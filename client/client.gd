@@ -23165,8 +23165,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.334 changes
+	display_game("[color=#00FF00]v0.9.334[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Class identity cleanup + XP stack fix (Audit #2 Slice 1)[/color]")
+	display_game("  • [b]Paladin / Sorcerer / Ninja are no longer described as \"[Legacy] - no longer available\"[/b] anywhere in code. They've been fully active classes for many versions; the stale strings in shared/constants.gd are now proper descriptions matching the character-create panel.")
+	display_game("  • [b]Bug fix: Sanctuary XP bonus was applying as a 11x multiplier at max level instead of 1.10x[/b]. character.gd add_experience was adding the raw percent value to 1.0 instead of dividing by 100 first. Now matches the party-combat XP path. Any character that stacked the upgrade was getting wildly inflated XP — fix levels the field.")
+	display_game("  • [b]New +50% cap on combined race × Sanctuary XP multiplier[/b]. Per the #2 audit: \"Ranger's +30% XP stacking with Human +10% — possible cap on XP-multiplier stacks.\" Hunter's Mark (Ranger class passive) is applied separately by combat and still works at full +30%; the cap covers the race + Sanctuary stack only.")
+	display_game("  • [b]Audit #2 moves from \"designing\" to \"implementing.\"[/b] Three designing-only systems shipped first slices in three consecutive releases (#4 → #13 → #2). Two remain: #3 Progression, #14 Multiplayer.")
+	display_game("")
+
 	# v0.9.333 changes
-	display_game("[color=#00FF00]v0.9.333[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.333[/color]")
 	display_game("  [color=#FFD700]Companion Sanctum (Audit #13 Slice 1)[/color]")
 	display_game("  • [b]New Sanctuary upgrade: Companion Sanctum.[/b] 5 levels. Each level grants +1 free Home Stone (Companion) injected into every new character's starting inventory. Veteran accounts can register their first companion immediately on a new life — no farming required.")
 	display_game("  • [b]Costs scaled to early-mid Sanctuary tier[/b]: 500 / 1,500 / 4,000 / 10,000 / 25,000 Baddie Points. The first level is the cheapest upgrade on the page, intentionally — surviving 2-3 deaths typically funds it.")
@@ -23203,15 +23212,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: dungeons should each feel different to traverse. 21 themed felt thin against 53 total — this batch pushes coverage past half (27/53) and hits the previously-untouched T7/T8 spectrum.")
 	display_game("")
 
-	# v0.9.330 changes
-	display_game("[color=#00FFFF]v0.9.330[/color]")
-	display_game("  [color=#FFD700]Threat services degrade (Audit #11 Slice 7)[/color]")
-	display_game("  • [b]Posts Under Threat now have +20% market prices.[/b] When a tier-2+ uncleared dungeon is within 80 tiles of the post you're browsing, every listing in that market costs 1.20× normal. Clear the dungeon → prices snap back. The /post warning you saw before now has real teeth.")
-	display_game("  • [b]Market panel banner[/b]: opening the browse view at a threatened post shows \"⚠ Under Threat — prices +20% (Spider Nest, 38 tiles N)\" above the listing grid. You see the cost going in, not as a surprise at checkout.")
-	display_game("  • [b]Cross-system #5 × #11 × #12 closed[/b]: dungeons spawn threats (Slice 6), posts surface them (Slice 1-6 rumors + status panel), economy feels them (this slice). Clearing a T3+ dungeon is now a tangible \"save the village\" — local prices restore.")
-	display_game("  • [b]ASCII map legend bigger[/b] (side QoL): the \"@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water\" line below the map jumped from font size 10 → 13. Much easier to read.")
-	display_game("  • [b]Why[/b]: 'Under Threat' was informational only — the rumor was menacing but nothing actually changed. Now it does. Future slices can add wandering monsters, post-tier downgrades, or rescue quests, but the economic bite is the foundation.")
-	display_game("")
 
 
 	# v0.9.327 changes

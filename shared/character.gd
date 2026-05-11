@@ -1832,10 +1832,27 @@ func discover_trading_post(post_name: String, post_x: int, post_y: int) -> bool:
 	return true
 
 func add_experience(amount: int) -> Dictionary:
-	"""Add experience and check for level up. Applies Human racial XP bonus and house XP bonus."""
-	# Apply Human racial XP bonus (+10%) and house XP bonus
-	var house_xp_mult = 1.0 + house_bonuses.get("xp_bonus", 0)
-	var final_amount = int(amount * get_xp_multiplier() * house_xp_mult)
+	"""Add experience and check for level up. Applies Human racial XP bonus and house XP bonus.
+
+	Audit #2 Slice 1 — bug fix + stack cap:
+	(1) `xp_bonus` is stored as a percent integer (1 per upgrade level, max 10),
+	    so it must be divided by 100 to become a multiplier. Previously this
+	    line read `1.0 + xp_bonus` directly, giving max-Sanctuary characters
+	    an 11× multiplier instead of 1.10×. Now matches combat_manager.gd's
+	    party-path math (line ~7811).
+	(2) Combined multiplier (race × class passive × Sanctuary) capped at
+	    1.50× so the Human Ranger + max Sanctuary stack doesn't snowball.
+	    Per audit #2 "Ranger's +30% XP stacking with Human +10% | TWEAK —
+	    possible cap on XP-multiplier stacks."
+	Note: the class passive multiplier (Hunter's Mark) is applied by
+	combat_manager before this function is called and feeds in via `amount`,
+	so the cap here covers race + Sanctuary, while the user-visible Hunter's
+	Mark bonus stays unchanged."""
+	var house_xp_mult = 1.0 + house_bonuses.get("xp_bonus", 0) / 100.0
+	var combined_mult = get_xp_multiplier() * house_xp_mult
+	if combined_mult > 1.50:
+		combined_mult = 1.50
+	var final_amount = int(amount * combined_mult)
 	experience += final_amount
 	var leveled_up = false
 	var levels_gained = 0

@@ -176,10 +176,12 @@ const CLASS_DESCRIPTIONS = {
 	# Trickster Path (WITS-focused, use Energy)
 	CLASS_THIEF: "Cunning trickster with high WITS and DEX. Energy abilities and outsmart tactics.",
 	CLASS_RANGER: "Versatile hybrid with STR/WITS. Mix of combat and trickster Energy abilities.",
-	# Legacy classes (for existing characters)
-	CLASS_PALADIN: "[Legacy] Holy warrior - no longer available for new characters",
-	CLASS_SORCERER: "[Legacy] Pure mage - no longer available for new characters",
-	CLASS_NINJA: "[Legacy] Shadow assassin - no longer available for new characters"
+	# Warrior Path hybrid
+	CLASS_PALADIN: "Holy warrior with sustain and bonus damage vs undead/demons. Uses Stamina.",
+	# Mage Path specialist
+	CLASS_SORCERER: "Chaotic mage with high-risk, high-reward magic. Uses Mana.",
+	# Trickster Path mobility specialist
+	CLASS_NINJA: "Shadow assassin with superior escape and flee tactics. Uses Energy."
 }
 
 # Starting Locations
