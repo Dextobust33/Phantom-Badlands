@@ -5292,8 +5292,13 @@ func trigger_encounter(peer_id: int):
 		character.forced_next_monster = ""
 		save_character(peer_id)
 	else:
-		# Normal random monster encounter
-		monster = monster_db.generate_monster(level_range.min, level_range.max)
+		# Normal random monster encounter. Slice 6b — pass the player's
+		# current biome so the monster pool biases toward biome-thematic
+		# picks (wolves in forest, kobolds in mountains, etc.). Biome is
+		# still a soft bias — out-of-biome monsters can still show up,
+		# just less often.
+		var encounter_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
+		monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome)
 
 	# Apply pending monster debuffs from scrolls
 	var debuff_messages = []

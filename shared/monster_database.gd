@@ -63,6 +63,66 @@ const ABILITY_ITEM_STEAL = "item_steal"          # 5% chance to steal random equ
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
 
+# Slice 6b — biome affinity. Each monster type maps to the biome strings (see
+# world_system.gd: "plains", "forest", "mountain", "swamp", "snow", "desert")
+# where it appears more often. select_monster_type applies a 3× weight
+# multiplier when the encounter biome matches an entry in this list — strong
+# bias toward thematic encounters without strict filtering (a Tundra player
+# can still occasionally meet a wandering Goblin, just rarely). Missing
+# entries or empty arrays = no biome preference (legendary tier-7+ monsters
+# fit anywhere). Resolution: monster's biome list checked AFTER the type is
+# in the level-appropriate pool, so biome never lets a higher-tier monster
+# spawn before its tier — it only re-weights inside the existing pool.
+const BIOME_AFFINITY = {
+	# Tier 1
+	MonsterType.GOBLIN:     ["forest", "mountain", "plains"],
+	MonsterType.GIANT_RAT:  ["swamp", "plains", "mountain"],
+	MonsterType.KOBOLD:     ["mountain", "desert"],
+	MonsterType.SKELETON:   ["swamp", "desert", "snow"],
+	MonsterType.WOLF:       ["forest", "mountain", "snow"],
+	# Tier 2
+	MonsterType.ORC:        ["mountain", "plains", "forest"],
+	MonsterType.HOBGOBLIN:  ["plains", "forest"],
+	MonsterType.GNOLL:      ["desert", "plains"],
+	MonsterType.ZOMBIE:     ["swamp", "plains"],
+	MonsterType.GIANT_SPIDER: ["forest", "swamp"],
+	MonsterType.WIGHT:      ["swamp", "snow"],
+	MonsterType.SIREN:      ["swamp"],
+	MonsterType.KELPIE:     ["swamp"],
+	# MIMIC: any — dungeon-leaning, no biome preference
+	# Tier 3
+	MonsterType.OGRE:       ["mountain", "forest"],
+	MonsterType.TROLL:      ["swamp", "forest", "mountain"],
+	MonsterType.WRAITH:     ["swamp", "snow"],
+	MonsterType.WYVERN:     ["mountain", "desert"],
+	MonsterType.MINOTAUR:   ["mountain"],
+	MonsterType.GARGOYLE:   ["mountain", "desert"],
+	MonsterType.HARPY:      ["mountain", "desert"],
+	MonsterType.SHRIEKER:   ["swamp", "forest"],
+	# Tier 4
+	MonsterType.GIANT:      ["mountain", "snow"],
+	MonsterType.DRAGON_WYRMLING: ["mountain", "forest"],
+	# DEMON: any
+	MonsterType.VAMPIRE:    ["swamp", "snow"],
+	MonsterType.GRYPHON:    ["mountain"],
+	MonsterType.CHIMAERA:   ["desert", "mountain"],
+	# SUCCUBUS: any
+	# Tier 5
+	# ANCIENT_DRAGON / DEMON_LORD / LICH / CERBERUS: any (legendary, no preference)
+	MonsterType.TITAN:      ["mountain"],
+	MonsterType.BALROG:     ["mountain"],
+	MonsterType.JABBERWOCK: ["forest"],
+	# Tier 6
+	MonsterType.IRON_GOLEM: ["mountain", "desert"],
+	MonsterType.SPHINX:     ["desert"],
+	MonsterType.HYDRA:      ["swamp"],
+	MonsterType.PHOENIX:    ["desert", "mountain"],
+	# ELEMENTAL / NAZGUL: any
+	# Tier 7+: legendary, no biome preference — leave unentered
+}
+
+const BIOME_AFFINITY_BONUS = 3  # weight multiplier when biome matches
+
 func set_balance_config(cfg: Dictionary):
 	"""Set balance configuration from server"""
 	balance_config = cfg
@@ -169,12 +229,16 @@ enum MonsterType {
 func _ready():
 	print("Monster Database initialized")
 
-func generate_monster(min_level: int, max_level: int) -> Dictionary:
-	"""Generate a random monster appropriate for the level range"""
+func generate_monster(min_level: int, max_level: int, biome: String = "") -> Dictionary:
+	"""Generate a random monster appropriate for the level range.
+	Slice 6b — optional biome biases the selection toward monsters whose
+	BIOME_AFFINITY list contains the biome (3× weight). Empty biome string
+	keeps the legacy uniform selection so callers that don't care about
+	biome (forced monsters, hunting, dungeon spawns) stay unchanged."""
 	var target_level = randi_range(min_level, max_level)
 
-	# Select monster type based on level
-	var monster_type = select_monster_type(target_level)
+	# Select monster type based on level (with optional biome bias)
+	var monster_type = select_monster_type(target_level, biome)
 
 	# Get base stats for this monster type
 	var base_stats = get_monster_base_stats(monster_type)
@@ -205,9 +269,14 @@ func get_all_monster_names() -> Array:
 	names.sort()  # Alphabetical order for easier navigation
 	return names
 
-func select_monster_type(level: int) -> MonsterType:
+func select_monster_type(level: int, biome: String = "") -> MonsterType:
 	"""Select an appropriate monster type for the level, with tier blending.
-	Lower tier monsters become rarer but never completely disappear."""
+	Lower tier monsters become rarer but never completely disappear.
+	Slice 6b — optional biome multiplies the per-monster weight by
+	BIOME_AFFINITY_BONUS (3×) when the monster's affinity list contains the
+	biome. Biome NEVER overrides the tier-based base pool — it only re-weights
+	inside the level-appropriate options, so a Tundra player still can't
+	encounter a Tier-3 monster while at Tier-1 levels."""
 	# Get tier bleed settings from config
 	var spawn_cfg = balance_config.get("monster_spawning", {})
 	var base_bleed_chance = spawn_cfg.get("tier_bleed_chance", 7)
@@ -245,8 +314,17 @@ func select_monster_type(level: int) -> MonsterType:
 
 		var tier_monsters = _get_tier_monsters(tier)
 		for monster in tier_monsters:
-			weighted_pool.append({"monster": monster, "weight": weight})
-			total_weight += weight
+			var w = weight
+			# Slice 6b — biome bias. Lookup monster's affinity list; if the
+			# encounter biome is in it, multiply weight. Monsters with no
+			# entry (or empty list) keep their base weight regardless of
+			# biome — they fit anywhere.
+			if biome != "" and BIOME_AFFINITY.has(monster):
+				var affinity = BIOME_AFFINITY[monster]
+				if affinity is Array and biome in affinity:
+					w = int(w * BIOME_AFFINITY_BONUS)
+			weighted_pool.append({"monster": monster, "weight": w})
+			total_weight += w
 
 	# Select from weighted pool
 	var roll = randi() % total_weight
