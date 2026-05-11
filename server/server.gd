@@ -4646,6 +4646,10 @@ func send_location_update(peer_id: int):
 	var outside_tier = int(wilderness_tier_info.get("tier", 1))
 	var outside_level = world_system.level_for_tier(outside_tier)
 
+	# Slice 6a — biome at player position (perpendicular axis to tier).
+	var biome_seed = chunk_manager.world_seed if chunk_manager else 0
+	var current_biome = world_system.get_biome_at(character.x, character.y, biome_seed)
+
 	# Send map display as description
 	var location_msg = {
 		"type": "location",
@@ -4673,6 +4677,11 @@ func send_location_update(peer_id: int):
 		"region_tier_name": region_tier_info.get("tier_name", "Core"),
 		"region_tier_color": region_tier_info.get("tier_color", "#00FF00"),
 		"region_post_name": region_tier_info.get("post_name", ""),
+		# Slice 6a — biome layer. Perpendicular to tier; same biome can span
+		# T1 → T6 territory.
+		"biome": current_biome,
+		"biome_name": world_system.get_biome_display_name(current_biome),
+		"biome_color": world_system.get_biome_empty_color(current_biome),
 		# Slice 4 boundary warning — client renders these only when in_bubble
 		# is true, so the player sees the wilderness tier they'd hit on exit
 		# and (when close to the edge) a red warning line.
