@@ -72,6 +72,19 @@ const REGION_SUFFIXES = [
 	"Downs", "Glade", "Wastes", "Verge", "Coast", "Fen",
 ]
 
+# Audit #11 Slice 4 — Personality traits. One trait per post, sampled at
+# generation. Shapes the greeting opening, the rumor preamble, and a
+# few flavor verbs. Adds variety without changing structure.
+#   warm     — friendly, helpful, hopes you do well
+#   gruff    — terse, no nonsense, direct hints
+#   wary     — suspicious of newcomers, lower-trust rumors
+#   jolly    — cheerful, conversational, occasional jokes
+#   scholarly — formal, references books and history
+#   eccentric — odd phrasings, cryptic but earnest
+const PERSONALITIES = [
+	"warm", "gruff", "wary", "jolly", "scholarly", "eccentric",
+]
+
 # Tier bands for procedurally-placed posts. Distance from origin (Euclidean)
 # determines the post's tier. Bands intentionally narrow at the core and
 # widen outward so most posts in the 450-tile placement radius get a tier
@@ -204,6 +217,15 @@ static func _generate_post(rng: RandomNumberGenerator, px: int, py: int, is_star
 		tier = _tier_from_distance(px, py)
 		region_name = _generate_region_name(rng)
 
+	# Audit #11 Slice 4 — personality trait. Shapes greeting + rumor flavor.
+	# Starter post locked to friendly "warm" so new players get a welcoming
+	# first NPC. Other posts roll random.
+	var personality: String
+	if is_starter:
+		personality = "warm"
+	else:
+		personality = PERSONALITIES[rng.randi_range(0, PERSONALITIES.size() - 1)]
+
 	return {
 		"x": px,
 		"y": py,
@@ -218,6 +240,7 @@ static func _generate_post(rng: RandomNumberGenerator, px: int, py: int, is_star
 		"wing_rooms": wing_rooms,
 		"tier": tier,
 		"region_name": region_name,
+		"personality": personality,
 	}
 
 static func _tier_from_distance(px: int, py: int) -> int:
@@ -239,7 +262,8 @@ static func _generate_region_name(rng: RandomNumberGenerator) -> String:
 static func backfill_post_fields(posts: Array, seed: int) -> Array:
 	"""Slice 6L — migrate posts saved before tier/region_name existed. Re-uses
 	the world seed so the same world reload produces stable names across
-	sessions. New fields only — doesn't touch existing data."""
+	sessions. New fields only — doesn't touch existing data.
+	Slice 11.4 — also backfills personality field for pre-existing posts."""
 	var rng = RandomNumberGenerator.new()
 	rng.seed = seed
 	for post in posts:
@@ -253,6 +277,11 @@ static func backfill_post_fields(posts: Array, seed: int) -> Array:
 				post["region_name"] = STARTER_REGION_NAME
 			else:
 				post["region_name"] = _generate_region_name(rng)
+		if not post.has("personality") or String(post.get("personality", "")).is_empty():
+			if post.get("is_starter", false):
+				post["personality"] = "warm"
+			else:
+				post["personality"] = PERSONALITIES[rng.randi_range(0, PERSONALITIES.size() - 1)]
 	return posts
 
 static func _generate_name(rng: RandomNumberGenerator) -> String:
