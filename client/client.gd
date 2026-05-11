@@ -22904,8 +22904,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.288 changes
+	display_game("[color=#00FF00]v0.9.288[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]NPC posts come alive — arrival greetings + rumors (Audit #11 Slice 1)[/color]")
+	display_game("  • [b]The first time you walk into an NPC post each session, the post's quest giver greets you[/b] with a chat line — post name, region, and a dungeon rumor pointing to the nearest active dungeon within ~150 tiles. Format: \"[color=#FFD700]═ Ironhold Lodge ═[/color] — [color=#FFFF00]T2 Ashfen Reach[/color]\" then \"[color=#A0C8E0]Trader Fenwick[/color]: 'Travelers whisper of a [color=#88FF88]Kobold Warren[/color] west of here, about 47 tiles out.'\"")
+	display_game("  • [b]Procedurally-generated quest givers are no longer dead data[/b] — each NPC post has had a quest giver name assigned at world-gen since Phase 6, but until now they were never surfaced. Now they greet you and deliver rumors.")
+	display_game("  • Repeat visits this session stay silent; reconnect to hear them again. Walk into 5 posts, get 5 different rumors pointing in different directions — a free way to discover dungeons across the world.")
+	display_game("  • If no dungeon is nearby, the NPC just nods in greeting. Rumors prefer the closest dungeon you haven't cleared yet.")
+	display_game("")
+
 	# v0.9.287 changes
-	display_game("[color=#00FF00]v0.9.287[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.287[/color]")
 	display_game("  [color=#FFD700]Region naming moved onto procedural posts (Audit #10 Slice 6L)[/color]")
 	display_game("  • [b]Each NPC post now carries its own region name and tier as data on the post itself,[/b] rolled at world-generation time and saved alongside the post. Region names survive a map wipe — a fresh world rolls 18 new posts at new positions, each with a freshly-rolled region name (Ashfen Reach, Stormhollow Moor, Sun-scoured Wastes, etc.) drawn from a procedural pool.")
 	display_game("  • [b]Region tier is now computed from each post's distance from origin[/b] (T1 inside 50 tiles → T7 beyond 500), so any new post placement still gets a sensible tier without hand-authored data.")
@@ -22931,14 +22940,6 @@ func display_changelog():
 	display_game("  • Hotzones were previously just punishment with no upside. Now they're a deliberate risk/reward zone: spend potions and abilities to clear a cluster, get noticeably more XP per minute and more loot than the surrounding territory.")
 	display_game("")
 
-	# v0.9.283 changes
-	display_game("[color=#00FFFF]v0.9.283[/color]")
-	display_game("  [color=#FFD700]Weather (Audit #10 Slice 6h)[/color]")
-	display_game("  • [b]Every biome now has weather that cycles every ~3 minutes.[/b] Plains gets Breeze or Rain; Forest adds Mist; Highlands can hit Strong Wind or Fog; Swamp has Mist/Rain/Fog; Tundra rolls Snow or Blizzard; Desert turns up Heat Haze or Sandstorm. Around 55% of any given cycle is Clear — weather is punctuation, not the steady state.")
-	display_game("  • [b]Heavy weather cuts vision.[/b] Rain / Snow / Heat Haze: −1 tile. Mist: −2. Fog / Blizzard / Sandstorm: −3 (floored at 3 tiles so you're never effectively blinded). Breeze / Strong Wind: no penalty.")
-	display_game("  • [b]A new \"Weather: ...\" line appears in the top-right HUD[/b] whenever the weather isn't Clear. Vision penalty shows as a small yellow tag next to the name.")
-	display_game("  • All players in the same biome see the same weather. Server picks one state per biome, rolls every 3 min, weather changes naturally as you cross biome boundaries.")
-	display_game("")
 
 
 
