@@ -45,7 +45,14 @@ const HOUSE_UPGRADES = {
 	"int_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 	"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 	"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-	"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]}
+	"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]},
+	# Audit #13 Slice 1 / Audit #4 Sanctuary tier — Companion Sanctum.
+	# Each level grants +1 free Home Stone (Companion) in every new
+	# character's starting inventory. Lets veteran accounts bootstrap new
+	# characters past the early-registration pain point without spending
+	# Valor on the NPC vendor (#4 Slice 1). Costs scaled to early-mid
+	# Sanctuary tier so 1-2 levels are reachable in the first few deaths.
+	"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]}
 }
 
 # Kennel capacity by upgrade level: 0=30, 1=50, ... 9=500
