@@ -19846,7 +19846,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20737,6 +20737,13 @@ func process_command(text: String):
 			# resolves zone by current location and replies with a `text` payload.
 			if has_character:
 				send_to_server({"type": "request_zone_deck"})
+			else:
+				display_game("You don't have a character yet")
+		"titles", "title":
+			# Audit #6 Slice 10 — list earned chain titles. Server formats and
+			# replies with a `text` payload (renders via existing chat path).
+			if has_character:
+				send_to_server({"type": "request_titles"})
 			else:
 				display_game("You don't have a character yet")
 		"debughatch":
@@ -23081,8 +23088,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.318 changes
+	display_game("[color=#00FF00]v0.9.318[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Chain title rewards (Audit #6 Slice 10)[/color]")
+	display_game("  • [b]14 unique titles[/b] now drop as chain-completion flair, one per chain. Examples: [color=#FF7F00]Goblin Bane[/color] (Goblin Menace), [color=#A335EE]Web Severer[/color] (Web Spreads), [color=#3CB371]Pack Master[/color] (Gnoll Pack Hunt), [color=#FFA500]Smith's Friend[/color] (Forge Supplies), [color=#00FF00]Apothecary's Friend[/color] (Apothecary Restock).")
+	display_game("  • [b]Awarded on final-stage chain turn-in[/b] via the existing chain_bonus schema (adds alongside valor + egg + Home Stones).")
+	display_game("  • [b]Cosmetic flair[/b]: no mechanical effect. Independent of the realm titles (Jarl / High King / Elder / Eternal) which still carry uniqueness + mechanical perks.")
+	display_game("  • [b]New command: [color=#9ACD32]/titles[/color][/b] (or /title) shows your earned chain titles with their colors, plus your realm title if held.")
+	display_game("  • [b]Backfill[/b]: characters who completed chains BEFORE this slice get their titles auto-awarded on next login. Nothing missed.")
+	display_game("")
+
 	# v0.9.317 changes
-	display_game("[color=#00FF00]v0.9.317[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.317[/color]")
 	display_game("  [color=#FFD700]Buy-order delivery queue (Audit #9 Slice 2b)[/color]")
 	display_game("  • [b]No more lost items.[/b] When a seller fulfills your buy order while you're offline (or your inventory is full), the items are now queued at the account level instead of vanishing.")
 	display_game("  • [b]Auto-collect on next login.[/b] The queue drains into your character on `character_loaded`. Materials go straight into crafting_materials; consumables/runes/parts take inventory slots. Anything that still won't fit is re-queued at the tail — nothing is ever lost.")
@@ -23118,18 +23135,6 @@ func display_changelog():
 	display_game("  • Works at every gathering location, including all 9 mining tiers, all 6 logging tiers, all 6 foraging tiers (incl. biome-locked nodes like cactus / ice_bloom), and both fishing zones (shallow + deep).")
 	display_game("")
 
-	# v0.9.313 changes
-	display_game("[color=#00FFFF]v0.9.313[/color]")
-	display_game("  [color=#FFD700]DELIVER quests — multi-path completability (Audit #6 Slice 9)[/color]")
-	display_game("  • [b]New quest type: DELIVER[/b]. The quest names an item; you can satisfy it ANY way: kill+salvage, buy off the market, [b]fulfill a buy order placed by others[/b] (or place one yourself!), find in chests, craft, or trade. The quest cares about delivery, not method.")
-	display_game("  • [b]3 new chains[/b] (6 quests across 3 starter posts):")
-	display_game("    – [color=#FFAA00]Forge Supplies[/color] at Haven: 8 Iron Ore → 4 Oak Wood. Reward: 250 valor + Iron Longsword.")
-	display_game("    – [color=#FFAA00]Apothecary Restock[/color] at Crossroads: 5 Health Potions → 6 Healing Herb. Reward: 220 valor + Wolf Egg.")
-	display_game("    – [color=#FFAA00]The Trapper's Trade[/color] at East Market: 6 Ragged Leather → 4 Leather Scraps. Reward: 240 valor + Hobgoblin Egg.")
-	display_game("  • [b]Live progress[/b]: quest log shows your current inventory count (\"5/8 Iron Ore\") rather than a tracked cumulative — items aren't \"locked in\" until you turn in. Use them freely, the quest checks again when you visit the giver.")
-	display_game("  • [b]Items consumed on turn-in[/b], not on accept. Walk in with the goods, hand them over.")
-	display_game("  • [b]Synergy with buy orders (v0.9.311)[/b]: place a buy order for the quest item, sit at the post, let other players bring you the goods.")
-	display_game("")
 
 
 

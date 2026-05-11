@@ -285,6 +285,11 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 # Title System - prestigious titles with special abilities
 @export var title: String = ""  # Current title: "", "jarl", "high_king", "elder", "eternal"
 @export var title_data: Dictionary = {}  # Title-specific data (lives for Eternal, etc.)
+# Audit #6 Slice 10 — chain title flair (cosmetic). Independent of the unique
+# realm titles above; this is a collection of identifiers from CHAIN_TITLES
+# in quest_database.gd, granted as chain_bonus rewards on final-stage quest
+# turn-ins. Persists across the character's life. /titles lists them.
+@export var earned_titles: Array = []
 
 # Knight/Mentee Status - granted by High King/Elder
 # Format: {granted_by: String, granted_by_id: int, granted_at: int (unix timestamp)}

@@ -37,6 +37,32 @@ enum QuestType {
 #   "prerequisite": String (quest_id that must be completed first, or empty)
 # }
 
+# Audit #6 Slice 10 — Chain titles. Flair-only cosmetic titles awarded as a
+# chain_bonus field on the final-stage quest. Independent of the unique
+# realm titles (Jarl/High King/Elder/Eternal) in shared/titles.gd — those
+# carry mechanical effects and uniqueness; these are pure identity flair.
+# Storage: character.earned_titles array. Display: /titles command + optional
+# active_chain_title (future slice).
+const CHAIN_TITLES = {
+	"goblin_bane":        {"name": "Goblin Bane",        "color": "#FF7F00"},
+	"crypt_cleanser":     {"name": "Crypt Cleanser",     "color": "#C0C0C0"},
+	"pack_hunter":        {"name": "Pack Hunter",        "color": "#8B4513"},
+	"rat_slayer":         {"name": "Rat Slayer",         "color": "#7FBF3F"},
+	"tunnel_crawler":     {"name": "Tunnel Crawler",     "color": "#A0522D"},
+	"web_severer":        {"name": "Web Severer",        "color": "#A335EE"},
+	"orc_slayer":         {"name": "Orc Slayer",         "color": "#660000"},
+	"iron_breaker":       {"name": "Iron-Breaker",       "color": "#D8D8C8"},
+	"mimic_hunter":       {"name": "Mimic Hunter",       "color": "#FFAA00"},
+	"barrow_walker":      {"name": "Barrow Walker",      "color": "#9370DB"},
+	"pack_master":        {"name": "Pack Master",        "color": "#3CB371"},
+	"smiths_friend":      {"name": "Smith's Friend",     "color": "#FFA500"},
+	"apothecarys_friend": {"name": "Apothecary's Friend", "color": "#00FF00"},
+	"trappers_friend":    {"name": "Trapper's Friend",   "color": "#CD853F"},
+}
+
+static func get_chain_title(title_id: String) -> Dictionary:
+	return CHAIN_TITLES.get(title_id, {})
+
 # Audit #6 Slice 1 — Quest chains. Each chain is a sequence of static quest
 # definitions linked by `next_in_chain`. Stage 1 quests are offered at the
 # named trading post; later stages are auto-added to active_quests when the
@@ -101,7 +127,7 @@ const QUESTS = {
 		"chain_total": 3,
 		"next_in_chain": "",
 		# Bonus dispensed on top of base rewards on final-stage turn-in
-		"chain_bonus": {"valor": 240, "egg": "Goblin", "home_stones": ["home_stone_egg", "home_stone_companion"]}
+		"chain_bonus": {"valor": 240, "egg": "Goblin", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "goblin_bane"}
 	},
 	# ===== "The Skeleton Lord's Curse" — Haven, 2 stages =====
 	"skeleton_lord_1": {
@@ -136,7 +162,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 150, "egg": "Skeleton", "home_stones": ["home_stone_egg", "home_stone_companion"]}
+		"chain_bonus": {"valor": 150, "egg": "Skeleton", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "crypt_cleanser"}
 	},
 	# ===== "The Wolf Pack" — Crossroads, 3 stages =====
 	"wolf_pack_1": {
@@ -188,7 +214,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 200, "egg": "Wolf", "home_stones": ["home_stone_egg", "home_stone_companion"]}
+		"chain_bonus": {"valor": 200, "egg": "Wolf", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "pack_hunter"}
 	},
 	# ===== "The Web Spreads" — East Market, 2 stages, T2 =====
 	"web_spreads_1": {
@@ -223,7 +249,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 275, "egg": "Giant Spider", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
+		"chain_bonus": {"valor": 275, "egg": "Giant Spider", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "web_severer"}
 	},
 	# ===== "Rat Plague" — Haven, 2 stages, T1 =====
 	"rat_plague_1": {
@@ -258,7 +284,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 150, "egg": "Giant Rat", "home_stones": ["home_stone_egg", "home_stone_companion"]}
+		"chain_bonus": {"valor": 150, "egg": "Giant Rat", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "rat_slayer"}
 	},
 	# ===== "Kobold Trouble" — Crossroads, 2 stages, T1 =====
 	"kobold_trouble_1": {
@@ -293,7 +319,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 150, "egg": "Kobold", "home_stones": ["home_stone_egg", "home_stone_companion"]}
+		"chain_bonus": {"valor": 150, "egg": "Kobold", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "tunnel_crawler"}
 	},
 	# ===== "Orc Threat" — East Market, 3 stages, T2 =====
 	"orc_threat_1": {
@@ -345,7 +371,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 310, "egg": "Orc", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
+		"chain_bonus": {"valor": 310, "egg": "Orc", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "orc_slayer"}
 	},
 	# ===== "Hobgoblin Discipline" — South Gate, 3 stages, T2 =====
 	"hobgoblin_discipline_1": {
@@ -397,7 +423,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 310, "egg": "Hobgoblin", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
+		"chain_bonus": {"valor": 310, "egg": "Hobgoblin", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "iron_breaker"}
 	},
 	# ===== "Mimic Hunt" — West Shrine, 2 stages, T2 =====
 	"mimic_hunt_1": {
@@ -432,7 +458,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 320, "egg": "Mimic", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
+		"chain_bonus": {"valor": 320, "egg": "Mimic", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "mimic_hunter"}
 	},
 	# ===== "Barrow's Curse" — South Gate, 2 stages, T2 =====
 	"barrow_curse_1": {
@@ -467,7 +493,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 315, "egg": "Wight", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
+		"chain_bonus": {"valor": 315, "egg": "Wight", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "barrow_walker"}
 	},
 	# ===== "Gnoll Pack Hunt" — West Shrine, 3 stages, T2 =====
 	"gnoll_pack_hunt_1": {
@@ -519,7 +545,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 305, "egg": "Gnoll", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
+		"chain_bonus": {"valor": 305, "egg": "Gnoll", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "pack_master"}
 	},
 
 	# Audit #6 Slice 9 — DELIVER chains (multi-path completability).
@@ -562,7 +588,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 210, "home_stones": ["home_stone_equipment"]}
+		"chain_bonus": {"valor": 210, "home_stones": ["home_stone_equipment"], "chain_title": "smiths_friend"}
 	},
 
 	"apothecary_restock_1": {
@@ -599,7 +625,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 180, "egg": "Wolf"}
+		"chain_bonus": {"valor": 180, "egg": "Wolf", "chain_title": "apothecarys_friend"}
 	},
 
 	"trapper_pelts_1": {
@@ -636,7 +662,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 200, "egg": "Hobgoblin"}
+		"chain_bonus": {"valor": 200, "egg": "Hobgoblin", "chain_title": "trappers_friend"}
 	}
 }
 
