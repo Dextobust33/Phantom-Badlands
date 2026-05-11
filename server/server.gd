@@ -13169,12 +13169,15 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 
 	# Slice 6c — biome at the gather site is the same for the whole session
 	# (gathering doesn't move the player). Compute once and reuse.
+	# Slice 6f — also forward the session's specific node_type so biome-locked
+	# nodes (cactus etc.) route through BIOME_LOCKED_DROPS.
 	var gather_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
+	var gather_node_type = str(session.get("node_type", ""))
 
 	# Roll rewards for each chain
 	var pending_quest_updates: Array = []
 	for i in range(auto_chains):
-		var reward = _roll_gathering_reward(job_type, tier, job_level, false, gather_biome)
+		var reward = _roll_gathering_reward(job_type, tier, job_level, false, gather_biome, gather_node_type)
 		var qty = reward.get("qty", 1)
 		# Apply house gathering bonus
 		var gathering_bonus = character.house_bonuses.get("gathering_bonus", 0)
@@ -13471,8 +13474,10 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 				depth_bonus = true
 
 		# Slice 6c — biome at player position so foraging splices in biome-exclusive entries.
+		# Slice 6f — biome-locked node type routes through BIOME_LOCKED_DROPS.
 		var gather_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
-		var reward = _roll_gathering_reward(job_type, effective_tier, job_level, is_risky, gather_biome)
+		var gather_node_type = str(session.get("node_type", ""))
+		var reward = _roll_gathering_reward(job_type, effective_tier, job_level, is_risky, gather_biome, gather_node_type)
 		var qty = reward.get("qty", 1)
 
 		# === FISHING: Trophy Catch — size roll affects quantity ===
@@ -13641,9 +13646,11 @@ func handle_gathering_choice(peer_id: int, message: Dictionary):
 				_end_gathering_session(peer_id, msg)
 			else:
 				# Still give a base reward (1x material) on failure. Foraging
-				# also keeps its biome bias on the consolation prize.
+				# also keeps its biome bias + node-type routing on the
+				# consolation prize.
 				var fail_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
-				var fail_reward = _roll_gathering_reward(job_type, tier, character.job_levels.get(job_type, 1), false, fail_biome)
+				var fail_node_type = str(session.get("node_type", ""))
+				var fail_reward = _roll_gathering_reward(job_type, tier, character.job_levels.get(job_type, 1), false, fail_biome, fail_node_type)
 				var fail_qty = 1
 				_add_gathering_reward(character, fail_reward, fail_qty)
 				session["chain_materials"].append({"id": fail_reward["id"], "name": fail_reward["name"], "qty": fail_qty, "type": fail_reward.get("type", "")})
@@ -13768,12 +13775,14 @@ func handle_gathering_end(peer_id: int, message: Dictionary):
 	else:
 		_end_gathering_session(peer_id)
 
-func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risky: bool, biome: String = "") -> Dictionary:
+func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risky: bool, biome: String = "", node_type: String = "") -> Dictionary:
 	"""Roll a material reward for a successful gathering round.
-	Slice 6c — `biome` only affects foraging right now (it splices in
-	biome-exclusive entries from BIOME_FORAGING_BONUS). Empty biome = legacy
-	behavior. The other job types ignore biome for now; future slices could
-	extend biome bias to mining (geode-rich highlands?) or fishing if useful."""
+	Slice 6c — `biome` splices BIOME_FORAGING_BONUS entries into foraging.
+	Slice 6f — `node_type` lets biome-locked nodes (cactus / ice_bloom /
+	swamp_lily / mountain_herb / brambleberry) bypass the generic pool and
+	guarantee their biome's material drop. Other job types ignore both
+	params for now; future slices could extend biome bias to mining (geode-
+	rich highlands?) or fishing."""
 	var reward = {}
 	match job_type:
 		"fishing":
@@ -13793,9 +13802,9 @@ func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risk
 			reward["qty"] = (2 if is_risky else 1) + (1 if randi() % 100 < job_level else 0)
 		"foraging":
 			# Use foraging catches if available, otherwise mining as fallback.
-			# Pass biome so the roll can splice in BIOME_FORAGING_BONUS entries.
+			# biome + node_type drive Slice 6c/6f routing inside the roll.
 			if drop_tables.has_method("roll_foraging_catch"):
-				reward = drop_tables.roll_foraging_catch(tier, job_level, biome)
+				reward = drop_tables.roll_foraging_catch(tier, job_level, biome, node_type)
 			else:
 				reward = drop_tables.roll_mining_catch(tier, job_level)
 			if reward.has("item_id"):

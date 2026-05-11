@@ -22863,8 +22863,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.281 changes
+	display_game("[color=#00FF00]v0.9.281[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Biome-locked nodes guarantee their biome material (Audit #10 Slice 6f)[/color]")
+	display_game("  • [b]Foraging a biome-locked node now drops only that biome's materials.[/b] Walking up to a Cactus and pressing Forage guarantees Cactus Flesh / Sun Petal / Scorched Root — no more rolling Clovers or Wild Berries off a cactus. Same for Ice Bloom (Frost Lichen / Ice Crystal / Snow Bloom), Swamp Lily (Bog Iris / Marsh Reed / Witch Cap), Mountain Herb (Alpine Lichen / Rock Salt / Crag Thistle), Brambleberry (Oak Acorn / Pine Resin / Silverleaf).")
+	display_game("  • Per node: 2 T1 anchors at high weight + 1 T2 standout at lower weight. Tier of the tile still drives Foraging XP gain.")
+	display_game("  • Regular herb/flower/mushroom/bush/reed nodes are unchanged — they keep rolling the generic foraging table with the Slice 6c biome bonus mixed in.")
+	display_game("")
+
 	# v0.9.280 changes
-	display_game("[color=#00FF00]v0.9.280[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.280[/color]")
 	display_game("  [color=#FFD700]Biome-locked node types — visible biome flavor on the map (Audit #10 Slice 6e)[/color]")
 	display_game("  • [b]Each non-plains biome now spawns a unique gatherable glyph[/b] that ONLY appears in that biome:")
 	display_game("    [color=#6B8E5A]Y[/color] Cactus (Desert)  [color=#B0E0E6]i[/color] Ice Bloom (Tundra)  [color=#DA70D6]&[/color] Swamp Lily (Swamp)  [color=#DAA520]j[/color] Mountain Herb (Highlands)  [color=#8B3A3A]b[/color] Brambleberry (Forest)")
@@ -22898,15 +22906,6 @@ func display_changelog():
 	display_game("  • Dungeon spawns, forced monsters (from selection scrolls), and hunted monsters are unaffected — those code paths already pick a specific monster on purpose.")
 	display_game("")
 
-	# v0.9.276 changes
-	display_game("[color=#00FFFF]v0.9.276[/color]")
-	display_game("  [color=#FFD700]Biome layer — the world now has Plains, Forest, Highlands, Swamp, Tundra, Desert (Audit #10 Slice 6a)[/color]")
-	display_game("  • [b]Biomes are large noise-defined regions[/b] that sit perpendicular to the existing tier curve. A T3 forest and a T6 forest are both forests; biome answers \"what does this terrain look like\" while tier answers \"how dangerous is it\". Each biome region spans hundreds of tiles, so you'll walk through one for a while before crossing into another.")
-	display_game("  • [b]Each biome shifts the node distribution toward its theme[/b]: forests have more trees + brush + mushrooms (less stone/ore); highlands are stone + ore heavy; swamps are reed + mushroom + water heavy; tundra is sparser; desert is very sparse and stone-leaning. Applies to newly generated tiles — already-explored chunks keep their existing nodes.")
-	display_game("  • [b]Empty tiles tint to their biome color[/b] so you can read the biome at a glance on the map: forest darker olive-brown, highlands gray-brown, swamp mossy green, tundra ice-blue, desert tan. Plains keeps the existing brown.")
-	display_game("  • [b]New \"Biome: Forest\" line[/b] appears in the top-right region label beneath the tier line, so you always know which biome you're in.")
-	display_game("  • Coming next: biome-specific mechanics (movement, weather, biome-locked monsters and resources) will layer onto this foundation in 6b+.")
-	display_game("")
 
 
 
