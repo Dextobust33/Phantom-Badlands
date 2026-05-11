@@ -914,6 +914,10 @@ var hud_region_post_name: String = ""
 var hud_biome: String = ""
 var hud_biome_name: String = ""
 var hud_biome_color: String = "#6B5B45"
+# Slice 6h — weather state for the player's current biome.
+var hud_weather: String = ""
+var hud_weather_name: String = ""
+var hud_weather_vision_mod: int = 0
 # Settler-bubble boundary warning (Slice 4) — fields only render when
 # hud_region_in_bubble is true. Lets the player see the wilderness tier they
 # would face on exit, with a red warning when within the edge threshold.
@@ -17819,6 +17823,9 @@ func handle_server_message(message: Dictionary):
 			hud_biome = String(message.get("biome", ""))
 			hud_biome_name = String(message.get("biome_name", ""))
 			hud_biome_color = String(message.get("biome_color", "#6B5B45"))
+			hud_weather = String(message.get("weather", ""))
+			hud_weather_name = String(message.get("weather_name", ""))
+			hud_weather_vision_mod = int(message.get("weather_vision_mod", 0))
 			# Slice 4 boundary warning — server only stamps these when relevant
 			hud_region_in_bubble = bool(message.get("region_in_bubble", false))
 			hud_region_bubble_edge_dist = int(message.get("region_bubble_edge_dist", -1))
@@ -22891,8 +22898,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.283 changes
+	display_game("[color=#00FF00]v0.9.283[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Weather (Audit #10 Slice 6h)[/color]")
+	display_game("  • [b]Every biome now has weather that cycles every ~3 minutes.[/b] Plains gets Breeze or Rain; Forest adds Mist; Highlands can hit Strong Wind or Fog; Swamp has Mist/Rain/Fog; Tundra rolls Snow or Blizzard; Desert turns up Heat Haze or Sandstorm. Around 55% of any given cycle is Clear — weather is punctuation, not the steady state.")
+	display_game("  • [b]Heavy weather cuts vision.[/b] Rain / Snow / Heat Haze: −1 tile. Mist: −2. Fog / Blizzard / Sandstorm: −3 (floored at 3 tiles so you're never effectively blinded). Breeze / Strong Wind: no penalty.")
+	display_game("  • [b]A new \"Weather: ...\" line appears in the top-right HUD[/b] whenever the weather isn't Clear. Vision penalty shows as a small yellow tag next to the name.")
+	display_game("  • All players in the same biome see the same weather. Server picks one state per biome, rolls every 3 min, weather changes naturally as you cross biome boundaries.")
+	display_game("")
+
 	# v0.9.282 changes
-	display_game("[color=#00FF00]v0.9.282[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.282[/color]")
 	display_game("  [color=#FFD700]Biome movement modifiers (Audit #10 Slice 6g)[/color]")
 	display_game("  • [b]Different biomes move at different speeds.[/b] Plains and Forest are baseline (0.5s per step). Highlands and Desert apply mild penalties (~+15-20% cooldown). Swamp and Tundra slow you noticeably (~+40% cooldown — 0.7s per step). The biome you're standing in determines the cost — crossing into a Swamp tile immediately starts the slower cadence.")
 	display_game("  • [b]The biome line in the top-right HUD adds a [color=#FF6644](slow)[/color] tag[/b] when you're in a meaningfully slow biome (Swamp / Tundra). Mild biomes (Highlands / Desert) feel slightly slower but don't get tagged.")
@@ -22926,14 +22942,6 @@ func display_changelog():
 	display_game("  • Applies to newly generated tiles around posts. Already-explored chunks keep their current distribution.")
 	display_game("")
 
-	# v0.9.278 changes
-	display_game("[color=#00FFFF]v0.9.278[/color]")
-	display_game("  [color=#FFD700]Biome-exclusive foraging materials (Audit #10 Slice 6c)[/color]")
-	display_game("  • [b]Each non-plains biome now drops materials that only appear there when you forage in it.[/b] Forests yield Pine Resin, Oak Acorn, and Silverleaf; Highlands give Alpine Lichen, Rock Salt, Crag Thistle; Swamps drop Bog Iris, Marsh Reed, Witch Cap; Tundras yield Frost Lichen, Ice Crystal, Snow Bloom; Deserts give Cactus Flesh, Sun Petal, Scorched Root.")
-	display_game("  • Biome-exclusive entries slot into the existing foraging table at tiers 1-2 — you'll see them mixed in with the generic catches when foraging inside the matching biome, and you'll [b]never[/b] see them when foraging outside. Skill bonuses (rare-boost on the tail of the list) still apply.")
-	display_game("  • Same Foraging skill, same XP curve, same Forage button. No new tools, no new node types — just region-specific drops in the existing herb/flower/mushroom/bush/reed nodes.")
-	display_game("  • Coming next: more biome mechanics (movement modifiers, weather, biome-locked node types) and a starter-resource ring around NPC posts so a Desert-spawn player still has basic materials nearby.")
-	display_game("")
 
 
 
@@ -23916,12 +23924,25 @@ func update_region_label():
 			slow_tag = " [color=#FF6644](slow)[/color]"
 		biome_line = "[color=#9ACD32]Biome:[/color] [color=%s]%s[/color]%s" % [hud_biome_color, hud_biome_name, slow_tag]
 
+	# Slice 6h — weather line. Skip when state is "clear" (default ~55% of
+	# the time) so the HUD stays quiet most of the time. Vision-reducing
+	# weather (rain/mist/fog/snow/blizzard/haze/sandstorm) gets a subtle
+	# yellow vis-tag so players know why their sight is shorter than usual.
+	var weather_line = ""
+	if hud_weather_name != "" and hud_weather != "clear":
+		var vis_tag = ""
+		if hud_weather_vision_mod < 0:
+			vis_tag = " [color=#E0C040](vision %d)[/color]" % hud_weather_vision_mod
+		weather_line = "[color=#9ACD32]Weather:[/color] [color=#A0C8E0]%s[/color]%s" % [hud_weather_name, vis_tag]
+
 	# Slice 4 boundary warning — when inside a settler bubble, surface the
 	# wilderness tier waiting just outside so the player isn't blindsided by
 	# a sudden level jump on exit. Red ⚠ tone when within REGION_EDGE_WARN_TILES.
 	var lines = [area_line, region_line]
 	if biome_line != "":
 		lines.append(biome_line)
+	if weather_line != "":
+		lines.append(weather_line)
 	if hud_region_in_bubble and hud_region_outside_tier > hud_region_tier:
 		var near_edge = hud_region_bubble_edge_dist >= 0 and hud_region_bubble_edge_dist <= REGION_EDGE_WARN_TILES
 		var label_color = "#FF6644" if near_edge else "#888888"

@@ -216,6 +216,17 @@ const MERCHANT_UPDATE_INTERVAL = 10.0  # Check every 10 seconds
 var merchant_update_timer = 0.0
 var last_merchant_cache_positions: Dictionary = {}  # Tracks merchant positions for change detection
 
+# Slice 6h — weather. Cycles every WEATHER_CYCLE_SECONDS; current state per
+# biome lives in weather_per_biome and is sent to clients in the location
+# message. Vision modifier is applied at map-generation time. Initial state
+# is "clear" everywhere until the first cycle fires.
+const WEATHER_CYCLE_SECONDS = 180.0  # 3 minutes between rolls
+var weather_cycle_timer = 0.0
+var weather_per_biome: Dictionary = {
+	"plains": "clear", "forest": "clear", "mountain": "clear",
+	"swamp": "clear", "snow": "clear", "desert": "clear",
+}
+
 # ===== GUARD SYSTEM =====
 # Active guards: "x,y" -> {owner, hired_at, last_fed, food_remaining, in_tower, radius}
 var active_guards: Dictionary = {}
@@ -765,6 +776,13 @@ func _process(delta):
 	if player_list_update_timer >= PLAYER_LIST_UPDATE_INTERVAL:
 		player_list_update_timer = 0.0
 		update_player_list()
+
+	# Slice 6h — weather cycle. Roll a new weather state per biome every
+	# WEATHER_CYCLE_SECONDS. Cheap (6 dict updates) so we run it inline.
+	weather_cycle_timer += delta
+	if weather_cycle_timer >= WEATHER_CYCLE_SECONDS:
+		weather_cycle_timer = 0.0
+		_cycle_weather()
 
 	# Update traveling merchants and send map updates to players when merchants move
 	if world_system:
@@ -4483,9 +4501,22 @@ func send_location_update(peer_id: int):
 
 	var character = characters[peer_id]
 
-	# Vision radius — expanded in new chunk system, reduced when blinded
+	# Slice 6a/6h — biome at player position drives both the region label
+	# (further down) and the weather lookup right below.
+	var biome_seed = chunk_manager.world_seed if chunk_manager else 0
+	var current_biome = world_system.get_biome_at(character.x, character.y, biome_seed)
+
+	# Vision radius — expanded in new chunk system, reduced when blinded.
+	# Slice 6h — weather can cut vision further (fog -3, mist -2, rain -1).
+	# Blind takes priority since it's a deliberate combat status; weather
+	# only kicks in when the player isn't already blinded.
 	var base_vision = WorldSystem.DEFAULT_VISION_RADIUS if chunk_manager else 6
 	var vision_radius = WorldSystem.BLIND_VISION_RADIUS if character.blind_active else base_vision
+	var current_weather = str(weather_per_biome.get(current_biome, "clear"))
+	var weather_vision_mod = world_system.get_weather_vision_mod(current_weather)
+	if not character.blind_active and weather_vision_mod < 0:
+		# Floor of 3 keeps the player from being effectively blinded by fog.
+		vision_radius = max(3, vision_radius + weather_vision_mod)
 
 	# Get nearby players for map display (within map radius)
 	var nearby_players = get_nearby_players(peer_id, vision_radius)
@@ -4646,10 +4677,6 @@ func send_location_update(peer_id: int):
 	var outside_tier = int(wilderness_tier_info.get("tier", 1))
 	var outside_level = world_system.level_for_tier(outside_tier)
 
-	# Slice 6a — biome at player position (perpendicular axis to tier).
-	var biome_seed = chunk_manager.world_seed if chunk_manager else 0
-	var current_biome = world_system.get_biome_at(character.x, character.y, biome_seed)
-
 	# Send map display as description
 	var location_msg = {
 		"type": "location",
@@ -4682,6 +4709,12 @@ func send_location_update(peer_id: int):
 		"biome": current_biome,
 		"biome_name": world_system.get_biome_display_name(current_biome),
 		"biome_color": world_system.get_biome_empty_color(current_biome),
+		# Slice 6h — current biome's weather state + display + vision penalty
+		# applied. weather_vision_mod is informational for the HUD; the map
+		# already accounts for it via vision_radius above.
+		"weather": current_weather,
+		"weather_name": world_system.get_weather_display(current_weather),
+		"weather_vision_mod": weather_vision_mod,
 		# Slice 4 boundary warning — client renders these only when in_bubble
 		# is true, so the player sees the wilderness tier they'd hit on exit
 		# and (when close to the edge) a red warning line.
@@ -26521,6 +26554,14 @@ func _initialize_road_paths(npc_posts: Array) -> void:
 
 	# Compute merchant circuits from whatever paths exist
 	world_system.compute_merchant_circuits(_get_posts_with_markets())
+
+func _cycle_weather() -> void:
+	"""Slice 6h — roll a new weather state per biome from BIOME_WEATHER_POOL.
+	Called every WEATHER_CYCLE_SECONDS. State is stored in weather_per_biome
+	and read in send_location_update; no broadcast needed because each
+	player's next location update naturally carries the new weather."""
+	for biome in weather_per_biome.keys():
+		weather_per_biome[biome] = world_system.pick_biome_weather(biome)
 
 func _try_connect_road() -> void:
 	"""Periodically try to find a path for one unconnected post pair.
