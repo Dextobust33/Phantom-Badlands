@@ -19878,7 +19878,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20778,6 +20778,13 @@ func process_command(text: String):
 			# inside. Owner-detail view if it's yours, public summary otherwise.
 			if has_character:
 				send_to_server({"type": "post_status"})
+			else:
+				display_game("You don't have a character yet")
+		"feedall", "feed_all":
+			# Audit #12 Slice 3 — feed every guard around your current post in
+			# one action. Server validates ownership and reports per-guard.
+			if has_character:
+				send_to_server({"type": "guard_feed_all"})
 			else:
 				display_game("You don't have a character yet")
 		"titles", "title":
@@ -23140,8 +23147,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.329 changes
+	display_game("[color=#00FF00]v0.9.329[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Feed All Guards (Audit #12 Slice 3)[/color]")
+	display_game("  • [b]New chat command: \"/feedall\"[/b] (also \"/feed_all\") — feeds every guard within 40 tiles of your current post in one action. Validates ownership (visitors can't feed your guards). Skips already-capped guards. Stops gracefully if food runs out mid-batch — you'll see which ones got skipped.")
+	display_game("  • [b]Per-guard report[/b] with compass quadrant labels (NE, SE, Tower N, etc.), days added, and was-LOW markers for guards rescued from the danger zone. Footer summarizes total food consumed + walks saved.")
+	display_game("  • [b]Status panel hint[/b]: \"/post\" now appends \"/feedall would top up N guards (need X food, have Y)\" when there's work to do. Green when you can afford it, orange when you're short. No more manually checking each guard's days remaining.")
+	display_game("  • [b]Why[/b]: Slice 2 made hungry guards visible. Slice 3 fixes them in one keystroke. With 5+ guards per post, manual feeding was 5+ walk-and-press sequences — now it's one command from the post center.")
+	display_game("")
+
 	# v0.9.328 changes
-	display_game("[color=#00FF00]v0.9.328[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.328[/color]")
 	display_game("  [color=#FFD700]Post status panel (Audit #12 Slice 2)[/color]")
 	display_game("  • [b]Step onto the center of one of your own posts[/b] to see the status dashboard: bubble radius, effective tier vs wilderness, each guard's compass quadrant and remaining food days, and any active threat warning. First time per post per session — walks back in won't re-spam.")
 	display_game("  • [b]New chat command: \"/post\"[/b] — re-show the status panel whenever you want. Works inside any player post: your own (full owner detail) or someone else's (public summary: name, owner, radius, tier).")
@@ -23182,16 +23198,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: closes the Slice 4 acquisition loop. You now have two paths to cross-class cards — companion-gift at L10 (deliberate, predictable) and tomes from chests (luck-based, exciting). Sanctuary deck customization is still on the post-audit list.")
 	display_game("")
 
-	# v0.9.324 changes
-	display_game("[color=#00FFFF]v0.9.324[/color]")
-	display_game("  [color=#FFD700]Companion gifts cross-class abilities (Audit #1 Slice 4b)[/color]")
-	display_game("  • [b]Companions now teach you cross-class abilities at level 10.[/b] When your active companion crosses level 10 in combat, if their monster type has a mapped gift ability AND it's not already in your deck, you get +1 copy permanently.")
-	display_game("  • [b]15 companions teach abilities[/b], spread across archetypes: Wolf → Ambush, Goblin → Distract, Skeleton → Magic Bolt, Spider → Paralyze, Orc → Power Strike, Hobgoblin → War Cry, Gnoll → Cleave, Wight → Vanish, Mimic → Analyze, Troll → Rally, and more.")
-	display_game("  • [b]Cross-class deliberate path[/b]: a Mage with an Orc companion can level the Orc up to learn Power Strike. The off-affinity tag from v0.9.323 lights up on the new card and shrinks as you grind its rank down.")
-	display_game("  • [b]One-time per ability per character[/b] — once a card is in your deck (even at 1 copy), the companion won't re-gift it. Cull doesn't matter (cull floors at 1 anyway).")
-	display_game("  • [b]Sanctuary deck customization noted for after the audit[/b] — a future station will let you spend Baddie Points to pre-load specific cards on a new character.")
-	display_game("  • [b]Ability Tomes deferred to next slice[/b] — a chest-drop alternative acquisition path. Companion gifts ship first as the primary loop.")
-	display_game("")
 
 
 
