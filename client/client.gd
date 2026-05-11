@@ -23032,8 +23032,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.303 changes
+	display_game("[color=#00FF00]v0.9.303[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Chain Atlas shows rewards (Audit #6 Slice 8)[/color]")
+	display_game("  • [b]The Chain Atlas (v0.9.302) now shows what each chain pays[/b]. Every available or in-progress chain line gets a terse reward summary appended: \"→ 240 valor + Goblin Egg + Stones (Egg, Companion)\". Completed chains stay terse (you already got the loot).")
+	display_game("  • [b]Why it matters[/b]: the v0.9.302 atlas told you which chains existed but not what they paid. Decisions like \"do I chase the Wolf Pack chain for a Wolf Egg or the Skeleton Lord for a Companion stone?\" are now visible at the atlas level instead of requiring a walk to each post.")
+	display_game("  • Built on the chain_bonus schema — same data the chain-completion handler reads, just formatted compactly. New `_summarize_chain_bonus` helper composes \"X valor + Y Egg + Stones (Z)\".")
+	display_game("")
+
 	# v0.9.302 changes
-	display_game("[color=#00FF00]v0.9.302[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.302[/color]")
 	display_game("  [color=#FFD700]Chain Atlas in quest log (Audit #6 Slice 7)[/color]")
 	display_game("  • [b]Quest log now shows a Chain Atlas[/b] under your active quests, listing all 11 chain campaigns and their status: [color=#5C8050]✓ completed[/color], [color=#FFAA00]▶ in-progress (stage X/Y)[/color], or [color=#A0A0A0]○ available at [Post Name][/color]. One line per chain, alphabetized by declaration order.")
 	display_game("  • [b]Why it matters[/b]: chains exist across five starter posts, and 'what have I done, what's left' was invisible — players had to remember which chains they finished and walk to each post to check. The atlas makes the whole campaign legible at a glance from the quest log.")
@@ -23065,13 +23073,6 @@ func display_changelog():
 	display_game("  • History resets cleanly when a fresh encounter starts, so non-flock fights still show only their own log (no stale history bleeding in).")
 	display_game("")
 
-	# v0.9.298 changes
-	display_game("[color=#00FFFF]v0.9.298[/color]")
-	display_game("  [color=#FFD700]Trap acknowledgments + fading toast hints[/color]")
-	display_game("  • [b]Dungeon traps now hard-block until you press Acknowledge.[/b] Triggering a trap pauses the game — your action bar shows a single [Acknowledge] button at slot 0, movement keys are gated, and you can't blunder forward until you've read what hit you. Easy to mash past traps before; not anymore.")
-	display_game("  • [b]Fading toast overlay for fleeting compass hints.[/b] Messages like \"You sense fallen remains to the SW...\" used to scroll past in chat while you were moving. They now appear in a small panel anchored top-right of the game output, fade in for 200ms, hold for ~6s, fade out gracefully. Stays out of the chat scroll so it can't get drowned.")
-	display_game("  • The toast is opt-in per-message — server sends a new \"toast\" message type or `\"toast\": true` flag. Easy to extend: any future hint that wants the corner-fade treatment just uses the new type.")
-	display_game("")
 
 
 
