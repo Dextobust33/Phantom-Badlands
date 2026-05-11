@@ -66,6 +66,17 @@ const TILE_RENDER = {
 	"bush":          {"char": ";", "color": "#006600", "blocks_move": false, "blocks_los": false},
 	"reed":          {"char": "|", "color": "#66CCCC", "blocks_move": false, "blocks_los": false},
 	"dense_brush":   {"char": "%", "color": "#6B8E23", "blocks_move": true, "blocks_los": false},
+	# Slice 6e — biome-locked foraging nodes. Distinct chars + biome-themed
+	# colors so they read at a glance on the map. Passable (blocks_move=false)
+	# so the player can step onto them like other forage tiles. Each spawns
+	# only in its matching biome via BIOME_NODE_WEIGHTS — they never appear
+	# outside their biome. Drop tables on the existing Slice 6c biome-bonus
+	# materials when foraged (no per-node tables yet — Slice 6f could add).
+	"cactus":        {"char": "Y", "color": "#6B8E5A", "blocks_move": false, "blocks_los": false},
+	"ice_bloom":     {"char": "i", "color": "#B0E0E6", "blocks_move": false, "blocks_los": false},
+	"swamp_lily":    {"char": "&", "color": "#DA70D6", "blocks_move": false, "blocks_los": false},
+	"mountain_herb": {"char": "j", "color": "#DAA520", "blocks_move": false, "blocks_los": false},
+	"brambleberry":  {"char": "b", "color": "#8B3A3A", "blocks_move": false, "blocks_los": false},
 	"water":         {"char": "~", "color": "#4488FF", "blocks_move": true, "blocks_los": false},
 	"deep_water":    {"char": "~", "color": "#2244AA", "blocks_move": true, "blocks_los": false},
 	"bridge":        {"char": "=", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
@@ -121,10 +132,18 @@ const NODE_TO_JOB = {
 	"bush": "foraging",
 	"reed": "foraging",
 	"water": "fishing",
+	# Slice 6e — biome-locked nodes all forage.
+	"cactus": "foraging",
+	"ice_bloom": "foraging",
+	"swamp_lily": "foraging",
+	"mountain_herb": "foraging",
+	"brambleberry": "foraging",
 }
 
 # Types that can be gathered
-const GATHERABLE_TYPES = ["stone", "ore_vein", "tree", "dense_brush", "herb", "flower", "mushroom", "bush", "reed", "water"]
+const GATHERABLE_TYPES = ["stone", "ore_vein", "tree", "dense_brush", "herb", "flower", "mushroom", "bush", "reed", "water",
+	# Slice 6e — biome-locked nodes feed the foraging pipeline.
+	"cactus", "ice_bloom", "swamp_lily", "mountain_herb", "brambleberry"]
 
 # Special locations - major landmarks only
 const SPECIAL_LOCATIONS = {
@@ -222,6 +241,8 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 6,
 		"reed": 2,
 		"dense_brush": 12,
+		# Slice 6e — biome-locked node; only spawns here.
+		"brambleberry": 8,
 	},
 	BIOME_MOUNTAIN: {
 		"stone": 42,
@@ -233,6 +254,7 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 3,
 		"reed": 1,
 		"dense_brush": 7,
+		"mountain_herb": 6,
 	},
 	BIOME_SWAMP: {
 		"stone": 8,
@@ -244,6 +266,7 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 6,
 		"reed": 22,
 		"dense_brush": 10,
+		"swamp_lily": 10,
 	},
 	BIOME_SNOW: {
 		"stone": 38,
@@ -255,6 +278,7 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 4,
 		"reed": 2,
 		"dense_brush": 6,
+		"ice_bloom": 6,
 	},
 	BIOME_DESERT: {
 		"stone": 48,
@@ -266,6 +290,7 @@ const BIOME_NODE_WEIGHTS = {
 		"bush": 12,
 		"reed": 2,
 		"dense_brush": 8,
+		"cactus": 12,
 	},
 }
 
@@ -775,10 +800,12 @@ func is_dense_forest(x: int, y: int) -> bool:
 	return _legacy_is_dense_forest(x, y)
 
 func is_foraging_spot(x: int, y: int) -> bool:
-	"""Check if coordinates are a foraging location (herb/flower/mushroom/bush/reed)."""
+	"""Check if coordinates are a foraging location. Includes the baseline
+	herb/flower/mushroom/bush/reed nodes plus Slice 6e biome-locked nodes."""
 	if chunk_manager:
 		var tile = chunk_manager.get_tile(x, y)
-		return tile.get("type", "") in ["herb", "flower", "mushroom", "bush", "reed"]
+		return tile.get("type", "") in ["herb", "flower", "mushroom", "bush", "reed",
+			"cactus", "ice_bloom", "swamp_lily", "mountain_herb", "brambleberry"]
 	return false
 
 func get_ore_tier(x: int, y: int) -> int:

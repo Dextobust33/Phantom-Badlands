@@ -22863,8 +22863,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.280 changes
+	display_game("[color=#00FF00]v0.9.280[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Biome-locked node types — visible biome flavor on the map (Audit #10 Slice 6e)[/color]")
+	display_game("  • [b]Each non-plains biome now spawns a unique gatherable glyph[/b] that ONLY appears in that biome:")
+	display_game("    [color=#6B8E5A]Y[/color] Cactus (Desert)  [color=#B0E0E6]i[/color] Ice Bloom (Tundra)  [color=#DA70D6]&[/color] Swamp Lily (Swamp)  [color=#DAA520]j[/color] Mountain Herb (Highlands)  [color=#8B3A3A]b[/color] Brambleberry (Forest)")
+	display_game("  • Forage these nodes the same way as herbs/flowers — walk up, press Forage. They feed the existing foraging pipeline (skill XP, Slice 6c biome bonus rolls).")
+	display_game("  • [b]Biome-locked nodes spawn OUTSIDE the 25-tile starter ring around NPC posts[/b] — you have to walk out of the post zone to find them. Strong signal that you've crossed from \"starter area\" to \"real biome\".")
+	display_game("")
+
 	# v0.9.279 changes
-	display_game("[color=#00FF00]v0.9.279[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.279[/color]")
 	display_game("  [color=#FFD700]Starter-resource ring around NPC posts (Audit #10 Slice 6d)[/color]")
 	display_game("  • [b]NPC posts now keep a small balanced-resource zone around them[/b], regardless of biome. Within 25 tiles of any NPC post, terrain generation blends 70% baseline distribution with 30% biome flavor — so a new player who spawns at a Desert or Tundra post can still find some trees, herbs, and mushrooms within walking distance, while the area still feels biome-appropriate.")
 	display_game("  • Past the 25-tile ring, full biome distribution takes over: deserts get truly arid, tundras truly sparse, swamps thick with mushroom and reed. Biome character intact where it matters.")
@@ -22899,14 +22908,6 @@ func display_changelog():
 	display_game("  • Coming next: biome-specific mechanics (movement, weather, biome-locked monsters and resources) will layer onto this foundation in 6b+.")
 	display_game("")
 
-	# v0.9.275 changes
-	display_game("[color=#00FFFF]v0.9.275[/color]")
-	display_game("  [color=#FFD700]Combat card damage fix + uses-to-next-rank indicator + market bulk fix + build-mode mobility[/color]")
-	display_game("  • [b]Card damage estimate now uses the right Attack number.[/b] v0.9.274 fell back to STR alone when reading total attack — your weapon's attack bonus (the dominant component) was silently ignored. Cards were under-predicting damage by roughly half. Now mirrors the server's get_total_attack (STR + equip STR + equip ATK).")
-	display_game("  • [b]Each card shows uses until next mastery rank.[/b] The rank tag in the middle row now reads e.g. \"R2 +47\" — 47 more successful casts until rank 3 (Expert). At max rank you'll see \"R4 ★\". Answers \"how close am I to ranking this up?\" without opening the Abilities panel.")
-	display_game("  • [b]Market \"List ▾\" bulk options pointed at the wrong category.[/b] Picking \"Bulk: All Equipment\" was opening the Consumables confirmation, \"Bulk: All Consumables\" opened Tools & Structures, and so on down the list — a separator-counting bug in the popup menu's id handler. The dispatch now indexes directly by menu id, so each entry confirms (and lists) what its label says.")
-	display_game("  • [b]You can walk while the build menu is open.[/b] Previously you had to position your character, open the menu, exit, reposition, then re-open before every placement. Now arrow keys and numpad keep moving the character while build mode is active; WASD still picks the placement direction. Reposition and place without breaking flow.")
-	display_game("")
 
 
 
