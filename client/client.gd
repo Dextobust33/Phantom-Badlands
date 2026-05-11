@@ -23032,8 +23032,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.301 changes
+	display_game("[color=#00FF00]v0.9.301[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Home Stones come home (Audit #6 Slice 6)[/color]")
+	display_game("  • [b]Permadeath protection no longer late-game gated.[/b] Home Stone (Companion) — the one that registers a companion to your Sanctuary so it survives your death — used to first drop at monster level 251+. New players spent their entire formative ~250 levels unable to protect anything. That gap is closed.")
+	display_game("  • [b]Quest chain rewards now hand out Home Stones[/b]: every T1 starter chain (Goblin Menace, Skeleton Lord's Curse, Wolf Pack, Rat Plague, Kobold Trouble) gives [color=#9ACD32]Home Stone (Egg)[/color] + [color=#9ACD32]Home Stone (Companion)[/color] on chain completion. Every T2 chain (Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt) gives [color=#9ACD32]Home Stone (Egg)[/color] + [color=#9ACD32]Home Stone (Equipment)[/color]. The boss egg you just earned is immediately bankable.")
+	display_game("  • [b]Drop tables shifted down two tiers[/b]: Home Stone (Egg) now appears at T2 consumable drops (monster level 11+), Home Stone (Companion) at T3 (level 26+). Still rare (low weight), still earned — just not buried behind 250 levels of permadeath.")
+	display_game("  • Why all this: the audit thesis is that endgame depth comes from world systems + companions, not late-game combat. Locking permadeath protection behind late-game gear means by the time a player can protect their companions, they've already lost a dozen would-be favorites. Now your first chain completion at level 10 hands you the safety net.")
+	display_game("")
+
 	# v0.9.300 changes
-	display_game("[color=#00FF00]v0.9.300[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.300[/color]")
 	display_game("  [color=#FFD700]Theme tiles: Plague Graveyard miasma (Audit #5 Slice 2)[/color]")
 	display_game("  • [b]Plagued Graveyard now has poison miasma tiles[/b]: ~12% of empty floor tiles render as a sickly green [color=#7FBF3F][b],[/b][/color] glyph. Stepping onto one ticks ~2% of your max HP (min 1, max 40 damage, can't kill outright — floored at 1 HP). The boss already has Contagion Aura wearing you down; now the floor itself does too. Plan paths around the green patches when you can.")
 	display_game("  • Same pattern as Spider Nest webbed tiles (v0.9.248): post-processor inside `_apply_theme_tags`, new TileType enum value, server move handler ticks HP on step, client tile-display knows the glyph + color.")
@@ -23064,13 +23073,6 @@ func display_changelog():
 	display_game("  • Both sections render on every dungeon entry, not just under-level entries. The warning has always fired for all dungeon entries — it just used to only talk about the no-free-exit caveat.")
 	display_game("")
 
-	# v0.9.296 changes
-	display_game("[color=#00FFFF]v0.9.296[/color]")
-	display_game("  [color=#FFD700]T2 boss signatures COMPLETE — Drowning (Audit #5 Slice 7)[/color]")
-	display_game("  • [b]Elder Kelpie (Kelpie Marsh) — [color=#1E90FF]Drowning[/color][/b]: each successful hit applies +1 drowning stack (cap 3). Each stack does TWO things — [b]ticks 2% of your max HP[/b] at start of your turn AND [b]reduces your damage output by 10%[/b]. At 3 stacks you're taking 6% per turn AND swinging for 70% damage. The only boss signature that's both a DoT and an offensive debuff at the same time.")
-	display_game("  • Counterplay: dodge gear matters (stacks come from hits), or burst the boss before stacks build. Damage debuff stays while drowning persists — there's no expire timer.")
-	display_game("  • [b]12 boss signatures shipped across 7 slices.[/b] T2 coverage is now [b]8 of 8 — complete[/b]. All 5 T1 and 8 T2 bosses now have unique mechanics distinct from base monsters. T3+ untouched.")
-	display_game("")
 
 
 

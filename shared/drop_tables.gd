@@ -484,6 +484,10 @@ const CONSUMABLE_DROPS = {
 	2: [
 		{"weight": 22, "item_type": "potion_lesser", "rarity": "common"},
 		{"weight": 10, "item_type": "mana_lesser", "rarity": "common"},
+		# Audit #6 Slice 6 — Home Stones available earlier so permadeath
+		# protection isn't gated behind mid-game. Egg-bank stone appears here
+		# (level 11-25) at low weight; Companion stone arrives at T3.
+		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
 	],
 	3: [
 		{"weight": 18, "item_type": "potion_standard", "rarity": "common"},
@@ -492,6 +496,13 @@ const CONSUMABLE_DROPS = {
 		{"weight": 4, "item_type": "scroll_stone_skin", "rarity": "common"},
 		{"weight": 4, "item_type": "scroll_haste", "rarity": "common"},
 		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "common"},
+		# Audit #6 Slice 6 — Companion stone now starts at T3 (level 26+) instead
+		# of T6 (level 251+). The Egg/Supplies stones also become accessible at
+		# this tier (low weight) — players still primarily get them via chain
+		# rewards, but luck-of-the-draw drops back them up.
+		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 1, "item_type": "home_stone_companion", "rarity": "rare"},
 	],
 	4: [
 		{"weight": 14, "item_type": "potion_greater", "rarity": "common"},

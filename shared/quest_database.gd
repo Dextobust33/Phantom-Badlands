@@ -87,7 +87,7 @@ const QUESTS = {
 	"goblin_menace_3": {
 		"id": "goblin_menace_3",
 		"name": "The Goblin Menace III — Slay the King",
-		"description": "Their king rallies the warbands from the Goblin Caves. Find the dungeon and slay the Goblin King to end the threat.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 300 valor + Goblin Egg[/color]",
+		"description": "Their king rallies the warbands from the Goblin Caves. Find the dungeon and slay the Goblin King to end the threat.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 300 valor + Goblin Egg + Home Stones (Egg + Companion)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "haven",
 		"target": 1,
@@ -100,7 +100,7 @@ const QUESTS = {
 		"chain_total": 3,
 		"next_in_chain": "",
 		# Bonus dispensed on top of base rewards on final-stage turn-in
-		"chain_bonus": {"valor": 240, "egg": "Goblin"}
+		"chain_bonus": {"valor": 240, "egg": "Goblin", "home_stones": ["home_stone_egg", "home_stone_companion"]}
 	},
 	# ===== "The Skeleton Lord's Curse" — Haven, 2 stages =====
 	"skeleton_lord_1": {
@@ -123,7 +123,7 @@ const QUESTS = {
 	"skeleton_lord_2": {
 		"id": "skeleton_lord_2",
 		"name": "The Skeleton Lord's Curse II — End the Lord",
-		"description": "The curse's anchor walks the Forgotten Crypt. Find the dungeon and put the Skeleton Lord to rest — for good this time.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 200 valor + Skeleton Egg[/color]",
+		"description": "The curse's anchor walks the Forgotten Crypt. Find the dungeon and put the Skeleton Lord to rest — for good this time.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 200 valor + Skeleton Egg + Home Stones (Egg + Companion)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "haven",
 		"target": 1,
@@ -135,7 +135,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 150, "egg": "Skeleton"}
+		"chain_bonus": {"valor": 150, "egg": "Skeleton", "home_stones": ["home_stone_egg", "home_stone_companion"]}
 	},
 	# ===== "The Wolf Pack" — Crossroads, 3 stages =====
 	"wolf_pack_1": {
@@ -175,7 +175,7 @@ const QUESTS = {
 	"wolf_pack_3": {
 		"id": "wolf_pack_3",
 		"name": "The Wolf Pack III — The Alpha",
-		"description": "The pack's alpha leads them from the Wolf Den. Find the dungeon and slay the Alpha Wolf to scatter the pack permanently.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 250 valor + Wolf Egg[/color]",
+		"description": "The pack's alpha leads them from the Wolf Den. Find the dungeon and slay the Alpha Wolf to scatter the pack permanently.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 250 valor + Wolf Egg + Home Stones (Egg + Companion)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "crossroads",
 		"target": 1,
@@ -187,7 +187,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 200, "egg": "Wolf"}
+		"chain_bonus": {"valor": 200, "egg": "Wolf", "home_stones": ["home_stone_egg", "home_stone_companion"]}
 	},
 	# ===== "The Web Spreads" — East Market, 2 stages, T2 =====
 	"web_spreads_1": {
@@ -210,7 +210,7 @@ const QUESTS = {
 	"web_spreads_2": {
 		"id": "web_spreads_2",
 		"name": "The Web Spreads II — Sever the Queen",
-		"description": "The brood-mother lairs in the Spider Nest. Find the dungeon, push through her webs, and slay the Spider Queen.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 350 valor + Giant Spider Egg[/color]",
+		"description": "The brood-mother lairs in the Spider Nest. Find the dungeon, push through her webs, and slay the Spider Queen.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 350 valor + Giant Spider Egg + Home Stones (Egg + Equipment)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "east_market",
 		"target": 1,
@@ -222,7 +222,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 275, "egg": "Giant Spider"}
+		"chain_bonus": {"valor": 275, "egg": "Giant Spider", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
 	},
 	# ===== "Rat Plague" — Haven, 2 stages, T1 =====
 	"rat_plague_1": {
@@ -245,7 +245,7 @@ const QUESTS = {
 	"rat_plague_2": {
 		"id": "rat_plague_2",
 		"name": "Rat Plague II — The King of Wretches",
-		"description": "The swarm answers to a single bloated lord nesting in the Rat Warrens. Find the dungeon and slay the Rat King to scatter what remains.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 200 valor + Giant Rat Egg[/color]",
+		"description": "The swarm answers to a single bloated lord nesting in the Rat Warrens. Find the dungeon and slay the Rat King to scatter what remains.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 200 valor + Giant Rat Egg + Home Stones (Egg + Companion)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "haven",
 		"target": 1,
@@ -257,7 +257,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 150, "egg": "Giant Rat"}
+		"chain_bonus": {"valor": 150, "egg": "Giant Rat", "home_stones": ["home_stone_egg", "home_stone_companion"]}
 	},
 	# ===== "Kobold Trouble" — Crossroads, 2 stages, T1 =====
 	"kobold_trouble_1": {
@@ -280,7 +280,7 @@ const QUESTS = {
 	"kobold_trouble_2": {
 		"id": "kobold_trouble_2",
 		"name": "Kobold Trouble II — Trap the Trapper",
-		"description": "The chieftain commands the raiders from the Kobold Tunnels. Find the dungeon, navigate his snares, and slay the Kobold Chieftain.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 200 valor + Kobold Egg[/color]",
+		"description": "The chieftain commands the raiders from the Kobold Tunnels. Find the dungeon, navigate his snares, and slay the Kobold Chieftain.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 200 valor + Kobold Egg + Home Stones (Egg + Companion)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "crossroads",
 		"target": 1,
@@ -292,7 +292,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 150, "egg": "Kobold"}
+		"chain_bonus": {"valor": 150, "egg": "Kobold", "home_stones": ["home_stone_egg", "home_stone_companion"]}
 	},
 	# ===== "Orc Threat" — East Market, 3 stages, T2 =====
 	"orc_threat_1": {
@@ -332,7 +332,7 @@ const QUESTS = {
 	"orc_threat_3": {
 		"id": "orc_threat_3",
 		"name": "Orc Threat III — Slay the Warlord",
-		"description": "The Warlord rallies his last warriors in the Orc Stronghold. Find the dungeon and end his campaign permanently — beware his Bloodied Fury when his strength wanes.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Orc Egg[/color]",
+		"description": "The Warlord rallies his last warriors in the Orc Stronghold. Find the dungeon and end his campaign permanently — beware his Bloodied Fury when his strength wanes.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Orc Egg + Home Stones (Egg + Equipment)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "east_market",
 		"target": 1,
@@ -344,7 +344,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 310, "egg": "Orc"}
+		"chain_bonus": {"valor": 310, "egg": "Orc", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
 	},
 	# ===== "Hobgoblin Discipline" — South Gate, 3 stages, T2 =====
 	"hobgoblin_discipline_1": {
@@ -384,7 +384,7 @@ const QUESTS = {
 	"hobgoblin_discipline_3": {
 		"id": "hobgoblin_discipline_3",
 		"name": "Hobgoblin Discipline III — Break the Commander",
-		"description": "The Commander drills his elite from the Hobgoblin Fortress. Find the dungeon and break him — but expect Iron Discipline: every fifth round he heals back and shrugs off your debuffs. Burst him down fast.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Hobgoblin Egg[/color]",
+		"description": "The Commander drills his elite from the Hobgoblin Fortress. Find the dungeon and break him — but expect Iron Discipline: every fifth round he heals back and shrugs off your debuffs. Burst him down fast.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Hobgoblin Egg + Home Stones (Egg + Equipment)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "south_gate",
 		"target": 1,
@@ -396,7 +396,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 310, "egg": "Hobgoblin"}
+		"chain_bonus": {"valor": 310, "egg": "Hobgoblin", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
 	},
 	# ===== "Mimic Hunt" — West Shrine, 2 stages, T2 =====
 	"mimic_hunt_1": {
@@ -419,7 +419,7 @@ const QUESTS = {
 	"mimic_hunt_2": {
 		"id": "mimic_hunt_2",
 		"name": "Mimic Hunt II — The Grand Mimic",
-		"description": "The mother of mimics squats in the Mimic Treasury. Find the dungeon and slay the Grand Mimic — beware its Treasure Decoy: a guaranteed crit on its first attack.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 400 valor + Mimic Egg[/color]",
+		"description": "The mother of mimics squats in the Mimic Treasury. Find the dungeon and slay the Grand Mimic — beware its Treasure Decoy: a guaranteed crit on its first attack.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 400 valor + Mimic Egg + Home Stones (Egg + Equipment)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "west_shrine",
 		"target": 1,
@@ -431,7 +431,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 320, "egg": "Mimic"}
+		"chain_bonus": {"valor": 320, "egg": "Mimic", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
 	},
 	# ===== "Barrow's Curse" — South Gate, 2 stages, T2 =====
 	"barrow_curse_1": {
@@ -454,7 +454,7 @@ const QUESTS = {
 	"barrow_curse_2": {
 		"id": "barrow_curse_2",
 		"name": "Barrow's Curse II — The Barrow Wight",
-		"description": "An ancient barrow lord commands the dead from Wight's Vault. Find the dungeon and lay it to rest. Bring healing — every third round its Soul Siphon will drain 8% of your max HP and heal the wight for the same. Plan your bursts around the timer.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 400 valor + Wight Egg[/color]",
+		"description": "An ancient barrow lord commands the dead from Wight's Vault. Find the dungeon and lay it to rest. Bring healing — every third round its Soul Siphon will drain 8% of your max HP and heal the wight for the same. Plan your bursts around the timer.\n\n[color=#FFAA00]CHAIN: 2 stages | Final reward: 400 valor + Wight Egg + Home Stones (Egg + Equipment)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "south_gate",
 		"target": 1,
@@ -466,7 +466,7 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 315, "egg": "Wight"}
+		"chain_bonus": {"valor": 315, "egg": "Wight", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
 	},
 	# ===== "Gnoll Pack Hunt" — West Shrine, 3 stages, T2 =====
 	"gnoll_pack_hunt_1": {
@@ -506,7 +506,7 @@ const QUESTS = {
 	"gnoll_pack_hunt_3": {
 		"id": "gnoll_pack_hunt_3",
 		"name": "Gnoll Pack Hunt III — Break the Packmaster",
-		"description": "The Packmaster rules the Gnoll Pack Den at the heart of the marches. Find the dungeon and bring the beast down — but strike fast. Pack Frenzy escalates every round: by round 10 the Packmaster hits 45% harder, by round 20 it's nearly double. Stall and die slow.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Gnoll Egg[/color]",
+		"description": "The Packmaster rules the Gnoll Pack Den at the heart of the marches. Find the dungeon and bring the beast down — but strike fast. Pack Frenzy escalates every round: by round 10 the Packmaster hits 45% harder, by round 20 it's nearly double. Stall and die slow.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 400 valor + Gnoll Egg + Home Stones (Egg + Equipment)[/color]",
 		"type": QuestType.BOSS_HUNT,
 		"trading_post": "west_shrine",
 		"target": 1,
@@ -518,7 +518,7 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
-		"chain_bonus": {"valor": 305, "egg": "Gnoll"}
+		"chain_bonus": {"valor": 305, "egg": "Gnoll", "home_stones": ["home_stone_egg", "home_stone_equipment"]}
 	}
 }
 
