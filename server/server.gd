@@ -1261,6 +1261,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_guard_dismiss(peer_id, message)
 		"post_status":
 			handle_post_status(peer_id)
+		"guard_feed_all":
+			handle_guard_feed_all(peer_id)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -19365,6 +19367,126 @@ func handle_guard_dismiss(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {"type": "guard_result", "success": true, "message": "[color=#FFFF00]Guard dismissed.[/color]"})
 	send_location_update(peer_id)
 
+func handle_guard_feed_all(peer_id: int) -> void:
+	"""Audit #12 Slice 3 — feed every guard inside your current post's
+	influence range in one action. Skips already-capped guards. Stops
+	gracefully if food runs out mid-batch. Reports per-guard outcome by
+	compass quadrant so the player can see who got fed and who didn't."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+
+	# Player must be standing in their own bubble — the post center reference
+	# comes from `_get_player_post_bubble_at`. Visitors can't feed someone
+	# else's guards.
+	var bubble = _get_player_post_bubble_at(character.x, character.y)
+	if bubble.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]Stand inside one of your posts to feed all its guards.[/color]"})
+		return
+	var owner = String(bubble.get("owner", ""))
+	if owner != username:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]These guards belong to %s — you can't feed them.[/color]" % owner})
+		return
+	var center_v = bubble.get("center", Vector2i.ZERO)
+	var cx = int(center_v.x) if center_v is Vector2i else int(center_v.get("x", 0))
+	var cy = int(center_v.y) if center_v is Vector2i else int(center_v.get("y", 0))
+
+	# Collect guards in influence range and sort by quadrant for readable
+	# report order.
+	var now = Time.get_unix_time_from_system()
+	var hungry: Array = []
+	var capped: Array = []
+	for pos_key in active_guards:
+		var guard = active_guards[pos_key]
+		if String(guard.get("owner", "")) != username:
+			continue
+		var parts = String(pos_key).split(",")
+		if parts.size() != 2:
+			continue
+		var gx = int(parts[0])
+		var gy = int(parts[1])
+		var dx_f = float(gx - cx)
+		var dy_f = float(gy - cy)
+		if sqrt(dx_f * dx_f + dy_f * dy_f) > float(POST_INFLUENCE_RANGE):
+			continue
+		var days_elapsed = (now - float(guard.get("last_fed", now))) / 86400.0
+		var days_remaining = float(guard.get("food_remaining", 0)) - days_elapsed
+		if days_remaining < 0.0:
+			days_remaining = 0.0
+		var entry = {
+			"pos_key": pos_key,
+			"gx": gx, "gy": gy,
+			"compass": _short_direction_from(cx, cy, gx, gy),
+			"in_tower": bool(guard.get("in_tower", false)),
+			"days_before": days_remaining,
+		}
+		if days_remaining >= float(GUARD_MAX_FOOD_DAYS):
+			capped.append(entry)
+		else:
+			hungry.append(entry)
+
+	if hungry.is_empty() and capped.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]No guards in range of this post.[/color]"})
+		return
+	if hungry.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]All %d guards are already at the food cap (%d days).[/color]" % [capped.size(), GUARD_MAX_FOOD_DAYS]})
+		return
+
+	# Drain food: 3 per guard, in inventory-cheapest-first order (same as
+	# single-guard feed). If food runs out, fed_count < hungry.size() and
+	# the report tells the player what's missing.
+	var food_available = _count_guard_food(character)
+	var per_feed = GUARD_FEED_FOOD_COST
+	var max_feedable = food_available / per_feed
+	var to_feed = mini(hungry.size(), max_feedable)
+	var report_lines: Array = []
+	report_lines.append("[color=#FFD700][ Feed All Guards ][/color]")
+
+	var fed_count = 0
+	for entry in hungry:
+		if fed_count >= to_feed:
+			report_lines.append("  [color=#FF6644]%s%s  skipped — out of food[/color]" % [
+				entry.compass,
+				"  (tower)" if entry.in_tower else "",
+			])
+			continue
+		var pos_key = String(entry.pos_key)
+		if not active_guards.has(pos_key):
+			continue
+		var guard = active_guards[pos_key]
+		var new_days = min(entry.days_before + float(GUARD_FEED_DAYS_ADDED), float(GUARD_MAX_FOOD_DAYS))
+		guard["last_fed"] = now
+		guard["food_remaining"] = new_days
+		_consume_guard_food(character, per_feed)
+		fed_count += 1
+		var was_low_tag = "  [color=#FF6644](was LOW)[/color]" if entry.days_before < 2.0 else ""
+		var tower_tag = "  [color=#A0C8E0](tower)[/color]" if entry.in_tower else ""
+		report_lines.append("  %s%s  +%d days  (now %.1f)%s" % [
+			entry.compass,
+			tower_tag,
+			GUARD_FEED_DAYS_ADDED,
+			new_days,
+			was_low_tag,
+		])
+	for entry in capped:
+		report_lines.append("  [color=#888888]%s%s  already capped (%.1f)[/color]" % [
+			entry.compass,
+			"  (tower)" if entry.in_tower else "",
+			entry.days_before,
+		])
+	var consumed = fed_count * per_feed
+	var saved_walks = max(0, fed_count - 1)
+	var summary = "  [color=#FFD700]Consumed: %d food[/color]" % consumed
+	if saved_walks > 0:
+		summary += "  |  Saved %d %s." % [saved_walks, "walk" if saved_walks == 1 else "walks"]
+	report_lines.append(summary)
+
+	persistence.save_guards(active_guards)
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(report_lines)})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
 func _count_guard_food(character) -> int:
 	"""Count total food materials in player crafting_materials."""
 	var count = 0
@@ -21275,7 +21397,7 @@ func _build_threat_rumor_line(px: int, py: int, quest_giver: String, personality
 		return "[color=#FF8800]%s[/color]: \"%s\"" % [quest_giver, msg]
 	return "[color=#FF8800]Locals warn: %s[/color]" % msg
 
-func _build_player_post_status(post_meta: Dictionary, owner_username: String, is_owner: bool) -> Array:
+func _build_player_post_status(post_meta: Dictionary, owner_username: String, is_owner: bool, viewer_peer_id: int = -1) -> Array:
 	"""Audit #12 Slice 2 — render a status report for one player post.
 
 	Owner sees: bubble radius, effective vs wilderness tier, per-guard food
@@ -21353,6 +21475,48 @@ func _build_player_post_status(post_meta: Dictionary, owner_username: String, is
 				food_tag = "  [color=#FFAA44][thin][/color]"
 			lines.append("    %s%s  food: %.1f days%s" % [compass, tower_tag, days_remaining, food_tag])
 
+	# Slice 3 feed-all hint — only when the player is the owner AND someone
+	# in range is below the food cap. Tells them what /feedall will do and
+	# whether they have enough food in inventory to actually do it.
+	if is_owner and guards_total > 0:
+		var now2 = Time.get_unix_time_from_system()
+		var feedable = 0
+		for pos_key2 in active_guards:
+			var g2 = active_guards[pos_key2]
+			if String(g2.get("owner", "")) != owner_username:
+				continue
+			var parts2 = String(pos_key2).split(",")
+			if parts2.size() != 2:
+				continue
+			var gx2 = int(parts2[0])
+			var gy2 = int(parts2[1])
+			var dxf = float(gx2 - cx)
+			var dyf = float(gy2 - cy)
+			if sqrt(dxf * dxf + dyf * dyf) > float(POST_INFLUENCE_RANGE):
+				continue
+			var elapsed = (now2 - float(g2.get("last_fed", now2))) / 86400.0
+			var rem = float(g2.get("food_remaining", 0)) - elapsed
+			if rem < float(GUARD_MAX_FOOD_DAYS):
+				feedable += 1
+		if feedable > 0:
+			var need = feedable * GUARD_FEED_FOOD_COST
+			if viewer_peer_id >= 0 and characters.has(viewer_peer_id):
+				var on_hand = _count_guard_food(characters[viewer_peer_id])
+				var afford_color = "#88FF88" if on_hand >= need else "#FF8800"
+				lines.append("  [color=#888888]/feedall[/color] would top up %d guard%s ([color=%s]need %d food, have %d[/color])" % [
+					feedable,
+					"" if feedable == 1 else "s",
+					afford_color,
+					need,
+					on_hand,
+				])
+			else:
+				lines.append("  [color=#888888]/feedall[/color] would top up %d guard%s (needs %d food)" % [
+					feedable,
+					"" if feedable == 1 else "s",
+					need,
+				])
+
 	# Threat warning — pulls from Slice 6 of #11 so this status panel is the
 	# single place to learn that your village is in danger.
 	var threat = _compute_post_threat_state(cx, cy)
@@ -21409,7 +21573,7 @@ func _maybe_send_own_post_arrival_status(peer_id: int, x: int, y: int) -> void:
 	if visited.has(post_index):
 		return
 	visited[post_index] = true
-	var lines = _build_player_post_status(hit.get("meta", {}), username, true)
+	var lines = _build_player_post_status(hit.get("meta", {}), username, true, peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
 func handle_post_status(peer_id: int) -> void:
@@ -21434,7 +21598,7 @@ func handle_post_status(peer_id: int) -> void:
 		return
 	var meta = player_post_names[owner][post_index]
 	var is_owner = (owner == username)
-	var lines = _build_player_post_status(meta, owner, is_owner)
+	var lines = _build_player_post_status(meta, owner, is_owner, peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
 func _find_player_post_at(x: int, y: int, username: String) -> Dictionary:
