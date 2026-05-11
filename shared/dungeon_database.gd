@@ -20,7 +20,8 @@ enum TileType {
 	BLOOD_TRAIL,   # Audit #5 theme tag — scavenged kill heals on first step (Wolf Den)
 	BONE_SCATTER,  # Audit #5 theme tag — sharp bones nick HP on step (Forgotten Crypt)
 	FALSE_CHEST,   # Audit #5 theme tag — mimic ambush — looks like treasure (Mimic Treasury)
-	UPDRAFT        # Audit #5 theme tag — wind shear costs +2 steps (Harpy Cliffs)
+	UPDRAFT,       # Audit #5 theme tag — wind shear costs +2 steps (Harpy Cliffs)
+	BLOOD_FONT     # Audit #5 theme tag — vampiric font heals + curses (Vampire Crypt)
 }
 
 # Tile display characters
@@ -40,7 +41,8 @@ const TILE_CHARS = {
 	TileType.BLOOD_TRAIL: ";",
 	TileType.BONE_SCATTER: "%",
 	TileType.FALSE_CHEST: "?",
-	TileType.UPDRAFT: "~"
+	TileType.UPDRAFT: "~",
+	TileType.BLOOD_FONT: "+"
 }
 
 # Tile colors for display
@@ -60,7 +62,8 @@ const TILE_COLORS = {
 	TileType.BLOOD_TRAIL: "#8B0000",
 	TileType.BONE_SCATTER: "#D8D8C8",
 	TileType.FALSE_CHEST: "#FFAA00",
-	TileType.UPDRAFT: "#87CEEB"
+	TileType.UPDRAFT: "#87CEEB",
+	TileType.BLOOD_FONT: "#660000"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -754,7 +757,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 3.0,
 			"attack_mult": 1.6,
-			"abilities": ["Ground Slam", "Mighty Throw", "Intimidate"]
+			"abilities": ["Tremor Stomp", "Mighty Throw", "Intimidate"]
 		},
 		"boss_egg": "Giant",
 		"floors": 5,
@@ -781,7 +784,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 2.5,
 			"attack_mult": 1.7,
-			"abilities": ["Life Drain", "Charm", "Bat Swarm"]
+			"abilities": ["Blood Frenzy", "Charm", "Bat Swarm"]
 		},
 		"boss_egg": "Vampire",
 		"floors": 5,
@@ -808,7 +811,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 2.8,
 			"attack_mult": 1.6,
-			"abilities": ["Fire Breath", "Wing Slash", "Hatchling Fury"]
+			"abilities": ["Hatchling Swarm", "Fire Breath", "Wing Slash"]
 		},
 		"boss_egg": "Dragon Wyrmling",
 		"floors": 5,
@@ -835,7 +838,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 2.8,
 			"attack_mult": 1.7,
-			"abilities": ["Hellfire", "Demonic Roar", "Shadow Strike"]
+			"abilities": ["Infernal Curse", "Hellfire", "Shadow Strike"]
 		},
 		"boss_egg": "Demon",
 		"floors": 5,
@@ -862,7 +865,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 2.5,
 			"attack_mult": 1.6,
-			"abilities": ["Diving Talon", "Majestic Roar", "Wind Shear"]
+			"abilities": ["Talon Barrage", "Majestic Roar", "Diving Talon"]
 		},
 		"boss_egg": "Gryphon",
 		"floors": 5,
@@ -889,7 +892,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 3.0,
 			"attack_mult": 1.7,
-			"abilities": ["Triple Maw", "Venomous Tail", "Fire Breath"]
+			"abilities": ["Triple Threat", "Triple Maw", "Fire Breath"]
 		},
 		"boss_egg": "Chimaera",
 		"floors": 5,
@@ -916,7 +919,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 2.5,
 			"attack_mult": 1.7,
-			"abilities": ["Seduction", "Life Drain", "Dark Charm"]
+			"abilities": ["Building Charm", "Life Drain", "Seduction"]
 		},
 		"boss_egg": "Succubus",
 		"floors": 5,
@@ -1805,6 +1808,17 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 10:
 						grid[y][x] = TileType.UPDRAFT
+		"vampire_crypt":
+			# Blood fonts over ~6% of empty tiles. Drinking a font heals 5%
+			# of max HP but inflicts the player with a temporary -10% damage
+			# penalty for the next combat encounter only. Consumed on use.
+			# Risk/reward — heal now, weaker fight next time.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 6:
+						grid[y][x] = TileType.BLOOD_FONT
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
