@@ -309,6 +309,77 @@ const NPC_STARTER_RING_RADIUS = 25
 # biome character; pure biome would leave Desert starters with no trees.
 const NPC_STARTER_RING_BASELINE_WEIGHT = 0.7
 
+# =============================================================================
+# Slice 6h — Weather (per biome, server-driven cycle)
+# =============================================================================
+# Each biome has a small pool of possible weather states. Server cycles them
+# every few minutes; the location message carries the player's current biome
+# weather + display name + vision modifier. Effects layer on top of biome
+# (a Tundra player gets Snow weather; a Plains player can't get Blizzard).
+# Clear is the most common state across all biomes — weather should add
+# variety, not constant noise.
+
+const WEATHER_EFFECTS = {
+	"clear":     {"display": "Clear",       "vision_mod": 0},
+	"breeze":    {"display": "Breezy",      "vision_mod": 0},
+	"wind":      {"display": "Strong Wind", "vision_mod": 0},
+	"rain":      {"display": "Rain",        "vision_mod": -1},
+	"mist":      {"display": "Mist",        "vision_mod": -2},
+	"fog":       {"display": "Fog",         "vision_mod": -3},
+	"snow":      {"display": "Snow",        "vision_mod": -1},
+	"blizzard":  {"display": "Blizzard",    "vision_mod": -3},
+	"haze":      {"display": "Heat Haze",   "vision_mod": -1},
+	"sandstorm": {"display": "Sandstorm",   "vision_mod": -3},
+}
+
+# Per-biome weather pool. First entry is the "default" state used when the
+# server first boots (before the first weather cycle runs). Weights are
+# tuned in _pick_biome_weather to favor clear states so weather feels like
+# punctuation rather than the steady state.
+const BIOME_WEATHER_POOL = {
+	BIOME_PLAINS:   ["clear", "breeze", "rain"],
+	BIOME_FOREST:   ["clear", "breeze", "rain", "mist"],
+	BIOME_MOUNTAIN: ["clear", "wind", "fog"],
+	BIOME_SWAMP:    ["clear", "mist", "rain", "fog"],
+	BIOME_SNOW:     ["clear", "snow", "blizzard"],
+	BIOME_DESERT:   ["clear", "haze", "sandstorm"],
+}
+
+# Clear-state weight when rolling weather. Other states share the remaining
+# (1.0 - CLEAR_WEIGHT) uniformly. Yields ~55% clear weather at any time, with
+# the other 45% spread across the biome's 2-3 non-clear states.
+const WEATHER_CLEAR_WEIGHT = 0.55
+
+func get_weather_display(weather: String) -> String:
+	var entry = WEATHER_EFFECTS.get(weather, {})
+	return str(entry.get("display", weather.capitalize()))
+
+func get_weather_vision_mod(weather: String) -> int:
+	var entry = WEATHER_EFFECTS.get(weather, {})
+	return int(entry.get("vision_mod", 0))
+
+func pick_biome_weather(biome: String, rng_seed: int = 0) -> String:
+	"""Roll a new weather state for `biome` from its pool. Clear gets
+	WEATHER_CLEAR_WEIGHT; the remaining states share the rest uniformly.
+	rng_seed lets the server pass a per-tick salt; if 0, randf() is used."""
+	var pool = BIOME_WEATHER_POOL.get(biome, ["clear"])
+	if pool.is_empty():
+		return "clear"
+	# Clear-vs-other roll
+	var r1 = randf() if rng_seed == 0 else _seeded_hash_float(rng_seed, 9001)
+	if r1 < WEATHER_CLEAR_WEIGHT or pool.size() == 1:
+		return "clear"
+	# Pick uniformly from the non-clear entries.
+	var non_clear: Array = []
+	for w in pool:
+		if w != "clear":
+			non_clear.append(w)
+	if non_clear.is_empty():
+		return "clear"
+	var r2 = randf() if rng_seed == 0 else _seeded_hash_float(rng_seed + 1, 9001)
+	var idx = int(r2 * float(non_clear.size())) % non_clear.size()
+	return str(non_clear[idx])
+
 func _is_in_npc_starter_ring(world_x: int, world_y: int) -> bool:
 	"""True if (x, y) is within NPC_STARTER_RING_RADIUS of any NPC post
 	centroid. Linear scan; npc_posts is ~18-100 entries which is cheap per
