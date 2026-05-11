@@ -10260,6 +10260,10 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		# Universal abilities
 		"cloak": {"display": "Cloak", "cost": 30, "cost_percent": 0, "resource_type": resource_type},
 		"all_or_nothing": {"display": "A/N %d%%" % int(3.0 + min(25.0, character_data.get("all_or_nothing_uses", 0) * 0.1)), "cost": 1, "cost_percent": 0, "resource_type": resource_type},
+		# Audit #1 deck variants — Forethought = paid mulligan (1 resource, skip
+		# monster turn). Tactical Retreat = free mulligan (0 cost, monster acts).
+		"forethought": {"display": "Forethought", "cost": 1, "cost_percent": 0, "resource_type": resource_type},
+		"tactical_retreat": {"display": "Retreat", "cost": 0, "cost_percent": 0, "resource_type": resource_type},
 	}
 
 	var result = ability_defs.get(ability_name, {})
@@ -10601,6 +10605,10 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			return {"text": "%d%% kill" % chance, "color": "#A0E060"}
 		"all_or_nothing":
 			return {"text": "All-or-nothing", "color": "#FFD700"}
+		"forethought":
+			return {"text": "Mulligan (keep turn)", "color": "#9370DB"}
+		"tactical_retreat":
+			return {"text": "Mulligan (skip turn)", "color": "#87CEEB"}
 	return {"text": "", "color": "#888888"}
 
 func _get_card_total_attack() -> int:
@@ -15810,6 +15818,8 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
 		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
 		"all_or_nothing": return "Big damage on hit; heavy self-damage on miss. Universal."
+		"forethought": return "Discard your hand and draw a fresh hand. Costs 1 of your primary resource. Skips the monster's turn — a setup card, not a tempo card. Universal."
+		"tactical_retreat": return "Discard your hand and draw a fresh hand for free, but the monster gets a free swing. Universal panic mulligan."
 		_:
 			return ""
 
@@ -23071,8 +23081,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.316 changes
+	display_game("[color=#00FF00]v0.9.316[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Deck variants: Forethought + Tactical Retreat (Audit #1)[/color]")
+	display_game("  • [b]Two new universal deck cards[/b] solve the stuck-hand problem. Every character — Mage, Warrior, Trickster — gets 1 copy of each in their starter deck. Existing characters get them auto-added on next combat.")
+	display_game("  • [color=#9370DB][b]Forethought[/b][/color]: pay 1 of your primary resource (mana / stamina / energy). Discard the rest of your hand and draw a fresh hand. [b]Skips the monster's turn[/b] — a setup card, not a tempo card. Use when you have cards you can't afford and need a do-over.")
+	display_game("  • [color=#87CEEB][b]Tactical Retreat[/b][/color]: free. Discard the rest of your hand and draw a fresh hand. [b]Monster gets a free swing[/b] — this is the panic button when you're out of resource and stuck. The price is the hit you'll eat.")
+	display_game("  • [b]Why[/b]: with a 5-card hand and persistent across rounds, you could previously get stuck holding only high-cost cards you can't afford. Slay-the-Spire-style mulligan cards let you cycle. Forethought is the patient choice; Tactical Retreat is the desperate one.")
+	display_game("")
+
 	# v0.9.315 changes
-	display_game("[color=#00FF00]v0.9.315[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.315[/color]")
 	display_game("  [color=#FFD700]Crafting quality odds preview (Audit #8 Layer 5)[/color]")
 	display_game("  • [b]Every recipe now shows your odds[/b] of each quality bucket before you craft: [color=#FFFFFF]Poor[/color] / [color=#00FF00]Standard[/color] / [color=#0070DD]Fine[/color] / [color=#A335EE]Masterwork[/color] (with their stat multipliers x0.5 / x1.0 / x1.25 / x1.5).")
 	display_game("  • [b]Computed from your real success chance[/b]: server walks all 100 possible roll values for this skill / difficulty / station combo and tallies which quality each lands on. No estimates — exactly the same buckets the actual craft uses.")
@@ -23116,16 +23135,6 @@ func display_changelog():
 	display_game("  • All theme tiles surface on the dungeon warning page legend.")
 	display_game("")
 
-	# v0.9.311 changes
-	display_game("[color=#00FFFF]v0.9.311[/color]")
-	display_game("  [color=#FFD700]Buy Orders — demand-side market (Audit #9 Slice 2)[/color]")
-	display_game("  • [b]Players can now place buy orders at trading posts[/b]: name an item, quantity, and price-per-unit. Valor is escrowed up-front. Other players at the same post fulfill the order by depositing matching items and receive the full per-unit Valor (no server spread on buy orders — incentivizes filling demand).")
-	display_game("  • [b]Supported categories[/b]: Materials, Consumables, Runes, Monster Parts. Equipment and Eggs are excluded (too stat-varied / unique to match cleanly).")
-	display_game("  • [b]New tab[/b] in the visual market panel: [color=#FFD700]Buy Orders[/color]. Shows all open orders at this post, with a ★ YOURS badge on your own. Click an order to inspect. Filters reuse the existing chips; sort by Newest / Price / Quantity / Name.")
-	display_game("  • [b]Create order dialog[/b]: pick a category → pick an item from the curated list (materials show tier + value; consumables/runes/parts show items currently in your inventory or listed at any post) → enter quantity + per-unit price → confirm.")
-	display_game("  • [b]Fulfill dialog[/b]: select another player's order and click Fulfill. Enter how many to deposit (capped at order's remaining qty AND your stock). You're paid immediately; the item is delivered to the buyer (or held if their inventory's full).")
-	display_game("  • [b]Cancel anytime[/b]: select your own buy order → Cancel Order refunds the unfilled portion. Buyer cannot fulfill their own order.")
-	display_game("")
 
 
 

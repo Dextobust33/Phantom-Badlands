@@ -16,7 +16,7 @@ enum CombatAction {
 const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
 const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate", "fortify", "rally"]
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
-const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing"]
+const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing", "forethought", "tactical_retreat"]
 
 # Mastery Slice 1 polish — only the first N uses of an ability per fight
 # count toward rank progress. Stops grind-spam (e.g., 5-mana Magic Bolts
@@ -2636,7 +2636,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		return {"success": false, "message": hand_msg, "messages": [hand_msg]}
 
 	# Universal abilities (available to all classes, use class resource)
-	if ability_name == "cloak" or ability_name == "all_or_nothing":
+	if ability_name in ["cloak", "all_or_nothing", "forethought", "tactical_retreat"]:
 		result = _process_universal_ability(combat, ability_name)
 	# Mage abilities (use mana)
 	elif ability_name in ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
@@ -2872,6 +2872,73 @@ func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dic
 			if monster.current_hp <= 0:
 				return _process_victory(combat, messages)
 
+			return {"success": true, "messages": messages, "combat_ended": false}
+
+		"forethought":
+			# Audit #1 deck variant — pay 1 of any primary resource, discard
+			# the rest of the hand, refill from deck. Player keeps the turn:
+			# action remains available, so this is a paid mulligan that lets
+			# you cast something usable afterward.
+			var has_res = false
+			if character.current_mana >= 1:
+				character.current_mana -= 1
+				has_res = true
+			elif character.current_stamina >= 1:
+				character.current_stamina -= 1
+				has_res = true
+			elif character.current_energy >= 1:
+				character.current_energy -= 1
+				has_res = true
+			if not has_res:
+				return {"success": false, "messages": ["[color=#FF4444]Forethought needs at least 1 resource.[/color]"], "combat_ended": false}
+
+			# Move the rest of the hand into the discard pile, then refill.
+			# Forethought itself is the card the player just spent — it's
+			# already being consumed by the standard _consume_card_from_hand
+			# path in the caller, so we touch only the OTHER cards here.
+			var hand: Array = combat.get("combat_hand", [])
+			var discard: Array = combat.get("combat_discard", [])
+			var discarded_count = 0
+			# Strip everything except Forethought (which is consumed by the caller).
+			var remaining_hand: Array = []
+			for card in hand:
+				if card == "forethought":
+					remaining_hand.append(card)
+				else:
+					discard.append(card)
+					discarded_count += 1
+			combat["combat_hand"] = remaining_hand
+			combat["combat_discard"] = discard
+			# Caller will consume Forethought + redraw — but we want the redraw
+			# to happen AFTER the discard so the player gets a full fresh hand.
+			# The normal hand-refill in _consume_card_from_hand uses the deck +
+			# discard reshuffle pattern, so this just works.
+			messages.append("[color=#9370DB]You take a moment — discard %d cards, draw fresh.[/color]" % discarded_count)
+			# Skip monster turn — Forethought is a "setup" card like Analyze /
+			# Pickpocket. The player paid a resource AND a card for a fresh hand;
+			# the round advances but the boss doesn't get a free swing.
+			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+
+		"tactical_retreat":
+			# Audit #1 deck variant — free mulligan, but spends the turn. The
+			# whole hand goes to discard (Tactical Retreat itself is consumed
+			# normally by the caller). Player skips their action; monster
+			# takes its turn next. Useful when no card is castable AND you
+			# can't afford Forethought's resource cost.
+			var hand2: Array = combat.get("combat_hand", [])
+			var discard2: Array = combat.get("combat_discard", [])
+			var discarded2 = 0
+			var remaining_hand2: Array = []
+			for card2 in hand2:
+				if card2 == "tactical_retreat":
+					remaining_hand2.append(card2)
+				else:
+					discard2.append(card2)
+					discarded2 += 1
+			combat["combat_hand"] = remaining_hand2
+			combat["combat_discard"] = discard2
+			messages.append("[color=#87CEEB]Tactical retreat — discard %d cards, surrender your turn for a fresh draw.[/color]" % discarded2)
+			# Player's turn ends; monster still acts.
 			return {"success": true, "messages": messages, "combat_ended": false}
 
 	return {"success": false, "messages": ["[color=#FF4444]Unknown universal ability![/color]"], "combat_ended": false}
