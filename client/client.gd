@@ -22863,8 +22863,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.277 changes
+	display_game("[color=#00FF00]v0.9.277[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Biome-themed encounters (Audit #10 Slice 6b)[/color]")
+	display_game("  • [b]Random overworld monsters now bias toward their biome.[/b] Wolves and goblins favor forests, kobolds prefer mountains, gnolls show up in deserts, wights and wraiths drift through swamps and tundra, and so on. Soft bias (3× weight inside the existing level-appropriate pool) — out-of-biome monsters can still show up, just less often.")
+	display_game("  • Biome never lets a stronger monster spawn early — the tier curve is unchanged. Biome only re-weights the picks inside the pool the tile would already produce.")
+	display_game("  • Dungeon spawns, forced monsters (from selection scrolls), and hunted monsters are unaffected — those code paths already pick a specific monster on purpose.")
+	display_game("")
+
 	# v0.9.276 changes
-	display_game("[color=#00FF00]v0.9.276[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.276[/color]")
 	display_game("  [color=#FFD700]Biome layer — the world now has Plains, Forest, Highlands, Swamp, Tundra, Desert (Audit #10 Slice 6a)[/color]")
 	display_game("  • [b]Biomes are large noise-defined regions[/b] that sit perpendicular to the existing tier curve. A T3 forest and a T6 forest are both forests; biome answers \"what does this terrain look like\" while tier answers \"how dangerous is it\". Each biome region spans hundreds of tiles, so you'll walk through one for a while before crossing into another.")
 	display_game("  • [b]Each biome shifts the node distribution toward its theme[/b]: forests have more trees + brush + mushrooms (less stone/ore); highlands are stone + ore heavy; swamps are reed + mushroom + water heavy; tundra is sparser; desert is very sparse and stone-leaning. Applies to newly generated tiles — already-explored chunks keep their existing nodes.")
@@ -22904,14 +22912,6 @@ func display_changelog():
 	display_game("  • [b]Sellers get full valor[/b] — the discount comes out of the server's markup spread, not the seller. List wherever you want; buy where it's cheapest")
 	display_game("")
 
-	# v0.9.272 changes
-	display_game("[color=#00FFFF]v0.9.272[/color]")
-	display_game("  [color=#FFD700]Deck cull — trim unwanted ability copies (Slice 6c)[/color]")
-	display_game("  • [b]Your combat deck is now editable.[/b] Open Settings → Abilities. Each ability card shows \"Deck × N\" — the number of copies in your shuffled combat deck. When a card has more than 1 copy, a \"− Cull\" button appears on it.")
-	display_game("  • [b]Click \"− Cull\" to permanently remove one copy[/b] from your deck. You decide which abilities should weight your hand. Useful for trimming extra copies you earned from \"+1 Card\" rank-up choices but no longer want")
-	display_game("  • [b]Minimum 1 copy per ability is locked in.[/b] You can't fully remove an ability — every accessible ability keeps a baseline copy so you never end up unable to draw any cards. Rationale: empty deck → can't use ability → can't rank up → soft-lock")
-	display_game("  • Cull is disabled during combat; cull rejection (e.g., already at 1) pops a clear popup")
-	display_game("")
 
 
 
