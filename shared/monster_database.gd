@@ -52,7 +52,6 @@ const ABILITY_WEAKNESS = "weakness"              # Applies -25% attack debuff fo
 
 # New abilities from Phantasia 5 inspiration
 const ABILITY_CHARM = "charm"                    # Player attacks themselves for 1 turn
-const ABILITY_GOLD_STEAL = "gold_steal"          # Legacy — no effect (gold removed)
 const ABILITY_BUFF_DESTROY = "buff_destroy"      # Removes one random active buff
 const ABILITY_SHIELD_SHATTER = "shield_shatter"  # Destroys forcefield/shield buffs instantly
 const ABILITY_FLEE_ATTACK = "flee_attack"        # Deals damage then flees (no loot)
