@@ -291,7 +291,16 @@ func _ready():
 		chunk_manager.save_npc_posts(npc_posts)
 		log_message("Generated %d NPC posts" % npc_posts.size())
 	else:
-		log_message("Loaded %d NPC posts" % npc_posts.size())
+		# Slice 6L — backfill tier + region_name on posts that predate the
+		# fields. Persist only if anything was actually added, so we don't
+		# rewrite the file every boot.
+		var pre_keys = npc_posts[0].keys() if npc_posts.size() > 0 else []
+		npc_posts = NpcPostDatabaseScript.backfill_post_fields(npc_posts, chunk_manager.world_seed)
+		if npc_posts.size() > 0 and ("tier" in npc_posts[0].keys()) and not ("tier" in pre_keys):
+			chunk_manager.save_npc_posts(npc_posts)
+			log_message("Backfilled tier/region_name on %d existing NPC posts" % npc_posts.size())
+		else:
+			log_message("Loaded %d NPC posts" % npc_posts.size())
 	# Always re-stamp post layouts into chunks (ensures walls/floors exist after wipes)
 	for post in npc_posts:
 		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
@@ -4639,9 +4648,9 @@ func send_location_update(peer_id: int):
 				"distance": dist
 			}
 
-	# Region tier from nearest trading post (post-anchored world model — Slice 1).
-	# Data + visibility only this slice; monster generation still radial from origin.
-	var wilderness_tier_info = trading_post_db.get_nearest_post_tier(character.x, character.y)
+	# Region tier from nearest NPC post (post-anchored world model — Slice 1,
+	# migrated to procedural posts in Slice 6L so it survives map wipes).
+	var wilderness_tier_info = chunk_manager.get_nearest_npc_post_with_tier(character.x, character.y)
 	var region_tier_info = wilderness_tier_info
 
 	# Slice 3/4 — if the player is inside any player-post settler bubble, the
@@ -4659,13 +4668,12 @@ func send_location_update(peer_id: int):
 			pp_name = "%s's Post" % settler_bubble.get("owner", "")
 		region_tier_info = {
 			"tier": pp_tier,
-			"tier_name": trading_post_db.POST_TIER_NAMES.get(pp_tier, "Core"),
-			"tier_color": trading_post_db.POST_TIER_COLORS.get(pp_tier, "#00FF00"),
+			"tier_name": chunk_manager.TIER_NAMES.get(pp_tier, "Core"),
+			"tier_color": chunk_manager.TIER_COLORS.get(pp_tier, "#00FF00"),
 			"post_name": pp_name,
 			# Slice 6k — inside a player-post bubble, use the player post's
 			# own name as the region label so the territory reads as "owned"
-			# (e.g., "T1 Bob's Camp") instead of falling back to the formal
-			# post's authored region name.
+			# (e.g., "T1 Bob's Camp") instead of the underlying region.
 			"region_name": pp_name,
 		}
 		# Boundary warning support: how many tiles before the player walks out
@@ -17538,7 +17546,7 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	var floor_tier = int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER))
 	var owner = String(post_meta.get("_owner", ""))
 
-	var wilderness_info = trading_post_db.get_nearest_post_tier(cx, cy)
+	var wilderness_info = chunk_manager.get_nearest_npc_post_with_tier(cx, cy)
 	var wilderness_tier = int(wilderness_info.get("tier", 1))
 
 	if owner == "":
@@ -25281,8 +25289,8 @@ func handle_gm_settler_diag(peer_id: int):
 	lines.append("[color=#FF4444]═══ SETTLER BUBBLE DIAG ═══[/color]")
 	lines.append("Position: (%d, %d)" % [x, y])
 
-	var wilderness_info = trading_post_db.get_nearest_post_tier(x, y)
-	lines.append("Wilderness tier: T%d %s — nearest formal post: %s @ %.0f tiles" % [
+	var wilderness_info = chunk_manager.get_nearest_npc_post_with_tier(x, y)
+	lines.append("Wilderness tier: T%d %s — nearest NPC post: %s @ %.0f tiles" % [
 		int(wilderness_info.get("tier", 1)),
 		String(wilderness_info.get("tier_name", "")),
 		String(wilderness_info.get("post_name", "")),

@@ -22904,12 +22904,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.286 changes
-	display_game("[color=#00FF00]v0.9.286[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Regions now have names (Audit #10 Slice 6k)[/color]")
-	display_game("  • [b]Every NPC post's surrounding territory now has a unique region name[/b] that replaces the generic tier label in the top-right HUD. Sunhaven Plains around Haven. Greenmeadow Reach around South Gate. Shadowmere Mires, Inferno Sands, Wyrmrest Moor in T5 territory. Worldspine Boreal / Eternal Dawn / Apex Northeast Peaks at the T7 fringe. 58 named regions across all seven tiers.")
-	display_game("  • The tier color and number stay (e.g., [color=#FFFF00]T3 Stonemarsh[/color]) so the danger level still reads at a glance — but the region itself now has a personality, not just a number.")
-	display_game("  • Inside a player-built settler bubble, the region label switches to your post's own name (e.g., [color=#00FF00]T1 Bob's Camp[/color]) — your enclosure overrides the wilderness region naming, signaling \"this is your turf.\"")
+	# v0.9.287 changes
+	display_game("[color=#00FF00]v0.9.287[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Region naming moved onto procedural posts (Audit #10 Slice 6L)[/color]")
+	display_game("  • [b]Each NPC post now carries its own region name and tier as data on the post itself,[/b] rolled at world-generation time and saved alongside the post. Region names survive a map wipe — a fresh world rolls 18 new posts at new positions, each with a freshly-rolled region name (Ashfen Reach, Stormhollow Moor, Sun-scoured Wastes, etc.) drawn from a procedural pool.")
+	display_game("  • [b]Region tier is now computed from each post's distance from origin[/b] (T1 inside 50 tiles → T7 beyond 500), so any new post placement still gets a sensible tier without hand-authored data.")
+	display_game("  • [b]Monster level anchoring (the post-anchored level model) also switched to the procedural posts,[/b] so the difficulty curve stays consistent with whatever post layout the current world has — not a baked-in legacy layout.")
+	display_game("  • Existing saved posts get backfilled with tier + region_name on first server boot. No action required.")
+	display_game("  • The previous Slice 6k authored region names (Sunhaven Plains, Wyrmrest Moor, etc.) are retired — they were bound to fixed post IDs that don't exist after a wipe.")
 	display_game("")
 
 	# v0.9.285 changes
@@ -22938,14 +22940,6 @@ func display_changelog():
 	display_game("  • All players in the same biome see the same weather. Server picks one state per biome, rolls every 3 min, weather changes naturally as you cross biome boundaries.")
 	display_game("")
 
-	# v0.9.282 changes
-	display_game("[color=#00FFFF]v0.9.282[/color]")
-	display_game("  [color=#FFD700]Biome movement modifiers (Audit #10 Slice 6g)[/color]")
-	display_game("  • [b]Different biomes move at different speeds.[/b] Plains and Forest are baseline (0.5s per step). Highlands and Desert apply mild penalties (~+15-20% cooldown). Swamp and Tundra slow you noticeably (~+40% cooldown — 0.7s per step). The biome you're standing in determines the cost — crossing into a Swamp tile immediately starts the slower cadence.")
-	display_game("  • [b]The biome line in the top-right HUD adds a [color=#FF6644](slow)[/color] tag[/b] when you're in a meaningfully slow biome (Swamp / Tundra). Mild biomes (Highlands / Desert) feel slightly slower but don't get tagged.")
-	display_game("  • Trade-off shape: the biomes with the best biome-locked materials (Slice 6e/6f Cactus / Ice Bloom / Swamp Lily) are also the slow ones — the travel cost is the price of farming them.")
-	display_game("  • Dungeons, houses, and other indoor spaces ignore biome cooldown — only overworld movement is affected.")
-	display_game("")
 
 
 
