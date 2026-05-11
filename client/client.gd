@@ -23064,8 +23064,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.312 changes
+	display_game("[color=#00FF00]v0.9.312[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 13)[/color]")
+	display_game("  • [b]15 of 53 dungeons[/b] now have unique theme tiles (up from 9). New themes span T1-T5 with a mix of positive pickups and persistent hazards:")
+	display_game("    – [color=#DAA520]Goblin Caves — Scattered Loot (c)[/color]: step → +1-5 Valor (consumed). Friendly T1 intro to themed tiles.")
+	display_game("    – [color=#20B2AA]Siren's Cove — Shallow Tide (=)[/color]: +1 step cost AND 5%% chance of Lullaby (next combat turn skipped). Persistent. Pairs with Siren Enchantress's Lullaby signature.")
+	display_game("    – [color=#3CB371]Troll Den — Cave Moss (m)[/color]: damp moss patches heal ~2%% max HP on step (consumed).")
+	display_game("    – [color=#F0E68C]Gargoyle Cathedral — Sacred Ground (T)[/color]: blesses your next attack with [b]+20%% damage[/b] (consumed). First buff-pickup tile. Pairs with Stoneform's alt-round damage reduction — bless yourself on odd rounds.")
+	display_game("    – [color=#CD853F]Dragon Hatchery — Warm Nest (n)[/color]: hatchling burrows heal ~4%% max HP on step (consumed).")
+	display_game("    – [color=#9ACD32]Cerberus Pit — Brimstone (s)[/color]: sulfur fumes burn for ~4%% max HP per step. Persistent.")
+	display_game("  • All theme tiles surface on the dungeon warning page legend.")
+	display_game("")
+
 	# v0.9.311 changes
-	display_game("[color=#00FF00]v0.9.311[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.311[/color]")
 	display_game("  [color=#FFD700]Buy Orders — demand-side market (Audit #9 Slice 2)[/color]")
 	display_game("  • [b]Players can now place buy orders at trading posts[/b]: name an item, quantity, and price-per-unit. Valor is escrowed up-front. Other players at the same post fulfill the order by depositing matching items and receive the full per-unit Valor (no server spread on buy orders — incentivizes filling demand).")
 	display_game("  • [b]Supported categories[/b]: Materials, Consumables, Runes, Monster Parts. Equipment and Eggs are excluded (too stat-varied / unique to match cleanly).")
@@ -23120,19 +23133,6 @@ func display_changelog():
 	display_game("  • [b]Coverage:[/b] 41 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5 + 7 T6). 9 dungeons themed. T7+ untouched.")
 	display_game("")
 
-	# v0.9.307 changes
-	display_game("[color=#00FFFF]v0.9.307[/color]")
-	display_game("  [color=#FFD700]T5 boss signatures + Balrog Depths lava theme (Audit #5 Slice 10)[/color]")
-	display_game("  • [b]All 6 T5 boss signatures shipped[/b]:")
-	display_game("    – [color=#9400D3]Lich — Soul Burn[/color]: on-hit, drains 5%% of your primary resource max (mana/stamina/energy by class). Resource pressure on casters.")
-	display_game("    – [color=#8B0000]Cerberus — Three Heads[/color]: every turn deals 4%% max HP that ignores DEF (gnaws through armor)")
-	display_game("    – [color=#FF4500]Balrog — Hellfire Stack[/color]: on-hit, deals (stacks × 4%%) max HP from prior stacks then adds +1. Escalating on-hit pressure.")
-	display_game("    – [color=#B22222]Demon Lord — Soul Forge[/color]: every 5 turns heals 15%% max HP. Biggest periodic heal in the boss-sig roster.")
-	display_game("    – [color=#8B4513]Titan — Earthquake[/color]: every 4 turns: 8%% max HP burst + permanent +10%% damage reduction stack (cap 5)")
-	display_game("    – [color=#006400]Jabberwock — Vorpal Strike[/color]: every 4 turns, next boss attack deals 3x damage. Watch for the rhythm.")
-	display_game("  • [b]Balrog Depths theme tile[/b]: lava pools ([color=#FF4500][b]^[/b][/color]) deal ~3%% max HP on step. Persistent (lava doesn't cool). Strongest persistent-damage tile to date — fits T5 difficulty.")
-	display_game("  • [b]Coverage:[/b] 34 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5). 8 dungeons themed. T6+ untouched.")
-	display_game("")
 
 
 
@@ -30349,6 +30349,24 @@ const DUNGEON_THEME_LEGEND = {
 	"phoenix_nest": [
 		{"glyph": "o", "color": "#FFA500", "desc": "Phoenix embers — fallen feathers still glowing with eternal flame. Step on one to heal ~4% of your max HP. One-time per ember (consumed)."}
 	],
+	"goblin_caves": [
+		{"glyph": "c", "color": "#DAA520", "desc": "Scattered loot — goblin hoard piles. Step on one to scoop up 1-5 Valor. One-time per pile (consumed)."}
+	],
+	"siren_cove": [
+		{"glyph": "=", "color": "#20B2AA", "desc": "Shallow tide — wading costs +1 step AND has a small chance (~5%) to apply Lullaby (skip your next combat turn). Persistent. Pairs with the Siren's Lullaby attack."}
+	],
+	"troll_den": [
+		{"glyph": "m", "color": "#3CB371", "desc": "Cave moss — damp moss patches that heal ~2% of your max HP on step. One-time per patch (consumed)."}
+	],
+	"gargoyle_cathedral": [
+		{"glyph": "T", "color": "#F0E68C", "desc": "Sacred ground — light beams blessing your next attack with +20% damage. One-time per tile (consumed). Pairs with Stoneform's alt-round damage reduction — bless yourself on odd rounds."}
+	],
+	"dragon_hatchery": [
+		{"glyph": "n", "color": "#CD853F", "desc": "Warm nest — hatchling burrow that heals ~4% of your max HP on step. One-time per nest (consumed)."}
+	],
+	"cerberus_pit": [
+		{"glyph": "s", "color": "#9ACD32", "desc": "Brimstone — sulfur fumes that burn your lungs for ~4% of your max HP on step. Persistent. Plan paths around the acid-green tiles."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -30814,6 +30832,18 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "^", "color": "#FF4500"}
 		18:  # EMBER_TILE — Phoenix Nest theme tile, heals once on step (v0.9.308)
 			return {"char": "o", "color": "#FFA500"}
+		19:  # SCATTERED_LOOT — Goblin Caves theme tile, valor pickup on step (v0.9.312)
+			return {"char": "c", "color": "#DAA520"}
+		20:  # SHALLOW_TIDE — Siren's Cove theme tile, +1 step + 5% lull chance (v0.9.312)
+			return {"char": "=", "color": "#20B2AA"}
+		21:  # CAVE_MOSS — Troll Den theme tile, small heal on step (v0.9.312)
+			return {"char": "m", "color": "#3CB371"}
+		22:  # SACRED_GROUND — Gargoyle Cathedral theme tile, +20% next-attack buff (v0.9.312)
+			return {"char": "T", "color": "#F0E68C"}
+		23:  # WARM_NEST — Dragon Hatchery theme tile, heal on step (v0.9.312)
+			return {"char": "n", "color": "#CD853F"}
+		24:  # BRIMSTONE — Cerberus Pit theme tile, persistent burn damage (v0.9.312)
+			return {"char": "s", "color": "#9ACD32"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 

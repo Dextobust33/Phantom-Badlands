@@ -19610,6 +19610,55 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		character.current_hp = min(max_hp_em, character.current_hp + ember_heal)
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]A phoenix ember warms you ([color=#00FF00]+%d HP[/color]).[/color]" % ember_heal})
+	# Audit #5 Slice 13 theme tag — Goblin Caves SCATTERED_LOOT pickup
+	# (consumed). 1-5 Valor. First T1 themed tile, friendly intro.
+	elif tile == DungeonDatabaseScript.TileType.SCATTERED_LOOT:
+		var loot_valor = randi_range(1, 5)
+		var account_id_loot = peers[peer_id].account_id
+		persistence.add_valor(account_id_loot, loot_valor)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#DAA520]You scoop up a goblin's hoard ([color=#FFD700]+%d Valor[/color]).[/color]" % loot_valor})
+	# Audit #5 Slice 13 theme tag — Siren's Cove SHALLOW_TIDE wading + Lullaby chance.
+	# +1 step cost AND 5% chance to set player_lulled on next combat turn. Pairs
+	# with Siren Enchantress's Lullaby signature.
+	elif tile == DungeonDatabaseScript.TileType.SHALLOW_TIDE:
+		character.dungeon_floor_steps += 1
+		var tide_msg = "[color=#20B2AA]You wade through the shallow tide (+1 step)."
+		if randi() % 100 < 5:
+			character.set_meta("pending_dungeon_lull", true)
+			tide_msg += " [color=#9370DB]The tide hums a lullaby — you'll skip your next combat turn.[/color]"
+		tide_msg += "[/color]"
+		send_to_peer(peer_id, {"type": "text", "message": tide_msg})
+	# Audit #5 Slice 13 theme tag — Troll Den CAVE_MOSS heals on step (consumed).
+	# 2% max HP, min 1 max 40. T3 — weaker than vampire_crypt's 5%, fits tier.
+	elif tile == DungeonDatabaseScript.TileType.CAVE_MOSS:
+		var moss_heal = clamp(int(character.get_total_max_hp() * 0.02), 1, 40)
+		var max_hp_cm = character.get_total_max_hp()
+		character.current_hp = min(max_hp_cm, character.current_hp + moss_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#3CB371]You press damp moss to your wounds ([color=#00FF00]+%d HP[/color]).[/color]" % moss_heal})
+	# Audit #5 Slice 13 theme tag — Gargoyle Cathedral SACRED_GROUND blesses next
+	# attack with +20% damage (consumed). First buff-pickup tile — buffs are
+	# stored on the character meta and consumed in calculate_damage.
+	elif tile == DungeonDatabaseScript.TileType.SACRED_GROUND:
+		character.set_meta("pending_sacred_buff", true)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#F0E68C]A beam of light blesses you — your next attack deals [color=#FFD700]+20%% damage[/color].[/color]"})
+	# Audit #5 Slice 13 theme tag — Dragon Hatchery WARM_NEST heals on step
+	# (consumed). 4% max HP, min 1 max 100. T4 — matches Phoenix's ember heal.
+	elif tile == DungeonDatabaseScript.TileType.WARM_NEST:
+		var nest_heal = clamp(int(character.get_total_max_hp() * 0.04), 1, 100)
+		var max_hp_wn = character.get_total_max_hp()
+		character.current_hp = min(max_hp_wn, character.current_hp + nest_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#CD853F]You warm yourself in a hatchling's nest ([color=#00FF00]+%d HP[/color]).[/color]" % nest_heal})
+	# Audit #5 Slice 13 theme tag — Cerberus Pit BRIMSTONE burns on step.
+	# 4% max HP per step, persistent. Sits between miasma (2% T2) and stronger
+	# than lava (3% T5) — Cerberus is the lower-bound T5 dungeon.
+	elif tile == DungeonDatabaseScript.TileType.BRIMSTONE:
+		var brim_dmg = clamp(int(character.get_total_max_hp() * 0.04), 1, 80)
+		character.current_hp = max(1, character.current_hp - brim_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]Sulfur fumes burn your lungs ([color=#FF4444]-%d HP[/color]).[/color]" % brim_dmg})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
