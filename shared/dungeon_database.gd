@@ -17,7 +17,10 @@ enum TileType {
 	FINAL_CHEST,   # End-of-dungeon reward chest, spawns post-boss
 	WEBBED,        # Audit #5 theme tag — clinging webs cost an extra step (Spider Nest)
 	POISON_MIASMA, # Audit #5 theme tag — toxic ground ticks HP on step (Plague Graveyard)
-	BLOOD_TRAIL    # Audit #5 theme tag — scavenged kill heals on first step (Wolf Den)
+	BLOOD_TRAIL,   # Audit #5 theme tag — scavenged kill heals on first step (Wolf Den)
+	BONE_SCATTER,  # Audit #5 theme tag — sharp bones nick HP on step (Forgotten Crypt)
+	FALSE_CHEST,   # Audit #5 theme tag — mimic ambush — looks like treasure (Mimic Treasury)
+	UPDRAFT        # Audit #5 theme tag — wind shear costs +2 steps (Harpy Cliffs)
 }
 
 # Tile display characters
@@ -34,7 +37,10 @@ const TILE_CHARS = {
 	TileType.FINAL_CHEST: "*",
 	TileType.WEBBED: "w",
 	TileType.POISON_MIASMA: ",",
-	TileType.BLOOD_TRAIL: ";"
+	TileType.BLOOD_TRAIL: ";",
+	TileType.BONE_SCATTER: "%",
+	TileType.FALSE_CHEST: "?",
+	TileType.UPDRAFT: "~"
 }
 
 # Tile colors for display
@@ -51,7 +57,10 @@ const TILE_COLORS = {
 	TileType.FINAL_CHEST: "#FFAA00",
 	TileType.WEBBED: "#A335EE",
 	TileType.POISON_MIASMA: "#7FBF3F",
-	TileType.BLOOD_TRAIL: "#8B0000"
+	TileType.BLOOD_TRAIL: "#8B0000",
+	TileType.BONE_SCATTER: "#D8D8C8",
+	TileType.FALSE_CHEST: "#FFAA00",
+	TileType.UPDRAFT: "#87CEEB"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -527,7 +536,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.5,
 			"attack_mult": 1.4,
-			"abilities": ["Regeneration", "Boulder Throw"]
+			"abilities": ["Trollish Regrowth", "Boulder Throw"]
 		},
 		"boss_egg": "Troll",  # GUARANTEED egg on completion
 		"floors": 5,
@@ -554,7 +563,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.0,
 			"attack_mult": 1.5,
-			"abilities": ["Diving Strike", "Poison Tail", "Screech"]
+			"abilities": ["Aerial Dive", "Poison Tail", "Screech"]
 		},
 		"boss_egg": "Wyvern",
 		"floors": 5,
@@ -581,7 +590,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.5,
 			"attack_mult": 1.5,
-			"abilities": ["Crushing Blow", "Thick Hide"]
+			"abilities": ["Concussive Slam", "Thick Hide"]
 		},
 		"boss_egg": "Ogre",
 		"floors": 5,
@@ -608,7 +617,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.0,
 			"attack_mult": 1.5,
-			"abilities": ["Soul Drain", "Ethereal Phase", "Chilling Touch"]
+			"abilities": ["Phase Mirror", "Ethereal Phase", "Chilling Touch"]
 		},
 		"boss_egg": "Wraith",
 		"floors": 5,
@@ -635,7 +644,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.5,
 			"attack_mult": 1.5,
-			"abilities": ["Gore Charge", "Labyrinth Fury", "Mighty Stomp"]
+			"abilities": ["Labyrinth Charge", "Labyrinth Fury", "Mighty Stomp"]
 		},
 		"boss_egg": "Minotaur",
 		"floors": 5,
@@ -662,7 +671,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.5,
 			"attack_mult": 1.4,
-			"abilities": ["Stone Skin", "Swooping Strike", "Petrifying Gaze"]
+			"abilities": ["Stoneform", "Swooping Strike", "Petrifying Gaze"]
 		},
 		"boss_egg": "Gargoyle",
 		"floors": 5,
@@ -689,7 +698,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.0,
 			"attack_mult": 1.5,
-			"abilities": ["Shrieking Blast", "Talon Dive", "Wind Gust"]
+			"abilities": ["Wind Shear", "Talon Dive", "Shrieking Blast"]
 		},
 		"boss_egg": "Harpy",
 		"floors": 5,
@@ -716,7 +725,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.15,
 			"hp_mult": 2.5,
 			"attack_mult": 1.4,
-			"abilities": ["Deafening Shriek", "Spore Cloud", "Root Grasp"]
+			"abilities": ["Sonic Echo", "Spore Cloud", "Root Grasp"]
 		},
 		"boss_egg": "Shrieker",
 		"floors": 5,
@@ -1765,6 +1774,37 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 8:
 						grid[y][x] = TileType.BLOOD_TRAIL
+		"forgotten_crypt":
+			# Bone scatter — sharp shards over ~10% of empty tiles. Each
+			# crossing nicks HP (small persistent hazard). Persistent because
+			# crypts don't "clean up" — the bones stay where they fell.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.BONE_SCATTER
+		"mimic_treasury":
+			# False chests — ~6% of empty tiles disguised as treasure. Looks
+			# like an opportunity, snaps when stepped on (consumed). The
+			# real treasure tiles remain — players must distinguish based on
+			# context (real $ tiles cluster, false ? are scattered).
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 6:
+						grid[y][x] = TileType.FALSE_CHEST
+		"harpy_cliffs":
+			# Updrafts over ~10% of empty tiles. Wind shear costs +2 steps to
+			# cross. Persistent; you can plan around them by mapping the
+			# wind currents.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.UPDRAFT
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""

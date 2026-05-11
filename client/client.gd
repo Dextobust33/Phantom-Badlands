@@ -23032,8 +23032,27 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.305 changes
+	display_game("[color=#00FF00]v0.9.305[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]T3 boss signatures + 3 more theme tiles (Audit #5 Slices 4-8)[/color]")
+	display_game("  • [b]All 8 T3 boss signatures shipped[/b], distinct from base monsters and from each other:")
+	display_game("    – [color=#7FBF3F]Troll King — Trollish Regrowth[/color]: heals 8% max HP per turn while below 50% HP (threshold burst — bring damage, not chip)")
+	display_game("    – [color=#87CEEB]Wyvern Queen — Aerial Dive[/color]: every 4 turns plummets for 12% max HP damage")
+	display_game("    – [color=#FFA500]Ogre Chief — Concussive Slam[/color]: every successful hit strips one active player buff (counter to Rage/Stone Skin stacks)")
+	display_game("    – [color=#9370DB]Wraith Overlord — Phase Mirror[/color]: 25% of your damage reflected back to you (softer hitters net better DPS)")
+	display_game("    – [color=#8B4513]Minotaur Champion — Labyrinth Charge[/color]: every 5 turns deals (round × 3%) max HP burst — escalates")
+	display_game("    – [color=#808080]Gargoyle Sentinel — Stoneform[/color]: on even-numbered rounds takes 70%% reduced damage. Time your bursts to odd rounds.")
+	display_game("    – [color=#87CEEB]Harpy Matriarch — Wind Shear[/color]: every 3 turns halves your damage for the next round")
+	display_game("    – [color=#DDA0DD]Shrieker Titan — Sonic Echo[/color]: 4-turn rhythm — stack builds to 4, then 15% max HP burst, then reset")
+	display_game("  • [b]Three more theme tiles ship Audit #5's full locked list[/b]:")
+	display_game("    – [color=#D8D8C8]Forgotten Crypt[/color] now has bone-scatter ([color=#D8D8C8]%%[/color]) — sharp shards nick ~1% max HP on step. Persistent.")
+	display_game("    – [color=#FFAA00]Mimic Treasury[/color] now has false-chests ([color=#FFAA00]?[/color]) — looks like treasure, snaps for ~4% max HP, consumed on trigger. Distinct from real treasure ($).")
+	display_game("    – [color=#87CEEB]Harpy Cliffs[/color] now has updrafts ([color=#87CEEB]~[/color]) — wind shears cost +2 steps to cross. Persistent.")
+	display_game("  • All theme tiles auto-surface on the dungeon warning page legend. All five audit-spec theme dungeons (Spider, Crypt, Mimic, Harpy, Plague Graveyard) now have unique terrain.")
+	display_game("")
+
 	# v0.9.304 changes
-	display_game("[color=#00FF00]v0.9.304[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.304[/color]")
 	display_game("  [color=#FFD700]Theme tiles: Wolf Den blood trails (Audit #5 Slice 3)[/color]")
 	display_game("  • [b]Wolf Den floors now have blood trails[/b] — ~8% of empty tiles render as a dark-red [color=#8B0000][b];[/b][/color] glyph. Stepping onto one heals ~3% of your max HP (min 1, max 60), then the tile is consumed and becomes empty floor. First positive-theme tile — counterbalance to spider webs and miasma.")
 	display_game("  • [b]Theme works thematically with Alpha Wolf's Bloodscent signature[/b]: scavenge from the pack's leftover kills before the boss fight, then commit to the engagement at a smaller HP deficit (so you trigger Bloodscent later).")
@@ -23065,13 +23084,6 @@ func display_changelog():
 	display_game("  • Why all this: the audit thesis is that endgame depth comes from world systems + companions, not late-game combat. Locking permadeath protection behind late-game gear means by the time a player can protect their companions, they've already lost a dozen would-be favorites. Now your first chain completion at level 10 hands you the safety net.")
 	display_game("")
 
-	# v0.9.300 changes
-	display_game("[color=#00FFFF]v0.9.300[/color]")
-	display_game("  [color=#FFD700]Theme tiles: Plague Graveyard miasma (Audit #5 Slice 2)[/color]")
-	display_game("  • [b]Plagued Graveyard now has poison miasma tiles[/b]: ~12% of empty floor tiles render as a sickly green [color=#7FBF3F][b],[/b][/color] glyph. Stepping onto one ticks ~2% of your max HP (min 1, max 40 damage, can't kill outright — floored at 1 HP). The boss already has Contagion Aura wearing you down; now the floor itself does too. Plan paths around the green patches when you can.")
-	display_game("  • Same pattern as Spider Nest webbed tiles (v0.9.248): post-processor inside `_apply_theme_tags`, new TileType enum value, server move handler ticks HP on step, client tile-display knows the glyph + color.")
-	display_game("  • [b]Map legend auto-surfaces it[/b]: the dungeon warning page (v0.9.297) reads `DUNGEON_THEME_LEGEND`, so the new entry shows up automatically whenever you enter Plagued Graveyard. No more wondering what the green commas mean.")
-	display_game("")
 
 
 
@@ -30204,6 +30216,15 @@ const DUNGEON_THEME_LEGEND = {
 	"wolf_den": [
 		{"glyph": ";", "color": "#8B0000", "desc": "Blood trails — fresh pack-kill scraps. Step on one to heal ~3% of your max HP. The tile is consumed (one-time per trail)."}
 	],
+	"forgotten_crypt": [
+		{"glyph": "%", "color": "#D8D8C8", "desc": "Bone scatter — sharp shards from old kills. Stepping onto one nicks ~1% of your max HP. Persistent (the bones don't clear), so plan paths to avoid pale patches."}
+	],
+	"mimic_treasury": [
+		{"glyph": "?", "color": "#FFAA00", "desc": "False chests — disguised mimics. Looks like treasure but snaps for ~4% of your max HP when triggered. Distinct from real treasure ($ glyph). One-time per false chest (consumed)."}
+	],
+	"harpy_cliffs": [
+		{"glyph": "~", "color": "#87CEEB", "desc": "Updrafts — wind shears costing +2 steps to cross. Persistent — map the wind currents and plan around them."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -30657,6 +30678,12 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": ",", "color": "#7FBF3F"}
 		12:  # BLOOD_TRAIL — Wolf Den theme tile, heals once on step (v0.9.304)
 			return {"char": ";", "color": "#8B0000"}
+		13:  # BONE_SCATTER — Forgotten Crypt theme tile, nicks HP on step (v0.9.305)
+			return {"char": "%", "color": "#D8D8C8"}
+		14:  # FALSE_CHEST — Mimic Treasury theme tile, ambushes on step (v0.9.305)
+			return {"char": "?", "color": "#FFAA00"}
+		15:  # UPDRAFT — Harpy Cliffs theme tile, costs +2 steps (v0.9.305)
+			return {"char": "~", "color": "#87CEEB"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 

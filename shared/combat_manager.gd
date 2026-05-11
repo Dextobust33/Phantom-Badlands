@@ -178,6 +178,15 @@ const ABILITY_BOSS_PACK_FRENZY = "boss_pack_frenzy"        # Boss attack scales 
 const ABILITY_BOSS_CONTAGION_AURA = "boss_contagion_aura"  # Passive: +1 contagion stack every 2 monster turns (cap 5); each stack ticks 1% player max HP at start of player turn. No hit required, distinct from on-hit Festering Bite
 const ABILITY_BOSS_LULLABY = "boss_lullaby"                # Every 4 monster turns, forces player to skip next turn (timer-based, deterministic — distinct from Web Stun's on-hit chance)
 const ABILITY_BOSS_DROWNING = "boss_drowning"              # On hit, +1 drowning stack (cap 3). Each stack ticks 2% player max HP per turn AND reduces player damage by 10%. Combines DoT + offensive debuff — only signature that does both
+# Audit #5 boss signatures (Slice 8 — T3 layer)
+const ABILITY_BOSS_TROLL_REGROWTH = "boss_troll_regrowth"  # When boss <50% HP, heals 8% max HP at start of each monster turn. Threshold-triggered, distinct from passive regeneration
+const ABILITY_BOSS_AERIAL_DIVE = "boss_aerial_dive"        # Every 4 monster turns, deals 12% player max HP damage (telegraphed). Cyclical burst — distinct from on-hit DoTs
+const ABILITY_BOSS_CONCUSSIVE_SLAM = "boss_concussive_slam"  # Each successful hit also strips 1 active player buff (rage/stone_skin/haste/etc). Counter to buff stacking
+const ABILITY_BOSS_PHASE_MIRROR = "boss_phase_mirror"      # 25% of incoming damage reflected back to player. Punishes hard hitters — softer attacks net better DPS
+const ABILITY_BOSS_LABYRINTH_CHARGE = "boss_labyrinth_charge"  # Every 5 monster turns, charges for (round × 3%) max player HP burst damage. Time-scaled burst, distinct from Pack Frenzy's steady ramp
+const ABILITY_BOSS_STONEFORM = "boss_stoneform"            # On even-numbered monster rounds (2,4,6...), incoming damage reduced 70%. Players must burst on odd rounds
+const ABILITY_BOSS_WIND_SHEAR = "boss_wind_shear"          # Every 3 monster turns, player damage reduced 50% for next round only. Periodic offensive debuff
+const ABILITY_BOSS_SONIC_ECHO = "boss_sonic_echo"          # Each monster turn adds +1 echo stack; at 4 stacks, deals 15% max HP burst then resets to 0. Cyclical 4-turn rhythm
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1417,8 +1426,24 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			character.current_hp = max(1, character.current_hp)
 			messages.append("[color=#9400D3]Wild magic burns you for %d damage![/color]" % backfire_damage)
 
+		# Audit #5 Slice 8 — Stoneform (Gargoyle Lord). On even-numbered rounds
+		# (2, 4, 6...), the boss takes 70% reduced incoming damage. Telegraphs
+		# the rhythm — players time bursts to odd rounds.
+		var stoneform_active = (ABILITY_BOSS_STONEFORM in abilities) and combat.get("round", 0) > 0 and int(combat.round) % 2 == 0
+		if stoneform_active:
+			damage = max(1, int(damage * 0.3))
+			messages.append("[color=#808080]The %s is in stoneform! Damage reduced.[/color]" % monster.name)
+
 		monster.current_hp -= damage
 		monster.current_hp = max(0, monster.current_hp)
+
+		# Audit #5 Slice 8 — Phase Mirror (Wraith Lord). 25% of damage dealt
+		# is reflected back to the player. Punishes hard hitters — softer
+		# damage nets better DPS. HP-floored at 1 (can't suicide on reflect).
+		if ABILITY_BOSS_PHASE_MIRROR in abilities and damage > 0:
+			var mirror_dmg = max(1, int(damage * 0.25))
+			character.current_hp = max(1, character.current_hp - mirror_dmg)
+			messages.append("[color=#9370DB]Phase Mirror reflects [color=#FF4444]%d[/color] back to you![/color]" % mirror_dmg)
 
 		# Use class-specific attack description
 		var attack_desc = character.get_class_attack_description(damage, monster.name, is_crit)
@@ -4910,6 +4935,18 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["player_drowning_stacks"] = current_drown + 1
 			messages.append("[color=#1E90FF]The %s drags you under! (Drowning %d/3 — your attacks weaken.)[/color]" % [monster.name, current_drown + 1])
 
+	# Audit #5 boss signature (Slice 8) — Concussive Slam (Ogre Chief).
+	# Each successful hit also strips one active player buff (rage, stone
+	# skin, haste, forcefield, etc). Counter to buff stacking. Reuses
+	# get_active_buff_names() but unlike ABILITY_BUFF_DESTROY (30% chance)
+	# this fires 100% on a hit landing.
+	if ABILITY_BOSS_CONCUSSIVE_SLAM in abilities and hits > 0:
+		var slam_buffs = character.get_active_buff_names()
+		if slam_buffs.size() > 0:
+			var stripped_buff = slam_buffs[randi() % slam_buffs.size()]
+			character.remove_buff(stripped_buff)
+			messages.append("[color=#FFA500]The %s's slam shatters your [color=#FFFF00]%s[/color] buff![/color]" % [monster.name, stripped_buff])
+
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
 		if randi() % 100 < 30:  # 30% chance
@@ -5010,6 +5047,72 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["player_lulled"] = true
 			messages.append("[color=#00CED1][b]LULLABY![/b][/color] [color=#A0E8FF]The %s's voice rises into an enchanting song. Your eyelids grow heavy...[/color]" % monster.name)
 
+	# Audit #5 boss signature (Slice 8) — Trollish Regrowth (Troll King).
+	# When boss <50% HP, heals 8% max HP at start of each monster turn.
+	# Threshold-triggered (different from passive regeneration which is
+	# always-on). Punishes "almost killed it" stalls — bring burst.
+	if ABILITY_BOSS_TROLL_REGROWTH in abilities and monster.current_hp < int(monster.max_hp * 0.5) and monster.current_hp > 0:
+		var regrowth_already = int(combat.get("troll_regrowth_last_round", -1))
+		if regrowth_already != int(combat.round):
+			combat["troll_regrowth_last_round"] = int(combat.round)
+			var regrow_amt = max(1, int(monster.max_hp * 0.08))
+			var actual_regrow = mini(regrow_amt, int(monster.max_hp) - int(monster.current_hp))
+			if actual_regrow > 0:
+				monster.current_hp = int(monster.current_hp) + actual_regrow
+				messages.append("[color=#7FBF3F][b]TROLLISH REGROWTH![/b][/color] [color=#9ACD32]The %s's flesh knits before your eyes (+%d HP).[/color]" % [monster.name, actual_regrow])
+
+	# Audit #5 boss signature (Slice 8) — Aerial Dive (Wyvern Queen). Every
+	# 4 monster turns deals 12% player max HP damage that ignores normal
+	# attack flow. Cyclical burst — distinct from on-hit DoTs.
+	if ABILITY_BOSS_AERIAL_DIVE in abilities and combat.round > 0 and combat.round % 4 == 0:
+		var dive_already = int(combat.get("aerial_dive_last_round", -1))
+		if dive_already != int(combat.round):
+			combat["aerial_dive_last_round"] = int(combat.round)
+			var dive_dmg = max(1, int(character.get_total_max_hp() * 0.12))
+			character.current_hp = max(1, character.current_hp - dive_dmg)
+			messages.append("[color=#87CEEB][b]AERIAL DIVE![/b][/color] [color=#FF8800]The %s plummets from above! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, dive_dmg])
+
+	# Audit #5 boss signature (Slice 8) — Labyrinth Charge (Minotaur). Every
+	# 5 monster turns, charges for (round × 3%) max player HP burst damage.
+	# Time-scaled burst — distinct from Pack Frenzy's per-attack steady ramp.
+	if ABILITY_BOSS_LABYRINTH_CHARGE in abilities and combat.round > 0 and combat.round % 5 == 0:
+		var charge_already = int(combat.get("labyrinth_charge_last_round", -1))
+		if charge_already != int(combat.round):
+			combat["labyrinth_charge_last_round"] = int(combat.round)
+			var charge_pct = float(combat.round) * 0.03
+			var charge_dmg = max(1, int(character.get_total_max_hp() * charge_pct))
+			character.current_hp = max(1, character.current_hp - charge_dmg)
+			messages.append("[color=#8B4513][b]LABYRINTH CHARGE![/b][/color] [color=#FF8800]The %s tramples you with maddened fury! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, charge_dmg])
+
+	# Audit #5 boss signature (Slice 8) — Wind Shear (Harpy Matriarch).
+	# Every 3 monster turns, the boss's gust halves player damage for the
+	# next round only. Periodic offensive debuff — distinct from Drowning
+	# (stacking, persistent). Sets a flag consumed by calculate_damage.
+	if ABILITY_BOSS_WIND_SHEAR in abilities and combat.round > 0 and combat.round % 3 == 0:
+		var shear_already = int(combat.get("wind_shear_last_round", -1))
+		if shear_already != int(combat.round):
+			combat["wind_shear_last_round"] = int(combat.round)
+			combat["player_wind_sheared_until_round"] = int(combat.round) + 1
+			messages.append("[color=#87CEEB][b]WIND SHEAR![/b][/color] [color=#A0E8FF]The %s's wings whip a stinging gust around you — your next strike will feel weaker.[/color]" % monster.name)
+
+	# Audit #5 boss signature (Slice 8) — Sonic Echo (Shrieker Titan).
+	# Each monster turn adds +1 echo stack; at 4 stacks, deals 15% player
+	# max HP burst and resets to 0. Cyclical 4-turn rhythm players can
+	# plan around — bursty rather than steady.
+	if ABILITY_BOSS_SONIC_ECHO in abilities and combat.round > 0:
+		var echo_already = int(combat.get("sonic_echo_last_round", -1))
+		if echo_already != int(combat.round):
+			combat["sonic_echo_last_round"] = int(combat.round)
+			var echo_stacks = int(combat.get("sonic_echo_stacks", 0)) + 1
+			combat["sonic_echo_stacks"] = echo_stacks
+			if echo_stacks >= 4:
+				combat["sonic_echo_stacks"] = 0
+				var echo_dmg = max(1, int(character.get_total_max_hp() * 0.15))
+				character.current_hp = max(1, character.current_hp - echo_dmg)
+				messages.append("[color=#DDA0DD][b]SONIC ECHO RELEASE![/b][/color] [color=#FF8800]The %s's resonance shatters the air around you! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, echo_dmg])
+			else:
+				messages.append("[color=#DDA0DD]The %s's screech builds (echo %d/4).[/color]" % [monster.name, echo_stacks])
+
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}
 	if combat.get("monster_fled", false):
@@ -5061,6 +5164,16 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	if drown_stacks > 0:
 		var drown_mult = max(0.1, 1.0 - 0.1 * drown_stacks)
 		raw_damage = max(1, int(raw_damage * drown_mult))
+
+	# Audit #5 Slice 8 — Wind Shear debuff (Harpy Matriarch). When the boss has
+	# applied wind shear, the player's damage is halved for the next round only.
+	# `player_wind_sheared_until_round` is set by the boss-turn block to
+	# (current round + 1) — we check against the CURRENT player turn round
+	# (combat.round is incremented in the boss-turn block). Falls through cleanly
+	# once the round passes.
+	var shear_until = int(combat.get("player_wind_sheared_until_round", -1))
+	if shear_until >= int(combat.get("round", 0)):
+		raw_damage = max(1, int(raw_damage * 0.5))
 
 	# === COMPANION BONUS: Attack damage ===
 	var companion_attack = character.get_companion_bonus("attack")
