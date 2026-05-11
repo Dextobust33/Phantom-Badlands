@@ -307,9 +307,19 @@ func _ready():
 		# rewrite the file every boot.
 		var pre_keys = npc_posts[0].keys() if npc_posts.size() > 0 else []
 		npc_posts = NpcPostDatabaseScript.backfill_post_fields(npc_posts, chunk_manager.world_seed)
-		if npc_posts.size() > 0 and ("tier" in npc_posts[0].keys()) and not ("tier" in pre_keys):
+		var did_backfill = npc_posts.size() > 0 and ("tier" in npc_posts[0].keys()) and not ("tier" in pre_keys)
+		# Audit #11 Slice 5 — densify worlds saved before the density bump up
+		# to the new POST_COUNT_TARGET. Preserves existing post identities.
+		var pre_size = npc_posts.size()
+		if pre_size < NpcPostDatabaseScript.POST_COUNT_TARGET:
+			npc_posts = NpcPostDatabaseScript.densify_posts(npc_posts, chunk_manager.world_seed)
+		var did_densify = npc_posts.size() > pre_size
+		if did_backfill or did_densify:
 			chunk_manager.save_npc_posts(npc_posts)
-			log_message("Backfilled tier/region_name on %d existing NPC posts" % npc_posts.size())
+			if did_densify:
+				log_message("Audit #11 Slice 5: densified %d → %d NPC posts" % [pre_size, npc_posts.size()])
+			if did_backfill:
+				log_message("Backfilled tier/region_name on existing NPC posts")
 		else:
 			log_message("Loaded %d NPC posts" % npc_posts.size())
 	# Always re-stamp post layouts into chunks (ensures walls/floors exist after wipes)
