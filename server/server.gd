@@ -70,6 +70,14 @@ const TRADING_POST_RUMOR_REFRESH_SEC: int = 1800  # 30 min
 # Audit #11 Slice 1 — per-session "first arrival at NPC post" tracking so the
 # greeting fires once per post per session. Map: peer_id → {"x,y": true}
 var visited_npc_posts_session: Dictionary = {}
+# Audit #9 Slice 4 — rolling market sale history. Keyed by item name, value is
+# an array of per-unit paid prices (post-markup, post-specialty-discount).
+# Trimmed to MARKET_HISTORY_WINDOW most recent sales per item. Session-warm
+# only — resets on server restart and builds back up from live sales. Tracking
+# by name (not item_id) means stat-varied equipment of the same name shares an
+# average; close enough for the "spot deals at a glance" use case.
+var market_sale_history: Dictionary = {}
+const MARKET_HISTORY_WINDOW: int = 50
 const INVENTORY_REFRESH_INTERVAL = 300.0  # 5 minutes
 const STARTER_INVENTORY_REFRESH_INTERVAL = 60.0  # 1 minute for starter trading posts
 const STARTER_TRADING_POSTS = ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
@@ -10339,6 +10347,8 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 	# so the per-listing display price reflects what the player will actually pay
 	# at this post. Field `specialty_discount` carries the discount fraction (0-1)
 	# so the client can render a "-15%" badge on discounted rows.
+	# Audit #9 Slice 4 — attach `avg_recent_price` from the rolling history so
+	# the client can render a "(avg X)" badge next to the listing price.
 	for listing in filtered:
 		var cat = listing.get("supply_category", "equipment")
 		var markup = persistence.calculate_markup(post_id, cat)
@@ -10351,6 +10361,8 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 			listing["markup_price"] = base_markup_price
 			listing["specialty_discount"] = 0.0
 		listing["markup"] = markup
+		var item_dict: Dictionary = listing.get("item", {})
+		listing["avg_recent_price"] = _get_avg_recent_price(String(item_dict.get("name", "")))
 
 	# Stack compatible listings (same item name + same price + same seller = one stack)
 	# Only eggs are truly unique (random variants). Everything else stacks.
@@ -10988,6 +11000,12 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 			character.inventory.append(item_copy)
 
 	save_character(peer_id)
+
+	# Audit #9 Slice 4 — record per-unit paid price for the rolling average.
+	# Use the FINAL price (post-markup, post-specialty-discount) so the avg
+	# reflects what players actually pay at this post.
+	var paid_per_unit = int(price / maxi(buy_qty, 1))
+	_record_market_sale(String(item.get("name", "")), paid_per_unit)
 
 	var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
 	send_to_peer(peer_id, {
@@ -19894,6 +19912,32 @@ func _get_direction_text(from_x: int, from_y: int, to_x: int, to_y: int) -> Stri
 		direction = ns + ew
 
 	return "%d tiles %s" % [distance, direction]
+
+func _record_market_sale(item_name: String, per_unit_price: int) -> void:
+	"""Audit #9 Slice 4 — record a sale for rolling-average lookup. Trims the
+	per-item history to MARKET_HISTORY_WINDOW most recent entries."""
+	if item_name == "" or per_unit_price <= 0:
+		return
+	if not market_sale_history.has(item_name):
+		market_sale_history[item_name] = []
+	var arr: Array = market_sale_history[item_name]
+	arr.append(per_unit_price)
+	if arr.size() > MARKET_HISTORY_WINDOW:
+		arr = arr.slice(arr.size() - MARKET_HISTORY_WINDOW, arr.size())
+		market_sale_history[item_name] = arr
+
+func _get_avg_recent_price(item_name: String) -> int:
+	"""Audit #9 Slice 4 — rounded mean per-unit paid price across the rolling
+	window. 0 when no history exists (callers treat 0 as "hide the badge")."""
+	if not market_sale_history.has(item_name):
+		return 0
+	var arr: Array = market_sale_history[item_name]
+	if arr.is_empty():
+		return 0
+	var total = 0
+	for p in arr:
+		total += int(p)
+	return int(round(float(total) / float(arr.size())))
 
 func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	"""Audit #11 Slice 1 — fire a one-time per-session arrival greeting when a
