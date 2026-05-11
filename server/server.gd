@@ -19899,8 +19899,8 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	"""Audit #11 Slice 1 — fire a one-time per-session arrival greeting when a
 	player walks into an NPC post tile. Surfaces the procedurally-generated
 	quest_giver name (otherwise unused), the region context from Slice 6L, and
-	a single dungeon rumor if anything's nearby. Repeat visits this session
-	stay silent; new session resets via handle_disconnect."""
+	a rotating rumor (dungeon hint or biome resource hint — Slice 2). Repeat
+	visits this session stay silent; new session resets via handle_disconnect."""
 	var px = int(post.get("x", 0))
 	var py = int(post.get("y", 0))
 	var post_key = "%d,%d" % [px, py]
@@ -19923,28 +19923,71 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 		header_parts.append("[color=%s]T%d %s[/color]" % [tier_color, tier, region_name])
 	send_to_peer(peer_id, {"type": "text", "message": " — ".join(header_parts)})
 
-	var rumors = _find_dungeon_rumors_near(px, py, 150, 1, peer_id)
-	if rumors.size() > 0:
-		var r = rumors[0]
-		var rumor_line: String
-		if quest_giver != "":
-			rumor_line = "[color=#A0C8E0]%s[/color]: \"Travelers whisper of a [color=%s]%s[/color] %s of here, about %d tiles out.\"" % [
-				quest_giver,
-				String(r.get("color", "#88FF88")),
-				String(r.get("name", "dungeon")),
-				String(r.get("direction_text", "nearby")),
-				int(r.get("distance", 0))
-			]
-		else:
-			rumor_line = "[color=#A0C8E0]A [color=%s]%s[/color] lies %s of here, about %d tiles out.[/color]" % [
-				String(r.get("color", "#88FF88")),
-				String(r.get("name", "dungeon")),
-				String(r.get("direction_text", "nearby")),
-				int(r.get("distance", 0))
-			]
+	# Slice 2 — pick rumor type with random preference order; falls through to
+	# the other type when the first has no data, so a post with neither a
+	# nearby dungeon NOR a flavored biome still produces a soft nod.
+	var rumor_line = ""
+	var prefer_dungeon = randf() < 0.5
+	var try_order = ["dungeon", "resource"] if prefer_dungeon else ["resource", "dungeon"]
+	for kind in try_order:
+		match kind:
+			"dungeon":
+				rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver)
+			"resource":
+				rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver)
+		if rumor_line != "":
+			break
+
+	if rumor_line != "":
 		send_to_peer(peer_id, {"type": "text", "message": rumor_line})
 	elif quest_giver != "":
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#A0C8E0]%s nods in greeting.[/color]" % quest_giver})
+
+func _build_dungeon_rumor_line(px: int, py: int, peer_id: int, quest_giver: String) -> String:
+	"""Slice 1 — dungeon hint rumor formatter. Returns "" when no dungeon is
+	within 150 tiles so the caller can fall through to another rumor type."""
+	var rumors = _find_dungeon_rumors_near(px, py, 150, 1, peer_id)
+	if rumors.size() == 0:
+		return ""
+	var r = rumors[0]
+	if quest_giver != "":
+		return "[color=#A0C8E0]%s[/color]: \"Travelers whisper of a [color=%s]%s[/color] %s of here, about %d tiles out.\"" % [
+			quest_giver,
+			String(r.get("color", "#88FF88")),
+			String(r.get("name", "dungeon")),
+			String(r.get("direction_text", "nearby")),
+			int(r.get("distance", 0))
+		]
+	return "[color=#A0C8E0]A [color=%s]%s[/color] lies %s of here, about %d tiles out.[/color]" % [
+		String(r.get("color", "#88FF88")),
+		String(r.get("name", "dungeon")),
+		String(r.get("direction_text", "nearby")),
+		int(r.get("distance", 0))
+	]
+
+func _build_resource_rumor_line(px: int, py: int, region_name: String, quest_giver: String) -> String:
+	"""Slice 2 — biome resource hint. Looks up the post's biome and picks one
+	T1 entry from BIOME_FORAGING_BONUS to namedrop. Plains has no flavored
+	pool so returns "" (caller falls through). Foragers hear about a region;
+	this nudges them toward the right biome for a material they may want."""
+	if world_system == null:
+		return ""
+	var biome = world_system.get_biome_at(px, py, chunk_manager.world_seed if chunk_manager else 0)
+	if not DropTablesScript.BIOME_FORAGING_BONUS.has(biome):
+		return ""
+	var tier_entries = DropTablesScript.BIOME_FORAGING_BONUS[biome].get(1, [])
+	if tier_entries.is_empty():
+		return ""
+	var entry = tier_entries[randi() % tier_entries.size()]
+	var mat_name = String(entry.get("name", "something useful"))
+	var region_label = region_name if region_name != "" else "this region"
+	if quest_giver != "":
+		return "[color=#A0C8E0]%s[/color]: \"Foragers say [color=#9ACD32]%s[/color] is rich in [color=#FFD700]%s[/color] this season — worth a look while you're out.\"" % [
+			quest_giver, region_label, mat_name
+		]
+	return "[color=#A0C8E0]Locals mention that [color=#9ACD32]%s[/color] is rich in [color=#FFD700]%s[/color] this season.[/color]" % [
+		region_label, mat_name
+	]
 
 func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer_id: int = -1) -> Array:
 	"""Audit #11 Slice 1 — uncached helper used by both legacy trading posts
