@@ -762,6 +762,14 @@ var current_enemy_is_boss: bool = false  # Track boss fights for pulsing border
 var vignette_overlay: ColorRect = null
 var vignette_material: ShaderMaterial = null
 
+# Lingering toast overlay — top-right of game_output area. For ephemeral
+# important hints (compass / sense / weather flavor) that get drowned by
+# normal chat scroll. show_toast() drives it; server can also send a
+# `"toast"` message type to push directly.
+var toast_panel: PanelContainer = null
+var toast_label: RichTextLabel = null
+var toast_tween: Tween = null
+
 # Boss border pulsing
 var boss_border_tween: Tween = null
 
@@ -1612,6 +1620,10 @@ func _ready():
 
 	# Setup low HP vignette overlay
 	_setup_vignette_overlay()
+
+	# Setup toast overlay (lingering compass-hint surface so important
+	# fleeting messages don't get drowned by the chat scroll)
+	_setup_toast_overlay()
 
 	# Setup action bar
 	if action_bar:
@@ -3288,7 +3300,7 @@ func _process(delta):
 			set_meta("enter_pressed", false)
 
 	# Dungeon movement with numpad/arrow keys (only when in dungeon_mode)
-	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not flock_pending and not harvest_mode and not dungeon_resource_prompt and not dungeon_food_select and not any_popup_open and not inventory_mode and not wish_selection_mode:
+	if connected and has_character and not input_field.has_focus() and dungeon_mode and not in_combat and not pending_continue and not awaiting_dungeon_trap_ack and not flock_pending and not harvest_mode and not dungeon_resource_prompt and not dungeon_food_select and not any_popup_open and not inventory_mode and not wish_selection_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
@@ -6476,6 +6488,21 @@ func update_action_bar():
 		var current_page = 0  # Always page 0 for now
 		current_actions = [
 			{"label": "Back", "action_type": "local", "action_data": "dungeon_list_cancel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+	elif dungeon_mode and awaiting_dungeon_trap_ack:
+		# Hard block after a trap fires so the player has to read what hit
+		# them. Slot 0 acknowledges; everything else is locked.
+		current_actions = [
+			{"label": "Acknowledge", "action_type": "local", "action_data": "dungeon_trap_acknowledge", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -12289,6 +12316,15 @@ func execute_local_action(action: String):
 			send_to_server({"type": "dungeon_go_back"})
 		"dungeon_skip_final_chest":
 			send_to_server({"type": "dungeon_skip_final_chest"})
+		"dungeon_trap_acknowledge":
+			# Player has read the trap effect — clear the block and refresh
+			# the floor display. The dungeon_state from the move that fired
+			# the trap already arrived and was suppressed by the trap-ack
+			# guard; calling display_dungeon_floor() rebuilds from the
+			# cached `dungeon_data` so the player returns to normal play.
+			awaiting_dungeon_trap_ack = false
+			display_dungeon_floor()
+			update_action_bar()
 		"dungeon_rest":
 			# Build food list from crafting materials
 			var food_types = ["plant", "herb", "fungus", "fish"]
@@ -16484,6 +16520,65 @@ func reset_combat_background():
 
 # ===== LOW HP VIGNETTE OVERLAY =====
 
+func _setup_toast_overlay():
+	"""Build the lingering toast surface — a PanelContainer anchored top-
+	right of the game_output area with a RichTextLabel inside. Hidden by
+	default (modulate.a = 0). show_toast() runs the fade-in/hold/fade-out
+	tween. Mouse filter is IGNORE so it never eats clicks meant for the
+	game_output below it."""
+	if game_output_container == null:
+		return
+	toast_panel = PanelContainer.new()
+	toast_panel.name = "ToastOverlay"
+	toast_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT, true)
+	toast_panel.offset_right = -10
+	toast_panel.offset_top = 10
+	toast_panel.offset_left = -340
+	toast_panel.offset_bottom = 10
+	toast_panel.custom_minimum_size = Vector2(320, 0)
+	toast_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast_panel.modulate.a = 0.0
+	toast_panel.visible = false
+
+	var bg = StyleBoxFlat.new()
+	bg.bg_color = Color(0.05, 0.06, 0.08, 0.92)
+	bg.border_color = Color(0.85, 0.6, 0.2, 0.9)
+	bg.set_border_width_all(1)
+	bg.set_corner_radius_all(4)
+	bg.set_content_margin_all(10)
+	toast_panel.add_theme_stylebox_override("panel", bg)
+
+	toast_label = RichTextLabel.new()
+	toast_label.bbcode_enabled = true
+	toast_label.fit_content = true
+	toast_label.scroll_active = false
+	toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	toast_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast_label.add_theme_font_size_override("normal_font_size", 14)
+	toast_panel.add_child(toast_label)
+
+	game_output_container.add_child(toast_panel)
+
+func show_toast(text: String, duration: float = 5.0) -> void:
+	"""Display a fading hint in the toast overlay. Kills any prior tween so
+	rapidly-arriving hints replace each other cleanly rather than stacking
+	half-finished fades."""
+	if toast_panel == null or toast_label == null:
+		return
+	if toast_tween != null and toast_tween.is_valid():
+		toast_tween.kill()
+	toast_label.text = text
+	toast_panel.visible = true
+	toast_panel.modulate.a = 0.0
+	toast_tween = create_tween()
+	toast_tween.tween_property(toast_panel, "modulate:a", 1.0, 0.2)
+	toast_tween.tween_interval(duration)
+	toast_tween.tween_property(toast_panel, "modulate:a", 0.0, 0.5)
+	toast_tween.tween_callback(func():
+		if toast_panel:
+			toast_panel.visible = false
+	)
+
 func _setup_vignette_overlay():
 	"""Create a CanvasLayer + ColorRect with the low HP vignette shader"""
 	var shader = load("res://client/shaders/low_hp_vignette.gdshader")
@@ -19355,6 +19450,16 @@ func handle_server_message(message: Dictionary):
 		"egg_hatched":
 			handle_egg_hatched(message)
 
+		"toast":
+			# Ephemeral hint surfaced in the corner toast overlay rather
+			# than the main game_output. Used for compass-style flavor
+			# (sense remains, distant rumors) that's easy to miss when
+			# the player is busy moving and reading status changes.
+			var toast_msg = String(message.get("message", ""))
+			var toast_dur = float(message.get("duration", 5.0))
+			if toast_msg != "":
+				show_toast(toast_msg, toast_dur)
+
 func _process_combat_start(message: Dictionary):
 	"""Process a combat_start message - separated out so queued combat can call it"""
 	# Flush any leftover phased combat messages from previous combat
@@ -21815,6 +21920,9 @@ func _on_move_button(direction: int):
 		return
 	if in_combat or flock_pending or pending_continue or inventory_mode or at_merchant:
 		return
+	# Block movement until the player acknowledges a triggered trap.
+	if dungeon_mode and awaiting_dungeon_trap_ack:
+		return
 
 	var current_time = Time.get_ticks_msec() / 1000.0
 	# Slice 6g — same biome cooldown modifier as the keyboard path. Dungeons
@@ -22904,8 +23012,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.298 changes
+	display_game("[color=#00FF00]v0.9.298[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Trap acknowledgments + fading toast hints[/color]")
+	display_game("  • [b]Dungeon traps now hard-block until you press Acknowledge.[/b] Triggering a trap pauses the game — your action bar shows a single [Acknowledge] button at slot 0, movement keys are gated, and you can't blunder forward until you've read what hit you. Easy to mash past traps before; not anymore.")
+	display_game("  • [b]Fading toast overlay for fleeting compass hints.[/b] Messages like \"You sense fallen remains to the SW...\" used to scroll past in chat while you were moving. They now appear in a small panel anchored top-right of the game output, fade in for 200ms, hold for ~6s, fade out gracefully. Stays out of the chat scroll so it can't get drowned.")
+	display_game("  • The toast is opt-in per-message — server sends a new \"toast\" message type or `\"toast\": true` flag. Easy to extend: any future hint that wants the corner-fade treatment just uses the new type.")
+	display_game("")
+
 	# v0.9.297 changes
-	display_game("[color=#00FF00]v0.9.297[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.297[/color]")
 	display_game("  [color=#FFD700]Dungeon warning page — recovery info + map legend[/color]")
 	display_game("  • [b]Recovery section[/b]: every dungeon-entry warning now shows your current food stockpile (plant + herb + fungus + fish materials, the ones the dungeon-rest action accepts). Color-coded: red at 0, yellow at 1-5, green at 6+. Breakdown by type when present. Soft warning when you have none — \"you can't rest inside without food.\" Plus advice on how to stock up: forage overworld herb/flower/mushroom/bush tiles, fish at water, forest biome is herb-rich, market consumables.")
 	display_game("  • [b]Map legend section[/b]: when the dungeon has unusual terrain glyphs, the warning page now lists them by symbol + color + meaning. First entry: Spider Nest [color=#A335EE][b]w[/b][/color] tiles — \"Spider webs — costs +1 step to cross.\" Players were finding the purple w glyphs with no key; now they know upfront. Easy to extend as more theme tags ship (just add an entry to DUNGEON_THEME_LEGEND).")
@@ -22928,14 +23044,6 @@ func display_changelog():
 	display_game("  • 11 boss signatures shipped across 6 slices. T2 coverage is now [b]5 of 8[/b] (Spider Queen, Orc Warlord, Grand Mimic, Hobgoblin Commander, Barrow Wight, Gnoll Packmaster, Plague Zombie, Siren Enchantress) — Elder Kelpie remains the only T2 boss without a signature.")
 	display_game("")
 
-	# v0.9.294 changes
-	display_game("[color=#00FFFF]v0.9.294[/color]")
-	display_game("  [color=#FFD700]Market shows rolling average recent price (Audit #9 Slice 4)[/color]")
-	display_game("  • [b]Each market listing now shows the typical recent sale price[/b] next to its current price, so you can tell a deal from a markup at a glance. Sample row: \"[b]Iron Longsword[/b] — 320 V  ★-15%  (avg 287)\".")
-	display_game("  • Server tracks the [b]last 50 sales per item name[/b] across the network, post-markup and post-specialty-discount (so the average reflects what players actually paid). Listings with no sale history yet hide the badge.")
-	display_game("  • Helps both sides: buyers spot deals, sellers price competitively. Doesn't affect the actual buy flow — just adds context.")
-	display_game("  • Caveat: history is session-warm. Server restart resets it; the window rebuilds as new sales land. Persistence can come later if needed.")
-	display_game("")
 
 
 
@@ -29870,10 +29978,10 @@ func handle_dungeon_state(message: Dictionary):
 	# (e.g., combat victory, treasure found, floor change, gather result, trap)
 	if not pending_continue and not awaiting_dungeon_gather_result and not awaiting_dungeon_trap_ack:
 		display_dungeon_floor()
-	# Clear one-shot acknowledgement flags so the NEXT state update refreshes
-	# (the current state kept the existing display intact so the player could read it).
-	if awaiting_dungeon_trap_ack:
-		awaiting_dungeon_trap_ack = false
+	# Gather result still auto-clears on next state — those aren't movement-
+	# blocking, just display-preserving. Trap ack is NOT auto-cleared anymore
+	# (a player mashing movement could miss a trap); it now requires explicit
+	# Acknowledge via the `dungeon_trap_acknowledge` action.
 	if awaiting_dungeon_gather_result:
 		awaiting_dungeon_gather_result = false
 	update_action_bar()
@@ -30240,7 +30348,11 @@ func handle_dungeon_resource_prompt(message: Dictionary):
 	update_action_bar()
 
 func handle_dungeon_trap(message: Dictionary):
-	"""Handle trap trigger display"""
+	"""Handle trap trigger display. Trap effects are easy to miss when the
+	player is mashing movement keys — so we hard-block input until they
+	press Acknowledge. The flag is cleared via `dungeon_trap_acknowledge`
+	(action bar slot 0 + Space hotkey) and only then does the dungeon
+	floor display refresh."""
 	# Add this trap to our triggered list for map display
 	var trap_x = message.get("trap_x", -1)
 	var trap_y = message.get("trap_y", -1)
@@ -30256,9 +30368,10 @@ func handle_dungeon_trap(message: Dictionary):
 	display_game("")
 	display_game(message.get("message", "[color=#FF4444]You triggered a trap![/color]"))
 	display_game("")
-	display_game("[color=#808080]Move to continue exploring...[/color]")
-	awaiting_dungeon_trap_ack = true  # Prevent dungeon state from clearing trap display
+	display_game("[color=#FFAA00]Press [%s] to acknowledge and continue exploring.[/color]" % get_action_key_name(0))
+	awaiting_dungeon_trap_ack = true  # Hard block until acknowledged
 	update_dungeon_map()
+	update_action_bar()
 
 func handle_dungeon_gather_result(message: Dictionary):
 	"""Handle gathering result from dungeon resource node"""

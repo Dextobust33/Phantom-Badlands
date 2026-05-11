@@ -18267,7 +18267,10 @@ func _check_nearby_corpses(peer_id: int, px: int, py: int):
 		var dist = max(abs(px - cx), abs(py - cy))
 		if dist <= 75 and dist > 0:
 			var dir = _get_compass_direction(px, py, cx, cy)
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6600]You sense fallen remains to the %s...[/color]" % dir})
+			# Toast overlay (client-side fading hint, top-right of game_output)
+			# instead of dumping into the scrolling chat — these messages
+			# arrive while the player is mid-movement and get lost otherwise.
+			send_to_peer(peer_id, {"type": "toast", "message": "[color=#FF6600]You sense fallen remains to the %s...[/color]" % dir, "duration": 6.0})
 			return  # One hint per check
 
 func _get_compass_direction(from_x: int, from_y: int, to_x: int, to_y: int) -> String:
