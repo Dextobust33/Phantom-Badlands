@@ -1280,6 +1280,15 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_clan_leave(peer_id)
 		"clan_info":
 			handle_clan_info(peer_id)
+		# Clan invitations (Audit #14 Slice 2)
+		"clan_invite":
+			handle_clan_invite(peer_id, message)
+		"clan_invite_accept":
+			handle_clan_invite_accept(peer_id, message)
+		"clan_invite_decline":
+			handle_clan_invite_decline(peer_id, message)
+		"clan_invites_list":
+			handle_clan_invites_list(peer_id)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -7650,18 +7659,20 @@ func handle_spend_stat_point(peer_id: int, message: Dictionary) -> void:
 
 func _send_clan_info(peer_id: int) -> void:
 	"""Push the viewer's current clan state to ClanPanel — either {has_clan:false}
-	or a full {clan, members} payload. Single source of truth for the panel's
-	rendered view."""
+	or a full {clan, members} payload. Always includes the viewer's pending
+	invitations array so the panel can render the invites section."""
 	if not peers.has(peer_id):
 		return
 	var account_id = String(peers[peer_id].get("account_id", ""))
 	if account_id == "":
 		return
+	var invitations = persistence.get_clan_invitations(account_id)
 	var clan_id = persistence.get_account_clan_id(account_id)
 	if clan_id == "":
 		send_to_peer(peer_id, {
 			"type": "clan_info_data",
 			"has_clan": false,
+			"invitations": invitations,
 		})
 		return
 	var clan = persistence.get_clan(clan_id)
@@ -7669,6 +7680,7 @@ func _send_clan_info(peer_id: int) -> void:
 		send_to_peer(peer_id, {
 			"type": "clan_info_data",
 			"has_clan": false,
+			"invitations": invitations,
 		})
 		return
 	var members = persistence.get_clan_member_summary(clan_id)
@@ -7684,6 +7696,7 @@ func _send_clan_info(peer_id: int) -> void:
 		"members": members,
 		"member_count": members.size(),
 		"max_members": persistence.CLAN_MAX_MEMBERS,
+		"invitations": invitations,
 	})
 
 func handle_clan_info(peer_id: int) -> void:
@@ -7753,6 +7766,178 @@ func handle_clan_leave(peer_id: int) -> void:
 	_send_clan_info(peer_id)
 	if disbanded and clan_name != "":
 		broadcast_chat("[color=#888888]Clan [color=#FFD700]%s[/color] has disbanded.[/color]" % clan_name, "System")
+
+# ===== CLAN INVITATIONS (Audit #14 Slice 2) =====
+
+func _find_peer_for_account(target_account_id: String) -> int:
+	"""Return peer_id of an online account, or -1 if offline. Used to deliver
+	live invite notifications + refresh the target's open ClanPanel."""
+	if target_account_id == "":
+		return -1
+	for pid in peers.keys():
+		if String(peers[pid].get("account_id", "")) == target_account_id:
+			return pid
+	return -1
+
+func handle_clan_invites_list(peer_id: int) -> void:
+	"""Slice 2 — explicit fetch for the invites view. _send_clan_info already
+	bundles invitations, so this just calls that."""
+	_send_clan_info(peer_id)
+
+func handle_clan_invite(peer_id: int, message: Dictionary) -> void:
+	"""Leader invites a player by username. Slice 2 keeps invite permission
+	leader-only (no officers / ranks yet)."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "invite",
+			"reason": "You must be in a clan to send invitations.",
+		})
+		return
+	var clan = persistence.get_clan(clan_id)
+	if String(clan.get("leader_account_id", "")) != account_id:
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "invite",
+			"reason": "Only the clan leader can invite players.",
+		})
+		return
+	var target_username = String(message.get("username", "")).strip_edges()
+	if target_username == "":
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "invite",
+			"reason": "Username required.",
+		})
+		return
+	var target_account_id = persistence.find_account_id_by_username(target_username)
+	if target_account_id == "":
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "invite",
+			"reason": "No player named '%s' found." % target_username,
+		})
+		return
+	var result = persistence.add_clan_invitation(target_account_id, clan_id, account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "invite",
+			"reason": String(result.get("reason", "Invite failed.")),
+		})
+		return
+	# Inviter feedback
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "invite",
+		"message": "[color=#A335EE]Invitation sent to [color=#FFD700]%s[/color].[/color]" % String(result.get("target_username", target_username)),
+	})
+	# Live notify the target if they're online
+	var target_peer = _find_peer_for_account(target_account_id)
+	if target_peer >= 0:
+		send_to_peer(target_peer, {
+			"type": "clan_invitation_received",
+			"clan_id": clan_id,
+			"clan_name": String(result.get("clan_name", "")),
+			"clan_tag": String(result.get("clan_tag", "")),
+			"inviter_username": String(result.get("inviter_username", "")),
+		})
+		# Refresh their open panel if they have one
+		_send_clan_info(target_peer)
+
+func handle_clan_invite_accept(peer_id: int, message: Dictionary) -> void:
+	"""Player accepts a pending invitation by clan_id."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var clan_id = String(message.get("clan_id", ""))
+	if clan_id == "":
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "accept",
+			"reason": "Missing clan_id.",
+		})
+		return
+	var result = persistence.accept_clan_invitation(account_id, clan_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "accept",
+			"reason": String(result.get("reason", "Accept failed.")),
+		})
+		_send_clan_info(peer_id)  # Refresh in case the invite went stale
+		return
+	var clan_name = String(result.get("clan_name", ""))
+	var clan_tag = String(result.get("clan_tag", ""))
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "accept",
+		"message": "[color=#A335EE]Joined clan [color=#FFD700]%s[/color] [%s]![/color]" % [clan_name, clan_tag],
+	})
+	_send_clan_info(peer_id)
+	# Refresh every online clan member so their roster updates immediately
+	var clan = persistence.get_clan(clan_id)
+	for member_id in clan.get("member_ids", []):
+		if member_id == account_id:
+			continue  # already refreshed above
+		var member_peer = _find_peer_for_account(member_id)
+		if member_peer >= 0:
+			_send_clan_info(member_peer)
+
+func handle_clan_invite_decline(peer_id: int, message: Dictionary) -> void:
+	"""Player declines a pending invitation."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var clan_id = String(message.get("clan_id", ""))
+	if clan_id == "":
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "decline",
+			"reason": "Missing clan_id.",
+		})
+		return
+	var result = persistence.decline_clan_invitation(account_id, clan_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "decline",
+			"reason": String(result.get("reason", "Decline failed.")),
+		})
+		_send_clan_info(peer_id)
+		return
+	var clan_name = String(result.get("clan_name", ""))
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "decline",
+		"message": "[color=#888888]Declined invitation from [color=#FFD700]%s[/color].[/color]" % clan_name,
+	})
+	_send_clan_info(peer_id)
 
 func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name: String):
 	"""Process hatching an egg and sending the companion to house kennel via Home Stone"""
