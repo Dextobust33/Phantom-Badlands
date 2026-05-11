@@ -27,6 +27,7 @@ const FILTER_CHIPS := [
 	{"id": "equipment", "label": "Equip"},
 	{"id": "egg", "label": "Eggs"},
 	{"id": "consumable", "label": "Cons"},
+	{"id": "food", "label": "Food"},
 	{"id": "tool", "label": "Tools"},
 	{"id": "rune", "label": "Runes"},
 	{"id": "material", "label": "Mats"},
