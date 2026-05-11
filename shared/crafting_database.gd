@@ -3616,6 +3616,24 @@ static func roll_quality(skill_level: int, difficulty: int, post_bonus: int = 0,
 	else:
 		return CraftingQuality.MASTERWORK
 
+static func quality_distribution(success_chance: int) -> Dictionary:
+	"""Audit #8 Layer 5 — return the % chance of each quality bucket given a
+	success_chance value. Mirrors roll_quality's bucket logic exactly: walks
+	all 100 possible roll values (0-99 from `randi() % 100`) and tallies which
+	quality each one produces. Returns {poor, standard, fine, masterwork} %s
+	(integers, summing to 100). Player-facing odds preview before crafting."""
+	var counts := {"poor": 0, "standard": 0, "fine": 0, "masterwork": 0}
+	for roll in range(100):
+		if roll > success_chance + 15:
+			counts["poor"] += 1
+		elif roll > success_chance - 15:
+			counts["standard"] += 1
+		elif roll > success_chance - 30:
+			counts["fine"] += 1
+		else:
+			counts["masterwork"] += 1
+	return counts
+
 static func calculate_craft_xp(difficulty: int, quality: CraftingQuality) -> int:
 	"""Calculate XP gained from crafting"""
 	var base_xp = BASE_CRAFT_XP + difficulty

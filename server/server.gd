@@ -15868,6 +15868,10 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		var is_bulk = recipe.output_type in CraftingDatabaseScript.BULK_CRAFTABLE_TYPES
 		var max_craft = _max_craftable_from_dict(recipe.materials, effective_mats, character.crafting_materials) if can_craft and is_bulk else (1 if can_craft else 0)
 
+		# Audit #8 Layer 5 — quality odds preview. Server computes the bucket
+		# distribution from success_chance once and ships it alongside the recipe
+		# so the client can render "12% Poor / 50% Standard / 30% Fine / 8% Masterwork".
+		var quality_odds = {} if (is_locked or specialist_gated) else CraftingDatabaseScript.quality_distribution(success_chance)
 		recipe_list.append({
 			"id": recipe_id,
 			"name": recipe.name,
@@ -15876,6 +15880,7 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"materials": recipe.materials,
 			"can_craft": can_craft,
 			"success_chance": success_chance,
+			"quality_odds": quality_odds,
 			"output_type": recipe.output_type,
 			"locked": is_locked,
 			"specialist_only": is_specialist_only,
