@@ -3688,6 +3688,26 @@ func _input(event):
 					_victory_legacy_view = not _victory_legacy_view
 					if _victory_legacy_view and combat_scene_panel.has_method("get_log_lines"):
 						game_output.clear()
+						# Flock chain: replay archived fights from earlier in the
+						# chain ABOVE the current fight's log so players can
+						# review the whole encounter, not just the final fight.
+						if combat_scene_panel.has_method("get_flock_history"):
+							var _flock_hist: Array = combat_scene_panel.get_flock_history()
+							var _idx := 1
+							for _entry in _flock_hist:
+								var _hdr_name = "[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]" % [str(_entry.get("color", "#FFFFFF")), str(_entry.get("monster_name", "Enemy")), int(_entry.get("level", 1))]
+								display_game("[color=#5C4D33]──── Fight %d ────[/color]" % _idx)
+								display_game(_hdr_name)
+								var _hdr_art = str(_entry.get("art", ""))
+								if _hdr_art != "":
+									display_game(_hdr_art)
+								display_game("")
+								for _ln in _entry.get("lines", []):
+									display_game(_ln)
+								display_game("")
+								_idx += 1
+							if _flock_hist.size() > 0:
+								display_game("[color=#5C4D33]──── Fight %d (current) ────[/color]" % _idx)
 						if combat_scene_panel.has_method("get_monster_header_bbcode"):
 							var header: Array = combat_scene_panel.get_monster_header_bbcode()
 							if header.size() == 2:
@@ -23012,8 +23032,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.299 changes
+	display_game("[color=#00FF00]v0.9.299[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Flock encounter log history[/color]")
+	display_game("  • [b]Flock fight logs no longer evaporate when the next fight starts.[/b] Each cleared log is now archived into the panel's flock history when the chain is continuing, and the [L] legacy log view replays every fight in the encounter — earlier fights labeled \"── Fight 1 ──\", \"── Fight 2 ──\", current fight last — with each fight's monster name + ASCII art header above its lines.")
+	display_game("  • [b]Why it matters[/b]: flock encounters could chain 3-5 fights and players had no way to scroll back to \"what hit me on the second monster.\" Press [L] during the victory or death interlude to see the whole chain.")
+	display_game("  • History resets cleanly when a fresh encounter starts, so non-flock fights still show only their own log (no stale history bleeding in).")
+	display_game("")
+
 	# v0.9.298 changes
-	display_game("[color=#00FF00]v0.9.298[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.298[/color]")
 	display_game("  [color=#FFD700]Trap acknowledgments + fading toast hints[/color]")
 	display_game("  • [b]Dungeon traps now hard-block until you press Acknowledge.[/b] Triggering a trap pauses the game — your action bar shows a single [Acknowledge] button at slot 0, movement keys are gated, and you can't blunder forward until you've read what hit you. Easy to mash past traps before; not anymore.")
 	display_game("  • [b]Fading toast overlay for fleeting compass hints.[/b] Messages like \"You sense fallen remains to the SW...\" used to scroll past in chat while you were moving. They now appear in a small panel anchored top-right of the game output, fade in for 200ms, hold for ~6s, fade out gracefully. Stays out of the chat scroll so it can't get drowned.")
@@ -25795,7 +25823,17 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	"""A1 — render the combat scene panel from the current combat_state."""
 	if combat_scene_panel == null:
 		return
-	combat_scene_panel.clear_log()
+	# Flock chain log archival: if we just finished a fight that had a flock
+	# queued behind it (`_combat_scene_was_flock_pending` was true on the last
+	# _process tick), archive the previous fight's log into the panel's flock
+	# history so the [L] legacy view can replay all fights in the chain.
+	# Otherwise this is a fresh encounter — drop any stale history.
+	if _combat_scene_was_flock_pending:
+		combat_scene_panel.clear_log(true)
+	else:
+		if combat_scene_panel.has_method("reset_flock_history"):
+			combat_scene_panel.reset_flock_history()
+		combat_scene_panel.clear_log()
 
 	var monster_name = combat_state.get("monster_name", "Enemy")
 	var monster_base_name = combat_state.get("monster_base_name", monster_name)
