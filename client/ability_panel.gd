@@ -1,11 +1,12 @@
 extends Control
 class_name AbilityPanel
 
-# Visual surface for the ability/hotbar mapping screen (More → Abilities).
-# Top: 6 slot cards (one per combat ability slot) showing the keybind and the
-# equipped ability. Click an empty slot to enter "choose mode" — the bottom
-# grid lights up and clicking an unlocked ability equips it. Click a filled
-# slot for a popup menu (Replace / Unequip / Rebind).
+# v0.9.322 — Combat Deck viewer (formerly Ability Loadout). Shows the
+# player's deck composition: one card per unlocked ability with copy count,
+# cost, mastery rank/uses, and description. The deck system replaced the
+# slot-equip loadout, so this is now a view-only surface (the only mutation
+# is the per-card Cull button from Slice 6c). Equipped slots / keybinds /
+# choose-mode were removed.
 
 signal close_requested
 signal equip_requested(slot: int, ability_name: String)
@@ -85,7 +86,7 @@ func _build_layout() -> void:
 	root_vbox.add_child(header)
 
 	_title_label = Label.new()
-	_title_label.text = "Ability Loadout"
+	_title_label.text = "Combat Deck"
 	_title_label.add_theme_color_override("font_color", Color(1, 0.84, 0))
 	_title_label.add_theme_font_size_override("font_size", 18)
 	header.add_child(_title_label)
@@ -99,48 +100,20 @@ func _build_layout() -> void:
 	_path_label_node.add_theme_font_size_override("normal_font_size", 14)
 	header.add_child(_path_label_node)
 
-	# Slot row label
-	var slots_header := Label.new()
-	slots_header.text = "Combat Slots — press these keys during combat:"
-	slots_header.add_theme_color_override("font_color", Color(0.0, 1.0, 1.0))
-	slots_header.add_theme_font_size_override("font_size", 13)
-	root_vbox.add_child(slots_header)
-
-	# Slot cards
-	_slots_row = HBoxContainer.new()
-	_slots_row.add_theme_constant_override("separation", 6)
-	root_vbox.add_child(_slots_row)
-	for i in range(SLOT_COUNT):
-		var card := _make_slot_card(i)
-		_slots_row.add_child(card)
-		_slot_cards.append(card)
-
-	# Status / cancel-choose row
-	var status_row := HBoxContainer.new()
-	status_row.add_theme_constant_override("separation", 8)
-	root_vbox.add_child(status_row)
-
+	# v0.9.322 — slot row / status row removed (deck system replaced
+	# slot-equip). Status + cancel-choose still allocated as dummy instances
+	# so legacy code paths that touch them don't NPE; they're never added to
+	# the visible tree.
 	_status_label = RichTextLabel.new()
 	_status_label.bbcode_enabled = true
 	_status_label.fit_content = true
 	_status_label.scroll_active = false
-	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_status_label.custom_minimum_size = Vector2(0, 24)
-	_status_label.add_theme_font_size_override("normal_font_size", 13)
-	status_row.add_child(_status_label)
-
 	_cancel_choose_btn = Button.new()
-	_cancel_choose_btn.text = "Cancel"
-	_cancel_choose_btn.focus_mode = Control.FOCUS_NONE
-	_cancel_choose_btn.add_theme_font_size_override("font_size", 12)
-	_cancel_choose_btn.custom_minimum_size = Vector2(80, 26)
 	_cancel_choose_btn.visible = false
-	_cancel_choose_btn.pressed.connect(_on_cancel_choose_pressed)
-	status_row.add_child(_cancel_choose_btn)
 
-	# Available abilities
+	# Deck cards header
 	var avail_header := Label.new()
-	avail_header.text = "Available Abilities:"
+	avail_header.text = "Your Deck — copies, cost, and mastery per card:"
 	avail_header.add_theme_color_override("font_color", Color(0.0, 1.0, 1.0))
 	avail_header.add_theme_font_size_override("font_size", 13)
 	root_vbox.add_child(avail_header)
@@ -187,7 +160,7 @@ func _build_layout() -> void:
 	root_vbox.add_child(action_row)
 
 	var hint := Label.new()
-	hint.text = "Click a slot to assign, right-click for unequip / rebind"
+	hint.text = "Multi-copy cards stay in your hand longer. Click − Cull to remove one copy (min 1 always remains)."
 	hint.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	hint.add_theme_font_size_override("font_size", 12)
 	action_row.add_child(hint)
@@ -204,7 +177,8 @@ func _build_layout() -> void:
 	close_btn.pressed.connect(_on_close_pressed)
 	action_row.add_child(close_btn)
 
-	# Right-click context menu
+	# Right-click context menu kept as dormant member (legacy code paths
+	# may still reference it). Never popped under the new deck-view flow.
 	_ctx_menu = PopupMenu.new()
 	_ctx_menu.id_pressed.connect(_on_ctx_menu_id_pressed)
 	add_child(_ctx_menu)
@@ -352,6 +326,10 @@ func _update_status() -> void:
 
 
 func _rebuild_slots() -> void:
+	# v0.9.322 — slot row removed under the deck-view rework. Keep the
+	# function callable for legacy paths but bail out if no cards exist.
+	if _slot_cards.is_empty():
+		return
 	for i in range(SLOT_COUNT):
 		var card: PanelContainer = _slot_cards[i]
 		var sb := StyleBoxFlat.new()
@@ -427,21 +405,19 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	var ab_name = str(ability.get("name", ""))
 	var disp = str(ability.get("display", _humanize(ab_name)))
 	var req_level = int(ability.get("level", 1))
-	var is_equipped = ab_name in _equipped
-	var is_target_choose = _choose_for_slot >= 0 and is_unlocked
 
+	# v0.9.322 — deck-view styling. No more "equipped" green border; the
+	# concept doesn't apply. Multi-copy cards get a faint lime tint so
+	# they're spot-readable in the grid.
+	var deck_count = int(_deck_collection.get(ab_name, 1)) if is_unlocked else 0
 	var sb := StyleBoxFlat.new()
 	if not is_unlocked:
 		sb.bg_color = Color(0.05, 0.05, 0.05, 0.95)
 		sb.border_color = Color(0.3, 0.3, 0.3, 0.5)
 		sb.set_border_width_all(1)
-	elif is_target_choose:
-		sb.bg_color = Color(0.13, 0.10, 0.04, 0.95)
-		sb.border_color = Color(1.0, 0.84, 0.0, 0.85)
-		sb.set_border_width_all(2)
-	elif is_equipped:
-		sb.bg_color = Color(0.07, 0.10, 0.07, 0.95)
-		sb.border_color = Color(0.0, 0.6, 0.4, 0.7)
+	elif deck_count > 1:
+		sb.bg_color = Color(0.07, 0.09, 0.05, 0.95)
+		sb.border_color = Color(0.4, 0.6, 0.3, 0.7)
 		sb.set_border_width_all(1)
 	else:
 		sb.bg_color = Color(0.06, 0.05, 0.04, 0.95)
@@ -453,10 +429,10 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	sb.content_margin_right = 6
 	sb.content_margin_bottom = 4
 	card.add_theme_stylebox_override("panel", sb)
-	# v0.9.272 Slice 6c — taller cards to fit the deck-count + cull row.
-	card.custom_minimum_size = Vector2(200, 76)
+	# v0.9.322 — taller cards fit a 2-line description below the meta row.
+	card.custom_minimum_size = Vector2(260, 110)
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
-	# Mastery Slice 1 polish — hover tooltip with cost / effect / rank info
+	# Hover tooltip with the original ability description (long-form).
 	card.tooltip_text = _tooltip_for(ab_name)
 
 	var vbox := VBoxContainer.new()
@@ -472,8 +448,6 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	name_lbl.add_theme_font_size_override("normal_font_size", 13)
 	if not is_unlocked:
 		name_lbl.text = "[color=#666666]%s[/color]" % disp
-	elif is_equipped:
-		name_lbl.text = "[color=#00FF00]%s[/color] [color=#888888](equipped)[/color]" % disp
 	else:
 		name_lbl.text = "[color=#FFFFFF]%s[/color]" % disp
 	vbox.add_child(name_lbl)
@@ -498,6 +472,20 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		meta.text = "[color=#888888]Locked[/color]"
 	vbox.add_child(meta)
 
+	# v0.9.322 — description line on the card itself (was tooltip-only).
+	# Helps players see at a glance what each deck card does.
+	if is_unlocked:
+		var desc := RichTextLabel.new()
+		desc.bbcode_enabled = true
+		desc.fit_content = true
+		desc.scroll_active = false
+		desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		desc.add_theme_font_size_override("normal_font_size", 10)
+		desc.add_theme_color_override("default_color", Color(0.75, 0.72, 0.65))
+		desc.text = _description_for(ab_name)
+		desc.custom_minimum_size = Vector2(0, 36)
+		vbox.add_child(desc)
+
 	# Slice 6c — deck row (only for unlocked abilities). Shows deck copy count
 	# and a cull button when there's more than 1 copy. Cull is min 1, so
 	# baseline copies aren't removable. Hidden entirely for locked abilities
@@ -508,7 +496,6 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		deck_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		vbox.add_child(deck_row)
 
-		var deck_count = int(_deck_collection.get(ab_name, 1))
 		var deck_lbl := Label.new()
 		deck_lbl.add_theme_font_size_override("font_size", 11)
 		if deck_count > 1:
@@ -554,6 +541,17 @@ func _tooltip_for(ability_name: String) -> String:
 	if client_ref and client_ref.has_method("_get_ability_tooltip"):
 		return str(client_ref._get_ability_tooltip(ability_name))
 	return _humanize(ability_name)
+
+func _description_for(ability_name: String) -> String:
+	"""v0.9.322 — short BBCode description rendered inside the card. Pulls
+	from the client's existing `_get_ability_description_text` helper which
+	already feeds combat tooltips."""
+	if client_ref and client_ref.has_method("_get_ability_description_text"):
+		var raw = str(client_ref._get_ability_description_text(ability_name))
+		if raw == "":
+			return ""
+		return "[color=#BFB5A4]%s[/color]" % raw
+	return ""
 
 
 func _find_ability(ab_name: String) -> Dictionary:

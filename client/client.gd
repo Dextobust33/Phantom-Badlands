@@ -8601,6 +8601,7 @@ func _create_shortcut_buttons():
 		["Pouch", "pouch_shortcut"],
 		["Build", "build_shortcut"],
 		["Quests", "quests_shortcut"],
+		["Deck", "deck_shortcut"],
 		["Inv", "inventory_shortcut"],
 		["Help", "help_shortcut"],
 	]
@@ -8715,6 +8716,17 @@ func _on_shortcut_button_pressed(action: String):
 			job_mode = false
 			pending_inventory_action = ""
 			send_to_server({"type": "get_quest_log"})
+		"deck_shortcut":
+			if ability_mode:
+				return  # Already viewing the deck
+			more_mode = false
+			pending_more_action = ""
+			companions_mode = false
+			eggs_mode = false
+			job_mode = false
+			inventory_mode = false
+			pending_inventory_action = ""
+			enter_ability_mode()
 		"inventory_shortcut":
 			if inventory_mode and pending_inventory_action == "":
 				return  # Already in base inventory
@@ -18447,7 +18459,8 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 
 		"ability_data":
-			# Received ability loadout data from server
+			# Received ability data from server. v0.9.322 — also carries
+			# combat_deck_collection + ability_uses for the Deck view rework.
 			ability_data = {
 				"all_abilities": message.get("all_abilities", []),
 				"unlocked_abilities": message.get("unlocked_abilities", []),
@@ -18457,6 +18470,8 @@ func handle_server_message(message: Dictionary):
 			# Also update character_data
 			character_data["equipped_abilities"] = ability_data.equipped_abilities
 			character_data["ability_keybinds"] = ability_data.ability_keybinds
+			character_data["combat_deck_collection"] = message.get("combat_deck_collection", {})
+			character_data["ability_uses"] = message.get("ability_uses", {})
 			# Display ability management screen and refresh action bar
 			display_ability_menu()
 			update_action_bar()
@@ -23099,8 +23114,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.322 changes
+	display_game("[color=#00FF00]v0.9.322[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat Deck view + Deck shortcut[/color]")
+	display_game("  • [b]Ability Loadout reworked into a Combat Deck viewer.[/b] The old 6-slot equip layout has been retired — the deck system already drives combat, so the loadout slots were dead UI. The new screen is a view of your actual deck composition.")
+	display_game("  • [b]New shortcut button: [color=#9ACD32]Deck[/color][/b] — sits with Companions/Jobs/Pouch/Build/Quests/Inv/Help on the right side of the chat row. One click opens the deck view.")
+	display_game("  • [b]Each card shows[/b]: name, variable cost range, mastery rank + progress to next rank (uses/threshold), copies you own (e.g., \"Deck × 3\"), and a short description of what the card does in combat.")
+	display_game("  • [b]Multi-copy cards[/b] get a soft lime tint so you can pick them out of the grid at a glance.")
+	display_game("  • [b]Cull still works[/b] (Slice 6c): on cards with > 1 copy, a − Cull button removes a copy from your deck. Minimum 1 always remains so you never lose access to a card.")
+	display_game("  • [b]Why[/b]: with the deck system live, \"loadout\" was misleading. You don't equip 6 abilities anymore — you draw a hand each round from your deck. The new view matches the mental model.")
+	display_game("")
+
 	# v0.9.321 changes
-	display_game("[color=#00FF00]v0.9.321[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.321[/color]")
 	display_game("  [color=#FFD700]NPC post density bump (Audit #11 Slice 5)[/color]")
 	display_game("  • [b]18 → 60 NPC posts[/b] across the inner world. Same procedural-post system, just denser. The wilderness between posts no longer feels barren; you should be hitting a new post much more often as you travel.")
 	display_game("  • [b]Placement radius 450 → 600[/b] tiles from origin. Some T7 \"World's Edge\" posts now exist where there used to be only wilderness.")
@@ -23143,14 +23169,6 @@ func display_changelog():
 	display_game("  • [b]Backfill[/b]: characters who completed chains BEFORE this slice get their titles auto-awarded on next login. Nothing missed.")
 	display_game("")
 
-	# v0.9.317 changes
-	display_game("[color=#00FFFF]v0.9.317[/color]")
-	display_game("  [color=#FFD700]Buy-order delivery queue (Audit #9 Slice 2b)[/color]")
-	display_game("  • [b]No more lost items.[/b] When a seller fulfills your buy order while you're offline (or your inventory is full), the items are now queued at the account level instead of vanishing.")
-	display_game("  • [b]Auto-collect on next login.[/b] The queue drains into your character on `character_loaded`. Materials go straight into crafting_materials; consumables/runes/parts take inventory slots. Anything that still won't fit is re-queued at the tail — nothing is ever lost.")
-	display_game("  • [b]Brief receipt at login[/b]: \"═ Pending Market Deliveries ═\" with a green +qty line for each item type, plus a warning if any couldn't fit (so you know to make space and relog).")
-	display_game("  • [b]Closes the only known v1 limitation[/b] from the buy-order launch in v0.9.311. Audit #9 marker dimension complete — Slices 1+2+2b+3+4 all shipped.")
-	display_game("")
 
 
 
