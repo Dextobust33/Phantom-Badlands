@@ -11,6 +11,7 @@ signal close_requested
 signal equip_requested(slot: int, ability_name: String)
 signal unequip_requested(slot: int)
 signal rebind_requested(slot: int)
+signal cull_requested(ability_name: String)  # Slice 6c — remove one deck copy
 
 const SLOT_COUNT := 6
 
@@ -24,6 +25,7 @@ var _player_level: int = 1
 var _path_label: String = ""
 var _choose_for_slot: int = -1     # -1 idle; 0-5 panel is in "pick ability for slot N" state
 var _ability_uses: Dictionary = {} # Mastery Slice 1: ability_name → use count, drives rank display
+var _deck_collection: Dictionary = {} # Slice 6c: ability_name → deck copy count
 
 # Mastery rank thresholds + display (mirrors character.gd's MASTERY_RANK_*)
 const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]
@@ -290,7 +292,7 @@ func _make_slot_card(slot_index: int) -> PanelContainer:
 
 # === Public API ===
 
-func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String, ability_uses: Dictionary = {}) -> void:
+func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String, ability_uses: Dictionary = {}, deck_collection: Dictionary = {}) -> void:
 	if not is_inside_tree():
 		return
 	_equipped = equipped
@@ -300,6 +302,7 @@ func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys:
 	_player_level = player_level
 	_path_label = path_label
 	_ability_uses = ability_uses
+	_deck_collection = deck_collection
 	# Reset choose state on data refresh (server sent new abilities → likely an equip/unequip just landed)
 	_choose_for_slot = -1
 	_path_label_node.text = path_label
@@ -307,6 +310,14 @@ func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys:
 	_cancel_choose_btn.visible = false
 	_rebuild_slots()
 	_rebuild_abilities()
+
+func update_deck_collection(deck_collection: Dictionary) -> void:
+	"""Slice 6c — refresh just the deck counts after a cull, without a full
+	populate() round-trip. Called from the client when cull_ability_card_result
+	arrives. Cheaper than re-running populate (which would rebuild slots too)."""
+	_deck_collection = deck_collection
+	if is_inside_tree():
+		_rebuild_abilities()
 
 func _get_ability_rank(ability_name: String) -> int:
 	"""Compute mastery rank from use count using same thresholds as character.gd."""
@@ -442,7 +453,8 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	sb.content_margin_right = 6
 	sb.content_margin_bottom = 4
 	card.add_theme_stylebox_override("panel", sb)
-	card.custom_minimum_size = Vector2(180, 56)
+	# v0.9.272 Slice 6c — taller cards to fit the deck-count + cull row.
+	card.custom_minimum_size = Vector2(200, 76)
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 	# Mastery Slice 1 polish — hover tooltip with cost / effect / rank info
 	card.tooltip_text = _tooltip_for(ab_name)
@@ -486,8 +498,49 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		meta.text = "[color=#888888]Locked[/color]"
 	vbox.add_child(meta)
 
+	# Slice 6c — deck row (only for unlocked abilities). Shows deck copy count
+	# and a cull button when there's more than 1 copy. Cull is min 1, so
+	# baseline copies aren't removable. Hidden entirely for locked abilities
+	# (they aren't in the collection yet).
+	if is_unlocked:
+		var deck_row := HBoxContainer.new()
+		deck_row.add_theme_constant_override("separation", 6)
+		deck_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vbox.add_child(deck_row)
+
+		var deck_count = int(_deck_collection.get(ab_name, 1))
+		var deck_lbl := Label.new()
+		deck_lbl.add_theme_font_size_override("font_size", 11)
+		if deck_count > 1:
+			deck_lbl.text = "Deck × %d" % deck_count
+			deck_lbl.add_theme_color_override("font_color", Color("#9ACD32"))
+		else:
+			deck_lbl.text = "Deck × 1"
+			deck_lbl.add_theme_color_override("font_color", Color("#888888"))
+		deck_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		deck_row.add_child(deck_lbl)
+
+		var spacer := Control.new()
+		spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		deck_row.add_child(spacer)
+
+		if deck_count > 1:
+			var cull_btn := Button.new()
+			cull_btn.text = "− Cull"
+			cull_btn.tooltip_text = "Remove one copy of this card from your deck (min 1 always remains)."
+			cull_btn.focus_mode = Control.FOCUS_NONE
+			cull_btn.custom_minimum_size = Vector2(58, 20)
+			cull_btn.add_theme_font_size_override("font_size", 10)
+			cull_btn.pressed.connect(_on_cull_pressed.bind(ab_name))
+			deck_row.add_child(cull_btn)
+
 	card.gui_input.connect(_on_ability_card_input.bind(ab_name, is_unlocked))
 	return card
+
+
+func _on_cull_pressed(ability_name: String) -> void:
+	emit_signal("cull_requested", ability_name)
 
 
 func _cost_text_for(ability_name: String) -> String:

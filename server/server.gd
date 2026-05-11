@@ -1023,6 +1023,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_combat_use_item(peer_id, message)
 		"rank_choice_response":
 			handle_rank_choice_response(peer_id, message)
+		"cull_ability_card":
+			handle_cull_ability_card(peer_id, message)
 		"wish_select":
 			handle_wish_select(peer_id, message)
 		"continue_flock":
@@ -3887,6 +3889,44 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	var rc_account_id = peers.get(peer_id, {}).get("account_id", "")
 	if persistence != null and rc_account_id != "":
 		persistence.save_character(rc_account_id, character)
+
+func handle_cull_ability_card(peer_id: int, message: Dictionary):
+	"""Slice 6c — permanently remove one copy of an ability card from the
+	player's persistent deck collection. Rejected during combat to avoid
+	mid-fight surprises. Sends `cull_ability_card_result` with new count +
+	the full updated collection so the client can repaint the UI without a
+	round-trip character_update."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {
+			"type": "cull_ability_card_result",
+			"ok": false,
+			"reason": "Cannot cull cards during combat."
+		})
+		return
+	var ability_name = str(message.get("ability", ""))
+	if ability_name == "":
+		send_to_peer(peer_id, {
+			"type": "cull_ability_card_result",
+			"ok": false,
+			"reason": "Missing ability name."
+		})
+		return
+	var result = character.cull_ability_card(ability_name)
+	send_to_peer(peer_id, {
+		"type": "cull_ability_card_result",
+		"ok": bool(result.get("ok", false)),
+		"reason": str(result.get("reason", "")),
+		"ability": ability_name,
+		"new_count": int(result.get("new_count", 0)),
+		"collection": character.combat_deck_collection.duplicate()
+	})
+	if result.get("ok", false):
+		var cull_account_id = peers.get(peer_id, {}).get("account_id", "")
+		if persistence != null and cull_account_id != "":
+			persistence.save_character(cull_account_id, character)
 
 func handle_combat_use_item(peer_id: int, message: Dictionary):
 	"""Handle using an item during combat"""

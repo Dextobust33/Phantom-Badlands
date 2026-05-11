@@ -2634,6 +2634,33 @@ func apply_rank_choice(ability_name: String, choice: String) -> Dictionary:
 		result["ok"] = true
 	return result
 
+func cull_ability_card(ability_name: String) -> Dictionary:
+	"""Slice 6c — permanently remove one copy of an ability card from the deck.
+	Decrements combat_deck_collection[ability_name] by 1, with a HARD MIN OF 1.
+	Resolution of the open design question: keep min=1 to avoid the soft-lock
+	where a player culls every ability to 0, then can't draw any cards in
+	combat to rank up (rank-up requires ability USE, which requires drawing).
+	Players can still shape deck weights heavily by trimming extra copies they
+	earned via rank-up choices. Returns {ok, new_count, reason}.
+	Caller (server) is responsible for save_character + sending the response."""
+	var result := {"ok": false, "new_count": 0, "reason": ""}
+	if ability_name == "":
+		result["reason"] = "Empty ability name"
+		return result
+	if not combat_deck_collection.has(ability_name):
+		result["reason"] = "Ability not in deck collection"
+		return result
+	var current = int(combat_deck_collection.get(ability_name, 0))
+	if current <= 1:
+		result["new_count"] = current
+		result["reason"] = "Cannot cull below 1 copy — every ability keeps a baseline."
+		return result
+	var new_count = current - 1
+	combat_deck_collection[ability_name] = new_count
+	result["ok"] = true
+	result["new_count"] = new_count
+	return result
+
 func apply_headstart_ranks(headstarts: Dictionary) -> Array:
 	"""Slice 3 — apply Sanctuary-purchased headstart ranks to a freshly created
 	character. For each {ability → target_rank}, set ability_uses[ability] to
