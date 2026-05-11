@@ -23114,8 +23114,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.324 changes
+	display_game("[color=#00FF00]v0.9.324[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companion gifts cross-class abilities (Audit #1 Slice 4b)[/color]")
+	display_game("  • [b]Companions now teach you cross-class abilities at level 10.[/b] When your active companion crosses level 10 in combat, if their monster type has a mapped gift ability AND it's not already in your deck, you get +1 copy permanently.")
+	display_game("  • [b]15 companions teach abilities[/b], spread across archetypes: Wolf → Ambush, Goblin → Distract, Skeleton → Magic Bolt, Spider → Paralyze, Orc → Power Strike, Hobgoblin → War Cry, Gnoll → Cleave, Wight → Vanish, Mimic → Analyze, Troll → Rally, and more.")
+	display_game("  • [b]Cross-class deliberate path[/b]: a Mage with an Orc companion can level the Orc up to learn Power Strike. The off-affinity tag from v0.9.323 lights up on the new card and shrinks as you grind its rank down.")
+	display_game("  • [b]One-time per ability per character[/b] — once a card is in your deck (even at 1 copy), the companion won't re-gift it. Cull doesn't matter (cull floors at 1 anyway).")
+	display_game("  • [b]Sanctuary deck customization noted for after the audit[/b] — a future station will let you spend Baddie Points to pre-load specific cards on a new character.")
+	display_game("  • [b]Ability Tomes deferred to next slice[/b] — a chest-drop alternative acquisition path. Companion gifts ship first as the primary loop.")
+	display_game("")
+
 	# v0.9.323 changes
-	display_game("[color=#00FF00]v0.9.323[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.323[/color]")
 	display_game("  [color=#FFD700]Off-affinity counter (Audit #1 Slice 4)[/color]")
 	display_game("  • [b]Using an ability outside your class path now deals less damage.[/b] A Warrior casting Magic Bolt eats a -25% damage penalty; a Wizard swinging Power Strike eats the same.")
 	display_game("  • [b]Mastery softens the penalty[/b]: as you grind the off-archetype ability and rank it up, the penalty shrinks linearly. Rank 0 = -25%, Rank 1 = -19%, Rank 2 = -13%, Rank 3 = -6%, Rank 4 = 0%.")
@@ -23160,15 +23171,6 @@ func display_changelog():
 	display_game("  • [b]Three new cross-system mechanics[/b]: pending festering, war banner damage buff, spectral veil miss chance. All carry from the dungeon tile through start_combat into combat math.")
 	display_game("")
 
-	# v0.9.319 changes
-	display_game("[color=#00FFFF]v0.9.319[/color]")
-	display_game("  [color=#FFD700]Wear your chain titles in chat (Audit #6 Slice 11)[/color]")
-	display_game("  • [b]New command: [color=#9ACD32]/set_title <id>[/color][/b] — pick which earned chain title to display in chat and join/leave broadcasts. Title ids are shown in parentheses next to each title in [color=#9ACD32]/titles[/color].")
-	display_game("  • [b]/set_title clear[/b] (or /set_title none) removes the prefix.")
-	display_game("  • [b]Display order[/b]: [color=#FF7F00][Goblin Bane][/color] [color=#FFD700][Jarl][/color] PlayerName — chain prefix sits outside the realm prefix, both visible together.")
-	display_game("  • [b]Validates against earned_titles[/b] — server rejects titles you haven't completed the chain for. Active title persists across login.")
-	display_game("  • [b]/titles marker[/b]: a yellow ✓ now sits next to your currently-worn title in the listing so you can see at a glance which one is active.")
-	display_game("")
 
 
 

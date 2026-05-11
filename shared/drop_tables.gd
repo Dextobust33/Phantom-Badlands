@@ -1188,6 +1188,38 @@ const COMPANION_DATA = {
 	"Entropy": {"companion_name": "Entropy Mote", "tier": 9, "bonuses": {"attack": 24, "hp_regen": 5, "lifesteal": 4, "aggro": 30}}
 }
 
+# Audit #1 Slice 4b (v0.9.324) — companion-gift abilities. When a companion
+# reaches level 10, if the player doesn't already have the named ability in
+# their combat_deck_collection, it gets gifted (1 copy added) + a chat
+# message. Themed per monster: predators teach Ambush, undead teach
+# Magic Bolt, etc. Cross-class companions are the primary acquisition path
+# for off-archetype deck cards under the deck system.
+const COMPANION_GIFT_ABILITY = {
+	# T1 — basic abilities, gifted by common companions
+	"Wolf": "ambush",
+	"Goblin": "distract",
+	"Giant Rat": "sabotage",
+	"Skeleton": "magic_bolt",
+	"Kobold": "pickpocket",
+	# T2 — mid-tier abilities
+	"Orc": "power_strike",
+	"Hobgoblin": "war_cry",
+	"Gnoll": "cleave",
+	"Giant Spider": "paralyze",
+	"Zombie": "blast",
+	"Mimic": "analyze",
+	"Wight": "vanish",
+	# T3 — bigger abilities
+	"Troll": "rally",
+	"Vampire": "blast",
+	"Wraith": "vanish",
+}
+
+static func get_companion_gift_ability(monster_type: String) -> String:
+	"""Returns the player ability gifted when this companion reaches level 10,
+	or empty string if this monster type doesn't teach anything."""
+	return COMPANION_GIFT_ABILITY.get(monster_type, "")
+
 # Per-monster companion abilities - each monster type has unique abilities based on their original monster abilities
 # Abilities scale with companion level: final_value = base + (scaling * companion_level)
 # Types: "passive" (always active), "active" (chance per turn), "threshold" (triggers once when HP drops below %)
