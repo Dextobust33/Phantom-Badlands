@@ -2592,23 +2592,69 @@ const BIOME_FORAGING_BONUS = {
 	},
 }
 
-static func roll_foraging_catch(forage_tier: int, foraging_skill: int, biome: String = "") -> Dictionary:
+# Slice 6f — biome-locked node guaranteed drops. When the player forages a
+# biome-locked tile (cactus / ice_bloom / swamp_lily / mountain_herb /
+# brambleberry from Slice 6e) the roll ignores the generic FORAGING_CATCHES
+# entirely and pulls from THIS table. Result: walking up to a cactus and
+# pressing Forage always yields a desert material — no generic Clovers /
+# Wild Berries from a cactus. Each node has 2× T1 anchors (most common) and
+# 1× T2 standout (less common). Tier of the tile still drives XP via the
+# existing roll_foraging_catch xp formula.
+const BIOME_LOCKED_DROPS = {
+	"cactus": [
+		{"weight": 55, "item": "cactus_flesh", "name": "Cactus Flesh", "type": "plant", "value": 8},
+		{"weight": 30, "item": "sun_petal", "name": "Sun Petal", "type": "herb", "value": 10},
+		{"weight": 15, "item": "scorched_root", "name": "Scorched Root", "type": "herb", "value": 24},
+	],
+	"ice_bloom": [
+		{"weight": 50, "item": "frost_lichen", "name": "Frost Lichen", "type": "herb", "value": 9},
+		{"weight": 35, "item": "ice_crystal", "name": "Ice Crystal", "type": "gem", "value": 12},
+		{"weight": 15, "item": "snow_bloom", "name": "Snow Bloom", "type": "herb", "value": 26},
+	],
+	"swamp_lily": [
+		{"weight": 50, "item": "bog_iris", "name": "Bog Iris", "type": "herb", "value": 9},
+		{"weight": 35, "item": "marsh_reed", "name": "Marsh Reed", "type": "plant", "value": 6},
+		{"weight": 15, "item": "witch_cap", "name": "Witch Cap", "type": "fungus", "value": 24},
+	],
+	"mountain_herb": [
+		{"weight": 50, "item": "alpine_lichen", "name": "Alpine Lichen", "type": "herb", "value": 8},
+		{"weight": 35, "item": "rock_salt", "name": "Rock Salt", "type": "mineral", "value": 6},
+		{"weight": 15, "item": "crag_thistle", "name": "Crag Thistle", "type": "herb", "value": 22},
+	],
+	"brambleberry": [
+		{"weight": 50, "item": "oak_acorn", "name": "Oak Acorn", "type": "plant", "value": 7},
+		{"weight": 35, "item": "pine_resin", "name": "Pine Resin", "type": "plant", "value": 8},
+		{"weight": 15, "item": "silverleaf", "name": "Silverleaf", "type": "herb", "value": 22},
+	],
+}
+
+static func roll_foraging_catch(forage_tier: int, foraging_skill: int, biome: String = "", node_type: String = "") -> Dictionary:
 	"""Roll a random catch from the foraging table for the given tier.
 	Slice 6c — optional biome splices the biome's exclusive entries from
 	BIOME_FORAGING_BONUS into the candidate pool. Empty biome string keeps
 	the legacy roll exactly. Biome-exclusive materials NEVER appear outside
-	their biome."""
+	their biome.
+	Slice 6f — when node_type names a biome-locked node (cactus / ice_bloom /
+	swamp_lily / mountain_herb / brambleberry), the pool is REPLACED by
+	BIOME_LOCKED_DROPS[node_type] — generic catches never roll on these
+	nodes. Tier still drives XP via the formula at the bottom."""
 	var tier = clampi(forage_tier, 1, 6)
 	if not FORAGING_CATCHES.has(tier):
 		tier = 1
 
-	# Build the effective pool — base catches + biome bonus entries when in-biome.
-	var catches: Array = FORAGING_CATCHES[tier].duplicate()
-	if biome != "" and BIOME_FORAGING_BONUS.has(biome):
-		var biome_tiers = BIOME_FORAGING_BONUS[biome]
-		if biome_tiers.has(tier):
-			for bonus in biome_tiers[tier]:
-				catches.append(bonus)
+	# Build the effective pool.
+	var catches: Array
+	if node_type != "" and BIOME_LOCKED_DROPS.has(node_type):
+		# Slice 6f — biome-locked node: dedicated pool, guaranteed biome material.
+		catches = BIOME_LOCKED_DROPS[node_type].duplicate()
+	else:
+		# Default path — generic foraging catches + biome bonus when applicable.
+		catches = FORAGING_CATCHES[tier].duplicate()
+		if biome != "" and BIOME_FORAGING_BONUS.has(biome):
+			var biome_tiers = BIOME_FORAGING_BONUS[biome]
+			if biome_tiers.has(tier):
+				for bonus in biome_tiers[tier]:
+					catches.append(bonus)
 
 	var total_weight = 0
 	for c in catches:
