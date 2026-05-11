@@ -1267,6 +1267,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_list_home_stones(peer_id)
 		"buy_home_stone":
 			handle_buy_home_stone(peer_id, message)
+		"show_stats":
+			handle_show_stats(peer_id)
+		"spend_stat_point":
+			handle_spend_stat_point(peer_id, message)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -7591,6 +7595,45 @@ func handle_buy_home_stone(peer_id: int, message: Dictionary) -> void:
 		"type": "text",
 		"message": "[color=#00FF00]Purchased [color=#FFD700]%s[/color] for %d Valor.%s[/color]" % [NPC_STONE_DISPLAY[stone_type], price, remain_tag],
 	})
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_show_stats(peer_id: int) -> void:
+	"""Audit #3 Slice 1 — print current allocated stats + unspent point bank.
+	Tells the player how /spendstat works when they have points to spend."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var lines: Array = []
+	lines.append("[color=#FFD700]═══ Stats ═══[/color]")
+	lines.append("Level: [color=#FFD700]%d[/color]  XP: %d / %d" % [character.level, character.experience, character.experience_to_next_level])
+	lines.append("  STR: %d   CON: %d   DEX: %d" % [character.strength, character.constitution, character.dexterity])
+	lines.append("  INT: %d   WIS: %d   WITS: %d" % [character.intelligence, character.wisdom, character.wits])
+	var points = int(character.unspent_stat_points)
+	if points > 0:
+		lines.append("[color=#00FF00]Unspent stat points: %d[/color]  ([color=#888888]use /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>[/color])" % points)
+	else:
+		lines.append("[color=#888888]No unspent stat points. Level up to earn (+1 per level).[/color]")
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func handle_spend_stat_point(peer_id: int, message: Dictionary) -> void:
+	"""Audit #3 Slice 1 — spend one banked stat point on the named stat.
+	Delegates validation + mutation to character.spend_stat_point. On success,
+	persists + pushes a character_update so HP/Mana/etc reflect the new stat."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var stat_name = String(message.get("stat", "")).strip_edges().to_lower()
+	if stat_name == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>  —  see /stats for your bank.[/color]"})
+		return
+	var result = character.spend_stat_point(stat_name)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6644]%s[/color]" % String(result.get("message", "Spend failed."))})
+		return
+	var remaining = int(result.get("unspent_remaining", 0))
+	var trailer = "  [color=#888888](%d remaining)[/color]" % remaining if remaining > 0 else "  [color=#888888](no points left)[/color]"
+	send_to_peer(peer_id, {"type": "text", "message": "%s%s" % [String(result.get("message", "")), trailer]})
 	send_character_update(peer_id)
 	save_character(peer_id)
 

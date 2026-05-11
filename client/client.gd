@@ -19878,7 +19878,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20805,6 +20805,24 @@ func process_command(text: String):
 					display_game("[color=#FF8800]Usage: /buystone <egg|supplies|equipment|companion>  —  see /stones for prices.[/color]")
 				else:
 					send_to_server({"type": "buy_home_stone", "stone_type": stone_type})
+		"stats":
+			# Audit #3 Slice 1 — show current stat allocation + unspent points.
+			if has_character:
+				send_to_server({"type": "show_stats"})
+			else:
+				display_game("You don't have a character yet")
+		"spendstat":
+			# Audit #3 Slice 1 — spend one banked stat point.
+			# Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var stat_parts := text.split(" ", false, 1)
+				var stat_name := stat_parts[1].strip_edges().to_lower() if stat_parts.size() > 1 else ""
+				if stat_name == "":
+					display_game("[color=#FF8800]Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>  —  see /stats for your bank.[/color]")
+				else:
+					send_to_server({"type": "spend_stat_point", "stat": stat_name})
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -23165,8 +23183,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.335 changes
+	display_game("[color=#00FF00]v0.9.335[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Stat allocation agency (Audit #3 Slice 1)[/color]")
+	display_game("  • [b]Each level-up now grants +1 unspent stat point[/b], on top of the existing class-fixed scaling (2.5 distributed automatically by class). Layered — class identity stays, but you get a slice of choice every level.")
+	display_game("  • [b]/stats[/b] — shows current STR/CON/DEX/INT/WIS/WITS, your level/XP progress, and your unspent point bank.")
+	display_game("  • [b]/spendstat <stat>[/b] — bump the named stat by 1 from your bank. Recomputes derived stats so HP/Mana/etc reflect the change immediately.")
+	display_game("  • [b]Legacy characters start at 0[/b] — no retroactive grant. Only level-ups after this version award points. Newly created characters bank from level 1.")
+	display_game("  • [b]Why[/b]: per the audit, players had no per-level agency in stat allocation. Classes still bias the scaling, but a per-level point gives you a small lever to lean into whatever you're playing — a Sage who wants more Wits, a Paladin who wants extra CON, etc.")
+	display_game("  • [b]Audit #3 moves from \"designing\" to \"implementing.\"[/b] Four designing-only systems shipped first slices in four consecutive releases (#4 → #13 → #2 → #3). Only #14 Multiplayer remains in designing.")
+	display_game("")
+
 	# v0.9.334 changes
-	display_game("[color=#00FF00]v0.9.334[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.334[/color]")
 	display_game("  [color=#FFD700]Class identity cleanup + XP stack fix (Audit #2 Slice 1)[/color]")
 	display_game("  • [b]Paladin / Sorcerer / Ninja are no longer described as \"[Legacy] - no longer available\"[/b] anywhere in code. They've been fully active classes for many versions; the stale strings in shared/constants.gd are now proper descriptions matching the character-create panel.")
 	display_game("  • [b]Bug fix: Sanctuary XP bonus was applying as a 11x multiplier at max level instead of 1.10x[/b]. character.gd add_experience was adding the raw percent value to 1.0 instead of dividing by 100 first. Now matches the party-combat XP path. Any character that stacked the upgrade was getting wildly inflated XP — fix levels the field.")
@@ -23197,20 +23226,6 @@ func display_changelog():
 	display_game("  • [b]Audit #4 moves from \"designing\" to \"implementing.\"[/b] Three more accessibility tiers planned: tutorial gift, T5+ chest drops (already exists), Sanctuary auto-registration slots.")
 	display_game("")
 
-	# v0.9.331 changes
-	display_game("[color=#00FFFF]v0.9.331[/color]")
-	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 15)[/color]")
-	display_game("  • [b]Coverage 21 → 27/53 dungeons.[/b] Six new themed dungeons, one new TileType each:")
-	display_game("    • [color=#B22222]x[/color] [b]Caltrops[/b] — Hobgoblin Fortress (T2). Persistent -2% HP on step. Tactical traps.")
-	display_game("    • [color=#BDB76B]d[/color] [b]Grave Dust[/b] — Barrow Mounds (T2). Persistent -3% HP on step. Necrotic burn.")
-	display_game("    • [color=#8B4513]g[/color] [b]Bull-runes[/b] — Minotaur Labyrinth (T4). +1 step cost. Scrambles bearings.")
-	display_game("    • [color=#4169E1]q[/color] [b]Prism Shards[/b] — Elemental Nexus (T7). Pickup: +15% damage 3 rounds next combat.")
-	display_game("    • [color=#F4A460]b[/color] [b]Sphinx Sand[/b] — Sphinx Riddle Hall (T8). Pickup: 20%% monster-miss 2 rounds next combat.")
-	display_game("    • [color=#ADD8E6]i[/color] [b]Frost Shards[/b] — Void Walker Rift (T8). Persistent -4% HP on step. Strongest persistent damage in the pool.")
-	display_game("  • [b]Pipeline hardened[/b]: standard 5-step recipe — TileType enum, TILE_CHARS, TILE_COLORS, _apply_theme_tags, server step handler, client legend. Adding more themes from here is mechanical.")
-	display_game("  • [b]Cross-system reuse[/b]: Prism Shards reuse the pending_war_banner buff from Orc Stronghold (different flavor, same engine); Sphinx Sand reuses pending_dungeon_veil from Wraith Barrow. No new combat-side metas to plumb.")
-	display_game("  • [b]Why[/b]: dungeons should each feel different to traverse. 21 themed felt thin against 53 total — this batch pushes coverage past half (27/53) and hits the previously-untouched T7/T8 spectrum.")
-	display_game("")
 
 
 
