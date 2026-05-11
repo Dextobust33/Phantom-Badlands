@@ -146,6 +146,18 @@ const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]  # uses needed to re
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]  # rank 0 → 4
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 const MASTERY_RANK_BACKFILL_USES: int = 200  # Existing characters get this many uses on archetype abilities at first load — puts them at rank 2 (baseline) so balance doesn't shift retroactively
+
+# ===== OFF-AFFINITY COUNTER (Audit #1 Slice 4 — v0.9.323) =====
+# Using an ability that doesn't match your class path costs damage. As you
+# grind use-progression rank on the off-archetype ability, the penalty
+# softens linearly. Mastery + counter together: rank 0 off-affinity is
+# brutal (mastery 0.80 × off 0.75 = 0.60 of baseline). Rank 4 erases the
+# whole gap (1.20 × 1.00 = 1.20 baseline — same as on-affinity max).
+# This is the "off-affinity mastery softens the −25% penalty" headline
+# from the combat audit. Universal abilities (cloak, all_or_nothing,
+# forethought, tactical_retreat, teleport) bypass this entirely.
+const OFF_AFFINITY_BASE_PENALTY: float = 0.25  # Rank 0 = full -25% damage
+const OFF_AFFINITY_MULT_BY_RANK: Array = [0.75, 0.81, 0.87, 0.94, 1.0]  # multiply ability damage by this when off-affinity
 # Slice 3 — Sanctuary headstart purchases. Baddie-point cost to start a new
 # character at each rank. Index = rank, value = BP cost for that step (R0 free).
 # Cumulative cost to R3 = 25 + 100 + 500 = 625 BP. Capped below max rank so
