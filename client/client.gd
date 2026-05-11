@@ -23147,8 +23147,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.330 changes
+	display_game("[color=#00FF00]v0.9.330[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Threat services degrade (Audit #11 Slice 7)[/color]")
+	display_game("  • [b]Posts Under Threat now have +20% market prices.[/b] When a tier-2+ uncleared dungeon is within 80 tiles of the post you're browsing, every listing in that market costs 1.20× normal. Clear the dungeon → prices snap back. The /post warning you saw before now has real teeth.")
+	display_game("  • [b]Market panel banner[/b]: opening the browse view at a threatened post shows \"⚠ Under Threat — prices +20% (Spider Nest, 38 tiles N)\" above the listing grid. You see the cost going in, not as a surprise at checkout.")
+	display_game("  • [b]Cross-system #5 × #11 × #12 closed[/b]: dungeons spawn threats (Slice 6), posts surface them (Slice 1-6 rumors + status panel), economy feels them (this slice). Clearing a T3+ dungeon is now a tangible \"save the village\" — local prices restore.")
+	display_game("  • [b]ASCII map legend bigger[/b] (side QoL): the \"@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water\" line below the map jumped from font size 10 → 13. Much easier to read.")
+	display_game("  • [b]Why[/b]: 'Under Threat' was informational only — the rumor was menacing but nothing actually changed. Now it does. Future slices can add wandering monsters, post-tier downgrades, or rescue quests, but the economic bite is the foundation.")
+	display_game("")
+
 	# v0.9.329 changes
-	display_game("[color=#00FF00]v0.9.329[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.329[/color]")
 	display_game("  [color=#FFD700]Feed All Guards (Audit #12 Slice 3)[/color]")
 	display_game("  • [b]New chat command: \"/feedall\"[/b] (also \"/feed_all\") — feeds every guard within 40 tiles of your current post in one action. Validates ownership (visitors can't feed your guards). Skips already-capped guards. Stops gracefully if food runs out mid-batch — you'll see which ones got skipped.")
 	display_game("  • [b]Per-guard report[/b] with compass quadrant labels (NE, SE, Tower N, etc.), days added, and was-LOW markers for guards rescued from the danger zone. Footer summarizes total food consumed + walks saved.")
@@ -23187,16 +23197,6 @@ func display_changelog():
 	display_game("  • [b]No mechanical effects yet[/b] — purely informational + narrative for v1. Future slices could add: monsters spawning between dungeon and post, mini-quests to rescue, post tier downgrades, etc.")
 	display_game("")
 
-	# v0.9.325 changes
-	display_game("[color=#00FFFF]v0.9.325[/color]")
-	display_game("  [color=#FFD700]Ability Tomes drop in chests (Audit #1 Slice 4c)[/color]")
-	display_game("  • [b]New rare consumable: \"Tome of [Ability]\"[/b] drops from T3+ chests. Using one adds +1 deck copy of the named ability — permanent. Cross-class friendly: a Mage can find Tome of Power Strike and add it to their deck (then grind the off-affinity penalty down).")
-	display_game("  • [b]Pool: 25 abilities[/b] across all three archetypes (Warrior / Mage / Trickster). Tomes pick uniformly at random — most drops will be cross-class, occasionally a same-archetype tome lands and just bumps your deck density.")
-	display_game("  • [b]Same-archetype tomes aren't wasted[/b]: a Mage finding a Magic Bolt tome gets the spell denser in their deck (draw it more often). Never a feel-bad pickup.")
-	display_game("  • [b]Drop rates by tier[/b]: T3 chests weight 1, T4 weight 2, T5-T7 weight 2-3, T8 weight 4, T9 weight 5. Rare across the board.")
-	display_game("  • [b]Out-of-combat only[/b] — mutating your deck mid-fight would be chaotic. The use button is greyed out during combat.")
-	display_game("  • [b]Why[/b]: closes the Slice 4 acquisition loop. You now have two paths to cross-class cards — companion-gift at L10 (deliberate, predictable) and tomes from chests (luck-based, exciting). Sanctuary deck customization is still on the post-audit list.")
-	display_game("")
 
 
 
@@ -27483,7 +27483,7 @@ func update_map(map_text: String):
 		main_text = _strip_remote_player_glyphs(main_text)
 		map_display.append_text(main_text)
 		if show_map_legend:
-			map_display.append_text("\n[color=#8B7355][font_size=10]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water[/font_size][/color]")
+			map_display.append_text("\n[color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water[/font_size][/color]")
 
 	if minimap_display:
 		minimap_display.clear()
@@ -31931,6 +31931,20 @@ func _handle_market_browse_result(message: Dictionary):
 	market_sort = message.get("sort", "category")
 	# Audit #9 Slice 3 — specialty header for the visual panel
 	market_specialty_summary = str(message.get("specialty_summary", ""))
+	# Audit #11 Slice 7 — threat banner prepended to the specialty line when
+	# the post is currently Under Threat. The server already inflated
+	# markup_price in each listing; this banner explains the why.
+	var threat_info: Dictionary = message.get("threat_info", {})
+	if threat_info.get("threatened", false):
+		var dungeon = String(threat_info.get("dungeon_name", "a nearby dungeon"))
+		var dir_text = String(threat_info.get("direction", ""))
+		var dist = int(threat_info.get("distance", 0))
+		var mult_pct = int(round((float(threat_info.get("multiplier", 1.0)) - 1.0) * 100.0))
+		var banner = "[color=#FF6644]Under Threat — prices +%d%% (%s, %d tiles %s)[/color]" % [mult_pct, dungeon, dist, dir_text]
+		if market_specialty_summary != "":
+			market_specialty_summary = banner + "    " + market_specialty_summary
+		else:
+			market_specialty_summary = banner
 	pending_market_action = "browse"
 	display_market_browse()
 	update_action_bar()
