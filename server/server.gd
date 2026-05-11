@@ -1194,6 +1194,9 @@ func handle_message(peer_id: int, message: Dictionary):
 		# Audit #6 Slice 10 — chain title flair listing
 		"request_titles":
 			handle_request_titles(peer_id, message)
+		# Audit #6 Slice 11 — set/clear which chain title is displayed in chat
+		"set_chain_title":
+			handle_set_chain_title(peer_id, message)
 		# Soldier harvest handlers
 		"harvest_start":
 			handle_harvest_start(peer_id)
@@ -1794,9 +1797,7 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	_backfill_chain_titles(peer_id)
 
 	# Broadcast join message to other players (include title if present)
-	var display_name = char_name
-	if not character.title.is_empty():
-		display_name = TitlesScript.format_titled_name(char_name, character.title)
+	var display_name = _format_full_titled_name(char_name, character)
 	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % display_name)
 
 	if dungeon_restored:
@@ -2292,16 +2293,14 @@ func handle_logout_character(peer_id: int):
 
 	# Remove character from active characters
 	if characters.has(peer_id):
-		var char_name = characters[peer_id].name
-		var char_title = characters[peer_id].title
+		var leaving_char = characters[peer_id]
+		var char_name = leaving_char.name
 		print("Character logout: %s" % char_name)
 		# Update title holder tracking before removing
 		_update_title_holders_on_logout(peer_id)
+		# Format display name BEFORE erasing (helper reads character.title + chain title)
+		var display_name = _format_full_titled_name(char_name, leaving_char)
 		characters.erase(peer_id)
-		# Broadcast after removal (include title if present)
-		var display_name = char_name
-		if not char_title.is_empty():
-			display_name = TitlesScript.format_titled_name(char_name, char_title)
 		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % display_name)
 
 	peers[peer_id].character_name = ""
@@ -2335,16 +2334,13 @@ func handle_logout_account(peer_id: int):
 
 	# Remove character
 	if characters.has(peer_id):
-		var char_name = characters[peer_id].name
-		var char_title = characters[peer_id].title
+		var leaving_char2 = characters[peer_id]
+		var char_name = leaving_char2.name
 		print("Character logout: %s" % char_name)
 		# Update title holder tracking before removing
 		_update_title_holders_on_logout(peer_id)
+		var display_name = _format_full_titled_name(char_name, leaving_char2)
 		characters.erase(peer_id)
-		# Broadcast after removal (include title if present)
-		var display_name = char_name
-		if not char_title.is_empty():
-			display_name = TitlesScript.format_titled_name(char_name, char_title)
 		broadcast_chat("[color=#FF0000]%s has left the realm.[/color]" % display_name)
 
 	var username = peers[peer_id].username
@@ -2381,12 +2377,10 @@ func handle_chat(peer_id: int, message: Dictionary):
 	var username = peers[peer_id].username
 	print("Chat from %s: %s" % [username, text])
 
-	# Get title prefix if character has one
+	# Get title prefix if character has one (realm + chain)
 	var display_name = username
 	if characters.has(peer_id):
-		var character = characters[peer_id]
-		if not character.title.is_empty():
-			display_name = TitlesScript.format_titled_name(username, character.title)
+		display_name = _format_full_titled_name(username, characters[peer_id])
 
 	# Broadcast to ALL peers EXCEPT the sender
 	for other_peer_id in peers.keys():
@@ -2441,10 +2435,8 @@ func handle_private_message(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "%s is not online!" % target_name})
 		return
 
-	# Get sender's title prefix if they have one
-	var sender_display = sender_name
-	if not characters[peer_id].title.is_empty():
-		sender_display = TitlesScript.format_titled_name(sender_name, characters[peer_id].title)
+	# Get sender's title prefix if they have one (realm + chain)
+	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
 
 	# Send to target
 	send_to_peer(target_peer_id, {
@@ -14463,6 +14455,46 @@ func handle_gathering_end(peer_id: int, message: Dictionary):
 	else:
 		_end_gathering_session(peer_id)
 
+func _format_full_titled_name(player_name: String, character) -> String:
+	"""Audit #6 Slice 11 — compose a player's display name with both realm and
+	chain prefixes. Order: [chain] [realm] Name. Empty / unknown ids are
+	skipped cleanly. Used everywhere a name is broadcast over chat / system."""
+	var out = player_name
+	var realm_id = String(character.title) if character else ""
+	if realm_id != "":
+		out = TitlesScript.format_titled_name(out, realm_id)
+	var chain_id = String(character.active_chain_title) if character else ""
+	if chain_id != "" and chain_id in character.earned_titles:
+		var info = quest_db.get_chain_title(chain_id)
+		if not info.is_empty():
+			out = "[color=%s][%s][/color] %s" % [String(info.get("color", "#FFFFFF")), String(info.get("name", chain_id)), out]
+	return out
+
+func handle_set_chain_title(peer_id: int, message: Dictionary) -> void:
+	"""Audit #6 Slice 11 — set or clear the displayed chain title. Empty id
+	clears the prefix; any other id must be present in character.earned_titles."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var title_id = String(message.get("title_id", "")).strip_edges()
+	if title_id == "" or title_id == "none" or title_id == "clear":
+		character.active_chain_title = ""
+		save_character(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]Chain title cleared.[/color]"})
+		send_character_update(peer_id)
+		return
+	if not (title_id in character.earned_titles):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6347]You haven't earned that title yet.[/color]"})
+		return
+	var info = quest_db.get_chain_title(title_id)
+	if info.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6347]Unknown title id.[/color]"})
+		return
+	character.active_chain_title = title_id
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=%s]Now wearing: %s[/color]" % [String(info.get("color", "#FFD700")), String(info.get("name", title_id))]})
+	send_character_update(peer_id)
+
 func _backfill_chain_titles(peer_id: int) -> void:
 	"""Audit #6 Slice 10 — migration. For each completed_chains entry, find the
 	final-stage quest in QUESTS, read chain_bonus.chain_title, append to
@@ -14509,12 +14541,16 @@ func handle_request_titles(peer_id: int, _message: Dictionary):
 	if earned.is_empty():
 		lines.append("[color=#808080]No chain titles yet. Complete a quest chain at a trading post to earn one.[/color]")
 	else:
+		var active_chain = String(character.active_chain_title)
 		lines.append("[color=#888888]Chain titles (%d earned):[/color]" % earned.size())
 		for title_id in earned:
 			var info = quest_db.get_chain_title(String(title_id))
 			if info.is_empty():
 				continue
-			lines.append("  [color=%s]%s[/color]" % [String(info.get("color", "#FFFFFF")), String(info.get("name", title_id))])
+			var marker = "  [color=#FFD700]✓[/color] " if String(title_id) == active_chain else "    "
+			lines.append("%s[color=%s]%s[/color]  [color=#666666](%s)[/color]" % [marker, String(info.get("color", "#FFFFFF")), String(info.get("name", title_id)), String(title_id)])
+		lines.append("")
+		lines.append("[color=#808080]Type /set_title <id> to wear one, /set_title clear to remove.[/color]")
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
 func handle_request_zone_deck(peer_id: int, _message: Dictionary):

@@ -19846,7 +19846,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20746,6 +20746,17 @@ func process_command(text: String):
 				send_to_server({"type": "request_titles"})
 			else:
 				display_game("You don't have a character yet")
+		"set_title", "settitle":
+			# Audit #6 Slice 11 — wear a chain title in chat. Usage:
+			#   /set_title <id>   → wear that title
+			#   /set_title clear  → remove the title
+			# Title ids are listed (in parens) by /titles.
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var st_parts = text.split(" ", false, 1)
+				var arg_id = st_parts[1].strip_edges() if st_parts.size() > 1 else ""
+				send_to_server({"type": "set_chain_title", "title_id": arg_id})
 		"debughatch":
 			if has_character:
 				send_to_server({"type": "debug_hatch"})
@@ -23088,8 +23099,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.319 changes
+	display_game("[color=#00FF00]v0.9.319[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Wear your chain titles in chat (Audit #6 Slice 11)[/color]")
+	display_game("  • [b]New command: [color=#9ACD32]/set_title <id>[/color][/b] — pick which earned chain title to display in chat and join/leave broadcasts. Title ids are shown in parentheses next to each title in [color=#9ACD32]/titles[/color].")
+	display_game("  • [b]/set_title clear[/b] (or /set_title none) removes the prefix.")
+	display_game("  • [b]Display order[/b]: [color=#FF7F00][Goblin Bane][/color] [color=#FFD700][Jarl][/color] PlayerName — chain prefix sits outside the realm prefix, both visible together.")
+	display_game("  • [b]Validates against earned_titles[/b] — server rejects titles you haven't completed the chain for. Active title persists across login.")
+	display_game("  • [b]/titles marker[/b]: a yellow ✓ now sits next to your currently-worn title in the listing so you can see at a glance which one is active.")
+	display_game("")
+
 	# v0.9.318 changes
-	display_game("[color=#00FF00]v0.9.318[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.318[/color]")
 	display_game("  [color=#FFD700]Chain title rewards (Audit #6 Slice 10)[/color]")
 	display_game("  • [b]14 unique titles[/b] now drop as chain-completion flair, one per chain. Examples: [color=#FF7F00]Goblin Bane[/color] (Goblin Menace), [color=#A335EE]Web Severer[/color] (Web Spreads), [color=#3CB371]Pack Master[/color] (Gnoll Pack Hunt), [color=#FFA500]Smith's Friend[/color] (Forge Supplies), [color=#00FF00]Apothecary's Friend[/color] (Apothecary Restock).")
 	display_game("  • [b]Awarded on final-stage chain turn-in[/b] via the existing chain_bonus schema (adds alongside valor + egg + Home Stones).")
@@ -23126,14 +23147,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: closes Layer 5 of the Audit #8 transparency roadmap. You can now make informed decisions about which recipes to grind, where to craft, and when to push skill before attempting a Masterwork.")
 	display_game("")
 
-	# v0.9.314 changes
-	display_game("[color=#00FFFF]v0.9.314[/color]")
-	display_game("  [color=#FFD700]Gathering zone deck preview (Audit #7)[/color]")
-	display_game("  • [b]New command: [color=#9ACD32]/catches[/color] (or [color=#9ACD32]/deck[/color])[/b]. While standing on a fishing/mining/logging/foraging tile, shows every possible catch in this zone with weight-normalized percentages, grouped by rarity (Common / Uncommon / Rare / Legendary / Treasure).")
-	display_game("  • [b]Auto-hint on gather start[/b]: when you begin gathering, you'll see a soft reminder that the command is available — no spam, just one line.")
-	display_game("  • [b]Why[/b]: closes the forward-direction loop on transparency. The crafting view already shows \"where do I find this material\" (v0.9.254); this answers the reverse: \"what's in front of me right now?\"")
-	display_game("  • Works at every gathering location, including all 9 mining tiers, all 6 logging tiers, all 6 foraging tiers (incl. biome-locked nodes like cactus / ice_bloom), and both fishing zones (shallow + deep).")
-	display_game("")
 
 
 
