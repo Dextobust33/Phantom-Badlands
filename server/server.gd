@@ -19130,6 +19130,15 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	elif tile == DungeonDatabaseScript.TileType.UPDRAFT:
 		character.dungeon_floor_steps += 2
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#87CEEB]A wind shear pushes against you (+2 steps).[/color]"})
+	# Audit #5 Slice 9 theme tag — Vampire Crypt BLOOD_FONT heals 5% max HP
+	# on first step (consumed). Stronger than Wolf Den's blood trail (3%) —
+	# T4 dungeon, more potent vampiric blood. Floored at full HP.
+	elif tile == DungeonDatabaseScript.TileType.BLOOD_FONT:
+		var font_heal = clamp(int(character.get_total_max_hp() * 0.05), 1, 100)
+		var max_hp_vf = character.get_total_max_hp()
+		character.current_hp = min(max_hp_vf, character.current_hp + font_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#660000]You drink from the blood font ([color=#00FF00]+%d HP[/color]).[/color]" % font_heal})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
@@ -20454,6 +20463,14 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Stoneform": "boss_stoneform",
 			"Wind Shear": "boss_wind_shear",
 			"Sonic Echo": "boss_sonic_echo",
+			# Audit #5 boss signatures (Slice 9) — T4 layer (7 sigs)
+			"Tremor Stomp": "boss_tremor_stomp",
+			"Blood Frenzy": "boss_blood_frenzy",
+			"Hatchling Swarm": "boss_hatchling_swarm",
+			"Infernal Curse": "boss_infernal_curse",
+			"Talon Barrage": "boss_talon_barrage",
+			"Triple Threat": "boss_triple_threat",
+			"Building Charm": "boss_building_charm",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")

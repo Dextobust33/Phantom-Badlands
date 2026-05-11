@@ -187,6 +187,14 @@ const ABILITY_BOSS_LABYRINTH_CHARGE = "boss_labyrinth_charge"  # Every 5 monster
 const ABILITY_BOSS_STONEFORM = "boss_stoneform"            # On even-numbered monster rounds (2,4,6...), incoming damage reduced 70%. Players must burst on odd rounds
 const ABILITY_BOSS_WIND_SHEAR = "boss_wind_shear"          # Every 3 monster turns, player damage reduced 50% for next round only. Periodic offensive debuff
 const ABILITY_BOSS_SONIC_ECHO = "boss_sonic_echo"          # Each monster turn adds +1 echo stack; at 4 stacks, deals 15% max HP burst then resets to 0. Cyclical 4-turn rhythm
+# Audit #5 boss signatures (Slice 9 — T4 layer)
+const ABILITY_BOSS_TREMOR_STOMP = "boss_tremor_stomp"      # Every 3 monster turns, deals 10% max HP and forces player to skip next turn. Burst + stun combo
+const ABILITY_BOSS_BLOOD_FRENZY = "boss_blood_frenzy"      # Vampire heals 30% of damage dealt back as HP (distinct from generic life_steal which is per-hit fixed %)
+const ABILITY_BOSS_HATCHLING_SWARM = "boss_hatchling_swarm"  # Every 4 monster turns, 15% player max HP burst (no spawn — already-hatched swarmlings just hit you)
+const ABILITY_BOSS_INFERNAL_CURSE = "boss_infernal_curse"  # Each monster turn +1 curse stack; at 5 stacks deals 25% max HP burst and resets to 0. Stacking burst that's faster than Sonic Echo
+const ABILITY_BOSS_TALON_BARRAGE = "boss_talon_barrage"    # On-hit, 30% chance for +2 bonus attacks at 50% damage each. Distinct from multi_strike (fixed multiplier, not chance-based)
+const ABILITY_BOSS_TRIPLE_THREAT = "boss_triple_threat"    # Cycles poison/burn/slow per round (round % 3 == 0/1/2). Each cycle applies its debuff to the player. Distinct from any single debuff signature
+const ABILITY_BOSS_BUILDING_CHARM = "boss_building_charm"  # On-hit, +1 charm stack (cap 3); at 3 stacks the player auto-attacks themselves for 50% damage NEXT player turn, then resets to 0. Cyclical charm-burst
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1444,6 +1452,18 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			var mirror_dmg = max(1, int(damage * 0.25))
 			character.current_hp = max(1, character.current_hp - mirror_dmg)
 			messages.append("[color=#9370DB]Phase Mirror reflects [color=#FF4444]%d[/color] back to you![/color]" % mirror_dmg)
+
+		# Audit #5 Slice 9 — Blood Frenzy (Vampire). Heals 30% of damage dealt
+		# back as HP. Distinct from generic life_steal (per-hit fixed % of
+		# monster max HP) — this scales with damage dealt, so glass-cannon
+		# strategies feed the vampire more aggressively. Capped at boss max HP.
+		if ABILITY_BOSS_BLOOD_FRENZY in abilities and damage > 0:
+			var blood_heal = max(1, int(damage * 0.30))
+			var blood_max = int(monster.get("max_hp", 1))
+			var blood_actual = mini(blood_heal, blood_max - int(monster.current_hp))
+			if blood_actual > 0:
+				monster.current_hp = int(monster.current_hp) + blood_actual
+				messages.append("[color=#660000][b]BLOOD FRENZY![/b][/color] [color=#FF66CC]The %s drinks deep, healing %d HP from your strike.[/color]" % [monster.name, blood_actual])
 
 		# Use class-specific attack description
 		var attack_desc = character.get_class_attack_description(damage, monster.name, is_crit)
@@ -4947,6 +4967,33 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			character.remove_buff(stripped_buff)
 			messages.append("[color=#FFA500]The %s's slam shatters your [color=#FFFF00]%s[/color] buff![/color]" % [monster.name, stripped_buff])
 
+	# Audit #5 boss signature (Slice 9) — Building Charm (Succubus Queen). On
+	# each successful hit, +1 charm stack (cap 3). At 3 stacks, sets a flag
+	# that triggers a forced player self-attack at the start of the player's
+	# next turn (handled in the player-turn-start block alongside the existing
+	# charm path). Stacks reset to 0 after firing — cyclical pressure.
+	if ABILITY_BOSS_BUILDING_CHARM in abilities and hits > 0:
+		var charm_stacks = int(combat.get("player_building_charm_stacks", 0)) + 1
+		combat["player_building_charm_stacks"] = charm_stacks
+		if charm_stacks >= 3:
+			combat["player_charmed"] = true
+			combat["player_building_charm_stacks"] = 0
+			messages.append("[color=#FF00FF][b]CHARM PEAKS![/b][/color] [color=#FF66CC]The %s's seduction overwhelms you — your next turn you'll strike yourself.[/color]" % monster.name)
+		else:
+			messages.append("[color=#FF66CC]The %s's allure tightens (charm %d/3).[/color]" % [monster.name, charm_stacks])
+
+	# Audit #5 boss signature (Slice 9) — Talon Barrage (Gryphon Alpha). On
+	# each successful hit, 30% chance for 2 additional attacks at ~50% of the
+	# monster's base attack. Distinct from generic multi_strike (deterministic
+	# bonus damage on every hit) — chance-based, two strikes, scales with the
+	# boss's attack stat rather than the last damage roll (avoids feedback loop
+	# with player defense reducing the burst to zero).
+	if ABILITY_BOSS_TALON_BARRAGE in abilities and hits > 0 and randi() % 100 < 30:
+		var barrage_base = max(1, int(monster.get("attack", 1) * 0.5))
+		for i in range(2):
+			character.current_hp = max(1, character.current_hp - barrage_base)
+		messages.append("[color=#FFD700][b]TALON BARRAGE![/b][/color] [color=#FF8800]The %s rakes you with two extra strikes! [color=#FF4444]-%d HP[/color] each.[/color]" % [monster.name, barrage_base])
+
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
 		if randi() % 100 < 30:  # 30% chance
@@ -5112,6 +5159,73 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#DDA0DD][b]SONIC ECHO RELEASE![/b][/color] [color=#FF8800]The %s's resonance shatters the air around you! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, echo_dmg])
 			else:
 				messages.append("[color=#DDA0DD]The %s's screech builds (echo %d/4).[/color]" % [monster.name, echo_stacks])
+
+	# Audit #5 boss signature (Slice 9) — Tremor Stomp (Giant). Every 3 monster
+	# turns, deals 10% max HP damage AND forces player skip next turn. Burst +
+	# stun combo. HP floored at 1. Sets player_lulled flag (shared with Lullaby).
+	if ABILITY_BOSS_TREMOR_STOMP in abilities and combat.round > 0 and combat.round % 3 == 0:
+		var tremor_already = int(combat.get("tremor_stomp_last_round", -1))
+		if tremor_already != int(combat.round):
+			combat["tremor_stomp_last_round"] = int(combat.round)
+			var tremor_dmg = max(1, int(character.get_total_max_hp() * 0.10))
+			character.current_hp = max(1, character.current_hp - tremor_dmg)
+			combat["player_lulled"] = true
+			messages.append("[color=#A0522D][b]TREMOR STOMP![/b][/color] [color=#FF8800]The %s slams the ground! [color=#FF4444]-%d HP[/color] — you stagger.[/color]" % [monster.name, tremor_dmg])
+
+	# Audit #5 boss signature (Slice 9) — Hatchling Swarm (Broodmother Wyrmling).
+	# Every 4 monster turns, hidden hatchlings burst for 15% max HP damage.
+	# Distinct from Aerial Dive's larger burst — slightly smaller, different
+	# rhythm (4 turns vs 4 turns... same but a different boss). Floored at 1.
+	if ABILITY_BOSS_HATCHLING_SWARM in abilities and combat.round > 0 and combat.round % 4 == 0:
+		var swarm_already = int(combat.get("hatchling_swarm_last_round", -1))
+		if swarm_already != int(combat.round):
+			combat["hatchling_swarm_last_round"] = int(combat.round)
+			var swarm_dmg = max(1, int(character.get_total_max_hp() * 0.15))
+			character.current_hp = max(1, character.current_hp - swarm_dmg)
+			messages.append("[color=#FF6347][b]HATCHLING SWARM![/b][/color] [color=#FF8800]Hidden hatchlings swarm from the shadows! [color=#FF4444]-%d HP[/color].[/color]" % swarm_dmg)
+
+	# Audit #5 boss signature (Slice 9) — Infernal Curse (Demon Overlord). Each
+	# monster turn +1 curse stack; at 5 stacks deals 25% max HP burst and resets.
+	# Stacking burst with a longer fuse than Sonic Echo (5 vs 4) and bigger
+	# payoff (25% vs 15%). Players know the count and can race to kill before it
+	# fires.
+	if ABILITY_BOSS_INFERNAL_CURSE in abilities and combat.round > 0:
+		var curse_already = int(combat.get("infernal_curse_last_round", -1))
+		if curse_already != int(combat.round):
+			combat["infernal_curse_last_round"] = int(combat.round)
+			var curse_stacks = int(combat.get("infernal_curse_stacks", 0)) + 1
+			combat["infernal_curse_stacks"] = curse_stacks
+			if curse_stacks >= 5:
+				combat["infernal_curse_stacks"] = 0
+				var curse_dmg = max(1, int(character.get_total_max_hp() * 0.25))
+				character.current_hp = max(1, character.current_hp - curse_dmg)
+				messages.append("[color=#8B0000][b]INFERNAL CURSE EXPLODES![/b][/color] [color=#FF4444]-%d HP[/color].[/color]" % curse_dmg)
+			else:
+				messages.append("[color=#9400D3]The %s's curse darkens around you (%d/5).[/color]" % [monster.name, curse_stacks])
+
+	# Audit #5 boss signature (Slice 9) — Triple Threat (Elder Chimaera). Each
+	# round applies a different debuff: round %% 3 == 0 → poison stack,
+	# == 1 → burn stack, == 2 → slow flag. Cycles through three monstrous heads.
+	# Distinct from Drowning (single debuff that stacks) — three rotating effects.
+	if ABILITY_BOSS_TRIPLE_THREAT in abilities and combat.round > 0:
+		var triple_already = int(combat.get("triple_threat_last_round", -1))
+		if triple_already != int(combat.round):
+			combat["triple_threat_last_round"] = int(combat.round)
+			var phase = int(combat.round) % 3
+			if phase == 0:
+				# Poison head: +1 poison stack
+				var poison_stacks = int(combat.get("player_poison_stacks", 0)) + 1
+				combat["player_poison_stacks"] = poison_stacks
+				messages.append("[color=#7FBF3F][b]TRIPLE THREAT (Poison)![/b][/color] [color=#9ACD32]The serpent head spits venom (poison %d).[/color]" % poison_stacks)
+			elif phase == 1:
+				# Burn head: 5% max HP immediate damage
+				var burn_dmg = max(1, int(character.get_total_max_hp() * 0.05))
+				character.current_hp = max(1, character.current_hp - burn_dmg)
+				messages.append("[color=#FF4500][b]TRIPLE THREAT (Burn)![/b][/color] [color=#FF8800]The dragon head exhales flame! [color=#FF4444]-%d HP[/color].[/color]" % burn_dmg)
+			else:
+				# Slow head: wind-shear-style debuff for next round only
+				combat["player_wind_sheared_until_round"] = int(combat.round) + 1
+				messages.append("[color=#87CEEB][b]TRIPLE THREAT (Chill)![/b][/color] [color=#A0E8FF]The goat head's breath chills you — your next strike will be weaker.[/color]")
 
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}

@@ -23032,8 +23032,23 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.306 changes
+	display_game("[color=#00FF00]v0.9.306[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]T4 boss signatures + Vampire Crypt theme tile (Audit #5 Slice 9)[/color]")
+	display_game("  • [b]All 7 T4 boss signatures shipped[/b]:")
+	display_game("    – [color=#A0522D]Giant — Tremor Stomp[/color]: every 3 turns deals 10%% max HP + skips your next turn (burst + stun combo)")
+	display_game("    – [color=#660000]Vampire — Blood Frenzy[/color]: heals 30%% of damage you deal back as HP (your bursts feed it)")
+	display_game("    – [color=#FF6347]Broodmother Wyrmling — Hatchling Swarm[/color]: every 4 turns: 15%% max HP burst")
+	display_game("    – [color=#8B0000]Demon Overlord — Infernal Curse[/color]: per-turn +1 stack, at 5 stacks deals 25%% max HP + reset (race the timer)")
+	display_game("    – [color=#FFD700]Gryphon Alpha — Talon Barrage[/color]: 30%% on-hit chance for 2 bonus strikes")
+	display_game("    – [color=#8B008B]Elder Chimaera — Triple Threat[/color]: each round one of poison/burn/slow rotates through three heads")
+	display_game("    – [color=#FF00FF]Succubus Queen — Building Charm[/color]: on-hit +1 charm stack, at 3 forces a self-attack next turn (cyclical)")
+	display_game("  • [b]Vampire Crypt theme tile[/b]: blood fonts ([color=#660000][b]+[/b][/color]) heal ~5%% max HP on step (consumed). Stronger than Wolf Den's blood trail (3%%); positive theme balancing the boss's Blood Frenzy.")
+	display_game("  • [b]Coverage:[/b] 28 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4). 7 dungeons themed. T5+ untouched.")
+	display_game("")
+
 	# v0.9.305 changes
-	display_game("[color=#00FF00]v0.9.305[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.305[/color]")
 	display_game("  [color=#FFD700]T3 boss signatures + 3 more theme tiles (Audit #5 Slices 4-8)[/color]")
 	display_game("  • [b]All 8 T3 boss signatures shipped[/b], distinct from base monsters and from each other:")
 	display_game("    – [color=#7FBF3F]Troll King — Trollish Regrowth[/color]: heals 8% max HP per turn while below 50% HP (threshold burst — bring damage, not chip)")
@@ -23075,14 +23090,6 @@ func display_changelog():
 	display_game("  • Pure read-only display — no new commands, no new UI mode. Server-side `format_quest_log` appends the atlas section after the active quest list. Reads `QUESTS` dict for stage-1 entries, joins against `completed_chains` and `active_quests` for status.")
 	display_game("")
 
-	# v0.9.301 changes
-	display_game("[color=#00FFFF]v0.9.301[/color]")
-	display_game("  [color=#FFD700]Home Stones come home (Audit #6 Slice 6)[/color]")
-	display_game("  • [b]Permadeath protection no longer late-game gated.[/b] Home Stone (Companion) — the one that registers a companion to your Sanctuary so it survives your death — used to first drop at monster level 251+. New players spent their entire formative ~250 levels unable to protect anything. That gap is closed.")
-	display_game("  • [b]Quest chain rewards now hand out Home Stones[/b]: every T1 starter chain (Goblin Menace, Skeleton Lord's Curse, Wolf Pack, Rat Plague, Kobold Trouble) gives [color=#9ACD32]Home Stone (Egg)[/color] + [color=#9ACD32]Home Stone (Companion)[/color] on chain completion. Every T2 chain (Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt) gives [color=#9ACD32]Home Stone (Egg)[/color] + [color=#9ACD32]Home Stone (Equipment)[/color]. The boss egg you just earned is immediately bankable.")
-	display_game("  • [b]Drop tables shifted down two tiers[/b]: Home Stone (Egg) now appears at T2 consumable drops (monster level 11+), Home Stone (Companion) at T3 (level 26+). Still rare (low weight), still earned — just not buried behind 250 levels of permadeath.")
-	display_game("  • Why all this: the audit thesis is that endgame depth comes from world systems + companions, not late-game combat. Locking permadeath protection behind late-game gear means by the time a player can protect their companions, they've already lost a dozen would-be favorites. Now your first chain completion at level 10 hands you the safety net.")
-	display_game("")
 
 
 
@@ -30225,6 +30232,9 @@ const DUNGEON_THEME_LEGEND = {
 	"harpy_cliffs": [
 		{"glyph": "~", "color": "#87CEEB", "desc": "Updrafts — wind shears costing +2 steps to cross. Persistent — map the wind currents and plan around them."}
 	],
+	"vampire_crypt": [
+		{"glyph": "+", "color": "#660000", "desc": "Blood fonts — vampiric pools. Drink from one to heal ~5% of your max HP. One-time per font (consumed)."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -30684,6 +30694,8 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "?", "color": "#FFAA00"}
 		15:  # UPDRAFT — Harpy Cliffs theme tile, costs +2 steps (v0.9.305)
 			return {"char": "~", "color": "#87CEEB"}
+		16:  # BLOOD_FONT — Vampire Crypt theme tile, heals once on step (v0.9.306)
+			return {"char": "+", "color": "#660000"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
