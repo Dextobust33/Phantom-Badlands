@@ -16,6 +16,15 @@ signal cull_requested(ability_name: String)  # Slice 6c — remove one deck copy
 
 const SLOT_COUNT := 6
 
+# Audit #1 Slice 4 — off-affinity tag data. Mirrors the static archetype
+# tables in character.gd so the panel can render an "Off-affinity" badge
+# without an extra server round-trip. Universal abilities are exempt.
+const _WARRIOR_ARCHETYPE_ABILITIES = ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]
+const _MAGE_ARCHETYPE_ABILITIES = ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
+const _TRICKSTER_ARCHETYPE_ABILITIES = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]
+const _UNIVERSAL_ABILITIES = ["cloak", "all_or_nothing", "forethought", "tactical_retreat", "shield", "teleport"]
+const _OFF_AFFINITY_MULT_BY_RANK: Array = [0.75, 0.81, 0.87, 0.94, 1.0]
+
 var client_ref = null
 
 var _equipped: Array = []          # Array of 6 strings (ability name or "")
@@ -24,6 +33,7 @@ var _all: Array = []               # Array of {name, display, level}
 var _slot_keys: Array = ["?", "?", "?", "?", "?", "?"]
 var _player_level: int = 1
 var _path_label: String = ""
+var _player_path: String = "warrior"  # Slice 4: warrior/mage/trickster — drives off-affinity tag
 var _choose_for_slot: int = -1     # -1 idle; 0-5 panel is in "pick ability for slot N" state
 var _ability_uses: Dictionary = {} # Mastery Slice 1: ability_name → use count, drives rank display
 var _deck_collection: Dictionary = {} # Slice 6c: ability_name → deck copy count
@@ -266,7 +276,7 @@ func _make_slot_card(slot_index: int) -> PanelContainer:
 
 # === Public API ===
 
-func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String, ability_uses: Dictionary = {}, deck_collection: Dictionary = {}) -> void:
+func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String, ability_uses: Dictionary = {}, deck_collection: Dictionary = {}, player_path: String = "warrior") -> void:
 	if not is_inside_tree():
 		return
 	_equipped = equipped
@@ -275,6 +285,7 @@ func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys:
 	_slot_keys = slot_keys
 	_player_level = player_level
 	_path_label = path_label
+	_player_path = player_path
 	_ability_uses = ability_uses
 	_deck_collection = deck_collection
 	# Reset choose state on data refresh (server sent new abilities → likely an equip/unequip just landed)
@@ -462,10 +473,18 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		# Mastery Slice 1 — cost + rank/progress on one line
 		var cost = _cost_text_for(ab_name)
 		var rank_str = _get_rank_progress_text(ab_name)
+		var meta_text = ""
 		if cost != "":
-			meta.text = "%s    %s" % [cost, rank_str]
+			meta_text = "%s    %s" % [cost, rank_str]
 		else:
-			meta.text = rank_str
+			meta_text = rank_str
+		# Audit #1 Slice 4 — off-affinity tag. Tag color softens with rank so
+		# players see the penalty shrinking as they grind use-progression.
+		var off_pct = _off_affinity_pct_for(ab_name)
+		if off_pct > 0:
+			var tag_color = "#FF6347" if off_pct >= 19 else ("#FFAA33" if off_pct >= 6 else "#9ACD32")
+			meta_text += "    [color=%s]Off-affinity (−%d%% dmg)[/color]" % [tag_color, off_pct]
+		meta.text = meta_text
 	else:
 		# Slice 1 removed level gates; the locked branch is now only used
 		# if a future slice gates abilities again (e.g., account unlocks).
@@ -541,6 +560,33 @@ func _tooltip_for(ability_name: String) -> String:
 	if client_ref and client_ref.has_method("_get_ability_tooltip"):
 		return str(client_ref._get_ability_tooltip(ability_name))
 	return _humanize(ability_name)
+
+func _ability_archetype(ability_name: String) -> String:
+	"""Slice 4 — local archetype lookup. Returns warrior/mage/trickster/universal."""
+	if ability_name in _UNIVERSAL_ABILITIES:
+		return "universal"
+	if ability_name in _WARRIOR_ARCHETYPE_ABILITIES:
+		return "warrior"
+	if ability_name in _MAGE_ARCHETYPE_ABILITIES:
+		return "mage"
+	if ability_name in _TRICKSTER_ARCHETYPE_ABILITIES:
+		return "trickster"
+	return "universal"
+
+func _off_affinity_pct_for(ability_name: String) -> int:
+	"""Returns the current off-affinity damage penalty as a positive int
+	percentage (e.g., 13 means damage is reduced by 13%). 0 if on-affinity
+	or universal."""
+	var arch = _ability_archetype(ability_name)
+	if arch == "universal" or arch == _player_path:
+		return 0
+	var rank = _get_ability_rank(ability_name)
+	if rank < 0:
+		rank = 0
+	if rank >= _OFF_AFFINITY_MULT_BY_RANK.size():
+		rank = _OFF_AFFINITY_MULT_BY_RANK.size() - 1
+	var mult = float(_OFF_AFFINITY_MULT_BY_RANK[rank])
+	return int(round((1.0 - mult) * 100.0))
 
 func _description_for(ability_name: String) -> String:
 	"""v0.9.322 — short BBCode description rendered inside the card. Pulls

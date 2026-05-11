@@ -4035,12 +4035,19 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 	"""Apply mastery + legacy skill_enhancement damage modifier to an
 	ability's damage. Mastery Slice 1 stacks the use-progression damage
 	multiplier (rank 0 = 0.80, rank 4 = 1.20) on top of any legacy
-	skill_enhancements bonus. Returns the modified damage."""
+	skill_enhancements bonus. Slice 4 (v0.9.323) additionally multiplies
+	by an off-affinity damage penalty when the ability isn't in the
+	character's class path — rank 0 caster of an off-archetype ability gets
+	0.80 (mastery) × 0.75 (off-affinity) = 0.60 of baseline damage; rank 4
+	erases the penalty entirely. Universal abilities (cloak, all_or_nothing,
+	forethought, tactical_retreat, teleport) bypass off-affinity. Returns
+	the modified damage."""
 	var damage_bonus = character.get_skill_damage_bonus(ability_name)
 	var dmg = float(base_damage)
 	if damage_bonus > 0:
 		dmg = dmg * (1.0 + damage_bonus / 100.0)
 	dmg = dmg * character.get_ability_damage_mult(ability_name)
+	dmg = dmg * character.get_off_affinity_damage_mult(ability_name)
 	return int(dmg)
 
 func process_use_item(peer_id: int, item_index: int, target: String = "self") -> Dictionary:

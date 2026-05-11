@@ -275,6 +275,11 @@ const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 const MASTERY_RANK_BACKFILL_USES: int = 200
 
+# Audit #1 Slice 4 — off-affinity counter damage multipliers (mirrors
+# Constants.OFF_AFFINITY_MULT_BY_RANK; inlined to avoid load-order coupling).
+# Rank 0 = full -25%, rank 4 = penalty erased.
+const OFF_AFFINITY_MULT_BY_RANK: Array = [0.75, 0.81, 0.87, 0.94, 1.0]
+
 # Combat action bar customization - swap Attack with first ability
 @export var swap_attack_with_ability: bool = false
 
@@ -2544,6 +2549,50 @@ func get_ability_damage_mult(ability_name: String) -> float:
 	if rank < 0 or rank >= MASTERY_RANK_DAMAGE_MULT.size():
 		return 1.0
 	return float(MASTERY_RANK_DAMAGE_MULT[rank])
+
+# === Audit #1 Slice 4 — Off-affinity counter ===
+
+const _WARRIOR_ARCHETYPE_ABILITIES = ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]
+const _MAGE_ARCHETYPE_ABILITIES = ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
+const _TRICKSTER_ARCHETYPE_ABILITIES = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]
+const _UNIVERSAL_ABILITIES = ["cloak", "all_or_nothing", "forethought", "tactical_retreat", "shield"]
+
+static func get_ability_archetype(ability_name: String) -> String:
+	"""Returns 'warrior' / 'mage' / 'trickster' / 'universal' for any ability.
+	Universal abilities (cloak, all_or_nothing, forethought, tactical_retreat,
+	teleport) skip the off-affinity penalty entirely."""
+	if ability_name in _UNIVERSAL_ABILITIES:
+		return "universal"
+	if ability_name == "teleport":
+		return "universal"
+	if ability_name in _WARRIOR_ARCHETYPE_ABILITIES:
+		return "warrior"
+	if ability_name in _MAGE_ARCHETYPE_ABILITIES:
+		return "mage"
+	if ability_name in _TRICKSTER_ARCHETYPE_ABILITIES:
+		return "trickster"
+	return "universal"  # Unknown abilities get the safe (no-penalty) treatment
+
+func is_ability_off_affinity(ability_name: String) -> bool:
+	"""True when this ability's archetype doesn't match this character's path
+	AND isn't universal. Universal abilities are never off-affinity."""
+	var arch = get_ability_archetype(ability_name)
+	if arch == "universal":
+		return false
+	return arch != get_class_path()
+
+func get_off_affinity_damage_mult(ability_name: String) -> float:
+	"""Multiplier applied to off-affinity ability damage. Softens with use rank:
+	rank 0 = 0.75 (full -25%), rank 4 = 1.0 (penalty erased). On-affinity and
+	universal abilities return 1.0."""
+	if not is_ability_off_affinity(ability_name):
+		return 1.0
+	var rank = get_ability_rank(ability_name)
+	if rank < 0:
+		rank = 0
+	if rank >= OFF_AFFINITY_MULT_BY_RANK.size():
+		rank = OFF_AFFINITY_MULT_BY_RANK.size() - 1
+	return float(OFF_AFFINITY_MULT_BY_RANK[rank])
 
 func get_ability_uses_to_next_rank(ability_name: String) -> Dictionary:
 	"""Returns {current_uses, next_threshold, at_max_rank} so the UI can

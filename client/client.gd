@@ -23114,8 +23114,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.323 changes
+	display_game("[color=#00FF00]v0.9.323[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Off-affinity counter (Audit #1 Slice 4)[/color]")
+	display_game("  • [b]Using an ability outside your class path now deals less damage.[/b] A Warrior casting Magic Bolt eats a -25% damage penalty; a Wizard swinging Power Strike eats the same.")
+	display_game("  • [b]Mastery softens the penalty[/b]: as you grind the off-archetype ability and rank it up, the penalty shrinks linearly. Rank 0 = -25%, Rank 1 = -19%, Rank 2 = -13%, Rank 3 = -6%, Rank 4 = 0%.")
+	display_game("  • [b]Stacks with mastery damage[/b]: at Rank 0 off-affinity you're at 0.80 × 0.75 = 0.60 of baseline. At Rank 4 you're at 1.20 × 1.00 = 1.20 — same ceiling as on-affinity, just earned the long way.")
+	display_game("  • [b]Universal cards bypass the penalty entirely[/b] (Cloak, All-or-Nothing, Forethought, Tactical Retreat, Teleport).")
+	display_game("  • [b]Deck view shows the tag[/b]: every off-archetype card now displays an \"Off-affinity (−N%% dmg)\" marker. Color fades from red (full penalty) → orange → lime as you rank it down. Visible reward loop.")
+	display_game("  • [b]Why[/b]: closes the \"trap class\" problem (Mage facing a stat-immune monster). You can still cross-class — it just costs damage until you put in the practice. Chassis identity stays meaningful; counter-play stays possible.")
+	display_game("")
+
 	# v0.9.322 changes
-	display_game("[color=#00FF00]v0.9.322[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.322[/color]")
 	display_game("  [color=#FFD700]Combat Deck view + Deck shortcut[/color]")
 	display_game("  • [b]Ability Loadout reworked into a Combat Deck viewer.[/b] The old 6-slot equip layout has been retired — the deck system already drives combat, so the loadout slots were dead UI. The new screen is a view of your actual deck composition.")
 	display_game("  • [b]New shortcut button: [color=#9ACD32]Deck[/color][/b] — sits with Companions/Jobs/Pouch/Build/Quests/Inv/Help on the right side of the chat row. One click opens the deck view.")
@@ -23159,15 +23170,6 @@ func display_changelog():
 	display_game("  • [b]/titles marker[/b]: a yellow ✓ now sits next to your currently-worn title in the listing so you can see at a glance which one is active.")
 	display_game("")
 
-	# v0.9.318 changes
-	display_game("[color=#00FFFF]v0.9.318[/color]")
-	display_game("  [color=#FFD700]Chain title rewards (Audit #6 Slice 10)[/color]")
-	display_game("  • [b]14 unique titles[/b] now drop as chain-completion flair, one per chain. Examples: [color=#FF7F00]Goblin Bane[/color] (Goblin Menace), [color=#A335EE]Web Severer[/color] (Web Spreads), [color=#3CB371]Pack Master[/color] (Gnoll Pack Hunt), [color=#FFA500]Smith's Friend[/color] (Forge Supplies), [color=#00FF00]Apothecary's Friend[/color] (Apothecary Restock).")
-	display_game("  • [b]Awarded on final-stage chain turn-in[/b] via the existing chain_bonus schema (adds alongside valor + egg + Home Stones).")
-	display_game("  • [b]Cosmetic flair[/b]: no mechanical effect. Independent of the realm titles (Jarl / High King / Elder / Eternal) which still carry uniqueness + mechanical perks.")
-	display_game("  • [b]New command: [color=#9ACD32]/titles[/color][/b] (or /title) shows your earned chain titles with their colors, plus your realm title if held.")
-	display_game("  • [b]Backfill[/b]: characters who completed chains BEFORE this slice get their titles auto-awarded on next login. Nothing missed.")
-	display_game("")
 
 
 
@@ -29624,7 +29626,7 @@ func _populate_ability_panel() -> void:
 	var ability_uses = character_data.get("ability_uses", {})
 	# Slice 6c — pass deck collection so panel shows copy counts + cull buttons.
 	var deck_collection = character_data.get("combat_deck_collection", {})
-	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label, ability_uses, deck_collection)
+	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label, ability_uses, deck_collection, path)
 
 func _on_ability_panel_close() -> void:
 	exit_ability_mode()
