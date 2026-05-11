@@ -1232,6 +1232,16 @@ var market_network_sort: String = "price_asc"
 const MARKET_SORT_LABELS = {"category": "Category", "price_asc": "Price ▲", "price_desc": "Price ▼", "name_asc": "Name A-Z", "newest": "Newest"}
 const MARKET_SORT_ORDER = ["category", "price_asc", "price_desc", "name_asc", "newest"]
 const MARKET_NETWORK_SORT_LABELS = {"price_asc": "Price ▲", "price_desc": "Price ▼", "name_asc": "Name A-Z", "distance": "Distance ▲", "category": "Category"}
+# Audit #9 Slice 2 — Buy orders (demand-side mirror)
+var market_orders: Array = []
+var market_orders_category: String = "all"
+var market_orders_sort: String = "newest"
+var market_orders_only_mine: bool = false
+var market_inspected_order: Dictionary = {}
+var market_orders_pickable: Array = []
+var market_orders_pickable_category: String = "material"
+const MARKET_ORDERS_SORT_LABELS = {"newest": "Newest", "price_desc": "Price ▼", "price_asc": "Price ▲", "qty_desc": "Qty ▼", "name_asc": "Name A-Z"}
+const MARKET_ORDERS_SORT_ORDER = ["newest", "price_desc", "price_asc", "qty_desc", "name_asc"]
 const MARKET_NETWORK_SORT_ORDER = ["price_asc", "price_desc", "name_asc", "distance", "category"]
 var account_valor: int = 0
 
@@ -1666,6 +1676,15 @@ func _ready():
 		market_panel.pull_all_pressed.connect(_on_market_panel_pull_all)
 		market_panel.refresh_requested.connect(_on_market_panel_refresh)
 		market_panel.list_action_pressed.connect(_on_market_panel_list_action)
+		# Audit #9 Slice 2 — Buy orders signals
+		market_panel.orders_filter_changed.connect(_on_market_panel_orders_filter_changed)
+		market_panel.orders_sort_changed.connect(_on_market_panel_orders_sort_changed)
+		market_panel.orders_only_mine_toggled.connect(_on_market_panel_orders_only_mine_toggled)
+		market_panel.order_clicked.connect(_on_market_panel_order_clicked)
+		market_panel.order_fulfill_pressed.connect(_on_market_panel_order_fulfill_pressed)
+		market_panel.order_cancel_pressed.connect(_on_market_panel_order_cancel_pressed)
+		market_panel.order_create_picker_requested.connect(_on_market_panel_order_create_picker_requested)
+		market_panel.order_create_submit.connect(_on_market_panel_order_create_submit)
 
 	# Setup companions panel
 	if companions_panel:
@@ -2251,7 +2270,7 @@ func _process(delta):
 	var _market_should_show: bool = false
 	if market_panel:
 		_market_should_show = (market_mode
-			and pending_market_action in ["", "browse", "my_listings", "inspect"]
+			and pending_market_action in ["", "browse", "my_listings", "inspect", "orders", "orders_inspect", "orders_create"]
 			and game_state == GameState.PLAYING)
 		if market_panel.visible != _market_should_show:
 			market_panel.visible = _market_should_show
@@ -19023,6 +19042,19 @@ func handle_server_message(message: Dictionary):
 			_handle_market_list_all_success(message)
 		"market_list_preview_result":
 			_handle_market_list_preview_result(message)
+		# Audit #9 Slice 2 — buy orders
+		"market_orders_browse_result":
+			_handle_market_orders_browse_result(message)
+		"market_order_create_success":
+			_handle_market_order_create_success(message)
+		"market_order_fulfill_success":
+			_handle_market_order_fulfill_success(message)
+		"market_order_cancel_success":
+			_handle_market_order_cancel_success(message)
+		"market_my_orders_result":
+			_handle_market_my_orders_result(message)
+		"market_orders_pickable_result":
+			_handle_market_orders_pickable_result(message)
 		"market_start":
 			# Server sends this when player bumps $ tile at trading post
 			enter_market()
@@ -23032,8 +23064,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.311 changes
+	display_game("[color=#00FF00]v0.9.311[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Buy Orders — demand-side market (Audit #9 Slice 2)[/color]")
+	display_game("  • [b]Players can now place buy orders at trading posts[/b]: name an item, quantity, and price-per-unit. Valor is escrowed up-front. Other players at the same post fulfill the order by depositing matching items and receive the full per-unit Valor (no server spread on buy orders — incentivizes filling demand).")
+	display_game("  • [b]Supported categories[/b]: Materials, Consumables, Runes, Monster Parts. Equipment and Eggs are excluded (too stat-varied / unique to match cleanly).")
+	display_game("  • [b]New tab[/b] in the visual market panel: [color=#FFD700]Buy Orders[/color]. Shows all open orders at this post, with a ★ YOURS badge on your own. Click an order to inspect. Filters reuse the existing chips; sort by Newest / Price / Quantity / Name.")
+	display_game("  • [b]Create order dialog[/b]: pick a category → pick an item from the curated list (materials show tier + value; consumables/runes/parts show items currently in your inventory or listed at any post) → enter quantity + per-unit price → confirm.")
+	display_game("  • [b]Fulfill dialog[/b]: select another player's order and click Fulfill. Enter how many to deposit (capped at order's remaining qty AND your stock). You're paid immediately; the item is delivered to the buyer (or held if their inventory's full).")
+	display_game("  • [b]Cancel anytime[/b]: select your own buy order → Cancel Order refunds the unfilled portion. Buyer cannot fulfill their own order.")
+	display_game("")
+
 	# v0.9.310 changes
-	display_game("[color=#00FF00]v0.9.310[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.310[/color]")
 	display_game("  [color=#FFD700]NPC personality traits (Audit #11 Slice 4)[/color]")
 	display_game("  • [b]Every NPC post now has a personality[/b] (warm, gruff, wary, jolly, scholarly, or eccentric). The trait shapes the quest-giver's greeting opener and rumor preamble. Starter post is locked to 'warm' so new players get a welcoming first NPC.")
 	display_game("  • [b]Examples[/b]: a gruff trader says 'Heard of a Wolf Den east of here'; a scholarly one says 'The records note a Wolf Den east of here'; an eccentric one says 'The bones whisper of a Wolf Den east of here.' Same data, six flavors.")
@@ -23089,21 +23132,6 @@ func display_changelog():
 	display_game("    – [color=#006400]Jabberwock — Vorpal Strike[/color]: every 4 turns, next boss attack deals 3x damage. Watch for the rhythm.")
 	display_game("  • [b]Balrog Depths theme tile[/b]: lava pools ([color=#FF4500][b]^[/b][/color]) deal ~3%% max HP on step. Persistent (lava doesn't cool). Strongest persistent-damage tile to date — fits T5 difficulty.")
 	display_game("  • [b]Coverage:[/b] 34 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5). 8 dungeons themed. T6+ untouched.")
-	display_game("")
-
-	# v0.9.306 changes
-	display_game("[color=#00FFFF]v0.9.306[/color]")
-	display_game("  [color=#FFD700]T4 boss signatures + Vampire Crypt theme tile (Audit #5 Slice 9)[/color]")
-	display_game("  • [b]All 7 T4 boss signatures shipped[/b]:")
-	display_game("    – [color=#A0522D]Giant — Tremor Stomp[/color]: every 3 turns deals 10%% max HP + skips your next turn (burst + stun combo)")
-	display_game("    – [color=#660000]Vampire — Blood Frenzy[/color]: heals 30%% of damage you deal back as HP (your bursts feed it)")
-	display_game("    – [color=#FF6347]Broodmother Wyrmling — Hatchling Swarm[/color]: every 4 turns: 15%% max HP burst")
-	display_game("    – [color=#8B0000]Demon Overlord — Infernal Curse[/color]: per-turn +1 stack, at 5 stacks deals 25%% max HP + reset (race the timer)")
-	display_game("    – [color=#FFD700]Gryphon Alpha — Talon Barrage[/color]: 30%% on-hit chance for 2 bonus strikes")
-	display_game("    – [color=#8B008B]Elder Chimaera — Triple Threat[/color]: each round one of poison/burn/slow rotates through three heads")
-	display_game("    – [color=#FF00FF]Succubus Queen — Building Charm[/color]: on-hit +1 charm stack, at 3 forces a self-attack next turn (cyclical)")
-	display_game("  • [b]Vampire Crypt theme tile[/b]: blood fonts ([color=#660000][b]+[/b][/color]) heal ~5%% max HP on step (consumed). Stronger than Wolf Den's blood trail (3%%); positive theme balancing the boss's Blood Frenzy.")
-	display_game("  • [b]Coverage:[/b] 28 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4). 7 dungeons themed. T5+ untouched.")
 	display_game("")
 
 
@@ -29146,6 +29174,12 @@ func _populate_market_panel() -> void:
 	var post_name = trading_post_data.get("name", "Trading Post")
 	if pending_market_action == "my_listings":
 		market_panel.populate_my_listings(post_name, account_valor, market_listings)
+	elif pending_market_action in ["orders", "orders_inspect", "orders_create"]:
+		# Audit #9 Slice 2 — buy-orders tab
+		if market_panel.has_method("populate_orders"):
+			market_panel.populate_orders(post_name, account_valor, market_orders, market_orders_category, market_orders_sort, market_orders_only_mine)
+		if pending_market_action == "orders_inspect" and not market_inspected_order.is_empty() and market_panel.has_method("populate_order_inspect"):
+			market_panel.populate_order_inspect(market_inspected_order, account_valor)
 	else:
 		# Default to browse for empty/main and "browse"/"inspect" states
 		market_panel.populate_browse(post_name, account_valor, market_listings, market_category, market_sort, market_page, market_total_pages, market_specialty_summary)
@@ -29167,6 +29201,61 @@ func _on_market_panel_tab_changed(tab_id: String) -> void:
 		market_my_page = 0
 		market_listings = []
 		send_to_server({"type": "market_my_listings"})
+	elif tab_id == "orders":
+		# Audit #9 Slice 2 — open buy-orders tab
+		pending_market_action = "orders"
+		market_orders = []
+		send_to_server({"type": "market_orders_browse", "category": market_orders_category, "sort": market_orders_sort, "only_mine": market_orders_only_mine})
+
+# === Audit #9 Slice 2 — Buy orders panel signal handlers ===
+
+func _on_market_panel_orders_filter_changed(category: String) -> void:
+	market_orders_category = category
+	send_to_server({"type": "market_orders_browse", "category": category, "sort": market_orders_sort, "only_mine": market_orders_only_mine})
+
+func _on_market_panel_orders_sort_changed(sort_id: String) -> void:
+	market_orders_sort = sort_id
+	send_to_server({"type": "market_orders_browse", "category": market_orders_category, "sort": sort_id, "only_mine": market_orders_only_mine})
+
+func _on_market_panel_orders_only_mine_toggled(only_mine: bool) -> void:
+	market_orders_only_mine = only_mine
+	send_to_server({"type": "market_orders_browse", "category": market_orders_category, "sort": market_orders_sort, "only_mine": only_mine})
+
+func _on_market_panel_order_clicked(order: Dictionary, _index: int) -> void:
+	market_inspected_order = order
+	if market_panel and market_panel.has_method("populate_order_inspect"):
+		market_panel.populate_order_inspect(order, account_valor)
+
+func _on_market_panel_order_fulfill_pressed(order: Dictionary, quantity: int) -> void:
+	if order.is_empty() or quantity <= 0:
+		return
+	send_to_server({
+		"type": "market_order_fulfill",
+		"order_id": order.get("order_id", ""),
+		"quantity": quantity,
+	})
+
+func _on_market_panel_order_cancel_pressed(order: Dictionary) -> void:
+	if order.is_empty():
+		return
+	send_to_server({
+		"type": "market_order_cancel",
+		"order_id": order.get("order_id", ""),
+		"post_id": order.get("post_id", ""),
+	})
+
+func _on_market_panel_order_create_picker_requested(category: String) -> void:
+	market_orders_pickable_category = category
+	send_to_server({"type": "market_orders_pickable", "category": category})
+
+func _on_market_panel_order_create_submit(item_type: String, item_name: String, quantity: int, per_unit_valor: int) -> void:
+	send_to_server({
+		"type": "market_order_create",
+		"item_type": item_type,
+		"item_name": item_name,
+		"quantity": quantity,
+		"per_unit_valor": per_unit_valor,
+	})
 
 func _on_market_panel_filter_changed(category: String) -> void:
 	market_category = category
@@ -31862,6 +31951,56 @@ func _handle_market_cancel_all_success(message: Dictionary):
 	display_game(msg)
 	# Refresh my listings
 	send_to_server({"type": "market_my_listings"})
+
+# === Audit #9 Slice 2 — Buy orders message handlers ===
+
+func _handle_market_orders_browse_result(message: Dictionary) -> void:
+	market_orders = message.get("orders", [])
+	market_orders_category = message.get("category", "all")
+	market_orders_sort = message.get("sort", "newest")
+	market_orders_only_mine = bool(message.get("only_mine", false))
+	pending_market_action = "orders"
+	if market_panel != null and is_instance_valid(market_panel) and market_panel.has_method("populate_orders"):
+		var post_name = trading_post_data.get("name", "Trading Post")
+		market_panel.populate_orders(post_name, account_valor, market_orders, market_orders_category, market_orders_sort, market_orders_only_mine)
+	update_action_bar()
+
+func _handle_market_order_create_success(message: Dictionary) -> void:
+	var item_name = message.get("item_name", "item")
+	var qty = int(message.get("quantity", 0))
+	var per_unit = int(message.get("per_unit_valor", 0))
+	var escrowed = int(message.get("escrowed", 0))
+	account_valor = int(message.get("new_valor", account_valor))
+	display_game("[color=#00FF00]Buy order placed: %s x%d @ %s V each (%s V escrowed).[/color]" % [item_name, qty, format_number(per_unit), format_number(escrowed)])
+	# Stay on orders tab and refresh
+	send_to_server({"type": "market_orders_browse", "category": market_orders_category, "sort": market_orders_sort, "only_mine": market_orders_only_mine})
+
+func _handle_market_order_fulfill_success(message: Dictionary) -> void:
+	var item_name = message.get("item_name", "item")
+	var payout = int(message.get("payout", 0))
+	account_valor = int(message.get("new_valor", account_valor))
+	display_game("[color=#00FF00]Fulfilled order: %s (+%s Valor).[/color]" % [item_name, format_number(payout)])
+	send_to_server({"type": "market_orders_browse", "category": market_orders_category, "sort": market_orders_sort, "only_mine": market_orders_only_mine})
+
+func _handle_market_order_cancel_success(message: Dictionary) -> void:
+	var refund = int(message.get("refund", 0))
+	account_valor = int(message.get("new_valor", account_valor))
+	display_game("[color=#FFD700]Buy order cancelled. Refunded %s Valor.[/color]" % format_number(refund))
+	send_to_server({"type": "market_orders_browse", "category": market_orders_category, "sort": market_orders_sort, "only_mine": market_orders_only_mine})
+
+func _handle_market_my_orders_result(message: Dictionary) -> void:
+	# Reuse the orders array but flag "only_mine" so the panel renders accordingly.
+	market_orders = message.get("orders", [])
+	market_orders_only_mine = true
+	if market_panel != null and is_instance_valid(market_panel) and market_panel.has_method("populate_orders"):
+		var post_name = trading_post_data.get("name", "Trading Post")
+		market_panel.populate_orders(post_name, account_valor, market_orders, market_orders_category, market_orders_sort, true)
+
+func _handle_market_orders_pickable_result(message: Dictionary) -> void:
+	market_orders_pickable = message.get("items", [])
+	market_orders_pickable_category = message.get("category", "material")
+	if market_panel != null and is_instance_valid(market_panel) and market_panel.has_method("populate_order_picker"):
+		market_panel.populate_order_picker(market_orders_pickable_category, market_orders_pickable, account_valor)
 
 # ===== QUEST FUNCTIONS =====
 

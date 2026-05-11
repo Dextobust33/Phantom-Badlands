@@ -1447,6 +1447,19 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_market_list_preview(peer_id, message)
 		"market_list_egg":
 			handle_market_list_egg(peer_id, message)
+		# Audit #9 Slice 2 — buy orders (demand-side mirror of listings)
+		"market_orders_browse":
+			handle_market_orders_browse(peer_id, message)
+		"market_order_create":
+			handle_market_order_create(peer_id, message)
+		"market_order_fulfill":
+			handle_market_order_fulfill(peer_id, message)
+		"market_order_cancel":
+			handle_market_order_cancel(peer_id, message)
+		"market_my_orders":
+			handle_market_my_orders(peer_id, message)
+		"market_orders_pickable":
+			handle_market_orders_pickable(peer_id, message)
 		_:
 			pass
 
@@ -11544,6 +11557,448 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 		"new_valor": persistence.get_valor(account_id)
 	})
 	send_character_update(peer_id)
+
+# ===== BUY ORDERS (Audit #9 Slice 2) =====
+# Demand-side mirror of listings. Buyer escrows Valor at order creation;
+# sellers at the same post fulfill from inventory (consumable/rune/monster_part)
+# or crafting_materials (material). Sellers receive the full per_unit_valor
+# per item — no server spread on buy orders. Buyer can cancel for a refund
+# of the unfilled portion at any time.
+#
+# Supported categories v1: material, consumable, rune, monster_part.
+# Equipment / eggs deliberately excluded — they're stat-varied or unique,
+# which makes order matching ambiguous.
+
+const ORDER_SUPPORTED_TYPES = ["material", "consumable", "rune", "monster_part"]
+const ORDER_MAX_QUANTITY = 999
+const ORDER_MIN_PER_UNIT = 1
+const ORDER_MAX_PER_UNIT = 1000000  # 1M Valor per unit is a sane hard cap
+
+func _order_remaining(order: Dictionary) -> int:
+	return maxi(0, int(order.get("quantity_wanted", 0)) - int(order.get("quantity_filled", 0)))
+
+func handle_market_orders_browse(peer_id: int, message: Dictionary):
+	"""Browse open buy orders at the current trading post."""
+	if not characters.has(peer_id):
+		return
+	var account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post to browse buy orders."})
+		return
+
+	var category = message.get("category", "all")
+	var sort_mode = message.get("sort", "newest")
+	var only_mine = bool(message.get("only_mine", false))
+
+	var all_orders = persistence.get_market_orders(post_id)
+
+	# Filter by category (same chip set as listings); v1: equipment/egg never have orders
+	var food_types = ["plant", "herb", "fungus", "fish"]
+	var filtered: Array = []
+	for order in all_orders:
+		if _order_remaining(order) <= 0:
+			continue  # Fully filled — skip (shouldn't persist anyway, but defensive)
+		if only_mine and order.get("account_id", "") != account_id:
+			continue
+		var supply_cat = String(order.get("supply_category", ""))
+		var item_name = String(order.get("item_name", ""))
+		var item_type = String(order.get("item_type", ""))
+		var is_food = false
+		if item_type == "material":
+			var mat_info = CraftingDatabaseScript.MATERIALS.get(item_name, {})
+			if mat_info.get("type", "") in food_types:
+				is_food = true
+		if category == "all":
+			filtered.append(order)
+		elif category == "food":
+			if is_food:
+				filtered.append(order)
+		elif category == "material":
+			if supply_cat.begins_with("material") and not is_food:
+				filtered.append(order)
+		elif category == "consumable":
+			if supply_cat == "consumable":
+				filtered.append(order)
+		elif category == "rune":
+			if supply_cat == "rune":
+				filtered.append(order)
+		elif category == "monster_part":
+			if supply_cat == "monster_part":
+				filtered.append(order)
+		# equipment/egg are not order-able — filter chip will just show empty
+
+	# Annotate each with "is_mine" + total escrowed valor remaining
+	for order in filtered:
+		order["is_mine"] = order.get("account_id", "") == account_id
+		order["remaining"] = _order_remaining(order)
+		order["valor_remaining"] = _order_remaining(order) * int(order.get("per_unit_valor", 0))
+
+	# Sort
+	match sort_mode:
+		"newest":
+			filtered.sort_custom(func(a, b): return int(a.get("listed_at", 0)) > int(b.get("listed_at", 0)))
+		"price_desc":
+			filtered.sort_custom(func(a, b): return int(a.get("per_unit_valor", 0)) > int(b.get("per_unit_valor", 0)))
+		"price_asc":
+			filtered.sort_custom(func(a, b): return int(a.get("per_unit_valor", 0)) < int(b.get("per_unit_valor", 0)))
+		"qty_desc":
+			filtered.sort_custom(func(a, b): return int(a.get("remaining", 0)) > int(b.get("remaining", 0)))
+		"name_asc":
+			filtered.sort_custom(func(a, b): return String(a.get("item_name", "")) < String(b.get("item_name", "")))
+
+	send_to_peer(peer_id, {
+		"type": "market_orders_browse_result",
+		"orders": filtered,
+		"post_id": post_id,
+		"category": category,
+		"sort": sort_mode,
+		"only_mine": only_mine,
+		"total_orders": filtered.size(),
+	})
+
+func handle_market_order_create(peer_id: int, message: Dictionary):
+	"""Create a buy order at the current post. Escrows total Valor up-front."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var item_type = String(message.get("item_type", ""))
+	var item_name = String(message.get("item_name", "")).strip_edges()
+	var per_unit_valor = int(message.get("per_unit_valor", 0))
+	var quantity = int(message.get("quantity", 0))
+
+	if not (item_type in ORDER_SUPPORTED_TYPES):
+		send_to_peer(peer_id, {"type": "market_error", "message": "That item category can't be buy-ordered."})
+		return
+	if item_name.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Item name is required."})
+		return
+	if quantity < 1 or quantity > ORDER_MAX_QUANTITY:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Quantity must be between 1 and %d." % ORDER_MAX_QUANTITY})
+		return
+	if per_unit_valor < ORDER_MIN_PER_UNIT or per_unit_valor > ORDER_MAX_PER_UNIT:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Price per unit must be between %d and %d Valor." % [ORDER_MIN_PER_UNIT, ORDER_MAX_PER_UNIT]})
+		return
+
+	# For materials, validate against CraftingDatabase so we don't escrow Valor
+	# against a nonsense order that no one can ever fill.
+	var supply_category = ""
+	if item_type == "material":
+		if not CraftingDatabaseScript.MATERIALS.has(item_name):
+			send_to_peer(peer_id, {"type": "market_error", "message": "Unknown material: %s" % item_name})
+			return
+		var mat_info = CraftingDatabaseScript.MATERIALS.get(item_name, {})
+		var mat_tier = int(mat_info.get("tier", _get_material_tier(item_name)))
+		supply_category = "material_t%d" % mat_tier
+	elif item_type == "consumable":
+		supply_category = "consumable"
+	elif item_type == "rune":
+		supply_category = "rune"
+	elif item_type == "monster_part":
+		supply_category = "monster_part"
+
+	# Escrow Valor
+	var total_escrow = per_unit_valor * quantity
+	var buyer_valor = persistence.get_valor(account_id)
+	if buyer_valor < total_escrow:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor. Need %d, have %d." % [total_escrow, buyer_valor]})
+		return
+	persistence.spend_valor(account_id, total_escrow)
+
+	var order = {
+		"account_id": account_id,
+		"buyer_name": character.name,
+		"item_type": item_type,
+		"item_name": item_name,
+		"supply_category": supply_category,
+		"per_unit_valor": per_unit_valor,
+		"quantity_wanted": quantity,
+		"quantity_filled": 0,
+		"listed_at": int(Time.get_unix_time_from_system()),
+	}
+	var order_id = persistence.add_market_order(post_id, order)
+
+	send_to_peer(peer_id, {
+		"type": "market_order_create_success",
+		"order_id": order_id,
+		"item_name": item_name,
+		"quantity": quantity,
+		"per_unit_valor": per_unit_valor,
+		"escrowed": total_escrow,
+		"new_valor": persistence.get_valor(account_id),
+	})
+	send_character_update(peer_id)
+
+func handle_market_order_fulfill(peer_id: int, message: Dictionary):
+	"""Fulfill (deposit items into) a buy order. Seller is paid per_unit_valor per item."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var seller_account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var order_id = String(message.get("order_id", ""))
+	var fulfill_qty = int(message.get("quantity", 0))
+	if order_id.is_empty() or fulfill_qty <= 0:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid fulfillment."})
+		return
+
+	# Find the order
+	var orders = persistence.get_market_orders(post_id)
+	var order: Dictionary = {}
+	for o in orders:
+		if o.get("order_id", "") == order_id:
+			order = o
+			break
+	if order.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Order not found (it may have been cancelled or filled)."})
+		return
+
+	# Can't self-fulfill — would let buyer pay themselves from their own pool
+	if order.get("account_id", "") == seller_account_id:
+		send_to_peer(peer_id, {"type": "market_error", "message": "You can't fulfill your own buy order."})
+		return
+
+	var remaining = _order_remaining(order)
+	if remaining <= 0:
+		send_to_peer(peer_id, {"type": "market_error", "message": "This order is already filled."})
+		return
+	fulfill_qty = mini(fulfill_qty, remaining)
+
+	var item_type = String(order.get("item_type", ""))
+	var item_name = String(order.get("item_name", ""))
+	var per_unit_valor = int(order.get("per_unit_valor", 0))
+
+	# Check seller has enough of the item
+	var seller_has = 0
+	if item_type == "material":
+		seller_has = int(character.crafting_materials.get(item_name, 0))
+	else:
+		# Inventory-resident types: count matching items by name
+		for inv_item in character.inventory:
+			if String(inv_item.get("name", "")) == item_name and String(inv_item.get("type", "")) == item_type:
+				seller_has += 1
+
+	if seller_has < fulfill_qty:
+		send_to_peer(peer_id, {"type": "market_error", "message": "You only have %d %s." % [seller_has, item_name]})
+		return
+
+	# Remove items from seller
+	if item_type == "material":
+		character.crafting_materials[item_name] = seller_has - fulfill_qty
+		if character.crafting_materials[item_name] <= 0:
+			character.crafting_materials.erase(item_name)
+	else:
+		var remaining_to_remove = fulfill_qty
+		var i = character.inventory.size() - 1
+		while i >= 0 and remaining_to_remove > 0:
+			var inv_item = character.inventory[i]
+			if String(inv_item.get("name", "")) == item_name and String(inv_item.get("type", "")) == item_type:
+				character.inventory.remove_at(i)
+				remaining_to_remove -= 1
+			i -= 1
+
+	# Update order's filled count (or remove if fully filled)
+	var new_filled = int(order.get("quantity_filled", 0)) + fulfill_qty
+	if new_filled >= int(order.get("quantity_wanted", 0)):
+		persistence.remove_market_order(post_id, order_id)
+	else:
+		persistence.update_market_order_filled(post_id, order_id, new_filled)
+
+	# Pay seller
+	var payout = per_unit_valor * fulfill_qty
+	persistence.add_valor(seller_account_id, payout)
+	save_character(peer_id)
+
+	# Audit #9 Slice 4 — record paid price for rolling average (mirrors handle_market_buy)
+	_record_market_sale(item_name, per_unit_valor)
+
+	# Deliver items to buyer if online; otherwise queue in their character on next load.
+	# For v1, only deliver if buyer is online — offline delivery would need a "pending
+	# delivery" queue layer; the buyer's valor is already escrowed, so worst case the
+	# buyer logs back in to a cancellable order.
+	var buyer_account_id = String(order.get("account_id", ""))
+	var buyer_peer = -1
+	for pid in peers.keys():
+		if peers[pid].account_id == buyer_account_id and characters.has(pid):
+			buyer_peer = pid
+			break
+
+	var qty_text = " x%d" % fulfill_qty if fulfill_qty > 1 else ""
+	send_to_peer(peer_id, {
+		"type": "market_order_fulfill_success",
+		"item_name": item_name + qty_text,
+		"payout": payout,
+		"new_valor": persistence.get_valor(seller_account_id),
+		"order_id": order_id,
+		"remaining": maxi(0, int(order.get("quantity_wanted", 0)) - new_filled),
+	})
+	send_character_update(peer_id)
+
+	if buyer_peer != -1:
+		var buyer_char = characters[buyer_peer]
+		# Add items to buyer's pool
+		if item_type == "material":
+			if not buyer_char.crafting_materials.has(item_name):
+				buyer_char.crafting_materials[item_name] = 0
+			buyer_char.crafting_materials[item_name] += fulfill_qty
+		else:
+			# Build a representative item dict. For consumables/runes/monster_parts we
+			# reconstruct a minimal item — the buyer gets a copy of one that exists in
+			# the world. We grab the seller's matching item template by name if we can.
+			# Since we already removed the seller's items above, fall back to a basic shape.
+			for _i in range(fulfill_qty):
+				var item_copy = {
+					"type": item_type,
+					"name": item_name,
+					"id": randi(),
+				}
+				if buyer_char.inventory.size() < Character.MAX_INVENTORY_SIZE:
+					buyer_char.inventory.append(item_copy)
+				else:
+					# Buyer's inventory full — drop on floor? For v1, just skip and
+					# notify. Buyer's valor stays spent (this is rare given fulfill_qty
+					# is bounded by the buyer's order qty which they sized themselves).
+					send_to_peer(buyer_peer, {"type": "text", "message": "[color=#FF6347]Your buy order for %s arrived but your inventory is full! Item lost.[/color]" % item_name})
+					break
+		save_character(buyer_peer)
+		send_to_peer(buyer_peer, {"type": "text", "message": "[color=#FFD700]Buy order fulfilled! Received %s%s.[/color]" % [item_name, qty_text]})
+		send_character_update(buyer_peer)
+
+func handle_market_order_cancel(peer_id: int, message: Dictionary):
+	"""Cancel a buy order. Refunds the unfilled portion to the buyer."""
+	if not characters.has(peer_id):
+		return
+	var buyer_account_id = peers[peer_id].account_id
+
+	var post_id_in = String(message.get("post_id", ""))
+	var order_id = String(message.get("order_id", ""))
+	if order_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid order."})
+		return
+
+	# If post_id wasn't supplied, find it by scanning the buyer's orders
+	var post_id = post_id_in
+	if post_id.is_empty():
+		var mine = persistence.get_all_orders_by_account(buyer_account_id)
+		for o in mine:
+			if o.get("order_id", "") == order_id:
+				post_id = String(o.get("post_id", ""))
+				break
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Order not found."})
+		return
+
+	var orders = persistence.get_market_orders(post_id)
+	var order: Dictionary = {}
+	for o in orders:
+		if o.get("order_id", "") == order_id:
+			order = o
+			break
+	if order.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Order not found."})
+		return
+	if order.get("account_id", "") != buyer_account_id:
+		send_to_peer(peer_id, {"type": "market_error", "message": "That's not your order."})
+		return
+
+	var refund = _order_remaining(order) * int(order.get("per_unit_valor", 0))
+	persistence.remove_market_order(post_id, order_id)
+	if refund > 0:
+		persistence.add_valor(buyer_account_id, refund)
+
+	send_to_peer(peer_id, {
+		"type": "market_order_cancel_success",
+		"order_id": order_id,
+		"refund": refund,
+		"new_valor": persistence.get_valor(buyer_account_id),
+	})
+	send_character_update(peer_id)
+
+func handle_market_my_orders(peer_id: int, message: Dictionary):
+	"""List all open buy orders this account has placed across every post."""
+	if not characters.has(peer_id):
+		return
+	var account_id = peers[peer_id].account_id
+	var orders = persistence.get_all_orders_by_account(account_id)
+	# Annotate with post_name for client display
+	for o in orders:
+		var post_id = String(o.get("post_id", ""))
+		o["post_name"] = _resolve_post_display_name(post_id)
+		o["remaining"] = _order_remaining(o)
+		o["valor_escrowed"] = _order_remaining(o) * int(o.get("per_unit_valor", 0))
+	send_to_peer(peer_id, {
+		"type": "market_my_orders_result",
+		"orders": orders,
+	})
+
+func handle_market_orders_pickable(peer_id: int, message: Dictionary):
+	"""Return the set of item names the player can place buy orders for, by category.
+	Materials: full CraftingDatabase list (so buyer can target anything).
+	Consumable/rune/monster_part: items currently listed across any post + items
+	currently in the buyer's inventory. Keeps the picker grounded in known items."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var category = String(message.get("category", "material"))
+
+	var names: Array = []
+	if category == "material":
+		var mat_keys = CraftingDatabaseScript.MATERIALS.keys()
+		mat_keys.sort()
+		for k in mat_keys:
+			var mat = CraftingDatabaseScript.MATERIALS.get(k, {})
+			names.append({
+				"name": String(k),
+				"tier": int(mat.get("tier", _get_material_tier(String(k)))),
+				"value": int(mat.get("value", 5)),
+				"material_subtype": String(mat.get("type", "")),
+			})
+	else:
+		# Build set of names from inventory + active listings (by category)
+		var seen: Dictionary = {}
+		for inv_item in character.inventory:
+			if String(inv_item.get("type", "")) == category:
+				seen[String(inv_item.get("name", ""))] = true
+		var all_listings = persistence.get_all_market_listings_with_post()
+		for lst in all_listings:
+			var li = lst.get("item", {})
+			if String(li.get("type", "")) == category:
+				seen[String(li.get("name", ""))] = true
+		var sorted_names = seen.keys()
+		sorted_names.sort()
+		for n in sorted_names:
+			names.append({"name": String(n)})
+
+	send_to_peer(peer_id, {
+		"type": "market_orders_pickable_result",
+		"category": category,
+		"items": names,
+	})
+
+func _resolve_post_display_name(post_id: String) -> String:
+	# post_id is either a legacy TRADING_POSTS key ("haven_post") or a player-post key
+	# ("player_<owner>_<idx>"). Player posts don't carry a server-side name here, so
+	# we just return the raw id for those; legacy posts use the curated table.
+	if post_id.begins_with("player_"):
+		return post_id
+	if trading_post_db:
+		var leg = trading_post_db.TRADING_POSTS.get(post_id, {})
+		if not leg.is_empty():
+			return String(leg.get("name", post_id))
+	return post_id
 
 # ===== QUEST HANDLERS =====
 

@@ -18,9 +18,34 @@ signal cancel_listing_pressed(listing: Dictionary, index: int)
 signal pull_all_pressed
 signal refresh_requested
 signal list_action_pressed(action_id: String)
+# Audit #9 Slice 2 — Buy orders (demand-side mirror)
+signal orders_filter_changed(category: String)
+signal orders_sort_changed(sort_id: String)
+signal orders_only_mine_toggled(only_mine: bool)
+signal order_clicked(order: Dictionary, index: int)
+signal order_fulfill_pressed(order: Dictionary, quantity: int)
+signal order_cancel_pressed(order: Dictionary)
+signal order_create_picker_requested(category: String)
+signal order_create_submit(item_type: String, item_name: String, quantity: int, per_unit_valor: int)
 
 const TAB_BROWSE := "browse"
 const TAB_MY := "my_listings"
+const TAB_ORDERS := "orders"  # Audit #9 Slice 2
+const ORDER_CATEGORY_OPTIONS := ["material", "consumable", "rune", "monster_part"]
+const ORDER_CATEGORY_LABELS := {
+	"material": "Materials",
+	"consumable": "Consumables",
+	"rune": "Runes",
+	"monster_part": "Monster Parts",
+}
+const ORDERS_SORT_ORDER := ["newest", "price_desc", "price_asc", "qty_desc", "name_asc"]
+const ORDERS_SORT_LABELS := {
+	"newest": "Newest",
+	"price_desc": "Price ▼",
+	"price_asc": "Price ▲",
+	"qty_desc": "Qty ▼",
+	"name_asc": "Name A-Z",
+}
 
 const FILTER_CHIPS := [
 	{"id": "all", "label": "All"},
@@ -70,6 +95,31 @@ var _valor: int = 0
 var _page: int = 0
 var _total_pages: int = 0
 var _selected_index: int = -1
+# Audit #9 Slice 2 — Buy orders state
+var _orders: Array = []
+var _orders_category: String = "all"
+var _orders_sort: String = "newest"
+var _orders_only_mine: bool = false
+var _selected_order: Dictionary = {}
+var _new_order_button: Button = null
+var _toggle_mine_button: Button = null
+# Create-order dialog state
+var _create_dialog: PanelContainer = null
+var _create_cat_label: Label = null
+var _create_cat_buttons: Dictionary = {}  # category id → Button
+var _create_picker_vbox: VBoxContainer = null
+var _create_picked_name_label: Label = null
+var _create_qty_input: LineEdit = null
+var _create_price_input: LineEdit = null
+var _create_summary_label: RichTextLabel = null
+var _create_submit_btn: Button = null
+var _create_picked_item_type: String = "material"
+var _create_picked_item_name: String = ""
+# Fulfill quantity dialog state
+var _fulfill_dialog: PanelContainer = null
+var _fulfill_qty_input: LineEdit = null
+var _fulfill_summary_label: RichTextLabel = null
+var _fulfill_order: Dictionary = {}
 
 var _root_panel: PanelContainer
 var _title_label: Label
@@ -77,6 +127,7 @@ var _valor_label: RichTextLabel
 var _specialty_label: RichTextLabel  # Audit #9 Slice 3 — post specialty header
 var _tab_browse_btn: Button
 var _tab_my_btn: Button
+var _tab_orders_btn: Button  # Audit #9 Slice 2
 var _filter_chip_row: HBoxContainer
 var _filter_buttons: Dictionary = {}
 var _sort_button: Button
@@ -164,8 +215,11 @@ func _build_layout() -> void:
 
 	_tab_browse_btn = _make_tab_button("Browse", _on_tab_browse_pressed)
 	_tab_my_btn = _make_tab_button("My Listings", _on_tab_my_pressed)
+	# Audit #9 Slice 2 — third tab for buy orders (demand side)
+	_tab_orders_btn = _make_tab_button("Buy Orders", _on_tab_orders_pressed)
 	tab_row.add_child(_tab_browse_btn)
 	tab_row.add_child(_tab_my_btn)
+	tab_row.add_child(_tab_orders_btn)
 
 	var tab_spacer := Control.new()
 	tab_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -318,6 +372,16 @@ func _build_layout() -> void:
 	_pull_all_button = _make_action_btn("Pull All", _on_pull_all_pressed)
 	action_row.add_child(_pull_all_button)
 
+	# Audit #9 Slice 2 — Orders tab action buttons
+	_new_order_button = _make_action_btn("+ New Buy Order", _on_new_order_pressed)
+	_new_order_button.visible = false
+	action_row.add_child(_new_order_button)
+
+	_toggle_mine_button = _make_action_btn("Show Mine Only", _on_toggle_mine_pressed)
+	_toggle_mine_button.toggle_mode = true
+	_toggle_mine_button.visible = false
+	action_row.add_child(_toggle_mine_button)
+
 	_status_label = RichTextLabel.new()
 	_status_label.bbcode_enabled = true
 	_status_label.fit_content = true
@@ -411,7 +475,13 @@ func populate_browse(post_name: String, valor: int, listings: Array, category: S
 	_sort_button.text = "Sort: %s" % SORT_LABELS.get(sort, sort.capitalize())
 	for chip_id in _filter_buttons.keys():
 		_filter_buttons[chip_id].button_pressed = (chip_id == category)
+		_filter_buttons[chip_id].disabled = false  # Re-enable equipment/egg chips off the Orders tab
 	_pull_all_button.visible = false
+	_list_button.visible = true
+	if _new_order_button:
+		_new_order_button.visible = false
+	if _toggle_mine_button:
+		_toggle_mine_button.visible = false
 
 	_page_label.visible = true
 	_prev_button.visible = true
@@ -439,9 +509,14 @@ func populate_my_listings(post_name: String, valor: int, listings: Array) -> voi
 	_filter_chip_row.visible = false
 	_sort_button.visible = false
 	_pull_all_button.visible = listings.size() > 0
+	_list_button.visible = true
 	_page_label.visible = false
 	_prev_button.visible = false
 	_next_button.visible = false
+	if _new_order_button:
+		_new_order_button.visible = false
+	if _toggle_mine_button:
+		_toggle_mine_button.visible = false
 
 	_rebuild_my_rows()
 	_update_tab_styles()
@@ -530,6 +605,8 @@ func _update_header() -> void:
 func _update_tab_styles() -> void:
 	_tab_browse_btn.button_pressed = (_current_tab == TAB_BROWSE)
 	_tab_my_btn.button_pressed = (_current_tab == TAB_MY)
+	if _tab_orders_btn:
+		_tab_orders_btn.button_pressed = (_current_tab == TAB_ORDERS)
 
 
 func _rebuild_browse_rows() -> void:
@@ -732,6 +809,13 @@ func _show_detail_empty(empty: bool) -> void:
 	_detail_title.visible = not empty
 	_detail_meta.visible = not empty
 	_detail_status.visible = not empty
+	# Audit #9 Slice 2 — On Orders tab, populate_order_inspect explicitly drives
+	# button visibility (Fulfill vs Cancel-Order), so we leave them alone here.
+	if _current_tab == TAB_ORDERS:
+		if empty:
+			_buy_button.visible = false
+			_cancel_button.visible = false
+		return
 	_buy_button.visible = (not empty) and _current_tab == TAB_BROWSE
 	_cancel_button.visible = (not empty) and _current_tab == TAB_MY
 
@@ -755,11 +839,25 @@ func _on_tab_my_pressed() -> void:
 func _on_filter_pressed(category: String) -> void:
 	for cid in _filter_buttons.keys():
 		_filter_buttons[cid].button_pressed = (cid == category)
-	if category != _current_category:
-		emit_signal("filter_changed", category)
+	# Audit #9 Slice 2 — emit orders_filter_changed when on the Orders tab
+	if _current_tab == TAB_ORDERS:
+		if category != _orders_category:
+			_orders_category = category
+			emit_signal("orders_filter_changed", category)
+	else:
+		if category != _current_category:
+			emit_signal("filter_changed", category)
 
 
 func _on_sort_pressed() -> void:
+	# Audit #9 Slice 2 — use orders sort order when on Orders tab
+	if _current_tab == TAB_ORDERS:
+		var oidx: int = ORDERS_SORT_ORDER.find(_orders_sort)
+		var next_o: String = ORDERS_SORT_ORDER[(oidx + 1) % ORDERS_SORT_ORDER.size()]
+		_orders_sort = next_o
+		_sort_button.text = "Sort: %s" % ORDERS_SORT_LABELS.get(next_o, next_o.capitalize())
+		emit_signal("orders_sort_changed", next_o)
+		return
 	var idx: int = SORT_ORDER.find(_current_sort)
 	var next_sort: String = SORT_ORDER[(idx + 1) % SORT_ORDER.size()]
 	emit_signal("sort_changed", next_sort)
@@ -795,12 +893,24 @@ func _refresh_row_toggles() -> void:
 
 
 func _on_buy_pressed() -> void:
+	# Audit #9 Slice 2 — on Orders tab, "Buy" button is really "Fulfill"
+	if _current_tab == TAB_ORDERS:
+		if _selected_index < 0 or _selected_index >= _orders.size():
+			return
+		_show_fulfill_dialog(_orders[_selected_index])
+		return
 	if _selected_index < 0 or _selected_index >= _listings.size():
 		return
 	emit_signal("buy_pressed", _listings[_selected_index])
 
 
 func _on_cancel_pressed() -> void:
+	# Audit #9 Slice 2 — on Orders tab, "Cancel" cancels your buy order
+	if _current_tab == TAB_ORDERS:
+		if _selected_index < 0 or _selected_index >= _orders.size():
+			return
+		emit_signal("order_cancel_pressed", _orders[_selected_index])
+		return
 	if _selected_index < 0 or _selected_index >= _listings.size():
 		return
 	emit_signal("cancel_listing_pressed", _listings[_selected_index], _selected_index)
@@ -833,3 +943,510 @@ func _on_list_menu_item_pressed(item_id: int) -> void:
 
 func _on_close_pressed() -> void:
 	emit_signal("close_requested")
+
+
+# === Audit #9 Slice 2 — Buy Orders (demand-side mirror) ===
+
+func _on_tab_orders_pressed() -> void:
+	if _current_tab == TAB_ORDERS:
+		_tab_orders_btn.button_pressed = true
+		return
+	emit_signal("tab_changed", TAB_ORDERS)
+
+
+func populate_orders(post_name: String, valor: int, orders: Array, category: String, sort: String, only_mine: bool) -> void:
+	if not is_inside_tree():
+		return
+	_current_tab = TAB_ORDERS
+	_post_name = post_name
+	_valor = valor
+	_orders = orders
+	_orders_category = category
+	_orders_sort = sort
+	_orders_only_mine = only_mine
+
+	_update_header()
+	# Reuse the existing filter chip row for category filter (limit to orderable cats).
+	_filter_chip_row.visible = true
+	# Toggle off chips that aren't orderable so the UI doesn't mislead.
+	# v1 buy-orders support: material/food/consumable/rune/monster_part (+ all).
+	for chip_id in _filter_buttons.keys():
+		var btn: Button = _filter_buttons[chip_id]
+		if chip_id in ["equipment", "egg", "tool"]:
+			btn.disabled = true
+		else:
+			btn.disabled = false
+		# Re-route the press signal for orders tab: existing handlers fire
+		# filter_changed which the client routes to listing browse. We instead
+		# emit orders_filter_changed from _on_filter_pressed when on Orders tab.
+		btn.button_pressed = (chip_id == category)
+	_sort_button.visible = true
+	_sort_button.text = "Sort: %s" % ORDERS_SORT_LABELS.get(sort, sort.capitalize())
+	_pull_all_button.visible = false
+	_list_button.visible = false  # Hide listing actions
+	_page_label.visible = false
+	_prev_button.visible = false
+	_next_button.visible = false
+
+	# Show Orders-specific action buttons
+	_new_order_button.visible = true
+	_toggle_mine_button.visible = true
+	_toggle_mine_button.text = "Show Mine Only"
+	_toggle_mine_button.button_pressed = only_mine
+
+	_rebuild_orders_rows()
+	_update_tab_styles()
+	_selected_index = -1
+	_selected_order = {}
+	_show_detail_empty(true)
+
+
+func populate_order_inspect(order: Dictionary, valor: int) -> void:
+	if not is_inside_tree():
+		return
+	if order.is_empty():
+		_show_detail_empty(true)
+		return
+	_selected_order = order
+	_valor = valor
+	_update_header()
+
+	var item_name = String(order.get("item_name", ""))
+	var per_unit = int(order.get("per_unit_valor", 0))
+	var remaining = int(order.get("remaining", maxi(0, int(order.get("quantity_wanted", 0)) - int(order.get("quantity_filled", 0)))))
+	var qty_wanted = int(order.get("quantity_wanted", 0))
+	var qty_filled = int(order.get("quantity_filled", 0))
+	var buyer = String(order.get("buyer_name", "Unknown"))
+	var is_mine = bool(order.get("is_mine", false))
+	var item_type = String(order.get("item_type", ""))
+
+	_detail_title.text = "[color=#FFD700][b]%s[/b][/color]" % item_name
+
+	var lines: Array = []
+	lines.append("[color=#87CEEB]Category:[/color] %s" % ORDER_CATEGORY_LABELS.get(item_type, item_type.capitalize()))
+	lines.append("[color=#87CEEB]Buyer:[/color] %s%s" % [buyer, "  [color=#FFD700](you)[/color]" if is_mine else ""])
+	lines.append("[color=#87CEEB]Price:[/color] [color=#00FF00]%s Valor[/color] per unit" % _format_number(per_unit))
+	lines.append("[color=#87CEEB]Wants:[/color] %d  ([color=#FFA500]%d remaining[/color], %d already filled)" % [qty_wanted, remaining, qty_filled])
+	lines.append("[color=#87CEEB]Total payout if fully filled:[/color] [color=#00FF00]%s Valor[/color]" % _format_number(per_unit * remaining))
+	_detail_meta.text = "\n".join(lines)
+	_detail_status.text = ""
+
+	_show_detail_empty(false)
+	# Replace standard buy/cancel buttons with order-specific actions
+	_buy_button.visible = false
+	if is_mine:
+		_cancel_button.visible = true
+		_cancel_button.text = "Cancel Order (Refund %s V)" % _format_number(per_unit * remaining)
+	else:
+		_cancel_button.visible = false
+		_buy_button.visible = true
+		_buy_button.text = "Fulfill Order"
+		_buy_button.disabled = false
+		_buy_button.add_theme_color_override("font_color", Color(0, 1, 0))
+
+
+func _rebuild_orders_rows() -> void:
+	for child in _listings_vbox.get_children():
+		child.queue_free()
+
+	if _orders.is_empty():
+		var lbl := Label.new()
+		if _orders_only_mine:
+			lbl.text = "You have no open buy orders at this post."
+		else:
+			lbl.text = "No buy orders at this post yet. Be the first to place one!"
+		lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+		lbl.add_theme_font_size_override("font_size", 13)
+		_listings_vbox.add_child(lbl)
+		return
+
+	for i in range(_orders.size()):
+		var order = _orders[i]
+		var row := _make_order_row(order, i)
+		_listings_vbox.add_child(row)
+
+
+func _make_order_row(order: Dictionary, index: int) -> Button:
+	var btn := Button.new()
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	btn.custom_minimum_size = Vector2(0, 40)
+	btn.toggle_mode = true
+	btn.button_pressed = (index == _selected_index)
+	btn.add_theme_font_size_override("font_size", 13)
+
+	var item_name = String(order.get("item_name", ""))
+	var per_unit = int(order.get("per_unit_valor", 0))
+	var remaining = int(order.get("remaining", maxi(0, int(order.get("quantity_wanted", 0)) - int(order.get("quantity_filled", 0)))))
+	var buyer = String(order.get("buyer_name", ""))
+	var is_mine = bool(order.get("is_mine", false))
+
+	var mine_tag = "  ★ YOURS" if is_mine else ""
+	btn.text = "%s x%d   @  %s V each   —   from %s%s" % [item_name, remaining, _format_number(per_unit), buyer, mine_tag]
+	# Yellow for your orders, white for others
+	if is_mine:
+		btn.add_theme_color_override("font_color", Color(1, 0.84, 0))
+	else:
+		btn.add_theme_color_override("font_color", Color(1, 1, 1))
+
+	btn.pressed.connect(_on_order_row_pressed.bind(index))
+	return btn
+
+
+func _on_order_row_pressed(index: int) -> void:
+	if index < 0 or index >= _orders.size():
+		return
+	_selected_index = index
+	_refresh_row_toggles()
+	var order = _orders[index]
+	_selected_order = order
+	emit_signal("order_clicked", order, index)
+
+
+func _on_new_order_pressed() -> void:
+	_show_create_dialog()
+
+
+func _on_toggle_mine_pressed() -> void:
+	_orders_only_mine = _toggle_mine_button.button_pressed
+	emit_signal("orders_only_mine_toggled", _orders_only_mine)
+
+
+# Override the existing buy/cancel handlers to route to orders signals when on Orders tab.
+# We intercept by overriding _on_buy_pressed / _on_cancel_pressed below to check _current_tab.
+
+
+func _create_dialog_open() -> bool:
+	return _create_dialog != null and is_instance_valid(_create_dialog) and _create_dialog.visible
+
+
+func _show_create_dialog() -> void:
+	if _create_dialog == null or not is_instance_valid(_create_dialog):
+		_build_create_dialog()
+	_create_picked_item_name = ""
+	_create_picked_item_type = "material"
+	if _create_picked_name_label:
+		_create_picked_name_label.text = "(pick an item below)"
+	if _create_qty_input:
+		_create_qty_input.text = ""
+	if _create_price_input:
+		_create_price_input.text = ""
+	_update_create_summary()
+	# Reset category buttons
+	for cat_id in _create_cat_buttons.keys():
+		_create_cat_buttons[cat_id].button_pressed = (cat_id == _create_picked_item_type)
+	_create_dialog.visible = true
+	emit_signal("order_create_picker_requested", _create_picked_item_type)
+
+
+func _hide_create_dialog() -> void:
+	if _create_dialog and is_instance_valid(_create_dialog):
+		_create_dialog.visible = false
+
+
+func populate_order_picker(category: String, items: Array, valor: int) -> void:
+	# Server returned the pickable set for `category`. Render them into the picker list.
+	_create_picked_item_type = category
+	_valor = valor
+	_update_header()
+	if _create_picker_vbox == null:
+		return
+	for child in _create_picker_vbox.get_children():
+		child.queue_free()
+	if items.is_empty():
+		var lbl := Label.new()
+		if category == "material":
+			lbl.text = "No materials known."
+		else:
+			lbl.text = "No items available — try acquiring one or browse for an active listing first."
+		lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+		_create_picker_vbox.add_child(lbl)
+		return
+	for entry in items:
+		var name_str = String(entry.get("name", ""))
+		if name_str.is_empty():
+			continue
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.add_theme_font_size_override("font_size", 12)
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.custom_minimum_size = Vector2(0, 26)
+		var label_text = name_str
+		if category == "material" and entry.has("tier"):
+			label_text += "  [T%d, value %d]" % [int(entry.get("tier", 1)), int(entry.get("value", 5))]
+		btn.text = label_text
+		btn.pressed.connect(_on_picker_item_pressed.bind(category, name_str))
+		_create_picker_vbox.add_child(btn)
+
+
+func _on_picker_item_pressed(category: String, name_str: String) -> void:
+	_create_picked_item_type = category
+	_create_picked_item_name = name_str
+	if _create_picked_name_label:
+		_create_picked_name_label.text = "%s — %s" % [ORDER_CATEGORY_LABELS.get(category, category.capitalize()), name_str]
+	_update_create_summary()
+
+
+func _on_create_category_pressed(category: String) -> void:
+	_create_picked_item_type = category
+	for cat_id in _create_cat_buttons.keys():
+		_create_cat_buttons[cat_id].button_pressed = (cat_id == category)
+	# Clear current pick — different category
+	_create_picked_item_name = ""
+	if _create_picked_name_label:
+		_create_picked_name_label.text = "(pick an item below)"
+	_update_create_summary()
+	emit_signal("order_create_picker_requested", category)
+
+
+func _update_create_summary() -> void:
+	if _create_summary_label == null:
+		return
+	var qty = int(_create_qty_input.text) if _create_qty_input and _create_qty_input.text.is_valid_int() else 0
+	var per_unit = int(_create_price_input.text) if _create_price_input and _create_price_input.text.is_valid_int() else 0
+	var total = qty * per_unit
+	var can_submit := not _create_picked_item_name.is_empty() and qty > 0 and per_unit > 0 and total <= _valor
+	var lines: Array = []
+	if _create_picked_item_name.is_empty():
+		lines.append("[color=#888]Pick an item.[/color]")
+	if qty <= 0:
+		lines.append("[color=#888]Enter quantity.[/color]")
+	if per_unit <= 0:
+		lines.append("[color=#888]Enter price per unit.[/color]")
+	if can_submit:
+		lines.append("[color=#00FF00]Total escrow:[/color] %s Valor   (you have %s V)" % [_format_number(total), _format_number(_valor)])
+	elif qty > 0 and per_unit > 0 and total > _valor:
+		lines.append("[color=#FF6347]Not enough Valor: need %s, have %s[/color]" % [_format_number(total), _format_number(_valor)])
+	_create_summary_label.text = "\n".join(lines)
+	if _create_submit_btn:
+		_create_submit_btn.disabled = not can_submit
+
+
+func _on_create_submit_pressed() -> void:
+	var qty = int(_create_qty_input.text) if _create_qty_input.text.is_valid_int() else 0
+	var per_unit = int(_create_price_input.text) if _create_price_input.text.is_valid_int() else 0
+	if _create_picked_item_name.is_empty() or qty <= 0 or per_unit <= 0:
+		return
+	emit_signal("order_create_submit", _create_picked_item_type, _create_picked_item_name, qty, per_unit)
+	_hide_create_dialog()
+
+
+func _build_create_dialog() -> void:
+	_create_dialog = PanelContainer.new()
+	_create_dialog.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_create_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.03, 0.03, 0.05, 0.92)
+	sb.border_color = Color(0.65, 0.55, 0.25, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 16
+	sb.content_margin_top = 16
+	sb.content_margin_right = 16
+	sb.content_margin_bottom = 16
+	_create_dialog.add_theme_stylebox_override("panel", sb)
+	add_child(_create_dialog)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	_create_dialog.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "+ New Buy Order"
+	title.add_theme_color_override("font_color", Color(1, 0.84, 0))
+	title.add_theme_font_size_override("font_size", 20)
+	vbox.add_child(title)
+
+	# Category row
+	var cat_label := Label.new()
+	cat_label.text = "Category:"
+	cat_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1))
+	cat_label.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(cat_label)
+
+	var cat_row := HBoxContainer.new()
+	cat_row.add_theme_constant_override("separation", 4)
+	vbox.add_child(cat_row)
+	for cat_id in ORDER_CATEGORY_OPTIONS:
+		var b := Button.new()
+		b.text = ORDER_CATEGORY_LABELS.get(cat_id, cat_id.capitalize())
+		b.toggle_mode = true
+		b.focus_mode = Control.FOCUS_NONE
+		b.add_theme_font_size_override("font_size", 12)
+		b.custom_minimum_size = Vector2(0, 28)
+		b.pressed.connect(_on_create_category_pressed.bind(cat_id))
+		cat_row.add_child(b)
+		_create_cat_buttons[cat_id] = b
+	_create_cat_buttons["material"].button_pressed = true
+
+	# Picker label
+	_create_picked_name_label = Label.new()
+	_create_picked_name_label.text = "(pick an item below)"
+	_create_picked_name_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+	_create_picked_name_label.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(_create_picked_name_label)
+
+	# Picker scroll
+	var picker_scroll := ScrollContainer.new()
+	picker_scroll.custom_minimum_size = Vector2(0, 200)
+	picker_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	picker_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox.add_child(picker_scroll)
+	_create_picker_vbox = VBoxContainer.new()
+	_create_picker_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	picker_scroll.add_child(_create_picker_vbox)
+
+	# Qty + price inputs
+	var qp_row := HBoxContainer.new()
+	qp_row.add_theme_constant_override("separation", 12)
+	vbox.add_child(qp_row)
+	var qlbl := Label.new()
+	qlbl.text = "Quantity:"
+	qp_row.add_child(qlbl)
+	_create_qty_input = LineEdit.new()
+	_create_qty_input.placeholder_text = "10"
+	_create_qty_input.custom_minimum_size = Vector2(80, 28)
+	_create_qty_input.text_changed.connect(func(_t): _update_create_summary())
+	qp_row.add_child(_create_qty_input)
+	var plbl := Label.new()
+	plbl.text = "Valor per unit:"
+	qp_row.add_child(plbl)
+	_create_price_input = LineEdit.new()
+	_create_price_input.placeholder_text = "50"
+	_create_price_input.custom_minimum_size = Vector2(80, 28)
+	_create_price_input.text_changed.connect(func(_t): _update_create_summary())
+	qp_row.add_child(_create_price_input)
+
+	# Summary
+	_create_summary_label = RichTextLabel.new()
+	_create_summary_label.bbcode_enabled = true
+	_create_summary_label.fit_content = true
+	_create_summary_label.scroll_active = false
+	_create_summary_label.custom_minimum_size = Vector2(0, 40)
+	vbox.add_child(_create_summary_label)
+
+	# Footer
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 8)
+	vbox.add_child(footer)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer.add_child(spacer)
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.focus_mode = Control.FOCUS_NONE
+	cancel_btn.custom_minimum_size = Vector2(100, 32)
+	cancel_btn.pressed.connect(_hide_create_dialog)
+	footer.add_child(cancel_btn)
+	_create_submit_btn = Button.new()
+	_create_submit_btn.text = "Place Order"
+	_create_submit_btn.focus_mode = Control.FOCUS_NONE
+	_create_submit_btn.custom_minimum_size = Vector2(140, 32)
+	_create_submit_btn.add_theme_color_override("font_color", Color(0, 1, 0))
+	_create_submit_btn.pressed.connect(_on_create_submit_pressed)
+	footer.add_child(_create_submit_btn)
+
+
+# === Fulfill dialog ===
+
+func _show_fulfill_dialog(order: Dictionary) -> void:
+	_fulfill_order = order
+	if _fulfill_dialog == null or not is_instance_valid(_fulfill_dialog):
+		_build_fulfill_dialog()
+	# Set defaults
+	var remaining = int(order.get("remaining", maxi(0, int(order.get("quantity_wanted", 0)) - int(order.get("quantity_filled", 0)))))
+	_fulfill_qty_input.text = str(remaining)
+	_update_fulfill_summary()
+	_fulfill_dialog.visible = true
+
+
+func _hide_fulfill_dialog() -> void:
+	if _fulfill_dialog and is_instance_valid(_fulfill_dialog):
+		_fulfill_dialog.visible = false
+
+
+func _update_fulfill_summary() -> void:
+	if _fulfill_summary_label == null:
+		return
+	var qty = int(_fulfill_qty_input.text) if _fulfill_qty_input and _fulfill_qty_input.text.is_valid_int() else 0
+	var per_unit = int(_fulfill_order.get("per_unit_valor", 0))
+	var remaining = int(_fulfill_order.get("remaining", maxi(0, int(_fulfill_order.get("quantity_wanted", 0)) - int(_fulfill_order.get("quantity_filled", 0)))))
+	var capped = mini(qty, remaining)
+	var payout = capped * per_unit
+	var item_name = String(_fulfill_order.get("item_name", ""))
+	var lines: Array = []
+	lines.append("[color=#87CEEB]Item:[/color] %s" % item_name)
+	lines.append("[color=#87CEEB]Order remaining:[/color] %d" % remaining)
+	if qty <= 0:
+		lines.append("[color=#888]Enter how many to deposit.[/color]")
+	else:
+		lines.append("[color=#00FF00]Payout:[/color] %s Valor (%d × %s)" % [_format_number(payout), capped, _format_number(per_unit)])
+	_fulfill_summary_label.text = "\n".join(lines)
+
+
+func _on_fulfill_submit_pressed() -> void:
+	var qty = int(_fulfill_qty_input.text) if _fulfill_qty_input.text.is_valid_int() else 0
+	if qty <= 0:
+		return
+	emit_signal("order_fulfill_pressed", _fulfill_order, qty)
+	_hide_fulfill_dialog()
+
+
+func _build_fulfill_dialog() -> void:
+	_fulfill_dialog = PanelContainer.new()
+	_fulfill_dialog.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fulfill_dialog.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.03, 0.03, 0.05, 0.92)
+	sb.border_color = Color(0.4, 0.7, 0.4, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 16
+	sb.content_margin_top = 16
+	sb.content_margin_right = 16
+	sb.content_margin_bottom = 16
+	_fulfill_dialog.add_theme_stylebox_override("panel", sb)
+	add_child(_fulfill_dialog)
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	_fulfill_dialog.add_child(vbox)
+	var title := Label.new()
+	title.text = "Fulfill Buy Order"
+	title.add_theme_color_override("font_color", Color(0.6, 1, 0.6))
+	title.add_theme_font_size_override("font_size", 20)
+	vbox.add_child(title)
+	var qty_row := HBoxContainer.new()
+	qty_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(qty_row)
+	var qlbl := Label.new()
+	qlbl.text = "Quantity to deposit:"
+	qty_row.add_child(qlbl)
+	_fulfill_qty_input = LineEdit.new()
+	_fulfill_qty_input.custom_minimum_size = Vector2(80, 28)
+	_fulfill_qty_input.text_changed.connect(func(_t): _update_fulfill_summary())
+	qty_row.add_child(_fulfill_qty_input)
+	_fulfill_summary_label = RichTextLabel.new()
+	_fulfill_summary_label.bbcode_enabled = true
+	_fulfill_summary_label.fit_content = true
+	_fulfill_summary_label.scroll_active = false
+	_fulfill_summary_label.custom_minimum_size = Vector2(0, 60)
+	vbox.add_child(_fulfill_summary_label)
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 8)
+	vbox.add_child(footer)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer.add_child(spacer)
+	var cancel := Button.new()
+	cancel.text = "Cancel"
+	cancel.focus_mode = Control.FOCUS_NONE
+	cancel.custom_minimum_size = Vector2(100, 32)
+	cancel.pressed.connect(_hide_fulfill_dialog)
+	footer.add_child(cancel)
+	var submit := Button.new()
+	submit.text = "Deposit"
+	submit.focus_mode = Control.FOCUS_NONE
+	submit.custom_minimum_size = Vector2(120, 32)
+	submit.add_theme_color_override("font_color", Color(0, 1, 0))
+	submit.pressed.connect(_on_fulfill_submit_pressed)
+	footer.add_child(submit)
