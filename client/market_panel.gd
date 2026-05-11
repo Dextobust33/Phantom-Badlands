@@ -330,13 +330,18 @@ func _build_layout() -> void:
 
 	action_row.add_child(_make_action_btn("Close (Space)", _on_close_pressed))
 
-	# List PopupMenu
+	# List PopupMenu — assign each slot an id equal to its index in
+	# LIST_MENU_ITEMS so the handler can look up entries directly. Without
+	# explicit ids the engine auto-assigns sequential ids that include the
+	# separator slot, which made id_pressed report a value one off from the
+	# "visible item" position the previous handler assumed.
 	_list_menu = PopupMenu.new()
-	for entry in LIST_MENU_ITEMS:
+	for i in range(LIST_MENU_ITEMS.size()):
+		var entry = LIST_MENU_ITEMS[i]
 		if entry["id"] == "_separator":
-			_list_menu.add_separator()
+			_list_menu.add_separator("", i)
 		else:
-			_list_menu.add_item(entry["label"])
+			_list_menu.add_item(entry["label"], i)
 	_list_menu.id_pressed.connect(_on_list_menu_item_pressed)
 	add_child(_list_menu)
 
@@ -807,16 +812,17 @@ func _on_list_menu_pressed() -> void:
 	_list_menu.popup()
 
 
-func _on_list_menu_item_pressed(menu_index: int) -> void:
-	# Map PopupMenu index back to LIST_MENU_ITEMS id (skipping separators)
-	var visible_idx := -1
-	for entry in LIST_MENU_ITEMS:
-		if entry["id"] == "_separator":
-			continue
-		visible_idx += 1
-		if visible_idx == menu_index:
-			emit_signal("list_action_pressed", entry["id"])
-			return
+func _on_list_menu_item_pressed(item_id: int) -> void:
+	# id_pressed sends the explicit id we assigned when building the menu —
+	# which is the index into LIST_MENU_ITEMS. Direct lookup, no separator
+	# bookkeeping. Separators are not clickable so we shouldn't get one,
+	# but guard anyway.
+	if item_id < 0 or item_id >= LIST_MENU_ITEMS.size():
+		return
+	var entry = LIST_MENU_ITEMS[item_id]
+	if entry["id"] == "_separator":
+		return
+	emit_signal("list_action_pressed", entry["id"])
 
 
 func _on_close_pressed() -> void:
