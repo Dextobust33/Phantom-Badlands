@@ -1188,6 +1188,9 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gathering_choice(peer_id, message)
 		"gathering_end":
 			handle_gathering_end(peer_id, message)
+		# Audit #7 forward-direction transparency — zone deck preview
+		"request_zone_deck":
+			handle_request_zone_deck(peer_id, message)
 		# Soldier harvest handlers
 		"harvest_start":
 			handle_harvest_start(peer_id)
@@ -13613,6 +13616,10 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	session["max_chains"] = 4 + tier * 2  # T1=6, T2=8, T3=10, T4=12, T5=14, T6=16
 	active_gathering[peer_id] = session
 
+	# Audit #7 forward-direction transparency — gentle hint about /catches.
+	# Sent once per session start as a soft cue; players can re-trigger anytime.
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#808080](Type /catches or /deck to see what's in this zone)[/color]"})
+
 	# Skip minigame if player has skip_gather_minigame enabled AND has tool equipped
 	var skip_failed_msg = ""
 	if character.skip_gather_minigame:
@@ -14354,6 +14361,113 @@ func handle_gathering_end(peer_id: int, message: Dictionary):
 		_end_gathering_session_no_deplete(peer_id)
 	else:
 		_end_gathering_session(peer_id)
+
+func handle_request_zone_deck(peer_id: int, _message: Dictionary):
+	"""Audit #7 forward-direction transparency — preview what's in the current
+	gathering zone. Reads the player's current tile, resolves the catch table
+	(FISHING / MINING / LOGGING / FORAGING), and returns a formatted listing
+	grouped by rarity with weight-normalized percentages.
+	No-op (empty payload + chat hint) when the player isn't on a gatherable tile."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var x = character.x
+	var y = character.y
+
+	# Identify the zone. Order: fishing → mining → logging → foraging. Each system
+	# uses world_system for tier lookup; biome-locked foraging gets a node-type
+	# branch so the curated zone is shown (matches actual roll behavior).
+	var catches: Array = []
+	var zone_label = ""
+	var job_type = ""
+	var tier_val = 0
+
+	if world_system.is_fishing_spot(x, y):
+		job_type = "fishing"
+		var zone = world_system.get_fishing_type(x, y)
+		catches = DropTablesScript.FISHING_CATCHES.get(zone, [])
+		zone_label = "Fishing (%s water)" % String(zone)
+		tier_val = world_system.get_fishing_tier(x, y)
+	elif world_system.is_ore_deposit(x, y):
+		job_type = "mining"
+		tier_val = world_system.get_ore_tier(x, y)
+		catches = DropTablesScript.MINING_CATCHES.get(tier_val, [])
+		zone_label = "Mining T%d" % tier_val
+	elif world_system.is_dense_forest(x, y):
+		job_type = "logging"
+		tier_val = world_system.get_wood_tier(x, y)
+		catches = DropTablesScript.LOGGING_CATCHES.get(tier_val, [])
+		zone_label = "Logging T%d" % tier_val
+	elif world_system.is_foraging_spot(x, y):
+		job_type = "foraging"
+		var chunk_t = chunk_manager.get_tile(x, y)
+		tier_val = int(chunk_t.get("tier", 1))
+		catches = DropTablesScript.FORAGING_CATCHES.get(tier_val, [])
+		zone_label = "Foraging T%d" % tier_val
+
+	if catches.is_empty() or job_type == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]No gathering deck here. Stand on water, ore, dense forest, or a herb tile.[/color]"})
+		return
+
+	# Compute weight-normalized percentages and bucket by rarity. Treasure
+	# chests get their own bucket. Rarity bucketing is by within-table chance
+	# (>=15% common, 5-14% uncommon, 2-4% rare, <2% legendary).
+	var total_w = 0
+	for c in catches:
+		total_w += int(c.get("weight", 0))
+	if total_w <= 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]This zone has no catches configured.[/color]"})
+		return
+
+	var enriched: Array = []
+	for c in catches:
+		var w = int(c.get("weight", 0))
+		var pct = float(w) / float(total_w) * 100.0
+		enriched.append({
+			"name": String(c.get("name", c.get("item", "Unknown"))),
+			"type": String(c.get("type", "")),
+			"value": int(c.get("value", 0)),
+			"pct": pct,
+			"weight": w,
+		})
+	enriched.sort_custom(func(a, b): return float(a.pct) > float(b.pct))
+
+	# Build BBCode output
+	var lines: Array = []
+	lines.append("[color=#FFD700]═══════ %s — Zone Deck ═══════[/color]" % zone_label)
+	lines.append("[color=#808080]%d entries, weight-normalized chance shown[/color]" % enriched.size())
+	lines.append("")
+	var last_bucket = ""
+	for e in enriched:
+		var pct: float = float(e.pct)
+		var bucket = ""
+		var color = "#FFFFFF"
+		if String(e.type) == "treasure_chest":
+			bucket = "Treasure"
+			color = "#FFAA00"
+		elif pct >= 15.0:
+			bucket = "Common"
+			color = "#FFFFFF"
+		elif pct >= 5.0:
+			bucket = "Uncommon"
+			color = "#1EFF00"
+		elif pct >= 2.0:
+			bucket = "Rare"
+			color = "#0070DD"
+		else:
+			bucket = "Legendary"
+			color = "#A335EE"
+		if bucket != last_bucket:
+			lines.append("[color=%s]── %s ──[/color]" % [color, bucket])
+			last_bucket = bucket
+		var val_text = ""
+		if int(e.value) > 0:
+			val_text = "  [color=#808080](value %d)[/color]" % int(e.value)
+		lines.append("  [color=%s]%5.1f%%[/color]  %s%s" % [color, pct, String(e.name), val_text])
+	lines.append("")
+	lines.append("[color=#808080]Higher skill → better luck within the deck.[/color]")
+
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
 func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risky: bool, biome: String = "", node_type: String = "") -> Dictionary:
 	"""Roll a material reward for a successful gathering round.
