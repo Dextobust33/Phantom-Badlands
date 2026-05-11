@@ -11774,6 +11774,22 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 					if not egg.is_empty():
 						character.add_item(egg)
 						chain_progress_msg += "[color=#9ACD32]Chain bonus: %s acquired![/color]\n" % egg.get("name", "Egg")
+				# Audit #6 Slice 6 — Home Stone chain bonuses. Each chain
+				# final-stage may list one or more home_stone_* item_types
+				# in `home_stones`; we mint each via the standard consumable
+				# generator (level-tier scaled) so the egg you just earned
+				# is bankable to your Sanctuary, and starter chains can
+				# hand out a Companion stone for permadeath protection.
+				var bonus_stones: Array = bonus.get("home_stones", [])
+				for stone_type in bonus_stones:
+					var stone_item_type = String(stone_type)
+					if stone_item_type == "" or drop_tables == null:
+						continue
+					var stone_entry = {"item_type": stone_item_type, "rarity": "uncommon"}
+					var stone_item = drop_tables._generate_item(stone_entry, character.level)
+					if not stone_item.is_empty():
+						character.add_item(stone_item)
+						chain_progress_msg += "[color=#9ACD32]Chain bonus: %s acquired![/color]\n" % stone_item.get("name", "Home Stone")
 				if chain_id not in character.completed_chains:
 					character.completed_chains.append(chain_id)
 				chain_completed = true
