@@ -23032,8 +23032,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.310 changes
+	display_game("[color=#00FF00]v0.9.310[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]NPC personality traits (Audit #11 Slice 4)[/color]")
+	display_game("  • [b]Every NPC post now has a personality[/b] (warm, gruff, wary, jolly, scholarly, or eccentric). The trait shapes the quest-giver's greeting opener and rumor preamble. Starter post is locked to 'warm' so new players get a welcoming first NPC.")
+	display_game("  • [b]Examples[/b]: a gruff trader says 'Heard of a Wolf Den east of here'; a scholarly one says 'The records note a Wolf Den east of here'; an eccentric one says 'The bones whisper of a Wolf Den east of here.' Same data, six flavors.")
+	display_game("  • Fallback nods also vary: warm NPCs smile and wave; wary NPCs watch carefully; jolly NPCs clap your shoulder; etc.")
+	display_game("  • Procedural assignment at post creation; backfilled for existing saves. Personality is hash-stable per post — the same NPC always greets you the same way across sessions.")
+	display_game("")
+
 	# v0.9.309 changes
-	display_game("[color=#00FF00]v0.9.309[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.309[/color]")
 	display_game("  [color=#FFD700]T7+T8+T9 boss signatures — ALL BOSS SIGS COMPLETE (Audit #5 Slice 12)[/color]")
 	display_game("  • [b]52 boss signatures shipped across 12 slices.[/b] Every single dungeon boss now has a unique mechanic. Audit #5's headline decision is realized.")
 	display_game("  • [b]T7 (4 sigs):[/b]")
@@ -23095,25 +23104,6 @@ func display_changelog():
 	display_game("    – [color=#FF00FF]Succubus Queen — Building Charm[/color]: on-hit +1 charm stack, at 3 forces a self-attack next turn (cyclical)")
 	display_game("  • [b]Vampire Crypt theme tile[/b]: blood fonts ([color=#660000][b]+[/b][/color]) heal ~5%% max HP on step (consumed). Stronger than Wolf Den's blood trail (3%%); positive theme balancing the boss's Blood Frenzy.")
 	display_game("  • [b]Coverage:[/b] 28 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4). 7 dungeons themed. T5+ untouched.")
-	display_game("")
-
-	# v0.9.305 changes
-	display_game("[color=#00FFFF]v0.9.305[/color]")
-	display_game("  [color=#FFD700]T3 boss signatures + 3 more theme tiles (Audit #5 Slices 4-8)[/color]")
-	display_game("  • [b]All 8 T3 boss signatures shipped[/b], distinct from base monsters and from each other:")
-	display_game("    – [color=#7FBF3F]Troll King — Trollish Regrowth[/color]: heals 8% max HP per turn while below 50% HP (threshold burst — bring damage, not chip)")
-	display_game("    – [color=#87CEEB]Wyvern Queen — Aerial Dive[/color]: every 4 turns plummets for 12% max HP damage")
-	display_game("    – [color=#FFA500]Ogre Chief — Concussive Slam[/color]: every successful hit strips one active player buff (counter to Rage/Stone Skin stacks)")
-	display_game("    – [color=#9370DB]Wraith Overlord — Phase Mirror[/color]: 25% of your damage reflected back to you (softer hitters net better DPS)")
-	display_game("    – [color=#8B4513]Minotaur Champion — Labyrinth Charge[/color]: every 5 turns deals (round × 3%) max HP burst — escalates")
-	display_game("    – [color=#808080]Gargoyle Sentinel — Stoneform[/color]: on even-numbered rounds takes 70%% reduced damage. Time your bursts to odd rounds.")
-	display_game("    – [color=#87CEEB]Harpy Matriarch — Wind Shear[/color]: every 3 turns halves your damage for the next round")
-	display_game("    – [color=#DDA0DD]Shrieker Titan — Sonic Echo[/color]: 4-turn rhythm — stack builds to 4, then 15% max HP burst, then reset")
-	display_game("  • [b]Three more theme tiles ship Audit #5's full locked list[/b]:")
-	display_game("    – [color=#D8D8C8]Forgotten Crypt[/color] now has bone-scatter ([color=#D8D8C8]%%[/color]) — sharp shards nick ~1% max HP on step. Persistent.")
-	display_game("    – [color=#FFAA00]Mimic Treasury[/color] now has false-chests ([color=#FFAA00]?[/color]) — looks like treasure, snaps for ~4% max HP, consumed on trigger. Distinct from real treasure ($).")
-	display_game("    – [color=#87CEEB]Harpy Cliffs[/color] now has updrafts ([color=#87CEEB]~[/color]) — wind shears cost +2 steps to cross. Persistent.")
-	display_game("  • All theme tiles auto-surface on the dungeon warning page legend. All five audit-spec theme dungeons (Spider, Crypt, Mimic, Harpy, Plague Graveyard) now have unique terrain.")
 	display_game("")
 
 

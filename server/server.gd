@@ -20020,9 +20020,9 @@ func _get_avg_recent_price(item_name: String) -> int:
 func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	"""Audit #11 Slice 1 — fire a one-time per-session arrival greeting when a
 	player walks into an NPC post tile. Surfaces the procedurally-generated
-	quest_giver name (otherwise unused), the region context from Slice 6L, and
-	a rotating rumor (dungeon hint or biome resource hint — Slice 2). Repeat
-	visits this session stay silent; new session resets via handle_disconnect."""
+	quest_giver name (otherwise unused), the region context from Slice 6L, a
+	rotating rumor (Slice 2-3), and the personality-shaped flavor (Slice 4).
+	Repeat visits this session stay silent; new session resets via handle_disconnect."""
 	var px = int(post.get("x", 0))
 	var py = int(post.get("y", 0))
 	var post_key = "%d,%d" % [px, py]
@@ -20038,6 +20038,8 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	var quest_giver = String(post.get("quest_giver", "")).strip_edges()
 	var tier = int(post.get("tier", 1))
 	var tier_color = chunk_manager.TIER_COLORS.get(tier, "#FFFFFF") if chunk_manager else "#FFFFFF"
+	# Audit #11 Slice 4 — personality shapes rumor preamble + fallback nod.
+	var personality = String(post.get("personality", "warm"))
 
 	var header_parts: Array = []
 	header_parts.append("[color=#FFD700]═ %s ═[/color]" % post_name)
@@ -20054,29 +20056,72 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	for kind in try_order:
 		match kind:
 			"dungeon":
-				rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver)
+				rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver, personality)
 			"resource":
-				rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver)
+				rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver, personality)
 			"hotzone":
-				rumor_line = _build_hotzone_rumor_line(px, py, quest_giver)
+				rumor_line = _build_hotzone_rumor_line(px, py, quest_giver, personality)
 		if rumor_line != "":
 			break
 
 	if rumor_line != "":
 		send_to_peer(peer_id, {"type": "text", "message": rumor_line})
 	elif quest_giver != "":
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#A0C8E0]%s nods in greeting.[/color]" % quest_giver})
+		send_to_peer(peer_id, {"type": "text", "message": _format_personality_fallback_nod(quest_giver, personality)})
 
-func _build_dungeon_rumor_line(px: int, py: int, peer_id: int, quest_giver: String) -> String:
+# Audit #11 Slice 4 — Personality-driven flavor. Keep tables small and inline
+# so the rumor helpers can pull a one-line opener without going through
+# multiple layers. Adding a personality is one extra entry per dict.
+const NPC_PERSONALITY_DUNGEON_OPENER = {
+	"warm": "Travelers say there's a",
+	"gruff": "Heard of a",
+	"wary": "Word's around of a",
+	"jolly": "Bah, you must've seen the",
+	"scholarly": "The records note a",
+	"eccentric": "The bones whisper of a",
+}
+const NPC_PERSONALITY_RESOURCE_OPENER = {
+	"warm": "Foragers say",
+	"gruff": "Folk found",
+	"wary": "Quiet word is",
+	"jolly": "Hah, listen —",
+	"scholarly": "The almanac notes",
+	"eccentric": "The wind tells me",
+}
+const NPC_PERSONALITY_HOTZONE_VERB_PREFIX = {
+	"warm": "Watch yourself — the wilds about",
+	"gruff": "Stay sharp — the wilds about",
+	"wary": "Don't go that way — the wilds about",
+	"jolly": "Brave one, eh? The wilds about",
+	"scholarly": "The signs warn — the wilds about",
+	"eccentric": "The wilds about",
+}
+const NPC_PERSONALITY_FALLBACK_NOD = {
+	"warm": "%s smiles and waves you in.",
+	"gruff": "%s grunts in greeting.",
+	"wary": "%s watches you carefully.",
+	"jolly": "%s claps you on the shoulder.",
+	"scholarly": "%s glances up from a tome.",
+	"eccentric": "%s mutters something you can almost hear.",
+}
+
+func _format_personality_fallback_nod(quest_giver: String, personality: String) -> String:
+	var template = String(NPC_PERSONALITY_FALLBACK_NOD.get(personality, NPC_PERSONALITY_FALLBACK_NOD["warm"]))
+	return "[color=#A0C8E0]%s[/color]" % (template % quest_giver)
+
+func _build_dungeon_rumor_line(px: int, py: int, peer_id: int, quest_giver: String, personality: String = "warm") -> String:
 	"""Slice 1 — dungeon hint rumor formatter. Returns "" when no dungeon is
-	within 150 tiles so the caller can fall through to another rumor type."""
+	within 150 tiles so the caller can fall through to another rumor type.
+	Slice 4 — personality shapes the opener phrase."""
 	var rumors = _find_dungeon_rumors_near(px, py, 150, 1, peer_id)
 	if rumors.size() == 0:
 		return ""
 	var r = rumors[0]
+	var opener = String(NPC_PERSONALITY_DUNGEON_OPENER.get(personality, NPC_PERSONALITY_DUNGEON_OPENER["warm"]))
 	if quest_giver != "":
-		return "[color=#A0C8E0]%s[/color]: \"Travelers whisper of a [color=%s]%s[/color] %s of here, about %d tiles out.\"" % [
+		return "[color=#A0C8E0]%s[/color]: \"%s [color=%s]%s[/color] %s of here, about %d tiles out.\"" % [
 			quest_giver,
+			opener,
 			String(r.get("color", "#88FF88")),
 			String(r.get("name", "dungeon")),
 			String(r.get("direction_text", "nearby")),
@@ -20089,11 +20134,12 @@ func _build_dungeon_rumor_line(px: int, py: int, peer_id: int, quest_giver: Stri
 		int(r.get("distance", 0))
 	]
 
-func _build_hotzone_rumor_line(px: int, py: int, quest_giver: String) -> String:
+func _build_hotzone_rumor_line(px: int, py: int, quest_giver: String, personality: String = "warm") -> String:
 	"""Slice 3 — hotzone warning rumor. Quest giver flags the nearest red `!`
 	danger zone within 80 tiles so newer players notice them rather than
 	walking blind into a +1.5-2.5× level monster cluster. Higher-intensity
-	hotzones get a stronger warning verb. Returns "" when no hotzone is near."""
+	hotzones get a stronger warning verb. Returns "" when no hotzone is near.
+	Slice 4 — personality shapes the warning preamble."""
 	if world_system == null:
 		return ""
 	var hz = world_system.find_nearby_hotzone(px, py, 80.0)
@@ -20109,15 +20155,16 @@ func _build_hotzone_rumor_line(px: int, py: int, quest_giver: String) -> String:
 		verb = "boiling over"
 	elif intensity >= 0.35:
 		verb = "stirred up"
+	var prefix = String(NPC_PERSONALITY_HOTZONE_VERB_PREFIX.get(personality, NPC_PERSONALITY_HOTZONE_VERB_PREFIX["warm"]))
 	if quest_giver != "":
-		return "[color=#A0C8E0]%s[/color]: \"Watch yourself — the wilds about %d tiles %s are [color=#FF6600]%s[/color] lately. Best travel armed.\"" % [
-			quest_giver, dist, direction, verb
+		return "[color=#A0C8E0]%s[/color]: \"%s %d tiles %s are [color=#FF6600]%s[/color] lately. Best travel armed.\"" % [
+			quest_giver, prefix, dist, direction, verb
 		]
 	return "[color=#A0C8E0]Locals warn that the wilds about %d tiles %s are [color=#FF6600]%s[/color] lately.[/color]" % [
 		dist, direction, verb
 	]
 
-func _build_resource_rumor_line(px: int, py: int, region_name: String, quest_giver: String) -> String:
+func _build_resource_rumor_line(px: int, py: int, region_name: String, quest_giver: String, personality: String = "warm") -> String:
 	"""Slice 2 — biome resource hint. Looks up the post's biome and picks one
 	T1 entry from BIOME_FORAGING_BONUS to namedrop. Plains has no flavored
 	pool so returns "" (caller falls through). Foragers hear about a region;
@@ -20133,9 +20180,10 @@ func _build_resource_rumor_line(px: int, py: int, region_name: String, quest_giv
 	var entry = tier_entries[randi() % tier_entries.size()]
 	var mat_name = String(entry.get("name", "something useful"))
 	var region_label = region_name if region_name != "" else "this region"
+	var opener = String(NPC_PERSONALITY_RESOURCE_OPENER.get(personality, NPC_PERSONALITY_RESOURCE_OPENER["warm"]))
 	if quest_giver != "":
-		return "[color=#A0C8E0]%s[/color]: \"Foragers say [color=#9ACD32]%s[/color] is rich in [color=#FFD700]%s[/color] this season — worth a look while you're out.\"" % [
-			quest_giver, region_label, mat_name
+		return "[color=#A0C8E0]%s[/color]: \"%s [color=#9ACD32]%s[/color] is rich in [color=#FFD700]%s[/color] this season — worth a look while you're out.\"" % [
+			quest_giver, opener, region_label, mat_name
 		]
 	return "[color=#A0C8E0]Locals mention that [color=#9ACD32]%s[/color] is rich in [color=#FFD700]%s[/color] this season.[/color]" % [
 		region_label, mat_name
