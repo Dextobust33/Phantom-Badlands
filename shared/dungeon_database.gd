@@ -22,7 +22,8 @@ enum TileType {
 	FALSE_CHEST,   # Audit #5 theme tag — mimic ambush — looks like treasure (Mimic Treasury)
 	UPDRAFT,       # Audit #5 theme tag — wind shear costs +2 steps (Harpy Cliffs)
 	BLOOD_FONT,    # Audit #5 theme tag — vampiric font heals + curses (Vampire Crypt)
-	LAVA_POOL      # Audit #5 theme tag — molten rock burns on step (Balrog's Depths)
+	LAVA_POOL,     # Audit #5 theme tag — molten rock burns on step (Balrog's Depths)
+	EMBER_TILE     # Audit #5 theme tag — phoenix ember heals on step (Phoenix Nest)
 }
 
 # Tile display characters
@@ -44,7 +45,8 @@ const TILE_CHARS = {
 	TileType.FALSE_CHEST: "?",
 	TileType.UPDRAFT: "~",
 	TileType.BLOOD_FONT: "+",
-	TileType.LAVA_POOL: "^"
+	TileType.LAVA_POOL: "^",
+	TileType.EMBER_TILE: "o"
 }
 
 # Tile colors for display
@@ -66,7 +68,8 @@ const TILE_COLORS = {
 	TileType.FALSE_CHEST: "#FFAA00",
 	TileType.UPDRAFT: "#87CEEB",
 	TileType.BLOOD_FONT: "#660000",
-	TileType.LAVA_POOL: "#FF4500"
+	TileType.LAVA_POOL: "#FF4500",
+	TileType.EMBER_TILE: "#FFA500"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -1115,7 +1118,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 5.0,
 			"attack_mult": 2.1,
-			"abilities": ["Fire Breath", "Wing Buffet", "Terrifying Roar", "Ancient Fury"]
+			"abilities": ["Dragon's Hoard", "Fire Breath", "Terrifying Roar", "Ancient Fury"]
 		},
 		"boss_egg": "Ancient Dragon",
 		"floors": 7,
@@ -1142,7 +1145,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 6.0,
 			"attack_mult": 1.8,
-			"abilities": ["Multi-Head Strike", "Regeneration", "Poison Spray", "Head Regrowth"]
+			"abilities": ["Hydra Regen", "Multi-Head Strike", "Poison Spray", "Head Regrowth"]
 		},
 		"boss_egg": "Hydra",
 		"floors": 7,
@@ -1169,7 +1172,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 4.0,
 			"attack_mult": 2.2,
-			"abilities": ["Rebirth", "Solar Flare", "Ash Storm", "Purifying Flame"]
+			"abilities": ["Phoenix Rebirth", "Solar Flare", "Ash Storm", "Purifying Flame"]
 		},
 		"boss_egg": "Phoenix",
 		"floors": 7,
@@ -1196,7 +1199,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 5.0,
 			"attack_mult": 2.0,
-			"abilities": ["Elemental Storm", "Planar Shift", "Absorb Element", "Unstable Core"]
+			"abilities": ["Element Cycle", "Planar Shift", "Absorb Element", "Unstable Core"]
 		},
 		"boss_egg": "Elemental",
 		"floors": 7,
@@ -1223,7 +1226,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 6.0,
 			"attack_mult": 2.0,
-			"abilities": ["Iron Fist", "Forge Heat", "Magnetic Pull", "Impervious Shell"]
+			"abilities": ["Forge Heat", "Iron Fist", "Magnetic Pull", "Impervious Shell"]
 		},
 		"boss_egg": "Iron Golem",
 		"floors": 7,
@@ -1250,7 +1253,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 5.0,
 			"attack_mult": 2.1,
-			"abilities": ["Riddle of Death", "Sphinx's Pounce", "Mind Shatter", "Desert Wind"]
+			"abilities": ["Riddle Curse", "Sphinx's Pounce", "Mind Shatter", "Desert Wind"]
 		},
 		"boss_egg": "Sphinx",
 		"floors": 7,
@@ -1277,7 +1280,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 5.5,
 			"attack_mult": 2.2,
-			"abilities": ["Black Breath", "Shadow Blade", "Morgul Strike", "Dread Aura"]
+			"abilities": ["Soul Touch", "Shadow Blade", "Morgul Strike", "Dread Aura"]
 		},
 		"boss_egg": "Nazgul",
 		"floors": 7,
@@ -1831,6 +1834,16 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 10:
 						grid[y][x] = TileType.LAVA_POOL
+		"phoenix_nest":
+			# Ember tiles over ~7% of empty tiles — fallen feathers still
+			# glowing with phoenix flame. Stepping heals 4% max HP. Consumed
+			# on use. Positive theme — pairs with Phoenix's revive sig.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 7:
+						grid[y][x] = TileType.EMBER_TILE
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""

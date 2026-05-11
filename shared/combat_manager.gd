@@ -202,6 +202,14 @@ const ABILITY_BOSS_HELLFIRE_STACK = "boss_hellfire_stack"  # On-hit, first deals
 const ABILITY_BOSS_SOUL_FORGE = "boss_soul_forge"          # Every 5 monster turns, heals 15% max HP. Bigger than Trollish Regrowth (8%) and distinct from Iron Discipline (heal + clears debuffs). Pure heal cycle
 const ABILITY_BOSS_TITAN_EARTHQUAKE = "boss_titan_earthquake"  # Every 4 monster turns, 8% max HP damage + permanently +1 earthquake stack (cap 5). Each stack reduces incoming player damage by 10%. Distinct from Stoneform (binary alt-round) — escalating persistent defense
 const ABILITY_BOSS_VORPAL_STRIKE = "boss_vorpal_strike"    # Every 4 monster turns, the boss's normal attack deals 3x damage. Telegraphed, infrequent, single-moment burst
+# Audit #5 boss signatures (Slice 11 — T6 layer)
+const ABILITY_BOSS_DRAGONS_HOARD = "boss_dragons_hoard"    # Every 5 monster turns, strips one active player buff AND gains a permanent +5% damage stack. Long-fight punisher
+const ABILITY_BOSS_HYDRA_REGEN = "boss_hydra_regen"        # When player deals > 10% boss max HP in a single attack, boss heals 10% max HP. Anti-burst — distinct from threshold heals
+const ABILITY_BOSS_PHOENIX_REBIRTH = "boss_phoenix_rebirth"  # When boss dies, revives at 75% HP exactly once per fight. Stronger than Skeleton Lord's Death Defiance (50%)
+const ABILITY_BOSS_ELEMENT_CYCLE = "boss_element_cycle"    # 4-phase rotation per round: fire (5% burn) → water (5% resource drain) → earth (next-round wind shear) → air (skip turn). Distinct from Triple Threat (3 heads)
+const ABILITY_BOSS_FORGE_HEAT = "boss_forge_heat"          # On-hit, +1 heat stack; at 5 stacks deals 10% player max HP burst and resets. Threshold burst — distinct from Hellfire Stack's compounding per-hit
+const ABILITY_BOSS_RIDDLE_CURSE = "boss_riddle_curse"      # Every 3 monster turns, +1 riddle stack (cap 5); each stack reduces player damage by 5%. Persistent stacking debuff — distinct from Wind Shear (one-round) and Drowning (on-hit, smaller cap)
+const ABILITY_BOSS_SOUL_TOUCH = "boss_soul_touch"          # On-hit, +1 soul stack (uncapped); each stack reduces player effective defense by 2% (compounding). Distinct from any other debuff — attacks DEFENSE stat, not damage
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1480,6 +1488,19 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				monster.current_hp = int(monster.current_hp) + blood_actual
 				messages.append("[color=#660000][b]BLOOD FRENZY![/b][/color] [color=#FF66CC]The %s drinks deep, healing %d HP from your strike.[/color]" % [monster.name, blood_actual])
 
+		# Audit #5 Slice 11 — Hydra Regen (Hydra). When player deals more than
+		# 10% of the boss's max HP in a single attack, boss heals 10% max HP.
+		# Anti-burst — distinct from Blood Frenzy (% of damage) and from
+		# threshold heals (HP-band triggered). Punishes hard-hitting strategies.
+		if ABILITY_BOSS_HYDRA_REGEN in abilities and damage > 0 and monster.current_hp > 0:
+			var hydra_threshold = int(monster.max_hp * 0.10)
+			if damage > hydra_threshold:
+				var hydra_heal = max(1, int(monster.max_hp * 0.10))
+				var hydra_actual = mini(hydra_heal, int(monster.max_hp) - int(monster.current_hp))
+				if hydra_actual > 0:
+					monster.current_hp = int(monster.current_hp) + hydra_actual
+					messages.append("[color=#2E8B57][b]HYDRA REGEN![/b][/color] [color=#9ACD32]The %s sprouts two heads for every blow — regrows %d HP![/color]" % [monster.name, hydra_actual])
+
 		# Use class-specific attack description
 		var attack_desc = character.get_class_attack_description(damage, monster.name, is_crit)
 		messages.append(attack_desc)
@@ -1604,6 +1625,17 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		monster.current_hp = revive_hp
 		messages.append("[color=#FFD700]The %s crumbles to dust... but bones rise once more![/color]" % monster.name)
 		messages.append("[color=#FFAA00]Death Defiance![/color] [color=#9ACD32]The %s revives at %d HP![/color]" % [monster.name, revive_hp])
+		return {"success": true, "messages": messages, "combat_ended": false}
+
+	# Audit #5 boss signature (Slice 11) — Phoenix Rebirth (Phoenix). Same shape
+	# as Death Defiance but revives at 75% HP instead of 50%. Final-tier
+	# resurrection — stronger comeback that punishes one-shot strategies.
+	if ABILITY_BOSS_PHOENIX_REBIRTH in abilities and not combat.get("boss_revive_used", false):
+		combat["boss_revive_used"] = true
+		var phoenix_hp = max(1, int(monster.max_hp * 0.75))
+		monster.current_hp = phoenix_hp
+		messages.append("[color=#FF8C00]The %s erupts in flames... and is reborn from the ashes![/color]" % monster.name)
+		messages.append("[color=#FFAA00]Phoenix Rebirth![/color] [color=#9ACD32]The %s rises at %d HP![/color]" % [monster.name, phoenix_hp])
 		return {"success": true, "messages": messages, "combat_ended": false}
 
 	# Custom death message
@@ -5040,6 +5072,30 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if hellfire_stacks < 5:
 			combat["player_hellfire_stacks"] = hellfire_stacks + 1
 
+	# Audit #5 boss signature (Slice 11) — Forge Heat (Iron Golem Overlord).
+	# On-hit +1 heat stack. At 5 stacks, deals 10% player max HP and resets
+	# to 0. Threshold burst — distinct from Hellfire Stack's compounding
+	# per-hit damage. Players who multi-hit hard hit the threshold faster.
+	if ABILITY_BOSS_FORGE_HEAT in abilities and hits > 0:
+		var heat_stacks = int(combat.get("forge_heat_stacks", 0)) + 1
+		combat["forge_heat_stacks"] = heat_stacks
+		if heat_stacks >= 5:
+			combat["forge_heat_stacks"] = 0
+			var forge_dmg = max(1, int(character.get_total_max_hp() * 0.10))
+			character.current_hp = max(1, character.current_hp - forge_dmg)
+			messages.append("[color=#CD7F32][b]FORGE HEAT OVERFLOW![/b][/color] [color=#FF8800]The %s's forge-fires erupt! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, forge_dmg])
+		else:
+			messages.append("[color=#CD7F32]The %s's heat builds (forge %d/5).[/color]" % [monster.name, heat_stacks])
+
+	# Audit #5 boss signature (Slice 11) — Soul Touch (Nazgul Lord). On each
+	# successful hit, +1 soul stack (uncapped). Each stack reduces player
+	# effective defense by 2% (consumer in calculate_monster_damage).
+	# Compounding, no cap — long fights make you increasingly fragile.
+	if ABILITY_BOSS_SOUL_TOUCH in abilities and hits > 0:
+		var soul_stacks = int(combat.get("soul_touch_stacks", 0)) + 1
+		combat["soul_touch_stacks"] = soul_stacks
+		messages.append("[color=#4B0082]The %s's touch withers your soul (Soul Touch %d — defense weakened).[/color]" % [monster.name, soul_stacks])
+
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
 		if randi() % 100 < 30:  # 30% chance
@@ -5316,6 +5372,68 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			else:
 				messages.append("[color=#8B4513][b]TITAN EARTHQUAKE![/b][/color] [color=#FF8800]The %s shakes the ground! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, quake_dmg])
 
+	# Audit #5 boss signature (Slice 11) — Dragon's Hoard (Ancient Dragon).
+	# Every 5 monster turns, strip one active player buff AND gain a permanent
+	# +5% damage stack (consumed in calculate_monster_damage). Long-fight
+	# punisher — stalling lets the dragon grow.
+	if ABILITY_BOSS_DRAGONS_HOARD in abilities and combat.round > 0 and combat.round % 5 == 0:
+		var hoard_already = int(combat.get("dragons_hoard_last_round", -1))
+		if hoard_already != int(combat.round):
+			combat["dragons_hoard_last_round"] = int(combat.round)
+			var hoard_stacks = int(combat.get("dragons_hoard_stacks", 0)) + 1
+			combat["dragons_hoard_stacks"] = hoard_stacks
+			var hoard_buffs = character.get_active_buff_names()
+			if hoard_buffs.size() > 0:
+				var swallowed = hoard_buffs[randi() % hoard_buffs.size()]
+				character.remove_buff(swallowed)
+				messages.append("[color=#FFD700][b]DRAGON'S HOARD![/b][/color] [color=#FFA500]The %s swallows your [color=#FFFF00]%s[/color] buff — the dragon's might grows (+%d%% damage stack %d).[/color]" % [monster.name, swallowed, 5 * hoard_stacks, hoard_stacks])
+			else:
+				messages.append("[color=#FFD700][b]DRAGON'S HOARD![/b][/color] [color=#FFA500]The %s broods on its hoard — its might grows (+%d%% damage stack %d).[/color]" % [monster.name, 5 * hoard_stacks, hoard_stacks])
+
+	# Audit #5 boss signature (Slice 11) — Element Cycle (Primeval Elemental).
+	# 4-phase rotation per round: fire (5% burn) → water (5% resource drain)
+	# → earth (next-round wind shear) → air (skip turn).
+	if ABILITY_BOSS_ELEMENT_CYCLE in abilities and combat.round > 0:
+		var elem_already = int(combat.get("element_cycle_last_round", -1))
+		if elem_already != int(combat.round):
+			combat["element_cycle_last_round"] = int(combat.round)
+			var elem_phase = int(combat.round) % 4
+			if elem_phase == 0:
+				var fire_dmg = max(1, int(character.get_total_max_hp() * 0.05))
+				character.current_hp = max(1, character.current_hp - fire_dmg)
+				messages.append("[color=#FF4500][b]ELEMENT CYCLE (Fire)![/b][/color] [color=#FF8800]The elemental burns! [color=#FF4444]-%d HP[/color].[/color]" % fire_dmg)
+			elif elem_phase == 1:
+				var water_resource = character.get_primary_resource()
+				var water_max = character.get_primary_resource_max()
+				var water_drain = max(1, int(water_max * 0.05))
+				match water_resource:
+					"mana":
+						character.current_mana = max(0, character.current_mana - water_drain)
+					"stamina":
+						character.current_stamina = max(0, character.current_stamina - water_drain)
+					"energy":
+						character.current_energy = max(0, character.current_energy - water_drain)
+				messages.append("[color=#1E90FF][b]ELEMENT CYCLE (Water)![/b][/color] [color=#A0C8E0]The current saps -%d %s.[/color]" % [water_drain, water_resource])
+			elif elem_phase == 2:
+				combat["player_wind_sheared_until_round"] = int(combat.round) + 1
+				messages.append("[color=#8B4513][b]ELEMENT CYCLE (Earth)![/b][/color] [color=#FFA500]The earth shifts beneath you — your next strike falters.[/color]")
+			else:
+				combat["player_lulled"] = true
+				messages.append("[color=#87CEEB][b]ELEMENT CYCLE (Air)![/b][/color] [color=#A0E8FF]A gale rips the breath from your lungs — you skip your next turn.[/color]")
+
+	# Audit #5 boss signature (Slice 11) — Riddle Curse (Ancient Sphinx). Every
+	# 3 monster turns, +1 riddle stack (cap 5); each stack reduces player damage
+	# by 5% (consumer in calculate_damage). Persistent stacking debuff —
+	# distinct from Wind Shear (one-round) and Drowning (on-hit, smaller cap).
+	if ABILITY_BOSS_RIDDLE_CURSE in abilities and combat.round > 0 and combat.round % 3 == 0:
+		var riddle_already = int(combat.get("riddle_curse_last_round", -1))
+		if riddle_already != int(combat.round):
+			combat["riddle_curse_last_round"] = int(combat.round)
+			var riddle_stacks = int(combat.get("riddle_curse_stacks", 0))
+			if riddle_stacks < 5:
+				combat["riddle_curse_stacks"] = riddle_stacks + 1
+				messages.append("[color=#9370DB][b]RIDDLE CURSE![/b][/color] [color=#DDA0DD]The %s poses an impossible riddle — your strength falters (curse %d/5).[/color]" % [monster.name, riddle_stacks + 1])
+
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}
 	if combat.get("monster_fled", false):
@@ -5377,6 +5495,13 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var shear_until = int(combat.get("player_wind_sheared_until_round", -1))
 	if shear_until >= int(combat.get("round", 0)):
 		raw_damage = max(1, int(raw_damage * 0.5))
+
+	# Audit #5 Slice 11 — Riddle Curse stacks (Ancient Sphinx). Each stack
+	# reduces player damage by 5% (cap 5 = -25%). Persistent across the fight.
+	var riddle_stacks = int(combat.get("riddle_curse_stacks", 0))
+	if riddle_stacks > 0:
+		var riddle_mult = max(0.5, 1.0 - 0.05 * riddle_stacks)
+		raw_damage = max(1, int(raw_damage * riddle_mult))
 
 	# === COMPANION BONUS: Attack damage ===
 	var companion_attack = character.get_companion_bonus("attack")
@@ -5654,6 +5779,13 @@ func calculate_monster_damage(monster: Dictionary, character: Character, combat:
 			combat["vorpal_last_round"] = int(combat.round)
 			raw_damage *= 3
 
+	# Audit #5 Slice 11 — Dragon's Hoard damage scaling (Ancient Dragon). Each
+	# stack from hoard buff-swallows gives the dragon +5% damage (uncapped).
+	# Stacks accumulate every 5 turns — long fights become brutal.
+	var hoard_stacks_dmg = int(combat.get("dragons_hoard_stacks", 0))
+	if hoard_stacks_dmg > 0:
+		raw_damage = int(raw_damage * (1.0 + 0.05 * hoard_stacks_dmg))
+
 	# Equipment defense provides flat reduction BEFORE defense formula
 	# This makes gear meaningful against higher-level monsters
 	var equipment_defense = character.get_equipment_defense()
@@ -5670,6 +5802,14 @@ func calculate_monster_damage(monster: Dictionary, character: Character, combat:
 	# Add defense buff bonus
 	var defense_buff = character.get_buff_value("defense")
 	player_defense += defense_buff
+
+	# Audit #5 Slice 11 — Soul Touch defense erosion (Nazgul Lord). Each
+	# soul stack reduces effective defense by 2%, compounding multiplicatively.
+	# Uncapped: long fights make you increasingly fragile.
+	var soul_stacks_def = int(combat.get("soul_touch_stacks", 0))
+	if soul_stacks_def > 0:
+		var soul_mult = pow(0.98, soul_stacks_def)
+		player_defense = int(player_defense * soul_mult)
 
 	# === COMPANION BONUS: Defense ===
 	if character.has_active_companion():

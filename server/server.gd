@@ -19146,6 +19146,15 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		var lava_dmg = clamp(int(character.get_total_max_hp() * 0.03), 1, 60)
 		character.current_hp = max(1, character.current_hp - lava_dmg)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4500]Molten rock sears you ([color=#FF4444]-%d HP[/color]).[/color]" % lava_dmg})
+	# Audit #5 Slice 11 theme tag — Phoenix Nest EMBER_TILE heals on step
+	# (consumed). 4% max HP heal, min 1 max 80. T6 dungeon — strongest
+	# consumed-heal tile so far. Pairs thematically with Phoenix Rebirth.
+	elif tile == DungeonDatabaseScript.TileType.EMBER_TILE:
+		var ember_heal = clamp(int(character.get_total_max_hp() * 0.04), 1, 80)
+		var max_hp_em = character.get_total_max_hp()
+		character.current_hp = min(max_hp_em, character.current_hp + ember_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]A phoenix ember warms you ([color=#00FF00]+%d HP[/color]).[/color]" % ember_heal})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
@@ -20438,7 +20447,7 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Multi-Head Strike": "multi_strike", "Colossal Swing": "multi_strike",
 			"Dirty Fighting": "ambusher", "Trap Master": "ambusher",
 			"Vorpal Jaws": "berserker", "Labyrinth Fury": "berserker",
-			"Ancient Fury": "berserker", "Forge Heat": "enrage",
+			"Ancient Fury": "berserker",
 			"Elemental Storm": "unpredictable", "Unstable Core": "unpredictable",
 			"Petrifying Gaze": "curse", "Spore Cloud": "curse", "Intimidate": "curse",
 			"Dark Pact": "curse", "Terrifying Roar": "curse",
@@ -20485,6 +20494,14 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Soul Forge": "boss_soul_forge",
 			"Titan Earthquake": "boss_titan_earthquake",
 			"Vorpal Strike": "boss_vorpal_strike",
+			# Audit #5 boss signatures (Slice 11) — T6 layer (7 sigs)
+			"Dragon's Hoard": "boss_dragons_hoard",
+			"Hydra Regen": "boss_hydra_regen",
+			"Phoenix Rebirth": "boss_phoenix_rebirth",
+			"Element Cycle": "boss_element_cycle",
+			"Forge Heat": "boss_forge_heat",
+			"Riddle Curse": "boss_riddle_curse",
+			"Soul Touch": "boss_soul_touch",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")
