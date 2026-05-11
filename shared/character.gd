@@ -290,6 +290,9 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 # in quest_database.gd, granted as chain_bonus rewards on final-stage quest
 # turn-ins. Persists across the character's life. /titles lists them.
 @export var earned_titles: Array = []
+# Audit #6 Slice 11 — which earned chain title to display alongside the realm
+# title. Empty string = no chain prefix. Player sets via /set_title <id>.
+@export var active_chain_title: String = ""
 
 # Knight/Mentee Status - granted by High King/Elder
 # Format: {granted_by: String, granted_by_id: int, granted_at: int (unix timestamp)}
