@@ -162,6 +162,177 @@ const TIER_REFERENCE_DISTANCE = {
 # trading-post anchor when (x, y) is inside one.
 var player_post_bubbles: Array = []
 
+# =============================================================================
+# Slice 6a — Biome layer (post-anchored world, perpendicular axis to tier)
+# =============================================================================
+# Biomes are large-scale noise regions stamped on top of the existing tier
+# layer. A T3 forest, a T6 forest, a T3 desert, a T6 desert all exist — biome
+# is mechanically independent of tier and answers "what does the terrain look
+# like here?" while tier answers "how dangerous are the things in it?".
+#
+# Generated via two perpendicular value-noise layers (temperature + humidity,
+# Whittaker-style classification) at frequency 0.005 — each noise cell spans
+# ~200 tiles so biome regions are large enough to feel like distinct places
+# without being so vast that a normal travel session never crosses one.
+#
+# Slice 6a scope: biome enum + assignment function + per-biome node-weight
+# shifts + empty-tile color tint + UI label. NO mechanical effects yet
+# (movement penalty, weather, biome-locked monsters — those land in 6b+).
+
+const BIOME_PLAINS  = "plains"
+const BIOME_FOREST  = "forest"
+const BIOME_MOUNTAIN = "mountain"
+const BIOME_SWAMP   = "swamp"
+const BIOME_SNOW    = "snow"
+const BIOME_DESERT  = "desert"
+
+const BIOME_NAMES = {
+	BIOME_PLAINS:   "Plains",
+	BIOME_FOREST:   "Forest",
+	BIOME_MOUNTAIN: "Highlands",
+	BIOME_SWAMP:    "Swamp",
+	BIOME_SNOW:     "Tundra",
+	BIOME_DESERT:   "Desert",
+}
+
+# Empty-tile color tint per biome — the dominant signal players read when
+# scanning the map. Plains keeps the existing brown so the most common biome
+# isn't visually loud; the others shift hue toward their theme.
+const BIOME_EMPTY_COLORS = {
+	BIOME_PLAINS:   "#6B5B45",  # current brown (unchanged baseline)
+	BIOME_FOREST:   "#4F5B35",  # darker olive-brown
+	BIOME_MOUNTAIN: "#665E55",  # gray-brown rock dust
+	BIOME_SWAMP:    "#3F5A45",  # mossy green
+	BIOME_SNOW:     "#C8D4DC",  # pale ice-blue
+	BIOME_DESERT:   "#C4A468",  # warm tan
+}
+
+# Per-biome node weight overrides. Each biome rebalances the same node types
+# rather than introducing new ones — keeps Slice 6a a pure distribution
+# shift, no new tile rendering or gather behavior to wire up. Plains uses the
+# baseline NODE_WEIGHTS.
+const BIOME_NODE_WEIGHTS = {
+	BIOME_FOREST: {
+		"stone": 12,
+		"tree": 40,
+		"ore_vein": 5,
+		"herb": 6,
+		"flower": 4,
+		"mushroom": 8,
+		"bush": 6,
+		"reed": 2,
+		"dense_brush": 12,
+	},
+	BIOME_MOUNTAIN: {
+		"stone": 42,
+		"tree": 12,
+		"ore_vein": 22,
+		"herb": 3,
+		"flower": 2,
+		"mushroom": 3,
+		"bush": 3,
+		"reed": 1,
+		"dense_brush": 7,
+	},
+	BIOME_SWAMP: {
+		"stone": 8,
+		"tree": 18,
+		"ore_vein": 3,
+		"herb": 8,
+		"flower": 2,
+		"mushroom": 18,
+		"bush": 6,
+		"reed": 22,
+		"dense_brush": 10,
+	},
+	BIOME_SNOW: {
+		"stone": 38,
+		"tree": 22,
+		"ore_vein": 14,
+		"herb": 4,
+		"flower": 1,
+		"mushroom": 4,
+		"bush": 4,
+		"reed": 2,
+		"dense_brush": 6,
+	},
+	BIOME_DESERT: {
+		"stone": 48,
+		"tree": 4,
+		"ore_vein": 18,
+		"herb": 3,
+		"flower": 4,
+		"mushroom": 1,
+		"bush": 12,
+		"reed": 2,
+		"dense_brush": 8,
+	},
+}
+
+func get_biome_at(world_x: int, world_y: int, world_seed: int = 0) -> String:
+	"""Return the biome string for a world tile. Whittaker-style assignment
+	from two perpendicular noise layers: temperature (cold→hot) and humidity
+	(dry→wet). Deterministic per (x, y, seed). Frequency 0.005 = ~200-tile
+	biome cells. Plains is the central default; biome regions cluster around
+	their climate niches and transition smoothly through plains."""
+	var temp = _biome_temp_noise(world_x, world_y, world_seed)
+	var humid = _biome_humid_noise(world_x, world_y, world_seed)
+
+	# Cold regions are snow regardless of humidity — visually consistent and
+	# matches the "Tundra is everywhere up north" mental model.
+	if temp < 0.28:
+		return BIOME_SNOW
+	# Hot + dry = desert.
+	if temp > 0.72 and humid < 0.40:
+		return BIOME_DESERT
+	# Hot + wet = swamp (humid jungle / mangrove read).
+	if temp > 0.65 and humid > 0.62:
+		return BIOME_SWAMP
+	# Temperate wet = forest.
+	if humid > 0.62:
+		return BIOME_FOREST
+	# Temperate dry = mountain / highlands.
+	if humid < 0.30:
+		return BIOME_MOUNTAIN
+	# Everything in the middle band = plains (baseline biome).
+	return BIOME_PLAINS
+
+func get_biome_display_name(biome: String) -> String:
+	return BIOME_NAMES.get(biome, "Wilderness")
+
+func get_biome_empty_color(biome: String) -> String:
+	return BIOME_EMPTY_COLORS.get(biome, "#6B5B45")
+
+func _biome_temp_noise(x: int, y: int, world_seed: int) -> float:
+	"""Low-frequency value noise for temperature gradient. Cold = 0, hot = 1.
+	Uses a different hash multiplier than humidity so the two layers don't
+	correlate — without that, biomes would smear into a 1D band."""
+	return _biome_value_noise(x, y, world_seed + 7919, 0.005)
+
+func _biome_humid_noise(x: int, y: int, world_seed: int) -> float:
+	"""Low-frequency value noise for humidity. Dry = 0, wet = 1."""
+	return _biome_value_noise(x, y, world_seed + 4001, 0.005)
+
+func _biome_value_noise(x: int, y: int, world_seed: int, freq: float) -> float:
+	"""Smoothstep-interpolated value noise. Same shape as _water_noise but
+	parameterized so temperature + humidity share the math while staying
+	independent via differing seed offsets."""
+	var fx = x * freq
+	var fy = y * freq
+	var ix = floori(fx)
+	var iy = floori(fy)
+	var frac_x = fx - ix
+	var frac_y = fy - iy
+	var v00 = _seeded_hash_float(ix * 191 + iy * 419, world_seed)
+	var v10 = _seeded_hash_float((ix + 1) * 191 + iy * 419, world_seed)
+	var v01 = _seeded_hash_float(ix * 191 + (iy + 1) * 419, world_seed)
+	var v11 = _seeded_hash_float((ix + 1) * 191 + (iy + 1) * 419, world_seed)
+	var sx = frac_x * frac_x * (3.0 - 2.0 * frac_x)
+	var sy = frac_y * frac_y * (3.0 - 2.0 * frac_y)
+	var top = v00 + (v10 - v00) * sx
+	var bottom = v01 + (v11 - v01) * sx
+	return top + (bottom - top) * sy
+
 func _ready():
 	print("World System initialized")
 	# Initialize legacy trading post database (kept for transition)
@@ -198,9 +369,18 @@ func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
 	if density_roll >= density:
 		return {"type": "empty", "tier": 0, "blocks_move": false, "blocks_los": false}
 
-	# This tile is occupied — determine node type
-	var type_roll = _seeded_hash_int(world_x * 31 + world_y * 53, seed + 1) % TOTAL_NODE_WEIGHT
-	var node_type = _roll_node_type(type_roll)
+	# This tile is occupied — determine node type using the biome's weight
+	# table (Slice 6a). Plains uses the baseline NODE_WEIGHTS; the other five
+	# biomes shift distribution toward their theme (forest = tree-heavy,
+	# mountain = stone/ore-heavy, etc.).
+	var biome = get_biome_at(world_x, world_y, seed)
+	var weights = BIOME_NODE_WEIGHTS.get(biome, NODE_WEIGHTS)
+	var total_weight = _biome_total_weight(weights)
+	if total_weight <= 0:
+		total_weight = TOTAL_NODE_WEIGHT
+		weights = NODE_WEIGHTS
+	var type_roll = _seeded_hash_int(world_x * 31 + world_y * 53, seed + 1) % total_weight
+	var node_type = _roll_node_type_weighted(type_roll, weights)
 
 	# Determine tier from distance
 	var tier = _get_tier_for_distance(distance, world_x, world_y, seed)
@@ -216,13 +396,41 @@ func generate_tile(world_x: int, world_y: int, seed: int) -> Dictionary:
 	}
 
 func _roll_node_type(roll: int) -> String:
-	"""Convert a weighted roll (0-94) into a node type string."""
+	"""Convert a weighted roll into a node type using baseline NODE_WEIGHTS."""
+	return _roll_node_type_weighted(roll, NODE_WEIGHTS)
+
+func _roll_node_type_weighted(roll: int, weights: Dictionary) -> String:
+	"""Convert a weighted roll into a node type using the given weight table.
+	Generic over biome variants — baseline NODE_WEIGHTS and any biome
+	override in BIOME_NODE_WEIGHTS plug in here."""
 	var cumulative = 0
-	for node_type in NODE_WEIGHTS:
-		cumulative += NODE_WEIGHTS[node_type]
+	for node_type in weights:
+		cumulative += int(weights[node_type])
 		if roll < cumulative:
 			return node_type
 	return "stone"  # fallback
+
+func _biome_total_weight(weights: Dictionary) -> int:
+	"""Sum a biome's node weights so the modulo on the roll matches the
+	table's actual coverage (biomes don't have to total 95 like baseline)."""
+	var total = 0
+	for k in weights:
+		total += int(weights[k])
+	return total
+
+func _dim_color(hex_color: String, factor: float) -> String:
+	"""Scale a #RRGGBB color toward black by factor (0..1). Used by the
+	minimap so biome tints read as faint regions rather than competing with
+	the bright glyphs (posts, dungeons) on the same surface."""
+	if hex_color.length() != 7 or not hex_color.begins_with("#"):
+		return hex_color
+	var r = hex_color.substr(1, 2).hex_to_int()
+	var g = hex_color.substr(3, 2).hex_to_int()
+	var b = hex_color.substr(5, 2).hex_to_int()
+	r = clampi(int(r * factor), 0, 255)
+	g = clampi(int(g * factor), 0, 255)
+	b = clampi(int(b * factor), 0, 255)
+	return "#%02X%02X%02X" % [r, g, b]
 
 func _get_tier_for_distance(distance: float, x: int, y: int, seed: int) -> int:
 	"""Get material tier based on distance from origin. Uses overlapping zones for gradual transition."""
@@ -1481,14 +1689,17 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 					# Tower — gold if boosting a nearby guard
 					line_parts.append(_render_tower_tile(x, y))
 				else:
-					line_parts.append(_render_tile_bbcode(tile_type, tile_tier))
+					line_parts.append(_render_tile_bbcode(tile_type, tile_tier, x, y))
 
 		map_lines.append("".join(line_parts))
 
 	return "\n".join(map_lines)
 
-func _render_tile_bbcode(tile_type: String, tier: int = 1) -> String:
-	"""Render a single tile as BBCode. 2 chars wide: space + character."""
+func _render_tile_bbcode(tile_type: String, tier: int = 1, world_x: int = 0, world_y: int = 0) -> String:
+	"""Render a single tile as BBCode. 2 chars wide: space + character.
+	Slice 6a — empty tiles pick up their biome's tint so map regions read at
+	a glance. world_x/world_y default to (0, 0) which always plains, preserving
+	legacy callers."""
 	var render = TILE_RENDER.get(tile_type, TILE_RENDER["empty"])
 	var char = render.char
 	var color = render.color
@@ -1503,6 +1714,13 @@ func _render_tile_bbcode(tile_type: String, tier: int = 1) -> String:
 		# Use a simple approach — vary by... well, flowers all look the same per tile
 		# The tier can serve as color index
 		color = flower_colors[(tier - 1) % flower_colors.size()]
+
+	# Biome tint for empty / path tiles — the dominant signal players read
+	# when scanning the map. Plains keeps the baseline brown unchanged.
+	if tile_type == "empty" or tile_type == "path":
+		var biome_seed = chunk_manager.world_seed if chunk_manager and "world_seed" in chunk_manager else 0
+		var biome = get_biome_at(world_x, world_y, biome_seed)
+		color = get_biome_empty_color(biome)
 
 	return "[color=%s] %s[/color]" % [color, char]
 
@@ -2683,7 +2901,12 @@ func _generate_minimap(center_x: int, center_y: int, dungeon_locations: Array = 
 				"blacksmith", "healer", "throne", "storage", "guard":
 					line += "[color=#FFD700].[/color]"
 				_:
-					line += "[color=#3A3028].[/color]"
+					# Slice 6a — minimap also picks up biome tint so the overview
+					# shows biome regions at a glance. Dimmed (~45% brightness) so
+					# the small chars stay legible.
+					var minimap_seed = chunk_manager.world_seed if chunk_manager else 0
+					var minimap_biome = get_biome_at(wx, wy, minimap_seed)
+					line += "[color=%s].[/color]" % _dim_color(get_biome_empty_color(minimap_biome), 0.45)
 
 		output += line + "\n"
 

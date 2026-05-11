@@ -893,6 +893,10 @@ var hud_region_tier: int = 1
 var hud_region_tier_name: String = "Core"
 var hud_region_tier_color: String = "#00FF00"
 var hud_region_post_name: String = ""
+# Slice 6a — biome label (perpendicular to tier).
+var hud_biome: String = ""
+var hud_biome_name: String = ""
+var hud_biome_color: String = "#6B5B45"
 # Settler-bubble boundary warning (Slice 4) — fields only render when
 # hud_region_in_bubble is true. Lets the player see the wilderness tier they
 # would face on exit, with a red warning when within the edge threshold.
@@ -17789,6 +17793,9 @@ func handle_server_message(message: Dictionary):
 			hud_region_tier_name = String(message.get("region_tier_name", "Core"))
 			hud_region_tier_color = String(message.get("region_tier_color", "#00FF00"))
 			hud_region_post_name = String(message.get("region_post_name", ""))
+			hud_biome = String(message.get("biome", ""))
+			hud_biome_name = String(message.get("biome_name", ""))
+			hud_biome_color = String(message.get("biome_color", "#6B5B45"))
 			# Slice 4 boundary warning — server only stamps these when relevant
 			hud_region_in_bubble = bool(message.get("region_in_bubble", false))
 			hud_region_bubble_edge_dist = int(message.get("region_bubble_edge_dist", -1))
@@ -22856,8 +22863,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.276 changes
+	display_game("[color=#00FF00]v0.9.276[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Biome layer — the world now has Plains, Forest, Highlands, Swamp, Tundra, Desert (Audit #10 Slice 6a)[/color]")
+	display_game("  • [b]Biomes are large noise-defined regions[/b] that sit perpendicular to the existing tier curve. A T3 forest and a T6 forest are both forests; biome answers \"what does this terrain look like\" while tier answers \"how dangerous is it\". Each biome region spans hundreds of tiles, so you'll walk through one for a while before crossing into another.")
+	display_game("  • [b]Each biome shifts the node distribution toward its theme[/b]: forests have more trees + brush + mushrooms (less stone/ore); highlands are stone + ore heavy; swamps are reed + mushroom + water heavy; tundra is sparser; desert is very sparse and stone-leaning. Applies to newly generated tiles — already-explored chunks keep their existing nodes.")
+	display_game("  • [b]Empty tiles tint to their biome color[/b] so you can read the biome at a glance on the map: forest darker olive-brown, highlands gray-brown, swamp mossy green, tundra ice-blue, desert tan. Plains keeps the existing brown.")
+	display_game("  • [b]New \"Biome: Forest\" line[/b] appears in the top-right region label beneath the tier line, so you always know which biome you're in.")
+	display_game("  • Coming next: biome-specific mechanics (movement, weather, biome-locked monsters and resources) will layer onto this foundation in 6b+.")
+	display_game("")
+
 	# v0.9.275 changes
-	display_game("[color=#00FF00]v0.9.275[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.275[/color]")
 	display_game("  [color=#FFD700]Combat card damage fix + uses-to-next-rank indicator + market bulk fix + build-mode mobility[/color]")
 	display_game("  • [b]Card damage estimate now uses the right Attack number.[/b] v0.9.274 fell back to STR alone when reading total attack — your weapon's attack bonus (the dominant component) was silently ignored. Cards were under-predicting damage by roughly half. Now mirrors the server's get_total_attack (STR + equip STR + equip ATK).")
 	display_game("  • [b]Each card shows uses until next mastery rank.[/b] The rank tag in the middle row now reads e.g. \"R2 +47\" — 47 more successful casts until rank 3 (Expert). At max rank you'll see \"R4 ★\". Answers \"how close am I to ranking this up?\" without opening the Abilities panel.")
@@ -22896,13 +22913,6 @@ func display_changelog():
 	display_game("  • Cull is disabled during combat; cull rejection (e.g., already at 1) pops a clear popup")
 	display_game("")
 
-	# v0.9.271 changes
-	display_game("[color=#00FFFF]v0.9.271[/color]")
-	display_game("  [color=#FFD700]Rescue quests — auto-route + distinct NPC glyph[/color]")
-	display_game("  • [b]Rescue quest NPCs no longer require you to enter the \"correct\" dungeon.[/b] If you have an active Rescue the Merchant / Healer / Blacksmith / Scholar / Breeder quest and walk into [b]any[/b] dungeon 'D' tile, you'll be routed into the rescue instance and get a notice: \"Following your rescue quest — you enter [Dungeon Name]. The [merchant] is on floor N (look for [color=#4DD0FF]R[/color]).\"")
-	display_game("  • [b]Rescue NPCs now render as a bright cyan [color=#4DD0FF]R[/color][/b] (was a green [color=#00FF00]?[/color] that blended with the red [color=#FF4444]?[/color] encounter tiles — players were walking right past them)")
-	display_game("  • New rescue quest descriptions now read: \"Walk into [b]any[/b] dungeon (D) near this trading post — you'll be routed to the right one. Look for the R glyph inside.\"")
-	display_game("")
 
 
 
@@ -23862,10 +23872,20 @@ func update_region_label():
 
 	var region_line = "[color=#9ACD32]Region:[/color] [color=%s]T%d %s[/color]" % [hud_region_tier_color, hud_region_tier, hud_region_tier_name]
 
+	# Slice 6a — biome line (perpendicular axis to tier; same biome can span
+	# T1 → T6). Hidden when the server hasn't sent biome info (e.g., older
+	# servers, or pre-Slice-6 character state) so we don't render "Biome: "
+	# with nothing after it.
+	var biome_line = ""
+	if hud_biome_name != "":
+		biome_line = "[color=#9ACD32]Biome:[/color] [color=%s]%s[/color]" % [hud_biome_color, hud_biome_name]
+
 	# Slice 4 boundary warning — when inside a settler bubble, surface the
 	# wilderness tier waiting just outside so the player isn't blindsided by
 	# a sudden level jump on exit. Red ⚠ tone when within REGION_EDGE_WARN_TILES.
 	var lines = [area_line, region_line]
+	if biome_line != "":
+		lines.append(biome_line)
 	if hud_region_in_bubble and hud_region_outside_tier > hud_region_tier:
 		var near_edge = hud_region_bubble_edge_dist >= 0 and hud_region_bubble_edge_dist <= REGION_EDGE_WARN_TILES
 		var label_color = "#FF6644" if near_edge else "#888888"
