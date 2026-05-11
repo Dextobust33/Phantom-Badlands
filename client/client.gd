@@ -22898,8 +22898,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.284 changes
+	display_game("[color=#00FF00]v0.9.284[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotzones now reward the trip (Audit #10 Slice 6i)[/color]")
+	display_game("  • [b]Kills inside a red [color=#FF4500]![/color] danger zone now give bonus XP and a better drop chance.[/b] Edge of a hotspot is +30%, center is +70%. Stacks on top of the natural level scaling — the monster is already 1.5-2.5× higher level, AND you get an extra reward on top.")
+	display_game("  • A new [color=#FF6600]\"Danger Zone Bonus: +N% XP and improved drop chance!\"[/color] line appears in the combat log on every hotspot kill so the payoff is visible.")
+	display_game("  • Hotzones were previously just punishment with no upside. Now they're a deliberate risk/reward zone: spend potions and abilities to clear a cluster, get noticeably more XP per minute and more loot than the surrounding territory.")
+	display_game("")
+
 	# v0.9.283 changes
-	display_game("[color=#00FF00]v0.9.283[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.283[/color]")
 	display_game("  [color=#FFD700]Weather (Audit #10 Slice 6h)[/color]")
 	display_game("  • [b]Every biome now has weather that cycles every ~3 minutes.[/b] Plains gets Breeze or Rain; Forest adds Mist; Highlands can hit Strong Wind or Fog; Swamp has Mist/Rain/Fog; Tundra rolls Snow or Blizzard; Desert turns up Heat Haze or Sandstorm. Around 55% of any given cycle is Clear — weather is punctuation, not the steady state.")
 	display_game("  • [b]Heavy weather cuts vision.[/b] Rain / Snow / Heat Haze: −1 tile. Mist: −2. Fog / Blizzard / Sandstorm: −3 (floored at 3 tiles so you're never effectively blinded). Breeze / Strong Wind: no penalty.")
@@ -22933,14 +22941,6 @@ func display_changelog():
 	display_game("  • [b]Biome-locked nodes spawn OUTSIDE the 25-tile starter ring around NPC posts[/b] — you have to walk out of the post zone to find them. Strong signal that you've crossed from \"starter area\" to \"real biome\".")
 	display_game("")
 
-	# v0.9.279 changes
-	display_game("[color=#00FFFF]v0.9.279[/color]")
-	display_game("  [color=#FFD700]Starter-resource ring around NPC posts (Audit #10 Slice 6d)[/color]")
-	display_game("  • [b]NPC posts now keep a small balanced-resource zone around them[/b], regardless of biome. Within 25 tiles of any NPC post, terrain generation blends 70% baseline distribution with 30% biome flavor — so a new player who spawns at a Desert or Tundra post can still find some trees, herbs, and mushrooms within walking distance, while the area still feels biome-appropriate.")
-	display_game("  • Past the 25-tile ring, full biome distribution takes over: deserts get truly arid, tundras truly sparse, swamps thick with mushroom and reed. Biome character intact where it matters.")
-	display_game("  • Plains-biome posts skip the blend (their baseline already matches). Player posts also unaffected — building in extreme biomes is still a player choice with consequences.")
-	display_game("  • Applies to newly generated tiles around posts. Already-explored chunks keep their current distribution.")
-	display_game("")
 
 
 

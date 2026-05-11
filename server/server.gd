@@ -5333,6 +5333,15 @@ func trigger_encounter(peer_id: int):
 		var encounter_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
 		monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome)
 
+	# Slice 6i — tag the monster with hotspot intensity (0.0 outside, 0.0-1.0
+	# inside) so victory processing can apply XP + loot bonuses. We attach
+	# even on forced/scripted encounters in case the player triggers one
+	# while standing inside a hotspot — the danger is real regardless of
+	# what spawned.
+	var hotspot_info = world_system.get_hotspot_at(character.x, character.y)
+	if hotspot_info.get("in_hotspot", false):
+		monster["hotspot_intensity"] = float(hotspot_info.get("intensity", 0.0))
+
 	# Apply pending monster debuffs from scrolls
 	var debuff_messages = []
 	if character.pending_monster_debuffs.size() > 0:
