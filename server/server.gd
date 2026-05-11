@@ -19139,6 +19139,13 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		character.current_hp = min(max_hp_vf, character.current_hp + font_heal)
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#660000]You drink from the blood font ([color=#00FF00]+%d HP[/color]).[/color]" % font_heal})
+	# Audit #5 Slice 10 theme tag — Balrog Depths LAVA_POOL burns on step.
+	# 3% max HP damage, min 1 max 60. Persistent (lava stays). Strongest
+	# persistent damage tile to date — fits T5 difficulty.
+	elif tile == DungeonDatabaseScript.TileType.LAVA_POOL:
+		var lava_dmg = clamp(int(character.get_total_max_hp() * 0.03), 1, 60)
+		character.current_hp = max(1, character.current_hp - lava_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4500]Molten rock sears you ([color=#FF4444]-%d HP[/color]).[/color]" % lava_dmg})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
@@ -20471,6 +20478,13 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Talon Barrage": "boss_talon_barrage",
 			"Triple Threat": "boss_triple_threat",
 			"Building Charm": "boss_building_charm",
+			# Audit #5 boss signatures (Slice 10) — T5 layer (6 sigs)
+			"Soul Burn": "boss_soul_burn",
+			"Three Heads": "boss_three_heads",
+			"Hellfire Stack": "boss_hellfire_stack",
+			"Soul Forge": "boss_soul_forge",
+			"Titan Earthquake": "boss_titan_earthquake",
+			"Vorpal Strike": "boss_vorpal_strike",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")

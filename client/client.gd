@@ -23032,8 +23032,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.307 changes
+	display_game("[color=#00FF00]v0.9.307[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]T5 boss signatures + Balrog Depths lava theme (Audit #5 Slice 10)[/color]")
+	display_game("  • [b]All 6 T5 boss signatures shipped[/b]:")
+	display_game("    – [color=#9400D3]Lich — Soul Burn[/color]: on-hit, drains 5%% of your primary resource max (mana/stamina/energy by class). Resource pressure on casters.")
+	display_game("    – [color=#8B0000]Cerberus — Three Heads[/color]: every turn deals 4%% max HP that ignores DEF (gnaws through armor)")
+	display_game("    – [color=#FF4500]Balrog — Hellfire Stack[/color]: on-hit, deals (stacks × 4%%) max HP from prior stacks then adds +1. Escalating on-hit pressure.")
+	display_game("    – [color=#B22222]Demon Lord — Soul Forge[/color]: every 5 turns heals 15%% max HP. Biggest periodic heal in the boss-sig roster.")
+	display_game("    – [color=#8B4513]Titan — Earthquake[/color]: every 4 turns: 8%% max HP burst + permanent +10%% damage reduction stack (cap 5)")
+	display_game("    – [color=#006400]Jabberwock — Vorpal Strike[/color]: every 4 turns, next boss attack deals 3x damage. Watch for the rhythm.")
+	display_game("  • [b]Balrog Depths theme tile[/b]: lava pools ([color=#FF4500][b]^[/b][/color]) deal ~3%% max HP on step. Persistent (lava doesn't cool). Strongest persistent-damage tile to date — fits T5 difficulty.")
+	display_game("  • [b]Coverage:[/b] 34 boss signatures shipped (5 T1 + 8 T2 + 8 T3 + 7 T4 + 6 T5). 8 dungeons themed. T6+ untouched.")
+	display_game("")
+
 	# v0.9.306 changes
-	display_game("[color=#00FF00]v0.9.306[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.306[/color]")
 	display_game("  [color=#FFD700]T4 boss signatures + Vampire Crypt theme tile (Audit #5 Slice 9)[/color]")
 	display_game("  • [b]All 7 T4 boss signatures shipped[/b]:")
 	display_game("    – [color=#A0522D]Giant — Tremor Stomp[/color]: every 3 turns deals 10%% max HP + skips your next turn (burst + stun combo)")
@@ -23082,13 +23096,6 @@ func display_changelog():
 	display_game("  • Built on the chain_bonus schema — same data the chain-completion handler reads, just formatted compactly. New `_summarize_chain_bonus` helper composes \"X valor + Y Egg + Stones (Z)\".")
 	display_game("")
 
-	# v0.9.302 changes
-	display_game("[color=#00FFFF]v0.9.302[/color]")
-	display_game("  [color=#FFD700]Chain Atlas in quest log (Audit #6 Slice 7)[/color]")
-	display_game("  • [b]Quest log now shows a Chain Atlas[/b] under your active quests, listing all 11 chain campaigns and their status: [color=#5C8050]✓ completed[/color], [color=#FFAA00]▶ in-progress (stage X/Y)[/color], or [color=#A0A0A0]○ available at [Post Name][/color]. One line per chain, alphabetized by declaration order.")
-	display_game("  • [b]Why it matters[/b]: chains exist across five starter posts, and 'what have I done, what's left' was invisible — players had to remember which chains they finished and walk to each post to check. The atlas makes the whole campaign legible at a glance from the quest log.")
-	display_game("  • Pure read-only display — no new commands, no new UI mode. Server-side `format_quest_log` appends the atlas section after the active quest list. Reads `QUESTS` dict for stage-1 entries, joins against `completed_chains` and `active_quests` for status.")
-	display_game("")
 
 
 
@@ -30235,6 +30242,9 @@ const DUNGEON_THEME_LEGEND = {
 	"vampire_crypt": [
 		{"glyph": "+", "color": "#660000", "desc": "Blood fonts — vampiric pools. Drink from one to heal ~5% of your max HP. One-time per font (consumed)."}
 	],
+	"balrog_depths": [
+		{"glyph": "^", "color": "#FF4500", "desc": "Lava pools — stepping deals ~3% of your max HP as fire damage. Persistent (the lava doesn't cool), so plan paths around the orange tiles."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -30696,6 +30706,8 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "~", "color": "#87CEEB"}
 		16:  # BLOOD_FONT — Vampire Crypt theme tile, heals once on step (v0.9.306)
 			return {"char": "+", "color": "#660000"}
+		17:  # LAVA_POOL — Balrog Depths theme tile, persistent fire damage (v0.9.307)
+			return {"char": "^", "color": "#FF4500"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 

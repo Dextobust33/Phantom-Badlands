@@ -195,6 +195,13 @@ const ABILITY_BOSS_INFERNAL_CURSE = "boss_infernal_curse"  # Each monster turn +
 const ABILITY_BOSS_TALON_BARRAGE = "boss_talon_barrage"    # On-hit, 30% chance for +2 bonus attacks at 50% damage each. Distinct from multi_strike (fixed multiplier, not chance-based)
 const ABILITY_BOSS_TRIPLE_THREAT = "boss_triple_threat"    # Cycles poison/burn/slow per round (round % 3 == 0/1/2). Each cycle applies its debuff to the player. Distinct from any single debuff signature
 const ABILITY_BOSS_BUILDING_CHARM = "boss_building_charm"  # On-hit, +1 charm stack (cap 3); at 3 stacks the player auto-attacks themselves for 50% damage NEXT player turn, then resets to 0. Cyclical charm-burst
+# Audit #5 boss signatures (Slice 10 — T5 layer)
+const ABILITY_BOSS_SOUL_BURN = "boss_soul_burn"            # On-hit, drains 5% of player primary resource max (mana/stamina/energy by class). Resource pressure — distinct from HP DoTs
+const ABILITY_BOSS_THREE_HEADS = "boss_three_heads"        # Each monster turn, 4% player max HP damage that ignores DEF (gnaws through gear). Steady chip
+const ABILITY_BOSS_HELLFIRE_STACK = "boss_hellfire_stack"  # On-hit, first deals (current_stacks × 4% max HP), then +1 stack (cap 5). Damage from PRIOR stacks fires on each hit — pressure builds across the fight, distinct from Festering (player-turn tick)
+const ABILITY_BOSS_SOUL_FORGE = "boss_soul_forge"          # Every 5 monster turns, heals 15% max HP. Bigger than Trollish Regrowth (8%) and distinct from Iron Discipline (heal + clears debuffs). Pure heal cycle
+const ABILITY_BOSS_TITAN_EARTHQUAKE = "boss_titan_earthquake"  # Every 4 monster turns, 8% max HP damage + permanently +1 earthquake stack (cap 5). Each stack reduces incoming player damage by 10%. Distinct from Stoneform (binary alt-round) — escalating persistent defense
+const ABILITY_BOSS_VORPAL_STRIKE = "boss_vorpal_strike"    # Every 4 monster turns, the boss's normal attack deals 3x damage. Telegraphed, infrequent, single-moment burst
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1441,6 +1448,14 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		if stoneform_active:
 			damage = max(1, int(damage * 0.3))
 			messages.append("[color=#808080]The %s is in stoneform! Damage reduced.[/color]" % monster.name)
+
+		# Audit #5 Slice 10 — Titan Earthquake stacks (Titan). Each stack
+		# reduces incoming player damage by 10% (cap 5 = 50% reduction).
+		# Distinct from Stoneform (binary alt-round) — escalating, persistent.
+		var quake_stacks = int(combat.get("titan_earthquake_stacks", 0))
+		if quake_stacks > 0 and ABILITY_BOSS_TITAN_EARTHQUAKE in abilities:
+			var quake_mult = max(0.5, 1.0 - 0.1 * quake_stacks)
+			damage = max(1, int(damage * quake_mult))
 
 		monster.current_hp -= damage
 		monster.current_hp = max(0, monster.current_hp)
@@ -4994,6 +5009,37 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			character.current_hp = max(1, character.current_hp - barrage_base)
 		messages.append("[color=#FFD700][b]TALON BARRAGE![/b][/color] [color=#FF8800]The %s rakes you with two extra strikes! [color=#FF4444]-%d HP[/color] each.[/color]" % [monster.name, barrage_base])
 
+	# Audit #5 boss signature (Slice 10) — Soul Burn (Lich). On each successful
+	# hit, drains 5% of the player's primary resource max (mana/stamina/energy
+	# by class path). Pressure on resource-dependent classes — distinct from
+	# the HP-focused DoTs. Floored at 0.
+	if ABILITY_BOSS_SOUL_BURN in abilities and hits > 0:
+		var sb_resource = character.get_primary_resource()
+		var sb_max = character.get_primary_resource_max()
+		var sb_drain = max(1, int(sb_max * 0.05))
+		match sb_resource:
+			"mana":
+				character.current_mana = max(0, character.current_mana - sb_drain)
+			"stamina":
+				character.current_stamina = max(0, character.current_stamina - sb_drain)
+			"energy":
+				character.current_energy = max(0, character.current_energy - sb_drain)
+		messages.append("[color=#9400D3][b]SOUL BURN![/b][/color] [color=#A0A0FF]The %s tears %d %s from your reserves.[/color]" % [monster.name, sb_drain, sb_resource])
+
+	# Audit #5 boss signature (Slice 10) — Hellfire Stack (Balrog). On each
+	# successful hit, FIRST burns for (current_stacks × 4% max HP), THEN +1
+	# stack (cap 5). Damage from prior stacks compounds across the fight —
+	# distinct from Festering (player-turn tick) and from Drowning (damage
+	# debuff). Pure escalating on-hit pressure.
+	if ABILITY_BOSS_HELLFIRE_STACK in abilities and hits > 0:
+		var hellfire_stacks = int(combat.get("player_hellfire_stacks", 0))
+		if hellfire_stacks > 0:
+			var hellfire_dmg = max(1, int(character.get_total_max_hp() * 0.04 * hellfire_stacks))
+			character.current_hp = max(1, character.current_hp - hellfire_dmg)
+			messages.append("[color=#FF4500][b]HELLFIRE![/b][/color] [color=#FF8800]Your existing burns flare for [color=#FF4444]-%d HP[/color] (%d stacks).[/color]" % [hellfire_dmg, hellfire_stacks])
+		if hellfire_stacks < 5:
+			combat["player_hellfire_stacks"] = hellfire_stacks + 1
+
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
 		if randi() % 100 < 30:  # 30% chance
@@ -5226,6 +5272,49 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				# Slow head: wind-shear-style debuff for next round only
 				combat["player_wind_sheared_until_round"] = int(combat.round) + 1
 				messages.append("[color=#87CEEB][b]TRIPLE THREAT (Chill)![/b][/color] [color=#A0E8FF]The goat head's breath chills you — your next strike will be weaker.[/color]")
+
+	# Audit #5 boss signature (Slice 10) — Three Heads (Cerberus). Each monster
+	# turn, deals 4% player max HP damage that ignores DEF (gnaws through gear).
+	# Steady, defense-piercing chip — pressure that gear can't mitigate.
+	if ABILITY_BOSS_THREE_HEADS in abilities and combat.round > 0:
+		var three_heads_already = int(combat.get("three_heads_last_round", -1))
+		if three_heads_already != int(combat.round):
+			combat["three_heads_last_round"] = int(combat.round)
+			var gnaw_dmg = max(1, int(character.get_total_max_hp() * 0.04))
+			character.current_hp = max(1, character.current_hp - gnaw_dmg)
+			messages.append("[color=#8B0000][b]THREE HEADS![/b][/color] [color=#FF8800]The %s's heads bite, claw, and gnaw past your armor! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, gnaw_dmg])
+
+	# Audit #5 boss signature (Slice 10) — Soul Forge (Demon Lord). Every 5
+	# monster turns, heals 15% max HP. Distinct from Iron Discipline (10% + clears
+	# debuffs at 5 turns) and from Trollish Regrowth (8% threshold-gated). Pure
+	# heal cycle, biggest periodic-heal in the boss-sig roster.
+	if ABILITY_BOSS_SOUL_FORGE in abilities and combat.round > 0 and combat.round % 5 == 0 and monster.current_hp < monster.max_hp:
+		var forge_already = int(combat.get("soul_forge_last_round", -1))
+		if forge_already != int(combat.round):
+			combat["soul_forge_last_round"] = int(combat.round)
+			var forge_amt = max(1, int(monster.max_hp * 0.15))
+			var forge_actual = mini(forge_amt, int(monster.max_hp) - int(monster.current_hp))
+			if forge_actual > 0:
+				monster.current_hp = int(monster.current_hp) + forge_actual
+				messages.append("[color=#B22222][b]SOUL FORGE![/b][/color] [color=#9ACD32]The %s drinks from forge-fire, healing %d HP![/color]" % [monster.name, forge_actual])
+
+	# Audit #5 boss signature (Slice 10) — Titan Earthquake. Every 4 monster
+	# turns, 8% max HP damage AND permanently +1 earthquake stack (cap 5).
+	# Each stack reduces incoming player damage by 10% (consumed in player
+	# attack path). Escalating defense — distinct from Stoneform's binary
+	# alt-round model.
+	if ABILITY_BOSS_TITAN_EARTHQUAKE in abilities and combat.round > 0 and combat.round % 4 == 0:
+		var quake_already = int(combat.get("titan_earthquake_last_round", -1))
+		if quake_already != int(combat.round):
+			combat["titan_earthquake_last_round"] = int(combat.round)
+			var quake_dmg = max(1, int(character.get_total_max_hp() * 0.08))
+			character.current_hp = max(1, character.current_hp - quake_dmg)
+			var quake_stacks = int(combat.get("titan_earthquake_stacks", 0))
+			if quake_stacks < 5:
+				combat["titan_earthquake_stacks"] = quake_stacks + 1
+				messages.append("[color=#8B4513][b]TITAN EARTHQUAKE![/b][/color] [color=#FF8800]The %s shakes the ground! [color=#FF4444]-%d HP[/color]. The %s gains hardened stance (Earthquake %d/5).[/color]" % [monster.name, quake_dmg, monster.name, quake_stacks + 1])
+			else:
+				messages.append("[color=#8B4513][b]TITAN EARTHQUAKE![/b][/color] [color=#FF8800]The %s shakes the ground! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, quake_dmg])
 
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}
@@ -5554,6 +5643,16 @@ func calculate_monster_damage(monster: Dictionary, character: Character, combat:
 	var base_damage = monster.strength
 	var damage_roll = (randi() % 6) + 1  # 1d6
 	var raw_damage = base_damage + damage_roll
+
+	# Audit #5 Slice 10 — Vorpal Strike (Jabberwock). Every 4 monster turns
+	# the next monster attack deals 3x damage. Check before defense reduction
+	# so the strike feels enormous even through gear. Telegraphed by the rhythm.
+	var vorpal_abilities = monster.get("abilities", [])
+	if ABILITY_BOSS_VORPAL_STRIKE in vorpal_abilities and combat.get("round", 0) > 0 and int(combat.round) % 4 == 0:
+		var vorpal_already = int(combat.get("vorpal_last_round", -1))
+		if vorpal_already != int(combat.round):
+			combat["vorpal_last_round"] = int(combat.round)
+			raw_damage *= 3
 
 	# Equipment defense provides flat reduction BEFORE defense formula
 	# This makes gear meaningful against higher-level monsters
