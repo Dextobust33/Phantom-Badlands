@@ -22898,8 +22898,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.285 changes
+	display_game("[color=#00FF00]v0.9.285[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Map memory — the map remembers where you've been (Audit #10 Slice 6j)[/color]")
+	display_game("  • [b]Tiles you've seen now stay visible as dim \"fog\" when you walk away.[/b] Previously, anything outside your current line-of-sight rendered as blank black space — meaning every time the map scrolled, you lost all surrounding context. Now any tile you've ever had in LOS keeps rendering its terrain at ~35% brightness, even from the other side of the map.")
+	display_game("  • [b]Memory is per-character and persists across logins[/b] (saved on the character file). Dynamic things — players, dungeons, corpses, depletion state, hotzone glow — are NOT drawn from memory; only the static terrain shape (trees, mountains, water, paths). Walk back to a tile to refresh those.")
+	display_game("  • [b]Mountains and other LOS-blockers themselves count as explored[/b] once you've seen them — so the silhouette of a mountain range stays visible even after you've left it behind.")
+	display_game("  • Caveat: existing characters start with empty memory and have to walk the world once to seed it.")
+	display_game("")
+
 	# v0.9.284 changes
-	display_game("[color=#00FF00]v0.9.284[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.284[/color]")
 	display_game("  [color=#FFD700]Hotzones now reward the trip (Audit #10 Slice 6i)[/color]")
 	display_game("  • [b]Kills inside a red [color=#FF4500]![/color] danger zone now give bonus XP and a better drop chance.[/b] Edge of a hotspot is +30%, center is +70%. Stacks on top of the natural level scaling — the monster is already 1.5-2.5× higher level, AND you get an extra reward on top.")
 	display_game("  • A new [color=#FF6600]\"Danger Zone Bonus: +N% XP and improved drop chance!\"[/color] line appears in the combat log on every hotspot kill so the payoff is visible.")
@@ -22932,14 +22941,6 @@ func display_changelog():
 	display_game("  • Regular herb/flower/mushroom/bush/reed nodes are unchanged — they keep rolling the generic foraging table with the Slice 6c biome bonus mixed in.")
 	display_game("")
 
-	# v0.9.280 changes
-	display_game("[color=#00FFFF]v0.9.280[/color]")
-	display_game("  [color=#FFD700]Biome-locked node types — visible biome flavor on the map (Audit #10 Slice 6e)[/color]")
-	display_game("  • [b]Each non-plains biome now spawns a unique gatherable glyph[/b] that ONLY appears in that biome:")
-	display_game("    [color=#6B8E5A]Y[/color] Cactus (Desert)  [color=#B0E0E6]i[/color] Ice Bloom (Tundra)  [color=#DA70D6]&[/color] Swamp Lily (Swamp)  [color=#DAA520]j[/color] Mountain Herb (Highlands)  [color=#8B3A3A]b[/color] Brambleberry (Forest)")
-	display_game("  • Forage these nodes the same way as herbs/flowers — walk up, press Forage. They feed the existing foraging pipeline (skill XP, Slice 6c biome bonus rolls).")
-	display_game("  • [b]Biome-locked nodes spawn OUTSIDE the 25-tile starter ring around NPC posts[/b] — you have to walk out of the post zone to find them. Strong signal that you've crossed from \"starter area\" to \"real biome\".")
-	display_game("")
 
 
 
