@@ -4799,6 +4799,12 @@ func send_location_update(peer_id: int):
 		# and (when close to the edge) a red warning line.
 		"region_in_bubble": in_bubble,
 		"region_bubble_edge_dist": bubble_edge_dist,
+		# Audit #12 Slice 1 — surface guard-force inputs so the HUD can show
+		# what's keeping the bubble inflated. Zero when the player is not in a
+		# bubble; the client already gates rendering on region_in_bubble.
+		"region_bubble_radius": int(settler_bubble.get("bubble_radius", 0)) if in_bubble else 0,
+		"region_bubble_guards": int(settler_bubble.get("guards", 0)) if in_bubble else 0,
+		"region_bubble_tower_guards": int(settler_bubble.get("tower_guards", 0)) if in_bubble else 0,
 		"region_outside_tier": outside_tier,
 		"region_outside_tier_name": String(wilderness_tier_info.get("tier_name", "Core")),
 		"region_outside_tier_color": String(wilderness_tier_info.get("tier_color", "#00FF00")),
@@ -18059,6 +18065,21 @@ const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT req
 const DEFAULT_PLAYER_POST_TIER: int = 1
 const DEFAULT_PLAYER_POST_BUBBLE_RADIUS: int = 25
 
+# Audit #12 Slice 1 — dynamic bubble radius gated by guard force.
+# Guards are counted within POST_INFLUENCE_RANGE of the post center (a fixed
+# range so the same guards always contribute, regardless of the current bubble
+# size). Each guard pushes the bubble out by BUBBLE_GROW_PER_GUARD; a guard
+# stationed in a tower contributes BUBBLE_GROW_PER_TOWER_GUARD instead (towers
+# reach further). Result is clamped to [MIN, MAX]. An unguarded post falls to
+# MIN_PLAYER_POST_BUBBLE_RADIUS — a marker zone with no real suppression. The
+# same POST_INFLUENCE_RANGE is also used by _compute_effective_post_tier so
+# tier suppression and radius growth share the same guard set.
+const POST_INFLUENCE_RANGE: int = 40
+const MIN_PLAYER_POST_BUBBLE_RADIUS: int = 12
+const MAX_PLAYER_POST_BUBBLE_RADIUS: int = 35
+const BUBBLE_GROW_PER_GUARD: int = 2
+const BUBBLE_GROW_PER_TOWER_GUARD: int = 4
+
 # Building-template kits (post-Slice-5 follow-up). A kit places multiple
 # tiles in a fixed layout when used, replacing the per-tile build grind for
 # common shapes. Coordinates are offsets from the player's current tile.
@@ -18360,9 +18381,10 @@ func _get_posts_for_account(account_id: String) -> Array:
 			else:
 				cx = int(c.get("x", 0))
 				cy = int(c.get("y", 0))
-			var meta_for_tier = meta.duplicate()
-			meta_for_tier["_owner"] = owner
-			var effective_tier = _compute_effective_post_tier(meta_for_tier)
+			var meta_for_compute = meta.duplicate()
+			meta_for_compute["_owner"] = owner
+			var effective_tier = _compute_effective_post_tier(meta_for_compute)
+			var effective_radius = _compute_effective_post_radius(meta_for_compute)
 			var display_name = String(meta.get("name", ""))
 			if display_name == "":
 				display_name = "%s's Post" % owner
@@ -18374,45 +18396,18 @@ func _get_posts_for_account(account_id: String) -> Array:
 				"y": cy,
 				"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
 				"effective_tier": effective_tier,
-				"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
+				"bubble_radius": effective_radius,
 			})
 	return out
 
-func _compute_effective_post_tier(post_meta: Dictionary) -> int:
-	"""Slice 4 — compute effective settler bubble tier from guard/tower count.
-
-	Moderate suppression formula (per design):
-	- Each guard owned by the post's owner inside the bubble: -1 from
-	  wilderness tier
-	- Each of those guards adjacent to a tower (already flagged in_tower at
-	  hire time): an additional -1 (so a tower-guard subtracts 2 total)
-	- Floor at post_meta.tier (default 1) — represents the best case with
-	  full investment; can never suppress past this
-	- Ceiling at wilderness tier — extra guards never raise difficulty
-
-	Wilderness tier is taken from the nearest formal trading post (Slice 1).
-	post_meta must include `_owner` (added by callers) since active_guards
-	is keyed by position, not by post."""
-	var c = post_meta.get("center", Vector2i.ZERO)
-	var cx: int
-	var cy: int
-	if c is Vector2i:
-		cx = c.x
-		cy = c.y
-	else:
-		cx = int(c.get("x", 0))
-		cy = int(c.get("y", 0))
-	var radius = int(post_meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
-	var floor_tier = int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER))
-	var owner = String(post_meta.get("_owner", ""))
-
-	var wilderness_info = chunk_manager.get_nearest_npc_post_with_tier(cx, cy)
-	var wilderness_tier = int(wilderness_info.get("tier", 1))
-
+func _count_post_guard_force(cx: int, cy: int, owner: String) -> Dictionary:
+	"""Audit #12 Slice 1 — count guards within POST_INFLUENCE_RANGE belonging
+	to the post's owner. Returns {guards, tower_guards}. Used by both radius
+	computation and tier suppression so the two share the same guard set."""
+	var guards = 0
+	var tower_guards = 0
 	if owner == "":
-		return wilderness_tier
-
-	var suppression = 0
+		return {"guards": 0, "tower_guards": 0}
 	for pos_key in active_guards:
 		var guard = active_guards[pos_key]
 		if String(guard.get("owner", "")) != owner:
@@ -18424,19 +18419,84 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 		var gy = int(parts[1])
 		var dx = float(gx - cx)
 		var dy = float(gy - cy)
-		if sqrt(dx * dx + dy * dy) > float(radius):
+		if sqrt(dx * dx + dy * dy) > float(POST_INFLUENCE_RANGE):
 			continue
-		suppression += 1
+		guards += 1
 		if bool(guard.get("in_tower", false)):
-			suppression += 1
+			tower_guards += 1
+	return {"guards": guards, "tower_guards": tower_guards}
 
+func _compute_effective_post_radius(post_meta: Dictionary) -> int:
+	"""Audit #12 Slice 1 — bubble radius scales with guard force.
+
+	An unguarded post falls to MIN_PLAYER_POST_BUBBLE_RADIUS (marker zone).
+	Each guard in the influence range adds BUBBLE_GROW_PER_GUARD; each tower-
+	stationed guard adds BUBBLE_GROW_PER_TOWER_GUARD instead (so towers reach
+	further). Result is clamped to [MIN, MAX]."""
+	var c = post_meta.get("center", Vector2i.ZERO)
+	var cx: int
+	var cy: int
+	if c is Vector2i:
+		cx = c.x
+		cy = c.y
+	else:
+		cx = int(c.get("x", 0))
+		cy = int(c.get("y", 0))
+	var owner = String(post_meta.get("_owner", ""))
+	var force = _count_post_guard_force(cx, cy, owner)
+	var plain_guards = int(force.get("guards", 0)) - int(force.get("tower_guards", 0))
+	var tower_guards = int(force.get("tower_guards", 0))
+	var radius = MIN_PLAYER_POST_BUBBLE_RADIUS
+	radius += plain_guards * BUBBLE_GROW_PER_GUARD
+	radius += tower_guards * BUBBLE_GROW_PER_TOWER_GUARD
+	return clamp(radius, MIN_PLAYER_POST_BUBBLE_RADIUS, MAX_PLAYER_POST_BUBBLE_RADIUS)
+
+func _compute_effective_post_tier(post_meta: Dictionary) -> int:
+	"""Slice 4 / Audit #12 Slice 1 — compute effective settler bubble tier.
+
+	Moderate suppression formula:
+	- Each guard owned by the post's owner inside POST_INFLUENCE_RANGE: -1
+	  from wilderness tier
+	- Each of those guards adjacent to a tower (in_tower flag set at hire
+	  time): an additional -1 (so a tower-guard subtracts 2 total)
+	- Floor at post_meta.tier (default 1) — best case with full investment
+	- Ceiling at wilderness tier — extra guards never raise difficulty
+
+	Counts use POST_INFLUENCE_RANGE (not bubble_radius) so the same guards
+	contribute regardless of the current bubble size — guards just outside
+	a small bubble still help. Wilderness tier is from the nearest formal
+	trading post. post_meta must include `_owner` (added by callers) since
+	active_guards is keyed by position, not by post."""
+	var c = post_meta.get("center", Vector2i.ZERO)
+	var cx: int
+	var cy: int
+	if c is Vector2i:
+		cx = c.x
+		cy = c.y
+	else:
+		cx = int(c.get("x", 0))
+		cy = int(c.get("y", 0))
+	var floor_tier = int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER))
+	var owner = String(post_meta.get("_owner", ""))
+
+	var wilderness_info = chunk_manager.get_nearest_npc_post_with_tier(cx, cy)
+	var wilderness_tier = int(wilderness_info.get("tier", 1))
+
+	if owner == "":
+		return wilderness_tier
+
+	var force = _count_post_guard_force(cx, cy, owner)
+	var suppression = int(force.get("guards", 0)) + int(force.get("tower_guards", 0))
 	var effective_tier = wilderness_tier - suppression
 	return clamp(effective_tier, floor_tier, wilderness_tier)
 
 func _update_player_post_bubble_cache():
 	"""Build settler bubble cache and push to world_system. Slice 4 — called
 	after every guard hire/feed/decay/dismiss and any enclosure mutation, so
-	get_post_anchored_level reflects the current suppression state."""
+	get_post_anchored_level reflects the current suppression state.
+
+	Audit #12 Slice 1 — radius is now computed from guard force, not pulled
+	from the stored bubble_radius default."""
 	if not world_system:
 		return
 	var bubbles: Array = []
@@ -18453,10 +18513,10 @@ func _update_player_post_bubble_cache():
 			else:
 				cx = int(c.get("x", 0))
 				cy = int(c.get("y", 0))
-			var radius = int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
-			var meta_for_tier = meta.duplicate()
-			meta_for_tier["_owner"] = owner
-			var effective_tier = _compute_effective_post_tier(meta_for_tier)
+			var meta_for_compute = meta.duplicate()
+			meta_for_compute["_owner"] = owner
+			var radius = _compute_effective_post_radius(meta_for_compute)
+			var effective_tier = _compute_effective_post_tier(meta_for_compute)
 			bubbles.append({
 				"x": cx,
 				"y": cy,
@@ -18468,13 +18528,15 @@ func _update_player_post_bubble_cache():
 	world_system.update_player_post_bubbles(bubbles)
 
 func _get_player_post_bubble_at(x: int, y: int) -> Dictionary:
-	"""Slice 3 — return the nearest player-post settler bubble covering (x, y),
-	or {} if none. Result fields: owner, post_index, name, center, tier,
-	bubble_radius, distance.
+	"""Slice 3 / Audit #12 Slice 1 — return the nearest player-post settler
+	bubble covering (x, y), or {} if none. Result fields: owner, post_index,
+	name, center, tier, effective_tier, bubble_radius, guards, tower_guards,
+	distance.
 
-	Visual indicator only this slice; monster levels still come from
-	post-anchored model in shared/world_system.gd. Slice 4 will gate the
-	bubble's effective tier on guard/tower/food maintenance."""
+	The bubble_radius and effective_tier are computed live from guard force
+	(POST_INFLUENCE_RANGE), so the bubble grows/shrinks as guards are hired,
+	fed, or decay. An unguarded post collapses to MIN_PLAYER_POST_BUBBLE_RADIUS
+	— a marker zone with no real suppression."""
 	var nearest_match = {}
 	var nearest_dist = INF
 	for owner in player_post_names:
@@ -18490,15 +18552,16 @@ func _get_player_post_bubble_at(x: int, y: int) -> Dictionary:
 			else:
 				cx = int(c.get("x", 0))
 				cy = int(c.get("y", 0))
-			var radius = int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
+			var meta_for_compute = meta.duplicate()
+			meta_for_compute["_owner"] = owner
+			var radius = _compute_effective_post_radius(meta_for_compute)
 			var dx = float(x - cx)
 			var dy = float(y - cy)
 			var d = sqrt(dx * dx + dy * dy)
 			if d <= float(radius) and d < nearest_dist:
 				nearest_dist = d
-				var meta_for_tier = meta.duplicate()
-				meta_for_tier["_owner"] = owner
-				var effective_tier = _compute_effective_post_tier(meta_for_tier)
+				var effective_tier = _compute_effective_post_tier(meta_for_compute)
+				var force = _count_post_guard_force(cx, cy, owner)
 				nearest_match = {
 					"owner": owner,
 					"post_index": i,
@@ -18507,6 +18570,8 @@ func _get_player_post_bubble_at(x: int, y: int) -> Dictionary:
 					"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
 					"effective_tier": effective_tier,
 					"bubble_radius": radius,
+					"guards": int(force.get("guards", 0)),
+					"tower_guards": int(force.get("tower_guards", 0)),
 					"distance": d,
 				}
 	return nearest_match
