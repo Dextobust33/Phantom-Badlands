@@ -1778,6 +1778,13 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	if USE_DELTA_UPDATES:
 		last_sent_character_state[peer_id] = char_dict_loaded.duplicate(true)
 
+	# Audit #9 Slice 2b — drain any pending market deliveries that accumulated
+	# while this account was offline (or while the buyer's inventory was full
+	# during a previous fulfillment). Materials land in crafting_materials;
+	# inventory-resident types take inventory slots; anything that still won't
+	# fit is re-queued at the tail so it isn't lost.
+	_drain_pending_market_deliveries(peer_id)
+
 	# Broadcast join message to other players (include title if present)
 	var display_name = char_name
 	if not character.title.is_empty():
@@ -11866,35 +11873,52 @@ func handle_market_order_fulfill(peer_id: int, message: Dictionary):
 	})
 	send_character_update(peer_id)
 
+	# Audit #9 Slice 2b — delivery queue. If the buyer is online AND has room,
+	# items land in their inventory immediately. Otherwise the items are
+	# appended to the account's pending_market_deliveries queue, which drains
+	# on next character_loaded.
+	var queued_qty = 0
 	if buyer_peer != -1:
 		var buyer_char = characters[buyer_peer]
-		# Add items to buyer's pool
+		# Materials always have room (crafting_materials is unbounded).
 		if item_type == "material":
 			if not buyer_char.crafting_materials.has(item_name):
 				buyer_char.crafting_materials[item_name] = 0
 			buyer_char.crafting_materials[item_name] += fulfill_qty
 		else:
-			# Build a representative item dict. For consumables/runes/monster_parts we
-			# reconstruct a minimal item — the buyer gets a copy of one that exists in
-			# the world. We grab the seller's matching item template by name if we can.
-			# Since we already removed the seller's items above, fall back to a basic shape.
+			# Inventory-resident types — fill what we can, queue the rest.
 			for _i in range(fulfill_qty):
-				var item_copy = {
-					"type": item_type,
-					"name": item_name,
-					"id": randi(),
-				}
 				if buyer_char.inventory.size() < Character.MAX_INVENTORY_SIZE:
+					var item_copy = {
+						"type": item_type,
+						"name": item_name,
+						"id": randi(),
+					}
 					buyer_char.inventory.append(item_copy)
 				else:
-					# Buyer's inventory full — drop on floor? For v1, just skip and
-					# notify. Buyer's valor stays spent (this is rare given fulfill_qty
-					# is bounded by the buyer's order qty which they sized themselves).
-					send_to_peer(buyer_peer, {"type": "text", "message": "[color=#FF6347]Your buy order for %s arrived but your inventory is full! Item lost.[/color]" % item_name})
-					break
+					queued_qty += 1
 		save_character(buyer_peer)
-		send_to_peer(buyer_peer, {"type": "text", "message": "[color=#FFD700]Buy order fulfilled! Received %s%s.[/color]" % [item_name, qty_text]})
+		var delivered_qty = fulfill_qty - queued_qty
+		if delivered_qty > 0:
+			var delivered_text = " x%d" % delivered_qty if delivered_qty > 1 else ""
+			send_to_peer(buyer_peer, {"type": "text", "message": "[color=#FFD700]Buy order fulfilled! Received %s%s.[/color]" % [item_name, delivered_text]})
+		if queued_qty > 0:
+			var q_text = " x%d" % queued_qty if queued_qty > 1 else ""
+			send_to_peer(buyer_peer, {"type": "text", "message": "[color=#FFA500]Inventory full — %s%s queued for delivery (auto-collected on next login).[/color]" % [item_name, q_text]})
 		send_character_update(buyer_peer)
+	else:
+		# Buyer offline — every item goes to the queue.
+		queued_qty = fulfill_qty
+
+	if queued_qty > 0:
+		persistence.append_account_pending_delivery(buyer_account_id, {
+			"item_type": item_type,
+			"item_name": item_name,
+			"quantity": queued_qty,
+			"order_id": order_id,
+			"fulfilled_by": String(characters[peer_id].name),
+			"timestamp": int(Time.get_unix_time_from_system()),
+		})
 
 func handle_market_order_cancel(peer_id: int, message: Dictionary):
 	"""Cancel a buy order. Refunds the unfilled portion to the buyer."""
@@ -11945,6 +11969,64 @@ func handle_market_order_cancel(peer_id: int, message: Dictionary):
 		"new_valor": persistence.get_valor(buyer_account_id),
 	})
 	send_character_update(peer_id)
+
+func _drain_pending_market_deliveries(peer_id: int) -> void:
+	"""Audit #9 Slice 2b — at character login, deliver any queued buy-order
+	items (queued when buyer was offline or had a full inventory). Materials
+	go to crafting_materials; consumable/rune/monster_part go to inventory.
+	Any item that still doesn't fit (inventory full) is re-queued at the tail
+	so the account never loses a fulfilled item."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var account_id = peers[peer_id].account_id
+	var deliveries = persistence.get_account_pending_deliveries(account_id)
+	if deliveries.is_empty():
+		return
+	var character = characters[peer_id]
+	var leftover: Array = []
+	var delivered_summary: Dictionary = {}  # item_name → total qty delivered
+	for d in deliveries:
+		var item_type = String(d.get("item_type", ""))
+		var item_name = String(d.get("item_name", ""))
+		var qty = int(d.get("quantity", 0))
+		if qty <= 0 or item_name.is_empty():
+			continue
+		if item_type == "material":
+			if not character.crafting_materials.has(item_name):
+				character.crafting_materials[item_name] = 0
+			character.crafting_materials[item_name] += qty
+			delivered_summary[item_name] = int(delivered_summary.get(item_name, 0)) + qty
+		else:
+			var fit = 0
+			while fit < qty and character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+				character.inventory.append({"type": item_type, "name": item_name, "id": randi()})
+				fit += 1
+			if fit > 0:
+				delivered_summary[item_name] = int(delivered_summary.get(item_name, 0)) + fit
+			if fit < qty:
+				# Inventory ran out mid-delivery — re-queue the rest at the tail.
+				leftover.append({
+					"item_type": item_type,
+					"item_name": item_name,
+					"quantity": qty - fit,
+					"order_id": d.get("order_id", ""),
+					"fulfilled_by": d.get("fulfilled_by", ""),
+					"timestamp": d.get("timestamp", int(Time.get_unix_time_from_system())),
+				})
+	# Persist updates: clear original queue, append any leftover.
+	persistence.clear_account_pending_deliveries(account_id)
+	for l in leftover:
+		persistence.append_account_pending_delivery(account_id, l)
+	if not delivered_summary.is_empty():
+		save_character(peer_id)
+		var lines: Array = []
+		lines.append("[color=#FFD700]═ Pending Market Deliveries ═[/color]")
+		for nm in delivered_summary.keys():
+			lines.append("  [color=#00FF00]+%d %s[/color]" % [int(delivered_summary[nm]), String(nm)])
+		if not leftover.is_empty():
+			lines.append("[color=#FFA500](%d items couldn't fit and are still queued)[/color]" % leftover.size())
+		send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+		send_character_update(peer_id)
 
 func handle_market_my_orders(peer_id: int, message: Dictionary):
 	"""List all open buy orders this account has placed across every post."""

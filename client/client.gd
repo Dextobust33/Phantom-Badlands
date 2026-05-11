@@ -23081,8 +23081,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.317 changes
+	display_game("[color=#00FF00]v0.9.317[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Buy-order delivery queue (Audit #9 Slice 2b)[/color]")
+	display_game("  • [b]No more lost items.[/b] When a seller fulfills your buy order while you're offline (or your inventory is full), the items are now queued at the account level instead of vanishing.")
+	display_game("  • [b]Auto-collect on next login.[/b] The queue drains into your character on `character_loaded`. Materials go straight into crafting_materials; consumables/runes/parts take inventory slots. Anything that still won't fit is re-queued at the tail — nothing is ever lost.")
+	display_game("  • [b]Brief receipt at login[/b]: \"═ Pending Market Deliveries ═\" with a green +qty line for each item type, plus a warning if any couldn't fit (so you know to make space and relog).")
+	display_game("  • [b]Closes the only known v1 limitation[/b] from the buy-order launch in v0.9.311. Audit #9 marker dimension complete — Slices 1+2+2b+3+4 all shipped.")
+	display_game("")
+
 	# v0.9.316 changes
-	display_game("[color=#00FF00]v0.9.316[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.316[/color]")
 	display_game("  [color=#FFD700]Deck variants: Forethought + Tactical Retreat (Audit #1)[/color]")
 	display_game("  • [b]Two new universal deck cards[/b] solve the stuck-hand problem. Every character — Mage, Warrior, Trickster — gets 1 copy of each in their starter deck. Existing characters get them auto-added on next combat.")
 	display_game("  • [color=#9370DB][b]Forethought[/b][/color]: pay 1 of your primary resource (mana / stamina / energy). Discard the rest of your hand and draw a fresh hand. [b]Skips the monster's turn[/b] — a setup card, not a tempo card. Use when you have cards you can't afford and need a do-over.")
@@ -23122,18 +23131,6 @@ func display_changelog():
 	display_game("  • [b]Synergy with buy orders (v0.9.311)[/b]: place a buy order for the quest item, sit at the post, let other players bring you the goods.")
 	display_game("")
 
-	# v0.9.312 changes
-	display_game("[color=#00FFFF]v0.9.312[/color]")
-	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 13)[/color]")
-	display_game("  • [b]15 of 53 dungeons[/b] now have unique theme tiles (up from 9). New themes span T1-T5 with a mix of positive pickups and persistent hazards:")
-	display_game("    – [color=#DAA520]Goblin Caves — Scattered Loot (c)[/color]: step → +1-5 Valor (consumed). Friendly T1 intro to themed tiles.")
-	display_game("    – [color=#20B2AA]Siren's Cove — Shallow Tide (=)[/color]: +1 step cost AND 5%% chance of Lullaby (next combat turn skipped). Persistent. Pairs with Siren Enchantress's Lullaby signature.")
-	display_game("    – [color=#3CB371]Troll Den — Cave Moss (m)[/color]: damp moss patches heal ~2%% max HP on step (consumed).")
-	display_game("    – [color=#F0E68C]Gargoyle Cathedral — Sacred Ground (T)[/color]: blesses your next attack with [b]+20%% damage[/b] (consumed). First buff-pickup tile. Pairs with Stoneform's alt-round damage reduction — bless yourself on odd rounds.")
-	display_game("    – [color=#CD853F]Dragon Hatchery — Warm Nest (n)[/color]: hatchling burrows heal ~4%% max HP on step (consumed).")
-	display_game("    – [color=#9ACD32]Cerberus Pit — Brimstone (s)[/color]: sulfur fumes burn for ~4%% max HP per step. Persistent.")
-	display_game("  • All theme tiles surface on the dungeon warning page legend.")
-	display_game("")
 
 
 
