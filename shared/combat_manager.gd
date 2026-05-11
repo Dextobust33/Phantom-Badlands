@@ -177,6 +177,7 @@ const ABILITY_BOSS_SOUL_SIPHON = "boss_soul_siphon"        # Every 3 monster tur
 const ABILITY_BOSS_PACK_FRENZY = "boss_pack_frenzy"        # Boss attack scales +5% per round, uncapped escalating. Rewards fast kills, punishes long fights
 const ABILITY_BOSS_CONTAGION_AURA = "boss_contagion_aura"  # Passive: +1 contagion stack every 2 monster turns (cap 5); each stack ticks 1% player max HP at start of player turn. No hit required, distinct from on-hit Festering Bite
 const ABILITY_BOSS_LULLABY = "boss_lullaby"                # Every 4 monster turns, forces player to skip next turn (timer-based, deterministic — distinct from Web Stun's on-hit chance)
+const ABILITY_BOSS_DROWNING = "boss_drowning"              # On hit, +1 drowning stack (cap 3). Each stack ticks 2% player max HP per turn AND reduces player damage by 10%. Combines DoT + offensive debuff — only signature that does both
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1290,6 +1291,18 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		character.current_hp -= contagion_dmg
 		character.current_hp = max(1, character.current_hp)
 		messages.append("[color=#6B8E23]Contagion seeps in — [color=#FF8800]%d[/color] damage. (%d stacks)[/color]" % [contagion_dmg, contagion_stacks])
+
+	# === DROWNING TICK (Audit #5 Slice 7 — Elder Kelpie boss_drowning) ===
+	# 2% max HP per stack per player turn (cap 3 stacks = 6%/turn). Damage-debuff
+	# component lives in calculate_damage. Stacks accumulate on monster HITS,
+	# distinct from Contagion (passive) and Festering (lower per-stack, capped
+	# at 5). Damage cannot kill.
+	var drowning_stacks = combat.get("player_drowning_stacks", 0)
+	if drowning_stacks > 0:
+		var drowning_dmg = max(1, int(character.get_total_max_hp() * 0.02 * drowning_stacks))
+		character.current_hp -= drowning_dmg
+		character.current_hp = max(1, character.current_hp)
+		messages.append("[color=#1E90FF]The murky water fills your lungs — [color=#FF8800]%d[/color] damage. (drowning %d/3)[/color]" % [drowning_dmg, drowning_stacks])
 
 	# === CHARM EFFECT (player attacks themselves) ===
 	if combat.get("player_charmed", false):
@@ -4886,6 +4899,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["player_fester_stacks"] = current_stacks + 1
 			messages.append("[color=#9ACD32]The %s's filthy bite festers! (Festering: %d stack%s)[/color]" % [monster.name, current_stacks + 1, "s" if current_stacks + 1 > 1 else ""])
 
+	# Audit #5 boss signature — Drowning / boss_drowning (Elder Kelpie). Each
+	# successful hit applies +1 drowning stack (cap 3). Damage tick handled in
+	# the player turn-start block; damage debuff in calculate_damage. Combines
+	# DoT + offensive debuff so the player simultaneously loses HP and loses
+	# damage output — pressure mounts fast unless you burst.
+	if ABILITY_BOSS_DROWNING in abilities and hits > 0:
+		var current_drown = int(combat.get("player_drowning_stacks", 0))
+		if current_drown < 3:
+			combat["player_drowning_stacks"] = current_drown + 1
+			messages.append("[color=#1E90FF]The %s drags you under! (Drowning %d/3 — your attacks weaken.)[/color]" % [monster.name, current_drown + 1])
+
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
 		if randi() % 100 < 30:  # 30% chance
@@ -5028,6 +5052,15 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var damage_buff = character.get_buff_value("damage")
 	if damage_buff > 0:
 		raw_damage = int(raw_damage * (1.0 + damage_buff / 100.0))
+
+	# Audit #5 — Drowning debuff (Elder Kelpie boss_drowning). Each stack drops
+	# player damage by 10% (cap 3 stacks = -30%). Combined with the DoT tick
+	# applied at start of player turn, the player simultaneously loses HP and
+	# loses output — the only signature that does both.
+	var drown_stacks = int(combat.get("player_drowning_stacks", 0))
+	if drown_stacks > 0:
+		var drown_mult = max(0.1, 1.0 - 0.1 * drown_stacks)
+		raw_damage = max(1, int(raw_damage * drown_mult))
 
 	# === COMPANION BONUS: Attack damage ===
 	var companion_attack = character.get_companion_bonus("attack")
