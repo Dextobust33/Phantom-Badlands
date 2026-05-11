@@ -450,6 +450,38 @@ func update_account_mastery_record(account_id: String, ability_name: String, new
 	save_accounts()
 	return true
 
+# ===== PENDING MARKET DELIVERIES (Audit #9 Slice 2b) =====
+# When a seller fulfills a buy order and the buyer is offline (or their
+# inventory is full), the items land here. Drained into the next character
+# the account logs in with — no items are lost. Account-level so any of
+# the player's characters can collect.
+
+func get_account_pending_deliveries(account_id: String) -> Array:
+	"""Return the queued deliveries for this account. Empty array if none."""
+	if not accounts_data.accounts.has(account_id):
+		return []
+	var account = accounts_data.accounts[account_id]
+	return account.get("pending_market_deliveries", []).duplicate(true)
+
+func append_account_pending_delivery(account_id: String, delivery: Dictionary):
+	"""Add one delivery entry to the queue. delivery shape:
+	{item_type, item_name, quantity, order_id, fulfilled_by, timestamp}"""
+	if not accounts_data.accounts.has(account_id):
+		return
+	var account = accounts_data.accounts[account_id]
+	if not account.has("pending_market_deliveries"):
+		account["pending_market_deliveries"] = []
+	account["pending_market_deliveries"].append(delivery)
+	save_accounts()
+
+func clear_account_pending_deliveries(account_id: String):
+	"""Wipe the queue (called after the items have been delivered to a character)."""
+	if not accounts_data.accounts.has(account_id):
+		return
+	var account = accounts_data.accounts[account_id]
+	account["pending_market_deliveries"] = []
+	save_accounts()
+
 func add_character_to_account(account_id: String, char_name: String):
 	"""Add character name to account's character slots"""
 	if not accounts_data.accounts.has(account_id):
