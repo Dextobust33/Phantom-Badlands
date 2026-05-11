@@ -978,11 +978,11 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	top_row.add_child(name_label)
 
-	# Bottom row: cost + rank
-	var bottom_row := HBoxContainer.new()
-	bottom_row.add_theme_constant_override("separation", 8)
-	bottom_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(bottom_row)
+	# Middle row: cost + rank
+	var middle_row := HBoxContainer.new()
+	middle_row.add_theme_constant_override("separation", 8)
+	middle_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(middle_row)
 
 	var cost_label := Label.new()
 	cost_label.name = "Cost"
@@ -990,7 +990,7 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	cost_label.add_theme_font_size_override("font_size", 14)
 	cost_label.add_theme_color_override("font_color", Color("#9ACD32"))
 	cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bottom_row.add_child(cost_label)
+	middle_row.add_child(cost_label)
 
 	var rank_label := Label.new()
 	rank_label.name = "Rank"
@@ -1000,7 +1000,21 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	rank_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	rank_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bottom_row.add_child(rank_label)
+	middle_row.add_child(rank_label)
+
+	# Bottom row: effect estimate (damage / buff magnitude / chance).
+	# Single label that fills the row; populated by _refresh_hand from the
+	# client's _estimate_ability_card_effect helper so the panel doesn't have
+	# to know per-ability formulas.
+	var effect_label := Label.new()
+	effect_label.name = "Effect"
+	effect_label.text = ""
+	effect_label.add_theme_font_size_override("font_size", 13)
+	effect_label.add_theme_color_override("font_color", Color("#FFA060"))
+	effect_label.clip_text = true
+	effect_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	effect_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(effect_label)
 
 	# Click handler — pulls the current card name from meta on click.
 	cell.gui_input.connect(_on_hand_cell_input.bind(index))
@@ -1043,11 +1057,12 @@ func _refresh_hand() -> void:
 		var cell: PanelContainer = _hand_cells[i]
 		var vbox = cell.get_node("VBox")
 		var top_row = vbox.get_child(0)
-		var bottom_row = vbox.get_child(1)
+		var middle_row = vbox.get_child(1)
 		var key_lbl: Label = top_row.get_child(0)
 		var name_lbl: Label = top_row.get_child(1)
-		var cost_lbl: Label = bottom_row.get_child(0)
-		var rank_lbl: Label = bottom_row.get_child(1)
+		var cost_lbl: Label = middle_row.get_child(0)
+		var rank_lbl: Label = middle_row.get_child(1)
+		var effect_lbl: Label = vbox.get_child(2)
 
 		# Hotkey label reads the live keybind for the action-bar slot this
 		# card sits at. Cards 0-4 land at action_5..action_9 (default keys
@@ -1070,6 +1085,7 @@ func _refresh_hand() -> void:
 			key_lbl.add_theme_color_override("font_color", Color("#444444"))
 			cost_lbl.text = ""
 			rank_lbl.text = ""
+			effect_lbl.text = ""
 			cell.tooltip_text = ""
 			_set_cell_dim(cell, true, false)
 			continue
@@ -1091,14 +1107,12 @@ func _refresh_hand() -> void:
 		else:
 			cell.tooltip_text = str(info.get("display", card_name))
 
-		var cost_int = int(info.get("cost", 0))
-		var cost_floor_int = int(info.get("cost_floor", 0))
+		# Show the single amount that will actually be spent if the card is
+		# triggered now (mirrors server's auto-cast / Magic Bolt smart suggest).
+		var planned_int = int(info.get("planned_cost", 0))
 		var resource_type = str(info.get("resource_type", ""))
-		if cost_int > 0 and resource_type != "":
-			if cost_floor_int > 0 and cost_floor_int < cost_int:
-				cost_lbl.text = "%d-%d %s" % [cost_floor_int, cost_int, _short_resource_label(resource_type)]
-			else:
-				cost_lbl.text = "%d %s" % [cost_int, _short_resource_label(resource_type)]
+		if planned_int > 0 and resource_type != "":
+			cost_lbl.text = "%d %s" % [planned_int, _short_resource_label(resource_type)]
 			cost_lbl.add_theme_color_override("font_color", _resource_color(resource_type))
 		else:
 			cost_lbl.text = "Free"
@@ -1106,10 +1120,22 @@ func _refresh_hand() -> void:
 
 		var rank = int(info.get("rank", 0))
 		if rank >= 0 and rank < HAND_RANK_NAMES.size():
-			rank_lbl.text = "R%d" % rank
+			var remaining = int(info.get("rank_uses_remaining", 0))
+			var at_max = bool(info.get("rank_at_max", false))
+			if at_max:
+				rank_lbl.text = "R%d ★" % rank
+			elif remaining > 0:
+				rank_lbl.text = "R%d +%d" % [rank, remaining]
+			else:
+				rank_lbl.text = "R%d" % rank
 			rank_lbl.add_theme_color_override("font_color", Color(HAND_RANK_COLORS[rank]))
 		else:
 			rank_lbl.text = ""
+
+		var effect_text = str(info.get("effect_text", ""))
+		var effect_color = str(info.get("effect_color", "#FFA060"))
+		effect_lbl.text = effect_text
+		effect_lbl.add_theme_color_override("font_color", Color(effect_color))
 
 		_set_cell_dim(cell, false, bool(info.get("can_afford", true)))
 
@@ -1139,7 +1165,7 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 	"""Pull display / cost / resource_type / rank / can_afford from client_ref.
 	Returns a dict with safe defaults when client_ref or its helpers aren't
 	available (e.g. if the panel is rendered outside a live client)."""
-	var info := {"display": card_name.replace("_", " ").capitalize(), "cost": 0, "cost_floor": 0, "resource_type": "", "rank": 0, "can_afford": true}
+	var info := {"display": card_name.replace("_", " ").capitalize(), "cost": 0, "cost_floor": 0, "planned_cost": 0, "fraction": 1.0, "resource_type": "", "rank": 0, "can_afford": true, "effect_text": "", "effect_color": "#FFA060"}
 	if client_ref == null:
 		return info
 	var path = ""
@@ -1151,10 +1177,32 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 			info["display"] = str(ability_info.get("display", info["display"]))
 			info["cost"] = int(ability_info.get("cost", 0))
 			# Slice 6c — variable-cost abilities carry a floor; cards light up if
-			# you can afford the floor, even when below the ceiling. Cost label
-			# displays as "f-c" when floor > 0.
+			# you can afford the floor, even when below the ceiling.
 			info["cost_floor"] = int(ability_info.get("cost_floor", 0))
 			info["resource_type"] = str(ability_info.get("resource_type", ""))
+	# Audit #1 follow-up — show single planned spend + effect estimate so the
+	# card answers "how much will this cost me, and what will I get?" without
+	# requiring the player to read the range and do mental math.
+	if client_ref.has_method("_get_ability_planned_spend"):
+		var spend = client_ref._get_ability_planned_spend(card_name)
+		if spend is Dictionary:
+			info["planned_cost"] = int(spend.get("amount", 0))
+			info["fraction"] = float(spend.get("fraction", 1.0))
+			if str(spend.get("resource_type", "")) != "":
+				info["resource_type"] = str(spend.get("resource_type", ""))
+	if client_ref.has_method("_estimate_ability_card_effect"):
+		var eff = client_ref._estimate_ability_card_effect(card_name, int(info.get("planned_cost", 0)), float(info.get("fraction", 1.0)))
+		if eff is Dictionary:
+			info["effect_text"] = str(eff.get("text", ""))
+			info["effect_color"] = str(eff.get("color", "#FFA060"))
+	# Mastery progress — uses needed before the ability's next rank-up. Renders
+	# inline with the rank tag so the card answers "how close am I to ranking
+	# this up?" at a glance.
+	if client_ref.has_method("_get_ability_rank_progress"):
+		var prog = client_ref._get_ability_rank_progress(card_name)
+		if prog is Dictionary:
+			info["rank_uses_remaining"] = int(prog.get("uses_remaining", 0))
+			info["rank_at_max"] = bool(prog.get("at_max", false))
 	# Mastery rank from ability_uses dict (mirrors AbilityPanel logic).
 	if "character_data" in client_ref:
 		var char_data = client_ref.character_data

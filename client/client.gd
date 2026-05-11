@@ -3396,26 +3396,31 @@ func _process(delta):
 					update_action_bar()  # Update to show what we're standing on
 				last_move_time = current_time
 
-	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, build, or popups)
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not build_mode and not storage_mode and not market_mode:
+	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, storage, market, or popups).
+	# Build mode is intentionally NOT in this exclusion list — players can reposition with their configured movement keys while picking a structure or aiming a placement. WASD remains the placement direction in build_direction_mode (consumed by _input()), so the movement poll below skips W/A/S/D when those slots are also placement keys, preventing a single key press from both moving and placing.
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode:
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			if current_time - last_move_time >= MOVE_COOLDOWN:
 				var move_dir = 0
 				var is_hunt = false
+				var build_placement_active = build_mode and (build_direction_mode or build_demolish_mode) and not pending_build_result
+				var placement_keys = [KEY_W, KEY_A, KEY_S, KEY_D]
 
 				# Check numpad/configured movement keys
 				for dir in [1, 2, 3, 4, 6, 7, 8, 9]:
 					var move_key = "move_%d" % dir
 					var key = keybinds.get(move_key, default_keybinds.get(move_key, 0))
 					if key != 0 and Input.is_physical_key_pressed(key):
+						if build_placement_active and key in placement_keys:
+							continue
 						move_dir = dir
 						break
 
 				# Check hunt key
 				if move_dir == 0:
 					var hunt_key = keybinds.get("hunt", default_keybinds.get("hunt", KEY_KP_5))
-					if Input.is_physical_key_pressed(hunt_key):
+					if Input.is_physical_key_pressed(hunt_key) and not (build_placement_active and hunt_key in placement_keys):
 						is_hunt = true
 
 				# Check arrow keys as alternative movement (4-direction)
@@ -3425,13 +3430,13 @@ func _process(delta):
 					var left_key = keybinds.get("move_left", default_keybinds.get("move_left", KEY_LEFT))
 					var right_key = keybinds.get("move_right", default_keybinds.get("move_right", KEY_RIGHT))
 
-					if Input.is_physical_key_pressed(up_key):
+					if Input.is_physical_key_pressed(up_key) and not (build_placement_active and up_key in placement_keys):
 						move_dir = 8  # North
-					elif Input.is_physical_key_pressed(down_key):
+					elif Input.is_physical_key_pressed(down_key) and not (build_placement_active and down_key in placement_keys):
 						move_dir = 2  # South
-					elif Input.is_physical_key_pressed(left_key):
+					elif Input.is_physical_key_pressed(left_key) and not (build_placement_active and left_key in placement_keys):
 						move_dir = 4  # West
-					elif Input.is_physical_key_pressed(right_key):
+					elif Input.is_physical_key_pressed(right_key) and not (build_placement_active and right_key in placement_keys):
 						move_dir = 6  # East
 
 				if move_dir > 0:
@@ -3440,9 +3445,18 @@ func _process(delta):
 						pending_party_bump = ""
 						update_action_bar()
 					send_move(move_dir)
-					# Don't clear trading post UI - server will notify if we leave
+					# Don't clear trading post UI - server will notify if we leave.
+					# In build mode, redraw the active build prompt so the menu
+					# stays on screen as the player walks to a new anchor tile.
 					if at_trading_post:
 						_display_trading_post_ui()
+					elif build_mode:
+						if build_demolish_mode:
+							display_demolish_direction()
+						elif build_direction_mode:
+							display_build_direction()
+						else:
+							display_build_items()
 					else:
 						clear_game_output()
 					last_move_time = current_time
@@ -10195,6 +10209,356 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 
 	result.cost = final_cost
 	return result
+
+# --- Audit #1 follow-up — combat hand cards now show a single "planned spend"
+# number (not a min-max range) and a damage / effect estimate so players can
+# pick the strongest option at a glance. _get_ability_planned_spend mirrors
+# the server's apply_variable_cost auto-cast (min(current, ceiling)) for
+# variable-cost abilities, and the Magic Bolt popup's pre-fill suggestion for
+# Magic Bolt. _estimate_ability_card_effect returns {damage, text} for the
+# third row of each card — numeric damage for damage abilities, short effect
+# tag for buffs / CC / utility.
+
+const _CARD_DAMAGE_ABILITIES = {
+	"magic_bolt": true, "blast": true, "meteor": true,
+	"power_strike": true, "shield_bash": true, "cleave": true, "devastate": true,
+	"ambush": true, "exploit": true, "gambit": true,
+}
+
+func _get_ability_planned_spend(ability_name: String) -> Dictionary:
+	var path = _get_player_active_path()
+	var info = _get_ability_combat_info(ability_name, path)
+	if not (info is Dictionary) or info.is_empty():
+		return {"amount": 0, "fraction": 1.0, "resource_type": ""}
+	var ceiling = int(info.get("cost", 0))
+	var floor_cost = int(info.get("cost_floor", 0))
+	var resource_type = str(info.get("resource_type", ""))
+	var current = 0
+	match resource_type:
+		"mana": current = int(character_data.get("current_mana", 0))
+		"stamina": current = int(character_data.get("current_stamina", 0))
+		"energy": current = int(character_data.get("current_energy", 0))
+	if ability_name == "magic_bolt":
+		# Magic Bolt is true free-spend (cost=0 in defs). Card shows the same
+		# amount the popup will pre-fill — mana needed to kill (5% buffer),
+		# capped at current mana.
+		var suggested = _estimate_magic_bolt_planned_mana()
+		return {"amount": suggested, "fraction": 1.0, "resource_type": resource_type}
+	if ceiling <= 0:
+		return {"amount": 0, "fraction": 1.0, "resource_type": resource_type}
+	if floor_cost > 0 and floor_cost < ceiling:
+		# Variable-cost: server's apply_variable_cost spends min(current, ceiling);
+		# fraction 0.3 (at floor) → 1.0 (at ceiling), linear.
+		var spend = min(current, ceiling)
+		var fraction := 1.0
+		if ceiling > floor_cost:
+			fraction = 0.3 + 0.7 * float(spend - floor_cost) / float(ceiling - floor_cost)
+			fraction = clamp(fraction, 0.3, 1.0)
+		return {"amount": spend, "fraction": fraction, "resource_type": resource_type}
+	return {"amount": ceiling, "fraction": 1.0, "resource_type": resource_type}
+
+func _estimate_magic_bolt_planned_mana() -> int:
+	# Compact mirror of the popup pre-fill in _show_ability_popup. Walks the
+	# same effective_multiplier chain so the card and popup agree.
+	var current_mana = int(character_data.get("current_mana", 0))
+	if current_mana <= 0:
+		return 0
+	var target_hp = 0
+	if current_enemy_max_hp > 0:
+		target_hp = current_enemy_max_hp
+	elif current_enemy_name != "" and current_enemy_level > 0:
+		var base_name = _get_base_monster_name(current_enemy_name)
+		var enemy_key = "%s_%d" % [base_name, current_enemy_level]
+		if known_enemy_hp.has(enemy_key):
+			target_hp = known_enemy_hp[enemy_key]
+		else:
+			var estimated = estimate_enemy_hp(base_name, current_enemy_level)
+			if estimated > 0:
+				target_hp = estimated
+	if target_hp <= 0:
+		# Unknown enemy — popup would leave blank; card shows full current mana
+		# (so player sees "I'd dump everything if I hit it now").
+		return current_mana
+	var mult = _estimate_outgoing_damage_multiplier(true)
+	# INT multiplier (mirrors server magic_bolt: hybrid sqrt/linear).
+	var int_stat = _get_card_effective_stat("intelligence")
+	var int_multiplier = 1.0 + max(sqrt(float(int_stat)) / 5.0, float(int_stat) / 75.0)
+	var effective = int_multiplier * mult
+	if effective <= 0.0:
+		return current_mana
+	var remaining = max(1, target_hp - damage_dealt_to_current_enemy)
+	if party_combat_active and current_enemy_hp > 0:
+		remaining = max(1, current_enemy_hp)
+	var mana_needed = ceili(float(remaining) / effective * 1.05)
+	return min(mana_needed, current_mana)
+
+func _estimate_outgoing_damage_multiplier(is_spell: bool) -> float:
+	# Shared multiplier chain for client-side damage estimates — covers the
+	# pieces that don't depend on the ability's base formula: damage buff
+	# (War Cry / potions), class passives we can deterministically read
+	# (Wizard Arcane Precision +15% for spells), monster level-based defense
+	# reduction estimate, level penalty vs current enemy, class affinity vs
+	# current enemy color. Random rolls (crits, Chaos Magic) intentionally
+	# excluded — estimates should bias toward "what you'll see most of the
+	# time" rather than best-case spikes.
+	var mult := 1.0
+	var damage_buff = _get_buff_value("damage")
+	if damage_buff != 0:
+		mult *= max(0.0, 1.0 + float(damage_buff) / 100.0)
+	var class_type = str(character_data.get("class", ""))
+	if is_spell and class_type == "Wizard":
+		mult *= 1.15
+	var is_mage_path = class_type in ["Wizard", "Sage", "Sorcerer"]
+	if is_spell and is_mage_path:
+		if current_enemy_color == "#00BFFF":
+			mult *= 1.25
+		elif current_enemy_color == "#FFFF00" or current_enemy_color == "#00FF00":
+			mult *= 0.85
+	# Monster defense (level-based fallback — same brackets as the magic_bolt
+	# popup simulator).
+	var estimated_defense = 5
+	if current_enemy_level <= 5:
+		estimated_defense = 8
+	elif current_enemy_level <= 15:
+		estimated_defense = 15
+	elif current_enemy_level <= 30:
+		estimated_defense = 25
+	elif current_enemy_level <= 50:
+		estimated_defense = 40
+	elif current_enemy_level <= 100:
+		estimated_defense = 60
+	elif current_enemy_level <= 500:
+		estimated_defense = 100
+	else:
+		estimated_defense = 150
+	estimated_defense += int(current_enemy_level / 10)
+	if "armored" in current_enemy_abilities:
+		estimated_defense = int(estimated_defense * 1.5)
+	var def_ratio = float(estimated_defense) / (float(estimated_defense) + 100.0)
+	var defense_reduction = def_ratio * 0.6 * 0.5
+	mult *= max(0.0, 1.0 - defense_reduction)
+	# Level penalty vs enemy.
+	var player_level = int(character_data.get("level", 1))
+	var level_diff = current_enemy_level - player_level
+	if level_diff > 0:
+		var level_penalty = minf(0.40, level_diff * 0.015)
+		mult *= max(0.0, 1.0 - level_penalty)
+	return mult
+
+func _get_ability_rank_progress(ability_name: String) -> Dictionary:
+	# Returns {rank, uses, next_threshold, uses_remaining, at_max} for an
+	# ability so the combat hand card can show "uses until next rank-up".
+	# Mirrors character.gd MASTERY_RANK_THRESHOLDS.
+	var thresholds = [30, 150, 600, 2400]
+	var uses_dict = character_data.get("ability_uses", {})
+	var uses = int(uses_dict.get(ability_name, 0)) if uses_dict is Dictionary else 0
+	var rank = 0
+	for t in thresholds:
+		if uses >= int(t):
+			rank += 1
+		else:
+			break
+	if rank >= thresholds.size():
+		return {"rank": rank, "uses": uses, "next_threshold": -1, "uses_remaining": 0, "at_max": true}
+	var next_threshold = int(thresholds[rank])
+	return {
+		"rank": rank,
+		"uses": uses,
+		"next_threshold": next_threshold,
+		"uses_remaining": max(0, next_threshold - uses),
+		"at_max": false,
+	}
+
+func _get_ability_mastery_damage_mult(ability_name: String) -> float:
+	# Mirrors AbilityPanel logic: damage scales by EFFECT rank (player-chosen),
+	# capped by USE rank.
+	var thresholds = [30, 150, 600, 2400]
+	var rank_mults = [0.80, 0.90, 1.00, 1.10, 1.20]
+	var uses_dict = character_data.get("ability_uses", {})
+	var uses = int(uses_dict.get(ability_name, 0)) if uses_dict is Dictionary else 0
+	var use_rank = 0
+	for t in thresholds:
+		if uses >= int(t):
+			use_rank += 1
+		else:
+			break
+	var effect_ranks = character_data.get("ability_effect_ranks", {})
+	var effect_rank = int(effect_ranks.get(ability_name, 0)) if effect_ranks is Dictionary else 0
+	var rank = min(effect_rank, use_rank)
+	if rank < 0 or rank >= rank_mults.size():
+		return 1.0
+	return rank_mults[rank]
+
+func _estimate_ability_card_effect(ability_name: String, planned_cost: int, fraction: float) -> Dictionary:
+	# Returns {text, color} for the third row of a combat hand card.
+	# Damage abilities show "~N dmg" (orange); non-damage show a short tag.
+	var int_stat = _get_card_effective_stat("intelligence")
+	var str_stat = _get_card_effective_stat("strength")
+	var wits_stat = _get_card_effective_stat("wits")
+	var total_attack = _get_card_total_attack()
+	var mastery_mult = _get_ability_mastery_damage_mult(ability_name)
+	var spell_mult = _estimate_outgoing_damage_multiplier(true)
+	var phys_mult = _estimate_outgoing_damage_multiplier(false)
+	match ability_name:
+		"magic_bolt":
+			var int_mult = 1.0 + max(sqrt(float(int_stat)) / 5.0, float(int_stat) / 75.0)
+			var dmg = int(float(planned_cost) * int_mult * spell_mult * mastery_mult)
+			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
+		"blast":
+			var int_mult = 1.0 + float(int_stat) * 0.04
+			var dmg = int(50.0 * int_mult * 2.0 * fraction * spell_mult * mastery_mult)
+			return {"text": "~%d dmg +burn" % max(0, dmg), "color": "#FFA060"}
+		"meteor":
+			var int_mult = 1.0 + float(int_stat) * 0.04
+			var dmg = int(100.0 * int_mult * 3.5 * fraction * spell_mult * mastery_mult)
+			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
+		"power_strike":
+			var str_mult = 1.0 + sqrt(float(str_stat)) / 10.0
+			var dmg = int(float(total_attack) * 2.0 * str_mult * fraction * phys_mult * mastery_mult)
+			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
+		"shield_bash":
+			var str_mult = 1.0 + sqrt(float(str_stat)) / 10.0
+			var dmg = int(float(total_attack) * 1.5 * str_mult * fraction * phys_mult * mastery_mult)
+			var stun_pct = int(100.0 * fraction)
+			return {"text": "~%d dmg +%d%% stun" % [max(0, dmg), stun_pct], "color": "#FFA060"}
+		"cleave":
+			var str_mult = 1.0 + sqrt(float(str_stat)) / 10.0
+			var dmg = int(float(total_attack) * 2.5 * str_mult * fraction * phys_mult * mastery_mult)
+			return {"text": "~%d dmg +bleed" % max(0, dmg), "color": "#FFA060"}
+		"devastate":
+			var str_mult = 1.0 + sqrt(float(str_stat)) / 10.0
+			var dmg = int(float(total_attack) * 5.0 * str_mult * fraction * phys_mult * mastery_mult)
+			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
+		"ambush":
+			var wits_mult = 1.0 + sqrt(float(wits_stat)) / 10.0
+			# 50% crit at +50% damage → average +25%.
+			var dmg = int(float(total_attack) * 3.0 * wits_mult * fraction * phys_mult * mastery_mult * 1.25)
+			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
+		"exploit":
+			var base_pct = clampi(15 + int(wits_stat / 4), 15, 35)
+			var max_hp_est = current_enemy_max_hp if current_enemy_max_hp > 0 else _get_estimated_enemy_hp_for_card()
+			if max_hp_est > 0:
+				var dmg = int(float(max_hp_est) * float(base_pct) / 100.0 * fraction * mastery_mult)
+				return {"text": "~%d dmg (%d%% HP)" % [max(0, dmg), base_pct], "color": "#FFA060"}
+			return {"text": "%d%% max HP" % base_pct, "color": "#FFA060"}
+		"gambit":
+			var wits_mult = 1.0 + sqrt(float(wits_stat)) / 10.0
+			var success = min(80, 55 + int(wits_stat / 4))
+			var dmg = int(float(total_attack) * 4.5 * wits_mult * fraction * phys_mult * mastery_mult)
+			return {"text": "~%d @%d%%" % [max(0, dmg), success], "color": "#FFA060"}
+		# Non-damage abilities — short effect tags.
+		"forcefield":
+			var shield_val = int((100.0 + float(int_stat) * 8.0) * fraction)
+			return {"text": "Shield %d" % shield_val, "color": "#7AA8FF"}
+		"haste":
+			var spd = int((20.0 + float(int_stat) / 5.0) * fraction)
+			return {"text": "+%d%% spd" % spd, "color": "#7AA8FF"}
+		"paralyze":
+			var chance = clampi(int((50 + int_stat / 2) * fraction), 10, 85)
+			return {"text": "%d%% stun" % chance, "color": "#7AA8FF"}
+		"banish":
+			var chance = clampi(int((40 + int_stat / 3) * fraction), 1, 75)
+			return {"text": "%d%% banish" % chance, "color": "#7AA8FF"}
+		"teleport":
+			return {"text": "Flee", "color": "#888888"}
+		"cloak":
+			return {"text": "50% miss", "color": "#7AA8FF"}
+		"war_cry":
+			var bonus = max(1, int(35.0 * fraction))
+			return {"text": "+%d%% dmg" % bonus, "color": "#FFCC66"}
+		"berserk":
+			var bonus = max(1, int(75.0 * fraction))
+			return {"text": "+%d%% dmg (risk)" % bonus, "color": "#FFCC66"}
+		"iron_skin":
+			var red = max(1, int(60.0 * fraction))
+			return {"text": "-%d%% dmg in" % red, "color": "#FFCC66"}
+		"fortify":
+			var def_bonus = max(1, int((30.0 + sqrt(float(str_stat)) * 3.0) * fraction))
+			return {"text": "+%d%% def" % def_bonus, "color": "#FFCC66"}
+		"rally":
+			var con_stat = _get_card_effective_stat("constitution")
+			var heal = max(1, int((30.0 + sqrt(float(con_stat)) * 10.0) * fraction))
+			return {"text": "Heal %d" % heal, "color": "#80E080"}
+		"analyze":
+			return {"text": "Reveal", "color": "#A0E060"}
+		"distract":
+			var acc = clampi(int(50.0 * fraction), 10, 100)
+			return {"text": "-%d%% enemy acc" % acc, "color": "#A0E060"}
+		"pickpocket":
+			return {"text": "Steal", "color": "#A0E060"}
+		"vanish":
+			return {"text": "Auto-crit", "color": "#A0E060"}
+		"sabotage":
+			var debuff = clampi(int((15 + wits_stat / 4) * fraction), 1, 30)
+			return {"text": "-%d%% str/def" % debuff, "color": "#A0E060"}
+		"perfect_heist":
+			var monster_int_est = 15
+			if current_enemy_level > 5:
+				monster_int_est = 10 + int(current_enemy_level / 5)
+			var lvl_diff = max(0, current_enemy_level - int(character_data.get("level", 1)))
+			var raw = 30 + int((wits_stat - monster_int_est) * 1.5) - lvl_diff * 2
+			var chance = max(1, int(clampi(raw, 5, 60) * fraction))
+			return {"text": "%d%% kill" % chance, "color": "#A0E060"}
+		"all_or_nothing":
+			return {"text": "All-or-nothing", "color": "#FFD700"}
+	return {"text": "", "color": "#888888"}
+
+func _get_card_total_attack() -> int:
+	# Mirror of server's Character.get_total_attack() = strength + equip.strength
+	# + equip.attack. character.to_dict() does NOT include total_attack — we
+	# have to derive it. The fallback was previously str_stat alone, which
+	# missed the weapon's attack bonus entirely (the dominant component at
+	# any level past the first few). That's the root cause of card damage
+	# estimates reading ~half the real damage.
+	var str_base = 0
+	var stats = character_data.get("stats", {})
+	if stats is Dictionary and stats.has("strength"):
+		str_base = int(stats.get("strength", 0))
+	else:
+		str_base = int(character_data.get("strength", 0))
+	var bonuses = character_data.get("equipment_bonuses", {})
+	if not (bonuses is Dictionary) or bonuses.is_empty():
+		bonuses = _calculate_equipment_bonuses(character_data.get("equipped", {}))
+	var server_attack = int(character_data.get("total_attack", 0))
+	if server_attack > 0:
+		return server_attack
+	return str_base + int(bonuses.get("strength", 0)) + int(bonuses.get("attack", 0))
+
+func _get_card_effective_stat(stat_name: String) -> int:
+	# Effective stat for client-side damage estimates. character.to_dict() puts
+	# raw stats under "stats" sub-dict; we add equipment bonuses on top. Player
+	# info queries (server.gd:2152) put stats at the top level — fall back to
+	# that shape too for safety. Permanent / house / tome bonuses are excluded;
+	# their effect on a card estimate is small relative to base + equipment.
+	var stats = character_data.get("stats", {})
+	var base = 10
+	if stats is Dictionary and stats.has(stat_name):
+		base = int(stats.get(stat_name, 10))
+	elif character_data.has(stat_name):
+		base = int(character_data.get(stat_name, 10))
+	if stat_name == "wits" and base == 10:
+		# Legacy character data still carries "charisma" for old saves.
+		if stats is Dictionary and stats.has("charisma"):
+			base = int(stats.get("charisma", base))
+		elif character_data.has("charisma"):
+			base = int(character_data.get("charisma", base))
+	var bonuses = character_data.get("equipment_bonuses", {})
+	if not (bonuses is Dictionary) or bonuses.is_empty():
+		bonuses = _calculate_equipment_bonuses(character_data.get("equipped", {}))
+	return base + int(bonuses.get(stat_name, 0))
+
+func _get_estimated_enemy_hp_for_card() -> int:
+	if current_enemy_max_hp > 0:
+		return current_enemy_max_hp
+	if current_enemy_name != "" and current_enemy_level > 0:
+		var base_name = _get_base_monster_name(current_enemy_name)
+		var enemy_key = "%s_%d" % [base_name, current_enemy_level]
+		if known_enemy_hp.has(enemy_key):
+			return int(known_enemy_hp[enemy_key])
+		var est = estimate_enemy_hp(base_name, current_enemy_level)
+		if est > 0:
+			return est
+	return 0
 
 func show_combat_item_menu():
 	"""Display usable items for combat selection."""
@@ -22492,8 +22856,25 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.275 changes
+	display_game("[color=#00FF00]v0.9.275[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat card damage fix + uses-to-next-rank indicator + market bulk fix + build-mode mobility[/color]")
+	display_game("  • [b]Card damage estimate now uses the right Attack number.[/b] v0.9.274 fell back to STR alone when reading total attack — your weapon's attack bonus (the dominant component) was silently ignored. Cards were under-predicting damage by roughly half. Now mirrors the server's get_total_attack (STR + equip STR + equip ATK).")
+	display_game("  • [b]Each card shows uses until next mastery rank.[/b] The rank tag in the middle row now reads e.g. \"R2 +47\" — 47 more successful casts until rank 3 (Expert). At max rank you'll see \"R4 ★\". Answers \"how close am I to ranking this up?\" without opening the Abilities panel.")
+	display_game("  • [b]Market \"List ▾\" bulk options pointed at the wrong category.[/b] Picking \"Bulk: All Equipment\" was opening the Consumables confirmation, \"Bulk: All Consumables\" opened Tools & Structures, and so on down the list — a separator-counting bug in the popup menu's id handler. The dispatch now indexes directly by menu id, so each entry confirms (and lists) what its label says.")
+	display_game("  • [b]You can walk while the build menu is open.[/b] Previously you had to position your character, open the menu, exit, reposition, then re-open before every placement. Now arrow keys and numpad keep moving the character while build mode is active; WASD still picks the placement direction. Reposition and place without breaking flow.")
+	display_game("")
+
+	# v0.9.274 changes
+	display_game("[color=#00FFFF]v0.9.274[/color]")
+	display_game("  [color=#FFD700]Combat cards show planned spend + damage estimate[/color]")
+	display_game("  • [b]Ability cards now show one cost number, not a range.[/b] The middle row used to read e.g. \"30-50 MP\" for variable-cost spells — now it shows the actual amount that will be spent if you press the card right now (server auto-casts at min(current, ceiling); Magic Bolt uses the popup's smart suggestion)")
+	display_game("  • [b]New third row on each card: a damage / effect estimate at that spend.[/b] For damage abilities (Blast, Meteor, Power Strike, Cleave, Devastate, Ambush, etc.) you'll see \"~N dmg\" so you can pick the strongest option at a glance. For buffs, CC, and utility (Iron Skin, Paralyze, Forcefield, Distract, Heist, …) you get a short effect tag (\"-60% dmg in\", \"55% stun\", \"Shield 240\", \"30% kill\", etc.)")
+	display_game("  • Estimates factor in the multipliers you can read off your sheet (INT/STR/WITS scaling, damage buffs, Wizard's Arcane Precision, mastery damage rank, the current enemy's level-based defense, level penalty, class affinity). Random rolls (crits, Chaos Magic) are excluded so the number reflects the typical case, not a best-case spike")
+	display_game("")
+
 	# v0.9.273 changes
-	display_game("[color=#00FF00]v0.9.273[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.273[/color]")
 	display_game("  [color=#FFD700]Trading posts now specialize — buy local for a discount (Slice 3)[/color]")
 	display_game("  • [b]Each trading post category gives a buy discount on a specific kind of item.[/b] Travel to the right post and save valor on what you're buying:")
 	display_game("    [color=#CD853F]Mine[/color] posts: [b]-15%[/b] on Materials (ore, gems, monster parts material drops)")
@@ -22523,24 +22904,7 @@ func display_changelog():
 	display_game("  • New rescue quest descriptions now read: \"Walk into [b]any[/b] dungeon (D) near this trading post — you'll be routed to the right one. Look for the R glyph inside.\"")
 	display_game("")
 
-	# v0.9.270 changes
-	display_game("[color=#00FFFF]v0.9.270[/color]")
-	display_game("  [color=#FFD700]Combat readability — bigger cards, bigger totals, louder YOU line[/color]")
-	display_game("  • [b]Ability cards are now ~3.3x bigger.[/b] Hand row in the combat panel went from 108x54 cells to 190x108 with larger fonts. They were easy to miss before; now they draw the eye")
-	display_game("  • [b]Running damage totals are bordered and large.[/b] The You/Pet/Foe strip above the cards is wrapped in a styled panel and the numbers are 22pt (up from 12pt) — at-a-glance score of the fight without reading the log")
-	display_game("  • [b]Your damage line is louder.[/b] The per-turn \"YOU [N] dmg\" summary in the combat log is now 18pt with a bright triangle and bold YOU label, so it stands out from monster turns when scrolling the log")
-	display_game("  • Bulk-list success now also writes to the chat log (in addition to the popup), so you can spot the result via [L] history if the popup got dismissed")
-	display_game("  • Inventory panel auto-refreshes after a bulk-list, so opening Inventory after listing always shows the current state")
-	display_game("")
 
-	# v0.9.269 changes
-	display_game("[color=#00FFFF]v0.9.269[/color]")
-	display_game("  [color=#FFD700]Hotfix — visual Market panel bulk + Food chip[/color]")
-	display_game("  • [b]Visual Market panel's \"List ▾\" Bulk options now actually work[/b]. Three of them (Bulk: All Consumables / Tools / Materials) were silently failing since the panel shipped — sending singular list_type values the server didn't recognize. The errors were going to game_output behind the visible panel, so it looked like \"nothing happens\"")
-	display_game("  • The visual panel's bulk buttons now go through the [b]same preview-and-confirm flow[/b] introduced in v0.9.268 — \"Will list N items for X Valor. Proceed?\"")
-	display_game("  • [b]Success / Nothing-to-list popups now appear over the visual panel[/b] (used to log to game_output, hidden under the panel). Panel auto-refreshes after a bulk list so the new valor and listings show up")
-	display_game("  • [b]Food chip added[/b] to the visual market filter row — between Cons and Tools. Same filter logic as v0.9.268's text-mode food category")
-	display_game("")
 
 
 
@@ -33671,6 +34035,7 @@ func display_build_direction():
 		display_game("[A] West    [D] East")
 		display_game("    [S] South")
 		display_game("")
+		display_game("[color=#888888]Use arrow keys or numpad to move and reposition without leaving build mode.[/color]")
 		display_game("[color=#888888]Press Cancel ([%s]) to stop building, or pick a different structure with number keys.[/color]" % get_action_key_name(0))
 
 func display_demolish_direction():
@@ -33684,6 +34049,7 @@ func display_demolish_direction():
 	display_game("[A] West    [D] East")
 	display_game("    [S] South")
 	display_game("")
+	display_game("[color=#888888]Use arrow keys or numpad to move and reposition while demolishing.[/color]")
 	display_game("[%s] Cancel" % get_action_key_name(0))
 
 func _get_structure_color(structure_type: String) -> String:
