@@ -1567,6 +1567,17 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 
 	var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
 
+	# Slice 6i — Danger Zone bonus. Hotspot kills give an extra +30-70% XP on
+	# top of the natural level scaling. Edge of a hotspot = +30%, center =
+	# +70%. The monster's level was already 1.5-2.5x larger from the hotspot
+	# multiplier, so total reward for fighting in a hotspot is meaningful.
+	var hotspot_intensity = float(monster.get("hotspot_intensity", 0.0))
+	var hotspot_xp_pct = 0
+	if hotspot_intensity > 0.0:
+		var hotspot_xp_mult = 1.3 + hotspot_intensity * 0.4
+		final_xp = int(final_xp * hotspot_xp_mult)
+		hotspot_xp_pct = int((hotspot_xp_mult - 1.0) * 100)
+
 	# Gambit kill bonus: +1 gem awarded later
 	var gambit_kill = combat.get("gambit_kill", false)
 
@@ -1588,6 +1599,8 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		messages.append("[color=#FFD700]You gain %d experience! [color=#00FFFF](+%d%% bonus)[/color][/color]" % [final_xp, effective_bonus_pct])
 	else:
 		messages.append("[color=#FFD700]You gain %d experience![/color]" % final_xp)
+	if hotspot_xp_pct > 0:
+		messages.append("[color=#FF6600]Danger Zone Bonus: +%d%% XP and improved drop chance![/color]" % hotspot_xp_pct)
 
 	# Award experience
 	character.add_experience(final_xp)
@@ -5570,6 +5583,14 @@ func roll_combat_drops(monster: Dictionary, character: Character) -> Array:
 		# +50% drop chance per tier above (multiplicative)
 		var tier_mult = pow(1.5, tier_diff)  # T+1=1.5x, T+2=2.25x, T+3=3.4x
 		drop_chance = int(drop_chance * tier_mult)
+
+	# Slice 6i — Danger Zone loot bonus. Same scale as the XP bonus: edge of
+	# hotspot = +30% drop chance, center = +70%. Stacks multiplicatively with
+	# the above-tier bonus.
+	var hotspot_intensity = float(monster.get("hotspot_intensity", 0.0))
+	if hotspot_intensity > 0.0:
+		var hotspot_drop_mult = 1.3 + hotspot_intensity * 0.4
+		drop_chance = int(drop_chance * hotspot_drop_mult)
 
 	# Roll for drops - server will handle adding to inventory
 	return drop_tables.roll_drops(drop_table_id, drop_chance, monster_level)
