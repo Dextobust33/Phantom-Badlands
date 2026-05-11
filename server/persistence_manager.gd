@@ -1702,12 +1702,17 @@ func load_market_data():
 	"""Load market data from file."""
 	var data = _safe_load(MARKET_FILE)
 	if data.is_empty():
-		market_data = {"listings": {}, "next_id": 1}
+		market_data = {"listings": {}, "orders": {}, "next_id": 1, "next_order_id": 1}
 		save_market_data()
 	else:
 		market_data = data
 		if not market_data.has("next_id"):
 			market_data["next_id"] = 1
+		# Audit #9 Slice 2 — backfill buy-order fields for pre-existing market files.
+		if not market_data.has("orders"):
+			market_data["orders"] = {}
+		if not market_data.has("next_order_id"):
+			market_data["next_order_id"] = 1
 
 func save_market_data():
 	"""Save market data to file."""
@@ -1824,8 +1829,93 @@ func calculate_markup(post_id: String, category: String) -> float:
 
 func clear_all_market_data():
 	"""Clear all market data (for wipes)."""
-	market_data = {"listings": {}, "next_id": 1}
+	market_data = {"listings": {}, "orders": {}, "next_id": 1, "next_order_id": 1}
 	save_market_data()
+
+# ===== BUY ORDERS (Audit #9 Slice 2) =====
+# Demand-side mirror of listings. Buyer escrows Valor at creation; sellers
+# fulfill from inventory or crafting_materials and receive the per-unit Valor.
+# Server takes no spread on orders — incentivizes filling demand.
+# Orders are stored at market_data.orders[post_id] = [order, order, ...].
+# Each order:
+#   order_id, account_id (buyer), buyer_name,
+#   item_type (material|consumable|rune|monster_part),
+#   item_name (display + match key, case-sensitive),
+#   supply_category (material_t<N> | consumable | rune | monster_part — for filter parity),
+#   per_unit_valor (int),
+#   quantity_wanted (int), quantity_filled (int),  # remaining = wanted - filled
+#   listed_at (unix_t)
+
+func get_market_orders(post_id: String) -> Array:
+	"""Get all open buy orders at a specific post."""
+	if not market_data.has("orders"):
+		market_data["orders"] = {}
+	return market_data.orders.get(post_id, [])
+
+func add_market_order(post_id: String, order: Dictionary) -> String:
+	"""Add a buy order. Caller must have already escrowed the Valor.
+	Returns order_id. Does NOT merge with existing orders — each is independent."""
+	if not market_data.has("orders"):
+		market_data["orders"] = {}
+	if not market_data.orders.has(post_id):
+		market_data.orders[post_id] = []
+	var order_id = "ord_%d" % int(market_data.get("next_order_id", 1))
+	order["order_id"] = order_id
+	market_data["next_order_id"] = int(market_data.get("next_order_id", 1)) + 1
+	market_data.orders[post_id].append(order)
+	save_market_data()
+	return order_id
+
+func remove_market_order(post_id: String, order_id: String) -> Dictionary:
+	"""Remove a buy order by ID. Returns the removed order or empty dict."""
+	if not market_data.has("orders"):
+		return {}
+	if not market_data.orders.has(post_id):
+		return {}
+	var orders = market_data.orders[post_id]
+	for i in range(orders.size()):
+		if orders[i].get("order_id", "") == order_id:
+			var removed = orders[i]
+			orders.remove_at(i)
+			save_market_data()
+			return removed
+	return {}
+
+func update_market_order_filled(post_id: String, order_id: String, new_filled: int):
+	"""Update a buy order's filled count after a partial fulfillment."""
+	if not market_data.has("orders") or not market_data.orders.has(post_id):
+		return
+	for order in market_data.orders[post_id]:
+		if order.get("order_id", "") == order_id:
+			order["quantity_filled"] = new_filled
+			save_market_data()
+			return
+
+func get_all_orders_by_account(account_id: String) -> Array:
+	"""All open buy orders placed by this account across all posts (for 'My Orders')."""
+	var result: Array = []
+	if not market_data.has("orders"):
+		return result
+	for post_id in market_data.orders.keys():
+		for order in market_data.orders[post_id]:
+			if order.get("account_id", "") == account_id:
+				var entry = order.duplicate()
+				entry["post_id"] = post_id
+				result.append(entry)
+	return result
+
+func get_all_market_orders_with_post() -> Array:
+	"""Flat array of every open buy order across every post, tagged with post_id.
+	Companion to get_all_market_listings_with_post. For future network-orders view."""
+	var result: Array = []
+	if not market_data.has("orders"):
+		return result
+	for post_id in market_data.orders.keys():
+		for order in market_data.orders[post_id]:
+			var entry = order.duplicate()
+			entry["post_id"] = post_id
+			result.append(entry)
+	return result
 
 # ===== PLAYER STORAGE (Building System - Storage Chests) =====
 
