@@ -1207,6 +1207,12 @@ var admin_mode: bool = false
 const AdminPanelScript = preload("res://client/admin_panel.gd")
 var admin_panel = null
 
+# Audit #4 Slice 1 (UI remediation) — visual NPC Home Stone vendor panel.
+# Replaces chat-command-only `/stones` + `/buystone` from v0.9.332 per the
+# "no chat-command-first features" hard rule.
+const StonesPanelScript = preload("res://client/stones_panel.gd")
+var stones_panel = null
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -1764,6 +1770,13 @@ func _ready():
 	add_child(admin_panel)
 	admin_panel.close_requested.connect(_on_admin_panel_close)
 	admin_panel.action_triggered.connect(_on_admin_panel_action)
+
+	# Audit #4 Slice 1 (UI remediation) — NPC Home Stone vendor visual panel.
+	# Same instantiation pattern as admin_panel.
+	stones_panel = StonesPanelScript.new()
+	add_child(stones_panel)
+	stones_panel.close_requested.connect(_on_stones_panel_close)
+	stones_panel.buy_requested.connect(_on_stones_panel_buy)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -8609,6 +8622,7 @@ func _create_shortcut_buttons():
 		["Build", "build_shortcut"],
 		["Quests", "quests_shortcut"],
 		["Deck", "deck_shortcut"],
+		["Stones", "stones_shortcut"],
 		["Inv", "inventory_shortcut"],
 		["Help", "help_shortcut"],
 	]
@@ -8734,6 +8748,12 @@ func _on_shortcut_button_pressed(action: String):
 			inventory_mode = false
 			pending_inventory_action = ""
 			enter_ability_mode()
+		"stones_shortcut":
+			# Audit #4 Slice 1 (UI remediation) — visual Home Stone vendor.
+			# Always opens regardless of location. The panel itself displays a
+			# "Stand at NPC post to purchase" hint when off-post; server is
+			# authoritative on the actual buy validation.
+			open_stones_panel()
 		"inventory_shortcut":
 			if inventory_mode and pending_inventory_action == "":
 				return  # Already in base inventory
@@ -18244,6 +18264,9 @@ func handle_server_message(message: Dictionary):
 				update_player_xp_bar()
 				update_currency_display()
 				update_companion_art_overlay()
+				# Audit #4 Slice 1 (UI remediation) — refresh stones panel
+				# bought-counts/valor live after each purchase.
+				_refresh_stones_panel_if_open()
 				# Refresh companion section in the battle panel so XP / level
 				# changes (gained from kills mid-combat) show in real time.
 				if combat_scene_panel and in_combat and combat_scene_panel.has_method("update_companion_data"):
@@ -20788,8 +20811,12 @@ func process_command(text: String):
 			else:
 				display_game("You don't have a character yet")
 		"stones":
-			# Audit #4 Slice 1 — list NPC Home Stone availability/prices/caps.
+			# Audit #4 Slice 1 (UI remediation) — `/stones` opens the visual
+			# vendor panel. Server `list_home_stones` text fallback still ships
+			# the text summary, useful for screen readers and the print-it-to-
+			# game-log power-user habit.
 			if has_character:
+				open_stones_panel()
 				send_to_server({"type": "list_home_stones"})
 			else:
 				display_game("You don't have a character yet")
@@ -23183,8 +23210,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.336 changes
+	display_game("[color=#00FF00]v0.9.336[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Visual NPC Home Stone vendor (UI remediation)[/color]")
+	display_game("  • [b]New shortcut button: [color=#9ACD32]Stones[/color][/b] — sits on the right side of the chat row next to Deck/Inv/Help. One click opens the visual vendor panel from anywhere.")
+	display_game("  • [b]Visual panel[/b] shows all four stone types as rows with name, description, price, how many you've bought, lifetime cap, and a clickable [Buy] button. Buttons disable when at-cap, when you can't afford, or when not at an NPC post.")
+	display_game("  • [b]Real-time refresh[/b] on purchase: buy a stone → panel updates immediately to show new owned-count and remaining valor.")
+	display_game("  • [b]Discovery first[/b]: the user pointed out chat-command-only features are invisible to players. This slice + the next few will retroactively add UI affordances to features I shipped today as chat commands (post status, feedall, stones, stats). Stones first because the vendor is the most likely to be missed without UI.")
+	display_game("  • [b]/stones still works[/b] but now opens the panel AND prints the text summary. /buystone <type> remains as a power-user shortcut.")
+	display_game("")
+
 	# v0.9.335 changes
-	display_game("[color=#00FF00]v0.9.335[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.335[/color]")
 	display_game("  [color=#FFD700]Stat allocation agency (Audit #3 Slice 1)[/color]")
 	display_game("  • [b]Each level-up now grants +1 unspent stat point[/b], on top of the existing class-fixed scaling (2.5 distributed automatically by class). Layered — class identity stays, but you get a slice of choice every level.")
 	display_game("  • [b]/stats[/b] — shows current STR/CON/DEX/INT/WIS/WITS, your level/XP progress, and your unspent point bank.")
@@ -23214,17 +23251,6 @@ func display_changelog():
 	display_game("  • [b]Audit #13 moves from \"designing\" to \"implementing.\"[/b] Two designing-only systems shipped first slices in two consecutive releases (#4 + #13).")
 	display_game("")
 
-	# v0.9.332 changes
-	display_game("[color=#00FFFF]v0.9.332[/color]")
-	display_game("  [color=#FFD700]NPC posts sell Home Stones (Audit #4 Slice 1)[/color]")
-	display_game("  • [b]Home Stones are now buyable at any NPC post for Valor.[/b] No more waiting on T3+ chest drops to register your first companion. The mid-game accessibility tier locked in the #4 audit memo is shipped.")
-	display_game("  • [b]/stones[/b] — list all four Home Stone types with prices, your lifetime cap, and how many you've already bought. Affordability is color-coded.")
-	display_game("  • [b]/buystone <type>[/b] — purchase at any NPC post. Types: egg / supplies / equipment / companion.")
-	display_game("  • [b]Prices[/b] (lifetime cap per character): Egg 500 Valor (3 max), Supplies 800 (5 max), Equipment 1500 (2 max), Companion 3000 (2 max).")
-	display_game("  • [b]Permadeath resets the cap[/b] — every new character earns their own accessibility through Valor. Valor is account-wide, so what you've banked across lives still counts toward the spend.")
-	display_game("  • [b]Why[/b]: registered companions surviving permadeath was the #1 critical pain point in the audit. Locking it behind T5+ chest drops meant new players were rolling without the safety net. This opens the door earlier.")
-	display_game("  • [b]Audit #4 moves from \"designing\" to \"implementing.\"[/b] Three more accessibility tiers planned: tutorial gift, T5+ chest drops (already exists), Sanctuary auto-registration slots.")
-	display_game("")
 
 
 
@@ -25857,6 +25883,47 @@ func close_admin_menu() -> void:
 
 func _on_admin_panel_close() -> void:
 	close_admin_menu()
+
+func open_stones_panel() -> void:
+	"""Audit #4 Slice 1 (UI remediation) — open the visual Home Stone vendor.
+	Pulls fresh valor + npc_stones_bought from character_data; the at_npc_post
+	flag comes from the most recent location update."""
+	if not stones_panel:
+		display_game("[color=#FF0000]Stones panel not initialized.[/color]")
+		return
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	var valor: int = int(account_valor)
+	var bought: Dictionary = character_data.get("npc_stones_bought", {})
+	# Server-side _player_at_npc_post() is authoritative for purchase. Client
+	# flag is best-effort: at_trading_post covers legacy posts. Procedural NPC
+	# post detection lives server-side; the server will reject a buy attempt
+	# off-post with a text message, so we don't gate too strictly here.
+	stones_panel.open(valor, bought, at_trading_post)
+
+func close_stones_panel() -> void:
+	if stones_panel:
+		stones_panel.close()
+
+func _on_stones_panel_close() -> void:
+	close_stones_panel()
+
+func _on_stones_panel_buy(stone_type: String) -> void:
+	"""Stone vendor row click — sends the server message. Server validates
+	at-post + valor + cap + inventory. Result text comes back through the
+	usual `text` channel; on success a character_update arrives and we
+	refresh the panel via _refresh_stones_panel_if_open()."""
+	send_to_server({"type": "buy_home_stone", "stone_type": stone_type})
+
+func _refresh_stones_panel_if_open() -> void:
+	"""Called whenever character_update arrives; refreshes the open panel's
+	bought-counts and valor so the rows reflect the new state immediately
+	after a purchase."""
+	if not stones_panel or not stones_panel.visible:
+		return
+	var valor: int = int(account_valor)
+	var bought: Dictionary = character_data.get("npc_stones_bought", {})
+	stones_panel.refresh(valor, bought, at_trading_post)
 
 func _on_admin_panel_action(action_id: String) -> void:
 	"""Dispatch admin panel button clicks. Each action_id maps to a
