@@ -22904,8 +22904,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.295 changes
+	display_game("[color=#00FF00]v0.9.295[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two more T2 boss signatures (Audit #5 Slice 6)[/color]")
+	display_game("  • [b]Plague Zombie (Plagued Graveyard) — [color=#6B8E23]Contagion Aura[/color][/b]: passive aura applies +1 contagion stack to you every 2 monster turns (cap 5). Each stack ticks [b]1% of your max HP[/b] at the start of your turn. No hit required — distinct from Festering Bite's on-hit stacking. The zombie doesn't need to land a blow to wear you down. End the fight fast or accept the cumulative burn.")
+	display_game("  • [b]Siren Enchantress (Siren's Cove) — [color=#00CED1]Lullaby[/color][/b]: every 4 monster turns the siren's song forces you to [b]skip your next turn[/b]. Deterministic timer, no resist roll, no on-hit dependency. Distinct from Web Stun (chance-based, on-hit). Mind the round count or get caught flat-footed.")
+	display_game("  • 11 boss signatures shipped across 6 slices. T2 coverage is now [b]5 of 8[/b] (Spider Queen, Orc Warlord, Grand Mimic, Hobgoblin Commander, Barrow Wight, Gnoll Packmaster, Plague Zombie, Siren Enchantress) — Elder Kelpie remains the only T2 boss without a signature.")
+	display_game("")
+
 	# v0.9.294 changes
-	display_game("[color=#00FF00]v0.9.294[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.294[/color]")
 	display_game("  [color=#FFD700]Market shows rolling average recent price (Audit #9 Slice 4)[/color]")
 	display_game("  • [b]Each market listing now shows the typical recent sale price[/b] next to its current price, so you can tell a deal from a markup at a glance. Sample row: \"[b]Iron Longsword[/b] — 320 V  ★-15%  (avg 287)\".")
 	display_game("  • Server tracks the [b]last 50 sales per item name[/b] across the network, post-markup and post-specialty-discount (so the average reflects what players actually paid). Listings with no sale history yet hide the badge.")
@@ -22928,13 +22936,6 @@ func display_changelog():
 	display_game("  • 11 chains total across 5 starter trading posts. West Shrine now has 2 chains (was 1) — distribution rebalanced. Quest descriptions paired tightly with boss signatures: pick up the chain, read the warning, fight the boss, see the mechanic exactly as advertised.")
 	display_game("")
 
-	# v0.9.291 changes
-	display_game("[color=#00FFFF]v0.9.291[/color]")
-	display_game("  [color=#FFD700]Two new T2 boss signatures (Audit #5 Slice 5)[/color]")
-	display_game("  • [b]Barrow Wight (Barrow Mounds) — [color=#9370DB]Soul Siphon[/color][/b]: every 3 monster turns, the wight drains 8% of your max HP and heals itself for the same amount. Vampiric burst — distinct from passive life steal because it's periodic and predictable. Cannot kill you (HP floored at 1) so it shapes the fight rather than ending it. Plan around the rhythm or burst the boss before turn 6.")
-	display_game("  • [b]Gnoll Packmaster (Gnoll Pack Den) — [color=#8B6914]Pack Frenzy[/color][/b]: boss damage scales [b]+5% per round[/b], uncapped. Round 1 = 1.0x, round 5 = 1.20x, round 10 = 1.45x, round 20 = 1.95x. No one-shot trigger — pressure just builds. Hard tempo cap on long fights: stall this boss and you die. Milestone messages at rounds 3 / 6 / 10 so you know how deep the hole is getting.")
-	display_game("  • 9 boss signatures shipped total across 5 slices. Pattern continues: each boss gets one mechanic that doesn't appear on base monsters, replacing the previous generic ability mapping (\"Life Drain → life_steal\" / \"Pack Tactics → pack_leader\" are both retired in favor of these signatures).")
-	display_game("")
 
 
 

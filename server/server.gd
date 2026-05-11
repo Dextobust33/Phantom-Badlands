@@ -20387,6 +20387,9 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			# Audit #5 boss signatures (Slice 5)
 			"Soul Siphon": "boss_soul_siphon",
 			"Pack Frenzy": "boss_pack_frenzy",
+			# Audit #5 boss signatures (Slice 6)
+			"Contagion Aura": "boss_contagion_aura",
+			"Lullaby": "boss_lullaby",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")

@@ -384,7 +384,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.3,
 			"attack_mult": 1.3,
-			"abilities": ["Plague Touch", "Shambling Charge"]
+			"abilities": ["Contagion Aura", "Shambling Charge"]
 		},
 		"boss_egg": "Zombie",
 		"floors": 4,
@@ -438,7 +438,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.0,
 			"attack_mult": 1.3,
-			"abilities": ["Enchanting Song", "Tidal Surge"]
+			"abilities": ["Lullaby", "Tidal Surge"]
 		},
 		"boss_egg": "Siren",
 		"floors": 4,
