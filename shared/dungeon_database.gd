@@ -23,7 +23,13 @@ enum TileType {
 	UPDRAFT,       # Audit #5 theme tag — wind shear costs +2 steps (Harpy Cliffs)
 	BLOOD_FONT,    # Audit #5 theme tag — vampiric font heals + curses (Vampire Crypt)
 	LAVA_POOL,     # Audit #5 theme tag — molten rock burns on step (Balrog's Depths)
-	EMBER_TILE     # Audit #5 theme tag — phoenix ember heals on step (Phoenix Nest)
+	EMBER_TILE,    # Audit #5 theme tag — phoenix ember heals on step (Phoenix Nest)
+	SCATTERED_LOOT,# Audit #5 theme tag — goblin hoard coin pickup (Goblin Caves)
+	SHALLOW_TIDE,  # Audit #5 theme tag — wading + Lullaby chance (Siren's Cove)
+	CAVE_MOSS,     # Audit #5 theme tag — moss patch small heal (Troll Den)
+	SACRED_GROUND, # Audit #5 theme tag — blessing buffs next attack (Gargoyle Cathedral)
+	WARM_NEST,     # Audit #5 theme tag — dragon nest heals on step (Dragon Hatchery)
+	BRIMSTONE      # Audit #5 theme tag — sulfur burn ticks HP on step (Cerberus Pit)
 }
 
 # Tile display characters
@@ -46,7 +52,13 @@ const TILE_CHARS = {
 	TileType.UPDRAFT: "~",
 	TileType.BLOOD_FONT: "+",
 	TileType.LAVA_POOL: "^",
-	TileType.EMBER_TILE: "o"
+	TileType.EMBER_TILE: "o",
+	TileType.SCATTERED_LOOT: "c",
+	TileType.SHALLOW_TIDE: "=",
+	TileType.CAVE_MOSS: "m",
+	TileType.SACRED_GROUND: "T",
+	TileType.WARM_NEST: "n",
+	TileType.BRIMSTONE: "s"
 }
 
 # Tile colors for display
@@ -69,7 +81,13 @@ const TILE_COLORS = {
 	TileType.UPDRAFT: "#87CEEB",
 	TileType.BLOOD_FONT: "#660000",
 	TileType.LAVA_POOL: "#FF4500",
-	TileType.EMBER_TILE: "#FFA500"
+	TileType.EMBER_TILE: "#FFA500",
+	TileType.SCATTERED_LOOT: "#DAA520",
+	TileType.SHALLOW_TIDE: "#20B2AA",
+	TileType.CAVE_MOSS: "#3CB371",
+	TileType.SACRED_GROUND: "#F0E68C",
+	TileType.WARM_NEST: "#CD853F",
+	TileType.BRIMSTONE: "#9ACD32"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -1844,6 +1862,67 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 7:
 						grid[y][x] = TileType.EMBER_TILE
+		"goblin_caves":
+			# Scattered loot ~7% of empty tiles. Goblins are pack-rat hoarders;
+			# stepping picks up 1-5 Valor and consumes the tile. Friendly T1
+			# theme — first dungeon, gentle introduction to themed tiles.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 7:
+						grid[y][x] = TileType.SCATTERED_LOOT
+		"siren_cove":
+			# Shallow tide ~9% of empty tiles. Wading costs +1 step AND has a
+			# 5% chance to apply player_lulled (next-turn skip). Pairs with
+			# Siren Enchantress's Lullaby boss signature.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 9:
+						grid[y][x] = TileType.SHALLOW_TIDE
+		"troll_den":
+			# Cave moss patches ~7% of empty tiles. Damp moss heals 2% max HP
+			# on step (consumed). Mid-strength T3 positive tile — weaker than
+			# vampire_crypt's blood font (5%) for the lower tier.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 7:
+						grid[y][x] = TileType.CAVE_MOSS
+		"gargoyle_cathedral":
+			# Sacred ground ~5% of empty tiles. Stepping blesses the player's
+			# next attack with +20% damage (consumed). First buff-pickup tile —
+			# pairs with Stoneform's alt-round damage reduction (encourages
+			# rotating through tiles for buff-stacked odd-round strikes).
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.SACRED_GROUND
+		"dragon_hatchery":
+			# Warm nest patches ~6% of empty tiles. Stepping heals 4% max HP
+			# (consumed). Same payload as ember_tile but in a T4 dungeon —
+			# placement scales the heal:tier ratio.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 6:
+						grid[y][x] = TileType.WARM_NEST
+		"cerberus_pit":
+			# Brimstone ~10% of empty tiles. Sulfur fumes burn the lungs —
+			# 4% max HP per step, persistent. Sits between lava_pool (3% T5)
+			# and miasma (2% T2) but on the more punishing end of T5.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.BRIMSTONE
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""

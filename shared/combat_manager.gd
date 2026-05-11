@@ -962,6 +962,14 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	_initialize_combat_deck(combat_state)
 	_draw_to_hand(combat_state)
 
+	# Audit #5 Slice 13 — Siren's Cove SHALLOW_TIDE pending-lull carryover.
+	# If the player stepped on a tide tile that rolled the 5% lull chance just
+	# before this combat started, apply player_lulled here so it consumes on
+	# the player's first turn.
+	if character.has_meta("pending_dungeon_lull") and character.get_meta("pending_dungeon_lull", false):
+		combat_state["player_lulled"] = true
+		character.remove_meta("pending_dungeon_lull")
+
 	# Mark character as in combat and reset per-combat flags
 	character.in_combat = true
 	character.reset_combat_flags()  # Reset Dwarf Last Stand etc.
@@ -5688,6 +5696,14 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var damage_buff = character.get_buff_value("damage")
 	if damage_buff > 0:
 		raw_damage = int(raw_damage * (1.0 + damage_buff / 100.0))
+
+	# Audit #5 Slice 13 — Gargoyle Cathedral SACRED_GROUND blesses next attack
+	# with +20% damage. Consumed on use. Picked up via the dungeon move handler
+	# which sets `pending_sacred_buff` on the character meta.
+	if character.has_meta("pending_sacred_buff") and character.get_meta("pending_sacred_buff", false):
+		raw_damage = int(raw_damage * 1.2)
+		character.remove_meta("pending_sacred_buff")
+		passive_messages.append("[color=#F0E68C]The blessing flares — your strike lands with divine force![/color]")
 
 	# Audit #5 — Drowning debuff (Elder Kelpie boss_drowning). Each stack drops
 	# player damage by 10% (cap 3 stacks = -30%). Combined with the DoT tick
