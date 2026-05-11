@@ -9950,6 +9950,10 @@ func _is_combat_usable_item(item: Dictionary) -> bool:
 	# Audit #5 — Dungeon Compass is an overworld discovery tool, not a combat item
 	if sub_type == "dungeon_compass" or base_type == "dungeon_compass":
 		return false
+	# Audit #1 Slice 4c — Ability Tomes change your deck composition. Mutating
+	# the deck mid-fight would be chaotic; deny in combat.
+	if sub_type == "ability_tome" or base_type == "ability_tome":
+		return false
 	if base_type == "tool" or base_type == "rune" or base_type == "structure":
 		return false
 	if "kit" in sub_type or "kit" in base_type:
@@ -15395,6 +15399,7 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type.begins_with("potion_") or item_type.begins_with("mana_") or
 			item_type.begins_with("stamina_") or item_type.begins_with("energy_") or
 			item_type.begins_with("scroll_") or item_type.begins_with("tome_") or
+			item_type == "ability_tome" or  # Slice 4c — deck-card tome (separate from tome_* stat tomes)
 			item_type == "gold_pouch" or item_type.begins_with("gem_") or
 			item_type == "mysterious_box" or item_type == "cursed_coin" or
 			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
@@ -20528,6 +20533,8 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Safely exit a dungeon without defeating the boss"
 	elif item_type == "dungeon_compass":
 		return "Reveals the nearest dungeon entrance on the world map. Higher-tier compasses cover more territory. (Overworld use only.)"
+	elif item_type == "ability_tome":
+		return "Use to add +1 copy of the named ability to your combat deck. The card is permanent once added."
 	elif "scroll" in item_type:
 		return "Magical scroll with unknown power"
 	# Home Stones
@@ -23114,8 +23121,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.325 changes
+	display_game("[color=#00FF00]v0.9.325[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Ability Tomes drop in chests (Audit #1 Slice 4c)[/color]")
+	display_game("  • [b]New rare consumable: \"Tome of [Ability]\"[/b] drops from T3+ chests. Using one adds +1 deck copy of the named ability — permanent. Cross-class friendly: a Mage can find Tome of Power Strike and add it to their deck (then grind the off-affinity penalty down).")
+	display_game("  • [b]Pool: 25 abilities[/b] across all three archetypes (Warrior / Mage / Trickster). Tomes pick uniformly at random — most drops will be cross-class, occasionally a same-archetype tome lands and just bumps your deck density.")
+	display_game("  • [b]Same-archetype tomes aren't wasted[/b]: a Mage finding a Magic Bolt tome gets the spell denser in their deck (draw it more often). Never a feel-bad pickup.")
+	display_game("  • [b]Drop rates by tier[/b]: T3 chests weight 1, T4 weight 2, T5-T7 weight 2-3, T8 weight 4, T9 weight 5. Rare across the board.")
+	display_game("  • [b]Out-of-combat only[/b] — mutating your deck mid-fight would be chaotic. The use button is greyed out during combat.")
+	display_game("  • [b]Why[/b]: closes the Slice 4 acquisition loop. You now have two paths to cross-class cards — companion-gift at L10 (deliberate, predictable) and tomes from chests (luck-based, exciting). Sanctuary deck customization is still on the post-audit list.")
+	display_game("")
+
 	# v0.9.324 changes
-	display_game("[color=#00FF00]v0.9.324[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.324[/color]")
 	display_game("  [color=#FFD700]Companion gifts cross-class abilities (Audit #1 Slice 4b)[/color]")
 	display_game("  • [b]Companions now teach you cross-class abilities at level 10.[/b] When your active companion crosses level 10 in combat, if their monster type has a mapped gift ability AND it's not already in your deck, you get +1 copy permanently.")
 	display_game("  • [b]15 companions teach abilities[/b], spread across archetypes: Wolf → Ambush, Goblin → Distract, Skeleton → Magic Bolt, Spider → Paralyze, Orc → Power Strike, Hobgoblin → War Cry, Gnoll → Cleave, Wight → Vanish, Mimic → Analyze, Troll → Rally, and more.")
@@ -23158,18 +23176,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: NPC posts are the load-bearing infrastructure for the post-anchored world (quest chains, market, region naming, rumors, personalities). Denser posts = more anchors per square mile = world feels more lived-in. Compounds on Slices 1-4 (greetings, rumors, hotzone warnings, personalities).")
 	display_game("")
 
-	# v0.9.320 changes
-	display_game("[color=#00FFFF]v0.9.320[/color]")
-	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 14)[/color]")
-	display_game("  • Coverage 15 → 21 dungeons themed. Rat Warrens / Kobold Tunnels / Orc Stronghold / Wraith Barrow / Giant Keep / Hydra Swamp now have signature environmental tiles.")
-	display_game("  • [color=#7BA821][b]p[/b][/color] [color=#7BA821]Filthy Puddle[/color] (Rat Warrens) — nicks ~1% HP AND 30% chance to bank a festering stack into your next combat. Cross-system pair with Rat King's Festering Bite signature.")
-	display_game("  • [color=#DAA520][b]t[/b][/color] [color=#DAA520]Trinket Pile[/color] (Kobold Tunnels) — 2-4 Valor pickup, consumed.")
-	display_game("  • [color=#FF6347][b]![/b][/color] [color=#FF6347]War Banner[/color] (Orc Stronghold) — touch one for +15% damage for the first 3 rounds of your next combat. Cross-system offensive buff. Consumed.")
-	display_game("  • [color=#9370DB][b]:[/b][/color] [color=#9370DB]Spectral Veil[/color] (Wraith Barrow) — touch one for 20% monster-miss chance for the first 2 rounds of your next combat. Cross-system defensive buff. Consumed.")
-	display_game("  • [color=#A0A0A0][b]r[/b][/color] [color=#A0A0A0]Crushed Rubble[/color] (Giant Keep) — +2 step cost. Densest step-debuff tile so far (12% placement).")
-	display_game("  • [color=#48D1CC][b]/[/b][/color] [color=#48D1CC]Regen Spring[/color] (Hydra Swamp) — strongest heal tile: ~6% max HP. Consumed. Pairs with Hydra's Regen boss signature.")
-	display_game("  • [b]Three new cross-system mechanics[/b]: pending festering, war banner damage buff, spectral veil miss chance. All carry from the dungeon tile through start_combat into combat math.")
-	display_game("")
 
 
 

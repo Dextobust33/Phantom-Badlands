@@ -503,6 +503,10 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 1, "item_type": "home_stone_companion", "rarity": "rare"},
+		# Audit #1 Slice 4c — Ability Tomes. Low-weight T3+ drop. Adds +1 deck
+		# copy of a random ability when used. Cross-class acquisition path
+		# alongside companion gifts.
+		{"weight": 1, "item_type": "ability_tome", "rarity": "rare"},
 	],
 	4: [
 		{"weight": 14, "item_type": "potion_greater", "rarity": "common"},
@@ -517,6 +521,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "scroll_vulnerability", "rarity": "common"},
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "home_stone_supplies", "rarity": "uncommon"},
+		{"weight": 2, "item_type": "ability_tome", "rarity": "rare"},
 	],
 	5: [
 		{"weight": 12, "item_type": "potion_superior", "rarity": "common"},
@@ -535,6 +540,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
+		{"weight": 2, "item_type": "ability_tome", "rarity": "rare"},
 	],
 	6: [
 		{"weight": 8, "item_type": "potion_master", "rarity": "common"},
@@ -555,6 +561,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 2, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
 	],
 	7: [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
@@ -574,6 +581,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
+		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
 	],
 	8: [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
@@ -590,6 +598,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
+		{"weight": 4, "item_type": "ability_tome", "rarity": "rare"},
 	],
 	9: [
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "common"},
@@ -611,6 +620,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
+		{"weight": 5, "item_type": "ability_tome", "rarity": "rare"},
 	],
 }
 
@@ -1219,6 +1229,62 @@ static func get_companion_gift_ability(monster_type: String) -> String:
 	"""Returns the player ability gifted when this companion reaches level 10,
 	or empty string if this monster type doesn't teach anything."""
 	return COMPANION_GIFT_ABILITY.get(monster_type, "")
+
+# Audit #1 Slice 4c (v0.9.325) — Ability Tomes drop-based acquisition path.
+# Curated pool of all 24 player abilities (universals excluded — they're free
+# by default). Drops from T3+ chests at low rates. Using a tome always adds
+# +1 deck copy of the named ability, even if the player already has it
+# (deck-density bonus). Never useless.
+const ABILITY_TOME_POOL: Array = [
+	# Warrior path
+	"power_strike", "war_cry", "shield_bash", "cleave", "berserk",
+	"iron_skin", "devastate", "fortify", "rally",
+	# Mage path
+	"magic_bolt", "blast", "forcefield", "meteor", "haste",
+	"paralyze", "banish",
+	# Trickster path
+	"analyze", "distract", "pickpocket", "ambush", "vanish",
+	"exploit", "perfect_heist", "sabotage", "gambit",
+]
+
+# Display names for tome contents — keep in sync with character.gd
+# get_all_available_abilities display fields.
+const ABILITY_TOME_DISPLAY_NAMES: Dictionary = {
+	"power_strike": "Power Strike", "war_cry": "War Cry", "shield_bash": "Shield Bash",
+	"cleave": "Cleave", "berserk": "Berserk", "iron_skin": "Iron Skin",
+	"devastate": "Devastate", "fortify": "Fortify", "rally": "Rally",
+	"magic_bolt": "Magic Bolt", "blast": "Blast", "forcefield": "Forcefield",
+	"meteor": "Meteor", "haste": "Haste", "paralyze": "Paralyze", "banish": "Banish",
+	"analyze": "Analyze", "distract": "Distract", "pickpocket": "Pickpocket",
+	"ambush": "Ambush", "vanish": "Vanish", "exploit": "Exploit",
+	"perfect_heist": "Perfect Heist", "sabotage": "Sabotage", "gambit": "Gambit",
+}
+
+func _generate_ability_tome(item_level: int) -> Dictionary:
+	"""Construct a fully-formed ability_tome consumable. Picks a random
+	ability from the pool and embeds it as `gift_ability`. The use handler
+	reads this field to know which card to add to the deck."""
+	var ability_name = ABILITY_TOME_POOL[randi() % ABILITY_TOME_POOL.size()]
+	var display_name = ABILITY_TOME_DISPLAY_NAMES.get(ability_name, ability_name.capitalize())
+	var tier = get_tier_for_level(item_level)
+	return {
+		"id": randi(),
+		"type": "ability_tome",
+		"item_type": "ability_tome",
+		"gift_ability": ability_name,
+		"rarity": "uncommon",
+		"level": tier,
+		"tier": tier,
+		"name": "Tome of %s" % display_name,
+		"is_consumable": true,
+		"quantity": 1,
+		"value": 250 + tier * 50,
+	}
+
+static func get_ability_tome_display(ability_name: String) -> String:
+	"""Public helper so server/client can resolve a tome's display name from
+	its gift_ability field without duplicating the table."""
+	return ABILITY_TOME_DISPLAY_NAMES.get(ability_name, ability_name.capitalize().replace("_", " "))
 
 # Per-monster companion abilities - each monster type has unique abilities based on their original monster abilities
 # Abilities scale with companion level: final_value = base + (scaling * companion_level)
@@ -3483,6 +3549,12 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 	"""Generate an actual item from a drop table entry. If override_rarity is set, use it (D2 system)."""
 	var item_type = drop_entry.get("item_type", "unknown")
 	var base_rarity = drop_entry.get("rarity", "common")
+
+	# Audit #1 Slice 4c — Ability Tome. Special-cased because the tome needs
+	# to pick a random ability AND embed it as a field. Returns a fully-built
+	# consumable item; no further processing needed.
+	if item_type == "ability_tome":
+		return _generate_ability_tome(monster_level)
 
 	# Special handling for generic "artifact" type - convert to random equipment slot
 	if item_type == "artifact":
