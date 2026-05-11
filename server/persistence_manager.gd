@@ -13,6 +13,14 @@ const HOUSES_FILE = "user://data/houses.json"
 const PLAYER_TILES_FILE = "user://data/player_tiles.json"
 const PLAYER_POSTS_FILE = "user://data/player_posts.json"
 const MARKET_FILE = "user://data/market_data.json"
+# Audit #14 Slice 1 — clans persistence. {clans: {clan_id: {name, tag,
+# leader_account_id, member_ids[], created_at}}, next_clan_id: int}.
+const CLANS_FILE = "user://data/clans.json"
+const CLAN_NAME_MIN = 3
+const CLAN_NAME_MAX = 24
+const CLAN_TAG_MIN = 2
+const CLAN_TAG_MAX = 5
+const CLAN_MAX_MEMBERS = 30
 const GUARDS_FILE = "user://data/guards.json"
 const BAN_LIST_FILE = "user://data/ban_list.json"
 
@@ -67,6 +75,8 @@ var houses_data: Dictionary = {}  # {"houses": {account_id: house_data}}
 var player_tiles_data: Dictionary = {}  # {"tiles": {username: [{x, y, type}]}}
 var player_posts_data: Dictionary = {}  # {"posts": {username: [{name, center_x, center_y, created_at}]}}
 var market_data: Dictionary = {}  # {"listings": {post_id: [...]}, "next_id": 1}
+# Audit #14 Slice 1 — clans cache. Loaded on startup, saved on every mutation.
+var clans_data: Dictionary = {}  # {"clans": {clan_id: clan_dict}, "next_clan_id": int}
 var ban_list_data: Dictionary = {}  # {"banned_ips": {ip: {reason, banned_at, banned_by}}}
 
 func _ready():
@@ -81,6 +91,7 @@ func _ready():
 	load_player_posts()
 	load_player_storage()
 	load_market_data()
+	load_clans()
 	load_ban_list()
 
 # ===== DIRECTORY SETUP =====
@@ -254,7 +265,8 @@ func create_account(username: String, password: String) -> Dictionary:
 		"max_characters": DEFAULT_MAX_CHARACTERS,
 		"is_admin": false,
 		"mastery_records": {},  # ability_name → highest rank ever achieved on any character (Slice 2)
-		"pending_headstarts": {}  # ability_name → rank queued for next character (Slice 3)
+		"pending_headstarts": {},  # ability_name → rank queued for next character (Slice 3)
+		"clan_id": ""  # Audit #14 Slice 1 — empty until player joins/creates a clan
 	}
 
 	accounts_data.username_to_id[username_lower] = account_id
@@ -1870,6 +1882,157 @@ func clear_all_market_data():
 	"""Clear all market data (for wipes)."""
 	market_data = {"listings": {}, "orders": {}, "next_id": 1, "next_order_id": 1}
 	save_market_data()
+
+# ===== CLANS (Audit #14 Slice 1) =====
+# Each clan: {clan_id, name, tag, leader_account_id, member_ids[], created_at}.
+# Names + tags are case-insensitive-unique. Leader leaves → clan disbands
+# (members get clan_id reset). Future slices: officer ranks, storage, posts,
+# wars. This slice ships create/leave/info only.
+
+func load_clans():
+	"""Load clans data from file."""
+	var data = _safe_load(CLANS_FILE)
+	if data.is_empty():
+		clans_data = {"clans": {}, "next_clan_id": 1}
+		save_clans()
+	else:
+		clans_data = data
+		if not clans_data.has("clans"):
+			clans_data["clans"] = {}
+		if not clans_data.has("next_clan_id"):
+			clans_data["next_clan_id"] = 1
+
+func save_clans():
+	"""Save clans data to file."""
+	_safe_save(CLANS_FILE, clans_data)
+
+func get_clan(clan_id: String) -> Dictionary:
+	"""Return clan dict by id, or {} if missing."""
+	if clan_id == "":
+		return {}
+	return clans_data.get("clans", {}).get(clan_id, {})
+
+func get_account_clan_id(account_id: String) -> String:
+	"""Return the clan_id this account belongs to, or "" if unaffiliated."""
+	var account = accounts_data.get("accounts", {}).get(account_id, {})
+	return String(account.get("clan_id", ""))
+
+func get_clan_by_account(account_id: String) -> Dictionary:
+	"""Return the clan dict the account belongs to, or {} if unaffiliated."""
+	var clan_id = get_account_clan_id(account_id)
+	return get_clan(clan_id)
+
+func _normalize_clan_key(text: String) -> String:
+	return text.strip_edges().to_lower()
+
+func find_clan_by_name(name: String) -> String:
+	"""Case-insensitive name lookup → clan_id or ""."""
+	var key = _normalize_clan_key(name)
+	for clan_id in clans_data.get("clans", {}):
+		var clan = clans_data["clans"][clan_id]
+		if _normalize_clan_key(String(clan.get("name", ""))) == key:
+			return String(clan_id)
+	return ""
+
+func find_clan_by_tag(tag: String) -> String:
+	"""Case-insensitive tag lookup → clan_id or ""."""
+	var key = _normalize_clan_key(tag)
+	for clan_id in clans_data.get("clans", {}):
+		var clan = clans_data["clans"][clan_id]
+		if _normalize_clan_key(String(clan.get("tag", ""))) == key:
+			return String(clan_id)
+	return ""
+
+func create_clan(leader_account_id: String, name: String, tag: String) -> Dictionary:
+	"""Create a new clan led by the named account. Validates length, unique
+	name/tag, and that the leader isn't already in a clan. Returns
+	{success, clan_id, clan, reason} where `reason` is set on failure."""
+	if get_account_clan_id(leader_account_id) != "":
+		return {"success": false, "reason": "Already in a clan — leave first."}
+	var nm = name.strip_edges()
+	var tg = tag.strip_edges()
+	if nm.length() < CLAN_NAME_MIN or nm.length() > CLAN_NAME_MAX:
+		return {"success": false, "reason": "Clan name must be %d-%d characters." % [CLAN_NAME_MIN, CLAN_NAME_MAX]}
+	if tg.length() < CLAN_TAG_MIN or tg.length() > CLAN_TAG_MAX:
+		return {"success": false, "reason": "Clan tag must be %d-%d characters." % [CLAN_TAG_MIN, CLAN_TAG_MAX]}
+	# Restrict to alphanumeric + space for names; alphanumeric only for tags.
+	var name_re = RegEx.new()
+	name_re.compile("^[a-zA-Z0-9 ]+$")
+	if not name_re.search(nm):
+		return {"success": false, "reason": "Clan name: letters / numbers / spaces only."}
+	var tag_re = RegEx.new()
+	tag_re.compile("^[a-zA-Z0-9]+$")
+	if not tag_re.search(tg):
+		return {"success": false, "reason": "Clan tag: letters / numbers only."}
+	if find_clan_by_name(nm) != "":
+		return {"success": false, "reason": "A clan with that name already exists."}
+	if find_clan_by_tag(tg) != "":
+		return {"success": false, "reason": "A clan with that tag already exists."}
+
+	var clan_id = "clan_%d" % int(clans_data.get("next_clan_id", 1))
+	clans_data["next_clan_id"] = int(clans_data.get("next_clan_id", 1)) + 1
+	clans_data["clans"][clan_id] = {
+		"clan_id": clan_id,
+		"name": nm,
+		"tag": tg,
+		"leader_account_id": leader_account_id,
+		"member_ids": [leader_account_id],
+		"created_at": int(Time.get_unix_time_from_system()),
+	}
+	accounts_data["accounts"][leader_account_id]["clan_id"] = clan_id
+	save_clans()
+	save_accounts()
+	return {"success": true, "clan_id": clan_id, "clan": clans_data["clans"][clan_id]}
+
+func leave_clan(account_id: String) -> Dictionary:
+	"""Remove account from its clan. If account is the leader, the clan is
+	disbanded (all members reset to clan_id ""). Returns {success, disbanded,
+	clan_name, reason}."""
+	var clan_id = get_account_clan_id(account_id)
+	if clan_id == "":
+		return {"success": false, "reason": "You're not in a clan."}
+	if not clans_data.get("clans", {}).has(clan_id):
+		# Stale account state — clean up.
+		accounts_data["accounts"][account_id]["clan_id"] = ""
+		save_accounts()
+		return {"success": true, "disbanded": false, "clan_name": ""}
+	var clan = clans_data["clans"][clan_id]
+	var clan_name = String(clan.get("name", ""))
+	var was_leader = (String(clan.get("leader_account_id", "")) == account_id)
+	if was_leader:
+		# Disband — reset every member's clan_id and remove the clan record.
+		for member_id in clan.get("member_ids", []):
+			if accounts_data["accounts"].has(member_id):
+				accounts_data["accounts"][member_id]["clan_id"] = ""
+		clans_data["clans"].erase(clan_id)
+		save_clans()
+		save_accounts()
+		return {"success": true, "disbanded": true, "clan_name": clan_name}
+	# Regular member — just remove from roster.
+	var members: Array = clan.get("member_ids", [])
+	members.erase(account_id)
+	clan["member_ids"] = members
+	accounts_data["accounts"][account_id]["clan_id"] = ""
+	save_clans()
+	save_accounts()
+	return {"success": true, "disbanded": false, "clan_name": clan_name}
+
+func get_clan_member_summary(clan_id: String) -> Array:
+	"""Return a list of {account_id, username, is_leader} for each member of
+	the clan, in roster order. Used by the visual panel."""
+	var clan = get_clan(clan_id)
+	if clan.is_empty():
+		return []
+	var leader_id = String(clan.get("leader_account_id", ""))
+	var out: Array = []
+	for member_id in clan.get("member_ids", []):
+		var member_account = accounts_data.get("accounts", {}).get(member_id, {})
+		out.append({
+			"account_id": member_id,
+			"username": String(member_account.get("username", "(unknown)")),
+			"is_leader": member_id == leader_id,
+		})
+	return out
 
 # ===== BUY ORDERS (Audit #9 Slice 2) =====
 # Demand-side mirror of listings. Buyer escrows Valor at creation; sellers

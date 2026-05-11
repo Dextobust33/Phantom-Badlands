@@ -1223,6 +1223,10 @@ var stats_panel = null
 const PostStatusPanelScript = preload("res://client/post_status_panel.gd")
 var post_status_panel = null
 
+# Audit #14 Slice 1 — visual clan create/roster panel (no chat-command-first).
+const ClanPanelScript = preload("res://client/clan_panel.gd")
+var clan_panel = null
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -1799,6 +1803,13 @@ func _ready():
 	add_child(post_status_panel)
 	post_status_panel.close_requested.connect(_on_post_status_panel_close)
 	post_status_panel.feed_all_requested.connect(_on_post_status_panel_feed_all)
+
+	# Audit #14 Slice 1 — clan create/roster panel.
+	clan_panel = ClanPanelScript.new()
+	add_child(clan_panel)
+	clan_panel.close_requested.connect(_on_clan_panel_close)
+	clan_panel.create_requested.connect(_on_clan_panel_create)
+	clan_panel.leave_requested.connect(_on_clan_panel_leave)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -8647,6 +8658,7 @@ func _create_shortcut_buttons():
 		["Stats", "stats_shortcut"],
 		["Stones", "stones_shortcut"],
 		["Post", "post_shortcut"],
+		["Clan", "clan_shortcut"],
 		["Inv", "inventory_shortcut"],
 		["Help", "help_shortcut"],
 	]
@@ -8784,6 +8796,9 @@ func _on_shortcut_button_pressed(action: String):
 		"post_shortcut":
 			# Audit #12 UI remediation — visual post status panel.
 			open_post_status_panel()
+		"clan_shortcut":
+			# Audit #14 Slice 1 — visual clan create/roster panel.
+			open_clan_panel()
 		"inventory_shortcut":
 			if inventory_mode and pending_inventory_action == "":
 				return  # Already in base inventory
@@ -19124,6 +19139,12 @@ func handle_server_message(message: Dictionary):
 		"post_status_data":
 			_handle_post_status_data(message)
 
+		# Audit #14 Slice 1 — clan panel feeds
+		"clan_info_data":
+			_handle_clan_info_data(message)
+		"clan_action_result":
+			_handle_clan_action_result(message)
+
 		# Market messages
 		"market_browse_result":
 			_handle_market_browse_result(message)
@@ -19939,7 +19960,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20893,6 +20914,14 @@ func process_command(text: String):
 					display_game("[color=#FF8800]Usage: /spendstat <strength|constitution|dexterity|intelligence|wisdom|wits>  —  see /stats for your bank.[/color]")
 				else:
 					send_to_server({"type": "spend_stat_point", "stat": stat_name})
+		"clan":
+			# Audit #14 Slice 1 — `/clan` opens the visual clan panel (create form
+			# if not in a clan, roster view if in one). Power-user shortcut for the
+			# Clan shortcut button.
+			if has_character:
+				open_clan_panel()
+			else:
+				display_game("You don't have a character yet")
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -23253,8 +23282,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.339 changes
+	display_game("[color=#00FF00]v0.9.339[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clans foundation (Audit #14 Slice 1)[/color]")
+	display_game("  • [b]New shortcut button: [color=#9ACD32]Clan[/color][/b] — opens the visual clan panel. When you're not in a clan, it shows a create form (Name + Tag). When you're in one, it shows the roster + a [Leave Clan] (or [Disband Clan] if you're the leader) button.")
+	display_game("  • [b]Create a clan[/b] with a 3–24 character Name (letters/numbers/spaces) and a 2–5 character Tag (letters/numbers only). Names and tags are unique across the server. The clan record persists at the account level — survives character permadeath.")
+	display_game("  • [b]Members[/b] are listed in roster order with the leader marked. The first slice supports up to 30 members. Invitation flow ships in Slice 2.")
+	display_game("  • [b]Leaving / disbanding[/b]: regular members can leave at any time; leaders leaving disbands the clan and clears every member's clan_id. Disband announcements broadcast to chat so other players see when clans form or dissolve.")
+	display_game("  • [b]Audit #14 moves from \"designing\" to \"implementing.\"[/b] All 15 audit systems now have shipped first slices. Future clan slices will add invitations, ranks, clan storage, and shared posts.")
+	display_game("  • [b]/clan[/b] also works as a power-user shortcut for the button.")
+	display_game("")
+
 	# v0.9.338 changes
-	display_game("[color=#00FF00]v0.9.338[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.338[/color]")
 	display_game("  [color=#FFD700]Visual post status panel + Feed All (UI remediation)[/color]")
 	display_game("  • [b]New shortcut button: [color=#9ACD32]Post[/color][/b] — opens the visual post status panel. Always accessible; shows \"Stand inside a player post\" empty-state when off-post.")
 	display_game("  • [b]Panel sections[/b]: header (post name + owner), bubble line (radius + effective tier + guard count), Under Threat banner if applicable, per-guard food-days list (with [LOW] / [thin] tags), and a [b]Feed All Guards[/b] button row.")
@@ -23282,16 +23322,6 @@ func display_changelog():
 	display_game("  • [b]/stones still works[/b] but now opens the panel AND prints the text summary. /buystone <type> remains as a power-user shortcut.")
 	display_game("")
 
-	# v0.9.335 changes
-	display_game("[color=#00FFFF]v0.9.335[/color]")
-	display_game("  [color=#FFD700]Stat allocation agency (Audit #3 Slice 1)[/color]")
-	display_game("  • [b]Each level-up now grants +1 unspent stat point[/b], on top of the existing class-fixed scaling (2.5 distributed automatically by class). Layered — class identity stays, but you get a slice of choice every level.")
-	display_game("  • [b]/stats[/b] — shows current STR/CON/DEX/INT/WIS/WITS, your level/XP progress, and your unspent point bank.")
-	display_game("  • [b]/spendstat <stat>[/b] — bump the named stat by 1 from your bank. Recomputes derived stats so HP/Mana/etc reflect the change immediately.")
-	display_game("  • [b]Legacy characters start at 0[/b] — no retroactive grant. Only level-ups after this version award points. Newly created characters bank from level 1.")
-	display_game("  • [b]Why[/b]: per the audit, players had no per-level agency in stat allocation. Classes still bias the scaling, but a per-level point gives you a small lever to lean into whatever you're playing — a Sage who wants more Wits, a Paladin who wants extra CON, etc.")
-	display_game("  • [b]Audit #3 moves from \"designing\" to \"implementing.\"[/b] Four designing-only systems shipped first slices in four consecutive releases (#4 → #13 → #2 → #3). Only #14 Multiplayer remains in designing.")
-	display_game("")
 
 
 
@@ -26046,6 +26076,50 @@ func _handle_post_status_data(message: Dictionary) -> void:
 		# (e.g., walking onto a post triggers a refresh while panel is hidden),
 		# we want the next open to show fresh data.
 		post_status_panel._last_data = message.duplicate()
+
+# === Audit #14 Slice 1 — Clan panel ===
+
+func open_clan_panel() -> void:
+	"""Open visual clan panel. Sends clan_info to refresh server state and shows
+	the panel; the server response populates create form vs roster view."""
+	if not clan_panel:
+		display_game("[color=#FF0000]Clan panel not initialized.[/color]")
+		return
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	# Open with empty state immediately; clan_info response will populate.
+	clan_panel.open({"has_clan": false})
+	send_to_server({"type": "clan_info"})
+
+func close_clan_panel() -> void:
+	if clan_panel:
+		clan_panel.close()
+
+func _on_clan_panel_close() -> void:
+	close_clan_panel()
+
+func _on_clan_panel_create(clan_name: String, clan_tag: String) -> void:
+	send_to_server({"type": "clan_create", "name": clan_name, "tag": clan_tag})
+
+func _on_clan_panel_leave() -> void:
+	send_to_server({"type": "clan_leave"})
+
+func _handle_clan_info_data(message: Dictionary) -> void:
+	"""Push server clan state into the panel if it's open."""
+	if not clan_panel:
+		return
+	if clan_panel.visible:
+		clan_panel.refresh(message)
+
+func _handle_clan_action_result(message: Dictionary) -> void:
+	"""Inline feedback under the clan panel title for create/leave results.
+	Also displays in game_output if the panel is closed."""
+	var success = bool(message.get("success", false))
+	var feedback = String(message.get("message", message.get("reason", "")))
+	if clan_panel and clan_panel.visible:
+		clan_panel.show_action_result(success, feedback)
+	if feedback != "":
+		display_game(feedback)
 
 func _on_admin_panel_action(action_id: String) -> void:
 	"""Dispatch admin panel button clicks. Each action_id maps to a

@@ -1273,6 +1273,13 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_show_stats(peer_id)
 		"spend_stat_point":
 			handle_spend_stat_point(peer_id, message)
+		# Clan system handlers (Audit #14 Slice 1)
+		"clan_create":
+			handle_clan_create(peer_id, message)
+		"clan_leave":
+			handle_clan_leave(peer_id)
+		"clan_info":
+			handle_clan_info(peer_id)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -7638,6 +7645,114 @@ func handle_spend_stat_point(peer_id: int, message: Dictionary) -> void:
 	send_to_peer(peer_id, {"type": "text", "message": "%s%s" % [String(result.get("message", "")), trailer]})
 	send_character_update(peer_id)
 	save_character(peer_id)
+
+# ===== CLAN HANDLERS (Audit #14 Slice 1) =====
+
+func _send_clan_info(peer_id: int) -> void:
+	"""Push the viewer's current clan state to ClanPanel — either {has_clan:false}
+	or a full {clan, members} payload. Single source of truth for the panel's
+	rendered view."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		send_to_peer(peer_id, {
+			"type": "clan_info_data",
+			"has_clan": false,
+		})
+		return
+	var clan = persistence.get_clan(clan_id)
+	if clan.is_empty():
+		send_to_peer(peer_id, {
+			"type": "clan_info_data",
+			"has_clan": false,
+		})
+		return
+	var members = persistence.get_clan_member_summary(clan_id)
+	var leader_id = String(clan.get("leader_account_id", ""))
+	send_to_peer(peer_id, {
+		"type": "clan_info_data",
+		"has_clan": true,
+		"clan_id": clan_id,
+		"name": String(clan.get("name", "")),
+		"tag": String(clan.get("tag", "")),
+		"is_leader": leader_id == account_id,
+		"created_at": int(clan.get("created_at", 0)),
+		"members": members,
+		"member_count": members.size(),
+		"max_members": persistence.CLAN_MAX_MEMBERS,
+	})
+
+func handle_clan_info(peer_id: int) -> void:
+	"""Refresh the requesting client's clan view."""
+	_send_clan_info(peer_id)
+
+func handle_clan_create(peer_id: int, message: Dictionary) -> void:
+	"""Create a new clan led by the requester. Validation lives in
+	persistence.create_clan (length, regex, uniqueness, not-already-in-clan)."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var name = String(message.get("name", "")).strip_edges()
+	var tag = String(message.get("tag", "")).strip_edges()
+	var result = persistence.create_clan(account_id, name, tag)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "create",
+			"reason": String(result.get("reason", "Create failed.")),
+		})
+		return
+	var clan_name = String(result["clan"].get("name", ""))
+	var clan_tag = String(result["clan"].get("tag", ""))
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "create",
+		"message": "[color=#A335EE]Clan [color=#FFD700]%s[/color] [%s] founded![/color]" % [clan_name, clan_tag],
+	})
+	_send_clan_info(peer_id)
+	# Announce in chat so other players see the new clan exists.
+	broadcast_chat("[color=#A335EE]Clan [color=#FFD700]%s[/color] [%s] has been founded![/color]" % [clan_name, clan_tag], "System")
+
+func handle_clan_leave(peer_id: int) -> void:
+	"""Remove requester from their clan. If they're the leader, the clan
+	disbands and every member's clan_id is cleared."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var result = persistence.leave_clan(account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "leave",
+			"reason": String(result.get("reason", "Leave failed.")),
+		})
+		return
+	var clan_name = String(result.get("clan_name", ""))
+	var disbanded = bool(result.get("disbanded", false))
+	var msg = "[color=#FF8800]Clan [color=#FFD700]%s[/color] disbanded.[/color]" % clan_name if disbanded else "[color=#FF8800]Left clan [color=#FFD700]%s[/color].[/color]" % clan_name
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "leave",
+		"message": msg,
+		"disbanded": disbanded,
+	})
+	_send_clan_info(peer_id)
+	if disbanded and clan_name != "":
+		broadcast_chat("[color=#888888]Clan [color=#FFD700]%s[/color] has disbanded.[/color]" % clan_name, "System")
 
 func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name: String):
 	"""Process hatching an egg and sending the companion to house kennel via Home Stone"""
