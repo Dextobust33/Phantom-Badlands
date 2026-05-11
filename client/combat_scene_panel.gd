@@ -35,6 +35,11 @@ var _monster_hp_known: bool = false
 
 const LOG_LINE_LIMIT := 80
 var _log_lines: Array = []
+# Flock encounter log archive — each entry: {monster_name, color, level, art, lines}.
+# Populated by clear_log(archive=true) so [L] legacy view can replay prior fights
+# from the same flock chain.
+var _flock_history: Array = []
+const FLOCK_HISTORY_LIMIT := 16
 
 # Layout nodes
 var _root_panel: PanelContainer
@@ -1542,10 +1547,30 @@ func append_log(bbcode_line: String) -> void:
 		_refresh_log()
 
 
-func clear_log() -> void:
+func clear_log(archive: bool = false) -> void:
+	# When archive=true and there's a current log, snapshot it into _flock_history
+	# so the [L] legacy view can replay prior fights from this flock chain.
+	if archive and _log_lines.size() > 0 and _monster_name != "":
+		_flock_history.append({
+			"monster_name": _monster_name,
+			"color": _monster_name_color,
+			"level": _monster_level,
+			"art": _monster_art_bbcode,
+			"lines": _log_lines.duplicate(),
+		})
+		if _flock_history.size() > FLOCK_HISTORY_LIMIT:
+			_flock_history = _flock_history.slice(_flock_history.size() - FLOCK_HISTORY_LIMIT)
 	_log_lines.clear()
 	if is_inside_tree():
 		_refresh_log()
+
+
+func reset_flock_history() -> void:
+	_flock_history.clear()
+
+
+func get_flock_history() -> Array:
+	return _flock_history.duplicate()
 
 
 func get_log_lines() -> Array:
