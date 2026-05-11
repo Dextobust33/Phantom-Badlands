@@ -22458,8 +22458,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.269 changes
+	display_game("[color=#00FF00]v0.9.269[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotfix — visual Market panel bulk + Food chip[/color]")
+	display_game("  • [b]Visual Market panel's \"List ▾\" Bulk options now actually work[/b]. Three of them (Bulk: All Consumables / Tools / Materials) were silently failing since the panel shipped — sending singular list_type values the server didn't recognize. The errors were going to game_output behind the visible panel, so it looked like \"nothing happens\"")
+	display_game("  • The visual panel's bulk buttons now go through the [b]same preview-and-confirm flow[/b] introduced in v0.9.268 — \"Will list N items for X Valor. Proceed?\"")
+	display_game("  • [b]Success / Nothing-to-list popups now appear over the visual panel[/b] (used to log to game_output, hidden under the panel). Panel auto-refreshes after a bulk list so the new valor and listings show up")
+	display_game("  • [b]Food chip added[/b] to the visual market filter row — between Cons and Tools. Same filter logic as v0.9.268's text-mode food category")
+	display_game("")
+
 	# v0.9.268 changes
-	display_game("[color=#00FF00]v0.9.268[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.268[/color]")
 	display_game("  [color=#FFD700]Market: bulk-list preview + Food filter[/color]")
 	display_game("  • [b]Bulk listing now asks first.[/b] Press 1-5 on the market menu — instead of silently listing, you get a popup: [color=#FFD700]\"Will list N items for X Valor. Proceed?\"[/color] with List / Cancel. Nothing gets listed until you confirm")
 	display_game("  • If the category is empty, the popup is skipped and the log says \"Nothing to list for that category\" — no more guessing whether anything happened")
@@ -22492,15 +22501,6 @@ func display_changelog():
 	display_game("  • [color=#FFD700]22/23 abilities now variable-cost.[/color] Next: balance pass with the combat simulator → Slice 6c (deck cull)")
 	display_game("")
 
-	# v0.9.264 changes
-	display_game("[color=#00FFFF]v0.9.264[/color]")
-	display_game("  [color=#FFD700]Variable-cost — Mage CC (Audit #1)[/color]")
-	display_game("  • [b]Haste, Paralyze, and Banish are now variable-cost.[/b] New design rule emerges: chance-based abilities scale the CHANCE, not the magnitude. Haste is the odd one out — speed bonus is a magnitude, so it scales like the warrior buffs")
-	display_game("  • [b]Haste[/b] floor ≈30%% mana cost. Speed bonus scales (e.g. +25%% at full → +7%% at floor for INT 25). Duration stays 5 rounds")
-	display_game("  • [b]Paralyze[/b] floor ≈30%%. Stun chance scales with spend (still capped 85%%, floored at 10%%). Duration stays 1-2 turns if the stun lands")
-	display_game("  • [b]Banish[/b] floor ≈30%%. Banish chance scales (40-75%% × spend). The 50%% loot-drop chance on successful banish stays constant — bonus outcomes don't scale, only the headline mechanic does")
-	display_game("  • 18/23 abilities done. Coming next: Trickster utility (Pickpocket / Sabotage / Distract / Perfect Heist) — the last batch")
-	display_game("")
 
 
 
@@ -28570,16 +28570,22 @@ func _on_market_panel_list_action(action_id: String) -> void:
 			market_egg_page = 0
 			display_market_list_eggs()
 			update_action_bar()
+		# v0.9.269: route through preview flow so player gets a confirmation
+		# popup with count + total valor before anything is listed. Also fixes
+		# pre-existing list_type drift — server expects plural (consumables /
+		# tools / materials), this dispatcher was sending singular and silently
+		# failing with "Invalid list type" errors that went to game_output
+		# (hidden behind the visual market panel).
 		"bulk_equipment":
-			send_to_server({"type": "market_list_all", "list_type": "equipment"})
+			send_to_server({"type": "market_list_preview", "list_type": "equipment"})
 		"bulk_consumable":
-			send_to_server({"type": "market_list_all", "list_type": "consumable"})
+			send_to_server({"type": "market_list_preview", "list_type": "consumables"})
 		"bulk_tool":
-			send_to_server({"type": "market_list_all", "list_type": "tool"})
+			send_to_server({"type": "market_list_preview", "list_type": "tools"})
 		"bulk_material":
-			send_to_server({"type": "market_list_all", "list_type": "material"})
+			send_to_server({"type": "market_list_preview", "list_type": "materials"})
 		"bulk_food":
-			send_to_server({"type": "market_list_all", "list_type": "food"})
+			send_to_server({"type": "market_list_preview", "list_type": "food"})
 
 # === Companions panel integration ===
 
@@ -30915,6 +30921,20 @@ func _handle_market_list_all_success(message: Dictionary):
 	var total_valor = int(message.get("total_valor", 0))
 	var new_valor = int(message.get("new_valor", 0))
 	account_valor = new_valor
+	# v0.9.269: when the visual market panel is up, the success message can't
+	# go to game_output (panel sits on top, player can't see it). Show a popup
+	# dialog instead and refresh the panel so the new valor reflects.
+	if market_panel != null and is_instance_valid(market_panel) and market_panel.visible:
+		var dialog := AcceptDialog.new()
+		dialog.title = "Listed!"
+		dialog.dialog_text = "Bulk listed %d items for %s Valor.\n\nTotal Valor: %s" % [count, format_number(total_valor), format_number(new_valor)]
+		dialog.confirmed.connect(func(): dialog.queue_free())
+		dialog.canceled.connect(func(): dialog.queue_free())
+		add_child(dialog)
+		dialog.popup_centered()
+		# Refresh the panel so the listings list + valor labels update.
+		send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
+		return
 	game_output.clear()
 	display_game("[color=#00FF00]Bulk listed %d items for %s Valor![/color]" % [count, format_number(total_valor)])
 	display_game("[color=#00FF00]Total Valor: %s[/color]" % format_number(new_valor))
@@ -30928,12 +30948,22 @@ func _handle_market_list_all_success(message: Dictionary):
 func _handle_market_list_preview_result(message: Dictionary) -> void:
 	"""v0.9.268 — server replied to a market_list_preview request. Show a
 	confirm dialog with count + total valor. On accept, fire the real
-	market_list_all. Empty results bail with a clear message."""
+	market_list_all. Empty results bail with a clear message. v0.9.269:
+	popup over the visual market panel since game_output is hidden behind it."""
 	var list_type = str(message.get("list_type", ""))
 	var count = int(message.get("count", 0))
 	var total_valor = int(message.get("total_valor", 0))
 	if count <= 0:
-		display_game("[color=#FFA500]Nothing to list for that category.[/color]")
+		if market_panel != null and is_instance_valid(market_panel) and market_panel.visible:
+			var empty_dialog := AcceptDialog.new()
+			empty_dialog.title = "Nothing to list"
+			empty_dialog.dialog_text = "You have nothing to list for that category."
+			empty_dialog.confirmed.connect(func(): empty_dialog.queue_free())
+			empty_dialog.canceled.connect(func(): empty_dialog.queue_free())
+			add_child(empty_dialog)
+			empty_dialog.popup_centered()
+		else:
+			display_game("[color=#FFA500]Nothing to list for that category.[/color]")
 		return
 	var label_map := {
 		"equipment": "Equipment",
