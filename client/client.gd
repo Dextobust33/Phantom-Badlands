@@ -22458,8 +22458,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.271 changes
+	display_game("[color=#00FF00]v0.9.271[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Rescue quests — auto-route + distinct NPC glyph[/color]")
+	display_game("  • [b]Rescue quest NPCs no longer require you to enter the \"correct\" dungeon.[/b] If you have an active Rescue the Merchant / Healer / Blacksmith / Scholar / Breeder quest and walk into [b]any[/b] dungeon 'D' tile, you'll be routed into the rescue instance and get a notice: \"Following your rescue quest — you enter [Dungeon Name]. The [merchant] is on floor N (look for [color=#4DD0FF]R[/color]).\"")
+	display_game("  • [b]Rescue NPCs now render as a bright cyan [color=#4DD0FF]R[/color][/b] (was a green [color=#00FF00]?[/color] that blended with the red [color=#FF4444]?[/color] encounter tiles — players were walking right past them)")
+	display_game("  • New rescue quest descriptions now read: \"Walk into [b]any[/b] dungeon (D) near this trading post — you'll be routed to the right one. Look for the R glyph inside.\"")
+	display_game("")
+
 	# v0.9.270 changes
-	display_game("[color=#00FF00]v0.9.270[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.270[/color]")
 	display_game("  [color=#FFD700]Combat readability — bigger cards, bigger totals, louder YOU line[/color]")
 	display_game("  • [b]Ability cards are now ~3.3x bigger.[/b] Hand row in the combat panel went from 108x54 cells to 190x108 with larger fonts. They were easy to miss before; now they draw the eye")
 	display_game("  • [b]Running damage totals are bordered and large.[/b] The You/Pet/Foe strip above the cards is wrapped in a styled panel and the numbers are 22pt (up from 12pt) — at-a-glance score of the fight without reading the log")
@@ -22493,11 +22501,6 @@ func display_changelog():
 	display_game("  • If you're below the unlock level, the tooltip reads \"Locked — unlocks at level N (you are level M)\". At or above the unlock, it reads \"Unlocked (level N+)\"")
 	display_game("")
 
-	# v0.9.266 changes
-	display_game("[color=#00FFFF]v0.9.266[/color]")
-	display_game("  [color=#FFD700]Hotfix — variable-cost hotkey firing[/color]")
-	display_game("  • [b]Fixed: variable-cost ability hotkeys not firing when below the ceiling.[/b] Example: Devastate range 15-50 SP with 35 stamina — the card would light up and clicking worked, but pressing the hotkey did nothing. Action bar's affordability check was still gating on the ceiling cost; click path was already using the floor. Both paths now use the floor (server scales the effect down to match what you actually spent)")
-	display_game("")
 
 
 

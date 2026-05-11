@@ -11924,11 +11924,14 @@ func _spawn_rescue_npc(instance_id: String, floor_num: int, npc_type: String, qu
 	if not dungeon_npcs.has(instance_id):
 		dungeon_npcs[instance_id] = {}
 
+	# v0.9.271 — rescue NPCs now render as bright cyan "R" so they don't blend
+	# with red "?" encounter tiles. Players reported missing rescue targets
+	# entirely because the green-vs-red "?" distinction wasn't readable.
 	dungeon_npcs[instance_id][floor_num] = {
 		"x": pos.x, "y": pos.y,
 		"npc_type": npc_type,
-		"display_char": "?",
-		"display_color": "#00FF00",
+		"display_char": "R",
+		"display_color": "#4DD0FF",
 		"quest_id": quest_id,
 		"rescued": false,
 	}
@@ -18658,6 +18661,12 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 
 	# Find instance to enter - prioritize player's personal dungeon for quests
 	var instance_id = ""
+	# v0.9.271 — track rescue-instance fallback so a player who walks into a
+	# 'D' tile of the WRONG dungeon type still ends up in their rescue dungeon
+	# (with a notice) rather than a fresh non-quest instance with no NPC. Saves
+	# rescue quests from silently failing when no matching 'D' tile is nearby.
+	var rescue_fallback_inst := ""
+	var rescue_redirect_msg := ""
 
 	# First check if provided instance_id is valid
 	if provided_instance_id != "" and active_dungeons.has(provided_instance_id):
@@ -18678,6 +18687,28 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 						instance_id = inst_id
 						dungeon_type = inst.dungeon_type  # Update type if was empty
 						break
+					# Remember rescue instances (those with rescue NPCs) as a
+					# fallback for the second pass — see below.
+					if rescue_fallback_inst == "" and dungeon_npcs.has(inst_id):
+						rescue_fallback_inst = inst_id
+
+		# Second pass: no exact match found, but player has an outstanding
+		# rescue quest? Route them into the rescue instance rather than create
+		# a fresh non-quest dungeon. The dungeon-type mismatch was the root
+		# cause of "can't find the merchant" reports — fixing forward.
+		if instance_id == "" and rescue_fallback_inst != "" and active_dungeons.has(rescue_fallback_inst):
+			instance_id = rescue_fallback_inst
+			dungeon_type = active_dungeons[rescue_fallback_inst].dungeon_type
+			var dd = DungeonDatabaseScript.get_dungeon(dungeon_type)
+			var name_str = dd.get("name", dungeon_type)
+			var npc_label := "ally"
+			var npc_floor := 1
+			for fnum in dungeon_npcs[rescue_fallback_inst]:
+				var npc = dungeon_npcs[rescue_fallback_inst][fnum]
+				npc_label = str(npc.get("npc_type", "ally")).capitalize()
+				npc_floor = int(fnum) + 1
+				break
+			rescue_redirect_msg = "[color=#FFD700]Following your rescue quest — you enter %s. The %s is on floor %d (look for [color=#4DD0FF]R[/color]).[/color]" % [name_str, npc_label, npc_floor]
 
 	# If no personal dungeon found, create a new personal instance
 	if instance_id == "":
@@ -18754,6 +18785,12 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		_send_dungeon_state(peer_id)
 		save_character(peer_id)
 		log_message("Player %s entered dungeon %s (instance %s)" % [character.name, dungeon_data.name, instance_id])
+
+	# v0.9.271 — if we rerouted the player into a rescue instance of a
+	# different type than the 'D' tile they walked onto, tell them so they
+	# know which dungeon they ended up in and what to look for.
+	if rescue_redirect_msg != "":
+		send_to_peer(peer_id, {"type": "text", "message": rescue_redirect_msg})
 
 func handle_dungeon_move(peer_id: int, message: Dictionary):
 	"""Handle player movement within dungeon"""
