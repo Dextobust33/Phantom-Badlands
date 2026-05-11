@@ -1446,28 +1446,30 @@ func get_post_anchored_level(x: int, y: int) -> int:
 	if bubble_level >= 0:
 		return bubble_level
 	var wilderness_level = _distance_to_level(sqrt(float(x * x + y * y)))
-	if not trading_post_db:
+	# Slice 6L — anchor against procedurally-generated NPC posts so the level
+	# model survives a map wipe. Falls through to the wilderness curve when
+	# chunk_manager isn't ready or no posts exist (boot, dev test).
+	if chunk_manager == null or chunk_manager.npc_posts.is_empty():
 		return wilderness_level
 
-	var posts_dict = trading_post_db.TRADING_POSTS
 	var nearest_dist = INF
 	var nearest_post_origin_dist = 0.0
 	var second_dist = INF
 	var second_post_origin_dist = 0.0
-	for post_id in posts_dict:
-		var post = posts_dict[post_id]
-		var c = post.center
-		var dx = float(x - c.x)
-		var dy = float(y - c.y)
+	for post in chunk_manager.npc_posts:
+		var cx = int(post.get("x", 0))
+		var cy = int(post.get("y", 0))
+		var dx = float(x - cx)
+		var dy = float(y - cy)
 		var d = sqrt(dx * dx + dy * dy)
 		if d < nearest_dist:
 			second_dist = nearest_dist
 			second_post_origin_dist = nearest_post_origin_dist
 			nearest_dist = d
-			nearest_post_origin_dist = sqrt(float(c.x * c.x + c.y * c.y))
+			nearest_post_origin_dist = sqrt(float(cx * cx + cy * cy))
 		elif d < second_dist:
 			second_dist = d
-			second_post_origin_dist = sqrt(float(c.x * c.x + c.y * c.y))
+			second_post_origin_dist = sqrt(float(cx * cx + cy * cy))
 
 	if nearest_dist == INF:
 		return wilderness_level

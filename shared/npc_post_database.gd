@@ -55,6 +55,42 @@ const QUEST_GIVERS = [
 	"Captain Roderick", "Seer Ophelia", "Guard-Captain Voss", "Lorekeeper Elias"
 ]
 
+# Audit #10 Slice 6L — Region name components. Drawn at post-generation time
+# so each procedural world produces unique region names that survive wipes.
+# Distinct from POST_PREFIXES/SUFFIXES (which name the post itself) — these
+# evoke terrain shape so the territory reads as a landscape, not another keep.
+const REGION_PREFIXES = [
+	"Sun", "Moon", "Ash", "Bone", "Stone", "Iron", "Frost", "Ember",
+	"Verdant", "Hollow", "Mist", "Storm", "Gold", "Silver", "Wild",
+	"Lost", "Hidden", "Dark", "Pale", "Crimson", "Amber", "Jade",
+	"Whisper", "Echo", "Thorn", "Ember", "Twilight", "Dawn",
+]
+
+const REGION_SUFFIXES = [
+	"Reach", "Moor", "Wilds", "Marches", "Steppe", "Vale", "Hollow",
+	"Crags", "Sands", "Tundra", "Mires", "Plains", "Heath", "Fells",
+	"Downs", "Glade", "Wastes", "Verge", "Coast", "Fen",
+]
+
+# Tier bands for procedurally-placed posts. Distance from origin (Euclidean)
+# determines the post's tier. Bands intentionally narrow at the core and
+# widen outward so most posts in the 450-tile placement radius get a tier
+# T1..T6, with T7 reserved for any post that happens to roll far out into
+# a corner. Tier maps to monster level via existing _distance_to_level.
+const TIER_BANDS = [
+	{"max_dist": 50, "tier": 1},
+	{"max_dist": 100, "tier": 2},
+	{"max_dist": 200, "tier": 3},
+	{"max_dist": 300, "tier": 4},
+	{"max_dist": 400, "tier": 5},
+	{"max_dist": 500, "tier": 6},
+]
+const TIER_BAND_DEFAULT = 7
+
+# Starter post gets a fixed region name — it's the player's first
+# anchor, so a curated name beats a procedural roll.
+const STARTER_REGION_NAME = "The Heartlands"
+
 # ===== GENERATION =====
 
 static func generate_posts(seed: int) -> Array:
@@ -157,6 +193,17 @@ static func _generate_post(rng: RandomNumberGenerator, px: int, py: int, is_star
 	var name = _generate_name(rng)
 	var quest_giver = QUEST_GIVERS[rng.randi_range(0, QUEST_GIVERS.size() - 1)]
 
+	# Slice 6L — tier from distance band, region name from procedural pool.
+	# Starter post is locked to T1 + curated region name.
+	var tier: int
+	var region_name: String
+	if is_starter:
+		tier = 1
+		region_name = STARTER_REGION_NAME
+	else:
+		tier = _tier_from_distance(px, py)
+		region_name = _generate_region_name(rng)
+
 	return {
 		"x": px,
 		"y": py,
@@ -169,7 +216,44 @@ static func _generate_post(rng: RandomNumberGenerator, px: int, py: int, is_star
 		"wings": wing_rooms.size(),
 		"main_room": main_room,
 		"wing_rooms": wing_rooms,
+		"tier": tier,
+		"region_name": region_name,
 	}
+
+static func _tier_from_distance(px: int, py: int) -> int:
+	"""Slice 6L — assign a tier (1-7) to a procedurally-placed post based on
+	its Euclidean distance from origin. Bands narrow at the core and widen
+	outward; anything past the last band falls to TIER_BAND_DEFAULT."""
+	var dist = sqrt(float(px * px + py * py))
+	for band in TIER_BANDS:
+		if dist <= float(band["max_dist"]):
+			return int(band["tier"])
+	return TIER_BAND_DEFAULT
+
+static func _generate_region_name(rng: RandomNumberGenerator) -> String:
+	"""Compose a region name from the procedural pools."""
+	var prefix = REGION_PREFIXES[rng.randi_range(0, REGION_PREFIXES.size() - 1)]
+	var suffix = REGION_SUFFIXES[rng.randi_range(0, REGION_SUFFIXES.size() - 1)]
+	return "%s %s" % [prefix, suffix]
+
+static func backfill_post_fields(posts: Array, seed: int) -> Array:
+	"""Slice 6L — migrate posts saved before tier/region_name existed. Re-uses
+	the world seed so the same world reload produces stable names across
+	sessions. New fields only — doesn't touch existing data."""
+	var rng = RandomNumberGenerator.new()
+	rng.seed = seed
+	for post in posts:
+		if not post.has("tier"):
+			if post.get("is_starter", false):
+				post["tier"] = 1
+			else:
+				post["tier"] = _tier_from_distance(int(post.get("x", 0)), int(post.get("y", 0)))
+		if not post.has("region_name") or String(post.get("region_name", "")).is_empty():
+			if post.get("is_starter", false):
+				post["region_name"] = STARTER_REGION_NAME
+			else:
+				post["region_name"] = _generate_region_name(rng)
+	return posts
 
 static func _generate_name(rng: RandomNumberGenerator) -> String:
 	"""Generate a random post name."""

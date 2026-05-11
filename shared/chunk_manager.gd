@@ -453,6 +453,57 @@ func get_nearest_npc_post(world_x: int, world_y: int) -> Dictionary:
 			nearest = post
 	return nearest
 
+# Audit #10 Slice 6L — tier + region_name labels for the client RegionLabel.
+# Looked up by trading_post_database constants (POST_TIER_NAMES / COLORS) which
+# are global tier descriptors, not post-bound.
+const TIER_NAMES = {
+	1: "Core", 2: "Inner", 3: "Mid", 4: "Mid-Outer",
+	5: "Outer", 6: "Extreme", 7: "World's Edge",
+}
+const TIER_COLORS = {
+	1: "#00FF00", 2: "#88FF00", 3: "#FFFF00", 4: "#FFAA00",
+	5: "#FF6600", 6: "#FF0000", 7: "#AA00FF",
+}
+
+func get_nearest_npc_post_with_tier(world_x: int, world_y: int) -> Dictionary:
+	"""Slice 6L — replaces trading_post_db.get_nearest_post_tier. Returns
+	{tier, post_id, post_name, region_name, distance, tier_name, tier_color}
+	using the procedurally-generated NPC posts so the data survives map
+	wipes. post_id is the x,y key (procedural posts have no string id)."""
+	var nearest_post = {}
+	var nearest_dist = INF
+	for post in npc_posts:
+		var dx = float(int(post.get("x", 0)) - world_x)
+		var dy = float(int(post.get("y", 0)) - world_y)
+		var dist = sqrt(dx * dx + dy * dy)
+		if dist < nearest_dist:
+			nearest_dist = dist
+			nearest_post = post
+	if nearest_post.is_empty():
+		# No procedural posts — fall back to T1 / empty so callers still get
+		# a valid shape. Wilderness curve still drives monster levels.
+		return {
+			"tier": 1,
+			"post_id": "",
+			"post_name": "",
+			"region_name": "Wilderness",
+			"distance": INF,
+			"tier_name": TIER_NAMES[1],
+			"tier_color": TIER_COLORS[1],
+		}
+	var tier = int(nearest_post.get("tier", 1))
+	var px = int(nearest_post.get("x", 0))
+	var py = int(nearest_post.get("y", 0))
+	return {
+		"tier": tier,
+		"post_id": "%d,%d" % [px, py],
+		"post_name": String(nearest_post.get("name", "")),
+		"region_name": String(nearest_post.get("region_name", TIER_NAMES.get(tier, "Wilderness"))),
+		"distance": nearest_dist,
+		"tier_name": TIER_NAMES.get(tier, "Wilderness"),
+		"tier_color": TIER_COLORS.get(tier, "#FFFFFF"),
+	}
+
 func get_npc_post_at(world_x: int, world_y: int) -> Dictionary:
 	"""Get NPC post data if the tile is inside any room of the post.
 	Uses per-room checks (main room + each wing) rather than the compound bounding box,
