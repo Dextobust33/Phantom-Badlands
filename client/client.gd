@@ -15400,6 +15400,22 @@ func _get_ability_tooltip(ability_name: String) -> String:
 		lines.append("Cost: " + cost_clean.strip_edges())
 	if desc != "":
 		lines.append(desc)
+	# Unlock-level info for level-gated utility abilities (Cloak L20 universal;
+	# Teleport per-class Mage 30 / Trickster 45 / Warrior 60). Class-specific
+	# abilities are all accessible from L1 since the mastery rework so they
+	# don't need this line.
+	var unlock_level := 0
+	match ability_name:
+		"cloak":
+			unlock_level = 20
+		"teleport":
+			unlock_level = _get_teleport_unlock_level()
+	if unlock_level > 0:
+		var current_level = int(character_data.get("level", 1))
+		if current_level >= unlock_level:
+			lines.append("Unlocked (level %d+)" % unlock_level)
+		else:
+			lines.append("Locked — unlocks at level %d (you are level %d)" % [unlock_level, current_level])
 	lines.append("")
 	lines.append("Rank %d — %s" % [rank, rank_name])
 	lines.append("Damage modifier: %s" % mult_str)
@@ -22437,8 +22453,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.267 changes
+	display_game("[color=#00FF00]v0.9.267[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Cloak / Teleport tooltips show unlock level[/color]")
+	display_game("  • Hovering Cloak or Teleport on the Abilities screen now clearly says when the ability unlocks. Cloak is universal at level 20. Teleport scales by class: Mage 30, Trickster 45, Warrior 60")
+	display_game("  • If you're below the unlock level, the tooltip reads \"Locked — unlocks at level N (you are level M)\". At or above the unlock, it reads \"Unlocked (level N+)\"")
+	display_game("")
+
 	# v0.9.266 changes
-	display_game("[color=#00FF00]v0.9.266[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.266[/color]")
 	display_game("  [color=#FFD700]Hotfix — variable-cost hotkey firing[/color]")
 	display_game("  • [b]Fixed: variable-cost ability hotkeys not firing when below the ceiling.[/b] Example: Devastate range 15-50 SP with 35 stamina — the card would light up and clicking worked, but pressing the hotkey did nothing. Action bar's affordability check was still gating on the ceiling cost; click path was already using the floor. Both paths now use the floor (server scales the effect down to match what you actually spent)")
 	display_game("")
@@ -22478,23 +22501,6 @@ func display_changelog():
 	display_game("  • 15/23 abilities done. Coming next: Mage CC (Haste / Paralyze / Banish) — chance-based stuff where the design question is whether to scale the chance or the magnitude")
 	display_game("")
 
-	# v0.9.262 changes
-	display_game("[color=#00FFFF]v0.9.262[/color]")
-	display_game("  [color=#FFD700]Variable-cost — Forcefield (Audit #1)[/color]")
-	display_game("  • [b]Forcefield is now variable-cost.[/b] Ceiling 20 mana (or 2%% max mana, whichever is higher); floor ≈ 30%% of that. Shield magnitude scales linearly with spend — a partial cast = a smaller shield, but it still soaks something")
-	display_game("  • Useful when you're low on mana mid-fight: instead of skipping Forcefield entirely, you can cast a partial one and still tank the next big hit (just not as much of it)")
-	display_game("  • 10/23 abilities done. Coming next: Warrior buffs (War Cry / Iron Skin / Berserk / Fortify / Rally — the hard design slice, since each buff has to decide between scaling magnitude OR duration on partial cast)")
-	display_game("")
-
-	# v0.9.261 changes
-	display_game("[color=#00FFFF]v0.9.261[/color]")
-	display_game("  [color=#FFD700]Variable-cost — Trickster damage (Audit #1)[/color]")
-	display_game("  • [b]Ambush, Exploit, and Gambit are now variable-cost.[/b] Ambush 9-30 energy, Exploit 10-35, Gambit 10-35. Same auto-spend pattern: press the key, system spends what you have up to the ceiling, damage scales 30%%-100%% with spend")
-	display_game("  • [b]Ambush crit chance stays at 50%%[/b] regardless of spend — a partial ambush still has the full crit potential. Only the base damage scales")
-	display_game("  • [b]Exploit's percentage chunk scales[/b] — a low-spend Exploit still bites a proportional slice of the monster's max HP, but smaller")
-	display_game("  • [b]Gambit: success chance stays constant; both reward AND punishment scale.[/b] Partial gambit = same 55-80%% odds of hitting, but smaller payoff on hit and smaller self-damage on miss. \"Same dice, smaller stakes.\"")
-	display_game("  • 9/23 abilities done. Coming next: Forcefield (shield magnitude scales) → Warrior buffs (the harder design work — partial War Cry / Berserk / Rally / Iron Skin / Fortify)")
-	display_game("")
 
 
 
