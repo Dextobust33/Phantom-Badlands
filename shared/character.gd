@@ -497,6 +497,10 @@ const SPECIALTY_JOBS = ["blacksmith", "builder", "alchemist", "scribe", "enchant
 # Registered companion tracking - companion survives death and returns to house
 @export var using_registered_companion: bool = false
 @export var registered_companion_slot: int = -1  # Which house slot the companion is from
+# Audit #4 Slice 1 — NPC Home Stone purchases. Per-character lifetime counter
+# keyed by stone variety ("egg", "supplies", "equipment", "companion"). Reset
+# on permadeath; new character earns its accessibility through valor again.
+@export var npc_stones_bought: Dictionary = {}
 
 func _init():
 	# Constructor

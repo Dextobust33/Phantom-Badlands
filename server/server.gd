@@ -1263,6 +1263,10 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_post_status(peer_id)
 		"guard_feed_all":
 			handle_guard_feed_all(peer_id)
+		"list_home_stones":
+			handle_list_home_stones(peer_id)
+		"buy_home_stone":
+			handle_buy_home_stone(peer_id, message)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -7455,6 +7459,128 @@ func _home_stone_pre_validate(peer_id: int, character, stone_type: String) -> bo
 		send_to_peer(peer_id, {"type": "error", "message": "House storage is full!"})
 		return false
 	return true
+
+# Audit #4 Slice 1 — NPC Home Stone vendor.
+# Multi-tier accessibility (memo locked direction): NPC posts sell Home Stones
+# for valor. Lifetime per-character caps prevent farming; new character starts
+# fresh on permadeath. Prices and caps balanced for mid-game accessibility.
+const NPC_STONE_PRICES: Dictionary = {
+	"egg": 500,
+	"supplies": 800,
+	"equipment": 1500,
+	"companion": 3000,
+}
+const NPC_STONE_CAPS: Dictionary = {
+	"egg": 3,
+	"supplies": 5,
+	"equipment": 2,
+	"companion": 2,
+}
+const NPC_STONE_DISPLAY: Dictionary = {
+	"egg": "Home Stone (Egg)",
+	"supplies": "Home Stone (Supplies)",
+	"equipment": "Home Stone (Equipment)",
+	"companion": "Home Stone (Companion)",
+}
+
+func _player_at_npc_post(peer_id: int) -> bool:
+	"""True when player is at a legacy trading post OR a procedural NPC post.
+	Both qualify as 'NPC post' for the Home Stone vendor."""
+	if at_trading_post.has(peer_id):
+		return true
+	if not characters.has(peer_id) or not chunk_manager:
+		return false
+	var character = characters[peer_id]
+	var np = chunk_manager.get_npc_post_at(character.x, character.y)
+	return not np.is_empty()
+
+func handle_list_home_stones(peer_id: int) -> void:
+	"""/stones — list Home Stones available for purchase at NPC posts.
+	Shows price, lifetime cap, and how many this character has bought so far.
+	Available everywhere (informational), but actual buy requires being at
+	an NPC post."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+	var current_valor = persistence.get_valor(account_id)
+	var bought = character.npc_stones_bought
+
+	var lines: Array = []
+	lines.append("[color=#FFD700]═══ NPC Home Stone Vendor ═══[/color]")
+	lines.append("Your Valor: [color=#FFD700]%d[/color]" % current_valor)
+	if not _player_at_npc_post(peer_id):
+		lines.append("[color=#FF8800]Stand at an NPC post to purchase. Type /buystone <type> there.[/color]")
+	lines.append("")
+	# Stable order for readability.
+	for stone_type in ["egg", "supplies", "equipment", "companion"]:
+		var price = int(NPC_STONE_PRICES[stone_type])
+		var cap = int(NPC_STONE_CAPS[stone_type])
+		var owned = int(bought.get(stone_type, 0))
+		var remaining = max(0, cap - owned)
+		var status_color = "#88FF88" if remaining > 0 and current_valor >= price else "#888888"
+		if remaining == 0:
+			status_color = "#FF6644"
+		var status_tag = ""
+		if remaining == 0:
+			status_tag = "  [color=#FF6644]SOLD OUT — lifetime cap reached[/color]"
+		elif current_valor < price:
+			status_tag = "  [color=#FF8800](need %d more Valor)[/color]" % (price - current_valor)
+		lines.append("[color=%s]/buystone %s[/color] — %s · [color=#FFD700]%d V[/color] · %d/%d bought%s" % [
+			status_color, stone_type, NPC_STONE_DISPLAY[stone_type], price, owned, cap, status_tag,
+		])
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func handle_buy_home_stone(peer_id: int, message: Dictionary) -> void:
+	"""/buystone <type> — purchase a Home Stone with valor at an NPC post.
+	Enforces: at-post, valor sufficient, lifetime cap not reached, inventory
+	space. Spends valor, generates the stone via DropTablesScript._generate_item
+	so it stacks with chest-dropped stones, increments npc_stones_bought."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var stone_type = String(message.get("stone_type", "")).strip_edges().to_lower()
+	if not NPC_STONE_PRICES.has(stone_type):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]Unknown stone type. Try: /buystone egg / supplies / equipment / companion[/color]"})
+		return
+	if not _player_at_npc_post(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]You must be at an NPC post to buy a Home Stone.[/color]"})
+		return
+	var cap = int(NPC_STONE_CAPS[stone_type])
+	var owned = int(character.npc_stones_bought.get(stone_type, 0))
+	if owned >= cap:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6644]You've already bought %d/%d %s from NPC vendors this lifetime. Find one from a chest instead.[/color]" % [owned, cap, NPC_STONE_DISPLAY[stone_type]]})
+		return
+	var price = int(NPC_STONE_PRICES[stone_type])
+	var account_id = peers[peer_id].account_id
+	var current_valor = persistence.get_valor(account_id)
+	if current_valor < price:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]Not enough Valor — need %d, have %d.[/color]" % [price, current_valor]})
+		return
+	if character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8800]Inventory full — make space first.[/color]"})
+		return
+
+	# Build the stone via the existing factory so it matches chest drops
+	# exactly (same fields, same name format, same is_consumable flag).
+	var stone_item_type = "home_stone_%s" % stone_type
+	var stone = drop_tables._generate_item({"item_type": stone_item_type, "rarity": "uncommon"}, max(character.level, 1))
+	if stone.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6644]Vendor stock failed — try again.[/color]"})
+		return
+
+	persistence.add_valor(account_id, -price)
+	character.inventory.append(stone)
+	character.npc_stones_bought[stone_type] = owned + 1
+
+	var remaining = cap - (owned + 1)
+	var remain_tag = " [color=#888888](%d remaining)[/color]" % remaining if remaining > 0 else " [color=#FF6644](sold out)[/color]"
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00]Purchased [color=#FFD700]%s[/color] for %d Valor.%s[/color]" % [NPC_STONE_DISPLAY[stone_type], price, remain_tag],
+	})
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name: String):
 	"""Process hatching an egg and sending the companion to house kennel via Home Stone"""

@@ -19878,7 +19878,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20787,6 +20787,24 @@ func process_command(text: String):
 				send_to_server({"type": "guard_feed_all"})
 			else:
 				display_game("You don't have a character yet")
+		"stones":
+			# Audit #4 Slice 1 — list NPC Home Stone availability/prices/caps.
+			if has_character:
+				send_to_server({"type": "list_home_stones"})
+			else:
+				display_game("You don't have a character yet")
+		"buystone":
+			# Audit #4 Slice 1 — buy a Home Stone with valor at an NPC post.
+			# Usage: /buystone <egg|supplies|equipment|companion>
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var stone_parts := text.split(" ", false, 1)
+				var stone_type := stone_parts[1].strip_edges().to_lower() if stone_parts.size() > 1 else ""
+				if stone_type == "":
+					display_game("[color=#FF8800]Usage: /buystone <egg|supplies|equipment|companion>  —  see /stones for prices.[/color]")
+				else:
+					send_to_server({"type": "buy_home_stone", "stone_type": stone_type})
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -23147,8 +23165,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.332 changes
+	display_game("[color=#00FF00]v0.9.332[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]NPC posts sell Home Stones (Audit #4 Slice 1)[/color]")
+	display_game("  • [b]Home Stones are now buyable at any NPC post for Valor.[/b] No more waiting on T3+ chest drops to register your first companion. The mid-game accessibility tier locked in the #4 audit memo is shipped.")
+	display_game("  • [b]/stones[/b] — list all four Home Stone types with prices, your lifetime cap, and how many you've already bought. Affordability is color-coded.")
+	display_game("  • [b]/buystone <type>[/b] — purchase at any NPC post. Types: egg / supplies / equipment / companion.")
+	display_game("  • [b]Prices[/b] (lifetime cap per character): Egg 500 Valor (3 max), Supplies 800 (5 max), Equipment 1500 (2 max), Companion 3000 (2 max).")
+	display_game("  • [b]Permadeath resets the cap[/b] — every new character earns their own accessibility through Valor. Valor is account-wide, so what you've banked across lives still counts toward the spend.")
+	display_game("  • [b]Why[/b]: registered companions surviving permadeath was the #1 critical pain point in the audit. Locking it behind T5+ chest drops meant new players were rolling without the safety net. This opens the door earlier.")
+	display_game("  • [b]Audit #4 moves from \"designing\" to \"implementing.\"[/b] Three more accessibility tiers planned: tutorial gift, T5+ chest drops (already exists), Sanctuary auto-registration slots.")
+	display_game("")
+
 	# v0.9.331 changes
-	display_game("[color=#00FF00]v0.9.331[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.331[/color]")
 	display_game("  [color=#FFD700]6 more dungeon theme tiles (Audit #5 Slice 15)[/color]")
 	display_game("  • [b]Coverage 21 → 27/53 dungeons.[/b] Six new themed dungeons, one new TileType each:")
 	display_game("    • [color=#B22222]x[/color] [b]Caltrops[/b] — Hobgoblin Fortress (T2). Persistent -2% HP on step. Tactical traps.")
@@ -23179,16 +23209,6 @@ func display_changelog():
 	display_game("  • [b]Per-guard report[/b] with compass quadrant labels (NE, SE, Tower N, etc.), days added, and was-LOW markers for guards rescued from the danger zone. Footer summarizes total food consumed + walks saved.")
 	display_game("  • [b]Status panel hint[/b]: \"/post\" now appends \"/feedall would top up N guards (need X food, have Y)\" when there's work to do. Green when you can afford it, orange when you're short. No more manually checking each guard's days remaining.")
 	display_game("  • [b]Why[/b]: Slice 2 made hungry guards visible. Slice 3 fixes them in one keystroke. With 5+ guards per post, manual feeding was 5+ walk-and-press sequences — now it's one command from the post center.")
-	display_game("")
-
-	# v0.9.328 changes
-	display_game("[color=#00FFFF]v0.9.328[/color]")
-	display_game("  [color=#FFD700]Post status panel (Audit #12 Slice 2)[/color]")
-	display_game("  • [b]Step onto the center of one of your own posts[/b] to see the status dashboard: bubble radius, effective tier vs wilderness, each guard's compass quadrant and remaining food days, and any active threat warning. First time per post per session — walks back in won't re-spam.")
-	display_game("  • [b]New chat command: \"/post\"[/b] — re-show the status panel whenever you want. Works inside any player post: your own (full owner detail) or someone else's (public summary: name, owner, radius, tier).")
-	display_game("  • [b]Per-guard food readout[/b] (owner only): each guard listed by quadrant (NE, S, Tower N, etc.) with food days remaining. Yellow [thin] tag at <4 days, red [LOW] at <2 days. No more walking to each guard one-by-one to check who's hungry.")
-	display_game("  • [b]Under Threat is in here too[/b] — the same warning from v0.9.326 surfaces in the status panel, so you have one place to learn that your village is in danger from a nearby dungeon.")
-	display_game("  • [b]Why[/b]: Slice 1 made bubbles dynamic, but the math was invisible unless you stared at the HUD line. Now stepping into your base gives you the full report — closes the \"I can't see what my base is doing\" gap and ties Slice 1's radius math + the existing food economy + #11's threat state into one dashboard.")
 	display_game("")
 
 	# v0.9.327 changes
