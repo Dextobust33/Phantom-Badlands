@@ -1291,7 +1291,10 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			var rescue_floor = rng.randi_range(1, max(1, total_floors - 2))
 			quest_name = "Rescue the %s" % rescue_npc.capitalize()
 			var dungeon_name = rescue_dungeon.get("name", "a dungeon")
-			quest_desc = "A %s is trapped in %s on floor %d! Look for the dungeon entrance (D) near this trading post." % [rescue_npc, dungeon_name, rescue_floor + 1]
+			# v0.9.271 — added "any 'D' tile near this post will route you in"
+			# clarification + "R" glyph hint, after a player report of the
+			# merchant being unfindable in the wrong dungeon type.
+			quest_desc = "A %s is trapped in %s on floor %d! Walk into any dungeon (D) near this trading post — you'll be routed to the right one. Look for the [color=#4DD0FF]R[/color] glyph inside." % [rescue_npc, dungeon_name, rescue_floor + 1]
 			target = 1
 			extra_fields["rescue_npc_type"] = rescue_npc
 			extra_fields["dungeon_type"] = rescue_dungeon.get("type", "")
