@@ -210,6 +210,20 @@ const ABILITY_BOSS_ELEMENT_CYCLE = "boss_element_cycle"    # 4-phase rotation pe
 const ABILITY_BOSS_FORGE_HEAT = "boss_forge_heat"          # On-hit, +1 heat stack; at 5 stacks deals 10% player max HP burst and resets. Threshold burst — distinct from Hellfire Stack's compounding per-hit
 const ABILITY_BOSS_RIDDLE_CURSE = "boss_riddle_curse"      # Every 3 monster turns, +1 riddle stack (cap 5); each stack reduces player damage by 5%. Persistent stacking debuff — distinct from Wind Shear (one-round) and Drowning (on-hit, smaller cap)
 const ABILITY_BOSS_SOUL_TOUCH = "boss_soul_touch"          # On-hit, +1 soul stack (uncapped); each stack reduces player effective defense by 2% (compounding). Distinct from any other debuff — attacks DEFENSE stat, not damage
+# Audit #5 boss signatures (Slice 12 — T7 layer)
+const ABILITY_BOSS_VOID_STEP = "boss_void_step"            # Every 3 monster turns, boss phases out; next player attack deals 0 damage (intangible). Anti-burst by negating one strike
+const ABILITY_BOSS_PRIMORDIAL_ROAR = "boss_primordial_roar"  # Every 5 monster turns, deals 20% player max HP AND strips ALL active player buffs. Single-moment apocalypse
+const ABILITY_BOSS_COIL_SQUEEZE = "boss_coil_squeeze"      # Each monster turn +1 coil stack (cap 10); each stack ticks 1% player max HP at start of player turn. Fastest-filling stacking DoT
+const ABILITY_BOSS_DEATH_MARK = "boss_death_mark"          # On first successful hit, applies permanent Death Mark. While marked, every 3 monster turns deals 8% player max HP. One-shot apply, persistent timer
+# Audit #5 boss signatures (Slice 12 — T8 layer)
+const ABILITY_BOSS_MADNESS_AURA = "boss_madness_aura"      # Every 4 monster turns, sets madness flag for the player's next 2 turns. While maddened, each player action has 30% chance to fizzle (waste action)
+const ABILITY_BOSS_TEMPORAL_REWIND = "boss_temporal_rewind"  # Every 6 monster turns, heals 25% max HP AND clears its own debuffs. Slower rhythm than Iron Discipline but bigger heal
+const ABILITY_BOSS_REAPERS_TOUCH = "boss_reapers_touch"    # On-hit, 15% chance to apply soul mark; at start of NEXT player turn, marked players lose 15% max HP. Per-hit chance with fixed payload
+# Audit #5 boss signatures (Slice 12 — T9 layer)
+const ABILITY_BOSS_CHAOTIC_SURGE = "boss_chaotic_surge"    # Each monster turn picks a RANDOM effect from 6: heal 10% / 10% max HP dmg / strip buff / skip player turn / +50% next monster dmg / -50% next monster dmg. True chaos
+const ABILITY_BOSS_UNKNOWABLE = "boss_unknowable"          # Each player attack has 25% chance to be "forgotten" — damage doesn't apply, no message. Anti-pattern, distinct from dodge (which announces)
+const ABILITY_BOSS_DIVINE_PUNISHMENT = "boss_divine_punishment"  # Every 4 monster turns, deals damage equal to (player_level × 5%) max HP. Scales with player power — anti-high-level
+const ABILITY_BOSS_DECAY = "boss_decay"                    # Each player turn START, +1 decay stack (uncapped); each stack ticks 2% player max HP at start of player turn. Self-decay — existing in the fight costs HP
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1336,6 +1350,33 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		character.current_hp = max(1, character.current_hp)
 		messages.append("[color=#1E90FF]The murky water fills your lungs — [color=#FF8800]%d[/color] damage. (drowning %d/3)[/color]" % [drowning_dmg, drowning_stacks])
 
+	# === COIL SQUEEZE TICK (World Serpent / boss_coil_squeeze) ===
+	# Each coil stack ticks 1% max HP per player turn. Cap 10 = -10% per turn.
+	var coil_stacks = combat.get("player_coil_stacks", 0)
+	if coil_stacks > 0:
+		var coil_dmg = max(1, int(character.get_total_max_hp() * 0.01 * coil_stacks))
+		character.current_hp -= coil_dmg
+		character.current_hp = max(1, character.current_hp)
+		messages.append("[color=#2E8B57]The coils tighten — [color=#FF8800]%d[/color] damage. (coil %d/10)[/color]" % [coil_dmg, coil_stacks])
+
+	# === DECAY TICK (Entropy / boss_decay) ===
+	# Each decay stack ticks 2% max HP per player turn. Uncapped.
+	var decay_stacks = combat.get("player_decay_stacks", 0)
+	if decay_stacks > 0:
+		var decay_dmg = max(1, int(character.get_total_max_hp() * 0.02 * decay_stacks))
+		character.current_hp -= decay_dmg
+		character.current_hp = max(1, character.current_hp)
+		messages.append("[color=#696969]Entropy unravels you — [color=#FF8800]%d[/color] damage. (decay %d)[/color]" % [decay_dmg, decay_stacks])
+
+	# === REAPER'S MARK CONSUMPTION (Death Incarnate / boss_reapers_touch) ===
+	# If marked, lose 15% max HP at start of this player turn, then clear mark.
+	if combat.get("player_reaper_marked", false):
+		combat["player_reaper_marked"] = false
+		var reaper_dmg = max(1, int(character.get_total_max_hp() * 0.15))
+		character.current_hp -= reaper_dmg
+		character.current_hp = max(1, character.current_hp)
+		messages.append("[color=#000000]The reaper's mark claims its due — [color=#FF8800]%d[/color] damage.[/color]" % reaper_dmg)
+
 	# === CHARM EFFECT (player attacks themselves) ===
 	if combat.get("player_charmed", false):
 		combat["player_charmed"] = false  # Only lasts one turn
@@ -1363,6 +1404,15 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	if combat.get("player_lulled", false):
 		combat["player_lulled"] = false
 		messages.append("[color=#00CED1]The siren's lullaby washes over you — you cannot act this turn![/color]")
+		combat.player_can_act = false
+		return {"success": true, "messages": messages, "combat_ended": false}
+
+	# === MADNESS AURA FIZZLE (Cosmic Horror / boss_madness_aura) ===
+	# While madness is active (until specified round), 30% chance for the
+	# player's action to fizzle (wasted turn). Flag is consumed by round.
+	var madness_until = int(combat.get("player_madness_until_round", -1))
+	if madness_until >= int(combat.get("round", 0)) and randi() % 100 < 30:
+		messages.append("[color=#9400D3]Madness grips you — your hand refuses to obey![/color]")
 		combat.player_can_act = false
 		return {"success": true, "messages": messages, "combat_ended": false}
 
@@ -1448,6 +1498,19 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			character.current_hp -= backfire_damage
 			character.current_hp = max(1, character.current_hp)
 			messages.append("[color=#9400D3]Wild magic burns you for %d damage![/color]" % backfire_damage)
+
+		# Audit #5 Slice 12 — Void Step consumer (Void Walker). If void step is
+		# active, the attack passes through and deals 0 damage. Consumed.
+		if ABILITY_BOSS_VOID_STEP in abilities and combat.get("void_step_active", false):
+			combat["void_step_active"] = false
+			damage = 0
+			messages.append("[color=#9400D3]Your strike passes through the %s — void-phase![/color]" % monster.name)
+
+		# Audit #5 Slice 12 — Unknowable consumer (Nameless One). 25% chance for
+		# the attack to be "forgotten" — damage doesn't apply, brief flavor.
+		if ABILITY_BOSS_UNKNOWABLE in abilities and damage > 0 and randi() % 100 < 25:
+			damage = 0
+			messages.append("[color=#A0A0A0]The %s's form blurs — your strike never quite happens.[/color]" % monster.name)
 
 		# Audit #5 Slice 8 — Stoneform (Gargoyle Lord). On even-numbered rounds
 		# (2, 4, 6...), the boss takes 70% reduced incoming damage. Telegraphs
@@ -5096,6 +5159,20 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		combat["soul_touch_stacks"] = soul_stacks
 		messages.append("[color=#4B0082]The %s's touch withers your soul (Soul Touch %d — defense weakened).[/color]" % [monster.name, soul_stacks])
 
+	# Audit #5 boss signature (Slice 12) — Death Mark first-hit apply (Elder Lich).
+	# On the FIRST successful hit, mark the player. Tick is handled in the
+	# round-cycle block. Idempotent — only applies once per fight.
+	if ABILITY_BOSS_DEATH_MARK in abilities and hits > 0 and not combat.get("player_death_marked", false):
+		combat["player_death_marked"] = true
+		messages.append("[color=#4B0082][b]DEATH MARK![/b][/color] [color=#9400D3]The %s brands your soul. The mark will pulse every third turn.[/color]" % monster.name)
+
+	# Audit #5 boss signature (Slice 12) — Reaper's Touch (Death Incarnate).
+	# Each hit has 15% chance to apply soul mark. At start of next player turn,
+	# marked players lose 15% max HP. Per-hit chance with fixed payload.
+	if ABILITY_BOSS_REAPERS_TOUCH in abilities and hits > 0 and randi() % 100 < 15:
+		combat["player_reaper_marked"] = true
+		messages.append("[color=#000000][b]REAPER'S TOUCH![/b][/color] [color=#A0A0A0]The %s brushes you with the scythe — your soul is marked.[/color]" % monster.name)
+
 	# Buff destroy ability: removes one random active buff
 	if ABILITY_BUFF_DESTROY in abilities and hits > 0:
 		if randi() % 100 < 30:  # 30% chance
@@ -5433,6 +5510,141 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			if riddle_stacks < 5:
 				combat["riddle_curse_stacks"] = riddle_stacks + 1
 				messages.append("[color=#9370DB][b]RIDDLE CURSE![/b][/color] [color=#DDA0DD]The %s poses an impossible riddle — your strength falters (curse %d/5).[/color]" % [monster.name, riddle_stacks + 1])
+
+	# Audit #5 boss signature (Slice 12) — Void Step (Void Walker). Every 3
+	# monster turns, the boss phases out. Sets a flag that makes the next
+	# player attack deal 0 damage (consumed in player attack path).
+	if ABILITY_BOSS_VOID_STEP in abilities and combat.round > 0 and combat.round % 3 == 0:
+		var void_already = int(combat.get("void_step_last_round", -1))
+		if void_already != int(combat.round):
+			combat["void_step_last_round"] = int(combat.round)
+			combat["void_step_active"] = true
+			messages.append("[color=#9400D3][b]VOID STEP![/b][/color] [color=#DDA0DD]The %s phases out of reality — your next strike will pass through.[/color]" % monster.name)
+
+	# Audit #5 boss signature (Slice 12) — Primordial Roar (Primordial Dragon).
+	# Every 5 monster turns, 20% player max HP damage AND strips ALL active
+	# player buffs. Single-moment apocalypse.
+	if ABILITY_BOSS_PRIMORDIAL_ROAR in abilities and combat.round > 0 and combat.round % 5 == 0:
+		var roar_already = int(combat.get("primordial_roar_last_round", -1))
+		if roar_already != int(combat.round):
+			combat["primordial_roar_last_round"] = int(combat.round)
+			var roar_dmg = max(1, int(character.get_total_max_hp() * 0.20))
+			character.current_hp = max(1, character.current_hp - roar_dmg)
+			var roar_buffs = character.get_active_buff_names()
+			for b in roar_buffs:
+				character.remove_buff(b)
+			if roar_buffs.size() > 0:
+				messages.append("[color=#FF6347][b]PRIMORDIAL ROAR![/b][/color] [color=#FF8800]Reality itself shudders! [color=#FF4444]-%d HP[/color]. All your buffs are torn away (%d stripped).[/color]" % [roar_dmg, roar_buffs.size()])
+			else:
+				messages.append("[color=#FF6347][b]PRIMORDIAL ROAR![/b][/color] [color=#FF8800]Reality itself shudders! [color=#FF4444]-%d HP[/color].[/color]" % roar_dmg)
+
+	# Audit #5 boss signature (Slice 12) — Coil Squeeze (World Serpent). Each
+	# monster turn +1 coil stack (cap 10). Stacks tick 1% player max HP at
+	# start of player turn (handled in turn-start block).
+	if ABILITY_BOSS_COIL_SQUEEZE in abilities and combat.round > 0:
+		var coil_already = int(combat.get("coil_squeeze_last_round", -1))
+		if coil_already != int(combat.round):
+			combat["coil_squeeze_last_round"] = int(combat.round)
+			var coil_stacks = int(combat.get("player_coil_stacks", 0))
+			if coil_stacks < 10:
+				combat["player_coil_stacks"] = coil_stacks + 1
+				messages.append("[color=#2E8B57]The %s tightens its coils around you (coil %d/10).[/color]" % [monster.name, coil_stacks + 1])
+
+	# Audit #5 boss signature (Slice 12) — Death Mark periodic tick (Elder Lich).
+	# Trigger condition is "player_death_marked" flag set on first hit (handled
+	# in on-hit block). When marked AND every 3 monster turns, deals 8% max HP.
+	if ABILITY_BOSS_DEATH_MARK in abilities and combat.get("player_death_marked", false) and combat.round > 0 and combat.round % 3 == 0:
+		var dmark_already = int(combat.get("death_mark_last_round", -1))
+		if dmark_already != int(combat.round):
+			combat["death_mark_last_round"] = int(combat.round)
+			var dmark_dmg = max(1, int(character.get_total_max_hp() * 0.08))
+			character.current_hp = max(1, character.current_hp - dmark_dmg)
+			messages.append("[color=#4B0082][b]DEATH MARK![/b][/color] [color=#9400D3]The mark on your soul flares! [color=#FF4444]-%d HP[/color].[/color]" % dmark_dmg)
+
+	# Audit #5 boss signature (Slice 12) — Madness Aura (Cosmic Horror). Every
+	# 4 monster turns, sets madness flag for player's next 2 turns. Consumer in
+	# player turn-start block has 30% chance to fizzle the action.
+	if ABILITY_BOSS_MADNESS_AURA in abilities and combat.round > 0 and combat.round % 4 == 0:
+		var madness_already = int(combat.get("madness_aura_last_round", -1))
+		if madness_already != int(combat.round):
+			combat["madness_aura_last_round"] = int(combat.round)
+			combat["player_madness_until_round"] = int(combat.round) + 2
+			messages.append("[color=#9400D3][b]MADNESS AURA![/b][/color] [color=#DDA0DD]The %s's gaze unhinges you — your next two turns will falter at random.[/color]" % monster.name)
+
+	# Audit #5 boss signature (Slice 12) — Temporal Rewind (Time Weaver). Every
+	# 6 monster turns, heals 25% max HP AND clears all its own debuffs. Slower
+	# rhythm than Iron Discipline (5) but bigger heal (25% vs 10%).
+	if ABILITY_BOSS_TEMPORAL_REWIND in abilities and combat.round > 0 and combat.round % 6 == 0 and monster.current_hp < monster.max_hp:
+		var rewind_already = int(combat.get("temporal_rewind_last_round", -1))
+		if rewind_already != int(combat.round):
+			combat["temporal_rewind_last_round"] = int(combat.round)
+			var rewind_amt = max(1, int(monster.max_hp * 0.25))
+			var rewind_actual = mini(rewind_amt, int(monster.max_hp) - int(monster.current_hp))
+			monster.current_hp = int(monster.current_hp) + rewind_actual
+			combat["monster_sabotaged"] = 0
+			combat.erase("monster_weakness")
+			messages.append("[color=#4169E1][b]TEMPORAL REWIND![/b][/color] [color=#9ACD32]The %s rewinds itself — heals %d HP and shrugs off all debuffs![/color]" % [monster.name, rewind_actual])
+
+	# Audit #5 boss signature (Slice 12) — Chaotic Surge (Avatar of Chaos).
+	# Each monster turn picks a RANDOM effect from a pool of 6 outcomes.
+	if ABILITY_BOSS_CHAOTIC_SURGE in abilities and combat.round > 0:
+		var chaos_already = int(combat.get("chaotic_surge_last_round", -1))
+		if chaos_already != int(combat.round):
+			combat["chaotic_surge_last_round"] = int(combat.round)
+			var chaos_roll = randi() % 6
+			match chaos_roll:
+				0:
+					var chaos_heal = max(1, int(monster.max_hp * 0.10))
+					var chaos_actual = mini(chaos_heal, int(monster.max_hp) - int(monster.current_hp))
+					if chaos_actual > 0:
+						monster.current_hp = int(monster.current_hp) + chaos_actual
+					messages.append("[color=#FF1493][b]CHAOTIC SURGE (Heal)![/b][/color] The %s regenerates %d HP." % [monster.name, chaos_actual])
+				1:
+					var chaos_dmg = max(1, int(character.get_total_max_hp() * 0.10))
+					character.current_hp = max(1, character.current_hp - chaos_dmg)
+					messages.append("[color=#FF1493][b]CHAOTIC SURGE (Burst)![/b][/color] Reality shears! [color=#FF4444]-%d HP[/color]." % chaos_dmg)
+				2:
+					var chaos_buffs = character.get_active_buff_names()
+					if chaos_buffs.size() > 0:
+						var chaos_buff = chaos_buffs[randi() % chaos_buffs.size()]
+						character.remove_buff(chaos_buff)
+						messages.append("[color=#FF1493][b]CHAOTIC SURGE (Unweave)![/b][/color] Your [color=#FFFF00]%s[/color] buff is dispelled." % chaos_buff)
+					else:
+						messages.append("[color=#FF1493][b]CHAOTIC SURGE (Unweave)![/b][/color] Chaos finds nothing to unweave.")
+				3:
+					combat["player_lulled"] = true
+					messages.append("[color=#FF1493][b]CHAOTIC SURGE (Stillness)![/b][/color] Time freezes — you skip your next turn.")
+				4:
+					combat["chaotic_next_dmg_mult"] = 1.5
+					messages.append("[color=#FF1493][b]CHAOTIC SURGE (Frenzy)![/b][/color] The %s's next attack will be enhanced." % monster.name)
+				5:
+					combat["chaotic_next_dmg_mult"] = 0.5
+					messages.append("[color=#FF1493][b]CHAOTIC SURGE (Weakness)![/b][/color] The %s's next attack will be diminished." % monster.name)
+
+	# Audit #5 boss signature (Slice 12) — Divine Punishment (God Slayer).
+	# Every 4 monster turns, deals damage = player_level × 5% max HP. High-
+	# level players take MORE damage. Scales with player power.
+	if ABILITY_BOSS_DIVINE_PUNISHMENT in abilities and combat.round > 0 and combat.round % 4 == 0:
+		var divine_already = int(combat.get("divine_punishment_last_round", -1))
+		if divine_already != int(combat.round):
+			combat["divine_punishment_last_round"] = int(combat.round)
+			# Use level multiplier capped so the burst is meaningful but not
+			# instakill — at level 100 it'd be 500% max HP otherwise.
+			var divine_pct = clamp(float(character.level) * 0.005, 0.10, 0.40)
+			var divine_dmg = max(1, int(character.get_total_max_hp() * divine_pct))
+			character.current_hp = max(1, character.current_hp - divine_dmg)
+			messages.append("[color=#FFD700][b]DIVINE PUNISHMENT![/b][/color] [color=#FF8800]The %s judges your insolence! [color=#FF4444]-%d HP[/color] (scales with your level).[/color]" % [monster.name, divine_dmg])
+
+	# Audit #5 boss signature (Slice 12) — Decay (Entropy). Each monster turn,
+	# +1 decay stack (uncapped). The tick is applied in player turn-start block.
+	# Existing in the fight costs HP.
+	if ABILITY_BOSS_DECAY in abilities and combat.round > 0:
+		var decay_already = int(combat.get("decay_last_round", -1))
+		if decay_already != int(combat.round):
+			combat["decay_last_round"] = int(combat.round)
+			var decay_stacks = int(combat.get("player_decay_stacks", 0)) + 1
+			combat["player_decay_stacks"] = decay_stacks
+			messages.append("[color=#696969]Entropy spreads through you (decay %d).[/color]" % decay_stacks)
 
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}
@@ -5785,6 +5997,13 @@ func calculate_monster_damage(monster: Dictionary, character: Character, combat:
 	var hoard_stacks_dmg = int(combat.get("dragons_hoard_stacks", 0))
 	if hoard_stacks_dmg > 0:
 		raw_damage = int(raw_damage * (1.0 + 0.05 * hoard_stacks_dmg))
+
+	# Audit #5 Slice 12 — Chaotic Surge next-attack multiplier (Avatar of Chaos).
+	# Set by Frenzy (1.5x) or Weakness (0.5x) outcomes. Consumed on use.
+	if combat.has("chaotic_next_dmg_mult"):
+		var chaos_mult = float(combat.get("chaotic_next_dmg_mult", 1.0))
+		raw_damage = max(1, int(raw_damage * chaos_mult))
+		combat.erase("chaotic_next_dmg_mult")
 
 	# Equipment defense provides flat reduction BEFORE defense formula
 	# This makes gear meaningful against higher-level monsters

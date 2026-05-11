@@ -20502,6 +20502,18 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			"Forge Heat": "boss_forge_heat",
 			"Riddle Curse": "boss_riddle_curse",
 			"Soul Touch": "boss_soul_touch",
+			# Audit #5 boss signatures (Slice 12) — T7+T8+T9 layers (11 sigs)
+			"Void Step": "boss_void_step",
+			"Primordial Roar": "boss_primordial_roar",
+			"Coil Squeeze": "boss_coil_squeeze",
+			"Death Mark": "boss_death_mark",
+			"Madness Aura": "boss_madness_aura",
+			"Temporal Rewind": "boss_temporal_rewind",
+			"Reaper's Touch": "boss_reapers_touch",
+			"Chaotic Surge": "boss_chaotic_surge",
+			"Unknowable": "boss_unknowable",
+			"Divine Punishment": "boss_divine_punishment",
+			"Decay": "boss_decay",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")

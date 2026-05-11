@@ -1309,7 +1309,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 6.0,
 			"attack_mult": 2.4,
-			"abilities": ["Phase Shift", "Void Bolt", "Reality Tear", "Dimensional Prison"]
+			"abilities": ["Void Step", "Void Bolt", "Reality Tear", "Dimensional Prison"]
 		},
 		"boss_egg": "Void Walker",
 		"floors": 8,
@@ -1336,7 +1336,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 7.0,
 			"attack_mult": 2.6,
-			"abilities": ["Primordial Breath", "Time Warp", "Cataclysm", "World Shaker"]
+			"abilities": ["Primordial Roar", "Primordial Breath", "Cataclysm", "World Shaker"]
 		},
 		"boss_egg": "Primordial Dragon",
 		"floors": 8,
@@ -1363,7 +1363,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 7.0,
 			"attack_mult": 2.5,
-			"abilities": ["Coil Crush", "Tidal Wave", "Venom Surge", "World Ender"]
+			"abilities": ["Coil Squeeze", "Tidal Wave", "Venom Surge", "World Ender"]
 		},
 		"boss_egg": "World Serpent",
 		"floors": 8,
@@ -1390,7 +1390,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.25,
 			"hp_mult": 6.5,
 			"attack_mult": 2.5,
-			"abilities": ["Phylactery Pulse", "Death Storm", "Soul Prison", "Undying Will"]
+			"abilities": ["Death Mark", "Death Storm", "Soul Prison", "Undying Will"]
 		},
 		"boss_egg": "Elder Lich",
 		"floors": 8,
@@ -1419,7 +1419,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.3,
 			"hp_mult": 8.0,
 			"attack_mult": 2.8,
-			"abilities": ["Madness Gaze", "Tentacle Storm", "Reality Warp", "Void Consumption"]
+			"abilities": ["Madness Aura", "Tentacle Storm", "Reality Warp", "Void Consumption"]
 		},
 		"boss_egg": "Cosmic Horror",
 		"floors": 9,
@@ -1446,7 +1446,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.3,
 			"hp_mult": 8.0,
 			"attack_mult": 2.8,
-			"abilities": ["Temporal Shift", "Chrono Beam", "Time Loop", "Age of Ruin"]
+			"abilities": ["Temporal Rewind", "Chrono Beam", "Time Loop", "Age of Ruin"]
 		},
 		"boss_egg": "Time Weaver",
 		"floors": 9,
@@ -1473,7 +1473,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.3,
 			"hp_mult": 8.5,
 			"attack_mult": 3.0,
-			"abilities": ["Reaper's Scythe", "Death's Embrace", "Soul Harvest", "Final Judgment"]
+			"abilities": ["Reaper's Touch", "Death's Embrace", "Soul Harvest", "Final Judgment"]
 		},
 		"boss_egg": "Death Incarnate",
 		"floors": 9,
@@ -1502,7 +1502,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.3,
 			"hp_mult": 10.0,
 			"attack_mult": 3.0,
-			"abilities": ["Chaos Storm", "Reality Shatter", "Entropy Wave", "Ultimate Destruction"]
+			"abilities": ["Chaotic Surge", "Reality Shatter", "Entropy Wave", "Ultimate Destruction"]
 		},
 		"boss_egg": "Avatar of Chaos",
 		"floors": 10,
@@ -1529,7 +1529,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.3,
 			"hp_mult": 10.0,
 			"attack_mult": 3.0,
-			"abilities": ["Nameless Dread", "Void Erasure", "Existential Horror", "Unmaking"]
+			"abilities": ["Unknowable", "Void Erasure", "Existential Horror", "Unmaking"]
 		},
 		"boss_egg": "The Nameless One",
 		"floors": 10,
@@ -1556,7 +1556,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.3,
 			"hp_mult": 10.0,
 			"attack_mult": 3.2,
-			"abilities": ["Divine Smite", "God Killer", "Ascendant Fury", "Immortal's End"]
+			"abilities": ["Divine Punishment", "God Killer", "Ascendant Fury", "Immortal's End"]
 		},
 		"boss_egg": "God Slayer",
 		"floors": 10,
@@ -1583,7 +1583,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.3,
 			"hp_mult": 12.0,
 			"attack_mult": 3.5,
-			"abilities": ["Heat Death", "Entropic Decay", "Universe Collapse", "Final Entropy"]
+			"abilities": ["Decay", "Heat Death", "Universe Collapse", "Final Entropy"]
 		},
 		"boss_egg": "Entropy",
 		"floors": 10,
