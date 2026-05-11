@@ -2438,12 +2438,15 @@ func handle_chat(peer_id: int, message: Dictionary):
 	if characters.has(peer_id):
 		display_name = _format_full_titled_name(username, characters[peer_id])
 
+	# Audit #14 Slice 3 — attach sender clan tag so client can render [TAG].
+	var sender_clan_tag = _get_clan_tag_for_peer(peer_id)
 	# Broadcast to ALL peers EXCEPT the sender
 	for other_peer_id in peers.keys():
 		if peers[other_peer_id].authenticated and other_peer_id != peer_id:
 			send_to_peer(other_peer_id, {
 				"type": "chat",
 				"sender": display_name,
+				"sender_clan_tag": sender_clan_tag,
 				"message": text
 			})
 
@@ -2493,12 +2496,15 @@ func handle_private_message(peer_id: int, message: Dictionary):
 
 	# Get sender's title prefix if they have one (realm + chain)
 	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
+	# Audit #14 Slice 3 — attach sender clan tag to whispers.
+	var sender_clan_tag = _get_clan_tag_for_peer(peer_id)
 
 	# Send to target
 	send_to_peer(target_peer_id, {
 		"type": "private_message",
 		"sender": sender_display,
 		"sender_name": sender_name,
+		"sender_clan_tag": sender_clan_tag,
 		"message": text
 	})
 
@@ -5109,12 +5115,32 @@ func _broadcast_achievement(player_name: String, message: String, peer_id: int =
 	broadcast_chat("[color=#FFD700]★[/color] %s [color=#FFD700]★[/color]" % message)
 	return true
 
-func broadcast_chat(message: String, sender: String = "System"):
-	"""Send a chat message to all connected players with characters"""
+func _get_clan_tag_for_peer(peer_id: int) -> String:
+	"""Audit #14 Slice 3 — resolve the clan tag for a connected peer, or ""
+	if they have no clan / no account. Used to attach [TAG] markers to chat,
+	player list, whispers, and party broadcasts."""
+	if not peers.has(peer_id):
+		return ""
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return ""
+	var clan = persistence.get_clan_by_account(account_id)
+	if clan.is_empty():
+		return ""
+	return String(clan.get("tag", ""))
+
+func broadcast_chat(message: String, sender: String = "System", sender_peer_id: int = -1):
+	"""Send a chat message to all connected players with characters. When the
+	sender is a player (sender_peer_id >= 0), include their clan_tag so the
+	client can render the [TAG] marker."""
+	var sender_clan_tag := ""
+	if sender_peer_id >= 0:
+		sender_clan_tag = _get_clan_tag_for_peer(sender_peer_id)
 	for peer_id in characters.keys():
 		send_to_peer(peer_id, {
 			"type": "chat",
 			"sender": sender,
+			"sender_clan_tag": sender_clan_tag,
 			"message": message
 		})
 
@@ -5128,6 +5154,7 @@ func broadcast_player_list():
 			"level": char.level,
 			"class": char.class_type,
 			"title": char.title,
+			"clan_tag": _get_clan_tag_for_peer(pid),
 			"appearance_variant": char.appearance_variant,
 			"appearance_color": char.appearance_color,
 			"appearance_color2": char.appearance_color2,

@@ -4800,6 +4800,11 @@ func update_online_players(players: Array):
 		var plevel = player.get("level", 1)
 		var pclass = player.get("class", "Unknown")
 		var ptitle = player.get("title", "")
+		var pclan_tag = String(player.get("clan_tag", ""))
+
+		# Audit #14 Slice 3 — render clan tag prefix before name.
+		if pclan_tag != "":
+			online_players_list.append_text("[color=#A335EE][%s][/color] " % pclan_tag)
 
 		# Use push_meta/pop for reliable click detection (Godot 4.x uses pop() not pop_meta())
 		online_players_list.push_meta(pname)
@@ -18179,7 +18184,10 @@ func handle_server_message(message: Dictionary):
 		"chat":
 			var sender = message.get("sender", "Unknown")
 			var text = message.get("message", "")
-			display_chat("[color=#00FFFF]%s:[/color] %s" % [sender, text])
+			# Audit #14 Slice 3 — prepend [TAG] when sender has a clan.
+			var sender_tag = String(message.get("sender_clan_tag", ""))
+			var sender_label = ("[color=#A335EE][%s][/color] %s" % [sender_tag, sender]) if sender_tag != "" else sender
+			display_chat("[color=#00FFFF]%s:[/color] %s" % [sender_label, text])
 			# Refresh player list when someone joins, leaves, or dies
 			if "entered the realm" in text or "left the realm" in text or "has fallen" in text:
 				request_player_list()
@@ -18196,8 +18204,11 @@ func handle_server_message(message: Dictionary):
 			var sender = message.get("sender", "Unknown")
 			var sender_name = message.get("sender_name", sender)  # Plain name for reply
 			var text = message.get("message", "")
+			# Audit #14 Slice 3 — clan tag on whispers.
+			var sender_tag = String(message.get("sender_clan_tag", ""))
+			var sender_label = ("[color=#A335EE][%s][/color] %s" % [sender_tag, sender]) if sender_tag != "" else sender
 			last_whisper_from = sender_name
-			display_chat("[color=#FF69B4][From %s]:[/color] %s" % [sender, text])
+			display_chat("[color=#FF69B4][From %s]:[/color] %s" % [sender_label, text])
 			# Play notification sound
 			play_whisper_notification()
 
@@ -23289,8 +23300,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.341 changes
+	display_game("[color=#00FF00]v0.9.341[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan tag visibility (Audit #14 Slice 3)[/color]")
+	display_game("  • [b]Clan tag [TAG] now renders next to every clan member's name[/b] in the Players list, in chat, and in whispers. This is the social marker layer that makes the clan system actually visible to everyone.")
+	display_game("  • [b]Players tab[/b]: the right-side player list now shows [color=#A335EE][TAG][/color] before the player's title + name + level + class.")
+	display_game("  • [b]Chat lines[/b]: when a clan member posts in global chat, their line shows as \"[color=#A335EE][TAG][/color] PlayerName: …\" so you can tell at a glance who's clanned and which clan they belong to.")
+	display_game("  • [b]Whispers[/b]: the [From X] header on incoming whispers now carries the sender's clan tag too — useful for quickly recognizing clan-mate chatter mid-conversation.")
+	display_game("  • [b]Server-side resolution[/b]: tags resolved via `_get_clan_tag_for_peer` and bundled in `player_list`, `chat`, and `private_message` payloads — keeps tags consistent even if a player re-logs into a different character on the same account.")
+	display_game("")
+
 	# v0.9.340 changes
-	display_game("[color=#00FF00]v0.9.340[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.340[/color]")
 	display_game("  [color=#FFD700]Clan invitations (Audit #14 Slice 2)[/color]")
 	display_game("  • [b]Invite players to your clan[/b]: leaders see an [color=#A335EE]Invite Player[/color] input field below the roster in the Clan panel. Type a username, hit Enter (or click [Invite]), and the invitation is delivered.")
 	display_game("  • [b]Live notifications[/b]: when someone invites you, you get a chat alert immediately (\"X invited you to join clan Y. Open the Clan panel to accept or decline.\"). If your Clan panel is already open, it refreshes automatically.")
@@ -23321,14 +23342,6 @@ func display_changelog():
 	display_game("  • [b]The rule going forward[/b]: no feature ships with chat commands as its primary interface. See `feedback_no_chat_command_first_features` for the full rule.")
 	display_game("")
 
-	# v0.9.337 changes
-	display_game("[color=#00FFFF]v0.9.337[/color]")
-	display_game("  [color=#FFD700]Visual stat allocation panel (UI remediation)[/color]")
-	display_game("  • [b]New shortcut button: [color=#9ACD32]Stats[/color][/b] — sits next to Deck/Stones/Inv. One click opens the character stats panel.")
-	display_game("  • [b]Visual panel[/b] shows level + XP progress, your unspent stat point bank, and all 6 stats (STR/CON/DEX/INT/WIS/WITS) with descriptions and clickable [+1] buttons.")
-	display_game("  • [b]Click [+1][/b] on any stat to spend a banked point. Buttons disable when no points available. Stat values update in real time after each spend.")
-	display_game("  • [b]Part 2 of 4[/b] UI remediation for today's chat-command-only slices. /stats and /spendstat still work as power-user shortcuts. Post status and Feed All panels coming next.")
-	display_game("")
 
 
 
