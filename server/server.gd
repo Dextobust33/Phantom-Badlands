@@ -2000,6 +2000,18 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	if house_bonuses.get("starting_valor", 0) > 0:
 		persistence.add_valor(account_id, house_bonuses.starting_valor)
 
+	# Audit #13 Slice 1 — Companion Sanctum starter stones. Each level of
+	# the Sanctum upgrade injects one Home Stone (Companion) into the
+	# character's starting inventory so veteran players can save their first
+	# companion early without farming Valor at NPC vendors. Stones generated
+	# via drop_tables so they're field-identical to chest drops.
+	var sanctum_level = int(persistence.get_house(account_id).get("upgrades", {}).get("companion_sanctum", 0))
+	if sanctum_level > 0:
+		for _i in range(sanctum_level):
+			var sanctum_stone = drop_tables._generate_item({"item_type": "home_stone_companion", "rarity": "uncommon"}, max(character.level, 1))
+			if not sanctum_stone.is_empty():
+				character.add_item(sanctum_stone)
+
 	# Slice 3 — apply queued mastery headstarts (baddie points already spent
 	# at purchase time). Consumes the queue so it doesn't apply to future
 	# characters. Marks the backfill flag so the existing-character migration

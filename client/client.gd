@@ -23165,8 +23165,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.333 changes
+	display_game("[color=#00FF00]v0.9.333[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companion Sanctum (Audit #13 Slice 1)[/color]")
+	display_game("  • [b]New Sanctuary upgrade: Companion Sanctum.[/b] 5 levels. Each level grants +1 free Home Stone (Companion) injected into every new character's starting inventory. Veteran accounts can register their first companion immediately on a new life — no farming required.")
+	display_game("  • [b]Costs scaled to early-mid Sanctuary tier[/b]: 500 / 1,500 / 4,000 / 10,000 / 25,000 Baddie Points. The first level is the cheapest upgrade on the page, intentionally — surviving 2-3 deaths typically funds it.")
+	display_game("  • [b]Found under Sanctuary → Upgrade Forge → Base Upgrades[/b], right after Companion Kennel slots.")
+	display_game("  • [b]Stones are field-identical to chest drops and NPC vendor stones[/b] — they go into your inventory and use the existing \"use to register\" flow. Stack alongside whatever you already have.")
+	display_game("  • [b]Closes the Home Stone accessibility ladder[/b]: tutorial (deferred) → NPC vendor (v0.9.332) → chest drops (existing) → Sanctuary auto-stock (this slice). All four layers from the #4 audit are now mechanically present.")
+	display_game("  • [b]Audit #13 moves from \"designing\" to \"implementing.\"[/b] Two designing-only systems shipped first slices in two consecutive releases (#4 + #13).")
+	display_game("")
+
 	# v0.9.332 changes
-	display_game("[color=#00FF00]v0.9.332[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.332[/color]")
 	display_game("  [color=#FFD700]NPC posts sell Home Stones (Audit #4 Slice 1)[/color]")
 	display_game("  • [b]Home Stones are now buyable at any NPC post for Valor.[/b] No more waiting on T3+ chest drops to register your first companion. The mid-game accessibility tier locked in the #4 audit memo is shipped.")
 	display_game("  • [b]/stones[/b] — list all four Home Stone types with prices, your lifetime cap, and how many you've already bought. Affordability is color-coded.")
@@ -23202,14 +23213,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: 'Under Threat' was informational only — the rumor was menacing but nothing actually changed. Now it does. Future slices can add wandering monsters, post-tier downgrades, or rescue quests, but the economic bite is the foundation.")
 	display_game("")
 
-	# v0.9.329 changes
-	display_game("[color=#00FFFF]v0.9.329[/color]")
-	display_game("  [color=#FFD700]Feed All Guards (Audit #12 Slice 3)[/color]")
-	display_game("  • [b]New chat command: \"/feedall\"[/b] (also \"/feed_all\") — feeds every guard within 40 tiles of your current post in one action. Validates ownership (visitors can't feed your guards). Skips already-capped guards. Stops gracefully if food runs out mid-batch — you'll see which ones got skipped.")
-	display_game("  • [b]Per-guard report[/b] with compass quadrant labels (NE, SE, Tower N, etc.), days added, and was-LOW markers for guards rescued from the danger zone. Footer summarizes total food consumed + walks saved.")
-	display_game("  • [b]Status panel hint[/b]: \"/post\" now appends \"/feedall would top up N guards (need X food, have Y)\" when there's work to do. Green when you can afford it, orange when you're short. No more manually checking each guard's days remaining.")
-	display_game("  • [b]Why[/b]: Slice 2 made hungry guards visible. Slice 3 fixes them in one keystroke. With 5+ guards per post, manual feeding was 5+ walk-and-press sequences — now it's one command from the post center.")
-	display_game("")
 
 	# v0.9.327 changes
 	display_game("[color=#00FFFF]v0.9.327[/color]")
@@ -33717,6 +33720,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"},
 	"kennel_capacity": {"name": "Kennel Expansion", "desc": "More kennel slots", "icon": "🏠"},
 	"post_slots": {"name": "Land Surveyor", "desc": "+1 max player post", "icon": "🏗️"},
+	"companion_sanctum": {"name": "Companion Sanctum", "desc": "+1 free Home Stone (Companion) at new character start", "icon": "🔮"},
 	# Combat bonuses
 	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
 	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
@@ -34395,7 +34399,7 @@ func display_house_upgrades():
 	# Define upgrade pages
 	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "companion_sanctum", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
@@ -34432,7 +34436,8 @@ func display_house_upgrades():
 		"int_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 		"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 		"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
-		"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]}
+		"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]},
+		"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]}
 	})
 
 	var current_page_upgrades = page_upgrades[house_upgrades_page]
@@ -34592,6 +34597,7 @@ func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 	match upgrade_id:
 		"storage_slots": return "+%d slots" % effect_value
 		"companion_slots": return "+%d slot%s" % [effect_value, "s" if effect_value != 1 else ""]
+		"companion_sanctum": return "+%d starter stone%s" % [effect_value, "s" if effect_value != 1 else ""]
 		"kennel_capacity": return "%d slots" % _get_house_kennel_capacity()
 		"egg_slots": return "%d/%d slots (base 3 + %d)" % [3 + effect_value, 12, effect_value]
 		"flee_chance", "xp_bonus", "gathering_bonus", "hp_bonus", "resource_max", "resource_regen":
@@ -34616,7 +34622,7 @@ func _get_house_companion_capacity() -> int:
 func _purchase_house_upgrade(index: int):
 	"""Send request to purchase a house upgrade based on current page"""
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "companion_sanctum", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
