@@ -1261,6 +1261,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_guard_dismiss(peer_id, message)
 		"post_status":
 			handle_post_status(peer_id)
+		"request_post_status_visual":
+			handle_request_post_status_visual(peer_id)
 		"guard_feed_all":
 			handle_guard_feed_all(peer_id)
 		"list_home_stones":
@@ -19686,6 +19688,9 @@ func handle_guard_feed_all(peer_id: int) -> void:
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(report_lines)})
 	send_character_update(peer_id)
 	save_character(peer_id)
+	# Audit #12 UI remediation — push fresh post_status_data so the visual
+	# panel (if open) immediately reflects the new food-days values.
+	handle_request_post_status_visual(peer_id)
 
 func _count_guard_food(character) -> int:
 	"""Count total food materials in player crafting_materials."""
@@ -21843,6 +21848,120 @@ func _maybe_send_own_post_arrival_status(peer_id: int, x: int, y: int) -> void:
 	visited[post_index] = true
 	var lines = _build_player_post_status(hit.get("meta", {}), username, true, peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func _compute_player_post_status_data(post_meta: Dictionary, owner_username: String, is_owner: bool, viewer_peer_id: int) -> Dictionary:
+	"""Audit #12 UI remediation — structured-data version of
+	_build_player_post_status. The visual PostStatusPanel consumes this dict;
+	the text path is kept untouched for /post fallback + screen readers.
+
+	Returns: post_name, owner, is_owner, bubble_radius, effective_tier,
+	wilderness_tier, guards [{compass, in_tower, food_days}], guard_count,
+	tower_count, threat {threatened, dungeon_name, tier, distance, direction,
+	color}, feedall {feedable, food_needed, food_on_hand}."""
+	var c = post_meta.get("center", Vector2i.ZERO)
+	var cx: int
+	var cy: int
+	if c is Vector2i:
+		cx = c.x
+		cy = c.y
+	else:
+		cx = int(c.get("x", 0))
+		cy = int(c.get("y", 0))
+	var display_name = String(post_meta.get("name", ""))
+	if display_name == "":
+		display_name = "[unnamed]"
+
+	var meta_for_compute = post_meta.duplicate()
+	meta_for_compute["_owner"] = owner_username
+	var radius = _compute_effective_post_radius(meta_for_compute)
+	var effective_tier = _compute_effective_post_tier(meta_for_compute)
+	var wilderness_info = chunk_manager.get_nearest_npc_post_with_tier(cx, cy)
+	var wilderness_tier = int(wilderness_info.get("tier", 1))
+	var force = _count_post_guard_force(cx, cy, owner_username)
+	var guards_total = int(force.get("guards", 0))
+	var towers = int(force.get("tower_guards", 0))
+
+	# Per-guard list (owner only — visitors don't see food state).
+	var guards_list: Array = []
+	if is_owner and guards_total > 0:
+		var now = Time.get_unix_time_from_system()
+		for pos_key in active_guards:
+			var guard = active_guards[pos_key]
+			if String(guard.get("owner", "")) != owner_username:
+				continue
+			var parts = String(pos_key).split(",")
+			if parts.size() != 2:
+				continue
+			var gx = int(parts[0])
+			var gy = int(parts[1])
+			var dx_f = float(gx - cx)
+			var dy_f = float(gy - cy)
+			if sqrt(dx_f * dx_f + dy_f * dy_f) > float(POST_INFLUENCE_RANGE):
+				continue
+			var days_elapsed = (now - float(guard.get("last_fed", now))) / 86400.0
+			var days_remaining = float(guard.get("food_remaining", 0)) - days_elapsed
+			if days_remaining < 0.0:
+				days_remaining = 0.0
+			guards_list.append({
+				"compass": _short_direction_from(cx, cy, gx, gy),
+				"in_tower": bool(guard.get("in_tower", false)),
+				"food_days": days_remaining,
+			})
+
+	# Feed All summary (owner only).
+	var feedall: Dictionary = {}
+	if is_owner and guards_total > 0 and viewer_peer_id >= 0 and characters.has(viewer_peer_id):
+		var feedable: int = 0
+		for g in guards_list:
+			if float(g["food_days"]) < float(GUARD_MAX_FOOD_DAYS):
+				feedable += 1
+		var owner_char = characters[viewer_peer_id]
+		feedall = {
+			"feedable": feedable,
+			"food_needed": feedable * GUARD_FEED_FOOD_COST,
+			"food_on_hand": _count_guard_food(owner_char),
+		}
+
+	# Threat info (from Slice 6 of #11).
+	var threat = _compute_post_threat_state(cx, cy)
+
+	return {
+		"post_name": display_name,
+		"owner": owner_username,
+		"is_owner": is_owner,
+		"bubble_radius": radius,
+		"effective_tier": effective_tier,
+		"wilderness_tier": wilderness_tier,
+		"guard_count": guards_total,
+		"tower_count": towers,
+		"guards": guards_list,
+		"feedall": feedall,
+		"threat": threat,
+	}
+
+func handle_request_post_status_visual(peer_id: int) -> void:
+	"""Audit #12 UI remediation — visual PostStatusPanel data feed.
+	Mirrors handle_post_status flow but returns structured dict instead of
+	BBCode text. Panel handles rendering."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var bubble = _get_player_post_bubble_at(character.x, character.y)
+	if bubble.is_empty():
+		send_to_peer(peer_id, {"type": "post_status_data", "at_post": false})
+		return
+	var owner = String(bubble.get("owner", ""))
+	var post_index = int(bubble.get("post_index", -1))
+	if not player_post_names.has(owner) or post_index < 0 or post_index >= player_post_names[owner].size():
+		send_to_peer(peer_id, {"type": "post_status_data", "at_post": false})
+		return
+	var meta = player_post_names[owner][post_index]
+	var is_owner = (owner == username)
+	var data = _compute_player_post_status_data(meta, owner, is_owner, peer_id)
+	data["at_post"] = true
+	data["type"] = "post_status_data"
+	send_to_peer(peer_id, data)
 
 func handle_post_status(peer_id: int) -> void:
 	"""Audit #12 Slice 2 — /post chat command. Reports status of the player

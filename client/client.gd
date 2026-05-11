@@ -1218,6 +1218,11 @@ var stones_panel = null
 const StatsPanelScript = preload("res://client/stats_panel.gd")
 var stats_panel = null
 
+# Audit #12 UI remediation — visual post status panel + Feed All button.
+# Replaces /post + /feedall chat commands.
+const PostStatusPanelScript = preload("res://client/post_status_panel.gd")
+var post_status_panel = null
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -1788,6 +1793,12 @@ func _ready():
 	add_child(stats_panel)
 	stats_panel.close_requested.connect(_on_stats_panel_close)
 	stats_panel.spend_requested.connect(_on_stats_panel_spend)
+
+	# Audit #12 UI remediation — post status panel + Feed All.
+	post_status_panel = PostStatusPanelScript.new()
+	add_child(post_status_panel)
+	post_status_panel.close_requested.connect(_on_post_status_panel_close)
+	post_status_panel.feed_all_requested.connect(_on_post_status_panel_feed_all)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -8635,6 +8646,7 @@ func _create_shortcut_buttons():
 		["Deck", "deck_shortcut"],
 		["Stats", "stats_shortcut"],
 		["Stones", "stones_shortcut"],
+		["Post", "post_shortcut"],
 		["Inv", "inventory_shortcut"],
 		["Help", "help_shortcut"],
 	]
@@ -8769,6 +8781,9 @@ func _on_shortcut_button_pressed(action: String):
 		"stats_shortcut":
 			# Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
 			open_stats_panel()
+		"post_shortcut":
+			# Audit #12 UI remediation — visual post status panel.
+			open_post_status_panel()
 		"inventory_shortcut":
 			if inventory_mode and pending_inventory_action == "":
 				return  # Already in base inventory
@@ -19105,6 +19120,10 @@ func handle_server_message(message: Dictionary):
 		"trading_post_message":
 			display_game(message.get("message", ""))
 
+		# Audit #12 UI remediation — post status panel data feed
+		"post_status_data":
+			_handle_post_status_data(message)
+
 		# Market messages
 		"market_browse_result":
 			_handle_market_browse_result(message)
@@ -20816,17 +20835,20 @@ func process_command(text: String):
 			else:
 				display_game("You don't have a character yet")
 		"post":
-			# Audit #12 Slice 2 — status panel for the player post you're standing
-			# inside. Owner-detail view if it's yours, public summary otherwise.
+			# Audit #12 Slice 2 (UI remediation) — `/post` opens the visual
+			# status panel. Server post_status text fallback still ships for
+			# screen readers / log history.
 			if has_character:
+				open_post_status_panel()
 				send_to_server({"type": "post_status"})
 			else:
 				display_game("You don't have a character yet")
 		"feedall", "feed_all":
-			# Audit #12 Slice 3 — feed every guard around your current post in
-			# one action. Server validates ownership and reports per-guard.
+			# Audit #12 Slice 3 (UI remediation) — opens the visual post status
+			# panel (which contains the Feed All button). The button itself
+			# sends guard_feed_all and renders the per-guard report.
 			if has_character:
-				send_to_server({"type": "guard_feed_all"})
+				open_post_status_panel()
 			else:
 				display_game("You don't have a character yet")
 		"stones":
@@ -23231,8 +23253,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.338 changes
+	display_game("[color=#00FF00]v0.9.338[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Visual post status panel + Feed All (UI remediation)[/color]")
+	display_game("  • [b]New shortcut button: [color=#9ACD32]Post[/color][/b] — opens the visual post status panel. Always accessible; shows \"Stand inside a player post\" empty-state when off-post.")
+	display_game("  • [b]Panel sections[/b]: header (post name + owner), bubble line (radius + effective tier + guard count), Under Threat banner if applicable, per-guard food-days list (with [LOW] / [thin] tags), and a [b]Feed All Guards[/b] button row.")
+	display_game("  • [b]Feed All button[/b] is enabled when guards need food AND you can afford it (food count shown next to button). Click it → server bulk-feeds, panel auto-refreshes with new days remaining.")
+	display_game("  • [b]Part 3 of 4 → and final.[/b] All four chat-command-only slices from earlier today (/post, /feedall, /stones, /spendstat) now have visual panels. /post and /feedall both open this panel; the chat commands remain as power-user shortcuts.")
+	display_game("  • [b]The rule going forward[/b]: no feature ships with chat commands as its primary interface. See `feedback_no_chat_command_first_features` for the full rule.")
+	display_game("")
+
 	# v0.9.337 changes
-	display_game("[color=#00FF00]v0.9.337[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.337[/color]")
 	display_game("  [color=#FFD700]Visual stat allocation panel (UI remediation)[/color]")
 	display_game("  • [b]New shortcut button: [color=#9ACD32]Stats[/color][/b] — sits next to Deck/Stones/Inv. One click opens the character stats panel.")
 	display_game("  • [b]Visual panel[/b] shows level + XP progress, your unspent stat point bank, and all 6 stats (STR/CON/DEX/INT/WIS/WITS) with descriptions and clickable [+1] buttons.")
@@ -23261,14 +23293,6 @@ func display_changelog():
 	display_game("  • [b]Audit #3 moves from \"designing\" to \"implementing.\"[/b] Four designing-only systems shipped first slices in four consecutive releases (#4 → #13 → #2 → #3). Only #14 Multiplayer remains in designing.")
 	display_game("")
 
-	# v0.9.334 changes
-	display_game("[color=#00FFFF]v0.9.334[/color]")
-	display_game("  [color=#FFD700]Class identity cleanup + XP stack fix (Audit #2 Slice 1)[/color]")
-	display_game("  • [b]Paladin / Sorcerer / Ninja are no longer described as \"[Legacy] - no longer available\"[/b] anywhere in code. They've been fully active classes for many versions; the stale strings in shared/constants.gd are now proper descriptions matching the character-create panel.")
-	display_game("  • [b]Bug fix: Sanctuary XP bonus was applying as a 11x multiplier at max level instead of 1.10x[/b]. character.gd add_experience was adding the raw percent value to 1.0 instead of dividing by 100 first. Now matches the party-combat XP path. Any character that stacked the upgrade was getting wildly inflated XP — fix levels the field.")
-	display_game("  • [b]New +50% cap on combined race × Sanctuary XP multiplier[/b]. Per the #2 audit: \"Ranger's +30% XP stacking with Human +10% — possible cap on XP-multiplier stacks.\" Hunter's Mark (Ranger class passive) is applied separately by combat and still works at full +30%; the cap covers the race + Sanctuary stack only.")
-	display_game("  • [b]Audit #2 moves from \"designing\" to \"implementing.\"[/b] Three designing-only systems shipped first slices in three consecutive releases (#4 → #13 → #2). Two remain: #3 Progression, #14 Multiplayer.")
-	display_game("")
 
 
 
@@ -25984,6 +26008,44 @@ func _refresh_stats_panel_if_open() -> void:
 	var stats: Dictionary = character_data.get("stats", {})
 	var unspent: int = int(character_data.get("unspent_stat_points", 0))
 	stats_panel.refresh(level, xp, xp_to_next, stats, unspent)
+
+func open_post_status_panel() -> void:
+	"""Audit #12 UI remediation — open the visual post status panel. Server
+	pushes post_status_data on request; the panel populates from there. Shows
+	empty-state ('Stand inside a player post') when off-post."""
+	if not post_status_panel:
+		display_game("[color=#FF0000]Post status panel not initialized.[/color]")
+		return
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	# Open with empty state immediately; server response will populate.
+	post_status_panel.open({"at_post": false})
+	send_to_server({"type": "request_post_status_visual"})
+
+func close_post_status_panel() -> void:
+	if post_status_panel:
+		post_status_panel.close()
+
+func _on_post_status_panel_close() -> void:
+	close_post_status_panel()
+
+func _on_post_status_panel_feed_all() -> void:
+	"""Feed All button → reuses existing guard_feed_all message. Server
+	pushes a fresh post_status_data after success so the panel refreshes."""
+	send_to_server({"type": "guard_feed_all"})
+
+func _handle_post_status_data(message: Dictionary) -> void:
+	"""Server data feed for the post status panel. Always update the panel's
+	last-known data; only display if the panel is open (or just opened)."""
+	if not post_status_panel:
+		return
+	if post_status_panel.visible:
+		post_status_panel.refresh(message)
+	else:
+		# Cache for the next open(); if the auto-display flow fires this
+		# (e.g., walking onto a post triggers a refresh while panel is hidden),
+		# we want the next open to show fresh data.
+		post_status_panel._last_data = message.duplicate()
 
 func _on_admin_panel_action(action_id: String) -> void:
 	"""Dispatch admin panel button clicks. Each action_id maps to a
