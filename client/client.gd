@@ -22904,8 +22904,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.290 changes
+	display_game("[color=#00FF00]v0.9.290[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]NPC posts get a third rumor type — hotzone warnings (Audit #11 Slice 3)[/color]")
+	display_game("  • [b]Quest givers now also warn you about nearby [color=#FF4500]![/color] hotzones[/b] when one is within ~80 tiles. Sample: \"[color=#A0C8E0]Trader Fenwick[/color]: 'Watch yourself — the wilds about 47 tiles east are [color=#FF6600]boiling over[/color] lately. Best travel armed.'\"")
+	display_game("  • Warning verb scales with hotspot intensity: \"restless\" for edges, \"stirred up\" for mid-intensity, \"boiling over\" for the dangerous core. Direction is exact (north/east/southwest etc.) and distance is precise — actionable info, not flavor.")
+	display_game("  • Rumor pool now rotates between [b]three[/b] types: dungeon hint, biome resource hint, hotzone warning. Random preference order per arrival; types with no nearby data fall through. The same post will say different things across different sessions, and different posts speak about different things in the same session.")
+	display_game("")
+
 	# v0.9.289 changes
-	display_game("[color=#00FF00]v0.9.289[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.289[/color]")
 	display_game("  [color=#FFD700]NPC posts get a second rumor type — biome resource hints (Audit #11 Slice 2)[/color]")
 	display_game("  • [b]Quest givers now alternate between dungeon rumors and biome resource hints[/b] on arrival. A forest post might say \"[color=#A0C8E0]Trader Fenwick[/color]: 'Foragers say [color=#9ACD32]Ashfen Reach[/color] is rich in [color=#FFD700]Pine Resin[/color] this season — worth a look while you're out.'\" instead of always pointing at a dungeon.")
 	display_game("  • Rumor type is randomly preferred per arrival; if the preferred type has no data nearby (e.g., no dungeon in 150 tiles, or post is in the unflavored Plains biome) the other type fires instead. Soft nod is still the final fallback.")
@@ -22932,14 +22940,6 @@ func display_changelog():
 	display_game("  • The previous Slice 6k authored region names (Sunhaven Plains, Wyrmrest Moor, etc.) are retired — they were bound to fixed post IDs that don't exist after a wipe.")
 	display_game("")
 
-	# v0.9.285 changes
-	display_game("[color=#00FFFF]v0.9.285[/color]")
-	display_game("  [color=#FFD700]Map memory — the map remembers where you've been (Audit #10 Slice 6j)[/color]")
-	display_game("  • [b]Tiles you've seen now stay visible as dim \"fog\" when you walk away.[/b] Previously, anything outside your current line-of-sight rendered as blank black space — meaning every time the map scrolled, you lost all surrounding context. Now any tile you've ever had in LOS keeps rendering its terrain at ~35% brightness, even from the other side of the map.")
-	display_game("  • [b]Memory is per-character and persists across logins[/b] (saved on the character file). Dynamic things — players, dungeons, corpses, depletion state, hotzone glow — are NOT drawn from memory; only the static terrain shape (trees, mountains, water, paths). Walk back to a tile to refresh those.")
-	display_game("  • [b]Mountains and other LOS-blockers themselves count as explored[/b] once you've seen them — so the silhouette of a mountain range stays visible even after you've left it behind.")
-	display_game("  • Caveat: existing characters start with empty memory and have to walk the world once to seed it.")
-	display_game("")
 
 
 
