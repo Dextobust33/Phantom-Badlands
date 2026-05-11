@@ -503,8 +503,8 @@ func format_quest_log(character: Character, extra_info: Dictionary = {}) -> Stri
 func _format_chain_atlas(character: Character) -> String:
 	"""Render the Chain Atlas section appended to the quest log. One line per
 	chain — completed chains are dimmed with a checkmark, in-progress chains
-	show the current stage, and available chains name the post where you can
-	pick them up."""
+	show the current stage, and available/in-progress chains include a terse
+	reward summary so players can decide which to chase next."""
 	var lines: Array = []
 	var completed: Array = character.completed_chains
 	# Build active-chain map: chain_id -> current stage number for fast lookup.
@@ -520,6 +520,19 @@ func _format_chain_atlas(character: Character) -> String:
 		if aq_chain_id == "":
 			continue
 		active_chain_stage[aq_chain_id] = int(aq_def.get("chain_stage", 1))
+	# Build chain-id → final-stage chain_bonus map so we can show rewards.
+	# Final stage is the one where chain_stage == chain_total, identified by
+	# walking once over the QUESTS dict.
+	var final_bonus_by_chain: Dictionary = {}
+	for inner_qid in QuestDatabaseScript.QUESTS.keys():
+		var iq = QuestDatabaseScript.QUESTS[inner_qid]
+		var ic_id = String(iq.get("chain_id", ""))
+		if ic_id == "":
+			continue
+		var ic_stage = int(iq.get("chain_stage", 0))
+		var ic_total = int(iq.get("chain_total", 0))
+		if ic_stage > 0 and ic_stage == ic_total:
+			final_bonus_by_chain[ic_id] = iq.get("chain_bonus", {})
 	# Iterate stage-1 starters in their declaration order — gives stable output.
 	for qid in QuestDatabaseScript.QUESTS.keys():
 		var q = QuestDatabaseScript.QUESTS[qid]
@@ -536,14 +549,19 @@ func _format_chain_atlas(character: Character) -> String:
 		var stage1_name = String(q.get("name", chain_id))
 		var sep_idx = stage1_name.find(" I —")
 		var chain_title = stage1_name.substr(0, sep_idx) if sep_idx > 0 else chain_id.replace("_", " ").capitalize()
+		var reward_summary = _summarize_chain_bonus(final_bonus_by_chain.get(chain_id, {}))
 		var line: String
 		if chain_id in completed:
 			line = "  [color=#5C8050]✓ %s[/color] [color=#404040](completed)[/color]" % chain_title
 		elif active_chain_stage.has(chain_id):
 			var cur_stage = active_chain_stage[chain_id]
 			line = "  [color=#FFAA00]▶ %s[/color] [color=#FFFF00](stage %d/%d)[/color]" % [chain_title, cur_stage, chain_total]
+			if reward_summary != "":
+				line += " [color=#888888]→ %s[/color]" % reward_summary
 		else:
-			line = "  [color=#A0A0A0]○ %s[/color] [color=#808080](available at %s, %d stages)[/color]" % [chain_title, post_name, chain_total]
+			line = "  [color=#A0A0A0]○ %s[/color] [color=#808080](%s, %d stages)[/color]" % [chain_title, post_name, chain_total]
+			if reward_summary != "":
+				line += " [color=#888888]→ %s[/color]" % reward_summary
 		lines.append(line)
 	if lines.is_empty():
 		return ""
@@ -551,6 +569,30 @@ func _format_chain_atlas(character: Character) -> String:
 	atlas += "\n".join(lines)
 	atlas += "\n"
 	return atlas
+
+
+func _summarize_chain_bonus(bonus: Dictionary) -> String:
+	"""Terse one-line summary of a chain's final-stage bonus. Used by the Chain
+	Atlas to surface what each chain pays without expanding the line."""
+	if bonus.is_empty():
+		return ""
+	var parts: Array = []
+	var bvalor = int(bonus.get("valor", 0))
+	if bvalor > 0:
+		parts.append("%d valor" % bvalor)
+	var begg = String(bonus.get("egg", ""))
+	if begg != "":
+		parts.append("%s Egg" % begg)
+	var stones: Array = bonus.get("home_stones", [])
+	if stones.size() > 0:
+		# Condense: just list the stone variant after the colon.
+		# home_stone_companion → "Companion", home_stone_egg → "Egg", etc.
+		var stone_labels: Array = []
+		for stone_type in stones:
+			var s = String(stone_type).replace("home_stone_", "").capitalize()
+			stone_labels.append(s)
+		parts.append("Stones (%s)" % ", ".join(stone_labels))
+	return " + ".join(parts)
 
 
 func format_available_quests(quests: Array, character: Character) -> String:
