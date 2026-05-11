@@ -1403,6 +1403,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_market_cancel_all(peer_id, message)
 		"market_list_all":
 			handle_market_list_all(peer_id, message)
+		"market_list_preview":
+			handle_market_list_preview(peer_id, message)
 		"market_list_egg":
 			handle_market_list_egg(peer_id, message)
 		_:
@@ -10171,14 +10173,29 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 
 	var all_listings = persistence.get_market_listings(post_id)
 
-	# Filter by category
+	# Filter by category. v0.9.268: food gets its own filter that recognizes
+	# plant/herb/fungus/fish material_types (food bulk-list still stamps
+	# supply_category as "material_t*" today; this filter does the lookup
+	# at browse time so no migration is needed for existing listings).
+	var food_types = ["plant", "herb", "fungus", "fish"]
 	var filtered = []
 	for listing in all_listings:
 		var supply_cat = listing.get("supply_category", "")
+		var is_food = false
+		if supply_cat.begins_with("material"):
+			var listing_item: Dictionary = listing.get("item", {})
+			var mat_name = str(listing_item.get("material_type", listing_item.get("name", "")))
+			if mat_name != "":
+				var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_name, {})
+				if mat_info.get("type", "") in food_types:
+					is_food = true
 		if category == "all":
 			filtered.append(listing)
+		elif category == "food":
+			if is_food:
+				filtered.append(listing)
 		elif category == "material":
-			if supply_cat.begins_with("material"):
+			if supply_cat.begins_with("material") and not is_food:
 				filtered.append(listing)
 		elif category == "rune":
 			if supply_cat == "rune":
@@ -10291,16 +10308,29 @@ func handle_market_network_browse(peer_id: int, message: Dictionary):
 
 	# Filter by category. Player posts (enclosures) are excluded from the
 	# network index — those are geographic discoveries, not official posts.
+	# v0.9.268: food gets its own filter (see handle_market_browse for rationale).
+	var net_food_types = ["plant", "herb", "fungus", "fish"]
 	var filtered = []
 	for listing in all_entries:
 		var lpid_check = String(listing.get("post_id", ""))
 		if lpid_check.begins_with("player_"):
 			continue
 		var supply_cat = listing.get("supply_category", "")
+		var is_food = false
+		if supply_cat.begins_with("material"):
+			var listing_item: Dictionary = listing.get("item", {})
+			var mat_name = str(listing_item.get("material_type", listing_item.get("name", "")))
+			if mat_name != "":
+				var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_name, {})
+				if mat_info.get("type", "") in net_food_types:
+					is_food = true
 		if category == "all":
 			filtered.append(listing)
+		elif category == "food":
+			if is_food:
+				filtered.append(listing)
 		elif category == "material":
-			if supply_cat.begins_with("material"):
+			if supply_cat.begins_with("material") and not is_food:
 				filtered.append(listing)
 		elif category == "rune":
 			if supply_cat == "rune":
@@ -11026,6 +11056,117 @@ func handle_market_cancel_all(peer_id: int, message: Dictionary):
 		"message": msg
 	})
 	send_character_update(peer_id)
+
+func handle_market_list_preview(peer_id: int, message: Dictionary):
+	"""Compute what handle_market_list_all WOULD list, without applying.
+	Mirrors the filter logic in handle_market_list_all so preview and apply
+	agree. Sends `market_list_preview_result` with count + total_valor.
+	Client uses this to show a confirm dialog before committing."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var list_type = str(message.get("list_type", ""))
+	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	var total_valor = 0
+	var count = 0
+
+	if list_type == "equipment":
+		for item in character.inventory:
+			if item.get("locked", false) or item.get("equipped", false):
+				continue
+			var itype = item.get("type", "")
+			if itype == "tool" or itype == "rune" or itype == "structure" or itype == "treasure_chest":
+				continue
+			if item.get("is_consumable", false) or _is_consumable_type(itype):
+				continue
+			if not item.has("slot") and not item.has("rarity"):
+				continue
+			var base_valor = drop_tables.calculate_base_valor(item)
+			if bonus > 0:
+				base_valor = int(base_valor * (1.0 + bonus))
+			total_valor += base_valor
+			count += 1
+	elif list_type == "consumables":
+		for item in character.inventory:
+			if item.get("locked", false) or item.get("equipped", false):
+				continue
+			var itype = item.get("type", "")
+			var is_consumable = item.get("is_consumable", false) or _is_consumable_type(itype)
+			if not is_consumable:
+				continue
+			if itype == "tool" or itype == "structure" or itype == "treasure_chest":
+				continue
+			if item.get("item_type", "") == "escape_scroll":
+				continue
+			var stack_size = maxi(1, int(item.get("quantity", 1)))
+			var base_valor = drop_tables.calculate_base_valor(item) * stack_size
+			if bonus > 0:
+				base_valor = int(base_valor * (1.0 + bonus))
+			total_valor += base_valor
+			count += stack_size
+	elif list_type == "tools":
+		for item in character.inventory:
+			if item.get("locked", false) or item.get("equipped", false):
+				continue
+			var itype = item.get("type", "")
+			if itype != "tool" and itype != "structure":
+				continue
+			if itype == "treasure_chest":
+				continue
+			var stack_size = maxi(1, int(item.get("quantity", 1)))
+			var base_valor = drop_tables.calculate_base_valor(item) * stack_size
+			if bonus > 0:
+				base_valor = int(base_valor * (1.0 + bonus))
+			total_valor += base_valor
+			count += stack_size
+	elif list_type == "materials":
+		var food_types = ["plant", "herb", "fungus", "fish"]
+		for mat_name in character.crafting_materials.keys():
+			var qty = int(character.crafting_materials.get(mat_name, 0))
+			if qty <= 0:
+				continue
+			var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_name, {})
+			if mat_info.get("type", "") in food_types:
+				continue
+			var mat_value = int(mat_info.get("value", 5))
+			var per_unit_valor = maxi(1, int(mat_value / 3.0))
+			var mat_total = per_unit_valor * qty
+			if bonus > 0:
+				mat_total = int(mat_total * (1.0 + bonus))
+			total_valor += mat_total
+			count += 1
+	elif list_type == "food":
+		var food_types = ["plant", "herb", "fungus", "fish"]
+		for mat_name in character.crafting_materials.keys():
+			var qty = int(character.crafting_materials.get(mat_name, 0))
+			if qty <= 0:
+				continue
+			var mat_info = CraftingDatabaseScript.MATERIALS.get(mat_name, {})
+			if mat_info.get("type", "") not in food_types:
+				continue
+			var mat_value = int(mat_info.get("value", 5))
+			var per_unit_valor = maxi(1, int(mat_value / 3.0))
+			var mat_total = per_unit_valor * qty
+			if bonus > 0:
+				mat_total = int(mat_total * (1.0 + bonus))
+			total_valor += mat_total
+			count += 1
+	else:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid list type."})
+		return
+
+	send_to_peer(peer_id, {
+		"type": "market_list_preview_result",
+		"list_type": list_type,
+		"count": count,
+		"total_valor": total_valor
+	})
 
 func handle_market_list_all(peer_id: int, message: Dictionary):
 	"""Bulk-list all items of a type on the market. Awards valor immediately."""
