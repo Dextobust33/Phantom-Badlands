@@ -465,7 +465,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.2,
 			"attack_mult": 1.3,
-			"abilities": ["Drowning Grasp", "Murky Veil"]
+			"abilities": ["Drowning", "Murky Veil"]
 		},
 		"boss_egg": "Kelpie",
 		"floors": 4,

@@ -20390,6 +20390,8 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			# Audit #5 boss signatures (Slice 6)
 			"Contagion Aura": "boss_contagion_aura",
 			"Lullaby": "boss_lullaby",
+			# Audit #5 boss signatures (Slice 7) — closes T2 coverage
+			"Drowning": "boss_drowning",
 		}
 		for raw_ability in monster_info.get("abilities", []):
 			var mapped = boss_ability_map.get(raw_ability, "")

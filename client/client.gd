@@ -22904,8 +22904,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.296 changes
+	display_game("[color=#00FF00]v0.9.296[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]T2 boss signatures COMPLETE — Drowning (Audit #5 Slice 7)[/color]")
+	display_game("  • [b]Elder Kelpie (Kelpie Marsh) — [color=#1E90FF]Drowning[/color][/b]: each successful hit applies +1 drowning stack (cap 3). Each stack does TWO things — [b]ticks 2% of your max HP[/b] at start of your turn AND [b]reduces your damage output by 10%[/b]. At 3 stacks you're taking 6% per turn AND swinging for 70% damage. The only boss signature that's both a DoT and an offensive debuff at the same time.")
+	display_game("  • Counterplay: dodge gear matters (stacks come from hits), or burst the boss before stacks build. Damage debuff stays while drowning persists — there's no expire timer.")
+	display_game("  • [b]12 boss signatures shipped across 7 slices.[/b] T2 coverage is now [b]8 of 8 — complete[/b]. All 5 T1 and 8 T2 bosses now have unique mechanics distinct from base monsters. T3+ untouched.")
+	display_game("")
+
 	# v0.9.295 changes
-	display_game("[color=#00FF00]v0.9.295[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.295[/color]")
 	display_game("  [color=#FFD700]Two more T2 boss signatures (Audit #5 Slice 6)[/color]")
 	display_game("  • [b]Plague Zombie (Plagued Graveyard) — [color=#6B8E23]Contagion Aura[/color][/b]: passive aura applies +1 contagion stack to you every 2 monster turns (cap 5). Each stack ticks [b]1% of your max HP[/b] at the start of your turn. No hit required — distinct from Festering Bite's on-hit stacking. The zombie doesn't need to land a blow to wear you down. End the fight fast or accept the cumulative burn.")
 	display_game("  • [b]Siren Enchantress (Siren's Cove) — [color=#00CED1]Lullaby[/color][/b]: every 4 monster turns the siren's song forces you to [b]skip your next turn[/b]. Deterministic timer, no resist roll, no on-hit dependency. Distinct from Web Stun (chance-based, on-hit). Mind the round count or get caught flat-footed.")
@@ -22928,13 +22936,6 @@ func display_changelog():
 	display_game("  • [b]Removed dead `gold_steal` ability.[/b] Already inert (gold removed from the game in 2026-02) but the constant kept showing up in monster ability lists. Cleanup pass — no behavior change, just dropped a dead reference.")
 	display_game("")
 
-	# v0.9.292 changes
-	display_game("[color=#00FFFF]v0.9.292[/color]")
-	display_game("  [color=#FFD700]New Gnoll Pack quest chain + Soul Siphon teaser (Audit #6 Slice 5)[/color]")
-	display_game("  • [b]New 3-stage chain \"Gnoll Pack Hunt\" at West Shrine[/b]: Kill 5 Gnolls → Kill 4 Wolves → Slay the Gnoll Packmaster. 400 valor + Gnoll Egg. The final-stage description teaches the Pack Frenzy mechanic upfront — so players know to burst the Packmaster down rather than stall the fight.")
-	display_game("  • [b]Barrow's Curse II description updated[/b] to teach Soul Siphon (every third round drains 8% of your max HP and heals the wight for the same). Closes the gap from yesterday's boss-sig drop — all T2 chain final stages now explain their boss's signature mechanic in advance.")
-	display_game("  • 11 chains total across 5 starter trading posts. West Shrine now has 2 chains (was 1) — distribution rebalanced. Quest descriptions paired tightly with boss signatures: pick up the chain, read the warning, fight the boss, see the mechanic exactly as advertised.")
-	display_game("")
 
 
 
