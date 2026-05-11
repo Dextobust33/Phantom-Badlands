@@ -21,7 +21,8 @@ enum TileType {
 	BONE_SCATTER,  # Audit #5 theme tag — sharp bones nick HP on step (Forgotten Crypt)
 	FALSE_CHEST,   # Audit #5 theme tag — mimic ambush — looks like treasure (Mimic Treasury)
 	UPDRAFT,       # Audit #5 theme tag — wind shear costs +2 steps (Harpy Cliffs)
-	BLOOD_FONT     # Audit #5 theme tag — vampiric font heals + curses (Vampire Crypt)
+	BLOOD_FONT,    # Audit #5 theme tag — vampiric font heals + curses (Vampire Crypt)
+	LAVA_POOL      # Audit #5 theme tag — molten rock burns on step (Balrog's Depths)
 }
 
 # Tile display characters
@@ -42,7 +43,8 @@ const TILE_CHARS = {
 	TileType.BONE_SCATTER: "%",
 	TileType.FALSE_CHEST: "?",
 	TileType.UPDRAFT: "~",
-	TileType.BLOOD_FONT: "+"
+	TileType.BLOOD_FONT: "+",
+	TileType.LAVA_POOL: "^"
 }
 
 # Tile colors for display
@@ -63,7 +65,8 @@ const TILE_COLORS = {
 	TileType.BONE_SCATTER: "#D8D8C8",
 	TileType.FALSE_CHEST: "#FFAA00",
 	TileType.UPDRAFT: "#87CEEB",
-	TileType.BLOOD_FONT: "#660000"
+	TileType.BLOOD_FONT: "#660000",
+	TileType.LAVA_POOL: "#FF4500"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -948,7 +951,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 3.0,
 			"attack_mult": 1.8,
-			"abilities": ["Life Drain", "Bone Storm", "Raise Dead", "Soul Freeze"]
+			"abilities": ["Soul Burn", "Bone Storm", "Raise Dead", "Soul Freeze"]
 		},
 		"boss_egg": "Lich",
 		"floors": 6,
@@ -975,7 +978,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 4.0,
 			"attack_mult": 1.9,
-			"abilities": ["Triple Bite", "Hellfire Breath", "Ferocious Howl"]
+			"abilities": ["Three Heads", "Hellfire Breath", "Ferocious Howl"]
 		},
 		"boss_egg": "Cerberus",
 		"floors": 6,
@@ -1002,7 +1005,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 4.5,
 			"attack_mult": 2.0,
-			"abilities": ["Flame Whip", "Shadow Wings", "Demonic Roar"]
+			"abilities": ["Hellfire Stack", "Shadow Wings", "Demonic Roar"]
 		},
 		"boss_egg": "Balrog",
 		"floors": 6,
@@ -1029,7 +1032,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 3.5,
 			"attack_mult": 1.9,
-			"abilities": ["Infernal Command", "Hellfire Storm", "Soul Rend", "Dark Pact"]
+			"abilities": ["Soul Forge", "Hellfire Storm", "Soul Rend", "Dark Pact"]
 		},
 		"boss_egg": "Demon Lord",
 		"floors": 6,
@@ -1056,7 +1059,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 4.0,
 			"attack_mult": 2.0,
-			"abilities": ["Earthquake", "Titan's Grip", "Colossal Swing", "Unyielding"]
+			"abilities": ["Titan Earthquake", "Titan's Grip", "Colossal Swing", "Unyielding"]
 		},
 		"boss_egg": "Titan",
 		"floors": 6,
@@ -1083,7 +1086,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.2,
 			"hp_mult": 3.5,
 			"attack_mult": 1.9,
-			"abilities": ["Vorpal Jaws", "Whiffling Wings", "Burbling Cry", "Eyes of Flame"]
+			"abilities": ["Vorpal Strike", "Whiffling Wings", "Burbling Cry", "Eyes of Flame"]
 		},
 		"boss_egg": "Jabberwock",
 		"floors": 6,
@@ -1810,15 +1813,24 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						grid[y][x] = TileType.UPDRAFT
 		"vampire_crypt":
 			# Blood fonts over ~6% of empty tiles. Drinking a font heals 5%
-			# of max HP but inflicts the player with a temporary -10% damage
-			# penalty for the next combat encounter only. Consumed on use.
-			# Risk/reward — heal now, weaker fight next time.
+			# of max HP. Consumed on use. Positive theme — pairs with the
+			# Vampire's Blood Frenzy boss signature.
 			for y in range(grid.size()):
 				for x in range(grid[y].size()):
 					if grid[y][x] != TileType.EMPTY:
 						continue
 					if rng.randi() % 100 < 6:
 						grid[y][x] = TileType.BLOOD_FONT
+		"balrog_depths":
+			# Lava pools over ~10% of empty tiles. Stepping deals 3% max HP
+			# damage. Persistent (lava stays). Strongest persistent damage
+			# theme tile — fits T5 dungeon difficulty.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.LAVA_POOL
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
