@@ -939,6 +939,12 @@ var hud_region_outside_tier: int = 1
 var hud_region_outside_tier_name: String = "Core"
 var hud_region_outside_tier_color: String = "#00FF00"
 var hud_region_outside_level: int = 1
+# Audit #12 Slice 1 — investment readout. The bubble's radius and guard force
+# determine how much suppression / how big the bubble is. Surfaced in the HUD
+# only when in_bubble == true.
+var hud_region_bubble_radius: int = 0
+var hud_region_bubble_guards: int = 0
+var hud_region_bubble_tower_guards: int = 0
 const REGION_EDGE_WARN_TILES: int = 5
 var hud_active_quests: Array = []  # Cached active quests for HUD
 var crafting_skill_level: int = 1  # Current skill level
@@ -18003,6 +18009,9 @@ func handle_server_message(message: Dictionary):
 			hud_region_outside_tier_name = String(message.get("region_outside_tier_name", "Core"))
 			hud_region_outside_tier_color = String(message.get("region_outside_tier_color", "#00FF00"))
 			hud_region_outside_level = int(message.get("region_outside_level", 1))
+			hud_region_bubble_radius = int(message.get("region_bubble_radius", 0))
+			hud_region_bubble_guards = int(message.get("region_bubble_guards", 0))
+			hud_region_bubble_tower_guards = int(message.get("region_bubble_tower_guards", 0))
 			update_status_hud()
 			# Map Sprites M2 — cache the nearby_players list (with class info)
 			# so the overlay can place a sprite for each visible remote player.
@@ -23124,8 +23133,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.327 changes
+	display_game("[color=#00FF00]v0.9.327[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Settler bubbles scale with investment (Audit #12 Slice 1)[/color]")
+	display_game("  • [b]Player-post settler bubbles are no longer flat 25 tiles.[/b] An unguarded post collapses to a 12-tile marker zone (no real suppression). Each guard you station within 40 tiles of the post pushes the bubble out: +2 per plain guard, +4 per tower-stationed guard. Cap at radius 35.")
+	display_game("  • [b]The investment math is now visible[/b]: the HUD shows \"Bubble: r=N  guards=M (K towered)\" while you're inside any bubble — your own or someone else's. A dim brown tone when guards=0 hints that the zone offers no protection.")
+	display_game("  • [b]Tier suppression now uses the same guard set[/b] (within 40 tiles, not within the live bubble) — so a guard parked just outside a small bubble still helps it grow and suppress. Hiring your next guard always pays out.")
+	display_game("  • [b]Casual vs invested split is real now[/b]: 0 guards = marker only, 2 guards = ~16 radius and T-2 suppression, 5 guards w/ 1 tower = ~26 radius. Walk into someone's well-defended post and the bubble line will show you why they're safe.")
+	display_game("  • [b]Why[/b]: with the post-anchored world, guards needed to be load-bearing rather than decoration. Now the food-economy cost (guards eat food) directly translates into how much safe territory you control. Foundation for #12 design work — future slices will explore tier formulas, decay timelines, and more buildable structures.")
+	display_game("")
+
 	# v0.9.326 changes
-	display_game("[color=#00FF00]v0.9.326[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.326[/color]")
 	display_game("  [color=#FFD700]Dynamic post state — Under Threat (Audit #11 Slice 6)[/color]")
 	display_game("  • [b]Posts now react to nearby active dungeons.[/b] When a tier-2+ world dungeon is uncleared within 80 tiles of an NPC post, the post is flagged \"Under Threat\". The HUD shows the menacing dungeon's name, tier, direction, and distance below the Nearest Post line.")
 	display_game("  • [b]Real-time updates[/b]: clear that dungeon (any player) and the warning vanishes. New dungeon spawns nearby and it re-appears. The threat indicator reflects the actual world state at every tick.")
@@ -23168,16 +23187,6 @@ func display_changelog():
 	display_game("  • [b]Why[/b]: closes the \"trap class\" problem (Mage facing a stat-immune monster). You can still cross-class — it just costs damage until you put in the practice. Chassis identity stays meaningful; counter-play stays possible.")
 	display_game("")
 
-	# v0.9.322 changes
-	display_game("[color=#00FFFF]v0.9.322[/color]")
-	display_game("  [color=#FFD700]Combat Deck view + Deck shortcut[/color]")
-	display_game("  • [b]Ability Loadout reworked into a Combat Deck viewer.[/b] The old 6-slot equip layout has been retired — the deck system already drives combat, so the loadout slots were dead UI. The new screen is a view of your actual deck composition.")
-	display_game("  • [b]New shortcut button: [color=#9ACD32]Deck[/color][/b] — sits with Companions/Jobs/Pouch/Build/Quests/Inv/Help on the right side of the chat row. One click opens the deck view.")
-	display_game("  • [b]Each card shows[/b]: name, variable cost range, mastery rank + progress to next rank (uses/threshold), copies you own (e.g., \"Deck × 3\"), and a short description of what the card does in combat.")
-	display_game("  • [b]Multi-copy cards[/b] get a soft lime tint so you can pick them out of the grid at a glance.")
-	display_game("  • [b]Cull still works[/b] (Slice 6c): on cards with > 1 copy, a − Cull button removes a copy from your deck. Minimum 1 always remains so you never lose access to a card.")
-	display_game("  • [b]Why[/b]: with the deck system live, \"loadout\" was misleading. You don't equip 6 abilities anymore — you draw a hand each round from your deck. The new view matches the mental model.")
-	display_game("")
 
 
 
@@ -24241,6 +24250,12 @@ func update_region_label():
 			var unit = "tile" if hud_region_bubble_edge_dist == 1 else "tiles"
 			edge_part = "  [color=#FF6644]! %d %s to edge[/color]" % [hud_region_bubble_edge_dist, unit]
 		lines.append("%s %s%s" % [prefix, outside_part, edge_part])
+		if hud_region_in_bubble and hud_region_bubble_radius > 0:
+			var guard_text = "%d" % hud_region_bubble_guards
+			if hud_region_bubble_tower_guards > 0:
+				guard_text += " ([color=#A0C8E0]%d towered[/color])" % hud_region_bubble_tower_guards
+			var bubble_color = "#88AA88" if hud_region_bubble_guards > 0 else "#AA8866"
+			lines.append("[color=%s]Bubble:[/color] r=%d  guards=%s" % [bubble_color, hud_region_bubble_radius, guard_text])
 
 	region_label.clear()
 	region_label.append_text("\n".join(lines))
