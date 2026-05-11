@@ -175,6 +175,8 @@ const ABILITY_BOSS_FESTERING_BITE = "boss_festering_bite"  # Each monster hit ad
 const ABILITY_BOSS_IRON_DISCIPLINE = "boss_iron_discipline"  # Every 5 monster turns, boss heals 10% max HP and clears its own debuffs
 const ABILITY_BOSS_SOUL_SIPHON = "boss_soul_siphon"        # Every 3 monster turns, drains 8% of player max HP and heals boss for same — vampiric burst, distinct from passive life_steal
 const ABILITY_BOSS_PACK_FRENZY = "boss_pack_frenzy"        # Boss attack scales +5% per round, uncapped escalating. Rewards fast kills, punishes long fights
+const ABILITY_BOSS_CONTAGION_AURA = "boss_contagion_aura"  # Passive: +1 contagion stack every 2 monster turns (cap 5); each stack ticks 1% player max HP at start of player turn. No hit required, distinct from on-hit Festering Bite
+const ABILITY_BOSS_LULLABY = "boss_lullaby"                # Every 4 monster turns, forces player to skip next turn (timer-based, deterministic — distinct from Web Stun's on-hit chance)
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -1278,6 +1280,17 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		character.current_hp = max(1, character.current_hp)
 		messages.append("[color=#9ACD32]Festering wounds tick [color=#FF8800]%d[/color] damage! (%d stacks)[/color]" % [fester_dmg, fester_stacks])
 
+	# === CONTAGION AURA TICK (Audit #5 Slice 6 — Plague Zombie boss_contagion_aura) ===
+	# Each contagion stack ticks 1% of max HP per player turn. Stacks accumulate
+	# passively (every 2 monster turns, applied from the boss's post-turn block),
+	# distinct from Festering Bite's on-hit stacking. Damage cannot kill.
+	var contagion_stacks = combat.get("player_contagion_stacks", 0)
+	if contagion_stacks > 0:
+		var contagion_dmg = max(1, int(character.get_total_max_hp() * 0.01 * contagion_stacks))
+		character.current_hp -= contagion_dmg
+		character.current_hp = max(1, character.current_hp)
+		messages.append("[color=#6B8E23]Contagion seeps in — [color=#FF8800]%d[/color] damage. (%d stacks)[/color]" % [contagion_dmg, contagion_stacks])
+
 	# === CHARM EFFECT (player attacks themselves) ===
 	if combat.get("player_charmed", false):
 		combat["player_charmed"] = false  # Only lasts one turn
@@ -1294,6 +1307,17 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	if combat.get("player_webbed", false):
 		combat["player_webbed"] = false
 		messages.append("[color=#A335EE]You struggle free of the webbing — but lose this turn![/color]")
+		combat.player_can_act = false
+		return {"success": true, "messages": messages, "combat_ended": false}
+
+	# === LULLABY EFFECT (Audit #5 Slice 6 — Siren Enchantress boss_lullaby) ===
+	# Deterministic timed CC: the siren's song reaches the player and the next
+	# turn is lost. Flag is applied from the boss's post-turn block every 4
+	# monster turns and consumed here. Distinct from Web Stun (chance on-hit,
+	# clears after one skip) by being timer-based and unavoidable.
+	if combat.get("player_lulled", false):
+		combat["player_lulled"] = false
+		messages.append("[color=#00CED1]The siren's lullaby washes over you — you cannot act this turn![/color]")
 		combat.player_can_act = false
 		return {"success": true, "messages": messages, "combat_ended": false}
 
@@ -4936,6 +4960,31 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var heal_amt_ss = mini(drain_amt, int(monster.max_hp) - int(monster.current_hp))
 			monster.current_hp = mini(int(monster.max_hp), int(monster.current_hp) + drain_amt)
 			messages.append("[color=#9370DB][b]SOUL SIPHON![/b][/color] [color=#A0C8E0]The %s drains [color=#FF8800]%d[/color] HP from you — and heals %d.[/color]" % [monster.name, drain_amt, heal_amt_ss])
+
+	# Audit #5 boss signature — Contagion Aura / boss_contagion_aura (Plague
+	# Zombie). Every 2 monster turns, apply +1 contagion stack (cap 5). The
+	# tick damage is applied at the start of the player's turn (see player
+	# turn-start block). Passive — no hit needed — so the player can't dodge
+	# the buildup by avoiding attacks, only by ending the fight quickly.
+	if ABILITY_BOSS_CONTAGION_AURA in abilities and combat.round > 0 and combat.round % 2 == 0:
+		var contagion_already = int(combat.get("contagion_aura_last_round", -1))
+		if contagion_already != int(combat.round):
+			combat["contagion_aura_last_round"] = int(combat.round)
+			var cur_stacks = int(combat.get("player_contagion_stacks", 0))
+			if cur_stacks < 5:
+				combat["player_contagion_stacks"] = cur_stacks + 1
+				messages.append("[color=#6B8E23][b]CONTAGION AURA![/b][/color] [color=#9ACD32]The %s's miasma seeps into you — contagion stack %d/5.[/color]" % [monster.name, cur_stacks + 1])
+
+	# Audit #5 boss signature — Lullaby / boss_lullaby (Siren Enchantress).
+	# Every 4 monster turns, force the player to skip their next turn. Flag
+	# is consumed at the start of the player's turn. Distinct from Web Stun:
+	# deterministic timer (not on-hit), no chance to resist.
+	if ABILITY_BOSS_LULLABY in abilities and combat.round > 0 and combat.round % 4 == 0:
+		var lullaby_already = int(combat.get("lullaby_last_round", -1))
+		if lullaby_already != int(combat.round):
+			combat["lullaby_last_round"] = int(combat.round)
+			combat["player_lulled"] = true
+			messages.append("[color=#00CED1][b]LULLABY![/b][/color] [color=#A0E8FF]The %s's voice rises into an enchanting song. Your eyelids grow heavy...[/color]" % monster.name)
 
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}
