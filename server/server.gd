@@ -4662,6 +4662,11 @@ func send_location_update(peer_id: int):
 			"tier_name": trading_post_db.POST_TIER_NAMES.get(pp_tier, "Core"),
 			"tier_color": trading_post_db.POST_TIER_COLORS.get(pp_tier, "#00FF00"),
 			"post_name": pp_name,
+			# Slice 6k — inside a player-post bubble, use the player post's
+			# own name as the region label so the territory reads as "owned"
+			# (e.g., "T1 Bob's Camp") instead of falling back to the formal
+			# post's authored region name.
+			"region_name": pp_name,
 		}
 		# Boundary warning support: how many tiles before the player walks out
 		# of the bubble. Uses ceil so "1 tile from edge" reads as 1, not 0.
@@ -4704,6 +4709,10 @@ func send_location_update(peer_id: int):
 		"region_tier_name": region_tier_info.get("tier_name", "Core"),
 		"region_tier_color": region_tier_info.get("tier_color", "#00FF00"),
 		"region_post_name": region_tier_info.get("post_name", ""),
+		# Slice 6k — authored per-post region name (or player post name when
+		# inside a settler bubble). Falls back to tier_name on client when
+		# missing for back-compat with older servers.
+		"region_name": region_tier_info.get("region_name", region_tier_info.get("tier_name", "")),
 		# Slice 6a — biome layer. Perpendicular to tier; same biome can span
 		# T1 → T6 territory.
 		"biome": current_biome,

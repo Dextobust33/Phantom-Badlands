@@ -910,6 +910,9 @@ var hud_region_tier: int = 1
 var hud_region_tier_name: String = "Core"
 var hud_region_tier_color: String = "#00FF00"
 var hud_region_post_name: String = ""
+# Slice 6k — authored per-post region name (or player post name when in
+# a settler bubble). Falls back to tier_name when server omits the field.
+var hud_region_name: String = "Core"
 # Slice 6a — biome label (perpendicular to tier).
 var hud_biome: String = ""
 var hud_biome_name: String = ""
@@ -17820,6 +17823,9 @@ func handle_server_message(message: Dictionary):
 			hud_region_tier_name = String(message.get("region_tier_name", "Core"))
 			hud_region_tier_color = String(message.get("region_tier_color", "#00FF00"))
 			hud_region_post_name = String(message.get("region_post_name", ""))
+			# Slice 6k — back-compat: older servers won't ship region_name, so
+			# fall back to tier_name (the previous label) when absent.
+			hud_region_name = String(message.get("region_name", hud_region_tier_name))
 			hud_biome = String(message.get("biome", ""))
 			hud_biome_name = String(message.get("biome_name", ""))
 			hud_biome_color = String(message.get("biome_color", "#6B5B45"))
@@ -22898,8 +22904,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.286 changes
+	display_game("[color=#00FF00]v0.9.286[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Regions now have names (Audit #10 Slice 6k)[/color]")
+	display_game("  • [b]Every NPC post's surrounding territory now has a unique region name[/b] that replaces the generic tier label in the top-right HUD. Sunhaven Plains around Haven. Greenmeadow Reach around South Gate. Shadowmere Mires, Inferno Sands, Wyrmrest Moor in T5 territory. Worldspine Boreal / Eternal Dawn / Apex Northeast Peaks at the T7 fringe. 58 named regions across all seven tiers.")
+	display_game("  • The tier color and number stay (e.g., [color=#FFFF00]T3 Stonemarsh[/color]) so the danger level still reads at a glance — but the region itself now has a personality, not just a number.")
+	display_game("  • Inside a player-built settler bubble, the region label switches to your post's own name (e.g., [color=#00FF00]T1 Bob's Camp[/color]) — your enclosure overrides the wilderness region naming, signaling \"this is your turf.\"")
+	display_game("")
+
 	# v0.9.285 changes
-	display_game("[color=#00FF00]v0.9.285[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.285[/color]")
 	display_game("  [color=#FFD700]Map memory — the map remembers where you've been (Audit #10 Slice 6j)[/color]")
 	display_game("  • [b]Tiles you've seen now stay visible as dim \"fog\" when you walk away.[/b] Previously, anything outside your current line-of-sight rendered as blank black space — meaning every time the map scrolled, you lost all surrounding context. Now any tile you've ever had in LOS keeps rendering its terrain at ~35% brightness, even from the other side of the map.")
 	display_game("  • [b]Memory is per-character and persists across logins[/b] (saved on the character file). Dynamic things — players, dungeons, corpses, depletion state, hotzone glow — are NOT drawn from memory; only the static terrain shape (trees, mountains, water, paths). Walk back to a tile to refresh those.")
@@ -22933,13 +22947,6 @@ func display_changelog():
 	display_game("  • Dungeons, houses, and other indoor spaces ignore biome cooldown — only overworld movement is affected.")
 	display_game("")
 
-	# v0.9.281 changes
-	display_game("[color=#00FFFF]v0.9.281[/color]")
-	display_game("  [color=#FFD700]Biome-locked nodes guarantee their biome material (Audit #10 Slice 6f)[/color]")
-	display_game("  • [b]Foraging a biome-locked node now drops only that biome's materials.[/b] Walking up to a Cactus and pressing Forage guarantees Cactus Flesh / Sun Petal / Scorched Root — no more rolling Clovers or Wild Berries off a cactus. Same for Ice Bloom (Frost Lichen / Ice Crystal / Snow Bloom), Swamp Lily (Bog Iris / Marsh Reed / Witch Cap), Mountain Herb (Alpine Lichen / Rock Salt / Crag Thistle), Brambleberry (Oak Acorn / Pine Resin / Silverleaf).")
-	display_game("  • Per node: 2 T1 anchors at high weight + 1 T2 standout at lower weight. Tier of the tile still drives Foraging XP gain.")
-	display_game("  • Regular herb/flower/mushroom/bush/reed nodes are unchanged — they keep rolling the generic foraging table with the Slice 6c biome bonus mixed in.")
-	display_game("")
 
 
 
@@ -23907,7 +23914,10 @@ func update_region_label():
 			danger = " [color=#FF0000]!DANGER[/color]"
 		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s" % [hud_area_level, danger]
 
-	var region_line = "[color=#9ACD32]Region:[/color] [color=%s]T%d %s[/color]" % [hud_region_tier_color, hud_region_tier, hud_region_tier_name]
+	# Slice 6k — Region line now shows the authored region name (e.g.,
+	# "Greenmeadow Reach") instead of the generic tier name. Tier color +
+	# number stay so the tier identity is still legible at a glance.
+	var region_line = "[color=#9ACD32]Region:[/color] [color=%s]T%d %s[/color]" % [hud_region_tier_color, hud_region_tier, hud_region_name]
 
 	# Slice 6a — biome line (perpendicular axis to tier; same biome can span
 	# T1 → T6). Hidden when the server hasn't sent biome info (e.g., older

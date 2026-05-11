@@ -714,6 +714,79 @@ const POST_TIER_COLORS = {
 	7: "#AA00FF",  # purple — world's edge
 }
 
+# Audit #10 Slice 6k — Region naming. Each formal post's surrounding
+# territory gets a unique evocative name, shown on the client RegionLabel
+# in place of the generic tier name. Tone scales with tier: T1 inviting,
+# T7 dread/apex. Player-post bubbles use the player post's own name
+# instead of looking up this dict.
+const POST_REGION_NAMES = {
+	# T1 Core — gentle, welcoming
+	"haven": "Sunhaven Plains",
+	"crossroads": "The Heartlands",
+	"south_gate": "Greenmeadow Reach",
+	"east_market": "Merchant's Steppe",
+	"west_shrine": "Hallowed Vale",
+	# T2 Inner — cultivated, established
+	"northeast_farm": "Goldenfields",
+	"northwest_mill": "Wheatmere",
+	"southeast_mine": "Quarrymark",
+	"southwest_grove": "Verdant Hollow",
+	"northwatch": "Watcher's Ridge",
+	"eastern_camp": "Sunrise Plain",
+	"western_refuge": "Twilight Plain",
+	"southern_watch": "Hartwood March",
+	"northeast_tower": "Beacon Heath",
+	"northwest_inn": "Wayfarer's End",
+	"southeast_bridge": "Riverbend",
+	"southwest_temple": "Templeward",
+	# T3 Mid — wilder
+	"frostgate": "Brittlefrost Marches",
+	"highland_post": "Highland Steppe",
+	"eastwatch": "Eastfen Marches",
+	"westhold": "Stonemarsh",
+	"southport": "Salt Coast",
+	"northeast_bastion": "Iron Heath",
+	"northwest_lodge": "Pinecrag",
+	"southeast_outpost": "Stormfen",
+	"southwest_camp": "Howling Plain",
+	# T4 Mid-Outer — frontier
+	"far_east_station": "Ashpath Wilds",
+	"far_west_haven": "Westwilds",
+	"deep_south_port": "Drownreach",
+	"high_north_peak": "Boreal Crown",
+	"northeast_frontier": "Ember Frontier",
+	"northwest_citadel": "Citadel Wastes",
+	"southeast_garrison": "Garrison Moor",
+	"southwest_fortress": "Stormwall Reach",
+	# T5 Outer — dangerous
+	"shadowmere": "Shadowmere Mires",
+	"inferno_outpost": "Inferno Sands",
+	"voids_edge": "Voidsedge Crags",
+	"frozen_reach": "Frozenreach Tundra",
+	"abyssal_depths": "Abyssal Reach",
+	"celestial_spire": "Celestial Wastes",
+	"storm_peak": "Stormpeak Skyfields",
+	"dragons_rest": "Wyrmrest Moor",
+	# T6 Extreme — dread
+	"primordial_sanctum": "Primordial Waste",
+	"nether_gate": "Nethergate Ash",
+	"eastern_terminus": "Sunfall Verge",
+	"western_terminus": "Moonfall Verge",
+	"chaos_refuge": "Chaosfields",
+	"entropy_station": "Entropy Verge",
+	"oblivion_watch": "Oblivion Plain",
+	"genesis_point": "Genesis Crater",
+	# T7 World's Edge — apex
+	"world_spine_north": "Worldspine Boreal",
+	"world_spine_south": "Worldspine Austral",
+	"eternal_east": "Eternal Dawn",
+	"eternal_west": "Eternal Dusk",
+	"apex_northeast": "Apex Northeast Peaks",
+	"apex_southeast": "Apex Southeast Wastes",
+	"apex_northwest": "Apex Northwest Wilds",
+	"apex_southwest": "Apex Southwest Reach",
+}
+
 # ============================================
 # REGIONAL POST SPECIALIZATION (Audit #9 Slice 3)
 # Each post category gives a buy discount on a specialty item supply category.
@@ -787,6 +860,15 @@ func get_post_tier(post_id: String) -> int:
 	"""Get tier classification (1-7) for a trading post. Defaults to 1 if unknown."""
 	return POST_TIERS.get(post_id, 1)
 
+func get_post_region_name(post_id: String) -> String:
+	"""Audit #10 Slice 6k — return the post's authored region name, or the
+	tier name as a fallback when the post isn't in POST_REGION_NAMES (e.g.,
+	new posts added without a name)."""
+	if POST_REGION_NAMES.has(post_id):
+		return POST_REGION_NAMES[post_id]
+	var tier = POST_TIERS.get(post_id, 1)
+	return POST_TIER_NAMES.get(tier, "Wilderness")
+
 func get_nearest_post_tier(x: int, y: int) -> Dictionary:
 	"""Get tier info for the nearest trading post.
 	Returns {tier, post_id, post_name, distance, tier_name, tier_color}."""
@@ -811,6 +893,7 @@ func get_nearest_post_tier(x: int, y: int) -> Dictionary:
 		"distance": nearest_dist,
 		"tier_name": POST_TIER_NAMES.get(tier, "Unknown"),
 		"tier_color": POST_TIER_COLORS.get(tier, "#FFFFFF"),
+		"region_name": get_post_region_name(nearest_post_id),
 	}
 
 func get_post_id_at(x: int, y: int) -> String:
