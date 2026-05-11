@@ -22904,8 +22904,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.289 changes
+	display_game("[color=#00FF00]v0.9.289[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]NPC posts get a second rumor type — biome resource hints (Audit #11 Slice 2)[/color]")
+	display_game("  • [b]Quest givers now alternate between dungeon rumors and biome resource hints[/b] on arrival. A forest post might say \"[color=#A0C8E0]Trader Fenwick[/color]: 'Foragers say [color=#9ACD32]Ashfen Reach[/color] is rich in [color=#FFD700]Pine Resin[/color] this season — worth a look while you're out.'\" instead of always pointing at a dungeon.")
+	display_game("  • Rumor type is randomly preferred per arrival; if the preferred type has no data nearby (e.g., no dungeon in 150 tiles, or post is in the unflavored Plains biome) the other type fires instead. Soft nod is still the final fallback.")
+	display_game("  • Each non-plains biome has its own material pool: Forest → Pine Resin / Oak Acorn / Silverleaf; Mountain → Alpine Lichen / Rock Salt / Crag Thistle; Swamp → Bog Iris / Marsh Reed / Witch Cap; Snow → Frost Lichen / Ice Crystal / Snow Bloom; Desert → Cactus Flesh / Sun Petal / Scorched Root.")
+	display_game("  • Plays into the audit's \"alive posts\" goal — different posts speak about different things, surfacing the biome layer + region naming + dungeon network without the player having to look at the map.")
+	display_game("")
+
 	# v0.9.288 changes
-	display_game("[color=#00FF00]v0.9.288[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.288[/color]")
 	display_game("  [color=#FFD700]NPC posts come alive — arrival greetings + rumors (Audit #11 Slice 1)[/color]")
 	display_game("  • [b]The first time you walk into an NPC post each session, the post's quest giver greets you[/b] with a chat line — post name, region, and a dungeon rumor pointing to the nearest active dungeon within ~150 tiles. Format: \"[color=#FFD700]═ Ironhold Lodge ═[/color] — [color=#FFFF00]T2 Ashfen Reach[/color]\" then \"[color=#A0C8E0]Trader Fenwick[/color]: 'Travelers whisper of a [color=#88FF88]Kobold Warren[/color] west of here, about 47 tiles out.'\"")
 	display_game("  • [b]Procedurally-generated quest givers are no longer dead data[/b] — each NPC post has had a quest giver name assigned at world-gen since Phase 6, but until now they were never surfaced. Now they greet you and deliver rumors.")
@@ -22932,13 +22941,6 @@ func display_changelog():
 	display_game("  • Caveat: existing characters start with empty memory and have to walk the world once to seed it.")
 	display_game("")
 
-	# v0.9.284 changes
-	display_game("[color=#00FFFF]v0.9.284[/color]")
-	display_game("  [color=#FFD700]Hotzones now reward the trip (Audit #10 Slice 6i)[/color]")
-	display_game("  • [b]Kills inside a red [color=#FF4500]![/color] danger zone now give bonus XP and a better drop chance.[/b] Edge of a hotspot is +30%, center is +70%. Stacks on top of the natural level scaling — the monster is already 1.5-2.5× higher level, AND you get an extra reward on top.")
-	display_game("  • A new [color=#FF6600]\"Danger Zone Bonus: +N% XP and improved drop chance!\"[/color] line appears in the combat log on every hotspot kill so the payoff is visible.")
-	display_game("  • Hotzones were previously just punishment with no upside. Now they're a deliberate risk/reward zone: spend potions and abilities to clear a cluster, get noticeably more XP per minute and more loot than the surrounding territory.")
-	display_game("")
 
 
 
