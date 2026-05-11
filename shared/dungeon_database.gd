@@ -357,7 +357,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.2,
 			"attack_mult": 1.4,
-			"abilities": ["Pack Tactics", "Frenzied Bite"]
+			"abilities": ["Pack Frenzy", "Frenzied Bite"]
 		},
 		"boss_egg": "Gnoll",
 		"floors": 4,
@@ -411,7 +411,7 @@ const DUNGEON_TYPES = {
 			"level_mult": 1.1,
 			"hp_mult": 2.3,
 			"attack_mult": 1.4,
-			"abilities": ["Life Drain", "Grave Chill"]
+			"abilities": ["Soul Siphon", "Grave Chill"]
 		},
 		"boss_egg": "Wight",
 		"floors": 4,

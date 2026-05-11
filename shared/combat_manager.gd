@@ -174,6 +174,8 @@ const ABILITY_BOSS_TREASURE_DECOY = "boss_treasure_decoy"  # First monster attac
 const ABILITY_BOSS_BLOODSCENT = "boss_bloodscent"        # When player <50% HP, boss gains +50% damage rest of fight (one-shot trigger)
 const ABILITY_BOSS_FESTERING_BITE = "boss_festering_bite"  # Each monster hit adds +1 festering stack (max 5); ticks 2% max HP per stack per player turn
 const ABILITY_BOSS_IRON_DISCIPLINE = "boss_iron_discipline"  # Every 5 monster turns, boss heals 10% max HP and clears its own debuffs
+const ABILITY_BOSS_SOUL_SIPHON = "boss_soul_siphon"        # Every 3 monster turns, drains 8% of player max HP and heals boss for same — vampiric burst, distinct from passive life_steal
+const ABILITY_BOSS_PACK_FRENZY = "boss_pack_frenzy"        # Boss attack scales +5% per round, uncapped escalating. Rewards fast kills, punishes long fights
 
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
@@ -4306,6 +4308,20 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				if combat.get("bloodscent_triggered", false):
 					damage = int(damage * 1.5)
 
+			# Audit #5 — Pack Frenzy / boss_pack_frenzy (Gnoll Packmaster).
+			# Escalating damage: +5% per round elapsed, no cap. Distinct from
+			# one-shot triggers — pressure builds the longer the fight runs,
+			# so there is a soft tempo cap. Round 1 = 1.0x, round 5 = 1.20x,
+			# round 10 = 1.45x, round 20 = 1.95x.
+			if ABILITY_BOSS_PACK_FRENZY in abilities:
+				var frenzy_round = max(0, int(combat.get("round", 1)) - 1)
+				if frenzy_round > 0:
+					damage = int(damage * (1.0 + 0.05 * frenzy_round))
+					var last_frenzy_msg = int(combat.get("pack_frenzy_last_msg_round", 0))
+					if (frenzy_round == 3 or frenzy_round == 6 or frenzy_round == 10) and last_frenzy_msg < frenzy_round:
+						combat["pack_frenzy_last_msg_round"] = frenzy_round
+						messages.append("[color=#8B6914][b]PACK FRENZY![/b][/color] [color=#FFAA00]The %s's blows land harder with each passing moment (+%d%% damage).[/color]" % [monster.name, int(0.05 * frenzy_round * 100)])
+
 			# Enrage stacks
 			var enrage = combat.get("enrage_stacks", 0)
 			if enrage > 0:
@@ -4902,6 +4918,21 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			combat["monster_sabotaged"] = 0
 			combat.erase("monster_weakness")
 			messages.append("[color=#C0C0C0][b]IRON DISCIPLINE![/b][/color] [color=#9ACD32]The %s steels itself, healing %d HP and shrugging off debuffs![/color]" % [monster.name, heal_amt])
+
+	# Audit #5 boss signature — Soul Siphon / boss_soul_siphon (Barrow Wight).
+	# Every 3 monster turns, drain 8% of player's max HP and heal boss for the
+	# same amount. Distinct from passive life_steal (per-hit small %) — periodic
+	# burst that the player can plan around. Cannot kill the player (HP floored
+	# at 1) so it shapes the fight rather than ending it.
+	if ABILITY_BOSS_SOUL_SIPHON in abilities and combat.round > 0 and combat.round % 3 == 0:
+		var siphon_already = int(combat.get("soul_siphon_last_round", -1))
+		if siphon_already != int(combat.round):
+			combat["soul_siphon_last_round"] = int(combat.round)
+			var drain_amt = max(1, int(character.get_total_max_hp() * 0.08))
+			character.current_hp = max(1, character.current_hp - drain_amt)
+			var heal_amt_ss = mini(drain_amt, int(monster.max_hp) - int(monster.current_hp))
+			monster.current_hp = mini(int(monster.max_hp), int(monster.current_hp) + drain_amt)
+			messages.append("[color=#9370DB][b]SOUL SIPHON![/b][/color] [color=#A0C8E0]The %s drains [color=#FF8800]%d[/color] HP from you — and heals %d.[/color]" % [monster.name, drain_amt, heal_amt_ss])
 
 	# Build return result - include monster_fled and summon_next_fight if set
 	var result = {"success": true, "message": "\n".join(messages)}
