@@ -70,6 +70,10 @@ const TRADING_POST_RUMOR_REFRESH_SEC: int = 1800  # 30 min
 # Audit #11 Slice 1 — per-session "first arrival at NPC post" tracking so the
 # greeting fires once per post per session. Map: peer_id → {"x,y": true}
 var visited_npc_posts_session: Dictionary = {}
+# Audit #12 Slice 2 — {peer_id: {post_index: true}} for player-owned posts the
+# user has stepped onto the center of this session. Prevents the status panel
+# from spamming every time they walk in and out.
+var visited_own_posts_session: Dictionary = {}
 # Audit #9 Slice 4 — rolling market sale history. Keyed by item name, value is
 # an array of per-unit paid prices (post-markup, post-specialty-discount).
 # Trimmed to MARKET_HISTORY_WINDOW most recent sales per item. Session-warm
@@ -1255,6 +1259,8 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_guard_feed(peer_id, message)
 		"guard_dismiss":
 			handle_guard_dismiss(peer_id, message)
+		"post_status":
+			handle_post_status(peer_id)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -2782,6 +2788,11 @@ func handle_move(peer_id: int, message: Dictionary):
 			at_player_station[peer_id] = {"stations": stations, "has_inn": has_inn, "has_storage": has_storage and is_own, "owner": enclosure_owner, "is_own": is_own}
 	if not now_in_enclosure and at_player_station.has(peer_id):
 		at_player_station.erase(peer_id)
+
+	# Audit #12 Slice 2 — when the player steps onto the CENTER of one of
+	# their own posts, send the status panel once per session per post. This
+	# is the "walk into your camp HQ to see the dashboard" moment.
+	_maybe_send_own_post_arrival_status(peer_id, new_pos.x, new_pos.y)
 
 	# Check for Infernal Forge (Fire Mountain) with Unforged Crown
 	if new_pos.x == -400 and new_pos.y == 0:
@@ -5168,6 +5179,9 @@ func handle_disconnect(peer_id: int):
 	# on next session.
 	if visited_npc_posts_session.has(peer_id):
 		visited_npc_posts_session.erase(peer_id)
+	# Audit #12 Slice 2 — same for own-post status panel.
+	if visited_own_posts_session.has(peer_id):
+		visited_own_posts_session.erase(peer_id)
 	# Clear pending wish if any
 	if pending_wishes.has(peer_id):
 		pending_wishes.erase(peer_id)
@@ -21260,6 +21274,192 @@ func _build_threat_rumor_line(px: int, py: int, quest_giver: String, personality
 	if quest_giver != "":
 		return "[color=#FF8800]%s[/color]: \"%s\"" % [quest_giver, msg]
 	return "[color=#FF8800]Locals warn: %s[/color]" % msg
+
+func _build_player_post_status(post_meta: Dictionary, owner_username: String, is_owner: bool) -> Array:
+	"""Audit #12 Slice 2 — render a status report for one player post.
+
+	Owner sees: bubble radius, effective vs wilderness tier, per-guard food
+	days remaining (with [LOW] tags), threat warning. Non-owners see a
+	public summary (name, owner, radius, effective tier) only — food data is
+	private operational state. Returns BBCode lines ready for `display_game`."""
+	var c = post_meta.get("center", Vector2i.ZERO)
+	var cx: int
+	var cy: int
+	if c is Vector2i:
+		cx = c.x
+		cy = c.y
+	else:
+		cx = int(c.get("x", 0))
+		cy = int(c.get("y", 0))
+	var display_name = String(post_meta.get("name", ""))
+	if display_name == "":
+		display_name = "[unnamed]"
+
+	var meta_for_compute = post_meta.duplicate()
+	meta_for_compute["_owner"] = owner_username
+	var radius = _compute_effective_post_radius(meta_for_compute)
+	var effective_tier = _compute_effective_post_tier(meta_for_compute)
+	var wilderness_info = chunk_manager.get_nearest_npc_post_with_tier(cx, cy)
+	var wilderness_tier = int(wilderness_info.get("tier", 1))
+	var force = _count_post_guard_force(cx, cy, owner_username)
+	var guards_total = int(force.get("guards", 0))
+	var towers = int(force.get("tower_guards", 0))
+
+	var lines: Array = []
+	var header_color = "#88FF88" if is_owner else "#A0C8E0"
+	lines.append("[color=%s]─── %s ───[/color]" % [header_color, display_name])
+	if not is_owner:
+		lines.append("  Owner: %s" % owner_username)
+	var tier_part = "T%d" % effective_tier
+	if effective_tier < wilderness_tier:
+		tier_part = "T%d  (wild T%d)" % [effective_tier, wilderness_tier]
+	lines.append("  Bubble: r=%d  %s" % [radius, tier_part])
+
+	if guards_total == 0:
+		lines.append("  [color=#AA8866]Guards: 0 — bubble is marker only (no protection)[/color]")
+	else:
+		var guard_summary = "Guards: %d" % guards_total
+		if towers > 0:
+			guard_summary += "  ([color=#A0C8E0]%d towered[/color])" % towers
+		lines.append("  %s" % guard_summary)
+
+	# Per-guard food days — owner-only since food state is private and
+	# tedious for non-owners to care about.
+	if is_owner and guards_total > 0:
+		var now = Time.get_unix_time_from_system()
+		for pos_key in active_guards:
+			var guard = active_guards[pos_key]
+			if String(guard.get("owner", "")) != owner_username:
+				continue
+			var parts = String(pos_key).split(",")
+			if parts.size() != 2:
+				continue
+			var gx = int(parts[0])
+			var gy = int(parts[1])
+			var dx_f = float(gx - cx)
+			var dy_f = float(gy - cy)
+			if sqrt(dx_f * dx_f + dy_f * dy_f) > float(POST_INFLUENCE_RANGE):
+				continue
+			var days_elapsed = (now - float(guard.get("last_fed", now))) / 86400.0
+			var days_remaining = float(guard.get("food_remaining", 0)) - days_elapsed
+			if days_remaining < 0.0:
+				days_remaining = 0.0
+			var compass = _short_direction_from(cx, cy, gx, gy)
+			var tower_tag = " [color=#A0C8E0](tower)[/color]" if bool(guard.get("in_tower", false)) else ""
+			var food_tag = ""
+			if days_remaining < 2.0:
+				food_tag = "  [color=#FF6644][LOW][/color]"
+			elif days_remaining < 4.0:
+				food_tag = "  [color=#FFAA44][thin][/color]"
+			lines.append("    %s%s  food: %.1f days%s" % [compass, tower_tag, days_remaining, food_tag])
+
+	# Threat warning — pulls from Slice 6 of #11 so this status panel is the
+	# single place to learn that your village is in danger.
+	var threat = _compute_post_threat_state(cx, cy)
+	if threat.get("threatened", false):
+		var threat_color = String(threat.get("color", "#FF6644"))
+		lines.append("  [color=%s]Under Threat: %s (T%d, %d tiles %s)[/color]" % [
+			threat_color,
+			String(threat.get("dungeon_name", "?")),
+			int(threat.get("tier", 0)),
+			int(threat.get("distance", 0)),
+			String(threat.get("direction", "nearby")),
+		])
+	return lines
+
+func _short_direction_from(from_x: int, from_y: int, to_x: int, to_y: int) -> String:
+	"""Two-letter compass (NE, S, etc) for a delta. Used by the post status
+	panel to label each guard by approximate quadrant relative to the post."""
+	var dx = to_x - from_x
+	var dy = to_y - from_y
+	if dx == 0 and dy == 0:
+		return "·"
+	var ns = ""
+	var ew = ""
+	if dy < -0.4 * abs(dx):
+		ns = "N"
+	elif dy > 0.4 * abs(dx):
+		ns = "S"
+	if dx > 0.4 * abs(dy):
+		ew = "E"
+	elif dx < -0.4 * abs(dy):
+		ew = "W"
+	var result = ns + ew
+	return result if result != "" else "·"
+
+func _maybe_send_own_post_arrival_status(peer_id: int, x: int, y: int) -> void:
+	"""Audit #12 Slice 2 — auto-display the status panel when the player steps
+	onto the CENTER of one of their own posts (first time per session per
+	post). Idempotent: silently no-ops if not on a center, not the owner, or
+	already shown this session."""
+	if not characters.has(peer_id):
+		return
+	var username = _get_username(peer_id)
+	if username == "":
+		return
+	var hit = _find_player_post_at(x, y, username)
+	if not hit.get("found", false):
+		return
+	var post_index = int(hit.get("post_index", -1))
+	if post_index < 0:
+		return
+	if not visited_own_posts_session.has(peer_id):
+		visited_own_posts_session[peer_id] = {}
+	var visited = visited_own_posts_session[peer_id]
+	if visited.has(post_index):
+		return
+	visited[post_index] = true
+	var lines = _build_player_post_status(hit.get("meta", {}), username, true)
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func handle_post_status(peer_id: int) -> void:
+	"""Audit #12 Slice 2 — /post chat command. Reports status of the player
+	post the user is currently standing inside (its center is closest if
+	multiple bubbles overlap), or notes that the player isn't in a post."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var bubble = _get_player_post_bubble_at(character.x, character.y)
+	if bubble.is_empty():
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#888888]You're not inside any player post.[/color]",
+		})
+		return
+	var owner = String(bubble.get("owner", ""))
+	var post_index = int(bubble.get("post_index", -1))
+	if not player_post_names.has(owner) or post_index < 0 or post_index >= player_post_names[owner].size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]Post lookup failed.[/color]"})
+		return
+	var meta = player_post_names[owner][post_index]
+	var is_owner = (owner == username)
+	var lines = _build_player_post_status(meta, owner, is_owner)
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func _find_player_post_at(x: int, y: int, username: String) -> Dictionary:
+	"""Return {found, meta, post_index, owner} for a post whose CENTER is at
+	(x, y). If username is non-empty, restricts to posts owned by that user
+	(used for the /post command + auto-display). Otherwise returns the first
+	post at this center."""
+	for owner in player_post_names:
+		if username != "" and owner != username:
+			continue
+		var posts = player_post_names[owner]
+		for i in range(posts.size()):
+			var meta = posts[i]
+			var c = meta.get("center", Vector2i.ZERO)
+			var cx: int
+			var cy: int
+			if c is Vector2i:
+				cx = c.x
+				cy = c.y
+			else:
+				cx = int(c.get("x", 0))
+				cy = int(c.get("y", 0))
+			if cx == x and cy == y:
+				return {"found": true, "meta": meta, "post_index": i, "owner": owner}
+	return {"found": false}
 
 func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer_id: int = -1) -> Array:
 	"""Audit #11 Slice 1 — uncached helper used by both legacy trading posts

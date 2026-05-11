@@ -19878,7 +19878,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -20771,6 +20771,13 @@ func process_command(text: String):
 			# resolves zone by current location and replies with a `text` payload.
 			if has_character:
 				send_to_server({"type": "request_zone_deck"})
+			else:
+				display_game("You don't have a character yet")
+		"post":
+			# Audit #12 Slice 2 — status panel for the player post you're standing
+			# inside. Owner-detail view if it's yours, public summary otherwise.
+			if has_character:
+				send_to_server({"type": "post_status"})
 			else:
 				display_game("You don't have a character yet")
 		"titles", "title":
@@ -23133,8 +23140,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.328 changes
+	display_game("[color=#00FF00]v0.9.328[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Post status panel (Audit #12 Slice 2)[/color]")
+	display_game("  • [b]Step onto the center of one of your own posts[/b] to see the status dashboard: bubble radius, effective tier vs wilderness, each guard's compass quadrant and remaining food days, and any active threat warning. First time per post per session — walks back in won't re-spam.")
+	display_game("  • [b]New chat command: \"/post\"[/b] — re-show the status panel whenever you want. Works inside any player post: your own (full owner detail) or someone else's (public summary: name, owner, radius, tier).")
+	display_game("  • [b]Per-guard food readout[/b] (owner only): each guard listed by quadrant (NE, S, Tower N, etc.) with food days remaining. Yellow [thin] tag at <4 days, red [LOW] at <2 days. No more walking to each guard one-by-one to check who's hungry.")
+	display_game("  • [b]Under Threat is in here too[/b] — the same warning from v0.9.326 surfaces in the status panel, so you have one place to learn that your village is in danger from a nearby dungeon.")
+	display_game("  • [b]Why[/b]: Slice 1 made bubbles dynamic, but the math was invisible unless you stared at the HUD line. Now stepping into your base gives you the full report — closes the \"I can't see what my base is doing\" gap and ties Slice 1's radius math + the existing food economy + #11's threat state into one dashboard.")
+	display_game("")
+
 	# v0.9.327 changes
-	display_game("[color=#00FF00]v0.9.327[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.327[/color]")
 	display_game("  [color=#FFD700]Settler bubbles scale with investment (Audit #12 Slice 1)[/color]")
 	display_game("  • [b]Player-post settler bubbles are no longer flat 25 tiles.[/b] An unguarded post collapses to a 12-tile marker zone (no real suppression). Each guard you station within 40 tiles of the post pushes the bubble out: +2 per plain guard, +4 per tower-stationed guard. Cap at radius 35.")
 	display_game("  • [b]The investment math is now visible[/b]: the HUD shows \"Bubble: r=N  guards=M (K towered)\" while you're inside any bubble — your own or someone else's. A dim brown tone when guards=0 hints that the zone offers no protection.")
@@ -23176,16 +23193,6 @@ func display_changelog():
 	display_game("  • [b]Ability Tomes deferred to next slice[/b] — a chest-drop alternative acquisition path. Companion gifts ship first as the primary loop.")
 	display_game("")
 
-	# v0.9.323 changes
-	display_game("[color=#00FFFF]v0.9.323[/color]")
-	display_game("  [color=#FFD700]Off-affinity counter (Audit #1 Slice 4)[/color]")
-	display_game("  • [b]Using an ability outside your class path now deals less damage.[/b] A Warrior casting Magic Bolt eats a -25% damage penalty; a Wizard swinging Power Strike eats the same.")
-	display_game("  • [b]Mastery softens the penalty[/b]: as you grind the off-archetype ability and rank it up, the penalty shrinks linearly. Rank 0 = -25%, Rank 1 = -19%, Rank 2 = -13%, Rank 3 = -6%, Rank 4 = 0%.")
-	display_game("  • [b]Stacks with mastery damage[/b]: at Rank 0 off-affinity you're at 0.80 × 0.75 = 0.60 of baseline. At Rank 4 you're at 1.20 × 1.00 = 1.20 — same ceiling as on-affinity, just earned the long way.")
-	display_game("  • [b]Universal cards bypass the penalty entirely[/b] (Cloak, All-or-Nothing, Forethought, Tactical Retreat, Teleport).")
-	display_game("  • [b]Deck view shows the tag[/b]: every off-archetype card now displays an \"Off-affinity (−N%% dmg)\" marker. Color fades from red (full penalty) → orange → lime as you rank it down. Visible reward loop.")
-	display_game("  • [b]Why[/b]: closes the \"trap class\" problem (Mage facing a stat-immune monster). You can still cross-class — it just costs damage until you put in the practice. Chassis identity stays meaningful; counter-play stays possible.")
-	display_game("")
 
 
 
