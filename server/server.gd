@@ -13262,7 +13262,12 @@ func handle_get_abilities(peer_id: int):
 		"all_abilities": all_abilities,
 		"unlocked_abilities": unlocked,
 		"equipped_abilities": character.equipped_abilities,
-		"ability_keybinds": character.ability_keybinds
+		"ability_keybinds": character.ability_keybinds,
+		# Audit #1 / Audit #11 Deck View — surfaces the player's deck
+		# composition so the rebuilt Ability View screen can show copies
+		# per ability and mastery rank/uses.
+		"combat_deck_collection": character.combat_deck_collection,
+		"ability_uses": character.ability_uses
 	})
 
 func handle_equip_ability(peer_id: int, message: Dictionary):
