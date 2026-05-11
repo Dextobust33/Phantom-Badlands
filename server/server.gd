@@ -19080,6 +19080,12 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	if tile == DungeonDatabaseScript.TileType.WEBBED:
 		character.dungeon_floor_steps += 1
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]You wade through clinging webs (+1 step).[/color]"})
+	# Audit #5 Slice 2 theme tag — Plague Graveyard POISON_MIASMA ticks HP on step.
+	# 2% of player max HP, min 1 max 40, can't kill outright (floored at 1 HP).
+	elif tile == DungeonDatabaseScript.TileType.POISON_MIASMA:
+		var miasma_dmg = clamp(int(character.get_total_max_hp() * 0.02), 1, 40)
+		character.current_hp = max(1, character.current_hp - miasma_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#7FBF3F]Toxic miasma sears your lungs ([color=#FF4444]-%d HP[/color]).[/color]" % miasma_dmg})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
