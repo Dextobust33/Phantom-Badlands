@@ -714,6 +714,68 @@ const POST_TIER_COLORS = {
 	7: "#AA00FF",  # purple — world's edge
 }
 
+# ============================================
+# REGIONAL POST SPECIALIZATION (Audit #9 Slice 3)
+# Each post category gives a buy discount on a specialty item supply category.
+# Encourages travel — go to a mine post to buy materials cheaper, a farm for
+# food/consumables, a shrine for runes, a fortress for equipment.
+# Discounts stack ON TOP of the base supply-markup. Sellers still receive base
+# valor regardless; the discount reduces only what the buyer pays (server spread
+# absorbs the cost).
+# Keys in the value dict match supply_category prefixes returned by
+# drop_tables.get_supply_category — "material" matches material_t1..t9.
+# ============================================
+
+const POST_SPECIALTY_DISCOUNTS = {
+	"mine":     {"material": 0.15},
+	"farm":     {"consumable": 0.15},
+	"shrine":   {"rune": 0.15},
+	"fortress": {"equipment": 0.10},
+	"market":   {"equipment": 0.05, "consumable": 0.05, "material": 0.05},
+}
+
+const POST_SPECIALTY_LABELS = {
+	"mine":     "Materials",
+	"farm":     "Food & Consumables",
+	"shrine":   "Runes",
+	"fortress": "Equipment",
+	"market":   "All goods (generalist)",
+}
+
+func get_specialty_discount(post_id: String, supply_category: String) -> float:
+	"""Audit #9 Slice 3 — returns the buy discount fraction for a given post +
+	supply_category pair. 0.15 = 15% off; 0.0 = no specialty match. Material
+	tiers (material_t1..t9) all collapse to the "material" lookup key."""
+	var post_cat = get_post_category(post_id)
+	var discounts: Dictionary = POST_SPECIALTY_DISCOUNTS.get(post_cat, {})
+	if discounts.is_empty():
+		return 0.0
+	var lookup = supply_category
+	if supply_category.begins_with("material_"):
+		lookup = "material"
+	return float(discounts.get(lookup, 0.0))
+
+func get_specialty_summary(post_id: String) -> String:
+	"""Audit #9 Slice 3 — short BBCode summary of the post's specialty bonus,
+	for the market panel header. Empty string if no specialty."""
+	var post_cat = get_post_category(post_id)
+	var discounts: Dictionary = POST_SPECIALTY_DISCOUNTS.get(post_cat, {})
+	if discounts.is_empty():
+		return ""
+	# Single-category posts (mine/farm/shrine/fortress) read better as
+	# "Specialty: -15% on Materials" than as a list.
+	if discounts.size() == 1:
+		var only_key = discounts.keys()[0]
+		var pct = int(discounts[only_key] * 100)
+		var label = POST_SPECIALTY_LABELS.get(post_cat, only_key.capitalize())
+		return "Specialty: -%d%% on %s" % [pct, label]
+	# Multi-category (market): list all.
+	var parts: Array = []
+	for cat in discounts:
+		var p = int(discounts[cat] * 100)
+		parts.append("-%d%% %s" % [p, cat.capitalize()])
+	return "Specialty: %s" % ", ".join(parts)
+
 func get_post_category(post_id: String) -> String:
 	return POST_CATEGORIES.get(post_id, "default")
 

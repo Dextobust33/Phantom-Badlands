@@ -63,6 +63,9 @@ var _current_category: String = "all"
 var _current_sort: String = "category"
 var _listings: Array = []
 var _post_name: String = ""
+# Audit #9 Slice 3 — specialty summary text (e.g., "Specialty: -15% on Materials").
+# Empty for non-specialty posts. Renders as a header line below the post name.
+var _specialty_summary: String = ""
 var _valor: int = 0
 var _page: int = 0
 var _total_pages: int = 0
@@ -71,6 +74,7 @@ var _selected_index: int = -1
 var _root_panel: PanelContainer
 var _title_label: Label
 var _valor_label: RichTextLabel
+var _specialty_label: RichTextLabel  # Audit #9 Slice 3 — post specialty header
 var _tab_browse_btn: Button
 var _tab_my_btn: Button
 var _filter_chip_row: HBoxContainer
@@ -140,6 +144,18 @@ func _build_layout() -> void:
 	_valor_label.custom_minimum_size = Vector2(0, 22)
 	_valor_label.add_theme_font_size_override("normal_font_size", 14)
 	header.add_child(_valor_label)
+
+	# Specialty header (Audit #9 Slice 3). Sits below the title row; hidden
+	# when post has no specialty. Bright green to draw the eye to the discount.
+	_specialty_label = RichTextLabel.new()
+	_specialty_label.bbcode_enabled = true
+	_specialty_label.fit_content = true
+	_specialty_label.scroll_active = false
+	_specialty_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_specialty_label.custom_minimum_size = Vector2(0, 20)
+	_specialty_label.add_theme_font_size_override("normal_font_size", 13)
+	_specialty_label.visible = false
+	root_vbox.add_child(_specialty_label)
 
 	# Tabs
 	var tab_row := HBoxContainer.new()
@@ -371,7 +387,7 @@ func set_status(text: String) -> void:
 		_status_label.text = text
 
 
-func populate_browse(post_name: String, valor: int, listings: Array, category: String, sort: String, page: int, total_pages: int) -> void:
+func populate_browse(post_name: String, valor: int, listings: Array, category: String, sort: String, page: int, total_pages: int, specialty_summary: String = "") -> void:
 	if not is_inside_tree():
 		return
 	_current_tab = TAB_BROWSE
@@ -382,6 +398,7 @@ func populate_browse(post_name: String, valor: int, listings: Array, category: S
 	_current_sort = sort
 	_page = page
 	_total_pages = total_pages
+	_specialty_summary = specialty_summary
 
 	_update_header()
 	_filter_chip_row.visible = true
@@ -494,6 +511,15 @@ func _update_header() -> void:
 		title_text = "Market - %s" % _post_name
 	_title_label.text = title_text
 	_valor_label.text = "[color=#00FF00]Your Valor:[/color] [color=#FFFF00]%s[/color]" % _format_number(_valor)
+	# Audit #9 Slice 3 — specialty line under the header. Visible only when the
+	# current browse view delivered a non-empty specialty summary (browse only;
+	# my_listings doesn't carry one).
+	if _specialty_label:
+		if _current_tab == TAB_BROWSE and _specialty_summary != "":
+			_specialty_label.text = "[color=#9ACD32]%s[/color]" % _specialty_summary
+			_specialty_label.visible = true
+		else:
+			_specialty_label.visible = false
 
 
 func _update_tab_styles() -> void:
@@ -623,6 +649,13 @@ func _make_listing_row(listing: Dictionary, index: int, is_my_listing: bool) -> 
 		meta = "  " + " ".join(label_parts)
 
 	var price_text := "%s V" % _format_number(price)
+	# Audit #9 Slice 3 — tag rows where the buyer is getting the post's specialty
+	# discount. The server has already baked the discount into `markup_price`;
+	# this badge just calls out which listings benefit. Buttons don't render
+	# BBCode, so we append as plain text and rely on a brighter font_color.
+	var disc := float(listing.get("specialty_discount", 0.0))
+	if disc > 0.0 and not is_my_listing:
+		price_text += "  ★-%d%%" % int(disc * 100)
 	if is_my_listing:
 		var post_name = listing.get("post_name", "")
 		if str(post_name) != "":

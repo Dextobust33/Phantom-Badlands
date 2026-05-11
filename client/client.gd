@@ -1170,6 +1170,9 @@ var market_listings: Array = []
 var market_page: int = 0
 var market_total_pages: int = 0
 var market_category: String = "all"
+# Audit #9 Slice 3 — buyer-side specialty discount label from current post
+# (empty if no specialty). Drives the market panel header line.
+var market_specialty_summary: String = ""
 var pending_market_action: String = ""  # "", "browse", "list_select", "list_material", "list_material_qty", "list_consumable_qty", "pull_qty", "list_confirm", "buy_confirm", "inspect", "my_listings"
 var market_selected_listing: Dictionary = {}
 var market_inspected_listing: Dictionary = {}
@@ -22489,8 +22492,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.273 changes
+	display_game("[color=#00FF00]v0.9.273[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Trading posts now specialize — buy local for a discount (Slice 3)[/color]")
+	display_game("  • [b]Each trading post category gives a buy discount on a specific kind of item.[/b] Travel to the right post and save valor on what you're buying:")
+	display_game("    [color=#CD853F]Mine[/color] posts: [b]-15%[/b] on Materials (ore, gems, monster parts material drops)")
+	display_game("    [color=#90EE90]Farm[/color] posts: [b]-15%[/b] on Consumables (food, herbs, fungus, potions)")
+	display_game("    [color=#E6E6FA]Shrine[/color] posts: [b]-15%[/b] on Runes")
+	display_game("    [color=#C0C0C0]Fortress[/color] posts: [b]-10%[/b] on Equipment (weapons, armor)")
+	display_game("    [color=#FF8C00]Market[/color] posts: [b]-5%[/b] on Equipment, Consumables, and Materials (generalist)")
+	display_game("    Camp, Tower, Exotic, Haven posts: no specialty (yet)")
+	display_game("  • The Market panel shows the post's specialty in a header line. Discounted listings get a [color=#FFD700]★-N%[/color] badge next to the price")
+	display_game("  • [b]Sellers get full valor[/b] — the discount comes out of the server's markup spread, not the seller. List wherever you want; buy where it's cheapest")
+	display_game("")
+
 	# v0.9.272 changes
-	display_game("[color=#00FF00]v0.9.272[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.272[/color]")
 	display_game("  [color=#FFD700]Deck cull — trim unwanted ability copies (Slice 6c)[/color]")
 	display_game("  • [b]Your combat deck is now editable.[/b] Open Settings → Abilities. Each ability card shows \"Deck × N\" — the number of copies in your shuffled combat deck. When a card has more than 1 copy, a \"− Cull\" button appears on it.")
 	display_game("  • [b]Click \"− Cull\" to permanently remove one copy[/b] from your deck. You decide which abilities should weight your hand. Useful for trimming extra copies you earned from \"+1 Card\" rank-up choices but no longer want")
@@ -22525,14 +22542,6 @@ func display_changelog():
 	display_game("  • [b]Food chip added[/b] to the visual market filter row — between Cons and Tools. Same filter logic as v0.9.268's text-mode food category")
 	display_game("")
 
-	# v0.9.268 changes
-	display_game("[color=#00FFFF]v0.9.268[/color]")
-	display_game("  [color=#FFD700]Market: bulk-list preview + Food filter[/color]")
-	display_game("  • [b]Bulk listing now asks first.[/b] Press 1-5 on the market menu — instead of silently listing, you get a popup: [color=#FFD700]\"Will list N items for X Valor. Proceed?\"[/color] with List / Cancel. Nothing gets listed until you confirm")
-	display_game("  • If the category is empty, the popup is skipped and the log says \"Nothing to list for that category\" — no more guessing whether anything happened")
-	display_game("  • [b]Food has its own market filter category now.[/b] On the browse screen, cycling the filter now includes [color=#9ACD32]Food[/color] between Consumable and Tool. Filters for Plants, Herbs, Fungus, and Fish (cooking inputs). Material filter no longer mixes food in")
-	display_game("  • Same Food filter works on the Network Browse view")
-	display_game("")
 
 
 
@@ -28497,7 +28506,7 @@ func _populate_market_panel() -> void:
 		market_panel.populate_my_listings(post_name, account_valor, market_listings)
 	else:
 		# Default to browse for empty/main and "browse"/"inspect" states
-		market_panel.populate_browse(post_name, account_valor, market_listings, market_category, market_sort, market_page, market_total_pages)
+		market_panel.populate_browse(post_name, account_valor, market_listings, market_category, market_sort, market_page, market_total_pages, market_specialty_summary)
 	# When inspecting a specific listing, drive the right-side detail too
 	if pending_market_action == "inspect" and not market_inspected_listing.is_empty():
 		market_panel.populate_inspect(market_inspected_listing, account_valor)
@@ -30891,6 +30900,8 @@ func _handle_market_browse_result(message: Dictionary):
 	market_total_pages = int(message.get("total_pages", 1))
 	market_category = message.get("category", "all")
 	market_sort = message.get("sort", "category")
+	# Audit #9 Slice 3 — specialty header for the visual panel
+	market_specialty_summary = str(message.get("specialty_summary", ""))
 	pending_market_action = "browse"
 	display_market_browse()
 	update_action_bar()

@@ -10246,11 +10246,21 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		elif supply_cat == category:
 			filtered.append(listing)
 
-	# Calculate markup prices
+	# Calculate markup prices. Audit #9 Slice 3 — apply specialty discount on top
+	# so the per-listing display price reflects what the player will actually pay
+	# at this post. Field `specialty_discount` carries the discount fraction (0-1)
+	# so the client can render a "-15%" badge on discounted rows.
 	for listing in filtered:
 		var cat = listing.get("supply_category", "equipment")
 		var markup = persistence.calculate_markup(post_id, cat)
-		listing["markup_price"] = int(listing.get("base_valor", 0) * markup)
+		var base_markup_price = int(listing.get("base_valor", 0) * markup)
+		var disc = trading_post_db.get_specialty_discount(post_id, cat)
+		if disc > 0.0:
+			listing["markup_price"] = int(base_markup_price * (1.0 - disc))
+			listing["specialty_discount"] = disc
+		else:
+			listing["markup_price"] = base_markup_price
+			listing["specialty_discount"] = 0.0
 		listing["markup"] = markup
 
 	# Stack compatible listings (same item name + same price + same seller = one stack)
@@ -10320,7 +10330,9 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 		"total_listings": stacks.size(),
 		"category": category,
 		"sort": sort_mode,
-		"post_id": post_id
+		"post_id": post_id,
+		# Audit #9 Slice 3 — specialty header for the panel ("Specialty: -15% on Materials")
+		"specialty_summary": trading_post_db.get_specialty_summary(post_id)
 	})
 
 func handle_market_network_browse(peer_id: int, message: Dictionary):
@@ -10786,6 +10798,13 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	var cat = listing.get("supply_category", "equipment")
 	var markup = persistence.calculate_markup(post_id, cat)
 	var price = int(partial_base * markup)
+	# Audit #9 Slice 3 — regional specialty discount. Reduces buyer-side cost
+	# (seller still got base_valor on listing, so this comes out of the server
+	# spread). Applies only when the buyer is AT a specialty post matching the
+	# item's supply category.
+	var specialty_disc = trading_post_db.get_specialty_discount(post_id, cat)
+	if specialty_disc > 0.0:
+		price = int(price * (1.0 - specialty_disc))
 
 	# Check buyer has enough valor
 	var buyer_valor = persistence.get_valor(buyer_account_id)
