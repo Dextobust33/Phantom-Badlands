@@ -22904,8 +22904,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.297 changes
+	display_game("[color=#00FF00]v0.9.297[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Dungeon warning page — recovery info + map legend[/color]")
+	display_game("  • [b]Recovery section[/b]: every dungeon-entry warning now shows your current food stockpile (plant + herb + fungus + fish materials, the ones the dungeon-rest action accepts). Color-coded: red at 0, yellow at 1-5, green at 6+. Breakdown by type when present. Soft warning when you have none — \"you can't rest inside without food.\" Plus advice on how to stock up: forage overworld herb/flower/mushroom/bush tiles, fish at water, forest biome is herb-rich, market consumables.")
+	display_game("  • [b]Map legend section[/b]: when the dungeon has unusual terrain glyphs, the warning page now lists them by symbol + color + meaning. First entry: Spider Nest [color=#A335EE][b]w[/b][/color] tiles — \"Spider webs — costs +1 step to cross.\" Players were finding the purple w glyphs with no key; now they know upfront. Easy to extend as more theme tags ship (just add an entry to DUNGEON_THEME_LEGEND).")
+	display_game("  • Both sections render on every dungeon entry, not just under-level entries. The warning has always fired for all dungeon entries — it just used to only talk about the no-free-exit caveat.")
+	display_game("")
+
 	# v0.9.296 changes
-	display_game("[color=#00FF00]v0.9.296[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.296[/color]")
 	display_game("  [color=#FFD700]T2 boss signatures COMPLETE — Drowning (Audit #5 Slice 7)[/color]")
 	display_game("  • [b]Elder Kelpie (Kelpie Marsh) — [color=#1E90FF]Drowning[/color][/b]: each successful hit applies +1 drowning stack (cap 3). Each stack does TWO things — [b]ticks 2% of your max HP[/b] at start of your turn AND [b]reduces your damage output by 10%[/b]. At 3 stacks you're taking 6% per turn AND swinging for 70% damage. The only boss signature that's both a DoT and an offensive debuff at the same time.")
 	display_game("  • Counterplay: dodge gear matters (stacks come from hits), or burst the boss before stacks build. Damage debuff stays while drowning persists — there's no expire timer.")
@@ -22929,12 +22937,6 @@ func display_changelog():
 	display_game("  • Caveat: history is session-warm. Server restart resets it; the window rebuilds as new sales land. Persistence can come later if needed.")
 	display_game("")
 
-	# v0.9.293 changes
-	display_game("[color=#00FFFF]v0.9.293[/color]")
-	display_game("  [color=#FFD700]Combat audit cleanup TWEAKs (Audit #1 Slice 7)[/color]")
-	display_game("  • [b]Ethereal dodge dropped from 50% → 33%.[/b] Ghostly / phasing monsters previously dodged half your swings, which made high-investment fights feel like a coin flip. 33% still rewards accuracy gear without making the fight feel unwinnable. The −10 player hit-chance penalty against ethereal targets is unchanged, so the layered miss math still punishes low accuracy builds.")
-	display_game("  • [b]Removed dead `gold_steal` ability.[/b] Already inert (gold removed from the game in 2026-02) but the constant kept showing up in monster ability lists. Cleanup pass — no behavior change, just dropped a dead reference.")
-	display_game("")
 
 
 
@@ -30014,9 +30016,21 @@ func handle_dungeon_level_warning(message: Dictionary):
 	display_game("[color=#FF6666]Recommended Level: %d[/color]" % message.min_level)
 	display_game("[color=#AAAAAA]Your Level: %d[/color]" % message.player_level)
 	display_game("")
+
+	# Recovery / food section — dungeons don't auto-heal between fights the
+	# way the overworld does. Resting consumes food materials and that's the
+	# only in-dungeon recovery method short of consumables. Show the player
+	# their food stockpile + how to acquire more BEFORE they commit.
+	_display_dungeon_food_warning_section()
+
+	# Map legend — surfaces any non-standard terrain glyphs this dungeon will
+	# have (e.g., Spider Nest's webbed tiles). Players were getting confused
+	# by purple w tiles with no key; this makes it obvious before entry.
+	var warn_dtype = String(message.get("dungeon_type", ""))
+	_display_dungeon_theme_legend_section(warn_dtype)
+
 	# Check if hard mode is available
 	var warn_completions = character_data.get("dungeons_completed", {})
-	var warn_dtype = message.get("dungeon_type", "")
 	if warn_completions.get(warn_dtype, 0) > 0:
 		display_game("[color=#FF8800]★ Hard Mode available! +50%% monster stats, +75%% XP, bonus loot[/color]")
 		display_game("")
@@ -30025,6 +30039,77 @@ func handle_dungeon_level_warning(message: Dictionary):
 		display_game("[color=#808080]Press [%s] to enter anyway, or [%s] to cancel.[/color]" % [get_action_key_name(0), get_action_key_name(1)])
 
 	update_action_bar()
+
+# Dungeon theme-tile legend. Per-dungeon descriptions of any unusual terrain
+# the player will see on the floor map so they aren't left wondering what a
+# strange glyph means. Add entries here as Audit #5 theme tags ship.
+const DUNGEON_THEME_LEGEND = {
+	"spider_nest": [
+		{"glyph": "w", "color": "#A335EE", "desc": "Spider webs — costs +1 step to cross. Wading through clinging silk slows you down."}
+	],
+}
+
+func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
+	"""Render the in-warning theme-tile legend. Spider Nest has webbed tiles
+	(Audit #5 theme tags Slice 1) — players reported confusion at the purple
+	w glyphs without a key. As more themes ship, drop entries into
+	DUNGEON_THEME_LEGEND and they show up here automatically."""
+	if not DUNGEON_THEME_LEGEND.has(dungeon_type):
+		return
+	var entries: Array = DUNGEON_THEME_LEGEND[dungeon_type]
+	if entries.is_empty():
+		return
+	display_game("[color=#FFD700]── Map legend ──[/color]")
+	for entry in entries:
+		var glyph = String(entry.get("glyph", "?"))
+		var color = String(entry.get("color", "#FFFFFF"))
+		var desc = String(entry.get("desc", ""))
+		display_game("  [color=%s][b]%s[/b][/color]  [color=#AAAAAA]%s[/color]" % [color, glyph, desc])
+	display_game("")
+
+func _display_dungeon_food_warning_section() -> void:
+	"""Render the in-warning recovery/food section. Computes food stockpile
+	from crafting_materials filtered by type (plant/herb/fungus/fish — same
+	set the dungeon_rest action accepts) and displays acquisition advice."""
+	var food_types = ["plant", "herb", "fungus", "fish"]
+	var mats: Dictionary = character_data.get("crafting_materials", {})
+	var total = 0
+	var stacks = 0
+	var by_type = {"plant": 0, "herb": 0, "fungus": 0, "fish": 0}
+	for mat_id in mats.keys():
+		var qty = int(mats[mat_id])
+		if qty <= 0:
+			continue
+		var mat_info = CraftingDatabase.MATERIALS.get(mat_id, {})
+		var mat_type = str(mat_info.get("type", ""))
+		if mat_type in food_types:
+			total += qty
+			stacks += 1
+			by_type[mat_type] = int(by_type.get(mat_type, 0)) + qty
+
+	display_game("[color=#FFD700]── Recovery in this dungeon ──[/color]")
+	display_game("[color=#AAAAAA]Dungeons don't auto-heal between fights. To rest, you spend [b]food materials[/b] (plant, herb, fungus, fish). No food means no resting.[/color]")
+	var amount_color: String
+	if total == 0:
+		amount_color = "#FF4444"
+	elif total <= 5:
+		amount_color = "#FFAA00"
+	else:
+		amount_color = "#9ACD32"
+	var stack_text = "%d stack%s" % [stacks, "" if stacks == 1 else "s"]
+	display_game("Food on hand: [color=%s][b]%d[/b][/color] (%s)" % [amount_color, total, stack_text])
+	if total > 0:
+		var parts: Array = []
+		for t in food_types:
+			var n = int(by_type.get(t, 0))
+			if n > 0:
+				parts.append("%s %d" % [t.capitalize(), n])
+		if parts.size() > 0:
+			display_game("[color=#808080]  Breakdown: %s[/color]" % ", ".join(parts))
+	if total == 0:
+		display_game("[color=#FF6666]You can't rest inside without food — bring some or expect to push through on HP alone.[/color]")
+	display_game("[color=#5F9EA0]Best ways to stock up:[/color] [color=#AAAAAA]Forage herb / flower / mushroom / bush tiles overworld; fish at water tiles; forest biome is herb-rich. Markets at trading posts also sell consumable materials.[/color]")
+	display_game("")
 
 func handle_hotzone_warning(message: Dictionary):
 	"""Handle warning about entering a hotzone area"""
