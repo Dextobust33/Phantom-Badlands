@@ -970,6 +970,34 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		combat_state["player_lulled"] = true
 		character.remove_meta("pending_dungeon_lull")
 
+	# Audit #5 Slice 14 — Rat Warrens FILTHY_PUDDLE pending-festering carryover.
+	# Each stack ticks 2% player max HP per turn — read by the existing Rat
+	# King Festering Bite block in the player-turn-start tick path. Uses the
+	# SAME combat key (player_fester_stacks) so puddle festering stacks with
+	# Rat-King-applied stacks (cap 5 enforced when boss applies more).
+	if character.has_meta("pending_dungeon_festering"):
+		var fest_stacks = int(character.get_meta("pending_dungeon_festering", 0))
+		if fest_stacks > 0:
+			combat_state["player_fester_stacks"] = clamp(fest_stacks, 0, 5)
+		character.remove_meta("pending_dungeon_festering")
+
+	# Audit #5 Slice 14 — Orc Stronghold WAR_BANNER pending-buff carryover.
+	# Player damage +15% while combat.round <= the deadline. combat.round
+	# starts at 1, so N rounds = deadline N inclusive.
+	if character.has_meta("pending_war_banner"):
+		var banner_rounds = int(character.get_meta("pending_war_banner", 0))
+		if banner_rounds > 0:
+			combat_state["player_war_banner_until_round"] = banner_rounds
+		character.remove_meta("pending_war_banner")
+
+	# Audit #5 Slice 14 — Wraith Barrow SPECTRAL_VEIL pending-buff carryover.
+	# Monster attacks have 20% miss chance while combat.round <= the deadline.
+	if character.has_meta("pending_dungeon_veil"):
+		var veil_rounds = int(character.get_meta("pending_dungeon_veil", 0))
+		if veil_rounds > 0:
+			combat_state["player_veil_until_round"] = veil_rounds
+		character.remove_meta("pending_dungeon_veil")
+
 	# Mark character as in combat and reset per-combat flags
 	character.in_combat = true
 	character.reset_combat_flags()  # Reset Dwarf Last Stand etc.
@@ -4489,6 +4517,15 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		messages.append("[color=#00FFFF]The %s is distracted by your companion and misses![/color]" % monster.name)
 		return {"success": true, "message": "\n".join(messages)}
 
+	# Audit #5 Slice 14 — Wraith Barrow SPECTRAL_VEIL buff. While the veil is
+	# active, the monster has a flat 20% miss chance per attack. Picked up via
+	# the dungeon move handler which sets `pending_dungeon_veil` on the
+	# character meta and is carried into combat in start_combat.
+	if int(combat.get("player_veil_until_round", 0)) >= int(combat.get("round", 0)):
+		if randi() % 100 < 20:
+			messages.append("[color=#9370DB]The wraith's veil shrouds you — the %s's attack passes through empty air![/color]" % monster.name)
+			return {"success": true, "message": "\n".join(messages)}
+
 	# === DETERMINE NUMBER OF ATTACKS ===
 	var num_attacks = 1
 	if ABILITY_MULTI_STRIKE in abilities:
@@ -5771,6 +5808,13 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 		raw_damage = int(raw_damage * 1.2)
 		character.remove_meta("pending_sacred_buff")
 		passive_messages.append("[color=#F0E68C]The blessing flares — your strike lands with divine force![/color]")
+
+	# Audit #5 Slice 14 — Orc Stronghold WAR_BANNER buff. +15% damage while
+	# combat.round <= player_war_banner_until_round. Picked up via the dungeon
+	# move handler which sets `pending_war_banner` on the character meta and
+	# is carried into combat in start_combat.
+	if int(combat.get("player_war_banner_until_round", 0)) >= int(combat.get("round", 0)):
+		raw_damage = int(raw_damage * 1.15)
 
 	# Audit #5 — Drowning debuff (Elder Kelpie boss_drowning). Each stack drops
 	# player damage by 10% (cap 3 stacks = -30%). Combined with the DoT tick

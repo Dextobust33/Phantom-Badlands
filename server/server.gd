@@ -19985,6 +19985,57 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		var brim_dmg = clamp(int(character.get_total_max_hp() * 0.04), 1, 80)
 		character.current_hp = max(1, character.current_hp - brim_dmg)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]Sulfur fumes burn your lungs ([color=#FF4444]-%d HP[/color]).[/color]" % brim_dmg})
+	# Audit #5 Slice 14 theme tag — Rat Warrens FILTHY_PUDDLE nicks HP + festering chance.
+	# 1% max HP damage AND 30% chance to bank a festering stack into the player's
+	# next combat (cross-system pair with Rat King's Festering Bite signature).
+	elif tile == DungeonDatabaseScript.TileType.FILTHY_PUDDLE:
+		var puddle_dmg = clamp(int(character.get_total_max_hp() * 0.01), 1, 20)
+		character.current_hp = max(1, character.current_hp - puddle_dmg)
+		var puddle_msg = "[color=#7BA821]Filth splashes your wounds ([color=#FF4444]-%d HP[/color])." % puddle_dmg
+		if randi() % 100 < 30:
+			var existing_fest = int(character.get_meta("pending_dungeon_festering", 0))
+			character.set_meta("pending_dungeon_festering", min(existing_fest + 1, 3))
+			puddle_msg += " [color=#9ACD32]A wound starts to fester — you'll carry it into combat.[/color]"
+		puddle_msg += "[/color]"
+		send_to_peer(peer_id, {"type": "text", "message": puddle_msg})
+	# Audit #5 Slice 14 theme tag — Kobold Tunnels TRINKET_PILE pickup (consumed).
+	# 2-4 Valor. Smaller payout than Goblin Caves' scattered_loot (1-5).
+	elif tile == DungeonDatabaseScript.TileType.TRINKET_PILE:
+		var trinket_valor = randi_range(2, 4)
+		var account_id_tk = peers[peer_id].account_id
+		persistence.add_valor(account_id_tk, trinket_valor)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#DAA520]You pocket a shiny kobold trinket ([color=#FFD700]+%d Valor[/color]).[/color]" % trinket_valor})
+	# Audit #5 Slice 14 theme tag — Orc Stronghold WAR_BANNER (consumed buff).
+	# Sets pending_war_banner meta — first 3 player rounds of next combat get
+	# +15% damage. Cross-system pair with the dungeon's brutal-combat theme.
+	elif tile == DungeonDatabaseScript.TileType.WAR_BANNER:
+		character.set_meta("pending_war_banner", 3)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6347]You touch an orc war banner — bloodlust surges. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 14 theme tag — Wraith Barrow SPECTRAL_VEIL (consumed buff).
+	# Sets pending_dungeon_veil meta — first 2 player rounds of next combat have
+	# a 20% monster-miss chance. Defensive cross-system buff distinct from
+	# WAR_BANNER's offensive payload.
+	elif tile == DungeonDatabaseScript.TileType.SPECTRAL_VEIL:
+		character.set_meta("pending_dungeon_veil", 2)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#9370DB]A wraith's veil drapes you — you'll fade from sight at the start of combat. [color=#00FFFF]20% miss chance for 2 rounds.[/color][/color]"})
+	# Audit #5 Slice 14 theme tag — Giant Keep CRUSHED_RUBBLE costs +2 steps.
+	# Persistent. Same payload as harpy_cliffs' updraft but at a denser placement
+	# (12% vs 10%) — giant_keep navigation is distinctly slow.
+	elif tile == DungeonDatabaseScript.TileType.CRUSHED_RUBBLE:
+		character.dungeon_floor_steps += 2
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#A0A0A0]You scramble over giant-scale rubble (+2 steps).[/color]"})
+	# Audit #5 Slice 14 theme tag — Hydra Swamp REGEN_SPRING heals on step (consumed).
+	# 6% max HP — strongest heal tile to date. Pairs with Hydra's Regen boss
+	# signature (boss heals when player hits hard).
+	elif tile == DungeonDatabaseScript.TileType.REGEN_SPRING:
+		var spring_heal = clamp(int(character.get_total_max_hp() * 0.06), 1, 200)
+		var max_hp_rs = character.get_total_max_hp()
+		character.current_hp = min(max_hp_rs, character.current_hp + spring_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#48D1CC]Hydra waters mend your wounds ([color=#00FF00]+%d HP[/color]).[/color]" % spring_heal})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
