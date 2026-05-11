@@ -19923,18 +19923,20 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 		header_parts.append("[color=%s]T%d %s[/color]" % [tier_color, tier, region_name])
 	send_to_peer(peer_id, {"type": "text", "message": " — ".join(header_parts)})
 
-	# Slice 2 — pick rumor type with random preference order; falls through to
-	# the other type when the first has no data, so a post with neither a
-	# nearby dungeon NOR a flavored biome still produces a soft nod.
+	# Slice 2/3 — pick rumor type with random preference order; falls through
+	# when the chosen type has no data nearby (no dungeon in range / no
+	# biome-flavored materials / no hotzone). Soft nod fallback below.
 	var rumor_line = ""
-	var prefer_dungeon = randf() < 0.5
-	var try_order = ["dungeon", "resource"] if prefer_dungeon else ["resource", "dungeon"]
+	var try_order: Array = ["dungeon", "resource", "hotzone"]
+	try_order.shuffle()
 	for kind in try_order:
 		match kind:
 			"dungeon":
 				rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver)
 			"resource":
 				rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver)
+			"hotzone":
+				rumor_line = _build_hotzone_rumor_line(px, py, quest_giver)
 		if rumor_line != "":
 			break
 
@@ -19963,6 +19965,34 @@ func _build_dungeon_rumor_line(px: int, py: int, peer_id: int, quest_giver: Stri
 		String(r.get("name", "dungeon")),
 		String(r.get("direction_text", "nearby")),
 		int(r.get("distance", 0))
+	]
+
+func _build_hotzone_rumor_line(px: int, py: int, quest_giver: String) -> String:
+	"""Slice 3 — hotzone warning rumor. Quest giver flags the nearest red `!`
+	danger zone within 80 tiles so newer players notice them rather than
+	walking blind into a +1.5-2.5× level monster cluster. Higher-intensity
+	hotzones get a stronger warning verb. Returns "" when no hotzone is near."""
+	if world_system == null:
+		return ""
+	var hz = world_system.find_nearby_hotzone(px, py, 80.0)
+	if not hz.get("found", false):
+		return ""
+	var hz_x = int(hz.get("x", px))
+	var hz_y = int(hz.get("y", py))
+	var dist = int(hz.get("distance", 0.0))
+	var intensity = float(hz.get("intensity", 0.0))
+	var direction = _get_direction_text(px, py, hz_x, hz_y)
+	var verb = "restless"
+	if intensity >= 0.6:
+		verb = "boiling over"
+	elif intensity >= 0.35:
+		verb = "stirred up"
+	if quest_giver != "":
+		return "[color=#A0C8E0]%s[/color]: \"Watch yourself — the wilds about %d tiles %s are [color=#FF6600]%s[/color] lately. Best travel armed.\"" % [
+			quest_giver, dist, direction, verb
+		]
+	return "[color=#A0C8E0]Locals warn that the wilds about %d tiles %s are [color=#FF6600]%s[/color] lately.[/color]" % [
+		dist, direction, verb
 	]
 
 func _build_resource_rumor_line(px: int, py: int, region_name: String, quest_giver: String) -> String:
