@@ -1213,6 +1213,11 @@ var admin_panel = null
 const StonesPanelScript = preload("res://client/stones_panel.gd")
 var stones_panel = null
 
+# Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
+# Replaces chat-command-only /stats + /spendstat from v0.9.335.
+const StatsPanelScript = preload("res://client/stats_panel.gd")
+var stats_panel = null
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -1777,6 +1782,12 @@ func _ready():
 	add_child(stones_panel)
 	stones_panel.close_requested.connect(_on_stones_panel_close)
 	stones_panel.buy_requested.connect(_on_stones_panel_buy)
+
+	# Audit #3 Slice 1 (UI remediation) — stat allocation panel.
+	stats_panel = StatsPanelScript.new()
+	add_child(stats_panel)
+	stats_panel.close_requested.connect(_on_stats_panel_close)
+	stats_panel.spend_requested.connect(_on_stats_panel_spend)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -8622,6 +8633,7 @@ func _create_shortcut_buttons():
 		["Build", "build_shortcut"],
 		["Quests", "quests_shortcut"],
 		["Deck", "deck_shortcut"],
+		["Stats", "stats_shortcut"],
 		["Stones", "stones_shortcut"],
 		["Inv", "inventory_shortcut"],
 		["Help", "help_shortcut"],
@@ -8754,6 +8766,9 @@ func _on_shortcut_button_pressed(action: String):
 			# "Stand at NPC post to purchase" hint when off-post; server is
 			# authoritative on the actual buy validation.
 			open_stones_panel()
+		"stats_shortcut":
+			# Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
+			open_stats_panel()
 		"inventory_shortcut":
 			if inventory_mode and pending_inventory_action == "":
 				return  # Already in base inventory
@@ -18267,6 +18282,10 @@ func handle_server_message(message: Dictionary):
 				# Audit #4 Slice 1 (UI remediation) — refresh stones panel
 				# bought-counts/valor live after each purchase.
 				_refresh_stones_panel_if_open()
+				# Audit #3 Slice 1 (UI remediation) — refresh stats panel
+				# after each /spendstat so the new stat value + decremented
+				# bank are visible immediately.
+				_refresh_stats_panel_if_open()
 				# Refresh companion section in the battle panel so XP / level
 				# changes (gained from kills mid-combat) show in real time.
 				if combat_scene_panel and in_combat and combat_scene_panel.has_method("update_companion_data"):
@@ -20833,8 +20852,10 @@ func process_command(text: String):
 				else:
 					send_to_server({"type": "buy_home_stone", "stone_type": stone_type})
 		"stats":
-			# Audit #3 Slice 1 — show current stat allocation + unspent points.
+			# Audit #3 Slice 1 (UI remediation) — `/stats` opens the visual
+			# panel. Server show_stats text fallback still ships the summary.
 			if has_character:
+				open_stats_panel()
 				send_to_server({"type": "show_stats"})
 			else:
 				display_game("You don't have a character yet")
@@ -23210,8 +23231,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.337 changes
+	display_game("[color=#00FF00]v0.9.337[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Visual stat allocation panel (UI remediation)[/color]")
+	display_game("  • [b]New shortcut button: [color=#9ACD32]Stats[/color][/b] — sits next to Deck/Stones/Inv. One click opens the character stats panel.")
+	display_game("  • [b]Visual panel[/b] shows level + XP progress, your unspent stat point bank, and all 6 stats (STR/CON/DEX/INT/WIS/WITS) with descriptions and clickable [+1] buttons.")
+	display_game("  • [b]Click [+1][/b] on any stat to spend a banked point. Buttons disable when no points available. Stat values update in real time after each spend.")
+	display_game("  • [b]Part 2 of 4[/b] UI remediation for today's chat-command-only slices. /stats and /spendstat still work as power-user shortcuts. Post status and Feed All panels coming next.")
+	display_game("")
+
 	# v0.9.336 changes
-	display_game("[color=#00FF00]v0.9.336[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.336[/color]")
 	display_game("  [color=#FFD700]Visual NPC Home Stone vendor (UI remediation)[/color]")
 	display_game("  • [b]New shortcut button: [color=#9ACD32]Stones[/color][/b] — sits on the right side of the chat row next to Deck/Inv/Help. One click opens the visual vendor panel from anywhere.")
 	display_game("  • [b]Visual panel[/b] shows all four stone types as rows with name, description, price, how many you've bought, lifetime cap, and a clickable [Buy] button. Buttons disable when at-cap, when you can't afford, or when not at an NPC post.")
@@ -23240,16 +23270,6 @@ func display_changelog():
 	display_game("  • [b]Audit #2 moves from \"designing\" to \"implementing.\"[/b] Three designing-only systems shipped first slices in three consecutive releases (#4 → #13 → #2). Two remain: #3 Progression, #14 Multiplayer.")
 	display_game("")
 
-	# v0.9.333 changes
-	display_game("[color=#00FFFF]v0.9.333[/color]")
-	display_game("  [color=#FFD700]Companion Sanctum (Audit #13 Slice 1)[/color]")
-	display_game("  • [b]New Sanctuary upgrade: Companion Sanctum.[/b] 5 levels. Each level grants +1 free Home Stone (Companion) injected into every new character's starting inventory. Veteran accounts can register their first companion immediately on a new life — no farming required.")
-	display_game("  • [b]Costs scaled to early-mid Sanctuary tier[/b]: 500 / 1,500 / 4,000 / 10,000 / 25,000 Baddie Points. The first level is the cheapest upgrade on the page, intentionally — surviving 2-3 deaths typically funds it.")
-	display_game("  • [b]Found under Sanctuary → Upgrade Forge → Base Upgrades[/b], right after Companion Kennel slots.")
-	display_game("  • [b]Stones are field-identical to chest drops and NPC vendor stones[/b] — they go into your inventory and use the existing \"use to register\" flow. Stack alongside whatever you already have.")
-	display_game("  • [b]Closes the Home Stone accessibility ladder[/b]: tutorial (deferred) → NPC vendor (v0.9.332) → chest drops (existing) → Sanctuary auto-stock (this slice). All four layers from the #4 audit are now mechanically present.")
-	display_game("  • [b]Audit #13 moves from \"designing\" to \"implementing.\"[/b] Two designing-only systems shipped first slices in two consecutive releases (#4 + #13).")
-	display_game("")
 
 
 
@@ -25924,6 +25944,46 @@ func _refresh_stones_panel_if_open() -> void:
 	var valor: int = int(account_valor)
 	var bought: Dictionary = character_data.get("npc_stones_bought", {})
 	stones_panel.refresh(valor, bought, at_trading_post)
+
+func open_stats_panel() -> void:
+	"""Audit #3 Slice 1 (UI remediation) — open the visual stat allocation
+	panel. Pulls level, XP, stats, and unspent bank from character_data."""
+	if not stats_panel:
+		display_game("[color=#FF0000]Stats panel not initialized.[/color]")
+		return
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	var level: int = int(character_data.get("level", 1))
+	var xp: int = int(character_data.get("experience", 0))
+	var xp_to_next: int = int(character_data.get("experience_to_next_level", 100))
+	var stats: Dictionary = character_data.get("stats", {})
+	var unspent: int = int(character_data.get("unspent_stat_points", 0))
+	stats_panel.open(level, xp, xp_to_next, stats, unspent)
+
+func close_stats_panel() -> void:
+	if stats_panel:
+		stats_panel.close()
+
+func _on_stats_panel_close() -> void:
+	close_stats_panel()
+
+func _on_stats_panel_spend(stat_name: String) -> void:
+	"""Stats panel [+1] click — server validates + applies. Result text comes
+	back through the usual `text` channel; on success a character_update
+	arrives and we refresh the panel via _refresh_stats_panel_if_open()."""
+	send_to_server({"type": "spend_stat_point", "stat": stat_name})
+
+func _refresh_stats_panel_if_open() -> void:
+	"""Called on every character_update so the panel reflects the new stat
+	value + decremented bank immediately after a spend."""
+	if not stats_panel or not stats_panel.visible:
+		return
+	var level: int = int(character_data.get("level", 1))
+	var xp: int = int(character_data.get("experience", 0))
+	var xp_to_next: int = int(character_data.get("experience_to_next_level", 100))
+	var stats: Dictionary = character_data.get("stats", {})
+	var unspent: int = int(character_data.get("unspent_stat_points", 0))
+	stats_panel.refresh(level, xp, xp_to_next, stats, unspent)
 
 func _on_admin_panel_action(action_id: String) -> void:
 	"""Dispatch admin panel button clicks. Each action_id maps to a
