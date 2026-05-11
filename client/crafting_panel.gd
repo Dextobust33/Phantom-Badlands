@@ -415,6 +415,14 @@ func _refresh_detail() -> void:
 
 	var meta_lines := []
 	meta_lines.append("[color=#87CEEB]Skill Req:[/color] %d   [color=#87CEEB]Difficulty:[/color] %d   [color=#87CEEB]Success:[/color] %d%%" % [skill_req, difficulty, success_chance])
+	# Audit #8 Layer 5 — quality odds bar
+	var odds = recipe.get("quality_odds", {})
+	if odds and typeof(odds) == TYPE_DICTIONARY and not odds.is_empty():
+		var p = int(odds.get("poor", 0))
+		var s = int(odds.get("standard", 0))
+		var f = int(odds.get("fine", 0))
+		var m = int(odds.get("masterwork", 0))
+		meta_lines.append("[color=#FFFFFF]Poor:[/color] %d%%   [color=#00FF00]Standard:[/color] %d%%   [color=#0070DD]Fine:[/color] %d%%   [color=#A335EE]Masterwork:[/color] %d%%" % [p, s, f, m])
 	var description := str(recipe.get("description", ""))
 	if description != "":
 		meta_lines.append("[color=#888888]%s[/color]" % description)

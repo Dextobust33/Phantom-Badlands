@@ -23071,8 +23071,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.315 changes
+	display_game("[color=#00FF00]v0.9.315[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafting quality odds preview (Audit #8 Layer 5)[/color]")
+	display_game("  • [b]Every recipe now shows your odds[/b] of each quality bucket before you craft: [color=#FFFFFF]Poor[/color] / [color=#00FF00]Standard[/color] / [color=#0070DD]Fine[/color] / [color=#A335EE]Masterwork[/color] (with their stat multipliers x0.5 / x1.0 / x1.25 / x1.5).")
+	display_game("  • [b]Computed from your real success chance[/b]: server walks all 100 possible roll values for this skill / difficulty / station combo and tallies which quality each lands on. No estimates — exactly the same buckets the actual craft uses.")
+	display_game("  • Renders in both the visual crafting panel AND the keyboard recipe details view.")
+	display_game("  • Locked / specialist-gated recipes show the old generic line (no odds preview).")
+	display_game("  • [b]Why[/b]: closes Layer 5 of the Audit #8 transparency roadmap. You can now make informed decisions about which recipes to grind, where to craft, and when to push skill before attempting a Masterwork.")
+	display_game("")
+
 	# v0.9.314 changes
-	display_game("[color=#00FF00]v0.9.314[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.314[/color]")
 	display_game("  [color=#FFD700]Gathering zone deck preview (Audit #7)[/color]")
 	display_game("  • [b]New command: [color=#9ACD32]/catches[/color] (or [color=#9ACD32]/deck[/color])[/b]. While standing on a fishing/mining/logging/foraging tile, shows every possible catch in this zone with weight-normalized percentages, grouped by rarity (Common / Uncommon / Rare / Legendary / Treasure).")
 	display_game("  • [b]Auto-hint on gather start[/b]: when you begin gathering, you'll see a soft reminder that the command is available — no spam, just one line.")
@@ -23117,14 +23127,6 @@ func display_changelog():
 	display_game("  • [b]Cancel anytime[/b]: select your own buy order → Cancel Order refunds the unfilled portion. Buyer cannot fulfill their own order.")
 	display_game("")
 
-	# v0.9.310 changes
-	display_game("[color=#00FFFF]v0.9.310[/color]")
-	display_game("  [color=#FFD700]NPC personality traits (Audit #11 Slice 4)[/color]")
-	display_game("  • [b]Every NPC post now has a personality[/b] (warm, gruff, wary, jolly, scholarly, or eccentric). The trait shapes the quest-giver's greeting opener and rumor preamble. Starter post is locked to 'warm' so new players get a welcoming first NPC.")
-	display_game("  • [b]Examples[/b]: a gruff trader says 'Heard of a Wolf Den east of here'; a scholarly one says 'The records note a Wolf Den east of here'; an eccentric one says 'The bones whisper of a Wolf Den east of here.' Same data, six flavors.")
-	display_game("  • Fallback nods also vary: warm NPCs smile and wave; wary NPCs watch carefully; jolly NPCs clap your shoulder; etc.")
-	display_game("  • Procedural assignment at post creation; backfilled for existing saves. Personality is hash-stable per post — the same NPC always greets you the same way across sessions.")
-	display_game("")
 
 
 
@@ -29067,8 +29069,21 @@ func display_craft_recipe_details():
 				display_game("    [color=#808080]from: %s[/color]" % src_line)
 
 	display_game("")
-	display_game("[color=#808080]Quality depends on skill vs difficulty.[/color]")
-	display_game("[color=#808080]Higher skill = better quality items![/color]")
+	# Audit #8 Layer 5 — quality odds preview. Server computes the bucket
+	# distribution and ships it as `quality_odds` per recipe. Falls back to the
+	# old generic line for locked/gated recipes (no odds attached).
+	var odds = recipe.get("quality_odds", {})
+	if odds and typeof(odds) == TYPE_DICTIONARY and not odds.is_empty():
+		var poor_pct = int(odds.get("poor", 0))
+		var std_pct = int(odds.get("standard", 0))
+		var fine_pct = int(odds.get("fine", 0))
+		var mw_pct = int(odds.get("masterwork", 0))
+		display_game("[color=#87CEEB]Quality Odds:[/color]")
+		display_game("  [color=#FFFFFF]Poor:[/color] %d%%   [color=#00FF00]Standard:[/color] %d%%   [color=#0070DD]Fine:[/color] %d%%   [color=#A335EE]Masterwork:[/color] %d%%" % [poor_pct, std_pct, fine_pct, mw_pct])
+		display_game("[color=#808080]Quality multipliers: Poor x0.5  Standard x1.0  Fine x1.25  Masterwork x1.5[/color]")
+	else:
+		display_game("[color=#808080]Quality depends on skill vs difficulty.[/color]")
+		display_game("[color=#808080]Higher skill = better quality items![/color]")
 	display_game("")
 
 	if can_craft:
