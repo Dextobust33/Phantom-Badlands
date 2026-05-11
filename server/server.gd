@@ -6476,6 +6476,11 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 		_use_dungeon_compass(peer_id, index)
 		return
 
+	# Audit #1 Slice 4c — Ability Tome: adds +1 deck copy of the named ability.
+	if item_type == "ability_tome" or item.get("item_type", "") == "ability_tome":
+		_use_ability_tome(peer_id, index, item)
+		return
+
 	# Treasure chest — open for random materials and gold
 	if item_type == "treasure_chest":
 		_open_treasure_chest(peer_id, index)
@@ -22584,6 +22589,40 @@ func _use_dungeon_compass(peer_id: int, item_index: int):
 
 	save_character(peer_id)
 	send_character_update(peer_id)
+
+func _use_ability_tome(peer_id: int, item_index: int, item: Dictionary):
+	"""Audit #1 Slice 4c — Use an ability tome to add +1 deck copy of its
+	gift_ability. Out-of-combat only (mutating the deck mid-fight would be
+	chaotic). Always succeeds if the gift_ability is valid; same-archetype
+	tomes bump the count for deck-density (Slay-the-Spire-style)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You cannot study a tome in the middle of combat!"})
+		return
+	var gift_ability = String(item.get("gift_ability", ""))
+	if gift_ability == "":
+		send_to_peer(peer_id, {"type": "error", "message": "This tome is blank — its pages are unreadable."})
+		return
+
+	# Bounds check
+	if item_index < 0 or item_index >= character.inventory.size():
+		return
+
+	var existing_count = int(character.combat_deck_collection.get(gift_ability, 0))
+	character.combat_deck_collection[gift_ability] = existing_count + 1
+	character.remove_item(item_index)
+
+	var display_name = drop_tables.get_ability_tome_display(gift_ability)
+	var msg: String
+	if existing_count == 0:
+		msg = "[color=#FFD700]You study the %s.[/color]\n[color=#00FF00]A new card joins your deck: %s ×1.[/color]" % [item.get("name", "tome"), display_name]
+	else:
+		msg = "[color=#FFD700]You study the %s.[/color]\n[color=#9ACD32]%s deepens in your deck: ×%d → ×%d.[/color]" % [item.get("name", "tome"), display_name, existing_count, existing_count + 1]
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 func _use_escape_scroll(peer_id: int, item_index: int):
 	"""Use an escape scroll to safely exit a dungeon."""
