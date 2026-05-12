@@ -23453,11 +23453,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.378 — diagnostic-only release. Same player-facing changes as v0.9.377;
-	# server-side instrumentation extended to find the residual 5s spike.
-	display_game("[color=#00FF00]v0.9.378[/color] [color=#808080](Current — diagnostic refinements)[/color]")
-	display_game("  [color=#FFD700]Same as v0.9.377 + extra server-side spike instrumentation[/color]")
-	display_game("  • Fresh logs after v0.9.377 showed one residual 4848ms frame spike with no sub-region accounting for it. Server is now timing every per-frame block in `_process` so the next spike pull will pinpoint the culprit.")
+	# v0.9.379 — actual fix for the residual 5s freeze.
+	display_game("[color=#00FF00]v0.9.379[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The other 5-second freeze is gone: road A* is now time-bounded[/color]")
+	display_game("  • Fresh logs after v0.9.378 pinpointed the residual ~5s freeze: it was the road pathfinding (A*) trying to connect two posts every 5 minutes — when the path was long/hard, a single A* search burned 4-5 seconds in one frame.")
+	display_game("  • Fix: A* now takes a wall-clock time budget (150 ms per pair, 200 ms total per check). If it doesn't find a path inside that window, it bails out cleanly; the next 5-minute tick retries. No single frame can be frozen by road pathfinding anymore.")
+	display_game("  • The dungeon-spawn queue from v0.9.377 + the road A* budget here together cover the two periodic causes of the ~5s server freezes that players have been reporting.")
+	display_game("")
+
+	# v0.9.378 — diagnostic-only release.
+	display_game("[color=#00FFFF]v0.9.378[/color]")
+	display_game("  [color=#FFD700]Diagnostic refinements (no player-facing change)[/color]")
+	display_game("  • Server-side timing extended to the remaining per-frame blocks (road A*, decay timers, network flush, character save flush) so the residual freeze could be pinpointed. The pinpoint paid off — see v0.9.379.")
 	display_game("")
 
 	# v0.9.377 changes

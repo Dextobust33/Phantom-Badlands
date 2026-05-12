@@ -2068,10 +2068,16 @@ func _is_npc_post_interior(x: int, y: int) -> bool:
 		return false
 	return chunk_manager.is_npc_post_tile(x, y)
 
-func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int, permissive: bool = false) -> Array:
+func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int, permissive: bool = false, time_budget_ms: int = 0) -> Array:
 	"""A* pathfinding from one point to another. Returns array of Vector2i waypoints.
 	Uses 4-directional movement only for clean visual roads. Returns empty if no path.
-	Permissive mode allows any non-blocking tile (used for player post connections)."""
+	Permissive mode allows any non-blocking tile (used for player post connections).
+
+	v0.9.379 — optional wall-clock time_budget_ms. Default 0 = unbounded (legacy
+	behavior; safe for short paths and tests). Background road A* (long permissive
+	paths over loaded chunks) was producing 4.8s frame spikes on Hetzner — pass a
+	~150ms budget there so a single _process tick stays bounded. Returns empty
+	if budget elapses; caller can retry next tick."""
 	var start = Vector2i(start_x, start_y)
 	var goal = Vector2i(end_x, end_y)
 
@@ -2085,6 +2091,11 @@ func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int, pe
 	var g_score: Dictionary = {start: 0}
 	var closed_set: Dictionary = {}
 	var nodes_explored = 0
+
+	# Time-budget check is amortized: only Time.get_ticks_usec() once every
+	# ~256 expansions (cheap enough at 150ms granularity, expensive otherwise).
+	var start_us: int = Time.get_ticks_usec() if time_budget_ms > 0 else 0
+	var budget_us: int = time_budget_ms * 1000
 
 	while heap.size() > 0 and nodes_explored < ASTAR_MAX_NODES:
 		# Pop minimum from heap
@@ -2103,6 +2114,11 @@ func compute_path_between(start_x: int, start_y: int, end_x: int, end_y: int, pe
 			continue
 		closed_set[current] = true
 		nodes_explored += 1
+
+		# Time-budget bail-out (only when caller passed a budget).
+		if budget_us > 0 and (nodes_explored & 0xFF) == 0:
+			if Time.get_ticks_usec() - start_us >= budget_us:
+				return []
 
 		for dir in ASTAR_DIRECTIONS:
 			var neighbor = current + dir
@@ -2233,11 +2249,22 @@ var _desired_edges: Array = []
 
 func try_connect_one_pair() -> Dictionary:
 	"""Try A* on one unconnected desired edge. Returns {path_key: waypoints} if found, else empty.
-	Called periodically by server. Cheap if no path exists yet (hits node cap quickly)."""
+	Called periodically by server. Cheap if no path exists yet (hits node cap quickly).
+	v0.9.379 — total wall-clock cap (200ms) so multiple edges timing out in
+	the same call can't stack into a frame freeze. Per-pair budget is 150ms;
+	outer cap is 200ms (allows at most ~one full per-pair timeout plus a
+	quick-fail attempt or two). Next 5-min tick picks up where we left off."""
+	var outer_start_us: int = Time.get_ticks_usec()
+	var outer_budget_us: int = 200 * 1000
 	for edge in _desired_edges:
 		var path_key = _make_path_key(edge.from, edge.to)
 		if _path_waypoints.has(path_key):
 			continue  # Already connected
+
+		# Bail out of the outer loop if we've already burned the total budget
+		# (e.g., a previous edge in this call timed out).
+		if Time.get_ticks_usec() - outer_start_us >= outer_budget_us:
+			return {}
 
 		var from_pos = _path_post_positions.get(edge.from, Vector2i(0, 0))
 		var to_pos = _path_post_positions.get(edge.to, Vector2i(0, 0))
@@ -2246,7 +2273,10 @@ func try_connect_one_pair() -> Dictionary:
 
 		# Use permissive mode so roads auto-connect through any non-blocking terrain.
 		# Water still blocks (blocks_move = true), so bridges are needed for water crossings.
-		var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y, true)
+		# Per-pair budget = remaining of the outer budget (so we never blow past 200ms total).
+		var elapsed_us: int = Time.get_ticks_usec() - outer_start_us
+		var remaining_ms: int = maxi(10, (outer_budget_us - elapsed_us) / 1000)
+		var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y, true, remaining_ms)
 		if waypoints.size() > 0:
 			# Reject paths that deviate too far from a straight line.
 			# Compare actual path length against the Manhattan distance between endpoints.
@@ -2369,11 +2399,14 @@ func connect_new_post(post: Dictionary) -> Dictionary:
 	if nearest_key == "":
 		return {}
 
-	# Compute path — use permissive mode (any non-blocking tile) for player posts
+	# Compute path — use permissive mode (any non-blocking tile) for player posts.
+	# v0.9.379 — 150ms wall-clock budget (same as periodic road check). This
+	# fires when a player builds a post; if the budget elapses no road is
+	# stamped this time, but the periodic _try_connect_road will retry.
 	var from_exit = _find_post_exit(px, py)
 	var to_pos = _path_post_positions[nearest_key]
 	var to_exit = _find_post_exit(to_pos.x, to_pos.y)
-	var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y, true)
+	var waypoints = compute_path_between(from_exit.x, from_exit.y, to_exit.x, to_exit.y, true, 150)
 
 	if waypoints.size() == 0:
 		return {}
