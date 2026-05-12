@@ -1454,6 +1454,8 @@ var scratch_player: AudioStreamPlayer = null  # v0.9.366 — scratch-off reveal 
 var scratch_jackpot_player: AudioStreamPlayer = null  # v0.9.367 — JACKPOT cue (dedicated for volume tuning)
 var scratch_dud_player: AudioStreamPlayer = null      # v0.9.367 — DUD cue
 var scratch_miss_player: AudioStreamPlayer = null     # v0.9.367 — MISS cue
+var scratch_chop_player: AudioStreamPlayer = null     # v0.9.371 — pendulum extreme (logging)
+var scratch_chink_player: AudioStreamPlayer = null    # v0.9.371 — strike-band jump (mining)
 
 # Volume control
 var sfx_volume: float = 1.0   # 0.0 to 1.0 multiplier for all SFX
@@ -1489,6 +1491,10 @@ const SFX_BASE_VOLUMES: Dictionary = {
 	"scratch_jackpot": -26.5,
 	"scratch_dud": -26.5,
 	"scratch_miss": -27.5,
+	# v0.9.371 — rhythm cues for pendulum/strike-band patterns. Quiet so they
+	# can repeat ~every 0.5-1s without becoming oppressive.
+	"scratch_chop": -28.0,
+	"scratch_chink": -28.0,
 }
 
 # ===== COMPANION ABILITIES (mirrored from drop_tables.gd) =====
@@ -1830,11 +1836,16 @@ func _ready():
 	stones_panel.buy_requested.connect(_on_stones_panel_buy)
 
 	# Audit #7 Slice 1D — themed visual scratch-off ticket panel.
+	# v0.9.369 — parented to GameOutputContainer (matching InventoryPanel /
+	# CraftingPanel / etc.) so the minigame fills the play area instead of
+	# being centered on the full window with the action bar / chat / map
+	# visible underneath.
 	scratch_off_panel = ScratchOffPanelScript.new()
-	add_child(scratch_off_panel)
+	game_output_container.add_child(scratch_off_panel)
 	scratch_off_panel.slot_clicked.connect(_on_scratch_off_slot_clicked)
 	scratch_off_panel.slot_missed.connect(_on_scratch_off_slot_missed)
 	scratch_off_panel.auto_skip_toggled.connect(_on_scratch_off_auto_skip_toggled)
+	scratch_off_panel.rhythm_beat.connect(_on_scratch_off_rhythm_beat)
 
 	# Audit #3 Slice 1 (UI remediation) — stat allocation panel.
 	stats_panel = StatsPanelScript.new()
@@ -2063,6 +2074,8 @@ func _init_sound_players():
 	scratch_jackpot_player = _create_sfx_player("res://audio/GemGain.wav", "scratch_jackpot")
 	scratch_dud_player = _create_sfx_player("res://audio/LootVanish.wav", "scratch_dud")
 	scratch_miss_player = _create_sfx_player("res://audio/Hit.wav", "scratch_miss")
+	scratch_chop_player = _create_sfx_player("res://audio/Slash01.wav", "scratch_chop")
+	scratch_chink_player = _create_sfx_player("res://audio/Damage01.wav", "scratch_chink")
 
 func _create_sfx_player(wav_path: String, volume_key: String) -> AudioStreamPlayer:
 	"""Create an AudioStreamPlayer with a WAV file and base volume"""
@@ -2242,6 +2255,8 @@ func _apply_volume_settings():
 		"scratch_jackpot": scratch_jackpot_player,
 		"scratch_dud": scratch_dud_player,
 		"scratch_miss": scratch_miss_player,
+		"scratch_chop": scratch_chop_player,
+		"scratch_chink": scratch_chink_player,
 	}
 	for key in sfx_players:
 		var player = sfx_players[key]
@@ -23417,14 +23432,26 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.371 changes
+	display_game("[color=#00FF00]v0.9.371[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Scratch-off expanded to mining / logging / foraging — each with its own targeting motion[/color]")
+	display_game("  • [b]Mining / Logging / Foraging now use the scratch-off ticket[/b] at all tiers — themed per job (color, glyphs, ambient texture).")
+	display_game("  • [b]Each job has a unique targeting motion[/b]:")
+	display_game("    – [color=#7AD8FF]Fishing[/color]: wavy water bar sweeps L→R")
+	display_game("    – [color=#9ACD32]Logging[/color]: vertical bar pendulum-swings L↔R — slow at the extremes, fast through center. [color=#9ACD32]Chop[/color] sound at each turnaround.")
+	display_game("    – [color=#FFAA33]Mining[/color]: horizontal strike band jumps between rows. [color=#FFAA33]Chink[/color] sound at each strike.")
+	display_game("    – [color=#FFEE55]Foraging[/color]: circular spotlight drifts on a winding path across the canvas.")
+	display_game("  • [b]Bar randomization[/b]: each session randomizes the bar's starting position and direction so the rhythm isn't predictable. No more waiting through a full cycle to reach a specific slot.")
+	display_game("  • [b]Panel positioning[/b]: minigame now fills the play area (Game Output section) instead of being centered on the full window.")
+	display_game("  • Completion summary adapts per job (Mining XP / Logging XP / Foraging XP + correct return hint).")
+	display_game("")
+
 	# v0.9.368 changes
-	display_game("[color=#00FF00]v0.9.368[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Scratch-off polish — wavy water bar, tool tuning, audio, hit-zone glow, miss feedback[/color]")
-	display_game("  • [b]Timing minigame[/b]: a [color=#7AD8FF]wavy water bar[/color] sweeps across the card. Click a silhouette while the wave is over it to scratch successfully. Mistime it and the slot becomes a red [color=#FF6B6B]✗ MISS[/color] showing what you lost (\"Lost: Small Fish\") with a shake animation. Hidden cards under the wave glow cyan so the live hit-zone is obvious.")
-	display_game("  • [b]Better rods make it easier[/b]: tier + rarity now scale how slow and wide the wave is. T1 baseline → T5 has the wave moving 40%% slower and twice as wide. Legendary rods stack another -20%% speed / +40%% width on top.")
-	display_game("  • [b]Reveal animations[/b]: successful scratches scale-pop the card; misses shake. Audio cues — light scratch (NORMAL/LUCKY), gem-chime (JACKPOT), loot-vanish (DUD), thud (MISS). Tuned ~40%% quieter than the equivalent generic sounds.")
-	display_game("  • [b]Auto-skip yields ~60%% of manual[/b]: each auto-pick has a 50%% miss chance (excluding free tool pre-reveals). Manual play rewards your time + skill.")
-	display_game("  • [b]Summary splits[/b] timing misses from unscratched slots — you can see how you actually performed.")
+	display_game("[color=#00FFFF]v0.9.368[/color]")
+	display_game("  [color=#FFD700]Scratch-off fishing polish — wavy water bar, tool tuning, miss feedback[/color]")
+	display_game("  • [b]Wavy water bar[/b], scale-pop reveal animation, miss shake with \"Lost: X\" feedback, hit-zone glow, audio cues tuned ~40%% quieter than generic sounds.")
+	display_game("  • [b]Tool tiers tune the bar[/b]: T1 baseline → T5 wave is 40%% slower and 2× wider. Legendary rods stack another -20%% speed / +40%% width.")
+	display_game("  • Auto-skip yields ~60%% of manual; cashed-in summary splits timing misses from unscratched slots.")
 	display_game("")
 
 	# v0.9.363 changes
@@ -23450,12 +23477,6 @@ func display_changelog():
 	display_game("  • [b]Click-only input[/b]: keyboard 1-5 is dropped (slot positions are random now). Mouse only.")
 	display_game("")
 
-	# v0.9.359 changes
-	display_game("[color=#00FFFF]v0.9.359[/color]")
-	display_game("  [color=#FFD700]Scratch-off slice 1D — themed visual ticket panel[/color]")
-	display_game("  • [b]Real-looking scratch-off card.[/b] The text-and-brackets layout is replaced with a themed Control panel — deep-water blue background, cyan trim, slot cards arranged in a row. Hidden slots show ripple lines + a fish silhouette + the slot number. Revealed slots show a colored card with the kind label (◆ / ★ LUCKY / ★★★ JACKPOT / ✗ EMPTY) and the catch name.")
-	display_game("  • [b]Slot cards are clickable.[/b] Click a hidden slot to scratch it, or press [b]1-5[/b] — both routes still work. Cursor changes to a pointer over hidden slots.")
-	display_game("")
 
 
 
@@ -29314,8 +29335,30 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 		update_player_xp_bar()
 		update_currency_display()
 
+	# v0.9.369 — header / XP label / hint vary per gathering job.
+	var session_job: String = String(message.get("job_type", scratch_off_job_type if scratch_off_job_type != "" else "fishing"))
+	var job_upper := session_job.to_upper()
+	var header_color := "#00BFFF"
+	var xp_label := "Fishing XP"
+	var return_hint := "Move away or step back onto the water to fish again."
+	match session_job:
+		"mining":
+			header_color = "#FFAA33"
+			xp_label = "Mining XP"
+			return_hint = "Move away or step back onto the ore to mine again."
+		"logging":
+			header_color = "#7AE07A"
+			xp_label = "Logging XP"
+			return_hint = "Move away or step back onto the tree to chop again."
+		"foraging":
+			header_color = "#FFEE55"
+			xp_label = "Foraging XP"
+			return_hint = "Move away or step back onto the patch to forage again."
+		_:
+			pass
+
 	game_output.clear()
-	display_game("[color=#00BFFF]═══ FISHING — Ticket Cashed ═══[/color]")
+	display_game("[color=%s]═══ %s — Ticket Cashed ═══[/color]" % [header_color, job_upper])
 	display_game("")
 	display_game("[color=#FFD700]Revealed:[/color]")
 	for slot in awarded:
@@ -29355,11 +29398,11 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 				_render_missed_line(slot)
 	display_game("")
 	if xp_gained > 0:
-		display_game("[color=#FF8800]+%d Fishing XP[/color]" % xp_gained)
+		display_game("[color=#FF8800]+%d %s[/color]" % [xp_gained, xp_label])
 	if leveled_up:
-		display_game("[color=#FFD700]★ Fishing leveled up to Lv%d! ★[/color]" % new_level)
+		display_game("[color=#FFD700]★ %s leveled up to Lv%d! ★[/color]" % [session_job.capitalize(), new_level])
 	display_game("")
-	display_game("[color=#808080]Move away or step back onto the water to fish again.[/color]")
+	display_game("[color=#808080]%s[/color]" % return_hint)
 
 	# v0.9.361 — hold the panel open briefly so player sees the final state
 	# (all revealed slots) before it closes. _process polls scratch_off_close_at
@@ -29451,6 +29494,19 @@ func _on_scratch_off_slot_missed(slot_index: int) -> void:
 	if not (scratch_off_revealed_slots[slot_index] as Dictionary).is_empty():
 		return
 	send_to_server({"type": "scratch_off_reveal", "slot_index": slot_index, "miss": true})
+
+
+func _on_scratch_off_rhythm_beat(beat_type: String) -> void:
+	"""v0.9.371 — panel-driven rhythm cues. Pendulum extreme = chop;
+	strike-band jump = chink. Players get audio reinforcement of the timing
+	pattern so they can play with their eyes off the bar momentarily."""
+	match beat_type:
+		"chop":
+			if scratch_chop_player and scratch_chop_player.stream:
+				scratch_chop_player.play()
+		"chink":
+			if scratch_chink_player and scratch_chink_player.stream:
+				scratch_chink_player.play()
 
 
 func _on_scratch_off_auto_skip_toggled(value: bool) -> void:

@@ -14469,11 +14469,16 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	# v0.9.355 — get_fishing_type uses the legacy radial-terrain enum and
 	# returns "" in the chunked world, so we route via the gathering_node's
 	# tier instead: tier 1 = shallow, anything else = deep (legacy flow).
+	# v0.9.369 — mining / logging / foraging now also route through scratch-off
+	# at ALL tiers (legacy minigame retired for these).
 	if job_type == "fishing":
 		var ft_tier := int(gathering_node.get("tier", 1))
 		if ft_tier <= 1:
-			_start_scratch_off_fishing(peer_id, character, "shallow", gathering_node)
+			_start_scratch_off_gathering(peer_id, character, "fishing", gathering_node, "shallow")
 			return
+	elif job_type in ["mining", "logging", "foraging"]:
+		_start_scratch_off_gathering(peer_id, character, job_type, gathering_node)
+		return
 
 	# Generate first round
 	var session = _generate_gathering_round(job_type, tier, hint_strength, 0, [])
@@ -14555,12 +14560,27 @@ func _roll_scratch_off_slot_kind(skill: int) -> String:
 		return "LUCKY"
 	return "NORMAL"
 
-func _build_scratch_off_slot(kind: String, water_type: String, skill: int) -> Dictionary:
+func _roll_gathering_catch(job_type: String, tier_or_water, skill: int, biome: String = "", node_type: String = "") -> Dictionary:
+	"""v0.9.369 — dispatch the appropriate drop-table roll for the job. The
+	signature varies per system (water_type vs tier vs biome+node) but we
+	normalize into a single catch dict."""
+	match job_type:
+		"fishing":
+			return drop_tables.roll_fishing_catch(String(tier_or_water), skill)
+		"mining":
+			return drop_tables.roll_mining_catch(int(tier_or_water), skill)
+		"logging":
+			return drop_tables.roll_logging_catch(int(tier_or_water), skill)
+		"foraging":
+			return drop_tables.roll_foraging_catch(int(tier_or_water), skill, biome, node_type)
+	return {}
+
+func _build_scratch_off_slot(kind: String, job_type: String, tier_or_water, skill: int, biome: String = "", node_type: String = "") -> Dictionary:
 	"""Build a single slot dictionary based on its kind. DUD slots have no
-	item (just bonus XP). JACKPOT rerolls until a rare-tier or
-	treasure-chest catch is picked. LUCKY doubles the item's quantity (we
-	store quantity=2 on the slot so the complete step knows to grant
-	doubles). NORMAL is the standard weighted pull."""
+	item (just bonus XP). JACKPOT rerolls until a rare-tier or treasure
+	catch is picked. LUCKY doubles the item's quantity. NORMAL is the
+	standard weighted pull.
+	v0.9.369 — generalized for all four gathering systems via _roll_gathering_catch."""
 	if kind == "DUD":
 		return {
 			"kind": "DUD",
@@ -14573,25 +14593,42 @@ func _build_scratch_off_slot(kind: String, water_type: String, skill: int) -> Di
 			"quantity": 0,
 		}
 	# Roll a catch. For JACKPOT, retry up to 20 times for a high-value entry.
-	var catch_data = drop_tables.roll_fishing_catch(water_type, skill)
+	var catch_data = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
 	if kind == "JACKPOT":
 		for _i in range(20):
-			var c = drop_tables.roll_fishing_catch(water_type, skill)
-			if c.get("type", "") == "treasure_chest" or int(c.get("value", 0)) >= 100:
+			var c = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
+			if c.get("type", "") in ["treasure_chest", "treasure", "egg"] or int(c.get("value", 0)) >= 100:
 				catch_data = c
 				break
 	var quantity = 1
 	if kind == "LUCKY":
 		quantity = 2
+	# v0.9.369 — foraging's roll returns `item_id` instead of `item`; normalize.
+	var item_str = String(catch_data.get("item", catch_data.get("item_id", "")))
+	# Compute XP at slot-build time so the completion path is fully generic.
+	# Foraging includes xp in the catch dict; mining/logging/fishing have it
+	# in side tables. Falls back to a sensible default.
+	var xp_val = int(catch_data.get("xp", 0))
+	if xp_val <= 0 and drop_tables:
+		match job_type:
+			"fishing":
+				xp_val = int(drop_tables.FISHING_XP.get(item_str, 5))
+			"mining":
+				xp_val = int(drop_tables.MINING_XP.get(item_str, 10))
+			"logging":
+				xp_val = int(drop_tables.LOGGING_XP.get(item_str, 10))
+			_:
+				xp_val = 5
 	return {
 		"kind": kind,
-		"item": String(catch_data.get("item", "small_fish")),
-		"name": String(catch_data.get("name", "Small Fish")),
-		"type": String(catch_data.get("type", "fish")),
+		"item": item_str,
+		"name": String(catch_data.get("name", "Catch")),
+		"type": String(catch_data.get("type", "material")),
 		"value": int(catch_data.get("value", 5)),
 		"tier": int(catch_data.get("tier", 1)),
 		"is_consumable": bool(catch_data.get("is_consumable", false)),
 		"quantity": quantity,
+		"xp": xp_val,
 	}
 
 const SCRATCH_OFF_SLOT_COUNT = 16
@@ -14604,39 +14641,54 @@ func _compute_scratch_budget(skill: int) -> int:
 	return clampi(SCRATCH_OFF_BASE_SCRATCHES + int(skill / 25), SCRATCH_OFF_BASE_SCRATCHES, SCRATCH_OFF_MAX_SCRATCHES)
 
 func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
-	"""Audit #7 Slice 1A / 1B / 1C — scratch-off fishing.
+	"""Back-compat shim: fishing-specific entry. Delegates to the generic
+	_start_scratch_off_gathering with the water_type as the tier param."""
+	_start_scratch_off_gathering(peer_id, character, "fishing", gathering_node, water_type)
 
-	v0.9.358 rework (1C): true scratch-off feel.
-	- 5 slots arranged in a row (ticket layout).
-	- Tool pre-reveals appear at RANDOM positions (not the first N).
-	- Player gets SCRATCH_OFF_BASE_SCRATCHES scratches and must choose which
-	  hidden slots to reveal. Unrevealed slots are lost loot.
-	- Player presses 1-5 to scratch a specific slot.
-	- Tool durability consumed on session start.
 
-	Earlier slices:
-	- 1A (v0.9.354): basic 3-slot reveal card.
-	- 1B (v0.9.357): slot variety (NORMAL / LUCKY / JACKPOT / DUD)."""
-	var fishing_skill = int(character.job_levels.get("fishing", 1))
+func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gathering_node: Dictionary, fishing_water_type: String = "") -> void:
+	"""v0.9.369 — generic scratch-off entry. Replaces the per-job stubs.
+	Handles fishing (tier_or_water = water_type string) and mining /
+	logging / foraging (tier_or_water = int tier from gathering_node)."""
+	var skill = int(character.job_levels.get(job_type, 1))
 	var slot_count = SCRATCH_OFF_SLOT_COUNT
-	var scratch_budget = _compute_scratch_budget(fishing_skill)
+	var scratch_budget = _compute_scratch_budget(skill)
+
+	# Per-job tier/water + biome for foraging.
+	var tier_or_water: Variant
+	var biome: String = ""
+	var node_descriptor: String = ""
+	var node_type: String = String(gathering_node.get("type", ""))
+	if job_type == "fishing":
+		tier_or_water = fishing_water_type if fishing_water_type != "" else "shallow"
+		node_descriptor = String(tier_or_water) + " water"
+	else:
+		var tier = int(gathering_node.get("tier", 1))
+		tier_or_water = tier
+		match job_type:
+			"mining":
+				node_descriptor = "T%d ore vein" % tier
+			"logging":
+				node_descriptor = "T%d grove" % tier
+			"foraging":
+				if world_system and chunk_manager:
+					biome = world_system.get_biome_at(int(gathering_node.get("node_x", character.x)), int(gathering_node.get("node_y", character.y)), chunk_manager.world_seed)
+				node_descriptor = ("%s patch" % biome.capitalize()) if biome != "" else "wild patch"
+
 	var slots: Array = []
 	for i in range(slot_count):
-		var kind = _roll_scratch_off_slot_kind(fishing_skill)
-		slots.append(_build_scratch_off_slot(kind, water_type, fishing_skill))
+		var kind = _roll_scratch_off_slot_kind(skill)
+		slots.append(_build_scratch_off_slot(kind, job_type, tier_or_water, skill, biome, node_type))
 
-	# Tool pre-reveals at RANDOM positions. Rod with tool_bonuses.reveals=N
-	# pre-reveals N slots, picked uniformly across the ticket.
-	var tool_subtype = _get_tool_subtype_for_job("fishing")
+	# Tool pre-reveals at RANDOM positions.
+	var tool_subtype = _get_tool_subtype_for_job(job_type)
 	var tool = _find_tool_in_inventory(character, tool_subtype)
 	var pre_reveals: int = 0
 	if not tool.is_empty():
 		var tb = tool.get("tool_bonuses", {})
 		pre_reveals = int(tb.get("reveals", 1 if tb.get("reveal", false) else 0))
-		# Always leave at least one hidden slot for the player to scratch.
 		pre_reveals = clampi(pre_reveals, 0, slot_count - 1)
 
-	# Shuffle positions to pick random pre-reveals.
 	var all_positions: Array = []
 	for i in range(slot_count):
 		all_positions.append(i)
@@ -14645,26 +14697,25 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 	for i in range(pre_reveals):
 		pre_revealed_positions.append(all_positions[i])
 
-	# Consume tool durability ONCE per fishing attempt (was missing pre-v0.9.358).
 	if not tool.is_empty():
 		_consume_tool_durability(peer_id, character, tool_subtype)
 
 	var session = {
 		"mode": "scratch_off",
-		"job_type": "fishing",
-		"node_type": gathering_node.get("type", "water"),
-		"water_type": water_type,
-		"tier": 1,
+		"job_type": job_type,
+		"node_type": node_type,
+		"water_type": fishing_water_type,  # only meaningful for fishing
+		"biome": biome,                    # only meaningful for foraging
+		"tier": int(gathering_node.get("tier", 1)),
 		"slots": slots,
 		"revealed_positions": pre_revealed_positions.duplicate(),
-		"miss_positions": [],  # v0.9.366 — timing misses for summary split
+		"miss_positions": [],
 		"scratches_remaining": scratch_budget,
 		"node_x": gathering_node.get("node_x", character.x),
 		"node_y": gathering_node.get("node_y", character.y),
 	}
 	active_gathering[peer_id] = session
 
-	# Build initial_slots: same length as slots, but hidden positions are {}.
 	var initial_slots: Array = []
 	for i in range(slot_count):
 		if i in pre_revealed_positions:
@@ -14672,10 +14723,6 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 		else:
 			initial_slots.append({})
 
-	# v0.9.363 — tool stats for the timing minigame. Tools may set
-	# tool_bonuses.bar_speed_mult (lower = slower bar = easier) and
-	# tool_bonuses.bar_width_mult (higher = wider target column = easier).
-	# Defaults are 1.0 if a tool doesn't define them — backwards-compatible.
 	var bar_speed_mult: float = 1.0
 	var bar_width_mult: float = 1.0
 	if not tool.is_empty():
@@ -14685,8 +14732,9 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 
 	send_to_peer(peer_id, {
 		"type": "scratch_off_start",
-		"job_type": "fishing",
-		"water_type": water_type,
+		"job_type": job_type,
+		"water_type": fishing_water_type,
+		"node_descriptor": node_descriptor,
 		"slot_count": slot_count,
 		"initial_slots": initial_slots,
 		"scratches_remaining": scratch_budget,
@@ -14807,7 +14855,8 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			"value": int(slot.get("value", 5)),
 		}
 		_add_gathering_reward(character, reward, qty)
-		var xp = drop_tables.FISHING_XP.get(item_id, 5) if drop_tables else 5
+		# XP was baked at slot-build time per job.
+		var xp = int(slot.get("xp", 5))
 		# Lucky and jackpot grant bonus XP on top of the bigger drops.
 		if kind == "LUCKY":
 			xp = int(xp * 1.5)
@@ -14815,10 +14864,25 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			xp = int(xp * 2.0)
 		total_xp += int(xp)
 		awarded.append({"kind": kind, "item": item_id, "name": item_name, "type": slot_type, "quantity": qty})
-	# Skill XP grant + deplete the water node (matches legacy fishing).
-	var xp_result = character.add_fishing_xp(total_xp)
-	character.record_fish_caught()
-	deplete_gathering_node(int(session.get("node_x", character.x)), int(session.get("node_y", character.y)), "water")
+	# v0.9.369 — generic XP grant + counter + node deplete per job type.
+	var session_job: String = String(session.get("job_type", "fishing"))
+	var xp_result: Dictionary
+	match session_job:
+		"fishing":
+			xp_result = character.add_fishing_xp(total_xp)
+			character.record_fish_caught()
+		"mining":
+			xp_result = character.add_mining_xp(total_xp)
+			character.record_ore_gathered()
+		"logging":
+			xp_result = character.add_logging_xp(total_xp)
+			character.record_wood_gathered()
+		_:  # foraging or future jobs
+			xp_result = character.add_job_xp(session_job, total_xp)
+	var deplete_node_type: String = String(session.get("node_type", ""))
+	if deplete_node_type == "" and session_job == "fishing":
+		deplete_node_type = "water"
+	deplete_gathering_node(int(session.get("node_x", character.x)), int(session.get("node_y", character.y)), deplete_node_type)
 	# Clear session BEFORE sending the complete message so the client can
 	# transition out cleanly without race conditions.
 	active_gathering.erase(peer_id)
@@ -14830,7 +14894,8 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		"missed": missed,
 		"xp_gained": total_xp,
 		"leveled_up": bool(xp_result.get("leveled_up", false)),
-		"new_level": int(xp_result.get("new_level", character.job_levels.get("fishing", 1))),
+		"new_level": int(xp_result.get("new_level", character.job_levels.get(session_job, 1))),
+		"job_type": session_job,  # v0.9.369 — client uses this for completion summary headers + post-session hint
 		"character": character.to_dict(),
 	})
 	# Refresh the player's map / location flags (e.g., at_water clears if depleted)
@@ -14868,8 +14933,13 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	if job_type == "fishing":
 		var bump_tier := int(gathering_node.get("tier", 1))
 		if bump_tier <= 1:
-			_start_scratch_off_fishing(peer_id, character, "shallow", gathering_node)
+			_start_scratch_off_gathering(peer_id, character, "fishing", gathering_node, "shallow")
 			return
+	elif job_type in ["mining", "logging", "foraging"]:
+		# v0.9.369 — bump-gather (walking into the node) also routes through
+		# scratch-off for mining/logging/foraging at all tiers.
+		_start_scratch_off_gathering(peer_id, character, job_type, gathering_node)
+		return
 
 	var session = _generate_gathering_round(job_type, tier, hint_strength, 0, [])
 	session["job_type"] = job_type
