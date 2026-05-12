@@ -23318,8 +23318,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.346 changes
+	display_game("[color=#00FF00]v0.9.346[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Server lag hotfix + sprite alignment fix #2[/color]")
+	display_game("  • [b]Character saves throttled to once per 3 seconds per player[/b]. Pre-fix every combat-end / item-use / market-action triggered an immediate synchronous disk write. Each write is ~100KB of JSON + a backup pass — on the Oracle Free VM that adds up to multi-second freezes when many fire in a row. Rapid-fire saves now collapse into one disk write per 3s.")
+	display_game("  • [b]Dirty-flag drain[/b]: throttled requests mark the character dirty. A periodic [color=#9ACD32]_process[/color] flush writes at most one pending character per tick — spreads disk I/O across many frames.")
+	display_game("  • [b]Critical paths bypass the throttle[/b]: disconnect, auto-save (60s), and death always force a sync write so nothing important gets lost.")
+	display_game("  • [b]Sprite alignment fix #2[/b]: v0.9.345's BBCode-scan fixed the header-line count, but reports of \"sprite 3 tiles south\" persisted on fresh logins (including at the starter post). Root cause was pixel math — we now ask RichTextLabel directly via [color=#9ACD32]get_paragraph_offset()[/color] for the actual rendered Y of the @ glyph's row instead of multiplying line index × line_h.")
+	display_game("")
+
 	# v0.9.345 changes
-	display_game("[color=#00FF00]v0.9.345[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.345[/color]")
 	display_game("  [color=#FFD700]Sprite alignment hotfix[/color]")
 	display_game("  • [b]Map sprite now tracks the actual [color=#FFFF00]@[/color] glyph[/color][/b] instead of relying on a hardcoded \"2 header lines\" assumption. The sprite overlay scans the map BBCode for the [color=#FFFF00]@[/color] character, counts newlines, and anchors itself at that line's pixel Y.")
 	display_game("  • [b]Fixes the \"sprite 3 tiles south of where I am\" bug[/b] reported after re-login near player walls. The math previously assumed header_lines=2 was always exact — turned out fragile under specific render conditions.")
@@ -23345,15 +23354,6 @@ func display_changelog():
 	display_game("  • [b]Audit #13 deepening[/b]: Sanctuary picks up its first qualitative unlock (data layer) beyond the capacity bumps. Future slices: Compass, Region Atlas, and other discovery-rewarding views.")
 	display_game("")
 
-	# v0.9.342 changes
-	display_game("[color=#00FFFF]v0.9.342[/color]")
-	display_game("  [color=#FFD700]Threatened posts bite back (Audit #11 Slice 8)[/color]")
-	display_game("  • [b]Map indicator[/b]: any visible NPC post that's Under Threat now renders with a [color=#FF4400]red ![/color] warning glyph on the map, so you can spot trouble at a glance.")
-	display_game("  • [b]At-post header[/b]: when standing inside a threatened post, the location header shows [color=#FF4400][b]Under Threat[/b][/color] instead of [color=#00FF00]Safe[/color]. Hard to miss.")
-	display_game("  • [b]Service price hike[/b]: healers and blacksmiths at threatened posts charge [color=#FF4400]+50%[/color] more. Threat banner shown on encounter open so the inflated costs make sense.")
-	display_game("  • [b]NPC flavor[/b]: the healer warns \"Dangerous times, traveler — supplies are scarce, prices steep,\" the blacksmith mutters about charging extra. Atmosphere matches the mechanics.")
-	display_game("  • [b]Threat economy now fully wired[/b]: market prices +20% (Slice 7), services +50% (Slice 8), map visibility (Slice 8). Players have to weigh whether to keep using a threatened post or push back the nearby dungeon to restore it.")
-	display_game("")
 
 
 
@@ -28355,25 +28355,33 @@ func _sync_map_sprites_overlay() -> void:
 	var map_width_px = map_diameter * cell_w
 	var map_x_offset = max(0.0, (map_display.size.x - map_width_px) * 0.5)
 
-	# v0.9.345 — anchor sprite Y to the actual @ glyph position in the BBCode
-	# rather than the previously-hardcoded `header_lines = 2`. Different render
-	# paths (NPC posts vs wilderness vs trading posts vs threatened posts) all
-	# CURRENTLY produce 2-line headers, but the relationship between BBCode
-	# layout and pixel Y was fragile — we saw a "sprite 3 tiles south of @"
-	# bug after re-login near player walls (v0.9.344 prior). Scanning for the
-	# @ glyph and counting newlines makes the sprite track wherever the map
-	# renderer actually puts it, removing the header-line dependency entirely.
+	# v0.9.345/346 — anchor sprite Y to the actual rendered position of the
+	# @ glyph in the BBCode rather than a hardcoded header_lines × line_h
+	# computation. v0.9.345 fixed half the problem (header line count) by
+	# scanning the BBCode for " @" and counting newlines. v0.9.346 fixes the
+	# other half (pixel Y per line) by asking RichTextLabel for the actual
+	# rendered offset of that paragraph via `get_paragraph_offset()`. Reports
+	# of "sprite 3 tiles south of @" persisted after v0.9.345 — that's the
+	# pixel-math drift, not the header-line count.
 	var bbcode_text: String = map_display.text
 	var at_byte_pos: int = bbcode_text.find(" @")
 	var at_line_idx: int = -1
 	if at_byte_pos >= 0:
 		at_line_idx = bbcode_text.substr(0, at_byte_pos).count("\n")
-	# Fallback to the legacy header_lines=2 + center-cell math if the @ glyph
-	# isn't in the BBCode for some reason (e.g., we're in a dungeon or the
-	# map hasn't been updated yet). Defensive — shouldn't fire in normal play.
+	# Compute the centered pixel Y of the @ glyph's row. Prefer the engine's
+	# own rendered offset via get_paragraph_offset; that automatically picks
+	# up [center], [b], font overrides, and any line-spacing quirks. Falls
+	# back to (idx × line_h) math if the API isn't available, and finally to
+	# the legacy hardcoded math if the @ isn't in the BBCode (dungeon view).
 	var at_pixel_y_center: float
 	if at_line_idx >= 0:
-		at_pixel_y_center = (at_line_idx + 0.5) * line_h
+		var paragraph_offset: float = -1.0
+		if map_display.has_method("get_paragraph_offset"):
+			paragraph_offset = map_display.get_paragraph_offset(at_line_idx)
+		if paragraph_offset >= 0.0:
+			at_pixel_y_center = paragraph_offset + line_h * 0.5
+		else:
+			at_pixel_y_center = (at_line_idx + 0.5) * line_h
 	else:
 		at_pixel_y_center = (2 + MAP_VIEWPORT_CENTER_CELL + 0.5) * line_h
 
