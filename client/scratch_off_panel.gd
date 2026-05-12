@@ -600,9 +600,11 @@ func _render_header(snapshot: Dictionary) -> void:
 func _craft_pool_hint(pool: String) -> String:
 	match pool:
 		"structure":
-			return "Slots reveal reinforcement (+HP), bonus structures, or material refunds."
+			return "Slots reveal bonus kits (+1/+2/+3) and material refunds."
 		"material":
 			return "Slots reveal bonus batches (+1/+2/+3) and material refunds."
+		"tool":
+			return "Slots reveal durability boosts, easier-minigame bonuses, and material refunds."
 		"quality":
 			return "Slots reveal quality boosts, bonus crafts, or material refunds."
 		_:
@@ -780,10 +782,14 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 				kind_label.text = "✕4"
 			"REFUND":
 				kind_label.text = "↺ MAT"
-			"STRUCTURE_HP_1":
-				kind_label.text = "🛡 +"
-			"STRUCTURE_HP_2":
-				kind_label.text = "🛡 ++"
+			"DURABILITY_UP_1":
+				kind_label.text = "🛠 +"
+			"DURABILITY_UP_2":
+				kind_label.text = "🛠 ++"
+			"EFFICIENCY_UP_1":
+				kind_label.text = "⚡ +"
+			"EFFICIENCY_UP_2":
+				kind_label.text = "⚡ ++"
 			_:
 				kind_label.text = "◆"
 		inner.add_child(kind_label)
@@ -889,19 +895,35 @@ func _palette_for_slot(slot: Dictionary) -> Dictionary:
 				"kind_color": Color(0.45, 0.95, 0.90),
 				"name_color": Color(0.80, 1.0, 0.95),
 			}
-		"STRUCTURE_HP_1":
+		"DURABILITY_UP_1":
+			# v0.9.376 — tool durability slot. Burnished bronze tones.
 			return {
-				"bg": Color(0.12, 0.12, 0.14, 1.0),
-				"border": Color(0.65, 0.65, 0.72, 1.0),
-				"kind_color": Color(0.80, 0.82, 0.90),
-				"name_color": Color(0.92, 0.94, 1.0),
+				"bg": Color(0.18, 0.12, 0.05, 1.0),
+				"border": Color(0.80, 0.55, 0.25, 1.0),
+				"kind_color": Color(1.0, 0.78, 0.45),
+				"name_color": Color(1.0, 0.90, 0.65),
 			}
-		"STRUCTURE_HP_2":
+		"DURABILITY_UP_2":
 			return {
-				"bg": Color(0.14, 0.14, 0.18, 1.0),
-				"border": Color(0.85, 0.85, 0.95, 1.0),
-				"kind_color": Color(0.95, 0.95, 1.0),
-				"name_color": Color(1.0, 1.0, 1.0),
+				"bg": Color(0.20, 0.13, 0.04, 1.0),
+				"border": Color(1.0, 0.70, 0.25, 1.0),
+				"kind_color": Color(1.0, 0.85, 0.40),
+				"name_color": Color(1.0, 0.95, 0.65),
+			}
+		"EFFICIENCY_UP_1":
+			# v0.9.376 — tool efficiency slot. Electric teal/yellow tones.
+			return {
+				"bg": Color(0.04, 0.16, 0.18, 1.0),
+				"border": Color(0.40, 0.90, 0.70, 1.0),
+				"kind_color": Color(0.70, 1.0, 0.85),
+				"name_color": Color(0.85, 1.0, 0.95),
+			}
+		"EFFICIENCY_UP_2":
+			return {
+				"bg": Color(0.04, 0.18, 0.16, 1.0),
+				"border": Color(0.50, 1.0, 0.75, 1.0),
+				"kind_color": Color(0.80, 1.0, 0.90),
+				"name_color": Color(0.95, 1.0, 0.95),
 			}
 		"LUCKY":
 			return {

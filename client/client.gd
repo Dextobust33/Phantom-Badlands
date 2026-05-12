@@ -23453,14 +23453,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.376 changes
+	display_game("[color=#00FF00]v0.9.376[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Tool crafting slot pool + duplicate fix + structure pool retuned[/color]")
+	display_game("  • [b]Tool recipes now roll a dedicated slot pool.[/b] New slot kinds:")
+	display_game("    – [color=#FFC15F]🛠 + / 🛠 ++[/color] Durability boost: +25%% / +50%% to max durability.")
+	display_game("    – [color=#7FF0BB]⚡ + / ⚡ ++[/color] Efficiency boost: easier scratch-off minigame when using the crafted tool (slower bar, wider hit zone).")
+	display_game("    – Plus bonus crafts (✕2 / ✕3 / ✕4) and material refunds.")
+	display_game("  • [b]Bonus craft slots now actually grant bonus items.[/b] v0.9.375 counted ✕2 / ✕3 / ✕4 reveals but didn't pass them through — fixed.")
+	display_game("  • [b]Structure pool retuned[/b]: dropped the placeholder HP slots (no per-tile HP system to wire them to) and redistributed weight into more bonus kits + material refunds.")
+	display_game("")
+
 	# v0.9.375 changes
-	display_game("[color=#00FF00]v0.9.375[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.375[/color]")
 	display_game("  [color=#FFD700]Crafting slot pools — recipes only roll bonuses that matter to them[/color]")
-	display_game("  • [b]Quality is gone from items where it didn't mean anything.[/b] Materials and structures used to roll Quality-Up slots that were silently ignored at finalize. Now each recipe picks a slot pool that fits its output:")
-	display_game("    – [color=#A335EE]Equipment / consumables / runes / upgrades / enchantments[/color]: [b]Quality pool[/b] (Refined / Polished / Masterful + bonus crafts + material refunds).")
-	display_game("    – [color=#9090A0]Structures[/color]: [b]Structure pool[/b] (+15%% / +30%% HP slots, bonus craft, material refund). Building HP wiring comes in the next slice.")
-	display_game("    – [color=#FFAA33]Materials[/color]: [b]Bulk pool[/b] (Bonus +1 / +2 / +3 extra craftings, material refund).")
-	display_game("  • New slot kinds on the scratch ticket: [color=#FFD700]✕2 / ✕3 / ✕4[/color] bonus craft, [color=#5FF0E0]↺ Mat refund[/color], [color=#E0E0F0]🛡 +HP[/color]. Higher skill shifts the distribution toward the better slots.")
+	display_game("  • [b]Quality is gone from items where it didn't mean anything.[/b] Each recipe now picks a slot pool that fits its output: Equipment/consumables/runes/upgrades/enchantments use the Quality pool; structures and materials use bonus-craft + refund pools.")
+	display_game("  • New slot kinds on the scratch ticket: [color=#FFD700]✕2 / ✕3 / ✕4[/color] bonus craft, [color=#5FF0E0]↺ Mat refund[/color]. Higher skill shifts the distribution toward the better slots.")
 	display_game("  • Subtitle on each craft panel tells you which pool that recipe rolls from.")
 	display_game("")
 
@@ -23494,12 +23502,6 @@ func display_changelog():
 	display_game("  • Auto-skip yields ~60%% of manual; cashed-in summary splits timing misses from unscratched slots.")
 	display_game("")
 
-	# v0.9.363 changes
-	display_game("[color=#00FFFF]v0.9.363[/color]")
-	display_game("  [color=#FFD700]Scratch-off slice 1F — timing minigame foundation[/color]")
-	display_game("  • [b]Click the silhouette while the wave is over it.[/b] Click outside the wave's reach and that scratch is burned. Choice still matters; now timing matters too.")
-	display_game("  • [b]Server diagnostics added[/b] (background) to identify the cause of intermittent ~5s freezes. No player-facing change.")
-	display_game("")
 
 
 
