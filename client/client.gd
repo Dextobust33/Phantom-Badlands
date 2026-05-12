@@ -23318,8 +23318,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.349 changes
+	display_game("[color=#00FF00]v0.9.349[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sprite alignment fix #4 — actually fixed this time[/color]")
+	display_game("  • [b]Root cause finally found.[/b] Previous attempts (v0.9.345-347) tried smarter ways of measuring paragraph offsets, but they were all bypassed: the [color=#FFFF00] @[/color] glyph was being [i]stripped[/i] from the BBCode before append, so the find(\" @\") code always returned -1 and fell to legacy math [color=#9ACD32](2 + 11 + 0.5) × line_h[/color]. That math happens to be correct in wilderness (2 plain-text header paragraphs = 2 × line_h) but under-shoots at NPC posts (the [color=#FFD700][b][/color] header renders taller, so the actual @ row is further south than the math assumes).")
+	display_game("  • [b]Fix[/b]: hide the @ glyph by setting alpha to 0 ([color=#9ACD32][color=#FFFF0000] @[/color][/color]) instead of stripping the characters. The sprite overlay can now [i]find[/i] the @ in [color=#9ACD32]map_display.text[/color] and use the real rendered paragraph offset via [color=#9ACD32]get_paragraph_offset()[/color]. Works correctly at wilderness AND posts because the math is no longer arithmetic — it's reading the actual rendered position.")
+	display_game("")
+
 	# v0.9.348 changes
-	display_game("[color=#00FF00]v0.9.348[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.348[/color]")
 	display_game("  [color=#FFD700]Movement responsiveness + server lag spike reduction[/color]")
 	display_game("  • [b]Movement cooldown cut from 0.5s → 0.15s.[/b] Single-keypress feel was throttled to 2 moves/sec — pressing direction 4× rapidly only registered as 1. Now ~6.7 moves/sec. The previous \"server lag\" you were feeling was largely this client-side throttle becoming visible after the Oracle CPU spikes were fixed in v0.9.344/346. Biome multipliers (1.0-1.4×) still apply, so swamps/tundra still tax movement.")
 	display_game("  • [b]Road check interval 60s → 300s.[/b] Each successful road formation runs A* (up to 100k nodes) + writes the full path data JSON + saves dirty chunks + recomputes merchant circuits — easily 200-1000ms of sync work. Spaced out to 5min so the spike is rare. Phase-staggered from the dungeon timer.")
@@ -23352,13 +23359,6 @@ func display_changelog():
 	display_game("  • [b]Defensive fallback[/b] to the old math if the @ glyph isn't found in the map BBCode (e.g., dungeon view, pre-character-load).")
 	display_game("")
 
-	# v0.9.344 changes
-	display_game("[color=#00FFFF]v0.9.344[/color]")
-	display_game("  [color=#FFD700]Server lag hotfix[/color]")
-	display_game("  • [b]Dungeon spawn rate-limited[/b] to 8 per tick (was unbounded). Pre-fix the spawner could create 80+ dungeons in a single frame when chunks became loadable after a restart, freezing the tick for ~1s. Catch-up now spreads across multiple 30s checks.")
-	display_game("  • [b]Post threat state cached per tick[/b]. Several handlers (movement, market browse, post-status panel, healer/blacksmith encounters) all query the same post's threat status within a single frame. The cache turns repeat lookups into dict reads instead of full active_dungeon scans.")
-	display_game("  • [b]No design changes[/b] — same threat behavior, just smoother server-side.")
-	display_game("")
 
 
 
@@ -27873,9 +27873,15 @@ func update_map(map_text: String):
 
 	if map_display:
 		map_display.clear()
-		# Hide the local player's @ marker so the sprite overlay is the only
-		# representation.
-		main_text = main_text.replace("[color=#FFFF00] @[/color]", "[color=#FFFF00]  [/color]")
+		# v0.9.349 — hide the local player's @ marker by setting alpha to 0,
+		# NOT by stripping the " @" characters. The sprite overlay locates
+		# itself by searching the rendered BBCode for " @" + `get_paragraph_offset()`
+		# of that line — stripping the glyph forced fallback math that only
+		# worked at wilderness by coincidence (2 plain-text header paragraphs
+		# happened to equal 2 × line_h). At NPC posts the [b] header paragraphs
+		# render taller, the fallback under-shot, sprite drew ~1 tile north.
+		# Keeping " @" with alpha=0 means the glyph is invisible but findable.
+		main_text = main_text.replace("[color=#FFFF00] @[/color]", "[color=#FFFF0000] @[/color]")
 		# Hide each visible remote player's letter cell. We construct the
 		# exact BBCode the server emitted from the cached nearby_players
 		# data, so the literal replace() can't false-positive on terrain
