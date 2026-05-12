@@ -124,6 +124,11 @@ var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_
 var active_bounties: Dictionary = {}  # quest_id -> {x, y, monster_type, level, name, peer_id}
 # Gathering session tracking (3-choice until-fail)
 var active_gathering: Dictionary = {}  # peer_id -> {job_type, node_type, tier, chain_count, chain_materials, correct_id, options, risky_available}
+# v0.9.376 — scratch-off craft sessions are erased from active_gathering before
+# _finalize_craft runs (so client-side state transitions cleanly), but tool slot
+# bonuses still need to be readable inside the "tool" branch. Lifetime is one
+# call: set right before _finalize_craft, erased right after.
+var pending_craft_sessions: Dictionary = {}  # peer_id -> session dict (transient)
 var gathering_cooldown: Dictionary = {}  # peer_id -> true — prevents encounter on first move after gathering
 var build_cooldown: Dictionary = {}  # peer_id -> timestamp — prevents rapid build spam
 # Soldier harvest session tracking (post-combat 3-choice)
@@ -14568,10 +14573,11 @@ func _craft_pool_for_output_type(output_type: String) -> String:
 			return "structure"
 		"material":
 			return "material"
-		# Future: "tool" → "tool" pool with DURABILITY+ / EFFICIENCY+ (slice 3b)
+		"tool":
+			return "tool"
 		_:
 			# weapon, armor, consumable, rune, upgrade, enchantment, enhancement,
-			# scroll, tome, tool (until slice 3b), map, transmute, reforge, etc.
+			# scroll, tome, map, transmute, reforge, etc.
 			return "quality"
 
 
@@ -14579,24 +14585,54 @@ func _roll_craft_slot_kind(pool: String, t: float) -> String:
 	"""Roll a slot kind from the given pool with skill-bias t in [0, 1]."""
 	match pool:
 		"structure":
-			# Buildings: no quality scaling. Slots favor HP and material economy.
+			# Buildings: no quality scaling and no per-tile HP system to attach
+			# to, so slots focus on material economy + bonus kits (each kit
+			# places one structure, so DUPLICATE = extra placement).
 			var w_dud: float = lerp(22.0, 4.0, t)
-			var w_base: float = lerp(40.0, 25.0, t)
-			var w_hp1: float = lerp(18.0, 26.0, t)
-			var w_hp2: float = lerp(8.0, 20.0, t)
-			var w_dup: float = lerp(7.0, 15.0, t)
-			var w_ref: float = lerp(5.0, 10.0, t)
-			var total: float = w_dud + w_base + w_hp1 + w_hp2 + w_dup + w_ref
+			var w_base: float = lerp(40.0, 22.0, t)
+			var w_dup: float = lerp(18.0, 28.0, t)    # +1 extra kit
+			var w_dup2: float = lerp(8.0, 18.0, t)    # +2 extra kits
+			var w_dup3: float = lerp(2.0, 10.0, t)    # +3 extra kits (rare)
+			var w_ref: float = lerp(10.0, 18.0, t)
+			var total: float = w_dud + w_base + w_dup + w_dup2 + w_dup3 + w_ref
 			var r: float = randf() * total
 			if r < w_dud: return "DUD"
 			r -= w_dud
 			if r < w_base: return "BASE"
 			r -= w_base
-			if r < w_hp1: return "STRUCTURE_HP_1"
-			r -= w_hp1
-			if r < w_hp2: return "STRUCTURE_HP_2"
-			r -= w_hp2
 			if r < w_dup: return "DUPLICATE"
+			r -= w_dup
+			if r < w_dup2: return "DUPLICATE_2"
+			r -= w_dup2
+			if r < w_dup3: return "DUPLICATE_3"
+			return "REFUND"
+		"tool":
+			# Tools: quality still drives base rarity (durability + bar tuning
+			# scale with rarity in DropTables.generate_tool), but extra slot
+			# kinds boost durability / minigame ease on top.
+			var w_dud_t: float = lerp(24.0, 4.0, t)
+			var w_base_t: float = lerp(38.0, 18.0, t)
+			var w_dura1: float = lerp(14.0, 22.0, t)    # +25% durability
+			var w_dura2: float = lerp(6.0, 16.0, t)     # +50% durability
+			var w_eff1: float = lerp(10.0, 18.0, t)     # easier minigame (small)
+			var w_eff2: float = lerp(3.0, 12.0, t)      # easier minigame (large)
+			var w_dup_t: float = lerp(3.0, 6.0, t)      # spare tool craft
+			var w_ref_t: float = lerp(2.0, 4.0, t)
+			var total_t: float = w_dud_t + w_base_t + w_dura1 + w_dura2 + w_eff1 + w_eff2 + w_dup_t + w_ref_t
+			var r_t: float = randf() * total_t
+			if r_t < w_dud_t: return "DUD"
+			r_t -= w_dud_t
+			if r_t < w_base_t: return "BASE"
+			r_t -= w_base_t
+			if r_t < w_dura1: return "DURABILITY_UP_1"
+			r_t -= w_dura1
+			if r_t < w_dura2: return "DURABILITY_UP_2"
+			r_t -= w_dura2
+			if r_t < w_eff1: return "EFFICIENCY_UP_1"
+			r_t -= w_eff1
+			if r_t < w_eff2: return "EFFICIENCY_UP_2"
+			r_t -= w_eff2
+			if r_t < w_dup_t: return "DUPLICATE"
 			return "REFUND"
 		"material":
 			# Intermediate materials: no quality. Slots favor BULK production.
@@ -14659,10 +14695,14 @@ func _build_craft_slot(kind: String, recipe: Dictionary) -> Dictionary:
 			return {"kind": "QUALITY_UP_2", "name": "Polished", "type": "craft_quality", "score": 2, "output_name": output_name}
 		"QUALITY_UP_3":
 			return {"kind": "QUALITY_UP_3", "name": "Masterful", "type": "craft_quality", "score": 3, "output_name": output_name}
-		"STRUCTURE_HP_1":
-			return {"kind": "STRUCTURE_HP_1", "name": "+15% HP", "type": "craft_structure", "score": 1, "output_name": output_name}
-		"STRUCTURE_HP_2":
-			return {"kind": "STRUCTURE_HP_2", "name": "+30% HP", "type": "craft_structure", "score": 1, "output_name": output_name}
+		"DURABILITY_UP_1":
+			return {"kind": "DURABILITY_UP_1", "name": "+25% Durability", "type": "craft_tool", "score": 1, "output_name": output_name}
+		"DURABILITY_UP_2":
+			return {"kind": "DURABILITY_UP_2", "name": "+50% Durability", "type": "craft_tool", "score": 1, "output_name": output_name}
+		"EFFICIENCY_UP_1":
+			return {"kind": "EFFICIENCY_UP_1", "name": "Easier Minigame", "type": "craft_tool", "score": 1, "output_name": output_name}
+		"EFFICIENCY_UP_2":
+			return {"kind": "EFFICIENCY_UP_2", "name": "Much Easier Minigame", "type": "craft_tool", "score": 1, "output_name": output_name}
 		"DUPLICATE":
 			return {"kind": "DUPLICATE", "name": "Bonus +1", "type": "craft_bonus", "score": 1, "output_name": output_name}
 		"DUPLICATE_2":
@@ -15060,11 +15100,12 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	var revealed_positions: Array = session.get("revealed_positions", [])
 	var miss_positions: Array = session.get("miss_positions", [])
 	# Best-reveal-wins: highest score among revealed slots. Also tally the
-	# new slot kinds (DUPLICATE/REFUND/STRUCTURE_HP — v0.9.375).
+	# new slot kinds (DUPLICATE/REFUND — v0.9.375; tool bonuses — v0.9.376).
 	var best_score: int = 0
-	var duplicate_count: int = 0  # extra items granted (sum of +N from DUPLICATE slots)
-	var refund_count: int = 0     # number of REFUND slots — each = +25% material refund
-	var structure_hp_pct: int = 0 # best HP bonus (0 / 15 / 30)
+	var duplicate_count: int = 0      # extra items granted (sum of +N from DUPLICATE slots)
+	var refund_count: int = 0         # number of REFUND slots — each = +25% material refund
+	var tool_durability_pct: int = 0  # best tool durability bonus (0 / 25 / 50)
+	var tool_efficiency_tier: int = 0 # best tool efficiency tier (0 / 1 / 2)
 	var awarded: Array = []
 	var missed: Array = []
 	for i in range(slots.size()):
@@ -15084,10 +15125,14 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 					duplicate_count += 3
 				"REFUND":
 					refund_count += 1
-				"STRUCTURE_HP_1":
-					structure_hp_pct = maxi(structure_hp_pct, 15)
-				"STRUCTURE_HP_2":
-					structure_hp_pct = maxi(structure_hp_pct, 30)
+				"DURABILITY_UP_1":
+					tool_durability_pct = maxi(tool_durability_pct, 25)
+				"DURABILITY_UP_2":
+					tool_durability_pct = maxi(tool_durability_pct, 50)
+				"EFFICIENCY_UP_1":
+					tool_efficiency_tier = maxi(tool_efficiency_tier, 1)
+				"EFFICIENCY_UP_2":
+					tool_efficiency_tier = maxi(tool_efficiency_tier, 2)
 			awarded.append({"kind": kind, "name": name, "type": "craft"})
 		else:
 			var cause = "miss" if (i in miss_positions) else "unscratched"
@@ -15114,17 +15159,19 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 				character.crafting_materials[mat_id] = int(character.crafting_materials.get(mat_id, 0)) + amt
 	# DUPLICATE: add to the craft quantity passed to _finalize_craft.
 	var effective_quantity: int = quantity + duplicate_count
-	# STRUCTURE_HP: TODO slice 3b — wire the % through to the placed structure.
-	# For now the slot is shown to the player but the HP modifier isn't applied.
-	# Recorded here so the message can mention what would-have-been.
-	var _structure_hp_recorded: int = structure_hp_pct
+	# Stash tool bonuses on the session so _finalize_craft's "tool" branch
+	# can read them. Quality recipes / non-tool pools see 0 here.
+	session["craft_tool_durability_pct"] = tool_durability_pct
+	session["craft_tool_efficiency_tier"] = tool_efficiency_tier
 
 	# Roll quality with derived score, then hand off to the existing craft
 	# finalize (which sends craft_result + grants XP/inventory).
 	var quality: int = CraftingDatabaseScript.roll_quality(skill_level, int(recipe.get("difficulty", 1)), total_bonus, best_score)
 
-	# Clear session BEFORE the panel-close message so the client can transition
-	# out cleanly. _finalize_craft sends craft_result after.
+	# Stash session for _finalize_craft's tool branch to read, then send
+	# the panel-close message and run finalize. Erase active_gathering
+	# AFTER finalize so the tool branch can still see the session.
+	pending_craft_sessions[peer_id] = session
 	active_gathering.erase(peer_id)
 
 	# Send scratch_off_complete (panel hold + close).
@@ -15141,8 +15188,9 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 		"character": character.to_dict(),
 	})
 
-	# Finalize the actual craft (sends craft_result).
-	_finalize_craft(peer_id, character, recipe_id, recipe, quality, skill_name, skill_level, total_bonus, best_score, quantity, temper_target, is_tempered)
+	# Finalize the actual craft (sends craft_result). DUPLICATE bumps quantity.
+	_finalize_craft(peer_id, character, recipe_id, recipe, quality, skill_name, skill_level, total_bonus, best_score, effective_quantity, temper_target, is_tempered)
+	pending_craft_sessions.erase(peer_id)
 
 
 func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
@@ -19308,14 +19356,48 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				var subtype_map = {"fishing_rod": "rod", "pickaxe": "pickaxe", "axe": "axe", "sickle": "sickle"}
 				var subtype = subtype_map.get(tool_type, tool_type)
 				var tool_rarity = _quality_to_rarity(quality)
-				var tool_data = DropTables.generate_tool(subtype, tool_tier, tool_rarity)
-				if not tool_data.is_empty():
+				# v0.9.376 — tool pool bonuses. Generate N tools (DUPLICATE) and
+				# apply DURABILITY_UP / EFFICIENCY_UP from the scratch-off session.
+				var craft_session: Dictionary = pending_craft_sessions.get(peer_id, {})
+				var durability_pct: int = int(craft_session.get("craft_tool_durability_pct", 0))
+				var efficiency_tier: int = int(craft_session.get("craft_tool_efficiency_tier", 0))
+				var crafted_tools: Array = []
+				for _i in range(maxi(1, quantity)):
+					var tool_data = DropTables.generate_tool(subtype, tool_tier, tool_rarity)
+					if tool_data.is_empty():
+						continue
 					if quality != CraftingDatabaseScript.CraftingQuality.STANDARD:
 						tool_data["name"] = "%s %s" % [quality_name, recipe.name]
 					tool_data["crafted"] = true
+					if durability_pct > 0:
+						var base_dura: int = int(tool_data.get("max_durability", 20))
+						var bonus_dura: int = int(base_dura * durability_pct / 100.0)
+						tool_data["max_durability"] = base_dura + bonus_dura
+						tool_data["durability"] = base_dura + bonus_dura
+					if efficiency_tier > 0:
+						# Tier 1: -5% speed / +15% width; Tier 2: -10% / +30%.
+						# Stays inside the generate_tool clamps (>=0.30 speed, <=3.0 width).
+						var bonuses: Dictionary = tool_data.get("tool_bonuses", {})
+						var spd: float = float(bonuses.get("bar_speed_mult", 1.0))
+						var wid: float = float(bonuses.get("bar_width_mult", 1.0))
+						var spd_delta: float = 0.05 if efficiency_tier == 1 else 0.10
+						var wid_delta: float = 0.15 if efficiency_tier == 1 else 0.30
+						bonuses["bar_speed_mult"] = maxf(0.30, spd - spd_delta)
+						bonuses["bar_width_mult"] = minf(3.00, wid + wid_delta)
+						tool_data["tool_bonuses"] = bonuses
 					character.inventory.append(tool_data)
-					crafted_item = tool_data
-					result_message = "[color=%s]Crafted %s! Check your inventory to equip it.[/color]" % [quality_color, tool_data.get("name", recipe.name)]
+					crafted_tools.append(tool_data)
+				if not crafted_tools.is_empty():
+					crafted_item = crafted_tools[0]
+					var qty_label: String = ""
+					if crafted_tools.size() > 1:
+						qty_label = "%dx " % crafted_tools.size()
+					var bonus_note: String = ""
+					if durability_pct > 0:
+						bonus_note += " (+%d%% durability)" % durability_pct
+					if efficiency_tier > 0:
+						bonus_note += " (easier minigame)" if efficiency_tier == 1 else " (much easier minigame)"
+					result_message = "[color=%s]Crafted %s%s!%s[/color]" % [quality_color, qty_label, crafted_item.get("name", recipe.name), bonus_note]
 				else:
 					for mat_id in recipe.materials:
 						character.add_crafting_material(mat_id, recipe.materials[mat_id])
