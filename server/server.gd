@@ -1372,6 +1372,8 @@ func handle_message(peer_id: int, message: Dictionary):
 		# House (Sanctuary) system handlers
 		"house_request":
 			handle_house_request(peer_id)
+		"bestiary_request":
+			handle_bestiary_request(peer_id)
 		"house_upgrade":
 			handle_house_upgrade(peer_id, message)
 		"house_discard_item":
@@ -3476,6 +3478,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var killed_monster_level = result.get("monster_level", 1)
 			if killed_monster_base_name != "":
 				characters[peer_id].record_monster_kill(killed_monster_base_name, killed_monster_level)
+				# Audit #13 Slice 2 — account-level bestiary ledger.
+				if peers.has(peer_id):
+					var bestiary_account_id = String(peers[peer_id].get("account_id", ""))
+					if bestiary_account_id != "":
+						persistence.record_bestiary_kill(bestiary_account_id, killed_monster_base_name, killed_monster_level)
 
 			# Check quest progress for kill-based quests (uses full name for variant-specific quests)
 			var monster_level_for_quest = result.get("monster_level", 1)
@@ -9905,6 +9912,24 @@ func handle_house_request(peer_id: int):
 		"pending_headstarts": persistence.get_pending_headstarts(account_id),
 		"headstart_costs": persistence.MASTERY_HEADSTART_BP_PER_RANK,
 		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK
+	})
+
+func handle_bestiary_request(peer_id: int):
+	"""Audit #13 Slice 2 — return the account's bestiary summary (sorted by
+	kill count desc) and the current upgrade level (0 = locked / 1-3 = tiers
+	revealing progressively more detail). Client uses level to decide which
+	columns to render."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "No account context."})
+		return
+	var summary = persistence.get_bestiary_summary(account_id)
+	send_to_peer(peer_id, {
+		"type": "bestiary_data",
+		"summary": summary,
 	})
 
 func handle_mastery_headstart_set(peer_id: int, message: Dictionary):
@@ -28889,6 +28914,11 @@ func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: D
 		# Record monster knowledge
 		characters[pid].record_monster_kill(monster_base_name, monster_level)
 		characters[pid].monsters_killed += 1
+		# Audit #13 Slice 2 — account-level bestiary ledger.
+		if peers.has(pid):
+			var party_bestiary_acct = String(peers[pid].get("account_id", ""))
+			if party_bestiary_acct != "" and monster_base_name != "":
+				persistence.record_bestiary_kill(party_bestiary_acct, monster_base_name, monster_level)
 
 		# Check quest progress
 		check_kill_quest_progress(pid, monster_level, monster_name)

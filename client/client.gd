@@ -1227,6 +1227,10 @@ var post_status_panel = null
 const ClanPanelScript = preload("res://client/clan_panel.gd")
 var clan_panel = null
 
+# Audit #13 Slice 2 — Bestiary panel (Sanctuary monster kill ledger).
+const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
+var bestiary_panel = null
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -1814,6 +1818,11 @@ func _ready():
 	clan_panel.invite_requested.connect(_on_clan_panel_invite)
 	clan_panel.accept_requested.connect(_on_clan_panel_accept)
 	clan_panel.decline_requested.connect(_on_clan_panel_decline)
+
+	# Audit #13 Slice 2 — Bestiary panel.
+	bestiary_panel = BestiaryPanelScript.new()
+	add_child(bestiary_panel)
+	bestiary_panel.close_requested.connect(_on_bestiary_panel_close)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -6192,11 +6201,14 @@ func update_action_bar():
 				if int(rk) > 0:
 					has_mastery_records = true
 					break
+			# Audit #13 Slice 2 — Bestiary button. Always visible on the Sanctuary
+			# main view; the panel itself shows a "locked" teaser when the upgrade
+			# isn't purchased yet, so players can discover the feature.
 			current_actions = [
 				{"label": interact_label, "action_type": "local", "action_data": interact_action, "enabled": interact_enabled},
 				{"label": "Logout", "action_type": "local", "action_data": "house_logout", "enabled": true},
 				{"label": "Mastery", "action_type": "local", "action_data": "house_mastery", "enabled": has_mastery_records},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Bestiary", "action_type": "local", "action_data": "house_bestiary", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
@@ -12603,6 +12615,9 @@ func execute_local_action(action: String):
 			pending_house_action = ""
 			display_house_upgrades()
 			update_action_bar()
+		"house_bestiary":
+			# Audit #13 Slice 2 — open Bestiary panel from Sanctuary main view.
+			open_bestiary_panel()
 		"upgrades_prev":
 			house_upgrades_page = max(0, house_upgrades_page - 1)
 			display_house_upgrades()
@@ -19162,6 +19177,9 @@ func handle_server_message(message: Dictionary):
 		# Audit #14 Slice 2 — live invitation alert
 		"clan_invitation_received":
 			_handle_clan_invitation_received(message)
+		# Audit #13 Slice 2 — Bestiary panel feed
+		"bestiary_data":
+			_handle_bestiary_data(message)
 
 		# Market messages
 		"market_browse_result":
@@ -23300,8 +23318,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.343 changes
+	display_game("[color=#00FF00]v0.9.343[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bestiary (Audit #13 Slice 2)[/color]")
+	display_game("  • [b]New Sanctuary upgrade: [color=#FFD700]Bestiary[/color][/b] — account-level ledger of every monster you've ever killed. 3 reveal tiers: L1 kill counts, L2 + highest level, L3 + first/last killed dates. Costs 800 / 3000 / 12000 BP.")
+	display_game("  • [b]Always tracking[/b]: kills are recorded from now on regardless of whether the upgrade is unlocked. When you buy it later, you'll see the data you've been accumulating.")
+	display_game("  • [b]Visual panel[/b]: new [color=#9ACD32]Bestiary[/color] button in the Sanctuary action bar opens a scrollable list sorted by kill count. When locked, shows a teaser pointing at the upgrade page.")
+	display_game("  • [b]Persistence[/b]: survives permadeath — new characters inherit your entire kill history.")
+	display_game("  • [b]Audit #13 deepening[/b]: Sanctuary picks up its first qualitative unlock (data layer) beyond the capacity bumps. Future slices: Compass, Region Atlas, and other discovery-rewarding views.")
+	display_game("")
+
 	# v0.9.342 changes
-	display_game("[color=#00FF00]v0.9.342[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.342[/color]")
 	display_game("  [color=#FFD700]Threatened posts bite back (Audit #11 Slice 8)[/color]")
 	display_game("  • [b]Map indicator[/b]: any visible NPC post that's Under Threat now renders with a [color=#FF4400]red ![/color] warning glyph on the map, so you can spot trouble at a glance.")
 	display_game("  • [b]At-post header[/b]: when standing inside a threatened post, the location header shows [color=#FF4400][b]Under Threat[/b][/color] instead of [color=#00FF00]Safe[/color]. Hard to miss.")
@@ -23331,16 +23359,6 @@ func display_changelog():
 	display_game("  • [b]30-member cap[/b] still applies — the invite input is hidden when the clan is full, with a \"Clan is full\" note in place.")
 	display_game("")
 
-	# v0.9.339 changes
-	display_game("[color=#00FFFF]v0.9.339[/color]")
-	display_game("  [color=#FFD700]Clans foundation (Audit #14 Slice 1)[/color]")
-	display_game("  • [b]New shortcut button: [color=#9ACD32]Clan[/color][/b] — opens the visual clan panel. When you're not in a clan, it shows a create form (Name + Tag). When you're in one, it shows the roster + a [Leave Clan] (or [Disband Clan] if you're the leader) button.")
-	display_game("  • [b]Create a clan[/b] with a 3–24 character Name (letters/numbers/spaces) and a 2–5 character Tag (letters/numbers only). Names and tags are unique across the server. The clan record persists at the account level — survives character permadeath.")
-	display_game("  • [b]Members[/b] are listed in roster order with the leader marked. The first slice supports up to 30 members. Invitation flow ships in Slice 2.")
-	display_game("  • [b]Leaving / disbanding[/b]: regular members can leave at any time; leaders leaving disbands the clan and clears every member's clan_id. Disband announcements broadcast to chat so other players see when clans form or dissolve.")
-	display_game("  • [b]Audit #14 moves from \"designing\" to \"implementing.\"[/b] All 15 audit systems now have shipped first slices. Future clan slices will add invitations, ranks, clan storage, and shared posts.")
-	display_game("  • [b]/clan[/b] also works as a power-user shortcut for the button.")
-	display_game("")
 
 
 
@@ -26155,6 +26173,34 @@ func _handle_clan_action_result(message: Dictionary) -> void:
 		clan_panel.show_action_result(success, feedback)
 	if feedback != "":
 		display_game(feedback)
+
+func open_bestiary_panel() -> void:
+	"""Audit #13 Slice 2 — open the Bestiary panel. Requests fresh summary
+	from the server; the panel renders locked / unlocked based on the upgrade
+	level returned alongside the entries."""
+	if not bestiary_panel:
+		display_game("[color=#FF0000]Bestiary panel not initialized.[/color]")
+		return
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	# Show locked placeholder immediately so the panel is responsive while we
+	# wait on the server fetch.
+	bestiary_panel.open({"level": 0, "entries": [], "unique_count": 0, "total_kills": 0})
+	send_to_server({"type": "bestiary_request"})
+
+func close_bestiary_panel() -> void:
+	if bestiary_panel:
+		bestiary_panel.close()
+
+func _on_bestiary_panel_close() -> void:
+	close_bestiary_panel()
+
+func _handle_bestiary_data(message: Dictionary) -> void:
+	if not bestiary_panel:
+		return
+	var summary: Dictionary = message.get("summary", {})
+	if bestiary_panel.visible:
+		bestiary_panel.refresh(summary)
 
 func _handle_clan_invitation_received(message: Dictionary) -> void:
 	"""Live invitation alert — fires when another player invites you. Shown as
@@ -34059,6 +34105,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"kennel_capacity": {"name": "Kennel Expansion", "desc": "More kennel slots", "icon": "🏠"},
 	"post_slots": {"name": "Land Surveyor", "desc": "+1 max player post", "icon": "🏗️"},
 	"companion_sanctum": {"name": "Companion Sanctum", "desc": "+1 free Home Stone (Companion) at new character start", "icon": "🔮"},
+	"bestiary": {"name": "Bestiary", "desc": "Account-level monster kill ledger. L1: kills, L2: + level, L3: + dates.", "icon": "📖"},
 	# Combat bonuses
 	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
 	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
@@ -34737,7 +34784,7 @@ func display_house_upgrades():
 	# Define upgrade pages
 	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "companion_sanctum", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
@@ -34775,7 +34822,8 @@ func display_house_upgrades():
 		"wis_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 		"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 		"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]},
-		"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]}
+		"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]},
+		"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
 	})
 
 	var current_page_upgrades = page_upgrades[house_upgrades_page]
@@ -34936,6 +34984,12 @@ func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 		"storage_slots": return "+%d slots" % effect_value
 		"companion_slots": return "+%d slot%s" % [effect_value, "s" if effect_value != 1 else ""]
 		"companion_sanctum": return "+%d starter stone%s" % [effect_value, "s" if effect_value != 1 else ""]
+		"bestiary":
+			match effect_value:
+				1: return "L1: kills tracked"
+				2: return "L2: + highest level"
+				3: return "L3: + dates"
+				_: return "Locked"
 		"kennel_capacity": return "%d slots" % _get_house_kennel_capacity()
 		"egg_slots": return "%d/%d slots (base 3 + %d)" % [3 + effect_value, 12, effect_value]
 		"flee_chance", "xp_bonus", "gathering_bonus", "hp_bonus", "resource_max", "resource_regen":
@@ -34960,7 +35014,7 @@ func _get_house_companion_capacity() -> int:
 func _purchase_house_upgrade(index: int):
 	"""Send request to purchase a house upgrade based on current page"""
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "companion_sanctum", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
