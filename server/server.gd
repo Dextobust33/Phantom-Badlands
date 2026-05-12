@@ -14494,31 +14494,95 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 		"skip_warning": skip_failed_msg,
 	})
 
-func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
-	"""Audit #7 Slice 1A — scratch-off fishing prototype.
+func _roll_scratch_off_slot_kind(skill: int) -> String:
+	"""v0.9.357 — pick a slot variety. Base distribution:
+	  NORMAL 70 / LUCKY 15 / JACKPOT 5 / DUD 10
+	Fishing skill biases DUD → JACKPOT (-0.2% dud, +0.2% jackpot per level,
+	capped). Gives a sense of progression: high-skill players see fewer
+	empty slots and more big wins."""
+	var skill_bias = mini(skill, 50)
+	var dud_chance = maxi(2, 10 - int(skill_bias * 0.2))  # 10% at L1, floor at 2% past L40
+	var jackpot_chance = mini(20, 5 + int(skill_bias * 0.2))  # 5% at L1, cap 20%
+	var lucky_chance = 15
+	# Remaining is normal.
+	var total = 100
+	var roll = randi() % total
+	if roll < dud_chance:
+		return "DUD"
+	roll -= dud_chance
+	if roll < jackpot_chance:
+		return "JACKPOT"
+	roll -= jackpot_chance
+	if roll < lucky_chance:
+		return "LUCKY"
+	return "NORMAL"
 
-	Server pre-rolls 3 items from FISHING_CATCHES[water_type], stores them
-	hidden in the session, sends the client a 'scratch_off_start' with the
-	slot count only (not contents). Client reveals one slot at a time via
-	'scratch_off_reveal'. When all slots are revealed, server commits the
-	items to inventory and ends the session. No chain, no twists in 1A —
-	this is the proof-of-concept slice; later slices add timing gates,
-	bonus/dud slots, skill-affects-deck, and apply to other systems."""
+func _build_scratch_off_slot(kind: String, water_type: String, skill: int) -> Dictionary:
+	"""Build a single slot dictionary based on its kind. DUD slots have no
+	item (just bonus XP). JACKPOT rerolls until a rare-tier or
+	treasure-chest catch is picked. LUCKY doubles the item's quantity (we
+	store quantity=2 on the slot so the complete step knows to grant
+	doubles). NORMAL is the standard weighted pull."""
+	if kind == "DUD":
+		return {
+			"kind": "DUD",
+			"item": "",
+			"name": "Empty",
+			"type": "dud",
+			"value": 0,
+			"tier": 0,
+			"is_consumable": false,
+			"quantity": 0,
+		}
+	# Roll a catch. For JACKPOT, retry up to 20 times for a high-value entry.
+	var catch_data = drop_tables.roll_fishing_catch(water_type, skill)
+	if kind == "JACKPOT":
+		for _i in range(20):
+			var c = drop_tables.roll_fishing_catch(water_type, skill)
+			if c.get("type", "") == "treasure_chest" or int(c.get("value", 0)) >= 100:
+				catch_data = c
+				break
+	var quantity = 1
+	if kind == "LUCKY":
+		quantity = 2
+	return {
+		"kind": kind,
+		"item": String(catch_data.get("item", "small_fish")),
+		"name": String(catch_data.get("name", "Small Fish")),
+		"type": String(catch_data.get("type", "fish")),
+		"value": int(catch_data.get("value", 5)),
+		"tier": int(catch_data.get("tier", 1)),
+		"is_consumable": bool(catch_data.get("is_consumable", false)),
+		"quantity": quantity,
+	}
+
+func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
+	"""Audit #7 Slice 1A / 1B — scratch-off fishing.
+
+	1A shipped the basic 3-slot card. 1B (v0.9.357) adds:
+	- Slot variety: NORMAL / LUCKY (2x qty) / JACKPOT (forced rare) / DUD (empty)
+	- Tool pre-reveals: an equipped Fishing Rod with tool_bonuses.reveals = N
+	  pre-reveals N slots when the card appears (the rod is your scratch-off
+	  pre-peek). Replaces the rod's old role in the option-pick minigame
+	  with an analogous role in the new mechanic.
+	- Skill biases DUD chance down + JACKPOT up over time."""
 	var fishing_skill = int(character.job_levels.get("fishing", 1))
 	var slot_count = 3
 	var slots: Array = []
 	for i in range(slot_count):
-		var catch_data = drop_tables.roll_fishing_catch(water_type, fishing_skill)
-		# catch_data is a dict from FISHING_CATCHES entries. Preserve item / name / value / type.
-		slots.append({
-			"item": String(catch_data.get("item", "small_fish")),
-			"name": String(catch_data.get("name", "Small Fish")),
-			"type": String(catch_data.get("type", "fish")),
-			"value": int(catch_data.get("value", 5)),
-			# tier / is_consumable only relevant for treasure chests
-			"tier": int(catch_data.get("tier", 1)),
-			"is_consumable": bool(catch_data.get("is_consumable", false)),
-		})
+		var kind = _roll_scratch_off_slot_kind(fishing_skill)
+		slots.append(_build_scratch_off_slot(kind, water_type, fishing_skill))
+
+	# Tool pre-reveals — rod with tool_bonuses.reveals = N pre-reveals N
+	# slots immediately. Capped at slot_count - 1 (always at least one
+	# slot left for the player to scratch themselves).
+	var tool_subtype = _get_tool_subtype_for_job("fishing")
+	var tool = _find_tool_in_inventory(character, tool_subtype)
+	var pre_reveals: int = 0
+	if not tool.is_empty():
+		var tb = tool.get("tool_bonuses", {})
+		pre_reveals = int(tb.get("reveals", 1 if tb.get("reveal", false) else 0))
+		pre_reveals = clampi(pre_reveals, 0, slot_count - 1)
 
 	var session = {
 		"mode": "scratch_off",
@@ -14527,17 +14591,25 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 		"water_type": water_type,
 		"tier": 1,
 		"slots": slots,
-		"revealed_index": 0,
+		"revealed_index": pre_reveals,  # pre-revealed slots are already past
 		"node_x": gathering_node.get("node_x", character.x),
 		"node_y": gathering_node.get("node_y", character.y),
 	}
 	active_gathering[peer_id] = session
+
+	# Build the pre-revealed slot payload so the client can show them
+	# immediately when the card opens.
+	var pre_revealed_slots: Array = []
+	for i in range(pre_reveals):
+		pre_revealed_slots.append(slots[i])
 
 	send_to_peer(peer_id, {
 		"type": "scratch_off_start",
 		"job_type": "fishing",
 		"water_type": water_type,
 		"slot_count": slot_count,
+		"pre_revealed": pre_revealed_slots,
+		"tool_name": String(tool.get("name", "")) if not tool.is_empty() else "",
 	})
 
 func handle_scratch_off_reveal(peer_id: int, _message: Dictionary) -> void:
@@ -14584,9 +14656,17 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	var awarded: Array = []
 	var total_xp: int = 0
 	for slot in slots:
+		var kind: String = String(slot.get("kind", "NORMAL"))
+		# DUD slots have no item — just grant a small XP consolation so the
+		# turn isn't a total waste, but no inventory loot.
+		if kind == "DUD":
+			total_xp += 3
+			awarded.append({"kind": "DUD", "name": "Empty", "type": "dud"})
+			continue
 		var item_id: String = slot.get("item", "")
 		var item_name: String = slot.get("name", "Unknown")
 		var slot_type: String = slot.get("type", "fish")
+		var qty: int = int(slot.get("quantity", 1))
 		# Use the shared gathering-reward router: treasure chests → inventory,
 		# everything else → crafting materials pouch.
 		var reward = {
@@ -14596,10 +14676,15 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			"tier": int(slot.get("tier", 1)),
 			"value": int(slot.get("value", 5)),
 		}
-		_add_gathering_reward(character, reward, 1)
+		_add_gathering_reward(character, reward, qty)
 		var xp = drop_tables.FISHING_XP.get(item_id, 5) if drop_tables else 5
+		# Lucky and jackpot grant bonus XP on top of the bigger drops.
+		if kind == "LUCKY":
+			xp = int(xp * 1.5)
+		elif kind == "JACKPOT":
+			xp = int(xp * 2.0)
 		total_xp += int(xp)
-		awarded.append({"item": item_id, "name": item_name, "type": slot_type})
+		awarded.append({"kind": kind, "item": item_id, "name": item_name, "type": slot_type, "quantity": qty})
 	# Skill XP grant + deplete the water node (matches legacy fishing).
 	var xp_result = character.add_fishing_xp(total_xp)
 	character.record_fish_caught()

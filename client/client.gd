@@ -23362,8 +23362,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.357 changes
+	display_game("[color=#00FF00]v0.9.357[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Scratch-off slice 1B — slot variety + tool pre-reveals[/color]")
+	display_game("  • [b]Slot variety[/b]: every slot now rolls a kind — [color=#1EFF00]LUCKY[/color] (2× the catch), [color=#FFD700]JACKPOT[/color] (forced rare/treasure), [color=#606060]DUD[/color] (empty, small XP), or NORMAL. Base distribution 70/15/5/10; fishing skill biases DUD down + JACKPOT up over time. Lottery-ticket tension is now in the mechanic.")
+	display_game("  • [b]Tools = pre-reveals[/b]: equip a Fishing Rod with [color=#9ACD32]tool_bonuses.reveals = N[/color] and N slots are pre-revealed when the card appears. Better rods reveal more — your existing rod-reveal mechanic carries over from the old minigame, just relocated. (Capped at slot_count-1 so there's always one slot left to scratch yourself.)")
+	display_game("  • [b]Skill XP bonuses[/b]: LUCKY slots grant 1.5× XP, JACKPOT 2× XP. DUD still grants a token 3 XP so a bad card isn't a full waste.")
+	display_game("")
+
 	# v0.9.356 changes
-	display_game("[color=#00FF00]v0.9.356[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.356[/color]")
 	display_game("  [color=#FFD700]Inventory filter chips show visible/hidden state clearly[/color]")
 	display_game("  • [b]Filter chips now have explicit visible vs hidden styling.[/b] A category that's [i]showing[/i] gets a warm gold border + filled background (\"this is on\"). A category that's [i]hidden[/i] is dim with a thin grey border (\"this is off\"). The default Button theme was too subtle — at a glance you couldn't tell which were on.")
 	display_game("  • [b]Hover state[/b] adds a tan border so you can preview \"if I clicked, this would toggle.\"")
@@ -23384,12 +23392,6 @@ func display_changelog():
 	display_game("  • [b]Server map wiped + post locations randomized.[/b] Accounts, characters, market listings, Sanctuaries, leaderboards, clans all preserved. Only the overworld terrain + NPC post positions regenerated. Your character's position was reset to origin (0, 0) so you don't spawn inside a freshly-grown mountain.")
 	display_game("")
 
-	# v0.9.353 changes
-	display_game("[color=#00FFFF]v0.9.353[/color]")
-	display_game("  [color=#FFD700]Inventory tab toggles + gear-drop callout in victory card[/color]")
-	display_game("  • [b]Inventory filter chips are now toggles, not radio buttons.[/b] Click [color=#9ACD32]Tools[/color] to hide tools; click again to show them. Hide [color=#9ACD32]Cons[/color] to clear consumables out of view. The [color=#9ACD32]All[/color] chip resets — clicking it brings everything back. Hidden categories persist across sessions ([color=#9ACD32]user://inventory_prefs.json[/color]). Helps when your equipment is buried under stacks of tools/consumables.")
-	display_game("  • [b]Post-combat victory card now has a dedicated gear callout banner.[/b] If a fight drops equipment, a gold-bordered \"★ N NEW ITEMS ACQUIRED ★\" frame appears above the regular loot list — each gear line is rendered at 16pt in its rarity color so common rats-and-gold don't bury that uncommon sword. Regular loot rows bumped 12pt → 13pt for legibility.")
-	display_game("")
 
 
 
@@ -29147,14 +29149,24 @@ func handle_gathering_complete(message: Dictionary):
 
 func handle_scratch_off_start(message: Dictionary) -> void:
 	"""Enter scratch-off mode. Server sends slot count + job/water type; we
-	render an empty card and the player reveals slots one at a time."""
+	render an empty card and the player reveals slots one at a time.
+	v0.9.357 — server may also send pre_revealed (Array of slot dicts) if
+	the player has a Fishing Rod with tool_bonuses.reveals."""
 	scratch_off_mode = true
 	scratch_off_slot_count = int(message.get("slot_count", 3))
 	scratch_off_revealed_slots = []
 	for i in range(scratch_off_slot_count):
 		scratch_off_revealed_slots.append({})  # empty dict = hidden
+	# Apply pre-reveals — server says "these slots are already revealed because
+	# of your tool." Slots come in order from index 0.
+	var pre_revealed: Array = message.get("pre_revealed", [])
+	for i in range(pre_revealed.size()):
+		if i < scratch_off_revealed_slots.size():
+			scratch_off_revealed_slots[i] = pre_revealed[i]
 	scratch_off_job_type = String(message.get("job_type", "fishing"))
 	scratch_off_water_type = String(message.get("water_type", "shallow"))
+	set_meta("scratchoff_tool_name", String(message.get("tool_name", "")))
+	set_meta("scratchoff_pre_reveals", int(pre_revealed.size()))
 	_render_scratch_off_panel()
 	update_action_bar()
 
@@ -29186,8 +29198,18 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off Complete ═══[/color]")
 	display_game("")
 	for slot in awarded:
-		var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
-		display_game("  [color=%s]◆ %s[/color]" % [color, String(slot.get("name", "?"))])
+		var kind = String(slot.get("kind", "NORMAL"))
+		match kind:
+			"DUD":
+				display_game("  [color=#606060]✗ Empty slot[/color]")
+			"LUCKY":
+				var qty = int(slot.get("quantity", 2))
+				display_game("  [color=#1EFF00]★ LUCKY — %dx %s[/color]" % [qty, String(slot.get("name", "?"))])
+			"JACKPOT":
+				display_game("  [color=#FFD700]★★★ JACKPOT — %s ★★★[/color]" % String(slot.get("name", "?")))
+			_:
+				var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
+				display_game("  [color=%s]◆ %s[/color]" % [color, String(slot.get("name", "?"))])
 	display_game("")
 	if xp_gained > 0:
 		display_game("[color=#FF8800]+%d Fishing XP[/color]" % xp_gained)
@@ -29205,11 +29227,18 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 
 func _render_scratch_off_panel() -> void:
 	"""Render the current scratch-off state into game_output. Hidden slots
-	show [?], revealed slots show the item name in a type-colored frame."""
+	show [?]; revealed slots show their kind-styled label.
+	v0.9.357 — slot kinds: NORMAL (rarity color), LUCKY (green + ★ + 2x),
+	JACKPOT (gold + ★★★), DUD (grey ✗)."""
 	game_output.clear()
 	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off ═══[/color]")
 	display_game("")
 	display_game("[color=#808080]Cast in %s water. Reveal each slot to see your catch.[/color]" % scratch_off_water_type)
+	# Tool pre-reveal hint, if any.
+	var tool_name = String(get_meta("scratchoff_tool_name", ""))
+	var pre_reveals = int(get_meta("scratchoff_pre_reveals", 0))
+	if pre_reveals > 0 and tool_name != "":
+		display_game("[color=#C4A882]Your %s pre-revealed %d slot%s.[/color]" % [tool_name, pre_reveals, "s" if pre_reveals != 1 else ""])
 	display_game("")
 	var row_parts: Array = []
 	var next_hidden_idx = -1
@@ -29220,15 +29249,33 @@ func _render_scratch_off_panel() -> void:
 			if next_hidden_idx == -1:
 				next_hidden_idx = i
 		else:
-			var item_name = String(slot.get("name", "?"))
-			var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
-			row_parts.append("[color=%s][ %s ][/color]" % [color, item_name])
+			row_parts.append(_format_scratch_off_slot(slot))
 	display_game("  " + "  ".join(row_parts))
 	display_game("")
 	if next_hidden_idx >= 0:
 		display_game("[color=#FFD700]Press [%s] to reveal slot %d of %d[/color]" % [get_action_key_name(0), next_hidden_idx + 1, scratch_off_slot_count])
 	else:
 		display_game("[color=#00FF00]All slots revealed. Finalizing...[/color]")
+
+func _format_scratch_off_slot(slot: Dictionary) -> String:
+	"""Format a single revealed slot label based on its kind for the
+	text-based scratch-off panel. Visual variety is the lottery-ticket
+	feel hook — DUD reads as a clear loss, JACKPOT as a clear win."""
+	var kind = String(slot.get("kind", "NORMAL"))
+	match kind:
+		"DUD":
+			return "[color=#606060][ ✗ Empty ][/color]"
+		"LUCKY":
+			var name = String(slot.get("name", "?"))
+			var qty = int(slot.get("quantity", 2))
+			return "[color=#1EFF00][ ★ %dx %s ][/color]" % [qty, name]
+		"JACKPOT":
+			var jname = String(slot.get("name", "?"))
+			return "[color=#FFD700][ ★★★ %s ★★★ ][/color]" % jname
+		_:  # NORMAL
+			var nname = String(slot.get("name", "?"))
+			var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
+			return "[color=%s][ %s ][/color]" % [color, nname]
 
 func _scratch_off_color_for_type(t: String) -> String:
 	match t:
