@@ -60,7 +60,13 @@ const HOUSE_UPGRADES = {
 	# characters past the early-registration pain point without spending
 	# Valor on the NPC vendor (#4 Slice 1). Costs scaled to early-mid
 	# Sanctuary tier so 1-2 levels are reachable in the first few deaths.
-	"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]}
+	"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]},
+	# Audit #13 Slice 2 — Bestiary. Account-level monster kill ledger.
+	# Level 1: names + kill counts; Level 2: + highest level killed; Level 3:
+	# + first-kill / last-kill timestamps. Always tracks (kills always recorded)
+	# but the UI is gated on upgrade level so unlocking reveals incrementally
+	# more info about your account's hunting history.
+	"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
 }
 
 # Kennel capacity by upgrade level: 0=30, 1=50, ... 9=500
@@ -1304,7 +1310,12 @@ func create_house(account_id: String) -> Dictionary:
 			"total_valor_earned": 0,
 			"total_xp_earned": 0,
 			"total_monsters_killed": 0
-		}
+		},
+
+		# Audit #13 Slice 2 — Bestiary ledger. Always recorded; UI is gated by
+		# the bestiary house upgrade level. Each entry:
+		#   monster_name → {kills, highest_level, first_killed_at, last_killed_at}
+		"bestiary": {}
 	}
 
 	houses_data.houses[account_id] = house
@@ -1340,6 +1351,78 @@ func get_egg_capacity(account_id: String) -> int:
 	var house = get_house(account_id)
 	var upgrade_level = house.upgrades.get("egg_slots", 0)
 	return 3 + (upgrade_level * HOUSE_UPGRADES.egg_slots.effect)
+
+# Audit #13 Slice 2 — Bestiary helpers.
+
+func bestiary_level(account_id: String) -> int:
+	"""Return the bestiary upgrade level (0 = locked, 1-3 = unlocked tiers)."""
+	var house = get_house(account_id)
+	if house == null or not house.has("upgrades"):
+		return 0
+	return int(house.upgrades.get("bestiary", 0))
+
+func record_bestiary_kill(account_id: String, monster_name: String, monster_level: int) -> void:
+	"""Increment the account's bestiary ledger for this monster type. Tracked
+	even when the upgrade is locked — unlocking later reveals the history.
+	Cheap no-op for missing accounts (rare race condition during character
+	creation / disconnect)."""
+	if account_id == "" or monster_name == "":
+		return
+	var house = get_house(account_id)
+	if house == null:
+		return
+	# Legacy houses created before Slice 2 ship may not have the bestiary key.
+	if not house.has("bestiary") or typeof(house.bestiary) != TYPE_DICTIONARY:
+		house["bestiary"] = {}
+	var now_ts = int(Time.get_unix_time_from_system())
+	if house.bestiary.has(monster_name):
+		var entry: Dictionary = house.bestiary[monster_name]
+		entry["kills"] = int(entry.get("kills", 0)) + 1
+		entry["highest_level"] = max(int(entry.get("highest_level", 0)), monster_level)
+		entry["last_killed_at"] = now_ts
+		house.bestiary[monster_name] = entry
+	else:
+		house.bestiary[monster_name] = {
+			"kills": 1,
+			"highest_level": monster_level,
+			"first_killed_at": now_ts,
+			"last_killed_at": now_ts,
+		}
+	save_house(account_id, house)
+
+func get_bestiary(account_id: String) -> Dictionary:
+	"""Return the raw bestiary dict (monster_name → entry). Empty if account
+	has no house or has never killed anything."""
+	var house = get_house(account_id)
+	if house == null or not house.has("bestiary"):
+		return {}
+	return house.bestiary.duplicate(true)
+
+func get_bestiary_summary(account_id: String) -> Dictionary:
+	"""Return a summary blob suitable for sending to the client: entries list
+	sorted by kill count desc, total kills, unique species count, and the
+	upgrade level (so the client can decide which fields to render)."""
+	var raw = get_bestiary(account_id)
+	var entries: Array = []
+	var total_kills: int = 0
+	for monster_name in raw.keys():
+		var entry: Dictionary = raw[monster_name]
+		var kills = int(entry.get("kills", 0))
+		entries.append({
+			"name": monster_name,
+			"kills": kills,
+			"highest_level": int(entry.get("highest_level", 0)),
+			"first_killed_at": int(entry.get("first_killed_at", 0)),
+			"last_killed_at": int(entry.get("last_killed_at", 0)),
+		})
+		total_kills += kills
+	entries.sort_custom(func(a, b): return a.kills > b.kills)
+	return {
+		"entries": entries,
+		"unique_count": entries.size(),
+		"total_kills": total_kills,
+		"level": bestiary_level(account_id),
+	}
 
 func add_item_to_house_storage(account_id: String, item: Dictionary) -> bool:
 	"""Add an item to house storage. Stacks consumables with matching type/tier. Returns true if successful."""

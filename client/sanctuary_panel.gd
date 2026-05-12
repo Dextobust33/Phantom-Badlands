@@ -22,7 +22,7 @@ const TAB_STORAGE := "storage"
 const TAB_UPGRADES := "upgrades"
 
 const UPGRADE_PAGES := [
-	{"label": "Base", "ids": ["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"]},
+	{"label": "Base", "ids": ["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus", "companion_sanctum", "bestiary"]},
 	{"label": "Combat", "ids": ["hp_bonus", "resource_max", "resource_regen"]},
 	{"label": "Stats", "ids": ["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]},
 ]
