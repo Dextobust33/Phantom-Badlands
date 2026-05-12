@@ -21156,7 +21156,7 @@ func _load_connection_settings():
 			var result = json.parse(json_str)
 			if result == OK:
 				var data = json.data
-				server_ip = data.get("last_ip", "129.213.166.185")
+				server_ip = data.get("last_ip", "5.78.217.135")
 				server_port = int(data.get("last_port", 9080))
 				last_username = data.get("last_username", "")
 				saved_connections = data.get("saved_connections", [])
@@ -21164,27 +21164,35 @@ func _load_connection_settings():
 				for conn in saved_connections:
 					if conn.has("port"):
 						conn.port = int(conn.port)
-				# Migrate existing configs: any non-cloud IP gets updated to cloud server.
-				# Skipped when running from the Godot editor so dev builds can test
-				# against localhost / staging servers.
-				if not OS.has_feature("editor") and server_ip != "129.213.166.185":
-					server_ip = "129.213.166.185"
+				# v0.9.351 — auto-migrate to Hetzner. Any saved config still
+				# pointing at Oracle (129.213.166.185) flips to Hetzner on launch.
+				# localhost is preserved (editor / dev). Skipped in editor so dev
+				# builds can keep testing locally.
+				if not OS.has_feature("editor"):
+					if server_ip == "129.213.166.185":
+						server_ip = "5.78.217.135"
+					# Rewrite any saved-connection entry that still has the Oracle IP
+					for conn in saved_connections:
+						if conn.get("ip", "") == "129.213.166.185":
+							conn.ip = "5.78.217.135"
+							if conn.get("name", "") == "Phantom Badlands":
+								conn.name = "Phantom Badlands"
 				# Ensure cloud server is in saved connections
 				var has_cloud = false
 				for conn in saved_connections:
-					if conn.get("ip", "") == "129.213.166.185":
+					if conn.get("ip", "") == "5.78.217.135":
 						has_cloud = true
 						break
 				if not has_cloud:
-					saved_connections.insert(0, {"name": "Phantom Badlands", "ip": "129.213.166.185", "port": 9080})
-					_save_connection_settings()
+					saved_connections.insert(0, {"name": "Phantom Badlands", "ip": "5.78.217.135", "port": 9080})
+				_save_connection_settings()
 				return
 	# Default values if no config
-	server_ip = "129.213.166.185"
+	server_ip = "5.78.217.135"
 	server_port = 9080
 	last_username = ""
 	saved_connections = [
-		{"name": "Phantom Badlands", "ip": "129.213.166.185", "port": 9080},
+		{"name": "Phantom Badlands", "ip": "5.78.217.135", "port": 9080},
 		{"name": "Local Server", "ip": "localhost", "port": 9080}
 	]
 
@@ -23318,8 +23326,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.351 changes
+	display_game("[color=#00FF00]v0.9.351[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Server migration — Oracle Cloud → Hetzner Cloud (no more CPU throttling)[/color]")
+	display_game("  • [b]New server[/b]: Hetzner Cloud CPX11 ([color=#9ACD32]5.78.217.135[/color]) in Hillsboro, OR. 2 dedicated AMD EPYC vCPUs + 2GB RAM at $6.99/mo. Replaces Oracle Cloud's [color=#FFB6C1]1/8 OCPU Always Free[/color] which was credit-throttled — your character's hold-direction-for-1-second backlog of 5 seconds is gone.")
+	display_game("  • [b]Auto-migrate[/b]: existing clients pointing at Oracle ([color=#9ACD32]129.213.166.185[/color]) get flipped to the new IP on launch — no action needed. Your saved characters are intact (data was migrated to the new host).")
+	display_game("  • [b]~16× practical compute uplift[/b] for the moving-player path. The previous optimization plan (cache biome/weather/region, spatial-index dungeons) is deferred — Hetzner's headroom buys time to ship features instead. Will revisit if multi-player load reveals new hot spots.")
+	display_game("")
+
 	# v0.9.350 changes
-	display_game("[color=#00FF00]v0.9.350[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.350[/color]")
 	display_game("  [color=#FFD700]Sprite alignment actually fixed + no map shift on post entry[/color]")
 	display_game("  • [b]Sprite at NPC posts.[/b] The previous 5 attempts (v0.9.345-349) all failed because we were reading [color=#9ACD32]map_display.text[/color] — but in Godot 4, append_text() doesn't update .text, so the find(\" @\") code got an empty string every call. Switched to [color=#9ACD32]map_display.get_parsed_text()[/color] which returns the actual rendered character stream. The alpha-0 @ marker from v0.9.349 is now findable, get_paragraph_offset() returns the real Y, sprite sits on the right row.")
 	display_game("  • [b]Map no longer jumps on post entry/exit.[/b] The post header used [color=#FFD700][b]bold[/b][/color] for the name + \"Under Threat\" — the bold font variant has slightly different line metrics, which pushed the map down ~2px when entering a post. Removed [b] from the post header. Color alone differentiates the name.")
@@ -23341,14 +23357,6 @@ func display_changelog():
 	display_game("  • [b]Remote players[/b] also use the auto-detected line height for their per-cell offset.")
 	display_game("")
 
-	# v0.9.346 changes
-	display_game("[color=#00FFFF]v0.9.346[/color]")
-	display_game("  [color=#FFD700]Server lag hotfix + sprite alignment fix #2[/color]")
-	display_game("  • [b]Character saves throttled to once per 3 seconds per player[/b]. Pre-fix every combat-end / item-use / market-action triggered an immediate synchronous disk write. Each write is ~100KB of JSON + a backup pass — on the Oracle Free VM that adds up to multi-second freezes when many fire in a row. Rapid-fire saves now collapse into one disk write per 3s.")
-	display_game("  • [b]Dirty-flag drain[/b]: throttled requests mark the character dirty. A periodic [color=#9ACD32]_process[/color] flush writes at most one pending character per tick — spreads disk I/O across many frames.")
-	display_game("  • [b]Critical paths bypass the throttle[/b]: disconnect, auto-save (60s), and death always force a sync write so nothing important gets lost.")
-	display_game("  • [b]Sprite alignment fix #2[/b]: v0.9.345's BBCode-scan fixed the header-line count, but reports of \"sprite 3 tiles south\" persisted on fresh logins (including at the starter post). Root cause was pixel math — we now ask RichTextLabel directly via [color=#9ACD32]get_paragraph_offset()[/color] for the actual rendered Y of the @ glyph's row instead of multiplying line index × line_h.")
-	display_game("")
 
 
 
