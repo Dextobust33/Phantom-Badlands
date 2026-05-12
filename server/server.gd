@@ -152,6 +152,12 @@ const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 second
 const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
+# v0.9.377 — spawn-queue. _check_dungeon_spawns enqueues dungeon_type strings;
+# _process drains one per frame so an 8-spawn catch-up becomes 8 single-frame
+# spikes instead of one 5s freeze. Diagnostics showed _create_world_dungeon
+# burst-spawning was the dominant cause of ~5s server pauses (peers=0,
+# dungeons=24→40 / 56→80 patterns in logs).
+var _pending_dungeon_spawn_queue: Array = []
 
 # Hotfix v0.9.344 — per-tick memoization for _compute_post_threat_state.
 # Cleared at the start of every _process tick. Keyed by "x,y" of the queried
@@ -172,11 +178,24 @@ var _world_threat_refresh_timer: float = 0.0
 const WORLD_THREAT_REFRESH_INTERVAL = 3.0
 
 # v0.9.362 — diagnostic timing. Logs hot-path timings to identify the
-# cause of intermittent ~5s freezes reported by players. Flip to false
-# once the culprit is identified + fixed.
+# cause of intermittent ~5s freezes reported by players.
+# v0.9.377 — root cause identified: _check_dungeon_spawns was bursting up
+# to 8 BSP+monster-gen spawns into a single frame, producing the ~5s spikes
+# (correlated with peers=0 dungeon-count jumps in the diag logs). Fix: spawn
+# queue, 1-per-frame drain. Flag stays ON for one release so we can verify
+# the per-frame spike disappears + per-spawn cost is bounded, then flip off.
 const DIAG_TIMING_ENABLED := true
 const DIAG_FRAME_SPIKE_MS := 100  # log frame if any tick exceeds this
 const DIAG_THREAT_SCAN_SPIKE_MS := 50  # log frame if cumulative threat scan exceeds this
+# v0.9.377 — rate-limit spike logging. Without throttling we get 20+ identical
+# lines per second when the persistent 130ms spikes fire, drowning the worst
+# spike in the noise. Keep the worst-in-window line so the diagnostic value
+# is preserved.
+const DIAG_SPIKE_LOG_WINDOW_MS := 2000
+var _diag_spike_window_start_ms: int = 0
+var _diag_spike_window_count: int = 0
+var _diag_spike_window_worst_ms: float = 0.0
+var _diag_spike_window_worst_line: String = ""
 var _diag_threat_scan_us_this_frame: int = 0
 
 
@@ -832,6 +851,14 @@ func update_player_list():
 func _process(delta):
 	# v0.9.362 — diagnostic: detect frame spikes that could cause client freezes.
 	var _diag_frame_start_us: int = 0
+	# v0.9.377 — granular per-region timing. Only logged when frame spike fires.
+	var _diag_merchants_us: int = 0
+	var _diag_node_respawns_us: int = 0
+	var _diag_geo_events_us: int = 0
+	var _diag_chunk_save_us: int = 0
+	var _diag_drain_spawn_us: int = 0
+	var _diag_peer_io_us: int = 0
+	var _diag_buffer_process_us: int = 0
 	if DIAG_TIMING_ENABLED:
 		_diag_frame_start_us = Time.get_ticks_usec()
 		_diag_threat_scan_us_this_frame = 0
@@ -890,7 +917,10 @@ func _process(delta):
 
 	# Update traveling merchants and send map updates to players when merchants move
 	if world_system:
+		var _merch_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		world_system.update_merchants(delta)
+		if DIAG_TIMING_ENABLED:
+			_diag_merchants_us = Time.get_ticks_usec() - _merch_start_us
 
 		# Check for merchant position changes and update player maps
 		merchant_update_timer += delta
@@ -917,24 +947,40 @@ func _process(delta):
 		if pending_update_seconds_remaining <= 0:
 			_execute_pending_shutdown()
 
-	# Dungeon spawn timer - periodically spawn new dungeons
+	# Dungeon spawn timer - periodically enqueue new dungeons
 	dungeon_spawn_timer += delta
 	if dungeon_spawn_timer >= DUNGEON_SPAWN_CHECK_INTERVAL:
 		dungeon_spawn_timer = 0.0
 		_check_dungeon_spawns()
 
+	# v0.9.377 — drain one queued dungeon spawn per frame (BSP gen + monster
+	# spawn was bursting ~5s frames; one-per-frame keeps each frame bounded).
+	var _drain_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+	_drain_pending_dungeon_spawn()
+	if DIAG_TIMING_ENABLED:
+		_diag_drain_spawn_us = Time.get_ticks_usec() - _drain_start_us
+
 	# Process gathering node respawns and chunk manager ticks
 	if chunk_manager:
+		var _node_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		chunk_manager.process_node_respawns(delta)
+		if DIAG_TIMING_ENABLED:
+			_diag_node_respawns_us = Time.get_ticks_usec() - _node_start_us
 
 		# Geological events (resource respawning in depleted areas)
+		var _geo_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		var geo_events = chunk_manager.process_geological_events(delta)
 		for event in geo_events:
 			_broadcast_geological_event(event)
+		if DIAG_TIMING_ENABLED:
+			_diag_geo_events_us = Time.get_ticks_usec() - _geo_start_us
 
 		# Periodic chunk save (piggyback on auto-save)
 		if auto_save_timer < 0.1:  # Just after auto-save reset
+			var _chunk_save_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 			chunk_manager.save_dirty_chunks()
+			if DIAG_TIMING_ENABLED:
+				_diag_chunk_save_us = Time.get_ticks_usec() - _chunk_save_start_us
 	else:
 		process_node_respawns(delta)
 
@@ -1012,6 +1058,7 @@ func _process(delta):
 		})
 
 	# Process existing connections
+	var _peer_io_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 	var disconnected_peers = []
 	for peer_id in peers.keys():
 		var peer_data = peers[peer_id]
@@ -1040,7 +1087,12 @@ func _process(delta):
 					continue
 
 				# Try to parse complete JSON messages
+				var _buf_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 				process_buffer(peer_id)
+				if DIAG_TIMING_ENABLED:
+					_diag_buffer_process_us += Time.get_ticks_usec() - _buf_start_us
+	if DIAG_TIMING_ENABLED:
+		_diag_peer_io_us = (Time.get_ticks_usec() - _peer_io_start_us) - _diag_buffer_process_us
 
 	# Clean up disconnected peers
 	for peer_id in disconnected_peers:
@@ -1080,7 +1132,46 @@ func _process(delta):
 		var _frame_ms = (Time.get_ticks_usec() - _diag_frame_start_us) / 1000.0
 		if _frame_ms >= DIAG_FRAME_SPIKE_MS:
 			var _threat_ms = _diag_threat_scan_us_this_frame / 1000.0
-			log_message("Diag: FRAME SPIKE %.1fms (threat_scan=%.1fms, peers=%d, dungeons=%d, posts=%d)" % [_frame_ms, _threat_ms, characters.size(), active_dungeons.size(), (chunk_manager.npc_posts.size() if chunk_manager else 0)])
+			# v0.9.377 — print per-region breakdown so we can pinpoint what's
+			# eating the frame. Sub-times only printed for regions ≥1ms to keep
+			# the line readable. Sum of regions is < frame total (handlers
+			# called outside these scopes — combat ticks, periodic timers fire
+			# only when interval hits, etc.).
+			var parts: PackedStringArray = []
+			parts.append("threat=%.1fms" % _threat_ms)
+			if _diag_merchants_us / 1000.0 >= 1.0:
+				parts.append("merchants=%.1fms" % (_diag_merchants_us / 1000.0))
+			if _diag_node_respawns_us / 1000.0 >= 1.0:
+				parts.append("node_respawns=%.1fms" % (_diag_node_respawns_us / 1000.0))
+			if _diag_geo_events_us / 1000.0 >= 1.0:
+				parts.append("geo_events=%.1fms" % (_diag_geo_events_us / 1000.0))
+			if _diag_chunk_save_us / 1000.0 >= 1.0:
+				parts.append("chunk_save=%.1fms" % (_diag_chunk_save_us / 1000.0))
+			if _diag_drain_spawn_us / 1000.0 >= 1.0:
+				parts.append("drain_spawn=%.1fms" % (_diag_drain_spawn_us / 1000.0))
+			if _diag_peer_io_us / 1000.0 >= 1.0:
+				parts.append("peer_io=%.1fms" % (_diag_peer_io_us / 1000.0))
+			if _diag_buffer_process_us / 1000.0 >= 1.0:
+				parts.append("buffer_process=%.1fms" % (_diag_buffer_process_us / 1000.0))
+			var _spike_line: String = "FRAME SPIKE %.1fms (%s, peers=%d, dungeons=%d, posts=%d)" % [_frame_ms, " ".join(parts), characters.size(), active_dungeons.size(), (chunk_manager.npc_posts.size() if chunk_manager else 0)]
+			# Rate-limit: keep the worst spike of the rolling 2s window. Emit
+			# at window close with a count so we know how many spikes piled up.
+			var _now_ms: int = Time.get_ticks_msec()
+			if _diag_spike_window_start_ms == 0:
+				_diag_spike_window_start_ms = _now_ms
+			if _frame_ms > _diag_spike_window_worst_ms:
+				_diag_spike_window_worst_ms = _frame_ms
+				_diag_spike_window_worst_line = _spike_line
+			_diag_spike_window_count += 1
+			if _now_ms - _diag_spike_window_start_ms >= DIAG_SPIKE_LOG_WINDOW_MS:
+				if _diag_spike_window_count == 1:
+					log_message("Diag: %s" % _diag_spike_window_worst_line)
+				else:
+					log_message("Diag: %s [+%d more spikes in %ds window]" % [_diag_spike_window_worst_line, _diag_spike_window_count - 1, DIAG_SPIKE_LOG_WINDOW_MS / 1000])
+				_diag_spike_window_start_ms = _now_ms
+				_diag_spike_window_count = 0
+				_diag_spike_window_worst_ms = 0.0
+				_diag_spike_window_worst_line = ""
 
 func process_buffer(peer_id: int):
 	var peer_data = peers[peer_id]
@@ -22388,44 +22479,55 @@ func _check_dungeon_spawns():
 		dungeon_monsters.erase(instance_id)
 		world_dungeon_count -= 1
 
-	# Spawn new world dungeons if below minimum.
-	# Hotfix v0.9.344 — cap spawns per tick to avoid frame-time spikes when
-	# the spawner catches up after chunks become loadable (e.g., the first
-	# player connection after a restart). Pre-fix this could spawn 88
-	# dungeons in a single frame, which froze the server tick for ~1s.
-	# Now spreads the catch-up across multiple 30s checks.
+	# v0.9.377 — enqueue spawns instead of running them all in this frame.
+	# _process drains one queue entry per frame so the burst that used to
+	# spike a single tick by ~5s now spreads across many frames.
+	# (Pre-v0.9.344: 88-dungeon catch-up in one frame, ~1s freeze;
+	# v0.9.344: capped at 8/tick, still ~5s on Hetzner CPX11 per diag logs;
+	# v0.9.377: 1/frame, expected ~hundreds of ms per individual frame.)
 	var dungeon_types = DungeonDatabaseScript.DUNGEON_TYPES.keys()
-	const MAX_SPAWNS_PER_TICK = 8
-	var spawns_this_tick: int = 0
-	while world_dungeon_count < MIN_WORLD_DUNGEONS and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
-		if spawns_this_tick >= MAX_SPAWNS_PER_TICK:
+	const MAX_ENQUEUE_PER_TICK = 8
+	var enqueued_this_tick: int = 0
+	var projected_count: int = world_dungeon_count
+	# Required spawns (under minimum)
+	while projected_count < MIN_WORLD_DUNGEONS and (active_dungeons.size() + _pending_dungeon_spawn_queue.size()) < MAX_ACTIVE_DUNGEONS:
+		if enqueued_this_tick >= MAX_ENQUEUE_PER_TICK:
 			break
-		# Pick a random dungeon type
-		var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
-		var instance_id = _create_world_dungeon(dungeon_type)
-		if instance_id != "":
-			world_dungeon_count += 1
-			spawns_this_tick += 1
-			log_message("Spawned new world dungeon: %s" % instance_id)
-		else:
-			break  # Failed to create, stop trying
+		_pending_dungeon_spawn_queue.append(dungeon_types[randi() % dungeon_types.size()])
+		projected_count += 1
+		enqueued_this_tick += 1
 
-	# Spawn extra dungeons up to max — same per-tick cap so the bonus loop
-	# can't spike either. The 50% gate further smooths out the catch-up.
-	while world_dungeon_count < MAX_WORLD_DUNGEONS and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
-		if spawns_this_tick >= MAX_SPAWNS_PER_TICK:
+	# Bonus spawns up to max (50% gate) — same per-tick cap
+	while projected_count < MAX_WORLD_DUNGEONS and (active_dungeons.size() + _pending_dungeon_spawn_queue.size()) < MAX_ACTIVE_DUNGEONS:
+		if enqueued_this_tick >= MAX_ENQUEUE_PER_TICK:
 			break
-		if randf() < 0.5:  # 50% chance per dungeon
-			var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
-			var instance_id = _create_world_dungeon(dungeon_type)
-			if instance_id != "":
-				world_dungeon_count += 1
-				spawns_this_tick += 1
-				log_message("Spawned bonus world dungeon: %s" % instance_id)
-			else:
-				break
-		else:
-			break  # Stop if random check fails
+		if randf() >= 0.5:
+			break
+		_pending_dungeon_spawn_queue.append(dungeon_types[randi() % dungeon_types.size()])
+		projected_count += 1
+		enqueued_this_tick += 1
+
+
+func _drain_pending_dungeon_spawn():
+	"""v0.9.377 — pop one queued dungeon spawn per frame. Called from _process.
+	Limits each frame's spawn cost to a single _create_world_dungeon call
+	(BSP gen + monster spawn) instead of letting _check_dungeon_spawns burst
+	8 of them in the same tick. Self-clearing — when the queue is empty
+	there's no work to do."""
+	if _pending_dungeon_spawn_queue.is_empty():
+		return
+	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
+		_pending_dungeon_spawn_queue.clear()
+		return
+	var dungeon_type: String = String(_pending_dungeon_spawn_queue.pop_front())
+	var spawn_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+	var instance_id: String = _create_world_dungeon(dungeon_type)
+	if DIAG_TIMING_ENABLED:
+		var spawn_ms: float = (Time.get_ticks_usec() - spawn_start_us) / 1000.0
+		if spawn_ms >= 50.0:
+			log_message("Diag: _create_world_dungeon(%s) took %.1fms (queue_left=%d)" % [dungeon_type, spawn_ms, _pending_dungeon_spawn_queue.size()])
+	if instance_id != "":
+		log_message("Spawned world dungeon: %s (queued, %d left)" % [instance_id, _pending_dungeon_spawn_queue.size()])
 
 func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, radius: int = 60) -> String:
 	"""Create a world dungeon near specific coordinates (for quest restoration after restart)."""
@@ -28958,6 +29060,7 @@ func _execute_map_wipe_same_seed(keep_market: bool):
 		depleted_nodes.clear()
 	active_bounties.clear()
 	active_dungeons.clear()
+	_pending_dungeon_spawn_queue.clear()
 	dungeon_floors.clear()
 	dungeon_floor_rooms.clear()
 	dungeon_monsters.clear()
@@ -29015,6 +29118,7 @@ func _execute_full_wipe(admin_peer_id: int):
 	pending_trade_requests.clear()
 	active_bounties.clear()
 	active_dungeons.clear()
+	_pending_dungeon_spawn_queue.clear()
 	player_enclosures.clear()
 	player_post_names.clear()
 	enclosure_tile_lookup.clear()
@@ -29052,6 +29156,7 @@ func _execute_map_wipe(admin_peer_id: int):
 		depleted_nodes.clear()
 	active_bounties.clear()
 	active_dungeons.clear()
+	_pending_dungeon_spawn_queue.clear()
 	dungeon_floors.clear()
 	dungeon_floor_rooms.clear()
 	dungeon_monsters.clear()

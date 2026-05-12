@@ -23453,8 +23453,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.377 changes
+	display_game("[color=#00FF00]v0.9.377[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Server-side fix: ~5s freeze pinpointed + spread out[/color]")
+	display_game("  • [b]Identified the cause of intermittent ~5-second server freezes.[/b] The world-dungeon spawner was generating up to 8 dungeons (BSP floor gen + monster spawns) in a single server tick, locking the frame for ~5s. Diagnostic logs over the past week showed the spike pattern matched the spawn catch-up timing exactly.")
+	display_game("  • [b]Fix: spawn queue.[/b] When the spawner decides it needs more dungeons, it now queues them and drains ONE per server frame. The same 8-dungeon catch-up is now spread across 8 frames instead of compressed into one — no more 5-second pauses.")
+	display_game("  • [b]Diagnostic timing got more granular[/b]: spike logs now show a per-region breakdown (threat / merchants / node_respawns / geo_events / chunk_save / peer_io / buffer_process) so we can pinpoint smaller persistent spikes. Spike logging is rate-limited so the log stays readable.")
+	display_game("  • No client-facing changes; this is purely a server stability fix.")
+	display_game("")
+
 	# v0.9.376 changes
-	display_game("[color=#00FF00]v0.9.376[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.376[/color]")
 	display_game("  [color=#FFD700]Tool crafting slot pool + duplicate fix + structure pool retuned[/color]")
 	display_game("  • [b]Tool recipes now roll a dedicated slot pool.[/b] New slot kinds:")
 	display_game("    – [color=#FFC15F]🛠 + / 🛠 ++[/color] Durability boost: +25%% / +50%% to max durability.")
