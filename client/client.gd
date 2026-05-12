@@ -23453,8 +23453,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.375 changes
+	display_game("[color=#00FF00]v0.9.375[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafting slot pools — recipes only roll bonuses that matter to them[/color]")
+	display_game("  • [b]Quality is gone from items where it didn't mean anything.[/b] Materials and structures used to roll Quality-Up slots that were silently ignored at finalize. Now each recipe picks a slot pool that fits its output:")
+	display_game("    – [color=#A335EE]Equipment / consumables / runes / upgrades / enchantments[/color]: [b]Quality pool[/b] (Refined / Polished / Masterful + bonus crafts + material refunds).")
+	display_game("    – [color=#9090A0]Structures[/color]: [b]Structure pool[/b] (+15%% / +30%% HP slots, bonus craft, material refund). Building HP wiring comes in the next slice.")
+	display_game("    – [color=#FFAA33]Materials[/color]: [b]Bulk pool[/b] (Bonus +1 / +2 / +3 extra craftings, material refund).")
+	display_game("  • New slot kinds on the scratch ticket: [color=#FFD700]✕2 / ✕3 / ✕4[/color] bonus craft, [color=#5FF0E0]↺ Mat refund[/color], [color=#E0E0F0]🛡 +HP[/color]. Higher skill shifts the distribution toward the better slots.")
+	display_game("  • Subtitle on each craft panel tells you which pool that recipe rolls from.")
+	display_game("")
+
 	# v0.9.372 changes
-	display_game("[color=#00FF00]v0.9.372[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.372[/color]")
 	display_game("  [color=#FFD700]Crafting overhaul (slice 1) + new-character numpad popup[/color]")
 	display_game("  • [b]Crafting minigame replaced with scratch-off[/b]: blacksmithing / alchemy / enchanting / scribing / construction now share the lottery-ticket mechanic. Reveal slots → BEST revealed kind decides your craft quality. Distribution shifts toward Refined / Polished / Masterful as your skill rises.")
 	display_game("  • Each craft has its own [b]themed panel[/b]: orange forge for blacksmithing, purple brew for alchemy, cyan sigil for enchanting, ivory inkwell for scribing, ochre blueprint for construction. Targeting motions reuse the gathering patterns for now; unique per-skill motions (hammer / swirl / sigil-trace / quill-stroke / plumb-bob) are queued for the next slice.")
@@ -23490,12 +23501,6 @@ func display_changelog():
 	display_game("  • [b]Server diagnostics added[/b] (background) to identify the cause of intermittent ~5s freezes. No player-facing change.")
 	display_game("")
 
-	# v0.9.361 changes
-	display_game("[color=#00FFFF]v0.9.361[/color]")
-	display_game("  [color=#FFD700]Scratch-off slice 1E hotfix — pacing + visible auto-skip toggle[/color]")
-	display_game("  • [b]The card now stays open long enough to see it.[/b] v0.9.360 auto-skipped in ~0.5s — too fast to see the toggle. Now the card opens, you have 0.8s to read the state; reveals fire every 0.6s; the panel holds 1.5s after the last reveal.")
-	display_game("  • [b]Auto-skip toggle is much more prominent.[/b] Big orange [color=#FFAA33]⏸ STOP AUTO-SKIP[/color] button when in auto mode, big green [color=#9ACD32]▶ Auto-Skip[/color] button when idle.")
-	display_game("")
 
 
 
@@ -29282,6 +29287,9 @@ func handle_scratch_off_start(message: Dictionary) -> void:
 	# v0.9.363 — tool-scaled timing minigame knobs.
 	set_meta("scratchoff_bar_speed_mult", float(message.get("bar_speed_mult", 1.0)))
 	set_meta("scratchoff_bar_width_mult", float(message.get("bar_width_mult", 1.0)))
+	# v0.9.375 — crafting pool hint (quality / structure / material) so the
+	# subtitle can explain what the slot kinds mean for this recipe.
+	set_meta("scratchoff_craft_pool", String(message.get("craft_pool", "")))
 	# v0.9.360 — pick up the server-side auto-skip flag (mirrors character.skip_gather_minigame).
 	# v0.9.361 — initial delay so the player can see the card + click the toggle to halt.
 	scratch_off_auto_skip = bool(message.get("auto_skip", false))
@@ -29495,6 +29503,7 @@ func _render_scratch_off_panel() -> void:
 		"auto_skip": scratch_off_auto_skip,
 		"bar_speed_mult": float(get_meta("scratchoff_bar_speed_mult", 1.0)),
 		"bar_width_mult": float(get_meta("scratchoff_bar_width_mult", 1.0)),
+		"craft_pool": String(get_meta("scratchoff_craft_pool", "")),
 	}
 	if scratch_off_panel.visible:
 		scratch_off_panel.refresh(snapshot)

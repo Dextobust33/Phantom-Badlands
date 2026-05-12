@@ -14539,53 +14539,114 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 
 func _generate_craft_slots(recipe: Dictionary, skill_level: int, character) -> Array:
 	"""v0.9.372 — generate 16 scratch-off slots for a crafting session.
-	Distribution shifts toward higher-quality outcomes as skill rises:
-	low skill = more DUD + BASE, high skill = more QUALITY_UP_*.
+	v0.9.375 — pool selection by recipe.output_type. Quality-meaningful
+	recipes (weapon/armor/consumable/rune/upgrade/enchantment/enhancement)
+	use the QUALITY pool. Structures and materials use category-specific
+	pools where quality is replaced with more relevant bonuses
+	(STRUCTURE_HP, DUPLICATE bulk, REFUND).
 
-	Slot kinds (crafting-specific, in addition to the gathering kinds):
-	- DUD: nothing
-	- BASE: standard craft (score 1 contribution)
-	- QUALITY_UP_1: pushes toward Uncommon (score ≥ 1)
-	- QUALITY_UP_2: pushes toward Rare (score ≥ 2)
-	- QUALITY_UP_3: pushes toward Epic+ (score = 3)
-
-	The COMPLETION step takes the BEST revealed kind (best_reveal_wins)
-	and maps it to a score 0-3 that feeds the existing roll_quality."""
+	Best-reveal-wins maps to score 0-3 for quality recipes; for non-quality
+	pools the SCORE is mostly cosmetic and the slot kinds themselves drive
+	the outcome via _complete_craft_scratch_off."""
 	var slot_count: int = SCRATCH_OFF_SLOT_COUNT
-	# Skill-scaled distribution. Cap skill influence at 100 so high-skill
-	# crafts don't trivialize the slot pool — they still want REFUND/DUPLICATE
-	# (added in a follow-up slice) to feel like meaningful variety.
 	var skill_clamped: float = clampf(float(skill_level), 0.0, 100.0)
 	var t: float = skill_clamped / 100.0  # 0.0 at L1 → 1.0 at L100
-	# Per-kind probability schedule. Targets at t=0 and t=1; linearly interpolated.
-	var w_dud: float = lerp(28.0, 4.0, t)        # bad outcome rate falls with skill
-	var w_base: float = lerp(45.0, 28.0, t)      # baseline stays sizeable
-	var w_qu1: float = lerp(16.0, 30.0, t)       # rises slowly
-	var w_qu2: float = lerp(8.0, 22.0, t)        # rises notably
-	var w_qu3: float = lerp(3.0, 16.0, t)        # rare at low skill, real at high
-	var total: float = w_dud + w_base + w_qu1 + w_qu2 + w_qu3
+	var output_type: String = String(recipe.get("output_type", "")).to_lower()
+	var pool: String = _craft_pool_for_output_type(output_type)
 	var slots: Array = []
 	for i in range(slot_count):
-		var roll: float = randf() * total
-		var kind: String = "BASE"
-		if roll < w_dud:
-			kind = "DUD"
-		elif roll < w_dud + w_base:
-			kind = "BASE"
-		elif roll < w_dud + w_base + w_qu1:
-			kind = "QUALITY_UP_1"
-		elif roll < w_dud + w_base + w_qu1 + w_qu2:
-			kind = "QUALITY_UP_2"
-		else:
-			kind = "QUALITY_UP_3"
-		slots.append(_build_craft_slot(kind, recipe))
+		slots.append(_build_craft_slot(_roll_craft_slot_kind(pool, t), recipe))
 	return slots
+
+
+func _craft_pool_for_output_type(output_type: String) -> String:
+	"""Map a recipe's output_type to one of the slot-pool names. Quality-pool
+	is the default — only categories with no meaningful quality scaling get
+	an alternative pool."""
+	match output_type:
+		"structure":
+			return "structure"
+		"material":
+			return "material"
+		# Future: "tool" → "tool" pool with DURABILITY+ / EFFICIENCY+ (slice 3b)
+		_:
+			# weapon, armor, consumable, rune, upgrade, enchantment, enhancement,
+			# scroll, tome, tool (until slice 3b), map, transmute, reforge, etc.
+			return "quality"
+
+
+func _roll_craft_slot_kind(pool: String, t: float) -> String:
+	"""Roll a slot kind from the given pool with skill-bias t in [0, 1]."""
+	match pool:
+		"structure":
+			# Buildings: no quality scaling. Slots favor HP and material economy.
+			var w_dud: float = lerp(22.0, 4.0, t)
+			var w_base: float = lerp(40.0, 25.0, t)
+			var w_hp1: float = lerp(18.0, 26.0, t)
+			var w_hp2: float = lerp(8.0, 20.0, t)
+			var w_dup: float = lerp(7.0, 15.0, t)
+			var w_ref: float = lerp(5.0, 10.0, t)
+			var total: float = w_dud + w_base + w_hp1 + w_hp2 + w_dup + w_ref
+			var r: float = randf() * total
+			if r < w_dud: return "DUD"
+			r -= w_dud
+			if r < w_base: return "BASE"
+			r -= w_base
+			if r < w_hp1: return "STRUCTURE_HP_1"
+			r -= w_hp1
+			if r < w_hp2: return "STRUCTURE_HP_2"
+			r -= w_hp2
+			if r < w_dup: return "DUPLICATE"
+			return "REFUND"
+		"material":
+			# Intermediate materials: no quality. Slots favor BULK production.
+			var w_dud2: float = lerp(20.0, 4.0, t)
+			var w_base2: float = lerp(40.0, 22.0, t)
+			var w_dup2: float = lerp(20.0, 30.0, t)    # +1 extra
+			var w_dup3: float = lerp(10.0, 22.0, t)    # +2 extra
+			var w_dup4: float = lerp(3.0, 12.0, t)     # +3 extra (rare jackpot)
+			var w_ref2: float = lerp(7.0, 10.0, t)
+			var total2: float = w_dud2 + w_base2 + w_dup2 + w_dup3 + w_dup4 + w_ref2
+			var r2: float = randf() * total2
+			if r2 < w_dud2: return "DUD"
+			r2 -= w_dud2
+			if r2 < w_base2: return "BASE"
+			r2 -= w_base2
+			if r2 < w_dup2: return "DUPLICATE"
+			r2 -= w_dup2
+			if r2 < w_dup3: return "DUPLICATE_2"
+			r2 -= w_dup3
+			if r2 < w_dup4: return "DUPLICATE_3"
+			return "REFUND"
+		_:  # "quality" pool (default)
+			var w_dud3: float = lerp(28.0, 4.0, t)
+			var w_base3: float = lerp(40.0, 22.0, t)
+			var w_qu1: float = lerp(16.0, 28.0, t)
+			var w_qu2: float = lerp(8.0, 20.0, t)
+			var w_qu3: float = lerp(3.0, 14.0, t)
+			var w_dup_q: float = lerp(3.0, 7.0, t)
+			var w_ref_q: float = lerp(2.0, 5.0, t)
+			var total3: float = w_dud3 + w_base3 + w_qu1 + w_qu2 + w_qu3 + w_dup_q + w_ref_q
+			var r3: float = randf() * total3
+			if r3 < w_dud3: return "DUD"
+			r3 -= w_dud3
+			if r3 < w_base3: return "BASE"
+			r3 -= w_base3
+			if r3 < w_qu1: return "QUALITY_UP_1"
+			r3 -= w_qu1
+			if r3 < w_qu2: return "QUALITY_UP_2"
+			r3 -= w_qu2
+			if r3 < w_qu3: return "QUALITY_UP_3"
+			r3 -= w_qu3
+			if r3 < w_dup_q: return "DUPLICATE"
+			return "REFUND"
 
 
 func _build_craft_slot(kind: String, recipe: Dictionary) -> Dictionary:
 	"""Build a craft slot dictionary. Slot's display label varies per kind
-	so the panel can render the lottery-ticket feel: BASE → 'Common', QUALITY_UP_3
-	→ 'Epic', DUD → 'Failed'. Item context is the recipe output_name."""
+	so the panel can render the lottery-ticket feel. Score is used by the
+	completion step to feed roll_quality (quality recipes) or is irrelevant
+	for non-quality pools where the kind drives the bonus instead."""
 	var output_name: String = String(recipe.get("output_name", recipe.get("name", "Item")))
 	match kind:
 		"DUD":
@@ -14598,6 +14659,18 @@ func _build_craft_slot(kind: String, recipe: Dictionary) -> Dictionary:
 			return {"kind": "QUALITY_UP_2", "name": "Polished", "type": "craft_quality", "score": 2, "output_name": output_name}
 		"QUALITY_UP_3":
 			return {"kind": "QUALITY_UP_3", "name": "Masterful", "type": "craft_quality", "score": 3, "output_name": output_name}
+		"STRUCTURE_HP_1":
+			return {"kind": "STRUCTURE_HP_1", "name": "+15% HP", "type": "craft_structure", "score": 1, "output_name": output_name}
+		"STRUCTURE_HP_2":
+			return {"kind": "STRUCTURE_HP_2", "name": "+30% HP", "type": "craft_structure", "score": 1, "output_name": output_name}
+		"DUPLICATE":
+			return {"kind": "DUPLICATE", "name": "Bonus +1", "type": "craft_bonus", "score": 1, "output_name": output_name}
+		"DUPLICATE_2":
+			return {"kind": "DUPLICATE_2", "name": "Bonus +2", "type": "craft_bonus", "score": 1, "output_name": output_name}
+		"DUPLICATE_3":
+			return {"kind": "DUPLICATE_3", "name": "Bonus +3", "type": "craft_bonus", "score": 1, "output_name": output_name}
+		"REFUND":
+			return {"kind": "REFUND", "name": "Mat refund", "type": "craft_bonus", "score": 1, "output_name": output_name}
 	return {"kind": "BASE", "name": "Standard", "type": "craft_base", "score": 1, "output_name": output_name}
 
 
@@ -14986,9 +15059,12 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	var slots: Array = session.get("slots", [])
 	var revealed_positions: Array = session.get("revealed_positions", [])
 	var miss_positions: Array = session.get("miss_positions", [])
-	# Best-reveal-wins: highest score among revealed slots. If nothing revealed
-	# (every scratch was a miss), default to score 0 (Crude outcome).
+	# Best-reveal-wins: highest score among revealed slots. Also tally the
+	# new slot kinds (DUPLICATE/REFUND/STRUCTURE_HP — v0.9.375).
 	var best_score: int = 0
+	var duplicate_count: int = 0  # extra items granted (sum of +N from DUPLICATE slots)
+	var refund_count: int = 0     # number of REFUND slots — each = +25% material refund
+	var structure_hp_pct: int = 0 # best HP bonus (0 / 15 / 30)
 	var awarded: Array = []
 	var missed: Array = []
 	for i in range(slots.size()):
@@ -14999,6 +15075,19 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 			var s_score = int(slot.get("score", 0))
 			if s_score > best_score:
 				best_score = s_score
+			match kind:
+				"DUPLICATE":
+					duplicate_count += 1
+				"DUPLICATE_2":
+					duplicate_count += 2
+				"DUPLICATE_3":
+					duplicate_count += 3
+				"REFUND":
+					refund_count += 1
+				"STRUCTURE_HP_1":
+					structure_hp_pct = maxi(structure_hp_pct, 15)
+				"STRUCTURE_HP_2":
+					structure_hp_pct = maxi(structure_hp_pct, 30)
 			awarded.append({"kind": kind, "name": name, "type": "craft"})
 		else:
 			var cause = "miss" if (i in miss_positions) else "unscratched"
@@ -15013,6 +15102,22 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	var quantity: int = int(session.get("craft_quantity", 1))
 	var temper_target: String = String(session.get("craft_temper_target", ""))
 	var is_tempered: bool = bool(session.get("craft_is_tempered", false))
+
+	# v0.9.375 — apply slot bonuses BEFORE _finalize_craft.
+	# REFUND: each slot returns 25% of consumed materials (cap 100%).
+	if refund_count > 0:
+		var refund_pct: int = mini(refund_count * 25, 100)
+		var consumed: Dictionary = session.get("craft_consumed_materials", {})
+		for mat_id in consumed:
+			var amt: int = int(int(consumed[mat_id]) * refund_pct / 100.0)
+			if amt > 0:
+				character.crafting_materials[mat_id] = int(character.crafting_materials.get(mat_id, 0)) + amt
+	# DUPLICATE: add to the craft quantity passed to _finalize_craft.
+	var effective_quantity: int = quantity + duplicate_count
+	# STRUCTURE_HP: TODO slice 3b — wire the % through to the placed structure.
+	# For now the slot is shown to the player but the HP modifier isn't applied.
+	# Recorded here so the message can mention what would-have-been.
+	var _structure_hp_recorded: int = structure_hp_pct
 
 	# Roll quality with derived score, then hand off to the existing craft
 	# finalize (which sends craft_result + grants XP/inventory).
@@ -17869,6 +17974,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"bar_speed_mult": craft_bar_speed_mult,
 			"bar_width_mult": craft_bar_width_mult,
 			"is_crafting": true,  # Hint so client can adapt completion summary copy
+			"craft_pool": _craft_pool_for_output_type(String(recipe.get("output_type", "")).to_lower()),
 		})
 		return
 

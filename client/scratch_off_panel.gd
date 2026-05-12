@@ -123,7 +123,7 @@ const JOB_THEME := {
 		"bar_color": Color(1.0, 0.55, 0.20, 0.32),
 		"bar_edge": Color(1.0, 0.75, 0.30, 0.85),
 		"verb": "hammer",
-		"bar_pattern": "strike_band",
+		"bar_pattern": "hammer_strike",
 	},
 	"crafting_alchemy": {
 		"title": "ALCHEMY — Brew Ticket",
@@ -141,7 +141,7 @@ const JOB_THEME := {
 		"bar_color": Color(0.75, 0.35, 1.0, 0.32),
 		"bar_edge": Color(0.85, 0.50, 1.0, 0.85),
 		"verb": "swirl",
-		"bar_pattern": "spotlight",
+		"bar_pattern": "swirl_spiral",
 	},
 	"crafting_enchanting": {
 		"title": "ENCHANTING — Sigil Ticket",
@@ -159,7 +159,7 @@ const JOB_THEME := {
 		"bar_color": Color(0.45, 0.90, 1.0, 0.32),
 		"bar_edge": Color(0.65, 1.0, 1.0, 0.85),
 		"verb": "trace",
-		"bar_pattern": "pendulum",
+		"bar_pattern": "sigil_trace",
 	},
 	"crafting_scribing": {
 		"title": "SCRIBING — Inkwell Ticket",
@@ -177,7 +177,7 @@ const JOB_THEME := {
 		"bar_color": Color(0.95, 0.85, 0.55, 0.32),
 		"bar_edge": Color(1.0, 0.95, 0.70, 0.85),
 		"verb": "quill stroke",
-		"bar_pattern": "wave_sweep",
+		"bar_pattern": "quill_stroke",
 	},
 	"crafting_construction": {
 		"title": "CONSTRUCTION — Blueprint Ticket",
@@ -195,7 +195,7 @@ const JOB_THEME := {
 		"bar_color": Color(0.85, 0.70, 0.40, 0.32),
 		"bar_edge": Color(0.95, 0.80, 0.50, 0.85),
 		"verb": "plumb-bob",
-		"bar_pattern": "pendulum",
+		"bar_pattern": "plumb_pendulum",
 	},
 }
 
@@ -260,13 +260,48 @@ var _spotlight_y_dir: float = 1.0
 # v0.9.371 — auto-skip transition tracker so we re-randomize only on flip,
 # not on every reveal refresh.
 var _was_auto_skip: bool = false
+# v0.9.373 — crafting motion state.
+# hammer_strike (blacksmithing):
+var _hammer_cell_x: float = 0.0
+var _hammer_cell_y: float = 0.0
+var _hammer_phase_t: float = 0.0  # 0..1 progress through current cycle
+var _hammer_cycle: float = 1.2    # total seconds per strike cycle
+# quill_stroke (scribing):
+var _quill_line: int = 0
+var _quill_x: float = 0.0
+var _quill_pause_until: float = 0.0
+var _quill_line_dir: float = 1.0  # 1 = L→R, -1 = R→L (alternates each line)
 # Tunables per pattern (scaled by tool stats at refresh time)
 const PENDULUM_AMPLITUDE_RATIO := 0.86  # fraction of canvas the swing covers
 const STRIKE_JUMP_INTERVAL_BASE := 0.55  # seconds at bar_speed_mult=1.0
 const STRIKE_BAND_HEIGHT_BASE := 80.0
-const SPOTLIGHT_RADIUS_BASE := 56.0
+const SPOTLIGHT_RADIUS_BASE := 60.0
 const SPOTLIGHT_PERIOD_X_BASE := 4.0
 const SPOTLIGHT_PERIOD_Y_BASE := 5.7
+# v0.9.374 — spotlight amplitude as a fraction of usable canvas. Higher
+# values push the spotlight closer to the corners so slots there get covered.
+const SPOTLIGHT_AMP_X_RATIO := 0.52
+const SPOTLIGHT_AMP_Y_RATIO := 0.52
+# v0.9.373 — crafting motion tunables.
+const HAMMER_STRIKE_INTERVAL_BASE := 0.85  # sec between strikes at speed=1.0 (was 0.70; gives reaction time)
+const HAMMER_DROP_DURATION := 0.30  # sec hammer takes to fall (was 0.18; lets player anticipate)
+const HAMMER_IMPACT_DURATION := 0.55  # sec hammer dwells on impact (hit window — was 0.25)
+const HAMMER_CELL_RADIUS_BASE := 48.0  # px radius of single-cell hit zone (was 38)
+const HAMMER_TELEGRAPH_COLOR := Color(1.0, 0.65, 0.30, 0.32)  # faint target during drop phase
+const SPIRAL_RADIUS_MIN := 30.0
+const SPIRAL_RADIUS_MAX := 280.0  # v0.9.374 — reach the corners (was 160)
+const SPIRAL_RADIUS_PERIOD := 5.0  # full in-out cycle
+const SPIRAL_THETA_RATE := 1.6  # radians/sec at speed=1.0
+const SPIRAL_RADIUS_BASE := 56.0  # spotlight radius (hit zone)
+const SIGIL_STAR_POINTS := 5
+const SIGIL_TRAVERSAL_PERIOD := 7.0  # time to traverse all star points
+const SIGIL_RADIUS := 240.0  # star inscribed radius (was 140 — too small; star didn't reach corner slots)
+const SIGIL_SPOTLIGHT_RADIUS_BASE := 62.0  # was 52
+const QUILL_LINE_INTERVAL_BASE := 1.8  # sec per line sweep at speed=1.0
+const QUILL_PAUSE := 0.20  # sec pause at line end
+const QUILL_LINE_HEIGHT_BASE := 80.0  # vertical thickness of one quill line
+const QUILL_LINE_COUNT := 4
+const PLUMB_AMPLITUDE_RATIO := 0.85
 
 
 func _ready() -> void:
@@ -316,6 +351,28 @@ func _randomize_pattern_start() -> void:
 			_pattern_t = randf_range(0.0, TAU)
 			_spotlight_x_dir = 1.0 if randf() < 0.5 else -1.0
 			_spotlight_y_dir = 1.0 if randf() < 0.5 else -1.0
+		"hammer_strike":
+			# Force a fresh cycle pick by setting last_cycle to a sentinel.
+			_meta_set("hammer_last_cycle", -1)
+			_hammer_cell_x = CANVAS_SIZE.x * 0.5
+			_hammer_cell_y = CANVAS_SIZE.y * 0.5
+			_hammer_phase_t = 0.0
+		"swirl_spiral":
+			# Random phase along radius cycle + random spin direction.
+			_pattern_t = randf_range(0.0, SPIRAL_RADIUS_PERIOD)
+			_bar_dir = 1.0 if randf() < 0.5 else -1.0
+		"sigil_trace":
+			_pattern_t = randf_range(0.0, SIGIL_TRAVERSAL_PERIOD)
+			_bar_dir = 1.0 if randf() < 0.5 else -1.0
+		"quill_stroke":
+			# Start at a random line + random initial x in [0, max_x] + random direction.
+			_quill_line = randi() % QUILL_LINE_COUNT
+			_quill_line_dir = 1.0 if randf() < 0.5 else -1.0
+			_quill_x = randf_range(0.0, max(0.0, CANVAS_SIZE.x - _bar_width))
+			_quill_pause_until = 0.0
+		"plumb_pendulum":
+			_pattern_t = randf_range(0.0, TAU)
+			_bar_dir = 1.0 if randf() < 0.5 else -1.0
 		_:
 			pass
 
@@ -527,11 +584,29 @@ func _render_header(snapshot: Dictionary) -> void:
 		else:
 			line1 = "Click a silhouette while the [color=%s]%s[/color] is over it." % [verb_color, String(theme["verb"])]
 	_subtitle_label.append_text("[color=#88BBDD]%s[/color]\n" % line1)
+	# v0.9.375 — pool hint for crafting so the player knows what slot kinds
+	# can appear for this recipe (quality / structure HP / bulk duplicates).
+	if is_crafting:
+		var pool_hint := _craft_pool_hint(String(snapshot.get("craft_pool", "")))
+		if pool_hint != "":
+			_subtitle_label.append_text("[color=#9FB8D8]%s[/color]\n" % pool_hint)
 	var tool_name = String(snapshot.get("tool_name", ""))
 	var pre_reveals = int(snapshot.get("pre_reveals", 0))
 	if pre_reveals > 0 and tool_name != "":
 		var plural = "s" if pre_reveals != 1 else ""
 		_subtitle_label.append_text("[color=#C4A882]Your %s pre-revealed %d slot%s.[/color]" % [tool_name, pre_reveals, plural])
+
+
+func _craft_pool_hint(pool: String) -> String:
+	match pool:
+		"structure":
+			return "Slots reveal reinforcement (+HP), bonus structures, or material refunds."
+		"material":
+			return "Slots reveal bonus batches (+1/+2/+3) and material refunds."
+		"quality":
+			return "Slots reveal quality boosts, bonus crafts, or material refunds."
+		_:
+			return ""
 
 
 func _get_theme() -> Dictionary:
@@ -697,6 +772,18 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 				kind_label.text = "◆ ++"
 			"QUALITY_UP_3":
 				kind_label.text = "★★★"
+			"DUPLICATE":
+				kind_label.text = "✕2"
+			"DUPLICATE_2":
+				kind_label.text = "✕3"
+			"DUPLICATE_3":
+				kind_label.text = "✕4"
+			"REFUND":
+				kind_label.text = "↺ MAT"
+			"STRUCTURE_HP_1":
+				kind_label.text = "🛡 +"
+			"STRUCTURE_HP_2":
+				kind_label.text = "🛡 ++"
 			_:
 				kind_label.text = "◆"
 		inner.add_child(kind_label)
@@ -772,6 +859,49 @@ func _palette_for_slot(slot: Dictionary) -> Dictionary:
 				"border": Color(0.64, 0.21, 0.93, 1.0),
 				"kind_color": Color(0.85, 0.45, 1.0),
 				"name_color": Color(0.90, 0.75, 1.0),
+			}
+		# v0.9.375 — duplicate/refund/structure-HP pools.
+		"DUPLICATE":
+			return {
+				"bg": Color(0.22, 0.14, 0.04, 1.0),
+				"border": Color(1.0, 0.70, 0.20, 1.0),
+				"kind_color": Color(1.0, 0.78, 0.30),
+				"name_color": Color(1.0, 0.90, 0.55),
+			}
+		"DUPLICATE_2":
+			return {
+				"bg": Color(0.24, 0.12, 0.04, 1.0),
+				"border": Color(1.0, 0.55, 0.10, 1.0),
+				"kind_color": Color(1.0, 0.65, 0.20),
+				"name_color": Color(1.0, 0.80, 0.45),
+			}
+		"DUPLICATE_3":
+			return {
+				"bg": Color(0.26, 0.10, 0.04, 1.0),
+				"border": Color(1.0, 0.40, 0.05, 1.0),
+				"kind_color": Color(1.0, 0.55, 0.15),
+				"name_color": Color(1.0, 0.72, 0.35),
+			}
+		"REFUND":
+			return {
+				"bg": Color(0.04, 0.18, 0.18, 1.0),
+				"border": Color(0.20, 0.85, 0.80, 1.0),
+				"kind_color": Color(0.45, 0.95, 0.90),
+				"name_color": Color(0.80, 1.0, 0.95),
+			}
+		"STRUCTURE_HP_1":
+			return {
+				"bg": Color(0.12, 0.12, 0.14, 1.0),
+				"border": Color(0.65, 0.65, 0.72, 1.0),
+				"kind_color": Color(0.80, 0.82, 0.90),
+				"name_color": Color(0.92, 0.94, 1.0),
+			}
+		"STRUCTURE_HP_2":
+			return {
+				"bg": Color(0.14, 0.14, 0.18, 1.0),
+				"border": Color(0.85, 0.85, 0.95, 1.0),
+				"kind_color": Color(0.95, 0.95, 1.0),
+				"name_color": Color(1.0, 1.0, 1.0),
 			}
 		"LUCKY":
 			return {
@@ -917,6 +1047,16 @@ func _process(delta: float) -> void:
 			_advance_strike_band(delta)
 		"spotlight":
 			_advance_spotlight(delta)
+		"hammer_strike":
+			_advance_hammer_strike(delta)
+		"swirl_spiral":
+			_advance_swirl_spiral(delta)
+		"sigil_trace":
+			_advance_sigil_trace(delta)
+		"quill_stroke":
+			_advance_quill_stroke(delta)
+		"plumb_pendulum":
+			_advance_plumb_pendulum(delta)
 		_:
 			_advance_wave_sweep(delta)
 	if _bar_runner and is_instance_valid(_bar_runner):
@@ -1005,11 +1145,154 @@ func _advance_spotlight(_delta: float) -> void:
 	var period_x: float = SPOTLIGHT_PERIOD_X_BASE * (BAR_BASE_SPEED / max(60.0, _bar_speed))
 	var period_y: float = SPOTLIGHT_PERIOD_Y_BASE * (BAR_BASE_SPEED / max(60.0, _bar_speed))
 	var radius: float = SPOTLIGHT_RADIUS_BASE * (_bar_width / BAR_BASE_WIDTH)
-	var amp_x: float = (CANVAS_SIZE.x - radius * 2.0) * 0.45
-	var amp_y: float = (CANVAS_SIZE.y - radius * 2.0) * 0.45
+	# v0.9.374 — wider amplitudes so the spotlight actually reaches the
+	# corner slots. Coverage guarantee: every slot is touched at some
+	# point during the Lissajous cycle.
+	var amp_x: float = (CANVAS_SIZE.x - radius * 2.0) * SPOTLIGHT_AMP_X_RATIO
+	var amp_y: float = (CANVAS_SIZE.y - radius * 2.0) * SPOTLIGHT_AMP_Y_RATIO
 	# v0.9.371 — per-session direction flips on each axis.
 	_bar_x = CANVAS_SIZE.x * 0.5 + amp_x * sin(_pattern_t * TAU / period_x * _spotlight_x_dir)
 	_bar_y = CANVAS_SIZE.y * 0.5 + amp_y * sin(_pattern_t * TAU / period_y * _spotlight_y_dir)
+
+
+# --- Pattern: HAMMER_STRIKE (blacksmithing) ----------------------------------
+# Hammer falls onto a single CELL of the canvas, dwells briefly (the hit
+# window), then retracts upward. Much smaller hit zone than strike_band,
+# rewarding precise timing. Tool width widens the impact zone.
+func _advance_hammer_strike(_delta: float) -> void:
+	# Cycle: raise (rest) → drop → impact → reset.
+	# Interval scales with bar_speed: faster tool → faster cycle.
+	var interval: float = HAMMER_STRIKE_INTERVAL_BASE * (BAR_BASE_SPEED / max(60.0, _bar_speed))
+	_hammer_cycle = max(0.45, HAMMER_DROP_DURATION + HAMMER_IMPACT_DURATION + interval)
+	_hammer_phase_t = fmod(_pattern_t, _hammer_cycle)
+	# Pick a new target cell at the start of each cycle. Track when we cross
+	# zero (start of cycle) by comparing to last frame's t.
+	# Simpler: rerolling happens when the rest phase ends — derive a deterministic
+	# pick from the cycle index so we don't drift in feel.
+	var cycle_index: int = int(_pattern_t / _hammer_cycle)
+	if cycle_index != int(_meta_get("hammer_last_cycle", -1)):
+		_meta_set("hammer_last_cycle", cycle_index)
+		# Pick a random hidden card position to drop on. Falls back to a random
+		# cell on the canvas if no positions tracked yet.
+		if _slot_positions.size() > 0:
+			var idx := randi() % _slot_positions.size()
+			var pos: Vector2 = _slot_positions[idx]
+			_hammer_cell_x = pos.x + CARD_SIZE.x * 0.5
+			_hammer_cell_y = pos.y + CARD_SIZE.y * 0.5
+		else:
+			_hammer_cell_x = randf_range(60.0, CANVAS_SIZE.x - 60.0)
+			_hammer_cell_y = randf_range(60.0, CANVAS_SIZE.y - 60.0)
+		# Emit chink at start of new strike (the moment the new target is locked).
+		rhythm_beat.emit("chink")
+
+
+func _hammer_in_impact_window() -> bool:
+	"""True while the hammer is at the bottom of its drop, in the hit window."""
+	var impact_start: float = HAMMER_DROP_DURATION
+	var impact_end: float = HAMMER_DROP_DURATION + HAMMER_IMPACT_DURATION
+	return _hammer_phase_t >= impact_start and _hammer_phase_t <= impact_end
+
+
+# --- Pattern: SWIRL_SPIRAL (alchemy) -----------------------------------------
+# Spotlight follows a spiral path — radius oscillates in/out while angle
+# advances continuously. Like a spoon stirring a cauldron.
+func _advance_swirl_spiral(_delta: float) -> void:
+	var period: float = SPIRAL_RADIUS_PERIOD * (BAR_BASE_SPEED / max(60.0, _bar_speed))
+	# Radius oscillates between min and max via a (1+sin)/2 envelope.
+	var r_norm: float = (sin(_pattern_t * TAU / period - PI * 0.5) + 1.0) * 0.5
+	var radius: float = lerp(SPIRAL_RADIUS_MIN, SPIRAL_RADIUS_MAX, r_norm)
+	var theta_rate: float = SPIRAL_THETA_RATE * (_bar_speed / BAR_BASE_SPEED) * _bar_dir
+	var theta: float = _pattern_t * theta_rate
+	_bar_x = CANVAS_SIZE.x * 0.5 + cos(theta) * radius
+	_bar_y = CANVAS_SIZE.y * 0.5 + sin(theta) * radius
+
+
+# --- Pattern: SIGIL_TRACE (enchanting) ---------------------------------------
+# Spotlight traces a 5-point star pattern by linearly interpolating between
+# the star's vertices in classic pentagram order (every other point).
+func _advance_sigil_trace(_delta: float) -> void:
+	var period: float = SIGIL_TRAVERSAL_PERIOD * (BAR_BASE_SPEED / max(60.0, _bar_speed))
+	# Normalize to [0, 1) across the full pattern, then map to 5 segments.
+	var u: float = fmod(_pattern_t / period, 1.0)
+	if _bar_dir < 0.0:
+		u = 1.0 - u  # reverse direction
+	var seg_count: int = SIGIL_STAR_POINTS
+	var seg_index: int = int(u * float(seg_count))
+	var seg_t: float = u * float(seg_count) - float(seg_index)
+	# Star vertices: every-other order so it traces a pentagram.
+	var vertices: Array = _sigil_star_vertices()
+	if vertices.size() < seg_count:
+		return
+	var a: Vector2 = vertices[seg_index % seg_count]
+	var b: Vector2 = vertices[(seg_index + 1) % seg_count]
+	var p: Vector2 = a.lerp(b, seg_t)
+	_bar_x = p.x
+	_bar_y = p.y
+
+
+func _sigil_star_vertices() -> Array:
+	"""5 vertices of a star, ordered to trace a pentagram (skip-one).
+	v0.9.374 — radius scales with tool's bar_width_mult so the sigil GROWS
+	with skill. Base radius is large enough that every slot is on the path
+	at low skill too — coverage guarantee."""
+	var center := Vector2(CANVAS_SIZE.x * 0.5, CANVAS_SIZE.y * 0.5)
+	# Skill scaling: 1.0 at base tool, up to ~1.30 at high tool stats. Bigger
+	# star = path passes through more corners and slot positions.
+	var skill_scale: float = 1.0 + max(0.0, _bar_width - BAR_BASE_WIDTH) / BAR_BASE_WIDTH * 0.30
+	skill_scale = clampf(skill_scale, 0.9, 1.40)
+	var actual_radius: float = SIGIL_RADIUS * skill_scale
+	var verts := []
+	for i in range(SIGIL_STAR_POINTS):
+		var angle := -PI * 0.5 + TAU * float(i * 2) / float(SIGIL_STAR_POINTS)
+		verts.append(center + Vector2(cos(angle), sin(angle)) * actual_radius)
+	return verts
+
+
+# --- Pattern: QUILL_STROKE (scribing) ----------------------------------------
+# Horizontal bar moves like a typewriter — sweeps a line, pauses at the
+# margin, drops to the next line, alternates direction. Hit zone is the
+# bar's column at its current line's Y range.
+func _advance_quill_stroke(delta: float) -> void:
+	# Pause handling — bar holds at end of line briefly.
+	if _pattern_t < _quill_pause_until:
+		return
+	var line_h: float = QUILL_LINE_HEIGHT_BASE * (_bar_width / BAR_BASE_WIDTH)
+	line_h = clampf(line_h, 50.0, 130.0)
+	var line_y_centers: Array = []
+	var pad := 8.0
+	for i in range(QUILL_LINE_COUNT):
+		line_y_centers.append(pad + line_h * 0.5 + float(i) * (CANVAS_SIZE.y - pad * 2.0 - line_h) / float(QUILL_LINE_COUNT - 1))
+	_quill_x += _bar_speed * _quill_line_dir * delta
+	var max_x: float = CANVAS_SIZE.x - _bar_width
+	if (_quill_line_dir > 0 and _quill_x >= max_x) or (_quill_line_dir < 0 and _quill_x <= 0.0):
+		# Hit margin: pause, drop to next line, flip direction.
+		_quill_pause_until = _pattern_t + QUILL_PAUSE
+		_quill_line = (_quill_line + 1) % QUILL_LINE_COUNT
+		_quill_line_dir *= -1.0
+		_quill_x = clampf(_quill_x, 0.0, max_x)
+	_bar_x = _quill_x
+	_bar_y = line_y_centers[clampi(_quill_line, 0, line_y_centers.size() - 1)]
+
+
+# --- Pattern: PLUMB_PENDULUM (construction) ----------------------------------
+# Vertical bar oscillates top to bottom — like a plumb bob on a string.
+# Sine-eased so it slows at the extremes. Different axis than logging's L↔R.
+func _advance_plumb_pendulum(_delta: float) -> void:
+	var bar_h: float = QUILL_LINE_HEIGHT_BASE * (_bar_width / BAR_BASE_WIDTH)
+	bar_h = clampf(bar_h, 40.0, 130.0)
+	var amplitude := (CANVAS_SIZE.y - bar_h) * PLUMB_AMPLITUDE_RATIO * 0.5
+	var center_y := (CANVAS_SIZE.y - bar_h) * 0.5
+	var omega: float = _bar_speed / max(1.0, amplitude) * 0.85 * _bar_dir
+	_bar_y = center_y + amplitude * sin(_pattern_t * omega)
+
+
+# --- Per-pattern meta helpers (avoid Object set_meta() name clashes) ---------
+func _meta_get(key: String, default: Variant) -> Variant:
+	return get_meta(key, default) if has_meta(key) else default
+
+
+func _meta_set(key: String, value: Variant) -> void:
+	set_meta(key, value)
 
 
 func _draw_timing_bar() -> void:
@@ -1028,6 +1311,16 @@ func _draw_timing_bar() -> void:
 			_draw_strike_band(theme)
 		"spotlight":
 			_draw_spotlight(theme)
+		"hammer_strike":
+			_draw_hammer_strike(theme)
+		"swirl_spiral":
+			_draw_swirl_spiral(theme)
+		"sigil_trace":
+			_draw_sigil_trace(theme)
+		"quill_stroke":
+			_draw_quill_stroke(theme)
+		"plumb_pendulum":
+			_draw_plumb_pendulum(theme)
 		_:
 			_draw_wave_sweep(theme)
 	# Hit-zone glow on hidden cards in the live zone.
@@ -1117,6 +1410,143 @@ func _draw_spotlight(theme: Dictionary) -> void:
 	_bar_runner.draw_polyline(ring_pts, theme["bar_edge"], 1.5)
 
 
+func _draw_hammer_strike(theme: Dictionary) -> void:
+	# v0.9.373 — hammer drops onto a cell. Visualize as a vertical hammer-head
+	# bar that descends from the top to the target cell, dwells, then retracts.
+	var cell_radius: float = HAMMER_CELL_RADIUS_BASE * (_bar_width / BAR_BASE_WIDTH)
+	cell_radius = clampf(cell_radius, 24.0, 90.0)
+	# Compute hammer head Y based on phase.
+	var head_y: float
+	if _hammer_phase_t < HAMMER_DROP_DURATION:
+		# Dropping: head moves from top (-30) to target_y.
+		var t: float = _hammer_phase_t / HAMMER_DROP_DURATION
+		head_y = lerp(-30.0, _hammer_cell_y, t)
+	elif _hammer_phase_t < HAMMER_DROP_DURATION + HAMMER_IMPACT_DURATION:
+		# Impact dwell.
+		head_y = _hammer_cell_y
+	else:
+		# Retract: head moves back up.
+		var t2_total: float = _hammer_cycle - HAMMER_DROP_DURATION - HAMMER_IMPACT_DURATION
+		var t2: float = (_hammer_phase_t - HAMMER_DROP_DURATION - HAMMER_IMPACT_DURATION) / max(0.01, t2_total)
+		head_y = lerp(_hammer_cell_y, -30.0, t2)
+	# v0.9.374 — TELEGRAPH the impact zone during the drop phase so the player
+	# can pre-aim. Faint ring shows where the hammer is going to land before
+	# it gets there. Telegraph fades in as the hammer approaches the cell.
+	if _hammer_phase_t < HAMMER_DROP_DURATION:
+		var telegraph_t: float = _hammer_phase_t / HAMMER_DROP_DURATION  # 0→1 over drop
+		var telegraph_alpha: float = lerp(0.35, 0.85, telegraph_t)
+		var telegraph_center := Vector2(_hammer_cell_x, _hammer_cell_y)
+		var t_color := Color(theme["bar_edge"])
+		t_color.a *= telegraph_alpha
+		# Dashed outline so it reads as "incoming" not "active".
+		var t_seg := 32
+		var dash_on := true
+		for i in range(t_seg):
+			if dash_on:
+				var a0 := float(i) / float(t_seg) * TAU
+				var a1 := float(i + 1) / float(t_seg) * TAU
+				_bar_runner.draw_line(
+					telegraph_center + Vector2(cos(a0), sin(a0)) * cell_radius,
+					telegraph_center + Vector2(cos(a1), sin(a1)) * cell_radius,
+					t_color,
+					1.5
+				)
+			dash_on = not dash_on
+	# Hammer shaft (thin vertical line from canvas top to head).
+	var shaft_x := _hammer_cell_x
+	if head_y > 0:
+		_bar_runner.draw_line(Vector2(shaft_x, 0), Vector2(shaft_x, head_y - 8.0), theme["bar_edge"], 2.0)
+	# Hammer head (rectangle).
+	var head_rect := Rect2(_hammer_cell_x - 14.0, head_y - 10.0, 28.0, 18.0)
+	_bar_runner.draw_rect(head_rect, theme["bar_edge"], true)
+	# Impact glow on the target cell during the impact window.
+	if _hammer_in_impact_window():
+		var center := Vector2(_hammer_cell_x, _hammer_cell_y)
+		_bar_runner.draw_circle(center, cell_radius, theme["bar_color"])
+		var ring_pts := PackedVector2Array()
+		var seg := 32
+		for i in range(seg + 1):
+			var a := float(i) / float(seg) * TAU
+			ring_pts.append(center + Vector2(cos(a), sin(a)) * cell_radius)
+		_bar_runner.draw_polyline(ring_pts, theme["bar_edge"], 2.0)
+
+
+func _draw_swirl_spiral(theme: Dictionary) -> void:
+	# v0.9.373 — alchemy: circular spotlight on a spiral path.
+	var radius: float = SPIRAL_RADIUS_BASE * (_bar_width / BAR_BASE_WIDTH)
+	radius = clampf(radius, 26.0, 100.0)
+	var center := Vector2(_bar_x, _bar_y)
+	_bar_runner.draw_circle(center, radius, theme["bar_color"])
+	var ring_pts := PackedVector2Array()
+	var seg := 36
+	for i in range(seg + 1):
+		var a := float(i) / float(seg) * TAU
+		ring_pts.append(center + Vector2(cos(a), sin(a)) * radius)
+	_bar_runner.draw_polyline(ring_pts, theme["bar_edge"], 1.5)
+	# Stir-marker — a small dot at canvas center to anchor the spiral.
+	_bar_runner.draw_circle(Vector2(CANVAS_SIZE.x * 0.5, CANVAS_SIZE.y * 0.5), 3.0, theme["bar_edge"])
+
+
+func _draw_sigil_trace(theme: Dictionary) -> void:
+	# v0.9.373 — enchanting: spotlight tracing a pentagram, with the full
+	# pentagram outline drawn faintly so the player can anticipate the path.
+	var radius: float = SIGIL_SPOTLIGHT_RADIUS_BASE * (_bar_width / BAR_BASE_WIDTH)
+	radius = clampf(radius, 28.0, 95.0)
+	# Faint pentagram path lines.
+	var verts := _sigil_star_vertices()
+	var faint := Color(theme["bar_edge"])
+	faint.a *= 0.30
+	for i in range(verts.size()):
+		var a: Vector2 = verts[i]
+		var b: Vector2 = verts[(i + 1) % verts.size()]
+		_bar_runner.draw_line(a, b, faint, 1.0)
+	# Active spotlight.
+	var center := Vector2(_bar_x, _bar_y)
+	_bar_runner.draw_circle(center, radius, theme["bar_color"])
+	var ring_pts := PackedVector2Array()
+	var seg := 32
+	for i in range(seg + 1):
+		var a := float(i) / float(seg) * TAU
+		ring_pts.append(center + Vector2(cos(a), sin(a)) * radius)
+	_bar_runner.draw_polyline(ring_pts, theme["bar_edge"], 1.5)
+
+
+func _draw_quill_stroke(theme: Dictionary) -> void:
+	# v0.9.373 — scribing: horizontal bar at the current "line", typewriter
+	# style. Faint horizontal guide lines for the unwritten rows so the
+	# player can read where future lines will be.
+	var line_h: float = QUILL_LINE_HEIGHT_BASE * (_bar_width / BAR_BASE_WIDTH)
+	line_h = clampf(line_h, 50.0, 130.0)
+	# Faint guide lines for all rows.
+	var pad := 8.0
+	var faint := Color(theme["bar_edge"])
+	faint.a *= 0.25
+	for i in range(QUILL_LINE_COUNT):
+		var y: float = pad + line_h * 0.5 + float(i) * (CANVAS_SIZE.y - pad * 2.0 - line_h) / float(QUILL_LINE_COUNT - 1)
+		_bar_runner.draw_line(Vector2(20.0, y), Vector2(CANVAS_SIZE.x - 20.0, y), faint, 1.0)
+	# Active bar — at quill's current x, y centered on the current line.
+	var bar_top: float = _bar_y - line_h * 0.5
+	var rect := Rect2(_bar_x, bar_top, _bar_width, line_h)
+	_bar_runner.draw_rect(rect, theme["bar_color"], true)
+	_bar_runner.draw_line(Vector2(_bar_x, bar_top), Vector2(_bar_x, bar_top + line_h), theme["bar_edge"], 1.5)
+	_bar_runner.draw_line(Vector2(_bar_x + _bar_width, bar_top), Vector2(_bar_x + _bar_width, bar_top + line_h), theme["bar_edge"], 1.5)
+
+
+func _draw_plumb_pendulum(theme: Dictionary) -> void:
+	# v0.9.373 — construction: horizontal bar oscillating top to bottom.
+	# Different axis than logging's pendulum.
+	var bar_h: float = QUILL_LINE_HEIGHT_BASE * (_bar_width / BAR_BASE_WIDTH)
+	bar_h = clampf(bar_h, 40.0, 130.0)
+	var rect := Rect2(0, _bar_y, CANVAS_SIZE.x, bar_h)
+	_bar_runner.draw_rect(rect, theme["bar_color"], true)
+	_bar_runner.draw_line(Vector2(0, _bar_y), Vector2(CANVAS_SIZE.x, _bar_y), theme["bar_edge"], 1.5)
+	_bar_runner.draw_line(Vector2(0, _bar_y + bar_h), Vector2(CANVAS_SIZE.x, _bar_y + bar_h), theme["bar_edge"], 1.5)
+	# Plumb-line marker — a short vertical line at canvas center hinting at
+	# the "string" holding the bob.
+	var pivot_x := CANVAS_SIZE.x * 0.5
+	_bar_runner.draw_line(Vector2(pivot_x, _bar_y + 4.0), Vector2(pivot_x, _bar_y + bar_h - 4.0), theme["bar_edge"], 2.0)
+
+
 # --- Per-pattern hit-test ----------------------------------------------------
 
 func _is_slot_in_hit_zone(slot_index: int) -> bool:
@@ -1138,6 +1568,35 @@ func _is_slot_in_hit_zone(slot_index: int) -> bool:
 			radius = clampf(radius, 30.0, 130.0)
 			var card_center := pos + CARD_SIZE * 0.5
 			return card_center.distance_to(Vector2(_bar_x, _bar_y)) <= radius + min(CARD_SIZE.x, CARD_SIZE.y) * 0.4
+		"hammer_strike":
+			# Hits only valid during the impact window AND on the target cell.
+			if not _hammer_in_impact_window():
+				return false
+			var cell_radius := HAMMER_CELL_RADIUS_BASE * (_bar_width / BAR_BASE_WIDTH)
+			cell_radius = clampf(cell_radius, 24.0, 90.0)
+			var card_center2 := pos + CARD_SIZE * 0.5
+			return card_center2.distance_to(Vector2(_hammer_cell_x, _hammer_cell_y)) <= cell_radius + min(CARD_SIZE.x, CARD_SIZE.y) * 0.4
+		"swirl_spiral":
+			var sradius := SPIRAL_RADIUS_BASE * (_bar_width / BAR_BASE_WIDTH)
+			sradius = clampf(sradius, 26.0, 100.0)
+			var card_center3 := pos + CARD_SIZE * 0.5
+			return card_center3.distance_to(Vector2(_bar_x, _bar_y)) <= sradius + min(CARD_SIZE.x, CARD_SIZE.y) * 0.4
+		"sigil_trace":
+			var sigradius := SIGIL_SPOTLIGHT_RADIUS_BASE * (_bar_width / BAR_BASE_WIDTH)
+			sigradius = clampf(sigradius, 28.0, 95.0)
+			var card_center4 := pos + CARD_SIZE * 0.5
+			return card_center4.distance_to(Vector2(_bar_x, _bar_y)) <= sigradius + min(CARD_SIZE.x, CARD_SIZE.y) * 0.4
+		"quill_stroke":
+			# Need both X overlap with the moving bar AND Y overlap with the active line.
+			var qline_h := QUILL_LINE_HEIGHT_BASE * (_bar_width / BAR_BASE_WIDTH)
+			qline_h = clampf(qline_h, 50.0, 130.0)
+			var qtop := _bar_y - qline_h * 0.5
+			var y_overlap := (qtop + qline_h) >= pos.y and qtop <= (pos.y + CARD_SIZE.y)
+			return y_overlap and _bar_overlaps_x(pos.x, pos.x + CARD_SIZE.x)
+		"plumb_pendulum":
+			var pbar_h := QUILL_LINE_HEIGHT_BASE * (_bar_width / BAR_BASE_WIDTH)
+			pbar_h = clampf(pbar_h, 40.0, 130.0)
+			return (_bar_y + pbar_h) >= pos.y and _bar_y <= (pos.y + CARD_SIZE.y)
 	return _bar_overlaps_x(pos.x, pos.x + CARD_SIZE.x)
 
 
