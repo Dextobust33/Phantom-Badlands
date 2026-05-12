@@ -32,12 +32,17 @@ const FILTER_CHIPS := [
 const GEAR_SLOTS := ["helm", "amulet", "weapon", "shield", "armor", "ring", "boots"]
 const TOOL_SLOTS := ["pickaxe", "axe", "sickle", "rod"]
 
-var current_filter: String = "all"
+# v0.9.353 — filter chips switched from radio-select ("show only X") to
+# toggle-hide ("hide X from view"). Each non-All chip toggles its category
+# in/out of `hidden_categories`. "All" chip resets to show everything.
+# State persists across sessions in user://inventory_prefs.json.
+var hidden_categories: Dictionary = {}  # filter id -> true (presence = hidden)
 var client_ref = null
 var equip_slot_nodes: Dictionary = {}
 var tool_slot_nodes: Dictionary = {}
 var card_nodes: Array = []
 var _filter_buttons: Dictionary = {}
+const INVENTORY_PREFS_PATH := "user://inventory_prefs.json"
 var _selected_card_index: int = -1  # selection within visible cards array
 
 var _root_panel: PanelContainer
@@ -139,10 +144,17 @@ func _build_layout() -> void:
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.add_theme_font_size_override("font_size", 11)
 		btn.custom_minimum_size = Vector2(0, 24)
+		# Tooltip clarifies the new toggle semantics so players don't
+		# expect radio-select.
+		if chip["id"] == "all":
+			btn.tooltip_text = "Show all categories (reset filters)"
+		else:
+			btn.tooltip_text = "Toggle " + chip["label"] + " items on/off in the inventory view"
 		btn.pressed.connect(_on_filter_pressed.bind(chip["id"]))
 		_filter_chips.add_child(btn)
 		_filter_buttons[chip["id"]] = btn
-	_filter_buttons["all"].button_pressed = true
+	_load_inventory_prefs()
+	_refresh_filter_button_states()
 
 	# Body: paper-doll (left) + card grid (right)
 	var body := HBoxContainer.new()
@@ -460,35 +472,89 @@ func _rebuild_cards(inventory: Array) -> void:
 		_empty_label.visible = false
 
 func _matches_filter(item: Dictionary) -> bool:
-	if current_filter == "all":
+	# v0.9.353 — hide items whose category is in hidden_categories. Items
+	# without a recognized filter category always show (they have no chip
+	# to toggle them off anyway).
+	if hidden_categories.is_empty():
 		return true
 	var t: String = item.get("type", "")
-	match current_filter:
-		"weapon":
-			return "weapon" in t
-		"armor":
-			return ("armor" in t) or ("helm" in t) or ("shield" in t) or ("boots" in t) or ("ring" in t) or ("amulet" in t)
-		"consumable":
-			return item.get("is_consumable", false)
-		"tool":
-			return t == "tool"
-		"rune":
-			return t == "rune"
-		"egg":
-			return t == "egg" or t.begins_with("egg_")
+	for hidden_id in hidden_categories.keys():
+		match hidden_id:
+			"weapon":
+				if "weapon" in t:
+					return false
+			"armor":
+				if ("armor" in t) or ("helm" in t) or ("shield" in t) or ("boots" in t) or ("ring" in t) or ("amulet" in t):
+					return false
+			"consumable":
+				if item.get("is_consumable", false):
+					return false
+			"tool":
+				if t == "tool":
+					return false
+			"rune":
+				if t == "rune":
+					return false
+			"egg":
+				if t == "egg" or t.begins_with("egg_"):
+					return false
 	return true
 
-func set_filter(id: String) -> void:
-	current_filter = id
-	for fid in _filter_buttons.keys():
-		_filter_buttons[fid].button_pressed = (fid == id)
+func _refresh_filter_button_states() -> void:
+	# "All" button is pressed when nothing is hidden (i.e., reset state).
+	# Other buttons are pressed when their category is currently VISIBLE.
+	# Unpressed = hidden. This way a glance at the chip row tells the player
+	# which categories are currently filtered out.
+	if _filter_buttons.has("all"):
+		_filter_buttons["all"].button_pressed = hidden_categories.is_empty()
+	for chip in FILTER_CHIPS:
+		var id: String = chip["id"]
+		if id == "all":
+			continue
+		if _filter_buttons.has(id):
+			_filter_buttons[id].button_pressed = not hidden_categories.has(id)
+
+func _load_inventory_prefs() -> void:
+	if not FileAccess.file_exists(INVENTORY_PREFS_PATH):
+		return
+	var file = FileAccess.open(INVENTORY_PREFS_PATH, FileAccess.READ)
+	if not file:
+		return
+	var json_str = file.get_as_text()
+	file.close()
+	var json = JSON.new()
+	if json.parse(json_str) != OK:
+		return
+	var data = json.data
+	if data is Dictionary:
+		var hidden = data.get("hidden_categories", [])
+		if hidden is Array:
+			hidden_categories.clear()
+			for id in hidden:
+				hidden_categories[str(id)] = true
+
+func _save_inventory_prefs() -> void:
+	var data = {"hidden_categories": hidden_categories.keys()}
+	var file = FileAccess.open(INVENTORY_PREFS_PATH, FileAccess.WRITE)
+	if not file:
+		return
+	file.store_string(JSON.stringify(data))
+	file.close()
 
 # === Signal handlers ===
 
 func _on_filter_pressed(id: String) -> void:
-	current_filter = id
-	for fid in _filter_buttons.keys():
-		_filter_buttons[fid].button_pressed = (fid == id)
+	# v0.9.353 — toggle behavior. "All" resets (show everything); other
+	# chips toggle their category in/out of hidden_categories.
+	if id == "all":
+		hidden_categories.clear()
+	else:
+		if hidden_categories.has(id):
+			hidden_categories.erase(id)
+		else:
+			hidden_categories[id] = true
+	_refresh_filter_button_states()
+	_save_inventory_prefs()
 	emit_signal("filter_changed", id)
 	if client_ref and "character_data" in client_ref:
 		_rebuild_cards(client_ref.character_data.get("inventory", []))
