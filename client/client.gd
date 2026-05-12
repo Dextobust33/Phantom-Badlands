@@ -697,7 +697,7 @@ const HOUSE_MAP_OVERHEAD_LINES = 10
 var character_data = {}
 var has_character = false
 var last_move_time = 0.0
-const MOVE_COOLDOWN = 0.5
+const MOVE_COOLDOWN = 0.15
 
 # Slice 6g — biome move cooldown modifier. Multipliers on MOVE_COOLDOWN per
 # biome string (matches world_system BIOME_* constants). Plains/Forest = 1.0
@@ -23318,8 +23318,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.348 changes
+	display_game("[color=#00FF00]v0.9.348[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Movement responsiveness + server lag spike reduction[/color]")
+	display_game("  • [b]Movement cooldown cut from 0.5s → 0.15s.[/b] Single-keypress feel was throttled to 2 moves/sec — pressing direction 4× rapidly only registered as 1. Now ~6.7 moves/sec. The previous \"server lag\" you were feeling was largely this client-side throttle becoming visible after the Oracle CPU spikes were fixed in v0.9.344/346. Biome multipliers (1.0-1.4×) still apply, so swamps/tundra still tax movement.")
+	display_game("  • [b]Road check interval 60s → 300s.[/b] Each successful road formation runs A* (up to 100k nodes) + writes the full path data JSON + saves dirty chunks + recomputes merchant circuits — easily 200-1000ms of sync work. Spaced out to 5min so the spike is rare. Phase-staggered from the dungeon timer.")
+	display_game("  • [b]Dungeon spawn check 30s → 120s.[/b] Halves the spike frequency for the dungeon refill pass (still capped at 8 per tick from v0.9.344). Completed dungeons get replaced within 2min, which is fine.")
+	display_game("")
+
 	# v0.9.347 changes
-	display_game("[color=#00FF00]v0.9.347[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.347[/color]")
 	display_game("  [color=#FFD700]Sprite alignment fix #3 — auto-detect line height[/color]")
 	display_game("  • [b]Fixes the \"half-tile too high\" sprite at NPC posts[/b] from v0.9.346. Root cause: the [color=#FFD700][b][/color] tag in the NPC post name header renders with slightly different line metrics, so the uniform line_h assumption drifted.")
 	display_game("  • [b]Auto-detect[/b]: the sprite code now measures the actual rendered line height of the @ row by subtracting its paragraph offset from the next paragraph's offset. Picks up bold / centered / font-size variations automatically.")
