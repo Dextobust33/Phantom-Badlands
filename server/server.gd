@@ -14556,33 +14556,53 @@ func _build_scratch_off_slot(kind: String, water_type: String, skill: int) -> Di
 		"quantity": quantity,
 	}
 
-func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
-	"""Audit #7 Slice 1A / 1B — scratch-off fishing.
+const SCRATCH_OFF_SLOT_COUNT = 5
+const SCRATCH_OFF_BASE_SCRATCHES = 2
 
-	1A shipped the basic 3-slot card. 1B (v0.9.357) adds:
-	- Slot variety: NORMAL / LUCKY (2x qty) / JACKPOT (forced rare) / DUD (empty)
-	- Tool pre-reveals: an equipped Fishing Rod with tool_bonuses.reveals = N
-	  pre-reveals N slots when the card appears (the rod is your scratch-off
-	  pre-peek). Replaces the rod's old role in the option-pick minigame
-	  with an analogous role in the new mechanic.
-	- Skill biases DUD chance down + JACKPOT up over time."""
+func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
+	"""Audit #7 Slice 1A / 1B / 1C — scratch-off fishing.
+
+	v0.9.358 rework (1C): true scratch-off feel.
+	- 5 slots arranged in a row (ticket layout).
+	- Tool pre-reveals appear at RANDOM positions (not the first N).
+	- Player gets SCRATCH_OFF_BASE_SCRATCHES scratches and must choose which
+	  hidden slots to reveal. Unrevealed slots are lost loot.
+	- Player presses 1-5 to scratch a specific slot.
+	- Tool durability consumed on session start.
+
+	Earlier slices:
+	- 1A (v0.9.354): basic 3-slot reveal card.
+	- 1B (v0.9.357): slot variety (NORMAL / LUCKY / JACKPOT / DUD)."""
 	var fishing_skill = int(character.job_levels.get("fishing", 1))
-	var slot_count = 3
+	var slot_count = SCRATCH_OFF_SLOT_COUNT
 	var slots: Array = []
 	for i in range(slot_count):
 		var kind = _roll_scratch_off_slot_kind(fishing_skill)
 		slots.append(_build_scratch_off_slot(kind, water_type, fishing_skill))
 
-	# Tool pre-reveals — rod with tool_bonuses.reveals = N pre-reveals N
-	# slots immediately. Capped at slot_count - 1 (always at least one
-	# slot left for the player to scratch themselves).
+	# Tool pre-reveals at RANDOM positions. Rod with tool_bonuses.reveals=N
+	# pre-reveals N slots, picked uniformly across the ticket.
 	var tool_subtype = _get_tool_subtype_for_job("fishing")
 	var tool = _find_tool_in_inventory(character, tool_subtype)
 	var pre_reveals: int = 0
 	if not tool.is_empty():
 		var tb = tool.get("tool_bonuses", {})
 		pre_reveals = int(tb.get("reveals", 1 if tb.get("reveal", false) else 0))
+		# Always leave at least one hidden slot for the player to scratch.
 		pre_reveals = clampi(pre_reveals, 0, slot_count - 1)
+
+	# Shuffle positions to pick random pre-reveals.
+	var all_positions: Array = []
+	for i in range(slot_count):
+		all_positions.append(i)
+	all_positions.shuffle()
+	var pre_revealed_positions: Array = []
+	for i in range(pre_reveals):
+		pre_revealed_positions.append(all_positions[i])
+
+	# Consume tool durability ONCE per fishing attempt (was missing pre-v0.9.358).
+	if not tool.is_empty():
+		_consume_tool_durability(peer_id, character, tool_subtype)
 
 	var session = {
 		"mode": "scratch_off",
@@ -14591,29 +14611,34 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 		"water_type": water_type,
 		"tier": 1,
 		"slots": slots,
-		"revealed_index": pre_reveals,  # pre-revealed slots are already past
+		"revealed_positions": pre_revealed_positions.duplicate(),
+		"scratches_remaining": SCRATCH_OFF_BASE_SCRATCHES,
 		"node_x": gathering_node.get("node_x", character.x),
 		"node_y": gathering_node.get("node_y", character.y),
 	}
 	active_gathering[peer_id] = session
 
-	# Build the pre-revealed slot payload so the client can show them
-	# immediately when the card opens.
-	var pre_revealed_slots: Array = []
-	for i in range(pre_reveals):
-		pre_revealed_slots.append(slots[i])
+	# Build initial_slots: same length as slots, but hidden positions are {}.
+	var initial_slots: Array = []
+	for i in range(slot_count):
+		if i in pre_revealed_positions:
+			initial_slots.append(slots[i])
+		else:
+			initial_slots.append({})
 
 	send_to_peer(peer_id, {
 		"type": "scratch_off_start",
 		"job_type": "fishing",
 		"water_type": water_type,
 		"slot_count": slot_count,
-		"pre_revealed": pre_revealed_slots,
+		"initial_slots": initial_slots,
+		"scratches_remaining": SCRATCH_OFF_BASE_SCRATCHES,
 		"tool_name": String(tool.get("name", "")) if not tool.is_empty() else "",
 	})
 
-func handle_scratch_off_reveal(peer_id: int, _message: Dictionary) -> void:
-	"""Reveal the next slot in the player's active scratch-off session."""
+func handle_scratch_off_reveal(peer_id: int, message: Dictionary) -> void:
+	"""Reveal a specific slot the player chose. v0.9.358: takes slot_index;
+	decrements scratches_remaining; auto-completes when budget exhausted."""
 	if not characters.has(peer_id):
 		return
 	if not active_gathering.has(peer_id):
@@ -14623,24 +14648,31 @@ func handle_scratch_off_reveal(peer_id: int, _message: Dictionary) -> void:
 	if session.get("mode", "") != "scratch_off":
 		send_to_peer(peer_id, {"type": "error", "message": "Active gathering is not a scratch-off."})
 		return
-	var revealed_index: int = int(session.get("revealed_index", 0))
 	var slots: Array = session.get("slots", [])
-	if revealed_index >= slots.size():
-		# Already fully revealed — treat as a complete signal.
+	var slot_index: int = int(message.get("slot_index", -1))
+	if slot_index < 0 or slot_index >= slots.size():
+		return
+	var revealed_positions: Array = session.get("revealed_positions", [])
+	if slot_index in revealed_positions:
+		# Already revealed — ignore.
+		return
+	var scratches_remaining: int = int(session.get("scratches_remaining", 0))
+	if scratches_remaining <= 0:
 		_complete_scratch_off_fishing(peer_id)
 		return
-	var slot = slots[revealed_index]
-	session["revealed_index"] = revealed_index + 1
-
+	# Reveal it.
+	revealed_positions.append(slot_index)
+	session["revealed_positions"] = revealed_positions
+	scratches_remaining -= 1
+	session["scratches_remaining"] = scratches_remaining
 	send_to_peer(peer_id, {
 		"type": "scratch_off_revealed",
-		"slot_index": revealed_index,
-		"item": slot,
-		"is_last": (revealed_index + 1 >= slots.size()),
+		"slot_index": slot_index,
+		"item": slots[slot_index],
+		"scratches_remaining": scratches_remaining,
+		"is_last": scratches_remaining == 0,
 	})
-
-	# When the final slot is revealed, commit the items + close the session.
-	if revealed_index + 1 >= slots.size():
+	if scratches_remaining == 0:
 		_complete_scratch_off_fishing(peer_id)
 
 func _complete_scratch_off_fishing(peer_id: int) -> void:
@@ -14653,9 +14685,20 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		return
 	var character = characters[peer_id]
 	var slots: Array = session.get("slots", [])
+	var revealed_positions: Array = session.get("revealed_positions", [])
 	var awarded: Array = []
+	var missed: Array = []  # v0.9.358 — slots player never scratched
 	var total_xp: int = 0
-	for slot in slots:
+	for i in range(slots.size()):
+		var slot = slots[i]
+		if not (i in revealed_positions):
+			# Player never scratched this slot — show what they missed.
+			missed.append({
+				"kind": String(slot.get("kind", "NORMAL")),
+				"name": String(slot.get("name", "?")),
+				"type": String(slot.get("type", "fish")),
+			})
+			continue
 		var kind: String = String(slot.get("kind", "NORMAL"))
 		# DUD slots have no item — just grant a small XP consolation so the
 		# turn isn't a total waste, but no inventory loot.
@@ -14697,6 +14740,7 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	send_to_peer(peer_id, {
 		"type": "scratch_off_complete",
 		"awarded": awarded,
+		"missed": missed,
 		"xp_gained": total_xp,
 		"leveled_up": bool(xp_result.get("leveled_up", false)),
 		"new_level": int(xp_result.get("new_level", character.job_levels.get("fishing", 1))),

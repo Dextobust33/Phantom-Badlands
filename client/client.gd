@@ -3013,17 +3013,18 @@ func _process(delta):
 		else:
 			set_meta("combatitem_next_pressed", false)
 
-	# v0.9.354 — Audit #7 Slice 1A: scratch-off fishing Space-to-reveal.
+	# v0.9.358 — scratch-off ticket: number keys 1-N scratch a specific slot.
 	if game_state == GameState.PLAYING and not input_field.has_focus() and scratch_off_mode:
-		var so_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
-		if Input.is_physical_key_pressed(so_key):
-			if not get_meta("scratchoff_action_pressed", false):
-				set_meta("scratchoff_action_pressed", true)
-				# Prevent action bar from also firing on this same Space press
-				set_meta("hotkey_0_pressed", true)
-				_send_scratch_off_reveal()
-		else:
-			set_meta("scratchoff_action_pressed", false)
+		for i in range(min(scratch_off_slot_count, 5)):
+			if is_item_select_key_pressed(i):
+				if not get_meta("scratchoff_slot_%d_pressed" % i, false):
+					set_meta("scratchoff_slot_%d_pressed" % i, true)
+					_consume_item_select_key(i)
+					# Only send if slot is still hidden.
+					if i < scratch_off_revealed_slots.size() and scratch_off_revealed_slots[i].is_empty():
+						_send_scratch_off_reveal(i)
+			else:
+				set_meta("scratchoff_slot_%d_pressed" % i, false)
 
 	# Companion activation with keybinds (1-5)
 	# Note: Don't check is_item_key_blocked_by_action_bar here - in companions_mode,
@@ -3350,7 +3351,7 @@ func _process(delta):
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
 			# Slots 5-9 are blocked because number keys 1-5 are used for quest abandonment
 			# Same for companions_mode - number keys 1-5 are used for companion selection
-			if (quest_log_mode or companions_mode or pending_blacksmith or pending_rescue_npc or home_stone_mode or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0) or (build_mode and not build_direction_mode and not build_demolish_mode and not pending_build_result)) and i >= 5:
+			if (quest_log_mode or companions_mode or pending_blacksmith or pending_rescue_npc or home_stone_mode or scratch_off_mode or (crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0) or (build_mode and not build_direction_mode and not build_demolish_mode and not pending_build_result)) and i >= 5:
 				continue
 			var action_key = "action_%d" % i
 			var key = keybinds.get(action_key, default_keybinds.get(action_key, KEY_SPACE))
@@ -23362,19 +23363,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.357 changes
-	display_game("[color=#00FF00]v0.9.357[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Scratch-off slice 1B — slot variety + tool pre-reveals[/color]")
-	display_game("  • [b]Slot variety[/b]: every slot now rolls a kind — [color=#1EFF00]LUCKY[/color] (2× the catch), [color=#FFD700]JACKPOT[/color] (forced rare/treasure), [color=#606060]DUD[/color] (empty, small XP), or NORMAL. Base distribution 70/15/5/10; fishing skill biases DUD down + JACKPOT up over time. Lottery-ticket tension is now in the mechanic.")
-	display_game("  • [b]Tools = pre-reveals[/b]: equip a Fishing Rod with [color=#9ACD32]tool_bonuses.reveals = N[/color] and N slots are pre-revealed when the card appears. Better rods reveal more — your existing rod-reveal mechanic carries over from the old minigame, just relocated. (Capped at slot_count-1 so there's always one slot left to scratch yourself.)")
-	display_game("  • [b]Skill XP bonuses[/b]: LUCKY slots grant 1.5× XP, JACKPOT 2× XP. DUD still grants a token 3 XP so a bad card isn't a full waste.")
+	# v0.9.358 changes
+	display_game("[color=#00FF00]v0.9.358[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Scratch-off slice 1C — true ticket mechanic: choose which slots to scratch[/color]")
+	display_game("  • [b]5-slot ticket, randomized pre-reveals[/b]: the card now has 5 slots in a row. Your fishing rod's pre-reveals land at [b]random[/b] positions, not always the first N — it feels like a real scratch-off where some squares come pre-rubbed.")
+	display_game("  • [b]Player chooses which slots to scratch[/b]: you get [color=#FFD700]2 scratches[/color] (base). Press [b]1-5[/b] to scratch a specific slot. Unscratched slots are [color=#808080]lost loot[/color] — at session end you see what you left on the ticket. Choice now matters.")
+	display_game("  • [b]Tool durability is consumed[/b] on session start (was silently free pre-v0.9.358 — a bug). Your rod chips by 1 per cast like other gathering tools.")
+	display_game("  • [b]Better deploy hygiene[/b]: SFTP held the server binary file open mid-deploy, causing v0.9.357 to silently run from a stale binary. The on-disk binary's hash is now verified against the local build before declaring the deploy done.")
 	display_game("")
 
-	# v0.9.356 changes
-	display_game("[color=#00FFFF]v0.9.356[/color]")
-	display_game("  [color=#FFD700]Inventory filter chips show visible/hidden state clearly[/color]")
-	display_game("  • [b]Filter chips now have explicit visible vs hidden styling.[/b] A category that's [i]showing[/i] gets a warm gold border + filled background (\"this is on\"). A category that's [i]hidden[/i] is dim with a thin grey border (\"this is off\"). The default Button theme was too subtle — at a glance you couldn't tell which were on.")
-	display_game("  • [b]Hover state[/b] adds a tan border so you can preview \"if I clicked, this would toggle.\"")
+	# v0.9.357 changes
+	display_game("[color=#00FFFF]v0.9.357[/color]")
+	display_game("  [color=#FFD700]Scratch-off slice 1B — slot variety + tool pre-reveals[/color]")
+	display_game("  • [b]Slot variety[/b]: every slot now rolls a kind — [color=#1EFF00]LUCKY[/color] (2× the catch), [color=#FFD700]JACKPOT[/color] (forced rare/treasure), [color=#606060]DUD[/color] (empty, small XP), or NORMAL. Base distribution 70/15/5/10; fishing skill biases DUD down + JACKPOT up over time. Lottery-ticket tension is now in the mechanic.")
+	display_game("  • [b]Tools = pre-reveals[/b]: equip a Fishing Rod with [color=#9ACD32]tool_bonuses.reveals = N[/color] and N slots are pre-revealed when the card appears. Better rods reveal more.")
+	display_game("  • [b]Skill XP bonuses[/b]: LUCKY slots grant 1.5× XP, JACKPOT 2× XP. DUD still grants a token 3 XP so a bad card isn't a full waste.")
 	display_game("")
 
 	# v0.9.355 changes
@@ -29148,25 +29151,26 @@ func handle_gathering_complete(message: Dictionary):
 # === Audit #7 Slice 1A — scratch-off fishing prototype ===
 
 func handle_scratch_off_start(message: Dictionary) -> void:
-	"""Enter scratch-off mode. Server sends slot count + job/water type; we
-	render an empty card and the player reveals slots one at a time.
-	v0.9.357 — server may also send pre_revealed (Array of slot dicts) if
-	the player has a Fishing Rod with tool_bonuses.reveals."""
+	"""Enter scratch-off mode. v0.9.358: server sends initial_slots (with
+	some pre-revealed at random positions) + a scratch budget. Player picks
+	which hidden slots to scratch via digit keys 1-N."""
 	scratch_off_mode = true
-	scratch_off_slot_count = int(message.get("slot_count", 3))
+	scratch_off_slot_count = int(message.get("slot_count", 5))
 	scratch_off_revealed_slots = []
+	# initial_slots is parallel array: dict if pre-revealed, {} if hidden.
+	var initial_slots: Array = message.get("initial_slots", [])
+	var pre_revealed_count = 0
 	for i in range(scratch_off_slot_count):
-		scratch_off_revealed_slots.append({})  # empty dict = hidden
-	# Apply pre-reveals — server says "these slots are already revealed because
-	# of your tool." Slots come in order from index 0.
-	var pre_revealed: Array = message.get("pre_revealed", [])
-	for i in range(pre_revealed.size()):
-		if i < scratch_off_revealed_slots.size():
-			scratch_off_revealed_slots[i] = pre_revealed[i]
+		if i < initial_slots.size() and not (initial_slots[i] as Dictionary).is_empty():
+			scratch_off_revealed_slots.append(initial_slots[i])
+			pre_revealed_count += 1
+		else:
+			scratch_off_revealed_slots.append({})
 	scratch_off_job_type = String(message.get("job_type", "fishing"))
 	scratch_off_water_type = String(message.get("water_type", "shallow"))
 	set_meta("scratchoff_tool_name", String(message.get("tool_name", "")))
-	set_meta("scratchoff_pre_reveals", int(pre_revealed.size()))
+	set_meta("scratchoff_pre_reveals", pre_revealed_count)
+	set_meta("scratchoff_scratches_remaining", int(message.get("scratches_remaining", 2)))
 	_render_scratch_off_panel()
 	update_action_bar()
 
@@ -29176,11 +29180,14 @@ func handle_scratch_off_revealed(message: Dictionary) -> void:
 	var item = message.get("item", {})
 	if slot_index >= 0 and slot_index < scratch_off_revealed_slots.size():
 		scratch_off_revealed_slots[slot_index] = item
+	set_meta("scratchoff_scratches_remaining", int(message.get("scratches_remaining", 0)))
 	_render_scratch_off_panel()
 
 func handle_scratch_off_complete(message: Dictionary) -> void:
-	"""All slots revealed + items committed. Show summary, exit mode."""
+	"""All scratches spent + items committed. Show summary including missed
+	(unscratched) slots so the player sees what they left on the ticket."""
 	var awarded: Array = message.get("awarded", [])
+	var missed: Array = message.get("missed", [])
 	var xp_gained: int = int(message.get("xp_gained", 0))
 	var leveled_up: bool = bool(message.get("leveled_up", false))
 	var new_level: int = int(message.get("new_level", 0))
@@ -29195,8 +29202,9 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 		update_currency_display()
 
 	game_output.clear()
-	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off Complete ═══[/color]")
+	display_game("[color=#00BFFF]═══ FISHING — Ticket Cashed ═══[/color]")
 	display_game("")
+	display_game("[color=#FFD700]Revealed:[/color]")
 	for slot in awarded:
 		var kind = String(slot.get("kind", "NORMAL"))
 		match kind:
@@ -29210,6 +29218,25 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 			_:
 				var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
 				display_game("  [color=%s]◆ %s[/color]" % [color, String(slot.get("name", "?"))])
+	if missed.size() > 0:
+		display_game("")
+		display_game("[color=#808080]Left on the ticket:[/color]")
+		for slot in missed:
+			var mkind = String(slot.get("kind", "NORMAL"))
+			var mname = String(slot.get("name", "?"))
+			var glyph = "·"
+			var color = "#505050"
+			match mkind:
+				"DUD":
+					glyph = "·"
+					mname = "Empty"
+				"LUCKY":
+					glyph = "★"
+					color = "#3A6A3A"
+				"JACKPOT":
+					glyph = "★★★"
+					color = "#806020"
+			display_game("  [color=%s]%s %s[/color]" % [color, glyph, mname])
 	display_game("")
 	if xp_gained > 0:
 		display_game("[color=#FF8800]+%d Fishing XP[/color]" % xp_gained)
@@ -29226,36 +29253,37 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 	update_action_bar()
 
 func _render_scratch_off_panel() -> void:
-	"""Render the current scratch-off state into game_output. Hidden slots
-	show [?]; revealed slots show their kind-styled label.
-	v0.9.357 — slot kinds: NORMAL (rarity color), LUCKY (green + ★ + 2x),
-	JACKPOT (gold + ★★★), DUD (grey ✗)."""
+	"""v0.9.358 ticket render: 5 slots in a row, each with its scratch-number
+	below. Hidden slots show [?]; revealed show their kind label. Scratch
+	budget remaining shown below the row."""
 	game_output.clear()
-	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off ═══[/color]")
+	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off Ticket ═══[/color]")
 	display_game("")
-	display_game("[color=#808080]Cast in %s water. Reveal each slot to see your catch.[/color]" % scratch_off_water_type)
-	# Tool pre-reveal hint, if any.
+	display_game("[color=#808080]Cast in %s water. Choose which slots to scratch.[/color]" % scratch_off_water_type)
 	var tool_name = String(get_meta("scratchoff_tool_name", ""))
 	var pre_reveals = int(get_meta("scratchoff_pre_reveals", 0))
 	if pre_reveals > 0 and tool_name != "":
 		display_game("[color=#C4A882]Your %s pre-revealed %d slot%s.[/color]" % [tool_name, pre_reveals, "s" if pre_reveals != 1 else ""])
 	display_game("")
-	var row_parts: Array = []
-	var next_hidden_idx = -1
+	var slot_row: Array = []
+	var num_row: Array = []
 	for i in range(scratch_off_revealed_slots.size()):
 		var slot = scratch_off_revealed_slots[i]
 		if slot.is_empty():
-			row_parts.append("[color=#808080][   ?   ][/color]")
-			if next_hidden_idx == -1:
-				next_hidden_idx = i
+			slot_row.append("[color=#808080][   ?   ][/color]")
+			num_row.append("[color=#FFD700]   %d   [/color]" % (i + 1))
 		else:
-			row_parts.append(_format_scratch_off_slot(slot))
-	display_game("  " + "  ".join(row_parts))
+			slot_row.append(_format_scratch_off_slot(slot))
+			# Pad to same width as the "?" placeholder for alignment.
+			num_row.append("[color=#404040]   —   [/color]")
+	display_game("  " + "  ".join(slot_row))
+	display_game("  " + "  ".join(num_row))
 	display_game("")
-	if next_hidden_idx >= 0:
-		display_game("[color=#FFD700]Press [%s] to reveal slot %d of %d[/color]" % [get_action_key_name(0), next_hidden_idx + 1, scratch_off_slot_count])
+	var scratches_remaining = int(get_meta("scratchoff_scratches_remaining", 0))
+	if scratches_remaining > 0:
+		display_game("[color=#FFD700]Scratches remaining: %d — press [1-%d] to scratch a slot.[/color]" % [scratches_remaining, scratch_off_slot_count])
 	else:
-		display_game("[color=#00FF00]All slots revealed. Finalizing...[/color]")
+		display_game("[color=#00FF00]Cashing in...[/color]")
 
 func _format_scratch_off_slot(slot: Dictionary) -> String:
 	"""Format a single revealed slot label based on its kind for the
@@ -29291,10 +29319,10 @@ func _scratch_off_color_for_type(t: String) -> String:
 			return "#FF69B4"  # pink — eggs
 	return "#FFFFFF"
 
-func _send_scratch_off_reveal() -> void:
+func _send_scratch_off_reveal(slot_index: int) -> void:
 	if not scratch_off_mode:
 		return
-	send_to_server({"type": "scratch_off_reveal"})
+	send_to_server({"type": "scratch_off_reveal", "slot_index": slot_index})
 
 func end_gathering(reason: String = ""):
 	"""Clean up gathering state and exit."""
