@@ -142,7 +142,7 @@ var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
 var pending_final_chest: Dictionary = {}  # peer_id -> {instance_id, floor_num, chest_x, chest_y}
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
-const DUNGEON_SPAWN_CHECK_INTERVAL = 30.0  # Check every 30 seconds
+const DUNGEON_SPAWN_CHECK_INTERVAL = 120.0  # v0.9.348: 30→120s. Check fires per-tick A* over chunk grid, contributing to lag spikes with 88+ dungeons in play. Refilling completed dungeons within 2min is acceptable.
 const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 seconds
 const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
@@ -29260,9 +29260,15 @@ var merchant_last_processed_post: Dictionary = {}
 # Timer for merchant arrival checks
 var _merchant_check_timer: float = 0.0
 const MERCHANT_CHECK_INTERVAL = 30.0
-# Timer for periodic road path checks (try to connect unconnected post pairs)
-var _road_check_timer: float = 0.0
-const ROAD_CHECK_INTERVAL = 60.0  # Check every 60 seconds
+# Timer for periodic road path checks (try to connect unconnected post pairs).
+# v0.9.348: 60s→300s. Each successful check runs A* (up to 100k nodes) +
+# serializes all path data (~100KB+ JSON) + saves dirty chunks + recomputes
+# merchant circuits — easily 200-1000ms of sync work on a 1-vCPU host. Was
+# colliding with the dungeon spawn check every 60s; spaced out to 5min so
+# spikes are rare. Started at 60.0 (not 0) to phase-stagger from the dungeon
+# timer which also starts at 0.
+var _road_check_timer: float = 60.0
+const ROAD_CHECK_INTERVAL = 300.0  # Check every 5 minutes
 
 func _initialize_road_paths(npc_posts: Array) -> void:
 	"""Initialize road graph and load any persisted paths. Called on startup.
