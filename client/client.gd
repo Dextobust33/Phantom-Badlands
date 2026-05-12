@@ -23318,11 +23318,11 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.349 changes
-	display_game("[color=#00FF00]v0.9.349[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Sprite alignment fix #4 — actually fixed this time[/color]")
-	display_game("  • [b]Root cause finally found.[/b] Previous attempts (v0.9.345-347) tried smarter ways of measuring paragraph offsets, but they were all bypassed: the [color=#FFFF00] @[/color] glyph was being [i]stripped[/i] from the BBCode before append, so the find(\" @\") code always returned -1 and fell to legacy math [color=#9ACD32](2 + 11 + 0.5) × line_h[/color]. That math happens to be correct in wilderness (2 plain-text header paragraphs = 2 × line_h) but under-shoots at NPC posts (the [color=#FFD700][b][/color] header renders taller, so the actual @ row is further south than the math assumes).")
-	display_game("  • [b]Fix[/b]: hide the @ glyph by setting alpha to 0 ([color=#9ACD32][color=#FFFF0000] @[/color][/color]) instead of stripping the characters. The sprite overlay can now [i]find[/i] the @ in [color=#9ACD32]map_display.text[/color] and use the real rendered paragraph offset via [color=#9ACD32]get_paragraph_offset()[/color]. Works correctly at wilderness AND posts because the math is no longer arithmetic — it's reading the actual rendered position.")
+	# v0.9.350 changes
+	display_game("[color=#00FF00]v0.9.350[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sprite alignment actually fixed + no map shift on post entry[/color]")
+	display_game("  • [b]Sprite at NPC posts.[/b] The previous 5 attempts (v0.9.345-349) all failed because we were reading [color=#9ACD32]map_display.text[/color] — but in Godot 4, append_text() doesn't update .text, so the find(\" @\") code got an empty string every call. Switched to [color=#9ACD32]map_display.get_parsed_text()[/color] which returns the actual rendered character stream. The alpha-0 @ marker from v0.9.349 is now findable, get_paragraph_offset() returns the real Y, sprite sits on the right row.")
+	display_game("  • [b]Map no longer jumps on post entry/exit.[/b] The post header used [color=#FFD700][b]bold[/b][/color] for the name + \"Under Threat\" — the bold font variant has slightly different line metrics, which pushed the map down ~2px when entering a post. Removed [b] from the post header. Color alone differentiates the name.")
 	display_game("")
 
 	# v0.9.348 changes
@@ -23350,14 +23350,6 @@ func display_changelog():
 	display_game("  • [b]Sprite alignment fix #2[/b]: v0.9.345's BBCode-scan fixed the header-line count, but reports of \"sprite 3 tiles south\" persisted on fresh logins (including at the starter post). Root cause was pixel math — we now ask RichTextLabel directly via [color=#9ACD32]get_paragraph_offset()[/color] for the actual rendered Y of the @ glyph's row instead of multiplying line index × line_h.")
 	display_game("")
 
-	# v0.9.345 changes
-	display_game("[color=#00FFFF]v0.9.345[/color]")
-	display_game("  [color=#FFD700]Sprite alignment hotfix[/color]")
-	display_game("  • [b]Map sprite now tracks the actual [color=#FFFF00]@[/color] glyph[/color][/b] instead of relying on a hardcoded \"2 header lines\" assumption. The sprite overlay scans the map BBCode for the [color=#FFFF00]@[/color] character, counts newlines, and anchors itself at that line's pixel Y.")
-	display_game("  • [b]Fixes the \"sprite 3 tiles south of where I am\" bug[/b] reported after re-login near player walls. The math previously assumed header_lines=2 was always exact — turned out fragile under specific render conditions.")
-	display_game("  • [b]Remote players[/b] also reposition relative to the @ pixel Y, so party-mates / nearby players track correctly even if the absolute math shifts.")
-	display_game("  • [b]Defensive fallback[/b] to the old math if the @ glyph isn't found in the map BBCode (e.g., dungeon view, pre-character-load).")
-	display_game("")
 
 
 
@@ -28368,15 +28360,13 @@ func _sync_map_sprites_overlay() -> void:
 	var map_width_px = map_diameter * cell_w
 	var map_x_offset = max(0.0, (map_display.size.x - map_width_px) * 0.5)
 
-	# v0.9.345/346 — anchor sprite Y to the actual rendered position of the
-	# @ glyph in the BBCode rather than a hardcoded header_lines × line_h
-	# computation. v0.9.345 fixed half the problem (header line count) by
-	# scanning the BBCode for " @" and counting newlines. v0.9.346 fixes the
-	# other half (pixel Y per line) by asking RichTextLabel for the actual
-	# rendered offset of that paragraph via `get_paragraph_offset()`. Reports
-	# of "sprite 3 tiles south of @" persisted after v0.9.345 — that's the
-	# pixel-math drift, not the header-line count.
-	var bbcode_text: String = map_display.text
+	# v0.9.350 — the previous attempts (v0.9.345-349) failed because they
+	# read `map_display.text`, which is EMPTY when content is added via
+	# `append_text()` (Godot 4 stores parsed items internally, not in the
+	# .text property). Switch to `get_parsed_text()` which returns the
+	# rendered character stream including the @ glyph (made invisible by
+	# the alpha-0 replace in update_map but still findable).
+	var bbcode_text: String = map_display.get_parsed_text() if map_display.has_method("get_parsed_text") else ""
 	var at_byte_pos: int = bbcode_text.find(" @")
 	var at_line_idx: int = -1
 	if at_byte_pos >= 0:

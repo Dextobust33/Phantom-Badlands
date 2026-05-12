@@ -1225,10 +1225,14 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	if chunk_manager and chunk_manager.is_npc_post_tile(center_x, center_y):
 		var post = chunk_manager.get_npc_post_at(center_x, center_y)
 		if not post.is_empty():
-			output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [post.get("name", "Trading Post"), center_x, center_y]
+			# v0.9.350 — drop [b] so the post header uses the regular font
+			# variant. The bold font has slightly different line metrics,
+			# which shifted the map block ~2px lower when entering a post
+			# vs the wilderness wrapper. Color alone distinguishes the name.
+			output += "[color=#FFD700]%s[/color] [color=#5F9EA0](%d, %d)[/color]\n" % [post.get("name", "Trading Post"), center_x, center_y]
 			# Audit #11 Slice 8 — header reflects threat state of this post.
 			if current_post_threatened:
-				output += "[color=#FF4400][b]Under Threat[/b][/color]"
+				output += "[color=#FF4400]Under Threat[/color]"
 			else:
 				output += "[color=#00FF00]Safe[/color]"
 			# Compass to nearest OTHER post — appended inline with the Safe
@@ -1249,7 +1253,8 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	# Check legacy Trading Post
 	if trading_post_db and trading_post_db.is_trading_post_tile(center_x, center_y):
 		var tp = trading_post_db.get_trading_post_at(center_x, center_y)
-		output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
+		# v0.9.350 — drop [b] for consistent map alignment (see NPC post path)
+		output += "[color=#FFD700]%s[/color] [color=#5F9EA0](%d, %d)[/color]\n" % [tp.get("name", "Trading Post"), center_x, center_y]
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
 		if chunk_manager:
