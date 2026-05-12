@@ -3523,7 +3523,7 @@ func _process(delta):
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, storage, market, or popups).
 	# Build mode is intentionally NOT in this exclusion list — players can reposition with their configured movement keys while picking a structure or aiming a placement. WASD remains the placement direction in build_direction_mode (consumed by _input()), so the movement poll below skips W/A/S/D when those slots are also placement keys, preventing a single key press from both moving and placing.
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode:
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			# Slice 6g — biome move-cooldown modifier. Swamp/Tundra slow the
@@ -23326,8 +23326,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.352 changes
+	display_game("[color=#00FF00]v0.9.352[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotzone dialog now locks movement + server-side threat cache[/color]")
+	display_game("  • [b]Bug fix[/b]: stepping into a hotzone for the first time opens the \"Enter at your own risk?\" dialog — but movement keys were still working underneath, so you could walk deeper while reading the warning. Now movement is blocked until you select Enter or Back. Same fix retroactively applied to the dungeon level-warning dialog.")
+	display_game("  • [b]Server optimization[/b]: the threat-state scan over all NPC posts (used by the map renderer to draw red \"!\" overlays + flip the at-post header to \"Under Threat\") used to run on every player move — iterating all 88+ active dungeons per post. Now precomputed once every 3 seconds in a background tick and cached. Movement responses don't pay for that work anymore. Acceptable staleness: threat banner may take up to 3s to flip when a new dungeon spawns near a post.")
+	display_game("")
+
 	# v0.9.351 changes
-	display_game("[color=#00FF00]v0.9.351[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.351[/color]")
 	display_game("  [color=#FFD700]Server migration — Oracle Cloud → Hetzner Cloud (no more CPU throttling)[/color]")
 	display_game("  • [b]New server[/b]: Hetzner Cloud CPX11 ([color=#9ACD32]5.78.217.135[/color]) in Hillsboro, OR. 2 dedicated AMD EPYC vCPUs + 2GB RAM at $6.99/mo. Replaces Oracle Cloud's [color=#FFB6C1]1/8 OCPU Always Free[/color] which was credit-throttled — your character's hold-direction-for-1-second backlog of 5 seconds is gone.")
 	display_game("  • [b]Auto-migrate[/b]: existing clients pointing at Oracle ([color=#9ACD32]129.213.166.185[/color]) get flipped to the new IP on launch — no action needed. Your saved characters are intact (data was migrated to the new host).")
@@ -23349,13 +23356,6 @@ func display_changelog():
 	display_game("  • [b]Dungeon spawn check 30s → 120s.[/b] Halves the spike frequency for the dungeon refill pass (still capped at 8 per tick from v0.9.344). Completed dungeons get replaced within 2min, which is fine.")
 	display_game("")
 
-	# v0.9.347 changes
-	display_game("[color=#00FFFF]v0.9.347[/color]")
-	display_game("  [color=#FFD700]Sprite alignment fix #3 — auto-detect line height[/color]")
-	display_game("  • [b]Fixes the \"half-tile too high\" sprite at NPC posts[/b] from v0.9.346. Root cause: the [color=#FFD700][b][/color] tag in the NPC post name header renders with slightly different line metrics, so the uniform line_h assumption drifted.")
-	display_game("  • [b]Auto-detect[/b]: the sprite code now measures the actual rendered line height of the @ row by subtracting its paragraph offset from the next paragraph's offset. Picks up bold / centered / font-size variations automatically.")
-	display_game("  • [b]Remote players[/b] also use the auto-detected line height for their per-cell offset.")
-	display_game("")
 
 
 

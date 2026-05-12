@@ -155,6 +155,17 @@ var dungeon_spawn_timer: float = 0.0
 # the at-post threat banner + per-visible-post overlay.
 var _threat_state_cache: Dictionary = {}
 
+# v0.9.352 — global world-threat-state cache. Refreshed every
+# WORLD_THREAT_REFRESH_INTERVAL seconds in _process, so send_location_update
+# can read pre-computed threat state for each NPC post instead of scanning
+# active_dungeons on every move. Was the largest per-move spike pre-Hetzner
+# (~1584 ops per move on Oracle = 88 dungeons × 18 posts in the worst case).
+# Acceptable staleness: up to 3s for dungeon spawn/clear to flip a post's
+# threat banner. Rumor system is already eventual-consistent.
+var _world_threat_states: Dictionary = {}
+var _world_threat_refresh_timer: float = 0.0
+const WORLD_THREAT_REFRESH_INTERVAL = 3.0
+
 
 # Combat command rate limiting (peer_id -> last command time in msec)
 var combat_command_cooldown: Dictionary = {}
@@ -812,6 +823,14 @@ func _process(delta):
 	# call this; without memoization, with 158+ active world dungeons and
 	# the Slice 8 multi-post threat scan, per-move cost climbed sharply.
 	_threat_state_cache.clear()
+
+	# v0.9.352 — periodically refresh the world-wide threat state cache so
+	# send_location_update reads a pre-computed dict instead of scanning all
+	# active_dungeons per move.
+	_world_threat_refresh_timer += delta
+	if _world_threat_refresh_timer >= WORLD_THREAT_REFRESH_INTERVAL:
+		_world_threat_refresh_timer = 0.0
+		_refresh_world_threat_states()
 
 	# v0.9.346 — flush at most one throttled character save per tick. Spreads
 	# disk I/O over many frames instead of letting bursts hit synchronously.
@@ -22033,17 +22052,20 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	dungeons. Threat is shared across all players — the world dungeons that
 	count are the ones without owner_peer_id.
 
-	Hotfix v0.9.344 — memoized per tick via _threat_state_cache (cleared at
-	the start of every _process). Several handlers (handle_move,
-	handle_market_browse, handle_request_post_status_visual) hit this
-	function multiple times per tick for the same post; the cache turns
-	those repeat calls into dict lookups instead of full active_dungeons
-	iterations.
+	Two-layer caching:
+	- v0.9.352: world cache (_world_threat_states) — refreshed every 3s in
+	  _process. Covers ALL known NPC posts, so callers hit this first.
+	- v0.9.344: per-tick cache (_threat_state_cache) — cleared each _process.
+	  Fallback for non-NPC-post coordinates or transient cache misses.
 
 	Returns:
 	  {threatened: false} when nothing in range
 	  {threatened: true, dungeon_name, tier, distance, direction, color, count}"""
 	var cache_key = "%d,%d" % [post_x, post_y]
+	# Layer 1: world cache (refreshed every WORLD_THREAT_REFRESH_INTERVAL seconds)
+	if _world_threat_states.has(cache_key):
+		return _world_threat_states[cache_key]
+	# Layer 2: per-tick cache (handles non-NPC-post queries + first-tick before refresh)
 	if _threat_state_cache.has(cache_key):
 		return _threat_state_cache[cache_key]
 	var threats: Array = []
@@ -22088,6 +22110,28 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	}
 	_threat_state_cache[cache_key] = result
 	return result
+
+func _refresh_world_threat_states() -> void:
+	"""v0.9.352 — recompute threat state for every known NPC post and store
+	in _world_threat_states. Called every WORLD_THREAT_REFRESH_INTERVAL
+	seconds from _process. Total cost: O(npc_posts × active_dungeons) which
+	is the work that used to happen PER MOVE for visible posts. Now happens
+	once per refresh window instead, amortized across all clients."""
+	_world_threat_states.clear()
+	if not world_system or not world_system.chunk_manager:
+		return
+	# Temporarily clear the per-tick cache so the recomputation isn't
+	# satisfied by stale per-tick entries from this same _process call.
+	# It will rebuild as we iterate.
+	_threat_state_cache.clear()
+	for np_post in world_system.chunk_manager.get_npc_posts():
+		var px = int(np_post.get("x", 0))
+		var py = int(np_post.get("y", 0))
+		var key = "%d,%d" % [px, py]
+		# Bypass the world cache (which is currently empty) and the tick
+		# cache (cleared above) — direct call hits the expensive scan path.
+		var state = _compute_post_threat_state(px, py)
+		_world_threat_states[key] = state
 
 const POST_THREAT_PRICE_MULT: float = 1.20
 # Audit #11 Slice 8 — service prices (healer / blacksmith) hike harder than
