@@ -1,9 +1,10 @@
 #!/bin/bash
-# Deploy Phantom Badlands server to Oracle Cloud
+# Deploy Phantom Badlands server to Hetzner Cloud (CPX11 @ Hillsboro, OR)
+# Migrated from Oracle Cloud Free 2026-05-12 (v0.9.351) — Oracle IP 129.213.166.185
 # Usage: bash deploy_server.sh
 
 SSH_KEY="/c/Users/Dexto/Desktop/PhantomBadlandsSSH/ssh-key-2026-04-21.key"
-SERVER_IP="129.213.166.185"
+SERVER_IP="5.78.217.135"
 SERVER_USER="ubuntu"
 GODOT="D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe"
 PROJECT="C:\Users\Dexto\Documents\phantasia-revival"

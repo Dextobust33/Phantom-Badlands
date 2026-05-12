@@ -260,7 +260,7 @@ The combat simulator tests monster lethality against all 9 character classes to 
 
 **GitHub:** https://github.com/Dextobust33/Phantom-Badlands
 **Website:** https://phantombadlands.com (GitHub Pages from `docs/`)
-**Game Server:** Oracle Cloud VM at `129.213.166.185:9080` (Always Free tier)
+**Game Server:** Hetzner Cloud CPX11 at `5.78.217.135:9080` (Hillsboro, OR — migrated from Oracle 2026-05-12 for ~16× compute, $6.99/mo)
 
 ### Creating a Client Release:
 ```bash
@@ -296,21 +296,21 @@ bash deploy_server.sh
 
 # 2. Upload and restart
 SSH_KEY="/c/Users/Dexto/Desktop/PhantomBadlandsSSH/ssh-key-2026-04-21.key"
-scp -i "$SSH_KEY" builds/server/PhantomBadlandsServer.x86_64 ubuntu@129.213.166.185:~/phantom-badlands/
-ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "chmod +x ~/phantom-badlands/PhantomBadlandsServer.x86_64 && sudo systemctl restart phantom-badlands"
+scp -i "$SSH_KEY" builds/server/PhantomBadlandsServer.x86_64 ubuntu@5.78.217.135:~/phantom-badlands/
+ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "chmod +x ~/phantom-badlands/PhantomBadlandsServer.x86_64 && sudo systemctl restart phantom-badlands"
 ```
 
 ### Server Management:
 ```bash
 SSH_KEY="/c/Users/Dexto/Desktop/PhantomBadlandsSSH/ssh-key-2026-04-21.key"
 # Check status
-ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo systemctl status phantom-badlands --no-pager"
+ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "sudo systemctl status phantom-badlands --no-pager"
 # View logs
-ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo journalctl -u phantom-badlands -n 50 --no-pager"
+ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "sudo journalctl -u phantom-badlands -n 50 --no-pager"
 # Restart
-ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo systemctl restart phantom-badlands"
+ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "sudo systemctl restart phantom-badlands"
 # Stop
-ssh -i "$SSH_KEY" ubuntu@129.213.166.185 "sudo systemctl stop phantom-badlands"
+ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "sudo systemctl stop phantom-badlands"
 ```
 
 ## Maintenance Reminders
