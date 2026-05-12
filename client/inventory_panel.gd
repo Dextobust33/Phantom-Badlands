@@ -137,6 +137,36 @@ func _build_layout() -> void:
 	_filter_chips = HBoxContainer.new()
 	_filter_chips.add_theme_constant_override("separation", 4)
 	root_vbox.add_child(_filter_chips)
+	# v0.9.356 — explicit on/off styleboxes so visible vs hidden state is
+	# unmistakable at a glance. Pressed = visible (gold border + warm fill);
+	# normal = hidden (dim grey, no border).
+	var sb_visible := StyleBoxFlat.new()
+	sb_visible.bg_color = Color(0.34, 0.27, 0.12, 1.0)  # warm gold-brown
+	sb_visible.border_color = Color("#FFD700")
+	sb_visible.set_border_width_all(2)
+	sb_visible.set_corner_radius_all(3)
+	sb_visible.content_margin_left = 8
+	sb_visible.content_margin_right = 8
+	sb_visible.content_margin_top = 2
+	sb_visible.content_margin_bottom = 2
+	var sb_hidden := StyleBoxFlat.new()
+	sb_hidden.bg_color = Color(0.13, 0.11, 0.09, 1.0)  # near-black, very dim
+	sb_hidden.border_color = Color(0.30, 0.25, 0.20, 1.0)
+	sb_hidden.set_border_width_all(1)
+	sb_hidden.set_corner_radius_all(3)
+	sb_hidden.content_margin_left = 8
+	sb_hidden.content_margin_right = 8
+	sb_hidden.content_margin_top = 2
+	sb_hidden.content_margin_bottom = 2
+	var sb_hover := StyleBoxFlat.new()
+	sb_hover.bg_color = Color(0.22, 0.18, 0.10, 1.0)
+	sb_hover.border_color = Color("#C4A882")
+	sb_hover.set_border_width_all(1)
+	sb_hover.set_corner_radius_all(3)
+	sb_hover.content_margin_left = 8
+	sb_hover.content_margin_right = 8
+	sb_hover.content_margin_top = 2
+	sb_hover.content_margin_bottom = 2
 	for chip in FILTER_CHIPS:
 		var btn := Button.new()
 		btn.text = chip["label"]
@@ -144,6 +174,15 @@ func _build_layout() -> void:
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.add_theme_font_size_override("font_size", 11)
 		btn.custom_minimum_size = Vector2(0, 24)
+		# Apply the visible/hidden style overrides. Godot Button reads
+		# 'pressed' for active toggle state.
+		btn.add_theme_stylebox_override("pressed", sb_visible)
+		btn.add_theme_stylebox_override("normal", sb_hidden)
+		btn.add_theme_stylebox_override("hover", sb_hover)
+		btn.add_theme_stylebox_override("hover_pressed", sb_visible)
+		btn.add_theme_color_override("font_color", Color("#D4C4A0"))
+		btn.add_theme_color_override("font_pressed_color", Color("#FFE066"))
+		btn.add_theme_color_override("font_hover_color", Color("#FFD700"))
 		# Tooltip clarifies the new toggle semantics so players don't
 		# expect radio-select.
 		if chip["id"] == "all":
