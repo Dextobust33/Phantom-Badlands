@@ -103,6 +103,100 @@ const JOB_THEME := {
 		"verb": "spotlight",
 		"bar_pattern": "spotlight",
 	},
+	# v0.9.372 — crafting themes. Each crafting skill gets its own palette
+	# and silhouette. Bar patterns reuse the gathering patterns for now;
+	# unique per-craft patterns (hammer / swirl / sigil / quill / plumb) are
+	# scheduled for a follow-up slice.
+	"crafting_blacksmithing": {
+		"title": "BLACKSMITHING — Forge Ticket",
+		"title_color": Color(1.0, 0.55, 0.30),
+		"panel_bg": Color(0.10, 0.05, 0.04, 0.97),
+		"panel_border": Color(0.95, 0.50, 0.20, 1.0),
+		"canvas_bg": Color(0.06, 0.03, 0.02, 1.0),
+		"canvas_border": Color(0.50, 0.25, 0.10, 1.0),
+		"hidden_bg": Color(0.20, 0.10, 0.06, 1.0),
+		"hidden_border": Color(0.95, 0.50, 0.20, 1.0),
+		"ambient_glyph": "* * *",
+		"ambient_color": Color(1.0, 0.65, 0.30, 0.85),
+		"silhouette": "⚒",
+		"silhouette_color": Color(0.85, 0.40, 0.20, 0.9),
+		"bar_color": Color(1.0, 0.55, 0.20, 0.32),
+		"bar_edge": Color(1.0, 0.75, 0.30, 0.85),
+		"verb": "hammer",
+		"bar_pattern": "strike_band",
+	},
+	"crafting_alchemy": {
+		"title": "ALCHEMY — Brew Ticket",
+		"title_color": Color(0.85, 0.45, 1.0),
+		"panel_bg": Color(0.08, 0.04, 0.12, 0.97),
+		"panel_border": Color(0.65, 0.30, 0.95, 1.0),
+		"canvas_bg": Color(0.05, 0.02, 0.08, 1.0),
+		"canvas_border": Color(0.40, 0.20, 0.55, 1.0),
+		"hidden_bg": Color(0.16, 0.08, 0.22, 1.0),
+		"hidden_border": Color(0.65, 0.30, 0.95, 1.0),
+		"ambient_glyph": "° ° °",
+		"ambient_color": Color(0.85, 0.55, 1.0, 0.85),
+		"silhouette": "⚗",
+		"silhouette_color": Color(0.65, 0.40, 0.85, 0.9),
+		"bar_color": Color(0.75, 0.35, 1.0, 0.32),
+		"bar_edge": Color(0.85, 0.50, 1.0, 0.85),
+		"verb": "swirl",
+		"bar_pattern": "spotlight",
+	},
+	"crafting_enchanting": {
+		"title": "ENCHANTING — Sigil Ticket",
+		"title_color": Color(0.45, 0.90, 1.0),
+		"panel_bg": Color(0.04, 0.08, 0.12, 0.97),
+		"panel_border": Color(0.30, 0.75, 0.95, 1.0),
+		"canvas_bg": Color(0.02, 0.05, 0.08, 1.0),
+		"canvas_border": Color(0.18, 0.45, 0.60, 1.0),
+		"hidden_bg": Color(0.08, 0.18, 0.26, 1.0),
+		"hidden_border": Color(0.30, 0.75, 0.95, 1.0),
+		"ambient_glyph": "✦ ✦ ✦",
+		"ambient_color": Color(0.55, 0.95, 1.0, 0.85),
+		"silhouette": "✶",
+		"silhouette_color": Color(0.30, 0.75, 0.95, 0.9),
+		"bar_color": Color(0.45, 0.90, 1.0, 0.32),
+		"bar_edge": Color(0.65, 1.0, 1.0, 0.85),
+		"verb": "trace",
+		"bar_pattern": "pendulum",
+	},
+	"crafting_scribing": {
+		"title": "SCRIBING — Inkwell Ticket",
+		"title_color": Color(0.95, 0.95, 0.85),
+		"panel_bg": Color(0.06, 0.06, 0.04, 0.97),
+		"panel_border": Color(0.85, 0.85, 0.65, 1.0),
+		"canvas_bg": Color(0.04, 0.03, 0.02, 1.0),
+		"canvas_border": Color(0.50, 0.45, 0.30, 1.0),
+		"hidden_bg": Color(0.14, 0.12, 0.08, 1.0),
+		"hidden_border": Color(0.85, 0.80, 0.55, 1.0),
+		"ambient_glyph": "· · ·",
+		"ambient_color": Color(0.95, 0.90, 0.65, 0.85),
+		"silhouette": "✎",
+		"silhouette_color": Color(0.70, 0.65, 0.40, 0.9),
+		"bar_color": Color(0.95, 0.85, 0.55, 0.32),
+		"bar_edge": Color(1.0, 0.95, 0.70, 0.85),
+		"verb": "quill stroke",
+		"bar_pattern": "wave_sweep",
+	},
+	"crafting_construction": {
+		"title": "CONSTRUCTION — Blueprint Ticket",
+		"title_color": Color(0.85, 0.75, 0.55),
+		"panel_bg": Color(0.06, 0.05, 0.04, 0.97),
+		"panel_border": Color(0.70, 0.60, 0.40, 1.0),
+		"canvas_bg": Color(0.04, 0.04, 0.03, 1.0),
+		"canvas_border": Color(0.40, 0.35, 0.22, 1.0),
+		"hidden_bg": Color(0.14, 0.12, 0.08, 1.0),
+		"hidden_border": Color(0.70, 0.60, 0.40, 1.0),
+		"ambient_glyph": "─ ─ ─",
+		"ambient_color": Color(0.85, 0.75, 0.50, 0.85),
+		"silhouette": "▦",
+		"silhouette_color": Color(0.60, 0.50, 0.30, 0.9),
+		"bar_color": Color(0.85, 0.70, 0.40, 0.32),
+		"bar_edge": Color(0.95, 0.80, 0.50, 0.85),
+		"verb": "plumb-bob",
+		"bar_pattern": "pendulum",
+	},
 }
 
 # v0.9.363 — timing minigame. Vertical bar sweeps left-to-right; clicking
@@ -419,11 +513,19 @@ func _render_header(snapshot: Dictionary) -> void:
 		var water_type: String = String(snapshot.get("water_type", snapshot.get("node_type", "")))
 		node_descriptor = water_type
 	var verb_color = "#" + Color(theme["bar_edge"]).to_html(false)
+	# v0.9.372 — crafting variant: "Crafting [recipe]" instead of "At [node]".
+	var is_crafting := _job_type.begins_with("crafting_")
 	var line1: String
-	if node_descriptor != "":
-		line1 = "At %s. Click a silhouette while the [color=%s]%s[/color] is over it." % [node_descriptor, verb_color, String(theme["verb"])]
+	if is_crafting:
+		if node_descriptor != "":
+			line1 = "Crafting %s. Click a silhouette while the [color=%s]%s[/color] is over it." % [node_descriptor, verb_color, String(theme["verb"])]
+		else:
+			line1 = "Click a silhouette while the [color=%s]%s[/color] is over it." % [verb_color, String(theme["verb"])]
 	else:
-		line1 = "Click a silhouette while the [color=%s]%s[/color] is over it." % [verb_color, String(theme["verb"])]
+		if node_descriptor != "":
+			line1 = "At %s. Click a silhouette while the [color=%s]%s[/color] is over it." % [node_descriptor, verb_color, String(theme["verb"])]
+		else:
+			line1 = "Click a silhouette while the [color=%s]%s[/color] is over it." % [verb_color, String(theme["verb"])]
 	_subtitle_label.append_text("[color=#88BBDD]%s[/color]\n" % line1)
 	var tool_name = String(snapshot.get("tool_name", ""))
 	var pre_reveals = int(snapshot.get("pre_reveals", 0))
@@ -587,6 +689,14 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 				kind_label.text = "★ LUCKY"
 			"JACKPOT":
 				kind_label.text = "★★★"
+			"BASE":
+				kind_label.text = "◇"
+			"QUALITY_UP_1":
+				kind_label.text = "◆ +"
+			"QUALITY_UP_2":
+				kind_label.text = "◆ ++"
+			"QUALITY_UP_3":
+				kind_label.text = "★★★"
 			_:
 				kind_label.text = "◆"
 		inner.add_child(kind_label)
@@ -633,6 +743,35 @@ func _palette_for_slot(slot: Dictionary) -> Dictionary:
 				"border": Color(0.35, 0.35, 0.35, 1.0),
 				"kind_color": Color(0.55, 0.55, 0.55),
 				"name_color": Color(0.45, 0.45, 0.45),
+			}
+		# v0.9.372 — crafting slot kinds.
+		"BASE":
+			return {
+				"bg": Color(0.10, 0.13, 0.16, 1.0),
+				"border": Color(0.45, 0.55, 0.65, 1.0),
+				"kind_color": Color(0.70, 0.80, 0.90),
+				"name_color": Color(0.80, 0.88, 0.95),
+			}
+		"QUALITY_UP_1":
+			return {
+				"bg": Color(0.07, 0.20, 0.07, 1.0),
+				"border": Color(0.30, 0.85, 0.30, 1.0),
+				"kind_color": Color(0.50, 1.0, 0.30),
+				"name_color": Color(0.85, 1.0, 0.85),
+			}
+		"QUALITY_UP_2":
+			return {
+				"bg": Color(0.04, 0.16, 0.22, 1.0),
+				"border": Color(0.0, 0.75, 1.0, 1.0),
+				"kind_color": Color(0.40, 0.85, 1.0),
+				"name_color": Color(0.75, 0.95, 1.0),
+			}
+		"QUALITY_UP_3":
+			return {
+				"bg": Color(0.16, 0.08, 0.22, 1.0),
+				"border": Color(0.64, 0.21, 0.93, 1.0),
+				"kind_color": Color(0.85, 0.45, 1.0),
+				"name_color": Color(0.90, 0.75, 1.0),
 			}
 		"LUCKY":
 			return {

@@ -1235,6 +1235,12 @@ var stones_panel = null
 const ScratchOffPanelScript = preload("res://client/scratch_off_panel.gd")
 var scratch_off_panel = null
 
+const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
+var numpad_help_panel = null
+# v0.9.372 — show the numpad-controls popup once per new character. Players
+# can toggle this off so future characters they create skip it.
+var show_numpad_popup: bool = true
+
 # Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
 # Replaces chat-command-only /stats + /spendstat from v0.9.335.
 const StatsPanelScript = preload("res://client/stats_panel.gd")
@@ -1846,6 +1852,12 @@ func _ready():
 	scratch_off_panel.slot_missed.connect(_on_scratch_off_slot_missed)
 	scratch_off_panel.auto_skip_toggled.connect(_on_scratch_off_auto_skip_toggled)
 	scratch_off_panel.rhythm_beat.connect(_on_scratch_off_rhythm_beat)
+
+	# v0.9.372 — numpad controls popup (new-character help).
+	numpad_help_panel = NumpadHelpPanelScript.new()
+	add_child(numpad_help_panel)
+	numpad_help_panel.dismissed.connect(_on_numpad_help_dismissed)
+	numpad_help_panel.persistent_toggled.connect(_on_numpad_help_persistent_toggled)
 
 	# Audit #3 Slice 1 (UI remediation) — stat allocation panel.
 	stats_panel = StatsPanelScript.new()
@@ -18003,6 +18015,12 @@ func handle_server_message(message: Dictionary):
 			display_title_holders(message.get("title_holders", []))
 			display_character_status()
 			request_player_list()
+			# v0.9.372 — numpad controls popup (one-time per character if the
+			# persistent setting is on). Shown BEFORE the tutorial prompt so
+			# the controls are visible while the tutorial text suggests
+			# pressing keys.
+			if show_numpad_popup and numpad_help_panel:
+				numpad_help_panel.open(show_numpad_popup)
 			# Ask if the player wants the tutorial (only if the setting hasn't
 			# turned it off). Previously we auto-started it, which was easy to
 			# miss or dismiss accidentally — the prompt lets players opt in.
@@ -21341,6 +21359,8 @@ func _load_keybinds():
 					swap_attack_outsmart = data["swap_attack_outsmart"]
 				if data.has("disable_tutorial"):
 					disable_tutorial = data["disable_tutorial"]
+				if data.has("show_numpad_popup"):
+					show_numpad_popup = bool(data["show_numpad_popup"])
 				# Load UI scale settings
 				if data.has("ui_scale_monster_art"):
 					ui_scale_monster_art = clampf(float(data["ui_scale_monster_art"]), 0.5, 3.0)
@@ -21379,6 +21399,7 @@ func _save_keybinds():
 	save_data["inventory_compare_stat"] = inventory_compare_stat
 	save_data["swap_attack_outsmart"] = swap_attack_outsmart
 	save_data["disable_tutorial"] = disable_tutorial
+	save_data["show_numpad_popup"] = show_numpad_popup
 	# Include UI scale settings
 	save_data["ui_scale_monster_art"] = ui_scale_monster_art
 	save_data["ui_scale_map"] = ui_scale_map
@@ -23432,8 +23453,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.372 changes
+	display_game("[color=#00FF00]v0.9.372[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafting overhaul (slice 1) + new-character numpad popup[/color]")
+	display_game("  • [b]Crafting minigame replaced with scratch-off[/b]: blacksmithing / alchemy / enchanting / scribing / construction now share the lottery-ticket mechanic. Reveal slots → BEST revealed kind decides your craft quality. Distribution shifts toward Refined / Polished / Masterful as your skill rises.")
+	display_game("  • Each craft has its own [b]themed panel[/b]: orange forge for blacksmithing, purple brew for alchemy, cyan sigil for enchanting, ivory inkwell for scribing, ochre blueprint for construction. Targeting motions reuse the gathering patterns for now; unique per-skill motions (hammer / swirl / sigil-trace / quill-stroke / plumb-bob) are queued for the next slice.")
+	display_game("  • [b]New character numpad popup[/b]: when you create a new character, a popup explains the numpad (8-direction movement + Hunt on 5). Click \"Don't show this for future characters\" if you've seen it.")
+	display_game("")
+
 	# v0.9.371 changes
-	display_game("[color=#00FF00]v0.9.371[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.371[/color]")
 	display_game("  [color=#FFD700]Scratch-off expanded to mining / logging / foraging — each with its own targeting motion[/color]")
 	display_game("  • [b]Mining / Logging / Foraging now use the scratch-off ticket[/b] at all tiers — themed per job (color, glyphs, ambient texture).")
 	display_game("  • [b]Each job has a unique targeting motion[/b]:")
@@ -23468,14 +23497,6 @@ func display_changelog():
 	display_game("  • [b]Auto-skip toggle is much more prominent.[/b] Big orange [color=#FFAA33]⏸ STOP AUTO-SKIP[/color] button when in auto mode, big green [color=#9ACD32]▶ Auto-Skip[/color] button when idle.")
 	display_game("")
 
-	# v0.9.360 changes
-	display_game("[color=#00FFFF]v0.9.360[/color]")
-	display_game("  [color=#FFD700]Scratch-off slice 1E — 16 scattered slots + auto-skip[/color]")
-	display_game("  • [b]16 slots in random positions[/b]: the ticket is no longer a row. 16 silhouettes are scattered across a jittered 4x4 layout — feels like a real scratch-off card. Click any silhouette to scratch it.")
-	display_game("  • [b]Skill-scaling scratches[/b]: you start with 2 picks and gain +1 per 25 fishing levels (cap 8). With 16 slots, even a max-skill player + pre-reveal rod still has real choice room.")
-	display_game("  • [b]Auto-Skip toggle on the panel[/b]: mirrors your Settings [color=#9ACD32][Skip Gather Minigame][/color] preference — they stay in sync.")
-	display_game("  • [b]Click-only input[/b]: keyboard 1-5 is dropped (slot positions are random now). Mouse only.")
-	display_game("")
 
 
 
@@ -29337,6 +29358,16 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 
 	# v0.9.369 — header / XP label / hint vary per gathering job.
 	var session_job: String = String(message.get("job_type", scratch_off_job_type if scratch_off_job_type != "" else "fishing"))
+	var is_crafting: bool = bool(message.get("is_crafting", false))
+	# v0.9.372 — crafting scratch-off skips the gathering-style summary in
+	# game_output; the craft_result message that lands immediately after will
+	# render the crafting outcome instead.
+	if is_crafting:
+		scratch_off_close_at = (Time.get_ticks_msec() / 1000.0) + SCRATCH_OFF_POST_COMPLETE_HOLD
+		_render_scratch_off_panel()
+		update_action_bar()
+		return
+
 	var job_upper := session_job.to_upper()
 	var header_color := "#00BFFF"
 	var xp_label := "Fishing XP"
@@ -29494,6 +29525,20 @@ func _on_scratch_off_slot_missed(slot_index: int) -> void:
 	if not (scratch_off_revealed_slots[slot_index] as Dictionary).is_empty():
 		return
 	send_to_server({"type": "scratch_off_reveal", "slot_index": slot_index, "miss": true})
+
+
+func _on_numpad_help_dismissed() -> void:
+	"""v0.9.372 — Got it button. Close popup, persist any toggle changes."""
+	if numpad_help_panel:
+		numpad_help_panel.close()
+	_save_keybinds()
+
+
+func _on_numpad_help_persistent_toggled(show_for_future: bool) -> void:
+	"""v0.9.372 — checkbox flip. Persist immediately (not waiting for Got
+	it) so closing the window any other way still saves the preference."""
+	show_numpad_popup = show_for_future
+	_save_keybinds()
 
 
 func _on_scratch_off_rhythm_beat(beat_type: String) -> void:

@@ -14537,6 +14537,70 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 		"skip_warning": skip_failed_msg,
 	})
 
+func _generate_craft_slots(recipe: Dictionary, skill_level: int, character) -> Array:
+	"""v0.9.372 — generate 16 scratch-off slots for a crafting session.
+	Distribution shifts toward higher-quality outcomes as skill rises:
+	low skill = more DUD + BASE, high skill = more QUALITY_UP_*.
+
+	Slot kinds (crafting-specific, in addition to the gathering kinds):
+	- DUD: nothing
+	- BASE: standard craft (score 1 contribution)
+	- QUALITY_UP_1: pushes toward Uncommon (score ≥ 1)
+	- QUALITY_UP_2: pushes toward Rare (score ≥ 2)
+	- QUALITY_UP_3: pushes toward Epic+ (score = 3)
+
+	The COMPLETION step takes the BEST revealed kind (best_reveal_wins)
+	and maps it to a score 0-3 that feeds the existing roll_quality."""
+	var slot_count: int = SCRATCH_OFF_SLOT_COUNT
+	# Skill-scaled distribution. Cap skill influence at 100 so high-skill
+	# crafts don't trivialize the slot pool — they still want REFUND/DUPLICATE
+	# (added in a follow-up slice) to feel like meaningful variety.
+	var skill_clamped: float = clampf(float(skill_level), 0.0, 100.0)
+	var t: float = skill_clamped / 100.0  # 0.0 at L1 → 1.0 at L100
+	# Per-kind probability schedule. Targets at t=0 and t=1; linearly interpolated.
+	var w_dud: float = lerp(28.0, 4.0, t)        # bad outcome rate falls with skill
+	var w_base: float = lerp(45.0, 28.0, t)      # baseline stays sizeable
+	var w_qu1: float = lerp(16.0, 30.0, t)       # rises slowly
+	var w_qu2: float = lerp(8.0, 22.0, t)        # rises notably
+	var w_qu3: float = lerp(3.0, 16.0, t)        # rare at low skill, real at high
+	var total: float = w_dud + w_base + w_qu1 + w_qu2 + w_qu3
+	var slots: Array = []
+	for i in range(slot_count):
+		var roll: float = randf() * total
+		var kind: String = "BASE"
+		if roll < w_dud:
+			kind = "DUD"
+		elif roll < w_dud + w_base:
+			kind = "BASE"
+		elif roll < w_dud + w_base + w_qu1:
+			kind = "QUALITY_UP_1"
+		elif roll < w_dud + w_base + w_qu1 + w_qu2:
+			kind = "QUALITY_UP_2"
+		else:
+			kind = "QUALITY_UP_3"
+		slots.append(_build_craft_slot(kind, recipe))
+	return slots
+
+
+func _build_craft_slot(kind: String, recipe: Dictionary) -> Dictionary:
+	"""Build a craft slot dictionary. Slot's display label varies per kind
+	so the panel can render the lottery-ticket feel: BASE → 'Common', QUALITY_UP_3
+	→ 'Epic', DUD → 'Failed'. Item context is the recipe output_name."""
+	var output_name: String = String(recipe.get("output_name", recipe.get("name", "Item")))
+	match kind:
+		"DUD":
+			return {"kind": "DUD", "name": "Failed", "type": "craft_dud", "score": 0, "output_name": output_name}
+		"BASE":
+			return {"kind": "BASE", "name": "Standard", "type": "craft_base", "score": 1, "output_name": output_name}
+		"QUALITY_UP_1":
+			return {"kind": "QUALITY_UP_1", "name": "Refined", "type": "craft_quality", "score": 1, "output_name": output_name}
+		"QUALITY_UP_2":
+			return {"kind": "QUALITY_UP_2", "name": "Polished", "type": "craft_quality", "score": 2, "output_name": output_name}
+		"QUALITY_UP_3":
+			return {"kind": "QUALITY_UP_3", "name": "Masterful", "type": "craft_quality", "score": 3, "output_name": output_name}
+	return {"kind": "BASE", "name": "Standard", "type": "craft_base", "score": 1, "output_name": output_name}
+
+
 func _roll_scratch_off_slot_kind(skill: int) -> String:
 	"""v0.9.357 — pick a slot variety. Base distribution:
 	  NORMAL 70 / LUCKY 15 / JACKPOT 5 / DUD 10
@@ -14812,6 +14876,10 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	var session: Dictionary = active_gathering[peer_id]
 	if session.get("mode", "") != "scratch_off":
 		return
+	# v0.9.372 — branch to crafting completion when session carries craft context.
+	if session.has("craft_recipe_id"):
+		_complete_craft_scratch_off(peer_id)
+		return
 	var character = characters[peer_id]
 	var slots: Array = session.get("slots", [])
 	var revealed_positions: Array = session.get("revealed_positions", [])
@@ -14900,6 +14968,77 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	})
 	# Refresh the player's map / location flags (e.g., at_water clears if depleted)
 	send_location_update(peer_id)
+
+func _complete_craft_scratch_off(peer_id: int) -> void:
+	"""v0.9.372 — finalize a crafting scratch-off session. Maps the player's
+	BEST revealed slot kind to a score 0-3 (best_reveal_wins), rolls quality
+	via the existing CraftingDatabaseScript pipeline, then defers to the
+	existing _finalize_craft to handle inventory + XP + craft_result message.
+
+	Also sends scratch_off_complete so the panel closes cleanly + the player
+	sees the slots they revealed before the craft outcome lands."""
+	if not characters.has(peer_id):
+		return
+	if not active_gathering.has(peer_id):
+		return
+	var session: Dictionary = active_gathering[peer_id]
+	var character = characters[peer_id]
+	var slots: Array = session.get("slots", [])
+	var revealed_positions: Array = session.get("revealed_positions", [])
+	var miss_positions: Array = session.get("miss_positions", [])
+	# Best-reveal-wins: highest score among revealed slots. If nothing revealed
+	# (every scratch was a miss), default to score 0 (Crude outcome).
+	var best_score: int = 0
+	var awarded: Array = []
+	var missed: Array = []
+	for i in range(slots.size()):
+		var slot = slots[i]
+		var kind: String = String(slot.get("kind", "BASE"))
+		var name: String = String(slot.get("name", "Standard"))
+		if i in revealed_positions:
+			var s_score = int(slot.get("score", 0))
+			if s_score > best_score:
+				best_score = s_score
+			awarded.append({"kind": kind, "name": name, "type": "craft"})
+		else:
+			var cause = "miss" if (i in miss_positions) else "unscratched"
+			missed.append({"kind": kind, "name": name, "type": "craft", "cause": cause})
+
+	# Pull crafting context out of the session.
+	var recipe_id: String = String(session.get("craft_recipe_id", ""))
+	var recipe: Dictionary = session.get("craft_recipe", {})
+	var skill_name: String = String(session.get("craft_skill_name", ""))
+	var skill_level: int = int(session.get("craft_skill_level", 1))
+	var total_bonus: int = int(session.get("craft_total_bonus", 0))
+	var quantity: int = int(session.get("craft_quantity", 1))
+	var temper_target: String = String(session.get("craft_temper_target", ""))
+	var is_tempered: bool = bool(session.get("craft_is_tempered", false))
+
+	# Roll quality with derived score, then hand off to the existing craft
+	# finalize (which sends craft_result + grants XP/inventory).
+	var quality: int = CraftingDatabaseScript.roll_quality(skill_level, int(recipe.get("difficulty", 1)), total_bonus, best_score)
+
+	# Clear session BEFORE the panel-close message so the client can transition
+	# out cleanly. _finalize_craft sends craft_result after.
+	active_gathering.erase(peer_id)
+
+	# Send scratch_off_complete (panel hold + close).
+	send_to_peer(peer_id, {
+		"type": "scratch_off_complete",
+		"awarded": awarded,
+		"missed": missed,
+		"xp_gained": 0,  # XP awarded via _finalize_craft below, not the scratch-off path
+		"leveled_up": false,
+		"new_level": 0,
+		"job_type": "crafting_" + skill_name,
+		"is_crafting": true,
+		"craft_best_score": best_score,
+		"character": character.to_dict(),
+	})
+
+	# Finalize the actual craft (sends craft_result).
+	_finalize_craft(peer_id, character, recipe_id, recipe, quality, skill_name, skill_level, total_bonus, best_score, quantity, temper_target, is_tempered)
+
 
 func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	"""Start gathering when player bumps into a blocking gathering node."""
@@ -17667,29 +17806,69 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	# Also skip if player has skip_craft_minigame enabled (with reduced score)
 	var skill_gap = skill_level - recipe.difficulty
 	if skill_gap < CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP and not character.skip_craft_minigame:
-		# Send crafting challenge minigame
-		var is_specialist = character.can_use_specialist_recipe(skill_name)
-		var job_level = character.job_levels.get(character.CRAFT_SKILL_TO_JOB.get(skill_name, ""), 0)
-		var challenge = _generate_craft_challenge(skill_name, job_level, is_specialist)
-		active_crafts[peer_id] = {
-			"recipe_id": recipe_id,
-			"recipe": recipe,
-			"skill_name": skill_name,
-			"skill_level": skill_level,
-			"post_bonus": post_bonus,
-			"total_bonus": tempered_bonus if is_tempered else total_bonus,
-			"correct_answers": challenge["correct_answers"],
-			"is_specialist": is_specialist,
-			"job_level": job_level,
-			"consumed_materials": _consumed_for_refund,
-			"quantity": quantity,
-			"temper_target": temper_target,
-			"is_tempered": is_tempered,
+		# v0.9.372 — replaced 3-round Q&A challenge with scratch-off minigame.
+		# Slot pool reflects skill (more good outcomes as skill grows), player
+		# reveals slots to determine score; best-reveal-wins feeds into the
+		# existing roll_quality pipeline.
+		var craft_slots = _generate_craft_slots(recipe, skill_level, character)
+		var craft_scratch_budget = _compute_scratch_budget(skill_level)
+
+		# Tool pre-reveals: crafting has no "tool" subtype mapping (rod / pickaxe
+		# / etc. are gathering-only). Tier-1 baseline = no pre-reveals; could
+		# extend later via a recipe.pre_reveals field. For now: 0.
+		var pre_revealed_positions: Array = []
+
+		# Bar tuning: crafting doesn't use gathering tools, so defaults apply.
+		# Future slice will add per-skill tool-equivalent bonuses.
+		var craft_bar_speed_mult: float = 1.0
+		var craft_bar_width_mult: float = 1.0
+
+		# Session is "scratch_off" mode but carries craft context — completion
+		# branches on this dict (see _complete_scratch_off_fishing).
+		active_gathering[peer_id] = {
+			"mode": "scratch_off",
+			"job_type": "crafting_" + skill_name,
+			"node_type": "crafting_station",
+			"water_type": "",
+			"slots": craft_slots,
+			"revealed_positions": pre_revealed_positions.duplicate(),
+			"miss_positions": [],
+			"scratches_remaining": craft_scratch_budget,
+			"node_x": character.x,
+			"node_y": character.y,
+			# Crafting-specific context, used by completion:
+			"craft_recipe_id": recipe_id,
+			"craft_recipe": recipe,
+			"craft_skill_name": skill_name,
+			"craft_skill_level": skill_level,
+			"craft_post_bonus": post_bonus,
+			"craft_total_bonus": tempered_bonus if is_tempered else total_bonus,
+			"craft_consumed_materials": _consumed_for_refund,
+			"craft_quantity": quantity,
+			"craft_temper_target": temper_target,
+			"craft_is_tempered": is_tempered,
 		}
+
+		var craft_initial_slots: Array = []
+		for i in range(craft_slots.size()):
+			if i in pre_revealed_positions:
+				craft_initial_slots.append(craft_slots[i])
+			else:
+				craft_initial_slots.append({})
+
 		send_to_peer(peer_id, {
-			"type": "craft_challenge",
-			"rounds": challenge["client_rounds"],
-			"skill_name": skill_name,
+			"type": "scratch_off_start",
+			"job_type": "crafting_" + skill_name,
+			"water_type": "",
+			"node_descriptor": String(recipe.get("output_name", recipe.get("name", "the recipe"))),
+			"slot_count": SCRATCH_OFF_SLOT_COUNT,
+			"initial_slots": craft_initial_slots,
+			"scratches_remaining": craft_scratch_budget,
+			"tool_name": "",
+			"auto_skip": false,  # Crafting skip is its own setting; player toggles via Settings
+			"bar_speed_mult": craft_bar_speed_mult,
+			"bar_width_mult": craft_bar_width_mult,
+			"is_crafting": true,  # Hint so client can adapt completion summary copy
 		})
 		return
 
