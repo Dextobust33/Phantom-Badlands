@@ -813,6 +813,10 @@ func _process(delta):
 	# the Slice 8 multi-post threat scan, per-move cost climbed sharply.
 	_threat_state_cache.clear()
 
+	# v0.9.346 — flush at most one throttled character save per tick. Spreads
+	# disk I/O over many frames instead of letting bursts hit synchronously.
+	_flush_pending_character_saves()
+
 	# Auto-save timer
 	auto_save_timer += delta
 	if auto_save_timer >= AUTO_SAVE_INTERVAL:
@@ -5222,21 +5226,62 @@ func send_buff_expiration_notifications(peer_id: int):
 			"message": "[color=#808080]Your %s buff has worn off. (%d battles)[/color]" % [buff_name, 0]
 		})
 
-func save_character(peer_id: int):
-	"""Save a single character"""
-	if not characters.has(peer_id):
-		return
-	if not peers.has(peer_id):
-		return
+# v0.9.346 — save throttling. Prevents the main thread freezing from
+# back-to-back synchronous disk writes (each character save is 3 disk ops
+# in _safe_save: read original → write .bak → write new, ~100KB JSON each
+# pass). Calls under the throttle just mark the peer dirty; a periodic
+# drain in _process flushes the dirty set. Critical paths (disconnect,
+# death, level-up) call _save_character_immediate to force a sync write.
+const SAVE_THROTTLE_SECONDS = 3.0
+var _last_save_time: Dictionary = {}  # peer_id → unix_time of last save
+var _pending_character_saves: Dictionary = {}  # peer_id → true if needs save
 
+func save_character(peer_id: int):
+	"""Save a single character (throttled).
+	If the peer was saved within SAVE_THROTTLE_SECONDS, the request is
+	deferred — peer is marked dirty and the next _process tick after the
+	cooldown expires will flush. Collapses rapid bursts (combat-end +
+	character_update + quest progress) into one disk write per N seconds."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var now = Time.get_unix_time_from_system()
+	var last = float(_last_save_time.get(peer_id, 0.0))
+	if now - last < SAVE_THROTTLE_SECONDS:
+		_pending_character_saves[peer_id] = true
+		return
+	_save_character_immediate(peer_id)
+
+func _save_character_immediate(peer_id: int):
+	"""Bypass the throttle and write the character to disk right now.
+	Used by disconnect, death, and any code path where the save MUST land
+	before the peer can vanish."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
 	var account_id = peers[peer_id].account_id
 	if account_id.is_empty():
 		return
-
 	persistence.save_character(account_id, characters[peer_id])
+	_last_save_time[peer_id] = Time.get_unix_time_from_system()
+	_pending_character_saves.erase(peer_id)
+
+func _flush_pending_character_saves():
+	"""Drain throttled save requests whose cooldown has elapsed. Called once
+	per _process tick. Saves at most one character per tick to keep the
+	frame budget bounded even if many peers are dirty."""
+	if _pending_character_saves.is_empty():
+		return
+	var now = Time.get_unix_time_from_system()
+	for peer_id in _pending_character_saves.keys():
+		var last = float(_last_save_time.get(peer_id, 0.0))
+		if now - last >= SAVE_THROTTLE_SECONDS:
+			_save_character_immediate(peer_id)
+			return  # Only one save per tick
 
 func save_all_active_characters():
-	"""Save all currently active characters (called by auto-save timer)"""
+	"""Save all currently active characters (called by auto-save timer).
+	Bypasses the throttle — auto-save is supposed to actually save."""
+	for peer_id in characters.keys():
+		_save_character_immediate(peer_id)
 	for peer_id in characters.keys():
 		save_character(peer_id)
 
@@ -5274,8 +5319,9 @@ func handle_disconnect(peer_id: int):
 		else:
 			print("COMBAT PERSISTENCE: Not saving combat for %s - player HP is 0" % character.name)
 
-	# Save character before removing (now includes combat state)
-	save_character(peer_id)
+	# Save character before removing (now includes combat state).
+	# v0.9.346 — bypass throttle; the peer is about to vanish.
+	_save_character_immediate(peer_id)
 
 	# Remove from combat (don't count as loss since we saved state)
 	if combat_mgr.is_in_combat(peer_id):
@@ -5326,6 +5372,11 @@ func handle_disconnect(peer_id: int):
 	active_harvests.erase(peer_id)
 	gathering_cooldown.erase(peer_id)
 	build_cooldown.erase(peer_id)
+
+	# v0.9.346 — clean up save-throttle state for the departing peer so a
+	# future peer reusing this ID doesn't inherit a stale cooldown.
+	_last_save_time.erase(peer_id)
+	_pending_character_saves.erase(peer_id)
 
 	# Clean up merchant position tracking
 	var player_key = "p_%d" % peer_id
