@@ -146,6 +146,8 @@ var _flock_warning_pulse_tween: Tween = null
 var _victory_card_overlay: PanelContainer
 var _victory_card_xp_label: RichTextLabel
 var _victory_card_levelup_label: RichTextLabel
+var _victory_card_gear_banner: PanelContainer  # v0.9.353 — dedicated callout for gear drops
+var _victory_card_gear_vbox: VBoxContainer
 var _victory_card_loot_vbox: VBoxContainer
 var _victory_card_prompt_label: RichTextLabel
 # True from show_victory_card() until hide_victory_card(), independent of
@@ -2416,6 +2418,27 @@ func _build_victory_card_overlay() -> void:
 	_victory_card_levelup_label.visible = false
 	vbox.add_child(_victory_card_levelup_label)
 
+	# v0.9.353 — dedicated gear banner. Highlighted PanelContainer that calls
+	# out new gear drops with a rarity-colored frame so they don't disappear
+	# into the regular drop list. Hidden when there are no gear drops.
+	_victory_card_gear_banner = PanelContainer.new()
+	var gear_sb := StyleBoxFlat.new()
+	gear_sb.bg_color = Color(0.20, 0.16, 0.05, 0.90)
+	gear_sb.border_color = Color("#FFD700")
+	gear_sb.set_border_width_all(2)
+	gear_sb.set_corner_radius_all(3)
+	gear_sb.content_margin_left = 8
+	gear_sb.content_margin_right = 8
+	gear_sb.content_margin_top = 4
+	gear_sb.content_margin_bottom = 4
+	_victory_card_gear_banner.add_theme_stylebox_override("panel", gear_sb)
+	_victory_card_gear_banner.visible = false
+	_victory_card_gear_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_victory_card_gear_banner)
+	_victory_card_gear_vbox = VBoxContainer.new()
+	_victory_card_gear_vbox.add_theme_constant_override("separation", 2)
+	_victory_card_gear_banner.add_child(_victory_card_gear_vbox)
+
 	# Divider before loot
 	var divider1 := ColorRect.new()
 	divider1.color = Color("#5C4D33")
@@ -2478,6 +2501,48 @@ func show_victory_card(rewards: Dictionary) -> void:
 	else:
 		_victory_card_levelup_label.visible = false
 
+	# v0.9.353 — gear drop banner. Server populates `gear_drops` with one
+	# entry per equipment item dropped this combat. Each entry carries
+	# {name, rarity, symbol, color, level} so we can render a prominent
+	# rarity-colored callout that won't blend into the generic loot list.
+	for child in _victory_card_gear_vbox.get_children():
+		child.queue_free()
+	var gear_drops: Array = rewards.get("gear_drops", [])
+	if gear_drops.is_empty():
+		_victory_card_gear_banner.visible = false
+	else:
+		_victory_card_gear_banner.visible = true
+		# Header line: "★ N NEW ITEM(S) ACQUIRED ★"
+		var header_label := RichTextLabel.new()
+		header_label.bbcode_enabled = true
+		header_label.fit_content = true
+		header_label.scroll_active = false
+		header_label.add_theme_font_size_override("normal_font_size", 15)
+		header_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var noun = "ITEM" if gear_drops.size() == 1 else "ITEMS"
+		header_label.text = "[center][b][color=#FFD700]★ %d NEW %s ACQUIRED ★[/color][/b][/center]" % [gear_drops.size(), noun]
+		_victory_card_gear_vbox.add_child(header_label)
+		# One row per gear drop — large, rarity-colored, with level tag
+		for entry in gear_drops:
+			if not (entry is Dictionary):
+				continue
+			var row := RichTextLabel.new()
+			row.bbcode_enabled = true
+			row.fit_content = true
+			row.scroll_active = false
+			row.add_theme_font_size_override("normal_font_size", 16)
+			row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var g_name = String(entry.get("name", "Unknown Item"))
+			var g_color = String(entry.get("color", "#FFFFFF"))
+			var g_symbol = String(entry.get("symbol", "•"))
+			var g_rarity = String(entry.get("rarity", "common"))
+			var g_level = int(entry.get("level", 0))
+			# Capitalize rarity for display
+			var rarity_label = g_rarity.capitalize() if g_rarity.length() > 0 else "Common"
+			var level_str = ("Lv %d " % g_level) if g_level > 0 else ""
+			row.text = "[center][color=%s][b]%s %s[/b][/color]   [color=#888888]%s%s[/color][/center]" % [g_color, g_symbol, g_name, level_str, rarity_label]
+			_victory_card_gear_vbox.add_child(row)
+
 	# Replace loot rows
 	for child in _victory_card_loot_vbox.get_children():
 		child.queue_free()
@@ -2497,7 +2562,10 @@ func show_victory_card(rewards: Dictionary) -> void:
 			row.bbcode_enabled = true
 			row.fit_content = true
 			row.scroll_active = false
-			row.add_theme_font_size_override("normal_font_size", 12)
+			# v0.9.353 — bumped 12→13pt so regular loot list is readable next
+			# to the new gear banner (which is 15-16pt). Keeps a visual gap
+			# between "headline drop" and "everything else."
+			row.add_theme_font_size_override("normal_font_size", 13)
 			row.text = "  " + str(drop_msg)
 			row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			_victory_card_loot_vbox.add_child(row)

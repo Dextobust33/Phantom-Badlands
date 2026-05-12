@@ -3751,9 +3751,15 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 							var symbol = _get_rarity_symbol(rarity)
 							var name = item.get("name", "Unknown Item")
 							drop_messages.append("[color=%s]%s %s[/color]" % [color, symbol, name])
-							# Track rarity and level for sound effects
+							# v0.9.353 — drop_data now carries name + symbol + color
+							# so the client's victory-card gear banner can render
+							# each item with proper rarity styling without parsing
+							# BBCode from drop_messages.
 							drop_data.append({
+								"name": name,
 								"rarity": rarity,
+								"symbol": symbol,
+								"color": color,
 								"level": item.get("level", 1),
 								"level_diff": item.get("level", 1) - player_level
 							})

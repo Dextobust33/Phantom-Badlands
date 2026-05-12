@@ -18936,12 +18936,16 @@ func handle_server_message(message: Dictionary):
 					# the same lines as a fallback / scrollback.
 					if combat_scene_panel and combat_scene_panel.has_method("show_victory_card"):
 						var _new_level = character_data.get("level", _level_before_victory)
+						# v0.9.353 — pass through drop_data so the victory card
+						# can render a rarity-colored gear callout banner above
+						# the regular loot list.
 						combat_scene_panel.show_victory_card({
 							"xp_gain": recent_xp_gain,
 							"old_level": _level_before_victory,
 							"new_level": _new_level,
 							"did_level_up": _new_level > _level_before_victory,
 							"loot": flock_drops,
+							"gear_drops": message.get("drop_data", []),
 							"harvest_available": harvest_available,
 							"continue_key": get_action_key_name(0),
 						})
@@ -23326,8 +23330,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.353 changes
+	display_game("[color=#00FF00]v0.9.353[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Inventory tab toggles + gear-drop callout in victory card[/color]")
+	display_game("  • [b]Inventory filter chips are now toggles, not radio buttons.[/b] Click [color=#9ACD32]Tools[/color] to hide tools; click again to show them. Hide [color=#9ACD32]Cons[/color] to clear consumables out of view. The [color=#9ACD32]All[/color] chip resets — clicking it brings everything back. Hidden categories persist across sessions ([color=#9ACD32]user://inventory_prefs.json[/color]). Helps when your equipment is buried under stacks of tools/consumables.")
+	display_game("  • [b]Post-combat victory card now has a dedicated gear callout banner.[/b] If a fight drops equipment, a gold-bordered \"★ N NEW ITEMS ACQUIRED ★\" frame appears above the regular loot list — each gear line is rendered at 16pt in its rarity color so common rats-and-gold don't bury that uncommon sword. Regular loot rows bumped 12pt → 13pt for legibility.")
+	display_game("")
+
 	# v0.9.352 changes
-	display_game("[color=#00FF00]v0.9.352[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.352[/color]")
 	display_game("  [color=#FFD700]Hotzone dialog now locks movement + server-side threat cache[/color]")
 	display_game("  • [b]Bug fix[/b]: stepping into a hotzone for the first time opens the \"Enter at your own risk?\" dialog — but movement keys were still working underneath, so you could walk deeper while reading the warning. Now movement is blocked until you select Enter or Back. Same fix retroactively applied to the dungeon level-warning dialog.")
 	display_game("  • [b]Server optimization[/b]: the threat-state scan over all NPC posts (used by the map renderer to draw red \"!\" overlays + flip the at-post header to \"Under Threat\") used to run on every player move — iterating all 88+ active dungeons per post. Now precomputed once every 3 seconds in a background tick and cached. Movement responses don't pay for that work anymore. Acceptable staleness: threat banner may take up to 3s to flip when a new dungeon spawns near a post.")
@@ -23348,13 +23359,6 @@ func display_changelog():
 	display_game("  • [b]Map no longer jumps on post entry/exit.[/b] The post header used [color=#FFD700][b]bold[/b][/color] for the name + \"Under Threat\" — the bold font variant has slightly different line metrics, which pushed the map down ~2px when entering a post. Removed [b] from the post header. Color alone differentiates the name.")
 	display_game("")
 
-	# v0.9.348 changes
-	display_game("[color=#00FFFF]v0.9.348[/color]")
-	display_game("  [color=#FFD700]Movement responsiveness + server lag spike reduction[/color]")
-	display_game("  • [b]Movement cooldown cut from 0.5s → 0.15s.[/b] Single-keypress feel was throttled to 2 moves/sec — pressing direction 4× rapidly only registered as 1. Now ~6.7 moves/sec. The previous \"server lag\" you were feeling was largely this client-side throttle becoming visible after the Oracle CPU spikes were fixed in v0.9.344/346. Biome multipliers (1.0-1.4×) still apply, so swamps/tundra still tax movement.")
-	display_game("  • [b]Road check interval 60s → 300s.[/b] Each successful road formation runs A* (up to 100k nodes) + writes the full path data JSON + saves dirty chunks + recomputes merchant circuits — easily 200-1000ms of sync work. Spaced out to 5min so the spike is rare. Phase-staggered from the dungeon timer.")
-	display_game("  • [b]Dungeon spawn check 30s → 120s.[/b] Halves the spike frequency for the dungeon refill pass (still capped at 8 per tick from v0.9.344). Completed dungeons get replaced within 2min, which is fine.")
-	display_game("")
 
 
 
