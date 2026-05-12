@@ -859,6 +859,23 @@ func _process(delta):
 	var _diag_drain_spawn_us: int = 0
 	var _diag_peer_io_us: int = 0
 	var _diag_buffer_process_us: int = 0
+	# v0.9.378 — round two: instrument the remaining un-instrumented blocks
+	# so we can find what's responsible for the ~4.8s spike with no other
+	# sub-region accounting for it. Each is conditional on DIAG_TIMING_ENABLED.
+	var _diag_flush_char_saves_us: int = 0
+	var _diag_world_threat_refresh_us: int = 0
+	var _diag_check_dungeon_spawns_us: int = 0
+	var _diag_road_check_us: int = 0
+	var _diag_guard_decay_us: int = 0
+	var _diag_wall_decay_us: int = 0
+	var _diag_check_merchant_arrivals_us: int = 0
+	var _diag_merchant_movement_us: int = 0
+	var _diag_disconnect_us: int = 0
+	var _diag_delta_flush_us: int = 0
+	var _diag_full_update_us: int = 0
+	var _diag_map_flush_us: int = 0
+	var _diag_security_check_us: int = 0
+	var _diag_stale_check_us: int = 0
 	if DIAG_TIMING_ENABLED:
 		_diag_frame_start_us = Time.get_ticks_usec()
 		_diag_threat_scan_us_this_frame = 0
@@ -887,7 +904,10 @@ func _process(delta):
 
 	# v0.9.346 — flush at most one throttled character save per tick. Spreads
 	# disk I/O over many frames instead of letting bursts hit synchronously.
+	var _flush_chr_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 	_flush_pending_character_saves()
+	if DIAG_TIMING_ENABLED:
+		_diag_flush_char_saves_us = Time.get_ticks_usec() - _flush_chr_start_us
 
 	# Auto-save timer
 	auto_save_timer += delta
@@ -926,19 +946,28 @@ func _process(delta):
 		merchant_update_timer += delta
 		if merchant_update_timer >= MERCHANT_UPDATE_INTERVAL:
 			merchant_update_timer = 0.0
+			var _mm_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 			send_merchant_movement_updates()
+			if DIAG_TIMING_ENABLED:
+				_diag_merchant_movement_us = Time.get_ticks_usec() - _mm_start_us
 
 		# Check for merchant arrivals at posts (equalization)
 		_merchant_check_timer += delta
 		if _merchant_check_timer >= MERCHANT_CHECK_INTERVAL:
 			_merchant_check_timer = 0.0
+			var _ma_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 			_check_merchant_arrivals()
+			if DIAG_TIMING_ENABLED:
+				_diag_check_merchant_arrivals_us = Time.get_ticks_usec() - _ma_start_us
 
 	# Periodic road path check — try to connect one unconnected post pair
 	_road_check_timer += delta
 	if _road_check_timer >= ROAD_CHECK_INTERVAL:
 		_road_check_timer = 0.0
+		var _road_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		_try_connect_road()
+		if DIAG_TIMING_ENABLED:
+			_diag_road_check_us = Time.get_ticks_usec() - _road_start_us
 
 	# Process pending update countdown
 	if pending_update_active:
@@ -951,7 +980,10 @@ func _process(delta):
 	dungeon_spawn_timer += delta
 	if dungeon_spawn_timer >= DUNGEON_SPAWN_CHECK_INTERVAL:
 		dungeon_spawn_timer = 0.0
+		var _cds_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		_check_dungeon_spawns()
+		if DIAG_TIMING_ENABLED:
+			_diag_check_dungeon_spawns_us = Time.get_ticks_usec() - _cds_start_us
 
 	# v0.9.377 — drain one queued dungeon spawn per frame (BSP gen + monster
 	# spawn was bursting ~5s frames; one-per-frame keeps each frame bounded).
@@ -988,13 +1020,19 @@ func _process(delta):
 	guard_decay_timer += delta
 	if guard_decay_timer >= GUARD_DECAY_CHECK_INTERVAL:
 		guard_decay_timer = 0.0
+		var _gd_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		_tick_guard_decay()
+		if DIAG_TIMING_ENABLED:
+			_diag_guard_decay_us = Time.get_ticks_usec() - _gd_start_us
 
 	# Wall decay timer
 	wall_decay_timer += delta
 	if wall_decay_timer >= WALL_DECAY_CHECK_INTERVAL:
 		wall_decay_timer = 0.0
+		var _wd_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		_tick_wall_decay()
+		if DIAG_TIMING_ENABLED:
+			_diag_wall_decay_us = Time.get_ticks_usec() - _wd_start_us
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -1095,34 +1133,49 @@ func _process(delta):
 		_diag_peer_io_us = (Time.get_ticks_usec() - _peer_io_start_us) - _diag_buffer_process_us
 
 	# Clean up disconnected peers
+	var _dc_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 	for peer_id in disconnected_peers:
 		handle_disconnect(peer_id)
+	if DIAG_TIMING_ENABLED:
+		_diag_disconnect_us = Time.get_ticks_usec() - _dc_start_us
 
 	# ===== NETWORK OPTIMIZATION: Flush batched updates =====
 	# Phase 1: Flush pending character deltas (one send per peer per frame)
 	if USE_DELTA_UPDATES:
+		var _df_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		_flush_pending_character_updates()
+		if DIAG_TIMING_ENABLED:
+			_diag_delta_flush_us = Time.get_ticks_usec() - _df_start_us
 
 	# Phase 1: Periodic forced full update (desync safety net)
 	if USE_DELTA_UPDATES:
 		full_update_timer += delta
 		if full_update_timer >= FULL_UPDATE_INTERVAL:
 			full_update_timer = 0.0
+			var _fu_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 			for pid in characters:
 				force_full_character_update(pid)
+			if DIAG_TIMING_ENABLED:
+				_diag_full_update_us = Time.get_ticks_usec() - _fu_start_us
 
 	# Phase 3: Flush batched map updates
 	if USE_BROADCAST_THROTTLE:
 		map_update_flush_timer += delta
 		if map_update_flush_timer >= MAP_UPDATE_FLUSH_INTERVAL:
 			map_update_flush_timer = 0.0
+			var _mf_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 			_flush_dirty_map_updates()
+			if DIAG_TIMING_ENABLED:
+				_diag_map_flush_us = Time.get_ticks_usec() - _mf_start_us
 
 	# Security: Periodically check for stale unauthenticated connections
 	security_check_timer += delta
 	if security_check_timer >= SECURITY_CHECK_INTERVAL:
 		security_check_timer = 0.0
+		var _sc_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 		_check_stale_connections()
+		if DIAG_TIMING_ENABLED:
+			_diag_stale_check_us = Time.get_ticks_usec() - _sc_start_us
 
 	# v0.9.362 — diagnostic: log frame spikes. If a single _process tick
 	# exceeds DIAG_FRAME_SPIKE_MS, log total time + threat-scan portion +
@@ -1153,6 +1206,31 @@ func _process(delta):
 				parts.append("peer_io=%.1fms" % (_diag_peer_io_us / 1000.0))
 			if _diag_buffer_process_us / 1000.0 >= 1.0:
 				parts.append("buffer_process=%.1fms" % (_diag_buffer_process_us / 1000.0))
+			# v0.9.378 round-two instrumentation:
+			if _diag_flush_char_saves_us / 1000.0 >= 1.0:
+				parts.append("flush_char_saves=%.1fms" % (_diag_flush_char_saves_us / 1000.0))
+			if _diag_check_dungeon_spawns_us / 1000.0 >= 1.0:
+				parts.append("check_dungeon_spawns=%.1fms" % (_diag_check_dungeon_spawns_us / 1000.0))
+			if _diag_road_check_us / 1000.0 >= 1.0:
+				parts.append("road_check=%.1fms" % (_diag_road_check_us / 1000.0))
+			if _diag_guard_decay_us / 1000.0 >= 1.0:
+				parts.append("guard_decay=%.1fms" % (_diag_guard_decay_us / 1000.0))
+			if _diag_wall_decay_us / 1000.0 >= 1.0:
+				parts.append("wall_decay=%.1fms" % (_diag_wall_decay_us / 1000.0))
+			if _diag_check_merchant_arrivals_us / 1000.0 >= 1.0:
+				parts.append("merchant_arrivals=%.1fms" % (_diag_check_merchant_arrivals_us / 1000.0))
+			if _diag_merchant_movement_us / 1000.0 >= 1.0:
+				parts.append("merchant_movement=%.1fms" % (_diag_merchant_movement_us / 1000.0))
+			if _diag_disconnect_us / 1000.0 >= 1.0:
+				parts.append("disconnect=%.1fms" % (_diag_disconnect_us / 1000.0))
+			if _diag_delta_flush_us / 1000.0 >= 1.0:
+				parts.append("delta_flush=%.1fms" % (_diag_delta_flush_us / 1000.0))
+			if _diag_full_update_us / 1000.0 >= 1.0:
+				parts.append("full_update=%.1fms" % (_diag_full_update_us / 1000.0))
+			if _diag_map_flush_us / 1000.0 >= 1.0:
+				parts.append("map_flush=%.1fms" % (_diag_map_flush_us / 1000.0))
+			if _diag_stale_check_us / 1000.0 >= 1.0:
+				parts.append("stale_check=%.1fms" % (_diag_stale_check_us / 1000.0))
 			var _spike_line: String = "FRAME SPIKE %.1fms (%s, peers=%d, dungeons=%d, posts=%d)" % [_frame_ms, " ".join(parts), characters.size(), active_dungeons.size(), (chunk_manager.npc_posts.size() if chunk_manager else 0)]
 			# Rate-limit: keep the worst spike of the rolling 2s window. Emit
 			# at window close with a count so we know how many spikes piled up.
