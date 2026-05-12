@@ -4656,8 +4656,31 @@ func send_location_update(peer_id: int):
 		if b.peer_id == peer_id:
 			bounty_locs.append({"x": b.x, "y": b.y})
 
+	# Audit #11 Slice 8 — pre-compute which visible NPC posts are Under Threat
+	# so the map renderer can overlay warning glyphs on them. Also flag whether
+	# the player's current post (if any) is threatened so the at-post header
+	# can flip from "Safe" to "Under Threat".
+	var threatened_post_centers: Array = []
+	var current_post_threatened: bool = false
+	if world_system.chunk_manager:
+		for np_post in world_system.chunk_manager.get_npc_posts():
+			var px = int(np_post.get("x", 0))
+			var py = int(np_post.get("y", 0))
+			# Skip posts entirely outside the player's vision footprint.
+			if abs(px - character.x) > vision_radius + 5 or abs(py - character.y) > vision_radius + 5:
+				continue
+			var ts = _compute_post_threat_state(px, py)
+			if ts.get("threatened", false):
+				threatened_post_centers.append("%d,%d" % [px, py])
+		# Is the player standing inside an NPC post footprint that is threatened?
+		if world_system.chunk_manager.is_npc_post_tile(character.x, character.y):
+			var own_post = world_system.chunk_manager.get_npc_post_at(character.x, character.y)
+			if not own_post.is_empty():
+				var own_ts = _compute_post_threat_state(int(own_post.get("x", 0)), int(own_post.get("y", 0)))
+				current_post_threatened = bool(own_ts.get("threatened", false))
+
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles, threatened_post_centers, current_post_threatened)
 
 	# Check for gathering node at this location OR adjacent tiles
 	var gathering_node = get_gathering_node_nearby(character.x, character.y)
@@ -5806,6 +5829,10 @@ func _handle_blacksmith_station(peer_id: int, character):
 	"""Handle bump into blacksmith station tile — open repair/upgrade menu."""
 	var bs_account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
 
+	# Audit #11 Slice 8 — services cost more at threatened posts.
+	var threat_info = _get_post_threat_info(peer_id)
+	var threatened: bool = bool(threat_info.get("threatened", false))
+
 	# Check if player has damaged gear
 	var damaged_items = []
 	var total_repair_cost = 0
@@ -5818,6 +5845,8 @@ func _handle_blacksmith_station(peer_id: int, character):
 				var item_level = item.get("level", 1)
 				var repair_cost = int(wear * item_level * 25)
 				var valor_cost = max(1, repair_cost / 10)
+				if threatened:
+					valor_cost = int(ceil(valor_cost * POST_THREAT_SERVICE_MULT))
 				damaged_items.append({
 					"slot": slot_name,
 					"name": item.get("name", slot_name.capitalize()),
@@ -5855,6 +5884,8 @@ func _handle_blacksmith_station(peer_id: int, character):
 
 	# Build message
 	var msg = "[color=#DAA520]═══════ BLACKSMITH ═══════[/color]\n"
+	if threatened:
+		msg += "[color=#FF6644]'Dark times. I'm charging extra — too risky to ply my trade right now.'[/color]\n"
 	if damaged_items.size() > 0:
 		msg += "'I can fix up that gear for you, traveler.'"
 	else:
@@ -5869,7 +5900,9 @@ func _handle_blacksmith_station(peer_id: int, character):
 		"repair_all_cost": repair_all_cost,
 		"can_upgrade": upgradeable_items.size() > 0,
 		"player_valor": persistence.get_valor(bs_account_id),
-		"player_materials": character.crafting_materials.duplicate()
+		"player_materials": character.crafting_materials.duplicate(),
+		"under_threat": threatened,
+		"threat_mult": POST_THREAT_SERVICE_MULT if threatened else 1.0,
 	})
 
 func check_blacksmith_encounter(_peer_id: int) -> bool:
@@ -6189,6 +6222,14 @@ func _handle_healer_station(peer_id: int, character):
 	var full_heal_cost = max(1, level * 90 / 10)
 	var cure_all_cost = max(1, level * 180 / 10)
 
+	# Audit #11 Slice 8 — services cost more at threatened posts.
+	var threat_info = _get_post_threat_info(peer_id)
+	var threatened: bool = bool(threat_info.get("threatened", false))
+	if threatened:
+		quick_heal_cost = int(ceil(quick_heal_cost * POST_THREAT_SERVICE_MULT))
+		full_heal_cost = int(ceil(full_heal_cost * POST_THREAT_SERVICE_MULT))
+		cure_all_cost = int(ceil(cure_all_cost * POST_THREAT_SERVICE_MULT))
+
 	var has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
 
 	# Store encounter data
@@ -6201,6 +6242,8 @@ func _handle_healer_station(peer_id: int, character):
 
 	# Build message
 	var msg = "[color=#00FF88]═══════ HEALER ═══════[/color]\n"
+	if threatened:
+		msg += "[color=#FF6644]'Dangerous times, traveler — supplies are scarce, prices steep.'[/color]\n"
 	var hp_ratio = float(character.current_hp) / max(1, character.get_total_max_hp())
 	if hp_ratio < 0.80 or has_debuffs:
 		msg += "'You look injured, traveler. Let me help.'"
@@ -6229,6 +6272,8 @@ func _handle_healer_station(peer_id: int, character):
 		"current_hp": character.current_hp,
 		"max_hp": character.get_total_max_hp(),
 		"companion": companion_payload,
+		"under_threat": threatened,
+		"threat_mult": POST_THREAT_SERVICE_MULT if threatened else 1.0,
 	})
 
 func check_healer_encounter(_peer_id: int) -> bool:
@@ -21927,6 +21972,11 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	}
 
 const POST_THREAT_PRICE_MULT: float = 1.20
+# Audit #11 Slice 8 — service prices (healer / blacksmith) hike harder than
+# the market markup because they're survival-critical services. The threat
+# economy is supposed to *bite* — players who linger at threatened posts pay
+# for the convenience.
+const POST_THREAT_SERVICE_MULT: float = 1.50
 
 func _get_post_threat_info(peer_id: int) -> Dictionary:
 	"""Audit #11 Slice 7 — threat-aware market modifier.
