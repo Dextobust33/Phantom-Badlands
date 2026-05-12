@@ -1185,6 +1185,16 @@ var gathering_last_correct: int = -1     # Index of correct answer from result
 var gathering_momentum: int = 0          # Logging: consecutive correct picks
 var gathering_discoveries: Array = []    # Foraging: discovered plant names this session
 
+# v0.9.354 — Audit #7 Slice 1A: scratch-off fishing prototype state.
+# When `scratch_off_mode` is true the player is in a card-reveal session;
+# Space sends a `scratch_off_reveal` message; movement is gated; the
+# action bar shows a "Reveal" button. Cleared on `scratch_off_complete`.
+var scratch_off_mode: bool = false
+var scratch_off_slot_count: int = 0
+var scratch_off_revealed_slots: Array = []  # Per-slot dict {item, name, type} as they reveal; empty until revealed
+var scratch_off_job_type: String = ""
+var scratch_off_water_type: String = ""
+
 # Harvest mode (Soldier job post-combat minigame)
 var harvest_mode: bool = false
 var harvest_phase: String = ""  # "choosing", "result", "complete"
@@ -3003,6 +3013,18 @@ func _process(delta):
 		else:
 			set_meta("combatitem_next_pressed", false)
 
+	# v0.9.354 — Audit #7 Slice 1A: scratch-off fishing Space-to-reveal.
+	if game_state == GameState.PLAYING and not input_field.has_focus() and scratch_off_mode:
+		var so_key = keybinds.get("action_0", default_keybinds.get("action_0", KEY_SPACE))
+		if Input.is_physical_key_pressed(so_key):
+			if not get_meta("scratchoff_action_pressed", false):
+				set_meta("scratchoff_action_pressed", true)
+				# Prevent action bar from also firing on this same Space press
+				set_meta("hotkey_0_pressed", true)
+				_send_scratch_off_reveal()
+		else:
+			set_meta("scratchoff_action_pressed", false)
+
 	# Companion activation with keybinds (1-5)
 	# Note: Don't check is_item_key_blocked_by_action_bar here - in companions_mode,
 	# number keys should ALWAYS select companions, not trigger action bar slots 5-9
@@ -3523,7 +3545,7 @@ func _process(delta):
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, storage, market, or popups).
 	# Build mode is intentionally NOT in this exclusion list — players can reposition with their configured movement keys while picking a structure or aiming a placement. WASD remains the placement direction in build_direction_mode (consumed by _input()), so the movement poll below skips W/A/S/D when those slots are also placement keys, preventing a single key press from both moving and placing.
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode and not scratch_off_mode and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			# Slice 6g — biome move-cooldown modifier. Swamp/Tundra slow the
@@ -19578,6 +19600,16 @@ func handle_server_message(message: Dictionary):
 		"gathering_complete":
 			handle_gathering_complete(message)
 
+		# v0.9.354 — Audit #7 Slice 1A scratch-off fishing
+		"scratch_off_start":
+			handle_scratch_off_start(message)
+
+		"scratch_off_revealed":
+			handle_scratch_off_revealed(message)
+
+		"scratch_off_complete":
+			handle_scratch_off_complete(message)
+
 		"harvest_round":
 			handle_harvest_round(message)
 
@@ -23330,8 +23362,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.354 changes
+	display_game("[color=#00FF00]v0.9.354[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Audit #7 Slice 1A — scratch-off fishing prototype + fresh map[/color]")
+	display_game("  • [b]Shallow-water fishing is now a 3-slot scratch-off card.[/b] Cast in shallow water → see 3 hidden slots. Press [color=#9ACD32][%s][/color] to reveal each. Items added on full reveal. Replaces the wait→react minigame for shallow water [b]only[/b] — deep water, mining, logging, foraging are unchanged this slice." % get_action_key_name(0))
+	display_game("  • [b]Why prototype-style:[/b] this is the proof-of-concept slice for the locked Audit #7 direction (replace rote reaction minigame with card-reveal mechanic). If it feels good, future slices add per-system twists (timing gates for fishing, hardness for mining, multi-pull for logging, time-of-day for foraging), bonus/dud/multiplier slots, and skill-affects-deck.")
+	display_game("  • [b]Server map wiped + post locations randomized.[/b] Accounts, characters, market listings, Sanctuaries, leaderboards, clans all preserved. Only the overworld terrain + NPC post positions regenerated. Your character's position was reset to origin (0, 0) so you don't spawn inside a freshly-grown mountain.")
+	display_game("")
+
 	# v0.9.353 changes
-	display_game("[color=#00FF00]v0.9.353[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.353[/color]")
 	display_game("  [color=#FFD700]Inventory tab toggles + gear-drop callout in victory card[/color]")
 	display_game("  • [b]Inventory filter chips are now toggles, not radio buttons.[/b] Click [color=#9ACD32]Tools[/color] to hide tools; click again to show them. Hide [color=#9ACD32]Cons[/color] to clear consumables out of view. The [color=#9ACD32]All[/color] chip resets — clicking it brings everything back. Hidden categories persist across sessions ([color=#9ACD32]user://inventory_prefs.json[/color]). Helps when your equipment is buried under stacks of tools/consumables.")
 	display_game("  • [b]Post-combat victory card now has a dedicated gear callout banner.[/b] If a fight drops equipment, a gold-bordered \"★ N NEW ITEMS ACQUIRED ★\" frame appears above the regular loot list — each gear line is rendered at 16pt in its rarity color so common rats-and-gold don't bury that uncommon sword. Regular loot rows bumped 12pt → 13pt for legibility.")
@@ -23352,12 +23392,6 @@ func display_changelog():
 	display_game("  • [b]~16× practical compute uplift[/b] for the moving-player path. The previous optimization plan (cache biome/weather/region, spatial-index dungeons) is deferred — Hetzner's headroom buys time to ship features instead. Will revisit if multi-player load reveals new hot spots.")
 	display_game("")
 
-	# v0.9.350 changes
-	display_game("[color=#00FFFF]v0.9.350[/color]")
-	display_game("  [color=#FFD700]Sprite alignment actually fixed + no map shift on post entry[/color]")
-	display_game("  • [b]Sprite at NPC posts.[/b] The previous 5 attempts (v0.9.345-349) all failed because we were reading [color=#9ACD32]map_display.text[/color] — but in Godot 4, append_text() doesn't update .text, so the find(\" @\") code got an empty string every call. Switched to [color=#9ACD32]map_display.get_parsed_text()[/color] which returns the actual rendered character stream. The alpha-0 @ marker from v0.9.349 is now findable, get_paragraph_offset() returns the real Y, sprite sits on the right row.")
-	display_game("  • [b]Map no longer jumps on post entry/exit.[/b] The post header used [color=#FFD700][b]bold[/b][/color] for the name + \"Under Threat\" — the bold font variant has slightly different line metrics, which pushed the map down ~2px when entering a post. Removed [b] from the post header. Color alone differentiates the name.")
-	display_game("")
 
 
 
@@ -29106,6 +29140,113 @@ func handle_gathering_complete(message: Dictionary):
 
 	# Auto-end gathering — no need to press Space, player can just move
 	end_gathering()
+
+
+# === Audit #7 Slice 1A — scratch-off fishing prototype ===
+
+func handle_scratch_off_start(message: Dictionary) -> void:
+	"""Enter scratch-off mode. Server sends slot count + job/water type; we
+	render an empty card and the player reveals slots one at a time."""
+	scratch_off_mode = true
+	scratch_off_slot_count = int(message.get("slot_count", 3))
+	scratch_off_revealed_slots = []
+	for i in range(scratch_off_slot_count):
+		scratch_off_revealed_slots.append({})  # empty dict = hidden
+	scratch_off_job_type = String(message.get("job_type", "fishing"))
+	scratch_off_water_type = String(message.get("water_type", "shallow"))
+	_render_scratch_off_panel()
+	update_action_bar()
+
+func handle_scratch_off_revealed(message: Dictionary) -> void:
+	"""Server reveals one slot. Update the local view + redraw."""
+	var slot_index = int(message.get("slot_index", 0))
+	var item = message.get("item", {})
+	if slot_index >= 0 and slot_index < scratch_off_revealed_slots.size():
+		scratch_off_revealed_slots[slot_index] = item
+	_render_scratch_off_panel()
+
+func handle_scratch_off_complete(message: Dictionary) -> void:
+	"""All slots revealed + items committed. Show summary, exit mode."""
+	var awarded: Array = message.get("awarded", [])
+	var xp_gained: int = int(message.get("xp_gained", 0))
+	var leveled_up: bool = bool(message.get("leveled_up", false))
+	var new_level: int = int(message.get("new_level", 0))
+
+	# Persist character refresh (inventory + skill XP).
+	if message.has("character"):
+		_set_character_data(message.character)
+		update_player_level()
+		update_player_hp_bar()
+		update_resource_bar()
+		update_player_xp_bar()
+		update_currency_display()
+
+	game_output.clear()
+	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off Complete ═══[/color]")
+	display_game("")
+	for slot in awarded:
+		var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
+		display_game("  [color=%s]◆ %s[/color]" % [color, String(slot.get("name", "?"))])
+	display_game("")
+	if xp_gained > 0:
+		display_game("[color=#FF8800]+%d Fishing XP[/color]" % xp_gained)
+	if leveled_up:
+		display_game("[color=#FFD700]★ Fishing leveled up to Lv%d! ★[/color]" % new_level)
+	display_game("")
+	display_game("[color=#808080]Move away or step back onto the water to fish again.[/color]")
+
+	scratch_off_mode = false
+	scratch_off_slot_count = 0
+	scratch_off_revealed_slots = []
+	scratch_off_job_type = ""
+	scratch_off_water_type = ""
+	update_action_bar()
+
+func _render_scratch_off_panel() -> void:
+	"""Render the current scratch-off state into game_output. Hidden slots
+	show [?], revealed slots show the item name in a type-colored frame."""
+	game_output.clear()
+	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off ═══[/color]")
+	display_game("")
+	display_game("[color=#808080]Cast in %s water. Reveal each slot to see your catch.[/color]" % scratch_off_water_type)
+	display_game("")
+	var row_parts: Array = []
+	var next_hidden_idx = -1
+	for i in range(scratch_off_revealed_slots.size()):
+		var slot = scratch_off_revealed_slots[i]
+		if slot.is_empty():
+			row_parts.append("[color=#808080][   ?   ][/color]")
+			if next_hidden_idx == -1:
+				next_hidden_idx = i
+		else:
+			var item_name = String(slot.get("name", "?"))
+			var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
+			row_parts.append("[color=%s][ %s ][/color]" % [color, item_name])
+	display_game("  " + "  ".join(row_parts))
+	display_game("")
+	if next_hidden_idx >= 0:
+		display_game("[color=#FFD700]Press [%s] to reveal slot %d of %d[/color]" % [get_action_key_name(0), next_hidden_idx + 1, scratch_off_slot_count])
+	else:
+		display_game("[color=#00FF00]All slots revealed. Finalizing...[/color]")
+
+func _scratch_off_color_for_type(t: String) -> String:
+	match t:
+		"fish":
+			return "#1EFF00"  # green — common catches
+		"material":
+			return "#00BFFF"  # cyan — useful materials
+		"treasure":
+			return "#A335EE"  # purple — rare treasures
+		"treasure_chest":
+			return "#FFD700"  # gold — chests
+		"egg":
+			return "#FF69B4"  # pink — eggs
+	return "#FFFFFF"
+
+func _send_scratch_off_reveal() -> void:
+	if not scratch_off_mode:
+		return
+	send_to_server({"type": "scratch_off_reveal"})
 
 func end_gathering(reason: String = ""):
 	"""Clean up gathering state and exit."""
