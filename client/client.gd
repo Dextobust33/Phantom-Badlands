@@ -23318,8 +23318,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.345 changes
+	display_game("[color=#00FF00]v0.9.345[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sprite alignment hotfix[/color]")
+	display_game("  • [b]Map sprite now tracks the actual [color=#FFFF00]@[/color] glyph[/color][/b] instead of relying on a hardcoded \"2 header lines\" assumption. The sprite overlay scans the map BBCode for the [color=#FFFF00]@[/color] character, counts newlines, and anchors itself at that line's pixel Y.")
+	display_game("  • [b]Fixes the \"sprite 3 tiles south of where I am\" bug[/b] reported after re-login near player walls. The math previously assumed header_lines=2 was always exact — turned out fragile under specific render conditions.")
+	display_game("  • [b]Remote players[/b] also reposition relative to the @ pixel Y, so party-mates / nearby players track correctly even if the absolute math shifts.")
+	display_game("  • [b]Defensive fallback[/b] to the old math if the @ glyph isn't found in the map BBCode (e.g., dungeon view, pre-character-load).")
+	display_game("")
+
 	# v0.9.344 changes
-	display_game("[color=#00FF00]v0.9.344[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.344[/color]")
 	display_game("  [color=#FFD700]Server lag hotfix[/color]")
 	display_game("  • [b]Dungeon spawn rate-limited[/b] to 8 per tick (was unbounded). Pre-fix the spawner could create 80+ dungeons in a single frame when chunks became loadable after a restart, freezing the tick for ~1s. Catch-up now spreads across multiple 30s checks.")
 	display_game("  • [b]Post threat state cached per tick[/b]. Several handlers (movement, market browse, post-status panel, healer/blacksmith encounters) all query the same post's threat status within a single frame. The cache turns repeat lookups into dict reads instead of full active_dungeon scans.")
@@ -23346,15 +23355,6 @@ func display_changelog():
 	display_game("  • [b]Threat economy now fully wired[/b]: market prices +20% (Slice 7), services +50% (Slice 8), map visibility (Slice 8). Players have to weigh whether to keep using a threatened post or push back the nearby dungeon to restore it.")
 	display_game("")
 
-	# v0.9.341 changes
-	display_game("[color=#00FFFF]v0.9.341[/color]")
-	display_game("  [color=#FFD700]Clan tag visibility (Audit #14 Slice 3)[/color]")
-	display_game("  • [b]Clan tag [TAG] now renders next to every clan member's name[/b] in the Players list, in chat, and in whispers. This is the social marker layer that makes the clan system actually visible to everyone.")
-	display_game("  • [b]Players tab[/b]: the right-side player list now shows [color=#A335EE][TAG][/color] before the player's title + name + level + class.")
-	display_game("  • [b]Chat lines[/b]: when a clan member posts in global chat, their line shows as \"[color=#A335EE][TAG][/color] PlayerName: …\" so you can tell at a glance who's clanned and which clan they belong to.")
-	display_game("  • [b]Whispers[/b]: the [From X] header on incoming whispers now carries the sender's clan tag too — useful for quickly recognizing clan-mate chatter mid-conversation.")
-	display_game("  • [b]Server-side resolution[/b]: tags resolved via `_get_clan_tag_for_peer` and bundled in `player_list`, `chat`, and `private_message` payloads — keeps tags consistent even if a player re-logs into a different character on the same account.")
-	display_game("")
 
 
 
@@ -28349,13 +28349,33 @@ func _sync_map_sprites_overlay() -> void:
 	var line_h = font.get_height(font_size)
 
 	# Each cell is 2 chars wide (" X" pattern), map is 23 cells wide and
-	# centered inside map_display, with 2 header lines above the centered
-	# map block (location/danger + compass — see world_system.gd ~line 875).
+	# centered inside map_display.
 	var cell_w = char_w * 2.0
 	var map_diameter = MAP_VIEWPORT_CENTER_CELL * 2 + 1
 	var map_width_px = map_diameter * cell_w
 	var map_x_offset = max(0.0, (map_display.size.x - map_width_px) * 0.5)
-	var header_lines = 2
+
+	# v0.9.345 — anchor sprite Y to the actual @ glyph position in the BBCode
+	# rather than the previously-hardcoded `header_lines = 2`. Different render
+	# paths (NPC posts vs wilderness vs trading posts vs threatened posts) all
+	# CURRENTLY produce 2-line headers, but the relationship between BBCode
+	# layout and pixel Y was fragile — we saw a "sprite 3 tiles south of @"
+	# bug after re-login near player walls (v0.9.344 prior). Scanning for the
+	# @ glyph and counting newlines makes the sprite track wherever the map
+	# renderer actually puts it, removing the header-line dependency entirely.
+	var bbcode_text: String = map_display.text
+	var at_byte_pos: int = bbcode_text.find(" @")
+	var at_line_idx: int = -1
+	if at_byte_pos >= 0:
+		at_line_idx = bbcode_text.substr(0, at_byte_pos).count("\n")
+	# Fallback to the legacy header_lines=2 + center-cell math if the @ glyph
+	# isn't in the BBCode for some reason (e.g., we're in a dungeon or the
+	# map hasn't been updated yet). Defensive — shouldn't fire in normal play.
+	var at_pixel_y_center: float
+	if at_line_idx >= 0:
+		at_pixel_y_center = (at_line_idx + 0.5) * line_h
+	else:
+		at_pixel_y_center = (2 + MAP_VIEWPORT_CENTER_CELL + 0.5) * line_h
 
 	# --- Local player at center cell ---
 	var local_cls = str(character_data.get("class", ""))
@@ -28368,7 +28388,7 @@ func _sync_map_sprites_overlay() -> void:
 		var lcx = MAP_VIEWPORT_CENTER_CELL
 		var lcy = MAP_VIEWPORT_CENTER_CELL
 		var lpx = map_x_offset + (lcx + 0.5) * cell_w - MAP_SPRITE_PIXEL_SIZE * 0.5
-		var lpy = (header_lines + lcy + 0.5) * line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
+		var lpy = at_pixel_y_center - MAP_SPRITE_PIXEL_SIZE * 0.5
 		local.position = Vector2(lpx, lpy)
 		local.texture = local_atlas
 		local.visible = true
@@ -28427,7 +28447,9 @@ func _sync_map_sprites_overlay() -> void:
 		var slot = _remote_sprite_pool[slot_idx]
 		slot.texture = ratlas
 		var px = map_x_offset + (grid_x + 0.5) * cell_w - MAP_SPRITE_PIXEL_SIZE * 0.5
-		var py = (header_lines + grid_y + 0.5) * line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
+		# v0.9.345 — anchor remote-player Y to the local @'s actual pixel Y plus
+		# the grid-cell offset. Same fix family as the local sprite calc above.
+		var py = at_pixel_y_center + (grid_y - MAP_VIEWPORT_CENTER_CELL) * line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
 		slot.position = Vector2(px, py)
 		slot.visible = true
 		slot.set_meta("player_data", {
