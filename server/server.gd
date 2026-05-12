@@ -1239,6 +1239,9 @@ func handle_message(peer_id: int, message: Dictionary):
 			handle_gathering_choice(peer_id, message)
 		"gathering_end":
 			handle_gathering_end(peer_id, message)
+		# Audit #7 Slice 1A — scratch-off fishing reveal
+		"scratch_off_reveal":
+			handle_scratch_off_reveal(peer_id, message)
 		# Audit #7 forward-direction transparency — zone deck preview
 		"request_zone_deck":
 			handle_request_zone_deck(peer_id, message)
@@ -14423,6 +14426,16 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	var tool = _find_tool_in_inventory(character, tool_subtype)
 	var has_tool = not tool.is_empty()
 
+	# v0.9.354 — Audit #7 Slice 1A: shallow-water fishing uses the scratch-off
+	# card-reveal mechanic instead of the option-pick minigame. Other gathering
+	# systems (deep fishing, mining, logging, foraging) keep the legacy flow
+	# while we playtest the new mechanic in one zone.
+	if job_type == "fishing":
+		var water_type = world_system.get_fishing_type(character.x, character.y) if world_system.has_method("get_fishing_type") else "shallow"
+		if water_type == "shallow":
+			_start_scratch_off_fishing(peer_id, character, water_type, gathering_node)
+			return
+
 	# Generate first round
 	var session = _generate_gathering_round(job_type, tier, hint_strength, 0, [])
 	session["job_type"] = job_type
@@ -14479,6 +14492,132 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 		"discoveries": [],
 		"skip_warning": skip_failed_msg,
 	})
+
+func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
+	"""Audit #7 Slice 1A — scratch-off fishing prototype.
+
+	Server pre-rolls 3 items from FISHING_CATCHES[water_type], stores them
+	hidden in the session, sends the client a 'scratch_off_start' with the
+	slot count only (not contents). Client reveals one slot at a time via
+	'scratch_off_reveal'. When all slots are revealed, server commits the
+	items to inventory and ends the session. No chain, no twists in 1A —
+	this is the proof-of-concept slice; later slices add timing gates,
+	bonus/dud slots, skill-affects-deck, and apply to other systems."""
+	var fishing_skill = int(character.job_levels.get("fishing", 1))
+	var slot_count = 3
+	var slots: Array = []
+	for i in range(slot_count):
+		var catch_data = drop_tables.roll_fishing_catch(water_type, fishing_skill)
+		# catch_data is a dict from FISHING_CATCHES entries. Preserve item / name / value / type.
+		slots.append({
+			"item": String(catch_data.get("item", "small_fish")),
+			"name": String(catch_data.get("name", "Small Fish")),
+			"type": String(catch_data.get("type", "fish")),
+			"value": int(catch_data.get("value", 5)),
+			# tier / is_consumable only relevant for treasure chests
+			"tier": int(catch_data.get("tier", 1)),
+			"is_consumable": bool(catch_data.get("is_consumable", false)),
+		})
+
+	var session = {
+		"mode": "scratch_off",
+		"job_type": "fishing",
+		"node_type": gathering_node.get("type", "water"),
+		"water_type": water_type,
+		"tier": 1,
+		"slots": slots,
+		"revealed_index": 0,
+		"node_x": gathering_node.get("node_x", character.x),
+		"node_y": gathering_node.get("node_y", character.y),
+	}
+	active_gathering[peer_id] = session
+
+	send_to_peer(peer_id, {
+		"type": "scratch_off_start",
+		"job_type": "fishing",
+		"water_type": water_type,
+		"slot_count": slot_count,
+	})
+
+func handle_scratch_off_reveal(peer_id: int, _message: Dictionary) -> void:
+	"""Reveal the next slot in the player's active scratch-off session."""
+	if not characters.has(peer_id):
+		return
+	if not active_gathering.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No active gathering session."})
+		return
+	var session: Dictionary = active_gathering[peer_id]
+	if session.get("mode", "") != "scratch_off":
+		send_to_peer(peer_id, {"type": "error", "message": "Active gathering is not a scratch-off."})
+		return
+	var revealed_index: int = int(session.get("revealed_index", 0))
+	var slots: Array = session.get("slots", [])
+	if revealed_index >= slots.size():
+		# Already fully revealed — treat as a complete signal.
+		_complete_scratch_off_fishing(peer_id)
+		return
+	var slot = slots[revealed_index]
+	session["revealed_index"] = revealed_index + 1
+
+	send_to_peer(peer_id, {
+		"type": "scratch_off_revealed",
+		"slot_index": revealed_index,
+		"item": slot,
+		"is_last": (revealed_index + 1 >= slots.size()),
+	})
+
+	# When the final slot is revealed, commit the items + close the session.
+	if revealed_index + 1 >= slots.size():
+		_complete_scratch_off_fishing(peer_id)
+
+func _complete_scratch_off_fishing(peer_id: int) -> void:
+	if not characters.has(peer_id):
+		return
+	if not active_gathering.has(peer_id):
+		return
+	var session: Dictionary = active_gathering[peer_id]
+	if session.get("mode", "") != "scratch_off":
+		return
+	var character = characters[peer_id]
+	var slots: Array = session.get("slots", [])
+	var awarded: Array = []
+	var total_xp: int = 0
+	for slot in slots:
+		var item_id: String = slot.get("item", "")
+		var item_name: String = slot.get("name", "Unknown")
+		var slot_type: String = slot.get("type", "fish")
+		# Use the shared gathering-reward router: treasure chests → inventory,
+		# everything else → crafting materials pouch.
+		var reward = {
+			"id": item_id,
+			"name": item_name,
+			"type": slot_type,
+			"tier": int(slot.get("tier", 1)),
+			"value": int(slot.get("value", 5)),
+		}
+		_add_gathering_reward(character, reward, 1)
+		var xp = drop_tables.FISHING_XP.get(item_id, 5) if drop_tables else 5
+		total_xp += int(xp)
+		awarded.append({"item": item_id, "name": item_name, "type": slot_type})
+	# Skill XP grant + deplete the water node (matches legacy fishing).
+	var xp_result = character.add_fishing_xp(total_xp)
+	character.record_fish_caught()
+	deplete_gathering_node(int(session.get("node_x", character.x)), int(session.get("node_y", character.y)), "water")
+	# Clear session BEFORE sending the complete message so the client can
+	# transition out cleanly without race conditions.
+	active_gathering.erase(peer_id)
+	# Persist via throttled save so the inventory + skill XP are durable.
+	save_character(peer_id)
+	send_to_peer(peer_id, {
+		"type": "scratch_off_complete",
+		"awarded": awarded,
+		"xp_gained": total_xp,
+		"leveled_up": bool(xp_result.get("leveled_up", false)),
+		"new_level": int(xp_result.get("new_level", character.job_levels.get("fishing", 1))),
+		"character": character.to_dict(),
+	})
+	# Refresh the player's map / location flags (e.g., at_water clears if depleted)
+	send_location_update(peer_id)
 
 func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	"""Start gathering when player bumps into a blocking gathering node."""
