@@ -14427,13 +14427,14 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	var has_tool = not tool.is_empty()
 
 	# v0.9.354 — Audit #7 Slice 1A: shallow-water fishing uses the scratch-off
-	# card-reveal mechanic instead of the option-pick minigame. Other gathering
-	# systems (deep fishing, mining, logging, foraging) keep the legacy flow
-	# while we playtest the new mechanic in one zone.
+	# card-reveal mechanic instead of the option-pick minigame.
+	# v0.9.355 — get_fishing_type uses the legacy radial-terrain enum and
+	# returns "" in the chunked world, so we route via the gathering_node's
+	# tier instead: tier 1 = shallow, anything else = deep (legacy flow).
 	if job_type == "fishing":
-		var water_type = world_system.get_fishing_type(character.x, character.y) if world_system.has_method("get_fishing_type") else "shallow"
-		if water_type == "shallow":
-			_start_scratch_off_fishing(peer_id, character, water_type, gathering_node)
+		var ft_tier := int(gathering_node.get("tier", 1))
+		if ft_tier <= 1:
+			_start_scratch_off_fishing(peer_id, character, "shallow", gathering_node)
 			return
 
 	# Generate first round
@@ -14642,6 +14643,17 @@ func _start_bump_gathering(peer_id: int, character, gathering_node: Dictionary):
 	var tool_subtype = _get_tool_subtype_for_job(job_type)
 	var tool = _find_tool_in_inventory(character, tool_subtype)
 	var has_tool = not tool.is_empty()
+
+	# v0.9.354 — Audit #7 Slice 1A: bump-fishing on shallow water also routes
+	# to the scratch-off prototype, same as the explicit Fish action. Walking
+	# into water tiles is the more common entry point so this branch matters.
+	# v0.9.355 — route via gathering_node tier (chunked world doesn't populate
+	# the legacy radial terrain that get_fishing_type checks).
+	if job_type == "fishing":
+		var bump_tier := int(gathering_node.get("tier", 1))
+		if bump_tier <= 1:
+			_start_scratch_off_fishing(peer_id, character, "shallow", gathering_node)
+			return
 
 	var session = _generate_gathering_round(job_type, tier, hint_strength, 0, [])
 	session["job_type"] = job_type
@@ -29277,7 +29289,17 @@ func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: D
 					var symbol = _get_rarity_symbol(rarity)
 					var name = item.get("name", "Unknown Item")
 					drop_messages.append("[color=%s]%s %s[/color]" % [color, symbol, name])
-					drop_data.append({"rarity": rarity, "level": item.get("level", 1), "level_diff": item.get("level", 1) - player_level})
+					# v0.9.355 — include name/symbol/color in party-combat drop_data
+					# so the client victory-card gear banner doesn't render
+					# "Unknown" for party-combat drops.
+					drop_data.append({
+						"name": name,
+						"rarity": rarity,
+						"symbol": symbol,
+						"color": color,
+						"level": item.get("level", 1),
+						"level_diff": item.get("level", 1) - player_level,
+					})
 			else:
 				drop_messages.append("[color=#FF4444]X LOST: %s[/color]" % item.get("name", "Unknown Item"))
 
