@@ -138,7 +138,7 @@ ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "free -h && top -bn1 | head -5"
 | What | Where |
 |------|-------|
 | SSH Private Key | `C:\Users\Dexto\Desktop\PhantomBadlandsSSH\ssh-key-2026-04-21.key` |
-| Oracle Cloud Console | cloud.oracle.com |
+| Hetzner Cloud Console | console.hetzner.cloud |
 | Cloudflare (domain) | dash.cloudflare.com |
 | GitHub Repo | github.com/Dextobust33/Phantom-Badlands |
 | Server IP | 5.78.217.135 |
@@ -154,6 +154,6 @@ ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "free -h && top -bn1 | head -5"
 - **Server auto-restarts** on crash (systemd). If it keeps crashing, check logs.
 - **Website auto-deploys** when you push changes to `docs/` on master
 - **Domain renews annually** (~$10) on Cloudflare — watch for renewal emails
-- **Oracle Cloud** is free tier — don't upgrade the VM shape or you'll get charged
+- **Hetzner Cloud** is $6.99/mo (CPX11 Hillsboro) — billed monthly to the card on file
 - **SSH key** is the only way to access the server — don't lose it!
 - After server-side code changes, you must run `deploy_server.sh` — client releases alone don't update the server
