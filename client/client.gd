@@ -23362,8 +23362,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.356 changes
+	display_game("[color=#00FF00]v0.9.356[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Inventory filter chips show visible/hidden state clearly[/color]")
+	display_game("  • [b]Filter chips now have explicit visible vs hidden styling.[/b] A category that's [i]showing[/i] gets a warm gold border + filled background (\"this is on\"). A category that's [i]hidden[/i] is dim with a thin grey border (\"this is off\"). The default Button theme was too subtle — at a glance you couldn't tell which were on.")
+	display_game("  • [b]Hover state[/b] adds a tan border so you can preview \"if I clicked, this would toggle.\"")
+	display_game("")
+
 	# v0.9.355 changes
-	display_game("[color=#00FF00]v0.9.355[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.355[/color]")
 	display_game("  [color=#FFD700]Scratch-off routing fixes + gear-banner cleanup[/color]")
 	display_game("  • [b]Scratch-off now actually fires.[/b] v0.9.354's branch checked [color=#9ACD32]world_system.get_fishing_type()[/color], which uses the legacy radial-terrain enum and returns \"\" in the chunked world — so the condition never matched. Routes via [color=#9ACD32]gathering_node.tier[/color] now (tier 1 = shallow). Also added the same branch to the bump-fishing path (walking into water tiles) since that's the more common entry point.")
 	display_game("  • [b]Gear callout no longer shows \"Unknown\".[/b] The drop_data array was sometimes populated with sound-FX-only entries ({is_egg: true} / {is_material: true}) that lacked a name field — those rendered as \"Unknown\" in v0.9.353's gear banner. Client now filters entries with no name; server's party-combat path also now includes name/symbol/color in drop_data for consistency.")
@@ -23384,12 +23391,6 @@ func display_changelog():
 	display_game("  • [b]Post-combat victory card now has a dedicated gear callout banner.[/b] If a fight drops equipment, a gold-bordered \"★ N NEW ITEMS ACQUIRED ★\" frame appears above the regular loot list — each gear line is rendered at 16pt in its rarity color so common rats-and-gold don't bury that uncommon sword. Regular loot rows bumped 12pt → 13pt for legibility.")
 	display_game("")
 
-	# v0.9.352 changes
-	display_game("[color=#00FFFF]v0.9.352[/color]")
-	display_game("  [color=#FFD700]Hotzone dialog now locks movement + server-side threat cache[/color]")
-	display_game("  • [b]Bug fix[/b]: stepping into a hotzone for the first time opens the \"Enter at your own risk?\" dialog — but movement keys were still working underneath, so you could walk deeper while reading the warning. Now movement is blocked until you select Enter or Back. Same fix retroactively applied to the dungeon level-warning dialog.")
-	display_game("  • [b]Server optimization[/b]: the threat-state scan over all NPC posts (used by the map renderer to draw red \"!\" overlays + flip the at-post header to \"Under Threat\") used to run on every player move — iterating all 88+ active dungeons per post. Now precomputed once every 3 seconds in a background tick and cached. Movement responses don't pay for that work anymore. Acceptable staleness: threat banner may take up to 3s to flip when a new dungeon spawns near a post.")
-	display_game("")
 
 
 
