@@ -23318,8 +23318,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.347 changes
+	display_game("[color=#00FF00]v0.9.347[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sprite alignment fix #3 — auto-detect line height[/color]")
+	display_game("  • [b]Fixes the \"half-tile too high\" sprite at NPC posts[/b] from v0.9.346. Root cause: the [color=#FFD700][b][/color] tag in the NPC post name header renders with slightly different line metrics, so the uniform line_h assumption drifted.")
+	display_game("  • [b]Auto-detect[/b]: the sprite code now measures the actual rendered line height of the @ row by subtracting its paragraph offset from the next paragraph's offset. Picks up bold / centered / font-size variations automatically.")
+	display_game("  • [b]Remote players[/b] also use the auto-detected line height for their per-cell offset.")
+	display_game("")
+
 	# v0.9.346 changes
-	display_game("[color=#00FF00]v0.9.346[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.346[/color]")
 	display_game("  [color=#FFD700]Server lag hotfix + sprite alignment fix #2[/color]")
 	display_game("  • [b]Character saves throttled to once per 3 seconds per player[/b]. Pre-fix every combat-end / item-use / market-action triggered an immediate synchronous disk write. Each write is ~100KB of JSON + a backup pass — on the Oracle Free VM that adds up to multi-second freezes when many fire in a row. Rapid-fire saves now collapse into one disk write per 3s.")
 	display_game("  • [b]Dirty-flag drain[/b]: throttled requests mark the character dirty. A periodic [color=#9ACD32]_process[/color] flush writes at most one pending character per tick — spreads disk I/O across many frames.")
@@ -23344,15 +23352,6 @@ func display_changelog():
 	display_game("  • [b]No design changes[/b] — same threat behavior, just smoother server-side.")
 	display_game("")
 
-	# v0.9.343 changes
-	display_game("[color=#00FFFF]v0.9.343[/color]")
-	display_game("  [color=#FFD700]Bestiary (Audit #13 Slice 2)[/color]")
-	display_game("  • [b]New Sanctuary upgrade: [color=#FFD700]Bestiary[/color][/b] — account-level ledger of every monster you've ever killed. 3 reveal tiers: L1 kill counts, L2 + highest level, L3 + first/last killed dates. Costs 800 / 3000 / 12000 BP.")
-	display_game("  • [b]Always tracking[/b]: kills are recorded from now on regardless of whether the upgrade is unlocked. When you buy it later, you'll see the data you've been accumulating.")
-	display_game("  • [b]Visual panel[/b]: new [color=#9ACD32]Bestiary[/color] button in the Sanctuary action bar opens a scrollable list sorted by kill count. When locked, shows a teaser pointing at the upgrade page.")
-	display_game("  • [b]Persistence[/b]: survives permadeath — new characters inherit your entire kill history.")
-	display_game("  • [b]Audit #13 deepening[/b]: Sanctuary picks up its first qualitative unlock (data layer) beyond the capacity bumps. Future slices: Compass, Region Atlas, and other discovery-rewarding views.")
-	display_game("")
 
 
 
@@ -28368,21 +28367,28 @@ func _sync_map_sprites_overlay() -> void:
 	var at_line_idx: int = -1
 	if at_byte_pos >= 0:
 		at_line_idx = bbcode_text.substr(0, at_byte_pos).count("\n")
-	# Compute the centered pixel Y of the @ glyph's row. Prefer the engine's
-	# own rendered offset via get_paragraph_offset; that automatically picks
-	# up [center], [b], font overrides, and any line-spacing quirks. Falls
-	# back to (idx × line_h) math if the API isn't available, and finally to
-	# the legacy hardcoded math if the @ isn't in the BBCode (dungeon view).
+	# Compute the centered pixel Y of the @ glyph's row.
+	# v0.9.347 — the half-tile offset at NPC posts (v0.9.346) was caused by
+	# the [b] post-name header: bold text renders with slightly different
+	# line metrics than regular text, so a uniform line_h × idx assumption
+	# drifted. Fix: measure the ACTUAL rendered line height of the @ row by
+	# subtracting its paragraph offset from the next paragraph's offset.
+	# Picks up bold/center/font-size variations automatically.
 	var at_pixel_y_center: float
-	if at_line_idx >= 0:
-		var paragraph_offset: float = -1.0
-		if map_display.has_method("get_paragraph_offset"):
-			paragraph_offset = map_display.get_paragraph_offset(at_line_idx)
-		if paragraph_offset >= 0.0:
-			at_pixel_y_center = paragraph_offset + line_h * 0.5
-		else:
-			at_pixel_y_center = (at_line_idx + 0.5) * line_h
+	var rendered_line_h: float = line_h  # default — used by remote-player offset too
+	if at_line_idx >= 0 and map_display.has_method("get_paragraph_offset"):
+		var at_y_top: float = map_display.get_paragraph_offset(at_line_idx)
+		var paragraph_count: int = map_display.get_paragraph_count() if map_display.has_method("get_paragraph_count") else 0
+		if paragraph_count > at_line_idx + 1:
+			var next_y_top: float = map_display.get_paragraph_offset(at_line_idx + 1)
+			if next_y_top > at_y_top:
+				rendered_line_h = next_y_top - at_y_top
+		at_pixel_y_center = at_y_top + rendered_line_h * 0.5
+	elif at_line_idx >= 0:
+		# get_paragraph_offset not available — fall back to math.
+		at_pixel_y_center = (at_line_idx + 0.5) * line_h
 	else:
+		# @ glyph not found (dungeon view / pre-character-load) — legacy math.
 		at_pixel_y_center = (2 + MAP_VIEWPORT_CENTER_CELL + 0.5) * line_h
 
 	# --- Local player at center cell ---
@@ -28455,9 +28461,10 @@ func _sync_map_sprites_overlay() -> void:
 		var slot = _remote_sprite_pool[slot_idx]
 		slot.texture = ratlas
 		var px = map_x_offset + (grid_x + 0.5) * cell_w - MAP_SPRITE_PIXEL_SIZE * 0.5
-		# v0.9.345 — anchor remote-player Y to the local @'s actual pixel Y plus
-		# the grid-cell offset. Same fix family as the local sprite calc above.
-		var py = at_pixel_y_center + (grid_y - MAP_VIEWPORT_CENTER_CELL) * line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
+		# v0.9.345/347 — anchor remote-player Y to the local @'s actual pixel Y
+		# plus the grid-cell offset. rendered_line_h is the actual measured
+		# spacing between map rows (auto-detected from get_paragraph_offset).
+		var py = at_pixel_y_center + (grid_y - MAP_VIEWPORT_CENTER_CELL) * rendered_line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
 		slot.position = Vector2(px, py)
 		slot.visible = true
 		slot.set_meta("player_data", {
