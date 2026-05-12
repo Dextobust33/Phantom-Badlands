@@ -1205,19 +1205,32 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}) -> String:
+func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_centers: Array = [], current_post_threatened: bool = false) -> String:
 	"""Generate complete map display with location info header.
 	Slice 6j — explored_tiles dict (key: "x,y", value: true) is mutated in
 	place: LOS-visible tiles are marked, and LOS-blocked tiles that were
-	previously seen render as a dim fog version of the static terrain."""
+	previously seen render as a dim fog version of the static terrain.
+	Audit #11 Slice 8 — threatened_post_centers ("x,y" keys) overlay red
+	warning glyphs on visible threatened post tiles; current_post_threatened
+	flips the at-post 'Safe' header to 'Under Threat'."""
 	var output = ""
+
+	# Pre-compute lookup set for the inner renderer to avoid repeated linear
+	# scans during the per-tile loop.
+	var threatened_post_set: Dictionary = {}
+	for ck in threatened_post_centers:
+		threatened_post_set[String(ck)] = true
 
 	# Check if at NPC post (new system)
 	if chunk_manager and chunk_manager.is_npc_post_tile(center_x, center_y):
 		var post = chunk_manager.get_npc_post_at(center_x, center_y)
 		if not post.is_empty():
 			output += "[color=#FFD700][b]%s[/b][/color] [color=#5F9EA0](%d, %d)[/color]\n" % [post.get("name", "Trading Post"), center_x, center_y]
-			output += "[color=#00FF00]Safe[/color]"
+			# Audit #11 Slice 8 — header reflects threat state of this post.
+			if current_post_threatened:
+				output += "[color=#FF4400][b]Under Threat[/b][/color]"
+			else:
+				output += "[color=#00FF00]Safe[/color]"
 			# Compass to nearest OTHER post — appended inline with the Safe
 			# marker (matches the wilderness path) so the header is 2 lines
 			# total. Putting the compass on its own line previously made the
@@ -1227,7 +1240,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 			output += _get_compass_line(center_x, center_y, post)
 			output += "\n"
 			output += "[center]"
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles)
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set)
 			output += "[/center]"
 			# Minimap — zoomed-out overview at small font, appended below the main map
 			output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
@@ -1240,7 +1253,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
 		if chunk_manager:
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles)
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set)
 		else:
 			output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 		output += "[/center]"
@@ -1289,7 +1302,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	# Add the main map (centered)
 	output += "[center]"
 	if chunk_manager:
-		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles)
+		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set)
 	else:
 		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 	output += "[/center]"
@@ -1719,7 +1732,7 @@ func bresenham_line(x0: int, y0: int, x1: int, y1: int) -> Array[Vector2i]:
 
 # ===== NEW MAP RENDERER (Chunk-based with LOS) =====
 
-func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}) -> String:
+func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}) -> String:
 	"""Generate ASCII map using chunk-based tile data with LOS raycasting.
 	Slice 6j — explored_tiles is mutated in place: any tile that resolves
 	to LOS-visible inside the vision circle is added to the set, and any
@@ -1805,6 +1818,14 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 					line_parts.append(_render_fog_tile(x, y))
 				else:
 					line_parts.append("  ")
+				continue
+
+			# Audit #11 Slice 8 — overlay red warning glyph on threatened post
+			# centers. Sits above terrain but below transient overlays so
+			# players / dungeons / corpses / bounties still read normally; only
+			# unoccupied post tiles flip to the warning indicator.
+			if threatened_post_set.has(pos_key) and not (player_positions.has(pos_key) or dungeon_positions.has(pos_key) or corpse_positions.has(pos_key) or bounty_positions.has(pos_key)):
+				line_parts.append("[color=#FF4400] ![/color]")
 				continue
 
 			# Priority: players > dungeons > bounties > corpses > entities > terrain

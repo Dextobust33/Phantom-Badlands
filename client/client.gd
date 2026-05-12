@@ -23300,8 +23300,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.342 changes
+	display_game("[color=#00FF00]v0.9.342[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Threatened posts bite back (Audit #11 Slice 8)[/color]")
+	display_game("  • [b]Map indicator[/b]: any visible NPC post that's Under Threat now renders with a [color=#FF4400]red ![/color] warning glyph on the map, so you can spot trouble at a glance.")
+	display_game("  • [b]At-post header[/b]: when standing inside a threatened post, the location header shows [color=#FF4400][b]Under Threat[/b][/color] instead of [color=#00FF00]Safe[/color]. Hard to miss.")
+	display_game("  • [b]Service price hike[/b]: healers and blacksmiths at threatened posts charge [color=#FF4400]+50%[/color] more. Threat banner shown on encounter open so the inflated costs make sense.")
+	display_game("  • [b]NPC flavor[/b]: the healer warns \"Dangerous times, traveler — supplies are scarce, prices steep,\" the blacksmith mutters about charging extra. Atmosphere matches the mechanics.")
+	display_game("  • [b]Threat economy now fully wired[/b]: market prices +20% (Slice 7), services +50% (Slice 8), map visibility (Slice 8). Players have to weigh whether to keep using a threatened post or push back the nearby dungeon to restore it.")
+	display_game("")
+
 	# v0.9.341 changes
-	display_game("[color=#00FF00]v0.9.341[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.341[/color]")
 	display_game("  [color=#FFD700]Clan tag visibility (Audit #14 Slice 3)[/color]")
 	display_game("  • [b]Clan tag [TAG] now renders next to every clan member's name[/b] in the Players list, in chat, and in whispers. This is the social marker layer that makes the clan system actually visible to everyone.")
 	display_game("  • [b]Players tab[/b]: the right-side player list now shows [color=#A335EE][TAG][/color] before the player's title + name + level + class.")
@@ -23332,15 +23342,6 @@ func display_changelog():
 	display_game("  • [b]/clan[/b] also works as a power-user shortcut for the button.")
 	display_game("")
 
-	# v0.9.338 changes
-	display_game("[color=#00FFFF]v0.9.338[/color]")
-	display_game("  [color=#FFD700]Visual post status panel + Feed All (UI remediation)[/color]")
-	display_game("  • [b]New shortcut button: [color=#9ACD32]Post[/color][/b] — opens the visual post status panel. Always accessible; shows \"Stand inside a player post\" empty-state when off-post.")
-	display_game("  • [b]Panel sections[/b]: header (post name + owner), bubble line (radius + effective tier + guard count), Under Threat banner if applicable, per-guard food-days list (with [LOW] / [thin] tags), and a [b]Feed All Guards[/b] button row.")
-	display_game("  • [b]Feed All button[/b] is enabled when guards need food AND you can afford it (food count shown next to button). Click it → server bulk-feeds, panel auto-refreshes with new days remaining.")
-	display_game("  • [b]Part 3 of 4 → and final.[/b] All four chat-command-only slices from earlier today (/post, /feedall, /stones, /spendstat) now have visual panels. /post and /feedall both open this panel; the chat commands remain as power-user shortcuts.")
-	display_game("  • [b]The rule going forward[/b]: no feature ships with chat commands as its primary interface. See `feedback_no_chat_command_first_features` for the full rule.")
-	display_game("")
 
 
 
@@ -28430,6 +28431,13 @@ func handle_blacksmith_encounter(message: Dictionary):
 	display_game(blacksmith_trader_art)
 	display_game("")
 
+	# Audit #11 Slice 8 — threat banner.
+	if bool(message.get("under_threat", false)):
+		var mult = float(message.get("threat_mult", 1.5))
+		var pct = int(round((mult - 1.0) * 100.0))
+		display_game("[color=#FF4400][b]⚠ Under Threat — prices +%d%%[/b][/color]" % pct)
+		display_game("")
+
 	display_game(message.get("message", ""))
 	display_game("")
 
@@ -28564,6 +28572,13 @@ func handle_healer_encounter(message: Dictionary):
 	var trader_art = _get_trader_art().get_random_trader_art()
 	display_game(trader_art)
 	display_game("")
+
+	# Audit #11 Slice 8 — threat banner above the encounter copy.
+	if bool(message.get("under_threat", false)):
+		var mult = float(message.get("threat_mult", 1.5))
+		var pct = int(round((mult - 1.0) * 100.0))
+		display_game("[color=#FF4400][b]⚠ Under Threat — prices +%d%%[/b][/color]" % pct)
+		display_game("")
 
 	display_game(message.get("message", ""))
 	display_game("")
