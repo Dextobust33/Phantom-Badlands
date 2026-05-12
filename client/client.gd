@@ -23453,8 +23453,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.378 — diagnostic-only release. Same player-facing changes as v0.9.377;
+	# server-side instrumentation extended to find the residual 5s spike.
+	display_game("[color=#00FF00]v0.9.378[/color] [color=#808080](Current — diagnostic refinements)[/color]")
+	display_game("  [color=#FFD700]Same as v0.9.377 + extra server-side spike instrumentation[/color]")
+	display_game("  • Fresh logs after v0.9.377 showed one residual 4848ms frame spike with no sub-region accounting for it. Server is now timing every per-frame block in `_process` so the next spike pull will pinpoint the culprit.")
+	display_game("")
+
 	# v0.9.377 changes
-	display_game("[color=#00FF00]v0.9.377[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.377[/color]")
 	display_game("  [color=#FFD700]Server-side fix: ~5s freeze pinpointed + spread out[/color]")
 	display_game("  • [b]Identified the cause of intermittent ~5-second server freezes.[/b] The world-dungeon spawner was generating up to 8 dungeons (BSP floor gen + monster spawns) in a single server tick, locking the frame for ~5s. Diagnostic logs over the past week showed the spike pattern matched the spawn catch-up timing exactly.")
 	display_game("  • [b]Fix: spawn queue.[/b] When the spawner decides it needs more dungeons, it now queues them and drains ONE per server frame. The same 8-dungeon catch-up is now spread across 8 frames instead of compressed into one — no more 5-second pauses.")
