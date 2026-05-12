@@ -1241,6 +1241,11 @@ var numpad_help_panel = null
 # can toggle this off so future characters they create skip it.
 var show_numpad_popup: bool = true
 
+# v0.9.380 — combat layout prototype toggle. "standard" = original side-by-side
+# (player+companion left, monster right). "chrono" = monster top center, party
+# row below. Set via `/layout <mode>`; persisted in keybinds.json.
+var combat_layout: String = "standard"
+
 # Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
 # Replaces chat-command-only /stats + /spendstat from v0.9.335.
 const StatsPanelScript = preload("res://client/stats_panel.gd")
@@ -1816,6 +1821,11 @@ func _ready():
 	# Setup combat scene panel (Phase A — Combat Juice initiative, A1 slice)
 	if combat_scene_panel:
 		combat_scene_panel.client_ref = self
+		# v0.9.380 — apply the persisted combat layout. Default is "standard"
+		# so this is a no-op for most players; chrono mode triggers a rebuild
+		# right after _ready already constructed the standard chrome.
+		if combat_layout != "standard":
+			combat_scene_panel.set_layout(combat_layout)
 		# Combat readability #5 — in-panel item picker signals
 		combat_scene_panel.picker_item_chosen.connect(_on_combat_picker_chosen)
 		combat_scene_panel.picker_canceled.connect(_on_combat_picker_canceled)
@@ -20120,7 +20130,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "layout",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21082,6 +21092,33 @@ func process_command(text: String):
 				open_clan_panel()
 			else:
 				display_game("You don't have a character yet")
+		"layout":
+			# v0.9.380 — combat layout prototype. Swap between "standard" (default)
+			# and "chrono" (Chrono Trigger / Mother style: monster on top, party row
+			# below). Setting persists in keybinds.json so the choice survives
+			# restarts. Usage:
+			#   /layout            → show current setting + options
+			#   /layout standard   → switch to the standard layout
+			#   /layout chrono     → switch to the chrono layout
+			var requested: String = (parts[1] if parts.size() > 1 else "").strip_edges().to_lower()
+			if requested == "":
+				var current: String = String(combat_scene_panel.combat_layout) if combat_scene_panel else "standard"
+				display_game("[color=#FFD700]Combat layout:[/color] %s" % current)
+				display_game("[color=#88BBDD]Available:[/color] standard, chrono")
+				display_game("[color=#888888]Use[/color] [color=#FFD700]/layout <mode>[/color] [color=#888888]to switch.[/color]")
+			elif requested in ["standard", "chrono"]:
+				if combat_scene_panel == null:
+					display_game("[color=#FF6644]Combat panel unavailable.[/color]")
+				elif combat_scene_panel.visible:
+					display_game("[color=#FF6644]Layout can't change mid-combat — finish the fight first.[/color]")
+				elif combat_scene_panel.set_layout(requested):
+					combat_layout = requested
+					_save_keybinds()
+					display_game("[color=#00FF88]Combat layout set to %s.[/color] [color=#888888]Takes effect on the next combat encounter.[/color]" % requested)
+				else:
+					display_game("[color=#FF6644]Failed to apply layout %s.[/color]" % requested)
+			else:
+				display_game("[color=#FF6644]Unknown layout '%s'.[/color] Available: standard, chrono." % requested)
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -21361,6 +21398,10 @@ func _load_keybinds():
 					disable_tutorial = data["disable_tutorial"]
 				if data.has("show_numpad_popup"):
 					show_numpad_popup = bool(data["show_numpad_popup"])
+				if data.has("combat_layout"):
+					var saved_layout: String = String(data["combat_layout"]).to_lower()
+					if saved_layout in ["standard", "chrono"]:
+						combat_layout = saved_layout
 				# Load UI scale settings
 				if data.has("ui_scale_monster_art"):
 					ui_scale_monster_art = clampf(float(data["ui_scale_monster_art"]), 0.5, 3.0)
@@ -21400,6 +21441,7 @@ func _save_keybinds():
 	save_data["swap_attack_outsmart"] = swap_attack_outsmart
 	save_data["disable_tutorial"] = disable_tutorial
 	save_data["show_numpad_popup"] = show_numpad_popup
+	save_data["combat_layout"] = combat_layout
 	# Include UI scale settings
 	save_data["ui_scale_monster_art"] = ui_scale_monster_art
 	save_data["ui_scale_map"] = ui_scale_map
@@ -23453,8 +23495,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.380 — combat layout prototype: Chrono Trigger style.
+	display_game("[color=#00FF00]v0.9.380[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Try a new combat layout — Chrono Trigger style[/color]")
+	display_game("  • [b]New /layout command[/b]. Swap the combat scene between the original layout and a [color=#FFD700]Chrono Trigger style[/color] layout: monster centered + large at the top, your character and companion side-by-side below. Reads more like a classic 16-bit JRPG.")
+	display_game("  • [color=#FFD700]/layout[/color] — show current setting and options")
+	display_game("  • [color=#FFD700]/layout standard[/color] — original side-by-side layout")
+	display_game("  • [color=#FFD700]/layout chrono[/color] — new Chrono Trigger style layout")
+	display_game("  • Your choice is saved between sessions. This is the first of a few layout prototypes — let us know which feels best!")
+	display_game("")
+
 	# v0.9.379 — actual fix for the residual 5s freeze.
-	display_game("[color=#00FF00]v0.9.379[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.379[/color]")
 	display_game("  [color=#FFD700]The other 5-second freeze is gone: road A* is now time-bounded[/color]")
 	display_game("  • Fresh logs after v0.9.378 pinpointed the residual ~5s freeze: it was the road pathfinding (A*) trying to connect two posts every 5 minutes — when the path was long/hard, a single A* search burned 4-5 seconds in one frame.")
 	display_game("  • Fix: A* now takes a wall-clock time budget (150 ms per pair, 200 ms total per check). If it doesn't find a path inside that window, it bails out cleanly; the next 5-minute tick retries. No single frame can be frozen by road pathfinding anymore.")
@@ -23517,13 +23569,6 @@ func display_changelog():
 	display_game("  • Completion summary adapts per job (Mining XP / Logging XP / Foraging XP + correct return hint).")
 	display_game("")
 
-	# v0.9.368 changes
-	display_game("[color=#00FFFF]v0.9.368[/color]")
-	display_game("  [color=#FFD700]Scratch-off fishing polish — wavy water bar, tool tuning, miss feedback[/color]")
-	display_game("  • [b]Wavy water bar[/b], scale-pop reveal animation, miss shake with \"Lost: X\" feedback, hit-zone glow, audio cues tuned ~40%% quieter than generic sounds.")
-	display_game("  • [b]Tool tiers tune the bar[/b]: T1 baseline → T5 wave is 40%% slower and 2× wider. Legendary rods stack another -20%% speed / +40%% width.")
-	display_game("  • Auto-skip yields ~60%% of manual; cashed-in summary splits timing misses from unscratched slots.")
-	display_game("")
 
 
 

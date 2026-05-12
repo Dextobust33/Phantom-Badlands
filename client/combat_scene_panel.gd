@@ -6,6 +6,17 @@ class_name CombatScenePanel
 # A1 slice — static layout only, no animations yet. PNG class sprites on
 # the left, ASCII monster art on the right (mismatched by design — see
 # project_combat_juice.md for the decision).
+#
+# v0.9.380 — layout prototype framework. `combat_layout` selects between:
+#   "standard" — original side-by-side (player+companion left, monster right)
+#   "chrono"   — Chrono Trigger / Mother style (monster top center, party row below)
+# Same instance variables hold the controls regardless of layout, so all
+# populate() / animation logic works unchanged. Layout is set via the
+# `/layout` slash command and persisted client-side in keybinds.json.
+
+const LAYOUT_STANDARD := "standard"
+const LAYOUT_CHRONO := "chrono"
+var combat_layout: String = LAYOUT_STANDARD
 
 const MONO_FONT_PATH := "res://font/Consolas/consolas.ttf"
 static var _mono_font: FontFile = null
@@ -43,7 +54,7 @@ const FLOCK_HISTORY_LIMIT := 16
 
 # Layout nodes
 var _root_panel: PanelContainer
-var _scene_section: HBoxContainer
+var _scene_section: Control  # v0.9.380 — HBox in standard layout, VBox in chrono
 var _log_section: PanelContainer
 
 # Player column
@@ -217,6 +228,35 @@ func _ready() -> void:
 	visible = false
 
 
+func set_layout(mode: String) -> bool:
+	"""v0.9.380 — switch combat layout at runtime. Tears down the existing
+	chrome and rebuilds with the new layout. Returns true if the mode was
+	valid and applied (or already active); false if the mode string is
+	unrecognized. Caller is responsible for re-populating combat state if
+	a fight is currently active.
+
+	Allowed: LAYOUT_STANDARD, LAYOUT_CHRONO."""
+	var normalized: String = mode.strip_edges().to_lower()
+	if normalized != LAYOUT_STANDARD and normalized != LAYOUT_CHRONO:
+		return false
+	if normalized == combat_layout and _root_panel != null and is_instance_valid(_root_panel):
+		return true
+	combat_layout = normalized
+	# Tear down the old chrome. Freeing the root frees all children + clears
+	# their instance-variable references (they're now invalid; rebuild
+	# re-creates them).
+	if _root_panel != null and is_instance_valid(_root_panel):
+		_root_panel.queue_free()
+	_root_panel = null
+	_scene_section = null
+	_log_section = null
+	_player_col = null
+	_monster_col = null
+	_companion_section = null
+	_build_layout()
+	return true
+
+
 func _load_mono_font() -> void:
 	if _mono_font != null:
 		return
@@ -245,19 +285,17 @@ func _build_layout() -> void:
 	root_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root_panel.add_child(root_vbox)
 
-	# === Top: scene (player vs monster) ===
-	_scene_section = HBoxContainer.new()
-	_scene_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_scene_section.size_flags_stretch_ratio = 2.0
-	_scene_section.add_theme_constant_override("separation", 8)
-	_scene_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root_vbox.add_child(_scene_section)
-
-	_player_col = _build_player_column()
-	_scene_section.add_child(_player_col)
-
-	_monster_col = _build_monster_column()
-	_scene_section.add_child(_monster_col)
+	# === Top: scene (player vs monster) — layout-specific arrangement ===
+	# v0.9.380 — dispatch by combat_layout. Both layouts share the bottom
+	# strips (HP / status / totals / hand / log) since those are pure
+	# data displays, not arrangement-sensitive.
+	var scene_root: Control
+	match combat_layout:
+		LAYOUT_CHRONO:
+			scene_root = _build_scene_section_chrono()
+		_:
+			scene_root = _build_scene_section_standard()
+	root_vbox.add_child(scene_root)
 
 	# === Shared HP strip — player on left, monster on right, same row ===
 	root_vbox.add_child(_build_shared_hp_strip())
@@ -320,7 +358,99 @@ func _build_layout() -> void:
 	_build_death_card_overlay()
 
 
+func _build_scene_section_standard() -> Control:
+	"""Standard layout: HBox with player+companion column on the left and
+	monster column on the right. v0.9.380 — extracted from the original
+	`_build_layout` body; same visual result as before this refactor."""
+	_scene_section = HBoxContainer.new()
+	_scene_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scene_section.size_flags_stretch_ratio = 2.0
+	_scene_section.add_theme_constant_override("separation", 8)
+	_scene_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	_player_col = _build_player_column()
+	_scene_section.add_child(_player_col)
+
+	_monster_col = _build_monster_column()
+	_scene_section.add_child(_monster_col)
+	return _scene_section
+
+
+func _build_scene_section_chrono() -> Control:
+	"""Chrono Trigger / Mother 2 style: monster centered + large at the top
+	of the scene area; party row (player and companion side-by-side) below.
+	v0.9.380 — alternate prototype layout. All controls use the same
+	instance variables as standard mode, so populate() and FX tweens work
+	without changes."""
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_stretch_ratio = 2.0
+	vbox.add_theme_constant_override("separation", 10)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scene_section = vbox  # Maintain reference for any consumer that reads it.
+
+	# Top: monster centered, ~60% of scene height. CenterContainer keeps the
+	# monster column visually balanced no matter the art width.
+	var monster_anchor := CenterContainer.new()
+	monster_anchor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	monster_anchor.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	monster_anchor.size_flags_stretch_ratio = 1.6
+	monster_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(monster_anchor)
+
+	_monster_col = _build_monster_column()
+	# Override the monster column's expand flags so it sizes by content
+	# (centered) rather than filling. Width slightly wider than the standard
+	# right-half to make the centered art feel deliberately large.
+	_monster_col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_monster_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_monster_col.custom_minimum_size = Vector2(420, 240)
+	monster_anchor.add_child(_monster_col)
+
+	# Bottom: party row — player on the left, companion on the right.
+	# Both blocks centered together as a unit so the "party" reads as
+	# a small group below the foe.
+	var party_anchor := CenterContainer.new()
+	party_anchor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	party_anchor.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	party_anchor.size_flags_stretch_ratio = 1.0
+	party_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(party_anchor)
+
+	var party_row := HBoxContainer.new()
+	party_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	party_row.add_theme_constant_override("separation", 28)
+	party_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	party_anchor.add_child(party_row)
+
+	# Player block — name on top, sprite/ascii below.
+	var player_block := VBoxContainer.new()
+	player_block.alignment = BoxContainer.ALIGNMENT_CENTER
+	player_block.add_theme_constant_override("separation", 2)
+	player_block.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	player_block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	party_row.add_child(player_block)
+
+	player_block.add_child(_create_player_name_label())
+	player_block.add_child(_create_player_sprite_holder())
+	player_block.add_child(_create_player_ascii_holder())
+
+	# Companion block — sits to the right of the player at the same height.
+	party_row.add_child(_create_companion_block())
+
+	# Keep _player_col pointing at the player_block so any external code
+	# that walks the tree from there continues to work.
+	_player_col = player_block
+
+	return vbox
+
+
 func _build_player_column() -> VBoxContainer:
+	"""Standard-layout player column. Build helpers below produce the same
+	controls regardless of layout; this just arranges them in the existing
+	player-left arrangement (player_name top, battle_row[companion, player]
+	just above the shared HP strip)."""
 	var col := VBoxContainer.new()
 	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	col.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -329,14 +459,7 @@ func _build_player_column() -> VBoxContainer:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	# Player name at the top of the column.
-	_player_name_label = RichTextLabel.new()
-	_player_name_label.bbcode_enabled = true
-	_player_name_label.fit_content = true
-	_player_name_label.scroll_active = false
-	_player_name_label.add_theme_font_size_override("normal_font_size", 14)
-	_player_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_player_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(_player_name_label)
+	col.add_child(_create_player_name_label())
 
 	# Spacer pushes the battle row down so it sits just above the shared
 	# HP strip below the scene_section.
@@ -355,12 +478,34 @@ func _build_player_column() -> VBoxContainer:
 	battle_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(battle_row)
 
-	# === Companion (LEFT of the battle row) ===
+	battle_row.add_child(_create_companion_block())
+	battle_row.add_child(_create_player_sprite_holder())
+	battle_row.add_child(_create_player_ascii_holder())
+
+	return col
+
+
+# v0.9.380 — control-creation helpers. Each sets the relevant instance
+# variables and returns the root Control of that piece. The standard layout
+# composes them in horizontal player/monster split; the chrono layout
+# composes them in monster-top + party-bottom arrangement.
+
+func _create_player_name_label() -> RichTextLabel:
+	_player_name_label = RichTextLabel.new()
+	_player_name_label.bbcode_enabled = true
+	_player_name_label.fit_content = true
+	_player_name_label.scroll_active = false
+	_player_name_label.add_theme_font_size_override("normal_font_size", 14)
+	_player_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_player_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return _player_name_label
+
+
+func _create_companion_block() -> VBoxContainer:
 	_companion_section = VBoxContainer.new()
 	_companion_section.add_theme_constant_override("separation", 2)
 	_companion_section.size_flags_vertical = Control.SIZE_SHRINK_END
 	_companion_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	battle_row.add_child(_companion_section)
 
 	_companion_name_label = RichTextLabel.new()
 	_companion_name_label.bbcode_enabled = true
@@ -453,12 +598,15 @@ func _build_player_column() -> VBoxContainer:
 		_companion_art.add_theme_font_override("mono_font", _mono_font)
 	_companion_section.add_child(_companion_art)
 
-	# === Player PNG sprite (RIGHT of the battle row, used when no ASCII) ===
+	return _companion_section
+
+
+func _create_player_sprite_holder() -> CenterContainer:
+	# Player PNG sprite holder. Used when there's no ASCII art for the class.
 	_player_sprite_holder = CenterContainer.new()
 	_player_sprite_holder.custom_minimum_size = Vector2(168, 168)
 	_player_sprite_holder.size_flags_vertical = Control.SIZE_SHRINK_END
 	_player_sprite_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	battle_row.add_child(_player_sprite_holder)
 
 	_player_sprite_rect = TextureRect.new()
 	_player_sprite_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -477,22 +625,22 @@ func _build_player_column() -> VBoxContainer:
 	_player_sprite_placeholder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_player_sprite_holder.add_child(_player_sprite_placeholder)
 
-	# === Player ASCII art (RIGHT of the battle row). Wrapped in a plain
-	# Control so the FX-target Panel inside has free-floating position
-	# (unaffected by HBox re-layouts when the companion text changes).
-	# The wrapper itself is the HBox child; the Panel inside is what
-	# lunge / shake / death-slump tweens animate.
+	return _player_sprite_holder
+
+
+func _create_player_ascii_holder() -> Control:
+	# Player ASCII battle art. Wrapped in a plain Control so the FX-target
+	# Panel inside has free-floating position (unaffected by HBox re-layouts
+	# when the companion text changes). The wrapper itself is the layout
+	# child; the Panel inside is what lunge / shake / death-slump tweens
+	# animate.
 	_ascii_outer = Control.new()
 	_ascii_outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ascii_outer.size_flags_vertical = Control.SIZE_SHRINK_END
-	# Height bumped from 200 → 260 so ASCII art at the v0.9.219 default font
-	# size (4, was 3) fits without the bottom 30-50px clipping behind the HP
-	# bar below the player column.
 	_ascii_outer.custom_minimum_size = Vector2(180, 260)
 	_ascii_outer.clip_contents = true
 	_ascii_outer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ascii_outer.visible = false
-	battle_row.add_child(_ascii_outer)
 	_ascii_outer.resized.connect(_sync_ascii_holder_size)
 
 	_player_ascii_holder = Panel.new()
@@ -518,7 +666,7 @@ func _build_player_column() -> VBoxContainer:
 		_player_ascii_label.add_theme_font_override("mono_font", _mono_font)
 	_player_ascii_holder.add_child(_player_ascii_label)
 
-	return col
+	return _ascii_outer
 
 
 func _sync_ascii_holder_size() -> void:
