@@ -148,6 +148,13 @@ const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tile
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
 
+# Hotfix v0.9.344 — per-tick memoization for _compute_post_threat_state.
+# Cleared at the start of every _process tick. Keyed by "x,y" of the queried
+# post. With Slice 8's multi-post threat scan + 150-200 active dungeons, the
+# uncached version was iterating ~150-450 dungeons per location update for
+# the at-post threat banner + per-visible-post overlay.
+var _threat_state_cache: Dictionary = {}
+
 
 # Combat command rate limiting (peer_id -> last command time in msec)
 var combat_command_cooldown: Dictionary = {}
@@ -799,6 +806,13 @@ func update_player_list():
 				])
 
 func _process(delta):
+	# Hotfix v0.9.344 — clear the per-tick threat-state cache at the start of
+	# each frame so _compute_post_threat_state recomputes at most once per
+	# unique post per tick. handle_move + map renders + market handlers all
+	# call this; without memoization, with 158+ active world dungeons and
+	# the Slice 8 multi-post threat scan, per-move cost climbed sharply.
+	_threat_state_cache.clear()
+
 	# Auto-save timer
 	auto_save_timer += delta
 	if auto_save_timer >= AUTO_SAVE_INTERVAL:
@@ -21494,25 +21508,39 @@ func _check_dungeon_spawns():
 		dungeon_monsters.erase(instance_id)
 		world_dungeon_count -= 1
 
-	# Spawn new world dungeons if below minimum
+	# Spawn new world dungeons if below minimum.
+	# Hotfix v0.9.344 — cap spawns per tick to avoid frame-time spikes when
+	# the spawner catches up after chunks become loadable (e.g., the first
+	# player connection after a restart). Pre-fix this could spawn 88
+	# dungeons in a single frame, which froze the server tick for ~1s.
+	# Now spreads the catch-up across multiple 30s checks.
 	var dungeon_types = DungeonDatabaseScript.DUNGEON_TYPES.keys()
+	const MAX_SPAWNS_PER_TICK = 8
+	var spawns_this_tick: int = 0
 	while world_dungeon_count < MIN_WORLD_DUNGEONS and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
+		if spawns_this_tick >= MAX_SPAWNS_PER_TICK:
+			break
 		# Pick a random dungeon type
 		var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
 		var instance_id = _create_world_dungeon(dungeon_type)
 		if instance_id != "":
 			world_dungeon_count += 1
+			spawns_this_tick += 1
 			log_message("Spawned new world dungeon: %s" % instance_id)
 		else:
 			break  # Failed to create, stop trying
 
-	# Spawn extra dungeons up to max (spawn multiple per check to fill up faster)
+	# Spawn extra dungeons up to max — same per-tick cap so the bonus loop
+	# can't spike either. The 50% gate further smooths out the catch-up.
 	while world_dungeon_count < MAX_WORLD_DUNGEONS and active_dungeons.size() < MAX_ACTIVE_DUNGEONS:
+		if spawns_this_tick >= MAX_SPAWNS_PER_TICK:
+			break
 		if randf() < 0.5:  # 50% chance per dungeon
 			var dungeon_type = dungeon_types[randi() % dungeon_types.size()]
 			var instance_id = _create_world_dungeon(dungeon_type)
 			if instance_id != "":
 				world_dungeon_count += 1
+				spawns_this_tick += 1
 				log_message("Spawned bonus world dungeon: %s" % instance_id)
 			else:
 				break
@@ -21954,9 +21982,19 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	dungeons. Threat is shared across all players — the world dungeons that
 	count are the ones without owner_peer_id.
 
+	Hotfix v0.9.344 — memoized per tick via _threat_state_cache (cleared at
+	the start of every _process). Several handlers (handle_move,
+	handle_market_browse, handle_request_post_status_visual) hit this
+	function multiple times per tick for the same post; the cache turns
+	those repeat calls into dict lookups instead of full active_dungeons
+	iterations.
+
 	Returns:
 	  {threatened: false} when nothing in range
 	  {threatened: true, dungeon_name, tier, distance, direction, color, count}"""
+	var cache_key = "%d,%d" % [post_x, post_y]
+	if _threat_state_cache.has(cache_key):
+		return _threat_state_cache[cache_key]
 	var threats: Array = []
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
@@ -21983,10 +22021,12 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 			"color": dungeon_data.get("color", "#FF8800"),
 		})
 	if threats.is_empty():
-		return {"threatened": false}
+		var empty_result = {"threatened": false}
+		_threat_state_cache[cache_key] = empty_result
+		return empty_result
 	threats.sort_custom(func(a, b): return a.distance < b.distance)
 	var nearest = threats[0]
-	return {
+	var result = {
 		"threatened": true,
 		"dungeon_name": nearest.name,
 		"tier": nearest.tier,
@@ -21995,6 +22035,8 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		"color": nearest.color,
 		"count": threats.size(),
 	}
+	_threat_state_cache[cache_key] = result
+	return result
 
 const POST_THREAT_PRICE_MULT: float = 1.20
 # Audit #11 Slice 8 — service prices (healer / blacksmith) hike harder than

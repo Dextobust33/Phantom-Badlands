@@ -23318,8 +23318,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.344 changes
+	display_game("[color=#00FF00]v0.9.344[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Server lag hotfix[/color]")
+	display_game("  • [b]Dungeon spawn rate-limited[/b] to 8 per tick (was unbounded). Pre-fix the spawner could create 80+ dungeons in a single frame when chunks became loadable after a restart, freezing the tick for ~1s. Catch-up now spreads across multiple 30s checks.")
+	display_game("  • [b]Post threat state cached per tick[/b]. Several handlers (movement, market browse, post-status panel, healer/blacksmith encounters) all query the same post's threat status within a single frame. The cache turns repeat lookups into dict reads instead of full active_dungeon scans.")
+	display_game("  • [b]No design changes[/b] — same threat behavior, just smoother server-side.")
+	display_game("")
+
 	# v0.9.343 changes
-	display_game("[color=#00FF00]v0.9.343[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.343[/color]")
 	display_game("  [color=#FFD700]Bestiary (Audit #13 Slice 2)[/color]")
 	display_game("  • [b]New Sanctuary upgrade: [color=#FFD700]Bestiary[/color][/b] — account-level ledger of every monster you've ever killed. 3 reveal tiers: L1 kill counts, L2 + highest level, L3 + first/last killed dates. Costs 800 / 3000 / 12000 BP.")
 	display_game("  • [b]Always tracking[/b]: kills are recorded from now on regardless of whether the upgrade is unlocked. When you buy it later, you'll see the data you've been accumulating.")
@@ -23348,16 +23356,6 @@ func display_changelog():
 	display_game("  • [b]Server-side resolution[/b]: tags resolved via `_get_clan_tag_for_peer` and bundled in `player_list`, `chat`, and `private_message` payloads — keeps tags consistent even if a player re-logs into a different character on the same account.")
 	display_game("")
 
-	# v0.9.340 changes
-	display_game("[color=#00FFFF]v0.9.340[/color]")
-	display_game("  [color=#FFD700]Clan invitations (Audit #14 Slice 2)[/color]")
-	display_game("  • [b]Invite players to your clan[/b]: leaders see an [color=#A335EE]Invite Player[/color] input field below the roster in the Clan panel. Type a username, hit Enter (or click [Invite]), and the invitation is delivered.")
-	display_game("  • [b]Live notifications[/b]: when someone invites you, you get a chat alert immediately (\"X invited you to join clan Y. Open the Clan panel to accept or decline.\"). If your Clan panel is already open, it refreshes automatically.")
-	display_game("  • [b]Pending invitations section[/b] appears at the top of the Clan panel listing every invite (clan name + tag, inviter username, [Accept] / [Decline] buttons). Accepting one invite voids all others — you can only be in one clan at a time.")
-	display_game("  • [b]Validations[/b]: only the clan leader can invite (officer/rank system ships in a later slice). Targets must exist and not already be in a clan. Duplicate invites from the same clan are rejected. Clan-is-full check runs at both invite-time and accept-time (race-safe).")
-	display_game("  • [b]Disband cleanup[/b]: if a clan disbands while invites are pending, those invites are pruned automatically.")
-	display_game("  • [b]30-member cap[/b] still applies — the invite input is hidden when the clan is full, with a \"Clan is full\" note in place.")
-	display_game("")
 
 
 
