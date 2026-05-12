@@ -21093,20 +21093,20 @@ func process_command(text: String):
 			else:
 				display_game("You don't have a character yet")
 		"layout":
-			# v0.9.380 — combat layout prototype. Swap between "standard" (default)
-			# and "chrono" (Chrono Trigger / Mother style: monster on top, party row
-			# below). Setting persists in keybinds.json so the choice survives
-			# restarts. Usage:
+			# v0.9.380 — combat layout prototype. Swap between layouts.
+			# Setting persists in keybinds.json so the choice survives restarts.
+			# Usage:
 			#   /layout            → show current setting + options
-			#   /layout standard   → switch to the standard layout
-			#   /layout chrono     → switch to the chrono layout
+			#   /layout standard   → original side-by-side
+			#   /layout chrono     → Chrono Trigger style (monster top, party below)
+			#   /layout lufia      → Lufia II style (monster left, party stacked right) — v0.9.381
 			var requested: String = (parts[1] if parts.size() > 1 else "").strip_edges().to_lower()
 			if requested == "":
 				var current: String = String(combat_scene_panel.combat_layout) if combat_scene_panel else "standard"
 				display_game("[color=#FFD700]Combat layout:[/color] %s" % current)
-				display_game("[color=#88BBDD]Available:[/color] standard, chrono")
+				display_game("[color=#88BBDD]Available:[/color] standard, chrono, lufia")
 				display_game("[color=#888888]Use[/color] [color=#FFD700]/layout <mode>[/color] [color=#888888]to switch.[/color]")
-			elif requested in ["standard", "chrono"]:
+			elif requested in ["standard", "chrono", "lufia"]:
 				if combat_scene_panel == null:
 					display_game("[color=#FF6644]Combat panel unavailable.[/color]")
 				elif combat_scene_panel.visible:
@@ -21118,7 +21118,7 @@ func process_command(text: String):
 				else:
 					display_game("[color=#FF6644]Failed to apply layout %s.[/color]" % requested)
 			else:
-				display_game("[color=#FF6644]Unknown layout '%s'.[/color] Available: standard, chrono." % requested)
+				display_game("[color=#FF6644]Unknown layout '%s'.[/color] Available: standard, chrono, lufia." % requested)
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -21400,7 +21400,7 @@ func _load_keybinds():
 					show_numpad_popup = bool(data["show_numpad_popup"])
 				if data.has("combat_layout"):
 					var saved_layout: String = String(data["combat_layout"]).to_lower()
-					if saved_layout in ["standard", "chrono"]:
+					if saved_layout in ["standard", "chrono", "lufia"]:
 						combat_layout = saved_layout
 				# Load UI scale settings
 				if data.has("ui_scale_monster_art"):
@@ -23495,14 +23495,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.381 — chrono sizing fix + new Lufia II layout + warned deploys.
+	display_game("[color=#00FF00]v0.9.381[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat layout polish + new Lufia II prototype[/color]")
+	display_game("  • [b]Chrono layout sizing fixes[/b]: monster ASCII no longer clips, player and companion sprites scaled down so the monster takes the spotlight at the top of the scene.")
+	display_game("  • [b]New layout: /layout lufia[/b] — Lufia II style. Monster on the LEFT, your character + companion stacked vertically on the RIGHT.")
+	display_game("  • Available layouts: [color=#FFD700]standard[/color] / [color=#FFD700]chrono[/color] / [color=#FFD700]lufia[/color]. Setting persists between sessions.")
+	display_game("  [color=#FFD700]Server-side: 1-minute warning before every restart[/color]")
+	display_game("  • From v0.9.381 onward, every server deploy sends a [color=#FFAA33]1-minute warning toast and chat broadcast[/color] to all online players so you can finish combat / trades / dungeon runs before the restart kicks you. The countdown shows warnings at 4m / 3m / 2m / 1m / 30s.")
+	display_game("")
+
 	# v0.9.380 — combat layout prototype: Chrono Trigger style.
-	display_game("[color=#00FF00]v0.9.380[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Try a new combat layout — Chrono Trigger style[/color]")
-	display_game("  • [b]New /layout command[/b]. Swap the combat scene between the original layout and a [color=#FFD700]Chrono Trigger style[/color] layout: monster centered + large at the top, your character and companion side-by-side below. Reads more like a classic 16-bit JRPG.")
-	display_game("  • [color=#FFD700]/layout[/color] — show current setting and options")
-	display_game("  • [color=#FFD700]/layout standard[/color] — original side-by-side layout")
-	display_game("  • [color=#FFD700]/layout chrono[/color] — new Chrono Trigger style layout")
-	display_game("  • Your choice is saved between sessions. This is the first of a few layout prototypes — let us know which feels best!")
+	display_game("[color=#00FFFF]v0.9.380[/color]")
+	display_game("  [color=#FFD700]Combat layout prototype — Chrono Trigger style[/color]")
+	display_game("  • [b]New /layout command[/b]. Swap the combat scene between the original layout and a Chrono Trigger style layout. Try both and see which feels right.")
 	display_game("")
 
 	# v0.9.379 — actual fix for the residual 5s freeze.
@@ -23545,14 +23551,6 @@ func display_changelog():
 	display_game("  • [b]Quality is gone from items where it didn't mean anything.[/b] Each recipe now picks a slot pool that fits its output: Equipment/consumables/runes/upgrades/enchantments use the Quality pool; structures and materials use bonus-craft + refund pools.")
 	display_game("  • New slot kinds on the scratch ticket: [color=#FFD700]✕2 / ✕3 / ✕4[/color] bonus craft, [color=#5FF0E0]↺ Mat refund[/color]. Higher skill shifts the distribution toward the better slots.")
 	display_game("  • Subtitle on each craft panel tells you which pool that recipe rolls from.")
-	display_game("")
-
-	# v0.9.372 changes
-	display_game("[color=#00FFFF]v0.9.372[/color]")
-	display_game("  [color=#FFD700]Crafting overhaul (slice 1) + new-character numpad popup[/color]")
-	display_game("  • [b]Crafting minigame replaced with scratch-off[/b]: blacksmithing / alchemy / enchanting / scribing / construction now share the lottery-ticket mechanic. Reveal slots → BEST revealed kind decides your craft quality. Distribution shifts toward Refined / Polished / Masterful as your skill rises.")
-	display_game("  • Each craft has its own [b]themed panel[/b]: orange forge for blacksmithing, purple brew for alchemy, cyan sigil for enchanting, ivory inkwell for scribing, ochre blueprint for construction. Targeting motions reuse the gathering patterns for now; unique per-skill motions (hammer / swirl / sigil-trace / quill-stroke / plumb-bob) are queued for the next slice.")
-	display_game("  • [b]New character numpad popup[/b]: when you create a new character, a popup explains the numpad (8-direction movement + Hunt on 5). Click \"Don't show this for future characters\" if you've seen it.")
 	display_game("")
 
 	# v0.9.371 changes

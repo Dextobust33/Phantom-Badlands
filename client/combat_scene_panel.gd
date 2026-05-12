@@ -16,6 +16,7 @@ class_name CombatScenePanel
 
 const LAYOUT_STANDARD := "standard"
 const LAYOUT_CHRONO := "chrono"
+const LAYOUT_LUFIA := "lufia"  # v0.9.381 — side view, monster left, party right (stacked)
 var combat_layout: String = LAYOUT_STANDARD
 
 const MONO_FONT_PATH := "res://font/Consolas/consolas.ttf"
@@ -235,9 +236,9 @@ func set_layout(mode: String) -> bool:
 	unrecognized. Caller is responsible for re-populating combat state if
 	a fight is currently active.
 
-	Allowed: LAYOUT_STANDARD, LAYOUT_CHRONO."""
+	Allowed: LAYOUT_STANDARD, LAYOUT_CHRONO, LAYOUT_LUFIA."""
 	var normalized: String = mode.strip_edges().to_lower()
-	if normalized != LAYOUT_STANDARD and normalized != LAYOUT_CHRONO:
+	if normalized != LAYOUT_STANDARD and normalized != LAYOUT_CHRONO and normalized != LAYOUT_LUFIA:
 		return false
 	if normalized == combat_layout and _root_panel != null and is_instance_valid(_root_panel):
 		return true
@@ -293,6 +294,8 @@ func _build_layout() -> void:
 	match combat_layout:
 		LAYOUT_CHRONO:
 			scene_root = _build_scene_section_chrono()
+		LAYOUT_LUFIA:
+			scene_root = _build_scene_section_lufia()
 		_:
 			scene_root = _build_scene_section_standard()
 	root_vbox.add_child(scene_root)
@@ -381,36 +384,46 @@ func _build_scene_section_chrono() -> Control:
 	of the scene area; party row (player and companion side-by-side) below.
 	v0.9.380 — alternate prototype layout. All controls use the same
 	instance variables as standard mode, so populate() and FX tweens work
-	without changes."""
+	without changes.
+
+	v0.9.381 — sizing fixes from playtest feedback:
+	  - monster ASCII was clipping → gave the top anchor a stronger stretch
+	    ratio and removed the small fixed size on _monster_col so it fills
+	    the available vertical room.
+	  - player ASCII was too large for the bottom row → shrunk both
+	    _player_sprite_holder and _ascii_outer to roughly 65% scale.
+	  - companion needs to be even smaller than player → shrunk
+	    _companion_art further (~55% scale)."""
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.size_flags_stretch_ratio = 2.0
-	vbox.add_theme_constant_override("separation", 10)
+	vbox.add_theme_constant_override("separation", 8)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_scene_section = vbox  # Maintain reference for any consumer that reads it.
 
-	# Top: monster centered, ~60% of scene height. CenterContainer keeps the
-	# monster column visually balanced no matter the art width.
+	# Top: monster centered. Stretch ratio 3:1 vs. the party row so the
+	# monster gets ~75% of scene height — enough that even tall ASCII art
+	# isn't clipped.
 	var monster_anchor := CenterContainer.new()
 	monster_anchor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	monster_anchor.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	monster_anchor.size_flags_stretch_ratio = 1.6
+	monster_anchor.size_flags_stretch_ratio = 3.0
 	monster_anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(monster_anchor)
 
 	_monster_col = _build_monster_column()
-	# Override the monster column's expand flags so it sizes by content
-	# (centered) rather than filling. Width slightly wider than the standard
-	# right-half to make the centered art feel deliberately large.
-	_monster_col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_monster_col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_monster_col.custom_minimum_size = Vector2(420, 240)
+	# Let the monster column expand to fill the centered area. Width minimum
+	# so narrow art still feels centered; height minimum kept loose so the
+	# CenterContainer's allocation drives the actual size.
+	_monster_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_monster_col.custom_minimum_size = Vector2(480, 0)
 	monster_anchor.add_child(_monster_col)
 
-	# Bottom: party row — player on the left, companion on the right.
-	# Both blocks centered together as a unit so the "party" reads as
-	# a small group below the foe.
+	# Bottom: party row. Centered horizontally, height clamped by stretch
+	# ratio so the player+companion sprites read as small figures below
+	# the foe rather than competing with it for space.
 	var party_anchor := CenterContainer.new()
 	party_anchor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	party_anchor.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -424,7 +437,8 @@ func _build_scene_section_chrono() -> Control:
 	party_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	party_anchor.add_child(party_row)
 
-	# Player block — name on top, sprite/ascii below.
+	# Player block — name on top, sprite/ascii below. Sizes reduced to ~65%
+	# of standard (sprite 168→108, ascii_outer 180x260→128x170).
 	var player_block := VBoxContainer.new()
 	player_block.alignment = BoxContainer.ALIGNMENT_CENTER
 	player_block.add_theme_constant_override("separation", 2)
@@ -433,17 +447,99 @@ func _build_scene_section_chrono() -> Control:
 	party_row.add_child(player_block)
 
 	player_block.add_child(_create_player_name_label())
-	player_block.add_child(_create_player_sprite_holder())
-	player_block.add_child(_create_player_ascii_holder())
+	var sprite_holder = _create_player_sprite_holder()
+	sprite_holder.custom_minimum_size = Vector2(108, 108)
+	if _player_sprite_rect:
+		_player_sprite_rect.custom_minimum_size = Vector2(100, 100)
+	player_block.add_child(sprite_holder)
+	var ascii_holder = _create_player_ascii_holder()
+	ascii_holder.custom_minimum_size = Vector2(128, 170)
+	if _player_ascii_holder:
+		_player_ascii_holder.size = Vector2(128, 170)
+	player_block.add_child(ascii_holder)
 
-	# Companion block — sits to the right of the player at the same height.
-	party_row.add_child(_create_companion_block())
+	# Companion block — even smaller than the player (~55% scale).
+	var companion = _create_companion_block()
+	if _companion_art:
+		_companion_art.custom_minimum_size = Vector2(110, 90)
+	if _companion_name_label:
+		_companion_name_label.custom_minimum_size = Vector2(110, 0)
+		_companion_name_label.add_theme_font_size_override("normal_font_size", 11)
+	party_row.add_child(companion)
 
 	# Keep _player_col pointing at the player_block so any external code
 	# that walks the tree from there continues to work.
 	_player_col = player_block
 
 	return vbox
+
+
+func _build_scene_section_lufia() -> Control:
+	"""Lufia II style: side view with monster column on the LEFT and the
+	party (player + companion stacked vertically) on the RIGHT. Inverts the
+	standard layout's left/right sides and pulls the companion below the
+	player rather than beside them.
+
+	v0.9.381 — added per playtest direction; gives players another option
+	if chrono's monster-on-top framing doesn't feel right."""
+	_scene_section = HBoxContainer.new()
+	_scene_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_scene_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scene_section.size_flags_stretch_ratio = 2.0
+	_scene_section.add_theme_constant_override("separation", 12)
+	_scene_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# Monster on the LEFT — same proportion as the standard layout's right
+	# half (1.0 stretch ratio), keeping the ASCII art at standard size.
+	_monster_col = _build_monster_column()
+	_scene_section.add_child(_monster_col)
+
+	# Party column on the RIGHT — player on top, companion below, both
+	# centered horizontally inside their stretch.
+	var party_col := VBoxContainer.new()
+	party_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	party_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	party_col.size_flags_stretch_ratio = 1.0
+	party_col.alignment = BoxContainer.ALIGNMENT_CENTER
+	party_col.add_theme_constant_override("separation", 8)
+	party_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scene_section.add_child(party_col)
+
+	# Player block on top — name, sprite OR ascii (whichever is visible).
+	var player_block := VBoxContainer.new()
+	player_block.alignment = BoxContainer.ALIGNMENT_CENTER
+	player_block.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	player_block.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	player_block.add_theme_constant_override("separation", 2)
+	player_block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	party_col.add_child(player_block)
+
+	player_block.add_child(_create_player_name_label())
+	var sprite_holder = _create_player_sprite_holder()
+	sprite_holder.custom_minimum_size = Vector2(140, 140)
+	if _player_sprite_rect:
+		_player_sprite_rect.custom_minimum_size = Vector2(132, 132)
+	player_block.add_child(sprite_holder)
+	var ascii_holder = _create_player_ascii_holder()
+	ascii_holder.custom_minimum_size = Vector2(160, 210)
+	if _player_ascii_holder:
+		_player_ascii_holder.size = Vector2(160, 210)
+	player_block.add_child(ascii_holder)
+
+	# Companion block below player — smaller than the player.
+	var companion = _create_companion_block()
+	if _companion_art:
+		_companion_art.custom_minimum_size = Vector2(140, 110)
+	if _companion_name_label:
+		_companion_name_label.custom_minimum_size = Vector2(140, 0)
+		_companion_name_label.add_theme_font_size_override("normal_font_size", 11)
+	party_col.add_child(companion)
+
+	# Keep _player_col pointing at the right column so external traversals
+	# from there keep working.
+	_player_col = party_col
+
+	return _scene_section
 
 
 func _build_player_column() -> VBoxContainer:

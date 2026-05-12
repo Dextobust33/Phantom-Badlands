@@ -34,6 +34,15 @@ var pending_wipe_type: String = ""  # Tracks which wipe is being confirmed
 # Pending update shutdown state
 var pending_update_active: bool = false
 var pending_update_seconds_remaining: float = 0.0
+
+# v0.9.381 — SSH-triggerable shutdown sentinel. Writing seconds to this file
+# (e.g. `echo 60 > path`) starts the pending-shutdown countdown remotely so
+# deploys can warn players before restarting the headless cloud server.
+# Resolves to /home/ubuntu/.local/share/godot/app_userdata/PhantomBadlands/
+# on the Hetzner host. File is deleted once consumed.
+const SHUTDOWN_SENTINEL_PATH := "user://pending_shutdown.txt"
+const SHUTDOWN_SENTINEL_POLL_INTERVAL := 5.0
+var _shutdown_sentinel_timer: float = 0.0
 var pending_update_last_announcement: int = -1  # Track which announcement was last sent
 const PersistenceManagerScript = preload("res://server/persistence_manager.gd")
 const DropTablesScript = preload("res://shared/drop_tables.gd")
@@ -595,6 +604,58 @@ func _send_broadcast(message: String):
 	for peer_id in peers.keys():
 		send_to_peer(peer_id, broadcast_msg)
 
+
+func _send_toast_broadcast(message: String, duration: float = 8.0) -> void:
+	"""v0.9.381 — broadcast a toast-overlay message (more prominent than the
+	chat broadcast). Pairs with _send_broadcast for shutdown countdown
+	announcements so players notice mid-combat / mid-trade."""
+	var toast_msg = {
+		"type": "toast",
+		"message": message,
+		"duration": duration,
+	}
+	for peer_id in peers.keys():
+		send_to_peer(peer_id, toast_msg)
+
+
+func _check_shutdown_sentinel() -> void:
+	"""v0.9.381 — poll for the SSH-writable shutdown sentinel file. Lets a
+	deploy script trigger the warned-shutdown countdown remotely without an
+	in-game admin presence. File contains seconds (default 60 on parse fail).
+	Consumed and deleted once read."""
+	if not FileAccess.file_exists(SHUTDOWN_SENTINEL_PATH):
+		return
+	# Read + delete the file. We delete first so a parse error doesn't leave
+	# stale state that re-triggers on the next poll.
+	var content: String = ""
+	var f = FileAccess.open(SHUTDOWN_SENTINEL_PATH, FileAccess.READ)
+	if f != null:
+		content = f.get_as_text()
+		f.close()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(SHUTDOWN_SENTINEL_PATH))
+	# Already counting down? Log and skip — a second trigger would reset the
+	# countdown which is rarely what the deploy script wants.
+	if pending_update_active:
+		log_message("[SHUTDOWN] Sentinel triggered but countdown already active — ignoring.")
+		return
+	var seconds: int = int(content.strip_edges())
+	if seconds <= 0:
+		seconds = 60
+	seconds = clampi(seconds, 5, 600)  # bound to [5s, 10min]
+	pending_update_active = true
+	pending_update_seconds_remaining = float(seconds)
+	pending_update_last_announcement = -1
+	if pending_update_button:
+		pending_update_button.visible = false
+	if cancel_update_button:
+		cancel_update_button.visible = true
+	log_message("[SHUTDOWN] Sentinel triggered — countdown started for %d seconds." % seconds)
+	# Initial announcement on both surfaces so the warning is immediately
+	# visible (chat for logs, toast for prominence).
+	var initial_msg: String = "⚠️ SERVER RESTART INCOMING IN %d SECONDS — finish what you're doing and find safety!" % seconds
+	_send_broadcast(initial_msg)
+	_send_toast_broadcast(initial_msg, minf(10.0, float(seconds) * 0.4))
+
 func _broadcast_geological_event(event: Dictionary):
 	"""Broadcast a geological event to nearby players."""
 	var msg = event.get("message", "")
@@ -659,24 +720,38 @@ func _check_pending_update_announcements():
 	# 5min=300, 4min=240, 3min=180, 2min=120, 1min=60, 30sec=30
 	var announcement_made = false
 
+	# v0.9.381 — both surfaces: chat broadcast (logged + persisted in chat
+	# scrollback) AND toast overlay (prominent corner popup, easier to spot
+	# mid-combat). Toast duration shrinks as the countdown narrows so the
+	# 30s warning stays sticky and the early ones fade off.
 	if seconds <= 30 and pending_update_last_announcement != 30:
-		_send_broadcast("⚠️ SERVER SHUTDOWN IN 30 SECONDS! Find safety NOW!")
+		var msg30 = "⚠️ SERVER SHUTDOWN IN 30 SECONDS! Find safety NOW!"
+		_send_broadcast(msg30)
+		_send_toast_broadcast(msg30, 10.0)
 		pending_update_last_announcement = 30
 		announcement_made = true
 	elif seconds <= 60 and seconds > 30 and pending_update_last_announcement != 60:
-		_send_broadcast("⚠️ SERVER SHUTDOWN: 1 minute remaining!")
+		var msg60 = "⚠️ SERVER SHUTDOWN: 1 minute remaining!"
+		_send_broadcast(msg60)
+		_send_toast_broadcast(msg60, 8.0)
 		pending_update_last_announcement = 60
 		announcement_made = true
 	elif seconds <= 120 and seconds > 60 and pending_update_last_announcement != 120:
-		_send_broadcast("⚠️ SERVER SHUTDOWN: 2 minutes remaining. Find a safe place!")
+		var msg120 = "⚠️ SERVER SHUTDOWN: 2 minutes remaining. Find a safe place!"
+		_send_broadcast(msg120)
+		_send_toast_broadcast(msg120, 6.0)
 		pending_update_last_announcement = 120
 		announcement_made = true
 	elif seconds <= 180 and seconds > 120 and pending_update_last_announcement != 180:
-		_send_broadcast("⚠️ SERVER SHUTDOWN: 3 minutes remaining.")
+		var msg180 = "⚠️ SERVER SHUTDOWN: 3 minutes remaining."
+		_send_broadcast(msg180)
+		_send_toast_broadcast(msg180, 5.0)
 		pending_update_last_announcement = 180
 		announcement_made = true
 	elif seconds <= 240 and seconds > 180 and pending_update_last_announcement != 240:
-		_send_broadcast("⚠️ SERVER SHUTDOWN: 4 minutes remaining.")
+		var msg240 = "⚠️ SERVER SHUTDOWN: 4 minutes remaining."
+		_send_broadcast(msg240)
+		_send_toast_broadcast(msg240, 5.0)
 		pending_update_last_announcement = 240
 		announcement_made = true
 
@@ -968,6 +1043,13 @@ func _process(delta):
 		_try_connect_road()
 		if DIAG_TIMING_ENABLED:
 			_diag_road_check_us = Time.get_ticks_usec() - _road_start_us
+
+	# v0.9.381 — poll the SSH-writable shutdown sentinel so deploys can trigger
+	# the warning countdown remotely.
+	_shutdown_sentinel_timer += delta
+	if _shutdown_sentinel_timer >= SHUTDOWN_SENTINEL_POLL_INTERVAL:
+		_shutdown_sentinel_timer = 0.0
+		_check_shutdown_sentinel()
 
 	# Process pending update countdown
 	if pending_update_active:
