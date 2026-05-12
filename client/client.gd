@@ -1194,6 +1194,15 @@ var scratch_off_slot_count: int = 0
 var scratch_off_revealed_slots: Array = []  # Per-slot dict {item, name, type} as they reveal; empty until revealed
 var scratch_off_job_type: String = ""
 var scratch_off_water_type: String = ""
+# v0.9.360 — Slice 1E: auto-skip animation. When ON, _process fires a
+# reveal every SCRATCH_OFF_AUTO_INTERVAL until budget exhausted. The
+# panel's toggle button can flip this mid-session.
+var scratch_off_auto_skip: bool = false
+var scratch_off_auto_next_at: float = 0.0
+var scratch_off_close_at: float = 0.0  # > 0 = pending close, scheduled by handle_scratch_off_complete
+const SCRATCH_OFF_AUTO_INTERVAL: float = 0.6
+const SCRATCH_OFF_AUTO_INITIAL_DELAY: float = 0.8
+const SCRATCH_OFF_POST_COMPLETE_HOLD: float = 1.5
 
 # Harvest mode (Soldier job post-combat minigame)
 var harvest_mode: bool = false
@@ -1222,6 +1231,9 @@ var admin_panel = null
 # "no chat-command-first features" hard rule.
 const StonesPanelScript = preload("res://client/stones_panel.gd")
 var stones_panel = null
+
+const ScratchOffPanelScript = preload("res://client/scratch_off_panel.gd")
+var scratch_off_panel = null
 
 # Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
 # Replaces chat-command-only /stats + /spendstat from v0.9.335.
@@ -1438,6 +1450,10 @@ var gem_gain_player: AudioStreamPlayer = null
 var loot_vanish_player: AudioStreamPlayer = null
 var player_buffed_player: AudioStreamPlayer = null
 var player_healed_player: AudioStreamPlayer = null
+var scratch_player: AudioStreamPlayer = null  # v0.9.366 — scratch-off reveal cue (NORMAL/LUCKY)
+var scratch_jackpot_player: AudioStreamPlayer = null  # v0.9.367 — JACKPOT cue (dedicated for volume tuning)
+var scratch_dud_player: AudioStreamPlayer = null      # v0.9.367 — DUD cue
+var scratch_miss_player: AudioStreamPlayer = null     # v0.9.367 — MISS cue
 
 # Volume control
 var sfx_volume: float = 1.0   # 0.0 to 1.0 multiplier for all SFX
@@ -1466,6 +1482,13 @@ const SFX_BASE_VOLUMES: Dictionary = {
 	"loot_vanish": -22.0,
 	"player_buffed": -22.0,
 	"player_healed": -22.0,
+	# v0.9.367 — scratch-off cues tuned ~4.5dB lower than equivalent generic
+	# sounds (≈40% quieter) per playtest. Dedicated players so adjusting these
+	# doesn't ripple into other systems (rare drops, combat, etc.).
+	"scratch": -22.0,
+	"scratch_jackpot": -26.5,
+	"scratch_dud": -26.5,
+	"scratch_miss": -27.5,
 }
 
 # ===== COMPANION ABILITIES (mirrored from drop_tables.gd) =====
@@ -1806,6 +1829,13 @@ func _ready():
 	stones_panel.close_requested.connect(_on_stones_panel_close)
 	stones_panel.buy_requested.connect(_on_stones_panel_buy)
 
+	# Audit #7 Slice 1D — themed visual scratch-off ticket panel.
+	scratch_off_panel = ScratchOffPanelScript.new()
+	add_child(scratch_off_panel)
+	scratch_off_panel.slot_clicked.connect(_on_scratch_off_slot_clicked)
+	scratch_off_panel.slot_missed.connect(_on_scratch_off_slot_missed)
+	scratch_off_panel.auto_skip_toggled.connect(_on_scratch_off_auto_skip_toggled)
+
 	# Audit #3 Slice 1 (UI remediation) — stat allocation panel.
 	stats_panel = StatsPanelScript.new()
 	add_child(stats_panel)
@@ -2029,6 +2059,10 @@ func _init_sound_players():
 	loot_vanish_player = _create_sfx_player("res://audio/LootVanish.wav", "loot_vanish")
 	player_buffed_player = _create_sfx_player("res://audio/PlayerBuffed.wav", "player_buffed")
 	player_healed_player = _create_sfx_player("res://audio/PlayerHealed.wav", "player_healed")
+	scratch_player = _create_sfx_player("res://audio/UI01.wav", "scratch")
+	scratch_jackpot_player = _create_sfx_player("res://audio/GemGain.wav", "scratch_jackpot")
+	scratch_dud_player = _create_sfx_player("res://audio/LootVanish.wav", "scratch_dud")
+	scratch_miss_player = _create_sfx_player("res://audio/Hit.wav", "scratch_miss")
 
 func _create_sfx_player(wav_path: String, volume_key: String) -> AudioStreamPlayer:
 	"""Create an AudioStreamPlayer with a WAV file and base volume"""
@@ -2204,6 +2238,10 @@ func _apply_volume_settings():
 		"loot_vanish": loot_vanish_player,
 		"player_buffed": player_buffed_player,
 		"player_healed": player_healed_player,
+		"scratch": scratch_player,
+		"scratch_jackpot": scratch_jackpot_player,
+		"scratch_dud": scratch_dud_player,
+		"scratch_miss": scratch_miss_player,
 	}
 	for key in sfx_players:
 		var player = sfx_players[key]
@@ -3013,18 +3051,34 @@ func _process(delta):
 		else:
 			set_meta("combatitem_next_pressed", false)
 
-	# v0.9.358 — scratch-off ticket: number keys 1-N scratch a specific slot.
-	if game_state == GameState.PLAYING and not input_field.has_focus() and scratch_off_mode:
-		for i in range(min(scratch_off_slot_count, 5)):
-			if is_item_select_key_pressed(i):
-				if not get_meta("scratchoff_slot_%d_pressed" % i, false):
-					set_meta("scratchoff_slot_%d_pressed" % i, true)
-					_consume_item_select_key(i)
-					# Only send if slot is still hidden.
-					if i < scratch_off_revealed_slots.size() and scratch_off_revealed_slots[i].is_empty():
-						_send_scratch_off_reveal(i)
-			else:
-				set_meta("scratchoff_slot_%d_pressed" % i, false)
+	# v0.9.360 — scratch-off auto-skip animation. Click-only via the panel;
+	# auto-skip fires reveals on a timer when enabled.
+	# v0.9.361 — initial delay + post-complete hold for readability.
+	# v0.9.363 — auto-skip rolls 50% MISS per pick (excluding pre-reveals).
+	# This approximates the target ~60% yield vs manual play after factoring
+	# in tool pre-reveals (which are always free). Send `miss: true` to the
+	# same handler so the server burns the scratch without revealing.
+	if scratch_off_mode and scratch_off_auto_skip and scratch_off_close_at == 0.0:
+		var now = Time.get_ticks_msec() / 1000.0
+		if now >= scratch_off_auto_next_at:
+			var hidden_indices: Array = []
+			for i in range(scratch_off_revealed_slots.size()):
+				if (scratch_off_revealed_slots[i] as Dictionary).is_empty():
+					hidden_indices.append(i)
+			if hidden_indices.size() > 0:
+				var pick = hidden_indices[randi() % hidden_indices.size()]
+				if randf() < 0.5:
+					send_to_server({"type": "scratch_off_reveal", "slot_index": pick, "miss": true})
+				else:
+					_send_scratch_off_reveal(pick)
+				scratch_off_auto_next_at = now + SCRATCH_OFF_AUTO_INTERVAL
+
+	# v0.9.361 — pending panel close (lets player see the final ticket state).
+	if scratch_off_close_at > 0.0:
+		var now2 = Time.get_ticks_msec() / 1000.0
+		if now2 >= scratch_off_close_at:
+			scratch_off_close_at = 0.0
+			_finalize_scratch_off_close()
 
 	# Companion activation with keybinds (1-5)
 	# Note: Don't check is_item_key_blocked_by_action_bar here - in companions_mode,
@@ -23363,37 +23417,49 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.358 changes
-	display_game("[color=#00FF00]v0.9.358[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Scratch-off slice 1C — true ticket mechanic: choose which slots to scratch[/color]")
-	display_game("  • [b]5-slot ticket, randomized pre-reveals[/b]: the card now has 5 slots in a row. Your fishing rod's pre-reveals land at [b]random[/b] positions, not always the first N — it feels like a real scratch-off where some squares come pre-rubbed.")
-	display_game("  • [b]Player chooses which slots to scratch[/b]: you get [color=#FFD700]2 scratches[/color] (base). Press [b]1-5[/b] to scratch a specific slot. Unscratched slots are [color=#808080]lost loot[/color] — at session end you see what you left on the ticket. Choice now matters.")
-	display_game("  • [b]Tool durability is consumed[/b] on session start (was silently free pre-v0.9.358 — a bug). Your rod chips by 1 per cast like other gathering tools.")
-	display_game("  • [b]Better deploy hygiene[/b]: SFTP held the server binary file open mid-deploy, causing v0.9.357 to silently run from a stale binary. The on-disk binary's hash is now verified against the local build before declaring the deploy done.")
+	# v0.9.368 changes
+	display_game("[color=#00FF00]v0.9.368[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Scratch-off polish — wavy water bar, tool tuning, audio, hit-zone glow, miss feedback[/color]")
+	display_game("  • [b]Timing minigame[/b]: a [color=#7AD8FF]wavy water bar[/color] sweeps across the card. Click a silhouette while the wave is over it to scratch successfully. Mistime it and the slot becomes a red [color=#FF6B6B]✗ MISS[/color] showing what you lost (\"Lost: Small Fish\") with a shake animation. Hidden cards under the wave glow cyan so the live hit-zone is obvious.")
+	display_game("  • [b]Better rods make it easier[/b]: tier + rarity now scale how slow and wide the wave is. T1 baseline → T5 has the wave moving 40%% slower and twice as wide. Legendary rods stack another -20%% speed / +40%% width on top.")
+	display_game("  • [b]Reveal animations[/b]: successful scratches scale-pop the card; misses shake. Audio cues — light scratch (NORMAL/LUCKY), gem-chime (JACKPOT), loot-vanish (DUD), thud (MISS). Tuned ~40%% quieter than the equivalent generic sounds.")
+	display_game("  • [b]Auto-skip yields ~60%% of manual[/b]: each auto-pick has a 50%% miss chance (excluding free tool pre-reveals). Manual play rewards your time + skill.")
+	display_game("  • [b]Summary splits[/b] timing misses from unscratched slots — you can see how you actually performed.")
 	display_game("")
 
-	# v0.9.357 changes
-	display_game("[color=#00FFFF]v0.9.357[/color]")
-	display_game("  [color=#FFD700]Scratch-off slice 1B — slot variety + tool pre-reveals[/color]")
-	display_game("  • [b]Slot variety[/b]: every slot now rolls a kind — [color=#1EFF00]LUCKY[/color] (2× the catch), [color=#FFD700]JACKPOT[/color] (forced rare/treasure), [color=#606060]DUD[/color] (empty, small XP), or NORMAL. Base distribution 70/15/5/10; fishing skill biases DUD down + JACKPOT up over time. Lottery-ticket tension is now in the mechanic.")
-	display_game("  • [b]Tools = pre-reveals[/b]: equip a Fishing Rod with [color=#9ACD32]tool_bonuses.reveals = N[/color] and N slots are pre-revealed when the card appears. Better rods reveal more.")
-	display_game("  • [b]Skill XP bonuses[/b]: LUCKY slots grant 1.5× XP, JACKPOT 2× XP. DUD still grants a token 3 XP so a bad card isn't a full waste.")
+	# v0.9.363 changes
+	display_game("[color=#00FFFF]v0.9.363[/color]")
+	display_game("  [color=#FFD700]Scratch-off slice 1F — timing minigame foundation[/color]")
+	display_game("  • [b]Click the silhouette while the wave is over it.[/b] Click outside the wave's reach and that scratch is burned. Choice still matters; now timing matters too.")
+	display_game("  • [b]Server diagnostics added[/b] (background) to identify the cause of intermittent ~5s freezes. No player-facing change.")
 	display_game("")
 
-	# v0.9.355 changes
-	display_game("[color=#00FFFF]v0.9.355[/color]")
-	display_game("  [color=#FFD700]Scratch-off routing fixes + gear-banner cleanup[/color]")
-	display_game("  • [b]Scratch-off now actually fires.[/b] v0.9.354's branch checked [color=#9ACD32]world_system.get_fishing_type()[/color], which uses the legacy radial-terrain enum and returns \"\" in the chunked world — so the condition never matched. Routes via [color=#9ACD32]gathering_node.tier[/color] now (tier 1 = shallow). Also added the same branch to the bump-fishing path (walking into water tiles) since that's the more common entry point.")
-	display_game("  • [b]Gear callout no longer shows \"Unknown\".[/b] The drop_data array was sometimes populated with sound-FX-only entries ({is_egg: true} / {is_material: true}) that lacked a name field — those rendered as \"Unknown\" in v0.9.353's gear banner. Client now filters entries with no name; server's party-combat path also now includes name/symbol/color in drop_data for consistency.")
+	# v0.9.361 changes
+	display_game("[color=#00FFFF]v0.9.361[/color]")
+	display_game("  [color=#FFD700]Scratch-off slice 1E hotfix — pacing + visible auto-skip toggle[/color]")
+	display_game("  • [b]The card now stays open long enough to see it.[/b] v0.9.360 auto-skipped in ~0.5s — too fast to see the toggle. Now the card opens, you have 0.8s to read the state; reveals fire every 0.6s; the panel holds 1.5s after the last reveal.")
+	display_game("  • [b]Auto-skip toggle is much more prominent.[/b] Big orange [color=#FFAA33]⏸ STOP AUTO-SKIP[/color] button when in auto mode, big green [color=#9ACD32]▶ Auto-Skip[/color] button when idle.")
 	display_game("")
 
-	# v0.9.354 changes
-	display_game("[color=#00FFFF]v0.9.354[/color]")
-	display_game("  [color=#FFD700]Audit #7 Slice 1A — scratch-off fishing prototype + fresh map[/color]")
-	display_game("  • [b]Shallow-water fishing is now a 3-slot scratch-off card.[/b] Cast in shallow water → see 3 hidden slots. Press [color=#9ACD32][%s][/color] to reveal each. Items added on full reveal. Replaces the wait→react minigame for shallow water [b]only[/b] — deep water, mining, logging, foraging are unchanged this slice." % get_action_key_name(0))
-	display_game("  • [b]Why prototype-style:[/b] this is the proof-of-concept slice for the locked Audit #7 direction (replace rote reaction minigame with card-reveal mechanic). If it feels good, future slices add per-system twists (timing gates for fishing, hardness for mining, multi-pull for logging, time-of-day for foraging), bonus/dud/multiplier slots, and skill-affects-deck.")
-	display_game("  • [b]Server map wiped + post locations randomized.[/b] Accounts, characters, market listings, Sanctuaries, leaderboards, clans all preserved. Only the overworld terrain + NPC post positions regenerated. Your character's position was reset to origin (0, 0) so you don't spawn inside a freshly-grown mountain.")
+	# v0.9.360 changes
+	display_game("[color=#00FFFF]v0.9.360[/color]")
+	display_game("  [color=#FFD700]Scratch-off slice 1E — 16 scattered slots + auto-skip[/color]")
+	display_game("  • [b]16 slots in random positions[/b]: the ticket is no longer a row. 16 silhouettes are scattered across a jittered 4x4 layout — feels like a real scratch-off card. Click any silhouette to scratch it.")
+	display_game("  • [b]Skill-scaling scratches[/b]: you start with 2 picks and gain +1 per 25 fishing levels (cap 8). With 16 slots, even a max-skill player + pre-reveal rod still has real choice room.")
+	display_game("  • [b]Auto-Skip toggle on the panel[/b]: mirrors your Settings [color=#9ACD32][Skip Gather Minigame][/color] preference — they stay in sync.")
+	display_game("  • [b]Click-only input[/b]: keyboard 1-5 is dropped (slot positions are random now). Mouse only.")
 	display_game("")
+
+	# v0.9.359 changes
+	display_game("[color=#00FFFF]v0.9.359[/color]")
+	display_game("  [color=#FFD700]Scratch-off slice 1D — themed visual ticket panel[/color]")
+	display_game("  • [b]Real-looking scratch-off card.[/b] The text-and-brackets layout is replaced with a themed Control panel — deep-water blue background, cyan trim, slot cards arranged in a row. Hidden slots show ripple lines + a fish silhouette + the slot number. Revealed slots show a colored card with the kind label (◆ / ★ LUCKY / ★★★ JACKPOT / ✗ EMPTY) and the catch name.")
+	display_game("  • [b]Slot cards are clickable.[/b] Click a hidden slot to scratch it, or press [b]1-5[/b] — both routes still work. Cursor changes to a pointer over hidden slots.")
+	display_game("")
+
+
+
+
 
 
 
@@ -29171,17 +29237,64 @@ func handle_scratch_off_start(message: Dictionary) -> void:
 	set_meta("scratchoff_tool_name", String(message.get("tool_name", "")))
 	set_meta("scratchoff_pre_reveals", pre_revealed_count)
 	set_meta("scratchoff_scratches_remaining", int(message.get("scratches_remaining", 2)))
+	# v0.9.363 — tool-scaled timing minigame knobs.
+	set_meta("scratchoff_bar_speed_mult", float(message.get("bar_speed_mult", 1.0)))
+	set_meta("scratchoff_bar_width_mult", float(message.get("bar_width_mult", 1.0)))
+	# v0.9.360 — pick up the server-side auto-skip flag (mirrors character.skip_gather_minigame).
+	# v0.9.361 — initial delay so the player can see the card + click the toggle to halt.
+	scratch_off_auto_skip = bool(message.get("auto_skip", false))
+	scratch_off_auto_next_at = (Time.get_ticks_msec() / 1000.0) + SCRATCH_OFF_AUTO_INITIAL_DELAY
+	scratch_off_close_at = 0.0
 	_render_scratch_off_panel()
 	update_action_bar()
 
 func handle_scratch_off_revealed(message: Dictionary) -> void:
-	"""Server reveals one slot. Update the local view + redraw."""
+	"""Server reveals or misses one slot. v0.9.363: `miss: true` marks the
+	slot as scratched-and-missed — burned the scratch but no item. Stored
+	as a special MISS kind so the panel renders a distinct visual.
+	v0.9.366: audio cues per outcome."""
 	var slot_index = int(message.get("slot_index", 0))
-	var item = message.get("item", {})
+	var is_miss: bool = bool(message.get("miss", false))
+	var item: Dictionary = message.get("item", {})
 	if slot_index >= 0 and slot_index < scratch_off_revealed_slots.size():
-		scratch_off_revealed_slots[slot_index] = item
+		if is_miss:
+			# v0.9.368 — preserve the lost item info so the MISS card can
+			# show what slipped away ("Lost: Small Fish") for punchier feedback.
+			var lost_kind = String(item.get("kind", "NORMAL"))
+			var lost_name = String(item.get("name", "?"))
+			scratch_off_revealed_slots[slot_index] = {
+				"kind": "MISS",
+				"name": "Missed",
+				"type": "miss",
+				"lost_kind": lost_kind,
+				"lost_name": lost_name,
+			}
+		else:
+			scratch_off_revealed_slots[slot_index] = item
 	set_meta("scratchoff_scratches_remaining", int(message.get("scratches_remaining", 0)))
+	_play_scratch_off_cue(is_miss, item)
 	_render_scratch_off_panel()
+
+
+func _play_scratch_off_cue(is_miss: bool, item: Dictionary) -> void:
+	"""Pick the right audio player for the reveal outcome. v0.9.367:
+	dedicated scratch_* players (lower base volume) so the minigame doesn't
+	share volume tuning with rare drops / combat / loot vanish."""
+	if is_miss:
+		if scratch_miss_player and scratch_miss_player.stream:
+			scratch_miss_player.play()
+		return
+	var kind: String = String(item.get("kind", "NORMAL"))
+	match kind:
+		"JACKPOT":
+			if scratch_jackpot_player and scratch_jackpot_player.stream:
+				scratch_jackpot_player.play()
+		"DUD":
+			if scratch_dud_player and scratch_dud_player.stream:
+				scratch_dud_player.play()
+		_:  # NORMAL or LUCKY — light scratch sound
+			if scratch_player and scratch_player.stream:
+				scratch_player.play()
 
 func handle_scratch_off_complete(message: Dictionary) -> void:
 	"""All scratches spent + items committed. Show summary including missed
@@ -29219,24 +29332,27 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 				var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
 				display_game("  [color=%s]◆ %s[/color]" % [color, String(slot.get("name", "?"))])
 	if missed.size() > 0:
-		display_game("")
-		display_game("[color=#808080]Left on the ticket:[/color]")
+		# v0.9.366 — split timing misses from unscratched. Server tags each
+		# entry with `cause: "miss"` or `"unscratched"`. Older payloads
+		# without the field default to the legacy combined bucket.
+		var miss_entries: Array = []
+		var unscratched_entries: Array = []
 		for slot in missed:
-			var mkind = String(slot.get("kind", "NORMAL"))
-			var mname = String(slot.get("name", "?"))
-			var glyph = "·"
-			var color = "#505050"
-			match mkind:
-				"DUD":
-					glyph = "·"
-					mname = "Empty"
-				"LUCKY":
-					glyph = "★"
-					color = "#3A6A3A"
-				"JACKPOT":
-					glyph = "★★★"
-					color = "#806020"
-			display_game("  [color=%s]%s %s[/color]" % [color, glyph, mname])
+			var cause = String(slot.get("cause", "unscratched"))
+			if cause == "miss":
+				miss_entries.append(slot)
+			else:
+				unscratched_entries.append(slot)
+		if miss_entries.size() > 0:
+			display_game("")
+			display_game("[color=#FF6B6B]Missed (timing):[/color]")
+			for slot in miss_entries:
+				_render_missed_line(slot)
+		if unscratched_entries.size() > 0:
+			display_game("")
+			display_game("[color=#808080]Unscratched (ran out):[/color]")
+			for slot in unscratched_entries:
+				_render_missed_line(slot)
 	display_game("")
 	if xp_gained > 0:
 		display_game("[color=#FF8800]+%d Fishing XP[/color]" % xp_gained)
@@ -29245,65 +29361,110 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 	display_game("")
 	display_game("[color=#808080]Move away or step back onto the water to fish again.[/color]")
 
+	# v0.9.361 — hold the panel open briefly so player sees the final state
+	# (all revealed slots) before it closes. _process polls scratch_off_close_at
+	# and runs _finalize_scratch_off_close() when the hold elapses.
+	scratch_off_close_at = (Time.get_ticks_msec() / 1000.0) + SCRATCH_OFF_POST_COMPLETE_HOLD
+	# Refresh once more so the panel's "Cashing in..." footer + revealed slots
+	# show during the hold. Auto-pick loop is gated on close_at == 0.
+	_render_scratch_off_panel()
+	update_action_bar()
+
+func _render_missed_line(slot: Dictionary) -> void:
+	"""Single line in the missed/unscratched summary list (v0.9.366)."""
+	var mkind = String(slot.get("kind", "NORMAL"))
+	var mname = String(slot.get("name", "?"))
+	var glyph = "·"
+	var color = "#505050"
+	match mkind:
+		"DUD":
+			glyph = "·"
+			mname = "Empty"
+		"LUCKY":
+			glyph = "★"
+			color = "#3A6A3A"
+		"JACKPOT":
+			glyph = "★★★"
+			color = "#806020"
+	display_game("  [color=%s]%s %s[/color]" % [color, glyph, mname])
+
+
+func _finalize_scratch_off_close() -> void:
+	"""Clear scratch-off state + close the panel. Runs after the post-complete
+	hold so player has seen the final ticket state."""
 	scratch_off_mode = false
 	scratch_off_slot_count = 0
 	scratch_off_revealed_slots = []
 	scratch_off_job_type = ""
 	scratch_off_water_type = ""
+	scratch_off_auto_skip = false
+	scratch_off_auto_next_at = 0.0
+	if scratch_off_panel:
+		scratch_off_panel.close()
 	update_action_bar()
 
 func _render_scratch_off_panel() -> void:
-	"""v0.9.358 ticket render: 5 slots in a row, each with its scratch-number
-	below. Hidden slots show [?]; revealed show their kind label. Scratch
-	budget remaining shown below the row."""
-	game_output.clear()
-	display_game("[color=#00BFFF]═══ FISHING — Scratch-Off Ticket ═══[/color]")
-	display_game("")
-	display_game("[color=#808080]Cast in %s water. Choose which slots to scratch.[/color]" % scratch_off_water_type)
-	var tool_name = String(get_meta("scratchoff_tool_name", ""))
-	var pre_reveals = int(get_meta("scratchoff_pre_reveals", 0))
-	if pre_reveals > 0 and tool_name != "":
-		display_game("[color=#C4A882]Your %s pre-revealed %d slot%s.[/color]" % [tool_name, pre_reveals, "s" if pre_reveals != 1 else ""])
-	display_game("")
-	var slot_row: Array = []
-	var num_row: Array = []
-	for i in range(scratch_off_revealed_slots.size()):
-		var slot = scratch_off_revealed_slots[i]
-		if slot.is_empty():
-			slot_row.append("[color=#808080][   ?   ][/color]")
-			num_row.append("[color=#FFD700]   %d   [/color]" % (i + 1))
-		else:
-			slot_row.append(_format_scratch_off_slot(slot))
-			# Pad to same width as the "?" placeholder for alignment.
-			num_row.append("[color=#404040]   —   [/color]")
-	display_game("  " + "  ".join(slot_row))
-	display_game("  " + "  ".join(num_row))
-	display_game("")
-	var scratches_remaining = int(get_meta("scratchoff_scratches_remaining", 0))
-	if scratches_remaining > 0:
-		display_game("[color=#FFD700]Scratches remaining: %d — press [1-%d] to scratch a slot.[/color]" % [scratches_remaining, scratch_off_slot_count])
+	"""v0.9.359: hand off to the themed visual panel (scratch_off_panel.gd).
+	Builds a snapshot Dictionary from local state and calls open()/refresh().
+	v0.9.360: panel is click-only (random positions); auto_skip plumbed
+	through so the toggle button reflects current state."""
+	if scratch_off_panel == null:
+		return
+	var snapshot := {
+		"job_type": scratch_off_job_type,
+		"water_type": scratch_off_water_type,
+		"tool_name": String(get_meta("scratchoff_tool_name", "")),
+		"pre_reveals": int(get_meta("scratchoff_pre_reveals", 0)),
+		"scratches_remaining": int(get_meta("scratchoff_scratches_remaining", 0)),
+		"slot_count": scratch_off_slot_count,
+		"slots": scratch_off_revealed_slots,
+		"auto_skip": scratch_off_auto_skip,
+		"bar_speed_mult": float(get_meta("scratchoff_bar_speed_mult", 1.0)),
+		"bar_width_mult": float(get_meta("scratchoff_bar_width_mult", 1.0)),
+	}
+	if scratch_off_panel.visible:
+		scratch_off_panel.refresh(snapshot)
 	else:
-		display_game("[color=#00FF00]Cashing in...[/color]")
+		scratch_off_panel.open(snapshot)
 
-func _format_scratch_off_slot(slot: Dictionary) -> String:
-	"""Format a single revealed slot label based on its kind for the
-	text-based scratch-off panel. Visual variety is the lottery-ticket
-	feel hook — DUD reads as a clear loss, JACKPOT as a clear win."""
-	var kind = String(slot.get("kind", "NORMAL"))
-	match kind:
-		"DUD":
-			return "[color=#606060][ ✗ Empty ][/color]"
-		"LUCKY":
-			var name = String(slot.get("name", "?"))
-			var qty = int(slot.get("quantity", 2))
-			return "[color=#1EFF00][ ★ %dx %s ][/color]" % [qty, name]
-		"JACKPOT":
-			var jname = String(slot.get("name", "?"))
-			return "[color=#FFD700][ ★★★ %s ★★★ ][/color]" % jname
-		_:  # NORMAL
-			var nname = String(slot.get("name", "?"))
-			var color = _scratch_off_color_for_type(String(slot.get("type", "fish")))
-			return "[color=%s][ %s ][/color]" % [color, nname]
+
+func _on_scratch_off_slot_clicked(slot_index: int) -> void:
+	"""Click route into the scratch-off panel. Only send if the slot is
+	still hidden + we're in mode."""
+	if not scratch_off_mode:
+		return
+	if slot_index < 0 or slot_index >= scratch_off_revealed_slots.size():
+		return
+	if not (scratch_off_revealed_slots[slot_index] as Dictionary).is_empty():
+		return
+	_send_scratch_off_reveal(slot_index)
+
+
+func _on_scratch_off_slot_missed(slot_index: int) -> void:
+	"""v0.9.363 — timing minigame miss. Player clicked a hidden slot but the
+	bar wasn't over it. Burns one scratch without revealing — server marks
+	the slot as scratched-and-missed."""
+	if not scratch_off_mode:
+		return
+	if slot_index < 0 or slot_index >= scratch_off_revealed_slots.size():
+		return
+	if not (scratch_off_revealed_slots[slot_index] as Dictionary).is_empty():
+		return
+	send_to_server({"type": "scratch_off_reveal", "slot_index": slot_index, "miss": true})
+
+
+func _on_scratch_off_auto_skip_toggled(value: bool) -> void:
+	"""Panel's Auto-Skip button click. Updates local state immediately so
+	the auto-pick loop reacts on the next tick, persists the preference
+	via setting_change (matches legacy /skipgather + Settings toggle), and
+	refreshes the panel so the footer hint updates."""
+	scratch_off_auto_skip = value
+	scratch_off_auto_next_at = 0.0
+	# Mirror to character_data so the legacy Settings toggle stays in sync.
+	if character_data is Dictionary:
+		character_data["skip_gather_minigame"] = value
+	send_to_server({"type": "setting_change", "setting": "skip_gather_minigame", "value": value})
+	_render_scratch_off_panel()
 
 func _scratch_off_color_for_type(t: String) -> String:
 	match t:

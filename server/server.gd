@@ -166,6 +166,14 @@ var _world_threat_states: Dictionary = {}
 var _world_threat_refresh_timer: float = 0.0
 const WORLD_THREAT_REFRESH_INTERVAL = 3.0
 
+# v0.9.362 — diagnostic timing. Logs hot-path timings to identify the
+# cause of intermittent ~5s freezes reported by players. Flip to false
+# once the culprit is identified + fixed.
+const DIAG_TIMING_ENABLED := true
+const DIAG_FRAME_SPIKE_MS := 100  # log frame if any tick exceeds this
+const DIAG_THREAT_SCAN_SPIKE_MS := 50  # log frame if cumulative threat scan exceeds this
+var _diag_threat_scan_us_this_frame: int = 0
+
 
 # Combat command rate limiting (peer_id -> last command time in msec)
 var combat_command_cooldown: Dictionary = {}
@@ -817,6 +825,12 @@ func update_player_list():
 				])
 
 func _process(delta):
+	# v0.9.362 — diagnostic: detect frame spikes that could cause client freezes.
+	var _diag_frame_start_us: int = 0
+	if DIAG_TIMING_ENABLED:
+		_diag_frame_start_us = Time.get_ticks_usec()
+		_diag_threat_scan_us_this_frame = 0
+
 	# Hotfix v0.9.344 — clear the per-tick threat-state cache at the start of
 	# each frame so _compute_post_threat_state recomputes at most once per
 	# unique post per tick. handle_move + map renders + market handlers all
@@ -830,7 +844,14 @@ func _process(delta):
 	_world_threat_refresh_timer += delta
 	if _world_threat_refresh_timer >= WORLD_THREAT_REFRESH_INTERVAL:
 		_world_threat_refresh_timer = 0.0
-		_refresh_world_threat_states()
+		if DIAG_TIMING_ENABLED:
+			var _refresh_start_us = Time.get_ticks_usec()
+			_refresh_world_threat_states()
+			var _refresh_ms = (Time.get_ticks_usec() - _refresh_start_us) / 1000.0
+			if _refresh_ms > 25.0:  # only log if non-trivial
+				log_message("Diag: _refresh_world_threat_states took %.1fms (posts=%d dungeons=%d)" % [_refresh_ms, (chunk_manager.npc_posts.size() if chunk_manager else 0), active_dungeons.size()])
+		else:
+			_refresh_world_threat_states()
 
 	# v0.9.346 — flush at most one throttled character save per tick. Spreads
 	# disk I/O over many frames instead of letting bursts hit synchronously.
@@ -840,7 +861,14 @@ func _process(delta):
 	auto_save_timer += delta
 	if auto_save_timer >= AUTO_SAVE_INTERVAL:
 		auto_save_timer = 0.0
-		save_all_active_characters()
+		if DIAG_TIMING_ENABLED:
+			var _save_start_us = Time.get_ticks_usec()
+			var _char_count = characters.size()
+			save_all_active_characters()
+			var _save_ms = (Time.get_ticks_usec() - _save_start_us) / 1000.0
+			log_message("Diag: save_all_active_characters took %.1fms for %d chars" % [_save_ms, _char_count])
+		else:
+			save_all_active_characters()
 
 	# Player list update timer (refresh display periodically)
 	player_list_update_timer += delta
@@ -1038,6 +1066,16 @@ func _process(delta):
 	if security_check_timer >= SECURITY_CHECK_INTERVAL:
 		security_check_timer = 0.0
 		_check_stale_connections()
+
+	# v0.9.362 — diagnostic: log frame spikes. If a single _process tick
+	# exceeds DIAG_FRAME_SPIKE_MS, log total time + threat-scan portion +
+	# active counts. This is the symptom-side check for the ~5s freeze
+	# reports — a sustained run of spikes here pinpoints the cause.
+	if DIAG_TIMING_ENABLED:
+		var _frame_ms = (Time.get_ticks_usec() - _diag_frame_start_us) / 1000.0
+		if _frame_ms >= DIAG_FRAME_SPIKE_MS:
+			var _threat_ms = _diag_threat_scan_us_this_frame / 1000.0
+			log_message("Diag: FRAME SPIKE %.1fms (threat_scan=%.1fms, peers=%d, dungeons=%d, posts=%d)" % [_frame_ms, _threat_ms, characters.size(), active_dungeons.size(), (chunk_manager.npc_posts.size() if chunk_manager else 0)])
 
 func process_buffer(peer_id: int):
 	var peer_data = peers[peer_id]
@@ -14556,8 +14594,14 @@ func _build_scratch_off_slot(kind: String, water_type: String, skill: int) -> Di
 		"quantity": quantity,
 	}
 
-const SCRATCH_OFF_SLOT_COUNT = 5
+const SCRATCH_OFF_SLOT_COUNT = 16
 const SCRATCH_OFF_BASE_SCRATCHES = 2
+const SCRATCH_OFF_MAX_SCRATCHES = 8
+
+func _compute_scratch_budget(skill: int) -> int:
+	"""v0.9.360 — skill-scaling scratch budget. 2 base + 1 per 25 skill, cap 8.
+	With 16 slots, this keeps real choice room even at high skill."""
+	return clampi(SCRATCH_OFF_BASE_SCRATCHES + int(skill / 25), SCRATCH_OFF_BASE_SCRATCHES, SCRATCH_OFF_MAX_SCRATCHES)
 
 func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
 	"""Audit #7 Slice 1A / 1B / 1C — scratch-off fishing.
@@ -14575,6 +14619,7 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 	- 1B (v0.9.357): slot variety (NORMAL / LUCKY / JACKPOT / DUD)."""
 	var fishing_skill = int(character.job_levels.get("fishing", 1))
 	var slot_count = SCRATCH_OFF_SLOT_COUNT
+	var scratch_budget = _compute_scratch_budget(fishing_skill)
 	var slots: Array = []
 	for i in range(slot_count):
 		var kind = _roll_scratch_off_slot_kind(fishing_skill)
@@ -14612,7 +14657,8 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 		"tier": 1,
 		"slots": slots,
 		"revealed_positions": pre_revealed_positions.duplicate(),
-		"scratches_remaining": SCRATCH_OFF_BASE_SCRATCHES,
+		"miss_positions": [],  # v0.9.366 — timing misses for summary split
+		"scratches_remaining": scratch_budget,
 		"node_x": gathering_node.get("node_x", character.x),
 		"node_y": gathering_node.get("node_y", character.y),
 	}
@@ -14626,19 +14672,36 @@ func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gat
 		else:
 			initial_slots.append({})
 
+	# v0.9.363 — tool stats for the timing minigame. Tools may set
+	# tool_bonuses.bar_speed_mult (lower = slower bar = easier) and
+	# tool_bonuses.bar_width_mult (higher = wider target column = easier).
+	# Defaults are 1.0 if a tool doesn't define them — backwards-compatible.
+	var bar_speed_mult: float = 1.0
+	var bar_width_mult: float = 1.0
+	if not tool.is_empty():
+		var tb2 = tool.get("tool_bonuses", {})
+		bar_speed_mult = float(tb2.get("bar_speed_mult", 1.0))
+		bar_width_mult = float(tb2.get("bar_width_mult", 1.0))
+
 	send_to_peer(peer_id, {
 		"type": "scratch_off_start",
 		"job_type": "fishing",
 		"water_type": water_type,
 		"slot_count": slot_count,
 		"initial_slots": initial_slots,
-		"scratches_remaining": SCRATCH_OFF_BASE_SCRATCHES,
+		"scratches_remaining": scratch_budget,
 		"tool_name": String(tool.get("name", "")) if not tool.is_empty() else "",
+		"auto_skip": bool(character.skip_gather_minigame),
+		"bar_speed_mult": bar_speed_mult,
+		"bar_width_mult": bar_width_mult,
 	})
 
 func handle_scratch_off_reveal(peer_id: int, message: Dictionary) -> void:
-	"""Reveal a specific slot the player chose. v0.9.358: takes slot_index;
-	decrements scratches_remaining; auto-completes when budget exhausted."""
+	"""Reveal or miss a specific slot. v0.9.358: takes slot_index; decrements
+	scratches_remaining; auto-completes when budget exhausted.
+	v0.9.363: a `miss: true` field decrements without revealing — the timing
+	minigame's miss path. Client decides hit/miss (it knows the bar position).
+	"""
 	if not characters.has(peer_id):
 		return
 	if not active_gathering.has(peer_id):
@@ -14650,28 +14713,46 @@ func handle_scratch_off_reveal(peer_id: int, message: Dictionary) -> void:
 		return
 	var slots: Array = session.get("slots", [])
 	var slot_index: int = int(message.get("slot_index", -1))
+	var is_miss: bool = bool(message.get("miss", false))
 	if slot_index < 0 or slot_index >= slots.size():
 		return
 	var revealed_positions: Array = session.get("revealed_positions", [])
-	if slot_index in revealed_positions:
-		# Already revealed — ignore.
+	if not is_miss and slot_index in revealed_positions:
+		# Already revealed — ignore (only relevant for hits).
 		return
 	var scratches_remaining: int = int(session.get("scratches_remaining", 0))
 	if scratches_remaining <= 0:
 		_complete_scratch_off_fishing(peer_id)
 		return
-	# Reveal it.
-	revealed_positions.append(slot_index)
-	session["revealed_positions"] = revealed_positions
 	scratches_remaining -= 1
 	session["scratches_remaining"] = scratches_remaining
-	send_to_peer(peer_id, {
-		"type": "scratch_off_revealed",
-		"slot_index": slot_index,
-		"item": slots[slot_index],
-		"scratches_remaining": scratches_remaining,
-		"is_last": scratches_remaining == 0,
-	})
+	if is_miss:
+		# Burn the scratch; track in miss_positions so summary can show
+		# "Missed (timing)" separately from "Unscratched (ran out)".
+		# v0.9.368 — include the actual slot data so the client can show
+		# the player WHAT they lost ("Lost: Small Fish") for punchier feedback.
+		var miss_positions: Array = session.get("miss_positions", [])
+		if not slot_index in miss_positions:
+			miss_positions.append(slot_index)
+			session["miss_positions"] = miss_positions
+		send_to_peer(peer_id, {
+			"type": "scratch_off_revealed",
+			"slot_index": slot_index,
+			"item": slots[slot_index],
+			"miss": true,
+			"scratches_remaining": scratches_remaining,
+			"is_last": scratches_remaining == 0,
+		})
+	else:
+		revealed_positions.append(slot_index)
+		session["revealed_positions"] = revealed_positions
+		send_to_peer(peer_id, {
+			"type": "scratch_off_revealed",
+			"slot_index": slot_index,
+			"item": slots[slot_index],
+			"scratches_remaining": scratches_remaining,
+			"is_last": scratches_remaining == 0,
+		})
 	if scratches_remaining == 0:
 		_complete_scratch_off_fishing(peer_id)
 
@@ -14687,16 +14768,22 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	var slots: Array = session.get("slots", [])
 	var revealed_positions: Array = session.get("revealed_positions", [])
 	var awarded: Array = []
-	var missed: Array = []  # v0.9.358 — slots player never scratched
+	var missed: Array = []  # v0.9.358 — slots player never scratched OR mistimed
+	var miss_positions: Array = session.get("miss_positions", [])
 	var total_xp: int = 0
 	for i in range(slots.size()):
 		var slot = slots[i]
 		if not (i in revealed_positions):
-			# Player never scratched this slot — show what they missed.
+			# Slot wasn't revealed. Either the player mistimed it (in
+			# miss_positions, scratch was burned) or they ran out of
+			# scratches (unscratched). Tag with `cause` so the client
+			# summary can split the lists.
+			var cause = "miss" if (i in miss_positions) else "unscratched"
 			missed.append({
 				"kind": String(slot.get("kind", "NORMAL")),
 				"name": String(slot.get("name", "?")),
 				"type": String(slot.get("type", "fish")),
+				"cause": cause,
 			})
 			continue
 		var kind: String = String(slot.get("kind", "NORMAL"))
@@ -22354,6 +22441,8 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	# Layer 2: per-tick cache (handles non-NPC-post queries + first-tick before refresh)
 	if _threat_state_cache.has(cache_key):
 		return _threat_state_cache[cache_key]
+	# v0.9.362 diag — accumulate uncached-scan time per frame to detect spikes.
+	var _diag_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
 	var threats: Array = []
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
@@ -22382,6 +22471,8 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 	if threats.is_empty():
 		var empty_result = {"threatened": false}
 		_threat_state_cache[cache_key] = empty_result
+		if DIAG_TIMING_ENABLED:
+			_diag_threat_scan_us_this_frame += Time.get_ticks_usec() - _diag_start_us
 		return empty_result
 	threats.sort_custom(func(a, b): return a.distance < b.distance)
 	var nearest = threats[0]
@@ -22395,6 +22486,8 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		"count": threats.size(),
 	}
 	_threat_state_cache[cache_key] = result
+	if DIAG_TIMING_ENABLED:
+		_diag_threat_scan_us_this_frame += Time.get_ticks_usec() - _diag_start_us
 	return result
 
 func _refresh_world_threat_states() -> void:

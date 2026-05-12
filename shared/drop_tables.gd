@@ -2977,12 +2977,25 @@ const TOOL_SUBTYPES = {
 const TOOL_DURABILITY_BY_TIER = {1: 20, 2: 50, 3: 100, 4: 150, 5: 200}
 
 # Rarity bonuses for tools: durability multiplier, saves per session, reveal bonus
+# v0.9.365 — bar_speed_delta (subtracted from speed mult) + bar_width_delta
+# (added to width mult) tune the Audit #7 scratch-off timing minigame.
+# Lower speed = slower bar = easier hit; higher width = wider target zone.
 const TOOL_RARITY_BONUSES = {
-	"common":    {"durability_mult": 1.0, "saves": 1, "reveal_bonus": 0},
-	"uncommon":  {"durability_mult": 1.2, "saves": 1, "reveal_bonus": 1},
-	"rare":      {"durability_mult": 1.5, "saves": 2, "reveal_bonus": 2},
-	"epic":      {"durability_mult": 2.0, "saves": 3, "reveal_bonus": 3},
-	"legendary": {"durability_mult": 2.5, "saves": 4, "reveal_bonus": 4},
+	"common":    {"durability_mult": 1.0, "saves": 1, "reveal_bonus": 0, "bar_speed_delta": 0.00, "bar_width_delta": 0.00},
+	"uncommon":  {"durability_mult": 1.2, "saves": 1, "reveal_bonus": 1, "bar_speed_delta": 0.05, "bar_width_delta": 0.10},
+	"rare":      {"durability_mult": 1.5, "saves": 2, "reveal_bonus": 2, "bar_speed_delta": 0.10, "bar_width_delta": 0.20},
+	"epic":      {"durability_mult": 2.0, "saves": 3, "reveal_bonus": 3, "bar_speed_delta": 0.15, "bar_width_delta": 0.30},
+	"legendary": {"durability_mult": 2.5, "saves": 4, "reveal_bonus": 4, "bar_speed_delta": 0.20, "bar_width_delta": 0.40},
+}
+
+# v0.9.365 — per-tier scratch-off bar tuning. T1 = baseline (1.00/1.00),
+# T5 = significant edge (0.60/2.10). Rarity adds on top via TOOL_RARITY_BONUSES.
+const TOOL_TIER_BAR_TUNING = {
+	1: {"bar_speed_mult": 1.00, "bar_width_mult": 1.00},
+	2: {"bar_speed_mult": 0.90, "bar_width_mult": 1.25},
+	3: {"bar_speed_mult": 0.80, "bar_width_mult": 1.50},
+	4: {"bar_speed_mult": 0.70, "bar_width_mult": 1.80},
+	5: {"bar_speed_mult": 0.60, "bar_width_mult": 2.10},
 }
 
 # Rarity bonuses for all craftable item types (weapons, armor, consumables, structures, enchantments)
@@ -3090,6 +3103,12 @@ static func generate_tool(subtype: String, tier: int, rarity: String = "common")
 	# Reveals scale with tier + rarity: base = ceil(tier/2), + rarity bonus
 	var base_reveals = ceili(tier / 2.0)  # T1-2: 1, T3-4: 2, T5: 3
 	var total_reveals = base_reveals + rarity_bonus["reveal_bonus"]
+	# v0.9.365 — scratch-off bar tuning. Tier defines the baseline; rarity
+	# shifts speed down + width up. Floors at 0.30 speed / caps at 3.0 width
+	# so legendaries don't trivialize the minigame.
+	var bar_tier = TOOL_TIER_BAR_TUNING.get(tier, TOOL_TIER_BAR_TUNING[1])
+	var bar_speed_mult = maxf(0.30, bar_tier["bar_speed_mult"] - float(rarity_bonus.get("bar_speed_delta", 0.0)))
+	var bar_width_mult = minf(3.00, bar_tier["bar_width_mult"] + float(rarity_bonus.get("bar_width_delta", 0.0)))
 	return {
 		"id": randi(),
 		"name": name,
@@ -3100,7 +3119,12 @@ static func generate_tool(subtype: String, tier: int, rarity: String = "common")
 		"max_durability": durability,
 		"rarity": rarity,
 		"max_saves": max_saves,
-		"tool_bonuses": {"reveals": total_reveals, "save": true},
+		"tool_bonuses": {
+			"reveals": total_reveals,
+			"save": true,
+			"bar_speed_mult": bar_speed_mult,
+			"bar_width_mult": bar_width_mult,
+		},
 		"value": tier * 25,
 	}
 
