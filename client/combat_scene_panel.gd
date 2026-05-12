@@ -2505,9 +2505,17 @@ func show_victory_card(rewards: Dictionary) -> void:
 	# entry per equipment item dropped this combat. Each entry carries
 	# {name, rarity, symbol, color, level} so we can render a prominent
 	# rarity-colored callout that won't blend into the generic loot list.
+	# v0.9.355 — filter out non-gear entries. drop_data is also populated
+	# with {is_egg: true} / {is_material: true} entries used for sound-FX
+	# routing — those don't have a `name` and would render as "Unknown".
+	# Real gear entries always carry a non-empty `name`.
 	for child in _victory_card_gear_vbox.get_children():
 		child.queue_free()
-	var gear_drops: Array = rewards.get("gear_drops", [])
+	var raw_drops: Array = rewards.get("gear_drops", [])
+	var gear_drops: Array = []
+	for entry in raw_drops:
+		if entry is Dictionary and String(entry.get("name", "")) != "":
+			gear_drops.append(entry)
 	if gear_drops.is_empty():
 		_victory_card_gear_banner.visible = false
 	else:

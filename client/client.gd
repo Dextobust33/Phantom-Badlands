@@ -23362,8 +23362,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.355 changes
+	display_game("[color=#00FF00]v0.9.355[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Scratch-off routing fixes + gear-banner cleanup[/color]")
+	display_game("  • [b]Scratch-off now actually fires.[/b] v0.9.354's branch checked [color=#9ACD32]world_system.get_fishing_type()[/color], which uses the legacy radial-terrain enum and returns \"\" in the chunked world — so the condition never matched. Routes via [color=#9ACD32]gathering_node.tier[/color] now (tier 1 = shallow). Also added the same branch to the bump-fishing path (walking into water tiles) since that's the more common entry point.")
+	display_game("  • [b]Gear callout no longer shows \"Unknown\".[/b] The drop_data array was sometimes populated with sound-FX-only entries ({is_egg: true} / {is_material: true}) that lacked a name field — those rendered as \"Unknown\" in v0.9.353's gear banner. Client now filters entries with no name; server's party-combat path also now includes name/symbol/color in drop_data for consistency.")
+	display_game("")
+
 	# v0.9.354 changes
-	display_game("[color=#00FF00]v0.9.354[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.354[/color]")
 	display_game("  [color=#FFD700]Audit #7 Slice 1A — scratch-off fishing prototype + fresh map[/color]")
 	display_game("  • [b]Shallow-water fishing is now a 3-slot scratch-off card.[/b] Cast in shallow water → see 3 hidden slots. Press [color=#9ACD32][%s][/color] to reveal each. Items added on full reveal. Replaces the wait→react minigame for shallow water [b]only[/b] — deep water, mining, logging, foraging are unchanged this slice." % get_action_key_name(0))
 	display_game("  • [b]Why prototype-style:[/b] this is the proof-of-concept slice for the locked Audit #7 direction (replace rote reaction minigame with card-reveal mechanic). If it feels good, future slices add per-system twists (timing gates for fishing, hardness for mining, multi-pull for logging, time-of-day for foraging), bonus/dud/multiplier slots, and skill-affects-deck.")
@@ -23384,13 +23391,6 @@ func display_changelog():
 	display_game("  • [b]Server optimization[/b]: the threat-state scan over all NPC posts (used by the map renderer to draw red \"!\" overlays + flip the at-post header to \"Under Threat\") used to run on every player move — iterating all 88+ active dungeons per post. Now precomputed once every 3 seconds in a background tick and cached. Movement responses don't pay for that work anymore. Acceptable staleness: threat banner may take up to 3s to flip when a new dungeon spawns near a post.")
 	display_game("")
 
-	# v0.9.351 changes
-	display_game("[color=#00FFFF]v0.9.351[/color]")
-	display_game("  [color=#FFD700]Server migration — Oracle Cloud → Hetzner Cloud (no more CPU throttling)[/color]")
-	display_game("  • [b]New server[/b]: Hetzner Cloud CPX11 ([color=#9ACD32]5.78.217.135[/color]) in Hillsboro, OR. 2 dedicated AMD EPYC vCPUs + 2GB RAM at $6.99/mo. Replaces Oracle Cloud's [color=#FFB6C1]1/8 OCPU Always Free[/color] which was credit-throttled — your character's hold-direction-for-1-second backlog of 5 seconds is gone.")
-	display_game("  • [b]Auto-migrate[/b]: existing clients pointing at Oracle ([color=#9ACD32]129.213.166.185[/color]) get flipped to the new IP on launch — no action needed. Your saved characters are intact (data was migrated to the new host).")
-	display_game("  • [b]~16× practical compute uplift[/b] for the moving-player path. The previous optimization plan (cache biome/weather/region, spatial-index dungeons) is deferred — Hetzner's headroom buys time to ship features instead. Will revisit if multi-player load reveals new hot spots.")
-	display_game("")
 
 
 
