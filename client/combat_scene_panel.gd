@@ -834,12 +834,16 @@ func _position_battlefield_overlay() -> void:
 	var bottom_pad: float = 0.0
 	var block_y: float = log_strip_h + log_gap
 	var block_h: float = overlay_h - block_y - bottom_pad
+	# v0.9.415 — per-user request, lift the player AND companion columns up
+	# by ~name-tag height so their ASCII / stats / name / log strip all sit
+	# a bit higher. Monster strip stays where it is.
+	var actor_lift: float = 22.0
 	if _overlay_player_block and is_instance_valid(_overlay_player_block):
-		_overlay_player_block.position = Vector2(edge_pad, block_y)
+		_overlay_player_block.position = Vector2(edge_pad, block_y - actor_lift)
 		_overlay_player_block.size = Vector2(block_w, block_h)
 		_overlay_player_block_baseline = _overlay_player_block.position
 	if _overlay_companion_block and is_instance_valid(_overlay_companion_block):
-		_overlay_companion_block.position = Vector2(rect.size.x - block_w - edge_pad, block_y)
+		_overlay_companion_block.position = Vector2(rect.size.x - block_w - edge_pad, block_y - actor_lift)
 		_overlay_companion_block.size = Vector2(block_w, block_h)
 		_overlay_companion_block_baseline = _overlay_companion_block.position
 
@@ -853,16 +857,17 @@ func _position_battlefield_overlay() -> void:
 	# offset DOWN so it sits further from the goblin's ASCII above.
 	var log_w_actor: float = block_w
 	var log_w_monster: float = block_w  # match the other two for visual rhythm
-	# v0.9.415 — all 3 strips at the same Y (top of overlay). User-requested
-	# vertical offsets caused more problems than they solved; keeping them
-	# aligned avoids monster strip drifting into ASCII zone.
 	var log_y_actor: float = 4.0
-	var log_y_monster: float = 4.0
+	# v0.9.415 — monster strip nudged DOWN by ~actor_lift so it sits further
+	# from the goblin's lower ASCII edge above it (matches the amount the
+	# player/companion columns were lifted upward).
+	var log_y_monster: float = 4.0 + actor_lift
 	if _overlay_player_log and is_instance_valid(_overlay_player_log):
-		_overlay_player_log.position = Vector2(edge_pad, log_y_actor)
+		# Same lift as the player block above so the column moves as one.
+		_overlay_player_log.position = Vector2(edge_pad, log_y_actor - actor_lift)
 		_overlay_player_log.size = Vector2(log_w_actor, log_strip_h)
 	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
-		_overlay_companion_log.position = Vector2(rect.size.x - log_w_actor - edge_pad, log_y_actor)
+		_overlay_companion_log.position = Vector2(rect.size.x - log_w_actor - edge_pad, log_y_actor - actor_lift)
 		_overlay_companion_log.size = Vector2(log_w_actor, log_strip_h)
 	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
 		# Anchor monster log horizontally under the monster art. _monster_col
@@ -889,9 +894,13 @@ func _populate_battlefield_overlay() -> void:
 	# Player ASCII — bumped font size for battlefield-scale.
 	# v0.9.415 — was +2; reduced to +1 so tall ASCII fits the block without
 	# vertical clipping. Block height is fixed and the bumped fonts overran.
+	# v0.9.415 — wrap in [center] so the ASCII sits over the centered HP bar
+	# (HP bar is anchored 0.12-0.88, ASCII previously left-aligned looked
+	# offset to the left of the bar).
 	if _overlay_player_ascii and is_instance_valid(_overlay_player_ascii):
 		if _player_ascii_label and is_instance_valid(_player_ascii_label):
-			_overlay_player_ascii.text = _bump_inline_font_size(_player_ascii_label.text, 1)
+			var p_bumped = _bump_inline_font_size(_player_ascii_label.text, 1)
+			_overlay_player_ascii.text = "[center]" + p_bumped + "[/center]"
 		else:
 			_overlay_player_ascii.text = ""
 	# Player HP bar + name.
@@ -3248,7 +3257,9 @@ func _spawn_miss_label(anchor_global: Vector2, color: Color = Color("#FFD93D")) 
 	label.add_theme_constant_override("outline_size", 6)
 	label.add_theme_font_size_override("font_size", 42)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.z_index = 110
+	# v0.9.415 — bumped from 110 to 130 so MISS draws in front of the
+	# battlefield overlay (z=100) and its log strips.
+	label.z_index = 130
 	add_child(label)
 	label.reset_size()
 	# Position relative to the panel (account for top_level coords).
@@ -3444,7 +3455,10 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	var label := Label.new()
 	label.text = ("-%d" % amount) if amount > 0 else "0"
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.z_index = 100
+	# v0.9.415 — bumped from 100 to 130 so damage popups draw in FRONT of
+	# the battlefield overlay (z_index 100) and its child log strips, not
+	# behind them.
+	label.z_index = 130
 	# v0.9.415 — display font: Fredoka Bold for normal hits, Bowlby One for
 	# crits (bigger visual impact on the harder hit). Falls back to default
 	# if a font is missing.
@@ -3496,15 +3510,18 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	t.tween_property(label, "theme_override_colors/font_color", color, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 	# Crit shake during early linger (small wobble).
+	# v0.9.415 — use the CLAMPED label.position as the shake base so the
+	# shake doesn't pull a clamped popup back above the panel top edge.
 	if is_crit:
+		var shake_base: Vector2 = label.position
 		var shake_amp := 4.0
 		var shake_count := 4
 		for i in range(shake_count):
 			var dt := 0.05
 			var dly := 0.20 + i * dt
 			var dir = Vector2(randf_range(-shake_amp, shake_amp), randf_range(-shake_amp, shake_amp))
-			t.tween_property(label, "position", local_anchor + dir, dt).set_delay(dly).set_trans(Tween.TRANS_SINE)
-		t.tween_property(label, "position", local_anchor, 0.05).set_delay(0.20 + shake_count * 0.05)
+			t.tween_property(label, "position", shake_base + dir, dt).set_delay(dly).set_trans(Tween.TRANS_SINE)
+		t.tween_property(label, "position", shake_base, 0.05).set_delay(0.20 + shake_count * 0.05)
 
 	# v0.9.415 — breathe pulse: gentle scale oscillation during linger so the
 	# number isn't completely static. Runs on its own tween in parallel.
