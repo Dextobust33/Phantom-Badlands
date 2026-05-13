@@ -1861,12 +1861,15 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 		var key = "%d,%d" % [bounty.get("x", -9999), bounty.get("y", -9999)]
 		bounty_positions[key] = bounty
 
-	# v0.9.428 — pre-fetch the `blocks_los` flag for every tile in the vision
-	# bounding box once. The previous LOS pre-compute did ~2640 chunk_manager.get_tile
-	# calls (377 visible tiles × ~7 intermediate Bresenham points each); the
-	# diag pull pinned LOS at 66-140ms per render. Pre-fetching the bounding
-	# box drops to ~529 get_tile calls (one per tile), and the LOS walker
-	# reads from the cache. Expected ~80% drop in LOS time → 13-30ms.
+	# v0.9.428 — pre-fetch tile data for every tile in the vision bounding box
+	# in one pass. Stores the full tile dict (not just blocks_los) so the
+	# per-tile render loop can read from the same cache instead of calling
+	# chunk_manager.get_tile again. Each get_tile call on an unmodified tile
+	# runs the full procedural-noise pipeline, so re-fetching the same tile
+	# is expensive. v0.9.429 diag: setup=50-62ms, render=34-42ms — render
+	# was paying generate_tile cost a SECOND time. With shared cache, render
+	# loop reads dict.
+	var tile_cache: Dictionary = {}
 	var blocks_los_cache: Dictionary = {}
 	if chunk_manager:
 		for dy_pf in range(-radius, radius + 1):
@@ -1874,13 +1877,14 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				var pf_x = center_x + dx_pf
 				var pf_y = center_y + dy_pf
 				var pf_tile = chunk_manager.get_tile(pf_x, pf_y)
+				var pf_key = "%d,%d" % [pf_x, pf_y]
+				tile_cache[pf_key] = pf_tile
 				var blocks = bool(pf_tile.get("blocks_los", false))
 				# Depleted gathering nodes don't block LOS (matches is_tile_visible).
 				if blocks and String(pf_tile.get("type", "")) in GATHERABLE_TYPES:
-					var dep_key = "%d,%d" % [pf_x, pf_y]
-					if depleted_set.has(dep_key):
+					if depleted_set.has(pf_key):
 						blocks = false
-				blocks_los_cache["%d,%d" % [pf_x, pf_y]] = blocks
+				blocks_los_cache[pf_key] = blocks
 	var _diag_setup_us: int = Time.get_ticks_usec() - _diag_setup_start
 
 	# Pre-compute LOS for all tiles in vision radius — now reads from the
@@ -1972,8 +1976,14 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				var merchant_char = _get_merchant_map_char(x, y)
 				line_parts.append("[color=%s] %s[/color]" % [merchant_color, merchant_char])
 			else:
-				# Render tile from chunk data
-				var tile = chunk_manager.get_tile(x, y)
+				# Render tile from chunk data — v0.9.430 uses the per-render
+				# cache populated in setup. Skips the procedural-noise pipeline
+				# that chunk_manager.get_tile runs for unmodified tiles. Cache
+				# miss only happens if the tile fell outside the bounding box
+				# (shouldn't, since we iterate the same box).
+				var tile = tile_cache.get(pos_key, null)
+				if tile == null:
+					tile = chunk_manager.get_tile(x, y)
 				var tile_type = tile.get("type", "empty")
 				var tile_tier = tile.get("tier", 1)
 				var is_depleted = depleted_set.has(pos_key)
