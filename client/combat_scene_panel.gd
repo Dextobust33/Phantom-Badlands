@@ -2360,9 +2360,23 @@ func clear_hand() -> void:
 
 func _build_picker_overlay() -> void:
 	"""Build the in-panel picker UI. Hidden by default; show via
-	show_item_picker() during combat_item_mode."""
+	show_item_picker() during combat_item_mode.
+
+	v0.9.428 — parented to the panel root (not _log_inner) so the picker
+	covers the FULL combat scene area, not just the small log strip. In the
+	Lufia layout _log_inner is too short to render the items ScrollContainer
+	(title + Prev/Next buttons consumed all of its vertical space, leaving
+	the item list with 0px). z_index=200 keeps it above the battlefield
+	overlay (z=100) and victory/death cards (z=150)."""
 	_picker_overlay = PanelContainer.new()
 	_picker_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_picker_overlay.z_index = 200
+	# Inset from the panel edges so the player can still see the underlying
+	# combat scene around the picker — feels less like a modal takeover.
+	_picker_overlay.offset_left = 24
+	_picker_overlay.offset_right = -24
+	_picker_overlay.offset_top = 24
+	_picker_overlay.offset_bottom = -24
 	var picker_sb := StyleBoxFlat.new()
 	picker_sb.bg_color = Color(0.05, 0.04, 0.06, 0.97)
 	picker_sb.border_color = Color(0.55, 0.45, 0.33)
@@ -2375,7 +2389,7 @@ func _build_picker_overlay() -> void:
 	_picker_overlay.add_theme_stylebox_override("panel", picker_sb)
 	_picker_overlay.visible = false
 	_picker_overlay.mouse_filter = Control.MOUSE_FILTER_PASS
-	_log_inner.add_child(_picker_overlay)
+	add_child(_picker_overlay)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 4)

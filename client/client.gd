@@ -23846,8 +23846,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.428 — Combat: Use Item picker now actually shows items.
+	display_game("[color=#00FF00]v0.9.428[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: Use Item picker now shows items (not just header + buttons)[/color]")
+	display_game("  • [b]The in-combat Use Item picker now overlays the full combat scene[/b] with a 24px inset, instead of being parented to the small log strip at the bottom. In the Lufia layout the log strip was too short — the title and Prev/Next buttons fit (fixed height) but the items ScrollContainer ended up with ~0px of vertical room and the actual items were invisible. z_index=200 keeps the picker above the battlefield overlay (z=100) and victory/death cards (z=150).")
+	display_game("")
+
 	# v0.9.427 — Combat: Use Item visible on first turn.
-	display_game("[color=#00FF00]v0.9.427[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.427[/color]")
 	display_game("  [color=#FFD700]Combat: Use Item now visible from the very first action[/color]")
 	display_game("  • [b]Pressing Use Item on the first turn of a new combat now actually shows your usable items.[/b] There was a one-frame race between in_combat going true (in _process_combat_start) and the combat scene panel's visibility sync — pressing Use Item in that window hit the panel.visible == false branch, rendered into game_output, and then game_output got hidden the next frame when the panel went visible. The picker overlay is now used regardless of panel.visible state; its own visibility flag carries through to the next frame.")
 	display_game("  [color=#FFD700]Server: map-render perf optimizations (no player-facing change)[/color]")
