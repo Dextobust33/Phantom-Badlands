@@ -1739,6 +1739,35 @@ func get_direction_name(direction: int) -> String:
 
 # ===== LINE OF SIGHT (BRESENHAM) =====
 
+func _is_tile_visible_cached(player_x: int, player_y: int, target_x: int, target_y: int, blocks_los_cache: Dictionary) -> bool:
+	"""v0.9.428 — fast LOS check using a pre-fetched blocks_los lookup.
+	Intermediate Bresenham points read from the cache instead of calling
+	chunk_manager.get_tile per step. Cache misses (intermediate point fell
+	outside the pre-fetched bounding box) fall through to the safe path.
+
+	Used by [[_generate_new_map]] to drop LOS time from 66-140ms to ~10-30ms
+	on a typical r=11 render."""
+	if not chunk_manager:
+		return true
+	var points = bresenham_line(player_x, player_y, target_x, target_y)
+	# Skip the player tile (index 0) and the target tile (last) — same rule
+	# as is_tile_visible: target is visible even if it blocks (you can see
+	# the wall).
+	for i in range(1, points.size() - 1):
+		var pkey = "%d,%d" % [points[i].x, points[i].y]
+		if blocks_los_cache.has(pkey):
+			if blocks_los_cache[pkey]:
+				return false
+		else:
+			# Cache miss — fall back to a single get_tile.
+			var tile = chunk_manager.get_tile(points[i].x, points[i].y)
+			if tile.get("blocks_los", false):
+				var tile_type = tile.get("type", "")
+				if tile_type in GATHERABLE_TYPES and chunk_manager.is_node_depleted(points[i].x, points[i].y):
+					continue
+				return false
+	return true
+
 func is_tile_visible(player_x: int, player_y: int, target_x: int, target_y: int) -> bool:
 	"""Check if target tile is visible from player using Bresenham LOS.
 	A tile is visible if no intermediate tile blocks LOS.
@@ -1832,9 +1861,31 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 		var key = "%d,%d" % [bounty.get("x", -9999), bounty.get("y", -9999)]
 		bounty_positions[key] = bounty
 
+	# v0.9.428 — pre-fetch the `blocks_los` flag for every tile in the vision
+	# bounding box once. The previous LOS pre-compute did ~2640 chunk_manager.get_tile
+	# calls (377 visible tiles × ~7 intermediate Bresenham points each); the
+	# diag pull pinned LOS at 66-140ms per render. Pre-fetching the bounding
+	# box drops to ~529 get_tile calls (one per tile), and the LOS walker
+	# reads from the cache. Expected ~80% drop in LOS time → 13-30ms.
+	var blocks_los_cache: Dictionary = {}
+	if chunk_manager:
+		for dy_pf in range(-radius, radius + 1):
+			for dx_pf in range(-radius, radius + 1):
+				var pf_x = center_x + dx_pf
+				var pf_y = center_y + dy_pf
+				var pf_tile = chunk_manager.get_tile(pf_x, pf_y)
+				var blocks = bool(pf_tile.get("blocks_los", false))
+				# Depleted gathering nodes don't block LOS (matches is_tile_visible).
+				if blocks and String(pf_tile.get("type", "")) in GATHERABLE_TYPES:
+					var dep_key = "%d,%d" % [pf_x, pf_y]
+					if depleted_set.has(dep_key):
+						blocks = false
+				blocks_los_cache["%d,%d" % [pf_x, pf_y]] = blocks
 	var _diag_setup_us: int = Time.get_ticks_usec() - _diag_setup_start
 
-	# Pre-compute LOS for all tiles in vision radius
+	# Pre-compute LOS for all tiles in vision radius — now reads from the
+	# cached blocks_los map instead of re-fetching every tile per Bresenham
+	# walk.
 	var _diag_los_start: int = Time.get_ticks_usec()
 	var visible_tiles = {}
 	for dy in range(-radius, radius + 1):
@@ -1845,7 +1896,7 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 			var tx = center_x + dx
 			var ty = center_y + dy
 			var key = "%d,%d" % [tx, ty]
-			var visible = is_tile_visible(center_x, center_y, tx, ty)
+			var visible = _is_tile_visible_cached(center_x, center_y, tx, ty, blocks_los_cache)
 			visible_tiles[key] = visible
 			# Slice 6j — record any tile seen in LOS as explored. Blockers
 			# themselves count as visible (you can see the mountain face that
