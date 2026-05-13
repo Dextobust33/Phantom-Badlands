@@ -1264,11 +1264,6 @@ var numpad_help_panel = null
 # can toggle this off so future characters they create skip it.
 var show_numpad_popup: bool = true
 
-# v0.9.380 — combat layout prototype toggle. "standard" = original side-by-side
-# (player+companion left, monster right). "chrono" = monster top center, party
-# row below. Set via `/layout <mode>`; persisted in keybinds.json.
-var combat_layout: String = "standard"
-
 # Audit #3 Slice 1 (UI remediation) — visual stat allocation panel.
 # Replaces chat-command-only /stats + /spendstat from v0.9.335.
 const StatsPanelScript = preload("res://client/stats_panel.gd")
@@ -1411,15 +1406,27 @@ var combat_msg_queue: Array[Dictionary] = []
 # args here and replay them when _drain_combat_queue finishes.
 var _pending_victory_fx_play: bool = false
 var _pending_victory_card_payload: Variant = null
+# v0.9.417 — defer the post-combat text chrome (Damage totals / LOOT / "Press
+# Space to continue...") until the message queue has fully drained, so the
+# chrome doesn't print BEFORE the player's killing-blow / monster-death
+# messages have shown. Without this, combat_end fires _combat_text_to_outputs
+# directly while the queue is still mid-drain, and chrome lands first.
+var _pending_combat_end_chrome: Dictionary = {}
 var combat_phase_timer: float = 0.0
 var combat_phase_paused: bool = false
-var combat_speed: int = 2  # 0=instant, 1=fast, 2=normal, 3=slow (debug) — v0.9.415 added Slow at 3× Normal for combat-polish QA
+# v0.9.417 — universal combat pacing (speed tiering removed). Single set of
+# delay values used by _drain_combat_queue.
+const SEPARATOR_DELAY: float = 0.6
+const INTER_ATTACK_DELAY: float = 0.78      # gap between consecutive attacks
+const POST_FINAL_ATTACK_DELAY: float = 0.55 # pause after last attack before end-of-phase
+const AMBIENT_DELAY: float = 0.15
+const END_ACTION_PHASE_GRACE: float = 0.9   # buffer after queue empties before overlay fades
 
 # Per-turn one-liners (Combat Readability slice #1)
 # Buffered messages between server pulses get folded into one summary per
 # actor at round boundaries / combat end. FX, sounds, and HP tracking still
 # fire on every message — only the *text* output is condensed.
-var condensed_combat_log: bool = true
+var condensed_combat_log: bool = false  # v0.9.417 — condensed mode removed; always firehose. Variable kept to avoid breaking dead-code branches; never set true.
 var _round_message_buffer: Array[String] = []
 # Latest combat_update status payload — stashed so the per-turn summary can
 # enrich DoT tags with duration info ("Bleed 4" → "Bleed 4 dmg / 3T").
@@ -1724,9 +1731,6 @@ func _ready():
 
 	# Load keybind configuration
 	_load_keybinds()
-	# v0.9.415 — push loaded combat_speed multiplier to the panel right away
-	# so a saved Slow setting is honored before the first fight.
-	_apply_combat_speed_to_panel()
 
 	# Save default game output stylebox for combat background changes
 	if game_output:
@@ -1854,11 +1858,7 @@ func _ready():
 	# Setup combat scene panel (Phase A — Combat Juice initiative, A1 slice)
 	if combat_scene_panel:
 		combat_scene_panel.client_ref = self
-		# v0.9.380 — apply the persisted combat layout. Default is "standard"
-		# so this is a no-op for most players; chrono mode triggers a rebuild
-		# right after _ready already constructed the standard chrome.
-		if combat_layout != "standard":
-			combat_scene_panel.set_layout(combat_layout)
+		# v0.9.417 — Lufia is the only layout; no runtime switching anymore.
 		# Combat readability #5 — in-panel item picker signals
 		combat_scene_panel.picker_item_chosen.connect(_on_combat_picker_chosen)
 		combat_scene_panel.picker_canceled.connect(_on_combat_picker_canceled)
@@ -4245,15 +4245,11 @@ func _input(event):
 			elif keycode == KEY_6:
 				_toggle_disable_tutorial()
 			elif keycode == KEY_7:
-				_cycle_combat_speed()
-			elif keycode == KEY_8:
 				_toggle_map_legend()
-			elif keycode == KEY_9:
+			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
 				game_output.clear()
 				_display_stat_priority_settings()
-			elif keycode == KEY_0:
-				_toggle_condensed_combat_log()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -8626,10 +8622,8 @@ func send_combat_command(command: String):
 	# attack FX fires. Without this, messages arrive mid-fade and attacks
 	# happen before the box fade completes, making it look like everything
 	# fires at once.
-	# v0.9.415 — scaled by speed so the fade-in (now also 3× in Slow) still
-	# completes before the first FX.
-	var lockout: float = 1.35 if combat_speed == 3 else 0.45
-	combat_phase_timer = max(combat_phase_timer, lockout)
+	# v0.9.417 — single universal lockout (speed tiering removed).
+	combat_phase_timer = max(combat_phase_timer, 0.45)
 	combat_phase_paused = true
 	send_to_server({"type": "combat", "command": command})
 
@@ -12328,8 +12322,6 @@ func execute_local_action(action: String):
 			game_output.clear()
 			display_game_settings()
 			update_action_bar()
-		"settings_combat_speed":
-			_cycle_combat_speed()
 		"settings_game_back":
 			settings_submenu = ""
 			game_output.clear()
@@ -13101,6 +13093,30 @@ func select_wish(index: int):
 	wish_selection_mode = false
 	display_game("[color=#808080]Making your wish...[/color]")
 
+func _emit_combat_end_chrome(args: Dictionary) -> void:
+	"""v0.9.417 — emit Damage totals / LOOT / Press-Space prompt for the
+	just-ended victory. Deferred from combat_end if the message queue is
+	still draining so the chrome doesn't print before the killing blow."""
+	if combat_scene_panel and combat_scene_panel.has_method("get_totals_summary_bbcode"):
+		_combat_text_to_outputs("")
+		_combat_text_to_outputs("[color=#5C4D33]── Damage totals ──[/color]")
+		_combat_text_to_outputs(combat_scene_panel.get_totals_summary_bbcode())
+	var drops: Array = args.get("drops", [])
+	if drops.size() > 0:
+		_combat_text_to_outputs("")
+		_combat_text_to_outputs("[color=#FFD700]────── LOOT ──────[/color]")
+		for drop_msg in drops:
+			_combat_text_to_outputs("  " + str(drop_msg))
+		_combat_text_to_outputs("[color=#FFD700]─────────────────────[/color]")
+		_combat_text_to_outputs("")
+	_combat_text_to_outputs("")
+	var harvest: bool = bool(args.get("harvest_available", false))
+	if harvest:
+		_combat_text_to_outputs("[color=#FF6600]Press [%s] to harvest...[/color]" % get_action_key_name(0))
+	else:
+		_combat_text_to_outputs("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+
+
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
@@ -13109,6 +13125,30 @@ func acknowledge_continue():
 	# next frame (no card + no in_combat + linger expired = hide).
 	if combat_scene_panel and combat_scene_panel.has_method("hide_victory_card"):
 		combat_scene_panel.hide_victory_card()
+	# v0.9.417 — clear deferred victory FX/card so a queue still draining when
+	# the player acknowledges won't re-show the card. Without this, the queue
+	# would later fire show_victory_card again (with pending_continue=false,
+	# no Space prompt to dismiss) → combat panel stuck visible.
+	_pending_victory_fx_play = false
+	_pending_victory_card_payload = null
+	# v0.9.417 — emit deferred chrome NOW so user sees totals/loot before
+	# acknowledging (instead of losing it because queue was flushed mid-drain).
+	if not _pending_combat_end_chrome.is_empty():
+		var chrome_args: Dictionary = _pending_combat_end_chrome
+		_pending_combat_end_chrome = {}
+		_emit_combat_end_chrome(chrome_args)
+	# v0.9.417 (b) — also flush the pending combat message queue and force the
+	# action phase to end immediately. Otherwise the overlay (FX scene) stays
+	# visible after the player acknowledges, because _action_phase_active stays
+	# true until the deferred end_action_phase_after timer fires — and that
+	# only schedules from inside _drain_combat_queue's empty branch, which the
+	# user may have already passed by pressing SPACE.
+	combat_msg_queue.clear()
+	combat_phase_paused = false
+	combat_phase_timer = 0.0
+	if combat_scene_panel and combat_scene_panel.has_method("end_action_phase"):
+		if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
+			combat_scene_panel.end_action_phase()
 	# Auto-harvest if available — send request and let harvest flow handle the rest
 	if harvest_available:
 		harvest_available = false
@@ -18880,14 +18920,11 @@ func handle_server_message(message: Dictionary):
 
 		"combat_message":
 			var combat_msg = message.get("message", "")
-			if combat_speed == 0:
-				# Instant mode — display immediately (current behavior)
-				_display_combat_msg(combat_msg)
-			else:
-				# Queue for phased display
-				combat_msg_queue.append({"raw": combat_msg})
-				if not combat_phase_paused:
-					_drain_combat_queue()
+			# v0.9.417 — universal pacing (instant mode removed). All messages
+			# go through the queue so each beat gets its inter-attack gap.
+			combat_msg_queue.append({"raw": combat_msg})
+			if not combat_phase_paused:
+				_drain_combat_queue()
 
 		"enemy_hp_revealed":
 			# Analyze ability revealed enemy HP - update the health bar for THIS combat
@@ -18987,11 +19024,16 @@ func handle_server_message(message: Dictionary):
 				# Round divider — when the round count goes up, drop a
 				# divider line so the eye chunks the combat log into turns
 				# instead of treating it as one stream.
-				var current_round = int(state.get("round", _last_displayed_round))
-				if current_round > _last_displayed_round and _last_displayed_round > 0:
-					var divider = "[color=#5C4D33]──────── Round %d ────────[/color]" % current_round
+				# v0.9.417 — server increments combat.round AFTER each round
+				# resolves, so state.round in the first combat_update is 2
+				# (with round 1's actions). Emit divider for state.round - 1
+				# so the label matches the round these messages came from.
+				var current_round = int(state.get("round", _last_displayed_round + 1))
+				var round_to_show: int = current_round - 1
+				if round_to_show > _last_displayed_round:
+					var divider = "[color=#5C4D33]──────── Round %d ────────[/color]" % round_to_show
 					_combat_text_to_outputs(divider)
-					_last_displayed_round = current_round
+					_last_displayed_round = round_to_show
 				var new_hp = state.get("player_hp", character_data.get("current_hp", 0))
 				var max_hp = state.get("player_max_hp", character_data.get("max_hp", 1))
 
@@ -19150,51 +19192,31 @@ func handle_server_message(message: Dictionary):
 						discovered_monster_types[enemy_key] = true
 						play_combat_victory_sound(true)  # Play for new discovery
 
-					# Mirror the running totals + loot to the panel log so the
-					# legacy detail view ([L]) — which now replays panel.log
-					# rather than reading game_output — shows the at-a-glance
-					# damage tally and loot list right where the combat log
-					# ends.
-					if combat_scene_panel and combat_scene_panel.has_method("get_totals_summary_bbcode"):
-						_combat_text_to_outputs("")
-						_combat_text_to_outputs("[color=#5C4D33]── Damage totals ──[/color]")
-						_combat_text_to_outputs(combat_scene_panel.get_totals_summary_bbcode())
-
-					# Victory without flock - show all accumulated drops
-					var flock_drops = message.get("flock_drops", [])
-					if flock_drops.size() > 0:
-						_combat_text_to_outputs("")
-						_combat_text_to_outputs("[color=#FFD700]────── LOOT ──────[/color]")
-						for drop_msg in flock_drops:
-							_combat_text_to_outputs("  " + drop_msg)
-						_combat_text_to_outputs("[color=#FFD700]─────────────────────[/color]")
-						_combat_text_to_outputs("")
-
-					# Check for rare drops and play sound effect
+					# Sounds + gem checks fire immediately (don't care about
+					# queue draining). Text chrome (Damage totals / LOOT /
+					# Press-Space prompt) is deferred so it doesn't appear
+					# before the killing-blow messages still in the queue.
+					# v0.9.417 — see _emit_combat_end_chrome().
 					var drop_value = _calculate_drop_value(message)
 					if drop_value > 0:
 						play_rare_drop_sound(drop_value)
-
-					# Check for egg drops
 					var all_drops = message.get("flock_drops", [])
 					for drop_msg in all_drops:
 						if "egg" in drop_msg.to_lower():
 							play_egg_found_sound()
 							break
-
-					# Check for gem gains
 					var total_gems = message.get("total_gems", 0)
 					if total_gems > 0:
 						play_gem_gain_sound()
 
-					# Require continue press so player can read loot before display refreshes.
-					# Routed through _combat_text_to_outputs so it lands in the
-					# panel log (visible via [L]) instead of cluttering game_output.
-					_combat_text_to_outputs("")
-					if harvest_available:
-						_combat_text_to_outputs("[color=#FF6600]Press [%s] to harvest...[/color]" % get_action_key_name(0))
+					var chrome_args := {
+						"drops": all_drops,
+						"harvest_available": harvest_available,
+					}
+					if combat_msg_queue.is_empty() and not combat_phase_paused:
+						_emit_combat_end_chrome(chrome_args)
 					else:
-						_combat_text_to_outputs("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+						_pending_combat_end_chrome = chrome_args
 					pending_continue = true
 					if dungeon_mode:
 						pending_dungeon_continue = true
@@ -19212,7 +19234,7 @@ func handle_server_message(message: Dictionary):
 							"old_level": _level_before_victory,
 							"new_level": _new_level,
 							"did_level_up": _new_level > _level_before_victory,
-							"loot": flock_drops,
+							"loot": all_drops,
 							"gear_drops": message.get("drop_data", []),
 							"harvest_available": harvest_available,
 							"continue_key": get_action_key_name(0),
@@ -20004,7 +20026,11 @@ func _process_combat_start(message: Dictionary):
 	awaiting_dungeon_trap_ack = false
 	last_known_hp_before_round = character_data.get("current_hp", 0)  # Track HP for danger sound
 	last_enemy_hp_percent = 100.0  # Reset enemy HP tracking for animations
-	_last_displayed_round = 1  # combat starts on round 1; dividers only fire from round 2 onward
+	# v0.9.417 — start at 0 so the first combat_update fires the correct
+	# divider. Server increments combat.round AFTER each round resolves, so
+	# state.round in the first update is 2 (containing round 1's actions).
+	# combat_update divider logic emits state.round - 1 to match.
+	_last_displayed_round = 0
 	update_action_bar()
 	update_companion_art_overlay()  # Show companion during combat
 
@@ -20291,7 +20317,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "layout",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21275,33 +21301,6 @@ func process_command(text: String):
 				open_clan_panel()
 			else:
 				display_game("You don't have a character yet")
-		"layout":
-			# v0.9.380 — combat layout prototype. Swap between layouts.
-			# Setting persists in keybinds.json so the choice survives restarts.
-			# Usage:
-			#   /layout            → show current setting + options
-			#   /layout standard   → original side-by-side
-			#   /layout chrono     → Chrono Trigger style (monster top, party below)
-			#   /layout lufia      → Lufia II style (monster left, party stacked right) — v0.9.381
-			var requested: String = (parts[1] if parts.size() > 1 else "").strip_edges().to_lower()
-			if requested == "":
-				var current: String = String(combat_scene_panel.combat_layout) if combat_scene_panel else "standard"
-				display_game("[color=#FFD700]Combat layout:[/color] %s" % current)
-				display_game("[color=#88BBDD]Available:[/color] standard, chrono, lufia")
-				display_game("[color=#888888]Use[/color] [color=#FFD700]/layout <mode>[/color] [color=#888888]to switch.[/color]")
-			elif requested in ["standard", "chrono", "lufia"]:
-				if combat_scene_panel == null:
-					display_game("[color=#FF6644]Combat panel unavailable.[/color]")
-				elif combat_scene_panel.visible:
-					display_game("[color=#FF6644]Layout can't change mid-combat — finish the fight first.[/color]")
-				elif combat_scene_panel.set_layout(requested):
-					combat_layout = requested
-					_save_keybinds()
-					display_game("[color=#00FF88]Combat layout set to %s.[/color] [color=#888888]Takes effect on the next combat encounter.[/color]" % requested)
-				else:
-					display_game("[color=#FF6644]Failed to apply layout %s.[/color]" % requested)
-			else:
-				display_game("[color=#FF6644]Unknown layout '%s'.[/color] Available: standard, chrono, lufia." % requested)
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -21581,10 +21580,6 @@ func _load_keybinds():
 					disable_tutorial = data["disable_tutorial"]
 				if data.has("show_numpad_popup"):
 					show_numpad_popup = bool(data["show_numpad_popup"])
-				if data.has("combat_layout"):
-					var saved_layout: String = String(data["combat_layout"]).to_lower()
-					if saved_layout in ["standard", "chrono", "lufia"]:
-						combat_layout = saved_layout
 				# Load UI scale settings
 				if data.has("ui_scale_monster_art"):
 					ui_scale_monster_art = clampf(float(data["ui_scale_monster_art"]), 0.5, 3.0)
@@ -21607,10 +21602,7 @@ func _load_keybinds():
 					music_volume = clampf(float(data["music_volume"]), 0.0, 1.0)
 				if data.has("sfx_muted"):
 					sfx_muted = data["sfx_muted"]
-				if data.has("combat_speed"):
-					combat_speed = clampi(int(data["combat_speed"]), 0, 3)
-				if data.has("condensed_combat_log"):
-					condensed_combat_log = bool(data["condensed_combat_log"])
+				# v0.9.417 — condensed_combat_log removed; ignore any saved value.
 				if data.has("show_map_legend"):
 					show_map_legend = data["show_map_legend"]
 				if data.has("comparison_pinned_stats") and data["comparison_pinned_stats"] is Array:
@@ -21624,7 +21616,6 @@ func _save_keybinds():
 	save_data["swap_attack_outsmart"] = swap_attack_outsmart
 	save_data["disable_tutorial"] = disable_tutorial
 	save_data["show_numpad_popup"] = show_numpad_popup
-	save_data["combat_layout"] = combat_layout
 	# Include UI scale settings
 	save_data["ui_scale_monster_art"] = ui_scale_monster_art
 	save_data["ui_scale_map"] = ui_scale_map
@@ -21637,8 +21628,7 @@ func _save_keybinds():
 	save_data["sfx_volume"] = sfx_volume
 	save_data["music_volume"] = music_volume
 	save_data["sfx_muted"] = sfx_muted
-	save_data["combat_speed"] = combat_speed
-	save_data["condensed_combat_log"] = condensed_combat_log
+	# v0.9.417 — condensed_combat_log removed; no longer saved.
 	save_data["show_map_legend"] = show_map_legend
 	save_data["comparison_pinned_stats"] = comparison_pinned_stats
 	var file = FileAccess.open(KEYBIND_CONFIG_PATH, FileAccess.WRITE)
@@ -22224,15 +22214,10 @@ func display_game_settings():
 	display_game("[5] Skip Harvest Minigame: %s" % skip_harvest_status)
 	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
 	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
-	var speed_labels = ["Instant", "Fast", "Normal", "Slow (dev)"]
-	var speed_colors = ["#FF6666", "#FFD700", "#00BFFF", "#FF99FF"]
-	display_game("[7] Combat Speed: [color=%s]%s[/color]" % [speed_colors[combat_speed], speed_labels[combat_speed]])
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
-	display_game("[8] Map Legend: %s" % legend_status)
+	display_game("[7] Map Legend: %s" % legend_status)
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
-	display_game("[9] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
-	var condensed_status = "[color=#00FF00]ON[/color]" if condensed_combat_log else "[color=#FF6666]OFF[/color]"
-	display_game("[0] Condensed Combat Log: %s" % condensed_status)
+	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
 	if skip_craft or skip_gather or skip_harvest:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -23678,8 +23663,29 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.417 — universal combat pacing + Lufia-only layout + condensed mode removed + strip-routing root cause + post-combat chrome order + death message clarity.
+	display_game("[color=#00FF00]v0.9.417[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: universal pacing (speed tiering removed)[/color]")
+	display_game("  • [b]Combat speed cycling (Instant/Fast/Normal/Slow) removed entirely.[/b] One set of delays applies to everyone: 0.78s gap between back-to-back attacks, 0.55s linger after the last attack before the action phase ends, 0.6s for separators, 0.15s for ambient lines, 0.9s end-of-action-phase grace. No more per-tier branching in _drain_combat_queue.")
+	display_game("  • [b]_speed_mult removed from combat_scene_panel.gd[/b] — every FX duration is now a single constant. Lunge 0.10s, popup linger 1.0s + fade 0.35s, miss popup linger 0.85s, action-phase fade 0.20/0.25/0.28s. Same speed for all players, no setting to adjust.")
+	display_game("  [color=#FFD700]Combat: Lufia is the only layout[/color]")
+	display_game("  • [b]LAYOUT_STANDARD / LAYOUT_CHRONO branches no longer run.[/b] combat_layout is now a const set to LUFIA. set_layout() function + /layout slash command removed. Every fight gets the FX scene + per-actor overlay + battlefield reveal automatically.")
+	display_game("  [color=#FFD700]Combat: condensed log removed[/color]")
+	display_game("  • [b]condensed_combat_log toggle is gone[/b] — Settings entry [9] removed, save/load skipped, force-firehose for everyone. The per-actor overlay strips replace the old turn-summary format. Variable kept as a no-op so dead-code branches still compile (cleanup later).")
+	display_game("  [color=#FFD700]Per-actor strip routing: root-cause fix[/color]")
+	display_game("  • Combat-log messages now route to player / monster / companion strips based on a single structural signal: [b]leading indent[/b]. process_monster_turn output gets indented 9 spaces via _indent_multiline (combat_manager.gd lines 1130/1252/2610/2790/3670/3824). Player ability messages are emitted via plain messages.append with no indent.")
+	display_game("  • Replaces previous per-verb / per-name / per-color heuristics that kept missing new edge cases (Magic Bolt's '[color=#00FFFF]The bolt strikes' falsely matching companion-cyan, 'The explosion deals' falsely matching monster verb-list, etc.). One discriminator now handles every line type cleanly.")
+	display_game("  [color=#FFD700]Combat log: ordering + Round 1 header[/color]")
+	display_game("  • [b]Round 1 divider now appears.[/b] Previously the divider only fired from round 2 onward — round 1 actions appeared under whatever followed. Now combat_manager.gd reports state.round AFTER the round resolves, so the client emits divider for state.round - 1 to match the round these messages actually came from.")
+	display_game("  • [b]Damage totals + LOOT + 'Press Space' chrome now print AFTER the killing blow[/b], not before. Previously combat_end emitted chrome directly while the message queue was still draining, so totals appeared with 0 damage and loot showed before the monster died. Now deferred via _pending_combat_end_chrome — emits from _drain_combat_queue's empty branch so totals are correct and loot lands after the kill.")
+	display_game("  [color=#FFD700]Combat: stuck-panel-on-Space fix[/color]")
+	display_game("  • [b]acknowledge_continue() now flushes the combat queue + force-ends the action phase[/b] so pressing Space during the FX scene before the transition completes doesn't leave the overlay stuck visible. Was: the pending end_action_phase timer could be bypassed by the early ack.")
+	display_game("  [color=#FFD700]Combat: clearer monster death (server)[/color]")
+	display_game("  • Server now [b]always appends 'The X is defeated!' after any custom death flavor[/b] (combat_manager.gd:1745). Custom flavor like 'The troll stops regenerating. Finally.' or 'The ogre falls with ground-shaking force.' reads as poetry but doesn't clearly mark death — the generic line removes the ambiguity.")
+	display_game("")
+
 	# v0.9.416 — testfx pacing demo bug fixes: FX-scene persistence, strip rendering, scroll-following, firehose-in-testfx.
-	display_game("[color=#00FF00]v0.9.416[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.416[/color]")
 	display_game("  [color=#FFD700]Combat polish: /testfx pacing walkthrough fixed[/color]")
 	display_game("  • [b]FX scene now persists across all 8 demo steps.[/b] Previously _drain_combat_queue's queue-empty branch always scheduled end_action_phase_after(0.9), so the action phase ended between steps — Phase 3 onward would fire on the small box-row portraits instead of the big overlay blocks. Now guarded by _testfx_step_active so production combat still auto-ends action phase, but the walkthrough keeps the FX scene up throughout.")
 	display_game("  • [b]Per-actor overlay log strips render even when empty.[/b] Was: fit_content=true collapsed the strip height to 0 with no content, so the dark bg never showed. Now fit_content=false + brighter bg (alpha 0.78→0.88) + 1px border + clip_contents so each strip is always a visible bordered box at the top of the overlay.")
@@ -28395,15 +28401,6 @@ func _run_combat_pacing_demo() -> void:
 	_combat_scene_force_visible = true
 	_testfx_step_active = true
 	combat_scene_panel.visible = true
-	# v0.9.416 — force LUFIA layout so the action-phase + overlay path is
-	# exercised. testfx is only useful when the FX scene is in play.
-	if combat_scene_panel.combat_layout != combat_scene_panel.LAYOUT_LUFIA:
-		combat_scene_panel.set_layout(combat_scene_panel.LAYOUT_LUFIA)
-	# v0.9.416 — force firehose combat log during testfx so each queued
-	# message lands on its overlay strip immediately. Condensed mode buffers
-	# until end-of-round and would leave the strips empty across phases.
-	var _saved_condensed: bool = condensed_combat_log
-	condensed_combat_log = false
 	await get_tree().process_frame
 	await get_tree().process_frame
 	combat_scene_panel.clear_log()
@@ -28473,8 +28470,6 @@ func _run_combat_pacing_demo() -> void:
 		await get_tree().create_timer(0.4).timeout
 	_combat_scene_force_visible = false
 	_testfx_step_active = false
-	# v0.9.416 — restore condensed-log preference saved at demo start.
-	condensed_combat_log = _saved_condensed
 	display_game("[color=#888888]pacing demo complete.[/color]")
 
 
@@ -28848,6 +28843,13 @@ func _drain_combat_queue():
 		# briefly hidden; the linger extension forces it visible next frame.
 		# Order matters: extend linger BEFORE firing FX so the panel-visible
 		# guard in play_victory_fx / show_victory_card sees the future state.
+		# v0.9.417 — emit deferred post-combat text chrome BEFORE the victory
+		# FX + card so totals/loot/Press-Space land in the panel log first,
+		# then the victory presentation covers the panel.
+		if not _pending_combat_end_chrome.is_empty():
+			var chrome_args: Dictionary = _pending_combat_end_chrome
+			_pending_combat_end_chrome = {}
+			_emit_combat_end_chrome(chrome_args)
 		if _pending_victory_fx_play and combat_scene_panel:
 			_pending_victory_fx_play = false
 			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
@@ -28865,45 +28867,28 @@ func _drain_combat_queue():
 				# phase-8 end_action_phase. Skip the auto-end so the FX scene
 				# persists across all steps.
 				if not _testfx_step_active:
-					# v0.9.415 — extend the end-of-action-phase grace in Slow
-					# mode so the last popup has time to fully linger before
-					# the boxes slide back.
-					var ap_delay: float = 2.7 if combat_speed == 3 else 0.9
-					combat_scene_panel.end_action_phase_after(ap_delay)
+					combat_scene_panel.end_action_phase_after(END_ACTION_PHASE_GRACE)
 		return
 	var entry = combat_msg_queue.pop_front()
 	var raw = entry.raw
 	_display_combat_msg(raw)
-	# Separator lines get a longer pause; regular messages get a short pause
-	# Speed 1 = Fast, Speed 2 = Normal.
-	# v0.9.408 — attack/ability messages get a longer pause than ambient
-	# lines so the lunge + damage popup for each actor has time to land
-	# before the next attack starts.
-	# v0.9.409 — track actor source per message and apply an EXTRA pause
-	# when crossing actor boundaries (player → companion → monster). Without
-	# this the player and companion attacks blur into a single flash and
-	# you can't tell who did what — the only way to make turns distinct is
-	# to enforce gaps at the seams.
+	# v0.9.417 — universal pacing (speed tiering removed). Two attack delays:
+	#   INTER_ATTACK_DELAY  — gap between consecutive actor attacks. Slightly
+	#                         longer so each actor's turn reads as distinct.
+	#   POST_FINAL_ATTACK_DELAY — pause after the LAST attack in the queue,
+	#                             before action phase ends / victory FX fires.
+	#                             Shorter so transitions don't drag.
 	var delay: float
 	var actor = _classify_combat_actor(raw)
 	var is_attack = actor != "" and actor != "ambient"
-	# v0.9.415 — Slow (combat_speed=3) is a dev/QA mode at ~3× Normal so each
-	# beat can be visually verified one at a time. Fast/Normal unchanged.
 	if "─────────" in raw:
-		if combat_speed == 1: delay = 0.3
-		elif combat_speed == 3: delay = 1.8
-		else: delay = 0.6
+		delay = SEPARATOR_DELAY
 	elif is_attack:
-		# v0.9.413 — single consistent delay per attack regardless of actor.
-		# User wants predictable rhythm so it's clear "who did what when".
-		# Inter-actor bonus removed (was 0.28 / 0.60s extra on actor change).
-		if combat_speed == 1: delay = 0.35
-		elif combat_speed == 3: delay = 2.55
-		else: delay = 0.64
+		# Post-pop, if queue is now empty, this was the last attack — use the
+		# shorter post-final-attack linger. Otherwise use the inter-attack gap.
+		delay = POST_FINAL_ATTACK_DELAY if combat_msg_queue.is_empty() else INTER_ATTACK_DELAY
 	else:
-		if combat_speed == 1: delay = 0.08
-		elif combat_speed == 3: delay = 0.45
-		else: delay = 0.15
+		delay = AMBIENT_DELAY
 	if is_attack:
 		_last_combat_actor = actor
 	# Always pause after showing a message — process_buffer() delivers all
@@ -28953,22 +28938,6 @@ func _flush_combat_queue():
 		var entry = combat_msg_queue.pop_front()
 		_display_combat_msg(entry.raw)
 
-func _cycle_combat_speed():
-	"""Cycle combat speed setting: Instant → Fast → Normal → Slow → Instant.
-	Slow (3× Normal) is a dev/QA mode for verifying combat FX pacing."""
-	combat_speed = (combat_speed + 1) % 4
-	_save_keybinds()
-	_apply_combat_speed_to_panel()
-	game_output.clear()
-	var labels = ["Instant", "Fast", "Normal", "Slow"]
-	var colors = ["#FF6666", "#FFD700", "#00BFFF", "#FF99FF"]
-	display_game("[color=%s]Combat Speed: %s[/color]" % [colors[combat_speed], labels[combat_speed]])
-	await get_tree().create_timer(1.0).timeout
-	if settings_mode and settings_submenu == "game":
-		game_output.clear()
-		display_game_settings()
-
-
 func _get_player_resource_for_combat() -> Dictionary:
 	"""v0.9.415 — pick the right resource (mana / energy / stamina) and color
 	for the current class so the overlay resource bar can render it. Mirrors
@@ -28991,17 +28960,6 @@ func _get_player_resource_for_combat() -> Dictionary:
 		color = "#FFCC00"
 	return {"cur": cur, "max": max_v, "color": color}
 
-
-func _apply_combat_speed_to_panel() -> void:
-	"""Push the current combat_speed multiplier to the combat scene panel so
-	lunges, popup linger, and action-phase fades scale with speed. Called on
-	every speed cycle and on combat start (in case the panel was reset)."""
-	if combat_scene_panel != null and combat_scene_panel.has_method("set_speed_mult"):
-		# Fast/Normal both 1.0 — they only differ in queue drain pacing, not FX
-		# shape. Slow scales the actual tween durations so popup linger, lunge,
-		# and action-phase fade are all visibly drawn-out for QA.
-		var mult: float = 3.0 if combat_speed == 3 else 1.0
-		combat_scene_panel.set_speed_mult(mult)
 
 func _toggle_map_legend():
 	"""Toggle map legend display"""
