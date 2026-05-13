@@ -1799,6 +1799,7 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 	# single window scan. Replaces per-tile _is_hotspot() (121 hash checks
 	# each, ~500 tiles per render = ~64K hash checks) with one scan + tiny
 	# per-tile array walks. Typical render finds ~3 clusters in the padded box.
+	var _diag_setup_start: int = Time.get_ticks_usec()
 	var _hotspot_clusters: Array = _collect_hotspot_clusters(
 		center_x - radius, center_x + radius,
 		center_y - radius, center_y + radius
@@ -1831,7 +1832,10 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 		var key = "%d,%d" % [bounty.get("x", -9999), bounty.get("y", -9999)]
 		bounty_positions[key] = bounty
 
+	var _diag_setup_us: int = Time.get_ticks_usec() - _diag_setup_start
+
 	# Pre-compute LOS for all tiles in vision radius
+	var _diag_los_start: int = Time.get_ticks_usec()
 	var visible_tiles = {}
 	for dy in range(-radius, radius + 1):
 		for dx in range(-radius, radius + 1):
@@ -1848,8 +1852,10 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 			# stops your sight) so they get remembered too.
 			if visible:
 				explored_tiles[key] = true
+	var _diag_los_us: int = Time.get_ticks_usec() - _diag_los_start
 
 	# Render map
+	var _diag_render_start: int = Time.get_ticks_usec()
 	for dy in range(radius, -radius - 1, -1):
 		var line_parts: PackedStringArray = PackedStringArray()
 		for dx in range(-radius, radius + 1):
@@ -1951,8 +1957,26 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 					line_parts.append(_render_tile_bbcode(tile_type, tile_tier, x, y))
 
 		map_lines.append("".join(line_parts))
-
-	return "\n".join(map_lines)
+	var _diag_render_us: int = Time.get_ticks_usec() - _diag_render_start
+	var _diag_join_start: int = Time.get_ticks_usec()
+	var _joined: String = "\n".join(map_lines)
+	var _diag_join_us: int = Time.get_ticks_usec() - _diag_join_start
+	# v0.9.428 — fine-grained map-render timing. Emit if total ≥ 80ms so we can
+	# see whether the cost is setup, LOS pre-compute, the per-tile render
+	# loop, or the final string join. Spike threshold is 80ms = the bottom of
+	# the 200-240ms move spikes we're chasing.
+	var _diag_total_us: int = _diag_setup_us + _diag_los_us + _diag_render_us + _diag_join_us
+	if _diag_total_us >= 80000:
+		print("[MAPRENDER] total=%.1fms setup=%.1fms los=%.1fms render=%.1fms join=%.1fms (r=%d, visible=%d)" % [
+			_diag_total_us / 1000.0,
+			_diag_setup_us / 1000.0,
+			_diag_los_us / 1000.0,
+			_diag_render_us / 1000.0,
+			_diag_join_us / 1000.0,
+			radius,
+			visible_tiles.size(),
+		])
+	return _joined
 
 func _render_tile_bbcode(tile_type: String, tier: int = 1, world_x: int = 0, world_y: int = 0) -> String:
 	"""Render a single tile as BBCode. 2 chars wide: space + character.
