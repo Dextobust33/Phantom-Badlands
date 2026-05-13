@@ -10565,7 +10565,10 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		# (internal name tactical_retreat): restore 50% max primary resource,
 		# monster acts.
 		"forethought": {"display": "Forethought", "cost": 1, "cost_percent": 0, "resource_type": resource_type},
-		"tactical_retreat": {"display": "Recharge", "cost": 0, "cost_percent": 0, "resource_type": resource_type},
+		# v0.9.424 — resource_type intentionally empty so the action bar's
+		# "cost==0 + resource_type != ''" check routes to direct-execute
+		# instead of the variable-cost prompt. Recharge is truly free.
+		"tactical_retreat": {"display": "Recharge", "cost": 0, "cost_percent": 0, "resource_type": ""},
 	}
 
 	var result = ability_defs.get(ability_name, {})
@@ -10655,6 +10658,13 @@ func _get_ability_planned_spend(ability_name: String) -> Dictionary:
 	if floor_cost > 0 and floor_cost < ceiling:
 		# Variable-cost: server's apply_variable_cost spends min(current, ceiling);
 		# fraction 0.3 (at floor) → 1.0 (at ceiling), linear.
+		# v0.9.424 — when current is below the floor, the card is unplayable
+		# (greyed out by the affordability check elsewhere) but the cost text
+		# should show the FLOOR amount so the player sees what they'd need.
+		# Returning 0 here made the cell render "Free", which read as
+		# "this card is free" rather than "you can't afford the minimum."
+		if current < floor_cost:
+			return {"amount": floor_cost, "fraction": 0.3, "resource_type": resource_type}
 		var spend = min(current, ceiling)
 		var fraction := 1.0
 		if ceiling > floor_cost:
@@ -23709,8 +23719,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
+	display_game("[color=#00FF00]v0.9.424[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: Recharge fires directly[/color]")
+	display_game("  • [b]Recharge no longer pops the variable-cost spend dialog.[/b] The card's resource_type was set, so it tripped the action-bar's 'cost==0 + resource_type set = variable-cost' branch and asked the player how much to spend. Recharge has no cost at all — it's a free card with a fixed effect. Cleared the resource_type so it routes to direct-execute.")
+	display_game("  [color=#FFD700]Combat: card cost label when out of resource[/color]")
+	display_game("  • [b]Cards no longer read 'Free' when you can't afford their floor cost.[/b] Variable-cost abilities compute planned spend as `min(current, ceiling)` — when current is 0, the spend is 0, which the card label rendered as 'Free'. Now returns the FLOOR cost when below the affordability threshold, so the player sees the minimum they'd need to spend.")
+	display_game("")
+
 	# v0.9.423 — ability content overhaul: deck/hand auto-cycle, ability changes, balance pass.
-	display_game("[color=#00FF00]v0.9.423[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.423[/color]")
 	display_game("  [color=#FFD700]Combat: auto-cycle hand every turn[/color]")
 	display_game("  • [b]Every player action draws a fresh 3-card hand next round.[/b] Basic attack: all 3 cards discard, draw 3 new ones. Ability play: that card consumed, other 2 discard, draw 3 new ones. Solves the 'stuck with uncastable cards' problem and keeps each round's options fresh.")
 	display_game("  [color=#FFD700]Combat: ability changes[/color]")
@@ -23824,16 +23842,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]/testfx upgrades[/color]")
 	display_game("  • [b]/testfx pacing[/b] command added — a step-through walkthrough of the full combat lifecycle (8 phases: enter, single attack, back-to-back, round divider, crit/miss, ability, victory, exit) so each beat can be tuned in real time. SPACE advances, R redoes, Q quits.")
 	display_game("  • Combat speed cycle now includes a 'Slow' tier at ~3× Normal as a dev/QA mode for visual verification.")
-	display_game("")
-
-	# v0.9.408 — combat speed default Normal + per-attack pause + stylebox-replace bg refresh.
-	display_game("[color=#00FFFF]v0.9.408[/color]")
-	display_game("  [color=#FFD700]Combat pacing[/color]")
-	display_game("  • [b]Combat speed now defaults to Normal[/b] for everyone (was Fast). Players who already picked a speed keep their setting; only new characters / fresh installs see the change.")
-	display_game("  • [b]Attack and ability messages now use a longer pause[/b] (0.55s on Normal, 0.30s on Fast) so each actor's lunge + damage popup has time to land before the next attack fires. Previously the player and companion attacks happened in the same ~0.15s window — visually a single flash with no read of who did what.")
-	display_game("  [color=#FFD700]Cobalt visibility — round 2[/color]")
-	display_game("  • v0.9.407 was supposed to paint a parchment bg behind dark variants but the visual didn't change. Switched the bg refresh from [b]mutating the existing stylebox's bg_color[/b] to [b]replacing the entire stylebox override[/b] + an explicit queue_redraw(). The mutation-and-changed-signal path was leaving the Panel painting the prior bg in some Godot 4.6 paths.")
-	display_game("  • Brightening also brought back for layouts WITHOUT a portrait bg panel (standard, chrono) — without that, dark variants would render raw-dark-on-dark in those layouts. Lufia still uses raw color (parchment bg gives the contrast).")
 	display_game("")
 
 	# v0.9.407 — Cobalt-on-parchment fix + battlefield overlay no longer overlaps monster.
