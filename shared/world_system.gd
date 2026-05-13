@@ -1559,7 +1559,10 @@ func get_hotspot_at(x: int, y: int) -> Dictionary:
 	return {"in_hotspot": in_hotspot, "intensity": intensity}
 
 func _is_hotspot(x: int, y: int) -> bool:
-	"""Check if coordinates are within a danger zone hot spot cluster"""
+	"""Check if coordinates are within a danger zone hot spot cluster.
+	Single-query path — scans the 11x11 window around (x, y) for cluster
+	centers. For bulk per-render lookups use [[_collect_hotspot_clusters]]
+	+ [[_is_hotspot_in_clusters]] instead (one window scan total)."""
 	# Find the nearest cluster center and check if we're within its radius
 	# Clusters are seeded at ~0.3% of tiles but expand to 1-20 tiles each
 
@@ -1572,6 +1575,53 @@ func _is_hotspot(x: int, y: int) -> bool:
 				if dist <= cluster_radius:
 					return true
 	return false
+
+func _collect_hotspot_clusters(min_x: int, max_x: int, min_y: int, max_y: int) -> Array:
+	"""v0.9.427 — collect every hotspot cluster center whose footprint can
+	intersect the [min_x..max_x] x [min_y..max_y] box. Pad the search by 5
+	(max cluster radius) so a center just outside the box but whose radius
+	reaches in is still captured. Returns Array of {x, y, radius}.
+
+	Used by the map renderer to replace ~500 per-tile 121-hash window scans
+	with one window scan + per-tile array walks. With 0.3% cluster density
+	and typical 33x33 padded vision (1089 cells), expect ~3 clusters per
+	render."""
+	var clusters: Array = []
+	var pad: int = 5
+	for cx in range(min_x - pad, max_x + pad + 1):
+		for cy in range(min_y - pad, max_y + pad + 1):
+			if _is_cluster_center(cx, cy):
+				clusters.append({"x": cx, "y": cy, "radius": _get_cluster_radius(cx, cy)})
+	return clusters
+
+func _is_hotspot_in_clusters(x: int, y: int, clusters: Array) -> bool:
+	"""v0.9.427 — fast per-tile hotspot check using a pre-collected cluster
+	list (see [[_collect_hotspot_clusters]]). Typically iterates a handful
+	of clusters instead of 121 hash checks."""
+	for c in clusters:
+		var dx = x - int(c.x)
+		var dy = y - int(c.y)
+		var r = float(c.radius)
+		if dx * dx + dy * dy <= r * r:
+			return true
+	return false
+
+func _get_hotspot_intensity_in_clusters(x: int, y: int, clusters: Array) -> float:
+	"""v0.9.427 — fast per-tile intensity check using a pre-collected cluster
+	list. Returns the highest intensity from any covering cluster (was: only
+	the nearest cluster, but with the bounded array walk the highest wins)."""
+	var best: float = 0.0
+	for c in clusters:
+		var dx = x - int(c.x)
+		var dy = y - int(c.y)
+		var r = float(c.radius)
+		var dist_sq = float(dx * dx + dy * dy)
+		if dist_sq <= r * r:
+			var dist = sqrt(dist_sq)
+			var intensity = clamp(1.0 - (dist / (r + 0.1)), 0.0, 1.0)
+			if intensity > best:
+				best = intensity
+	return best
 
 func _is_cluster_center(x: int, y: int) -> bool:
 	"""Check if this coordinate is a hotspot cluster center (~0.3% of tiles)"""
@@ -1745,6 +1795,15 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 	of blank."""
 	var map_lines: PackedStringArray = PackedStringArray()
 
+	# v0.9.427 — pre-collect hotspot clusters for the entire vision area in a
+	# single window scan. Replaces per-tile _is_hotspot() (121 hash checks
+	# each, ~500 tiles per render = ~64K hash checks) with one scan + tiny
+	# per-tile array walks. Typical render finds ~3 clusters in the padded box.
+	var _hotspot_clusters: Array = _collect_hotspot_clusters(
+		center_x - radius, center_x + radius,
+		center_y - radius, center_y + radius
+	)
+
 	# Build lookups
 	var depleted_set = {}
 	for coord_key in depleted_nodes:
@@ -1861,12 +1920,14 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				var tile_type = tile.get("type", "empty")
 				var tile_tier = tile.get("tier", 1)
 				var is_depleted = depleted_set.has(pos_key)
-				var in_hotzone = _is_hotspot(x, y) and not is_safe_zone(x, y)
+				# v0.9.427 — use pre-collected cluster array instead of the
+				# per-tile 121-hash _is_hotspot scan. Same is_safe_zone gate.
+				var in_hotzone = _is_hotspot_in_clusters(x, y, _hotspot_clusters) and not is_safe_zone(x, y)
 
 				if is_depleted and tile_type in GATHERABLE_TYPES:
 					if in_hotzone:
 						# Depleted node in hotzone — show red ! instead of gray comma
-						var intensity = _get_hotspot_intensity(x, y)
+						var intensity = _get_hotspot_intensity_in_clusters(x, y, _hotspot_clusters)
 						var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
 						line_parts.append("[color=%s] ![/color]" % hz_color)
 					else:
@@ -1874,7 +1935,7 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 						line_parts.append("[color=#444444] ,[/color]")
 				elif in_hotzone and (tile_type == "empty" or not TILE_RENDER.get(tile_type, {}).get("blocks_move", false)):
 					# Passable tile in hotzone — show red ! with intensity gradient
-					var intensity = _get_hotspot_intensity(x, y)
+					var intensity = _get_hotspot_intensity_in_clusters(x, y, _hotspot_clusters)
 					var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
 					line_parts.append("[color=%s] ![/color]" % hz_color)
 				elif in_hotzone:
