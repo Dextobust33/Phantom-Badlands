@@ -5960,7 +5960,29 @@ func update_action_bar():
 	# Reset status page background if active (gets set in display_character_status)
 	_reset_game_output_background()
 
-	if settings_mode:
+	# v0.9.426 — Home Stone (Companion) modal choice. Promoted to top-level
+	# so the Register / Kennel / Cancel buttons appear regardless of game
+	# context. Previously this branch lived inside the HOUSE_SCREEN block,
+	# so using the stone from world inventory left the player with no UI to
+	# resolve the choice (stone consumed, no way to register or cancel).
+	if pending_home_stone_choice:
+		current_actions = [
+			{"label": "Cancel", "action_type": "local", "action_data": "home_stone_cancel", "enabled": true},
+			{"label": "Register", "action_type": "local", "action_data": "home_stone_register", "enabled": true},
+			{"label": "Kennel", "action_type": "local", "action_data": "home_stone_kennel", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+		]
+		# Fall through to the end-of-function button-apply loop. Don't early-
+		# return — there's no helper that applies current_actions; the loop
+		# at the bottom of update_action_bar does that. But we DO need to
+		# skip the remaining branches so they don't overwrite current_actions.
+	elif settings_mode:
 		# Settings mode - actions handled by _input(), show info only
 		if rebinding_action != "":
 			current_actions = [
@@ -13141,10 +13163,11 @@ func execute_local_action(action: String):
 			pending_home_stone_choice = false
 			send_to_server({"type": "home_stone_companion_response", "choice": "kennel"})
 			update_action_bar()
-		"home_stone_cancel":
-			pending_home_stone_choice = false
-			send_to_server({"type": "home_stone_companion_response", "choice": "cancel"})
-			update_action_bar()
+		# v0.9.426 — dead-code duplicate "home_stone_cancel" case removed. The
+		# earlier case at the "home_stone_cancel" handler (calling
+		# _cancel_home_stone) is the one that fires for both selection variants
+		# and the companion choice; the server's handle_home_stone_cancel now
+		# clears pending_home_stone_companion in addition to the selection meta.
 
 func _send_bless_with_stat(stat: String):
 	"""Send bless ability with chosen stat"""
@@ -18222,6 +18245,16 @@ func handle_server_message(message: Dictionary):
 
 		"home_stone_companion_choice":
 			pending_home_stone_choice = true
+			# v0.9.426 — close inventory + visual panels so the choice prompt is
+			# actually visible. The server fires this in response to an
+			# inventory_use, so the inventory panel was still up covering
+			# game_output — the user saw nothing happen. Clearing inventory_mode
+			# (+ any sub-action) drops the panel back to game_output where the
+			# display_game lines below land.
+			if inventory_mode:
+				inventory_mode = false
+				pending_inventory_action = ""
+			game_output.clear()
 			var hs_comp_name = message.get("companion_name", "Companion")
 			var hs_can_register = message.get("can_register", false)
 			var hs_can_kennel = message.get("can_kennel", false)
@@ -23801,8 +23834,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.426 — Home Stone (Companion) fix.
+	display_game("[color=#00FF00]v0.9.426[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Home Stone (Companion) now actually works[/color]")
+	display_game("  • [b]Using a Home Stone (Companion) from inventory now shows the Register / Kennel / Cancel prompt[/b], instead of silently consuming the stone. Three bugs fixed at once: (1) the early home-stone block in handle_inventory_use was missing the companion case, so the stone fell through to a legacy handler that consumed it BEFORE asking the player. (2) The home_stone_companion_choice client handler didn't close the inventory panel, so the prompt landed in game_output which was hidden behind the panel. (3) The Register / Kennel / Cancel action-bar branch lived inside the HOUSE_SCREEN block — when used in-world, the buttons never rendered.")
+	display_game("  • [b]Cancel no longer consumes the stone[/b]. Companion now matches the supplies/egg/equipment pattern: stone is held in inventory across the choice, consumed only on Register or Kennel confirm. Was: consumed up front, refunded on cancel (which briefly dropped the count and could surprise the player if anything mutated inventory in between).")
+	display_game("")
+
 	# v0.9.425 — combat polish: monster-ability strip routing + totals border in FX scene + dungeon combat-panel clear.
-	display_game("[color=#00FF00]v0.9.425[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.425[/color]")
 	display_game("  [color=#FFD700]Combat: monster ability bangs route to the monster strip[/color]")
 	display_game("  • [b]Lines like 'AMBUSH! The Wolf strikes from the shadows!' now land on the monster strip[/b] instead of the player strip. The overlay classifier required both the 9-space indent AND a 'The X' prefix to call a line 'monster'; ability bangs that begin with the bang word (AMBUSH!, BLOODIED FURY!, TREASURE DECOY!, BLOODSCENT!, PACK FRENZY!) failed the prefix check and fell through to ambient → player strip. Indent alone is the structural signal — earlier 'You/Your' overrides already peel off the player/companion lines inside an indented block.")
 	display_game("  [color=#FFD700]FX scene: totals strip border no longer shows[/color]")
@@ -35064,13 +35104,18 @@ func _select_home_stone_option(index: int):
 	update_action_bar()
 
 func _cancel_home_stone():
-	"""Cancel Home Stone selection"""
+	"""Cancel Home Stone selection.
+
+	v0.9.426 — also clears pending_home_stone_choice so the same Cancel
+	action covers both the supplies/egg/equipment selection UI and the
+	companion choice modal."""
 	send_to_server({"type": "home_stone_cancel"})
 	home_stone_mode = false
 	home_stone_type = ""
 	home_stone_options = []
 	home_stone_selected = {}
 	home_stone_page = 0
+	pending_home_stone_choice = false
 	game_output.clear()
 	display_game("[color=#808080]Home Stone use cancelled.[/color]")
 	update_action_bar()

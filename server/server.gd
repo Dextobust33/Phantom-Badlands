@@ -7254,6 +7254,47 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 			else:
 				send_to_peer(peer_id, {"type": "error", "message": "You have no equipment in your inventory to send home!"})
 				return
+		elif stone_type == "companion":
+			# v0.9.426 — match the pre-validate/no-consume pattern of the other
+			# home stones. Previously this case was missing entirely from the
+			# early block, so home_stone_companion fell through to the legacy
+			# handler at 7857 which consumed the stone BEFORE asking the player
+			# whether to Register or Kennel. Now the stone stays in inventory
+			# until the response actually fires (Register/Kennel) — Cancel
+			# leaves it untouched, no restore needed.
+			if character.active_companion.is_empty():
+				send_to_peer(peer_id, {"type": "error", "message": "You have no active companion to register!"})
+				return
+			if character.active_companion.get("house_slot", -1) >= 0:
+				send_to_peer(peer_id, {"type": "error", "message": "This companion is already registered to your house!"})
+				return
+			var account_id = peers[peer_id].account_id
+			var house = persistence.get_house(account_id)
+			if house == null:
+				send_to_peer(peer_id, {"type": "error", "message": "No house found for your account!"})
+				return
+			var companion_capacity = persistence.get_house_companion_capacity(account_id)
+			var kennel_capacity = persistence.get_kennel_capacity(account_id)
+			var can_register = house.registered_companions.companions.size() < companion_capacity
+			var can_kennel = house.companion_kennel.companions.size() < kennel_capacity
+			if not can_register and not can_kennel:
+				send_to_peer(peer_id, {"type": "error", "message": "Both registered slots and kennel are full! Upgrade for more space."})
+				return
+			# Store pending state including the inventory index of the stone
+			# so the response handler can consume it ONLY on Register/Kennel.
+			pending_home_stone_companion[peer_id] = {
+				"item_type": item_type,
+				"item_name": item_name,
+				"item_tier": item_tier,
+				"inv_index": index,
+			}
+			send_to_peer(peer_id, {
+				"type": "home_stone_companion_choice",
+				"companion_name": character.active_companion.get("name", "Companion"),
+				"can_register": can_register,
+				"can_kennel": can_kennel,
+			})
+			return
 
 	# Handle new scribing item types (scroll, map, tome, bestiary)
 	if item_type == "scroll":
@@ -8647,12 +8688,17 @@ func handle_home_stone_select(peer_id: int, message: Dictionary):
 	save_character(peer_id)
 
 func handle_home_stone_cancel(peer_id: int, _message: Dictionary):
-	"""Handle player cancelling Home Stone selection"""
+	"""Handle player cancelling Home Stone selection (all variants).
+
+	v0.9.426 — also clears the pending_home_stone_companion entry so the
+	companion choice can be cancelled via the same client action ("home_stone_cancel").
+	The stone is never consumed in the early-block flow, so nothing to refund."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
 	if character.has_meta("pending_home_stone_index"):
 		character.remove_meta("pending_home_stone_index")
+	pending_home_stone_companion.erase(peer_id)
 	send_to_peer(peer_id, {
 		"type": "text",
 		"message": "[color=#808080]Home Stone use cancelled.[/color]"
@@ -10621,7 +10667,12 @@ func handle_house_register_companion_from_storage(peer_id: int, message: Diction
 	})
 
 func handle_home_stone_companion_response(peer_id: int, message: Dictionary):
-	"""Handle player's choice for Home Stone (Companion) - Register or Kennel"""
+	"""Handle player's choice for Home Stone (Companion) - Register or Kennel.
+
+	v0.9.426 — the stone is now held in inventory across the choice prompt
+	and consumed ONLY on Register/Kennel confirm. Cancel leaves the stone
+	untouched (was: stone consumed up front + restored on cancel, which
+	briefly dropped the count and could surprise the player)."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
@@ -10630,6 +10681,39 @@ func handle_home_stone_companion_response(peer_id: int, message: Dictionary):
 	var choice = message.get("choice", "")
 	var account_id = peers[peer_id].account_id
 	var companion = character.active_companion.duplicate(true)
+
+	if choice == "register" or choice == "kennel":
+		# Consume the held stone now that the player is committing. Validate
+		# the stored inventory index still points at the same stone — guards
+		# against any inventory mutation in between.
+		if not pending_home_stone_companion.has(peer_id):
+			send_to_peer(peer_id, {"type": "error", "message": "Home Stone choice expired — please try again."})
+			return
+		var pending = pending_home_stone_companion[peer_id]
+		var stone_index: int = int(pending.get("inv_index", -1))
+		var stone_type: String = str(pending.get("item_type", "home_stone_companion"))
+		var consumed: bool = false
+		if stone_index >= 0 and stone_index < character.inventory.size() and character.inventory[stone_index].get("type", "") == stone_type:
+			# Stone is right where we left it — consume by stack.
+			if character.inventory[stone_index].get("is_consumable", false):
+				character.use_consumable_stack(stone_index)
+			else:
+				character.remove_item(stone_index)
+			consumed = true
+		else:
+			# Index moved (sort / new pickups / drop). Fall back to first match.
+			for i in range(character.inventory.size()):
+				if character.inventory[i].get("type", "") == stone_type:
+					if character.inventory[i].get("is_consumable", false):
+						character.use_consumable_stack(i)
+					else:
+						character.remove_item(i)
+					consumed = true
+					break
+		if not consumed:
+			send_to_peer(peer_id, {"type": "error", "message": "Home Stone not found in inventory — choice cancelled."})
+			pending_home_stone_companion.erase(peer_id)
+			return
 
 	if choice == "register":
 		var house = persistence.get_house(account_id)
@@ -10662,26 +10746,10 @@ func handle_home_stone_companion_response(peer_id: int, message: Dictionary):
 			"message": "[color=#A335EE]%s stored in kennel for fusion![/color]" % companion.get("name", "Companion")
 		})
 	else:
-		# Cancel — return the Home Stone to inventory
-		if pending_home_stone_companion.has(peer_id):
-			var pending = pending_home_stone_companion[peer_id]
-			var restored_item = {
-				"id": randi(),
-				"type": pending.get("item_type", "home_stone_companion"),
-				"name": pending.get("item_name", "Home Stone (Companion)"),
-				"is_consumable": true,
-				"quantity": 1,
-				"tier": int(pending.get("item_tier", 0)),
-				"rarity": "common",
-				"level": 1,
-				"value": 0,
-				"affixes": {}
-			}
-			character.add_item(restored_item)
+		# Cancel — stone was never consumed; just clear pending state.
 		pending_home_stone_companion.erase(peer_id)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Cancelled.[/color]"})
 		send_character_update(peer_id)
-		save_character(peer_id)
 		return
 
 	pending_home_stone_companion.erase(peer_id)
