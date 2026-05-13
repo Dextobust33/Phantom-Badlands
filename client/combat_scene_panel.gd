@@ -35,6 +35,10 @@ var _player_appearance_color2: String = ""
 var _player_appearance_pattern: String = "solid"
 var _player_hp: int = 0
 var _player_max_hp: int = 1
+# v0.9.415 — secondary resource (MP/SP/Energy) for the overlay bar.
+var _player_resource_cur: int = 0
+var _player_resource_max: int = 1
+var _player_resource_color: Color = Color("#3DD9FF")
 var _companion_data: Dictionary = {}
 var _companion_font_size: int = 3  # Default; recalculated per fight to ~2/3 of monster art font
 var _monster_name: String = ""
@@ -204,13 +208,27 @@ var _damage_label_seq: int = 0
 var _damage_label_last_spawn_ts: float = -10.0
 var _damage_label_stack_y: float = 0.0
 const DAMAGE_STACK_STEP_PX := 70.0
-const DAMAGE_STACK_RESET_S := 0.35
+# v0.9.415 — was 0.35s; popups linger 1.0s + fade 0.35s, so two popups within
+# ~1.35s would overlap. Use a window slightly longer than full popup lifetime
+# so consecutive popups always stack instead of overdrawing each other.
+const DAMAGE_STACK_RESET_S := 1.5
+# v0.9.415 — cap stack so rapid bursts don't push popups off the panel.
+# At 70px/step, 210px = 4 popups visible before plateauing. Beyond that the
+# topmost slot is reused and new popups overlap the previous topmost, but
+# everything stays on-screen.
+const DAMAGE_STACK_MAX_OFFSET := 210.0
 
 const FLASH_TINT_HIT := Color(1.6, 0.5, 0.5)  # Reddish overdrive
 const FLASH_TINT_CRIT := Color(2.0, 0.4, 0.2)  # Hotter red
 const FLASH_DURATION := 0.18
 const LUNGE_DISTANCE := 16.0
 const LUNGE_DURATION := 0.10  # one direction; total = 2x
+
+# v0.9.415 — speed multiplier set by client.gd via set_speed_mult(). 1.0 is
+# normal; 3.0 is the dev/QA Slow mode that stretches every FX duration so
+# pacing can be visually verified one beat at a time. Applies to lunges,
+# popup linger+fade, and action-phase fade tweens.
+var _speed_mult: float = 1.0
 
 # Audit #1 Slice 6a — combat hand row. Five card cells in a horizontal
 # strip plus a small "Deck N · Discard M" indicator on the right. Cells
@@ -530,6 +548,13 @@ func _build_scene_section_lufia() -> Control:
 	return vbox
 
 
+func set_speed_mult(mult: float) -> void:
+	"""v0.9.415 — set the FX timing multiplier. client.gd calls this when
+	combat_speed cycles. 1.0 = normal, 3.0 = Slow (dev QA). Active tweens
+	keep their current duration — only new tweens after this call scale."""
+	_speed_mult = max(0.1, mult)
+
+
 func start_action_phase() -> void:
 	"""v0.9.406 — Lufia II battlefield reveal. (1) The entire party box row
 	fades out at the bottom; (2) a separate 'battlefield' overlay fades in
@@ -560,7 +585,7 @@ func start_action_phase() -> void:
 	_action_phase_tween = create_tween().set_parallel(true)
 	# Fade the whole party row down + out.
 	if _player_col and is_instance_valid(_player_col):
-		_action_phase_tween.tween_property(_player_col, "modulate:a", 0.0, 0.20).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 0.0, 0.20 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	# Reposition overlay after the strips collapse so the new available
 	# space is accounted for.
 	call_deferred("_position_battlefield_overlay")
@@ -570,8 +595,8 @@ func start_action_phase() -> void:
 		_battlefield_overlay.visible = true
 		_battlefield_overlay.modulate.a = 0.0
 		_battlefield_overlay.position.y = _battlefield_overlay_rest_y - 40.0
-		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 1.0, 0.25 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y, 0.28 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func end_action_phase() -> void:
@@ -594,10 +619,10 @@ func end_action_phase() -> void:
 	_kill_action_phase_tween()
 	_action_phase_tween = create_tween().set_parallel(true)
 	if _player_col and is_instance_valid(_player_col):
-		_action_phase_tween.tween_property(_player_col, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 1.0, 0.25 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
-		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 0.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y - 40.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 0.0, 0.22 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y - 40.0, 0.22 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		# Hide after the tween completes so it doesn't block input or paint.
 		_action_phase_tween.chain().tween_callback(func():
 			if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
@@ -613,6 +638,9 @@ var _battlefield_overlay: Control = null
 var _overlay_player_block: Control = null
 var _overlay_player_ascii: RichTextLabel = null
 var _overlay_player_hp_bar: ProgressBar = null
+# v0.9.415 — secondary resource bar (MP/SP/energy depending on class) under
+# the HP bar. Populated from the same data the in-box stats line uses.
+var _overlay_player_resource_bar: ProgressBar = null
 var _overlay_player_name: Label = null
 var _overlay_companion_block: Control = null
 var _overlay_companion_ascii: RichTextLabel = null
@@ -621,6 +649,18 @@ var _overlay_companion_name: Label = null
 var _battlefield_overlay_rest_y: float = 0.0
 var _overlay_player_block_baseline: Vector2 = Vector2.ZERO
 var _overlay_companion_block_baseline: Vector2 = Vector2.ZERO
+
+# v0.9.415 — per-actor log strips during action phase. Three small scrolling
+# regions inside the overlay so each actor's actions appear over their own
+# zone. Single combat log (_log_label) still receives everything and is the
+# canonical record for non-overlay layouts / [L] legacy view.
+const OVERLAY_LOG_LINE_LIMIT := 5
+var _overlay_player_log: RichTextLabel = null
+var _overlay_monster_log: RichTextLabel = null
+var _overlay_companion_log: RichTextLabel = null
+var _overlay_player_log_lines: Array = []
+var _overlay_monster_log_lines: Array = []
+var _overlay_companion_log_lines: Array = []
 
 
 func _ensure_battlefield_overlay() -> void:
@@ -643,6 +683,17 @@ func _ensure_battlefield_overlay() -> void:
 	_battlefield_overlay.visible = false
 	parent.add_child(_battlefield_overlay)
 
+	# v0.9.415 — per-actor log strips at the TOP of the overlay (above the
+	# character blocks). Built first so they sit beneath blocks in z-order
+	# but logically above in layout. Each is a small RichTextLabel that
+	# scrolls a 3-5 line history of that actor's combat messages.
+	_overlay_player_log = _build_overlay_log_label("left")
+	_battlefield_overlay.add_child(_overlay_player_log)
+	_overlay_monster_log = _build_overlay_log_label("center")
+	_battlefield_overlay.add_child(_overlay_monster_log)
+	_overlay_companion_log = _build_overlay_log_label("right")
+	_battlefield_overlay.add_child(_overlay_companion_log)
+
 	# Player block — bigger ASCII font (3) + mini HP bar + name underneath.
 	_overlay_player_block = _build_overlay_character_block(true)
 	_battlefield_overlay.add_child(_overlay_player_block)
@@ -652,6 +703,30 @@ func _ensure_battlefield_overlay() -> void:
 
 	# Defer initial positioning so layout has computed _player_col's rect.
 	call_deferred("_position_battlefield_overlay")
+
+
+func _build_overlay_log_label(align: String) -> RichTextLabel:
+	"""v0.9.415 — small scrolling per-actor log shown in the action-phase
+	overlay. Holds up to OVERLAY_LOG_LINE_LIMIT recent lines for one actor."""
+	var lbl := RichTextLabel.new()
+	lbl.bbcode_enabled = true
+	lbl.fit_content = true
+	lbl.scroll_active = false
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.add_theme_font_size_override("normal_font_size", 12)
+	# Background tint so the strip reads as its own zone over the box bg.
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0.03, 0.03, 0.05, 0.78)
+	bg.set_corner_radius_all(4)
+	bg.set_content_margin_all(4)
+	lbl.add_theme_stylebox_override("normal", bg)
+	match align:
+		"center":
+			pass  # text aligns naturally; center the block via position
+		"right":
+			pass
+	return lbl
 
 
 func _build_overlay_character_block(is_player: bool) -> Control:
@@ -682,6 +757,8 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	block.add_child(ascii)
 
 	# HP bar — fixed width, just under the ASCII.
+	# v0.9.415 — resource bar reverted; HP bar back to 0.80-0.86 for both
+	# blocks (no overlap with ASCII at anchor 0.0-0.78).
 	var hp_bar := _make_hp_bar(Color("#FF4444"))
 	hp_bar.anchor_left = 0.12
 	hp_bar.anchor_right = 0.88
@@ -690,7 +767,9 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	hp_bar.custom_minimum_size = Vector2(0, 8)
 	block.add_child(hp_bar)
 
-	# Name label — under the HP bar.
+	var resource_bar: ProgressBar = null  # kept for assignment below; unused now
+
+	# Name label — under the bar.
 	var name_lbl := Label.new()
 	name_lbl.add_theme_font_size_override("font_size", 11)
 	name_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
@@ -700,13 +779,14 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	name_lbl.anchor_left = 0.0
 	name_lbl.anchor_right = 1.0
-	name_lbl.anchor_top = 0.88
+	name_lbl.anchor_top = 0.90
 	name_lbl.anchor_bottom = 1.0
 	block.add_child(name_lbl)
 
 	if is_player:
 		_overlay_player_ascii = ascii
 		_overlay_player_hp_bar = hp_bar
+		_overlay_player_resource_bar = resource_bar
 		_overlay_player_name = name_lbl
 	else:
 		_overlay_companion_ascii = ascii
@@ -744,22 +824,62 @@ func _position_battlefield_overlay() -> void:
 	_battlefield_overlay.global_position = Vector2(rect.position.x, overlay_y)
 	_battlefield_overlay_rest_y = _battlefield_overlay.position.y
 
-	# Two character blocks centered horizontally with a 32px gap. Each block
-	# is 320px wide (matches v0.9.412 _build_overlay_character_block).
+	# v0.9.415 — state the user confirmed worked well: 3-strip log visible
+	# at top of overlay, player flush-left, companion flush-right, monster
+	# strip 320px centered under the goblin.
 	var block_w: float = 320.0
-	var gap: float = 32.0
-	var total_w: float = block_w * 2 + gap
-	var start_x: float = (rect.size.x - total_w) * 0.5
-	var block_h: float = overlay_h
-	var block_y: float = 0.0
+	var edge_pad: float = 16.0
+	var log_strip_h: float = clampf(overlay_h * 0.22, 60.0, 110.0)
+	var log_gap: float = 4.0
+	var bottom_pad: float = 0.0
+	var block_y: float = log_strip_h + log_gap
+	var block_h: float = overlay_h - block_y - bottom_pad
 	if _overlay_player_block and is_instance_valid(_overlay_player_block):
-		_overlay_player_block.position = Vector2(start_x, block_y)
+		_overlay_player_block.position = Vector2(edge_pad, block_y)
 		_overlay_player_block.size = Vector2(block_w, block_h)
 		_overlay_player_block_baseline = _overlay_player_block.position
 	if _overlay_companion_block and is_instance_valid(_overlay_companion_block):
-		_overlay_companion_block.position = Vector2(start_x + block_w + gap, block_y)
+		_overlay_companion_block.position = Vector2(rect.size.x - block_w - edge_pad, block_y)
 		_overlay_companion_block.size = Vector2(block_w, block_h)
 		_overlay_companion_block_baseline = _overlay_companion_block.position
+
+	# Three log strips across the top of the overlay. All three use the same
+	# width (block_w) so they read as a consistent row of "actor speech".
+	# Player aligned over player block, companion over companion block,
+	# monster centered UNDER the actual monster art (right-aligned in Lufia
+	# layout, so it sits well right of the overlay's geometric center).
+	# v0.9.415 — separate Y positions: player/companion at the very top of
+	# the overlay so they sit further from their own ASCII below; monster
+	# offset DOWN so it sits further from the goblin's ASCII above.
+	var log_w_actor: float = block_w
+	var log_w_monster: float = block_w  # match the other two for visual rhythm
+	# v0.9.415 — all 3 strips at the same Y (top of overlay). User-requested
+	# vertical offsets caused more problems than they solved; keeping them
+	# aligned avoids monster strip drifting into ASCII zone.
+	var log_y_actor: float = 4.0
+	var log_y_monster: float = 4.0
+	if _overlay_player_log and is_instance_valid(_overlay_player_log):
+		_overlay_player_log.position = Vector2(edge_pad, log_y_actor)
+		_overlay_player_log.size = Vector2(log_w_actor, log_strip_h)
+	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
+		_overlay_companion_log.position = Vector2(rect.size.x - log_w_actor - edge_pad, log_y_actor)
+		_overlay_companion_log.size = Vector2(log_w_actor, log_strip_h)
+	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
+		# Anchor monster log horizontally under the monster art. _monster_col
+		# / _monster_art_label live in a different parent than _player_col,
+		# so use their global position to get the actual on-screen center.
+		var monster_center_global_x: float = rect.position.x + rect.size.x * 0.5
+		if _monster_art_label and is_instance_valid(_monster_art_label):
+			monster_center_global_x = _monster_art_label.global_position.x + _monster_art_label.size.x * 0.5
+		elif _monster_col and is_instance_valid(_monster_col):
+			monster_center_global_x = _monster_col.global_position.x + _monster_col.size.x * 0.5
+		var monster_local_x: float = monster_center_global_x - rect.position.x - log_w_monster * 0.5
+		# Loose clamp: just don't escape the overlay. Allow overlap with the
+		# player/companion strip if the monster sits there — readability of
+		# the actual on-target position wins over zone separation.
+		monster_local_x = clampf(monster_local_x, 0.0, rect.size.x - log_w_monster)
+		_overlay_monster_log.position = Vector2(monster_local_x, log_y_monster)
+		_overlay_monster_log.size = Vector2(log_w_monster, log_strip_h)
 
 
 func _populate_battlefield_overlay() -> void:
@@ -767,22 +887,31 @@ func _populate_battlefield_overlay() -> void:
 	bumped (+2) so the battlefield reveal reads larger than the in-box
 	portraits. HP bar + name pulled from current stats."""
 	# Player ASCII — bumped font size for battlefield-scale.
+	# v0.9.415 — was +2; reduced to +1 so tall ASCII fits the block without
+	# vertical clipping. Block height is fixed and the bumped fonts overran.
 	if _overlay_player_ascii and is_instance_valid(_overlay_player_ascii):
 		if _player_ascii_label and is_instance_valid(_player_ascii_label):
-			_overlay_player_ascii.text = _bump_inline_font_size(_player_ascii_label.text, 2)
+			_overlay_player_ascii.text = _bump_inline_font_size(_player_ascii_label.text, 1)
 		else:
 			_overlay_player_ascii.text = ""
 	# Player HP bar + name.
 	if _overlay_player_hp_bar and is_instance_valid(_overlay_player_hp_bar):
 		_overlay_player_hp_bar.max_value = maxi(1, _player_max_hp)
 		_overlay_player_hp_bar.value = clampi(_player_hp, 0, _player_max_hp)
+	# v0.9.415 — wire resource bar (MP/SP/Energy) under the HP bar.
+	if _overlay_player_resource_bar and is_instance_valid(_overlay_player_resource_bar):
+		_overlay_player_resource_bar.max_value = maxi(1, _player_resource_max)
+		_overlay_player_resource_bar.value = clampi(_player_resource_cur, 0, _player_resource_max)
+		var fill := _overlay_player_resource_bar.get_theme_stylebox("fill")
+		if fill is StyleBoxFlat:
+			(fill as StyleBoxFlat).bg_color = _player_resource_color
 	if _overlay_player_name and is_instance_valid(_overlay_player_name):
 		_overlay_player_name.text = _player_name
 
-	# Companion ASCII + stats.
+	# Companion ASCII + stats. v0.9.415 — bump dropped +2 → +1 to match player.
 	if _overlay_companion_ascii and is_instance_valid(_overlay_companion_ascii):
 		if _companion_art and is_instance_valid(_companion_art):
-			_overlay_companion_ascii.text = _bump_inline_font_size(_companion_art.text, 2)
+			_overlay_companion_ascii.text = _bump_inline_font_size(_companion_art.text, 1)
 		else:
 			_overlay_companion_ascii.text = ""
 	if _overlay_companion_hp_bar and is_instance_valid(_overlay_companion_hp_bar):
@@ -2333,6 +2462,13 @@ func populate(payload: Dictionary) -> void:
 		_player_hp = int(payload["player_hp"])
 	if payload.has("player_max_hp"):
 		_player_max_hp = maxi(1, int(payload["player_max_hp"]))
+	# v0.9.415 — resource (MP/SP/Energy) for the overlay bar.
+	if payload.has("player_resource_cur"):
+		_player_resource_cur = int(payload["player_resource_cur"])
+	if payload.has("player_resource_max"):
+		_player_resource_max = maxi(1, int(payload["player_resource_max"]))
+	if payload.has("player_resource_color"):
+		_player_resource_color = Color(str(payload["player_resource_color"]))
 	if payload.has("companion_data"):
 		_companion_data = payload["companion_data"]
 	if payload.has("companion_font_size"):
@@ -2364,6 +2500,9 @@ func populate(payload: Dictionary) -> void:
 	_action_phase_active = false
 	_kill_action_phase_tween()
 	_cancel_action_phase_timer()
+	# v0.9.415 — clear per-actor overlay logs so previous fight's lines don't
+	# bleed into the new one.
+	clear_overlay_logs()
 	if _lufia_player_stats and is_instance_valid(_lufia_player_stats):
 		_lufia_player_stats.modulate.a = 1.0
 	if _lufia_companion_stats and is_instance_valid(_lufia_companion_stats):
@@ -2440,6 +2579,129 @@ func append_log(bbcode_line: String) -> void:
 		_log_lines = _log_lines.slice(_log_lines.size() - LOG_LINE_LIMIT)
 	if is_inside_tree():
 		_refresh_log()
+	# v0.9.415 — during action_phase, also route to the per-actor overlay log
+	# (classified from the line itself if no actor hint was passed).
+	if _action_phase_active:
+		# Round dividers broadcast to all 3 strips so each actor's log keeps
+		# round boundaries.
+		var round_n: int = _extract_round_number(bbcode_line)
+		if round_n > 0:
+			_push_round_divider_to_overlays(round_n)
+		else:
+			_route_to_overlay_log(bbcode_line, _classify_overlay_actor(bbcode_line))
+
+
+func append_log_actor(actor: String, bbcode_line: String) -> void:
+	"""v0.9.415 — explicit actor routing for the per-actor overlay logs.
+	Use this instead of append_log when the caller already knows which actor
+	the message belongs to (avoids the classifier heuristic). Falls back to
+	append_log if action_phase isn't active."""
+	if bbcode_line.strip_edges() == "":
+		return
+	_log_lines.append(bbcode_line)
+	if _log_lines.size() > LOG_LINE_LIMIT:
+		_log_lines = _log_lines.slice(_log_lines.size() - LOG_LINE_LIMIT)
+	if is_inside_tree():
+		_refresh_log()
+	if _action_phase_active:
+		_route_to_overlay_log(bbcode_line, actor)
+
+
+func _route_to_overlay_log(bbcode_line: String, actor: String) -> void:
+	"""Append the line to the matching overlay log strip + refresh it. Ambient
+	(separators / DoT ticks / scene narration) routes to the player log so it
+	always shows somewhere."""
+	var target_lines: Array
+	var target_label: RichTextLabel
+	match actor:
+		"companion":
+			target_lines = _overlay_companion_log_lines
+			target_label = _overlay_companion_log
+		"monster":
+			target_lines = _overlay_monster_log_lines
+			target_label = _overlay_monster_log
+		_:  # "player" or "ambient"
+			target_lines = _overlay_player_log_lines
+			target_label = _overlay_player_log
+	target_lines.append(bbcode_line)
+	if target_lines.size() > OVERLAY_LOG_LINE_LIMIT:
+		target_lines.remove_at(0)
+	# Re-assign in case match's local view doesn't share the same array reference.
+	match actor:
+		"companion":
+			_overlay_companion_log_lines = target_lines
+		"monster":
+			_overlay_monster_log_lines = target_lines
+		_:
+			_overlay_player_log_lines = target_lines
+	if target_label and is_instance_valid(target_label):
+		target_label.text = "\n".join(target_lines)
+
+
+func _classify_overlay_actor(raw: String) -> String:
+	"""Same heuristic as client.gd's _classify_combat_actor: identify which
+	actor produced this combat line so we can route it to their overlay log.
+	Returns 'player', 'companion', 'monster', or 'ambient'."""
+	if " attacks" in raw or " strikes" in raw or " hits " in raw or " misses" in raw or " uses " in raw or " casts " in raw:
+		if "Your " in raw or "#00FFFF" in raw:
+			return "companion"
+		if raw.begins_with("You ") or raw.begins_with("[color=#FFD700]You "):
+			return "player"
+		if raw.begins_with("The ") or raw.begins_with("[color=#FF4444]") or raw.begins_with("[color=#FF0000]"):
+			return "monster"
+	# Player damage taken — "deals N damage to you"
+	if "damage to you" in raw or "smashes you" in raw:
+		return "monster"
+	return "ambient"
+
+
+func _extract_round_number(raw: String) -> int:
+	"""Detect the round divider line emitted by client.gd (format:
+	'[color=...]──────── Round N ────────[/color]') and return N. Returns 0
+	if no round number is present."""
+	if not ("Round " in raw):
+		return 0
+	var re := RegEx.new()
+	re.compile("Round\\s+(\\d+)")
+	var m := re.search(raw)
+	if m == null:
+		return 0
+	return int(m.get_string(1))
+
+
+func _push_round_divider_to_overlays(round_n: int) -> void:
+	"""Add a compact '── R<n> ──' marker to all 3 actor logs so each strip
+	shows where round boundaries fall. Skipped if no logs exist."""
+	var marker := "[color=#7A6845]── R%d ──[/color]" % round_n
+	for entry in [
+		[_overlay_player_log_lines, _overlay_player_log],
+		[_overlay_monster_log_lines, _overlay_monster_log],
+		[_overlay_companion_log_lines, _overlay_companion_log],
+	]:
+		var lines: Array = entry[0]
+		var label: RichTextLabel = entry[1]
+		lines.append(marker)
+		if lines.size() > OVERLAY_LOG_LINE_LIMIT:
+			lines.remove_at(0)
+		if label and is_instance_valid(label):
+			label.text = "\n".join(lines)
+	# Mutate the actual member arrays (entry[0] above is a reference; the
+	# append did mutate _overlay_*_log_lines in place since Arrays are
+	# passed by reference in GDScript. Nothing further needed.)
+
+
+func clear_overlay_logs() -> void:
+	"""Reset the per-actor overlay logs. Called on fight start so previous
+	fight's lines don't leak into the new one."""
+	_overlay_player_log_lines.clear()
+	_overlay_monster_log_lines.clear()
+	_overlay_companion_log_lines.clear()
+	if _overlay_player_log and is_instance_valid(_overlay_player_log):
+		_overlay_player_log.text = ""
+	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
+		_overlay_monster_log.text = ""
+	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
+		_overlay_companion_log.text = ""
 
 
 func clear_log(archive: bool = false) -> void:
@@ -2673,7 +2935,9 @@ func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
 	"""Phase B1 — floating damage label above the companion ASCII when the
 	monster targets it. Reuses the existing damage-label fan.
 	v0.9.411 — during action phase, anchor on the overlay companion block
-	(visible) instead of the faded in-box companion art."""
+	(visible) instead of the faded in-box companion art.
+	v0.9.415 — anchor at mid-body (0.5) instead of top-quarter (0.25) so the
+	popup lands near the companion's head, not floating high above it."""
 	if amount <= 0:
 		return
 	var anchor: Control
@@ -2683,7 +2947,7 @@ func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
 		anchor = _companion_art
 	if anchor == null or not is_instance_valid(anchor):
 		return
-	var anchor_global := anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.25)
+	var anchor_global := anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.5)
 	# Pink-red color so companion hits are distinguishable from player hits.
 	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true)
 
@@ -2811,10 +3075,16 @@ func _refresh_monster_hp() -> void:
 
 func _refresh_log() -> void:
 	_log_label.text = "\n".join(_log_lines)
-	# Auto-scroll to bottom
+	# v0.9.415 — RichTextLabel.fit_content expands asynchronously: one frame
+	# isn't always enough for `get_v_scroll_bar().max_value` to reflect the
+	# new content height, so the auto-scroll silently snaps to a stale max.
+	# Wait two frames AND re-apply after the resized signal lands.
+	await get_tree().process_frame
 	await get_tree().process_frame
 	if _log_scroll and is_instance_valid(_log_scroll):
-		_log_scroll.scroll_vertical = int(_log_scroll.get_v_scroll_bar().max_value)
+		var bar := _log_scroll.get_v_scroll_bar()
+		if bar:
+			_log_scroll.scroll_vertical = int(bar.max_value)
 
 
 # === A2 hit feedback ===
@@ -2865,8 +3135,8 @@ func lunge_player_forward() -> void:
 	# Player is on the left, monster on the right — lunge to the RIGHT.
 	var target_pos = baseline + Vector2(LUNGE_DISTANCE, 0)
 	_player_lunge_tween = create_tween()
-	_player_lunge_tween.tween_property(node, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_player_lunge_tween.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_player_lunge_tween.tween_property(node, "position", target_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_player_lunge_tween.tween_property(node, "position", baseline, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 func lunge_companion_forward() -> void:
@@ -2889,8 +3159,8 @@ func lunge_companion_forward() -> void:
 		_companion_art.position = baseline
 	var target_pos = baseline + Vector2(LUNGE_DISTANCE, 0)
 	_companion_lunge_tween = create_tween()
-	_companion_lunge_tween.tween_property(_companion_art, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_companion_lunge_tween.tween_property(_companion_art, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_companion_lunge_tween.tween_property(_companion_art, "position", target_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_companion_lunge_tween.tween_property(_companion_art, "position", baseline, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 func _lunge_node(node: Control, baseline: Vector2, is_player: bool, forward: bool) -> void:
@@ -2914,24 +3184,26 @@ func _lunge_node(node: Control, baseline: Vector2, is_player: bool, forward: boo
 		_companion_lunge_tween = create_tween()
 		t = _companion_lunge_tween
 	node.position = baseline
-	t.tween_property(node, "position", target, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	t.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_property(node, "position", target, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", baseline, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 # === v0.9.413 — Miss FX ===
 
-func show_miss_on_monster() -> void:
+func show_miss_on_monster(source: String = "player") -> void:
 	"""Floating MISS label above the monster (player or companion attacked
-	but missed). Reuses the popup spawn pattern but renders 'MISS' in gray
-	with a different scale/timing than damage numbers."""
+	but missed). v0.9.415 — color matches the attacker so MISS is visually
+	consistent with the damage number the player/companion would have shown."""
 	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
 		return
 	var anchor_global = _monster_art_label.global_position + Vector2(_monster_art_label.size.x * 0.5, _monster_art_label.size.y * 0.25)
-	_spawn_miss_label(anchor_global)
+	var col: Color = Color("#3DD9FF") if source == "companion" else Color("#FFD93D")
+	_spawn_miss_label(anchor_global, col)
 
 
 func show_miss_on_player() -> void:
-	"""Monster attacked but missed the player. v0.9.413."""
+	"""Monster attacked but missed the player. v0.9.413. v0.9.415 — red to
+	match the attacker; anchor at mid-body to land near the target."""
 	var node: Control
 	if _action_phase_active and _overlay_player_block and is_instance_valid(_overlay_player_block):
 		node = _overlay_player_block
@@ -2939,13 +3211,14 @@ func show_miss_on_player() -> void:
 		node = _player_visual_for_fx()
 	if node == null or not is_instance_valid(node):
 		return
-	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.25)
-	_spawn_miss_label(anchor_global)
+	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.5)
+	_spawn_miss_label(anchor_global, Color("#FF6666"))
 
 
 func show_miss_on_companion() -> void:
 	"""Monster attacked but missed the companion (or companion lunged but
-	missed). v0.9.413."""
+	missed). v0.9.413. v0.9.415 — red to match the attacker; anchor at
+	mid-body to land near the target."""
 	var anchor: Control
 	if _action_phase_active and _overlay_companion_block and is_instance_valid(_overlay_companion_block):
 		anchor = _overlay_companion_block
@@ -2953,18 +3226,25 @@ func show_miss_on_companion() -> void:
 		anchor = _companion_art
 	else:
 		return
-	var anchor_global = anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.25)
-	_spawn_miss_label(anchor_global)
+	var anchor_global = anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.5)
+	_spawn_miss_label(anchor_global, Color("#FF6666"))
 
 
-func _spawn_miss_label(anchor_global: Vector2) -> void:
+func _spawn_miss_label(anchor_global: Vector2, color: Color = Color("#FFD93D")) -> void:
 	# v0.9.414 — bumped to bright yellow + larger font + bold scale-pop so
 	# misses are unmistakably visible. The earlier gray-on-dark with 30pt
 	# was easy to miss against the action-phase background.
+	# v0.9.415 — color is now per-actor (passed in by show_miss_on_*) so the
+	# MISS reads consistently with the actor's damage-number color.
 	var label := Label.new()
 	label.text = "MISS"
-	label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.30))
-	label.add_theme_color_override("font_outline_color", Color(0.2, 0.05, 0.0, 1.0))
+	# v0.9.415 — Fredoka Bold matches the normal-hit damage font so MISS
+	# reads as part of the same visual family.
+	var miss_font: Font = _get_display_font("fredoka")
+	if miss_font != null:
+		label.add_theme_font_override("font", miss_font)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0.05, 0.05, 0.05, 1.0))
 	label.add_theme_constant_override("outline_size", 6)
 	label.add_theme_font_size_override("font_size", 42)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2976,22 +3256,34 @@ func _spawn_miss_label(anchor_global: Vector2) -> void:
 	label.position = local_anchor
 
 	# Reuse the damage-stack so misses also stack vertically with hits.
+	# v0.9.415 — use the same reset window as damage popups (scaled by speed)
+	# so misses don't overdraw recent damage numbers; cap so rapid bursts
+	# don't push popups off the top of the panel.
 	var now := float(Time.get_ticks_msec()) / 1000.0
-	if now - _damage_label_last_spawn_ts < 0.35:
-		_damage_label_stack_y -= 70.0
+	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S * _speed_mult:
+		_damage_label_stack_y = maxf(_damage_label_stack_y - DAMAGE_STACK_STEP_PX, -DAMAGE_STACK_MAX_OFFSET)
 	else:
 		_damage_label_stack_y = 0.0
 	_damage_label_last_spawn_ts = now
 	label.position.y += _damage_label_stack_y
+	# Final on-screen clamp: anchor can already be near the panel top (esp.
+	# monster art), so stack offset on top of that may go negative. Force the
+	# label inside the panel bounds; popups beyond capacity overlap at the
+	# top edge instead of disappearing above it.
+	label.position.y = maxf(label.position.y, 8.0)
 
 	# Bold scale-pop + linger + fade.
 	label.scale = Vector2(0.3, 0.3)
 	label.pivot_offset = label.size * 0.5
+	# v0.9.415 — linger + fade scaled by _speed_mult; scale-pop intro keeps
+	# its punch so MISS still snaps into view in Slow mode.
+	var miss_linger := 0.85 * _speed_mult
+	var miss_fade := 0.35 * _speed_mult
 	var t := create_tween().set_parallel(true)
 	t.tween_property(label, "scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	t.tween_property(label, "scale", Vector2(1.0, 1.0), 0.10).set_delay(0.12)
-	t.tween_property(label, "modulate:a", 0.0, 0.35).set_delay(0.85)
-	t.tween_callback(label.queue_free).set_delay(1.20)
+	t.tween_property(label, "modulate:a", 0.0, miss_fade).set_delay(miss_linger)
+	t.tween_callback(label.queue_free).set_delay(miss_linger + miss_fade)
 
 
 func lunge_monster_forward() -> void:
@@ -3006,8 +3298,8 @@ func lunge_monster_forward() -> void:
 	# Monster is on the right — lunge to the LEFT (toward player).
 	var target_pos = _monster_art_baseline_pos + Vector2(-LUNGE_DISTANCE, 0)
 	_monster_lunge_tween = create_tween()
-	_monster_lunge_tween.tween_property(_monster_art_label, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_monster_lunge_tween.tween_property(_monster_art_label, "position", _monster_art_baseline_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_monster_lunge_tween.tween_property(_monster_art_label, "position", target_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_monster_lunge_tween.tween_property(_monster_art_label, "position", _monster_art_baseline_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player") -> void:
@@ -3022,6 +3314,8 @@ func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player
 func show_damage_on_player(amount: int, is_crit: bool) -> void:
 	# v0.9.411 — during action phase, anchor the popup over the overlay
 	# player block (visible) instead of the faded in-box portrait.
+	# v0.9.415 — anchor at mid-body (0.5) so the popup lands near the
+	# player's head, not floating high above the target.
 	var node: Control
 	if _action_phase_active and _overlay_player_block and is_instance_valid(_overlay_player_block):
 		node = _overlay_player_block
@@ -3029,7 +3323,7 @@ func show_damage_on_player(amount: int, is_crit: bool) -> void:
 		node = _player_visual_for_fx()
 	if node == null or not is_instance_valid(node):
 		return
-	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.25)
+	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.5)
 	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true)
 
 
@@ -3086,6 +3380,47 @@ func show_dot_tick(amount: int, dot_type: String, target_is_player: bool) -> voi
 	t.chain().tween_callback(label.queue_free)
 
 
+# === v0.9.415 — Display font cache for damage / miss popups ===
+# Fredoka Bold for normal-hit damage + miss labels, Bowlby One for crits.
+# Lilita One is downloaded but currently unused (kept for future swaps).
+var _display_font_bowlby: Font = null
+var _display_font_fredoka: Font = null
+var _display_font_lilita: Font = null
+
+func _get_display_font(name: String) -> Font:
+	"""Lazy-load and cache a display font from font/display/. Bypasses the
+	Godot import system (no .import sidecar needed) by reading the TTF as
+	raw bytes via FileAccess and constructing a FontFile manually. Returns
+	null if the file is missing so the call site can fall back to default."""
+	match name:
+		"bowlby":
+			if _display_font_bowlby == null:
+				_display_font_bowlby = _load_ttf_runtime("res://font/display/BowlbyOne-Regular.ttf")
+			return _display_font_bowlby
+		"fredoka":
+			if _display_font_fredoka == null:
+				_display_font_fredoka = _load_ttf_runtime("res://font/display/Fredoka-Bold.ttf")
+			return _display_font_fredoka
+		"lilita":
+			if _display_font_lilita == null:
+				_display_font_lilita = _load_ttf_runtime("res://font/display/LilitaOne-Regular.ttf")
+			return _display_font_lilita
+	return null
+
+func _load_ttf_runtime(path: String) -> FontFile:
+	"""Load a TTF directly from disk into a FontFile, skipping the import
+	system. Used for display fonts added at runtime without an editor pass."""
+	if not FileAccess.file_exists(path):
+		push_warning("[combat_scene_panel] display font missing: " + path)
+		return null
+	var bytes := FileAccess.get_file_as_bytes(path)
+	if bytes.is_empty():
+		push_warning("[combat_scene_panel] display font is empty: " + path)
+		return null
+	var font := FontFile.new()
+	font.data = bytes
+	return font
+
 func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, source: String, target_is_player: bool) -> void:
 	# v0.9.396 — damage popup pass 4 per feedback:
 	#   • NO boxy background panel — just a Label with a thick outline that
@@ -3110,6 +3445,12 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	label.text = ("-%d" % amount) if amount > 0 else "0"
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.z_index = 100
+	# v0.9.415 — display font: Fredoka Bold for normal hits, Bowlby One for
+	# crits (bigger visual impact on the harder hit). Falls back to default
+	# if a font is missing.
+	var dmg_font: Font = _get_display_font("bowlby") if is_crit else _get_display_font("fredoka")
+	if dmg_font != null:
+		label.add_theme_font_override("font", dmg_font)
 	# White-flash spawn color, tweens to damage color shortly after.
 	label.add_theme_color_override("font_color", Color.WHITE)
 	label.add_theme_color_override("font_outline_color", Color(0.04, 0.03, 0.06, 1.0))
@@ -3124,8 +3465,11 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	# The popup itself doesn't move — stack offset just determines spawn Y.
 	_damage_label_seq += 1
 	var now := float(Time.get_ticks_msec()) / 1000.0
-	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S:
-		_damage_label_stack_y -= DAMAGE_STACK_STEP_PX
+	# v0.9.415 — scale reset window by speed_mult so Slow mode's longer
+	# linger doesn't cause overlapping spawns. Cap the cumulative offset so
+	# rapid bursts can't push popups off the top of the panel.
+	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S * _speed_mult:
+		_damage_label_stack_y = maxf(_damage_label_stack_y - DAMAGE_STACK_STEP_PX, -DAMAGE_STACK_MAX_OFFSET)
 	else:
 		_damage_label_stack_y = 0.0
 	_damage_label_last_spawn_ts = now
@@ -3134,6 +3478,9 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	var local_anchor = anchor_global - global_position - label.size * 0.5
 	local_anchor += Vector2(x_jitter, _damage_label_stack_y)
 	label.position = local_anchor
+	# v0.9.415 — final on-screen clamp: anchor + stack can go above panel
+	# when monster is high in the layout. Keep popups inside the panel.
+	label.position.y = maxf(label.position.y, 8.0)
 
 	# Slight random rotation per spawn (more for crits).
 	var jitter_deg = randf_range(-4.0, 4.0) if not is_crit else randf_range(-7.0, 7.0)
@@ -3159,11 +3506,22 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 			t.tween_property(label, "position", local_anchor + dir, dt).set_delay(dly).set_trans(Tween.TRANS_SINE)
 		t.tween_property(label, "position", local_anchor, 0.05).set_delay(0.20 + shake_count * 0.05)
 
+	# v0.9.415 — breathe pulse: gentle scale oscillation during linger so the
+	# number isn't completely static. Runs on its own tween in parallel.
+	var breathe := create_tween().set_loops(3)
+	var beat_a := rest_scale * Vector2(1.05, 0.97)
+	var beat_b := rest_scale * Vector2(0.96, 1.04)
+	breathe.tween_property(label, "scale", beat_a, 0.18).set_trans(Tween.TRANS_SINE).set_delay(0.25)
+	breathe.tween_property(label, "scale", beat_b, 0.18).set_trans(Tween.TRANS_SINE)
+	breathe.tween_property(label, "scale", rest_scale, 0.18).set_trans(Tween.TRANS_SINE)
+
 	# Linger in place, then fade with a subtle scale shrink (no upward drift).
 	# v0.9.411 — reverted to 1.0s linger + 0.35s fade. The right fix is to
 	# pause LONGER between actor attacks, not shorten popup readability.
-	var linger_time := 1.0
-	var fade_time := 0.35
+	# v0.9.415 — scaled by _speed_mult so Slow mode lets the popup linger
+	# even longer for QA.
+	var linger_time := 1.0 * _speed_mult
+	var fade_time := 0.35 * _speed_mult
 	t.tween_property(label, "modulate:a", 0.0, fade_time).set_delay(linger_time)
 	t.tween_property(label, "scale", rest_scale * 0.85, fade_time).set_delay(linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	t.tween_callback(label.queue_free).set_delay(linger_time + fade_time)

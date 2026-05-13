@@ -411,6 +411,12 @@ var game_state = GameState.DISCONNECTED
 @onready var ability_panel = $RootContainer/TopSection/GameOutputContainer/AbilityPanel
 @onready var combat_scene_panel = $RootContainer/TopSection/GameOutputContainer/CombatScenePanel
 var _combat_scene_force_visible: bool = false  # /testfx debug override
+# v0.9.415 — step-through /testfx state. When _testfx_step_active is true, the
+# demo coroutine yields between each FX waiting for the user to press SPACE
+# (advance), R (redo), or Q (quit). _input emits _testfx_advance with the
+# command so the coroutine can react.
+signal _testfx_advance(cmd: String)
+var _testfx_step_active: bool = false
 var _combat_scene_was_in_combat: bool = false  # transition tracking
 var _combat_scene_was_flock_pending: bool = false  # tracks flock_pending true→false to extend linger across the continue press
 var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
@@ -1407,7 +1413,7 @@ var _pending_victory_fx_play: bool = false
 var _pending_victory_card_payload: Variant = null
 var combat_phase_timer: float = 0.0
 var combat_phase_paused: bool = false
-var combat_speed: int = 2  # 0=instant, 1=fast, 2=normal — v0.9.408 default Normal so player + companion attacks are visibly distinct
+var combat_speed: int = 2  # 0=instant, 1=fast, 2=normal, 3=slow (debug) — v0.9.415 added Slow at 3× Normal for combat-polish QA
 
 # Per-turn one-liners (Combat Readability slice #1)
 # Buffered messages between server pulses get folded into one summary per
@@ -1718,6 +1724,9 @@ func _ready():
 
 	# Load keybind configuration
 	_load_keybinds()
+	# v0.9.415 — push loaded combat_speed multiplier to the panel right away
+	# so a saved Slow setting is honored before the first fight.
+	_apply_combat_speed_to_panel()
 
 	# Save default game output stylebox for combat background changes
 	if game_output:
@@ -3481,7 +3490,7 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
-	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode
+	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode and not _testfx_step_active
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
 		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "affix_filter_select"]
@@ -3811,6 +3820,22 @@ func _process(delta):
 			call_deferred("show_connection_panel")
 
 func _input(event):
+	# v0.9.415 — step-through testfx: SPACE advances, R redoes, Q aborts.
+	# Highest priority so it isn't eaten by combat / menus running concurrently.
+	if _testfx_step_active and event is InputEventKey and event.pressed and not event.echo:
+		var k: int = event.keycode
+		if k == KEY_SPACE:
+			_testfx_advance.emit("next")
+			get_viewport().set_input_as_handled()
+			return
+		elif k == KEY_R:
+			_testfx_advance.emit("redo")
+			get_viewport().set_input_as_handled()
+			return
+		elif k == KEY_Q or k == KEY_ESCAPE:
+			_testfx_advance.emit("quit")
+			get_viewport().set_input_as_handled()
+			return
 	# Handle numpad input for popup LineEdits (higher priority than other handlers)
 	# NOTE: Use active flags instead of just visibility - more reliable for input handling
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -8601,7 +8626,10 @@ func send_combat_command(command: String):
 	# attack FX fires. Without this, messages arrive mid-fade and attacks
 	# happen before the box fade completes, making it look like everything
 	# fires at once.
-	combat_phase_timer = max(combat_phase_timer, 0.45)
+	# v0.9.415 — scaled by speed so the fade-in (now also 3× in Slow) still
+	# completes before the first FX.
+	var lockout: float = 1.35 if combat_speed == 3 else 0.45
+	combat_phase_timer = max(combat_phase_timer, lockout)
 	combat_phase_paused = true
 	send_to_server({"type": "combat", "command": command})
 
@@ -21012,7 +21040,26 @@ func process_command(text: String):
 			game_output.clear()
 			chat_output.clear()
 		"testfx":
-			_run_combat_fx_demo()
+			# v0.9.415 — step-through by default. Subcommands:
+			#   /testfx          → step through all FX (in-box path, simpler)
+			#   /testfx action   → step through with action-phase overlay path
+			#   /testfx misses   → step through only the 3 miss FX
+			#   /testfx auto     → original auto-paced demo (kept for quick visual)
+			#   /testfx quit     → abort an in-flight step demo
+			var sub: String = parts[1].to_lower() if parts.size() > 1 else ""
+			if sub == "quit" or sub == "abort":
+				if _testfx_step_active:
+					_testfx_advance.emit("quit")
+				else:
+					display_game("[color=#888888]No testfx is running.[/color]")
+			elif sub == "auto":
+				_run_combat_fx_demo(false)
+			elif sub == "misses" or sub == "miss":
+				_run_combat_step_demo("misses")
+			elif sub == "action":
+				_run_combat_step_demo("full")
+			else:
+				_run_combat_step_demo("full_noaction")
 		"spritesize":
 			_show_sprite_size_preview()
 		"altsprite":
@@ -21558,7 +21605,7 @@ func _load_keybinds():
 				if data.has("sfx_muted"):
 					sfx_muted = data["sfx_muted"]
 				if data.has("combat_speed"):
-					combat_speed = clampi(int(data["combat_speed"]), 0, 2)
+					combat_speed = clampi(int(data["combat_speed"]), 0, 3)
 				if data.has("condensed_combat_log"):
 					condensed_combat_log = bool(data["condensed_combat_log"])
 				if data.has("show_map_legend"):
@@ -22174,8 +22221,8 @@ func display_game_settings():
 	display_game("[5] Skip Harvest Minigame: %s" % skip_harvest_status)
 	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
 	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
-	var speed_labels = ["Instant", "Fast", "Normal"]
-	var speed_colors = ["#FF6666", "#FFD700", "#00BFFF"]
+	var speed_labels = ["Instant", "Fast", "Normal", "Slow (dev)"]
+	var speed_colors = ["#FF6666", "#FFD700", "#00BFFF", "#FF99FF"]
 	display_game("[7] Combat Speed: [color=%s]%s[/color]" % [speed_colors[combat_speed], speed_labels[combat_speed]])
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
 	display_game("[8] Map Legend: %s" % legend_status)
@@ -27179,11 +27226,15 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	# stay visually proportionate — bigger monster = bigger companion.
 	var companion_font_size = max(2, int(round(monster_font_size * 2.0 / 3.0)))
 
+	var _res = _get_player_resource_for_combat()
 	combat_scene_panel.populate({
 		"player_class": str(character_data.get("class", "Fighter")),
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": int(character_data.get("current_hp", 0)),
 		"player_max_hp": int(character_data.get("total_max_hp", character_data.get("max_hp", 1))),
+		"player_resource_cur": _res.cur,
+		"player_resource_max": _res.max,
+		"player_resource_color": _res.color,
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -27924,13 +27975,16 @@ func _run_altsprite_test(args: Array) -> void:
 	display_game("[color=#808080]Use /altsprite again to toggle back. Pass [path] and/or [font_size] to tweak.[/color]")
 
 
-func _run_combat_fx_demo() -> void:
+func _run_combat_fx_demo(in_action_phase: bool = false) -> void:
 	"""/testfx — force the combat scene panel visible and play every FX in
-	sequence so we can verify them outside real combat. Auto-releases when done."""
+	sequence so we can verify them outside real combat. Auto-releases when done.
+	v0.9.415 — in_action_phase wraps the demo in start_action_phase /
+	end_action_phase so the overlay-redirect path is exercised."""
 	if combat_scene_panel == null:
 		display_game("[color=#FF6666]Combat scene panel not loaded.[/color]")
 		return
-	display_game("[color=#FFD700]Playing combat FX demo (5s)...[/color]")
+	var demo_label := "FX demo (action phase)" if in_action_phase else "combat FX demo"
+	display_game("[color=#FFD700]Playing %s...[/color]" % demo_label)
 	_combat_scene_force_visible = true
 
 	var mock_companion = character_data.get("active_companion", {})
@@ -27946,6 +28000,7 @@ func _run_combat_fx_demo() -> void:
 		"player_class": str(character_data.get("class", "Fighter")),
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": 100, "player_max_hp": 100,
+		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -27956,6 +28011,13 @@ func _run_combat_fx_demo() -> void:
 		"monster_art_bbcode": art_bb,
 		"monster_hp": 200, "monster_max_hp": 200, "monster_hp_known": true,
 	})
+
+	# v0.9.415 — enter action phase to test the overlay-redirect path used
+	# in real combat. Without this, FX target in-box portraits regardless
+	# of layout — and the new overlay block code is never exercised.
+	if in_action_phase and combat_scene_panel.has_method("start_action_phase"):
+		combat_scene_panel.start_action_phase()
+		await get_tree().create_timer(0.45).timeout  # let fade-in complete
 
 	# Sequence: player hit → companion hit → crit → monster hits player → monster crits player.
 	await get_tree().create_timer(0.4).timeout
@@ -27986,6 +28048,24 @@ func _run_combat_fx_demo() -> void:
 	combat_scene_panel.show_damage_on_player(35, true)
 	combat_scene_panel.flash_player(true)
 	combat_scene_panel.lunge_monster_forward()
+
+	# === v0.9.415 — Miss FX (player / companion / monster) ===
+	# Verifies the miss popup landed by v0.9.413-414. Each actor still lunges
+	# on a miss so the player can tell whose turn it was.
+	await get_tree().create_timer(0.9).timeout
+	combat_scene_panel.append_log("[color=#888888]Your attack misses![/color]")
+	combat_scene_panel.lunge_player_forward()
+	combat_scene_panel.show_miss_on_monster()
+
+	await get_tree().create_timer(0.8).timeout
+	combat_scene_panel.append_log("[color=#00FFFF]Your TestPet lunges but misses![/color]")
+	combat_scene_panel.lunge_companion_forward()
+	combat_scene_panel.show_miss_on_monster()
+
+	await get_tree().create_timer(0.8).timeout
+	combat_scene_panel.append_log("[color=#FF4444]The Goblin attacks but misses![/color]")
+	combat_scene_panel.lunge_monster_forward()
+	combat_scene_panel.show_miss_on_player()
 
 	# === A3 ability FX ===
 	await get_tree().create_timer(1.0).timeout
@@ -28045,8 +28125,264 @@ func _run_combat_fx_demo() -> void:
 	combat_scene_panel.play_victory_fx()
 
 	await get_tree().create_timer(2.5).timeout
+	# v0.9.415 — release the action-phase wrapper too, otherwise the overlay
+	# stays up after the demo and the next real combat starts confused.
+	if in_action_phase and combat_scene_panel.has_method("end_action_phase"):
+		combat_scene_panel.end_action_phase()
+		await get_tree().create_timer(0.4).timeout
 	_combat_scene_force_visible = false
 	display_game("[color=#888888]FX demo complete.[/color]")
+
+
+func _run_combat_step_demo(mode: String) -> void:
+	"""/testfx — step-through FX demo. Each entry in the steps list is fired
+	on user input (SPACE to advance, R to redo last, Q to quit). Lets us
+	verify each FX one at a time and confirm pacing/redirection are correct.
+
+	Mode strings:
+	  • "full"           — every FX, action_phase wrapped
+	  • "full_noaction"  — every FX, no action_phase wrap (in-box FX path)
+	  • "misses"         — only the three miss FX
+	"""
+	if combat_scene_panel == null:
+		display_game("[color=#FF6666]Combat scene panel not loaded.[/color]")
+		return
+	if _testfx_step_active:
+		display_game("[color=#FFD700]testfx already running. /testfx quit to abort.[/color]")
+		return
+
+	# Stage the panel + mocks.
+	var mock_companion = character_data.get("active_companion", {})
+	if mock_companion == null or mock_companion.is_empty():
+		mock_companion = {"name": "TestPet", "monster_type": "Wolf", "level": 5, "variant": "Normal", "variant_color": "#88FFAA"}
+	var monster_art_inst = _get_monster_art()
+	var raw = monster_art_inst.get_monster_ascii_art("Goblin") if monster_art_inst else ""
+	var font = MonsterArt.FONT_SIZE_OVERRIDES.get("Goblin", MonsterArt.ASCII_ART_FONT_SIZE)
+	var art_bb = "[right][font_size=%d]%s[/font_size][/right]" % [font, raw]
+
+	# Force the panel visible FIRST and wait for layout. start_action_phase
+	# reads _player_col.global_position to position the battlefield overlay;
+	# if the panel hasn't been laid out, that's (0,0) → overlay glued to the
+	# top-left corner instead of over the party row.
+	_combat_scene_force_visible = true
+	_testfx_step_active = true
+	combat_scene_panel.visible = true
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	combat_scene_panel.clear_log()
+	combat_scene_panel.populate({
+		"player_class": str(character_data.get("class", "Fighter")),
+		"player_name": str(character_data.get("name", "Player")),
+		"player_hp": 100, "player_max_hp": 100,
+		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
+		"player_appearance_color": str(character_data.get("appearance_color", "")),
+		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
+		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
+		"companion_data": mock_companion,
+		"companion_font_size": max(2, int(round(font * 2.0 / 3.0))),
+		"monster_name": "Demo Goblin", "monster_level": 5,
+		"monster_name_color": "#00FF66",
+		"monster_art_bbcode": art_bb,
+		"monster_hp": 200, "monster_max_hp": 200, "monster_hp_known": true,
+	})
+	# Two more frames so populate's internal layout settles.
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var in_action: bool = (mode == "full")
+	if in_action and combat_scene_panel.has_method("start_action_phase"):
+		combat_scene_panel.start_action_phase()
+		await get_tree().create_timer(0.45).timeout  # let fade-in complete
+
+	# Build step list. Each step: {label, action}.
+	var panel = combat_scene_panel
+	var steps: Array = []
+
+	if mode == "misses":
+		steps.append_array([
+			{"label": "Player MISS", "action": func():
+				panel.append_log("[color=#888888]Your attack misses![/color]")
+				panel.lunge_player_forward()
+				panel.show_miss_on_monster()},
+			{"label": "Companion MISS", "action": func():
+				panel.append_log("[color=#00FFFF]Your TestPet lunges but misses![/color]")
+				panel.lunge_companion_forward()
+				panel.show_miss_on_monster("companion")},
+			{"label": "Monster MISS (player target)", "action": func():
+				panel.append_log("[color=#FF4444]The Goblin attacks but misses![/color]")
+				panel.lunge_monster_forward()
+				panel.show_miss_on_player()},
+		])
+	else:
+		# Full demo, with or without action-phase wrap.
+		steps.append_array([
+			{"label": "Player attack — 25 dmg (normal)", "action": func():
+				panel.append_log("[color=#00FF00]>> [/color]You deal 25 damage to the Goblin!")
+				panel.show_damage_on_monster(25, false, "player")
+				panel.flash_monster(false)
+				panel.lunge_player_forward()},
+			{"label": "Companion attack — 18 dmg", "action": func():
+				panel.append_log("Your TestPet attacks for 18 damage!")
+				panel.show_damage_on_monster(18, false, "companion")
+				panel.flash_monster(false)
+				panel.lunge_companion_forward()},
+			{"label": "Monster attack — 12 dmg to player", "action": func():
+				panel.append_log("[color=#FF4444]<< [/color]The Goblin attacks and deals 12 damage to you!")
+				panel.show_damage_on_player(12, false)
+				panel.flash_player(false)
+				panel.lunge_monster_forward()},
+			{"label": "── ROUND 2 divider ──", "action": func():
+				panel.append_log("[color=#5C4D33]──────── Round 2 ────────[/color]")},
+			{"label": "Player CRIT — 78 dmg", "action": func():
+				panel.append_log("[color=#FF0000]CRITICAL HIT![/color] You deal 78 damage!")
+				panel.show_damage_on_monster(78, true, "player")
+				panel.flash_monster(true)
+				panel.lunge_player_forward()},
+			{"label": "Monster CRIT — 35 dmg to player", "action": func():
+				panel.append_log("[color=#FF0000]CRITICAL![/color] The Goblin smashes you for 35 damage!")
+				panel.show_damage_on_player(35, true)
+				panel.flash_player(true)
+				panel.lunge_monster_forward()},
+			{"label": "── ROUND 3 divider ──", "action": func():
+				panel.append_log("[color=#5C4D33]──────── Round 3 ────────[/color]")},
+			{"label": "Player MISS", "action": func():
+				panel.append_log("[color=#888888]Your attack misses![/color]")
+				panel.lunge_player_forward()
+				panel.show_miss_on_monster()},
+			{"label": "Companion MISS", "action": func():
+				panel.append_log("[color=#00FFFF]Your TestPet lunges but misses![/color]")
+				panel.lunge_companion_forward()
+				panel.show_miss_on_monster("companion")},
+			{"label": "Monster MISS (player target)", "action": func():
+				panel.append_log("[color=#FF4444]The Goblin attacks but misses![/color]")
+				panel.lunge_monster_forward()
+				panel.show_miss_on_player()},
+			{"label": "POWER STRIKE — slash arc + 95 dmg", "action": func():
+				panel.append_log("[color=#FF4444]POWER STRIKE![/color] You deal 95 damage!")
+				panel.play_slash_arc(false)
+				panel.show_damage_on_monster(95, false, "player")
+				panel.flash_monster(false)},
+			{"label": "DEVASTATE — crit slash + 180 dmg", "action": func():
+				panel.append_log("[color=#FF4444]DEVASTATE![/color] A catastrophic blow deals 180 damage!")
+				panel.play_slash_arc(true)
+				panel.show_damage_on_monster(180, true, "player")
+				panel.flash_monster(true)},
+			{"label": "Magic Bolt — projectile + 60 dmg", "action": func():
+				panel.append_log("[color=#FF00FF]You cast Magic Bolt![/color] The bolt deals 60 damage!")
+				panel.play_projectile("✦", Color("#FF66FF"))
+				await get_tree().create_timer(0.35).timeout
+				panel.show_damage_on_monster(60, false, "player")
+				panel.flash_monster(false)},
+			{"label": "Blast — fire projectile + 75 dmg", "action": func():
+				panel.append_log("[color=#FF00FF]You cast Blast![/color] Burning the target for 75 damage!")
+				panel.play_projectile("●", Color("#FF8833"))
+				await get_tree().create_timer(0.35).timeout
+				panel.show_damage_on_monster(75, false, "player")
+				panel.flash_monster(false)},
+			{"label": "War Cry — buff aura (orange)", "action": func():
+				panel.append_log("[color=#FF4444]WAR CRY![/color] +35% damage for 4 rounds!")
+				panel.play_buff_aura(Color("#FFAA33"))},
+			{"label": "Haste — buff aura (cyan)", "action": func():
+				panel.append_log("[color=#00FFFF]You cast Haste! +30% speed for 5 rounds[/color]")
+				panel.play_buff_aura(Color("#33CCFF"))},
+			{"label": "Vanish — stealth fade", "action": func():
+				panel.append_log("[color=#00FF00]VANISH![/color] You fade into shadow...")
+				panel.play_stealth_fade(2.0)},
+			{"label": "Potion — heal pulse +45 HP", "action": func():
+				panel.append_log("[color=#00FF00]You drink a potion and restore 45 HP![/color]")
+				panel.play_heal_pulse(45)},
+			{"label": "Outsmart — spiral", "action": func():
+				panel.append_log("[color=#33FF99]You outwit the Goblin![/color]")
+				panel.play_outsmart_spiral()},
+			{"label": "Level Up — banner", "action": func():
+				panel.append_log("[color=#FFE066]LEVEL UP![/color] You are now level 7!")
+				panel.play_level_up_fx(7)},
+			{"label": "VICTORY — banner (back-to-back w/ level-up in real combat)", "action": func():
+				panel.append_log("[color=#FFD93D]VICTORY![/color] The Goblin is defeated!")
+				panel.play_victory_fx()},
+		])
+
+	# Run the loop. Each step prints its label, waits for one SPACE, fires
+	# the action, then advances. R = go back one step (next SPACE will re-fire
+	# the previous step). Q = quit.
+	display_game("[color=#FFD700]>>> /testfx step mode (%d steps) — SPACE=fire+advance, R=back, Q=quit <<<[/color]" % steps.size())
+	var idx: int = 0
+	while idx < steps.size():
+		var step = steps[idx]
+		display_game("[color=#FF99FF]Step %d/%d: %s[/color] [color=#666666]— SPACE fires, R back, Q quit[/color]" % [idx + 1, steps.size(), step.label])
+		var cmd: String = await _testfx_advance
+		if cmd == "quit":
+			break
+		elif cmd == "redo":
+			idx = max(0, idx - 1)
+			continue
+		# fire and advance
+		await step.action.call()
+		idx += 1
+
+	# Teardown
+	if in_action and combat_scene_panel.has_method("end_action_phase"):
+		combat_scene_panel.end_action_phase()
+		await get_tree().create_timer(0.4).timeout
+	_combat_scene_force_visible = false
+	_testfx_step_active = false
+	display_game("[color=#888888]testfx step demo complete.[/color]")
+
+
+func _run_combat_miss_demo() -> void:
+	"""/testfx misses — fire only the miss FX in sequence so the v0.9.413-414
+	popup work can be verified in isolation. Useful when the full demo's
+	other FX overlap and you can't isolate misses."""
+	if combat_scene_panel == null:
+		display_game("[color=#FF6666]Combat scene panel not loaded.[/color]")
+		return
+	display_game("[color=#FFD700]Playing miss FX demo...[/color]")
+	_combat_scene_force_visible = true
+
+	var mock_companion = character_data.get("active_companion", {})
+	if mock_companion == null or mock_companion.is_empty():
+		mock_companion = {"name": "TestPet", "monster_type": "Wolf", "level": 5, "variant": "Normal", "variant_color": "#88FFAA"}
+	var monster_art_inst = _get_monster_art()
+	var raw = monster_art_inst.get_monster_ascii_art("Goblin") if monster_art_inst else ""
+	var font = MonsterArt.FONT_SIZE_OVERRIDES.get("Goblin", MonsterArt.ASCII_ART_FONT_SIZE)
+	var art_bb = "[right][font_size=%d]%s[/font_size][/right]" % [font, raw]
+
+	combat_scene_panel.clear_log()
+	combat_scene_panel.populate({
+		"player_class": str(character_data.get("class", "Fighter")),
+		"player_name": str(character_data.get("name", "Player")),
+		"player_hp": 100, "player_max_hp": 100,
+		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
+		"player_appearance_color": str(character_data.get("appearance_color", "")),
+		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
+		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
+		"companion_data": mock_companion,
+		"companion_font_size": max(2, int(round(font * 2.0 / 3.0))),
+		"monster_name": "Demo Goblin", "monster_level": 5,
+		"monster_name_color": "#00FF66",
+		"monster_art_bbcode": art_bb,
+		"monster_hp": 200, "monster_max_hp": 200, "monster_hp_known": true,
+	})
+
+	await get_tree().create_timer(0.6).timeout
+	combat_scene_panel.append_log("[color=#888888]Your attack misses![/color]")
+	combat_scene_panel.lunge_player_forward()
+	combat_scene_panel.show_miss_on_monster()
+
+	await get_tree().create_timer(1.4).timeout
+	combat_scene_panel.append_log("[color=#00FFFF]Your TestPet lunges but misses![/color]")
+	combat_scene_panel.lunge_companion_forward()
+	combat_scene_panel.show_miss_on_monster()
+
+	await get_tree().create_timer(1.4).timeout
+	combat_scene_panel.append_log("[color=#FF4444]The Goblin attacks but misses![/color]")
+	combat_scene_panel.lunge_monster_forward()
+	combat_scene_panel.show_miss_on_player()
+
+	await get_tree().create_timer(1.6).timeout
+	_combat_scene_force_visible = false
+	display_game("[color=#888888]Miss FX demo complete.[/color]")
 
 
 func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
@@ -28120,7 +28456,7 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		# Companion lunge-but-misses → cyan + "lunges but misses".
 		if has_cyan and ("lunges but" in lower or has_your):
 			combat_scene_panel.lunge_companion_forward()
-			combat_scene_panel.show_miss_on_monster()
+			combat_scene_panel.show_miss_on_monster("companion")
 			missed = true
 		# Monster attacks but misses → "The X attacks/misses".
 		elif combat_msg.find("The ") != -1 or "distracted" in lower:
@@ -28134,7 +28470,7 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		else:
 			# Player's own attack missed.
 			combat_scene_panel.lunge_player_forward()
-			combat_scene_panel.show_miss_on_monster()
+			combat_scene_panel.show_miss_on_monster("player")
 			missed = true
 		if missed:
 			return
@@ -28293,7 +28629,11 @@ func _drain_combat_queue():
 			combat_scene_panel.show_victory_card(payload)
 		if combat_scene_panel and combat_scene_panel.has_method("end_action_phase_after"):
 			if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
-				combat_scene_panel.end_action_phase_after(0.9)
+				# v0.9.415 — extend the end-of-action-phase grace in Slow mode
+				# so the last popup has time to fully linger before the boxes
+				# slide back.
+				var ap_delay: float = 2.7 if combat_speed == 3 else 0.9
+				combat_scene_panel.end_action_phase_after(ap_delay)
 		return
 	var entry = combat_msg_queue.pop_front()
 	var raw = entry.raw
@@ -28311,15 +28651,23 @@ func _drain_combat_queue():
 	var delay: float
 	var actor = _classify_combat_actor(raw)
 	var is_attack = actor != "" and actor != "ambient"
+	# v0.9.415 — Slow (combat_speed=3) is a dev/QA mode at ~3× Normal so each
+	# beat can be visually verified one at a time. Fast/Normal unchanged.
 	if "─────────" in raw:
-		delay = 0.3 if combat_speed == 1 else 0.6
+		if combat_speed == 1: delay = 0.3
+		elif combat_speed == 3: delay = 1.8
+		else: delay = 0.6
 	elif is_attack:
 		# v0.9.413 — single consistent delay per attack regardless of actor.
 		# User wants predictable rhythm so it's clear "who did what when".
 		# Inter-actor bonus removed (was 0.28 / 0.60s extra on actor change).
-		delay = 0.35 if combat_speed == 1 else 0.85
+		if combat_speed == 1: delay = 0.35
+		elif combat_speed == 3: delay = 2.55
+		else: delay = 0.85
 	else:
-		delay = 0.08 if combat_speed == 1 else 0.15
+		if combat_speed == 1: delay = 0.08
+		elif combat_speed == 3: delay = 0.45
+		else: delay = 0.15
 	if is_attack:
 		_last_combat_actor = actor
 	# Always pause after showing a message — process_buffer() delivers all
@@ -28370,17 +28718,54 @@ func _flush_combat_queue():
 		_display_combat_msg(entry.raw)
 
 func _cycle_combat_speed():
-	"""Cycle combat speed setting: Instant → Normal → Slow → Instant"""
-	combat_speed = (combat_speed + 1) % 3
+	"""Cycle combat speed setting: Instant → Fast → Normal → Slow → Instant.
+	Slow (3× Normal) is a dev/QA mode for verifying combat FX pacing."""
+	combat_speed = (combat_speed + 1) % 4
 	_save_keybinds()
+	_apply_combat_speed_to_panel()
 	game_output.clear()
-	var labels = ["Instant", "Fast", "Normal"]
-	var colors = ["#FF6666", "#FFD700", "#00BFFF"]
+	var labels = ["Instant", "Fast", "Normal", "Slow"]
+	var colors = ["#FF6666", "#FFD700", "#00BFFF", "#FF99FF"]
 	display_game("[color=%s]Combat Speed: %s[/color]" % [colors[combat_speed], labels[combat_speed]])
 	await get_tree().create_timer(1.0).timeout
 	if settings_mode and settings_submenu == "game":
 		game_output.clear()
 		display_game_settings()
+
+
+func _get_player_resource_for_combat() -> Dictionary:
+	"""v0.9.415 — pick the right resource (mana / energy / stamina) and color
+	for the current class so the overlay resource bar can render it. Mirrors
+	the resource selection used by the player-info panel."""
+	var cls := str(character_data.get("class", "Fighter"))
+	var cur: int = 0
+	var max_v: int = 1
+	var color: String = "#3DD9FF"
+	if cls in ["Wizard", "Sorcerer", "Sage"]:
+		cur = int(character_data.get("current_mana", 0))
+		max_v = maxi(1, int(character_data.get("total_max_mana", character_data.get("max_mana", 1))))
+		color = "#9999FF"
+	elif cls in ["Thief", "Ranger", "Ninja"]:
+		cur = int(character_data.get("current_energy", 0))
+		max_v = maxi(1, int(character_data.get("total_max_energy", character_data.get("max_energy", 1))))
+		color = "#66FF66"
+	else:  # Fighter, Barbarian, Paladin, default
+		cur = int(character_data.get("current_stamina", 0))
+		max_v = maxi(1, int(character_data.get("total_max_stamina", character_data.get("max_stamina", 1))))
+		color = "#FFCC00"
+	return {"cur": cur, "max": max_v, "color": color}
+
+
+func _apply_combat_speed_to_panel() -> void:
+	"""Push the current combat_speed multiplier to the combat scene panel so
+	lunges, popup linger, and action-phase fades scale with speed. Called on
+	every speed cycle and on combat start (in case the panel was reset)."""
+	if combat_scene_panel != null and combat_scene_panel.has_method("set_speed_mult"):
+		# Fast/Normal both 1.0 — they only differ in queue drain pacing, not FX
+		# shape. Slow scales the actual tween durations so popup linger, lunge,
+		# and action-phase fade are all visibly drawn-out for QA.
+		var mult: float = 3.0 if combat_speed == 3 else 1.0
+		combat_scene_panel.set_speed_mult(mult)
 
 func _toggle_map_legend():
 	"""Toggle map legend display"""
