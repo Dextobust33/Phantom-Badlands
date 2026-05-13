@@ -348,27 +348,17 @@ func _build_layout() -> void:
 	root_vbox.add_child(_build_hand_strip())
 
 	# === Bottom: combat log mirror ===
+	# v0.9.429 — the legacy log strip is no longer attached to the layout.
+	# The per-actor overlay strips that land during the action phase
+	# (v0.9.415+) replaced its function — that's where attacks read by
+	# actor — and in the Lufia layout this strip was squeezed too short
+	# to be readable. Keeping _log_section / _log_inner / _log_scroll /
+	# _log_label allocated (just not added to root_vbox) so append_log
+	# stays a no-op write instead of crashing — testfx fixtures and a few
+	# real callers still poke it. Death card / picker overlays that used
+	# to be parented under _log_inner now go directly on the panel root.
 	_log_section = PanelContainer.new()
-	var log_sb := StyleBoxFlat.new()
-	log_sb.bg_color = Color(0.02, 0.02, 0.025, 0.85)
-	log_sb.border_color = Color(0.3, 0.25, 0.2, 0.7)
-	log_sb.set_border_width_all(1)
-	log_sb.set_corner_radius_all(4)
-	log_sb.content_margin_left = 6
-	log_sb.content_margin_top = 4
-	log_sb.content_margin_right = 6
-	log_sb.content_margin_bottom = 4
-	_log_section.add_theme_stylebox_override("panel", log_sb)
-	_log_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# v0.9.383 — log shrinks in vertical layouts so scene_section (now
-	# stretch_ratio 4.0 for chrono/lufia) actually gets the vertical room
-	# it needs. Standard layout keeps the larger log it had before.
-	if combat_layout == LAYOUT_STANDARD:
-		_log_section.size_flags_stretch_ratio = 1.0
-	else:
-		_log_section.size_flags_stretch_ratio = 0.4
 	_log_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root_vbox.add_child(_log_section)
 
 	# Wrapper Control inside the log_section so we can stack the scroll
 	# (combat log) and a picker overlay on the same rect, swapping which
@@ -2494,6 +2484,12 @@ func show_item_picker(title: String, items_on_page: Array, page: int, total_page
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.text = "[%d]  %s%s" % [slot, name, qty_text]
+		# v0.9.429 — hover tooltip with the same effect description the
+		# regular inventory shows on inspect. Caller passes "tooltip" in the
+		# entry dict.
+		var tip := str(entry.get("tooltip", ""))
+		if tip != "":
+			btn.tooltip_text = tip
 		# Override the text color via a custom theme font color — but Buttons
 		# only support solid color, so prefix the index with the rarity color
 		# isn't possible without BBCode. Just tint the whole label.
@@ -4475,7 +4471,16 @@ func _build_death_card_overlay() -> void:
 	_death_card_overlay.add_theme_stylebox_override("panel", card_sb)
 	_death_card_overlay.visible = false
 	_death_card_overlay.mouse_filter = Control.MOUSE_FILTER_PASS
-	_log_inner.add_child(_death_card_overlay)
+	# v0.9.429 — parented to the panel root (was _log_inner). The log strip is
+	# no longer attached to the layout; reparenting here keeps the death card
+	# visible across the full combat scene with its z=150 above the
+	# battlefield overlay. Match the picker's 24px inset so the card sits
+	# inside the panel border rather than flush against it.
+	_death_card_overlay.offset_left = 24
+	_death_card_overlay.offset_right = -24
+	_death_card_overlay.offset_top = 24
+	_death_card_overlay.offset_bottom = -24
+	add_child(_death_card_overlay)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 4)
