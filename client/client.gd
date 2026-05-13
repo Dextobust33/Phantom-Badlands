@@ -23495,8 +23495,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.382 — bridge bug fix + chrono visible again + Lufia rewrite.
+	display_game("[color=#00FF00]v0.9.382[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug fixes: bridges, chrono monster art, Lufia layout[/color]")
+	display_game("  • [b]Bridges no longer become impassable after a server restart.[/b] On startup, the server re-stamps every placed tile into the world map, and the re-stamp logic was forcing bridges to block movement. Fixed — bridges placed before v0.9.382 will be walkable again after this restart.")
+	display_game("  • [b]Chrono layout: monster ASCII is visible again[/b]. v0.9.381 wrapped the monster in a centering container that collapsed it to zero height. Replaced with a proper expand-fill arrangement.")
+	display_game("  • [b]Lufia II layout rewritten[/b] to match the reference — monster at the top, party members in bordered stat boxes at the bottom (one box per member, each holding their portrait + name).")
+	display_game("")
+
 	# v0.9.381 — chrono sizing fix + new Lufia II layout + warned deploys.
-	display_game("[color=#00FF00]v0.9.381[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.381[/color]")
 	display_game("  [color=#FFD700]Combat layout polish + new Lufia II prototype[/color]")
 	display_game("  • [b]Chrono layout sizing fixes[/b]: monster ASCII no longer clips, player and companion sprites scaled down so the monster takes the spotlight at the top of the scene.")
 	display_game("  • [b]New layout: /layout lufia[/b] — Lufia II style. Monster on the LEFT, your character + companion stacked vertically on the RIGHT.")

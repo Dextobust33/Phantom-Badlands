@@ -20757,12 +20757,17 @@ func _rebuild_all_player_enclosures():
 	var all_tiles = persistence.get_all_player_tiles()
 	for username in all_tiles:
 		var tiles = all_tiles[username]
-		# Re-stamp all player tiles into chunks (they should already be there from chunk save, but ensure)
+		# Re-stamp all player tiles into chunks (they should already be there
+		# from chunk save, but ensure). v0.9.382 — bridge fix: must mirror the
+		# placement logic in handle_build_place which treats both "door" and
+		# "bridge" as walkable. Pre-fix, every restart re-stamped bridges
+		# with blocks_move=true, silently breaking bridges placed in prior
+		# sessions.
 		for td in tiles:
 			var tx = int(td.get("x", 0))
 			var ty = int(td.get("y", 0))
 			var tile_type = td.get("type", "wall")
-			var blocks_move = tile_type != "door"
+			var blocks_move = tile_type not in ["door", "bridge"]
 			var blocks_los = tile_type == "wall"
 			chunk_manager.set_tile(tx, ty, {
 				"type": tile_type,
