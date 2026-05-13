@@ -23718,8 +23718,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.421 — character XP from gathering + companion ghost fix + scratch-off XP display.
+	display_game("[color=#00FF00]v0.9.421[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Gathering: character XP restored[/color]")
+	display_game("  • [b]Fishing / mining / logging / foraging now grant character XP again[/b], not just job XP. The v0.9.371 scratch-off rewrite called add_fishing_xp / add_mining_xp / add_logging_xp directly — these functions only update the per-skill XP and never call add_experience, so character level XP stopped landing. Foraging used add_job_xp which DOES compute char_xp_gained but the scratch-off caller ignored it. Both paths now apply the legacy taper (1.0× below skill 20 / 0.5× below 50 / 0.2× above 50) and call add_experience.")
+	display_game("  • Scratch-off summary now shows both [color=#FF8800]+N Job XP[/color] and [color=#00BFFF]+N Character XP[/color] lines, plus character-level-up notification if the session bumped your character level.")
+	display_game("  [color=#FFD700]Combat: companion ghost fix[/color]")
+	display_game("  • [b]New characters with no active companion no longer show the previous character's companion in the FX overlay[/b]. _refresh_companion early-returns when companion_data is empty but wasn't clearing the cached _companion_art.text — the FX overlay's _overlay_companion_ascii reads from that text, so stale BBCode lingered across permadeath. Now also clears overlay companion ASCII / name / HP bar fields when there's no companion.")
+	display_game("")
+
 	# v0.9.420 — death-during-action-phase fix: end the action phase so the strips don't block the death card.
-	display_game("[color=#00FF00]v0.9.420[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.420[/color]")
 	display_game("  [color=#FFD700]Combat: stuck-on-defeat fix[/color]")
 	display_game("  • [b]Death card now appears reliably after a defeat[/b], even when the player died mid-action-phase. Previously the battlefield overlay (per-actor strips at z=100) kept rendering over the death card (z=0), so players saw a frozen-looking combat panel instead of the eulogy + Continue prompt — pressing Continue went nowhere because `_action_phase_active` was still true and held the panel visible.")
 	display_game("  • Fix has two parts. [b]Death card z_index bumped 0 → 150[/b] (matches the v0.9.418 victory card), so it always draws above any in-flight battlefield overlay. And [b]the permadeath handler now ends the action phase[/b] (mirrors the v0.9.417 acknowledge_continue victory-path fix): flushes the combat message queue, clears deferred victory FX/chrome, and calls combat_scene_panel.end_action_phase() so the overlay tweens out and `_combat_scene_should_show` no longer pins the panel visible.")
@@ -23801,23 +23810,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]/testfx upgrades[/color]")
 	display_game("  • [b]/testfx pacing[/b] command added — a step-through walkthrough of the full combat lifecycle (8 phases: enter, single attack, back-to-back, round divider, crit/miss, ability, victory, exit) so each beat can be tuned in real time. SPACE advances, R redoes, Q quits.")
 	display_game("  • Combat speed cycle now includes a 'Slow' tier at ~3× Normal as a dev/QA mode for visual verification.")
-	display_game("")
-
-	# v0.9.411 — battlefield overlay rebuilt: blocks lunge during action phase + stat bars + near-black box bg.
-	display_game("[color=#00FFFF]v0.9.411[/color]")
-	display_game("  [color=#FFD700]Combat: visibility (round 5 — actually fixed)[/color]")
-	display_game("  • Lufia box bg changed to [b]near-black[/b] `(0.02, 0.02, 0.03)` (was warm-gray; before that navy). All variants — Cobalt, Crimson, Gold, Ivory — now have maximum contrast.")
-	display_game("  [color=#FFD700]Combat: battlefield overlay rebuilt for action phase[/color]")
-	display_game("  • The previous overlay was just two RichTextLabels in an HBox. When the in-box portraits faded during action phase, lunge animations fired on those faded portraits — so NO movement was visible. The overlay was just text floating with no FX target.")
-	display_game("  • [b]Each character now gets its own block[/b]: ASCII at top (bumped font_size, ~220×125), HP bar below, name underneath. Blocks are positioned manually (no parent layout) so they can be lunged via position tweens.")
-	display_game("  • [b]z_index = 100[/b] on the overlay so it draws above the damage banner + ability cards beneath it.")
-	display_game("  • Overlay height clamped to 140-180px so it stays inside the party-row band — won't extend down into the damage banner area.")
-	display_game("  [color=#FFD700]Combat: FX redirect during action phase[/color]")
-	display_game("  • [b]lunge_player_forward / lunge_companion_forward[/b] now animate the OVERLAY block when _action_phase_active. Outside action phase (or in non-Lufia layouts) they animate the in-box portrait as before.")
-	display_game("  • [b]Damage popups[/b] (show_damage_on_player, show_damage_on_companion) anchor on the overlay block during action phase — popups spawn next to the visible character, not over the faded box.")
-	display_game("  [color=#FFD700]Combat: longer pauses between actors[/color]")
-	display_game("  • Reverted v0.9.410's popup-linger shortening — that was the wrong fix. Popups linger 1.0s + 0.35s fade as before.")
-	display_game("  • Per-attack pause bumped 0.85s → [b]1.45s[/b] on Normal (fits popup linger). Inter-actor extra pause 0.60s → [b]1.20s[/b]. Between two different actors' attacks, the gap is now 2.65s — unmistakably separate events.")
 	display_game("")
 
 	# v0.9.410 — back to basics: neutral box bg + companion lunge + popup linger.
@@ -30752,6 +30744,13 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 	var xp_gained: int = int(message.get("xp_gained", 0))
 	var leveled_up: bool = bool(message.get("leveled_up", false))
 	var new_level: int = int(message.get("new_level", 0))
+	# v0.9.421 — character XP from gathering. Server's scratch-off completion
+	# now applies the legacy taper (1.0/0.5/0.2 by job-skill level) to grant
+	# char XP alongside job XP, matching the legacy auto-chain pattern. The
+	# scratch-off path had been silently dropping char_xp since v0.9.371.
+	var char_xp_gained: int = int(message.get("char_xp_gained", 0))
+	var char_leveled_up: bool = bool(message.get("char_leveled_up", false))
+	var new_char_level: int = int(message.get("new_char_level", 0))
 
 	# Persist character refresh (inventory + skill XP).
 	if message.has("character"):
@@ -30836,8 +30835,12 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 	display_game("")
 	if xp_gained > 0:
 		display_game("[color=#FF8800]+%d %s[/color]" % [xp_gained, xp_label])
+	if char_xp_gained > 0:
+		display_game("[color=#00BFFF]+%d Character XP[/color]" % char_xp_gained)
 	if leveled_up:
 		display_game("[color=#FFD700]★ %s leveled up to Lv%d! ★[/color]" % [session_job.capitalize(), new_level])
+	if char_leveled_up:
+		display_game("[color=#FFD700]★ Character leveled up to Lv%d! ★[/color]" % new_char_level)
 	display_game("")
 	display_game("[color=#808080]%s[/color]" % return_hint)
 

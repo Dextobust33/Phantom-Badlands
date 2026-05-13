@@ -3042,6 +3042,20 @@ func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
 func _refresh_companion() -> void:
 	if _companion_data == null or _companion_data.is_empty():
 		_companion_section.visible = false
+		# v0.9.421 — clear the cached companion art so a new character with no
+		# companion doesn't show the previous character's companion in the FX
+		# overlay block. The overlay's _overlay_companion_ascii reads from
+		# _companion_art.text, which would otherwise keep its stale BBCode
+		# across character permadeath.
+		if _companion_art and is_instance_valid(_companion_art):
+			_companion_art.text = ""
+		if _overlay_companion_ascii and is_instance_valid(_overlay_companion_ascii):
+			_overlay_companion_ascii.text = ""
+		if _overlay_companion_name and is_instance_valid(_overlay_companion_name):
+			_overlay_companion_name.text = ""
+		if _overlay_companion_hp_bar and is_instance_valid(_overlay_companion_hp_bar):
+			_overlay_companion_hp_bar.max_value = 1
+			_overlay_companion_hp_bar.value = 0
 		return
 	_companion_section.visible = true
 

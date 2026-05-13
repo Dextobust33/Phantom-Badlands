@@ -15304,18 +15304,41 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	# v0.9.369 — generic XP grant + counter + node deplete per job type.
 	var session_job: String = String(session.get("job_type", "fishing"))
 	var xp_result: Dictionary
+	# v0.9.421 — also calculate the character XP (not just job XP) using the
+	# same taper formula the legacy auto-chain path used (line ~15602).
+	# fishing/mining/logging add_X_xp() funcs return only {leveled_up, new_level};
+	# they don't apply char_xp. add_job_xp() does compute char_xp_gained but the
+	# scratch-off caller was ignoring it. Both gaps fixed below.
+	var skill_level_for_taper: int = 1
 	match session_job:
 		"fishing":
+			skill_level_for_taper = int(character.fishing_skill)
 			xp_result = character.add_fishing_xp(total_xp)
 			character.record_fish_caught()
 		"mining":
+			skill_level_for_taper = int(character.mining_skill)
 			xp_result = character.add_mining_xp(total_xp)
 			character.record_ore_gathered()
 		"logging":
+			skill_level_for_taper = int(character.logging_skill)
 			xp_result = character.add_logging_xp(total_xp)
 			character.record_wood_gathered()
 		_:  # foraging or future jobs
+			skill_level_for_taper = int(character.job_levels.get(session_job, 1))
 			xp_result = character.add_job_xp(session_job, total_xp)
+	# Compute character XP. Prefer add_job_xp's returned value (foraging path);
+	# otherwise apply the legacy taper to total_xp (fishing/mining/logging).
+	var char_xp_gained: int = int(xp_result.get("char_xp_gained", 0))
+	if char_xp_gained == 0 and total_xp > 0:
+		var taper: float = 1.0
+		if skill_level_for_taper > 50:
+			taper = 0.2
+		elif skill_level_for_taper > 20:
+			taper = 0.5
+		char_xp_gained = int(total_xp * taper)
+	var char_level_result: Dictionary = {}
+	if char_xp_gained > 0:
+		char_level_result = character.add_experience(char_xp_gained)
 	# v0.9.419 — credit gather-quest progress per non-DUD awarded slot. Legacy
 	# chain-gather (line ~15590) and per-correct-answer (line ~15985) paths both
 	# call check_gathering_progress per awarded item; the scratch-off path was
@@ -15347,6 +15370,12 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		"leveled_up": bool(xp_result.get("leveled_up", false)),
 		"new_level": int(xp_result.get("new_level", character.job_levels.get(session_job, 1))),
 		"job_type": session_job,  # v0.9.369 — client uses this for completion summary headers + post-session hint
+		# v0.9.421 — surface character XP so the client summary can show "+N XP"
+		# alongside the job XP. char_leveled_up / new_char_level let the client
+		# trigger the level-up FX path if the gather session bumped the char level.
+		"char_xp_gained": char_xp_gained,
+		"char_leveled_up": bool(char_level_result.get("leveled_up", false)),
+		"new_char_level": int(char_level_result.get("new_level", character.level)),
 		"character": character.to_dict(),
 	})
 	# v0.9.419 — flush pending gather-quest progress messages AFTER the
