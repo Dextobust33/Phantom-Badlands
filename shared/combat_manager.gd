@@ -1737,12 +1737,14 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		messages.append("[color=#FFAA00]Phoenix Rebirth![/color] [color=#9ACD32]The %s rises at %d HP![/color]" % [monster.name, phoenix_hp])
 		return {"success": true, "messages": messages, "combat_ended": false}
 
-	# Custom death message
+	# Custom death message — emit flavor first if set, then ALWAYS emit the
+	# generic "defeated" line so the combat log has an unambiguous death
+	# marker (some flavor messages like "The troll stops regenerating. Finally."
+	# don't read as obvious deaths).
 	var death_msg = monster.get("death_message", "")
 	if death_msg != "":
 		messages.append("[color=#FFD700]%s[/color]" % death_msg)
-	else:
-		messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
+	messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
 
 	# Death curse ability: deal damage on death (nerfed from 25% to 10%, reduced by WIS)
 	# Undead racial: immune to death curses

@@ -7,17 +7,14 @@ class_name CombatScenePanel
 # the left, ASCII monster art on the right (mismatched by design — see
 # project_combat_juice.md for the decision).
 #
-# v0.9.380 — layout prototype framework. `combat_layout` selects between:
-#   "standard" — original side-by-side (player+companion left, monster right)
-#   "chrono"   — Chrono Trigger / Mother style (monster top center, party row below)
-# Same instance variables hold the controls regardless of layout, so all
-# populate() / animation logic works unchanged. Layout is set via the
-# `/layout` slash command and persisted client-side in keybinds.json.
-
+# v0.9.417 — Lufia II is the only combat layout. Earlier prototypes
+# (LAYOUT_STANDARD, LAYOUT_CHRONO) are dead-code conditionals kept around
+# because they don't run anymore — see set_layout removal + combat_layout
+# const below. Cleanup pass to delete the dead branches is a follow-up.
 const LAYOUT_STANDARD := "standard"
 const LAYOUT_CHRONO := "chrono"
-const LAYOUT_LUFIA := "lufia"  # v0.9.381 — side view, monster left, party right (stacked)
-var combat_layout: String = LAYOUT_STANDARD
+const LAYOUT_LUFIA := "lufia"
+const combat_layout: String = LAYOUT_LUFIA
 
 const MONO_FONT_PATH := "res://font/Consolas/consolas.ttf"
 static var _mono_font: FontFile = null
@@ -224,12 +221,6 @@ const FLASH_DURATION := 0.18
 const LUNGE_DISTANCE := 16.0
 const LUNGE_DURATION := 0.10  # one direction; total = 2x
 
-# v0.9.415 — speed multiplier set by client.gd via set_speed_mult(). 1.0 is
-# normal; 3.0 is the dev/QA Slow mode that stretches every FX duration so
-# pacing can be visually verified one beat at a time. Applies to lunges,
-# popup linger+fade, and action-phase fade tweens.
-var _speed_mult: float = 1.0
-
 # Audit #1 Slice 6a — combat hand row. Five card cells in a horizontal
 # strip plus a small "Deck N · Discard M" indicator on the right. Cells
 # are PanelContainers built once at layout time and rebuilt on each hand
@@ -285,35 +276,6 @@ func _ready() -> void:
 	_load_mono_font()
 	_build_layout()
 	visible = false
-
-
-func set_layout(mode: String) -> bool:
-	"""v0.9.380 — switch combat layout at runtime. Tears down the existing
-	chrome and rebuilds with the new layout. Returns true if the mode was
-	valid and applied (or already active); false if the mode string is
-	unrecognized. Caller is responsible for re-populating combat state if
-	a fight is currently active.
-
-	Allowed: LAYOUT_STANDARD, LAYOUT_CHRONO, LAYOUT_LUFIA."""
-	var normalized: String = mode.strip_edges().to_lower()
-	if normalized != LAYOUT_STANDARD and normalized != LAYOUT_CHRONO and normalized != LAYOUT_LUFIA:
-		return false
-	if normalized == combat_layout and _root_panel != null and is_instance_valid(_root_panel):
-		return true
-	combat_layout = normalized
-	# Tear down the old chrome. Freeing the root frees all children + clears
-	# their instance-variable references (they're now invalid; rebuild
-	# re-creates them).
-	if _root_panel != null and is_instance_valid(_root_panel):
-		_root_panel.queue_free()
-	_root_panel = null
-	_scene_section = null
-	_log_section = null
-	_player_col = null
-	_monster_col = null
-	_companion_section = null
-	_build_layout()
-	return true
 
 
 func _load_mono_font() -> void:
@@ -548,13 +510,6 @@ func _build_scene_section_lufia() -> Control:
 	return vbox
 
 
-func set_speed_mult(mult: float) -> void:
-	"""v0.9.415 — set the FX timing multiplier. client.gd calls this when
-	combat_speed cycles. 1.0 = normal, 3.0 = Slow (dev QA). Active tweens
-	keep their current duration — only new tweens after this call scale."""
-	_speed_mult = max(0.1, mult)
-
-
 func start_action_phase() -> void:
 	"""v0.9.406 — Lufia II battlefield reveal. (1) The entire party box row
 	fades out at the bottom; (2) a separate 'battlefield' overlay fades in
@@ -585,7 +540,7 @@ func start_action_phase() -> void:
 	_action_phase_tween = create_tween().set_parallel(true)
 	# Fade the whole party row down + out.
 	if _player_col and is_instance_valid(_player_col):
-		_action_phase_tween.tween_property(_player_col, "modulate:a", 0.0, 0.20 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 0.0, 0.20).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	# Reposition overlay after the strips collapse so the new available
 	# space is accounted for.
 	call_deferred("_position_battlefield_overlay")
@@ -595,8 +550,8 @@ func start_action_phase() -> void:
 		_battlefield_overlay.visible = true
 		_battlefield_overlay.modulate.a = 0.0
 		_battlefield_overlay.position.y = _battlefield_overlay_rest_y - 40.0
-		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 1.0, 0.25 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y, 0.28 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func end_action_phase() -> void:
@@ -619,10 +574,10 @@ func end_action_phase() -> void:
 	_kill_action_phase_tween()
 	_action_phase_tween = create_tween().set_parallel(true)
 	if _player_col and is_instance_valid(_player_col):
-		_action_phase_tween.tween_property(_player_col, "modulate:a", 1.0, 0.25 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
-		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 0.0, 0.22 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y - 40.0, 0.22 * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 0.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y - 40.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		# Hide after the tween completes so it doesn't block input or paint.
 		_action_phase_tween.chain().tween_callback(func():
 			if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
@@ -708,32 +663,18 @@ func _ensure_battlefield_overlay() -> void:
 func _build_overlay_log_label(align: String) -> RichTextLabel:
 	"""v0.9.415 — small scrolling per-actor log shown in the action-phase
 	overlay. Holds up to OVERLAY_LOG_LINE_LIMIT recent lines for one actor.
-	v0.9.416 — fit_content disabled + brighter bg so the strip's box is
-	visible even when empty (was: bg only appeared once content arrived)."""
+	v0.9.417 — bg removed; text floats over the combat bg so the strip
+	disappears visually when empty (no bordered box). scroll_following
+	keeps newest line at the bottom."""
 	var lbl := RichTextLabel.new()
 	lbl.bbcode_enabled = true
 	lbl.fit_content = false
-	# v0.9.416 — scroll_active + scroll_following so newest lines stay visible
-	# at the BOTTOM of the strip (was: only top-N visible, newer lines fell off).
-	# mouse_filter IGNORE keeps users from accidentally scrolling away.
 	lbl.scroll_active = true
 	lbl.scroll_following = true
 	lbl.clip_contents = true
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.add_theme_font_size_override("normal_font_size", 12)
-	# Background tint so the strip reads as its own zone over the box bg.
-	# v0.9.416 — brighter alpha so the empty strip is still legible as a box.
-	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.08, 0.08, 0.12, 0.88)
-	bg.border_color = Color(0.35, 0.35, 0.45, 0.9)
-	bg.border_width_left = 1
-	bg.border_width_right = 1
-	bg.border_width_top = 1
-	bg.border_width_bottom = 1
-	bg.set_corner_radius_all(4)
-	bg.set_content_margin_all(4)
-	lbl.add_theme_stylebox_override("normal", bg)
 	match align:
 		"center":
 			pass  # text aligns naturally; center the block via position
@@ -2661,18 +2602,70 @@ func _route_to_overlay_log(bbcode_line: String, actor: String) -> void:
 
 
 func _classify_overlay_actor(raw: String) -> String:
-	"""Same heuristic as client.gd's _classify_combat_actor: identify which
-	actor produced this combat line so we can route it to their overlay log.
-	Returns 'player', 'companion', 'monster', or 'ambient'."""
-	if " attacks" in raw or " strikes" in raw or " hits " in raw or " misses" in raw or " uses " in raw or " casts " in raw:
-		if "Your " in raw or "#00FFFF" in raw:
+	"""Identify which actor produced this combat line so we can route it to
+	their overlay log. Returns 'player', 'companion', 'monster', or 'ambient'.
+
+	v0.9.417 — three layers of detection, in order:
+	  1. Condensed per-turn summary glyph prefixes (►/◆/✦) — these don't
+	     contain attack verbs so the verb-check below would miss them.
+	  2. Firehose enhancement markers (>> / << / ++) — _enhance_combat_message
+	     in client.gd prepends '<<' to ANY 'The X ...' line so we can detect
+	     the actor from a single marker regardless of the original prefix
+	     color (handles #FF4444, #FF6600 ability variants, etc.).
+	  3. Raw verb + actor-prefix fallback for non-enhanced lines."""
+	return _classify_overlay_actor_inner(raw)
+
+
+func _strip_bbcode_and_whitespace(raw: String) -> String:
+	"""Strip BBCode tags ([color=...], [pulse ...], [/...], etc.) and leading/
+	trailing whitespace so begins_with checks see the actual text content."""
+	var re := RegEx.new()
+	re.compile("\\[/?[^\\]]+\\]")
+	return re.sub(raw, "", true).strip_edges()
+
+
+func _classify_overlay_actor_inner(raw: String) -> String:
+	"""v0.9.417 — single-discriminator routing based on the server's own
+	structural signal: process_monster_turn output is wrapped by
+	_indent_multiline(msg, "         ") in combat_manager.gd (lines 1130,
+	1252, 2610, 2790, 3670, 3824). Player ability side-effects (Magic Bolt's
+	'The bolt strikes', Blast's 'The explosion deals') are emitted via plain
+	messages.append with no indent.
+
+	Rule: leading 5+ spaces of indent = monster-turn block. Otherwise classify
+	by content prefix (Your → companion, You → player, else ambient).
+
+	No more per-verb / per-ability heuristics."""
+	# Condensed-summary glyph prefixes (still used by some buffer paths).
+	if "►" in raw and "YOU" in raw:
+		return "player"
+	if "◆" in raw and "Your " in raw:
+		return "companion"
+	if "✦" in raw and "The " in raw:
+		return "monster"
+	# Count leading spaces — the structural signal for monster-turn blocks.
+	var leading_ws: int = 0
+	while leading_ws < raw.length() and raw[leading_ws] == " ":
+		leading_ws += 1
+	# Companion — 'Your X' + action verb (works regardless of indent).
+	if "Your " in raw:
+		if " attacks" in raw or " strikes" in raw or " hits " in raw or " misses" in raw or " uses " in raw or " lunges" in raw:
 			return "companion"
-		if raw.begins_with("You ") or raw.begins_with("[color=#FFD700]You "):
-			return "player"
-		if raw.begins_with("The ") or raw.begins_with("[color=#FF4444]") or raw.begins_with("[color=#FF0000]"):
-			return "monster"
-	# Player damage taken — "deals N damage to you"
-	if "damage to you" in raw or "smashes you" in raw:
+	# Enhancement markers explicitly tag player lines.
+	if ">>" in raw or "++" in raw:
+		return "player"
+	var content: String = _strip_bbcode_and_whitespace(raw)
+	# 'You' content prefix → player regardless of indent (covers indented
+	# 'You gain N experience!' inside monster-turn blocks).
+	if content.begins_with("You ") or content.begins_with("you "):
+		return "player"
+	# Damage-taken phrasing without 'The X' prefix.
+	var content_lower: String = content.to_lower()
+	if "damage to you" in content_lower or "smashes you" in content_lower:
+		return "monster"
+	# Indented 'The X' line → monster (came from process_monster_turn block).
+	# Non-indented 'The X' line → ambient (player ability side-effect).
+	if leading_ws >= 5 and (content.begins_with("The ") or content.begins_with("the ")):
 		return "monster"
 	return "ambient"
 
@@ -3157,8 +3150,8 @@ func lunge_player_forward() -> void:
 	# Player is on the left, monster on the right — lunge to the RIGHT.
 	var target_pos = baseline + Vector2(LUNGE_DISTANCE, 0)
 	_player_lunge_tween = create_tween()
-	_player_lunge_tween.tween_property(node, "position", target_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_player_lunge_tween.tween_property(node, "position", baseline, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_player_lunge_tween.tween_property(node, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_player_lunge_tween.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 func lunge_companion_forward() -> void:
@@ -3181,8 +3174,8 @@ func lunge_companion_forward() -> void:
 		_companion_art.position = baseline
 	var target_pos = baseline + Vector2(LUNGE_DISTANCE, 0)
 	_companion_lunge_tween = create_tween()
-	_companion_lunge_tween.tween_property(_companion_art, "position", target_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_companion_lunge_tween.tween_property(_companion_art, "position", baseline, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_companion_lunge_tween.tween_property(_companion_art, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_companion_lunge_tween.tween_property(_companion_art, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 func _lunge_node(node: Control, baseline: Vector2, is_player: bool, forward: bool) -> void:
@@ -3206,8 +3199,8 @@ func _lunge_node(node: Control, baseline: Vector2, is_player: bool, forward: boo
 		_companion_lunge_tween = create_tween()
 		t = _companion_lunge_tween
 	node.position = baseline
-	t.tween_property(node, "position", target, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	t.tween_property(node, "position", baseline, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_property(node, "position", target, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 # === v0.9.413 — Miss FX ===
@@ -3284,7 +3277,7 @@ func _spawn_miss_label(anchor_global: Vector2, color: Color = Color("#FFD93D")) 
 	# so misses don't overdraw recent damage numbers; cap so rapid bursts
 	# don't push popups off the top of the panel.
 	var now := float(Time.get_ticks_msec()) / 1000.0
-	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S * _speed_mult:
+	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S:
 		_damage_label_stack_y = maxf(_damage_label_stack_y - DAMAGE_STACK_STEP_PX, -DAMAGE_STACK_MAX_OFFSET)
 	else:
 		_damage_label_stack_y = 0.0
@@ -3299,10 +3292,9 @@ func _spawn_miss_label(anchor_global: Vector2, color: Color = Color("#FFD93D")) 
 	# Bold scale-pop + linger + fade.
 	label.scale = Vector2(0.3, 0.3)
 	label.pivot_offset = label.size * 0.5
-	# v0.9.415 — linger + fade scaled by _speed_mult; scale-pop intro keeps
-	# its punch so MISS still snaps into view in Slow mode.
-	var miss_linger := 0.85 * _speed_mult
-	var miss_fade := 0.35 * _speed_mult
+	# v0.9.417 — bold scale-pop + linger + fade for MISS popups.
+	var miss_linger := 0.85
+	var miss_fade := 0.35
 	var t := create_tween().set_parallel(true)
 	t.tween_property(label, "scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	t.tween_property(label, "scale", Vector2(1.0, 1.0), 0.10).set_delay(0.12)
@@ -3322,8 +3314,8 @@ func lunge_monster_forward() -> void:
 	# Monster is on the right — lunge to the LEFT (toward player).
 	var target_pos = _monster_art_baseline_pos + Vector2(-LUNGE_DISTANCE, 0)
 	_monster_lunge_tween = create_tween()
-	_monster_lunge_tween.tween_property(_monster_art_label, "position", target_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	_monster_lunge_tween.tween_property(_monster_art_label, "position", _monster_art_baseline_pos, LUNGE_DURATION * _speed_mult).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_monster_lunge_tween.tween_property(_monster_art_label, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_monster_lunge_tween.tween_property(_monster_art_label, "position", _monster_art_baseline_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
 func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player") -> void:
@@ -3495,7 +3487,7 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	# v0.9.415 — scale reset window by speed_mult so Slow mode's longer
 	# linger doesn't cause overlapping spawns. Cap the cumulative offset so
 	# rapid bursts can't push popups off the top of the panel.
-	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S * _speed_mult:
+	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S:
 		_damage_label_stack_y = maxf(_damage_label_stack_y - DAMAGE_STACK_STEP_PX, -DAMAGE_STACK_MAX_OFFSET)
 	else:
 		_damage_label_stack_y = 0.0
@@ -3548,10 +3540,8 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	# Linger in place, then fade with a subtle scale shrink (no upward drift).
 	# v0.9.411 — reverted to 1.0s linger + 0.35s fade. The right fix is to
 	# pause LONGER between actor attacks, not shorten popup readability.
-	# v0.9.415 — scaled by _speed_mult so Slow mode lets the popup linger
-	# even longer for QA.
-	var linger_time := 1.0 * _speed_mult
-	var fade_time := 0.35 * _speed_mult
+	var linger_time := 1.0
+	var fade_time := 0.35
 	t.tween_property(label, "modulate:a", 0.0, fade_time).set_delay(linger_time)
 	t.tween_property(label, "scale", rest_scale * 0.85, fade_time).set_delay(linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	t.tween_callback(label.queue_free).set_delay(linger_time + fade_time)
