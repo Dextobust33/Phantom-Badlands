@@ -2551,13 +2551,16 @@ func get_all_available_abilities() -> Array:
 	var abilities = []
 
 	# Universal abilities available to all classes
-	abilities.append({"name": "cloak", "level": 20, "display": "Cloak", "universal": true})
-	abilities.append({"name": "all_or_nothing", "level": 1, "display": "All or Nothing", "universal": true})
-	# Audit #1 deck variants — utility cards that manipulate the hand itself.
-	# Forethought: pay 1 resource, mulligan the hand, keep your turn.
-	# Tactical Retreat: free skip — discard + redraw + end turn, no damage swing.
+	# v0.9.423 — Cloak is an out-of-combat ability (slip past overworld
+	# monsters); marked non_combat so the combat deck builder and the
+	# ability panel filter it out of the combat loadout.
+	abilities.append({"name": "cloak", "level": 20, "display": "Cloak", "universal": true, "non_combat": true})
+	# v0.9.423 — utility cards that interact with the hand-cycle.
+	# Forethought: pay 1 resource, skip monster turn (hand also cycles via
+	# the new auto-cycle on any player action). Recharge: surrender turn,
+	# restore 50% of your max primary resource.
 	abilities.append({"name": "forethought", "level": 1, "display": "Forethought", "universal": true})
-	abilities.append({"name": "tactical_retreat", "level": 1, "display": "Tactical Retreat", "universal": true})
+	abilities.append({"name": "tactical_retreat", "level": 1, "display": "Recharge", "universal": true})
 
 	# Teleport unlocks at different levels per class path
 	var teleport_level = 60  # Default (warrior)
@@ -2594,7 +2597,7 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": "distract", "level": 10, "display": "Distract"})
 			abilities.append({"name": "pickpocket", "level": 25, "display": "Pickpocket"})
 			abilities.append({"name": "ambush", "level": 40, "display": "Ambush"})
-			abilities.append({"name": "vanish", "level": 60, "display": "Vanish"})
+			abilities.append({"name": "vanish", "level": 60, "display": "Phantom Strike"})
 			abilities.append({"name": "exploit", "level": 80, "display": "Exploit"})
 			abilities.append({"name": "perfect_heist", "level": 100, "display": "Perfect Heist"})
 			abilities.append({"name": "sabotage", "level": 30, "display": "Sabotage"})
@@ -2744,11 +2747,47 @@ func initialize_deck_collection_if_needed() -> bool:
 	Returns true if anything was added/changed (caller should persist)."""
 	var changed = false
 	var available = get_all_available_abilities()
+	# v0.9.423 — migrate out non_combat abilities (Cloak, Teleport) from
+	# existing characters' deck collections. They were added by earlier
+	# versions before the non_combat tag was added; now they're filtered
+	# from the combat deck entirely so we strip them from the collection
+	# to keep the data clean. Out-of-combat triggers still work via
+	# separate code paths (server.gd teleport/cloak handlers).
+	for entry_nc in available:
+		var nc_name = String(entry_nc.get("name", ""))
+		if nc_name == "":
+			continue
+		if bool(entry_nc.get("non_combat", false)) and combat_deck_collection.has(nc_name):
+			combat_deck_collection.erase(nc_name)
+			changed = true
+	# v0.9.423 — also migrate out the retired "all_or_nothing" ability so
+	# existing characters drop it from their deck collections.
+	if combat_deck_collection.has("all_or_nothing"):
+		combat_deck_collection.erase("all_or_nothing")
+		changed = true
+	# v0.9.423 — also unequip non_combat abilities (and retired all_or_nothing)
+	# from combat slots so a slot isn't silently wasted after the migration.
+	for i in range(equipped_abilities.size()):
+		var eq_name = String(equipped_abilities[i]) if equipped_abilities[i] != null else ""
+		if eq_name == "":
+			continue
+		if eq_name == "all_or_nothing":
+			equipped_abilities[i] = ""
+			changed = true
+			continue
+		for entry_eq in available:
+			if String(entry_eq.get("name", "")) == eq_name and bool(entry_eq.get("non_combat", false)):
+				equipped_abilities[i] = ""
+				changed = true
+				break
 	# Always-on additive backfill: any newly-shipped accessible ability the
 	# character doesn't yet have gets 1 copy. Doesn't shrink the collection.
+	# Skip non_combat abilities so they never enter the combat deck.
 	for entry in available:
 		var name = entry.get("name", "")
 		if name == "":
+			continue
+		if bool(entry.get("non_combat", false)):
 			continue
 		if not combat_deck_collection.has(name):
 			combat_deck_collection[name] = 1

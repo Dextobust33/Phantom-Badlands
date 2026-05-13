@@ -1727,7 +1727,7 @@ const TRICKSTER_ABILITY_SLOTS = [
 	["distract", "Distract", 10, 15, "energy"],
 	["pickpocket", "Steal", 25, 20, "energy"],
 	["ambush", "Ambush", 40, 30, "energy"],
-	["vanish", "Vanish", 60, 40, "energy"],
+	["vanish", "Phantom Strike", 60, 40, "energy"],
 	["exploit", "Exploit", 80, 35, "energy"],
 ]
 
@@ -10456,11 +10456,10 @@ func _get_combat_ability_actions() -> Array:
 func _get_combat_hand_actions() -> Array:
 	"""Audit #1 Slice 6a — build the 6 ability-slot entries for the action
 	bar from the server-pushed hand. Layout maps to keys [R, 1, 2, 3, 4, 5]:
-	slot 0 (R) hosts All-or-Nothing as a permanent always-available action
-	(too niche to draw as a card per user 2026-05-10); slots 1-5 host the
-	5 drawn cards. Resource availability is recomputed client-side so a
-	freshly-spent ability greys out immediately on the same frame as the
-	combat update."""
+	v0.9.423 — All-or-Nothing was removed entirely, so slot 0 (R) is now
+	empty. Slots 1-3 host the (3-card) hand; remaining slots stay blank.
+	Resource availability is recomputed client-side so a freshly-spent
+	ability greys out immediately on the same frame as the combat update."""
 	var actions: Array = []
 
 	var path = _get_player_active_path()
@@ -10468,29 +10467,8 @@ func _get_combat_hand_actions() -> Array:
 	var current_stamina = int(character_data.get("current_stamina", 0))
 	var current_energy = int(character_data.get("current_energy", 0))
 
-	# Slot 0 (R) — All-or-Nothing, permanent. Pulled through the same info
-	# helper as the hand cards so its label shows the live A/N percent and
-	# cost matches the player's active path (mana / stamina / energy).
-	var aon_info = _get_ability_combat_info("all_or_nothing", path)
-	if aon_info.is_empty():
-		actions.append({"label": "—", "action_type": "none", "action_data": "", "enabled": false, "cost": 0, "resource_type": ""})
-	else:
-		var aon_cost = int(aon_info.get("cost", 1))
-		var aon_rt = str(aon_info.get("resource_type", ""))
-		var aon_can_afford = true
-		if aon_cost > 0:
-			match aon_rt:
-				"mana": aon_can_afford = current_mana >= aon_cost
-				"stamina": aon_can_afford = current_stamina >= aon_cost
-				"energy": aon_can_afford = current_energy >= aon_cost
-		actions.append({
-			"label": str(aon_info.get("display", "A/N")),
-			"action_type": "combat",
-			"action_data": "all_or_nothing",
-			"enabled": aon_can_afford,
-			"cost": aon_cost,
-			"resource_type": aon_rt
-		})
+	# Slot 0 (R) — empty placeholder (was All-or-Nothing pre-v0.9.423).
+	actions.append({"label": "—", "action_type": "none", "action_data": "", "enabled": false, "cost": 0, "resource_type": ""})
 
 	for i in range(5):
 		if i < combat_hand.size():
@@ -10554,7 +10532,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
 		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 8, "cost_floor_ratio": 0.3, "resource_type": "mana"},
-		"haste": {"display": "Haste", "cost": 35, "cost_percent": 3, "cost_floor_ratio": 0.3, "resource_type": "mana"},
+		"haste": {"display": "Arcane Surge", "cost": 35, "cost_percent": 3, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
@@ -10573,18 +10551,21 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"distract": {"display": "Distract", "cost": 15, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"pickpocket": {"display": "Steal", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"ambush": {"display": "Ambush", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
-		"vanish": {"display": "Vanish", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
+		"vanish": {"display": "Phantom Strike", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
 		"exploit": {"display": "Exploit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"perfect_heist": {"display": "Heist", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"sabotage": {"display": "Sabotage", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"gambit": {"display": "Gambit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
+		# v0.9.423 — Cloak is non-combat (slip past overworld monsters); kept
+		# here so out-of-combat info lookups work. All-or-Nothing was retired.
 		"cloak": {"display": "Cloak", "cost": 30, "cost_percent": 0, "resource_type": resource_type},
-		"all_or_nothing": {"display": "A/N %d%%" % int(3.0 + min(25.0, character_data.get("all_or_nothing_uses", 0) * 0.1)), "cost": 1, "cost_percent": 0, "resource_type": resource_type},
-		# Audit #1 deck variants — Forethought = paid mulligan (1 resource, skip
-		# monster turn). Tactical Retreat = free mulligan (0 cost, monster acts).
+		# v0.9.423 — Forethought: pay 1 resource, skip monster turn (the
+		# auto-cycle on card play handles the hand mulligan). Recharge
+		# (internal name tactical_retreat): restore 50% max primary resource,
+		# monster acts.
 		"forethought": {"display": "Forethought", "cost": 1, "cost_percent": 0, "resource_type": resource_type},
-		"tactical_retreat": {"display": "Retreat", "cost": 0, "cost_percent": 0, "resource_type": resource_type},
+		"tactical_retreat": {"display": "Recharge", "cost": 0, "cost_percent": 0, "resource_type": resource_type},
 	}
 
 	var result = ability_defs.get(ability_name, {})
@@ -10924,12 +10905,10 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			var raw = 30 + int((wits_stat - monster_int_est) * 1.5) - lvl_diff * 2
 			var chance = max(1, int(clampi(raw, 5, 60) * fraction))
 			return {"text": "%d%% kill" % chance, "color": "#A0E060"}
-		"all_or_nothing":
-			return {"text": "All-or-nothing", "color": "#FFD700"}
 		"forethought":
-			return {"text": "Mulligan (keep turn)", "color": "#9370DB"}
+			return {"text": "Skip monster turn", "color": "#9370DB"}
 		"tactical_retreat":
-			return {"text": "Mulligan (skip turn)", "color": "#87CEEB"}
+			return {"text": "+50% max resource", "color": "#87CEEB"}
 	return {"text": "", "color": "#888888"}
 
 func _get_card_total_attack() -> int:
@@ -16206,12 +16185,12 @@ func _get_ability_description_text(ability_name: String) -> String:
 	match ability_name:
 		"magic_bolt": return "Deal damage equal to mana spent (scales with INT). Variable mana cost."
 		"shield": return "Alias for Forcefield — flat damage absorption shield."
-		"cloak": return "75% chance to escape combat. Costs 8% of your max class resource. Requires Lv 20."
+		"cloak": return "Out-of-combat ability — slip past monsters on the overworld. Costs 8% of your max class resource. Requires Lv 20. (Cannot be used in combat.)"
 		"blast": return "INT-scaled burst damage + 3-round burn DoT (20% of INT per round). Variable cost (≈30% of mana pool max) — damage AND burn magnitude scale with spend; duration stays 3 rounds."
 		"forcefield": return "Absorbs flat damage equal to 100 + INT × 8 until depleted. Variable cost (≈30% of mana pool max) — shield magnitude scales with spend (partial cast = smaller shield)."
 		"teleport": return "Out-of-combat travel ability (not used in combat)."
 		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. Variable cost (≈30% of mana pool max) — damage scales linearly with spend."
-		"haste": return "+ (20 + INT/5)% speed for 5 rounds — buffs your dodge and reduces enemy hits. Variable cost (≈30% of mana pool max) — speed magnitude scales with spend; duration stays 5 rounds."
+		"haste": return "ARCANE SURGE — buffs your spell damage and adds a double-cast chance on damage spells for 4 rounds. +40-60% spell damage (scales with INT and spend), +7-25% double-cast chance. Variable cost (≈30% of mana pool max) — both effects scale with spend."
 		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC. Variable cost (≈30% of mana pool max) — stun CHANCE scales with spend (duration stays 1-2 turns if it lands)."
 		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish. Variable cost (≈30% of mana pool max) — banish CHANCE scales with spend; loot-drop chance stays 50% (bonus outcome)."
 		"power_strike": return "2× attack with sqrt STR scaling. Variable cost 3-10 stamina — damage scales linearly with what you spend (30% at floor, 100% at ceiling)."
@@ -16232,9 +16211,8 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks. Variable cost 15-50 energy — success CHANCE scales with spend (floor-cast Heist is almost always a miss; full-cost is the only realistic shot)."
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
 		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
-		"all_or_nothing": return "Big damage on hit; heavy self-damage on miss. Universal."
-		"forethought": return "Discard your hand and draw a fresh hand. Costs 1 of your primary resource. Skips the monster's turn — a setup card, not a tempo card. Universal."
-		"tactical_retreat": return "Discard your hand and draw a fresh hand for free, but the monster gets a free swing. Universal panic mulligan."
+		"forethought": return "Pay 1 of your primary resource to skip the monster's turn. The hand mulligan is now automatic — every player action draws a fresh hand, so Forethought is purely a tempo / safety card. Universal."
+		"tactical_retreat": return "RECHARGE — Catch your breath and restore 50% of your max primary resource (mana/stamina/energy). Monster gets a turn. Pair with Forethought when low on resources for a swing-pivot."
 		_:
 			return ""
 
@@ -17396,8 +17374,8 @@ func _get_buff_display_name(buff_type: String) -> String:
 		"war_cry": return "War Cry"
 		"berserk": return "Berserk"
 		"iron_skin": return "Iron Skin"
-		"haste": return "Haste"
-		"vanish": return "Vanish"
+		"haste": return "Arcane Surge"
+		"vanish": return "Phantom Strike"
 		"cloak", "invisibility": return "Invisibility"
 		"shield": return "Shield"
 		"rally": return "Rally"
@@ -23731,8 +23709,23 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.423 — ability content overhaul: deck/hand auto-cycle, ability changes, balance pass.
+	display_game("[color=#00FF00]v0.9.423[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: auto-cycle hand every turn[/color]")
+	display_game("  • [b]Every player action draws a fresh 3-card hand next round.[/b] Basic attack: all 3 cards discard, draw 3 new ones. Ability play: that card consumed, other 2 discard, draw 3 new ones. Solves the 'stuck with uncastable cards' problem and keeps each round's options fresh.")
+	display_game("  [color=#FFD700]Combat: ability changes[/color]")
+	display_game("  • [b]Cloak and Teleport removed from combat[/b] — these are out-of-combat utilities only (slip past overworld monsters / fast-travel). They no longer appear in your deck or ability panel. Migrated out of existing characters' deck collections + equipped slots automatically.")
+	display_game("  • [b]All or Nothing removed entirely[/b]. The 97%-fail-doubles-monster-stats mechanic was a fight-ender more often than a hail mary. Action bar slot 0 (R key) in combat is now empty.")
+	display_game("  • [b]Tactical Retreat → Recharge[/b]: surrender your turn and restore 50% of your max primary resource (mana/stam/energy). Replaces the old free-mulligan effect (the new auto-cycle already handles mulligans). Internal name preserved so existing decks unaffected.")
+	display_game("  • [b]Haste → Arcane Surge[/b]: +40-60% spell damage AND a 7-25% double-cast chance on damage spells for 4 rounds (variable cost scales both). Replaces the old speed buff — mages weren't getting much value from +20% speed. Magic Bolt, Blast, and Meteor roll for double-cast each cast.")
+	display_game("  • [b]Vanish → Phantom Strike[/b] (display rename only — internal name preserved). The 'vanish' label suggested an escape; the actual mechanic is 'auto-crit next attack', so the new name matches what it does.")
+	display_game("  • [b]Banish loot chance 50% → 70%[/b]. Effective full-win rate jumps from 20-37.5% → 28-52.5%, less punishing for an endgame ability.")
+	display_game("  • [b]Pickpocket per-fight cap[/b] now rolls 2-4 (was 1-3). The 25-level, 20-energy ability now delivers more value across a long fight.")
+	display_game("  • [b]Forethought simplified[/b] — pay 1 resource to skip the monster's turn. The hand mulligan is now automatic via the auto-cycle.")
+	display_game("")
+
 	# v0.9.422 — post-victory transition fix + ~20% pacing speedup.
-	display_game("[color=#00FF00]v0.9.422[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.422[/color]")
 	display_game("  [color=#FFD700]Combat: no more back-to-battle flash after victory[/color]")
 	display_game("  • [b]Pressing Space on the victory / loot screen now hides the combat panel immediately[/b] instead of briefly re-exposing the battle scene before game_output appears. acknowledge_continue now zeroes _combat_scene_linger_until_ms (was leaving the 2.2s victory-FX linger active) and clears _combat_scene_force_visible so the panel can hide on the next frame.")
 	display_game("  [color=#FFD700]Combat: ~20% faster pacing[/color]")
@@ -23831,16 +23824,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]/testfx upgrades[/color]")
 	display_game("  • [b]/testfx pacing[/b] command added — a step-through walkthrough of the full combat lifecycle (8 phases: enter, single attack, back-to-back, round divider, crit/miss, ability, victory, exit) so each beat can be tuned in real time. SPACE advances, R redoes, Q quits.")
 	display_game("  • Combat speed cycle now includes a 'Slow' tier at ~3× Normal as a dev/QA mode for visual verification.")
-	display_game("")
-
-	# v0.9.409 — ASCII outline halo + transition lockout + inter-actor pause.
-	display_game("[color=#00FFFF]v0.9.409[/color]")
-	display_game("  [color=#FFD700]ASCII visibility — outline halo (new approach)[/color]")
-	display_game("  • Bg-paint alone wasn't getting there. Now every glyph of the player + companion ASCII gets a [b]6px contrasting outline halo[/b] via RichTextLabel's font_outline_color/outline_size theme. Halo color flips on variant brightness: [b]dark variants get a warm-cream halo, bright variants get a near-black halo[/b]. The figure reads regardless of fill, halo, or bg combo because there's always two-level contrast.")
-	display_game("  • Parchment bg paint for dark variants is preserved — outline + parchment together is bulletproof.")
-	display_game("  [color=#FFD700]Combat: turn separation[/color]")
-	display_game("  • [b]Transition lockout[/b]: playing a card now holds the combat message queue for 0.45s so the box fade-out + battlefield overlay fade-in completes before the first attack FX fires. Previously the server's combat_update would arrive mid-fade and attacks would happen during the transition, blurring everything.")
-	display_game("  • [b]Inter-actor pause[/b]: per-attack message delay bumped to 0.85s on Normal (was 0.55s), and when the actor changes between consecutive attacks (player → companion → monster), an EXTRA 0.60s gap fires so each actor's turn reads as a discrete event. Actor classifier reads server message conventions ('Your X attacks' = companion, 'The X attacks' = monster, 'You attack' = player).")
 	display_game("")
 
 	# v0.9.408 — combat speed default Normal + per-attack pause + stylebox-replace bg refresh.

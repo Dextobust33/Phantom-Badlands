@@ -396,6 +396,12 @@ func _rebuild_abilities() -> void:
 
 	var locked_count := 0
 	for ability in _all:
+		# v0.9.423 — non_combat abilities (Cloak, Teleport) are utility
+		# triggers used outside combat. They shouldn't appear in the combat
+		# ability/deck panel because equipping them to a combat slot would
+		# do nothing (the in-combat handlers refuse).
+		if bool(ability.get("non_combat", false)):
+			continue
 		var ab_name = str(ability.get("name", ""))
 		var req_level = int(ability.get("level", 1))
 		var is_unlocked = unlocked_names.has(ab_name) or _player_level >= req_level

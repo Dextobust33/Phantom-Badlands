@@ -16,7 +16,7 @@ enum CombatAction {
 const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
 const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate", "fortify", "rally"]
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
-const UNIVERSAL_ABILITY_COMMANDS = ["all_or_nothing", "forethought", "tactical_retreat"]
+const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
 
 # Mastery Slice 1 polish — only the first N uses of an ability per fight
 # count toward rank progress. Stops grind-spam (e.g., 5-mana Magic Bolts
@@ -31,14 +31,10 @@ const MASTERY_USES_PER_COMBAT_CAP: int = 5
 # empties the discard reshuffles in. Standard actions (attack/item/flee/
 # outsmart) bypass the hand entirely.
 const COMBAT_HAND_SIZE: int = 3
-# Stripped from the deck. Teleport is a guaranteed-flee non-combat utility.
-# Cloak is a 75%-flee escape with a hard level-20 gate inside _process_universal_ability,
-# which contradicts Slice 1's "all abilities accessible from L1" rule and would
-# otherwise hand low-level players a card that always rejects on cast — confusing
-# UX. If we re-enable it in a later slice we should drop the level gate too.
-# All-or-nothing is too niche to draw — per user 2026-05-10 it lives on the R
-# slot of the action bar instead, always available outside the deck.
-const COMBAT_DECK_NON_COMBAT: Array = ["teleport", "cloak", "all_or_nothing"]
+# Stripped from the deck. v0.9.423 — Cloak + Teleport are out-of-combat
+# utilities only (slip past overworld monsters / fast-travel). All-or-Nothing
+# was removed entirely.
+const COMBAT_DECK_NON_COMBAT: Array = ["teleport", "cloak"]
 
 # Audit #1 variable-cost rework — floor + ceiling per ability. Spending the floor
 # yields VARIABLE_COST_MIN_FRACTION of the full effect; spending the ceiling yields
@@ -949,7 +945,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"total_damage_taken": 0,
 		"player_hp_at_start": character.current_hp,
 		"pickpocket_count": 0,
-		"pickpocket_max": randi_range(1, 3),  # Monster has 1-3 pockets of materials
+		"pickpocket_max": randi_range(2, 4),  # v0.9.423 — Monster has 2-4 pockets (was 1-3) to match the bumped per-fight cap
 		# Audit #1 Slice 6a — deck/hand/discard. Initialized after
 		# active_combats assignment (the helpers read combat_state by ref).
 		"combat_hand_size": COMBAT_HAND_SIZE,
@@ -1236,6 +1232,13 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	# Track any self-damage from player action (backfire, thorns reflection)
 	var self_damage = max(0, player_hp_before - combat.character.current_hp)
 	combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + self_damage
+
+	# v0.9.423 — basic attacks cycle the hand (ability uses already cycle
+	# via _consume_card_from_hand). Skip on flee-success / outsmart-success
+	# since combat is ending anyway. Skip if the action didn't actually
+	# resolve (e.g., outsmart-failed kept player_can_act false).
+	if action == CombatAction.ATTACK and result.get("success", false) and not result.get("combat_ended", false):
+		_cycle_hand_after_attack(combat)
 
 	# Check if combat ended
 	if result.has("combat_ended") and result.combat_ended:
@@ -2680,7 +2683,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		return {"success": false, "message": hand_msg, "messages": [hand_msg]}
 
 	# Universal abilities (available to all classes, use class resource)
-	if ability_name in ["cloak", "all_or_nothing", "forethought", "tactical_retreat"]:
+	if ability_name in ["cloak", "forethought", "tactical_retreat"]:
 		result = _process_universal_ability(combat, ability_name)
 	# Mage abilities (use mana)
 	elif ability_name in ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
@@ -2828,101 +2831,23 @@ func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dic
 
 	match ability_name:
 		"cloak":
-			# Check level requirement for cloak (level 20)
-			if character.level < 20:
-				return {"success": false, "messages": ["[color=#FF4444]Cloak requires level 20![/color]"], "combat_ended": false}
-
-			# Determine cost based on class path (8% of max resource)
-			var cost = character.get_cloak_cost()
-			var resource_name = character.get_primary_resource()
-			var current_resource = character.get_primary_resource_current()
-
-			# In combat, cloak lets you avoid one monster attack and escape
-			if current_resource < cost:
-				return {"success": false, "messages": ["[color=#FF4444]Not enough %s! Need %d.[/color]" % [resource_name, cost]], "combat_ended": false}
-
-			# Drain the resource
-			character.drain_cloak_cost()
-
-			# 75% chance to escape combat successfully
-			if randf() < 0.75:
-				messages.append("[color=#9932CC]You cloak yourself in shadows and slip away from combat![/color]")
-				return {
-					"success": true,
-					"messages": messages,
-					"combat_ended": true,
-					"victory": false,
-					"fled": true,
-					"skip_monster_turn": true
-				}
-			else:
-				messages.append("[color=#FF4444]You try to cloak but the %s sees through your disguise![/color]" % monster.name)
-				return {"success": true, "messages": messages, "combat_ended": false}
-
-		"all_or_nothing":
-			# Universal desperation ability - very low chance to instant kill
-			# Costs 1 mana/stamina/energy (uses whatever resource the class has)
-			var has_resource = false
-			if character.current_mana >= 1:
-				character.current_mana -= 1
-				has_resource = true
-			elif character.current_stamina >= 1:
-				character.current_stamina -= 1
-				has_resource = true
-			elif character.current_energy >= 1:
-				character.current_energy -= 1
-				has_resource = true
-
-			if not has_resource:
-				return {"success": false, "messages": ["[color=#FF4444]You need at least 1 resource to attempt this![/color]"], "combat_ended": false, "skip_monster_turn": true}
-
-			# Track usage (for "gets better over time" mechanic)
-			character.all_or_nothing_uses += 1
-
-			# Calculate success chance:
-			# Base: 3%
-			# +0.1% per use (max +25% from uses, so caps at 250 uses)
-			# -0.5% per monster level above player (heavily penalized vs high level)
-			# +0.5% per monster level below player
-			var base_chance = 3.0
-			var use_bonus = min(25.0, character.all_or_nothing_uses * 0.1)
-			var level_diff = monster.level - character.level
-			var level_modifier = -level_diff * 0.5  # Negative if monster higher, positive if lower
-
-			var success_chance = base_chance + use_bonus + level_modifier
-			success_chance = clamp(success_chance, 1.0, 34.0)  # Min 1%, max 34%
-
-			messages.append("[color=#FF00FF][b]ALL OR NOTHING![/b][/color]")
-			messages.append("[color=#808080](Success chance: %.1f%%)[/color]" % success_chance)
-
-			if randf() * 100.0 < success_chance:
-				# SUCCESS - instant kill!
-				var killing_blow = monster.current_hp
-				monster.current_hp = 0
-				messages.append("[color=#00FF00][b]MIRACULOUS SUCCESS![/b][/color]")
-				messages.append("[color=#FFD700]Against all odds, you strike the %s's vital point for %d damage![/color]" % [monster.name, killing_blow])
-			else:
-				# FAILURE - monster gets enraged (double strength and speed)
-				monster.strength = monster.strength * 2
-				monster.speed = monster.speed * 2
-				# Wake up paralyzed monsters faster
-				if combat.get("monster_stunned", 0) > 0:
-					combat["monster_stunned"] = max(0, combat["monster_stunned"] - 2)
-					messages.append("[color=#FF4444]The monster snaps out of paralysis![/color]")
-				messages.append("[color=#FF0000][b]CATASTROPHIC FAILURE![/b][/color]")
-				messages.append("[color=#FF4444]The %s becomes ENRAGED! Its strength and speed DOUBLE![/color]" % monster.name)
-
-			# Check if monster died
-			if monster.current_hp <= 0:
-				return _process_victory(combat, messages)
-
-			return {"success": true, "messages": messages, "combat_ended": false}
+			# v0.9.423 — Cloak is an out-of-combat ability ONLY. Use it on the
+			# overworld to slip past monsters; in combat, it's refused. The
+			# 75% combat-escape variant was removed because it overlapped
+			# with the basic Flee command, the Ninja class passive, and
+			# Teleport's role, and felt unreliable at 75%.
+			return {
+				"success": false,
+				"messages": ["[color=#FF4444]Cloak can only be used out of combat — use it to avoid encounters on the overworld.[/color]"],
+				"combat_ended": false
+			}
 
 		"forethought":
-			# Audit #1 deck variant — pay 1 of any primary resource, discard
-			# the rest of the hand, refill from deck. Player keeps the turn:
-			# action remains available, so this is a paid mulligan that lets
-			# you cast something usable afterward.
+			# v0.9.423 — simplified: pay 1 of any primary resource to skip
+			# the monster's turn. The hand-discard + redraw that this used to
+			# do manually is now handled automatically by every player action
+			# via _consume_card_from_hand (auto-cycle rule). Net effect is
+			# now "pay 1 to skip monster turn AND get a fresh hand."
 			var has_res = false
 			if character.current_mana >= 1:
 				character.current_mana -= 1
@@ -2935,54 +2860,49 @@ func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dic
 				has_res = true
 			if not has_res:
 				return {"success": false, "messages": ["[color=#FF4444]Forethought needs at least 1 resource.[/color]"], "combat_ended": false}
-
-			# Move the rest of the hand into the discard pile, then refill.
-			# Forethought itself is the card the player just spent — it's
-			# already being consumed by the standard _consume_card_from_hand
-			# path in the caller, so we touch only the OTHER cards here.
-			var hand: Array = combat.get("combat_hand", [])
-			var discard: Array = combat.get("combat_discard", [])
-			var discarded_count = 0
-			# Strip everything except Forethought (which is consumed by the caller).
-			var remaining_hand: Array = []
-			for card in hand:
-				if card == "forethought":
-					remaining_hand.append(card)
-				else:
-					discard.append(card)
-					discarded_count += 1
-			combat["combat_hand"] = remaining_hand
-			combat["combat_discard"] = discard
-			# Caller will consume Forethought + redraw — but we want the redraw
-			# to happen AFTER the discard so the player gets a full fresh hand.
-			# The normal hand-refill in _consume_card_from_hand uses the deck +
-			# discard reshuffle pattern, so this just works.
-			messages.append("[color=#9370DB]You take a moment — discard %d cards, draw fresh.[/color]" % discarded_count)
-			# Skip monster turn — Forethought is a "setup" card like Analyze /
-			# Pickpocket. The player paid a resource AND a card for a fresh hand;
-			# the round advances but the boss doesn't get a free swing.
+			messages.append("[color=#9370DB]You take a moment to plan — the monster pauses.[/color]")
+			# Skip monster turn — the auto-cycle on card play handles the
+			# hand mulligan, so all this card does is buy a free turn for 1.
 			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"tactical_retreat":
-			# Audit #1 deck variant — free mulligan, but spends the turn. The
-			# whole hand goes to discard (Tactical Retreat itself is consumed
-			# normally by the caller). Player skips their action; monster
-			# takes its turn next. Useful when no card is castable AND you
-			# can't afford Forethought's resource cost.
-			var hand2: Array = combat.get("combat_hand", [])
-			var discard2: Array = combat.get("combat_discard", [])
-			var discarded2 = 0
-			var remaining_hand2: Array = []
-			for card2 in hand2:
-				if card2 == "tactical_retreat":
-					remaining_hand2.append(card2)
-				else:
-					discard2.append(card2)
-					discarded2 += 1
-			combat["combat_hand"] = remaining_hand2
-			combat["combat_discard"] = discard2
-			messages.append("[color=#87CEEB]Tactical retreat — discard %d cards, surrender your turn for a fresh draw.[/color]" % discarded2)
-			# Player's turn ends; monster still acts.
+			# v0.9.423 — repurposed from "free mulligan" to "Recharge".
+			# Restore 50% of the player's max primary resource. Monster
+			# still acts. Hand auto-cycles like any other player action,
+			# so the player gets fresh cards next round with more
+			# resources to spend on them. Internal name kept as
+			# "tactical_retreat" to preserve saved deck collections.
+			var resource_name = character.get_primary_resource()
+			var restored: int = 0
+			match resource_name:
+				"mana":
+					var max_mana = character.get_total_max_mana()
+					var heal_amount = int(float(max_mana) * 0.5)
+					var before = character.current_mana
+					character.current_mana = min(max_mana, character.current_mana + heal_amount)
+					restored = character.current_mana - before
+				"stamina":
+					var max_stam = character.get_total_max_stamina()
+					var heal_amount = int(float(max_stam) * 0.5)
+					var before = character.current_stamina
+					character.current_stamina = min(max_stam, character.current_stamina + heal_amount)
+					restored = character.current_stamina - before
+				"energy":
+					var max_energy = character.get_total_max_energy()
+					var heal_amount = int(float(max_energy) * 0.5)
+					var before = character.current_energy
+					character.current_energy = min(max_energy, character.current_energy + heal_amount)
+					restored = character.current_energy - before
+				_:
+					# Fallback for hybrid resource classes — restore whichever
+					# pool is the player's "primary" via the resource-info helper.
+					restored = 0
+			messages.append("[color=#87CEEB]RECHARGE![/color]")
+			if restored > 0:
+				messages.append("[color=#66FF99]You catch your breath and recover %d %s![/color]" % [restored, resource_name])
+			else:
+				messages.append("[color=#808080]You catch your breath but you're already at full %s.[/color]" % resource_name)
+			# Player surrenders their action; monster still acts.
 			return {"success": true, "messages": messages, "combat_ended": false}
 
 	return {"success": false, "messages": ["[color=#FF4444]Unknown universal ability![/color]"], "combat_ended": false}
@@ -3123,6 +3043,13 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]You cast Magic Bolt for %d mana![/color]" % actual_mana_cost)
 			messages.append("[color=#00FFFF]The bolt strikes for %d damage![/color]" % final_damage)
+			# v0.9.423 — Arcane Surge double-cast roll
+			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0))
+			if dc_chance_mb > 0 and randi() % 100 < dc_chance_mb:
+				monster.current_hp -= final_damage
+				monster.current_hp = max(0, monster.current_hp)
+				messages.append("[color=#FF00FF]ARCANE SURGE: DOUBLE CAST![/color]")
+				messages.append("[color=#00FFFF]A second bolt strikes for %d damage![/color]" % final_damage)
 
 		"cloak":
 			if not character.use_mana(mana_cost):
@@ -3179,6 +3106,13 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FF00FF]You cast Blast![/color]")
 			messages.append("[color=#00FFFF]The explosion deals %d damage![/color]" % damage)
+			# v0.9.423 — Arcane Surge double-cast roll
+			var dc_chance_bl = int(combat.get("arcane_surge_double_cast", 0))
+			if dc_chance_bl > 0 and randi() % 100 < dc_chance_bl:
+				monster.current_hp -= damage
+				monster.current_hp = max(0, monster.current_hp)
+				messages.append("[color=#FF00FF]ARCANE SURGE: DOUBLE CAST![/color]")
+				messages.append("[color=#00FFFF]A second explosion deals %d damage![/color]" % damage)
 			# Apply burn DoT (20% of INT per round, scaled by spend, for 3 rounds)
 			var burn_damage = max(1, int(int_stat * 0.2 * variable_fraction))
 			combat["monster_burn"] = burn_damage
@@ -3196,14 +3130,14 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			is_buff_ability = true
 
 		"teleport":
-			if not character.use_mana(mana_cost):
-				return {"success": false, "messages": ["[color=#FF4444]Not enough mana! (Need %d)[/color]" % mana_cost], "combat_ended": false, "skip_monster_turn": true}
-			messages.append("[color=#FF00FF]You cast Teleport and vanish![/color]")
+			# v0.9.423 — Teleport is an out-of-combat utility ONLY. Use it
+			# on the overworld to fast-travel; in combat it's refused.
+			# The basic Flee command + class-specific escapes cover the
+			# combat-escape role; Teleport at Lv80 was redundant.
 			return {
-				"success": true,
-				"messages": messages,
-				"combat_ended": true,
-				"fled": true,
+				"success": false,
+				"messages": ["[color=#FF4444]Teleport can only be used out of combat — use it to fast-travel on the overworld.[/color]"],
+				"combat_ended": false,
 				"skip_monster_turn": true
 			}
 
@@ -3253,14 +3187,31 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			monster.current_hp = max(0, monster.current_hp)
 			messages.append("[color=#FFD700][b]METEOR![/b][/color]")
 			messages.append("[color=#FF4444]A massive meteor crashes down for %d damage![/color]" % damage)
+			# v0.9.423 — Arcane Surge double-cast roll
+			var dc_chance_mt = int(combat.get("arcane_surge_double_cast", 0))
+			if dc_chance_mt > 0 and randi() % 100 < dc_chance_mt:
+				monster.current_hp -= damage
+				monster.current_hp = max(0, monster.current_hp)
+				messages.append("[color=#FF00FF]ARCANE SURGE: DOUBLE CAST![/color]")
+				messages.append("[color=#FF4444]A second meteor crashes down for %d damage![/color]" % damage)
 
 		"haste":
-			# Speed buff - reduces monster attacks and increases player dodge.
-			# Variable cost (v0.9.264): magnitude scales, duration stays 5 rounds.
-			var speed_bonus = max(1, int((20 + character.get_effective_stat("intelligence") / 5) * variable_fraction))
-			character.add_buff("speed", speed_bonus, 5)
-			combat["haste_active"] = true
-			messages.append("[color=#00FFFF]You cast Haste! (+%d%% speed for 5 rounds)[/color]" % speed_bonus)
+			# v0.9.423 — repurposed from a speed buff (mages rarely benefit
+			# from speed) to "Arcane Surge": stacks bonus spell damage AND a
+			# double-cast chance on subsequent damage spells. Internal name
+			# kept as "haste" to preserve saved deck collections + mastery
+			# ranks. Variable cost: both effects scale with spend; duration
+			# stays 4 rounds. Damage portion piggybacks on the existing
+			# add_buff("damage", ...) channel; double-cast is rolled inside
+			# magic_bolt / blast / meteor after damage is computed.
+			var int_stat = character.get_effective_stat("intelligence")
+			var spell_damage_bonus = max(1, int((40 + int_stat / 4) * variable_fraction))
+			var double_cast_chance = max(1, int(25 * variable_fraction))  # 25% at full, 7-8% at floor
+			character.add_buff("damage", spell_damage_bonus, 4)
+			combat["arcane_surge_double_cast"] = double_cast_chance
+			combat["arcane_surge_double_cast_duration"] = 4
+			messages.append("[color=#00FFFF]ARCANE SURGE![/color]")
+			messages.append("[color=#FF00FF]+%d%% spell damage and %d%% double-cast chance for 4 rounds![/color]" % [spell_damage_bonus, double_cast_chance])
 			is_buff_ability = true
 
 		"paralyze":
@@ -3284,16 +3235,21 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				messages.append("[color=#808080](Enemy CC resistance: %d%%)[/color]" % (cc_resist * 20))
 
 		"banish":
-			# Attempt to remove monster from combat with 50% loot chance.
+			# Attempt to remove monster from combat with 70% loot chance.
 			# Variable cost (v0.9.264): banish CHANCE scales with spend. Loot
-			# drop chance stays 50% (binary bonus outcome, not the headline).
+			# drop chance stays at the fixed rate (binary bonus outcome, not
+			# the headline).
+			# v0.9.423 — loot chance 50% → 70%. Banish at Lv70 cost 80 mana
+			# with a 40-75% success rate × 50% loot = effective full-win
+			# rate of 20-37.5%, which felt punishing for an endgame ability.
+			# Bumping to 70% loot brings effective full-win to 28-52.5%.
 			var int_stat = character.get_effective_stat("intelligence")
 			var raw_chance = min(75, 40 + int(int_stat / 3))  # 40% base + 0.33% per INT, cap 75%
 			var success_chance = int(raw_chance * variable_fraction)
 			if randf() * 100 < success_chance:
 				messages.append("[color=#FF00FF]You banish the %s to another dimension![/color]" % monster.name)
-				# 50% chance to get loot from banished monster
-				if randf() < 0.5:
+				# 70% chance to get loot from banished monster
+				if randf() < 0.70:
 					messages.append("[color=#FFD700]The creature drops something as it vanishes![/color]")
 					return _process_victory_with_abilities(combat, messages)
 				else:
@@ -3637,8 +3593,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 		"pickpocket":
 			# Check if monster has anything left to steal
+			# v0.9.423 — bumped uses-per-fight cap 2 → 4 so the 25-level
+			# 20-energy ability delivers more value across a long fight.
 			var pp_count = combat.get("pickpocket_count", 0)
-			var pp_max = combat.get("pickpocket_max", 2)
+			var pp_max = combat.get("pickpocket_max", 4)
 			if pp_count >= pp_max:
 				messages.append("[color=#808080]The enemy has nothing left to steal![/color]")
 				return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": false}
@@ -3707,9 +3665,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#FFFF00]You deal %d damage![/color]" % damage)
 
 		"vanish":
-			# Auto-crit on next attack, skips monster turn
+			# Auto-crit on next attack, skips monster turn.
+			# v0.9.423 — display name changed Vanish → Phantom Strike to make
+			# its role (setup attack) less confusable with the Flee command.
+			# Internal name kept as "vanish" to preserve saved characters'
+			# combat_deck_collection + mastery records.
 			combat["vanished"] = true  # Next attack auto-crits
-			messages.append("[color=#00FF00]VANISH![/color]")
+			messages.append("[color=#00FF00]PHANTOM STRIKE![/color]")
 			messages.append("[color=#808080]You fade into shadow... Next attack will crit![/color]")
 			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
@@ -3894,7 +3856,8 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 	# Universal abilities (available to all paths)
 	match ability_name:
 		"cloak": return {"level": 20, "cost": 0, "name": "Cloak", "universal": true}
-		"all_or_nothing": return {"level": 1, "cost": 1, "name": "All or Nothing", "universal": true}
+		"forethought": return {"level": 1, "cost": 1, "name": "Forethought", "universal": true}
+		"tactical_retreat": return {"level": 1, "cost": 0, "name": "Recharge", "universal": true}
 
 	match path:
 		"mage":
@@ -3928,7 +3891,7 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"sabotage": return {"level": 30, "cost": 25, "name": "Sabotage"}
 				"ambush": return {"level": 40, "cost": 30, "name": "Ambush"}
 				"gambit": return {"level": 50, "cost": 35, "name": "Gambit"}
-				"vanish": return {"level": 60, "cost": 40, "name": "Vanish"}
+				"vanish": return {"level": 60, "cost": 40, "name": "Phantom Strike"}
 				"exploit": return {"level": 80, "cost": 35, "name": "Exploit"}
 				"perfect_heist": return {"level": 100, "cost": 50, "name": "Perfect Heist"}
 	return {}
@@ -4416,6 +4379,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			messages.append("[color=#808080]The bleeding stops.[/color]")
 		if monster.current_hp <= 0:
 			return _process_victory(combat, messages)
+
+	# v0.9.423 — Arcane Surge double-cast duration tickdown. The damage
+	# portion of Arcane Surge is handled by character.add_buff("damage", ...)
+	# which decays on its own; the double-cast chance lives in combat state
+	# and needs explicit per-round tickdown here.
+	var as_dur = int(combat.get("arcane_surge_double_cast_duration", 0))
+	if as_dur > 0:
+		combat["arcane_surge_double_cast_duration"] = as_dur - 1
+		if combat["arcane_surge_double_cast_duration"] <= 0:
+			combat["arcane_surge_double_cast"] = 0
+			messages.append("[color=#808080]Arcane Surge fades.[/color]")
 
 	# Regeneration ability: heal 10% HP per turn
 	if ABILITY_REGENERATION in abilities:
@@ -6866,7 +6840,11 @@ func _draw_to_hand(combat_state: Dictionary) -> void:
 
 func _consume_card_from_hand(combat_state: Dictionary, ability_name: String) -> bool:
 	"""Move a card from hand to discard and refill the hand. Returns true if
-	the ability was actually in hand and removed."""
+	the ability was actually in hand and removed.
+	v0.9.423 — playing a card now cycles the ENTIRE remaining hand to discard
+	before redrawing, so the player gets a fresh 3-card hand next round
+	instead of keeping unused cards across turns. Solves the 'stuck with
+	uncastable cards' problem and keeps each round's options fresh."""
 	var hand: Array = combat_state.get("combat_hand", [])
 	var idx = hand.find(ability_name)
 	if idx < 0:
@@ -6874,10 +6852,26 @@ func _consume_card_from_hand(combat_state: Dictionary, ability_name: String) -> 
 	hand.remove_at(idx)
 	var discard: Array = combat_state.get("combat_discard", [])
 	discard.append(ability_name)
-	combat_state["combat_hand"] = hand
+	# Cycle the rest of the hand to discard before redrawing.
+	for leftover in hand:
+		discard.append(leftover)
+	combat_state["combat_hand"] = []
 	combat_state["combat_discard"] = discard
 	_draw_to_hand(combat_state)
 	return true
+
+func _cycle_hand_after_attack(combat_state: Dictionary) -> void:
+	"""v0.9.423 — basic attacks (no card played) also cycle the hand: all
+	current cards go to discard, then draw 3 fresh ones. Mirrors the
+	user-facing rule: 'every player action results in a fresh hand next
+	round so you're never stuck holding unusable cards.'"""
+	var hand: Array = combat_state.get("combat_hand", [])
+	var discard: Array = combat_state.get("combat_discard", [])
+	for card in hand:
+		discard.append(card)
+	combat_state["combat_hand"] = []
+	combat_state["combat_discard"] = discard
+	_draw_to_hand(combat_state)
 
 func _ability_alias_to_card(ability_name: String) -> String:
 	"""Normalize an inbound ability command (which may be an alias like
@@ -7359,7 +7353,7 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 
 	# Process the ability using existing solo ability functions
 	var result: Dictionary
-	if ability_name == "cloak" or ability_name == "all_or_nothing":
+	if ability_name == "cloak" or ability_name == "forethought" or ability_name == "tactical_retreat":
 		result = _process_universal_ability(adapter, ability_name)
 	elif ability_name in ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
 		result = _process_mage_ability(adapter, ability_name, arg)
