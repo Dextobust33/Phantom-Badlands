@@ -23495,8 +23495,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.383 — combat layout rebuild for both chrono and lufia.
+	display_game("[color=#00FF00]v0.9.383[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat layouts: third pass on chrono + lufia[/color]")
+	display_game("  • [b]Chrono fixes[/b]: player ASCII was getting clipped because the full battle ASCII was inflating the bottom party row and starving the monster of vertical room. Now uses the small sprite only (~72px) — monster gets ~80% of the scene area, party row is a tight strip beneath it.")
+	display_game("  • [b]Lufia II rewritten properly[/b]: each party member is now a [b]stat box with portrait on the LEFT and stats on the RIGHT[/b] (name + companion XP / HP bars beside the portrait, not above it). Matches the SNES reference much closer.")
+	display_game("  • [b]Combat log shrinks[/b] in chrono/lufia so the scene actually gets the vertical room it needs. Combat log stays as-is in the standard layout.")
+	display_game("")
+
 	# v0.9.382 — bridge bug fix + chrono visible again + Lufia rewrite.
-	display_game("[color=#00FF00]v0.9.382[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.382[/color]")
 	display_game("  [color=#FFD700]Bug fixes: bridges, chrono monster art, Lufia layout[/color]")
 	display_game("  • [b]Bridges no longer become impassable after a server restart.[/b] On startup, the server re-stamps every placed tile into the world map, and the re-stamp logic was forcing bridges to block movement. Fixed — bridges placed before v0.9.382 will be walkable again after this restart.")
 	display_game("  • [b]Chrono layout: monster ASCII is visible again[/b]. v0.9.381 wrapped the monster in a centering container that collapsed it to zero height. Replaced with a proper expand-fill arrangement.")

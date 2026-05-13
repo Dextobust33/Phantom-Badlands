@@ -82,7 +82,7 @@ var _player_ascii_holder: Panel
 var _player_ascii_label: RichTextLabel
 
 # Companion column (below player)
-var _companion_section: VBoxContainer
+var _companion_section: Control  # v0.9.383 — VBox in standard/chrono, HBox in lufia stat-box
 var _companion_art: RichTextLabel
 var _companion_name_label: RichTextLabel
 # Tiny XP + HP bars between the companion name and the ASCII art. XP bar
@@ -325,7 +325,13 @@ func _build_layout() -> void:
 	log_sb.content_margin_bottom = 4
 	_log_section.add_theme_stylebox_override("panel", log_sb)
 	_log_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_log_section.size_flags_stretch_ratio = 1.0
+	# v0.9.383 — log shrinks in vertical layouts so scene_section (now
+	# stretch_ratio 4.0 for chrono/lufia) actually gets the vertical room
+	# it needs. Standard layout keeps the larger log it had before.
+	if combat_layout == LAYOUT_STANDARD:
+		_log_section.size_flags_stretch_ratio = 1.0
+	else:
+		_log_section.size_flags_stretch_ratio = 0.4
 	_log_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root_vbox.add_child(_log_section)
 
@@ -380,29 +386,75 @@ func _build_scene_section_standard() -> Control:
 
 
 func _build_scene_section_chrono() -> Control:
-	"""Chrono Trigger / Mother 2 style: monster centered + large at the top
-	of the scene area; party row (player and companion side-by-side) below.
-	v0.9.380 — alternate prototype layout. All controls use the same
-	instance variables as standard mode, so populate() and FX tweens work
-	without changes.
+	"""Chrono Trigger / Mother 2 style: monster centered + large at the top,
+	small party row underneath.
 
-	v0.9.382 — bug fix from v0.9.381: was wrapping _monster_col in a
-	CenterContainer, which forces children to their combined_minimum_size
-	and ignores SIZE_EXPAND_FILL — that collapsed the monster art to
-	nothing. Switched to placing _monster_col directly in the VBox with
-	SHRINK_CENTER horizontal (gives the horizontal centering) and
-	EXPAND_FILL vertical (lets the row's stretch_ratio drive height)."""
+	v0.9.383 — third rewrite. Earlier versions inflated the party row to
+	~280px because the full 180x260 battle ASCII art was bundled into the
+	player block, starving the monster of vertical space. This version:
+	  - Player block contains ONLY the small sprite (~72×72) — no battle
+	    ASCII (it's hidden / unused in vertical layouts).
+	  - Companion content shrunk to ~72×72 ASCII portrait.
+	  - Scene stretch_ratio bumped to 4.0 (vs log_section's 1.0) so the
+	    vertical layout actually gets the vertical room it needs.
+	  - Inner stretch 4:1 between monster and party row → monster ~80%."""
 	var vbox := VBoxContainer.new()
 	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_stretch_ratio = 2.0
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.size_flags_stretch_ratio = 4.0  # Bumped from 2.0 so vertical layouts dominate the panel
+	vbox.add_theme_constant_override("separation", 6)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_scene_section = vbox
 
-	# Top row: monster centered. 3:1 stretch ratio against the party row
-	# below gives the monster ~75% of scene height. SHRINK_CENTER on the
-	# horizontal axis centers the column without forcing it to minimum.
+	# Top: monster, centered, fills the upper 80% of scene_section.
+	_monster_col = _build_monster_column()
+	_monster_col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_stretch_ratio = 4.0
+	_monster_col.custom_minimum_size = Vector2(480, 0)
+	vbox.add_child(_monster_col)
+
+	# Bottom: small party row, ~20% of scene_section. Sprite-only — no
+	# battle ASCII inflating the minimum height.
+	var party_row := HBoxContainer.new()
+	party_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	party_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	party_row.size_flags_stretch_ratio = 1.0
+	party_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	party_row.add_theme_constant_override("separation", 24)
+	party_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(party_row)
+
+	party_row.add_child(_build_compact_player_block(72))
+	party_row.add_child(_build_compact_companion_block(72))
+
+	_player_col = party_row
+	return vbox
+
+
+func _build_scene_section_lufia() -> Control:
+	"""Lufia II style per SNES reference: enemy occupies the upper ~75% of
+	the scene; party members live in a row of BORDERED STAT BOXES at the
+	bottom, each box arranged as [portrait LEFT | stats RIGHT VBox].
+
+	v0.9.383 — third rewrite. Two earlier attempts (v0.9.381 side-view,
+	v0.9.382 stacked portrait-above-stats) both failed because the full
+	battle ASCII was included inside the boxes and inflated their height
+	to consume most of the scene. This version:
+	  - Each box is HBox[ small portrait (~72×72) | VBox{name, xp, hp} ]
+	  - Total box height ~110-130px regardless of art content
+	  - Scene stretch_ratio = 4.0 so vertical layouts get real vertical
+	    room (log_section drops from 1.0 to a tight ~0.4 in _build_layout)
+	  - Monster:party_box_row inner stretch 3:1 → monster ~75%"""
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_stretch_ratio = 4.0
+	vbox.add_theme_constant_override("separation", 6)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scene_section = vbox
+
+	# Top: monster, centered. Big.
 	_monster_col = _build_monster_column()
 	_monster_col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -410,87 +462,8 @@ func _build_scene_section_chrono() -> Control:
 	_monster_col.custom_minimum_size = Vector2(480, 0)
 	vbox.add_child(_monster_col)
 
-	# Bottom row: party — player block (smaller) + companion block (smaller
-	# still). Centered as a unit via the HBox alignment.
-	var party_row := HBoxContainer.new()
-	party_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	party_row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	party_row.size_flags_stretch_ratio = 1.0
-	party_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	party_row.add_theme_constant_override("separation", 28)
-	party_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(party_row)
-
-	# Player block — name + sprite/ascii. Scaled to ~60% of standard.
-	var player_block := VBoxContainer.new()
-	player_block.alignment = BoxContainer.ALIGNMENT_CENTER
-	player_block.add_theme_constant_override("separation", 2)
-	player_block.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	player_block.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	party_row.add_child(player_block)
-
-	player_block.add_child(_create_player_name_label())
-	var sprite_holder = _create_player_sprite_holder()
-	sprite_holder.custom_minimum_size = Vector2(100, 100)
-	if _player_sprite_rect:
-		_player_sprite_rect.custom_minimum_size = Vector2(92, 92)
-	player_block.add_child(sprite_holder)
-	var ascii_holder = _create_player_ascii_holder()
-	ascii_holder.custom_minimum_size = Vector2(120, 150)
-	if _player_ascii_holder:
-		_player_ascii_holder.size = Vector2(120, 150)
-	player_block.add_child(ascii_holder)
-
-	# Companion block — even smaller (~55% of standard).
-	var companion = _create_companion_block()
-	if _companion_art:
-		_companion_art.custom_minimum_size = Vector2(100, 80)
-	if _companion_name_label:
-		_companion_name_label.custom_minimum_size = Vector2(100, 0)
-		_companion_name_label.add_theme_font_size_override("normal_font_size", 11)
-	party_row.add_child(companion)
-
-	_player_col = player_block
-	return vbox
-
-
-func _build_scene_section_lufia() -> Control:
-	"""Lufia II style. Reference: SNES Lufia II battle screen — enemy(ies)
-	occupy the upper ~60% of the screen, and the party is presented at
-	the bottom as a row of BORDERED STAT BOXES (one box per member), each
-	holding the member's portrait, name, level, and HP/MP bars together
-	as a unit.
-
-	v0.9.382 — rewrite per user feedback + reference screenshots. Earlier
-	(v0.9.381) attempt was a left/right side view with stacked controls
-	on the right — that didn't match the reference at all.
-
-	Implementation: VBox top→bottom. Top child = _monster_col (centered,
-	~60% height). Bottom child = HBox of two PanelContainers (player +
-	companion), each with a styled border and the relevant controls
-	inside. The shared HP strip below scene_section still renders the
-	main HP bars (Lufia's stat-box concept overlaps with our existing
-	HP strip; rather than duplicate it, we keep portrait + name inside
-	the bordered boxes and let HP live in its usual spot)."""
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_stretch_ratio = 2.0
-	vbox.add_theme_constant_override("separation", 6)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scene_section = vbox
-
-	# Top: monster, centered, ~60% of scene height. Same expand pattern
-	# as chrono (no CenterContainer — that bug already cost us once).
-	_monster_col = _build_monster_column()
-	_monster_col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_monster_col.size_flags_stretch_ratio = 1.5
-	_monster_col.custom_minimum_size = Vector2(480, 0)
-	vbox.add_child(_monster_col)
-
-	# Bottom: row of bordered stat boxes — player box on the left, companion
-	# box on the right. Both fill their half evenly.
+	# Bottom: row of bordered stat boxes. Stretch ratio 1.0 vs monster's
+	# 3.0 caps party_box_row at ~25% of scene height (~110-130px).
 	var party_box_row := HBoxContainer.new()
 	party_box_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	party_box_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -499,17 +472,64 @@ func _build_scene_section_lufia() -> Control:
 	party_box_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(party_box_row)
 
-	party_box_row.add_child(_build_lufia_party_box(_create_player_party_box_content()))
-	party_box_row.add_child(_build_lufia_party_box(_create_companion_party_box_content()))
+	party_box_row.add_child(_build_lufia_party_box(_build_lufia_player_box_content()))
+	party_box_row.add_child(_build_lufia_party_box(_build_lufia_companion_box_content()))
 
 	_player_col = party_box_row
 	return vbox
 
 
+func _build_compact_player_block(portrait_size: int) -> VBoxContainer:
+	"""Chrono helper: small player block — name on top, sprite below (no
+	battle ASCII). v0.9.383."""
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_theme_constant_override("separation", 2)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(_create_player_name_label())
+	var sprite_holder = _create_player_sprite_holder()
+	sprite_holder.custom_minimum_size = Vector2(portrait_size, portrait_size)
+	if _player_sprite_rect:
+		_player_sprite_rect.custom_minimum_size = Vector2(portrait_size - 4, portrait_size - 4)
+	col.add_child(sprite_holder)
+	# Create the ascii_holder so populate code doesn't NPE referencing
+	# _player_ascii_label / _ascii_outer, but force it to zero size and
+	# hidden so it doesn't inflate the column.
+	var ascii_holder = _create_player_ascii_holder()
+	ascii_holder.custom_minimum_size = Vector2(0, 0)
+	ascii_holder.visible = false
+	if _player_ascii_holder:
+		_player_ascii_holder.size = Vector2(portrait_size, portrait_size)
+	col.add_child(ascii_holder)
+	return col
+
+
+func _build_compact_companion_block(portrait_size: int) -> VBoxContainer:
+	"""Chrono helper: small companion block with the existing name + bar
+	rows, plus a TINY ASCII portrait. v0.9.383 — sized so it doesn't
+	dominate the party row."""
+	_companion_section = VBoxContainer.new()
+	_companion_section.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_companion_section.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_companion_section.add_theme_constant_override("separation", 2)
+	_companion_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var name_label = _create_companion_name_label()
+	name_label.add_theme_font_size_override("normal_font_size", 11)
+	name_label.custom_minimum_size = Vector2(portrait_size, 0)
+	_companion_section.add_child(name_label)
+	_companion_section.add_child(_create_companion_xp_row())
+	_companion_section.add_child(_create_companion_hp_row())
+	var art = _create_companion_art_label()
+	art.custom_minimum_size = Vector2(portrait_size, portrait_size)
+	_companion_section.add_child(art)
+	return _companion_section
+
+
 func _build_lufia_party_box(content: Control) -> PanelContainer:
-	"""Wrap one party member's controls in a Lufia-style bordered stat box.
-	Border styled to mimic the SNES battle UI: dark inset bg, light outer
-	border, generous content margins."""
+	"""Wrap a Lufia-style stat box: dark inset bg, light outer border."""
 	var box := PanelContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -519,55 +539,91 @@ func _build_lufia_party_box(content: Control) -> PanelContainer:
 	sb.border_color = Color(0.75, 0.78, 0.92, 1.0)
 	sb.set_border_width_all(2)
 	sb.set_corner_radius_all(4)
-	sb.content_margin_left = 8
-	sb.content_margin_top = 6
-	sb.content_margin_right = 8
-	sb.content_margin_bottom = 6
+	sb.content_margin_left = 6
+	sb.content_margin_top = 4
+	sb.content_margin_right = 6
+	sb.content_margin_bottom = 4
 	box.add_theme_stylebox_override("panel", sb)
 	box.add_child(content)
 	return box
 
 
-func _create_player_party_box_content() -> VBoxContainer:
-	"""Lufia-style player content: name label on top, sprite/ASCII below.
-	Wrapped in a VBox that the bordered box parents."""
-	var col := VBoxContainer.new()
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	col.add_theme_constant_override("separation", 4)
-	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(_create_player_name_label())
+func _build_lufia_player_box_content() -> HBoxContainer:
+	"""Lufia stat box internal layout: portrait LEFT, stats RIGHT.
+	v0.9.383 — matches the SNES reference. Stats column has the player's
+	name only (HP lives in the shared HP strip below scene_section).
+	Battle ASCII intentionally omitted — too tall for stat-box height."""
+	var hbox := HBoxContainer.new()
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.add_theme_constant_override("separation", 8)
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# Left: small sprite holder, ~72×72.
 	var sprite_holder = _create_player_sprite_holder()
-	sprite_holder.custom_minimum_size = Vector2(100, 100)
+	sprite_holder.custom_minimum_size = Vector2(72, 72)
+	sprite_holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	if _player_sprite_rect:
-		_player_sprite_rect.custom_minimum_size = Vector2(92, 92)
-	col.add_child(sprite_holder)
+		_player_sprite_rect.custom_minimum_size = Vector2(68, 68)
+	hbox.add_child(sprite_holder)
+
+	# Also instantiate ascii_holder (hidden) so populate code doesn't
+	# NPE on _player_ascii_label references.
 	var ascii_holder = _create_player_ascii_holder()
-	ascii_holder.custom_minimum_size = Vector2(140, 150)
-	if _player_ascii_holder:
-		_player_ascii_holder.size = Vector2(140, 150)
-	col.add_child(ascii_holder)
-	return col
+	ascii_holder.custom_minimum_size = Vector2(0, 0)
+	ascii_holder.visible = false
+	hbox.add_child(ascii_holder)
+
+	# Right: stats column — name at top, room for HP/MP/etc. in future.
+	var stats := VBoxContainer.new()
+	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stats.alignment = BoxContainer.ALIGNMENT_CENTER
+	stats.add_theme_constant_override("separation", 2)
+	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(stats)
+
+	stats.add_child(_create_player_name_label())
+	return hbox
 
 
-func _create_companion_party_box_content() -> VBoxContainer:
-	"""Lufia-style companion content: the existing companion section,
-	wrapped so the bordered box can parent it. Slightly smaller portrait
-	than player to mirror Lufia's portrait sizes."""
-	var col := VBoxContainer.new()
-	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	col.add_theme_constant_override("separation", 4)
-	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var companion = _create_companion_block()
-	if _companion_art:
-		_companion_art.custom_minimum_size = Vector2(130, 110)
-	if _companion_name_label:
-		_companion_name_label.custom_minimum_size = Vector2(130, 0)
-	col.add_child(companion)
-	return col
+func _build_lufia_companion_box_content() -> HBoxContainer:
+	"""Lufia stat box for the companion: portrait LEFT, name + XP + HP
+	bars stacked on the RIGHT (bars BESIDE the portrait, not above it).
+	v0.9.383 — matches the SNES reference's stat-box layout."""
+	var hbox := HBoxContainer.new()
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.add_theme_constant_override("separation", 8)
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# Left: small companion ASCII portrait, ~72×72.
+	var art = _create_companion_art_label()
+	art.custom_minimum_size = Vector2(72, 72)
+	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	art.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hbox.add_child(art)
+
+	# Right: stats column — name on top, XP row, HP row (bars beside the
+	# portrait visually).
+	var stats := VBoxContainer.new()
+	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stats.alignment = BoxContainer.ALIGNMENT_CENTER
+	stats.add_theme_constant_override("separation", 2)
+	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(stats)
+
+	var name_label = _create_companion_name_label()
+	name_label.add_theme_font_size_override("normal_font_size", 11)
+	name_label.custom_minimum_size = Vector2(0, 0)
+	stats.add_child(name_label)
+	stats.add_child(_create_companion_xp_row())
+	stats.add_child(_create_companion_hp_row())
+
+	# Populate code expects _companion_section to exist. Use the HBox itself.
+	_companion_section = hbox
+	return hbox
 
 
 func _build_player_column() -> VBoxContainer:
@@ -626,11 +682,22 @@ func _create_player_name_label() -> RichTextLabel:
 
 
 func _create_companion_block() -> VBoxContainer:
+	"""Standard-layout companion block: name on top, XP bar, HP bar, then
+	the companion ASCII art at the bottom. v0.9.383 — body refactored into
+	atomic helpers so chrono/lufia layouts can arrange the same controls
+	differently (e.g., portrait-left + stats-right inside a stat box)."""
 	_companion_section = VBoxContainer.new()
 	_companion_section.add_theme_constant_override("separation", 2)
 	_companion_section.size_flags_vertical = Control.SIZE_SHRINK_END
 	_companion_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_companion_section.add_child(_create_companion_name_label())
+	_companion_section.add_child(_create_companion_xp_row())
+	_companion_section.add_child(_create_companion_hp_row())
+	_companion_section.add_child(_create_companion_art_label())
+	return _companion_section
 
+
+func _create_companion_name_label() -> RichTextLabel:
 	_companion_name_label = RichTextLabel.new()
 	_companion_name_label.bbcode_enabled = true
 	_companion_name_label.fit_content = true
@@ -638,15 +705,14 @@ func _create_companion_block() -> VBoxContainer:
 	_companion_name_label.add_theme_font_size_override("normal_font_size", 12)
 	_companion_name_label.custom_minimum_size = Vector2(180, 0)
 	_companion_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_companion_section.add_child(_companion_name_label)
+	return _companion_name_label
 
-	# Tiny XP bar + text under the name. Mirrors the player's level-progress
-	# affordance; gives the companion presence on par with the other
-	# combatants in the panel.
+
+func _create_companion_xp_row() -> HBoxContainer:
+	# Tiny XP bar + text. Mirrors the player's level-progress affordance.
 	var xp_row := HBoxContainer.new()
 	xp_row.add_theme_constant_override("separation", 4)
 	xp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_companion_section.add_child(xp_row)
 
 	_companion_xp_bar = ProgressBar.new()
 	_companion_xp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -659,7 +725,7 @@ func _create_companion_block() -> VBoxContainer:
 	xp_bar_sb.set_corner_radius_all(2)
 	_companion_xp_bar.add_theme_stylebox_override("background", xp_bar_sb)
 	var xp_fill_sb := StyleBoxFlat.new()
-	xp_fill_sb.bg_color = Color("#3DD9FF")  # cyan, matches Pet damage totals
+	xp_fill_sb.bg_color = Color("#3DD9FF")
 	xp_fill_sb.set_corner_radius_all(2)
 	_companion_xp_bar.add_theme_stylebox_override("fill", xp_fill_sb)
 	_companion_xp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -672,15 +738,14 @@ func _create_companion_block() -> VBoxContainer:
 	_companion_xp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_companion_xp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	xp_row.add_child(_companion_xp_text)
+	return xp_row
 
-	# Phase B1 — Companion HP bar. Persistent across fights; shown so the
-	# player sees their companion bleed low and remembers to heal it. Hidden
-	# entirely when there's no active companion or the server hasn't shipped
-	# HP yet (legacy server / out-of-combat).
+
+func _create_companion_hp_row() -> HBoxContainer:
+	# Phase B1 — Companion HP bar. Persistent across fights.
 	_companion_hp_row = HBoxContainer.new()
 	_companion_hp_row.add_theme_constant_override("separation", 4)
 	_companion_hp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_companion_section.add_child(_companion_hp_row)
 
 	_companion_hp_bar = ProgressBar.new()
 	_companion_hp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -706,7 +771,10 @@ func _create_companion_block() -> VBoxContainer:
 	_companion_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_companion_hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_companion_hp_row.add_child(_companion_hp_text)
+	return _companion_hp_row
 
+
+func _create_companion_art_label() -> RichTextLabel:
 	_companion_art = RichTextLabel.new()
 	_companion_art.bbcode_enabled = true
 	_companion_art.fit_content = true
@@ -720,9 +788,7 @@ func _create_companion_block() -> VBoxContainer:
 		_companion_art.add_theme_font_override("bold_font", _mono_font)
 		_companion_art.add_theme_font_override("italics_font", _mono_font)
 		_companion_art.add_theme_font_override("mono_font", _mono_font)
-	_companion_section.add_child(_companion_art)
-
-	return _companion_section
+	return _companion_art
 
 
 func _create_player_sprite_holder() -> CenterContainer:
