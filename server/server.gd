@@ -191,9 +191,14 @@ const WORLD_THREAT_REFRESH_INTERVAL = 3.0
 # v0.9.377 — root cause identified: _check_dungeon_spawns was bursting up
 # to 8 BSP+monster-gen spawns into a single frame, producing the ~5s spikes
 # (correlated with peers=0 dungeon-count jumps in the diag logs). Fix: spawn
-# queue, 1-per-frame drain. Flag stays ON for one release so we can verify
-# the per-frame spike disappears + per-spawn cost is bounded, then flip off.
-const DIAG_TIMING_ENABLED := true
+# queue, 1-per-frame drain.
+# v0.9.379 — second cause identified: road A* with no time budget could
+# burn ~4.8s exploring 100k nodes in one tick. Fix: time-budgeted A*.
+# v0.9.419 — flag flipped off. Both periodic ~5s causes are gone in
+# production logs. Persistent 100-300ms buffer_process baseline (handler
+# cost stutter, NOT a freeze) remains open but is tracked separately; flip
+# back to true if/when investigating that.
+const DIAG_TIMING_ENABLED := false
 const DIAG_FRAME_SPIKE_MS := 100  # log frame if any tick exceeds this
 const DIAG_THREAT_SCAN_SPIKE_MS := 50  # log frame if cumulative threat scan exceeds this
 # v0.9.377 — rate-limit spike logging. Without throttling we get 20+ identical
@@ -15311,6 +15316,20 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			character.record_wood_gathered()
 		_:  # foraging or future jobs
 			xp_result = character.add_job_xp(session_job, total_xp)
+	# v0.9.419 — credit gather-quest progress per non-DUD awarded slot. Legacy
+	# chain-gather (line ~15590) and per-correct-answer (line ~15985) paths both
+	# call check_gathering_progress per awarded item; the scratch-off path was
+	# missing this since v0.9.371, so logging / mining / foraging / fishing
+	# quests stopped ticking. One tick per awarded item (DUDs excluded) keeps
+	# parity with the legacy per-chain semantics — a 5-slot scratch session
+	# credits ~5 quest ticks just like a 5-chain legacy session did.
+	var pending_quest_updates: Array = []
+	for awarded_slot in awarded:
+		if String(awarded_slot.get("kind", "")) == "DUD":
+			continue
+		var gather_updates = quest_mgr.check_gathering_progress(character, session_job)
+		for update in gather_updates:
+			pending_quest_updates.append(update)
 	var deplete_node_type: String = String(session.get("node_type", ""))
 	if deplete_node_type == "" and session_job == "fishing":
 		deplete_node_type = "water"
@@ -15330,6 +15349,26 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		"job_type": session_job,  # v0.9.369 — client uses this for completion summary headers + post-session hint
 		"character": character.to_dict(),
 	})
+	# v0.9.419 — flush pending gather-quest progress messages AFTER the
+	# scratch_off_complete so the client has already transitioned out of the
+	# scratch-off panel and the quest_progress toast/log update lands on the
+	# overworld instead of being eaten by panel transition state. Dedupe by
+	# quest_id so the client only sees the FINAL progress per quest rather
+	# than intermediate ticks (mirrors the legacy auto-chain pattern at line
+	# ~15662).
+	var sent_quests: Dictionary = {}
+	for update in pending_quest_updates:
+		sent_quests[update.quest_id] = update
+	for quest_id in sent_quests:
+		var update = sent_quests[quest_id]
+		send_to_peer(peer_id, {
+			"type": "quest_progress",
+			"quest_id": update.quest_id,
+			"progress": update.progress,
+			"target": update.target,
+			"completed": update.completed,
+			"message": update.message
+		})
 	# Refresh the player's map / location flags (e.g., at_water clears if depleted)
 	send_location_update(peer_id)
 
