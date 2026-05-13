@@ -184,6 +184,7 @@ var _player_flash_tween: Tween = null
 var _monster_flash_tween: Tween = null
 var _companion_flash_tween: Tween = null
 var _player_lunge_tween: Tween = null
+var _companion_lunge_tween: Tween = null  # v0.9.410 — per-actor companion lunge
 var _monster_lunge_tween: Tween = null
 
 # Lunge baseline (the original position we return to). Captured the first
@@ -197,6 +198,13 @@ var _monster_art_baseline_captured: bool = false
 # rapid consecutive hits don't pile on top of each other. Resets when the
 # panel is repopulated for a new fight.
 var _damage_label_seq: int = 0
+# v0.9.395 — time-windowed vertical stack so back-to-back hits don't overlap.
+# Each spawn within DAMAGE_STACK_RESET_S of the previous gets pushed up by
+# DAMAGE_STACK_STEP_PX; cleared when there's a gap >= reset window.
+var _damage_label_last_spawn_ts: float = -10.0
+var _damage_label_stack_y: float = 0.0
+const DAMAGE_STACK_STEP_PX := 70.0
+const DAMAGE_STACK_RESET_S := 0.35
 
 const FLASH_TINT_HIT := Color(1.6, 0.5, 0.5)  # Reddish overdrive
 const FLASH_TINT_CRIT := Color(2.0, 0.4, 0.2)  # Hotter red
@@ -216,6 +224,38 @@ var _hand_status_label: Label
 var _combat_hand: Array = []
 var _combat_deck_count: int = 0
 var _combat_discard_count: int = 0
+# v0.9.385 — optional Lufia-box mirror widgets (HP + deck info inside the
+# player's stat box, beside the portrait). Created in
+# _build_lufia_player_box_content and updated alongside the shared widgets;
+# null in non-lufia layouts.
+var _lufia_player_hp_bar: ProgressBar
+var _lufia_player_hp_text: Label
+var _lufia_player_deck_label: Label
+# v0.9.405 — refs to the stats VBox inside each Lufia stat box so the
+# action-phase transition can fade ONLY the stats (HP bars, deck info,
+# names) while leaving the portrait ASCII visible — characters now appear
+# on the battlefield during action, matching Lufia II.
+var _lufia_player_stats: VBoxContainer = null
+var _lufia_companion_stats: VBoxContainer = null
+# v0.9.406 — per-portrait bg panels. _refresh_portrait_bg paints them with a
+# contrasting color based on the variant brightness so dark variants pop
+# against a parchment-like bg. Painted in set_player_ascii_art / _refresh_companion.
+var _player_portrait_bg: Panel = null
+var _companion_portrait_bg: Panel = null
+# v0.9.403 — Lufia II battlefield reveal: stat boxes hide during action phase
+# (FX play out on a clear stage), then return for next-turn command select.
+var _action_phase_active: bool = false
+var _action_phase_tween: Tween = null
+var _action_phase_end_timer: SceneTreeTimer = null
+# v0.9.390 — Lufia mode also relocates the monster HP bar to a bordered
+# strip at the TOP of the monster column (was bottom-right shared strip).
+# These mirror widgets are updated alongside _monster_hp_bar / _text in
+# _refresh_monster_hp; null in non-lufia layouts.
+var _lufia_monster_hp_bar: ProgressBar
+var _lufia_monster_hp_text: Label
+# Reference to the shared HP strip so Lufia can hide it (player + monster
+# HP both live inside their respective Lufia widgets).
+var _shared_hp_strip: HBoxContainer
 const HAND_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
 const HAND_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", "#FF6644"]
 
@@ -269,6 +309,9 @@ func _build_layout() -> void:
 	_root_panel = PanelContainer.new()
 	_root_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var sb := StyleBoxFlat.new()
+	# v0.9.406 — reverted to original dark plum (mid-gray made things worse
+	# overall). Dark-variant readability is handled by a contrasting portrait
+	# bg added per-portrait in populate() (see _refresh_portrait_bg).
 	sb.bg_color = Color(0.04, 0.03, 0.05, 0.97)
 	sb.border_color = Color(0.55, 0.45, 0.33, 1)
 	sb.set_border_width_all(2)
@@ -301,7 +344,12 @@ func _build_layout() -> void:
 	root_vbox.add_child(scene_root)
 
 	# === Shared HP strip — player on left, monster on right, same row ===
-	root_vbox.add_child(_build_shared_hp_strip())
+	# v0.9.390 — Lufia hides this strip; player HP lives inside the player
+	# stat box and monster HP lives in a bordered strip atop the monster column.
+	_shared_hp_strip = _build_shared_hp_strip()
+	root_vbox.add_child(_shared_hp_strip)
+	if combat_layout == LAYOUT_LUFIA:
+		_shared_hp_strip.visible = false
 
 	# === Status-effect strip (DoT timers / buffs / debuffs) ===
 	root_vbox.add_child(_build_shared_status_strip())
@@ -425,8 +473,8 @@ func _build_scene_section_chrono() -> Control:
 	party_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(party_row)
 
-	party_row.add_child(_build_compact_player_block(72))
-	party_row.add_child(_build_compact_companion_block(72))
+	party_row.add_child(_build_compact_player_block(COMPACT_PORTRAIT_PX))
+	party_row.add_child(_build_compact_companion_block(COMPACT_PORTRAIT_PX))
 
 	_player_col = party_row
 	return vbox
@@ -462,13 +510,16 @@ func _build_scene_section_lufia() -> Control:
 	_monster_col.custom_minimum_size = Vector2(480, 0)
 	vbox.add_child(_monster_col)
 
-	# Bottom: row of bordered stat boxes. Stretch ratio 1.0 vs monster's
-	# 3.0 caps party_box_row at ~25% of scene height (~110-130px).
+	# Bottom: row of bordered stat boxes. v0.9.388 — row expands to full
+	# width of scene_section so ALIGNMENT_CENTER actually centers the boxes
+	# horizontally. Boxes themselves use SIZE_SHRINK_CENTER so they only
+	# take their content's width (no more stretching across the screen).
 	var party_box_row := HBoxContainer.new()
 	party_box_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	party_box_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	party_box_row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	party_box_row.size_flags_stretch_ratio = 1.0
-	party_box_row.add_theme_constant_override("separation", 8)
+	party_box_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	party_box_row.add_theme_constant_override("separation", 12)
 	party_box_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(party_box_row)
 
@@ -479,9 +530,323 @@ func _build_scene_section_lufia() -> Control:
 	return vbox
 
 
+func start_action_phase() -> void:
+	"""v0.9.406 — Lufia II battlefield reveal. (1) The entire party box row
+	fades out at the bottom; (2) a separate 'battlefield' overlay fades in
+	at a different on-screen position, showing the same player + companion
+	ASCII art at a larger size — characters appear ON the battlefield, not
+	in the same place as the box. end_action_phase reverses both.
+
+	v0.9.412 — also hide the running-totals banner, hand strip, and status
+	strip while in the FX scene. Frees vertical room for the overlay so the
+	bigger ASCII blocks don't get cut off by adjacent UI.
+
+	No-op in LAYOUT_STANDARD."""
+	if combat_layout == LAYOUT_STANDARD:
+		return
+	if _action_phase_active:
+		return
+	_action_phase_active = true
+	_ensure_battlefield_overlay()
+	_populate_battlefield_overlay()
+	# v0.9.412 — collapse non-essential strips so the overlay has more room.
+	if _totals_strip and is_instance_valid(_totals_strip):
+		_totals_strip.visible = false
+	if _hand_strip and is_instance_valid(_hand_strip):
+		_hand_strip.visible = false
+	if _status_strip and is_instance_valid(_status_strip):
+		_status_strip.visible = false
+	_kill_action_phase_tween()
+	_action_phase_tween = create_tween().set_parallel(true)
+	# Fade the whole party row down + out.
+	if _player_col and is_instance_valid(_player_col):
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 0.0, 0.20).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# Reposition overlay after the strips collapse so the new available
+	# space is accounted for.
+	call_deferred("_position_battlefield_overlay")
+	# Reveal the battlefield overlay: starts above its rest position and
+	# slides down into place with a fade-in.
+	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
+		_battlefield_overlay.visible = true
+		_battlefield_overlay.modulate.a = 0.0
+		_battlefield_overlay.position.y = _battlefield_overlay_rest_y - 40.0
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+func end_action_phase() -> void:
+	"""v0.9.406 — hide the battlefield overlay and slide the party row back.
+	v0.9.412 — restore the running-totals / hand / status strips that were
+	collapsed during the action phase."""
+	if combat_layout == LAYOUT_STANDARD:
+		return
+	_cancel_action_phase_timer()
+	if not _action_phase_active:
+		return
+	_action_phase_active = false
+	# Restore the strips that were hidden in start_action_phase.
+	if _totals_strip and is_instance_valid(_totals_strip):
+		_totals_strip.visible = true
+	if _hand_strip and is_instance_valid(_hand_strip):
+		_hand_strip.visible = true
+	if _status_strip and is_instance_valid(_status_strip):
+		_status_strip.visible = true
+	_kill_action_phase_tween()
+	_action_phase_tween = create_tween().set_parallel(true)
+	if _player_col and is_instance_valid(_player_col):
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 0.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y - 40.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		# Hide after the tween completes so it doesn't block input or paint.
+		_action_phase_tween.chain().tween_callback(func():
+			if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
+				_battlefield_overlay.visible = false
+		)
+
+
+# v0.9.411 — battlefield overlay rebuilt. Per-character block with its own
+# ASCII label + HP bar + name; blocks are positioned manually inside the
+# overlay so they can be lunged via position tweens during action phase.
+# z_index=100 keeps the overlay above the damage banner / ability cards.
+var _battlefield_overlay: Control = null
+var _overlay_player_block: Control = null
+var _overlay_player_ascii: RichTextLabel = null
+var _overlay_player_hp_bar: ProgressBar = null
+var _overlay_player_name: Label = null
+var _overlay_companion_block: Control = null
+var _overlay_companion_ascii: RichTextLabel = null
+var _overlay_companion_hp_bar: ProgressBar = null
+var _overlay_companion_name: Label = null
+var _battlefield_overlay_rest_y: float = 0.0
+var _overlay_player_block_baseline: Vector2 = Vector2.ZERO
+var _overlay_companion_block_baseline: Vector2 = Vector2.ZERO
+
+
+func _ensure_battlefield_overlay() -> void:
+	if _battlefield_overlay != null and is_instance_valid(_battlefield_overlay):
+		return
+	if _player_col == null or not is_instance_valid(_player_col):
+		return
+	var parent: Node = _player_col.get_parent()
+	if parent == null:
+		return
+	# Root Control — sized + positioned in _position_battlefield_overlay.
+	# top_level=true: escapes parent layout so we control the position.
+	# z_index=100: draws above the damage banner / ability cards which sit
+	# below the scene_section.
+	_battlefield_overlay = Control.new()
+	_battlefield_overlay.name = "BattlefieldOverlay"
+	_battlefield_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_battlefield_overlay.top_level = true
+	_battlefield_overlay.z_index = 100
+	_battlefield_overlay.visible = false
+	parent.add_child(_battlefield_overlay)
+
+	# Player block — bigger ASCII font (3) + mini HP bar + name underneath.
+	_overlay_player_block = _build_overlay_character_block(true)
+	_battlefield_overlay.add_child(_overlay_player_block)
+	# Companion block — smaller ASCII font (2) since companion art is often wider.
+	_overlay_companion_block = _build_overlay_character_block(false)
+	_battlefield_overlay.add_child(_overlay_companion_block)
+
+	# Defer initial positioning so layout has computed _player_col's rect.
+	call_deferred("_position_battlefield_overlay")
+
+
+func _build_overlay_character_block(is_player: bool) -> Control:
+	"""v0.9.411 — a character block on the battlefield overlay. Manually
+	positioned (no parent layout) so it can be lunged via position tweens.
+	v0.9.412 — block bumped 220×160 → 320×280 so the ASCII art (often
+	75+ lines tall at the bumped font_size) fits without vertical clipping.
+	Hidden UI strips during action phase free the space to make this fit."""
+	var block := Control.new()
+	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	block.custom_minimum_size = Vector2(320, 280)
+
+	# ASCII label fills the top portion of the block.
+	var ascii := RichTextLabel.new()
+	ascii.bbcode_enabled = true
+	ascii.fit_content = false
+	ascii.scroll_active = false
+	ascii.autowrap_mode = TextServer.AUTOWRAP_OFF
+	ascii.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ascii.anchor_left = 0.0
+	ascii.anchor_top = 0.0
+	ascii.anchor_right = 1.0
+	ascii.anchor_bottom = 0.78
+	if _mono_font:
+		ascii.add_theme_font_override("normal_font", _mono_font)
+		ascii.add_theme_font_override("bold_font", _mono_font)
+		ascii.add_theme_font_override("mono_font", _mono_font)
+	block.add_child(ascii)
+
+	# HP bar — fixed width, just under the ASCII.
+	var hp_bar := _make_hp_bar(Color("#FF4444"))
+	hp_bar.anchor_left = 0.12
+	hp_bar.anchor_right = 0.88
+	hp_bar.anchor_top = 0.80
+	hp_bar.anchor_bottom = 0.86
+	hp_bar.custom_minimum_size = Vector2(0, 8)
+	block.add_child(hp_bar)
+
+	# Name label — under the HP bar.
+	var name_lbl := Label.new()
+	name_lbl.add_theme_font_size_override("font_size", 11)
+	name_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	name_lbl.add_theme_constant_override("outline_size", 2)
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_lbl.anchor_left = 0.0
+	name_lbl.anchor_right = 1.0
+	name_lbl.anchor_top = 0.88
+	name_lbl.anchor_bottom = 1.0
+	block.add_child(name_lbl)
+
+	if is_player:
+		_overlay_player_ascii = ascii
+		_overlay_player_hp_bar = hp_bar
+		_overlay_player_name = name_lbl
+	else:
+		_overlay_companion_ascii = ascii
+		_overlay_companion_hp_bar = hp_bar
+		_overlay_companion_name = name_lbl
+	return block
+
+
+func _position_battlefield_overlay() -> void:
+	"""v0.9.411 — overlay sits AT the party-row vertical band. Player block
+	on the left, companion block on the right, each at fixed local positions
+	inside the overlay so they can be lunged via position tweens.
+
+	v0.9.412 — overlay can now claim the vertical space freed by the hidden
+	totals/hand/status strips during action phase. Grows UP from the box
+	row position toward the monster, capped so it doesn't touch monster art."""
+	if _battlefield_overlay == null or not is_instance_valid(_battlefield_overlay):
+		return
+	if _player_col == null or not is_instance_valid(_player_col):
+		return
+	var rect: Rect2 = Rect2(_player_col.global_position, _player_col.size)
+	# Vertical room: prefer 280px (matches block height) so the ASCII fits.
+	# If the box row is shorter, grow upward (toward monster) by extending the
+	# overlay height above the box top while keeping the bottom anchored to
+	# the box top so we don't push into damage banner area below.
+	var overlay_h: float = maxf(rect.size.y, 280.0)
+	var overlay_y: float = rect.position.y - (overlay_h - rect.size.y)
+	# Clamp upward growth to keep at least 60px below the monster artwork.
+	if _monster_col and is_instance_valid(_monster_col):
+		var monster_bottom: float = _monster_col.global_position.y + _monster_col.size.y
+		if overlay_y < monster_bottom + 8.0:
+			overlay_y = monster_bottom + 8.0
+			overlay_h = (rect.position.y + rect.size.y) - overlay_y
+	_battlefield_overlay.size = Vector2(rect.size.x, overlay_h)
+	_battlefield_overlay.global_position = Vector2(rect.position.x, overlay_y)
+	_battlefield_overlay_rest_y = _battlefield_overlay.position.y
+
+	# Two character blocks centered horizontally with a 32px gap. Each block
+	# is 320px wide (matches v0.9.412 _build_overlay_character_block).
+	var block_w: float = 320.0
+	var gap: float = 32.0
+	var total_w: float = block_w * 2 + gap
+	var start_x: float = (rect.size.x - total_w) * 0.5
+	var block_h: float = overlay_h
+	var block_y: float = 0.0
+	if _overlay_player_block and is_instance_valid(_overlay_player_block):
+		_overlay_player_block.position = Vector2(start_x, block_y)
+		_overlay_player_block.size = Vector2(block_w, block_h)
+		_overlay_player_block_baseline = _overlay_player_block.position
+	if _overlay_companion_block and is_instance_valid(_overlay_companion_block):
+		_overlay_companion_block.position = Vector2(start_x + block_w + gap, block_y)
+		_overlay_companion_block.size = Vector2(block_w, block_h)
+		_overlay_companion_block_baseline = _overlay_companion_block.position
+
+
+func _populate_battlefield_overlay() -> void:
+	"""v0.9.411 — copy ASCII + stat data into the overlay blocks. Font sizes
+	bumped (+2) so the battlefield reveal reads larger than the in-box
+	portraits. HP bar + name pulled from current stats."""
+	# Player ASCII — bumped font size for battlefield-scale.
+	if _overlay_player_ascii and is_instance_valid(_overlay_player_ascii):
+		if _player_ascii_label and is_instance_valid(_player_ascii_label):
+			_overlay_player_ascii.text = _bump_inline_font_size(_player_ascii_label.text, 2)
+		else:
+			_overlay_player_ascii.text = ""
+	# Player HP bar + name.
+	if _overlay_player_hp_bar and is_instance_valid(_overlay_player_hp_bar):
+		_overlay_player_hp_bar.max_value = maxi(1, _player_max_hp)
+		_overlay_player_hp_bar.value = clampi(_player_hp, 0, _player_max_hp)
+	if _overlay_player_name and is_instance_valid(_overlay_player_name):
+		_overlay_player_name.text = _player_name
+
+	# Companion ASCII + stats.
+	if _overlay_companion_ascii and is_instance_valid(_overlay_companion_ascii):
+		if _companion_art and is_instance_valid(_companion_art):
+			_overlay_companion_ascii.text = _bump_inline_font_size(_companion_art.text, 2)
+		else:
+			_overlay_companion_ascii.text = ""
+	if _overlay_companion_hp_bar and is_instance_valid(_overlay_companion_hp_bar):
+		var c_level := int(_companion_data.get("level", 1))
+		var c_sub_tier := int(_companion_data.get("sub_tier", _companion_data.get("tier", 1)))
+		var c_bonuses: Dictionary = _companion_data.get("bonuses", {})
+		var c_hp_bonus := int(c_bonuses.get("hp_bonus", 0))
+		var c_max_hp := maxi(1, 30 + c_level * 5 + c_sub_tier * 10 + c_hp_bonus)
+		var c_cur_hp := int(_companion_data.get("combat_hp", c_max_hp))
+		_overlay_companion_hp_bar.max_value = c_max_hp
+		_overlay_companion_hp_bar.value = clampi(c_cur_hp, 0, c_max_hp)
+	if _overlay_companion_name and is_instance_valid(_overlay_companion_name):
+		_overlay_companion_name.text = str(_companion_data.get("name", "Companion"))
+
+	# Reposition (handles window resize / layout shifts).
+	_position_battlefield_overlay()
+
+
+func _bump_inline_font_size(bbcode: String, bump: int) -> String:
+	"""Find [font_size=N] tags in the BBCode and replace each with [font_size=N+bump]."""
+	if bbcode == null or bbcode == "" or bump <= 0:
+		return bbcode
+	var regex := RegEx.new()
+	regex.compile("\\[font_size=(\\d+)\\]")
+	var out := bbcode
+	var matches := regex.search_all(out)
+	# Walk matches in reverse so substring offsets stay valid as we substitute.
+	for i in range(matches.size() - 1, -1, -1):
+		var m: RegExMatch = matches[i]
+		var n_str: String = m.get_string(1)
+		var n: int = n_str.to_int() + bump
+		var rep: String = "[font_size=%d]" % n
+		out = out.substr(0, m.get_start()) + rep + out.substr(m.get_end())
+	return out
+
+
+func end_action_phase_after(delay_seconds: float) -> void:
+	"""v0.9.403 — schedule end_action_phase after a delay so FX have time to
+	play out before the boxes slide back. Cancels any prior pending end."""
+	_cancel_action_phase_timer()
+	if not _action_phase_active:
+		return
+	_action_phase_end_timer = get_tree().create_timer(max(0.0, delay_seconds))
+	_action_phase_end_timer.timeout.connect(end_action_phase)
+
+
+func _kill_action_phase_tween() -> void:
+	if _action_phase_tween != null and _action_phase_tween.is_valid():
+		_action_phase_tween.kill()
+	_action_phase_tween = null
+
+
+func _cancel_action_phase_timer() -> void:
+	# SceneTreeTimer doesn't expose a cancel; we drop the reference and the
+	# old timer's timeout fires into a no-op since end_action_phase is
+	# guarded by _action_phase_active.
+	_action_phase_end_timer = null
+
+
 func _build_compact_player_block(portrait_size: int) -> VBoxContainer:
-	"""Chrono helper: small player block — name on top, sprite below (no
-	battle ASCII). v0.9.383."""
+	"""Chrono helper: small player block — name on top, tiny ASCII portrait
+	below. v0.9.385 — battle is ASCII even in compact layouts; sprite is
+	overworld-only. set_player_ascii_art() applies a small font_size
+	override when _is_compact_layout() so the art fits in portrait_size."""
 	var col := VBoxContainer.new()
 	col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	col.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -489,17 +854,21 @@ func _build_compact_player_block(portrait_size: int) -> VBoxContainer:
 	col.add_theme_constant_override("separation", 2)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(_create_player_name_label())
+	# Sprite holder still exists for classes with no ASCII art, but it sits
+	# at portrait_size and is hidden by default — set_player_ascii_art will
+	# flip _ascii_outer visible / _player_sprite_holder hidden when ASCII is
+	# present.
 	var sprite_holder = _create_player_sprite_holder()
 	sprite_holder.custom_minimum_size = Vector2(portrait_size, portrait_size)
 	if _player_sprite_rect:
 		_player_sprite_rect.custom_minimum_size = Vector2(portrait_size - 4, portrait_size - 4)
 	col.add_child(sprite_holder)
-	# Create the ascii_holder so populate code doesn't NPE referencing
-	# _player_ascii_label / _ascii_outer, but force it to zero size and
-	# hidden so it doesn't inflate the column.
+	# Compact ASCII holder — portrait_size × portrait_size, clipped, no
+	# fit_content inflation. _player_ascii_label fills via PRESET_FULL_RECT.
 	var ascii_holder = _create_player_ascii_holder()
-	ascii_holder.custom_minimum_size = Vector2(0, 0)
-	ascii_holder.visible = false
+	ascii_holder.custom_minimum_size = Vector2(portrait_size, portrait_size)
+	ascii_holder.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	ascii_holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	if _player_ascii_holder:
 		_player_ascii_holder.size = Vector2(portrait_size, portrait_size)
 	col.add_child(ascii_holder)
@@ -523,19 +892,79 @@ func _build_compact_companion_block(portrait_size: int) -> VBoxContainer:
 	_companion_section.add_child(_create_companion_xp_row())
 	_companion_section.add_child(_create_companion_hp_row())
 	var art = _create_companion_art_label()
+	# v0.9.384 — fit_content=true (default in _create_companion_art_label)
+	# makes the label grow to its content's natural width/height,
+	# ignoring custom_minimum_size as a ceiling. Disable it here so
+	# custom_minimum_size + clip_contents=true actually bounds the art
+	# to the 72×72 portrait box.
+	art.fit_content = false
 	art.custom_minimum_size = Vector2(portrait_size, portrait_size)
+	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	art.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_companion_section.add_child(art)
 	return _companion_section
 
 
-func _build_lufia_party_box(content: Control) -> PanelContainer:
-	"""Wrap a Lufia-style stat box: dark inset bg, light outer border."""
+func _build_lufia_monster_hp_panel() -> PanelContainer:
+	"""v0.9.390 — bordered Lufia-style strip at the top of the monster column
+	showing the monster's HP bar + cur/max text. Same border palette as the
+	party stat boxes for visual cohesion. Width is content-sized + centered
+	so it doesn't stretch across the screen."""
 	var box := PanelContainer.new()
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := StyleBoxFlat.new()
+	# v0.9.406 — reverted Lufia box bg to original dark navy. Contrast for
+	# dark-variant portraits is handled by _refresh_portrait_bg painting a
+	# light parchment color behind ONLY the portrait, not the whole box.
 	sb.bg_color = Color(0.06, 0.05, 0.10, 0.96)
+	sb.border_color = Color(0.75, 0.78, 0.92, 1.0)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 8
+	sb.content_margin_top = 4
+	sb.content_margin_right = 8
+	sb.content_margin_bottom = 4
+	box.add_theme_stylebox_override("panel", sb)
+
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(row)
+
+	# v0.9.395 — bar enlarged to 440×20 (was 220×12) so it's a prominent strip
+	# centered over the monster art. Fill color is re-tinted to the monster's
+	# class-affinity color (_monster_name_color) in _refresh_monster_hp.
+	_lufia_monster_hp_bar = _make_hp_bar(Color("#FFAA22"))
+	_lufia_monster_hp_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_lufia_monster_hp_bar.custom_minimum_size = Vector2(440, 20)
+	row.add_child(_lufia_monster_hp_bar)
+
+	_lufia_monster_hp_text = Label.new()
+	_lufia_monster_hp_text.add_theme_font_size_override("font_size", 13)
+	_lufia_monster_hp_text.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	_lufia_monster_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_lufia_monster_hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(_lufia_monster_hp_text)
+
+	return box
+
+
+func _build_lufia_party_box(content: Control) -> PanelContainer:
+	"""Wrap a Lufia-style stat box: dark inset bg, light outer border.
+	v0.9.388 — SHRINK_CENTER so the box only takes the content's width."""
+	var box := PanelContainer.new()
+	box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	# v0.9.411 — near-black box bg. v0.9.410 warm-gray (0.13, 0.12, 0.11)
+	# was too light; even Cobalt looked washed out. Near-black gives every
+	# variant — Cobalt blue, Crimson red, Gold yellow — maximum contrast
+	# against the bg.
+	sb.bg_color = Color(0.02, 0.02, 0.03, 0.98)
 	sb.border_color = Color(0.75, 0.78, 0.92, 1.0)
 	sb.set_border_width_all(2)
 	sb.set_corner_radius_all(4)
@@ -550,80 +979,166 @@ func _build_lufia_party_box(content: Control) -> PanelContainer:
 
 func _build_lufia_player_box_content() -> HBoxContainer:
 	"""Lufia stat box internal layout: portrait LEFT, stats RIGHT.
-	v0.9.383 — matches the SNES reference. Stats column has the player's
-	name only (HP lives in the shared HP strip below scene_section).
-	Battle ASCII intentionally omitted — too tall for stat-box height."""
+	v0.9.388 — content-sized (no EXPAND_FILL), fixed-width bars (COMPACT_BAR_W),
+	portrait sized W×H so the wide companion ASCII isn't clipped horizontally."""
 	var hbox := HBoxContainer.new()
-	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hbox.add_theme_constant_override("separation", 8)
+	hbox.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	hbox.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# v0.9.390 — tightened from 8 to 2 to remove dead horizontal space
+	# between portrait and stats.
+	hbox.add_theme_constant_override("separation", 2)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# Left: small sprite holder, ~72×72.
+	# Left: portrait area — a Panel whose bg is painted per-variant by
+	# _refresh_portrait_bg (light parchment behind dark variants, dark behind
+	# bright variants). Sprite + ASCII holders anchor full-rect inside.
+	_player_portrait_bg = Panel.new()
+	_player_portrait_bg.custom_minimum_size = Vector2(COMPACT_PLAYER_PORTRAIT_W, COMPACT_PORTRAIT_H)
+	_player_portrait_bg.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_player_portrait_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_player_portrait_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Initial stylebox — gets repainted in set_player_ascii_art based on
+	# variant brightness. Use the box bg as default so no visible frame.
+	var pbg := StyleBoxFlat.new()
+	pbg.bg_color = Color(0.06, 0.05, 0.10, 0.0)
+	_player_portrait_bg.add_theme_stylebox_override("panel", pbg)
+	hbox.add_child(_player_portrait_bg)
+
 	var sprite_holder = _create_player_sprite_holder()
-	sprite_holder.custom_minimum_size = Vector2(72, 72)
-	sprite_holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sprite_holder.set_anchors_preset(Control.PRESET_FULL_RECT)
 	if _player_sprite_rect:
-		_player_sprite_rect.custom_minimum_size = Vector2(68, 68)
-	hbox.add_child(sprite_holder)
+		_player_sprite_rect.custom_minimum_size = Vector2(COMPACT_PLAYER_PORTRAIT_W - 4, COMPACT_PORTRAIT_H - 4)
+	_player_portrait_bg.add_child(sprite_holder)
 
-	# Also instantiate ascii_holder (hidden) so populate code doesn't
-	# NPE on _player_ascii_label references.
 	var ascii_holder = _create_player_ascii_holder()
-	ascii_holder.custom_minimum_size = Vector2(0, 0)
-	ascii_holder.visible = false
-	hbox.add_child(ascii_holder)
+	ascii_holder.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if _player_ascii_holder:
+		_player_ascii_holder.size = Vector2(COMPACT_PLAYER_PORTRAIT_W, COMPACT_PORTRAIT_H)
+	_player_portrait_bg.add_child(ascii_holder)
 
-	# Right: stats column — name at top, room for HP/MP/etc. in future.
+	# Right: stats column — name on top, HP bar beneath, deck info last.
+	# v0.9.388 — SHRINK_CENTER, fixed-width bars (no stretchy long bars).
+	# v0.9.405 — captured as _lufia_player_stats so start_action_phase can
+	# fade ONLY the stats (portrait stays visible on the battlefield).
 	var stats := VBoxContainer.new()
-	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stats.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	stats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	stats.alignment = BoxContainer.ALIGNMENT_CENTER
-	stats.add_theme_constant_override("separation", 2)
+	stats.add_theme_constant_override("separation", 3)
 	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(stats)
+	_lufia_player_stats = stats
 
-	stats.add_child(_create_player_name_label())
+	var name_label = _create_player_name_label()
+	name_label.custom_minimum_size = Vector2(COMPACT_BAR_W + 60, 0)
+	stats.add_child(name_label)
+
+	# HP row: fixed-width bar + "HP cur / max" text.
+	var hp_row := HBoxContainer.new()
+	hp_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	hp_row.add_theme_constant_override("separation", 6)
+	hp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stats.add_child(hp_row)
+	_lufia_player_hp_bar = _make_hp_bar(Color("#FF4444"))
+	_lufia_player_hp_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_lufia_player_hp_bar.custom_minimum_size = Vector2(COMPACT_BAR_W, 10)
+	hp_row.add_child(_lufia_player_hp_bar)
+	_lufia_player_hp_text = Label.new()
+	_lufia_player_hp_text.add_theme_font_size_override("font_size", 11)
+	_lufia_player_hp_text.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	_lufia_player_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_lufia_player_hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hp_row.add_child(_lufia_player_hp_text)
+
+	# Deck info: "Deck N · Hand M · Discard K"
+	_lufia_player_deck_label = Label.new()
+	_lufia_player_deck_label.add_theme_font_size_override("font_size", 11)
+	_lufia_player_deck_label.add_theme_color_override("font_color", Color(0.82, 0.78, 0.55))
+	_lufia_player_deck_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_lufia_player_deck_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stats.add_child(_lufia_player_deck_label)
 	return hbox
 
 
 func _build_lufia_companion_box_content() -> HBoxContainer:
 	"""Lufia stat box for the companion: portrait LEFT, name + XP + HP
 	bars stacked on the RIGHT (bars BESIDE the portrait, not above it).
-	v0.9.383 — matches the SNES reference's stat-box layout."""
+	v0.9.388 — content-sized box, wider portrait (so Minotaur ~150-wide
+	ASCII fits at font_size 1), fixed-width bars (no stretching)."""
 	var hbox := HBoxContainer.new()
-	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hbox.add_theme_constant_override("separation", 8)
+	hbox.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	hbox.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# v0.9.390 — tightened from 8 to 2 to remove dead space between portrait
+	# and stats.
+	hbox.add_theme_constant_override("separation", 2)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
-	# Left: small companion ASCII portrait, ~72×72.
-	var art = _create_companion_art_label()
-	art.custom_minimum_size = Vector2(72, 72)
-	art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	art.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	hbox.add_child(art)
+	# Left: companion portrait bg + art inside, same pattern as the player box.
+	_companion_portrait_bg = Panel.new()
+	_companion_portrait_bg.custom_minimum_size = Vector2(COMPACT_PORTRAIT_W, COMPACT_PORTRAIT_H)
+	_companion_portrait_bg.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_companion_portrait_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_companion_portrait_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cbg := StyleBoxFlat.new()
+	cbg.bg_color = Color(0.06, 0.05, 0.10, 0.0)
+	_companion_portrait_bg.add_theme_stylebox_override("panel", cbg)
+	hbox.add_child(_companion_portrait_bg)
 
-	# Right: stats column — name on top, XP row, HP row (bars beside the
-	# portrait visually).
+	var art = _create_companion_art_label()
+	art.fit_content = false
+	art.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_companion_portrait_bg.add_child(art)
+
+	# Right: stats column — name on top, fixed-width XP bar, HP bar.
+	# v0.9.405 — captured as _lufia_companion_stats for action-phase fade.
 	var stats := VBoxContainer.new()
-	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stats.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stats.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	stats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	stats.alignment = BoxContainer.ALIGNMENT_CENTER
 	stats.add_theme_constant_override("separation", 2)
 	stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hbox.add_child(stats)
+	_lufia_companion_stats = stats
 
 	var name_label = _create_companion_name_label()
 	name_label.add_theme_font_size_override("normal_font_size", 11)
-	name_label.custom_minimum_size = Vector2(0, 0)
+	name_label.custom_minimum_size = Vector2(COMPACT_BAR_W + 60, 0)
 	stats.add_child(name_label)
-	stats.add_child(_create_companion_xp_row())
-	stats.add_child(_create_companion_hp_row())
+
+	# Constrain the HP / XP rows so the bars don't stretch — they share the
+	# same compact width as the player box.
+	# v0.9.389 — HP first (top), XP below (matches the player box's HP-then-
+	# resource-info order; user feedback request).
+	var hp_row = _create_companion_hp_row()
+	_constrain_companion_bar_row(hp_row)
+	stats.add_child(hp_row)
+	var xp_row = _create_companion_xp_row()
+	_constrain_companion_bar_row(xp_row)
+	stats.add_child(xp_row)
 
 	# Populate code expects _companion_section to exist. Use the HBox itself.
 	_companion_section = hbox
 	return hbox
+
+
+func _constrain_companion_bar_row(row: HBoxContainer) -> void:
+	"""v0.9.388 — replace SIZE_EXPAND_FILL on the bar (first child) of a
+	companion xp/hp row with a fixed COMPACT_BAR_W width so the bar doesn't
+	stretch across the screen in the Lufia layout.
+	v0.9.395 — row left-anchored (was centered) so HP and XP bars line up
+	vertically at the same X within the stats VBox. Previously each row
+	centered independently, so different trailing-text widths shifted the
+	bars to different X positions."""
+	if row == null or not is_instance_valid(row):
+		return
+	row.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	for child in row.get_children():
+		if child is ProgressBar:
+			(child as ProgressBar).size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			(child as ProgressBar).custom_minimum_size = Vector2(COMPACT_BAR_W, 10)
+		elif child is Label:
+			(child as Label).horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+			(child as Label).custom_minimum_size = Vector2(0, 0)
 
 
 func _build_player_column() -> VBoxContainer:
@@ -783,6 +1298,7 @@ func _create_companion_art_label() -> RichTextLabel:
 	_companion_art.custom_minimum_size = Vector2(180, 150)
 	_companion_art.clip_contents = true
 	_companion_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# v0.9.410 — outline approach abandoned (see _create_player_ascii_holder).
 	if _mono_font:
 		_companion_art.add_theme_font_override("normal_font", _mono_font)
 		_companion_art.add_theme_font_override("bold_font", _mono_font)
@@ -849,6 +1365,9 @@ func _create_player_ascii_holder() -> Control:
 	_player_ascii_label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_player_ascii_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_player_ascii_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# v0.9.410 — outline approach abandoned. Even 1px halo at font_size 2
+	# blurred glyph detail into a glow. Reverted to no outline; visibility
+	# now comes from the neutral dark-gray box bg (see _build_lufia_party_box).
 	if _mono_font:
 		_player_ascii_label.add_theme_font_override("normal_font", _mono_font)
 		_player_ascii_label.add_theme_font_override("bold_font", _mono_font)
@@ -877,6 +1396,12 @@ func _build_monster_column() -> VBoxContainer:
 	col.size_flags_stretch_ratio = 1.0
 	col.add_theme_constant_override("separation", 4)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	# v0.9.390 — Lufia prepends a bordered HP strip ABOVE the name/art so the
+	# monster's HP is visible at the top of the scene (where the player's
+	# attention is for combat). Standard / chrono keep HP in the shared strip.
+	if combat_layout == LAYOUT_LUFIA:
+		col.add_child(_build_lufia_monster_hp_panel())
 
 	_monster_name_label = RichTextLabel.new()
 	_monster_name_label.bbcode_enabled = true
@@ -1487,6 +2012,10 @@ func _refresh_hand() -> void:
 	# Status line
 	if _hand_status_label:
 		_hand_status_label.text = "Deck %d  ·  Discard %d" % [_combat_deck_count, _combat_discard_count]
+	# v0.9.385 — mirror deck / hand / discard into the Lufia in-box label.
+	if _lufia_player_deck_label and is_instance_valid(_lufia_player_deck_label):
+		var hand_size := _combat_hand.size()
+		_lufia_player_deck_label.text = "Deck %d · Hand %d · Discard %d" % [_combat_deck_count, hand_size, _combat_discard_count]
 
 
 func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
@@ -1827,7 +2356,33 @@ func populate(payload: Dictionary) -> void:
 	# at the leftmost slot every time. Also reset the running damage totals
 	# so the strip starts at zero for this fight.
 	_damage_label_seq = 0
+	_damage_label_stack_y = 0.0
+	_damage_label_last_spawn_ts = -10.0
 	reset_running_totals()
+	# v0.9.403/406 — reset action-phase state so a fresh fight starts with
+	# party row fully visible and the battlefield overlay hidden.
+	_action_phase_active = false
+	_kill_action_phase_tween()
+	_cancel_action_phase_timer()
+	if _lufia_player_stats and is_instance_valid(_lufia_player_stats):
+		_lufia_player_stats.modulate.a = 1.0
+	if _lufia_companion_stats and is_instance_valid(_lufia_companion_stats):
+		_lufia_companion_stats.modulate.a = 1.0
+	if _player_col and is_instance_valid(_player_col):
+		_player_col.modulate.a = 1.0
+	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
+		_battlefield_overlay.visible = false
+		_battlefield_overlay.modulate.a = 0.0
+	# v0.9.414 — restore the UI strips that start_action_phase hid (totals
+	# banner, hand cards, status). If the player pressed Space to chain
+	# into the next flock combat before end_action_phase fired, the strips
+	# stayed hidden and the new fight had no visible ability cards.
+	if _totals_strip and is_instance_valid(_totals_strip):
+		_totals_strip.visible = true
+	if _hand_strip and is_instance_valid(_hand_strip):
+		_hand_strip.visible = true
+	if _status_strip and is_instance_valid(_status_strip):
+		_status_strip.visible = true
 
 	# Reset any FX-applied sprite state from the prior fight (death slump,
 	# stealth fade, victory grey-out) so this fight starts clean. Reset
@@ -1931,6 +2486,87 @@ func get_monster_header_bbcode() -> Array:
 
 # === Internal rendering ===
 
+func _refresh_portrait_bg(bg_panel: Panel, variant_color_hex: String) -> void:
+	"""v0.9.410 — parchment bg paint abandoned. Per user feedback, the right
+	fix was to darken / recolor the BOX bg, not the portrait bg. Kept as a
+	no-op for call-site compatibility. See _build_lufia_party_box for the
+	new neutral dark-gray box bg that gives every variant enough contrast."""
+	if bg_panel == null or not is_instance_valid(bg_panel):
+		return
+	# Force the portrait bg fully transparent so the (now neutral-gray) box
+	# bg shows through. No per-variant logic.
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	bg_panel.add_theme_stylebox_override("panel", sb)
+	bg_panel.queue_redraw()
+
+
+func _apply_ascii_outline(label: RichTextLabel, fill_color_hex: String) -> void:
+	"""v0.9.410 — outline approach abandoned. Kept as a no-op so existing
+	call sites compile, but no outline is applied. Visibility now comes
+	from the neutral dark-gray box bg (see _build_lufia_party_box) which
+	gives every variant color enough contrast without modifying the ASCII."""
+	pass
+
+
+func _battle_lift_color(hex: String) -> String:
+	"""v0.9.414 — battle ASCII lift bumped 0.18 → 0.35 toward white. Tactical
+	view still felt dark vs FX overlay; this brings both to a clearly bright
+	read while preserving variant hue."""
+	if hex == null or hex == "":
+		return hex
+	var c: Color = Color(hex)
+	var lifted: Color = c.lerp(Color.WHITE, 0.35)
+	return "#" + lifted.to_html(false)
+
+
+func _battle_brighten_color_hex(hex: String) -> String:
+	"""v0.9.405 — aggressive lerp-toward-white for ASCII colors used in
+	battle. The HSV value-floor approach in v0.9.404 wasn't enough for
+	colors like Cobalt (low saturation + low value but the HSV V calc only
+	measures the brightest channel). Lerp toward white blends WITHOUT
+	losing hue, so Cobalt (#0047AB → ~#80A0DB) becomes a light-blue that
+	reads on any dark bg, while bright variants (Gold, Ivory) untouched."""
+	if hex == null or hex == "":
+		return hex
+	var c: Color = Color(hex)
+	# Perceived brightness via luminance weights.
+	var brightness: float = c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+	# Already bright enough? leave alone.
+	if brightness >= 0.55:
+		return hex
+	# Lerp toward white. The darker the color, the more lift it gets,
+	# capped at 0.55 so very-dark variants don't end up pure white.
+	var lift: float = clampf((0.55 - brightness) * 1.4, 0.0, 0.55)
+	var lifted: Color = c.lerp(Color.WHITE, lift)
+	return "#" + lifted.to_html(false)
+
+
+func _is_compact_layout() -> bool:
+	"""v0.9.384 — chrono / lufia render the same battle ASCII as standard
+	but at a tiny font size + clipped to a small portrait box. This helper
+	centralizes the layout check (sizes and font sizes branch on it)."""
+	return combat_layout != LAYOUT_STANDARD
+
+
+const COMPACT_PORTRAIT_PX := 96  # v0.9.385 — square chrono party-row portrait size (px)
+# v0.9.389 — Lufia portrait box bumped to fit the full ~75-line Minotaur ASCII
+# (~200 tall at font_size 1 with the font's minimum line height). Box height
+# dominates because monster art is taller than wide in our content; Barbarian
+# class art is 100×55 chars which fits at font_size 2.
+const COMPACT_PORTRAIT_W := 200  # v0.9.394 — back to 200 (240 was too much horizontal). [center] still helps when natural art is narrower.
+const COMPACT_PORTRAIT_H := 180
+# v0.9.392 — player portrait gets its own narrower width since player ASCII
+# (~100 chars wide at font_size 2 ≈ ~120px rendered) was leaving ~80px of dead
+# space on the right of the 200-wide portrait before the stat bars started.
+const COMPACT_PLAYER_PORTRAIT_W := 140
+const COMPACT_BAR_W := 120  # v0.9.388 — fixed-width bars (no EXPAND_FILL stretch)
+const COMPACT_ASCII_FONT_SIZE := 1  # v0.9.385 — companion ASCII font_size in compact layouts
+# v0.9.389 — player class ASCII uses a slightly larger font so the figure is
+# legible. Player art is ~100 chars wide, so font 2 stays inside the 200px box.
+const COMPACT_PLAYER_ASCII_FONT_SIZE := 2
+
+
 func _refresh_player() -> void:
 	# Class ASCII art takes priority over the PNG sprite when available.
 	# Drop a file at `res://client/sprites/ascii/<Class>.txt` and it shows up
@@ -1945,15 +2581,20 @@ func _refresh_player() -> void:
 		# pattern recolor helper companions use, via client_ref.
 		if _player_appearance_color != "":
 			col = _player_appearance_color
-		# Match the readability transform map-hover / player-popup / status-page
-		# use so dark variant palettes don't render dimmer in battle than they
-		# do on the other player surfaces.
+		# v0.9.412 — always brighten battle ASCII via _ensure_readable_color
+		# (same transform used by map hover / player popup / status page).
+		# v0.9.413 — extra battle lift on top (lerp 0.18 toward white) since
+		# the tactical view still reads darker than the FX overlay for
+		# subjective reasons (smaller font, more competing UI).
 		var col2 = _player_appearance_color2
 		if client_ref != null and client_ref.has_method("_ensure_readable_color"):
 			if col != "":
 				col = client_ref._ensure_readable_color(col)
 			if col2 != "":
 				col2 = client_ref._ensure_readable_color(col2)
+		col = _battle_lift_color(col)
+		if col2 != "":
+			col2 = _battle_lift_color(col2)
 		set_player_ascii_art(ascii_art, fsize, col, col2, _player_appearance_pattern)
 	else:
 		# Hide the alt holder if we'd previously been showing ASCII for a
@@ -1985,6 +2626,12 @@ func _refresh_player_hp() -> void:
 	_player_hp_bar.max_value = _player_max_hp
 	_player_hp_bar.value = clampi(_player_hp, 0, _player_max_hp)
 	_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
+	# v0.9.385 — mirror to the Lufia in-box HP widget when it exists.
+	if _lufia_player_hp_bar and is_instance_valid(_lufia_player_hp_bar):
+		_lufia_player_hp_bar.max_value = _player_max_hp
+		_lufia_player_hp_bar.value = clampi(_player_hp, 0, _player_max_hp)
+	if _lufia_player_hp_text and is_instance_valid(_lufia_player_hp_text):
+		_lufia_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
 
 
 func update_companion_data(data: Dictionary) -> void:
@@ -2024,10 +2671,16 @@ func update_companion_combat_hp(current_hp: int, max_hp: int, is_ko: bool) -> vo
 
 func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
 	"""Phase B1 — floating damage label above the companion ASCII when the
-	monster targets it. Reuses the existing damage-label fan."""
+	monster targets it. Reuses the existing damage-label fan.
+	v0.9.411 — during action phase, anchor on the overlay companion block
+	(visible) instead of the faded in-box companion art."""
 	if amount <= 0:
 		return
-	var anchor: Control = _companion_art
+	var anchor: Control
+	if _action_phase_active and _overlay_companion_block and is_instance_valid(_overlay_companion_block):
+		anchor = _overlay_companion_block
+	else:
+		anchor = _companion_art
 	if anchor == null or not is_instance_valid(anchor):
 		return
 	var anchor_global := anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.25)
@@ -2087,12 +2740,28 @@ func _refresh_companion() -> void:
 				var v_color = str(_companion_data.get("variant_color", "#FFFFFF"))
 				var v_color2 = str(_companion_data.get("variant_color2", ""))
 				var v_pattern = str(_companion_data.get("variant_pattern", "solid"))
+				# v0.9.412 — always brighten companion variant via
+				# _ensure_readable_color (matches map hover brightness).
+				# v0.9.413 — extra battle lift for the tactical view.
 				if client_ref.has_method("_ensure_readable_color"):
 					v_color = client_ref._ensure_readable_color(v_color)
 					if v_color2 != "":
 						v_color2 = client_ref._ensure_readable_color(v_color2)
+				v_color = _battle_lift_color(v_color)
+				if v_color2 != "":
+					v_color2 = _battle_lift_color(v_color2)
 				raw_art = client_ref._recolor_ascii_art_pattern(raw_art, v_color, v_color2, v_pattern)
-			art_text = "[font_size=%d]%s[/font_size]" % [_companion_font_size, raw_art]
+			# v0.9.385 — compact layouts use a tiny font_size so the companion
+			# ASCII fits in the COMPACT_PORTRAIT_PX box.
+			# v0.9.393 — also wrap in [center] for compact layouts so the
+			# (typically rectangular, line-padded) monster ASCII centers
+			# horizontally within its portrait holder instead of left-aligning
+			# and leaving a visible gap on the right.
+			var comp_fs := COMPACT_ASCII_FONT_SIZE if _is_compact_layout() else _companion_font_size
+			if _is_compact_layout():
+				art_text = "[center][font_size=%d]%s[/font_size][/center]" % [comp_fs, raw_art]
+			else:
+				art_text = "[font_size=%d]%s[/font_size]" % [comp_fs, raw_art]
 	if art_text == "":
 		art_text = "[color=#666666](companion)[/color]"
 	_companion_art.text = art_text
@@ -2117,10 +2786,27 @@ func _refresh_monster_hp() -> void:
 		_monster_hp_bar.value = 0
 		_monster_hp_bar.max_value = 100
 		_monster_hp_text.text = "HP ???"
+		# v0.9.390 — Lufia mirror.
+		if _lufia_monster_hp_bar and is_instance_valid(_lufia_monster_hp_bar):
+			_lufia_monster_hp_bar.value = 0
+			_lufia_monster_hp_bar.max_value = 100
+		if _lufia_monster_hp_text and is_instance_valid(_lufia_monster_hp_text):
+			_lufia_monster_hp_text.text = "HP ???"
 		return
 	_monster_hp_bar.max_value = _monster_max_hp
 	_monster_hp_bar.value = clampi(_monster_hp, 0, _monster_max_hp)
 	_monster_hp_text.text = "HP %d / %d" % [maxi(0, _monster_hp), _monster_max_hp]
+	if _lufia_monster_hp_bar and is_instance_valid(_lufia_monster_hp_bar):
+		_lufia_monster_hp_bar.max_value = _monster_max_hp
+		_lufia_monster_hp_bar.value = clampi(_monster_hp, 0, _monster_max_hp)
+		# v0.9.395 — tint the Lufia bar fill to the monster's affinity color.
+		# _monster_name_color is supplied per-monster from the server payload
+		# (matches the name-tint in the monster name label).
+		var fill_sb: StyleBoxFlat = _lufia_monster_hp_bar.get_theme_stylebox("fill")
+		if fill_sb != null:
+			fill_sb.bg_color = Color.from_string(_monster_name_color, Color("#FFAA22"))
+	if _lufia_monster_hp_text and is_instance_valid(_lufia_monster_hp_text):
+		_lufia_monster_hp_text.text = "HP %d / %d" % [maxi(0, _monster_hp), _monster_max_hp]
 
 
 func _refresh_log() -> void:
@@ -2157,11 +2843,16 @@ func _flash_node(node: CanvasItem, current_tween: Tween, is_crit: bool, tween_fi
 
 
 func lunge_player_forward() -> void:
+	# v0.9.411 — during action phase the in-box player portrait is faded
+	# (alpha 0) and the battlefield OVERLAY player block is what's visible.
+	# Lunge that instead so the player actually moves. Outside action phase
+	# (or in non-Lufia layouts), animate the in-box portrait as before.
+	if _action_phase_active and _overlay_player_block and is_instance_valid(_overlay_player_block):
+		_lunge_node(_overlay_player_block, _overlay_player_block_baseline, true, true)
+		return
 	var node = _player_visual_for_fx()
 	if node == null or not is_instance_valid(node):
 		return
-	# Per-node baseline via metadata — works whether the visual is the
-	# PNG sprite or the ASCII holder.
 	var baseline: Vector2
 	if node.has_meta("lunge_baseline"):
 		baseline = node.get_meta("lunge_baseline")
@@ -2176,6 +2867,131 @@ func lunge_player_forward() -> void:
 	_player_lunge_tween = create_tween()
 	_player_lunge_tween.tween_property(node, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	_player_lunge_tween.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+func lunge_companion_forward() -> void:
+	"""v0.9.410 — per-actor visual signature. Companion ASCII lunges right
+	(toward monster) when the companion attacks. v0.9.411 — during action
+	phase, animate the OVERLAY companion block (the in-box one is faded)."""
+	if _action_phase_active and _overlay_companion_block and is_instance_valid(_overlay_companion_block):
+		_lunge_node(_overlay_companion_block, _overlay_companion_block_baseline, false, true)
+		return
+	if _companion_art == null or not is_instance_valid(_companion_art):
+		return
+	var baseline: Vector2
+	if _companion_art.has_meta("lunge_baseline"):
+		baseline = _companion_art.get_meta("lunge_baseline")
+	else:
+		baseline = _companion_art.position
+		_companion_art.set_meta("lunge_baseline", baseline)
+	if _companion_lunge_tween and _companion_lunge_tween.is_valid():
+		_companion_lunge_tween.kill()
+		_companion_art.position = baseline
+	var target_pos = baseline + Vector2(LUNGE_DISTANCE, 0)
+	_companion_lunge_tween = create_tween()
+	_companion_lunge_tween.tween_property(_companion_art, "position", target_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_companion_lunge_tween.tween_property(_companion_art, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+func _lunge_node(node: Control, baseline: Vector2, is_player: bool, forward: bool) -> void:
+	"""v0.9.411 — generic lunge helper for overlay character blocks. Used by
+	lunge_player_forward / lunge_companion_forward when action phase is
+	active so the visible (overlay) block animates instead of the faded
+	in-box portrait."""
+	if node == null or not is_instance_valid(node):
+		return
+	var dir := 1.0 if forward else -1.0
+	var target := baseline + Vector2(LUNGE_DISTANCE * dir, 0)
+	var t: Tween
+	if is_player:
+		if _player_lunge_tween and _player_lunge_tween.is_valid():
+			_player_lunge_tween.kill()
+		_player_lunge_tween = create_tween()
+		t = _player_lunge_tween
+	else:
+		if _companion_lunge_tween and _companion_lunge_tween.is_valid():
+			_companion_lunge_tween.kill()
+		_companion_lunge_tween = create_tween()
+		t = _companion_lunge_tween
+	node.position = baseline
+	t.tween_property(node, "position", target, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+# === v0.9.413 — Miss FX ===
+
+func show_miss_on_monster() -> void:
+	"""Floating MISS label above the monster (player or companion attacked
+	but missed). Reuses the popup spawn pattern but renders 'MISS' in gray
+	with a different scale/timing than damage numbers."""
+	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
+		return
+	var anchor_global = _monster_art_label.global_position + Vector2(_monster_art_label.size.x * 0.5, _monster_art_label.size.y * 0.25)
+	_spawn_miss_label(anchor_global)
+
+
+func show_miss_on_player() -> void:
+	"""Monster attacked but missed the player. v0.9.413."""
+	var node: Control
+	if _action_phase_active and _overlay_player_block and is_instance_valid(_overlay_player_block):
+		node = _overlay_player_block
+	else:
+		node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
+		return
+	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.25)
+	_spawn_miss_label(anchor_global)
+
+
+func show_miss_on_companion() -> void:
+	"""Monster attacked but missed the companion (or companion lunged but
+	missed). v0.9.413."""
+	var anchor: Control
+	if _action_phase_active and _overlay_companion_block and is_instance_valid(_overlay_companion_block):
+		anchor = _overlay_companion_block
+	elif _companion_art and is_instance_valid(_companion_art):
+		anchor = _companion_art
+	else:
+		return
+	var anchor_global = anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.25)
+	_spawn_miss_label(anchor_global)
+
+
+func _spawn_miss_label(anchor_global: Vector2) -> void:
+	# v0.9.414 — bumped to bright yellow + larger font + bold scale-pop so
+	# misses are unmistakably visible. The earlier gray-on-dark with 30pt
+	# was easy to miss against the action-phase background.
+	var label := Label.new()
+	label.text = "MISS"
+	label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.30))
+	label.add_theme_color_override("font_outline_color", Color(0.2, 0.05, 0.0, 1.0))
+	label.add_theme_constant_override("outline_size", 6)
+	label.add_theme_font_size_override("font_size", 42)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 110
+	add_child(label)
+	label.reset_size()
+	# Position relative to the panel (account for top_level coords).
+	var local_anchor: Vector2 = anchor_global - global_position - label.size * 0.5
+	label.position = local_anchor
+
+	# Reuse the damage-stack so misses also stack vertically with hits.
+	var now := float(Time.get_ticks_msec()) / 1000.0
+	if now - _damage_label_last_spawn_ts < 0.35:
+		_damage_label_stack_y -= 70.0
+	else:
+		_damage_label_stack_y = 0.0
+	_damage_label_last_spawn_ts = now
+	label.position.y += _damage_label_stack_y
+
+	# Bold scale-pop + linger + fade.
+	label.scale = Vector2(0.3, 0.3)
+	label.pivot_offset = label.size * 0.5
+	var t := create_tween().set_parallel(true)
+	t.tween_property(label, "scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "scale", Vector2(1.0, 1.0), 0.10).set_delay(0.12)
+	t.tween_property(label, "modulate:a", 0.0, 0.35).set_delay(0.85)
+	t.tween_callback(label.queue_free).set_delay(1.20)
 
 
 func lunge_monster_forward() -> void:
@@ -2204,7 +3020,13 @@ func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player
 
 
 func show_damage_on_player(amount: int, is_crit: bool) -> void:
-	var node = _player_visual_for_fx()
+	# v0.9.411 — during action phase, anchor the popup over the overlay
+	# player block (visible) instead of the faded in-box portrait.
+	var node: Control
+	if _action_phase_active and _overlay_player_block and is_instance_valid(_overlay_player_block):
+		node = _overlay_player_block
+	else:
+		node = _player_visual_for_fx()
 	if node == null or not is_instance_valid(node):
 		return
 	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.25)
@@ -2265,47 +3087,86 @@ func show_dot_tick(amount: int, dot_type: String, target_is_player: bool) -> voi
 
 
 func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, source: String, target_is_player: bool) -> void:
+	# v0.9.396 — damage popup pass 4 per feedback:
+	#   • NO boxy background panel — just a Label with a thick outline that
+	#     forms a "border around the number" (the letterforms themselves get
+	#     a near-black halo, not a rectangle).
+	#   • NO upward drift — the number lingers in place, then fades.
+	#   • Kept: thin+tall scale, white-flash impact, rotation jitter, crit
+	#     shake, vertical no-overlap stacking.
+	var color := Color("#FFD93D")  # default yellow = player damage
+	var font_size := 40
+	if is_crit:
+		color = Color("#FF3B3B")
+		font_size = 58
+	elif source == "companion":
+		color = Color("#3DD9FF")
+	elif target_is_player:
+		color = Color("#FF6666")
+
+	# Bare Label — no Panel wrapper. The outline is the "border around the
+	# number" the user asked for; thickness scales with font size.
 	var label := Label.new()
 	label.text = ("-%d" % amount) if amount > 0 else "0"
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.z_index = 100
-	# Color by source (who dealt it) and crit
-	var color := Color("#FFD93D")  # default yellow = player damage
-	var font_size := 22
-	if is_crit:
-		color = Color("#FF3B3B")
-		font_size = 30
-	elif source == "companion":
-		color = Color("#3DD9FF")
-	elif target_is_player:
-		# Damage TO the player — shown in red so it visually reads as "hurt me"
-		color = Color("#FF6666")
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	label.add_theme_constant_override("outline_size", 4)
+	# White-flash spawn color, tweens to damage color shortly after.
+	label.add_theme_color_override("font_color", Color.WHITE)
+	label.add_theme_color_override("font_outline_color", Color(0.04, 0.03, 0.06, 1.0))
+	label.add_theme_constant_override("outline_size", maxi(8, int(font_size / 5.0)))
 	label.add_theme_font_size_override("font_size", font_size)
 	add_child(label)
-	# Force layout so label.size is valid before we anchor.
 	label.reset_size()
+	label.pivot_offset = label.size * 0.5
 
-	# Deterministic spread: cycle through 5 positions in a fan pattern so
-	# rapid back-to-back hits don't stack. Counter resets when populate()
-	# is called for a new fight.
-	var slot = _damage_label_seq % 5
+	# Time-windowed vertical stack so rapid hits don't overlap. If recent,
+	# push this one up by DAMAGE_STACK_STEP_PX; otherwise reset the stack.
+	# The popup itself doesn't move — stack offset just determines spawn Y.
 	_damage_label_seq += 1
-	var spread_x = [-50.0, 30.0, -20.0, 60.0, 0.0][slot]
-	var spread_y = [0.0, -10.0, 14.0, 4.0, -18.0][slot]
+	var now := float(Time.get_ticks_msec()) / 1000.0
+	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S:
+		_damage_label_stack_y -= DAMAGE_STACK_STEP_PX
+	else:
+		_damage_label_stack_y = 0.0
+	_damage_label_last_spawn_ts = now
+	var x_jitter := randf_range(-22.0, 22.0)
 
 	var local_anchor = anchor_global - global_position - label.size * 0.5
-	local_anchor += Vector2(spread_x, spread_y)
+	local_anchor += Vector2(x_jitter, _damage_label_stack_y)
 	label.position = local_anchor
 
-	var float_distance := 60.0
-	var lifetime := 1.0
+	# Slight random rotation per spawn (more for crits).
+	var jitter_deg = randf_range(-4.0, 4.0) if not is_crit else randf_range(-7.0, 7.0)
+	label.rotation = deg_to_rad(jitter_deg)
+
+	# Persistent "thin + tall" scale (verticality).
+	var rest_scale := Vector2(0.70, 1.55)
+	label.scale = Vector2(0.30, 1.85)
 	var t := create_tween().set_parallel(true)
-	t.tween_property(label, "position", local_anchor + Vector2(0, -float_distance), lifetime).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	t.tween_property(label, "modulate:a", 0.0, lifetime * 0.6).set_delay(lifetime * 0.4)
-	t.chain().tween_callback(label.queue_free)
+	# Scale pop-in (overshoot for SNES "punch").
+	t.tween_property(label, "scale", rest_scale, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# White → damage color flash.
+	t.tween_property(label, "theme_override_colors/font_color", color, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+	# Crit shake during early linger (small wobble).
+	if is_crit:
+		var shake_amp := 4.0
+		var shake_count := 4
+		for i in range(shake_count):
+			var dt := 0.05
+			var dly := 0.20 + i * dt
+			var dir = Vector2(randf_range(-shake_amp, shake_amp), randf_range(-shake_amp, shake_amp))
+			t.tween_property(label, "position", local_anchor + dir, dt).set_delay(dly).set_trans(Tween.TRANS_SINE)
+		t.tween_property(label, "position", local_anchor, 0.05).set_delay(0.20 + shake_count * 0.05)
+
+	# Linger in place, then fade with a subtle scale shrink (no upward drift).
+	# v0.9.411 — reverted to 1.0s linger + 0.35s fade. The right fix is to
+	# pause LONGER between actor attacks, not shorten popup readability.
+	var linger_time := 1.0
+	var fade_time := 0.35
+	t.tween_property(label, "modulate:a", 0.0, fade_time).set_delay(linger_time)
+	t.tween_property(label, "scale", rest_scale * 0.85, fade_time).set_delay(linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_callback(label.queue_free).set_delay(linger_time + fade_time)
 
 
 # === A3 ability VFX ===
@@ -2657,6 +3518,16 @@ func set_player_ascii_art(text: String, font_size: int = 3, color_hex: String = 
 	data is passed."""
 	if _player_ascii_label == null or not is_instance_valid(_player_ascii_label):
 		return
+	# v0.9.406 — paint a contrasting bg behind the portrait based on variant
+	# brightness (dark variants get a light parchment; bright variants keep
+	# the dark box bg). This replaces the v0.9.404/405 color-brightening
+	# attempts which couldn't get dark variants like Cobalt readable.
+	_refresh_portrait_bg(_player_portrait_bg, color_hex)
+	# v0.9.409 — text outline gives a contrasting halo around every glyph
+	# so the figure reads regardless of bg. Halo color flips based on the
+	# variant brightness: dark variants get a light halo (cream), bright
+	# variants get a dark halo (near-black).
+	_apply_ascii_outline(_player_ascii_label, color_hex)
 	var safe_text = text.replace("[", "[lb]")  # keep stray brackets from being read as BBCode tags
 	var bbcode: String
 	if pattern != "solid" and color2_hex != "" and client_ref != null and client_ref.has_method("_recolor_ascii_art_pattern"):
@@ -2666,7 +3537,19 @@ func set_player_ascii_art(text: String, font_size: int = 3, color_hex: String = 
 		bbcode = "[font_size=%d]%s[/font_size]" % [font_size, recolored]
 	else:
 		bbcode = "[font_size=%d][color=%s]%s[/color][/font_size]" % [font_size, color_hex, safe_text]
-	_player_ascii_label.text = bbcode
+	# v0.9.385/389 — compact layouts force a small font_size override so the
+	# ASCII fits inside the portrait box. Player gets COMPACT_PLAYER_ASCII_FONT_SIZE
+	# (slightly larger than the companion's font for readability). Sprites are
+	# overworld-only; battle is ASCII even in compact layouts.
+	if _is_compact_layout():
+		if pattern != "solid" and color2_hex != "" and client_ref != null and client_ref.has_method("_recolor_ascii_art_pattern"):
+			var wrapped = "[color=%s]\n%s\n[/color]" % [color_hex, safe_text]
+			var recolored = client_ref._recolor_ascii_art_pattern(wrapped, color_hex, color2_hex, pattern)
+			bbcode = "[font_size=%d]%s[/font_size]" % [COMPACT_PLAYER_ASCII_FONT_SIZE, recolored]
+		else:
+			bbcode = "[font_size=%d][color=%s]%s[/color][/font_size]" % [COMPACT_PLAYER_ASCII_FONT_SIZE, color_hex, safe_text]
+	if _player_ascii_label and is_instance_valid(_player_ascii_label):
+		_player_ascii_label.text = bbcode
 	if _ascii_outer:
 		_ascii_outer.visible = true
 	if _player_sprite_holder:

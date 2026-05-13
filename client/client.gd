@@ -422,6 +422,14 @@ var _last_displayed_round: int = 0  # round number we last drew a divider for; r
 @onready var tool_status_overlay = $RootContainer/TopSection/MapPanel/BottomRow/ToolStatusOverlay
 @onready var minimap_display = $RootContainer/TopSection/MapPanel/BottomRow/MinimapDisplay
 @onready var region_label = $RootContainer/TopSection/MapPanel/MapDisplay/RegionLabel
+# v0.9.397 — coordinate / post-name box, top-LEFT of map_display. Mirrors the
+# region_label style on the right. Created programmatically in _ensure_coord_post_label.
+var coord_post_label: RichTextLabel = null
+# v0.9.401 — when player has unspent stat points, the Stats shortcut button
+# gets a "+N" suffix and pulses to draw attention. Captured at shortcut-bar
+# creation; tween started/stopped by update_stats_reminder().
+var _stats_shortcut_btn: Button = null
+var _stats_reminder_tween: Tween = null
 @onready var status_hud = $RootContainer/TopSection/MapPanel/StatusHUD
 @onready var status_hud_backpack = $RootContainer/TopSection/MapPanel/StatusHUD/BackpackLabel
 @onready var status_hud_area = $RootContainer/TopSection/MapPanel/StatusHUD/AreaLabel
@@ -436,6 +444,15 @@ var shortcut_buttons_container: HBoxContainer = null
 # players, attached as a child of map_display so it inherits the map's
 # coordinate space.
 var map_sprites_overlay: Control = null
+# v0.9.388 — true briefly after the user moves the scroll bar manually; lets
+# _sync_map_sprites_overlay skip its auto-center logic for one frame so we
+# don't fight the user's drag. Cleared on the next map update.
+var _map_scroll_user_active: bool = false
+# v0.9.390 — capture the most recent dungeon special-tile text message so
+# display_dungeon_floor can re-append it (otherwise the immediately-following
+# dungeon_state clears game_output before the player can read it).
+var _last_dungeon_tile_message: String = ""
+var _dungeon_text_pending: bool = false
 var _cached_nearby_players: Array = []  # Latest nearby_players list from server
 # Local player's position from the most recent location message. Cached
 # separately because character_data.x/y is only updated on flee, not on
@@ -1381,9 +1398,16 @@ const ANIMATION_DURATION: float = 0.6
 
 # Phased combat message display
 var combat_msg_queue: Array[Dictionary] = []
+# v0.9.413 — when combat_end fires during a one-turn battle, the queue is
+# still full of attack messages. Without deferring the victory presentations,
+# the victory FX + card cover the panel immediately and the user never sees
+# the paced player/companion attacks. We capture the victory presentation
+# args here and replay them when _drain_combat_queue finishes.
+var _pending_victory_fx_play: bool = false
+var _pending_victory_card_payload: Variant = null
 var combat_phase_timer: float = 0.0
 var combat_phase_paused: bool = false
-var combat_speed: int = 1  # 0=instant, 1=normal(0.6s), 2=slow(1.2s)
+var combat_speed: int = 2  # 0=instant, 1=fast, 2=normal — v0.9.408 default Normal so player + companion attacks are visibly distinct
 
 # Per-turn one-liners (Combat Readability slice #1)
 # Buffered messages between server pulses get folded into one summary per
@@ -2340,6 +2364,14 @@ func _on_window_resized():
 	if map_display:
 		var map_font_size = int(MAP_BASE_FONT_SIZE * base_scale * ui_scale_map)
 		map_font_size = clampi(map_font_size, MAP_MIN_FONT_SIZE, MAP_MAX_FONT_SIZE)
+		# v0.9.391 — also cap so the map fits horizontally inside map_display.
+		# Map is 23 cells × 2 chars = 46 chars wide; Consolas char width is
+		# ~0.6 × font_size. RichTextLabel has no horizontal scroll, so without
+		# this cap a high zoom truncates the right edge of the map.
+		if map_display.size.x > 0:
+			var max_h_font = int(map_display.size.x / (46.0 * 0.6))
+			if max_h_font >= MAP_MIN_FONT_SIZE:
+				map_font_size = mini(map_font_size, max_h_font)
 		map_display.add_theme_font_size_override("normal_font_size", map_font_size)
 		map_display.add_theme_font_size_override("bold_font_size", map_font_size)
 		map_display.add_theme_font_size_override("italics_font_size", map_font_size)
@@ -2383,6 +2415,12 @@ func _on_window_resized():
 
 	# Scale shortcut buttons above chat
 	_scale_shortcut_buttons(base_scale)
+
+	# v0.9.387 — reposition / resize the map sprite overlay whenever map font
+	# size or window size changes. Deferred so the new font_size has settled
+	# in the RichTextLabel before we read its metrics.
+	if has_method("_sync_map_sprites_overlay"):
+		call_deferred("_sync_map_sprites_overlay")
 
 func _process(delta):
 	# Clear action triggers from previous frame
@@ -2536,7 +2574,17 @@ func _process(delta):
 			_scene_temporarily_hidden = true
 		else:
 			_victory_legacy_view = false
-		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up) and not _scene_temporarily_hidden
+		# v0.9.414 — keep the panel visible while the action phase is still
+		# active (queue draining + deferred victory FX/card pending). Without
+		# this, in_combat = false fires immediately on combat_end and the
+		# 1100ms linger can expire before the queue drains, briefly showing
+		# the legacy victory text + flashing the panel back on.
+		var _action_phase_pending = (
+			combat_scene_panel.has_method("get") and "_action_phase_active" in combat_scene_panel
+			and combat_scene_panel._action_phase_active
+		)
+		var _victory_pending = _pending_victory_fx_play or _pending_victory_card_payload != null
+		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up or _action_phase_pending or _victory_pending) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
 
@@ -8543,6 +8591,18 @@ func send_combat_command(command: String):
 	_start_combat_command_animation(command)
 
 	display_game("[color=#00FFFF]> %s[/color]" % command)
+	# v0.9.403 — Lufia II battlefield reveal: hide the party stat boxes the
+	# moment a card is played so FX play out on a clear stage. end_action_phase
+	# is triggered after the next combat_update arrives (see message handler).
+	if combat_scene_panel and combat_scene_panel.has_method("start_action_phase"):
+		combat_scene_panel.start_action_phase()
+	# v0.9.409 — transition lockout: hold off draining the combat message
+	# queue for 0.45s so the action_phase fade-in finishes before the first
+	# attack FX fires. Without this, messages arrive mid-fade and attacks
+	# happen before the box fade completes, making it look like everything
+	# fires at once.
+	combat_phase_timer = max(combat_phase_timer, 0.45)
+	combat_phase_paused = true
 	send_to_server({"type": "combat", "command": command})
 
 func _start_combat_command_animation(command: String):
@@ -8825,6 +8885,10 @@ func _create_shortcut_buttons():
 		btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
 		btn.pressed.connect(_on_shortcut_button_pressed.bind(shortcut[1]))
 		shortcut_buttons_container.add_child(btn)
+		# v0.9.401 — capture the Stats button so update_stats_reminder can
+		# update its label + pulse when there are unspent points to spend.
+		if shortcut[1] == "stats_shortcut":
+			_stats_shortcut_btn = btn
 
 	shortcut_buttons_container.visible = false
 
@@ -13078,6 +13142,14 @@ func acknowledge_continue():
 		else:
 			display_dungeon_floor()
 
+	# v0.9.398 — re-show the overworld player sprite after combat ends.
+	# Previously the sprite stayed hidden (in_combat had toggled false during
+	# combat_end, but no update_map fired) until the player next moved, which
+	# triggered a location update. Re-syncing here makes the sprite appear
+	# the moment the player acknowledges the post-combat continue.
+	if not dungeon_mode:
+		_sync_map_sprites_overlay()
+
 	update_action_bar()
 
 func logout_character():
@@ -17069,6 +17141,32 @@ func update_player_level():
 			combat_scene_panel.play_level_up_fx(level)
 			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2400)
 	last_known_level = level
+	# v0.9.401 — refresh the Stats shortcut reminder pulse.
+	update_stats_reminder()
+
+
+func update_stats_reminder() -> void:
+	"""v0.9.401 — when the character has unspent stat points, append a bright
+	"+N" suffix to the Stats shortcut button and pulse its opacity so the
+	player notices. Clears + stops the pulse when there are no points left."""
+	if not _stats_shortcut_btn or not is_instance_valid(_stats_shortcut_btn):
+		return
+	var unspent: int = int(character_data.get("unspent_stat_points", 0))
+	if unspent > 0:
+		_stats_shortcut_btn.text = "Stats +%d" % unspent
+		_stats_shortcut_btn.add_theme_color_override("font_color", Color("#FFE066"))
+		# Start a looping opacity pulse if not already running.
+		if _stats_reminder_tween == null or not _stats_reminder_tween.is_valid():
+			_stats_reminder_tween = create_tween().set_loops()
+			_stats_reminder_tween.tween_property(_stats_shortcut_btn, "modulate:a", 0.55, 0.55).set_trans(Tween.TRANS_SINE)
+			_stats_reminder_tween.tween_property(_stats_shortcut_btn, "modulate:a", 1.0, 0.55).set_trans(Tween.TRANS_SINE)
+	else:
+		_stats_shortcut_btn.text = "Stats"
+		_stats_shortcut_btn.remove_theme_color_override("font_color")
+		if _stats_reminder_tween and _stats_reminder_tween.is_valid():
+			_stats_reminder_tween.kill()
+		_stats_reminder_tween = null
+		_stats_shortcut_btn.modulate.a = 1.0
 
 func update_player_hp_bar():
 	if not player_health_bar or not has_character:
@@ -18368,6 +18466,12 @@ func handle_server_message(message: Dictionary):
 				last_item_use_result = text_msg
 			else:
 				display_game(text_msg)
+			# v0.9.390 — capture dungeon special-tile messages so the next
+			# dungeon_state can re-append them (otherwise display_dungeon_floor
+			# clears game_output and the player never sees what they stepped on).
+			if dungeon_mode and text_msg != "":
+				_last_dungeon_tile_message = text_msg
+				_dungeon_text_pending = true
 			# Sound triggers for text messages
 			var text_lower = text_msg.to_lower()
 			if "hp restored" in text_lower or "healed" in text_lower or "recovered" in text_lower:
@@ -18917,15 +19021,26 @@ func handle_server_message(message: Dictionary):
 					if combat_scene_panel and combat_scene_panel.has_method("update_hand"):
 						combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
 					update_action_bar()
+				# v0.9.412 — end_action_phase trigger MOVED to _drain_combat_queue
+				# (fires when queue empties + popup buffer). Scheduling it
+				# from combat_update arrival fired before messages drained
+				# when delays were long, cutting the action short.
 
 		"combat_end":
-			# Flush any remaining phased combat messages before processing end
-			if not combat_msg_queue.is_empty():
-				_flush_combat_queue()
+			# v0.9.413 — DO NOT flush the message queue here. One-turn battles
+			# (player → companion → killing blow → combat_end fires
+			# immediately) previously had the queue flushed, instantly showing
+			# all messages with no pacing. Now we let messages drain naturally
+			# at the configured per-attack rhythm. end_action_phase fires via
+			# _drain_combat_queue's queue-empty trigger.
 			# Flush any buffered per-turn summary so the final round's
 			# damage totals appear before the victory/defeat output.
 			if condensed_combat_log:
 				_emit_turn_summary()
+			# v0.9.413 — defensive re-sync of the map sprite on combat exit
+			# to address occasional "sprite disappears from overworld" reports
+			# where acknowledge_continue's sync hit a race with state change.
+			call_deferred("_sync_map_sprites_overlay")
 			in_combat = false
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
@@ -18949,9 +19064,14 @@ func handle_server_message(message: Dictionary):
 				# A4 — play victory FX on the battle scene + extend the linger
 				# so the monster slump and VICTORY banner finish before the
 				# panel hides for the loot/level-up screen.
+				# v0.9.413 — defer if queue has unplayed messages so paced
+				# attacks finish before the victory FX covers the panel.
 				if combat_scene_panel and combat_scene_panel.visible:
-					combat_scene_panel.play_victory_fx()
-					_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
+					if not combat_msg_queue.is_empty():
+						_pending_victory_fx_play = true
+					else:
+						combat_scene_panel.play_victory_fx()
+						_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
 				# Record defeat if damage was dealt OR if Analyze revealed HP (e.g., Outsmart victory after Analyze)
 				if damage_dealt_to_current_enemy > 0 or analyze_revealed_max_hp > 0:
 					record_enemy_defeated(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
@@ -19059,7 +19179,7 @@ func handle_server_message(message: Dictionary):
 						# v0.9.353 — pass through drop_data so the victory card
 						# can render a rarity-colored gear callout banner above
 						# the regular loot list.
-						combat_scene_panel.show_victory_card({
+						var victory_payload = {
 							"xp_gain": recent_xp_gain,
 							"old_level": _level_before_victory,
 							"new_level": _new_level,
@@ -19068,7 +19188,13 @@ func handle_server_message(message: Dictionary):
 							"gear_drops": message.get("drop_data", []),
 							"harvest_available": harvest_available,
 							"continue_key": get_action_key_name(0),
-						})
+						}
+						# v0.9.413 — defer if queue has unplayed messages so
+						# paced attacks finish before the card covers the panel.
+						if not combat_msg_queue.is_empty():
+							_pending_victory_card_payload = victory_payload
+						else:
+							combat_scene_panel.show_victory_card(victory_payload)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -19814,6 +19940,13 @@ func _process_combat_start(message: Dictionary):
 	# Drop any leftover per-turn summary buffer from the previous fight so it
 	# doesn't bleed into round 1 of the new fight.
 	_round_message_buffer.clear()
+	# v0.9.409 — reset actor-tracking so the first attack of the new fight
+	# doesn't get an inter-actor penalty pause based on the previous fight.
+	_last_combat_actor = ""
+	# v0.9.413 — clear any deferred victory payload from a prior (rare:
+	# back-to-back) combat so it doesn't trigger in this fight.
+	_pending_victory_fx_play = false
+	_pending_victory_card_payload = null
 	# Reset cached status snapshots so stale buffs/DoT timers from the
 	# previous fight don't enrich this fight's first summary.
 	_last_player_status = {}
@@ -23495,8 +23628,286 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.414 — brighter ASCII, miss popup pop, no panel flash, victory FX reliable, flock cards fix.
+	display_game("[color=#00FF00]v0.9.414[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: brighter ASCII[/color]")
+	display_game("  • [b]Battle lift bumped 0.18 → 0.35 toward white[/b]. Tactical view (in-box) was still reading darker than the FX overlay; this brings both clearly bright while preserving variant hue.")
+	display_game("  [color=#FFD700]Combat: miss popup pop[/color]")
+	display_game("  • [b]MISS popup is now bright yellow + 42pt + bold scale-pop[/b] (was 30pt gray). Misses are unmistakably visible across player / companion / monster paths.")
+	display_game("  [color=#FFD700]Combat: no panel flash to legacy view[/color]")
+	display_game("  • Panel visibility now also honors [b]_action_phase_active[/b] + pending victory FX/card flags. Was: in_combat=false fired on combat_end and the 1100ms linger could expire while queue still drained, briefly hiding the panel to show legacy game_output text before snapping back. Now the panel stays up continuously across the entire action phase + victory presentation.")
+	display_game("  [color=#FFD700]Combat: victory FX reliable[/color]")
+	display_game("  • Deferred play_victory_fx + show_victory_card calls now [b]force-set panel.visible = true + extend linger BEFORE firing[/b], so the monster slump + 'VICTORY!' banner + reward card always land properly on the final kill instead of getting skipped when the panel was briefly hidden.")
+	display_game("  [color=#FFD700]Flock combat: ability cards restored[/color]")
+	display_game("  • [b]populate() now restores _totals_strip / _hand_strip / _status_strip visibility[/b]. Previously start_action_phase hid them; if the player chained into the next flock combat (by pressing Space) before end_action_phase fired its 0.9s timer, the strips stayed hidden and the new fight had no visible ability cards.")
+	display_game("")
+
+	# v0.9.413 — tactical brightness, miss FX, consistent pacing, defer victory card, faster transition back.
+	display_game("[color=#00FFFF]v0.9.413[/color]")
+	display_game("  [color=#FFD700]Combat: tactical ASCII brightness[/color]")
+	display_game("  • [b]Extra lift on top of _ensure_readable_color[/b] (lerp 0.18 toward white) so the in-box tactical view reads as bright as the FX overlay. Same color reaches both, but the tactical view's smaller font + competing UI made it look darker subjectively.")
+	display_game("  [color=#FFD700]Combat: miss FX[/color]")
+	display_game("  • [b]Miss-message detection added[/b]: the actor still lunges (player / companion / monster) and a [b]MISS popup[/b] floats over the target. Previously miss messages produced no visual, making it look like the actor skipped their turn.")
+	display_game("  • Catches all server miss patterns: 'X's attack misses', 'Your X lunges but misses' (companion), 'The X attacks but misses' / 'completely misses' / 'is distracted by your companion and misses' (monster).")
+	display_game("  [color=#FFD700]Combat: consistent pacing[/color]")
+	display_game("  • [b]Single consistent attack delay[/b] (0.85s Normal / 0.35s Fast) regardless of which actor attacks. Inter-actor bonus removed. Predictable rhythm so it reads who-did-what-when.")
+	display_game("  [color=#FFD700]Combat: transition + one-turn battles[/color]")
+	display_game("  • [b]Transition back faster[/b]: queue-empty → end_action_phase buffer reduced 1.5s → 0.9s. Final popup still readable, transition no longer drags.")
+	display_game("  • [b]One-turn battles preserve pacing[/b]: combat_end no longer flushes the message queue. Victory FX + victory card are deferred until the queue drains, so player → companion → killing blow plays out at proper tempo before the card covers the panel.")
+	display_game("  [color=#FFD700]Misc[/color]")
+	display_game("  • Defensive [b]map-sprite re-sync[/b] on combat_end to address occasional 'overworld sprite disappears after combat' reports.")
+	display_game("")
+
+	# v0.9.412 — halve delays, brighten ASCII, hide UI strips for room, bigger overlay block.
+	display_game("[color=#00FFFF]v0.9.412[/color]")
+	display_game("  [color=#FFD700]Combat pacing[/color]")
+	display_game("  • [b]Per-attack + inter-actor delays halved.[/b] Normal: 1.45 → 0.72s base, +1.20 → +0.60s inter-actor extra. Total max gap between different actors' attacks is now ~1.32s (was 2.65s).")
+	display_game("  • [b]end_action_phase trigger moved to queue-empty + 1.5s buffer.[/b] Previously the 1.5s timer started when combat_update arrived, which could end the action phase before all messages drained. Now it fires only after the last message displays + 1.5s buffer for popups to fade.")
+	display_game("  [color=#FFD700]Combat: ASCII brightness[/color]")
+	display_game("  • [b]Battle player + companion ASCII now use the same brightness transform as map hover / player popup / status page[/b] (_ensure_readable_color). Previously battle render was darker than the rest of the UI for dark variants.")
+	display_game("  [color=#FFD700]Combat: overlay vertical room[/color]")
+	display_game("  • [b]During action phase, the running-totals banner, hand strip, and status strip collapse[/b] to free vertical space. Restored when the action phase ends.")
+	display_game("  • [b]Overlay character block bumped 220×160 → 320×280[/b] so the bumped-font ASCII fits without vertical clipping. Overlay grows upward toward the monster (clamped to stay 8px below monster art) into the freed space.")
+	display_game("")
+
+	# v0.9.411 — battlefield overlay rebuilt: blocks lunge during action phase + stat bars + near-black box bg.
+	display_game("[color=#00FFFF]v0.9.411[/color]")
+	display_game("  [color=#FFD700]Combat: visibility (round 5 — actually fixed)[/color]")
+	display_game("  • Lufia box bg changed to [b]near-black[/b] `(0.02, 0.02, 0.03)` (was warm-gray; before that navy). All variants — Cobalt, Crimson, Gold, Ivory — now have maximum contrast.")
+	display_game("  [color=#FFD700]Combat: battlefield overlay rebuilt for action phase[/color]")
+	display_game("  • The previous overlay was just two RichTextLabels in an HBox. When the in-box portraits faded during action phase, lunge animations fired on those faded portraits — so NO movement was visible. The overlay was just text floating with no FX target.")
+	display_game("  • [b]Each character now gets its own block[/b]: ASCII at top (bumped font_size, ~220×125), HP bar below, name underneath. Blocks are positioned manually (no parent layout) so they can be lunged via position tweens.")
+	display_game("  • [b]z_index = 100[/b] on the overlay so it draws above the damage banner + ability cards beneath it.")
+	display_game("  • Overlay height clamped to 140-180px so it stays inside the party-row band — won't extend down into the damage banner area.")
+	display_game("  [color=#FFD700]Combat: FX redirect during action phase[/color]")
+	display_game("  • [b]lunge_player_forward / lunge_companion_forward[/b] now animate the OVERLAY block when _action_phase_active. Outside action phase (or in non-Lufia layouts) they animate the in-box portrait as before.")
+	display_game("  • [b]Damage popups[/b] (show_damage_on_player, show_damage_on_companion) anchor on the overlay block during action phase — popups spawn next to the visible character, not over the faded box.")
+	display_game("  [color=#FFD700]Combat: longer pauses between actors[/color]")
+	display_game("  • Reverted v0.9.410's popup-linger shortening — that was the wrong fix. Popups linger 1.0s + 0.35s fade as before.")
+	display_game("  • Per-attack pause bumped 0.85s → [b]1.45s[/b] on Normal (fits popup linger). Inter-actor extra pause 0.60s → [b]1.20s[/b]. Between two different actors' attacks, the gap is now 2.65s — unmistakably separate events.")
+	display_game("")
+
+	# v0.9.410 — back to basics: neutral box bg + companion lunge + popup linger.
+	display_game("[color=#00FFFF]v0.9.410[/color]")
+	display_game("  [color=#FFD700]Combat visibility — the fix that was needed all along[/color]")
+	display_game("  • [b]Reverted the v0.9.409 outline halo + v0.9.406 parchment bg paint.[/b] Both made things worse — outline at 6px blurred glyph detail into a glow, and 1px didn't help.")
+	display_game("  • The actual fix: [b]Lufia box bg color changed[/b] from dark navy `(0.06, 0.05, 0.10)` to neutral dark warm-gray `(0.13, 0.12, 0.11)`. Navy shared blue hue with cobalt/midnight/azure variants so those disappeared into the bg. Neutral warm-gray has no hue collision — every variant (Cobalt blue, Crimson red, Gold yellow) retains visible contrast.")
+	display_game("  • ASCII colors are unchanged — your Cobalt character stays Cobalt-colored.")
+	display_game("  [color=#FFD700]Combat: per-actor lunge[/color]")
+	display_game("  • [b]Companion ASCII now lunges right when it attacks.[/b] Previously only the player + monster had lunge animations; companion attacks fired silently (just a popup), making player and companion attacks look like one event.")
+	display_game("  [color=#FFD700]Combat: distinct turns[/color]")
+	display_game("  • [b]Damage popup linger shortened[/b] 1.0s → 0.35s, fade 0.35s → 0.25s (total visible: 0.60s, was 1.35s). Popups now clear before the next actor's turn fires, so each lunge + popup reads as its own discrete event instead of overlapping. Combined with the v0.9.409 attack-message gap of 0.85s + inter-actor +0.60s, each actor's turn is now visually framed.")
+	display_game("  [color=#FFD700]Coming next[/color]")
+	display_game("  • Battlefield reveal w/ stat bars under new ASCII positions (Lufia II style) — deferred to focus this release on the simple, broken-for-a-week fixes.")
+	display_game("")
+
+	# v0.9.409 — ASCII outline halo + transition lockout + inter-actor pause.
+	display_game("[color=#00FFFF]v0.9.409[/color]")
+	display_game("  [color=#FFD700]ASCII visibility — outline halo (new approach)[/color]")
+	display_game("  • Bg-paint alone wasn't getting there. Now every glyph of the player + companion ASCII gets a [b]6px contrasting outline halo[/b] via RichTextLabel's font_outline_color/outline_size theme. Halo color flips on variant brightness: [b]dark variants get a warm-cream halo, bright variants get a near-black halo[/b]. The figure reads regardless of fill, halo, or bg combo because there's always two-level contrast.")
+	display_game("  • Parchment bg paint for dark variants is preserved — outline + parchment together is bulletproof.")
+	display_game("  [color=#FFD700]Combat: turn separation[/color]")
+	display_game("  • [b]Transition lockout[/b]: playing a card now holds the combat message queue for 0.45s so the box fade-out + battlefield overlay fade-in completes before the first attack FX fires. Previously the server's combat_update would arrive mid-fade and attacks would happen during the transition, blurring everything.")
+	display_game("  • [b]Inter-actor pause[/b]: per-attack message delay bumped to 0.85s on Normal (was 0.55s), and when the actor changes between consecutive attacks (player → companion → monster), an EXTRA 0.60s gap fires so each actor's turn reads as a discrete event. Actor classifier reads server message conventions ('Your X attacks' = companion, 'The X attacks' = monster, 'You attack' = player).")
+	display_game("")
+
+	# v0.9.408 — combat speed default Normal + per-attack pause + stylebox-replace bg refresh.
+	display_game("[color=#00FFFF]v0.9.408[/color]")
+	display_game("  [color=#FFD700]Combat pacing[/color]")
+	display_game("  • [b]Combat speed now defaults to Normal[/b] for everyone (was Fast). Players who already picked a speed keep their setting; only new characters / fresh installs see the change.")
+	display_game("  • [b]Attack and ability messages now use a longer pause[/b] (0.55s on Normal, 0.30s on Fast) so each actor's lunge + damage popup has time to land before the next attack fires. Previously the player and companion attacks happened in the same ~0.15s window — visually a single flash with no read of who did what.")
+	display_game("  [color=#FFD700]Cobalt visibility — round 2[/color]")
+	display_game("  • v0.9.407 was supposed to paint a parchment bg behind dark variants but the visual didn't change. Switched the bg refresh from [b]mutating the existing stylebox's bg_color[/b] to [b]replacing the entire stylebox override[/b] + an explicit queue_redraw(). The mutation-and-changed-signal path was leaving the Panel painting the prior bg in some Godot 4.6 paths.")
+	display_game("  • Brightening also brought back for layouts WITHOUT a portrait bg panel (standard, chrono) — without that, dark variants would render raw-dark-on-dark in those layouts. Lufia still uses raw color (parchment bg gives the contrast).")
+	display_game("")
+
+	# v0.9.407 — Cobalt-on-parchment fix + battlefield overlay no longer overlaps monster.
+	display_game("[color=#00FFFF]v0.9.407[/color]")
+	display_game("  [color=#FFD700]Combat: Cobalt visibility fix[/color]")
+	display_game("  • v0.9.406 paints a [b]light parchment bg behind dark variants[/b] (Cobalt, Obsidian, Midnight…) for contrast — but the brightness check was running AFTER an upstream readability transform that pre-brightened Cobalt to a pastel. Result: the bg never picked parchment for Cobalt, and the pastel-on-dark-plum stayed barely visible.")
+	display_game("  • Removed the pre-brightening for the battle player + companion ASCII. Raw variant color (e.g., Cobalt #0047AB at brightness 0.24) now reaches both the bg picker AND the ASCII renderer — bg correctly paints parchment, ASCII renders dark Cobalt on parchment = high contrast.")
+	display_game("  [color=#FFD700]Combat: battlefield overlay no longer overlaps monster[/color]")
+	display_game("  • v0.9.406 positioned the battlefield overlay at [b]-220px[/b] from the party row, which placed it inside the monster's vertical band — characters revealed on TOP of the monster ASCII. Repositioned to sit AT the party-row band (where the boxes were), so when the boxes fade out the overlay reveals in that same space at battlefield-scale.")
+	display_game("  • [b]Overlay font size is now visibly bigger[/b] than the boxed version: the BBCode inline [font_size=N] tags are bumped +2 (player from font 2 → 4, companion from 1 → 3) so the battlefield characters read as larger than the in-box portraits, not identical to them.")
+	display_game("")
+
+	# v0.9.406 — full restart on combat visuals: original bg + contrasting portrait bg + battlefield overlay.
+	display_game("[color=#00FFFF]v0.9.406[/color]")
+	display_game("  [color=#FFD700]Combat visuals — full reset per feedback[/color]")
+	display_game("  • [b]Reverted combat bg to original dark plum + Lufia box bg to original dark navy.[/b] The mid-gray neutral experiment didn't help.")
+	display_game("  • [b]Dynamic contrasting portrait bg[/b]: when the player or companion's variant is dark (brightness < 0.45 — Cobalt, Obsidian, Midnight, etc.), a [b]light parchment color is painted directly behind their portrait[/b], so dark variants pop against high-luminance bg. Bright variants keep the transparent bg (no visible frame, matches box).")
+	display_game("  • [b]Removed the brightening hacks[/b] from v0.9.404/405 — they couldn't get there.")
+	display_game("  [color=#FFD700]Combat: Lufia battlefield reveal — proper transition[/color]")
+	display_game("  • Restored the [b]full party row fade-out[/b] when you play a card (was scaled back in v0.9.405 to keep portraits in their boxes — but you wanted the row to actually disappear, with characters appearing on the battlefield elsewhere).")
+	display_game("  • [b]New battlefield overlay[/b] appears at a different position than the boxes, showing the same player + companion ASCII art at a [b]larger font size[/b]. Slides + fades in when action starts; slides + fades out when action ends. Characters now visibly transition to the battlefield instead of just disappearing.")
+	display_game("")
+
+	# v0.9.405 — aggressive ASCII brightening + Lufia action phase keeps portraits visible.
+	display_game("[color=#00FFFF]v0.9.405[/color]")
+	display_game("  [color=#FFD700]Battle ASCII visibility (pass 2)[/color]")
+	display_game("  • Replaced v0.9.404's HSV-value floor (which still left low-saturation dark colors dim) with a [b]lerp-toward-white[/b] of strength up to 0.55. Cobalt (#0047AB, brightness 0.24) now renders as a pastel light-blue (~#80A0DB) that reads against any dark bg. Bright variants (Gold, Ivory) are untouched (brightness ≥ 0.55 short-circuits).")
+	display_game("  [color=#FFD700]Combat Lufia action phase — portraits stay visible[/color]")
+	display_game("  • Previously the whole party box row faded out during action phase, including the portraits — characters disappeared completely. Now [b]only the stats columns fade[/b] (name, HP/XP bars, deck info). Portraits stay on the battlefield, framed by the still-visible box outline — closer to the Lufia II command-vs-action read.")
+	display_game("  • [b]Kill transitions no longer end too fast[/b]: on combat_end (victory/defeat), the action-phase end is rescheduled to 1.8s instead of firing instantly, so the killing FX gets room to land before the stats return.")
+	display_game("")
+
+	# v0.9.404 — force-brighten battle ASCII variant colors.
+	display_game("[color=#00FFFF]v0.9.404[/color]")
+	display_game("  [color=#FFD700]Battle ASCII visibility[/color]")
+	display_game("  • Variant colors used in the battle ASCII (player + companion) are now [b]force-floored to HSV value 0.85[/b]. Cobalt (#0047AB, v≈0.67) renders as a vibrant brighter Cobalt; bright variants are unchanged. This bypasses any upstream readability processing that didn't fully cover the battle path — dark variants like Cobalt, Midnight, Obsidian no longer disappear into the combat bg.")
+	display_game("")
+
+	# v0.9.403 — Lufia battlefield reveal (slice 1) + universal-contrast combat bg.
+	display_game("[color=#00FFFF]v0.9.403[/color]")
+	display_game("  [color=#FFD700]Combat: Lufia II battlefield reveal — slice 1[/color]")
+	display_game("  • When you play a card, the [b]party stat box row fades out[/b] so FX play on a clear stage. Boxes fade back in 1.5s after the server's combat_update arrives (gives the damage popups room to land). The monster stays on screen the whole time.")
+	display_game("  • No-op in standard layout (no boxes to hide).")
+	display_game("  • Future slice: sequential per-actor reveals + larger party portraits during action (server payload would need per-event sequencing first).")
+	display_game("  [color=#FFD700]Combat background[/color]")
+	display_game("  • [b]Combat bg lifted to mid-dark neutral gray[/b] `(0.22, 0.20, 0.22)`. Old `(0.04, 0.03, 0.05)` was near-black plum — great for bright variants (Crimson, Gold) but zero contrast for mid-dark variants (Cobalt, Onyx). Neutral gray gives readable contrast across the whole variant palette.")
+	display_game("  • Lufia box bg matches the same neutral so boxes feel integrated with the battlefield.")
+	display_game("")
+
+	# v0.9.402 — removed portrait/stats divider.
+	display_game("[color=#00FFFF]v0.9.402[/color]")
+	display_game("  [color=#FFD700]Portrait/stats divider removed[/color]")
+	display_game("  • The thin border between the portrait area and the stat bars (added in v0.9.400) didn't look good. Reverted — portrait holders are direct hbox siblings again with no frame. The neutralized box bg from v0.9.400 alone provides the contrast for variant-colored ASCII.")
+	display_game("")
+
+	# v0.9.401 — Stats shortcut reminder + neutralized box bg + portrait border.
+	display_game("[color=#00FFFF]v0.9.401[/color]")
+	display_game("  [color=#FFD700]Stat-point reminder[/color]")
+	display_game("  • [b]The Stats shortcut button now flashes when you have unspent stat points[/b]. Shows \"Stats +N\" in bright yellow with a slow opacity pulse so you remember to spend them. Click the button to open the stat allocation panel as usual. Pulse clears once you've spent every point.")
+	display_game("  [color=#FFD700]Portrait contrast, take 3[/color]")
+	display_game("  • [b]Lufia box bg neutralized[/b] `(0.06, 0.05, 0.10)` → `(0.08, 0.08, 0.09)` — old bg leaned too blue and collided with cool variants (Cobalt etc.).")
+	display_game("  • [b]Thin subtle border around the portrait area[/b] (transparent bg, 1px warm-tan partial-alpha). Delineates the portrait without recoloring anything (so no inversion like v0.9.398).")
+	display_game("")
+
+	# v0.9.399 — reverted bad-looking portrait frame; kept sprite-after-combat fix.
+	display_game("[color=#00FFFF]v0.9.399[/color]")
+	display_game("  [color=#FFD700]Revert: portrait contrast frame (looked inverted)[/color]")
+	display_game("  • The v0.9.398 warm-dark portrait frame + black ASCII outline made variant-tinted art look color-inverted (especially on cool variants like Cobalt). Reverted to the simpler structure — sprite + ASCII holders sit directly in the box with no separate bg panel and no text outline.")
+	display_game("  • [b]Sprite-after-combat fix from v0.9.398 retained[/b]: the overworld sprite still reappears immediately when you press Space after combat instead of waiting for the next movement.")
+	display_game("")
+
+	# v0.9.397 — coord / post info moved to a styled top-left box.
+	display_game("[color=#00FFFF]v0.9.397[/color]")
+	display_game("  [color=#FFD700]Map HUD polish[/color]")
+	display_game("  • [b]Coordinates + nearest post info now render in a styled top-LEFT box[/b] on the map, mirroring the area/region/biome/weather box on the top-right. Same dark navy bg + 2px golden border + rounded corners.")
+	display_game("  • The inline coord/post header that the server emitted above the ASCII map block is stripped client-side now (it's redundant with the new box and was taking vertical space the map needs).")
+	display_game("  • The box hovers as an overlay on map_display, so it stays visible even when you zoom the map in past the scroll threshold.")
+	display_game("")
+
+	# v0.9.396 — damage popup pass 4: no box, no drift, linger + fade.
+	display_game("[color=#00FFFF]v0.9.396[/color]")
+	display_game("  [color=#FFD700]Damage popup pass 4[/color]")
+	display_game("  • [b]No more boxy background[/b] — the bordered Panel is gone. Numbers now use a thick text outline as their border, so the border hugs the letterforms instead of a rectangle around them. Outline thickness scales with font size (~font/5).")
+	display_game("  • [b]No more upward drift[/b] — popups linger in place for 1.0s, then fade with a subtle scale-shrink over 0.35s. Replaces the drift-up motion.")
+	display_game("  • Kept: thin + tall scale (0.70, 1.55), white-flash spawn, rotation jitter, crit shake, no-overlap vertical stack.")
+	display_game("")
+
+	# v0.9.395 — monster HP / affinity / damage popup pass 3 + companion bar align + no-overlap stack.
+	display_game("[color=#00FFFF]v0.9.395[/color]")
+	display_game("  [color=#FFD700]Lufia layout polish[/color]")
+	display_game("  • [b]Monster HP bar enlarged to 440×20[/b] (was 220×12) and [b]tinted to the monster's class-affinity color[/b] (same color as the monster's name).")
+	display_game("  • [b]Companion HP and XP bars now line up vertically[/b]. Each row was centering independently so different trailing-text widths shifted bar X. Both rows now left-anchor inside the stats column.")
+	display_game("  [color=#FFD700]Damage popup pass 3[/color]")
+	display_game("  • [b]Thinner + taller[/b] via scale (0.70, 1.55) — was (0.85, 1.30). Font 40 / 58 crit (was 36 / 52).")
+	display_game("  • [b]White-flash impact[/b]: each number spawns white and tweens to its damage color over 0.22s — every hit reads as a quick visual punch.")
+	display_game("  • [b]Slight random rotation per spawn[/b] (±4° normal, ±7° crit) so identical hits don't feel mechanical.")
+	display_game("  • [b]Crit shake[/b] during hold — small wobble around the anchor before the drift-up.")
+	display_game("  • [b]No more overlap on rapid hits[/b]: each new damage popup within 0.35s of the previous stacks 70px above it, like a Lufia damage tower. Gap of 0.35s+ resets the stack.")
+	display_game("")
+
+	# v0.9.394 — damage popup pass 2 + companion portrait width back to 200.
+	display_game("[color=#00FFFF]v0.9.394[/color]")
+	display_game("  [color=#FFD700]Damage popup pass 2[/color]")
+	display_game("  • [b]Border is now thin (1px) and a contrasting near-black[/b] so the bright damage color is the focal point, not the frame. Was 2-3px matching-color before.")
+	display_game("  • [b]Numbers rendered tall and narrow[/b] via persistent panel scale (0.85, 1.30) — the SNES JRPG look where damage feels like impact. Font size also bumped (36 / 52 crit, was 32 / 44).")
+	display_game("  • [b]Squash-out exit animation[/b] instead of plain fade: numbers compress to scale (0.45, 0.15) while drifting up and fading. Replaces v0.9.392's hold-then-fade.")
+	display_game("  [color=#FFD700]Lufia portrait[/color]")
+	display_game("  • Companion portrait width back to 200 (240 was too generous). [center] alignment from v0.9.393 still in effect.")
+	display_game("")
+
+	# v0.9.393 — companion ASCII centered + slightly wider companion portrait.
+	display_game("[color=#00FFFF]v0.9.393[/color]")
+	display_game("  [color=#FFD700]Lufia companion portrait[/color]")
+	display_game("  • [b]Companion ASCII is now [center]-aligned[/b] inside its portrait holder, so the (typically line-padded) monster art centers horizontally instead of left-aligning and showing dead space on one side.")
+	display_game("  • Companion portrait widened 200 → 240 so wide monster art (Minotaur, etc.) has enough breathing room and isn't clipped on the right.")
+	display_game("")
+
+	# v0.9.392 — Lufia player portrait narrowed + Lufia-style damage popups.
+	display_game("[color=#00FFFF]v0.9.392[/color]")
+	display_game("  [color=#FFD700]Combat polish[/color]")
+	display_game("  • [b]Damage popups redesigned, Lufia II style[/b]: bordered panel (border color matches damage color), [b]larger font[/b] (32 / 44 for crits, was 22 / 30), thicker outline, pop-in scale on appearance, then [b]holds still for 0.5s[/b] so you can read the number before it drifts up and fades. Total lifetime 1.5s (was 1.0s).")
+	display_game("  • [b]Lufia player portrait narrowed[/b] (140px wide, was 200) so there's no longer a big dead gap between the player ASCII and the stat bars. Companion portrait stays 200 wide for the wider monster art.")
+	display_game("")
+
+	# v0.9.391 — map auto-center fix (layout-settling) + horizontal clamp.
+	display_game("[color=#00FFFF]v0.9.391[/color]")
+	display_game("  [color=#FFD700]Map zoom fixes[/color]")
+	display_game("  • [b]Auto-center now reads layout correctly at high zoom[/b]. Root cause: _sync_map_sprites_overlay was called immediately after map_display.append_text(), but RichTextLabel's paragraph offsets don't update until the next process frame — so the auto-center scrolled to 0 (top of content) and the @ ended up below the visible area. Now _sync awaits one process_frame after the should-show check, so paragraph offsets are valid by the time we compute ideal_scroll. Same fix resolves the in-combat sprite-position weirdness at high zoom (same stale-layout root).")
+	display_game("  • [b]Map font is now capped so content fits horizontally[/b]. RichTextLabel has no horizontal scroll, so zooming past viewport_width / (46 × 0.6) would truncate the right edge of the map. Effective font size is clamped to that cap, even if the user's slider says higher. The cap is dynamic — bigger viewports allow more zoom.")
+	display_game("")
+
+	# v0.9.390 — Lufia tighten + monster HP relocation + dungeon legend / tile-message persistence.
+	display_game("[color=#00FFFF]v0.9.390[/color]")
+	display_game("  [color=#FFD700]Lufia layout polish[/color]")
+	display_game("  • [b]Tightened portrait → stats spacing[/b] (HBox separation 8 → 2) so there's no more dead gap between the ASCII art and the HP/XP bars.")
+	display_game("  • [b]Monster HP bar moved to a bordered strip at the top of the monster column[/b] in Lufia mode (was the bottom-right of the shared HP strip). Centered, content-sized, same border palette as the party stat boxes.")
+	display_game("  • [b]Shared HP strip hidden in Lufia[/b] — the player HP now lives inside the player stat box and the monster HP at the top, so the bottom-left bar is redundant.")
+	display_game("  [color=#FFD700]Dungeons[/color]")
+	display_game("  • [b]Map legend now appears in the dungeon floor view[/b], not just on the entrance warning. Players can see what every special glyph (w, +, ^, etc.) does at any time without remembering the warning.")
+	display_game("  • [b]Special-tile messages persist on-screen[/b]. Previously, stepping on a blood font / lava pool / etc. flashed a one-line description that the next dungeon_state immediately cleared. Now display_dungeon_floor re-appends the most recent tile message under the floor status, and it's cleared only when you move onto a different tile that doesn't generate one.")
+	display_game("")
+
+	# v0.9.389 — Lufia portrait box bumped, player font bigger, bars swapped.
+	display_game("[color=#00FFFF]v0.9.389[/color]")
+	display_game("  [color=#FFD700]Lufia portrait tuning[/color]")
+	display_game("  • Portrait box bumped from 144×96 → [b]200×180[/b] so the tall Minotaur ASCII (~75 rows at font_size 1) isn't cut vertically.")
+	display_game("  • Player class ASCII now renders at [b]font_size 2[/b] (was 1) so the figure is actually legible. Companion stays at font_size 1 since monster art is much taller.")
+	display_game("  • Companion stat-box bar order swapped — [b]HP on top, XP below[/b] (was XP/HP).")
+	display_game("")
+
+	# v0.9.388 — Lufia compact boxes + map auto-pan to keep @ centered.
+	display_game("[color=#00FFFF]v0.9.388[/color]")
+	display_game("  [color=#FFD700]Lufia layout: compact boxes + map auto-pan[/color]")
+	display_game("  • [b]Lufia boxes are now content-sized and centered[/b] instead of stretched across the screen. HP / XP bars are fixed-width (120px) instead of expanding to fill, matching the SNES Lufia II reference.")
+	display_game("  • [b]Companion ASCII portrait widened to 144×96[/b] so wide monster art (e.g., Minotaur ~150 chars wide at font_size 1) isn't horizontally clipped.")
+	display_game("  • [b]Map auto-pans to keep your @ centered[/b] when zoomed in past where the map needs to scroll. Previously the scroll bar stayed at 0 and the @ disappeared off the bottom of the visible area. The auto-center reads the actual @ row's Y from the RichTextLabel and sets the scroll value to put it at the viewport midpoint.")
+	display_game("  • [b]Sprite stays on its tile while the map scrolls[/b]. The map scrollbar's value_changed signal now re-syncs the sprite overlay so the sprite tracks its tile through any scroll motion.")
+	display_game("")
+
+	# v0.9.387 — map sprite live-resize + scroll-offset fix.
+	display_game("[color=#00FFFF]v0.9.387[/color]")
+	display_game("  [color=#FFD700]Map sprite fixes (follow-up to v0.9.386)[/color]")
+	display_game("  • [b]Sprite repositions instantly when you change Map Display %[/b] — previously the sprite stayed at the old size/position until you moved one tile. _on_window_resized now triggers a deferred sprite-overlay sync so the new font metrics take effect immediately.")
+	display_game("  • [b]Sprite stays centered at extreme zoom (140%+)[/b] where the map overflows and the RichTextLabel scrolls internally. The Y-position calculation now subtracts the scroll bar value so the sprite sits on the visible row, not the content-space row.")
+	display_game("")
+
+	# v0.9.386 — map sprite scales with map font.
+	display_game("[color=#00FFFF]v0.9.386[/color]")
+	display_game("  [color=#FFD700]Map sprite scales with the map font setting[/color]")
+	display_game("  • The overworld player sprite was hardcoded to 32px, so it only aligned correctly at one specific configuration (2560×1440 + ui_scale_map=0.80). Sprite size now scales proportionally with the current map font_size; remote players + companion trails use the same dynamic size so the whole layer scales together.")
+	display_game("")
+
+	# v0.9.385 — chrono / lufia render ASCII portraits at tiny font size + lufia in-box HP / deck.
+	display_game("[color=#00FFFF]v0.9.385[/color]")
+	display_game("  [color=#FFD700]Combat layouts: ASCII portraits + Lufia stat-box bars[/color]")
+	display_game("  • [b]Player and companion now render their full battle ASCII art[/b] in chrono / lufia, just at a tiny font_size (so the ~180×260 art fits in a 96×96 portrait box). Battle is meant to be ASCII; sprites stay overworld-only.")
+	display_game("  • [b]Lufia stat box: HP bar + deck/hand/discard counter inside each player box[/b], beside the portrait — matches the SNES Lufia II reference. The deck/hand/discard row stands in for the SP/MP gauge a traditional JRPG would show.")
+	display_game("  • Portrait box bumped from 72×72 to 96×96 so the small-font ASCII has enough room to be readable.")
+	display_game("")
+
+	# v0.9.384 — bounded ASCII rendering (first hotfix pass).
+	display_game("[color=#00FFFF]v0.9.384[/color]")
+	display_game("  [color=#FFD700]Combat layouts: art rendering hotfix[/color]")
+	display_game("  • [b]Companion portrait actually bounded[/b] in chrono / lufia. The companion ASCII label had [color=#FFAA33]fit_content = true[/color] by default — [color=#FFAA33]custom_minimum_size[/color] was only a floor, so the label grew to the natural ~250×200 size of the ASCII content. Now [color=#FFAA33]fit_content = false[/color] in compact builders.")
+	display_game("  • Fixed an issue where populate() would re-show the full battle ASCII over the compact party row, dominating the scene. (Replaced in v0.9.385 with the tiny-font approach.)")
+	display_game("")
+
 	# v0.9.383 — combat layout rebuild for both chrono and lufia.
-	display_game("[color=#00FF00]v0.9.383[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.383[/color]")
 	display_game("  [color=#FFD700]Combat layouts: third pass on chrono + lufia[/color]")
 	display_game("  • [b]Chrono fixes[/b]: player ASCII was getting clipped because the full battle ASCII was inflating the bottom party row and starving the monster of vertical room. Now uses the small sprite only (~72px) — monster gets ~80% of the scene area, party row is a tight strip beneath it.")
 	display_game("  • [b]Lufia II rewritten properly[/b]: each party member is now a [b]stat box with portrait on the LEFT and stats on the RIGHT[/b] (name + companion XP / HP bars beside the portrait, not above it). Matches the SNES reference much closer.")
@@ -24624,6 +25035,82 @@ func update_status_hud():
 	# drive this function.
 	update_tool_status_overlay()
 	update_region_label()
+	update_coord_post_label()
+
+
+func _ensure_coord_post_label() -> void:
+	"""v0.9.397 — lazily build the top-LEFT styled box that mirrors the
+	region_label on the right. Contains coordinates + post info + safe/threat
+	status, so players can see them even when the map is zoomed in and the
+	inline header is scrolled out of view."""
+	if coord_post_label != null and is_instance_valid(coord_post_label):
+		return
+	if map_display == null or not is_instance_valid(map_display):
+		return
+	coord_post_label = RichTextLabel.new()
+	coord_post_label.name = "CoordPostLabel"
+	coord_post_label.bbcode_enabled = true
+	coord_post_label.fit_content = true
+	coord_post_label.scroll_active = false
+	coord_post_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Anchor top-LEFT (region_label is top-right, this one is top-left).
+	coord_post_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	coord_post_label.offset_left = 8.0
+	coord_post_label.offset_top = 8.0
+	coord_post_label.offset_right = 248.0
+	coord_post_label.offset_bottom = 60.0
+	coord_post_label.add_theme_font_size_override("normal_font_size", 15)
+	coord_post_label.add_theme_color_override("default_color", Color.WHITE)
+	# Match region_label's StyleBoxFlat_region_frame so the two boxes are
+	# visually paired.
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.05, 0.05, 0.08, 0.92)
+	sb.border_color = Color(0.85, 0.7, 0.2, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	coord_post_label.add_theme_stylebox_override("normal", sb)
+	map_display.add_child(coord_post_label)
+
+
+func update_coord_post_label() -> void:
+	"""v0.9.397 — populate the top-left coord/post box. Mirrors the data the
+	server's inline map header carried (post name, coords, safe/threat) using
+	already-cached client fields, so it stays in sync without a new payload."""
+	_ensure_coord_post_label()
+	if coord_post_label == null or not is_instance_valid(coord_post_label):
+		return
+	if not has_character or game_state != GameState.PLAYING:
+		coord_post_label.visible = false
+		return
+	if dungeon_mode or in_combat:
+		coord_post_label.visible = false
+		return
+
+	var lines: Array[String] = []
+	# Coords line — always shown.
+	lines.append("[color=#5F9EA0]Coords:[/color] [color=#FFFFFF](%d, %d)[/color]" % [_cached_local_x, _cached_local_y])
+
+	# Nearest-post compass — show name + direction + distance.
+	if not hud_nearest_post.is_empty():
+		var pname = String(hud_nearest_post.get("name", "Post"))
+		var direction = String(hud_nearest_post.get("direction", ""))
+		var distance = int(hud_nearest_post.get("distance", 0))
+		lines.append("[color=#5F9EA0]Post:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [pname, direction, distance])
+		# Under Threat warning when the nearest post is menaced.
+		if hud_post_threat.get("threatened", false):
+			var threat_dungeon = String(hud_post_threat.get("dungeon_name", "dungeon"))
+			var threat_tier = int(hud_post_threat.get("tier", 1))
+			var threat_color = String(hud_post_threat.get("color", "#FF8800"))
+			lines.append("[color=#FF6347]⚠ Threat:[/color] [color=%s]T%d %s[/color]" % [threat_color, threat_tier, threat_dungeon])
+
+	coord_post_label.clear()
+	coord_post_label.append_text("\n".join(lines))
+	coord_post_label.visible = true
+
 
 func update_region_label():
 	"""Render Area + Region info into the label above the minimap.
@@ -27593,6 +28080,10 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 			combat_scene_panel.lunge_player_forward()
 			combat_scene_panel.add_player_damage(damage_to_monster)
 		else:
+			# v0.9.410 — companion attacks now lunge their ASCII too so each
+			# actor has a distinct visual cue (was silent — only the popup
+			# differentiated player vs companion attacks).
+			combat_scene_panel.lunge_companion_forward()
 			combat_scene_panel.add_companion_damage(damage_to_monster)
 
 	# Phase B1 — Damage TO companion. "The <monster> attacks your <X> for N
@@ -27614,6 +28105,39 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		combat_scene_panel.flash_player(is_crit)
 		combat_scene_panel.lunge_monster_forward()
 		combat_scene_panel.add_monster_damage(damage_to_player)
+
+	# v0.9.413 — Miss FX. Server miss patterns:
+	#   Player:     "<name>'s attack misses!"
+	#   Companion:  "Your <name> lunges but misses!"  (cyan)
+	#   Monster:    "The <name> attacks but misses!" / "completely misses" /
+	#               "is distracted by your companion and misses"
+	# Detect any of these and fire the actor's lunge + MISS popup so the
+	# player sees that the actor still took their turn.
+	if damage_to_monster <= 0 and " misses" in lower:
+		var missed = false
+		var has_cyan = "#00FFFF" in combat_msg
+		var has_your = "Your " in combat_msg
+		# Companion lunge-but-misses → cyan + "lunges but misses".
+		if has_cyan and ("lunges but" in lower or has_your):
+			combat_scene_panel.lunge_companion_forward()
+			combat_scene_panel.show_miss_on_monster()
+			missed = true
+		# Monster attacks but misses → "The X attacks/misses".
+		elif combat_msg.find("The ") != -1 or "distracted" in lower:
+			combat_scene_panel.lunge_monster_forward()
+			# Was it targeting the companion (distracted) or player?
+			if "distracted" in lower or "your companion" in lower:
+				combat_scene_panel.show_miss_on_companion()
+			else:
+				combat_scene_panel.show_miss_on_player()
+			missed = true
+		else:
+			# Player's own attack missed.
+			combat_scene_panel.lunge_player_forward()
+			combat_scene_panel.show_miss_on_monster()
+			missed = true
+		if missed:
+			return
 
 	# DoT / proc floating numbers — bleed/poison/thorns/reflect/charm/curse
 	# get small tag-colored ticks above the affected combatant. Routed here
@@ -27749,22 +28273,93 @@ func _drain_combat_queue():
 	"""Display one queued combat message, then pause before showing the next."""
 	if combat_msg_queue.is_empty():
 		combat_phase_paused = false
+		# v0.9.413 — queue just emptied. Fire any deferred victory FX +
+		# card NOW so the final popup is seen before the card covers the
+		# panel. Then schedule end_action_phase with a short buffer.
+		# v0.9.414 — relaxed the visibility check: fire even if panel is
+		# briefly hidden; the linger extension forces it visible next frame.
+		# Order matters: extend linger BEFORE firing FX so the panel-visible
+		# guard in play_victory_fx / show_victory_card sees the future state.
+		if _pending_victory_fx_play and combat_scene_panel:
+			_pending_victory_fx_play = false
+			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
+			combat_scene_panel.visible = true
+			combat_scene_panel.play_victory_fx()
+		if _pending_victory_card_payload != null and combat_scene_panel and combat_scene_panel.has_method("show_victory_card"):
+			var payload = _pending_victory_card_payload
+			_pending_victory_card_payload = null
+			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
+			combat_scene_panel.visible = true
+			combat_scene_panel.show_victory_card(payload)
+		if combat_scene_panel and combat_scene_panel.has_method("end_action_phase_after"):
+			if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
+				combat_scene_panel.end_action_phase_after(0.9)
 		return
 	var entry = combat_msg_queue.pop_front()
 	var raw = entry.raw
 	_display_combat_msg(raw)
 	# Separator lines get a longer pause; regular messages get a short pause
-	# Speed 1 = Fast (2x old normal), Speed 2 = Normal (old speed)
+	# Speed 1 = Fast, Speed 2 = Normal.
+	# v0.9.408 — attack/ability messages get a longer pause than ambient
+	# lines so the lunge + damage popup for each actor has time to land
+	# before the next attack starts.
+	# v0.9.409 — track actor source per message and apply an EXTRA pause
+	# when crossing actor boundaries (player → companion → monster). Without
+	# this the player and companion attacks blur into a single flash and
+	# you can't tell who did what — the only way to make turns distinct is
+	# to enforce gaps at the seams.
 	var delay: float
+	var actor = _classify_combat_actor(raw)
+	var is_attack = actor != "" and actor != "ambient"
 	if "─────────" in raw:
 		delay = 0.3 if combat_speed == 1 else 0.6
+	elif is_attack:
+		# v0.9.413 — single consistent delay per attack regardless of actor.
+		# User wants predictable rhythm so it's clear "who did what when".
+		# Inter-actor bonus removed (was 0.28 / 0.60s extra on actor change).
+		delay = 0.35 if combat_speed == 1 else 0.85
 	else:
 		delay = 0.08 if combat_speed == 1 else 0.15
+	if is_attack:
+		_last_combat_actor = actor
 	# Always pause after showing a message — process_buffer() delivers all
 	# combat messages in a single frame, so we must block immediate draining
 	# of the next message that arrives from the same buffer batch.
 	combat_phase_timer = delay
 	combat_phase_paused = true
+
+
+# v0.9.409 — last actor whose attack/ability message we displayed; used to
+# inject an extra delay at actor boundaries so the visual turns separate.
+var _last_combat_actor: String = ""
+
+
+func _classify_combat_actor(raw: String) -> String:
+	"""Return 'player', 'companion', 'monster', 'ambient', or '' for a
+	combat message. Heuristic based on server formatting conventions:
+	  - Companion: 'Your <X> attacks' / 'Your <X> ...' / cyan-colored sources
+	  - Monster: 'The <X> attacks' / 'The <X> hits' / red-colored sources
+	  - Player: 'You attack' / 'You ...' / no source tag
+	Anything that isn't an attack/ability gets 'ambient'."""
+	if " attacks" in raw or " strikes" in raw or " hits " in raw:
+		# Companion patterns: server wraps companion names in cyan and
+		# uses 'Your <name> attacks'.
+		if "Your " in raw or "#00FFFF" in raw:
+			return "companion"
+		if raw.begins_with("You ") or raw.begins_with("[color=#FFD700]You "):
+			return "player"
+		# "The <monster> attacks" / "The <monster> hits"
+		if raw.begins_with("The ") or "#FF" in raw or "#DC" in raw:
+			return "monster"
+		return "ambient"
+	if " uses " in raw or " casts " in raw:
+		if "Your " in raw or "#00FFFF" in raw:
+			return "companion"
+		if raw.begins_with("You "):
+			return "player"
+		if raw.begins_with("The "):
+			return "monster"
+	return "ambient"
 
 func _flush_combat_queue():
 	"""Instantly display all remaining queued combat messages"""
@@ -28114,6 +28709,21 @@ func update_map(map_text: String):
 
 	if map_display:
 		map_display.clear()
+		# v0.9.397 — strip the inline coord / post header that the server
+		# emits above the [center]...[/center] map block. We now render that
+		# data in the styled coord_post_label box at top-left, so showing it
+		# twice would be redundant + take vertical space the map needs.
+		# Header structure (see world_system.gd generate_map_display):
+		#   <header lines (1-2 lines, contains coords + post name + safe)>
+		#   [center]<actual map>[/center]
+		#   <minimap below>
+		# Split at the first "[center]" to keep only the map + minimap.
+		# v0.9.397 — keep one blank paragraph in place of the header so the
+		# sprite overlay's at_pixel_y_center math (which expects the same
+		# row count as before) stays aligned with the @ glyph.
+		var center_idx: int = main_text.find("[center]")
+		if center_idx > 0:
+			main_text = "\n" + main_text.substr(center_idx)
 		# v0.9.349 — hide the local player's @ marker by setting alpha to 0,
 		# NOT by stripping the " @" characters. The sprite overlay locates
 		# itself by searching the rendered BBCode for " @" + `get_paragraph_offset()`
@@ -28145,6 +28755,22 @@ func update_map(map_text: String):
 
 	# Map Sprites M1 — refresh sprite overlay to match the new map.
 	_sync_map_sprites_overlay()
+	# v0.9.397 — keep the coord/post box current on every map refresh.
+	update_coord_post_label()
+
+
+func _on_map_scroll_changed(new_value: float) -> void:
+	"""v0.9.388 — fired when the user (or our auto-center code) moves the
+	v-scroll on map_display. Re-sync the sprite overlay so the sprite
+	follows its tile through the scroll. The user-active flag is set so the
+	next sync skips auto-centering and respects the manual scroll position;
+	cleared on the next map update."""
+	_map_scroll_user_active = true
+	_sync_map_sprites_overlay()
+	# Clear the flag after a couple of frames so subsequent server-driven
+	# map updates re-center on the @.
+	var t := get_tree().create_timer(0.25)
+	t.timeout.connect(func(): _map_scroll_user_active = false)
 
 
 func _ensure_map_sprites_overlay() -> void:
@@ -28156,6 +28782,14 @@ func _ensure_map_sprites_overlay() -> void:
 	map_sprites_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_sprites_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	map_display.add_child(map_sprites_overlay)
+
+	# v0.9.388 — re-sync sprites whenever the user scrolls the map (high
+	# zoom / scroll bar visible). Without this, sprites stay anchored to
+	# the viewport while the map content scrolls past, drifting off tile.
+	if map_display.has_method("get_v_scroll_bar"):
+		var vsb: VScrollBar = map_display.get_v_scroll_bar()
+		if vsb != null and not vsb.value_changed.is_connected(_on_map_scroll_changed):
+			vsb.value_changed.connect(_on_map_scroll_changed)
 
 	# Local-player slot.
 	var local := _make_map_sprite_slot()
@@ -28517,7 +29151,7 @@ func _hide_map_tooltip() -> void:
 	_map_tooltip_anchor = null
 
 
-func _apply_companion_trail(label: RichTextLabel, companion_data: Dictionary, sprite_top_left: Vector2, facing: String, cell_w: float, line_h: float) -> void:
+func _apply_companion_trail(label: RichTextLabel, companion_data: Dictionary, sprite_top_left: Vector2, facing: String, cell_w: float, line_h: float, sprite_px: float = 32.0) -> void:
 	"""Render a single variant-colored letter representing the companion in
 	the cell the player just moved from (opposite of `facing`). Hovering
 	will later expand this into a full tooltip with ASCII art + details;
@@ -28555,8 +29189,8 @@ func _apply_companion_trail(label: RichTextLabel, companion_data: Dictionary, sp
 		"up":    dy_cells = 1.0
 		"down":  dy_cells = -1.0
 		_:       dx_cells = -1.0  # Default to "trailing west" if facing unknown
-	var sprite_center_x = sprite_top_left.x + MAP_SPRITE_PIXEL_SIZE * 0.5
-	var sprite_center_y = sprite_top_left.y + MAP_SPRITE_PIXEL_SIZE * 0.5
+	var sprite_center_x = sprite_top_left.x + sprite_px * 0.5
+	var sprite_center_y = sprite_top_left.y + sprite_px * 0.5
 	label.position = Vector2(
 		sprite_center_x + dx_cells * cell_w - MAP_COMPANION_LABEL_WIDTH * 0.5,
 		sprite_center_y + dy_cells * line_h - MAP_COMPANION_LABEL_HEIGHT * 0.5
@@ -28567,7 +29201,13 @@ func _apply_companion_trail(label: RichTextLabel, companion_data: Dictionary, sp
 func _sync_map_sprites_overlay() -> void:
 	"""Position the local-player sprite + a sprite for each visible remote
 	player over the world map cells. Hides everything when not actively
-	playing or when the player has no class (pre-character-creation)."""
+	playing or when the player has no class (pre-character-creation).
+
+	v0.9.391 — awaits one process_frame BEFORE reading paragraph offsets so
+	the RichTextLabel layout has settled. Previously, calling _sync from
+	update_map (right after append_text) read get_paragraph_offset=0 because
+	layout was deferred, which broke auto-center at high zoom (scroll snapped
+	to top, @ ended up below the visible area)."""
 	_ensure_map_sprites_overlay()
 	if map_sprites_overlay == null:
 		return
@@ -28575,6 +29215,7 @@ func _sync_map_sprites_overlay() -> void:
 	if local == null:
 		return
 
+	# Hide checks first — they don't read layout, safe to run immediately.
 	var should_show = (game_state == GameState.PLAYING and has_character
 		and not in_combat and not dungeon_mode)
 	if not should_show:
@@ -28586,6 +29227,24 @@ func _sync_map_sprites_overlay() -> void:
 		for lbl in _remote_companion_pool:
 			lbl.visible = false
 		_hide_map_tooltip()
+		return
+
+	# v0.9.391 — wait for layout. RichTextLabel doesn't settle paragraph
+	# offsets until the next process frame after content changes.
+	await get_tree().process_frame
+	# Re-validate after the await — game state may have changed (e.g.,
+	# combat started while we were waiting).
+	if not (game_state == GameState.PLAYING and has_character
+			and not in_combat and not dungeon_mode):
+		local.visible = false
+		if _local_companion_label:
+			_local_companion_label.visible = false
+		for slot in _remote_sprite_pool:
+			slot.visible = false
+		for lbl in _remote_companion_pool:
+			lbl.visible = false
+		return
+	if not is_instance_valid(map_display) or not is_instance_valid(local):
 		return
 
 	var font = map_display.get_theme_font("normal_font")
@@ -28608,6 +29267,13 @@ func _sync_map_sprites_overlay() -> void:
 	var map_diameter = MAP_VIEWPORT_CENTER_CELL * 2 + 1
 	var map_width_px = map_diameter * cell_w
 	var map_x_offset = max(0.0, (map_display.size.x - map_width_px) * 0.5)
+
+	# v0.9.386 — sprite size scales with the map font (was hardcoded at 32px,
+	# only aligning correctly at 2560×1440 + ui_scale_map=0.80). Anchor: 32px
+	# at font_size 22 (the working config), so we derive 32×font_size/22.
+	# Clamped to [16, 96] so the sprite stays visible at extreme zoom and
+	# never overflows the cell more than ~2× line height.
+	var sprite_px: int = clampi(int(round(32.0 * float(font_size) / 22.0)), 16, 96)
 
 	# v0.9.350 — the previous attempts (v0.9.345-349) failed because they
 	# read `map_display.text`, which is EMPTY when content is added via
@@ -28644,6 +29310,28 @@ func _sync_map_sprites_overlay() -> void:
 		# @ glyph not found (dungeon view / pre-character-load) — legacy math.
 		at_pixel_y_center = (2 + MAP_VIEWPORT_CENTER_CELL + 0.5) * line_h
 
+	# v0.9.388 — at high map zoom the content overflows map_display's rect
+	# and the RichTextLabel scrolls internally. Auto-center the v_scroll on
+	# the @ row so the character is always visible (the previous attempt of
+	# just subtracting v_scroll left the @ off-screen because the scroll bar
+	# stayed at its default 0 position). After centering, subtract the
+	# (now-centered) scroll value so the sprite sits on the visible row.
+	var v_scroll_value: float = 0.0
+	if map_display.has_method("get_v_scroll_bar"):
+		var vsb: VScrollBar = map_display.get_v_scroll_bar()
+		if vsb != null:
+			if vsb.max_value > vsb.page:
+				# Content overflows — auto-center on the @ row. Skip while
+				# the user is actively dragging the scroll bar so we don't
+				# fight their input. _map_scroll_user_active is set briefly
+				# by _on_map_scroll_changed.
+				if not _map_scroll_user_active:
+					var ideal_scroll: float = at_pixel_y_center - map_display.size.y * 0.5
+					ideal_scroll = clampf(ideal_scroll, 0.0, vsb.max_value - vsb.page)
+					vsb.set_value_no_signal(ideal_scroll)
+			v_scroll_value = vsb.value
+	at_pixel_y_center -= v_scroll_value
+
 	# --- Local player at center cell ---
 	var local_cls = str(character_data.get("class", ""))
 	var local_atlas: AtlasTexture = ClassSprite.get_idle_atlas_for_direction(local_cls, _local_map_facing)
@@ -28654,8 +29342,9 @@ func _sync_map_sprites_overlay() -> void:
 	else:
 		var lcx = MAP_VIEWPORT_CENTER_CELL
 		var lcy = MAP_VIEWPORT_CENTER_CELL
-		var lpx = map_x_offset + (lcx + 0.5) * cell_w - MAP_SPRITE_PIXEL_SIZE * 0.5
-		var lpy = at_pixel_y_center - MAP_SPRITE_PIXEL_SIZE * 0.5
+		var lpx = map_x_offset + (lcx + 0.5) * cell_w - sprite_px * 0.5
+		var lpy = at_pixel_y_center - sprite_px * 0.5
+		local.size = Vector2(sprite_px, sprite_px)
 		local.position = Vector2(lpx, lpy)
 		local.texture = local_atlas
 		local.visible = true
@@ -28670,7 +29359,7 @@ func _sync_map_sprites_overlay() -> void:
 			"appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
 		})
 		var local_comp = character_data.get("active_companion", {})
-		_apply_companion_trail(_local_companion_label, local_comp, Vector2(lpx, lpy), _local_map_facing, cell_w, line_h)
+		_apply_companion_trail(_local_companion_label, local_comp, Vector2(lpx, lpy), _local_map_facing, cell_w, line_h, sprite_px)
 		_local_companion_label.set_meta("companion_data", local_comp)
 
 	# --- Remote players ---
@@ -28713,11 +29402,12 @@ func _sync_map_sprites_overlay() -> void:
 		cells_used[cell_key] = true
 		var slot = _remote_sprite_pool[slot_idx]
 		slot.texture = ratlas
-		var px = map_x_offset + (grid_x + 0.5) * cell_w - MAP_SPRITE_PIXEL_SIZE * 0.5
+		var px = map_x_offset + (grid_x + 0.5) * cell_w - sprite_px * 0.5
 		# v0.9.345/347 — anchor remote-player Y to the local @'s actual pixel Y
 		# plus the grid-cell offset. rendered_line_h is the actual measured
 		# spacing between map rows (auto-detected from get_paragraph_offset).
-		var py = at_pixel_y_center + (grid_y - MAP_VIEWPORT_CENTER_CELL) * rendered_line_h - MAP_SPRITE_PIXEL_SIZE * 0.5
+		var py = at_pixel_y_center + (grid_y - MAP_VIEWPORT_CENTER_CELL) * rendered_line_h - sprite_px * 0.5
+		slot.size = Vector2(sprite_px, sprite_px)
 		slot.position = Vector2(px, py)
 		slot.visible = true
 		slot.set_meta("player_data", {
@@ -28731,7 +29421,7 @@ func _sync_map_sprites_overlay() -> void:
 			"appearance_pattern": str(entry.get("appearance_pattern", "solid")),
 		})
 		var rcomp = entry.get("companion", {})
-		_apply_companion_trail(_remote_companion_pool[slot_idx], rcomp, Vector2(px, py), rfacing, cell_w, line_h)
+		_apply_companion_trail(_remote_companion_pool[slot_idx], rcomp, Vector2(px, py), rfacing, cell_w, line_h, sprite_px)
 		_remote_companion_pool[slot_idx].set_meta("companion_data", rcomp)
 		slot_idx += 1
 	# Hide unused slots from prior frames.
@@ -31835,6 +32525,21 @@ func display_dungeon_floor():
 		display_game("[color=#00FF00]Floor cleared![/color]")
 	display_game("")
 	display_game("Use numpad/arrows to move. [color=#FFFF00][%s][/color] Items, [color=#FFFF00][%s][/color] %s" % [get_action_key_name(0), get_action_key_name(1), "Meditate" if character_data.get("character_class", "") in ["Wizard", "Sorcerer", "Sage"] else "Rest"])
+
+	# v0.9.390 — re-render the last special-tile message (poison, heal,
+	# blood font, etc.) so the player can actually read it. Cleared after
+	# display so a subsequent dungeon_state with no new text drops the message.
+	if _dungeon_text_pending and _last_dungeon_tile_message != "":
+		display_game("")
+		display_game("[color=#FFA060]> %s[/color]" % _last_dungeon_tile_message)
+		_dungeon_text_pending = false
+
+	# v0.9.390 — show the theme-tile legend so players know what the special
+	# glyphs (w, +, ^, etc.) do without having to remember the entrance warning.
+	var dungeon_type_for_legend = String(dungeon_data.get("dungeon_type", ""))
+	if dungeon_type_for_legend != "" and DUNGEON_THEME_LEGEND.has(dungeon_type_for_legend):
+		display_game("")
+		_display_dungeon_theme_legend_section(dungeon_type_for_legend)
 
 func display_dungeon_food_select():
 	"""Display food selection for dungeon rest."""
