@@ -116,6 +116,7 @@ var _log_scroll: ScrollContainer
 # "Foe:") in one color and the number in a contrasting color so the digit
 # stands out from the surrounding text.
 var _totals_strip: HBoxContainer
+var _totals_strip_frame: PanelContainer  # v0.9.425 — wrapping PanelContainer (yellow-gold border); hide this during action phase to keep the border out of the FX scene
 var _player_total_label: Label
 var _companion_total_label: Label
 var _companion_total_box: HBoxContainer  # parent for visibility toggle
@@ -536,6 +537,11 @@ func start_action_phase() -> void:
 	_ensure_battlefield_overlay()
 	_populate_battlefield_overlay()
 	# v0.9.412 — collapse non-essential strips so the overlay has more room.
+	# v0.9.425 — also hide the totals' wrapping PanelContainer so its yellow-gold
+	# border doesn't draw underneath the FX scene (hiding only the inner HBox
+	# left the bordered frame on screen).
+	if _totals_strip_frame and is_instance_valid(_totals_strip_frame):
+		_totals_strip_frame.visible = false
 	if _totals_strip and is_instance_valid(_totals_strip):
 		_totals_strip.visible = false
 	if _hand_strip and is_instance_valid(_hand_strip):
@@ -571,6 +577,8 @@ func end_action_phase() -> void:
 		return
 	_action_phase_active = false
 	# Restore the strips that were hidden in start_action_phase.
+	if _totals_strip_frame and is_instance_valid(_totals_strip_frame):
+		_totals_strip_frame.visible = true
 	if _totals_strip and is_instance_valid(_totals_strip):
 		_totals_strip.visible = true
 	if _hand_strip and is_instance_valid(_hand_strip):
@@ -1797,6 +1805,7 @@ func _build_running_totals_strip() -> Control:
 	var frame := PanelContainer.new()
 	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_totals_strip_frame = frame  # v0.9.425 — keep a handle so action-phase can hide the border
 
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.10, 0.08, 0.06, 0.85)
@@ -1961,6 +1970,9 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
 	cell.tooltip_text = ""
 
+	# v0.9.425 — initial stylebox uses neutral colors; per-card category color
+	# is applied each refresh in _refresh_hand. Keep this as the fallback for
+	# the "empty slot" state.
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.07, 0.07, 0.09, 0.92)
 	sb.border_color = Color(0.55, 0.45, 0.30, 1)
@@ -1971,6 +1983,22 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	sb.content_margin_top = 8
 	sb.content_margin_bottom = 8
 	cell.add_theme_stylebox_override("panel", sb)
+
+	# v0.9.425 — category glyph rendered in the top-right corner of the card
+	# (anchored via top_right preset so it stays in place across resizes).
+	# Color and text are populated in _refresh_hand from the ability table.
+	var glyph_label := Label.new()
+	glyph_label.name = "Glyph"
+	glyph_label.text = ""
+	glyph_label.add_theme_font_size_override("font_size", 22)
+	glyph_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
+	glyph_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	glyph_label.position = Vector2(-26, 4)
+	glyph_label.size = Vector2(22, 22)
+	glyph_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	glyph_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cell.add_child(glyph_label)
 
 	var vbox := VBoxContainer.new()
 	vbox.name = "VBox"
@@ -2100,6 +2128,10 @@ func _refresh_hand() -> void:
 				key_text = pulled
 		key_lbl.text = key_text
 
+		# v0.9.425 — category glyph label (top-right corner). Populated below
+		# for non-empty slots; cleared on empty.
+		var glyph_lbl: Label = cell.get_node_or_null("Glyph")
+
 		if i >= _combat_hand.size():
 			# Empty slot
 			cell.set_meta("card_name", "")
@@ -2111,6 +2143,8 @@ func _refresh_hand() -> void:
 			rank_lbl.text = ""
 			effect_lbl.text = ""
 			cell.tooltip_text = ""
+			if glyph_lbl:
+				glyph_lbl.text = ""
 			_set_cell_dim(cell, true, false)
 			continue
 
@@ -2118,6 +2152,16 @@ func _refresh_hand() -> void:
 		var info = _resolve_card_info(card_name)
 		cell.set_meta("card_name", card_name)
 		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
+
+		# v0.9.425 — apply category theming to the cell stylebox + glyph.
+		var category_info: Dictionary = {}
+		if client_ref and client_ref.has_method("get_ability_category_info"):
+			category_info = client_ref.get_ability_category_info(card_name)
+		cell.set_meta("category_color", str(category_info.get("color", "#8C7656")))
+		cell.set_meta("category_tint_alpha", float(category_info.get("tint_alpha", 0.0)))
+		if glyph_lbl:
+			glyph_lbl.text = str(category_info.get("glyph", ""))
+			glyph_lbl.add_theme_color_override("font_color", Color(str(category_info.get("color", "#FFFFFF"))) * Color(1, 1, 1, 0.55))
 
 		name_lbl.text = str(info.get("display", card_name))
 		name_lbl.add_theme_color_override("font_color", Color("#DDDDDD"))
@@ -2174,7 +2218,10 @@ func _refresh_hand() -> void:
 
 func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 	"""Adjust cell border/bg to convey state. Empty = very muted; uncastable
-	= mid muted; castable = active gold border."""
+	= mid muted; castable = full-color category border.
+	v0.9.425 — per-card category color (set in _refresh_hand via meta) drives
+	the active border. Empty / uncastable fall back to neutral muted tones so
+	an unaffordable Phantom Strike doesn't shout 'utility blue' at the player."""
 	var sb := cell.get_theme_stylebox("panel") as StyleBoxFlat
 	if sb == null:
 		return
@@ -2185,8 +2232,17 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 		sb.border_color = Color(0.35, 0.25, 0.20, 1)
 		sb.bg_color = Color(0.06, 0.05, 0.06, 0.92)
 	else:
-		sb.border_color = Color(0.70, 0.55, 0.30, 1)
-		sb.bg_color = Color(0.08, 0.07, 0.05, 0.95)
+		var category_color_hex = str(cell.get_meta("category_color", "#B08C4C"))
+		var tint_alpha = float(cell.get_meta("category_tint_alpha", 0.0))
+		var border := Color(category_color_hex)
+		var base_bg := Color(0.08, 0.07, 0.05, 0.95)
+		# Blend the base bg toward the category color at the configured alpha.
+		if tint_alpha > 0.0:
+			var tint := Color(category_color_hex)
+			tint.a = base_bg.a
+			base_bg = base_bg.lerp(tint, tint_alpha)
+		sb.border_color = border
+		sb.bg_color = base_bg
 
 
 func _resolve_card_info(card_name: String) -> Dictionary:
@@ -2675,10 +2731,9 @@ func _classify_overlay_actor(raw: String) -> String:
 	     the actor from a single marker regardless of the original prefix
 	     color (handles #FF4444, #FF6600 ability variants, etc.).
 	  3. Raw verb + actor-prefix fallback for non-enhanced lines."""
-	var result := _classify_overlay_actor_inner(raw)
-	# v0.9.418 — temporary diagnostic for Wyvern-attacks-companion routing bug.
-	print("[STRIP-ROUTE] actor=%s | raw=%s" % [result, raw.left(160)])
-	return result
+	# v0.9.425 — diagnostic print removed; routing fix landed (indent alone
+	# now classifies monster-turn lines, regardless of content prefix).
+	return _classify_overlay_actor_inner(raw)
 
 
 func _strip_bbcode_and_whitespace(raw: String) -> String:
@@ -2735,9 +2790,15 @@ func _classify_overlay_actor_inner(raw: String) -> String:
 	var content_lower: String = content.to_lower()
 	if "damage to you" in content_lower or "smashes you" in content_lower:
 		return "monster"
-	# Indented 'The X' line → monster (came from process_monster_turn block).
-	# Non-indented 'The X' line → ambient (player ability side-effect).
-	if leading_ws >= 5 and (content.begins_with("The ") or content.begins_with("the ")):
+	# v0.9.425 — any line carrying the monster-turn indent (5+ leading spaces
+	# from _indent_multiline) belongs to the monster. Earlier "You "/"Your "
+	# overrides already peeled off the player/companion lines that can occur
+	# inside an indented block (e.g., "You gain N experience!"), so by the
+	# time we reach this point an indented line must be monster-emitted.
+	# The previous rule required content.begins_with("The "), which dropped
+	# monster ability bangs like "AMBUSH! The Wolf strikes from the shadows!"
+	# or "BLOODIED FURY!" into the player strip.
+	if leading_ws >= 5:
 		return "monster"
 	return "ambient"
 
