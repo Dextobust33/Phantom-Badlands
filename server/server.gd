@@ -198,7 +198,11 @@ const WORLD_THREAT_REFRESH_INTERVAL = 3.0
 # production logs. Persistent 100-300ms buffer_process baseline (handler
 # cost stutter, NOT a freeze) remains open but is tracked separately; flip
 # back to true if/when investigating that.
-const DIAG_TIMING_ENABLED := false
+# v0.9.426 — flipped back on for one release to pinpoint the persistent
+# 100-300ms buffer_process baseline. Added per-msg-type breakdown inside
+# handle_message so a stuttery frame attributes its time to a specific
+# message type. Flip back off after the cause is identified + fixed.
+const DIAG_TIMING_ENABLED := true
 const DIAG_FRAME_SPIKE_MS := 100  # log frame if any tick exceeds this
 const DIAG_THREAT_SCAN_SPIKE_MS := 50  # log frame if cumulative threat scan exceeds this
 # v0.9.377 — rate-limit spike logging. Without throttling we get 20+ identical
@@ -211,6 +215,13 @@ var _diag_spike_window_count: int = 0
 var _diag_spike_window_worst_ms: float = 0.0
 var _diag_spike_window_worst_line: String = ""
 var _diag_threat_scan_us_this_frame: int = 0
+# v0.9.426 — per-message-type handler timing, accumulated per _process tick.
+# Cleared at the start of each tick when DIAG_TIMING_ENABLED, populated by
+# handle_message wrapping each dispatch. Dumped in the FRAME SPIKE log line
+# (top 3 contributors) so a 100-300ms stuttery frame can be pinpointed to a
+# specific msg_type (e.g., "move=78ms select_character=42ms") instead of
+# just "buffer_process=150ms" with no further breakdown.
+var _diag_msg_handler_us: Dictionary = {}
 
 
 # Combat command rate limiting (peer_id -> last command time in msec)
@@ -959,6 +970,7 @@ func _process(delta):
 	if DIAG_TIMING_ENABLED:
 		_diag_frame_start_us = Time.get_ticks_usec()
 		_diag_threat_scan_us_this_frame = 0
+		_diag_msg_handler_us.clear()
 
 	# Hotfix v0.9.344 — clear the per-tick threat-state cache at the start of
 	# each frame so _compute_post_threat_state recomputes at most once per
@@ -1318,6 +1330,25 @@ func _process(delta):
 				parts.append("map_flush=%.1fms" % (_diag_map_flush_us / 1000.0))
 			if _diag_stale_check_us / 1000.0 >= 1.0:
 				parts.append("stale_check=%.1fms" % (_diag_stale_check_us / 1000.0))
+			# v0.9.426 — top 3 msg_type handlers from this tick. Sorted desc by
+			# elapsed us; only printed if the leader was ≥1ms. Surfaces what the
+			# 100-300ms baseline is actually spending its time on (e.g.,
+			# msg_top: move=78ms select_character=42ms).
+			if not _diag_msg_handler_us.is_empty():
+				var _handler_pairs: Array = []
+				for _t in _diag_msg_handler_us.keys():
+					_handler_pairs.append({"t": _t, "us": int(_diag_msg_handler_us[_t])})
+				_handler_pairs.sort_custom(func(a, b): return a.us > b.us)
+				if _handler_pairs.size() > 0 and _handler_pairs[0].us / 1000.0 >= 1.0:
+					var _top_parts: PackedStringArray = []
+					var _top_n: int = mini(3, _handler_pairs.size())
+					for _i in range(_top_n):
+						var _p = _handler_pairs[_i]
+						if _p.us / 1000.0 < 1.0:
+							break
+						_top_parts.append("%s=%.1fms" % [_p.t, _p.us / 1000.0])
+					if _top_parts.size() > 0:
+						parts.append("msg_top:[%s]" % " ".join(_top_parts))
 			var _spike_line: String = "FRAME SPIKE %.1fms (%s, peers=%d, dungeons=%d, posts=%d)" % [_frame_ms, " ".join(parts), characters.size(), active_dungeons.size(), (chunk_manager.npc_posts.size() if chunk_manager else 0)]
 			# Rate-limit: keep the worst spike of the rolling 2s window. Emit
 			# at window close with a count so we know how many spikes piled up.
@@ -1376,6 +1407,20 @@ func handle_message(peer_id: int, message: Dictionary):
 	if not _check_rate_limit(peer_id, msg_type):
 		return  # Silently drop
 
+	# v0.9.426 — per-msg-type timing accumulator. Wraps the dispatch so the
+	# FRAME SPIKE log can report which handler(s) consumed the frame, not just
+	# the bulk buffer_process total. Only the dispatch is timed; the rate-limit
+	# check above is cheap and uniform.
+	if DIAG_TIMING_ENABLED:
+		var _handler_start_us: int = Time.get_ticks_usec()
+		_dispatch_message(peer_id, msg_type, message)
+		var _elapsed_us: int = Time.get_ticks_usec() - _handler_start_us
+		_diag_msg_handler_us[msg_type] = int(_diag_msg_handler_us.get(msg_type, 0)) + _elapsed_us
+		return
+	_dispatch_message(peer_id, msg_type, message)
+
+
+func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 	match msg_type:
 		"register":
 			handle_register(peer_id, message)
