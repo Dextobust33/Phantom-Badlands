@@ -11082,10 +11082,22 @@ func _display_combat_usable_items_page():
 	for j in range(start_idx, end_idx):
 		var entry = usable_items[j]
 		var item = entry.item
+		# v0.9.429 — include the same effect description the inventory shows
+		# on hover so the picker has parity with normal item inspect. Resolve
+		# tier vs level the same way display_item_details does (consumables
+		# pass tier into the level slot of _get_item_effect_description).
+		var item_type_for_desc: String = str(item.get("item_type", item.get("type", "")))
+		var rarity_for_desc: String = str(item.get("rarity", "common"))
+		var is_cons: bool = bool(item.get("is_consumable", false))
+		var level_for_desc: int = int(item.get("tier", 0)) if is_cons else int(item.get("level", 1))
+		if level_for_desc <= 0:
+			level_for_desc = int(item.get("level", 1))
+		var tooltip_desc: String = _get_item_effect_description(item_type_for_desc, level_for_desc, rarity_for_desc)
 		items_payload.append({
 			"name": str(item.get("name", "Unknown")),
 			"color": _get_rarity_color(str(item.get("rarity", "common"))),
 			"qty": int(item.get("quantity", 1)),
+			"tooltip": tooltip_desc,
 		})
 
 	# v0.9.428 — drop the .visible guard. At combat START there's a one-frame
@@ -23846,8 +23858,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.429 — Combat picker tooltips + log strip removed.
+	display_game("[color=#00FF00]v0.9.429[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat picker: hover tooltips on every item[/color]")
+	display_game("  • [b]Hovering an item in the in-combat Use Item picker now shows the same effect description the regular inventory inspect shows[/b] — e.g., 'Restores 250 HP + 25% of max HP', 'Companion draws +30% aggro for next 3 monster turns.' Tooltip is built from _get_item_effect_description so any future inventory description tweaks land in the picker for free.")
+	display_game("  [color=#FFD700]Combat scene: legacy log strip removed from layout[/color]")
+	display_game("  • [b]The small combat log strip at the bottom of the combat scene is no longer attached to the layout[/b] — it was squeezed to ~0px in the Lufia layout and the per-actor overlay strips that land during the action phase (v0.9.415) already cover what the central log used to. Death card was reparented to the panel root with the same 24px inset as the picker / victory card. append_log calls still compile (the log controls remain allocated, just orphaned) so testfx fixtures and any third-party hook keep working without changes.")
+	display_game("")
+
 	# v0.9.428 — Combat: Use Item picker now actually shows items.
-	display_game("[color=#00FF00]v0.9.428[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.428[/color]")
 	display_game("  [color=#FFD700]Combat: Use Item picker now shows items (not just header + buttons)[/color]")
 	display_game("  • [b]The in-combat Use Item picker now overlays the full combat scene[/b] with a 24px inset, instead of being parented to the small log strip at the bottom. In the Lufia layout the log strip was too short — the title and Prev/Next buttons fit (fixed height) but the items ScrollContainer ended up with ~0px of vertical room and the actual items were invisible. z_index=200 keeps the picker above the battlefield overlay (z=100) and victory/death cards (z=150).")
 	display_game("")
