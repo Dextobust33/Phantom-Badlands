@@ -1421,11 +1421,15 @@ var combat_phase_paused: bool = false
 var _combat_paused: bool = false
 # v0.9.417 — universal combat pacing (speed tiering removed). Single set of
 # delay values used by _drain_combat_queue.
-const SEPARATOR_DELAY: float = 0.6
-const INTER_ATTACK_DELAY: float = 0.78      # gap between consecutive attacks
-const POST_FINAL_ATTACK_DELAY: float = 0.55 # pause after last attack before end-of-phase
-const AMBIENT_DELAY: float = 0.15
-const END_ACTION_PHASE_GRACE: float = 0.9   # buffer after queue empties before overlay fades
+# v0.9.422 — ~20% speedup across the board. User feedback: turns took too
+# long, especially between rounds when picking the next ability. Tuned to
+# preserve readability (popups still readable, attacks still separable) but
+# trim the dead time between events.
+const SEPARATOR_DELAY: float = 0.45
+const INTER_ATTACK_DELAY: float = 0.65      # gap between consecutive attacks (0.78 → 0.65)
+const POST_FINAL_ATTACK_DELAY: float = 0.40 # pause after last attack before end-of-phase (0.55 → 0.40)
+const AMBIENT_DELAY: float = 0.12
+const END_ACTION_PHASE_GRACE: float = 0.6   # buffer after queue empties before overlay fades (0.9 → 0.6)
 
 # Per-turn one-liners (Combat Readability slice #1)
 # Buffered messages between server pulses get folded into one summary per
@@ -8624,12 +8628,14 @@ func send_combat_command(command: String):
 	if combat_scene_panel and combat_scene_panel.has_method("start_action_phase"):
 		combat_scene_panel.start_action_phase()
 	# v0.9.409 — transition lockout: hold off draining the combat message
-	# queue for 0.45s so the action_phase fade-in finishes before the first
-	# attack FX fires. Without this, messages arrive mid-fade and attacks
-	# happen before the box fade completes, making it look like everything
-	# fires at once.
+	# queue so the action_phase fade-in finishes before the first attack FX
+	# fires. Without this, messages arrive mid-fade and attacks happen before
+	# the box fade completes, making it look like everything fires at once.
 	# v0.9.417 — single universal lockout (speed tiering removed).
-	combat_phase_timer = max(combat_phase_timer, 0.45)
+	# v0.9.422 — 0.45 → 0.30. Player_col fade is 0.20s + overlay fade is
+	# 0.25s, but the first attack can land at 0.30 because the overlay is
+	# still fading in (player sees the lunge happen during the fade — fine).
+	combat_phase_timer = max(combat_phase_timer, 0.30)
 	combat_phase_paused = true
 	send_to_server({"type": "combat", "command": command})
 
@@ -13167,6 +13173,13 @@ func acknowledge_continue():
 	if combat_scene_panel and combat_scene_panel.has_method("end_action_phase"):
 		if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
 			combat_scene_panel.end_action_phase()
+	# v0.9.422 — zero out the linger window so the combat panel hides on the
+	# next frame after the player acknowledges. Without this, the 2.2s victory
+	# FX linger left over from play_victory_fx kept the panel visible after the
+	# victory card hid, briefly exposing the battle scene before game_output
+	# took over. Continue is an explicit "I'm done" — no fade-out window needed.
+	_combat_scene_linger_until_ms = 0
+	_combat_scene_force_visible = false
 	# Auto-harvest if available — send request and let harvest flow handle the rest
 	if harvest_available:
 		harvest_available = false
@@ -23718,8 +23731,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.422 — post-victory transition fix + ~20% pacing speedup.
+	display_game("[color=#00FF00]v0.9.422[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: no more back-to-battle flash after victory[/color]")
+	display_game("  • [b]Pressing Space on the victory / loot screen now hides the combat panel immediately[/b] instead of briefly re-exposing the battle scene before game_output appears. acknowledge_continue now zeroes _combat_scene_linger_until_ms (was leaving the 2.2s victory-FX linger active) and clears _combat_scene_force_visible so the panel can hide on the next frame.")
+	display_game("  [color=#FFD700]Combat: ~20% faster pacing[/color]")
+	display_game("  • [b]Inter-attack and end-of-round delays shaved across the board[/b]. INTER_ATTACK_DELAY 0.78s → 0.65s, POST_FINAL_ATTACK_DELAY 0.55s → 0.40s, SEPARATOR_DELAY 0.6s → 0.45s, AMBIENT_DELAY 0.15s → 0.12s, END_ACTION_PHASE_GRACE 0.9s → 0.6s, action-phase fade-in lockout 0.45s → 0.30s. Turns flow faster and the gap between rounds (when you're picking your next ability) is noticeably shorter, without losing popup readability or attack-by-attack separation.")
+	display_game("")
+
 	# v0.9.421 — character XP from gathering + companion ghost fix + scratch-off XP display.
-	display_game("[color=#00FF00]v0.9.421[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.421[/color]")
 	display_game("  [color=#FFD700]Gathering: character XP restored[/color]")
 	display_game("  • [b]Fishing / mining / logging / foraging now grant character XP again[/b], not just job XP. The v0.9.371 scratch-off rewrite called add_fishing_xp / add_mining_xp / add_logging_xp directly — these functions only update the per-skill XP and never call add_experience, so character level XP stopped landing. Foraging used add_job_xp which DOES compute char_xp_gained but the scratch-off caller ignored it. Both paths now apply the legacy taper (1.0× below skill 20 / 0.5× below 50 / 0.2× above 50) and call add_experience.")
 	display_game("  • Scratch-off summary now shows both [color=#FF8800]+N Job XP[/color] and [color=#00BFFF]+N Character XP[/color] lines, plus character-level-up notification if the session bumped your character level.")
@@ -23810,20 +23831,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]/testfx upgrades[/color]")
 	display_game("  • [b]/testfx pacing[/b] command added — a step-through walkthrough of the full combat lifecycle (8 phases: enter, single attack, back-to-back, round divider, crit/miss, ability, victory, exit) so each beat can be tuned in real time. SPACE advances, R redoes, Q quits.")
 	display_game("  • Combat speed cycle now includes a 'Slow' tier at ~3× Normal as a dev/QA mode for visual verification.")
-	display_game("")
-
-	# v0.9.410 — back to basics: neutral box bg + companion lunge + popup linger.
-	display_game("[color=#00FFFF]v0.9.410[/color]")
-	display_game("  [color=#FFD700]Combat visibility — the fix that was needed all along[/color]")
-	display_game("  • [b]Reverted the v0.9.409 outline halo + v0.9.406 parchment bg paint.[/b] Both made things worse — outline at 6px blurred glyph detail into a glow, and 1px didn't help.")
-	display_game("  • The actual fix: [b]Lufia box bg color changed[/b] from dark navy `(0.06, 0.05, 0.10)` to neutral dark warm-gray `(0.13, 0.12, 0.11)`. Navy shared blue hue with cobalt/midnight/azure variants so those disappeared into the bg. Neutral warm-gray has no hue collision — every variant (Cobalt blue, Crimson red, Gold yellow) retains visible contrast.")
-	display_game("  • ASCII colors are unchanged — your Cobalt character stays Cobalt-colored.")
-	display_game("  [color=#FFD700]Combat: per-actor lunge[/color]")
-	display_game("  • [b]Companion ASCII now lunges right when it attacks.[/b] Previously only the player + monster had lunge animations; companion attacks fired silently (just a popup), making player and companion attacks look like one event.")
-	display_game("  [color=#FFD700]Combat: distinct turns[/color]")
-	display_game("  • [b]Damage popup linger shortened[/b] 1.0s → 0.35s, fade 0.35s → 0.25s (total visible: 0.60s, was 1.35s). Popups now clear before the next actor's turn fires, so each lunge + popup reads as its own discrete event instead of overlapping. Combined with the v0.9.409 attack-message gap of 0.85s + inter-actor +0.60s, each actor's turn is now visually framed.")
-	display_game("  [color=#FFD700]Coming next[/color]")
-	display_game("  • Battlefield reveal w/ stat bars under new ASCII positions (Lufia II style) — deferred to focus this release on the simple, broken-for-a-week fixes.")
 	display_game("")
 
 	# v0.9.409 — ASCII outline halo + transition lockout + inter-actor pause.
