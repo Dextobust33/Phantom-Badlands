@@ -11088,11 +11088,23 @@ func _display_combat_usable_items_page():
 			"qty": int(item.get("quantity", 1)),
 		})
 
-	if combat_scene_panel and combat_scene_panel.visible:
+	# v0.9.428 — drop the .visible guard. At combat START there's a one-frame
+	# gap between in_combat flipping true (_process_combat_start) and the
+	# panel visibility sync running. Pressing Use Item in that gap hit the
+	# old combat_scene_panel.visible == false branch and rendered into
+	# game_output, which got hidden the very next frame when the panel went
+	# visible — items invisible, no way to recover without reopening the
+	# menu. show_item_picker now fires whenever the panel object exists; its
+	# own _picker_overlay.visible = true flag carries through to the next
+	# frame when the parent panel becomes visible, so the picker shows up as
+	# soon as the panel paints.
+	if combat_scene_panel:
 		combat_scene_panel.show_item_picker("Use Item", items_payload, combat_use_page, total_pages)
 		return
 
-	# Fallback (panel not active) — old game_output path.
+	# Fallback (panel not present at all — extremely rare; covers a future
+	# refactor where combat could fire without the scene panel) — old
+	# game_output path.
 	if total_pages > 1:
 		display_game("[color=#FFD700]===== USABLE ITEMS (Page %d/%d) =====[/color]" % [combat_use_page + 1, total_pages])
 	else:
@@ -23834,8 +23846,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.427 — Combat: Use Item visible on first turn.
+	display_game("[color=#00FF00]v0.9.427[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: Use Item now visible from the very first action[/color]")
+	display_game("  • [b]Pressing Use Item on the first turn of a new combat now actually shows your usable items.[/b] There was a one-frame race between in_combat going true (in _process_combat_start) and the combat scene panel's visibility sync — pressing Use Item in that window hit the panel.visible == false branch, rendered into game_output, and then game_output got hidden the next frame when the panel went visible. The picker overlay is now used regardless of panel.visible state; its own visibility flag carries through to the next frame.")
+	display_game("  [color=#FFD700]Server: map-render perf optimizations (no player-facing change)[/color]")
+	display_game("  • Two server-side optimizations to handle_move (the biggest stutter source from the v0.9.426 diag). Pre-fetched blocks_los for the vision bounding box (dropped LOS time from 66-140ms to ~10-30ms by replacing ~2640 per-Bresenham-point tile lookups with ~529 upfront fetches + dict reads). Also cached hotspot clusters per render (one scan instead of 121 hash checks × ~500 tiles).")
+	display_game("")
+
 	# v0.9.426 — Home Stone (Companion) fix.
-	display_game("[color=#00FF00]v0.9.426[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.426[/color]")
 	display_game("  [color=#FFD700]Home Stone (Companion) now actually works[/color]")
 	display_game("  • [b]Using a Home Stone (Companion) from inventory now shows the Register / Kennel / Cancel prompt[/b], instead of silently consuming the stone. Three bugs fixed at once: (1) the early home-stone block in handle_inventory_use was missing the companion case, so the stone fell through to a legacy handler that consumed it BEFORE asking the player. (2) The home_stone_companion_choice client handler didn't close the inventory panel, so the prompt landed in game_output which was hidden behind the panel. (3) The Register / Kennel / Cancel action-bar branch lived inside the HOUSE_SCREEN block — when used in-world, the buttons never rendered.")
 	display_game("  • [b]Cancel no longer consumes the stone[/b]. Companion now matches the supplies/egg/equipment pattern: stone is held in inventory across the choice, consumed only on Register or Kennel confirm. Was: consumed up front, refunded on cancel (which briefly dropped the count and could surprise the player if anything mutated inventory in between).")
