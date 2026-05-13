@@ -223,11 +223,15 @@ const FLASH_DURATION := 0.18
 const LUNGE_DISTANCE := 16.0
 const LUNGE_DURATION := 0.10  # one direction; total = 2x
 
-# Audit #1 Slice 6a — combat hand row. Five card cells in a horizontal
-# strip plus a small "Deck N · Discard M" indicator on the right. Cells
-# are PanelContainers built once at layout time and rebuilt on each hand
+# Audit #1 Slice 6a — combat hand row. Card cells in a horizontal strip
+# plus a small "Deck N · Discard M" indicator on the right. Cells are
+# PanelContainers built once at layout time and rebuilt on each hand
 # update so we don't repeatedly add/remove children mid-combat.
-const COMBAT_HAND_SIZE := 5
+# v0.9.419 — hand size dropped 5 → 3 so each card matters more per round
+# and the strip footprint shrinks. Must match shared/combat_manager.gd's
+# COMBAT_HAND_SIZE — server fallback uses the server const, so a
+# mismatch would render empty cells.
+const COMBAT_HAND_SIZE := 3
 signal card_played(card_name: String)
 var _hand_strip: HBoxContainer
 var _hand_cells: Array = []  # Array of PanelContainers (5)

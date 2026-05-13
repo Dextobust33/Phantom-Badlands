@@ -13964,7 +13964,7 @@ func _get_player_resource_info() -> Dictionary:
 			}
 		"Fighter", "Barbarian", "Paladin":
 			return {
-				"label": "ST", "color": "#FFCC00",
+				"label": "STA", "color": "#FFCC00",
 				"mana_mult": 0.5, "stam_mult": 1.0, "energy_mult": 1.0,
 				"allowed_regens": ["stamina_regen"],
 			}
@@ -14230,9 +14230,15 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		var c = "#00FF00" if def_diff > 0 else "#808080"
 		all_diffs["DEF"] = "[color=%s]%+dDEF[/color]" % [c, def_diff]
 
-	# Effective HP = max_hp + constitution×5 (matches get_total_max_hp formula)
-	var new_eff_hp = new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5
-	var old_eff_hp = old_bonuses.get("max_hp", 0) + old_bonuses.get("constitution", 0) * 5
+	# Effective HP = (max_hp + constitution×5) × house_hp_bonus%
+	# v0.9.419 — fold the house hp_bonus multiplier in so the diff matches the
+	# actual character delta. Without this, players with Sanctuary HP upgrades
+	# would see "+50 HP" on a swap that actually gives them +55. Mirrors
+	# character.gd:1037 get_total_max_hp which multiplies the full total.
+	var house_bonuses_data: Dictionary = character_data.get("house_bonuses", {})
+	var hp_mult: float = 1.0 + float(house_bonuses_data.get("hp_bonus", 0)) / 100.0
+	var new_eff_hp = int((new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5) * hp_mult)
+	var old_eff_hp = int((old_bonuses.get("max_hp", 0) + old_bonuses.get("constitution", 0) * 5) * hp_mult)
 	var hp_diff = new_eff_hp - old_eff_hp
 	if hp_diff != 0:
 		var c = "#FF6666" if hp_diff > 0 else "#808080"
@@ -14250,13 +14256,18 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		var c = "#FF00FF" if wits_diff > 0 else "#808080"
 		all_diffs["WIT"] = "[color=%s]%+dWIT[/color]" % [c, wits_diff]
 
-	# Effective resource comparison — fold attribute contributions into pool sizes
-	var new_eff_mana = new_bonuses.get("max_mana", 0) + new_bonuses.get("intelligence", 0) * 3 + int(new_bonuses.get("wisdom", 0) * 1.5)
-	var new_eff_stam = new_bonuses.get("max_stamina", 0) + new_bonuses.get("strength", 0) + new_bonuses.get("constitution", 0)
-	var new_eff_energy = new_bonuses.get("max_energy", 0) + int((new_bonuses.get("wits", 0) + new_bonuses.get("dexterity", 0)) * 0.75)
-	var old_eff_mana = old_bonuses.get("max_mana", 0) + old_bonuses.get("intelligence", 0) * 3 + int(old_bonuses.get("wisdom", 0) * 1.5)
-	var old_eff_stam = old_bonuses.get("max_stamina", 0) + old_bonuses.get("strength", 0) + old_bonuses.get("constitution", 0)
-	var old_eff_energy = old_bonuses.get("max_energy", 0) + int((old_bonuses.get("wits", 0) + old_bonuses.get("dexterity", 0)) * 0.75)
+	# Effective resource comparison — fold attribute contributions into pool sizes,
+	# then apply the house resource_max multiplier so the diff matches the actual
+	# character delta. Mirrors character.gd:1049/1061/1072 (get_total_max_mana/
+	# stamina/energy), each of which multiplies the full total by
+	# (1 + house.resource_max% / 100).
+	var res_mult: float = 1.0 + float(house_bonuses_data.get("resource_max", 0)) / 100.0
+	var new_eff_mana = int((new_bonuses.get("max_mana", 0) + new_bonuses.get("intelligence", 0) * 3 + int(new_bonuses.get("wisdom", 0) * 1.5)) * res_mult)
+	var new_eff_stam = int((new_bonuses.get("max_stamina", 0) + new_bonuses.get("strength", 0) + new_bonuses.get("constitution", 0)) * res_mult)
+	var new_eff_energy = int((new_bonuses.get("max_energy", 0) + int((new_bonuses.get("wits", 0) + new_bonuses.get("dexterity", 0)) * 0.75)) * res_mult)
+	var old_eff_mana = int((old_bonuses.get("max_mana", 0) + old_bonuses.get("intelligence", 0) * 3 + int(old_bonuses.get("wisdom", 0) * 1.5)) * res_mult)
+	var old_eff_stam = int((old_bonuses.get("max_stamina", 0) + old_bonuses.get("strength", 0) + old_bonuses.get("constitution", 0)) * res_mult)
+	var old_eff_energy = int((old_bonuses.get("max_energy", 0) + int((old_bonuses.get("wits", 0) + old_bonuses.get("dexterity", 0)) * 0.75)) * res_mult)
 
 	var player_class = character_data.get("class", "")
 	var resource_label = "RES"
@@ -14448,9 +14459,13 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 		var color = "#00FF00" if diff > 0 else "#FF6666"
 		comparisons.append("[color=%s]%+d DEF[/color]" % [color, diff])
 
-	# Effective HP = max_hp + constitution×5 (matches get_total_max_hp)
-	var new_eff_hp = new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5
-	var old_eff_hp = old_bonuses.get("max_hp", 0) + old_bonuses.get("constitution", 0) * 5
+	# Effective HP = (max_hp + constitution×5) × house_hp_bonus%
+	# v0.9.419 — see _get_item_comparison_parts for rationale (matches
+	# character.gd:1037 get_total_max_hp's house multiplier).
+	var house_bonuses_data: Dictionary = character_data.get("house_bonuses", {})
+	var hp_mult: float = 1.0 + float(house_bonuses_data.get("hp_bonus", 0)) / 100.0
+	var new_eff_hp = int((new_bonuses.get("max_hp", 0) + new_bonuses.get("constitution", 0) * 5) * hp_mult)
+	var old_eff_hp = int((old_bonuses.get("max_hp", 0) + old_bonuses.get("constitution", 0) * 5) * hp_mult)
 	if new_eff_hp != old_eff_hp:
 		var diff = new_eff_hp - old_eff_hp
 		var color = "#00FF00" if diff > 0 else "#FF6666"
@@ -14475,13 +14490,15 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 			var color = "#00FF00" if diff > 0 else "#FF6666"
 			comparisons.append("[color=%s]%+d %s[/color]" % [color, diff, class_stats[stat]])
 
-	# Effective resource comparison with attribute contributions
-	var new_eff_mana = new_bonuses.get("max_mana", 0) + new_bonuses.get("intelligence", 0) * 3 + int(new_bonuses.get("wisdom", 0) * 1.5)
-	var new_eff_stam = new_bonuses.get("max_stamina", 0) + new_bonuses.get("strength", 0) + new_bonuses.get("constitution", 0)
-	var new_eff_energy = new_bonuses.get("max_energy", 0) + int((new_bonuses.get("wits", 0) + new_bonuses.get("dexterity", 0)) * 0.75)
-	var old_eff_mana = old_bonuses.get("max_mana", 0) + old_bonuses.get("intelligence", 0) * 3 + int(old_bonuses.get("wisdom", 0) * 1.5)
-	var old_eff_stam = old_bonuses.get("max_stamina", 0) + old_bonuses.get("strength", 0) + old_bonuses.get("constitution", 0)
-	var old_eff_energy = old_bonuses.get("max_energy", 0) + int((old_bonuses.get("wits", 0) + old_bonuses.get("dexterity", 0)) * 0.75)
+	# Effective resource comparison with attribute contributions × house resource_max%
+	# v0.9.419 — fold house multiplier so the diff matches actual character delta.
+	var res_mult: float = 1.0 + float(house_bonuses_data.get("resource_max", 0)) / 100.0
+	var new_eff_mana = int((new_bonuses.get("max_mana", 0) + new_bonuses.get("intelligence", 0) * 3 + int(new_bonuses.get("wisdom", 0) * 1.5)) * res_mult)
+	var new_eff_stam = int((new_bonuses.get("max_stamina", 0) + new_bonuses.get("strength", 0) + new_bonuses.get("constitution", 0)) * res_mult)
+	var new_eff_energy = int((new_bonuses.get("max_energy", 0) + int((new_bonuses.get("wits", 0) + new_bonuses.get("dexterity", 0)) * 0.75)) * res_mult)
+	var old_eff_mana = int((old_bonuses.get("max_mana", 0) + old_bonuses.get("intelligence", 0) * 3 + int(old_bonuses.get("wisdom", 0) * 1.5)) * res_mult)
+	var old_eff_stam = int((old_bonuses.get("max_stamina", 0) + old_bonuses.get("strength", 0) + old_bonuses.get("constitution", 0)) * res_mult)
+	var old_eff_energy = int((old_bonuses.get("max_energy", 0) + int((old_bonuses.get("wits", 0) + old_bonuses.get("dexterity", 0)) * 0.75)) * res_mult)
 
 	var player_class = character_data.get("class", "")
 	var resource_label = "Resource"
@@ -23686,8 +23703,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.419 — gather quest fix + inventory comparison accuracy + hand size 5→3 + server diag cleanup.
+	display_game("[color=#00FF00]v0.9.419[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Gather quests: progress now ticks on scratch-off catches[/color]")
+	display_game("  • [b]Logging / mining / foraging / fishing quests resume gaining progress[/b]. Since v0.9.371 routed all gathering through the scratch-off minigame, the completion handler granted items + job XP but never called check_gathering_progress — so active gather quests stopped ticking. Now credits one quest tick per non-DUD awarded slot (matches legacy per-chain semantics) and dedupes by quest_id so only the final progress message is sent.")
+	display_game("  [color=#FFD700]Inventory comparison: accurate stats[/color]")
+	display_game("  • [b]Comparison view now folds in Sanctuary house multipliers[/b]. Players with hp_bonus / resource_max Sanctuary upgrades saw '+50 HP' on a swap that actually gave them +55 — comparison was computing effective stats but skipping the multiplier that get_total_max_hp / get_total_max_mana / stamina / energy apply at character.gd:1037+. Mirrored both _get_item_comparison_parts and _display_item_comparison.")
+	display_game("  • [b]ST → STA label[/b] on the resource pool for Fighter / Barbarian / Paladin compact card display, unifying with the comparison view that already used STA. STA collides less visually with STR.")
+	display_game("  [color=#FFD700]Combat: hand size 5 → 3[/color]")
+	display_game("  • [b]COMBAT_HAND_SIZE dropped 5 → 3[/b] in both shared/combat_manager.gd and client/combat_scene_panel.gd. Three cards per turn means each draw matters more and the hand strip footprint shrinks. Restore path clamps stored hand_size on reconnect, and any 4-5 card hands from pre-update saves flush the excess into discard so the visible hand matches the new 3-cell strip.")
+	display_game("  [color=#FFD700]Server: diagnostic timing flipped off[/color]")
+	display_game("  • DIAG_TIMING_ENABLED → false. Both periodic ~5s freeze causes (v0.9.377 dungeon spawn burst, v0.9.379 unbounded road A*) are gone from production logs. The persistent 100-300ms handler stutter is a separate baseline (not a freeze); flip back on if/when investigating that.")
+	display_game("")
+
 	# v0.9.418 — UI pause button + taller per-actor strips + full-panel victory screen + companion-routing fix.
-	display_game("[color=#00FF00]v0.9.418[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.418[/color]")
 	display_game("  [color=#FFD700]Combat: UI pause button[/color]")
 	display_game("  • [b]⏸ PAUSE / ▶ RESUME button in the top-right of the FX overlay[/b] freezes the combat message queue so you can read the strips at your own pace. Active tweens (lunge / popup fade) finish on their own — pause only halts NEW messages from arriving. Auto-resets on next combat so a pause from a prior fight never carries over.")
 	display_game("  [color=#FFD700]Combat: taller per-actor strips[/color]")
@@ -23763,18 +23793,6 @@ func display_changelog():
 	display_game("  • Deferred play_victory_fx + show_victory_card calls now [b]force-set panel.visible = true + extend linger BEFORE firing[/b], so the monster slump + 'VICTORY!' banner + reward card always land properly on the final kill instead of getting skipped when the panel was briefly hidden.")
 	display_game("  [color=#FFD700]Flock combat: ability cards restored[/color]")
 	display_game("  • [b]populate() now restores _totals_strip / _hand_strip / _status_strip visibility[/b]. Previously start_action_phase hid them; if the player chained into the next flock combat (by pressing Space) before end_action_phase fired its 0.9s timer, the strips stayed hidden and the new fight had no visible ability cards.")
-	display_game("")
-
-	# v0.9.412 — halve delays, brighten ASCII, hide UI strips for room, bigger overlay block.
-	display_game("[color=#00FFFF]v0.9.412[/color]")
-	display_game("  [color=#FFD700]Combat pacing[/color]")
-	display_game("  • [b]Per-attack + inter-actor delays halved.[/b] Normal: 1.45 → 0.72s base, +1.20 → +0.60s inter-actor extra. Total max gap between different actors' attacks is now ~1.32s (was 2.65s).")
-	display_game("  • [b]end_action_phase trigger moved to queue-empty + 1.5s buffer.[/b] Previously the 1.5s timer started when combat_update arrived, which could end the action phase before all messages drained. Now it fires only after the last message displays + 1.5s buffer for popups to fade.")
-	display_game("  [color=#FFD700]Combat: ASCII brightness[/color]")
-	display_game("  • [b]Battle player + companion ASCII now use the same brightness transform as map hover / player popup / status page[/b] (_ensure_readable_color). Previously battle render was darker than the rest of the UI for dark variants.")
-	display_game("  [color=#FFD700]Combat: overlay vertical room[/color]")
-	display_game("  • [b]During action phase, the running-totals banner, hand strip, and status strip collapse[/b] to free vertical space. Restored when the action phase ends.")
-	display_game("  • [b]Overlay character block bumped 220×160 → 320×280[/b] so the bumped-font ASCII fits without vertical clipping. Overlay grows upward toward the monster (clamped to stay 8px below monster art) into the freed space.")
 	display_game("")
 
 	# v0.9.411 — battlefield overlay rebuilt: blocks lunge during action phase + stat bars + near-black box bg.

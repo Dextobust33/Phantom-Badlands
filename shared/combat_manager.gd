@@ -30,7 +30,7 @@ const MASTERY_USES_PER_COMBAT_CAP: int = 5
 # hand; using one moves it to discard and refills the hand. When the deck
 # empties the discard reshuffles in. Standard actions (attack/item/flee/
 # outsmart) bypass the hand entirely.
-const COMBAT_HAND_SIZE: int = 5
+const COMBAT_HAND_SIZE: int = 3
 # Stripped from the deck. Teleport is a guaranteed-flee non-combat utility.
 # Cloak is a 75%-flee escape with a hard level-20 gate inside _process_universal_ability,
 # which contradicts Slice 1's "all abilities accessible from L1" rule and would
@@ -6976,7 +6976,10 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		# Audit #1 Slice 6a — deck/hand restoration. If saved state predates
 		# Slice 6a (legacy disconnect), arrays are empty and we re-initialize
 		# below so the player still has a valid hand.
-		"combat_hand_size": int(saved_state.get("combat_hand_size", COMBAT_HAND_SIZE)),
+		# v0.9.419 — clamp restored hand_size to the current const so older
+		# saves (with hand_size=5) don't reconstitute with 5-card hands on a
+		# 3-cell client strip after the drop from 5 → 3.
+		"combat_hand_size": mini(int(saved_state.get("combat_hand_size", COMBAT_HAND_SIZE)), COMBAT_HAND_SIZE),
 		"combat_deck": saved_state.get("combat_deck", []).duplicate() if saved_state.get("combat_deck", []) is Array else [],
 		"combat_hand": saved_state.get("combat_hand", []).duplicate() if saved_state.get("combat_hand", []) is Array else [],
 		"combat_discard": saved_state.get("combat_discard", []).duplicate() if saved_state.get("combat_discard", []) is Array else []
@@ -6988,6 +6991,12 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 	if combat_state["combat_deck"].is_empty() and combat_state["combat_hand"].is_empty() and combat_state["combat_discard"].is_empty():
 		_initialize_combat_deck(combat_state)
 		_draw_to_hand(combat_state)
+	# v0.9.419 — if a pre-drop save restored a 5-card hand into the new
+	# 3-card system, move the excess into discard so the visible hand
+	# matches the client cell strip. Refill won't redraw past the new cap
+	# until cards leave the hand.
+	while combat_state["combat_hand"].size() > combat_state["combat_hand_size"]:
+		combat_state["combat_discard"].append(combat_state["combat_hand"].pop_back())
 
 	# Mark character as in combat
 	character.in_combat = true
