@@ -15511,8 +15511,19 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			"completed": update.completed,
 			"message": update.message
 		})
-	# Refresh the player's map / location flags (e.g., at_water clears if depleted)
-	send_location_update(peer_id)
+	# v0.9.427 — defer the post-scratch-off map refresh through the dirty-map
+	# throttle (USE_BROADCAST_THROTTLE) instead of running a full
+	# send_location_update synchronously. The scratch-off completion path was
+	# logging spikes of 200-260ms per final reveal in the diag pull, and
+	# send_location_update (full map re-render) was the dominant cost. The
+	# scratch_off_complete message just sent already carries the fresh
+	# character dict, so the client has everything it needs to render the
+	# session summary. The map + at_water flag refresh ride the next 300ms
+	# tick — visually indistinguishable from immediate.
+	if USE_BROADCAST_THROTTLE:
+		map_update_dirty[peer_id] = true
+	else:
+		send_location_update(peer_id)
 
 func _complete_craft_scratch_off(peer_id: int) -> void:
 	"""v0.9.372 — finalize a crafting scratch-off session. Maps the player's
