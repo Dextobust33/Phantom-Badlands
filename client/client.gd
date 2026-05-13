@@ -18305,6 +18305,21 @@ func handle_server_message(message: Dictionary):
 				cancel_variable_cost_ability()
 			last_death_message = message.duplicate(true)
 			play_death_sound()
+			# v0.9.420 — if the player died mid-action-phase, end it cleanly so
+			# the battlefield overlay (strips at z=100) tweens out and stops
+			# blocking the death card. Also flush any pending combat message
+			# queue + deferred victory chrome from the same fight so they don't
+			# fire after the player is already dead. Mirrors the v0.9.417
+			# acknowledge_continue fix for the victory path.
+			combat_msg_queue.clear()
+			combat_phase_paused = false
+			combat_phase_timer = 0.0
+			_pending_victory_fx_play = false
+			_pending_victory_card_payload = null
+			_pending_combat_end_chrome = {}
+			if combat_scene_panel and combat_scene_panel.has_method("end_action_phase"):
+				if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
+					combat_scene_panel.end_action_phase()
 			# A4 — play the death FX in the battle scene before the death
 			# screen takes over. Linger keeps the panel visible past the
 			# game_state transition so the slump animation completes.
@@ -23703,8 +23718,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.420 — death-during-action-phase fix: end the action phase so the strips don't block the death card.
+	display_game("[color=#00FF00]v0.9.420[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: stuck-on-defeat fix[/color]")
+	display_game("  • [b]Death card now appears reliably after a defeat[/b], even when the player died mid-action-phase. Previously the battlefield overlay (per-actor strips at z=100) kept rendering over the death card (z=0), so players saw a frozen-looking combat panel instead of the eulogy + Continue prompt — pressing Continue went nowhere because `_action_phase_active` was still true and held the panel visible.")
+	display_game("  • Fix has two parts. [b]Death card z_index bumped 0 → 150[/b] (matches the v0.9.418 victory card), so it always draws above any in-flight battlefield overlay. And [b]the permadeath handler now ends the action phase[/b] (mirrors the v0.9.417 acknowledge_continue victory-path fix): flushes the combat message queue, clears deferred victory FX/chrome, and calls combat_scene_panel.end_action_phase() so the overlay tweens out and `_combat_scene_should_show` no longer pins the panel visible.")
+	display_game("")
+
 	# v0.9.419 — gather quest fix + inventory comparison accuracy + hand size 5→3 + server diag cleanup.
-	display_game("[color=#00FF00]v0.9.419[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.419[/color]")
 	display_game("  [color=#FFD700]Gather quests: progress now ticks on scratch-off catches[/color]")
 	display_game("  • [b]Logging / mining / foraging / fishing quests resume gaining progress[/b]. Since v0.9.371 routed all gathering through the scratch-off minigame, the completion handler granted items + job XP but never called check_gathering_progress — so active gather quests stopped ticking. Now credits one quest tick per non-DUD awarded slot (matches legacy per-chain semantics) and dedupes by quest_id so only the final progress message is sent.")
 	display_game("  [color=#FFD700]Inventory comparison: accurate stats[/color]")
@@ -23779,20 +23801,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]/testfx upgrades[/color]")
 	display_game("  • [b]/testfx pacing[/b] command added — a step-through walkthrough of the full combat lifecycle (8 phases: enter, single attack, back-to-back, round divider, crit/miss, ability, victory, exit) so each beat can be tuned in real time. SPACE advances, R redoes, Q quits.")
 	display_game("  • Combat speed cycle now includes a 'Slow' tier at ~3× Normal as a dev/QA mode for visual verification.")
-	display_game("")
-
-	# v0.9.414 — brighter ASCII, miss popup pop, no panel flash, victory FX reliable, flock cards fix.
-	display_game("[color=#00FFFF]v0.9.414[/color]")
-	display_game("  [color=#FFD700]Combat: brighter ASCII[/color]")
-	display_game("  • [b]Battle lift bumped 0.18 → 0.35 toward white[/b]. Tactical view (in-box) was still reading darker than the FX overlay; this brings both clearly bright while preserving variant hue.")
-	display_game("  [color=#FFD700]Combat: miss popup pop[/color]")
-	display_game("  • [b]MISS popup is now bright yellow + 42pt + bold scale-pop[/b] (was 30pt gray). Misses are unmistakably visible across player / companion / monster paths.")
-	display_game("  [color=#FFD700]Combat: no panel flash to legacy view[/color]")
-	display_game("  • Panel visibility now also honors [b]_action_phase_active[/b] + pending victory FX/card flags. Was: in_combat=false fired on combat_end and the 1100ms linger could expire while queue still drained, briefly hiding the panel to show legacy game_output text before snapping back. Now the panel stays up continuously across the entire action phase + victory presentation.")
-	display_game("  [color=#FFD700]Combat: victory FX reliable[/color]")
-	display_game("  • Deferred play_victory_fx + show_victory_card calls now [b]force-set panel.visible = true + extend linger BEFORE firing[/b], so the monster slump + 'VICTORY!' banner + reward card always land properly on the final kill instead of getting skipped when the panel was briefly hidden.")
-	display_game("  [color=#FFD700]Flock combat: ability cards restored[/color]")
-	display_game("  • [b]populate() now restores _totals_strip / _hand_strip / _status_strip visibility[/b]. Previously start_action_phase hid them; if the player chained into the next flock combat (by pressing Space) before end_action_phase fired its 0.9s timer, the strips stayed hidden and the new fight had no visible ability cards.")
 	display_game("")
 
 	# v0.9.411 — battlefield overlay rebuilt: blocks lunge during action phase + stat bars + near-black box bg.

@@ -4369,6 +4369,11 @@ func _build_death_card_overlay() -> void:
 	so death is part of combat, not a wall-of-text exit."""
 	_death_card_overlay = PanelContainer.new()
 	_death_card_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# v0.9.420 — z_index 150 so the death card draws above the battlefield
+	# overlay (z=100) when the player dies mid-action-phase. Without this,
+	# the strips covered the death card and players saw the combat panel
+	# instead of the eulogy + Continue prompt. Matches victory card's z=150.
+	_death_card_overlay.z_index = 150
 	var card_sb := StyleBoxFlat.new()
 	card_sb.bg_color = Color(0.08, 0.02, 0.02, 0.97)
 	card_sb.border_color = Color("#FF4444")
