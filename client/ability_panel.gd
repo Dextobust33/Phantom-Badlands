@@ -426,26 +426,61 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	# v0.9.322 — deck-view styling. No more "equipped" green border; the
 	# concept doesn't apply. Multi-copy cards get a faint lime tint so
 	# they're spot-readable in the grid.
+	# v0.9.425 — ability category color drives the border + a subtle bg tint
+	# on unlocked cards (mirrors the combat hand strip theming). Multi-copy
+	# tint kept as a small additional cue. Locked cards stay neutral muted.
 	var deck_count = int(_deck_collection.get(ab_name, 1)) if is_unlocked else 0
+	var category_info: Dictionary = {}
+	if client_ref and client_ref.has_method("get_ability_category_info"):
+		category_info = client_ref.get_ability_category_info(ab_name)
 	var sb := StyleBoxFlat.new()
 	if not is_unlocked:
 		sb.bg_color = Color(0.05, 0.05, 0.05, 0.95)
 		sb.border_color = Color(0.3, 0.3, 0.3, 0.5)
 		sb.set_border_width_all(1)
-	elif deck_count > 1:
-		sb.bg_color = Color(0.07, 0.09, 0.05, 0.95)
-		sb.border_color = Color(0.4, 0.6, 0.3, 0.7)
-		sb.set_border_width_all(1)
 	else:
-		sb.bg_color = Color(0.06, 0.05, 0.04, 0.95)
-		sb.border_color = Color(0.4, 0.34, 0.25, 0.7)
-		sb.set_border_width_all(1)
+		var category_color_hex = str(category_info.get("color", "#675444"))
+		var tint_alpha = float(category_info.get("tint_alpha", 0.0))
+		var base_bg := Color(0.06, 0.05, 0.04, 0.95)
+		if tint_alpha > 0.0:
+			var tint := Color(category_color_hex)
+			tint.a = base_bg.a
+			base_bg = base_bg.lerp(tint, tint_alpha)
+		sb.bg_color = base_bg
+		# Multi-copy emphasis: thicker border + a hint toward green.
+		if deck_count > 1:
+			var dup_tint := Color("#7AE07A")
+			dup_tint.a = 1.0
+			sb.border_color = Color(category_color_hex).lerp(dup_tint, 0.25)
+			sb.set_border_width_all(2)
+		else:
+			sb.border_color = Color(category_color_hex)
+			sb.set_border_width_all(1)
 	sb.set_corner_radius_all(4)
 	sb.content_margin_left = 6
 	sb.content_margin_top = 4
 	sb.content_margin_right = 6
 	sb.content_margin_bottom = 4
 	card.add_theme_stylebox_override("panel", sb)
+
+	# v0.9.425 — category glyph in the top-right corner. Skips when locked
+	# (no category to advertise) or when the ability has no category info.
+	if is_unlocked:
+		var glyph_text = str(category_info.get("glyph", ""))
+		if glyph_text != "":
+			var glyph_lbl := Label.new()
+			glyph_lbl.text = glyph_text
+			glyph_lbl.add_theme_font_size_override("font_size", 18)
+			var glyph_col := Color(str(category_info.get("color", "#FFFFFF")))
+			glyph_col.a = 0.55
+			glyph_lbl.add_theme_color_override("font_color", glyph_col)
+			glyph_lbl.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+			glyph_lbl.position = Vector2(-22, 2)
+			glyph_lbl.size = Vector2(18, 18)
+			glyph_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			glyph_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			glyph_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			card.add_child(glyph_lbl)
 	# v0.9.322 — taller cards fit a 2-line description below the meta row.
 	card.custom_minimum_size = Vector2(260, 110)
 	card.mouse_filter = Control.MOUSE_FILTER_STOP

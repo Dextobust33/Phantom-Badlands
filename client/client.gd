@@ -10634,6 +10634,49 @@ const _CARD_DAMAGE_ABILITIES = {
 	"ambush": true, "exploit": true, "gambit": true,
 }
 
+# v0.9.425 — ability card category theming. Each ability is tagged with one
+# of {offense, buff, control, utility} which drives the card's border color,
+# subtle bg tint, and a small glyph rendered in the top-right corner. Used
+# by both the combat hand strip (combat_scene_panel.gd) and the out-of-combat
+# ability panel (ability_panel.gd) so the categorization reads consistently
+# in both surfaces.
+const ABILITY_CATEGORY_DEFS = {
+	"offense": {"color": "#FF6644", "tint_alpha": 0.10, "glyph": "⚔"},
+	"buff":    {"color": "#7AE07A", "tint_alpha": 0.10, "glyph": "✦"},
+	"control": {"color": "#A335EE", "tint_alpha": 0.10, "glyph": "❄"},
+	"utility": {"color": "#66B0FF", "tint_alpha": 0.10, "glyph": "◈"},
+}
+
+const ABILITY_CATEGORIES = {
+	# OFFENSE — pure damage spells / strikes
+	"magic_bolt": "offense", "blast": "offense", "meteor": "offense",
+	"power_strike": "offense", "shield_bash": "offense", "cleave": "offense", "devastate": "offense",
+	"ambush": "offense", "gambit": "offense", "exploit": "offense", "perfect_heist": "offense",
+	# BUFF — self-buffs that boost stats / heals
+	"war_cry": "buff", "fortify": "buff", "iron_skin": "buff", "berserk": "buff", "rally": "buff",
+	"forcefield": "buff", "haste": "buff",
+	# CONTROL — debuffs to monster, CC, removal
+	"paralyze": "control", "distract": "control", "sabotage": "control", "banish": "control",
+	# UTILITY — info, setup, resource gain, escape, theft
+	"analyze": "utility", "vanish": "utility", "pickpocket": "utility",
+	"forethought": "utility", "tactical_retreat": "utility",
+}
+
+func get_ability_category_info(ability_name: String) -> Dictionary:
+	"""Return {category, color, tint_alpha, glyph} for an ability card.
+	Falls back to neutral defaults when an ability isn't in the table
+	(unknown ability — should never happen for current cards)."""
+	var category = String(ABILITY_CATEGORIES.get(ability_name, ""))
+	if category == "" or not ABILITY_CATEGORY_DEFS.has(category):
+		return {"category": "", "color": "#8C7656", "tint_alpha": 0.0, "glyph": ""}
+	var defs: Dictionary = ABILITY_CATEGORY_DEFS[category]
+	return {
+		"category": category,
+		"color": str(defs.get("color", "#8C7656")),
+		"tint_alpha": float(defs.get("tint_alpha", 0.10)),
+		"glyph": str(defs.get("glyph", "")),
+	}
+
 func _get_ability_planned_spend(ability_name: String) -> Dictionary:
 	var path = _get_player_active_path()
 	var info = _get_ability_combat_info(ability_name, path)
@@ -12741,6 +12784,36 @@ func execute_local_action(action: String):
 			# Dismiss the rewards card now that the player has acknowledged it.
 			if combat_scene_panel and combat_scene_panel.has_method("hide_victory_card"):
 				combat_scene_panel.hide_victory_card()
+			# v0.9.425 — mirror acknowledge_continue's panel-state reset so the
+			# combat scene actually hides over the dungeon view. Previously the
+			# dungeon path only dismissed the victory card; combat_msg_queue,
+			# the active action-phase overlay, the linger window, the force-
+			# visible flag, and any deferred FX/card payload all stayed live —
+			# so the panel kept covering game_output until the linger expired
+			# (or never, if force_visible was still set). Now matches the
+			# overworld path exactly.
+			_pending_victory_fx_play = false
+			_pending_victory_card_payload = null
+			if not _pending_combat_end_chrome.is_empty():
+				var chrome_args: Dictionary = _pending_combat_end_chrome
+				_pending_combat_end_chrome = {}
+				_emit_combat_end_chrome(chrome_args)
+			combat_msg_queue.clear()
+			combat_phase_paused = false
+			combat_phase_timer = 0.0
+			if combat_scene_panel and combat_scene_panel.has_method("end_action_phase"):
+				if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
+					combat_scene_panel.end_action_phase()
+			_combat_scene_linger_until_ms = 0
+			_combat_scene_force_visible = false
+			# v0.9.426 — explicitly hide the panel + show game_output in the same
+			# frame as the Continue press. Mirrors the overworld acknowledge_continue
+			# fix so the dungeon view doesn't flash the battle scene between the
+			# victory card going away and _process re-evaluating panel visibility.
+			if combat_scene_panel:
+				combat_scene_panel.visible = false
+			if game_output:
+				game_output.visible = true
 
 			# If a Soldier harvest is available, the prompt shown to the player was
 			# "Press [Space] to auto-harvest" — honor that by triggering the harvest.
@@ -13169,6 +13242,15 @@ func acknowledge_continue():
 	# took over. Continue is an explicit "I'm done" — no fade-out window needed.
 	_combat_scene_linger_until_ms = 0
 	_combat_scene_force_visible = false
+	# v0.9.425 — explicitly hide the panel + show game_output in the same frame
+	# as the Continue press. _process re-evaluates visibility on the next frame,
+	# which painted the battle scene under the now-hidden victory card for one
+	# frame → the brief flash players saw between "Continue" and game_output
+	# appearing. Doing it inline removes the in-between frame entirely.
+	if combat_scene_panel:
+		combat_scene_panel.visible = false
+	if game_output:
+		game_output.visible = true
 	# Auto-harvest if available — send request and let harvest flow handle the rest
 	if harvest_available:
 		harvest_available = false
@@ -23719,8 +23801,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.425 — combat polish: monster-ability strip routing + totals border in FX scene + dungeon combat-panel clear.
+	display_game("[color=#00FF00]v0.9.425[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: monster ability bangs route to the monster strip[/color]")
+	display_game("  • [b]Lines like 'AMBUSH! The Wolf strikes from the shadows!' now land on the monster strip[/b] instead of the player strip. The overlay classifier required both the 9-space indent AND a 'The X' prefix to call a line 'monster'; ability bangs that begin with the bang word (AMBUSH!, BLOODIED FURY!, TREASURE DECOY!, BLOODSCENT!, PACK FRENZY!) failed the prefix check and fell through to ambient → player strip. Indent alone is the structural signal — earlier 'You/Your' overrides already peel off the player/companion lines inside an indented block.")
+	display_game("  [color=#FFD700]FX scene: totals strip border no longer shows[/color]")
+	display_game("  • [b]The yellow-gold border around the damage totals is hidden during the action-phase FX scene.[/b] start_action_phase was only hiding the inner HBox; the bordered PanelContainer wrapper stayed visible and kept drawing its frame. Now toggles the wrapper too.")
+	display_game("  [color=#FFD700]Dungeon: combat panel clears after a kill[/color]")
+	display_game("  • [b]After defeating a monster in a dungeon and pressing Continue, the combat scene now actually hides[/b] so the dungeon map view is visible again. dungeon_continue was only dismissing the victory card — combat_msg_queue, _action_phase_active, the linger window, _combat_scene_force_visible, and any deferred FX/card payload were all left live, so the panel kept covering game_output. Now performs the same reset that acknowledge_continue does on the overworld path.")
+	display_game("  [color=#FFD700]Post-victory: no more battle-scene flash[/color]")
+	display_game("  • [b]Pressing Continue on the loot screen now hides the combat panel in the same frame[/b], in both overworld and dungeon paths. Previously hide_victory_card removed the card overlay but the panel itself only hid on the NEXT _process tick, exposing the battle scene (strips + ASCII) underneath for one frame → the brief flash players saw between Continue and game_output appearing. Both acknowledge_continue and dungeon_continue now explicitly set combat_scene_panel.visible = false + game_output.visible = true after the state resets, so there's no in-between frame.")
+	display_game("")
+
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
-	display_game("[color=#00FF00]v0.9.424[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.424[/color]")
 	display_game("  [color=#FFD700]Combat: Recharge fires directly[/color]")
 	display_game("  • [b]Recharge no longer pops the variable-cost spend dialog.[/b] The card's resource_type was set, so it tripped the action-bar's 'cost==0 + resource_type set = variable-cost' branch and asked the player how much to spend. Recharge has no cost at all — it's a free card with a fixed effect. Cleared the resource_type so it routes to direct-execute.")
 	display_game("  [color=#FFD700]Combat: card cost label when out of resource[/color]")
@@ -23759,58 +23853,6 @@ func display_changelog():
 	display_game("  • [b]New characters with no active companion no longer show the previous character's companion in the FX overlay[/b]. _refresh_companion early-returns when companion_data is empty but wasn't clearing the cached _companion_art.text — the FX overlay's _overlay_companion_ascii reads from that text, so stale BBCode lingered across permadeath. Now also clears overlay companion ASCII / name / HP bar fields when there's no companion.")
 	display_game("")
 
-	# v0.9.420 — death-during-action-phase fix: end the action phase so the strips don't block the death card.
-	display_game("[color=#00FFFF]v0.9.420[/color]")
-	display_game("  [color=#FFD700]Combat: stuck-on-defeat fix[/color]")
-	display_game("  • [b]Death card now appears reliably after a defeat[/b], even when the player died mid-action-phase. Previously the battlefield overlay (per-actor strips at z=100) kept rendering over the death card (z=0), so players saw a frozen-looking combat panel instead of the eulogy + Continue prompt — pressing Continue went nowhere because `_action_phase_active` was still true and held the panel visible.")
-	display_game("  • Fix has two parts. [b]Death card z_index bumped 0 → 150[/b] (matches the v0.9.418 victory card), so it always draws above any in-flight battlefield overlay. And [b]the permadeath handler now ends the action phase[/b] (mirrors the v0.9.417 acknowledge_continue victory-path fix): flushes the combat message queue, clears deferred victory FX/chrome, and calls combat_scene_panel.end_action_phase() so the overlay tweens out and `_combat_scene_should_show` no longer pins the panel visible.")
-	display_game("")
-
-	# v0.9.419 — gather quest fix + inventory comparison accuracy + hand size 5→3 + server diag cleanup.
-	display_game("[color=#00FFFF]v0.9.419[/color]")
-	display_game("  [color=#FFD700]Gather quests: progress now ticks on scratch-off catches[/color]")
-	display_game("  • [b]Logging / mining / foraging / fishing quests resume gaining progress[/b]. Since v0.9.371 routed all gathering through the scratch-off minigame, the completion handler granted items + job XP but never called check_gathering_progress — so active gather quests stopped ticking. Now credits one quest tick per non-DUD awarded slot (matches legacy per-chain semantics) and dedupes by quest_id so only the final progress message is sent.")
-	display_game("  [color=#FFD700]Inventory comparison: accurate stats[/color]")
-	display_game("  • [b]Comparison view now folds in Sanctuary house multipliers[/b]. Players with hp_bonus / resource_max Sanctuary upgrades saw '+50 HP' on a swap that actually gave them +55 — comparison was computing effective stats but skipping the multiplier that get_total_max_hp / get_total_max_mana / stamina / energy apply at character.gd:1037+. Mirrored both _get_item_comparison_parts and _display_item_comparison.")
-	display_game("  • [b]ST → STA label[/b] on the resource pool for Fighter / Barbarian / Paladin compact card display, unifying with the comparison view that already used STA. STA collides less visually with STR.")
-	display_game("  [color=#FFD700]Combat: hand size 5 → 3[/color]")
-	display_game("  • [b]COMBAT_HAND_SIZE dropped 5 → 3[/b] in both shared/combat_manager.gd and client/combat_scene_panel.gd. Three cards per turn means each draw matters more and the hand strip footprint shrinks. Restore path clamps stored hand_size on reconnect, and any 4-5 card hands from pre-update saves flush the excess into discard so the visible hand matches the new 3-cell strip.")
-	display_game("  [color=#FFD700]Server: diagnostic timing flipped off[/color]")
-	display_game("  • DIAG_TIMING_ENABLED → false. Both periodic ~5s freeze causes (v0.9.377 dungeon spawn burst, v0.9.379 unbounded road A*) are gone from production logs. The persistent 100-300ms handler stutter is a separate baseline (not a freeze); flip back on if/when investigating that.")
-	display_game("")
-
-	# v0.9.418 — UI pause button + taller per-actor strips + full-panel victory screen + companion-routing fix.
-	display_game("[color=#00FFFF]v0.9.418[/color]")
-	display_game("  [color=#FFD700]Combat: UI pause button[/color]")
-	display_game("  • [b]⏸ PAUSE / ▶ RESUME button in the top-right of the FX overlay[/b] freezes the combat message queue so you can read the strips at your own pace. Active tweens (lunge / popup fade) finish on their own — pause only halts NEW messages from arriving. Auto-resets on next combat so a pause from a prior fight never carries over.")
-	display_game("  [color=#FFD700]Combat: taller per-actor strips[/color]")
-	display_game("  • [b]Strip height bumped from clampf(overlay_h × 0.22, 80, 110) → clampf(overlay_h × 0.30, 100, 140)[/b]. Overlay minimum height pushed 280 → 340 to absorb the taller strips. Monster strip-to-ASCII gap tightened 8 → 4. ASCII art is still anchored to the overlay center — no displacement, no overlap.")
-	display_game("  [color=#FFD700]Combat: full-panel victory screen[/color]")
-	display_game("  • [b]New victory card replaces the in-strip totals block[/b]. Full-panel overlay with VICTORY banner (36pt gold), monster-defeated line, Battle Totals row, and Loot section. z_index 150 so it draws above the strips and any in-flight popup remnants.")
-	display_game("  [color=#FFD700]Combat: companion-routing fix[/color]")
-	display_game("  • [b]Spider Hatchling poison + other companion ability lines now route to the companion strip[/b] instead of the player strip. Added 'X's Y' companion-name pattern as a second structural signal alongside the leading-9-space indent from v0.9.417. The two signals together now classify every combat line cleanly.")
-	display_game("")
-
-	# v0.9.417 — universal combat pacing + Lufia-only layout + condensed mode removed + strip-routing root cause + post-combat chrome order + death message clarity.
-	display_game("[color=#00FFFF]v0.9.417[/color]")
-	display_game("  [color=#FFD700]Combat: universal pacing (speed tiering removed)[/color]")
-	display_game("  • [b]Combat speed cycling (Instant/Fast/Normal/Slow) removed entirely.[/b] One set of delays applies to everyone: 0.78s gap between back-to-back attacks, 0.55s linger after the last attack before the action phase ends, 0.6s for separators, 0.15s for ambient lines, 0.9s end-of-action-phase grace. No more per-tier branching in _drain_combat_queue.")
-	display_game("  • [b]_speed_mult removed from combat_scene_panel.gd[/b] — every FX duration is now a single constant. Lunge 0.10s, popup linger 1.0s + fade 0.35s, miss popup linger 0.85s, action-phase fade 0.20/0.25/0.28s. Same speed for all players, no setting to adjust.")
-	display_game("  [color=#FFD700]Combat: Lufia is the only layout[/color]")
-	display_game("  • [b]LAYOUT_STANDARD / LAYOUT_CHRONO branches no longer run.[/b] combat_layout is now a const set to LUFIA. set_layout() function + /layout slash command removed. Every fight gets the FX scene + per-actor overlay + battlefield reveal automatically.")
-	display_game("  [color=#FFD700]Combat: condensed log removed[/color]")
-	display_game("  • [b]condensed_combat_log toggle is gone[/b] — Settings entry [9] removed, save/load skipped, force-firehose for everyone. The per-actor overlay strips replace the old turn-summary format. Variable kept as a no-op so dead-code branches still compile (cleanup later).")
-	display_game("  [color=#FFD700]Per-actor strip routing: root-cause fix[/color]")
-	display_game("  • Combat-log messages now route to player / monster / companion strips based on a single structural signal: [b]leading indent[/b]. process_monster_turn output gets indented 9 spaces via _indent_multiline (combat_manager.gd lines 1130/1252/2610/2790/3670/3824). Player ability messages are emitted via plain messages.append with no indent.")
-	display_game("  • Replaces previous per-verb / per-name / per-color heuristics that kept missing new edge cases (Magic Bolt's '[color=#00FFFF]The bolt strikes' falsely matching companion-cyan, 'The explosion deals' falsely matching monster verb-list, etc.). One discriminator now handles every line type cleanly.")
-	display_game("  [color=#FFD700]Combat log: ordering + Round 1 header[/color]")
-	display_game("  • [b]Round 1 divider now appears.[/b] Previously the divider only fired from round 2 onward — round 1 actions appeared under whatever followed. Now combat_manager.gd reports state.round AFTER the round resolves, so the client emits divider for state.round - 1 to match the round these messages actually came from.")
-	display_game("  • [b]Damage totals + LOOT + 'Press Space' chrome now print AFTER the killing blow[/b], not before. Previously combat_end emitted chrome directly while the message queue was still draining, so totals appeared with 0 damage and loot showed before the monster died. Now deferred via _pending_combat_end_chrome — emits from _drain_combat_queue's empty branch so totals are correct and loot lands after the kill.")
-	display_game("  [color=#FFD700]Combat: stuck-panel-on-Space fix[/color]")
-	display_game("  • [b]acknowledge_continue() now flushes the combat queue + force-ends the action phase[/b] so pressing Space during the FX scene before the transition completes doesn't leave the overlay stuck visible. Was: the pending end_action_phase timer could be bypassed by the early ack.")
-	display_game("  [color=#FFD700]Combat: clearer monster death (server)[/color]")
-	display_game("  • Server now [b]always appends 'The X is defeated!' after any custom death flavor[/b] (combat_manager.gd:1745). Custom flavor like 'The troll stops regenerating. Finally.' or 'The ogre falls with ground-shaking force.' reads as poetry but doesn't clearly mark death — the generic line removes the ambiguity.")
-	display_game("")
 
 	# v0.9.416 — testfx pacing demo bug fixes: FX-scene persistence, strip rendering, scroll-following, firehose-in-testfx.
 	display_game("[color=#00FFFF]v0.9.416[/color]")
