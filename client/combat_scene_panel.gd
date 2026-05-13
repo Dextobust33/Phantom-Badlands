@@ -157,6 +157,8 @@ var _flock_warning_pulse_tween: Tween = null
 # after a non-flock victory, so the player reads rewards inside the scene
 # panel instead of being yanked into a wall of text in game_output.
 var _victory_card_overlay: PanelContainer
+var _victory_card_monster_label: RichTextLabel  # v0.9.418 — "Defeated: Troll (Lv 21)"
+var _victory_card_totals_label: RichTextLabel   # v0.9.418 — "You: 302 · Pet: 25 · Foe: 22"
 var _victory_card_xp_label: RichTextLabel
 var _victory_card_levelup_label: RichTextLabel
 var _victory_card_gear_banner: PanelContainer  # v0.9.353 — dedicated callout for gear drops
@@ -610,6 +612,10 @@ var _overlay_companion_block_baseline: Vector2 = Vector2.ZERO
 # zone. Single combat log (_log_label) still receives everything and is the
 # canonical record for non-overlay layouts / [L] legacy view.
 const OVERLAY_LOG_LINE_LIMIT := 5
+# v0.9.418 — pause button in the top-right corner of the FX overlay so the
+# player can freeze the message-drain pacing and read what just happened.
+# Connected to client.toggle_combat_pause() via client_ref.
+var _pause_button: Button = null
 var _overlay_player_log: RichTextLabel = null
 var _overlay_monster_log: RichTextLabel = null
 var _overlay_companion_log: RichTextLabel = null
@@ -656,8 +662,43 @@ func _ensure_battlefield_overlay() -> void:
 	_overlay_companion_block = _build_overlay_character_block(false)
 	_battlefield_overlay.add_child(_overlay_companion_block)
 
+	# v0.9.418 — pause button. Positioned in _position_battlefield_overlay so
+	# it tracks the overlay's actual size at runtime. z_index above strips so
+	# it's clickable even when monster strip stretches across the top.
+	_pause_button = Button.new()
+	_pause_button.text = "⏸ PAUSE"
+	_pause_button.tooltip_text = "Pause combat — message drain freezes until you press Resume"
+	_pause_button.add_theme_font_size_override("font_size", 12)
+	_pause_button.custom_minimum_size = Vector2(86, 28)
+	_pause_button.focus_mode = Control.FOCUS_NONE
+	_pause_button.z_index = 5
+	_pause_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_pause_button.pressed.connect(_on_pause_button_pressed)
+	_battlefield_overlay.add_child(_pause_button)
+
 	# Defer initial positioning so layout has computed _player_col's rect.
 	call_deferred("_position_battlefield_overlay")
+
+
+func _on_pause_button_pressed() -> void:
+	"""v0.9.418 — forward to client.toggle_combat_pause(). Client owns the
+	paused-state flag because the combat message queue + drain timer live
+	there. Panel just renders the button and updates its label."""
+	if client_ref != null and client_ref.has_method("toggle_combat_pause"):
+		client_ref.toggle_combat_pause()
+
+
+func set_pause_button_label(paused: bool) -> void:
+	"""Called by client when pause state toggles, so the button reflects the
+	current state."""
+	if _pause_button == null or not is_instance_valid(_pause_button):
+		return
+	if paused:
+		_pause_button.text = "▶ RESUME"
+		_pause_button.tooltip_text = "Resume combat — message drain continues"
+	else:
+		_pause_button.text = "⏸ PAUSE"
+		_pause_button.tooltip_text = "Pause combat — message drain freezes until you press Resume"
 
 
 func _build_overlay_log_label(align: String) -> RichTextLabel:
@@ -766,13 +807,17 @@ func _position_battlefield_overlay() -> void:
 	# If the box row is shorter, grow upward (toward monster) by extending the
 	# overlay height above the box top while keeping the bottom anchored to
 	# the box top so we don't push into damage banner area below.
-	var overlay_h: float = maxf(rect.size.y, 280.0)
+	# v0.9.418 — overlay min height bumped 280 → 340 to accommodate taller log
+	# strips (so each strip fits a full round of messages without scrolling).
+	# Monster-art gap reduced 8 → 4 so the overlay can grow upward when there's
+	# little vertical room. If the clamp still kicks in, the strip-vs-block
+	# split keeps strips at their floor (100px) and lets the block shrink last.
+	var overlay_h: float = maxf(rect.size.y, 340.0)
 	var overlay_y: float = rect.position.y - (overlay_h - rect.size.y)
-	# Clamp upward growth to keep at least 60px below the monster artwork.
 	if _monster_col and is_instance_valid(_monster_col):
 		var monster_bottom: float = _monster_col.global_position.y + _monster_col.size.y
-		if overlay_y < monster_bottom + 8.0:
-			overlay_y = monster_bottom + 8.0
+		if overlay_y < monster_bottom + 4.0:
+			overlay_y = monster_bottom + 4.0
 			overlay_h = (rect.position.y + rect.size.y) - overlay_y
 	_battlefield_overlay.size = Vector2(rect.size.x, overlay_h)
 	_battlefield_overlay.global_position = Vector2(rect.position.x, overlay_y)
@@ -781,9 +826,12 @@ func _position_battlefield_overlay() -> void:
 	# v0.9.415 — state the user confirmed worked well: 3-strip log visible
 	# at top of overlay, player flush-left, companion flush-right, monster
 	# strip 320px centered under the goblin.
+	# v0.9.418 — strip height bumped from 0.22/60-110 to 0.30/100-140 so a full
+	# round of messages fits without internal scrolling. Block height auto-
+	# derives from the remaining overlay space below the strip row.
 	var block_w: float = 320.0
 	var edge_pad: float = 16.0
-	var log_strip_h: float = clampf(overlay_h * 0.22, 60.0, 110.0)
+	var log_strip_h: float = clampf(overlay_h * 0.30, 100.0, 140.0)
 	var log_gap: float = 4.0
 	var bottom_pad: float = 0.0
 	var block_y: float = log_strip_h + log_gap
@@ -823,6 +871,16 @@ func _position_battlefield_overlay() -> void:
 	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
 		_overlay_companion_log.position = Vector2(rect.size.x - log_w_actor - edge_pad, log_y_actor - actor_lift)
 		_overlay_companion_log.size = Vector2(log_w_actor, log_strip_h)
+	# v0.9.418 — pause button: top-right corner of the overlay, inside the
+	# rect so it sits over the companion strip's top-right corner. z_index
+	# above the strip keeps it clickable. Strips use scroll_following so
+	# newest text is at the bottom — covering the top-right corner only
+	# obscures the oldest line that's about to scroll off.
+	if _pause_button and is_instance_valid(_pause_button):
+		var btn_w: float = 86.0
+		var btn_h: float = 26.0
+		_pause_button.position = Vector2(rect.size.x - btn_w - 4.0, 2.0)
+		_pause_button.size = Vector2(btn_w, btn_h)
 	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
 		# Anchor monster log horizontally under the monster art. _monster_col
 		# / _monster_art_label live in a different parent than _player_col,
@@ -2613,7 +2671,10 @@ func _classify_overlay_actor(raw: String) -> String:
 	     the actor from a single marker regardless of the original prefix
 	     color (handles #FF4444, #FF6600 ability variants, etc.).
 	  3. Raw verb + actor-prefix fallback for non-enhanced lines."""
-	return _classify_overlay_actor_inner(raw)
+	var result := _classify_overlay_actor_inner(raw)
+	# v0.9.418 — temporary diagnostic for Wyvern-attacks-companion routing bug.
+	print("[STRIP-ROUTE] actor=%s | raw=%s" % [result, raw.left(160)])
+	return result
 
 
 func _strip_bbcode_and_whitespace(raw: String) -> String:
@@ -2647,10 +2708,17 @@ func _classify_overlay_actor_inner(raw: String) -> String:
 	var leading_ws: int = 0
 	while leading_ws < raw.length() and raw[leading_ws] == " ":
 		leading_ws += 1
-	# Companion — 'Your X' + action verb (works regardless of indent).
+	# Companion — two structural patterns the server emits:
+	#   1. "Your <name> attacks/strikes/hits/misses/uses/lunges ..." (standard)
+	#   2. "<name>'s <ability> ..." (companion abilities like Poison Bite —
+	#      see combat_manager.gd:688)
+	# Detect by checking for the companion's own name when populate() has set it.
+	var comp_name: String = str(_companion_data.get("name", "")) if not _companion_data.is_empty() else ""
 	if "Your " in raw:
 		if " attacks" in raw or " strikes" in raw or " hits " in raw or " misses" in raw or " uses " in raw or " lunges" in raw:
 			return "companion"
+	if comp_name != "" and "%s's " % comp_name in raw:
+		return "companion"
 	# Enhancement markers explicitly tag player lines.
 	if ">>" in raw or "++" in raw:
 		return "player"
@@ -3965,46 +4033,91 @@ func _player_visual_for_fx() -> Control:
 # === Victory card ===
 
 func _build_victory_card_overlay() -> void:
-	"""Card layered over the log section that shows post-fight rewards
-	(XP, level-up, loot) inside the scene panel. Hidden by default; shown
-	via show_victory_card()."""
+	"""v0.9.418 — full-panel victory screen layered above the entire combat
+	scene. Replaces the smaller v0.9.353 reward card. Shows VICTORY banner,
+	defeated-monster line, Battle Totals row, XP / level-up, gear banner,
+	loot list, and the Press-Space prompt. Sits at z_index 150 so it covers
+	the battlefield overlay (z=100) and the panel chrome below.
+
+	Parented to the panel's outer Control (self) so PRESET_FULL_RECT matches
+	the full combat panel rect, not just the log section."""
 	_victory_card_overlay = PanelContainer.new()
 	_victory_card_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_victory_card_overlay.z_index = 150
 	var card_sb := StyleBoxFlat.new()
-	card_sb.bg_color = Color(0.05, 0.04, 0.06, 0.97)
+	card_sb.bg_color = Color(0.04, 0.03, 0.05, 0.98)
 	card_sb.border_color = Color("#FFD700")
-	card_sb.set_border_width_all(2)
-	card_sb.set_corner_radius_all(4)
-	card_sb.content_margin_left = 10
-	card_sb.content_margin_right = 10
-	card_sb.content_margin_top = 6
-	card_sb.content_margin_bottom = 6
+	card_sb.set_border_width_all(3)
+	card_sb.set_corner_radius_all(6)
+	card_sb.content_margin_left = 24
+	card_sb.content_margin_right = 24
+	card_sb.content_margin_top = 16
+	card_sb.content_margin_bottom = 16
 	_victory_card_overlay.add_theme_stylebox_override("panel", card_sb)
 	_victory_card_overlay.visible = false
 	_victory_card_overlay.mouse_filter = Control.MOUSE_FILTER_PASS
-	_log_inner.add_child(_victory_card_overlay)
+	add_child(_victory_card_overlay)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 2)
+	vbox.add_theme_constant_override("separation", 8)
 	_victory_card_overlay.add_child(vbox)
 
-	# Header row — small "REWARDS" tag (the big "VICTORY!" banner from
-	# play_victory_fx already announced the outcome, so the card just lists
-	# what was earned).
-	var header := RichTextLabel.new()
-	header.bbcode_enabled = true
-	header.fit_content = true
-	header.scroll_active = false
-	header.add_theme_font_size_override("normal_font_size", 14)
-	header.text = "[b][color=#FFD700]REWARDS[/color][/b]"
-	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(header)
+	# VICTORY banner — large gold centered title.
+	var victory_banner := RichTextLabel.new()
+	victory_banner.bbcode_enabled = true
+	victory_banner.fit_content = true
+	victory_banner.scroll_active = false
+	victory_banner.add_theme_font_size_override("normal_font_size", 36)
+	victory_banner.text = "[center][b][color=#FFD700]★ VICTORY ★[/color][/b][/center]"
+	victory_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(victory_banner)
+
+	# Defeated-monster line — "Defeated: Troll (Lv 21)".
+	_victory_card_monster_label = RichTextLabel.new()
+	_victory_card_monster_label.bbcode_enabled = true
+	_victory_card_monster_label.fit_content = true
+	_victory_card_monster_label.scroll_active = false
+	_victory_card_monster_label.add_theme_font_size_override("normal_font_size", 18)
+	_victory_card_monster_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_victory_card_monster_label)
+
+	# Divider before totals.
+	var divider_top := ColorRect.new()
+	divider_top.color = Color("#5C4D33")
+	divider_top.custom_minimum_size = Vector2(0, 2)
+	divider_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(divider_top)
+
+	# Battle Totals header + row.
+	var totals_header := RichTextLabel.new()
+	totals_header.bbcode_enabled = true
+	totals_header.fit_content = true
+	totals_header.scroll_active = false
+	totals_header.add_theme_font_size_override("normal_font_size", 14)
+	totals_header.text = "[center][color=#5C4D33][b]── Battle Totals ──[/b][/color][/center]"
+	totals_header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(totals_header)
+
+	_victory_card_totals_label = RichTextLabel.new()
+	_victory_card_totals_label.bbcode_enabled = true
+	_victory_card_totals_label.fit_content = true
+	_victory_card_totals_label.scroll_active = false
+	_victory_card_totals_label.add_theme_font_size_override("normal_font_size", 16)
+	_victory_card_totals_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_victory_card_totals_label)
+
+	# Divider before XP/loot.
+	var divider_mid := ColorRect.new()
+	divider_mid.color = Color("#5C4D33")
+	divider_mid.custom_minimum_size = Vector2(0, 2)
+	divider_mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(divider_mid)
 
 	_victory_card_xp_label = RichTextLabel.new()
 	_victory_card_xp_label.bbcode_enabled = true
 	_victory_card_xp_label.fit_content = true
 	_victory_card_xp_label.scroll_active = false
-	_victory_card_xp_label.add_theme_font_size_override("normal_font_size", 13)
+	_victory_card_xp_label.add_theme_font_size_override("normal_font_size", 16)
 	_victory_card_xp_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_victory_card_xp_label)
 
@@ -4012,7 +4125,7 @@ func _build_victory_card_overlay() -> void:
 	_victory_card_levelup_label.bbcode_enabled = true
 	_victory_card_levelup_label.fit_content = true
 	_victory_card_levelup_label.scroll_active = false
-	_victory_card_levelup_label.add_theme_font_size_override("normal_font_size", 14)
+	_victory_card_levelup_label.add_theme_font_size_override("normal_font_size", 18)
 	_victory_card_levelup_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_victory_card_levelup_label.visible = false
 	vbox.add_child(_victory_card_levelup_label)
@@ -4046,6 +4159,16 @@ func _build_victory_card_overlay() -> void:
 	vbox.add_child(divider1)
 
 	# Loot list — scrollable in case there are many drops
+	# Loot section header.
+	var loot_header := RichTextLabel.new()
+	loot_header.bbcode_enabled = true
+	loot_header.fit_content = true
+	loot_header.scroll_active = false
+	loot_header.add_theme_font_size_override("normal_font_size", 14)
+	loot_header.text = "[center][color=#5C4D33][b]── Loot ──[/b][/color][/center]"
+	loot_header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(loot_header)
+
 	var loot_scroll := ScrollContainer.new()
 	loot_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	loot_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -4055,21 +4178,21 @@ func _build_victory_card_overlay() -> void:
 
 	_victory_card_loot_vbox = VBoxContainer.new()
 	_victory_card_loot_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_victory_card_loot_vbox.add_theme_constant_override("separation", 1)
+	_victory_card_loot_vbox.add_theme_constant_override("separation", 2)
 	loot_scroll.add_child(_victory_card_loot_vbox)
 
 	# Divider before prompt
-	var divider2 := ColorRect.new()
-	divider2.color = Color("#5C4D33")
-	divider2.custom_minimum_size = Vector2(0, 1)
-	divider2.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(divider2)
+	var divider_bot := ColorRect.new()
+	divider_bot.color = Color("#5C4D33")
+	divider_bot.custom_minimum_size = Vector2(0, 2)
+	divider_bot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(divider_bot)
 
 	_victory_card_prompt_label = RichTextLabel.new()
 	_victory_card_prompt_label.bbcode_enabled = true
 	_victory_card_prompt_label.fit_content = true
 	_victory_card_prompt_label.scroll_active = false
-	_victory_card_prompt_label.add_theme_font_size_override("normal_font_size", 13)
+	_victory_card_prompt_label.add_theme_font_size_override("normal_font_size", 16)
 	_victory_card_prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_victory_card_prompt_label)
 
@@ -4078,14 +4201,33 @@ func show_victory_card(rewards: Dictionary) -> void:
 	"""Render the post-fight rewards card. Expected keys:
 	xp_gain (int), old_level (int), new_level (int), did_level_up (bool),
 	loot (Array of preformatted BBCode strings), harvest_available (bool),
-	continue_key (String).
-	The card stays visible until hide_victory_card() is called."""
+	continue_key (String), gear_drops (Array of Dict).
+	The card stays visible until hide_victory_card() is called.
+
+	v0.9.418 — also pulls _monster_name + _monster_level + _player_total /
+	_companion_total / _monster_total directly from the panel so callers don't
+	need to thread that data through the rewards dict."""
 	if _victory_card_overlay == null or not is_instance_valid(_victory_card_overlay):
 		return
 
+	# Defeated-monster line.
+	if _monster_name != "":
+		var name_color: String = _monster_name_color if _monster_name_color != "" else "#FFFFFF"
+		_victory_card_monster_label.text = "[center][color=#888888]Defeated:[/color] [color=%s][b]%s[/b][/color] [color=#888888](Lv %d)[/color][/center]" % [name_color, _monster_name, _monster_level]
+	else:
+		_victory_card_monster_label.text = ""
+
+	# Battle Totals row — pull totals from panel's own running tally.
+	var totals_parts: Array = []
+	totals_parts.append("[color=#C9A040]You: [/color][color=#FFD93D]%d[/color]" % _player_total)
+	if _companion_total > 0:
+		totals_parts.append("[color=#FF9966]Pet: [/color][color=#3DD9FF]%d[/color]" % _companion_total)
+	totals_parts.append("[color=#FF6666]Foe: [/color][color=#FFA033]%d[/color]" % _monster_total)
+	_victory_card_totals_label.text = "[center]" + "   ·   ".join(totals_parts) + "[/center]"
+
 	var xp_gain = int(rewards.get("xp_gain", 0))
 	if xp_gain > 0:
-		_victory_card_xp_label.text = "[color=#A0E0FF]+%d XP[/color]" % xp_gain
+		_victory_card_xp_label.text = "[center][color=#A0E0FF]+%d XP[/color][/center]" % xp_gain
 		_victory_card_xp_label.visible = true
 	else:
 		_victory_card_xp_label.text = ""
@@ -4095,7 +4237,7 @@ func show_victory_card(rewards: Dictionary) -> void:
 	if did_level_up:
 		var old_level = int(rewards.get("old_level", 0))
 		var new_level = int(rewards.get("new_level", 0))
-		_victory_card_levelup_label.text = "[b][color=#FFE066]LEVEL UP![/color][/b]  [color=#FFE066]Lv %d → Lv %d[/color]" % [old_level, new_level]
+		_victory_card_levelup_label.text = "[center][b][color=#FFE066]LEVEL UP![/color][/b]  [color=#FFE066]Lv %d → Lv %d[/color][/center]" % [old_level, new_level]
 		_victory_card_levelup_label.visible = true
 	else:
 		_victory_card_levelup_label.visible = false
@@ -4182,10 +4324,10 @@ func show_victory_card(rewards: Dictionary) -> void:
 	if bool(rewards.get("harvest_available", false)):
 		primary_prompt = "[color=#FF6600][b]Press [%s] to harvest[/b][/color]" % key_name
 	else:
-		primary_prompt = "[color=#FFD700]Press [%s] to continue[/color]" % key_name
+		primary_prompt = "[color=#FFD700][b]Press [%s] to continue[/b][/color]" % key_name
 	# Secondary hint — let players who want the full play-by-play pop the
 	# legacy detail view (game_output) without pressing continue.
-	_victory_card_prompt_label.text = "%s   [color=#888888]·  Press [L] to view details[/color]" % primary_prompt
+	_victory_card_prompt_label.text = "[center]%s   [color=#888888]·  Press [L] to view details[/color][/center]" % primary_prompt
 
 	_victory_card_overlay.visible = true
 	if _log_scroll:

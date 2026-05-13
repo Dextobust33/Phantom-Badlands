@@ -1414,6 +1414,11 @@ var _pending_victory_card_payload: Variant = null
 var _pending_combat_end_chrome: Dictionary = {}
 var combat_phase_timer: float = 0.0
 var combat_phase_paused: bool = false
+# v0.9.418 — user-initiated combat pause (via the pause button on the FX
+# overlay). When true, _process skips combat_phase_timer decrement so the
+# queue drain freezes. Active tweens (lunge / popup fade) complete on their
+# own — pause only halts NEW messages from arriving.
+var _combat_paused: bool = false
 # v0.9.417 — universal combat pacing (speed tiering removed). Single set of
 # delay values used by _drain_combat_queue.
 const SEPARATOR_DELAY: float = 0.6
@@ -2616,7 +2621,8 @@ func _process(delta):
 			combat_spinner_index = int(frame_time / SPINNER_SPEED) % combat_spinner_frames.size()
 
 	# Phased combat message display
-	if combat_phase_paused:
+	# v0.9.418 — user pause halts NEW messages but lets in-flight tweens finish.
+	if combat_phase_paused and not _combat_paused:
 		combat_phase_timer -= delta
 		if combat_phase_timer <= 0:
 			combat_phase_paused = false
@@ -13093,6 +13099,18 @@ func select_wish(index: int):
 	wish_selection_mode = false
 	display_game("[color=#808080]Making your wish...[/color]")
 
+func toggle_combat_pause() -> void:
+	"""v0.9.418 — user pause toggle wired to the FX-overlay PAUSE button.
+	Flips _combat_paused; _process consults the flag and skips the
+	combat_phase_timer decrement while it's true, freezing queue drain.
+	Active tweens (lunge / popup) finish on their own — pause only halts
+	NEW messages from arriving. Safe to call outside combat (no-op)."""
+	if not in_combat:
+		return
+	_combat_paused = not _combat_paused
+	if combat_scene_panel and combat_scene_panel.has_method("set_pause_button_label"):
+		combat_scene_panel.set_pause_button_label(_combat_paused)
+
 func _emit_combat_end_chrome(args: Dictionary) -> void:
 	"""v0.9.417 — emit Damage totals / LOOT / Press-Space prompt for the
 	just-ended victory. Deferred from combat_end if the message queue is
@@ -19997,6 +20015,11 @@ func _process_combat_start(message: Dictionary):
 	# back-to-back) combat so it doesn't trigger in this fight.
 	_pending_victory_fx_play = false
 	_pending_victory_card_payload = null
+	# v0.9.418 — clear user-pause from a prior combat so the new fight isn't
+	# frozen from the very first message.
+	_combat_paused = false
+	if combat_scene_panel and combat_scene_panel.has_method("set_pause_button_label"):
+		combat_scene_panel.set_pause_button_label(false)
 	# Reset cached status snapshots so stale buffs/DoT timers from the
 	# previous fight don't enrich this fight's first summary.
 	_last_player_status = {}
@@ -23663,8 +23686,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.418 — UI pause button + taller per-actor strips + full-panel victory screen + companion-routing fix.
+	display_game("[color=#00FF00]v0.9.418[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: UI pause button[/color]")
+	display_game("  • [b]⏸ PAUSE / ▶ RESUME button in the top-right of the FX overlay[/b] freezes the combat message queue so you can read the strips at your own pace. Active tweens (lunge / popup fade) finish on their own — pause only halts NEW messages from arriving. Auto-resets on next combat so a pause from a prior fight never carries over.")
+	display_game("  [color=#FFD700]Combat: taller per-actor strips[/color]")
+	display_game("  • [b]Strip height bumped from clampf(overlay_h × 0.22, 80, 110) → clampf(overlay_h × 0.30, 100, 140)[/b]. Overlay minimum height pushed 280 → 340 to absorb the taller strips. Monster strip-to-ASCII gap tightened 8 → 4. ASCII art is still anchored to the overlay center — no displacement, no overlap.")
+	display_game("  [color=#FFD700]Combat: full-panel victory screen[/color]")
+	display_game("  • [b]New victory card replaces the in-strip totals block[/b]. Full-panel overlay with VICTORY banner (36pt gold), monster-defeated line, Battle Totals row, and Loot section. z_index 150 so it draws above the strips and any in-flight popup remnants.")
+	display_game("  [color=#FFD700]Combat: companion-routing fix[/color]")
+	display_game("  • [b]Spider Hatchling poison + other companion ability lines now route to the companion strip[/b] instead of the player strip. Added 'X's Y' companion-name pattern as a second structural signal alongside the leading-9-space indent from v0.9.417. The two signals together now classify every combat line cleanly.")
+	display_game("")
+
 	# v0.9.417 — universal combat pacing + Lufia-only layout + condensed mode removed + strip-routing root cause + post-combat chrome order + death message clarity.
-	display_game("[color=#00FF00]v0.9.417[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.417[/color]")
 	display_game("  [color=#FFD700]Combat: universal pacing (speed tiering removed)[/color]")
 	display_game("  • [b]Combat speed cycling (Instant/Fast/Normal/Slow) removed entirely.[/b] One set of delays applies to everyone: 0.78s gap between back-to-back attacks, 0.55s linger after the last attack before the action phase ends, 0.6s for separators, 0.15s for ambient lines, 0.9s end-of-action-phase grace. No more per-tier branching in _drain_combat_queue.")
 	display_game("  • [b]_speed_mult removed from combat_scene_panel.gd[/b] — every FX duration is now a single constant. Lunge 0.10s, popup linger 1.0s + fade 0.35s, miss popup linger 0.85s, action-phase fade 0.20/0.25/0.28s. Same speed for all players, no setting to adjust.")
@@ -23728,22 +23763,6 @@ func display_changelog():
 	display_game("  • Deferred play_victory_fx + show_victory_card calls now [b]force-set panel.visible = true + extend linger BEFORE firing[/b], so the monster slump + 'VICTORY!' banner + reward card always land properly on the final kill instead of getting skipped when the panel was briefly hidden.")
 	display_game("  [color=#FFD700]Flock combat: ability cards restored[/color]")
 	display_game("  • [b]populate() now restores _totals_strip / _hand_strip / _status_strip visibility[/b]. Previously start_action_phase hid them; if the player chained into the next flock combat (by pressing Space) before end_action_phase fired its 0.9s timer, the strips stayed hidden and the new fight had no visible ability cards.")
-	display_game("")
-
-	# v0.9.413 — tactical brightness, miss FX, consistent pacing, defer victory card, faster transition back.
-	display_game("[color=#00FFFF]v0.9.413[/color]")
-	display_game("  [color=#FFD700]Combat: tactical ASCII brightness[/color]")
-	display_game("  • [b]Extra lift on top of _ensure_readable_color[/b] (lerp 0.18 toward white) so the in-box tactical view reads as bright as the FX overlay. Same color reaches both, but the tactical view's smaller font + competing UI made it look darker subjectively.")
-	display_game("  [color=#FFD700]Combat: miss FX[/color]")
-	display_game("  • [b]Miss-message detection added[/b]: the actor still lunges (player / companion / monster) and a [b]MISS popup[/b] floats over the target. Previously miss messages produced no visual, making it look like the actor skipped their turn.")
-	display_game("  • Catches all server miss patterns: 'X's attack misses', 'Your X lunges but misses' (companion), 'The X attacks but misses' / 'completely misses' / 'is distracted by your companion and misses' (monster).")
-	display_game("  [color=#FFD700]Combat: consistent pacing[/color]")
-	display_game("  • [b]Single consistent attack delay[/b] (0.85s Normal / 0.35s Fast) regardless of which actor attacks. Inter-actor bonus removed. Predictable rhythm so it reads who-did-what-when.")
-	display_game("  [color=#FFD700]Combat: transition + one-turn battles[/color]")
-	display_game("  • [b]Transition back faster[/b]: queue-empty → end_action_phase buffer reduced 1.5s → 0.9s. Final popup still readable, transition no longer drags.")
-	display_game("  • [b]One-turn battles preserve pacing[/b]: combat_end no longer flushes the message queue. Victory FX + victory card are deferred until the queue drains, so player → companion → killing blow plays out at proper tempo before the card covers the panel.")
-	display_game("  [color=#FFD700]Misc[/color]")
-	display_game("  • Defensive [b]map-sprite re-sync[/b] on combat_end to address occasional 'overworld sprite disappears after combat' reports.")
 	display_game("")
 
 	# v0.9.412 — halve delays, brighten ASCII, hide UI strips for room, bigger overlay block.
