@@ -21044,6 +21044,7 @@ func process_command(text: String):
 			#   /testfx          → step through all FX (in-box path, simpler)
 			#   /testfx action   → step through with action-phase overlay path
 			#   /testfx misses   → step through only the 3 miss FX
+			#   /testfx pacing   → REAL queue + action-phase pacing walkthrough
 			#   /testfx auto     → original auto-paced demo (kept for quick visual)
 			#   /testfx quit     → abort an in-flight step demo
 			var sub: String = parts[1].to_lower() if parts.size() > 1 else ""
@@ -21056,6 +21057,8 @@ func process_command(text: String):
 				_run_combat_fx_demo(false)
 			elif sub == "misses" or sub == "miss":
 				_run_combat_step_demo("misses")
+			elif sub == "pacing":
+				_run_combat_pacing_demo()
 			elif sub == "action":
 				_run_combat_step_demo("full")
 			else:
@@ -23675,8 +23678,40 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.416 — testfx pacing demo bug fixes: FX-scene persistence, strip rendering, scroll-following, firehose-in-testfx.
+	display_game("[color=#00FF00]v0.9.416[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat polish: /testfx pacing walkthrough fixed[/color]")
+	display_game("  • [b]FX scene now persists across all 8 demo steps.[/b] Previously _drain_combat_queue's queue-empty branch always scheduled end_action_phase_after(0.9), so the action phase ended between steps — Phase 3 onward would fire on the small box-row portraits instead of the big overlay blocks. Now guarded by _testfx_step_active so production combat still auto-ends action phase, but the walkthrough keeps the FX scene up throughout.")
+	display_game("  • [b]Per-actor overlay log strips render even when empty.[/b] Was: fit_content=true collapsed the strip height to 0 with no content, so the dark bg never showed. Now fit_content=false + brighter bg (alpha 0.78→0.88) + 1px border + clip_contents so each strip is always a visible bordered box at the top of the overlay.")
+	display_game("  • [b]Strips auto-scroll to newest line.[/b] Was: scroll_active=false showed the TOP of accumulated content, so lines past the strip height fell off the bottom invisibly. Now scroll_active=true + scroll_following=true keeps the newest line visible (mouse_filter IGNORE so users can't accidentally scroll away).")
+	display_game("  • [b]Firehose log forced during testfx[/b] (condensed_combat_log toggled off for the demo, restored on exit) so each queued mock message lands on its strip immediately. Condensed mode would have buffered them until end-of-round and left strips empty across phases.")
+	display_game("  • Phase-4 mock now uses the canonical `Round N` format so _extract_round_number detects it and broadcasts the divider to all 3 strips.")
+	display_game("  [color=#FFD700]testfx pacing: defaults[/color]")
+	display_game("  • Demo now [b]auto-forces LUFIA layout[/b] on entry (no-op if already set) so the action-phase + overlay path is exercised. testfx is only meaningful with the FX scene in play.")
+	display_game("")
+
+	# v0.9.415 — combat scene polish: 3-strip per-actor logs, custom display fonts, mid-popup positioning, damage popup z-index.
+	display_game("[color=#00FFFF]v0.9.415[/color]")
+	display_game("  [color=#FFD700]Combat scene: 3-strip per-actor combat log[/color]")
+	display_game("  • [b]During action phase, each actor (player / monster / companion) gets its own small bordered log strip[/b] at the top of the FX overlay. Player attacks land in the left strip, monster attacks in the center strip (under the monster art), companion attacks in the right strip. Round dividers (`──── Round N ────`) broadcast to all 3 so each strip keeps its round boundaries.")
+	display_game("  • Strips hold up to OVERLAY_LOG_LINE_LIMIT recent lines per actor; lines route by classifying the message's source from server formatting conventions (`Your X` → companion, `The X` → monster, `You` → player).")
+	display_game("  [color=#FFD700]Combat scene: custom display fonts for damage popups[/color]")
+	display_game("  • Damage popups now use [b]Fredoka Bold for normal hits and Bowlby One for crits[/b] — runtime-loaded TTFs (no .import sidecar required) cached in _display_font_* members. MISS popups use Fredoka Bold for the same readable-but-energetic feel. Fonts live in `font/display/`.")
+	display_game("  [color=#FFD700]Combat scene: damage popup polish[/color]")
+	display_game("  • [b]Popups draw IN FRONT of the combat-log strips[/b] (z_index 100→130) so the damage number doesn't get hidden behind a strip when the spawn point overlaps.")
+	display_game("  • [b]Crit shake no longer flings popups off the top of the screen[/b]. Was: crit shake tweened from an unclamped local_anchor, which let high stacks shake above the viewport. Now shake_base is captured AFTER the on-screen clamp so the shake stays inside the visible area.")
+	display_game("  • Stack reset window 0.35s → 1.5s + max stack offset capped at 210px. Popups still stack vertically when fired rapid-fire, but stop walking off the top of the screen.")
+	display_game("  [color=#FFD700]Combat scene: actor lift + layout polish[/color]")
+	display_game("  • [b]Player and companion overlay blocks lifted up ~22px (name-tag height)[/b] so the strip + ASCII + HP bar + name column sit a bit higher. Monster strip nudged DOWN by the same amount so it sits further from the goblin's lower ASCII edge.")
+	display_game("  • [b]Player ASCII now centered over its HP bar[/b] (was left-aligned, looked offset since HP bar anchors 0.12-0.88).")
+	display_game("  • Resource bar (mana / energy / stamina) added under HP bar in the overlay block — color-coded by class (mage→blue, rogue→green, fighter→yellow).")
+	display_game("  [color=#FFD700]/testfx upgrades[/color]")
+	display_game("  • [b]/testfx pacing[/b] command added — a step-through walkthrough of the full combat lifecycle (8 phases: enter, single attack, back-to-back, round divider, crit/miss, ability, victory, exit) so each beat can be tuned in real time. SPACE advances, R redoes, Q quits.")
+	display_game("  • Combat speed cycle now includes a 'Slow' tier at ~3× Normal as a dev/QA mode for visual verification.")
+	display_game("")
+
 	# v0.9.414 — brighter ASCII, miss popup pop, no panel flash, victory FX reliable, flock cards fix.
-	display_game("[color=#00FF00]v0.9.414[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.414[/color]")
 	display_game("  [color=#FFD700]Combat: brighter ASCII[/color]")
 	display_game("  • [b]Battle lift bumped 0.18 → 0.35 toward white[/b]. Tactical view (in-box) was still reading darker than the FX overlay; this brings both clearly bright while preserving variant hue.")
 	display_game("  [color=#FFD700]Combat: miss popup pop[/color]")
@@ -28330,6 +28365,203 @@ func _run_combat_step_demo(mode: String) -> void:
 	display_game("[color=#888888]testfx step demo complete.[/color]")
 
 
+func _run_combat_pacing_demo() -> void:
+	"""v0.9.415 — Full combat lifecycle pacing walkthrough.
+
+	Unlike /testfx action (which calls FX functions directly), this routes
+	mock combat messages through the REAL queue + drain path. That means
+	combat_phase_timer, action-phase transitions, lockouts, and inter-beat
+	gaps all behave exactly as they would in real combat — so the user can
+	feel the actual pacing and tell me which beats need tightening.
+
+	SPACE advances each step. R re-runs the previous step. Q quits."""
+	if combat_scene_panel == null:
+		display_game("[color=#FF6666]Combat scene panel not loaded.[/color]")
+		return
+	if _testfx_step_active:
+		display_game("[color=#FFD700]testfx already running. /testfx quit to abort.[/color]")
+		return
+
+	# Stage panel + mocks.
+	var mock_companion = character_data.get("active_companion", {})
+	if mock_companion == null or mock_companion.is_empty():
+		mock_companion = {"name": "TestPet", "monster_type": "Wolf", "level": 5, "variant": "Normal", "variant_color": "#88FFAA"}
+	var monster_art_inst = _get_monster_art()
+	var raw_art = monster_art_inst.get_monster_ascii_art("Goblin") if monster_art_inst else ""
+	var font = MonsterArt.FONT_SIZE_OVERRIDES.get("Goblin", MonsterArt.ASCII_ART_FONT_SIZE)
+	var art_bb = "[right][font_size=%d]%s[/font_size][/right]" % [font, raw_art]
+	var _res = _get_player_resource_for_combat()
+
+	_combat_scene_force_visible = true
+	_testfx_step_active = true
+	combat_scene_panel.visible = true
+	# v0.9.416 — force LUFIA layout so the action-phase + overlay path is
+	# exercised. testfx is only useful when the FX scene is in play.
+	if combat_scene_panel.combat_layout != combat_scene_panel.LAYOUT_LUFIA:
+		combat_scene_panel.set_layout(combat_scene_panel.LAYOUT_LUFIA)
+	# v0.9.416 — force firehose combat log during testfx so each queued
+	# message lands on its overlay strip immediately. Condensed mode buffers
+	# until end-of-round and would leave the strips empty across phases.
+	var _saved_condensed: bool = condensed_combat_log
+	condensed_combat_log = false
+	await get_tree().process_frame
+	await get_tree().process_frame
+	combat_scene_panel.clear_log()
+	combat_scene_panel.populate({
+		"player_class": str(character_data.get("class", "Fighter")),
+		"player_name": str(character_data.get("name", "Player")),
+		"player_hp": 100, "player_max_hp": 100,
+		"player_resource_cur": _res.cur, "player_resource_max": _res.max, "player_resource_color": _res.color,
+		"player_appearance_color": str(character_data.get("appearance_color", "")),
+		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
+		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
+		"companion_data": mock_companion,
+		"companion_font_size": max(2, int(round(font * 2.0 / 3.0))),
+		"monster_name": "Demo Goblin", "monster_level": 5,
+		"monster_name_color": "#00FF66",
+		"monster_art_bbcode": art_bb,
+		"monster_hp": 200, "monster_max_hp": 200, "monster_hp_known": true,
+	})
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	display_game("[color=#FFD700]>>> /testfx pacing — REAL queue + action-phase walkthrough <<<[/color]")
+	display_game("[color=#888888]Each step queues real messages through _drain_combat_queue so the pacing matches actual combat.[/color]")
+	display_game("[color=#888888]SPACE = next step · R = redo previous · Q = quit[/color]")
+
+	# Step metadata. Bodies live in _run_pacing_step_body() to avoid
+	# multi-line lambdas inside Dictionary literals (GDScript 4 parser
+	# struggles with that pattern).
+	var steps: Array = [
+		{"id": 1, "label": "PHASE 1 — Action phase ENTER (party row fades, overlay slides in)",
+		 "hint": "Watch the box row fade out and the bigger battlefield blocks slide down into place."},
+		{"id": 2, "label": "PHASE 2 — Player normal attack (lunge + 25 damage popup)",
+		 "hint": "Feel the gap between SPACE and the first popup, and the linger after."},
+		{"id": 3, "label": "PHASE 3 — Player + Companion back-to-back attacks",
+		 "hint": "Two consecutive lunges. Does the inter-attack gap feel right?"},
+		{"id": 4, "label": "PHASE 4 — Round divider + monster turn (player takes damage)",
+		 "hint": "Round 2 marker should appear in all 3 strips, then monster attacks player."},
+		{"id": 5, "label": "PHASE 5 — CRIT (with shake) + MISS (yellow popup)",
+		 "hint": "Crit should shake briefly. Miss popup color should match player (yellow)."},
+		{"id": 6, "label": "PHASE 6 — Ability: POWER STRIKE (slash arc + damage)",
+		 "hint": "Slash glyph sweeps across the monster, damage popup, then a brief pause."},
+		{"id": 7, "label": "PHASE 7 — Victory beat: kill + monster slump + VICTORY banner",
+		 "hint": "Final damage popup should land before the banner covers the panel."},
+		{"id": 8, "label": "PHASE 8 — Action phase EXIT (overlay fades, box row returns)",
+		 "hint": "Reverse of phase 1. Watch for any visual hiccups in the transition."},
+	]
+
+	var idx: int = 0
+	while idx < steps.size():
+		var step = steps[idx]
+		display_game("[color=#FF99FF]Step %d/%d: %s[/color]" % [idx + 1, steps.size(), step.label])
+		display_game("[color=#666666]  %s[/color]" % step.hint)
+		display_game("[color=#666666]  SPACE fires · R back · Q quit[/color]")
+		var cmd: String = await _testfx_advance
+		if cmd == "quit":
+			break
+		elif cmd == "redo":
+			idx = max(0, idx - 1)
+			continue
+		await _run_pacing_step_body(int(step.id))
+		display_game("[color=#888888]  fired. SPACE for next step.[/color]")
+		idx += 1
+
+	# Teardown — make sure action phase is ended.
+	if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
+		combat_scene_panel.end_action_phase()
+		await get_tree().create_timer(0.4).timeout
+	_combat_scene_force_visible = false
+	_testfx_step_active = false
+	# v0.9.416 — restore condensed-log preference saved at demo start.
+	condensed_combat_log = _saved_condensed
+	display_game("[color=#888888]pacing demo complete.[/color]")
+
+
+func _queue_pacing_msgs(lines: Array) -> void:
+	"""Push mock combat messages onto the real queue + kick the drain.
+	Used by _run_pacing_step_body so each step exercises the real
+	combat_msg_queue / combat_phase_timer pacing path."""
+	for line in lines:
+		combat_msg_queue.append({"raw": str(line)})
+	if not combat_phase_paused:
+		_drain_combat_queue()
+
+
+func _wait_for_pacing_drain() -> void:
+	"""Block until the combat queue is fully drained. Polls the queue +
+	pause state once per frame so the step body returns only after the
+	final beat's linger has elapsed."""
+	while not combat_msg_queue.is_empty() or combat_phase_paused:
+		await get_tree().process_frame
+	# A small tail buffer so the last popup gets its linger before the
+	# next step's SPACE prompt prints.
+	await get_tree().create_timer(0.25).timeout
+
+
+func _run_pacing_step_body(id: int) -> void:
+	"""v0.9.415 — Per-step body for /testfx pacing walkthrough. Each step
+	queues real messages through _drain_combat_queue + awaits drain so the
+	walkthrough exercises the actual combat pacing path."""
+	match id:
+		1:
+			# Action-phase ENTER: party row fades, overlay slides in.
+			if combat_scene_panel.has_method("start_action_phase"):
+				combat_scene_panel.start_action_phase()
+			await get_tree().create_timer(0.5).timeout
+		2:
+			# Single player normal attack — lunge + 25 damage popup.
+			_queue_pacing_msgs([
+				"You attack the Goblin for 25 damage!",
+			])
+			await _wait_for_pacing_drain()
+		3:
+			# Player + Companion back-to-back attacks.
+			_queue_pacing_msgs([
+				"You attack the Goblin for 22 damage!",
+				"Your [color=#00FFFF]TestPet[/color] attacks the Goblin for 18 damage!",
+			])
+			await _wait_for_pacing_drain()
+		4:
+			# Round divider + monster attack on player. Use canonical "Round N"
+			# format so _extract_round_number detects it and broadcasts the
+			# divider to all 3 overlay log strips.
+			_queue_pacing_msgs([
+				"[color=#5C4D33]──────── Round 2 ────────[/color]",
+				"The Goblin attacks you for [color=#FF8800]14[/color] damage!",
+			])
+			await _wait_for_pacing_drain()
+		5:
+			# CRIT (player) + MISS (monster missing player).
+			_queue_pacing_msgs([
+				"You CRITICAL strike the Goblin for 58 damage!",
+				"The Goblin attacks but misses!",
+			])
+			await _wait_for_pacing_drain()
+		6:
+			# Ability: POWER STRIKE. Uppercase + bang triggers the slash-arc FX
+			# in _dispatch_ability_fx (~line 28783).
+			_queue_pacing_msgs([
+				"You unleash POWER STRIKE! on the Goblin for 42 damage!",
+			])
+			await _wait_for_pacing_drain()
+		7:
+			# Final kill + monster slump + VICTORY beat.
+			_queue_pacing_msgs([
+				"You attack the Goblin for 30 damage!",
+				"You defeated the Goblin!",
+			])
+			await _wait_for_pacing_drain()
+			if combat_scene_panel.has_method("play_victory_fx"):
+				combat_scene_panel.play_victory_fx()
+			await get_tree().create_timer(1.8).timeout
+		8:
+			# Action-phase EXIT: overlay fades, box row returns.
+			if combat_scene_panel.has_method("end_action_phase"):
+				combat_scene_panel.end_action_phase()
+			await get_tree().create_timer(0.6).timeout
+
+
 func _run_combat_miss_demo() -> void:
 	"""/testfx misses — fire only the miss FX in sequence so the v0.9.413-414
 	popup work can be verified in isolation. Useful when the full demo's
@@ -28629,11 +28861,15 @@ func _drain_combat_queue():
 			combat_scene_panel.show_victory_card(payload)
 		if combat_scene_panel and combat_scene_panel.has_method("end_action_phase_after"):
 			if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
-				# v0.9.415 — extend the end-of-action-phase grace in Slow mode
-				# so the last popup has time to fully linger before the boxes
-				# slide back.
-				var ap_delay: float = 2.7 if combat_speed == 3 else 0.9
-				combat_scene_panel.end_action_phase_after(ap_delay)
+				# v0.9.416 — testfx pacing walkthrough has its own explicit
+				# phase-8 end_action_phase. Skip the auto-end so the FX scene
+				# persists across all steps.
+				if not _testfx_step_active:
+					# v0.9.415 — extend the end-of-action-phase grace in Slow
+					# mode so the last popup has time to fully linger before
+					# the boxes slide back.
+					var ap_delay: float = 2.7 if combat_speed == 3 else 0.9
+					combat_scene_panel.end_action_phase_after(ap_delay)
 		return
 	var entry = combat_msg_queue.pop_front()
 	var raw = entry.raw
@@ -28663,7 +28899,7 @@ func _drain_combat_queue():
 		# Inter-actor bonus removed (was 0.28 / 0.60s extra on actor change).
 		if combat_speed == 1: delay = 0.35
 		elif combat_speed == 3: delay = 2.55
-		else: delay = 0.85
+		else: delay = 0.64
 	else:
 		if combat_speed == 1: delay = 0.08
 		elif combat_speed == 3: delay = 0.45

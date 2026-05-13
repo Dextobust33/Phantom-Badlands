@@ -707,17 +707,30 @@ func _ensure_battlefield_overlay() -> void:
 
 func _build_overlay_log_label(align: String) -> RichTextLabel:
 	"""v0.9.415 — small scrolling per-actor log shown in the action-phase
-	overlay. Holds up to OVERLAY_LOG_LINE_LIMIT recent lines for one actor."""
+	overlay. Holds up to OVERLAY_LOG_LINE_LIMIT recent lines for one actor.
+	v0.9.416 — fit_content disabled + brighter bg so the strip's box is
+	visible even when empty (was: bg only appeared once content arrived)."""
 	var lbl := RichTextLabel.new()
 	lbl.bbcode_enabled = true
-	lbl.fit_content = true
-	lbl.scroll_active = false
+	lbl.fit_content = false
+	# v0.9.416 — scroll_active + scroll_following so newest lines stay visible
+	# at the BOTTOM of the strip (was: only top-N visible, newer lines fell off).
+	# mouse_filter IGNORE keeps users from accidentally scrolling away.
+	lbl.scroll_active = true
+	lbl.scroll_following = true
+	lbl.clip_contents = true
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lbl.add_theme_font_size_override("normal_font_size", 12)
 	# Background tint so the strip reads as its own zone over the box bg.
+	# v0.9.416 — brighter alpha so the empty strip is still legible as a box.
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.03, 0.03, 0.05, 0.78)
+	bg.bg_color = Color(0.08, 0.08, 0.12, 0.88)
+	bg.border_color = Color(0.35, 0.35, 0.45, 0.9)
+	bg.border_width_left = 1
+	bg.border_width_right = 1
+	bg.border_width_top = 1
+	bg.border_width_bottom = 1
 	bg.set_corner_radius_all(4)
 	bg.set_content_margin_all(4)
 	lbl.add_theme_stylebox_override("normal", bg)
