@@ -222,7 +222,7 @@ const FLASH_TINT_HIT := Color(1.6, 0.5, 0.5)  # Reddish overdrive
 const FLASH_TINT_CRIT := Color(2.0, 0.4, 0.2)  # Hotter red
 const FLASH_DURATION := 0.18
 const LUNGE_DISTANCE := 16.0
-const LUNGE_DURATION := 0.10  # one direction; total = 2x
+const LUNGE_DURATION := 0.07  # v0.9.439: 0.10 → 0.07. One direction; total = 2x.
 
 # Audit #1 Slice 6a — combat hand row. Card cells in a horizontal strip
 # plus a small "Deck N · Discard M" indicator on the right. Cells are
@@ -283,6 +283,19 @@ func _ready() -> void:
 	_load_mono_font()
 	_build_layout()
 	visible = false
+
+
+func _notification(what: int) -> void:
+	# v0.9.439 — keep the Review FX button anchored to the top-right on resize
+	# and hide it when the combat panel becomes invisible.
+	match what:
+		NOTIFICATION_RESIZED:
+			if _review_button and is_instance_valid(_review_button) and _review_button.visible:
+				_position_review_button()
+		NOTIFICATION_VISIBILITY_CHANGED:
+			if not visible:
+				if _review_button and is_instance_valid(_review_button):
+					_review_button.visible = false
 
 
 func _load_mono_font() -> void:
@@ -390,6 +403,24 @@ func _build_layout() -> void:
 	_build_picker_overlay()
 	_build_victory_card_overlay()
 	_build_death_card_overlay()
+
+	# v0.9.439 — Review FX button. Sits at the top-right of the combat panel
+	# (sibling of _root_panel) so it's visible when the overlay is hidden —
+	# i.e., during hand selection. Pressing it re-enters the action-phase
+	# visuals so the player can re-read the per-actor strips (which become
+	# mouse-scrollable in review mode).
+	_review_button = Button.new()
+	_review_button.text = "↺ Review FX"
+	_review_button.tooltip_text = "Re-open the FX scene to re-read this fight's combat log"
+	_review_button.add_theme_font_size_override("font_size", 12)
+	_review_button.custom_minimum_size = Vector2(102, 26)
+	_review_button.focus_mode = Control.FOCUS_NONE
+	_review_button.z_index = 50
+	_review_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_review_button.visible = false
+	_review_button.pressed.connect(_on_review_button_pressed)
+	add_child(_review_button)
+	call_deferred("_position_review_button")
 
 
 func _build_scene_section_standard() -> Control:
@@ -524,6 +555,10 @@ func start_action_phase() -> void:
 	if _action_phase_active:
 		return
 	_action_phase_active = true
+	# v0.9.439 — hide Review FX button while overlay is showing (pause button on
+	# the overlay handles input there).
+	if _review_button and is_instance_valid(_review_button):
+		_review_button.visible = false
 	_ensure_battlefield_overlay()
 	_populate_battlefield_overlay()
 	# v0.9.412 — collapse non-essential strips so the overlay has more room.
@@ -540,20 +575,20 @@ func start_action_phase() -> void:
 		_status_strip.visible = false
 	_kill_action_phase_tween()
 	_action_phase_tween = create_tween().set_parallel(true)
-	# Fade the whole party row down + out.
+	# Fade the whole party row down + out. v0.9.439: 0.20 → 0.12.
 	if _player_col and is_instance_valid(_player_col):
-		_action_phase_tween.tween_property(_player_col, "modulate:a", 0.0, 0.20).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 0.0, 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	# Reposition overlay after the strips collapse so the new available
 	# space is accounted for.
 	call_deferred("_position_battlefield_overlay")
 	# Reveal the battlefield overlay: starts above its rest position and
-	# slides down into place with a fade-in.
+	# slides down into place with a fade-in. v0.9.439: 0.25/0.28 → 0.15/0.18.
 	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
 		_battlefield_overlay.visible = true
 		_battlefield_overlay.modulate.a = 0.0
 		_battlefield_overlay.position.y = _battlefield_overlay_rest_y - 40.0
-		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 1.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func end_action_phase() -> void:
@@ -566,6 +601,10 @@ func end_action_phase() -> void:
 	if not _action_phase_active:
 		return
 	_action_phase_active = false
+	# v0.9.439 — overlay is fading out; show Review FX button so the player can
+	# re-enter at will. Visibility helper also gates on whether any log content
+	# exists, so the button stays hidden on the very first FX scene.
+	call_deferred("_update_review_button_visibility")
 	# Restore the strips that were hidden in start_action_phase.
 	if _totals_strip_frame and is_instance_valid(_totals_strip_frame):
 		_totals_strip_frame.visible = true
@@ -577,11 +616,12 @@ func end_action_phase() -> void:
 		_status_strip.visible = true
 	_kill_action_phase_tween()
 	_action_phase_tween = create_tween().set_parallel(true)
+	# v0.9.439: 0.25/0.22 → 0.15/0.13. Faster transition back to action UI.
 	if _player_col and is_instance_valid(_player_col):
-		_action_phase_tween.tween_property(_player_col, "modulate:a", 1.0, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_player_col, "modulate:a", 1.0, 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
-		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 0.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y - 40.0, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_battlefield_overlay, "modulate:a", 0.0, 0.13).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_action_phase_tween.tween_property(_battlefield_overlay, "position:y", _battlefield_overlay_rest_y - 40.0, 0.13).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		# Hide after the tween completes so it doesn't block input or paint.
 		_action_phase_tween.chain().tween_callback(func():
 			if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
@@ -613,11 +653,16 @@ var _overlay_companion_block_baseline: Vector2 = Vector2.ZERO
 # regions inside the overlay so each actor's actions appear over their own
 # zone. Single combat log (_log_label) still receives everything and is the
 # canonical record for non-overlay layouts / [L] legacy view.
-const OVERLAY_LOG_LINE_LIMIT := 5
+const OVERLAY_LOG_LINE_LIMIT := 30  # v0.9.439: 5 → 30. Strips are scrollable during Review FX.
 # v0.9.418 — pause button in the top-right corner of the FX overlay so the
 # player can freeze the message-drain pacing and read what just happened.
 # Connected to client.toggle_combat_pause() via client_ref.
 var _pause_button: Button = null
+# v0.9.439 — Review FX. When in hand-selection (overlay hidden), this button
+# (top-right of the combat panel root) lets the player re-enter the FX scene
+# with the latest round's per-actor strips scrollable for re-reading.
+var _review_button: Button = null
+var _in_review_phase: bool = false
 var _overlay_player_log: RichTextLabel = null
 var _overlay_monster_log: RichTextLabel = null
 var _overlay_companion_log: RichTextLabel = null
@@ -685,9 +730,121 @@ func _ensure_battlefield_overlay() -> void:
 func _on_pause_button_pressed() -> void:
 	"""v0.9.418 — forward to client.toggle_combat_pause(). Client owns the
 	paused-state flag because the combat message queue + drain timer live
-	there. Panel just renders the button and updates its label."""
+	there. Panel just renders the button and updates its label.
+	v0.9.439 — when in Review FX, this button doubles as 'Back to Hand'."""
+	if _in_review_phase:
+		end_review_phase()
+		return
 	if client_ref != null and client_ref.has_method("toggle_combat_pause"):
 		client_ref.toggle_combat_pause()
+
+
+func _on_review_button_pressed() -> void:
+	"""v0.9.439 — re-enter FX overlay so the player can re-read this fight's
+	per-actor strips. Strips become mouse-scrollable in review mode."""
+	start_review_phase()
+
+
+func start_review_phase() -> void:
+	"""v0.9.439 — re-show the FX scene from the action-selection view. Re-uses
+	start_action_phase's visual transition. Strips switch to mouse-scrollable.
+	The pause button doubles as 'Back to Hand' until end_review_phase fires."""
+	if _action_phase_active:
+		# Already on the FX scene from a real action phase — nothing to do.
+		return
+	if combat_layout == LAYOUT_STANDARD:
+		# Standard layout has no overlay to review.
+		return
+	_in_review_phase = true
+	# Show the back button instead of pause/resume, since there's no queue to
+	# pause during review.
+	_set_back_button_label()
+	# Make per-actor strips mouse-scrollable. Default was MOUSE_FILTER_IGNORE
+	# so events passed through to the parent; STOP captures wheel + scrollbar.
+	_set_overlay_strips_scrollable(true)
+	start_action_phase()
+	# Hide the review-launch button while in review.
+	if _review_button and is_instance_valid(_review_button):
+		_review_button.visible = false
+
+
+func end_review_phase() -> void:
+	"""v0.9.439 — exit Review FX. Restores the hand-selection view."""
+	if not _in_review_phase:
+		return
+	_in_review_phase = false
+	# Restore strip mouse_filter so future FX firing through them isn't
+	# blocked by the scrollable strip swallowing events.
+	_set_overlay_strips_scrollable(false)
+	# Restore pause button label so the next real action phase shows ⏸ PAUSE.
+	set_pause_button_label(false)
+	end_action_phase()
+	# Show the review button again so the player can re-enter at will.
+	_update_review_button_visibility()
+
+
+func _set_overlay_strips_scrollable(enabled: bool) -> void:
+	"""v0.9.439 — toggle the per-actor strip mouse_filter. Strips are
+	IGNORE by default (events pass through) so they don't eat lunge clicks
+	or popup interactions. In review mode they're STOP so the player can
+	scroll the wheel / drag the scrollbar to re-read older lines."""
+	var filter := Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+	if _overlay_player_log and is_instance_valid(_overlay_player_log):
+		_overlay_player_log.mouse_filter = filter
+		_overlay_player_log.scroll_following = not enabled  # release follow so user can scroll up
+	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
+		_overlay_monster_log.mouse_filter = filter
+		_overlay_monster_log.scroll_following = not enabled
+	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
+		_overlay_companion_log.mouse_filter = filter
+		_overlay_companion_log.scroll_following = not enabled
+
+
+func _set_back_button_label() -> void:
+	"""v0.9.439 — show 'Back to Hand' on the pause button while in review."""
+	if _pause_button == null or not is_instance_valid(_pause_button):
+		return
+	_pause_button.text = "← Back"
+	_pause_button.tooltip_text = "Exit Review FX and return to action selection"
+
+
+func _position_review_button() -> void:
+	"""v0.9.439 — anchor Review FX button to the top-right of the combat panel.
+	Mirrors the overlay pause button position so they swap cleanly."""
+	if _review_button == null or not is_instance_valid(_review_button):
+		return
+	var panel_w: float = size.x
+	var btn_w: float = _review_button.custom_minimum_size.x
+	var btn_h: float = _review_button.custom_minimum_size.y
+	_review_button.size = Vector2(btn_w, btn_h)
+	_review_button.position = Vector2(maxf(0.0, panel_w - btn_w - 8.0), 6.0)
+
+
+func _update_review_button_visibility() -> void:
+	"""v0.9.439 — show the Review FX button only when:
+	  • The combat panel is visible
+	  • We're NOT currently in an action phase (FX scene already up)
+	  • We're NOT in review (the pause button doubles as Back)
+	  • Combat layout supports the overlay (not LAYOUT_STANDARD)
+	  • There's actually log content to review
+	"""
+	if _review_button == null or not is_instance_valid(_review_button):
+		return
+	if combat_layout == LAYOUT_STANDARD:
+		_review_button.visible = false
+		return
+	if _action_phase_active or _in_review_phase:
+		_review_button.visible = false
+		return
+	if not visible:
+		_review_button.visible = false
+		return
+	var has_log := _overlay_player_log_lines.size() > 0 \
+		or _overlay_monster_log_lines.size() > 0 \
+		or _overlay_companion_log_lines.size() > 0
+	_review_button.visible = has_log
+	if _review_button.visible:
+		_position_review_button()
 
 
 func set_pause_button_label(paused: bool) -> void:
@@ -2594,6 +2751,11 @@ func populate(payload: Dictionary) -> void:
 	# v0.9.415 — clear per-actor overlay logs so previous fight's lines don't
 	# bleed into the new one.
 	clear_overlay_logs()
+	# v0.9.439 — reset Review FX state for the new fight. No history yet, so
+	# button stays hidden until the first round fires.
+	_in_review_phase = false
+	if _review_button and is_instance_valid(_review_button):
+		_review_button.visible = false
 	if _lufia_player_stats and is_instance_valid(_lufia_player_stats):
 		_lufia_player_stats.modulate.a = 1.0
 	if _lufia_companion_stats and is_instance_valid(_lufia_companion_stats):
@@ -2727,6 +2889,9 @@ func _route_to_overlay_log(bbcode_line: String, actor: String) -> void:
 			_overlay_player_log_lines = target_lines
 	if target_label and is_instance_valid(target_label):
 		target_label.text = "\n".join(target_lines)
+	# v0.9.439 — log now has content; Review FX button can show on the next
+	# transition out of action phase.
+	_update_review_button_visibility()
 
 
 func _classify_overlay_actor(raw: String) -> String:
@@ -3450,8 +3615,9 @@ func _spawn_miss_label(anchor_global: Vector2, color: Color = Color("#FFD93D")) 
 	label.scale = Vector2(0.3, 0.3)
 	label.pivot_offset = label.size * 0.5
 	# v0.9.417 — bold scale-pop + linger + fade for MISS popups.
-	var miss_linger := 0.85
-	var miss_fade := 0.35
+	# v0.9.439: 0.85/0.35 → 0.55/0.25.
+	var miss_linger := 0.55
+	var miss_fade := 0.25
 	var t := create_tween().set_parallel(true)
 	t.tween_property(label, "scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	t.tween_property(label, "scale", Vector2(1.0, 1.0), 0.10).set_delay(0.12)
@@ -3695,10 +3861,11 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	breathe.tween_property(label, "scale", rest_scale, 0.18).set_trans(Tween.TRANS_SINE)
 
 	# Linger in place, then fade with a subtle scale shrink (no upward drift).
-	# v0.9.411 — reverted to 1.0s linger + 0.35s fade. The right fix is to
-	# pause LONGER between actor attacks, not shorten popup readability.
-	var linger_time := 1.0
-	var fade_time := 0.35
+	# v0.9.439: 1.0/0.35 → 0.65/0.25. Inter-attack delay also dropped to 0.45,
+	# so the popup fades just before the next attack lands. Review FX is the
+	# escape hatch if a player misses anything.
+	var linger_time := 0.65
+	var fade_time := 0.25
 	t.tween_property(label, "modulate:a", 0.0, fade_time).set_delay(linger_time)
 	t.tween_property(label, "scale", rest_scale * 0.85, fade_time).set_delay(linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	t.tween_callback(label.queue_free).set_delay(linger_time + fade_time)
