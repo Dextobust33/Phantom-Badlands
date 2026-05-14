@@ -1262,6 +1262,9 @@ var stones_panel = null
 
 const ScratchOffPanelScript = preload("res://client/scratch_off_panel.gd")
 var scratch_off_panel = null
+# Combat scratch-off (user-requested 2026-05-14)
+const CombatLootPanelScript = preload("res://client/combat_loot_panel.gd")
+var combat_loot_panel = null
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 var numpad_help_panel = null
@@ -1947,6 +1950,15 @@ func _ready():
 	bestiary_panel = BestiaryPanelScript.new()
 	add_child(bestiary_panel)
 	bestiary_panel.close_requested.connect(_on_bestiary_panel_close)
+
+	# Combat scratch-off panel (user-requested 2026-05-14). Lives at the
+	# top-level scene so it can overlay the victory card cleanly. Hidden by
+	# default — opens when a combat_end message arrives with a loot_bag.
+	combat_loot_panel = CombatLootPanelScript.new()
+	add_child(combat_loot_panel)
+	combat_loot_panel.slot_clicked.connect(_on_combat_loot_slot_clicked)
+	combat_loot_panel.done_pressed.connect(_on_combat_loot_done_pressed)
+	combat_loot_panel.closed.connect(_on_combat_loot_closed)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -19446,6 +19458,15 @@ func handle_server_message(message: Dictionary):
 							_pending_victory_card_payload = victory_payload
 						else:
 							combat_scene_panel.show_victory_card(victory_payload)
+
+						# Combat scratch-off (user-requested 2026-05-14) — when
+						# the server attaches a loot_bag, open the reveal panel
+						# over the victory card. The victory card still shows
+						# (XP / level-up framing); the loot section is replaced
+						# by the interactive grid.
+						var _loot_bag = message.get("loot_bag", {})
+						if _loot_bag is Dictionary and not _loot_bag.is_empty() and combat_loot_panel:
+							combat_loot_panel.open_bag(_loot_bag)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -19669,6 +19690,14 @@ func handle_server_message(message: Dictionary):
 		# Audit #12 UI remediation — post status panel data feed
 		"post_status_data":
 			_handle_post_status_data(message)
+
+		# Combat scratch-off (user-requested 2026-05-14)
+		"combat_loot_reveal_result":
+			_handle_combat_loot_reveal_result(message)
+		"combat_loot_done_result":
+			_handle_combat_loot_done_result(message)
+		"combat_loot_error":
+			display_game("[color=#FF6644]%s[/color]" % String(message.get("reason", "Loot error.")))
 
 		# Audit #14 Slice 1 — clan panel feeds
 		"clan_info_data":
@@ -23869,8 +23898,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.434 — Combat scratch-off (user-requested 2026-05-14).
+	display_game("[color=#00FF00]v0.9.434[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat loot: scratch-off reveal grid[/color]")
+	display_game("  • [b]Every winning combat now opens a 16-card reveal grid instead of dumping loot directly into your inventory.[/b] Click cards to reveal what's underneath; click Done early or run out of reveals and the remaining cards cascade-flip to show what you missed (those drops are NOT awarded). Reveals are tier-scaled: T1-2 monsters give 1, T3-5 give 2, T6+ give 3. Flocks add +1 reveal per kill beyond the first — a 5-monster T3 flock gives 6 reveals on the aggregated panel at the end. Every slot has SOMETHING (drops to current rates + filler of small Valor / Salvage Essence / T1 materials / Monster Parts) so every click pays off.")
+	display_game("")
+
 	# v0.9.433 — Audit #14 Slice 4: Clan ranks/officers.
-	display_game("[color=#00FF00]v0.9.433[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.433[/color]")
 	display_game("  [color=#FFD700]Clans: new Officer rank — non-leaders can finally help run the clan[/color]")
 	display_game("  • [b]Leaders can now promote any member to Officer (and demote them back).[/b] Officers can invite new players and kick regular members. Leaders retain full power — they can kick anyone (including officers) and they're the only role allowed to promote/demote. The clan panel now shows a colored rank badge ([color=#FFD700]LEADER[/color] / [color=#66DDFF]OFFICER[/color] / [color=#888888]MEMBER[/color]) on every roster row, plus the rank-action buttons your viewer rank is allowed to use. Unblocks the 'leader has to be online for the clan to grow' problem.")
 	display_game("")
@@ -23893,14 +23928,6 @@ func display_changelog():
 	display_game("  • [b]Hovering a companion card now shows a tooltip with rarity, level/tier/sub-tier, XP bar, damage estimate, aggro role, top stat bonuses, all three abilities (Passive / Active / Threshold with unlock requirements + descriptions), and the variant-recolored ASCII art[/b] — closes the audit gap noted by the user: 'I'd like it to be like the Inventory system where you can hover it and see the companion ASCII art and Inspect info etc.' Left-click still activates and right-click still opens the Activate / Inspect / Release menu.")
 	display_game("  [color=#FFD700]Eggs panel: hover any egg for hatch preview[/color]")
 	display_game("  • [b]Hovering an egg card now shows what it hatches into[/b] — Passive / Active / Threshold ability previews plus a progress bar restate, frozen flag, and rarity tag. Decide at a glance whether the egg is worth keeping, freezing, or trading.")
-	display_game("")
-
-	# v0.9.429 — Combat picker tooltips + log strip removed.
-	display_game("[color=#00FFFF]v0.9.429[/color]")
-	display_game("  [color=#FFD700]Combat picker: hover tooltips on every item[/color]")
-	display_game("  • [b]Hovering an item in the in-combat Use Item picker now shows the same effect description the regular inventory inspect shows[/b] — e.g., 'Restores 250 HP + 25% of max HP', 'Companion draws +30% aggro for next 3 monster turns.' Tooltip is built from _get_item_effect_description so any future inventory description tweaks land in the picker for free.")
-	display_game("  [color=#FFD700]Combat scene: legacy log strip removed from layout[/color]")
-	display_game("  • [b]The small combat log strip at the bottom of the combat scene is no longer attached to the layout[/b] — it was squeezed to ~0px in the Lufia layout and the per-actor overlay strips that land during the action phase (v0.9.415) already cover what the central log used to. Death card was reparented to the panel root with the same 24px inset as the picker / victory card. append_log calls still compile (the log controls remain allocated, just orphaned) so testfx fixtures and any third-party hook keep working without changes.")
 	display_game("")
 
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
@@ -27189,6 +27216,50 @@ func _on_clan_panel_demote(target_account_id: String) -> void:
 func _on_clan_panel_kick(target_account_id: String) -> void:
 	"""Audit #14 Slice 4 — leader/officer kicks a member from the clan."""
 	send_to_server({"type": "clan_kick", "target_account_id": target_account_id})
+
+func _on_combat_loot_slot_clicked(slot_index: int) -> void:
+	"""Audit user-request 2026-05-14 — player clicked an unrevealed slot in
+	the combat scratch-off grid. Server validates + awards + pushes back."""
+	send_to_server({"type": "combat_loot_reveal", "slot_index": slot_index})
+
+func _on_combat_loot_done_pressed() -> void:
+	"""Player pressed Done — server cascade-flips the rest (no awards)."""
+	send_to_server({"type": "combat_loot_done"})
+
+func _on_combat_loot_closed() -> void:
+	"""Combat loot panel finished its close animation. No-op for now — the
+	regular victory-card continue flow handles advancing past the victory
+	scene."""
+	pass
+
+func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
+	"""Server confirmed a reveal — update the panel + sync character state."""
+	if message.has("character"):
+		_set_character_data(message.character)
+		update_player_level()
+		update_player_hp_bar()
+		update_resource_bar()
+		update_player_xp_bar()
+		update_currency_display()
+	if combat_loot_panel:
+		combat_loot_panel.reveal_slot(
+			int(message.get("slot_index", -1)),
+			message.get("reveal", {}),
+			int(message.get("reveals_used", 0)),
+			int(message.get("reveal_budget", 0))
+		)
+
+func _handle_combat_loot_done_result(message: Dictionary) -> void:
+	"""Server cascade-flipped the rest — render the missed cards + close."""
+	if message.has("character"):
+		_set_character_data(message.character)
+		update_player_level()
+		update_player_hp_bar()
+		update_resource_bar()
+		update_player_xp_bar()
+		update_currency_display()
+	if combat_loot_panel:
+		combat_loot_panel.finish(message.get("final_bag", {}))
 
 func _handle_clan_info_data(message: Dictionary) -> void:
 	"""Push server clan state into the panel if it's open."""
