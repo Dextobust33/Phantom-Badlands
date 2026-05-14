@@ -23929,8 +23929,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.441 — Audit #4 Slice 3: small overworld egg chance.
+	display_game("[color=#00FF00]v0.9.441[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companion eggs can drop from overworld T1-T2 monster kills[/color]")
+	display_game("  • [b]T1 monsters: 3% egg drop chance.[/b] T2 monsters: 1% egg drop chance. T3+ still dungeon-only — dungeons remain the canonical path to mid-tier companions, but new players who haven't reached a dungeon yet can now find low-tier eggs through normal exploration. The egg reveals on the post-combat scratch-off panel like any other drop. Of-the-same-monster-type the player just killed; variant rolled at egg creation per existing rules. Closes the longstanding 'eggs only from dungeons' gate noted in the audit (#4 Slice 3).")
+	display_game("")
+
 	# v0.9.439/440 — Combat pacing trim + Review FX button (renamed Review Damage v0.9.440).
-	display_game("[color=#00FF00]v0.9.439/440[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.439/440[/color]")
 	display_game("  [color=#FFD700]Combat: faster pacing across the board + new Review Damage button[/color]")
 	display_game("  • [b]~25% pacing trim on combat transitions and animations.[/b] Action→FX lockout 0.30→0.15s. Inter-attack 0.65→0.45s. Post-final-attack 0.40→0.25s. Separator 0.45→0.25s. Ambient 0.12→0.06s. End-of-action grace 0.60→0.30s. Action-phase fade-in tweens 0.20/0.25/0.28→0.12/0.15/0.18s. Fade-out 0.25/0.22→0.15/0.13s. Lunge 0.10→0.07s. Damage popup linger 1.0/0.35→0.65/0.25s. Miss popup 0.85/0.35→0.55/0.25s. The whole loop snaps closed faster — less waiting between rounds.")
 	display_game("  • [b]New 'Review Damage' button on the combat panel.[/b] Top-right corner during action selection (larger / bumped font in v0.9.440). Press it to re-open the FX scene and re-read the latest fight's per-actor strips. Strips become mouse-scrollable in review mode — newest entry is auto-pinned to the bottom but the player is free to scroll up to read older lines, with the position preserved until they choose to fire a new ability. History limit bumped 5→30 lines so you can read deep into the fight. Press 'Back' (in the same corner during review) to return to hand selection.")
