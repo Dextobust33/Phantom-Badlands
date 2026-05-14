@@ -1265,6 +1265,12 @@ var scratch_off_panel = null
 # Combat scratch-off (user-requested 2026-05-14)
 const CombatLootPanelScript = preload("res://client/combat_loot_panel.gd")
 var combat_loot_panel = null
+# Cached victory-card payload so we can re-render the loot list after each
+# reveal (and especially after Done, when the panel closes and the player
+# wants to see what they got). Cleared when the next combat starts.
+var _combat_loot_victory_payload: Dictionary = {}
+var _combat_loot_revealed_lines: Array = []
+var _combat_loot_gear_drops: Array = []
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 var numpad_help_panel = null
@@ -1951,11 +1957,12 @@ func _ready():
 	add_child(bestiary_panel)
 	bestiary_panel.close_requested.connect(_on_bestiary_panel_close)
 
-	# Combat scratch-off panel (user-requested 2026-05-14). Lives at the
-	# top-level scene so it can overlay the victory card cleanly. Hidden by
-	# default — opens when a combat_end message arrives with a loot_bag.
+	# Combat scratch-off panel (user-requested 2026-05-14). Parented to
+	# game_output_container so the centering math matches other gathering
+	# minigames; the root client layout is a VBox so add_child(self) would
+	# anchor the panel top-left instead of centering it on the play area.
 	combat_loot_panel = CombatLootPanelScript.new()
-	add_child(combat_loot_panel)
+	game_output_container.add_child(combat_loot_panel)
 	combat_loot_panel.slot_clicked.connect(_on_combat_loot_slot_clicked)
 	combat_loot_panel.done_pressed.connect(_on_combat_loot_done_pressed)
 	combat_loot_panel.closed.connect(_on_combat_loot_closed)
@@ -19463,9 +19470,15 @@ func handle_server_message(message: Dictionary):
 						# the server attaches a loot_bag, open the reveal panel
 						# over the victory card. The victory card still shows
 						# (XP / level-up framing); the loot section is replaced
-						# by the interactive grid.
+						# by the interactive grid. The cached payload + revealed
+						# arrays let us re-render the victory card's loot list
+						# as reveals come in (so when the panel closes the player
+						# sees exactly what they got).
 						var _loot_bag = message.get("loot_bag", {})
 						if _loot_bag is Dictionary and not _loot_bag.is_empty() and combat_loot_panel:
+							_combat_loot_victory_payload = victory_payload.duplicate(true)
+							_combat_loot_revealed_lines = []
+							_combat_loot_gear_drops = []
 							combat_loot_panel.open_bag(_loot_bag)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
@@ -23898,8 +23911,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.435 — Combat scratch-off fixes.
+	display_game("[color=#00FF00]v0.9.435[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat scratch-off: 3 fixes[/color]")
+	display_game("  • [b]Flock reveal count off by one[/b] — fixed. flock_counts increments only for chain monsters; the final kill that triggers the panel was missing from the total. A 4-wolf flock now correctly gives 4 reveals (was 3).")
+	display_game("  • [b]Panel centering[/b] — fixed. Loot Reveal now centers in the play area like the other gathering minigames. Was anchored top-left because the panel was parented to the root VBox instead of game_output_container.")
+	display_game("  • [b]Victory card lists what you got[/b] — each card you reveal now adds its drop to the victory card's loot list (and equipment fires the rarity banner). After you press Done or run out of reveals, the panel closes and the card shows the full list of what you collected from the bag.")
+	display_game("")
+
 	# v0.9.434 — Combat scratch-off (user-requested 2026-05-14).
-	display_game("[color=#00FF00]v0.9.434[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.434[/color]")
 	display_game("  [color=#FFD700]Combat loot: scratch-off reveal grid[/color]")
 	display_game("  • [b]Every winning combat now opens a 16-card reveal grid instead of dumping loot directly into your inventory.[/b] Click cards to reveal what's underneath; click Done early or run out of reveals and the remaining cards cascade-flip to show what you missed (those drops are NOT awarded). Reveals are tier-scaled: T1-2 monsters give 1, T3-5 give 2, T6+ give 3. Flocks add +1 reveal per kill beyond the first — a 5-monster T3 flock gives 6 reveals on the aggregated panel at the end. Every slot has SOMETHING (drops to current rates + filler of small Valor / Salvage Essence / T1 materials / Monster Parts) so every click pays off.")
 	display_game("")
@@ -23920,14 +23941,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.431[/color]")
 	display_game("  [color=#FFD700]Companion/egg hover tooltip: ASCII art rows no longer wrap[/color]")
 	display_game("  • [b]The tooltip RichTextLabel had autowrap on by default, so wide ASCII art rows wrapped to the 320-px min width and destroyed column alignment.[/b] Turned autowrap off so the tooltip width grows to fit the widest line; non-art lines are short and still fit comfortably.")
-	display_game("")
-
-	# v0.9.430 — Audit #4 Slice 2: hover tooltips on companion + egg cards.
-	display_game("[color=#00FFFF]v0.9.430[/color]")
-	display_game("  [color=#FFD700]Companions panel: hover any card to see the full preview[/color]")
-	display_game("  • [b]Hovering a companion card now shows a tooltip with rarity, level/tier/sub-tier, XP bar, damage estimate, aggro role, top stat bonuses, all three abilities (Passive / Active / Threshold with unlock requirements + descriptions), and the variant-recolored ASCII art[/b] — closes the audit gap noted by the user: 'I'd like it to be like the Inventory system where you can hover it and see the companion ASCII art and Inspect info etc.' Left-click still activates and right-click still opens the Activate / Inspect / Release menu.")
-	display_game("  [color=#FFD700]Eggs panel: hover any egg for hatch preview[/color]")
-	display_game("  • [b]Hovering an egg card now shows what it hatches into[/b] — Passive / Active / Threshold ability previews plus a progress bar restate, frozen flag, and rarity tag. Decide at a glance whether the egg is worth keeping, freezing, or trading.")
 	display_game("")
 
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
@@ -27233,7 +27246,9 @@ func _on_combat_loot_closed() -> void:
 	pass
 
 func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
-	"""Server confirmed a reveal — update the panel + sync character state."""
+	"""Server confirmed a reveal — update the panel, sync character, and
+	accumulate the revealed item into the cached victory-card payload so the
+	loot list re-renders when the scratch-off panel closes."""
 	if message.has("character"):
 		_set_character_data(message.character)
 		update_player_level()
@@ -27241,10 +27256,12 @@ func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
 		update_resource_bar()
 		update_player_xp_bar()
 		update_currency_display()
+	var reveal: Dictionary = message.get("reveal", {})
+	_combat_loot_accumulate_reveal(reveal)
 	if combat_loot_panel:
 		combat_loot_panel.reveal_slot(
 			int(message.get("slot_index", -1)),
-			message.get("reveal", {}),
+			reveal,
 			int(message.get("reveals_used", 0)),
 			int(message.get("reveal_budget", 0))
 		)
@@ -27260,6 +27277,72 @@ func _handle_combat_loot_done_result(message: Dictionary) -> void:
 		update_currency_display()
 	if combat_loot_panel:
 		combat_loot_panel.finish(message.get("final_bag", {}))
+
+func _combat_loot_accumulate_reveal(reveal: Dictionary) -> void:
+	"""Append a display line (and a gear_drops entry for equipment) for a
+	freshly-revealed slot to the cached victory-card payload. Re-renders the
+	card so the loot list grows in real time behind the scratch-off panel."""
+	if reveal == null or reveal.is_empty():
+		return
+	if _combat_loot_victory_payload.is_empty():
+		return
+	var kind: String = String(reveal.get("kind", ""))
+	var name: String = String(reveal.get("name", ""))
+	var color: String = String(reveal.get("color", "#FFFFFF"))
+	var symbol: String = String(reveal.get("symbol", ""))
+	var rarity: String = String(reveal.get("rarity", "common"))
+	# Display line for the loot list. Symbol prefix on equipment matches the
+	# legacy give-loot loop output so the card looks the same as before.
+	var line: String
+	match kind:
+		"item":
+			line = "[color=%s]%s %s[/color]" % [color, symbol, name]
+			# Equipment also gets a gear_drops entry so the rarity-colored
+			# banner above the loot list lights up like it used to.
+			_combat_loot_gear_drops.append({
+				"name": name,
+				"rarity": rarity,
+				"symbol": symbol,
+				"color": color,
+				"level": int(reveal.get("level", 1)),
+				"level_diff": int(reveal.get("level_diff", 0)),
+			})
+		"egg":
+			line = "[color=%s]✦ COMPANION EGG: %s[/color]" % [color, name]
+		"egg_full":
+			line = "[color=%s]★ %s ★[/color]" % [color, name]
+		"material":
+			line = "[color=%s]◆ MATERIAL: %s[/color]" % [color, name]
+		"monster_part":
+			line = "[color=%s]◆ PART: %s[/color]" % [color, name]
+		"filler_valor":
+			line = "[color=%s]🪙 %s[/color]" % [color, name]
+		"filler_essence":
+			line = "[color=%s]✦ %s[/color]" % [color, name]
+		"filler_material":
+			line = "[color=%s]◆ %s[/color]" % [color, name]
+		"filler_part":
+			line = "[color=%s]◆ %s[/color]" % [color, name]
+		"auto_salvaged", "inv_full_salvaged":
+			line = "[color=%s]%s[/color]" % [color, name]
+		"inv_full_lost":
+			line = "[color=%s]%s[/color]" % [color, name]
+		_:
+			line = "[color=%s]%s[/color]" % [color, name]
+	_combat_loot_revealed_lines.append(line)
+	# Re-render the victory card so the loot list grows in real time. Cheap —
+	# show_victory_card just rebuilds the inner vboxes.
+	_combat_loot_refresh_victory_card()
+
+func _combat_loot_refresh_victory_card() -> void:
+	if _combat_loot_victory_payload.is_empty():
+		return
+	if combat_scene_panel == null or not combat_scene_panel.has_method("show_victory_card"):
+		return
+	var payload: Dictionary = _combat_loot_victory_payload.duplicate(true)
+	payload["loot"] = _combat_loot_revealed_lines.duplicate()
+	payload["gear_drops"] = _combat_loot_gear_drops.duplicate()
+	combat_scene_panel.show_victory_card(payload)
 
 func _handle_clan_info_data(message: Dictionary) -> void:
 	"""Push server clan state into the panel if it's open."""

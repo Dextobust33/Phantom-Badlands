@@ -4014,11 +4014,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 
 				# Capture the flock kill count BEFORE we erase flock_counts —
 				# the combat scratch-off uses this to award +1 reveal per extra
-				# kill in the flock. flock_counts is the number of monsters in
-				# the current chain (1 = solo fight, N = N-monster flock).
+				# kill in the flock. flock_counts tracks ONLY chain monsters
+				# (each increment fires inside the flock-triggered branch); the
+				# final kill that lands in THIS branch is not counted yet, so
+				# add 1 when an entry exists. Solo fight = flock_counts unset
+				# = 1 kill. 4-wolf chain = 3 (chain) + 1 (final) = 4 kills.
 				var _final_flock_kills: int = 1
 				if flock_counts.has(peer_id):
-					_final_flock_kills = max(1, int(flock_counts[peer_id]))
+					_final_flock_kills = max(1, int(flock_counts[peer_id]) + 1)
 
 				# Reset flock count
 				if flock_counts.has(peer_id):
