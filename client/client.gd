@@ -937,6 +937,11 @@ var hud_area_is_hotspot: bool = false
 var hud_area_is_safe: bool = true
 var hud_nearest_post: Dictionary = {}  # Nearest NPC post info for compass line
 var hud_post_threat: Dictionary = {"threatened": false}  # Slice 6 — dynamic post threat state
+# Audit #13 Slice 3 — Sanctuary Compass payload. Server-stamped per location
+# update. {level: 0..3, direction: "NE", glyph: "↗", distance?, name?,
+# all_visited?}. Rendered only when level >= 1 and a nearest unvisited post
+# exists. Tier 1 = glyph/direction only; Tier 2 = + distance; Tier 3 = + name.
+var hud_compass: Dictionary = {}
 # Region tier from nearest trading post (post-anchored world model — Slice 1)
 var hud_region_tier: int = 1
 var hud_region_tier_name: String = "Core"
@@ -18553,6 +18558,8 @@ func handle_server_message(message: Dictionary):
 			hud_nearest_post = message.get("nearest_post", {})
 			# Slice 6 — threat state of the nearest NPC post (dynamic post state)
 			hud_post_threat = message.get("nearest_post_threat", {"threatened": false})
+			# Audit #13 Slice 3 — Sanctuary Compass payload (direction to nearest unvisited post).
+			hud_compass = message.get("compass", {})
 			# Region tier from post-anchored world model (Slice 1 — visibility only)
 			hud_region_tier = int(message.get("region_tier", 1))
 			hud_region_tier_name = String(message.get("region_tier_name", "Core"))
@@ -23858,8 +23865,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.432 — Audit #13 Slice 3: Sanctuary Compass.
+	display_game("[color=#00FF00]v0.9.432[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sanctuary: new Compass upgrade — direction to nearest unvisited post[/color]")
+	display_game("  • [b]New Sanctuary upgrade (3 levels, 1000 / 4000 / 15000 BP) adds a HUD compass line above the map[/b] pointing toward the nearest NPC post your account hasn't yet visited. L1 shows direction (↑↓←→ and diagonals). L2 adds distance. L3 adds the post name. The ledger always records visits, so you can unlock the compass later and immediately use the full account history. Once every post on the map has been visited, the line reads 'All posts visited.' Available on the Sanctuary 'Base Upgrades' page.")
+	display_game("")
+
 	# v0.9.431 — hotfix: companion/egg tooltip ASCII art no longer wraps.
-	display_game("[color=#00FF00]v0.9.431[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.431[/color]")
 	display_game("  [color=#FFD700]Companion/egg hover tooltip: ASCII art rows no longer wrap[/color]")
 	display_game("  • [b]The tooltip RichTextLabel had autowrap on by default, so wide ASCII art rows wrapped to the 320-px min width and destroyed column alignment.[/b] Turned autowrap off so the tooltip width grows to fit the widest line; non-art lines are short and still fit comfortably.")
 	display_game("")
@@ -23884,14 +23897,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.428[/color]")
 	display_game("  [color=#FFD700]Combat: Use Item picker now shows items (not just header + buttons)[/color]")
 	display_game("  • [b]The in-combat Use Item picker now overlays the full combat scene[/b] with a 24px inset, instead of being parented to the small log strip at the bottom. In the Lufia layout the log strip was too short — the title and Prev/Next buttons fit (fixed height) but the items ScrollContainer ended up with ~0px of vertical room and the actual items were invisible. z_index=200 keeps the picker above the battlefield overlay (z=100) and victory/death cards (z=150).")
-	display_game("")
-
-	# v0.9.427 — Combat: Use Item visible on first turn.
-	display_game("[color=#00FFFF]v0.9.427[/color]")
-	display_game("  [color=#FFD700]Combat: Use Item now visible from the very first action[/color]")
-	display_game("  • [b]Pressing Use Item on the first turn of a new combat now actually shows your usable items.[/b] There was a one-frame race between in_combat going true (in _process_combat_start) and the combat scene panel's visibility sync — pressing Use Item in that window hit the panel.visible == false branch, rendered into game_output, and then game_output got hidden the next frame when the panel went visible. The picker overlay is now used regardless of panel.visible state; its own visibility flag carries through to the next frame.")
-	display_game("  [color=#FFD700]Server: map-render perf optimizations (no player-facing change)[/color]")
-	display_game("  • Two server-side optimizations to handle_move (the biggest stutter source from the v0.9.426 diag). Pre-fetched blocks_los for the vision bounding box (dropped LOS time from 66-140ms to ~10-30ms by replacing ~2640 per-Bresenham-point tile lookups with ~529 upfront fetches + dict reads). Also cached hotspot clusters per render (one scan instead of 121 hash checks × ~500 tiles).")
 	display_game("")
 
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
@@ -25353,9 +25358,42 @@ func update_coord_post_label() -> void:
 			var threat_color = String(hud_post_threat.get("color", "#FF8800"))
 			lines.append("[color=#FF6347]⚠ Threat:[/color] [color=%s]T%d %s[/color]" % [threat_color, threat_tier, threat_dungeon])
 
+	# Audit #13 Slice 3 — Sanctuary Compass line. Direction to nearest UNVISITED
+	# NPC post. Hidden when the upgrade is locked (level 0) or when every post on
+	# the map has been visited (all_visited flag from server).
+	var compass_line = _format_compass_line(hud_compass)
+	if compass_line != "":
+		lines.append(compass_line)
+
 	coord_post_label.clear()
 	coord_post_label.append_text("\n".join(lines))
 	coord_post_label.visible = true
+
+
+func _format_compass_line(compass: Dictionary) -> String:
+	"""Build the Sanctuary Compass HUD line from the server-stamped payload.
+	Empty string when the upgrade is locked, no unvisited posts remain, or the
+	payload is missing. Tier reveals more info: T1 glyph only, T2 + distance,
+	T3 + post name."""
+	if compass == null or compass.is_empty():
+		return ""
+	var level: int = int(compass.get("level", 0))
+	if level <= 0:
+		return ""
+	if bool(compass.get("all_visited", false)):
+		return "[color=#5F9EA0]Compass:[/color] [color=#00FF7F]All posts visited[/color]"
+	var direction: String = String(compass.get("direction", ""))
+	if direction == "":
+		return ""
+	var glyph: String = String(compass.get("glyph", direction))
+	var parts: Array = []
+	parts.append("[color=#FFD700]%s[/color]" % glyph)
+	parts.append("[color=#AAAAAA]%s[/color]" % direction)
+	if level >= 2 and compass.has("distance"):
+		parts.append("[color=#AAAAAA]~%d tiles[/color]" % int(compass.get("distance", 0)))
+	if level >= 3 and compass.has("name"):
+		parts.append("[color=#FF99FF]%s[/color]" % String(compass.get("name", "")))
+	return "[color=#5F9EA0]Compass:[/color] " + " ".join(parts)
 
 
 func update_region_label():
@@ -36380,6 +36418,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"post_slots": {"name": "Land Surveyor", "desc": "+1 max player post", "icon": "🏗️"},
 	"companion_sanctum": {"name": "Companion Sanctum", "desc": "+1 free Home Stone (Companion) at new character start", "icon": "🔮"},
 	"bestiary": {"name": "Bestiary", "desc": "Account-level monster kill ledger. L1: kills, L2: + level, L3: + dates.", "icon": "📖"},
+	"compass": {"name": "Sanctuary Compass", "desc": "HUD compass points to nearest unvisited NPC post. L1: direction, L2: + distance, L3: + post name.", "icon": "🧭"},
 	# Combat bonuses
 	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
 	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
@@ -37058,7 +37097,7 @@ func display_house_upgrades():
 	# Define upgrade pages
 	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "compass", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
@@ -37097,7 +37136,8 @@ func display_house_upgrades():
 		"wits_bonus": {"effect": 1, "max": 10, "costs": [1000, 2000, 4000, 7000, 12000, 18000, 26000, 36000, 45000, 50000]},
 		"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]},
 		"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]},
-		"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
+		"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]},
+		"compass": {"effect": 1, "max": 3, "costs": [1000, 4000, 15000]}
 	})
 
 	var current_page_upgrades = page_upgrades[house_upgrades_page]
@@ -37264,6 +37304,12 @@ func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 				2: return "L2: + highest level"
 				3: return "L3: + dates"
 				_: return "Locked"
+		"compass":
+			match effect_value:
+				1: return "L1: direction only"
+				2: return "L2: + distance"
+				3: return "L3: + post name"
+				_: return "Locked"
 		"kennel_capacity": return "%d slots" % _get_house_kennel_capacity()
 		"egg_slots": return "%d/%d slots (base 3 + %d)" % [3 + effect_value, 12, effect_value]
 		"flee_chance", "xp_bonus", "gathering_bonus", "hp_bonus", "resource_max", "resource_regen":
@@ -37288,7 +37334,7 @@ func _get_house_companion_capacity() -> int:
 func _purchase_house_upgrade(index: int):
 	"""Send request to purchase a house upgrade based on current page"""
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "compass", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]

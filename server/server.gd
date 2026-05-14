@@ -5075,6 +5075,14 @@ func send_location_update(peer_id: int):
 			if not own_post.is_empty():
 				var own_ts = _compute_post_threat_state(int(own_post.get("x", 0)), int(own_post.get("y", 0)))
 				current_post_threatened = bool(own_ts.get("threatened", false))
+				# Audit #13 Slice 3 — record this post visit on the account-level
+				# ledger. record_post_visit is a no-op on repeat visits so the
+				# per-tick cost is one dict lookup + early return.
+				if peers.has(peer_id):
+					var visit_account_id: String = str(peers[peer_id].get("account_id", ""))
+					var visit_post_name: String = str(own_post.get("name", ""))
+					if visit_account_id != "" and visit_post_name != "":
+						persistence.record_post_visit(visit_account_id, visit_post_name)
 
 	# Get complete map display (includes location info at top)
 	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles, threatened_post_centers, current_post_threatened)
@@ -5286,6 +5294,9 @@ func send_location_update(peer_id: int):
 		"region_outside_tier_name": String(wilderness_tier_info.get("tier_name", "Core")),
 		"region_outside_tier_color": String(wilderness_tier_info.get("tier_color", "#00FF00")),
 		"region_outside_level": outside_level,
+		# Audit #13 Slice 3 — Sanctuary Compass. {level, direction, glyph,
+		# distance?, name?, all_visited?}. Client hides when level == 0.
+		"compass": _compute_compass_payload(peer_id),
 	}
 	if in_player_post:
 		location_msg["in_own_enclosure"] = player_post_is_own
@@ -23111,6 +23122,76 @@ func _get_direction_text(from_x: int, from_y: int, to_x: int, to_y: int) -> Stri
 		direction = ns + ew
 
 	return "%d tiles %s" % [distance, direction]
+
+# Audit #13 Slice 3 — Sanctuary Compass.
+const _COMPASS_DIR_GLYPHS := {
+	"N": "↑", "S": "↓", "E": "→", "W": "←",
+	"NE": "↗", "NW": "↖", "SE": "↘", "SW": "↙",
+}
+
+func _compass_direction_label(dx: int, dy: int) -> String:
+	"""Returns a compact 1-2 letter compass label (N/S/E/W/NE/NW/SE/SW) for the
+	vector from origin to (dx, dy). Used by the unvisited-post compass HUD.
+	Positive dy = south (map convention); positive dx = east."""
+	if dx == 0 and dy == 0:
+		return ""
+	# Mostly-horizontal vs mostly-vertical vs diagonal — same thresholds as
+	# _get_direction_text so the compass agrees with prose direction text.
+	if abs(dy) < abs(dx) / 3:
+		return "E" if dx > 0 else "W"
+	if abs(dx) < abs(dy) / 3:
+		return "S" if dy > 0 else "N"
+	var ns := "S" if dy > 0 else "N"
+	var ew := "E" if dx > 0 else "W"
+	return ns + ew
+
+func _compute_compass_payload(peer_id: int) -> Dictionary:
+	"""Build the Audit #13 Slice 3 Sanctuary Compass payload for a peer.
+	Returns the upgrade level plus (when level >= 1) the direction to the
+	nearest UNVISITED NPC post. Tier 2 adds distance, tier 3 adds the post
+	name. Always includes 'level' so the client can decide whether to render."""
+	var payload: Dictionary = {"level": 0}
+	if not peers.has(peer_id) or not characters.has(peer_id) or chunk_manager == null:
+		return payload
+	var account_id: String = str(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return payload
+	var level: int = persistence.compass_level(account_id)
+	payload["level"] = level
+	if level <= 0:
+		return payload
+	var character = characters[peer_id]
+	var nearest_post: Dictionary = {}
+	var nearest_dist_sq: int = 0x7FFFFFFF
+	for post in chunk_manager.get_npc_posts():
+		var post_name: String = str(post.get("name", ""))
+		if post_name == "":
+			continue
+		if persistence.is_post_visited(account_id, post_name):
+			continue
+		var px: int = int(post.get("x", 0))
+		var py: int = int(post.get("y", 0))
+		var ddx: int = px - character.x
+		var ddy: int = py - character.y
+		var dist_sq: int = ddx * ddx + ddy * ddy
+		if dist_sq < nearest_dist_sq:
+			nearest_dist_sq = dist_sq
+			nearest_post = post
+	if nearest_post.is_empty():
+		payload["all_visited"] = true
+		return payload
+	var npx: int = int(nearest_post.get("x", 0))
+	var npy: int = int(nearest_post.get("y", 0))
+	var dx: int = npx - character.x
+	var dy: int = npy - character.y
+	var label: String = _compass_direction_label(dx, dy)
+	payload["direction"] = label
+	payload["glyph"] = str(_COMPASS_DIR_GLYPHS.get(label, "•"))
+	if level >= 2:
+		payload["distance"] = int(sqrt(float(dx * dx + dy * dy)))
+	if level >= 3:
+		payload["name"] = str(nearest_post.get("name", ""))
+	return payload
 
 func _record_market_sale(item_name: String, per_unit_price: int) -> void:
 	"""Audit #9 Slice 4 — record a sale for rolling-average lookup. Trims the
