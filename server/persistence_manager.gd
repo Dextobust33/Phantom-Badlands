@@ -74,7 +74,12 @@ const HOUSE_UPGRADES = {
 	#   L2: + distance in tiles
 	#   L3: + post name
 	# Visits are always recorded so unlocking later still uses the full history.
-	"compass": {"effect": 1, "max": 3, "costs": [1000, 4000, 15000]}
+	"compass": {"effect": 1, "max": 3, "costs": [1000, 4000, 15000]},
+	# Audit #13 Slice 4 — Region Atlas. Account-level region ledger.
+	# Level 1: count of regions visited; Level 2: + sorted list of region names;
+	# Level 3: + completion ratio (visited / total regions in the world).
+	# Always tracks (visits always recorded) but the UI is gated on upgrade level.
+	"region_atlas": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
 }
 
 # Kennel capacity by upgrade level: 0=30, 1=50, ... 9=500
@@ -1329,7 +1334,12 @@ func create_house(account_id: String) -> Dictionary:
 		# direction-finder ignores any post present in this dict. Each entry:
 		#   post_name → first_visited_at (unix ts). Keyed by post name because
 		# procedural NPC post identity is its name (npc_post_database.gd:235).
-		"visited_posts": {}
+		"visited_posts": {},
+
+		# Audit #13 Slice 4 (v0.9.444) — Region Atlas ledger. Always recorded;
+		# the atlas count/list is gated by the region_atlas house upgrade.
+		# Each entry: region_name → first_visited_at (unix ts).
+		"visited_regions": {}
 	}
 
 	houses_data.houses[account_id] = house
@@ -1456,6 +1466,51 @@ func get_visited_posts(account_id: String) -> Dictionary:
 	if house == null or not house.has("visited_posts"):
 		return {}
 	return house.visited_posts.duplicate(true)
+
+
+# Audit #13 Slice 4 (v0.9.444) — Region Atlas helpers. Mirror the Compass
+# pattern: always-track ledger + tier-gated UI.
+
+func region_atlas_level(account_id: String) -> int:
+	"""Return the region_atlas house-upgrade level (0 = locked / 1-3 = tiers
+	revealing progressively more atlas detail)."""
+	var house = get_house(account_id)
+	if house == null or not house.has("upgrades"):
+		return 0
+	return int(house.upgrades.get("region_atlas", 0))
+
+
+func record_region_visit(account_id: String, region_name: String) -> bool:
+	"""Mark a region as visited by this account. Returns true if this was
+	the first visit (new entry), false if already recorded. Always tracked
+	even when the upgrade is locked — unlocking later uses the full ledger."""
+	if account_id == "" or region_name == "":
+		return false
+	# Cheap canonical filter — when no NPC posts are reachable we hand back
+	# "Wilderness" from chunk_manager. That's a fallback, not a discoverable
+	# region; don't pollute the ledger with it.
+	if region_name == "Wilderness":
+		return false
+	var house = get_house(account_id)
+	if house == null:
+		return false
+	# Legacy houses created before Slice 4 ship may not have visited_regions.
+	if not house.has("visited_regions") or typeof(house.visited_regions) != TYPE_DICTIONARY:
+		house["visited_regions"] = {}
+	if house.visited_regions.has(region_name):
+		return false
+	house.visited_regions[region_name] = int(Time.get_unix_time_from_system())
+	save_house(account_id, house)
+	return true
+
+
+func get_visited_regions(account_id: String) -> Dictionary:
+	"""Return the raw visited_regions dict (region_name → first_visit_ts).
+	Empty if the account has no house or has never visited a region."""
+	var house = get_house(account_id)
+	if house == null or not house.has("visited_regions"):
+		return {}
+	return house.visited_regions.duplicate(true)
 
 func get_bestiary_summary(account_id: String) -> Dictionary:
 	"""Return a summary blob suitable for sending to the client: entries list

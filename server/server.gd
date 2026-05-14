@@ -5286,6 +5286,17 @@ func send_location_update(peer_id: int):
 	var outside_tier = int(wilderness_tier_info.get("tier", 1))
 	var outside_level = world_system.level_for_tier(outside_tier)
 
+	# Audit #13 Slice 4 (v0.9.444) — record this region visit on the
+	# account-level Region Atlas ledger. record_region_visit is a no-op on
+	# repeats and on the "Wilderness" fallback, so the per-tick cost is one
+	# dict lookup + early return for already-visited regions. Uses the
+	# region_tier_info name so player-post bubbles count their own region.
+	if peers.has(peer_id):
+		var atlas_account_id: String = str(peers[peer_id].get("account_id", ""))
+		var atlas_region_name: String = str(region_tier_info.get("region_name", ""))
+		if atlas_account_id != "":
+			persistence.record_region_visit(atlas_account_id, atlas_region_name)
+
 	# Send map display as description
 	var location_msg = {
 		"type": "location",
@@ -5349,6 +5360,9 @@ func send_location_update(peer_id: int):
 		# Audit #13 Slice 3 — Sanctuary Compass. {level, direction, glyph,
 		# distance?, name?, all_visited?}. Client hides when level == 0.
 		"compass": _compute_compass_payload(peer_id),
+		# Audit #13 Slice 4 (v0.9.444) — Region Atlas. {level, count, total,
+		# names?}. Client surfaces in Progression Vectors dashboard.
+		"region_atlas": _compute_region_atlas_payload(peer_id),
 	}
 	if in_player_post:
 		location_msg["in_own_enclosure"] = player_post_is_own
@@ -23324,6 +23338,41 @@ func _compute_compass_payload(peer_id: int) -> Dictionary:
 	if level >= 3:
 		payload["name"] = str(nearest_post.get("name", ""))
 	return payload
+
+func _compute_region_atlas_payload(peer_id: int) -> Dictionary:
+	"""Audit #13 Slice 4 (v0.9.444) — build the Region Atlas payload for a peer.
+	Returns the upgrade level plus (when level >= 1) the count of regions
+	visited. Tier 2 adds the sorted list of region names; Tier 3 adds the
+	completion ratio (visited / total regions in the world). Visits are always
+	recorded in record_region_visit regardless of upgrade level — unlocking
+	later uses the full ledger."""
+	var payload: Dictionary = {"level": 0}
+	if not peers.has(peer_id) or chunk_manager == null:
+		return payload
+	var account_id: String = str(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return payload
+	var level: int = persistence.region_atlas_level(account_id)
+	payload["level"] = level
+	if level <= 0:
+		return payload
+	var visited: Dictionary = persistence.get_visited_regions(account_id)
+	payload["count"] = visited.size()
+	if level >= 2:
+		var names: Array = visited.keys()
+		names.sort()
+		payload["names"] = names
+	if level >= 3:
+		# Total unique regions is the count of distinct region_name values
+		# across all procedural NPC posts.
+		var unique := {}
+		for post in chunk_manager.get_npc_posts():
+			var rn: String = str(post.get("region_name", ""))
+			if rn != "":
+				unique[rn] = true
+		payload["total"] = unique.size()
+	return payload
+
 
 func _record_market_sale(item_name: String, per_unit_price: int) -> void:
 	"""Audit #9 Slice 4 — record a sale for rolling-average lookup. Trims the
