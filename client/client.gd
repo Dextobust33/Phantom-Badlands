@@ -1232,16 +1232,20 @@ const SCRATCH_OFF_AUTO_INTERVAL: float = 0.6
 const SCRATCH_OFF_AUTO_INITIAL_DELAY: float = 0.8
 const SCRATCH_OFF_POST_COMPLETE_HOLD: float = 1.5
 
-# Harvest mode (Soldier job post-combat minigame)
+# Old Soldier harvest minigame removed v0.9.436 — combat scratch-off
+# (v0.9.434) is the post-combat loot surface now. Soldier-level bonus reveals
+# replace the old harvest_saves table; per-monster mastery is no longer wired.
+# These vars stay as `false`/empty deprecation stubs so the dead branches in
+# update_action_bar etc. still compile until a follow-up sweep removes them.
 var harvest_mode: bool = false
-var harvest_phase: String = ""  # "choosing", "result", "complete"
+var harvest_phase: String = ""
 var harvest_options: Array = []
 var harvest_hint_strength: float = 0.0
 var harvest_round: int = 0
 var harvest_max_rounds: int = 1
 var harvest_monster_name: String = ""
 var harvest_parts_gained: Array = []
-var harvest_available: bool = false  # Set by combat_end message
+var harvest_available: bool = false
 var harvest_saves_remaining: int = 0
 var harvest_mastery_label: String = ""
 var harvest_mastery_count: int = 0
@@ -4152,7 +4156,6 @@ func _input(event):
 				start_rebinding("move_9")  # NE
 			elif keycode == KEY_4:
 				start_rebinding("move_4")  # W
-			elif keycode == KEY_5:
 				start_rebinding("hunt")
 			elif keycode == KEY_6:
 				start_rebinding("move_6")  # E
@@ -4187,7 +4190,6 @@ func _input(event):
 				adjust_ui_scale("monster_art", 0.1)
 			elif keycode == KEY_4:
 				adjust_ui_scale("monster_art", -0.1)
-			elif keycode == KEY_5:
 				adjust_ui_scale("game_output", 0.1)
 			elif keycode == KEY_6:
 				adjust_ui_scale("game_output", -0.1)
@@ -4226,7 +4228,6 @@ func _input(event):
 				adjust_sound_volume("music", 0.1)
 			elif keycode == KEY_4:
 				adjust_sound_volume("music", -0.1)
-			elif keycode == KEY_5:
 				sfx_muted = not sfx_muted
 				_apply_volume_settings()
 				_save_keybinds()
@@ -4279,12 +4280,10 @@ func _input(event):
 			elif keycode == KEY_4:
 				_toggle_skip_gather_minigame()
 			elif keycode == KEY_5:
-				_toggle_skip_harvest_minigame()
-			elif keycode == KEY_6:
 				_toggle_disable_tutorial()
-			elif keycode == KEY_7:
+			elif keycode == KEY_6:
 				_toggle_map_legend()
-			elif keycode == KEY_8:
+			elif keycode == KEY_7:
 				settings_submenu = "stat_priority"
 				game_output.clear()
 				_display_stat_priority_settings()
@@ -6802,42 +6801,6 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
-	elif harvest_mode:
-		# Soldier harvest minigame (post-combat)
-		if harvest_phase == "choosing":
-			var hopt_buttons = []
-			for i in range(harvest_options.size()):
-				var opt = harvest_options[i]
-				var label = opt.get("label", "Option %d" % (i + 1))
-				hopt_buttons.append({"label": label, "action_type": "local", "action_data": "harvest_pick_%d" % i, "enabled": true})
-			while hopt_buttons.size() < 3:
-				hopt_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
-			current_actions = [
-				{"label": "Stop", "action_type": "local", "action_data": "harvest_stop", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				hopt_buttons[0],
-				hopt_buttons[1],
-				hopt_buttons[2],
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			]
-		else:
-			# "complete" phase
-			current_actions = [
-				{"label": "OK", "action_type": "local", "action_data": "harvest_done", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			]
 	elif dungeon_list_mode:
 		# Viewing list of available dungeons - select with 1-9
 		var total_pages = max(1, ceili(float(dungeon_available.size()) / 5.0))
@@ -6871,10 +6834,9 @@ func update_action_bar():
 		]
 	elif dungeon_mode and pending_continue:
 		# In dungeon, waiting for player to continue after combat/event
-		var primary_label = "Harvest" if harvest_available else "Continue"
 		current_actions = [
-			{"label": primary_label, "action_type": "local", "action_data": "dungeon_continue", "enabled": true},
-			{"label": "Skip" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "skip_harvest" if harvest_available else "", "enabled": harvest_available},
+			{"label": "Continue", "action_type": "local", "action_data": "dungeon_continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7381,10 +7343,9 @@ func update_action_bar():
 		]
 	elif pending_continue:
 		# Waiting for player to acknowledge combat results
-		var primary_label = "Harvest" if harvest_available else "Continue"
 		current_actions = [
-			{"label": primary_label, "action_type": "local", "action_data": "acknowledge_continue", "enabled": true},
-			{"label": "Skip" if harvest_available else "---", "action_type": "local" if harvest_available else "none", "action_data": "skip_harvest" if harvest_available else "", "enabled": harvest_available},
+			{"label": "Continue", "action_type": "local", "action_data": "acknowledge_continue", "enabled": true},
+			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11351,13 +11312,7 @@ func execute_local_action(action: String):
 			send_to_server({"type": "gathering_choice", "choice_id": opt.get("id", pick_idx)})
 		return
 
-	# Handle dynamic harvest pick actions (harvest_pick_0, harvest_pick_1, etc.)
-	if action.begins_with("harvest_pick_"):
-		var pick_idx = int(action.replace("harvest_pick_", ""))
-		if pick_idx >= 0 and pick_idx < harvest_options.size():
-			var opt = harvest_options[pick_idx]
-			send_to_server({"type": "harvest_choice", "choice_id": opt.get("id", pick_idx)})
-		return
+	# Old harvest_pick_ handler removed v0.9.436.
 
 	# Handle crafting challenge answer picks (craft_challenge_pick_0, etc.)
 	if action.begins_with("craft_challenge_pick_"):
@@ -11459,29 +11414,6 @@ func execute_local_action(action: String):
 			if gathering_reveals_remaining > 0:
 				gathering_reveals_remaining -= 1
 				send_to_server({"type": "gathering_choice", "choice_id": "reveal"})
-		"harvest_start":
-			# Start harvest minigame after combat
-			harvest_available = false
-			pending_continue = false
-			send_to_server({"type": "harvest_start"})
-		"skip_harvest":
-			# Decline the harvest offer — just continue without harvesting.
-			# harvest_available is cleared first so the continue path doesn't re-trigger it.
-			harvest_available = false
-			pending_continue = false
-			if dungeon_mode:
-				send_to_server({"type": "dungeon_state"})
-				update_action_bar()
-			else:
-				acknowledge_continue()
-		"harvest_stop":
-			# Stop harvest early — notify server so it clears the session (else server blocks movement)
-			send_to_server({"type": "harvest_end"})
-			game_output.clear()
-			end_harvest()
-		"harvest_done":
-			# Dismiss harvest complete screen
-			end_harvest()
 		"companions":
 			show_companion_info()
 		"companions_close":
@@ -12889,12 +12821,8 @@ func execute_local_action(action: String):
 			if game_output:
 				game_output.visible = true
 
-			# If a Soldier harvest is available, the prompt shown to the player was
-			# "Press [Space] to auto-harvest" — honor that by triggering the harvest.
-			if harvest_available:
-				harvest_available = false
-				send_to_server({"type": "harvest_start"})
-				return
+			# Old harvest auto-trigger on Space removed v0.9.436 — combat
+			# scratch-off panel is the new post-combat surface.
 
 			# CRITICAL: Check for queued combat (e.g., egg hatched right before combat started)
 			if not queued_combat_message.is_empty():
@@ -13271,11 +13199,7 @@ func _emit_combat_end_chrome(args: Dictionary) -> void:
 		_combat_text_to_outputs("[color=#FFD700]─────────────────────[/color]")
 		_combat_text_to_outputs("")
 	_combat_text_to_outputs("")
-	var harvest: bool = bool(args.get("harvest_available", false))
-	if harvest:
-		_combat_text_to_outputs("[color=#FF6600]Press [%s] to harvest...[/color]" % get_action_key_name(0))
-	else:
-		_combat_text_to_outputs("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+	_combat_text_to_outputs("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
 
 func acknowledge_continue():
@@ -13326,12 +13250,7 @@ func acknowledge_continue():
 		combat_scene_panel.visible = false
 	if game_output:
 		game_output.visible = true
-	# Auto-harvest if available — send request and let harvest flow handle the rest
-	if harvest_available:
-		harvest_available = false
-		send_to_server({"type": "harvest_start"})
-		return
-	harvest_available = false
+	# Old auto-harvest hook removed v0.9.436 (combat scratch-off replaces it).
 
 	# If combat was queued while showing egg hatch celebration, start it now
 	if not queued_combat_message.is_empty():
@@ -19380,8 +19299,6 @@ func handle_server_message(message: Dictionary):
 					# overlay as soon as the fight resolves, so wounded /
 					# KO'd state is visible without waiting for the next move.
 					update_companion_art_overlay()
-				# Check if Soldier harvest is available
-				harvest_available = message.get("harvest_available", false)
 				# Check for incoming flock encounter
 				if message.get("flock_incoming", false):
 					flock_pending = true
@@ -19431,7 +19348,6 @@ func handle_server_message(message: Dictionary):
 
 					var chrome_args := {
 						"drops": all_drops,
-						"harvest_available": harvest_available,
 					}
 					if combat_msg_queue.is_empty() and not combat_phase_paused:
 						_emit_combat_end_chrome(chrome_args)
@@ -19456,7 +19372,6 @@ func handle_server_message(message: Dictionary):
 							"did_level_up": _new_level > _level_before_victory,
 							"loot": all_drops,
 							"gear_drops": message.get("drop_data", []),
-							"harvest_available": harvest_available,
 							"continue_key": get_action_key_name(0),
 						}
 						# v0.9.413 — defer if queue has unplayed messages so
@@ -20127,14 +20042,7 @@ func handle_server_message(message: Dictionary):
 		"scratch_off_complete":
 			handle_scratch_off_complete(message)
 
-		"harvest_round":
-			handle_harvest_round(message)
-
-		"harvest_result":
-			handle_harvest_result(message)
-
-		"harvest_complete":
-			handle_harvest_complete(message)
+		# Old harvest minigame removed v0.9.436 — see combat scratch-off.
 
 		"craft_list":
 			handle_craft_list(message)
@@ -22457,17 +22365,15 @@ func display_game_settings():
 	var skip_gather = character_data.get("skip_gather_minigame", false)
 	var skip_gather_status = "[color=#00FF00]ON[/color]" if skip_gather else "[color=#FF6666]OFF[/color]"
 	display_game("[4] Skip Gather Minigame: %s" % skip_gather_status)
-	var skip_harvest = character_data.get("skip_harvest_minigame", false)
-	var skip_harvest_status = "[color=#00FF00]ON[/color]" if skip_harvest else "[color=#FF6666]OFF[/color]"
-	display_game("[5] Skip Harvest Minigame: %s" % skip_harvest_status)
+	# Old Skip Harvest Minigame setting removed v0.9.436.
 	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
-	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
+	display_game("[5] Tutorial on New Character: %s" % tutorial_status)
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
-	display_game("[7] Map Legend: %s" % legend_status)
+	display_game("[6] Map Legend: %s" % legend_status)
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
-	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
+	display_game("[7] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
-	if skip_craft or skip_gather or skip_harvest:
+	if skip_craft or skip_gather:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
 		display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))
@@ -22520,25 +22426,6 @@ func _toggle_skip_gather_minigame():
 	else:
 		display_game("[color=#FF6666]Skip Gather Minigame: DISABLED[/color]")
 		display_game("[color=#808080]Gathering minigames will play normally.[/color]")
-	await get_tree().create_timer(1.5).timeout
-	if settings_mode and settings_submenu == "game":
-		game_output.clear()
-		display_game_settings()
-
-func _toggle_skip_harvest_minigame():
-	"""Toggle skip harvest minigame setting."""
-	var current = character_data.get("skip_harvest_minigame", false)
-	var new_value = not current
-	character_data["skip_harvest_minigame"] = new_value
-	send_to_server({"type": "setting_change", "setting": "skip_harvest_minigame", "value": new_value})
-	game_output.clear()
-	if new_value:
-		display_game("[color=#00FF00]Skip Harvest Minigame: ENABLED[/color]")
-		display_game("[color=#FFFF00]Warning: Skipping harvest minigames gives ~50% average rewards.[/color]")
-		display_game("[color=#808080]Disable in Settings > Game anytime.[/color]")
-	else:
-		display_game("[color=#FF6666]Skip Harvest Minigame: DISABLED[/color]")
-		display_game("[color=#808080]Harvest minigames will play normally.[/color]")
 	await get_tree().create_timer(1.5).timeout
 	if settings_mode and settings_submenu == "game":
 		game_output.clear()
@@ -23911,8 +23798,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.436 — Old Soldier harvest minigame removed; folded into scratch-off.
+	display_game("[color=#00FF00]v0.9.436[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Old harvest minigame replaced by the combat scratch-off[/color]")
+	display_game("  • [b]The post-combat 'Press Space to harvest' prompt is gone.[/b] The combat scratch-off (v0.9.434) is now the single post-combat loot surface. Old harvest_pick / harvest_stop / harvest_done action handlers, the Skip Harvest setting toggle, the Soldier harvest mastery minigame screens, and the entire server-side harvest dispatch (handle_harvest_start / _choice / _end + active_harvests state) all removed.")
+	display_game("  • [b]Soldier-job benefits fold into the scratch-off[/b] — your Soldier level adds bonus reveals on top of the tier-scaled base (Lv 20: +1, Lv 50: +2, Lv 80: +3). Mirrors the old harvest_saves table. The monster-part drop bonus that already scales with soldier_level via roll_monster_part_drop is untouched, so Soldiers still get more parts per kill on average.")
+	display_game("")
+
 	# v0.9.435 — Combat scratch-off fixes.
-	display_game("[color=#00FF00]v0.9.435[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.435[/color]")
 	display_game("  [color=#FFD700]Combat scratch-off: 3 fixes[/color]")
 	display_game("  • [b]Flock reveal count off by one[/b] — fixed. flock_counts increments only for chain monsters; the final kill that triggers the panel was missing from the total. A 4-wolf flock now correctly gives 4 reveals (was 3).")
 	display_game("  • [b]Panel centering[/b] — fixed. Loot Reveal now centers in the play area like the other gathering minigames. Was anchored top-left because the panel was parented to the root VBox instead of game_output_container.")
@@ -23935,12 +23829,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.432[/color]")
 	display_game("  [color=#FFD700]Sanctuary: new Compass upgrade — direction to nearest unvisited post[/color]")
 	display_game("  • [b]New Sanctuary upgrade (3 levels, 1000 / 4000 / 15000 BP) adds a HUD compass line above the map[/b] pointing toward the nearest NPC post your account hasn't yet visited. L1 shows direction (↑↓←→ and diagonals). L2 adds distance. L3 adds the post name. The ledger always records visits, so you can unlock the compass later and immediately use the full account history. Once every post on the map has been visited, the line reads 'All posts visited.' Available on the Sanctuary 'Base Upgrades' page.")
-	display_game("")
-
-	# v0.9.431 — hotfix: companion/egg tooltip ASCII art no longer wraps.
-	display_game("[color=#00FFFF]v0.9.431[/color]")
-	display_game("  [color=#FFD700]Companion/egg hover tooltip: ASCII art rows no longer wrap[/color]")
-	display_game("  • [b]The tooltip RichTextLabel had autowrap on by default, so wide ASCII art rows wrapped to the 320-px min width and destroyed column alignment.[/b] Turned autowrap off so the tooltip width grows to fit the widest line; non-art lines are short and still fit comfortably.")
 	display_game("")
 
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
@@ -31410,157 +31298,6 @@ func _get_gathering_prompt(job_type: String, chain: int) -> String:
 	var options = prompts.get(job_type, ["Make your choice:"])
 	return options[chain % options.size()]
 
-# ===== SOLDIER HARVEST FUNCTIONS =====
-
-func handle_harvest_round(message: Dictionary):
-	"""Server sent a harvest round with 3 choices."""
-	harvest_mode = true
-	harvest_phase = "choosing"
-	harvest_options = message.get("options", [])
-	harvest_hint_strength = message.get("hint_strength", 0.0)
-	harvest_round = message.get("round", 1)
-	harvest_max_rounds = message.get("max_rounds", 1)
-	harvest_monster_name = message.get("monster_name", "creature")
-	harvest_saves_remaining = message.get("saves_remaining", 0)
-	harvest_mastery_label = message.get("mastery_label", "")
-	harvest_mastery_count = message.get("mastery_count", 0)
-	# Server may reveal correct answer as hint
-	var hint_id = message.get("hint_id", -1)
-	for i in range(harvest_options.size()):
-		if harvest_options[i].get("id", -1) == hint_id:
-			harvest_options[i]["hinted"] = true
-	display_harvest_round()
-	update_action_bar()
-
-func display_harvest_round():
-	"""Display the harvest choices to the player."""
-	game_output.clear()
-	# Header with mastery
-	var mastery_text = ""
-	if harvest_mastery_label != "":
-		var mastery_color = "#808080"
-		var mastery_next = 0
-		match harvest_mastery_label:
-			"Familiar":
-				mastery_color = "#00FF00"
-				mastery_next = 7
-			"Expert":
-				mastery_color = "#0070DD"
-				mastery_next = 15
-			"Master":
-				mastery_color = "#A335EE"
-				mastery_next = 0
-		if mastery_next > 0:
-			mastery_text = "  |  [color=%s]%s (%d/%d)[/color]" % [mastery_color, harvest_mastery_label, harvest_mastery_count, mastery_next]
-		else:
-			mastery_text = "  |  [color=%s]%s[/color]" % [mastery_color, harvest_mastery_label]
-	display_game("[color=#FF6600]═══════ HARVEST: %s (Round %d/%d)%s ═══════[/color]" % [harvest_monster_name, harvest_round, harvest_max_rounds, mastery_text])
-	display_game("")
-	if harvest_saves_remaining > 0:
-		display_game("[color=#00FFFF]Saves remaining: %d[/color]" % harvest_saves_remaining)
-		display_game("")
-	display_game("[color=#FFAA00]Choose the best approach to harvest parts:[/color]")
-	display_game("")
-	for i in range(harvest_options.size()):
-		var opt = harvest_options[i]
-		var label = opt.get("label", "Option %d" % (i + 1))
-		var hint_text = ""
-		if opt.get("hinted", false):
-			hint_text = " [color=#00FF00](looks promising)[/color]"
-		var key_name = get_action_key_name(5 + i)
-		display_game("  [color=#FFD700][%s][/color] %s%s" % [key_name, label, hint_text])
-	display_game("")
-	if harvest_parts_gained.size() > 0:
-		display_game("[color=#808080]Parts gained so far: %d[/color]" % harvest_parts_gained.size())
-
-func handle_harvest_result(message: Dictionary):
-	"""Server responded to harvest choice."""
-	var correct = message.get("correct", false)
-	var part = message.get("part_gained", {})
-	var cont = message.get("continue", false)
-	var harvest_saved = message.get("harvest_saved", false)
-	var auto_success = message.get("auto_success", false)
-
-	if auto_success and not part.is_empty():
-		harvest_parts_gained.append(part)
-		var mastery_lbl = message.get("mastery_label", "Expert")
-		display_game("[color=#0070DD]★ %s knowledge! Auto-harvested: [color=#FF6600]%s[/color] ★[/color]" % [mastery_lbl, part.get("name", "part")])
-	elif correct and not part.is_empty():
-		harvest_parts_gained.append(part)
-		display_game("[color=#00FF00]✓ Success! You harvested: [color=#FF6600]%s[/color][/color]" % part.get("name", "part"))
-	elif harvest_saved:
-		display_game("[color=#00FFFF]✗ Wrong, but your experience saves you! Try again.[/color]")
-		display_game("[color=#808080](%d save(s) remaining)[/color]" % message.get("saves_remaining", 0))
-	elif not correct:
-		if not part.is_empty():
-			harvest_parts_gained.append(part)
-			display_game("[color=#FF4444]✗ Wrong pick, but you salvaged: [color=#FF6600]%s[/color][/color]" % part.get("name", "part"))
-		else:
-			display_game("[color=#FF4444]✗ The harvest attempt failed.[/color]")
-
-	if cont and not harvest_saved:
-		display_game("[color=#808080]Preparing next harvest round...[/color]")
-	elif not cont:
-		pass
-
-func handle_harvest_complete(message: Dictionary):
-	"""Harvest session is done — show summary."""
-	harvest_phase = "complete"
-	var total_parts = message.get("total_parts", [])
-	var job_xp = message.get("job_xp_gained", 0)
-
-	game_output.clear()
-	display_game("[color=#FF6600]═══════ HARVEST COMPLETE ═══════[/color]")
-	display_game("")
-	if total_parts.size() > 0:
-		display_game("[color=#FFD700]Parts harvested:[/color]")
-		for part in total_parts:
-			display_game("  [color=#FF6600]◆ %s[/color]" % part.get("name", "Unknown"))
-	else:
-		display_game("[color=#808080]No parts harvested.[/color]")
-	display_game("")
-	if job_xp > 0:
-		display_game("[color=#00BFFF]+%d Soldier XP[/color]" % job_xp)
-	display_game("")
-
-	# Auto-end harvest — no need to press Space, player can just move
-	end_harvest()
-
-func end_harvest():
-	"""Clean up harvest state."""
-	harvest_mode = false
-	harvest_phase = ""
-	harvest_options = []
-	harvest_hint_strength = 0.0
-	harvest_round = 0
-	harvest_max_rounds = 1
-	harvest_monster_name = ""
-	harvest_parts_gained = []
-	harvest_available = false
-	harvest_saves_remaining = 0
-	harvest_mastery_label = ""
-	harvest_mastery_count = 0
-	# Reset combat background before any screen change so lingering combat bg
-	# doesn't bleed into the dungeon-complete screen.
-	reset_combat_background()
-	# If a dungeon completion was queued (harvest ran after a boss kill that
-	# cleared dungeon_mode), show it now — otherwise it sits dormant until the
-	# next combat's acknowledge_continue flushes the queue.
-	if not queued_dungeon_complete.is_empty():
-		var complete_msg = queued_dungeon_complete.duplicate(true)
-		queued_dungeon_complete = {}
-		_display_dungeon_complete(complete_msg)
-		update_action_bar()
-		return
-	# After harvest in dungeon, always gate movement behind the Continue prompt so
-	# the HARVEST COMPLETE summary is readable before the next dungeon state clears it.
-	if dungeon_mode:
-		pending_continue = true
-		pending_dungeon_continue = true
-		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
-	update_action_bar()
-
-# ===== CRAFTING FUNCTIONS =====
 
 func _craft_skill_to_job_name(skill_name: String) -> String:
 	match skill_name.to_lower():
