@@ -942,6 +942,11 @@ var hud_post_threat: Dictionary = {"threatened": false}  # Slice 6 — dynamic p
 # all_visited?}. Rendered only when level >= 1 and a nearest unvisited post
 # exists. Tier 1 = glyph/direction only; Tier 2 = + distance; Tier 3 = + name.
 var hud_compass: Dictionary = {}
+# Audit #13 Slice 4 (v0.9.444) — Region Atlas payload from location_update.
+# {level, count, names?, total?}. Surfaced in the Progression Vectors
+# dashboard section of display_character_status. Tier-gated: L1 = count,
+# L2 = + names list, L3 = + total/completion ratio.
+var hud_region_atlas: Dictionary = {}
 # Region tier from nearest trading post (post-anchored world model — Slice 1)
 var hud_region_tier: int = 1
 var hud_region_tier_name: String = "Core"
@@ -18505,6 +18510,8 @@ func handle_server_message(message: Dictionary):
 			hud_post_threat = message.get("nearest_post_threat", {"threatened": false})
 			# Audit #13 Slice 3 — Sanctuary Compass payload (direction to nearest unvisited post).
 			hud_compass = message.get("compass", {})
+			# Audit #13 Slice 4 — Region Atlas payload (visited region count + names).
+			hud_region_atlas = message.get("region_atlas", {})
 			# Region tier from post-anchored world model (Slice 1 — visibility only)
 			hud_region_tier = int(message.get("region_tier", 1))
 			hud_region_tier_name = String(message.get("region_tier_name", "Core"))
@@ -23106,8 +23113,11 @@ func _build_progression_vectors_text(char: Dictionary) -> String:
 			bestiary_total_kills += int(entry)
 	var visited_posts_dict: Dictionary = house_data.get("visited_posts", {})
 	var posts_visited = visited_posts_dict.size()
+	var visited_regions_dict: Dictionary = house_data.get("visited_regions", {})
+	var regions_visited = visited_regions_dict.size()
 	var bestiary_lvl = int(upgrades.get("bestiary", 0))
 	var compass_lvl = int(upgrades.get("compass", 0))
+	var atlas_lvl = int(upgrades.get("region_atlas", 0))
 	out += "[color=#FF6666]Bestiary:[/color] %d species  •  %d kills  %s\n" % [
 		bestiary_unique, bestiary_total_kills,
 		("[color=#888888](unlock at Sanctuary to view ledger)[/color]" if bestiary_lvl == 0 else "[color=#88FF88](L%d)[/color]" % bestiary_lvl)
@@ -23115,6 +23125,20 @@ func _build_progression_vectors_text(char: Dictionary) -> String:
 	out += "[color=#66CCFF]Compass:[/color] %d posts visited  %s\n" % [
 		posts_visited,
 		("[color=#888888](unlock at Sanctuary for nearest-post hint)[/color]" if compass_lvl == 0 else "[color=#88FF88](L%d)[/color]" % compass_lvl)
+	]
+	# Audit #13 Slice 4 — Region Atlas line. Reads from house_data ledger (always
+	# tracked) and falls back to live hud_region_atlas payload's `total` field
+	# for the L3 completion-ratio hint.
+	var atlas_total: int = int(hud_region_atlas.get("total", 0)) if atlas_lvl >= 3 else 0
+	var atlas_suffix: String
+	if atlas_lvl == 0:
+		atlas_suffix = "[color=#888888](unlock at Sanctuary for atlas list)[/color]"
+	elif atlas_lvl >= 3 and atlas_total > 0:
+		atlas_suffix = "[color=#88FF88](L%d, %d/%d)[/color]" % [atlas_lvl, regions_visited, atlas_total]
+	else:
+		atlas_suffix = "[color=#88FF88](L%d)[/color]" % atlas_lvl
+	out += "[color=#C9A0FF]Atlas:[/color] %d regions visited  %s\n" % [
+		regions_visited, atlas_suffix
 	]
 
 	# --- Currencies / pouch ---
@@ -23942,8 +23966,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.444 — Audit #13 Slice 4: Region Atlas Sanctuary upgrade.
+	display_game("[color=#00FF00]v0.9.444[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New Sanctuary upgrade: Region Atlas (account-wide region ledger)[/color]")
+	display_game("  • [b]New `region_atlas` Sanctuary upgrade (3 levels, 800/3000/12000 BP).[/b] Tracks which regions your account has visited — always recorded server-side regardless of upgrade level, so unlocking later uses the full history. Level 1: count visited. Level 2: + sorted region list (the names show up on the inspect dashboard). Level 3: + completion ratio (e.g. 12/47 visited). Surfaced in the Progression Vectors section of the Status page alongside Bestiary and Compass. Third qualitative Sanctuary unlock after Bestiary v0.9.343 and Compass v0.9.432 — keeps exploration tracked and visible. Audit #13 Slice 4.")
+	display_game("")
+
 	# v0.9.443 — Audit #11 Slice 7: persistent NPC rumor cache.
-	display_game("[color=#00FF00]v0.9.443[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.443[/color]")
 	display_game("  [color=#FFD700]NPC posts: revisits show the same rumor, walking on-and-off doesn't spam[/color]")
 	display_game("  • [b]Walking on-and-off an NPC post tile no longer re-fires the greeting every step.[/b] A 60-second per-player cooldown gates the message so you only see it once when you actually arrive.")
 	display_game("  • [b]Re-visiting a post — including after a reconnect — now shows the SAME rumor for 30 minutes,[/b] matching the way legacy trading posts work. Each NPC has a consistent narrative for your account, so you can leave and come back without losing the thread. After 30 min the rumor rerolls (or sooner if a new dungeon threat appears nearby — threats always run fresh). Different accounts at the same post still get their own rumors. Audit #11 Slice 7.")
@@ -36535,6 +36565,7 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"companion_sanctum": {"name": "Companion Sanctum", "desc": "+1 free Home Stone (Companion) at new character start", "icon": "🔮"},
 	"bestiary": {"name": "Bestiary", "desc": "Account-level monster kill ledger. L1: kills, L2: + level, L3: + dates.", "icon": "📖"},
 	"compass": {"name": "Sanctuary Compass", "desc": "HUD compass points to nearest unvisited NPC post. L1: direction, L2: + distance, L3: + post name.", "icon": "🧭"},
+	"region_atlas": {"name": "Region Atlas", "desc": "Account-level region ledger. L1: count visited, L2: + sorted region list, L3: + completion ratio (visited / total).", "icon": "🗺"},
 	# Combat bonuses
 	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
 	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
@@ -37213,7 +37244,7 @@ func display_house_upgrades():
 	# Define upgrade pages
 	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
 	var page_upgrades = [
-		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "compass", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
+		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "compass", "region_atlas", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
 		["hp_bonus", "resource_max", "resource_regen"],
 		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
 	]
@@ -37253,7 +37284,8 @@ func display_house_upgrades():
 		"post_slots": {"effect": 1, "max": 5, "costs": [5000, 10000, 20000, 35000, 60000]},
 		"companion_sanctum": {"effect": 1, "max": 5, "costs": [500, 1500, 4000, 10000, 25000]},
 		"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]},
-		"compass": {"effect": 1, "max": 3, "costs": [1000, 4000, 15000]}
+		"compass": {"effect": 1, "max": 3, "costs": [1000, 4000, 15000]},
+		"region_atlas": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
 	})
 
 	var current_page_upgrades = page_upgrades[house_upgrades_page]
@@ -37425,6 +37457,12 @@ func _get_upgrade_effect_text(upgrade_id: String, effect_value: int) -> String:
 				1: return "L1: direction only"
 				2: return "L2: + distance"
 				3: return "L3: + post name"
+				_: return "Locked"
+		"region_atlas":
+			match effect_value:
+				1: return "L1: count visited"
+				2: return "L2: + region list"
+				3: return "L3: + completion %"
 				_: return "Locked"
 		"kennel_capacity": return "%d slots" % _get_house_kennel_capacity()
 		"egg_slots": return "%d/%d slots (base 3 + %d)" % [3 + effect_value, 12, effect_value]
