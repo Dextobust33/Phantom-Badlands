@@ -2121,6 +2121,10 @@ func create_clan(leader_account_id: String, name: String, tag: String) -> Dictio
 		"tag": tg,
 		"leader_account_id": leader_account_id,
 		"member_ids": [leader_account_id],
+		# Audit #14 Slice 4 — officer rank. Officers can invite + kick regular
+		# members but cannot kick each other or the leader and cannot promote.
+		# Leader is implicitly above all officers (NOT in this list).
+		"officer_ids": [],
 		"created_at": int(Time.get_unix_time_from_system()),
 	}
 	accounts_data["accounts"][leader_account_id]["clan_id"] = clan_id
@@ -2160,27 +2164,166 @@ func leave_clan(account_id: String) -> Dictionary:
 	var members: Array = clan.get("member_ids", [])
 	members.erase(account_id)
 	clan["member_ids"] = members
+	# Audit #14 Slice 4 — officer-rank members lose their rank on leaving.
+	if clan.has("officer_ids") and typeof(clan.officer_ids) == TYPE_ARRAY:
+		var officers: Array = clan["officer_ids"]
+		if officers.has(account_id):
+			officers.erase(account_id)
+			clan["officer_ids"] = officers
 	accounts_data["accounts"][account_id]["clan_id"] = ""
 	save_clans()
 	save_accounts()
 	return {"success": true, "disbanded": false, "clan_name": clan_name}
 
 func get_clan_member_summary(clan_id: String) -> Array:
-	"""Return a list of {account_id, username, is_leader} for each member of
-	the clan, in roster order. Used by the visual panel."""
+	"""Return a list of {account_id, username, is_leader, is_officer, rank} for
+	each member of the clan, in roster order. Used by the visual panel."""
 	var clan = get_clan(clan_id)
 	if clan.is_empty():
 		return []
 	var leader_id = String(clan.get("leader_account_id", ""))
+	# Audit #14 Slice 4 — officer list. Legacy clans (Slice 1-3) may lack it.
+	var officers: Array = clan.get("officer_ids", [])
 	var out: Array = []
 	for member_id in clan.get("member_ids", []):
 		var member_account = accounts_data.get("accounts", {}).get(member_id, {})
+		var is_leader = member_id == leader_id
+		var is_officer = officers.has(member_id)
+		var rank: String = "leader" if is_leader else ("officer" if is_officer else "member")
 		out.append({
 			"account_id": member_id,
 			"username": String(member_account.get("username", "(unknown)")),
-			"is_leader": member_id == leader_id,
+			"is_leader": is_leader,
+			"is_officer": is_officer,
+			"rank": rank,
 		})
 	return out
+
+# ===== CLAN RANK HELPERS (Audit #14 Slice 4) =====
+
+func is_clan_leader(account_id: String) -> bool:
+	"""True if account is the leader of their current clan."""
+	var clan_id = get_account_clan_id(account_id)
+	if clan_id == "":
+		return false
+	var clan = get_clan(clan_id)
+	return String(clan.get("leader_account_id", "")) == account_id
+
+func is_clan_officer(account_id: String) -> bool:
+	"""True if account is in their clan's officer_ids list. Leader is NOT an
+	officer for this check — use is_clan_leader_or_officer when the call site
+	wants either rank."""
+	var clan_id = get_account_clan_id(account_id)
+	if clan_id == "":
+		return false
+	var clan = get_clan(clan_id)
+	var officers: Array = clan.get("officer_ids", [])
+	return officers.has(account_id)
+
+func is_clan_leader_or_officer(account_id: String) -> bool:
+	"""Convenience: either rank passes the permission check (e.g., invite)."""
+	return is_clan_leader(account_id) or is_clan_officer(account_id)
+
+func promote_to_officer(leader_account_id: String, target_account_id: String) -> Dictionary:
+	"""Leader-only promote a member to officer. Validates same clan, target is
+	not already officer/leader. Returns {success, reason, clan_id, target_username}."""
+	if leader_account_id == "" or target_account_id == "":
+		return {"success": false, "reason": "Invalid account."}
+	if leader_account_id == target_account_id:
+		return {"success": false, "reason": "You're already the leader."}
+	var clan_id = get_account_clan_id(leader_account_id)
+	if clan_id == "":
+		return {"success": false, "reason": "You're not in a clan."}
+	var clan: Dictionary = clans_data.get("clans", {}).get(clan_id, {})
+	if clan.is_empty():
+		return {"success": false, "reason": "Clan no longer exists."}
+	if String(clan.get("leader_account_id", "")) != leader_account_id:
+		return {"success": false, "reason": "Only the clan leader can promote."}
+	var members: Array = clan.get("member_ids", [])
+	if not members.has(target_account_id):
+		return {"success": false, "reason": "That player is not in your clan."}
+	if not clan.has("officer_ids") or typeof(clan.officer_ids) != TYPE_ARRAY:
+		clan["officer_ids"] = []
+	var officers: Array = clan["officer_ids"]
+	if officers.has(target_account_id):
+		return {"success": false, "reason": "That player is already an officer."}
+	officers.append(target_account_id)
+	clan["officer_ids"] = officers
+	save_clans()
+	var target_username: String = String(accounts_data.get("accounts", {}).get(target_account_id, {}).get("username", "(unknown)"))
+	return {"success": true, "clan_id": clan_id, "target_username": target_username, "target_account_id": target_account_id}
+
+func demote_from_officer(leader_account_id: String, target_account_id: String) -> Dictionary:
+	"""Leader-only demote an officer back to regular member."""
+	if leader_account_id == "" or target_account_id == "":
+		return {"success": false, "reason": "Invalid account."}
+	var clan_id = get_account_clan_id(leader_account_id)
+	if clan_id == "":
+		return {"success": false, "reason": "You're not in a clan."}
+	var clan: Dictionary = clans_data.get("clans", {}).get(clan_id, {})
+	if clan.is_empty():
+		return {"success": false, "reason": "Clan no longer exists."}
+	if String(clan.get("leader_account_id", "")) != leader_account_id:
+		return {"success": false, "reason": "Only the clan leader can demote."}
+	var officers: Array = clan.get("officer_ids", [])
+	if not officers.has(target_account_id):
+		return {"success": false, "reason": "That player is not an officer."}
+	officers.erase(target_account_id)
+	clan["officer_ids"] = officers
+	save_clans()
+	var target_username: String = String(accounts_data.get("accounts", {}).get(target_account_id, {}).get("username", "(unknown)"))
+	return {"success": true, "clan_id": clan_id, "target_username": target_username, "target_account_id": target_account_id}
+
+func kick_from_clan(actor_account_id: String, target_account_id: String) -> Dictionary:
+	"""Leader or officer kicks a member from the clan. Rules:
+	  - Leader can kick anyone except self.
+	  - Officer can kick non-officer non-leader members only.
+	  - You cannot kick yourself (use leave_clan).
+	Returns {success, reason, clan_id, clan_name, target_username, target_account_id, was_officer}."""
+	if actor_account_id == "" or target_account_id == "":
+		return {"success": false, "reason": "Invalid account."}
+	if actor_account_id == target_account_id:
+		return {"success": false, "reason": "You can't kick yourself — leave instead."}
+	var clan_id = get_account_clan_id(actor_account_id)
+	if clan_id == "":
+		return {"success": false, "reason": "You're not in a clan."}
+	if get_account_clan_id(target_account_id) != clan_id:
+		return {"success": false, "reason": "That player is not in your clan."}
+	var clan: Dictionary = clans_data.get("clans", {}).get(clan_id, {})
+	if clan.is_empty():
+		return {"success": false, "reason": "Clan no longer exists."}
+	var leader_id: String = String(clan.get("leader_account_id", ""))
+	var officers: Array = clan.get("officer_ids", [])
+	var actor_is_leader: bool = leader_id == actor_account_id
+	var actor_is_officer: bool = officers.has(actor_account_id)
+	if not actor_is_leader and not actor_is_officer:
+		return {"success": false, "reason": "Only the leader and officers can kick."}
+	if target_account_id == leader_id:
+		return {"success": false, "reason": "You can't kick the leader."}
+	# Officers can only kick regular members.
+	var target_is_officer: bool = officers.has(target_account_id)
+	if not actor_is_leader and target_is_officer:
+		return {"success": false, "reason": "Officers can't kick other officers — the leader has to demote them first."}
+	# Apply the kick.
+	var members: Array = clan.get("member_ids", [])
+	members.erase(target_account_id)
+	clan["member_ids"] = members
+	if target_is_officer:
+		officers.erase(target_account_id)
+		clan["officer_ids"] = officers
+	if accounts_data.get("accounts", {}).has(target_account_id):
+		accounts_data["accounts"][target_account_id]["clan_id"] = ""
+	save_clans()
+	save_accounts()
+	var target_username: String = String(accounts_data.get("accounts", {}).get(target_account_id, {}).get("username", "(unknown)"))
+	return {
+		"success": true,
+		"clan_id": clan_id,
+		"clan_name": String(clan.get("name", "")),
+		"target_username": target_username,
+		"target_account_id": target_account_id,
+		"was_officer": target_is_officer,
+	}
 
 # ===== CLAN INVITATIONS (Audit #14 Slice 2) =====
 # Stored as clans_data.invitations[target_account_id] = [

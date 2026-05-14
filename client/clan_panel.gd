@@ -14,6 +14,11 @@ signal leave_requested
 signal invite_requested(username: String)
 signal accept_requested(clan_id: String)
 signal decline_requested(clan_id: String)
+# Audit #14 Slice 4 — rank actions. target_account_id matches the value the
+# server sends in the members[] payload so the round-trip is trivial.
+signal promote_requested(target_account_id: String)
+signal demote_requested(target_account_id: String)
+signal kick_requested(target_account_id: String)
 
 var _root_panel: PanelContainer
 var _vbox: VBoxContainer
@@ -309,6 +314,10 @@ func _render_in_clan_view() -> void:
 	var member_count: int = int(_data.get("member_count", 0))
 	var max_members: int = int(_data.get("max_members", 30))
 	var is_leader: bool = bool(_data.get("is_leader", false))
+	# Audit #14 Slice 4 — viewer's own rank. Officers see Invite + Kick (for
+	# regular members only). Leaders see everything.
+	var is_officer: bool = bool(_data.get("is_officer", false))
+	var can_invite: bool = is_leader or is_officer
 	var members: Array = _data.get("members", [])
 
 	# Header
@@ -330,6 +339,15 @@ func _render_in_clan_view() -> void:
 		leader_note.custom_minimum_size = Vector2(0, 18)
 		leader_note.text = "[color=#FFD700]You are the leader.[/color] [color=#888888]Leaving disbands the clan.[/color]"
 		_body_container.add_child(leader_note)
+	elif is_officer:
+		var officer_note := RichTextLabel.new()
+		officer_note.bbcode_enabled = true
+		officer_note.fit_content = true
+		officer_note.scroll_active = false
+		officer_note.add_theme_font_size_override("normal_font_size", 11)
+		officer_note.custom_minimum_size = Vector2(0, 18)
+		officer_note.text = "[color=#66DDFF]You are an officer.[/color] [color=#888888]You can invite + kick regular members.[/color]"
+		_body_container.add_child(officer_note)
 
 	# Roster panel
 	var roster_panel := PanelContainer.new()
@@ -346,7 +364,7 @@ func _render_in_clan_view() -> void:
 	_body_container.add_child(roster_panel)
 
 	var roster_vbox := VBoxContainer.new()
-	roster_vbox.add_theme_constant_override("separation", 2)
+	roster_vbox.add_theme_constant_override("separation", 3)
 	roster_panel.add_child(roster_vbox)
 
 	if members.is_empty():
@@ -359,22 +377,10 @@ func _render_in_clan_view() -> void:
 			if not (member_var is Dictionary):
 				continue
 			var member: Dictionary = member_var
-			var username: String = String(member.get("username", "(unknown)"))
-			var leader_flag: bool = bool(member.get("is_leader", false))
-			var row := RichTextLabel.new()
-			row.bbcode_enabled = true
-			row.fit_content = true
-			row.scroll_active = false
-			row.add_theme_font_size_override("normal_font_size", 13)
-			row.custom_minimum_size = Vector2(0, 18)
-			if leader_flag:
-				row.text = "[color=#FFD700]★ %s[/color] [color=#888888](leader)[/color]" % username
-			else:
-				row.text = "[color=#DDDDDD]%s[/color]" % username
-			roster_vbox.add_child(row)
+			roster_vbox.add_child(_build_member_row(member, is_leader, is_officer))
 
-	# Audit #14 Slice 2 — Leader-only invite input below roster.
-	if is_leader and member_count < max_members:
+	# Audit #14 Slice 2 + 4 — Invite input. Leader or officer can send invites.
+	if can_invite and member_count < max_members:
 		var invite_spacer := Control.new()
 		invite_spacer.custom_minimum_size = Vector2(0, 4)
 		_body_container.add_child(invite_spacer)
@@ -408,7 +414,7 @@ func _render_in_clan_view() -> void:
 		invite_btn.pressed.connect(submit_invite)
 		invite_edit.text_submitted.connect(func(_t): submit_invite.call())
 		invite_hbox.add_child(invite_btn)
-	elif is_leader and member_count >= max_members:
+	elif can_invite and member_count >= max_members:
 		var full_note := RichTextLabel.new()
 		full_note.bbcode_enabled = true
 		full_note.fit_content = true
@@ -434,3 +440,89 @@ func _render_in_clan_view() -> void:
 	leave_btn.text = "Disband Clan" if is_leader else "Leave Clan"
 	leave_btn.pressed.connect(func(): leave_requested.emit())
 	btn_hbox.add_child(leave_btn)
+
+
+func _build_member_row(member: Dictionary, viewer_is_leader: bool, viewer_is_officer: bool) -> Control:
+	"""Audit #14 Slice 4 — one roster row with a rank badge and the rank-action
+	buttons the viewer is allowed to use against this member. Buttons hidden on
+	the viewer's own row to avoid self-actions (leave handles self-removal)."""
+	var username: String = String(member.get("username", "(unknown)"))
+	var target_account_id: String = String(member.get("account_id", ""))
+	var leader_flag: bool = bool(member.get("is_leader", false))
+	var officer_flag: bool = bool(member.get("is_officer", false))
+	var rank: String = String(member.get("rank", "member"))
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.custom_minimum_size = Vector2(0, 28)
+
+	# Rank badge — fixed width so usernames align across rows.
+	var badge := RichTextLabel.new()
+	badge.bbcode_enabled = true
+	badge.fit_content = true
+	badge.scroll_active = false
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_theme_font_size_override("normal_font_size", 11)
+	badge.custom_minimum_size = Vector2(86, 22)
+	var badge_color: String
+	var badge_text: String
+	match rank:
+		"leader":
+			badge_color = "#FFD700"
+			badge_text = "LEADER"
+		"officer":
+			badge_color = "#66DDFF"
+			badge_text = "OFFICER"
+		_:
+			badge_color = "#888888"
+			badge_text = "MEMBER"
+	badge.text = "[color=%s][b]%s[/b][/color]" % [badge_color, badge_text]
+	row.add_child(badge)
+
+	# Username (expands to fill remaining space).
+	var name_label := RichTextLabel.new()
+	name_label.bbcode_enabled = true
+	name_label.fit_content = true
+	name_label.scroll_active = false
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	name_label.add_theme_font_size_override("normal_font_size", 13)
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.custom_minimum_size = Vector2(0, 22)
+	if leader_flag:
+		name_label.text = "[color=#FFD700]★ %s[/color]" % username
+	else:
+		name_label.text = "[color=#DDDDDD]%s[/color]" % username
+	row.add_child(name_label)
+
+	# Rank-action buttons.
+	var viewer_account_id: String = String(_data.get("account_id", ""))
+	var is_self: bool = viewer_account_id != "" and viewer_account_id == target_account_id
+	if not is_self and target_account_id != "":
+		# Leader can promote / demote / kick anyone (not self).
+		if viewer_is_leader:
+			if not leader_flag and not officer_flag:
+				row.add_child(_make_rank_button("Promote", "#A335EE", target_account_id, promote_requested))
+			elif officer_flag:
+				row.add_child(_make_rank_button("Demote", "#888888", target_account_id, demote_requested))
+			if not leader_flag:
+				row.add_child(_make_rank_button("Kick", "#FF6644", target_account_id, kick_requested))
+		# Officer can only kick regular members (not leader, not other officers).
+		elif viewer_is_officer and not leader_flag and not officer_flag:
+			row.add_child(_make_rank_button("Kick", "#FF6644", target_account_id, kick_requested))
+
+	return row
+
+
+func _make_rank_button(label: String, color_hex: String, target_account_id: String, sig: Signal) -> Button:
+	"""Helper: action button that emits the given rank-action signal with the
+	target's account_id when pressed. Color tint matches the action's intent."""
+	var btn := Button.new()
+	btn.text = label
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.custom_minimum_size = Vector2(72, 26)
+	btn.add_theme_font_size_override("font_size", 11)
+	btn.add_theme_color_override("font_color", Color.html(color_hex))
+	var sig_ref := sig
+	var target_captured := target_account_id
+	btn.pressed.connect(func(): sig_ref.emit(target_captured))
+	return btn
