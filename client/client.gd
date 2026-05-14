@@ -22813,10 +22813,23 @@ func display_character_status():
 	if appearance_variant != "" and appearance_color != "":
 		text += "[color=%s]●[/color] [color=#AAAAAA]Appearance:[/color] [color=%s]%s[/color]\n" % [appearance_color, appearance_color, appearance_variant]
 
-	# Class passive
-	var class_passive = _get_class_passive(char.get("class", ""))
+	# Class & Race — Audit #2 Slice 2 (v0.9.442). Both passives live on the
+	# same surface so the class identity reads alongside the race identity.
+	# Was a single class-passive line; race passive was implicit (effects
+	# applied at runtime but never named on the inspect screen).
+	var class_name_str = String(char.get("class", ""))
+	var race_name_str = String(char.get("race", ""))
+	var class_passive = _get_class_passive(class_name_str)
+	var race_passive = _get_race_passive(race_name_str)
+	text += "[color=#808080]── Class & Race ──[/color]\n"
 	if class_passive.name != "None":
-		text += "[color=%s]%s:[/color] %s\n" % [class_passive.color, class_passive.name, class_passive.description]
+		text += "[color=%s]%s:[/color] [b]%s[/b] — %s\n" % [
+			class_passive.color, class_name_str, class_passive.name, class_passive.description
+		]
+	if race_passive.name != "None":
+		text += "[color=%s]%s:[/color] [b]%s[/b] — %s\n" % [
+			race_passive.color, race_name_str, race_passive.name, race_passive.description
+		]
 	text += "\n"
 
 	# Player class ASCII art — recolored using the player's appearance variant
@@ -23929,8 +23942,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.442 — Audit #2 Slice 2: Class & Race section in inspect.
+	display_game("[color=#00FF00]v0.9.442[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Status page: both class passive AND race passive named in one block[/color]")
+	display_game("  • [b]Replaced the single-line class passive on the inspect page with a 'Class & Race' section listing both passives by name with full effect text.[/b] Race passives (Human Ambition / Elf Forest Heritage / Dwarf Last Stand / Ogre Hearty / Halfling Light-Footed / Orc Berserker / Gnome Arcane Tinkerer / Undead Cursed Resilience) were applied at runtime but never named on any player-facing surface — now the Race line tells you what your racial passive does and the Class line tells you what your class passive does, color-coded to match each identity. Audit #2 Slice 2 closes the visibility gap.")
+	display_game("")
+
 	# v0.9.441 — Audit #4 Slice 3: small overworld egg chance.
-	display_game("[color=#00FF00]v0.9.441[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.441[/color]")
 	display_game("  [color=#FFD700]Companion eggs can drop from overworld T1-T2 monster kills[/color]")
 	display_game("  • [b]T1 monsters: 3% egg drop chance.[/b] T2 monsters: 1% egg drop chance. T3+ still dungeon-only — dungeons remain the canonical path to mid-tier companions, but new players who haven't reached a dungeon yet can now find low-tier eggs through normal exploration. The egg reveals on the post-combat scratch-off panel like any other drop. Of-the-same-monster-type the player just killed; variant rolled at egg creation per existing rules. Closes the longstanding 'eggs only from dungeons' gate noted in the audit (#4 Slice 3).")
 	display_game("")
@@ -26367,6 +26386,34 @@ func _get_class_passive(class_type: String) -> Dictionary:
 			return {"name": "Shadow Step", "description": "+40% flee chance, no damage on failed flee. Affects: Flee action only", "color": "#191970"}
 		_:
 			return {"name": "None", "description": "No passive ability", "color": "#808080"}
+
+
+func _get_race_passive(race_name: String) -> Dictionary:
+	"""Audit #2 Slice 2 — race passive info for the inspect Class & Race
+	section. Mirrors the per-effect getters in character.gd (get_xp_multiplier,
+	has_poison_resistance, get_magic_resistance, get_mana_multiplier,
+	try_last_stand, get_heal_multiplier, get_dodge_bonus, get_market_bonus,
+	get_low_hp_damage_bonus, get_ability_cost_multiplier, is_immune_to_death_curse,
+	does_poison_heal)."""
+	match race_name:
+		"Human":
+			return {"name": "Ambition", "description": "+10% XP from all sources.", "color": "#E6D8B0"}
+		"Elf":
+			return {"name": "Forest Heritage", "description": "+25% max Mana, +20% magic resist, takes 50% poison damage.", "color": "#88FFAA"}
+		"Dwarf":
+			return {"name": "Last Stand", "description": "34% chance to survive lethal damage with 1 HP (once per combat).", "color": "#D4A05A"}
+		"Ogre":
+			return {"name": "Hearty", "description": "Healing items and effects restore 2× HP.", "color": "#9CC25A"}
+		"Halfling":
+			return {"name": "Light-Footed", "description": "+10% dodge chance, +15% Valor from market listings.", "color": "#F0C474"}
+		"Orc":
+			return {"name": "Berserker", "description": "+20% damage when below 50% HP.", "color": "#D24A4A"}
+		"Gnome":
+			return {"name": "Arcane Tinkerer", "description": "−15% ability resource costs (mana / stamina / energy).", "color": "#9BA8FF"}
+		"Undead":
+			return {"name": "Cursed Resilience", "description": "Immune to death-curse effects; poison heals instead of damaging.", "color": "#A8A8A8"}
+		_:
+			return {"name": "None", "description": "No racial passive", "color": "#808080"}
 
 func _get_buff_value(buff_type: String) -> int:
 	"""Get the current value of a buff type from character_data (combines active and persistent buffs)"""
