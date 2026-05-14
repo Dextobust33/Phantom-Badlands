@@ -1698,6 +1698,13 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_clan_demote(peer_id, message)
 		"clan_kick":
 			handle_clan_kick(peer_id, message)
+		# Audit #14 Slice 5 (v0.9.446) — Clan Vault.
+		"clan_vault_list":
+			handle_clan_vault_list(peer_id)
+		"clan_vault_deposit":
+			handle_clan_vault_deposit(peer_id, message)
+		"clan_vault_withdraw":
+			handle_clan_vault_withdraw(peer_id, message)
 		# Combat scratch-off (user-requested 2026-05-14)
 		"combat_loot_reveal":
 			handle_combat_loot_reveal(peer_id, message)
@@ -8715,6 +8722,136 @@ func handle_clan_kick(peer_id: int, message: Dictionary) -> void:
 		})
 		_send_clan_info(target_peer)
 	_refresh_all_online_clan_members(clan_id_before)
+
+
+# ===== CLAN VAULT (Audit #14 Slice 5 — v0.9.446) =====
+# Shared item storage owned by the clan. Any member can deposit + withdraw.
+# Capped at persistence.CLAN_VAULT_CAPACITY items. Chat-command MVP — no UI
+# yet; players use /vault, /vault deposit <slot>, /vault take <index>.
+
+func _clan_member_or_error(peer_id: int) -> String:
+	"""Return the caller's clan_id if they're authenticated AND in a clan.
+	Otherwise sends an error to the peer and returns ""."""
+	if not peers.has(peer_id):
+		return ""
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return ""
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]You're not in a clan. Use /clan to create or join one.[/color]"})
+		return ""
+	return clan_id
+
+
+func handle_clan_vault_list(peer_id: int) -> void:
+	"""Send the clan vault contents to the caller as a `clan_vault_list_result`
+	payload (consumed by client `/vault` rendering). Permission: any member."""
+	var clan_id = _clan_member_or_error(peer_id)
+	if clan_id == "":
+		return
+	var items = persistence.get_clan_storage(clan_id)
+	var clan = persistence.get_clan(clan_id)
+	send_to_peer(peer_id, {
+		"type": "clan_vault_list_result",
+		"items": items,
+		"capacity": persistence.CLAN_VAULT_CAPACITY,
+		"clan_name": String(clan.get("name", "")),
+		"clan_tag": String(clan.get("tag", "")),
+	})
+
+
+func handle_clan_vault_deposit(peer_id: int, message: Dictionary) -> void:
+	"""Deposit an inventory item into the clan vault. Slot is 0-indexed into
+	character.inventory. Permission: any member."""
+	if not characters.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No character loaded."})
+		return
+	var clan_id = _clan_member_or_error(peer_id)
+	if clan_id == "":
+		return
+	var slot = int(message.get("slot", -1))
+	var character = characters[peer_id]
+	if slot < 0 or slot >= character.inventory.size():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Invalid inventory slot.[/color]"})
+		return
+	var item = character.inventory[slot]
+	if item == null or (item is Dictionary and item.is_empty()):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]That slot is empty.[/color]"})
+		return
+	# Deposit a copy first; only remove from inventory if persistence accepts.
+	var result = persistence.clan_deposit_item(clan_id, item)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Deposit failed."))})
+		return
+	character.inventory.remove_at(slot)
+	save_character(peer_id)
+	send_character_update(peer_id)
+	var item_name = String(item.get("name", "item")) if item is Dictionary else "item"
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#88FF88]Deposited [color=#FFD700]%s[/color] to the clan vault. ([%d/%d])[/color]" % [
+			item_name, int(result.get("vault_size", 0)), persistence.CLAN_VAULT_CAPACITY
+		]
+	})
+	# Push fresh vault state to all online clan members so any open viewers refresh.
+	_push_clan_vault_to_all(clan_id)
+
+
+func handle_clan_vault_withdraw(peer_id: int, message: Dictionary) -> void:
+	"""Withdraw an item from the clan vault into the caller's inventory.
+	Permission: any member."""
+	if not characters.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No character loaded."})
+		return
+	var clan_id = _clan_member_or_error(peer_id)
+	if clan_id == "":
+		return
+	var character = characters[peer_id]
+	if character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Your inventory is full.[/color]"})
+		return
+	var vault_index = int(message.get("index", -1))
+	var result = persistence.clan_withdraw_item(clan_id, vault_index)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Withdraw failed."))})
+		return
+	var item = result.get("item", {})
+	character.inventory.append(item)
+	save_character(peer_id)
+	send_character_update(peer_id)
+	var item_name = String(item.get("name", "item")) if item is Dictionary else "item"
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#88FF88]Withdrew [color=#FFD700]%s[/color] from the clan vault.[/color]" % item_name
+	})
+	_push_clan_vault_to_all(clan_id)
+
+
+func _push_clan_vault_to_all(clan_id: String) -> void:
+	"""Re-send the vault list to every online clan member so anyone viewing
+	the vault sees the change immediately. Mirrors _refresh_all_online_clan_members."""
+	if clan_id == "":
+		return
+	var clan = persistence.get_clan(clan_id)
+	if clan.is_empty():
+		return
+	var items = persistence.get_clan_storage(clan_id)
+	var capacity = persistence.CLAN_VAULT_CAPACITY
+	var clan_name = String(clan.get("name", ""))
+	var clan_tag = String(clan.get("tag", ""))
+	for member_id in clan.get("member_ids", []):
+		var member_peer = _find_peer_for_account(String(member_id))
+		if member_peer >= 0:
+			send_to_peer(member_peer, {
+				"type": "clan_vault_list_result",
+				"items": items,
+				"capacity": capacity,
+				"clan_name": clan_name,
+				"clan_tag": clan_tag,
+			})
+
 
 func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name: String):
 	"""Process hatching an egg and sending the companion to house kennel via Home Stone"""
