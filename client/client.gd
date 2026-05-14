@@ -23102,9 +23102,14 @@ func _build_progression_vectors_text(char: Dictionary) -> String:
 	]
 
 	# --- Currencies / pouch ---
-	var soul_gems = int(char.get("soul_gems", 0))
-	if soul_gems > 0:
-		out += "[color=#9966FF]Soul Gems:[/color] %d\n" % soul_gems
+	var soul_gems_raw = char.get("soul_gems", [])
+	var soul_gem_count: int = 0
+	if soul_gems_raw is Array:
+		soul_gem_count = soul_gems_raw.size()
+	elif soul_gems_raw is int or soul_gems_raw is float:
+		soul_gem_count = int(soul_gems_raw)
+	if soul_gem_count > 0:
+		out += "[color=#9966FF]Soul Gems:[/color] %d\n" % soul_gem_count
 
 	out += "\n"
 	return out
@@ -23921,8 +23926,8 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.437 — Audit #3 Slice 2: Progression Vectors dashboard.
-	display_game("[color=#00FF00]v0.9.437[/color] [color=#808080](Current)[/color]")
+	# v0.9.437/438 — Audit #3 Slice 2: Progression Vectors dashboard.
+	display_game("[color=#00FF00]v0.9.437/438[/color] [color=#808080](Current)[/color]")
 	display_game("  [color=#FFD700]Status page now lists every advanceable track[/color]")
 	display_game("  • [b]New 'Progression Vectors' section on the character status page surfaces every track you can advance in one place.[/b] Unspent stat points (with a hint to spend them), Sanctuary upgrades + Baddie Point balance, all 5 gathering jobs and 5 specialty jobs with current level / XP% / commit status, Bestiary unique species and total kill count, Compass posts-visited count, and Soul Gems. Each entry shows the next milestone or commit hint so you know what the action is. Was hard to tell at a glance what was even progressing — this is the discoverability surface for everything else the game tracks.")
 	display_game("")
