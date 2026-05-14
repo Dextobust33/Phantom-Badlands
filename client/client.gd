@@ -1443,11 +1443,11 @@ var _combat_paused: bool = false
 # long, especially between rounds when picking the next ability. Tuned to
 # preserve readability (popups still readable, attacks still separable) but
 # trim the dead time between events.
-const SEPARATOR_DELAY: float = 0.45
-const INTER_ATTACK_DELAY: float = 0.65      # gap between consecutive attacks (0.78 → 0.65)
-const POST_FINAL_ATTACK_DELAY: float = 0.40 # pause after last attack before end-of-phase (0.55 → 0.40)
-const AMBIENT_DELAY: float = 0.12
-const END_ACTION_PHASE_GRACE: float = 0.6   # buffer after queue empties before overlay fades (0.9 → 0.6)
+const SEPARATOR_DELAY: float = 0.25         # v0.9.439: 0.45 → 0.25 (Review FX is the escape hatch)
+const INTER_ATTACK_DELAY: float = 0.45      # v0.9.439: 0.65 → 0.45
+const POST_FINAL_ATTACK_DELAY: float = 0.25 # v0.9.439: 0.40 → 0.25
+const AMBIENT_DELAY: float = 0.06           # v0.9.439: 0.12 → 0.06
+const END_ACTION_PHASE_GRACE: float = 0.30  # v0.9.439: 0.60 → 0.30
 
 # Per-turn one-liners (Combat Readability slice #1)
 # Buffered messages between server pulses get folded into one summary per
@@ -8646,7 +8646,10 @@ func send_combat_command(command: String):
 	# v0.9.422 — 0.45 → 0.30. Player_col fade is 0.20s + overlay fade is
 	# 0.25s, but the first attack can land at 0.30 because the overlay is
 	# still fading in (player sees the lunge happen during the fade — fine).
-	combat_phase_timer = max(combat_phase_timer, 0.30)
+	# v0.9.439 — 0.30 → 0.15. Action-phase fade tweens were also shrunk
+	# (0.20/0.25/0.28 → 0.12/0.15/0.18) so the overlay is mostly visible
+	# by 0.15s. Review FX is the escape hatch if anyone needs to re-watch.
+	combat_phase_timer = max(combat_phase_timer, 0.15)
 	combat_phase_paused = true
 	send_to_server({"type": "combat", "command": command})
 
@@ -23926,8 +23929,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.439 — Combat pacing trim + Review FX button.
+	display_game("[color=#00FF00]v0.9.439[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat: faster pacing across the board + new Review FX button[/color]")
+	display_game("  • [b]~25% pacing trim on combat transitions and animations.[/b] Action→FX lockout 0.30→0.15s. Inter-attack 0.65→0.45s. Post-final-attack 0.40→0.25s. Separator 0.45→0.25s. Ambient 0.12→0.06s. End-of-action grace 0.60→0.30s. Action-phase fade-in tweens 0.20/0.25/0.28→0.12/0.15/0.18s. Fade-out 0.25/0.22→0.15/0.13s. Lunge 0.10→0.07s. Damage popup linger 1.0/0.35→0.65/0.25s. Miss popup 0.85/0.35→0.55/0.25s. The whole loop snaps closed faster — less waiting between rounds.")
+	display_game("  • [b]New 'Review FX' button on the combat panel.[/b] Top-right corner during action selection. Press it to re-open the FX scene and re-read the latest fight's per-actor strips. Strips become mouse-scrollable in review mode (wheel or drag the scrollbar). History limit bumped 5→30 lines, so you can read deep into the fight. Press 'Back' (in the same corner during review) to return to hand selection.")
+	display_game("")
+
 	# v0.9.437/438 — Audit #3 Slice 2: Progression Vectors dashboard.
-	display_game("[color=#00FF00]v0.9.437/438[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.437/438[/color]")
 	display_game("  [color=#FFD700]Status page now lists every advanceable track[/color]")
 	display_game("  • [b]New 'Progression Vectors' section on the character status page surfaces every track you can advance in one place.[/b] Unspent stat points (with a hint to spend them), Sanctuary upgrades + Baddie Point balance, all 5 gathering jobs and 5 specialty jobs with current level / XP% / commit status, Bestiary unique species and total kill count, Compass posts-visited count, and Soul Gems. Each entry shows the next milestone or commit hint so you know what the action is. Was hard to tell at a glance what was even progressing — this is the discoverability surface for everything else the game tracks.")
 	display_game("")
