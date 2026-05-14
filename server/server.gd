@@ -18132,6 +18132,12 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		# distribution from success_chance once and ships it alongside the recipe
 		# so the client can render "12% Poor / 50% Standard / 30% Fine / 8% Masterwork".
 		var quality_odds = {} if (is_locked or specialist_gated) else CraftingDatabaseScript.quality_distribution(success_chance)
+		# Audit #8 Layer 6 (v0.9.445) — sell-value preview. Pull the rolling
+		# market average from the same history Slice 4 of #9 maintains. Keyed
+		# by recipe output name; 0 when no sales have been recorded yet (UI
+		# skips rendering in that case). Stat-varied equipment averages across
+		# all its random rolls — same caveat as the per-listing avg badge.
+		var avg_market_price: int = _get_avg_recent_price(recipe.name)
 		recipe_list.append({
 			"id": recipe_id,
 			"name": recipe.name,
@@ -18141,6 +18147,7 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			"can_craft": can_craft,
 			"success_chance": success_chance,
 			"quality_odds": quality_odds,
+			"avg_market_price": avg_market_price,
 			"output_type": recipe.output_type,
 			"locked": is_locked,
 			"specialist_only": is_specialist_only,
