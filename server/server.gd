@@ -63,6 +63,13 @@ var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
 var pending_flock_drops = {}  # peer_id -> Array of accumulated drops during flock
 var pending_flock_gems = {}   # peer_id -> Total gems earned during flock
 var flock_counts = {}  # peer_id -> int (how many monsters in current flock chain)
+# Audit user-request 2026-05-14 — combat scratch-off slice. peer_id → bag dict
+# {slots, reveal_budget, reveals_used, monster_tier, monster_level}.
+# When the flag is OFF, the entire scratch-off path is bypassed and items award
+# inline like before — a safety lever for fast revert if a v1 bug ships.
+const COMBAT_LOOT_SCRATCH_OFF_ENABLED := true
+const COMBAT_LOOT_SLOT_COUNT := 16
+var active_combat_loot: Dictionary = {}
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
@@ -1680,6 +1687,11 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_clan_demote(peer_id, message)
 		"clan_kick":
 			handle_clan_kick(peer_id, message)
+		# Combat scratch-off (user-requested 2026-05-14)
+		"combat_loot_reveal":
+			handle_combat_loot_reveal(peer_id, message)
+		"combat_loot_done":
+			handle_combat_loot_done(peer_id)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -4000,6 +4012,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					total_gems += pending_flock_gems[peer_id]
 					pending_flock_gems.erase(peer_id)
 
+				# Capture the flock kill count BEFORE we erase flock_counts —
+				# the combat scratch-off uses this to award +1 reveal per extra
+				# kill in the flock. flock_counts is the number of monsters in
+				# the current chain (1 = solo fight, N = N-monster flock).
+				var _final_flock_kills: int = 1
+				if flock_counts.has(peer_id):
+					_final_flock_kills = max(1, int(flock_counts[peer_id]))
+
 				# Reset flock count
 				if flock_counts.has(peer_id):
 					flock_counts.erase(peer_id)
@@ -4051,11 +4071,33 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"monster_tier": _get_monster_tier(killed_monster_level)
 					})
 
-				# Give all drops to player now
+				# Combat scratch-off bag (user-requested 2026-05-14) — when the
+				# feature flag is on, we route all drops through the 16-slot
+				# reveal panel instead of awarding inline. Currency/XP still go
+				# straight to the player below (combat_end auto-applies via
+				# the character payload). When the flag is off, fall through to
+				# the legacy give-loot loop so production can be reverted with
+				# a single edit.
+				# Combat scratch-off: build the bag instead of awarding inline.
+				# drop_messages / drop_data stay empty so the existing combat_end
+				# send below ships the loot_bag field instead. Achievement +
+				# dungeon-state code after the send still runs normally.
+				var _combat_loot_bag_view: Dictionary = {}
+				if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
+					var _monster_tier: int = _get_monster_tier(killed_monster_level)
+					var _bag: Dictionary = _build_combat_loot_bag(all_drops, _monster_tier, _final_flock_kills)
+					active_combat_loot[peer_id] = _bag
+					_combat_loot_bag_view = _serialize_combat_loot_bag_for_client(_bag, false)
+
+				# Give all drops to player now (skipped when scratch-off is on;
+				# items award one-by-one as the player reveals slots).
 				var drop_messages = []
 				var drop_data = []  # For client sound effects
 				var player_level = characters[peer_id].level
 				for item in all_drops:
+					if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
+						# Skip the inline award — bag path handles it on reveal.
+						break
 					# Special handling for companion eggs
 					if item.get("type", "") == "companion_egg":
 						var egg_data = item.get("egg_data", {})
@@ -4153,7 +4195,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"character": characters[peer_id].to_dict(),
 						"flock_drops": drop_messages,
 						"total_gems": total_gems,
-						"drop_data": drop_data
+						"drop_data": drop_data,
+						# Combat scratch-off — empty when flag is off.
+						"loot_bag": _combat_loot_bag_view,
 					})
 				else:
 					send_to_peer(peer_id, {
@@ -4163,7 +4207,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"flock_drops": drop_messages,
 						"total_gems": total_gems,
 						"drop_data": drop_data,
-						"harvest_available": _harvest_avail
+						"harvest_available": _harvest_avail,
+						# Combat scratch-off — when present, client renders the
+						# 16-slot reveal grid instead of the flat loot list.
+						"loot_bag": _combat_loot_bag_view,
 					})
 
 				# === ACHIEVEMENT BROADCASTS ===
@@ -5762,6 +5809,9 @@ func handle_disconnect(peer_id: int):
 	active_harvests.erase(peer_id)
 	gathering_cooldown.erase(peer_id)
 	build_cooldown.erase(peer_id)
+	# Combat scratch-off cleanup (user-requested 2026-05-14) — unrevealed
+	# slots are lost on disconnect, same way pending_flock_drops behaves.
+	active_combat_loot.erase(peer_id)
 
 	# v0.9.346 — clean up save-throttle state for the departing peer so a
 	# future peer reusing this ID doesn't inherit a stale cooldown.
@@ -15677,6 +15727,373 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		map_update_dirty[peer_id] = true
 	else:
 		send_location_update(peer_id)
+
+# ===== COMBAT SCRATCH-OFF (user-requested 2026-05-14) =====
+#
+# After a winning combat (or at the end of a flock), the player sees a 16-slot
+# bag of pre-rolled outcomes. Reveal budget is tier-scaled (T1-2: 1, T3-5: 2,
+# T6+: 3) with +1 per additional flock kill. Each click reveals one slot and
+# AWARDS that slot's content; Done leaves the rest sealed (auto-flipped client
+# side so the player sees what they missed). Currency (gold/valor/gems) still
+# auto-awards on victory — only items live in the bag. Filler outcomes (small
+# Valor / Salvage Essence / T1 materials / Monster Parts) fill the leftover
+# slots so every click pays off in some way; expected value of real drops is
+# preserved because filler is added AFTER the real drops are decided by the
+# existing roll_combat_drops pipeline.
+
+func _combat_loot_reveal_budget(monster_tier: int, flock_kills: int) -> int:
+	"""Tier-scaled base + (flock_kills - 1) for the bonus. Solo fight = base
+	only; 5-monster flock = base + 4."""
+	var base: int
+	if monster_tier <= 2:
+		base = 1
+	elif monster_tier <= 5:
+		base = 2
+	else:
+		base = 3
+	var bonus = max(0, flock_kills - 1)
+	return base + bonus
+
+func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
+	"""Roll a single filler slot — one of: small Valor, Salvage Essence, a T1
+	material, or a Monster Part. Quantities scale lightly with tier so a T7
+	filler isn't insulting (still way less than a real drop). Returns a dict
+	with `kind` and the kind-specific payload."""
+	var roll = randi() % 4
+	var tier_scale: int = clampi(monster_tier, 1, 9)
+	match roll:
+		0:
+			# Small Valor — currency. Tier 1: 2-6, Tier 9: 12-30 (rough).
+			var amount: int = randi_range(2, 6) * tier_scale / 2
+			amount = max(1, amount)
+			return {"kind": "filler_valor", "amount": amount}
+		1:
+			# Salvage Essence — scales 1-2 at low tier, up to 3-6 at high tier.
+			var qty: int = randi_range(1, 2 + tier_scale / 3)
+			return {"kind": "filler_essence", "amount": qty}
+		2:
+			# T1 crafting material — Iron Ore / Pine Wood / etc. Pick one
+			# from the tier-1 material pool. Falls through to essence on miss.
+			var t1_mats = ["iron_ore", "pine_wood", "wheat", "raw_hide"]
+			var mat_id: String = t1_mats[randi() % t1_mats.size()]
+			var qty: int = randi_range(1, 2 + tier_scale / 4)
+			return {"kind": "filler_material", "material_id": mat_id, "quantity": qty}
+		_:
+			# Monster Part — small generic part drop scaled to tier.
+			var part_id: String = "monster_hide" if (randi() % 2 == 0) else "monster_bone"
+			var qty: int = randi_range(1, 1 + tier_scale / 3)
+			return {"kind": "filler_part", "material_id": part_id, "quantity": qty}
+
+func _build_combat_loot_bag(real_drops: Array, monster_tier: int, flock_kills: int) -> Dictionary:
+	"""Pre-roll the 16-slot bag. Real drops (everything roll_combat_drops gave
+	the player + any extras the flock-end path rolled) are placed into random
+	slot indices; the rest fill with filler outcomes. Bag is shuffled so the
+	player can't tell real from filler at a glance. Returns the bag dict the
+	server stores for the active session + sends to the client."""
+	var slot_count: int = COMBAT_LOOT_SLOT_COUNT
+	var slots: Array = []
+	# Real drops first — already in roll order from the combat result.
+	for d in real_drops:
+		if slots.size() >= slot_count:
+			break
+		# Tag each entry with kind=real so reveal handler routes to the right
+		# inventory path. Keep the original drop dict untouched so existing
+		# special-case branches (egg / material / monster_part) still work.
+		slots.append({"kind": "real", "drop": d, "revealed": false})
+	# Filler to fill remaining slots so every click pays off.
+	while slots.size() < slot_count:
+		var filler: Dictionary = _build_combat_loot_filler(monster_tier)
+		filler["revealed"] = false
+		slots.append(filler)
+	# Shuffle so the player can't infer real-vs-filler from slot position.
+	slots.shuffle()
+	var budget: int = _combat_loot_reveal_budget(monster_tier, flock_kills)
+	return {
+		"slots": slots,
+		"reveal_budget": budget,
+		"reveals_used": 0,
+		"monster_tier": monster_tier,
+		"flock_kills": flock_kills,
+	}
+
+func _award_combat_loot_slot(peer_id: int, slot: Dictionary) -> Dictionary:
+	"""Award the contents of a revealed slot to the player's inventory. Returns
+	a structured payload the client uses to render the reveal (name, color,
+	rarity, etc). Filler slots are awarded inline (currency / materials);
+	real drops go through the same special-case paths the old flock-end loop
+	used so eggs land in incubation, materials in the pouch, etc."""
+	if not characters.has(peer_id):
+		return {}
+	var character = characters[peer_id]
+	var kind: String = String(slot.get("kind", ""))
+	match kind:
+		"filler_valor":
+			var amount: int = int(slot.get("amount", 0))
+			if peers.has(peer_id):
+				var acct_id: String = str(peers[peer_id].get("account_id", ""))
+				if acct_id != "":
+					persistence.add_valor(acct_id, amount)
+			return {
+				"kind": "filler_valor",
+				"name": "+%d Valor" % amount,
+				"amount": amount,
+				"color": "#FFD700",
+				"rarity": "common",
+			}
+		"filler_essence":
+			var amount2: int = int(slot.get("amount", 0))
+			character.salvage_essence += amount2
+			return {
+				"kind": "filler_essence",
+				"name": "+%d Salvage Essence" % amount2,
+				"amount": amount2,
+				"color": "#AA66FF",
+				"rarity": "common",
+			}
+		"filler_material":
+			var mat_id: String = String(slot.get("material_id", ""))
+			var qty: int = int(slot.get("quantity", 1))
+			character.add_crafting_material(mat_id, qty)
+			var mat_name: String = CraftingDatabaseScript.get_material_name(mat_id)
+			return {
+				"kind": "filler_material",
+				"name": "%s x%d" % [mat_name, qty],
+				"color": "#1EFF00",
+				"rarity": "common",
+			}
+		"filler_part":
+			var p_id: String = String(slot.get("material_id", ""))
+			var p_qty: int = int(slot.get("quantity", 1))
+			character.add_crafting_material(p_id, p_qty)
+			var p_name: String = CraftingDatabaseScript.get_material_name(p_id)
+			return {
+				"kind": "filler_part",
+				"name": "%s x%d" % [p_name, p_qty],
+				"color": "#FF6600",
+				"rarity": "common",
+			}
+		"real":
+			# Re-uses the existing flock-end branching so eggs / mats / parts
+			# / equipment all land where the old code put them.
+			var d: Dictionary = slot.get("drop", {})
+			return _award_real_combat_loot(peer_id, d)
+		_:
+			return {}
+
+func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
+	"""Mirrors the special-case branches from the old flock-end give-loot loop
+	(server.gd ~line 4058). Returns a structured reveal payload so the client
+	can show the right rarity / icon. Called only when the player reveals a
+	real-drop slot in the scratch-off."""
+	if not characters.has(peer_id):
+		return {}
+	var character = characters[peer_id]
+	var t: String = String(item.get("type", ""))
+	var player_level: int = character.level
+	if t == "companion_egg":
+		var egg_data: Dictionary = item.get("egg_data", {})
+		var egg_cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+		var egg_result = character.add_egg(egg_data, egg_cap)
+		if egg_result.success:
+			return {
+				"kind": "egg",
+				"name": str(egg_data.get("name", "Mysterious Egg")),
+				"hatch_steps": int(egg_data.get("hatch_steps", 100)),
+				"color": "#A335EE",
+				"rarity": "epic",
+			}
+		return {
+			"kind": "egg_full",
+			"name": "%s (eggs full!)" % str(egg_data.get("name", "Egg")),
+			"color": "#FF6666",
+			"rarity": "common",
+		}
+	if t == "crafting_material":
+		var mat_id: String = str(item.get("material_id", ""))
+		var qty: int = int(item.get("quantity", 1))
+		var mat_info: Dictionary = CraftingDatabaseScript.get_material(mat_id)
+		var mat_name: String = mat_info.get("name", mat_id) if not mat_info.is_empty() else mat_id
+		character.add_crafting_material(mat_id, qty)
+		return {
+			"kind": "material",
+			"name": "%s x%d" % [mat_name, qty],
+			"color": "#1EFF00",
+			"rarity": "uncommon",
+		}
+	if t == "monster_part":
+		var mp_id: String = str(item.get("material_id", ""))
+		var mp_name: String = str(item.get("material_name", mp_id))
+		var mp_qty: int = int(item.get("quantity", 1))
+		character.add_crafting_material(mp_id, mp_qty)
+		return {
+			"kind": "monster_part",
+			"name": "%s x%d" % [mp_name, mp_qty],
+			"color": "#FF6600",
+			"rarity": "common",
+		}
+	# Regular item — equipment / consumable / tool / etc. Path mirrors the old
+	# add_item-or-auto-salvage branch.
+	if character.can_add_item() or _try_auto_salvage(peer_id):
+		if _should_auto_salvage_item(peer_id, item):
+			var sal_result = drop_tables.get_salvage_value(item)
+			var sal_mats = sal_result.get("materials", {})
+			for k in sal_mats:
+				character.add_crafting_material(k, sal_mats[k])
+			return {
+				"kind": "auto_salvaged",
+				"name": "%s (auto-salvaged)" % str(item.get("name", "item")),
+				"color": "#AA66FF",
+				"rarity": item.get("rarity", "common"),
+			}
+		character.add_item(item)
+		var rarity: String = str(item.get("rarity", "common"))
+		var rcolor: String = _get_rarity_color(rarity)
+		var rsymbol: String = _get_rarity_symbol(rarity)
+		var rname: String = str(item.get("name", "Unknown Item"))
+		return {
+			"kind": "item",
+			"name": rname,
+			"symbol": rsymbol,
+			"color": rcolor,
+			"rarity": rarity,
+			"level": int(item.get("level", 1)),
+			"level_diff": int(item.get("level", 1)) - player_level,
+		}
+	# Inventory full — auto-salvage same as before.
+	var overflow_sal = drop_tables.get_salvage_value(item)
+	var overflow_mats = overflow_sal.get("materials", {})
+	if not overflow_mats.is_empty():
+		for k in overflow_mats:
+			character.add_crafting_material(k, overflow_mats[k])
+		return {
+			"kind": "inv_full_salvaged",
+			"name": "%s (inv full → salvaged)" % str(item.get("name", "item")),
+			"color": "#FF8800",
+			"rarity": item.get("rarity", "common"),
+		}
+	return {
+		"kind": "inv_full_lost",
+		"name": "%s (inv full, no salvage)" % str(item.get("name", "item")),
+		"color": "#FF4444",
+		"rarity": item.get("rarity", "common"),
+	}
+
+func _serialize_combat_loot_bag_for_client(bag: Dictionary, fully_revealed: bool = false) -> Dictionary:
+	"""Build the client-visible view of the bag. Unrevealed slots ship only a
+	`kind: 'sealed'` placeholder so the client can't peek; revealed slots ship
+	their full content payload (which the client already has from the reveal
+	response, but we mirror it here for completeness on done)."""
+	var view_slots: Array = []
+	for s in bag.slots:
+		if s.get("revealed", false) or fully_revealed:
+			# Reveal the slot kind + display info so client can draw it.
+			view_slots.append(_preview_slot_for_client(s))
+		else:
+			view_slots.append({"kind": "sealed", "revealed": false})
+	return {
+		"slots": view_slots,
+		"reveal_budget": int(bag.get("reveal_budget", 0)),
+		"reveals_used": int(bag.get("reveals_used", 0)),
+		"monster_tier": int(bag.get("monster_tier", 1)),
+		"flock_kills": int(bag.get("flock_kills", 1)),
+	}
+
+func _preview_slot_for_client(slot: Dictionary) -> Dictionary:
+	"""Lightweight preview (without re-awarding) for the done-reveal cascade so
+	the player can see what they missed."""
+	var kind: String = String(slot.get("kind", ""))
+	var revealed: bool = bool(slot.get("revealed", false))
+	match kind:
+		"filler_valor":
+			return {"kind": "filler_valor", "revealed": revealed, "name": "+%d Valor" % int(slot.get("amount", 0)), "color": "#FFD700"}
+		"filler_essence":
+			return {"kind": "filler_essence", "revealed": revealed, "name": "+%d Essence" % int(slot.get("amount", 0)), "color": "#AA66FF"}
+		"filler_material":
+			var mid: String = str(slot.get("material_id", ""))
+			var mname: String = CraftingDatabaseScript.get_material_name(mid)
+			return {"kind": "filler_material", "revealed": revealed, "name": "%s x%d" % [mname, int(slot.get("quantity", 1))], "color": "#1EFF00"}
+		"filler_part":
+			var pid: String = str(slot.get("material_id", ""))
+			var pname: String = CraftingDatabaseScript.get_material_name(pid)
+			return {"kind": "filler_part", "revealed": revealed, "name": "%s x%d" % [pname, int(slot.get("quantity", 1))], "color": "#FF6600"}
+		"real":
+			var d: Dictionary = slot.get("drop", {})
+			var t: String = str(d.get("type", ""))
+			if t == "companion_egg":
+				return {"kind": "egg", "revealed": revealed, "name": str(d.get("egg_data", {}).get("name", "Mysterious Egg")), "color": "#A335EE", "rarity": "epic"}
+			if t == "crafting_material":
+				var mid2: String = str(d.get("material_id", ""))
+				var minfo: Dictionary = CraftingDatabaseScript.get_material(mid2)
+				var mname2: String = minfo.get("name", mid2) if not minfo.is_empty() else mid2
+				return {"kind": "material", "revealed": revealed, "name": "%s x%d" % [mname2, int(d.get("quantity", 1))], "color": "#1EFF00", "rarity": "uncommon"}
+			if t == "monster_part":
+				return {"kind": "monster_part", "revealed": revealed, "name": "%s x%d" % [str(d.get("material_name", "Part")), int(d.get("quantity", 1))], "color": "#FF6600", "rarity": "common"}
+			return {
+				"kind": "item",
+				"revealed": revealed,
+				"name": str(d.get("name", "Item")),
+				"symbol": _get_rarity_symbol(str(d.get("rarity", "common"))),
+				"color": _get_rarity_color(str(d.get("rarity", "common"))),
+				"rarity": str(d.get("rarity", "common")),
+				"level": int(d.get("level", 1)),
+			}
+		_:
+			return {"kind": "sealed", "revealed": revealed}
+
+func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
+	"""Client picked a slot — award the contents + decrement budget + push a
+	reveal_result. Auto-finishes the session when budget hits zero."""
+	if not characters.has(peer_id):
+		return
+	if not active_combat_loot.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "No active combat loot bag."})
+		return
+	var bag: Dictionary = active_combat_loot[peer_id]
+	var slot_index: int = int(message.get("slot_index", -1))
+	var slots: Array = bag.slots
+	if slot_index < 0 or slot_index >= slots.size():
+		return
+	if bool(slots[slot_index].get("revealed", false)):
+		return
+	if int(bag.get("reveals_used", 0)) >= int(bag.get("reveal_budget", 0)):
+		send_to_peer(peer_id, {"type": "combat_loot_error", "reason": "No reveals remaining."})
+		return
+	# Award the slot's content, mark revealed, push the reveal-result.
+	slots[slot_index]["revealed"] = true
+	bag["reveals_used"] = int(bag.get("reveals_used", 0)) + 1
+	var awarded = _award_combat_loot_slot(peer_id, slots[slot_index])
+	send_to_peer(peer_id, {
+		"type": "combat_loot_reveal_result",
+		"slot_index": slot_index,
+		"reveal": awarded,
+		"reveals_used": int(bag.reveals_used),
+		"reveal_budget": int(bag.reveal_budget),
+		"character": characters[peer_id].to_dict(),
+	})
+	save_character(peer_id)
+	if int(bag.reveals_used) >= int(bag.reveal_budget):
+		# Budget exhausted — auto-close (client will animate the cascade).
+		_finish_combat_loot(peer_id, true)
+
+func handle_combat_loot_done(peer_id: int) -> void:
+	"""Player pressed Done early — flip the remaining cards for the cascade so
+	they can see what they missed, then clear the bag. Unrevealed slots are
+	NOT awarded (this is the cost of stopping early)."""
+	if not active_combat_loot.has(peer_id):
+		return
+	_finish_combat_loot(peer_id, false)
+
+func _finish_combat_loot(peer_id: int, _budget_exhausted: bool) -> void:
+	"""Shared close path — push the fully-revealed bag view and clear state."""
+	if not active_combat_loot.has(peer_id):
+		return
+	var bag: Dictionary = active_combat_loot[peer_id]
+	send_to_peer(peer_id, {
+		"type": "combat_loot_done_result",
+		"final_bag": _serialize_combat_loot_bag_for_client(bag, true),
+		"character": characters[peer_id].to_dict() if characters.has(peer_id) else {},
+	})
+	active_combat_loot.erase(peer_id)
 
 func _complete_craft_scratch_off(peer_id: int) -> void:
 	"""v0.9.372 — finalize a crafting scratch-off session. Maps the player's
