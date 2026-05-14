@@ -423,6 +423,11 @@ func _refresh_detail() -> void:
 		var f = int(odds.get("fine", 0))
 		var m = int(odds.get("masterwork", 0))
 		meta_lines.append("[color=#FFFFFF]Poor:[/color] %d%%   [color=#00FF00]Standard:[/color] %d%%   [color=#0070DD]Fine:[/color] %d%%   [color=#A335EE]Masterwork:[/color] %d%%" % [p, s, f, m])
+	# Audit #8 Layer 6 (v0.9.445) — sell-value preview from #9's rolling market avg.
+	# 0 means no sales recorded yet — skip rendering rather than mislead with zero.
+	var market_avg := int(recipe.get("avg_market_price", 0))
+	if market_avg > 0:
+		meta_lines.append("[color=#FFD700]Recent market avg:[/color] %d Valor [color=#888888](rolling)[/color]" % market_avg)
 	var description := str(recipe.get("description", ""))
 	if description != "":
 		meta_lines.append("[color=#888888]%s[/color]" % description)

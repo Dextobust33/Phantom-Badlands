@@ -23966,8 +23966,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.445 — Audit #8 Layer 6: crafting sell-value preview.
+	display_game("[color=#00FF00]v0.9.445[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafting recipes now show recent market avg price[/color]")
+	display_game("  • [b]Crafting recipe details now include a 'Recent market avg' line[/b] when other players have actually sold the same item recently. Uses the same rolling-average history that already powers the market browse `(avg N)` badges (Slice 4 of audit #9). Helps you tell at a glance whether a craft is worth your time — if Iron Swords typically sell for 80 Valor and your materials are worth 200 in total, the recipe is a loss; conversely a Masterwork might fetch 5× more on the market than what you'd get from salvage. Stat-varied equipment averages across rolls (same caveat as the market badge — the average is a hint, not a quote). Audit #8 Layer 6.")
+	display_game("")
+
 	# v0.9.444 — Audit #13 Slice 4: Region Atlas Sanctuary upgrade.
-	display_game("[color=#00FF00]v0.9.444[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.444[/color]")
 	display_game("  [color=#FFD700]New Sanctuary upgrade: Region Atlas (account-wide region ledger)[/color]")
 	display_game("  • [b]New `region_atlas` Sanctuary upgrade (3 levels, 800/3000/12000 BP).[/b] Tracks which regions your account has visited — always recorded server-side regardless of upgrade level, so unlocking later uses the full history. Level 1: count visited. Level 2: + sorted region list (the names show up on the inspect dashboard). Level 3: + completion ratio (e.g. 12/47 visited). Surfaced in the Progression Vectors section of the Status page alongside Bestiary and Compass. Third qualitative Sanctuary unlock after Bestiary v0.9.343 and Compass v0.9.432 — keeps exploration tracked and visible. Audit #13 Slice 4.")
 	display_game("")
@@ -31842,6 +31848,13 @@ func display_craft_recipe_details():
 		display_game("[color=#808080]Quality depends on skill vs difficulty.[/color]")
 		display_game("[color=#808080]Higher skill = better quality items![/color]")
 	display_game("")
+	# Audit #8 Layer 6 (v0.9.445) — sell-value preview. Pulls from Slice 4 of #9's
+	# rolling market average history; 0 when no sales have been recorded yet, in
+	# which case we skip rendering rather than show a misleading zero.
+	var market_avg = int(recipe.get("avg_market_price", 0))
+	if market_avg > 0:
+		display_game("[color=#FFD700]Recent market avg:[/color] %d Valor  [color=#808080](rolling avg of recent sales by all players)[/color]" % market_avg)
+		display_game("")
 
 	if can_craft:
 		var craft_label = "CRAFT %dx!" % craft_quantity if craft_quantity > 1 else "CRAFT!"
