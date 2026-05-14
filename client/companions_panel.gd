@@ -66,6 +66,12 @@ var _release_button: Button
 var _ctx_menu: PopupMenu
 var _ctx_companion: Dictionary = {}
 
+# Hover tooltip — top_level Control so it can escape the panel's clip_contents.
+# Mirrors the inventory_panel pattern; monospace font is required so the
+# companion ASCII art rows in the tooltip body line up.
+var _tooltip: PanelContainer
+var _tooltip_label: RichTextLabel
+
 const CTX_INSPECT := 1
 const CTX_RELEASE := 2
 const CTX_ACTIVATE := 3
@@ -77,6 +83,13 @@ func _ready() -> void:
 	clip_contents = true
 	_build_layout()
 	visible = false
+
+
+func _notification(what: int) -> void:
+	# Hide the hover tooltip whenever the panel itself becomes hidden — otherwise
+	# the top_level tooltip would linger on screen after the panel closes.
+	if what == NOTIFICATION_VISIBILITY_CHANGED and not visible:
+		_hide_tooltip()
 
 
 func _build_layout() -> void:
@@ -310,6 +323,42 @@ func _build_layout() -> void:
 	_ctx_menu.id_pressed.connect(_on_ctx_menu_id_pressed)
 	add_child(_ctx_menu)
 
+	# Hover tooltip — top_level so it extends beyond the panel's clip bounds.
+	_tooltip = PanelContainer.new()
+	var tip_sb := StyleBoxFlat.new()
+	tip_sb.bg_color = Color(0.08, 0.06, 0.05, 0.97)
+	tip_sb.border_color = Color(0.55, 0.45, 0.33, 1)
+	tip_sb.set_border_width_all(2)
+	tip_sb.set_corner_radius_all(5)
+	tip_sb.content_margin_left = 8
+	tip_sb.content_margin_top = 6
+	tip_sb.content_margin_right = 8
+	tip_sb.content_margin_bottom = 6
+	_tooltip.add_theme_stylebox_override("panel", tip_sb)
+	_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip.top_level = true
+	_tooltip.visible = false
+	_tooltip.z_index = 100
+	add_child(_tooltip)
+
+	_tooltip_label = RichTextLabel.new()
+	_tooltip_label.bbcode_enabled = true
+	_tooltip_label.fit_content = true
+	_tooltip_label.scroll_active = false
+	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tooltip_label.add_theme_font_size_override("normal_font_size", 12)
+	_tooltip_label.custom_minimum_size = Vector2(320, 0)
+	# Monospace font so ASCII art rendered inside the tooltip body lines up.
+	var tip_mono_path := "res://font/Consolas/consolas.ttf"
+	if ResourceLoader.exists(tip_mono_path):
+		var tip_mono_font: FontFile = load(tip_mono_path)
+		if tip_mono_font:
+			_tooltip_label.add_theme_font_override("normal_font", tip_mono_font)
+			_tooltip_label.add_theme_font_override("bold_font", tip_mono_font)
+			_tooltip_label.add_theme_font_override("italics_font", tip_mono_font)
+			_tooltip_label.add_theme_font_override("mono_font", tip_mono_font)
+	_tooltip.add_child(_tooltip_label)
+
 	_set_tab(TAB_COMPANIONS)
 	_update_tab_styles()
 
@@ -404,6 +453,8 @@ func _set_tab(tab: String) -> void:
 
 
 func _show_inspect_view(active: bool) -> void:
+	if active:
+		_hide_tooltip()
 	_inspect_root.visible = active
 	_companions_tab.visible = (not active) and _current_tab == TAB_COMPANIONS
 	_eggs_tab.visible = (not active) and _current_tab == TAB_EGGS
@@ -480,6 +531,7 @@ func _rebuild_active_section() -> void:
 
 
 func _rebuild_companion_grid() -> void:
+	_hide_tooltip()
 	for child in _companion_grid.get_children():
 		if child == _companion_empty:
 			continue
@@ -572,7 +624,54 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 
 	# Capture click events on the card itself
 	card.gui_input.connect(_on_companion_card_input.bind(c, index))
+	# Hover tooltip — show formatted companion preview while mouse is over the card.
+	card.mouse_entered.connect(_on_companion_card_mouse_entered.bind(c, card))
+	card.mouse_exited.connect(_hide_tooltip)
 	return card
+
+
+# === Hover tooltip ===
+
+func _on_companion_card_mouse_entered(companion: Dictionary, anchor: Control) -> void:
+	if client_ref == null or not client_ref.has_method("format_companion_tooltip_bbcode"):
+		return
+	var bbcode: String = str(client_ref.format_companion_tooltip_bbcode(companion))
+	_show_tooltip_with(bbcode, anchor)
+
+
+func _on_egg_card_mouse_entered(egg: Dictionary, anchor: Control) -> void:
+	if client_ref == null or not client_ref.has_method("format_egg_tooltip_bbcode"):
+		return
+	var bbcode: String = str(client_ref.format_egg_tooltip_bbcode(egg))
+	_show_tooltip_with(bbcode, anchor)
+
+
+func _show_tooltip_with(bbcode: String, anchor: Control) -> void:
+	if bbcode == "" or _tooltip == null or _tooltip_label == null:
+		return
+	_tooltip_label.text = bbcode
+	# Reset so the tooltip shrinks back to fit shorter content (otherwise it keeps
+	# the height of whatever previous, taller tooltip set it).
+	_tooltip.size = Vector2.ZERO
+	_tooltip.visible = true
+	await get_tree().process_frame
+	if not is_instance_valid(_tooltip) or not _tooltip.visible:
+		return
+	_tooltip.reset_size()
+	var vp: Vector2 = get_viewport_rect().size
+	var anchor_rect := Rect2(anchor.global_position, anchor.size)
+	var tip_size: Vector2 = _tooltip.size
+	var pos := Vector2(anchor_rect.position.x + anchor_rect.size.x + 6, anchor_rect.position.y)
+	if pos.x + tip_size.x > vp.x - 4:
+		pos.x = max(4.0, anchor_rect.position.x - tip_size.x - 6)
+	if pos.y + tip_size.y > vp.y - 4:
+		pos.y = max(4.0, vp.y - tip_size.y - 4)
+	_tooltip.global_position = pos
+
+
+func _hide_tooltip() -> void:
+	if _tooltip:
+		_tooltip.visible = false
 
 
 func _on_companion_card_input(event: InputEvent, companion: Dictionary, _index: int) -> void:
@@ -588,6 +687,7 @@ func _on_companion_card_input(event: InputEvent, companion: Dictionary, _index: 
 
 
 func _open_ctx_menu(companion: Dictionary, screen_pos: Vector2) -> void:
+	_hide_tooltip()
 	_ctx_companion = companion
 	_ctx_menu.clear()
 	var clicked_id = str(companion.get("id", ""))
@@ -624,6 +724,7 @@ func _sort_companions(companions: Array) -> Array:
 
 
 func _rebuild_egg_grid() -> void:
+	_hide_tooltip()
 	for child in _egg_grid.get_children():
 		if child == _egg_empty:
 			continue
@@ -720,6 +821,9 @@ func _make_egg_card(egg: Dictionary, index: int) -> PanelContainer:
 
 	# Click to toggle freeze
 	card.gui_input.connect(_on_egg_card_input.bind(index))
+	# Hover tooltip — show ability/hatch-target preview for the egg.
+	card.mouse_entered.connect(_on_egg_card_mouse_entered.bind(egg, card))
+	card.mouse_exited.connect(_hide_tooltip)
 	return card
 
 

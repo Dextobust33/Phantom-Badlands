@@ -23858,8 +23858,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.430 — Audit #4 Slice 2: hover tooltips on companion + egg cards.
+	display_game("[color=#00FF00]v0.9.430[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companions panel: hover any card to see the full preview[/color]")
+	display_game("  • [b]Hovering a companion card now shows a tooltip with rarity, level/tier/sub-tier, XP bar, damage estimate, aggro role, top stat bonuses, all three abilities (Passive / Active / Threshold with unlock requirements + descriptions), and the variant-recolored ASCII art[/b] — closes the audit gap noted by the user: 'I'd like it to be like the Inventory system where you can hover it and see the companion ASCII art and Inspect info etc.' Left-click still activates and right-click still opens the Activate / Inspect / Release menu.")
+	display_game("  [color=#FFD700]Eggs panel: hover any egg for hatch preview[/color]")
+	display_game("  • [b]Hovering an egg card now shows what it hatches into[/b] — Passive / Active / Threshold ability previews plus a progress bar restate, frozen flag, and rarity tag. Decide at a glance whether the egg is worth keeping, freezing, or trading.")
+	display_game("")
+
 	# v0.9.429 — Combat picker tooltips + log strip removed.
-	display_game("[color=#00FF00]v0.9.429[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.429[/color]")
 	display_game("  [color=#FFD700]Combat picker: hover tooltips on every item[/color]")
 	display_game("  • [b]Hovering an item in the in-combat Use Item picker now shows the same effect description the regular inventory inspect shows[/b] — e.g., 'Restores 250 HP + 25% of max HP', 'Companion draws +30% aggro for next 3 monster turns.' Tooltip is built from _get_item_effect_description so any future inventory description tweaks land in the picker for free.")
 	display_game("  [color=#FFD700]Combat scene: legacy log strip removed from layout[/color]")
@@ -23885,18 +23893,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Home Stone (Companion) now actually works[/color]")
 	display_game("  • [b]Using a Home Stone (Companion) from inventory now shows the Register / Kennel / Cancel prompt[/b], instead of silently consuming the stone. Three bugs fixed at once: (1) the early home-stone block in handle_inventory_use was missing the companion case, so the stone fell through to a legacy handler that consumed it BEFORE asking the player. (2) The home_stone_companion_choice client handler didn't close the inventory panel, so the prompt landed in game_output which was hidden behind the panel. (3) The Register / Kennel / Cancel action-bar branch lived inside the HOUSE_SCREEN block — when used in-world, the buttons never rendered.")
 	display_game("  • [b]Cancel no longer consumes the stone[/b]. Companion now matches the supplies/egg/equipment pattern: stone is held in inventory across the choice, consumed only on Register or Kennel confirm. Was: consumed up front, refunded on cancel (which briefly dropped the count and could surprise the player if anything mutated inventory in between).")
-	display_game("")
-
-	# v0.9.425 — combat polish: monster-ability strip routing + totals border in FX scene + dungeon combat-panel clear.
-	display_game("[color=#00FFFF]v0.9.425[/color]")
-	display_game("  [color=#FFD700]Combat: monster ability bangs route to the monster strip[/color]")
-	display_game("  • [b]Lines like 'AMBUSH! The Wolf strikes from the shadows!' now land on the monster strip[/b] instead of the player strip. The overlay classifier required both the 9-space indent AND a 'The X' prefix to call a line 'monster'; ability bangs that begin with the bang word (AMBUSH!, BLOODIED FURY!, TREASURE DECOY!, BLOODSCENT!, PACK FRENZY!) failed the prefix check and fell through to ambient → player strip. Indent alone is the structural signal — earlier 'You/Your' overrides already peel off the player/companion lines inside an indented block.")
-	display_game("  [color=#FFD700]FX scene: totals strip border no longer shows[/color]")
-	display_game("  • [b]The yellow-gold border around the damage totals is hidden during the action-phase FX scene.[/b] start_action_phase was only hiding the inner HBox; the bordered PanelContainer wrapper stayed visible and kept drawing its frame. Now toggles the wrapper too.")
-	display_game("  [color=#FFD700]Dungeon: combat panel clears after a kill[/color]")
-	display_game("  • [b]After defeating a monster in a dungeon and pressing Continue, the combat scene now actually hides[/b] so the dungeon map view is visible again. dungeon_continue was only dismissing the victory card — combat_msg_queue, _action_phase_active, the linger window, _combat_scene_force_visible, and any deferred FX/card payload were all left live, so the panel kept covering game_output. Now performs the same reset that acknowledge_continue does on the overworld path.")
-	display_game("  [color=#FFD700]Post-victory: no more battle-scene flash[/color]")
-	display_game("  • [b]Pressing Continue on the loot screen now hides the combat panel in the same frame[/b], in both overworld and dungeon paths. Previously hide_victory_card removed the card overlay but the panel itself only hid on the NEXT _process tick, exposing the battle scene (strips + ASCII) underneath for one frame → the brief flash players saw between Continue and game_output appearing. Both acknowledge_continue and dungeon_continue now explicitly set combat_scene_panel.visible = false + game_output.visible = true after the state resets, so there's no in-between frame.")
 	display_game("")
 
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
@@ -32251,6 +32247,199 @@ func _short_bonus_label(key: String) -> String:
 
 func _get_egg_art_for_panel(variant: String, color1: String, color2: String, pattern: String) -> String:
 	return MonsterArt.get_egg_art(variant, color1, color2, pattern, ui_scale_monster_art)
+
+# Audit #4 Slice 2 — hover tooltip body for companion cards in CompanionsPanel.
+# Mirrors format_item_tooltip_bbcode's role for inventory: a compact, BBCode-only
+# preview rendered in a top-level tooltip on hover. ASCII art is included at the
+# bottom and recolored using the companion's appearance variant; the panel sets a
+# monospace font on the tooltip RichTextLabel so the art rows align.
+func format_companion_tooltip_bbcode(companion: Dictionary) -> String:
+	if companion == null or companion.is_empty():
+		return ""
+	var lines: Array = []
+	var comp_name: String = str(companion.get("name", "Unknown"))
+	var monster_type: String = str(companion.get("monster_type", comp_name))
+	var level: int = int(companion.get("level", 1))
+	var tier: int = int(companion.get("tier", 1))
+	var sub_tier: int = int(companion.get("sub_tier", 1))
+	var variant: String = str(companion.get("variant", "Normal"))
+	var variant_color_raw: String = str(companion.get("variant_color", "#FFFFFF"))
+	var variant_color2_raw: String = str(companion.get("variant_color2", ""))
+	var variant_pattern: String = str(companion.get("variant_pattern", "solid"))
+	var variant_color: String = _ensure_readable_color(variant_color_raw)
+	var variant_color2: String = _ensure_readable_color(variant_color2_raw) if variant_color2_raw != "" else ""
+	var rarity_info: Dictionary = _get_variant_rarity_info(variant)
+	var rarity_color: String = str(rarity_info.get("color", "#FFFFFF"))
+	var rarity_tag: String = str(rarity_info.get("tier", ""))
+	var variant_mult: float = _get_variant_multiplier(variant)
+	var sub_tier_mult: float = _get_sub_tier_multiplier(sub_tier)
+
+	# Header — rarity tag + variant + name in variant color
+	var rarity_prefix: String = ("[color=%s][%s][/color] " % [rarity_color, rarity_tag]) if rarity_tag != "" else ""
+	lines.append("%s[color=%s][b]%s %s[/b][/color]" % [rarity_prefix, variant_color, variant, comp_name])
+	var stat_suffix: String = ""
+	if variant_mult > 1.0:
+		stat_suffix += " +%d%%" % int((variant_mult - 1.0) * 100)
+	if sub_tier_mult > 1.0:
+		stat_suffix += " x%.1f" % sub_tier_mult
+	lines.append("[color=#888]Lv %d • Tier %d-%d%s[/color]" % [level, tier, sub_tier, stat_suffix])
+
+	# XP bar
+	if level < 10000:
+		var xp_now: int = int(companion.get("xp", 0))
+		var xp_to_next: int = int(pow(level + 1, 2.0) * 15)
+		var pct: int = 0
+		if xp_to_next > 0:
+			pct = clampi(int((float(xp_now) / float(xp_to_next)) * 100), 0, 100)
+		var bar_filled: int = int(14 * pct / 100)
+		var bar_text: String = "[" + "█".repeat(bar_filled) + "░".repeat(14 - bar_filled) + "]"
+		lines.append("[color=#00FF00]XP %s %d%%[/color]" % [bar_text, pct])
+	else:
+		lines.append("[color=#FFD700]MAX LEVEL[/color]")
+
+	# Combat damage estimate
+	var bonuses: Dictionary = companion.get("bonuses", {})
+	var player_level: int = int(character_data.get("level", 1))
+	var dmg = _estimate_companion_damage(tier, player_level, bonuses, level, variant_mult, sub_tier)
+	lines.append("")
+	lines.append("[color=#FF6666]Damage:[/color] %d - %d per turn" % [int(dmg.get("min", 0)), int(dmg.get("max", 0))])
+
+	# Aggro role
+	var raw_aggro: int = int(bonuses.get("aggro", 25))
+	var aggro_label: String
+	var aggro_color: String
+	if raw_aggro >= 50:
+		aggro_label = "Tank"
+		aggro_color = "#FFD700"
+	elif raw_aggro >= 30:
+		aggro_label = "Fighter"
+		aggro_color = "#FFA500"
+	elif raw_aggro >= 20:
+		aggro_label = "Default"
+		aggro_color = "#FFFFFF"
+	else:
+		aggro_label = "Evasive"
+		aggro_color = "#87CEEB"
+	lines.append("[color=#FF8800]Aggro:[/color] [color=%s]%d%% %s[/color]" % [aggro_color, raw_aggro, aggro_label])
+
+	# Top stat bonuses (effective values, capped at first 3 non-zero)
+	var effective_mult: float = variant_mult * sub_tier_mult
+	var bonus_parts: Array = []
+	for k in bonuses.keys():
+		if str(k) == "aggro":
+			continue
+		var v: int = int(float(bonuses[k]) * effective_mult)
+		if v == 0:
+			continue
+		bonus_parts.append("+%d %s" % [v, _short_bonus_label(str(k))])
+		if bonus_parts.size() >= 4:
+			break
+	if bonus_parts.size() > 0:
+		lines.append("[color=#00FF00]%s[/color]" % "  ".join(bonus_parts))
+
+	# Abilities summary — passive / active / threshold (one line each)
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		lines.append("")
+		var ab: Dictionary = COMPANION_MONSTER_ABILITIES[monster_type]
+		if ab.has("passive"):
+			var p: Dictionary = ab["passive"]
+			var p_name: String = str(p.get("name", "?"))
+			var p_desc: String = str(p.get("description", ""))
+			lines.append("[color=#A335EE]Passive — %s[/color] [color=#888]%s[/color]" % [p_name, p_desc])
+		if ab.has("active"):
+			var a: Dictionary = ab["active"]
+			var a_name: String = str(a.get("name", "?"))
+			var a_desc: String = str(a.get("description", ""))
+			var unlock_lv: int = int(a.get("unlock_level", 5))
+			var unlocked: bool = level >= unlock_lv
+			var act_color: String = "#00FF00" if unlocked else "#808080"
+			var lock_tag: String = "" if unlocked else " [Lv.%d]" % unlock_lv
+			lines.append("[color=%s]Active — %s%s[/color] [color=#888]%s[/color]" % [act_color, a_name, lock_tag, a_desc])
+		if ab.has("threshold"):
+			var t: Dictionary = ab["threshold"]
+			var t_name: String = str(t.get("name", "?"))
+			var t_desc: String = str(t.get("description", ""))
+			var t_hp: int = int(t.get("hp_percent", 0))
+			var t_hp_text: String = (" @ %d%% HP" % t_hp) if t_hp > 0 else ""
+			lines.append("[color=#FFAA00]Threshold — %s%s[/color] [color=#888]%s[/color]" % [t_name, t_hp_text, t_desc])
+
+	# ASCII art at the bottom — variant-recolored. Wrapped in a small font_size so
+	# the tooltip stays compact even for wide art.
+	var art_lines: Array = _get_companion_art_lines(monster_type, comp_name)
+	if art_lines.size() > 0:
+		var art_str: String = "\n".join(art_lines)
+		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+		lines.append("")
+		var art_font_size: int = clampi(int(5 * ui_scale_monster_art), 4, 9)
+		lines.append("[font_size=%d]%s[/font_size]" % [art_font_size, art_str])
+
+	return "\n".join(lines)
+
+# Audit #4 Slice 2 — hover tooltip body for egg cards in CompanionsPanel. Adds
+# hatch-target ability preview + progress restate (cards already show progress;
+# tooltip surfaces what the egg will hatch into).
+func format_egg_tooltip_bbcode(egg: Dictionary) -> String:
+	if egg == null or egg.is_empty():
+		return ""
+	var lines: Array = []
+	var egg_name: String = str(egg.get("companion_name", "Unknown"))
+	var monster_type: String = str(egg.get("monster_type", egg_name))
+	var tier: int = int(egg.get("tier", 1))
+	var sub_tier: int = int(egg.get("sub_tier", 1))
+	var variant: String = str(egg.get("variant", "Normal"))
+	var variant_color: String = str(egg.get("variant_color", "#FFAA00"))
+	var is_frozen: bool = bool(egg.get("frozen", false))
+	var rarity_info: Dictionary = _get_variant_rarity_info(variant)
+	var rarity_color: String = str(rarity_info.get("color", "#FFFFFF"))
+	var rarity_tag: String = str(rarity_info.get("tier", ""))
+	var variant_mult: float = _get_variant_multiplier(variant)
+	var sub_tier_mult: float = _get_sub_tier_multiplier(sub_tier)
+
+	# Header — rarity tag + variant + name
+	var rarity_prefix: String = ("[color=%s][%s][/color] " % [rarity_color, rarity_tag]) if rarity_tag != "" else ""
+	lines.append("%s[color=%s][b]%s %s Egg[/b][/color]" % [rarity_prefix, variant_color, variant, egg_name])
+	var stat_suffix: String = ""
+	if variant_mult > 1.0:
+		stat_suffix += " +%d%% stats" % int((variant_mult - 1.0) * 100)
+	if sub_tier_mult > 1.0:
+		stat_suffix += " x%.1f" % sub_tier_mult
+	lines.append("[color=#888]Tier %d-%d%s[/color]" % [tier, sub_tier, stat_suffix])
+
+	# Progress bar (steps_required / steps_taken or hatch_steps / steps_remaining)
+	var required: int = int(egg.get("steps_required", egg.get("hatch_steps", 1000)))
+	var steps_taken: int = int(egg.get("steps_taken", 0))
+	if steps_taken == 0 and egg.has("steps_remaining") and egg.has("hatch_steps"):
+		steps_taken = int(egg.get("hatch_steps", 1000)) - int(egg.get("steps_remaining", 1000))
+	var pct: int = 0
+	if required > 0:
+		pct = clampi(int((float(steps_taken) / float(required)) * 100), 0, 100)
+	var bar_filled: int = int(14 * pct / 100)
+	var bar_text: String = "[" + "█".repeat(bar_filled) + "░".repeat(14 - bar_filled) + "]"
+	var prog_color: String = "#00BFFF" if is_frozen else "#AAAAAA"
+	var status_suffix: String = " — PAUSED" if is_frozen else ""
+	lines.append("[color=%s]Hatch %s %d%% (%d/%d)%s[/color]" % [prog_color, bar_text, pct, steps_taken, required, status_suffix])
+
+	# Hatch target + ability preview
+	lines.append("")
+	lines.append("[color=#A335EE]Hatches into a %s companion.[/color]" % egg_name)
+	if COMPANION_MONSTER_ABILITIES.has(monster_type):
+		var ab: Dictionary = COMPANION_MONSTER_ABILITIES[monster_type]
+		if ab.has("passive"):
+			var p: Dictionary = ab["passive"]
+			lines.append("[color=#A335EE]Passive:[/color] [color=#888]%s — %s[/color]" % [str(p.get("name", "?")), str(p.get("description", ""))])
+		if ab.has("active"):
+			var a: Dictionary = ab["active"]
+			var unlock_lv: int = int(a.get("unlock_level", 5))
+			lines.append("[color=#888]Active:[/color] [color=#888]%s (Lv.%d) — %s[/color]" % [str(a.get("name", "?")), unlock_lv, str(a.get("description", ""))])
+		if ab.has("threshold"):
+			var t: Dictionary = ab["threshold"]
+			lines.append("[color=#FFAA00]Threshold:[/color] [color=#888]%s — %s[/color]" % [str(t.get("name", "?")), str(t.get("description", ""))])
+
+	if is_frozen:
+		lines.append("")
+		lines.append("[color=#00BFFF]Frozen — click the card again to resume.[/color]")
+
+	return "\n".join(lines)
 
 func _on_comp_panel_close() -> void:
 	# Use whichever close path is currently appropriate
