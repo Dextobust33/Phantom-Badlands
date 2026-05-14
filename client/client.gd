@@ -23018,6 +23018,13 @@ func display_character_status():
 			text += "[color=#9ACD32]Gathering:[/color] %s\n" % "  ".join(gather_bp)
 		text += "\n"
 
+	# === PROGRESSION VECTORS ===
+	# Audit #3 Slice 2 — single dashboard surfacing every advanceable track,
+	# so players see at-a-glance what they're progressing on and how to push
+	# each one. Vectors come from char_data + house_data; bestiary/compass
+	# counts use the house dict populated at login (Sanctuary screen).
+	text += _build_progression_vectors_text(char)
+
 	# === ACTIVE EFFECTS ===
 	var effects_text = _get_status_effects_text_compact()
 	if effects_text != "":
@@ -23025,6 +23032,122 @@ func display_character_status():
 		text += effects_text
 
 	display_game(text)
+
+func _build_progression_vectors_text(char: Dictionary) -> String:
+	"""Audit #3 Slice 2 — Progression Vectors dashboard. One section per
+	track: Sanctuary upgrades, gathering jobs, specialty jobs, crafting,
+	exploration. Each line shows current value + next milestone."""
+	var out = ""
+	out += _subheader("Progression Vectors") + "\n"
+
+	# --- Unspent stat points (Audit #3 Slice 1) ---
+	var unspent = int(char.get("unspent_stat_points", 0))
+	if unspent > 0:
+		out += "[color=#FFFF00]●[/color] [b]%d unspent stat point%s[/b] — open Stats panel ([color=#88FF88]/stats[/color]) to spend.\n" % [unspent, "s" if unspent != 1 else ""]
+	else:
+		out += "[color=#808080]●[/color] No unspent stat points (gain +1 each level)\n"
+
+	# --- Sanctuary (account-wide upgrades + BP) ---
+	var upgrades: Dictionary = house_data.get("upgrades", {})
+	var upgrade_count := 0
+	for k in upgrades:
+		if int(upgrades[k]) > 0:
+			upgrade_count += 1
+	var bp_balance = int(house_data.get("baddie_points", 0))
+	out += "[color=#FFD700]Sanctuary:[/color] %d upgrade%s purchased  •  [color=#FF66FF]%d BP[/color] available\n" % [
+		upgrade_count, "s" if upgrade_count != 1 else "", bp_balance
+	]
+	if upgrade_count == 0 and bp_balance > 0:
+		out += "[color=#808080]  Visit Sanctuary on login to spend BP on permanent boosts.[/color]\n"
+
+	# --- Gathering jobs ---
+	var jlevels: Dictionary = char.get("job_levels", {})
+	var jxp: Dictionary = char.get("job_xp", {})
+	var gather_committed = bool(char.get("gathering_job_committed", false))
+	var gather_job = String(char.get("gathering_job", ""))
+	var gather_commit_hint = "  [color=#888888](trial cap Lv 5 — commit one at any trading post)[/color]" if not gather_committed else ""
+	out += "[color=#9ACD32]Gathering Jobs:[/color]%s\n" % gather_commit_hint
+	out += _format_job_row(["fishing", "mining", "logging"], jlevels, jxp, gather_committed, gather_job, false)
+	out += _format_job_row(["foraging", "soldier"], jlevels, jxp, gather_committed, gather_job, false)
+
+	# --- Specialty jobs (level mirrors crafting_skills via JOB_TO_CRAFT_SKILL) ---
+	var specialty_committed = bool(char.get("specialty_job_committed", false))
+	var specialty_job_name = String(char.get("specialty_job", ""))
+	var specialty_hint = "  [color=#888888](try each to Lv 5 then commit at a bench)[/color]" if not specialty_committed else ""
+	out += "[color=#FFAA66]Specialty Jobs:[/color]%s\n" % specialty_hint
+	out += _format_job_row(["blacksmith", "alchemist", "enchanter"], jlevels, jxp, specialty_committed, specialty_job_name, true, char)
+	out += _format_job_row(["scribe", "builder"], jlevels, jxp, specialty_committed, specialty_job_name, true, char)
+
+	# --- Exploration (account-wide) ---
+	var bestiary_dict: Dictionary = house_data.get("bestiary", {})
+	var bestiary_unique = bestiary_dict.size()
+	var bestiary_total_kills := 0
+	for mname in bestiary_dict:
+		var entry = bestiary_dict[mname]
+		if entry is Dictionary:
+			bestiary_total_kills += int(entry.get("kill_count", entry.get("kills", 0)))
+		else:
+			bestiary_total_kills += int(entry)
+	var visited_posts_dict: Dictionary = house_data.get("visited_posts", {})
+	var posts_visited = visited_posts_dict.size()
+	var bestiary_lvl = int(upgrades.get("bestiary", 0))
+	var compass_lvl = int(upgrades.get("compass", 0))
+	out += "[color=#FF6666]Bestiary:[/color] %d species  •  %d kills  %s\n" % [
+		bestiary_unique, bestiary_total_kills,
+		("[color=#888888](unlock at Sanctuary to view ledger)[/color]" if bestiary_lvl == 0 else "[color=#88FF88](L%d)[/color]" % bestiary_lvl)
+	]
+	out += "[color=#66CCFF]Compass:[/color] %d posts visited  %s\n" % [
+		posts_visited,
+		("[color=#888888](unlock at Sanctuary for nearest-post hint)[/color]" if compass_lvl == 0 else "[color=#88FF88](L%d)[/color]" % compass_lvl)
+	]
+
+	# --- Currencies / pouch ---
+	var soul_gems = int(char.get("soul_gems", 0))
+	if soul_gems > 0:
+		out += "[color=#9966FF]Soul Gems:[/color] %d\n" % soul_gems
+
+	out += "\n"
+	return out
+
+func _format_job_row(job_names: Array, jlevels: Dictionary, jxp: Dictionary, is_category_committed: bool, committed_name: String, is_specialty: bool, char_for_specialty: Dictionary = {}) -> String:
+	"""Render a row of 2-3 job entries compactly: '  fishing 12  mining 18 ★'."""
+	var parts: Array = []
+	for jname in job_names:
+		var jlv: int
+		var xp_cur: int
+		var xp_needed: int
+		if is_specialty:
+			var craft_skill = JOB_TO_CRAFT_SKILL.get(jname, "")
+			if craft_skill != "":
+				var cskills: Dictionary = char_for_specialty.get("crafting_skills", {})
+				var cxp: Dictionary = char_for_specialty.get("crafting_xp", {})
+				jlv = int(cskills.get(craft_skill, jlevels.get(jname, 1)))
+				xp_cur = int(cxp.get(craft_skill, 0))
+				xp_needed = int(50 * pow(jlv, 1.3))
+			else:
+				jlv = int(jlevels.get(jname, 1))
+				xp_cur = int(jxp.get(jname, 0))
+				xp_needed = int(100 * pow(jlv, 1.4))
+		else:
+			jlv = int(jlevels.get(jname, 1))
+			xp_cur = int(jxp.get(jname, 0))
+			xp_needed = int(100 * pow(jlv, 1.4))
+
+		var is_committed = is_category_committed and committed_name == jname
+		var is_locked = is_category_committed and committed_name != jname
+		var label_color = "#FFD700" if is_committed else ("#666666" if is_locked else "#FFFFFF")
+		var status_marker = ""
+		if is_committed:
+			status_marker = " [color=#FFD700]★[/color]"
+		elif is_locked:
+			status_marker = " [color=#666666]✗[/color]"
+		elif jlv >= 5 and not is_category_committed:
+			status_marker = " [color=#FFFF00]⚡[/color]"
+		var pct = float(xp_cur) / float(xp_needed) if xp_needed > 0 else 0.0
+		var pct_int = clampi(int(pct * 100), 0, 99)
+		var xp_str = "" if jlv >= 100 else " [color=#888888](%d%%)[/color]" % pct_int
+		parts.append("[color=%s]%s Lv%d[/color]%s%s" % [label_color, jname.capitalize(), jlv, xp_str, status_marker])
+	return "  " + "   ".join(parts) + "\n"
 
 func _get_status_effects_text_compact() -> String:
 	"""Generate compact status effects for character status display"""
@@ -23798,8 +23921,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.437 — Audit #3 Slice 2: Progression Vectors dashboard.
+	display_game("[color=#00FF00]v0.9.437[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Status page now lists every advanceable track[/color]")
+	display_game("  • [b]New 'Progression Vectors' section on the character status page surfaces every track you can advance in one place.[/b] Unspent stat points (with a hint to spend them), Sanctuary upgrades + Baddie Point balance, all 5 gathering jobs and 5 specialty jobs with current level / XP% / commit status, Bestiary unique species and total kill count, Compass posts-visited count, and Soul Gems. Each entry shows the next milestone or commit hint so you know what the action is. Was hard to tell at a glance what was even progressing — this is the discoverability surface for everything else the game tracks.")
+	display_game("")
+
 	# v0.9.436 — Old Soldier harvest minigame removed; folded into scratch-off.
-	display_game("[color=#00FF00]v0.9.436[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.436[/color]")
 	display_game("  [color=#FFD700]Old harvest minigame replaced by the combat scratch-off[/color]")
 	display_game("  • [b]The post-combat 'Press Space to harvest' prompt is gone.[/b] The combat scratch-off (v0.9.434) is now the single post-combat loot surface. Old harvest_pick / harvest_stop / harvest_done action handlers, the Skip Harvest setting toggle, the Soldier harvest mastery minigame screens, and the entire server-side harvest dispatch (handle_harvest_start / _choice / _end + active_harvests state) all removed.")
 	display_game("  • [b]Soldier-job benefits fold into the scratch-off[/b] — your Soldier level adds bonus reveals on top of the tier-scaled base (Lv 20: +1, Lv 50: +2, Lv 80: +3). Mirrors the old harvest_saves table. The monster-part drop bonus that already scales with soldier_level via roll_monster_part_drop is untouched, so Soldiers still get more parts per kill on average.")
