@@ -1938,6 +1938,10 @@ func _ready():
 	clan_panel.invite_requested.connect(_on_clan_panel_invite)
 	clan_panel.accept_requested.connect(_on_clan_panel_accept)
 	clan_panel.decline_requested.connect(_on_clan_panel_decline)
+	# Audit #14 Slice 4 — clan rank signals (promote / demote / kick).
+	clan_panel.promote_requested.connect(_on_clan_panel_promote)
+	clan_panel.demote_requested.connect(_on_clan_panel_demote)
+	clan_panel.kick_requested.connect(_on_clan_panel_kick)
 
 	# Audit #13 Slice 2 — Bestiary panel.
 	bestiary_panel = BestiaryPanelScript.new()
@@ -23865,8 +23869,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.433 — Audit #14 Slice 4: Clan ranks/officers.
+	display_game("[color=#00FF00]v0.9.433[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clans: new Officer rank — non-leaders can finally help run the clan[/color]")
+	display_game("  • [b]Leaders can now promote any member to Officer (and demote them back).[/b] Officers can invite new players and kick regular members. Leaders retain full power — they can kick anyone (including officers) and they're the only role allowed to promote/demote. The clan panel now shows a colored rank badge ([color=#FFD700]LEADER[/color] / [color=#66DDFF]OFFICER[/color] / [color=#888888]MEMBER[/color]) on every roster row, plus the rank-action buttons your viewer rank is allowed to use. Unblocks the 'leader has to be online for the clan to grow' problem.")
+	display_game("")
+
 	# v0.9.432 — Audit #13 Slice 3: Sanctuary Compass.
-	display_game("[color=#00FF00]v0.9.432[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.432[/color]")
 	display_game("  [color=#FFD700]Sanctuary: new Compass upgrade — direction to nearest unvisited post[/color]")
 	display_game("  • [b]New Sanctuary upgrade (3 levels, 1000 / 4000 / 15000 BP) adds a HUD compass line above the map[/b] pointing toward the nearest NPC post your account hasn't yet visited. L1 shows direction (↑↓←→ and diagonals). L2 adds distance. L3 adds the post name. The ledger always records visits, so you can unlock the compass later and immediately use the full account history. Once every post on the map has been visited, the line reads 'All posts visited.' Available on the Sanctuary 'Base Upgrades' page.")
 	display_game("")
@@ -23891,12 +23901,6 @@ func display_changelog():
 	display_game("  • [b]Hovering an item in the in-combat Use Item picker now shows the same effect description the regular inventory inspect shows[/b] — e.g., 'Restores 250 HP + 25% of max HP', 'Companion draws +30% aggro for next 3 monster turns.' Tooltip is built from _get_item_effect_description so any future inventory description tweaks land in the picker for free.")
 	display_game("  [color=#FFD700]Combat scene: legacy log strip removed from layout[/color]")
 	display_game("  • [b]The small combat log strip at the bottom of the combat scene is no longer attached to the layout[/b] — it was squeezed to ~0px in the Lufia layout and the per-actor overlay strips that land during the action phase (v0.9.415) already cover what the central log used to. Death card was reparented to the panel root with the same 24px inset as the picker / victory card. append_log calls still compile (the log controls remain allocated, just orphaned) so testfx fixtures and any third-party hook keep working without changes.")
-	display_game("")
-
-	# v0.9.428 — Combat: Use Item picker now actually shows items.
-	display_game("[color=#00FFFF]v0.9.428[/color]")
-	display_game("  [color=#FFD700]Combat: Use Item picker now shows items (not just header + buttons)[/color]")
-	display_game("  • [b]The in-combat Use Item picker now overlays the full combat scene[/b] with a 24px inset, instead of being parented to the small log strip at the bottom. In the Lufia layout the log strip was too short — the title and Prev/Next buttons fit (fixed height) but the items ScrollContainer ended up with ~0px of vertical room and the actual items were invisible. z_index=200 keeps the picker above the battlefield overlay (z=100) and victory/death cards (z=150).")
 	display_game("")
 
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
@@ -27174,12 +27178,29 @@ func _on_clan_panel_decline(clan_id: String) -> void:
 	"""Audit #14 Slice 2 — decline a pending clan invitation."""
 	send_to_server({"type": "clan_invite_decline", "clan_id": clan_id})
 
+func _on_clan_panel_promote(target_account_id: String) -> void:
+	"""Audit #14 Slice 4 — leader promotes a member to officer."""
+	send_to_server({"type": "clan_promote", "target_account_id": target_account_id})
+
+func _on_clan_panel_demote(target_account_id: String) -> void:
+	"""Audit #14 Slice 4 — leader demotes an officer back to member."""
+	send_to_server({"type": "clan_demote", "target_account_id": target_account_id})
+
+func _on_clan_panel_kick(target_account_id: String) -> void:
+	"""Audit #14 Slice 4 — leader/officer kicks a member from the clan."""
+	send_to_server({"type": "clan_kick", "target_account_id": target_account_id})
+
 func _handle_clan_info_data(message: Dictionary) -> void:
 	"""Push server clan state into the panel if it's open."""
 	if not clan_panel:
 		return
+	# Audit #14 Slice 4 — merge the viewer's account_id so the panel can hide
+	# rank-action buttons on the viewer's own row (no self-promote / self-kick).
+	# Server already sets is_leader / is_officer from this same account_id.
+	var enriched = message.duplicate(true)
+	enriched["account_id"] = account_id
 	if clan_panel.visible:
-		clan_panel.refresh(message)
+		clan_panel.refresh(enriched)
 
 func _handle_clan_action_result(message: Dictionary) -> void:
 	"""Inline feedback under the clan panel title for create/leave/invite results.

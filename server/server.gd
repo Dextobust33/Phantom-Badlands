@@ -1673,6 +1673,13 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_clan_invite_decline(peer_id, message)
 		"clan_invites_list":
 			handle_clan_invites_list(peer_id)
+		# Clan ranks (Audit #14 Slice 4)
+		"clan_promote":
+			handle_clan_promote(peer_id, message)
+		"clan_demote":
+			handle_clan_demote(peer_id, message)
+		"clan_kick":
+			handle_clan_kick(peer_id, message)
 		# Dungeon system handlers
 		"dungeon_list":
 			handle_dungeon_list(peer_id)
@@ -8253,6 +8260,9 @@ func _send_clan_info(peer_id: int) -> void:
 		return
 	var members = persistence.get_clan_member_summary(clan_id)
 	var leader_id = String(clan.get("leader_account_id", ""))
+	# Audit #14 Slice 4 — rank info for the client. is_officer drives Promote /
+	# Demote / Kick / Invite button visibility on the viewer's roster.
+	var officer_ids: Array = clan.get("officer_ids", [])
 	send_to_peer(peer_id, {
 		"type": "clan_info_data",
 		"has_clan": true,
@@ -8260,6 +8270,8 @@ func _send_clan_info(peer_id: int) -> void:
 		"name": String(clan.get("name", "")),
 		"tag": String(clan.get("tag", "")),
 		"is_leader": leader_id == account_id,
+		"is_officer": officer_ids.has(account_id),
+		"officer_ids": officer_ids,
 		"created_at": int(clan.get("created_at", 0)),
 		"members": members,
 		"member_count": members.size(),
@@ -8353,8 +8365,8 @@ func handle_clan_invites_list(peer_id: int) -> void:
 	_send_clan_info(peer_id)
 
 func handle_clan_invite(peer_id: int, message: Dictionary) -> void:
-	"""Leader invites a player by username. Slice 2 keeps invite permission
-	leader-only (no officers / ranks yet)."""
+	"""Leader or officer invites a player by username. Slice 4 opened invite
+	permission to officers as well (was leader-only in Slice 2)."""
 	if not peers.has(peer_id):
 		return
 	var account_id = String(peers[peer_id].get("account_id", ""))
@@ -8371,12 +8383,13 @@ func handle_clan_invite(peer_id: int, message: Dictionary) -> void:
 		})
 		return
 	var clan = persistence.get_clan(clan_id)
-	if String(clan.get("leader_account_id", "")) != account_id:
+	# Audit #14 Slice 4 — officers can invite too; leader-or-officer check.
+	if not persistence.is_clan_leader_or_officer(account_id):
 		send_to_peer(peer_id, {
 			"type": "clan_action_result",
 			"success": false,
 			"action": "invite",
-			"reason": "Only the clan leader can invite players.",
+			"reason": "Only the leader and officers can invite players.",
 		})
 		return
 	var target_username = String(message.get("username", "")).strip_edges()
@@ -8506,6 +8519,135 @@ func handle_clan_invite_decline(peer_id: int, message: Dictionary) -> void:
 		"message": "[color=#888888]Declined invitation from [color=#FFD700]%s[/color].[/color]" % clan_name,
 	})
 	_send_clan_info(peer_id)
+
+# ===== CLAN RANKS (Audit #14 Slice 4) =====
+
+func _refresh_all_online_clan_members(clan_id: String) -> void:
+	"""Push fresh clan_info_data to every online member of the clan so badges /
+	buttons update without anyone needing to reopen the panel."""
+	var clan = persistence.get_clan(clan_id)
+	if clan.is_empty():
+		return
+	for member_id in clan.get("member_ids", []):
+		var member_peer = _find_peer_for_account(member_id)
+		if member_peer >= 0:
+			_send_clan_info(member_peer)
+
+func handle_clan_promote(peer_id: int, message: Dictionary) -> void:
+	"""Leader promotes a member to officer. Target identified by account_id
+	(clients pass the value from their roster payload)."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var target_account_id = String(message.get("target_account_id", ""))
+	var result = persistence.promote_to_officer(account_id, target_account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "promote",
+			"reason": String(result.get("reason", "Promote failed.")),
+		})
+		return
+	var target_username = String(result.get("target_username", ""))
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "promote",
+		"message": "[color=#A335EE]Promoted [color=#FFD700]%s[/color] to Officer.[/color]" % target_username,
+	})
+	# Notify the target if online so they see the rank flip immediately.
+	var target_peer = _find_peer_for_account(target_account_id)
+	if target_peer >= 0:
+		send_to_peer(target_peer, {
+			"type": "clan_action_result",
+			"success": true,
+			"action": "rank_changed",
+			"message": "[color=#A335EE]You were promoted to Officer.[/color]",
+		})
+	_refresh_all_online_clan_members(String(result.get("clan_id", "")))
+
+func handle_clan_demote(peer_id: int, message: Dictionary) -> void:
+	"""Leader demotes an officer back to regular member."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var target_account_id = String(message.get("target_account_id", ""))
+	var result = persistence.demote_from_officer(account_id, target_account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "demote",
+			"reason": String(result.get("reason", "Demote failed.")),
+		})
+		return
+	var target_username = String(result.get("target_username", ""))
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "demote",
+		"message": "[color=#888888]Demoted [color=#FFD700]%s[/color] to Member.[/color]" % target_username,
+	})
+	var target_peer = _find_peer_for_account(target_account_id)
+	if target_peer >= 0:
+		send_to_peer(target_peer, {
+			"type": "clan_action_result",
+			"success": true,
+			"action": "rank_changed",
+			"message": "[color=#888888]You are no longer an Officer.[/color]",
+		})
+	_refresh_all_online_clan_members(String(result.get("clan_id", "")))
+
+func handle_clan_kick(peer_id: int, message: Dictionary) -> void:
+	"""Leader or officer kicks a member. Permission rules are enforced in
+	persistence.kick_from_clan (officers can't kick other officers / leader)."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var target_account_id = String(message.get("target_account_id", ""))
+	# Pre-compute the clan_id before the kick so we can refresh the remaining
+	# roster after the target is removed.
+	var clan_id_before = persistence.get_account_clan_id(account_id)
+	var result = persistence.kick_from_clan(account_id, target_account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {
+			"type": "clan_action_result",
+			"success": false,
+			"action": "kick",
+			"reason": String(result.get("reason", "Kick failed.")),
+		})
+		return
+	var target_username = String(result.get("target_username", ""))
+	var clan_name = String(result.get("clan_name", ""))
+	send_to_peer(peer_id, {
+		"type": "clan_action_result",
+		"success": true,
+		"action": "kick",
+		"message": "[color=#FF8800]Kicked [color=#FFD700]%s[/color] from the clan.[/color]" % target_username,
+	})
+	# Notify the kicked player if they're online. Their clan_id was already
+	# cleared in persistence.kick_from_clan so _send_clan_info ships the
+	# has_clan:false branch.
+	var target_peer = _find_peer_for_account(target_account_id)
+	if target_peer >= 0:
+		send_to_peer(target_peer, {
+			"type": "clan_action_result",
+			"success": true,
+			"action": "kicked",
+			"message": "[color=#FF6347]You were kicked from clan [color=#FFD700]%s[/color].[/color]" % clan_name,
+		})
+		_send_clan_info(target_peer)
+	_refresh_all_online_clan_members(clan_id_before)
 
 func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name: String):
 	"""Process hatching an egg and sending the companion to house kennel via Home Stone"""
