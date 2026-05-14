@@ -347,6 +347,11 @@ func _build_layout() -> void:
 	_tooltip_label.scroll_active = false
 	_tooltip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tooltip_label.add_theme_font_size_override("normal_font_size", 12)
+	# Disable word-wrap so wide ASCII art rows extend the tooltip horizontally
+	# instead of getting wrapped (which destroys column alignment). Width then
+	# grows to fit the widest line; non-art lines stay readable since they're
+	# pre-formatted to be short.
+	_tooltip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_tooltip_label.custom_minimum_size = Vector2(320, 0)
 	# Monospace font so ASCII art rendered inside the tooltip body lines up.
 	var tip_mono_path := "res://font/Consolas/consolas.ttf"

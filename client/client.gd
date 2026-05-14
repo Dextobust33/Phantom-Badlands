@@ -23858,8 +23858,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.431 — hotfix: companion/egg tooltip ASCII art no longer wraps.
+	display_game("[color=#00FF00]v0.9.431[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companion/egg hover tooltip: ASCII art rows no longer wrap[/color]")
+	display_game("  • [b]The tooltip RichTextLabel had autowrap on by default, so wide ASCII art rows wrapped to the 320-px min width and destroyed column alignment.[/b] Turned autowrap off so the tooltip width grows to fit the widest line; non-art lines are short and still fit comfortably.")
+	display_game("")
+
 	# v0.9.430 — Audit #4 Slice 2: hover tooltips on companion + egg cards.
-	display_game("[color=#00FF00]v0.9.430[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.430[/color]")
 	display_game("  [color=#FFD700]Companions panel: hover any card to see the full preview[/color]")
 	display_game("  • [b]Hovering a companion card now shows a tooltip with rarity, level/tier/sub-tier, XP bar, damage estimate, aggro role, top stat bonuses, all three abilities (Passive / Active / Threshold with unlock requirements + descriptions), and the variant-recolored ASCII art[/b] — closes the audit gap noted by the user: 'I'd like it to be like the Inventory system where you can hover it and see the companion ASCII art and Inspect info etc.' Left-click still activates and right-click still opens the Activate / Inspect / Release menu.")
 	display_game("  [color=#FFD700]Eggs panel: hover any egg for hatch preview[/color]")
@@ -23886,13 +23892,6 @@ func display_changelog():
 	display_game("  • [b]Pressing Use Item on the first turn of a new combat now actually shows your usable items.[/b] There was a one-frame race between in_combat going true (in _process_combat_start) and the combat scene panel's visibility sync — pressing Use Item in that window hit the panel.visible == false branch, rendered into game_output, and then game_output got hidden the next frame when the panel went visible. The picker overlay is now used regardless of panel.visible state; its own visibility flag carries through to the next frame.")
 	display_game("  [color=#FFD700]Server: map-render perf optimizations (no player-facing change)[/color]")
 	display_game("  • Two server-side optimizations to handle_move (the biggest stutter source from the v0.9.426 diag). Pre-fetched blocks_los for the vision bounding box (dropped LOS time from 66-140ms to ~10-30ms by replacing ~2640 per-Bresenham-point tile lookups with ~529 upfront fetches + dict reads). Also cached hotspot clusters per render (one scan instead of 121 hash checks × ~500 tiles).")
-	display_game("")
-
-	# v0.9.426 — Home Stone (Companion) fix.
-	display_game("[color=#00FFFF]v0.9.426[/color]")
-	display_game("  [color=#FFD700]Home Stone (Companion) now actually works[/color]")
-	display_game("  • [b]Using a Home Stone (Companion) from inventory now shows the Register / Kennel / Cancel prompt[/b], instead of silently consuming the stone. Three bugs fixed at once: (1) the early home-stone block in handle_inventory_use was missing the companion case, so the stone fell through to a legacy handler that consumed it BEFORE asking the player. (2) The home_stone_companion_choice client handler didn't close the inventory panel, so the prompt landed in game_output which was hidden behind the panel. (3) The Register / Kennel / Cancel action-bar branch lived inside the HOUSE_SCREEN block — when used in-world, the buttons never rendered.")
-	display_game("  • [b]Cancel no longer consumes the stone[/b]. Companion now matches the supplies/egg/equipment pattern: stone is held in inventory across the choice, consumed only on Register or Kennel confirm. Was: consumed up front, refunded on cancel (which briefly dropped the count and could surprise the player if anything mutated inventory in between).")
 	display_game("")
 
 	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
