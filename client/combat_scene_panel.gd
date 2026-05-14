@@ -410,10 +410,10 @@ func _build_layout() -> void:
 	# visuals so the player can re-read the per-actor strips (which become
 	# mouse-scrollable in review mode).
 	_review_button = Button.new()
-	_review_button.text = "↺ Review FX"
-	_review_button.tooltip_text = "Re-open the FX scene to re-read this fight's combat log"
-	_review_button.add_theme_font_size_override("font_size", 12)
-	_review_button.custom_minimum_size = Vector2(102, 26)
+	_review_button.text = "🩸 Review Damage"
+	_review_button.tooltip_text = "Re-open the FX scene to re-read this fight's damage / combat log"
+	_review_button.add_theme_font_size_override("font_size", 15)
+	_review_button.custom_minimum_size = Vector2(168, 36)
 	_review_button.focus_mode = Control.FOCUS_NONE
 	_review_button.z_index = 50
 	_review_button.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -787,17 +787,25 @@ func _set_overlay_strips_scrollable(enabled: bool) -> void:
 	"""v0.9.439 — toggle the per-actor strip mouse_filter. Strips are
 	IGNORE by default (events pass through) so they don't eat lunge clicks
 	or popup interactions. In review mode they're STOP so the player can
-	scroll the wheel / drag the scrollbar to re-read older lines."""
+	scroll the wheel / drag the scrollbar to re-read older lines.
+
+	v0.9.440 — scroll_following stays TRUE in both modes:
+	  • During review the queue is empty so no new lines append → scroll
+	    position is whatever the user sets (manual scroll is free).
+	  • Re-entering action phase (player pressed Back then fired an ability)
+	    new lines append and the strip auto-scrolls back to newest.
+	So we get autoscroll-to-newest by default + manual-scroll-when-wanted
+	without touching the follow flag."""
 	var filter := Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
 	if _overlay_player_log and is_instance_valid(_overlay_player_log):
 		_overlay_player_log.mouse_filter = filter
-		_overlay_player_log.scroll_following = not enabled  # release follow so user can scroll up
+		_overlay_player_log.scroll_following = true
 	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
 		_overlay_monster_log.mouse_filter = filter
-		_overlay_monster_log.scroll_following = not enabled
+		_overlay_monster_log.scroll_following = true
 	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
 		_overlay_companion_log.mouse_filter = filter
-		_overlay_companion_log.scroll_following = not enabled
+		_overlay_companion_log.scroll_following = true
 
 
 func _set_back_button_label() -> void:
