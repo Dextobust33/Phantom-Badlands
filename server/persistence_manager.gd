@@ -2180,6 +2180,11 @@ func create_clan(leader_account_id: String, name: String, tag: String) -> Dictio
 		# members but cannot kick each other or the leader and cannot promote.
 		# Leader is implicitly above all officers (NOT in this list).
 		"officer_ids": [],
+		# Audit #14 Slice 5 (v0.9.446) — Clan Vault. Shared item storage owned
+		# by the clan. Any member can deposit/withdraw; capacity capped at
+		# CLAN_VAULT_CAPACITY. Items are full item dicts (same shape as
+		# inventory entries: type, name, etc.).
+		"storage": [],
 		"created_at": int(Time.get_unix_time_from_system()),
 	}
 	accounts_data["accounts"][leader_account_id]["clan_id"] = clan_id
@@ -2253,6 +2258,70 @@ func get_clan_member_summary(clan_id: String) -> Array:
 			"rank": rank,
 		})
 	return out
+
+# ===== CLAN VAULT HELPERS (Audit #14 Slice 5) =====
+# Shared item storage owned by the clan. Any clan member can deposit / withdraw.
+# Items are full item dicts (mirroring inventory entries). Capacity is a hard
+# cap; deposits beyond it are rejected. Withdrawals shift the array in place.
+# v0.9.446 — chat-command MVP; no UI yet.
+
+const CLAN_VAULT_CAPACITY: int = 30
+
+func get_clan_storage(clan_id: String) -> Array:
+	"""Return a duplicate of the clan's storage array. Empty if the clan
+	doesn't exist or its storage field is missing/legacy."""
+	var clan = get_clan(clan_id)
+	if clan.is_empty():
+		return []
+	var raw = clan.get("storage", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return []
+	return raw.duplicate(true)
+
+func clan_storage_count(clan_id: String) -> int:
+	"""Cheap count helper for capacity checks."""
+	var clan = get_clan(clan_id)
+	if clan.is_empty():
+		return 0
+	var raw = clan.get("storage", [])
+	if typeof(raw) != TYPE_ARRAY:
+		return 0
+	return raw.size()
+
+func clan_deposit_item(clan_id: String, item: Dictionary) -> Dictionary:
+	"""Append an item to the clan vault. Returns {success, reason?, vault_size}."""
+	if clan_id == "":
+		return {"success": false, "reason": "Not in a clan."}
+	if not clans_data.get("clans", {}).has(clan_id):
+		return {"success": false, "reason": "Clan not found."}
+	if item == null or item.is_empty():
+		return {"success": false, "reason": "Empty item."}
+	var clan: Dictionary = clans_data["clans"][clan_id]
+	# Legacy clans created pre-Slice 5 won't have the storage field.
+	if not clan.has("storage") or typeof(clan.storage) != TYPE_ARRAY:
+		clan["storage"] = []
+	if clan.storage.size() >= CLAN_VAULT_CAPACITY:
+		return {"success": false, "reason": "Vault full (%d/%d)." % [clan.storage.size(), CLAN_VAULT_CAPACITY]}
+	clan.storage.append(item.duplicate(true))
+	save_clans()
+	return {"success": true, "vault_size": clan.storage.size()}
+
+func clan_withdraw_item(clan_id: String, vault_index: int) -> Dictionary:
+	"""Remove + return the item at `vault_index`. Returns {success, item?, reason?}."""
+	if clan_id == "":
+		return {"success": false, "reason": "Not in a clan."}
+	if not clans_data.get("clans", {}).has(clan_id):
+		return {"success": false, "reason": "Clan not found."}
+	var clan: Dictionary = clans_data["clans"][clan_id]
+	if not clan.has("storage") or typeof(clan.storage) != TYPE_ARRAY:
+		return {"success": false, "reason": "Vault is empty."}
+	if vault_index < 0 or vault_index >= clan.storage.size():
+		return {"success": false, "reason": "Invalid vault slot."}
+	var taken: Dictionary = clan.storage[vault_index]
+	clan.storage.remove_at(vault_index)
+	save_clans()
+	return {"success": true, "item": taken}
+
 
 # ===== CLAN RANK HELPERS (Audit #14 Slice 4) =====
 

@@ -19642,6 +19642,9 @@ func handle_server_message(message: Dictionary):
 			_handle_clan_info_data(message)
 		"clan_action_result":
 			_handle_clan_action_result(message)
+		# Audit #14 Slice 5 (v0.9.446) — Clan Vault chat-command output.
+		"clan_vault_list_result":
+			_handle_clan_vault_list_result(message)
 		# Audit #14 Slice 2 — live invitation alert
 		"clan_invitation_received":
 			_handle_clan_invitation_received(message)
@@ -20483,7 +20486,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "vault", "clanvault",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21490,6 +21493,43 @@ func process_command(text: String):
 				send_to_server({"type": "debug_hatch"})
 			else:
 				display_game("You don't have a character yet")
+		"vault", "clanvault":
+			# Audit #14 Slice 5 (v0.9.446) — chat-command Clan Vault.
+			# Usage:
+			#   /vault                    → list current vault contents
+			#   /vault deposit <slot>     → put inventory slot N (1-based) into vault
+			#   /vault take <N>           → pull vault slot N (1-based) into inventory
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var vparts = text.split(" ", false)
+				if vparts.size() <= 1:
+					send_to_server({"type": "clan_vault_list"})
+				else:
+					var sub = String(vparts[1]).to_lower()
+					match sub:
+						"deposit", "put", "store":
+							if vparts.size() < 3:
+								display_game("[color=#FFAA66]Usage:[/color] /vault deposit <inventory slot number>")
+							else:
+								var slot_arg = int(vparts[2]) - 1
+								if slot_arg < 0:
+									display_game("[color=#FF6666]Invalid slot number.[/color]")
+								else:
+									send_to_server({"type": "clan_vault_deposit", "slot": slot_arg})
+						"take", "withdraw", "get":
+							if vparts.size() < 3:
+								display_game("[color=#FFAA66]Usage:[/color] /vault take <vault slot number>")
+							else:
+								var idx_arg = int(vparts[2]) - 1
+								if idx_arg < 0:
+									display_game("[color=#FF6666]Invalid vault slot.[/color]")
+								else:
+									send_to_server({"type": "clan_vault_withdraw", "index": idx_arg})
+						"list", "show", "":
+							send_to_server({"type": "clan_vault_list"})
+						_:
+							display_game("[color=#FFAA66]Unknown vault command.[/color] Try: /vault, /vault deposit <N>, /vault take <N>")
 		# ===== GM COMMANDS =====
 		"admin":
 			open_admin_menu()
@@ -23966,8 +24006,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.446 — Audit #14 Slice 5: Clan Vault MVP.
+	display_game("[color=#00FF00]v0.9.446[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New: Clan Vault — shared item storage for clan members[/color]")
+	display_game("  • [b]Clans now have a shared vault for up to 30 items.[/b] Any clan member can deposit items from their inventory or withdraw items the clan has stored. Use [color=#88FF88]/vault[/color] to see contents, [color=#88FF88]/vault deposit <slot>[/color] to put your inventory slot into the vault, and [color=#88FF88]/vault take <N>[/color] to pull a vault slot into your inventory. When you deposit or withdraw, every online clan member sees the updated vault automatically. UI integration with the clan panel will come in a follow-up — this MVP is chat-command only so the underlying mechanic is proved first. Audit #14 Slice 5.")
+	display_game("")
+
 	# v0.9.445 — Audit #8 Layer 6: crafting sell-value preview.
-	display_game("[color=#00FF00]v0.9.445[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.445[/color]")
 	display_game("  [color=#FFD700]Crafting recipes now show recent market avg price[/color]")
 	display_game("  • [b]Crafting recipe details now include a 'Recent market avg' line[/b] when other players have actually sold the same item recently. Uses the same rolling-average history that already powers the market browse `(avg N)` badges (Slice 4 of audit #9). Helps you tell at a glance whether a craft is worth your time — if Iron Swords typically sell for 80 Valor and your materials are worth 200 in total, the recipe is a loss; conversely a Masterwork might fetch 5× more on the market than what you'd get from salvage. Stat-varied equipment averages across rolls (same caveat as the market badge — the average is a hint, not a quote). Audit #8 Layer 6.")
 	display_game("")
@@ -27483,6 +27529,37 @@ func _handle_clan_info_data(message: Dictionary) -> void:
 	enriched["account_id"] = account_id
 	if clan_panel.visible:
 		clan_panel.refresh(enriched)
+
+func _handle_clan_vault_list_result(message: Dictionary) -> void:
+	"""Audit #14 Slice 5 (v0.9.446) — chat-command render of the clan vault.
+	Headers, item rows with [N]/[NAME]/[TYPE/rarity], footer with capacity.
+	No panel UI yet — proven via /vault commands first."""
+	var items: Array = message.get("items", [])
+	var capacity := int(message.get("capacity", 30))
+	var clan_name := String(message.get("clan_name", ""))
+	var clan_tag := String(message.get("clan_tag", ""))
+	display_game("[color=#FFD700]═══════ CLAN VAULT ═══════[/color]")
+	if clan_name != "":
+		display_game("[color=#888888]%s [%s][/color]   [color=#88FF88]%d / %d[/color]" % [clan_name, clan_tag, items.size(), capacity])
+	if items.is_empty():
+		display_game("[color=#888888](Empty — use /vault deposit <inventory slot> to add an item.)[/color]")
+		return
+	for i in range(items.size()):
+		var item = items[i]
+		var iname := String(item.get("name", "?"))
+		var itype := String(item.get("type", ""))
+		var rarity := String(item.get("rarity", ""))
+		var rarity_color := _get_item_rarity_color(rarity) if rarity != "" else "#FFFFFF"
+		var qty_str := ""
+		var qty = item.get("quantity", 1)
+		if int(qty) > 1:
+			qty_str = " [color=#AAAAAA]x%d[/color]" % int(qty)
+		var type_tag := ""
+		if itype != "":
+			type_tag = " [color=#888888](%s)[/color]" % itype
+		display_game("  [color=#FFCC00]%2d.[/color] [color=%s]%s[/color]%s%s" % [i + 1, rarity_color, iname, qty_str, type_tag])
+	display_game("[color=#888888]/vault take <N> to withdraw  •  /vault deposit <inventory slot> to add[/color]")
+
 
 func _handle_clan_action_result(message: Dictionary) -> void:
 	"""Inline feedback under the clan panel title for create/leave/invite results.
