@@ -85,7 +85,21 @@ var trading_post_rumors: Dictionary = {}
 const TRADING_POST_RUMOR_REFRESH_SEC: int = 1800  # 30 min
 # Audit #11 Slice 1 — per-session "first arrival at NPC post" tracking so the
 # greeting fires once per post per session. Map: peer_id → {"x,y": true}
+# v0.9.443 (Slice 7): kept for back-compat reads but the real anti-spam gate
+# is now npc_post_greet_cooldown below. Cleared on disconnect alongside.
 var visited_npc_posts_session: Dictionary = {}
+# Audit #11 Slice 7 (v0.9.443) — anti-spam cooldown so walking on-and-off the
+# same post tile doesn't re-fire the greeting every step. Per-peer-per-post
+# timestamp. Map: peer_id → {"x,y": last_arrival_ms}
+var npc_post_greet_cooldown: Dictionary = {}
+const NPC_GREET_COOLDOWN_MS: int = 60 * 1000  # 60s anti-spam window
+# Audit #11 Slice 7 (v0.9.443) — persistent rumor cache so the same player
+# hears the same rumor at the same post across reconnects until the cache
+# expires. Keyed by ACCOUNT (not peer) so logins on the same account see
+# the same narrative continuity. Matches the trading_post_rumors pattern.
+# Map: account_id → {"x,y": {rumor: String, expires_at_ms: int}}
+var npc_post_rumor_cache: Dictionary = {}
+const NPC_RUMOR_CACHE_TTL_MS: int = 30 * 60 * 1000  # 30 min
 # Audit #12 Slice 2 — {peer_id: {post_index: true}} for player-owned posts the
 # user has stepped onto the center of this session. Prevents the status panel
 # from spamming every time they walk in and out.
@@ -5755,8 +5769,14 @@ func handle_disconnect(peer_id: int):
 		flock_counts.erase(peer_id)
 	# Audit #11 Slice 1 — clear NPC post arrival memory; greeting re-fires
 	# on next session.
+	# v0.9.443 (Slice 7) — also clear the per-peer anti-spam cooldown so
+	# the next session starts clean. The per-account rumor CACHE is kept
+	# (account-keyed, intentionally survives reconnect so the player sees
+	# the same rumor narrative across sessions).
 	if visited_npc_posts_session.has(peer_id):
 		visited_npc_posts_session.erase(peer_id)
+	if npc_post_greet_cooldown.has(peer_id):
+		npc_post_greet_cooldown.erase(peer_id)
 	# Audit #12 Slice 2 — same for own-post status panel.
 	if visited_own_posts_session.has(peer_id):
 		visited_own_posts_session.erase(peer_id)
@@ -23332,20 +23352,34 @@ func _get_avg_recent_price(item_name: String) -> int:
 	return int(round(float(total) / float(arr.size())))
 
 func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
-	"""Audit #11 Slice 1 — fire a one-time per-session arrival greeting when a
-	player walks into an NPC post tile. Surfaces the procedurally-generated
-	quest_giver name (otherwise unused), the region context from Slice 6L, a
-	rotating rumor (Slice 2-3), and the personality-shaped flavor (Slice 4).
-	Repeat visits this session stay silent; new session resets via handle_disconnect."""
+	"""Audit #11 Slice 1 — fire the arrival greeting when a player walks into an
+	NPC post tile. Surfaces the procedurally-generated quest_giver name, the
+	region context from Slice 6L, a rotating rumor (Slice 2-3), the personality-
+	shaped flavor (Slice 4), and threat warnings from Slice 6.
+
+	v0.9.443 (Slice 7): replaced session-binary 'shown once and silent forever'
+	with two layers:
+	  (a) Per-peer cooldown (NPC_GREET_COOLDOWN_MS) suppresses walking on/off
+	      the same tile from re-spamming the greeting.
+	  (b) Per-account rumor cache (NPC_RUMOR_CACHE_TTL_MS) makes re-visits
+	      after the cooldown — including reconnects on the same account —
+	      show the SAME rumor for 30 minutes. Closes the audit memo's
+	      'revisits get same rumor / matches legacy trading post behavior'
+	      gap. Different accounts at the same post get independent rumors."""
 	var px = int(post.get("x", 0))
 	var py = int(post.get("y", 0))
 	var post_key = "%d,%d" % [px, py]
-	if not visited_npc_posts_session.has(peer_id):
-		visited_npc_posts_session[peer_id] = {}
-	var visited = visited_npc_posts_session[peer_id]
-	if visited.has(post_key):
+
+	# (a) Anti-spam cooldown — if this peer walked on the post tile recently,
+	# stay silent so steps along the post don't re-spam.
+	var now_ms = Time.get_ticks_msec()
+	if not npc_post_greet_cooldown.has(peer_id):
+		npc_post_greet_cooldown[peer_id] = {}
+	var peer_cooldowns: Dictionary = npc_post_greet_cooldown[peer_id]
+	var last_ms = int(peer_cooldowns.get(post_key, 0))
+	if last_ms > 0 and (now_ms - last_ms) < NPC_GREET_COOLDOWN_MS:
 		return
-	visited[post_key] = true
+	peer_cooldowns[post_key] = now_ms
 
 	var post_name = String(post.get("name", "Trading Post"))
 	var region_name = String(post.get("region_name", ""))
@@ -23361,26 +23395,50 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 		header_parts.append("[color=%s]T%d %s[/color]" % [tier_color, tier, region_name])
 	send_to_peer(peer_id, {"type": "text", "message": " — ".join(header_parts)})
 
-	# Slice 6 — threat warning takes priority over rotating rumors when the
-	# post is currently menaced by a tier-2+ dungeon. Falls through to the
-	# regular rotation otherwise.
+	# (b) Rumor cache — look up the cached rumor for this account at this post.
+	# Threat warnings always run fresh (post may have become safe since last
+	# visit — stale threat info is misleading); other rumors stick.
+	var account_id = String(peers[peer_id].get("account_id", "")) if peers.has(peer_id) else ""
+
+	# Threat takes priority and is computed fresh each time. If a threat is
+	# present, also INVALIDATE any cached rumor — when the threat clears the
+	# next visit should pick a fresh non-threat rumor rather than re-show a
+	# stale dungeon/resource line that pre-dated the danger.
 	var rumor_line = _build_threat_rumor_line(px, py, quest_giver, personality)
 	if rumor_line == "":
-		# Slice 2/3 — pick rumor type with random preference order; falls through
-		# when the chosen type has no data nearby (no dungeon in range / no
-		# biome-flavored materials / no hotzone). Soft nod fallback below.
-		var try_order: Array = ["dungeon", "resource", "hotzone"]
-		try_order.shuffle()
-		for kind in try_order:
-			match kind:
-				"dungeon":
-					rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver, personality)
-				"resource":
-					rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver, personality)
-				"hotzone":
-					rumor_line = _build_hotzone_rumor_line(px, py, quest_giver, personality)
-			if rumor_line != "":
-				break
+		# Try cache first — same account at same post within TTL gets same rumor.
+		if account_id != "" and npc_post_rumor_cache.has(account_id):
+			var acct_cache: Dictionary = npc_post_rumor_cache[account_id]
+			if acct_cache.has(post_key):
+				var entry: Dictionary = acct_cache[post_key]
+				if int(entry.get("expires_at_ms", 0)) > now_ms:
+					rumor_line = String(entry.get("rumor", ""))
+		if rumor_line == "":
+			# Slice 2/3 — pick rumor type with random preference order; falls
+			# through when the chosen type has no data nearby. Soft nod fallback
+			# below if all kinds came back empty.
+			var try_order: Array = ["dungeon", "resource", "hotzone"]
+			try_order.shuffle()
+			for kind in try_order:
+				match kind:
+					"dungeon":
+						rumor_line = _build_dungeon_rumor_line(px, py, peer_id, quest_giver, personality)
+					"resource":
+						rumor_line = _build_resource_rumor_line(px, py, region_name, quest_giver, personality)
+					"hotzone":
+						rumor_line = _build_hotzone_rumor_line(px, py, quest_giver, personality)
+				if rumor_line != "":
+					break
+			# Cache whatever we rolled (including a non-empty fallback nod
+			# result is intentionally skipped — only "real" rumors stick so
+			# the player keeps getting fresh chances at a real one).
+			if rumor_line != "" and account_id != "":
+				if not npc_post_rumor_cache.has(account_id):
+					npc_post_rumor_cache[account_id] = {}
+				(npc_post_rumor_cache[account_id] as Dictionary)[post_key] = {
+					"rumor": rumor_line,
+					"expires_at_ms": now_ms + NPC_RUMOR_CACHE_TTL_MS,
+				}
 
 	if rumor_line != "":
 		send_to_peer(peer_id, {"type": "text", "message": rumor_line})

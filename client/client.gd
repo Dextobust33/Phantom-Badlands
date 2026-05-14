@@ -23942,8 +23942,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.443 — Audit #11 Slice 7: persistent NPC rumor cache.
+	display_game("[color=#00FF00]v0.9.443[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]NPC posts: revisits show the same rumor, walking on-and-off doesn't spam[/color]")
+	display_game("  • [b]Walking on-and-off an NPC post tile no longer re-fires the greeting every step.[/b] A 60-second per-player cooldown gates the message so you only see it once when you actually arrive.")
+	display_game("  • [b]Re-visiting a post — including after a reconnect — now shows the SAME rumor for 30 minutes,[/b] matching the way legacy trading posts work. Each NPC has a consistent narrative for your account, so you can leave and come back without losing the thread. After 30 min the rumor rerolls (or sooner if a new dungeon threat appears nearby — threats always run fresh). Different accounts at the same post still get their own rumors. Audit #11 Slice 7.")
+	display_game("")
+
 	# v0.9.442 — Audit #2 Slice 2: Class & Race section in inspect.
-	display_game("[color=#00FF00]v0.9.442[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.442[/color]")
 	display_game("  [color=#FFD700]Status page: both class passive AND race passive named in one block[/color]")
 	display_game("  • [b]Replaced the single-line class passive on the inspect page with a 'Class & Race' section listing both passives by name with full effect text.[/b] Race passives (Human Ambition / Elf Forest Heritage / Dwarf Last Stand / Ogre Hearty / Halfling Light-Footed / Orc Berserker / Gnome Arcane Tinkerer / Undead Cursed Resilience) were applied at runtime but never named on any player-facing surface — now the Race line tells you what your racial passive does and the Class line tells you what your class passive does, color-coded to match each identity. Audit #2 Slice 2 closes the visibility gap.")
 	display_game("")
