@@ -66,7 +66,15 @@ const HOUSE_UPGRADES = {
 	# + first-kill / last-kill timestamps. Always tracks (kills always recorded)
 	# but the UI is gated on upgrade level so unlocking reveals incrementally
 	# more info about your account's hunting history.
-	"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
+	"bestiary": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]},
+	# Audit #13 Slice 3 — Compass. Account-level exploration aid. Points the
+	# player at the nearest NPC post they have NOT yet visited (per-account
+	# ledger keyed on post name). Tiers reveal progressively more info:
+	#   L1: direction only (N/S/E/W/NE/NW/SE/SW)
+	#   L2: + distance in tiles
+	#   L3: + post name
+	# Visits are always recorded so unlocking later still uses the full history.
+	"compass": {"effect": 1, "max": 3, "costs": [1000, 4000, 15000]}
 }
 
 # Kennel capacity by upgrade level: 0=30, 1=50, ... 9=500
@@ -1315,7 +1323,13 @@ func create_house(account_id: String) -> Dictionary:
 		# Audit #13 Slice 2 — Bestiary ledger. Always recorded; UI is gated by
 		# the bestiary house upgrade level. Each entry:
 		#   monster_name → {kills, highest_level, first_killed_at, last_killed_at}
-		"bestiary": {}
+		"bestiary": {},
+
+		# Audit #13 Slice 3 — Compass ledger. Always recorded; the compass
+		# direction-finder ignores any post present in this dict. Each entry:
+		#   post_name → first_visited_at (unix ts). Keyed by post name because
+		# procedural NPC post identity is its name (npc_post_database.gd:235).
+		"visited_posts": {}
 	}
 
 	houses_data.houses[account_id] = house
@@ -1397,6 +1411,51 @@ func get_bestiary(account_id: String) -> Dictionary:
 	if house == null or not house.has("bestiary"):
 		return {}
 	return house.bestiary.duplicate(true)
+
+# Audit #13 Slice 3 — Compass helpers.
+
+func compass_level(account_id: String) -> int:
+	"""Return the compass upgrade level (0 = locked, 1-3 = unlocked tiers)."""
+	var house = get_house(account_id)
+	if house == null or not house.has("upgrades"):
+		return 0
+	return int(house.upgrades.get("compass", 0))
+
+func record_post_visit(account_id: String, post_name: String) -> bool:
+	"""Mark a post as visited by this account. Returns true if this was the
+	first visit (new entry), false if already recorded. Always tracked even
+	when the compass upgrade is locked — unlocking later uses the full ledger."""
+	if account_id == "" or post_name == "":
+		return false
+	var house = get_house(account_id)
+	if house == null:
+		return false
+	# Legacy houses created before Slice 3 ship may not have visited_posts.
+	if not house.has("visited_posts") or typeof(house.visited_posts) != TYPE_DICTIONARY:
+		house["visited_posts"] = {}
+	if house.visited_posts.has(post_name):
+		return false
+	house.visited_posts[post_name] = int(Time.get_unix_time_from_system())
+	save_house(account_id, house)
+	return true
+
+func is_post_visited(account_id: String, post_name: String) -> bool:
+	"""Cheap check for use in the compass direction-finder. False when account
+	has no house or hasn't visited that post."""
+	if account_id == "" or post_name == "":
+		return false
+	var house = get_house(account_id)
+	if house == null or not house.has("visited_posts"):
+		return false
+	return house.visited_posts.has(post_name)
+
+func get_visited_posts(account_id: String) -> Dictionary:
+	"""Return the raw visited_posts dict (post_name → first_visit_ts). Empty
+	if the account has no house or has never visited a post."""
+	var house = get_house(account_id)
+	if house == null or not house.has("visited_posts"):
+		return {}
+	return house.visited_posts.duplicate(true)
 
 func get_bestiary_summary(account_id: String) -> Dictionary:
 	"""Return a summary blob suitable for sending to the client: entries list
