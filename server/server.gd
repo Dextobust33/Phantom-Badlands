@@ -148,7 +148,8 @@ var pending_craft_sessions: Dictionary = {}  # peer_id -> session dict (transien
 var gathering_cooldown: Dictionary = {}  # peer_id -> true — prevents encounter on first move after gathering
 var build_cooldown: Dictionary = {}  # peer_id -> timestamp — prevents rapid build spam
 # Soldier harvest session tracking (post-combat 3-choice)
-var active_harvests: Dictionary = {}  # peer_id -> {monster_name, monster_tier, round, max_rounds, parts_gained}
+# active_harvests (old Soldier harvest minigame) removed v0.9.436. Soldier
+# benefits fold into the combat scratch-off via reveal-budget bonuses.
 var active_crafts: Dictionary = {}  # peer_id -> {recipe_id, skill_name, post_bonus, job_bonus, questions, correct_answers}
 # Rescue system tracking
 var dungeon_npcs: Dictionary = {}  # instance_id -> {floor_num: npc_data}
@@ -1602,13 +1603,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #6 Slice 11 — set/clear which chain title is displayed in chat
 		"set_chain_title":
 			handle_set_chain_title(peer_id, message)
-		# Soldier harvest handlers
-		"harvest_start":
-			handle_harvest_start(peer_id)
-		"harvest_choice":
-			handle_harvest_choice(peer_id, message)
-		"harvest_end":
-			handle_harvest_end(peer_id)
+		# Old harvest minigame removed v0.9.436 — the combat scratch-off
+		# (v0.9.434) handles post-combat loot. Soldier-job benefits fold into
+		# the new minigame via _combat_loot_reveal_budget.
 		# Tool equip/unequip
 		"equip_tool":
 			handle_equip_tool(peer_id, message)
@@ -2954,9 +2951,6 @@ func handle_move(peer_id: int, message: Dictionary):
 	if active_gathering.has(peer_id):
 		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while gathering!"})
 		return
-	if active_harvests.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "You cannot move while harvesting!"})
-		return
 
 	# Cancel any active trade (moving breaks trade)
 	if active_trades.has(peer_id):
@@ -4064,16 +4058,6 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if not tool_drop.is_empty():
 					all_drops.append(tool_drop)
 
-				# Set pending harvest data — available to all players
-				# Base 20% chance, scales up with soldier level (max ~70% at Lv100)
-				var _soldier_lvl = characters[peer_id].job_levels.get("soldier", 1)
-				var _harvest_chance = 0.20 + (_soldier_lvl * 0.005)  # 20% base + 0.5% per level
-				if randf() < _harvest_chance:
-					characters[peer_id].set_meta("pending_harvest", {
-						"monster_name": killed_monster_base_name,
-						"monster_tier": _get_monster_tier(killed_monster_level)
-					})
-
 				# Combat scratch-off bag (user-requested 2026-05-14) — when the
 				# feature flag is on, we route all drops through the 16-slot
 				# reveal panel instead of awarding inline. Currency/XP still go
@@ -4088,7 +4072,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				var _combat_loot_bag_view: Dictionary = {}
 				if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
 					var _monster_tier: int = _get_monster_tier(killed_monster_level)
-					var _bag: Dictionary = _build_combat_loot_bag(all_drops, _monster_tier, _final_flock_kills)
+					var _slvl: int = int(characters[peer_id].job_levels.get("soldier", 0))
+					var _bag: Dictionary = _build_combat_loot_bag(all_drops, _monster_tier, _final_flock_kills, _slvl)
 					active_combat_loot[peer_id] = _bag
 					_combat_loot_bag_view = _serialize_combat_loot_bag_for_client(_bag, false)
 
@@ -4176,9 +4161,6 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						else:
 							drop_messages.append("[color=#FF4444]Inventory full! %s lost (no salvage value)[/color]" % item.get("name", "Unknown Item"))
 
-				# Check if harvest is available for Soldier
-				var _harvest_avail = characters[peer_id].has_meta("pending_harvest") and not characters[peer_id].get_meta("pending_harvest", {}).is_empty()
-
 				# Check if wish granter gave pending wish choice (from result, not combat state)
 				var wish_pending = result.get("wish_pending", false)
 				var wish_options = result.get("wish_options", [])
@@ -4210,7 +4192,6 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"flock_drops": drop_messages,
 						"total_gems": total_gems,
 						"drop_data": drop_data,
-						"harvest_available": _harvest_avail,
 						# Combat scratch-off — when present, client renders the
 						# 16-slot reveal grid instead of the flat loot list.
 						"loot_bag": _combat_loot_bag_view,
@@ -5807,9 +5788,8 @@ func handle_disconnect(peer_id: int):
 				char.add_crafting_material(mat_id, consumed[mat_id])
 			log_message("Refunded crafting materials for disconnected player %d" % peer_id)
 		active_crafts.erase(peer_id)
-	# Clear active gathering/harvest sessions
+	# Clear active gathering sessions
 	active_gathering.erase(peer_id)
-	active_harvests.erase(peer_id)
 	gathering_cooldown.erase(peer_id)
 	build_cooldown.erase(peer_id)
 	# Combat scratch-off cleanup (user-requested 2026-05-14) — unrevealed
@@ -15744,9 +15724,11 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 # preserved because filler is added AFTER the real drops are decided by the
 # existing roll_combat_drops pipeline.
 
-func _combat_loot_reveal_budget(monster_tier: int, flock_kills: int) -> int:
-	"""Tier-scaled base + (flock_kills - 1) for the bonus. Solo fight = base
-	only; 5-monster flock = base + 4."""
+func _combat_loot_reveal_budget(monster_tier: int, flock_kills: int, soldier_level: int = 0) -> int:
+	"""Tier-scaled base + (flock_kills - 1) for the bonus + Soldier-level
+	bonus (v0.9.436 — replaces the old harvest mechanic's level-gated saves).
+	Solo fight = base; 5-monster flock = base + 4. Soldier bonus thresholds
+	mirror the old harvest_saves table: Lv20=+1, Lv50=+2, Lv80=+3."""
 	var base: int
 	if monster_tier <= 2:
 		base = 1
@@ -15755,7 +15737,14 @@ func _combat_loot_reveal_budget(monster_tier: int, flock_kills: int) -> int:
 	else:
 		base = 3
 	var bonus = max(0, flock_kills - 1)
-	return base + bonus
+	var soldier_bonus = 0
+	if soldier_level >= 80:
+		soldier_bonus = 3
+	elif soldier_level >= 50:
+		soldier_bonus = 2
+	elif soldier_level >= 20:
+		soldier_bonus = 1
+	return base + bonus + soldier_bonus
 
 func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 	"""Roll a single filler slot — one of: small Valor, Salvage Essence, a T1
@@ -15787,36 +15776,31 @@ func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 			var qty: int = randi_range(1, 1 + tier_scale / 3)
 			return {"kind": "filler_part", "material_id": part_id, "quantity": qty}
 
-func _build_combat_loot_bag(real_drops: Array, monster_tier: int, flock_kills: int) -> Dictionary:
+func _build_combat_loot_bag(real_drops: Array, monster_tier: int, flock_kills: int, soldier_level: int = 0) -> Dictionary:
 	"""Pre-roll the 16-slot bag. Real drops (everything roll_combat_drops gave
 	the player + any extras the flock-end path rolled) are placed into random
 	slot indices; the rest fill with filler outcomes. Bag is shuffled so the
-	player can't tell real from filler at a glance. Returns the bag dict the
-	server stores for the active session + sends to the client."""
+	player can't tell real from filler at a glance. Soldier-level passed
+	through so the budget pickup applies (replaces the old harvest_saves)."""
 	var slot_count: int = COMBAT_LOOT_SLOT_COUNT
 	var slots: Array = []
-	# Real drops first — already in roll order from the combat result.
 	for d in real_drops:
 		if slots.size() >= slot_count:
 			break
-		# Tag each entry with kind=real so reveal handler routes to the right
-		# inventory path. Keep the original drop dict untouched so existing
-		# special-case branches (egg / material / monster_part) still work.
 		slots.append({"kind": "real", "drop": d, "revealed": false})
-	# Filler to fill remaining slots so every click pays off.
 	while slots.size() < slot_count:
 		var filler: Dictionary = _build_combat_loot_filler(monster_tier)
 		filler["revealed"] = false
 		slots.append(filler)
-	# Shuffle so the player can't infer real-vs-filler from slot position.
 	slots.shuffle()
-	var budget: int = _combat_loot_reveal_budget(monster_tier, flock_kills)
+	var budget: int = _combat_loot_reveal_budget(monster_tier, flock_kills, soldier_level)
 	return {
 		"slots": slots,
 		"reveal_budget": budget,
 		"reveals_used": 0,
 		"monster_tier": monster_tier,
 		"flock_kills": flock_kills,
+		"soldier_level": soldier_level,
 	}
 
 func _award_combat_loot_slot(peer_id: int, slot: Dictionary) -> Dictionary:
@@ -17359,440 +17343,6 @@ func _auto_equip_tool_replacement(peer_id: int, character, tool_subtype: String,
 			"replacement": "",
 		})
 
-# ===== SOLDIER HARVEST SYSTEM =====
-
-func handle_harvest_start(peer_id: int):
-	"""Start a harvest session after combat victory (Soldier job)."""
-	if not characters.has(peer_id):
-		return
-	if active_harvests.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-	var soldier_level = character.job_levels.get("soldier", 1)
-
-	# Get last killed monster info from pending harvest data
-	var harvest_data = character.get_meta("pending_harvest", {}) if character.has_meta("pending_harvest") else {}
-	if harvest_data.is_empty():
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]No monster to harvest![/color]"})
-		return
-
-	var monster_name = harvest_data.get("monster_name", "")
-	var monster_tier = harvest_data.get("monster_tier", 1)
-	var max_rounds = 1
-	if monster_tier >= 7:
-		max_rounds = 3
-	elif monster_tier >= 4:
-		max_rounds = 2
-
-	# Calculate soldier saves (level-based)
-	var harvest_saves = 0
-	if soldier_level >= 80:
-		harvest_saves = 3
-	elif soldier_level >= 50:
-		harvest_saves = 2
-	elif soldier_level >= 20:
-		harvest_saves = 1
-
-	# Check harvest mastery for this monster type
-	var mastery_count = int(character.harvest_mastery.get(monster_name, 0))
-	var mastery_label = ""
-	var mastery_auto_round = false
-	var mastery_bonus_parts = 0
-	if mastery_count >= 15:
-		mastery_label = "Master"
-		mastery_bonus_parts = 3  # +3 parts per correct round
-		mastery_auto_round = true  # Round 1 auto-succeeds
-	elif mastery_count >= 7:
-		mastery_label = "Expert"
-		mastery_auto_round = true
-	elif mastery_count >= 3:
-		mastery_label = "Familiar"
-
-	var session = _generate_harvest_round(monster_name, monster_tier)
-	session["monster_name"] = monster_name
-	session["monster_tier"] = monster_tier
-	session["round"] = 1
-	session["max_rounds"] = max_rounds
-	session["parts_gained"] = []
-	session["saves_remaining"] = harvest_saves
-	session["mastery_count"] = mastery_count
-	session["mastery_label"] = mastery_label
-	session["mastery_bonus_parts"] = mastery_bonus_parts
-	active_harvests[peer_id] = session
-
-	# Skip harvest minigame if setting enabled — 50% chance per round, auto-complete
-	if character.skip_harvest_minigame:
-		_handle_harvest_skip(peer_id, session, character)
-		return
-
-	# If Expert/Master, auto-succeed round 1
-	if mastery_auto_round:
-		_handle_harvest_auto_success(peer_id, session, character)
-		return
-
-	var _hint_str = minf(1.0, float(soldier_level) / 100.0)
-	# Familiar mastery adds +0.3 hint strength
-	if mastery_count >= 3:
-		_hint_str = minf(1.0, _hint_str + 0.3)
-	var _harvest_msg = {
-		"type": "harvest_round",
-		"options": session["client_options"],
-		"hint_strength": _hint_str,
-		"round": 1,
-		"max_rounds": max_rounds,
-		"monster_name": monster_name,
-		"saves_remaining": harvest_saves,
-		"mastery_label": mastery_label,
-		"mastery_count": mastery_count,
-	}
-	# Reveal correct answer as hint if hint_strength > 0.5
-	if _hint_str > 0.5 and randf() < _hint_str:
-		_harvest_msg["hint_id"] = session["correct_id"]
-	send_to_peer(peer_id, _harvest_msg)
-
-func _handle_harvest_skip(peer_id: int, session: Dictionary, character):
-	"""Auto-complete all harvest rounds with 50% success chance each (skip minigame)."""
-	var monster_name = session["monster_name"]
-	var parts = drop_tables.get_monster_parts(monster_name)
-	var total_parts: Array = []
-
-	for r in range(session["max_rounds"]):
-		if randf() < 0.5 and not parts.is_empty():
-			# 50% chance to succeed this round
-			character.harvest_mastery[monster_name] = int(character.harvest_mastery.get(monster_name, 0)) + 1
-			var adjusted = parts.duplicate(true)
-			for p in adjusted:
-				p["weight"] = maxi(p["weight"], 20)
-			var total_w = 0
-			for p in adjusted:
-				total_w += p["weight"]
-			var roll = randi() % total_w
-			var cum = 0
-			for p in adjusted:
-				cum += p["weight"]
-				if roll < cum:
-					var qty = 5 + session.get("mastery_bonus_parts", 0)
-					character.add_crafting_material(p["id"], qty)
-					total_parts.append({"id": p["id"], "name": p["name"], "qty": qty})
-					break
-
-	# Award soldier XP
-	var soldier_level = character.job_levels.get("soldier", 1)
-	var base_xp = 10 + session["monster_tier"] * 5
-	var job_xp = base_xp * total_parts.size()
-	if job_xp > 0:
-		character.add_job_xp("soldier", job_xp)
-
-	# Send auto-skipped completion directly
-	send_to_peer(peer_id, {
-		"type": "harvest_complete",
-		"total_parts": total_parts,
-		"job_xp_gained": job_xp,
-		"auto_skipped": true,
-	})
-	active_harvests.erase(peer_id)
-	character.remove_meta("pending_harvest")
-	send_character_update(peer_id)
-	save_character(peer_id)
-
-func _handle_harvest_auto_success(peer_id: int, session: Dictionary, character):
-	"""Auto-succeed a harvest round due to Expert/Master mastery."""
-	var monster_name = session["monster_name"]
-	var parts = drop_tables.get_monster_parts(monster_name)
-	if not parts.is_empty():
-		var adjusted = parts.duplicate(true)
-		for p in adjusted:
-			p["weight"] = maxi(p["weight"], 20)
-		var total_w = 0
-		for p in adjusted:
-			total_w += p["weight"]
-		var roll = randi() % total_w
-		var cum = 0
-		for p in adjusted:
-			cum += p["weight"]
-			if roll < cum:
-				var qty = 5 + session.get("mastery_bonus_parts", 0)
-				character.add_crafting_material(p["id"], qty)
-				session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
-				break
-
-	send_to_peer(peer_id, {
-		"type": "harvest_result",
-		"correct": true,
-		"part_gained": session["parts_gained"][-1] if session["parts_gained"].size() > 0 else {},
-		"round": 1,
-		"continue": session["max_rounds"] > 1,
-		"auto_success": true,
-		"mastery_label": session.get("mastery_label", ""),
-	})
-
-	if session["max_rounds"] > 1:
-		session["round"] = 2
-		var new_round = _generate_harvest_round(monster_name, session["monster_tier"])
-		session["options"] = new_round["options"]
-		session["client_options"] = new_round["client_options"]
-		session["correct_id"] = new_round["correct_id"]
-		var soldier_level = character.job_levels.get("soldier", 0)
-		var _h_hint = minf(1.0, float(soldier_level) / 100.0)
-		if session.get("mastery_count", 0) >= 3:
-			_h_hint = minf(1.0, _h_hint + 0.3)
-		var _h_msg = {
-			"type": "harvest_round",
-			"options": new_round["client_options"],
-			"hint_strength": _h_hint,
-			"round": 2,
-			"max_rounds": session["max_rounds"],
-			"monster_name": monster_name,
-			"saves_remaining": session.get("saves_remaining", 0),
-			"mastery_label": session.get("mastery_label", ""),
-			"mastery_count": session.get("mastery_count", 0),
-		}
-		if _h_hint > 0.5 and randf() < _h_hint:
-			_h_msg["hint_id"] = new_round["correct_id"]
-		send_to_peer(peer_id, _h_msg)
-	else:
-		_end_harvest_session(peer_id, true)
-
-func _generate_harvest_round(monster_name: String, monster_tier: int) -> Dictionary:
-	"""Generate a harvest round — reuses gathering 3-choice pattern."""
-	var labels = [
-		["Carve the hide", "Extract the organ", "Collect the bone"],
-		["Slice the tendon", "Drain the ichor", "Pry the scale"],
-		["Sever the limb", "Harvest the gland", "Chip the claw"],
-	]
-	var label_set = labels[randi() % labels.size()]
-	var shuffled = label_set.duplicate()
-	shuffled.shuffle()
-	var correct_idx = randi() % 3
-	var options = []
-	for i in range(3):
-		options.append({"label": shuffled[i], "id": i, "correct": i == correct_idx})
-	var client_options = []
-	for opt in options:
-		client_options.append({"label": opt["label"], "id": opt["id"]})
-	return {"options": options, "client_options": client_options, "correct_id": correct_idx}
-
-func handle_harvest_choice(peer_id: int, message: Dictionary):
-	"""Handle player making a harvest choice."""
-	if not characters.has(peer_id):
-		return
-	if not active_harvests.has(peer_id):
-		return
-
-	var character = characters[peer_id]
-	var session = active_harvests[peer_id]
-	var choice_id = int(message.get("choice_id", -1))
-
-	var options = session.get("options", [])
-	var chosen = null
-	for opt in options:
-		if int(opt["id"]) == choice_id:
-			chosen = opt
-			break
-	if chosen == null:
-		return
-
-	var correct = chosen.get("correct", false)
-	var monster_name = session["monster_name"]
-	var monster_tier = session["monster_tier"]
-
-	if correct:
-		# Track mastery for this monster type
-		character.harvest_mastery[monster_name] = int(character.harvest_mastery.get(monster_name, 0)) + 1
-
-		# Roll a part with higher rare weights
-		var parts = drop_tables.get_monster_parts(monster_name)
-		if not parts.is_empty():
-			# Bias toward rarer parts for harvest
-			var adjusted = parts.duplicate(true)
-			for p in adjusted:
-				p["weight"] = maxi(p["weight"], 20)  # Flatten weights
-			var total_w = 0
-			for p in adjusted:
-				total_w += p["weight"]
-			var roll = randi() % total_w
-			var cum = 0
-			for p in adjusted:
-				cum += p["weight"]
-				if roll < cum:
-					var qty = 5 + session.get("mastery_bonus_parts", 0)
-					character.add_crafting_material(p["id"], qty)
-					session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
-					break
-
-		if session["round"] < session["max_rounds"]:
-			# More rounds available
-			session["round"] += 1
-			var new_round = _generate_harvest_round(monster_name, monster_tier)
-			session["options"] = new_round["options"]
-			session["client_options"] = new_round["client_options"]
-			session["correct_id"] = new_round["correct_id"]
-			var soldier_level = character.job_levels.get("soldier", 0)
-			send_to_peer(peer_id, {
-				"type": "harvest_result",
-				"correct": true,
-				"part_gained": session["parts_gained"][-1] if session["parts_gained"].size() > 0 else {},
-				"round": session["round"],
-				"continue": true,
-			})
-			var _h_hint = minf(1.0, float(soldier_level) / 100.0)
-			if session.get("mastery_count", 0) >= 3:
-				_h_hint = minf(1.0, _h_hint + 0.3)
-			var _h_msg = {
-				"type": "harvest_round",
-				"options": new_round["client_options"],
-				"hint_strength": _h_hint,
-				"round": session["round"],
-				"max_rounds": session["max_rounds"],
-				"monster_name": monster_name,
-				"saves_remaining": session.get("saves_remaining", 0),
-				"mastery_label": session.get("mastery_label", ""),
-				"mastery_count": session.get("mastery_count", 0),
-			}
-			if _h_hint > 0.5 and randf() < _h_hint:
-				_h_msg["hint_id"] = new_round["correct_id"]
-			send_to_peer(peer_id, _h_msg)
-		else:
-			# All rounds done - send final result then complete
-			send_to_peer(peer_id, {
-				"type": "harvest_result",
-				"correct": true,
-				"part_gained": session["parts_gained"][-1] if session["parts_gained"].size() > 0 else {},
-				"round": session["round"],
-				"continue": false,
-			})
-			_end_harvest_session(peer_id, true)
-	else:
-		# Wrong — check for soldier saves (re-roll same round for another chance)
-		var saves_left = session.get("saves_remaining", 0)
-		if saves_left > 0:
-			session["saves_remaining"] -= 1
-			# Re-roll the round (new options, same round number)
-			var new_round = _generate_harvest_round(monster_name, monster_tier)
-			session["options"] = new_round["options"]
-			session["client_options"] = new_round["client_options"]
-			session["correct_id"] = new_round["correct_id"]
-			send_to_peer(peer_id, {
-				"type": "harvest_result",
-				"correct": false,
-				"part_gained": {},
-				"round": session["round"],
-				"continue": true,
-				"harvest_saved": true,
-				"saves_remaining": session["saves_remaining"],
-			})
-			var soldier_level = character.job_levels.get("soldier", 0)
-			var _h_hint = minf(1.0, float(soldier_level) / 100.0)
-			if session.get("mastery_count", 0) >= 3:
-				_h_hint = minf(1.0, _h_hint + 0.3)
-			var _h_msg = {
-				"type": "harvest_round",
-				"options": new_round["client_options"],
-				"hint_strength": _h_hint,
-				"round": session["round"],
-				"max_rounds": session["max_rounds"],
-				"monster_name": monster_name,
-				"saves_remaining": session["saves_remaining"],
-				"mastery_label": session.get("mastery_label", ""),
-				"mastery_count": session.get("mastery_count", 0),
-			}
-			if _h_hint > 0.5 and randf() < _h_hint:
-				_h_msg["hint_id"] = new_round["correct_id"]
-			send_to_peer(peer_id, _h_msg)
-		else:
-			# No saves — give 1 base part (reduced) and continue to next round
-			var fail_part = {}
-			var parts = drop_tables.get_monster_parts(monster_name)
-			if not parts.is_empty():
-				var p = parts[0]
-				var qty = 1
-				character.add_crafting_material(p["id"], qty)
-				session["parts_gained"].append({"id": p["id"], "name": p["name"], "qty": qty})
-				fail_part = {"id": p["id"], "name": p["name"], "qty": qty}
-			if session["round"] < session["max_rounds"]:
-				# More rounds — continue
-				session["round"] += 1
-				var new_round = _generate_harvest_round(monster_name, monster_tier)
-				session["options"] = new_round["options"]
-				session["client_options"] = new_round["client_options"]
-				session["correct_id"] = new_round["correct_id"]
-				send_to_peer(peer_id, {
-					"type": "harvest_result",
-					"correct": false,
-					"part_gained": fail_part,
-					"round": session["round"] - 1,
-					"continue": true,
-				})
-				var soldier_level = character.job_levels.get("soldier", 0)
-				var _h_hint = minf(1.0, float(soldier_level) / 100.0)
-				if session.get("mastery_count", 0) >= 3:
-					_h_hint = minf(1.0, _h_hint + 0.3)
-				var _h_msg = {
-					"type": "harvest_round",
-					"options": new_round["client_options"],
-					"hint_strength": _h_hint,
-					"round": session["round"],
-					"max_rounds": session["max_rounds"],
-					"monster_name": monster_name,
-					"saves_remaining": 0,
-					"mastery_label": session.get("mastery_label", ""),
-					"mastery_count": session.get("mastery_count", 0),
-				}
-				if _h_hint > 0.5 and randf() < _h_hint:
-					_h_msg["hint_id"] = new_round["correct_id"]
-				send_to_peer(peer_id, _h_msg)
-			else:
-				# Last round — end session
-				send_to_peer(peer_id, {
-					"type": "harvest_result",
-					"correct": false,
-					"part_gained": fail_part,
-					"round": session["round"],
-					"continue": false,
-				})
-				_end_harvest_session(peer_id, false)
-
-func _end_harvest_session(peer_id: int, all_correct: bool = false):
-	"""End a harvest session and give job XP."""
-	if not active_harvests.has(peer_id):
-		return
-	if not characters.has(peer_id):
-		active_harvests.erase(peer_id)
-		return
-
-	var character = characters[peer_id]
-	var session = active_harvests[peer_id]
-	var parts = session.get("parts_gained", [])
-	var monster_tier = session.get("monster_tier", 1)
-
-	# Soldier job XP
-	var xp_per_round = 15 + (monster_tier - 1) * 10
-	var total_xp = xp_per_round * parts.size()
-	var job_result = character.add_job_xp("soldier", total_xp)
-	var char_xp = job_result.get("char_xp_gained", 0)
-	if char_xp > 0:
-		character.add_experience(char_xp)
-
-	send_to_peer(peer_id, {
-		"type": "harvest_complete",
-		"total_parts": parts,
-		"job_xp_gained": total_xp,
-		"job_leveled_up": job_result.get("leveled_up", false),
-		"new_job_level": job_result.get("new_level", 1),
-	})
-
-	# Clear pending harvest
-	if character.has_meta("pending_harvest"):
-		character.remove_meta("pending_harvest")
-	active_harvests.erase(peer_id)
-	send_character_update(peer_id)
-	save_character(peer_id)
-
-func handle_harvest_end(peer_id: int):
-	"""Handle player voluntarily stopping harvest early. Clears the session so server stops blocking movement."""
-	if active_harvests.has(peer_id):
-		active_harvests.erase(peer_id)
 
 # ===== OLD GATHERING HANDLERS (kept for reference, unreachable) =====
 
