@@ -24011,10 +24011,12 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.452 — Audit #6 Slice 12: chain-only quest model.
-	display_game("[color=#00FF00]v0.9.452[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Quest boards now show campaign chains only — daily kill-tasks retired[/color]")
-	display_game("  • [b]Trading post quest boards no longer generate daily kill-task quests.[/b] Chains (and their stage-by-stage progression) are now the only campaign content at quest boards, alongside the level-up progression nudge toward the next post. This closes the audit's headline overhaul on quests: 'Daily refresh model unengaging' → 'persistent target-farm chains'. Already-active dailies on existing characters still complete normally — only new daily generation is gated. Eleven chain campaigns are live (Goblin Menace, Skeleton Lord's Curse, Wolf Pack, Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt, Rat Plague, Kobold Trouble) plus three DELIVER chains, spread across five starter posts. With chains as the only content driver, quest boards that have nothing available point you at other posts — every campaign is somewhere, and chains rotate by location rather than by clock. Single feature flag controls the switch so it's a one-line revert if breadth feels too tight. Audit #6 Slice 12 — the audit's full quest overhaul.")
+	# v0.9.453 — Audit #6 Slice 13: regenerating quest board (supersedes Slice 12).
+	display_game("[color=#00FF00]v0.9.453[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Quest board now regenerates continuously — no more daily caps[/color]")
+	display_game("  • [b]Procedural quests are back, but the daily-cap model is gone for good.[/b] Trading post boards now show 5-6 quests at starter posts / 7-8 at mid-tier / 8-10 at endgame, and the slot of every quest you complete is immediately filled with a new procedural one. No 24-hour cooldown, no \"do a couple of quests then wait until tomorrow.\" You can keep working through the board as long as you have time. The slice supersedes yesterday's chain-only model (v0.9.452) — the original audit signal was about the cap mechanic, not the kill-task content itself. Chain campaigns are unaffected and still alongside the procedural quests.")
+	display_game("  • [b]Active quest cap lowered from 5 to 3.[/b] With the board never running dry, hoarding accepts is no longer a viable strategy — triage to your top 3 and rotate as you complete. The board is the parking lot, not your inventory.")
+	display_game("  • [b][DAILY] row tag removed and the featured pick relabelled '★ FEATURED ★'[/b] (was '★ TODAY'S BOUNTY ★') — daily-cadence framing retired across the UI. Already-active dailies on existing characters complete normally; in-flight cooldown entries from before this release naturally fold into the new sliding window. Audit #6 Slice 13.")
 	display_game("")
 
 	# v0.9.451 — Audit #11 Slice 8: NPC vendors at mine/farm/shrine.
@@ -35312,8 +35314,12 @@ func handle_quest_list(message: Dictionary):
 		available_quests.sort_custom(func(a, b): return a.get("is_featured", false) and not b.get("is_featured", false))
 		for i in range(available_quests.size()):
 			var quest = available_quests[i]
-			var daily_tag = " [color=#00FFFF][DAILY][/color]" if quest.get("is_daily", false) else ""
-			var featured_tag = " [color=#FFD700]★ TODAY'S BOUNTY ★[/color]" if quest.get("is_featured", false) else ""
+			# v0.9.453 — daily-cadence framing retired (quests now regenerate
+			# continuously). [DAILY] tag dropped; rely on the chain-quest
+			# stage badge in the description to distinguish chain content.
+			# Featured pick remains a per-board flair.
+			var daily_tag = ""
+			var featured_tag = " [color=#FFD700]★ FEATURED ★[/color]" if quest.get("is_featured", false) else ""
 			var tier_tag = _get_quest_tier_tag(quest)
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
@@ -35334,13 +35340,11 @@ func handle_quest_list(message: Dictionary):
 			display_game("    [color=#808080]Requires: Complete '%s' first[/color]" % prereq_name)
 			display_game("")
 
-	# Show message if nothing available. Audit #6 Slice 12 — chain-only model
-	# means a post may legitimately have nothing once its chains are
-	# completed or in progress at another post. Point the player at the
-	# travel option so they know more campaigns exist elsewhere.
+	# Show message if nothing available — with the v0.9.453 regenerating board
+	# this should be rare (board always slides forward as quests are
+	# completed) but it can still fire on disconnected/edge states.
 	if quests_to_turn_in.size() == 0 and available_quests.size() == 0 and active_quests_display.size() == 0 and locked_quests.size() == 0:
-		display_game("[color=#808080]No campaigns available at this post right now.[/color]")
-		display_game("[color=#808080]Chains rotate by location — try another trading post for more.[/color]")
+		display_game("[color=#808080]No quests available at this time.[/color]")
 
 	display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))
