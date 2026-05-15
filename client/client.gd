@@ -625,7 +625,7 @@ var house_data: Dictionary = {}
 var house_mode: String = ""  # "", "main", "storage", "companions", "upgrades"
 var pending_house_action: String = ""  # For sub-menus like withdraw_select, checkout_select, etc.
 var house_storage_page: int = 0
-var house_upgrades_page: int = 0  # 0=Base, 1=Combat, 2=Stats
+var house_upgrades_page: int = 0  # Index into SANCTUARY_UPGRADE_TABS (Storage/Combat/Stats/Discovery/Economy)
 var house_mastery_page: int = 0  # Slice 3 — pagination for mastery headstart panel (5 abilities per page)
 var house_storage_withdraw_items: Array = []  # Items to withdraw on character creation
 var house_checkout_companion_slot: int = -1  # Companion slot to checkout on character creation
@@ -6246,15 +6246,19 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 		elif house_mode == "upgrades":
-			var page_labels = ["Base", "Combat", "Stats"]
-			var page_buy_labels = ["1-6=Buy", "1-3=Buy", "1-6=Buy"]
+			# Audit #13 Slice 5 — tab labels + buy-key hints pulled from
+			# SANCTUARY_UPGRADE_TABS so they can't drift from the display.
+			var sus_tab: Dictionary = SANCTUARY_UPGRADE_TABS[house_upgrades_page]
+			var sus_label: String = sus_tab["label"]
+			var sus_count: int = sus_tab["ids"].size()
+			var sus_buy_hint: String = "1-%d=Buy" % sus_count if sus_count > 0 else ""
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
 				{"label": "< Prev", "action_type": "local", "action_data": "upgrades_prev", "enabled": house_upgrades_page > 0},
-				{"label": "Next >", "action_type": "local", "action_data": "upgrades_next", "enabled": house_upgrades_page < 2},
-				{"label": page_labels[house_upgrades_page], "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Next >", "action_type": "local", "action_data": "upgrades_next", "enabled": house_upgrades_page < SANCTUARY_UPGRADE_TABS.size() - 1},
+				{"label": sus_label, "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": page_buy_labels[house_upgrades_page], "action_type": "none", "action_data": "", "enabled": false},
+				{"label": sus_buy_hint, "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -12906,7 +12910,7 @@ func execute_local_action(action: String):
 			display_house_upgrades()
 			update_action_bar()
 		"upgrades_next":
-			house_upgrades_page = min(2, house_upgrades_page + 1)
+			house_upgrades_page = min(SANCTUARY_UPGRADE_TABS.size() - 1, house_upgrades_page + 1)
 			display_house_upgrades()
 			update_action_bar()
 		"house_mastery":
@@ -24007,8 +24011,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.448 — Audit #13 Slice 5: Sanctuary tab categorization.
+	display_game("[color=#00FF00]v0.9.448[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sanctuary: upgrades reorganized into 5 named tabs[/color]")
+	display_game("  • [b]The upgrade screen now has 5 categorized tabs — Storage, Combat, Stats, Discovery, Economy — instead of the previous 3-page mash-up.[/b] The old Base Upgrades page had 13 entries mixing storage, companion slots, discovery upgrades, posts, and economy bonuses; finding the upgrade you wanted meant reading the whole list. The new tabs put each upgrade with its peers: Storage groups all the slot expansions (inventory / kennel / egg / companion / posts / sanctum) so you can see your hoarding capacity in one place. Combat groups HP, resource max, regen, and flee chance. Discovery groups the three account-level qualitative unlocks (Bestiary / Compass / Region Atlas) so they're easy to find. The visual panel also gained the Compass and Region Atlas upgrades — they were only ever visible in the text view by accident (a latent bug since v0.9.444). A tab strip across the top names all 5 categories at once with the current one highlighted, so the full landscape is visible whether you're paging or just orienting. Audit #13 Slice 5.")
+	display_game("")
+
 	# v0.9.447 — Audit #8 Layer 7: skill progression preview.
-	display_game("[color=#00FF00]v0.9.447[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.447[/color]")
 	display_game("  [color=#FFD700]Crafting: 'Coming Up' preview shows what unlocks at higher skill[/color]")
 	display_game("  • [b]The crafting recipe list now ends with a 'Coming Up' footer naming the next 3 recipes you'll unlock at higher skill levels[/b], with the level required and how many levels away each one is. Tells you what you're working toward when you grind a craft skill — and at a glance whether the next thing is a 1-level bump or a 20-level slog. Closes layer 7 (the final layer) of the crafting transparency stack — every recipe now answers what you can make, what materials you need, where to find them, what quality odds look like, what it sells for, and now what you're building toward. Visual panel mirrored. Audit #8 Layer 7.")
 	display_game("")
@@ -36695,6 +36705,18 @@ const HOUSE_UPGRADE_DISPLAY = {
 	"wits_bonus": {"name": "Wits Training", "desc": "+1 WITS", "icon": "⚡"}
 }
 
+# Audit #13 Slice 5 — Sanctuary upgrade categorization. Single source of truth
+# for the upgrade tab list — referenced by display_house_upgrades, _purchase_house_upgrade,
+# and the action-bar prev/next bounds. The visual sanctuary_panel.gd has its own
+# UPGRADE_PAGES constant that MUST stay aligned with this (label + ids).
+const SANCTUARY_UPGRADE_TABS = [
+	{"label": "Storage", "ids": ["storage_slots", "egg_slots", "kennel_capacity", "companion_slots", "companion_sanctum", "post_slots"]},
+	{"label": "Combat", "ids": ["hp_bonus", "resource_max", "resource_regen", "flee_chance"]},
+	{"label": "Stats", "ids": ["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]},
+	{"label": "Discovery", "ids": ["bestiary", "compass", "region_atlas"]},
+	{"label": "Economy", "ids": ["starting_gold", "xp_bonus", "gathering_bonus"]},
+]
+
 func _get_current_house_layout() -> Array:
 	"""Build the house map with dynamic C and K tiles based on upgrade levels"""
 	# Start with base map
@@ -37357,18 +37379,23 @@ func display_house_upgrades():
 	house_mode = "upgrades"
 	_update_house_map()
 
-	# Define upgrade pages
-	var page_names = ["Base Upgrades", "Combat Bonuses", "Stat Training"]
-	var page_upgrades = [
-		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "compass", "region_atlas", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
-		["hp_bonus", "resource_max", "resource_regen"],
-		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
-	]
-
-	house_upgrades_page = clamp(house_upgrades_page, 0, page_names.size() - 1)
+	# Audit #13 Slice 5 — 5-tab categorization (Storage/Combat/Stats/Discovery/Economy).
+	# Canonical taxonomy lives in SANCTUARY_UPGRADE_TABS.
+	var tab_count = SANCTUARY_UPGRADE_TABS.size()
+	house_upgrades_page = clamp(house_upgrades_page, 0, tab_count - 1)
+	var current_tab = SANCTUARY_UPGRADE_TABS[house_upgrades_page]
 
 	display_game("[color=#FF6600]═══════ UPGRADE FORGE ═══════[/color]")
-	display_game("[color=#AAAAAA]Page %d/3: %s[/color]" % [house_upgrades_page + 1, page_names[house_upgrades_page]])
+	# Tab strip — show every category so players see the full landscape before paging.
+	var tab_strip_parts: Array = []
+	for ti in range(tab_count):
+		var label: String = SANCTUARY_UPGRADE_TABS[ti]["label"]
+		if ti == house_upgrades_page:
+			tab_strip_parts.append("[color=#FFD700][%s][/color]" % label)
+		else:
+			tab_strip_parts.append("[color=#666666]%s[/color]" % label)
+	display_game("  ".join(tab_strip_parts))
+	display_game("[color=#AAAAAA]Page %d/%d: %s[/color]" % [house_upgrades_page + 1, tab_count, current_tab["label"]])
 	display_game("")
 
 	var bp = house_data.get("baddie_points", 0)
@@ -37404,7 +37431,7 @@ func display_house_upgrades():
 		"region_atlas": {"effect": 1, "max": 3, "costs": [800, 3000, 12000]}
 	})
 
-	var current_page_upgrades = page_upgrades[house_upgrades_page]
+	var current_page_upgrades: Array = current_tab["ids"]
 	var idx = 1
 	for upgrade_id in current_page_upgrades:
 		var upgrade_def = upgrade_costs.get(upgrade_id, {})
@@ -37602,13 +37629,11 @@ func _get_house_companion_capacity() -> int:
 	return base_slots + upgrade_level
 
 func _purchase_house_upgrade(index: int):
-	"""Send request to purchase a house upgrade based on current page"""
-	var page_upgrades = [
-		["storage_slots", "companion_slots", "companion_sanctum", "bestiary", "compass", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus"],
-		["hp_bonus", "resource_max", "resource_regen"],
-		["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]
-	]
-	var current_page_upgrades = page_upgrades[house_upgrades_page]
+	"""Send request to purchase a house upgrade based on current tab — pulls
+	from SANCTUARY_UPGRADE_TABS so display order and buy order can never drift."""
+	if house_upgrades_page < 0 or house_upgrades_page >= SANCTUARY_UPGRADE_TABS.size():
+		return
+	var current_page_upgrades: Array = SANCTUARY_UPGRADE_TABS[house_upgrades_page]["ids"]
 	if index < 0 or index >= current_page_upgrades.size():
 		return
 	send_to_server({"type": "house_upgrade", "upgrade_id": current_page_upgrades[index]})

@@ -21,10 +21,14 @@ signal upgrade_page_changed(page_index: int)
 const TAB_STORAGE := "storage"
 const TAB_UPGRADES := "upgrades"
 
+# Audit #13 Slice 5 — categorized tabs. MUST stay aligned with
+# SANCTUARY_UPGRADE_TABS in client.gd (label + ids).
 const UPGRADE_PAGES := [
-	{"label": "Base", "ids": ["storage_slots", "companion_slots", "kennel_capacity", "egg_slots", "post_slots", "flee_chance", "starting_gold", "xp_bonus", "gathering_bonus", "companion_sanctum", "bestiary"]},
-	{"label": "Combat", "ids": ["hp_bonus", "resource_max", "resource_regen"]},
+	{"label": "Storage", "ids": ["storage_slots", "egg_slots", "kennel_capacity", "companion_slots", "companion_sanctum", "post_slots"]},
+	{"label": "Combat", "ids": ["hp_bonus", "resource_max", "resource_regen", "flee_chance"]},
 	{"label": "Stats", "ids": ["str_bonus", "con_bonus", "dex_bonus", "int_bonus", "wis_bonus", "wits_bonus"]},
+	{"label": "Discovery", "ids": ["bestiary", "compass", "region_atlas"]},
+	{"label": "Economy", "ids": ["starting_gold", "xp_bonus", "gathering_bonus"]},
 ]
 
 var client_ref = null
