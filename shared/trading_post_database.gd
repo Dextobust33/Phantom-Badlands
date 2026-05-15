@@ -819,6 +819,9 @@ const CATEGORY_STOCK_POOLS: Dictionary = {
 		{"item_type": "floor_skip_charm", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Floor Skip Charm"},
 		{"item_type": "elixir", "rarity": "common", "price": 350, "supply_category": "consumable", "display_name": "Elixir"},
 		{"item_type": "cursed_coin", "rarity": "common", "price": 75, "supply_category": "consumable", "display_name": "Cursed Coin"},
+		# Audit #9 Slice 5 — Travel Stone. Curiosity Trader carries them too
+		# so players have a market path alongside T5+ drops.
+		{"item_type": "travel_stone", "rarity": "rare", "price": 3000, "supply_category": "consumable", "display_name": "Travel Stone"},
 	],
 	"mine": [
 		# Forge Master — equipment + defensive theme. Sanctuary equipment

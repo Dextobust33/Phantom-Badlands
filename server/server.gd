@@ -1911,6 +1911,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_market_list_material(peer_id, message)
 		"market_buy":
 			handle_market_buy(peer_id, message)
+		"market_network_buy":
+			# Audit #9 Slice 5 — remote network purchase. Requires a Travel Stone
+			# in inventory; consumed per listing-buy.
+			handle_market_network_buy(peer_id, message)
 		"market_my_listings":
 			handle_market_my_listings(peer_id, message)
 		"market_cancel":
@@ -12757,6 +12761,167 @@ func _handle_market_buy_npc_stock(peer_id: int, listing_id: String, requested_qt
 		"quantity": buy_qty,
 		"price": price,
 		"is_npc": true,
+		"new_valor": persistence.get_valor(buyer_account_id)
+	})
+	send_character_update(peer_id)
+
+func handle_market_network_buy(peer_id: int, message: Dictionary):
+	"""Audit #9 Slice 5 — remote network purchase.
+
+	The player is at some trading post (required for any market access) and
+	browsing the network view. They've spotted a listing at a DIFFERENT post
+	and want to buy it without traveling. Travel Stones are the fast-travel
+	friction tier: spend one Travel Stone from inventory to buy a single
+	listing remotely. Item is delivered directly to inventory/pouch/eggs.
+
+	Pricing uses the LISTING'S post markup (the seller's geographic spread).
+	Specialty discount is skipped — buyer isn't at the specialty post.
+	Threat multiplier is skipped — buyer isn't at the threatened post.
+	This preserves the audit's geographic value: specialty + threat economy
+	requires actual presence; remote buy is straight markup."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var buyer_account_id: String = peers[peer_id].account_id
+
+	# Must be at a market location to use the network view at all.
+	var here_post_id: String = _get_market_post_id(peer_id)
+	if here_post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post to use the market network."})
+		return
+
+	var listing_id: String = String(message.get("listing_id", ""))
+	var listing_post_id: String = String(message.get("post_id", ""))
+	if listing_id.is_empty() or listing_post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid listing."})
+		return
+
+	# Reject remote buys against the player's current post — they should use
+	# the local buy flow (which applies specialty discount).
+	if listing_post_id == here_post_id:
+		send_to_peer(peer_id, {"type": "market_error", "message": "You're already at this post — use Local browse to buy here."})
+		return
+
+	# Player must have at least one travel_stone in inventory.
+	var stone_index: int = -1
+	for i in range(character.inventory.size()):
+		if String(character.inventory[i].get("type", "")) == "travel_stone":
+			stone_index = i
+			break
+	if stone_index < 0:
+		send_to_peer(peer_id, {"type": "market_error", "message": "You need a Travel Stone to buy remotely. Drops from T5+ chests or sold by the Curiosity Trader at exotic posts."})
+		return
+
+	# Locate the listing at its actual post.
+	var listings: Array = persistence.get_market_listings(listing_post_id)
+	var listing: Dictionary = {}
+	for l in listings:
+		if String(l.get("listing_id", "")) == listing_id:
+			listing = l
+			break
+	if listing.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "That listing is no longer available."})
+		return
+
+	var item: Dictionary = listing.get("item", {})
+	var listing_qty: int = int(listing.get("quantity", 1))
+	var base_valor: int = int(listing.get("base_valor", 0))
+	var seller_account_id: String = String(listing.get("account_id", ""))
+
+	# v1: network buy purchases the full listing stack — no partial quantity.
+	# Keeps the slice scoped; bulk multi-listing purchases can come later.
+	var buy_qty: int = listing_qty
+	var per_unit_valor: int = int(base_valor / maxi(listing_qty, 1))
+	var partial_base: int = per_unit_valor * buy_qty
+
+	# Pricing: listing's-post markup only. No specialty discount, no threat
+	# multiplier — see docstring above.
+	var cat: String = String(listing.get("supply_category", "equipment"))
+	var markup: float = persistence.calculate_markup(listing_post_id, cat)
+	var price: int = int(partial_base * markup)
+
+	# Affordability check.
+	var buyer_valor: int = persistence.get_valor(buyer_account_id)
+	if buyer_valor < price:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor. Need %d, have %d." % [price, buyer_valor]})
+		return
+
+	# Inventory space check. Materials → pouch, eggs → incubator slot,
+	# everything else → inventory slot.
+	var item_type: String = String(item.get("type", ""))
+	if item_type == "material":
+		pass  # Materials go to pouch — always room
+	elif item_type == "egg":
+		var egg_cap: int = persistence.get_egg_capacity(buyer_account_id)
+		if character.incubating_eggs.size() >= egg_cap:
+			send_to_peer(peer_id, {"type": "market_error", "message": "Your egg incubator is full! (%d/%d)" % [character.incubating_eggs.size(), egg_cap]})
+			return
+	elif character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
+		return
+
+	# Consume listing first (race-safe — same pattern as handle_market_buy).
+	var removed: Dictionary = persistence.remove_market_listing(listing_post_id, listing_id)
+	if removed.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "That listing is no longer available."})
+		return
+
+	# Charge valor + consume Travel Stone.
+	persistence.spend_valor(buyer_account_id, price)
+	# Remove the stone — defensive re-scan in case the index drifted during validation.
+	var stone_consumed: bool = false
+	if stone_index >= 0 and stone_index < character.inventory.size() and String(character.inventory[stone_index].get("type", "")) == "travel_stone":
+		if bool(character.inventory[stone_index].get("is_consumable", false)):
+			character.use_consumable_stack(stone_index)
+		else:
+			character.remove_item(stone_index)
+		stone_consumed = true
+	else:
+		for i in range(character.inventory.size()):
+			if String(character.inventory[i].get("type", "")) == "travel_stone":
+				if bool(character.inventory[i].get("is_consumable", false)):
+					character.use_consumable_stack(i)
+				else:
+					character.remove_item(i)
+				stone_consumed = true
+				break
+	if not stone_consumed:
+		# Race condition: stone disappeared between checks. Refund + bail.
+		persistence.add_valor(buyer_account_id, price)
+		# Put the listing back since we already removed it.
+		# Best-effort restore — uses add_market_listing API if available.
+		send_to_peer(peer_id, {"type": "market_error", "message": "Travel Stone vanished — purchase rolled back."})
+		return
+
+	# Pay the seller their base valor (no markup spread for the seller —
+	# seller already got base_valor when they listed). Mirror existing
+	# market_buy seller-credit semantics.
+	if seller_account_id != "" and seller_account_id != buyer_account_id:
+		persistence.add_valor(seller_account_id, base_valor)
+
+	# Deliver the item.
+	if item_type == "material":
+		var mat_name: String = String(item.get("name", ""))
+		var mat_qty: int = int(item.get("quantity", buy_qty))
+		character.crafting_materials[mat_name] = int(character.crafting_materials.get(mat_name, 0)) + mat_qty
+	elif item_type == "egg":
+		character.incubating_eggs.append(item.duplicate(true))
+	else:
+		character.inventory.append(item.duplicate(true))
+
+	# Record sale in rolling avg history (mirrors handle_market_buy).
+	var paid_per_unit: int = int(price / max(buy_qty, 1))
+	_record_market_sale(String(item.get("name", "")), paid_per_unit)
+
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_buy_result",
+		"success": true,
+		"item_name": String(item.get("name", "Item")),
+		"quantity": buy_qty,
+		"price": price,
+		"is_network_buy": true,
 		"new_valor": persistence.get_valor(buyer_account_id)
 	})
 	send_character_update(peer_id)
