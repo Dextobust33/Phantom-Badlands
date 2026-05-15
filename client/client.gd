@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.460 — Audit #12 Slice 4: post inactivity surfacing.
+	display_game("[color=#00FF00]v0.9.460[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player posts now show how long since they were last tended[/color]")
+	display_game("  • [b]Every player post tracks when its owner last interacted with it — arriving inside the bubble, building or demolishing tiles inside it, or using /feedall to refill its guards.[/b] The post-status panel now shows a [color=#88FF88]Last tended: Xd ago[/color] line for both owners and visitors. After [color=#FFAA44]7 days[/color] without tending the post is tagged [color=#FFAA44]⚠ Inactive[/color]; after [color=#FF4444]30 days[/color] it flips to [color=#FF4444]⚠⚠ ABANDONED[/color]. No mechanical consequence yet — this slice surfaces inactivity so you can see at a glance which bases are stale before a future slice adds decay or reclaim mechanics. Audit #12 Slice 4.")
+	display_game("")
+
 	# v0.9.459 — Audit #5 Slice 17: 6 more dungeon theme tiles.
-	display_game("[color=#00FF00]v0.9.459[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.459[/color]")
 	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles[/color]")
 	display_game("  • [b]Shrieker Caverns, Chimaera Gorge, Succubus Parlor, Lich Sanctum, Demon Lord Throne, and Titan Colosseum each gained a themed environmental tile[/b], completing T3+T4 coverage and starting T5. The new tiles: [color=#B080FF]Sound Echo (h)[/color] in Shrieker Caverns — disorienting echoes cost +1 step to cross; [color=#66CC00]Venom Drip (k)[/color] in Chimaera Gorge — persistent ~2% max HP poison damage; [color=#FF80CC]Allure Petal (l)[/color] in Succubus Parlor — heals ~4% max HP on step (consumed); [color=#6644AA]Soul Residue (j)[/color] in Lich Sanctum — touching one banks 20% monster-miss for 2 rounds of your next combat; [color=#FF6600]Infernal Brazier (e)[/color] in Demon Lord Throne — banks +15% damage for 3 rounds of your next combat; [color=#909090]Stone Stairs (H)[/color] in Titan Colosseum — titan-scale stonework costs +2 steps to scramble up. Coverage now [color=#88FF88]39 of 53 dungeons themed[/color]. Audit #5 Slice 17.")
 	display_game("")

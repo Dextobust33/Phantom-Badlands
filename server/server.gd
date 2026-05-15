@@ -3263,6 +3263,10 @@ func handle_move(peer_id: int, message: Dictionary):
 	# their own posts, send the status panel once per session per post. This
 	# is the "walk into your camp HQ to see the dashboard" moment.
 	_maybe_send_own_post_arrival_status(peer_id, new_pos.x, new_pos.y)
+	# Audit #12 Slice 4 — touch last_tended_at any time the owner is inside
+	# their bubble. Bumps every move within the bubble; cheap and reliable.
+	# Posts the owner never visits stay marked Inactive/Abandoned.
+	_touch_post_tended_at(_get_username(peer_id), new_pos.x, new_pos.y)
 
 	# Check for Infernal Forge (Fire Mountain) with Unforged Crown
 	if new_pos.x == -400 and new_pos.y == 0:
@@ -20721,6 +20725,14 @@ const MAX_PLAYER_POST_BUBBLE_RADIUS: int = 35
 const BUBBLE_GROW_PER_GUARD: int = 2
 const BUBBLE_GROW_PER_TOWER_GUARD: int = 4
 
+# Audit #12 Slice 4 — post inactivity surfacing. last_tended_at tracks when
+# the owner last interacted with their post (arrived inside it, built/demolished,
+# or fed guards there). Surface tags on the post-status panel let owners + other
+# players see that a base is being neglected. No actual cleanup yet; this slice
+# only makes inactivity VISIBLE so the natural follow-on can add decay/reclaim.
+const POST_INACTIVE_THRESHOLD_DAYS: int = 7
+const POST_ABANDONED_THRESHOLD_DAYS: int = 30
+
 # Building-template kits (post-Slice-5 follow-up). A kit places multiple
 # tiles in a fixed layout when used, replacing the per-tile build grind for
 # common shapes. Coordinates are offsets from the player's current tile.
@@ -20932,6 +20944,11 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	send_character_update(peer_id)
 	send_location_update(peer_id)
 	save_character(peer_id)
+	# Audit #12 Slice 4 — placing tiles inside one of your bubbles counts as
+	# tending. Touch is based on placement coordinate so adjacent-bubble plays
+	# (e.g., placing a guard just inside your post from across the wall) still
+	# bump tended_at correctly.
+	_touch_post_tended_at(username, tx, ty)
 
 func handle_build_demolish(peer_id: int, message: Dictionary):
 	"""Handle player demolishing a tile they placed."""
@@ -20994,6 +21011,8 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 
 	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
 	send_location_update(peer_id)
+	# Audit #12 Slice 4 — demolishing counts as tending (active management).
+	_touch_post_tended_at(username, tx, ty)
 
 func _get_posts_for_account(account_id: String) -> Array:
 	"""Slice 5 — returns the player posts owned by a given account, formatted
@@ -21419,10 +21438,12 @@ func _check_enclosures_after_build(username: String, peer_id: int = -1) -> Strin
 			creator_account_id = String(peers[peer_id].get("account_id", ""))
 		if creator_account_id == "":
 			creator_account_id = persistence.find_account_for_character(username)
+		var post_now = int(Time.get_unix_time_from_system())
 		player_post_names[username].append({
 			"name": "",
 			"center": center,
-			"created_at": int(Time.get_unix_time_from_system()),
+			"created_at": post_now,
+			"last_tended_at": post_now,
 			"tier": DEFAULT_PLAYER_POST_TIER,
 			"bubble_radius": DEFAULT_PLAYER_POST_BUBBLE_RADIUS,
 			"account_id": creator_account_id,
@@ -22116,6 +22137,9 @@ func handle_guard_feed_all(peer_id: int) -> void:
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(report_lines)})
 	send_character_update(peer_id)
 	save_character(peer_id)
+	# Audit #12 Slice 4 — feeding counts as tending this post.
+	if fed_count > 0:
+		_touch_post_tended_at(username, character.x, character.y)
 	# Audit #12 UI remediation — push fresh post_status_data so the visual
 	# panel (if open) immediately reflects the new food-days values.
 	handle_request_post_status_visual(peer_id)
@@ -24577,6 +24601,23 @@ func _build_player_post_status(post_meta: Dictionary, owner_username: String, is
 			int(threat.get("distance", 0)),
 			String(threat.get("direction", "nearby")),
 		])
+
+	# Audit #12 Slice 4 — inactivity surfacing. Both owner and visitors see
+	# how long since the post was last tended (arrival inside the bubble,
+	# build/demolish, feed). Tags escalate at INACTIVE (7d) and ABANDONED (30d).
+	var now_ts = Time.get_unix_time_from_system()
+	var tended_ts = float(post_meta.get("last_tended_at", post_meta.get("created_at", now_ts)))
+	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
+	var tend_color = "#88FF88"
+	var tend_tag = ""
+	if days_inactive >= float(POST_ABANDONED_THRESHOLD_DAYS):
+		tend_color = "#FF4444"
+		tend_tag = "  [color=#FF4444]⚠⚠ ABANDONED[/color]"
+	elif days_inactive >= float(POST_INACTIVE_THRESHOLD_DAYS):
+		tend_color = "#FFAA44"
+		tend_tag = "  [color=#FFAA44]⚠ Inactive[/color]"
+	lines.append("  [color=%s]Last tended: %.1f days ago[/color]%s" % [tend_color, days_inactive, tend_tag])
+
 	return lines
 
 func _short_direction_from(from_x: int, from_y: int, to_x: int, to_y: int) -> String:
@@ -24700,6 +24741,16 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 	# Threat info (from Slice 6 of #11).
 	var threat = _compute_post_threat_state(cx, cy)
 
+	# Audit #12 Slice 4 — inactivity tracking.
+	var now_ts = Time.get_unix_time_from_system()
+	var tended_ts = float(post_meta.get("last_tended_at", post_meta.get("created_at", now_ts)))
+	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
+	var inactivity_state: String = "active"
+	if days_inactive >= float(POST_ABANDONED_THRESHOLD_DAYS):
+		inactivity_state = "abandoned"
+	elif days_inactive >= float(POST_INACTIVE_THRESHOLD_DAYS):
+		inactivity_state = "inactive"
+
 	return {
 		"post_name": display_name,
 		"owner": owner_username,
@@ -24712,6 +24763,10 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 		"guards": guards_list,
 		"feedall": feedall,
 		"threat": threat,
+		"days_inactive": days_inactive,
+		"inactivity_state": inactivity_state,
+		"inactive_threshold_days": POST_INACTIVE_THRESHOLD_DAYS,
+		"abandoned_threshold_days": POST_ABANDONED_THRESHOLD_DAYS,
 	}
 
 func handle_request_post_status_visual(peer_id: int) -> void:
@@ -24762,6 +24817,41 @@ func handle_post_status(peer_id: int) -> void:
 	var is_owner = (owner == username)
 	var lines = _build_player_post_status(meta, owner, is_owner, peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
+
+func _touch_post_tended_at(username: String, x: int, y: int) -> void:
+	"""Audit #12 Slice 4 — bump last_tended_at on the player post whose bubble
+	contains (x, y) for `username`. Called when the owner arrives at their own
+	post, builds/demolishes inside it, or feeds guards there. No-op if no post
+	matches (so it's safe to call unconditionally from build/feed paths)."""
+	if username == "" or not player_post_names.has(username):
+		return
+	var posts = player_post_names[username]
+	var now_ts = int(Time.get_unix_time_from_system())
+	var best_idx: int = -1
+	var best_dist: float = INF
+	for i in range(posts.size()):
+		var meta = posts[i]
+		var c = meta.get("center", Vector2i.ZERO)
+		var cx: int
+		var cy: int
+		if c is Vector2i:
+			cx = c.x
+			cy = c.y
+		else:
+			cx = int(c.get("x", 0))
+			cy = int(c.get("y", 0))
+		var meta_for_compute = meta.duplicate()
+		meta_for_compute["_owner"] = username
+		var radius = _compute_effective_post_radius(meta_for_compute)
+		var dx = float(x - cx)
+		var dy = float(y - cy)
+		var d = sqrt(dx * dx + dy * dy)
+		if d <= float(radius) and d < best_dist:
+			best_dist = d
+			best_idx = i
+	if best_idx >= 0:
+		player_post_names[username][best_idx]["last_tended_at"] = now_ts
+
 
 func _find_player_post_at(x: int, y: int, username: String) -> Dictionary:
 	"""Return {found, meta, post_index, owner} for a post whose CENTER is at
