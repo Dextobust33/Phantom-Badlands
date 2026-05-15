@@ -240,6 +240,9 @@ func _render() -> void:
 			int(threat.get("distance", 0)),
 			String(threat.get("direction", "nearby")),
 		])
+		# Audit #11 Slice 11 — threat weakens bubble suppression by 1.
+		if bool(threat.get("suppression_weakened", false)):
+			_threat_label.append_text("\n[color=#FFAA44]    Bubble suppression weakened (-1) while threatened[/color]")
 	else:
 		_threat_label.visible = false
 

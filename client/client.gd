@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.464 — Audit #11 Slice 11: post threat-tier suppression.
+	display_game("[color=#00FF00]v0.9.464[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Threatened player posts now lose 1 bubble suppression — your base is mechanically weaker while a dungeon is uncleared nearby[/color]")
+	display_game("  • [b]When a T2+ active dungeon sits within 80 tiles of your player post, the post's settler bubble suppression drops by 1 (floor at 0) until you clear the threat.[/b] In practical terms, monsters spawning inside your bubble now spawn one tier higher than usual while threatened — your village is mechanically more dangerous to defend. Combined with the threat-corridor encounters from v0.9.454 (which already biased random encounters to spawn the dungeon's monster_type in the same zone) and the +50% service costs / +20% market markup that already existed, the Under Threat marker now has a third mechanical bite that hits your own base. The post status panel surfaces 'Bubble suppression weakened (-1) while threatened' under the Under Threat banner when this applies. Clearing the dungeon restores full suppression. Audit #11 Slice 11.")
+	display_game("")
+
 	# v0.9.463 — Audit #6 Slice 14: 2 new T3 quest chains.
-	display_game("[color=#00FF00]v0.9.463[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.463[/color]")
 	display_game("  [color=#FFD700]Two new T3 chain quests: Trollish Tide + Stone Vigil[/color]")
 	display_game("  • [b]The first quest chains anchored to mid-tier trading posts are now live.[/b] [color=#5D4037]Trollish Tide[/color] at Eastwatch is a 3-stage chain: kill 6 Trolls → kill 5 Ogres → slay the Troll King at his Troll Den (T3 boss). [color=#F0E68C]Stone Vigil[/color] at Highland Post mirrors the structure for the cliff-cult: kill 5 Gargoyles → kill 4 Harpies → break the Gargoyle Sentinel in his Cathedral. Each chain pays out 500 Valor + a tier-3 companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#5D4037]Troll Render[/color] and [color=#F0E68C]Stone Breaker[/color]). Continues the breadth push the master memo flagged after the daily-quest model was retired in v0.9.453. Audit #6 Slice 14.")
 	display_game("")
