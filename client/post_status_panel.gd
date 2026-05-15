@@ -19,6 +19,7 @@ var _guards_section: VBoxContainer
 var _guards_title: RichTextLabel
 var _guards_list_vbox: VBoxContainer
 var _threat_label: RichTextLabel
+var _inactivity_label: RichTextLabel
 var _feed_button: Button
 var _feed_hint_label: RichTextLabel
 
@@ -125,6 +126,16 @@ func _build_layout() -> void:
 	_threat_label.custom_minimum_size = Vector2(0, 22)
 	_vbox.add_child(_threat_label)
 
+	# Audit #12 Slice 4 — inactivity line (always visible when at a post).
+	# Shows "Last tended: Xd ago" plus an Inactive (7d) or Abandoned (30d) tag.
+	_inactivity_label = RichTextLabel.new()
+	_inactivity_label.bbcode_enabled = true
+	_inactivity_label.fit_content = true
+	_inactivity_label.scroll_active = false
+	_inactivity_label.add_theme_font_size_override("normal_font_size", 12)
+	_inactivity_label.custom_minimum_size = Vector2(0, 18)
+	_vbox.add_child(_inactivity_label)
+
 	# Guards section (visible only for owners with guards)
 	_guards_section = VBoxContainer.new()
 	_guards_section.add_theme_constant_override("separation", 4)
@@ -180,6 +191,7 @@ func _render() -> void:
 		_empty_label.append_text("[color=#888888]Stand inside a player post to view its status. Walking onto the center of one of your own posts also auto-displays this panel.[/color]")
 		_bubble_label.visible = false
 		_threat_label.visible = false
+		_inactivity_label.visible = false
 		_guards_section.visible = false
 		_feed_button.visible = false
 		_feed_hint_label.visible = false
@@ -230,6 +242,22 @@ func _render() -> void:
 		])
 	else:
 		_threat_label.visible = false
+
+	# Audit #12 Slice 4 — inactivity line (always visible at a post).
+	_inactivity_label.visible = true
+	_inactivity_label.clear()
+	var days_inactive: float = float(_last_data.get("days_inactive", 0.0))
+	var inactivity_state: String = String(_last_data.get("inactivity_state", "active"))
+	var tend_color: String = "#88FF88"
+	var tend_tag: String = ""
+	match inactivity_state:
+		"abandoned":
+			tend_color = "#FF4444"
+			tend_tag = "   [color=#FF4444]⚠⚠ ABANDONED[/color]"
+		"inactive":
+			tend_color = "#FFAA44"
+			tend_tag = "   [color=#FFAA44]⚠ Inactive[/color]"
+	_inactivity_label.append_text("[color=%s]Last tended: %.1f days ago[/color]%s" % [tend_color, days_inactive, tend_tag])
 
 	# Per-guard list (owner only)
 	if is_owner and guards.size() > 0:
