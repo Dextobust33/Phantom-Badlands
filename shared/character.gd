@@ -228,7 +228,7 @@ static func get_item_slot_from_type(item_type: String) -> String:
 @export var daily_quest_cooldowns: Dictionary = {}
 # Discovered trading posts: Array of {name: String, x: int, y: int}
 @export var discovered_posts: Array = []
-const MAX_ACTIVE_QUESTS = 5
+const MAX_ACTIVE_QUESTS = 3  # v0.9.453 — capped at 3 alongside the regenerating quest board so players triage rather than hoard.
 
 # Monster Knowledge System - tracks which monsters the player has killed
 # Dictionary of {monster_name: max_level_killed} - knowing a monster reveals its HP
@@ -2496,17 +2496,21 @@ func update_quest_progress(quest_id: String, amount: int = 1, hotzone_intensity:
 			}
 	return {"updated": false, "completed": false, "progress": 0, "target": 0}
 
-func complete_quest(quest_id: String, is_daily: bool = false) -> bool:
-	"""Mark quest as completed and remove from active. Returns false if quest not found."""
+func complete_quest(quest_id: String, _is_daily: bool = false) -> bool:
+	"""Mark quest as completed and remove from active. Returns false if quest not found.
+
+	v0.9.453 — daily quests now append to completed_quests (same as one-shot)
+	so the regenerating-board sliding window can advance past them. The legacy
+	24h cooldown branch is retained as dead state for back-compat; existing
+	entries in daily_quest_cooldowns still count toward completed_at_post in
+	the dynamic-quest generator so in-flight cooldowns from pre-Slice-13
+	naturally fold into the new model. is_daily kept on the signature so
+	existing callers don't break; ignored by the new code path."""
 	for i in range(active_quests.size()):
 		if active_quests[i].quest_id == quest_id:
 			var quest = active_quests[i]
 			active_quests.remove_at(i)
-			if not is_daily:
-				completed_quests.append(quest_id)
-			else:
-				# Daily quests have 24 hour cooldown
-				daily_quest_cooldowns[quest_id] = int(Time.get_unix_time_from_system()) + 86400
+			completed_quests.append(quest_id)
 			return true
 	return false
 

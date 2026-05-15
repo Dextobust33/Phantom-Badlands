@@ -5,15 +5,17 @@ extends Node
 
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
 
-# Audit #6 Slice 12 — chain-only quest model. When false, the daily-refresh
-# kill-task generator is bypassed and trading post boards surface only chain
-# starters + active chains + the progression nudge. The dynamic-daily code
-# path is left intact for two reasons: (1) already-active dailies on existing
-# characters need _regenerate_daily_quest to keep working during turn-in;
-# (2) the flag is a single-edit revert if playtest shows chains are too
-# sparse for sustained play. User feedback explicitly named dailies as
-# "unengaging" — this slice retires them as the primary content driver.
-const DYNAMIC_DAILIES_ENABLED: bool = false
+# Audit #6 Slice 13 (supersedes Slice 12). The original audit signal said
+# "daily stuff isn't engaging" — Slice 12 misread that as "daily kill-tasks
+# are unengaging, kill them" and gated dailies entirely. User clarified
+# (2026-05-15): the real complaint is the daily *cap* — "do a couple of
+# quests then have to wait until the next day to continue. It's better to
+# generate quests so they don't end." Slice 13 unblocks generation and makes
+# the board *continuously regenerate* — completing a quest immediately fills
+# its slot with a fresh procedural one. See _generate_dynamic_board_indices.
+# Flag retained as a safety: setting false reverts to no procedural quests
+# (chains-only), matching Slice 12's behavior.
+const DYNAMIC_DAILIES_ENABLED: bool = true
 
 # Quest type constants
 enum QuestType {
@@ -1323,14 +1325,31 @@ func _get_dungeon_for_area(area_level: int) -> Dictionary:
 	return {}
 
 func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0, daily_cooldowns: Dictionary = {}, character_name: String = "") -> Array:
-	"""Generate daily quest board for a trading post. Seeded by date + post ID + character name
-	so each character sees different quests at the same post on the same day."""
-	# Audit #6 Slice 12 — chain-only quest model. When the feature flag is
-	# off, no new daily boards are generated; chains + progression nudges
-	# are the only quest sources. Already-active dailies on saved characters
-	# still complete normally via _regenerate_daily_quest at turn-in.
+	"""Audit #6 Slice 13 — regenerating quest board.
+
+	Replaces the prior daily-refresh model: instead of a fixed daily-board
+	that exhausts after N completions and waits 24h, the board now slides
+	forward as quests are completed. The slot a completed quest occupied
+	gets filled immediately by a new procedural quest at the next index.
+	Players never have to wait for a daily reset.
+
+	Board size is bumped: starter 5-6 / mid 7-8 / endgame 8-10 quests
+	visible at all times (was 3-4 / 5-6 / 6-8).
+
+	Determinism: each quest's data is keyed off (trading_post_id, date_str,
+	character_name, index). _regenerate_daily_quest walks 0..index linearly
+	to advance the shared RNG, so we do the same here. Quest at index N
+	is the same whichever function generates it.
+
+	active_quest_ids: quests the player has already accepted. Their slots
+	are skipped (not double-shown) but rng advances over them.
+	completed_quests / daily_cooldowns: count toward the sliding-window
+	floor so completed indices never reappear."""
 	if not DYNAMIC_DAILIES_ENABLED:
 		return []
+	# `daily_cooldowns` is dead state with Slice 13 but kept on the signature
+	# so existing callers don't break; the upstream completed_at_post counter
+	# already folds pre-Slice-13 cooldown entries into the sliding window.
 	var quests = []
 	var date_str = _get_date_string()
 
@@ -1338,19 +1357,18 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 	var post_coords = TRADING_POST_COORDS.get(trading_post_id, Vector2i(0, 0))
 	var post_distance = sqrt(post_coords.x * post_coords.x + post_coords.y * post_coords.y)
 	var area_level = max(1, int(post_distance * 0.5))
-	var monster_tier = _get_tier_for_area_level(area_level)
 
-	# Quest count scales with area level: starter 3-4, mid 5-6, endgame 6-8
+	# Board size — bumped per Slice 13 so players see "a few more" quests.
 	var daily_seed = hash(trading_post_id + date_str + character_name)
 	var rng = RandomNumberGenerator.new()
 	rng.seed = daily_seed
-	var quest_count: int
+	var board_size: int
 	if area_level < 10:
-		quest_count = rng.randi_range(3, 4)
+		board_size = rng.randi_range(5, 6)
 	elif area_level < 100:
-		quest_count = rng.randi_range(5, 6)
+		board_size = rng.randi_range(7, 8)
 	else:
-		quest_count = rng.randi_range(6, 8)
+		board_size = rng.randi_range(8, 10)
 
 	# Calculate difficulty modifier from progression
 	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
@@ -1359,36 +1377,39 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
 		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]
 
-	# Featured quest is index 0 (seeded by date across all posts)
-	var featured_index = hash(date_str) % quest_count
-
-	for i in range(quest_count):
+	# Sliding-window loop: walk indices from 0, skipping below the floor,
+	# yielding until we have board_size visible quests. Active and completed
+	# slots are skipped (their quests are elsewhere — log or history) but
+	# rng still advances over them so quest content per index stays stable.
+	var board_floor: int = quests_completed_at_post
+	var visible_count: int = 0
+	var safety_cap: int = board_floor + board_size * 4
+	var i: int = 0
+	while i <= safety_cap and visible_count < board_size:
 		var quest_id = "%s_daily_%s_%d" % [trading_post_id, date_str, i]
-
-		# ALWAYS generate the quest so the rng advances the same number of times
-		# regardless of whether the index is filtered out. _regenerate_daily_quest
-		# runs for every index 0..N — if we skip generation here but not there, the
-		# same quest_id resolves to different quest data at display vs accept time.
+		# Always generate to keep RNG state in lockstep with
+		# _regenerate_daily_quest's linear walk.
 		var quest = _generate_daily_quest(trading_post_id, quest_id, i, post_distance,
 			player_level, progression_modifier, quest_types, rng, post_coords)
-
-		# Filter out already-active, completed, or on-cooldown quests AFTER generation
+		if i < board_floor:
+			i += 1
+			continue
 		if quest_id in active_quest_ids or quest_id in completed_quests:
+			i += 1
 			continue
-		if daily_cooldowns.has(quest_id):
-			var current_time = Time.get_unix_time_from_system()
-			if current_time < daily_cooldowns[quest_id]:
-				continue
 		if quest.is_empty():
+			i += 1
 			continue
-
-		# Mark featured quest with bonus rewards
-		if i == featured_index:
+		# First visible quest is the daily featured pick (was a hash-based
+		# slot before; the sliding window makes "slot 0" the natural fit
+		# since later slots can change as completions advance the floor).
+		if visible_count == 0:
 			quest["is_featured"] = true
 			quest.rewards["xp"] = int(quest.rewards.get("xp", 0) * 1.5)
 			quest.rewards["valor"] = max(quest.rewards.get("valor", 0), int(quest.rewards.get("valor", 0) * 1.5))
-
 		quests.append(quest)
+		visible_count += 1
+		i += 1
 
 	# Restore randomness
 	randomize()
@@ -1616,14 +1637,20 @@ func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_co
 	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
 		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]
 
-	# Determine quest count (same logic as generate_dynamic_quests)
+	# Determine board size — must match generate_dynamic_quests exactly so
+	# the rng state stays in lockstep when we walk indices below. (Slice 13
+	# bumped the ranges; pre-Slice-13 quest_ids no longer regenerate
+	# bit-identical content because the rng state shifts, but the quest
+	# data on already-accepted dailies lives in character.active_quests so
+	# turn-in still works — _regenerate_daily_quest is only called when the
+	# server needs to look up a quest that ISN'T in the player's log.)
 	var area_level = max(1, int(post_distance * 0.5))
 	if area_level < 10:
-		var _count = rng.randi_range(3, 4)
-	elif area_level < 100:
 		var _count = rng.randi_range(5, 6)
+	elif area_level < 100:
+		var _count = rng.randi_range(7, 8)
 	else:
-		var _count = rng.randi_range(6, 8)
+		var _count = rng.randi_range(8, 10)
 
 	# Generate quests 0..index to advance RNG state correctly
 	var result = {}
