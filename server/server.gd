@@ -23044,6 +23044,44 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	elif tile == DungeonDatabaseScript.TileType.STONE_STAIRS:
 		character.dungeon_floor_steps += 2
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#909090]You scramble up titan-scale stairs (+2 steps).[/color]"})
+	# Audit #5 Slice 18 theme tag — Ancient Dragon Lair GOLD_HOARD valor pickup.
+	# 5-10 Valor (consumed). T6 valor payout — bigger than goblin/kobold tier.
+	elif tile == DungeonDatabaseScript.TileType.GOLD_HOARD:
+		var hoard_valor = randi_range(5, 10)
+		persistence.add_valor(peer_id, hoard_valor)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]You snatch a handful of dragon-hoard coins ([color=#FFAA00]+%d Valor[/color]).[/color]" % hoard_valor})
+	# Audit #5 Slice 18 theme tag — Golem Foundry MOLTEN_SLAG +1 step cost.
+	# Persistent. Hot industrial floor slows you. Same payload as WEBBED at T6.
+	elif tile == DungeonDatabaseScript.TileType.MOLTEN_SLAG:
+		character.dungeon_floor_steps += 1
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#707070]Molten slag clings to your boots (+1 step).[/color]"})
+	# Audit #5 Slice 18 theme tag — Nazgul Shadow Keep SHADOW_POOL persistent damage.
+	# 3% max HP, min 1 max 200. T6 — same payload as GRAVE_DUST but at T6 cap.
+	elif tile == DungeonDatabaseScript.TileType.SHADOW_POOL:
+		var shadow_dmg = clamp(int(character.get_total_max_hp() * 0.03), 1, 200)
+		character.current_hp = max(1, character.current_hp - shadow_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#2A0033]Nazgul shadow saps your warmth ([color=#FF4444]-%d HP[/color]).[/color]" % shadow_dmg})
+	# Audit #5 Slice 18 theme tag — Primordial Dragon Domain DRAGON_BREATH burn.
+	# 5% max HP, min 1 max 400. T7 damage tile — strongest persistent damage in
+	# the pool. Fits primordial dragon's elemental signature.
+	elif tile == DungeonDatabaseScript.TileType.DRAGON_BREATH:
+		var breath_dmg = clamp(int(character.get_total_max_hp() * 0.05), 1, 400)
+		character.current_hp = max(1, character.current_hp - breath_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4500]Primordial dragon breath sears you ([color=#FF4444]-%d HP[/color]).[/color]" % breath_dmg})
+	# Audit #5 Slice 18 theme tag — World Serpent Coil COILED_SCALE +2 step cost.
+	# Persistent. Floor IS the serpent's muscled body. Same payload as Harpy
+	# UPDRAFT / Ogre SINKING_MUD / Titan STONE_STAIRS at T7 density.
+	elif tile == DungeonDatabaseScript.TileType.COILED_SCALE:
+		character.dungeon_floor_steps += 2
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#003344]The serpent's coils ripple under your feet (+2 steps).[/color]"})
+	# Audit #5 Slice 18 theme tag — Elder Lich Phylactery PHYLACTERY_SHARD (consumed buff).
+	# Reuses pending_war_banner meta — +15% damage for 3 rounds in next combat.
+	# Rarest placement (4%) befitting T7 power and pairing with Death Mark sig.
+	elif tile == DungeonDatabaseScript.TileType.PHYLACTERY_SHARD:
+		character.set_meta("pending_war_banner", 3)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]A shard of the lich's phylactery flares — death's edge whispers to your blade. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false

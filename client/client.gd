@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.461 — Audit #5 Slice 18: 6 more dungeon theme tiles (T6+T7 batch).
+	display_game("[color=#00FF00]v0.9.461[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles — all of T6 done[/color]")
+	display_game("  • [b]Ancient Dragon Lair, Golem Foundry, Nazgul Shadow Keep, Primordial Dragon Domain, World Serpent Coil, and Elder Lich Phylactery each gained a themed environmental tile,[/b] finishing T6 coverage and bringing T7 to 3 of 4. The new tiles: [color=#FFD700]Gold Hoard (G)[/color] in Ancient Dragon Lair — ancient dragons sleep on coin piles, step to grab 5-10 Valor (consumed); [color=#909090]Molten Slag (S)[/color] in Golem Foundry — hot industrial floor costs +1 step; [color=#A335EE]Shadow Pool (Q)[/color] in Nazgul Shadow Keep — cold shadow saps ~3% max HP on step; [color=#FF4500]Dragon Breath (F)[/color] in Primordial Dragon Domain — lingering primordial fire burns ~5% max HP, the strongest persistent damage tile in the pool; [color=#003344]Coiled Scale (Z)[/color] in World Serpent Coil — the floor IS the serpent, costs +2 steps to cross; [color=#AA66FF]Phylactery Shard (Y)[/color] in Elder Lich Phylactery — rare buff pickup that banks +15% damage for 3 rounds of your next combat. Coverage now [color=#88FF88]45 of 53 dungeons themed[/color]. Audit #5 Slice 18.")
+	display_game("")
+
 	# v0.9.460 — Audit #12 Slice 4: post inactivity surfacing.
-	display_game("[color=#00FF00]v0.9.460[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.460[/color]")
 	display_game("  [color=#FFD700]Player posts now show how long since they were last tended[/color]")
 	display_game("  • [b]Every player post tracks when its owner last interacted with it — arriving inside the bubble, building or demolishing tiles inside it, or using /feedall to refill its guards.[/b] The post-status panel now shows a [color=#88FF88]Last tended: Xd ago[/color] line for both owners and visitors. After [color=#FFAA44]7 days[/color] without tending the post is tagged [color=#FFAA44]⚠ Inactive[/color]; after [color=#FF4444]30 days[/color] it flips to [color=#FF4444]⚠⚠ ABANDONED[/color]. No mechanical consequence yet — this slice surfaces inactivity so you can see at a glance which bases are stale before a future slice adds decay or reclaim mechanics. Audit #12 Slice 4.")
 	display_game("")
@@ -33699,6 +33705,24 @@ const DUNGEON_THEME_LEGEND = {
 	"titan_colosseum": [
 		{"glyph": "H", "color": "#909090", "desc": "Stone stairs — built at titan scale, every flight is a climb. Costs +2 steps to scramble up. Persistent — plan paths around the giant stonework."}
 	],
+	"ancient_dragon_lair": [
+		{"glyph": "G", "color": "#FFD700", "desc": "Gold hoard — ancient dragons sleep on coin piles. Step on one to scoop up 5-10 Valor. One-time per hoard (consumed)."}
+	],
+	"golem_foundry": [
+		{"glyph": "S", "color": "#707070", "desc": "Molten slag — industrial floor still hot from golem-forging. Costs +1 step to cross. Persistent — plan paths around the gray patches."}
+	],
+	"nazgul_shadow_keep": [
+		{"glyph": "Q", "color": "#2A0033", "desc": "Shadow pool — cold nazgul shadow saps your warmth. Stepping ticks ~3% of your max HP. Persistent — plan paths around the dark patches."}
+	],
+	"primordial_dragon_domain": [
+		{"glyph": "F", "color": "#FF4500", "desc": "Dragon breath — primordial elemental fire that lingers in the air. Stepping burns ~5% of your max HP. Persistent. Strongest persistent damage in the pool — plan T7 paths very carefully."}
+	],
+	"world_serpent_coil": [
+		{"glyph": "Z", "color": "#003344", "desc": "Coiled scales — the floor IS the world serpent's muscled body. Costs +2 steps to cross as the coils ripple beneath you. Persistent."}
+	],
+	"elder_lich_phylactery": [
+		{"glyph": "Y", "color": "#AA66FF", "desc": "Phylactery shards — fragments of the elder lich's soul vessel. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per shard (consumed). Rarest placement — pairs with Death Mark."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -34239,6 +34263,18 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "e", "color": "#FF6600"}
 		48:  # STONE_STAIRS — Titan Colosseum theme tile, +2 step (v0.9.459)
 			return {"char": "H", "color": "#909090"}
+		49:  # GOLD_HOARD — Ancient Dragon Lair theme tile, valor pickup (v0.9.461)
+			return {"char": "G", "color": "#FFD700"}
+		50:  # MOLTEN_SLAG — Golem Foundry theme tile, +1 step (v0.9.461)
+			return {"char": "S", "color": "#707070"}
+		51:  # SHADOW_POOL — Nazgul Shadow Keep theme tile, persistent damage (v0.9.461)
+			return {"char": "Q", "color": "#2A0033"}
+		52:  # DRAGON_BREATH — Primordial Dragon Domain theme tile, persistent burn (v0.9.461)
+			return {"char": "F", "color": "#FF4500"}
+		53:  # COILED_SCALE — World Serpent Coil theme tile, +2 step (v0.9.461)
+			return {"char": "Z", "color": "#003344"}
+		54:  # PHYLACTERY_SHARD — Elder Lich Phylactery theme tile, dmg buff pickup (v0.9.461)
+			return {"char": "Y", "color": "#AA66FF"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
