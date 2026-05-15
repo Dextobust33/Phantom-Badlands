@@ -70,6 +70,9 @@ const CHAIN_TITLES = {
 	"smiths_friend":      {"name": "Smith's Friend",     "color": "#FFA500"},
 	"apothecarys_friend": {"name": "Apothecary's Friend", "color": "#00FF00"},
 	"trappers_friend":    {"name": "Trapper's Friend",   "color": "#CD853F"},
+	# Audit #6 Slice 14 — T3 chain titles.
+	"troll_render":       {"name": "Troll Render",       "color": "#5D4037"},
+	"stone_breaker":      {"name": "Stone Breaker",      "color": "#F0E68C"},
 }
 
 static func get_chain_title(title_id: String) -> Dictionary:
@@ -675,6 +678,110 @@ const QUESTS = {
 		"chain_total": 2,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 200, "egg": "Hobgoblin", "chain_title": "trappers_friend"}
+	},
+	# ===== "Trollish Tide" — Eastwatch, 3 stages, T3 (Audit #6 Slice 14) =====
+	"trolltide_1": {
+		"id": "trolltide_1",
+		"name": "Trollish Tide I — Cull the Brutes",
+		"description": "Trolls have been crashing out of the eastern crags, smashing pack-trains and scattering livestock. Defeat 6 Trolls to put the brakes on their advance.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 500 valor + Troll Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "eastwatch",
+		"target": 6,
+		"monster_type": "Troll",
+		"rewards": {"xp": 450, "valor": 65},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "trolltide",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "trolltide_2",
+		"chain_bonus": {}
+	},
+	"trolltide_2": {
+		"id": "trolltide_2",
+		"name": "Trollish Tide II — Their Brutish Cousins",
+		"description": "Ogres are following the trolls down from the high crags, scavenging what the trolls leave behind. Cut down 5 Ogres before they get a taste for the road.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 500 valor + Troll Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "eastwatch",
+		"target": 5,
+		"monster_type": "Ogre",
+		"rewards": {"xp": 600, "valor": 85},
+		"is_daily": false,
+		"prerequisite": "trolltide_1",
+		"chain_id": "trolltide",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "trolltide_3",
+		"chain_bonus": {}
+	},
+	"trolltide_3": {
+		"id": "trolltide_3",
+		"name": "Trollish Tide III — Crown the King",
+		"description": "The Troll King leads the migration from the Troll Den. Find the dungeon and break his crown. Beware Trollish Regrowth — once he drops below half health, he heals 8% max HP at the start of every monster turn. Burst him down through the threshold instead of trading blows.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 500 valor + Troll Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "eastwatch",
+		"target": 1,
+		"bounty_name": "Troll King",
+		"rewards": {"xp": 900, "valor": 100},
+		"is_daily": false,
+		"prerequisite": "trolltide_2",
+		"chain_id": "trolltide",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 400, "egg": "Troll", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "troll_render"}
+	},
+	# ===== "Stone Vigil" — Highland Post, 3 stages, T3 (Audit #6 Slice 14) =====
+	"stonevigil_1": {
+		"id": "stonevigil_1",
+		"name": "Stone Vigil I — Crumbling Watchers",
+		"description": "Gargoyles have been peeling off the highland cliffs and stalking travelers on the mountain roads. Bring down 5 Gargoyles before their flight expands.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 500 valor + Gargoyle Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "highland_post",
+		"target": 5,
+		"monster_type": "Gargoyle",
+		"rewards": {"xp": 450, "valor": 65},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "stonevigil",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "stonevigil_2",
+		"chain_bonus": {}
+	},
+	"stonevigil_2": {
+		"id": "stonevigil_2",
+		"name": "Stone Vigil II — Clear the Skies",
+		"description": "Harpies have moved into the gaps left by the gargoyle exodus, and they're worse for travelers — fast and screaming. Drop 4 Harpies to clear the air lanes back open.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 500 valor + Gargoyle Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "highland_post",
+		"target": 4,
+		"monster_type": "Harpy",
+		"rewards": {"xp": 600, "valor": 85},
+		"is_daily": false,
+		"prerequisite": "stonevigil_1",
+		"chain_id": "stonevigil",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "stonevigil_3",
+		"chain_bonus": {}
+	},
+	"stonevigil_3": {
+		"id": "stonevigil_3",
+		"name": "Stone Vigil III — Break the Sentinel",
+		"description": "The Gargoyle Sentinel anchors the flight from the Gargoyle Cathedral. Find the dungeon and end its watch. Beware Stoneform — on even rounds the sentinel takes only 30% damage. Save big hits for odd rounds and let the petals of light from any Sacred Ground tiles bless your strikes.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 500 valor + Gargoyle Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "highland_post",
+		"target": 1,
+		"bounty_name": "Gargoyle Sentinel",
+		"rewards": {"xp": 900, "valor": 100},
+		"is_daily": false,
+		"prerequisite": "stonevigil_2",
+		"chain_id": "stonevigil",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 400, "egg": "Gargoyle", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "stone_breaker"}
 	}
 }
 

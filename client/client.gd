@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.463 — Audit #6 Slice 14: 2 new T3 quest chains.
+	display_game("[color=#00FF00]v0.9.463[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two new T3 chain quests: Trollish Tide + Stone Vigil[/color]")
+	display_game("  • [b]The first quest chains anchored to mid-tier trading posts are now live.[/b] [color=#5D4037]Trollish Tide[/color] at Eastwatch is a 3-stage chain: kill 6 Trolls → kill 5 Ogres → slay the Troll King at his Troll Den (T3 boss). [color=#F0E68C]Stone Vigil[/color] at Highland Post mirrors the structure for the cliff-cult: kill 5 Gargoyles → kill 4 Harpies → break the Gargoyle Sentinel in his Cathedral. Each chain pays out 500 Valor + a tier-3 companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#5D4037]Troll Render[/color] and [color=#F0E68C]Stone Breaker[/color]). Continues the breadth push the master memo flagged after the daily-quest model was retired in v0.9.453. Audit #6 Slice 14.")
+	display_game("")
+
 	# v0.9.462 — Audit #5 Slice 19: final 8 theme tiles, 53/53 dungeons complete.
-	display_game("[color=#00FF00]v0.9.462[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.462[/color]")
 	display_game("  [color=#FFD700]ALL 53 DUNGEONS NOW HAVE THEMED ENVIRONMENTAL TILES — Audit #5 dungeon themes 100%[/color]")
 	display_game("  • [b]The final eight dungeons gained themed environmental tiles, closing out Audit #5's headline OVERHAUL of dungeon distinctness.[/b] The new tiles span T5/T8/T9 (the last gaps): [color=#228B22]Vorpal Briar (V)[/color] in Jabberwock Thicket — thorny brambles cost +1 step (closes T5); [color=#A335EE]Reality Tear (R)[/color] in Cosmic Horror Realm — banks 20% monster-miss for 2 rounds of your next combat; [color=#4488FF]Time Fragment (I)[/color] in Time Weaver Loom — banks +15% damage for 3 rounds of your next combat; [color=#FF00AA]Soul Vortex (O)[/color] in Death Domain — persistent ~4% max HP drain; [color=#FF00FF]Chaos Warp (W)[/color] in Chaos Sanctum — persistent ~5% max HP damage; [color=#9999AA]Void Whisper (N)[/color] in Nameless Void — costs +2 steps to cross; [color=#FFFFAA]Divine Blood (D)[/color] in God Slayer Arena — heals ~8% max HP on step, the strongest heal tile in the pool; [color=#884466]Decay Mote (U)[/color] in Entropy End — persistent ~6% max HP rot, the strongest persistent damage tile in the pool. Theme tile coverage is now [color=#FFD700]53 of 53 dungeons (100%)[/color]. Combined with the 52 unique boss signatures (Slices 1-12), Audit #5's twin OVERHAUL decisions — bosses-not-unique and dungeons-feel-same — are both fully realized. Audit #5 Slice 19.")
 	display_game("")
