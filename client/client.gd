@@ -24011,8 +24011,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.452 — Audit #6 Slice 12: chain-only quest model.
+	display_game("[color=#00FF00]v0.9.452[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Quest boards now show campaign chains only — daily kill-tasks retired[/color]")
+	display_game("  • [b]Trading post quest boards no longer generate daily kill-task quests.[/b] Chains (and their stage-by-stage progression) are now the only campaign content at quest boards, alongside the level-up progression nudge toward the next post. This closes the audit's headline overhaul on quests: 'Daily refresh model unengaging' → 'persistent target-farm chains'. Already-active dailies on existing characters still complete normally — only new daily generation is gated. Eleven chain campaigns are live (Goblin Menace, Skeleton Lord's Curse, Wolf Pack, Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt, Rat Plague, Kobold Trouble) plus three DELIVER chains, spread across five starter posts. With chains as the only content driver, quest boards that have nothing available point you at other posts — every campaign is somewhere, and chains rotate by location rather than by clock. Single feature flag controls the switch so it's a one-line revert if breadth feels too tight. Audit #6 Slice 12 — the audit's full quest overhaul.")
+	display_game("")
+
 	# v0.9.451 — Audit #11 Slice 8: NPC vendors at mine/farm/shrine.
-	display_game("[color=#00FF00]v0.9.451[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.451[/color]")
 	display_game("  [color=#FFD700]Three more post categories now host themed NPC vendors[/color]")
 	display_game("  • [b]Mine, farm, and shrine posts each now host a category-themed NPC trader at the top of the market browse,[/b] joining the Curiosity Trader that exotic posts got in v0.9.450. The vendors are: [color=#FF8C42][FORGE] Forge Master[/color] at mine posts (equipment & defensive theme — Home Stone Equipment, Charm of Taunt, Revival Potion, Stone Skin and Forcefield scrolls, Greater Elixir); [color=#80E060][FARM] Provisioner[/color] at farm posts (restoration & supplies theme — Home Stone Supplies, health potions, elixirs, Revival Potion); [color=#7FD7FF][SHRINE] Mystic[/color] at shrine posts (magical & spiritual theme — Home Stone Egg, Haste/Rage/Precision/Vampirism scrolls, Divine Elixir). Three slots per day per post, deterministically rotated by post + day hash — every visitor sees the same items today; tomorrow rolls fresh. NPC prices stay fixed (no supply markup, no specialty discount) but threat multiplier still applies. Pairs each of #9's specialty-discount categories (Slice 3) with a destination-vendor identity (Slice 3b pattern). Audit #11 Slice 8.")
 	display_game("")
@@ -35328,9 +35334,13 @@ func handle_quest_list(message: Dictionary):
 			display_game("    [color=#808080]Requires: Complete '%s' first[/color]" % prereq_name)
 			display_game("")
 
-	# Show message if nothing available
+	# Show message if nothing available. Audit #6 Slice 12 — chain-only model
+	# means a post may legitimately have nothing once its chains are
+	# completed or in progress at another post. Point the player at the
+	# travel option so they know more campaigns exist elsewhere.
 	if quests_to_turn_in.size() == 0 and available_quests.size() == 0 and active_quests_display.size() == 0 and locked_quests.size() == 0:
-		display_game("[color=#808080]No quests available at this time.[/color]")
+		display_game("[color=#808080]No campaigns available at this post right now.[/color]")
+		display_game("[color=#808080]Chains rotate by location — try another trading post for more.[/color]")
 
 	display_game("")
 	display_game("[%s] Back" % get_action_key_name(0))

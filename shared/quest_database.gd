@@ -5,6 +5,16 @@ extends Node
 
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
 
+# Audit #6 Slice 12 — chain-only quest model. When false, the daily-refresh
+# kill-task generator is bypassed and trading post boards surface only chain
+# starters + active chains + the progression nudge. The dynamic-daily code
+# path is left intact for two reasons: (1) already-active dailies on existing
+# characters need _regenerate_daily_quest to keep working during turn-in;
+# (2) the flag is a single-edit revert if playtest shows chains are too
+# sparse for sustained play. User feedback explicitly named dailies as
+# "unengaging" — this slice retires them as the primary content driver.
+const DYNAMIC_DAILIES_ENABLED: bool = false
+
 # Quest type constants
 enum QuestType {
 	KILL_ANY,           # 0 - Kill X monsters of any type
@@ -1315,6 +1325,12 @@ func _get_dungeon_for_area(area_level: int) -> Dictionary:
 func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, active_quest_ids: Array, player_level: int = 1, quests_completed_at_post: int = 0, daily_cooldowns: Dictionary = {}, character_name: String = "") -> Array:
 	"""Generate daily quest board for a trading post. Seeded by date + post ID + character name
 	so each character sees different quests at the same post on the same day."""
+	# Audit #6 Slice 12 — chain-only quest model. When the feature flag is
+	# off, no new daily boards are generated; chains + progression nudges
+	# are the only quest sources. Already-active dailies on saved characters
+	# still complete normally via _regenerate_daily_quest at turn-in.
+	if not DYNAMIC_DAILIES_ENABLED:
+		return []
 	var quests = []
 	var date_str = _get_date_string()
 
