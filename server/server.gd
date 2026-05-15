@@ -22940,6 +22940,46 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		var frost_dmg = clamp(int(character.get_total_max_hp() * 0.04), 1, 80)
 		character.current_hp = max(1, character.current_hp - frost_dmg)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#ADD8E6]Void frost bites through your boots ([color=#FF4444]-%d HP[/color]).[/color]" % frost_dmg})
+	# Audit #5 Slice 16 theme tag — Gnoll Pack Den TORN_CARRION heals on step
+	# (consumed). 2% max HP. T2 positive tile counter-balancing Pack Frenzy.
+	elif tile == DungeonDatabaseScript.TileType.TORN_CARRION:
+		var carrion_heal = clamp(int(character.get_total_max_hp() * 0.02), 1, 25)
+		var max_hp_tc = character.get_total_max_hp()
+		character.current_hp = min(max_hp_tc, character.current_hp + carrion_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#8B2500]You scavenge a fresh pack-kill ([color=#00FF00]+%d HP[/color]).[/color]" % carrion_heal})
+	# Audit #5 Slice 16 theme tag — Kelpie Marsh BOG_PATCH +1 step cost.
+	# Persistent. Same payload as Spider Nest WEBBED at marsh density.
+	elif tile == DungeonDatabaseScript.TileType.BOG_PATCH:
+		character.dungeon_floor_steps += 1
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#556B2F]Marsh muck drags at your boots (+1 step).[/color]"})
+	# Audit #5 Slice 16 theme tag — Wyvern Roost FEATHER_DOWN heals on step
+	# (consumed). 3% max HP. T3 positive tile between cave_moss and warm_nest.
+	elif tile == DungeonDatabaseScript.TileType.FEATHER_DOWN:
+		var feather_heal = clamp(int(character.get_total_max_hp() * 0.03), 1, 50)
+		var max_hp_fd = character.get_total_max_hp()
+		character.current_hp = min(max_hp_fd, character.current_hp + feather_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFE4B5]Soft wyvern down cushions your wounds ([color=#00FF00]+%d HP[/color]).[/color]" % feather_heal})
+	# Audit #5 Slice 16 theme tag — Ogre Bog SINKING_MUD +2 step cost.
+	# Persistent. Same payload as Harpy Cliffs UPDRAFT at bog density.
+	elif tile == DungeonDatabaseScript.TileType.SINKING_MUD:
+		character.dungeon_floor_steps += 2
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#5D4037]You sink to your knees in ogre bog (+2 steps).[/color]"})
+	# Audit #5 Slice 16 theme tag — Demon Gate HELLFIRE_RUNE persistent burn.
+	# 3% max HP, min 1 max 100. T4 damage tile — same payload as lava_pool but
+	# at T4 tier; pairs with Demon Overlord's stacking Infernal Curse.
+	elif tile == DungeonDatabaseScript.TileType.HELLFIRE_RUNE:
+		var rune_dmg = clamp(int(character.get_total_max_hp() * 0.03), 1, 100)
+		character.current_hp = max(1, character.current_hp - rune_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#DC143C]A hellfire rune sears your flesh ([color=#FF4444]-%d HP[/color]).[/color]" % rune_dmg})
+	# Audit #5 Slice 16 theme tag — Gryphon Aerie WIND_CURRENT (consumed buff).
+	# Reuses pending_war_banner meta — +15% damage for 3 rounds in next combat.
+	# Rare placement (5%) befitting T4 power and pairing with Talon Barrage.
+	elif tile == DungeonDatabaseScript.TileType.WIND_CURRENT:
+		character.set_meta("pending_war_banner", 3)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#B0E0E6]An updraft lifts you on gryphon wings — predator's edge. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
