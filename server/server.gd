@@ -21126,7 +21126,14 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	contribute regardless of the current bubble size — guards just outside
 	a small bubble still help. Wilderness tier is from the nearest formal
 	trading post. post_meta must include `_owner` (added by callers) since
-	active_guards is keyed by position, not by post."""
+	active_guards is keyed by position, not by post.
+
+	Audit #11 Slice 11 — threat-tier suppression. When a T2+ active dungeon
+	is within THREAT_CORRIDOR_RADIUS, the bubble loses 1 suppression (floor
+	at 0). Effective tier inside the bubble rises by 1 while threatened —
+	mob spawns are harder until the threat is cleared. Pairs with the Slice 9
+	threat-corridor monster bias (encounters spill the dungeon's monster_type
+	into the same zone)."""
 	var c = post_meta.get("center", Vector2i.ZERO)
 	var cx: int
 	var cy: int
@@ -21147,6 +21154,10 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 
 	var force = _count_post_guard_force(cx, cy, owner)
 	var suppression = int(force.get("guards", 0)) + int(force.get("tower_guards", 0))
+	# Audit #11 Slice 11 — threat erodes suppression.
+	var threat_state = _compute_post_threat_state(cx, cy)
+	if threat_state.get("threatened", false):
+		suppression = max(0, suppression - 1)
 	var effective_tier = wilderness_tier - suppression
 	return clamp(effective_tier, floor_tier, wilderness_tier)
 
@@ -24691,6 +24702,9 @@ func _build_player_post_status(post_meta: Dictionary, owner_username: String, is
 			int(threat.get("distance", 0)),
 			String(threat.get("direction", "nearby")),
 		])
+		# Audit #11 Slice 11 — surface the bubble-suppression erosion.
+		if guards_total > 0:
+			lines.append("    [color=#FFAA44]Bubble suppression weakened by threat (-1)[/color]")
 
 	# Audit #12 Slice 4 — inactivity surfacing. Both owner and visitors see
 	# how long since the post was last tended (arrival inside the bubble,
@@ -24830,6 +24844,10 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 
 	# Threat info (from Slice 6 of #11).
 	var threat = _compute_post_threat_state(cx, cy)
+	# Audit #11 Slice 11 — flag suppression-weakened state so the visual panel
+	# can render the same "-1 suppression while threatened" cue as the text path.
+	if threat.get("threatened", false) and guards_total > 0:
+		threat["suppression_weakened"] = true
 
 	# Audit #12 Slice 4 — inactivity tracking.
 	var now_ts = Time.get_unix_time_from_system()
