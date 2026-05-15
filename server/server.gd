@@ -22980,6 +22980,46 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		character.set_meta("pending_war_banner", 3)
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#B0E0E6]An updraft lifts you on gryphon wings — predator's edge. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 17 theme tag — Shrieker Caverns SOUND_ECHO +1 step cost.
+	# Persistent. Echoes disorient and slow you. Pairs with Sonic Echo boss sig.
+	elif tile == DungeonDatabaseScript.TileType.SOUND_ECHO:
+		character.dungeon_floor_steps += 1
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#B080FF]A shrieking echo rattles your bones (+1 step).[/color]"})
+	# Audit #5 Slice 17 theme tag — Chimaera Gorge VENOM_DRIP persistent poison.
+	# 2% max HP, min 1 max 60. T4 damage tile pairing with Triple Threat sig.
+	elif tile == DungeonDatabaseScript.TileType.VENOM_DRIP:
+		var venom_dmg = clamp(int(character.get_total_max_hp() * 0.02), 1, 60)
+		character.current_hp = max(1, character.current_hp - venom_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#66CC00]Chimaera venom drips on you ([color=#FF4444]-%d HP[/color]).[/color]" % venom_dmg})
+	# Audit #5 Slice 17 theme tag — Succubus Parlor ALLURE_PETAL heals on step.
+	# 4% max HP, min 1 max 80. T4 positive tile (consumed). Same payload as
+	# Dragon Hatchery WARM_NEST.
+	elif tile == DungeonDatabaseScript.TileType.ALLURE_PETAL:
+		var petal_heal = clamp(int(character.get_total_max_hp() * 0.04), 1, 80)
+		var max_hp_ap = character.get_total_max_hp()
+		character.current_hp = min(max_hp_ap, character.current_hp + petal_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF80CC]A succubus petal soothes your wounds ([color=#00FF00]+%d HP[/color]).[/color]" % petal_heal})
+	# Audit #5 Slice 17 theme tag — Lich Sanctum SOUL_RESIDUE (consumed buff).
+	# Reuses pending_dungeon_veil meta — 20% monster-miss for 2 rounds in
+	# next combat. T5 defensive buff.
+	elif tile == DungeonDatabaseScript.TileType.SOUL_RESIDUE:
+		character.set_meta("pending_dungeon_veil", 2)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#6644AA]Spilled lich-essence wraps you in shadow. [color=#00FFFF]20% monster-miss for 2 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 17 theme tag — Demon Lord Throne INFERNAL_BRAZIER (consumed buff).
+	# Reuses pending_war_banner meta — +15% damage for 3 rounds in next combat.
+	# Rare placement (5%) befitting T5 power.
+	elif tile == DungeonDatabaseScript.TileType.INFERNAL_BRAZIER:
+		character.set_meta("pending_war_banner", 3)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6600]You draw on infernal fire from the brazier. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 17 theme tag — Titan Colosseum STONE_STAIRS +2 step cost.
+	# Persistent. Titans built everything at giant scale. Same payload as
+	# Harpy Cliffs UPDRAFT and Ogre Bog SINKING_MUD at T5 density.
+	elif tile == DungeonDatabaseScript.TileType.STONE_STAIRS:
+		character.dungeon_floor_steps += 2
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#909090]You scramble up titan-scale stairs (+2 steps).[/color]"})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false

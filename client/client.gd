@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.459 — Audit #5 Slice 17: 6 more dungeon theme tiles.
+	display_game("[color=#00FF00]v0.9.459[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles[/color]")
+	display_game("  • [b]Shrieker Caverns, Chimaera Gorge, Succubus Parlor, Lich Sanctum, Demon Lord Throne, and Titan Colosseum each gained a themed environmental tile[/b], completing T3+T4 coverage and starting T5. The new tiles: [color=#B080FF]Sound Echo (h)[/color] in Shrieker Caverns — disorienting echoes cost +1 step to cross; [color=#66CC00]Venom Drip (k)[/color] in Chimaera Gorge — persistent ~2% max HP poison damage; [color=#FF80CC]Allure Petal (l)[/color] in Succubus Parlor — heals ~4% max HP on step (consumed); [color=#6644AA]Soul Residue (j)[/color] in Lich Sanctum — touching one banks 20% monster-miss for 2 rounds of your next combat; [color=#FF6600]Infernal Brazier (e)[/color] in Demon Lord Throne — banks +15% damage for 3 rounds of your next combat; [color=#909090]Stone Stairs (H)[/color] in Titan Colosseum — titan-scale stonework costs +2 steps to scramble up. Coverage now [color=#88FF88]39 of 53 dungeons themed[/color]. Audit #5 Slice 17.")
+	display_game("")
+
 	# v0.9.458 — Audit #14 Slice 6: visual Clan Vault panel.
-	display_game("[color=#00FF00]v0.9.458[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.458[/color]")
 	display_game("  [color=#FFD700]Clan Vault now has a real UI panel — no more chat-only deposits[/color]")
 	display_game("  • [b]The clan vault that shipped as a `/vault` chat-command MVP in v0.9.446 is now a real panel.[/b] Open the Clan view (More → Clan) and you'll see a new [color=#FFD700]Open Vault[/color] button — click it to see the vault contents in a proper modal with capacity counter, rarity-colored item names, and a one-click Withdraw button per row. A [color=#FFD700]Deposit[/color] tab at the top lists your full inventory with a Deposit button per item, so you don't have to remember slot numbers. Any clan member can deposit or withdraw; whenever a member acts, the vault auto-refreshes on every other online member's screen so you never see stale state. The original `/vault` chat commands still work as a fallback. Audit #14 Slice 6.")
 	display_game("")
@@ -33669,6 +33675,24 @@ const DUNGEON_THEME_LEGEND = {
 	"gryphon_aerie": [
 		{"glyph": "a", "color": "#B0E0E6", "desc": "Wind currents — gryphon updrafts. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per current (consumed). Rare placement — pairs with Talon Barrage."}
 	],
+	"shrieker_caverns": [
+		{"glyph": "h", "color": "#B080FF", "desc": "Sound echoes — the Shrieker's resonant cries still bounce off the walls. Crossing one costs +1 step from sheer disorientation. Persistent — plan paths around the purple echoes."}
+	],
+	"chimaera_gorge": [
+		{"glyph": "k", "color": "#66CC00", "desc": "Venom drips — the chimaera's serpent head leaves venom on cave ledges. Stepping under one ticks ~2% of your max HP. Persistent. Pairs with Triple Threat's poison-burn-slow rotation."}
+	],
+	"succubus_parlor": [
+		{"glyph": "l", "color": "#FF80CC", "desc": "Allure petals — fallen succubus blooms. Step on one to heal ~4% of your max HP. One-time per petal (consumed). Reward for not being Charmed by the boss."}
+	],
+	"lich_sanctum": [
+		{"glyph": "j", "color": "#6644AA", "desc": "Soul residue — spilled lich-essence that wraps you in shadow. Touching one banks 20% monster-miss for the first 2 rounds of your next combat. One-time per puddle (consumed)."}
+	],
+	"demon_lord_throne": [
+		{"glyph": "e", "color": "#FF6600", "desc": "Infernal braziers — perpetual fires of the demon lord's throne. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per brazier (consumed). Rare placement — pairs with Soul Forge."}
+	],
+	"titan_colosseum": [
+		{"glyph": "H", "color": "#909090", "desc": "Stone stairs — built at titan scale, every flight is a climb. Costs +2 steps to scramble up. Persistent — plan paths around the giant stonework."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -34197,6 +34221,18 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "z", "color": "#DC143C"}
 		42:  # WIND_CURRENT — Gryphon Aerie theme tile, buff pickup (v0.9.457)
 			return {"char": "a", "color": "#B0E0E6"}
+		43:  # SOUND_ECHO — Shrieker Caverns theme tile, +1 step (v0.9.459)
+			return {"char": "h", "color": "#B080FF"}
+		44:  # VENOM_DRIP — Chimaera Gorge theme tile, persistent poison (v0.9.459)
+			return {"char": "k", "color": "#66CC00"}
+		45:  # ALLURE_PETAL — Succubus Parlor theme tile, heal on step (v0.9.459)
+			return {"char": "l", "color": "#FF80CC"}
+		46:  # SOUL_RESIDUE — Lich Sanctum theme tile, miss-chance pickup (v0.9.459)
+			return {"char": "j", "color": "#6644AA"}
+		47:  # INFERNAL_BRAZIER — Demon Lord Throne theme tile, dmg buff pickup (v0.9.459)
+			return {"char": "e", "color": "#FF6600"}
+		48:  # STONE_STAIRS — Titan Colosseum theme tile, +2 step (v0.9.459)
+			return {"char": "H", "color": "#909090"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
