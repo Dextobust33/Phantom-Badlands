@@ -11837,16 +11837,23 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 
 	var all_listings = persistence.get_market_listings(post_id)
 
-	# Audit #9 Slice 3b — exotic post rare-item access. Prepend daily NPC
-	# stock to the listings array BEFORE the filter so the existing
-	# category/sort/stack pipeline handles them naturally. Synthetic listings
-	# carry `is_npc: true` so the markup loop below knows to skip supply +
-	# specialty math (NPC prices are fixed). post_id rotation is deterministic
-	# per day so every visitor sees the same stock.
+	# Audit #9 Slice 3b + Audit #11 Slice 8 — category NPC vendors. Prepend
+	# the post's daily NPC stock to the listings array BEFORE the filter so
+	# the existing category/sort/stack pipeline handles them naturally.
+	# Synthetic listings carry `is_npc: true` so the markup loop below knows
+	# to skip supply + specialty math (NPC prices are fixed). The category
+	# is resolved via resolve_post_category(post_dict, post_id) which handles
+	# both procedural and legacy fixed posts. Each supported category
+	# (exotic / mine / farm / shrine) has its own vendor name + tag + color
+	# in CATEGORY_VENDOR_CONFIG so the client renders distinct UI per vendor.
 	var post_dict_here: Dictionary = at_trading_post.get(peer_id, {})
 	var resolved_category: String = trading_post_db.resolve_post_category(post_dict_here, post_id)
-	if resolved_category == "exotic":
-		var daily_stock: Array = trading_post_db.get_exotic_daily_stock(post_id)
+	if trading_post_db.category_has_npc_stock(resolved_category):
+		var vendor_cfg: Dictionary = trading_post_db.get_npc_vendor_config(resolved_category)
+		var vendor_name: String = String(vendor_cfg.get("vendor_name", "Trader"))
+		var vendor_tag: String = String(vendor_cfg.get("tag", "NPC"))
+		var vendor_color: String = String(vendor_cfg.get("color", "#A335EE"))
+		var daily_stock: Array = trading_post_db.get_npc_daily_stock(post_id, resolved_category)
 		var npc_listings: Array = []
 		for slot_idx in range(daily_stock.size()):
 			var entry: Dictionary = daily_stock[slot_idx]
@@ -11863,22 +11870,29 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 				"rarity": String(entry.get("rarity", "uncommon")),
 				"is_npc_stub": true,
 			}
+			# listing_id prefix stays "exotic_npc_" across categories so the
+			# buy router (handle_market_buy) keeps a single recognition path.
+			# Category is encoded inside the id for the recompute-on-buy
+			# verification step.
 			npc_listings.append({
-				"listing_id": "exotic_npc_%s_%d" % [post_id, slot_idx],
+				"listing_id": "exotic_npc_%s_%s_%d" % [resolved_category, post_id, slot_idx],
 				"post_id": post_id,
 				"item": stub_item,
 				"base_valor": price,
 				"quantity": 1,
 				"supply_category": supply_cat,
-				"account_id": "exotic_trader",
-				"seller_name": "Curiosity Trader",
+				"account_id": "%s_trader" % resolved_category,
+				"seller_name": vendor_name,
 				"is_npc": true,
+				"npc_category": resolved_category,
+				"npc_tag": vendor_tag,
+				"npc_color": vendor_color,
 				"listed_at": 0,
 				"pool_index": int(entry.get("_pool_idx", slot_idx)),
 				"pool_item_type": item_type,
 			})
 		# Prepend so they show at the top of the post's listings (visually
-		# anchors the exotic vendor identity above player listings).
+		# anchors the vendor identity above player listings).
 		all_listings = npc_listings + all_listings
 
 	# Filter by category. v0.9.268: food gets its own filter that recognizes
@@ -12455,14 +12469,14 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid listing."})
 		return
 
-	# Audit #9 Slice 3b — NPC exotic listing branch. Synthetic listings carry
-	# a listing_id starting with "exotic_npc_". They're not persisted, so the
-	# server recomputes today's stock for the post and matches the requested
-	# id against today's synthetic slots. Items are generated on demand from
-	# the pool entry; price is the entry's fixed valor (plus threat multiplier
-	# if applicable). Unlimited stock per day — no listing removal.
+	# Audit #9 Slice 3b + Audit #11 Slice 8 — NPC vendor branch (any category
+	# in CATEGORY_VENDOR_CONFIG). Synthetic listings carry a listing_id
+	# starting with "exotic_npc_" (the prefix is historical from Slice 3b;
+	# kept for back-compat across mid-update clients/servers). The listing_id
+	# now encodes the category, so the buy router can re-derive today's
+	# stock for the correct pool.
 	if String(listing_ids[0]).begins_with("exotic_npc_"):
-		_handle_market_buy_exotic_npc(peer_id, listing_ids[0], int(message.get("quantity", 1)))
+		_handle_market_buy_npc_stock(peer_id, listing_ids[0], int(message.get("quantity", 1)))
 		return
 
 	# Find first valid listing (use it for item info and pricing)
@@ -12629,11 +12643,13 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	})
 	send_character_update(peer_id)
 
-func _handle_market_buy_exotic_npc(peer_id: int, listing_id: String, requested_qty: int) -> void:
-	"""Audit #9 Slice 3b — NPC purchase branch for exotic-post Curiosity Trader.
-	Pool entries have fixed prices and unlimited daily stock. Server re-derives
-	today's stock for the player's current post and matches the listing_id
-	against today's synthetic slots. No listing removal, no sale history.
+func _handle_market_buy_npc_stock(peer_id: int, listing_id: String, requested_qty: int) -> void:
+	"""Audit #9 Slice 3b + Audit #11 Slice 8 — NPC purchase branch for any
+	category in CATEGORY_VENDOR_CONFIG (exotic / mine / farm / shrine today).
+	Pool entries have fixed prices and unlimited daily stock. Server
+	re-derives today's stock for the player's current post + category and
+	matches the listing_id against today's synthetic slots. No listing
+	removal, no sale history.
 
 	Buyer pays valor (plus threat multiplier when post is threatened); server
 	generates a fresh item via drop_tables._generate_item using the player's
@@ -12648,20 +12664,24 @@ func _handle_market_buy_exotic_npc(peer_id: int, listing_id: String, requested_q
 		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
 		return
 
-	# Verify the post is actually exotic — protects against listing_id
-	# replay against a non-exotic post.
+	# Verify the post still hosts an NPC vendor — protects against
+	# listing_id replay against a non-vendor post.
 	var post_dict_here: Dictionary = at_trading_post.get(peer_id, {})
 	var resolved_cat: String = trading_post_db.resolve_post_category(post_dict_here, post_id)
-	if resolved_cat != "exotic":
-		send_to_peer(peer_id, {"type": "market_error", "message": "Curiosity Trader not available here."})
+	if not trading_post_db.category_has_npc_stock(resolved_cat):
+		send_to_peer(peer_id, {"type": "market_error", "message": "No vendor available here."})
 		return
 
-	# Recompute today's stock and find the matching slot.
-	var daily_stock: Array = trading_post_db.get_exotic_daily_stock(post_id)
+	# Recompute today's stock for THIS category and find the matching slot.
+	# (Slice 8 changed the listing_id format to encode the category; older
+	# Slice 3b ids without a category segment fall through and resolve as
+	# exotic so mid-deploy clients still buy correctly.)
+	var daily_stock: Array = trading_post_db.get_npc_daily_stock(post_id, resolved_cat)
 	var matched_entry: Dictionary = {}
 	for slot_idx in range(daily_stock.size()):
-		var expected_id: String = "exotic_npc_%s_%d" % [post_id, slot_idx]
-		if expected_id == listing_id:
+		var expected_id: String = "exotic_npc_%s_%s_%d" % [resolved_cat, post_id, slot_idx]
+		var legacy_id: String = "exotic_npc_%s_%d" % [post_id, slot_idx]
+		if expected_id == listing_id or legacy_id == listing_id:
 			matched_entry = daily_stock[slot_idx]
 			break
 	if matched_entry.is_empty():
