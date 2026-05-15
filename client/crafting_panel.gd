@@ -23,6 +23,7 @@ var _current_skill: String = ""
 var _recipes: Array = []
 var _materials: Dictionary = {}
 var _selected_index: int = -1
+var _upcoming_unlocks: Array = []  # Audit #8 Layer 7: next 3 locked recipes preview
 var _craft_quantity: int = 1
 var _allow_skill_switch: bool = true
 
@@ -293,6 +294,12 @@ func set_allow_skill_switch(allow: bool) -> void:
 		_skill_chip_row.visible = allow
 
 
+# Audit #8 Layer 7 — next 3 locked recipes shown as a "Coming Up" footer in
+# the recipe list. Call right after populate() so _rebuild_recipe_list sees it.
+func set_upcoming_unlocks(unlocks: Array) -> void:
+	_upcoming_unlocks = unlocks
+
+
 # Called by client.gd whenever the recipe list / materials change (server craft_list response,
 # materials update, character_update, etc.).
 func populate(skill: String, recipes: Array, materials: Dictionary, skill_level: int, post_bonus: int, job_bonus: Dictionary, selected_index: int, craft_quantity: int) -> void:
@@ -352,6 +359,34 @@ func _rebuild_recipe_list() -> void:
 		var btn = _make_recipe_button(recipe, i)
 		_recipe_list_vbox.add_child(btn)
 		_recipe_buttons.append(btn)
+
+	# Audit #8 Layer 7 — Coming Up preview footer mirroring the text-mode list.
+	if not _upcoming_unlocks.is_empty():
+		var spacer := Control.new()
+		spacer.custom_minimum_size = Vector2(0, 6)
+		_recipe_list_vbox.add_child(spacer)
+
+		var header := Label.new()
+		header.text = "── Coming Up ──"
+		header.add_theme_color_override("font_color", Color(0.60, 0.80, 0.20))
+		header.add_theme_font_size_override("font_size", 12)
+		_recipe_list_vbox.add_child(header)
+
+		for unlock in _upcoming_unlocks:
+			var u_name := str(unlock.get("name", "Unknown"))
+			var u_req := int(unlock.get("skill_required", 0))
+			var u_type := str(unlock.get("output_type", ""))
+			var u_away := int(unlock.get("levels_away", 0))
+			var away_label := "%d level%s away" % [u_away, "" if u_away == 1 else "s"]
+			var type_tag := " (%s)" % u_type if u_type != "" else ""
+			var row := RichTextLabel.new()
+			row.bbcode_enabled = true
+			row.fit_content = true
+			row.scroll_active = false
+			row.add_theme_font_size_override("normal_font_size", 12)
+			row.text = "  [color=#888888]Lv%d[/color] [color=#AAAAAA]%s[/color][color=#666666]%s[/color] [color=#9ACD32]— %s[/color]" % [u_req, u_name, type_tag, away_label]
+			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_recipe_list_vbox.add_child(row)
 
 
 func _make_recipe_button(recipe: Dictionary, index: int) -> Button:
