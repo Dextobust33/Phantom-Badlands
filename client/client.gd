@@ -1301,6 +1301,9 @@ var post_status_panel = null
 # Audit #14 Slice 1 — visual clan create/roster panel (no chat-command-first).
 const ClanPanelScript = preload("res://client/clan_panel.gd")
 var clan_panel = null
+# Audit #14 Slice 6 — visual Clan Vault panel.
+const ClanVaultPanelScript = preload("res://client/clan_vault_panel.gd")
+var clan_vault_panel = null
 
 # Audit #13 Slice 2 — Bestiary panel (Sanctuary monster kill ledger).
 const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
@@ -1961,6 +1964,13 @@ func _ready():
 	clan_panel.promote_requested.connect(_on_clan_panel_promote)
 	clan_panel.demote_requested.connect(_on_clan_panel_demote)
 	clan_panel.kick_requested.connect(_on_clan_panel_kick)
+	clan_panel.vault_requested.connect(_on_clan_panel_vault)
+
+	clan_vault_panel = ClanVaultPanelScript.new()
+	add_child(clan_vault_panel)
+	clan_vault_panel.close_requested.connect(_on_clan_vault_panel_close)
+	clan_vault_panel.withdraw_requested.connect(_on_clan_vault_panel_withdraw)
+	clan_vault_panel.deposit_requested.connect(_on_clan_vault_panel_deposit)
 
 	# Audit #13 Slice 2 — Bestiary panel.
 	bestiary_panel = BestiaryPanelScript.new()
@@ -18824,6 +18834,10 @@ func handle_server_message(message: Dictionary):
 				# Audit #4 Slice 1 (UI remediation) — refresh stones panel
 				# bought-counts/valor live after each purchase.
 				_refresh_stones_panel_if_open()
+				# Audit #14 Slice 6 — keep the vault deposit picker live with
+				# the latest inventory so deposits/withdraws reflect immediately.
+				if clan_vault_panel and clan_vault_panel.visible:
+					clan_vault_panel.set_inventory(character_data.get("inventory", []))
 				# Audit #3 Slice 1 (UI remediation) — refresh stats panel
 				# after each /spendstat so the new stat value + decremented
 				# bank are visible immediately.
@@ -24050,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.458 — Audit #14 Slice 6: visual Clan Vault panel.
+	display_game("[color=#00FF00]v0.9.458[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan Vault now has a real UI panel — no more chat-only deposits[/color]")
+	display_game("  • [b]The clan vault that shipped as a `/vault` chat-command MVP in v0.9.446 is now a real panel.[/b] Open the Clan view (More → Clan) and you'll see a new [color=#FFD700]Open Vault[/color] button — click it to see the vault contents in a proper modal with capacity counter, rarity-colored item names, and a one-click Withdraw button per row. A [color=#FFD700]Deposit[/color] tab at the top lists your full inventory with a Deposit button per item, so you don't have to remember slot numbers. Any clan member can deposit or withdraw; whenever a member acts, the vault auto-refreshes on every other online member's screen so you never see stale state. The original `/vault` chat commands still work as a fallback. Audit #14 Slice 6.")
+	display_game("")
+
 	# v0.9.457 — Audit #5 Slice 16: 6 more dungeon theme tiles.
-	display_game("[color=#00FF00]v0.9.457[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.457[/color]")
 	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles[/color]")
 	display_game("  • [b]Gnoll Pack Den, Kelpie Marsh, Wyvern Roost, Ogre Bog, Demon Gate, and Gryphon Aerie each gained a themed environmental tile,[/b] filling out the T2-T4 mid-game with the pattern that established at Slice 1 and grew through Slice 15. The new tiles: [color=#8B2500]Torn Carrion (y)[/color] in Gnoll Pack Den — pack-kill scraps that heal ~2% max HP on step (consumed), counter-balancing the boss's Pack Frenzy ramp; [color=#556B2F]Bog Patches (u)[/color] in Kelpie Marsh — persistent +1 step cost wading the marsh; [color=#FFE4B5]Feather Down (f)[/color] in Wyvern Roost — soft wyvern feathers heal ~3% max HP on step (consumed); [color=#5D4037]Sinking Mud (v)[/color] in Ogre Bog — persistent +2 step cost where the ogres trampled it deep; [color=#DC143C]Hellfire Runes (z)[/color] at Demon Gate — persistent ~3% max HP burn, pairs with the boss's stacking curse; [color=#B0E0E6]Wind Currents (a)[/color] in Gryphon Aerie — rare buff pickup that banks +15% damage for 3 rounds of your next combat. Coverage now 33 of 53 dungeons themed. Also fixes a latent rendering bug where the Slice 15 theme glyphs (caltrops/grave dust/maze runes/prism shards/blinding sand/frost shards) were showing as `?` fallbacks on the dungeon map — now they render with their proper glyph + color. Audit #5 Slice 16.")
 	display_game("")
@@ -27510,6 +27530,35 @@ func _on_clan_panel_kick(target_account_id: String) -> void:
 	"""Audit #14 Slice 4 — leader/officer kicks a member from the clan."""
 	send_to_server({"type": "clan_kick", "target_account_id": target_account_id})
 
+func _on_clan_panel_vault() -> void:
+	"""Audit #14 Slice 6 — open the Clan Vault panel from the in-clan view."""
+	open_clan_vault_panel()
+
+func open_clan_vault_panel() -> void:
+	"""Audit #14 Slice 6 — open the visual Clan Vault. Sends clan_vault_list
+	immediately; the response refreshes the panel with the current contents."""
+	if not clan_vault_panel:
+		display_game("[color=#FF0000]Clan vault panel not initialized.[/color]")
+		return
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	var inventory: Array = character_data.get("inventory", []) if character_data is Dictionary else []
+	clan_vault_panel.open({"items": [], "capacity": 30, "clan_name": "", "clan_tag": ""}, inventory)
+	send_to_server({"type": "clan_vault_list"})
+
+func close_clan_vault_panel() -> void:
+	if clan_vault_panel:
+		clan_vault_panel.close()
+
+func _on_clan_vault_panel_close() -> void:
+	close_clan_vault_panel()
+
+func _on_clan_vault_panel_withdraw(vault_index: int) -> void:
+	send_to_server({"type": "clan_vault_withdraw", "index": vault_index})
+
+func _on_clan_vault_panel_deposit(inventory_slot: int) -> void:
+	send_to_server({"type": "clan_vault_deposit", "slot": inventory_slot})
+
 func _on_combat_loot_slot_clicked(slot_index: int) -> void:
 	"""Audit user-request 2026-05-14 — player clicked an unrevealed slot in
 	the combat scratch-off grid. Server validates + awards + pushes back."""
@@ -27638,12 +27687,25 @@ func _handle_clan_info_data(message: Dictionary) -> void:
 
 func _handle_clan_vault_list_result(message: Dictionary) -> void:
 	"""Audit #14 Slice 5 (v0.9.446) — chat-command render of the clan vault.
-	Headers, item rows with [N]/[NAME]/[TYPE/rarity], footer with capacity.
-	No panel UI yet — proven via /vault commands first."""
+	Audit #14 Slice 6 (v0.9.458) — also feeds the visual Clan Vault panel
+	when open; chat-command render only runs as a fallback so /vault still
+	works from the chat input."""
 	var items: Array = message.get("items", [])
 	var capacity := int(message.get("capacity", 30))
 	var clan_name := String(message.get("clan_name", ""))
 	var clan_tag := String(message.get("clan_tag", ""))
+
+	# Visual panel path: push refresh + skip the chat-command render so the
+	# game_output isn't spammed every time another member deposits.
+	if clan_vault_panel and clan_vault_panel.visible:
+		clan_vault_panel.refresh({
+			"items": items,
+			"capacity": capacity,
+			"clan_name": clan_name,
+			"clan_tag": clan_tag,
+		})
+		return
+
 	display_game("[color=#FFD700]═══════ CLAN VAULT ═══════[/color]")
 	if clan_name != "":
 		display_game("[color=#888888]%s [%s][/color]   [color=#88FF88]%d / %d[/color]" % [clan_name, clan_tag, items.size(), capacity])

@@ -19,6 +19,8 @@ signal decline_requested(clan_id: String)
 signal promote_requested(target_account_id: String)
 signal demote_requested(target_account_id: String)
 signal kick_requested(target_account_id: String)
+# Audit #14 Slice 6 — open the Clan Vault panel from the in-clan view.
+signal vault_requested
 
 var _root_panel: PanelContainer
 var _vbox: VBoxContainer
@@ -433,6 +435,16 @@ func _render_in_clan_view() -> void:
 	btn_hbox.add_theme_constant_override("separation", 8)
 	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
 	_body_container.add_child(btn_hbox)
+
+	# Audit #14 Slice 6 — Vault button promotes the v0.9.446 chat-command MVP
+	# to a real panel. Available to every member (clans are trust-based).
+	var vault_btn := Button.new()
+	vault_btn.focus_mode = Control.FOCUS_NONE
+	vault_btn.custom_minimum_size = Vector2(140, 36)
+	vault_btn.text = "Open Vault"
+	vault_btn.add_theme_color_override("font_color", Color.html("#FFD700"))
+	vault_btn.pressed.connect(func(): vault_requested.emit())
+	btn_hbox.add_child(vault_btn)
 
 	var leave_btn := Button.new()
 	leave_btn.focus_mode = Control.FOCUS_NONE
