@@ -24011,8 +24011,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.449 — Audit #13 Slice 6: Sanctuary affordability discovery.
+	display_game("[color=#00FF00]v0.9.449[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sanctuary: upgrade screen surfaces what you can afford right now[/color]")
+	display_game("  • [b]Affordability is now visible at a glance from anywhere on the upgrade screen.[/b] The tab strip across the top shows a green +N badge per tab whenever any upgrades there are buyable — so you can see 'Storage +2  Combat  Stats +1  Discovery +1  Economy' without paging through every tab. A summary line under your Baddie Points reads 'X upgrades affordable on this tab — Y total across all tabs.' Every affordable row now wears a green ✓ AFFORDABLE tag on its name line (maxed rows get a blue ✦ MAX). In the visual panel, affordable cards get a brighter green border + 2px outline so they pop in the grid, and each tab button shows its affordable count in green next to the label. Closes the audit's 'Discoverability — TWEAK — Sanctuary screen highlights affordable upgrades' decision. Audit #13 Slice 6.")
+	display_game("")
+
 	# v0.9.448 — Audit #13 Slice 5: Sanctuary tab categorization.
-	display_game("[color=#00FF00]v0.9.448[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.448[/color]")
 	display_game("  [color=#FFD700]Sanctuary: upgrades reorganized into 5 named tabs[/color]")
 	display_game("  • [b]The upgrade screen now has 5 categorized tabs — Storage, Combat, Stats, Discovery, Economy — instead of the previous 3-page mash-up.[/b] The old Base Upgrades page had 13 entries mixing storage, companion slots, discovery upgrades, posts, and economy bonuses; finding the upgrade you wanted meant reading the whole list. The new tabs put each upgrade with its peers: Storage groups all the slot expansions (inventory / kennel / egg / companion / posts / sanctum) so you can see your hoarding capacity in one place. Combat groups HP, resource max, regen, and flee chance. Discovery groups the three account-level qualitative unlocks (Bestiary / Compass / Region Atlas) so they're easy to find. The visual panel also gained the Compass and Region Atlas upgrades — they were only ever visible in the text view by accident (a latent bug since v0.9.444). A tab strip across the top names all 5 categories at once with the current one highlighted, so the full landscape is visible whether you're paging or just orienting. Audit #13 Slice 5.")
 	display_game("")
@@ -37372,6 +37378,46 @@ func _toggle_mixed_fusion_companion(page_index: int):
 	display_house_fusion()
 	update_action_bar()
 
+# Audit #13 Slice 6 — affordability discovery. Walks one tab's upgrade list
+# and returns the count of upgrades the player can buy right now (current_level
+# < max AND bp >= next cost). Used for the per-tab badges in the tab strip and
+# the top-of-page summary so players can scan affordability without paging
+# through every tab.
+func _count_affordable_in_tab(tab_idx: int) -> int:
+	if tab_idx < 0 or tab_idx >= SANCTUARY_UPGRADE_TABS.size():
+		return 0
+	var upgrades: Dictionary = house_data.get("upgrades", {})
+	var upgrade_costs: Dictionary = house_data.get("upgrade_costs", {})
+	var bp: int = int(house_data.get("baddie_points", 0))
+	var count: int = 0
+	for upgrade_id in SANCTUARY_UPGRADE_TABS[tab_idx]["ids"]:
+		var def: Dictionary = upgrade_costs.get(upgrade_id, {})
+		var current_level: int = int(upgrades.get(upgrade_id, 0))
+		var max_level: int = int(def.get("max", 1))
+		var costs: Array = def.get("costs", [])
+		if current_level >= max_level:
+			continue
+		if current_level >= costs.size():
+			continue
+		if bp >= int(costs[current_level]):
+			count += 1
+	return count
+
+func _is_upgrade_affordable(upgrade_id: String) -> bool:
+	"""Per-row affordability check for the upgrades view."""
+	var upgrades: Dictionary = house_data.get("upgrades", {})
+	var upgrade_costs: Dictionary = house_data.get("upgrade_costs", {})
+	var bp: int = int(house_data.get("baddie_points", 0))
+	var def: Dictionary = upgrade_costs.get(upgrade_id, {})
+	var current_level: int = int(upgrades.get(upgrade_id, 0))
+	var max_level: int = int(def.get("max", 1))
+	var costs: Array = def.get("costs", [])
+	if current_level >= max_level:
+		return false
+	if current_level >= costs.size():
+		return false
+	return bp >= int(costs[current_level])
+
 func display_house_upgrades():
 	"""Display available house upgrades with pagination"""
 	_populate_sanctuary_panel()
@@ -37386,20 +37432,31 @@ func display_house_upgrades():
 	var current_tab = SANCTUARY_UPGRADE_TABS[house_upgrades_page]
 
 	display_game("[color=#FF6600]═══════ UPGRADE FORGE ═══════[/color]")
-	# Tab strip — show every category so players see the full landscape before paging.
+	# Tab strip — every category with its current affordable-count badge so
+	# players can spot which tabs have purchases available without paging.
+	# Slice 6 (Audit #13) — affordability discovery.
 	var tab_strip_parts: Array = []
+	var grand_affordable: int = 0
 	for ti in range(tab_count):
 		var label: String = SANCTUARY_UPGRADE_TABS[ti]["label"]
+		var affordable_ct: int = _count_affordable_in_tab(ti)
+		grand_affordable += affordable_ct
+		var badge: String = ""
+		if affordable_ct > 0:
+			badge = "[color=#00FF00]+%d[/color]" % affordable_ct
 		if ti == house_upgrades_page:
-			tab_strip_parts.append("[color=#FFD700][%s][/color]" % label)
+			tab_strip_parts.append("[color=#FFD700][%s][/color]%s" % [label, badge])
 		else:
-			tab_strip_parts.append("[color=#666666]%s[/color]" % label)
+			tab_strip_parts.append("[color=#666666]%s[/color]%s" % [label, badge])
 	display_game("  ".join(tab_strip_parts))
 	display_game("[color=#AAAAAA]Page %d/%d: %s[/color]" % [house_upgrades_page + 1, tab_count, current_tab["label"]])
 	display_game("")
 
 	var bp = house_data.get("baddie_points", 0)
+	var current_tab_affordable: int = _count_affordable_in_tab(house_upgrades_page)
 	display_game("[color=#FF6600]Baddie Points: %d[/color]" % bp)
+	if grand_affordable > 0:
+		display_game("[color=#00FF00]✓ %d upgrade%s affordable on this tab — %d total across all tabs[/color]" % [current_tab_affordable, "" if current_tab_affordable == 1 else "s", grand_affordable])
 	display_game("")
 
 	var upgrades = house_data.get("upgrades", {})
@@ -37457,7 +37514,15 @@ func display_house_upgrades():
 		var effect_value = upgrade_def.get("effect", 0) * current_level
 		var effect_text = _get_upgrade_effect_text(upgrade_id, effect_value)
 
-		display_game("[%d] [color=#FFD700]%s[/color] Lv.%d/%d" % [idx, display_info.name, current_level, max_level])
+		# Slice 6 (Audit #13) — per-row affordability glyph. ✓ for affordable,
+		# ✦ for maxed (the cost line already shows red for can't-afford so no
+		# extra glyph needed there).
+		var row_tag: String = ""
+		if current_level >= max_level:
+			row_tag = "  [color=#00BFFF]✦ MAX[/color]"
+		elif can_afford:
+			row_tag = "  [color=#00FF00]✓ AFFORDABLE[/color]"
+		display_game("[%d] [color=#FFD700]%s[/color] Lv.%d/%d%s" % [idx, display_info.name, current_level, max_level, row_tag])
 		display_game("    %s [color=#AAAAAA](%s)[/color]" % [display_info.desc, effect_text])
 		display_game("    Cost: %s" % cost_text)
 		display_game("")
