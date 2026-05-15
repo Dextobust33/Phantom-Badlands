@@ -24050,8 +24050,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.456 — Audit #11 Slice 10: NPC vendors at the remaining 5 categories.
+	display_game("[color=#00FF00]v0.9.456[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Every NPC post category now has its own vendor[/color]")
+	display_game("  • [b]Five more themed NPC traders join the market browse at their post categories,[/b] completing the vendor system that started with Slice 3b (exotic) and Slice 8 (mine/farm/shrine). The new vendors are: [color=#FFE0A0][HAVEN] Innkeeper[/color] (restoration & traveler supplies — Elixir, Greater Health/Mana/Stamina/Energy Potions, Minor Elixir); [color=#FFA070][MARKET] Trade Master[/color] (generalist mix — Home Stone Egg, Mysterious Box, Elixir, Scroll of Haste, Charm of Taunt, Greater Health Potion); [color=#88AAFF][TOWER] Lookout[/color] (scout & foresight — Reclaimer Lantern, Scroll of Monster Selection, Scroll of Precision, Elixir, Mysterious Box, Charm of Taunt); [color=#AA8866][CAMP] Outfitter[/color] (basic traveler supplies at low prices — Standard Health/Mana/Stamina/Energy Potions, Cursed Coin, Scroll of Haste); [color=#A0A0A0][FORTRESS] Quartermaster[/color] (heavy combat & equipment — Home Stone Equipment, Scrolls of Forcefield/Stone Skin/Rage, Boss Slayer Tonic, Charm of Taunt). Three slots per day per post, same deterministic rotation as the existing vendors. Every NPC post category in the world now has a destination identity. Audit #11 Slice 10.")
+	display_game("")
+
 	# v0.9.455 — Audit #9 Slice 5: Travel Stone / network buy.
-	display_game("[color=#00FF00]v0.9.455[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.455[/color]")
 	display_game("  [color=#FFD700]New consumable: Travel Stone — buy from remote posts without traveling[/color]")
 	display_game("  • [b]Travel Stones let you buy from any market listing in the network browse view without leaving your current post.[/b] Click any remote listing in Network Browse, and if you have at least one Travel Stone in your inventory you'll get a 'Buy (Stone x N)' button. Confirming spends one stone and one valor payment at the listing's full markup price, and the item is delivered straight to your inventory / pouch / egg incubator. The audit's geographic value is preserved: specialty discounts (mine -15% on materials, etc.) still require you to actually visit the specialty post, and threat multipliers still bite at threatened posts. Travel Stones drop from Tier 5+ dungeon chests at low rates, and the Curiosity Trader at exotic posts sells them for 3000 Valor (when they're in today's stock rotation). Audit #9 Slice 5.")
 	display_game("")
