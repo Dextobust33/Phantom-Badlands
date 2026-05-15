@@ -24011,8 +24011,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.454 — Audit #11 Slice 9: threat-corridor wandering monsters.
+	display_game("[color=#00FF00]v0.9.454[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Threatened-post dungeons now spill their monsters into the surrounding world[/color]")
+	display_game("  • [b]Standing within 80 tiles of an active T2+ world dungeon now puts you in a 'threat corridor.'[/b] Random encounters in this zone spawn THAT dungeon's monster_type at the dungeon's tier-appropriate level instead of the biome default — orc patrols spilling out of an Orc Stronghold, wights drifting from a barrow, etc. Gives the [color=#FF6600]⚠ Under Threat[/color] post marker (v0.9.326) actual mechanical bite. Encounters in the corridor are flagged in combat: '⚠ Spilled from [Dungeon Name] — you're in the threat corridor.' Tells you (a) the encounter is unusual, (b) which dungeon to clear if you want it to stop, and (c) roughly where that dungeon is from your encounter location. T1 dungeons still skip the corridor — newbie content shouldn't terrorize starter posts. Audit #11 Slice 9.")
+	display_game("")
+
 	# v0.9.453 — Audit #6 Slice 13: regenerating quest board (supersedes Slice 12).
-	display_game("[color=#00FF00]v0.9.453[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.453[/color]")
 	display_game("  [color=#FFD700]Quest board now regenerates continuously — no more daily caps[/color]")
 	display_game("  • [b]Procedural quests are back, but the daily-cap model is gone for good.[/b] Trading post boards now show 5-6 quests at starter posts / 7-8 at mid-tier / 8-10 at endgame, and the slot of every quest you complete is immediately filled with a new procedural one. No 24-hour cooldown, no \"do a couple of quests then wait until tomorrow.\" You can keep working through the board as long as you have time. The slice supersedes yesterday's chain-only model (v0.9.452) — the original audit signal was about the cap mechanic, not the kill-task content itself. Chain campaigns are unaffected and still alongside the procedural quests.")
 	display_game("  • [b]Active quest cap lowered from 5 to 3.[/b] With the board never running dry, hoarding accepts is no longer a viable strategy — triage to your top 3 and rotate as you complete. The board is the parking lot, not your inventory.")
@@ -27948,6 +27954,17 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 
 	# Build encounter message with colored monster name
 	var msg = "[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster_name, monster_level]
+
+	# Audit #11 Slice 9 — threat-corridor flag. Server stamps `threat_source`
+	# when this monster spilled out of a nearby active T2+ dungeon. The line
+	# tells the player they're not just unlucky — they walked into a threat
+	# zone, which is itself a directional hint about where the dungeon lies.
+	var threat_source = String(combat_state.get("threat_source", ""))
+	if threat_source != "":
+		var threat_color = String(combat_state.get("threat_color", "#FF8800"))
+		if threat_color == "":
+			threat_color = "#FF8800"
+		msg += "\n[color=%s]⚠ Spilled from %s — you're in the threat corridor.[/color]" % [threat_color, threat_source]
 
 	# Show notable abilities from combat_state
 	var abilities = combat_state.get("monster_abilities", [])

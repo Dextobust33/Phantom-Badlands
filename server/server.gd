@@ -6054,13 +6054,34 @@ func trigger_encounter(peer_id: int):
 		character.forced_next_monster = ""
 		save_character(peer_id)
 	else:
-		# Normal random monster encounter. Slice 6b — pass the player's
-		# current biome so the monster pool biases toward biome-thematic
-		# picks (wolves in forest, kobolds in mountains, etc.). Biome is
-		# still a soft bias — out-of-biome monsters can still show up,
-		# just less often.
-		var encounter_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
-		monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome)
+		# Audit #11 Slice 9 — threat-corridor bias. If the player is within
+		# THREAT_CORRIDOR_RADIUS of an active T2+ world dungeon, spawn that
+		# dungeon's own monster_type at a level rolled in the dungeon's
+		# min/max range, overriding the biome default. Threat zones spill
+		# their inhabitants into the surrounding world; gives Slice 6's
+		# "Under Threat" marker mechanical bite.
+		var threat_zone: Dictionary = _get_threat_zone_dungeon_at(character.x, character.y)
+		var threat_monster_type: String = String(threat_zone.get("monster_type", ""))
+		if not threat_zone.is_empty() and threat_monster_type != "":
+			var t_min: int = int(threat_zone.get("min_level", level_range.min))
+			var t_max: int = int(threat_zone.get("max_level", level_range.max))
+			var rolled_level: int = randi_range(maxi(1, t_min), maxi(t_min, t_max))
+			monster = monster_db.generate_monster_by_name(threat_monster_type, rolled_level)
+			if monster.is_empty():
+				# Named monster missing from DB — fall through to biome pool.
+				var encounter_biome_fb = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
+				monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome_fb)
+			else:
+				monster["threat_source"] = String(threat_zone.get("dungeon_name", ""))
+				monster["threat_color"] = String(threat_zone.get("color", "#FF8800"))
+		else:
+			# Normal random monster encounter. Slice 6b — pass the player's
+			# current biome so the monster pool biases toward biome-thematic
+			# picks (wolves in forest, kobolds in mountains, etc.). Biome is
+			# still a soft bias — out-of-biome monsters can still show up,
+			# just less often.
+			var encounter_biome = world_system.get_biome_at(character.x, character.y, chunk_manager.world_seed if chunk_manager else 0)
+			monster = monster_db.generate_monster(level_range.min, level_range.max, encounter_biome)
 
 	# Slice 6i — tag the monster with hotspot intensity (0.0 outside, 0.0-1.0
 	# inside) so victory processing can apply XP + loot bonuses. We attach
@@ -24060,6 +24081,55 @@ const POST_THREAT_PRICE_MULT: float = 1.20
 # economy is supposed to *bite* — players who linger at threatened posts pay
 # for the convenience.
 const POST_THREAT_SERVICE_MULT: float = 1.50
+
+# Audit #11 Slice 9 — threat corridor. A player within this distance of an
+# active T2+ world dungeon stands in the "danger zone" between the dungeon
+# and any nearby threatened post. Random encounters in this zone are biased
+# toward the dungeon's own monster_type — orcs spilling out of Orc Stronghold,
+# wights drifting from a barrow, etc. Gives the Slice 6 "Under Threat" marker
+# mechanical bite without inventing a new entity system.
+const THREAT_CORRIDOR_RADIUS: int = 80
+
+func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
+	"""Audit #11 Slice 9 — locate the closest active T2+ world dungeon within
+	THREAT_CORRIDOR_RADIUS of (x, y). Returns the dungeon's encounter info or
+	{} if not in a threat zone. Iterates active_dungeons (~60-70 entries on
+	the live world) — cheap because trigger_encounter is a per-encounter call,
+	not a per-frame poll. Same filters as _compute_post_threat_state (not
+	completed, no owner, tier >= 2)."""
+	var best: Dictionary = {}
+	var best_dist_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS + 1
+	for instance_id in active_dungeons:
+		var instance = active_dungeons[instance_id]
+		if instance.get("completed_at", 0) > 0:
+			continue
+		if instance.has("owner_peer_id"):
+			continue  # Personal instances aren't world threats
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
+		if dungeon_data.is_empty():
+			continue
+		var tier = int(dungeon_data.get("tier", 1))
+		if tier < 2:
+			continue  # T1 dungeons are starter content, not threats
+		var inst_x = int(instance.get("world_x", 0))
+		var inst_y = int(instance.get("world_y", 0))
+		var dx = inst_x - x
+		var dy = inst_y - y
+		var dist_sq = dx * dx + dy * dy
+		if dist_sq > THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS:
+			continue
+		if dist_sq < best_dist_sq:
+			best_dist_sq = dist_sq
+			var boss = dungeon_data.get("boss", {})
+			best = {
+				"dungeon_name": String(dungeon_data.get("name", "Unknown")),
+				"monster_type": String(boss.get("monster_type", "")),
+				"tier": tier,
+				"min_level": int(dungeon_data.get("min_level", 1)),
+				"max_level": int(dungeon_data.get("max_level", 10)),
+				"color": String(dungeon_data.get("color", "#FF8800")),
+			}
+	return best
 
 func _get_post_threat_info(peer_id: int) -> Dictionary:
 	"""Audit #11 Slice 7 — threat-aware market modifier.
