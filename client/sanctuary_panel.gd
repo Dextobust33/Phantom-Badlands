@@ -337,8 +337,37 @@ func _update_tab_styles() -> void:
 
 
 func _update_upgrade_page_styles() -> void:
+	# Slice 6 (Audit #13) — annotate each tab button with its affordable
+	# upgrade count so the player can scan all tabs at once for purchases.
 	for i in range(_upgrade_page_buttons.size()):
-		_upgrade_page_buttons[i].button_pressed = (i == _upgrade_page)
+		var btn: Button = _upgrade_page_buttons[i]
+		btn.button_pressed = (i == _upgrade_page)
+		var base_label: String = str(UPGRADE_PAGES[i]["label"])
+		var count: int = _count_affordable_in_tab(i)
+		if count > 0:
+			btn.text = "%s (%d)" % [base_label, count]
+			btn.add_theme_color_override("font_color", Color(0.2, 1.0, 0.2))
+		else:
+			btn.text = base_label
+			btn.remove_theme_color_override("font_color")
+
+func _count_affordable_in_tab(tab_idx: int) -> int:
+	"""Count upgrades on a given tab the player can buy right now."""
+	if tab_idx < 0 or tab_idx >= UPGRADE_PAGES.size():
+		return 0
+	var count: int = 0
+	for upgrade_id in UPGRADE_PAGES[tab_idx]["ids"]:
+		var def: Dictionary = _upgrade_costs.get(str(upgrade_id), {})
+		var current_level: int = int(_upgrades.get(str(upgrade_id), 0))
+		var max_level: int = int(def.get("max", 1))
+		var costs: Array = def.get("costs", [])
+		if current_level >= max_level:
+			continue
+		if current_level >= costs.size():
+			continue
+		if _baddie_points >= int(costs[current_level]):
+			count += 1
+	return count
 
 
 func _rebuild_storage_list() -> void:
@@ -455,10 +484,28 @@ func _rebuild_upgrade_grid() -> void:
 
 func _make_upgrade_card(upgrade_id: String) -> PanelContainer:
 	var card := PanelContainer.new()
+
+	var current_level: int = int(_upgrades.get(upgrade_id, 0))
+	var def: Dictionary = _upgrade_costs.get(upgrade_id, {})
+	var max_level: int = int(def.get("max", 1))
+	var costs: Array = def.get("costs", [])
+	var maxed := current_level >= max_level
+	var next_cost: int = 0
+	var can_afford := false
+	if not maxed and current_level < costs.size():
+		next_cost = int(costs[current_level])
+		can_afford = _baddie_points >= next_cost
+
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.06, 0.05, 0.04, 0.95)
-	sb.border_color = Color(0.4, 0.34, 0.25, 0.7)
-	sb.set_border_width_all(1)
+	# Slice 6 (Audit #13) — affordable cards get a green border + thicker
+	# outline so they pop in the grid.
+	if can_afford:
+		sb.border_color = Color(0.3, 1.0, 0.3, 0.85)
+		sb.set_border_width_all(2)
+	else:
+		sb.border_color = Color(0.4, 0.34, 0.25, 0.7)
+		sb.set_border_width_all(1)
 	sb.set_corner_radius_all(4)
 	sb.content_margin_left = 8
 	sb.content_margin_top = 6
@@ -477,23 +524,18 @@ func _make_upgrade_card(upgrade_id: String) -> PanelContainer:
 	if info.is_empty():
 		info = {"name": upgrade_id.capitalize(), "desc": ""}
 
-	var current_level: int = int(_upgrades.get(upgrade_id, 0))
-	var def: Dictionary = _upgrade_costs.get(upgrade_id, {})
-	var max_level: int = int(def.get("max", 1))
-	var costs: Array = def.get("costs", [])
-	var maxed := current_level >= max_level
-	var next_cost: int = 0
-	var can_afford := false
-	if not maxed and current_level < costs.size():
-		next_cost = int(costs[current_level])
-		can_afford = _baddie_points >= next_cost
-
 	var name_lbl := RichTextLabel.new()
 	name_lbl.bbcode_enabled = true
 	name_lbl.fit_content = true
 	name_lbl.scroll_active = false
 	name_lbl.add_theme_font_size_override("normal_font_size", 14)
-	name_lbl.text = "[color=#FFD700]%s[/color]  [color=#AAAAAA]Lv %d / %d[/color]" % [str(info.get("name", upgrade_id)), current_level, max_level]
+	# Affordable badge appended after Lv label.
+	var afford_tag: String = ""
+	if maxed:
+		afford_tag = "  [color=#00BFFF]✦ MAX[/color]"
+	elif can_afford:
+		afford_tag = "  [color=#00FF00]✓[/color]"
+	name_lbl.text = "[color=#FFD700]%s[/color]  [color=#AAAAAA]Lv %d / %d[/color]%s" % [str(info.get("name", upgrade_id)), current_level, max_level, afford_tag]
 	vbox.add_child(name_lbl)
 
 	var desc_lbl := RichTextLabel.new()
