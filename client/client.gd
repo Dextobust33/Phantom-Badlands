@@ -8280,9 +8280,17 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_market_action == "network_inspect":
+			# Audit #9 Slice 5 — surface a Travel Stone buy slot when the
+			# inspected listing is at a remote post AND the player holds at
+			# least one stone. Slot stays hidden otherwise so the same view
+			# still works for read-only inspection.
+			var ni_stones: int = _count_inventory_travel_stones()
+			var ni_remote: bool = not bool(market_inspected_listing.get("is_here", false))
+			var ni_buy_enabled: bool = ni_remote and ni_stones > 0
+			var ni_buy_label: String = "Buy (Stone x%d)" % ni_stones if ni_buy_enabled else ("Need Travel Stone" if ni_remote else "Local — use Browse")
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "market_network_inspect_back", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": ni_buy_label, "action_type": "local", "action_data": "market_network_buy_confirm", "enabled": ni_buy_enabled},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -12138,6 +12146,22 @@ func execute_local_action(action: String):
 			pending_market_action = "network_browse"
 			display_market_network_browse()
 			update_action_bar()
+		"market_network_buy_confirm":
+			# Audit #9 Slice 5 — spend one Travel Stone to buy a remote listing.
+			# Server validates inventory, stone count, post markup price, etc.
+			if market_inspected_listing.is_empty():
+				display_game("[color=#FF0000]No listing selected.[/color]")
+				return
+			var nbuy_lid: String = String(market_inspected_listing.get("listing_id", ""))
+			var nbuy_pid: String = String(market_inspected_listing.get("post_id", ""))
+			if nbuy_lid.is_empty() or nbuy_pid.is_empty():
+				display_game("[color=#FF0000]Listing missing identifiers.[/color]")
+				return
+			send_to_server({
+				"type": "market_network_buy",
+				"listing_id": nbuy_lid,
+				"post_id": nbuy_pid,
+			})
 		"market_buy_confirm":
 			if market_selected_listing.is_empty():
 				display_game("[color=#FF0000]No listing selected.[/color]")
@@ -15869,6 +15893,17 @@ func _get_item_bonus_summary(item: Dictionary) -> String:
 		return "[color=%s]+%d %s[/color]" % [resource_color, scaled_val, resource_name]
 	return ""
 
+func _count_inventory_travel_stones() -> int:
+	"""Audit #9 Slice 5 — count Travel Stones the player holds across all
+	inventory slots, summing stack quantities for the consumable stacking
+	system. Used to decide whether to show the network-buy CTA."""
+	var inv = character_data.get("inventory", [])
+	var total: int = 0
+	for it in inv:
+		if String(it.get("type", "")) == "travel_stone":
+			total += int(it.get("quantity", 1))
+	return total
+
 func _is_consumable_type(item_type: String) -> bool:
 	"""Check if an item type is a consumable (potion, scroll, crafted consumable, home stone, etc.)"""
 	return (item_type == "consumable" or  # Crafted consumables (Enchanted Kindling, etc.)
@@ -15881,7 +15916,8 @@ func _is_consumable_type(item_type: String) -> bool:
 			item_type == "soul_gem" or item_type.begins_with("home_stone_") or
 			item_type.begins_with("charm_") or
 			item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or
-			item_type == "floor_skip_charm")
+			item_type == "floor_skip_charm" or
+			item_type == "travel_stone")  # Audit #9 Slice 5 — network buy currency
 
 func _get_slot_for_item_type(item_type: String) -> String:
 	"""Get equipment slot for an item type"""
@@ -21002,6 +21038,9 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 		return "Dungeon-exclusive. +25% chance for an extra item drop on your next 5 dungeon kills."
 	if item_type == "floor_skip_charm":
 		return "Dungeon-exclusive. Out of combat in a dungeon, advances you to the next floor instantly. Useless on the boss floor."
+	# Audit #9 Slice 5 — Travel Stone (network buy currency).
+	if item_type == "travel_stone":
+		return "Spend 1 to buy a listing from a remote post via Network Browse. Item delivered straight to your inventory at the listing post's full markup; no specialty discount applies."
 	# Elixirs - pure % max HP healing
 	if is_tier_value and (item_type == "elixir" or item_type.begins_with("elixir_")):
 		var elixir_pcts = {"elixir_minor": 50, "elixir_greater": 70, "elixir_divine": 100}
@@ -24011,8 +24050,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.455 — Audit #9 Slice 5: Travel Stone / network buy.
+	display_game("[color=#00FF00]v0.9.455[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New consumable: Travel Stone — buy from remote posts without traveling[/color]")
+	display_game("  • [b]Travel Stones let you buy from any market listing in the network browse view without leaving your current post.[/b] Click any remote listing in Network Browse, and if you have at least one Travel Stone in your inventory you'll get a 'Buy (Stone x N)' button. Confirming spends one stone and one valor payment at the listing's full markup price, and the item is delivered straight to your inventory / pouch / egg incubator. The audit's geographic value is preserved: specialty discounts (mine -15% on materials, etc.) still require you to actually visit the specialty post, and threat multipliers still bite at threatened posts. Travel Stones drop from Tier 5+ dungeon chests at low rates, and the Curiosity Trader at exotic posts sells them for 3000 Valor (when they're in today's stock rotation). Audit #9 Slice 5.")
+	display_game("")
+
 	# v0.9.454 — Audit #11 Slice 9: threat-corridor wandering monsters.
-	display_game("[color=#00FF00]v0.9.454[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.454[/color]")
 	display_game("  [color=#FFD700]Threatened-post dungeons now spill their monsters into the surrounding world[/color]")
 	display_game("  • [b]Standing within 80 tiles of an active T2+ world dungeon now puts you in a 'threat corridor.'[/b] Random encounters in this zone spawn THAT dungeon's monster_type at the dungeon's tier-appropriate level instead of the biome default — orc patrols spilling out of an Orc Stronghold, wights drifting from a barrow, etc. Gives the [color=#FF6600]⚠ Under Threat[/color] post marker (v0.9.326) actual mechanical bite. Encounters in the corridor are flagged in combat: '⚠ Spilled from [Dungeon Name] — you're in the threat corridor.' Tells you (a) the encounter is unusual, (b) which dungeon to clear if you want it to stop, and (c) roughly where that dungeon is from your encounter location. T1 dungeons still skip the corridor — newbie content shouldn't terrorize starter posts. Audit #11 Slice 9.")
 	display_game("")
@@ -34838,10 +34883,19 @@ func display_market_network_inspect():
 		display_game("  Listed at: [color=#87CEEB]%s[/color]" % post_name)
 	display_game("  Your Valor: [color=#00FF00]%s[/color]" % format_number(account_valor))
 	display_game("")
+	# Audit #9 Slice 5 — Travel Stone option. When the player has at least one
+	# stone and the listing is remote, the [%s] slot is wired to buy
+	# immediately. Always still show the travel hint so the geographic option
+	# stays discoverable.
 	if here:
 		display_game("[color=#FFD700]Switch to Local browse and buy from this post.[/color]")
 	else:
 		display_game("[color=#808080]Travel to %s and use Browse there to purchase.[/color]" % post_name)
+		var ni_stones: int = _count_inventory_travel_stones()
+		if ni_stones > 0:
+			display_game("[color=#9ACD32]Or press [%s] to spend 1 of your %d Travel Stone%s and buy from here.[/color]" % [get_action_key_name(1), ni_stones, "" if ni_stones == 1 else "s"])
+		else:
+			display_game("[color=#808080]A Travel Stone (T5+ chest drop or Curiosity Trader) would let you buy without traveling.[/color]")
 	display_game("")
 	display_game("[color=#FFD700]%s[/color] Back" % get_action_key_name(0))
 

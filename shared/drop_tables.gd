@@ -541,6 +541,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "ability_tome", "rarity": "rare"},
+		{"weight": 1, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
 	],
 	6: [
 		{"weight": 8, "item_type": "potion_master", "rarity": "common"},
@@ -562,6 +563,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
+		{"weight": 2, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
 	],
 	7: [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
@@ -582,6 +584,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
+		{"weight": 3, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
 	],
 	8: [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
@@ -599,6 +602,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 4, "item_type": "ability_tome", "rarity": "rare"},
+		{"weight": 3, "item_type": "travel_stone", "rarity": "epic"},  # Audit #9 Slice 5 — network buy currency
 	],
 	9: [
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "common"},
@@ -621,6 +625,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"},
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 5, "item_type": "ability_tome", "rarity": "rare"},
+		{"weight": 4, "item_type": "travel_stone", "rarity": "epic"},  # Audit #9 Slice 5 — network buy currency
 	],
 }
 
@@ -923,6 +928,11 @@ const POTION_EFFECTS = {
 	"mysterious_box": {"mystery_box": true},
 	# Cursed Coin - 50% double essence gain, 50% lose half essence (legacy, may be removed)
 	"cursed_coin": {"cursed_coin": true},
+	# === Audit #9 Slice 5 — Travel Stone ===
+	# Spent as currency on the network-browse market_network_buy flow.
+	# Not directly usable from inventory — consumed by the buy handler.
+	# Each stone enables one remote purchase (one listing per stone).
+	"travel_stone": {"travel_stone": true},
 	# === STAT TOMES (Tier 6+) ===
 	# Each tome permanently increases a stat by 1
 	"tome_strength": {"permanent_stat": "strength", "amount": 1},
@@ -4307,6 +4317,11 @@ func _maybe_upgrade_rarity(base_rarity: String) -> String:
 
 func _get_item_name(item_type: String, rarity: String = "common") -> String:
 	"""Get display name for an item type, with prefix for high rarity."""
+	# Audit #9 Slice 5 — Travel Stone. Single-name consumable; no rarity prefix.
+	# Spent as currency on the network browse market_network_buy flow.
+	if item_type == "travel_stone":
+		return "Travel Stone"
+
 	# Special handling for material pouches - name based on rarity
 	if item_type == "essence_pouch":
 		match rarity:
