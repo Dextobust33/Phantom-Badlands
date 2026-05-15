@@ -59,7 +59,15 @@ enum TileType {
 	SHADOW_POOL,    # Audit #5 Slice 18 — nazgul shadow pool nicks HP on step (Nazgul Shadow Keep)
 	DRAGON_BREATH,  # Audit #5 Slice 18 — primordial dragon breath burns HP (Primordial Dragon Domain)
 	COILED_SCALE,   # Audit #5 Slice 18 — world serpent scales cost +2 steps (World Serpent Coil)
-	PHYLACTERY_SHARD # Audit #5 Slice 18 — elder lich phylactery shard buffs next combat (Elder Lich Phylactery)
+	PHYLACTERY_SHARD, # Audit #5 Slice 18 — elder lich phylactery shard buffs next combat (Elder Lich Phylactery)
+	VORPAL_BRIAR,   # Audit #5 Slice 19 — jabberwock thorn briars cost +1 step (Jabberwock Thicket)
+	REALITY_TEAR,   # Audit #5 Slice 19 — cosmic horror reality tear buffs next combat dodge (Cosmic Horror Realm)
+	TIME_FRAGMENT,  # Audit #5 Slice 19 — time weaver fragment buffs next combat damage (Time Weaver Loom)
+	SOUL_VORTEX,    # Audit #5 Slice 19 — death domain soul vortex drains HP on step (Death Domain)
+	CHAOS_WARP,     # Audit #5 Slice 19 — chaos warp burns HP on step (Chaos Sanctum)
+	VOID_WHISPER,   # Audit #5 Slice 19 — void whisper erodes movement +2 steps (Nameless Void)
+	DIVINE_BLOOD,   # Audit #5 Slice 19 — god slayer blood heals on step (God Slayer Arena)
+	DECAY_MOTE      # Audit #5 Slice 19 — entropy decay mote rots HP on step (Entropy End)
 }
 
 # Tile display characters
@@ -118,7 +126,15 @@ const TILE_CHARS = {
 	TileType.SHADOW_POOL: "Q",
 	TileType.DRAGON_BREATH: "F",
 	TileType.COILED_SCALE: "Z",
-	TileType.PHYLACTERY_SHARD: "Y"
+	TileType.PHYLACTERY_SHARD: "Y",
+	TileType.VORPAL_BRIAR: "V",
+	TileType.REALITY_TEAR: "R",
+	TileType.TIME_FRAGMENT: "I",
+	TileType.SOUL_VORTEX: "O",
+	TileType.CHAOS_WARP: "W",
+	TileType.VOID_WHISPER: "N",
+	TileType.DIVINE_BLOOD: "D",
+	TileType.DECAY_MOTE: "U"
 }
 
 # Tile colors for display
@@ -177,7 +193,15 @@ const TILE_COLORS = {
 	TileType.SHADOW_POOL: "#2A0033",
 	TileType.DRAGON_BREATH: "#FF4500",
 	TileType.COILED_SCALE: "#003344",
-	TileType.PHYLACTERY_SHARD: "#AA66FF"
+	TileType.PHYLACTERY_SHARD: "#AA66FF",
+	TileType.VORPAL_BRIAR: "#228B22",
+	TileType.REALITY_TEAR: "#1A0033",
+	TileType.TIME_FRAGMENT: "#4488FF",
+	TileType.SOUL_VORTEX: "#FF00AA",
+	TileType.CHAOS_WARP: "#FF00FF",
+	TileType.VOID_WHISPER: "#444466",
+	TileType.DIVINE_BLOOD: "#FFFFAA",
+	TileType.DECAY_MOTE: "#884466"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -2322,6 +2346,85 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 4:
 						grid[y][x] = TileType.PHYLACTERY_SHARD
+		"jabberwock_thicket":
+			# Vorpal briars ~8% of empty tiles. Persistent +1 step cost — thorny
+			# brambles slow your advance. Closes T5 coverage (last T5 holdout).
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.VORPAL_BRIAR
+		"cosmic_horror_realm":
+			# Reality tears ~6% of empty tiles. Pickup (consumed). Reuses
+			# pending_dungeon_veil meta — 20% monster-miss for 2 rounds in next
+			# combat. T8 defensive pickup — reality distortion grants you brief
+			# invisibility-edge before the boss's Madness Aura.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 6:
+						grid[y][x] = TileType.REALITY_TEAR
+		"time_weaver_loom":
+			# Time fragments ~5% of empty tiles. Pickup (consumed). Reuses
+			# pending_war_banner meta — +15% damage for 3 rounds in next combat.
+			# T8 offensive pickup — fragmented time grants accelerated strikes.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.TIME_FRAGMENT
+		"death_domain":
+			# Soul vortexes ~9% of empty tiles. Persistent 4% max HP damage —
+			# souls being drained as you pass. T8 damage tile.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 9:
+						grid[y][x] = TileType.SOUL_VORTEX
+		"chaos_sanctum":
+			# Chaos warps ~10% of empty tiles. Persistent 5% max HP damage —
+			# raw chaos eats at your form. T9 damage tile, matched to T7
+			# DRAGON_BREATH's payload but at T9 density.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.CHAOS_WARP
+		"nameless_void":
+			# Void whispers ~8% of empty tiles. Persistent +2 step cost — the
+			# void erodes your sense of motion. Same payload as Harpy UPDRAFT
+			# / Ogre SINKING_MUD / Titan STONE_STAIRS / Coiled Scale at T9.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.VOID_WHISPER
+		"god_slayer_arena":
+			# Divine blood ~5% of empty tiles. Pickup heals 8% max HP (consumed).
+			# T9 heal — strongest heal pickup in the pool. God-killing power
+			# restores those who walk in its blood.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.DIVINE_BLOOD
+		"entropy_end":
+			# Decay motes ~11% of empty tiles. Persistent 6% max HP damage —
+			# entropy itself eats at you. T9 damage tile — strongest persistent
+			# damage in the pool. Closes Slice 19 / 53-of-53 coverage.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 11:
+						grid[y][x] = TileType.DECAY_MOTE
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""

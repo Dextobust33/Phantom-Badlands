@@ -23082,6 +23082,58 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		character.set_meta("pending_war_banner", 3)
 		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#AA66FF]A shard of the lich's phylactery flares — death's edge whispers to your blade. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 19 theme tag — Jabberwock Thicket VORPAL_BRIAR +1 step cost.
+	# Persistent. Closes T5 coverage. Last T5 holdout themed.
+	elif tile == DungeonDatabaseScript.TileType.VORPAL_BRIAR:
+		character.dungeon_floor_steps += 1
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#228B22]Vorpal thorns snag your boots (+1 step).[/color]"})
+	# Audit #5 Slice 19 theme tag — Cosmic Horror Realm REALITY_TEAR (consumed buff).
+	# Reuses pending_dungeon_veil meta — 20% monster-miss for 2 rounds in next combat.
+	# T8 defensive — reality distortion briefly hides you.
+	elif tile == DungeonDatabaseScript.TileType.REALITY_TEAR:
+		character.set_meta("pending_dungeon_veil", 2)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#1A0033]A tear in reality blurs your outline. [color=#00FFFF]20% monster-miss for 2 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 19 theme tag — Time Weaver Loom TIME_FRAGMENT (consumed buff).
+	# Reuses pending_war_banner meta — +15% damage for 3 rounds in next combat.
+	# T8 offensive — fragmented time grants accelerated strikes.
+	elif tile == DungeonDatabaseScript.TileType.TIME_FRAGMENT:
+		character.set_meta("pending_war_banner", 3)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#4488FF]Shattered time flows through your fingers. [color=#FFAA00]+15% damage for 3 rounds in your next combat.[/color][/color]"})
+	# Audit #5 Slice 19 theme tag — Death Domain SOUL_VORTEX persistent damage.
+	# 4% max HP, min 1 max 500. T8 — souls drained as you pass.
+	elif tile == DungeonDatabaseScript.TileType.SOUL_VORTEX:
+		var vortex_dmg = clamp(int(character.get_total_max_hp() * 0.04), 1, 500)
+		character.current_hp = max(1, character.current_hp - vortex_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF00AA]A soul-vortex tugs at your essence ([color=#FF4444]-%d HP[/color]).[/color]" % vortex_dmg})
+	# Audit #5 Slice 19 theme tag — Chaos Sanctum CHAOS_WARP persistent damage.
+	# 5% max HP, min 1 max 700. T9 — raw chaos eats at form.
+	elif tile == DungeonDatabaseScript.TileType.CHAOS_WARP:
+		var chaos_dmg = clamp(int(character.get_total_max_hp() * 0.05), 1, 700)
+		character.current_hp = max(1, character.current_hp - chaos_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF00FF]Raw chaos warps you in passing ([color=#FF4444]-%d HP[/color]).[/color]" % chaos_dmg})
+	# Audit #5 Slice 19 theme tag — Nameless Void VOID_WHISPER +2 step cost.
+	# Persistent. T9 — the void erodes your sense of motion.
+	elif tile == DungeonDatabaseScript.TileType.VOID_WHISPER:
+		character.dungeon_floor_steps += 2
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#444466]A nameless whisper steals your bearings (+2 steps).[/color]"})
+	# Audit #5 Slice 19 theme tag — God Slayer Arena DIVINE_BLOOD heals on step.
+	# 8% max HP, min 1 max 1000. Strongest heal pickup in the pool. Consumed.
+	# God-killing power restores those who walk in its blood.
+	elif tile == DungeonDatabaseScript.TileType.DIVINE_BLOOD:
+		var divine_heal = clamp(int(character.get_total_max_hp() * 0.08), 1, 1000)
+		var max_hp_db = character.get_total_max_hp()
+		character.current_hp = min(max_hp_db, character.current_hp + divine_heal)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.EMPTY
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFFFAA]Divine blood mends you ([color=#00FF00]+%d HP[/color]).[/color]" % divine_heal})
+	# Audit #5 Slice 19 theme tag — Entropy End DECAY_MOTE persistent damage.
+	# 6% max HP, min 1 max 1000. Strongest persistent damage in pool. T9.
+	# Closes Slice 19 / 53-of-53 coverage.
+	elif tile == DungeonDatabaseScript.TileType.DECAY_MOTE:
+		var decay_dmg = clamp(int(character.get_total_max_hp() * 0.06), 1, 1000)
+		character.current_hp = max(1, character.current_hp - decay_dmg)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#884466]Entropy itself rots at you ([color=#FF4444]-%d HP[/color]).[/color]" % decay_dmg})
 	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
 	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false

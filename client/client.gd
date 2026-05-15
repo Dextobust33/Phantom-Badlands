@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.462 — Audit #5 Slice 19: final 8 theme tiles, 53/53 dungeons complete.
+	display_game("[color=#00FF00]v0.9.462[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]ALL 53 DUNGEONS NOW HAVE THEMED ENVIRONMENTAL TILES — Audit #5 dungeon themes 100%[/color]")
+	display_game("  • [b]The final eight dungeons gained themed environmental tiles, closing out Audit #5's headline OVERHAUL of dungeon distinctness.[/b] The new tiles span T5/T8/T9 (the last gaps): [color=#228B22]Vorpal Briar (V)[/color] in Jabberwock Thicket — thorny brambles cost +1 step (closes T5); [color=#A335EE]Reality Tear (R)[/color] in Cosmic Horror Realm — banks 20% monster-miss for 2 rounds of your next combat; [color=#4488FF]Time Fragment (I)[/color] in Time Weaver Loom — banks +15% damage for 3 rounds of your next combat; [color=#FF00AA]Soul Vortex (O)[/color] in Death Domain — persistent ~4% max HP drain; [color=#FF00FF]Chaos Warp (W)[/color] in Chaos Sanctum — persistent ~5% max HP damage; [color=#9999AA]Void Whisper (N)[/color] in Nameless Void — costs +2 steps to cross; [color=#FFFFAA]Divine Blood (D)[/color] in God Slayer Arena — heals ~8% max HP on step, the strongest heal tile in the pool; [color=#884466]Decay Mote (U)[/color] in Entropy End — persistent ~6% max HP rot, the strongest persistent damage tile in the pool. Theme tile coverage is now [color=#FFD700]53 of 53 dungeons (100%)[/color]. Combined with the 52 unique boss signatures (Slices 1-12), Audit #5's twin OVERHAUL decisions — bosses-not-unique and dungeons-feel-same — are both fully realized. Audit #5 Slice 19.")
+	display_game("")
+
 	# v0.9.461 — Audit #5 Slice 18: 6 more dungeon theme tiles (T6+T7 batch).
-	display_game("[color=#00FF00]v0.9.461[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.461[/color]")
 	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles — all of T6 done[/color]")
 	display_game("  • [b]Ancient Dragon Lair, Golem Foundry, Nazgul Shadow Keep, Primordial Dragon Domain, World Serpent Coil, and Elder Lich Phylactery each gained a themed environmental tile,[/b] finishing T6 coverage and bringing T7 to 3 of 4. The new tiles: [color=#FFD700]Gold Hoard (G)[/color] in Ancient Dragon Lair — ancient dragons sleep on coin piles, step to grab 5-10 Valor (consumed); [color=#909090]Molten Slag (S)[/color] in Golem Foundry — hot industrial floor costs +1 step; [color=#A335EE]Shadow Pool (Q)[/color] in Nazgul Shadow Keep — cold shadow saps ~3% max HP on step; [color=#FF4500]Dragon Breath (F)[/color] in Primordial Dragon Domain — lingering primordial fire burns ~5% max HP, the strongest persistent damage tile in the pool; [color=#003344]Coiled Scale (Z)[/color] in World Serpent Coil — the floor IS the serpent, costs +2 steps to cross; [color=#AA66FF]Phylactery Shard (Y)[/color] in Elder Lich Phylactery — rare buff pickup that banks +15% damage for 3 rounds of your next combat. Coverage now [color=#88FF88]45 of 53 dungeons themed[/color]. Audit #5 Slice 18.")
 	display_game("")
@@ -33723,6 +33729,30 @@ const DUNGEON_THEME_LEGEND = {
 	"elder_lich_phylactery": [
 		{"glyph": "Y", "color": "#AA66FF", "desc": "Phylactery shards — fragments of the elder lich's soul vessel. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per shard (consumed). Rarest placement — pairs with Death Mark."}
 	],
+	"jabberwock_thicket": [
+		{"glyph": "V", "color": "#228B22", "desc": "Vorpal briars — thorny brambles that snag your boots. Costs +1 step to push through. Persistent — plan paths around the green tangles."}
+	],
+	"cosmic_horror_realm": [
+		{"glyph": "R", "color": "#1A0033", "desc": "Reality tears — fractures in the world where space briefly breaks. Touching one banks 20% monster-miss for the first 2 rounds of your next combat. One-time per tear (consumed)."}
+	],
+	"time_weaver_loom": [
+		{"glyph": "I", "color": "#4488FF", "desc": "Time fragments — shattered moments still glowing with potential. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per fragment (consumed)."}
+	],
+	"death_domain": [
+		{"glyph": "O", "color": "#FF00AA", "desc": "Soul vortexes — places where the dead are still being drained. Stepping ticks ~4% of your max HP. Persistent — plan paths around the pink swirls."}
+	],
+	"chaos_sanctum": [
+		{"glyph": "W", "color": "#FF00FF", "desc": "Chaos warps — raw chaos eats at your form. Stepping ticks ~5% of your max HP. Persistent. T9 damage tile — plan paths very carefully."}
+	],
+	"nameless_void": [
+		{"glyph": "N", "color": "#444466", "desc": "Void whispers — the void erodes your sense of motion. Costs +2 steps to cross. Persistent — plan paths around the dim patches."}
+	],
+	"god_slayer_arena": [
+		{"glyph": "D", "color": "#FFFFAA", "desc": "Divine blood — god-killing power lingers in pools. Step on one to heal ~8% of your max HP. Strongest heal tile in the pool. One-time per pool (consumed)."}
+	],
+	"entropy_end": [
+		{"glyph": "U", "color": "#884466", "desc": "Decay motes — entropy itself rots at you. Stepping ticks ~6% of your max HP. Strongest persistent damage tile in the pool. Persistent. Plan T9 paths VERY carefully."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -34275,6 +34305,22 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "Z", "color": "#003344"}
 		54:  # PHYLACTERY_SHARD — Elder Lich Phylactery theme tile, dmg buff pickup (v0.9.461)
 			return {"char": "Y", "color": "#AA66FF"}
+		55:  # VORPAL_BRIAR — Jabberwock Thicket theme tile, +1 step (v0.9.462)
+			return {"char": "V", "color": "#228B22"}
+		56:  # REALITY_TEAR — Cosmic Horror Realm theme tile, miss-chance pickup (v0.9.462)
+			return {"char": "R", "color": "#1A0033"}
+		57:  # TIME_FRAGMENT — Time Weaver Loom theme tile, dmg buff pickup (v0.9.462)
+			return {"char": "I", "color": "#4488FF"}
+		58:  # SOUL_VORTEX — Death Domain theme tile, persistent damage (v0.9.462)
+			return {"char": "O", "color": "#FF00AA"}
+		59:  # CHAOS_WARP — Chaos Sanctum theme tile, persistent damage (v0.9.462)
+			return {"char": "W", "color": "#FF00FF"}
+		60:  # VOID_WHISPER — Nameless Void theme tile, +2 step (v0.9.462)
+			return {"char": "N", "color": "#444466"}
+		61:  # DIVINE_BLOOD — God Slayer Arena theme tile, strongest heal pickup (v0.9.462)
+			return {"char": "D", "color": "#FFFFAA"}
+		62:  # DECAY_MOTE — Entropy End theme tile, strongest persistent damage (v0.9.462)
+			return {"char": "U", "color": "#884466"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
