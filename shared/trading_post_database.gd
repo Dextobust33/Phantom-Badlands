@@ -855,15 +855,78 @@ const CATEGORY_STOCK_POOLS: Dictionary = {
 		{"item_type": "scroll_vampirism", "rarity": "common", "price": 260, "supply_category": "consumable", "display_name": "Scroll of Vampirism"},
 		{"item_type": "elixir_divine", "rarity": "common", "price": 500, "supply_category": "consumable", "display_name": "Divine Elixir"},
 	],
+	# === Audit #11 Slice 10 — Vendors for the remaining 5 post categories ===
+	# Same pattern as Slice 8 (mine/farm/shrine + exotic from #9 Slice 3b).
+	# Each category gets a themed identity to differentiate destination posts.
+	"haven": [
+		# Innkeeper — restoration + traveler-supplies theme. Mid-tier potions
+		# and elixirs across all four resources. Friendly mid-price stock.
+		{"item_type": "elixir", "rarity": "common", "price": 350, "supply_category": "consumable", "display_name": "Elixir"},
+		{"item_type": "potion_greater", "rarity": "common", "price": 120, "supply_category": "consumable", "display_name": "Greater Health Potion"},
+		{"item_type": "mana_greater", "rarity": "common", "price": 120, "supply_category": "consumable", "display_name": "Greater Mana Potion"},
+		{"item_type": "stamina_greater", "rarity": "common", "price": 120, "supply_category": "consumable", "display_name": "Greater Stamina Potion"},
+		{"item_type": "energy_greater", "rarity": "common", "price": 120, "supply_category": "consumable", "display_name": "Greater Energy Potion"},
+		{"item_type": "elixir_minor", "rarity": "common", "price": 80, "supply_category": "consumable", "display_name": "Minor Elixir"},
+	],
+	"market": [
+		# Trade Master — generalist mix. Sample one item from each other
+		# specialty so a market post reads as "a bit of everything" by design.
+		{"item_type": "home_stone_egg", "rarity": "uncommon", "price": 800, "supply_category": "consumable", "display_name": "Home Stone (Egg)"},
+		{"item_type": "mysterious_box", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Mysterious Box"},
+		{"item_type": "elixir", "rarity": "common", "price": 350, "supply_category": "consumable", "display_name": "Elixir"},
+		{"item_type": "scroll_haste", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Haste"},
+		{"item_type": "charm_taunt", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Charm of Taunt"},
+		{"item_type": "potion_greater", "rarity": "common", "price": 120, "supply_category": "consumable", "display_name": "Greater Health Potion"},
+	],
+	"tower": [
+		# Lookout — scout / foresight theme. Tools for hunting and spotting:
+		# the lantern + monster select scroll let you steer encounters, and
+		# precision plays into the "scout's eye" vibe.
+		{"item_type": "reclaimer_lantern", "rarity": "rare", "price": 900, "supply_category": "consumable", "display_name": "Reclaimer Lantern"},
+		{"item_type": "scroll_monster_select", "rarity": "common", "price": 240, "supply_category": "consumable", "display_name": "Scroll of Monster Selection"},
+		{"item_type": "scroll_precision", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Precision"},
+		{"item_type": "elixir", "rarity": "common", "price": 350, "supply_category": "consumable", "display_name": "Elixir"},
+		{"item_type": "mysterious_box", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Mysterious Box"},
+		{"item_type": "charm_taunt", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Charm of Taunt"},
+	],
+	"camp": [
+		# Outfitter — basic traveler supplies. Cheap entry-tier potions across
+		# all four resources, plus a couple of low-cost utility items. Newbie
+		# friendly pricing so first-timers near camp posts can stock up.
+		{"item_type": "potion_standard", "rarity": "common", "price": 60, "supply_category": "consumable", "display_name": "Standard Health Potion"},
+		{"item_type": "mana_standard", "rarity": "common", "price": 60, "supply_category": "consumable", "display_name": "Standard Mana Potion"},
+		{"item_type": "stamina_standard", "rarity": "common", "price": 60, "supply_category": "consumable", "display_name": "Standard Stamina Potion"},
+		{"item_type": "energy_standard", "rarity": "common", "price": 60, "supply_category": "consumable", "display_name": "Standard Energy Potion"},
+		{"item_type": "cursed_coin", "rarity": "common", "price": 75, "supply_category": "consumable", "display_name": "Cursed Coin"},
+		{"item_type": "scroll_haste", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Haste"},
+	],
+	"fortress": [
+		# Quartermaster — heavy combat + equipment theme. Wall-of-iron stock
+		# for the serious raid prep: equipment-stone, defensive wards, boss-
+		# slayer for hard fights. Pairs well with the fortress posts (which
+		# get the equipment specialty discount from #9 Slice 3).
+		{"item_type": "home_stone_equipment", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Home Stone (Equipment)"},
+		{"item_type": "scroll_forcefield", "rarity": "common", "price": 240, "supply_category": "consumable", "display_name": "Scroll of Forcefield"},
+		{"item_type": "scroll_stone_skin", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Stone Skin"},
+		{"item_type": "scroll_rage", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Rage"},
+		{"item_type": "boss_slayer_tonic", "rarity": "rare", "price": 1200, "supply_category": "consumable", "display_name": "Boss Slayer Tonic"},
+		{"item_type": "charm_taunt", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Charm of Taunt"},
+	],
 }
 
 # Per-category vendor presentation: NPC name, market-row tag, hex tag color,
 # slots-per-day. Categories absent from this dict have no NPC stock.
 const CATEGORY_VENDOR_CONFIG: Dictionary = {
-	"exotic": {"vendor_name": "Curiosity Trader", "tag": "EXOTIC", "color": "#A335EE", "slots_per_day": 4},
-	"mine":   {"vendor_name": "Forge Master",     "tag": "FORGE",  "color": "#FF8C42", "slots_per_day": 3},
-	"farm":   {"vendor_name": "Provisioner",      "tag": "FARM",   "color": "#80E060", "slots_per_day": 3},
-	"shrine": {"vendor_name": "Mystic",           "tag": "SHRINE", "color": "#7FD7FF", "slots_per_day": 3},
+	"exotic":   {"vendor_name": "Curiosity Trader", "tag": "EXOTIC",   "color": "#A335EE", "slots_per_day": 4},
+	"mine":     {"vendor_name": "Forge Master",     "tag": "FORGE",    "color": "#FF8C42", "slots_per_day": 3},
+	"farm":     {"vendor_name": "Provisioner",      "tag": "FARM",     "color": "#80E060", "slots_per_day": 3},
+	"shrine":   {"vendor_name": "Mystic",           "tag": "SHRINE",   "color": "#7FD7FF", "slots_per_day": 3},
+	# Slice 10 — remaining 5 categories.
+	"haven":    {"vendor_name": "Innkeeper",        "tag": "HAVEN",    "color": "#FFE0A0", "slots_per_day": 3},
+	"market":   {"vendor_name": "Trade Master",     "tag": "MARKET",   "color": "#FFA070", "slots_per_day": 3},
+	"tower":    {"vendor_name": "Lookout",          "tag": "TOWER",    "color": "#88AAFF", "slots_per_day": 3},
+	"camp":     {"vendor_name": "Outfitter",        "tag": "CAMP",     "color": "#AA8866", "slots_per_day": 3},
+	"fortress": {"vendor_name": "Quartermaster",    "tag": "FORTRESS", "color": "#A0A0A0", "slots_per_day": 3},
 }
 
 # Back-compat alias — Slice 3b client code may reference EXOTIC_STOCK_POOL.
