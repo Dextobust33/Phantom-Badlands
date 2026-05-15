@@ -6322,6 +6322,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"is_rare_variant": monster.get("is_rare_variant", false),  # For visual indicator
 		"is_elite": monster.get("is_elite", false),  # Elite variant — stronger, better loot
 		"variant_type": monster.get("variant_type", ""),  # Specific variant ID for client-side border tinting on monster ASCII art
+		# Audit #11 Slice 9 — threat-corridor encounter tag. When the server
+		# spawned this monster via threat-zone bias, these fields name the
+		# source dungeon so the client can flag the encounter visually.
+		# Empty string when this is a normal random encounter.
+		"threat_source": monster.get("threat_source", ""),
+		"threat_color": monster.get("threat_color", ""),
 		"can_act": combat.player_can_act,
 		# Audit #1 Slice 6a — deck/hand. Client renders the hand as cards
 		# in the combat scene; deck/discard counts ride along for the
