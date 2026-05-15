@@ -18307,6 +18307,29 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 				if srcs.size() > 0:
 					sources_map[m_id] = srcs
 
+	# Audit #8 Layer 7 — skill progression preview. Pick the next 3 locked
+	# recipes by lowest skill_required above current skill_level, skipping
+	# specialist_gated entries (player can't use them) and undiscovered ones
+	# (would leak unknown content). Player sees what's coming up if they keep
+	# leveling — closes the audit's "What unlocks at higher skill?" question
+	# and finishes the 7-layer transparency stack.
+	var upcoming_pool: Array = []
+	for r in recipe_list:
+		if not r.get("locked", false):
+			continue
+		if r.get("undiscovered", false):
+			continue
+		if r.get("specialist_gated", false):
+			continue
+		upcoming_pool.append({
+			"name": r.get("name", "Unknown"),
+			"skill_required": int(r.get("skill_required", 0)),
+			"output_type": r.get("output_type", ""),
+			"levels_away": int(r.get("skill_required", 0)) - skill_level,
+		})
+	upcoming_pool.sort_custom(func(a, b): return int(a.skill_required) < int(b.skill_required))
+	var upcoming_unlocks: Array = upcoming_pool.slice(0, 3)
+
 	send_to_peer(peer_id, {
 		"type": "craft_list",
 		"skill": skill_name,
@@ -18317,6 +18340,7 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		"materials": effective_mats,
 		"pouch_materials": character.crafting_materials,
 		"material_sources": sources_map,
+		"upcoming_unlocks": upcoming_unlocks,
 	})
 
 func _get_effective_craft_materials(peer_id: int) -> Dictionary:

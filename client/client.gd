@@ -932,6 +932,7 @@ var crafting_skill: String = ""  # "blacksmithing", "alchemy", "enchanting"
 var crafting_recipes: Array = []  # Available recipes from server
 var crafting_materials: Dictionary = {}  # Player's materials
 var crafting_material_sources: Dictionary = {}  # Audit #7/#8: material_id -> Array of source dicts (where to find each material)
+var crafting_upcoming_unlocks: Array = []  # Audit #8 Layer 7: next 3 locked recipes {name, skill_required, output_type, levels_away}
 var hud_area_level: int = 0  # Last known area level for Status HUD
 var hud_area_is_hotspot: bool = false
 var hud_area_is_safe: bool = true
@@ -24006,8 +24007,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.447 — Audit #8 Layer 7: skill progression preview.
+	display_game("[color=#00FF00]v0.9.447[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafting: 'Coming Up' preview shows what unlocks at higher skill[/color]")
+	display_game("  • [b]The crafting recipe list now ends with a 'Coming Up' footer naming the next 3 recipes you'll unlock at higher skill levels[/b], with the level required and how many levels away each one is. Tells you what you're working toward when you grind a craft skill — and at a glance whether the next thing is a 1-level bump or a 20-level slog. Closes layer 7 (the final layer) of the crafting transparency stack — every recipe now answers what you can make, what materials you need, where to find them, what quality odds look like, what it sells for, and now what you're building toward. Visual panel mirrored. Audit #8 Layer 7.")
+	display_game("")
+
 	# v0.9.446 — Audit #14 Slice 5: Clan Vault MVP.
-	display_game("[color=#00FF00]v0.9.446[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.446[/color]")
 	display_game("  [color=#FFD700]New: Clan Vault — shared item storage for clan members[/color]")
 	display_game("  • [b]Clans now have a shared vault for up to 30 items.[/b] Any clan member can deposit items from their inventory or withdraw items the clan has stored. Use [color=#88FF88]/vault[/color] to see contents, [color=#88FF88]/vault deposit <slot>[/color] to put your inventory slot into the vault, and [color=#88FF88]/vault take <N>[/color] to pull a vault slot into your inventory. When you deposit or withdraw, every online clan member sees the updated vault automatically. UI integration with the clan panel will come in a follow-up — this MVP is chat-command only so the underlying mechanic is proved first. Audit #14 Slice 5.")
 	display_game("")
@@ -31711,6 +31718,8 @@ func handle_craft_list(message: Dictionary):
 	crafting_materials = message.get("materials", {})
 	# Audit #7/#8 transparency — material → sources map sent with recipes
 	crafting_material_sources = message.get("material_sources", {})
+	# Audit #8 Layer 7 — next 3 locked recipes by lowest skill_required
+	crafting_upcoming_unlocks = message.get("upcoming_unlocks", [])
 	crafting_selected_recipe = -1
 	if crafting_preserve_page:
 		# Returning from craft result — stay on same page, clamp if recipes changed
@@ -31823,6 +31832,21 @@ func display_craft_recipe_list():
 				display_game("[color=#888888]    %s[/color]" % description)
 			if mat_line != "":
 				display_game(mat_line)
+
+	# Audit #8 Layer 7 — Coming Up preview. Shows next 3 recipes the player will
+	# unlock at higher skill levels, so they know what they're working toward.
+	# Skipped when empty (player maxed this skill or specialist-gated everything).
+	if not crafting_upcoming_unlocks.is_empty() and crafting_page == total_pages - 1:
+		display_game("")
+		display_game("[color=#9ACD32]── Coming Up ──[/color]")
+		for unlock in crafting_upcoming_unlocks:
+			var u_name = unlock.get("name", "Unknown")
+			var u_req = int(unlock.get("skill_required", 0))
+			var u_type = String(unlock.get("output_type", ""))
+			var u_away = int(unlock.get("levels_away", 0))
+			var away_label = "%d level%s away" % [u_away, "" if u_away == 1 else "s"]
+			var type_tag = " [color=#666666](%s)[/color]" % u_type if u_type != "" else ""
+			display_game("  [color=#888888]Lv%d[/color] [color=#AAAAAA]%s[/color]%s [color=#9ACD32]— %s[/color]" % [u_req, u_name, type_tag, away_label])
 
 	display_game("")
 	display_game("[%s] Back | [%s/%s] Prev/Next Page" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
@@ -31982,6 +32006,8 @@ func _populate_craft_panel() -> void:
 		return
 	# When entered via station the player can't switch skills; otherwise the chips are useful.
 	crafting_panel.set_allow_skill_switch(not crafting_entered_via_station)
+	# Audit #8 Layer 7 — set before populate so the rebuild includes the footer.
+	crafting_panel.set_upcoming_unlocks(crafting_upcoming_unlocks)
 	crafting_panel.populate(
 		crafting_skill,
 		crafting_recipes,
