@@ -45,9 +45,15 @@ enum TileType {
 	TORN_CARRION,  # Audit #5 Slice 16 — gnoll pack-kill scrap heals on step (Gnoll Pack Den)
 	BOG_PATCH,     # Audit #5 Slice 16 — kelpie marsh muck costs +1 step (Kelpie Marsh)
 	FEATHER_DOWN,  # Audit #5 Slice 16 — wyvern down patch heals on step (Wyvern Roost)
-	SINKING_MUD,   # Audit #5 Slice 16 — ogre bog mud costs +2 steps (Ogre Bog)
-	HELLFIRE_RUNE, # Audit #5 Slice 16 — demon rune burns HP on step (Demon Gate)
-	WIND_CURRENT   # Audit #5 Slice 16 — gryphon updraft buffs next combat damage (Gryphon Aerie)
+	SINKING_MUD,    # Audit #5 Slice 16 — ogre bog mud costs +2 steps (Ogre Bog)
+	HELLFIRE_RUNE,  # Audit #5 Slice 16 — demon rune burns HP on step (Demon Gate)
+	WIND_CURRENT,   # Audit #5 Slice 16 — gryphon updraft buffs next combat damage (Gryphon Aerie)
+	SOUND_ECHO,     # Audit #5 Slice 17 — shrieker echo disorients +1 step (Shrieker Caverns)
+	VENOM_DRIP,     # Audit #5 Slice 17 — chimaera serpent venom nicks HP (Chimaera Gorge)
+	ALLURE_PETAL,   # Audit #5 Slice 17 — succubus petal heals on step (Succubus Parlor)
+	SOUL_RESIDUE,   # Audit #5 Slice 17 — lich soul residue buffs next combat dodge (Lich Sanctum)
+	INFERNAL_BRAZIER, # Audit #5 Slice 17 — demon lord brazier buffs next combat damage (Demon Lord Throne)
+	STONE_STAIRS    # Audit #5 Slice 17 — titan-scale stairs cost +2 steps (Titan Colosseum)
 }
 
 # Tile display characters
@@ -94,7 +100,13 @@ const TILE_CHARS = {
 	TileType.FEATHER_DOWN: "f",
 	TileType.SINKING_MUD: "v",
 	TileType.HELLFIRE_RUNE: "z",
-	TileType.WIND_CURRENT: "a"
+	TileType.WIND_CURRENT: "a",
+	TileType.SOUND_ECHO: "h",
+	TileType.VENOM_DRIP: "k",
+	TileType.ALLURE_PETAL: "l",
+	TileType.SOUL_RESIDUE: "j",
+	TileType.INFERNAL_BRAZIER: "e",
+	TileType.STONE_STAIRS: "H"
 }
 
 # Tile colors for display
@@ -141,7 +153,13 @@ const TILE_COLORS = {
 	TileType.FEATHER_DOWN: "#FFE4B5",
 	TileType.SINKING_MUD: "#5D4037",
 	TileType.HELLFIRE_RUNE: "#DC143C",
-	TileType.WIND_CURRENT: "#B0E0E6"
+	TileType.WIND_CURRENT: "#B0E0E6",
+	TileType.SOUND_ECHO: "#B080FF",
+	TileType.VENOM_DRIP: "#66CC00",
+	TileType.ALLURE_PETAL: "#FF80CC",
+	TileType.SOUL_RESIDUE: "#6644AA",
+	TileType.INFERNAL_BRAZIER: "#FF6600",
+	TileType.STONE_STAIRS: "#909090"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -2165,6 +2183,67 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 5:
 						grid[y][x] = TileType.WIND_CURRENT
+		"shrieker_caverns":
+			# Sound echoes ~8% of empty tiles. Persistent +1 step cost — the
+			# Shrieker's resonant echoes disorient and slow you. Pairs with
+			# Sonic Echo boss sig (per-turn stack, 4 = 15% burst).
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.SOUND_ECHO
+		"chimaera_gorge":
+			# Venom drips ~9% of empty tiles. Persistent 2% max HP poison damage —
+			# the chimaera's serpent head drips venom from cave ledges. Pairs
+			# with Triple Threat (3-head rotation: poison/burn/slow).
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 9:
+						grid[y][x] = TileType.VENOM_DRIP
+		"succubus_parlor":
+			# Allure petals ~6% of empty tiles. Pickup heals 4% max HP (consumed).
+			# Same payload as Dragon Hatchery WARM_NEST but pink-themed and at
+			# the same T4 tier. Reward for not getting Charmed by the boss.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 6:
+						grid[y][x] = TileType.ALLURE_PETAL
+		"lich_sanctum":
+			# Soul residue ~8% of empty tiles. Pickup (consumed). Reuses
+			# pending_dungeon_veil meta — 20% monster-miss for 2 rounds in
+			# next combat. T5 defensive buff — the lich's spilled essence
+			# wraps you in shadow.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.SOUL_RESIDUE
+		"demon_lord_throne":
+			# Infernal braziers ~5% of empty tiles. Pickup (consumed). Reuses
+			# pending_war_banner meta — +15% damage for 3 rounds in next combat.
+			# Rare-density T5 offensive buff — drawing power from infernal fire.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.INFERNAL_BRAZIER
+		"titan_colosseum":
+			# Stone stairs ~8% of empty tiles. Persistent +2 step cost — the
+			# titans built EVERYTHING at giant scale. Same payload as Harpy
+			# Cliffs UPDRAFT but at T5 colosseum density.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.STONE_STAIRS
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
