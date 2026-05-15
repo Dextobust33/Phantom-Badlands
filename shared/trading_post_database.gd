@@ -784,6 +784,77 @@ func get_specialty_summary(post_id: String) -> String:
 func get_post_category(post_id: String) -> String:
 	return POST_CATEGORIES.get(post_id, "default")
 
+# Audit #9 Slice 3b — exotic post rare-item access.
+#
+# Each exotic post hosts a "Curiosity Trader" with a small NPC inventory of
+# rare items that rotates daily. Items are listed alongside player listings
+# at the post, flagged with is_npc=true so the browse handler skips supply
+# markup + specialty discount on them (NPC prices are fixed).
+#
+# The daily rotation is deterministic: hash(post_id, days_since_epoch)
+# picks the same EXOTIC_SLOTS_PER_DAY items from the pool every time on a
+# given day, so all players visiting the same exotic post see the same
+# stock that day. Tomorrow rolls a fresh subset.
+#
+# Items are unlimited stock — players can buy as many as they want at the
+# listed price all day. No daily-purchase tracking. The intent is "destination
+# vendor" — exotic posts are a reason to travel, not a daily limited resource.
+const EXOTIC_SLOTS_PER_DAY := 4
+const EXOTIC_STOCK_POOL: Array = [
+	{"item_type": "home_stone_egg", "rarity": "uncommon", "price": 800, "supply_category": "consumable", "display_name": "Home Stone (Egg)"},
+	{"item_type": "home_stone_supplies", "rarity": "uncommon", "price": 600, "supply_category": "consumable", "display_name": "Home Stone (Supplies)"},
+	{"item_type": "home_stone_equipment", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Home Stone (Equipment)"},
+	{"item_type": "home_stone_companion", "rarity": "rare", "price": 3000, "supply_category": "consumable", "display_name": "Home Stone (Companion)"},
+	{"item_type": "mysterious_box", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Mysterious Box"},
+	{"item_type": "boss_slayer_tonic", "rarity": "rare", "price": 1200, "supply_category": "consumable", "display_name": "Boss Slayer Tonic"},
+	{"item_type": "reclaimer_lantern", "rarity": "rare", "price": 900, "supply_category": "consumable", "display_name": "Reclaimer Lantern"},
+	{"item_type": "floor_skip_charm", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Floor Skip Charm"},
+	{"item_type": "elixir", "rarity": "common", "price": 350, "supply_category": "consumable", "display_name": "Elixir"},
+	{"item_type": "cursed_coin", "rarity": "common", "price": 75, "supply_category": "consumable", "display_name": "Cursed Coin"},
+]
+
+func resolve_post_category(post_dict: Dictionary, post_id: String) -> String:
+	"""Audit #9 Slice 3b — resolve a trading post's category from either source.
+	Procedural NPC posts carry "category" on the post dict; legacy fixed posts
+	in TRADING_POSTS use the separate POST_CATEGORIES lookup. Callers with the
+	live post dict (e.g. at_trading_post[peer_id]) should prefer this over
+	get_post_category(post_id) so procedural posts resolve correctly."""
+	var dict_cat: String = String(post_dict.get("category", ""))
+	if dict_cat != "":
+		return dict_cat
+	return POST_CATEGORIES.get(post_id, "default")
+
+func get_exotic_daily_stock(post_id: String) -> Array:
+	"""Audit #9 Slice 3b — deterministic per-post daily NPC stock. Hashes
+	post_id with days-since-epoch so every visitor sees the same items
+	on a given day. Tomorrow's stock rolls a fresh hash. Returns an Array
+	of EXOTIC_SLOTS_PER_DAY pool entries (or fewer if the pool is small)."""
+	if EXOTIC_STOCK_POOL.is_empty():
+		return []
+	# Days since epoch — UTC truncation is fine, all players use the
+	# server's clock so the day boundary is consistent.
+	var seconds_since_epoch: int = int(Time.get_unix_time_from_system())
+	var day_index: int = seconds_since_epoch / 86400
+	var seed_str := "%s|%d" % [post_id, day_index]
+	var seed_hash: int = seed_str.hash()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_hash
+	# Sample without replacement: shuffle pool indices, take first N.
+	var indices: Array = []
+	for i in range(EXOTIC_STOCK_POOL.size()):
+		indices.append(i)
+	# Fisher-Yates on indices using the seeded RNG.
+	for i in range(indices.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = indices[i]
+		indices[i] = indices[j]
+		indices[j] = tmp
+	var picked: Array = []
+	var limit: int = mini(EXOTIC_SLOTS_PER_DAY, EXOTIC_STOCK_POOL.size())
+	for i in range(limit):
+		picked.append(EXOTIC_STOCK_POOL[indices[i]])
+	return picked
+
 func get_post_map_colors(post_id: String) -> Dictionary:
 	var category = get_post_category(post_id)
 	return POST_MAP_COLORS.get(category, POST_MAP_COLORS["default"])

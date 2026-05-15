@@ -24011,8 +24011,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.450 — Audit #9 Slice 3b: Exotic post rare-item access.
+	display_game("[color=#00FF00]v0.9.450[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Exotic posts now host a Curiosity Trader with rotating rare stock[/color]")
+	display_game("  • [b]Visit an exotic post and you'll find a Curiosity Trader's daily stock at the top of the market browse, tagged [color=#A335EE][EXOTIC][/color].[/b] Four rotating items per post per day, picked deterministically from a curated pool of ten rare items — Home Stones (Egg / Supplies / Equipment / Companion), Mysterious Box, Boss Slayer Tonic, Reclaimer Lantern, Floor Skip Charm, Elixir, and Cursed Coin. Every player visiting the same exotic post sees the same stock on the same day; tomorrow rolls a fresh selection so the post stays worth checking. NPC prices are fixed — no supply markup, no specialty discount applies — but a threatened post still hikes everything (bandits charge more regardless of source). Stock is unlimited per day, so the items are a destination-vendor reason to travel to exotics rather than a daily limited resource. Closes the audit captured decision 'exotic posts → rare-item access.' Audit #9 Slice 3b.")
+	display_game("")
+
 	# v0.9.449 — Audit #13 Slice 6: Sanctuary affordability discovery.
-	display_game("[color=#00FF00]v0.9.449[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.449[/color]")
 	display_game("  [color=#FFD700]Sanctuary: upgrade screen surfaces what you can afford right now[/color]")
 	display_game("  • [b]Affordability is now visible at a glance from anywhere on the upgrade screen.[/b] The tab strip across the top shows a green +N badge per tab whenever any upgrades there are buyable — so you can see 'Storage +2  Combat  Stats +1  Discovery +1  Economy' without paging through every tab. A summary line under your Baddie Points reads 'X upgrades affordable on this tab — Y total across all tabs.' Every affordable row now wears a green ✓ AFFORDABLE tag on its name line (maxed rows get a blue ✦ MAX). In the visual panel, affordable cards get a brighter green border + 2px outline so they pop in the grid, and each tab button shows its affordable count in green next to the label. Closes the audit's 'Discoverability — TWEAK — Sanctuary screen highlights affordable upgrades' decision. Audit #13 Slice 6.")
 	display_game("")
@@ -34410,6 +34416,13 @@ func display_market_browse():
 			if total_qty > 1:
 				qty_text = " x%d" % total_qty
 
+			# Audit #9 Slice 3b — NPC exotic-stock tag. Purple [EXOTIC] glyph
+			# placed before the rarity name so the listing reads at a glance
+			# as Curiosity Trader stock vs. player listings.
+			var npc_tag: String = ""
+			if listing.get("is_npc", false):
+				npc_tag = "[color=#A335EE][EXOTIC][/color] "
+
 			# Egg items show variant/tier info instead of rarity/level
 			if item.get("type", "") == "egg":
 				var variant = item.get("variant", "Normal")
@@ -34417,7 +34430,7 @@ func display_market_browse():
 				var egg_tier = item.get("tier", 1)
 				var egg_sub = item.get("sub_tier", 1)
 				var rinfo = _get_variant_rarity_info(variant)
-				display_game("  [color=#FFFF00]%d)[/color] [color=%s][%s][/color] [color=%s]%s[/color] [color=#808080](T%d-%d)[/color] - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, rinfo.color, rinfo.tier, variant_color, item_name, egg_tier, egg_sub, format_number(price), seller])
+				display_game("  [color=#FFFF00]%d)[/color] %s[color=%s][%s][/color] [color=%s]%s[/color] [color=#808080](T%d-%d)[/color] - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, npc_tag, rinfo.color, rinfo.tier, variant_color, item_name, egg_tier, egg_sub, format_number(price), seller])
 			else:
 				var level_text = ""
 				if item.has("level"):
@@ -34443,7 +34456,7 @@ func display_market_browse():
 					compare_text = " %s" % _arrow
 					if _parts.size() > 0:
 						compare_text += _format_comparison_bracket(_parts)
-				display_game("  [color=#FFFF00]%d)[/color]%s [color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, compare_text, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
+				display_game("  [color=#FFFF00]%d)[/color]%s %s[color=%s]%s[/color]%s%s - [color=#00FF00]%s V[/color] [color=#808080](by %s)[/color]" % [idx + 1, compare_text, npc_tag, rarity_color, item_name, qty_text, level_text, format_number(price), seller])
 
 	display_game("")
 	display_game("[color=#808080]Press 1-9 to inspect, [%s]/[%s] page, [%s] filter, [%s] sort, [%s] back[/color]" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3), get_action_key_name(4), get_action_key_name(0)])
