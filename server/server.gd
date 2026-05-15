@@ -11837,6 +11837,50 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 
 	var all_listings = persistence.get_market_listings(post_id)
 
+	# Audit #9 Slice 3b — exotic post rare-item access. Prepend daily NPC
+	# stock to the listings array BEFORE the filter so the existing
+	# category/sort/stack pipeline handles them naturally. Synthetic listings
+	# carry `is_npc: true` so the markup loop below knows to skip supply +
+	# specialty math (NPC prices are fixed). post_id rotation is deterministic
+	# per day so every visitor sees the same stock.
+	var post_dict_here: Dictionary = at_trading_post.get(peer_id, {})
+	var resolved_category: String = trading_post_db.resolve_post_category(post_dict_here, post_id)
+	if resolved_category == "exotic":
+		var daily_stock: Array = trading_post_db.get_exotic_daily_stock(post_id)
+		var npc_listings: Array = []
+		for slot_idx in range(daily_stock.size()):
+			var entry: Dictionary = daily_stock[slot_idx]
+			var item_type: String = String(entry.get("item_type", ""))
+			var display_name: String = String(entry.get("display_name", item_type.capitalize()))
+			var price: int = int(entry.get("price", 100))
+			var supply_cat: String = String(entry.get("supply_category", "consumable"))
+			# Stub item dict — the real item is generated on buy from the pool
+			# entry. Browse only needs the name/type/rarity for the row display.
+			var stub_item: Dictionary = {
+				"name": display_name,
+				"type": item_type,
+				"item_type": item_type,
+				"rarity": String(entry.get("rarity", "uncommon")),
+				"is_npc_stub": true,
+			}
+			npc_listings.append({
+				"listing_id": "exotic_npc_%s_%d" % [post_id, slot_idx],
+				"post_id": post_id,
+				"item": stub_item,
+				"base_valor": price,
+				"quantity": 1,
+				"supply_category": supply_cat,
+				"account_id": "exotic_trader",
+				"seller_name": "Curiosity Trader",
+				"is_npc": true,
+				"listed_at": 0,
+				"pool_index": int(entry.get("_pool_idx", slot_idx)),
+				"pool_item_type": item_type,
+			})
+		# Prepend so they show at the top of the post's listings (visually
+		# anchors the exotic vendor identity above player listings).
+		all_listings = npc_listings + all_listings
+
 	# Filter by category. v0.9.268: food gets its own filter that recognizes
 	# plant/herb/fungus/fish material_types (food bulk-list still stamps
 	# supply_category as "material_t*" today; this filter does the lookup
@@ -11883,6 +11927,17 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 	var threat_mult = float(threat_info.get("multiplier", 1.0)) if threat_info.get("threatened", false) else 1.0
 	for listing in filtered:
 		var cat = listing.get("supply_category", "equipment")
+		# Audit #9 Slice 3b — NPC listings bypass supply markup + specialty
+		# discount (their base_valor IS the final NPC sticker price). Threat
+		# multiplier still applies — bandits charge more across all goods.
+		if listing.get("is_npc", false):
+			var npc_base: int = int(listing.get("base_valor", 0))
+			listing["markup"] = 1.0
+			listing["specialty_discount"] = 0.0
+			listing["pre_threat_price"] = npc_base
+			listing["markup_price"] = int(npc_base * threat_mult)
+			listing["avg_recent_price"] = 0
+			continue
 		var markup = persistence.calculate_markup(post_id, cat)
 		var base_markup_price = int(listing.get("base_valor", 0) * markup)
 		var disc = trading_post_db.get_specialty_discount(post_id, cat)
@@ -11916,8 +11971,10 @@ func handle_market_browse(peer_id: int, message: Dictionary):
 			supply_cat = "consumable"
 		var display_cat = _get_display_category(supply_cat)
 
-		# Only eggs are truly unique (random variants per individual)
-		var is_unique = supply_cat == "egg"
+		# Only eggs are truly unique (random variants per individual).
+		# Slice 3b — NPC listings also bypass stacking so each daily slot
+		# stays addressable by its synthetic listing_id on buy.
+		var is_unique = supply_cat == "egg" or listing.get("is_npc", false)
 
 		if is_unique:
 			var entry = listing.duplicate()
@@ -12398,6 +12455,16 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid listing."})
 		return
 
+	# Audit #9 Slice 3b — NPC exotic listing branch. Synthetic listings carry
+	# a listing_id starting with "exotic_npc_". They're not persisted, so the
+	# server recomputes today's stock for the post and matches the requested
+	# id against today's synthetic slots. Items are generated on demand from
+	# the pool entry; price is the entry's fixed valor (plus threat multiplier
+	# if applicable). Unlimited stock per day — no listing removal.
+	if String(listing_ids[0]).begins_with("exotic_npc_"):
+		_handle_market_buy_exotic_npc(peer_id, listing_ids[0], int(message.get("quantity", 1)))
+		return
+
 	# Find first valid listing (use it for item info and pricing)
 	var listing = {}
 	var listing_post_id = post_id
@@ -12558,6 +12625,97 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		"type": "market_buy_success",
 		"item_name": item.get("name", "item") + qty_text,
 		"price": price,
+		"new_valor": persistence.get_valor(buyer_account_id)
+	})
+	send_character_update(peer_id)
+
+func _handle_market_buy_exotic_npc(peer_id: int, listing_id: String, requested_qty: int) -> void:
+	"""Audit #9 Slice 3b — NPC purchase branch for exotic-post Curiosity Trader.
+	Pool entries have fixed prices and unlimited daily stock. Server re-derives
+	today's stock for the player's current post and matches the listing_id
+	against today's synthetic slots. No listing removal, no sale history.
+
+	Buyer pays valor (plus threat multiplier when post is threatened); server
+	generates a fresh item via drop_tables._generate_item using the player's
+	level so consumable tiers / equipment levels scale appropriately."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var buyer_account_id: String = peers[peer_id].account_id
+
+	var post_id: String = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	# Verify the post is actually exotic — protects against listing_id
+	# replay against a non-exotic post.
+	var post_dict_here: Dictionary = at_trading_post.get(peer_id, {})
+	var resolved_cat: String = trading_post_db.resolve_post_category(post_dict_here, post_id)
+	if resolved_cat != "exotic":
+		send_to_peer(peer_id, {"type": "market_error", "message": "Curiosity Trader not available here."})
+		return
+
+	# Recompute today's stock and find the matching slot.
+	var daily_stock: Array = trading_post_db.get_exotic_daily_stock(post_id)
+	var matched_entry: Dictionary = {}
+	for slot_idx in range(daily_stock.size()):
+		var expected_id: String = "exotic_npc_%s_%d" % [post_id, slot_idx]
+		if expected_id == listing_id:
+			matched_entry = daily_stock[slot_idx]
+			break
+	if matched_entry.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "That item is no longer on the shelf — the trader's stock has rotated."})
+		return
+
+	# Quantity is fixed at 1 per buy for NPC stock — exotic items are
+	# intentionally one-at-a-time so the player commits per purchase.
+	var buy_qty: int = 1
+	var _ignored = requested_qty  # accepted but capped
+
+	var price: int = int(matched_entry.get("price", 100))
+	# Threat multiplier still applies (bandits charge more, NPC or not).
+	var buy_threat_info: Dictionary = _get_post_threat_info(peer_id)
+	if buy_threat_info.get("threatened", false):
+		price = int(price * float(buy_threat_info.get("multiplier", 1.0)))
+
+	# Valor check
+	var buyer_valor: int = persistence.get_valor(buyer_account_id)
+	if buyer_valor < price:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor. Need %d, have %d." % [price, buyer_valor]})
+		return
+
+	# Inventory space — exotic items are all consumables today so inventory
+	# slot check is the right gate. (No materials / no eggs in the pool.)
+	if character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
+		return
+
+	# Spend valor, generate item, deliver. Item level scales with player
+	# level so consumable tier (potions etc) matches their progression.
+	persistence.spend_valor(buyer_account_id, price)
+	var drop_entry: Dictionary = {
+		"item_type": String(matched_entry.get("item_type", "")),
+		"rarity": String(matched_entry.get("rarity", "common")),
+	}
+	var item_level: int = maxi(1, int(character.level))
+	var fresh_item: Dictionary = drop_tables._generate_item(drop_entry, item_level)
+	if fresh_item.is_empty():
+		# Refund and bail if generation failed.
+		persistence.add_valor(buyer_account_id, price)
+		send_to_peer(peer_id, {"type": "market_error", "message": "The trader fumbles — try again."})
+		return
+
+	character.inventory.append(fresh_item)
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_buy_result",
+		"success": true,
+		"item_name": String(matched_entry.get("display_name", fresh_item.get("name", "Item"))),
+		"quantity": buy_qty,
+		"price": price,
+		"is_npc": true,
 		"new_valor": persistence.get_valor(buyer_account_id)
 	})
 	send_character_update(peer_id)
