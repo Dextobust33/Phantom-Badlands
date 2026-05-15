@@ -41,7 +41,13 @@ enum TileType {
 	MAZE_GLYPH,    # Audit #5 Slice 15 — minotaur maze glyphs cost +1 step (Minotaur Labyrinth)
 	PRISM_SHARD,   # Audit #5 Slice 15 — elemental prism buffs next combat (Elemental Nexus)
 	BLINDING_SAND, # Audit #5 Slice 15 — sphinx sand grants monster-miss next combat (Sphinx Riddle Hall)
-	FROST_SHARD    # Audit #5 Slice 15 — void frost shards bite HP on step (Void Walker Rift)
+	FROST_SHARD,   # Audit #5 Slice 15 — void frost shards bite HP on step (Void Walker Rift)
+	TORN_CARRION,  # Audit #5 Slice 16 — gnoll pack-kill scrap heals on step (Gnoll Pack Den)
+	BOG_PATCH,     # Audit #5 Slice 16 — kelpie marsh muck costs +1 step (Kelpie Marsh)
+	FEATHER_DOWN,  # Audit #5 Slice 16 — wyvern down patch heals on step (Wyvern Roost)
+	SINKING_MUD,   # Audit #5 Slice 16 — ogre bog mud costs +2 steps (Ogre Bog)
+	HELLFIRE_RUNE, # Audit #5 Slice 16 — demon rune burns HP on step (Demon Gate)
+	WIND_CURRENT   # Audit #5 Slice 16 — gryphon updraft buffs next combat damage (Gryphon Aerie)
 }
 
 # Tile display characters
@@ -82,7 +88,13 @@ const TILE_CHARS = {
 	TileType.MAZE_GLYPH: "g",
 	TileType.PRISM_SHARD: "q",
 	TileType.BLINDING_SAND: "b",
-	TileType.FROST_SHARD: "i"
+	TileType.FROST_SHARD: "i",
+	TileType.TORN_CARRION: "y",
+	TileType.BOG_PATCH: "u",
+	TileType.FEATHER_DOWN: "f",
+	TileType.SINKING_MUD: "v",
+	TileType.HELLFIRE_RUNE: "z",
+	TileType.WIND_CURRENT: "a"
 }
 
 # Tile colors for display
@@ -123,7 +135,13 @@ const TILE_COLORS = {
 	TileType.MAZE_GLYPH: "#8B4513",
 	TileType.PRISM_SHARD: "#4169E1",
 	TileType.BLINDING_SAND: "#F4A460",
-	TileType.FROST_SHARD: "#ADD8E6"
+	TileType.FROST_SHARD: "#ADD8E6",
+	TileType.TORN_CARRION: "#8B2500",
+	TileType.BOG_PATCH: "#556B2F",
+	TileType.FEATHER_DOWN: "#FFE4B5",
+	TileType.SINKING_MUD: "#5D4037",
+	TileType.HELLFIRE_RUNE: "#DC143C",
+	TileType.WIND_CURRENT: "#B0E0E6"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -2085,6 +2103,68 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 10:
 						grid[y][x] = TileType.FROST_SHARD
+		"gnoll_den":
+			# Torn carrion ~7% of empty tiles. Pickup heals 2% max HP (consumed).
+			# Pairs with Gnoll Packmaster's Pack Frenzy boss sig — small heal pickups
+			# counter-balance the per-round damage ramp, encouraging fast pushes.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 7:
+						grid[y][x] = TileType.TORN_CARRION
+		"kelpie_marsh":
+			# Bog patches ~10% of empty tiles. Persistent +1 step cost.
+			# Simple slow-tile fitting the marsh — same payload as Spider Nest
+			# WEBBED but at T2 marsh density.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.BOG_PATCH
+		"wyvern_roost":
+			# Feather down ~7% of empty tiles. Pickup heals 3% max HP (consumed).
+			# T3 positive tile — sits between cave_moss (2%) and warm_nest (4%) for
+			# tier-scaled placement. Pairs with Wyvern Queen's Aerial Dive burst.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 7:
+						grid[y][x] = TileType.FEATHER_DOWN
+		"ogre_bog":
+			# Sinking mud ~10% of empty tiles. Persistent +2 step cost. Same
+			# payload as harpy_cliffs UPDRAFT but at T3 bog density. Ogres lumber
+			# through their bog; you wade.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.SINKING_MUD
+		"demon_gate":
+			# Hellfire runes ~9% of empty tiles. Persistent 3% max HP burn — same
+			# payload as lava_pool but T4 instead of T5, so slightly less dense.
+			# Pairs with Demon Overlord's stacking Infernal Curse — environmental
+			# pressure adds to the boss-sig fuse.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 9:
+						grid[y][x] = TileType.HELLFIRE_RUNE
+		"gryphon_aerie":
+			# Wind currents ~5% of empty tiles. Pickup (consumed). Reuses
+			# pending_war_banner meta — +15% damage for 3 rounds in next combat.
+			# Aerial-themed buff pickup. Pairs with Gryphon Alpha's Talon Barrage
+			# — rare-density pre-combat power pickup for a punishing boss.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 5:
+						grid[y][x] = TileType.WIND_CURRENT
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""

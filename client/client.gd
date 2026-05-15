@@ -24050,8 +24050,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.457 — Audit #5 Slice 16: 6 more dungeon theme tiles.
+	display_game("[color=#00FF00]v0.9.457[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles[/color]")
+	display_game("  • [b]Gnoll Pack Den, Kelpie Marsh, Wyvern Roost, Ogre Bog, Demon Gate, and Gryphon Aerie each gained a themed environmental tile,[/b] filling out the T2-T4 mid-game with the pattern that established at Slice 1 and grew through Slice 15. The new tiles: [color=#8B2500]Torn Carrion (y)[/color] in Gnoll Pack Den — pack-kill scraps that heal ~2% max HP on step (consumed), counter-balancing the boss's Pack Frenzy ramp; [color=#556B2F]Bog Patches (u)[/color] in Kelpie Marsh — persistent +1 step cost wading the marsh; [color=#FFE4B5]Feather Down (f)[/color] in Wyvern Roost — soft wyvern feathers heal ~3% max HP on step (consumed); [color=#5D4037]Sinking Mud (v)[/color] in Ogre Bog — persistent +2 step cost where the ogres trampled it deep; [color=#DC143C]Hellfire Runes (z)[/color] at Demon Gate — persistent ~3% max HP burn, pairs with the boss's stacking curse; [color=#B0E0E6]Wind Currents (a)[/color] in Gryphon Aerie — rare buff pickup that banks +15% damage for 3 rounds of your next combat. Coverage now 33 of 53 dungeons themed. Also fixes a latent rendering bug where the Slice 15 theme glyphs (caltrops/grave dust/maze runes/prism shards/blinding sand/frost shards) were showing as `?` fallbacks on the dungeon map — now they render with their proper glyph + color. Audit #5 Slice 16.")
+	display_game("")
+
 	# v0.9.456 — Audit #11 Slice 10: NPC vendors at the remaining 5 categories.
-	display_game("[color=#00FF00]v0.9.456[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.456[/color]")
 	display_game("  [color=#FFD700]Every NPC post category now has its own vendor[/color]")
 	display_game("  • [b]Five more themed NPC traders join the market browse at their post categories,[/b] completing the vendor system that started with Slice 3b (exotic) and Slice 8 (mine/farm/shrine). The new vendors are: [color=#FFE0A0][HAVEN] Innkeeper[/color] (restoration & traveler supplies — Elixir, Greater Health/Mana/Stamina/Energy Potions, Minor Elixir); [color=#FFA070][MARKET] Trade Master[/color] (generalist mix — Home Stone Egg, Mysterious Box, Elixir, Scroll of Haste, Charm of Taunt, Greater Health Potion); [color=#88AAFF][TOWER] Lookout[/color] (scout & foresight — Reclaimer Lantern, Scroll of Monster Selection, Scroll of Precision, Elixir, Mysterious Box, Charm of Taunt); [color=#AA8866][CAMP] Outfitter[/color] (basic traveler supplies at low prices — Standard Health/Mana/Stamina/Energy Potions, Cursed Coin, Scroll of Haste); [color=#A0A0A0][FORTRESS] Quartermaster[/color] (heavy combat & equipment — Home Stone Equipment, Scrolls of Forcefield/Stone Skin/Rage, Boss Slayer Tonic, Charm of Taunt). Three slots per day per post, same deterministic rotation as the existing vendors. Every NPC post category in the world now has a destination identity. Audit #11 Slice 10.")
 	display_game("")
@@ -33583,6 +33589,24 @@ const DUNGEON_THEME_LEGEND = {
 	"void_walker_rift": [
 		{"glyph": "i", "color": "#ADD8E6", "desc": "Frost shards — void cold that bites through your boots for ~4% of your max HP on step. Persistent. Strongest persistent damage tile in the pool — plan T8 paths carefully."}
 	],
+	"gnoll_den": [
+		{"glyph": "y", "color": "#8B2500", "desc": "Torn carrion — gnoll pack-kill scraps. Step on one to heal ~2% of your max HP. One-time per scrap (consumed). Pairs with Pack Frenzy — heal pickups counter-balance the per-round damage ramp."}
+	],
+	"kelpie_marsh": [
+		{"glyph": "u", "color": "#556B2F", "desc": "Bog patches — marsh muck that drags at your boots. Costs +1 step to cross. Persistent. Plan paths around the dark olive patches."}
+	],
+	"wyvern_roost": [
+		{"glyph": "f", "color": "#FFE4B5", "desc": "Wyvern down — soft feather patches that cushion wounds for ~3% of your max HP on step. One-time per patch (consumed). Pairs with the Wyvern Queen's Aerial Dive burst."}
+	],
+	"ogre_bog": [
+		{"glyph": "v", "color": "#5D4037", "desc": "Sinking mud — ogre-trampled bog that costs +2 steps to wade through. Persistent. Plan paths around the dark brown patches."}
+	],
+	"demon_gate": [
+		{"glyph": "z", "color": "#DC143C", "desc": "Hellfire runes — demonic glyphs that sear your flesh for ~3% of your max HP on step. Persistent. Pairs with the Demon Overlord's stacking Infernal Curse — every nick adds to the pressure."}
+	],
+	"gryphon_aerie": [
+		{"glyph": "a", "color": "#B0E0E6", "desc": "Wind currents — gryphon updrafts. Touching one banks +15% damage for the first 3 rounds of your next combat. One-time per current (consumed). Rare placement — pairs with Talon Barrage."}
+	],
 }
 
 func _display_dungeon_theme_legend_section(dungeon_type: String) -> void:
@@ -34087,6 +34111,30 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "r", "color": "#A0A0A0"}
 		30:  # REGEN_SPRING — Hydra Swamp theme tile, strong heal on step (v0.9.320)
 			return {"char": "/", "color": "#48D1CC"}
+		31:  # CALTROPS — Hobgoblin Fortress theme tile, persistent nick (v0.9.331)
+			return {"char": "x", "color": "#B22222"}
+		32:  # GRAVE_DUST — Barrow Mounds theme tile, persistent nick (v0.9.331)
+			return {"char": "d", "color": "#BDB76B"}
+		33:  # MAZE_GLYPH — Minotaur Labyrinth theme tile, +1 step (v0.9.331)
+			return {"char": "g", "color": "#8B4513"}
+		34:  # PRISM_SHARD — Elemental Nexus theme tile, buff pickup (v0.9.331)
+			return {"char": "q", "color": "#4169E1"}
+		35:  # BLINDING_SAND — Sphinx Riddle Hall theme tile, miss-chance pickup (v0.9.331)
+			return {"char": "b", "color": "#F4A460"}
+		36:  # FROST_SHARD — Void Walker Rift theme tile, persistent damage (v0.9.331)
+			return {"char": "i", "color": "#ADD8E6"}
+		37:  # TORN_CARRION — Gnoll Pack Den theme tile, heal on step (v0.9.457)
+			return {"char": "y", "color": "#8B2500"}
+		38:  # BOG_PATCH — Kelpie Marsh theme tile, +1 step (v0.9.457)
+			return {"char": "u", "color": "#556B2F"}
+		39:  # FEATHER_DOWN — Wyvern Roost theme tile, heal on step (v0.9.457)
+			return {"char": "f", "color": "#FFE4B5"}
+		40:  # SINKING_MUD — Ogre Bog theme tile, +2 step cost (v0.9.457)
+			return {"char": "v", "color": "#5D4037"}
+		41:  # HELLFIRE_RUNE — Demon Gate theme tile, persistent damage (v0.9.457)
+			return {"char": "z", "color": "#DC143C"}
+		42:  # WIND_CURRENT — Gryphon Aerie theme tile, buff pickup (v0.9.457)
+			return {"char": "a", "color": "#B0E0E6"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
