@@ -53,7 +53,13 @@ enum TileType {
 	ALLURE_PETAL,   # Audit #5 Slice 17 — succubus petal heals on step (Succubus Parlor)
 	SOUL_RESIDUE,   # Audit #5 Slice 17 — lich soul residue buffs next combat dodge (Lich Sanctum)
 	INFERNAL_BRAZIER, # Audit #5 Slice 17 — demon lord brazier buffs next combat damage (Demon Lord Throne)
-	STONE_STAIRS    # Audit #5 Slice 17 — titan-scale stairs cost +2 steps (Titan Colosseum)
+	STONE_STAIRS,   # Audit #5 Slice 17 — titan-scale stairs cost +2 steps (Titan Colosseum)
+	GOLD_HOARD,     # Audit #5 Slice 18 — ancient dragon gold pile gives valor (Ancient Dragon Lair)
+	MOLTEN_SLAG,    # Audit #5 Slice 18 — golem foundry slag costs +1 step (Golem Foundry)
+	SHADOW_POOL,    # Audit #5 Slice 18 — nazgul shadow pool nicks HP on step (Nazgul Shadow Keep)
+	DRAGON_BREATH,  # Audit #5 Slice 18 — primordial dragon breath burns HP (Primordial Dragon Domain)
+	COILED_SCALE,   # Audit #5 Slice 18 — world serpent scales cost +2 steps (World Serpent Coil)
+	PHYLACTERY_SHARD # Audit #5 Slice 18 — elder lich phylactery shard buffs next combat (Elder Lich Phylactery)
 }
 
 # Tile display characters
@@ -106,7 +112,13 @@ const TILE_CHARS = {
 	TileType.ALLURE_PETAL: "l",
 	TileType.SOUL_RESIDUE: "j",
 	TileType.INFERNAL_BRAZIER: "e",
-	TileType.STONE_STAIRS: "H"
+	TileType.STONE_STAIRS: "H",
+	TileType.GOLD_HOARD: "G",
+	TileType.MOLTEN_SLAG: "S",
+	TileType.SHADOW_POOL: "Q",
+	TileType.DRAGON_BREATH: "F",
+	TileType.COILED_SCALE: "Z",
+	TileType.PHYLACTERY_SHARD: "Y"
 }
 
 # Tile colors for display
@@ -159,7 +171,13 @@ const TILE_COLORS = {
 	TileType.ALLURE_PETAL: "#FF80CC",
 	TileType.SOUL_RESIDUE: "#6644AA",
 	TileType.INFERNAL_BRAZIER: "#FF6600",
-	TileType.STONE_STAIRS: "#909090"
+	TileType.STONE_STAIRS: "#909090",
+	TileType.GOLD_HOARD: "#FFD700",
+	TileType.MOLTEN_SLAG: "#707070",
+	TileType.SHADOW_POOL: "#2A0033",
+	TileType.DRAGON_BREATH: "#FF4500",
+	TileType.COILED_SCALE: "#003344",
+	TileType.PHYLACTERY_SHARD: "#AA66FF"
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -2244,6 +2262,66 @@ static func _apply_theme_tags(grid: Array, dungeon_id: String, rng: RandomNumber
 						continue
 					if rng.randi() % 100 < 8:
 						grid[y][x] = TileType.STONE_STAIRS
+		"ancient_dragon_lair":
+			# Gold hoard ~7% of empty tiles. Pickup awards 5-10 Valor (consumed).
+			# T6 valor payout — bigger than Goblin Caves' 1-5 and Kobold Tunnels'
+			# 2-4 to match the tier. Ancient dragons sleep on coin piles.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 7:
+						grid[y][x] = TileType.GOLD_HOARD
+		"golem_foundry":
+			# Molten slag ~8% of empty tiles. Persistent +1 step cost — industrial
+			# floor still hot from golem-forging. Same payload as Spider WEBBED.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.MOLTEN_SLAG
+		"nazgul_shadow_keep":
+			# Shadow pool ~9% of empty tiles. Persistent 3% max HP damage. Same
+			# payload as Barrow Mounds GRAVE_DUST but at T6 — cold nazgul shadow
+			# saps the warmth from you as you step through.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 9:
+						grid[y][x] = TileType.SHADOW_POOL
+		"primordial_dragon_domain":
+			# Dragon breath ~10% of empty tiles. Persistent 5% max HP burn —
+			# strongest persistent damage tile so far. Fits T7 difficulty and
+			# the primordial dragon's elemental sig.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 10:
+						grid[y][x] = TileType.DRAGON_BREATH
+		"world_serpent_coil":
+			# Coiled scales ~8% of empty tiles. Persistent +2 step cost — the
+			# floor IS the serpent's muscled body. Same payload as Harpy UPDRAFT
+			# / Ogre SINKING_MUD / Titan STONE_STAIRS at T7 density.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 8:
+						grid[y][x] = TileType.COILED_SCALE
+		"elder_lich_phylactery":
+			# Phylactery shards ~4% of empty tiles. Pickup (consumed). Reuses
+			# pending_war_banner meta — +15% damage for 3 rounds in next combat.
+			# Rarest placement tier so far (4%) — these shards are precious
+			# at T7 and pair with the elder lich's Death Mark sig.
+			for y in range(grid.size()):
+				for x in range(grid[y].size()):
+					if grid[y][x] != TileType.EMPTY:
+						continue
+					if rng.randi() % 100 < 4:
+						grid[y][x] = TileType.PHYLACTERY_SHARD
 
 static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumberGenerator, out_partitions: Array):
 	"""Recursively split area into BSP partitions"""
