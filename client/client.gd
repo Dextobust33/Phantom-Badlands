@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.465 — Audit #15 — Help page refresh.
+	display_game("[color=#00FF00]v0.9.465[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]/help is current again — refreshed to cover every major v0.9.4xx addition[/color]")
+	display_game("  • [b]The Help page's 'New Features' block now reflects what's actually new[/b] — NPC vendors at category posts, Travel Stone, threat-corridor mechanics, regenerating quest board (no daily caps, 3 active max), Clan Vault panel, dungeon theme tiles on all 53 dungeons, Sanctuary tabs + Discovery unlocks, crafting transparency, Progression Vectors dashboard, combat loot scratch-off, and boss signatures. The inline Quests line in the basics section also names chains + the new 3-active cap, so anyone press-and-reading /help now sees what's there. Client-only release. Audit #15.")
+	display_game("")
+
 	# v0.9.464 — Audit #11 Slice 11: post threat-tier suppression.
-	display_game("[color=#00FF00]v0.9.464[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.464[/color]")
 	display_game("  [color=#FFD700]Threatened player posts now lose 1 bubble suppression — your base is mechanically weaker while a dungeon is uncleared nearby[/color]")
 	display_game("  • [b]When a T2+ active dungeon sits within 80 tiles of your player post, the post's settler bubble suppression drops by 1 (floor at 0) until you clear the threat.[/b] In practical terms, monsters spawning inside your bubble now spawn one tier higher than usual while threatened — your village is mechanically more dangerous to defend. Combined with the threat-corridor encounters from v0.9.454 (which already biased random encounters to spawn the dungeon's monster_type in the same zone) and the +50% service costs / +20% market markup that already existed, the Under Threat marker now has a third mechanical bite that hits your own base. The post status panel surfaces 'Bubble suppression weakened (-1) while threatened' under the Under Threat banner when this applies. Clearing the dungeon restores full suppression. Audit #11 Slice 11.")
 	display_game("")
@@ -26997,7 +27003,7 @@ func show_help():
 [color=#00FF00]Posts(58):[/color] Haven(0,10)=spawn | Crossroads(0,0)=throne | Frostgate(0,-100)=boss. Recharge([%s])!
 [color=#FFD700]Merchants:[/color] Couriers on roads between posts with markets. Browse carried goods when encountered.
 [color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
-[color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone(bonus!), Boss Hunt, Dungeon Clear. Tier scales with player level.
+[color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone, Boss Hunt, Dungeon Clear, Chains (multi-stage with egg+title bonuses). Board regenerates — no daily caps. Max 3 active.
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
   All monsters match dungeon theme (Orc Stronghold = Orcs). Sub-tiers (T3-1, T3-2) = harder variants, better loot!
   [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50%% stats, -20%% steps, +75%% XP, bonus loot)!
@@ -27083,16 +27089,33 @@ func show_help():
 	# New features section (added separately to avoid format string complexity)
 	display_game("")
 	display_game("[b][color=#FFD700]══ NEW FEATURES ══[/color][/b]")
-	display_game("[color=#FF8800]★ Elite Champions:[/color] Rare (1%%) powerful monsters at Lv15+. Gold [ELITE] label, +50%% stats, +50%% XP, guaranteed drop.")
-	display_game("  2 random combat abilities. Worth fighting — but dangerous!")
-	display_game("[color=#FFD700]Minimap:[/color] A zoomed-out overview appears below your main map. Shows terrain, posts, dungeons, and paths.")
-	display_game("[color=#00FFFF]Stat Compare Priority:[/color] Settings→Game→[9] to choose which stats show first in equipment brackets.")
-	display_game("  Pin the stats you care about (ATK, DEF, HP, etc.) — unpinned stats get truncated.")
-	display_game("[color=#87CEEB]Thematic Potions:[/color] Health and resource potions now have unique names per tier:")
-	display_game("  T1: Herbalist's Tincture → T4: Healer's Draught → T6: Phoenix Essence → T7: Divine Ambrosia")
-	display_game("[color=#FF8800]Boss Abilities:[/color] Dungeon bosses now use their unique abilities in combat!")
-	display_game("  Goblin King summons minions, Alpha Wolf causes bleeding, Lich drains life, etc.")
-	display_game("[color=#00FF00]Bridges:[/color] Craft wooden bridges (Construction Lv3) to cross water permanently. Any player can use them.")
+	display_game("[color=#FFD700]Quest Board Regenerates:[/color] No more daily caps — your post board refills the moment you turn in a quest.")
+	display_game("  3 active at a time max (triage to your top three). Chain quests still run alongside the procedural board.")
+	display_game("[color=#A335EE]NPC Vendors at Category Posts:[/color] Exotic / mine / farm / shrine / haven / market / tower / camp / fortress posts")
+	display_game("  each host a themed trader at the top of their market browse. Daily-rotating stock (3-4 slots/day, hash-based) — same items for")
+	display_game("  every visitor on the same day, fresh roll tomorrow. NPC prices ignore supply markup but still hike at threatened posts.")
+	display_game("[color=#88AAFF]Travel Stone:[/color] New consumable — buy from any remote market listing without traveling. Drops T5+ chests, exotic Curiosity Trader sells one for 3000v.")
+	display_game("  In Network Browse, inspect any remote listing → 'Buy (Stone x N)' button appears if you have one. Specialty discounts still require physical visit.")
+	display_game("[color=#FF6644]Under Threat — Mechanical Bite:[/color] When a T2+ active dungeon is within 80 tiles of a post, the post shows ⚠ Under Threat.")
+	display_game("  Now means: +50%% service costs / +20%% market markup / threat-zone encounters spawn the dungeon's monster type / your settler bubble loses 1 suppression. Clear the dungeon to remove all four.")
+	display_game("[color=#FFD700]Clan Vault Panel:[/color] More → Clan → Open Vault. 30 shared slots; rarity-colored item rows; one-click Withdraw / Deposit.")
+	display_game("  Auto-refreshes when other members act. `/vault` chat command still works as fallback.")
+	display_game("[color=#88FF88]Player Post Inactivity:[/color] Posts now show 'Last tended: Xd ago' on the status panel.")
+	display_game("  ⚠ Inactive at 7d, ⚠⚠ ABANDONED at 30d. Tending = arrival inside the bubble, build / demolish, /feedall.")
+	display_game("[color=#FF8800]Dungeon Theme Tiles:[/color] All 53 dungeons now have unique themed tiles — webs in Spider Nest, lava in Balrog Depths,")
+	display_game("  blood fonts in Vampire Crypt, divine blood in God Slayer Arena, decay motes in Entropy End, and 48 more. Each tile has a")
+	display_game("  legend on the dungeon-entry warning page. Some heal, some hurt, some pre-load a buff for your next combat.")
+	display_game("[color=#A335EE]Sanctuary Reorganized:[/color] Upgrades grouped into 5 tabs (Storage / Combat / Stats / Discovery / Economy)")
+	display_game("  with green ✓ AFFORDABLE tags + per-tab badges so you can see at a glance what you can buy. Three discovery unlocks live:")
+	display_game("  Bestiary (track species), Compass (nearest unexplored post hint), Region Atlas (visited-region ledger).")
+	display_game("[color=#FFD700]Crafting Transparency:[/color] Recipe details now show 'Recent market avg' price + 'Coming Up' preview of next 3 unlocks.")
+	display_game("  Material → source mapping, quality odds preview, and sell-value preview all live. 7-layer transparency stack complete.")
+	display_game("[color=#FFAA00]Progression Vectors Dashboard:[/color] Status page now has a single section naming every advanceable track:")
+	display_game("  unspent stat points, Sanctuary BP + upgrades, 10 jobs with commit markers, Bestiary, Compass, Soul Gems, Region Atlas.")
+	display_game("[color=#FF8800]Combat Loot Scratch-Off:[/color] Victory rewards are now a 16-slot click-to-reveal grid.")
+	display_game("  Tier-scaled reveal budget + 1 extra per flock kill; remaining slots fill with consolation Valor / Salvage Essence / monster parts.")
+	display_game("[color=#FF8800]Boss Signatures:[/color] All 52 dungeon bosses use a unique signature mechanic distinct from base monsters.")
+	display_game("  Goblin King summons reinforcements, Alpha Wolf scents your blood under 50%% HP, Troll King regrows below 50%%, etc.")
 
 	# Community section
 	display_game("")
