@@ -24011,8 +24011,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.451 — Audit #11 Slice 8: NPC vendors at mine/farm/shrine.
+	display_game("[color=#00FF00]v0.9.451[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three more post categories now host themed NPC vendors[/color]")
+	display_game("  • [b]Mine, farm, and shrine posts each now host a category-themed NPC trader at the top of the market browse,[/b] joining the Curiosity Trader that exotic posts got in v0.9.450. The vendors are: [color=#FF8C42][FORGE] Forge Master[/color] at mine posts (equipment & defensive theme — Home Stone Equipment, Charm of Taunt, Revival Potion, Stone Skin and Forcefield scrolls, Greater Elixir); [color=#80E060][FARM] Provisioner[/color] at farm posts (restoration & supplies theme — Home Stone Supplies, health potions, elixirs, Revival Potion); [color=#7FD7FF][SHRINE] Mystic[/color] at shrine posts (magical & spiritual theme — Home Stone Egg, Haste/Rage/Precision/Vampirism scrolls, Divine Elixir). Three slots per day per post, deterministically rotated by post + day hash — every visitor sees the same items today; tomorrow rolls fresh. NPC prices stay fixed (no supply markup, no specialty discount) but threat multiplier still applies. Pairs each of #9's specialty-discount categories (Slice 3) with a destination-vendor identity (Slice 3b pattern). Audit #11 Slice 8.")
+	display_game("")
+
 	# v0.9.450 — Audit #9 Slice 3b: Exotic post rare-item access.
-	display_game("[color=#00FF00]v0.9.450[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.450[/color]")
 	display_game("  [color=#FFD700]Exotic posts now host a Curiosity Trader with rotating rare stock[/color]")
 	display_game("  • [b]Visit an exotic post and you'll find a Curiosity Trader's daily stock at the top of the market browse, tagged [color=#A335EE][EXOTIC][/color].[/b] Four rotating items per post per day, picked deterministically from a curated pool of ten rare items — Home Stones (Egg / Supplies / Equipment / Companion), Mysterious Box, Boss Slayer Tonic, Reclaimer Lantern, Floor Skip Charm, Elixir, and Cursed Coin. Every player visiting the same exotic post sees the same stock on the same day; tomorrow rolls a fresh selection so the post stays worth checking. NPC prices are fixed — no supply markup, no specialty discount applies — but a threatened post still hikes everything (bandits charge more regardless of source). Stock is unlimited per day, so the items are a destination-vendor reason to travel to exotics rather than a daily limited resource. Closes the audit captured decision 'exotic posts → rare-item access.' Audit #9 Slice 3b.")
 	display_game("")
@@ -34416,12 +34422,16 @@ func display_market_browse():
 			if total_qty > 1:
 				qty_text = " x%d" % total_qty
 
-			# Audit #9 Slice 3b — NPC exotic-stock tag. Purple [EXOTIC] glyph
-			# placed before the rarity name so the listing reads at a glance
-			# as Curiosity Trader stock vs. player listings.
+			# Audit #9 Slice 3b + Audit #11 Slice 8 — NPC vendor tag, themed
+			# by post category. Server stamps `npc_tag` + `npc_color` on
+			# synthetic listings so the row glyph matches the vendor identity
+			# (Forge / Farm / Shrine / Exotic). Defaults to "EXOTIC" purple
+			# for back-compat with pre-Slice-8 server responses.
 			var npc_tag: String = ""
 			if listing.get("is_npc", false):
-				npc_tag = "[color=#A335EE][EXOTIC][/color] "
+				var _ntag: String = String(listing.get("npc_tag", "EXOTIC"))
+				var _ncol: String = String(listing.get("npc_color", "#A335EE"))
+				npc_tag = "[color=%s][%s][/color] " % [_ncol, _ntag]
 
 			# Egg items show variant/tier info instead of rarity/level
 			if item.get("type", "") == "egg":

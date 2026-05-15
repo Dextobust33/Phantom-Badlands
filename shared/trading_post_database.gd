@@ -784,34 +784,89 @@ func get_specialty_summary(post_id: String) -> String:
 func get_post_category(post_id: String) -> String:
 	return POST_CATEGORIES.get(post_id, "default")
 
-# Audit #9 Slice 3b — exotic post rare-item access.
+# Audit #9 Slice 3b + Audit #11 Slice 8 — category NPC vendors.
 #
-# Each exotic post hosts a "Curiosity Trader" with a small NPC inventory of
-# rare items that rotates daily. Items are listed alongside player listings
-# at the post, flagged with is_npc=true so the browse handler skips supply
-# markup + specialty discount on them (NPC prices are fixed).
+# Each "specialty" post category (exotic / mine / farm / shrine) hosts an
+# NPC with a small, themed inventory that rotates daily. Items are listed
+# alongside player listings at the post, flagged with is_npc=true so the
+# browse handler skips supply markup + specialty discount on them (NPC
+# prices are fixed). Threat multiplier still applies.
+#
+# Slice 3b launched with exotic only; Slice 8 extends the same pattern to
+# the other three specialty categories from #9 Slice 3 (mine/farm/shrine),
+# pairing #9's specialty discount with a category-themed destination vendor.
+# Each category gets its own vendor name, tag glyph, and color so the
+# market browse reads at a glance: [FORGE] at mine, [FARM] at farm, etc.
 #
 # The daily rotation is deterministic: hash(post_id, days_since_epoch)
-# picks the same EXOTIC_SLOTS_PER_DAY items from the pool every time on a
-# given day, so all players visiting the same exotic post see the same
+# picks the same `slots_per_day` items from the category pool every time
+# on a given day, so all players visiting the same post see the same
 # stock that day. Tomorrow rolls a fresh subset.
 #
 # Items are unlimited stock — players can buy as many as they want at the
-# listed price all day. No daily-purchase tracking. The intent is "destination
-# vendor" — exotic posts are a reason to travel, not a daily limited resource.
-const EXOTIC_SLOTS_PER_DAY := 4
-const EXOTIC_STOCK_POOL: Array = [
-	{"item_type": "home_stone_egg", "rarity": "uncommon", "price": 800, "supply_category": "consumable", "display_name": "Home Stone (Egg)"},
-	{"item_type": "home_stone_supplies", "rarity": "uncommon", "price": 600, "supply_category": "consumable", "display_name": "Home Stone (Supplies)"},
-	{"item_type": "home_stone_equipment", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Home Stone (Equipment)"},
-	{"item_type": "home_stone_companion", "rarity": "rare", "price": 3000, "supply_category": "consumable", "display_name": "Home Stone (Companion)"},
-	{"item_type": "mysterious_box", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Mysterious Box"},
-	{"item_type": "boss_slayer_tonic", "rarity": "rare", "price": 1200, "supply_category": "consumable", "display_name": "Boss Slayer Tonic"},
-	{"item_type": "reclaimer_lantern", "rarity": "rare", "price": 900, "supply_category": "consumable", "display_name": "Reclaimer Lantern"},
-	{"item_type": "floor_skip_charm", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Floor Skip Charm"},
-	{"item_type": "elixir", "rarity": "common", "price": 350, "supply_category": "consumable", "display_name": "Elixir"},
-	{"item_type": "cursed_coin", "rarity": "common", "price": 75, "supply_category": "consumable", "display_name": "Cursed Coin"},
-]
+# listed price all day. No daily-purchase tracking. The intent is
+# "destination vendor" — these posts are a reason to travel, not a daily
+# limited resource.
+const CATEGORY_STOCK_POOLS: Dictionary = {
+	"exotic": [
+		{"item_type": "home_stone_egg", "rarity": "uncommon", "price": 800, "supply_category": "consumable", "display_name": "Home Stone (Egg)"},
+		{"item_type": "home_stone_supplies", "rarity": "uncommon", "price": 600, "supply_category": "consumable", "display_name": "Home Stone (Supplies)"},
+		{"item_type": "home_stone_equipment", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Home Stone (Equipment)"},
+		{"item_type": "home_stone_companion", "rarity": "rare", "price": 3000, "supply_category": "consumable", "display_name": "Home Stone (Companion)"},
+		{"item_type": "mysterious_box", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Mysterious Box"},
+		{"item_type": "boss_slayer_tonic", "rarity": "rare", "price": 1200, "supply_category": "consumable", "display_name": "Boss Slayer Tonic"},
+		{"item_type": "reclaimer_lantern", "rarity": "rare", "price": 900, "supply_category": "consumable", "display_name": "Reclaimer Lantern"},
+		{"item_type": "floor_skip_charm", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Floor Skip Charm"},
+		{"item_type": "elixir", "rarity": "common", "price": 350, "supply_category": "consumable", "display_name": "Elixir"},
+		{"item_type": "cursed_coin", "rarity": "common", "price": 75, "supply_category": "consumable", "display_name": "Cursed Coin"},
+	],
+	"mine": [
+		# Forge Master — equipment + defensive theme. Sanctuary equipment
+		# storage stone is the headliner; charm_taunt + revive potions
+		# round out the front-line-focused kit.
+		{"item_type": "home_stone_equipment", "rarity": "rare", "price": 1500, "supply_category": "consumable", "display_name": "Home Stone (Equipment)"},
+		{"item_type": "charm_taunt", "rarity": "uncommon", "price": 400, "supply_category": "consumable", "display_name": "Charm of Taunt"},
+		{"item_type": "potion_revive_companion", "rarity": "uncommon", "price": 350, "supply_category": "consumable", "display_name": "Revival Potion"},
+		{"item_type": "scroll_stone_skin", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Stone Skin"},
+		{"item_type": "scroll_forcefield", "rarity": "common", "price": 240, "supply_category": "consumable", "display_name": "Scroll of Forcefield"},
+		{"item_type": "elixir_greater", "rarity": "common", "price": 320, "supply_category": "consumable", "display_name": "Greater Elixir"},
+	],
+	"farm": [
+		# Provisioner — restoration + supplies theme. Home Stone (Supplies)
+		# is the headliner; potions and elixirs fit the "harvest hall" vibe.
+		{"item_type": "home_stone_supplies", "rarity": "uncommon", "price": 600, "supply_category": "consumable", "display_name": "Home Stone (Supplies)"},
+		{"item_type": "potion_standard", "rarity": "common", "price": 60, "supply_category": "consumable", "display_name": "Standard Health Potion"},
+		{"item_type": "potion_greater", "rarity": "common", "price": 120, "supply_category": "consumable", "display_name": "Greater Health Potion"},
+		{"item_type": "elixir_minor", "rarity": "common", "price": 80, "supply_category": "consumable", "display_name": "Minor Elixir"},
+		{"item_type": "elixir_greater", "rarity": "common", "price": 320, "supply_category": "consumable", "display_name": "Greater Elixir"},
+		{"item_type": "potion_revive_companion", "rarity": "uncommon", "price": 350, "supply_category": "consumable", "display_name": "Revival Potion"},
+	],
+	"shrine": [
+		# Mystic — magical/spiritual theme. Home Stone (Egg) is the headliner
+		# (eggs read as spiritual artifacts); scrolls and divine elixirs round
+		# out the rune-shrine vibe.
+		{"item_type": "home_stone_egg", "rarity": "uncommon", "price": 800, "supply_category": "consumable", "display_name": "Home Stone (Egg)"},
+		{"item_type": "scroll_haste", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Haste"},
+		{"item_type": "scroll_rage", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Rage"},
+		{"item_type": "scroll_precision", "rarity": "common", "price": 180, "supply_category": "consumable", "display_name": "Scroll of Precision"},
+		{"item_type": "scroll_vampirism", "rarity": "common", "price": 260, "supply_category": "consumable", "display_name": "Scroll of Vampirism"},
+		{"item_type": "elixir_divine", "rarity": "common", "price": 500, "supply_category": "consumable", "display_name": "Divine Elixir"},
+	],
+}
+
+# Per-category vendor presentation: NPC name, market-row tag, hex tag color,
+# slots-per-day. Categories absent from this dict have no NPC stock.
+const CATEGORY_VENDOR_CONFIG: Dictionary = {
+	"exotic": {"vendor_name": "Curiosity Trader", "tag": "EXOTIC", "color": "#A335EE", "slots_per_day": 4},
+	"mine":   {"vendor_name": "Forge Master",     "tag": "FORGE",  "color": "#FF8C42", "slots_per_day": 3},
+	"farm":   {"vendor_name": "Provisioner",      "tag": "FARM",   "color": "#80E060", "slots_per_day": 3},
+	"shrine": {"vendor_name": "Mystic",           "tag": "SHRINE", "color": "#7FD7FF", "slots_per_day": 3},
+}
+
+# Back-compat alias — Slice 3b client code may reference EXOTIC_STOCK_POOL.
+# Keeping the symbol so cross-version client builds still resolve it.
+const EXOTIC_STOCK_POOL: Array = []  # superseded by CATEGORY_STOCK_POOLS["exotic"]
+const EXOTIC_SLOTS_PER_DAY := 4  # superseded by CATEGORY_VENDOR_CONFIG["exotic"].slots_per_day
 
 func resolve_post_category(post_dict: Dictionary, post_id: String) -> String:
 	"""Audit #9 Slice 3b — resolve a trading post's category from either source.
@@ -824,24 +879,38 @@ func resolve_post_category(post_dict: Dictionary, post_id: String) -> String:
 		return dict_cat
 	return POST_CATEGORIES.get(post_id, "default")
 
-func get_exotic_daily_stock(post_id: String) -> Array:
-	"""Audit #9 Slice 3b — deterministic per-post daily NPC stock. Hashes
-	post_id with days-since-epoch so every visitor sees the same items
-	on a given day. Tomorrow's stock rolls a fresh hash. Returns an Array
-	of EXOTIC_SLOTS_PER_DAY pool entries (or fewer if the pool is small)."""
-	if EXOTIC_STOCK_POOL.is_empty():
+func get_npc_vendor_config(category: String) -> Dictionary:
+	"""Slice 8 — returns vendor presentation for a category, or empty when
+	the category has no NPC stock. Empty result signals 'no vendor here.'"""
+	return CATEGORY_VENDOR_CONFIG.get(category, {})
+
+func category_has_npc_stock(category: String) -> bool:
+	"""Slice 8 — single source of truth for which categories host a vendor."""
+	return CATEGORY_STOCK_POOLS.has(category) and not CATEGORY_STOCK_POOLS[category].is_empty()
+
+func get_npc_daily_stock(post_id: String, category: String) -> Array:
+	"""Audit #11 Slice 8 (generalises Audit #9 Slice 3b). Deterministic
+	per-post-per-day NPC stock. Hashes post_id with days-since-epoch and
+	the category so different categories roll independently (the same
+	post wouldn't change category mid-life, but the seed is cleaner if
+	categories are independent). Returns Array of vendor_config.slots_per_day
+	pool entries (or fewer if the pool is smaller)."""
+	if not category_has_npc_stock(category):
 		return []
+	var pool: Array = CATEGORY_STOCK_POOLS[category]
+	var cfg: Dictionary = CATEGORY_VENDOR_CONFIG.get(category, {})
+	var slots: int = int(cfg.get("slots_per_day", 3))
 	# Days since epoch — UTC truncation is fine, all players use the
 	# server's clock so the day boundary is consistent.
 	var seconds_since_epoch: int = int(Time.get_unix_time_from_system())
 	var day_index: int = seconds_since_epoch / 86400
-	var seed_str := "%s|%d" % [post_id, day_index]
+	var seed_str := "%s|%s|%d" % [category, post_id, day_index]
 	var seed_hash: int = seed_str.hash()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_hash
 	# Sample without replacement: shuffle pool indices, take first N.
 	var indices: Array = []
-	for i in range(EXOTIC_STOCK_POOL.size()):
+	for i in range(pool.size()):
 		indices.append(i)
 	# Fisher-Yates on indices using the seeded RNG.
 	for i in range(indices.size() - 1, 0, -1):
@@ -850,10 +919,16 @@ func get_exotic_daily_stock(post_id: String) -> Array:
 		indices[i] = indices[j]
 		indices[j] = tmp
 	var picked: Array = []
-	var limit: int = mini(EXOTIC_SLOTS_PER_DAY, EXOTIC_STOCK_POOL.size())
+	var limit: int = mini(slots, pool.size())
 	for i in range(limit):
-		picked.append(EXOTIC_STOCK_POOL[indices[i]])
+		picked.append(pool[indices[i]])
 	return picked
+
+# Back-compat shim — Slice 3b server code calls get_exotic_daily_stock(post_id).
+# Delegates to the new generalised helper so any stale callers stay correct
+# until they migrate.
+func get_exotic_daily_stock(post_id: String) -> Array:
+	return get_npc_daily_stock(post_id, "exotic")
 
 func get_post_map_colors(post_id: String) -> Dictionary:
 	var category = get_post_category(post_id)

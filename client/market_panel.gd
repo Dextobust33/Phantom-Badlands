@@ -749,19 +749,21 @@ func _make_listing_row(listing: Dictionary, index: int, is_my_listing: bool) -> 
 		if str(post_name) != "":
 			meta += "  @%s" % post_name
 
-	# Audit #9 Slice 3b — NPC exotic-trader tag. Prepended to the row text so
-	# the Curiosity Trader's stock reads as distinct from player listings. The
-	# row font color shifts to the exotic-purple rarity for the same reason.
+	# Audit #9 Slice 3b + Audit #11 Slice 8 — NPC vendor tag, themed by post
+	# category. Server stamps npc_tag + npc_color on synthetic listings so
+	# each vendor reads distinctly (FORGE / FARM / SHRINE / EXOTIC). Defaults
+	# to "EXOTIC" purple when fields absent (back-compat).
 	var npc_prefix: String = ""
+	var npc_font_color: Color = rarity_color
 	if listing.get("is_npc", false):
-		npc_prefix = "[EXOTIC] "
+		var _ntag: String = String(listing.get("npc_tag", "EXOTIC"))
+		npc_prefix = "[%s] " % _ntag
+		var _ncol: String = String(listing.get("npc_color", "#A335EE"))
+		npc_font_color = Color(_ncol)
 
 	# Use BBCode-free button text since Buttons don't render BBCode — use color override
 	btn.text = "%s%s%s%s   —   %s%s" % [npc_prefix, item_name, qty_text, meta, price_text, "  (by %s)" % seller if not is_my_listing and seller != "" else ""]
-	if listing.get("is_npc", false):
-		btn.add_theme_color_override("font_color", Color(0.64, 0.21, 0.93))
-	else:
-		btn.add_theme_color_override("font_color", rarity_color)
+	btn.add_theme_color_override("font_color", npc_font_color)
 
 	btn.pressed.connect(_on_listing_pressed.bind(index))
 	return btn
