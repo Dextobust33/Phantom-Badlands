@@ -24111,8 +24111,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.480 — Hotfix: starter buffer + threat-corridor clamp.
+	display_game("[color=#00FF00]v0.9.480[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotfix — starter buffer now actually delivers Lv 1-2 monsters, and Area Lv stops lying about encounter difficulty[/color]")
+	display_game("  • [b]Two layered bugs broke v0.9.479's starter buffer.[/b] (1) Post-anchored level used a [color=#FFAA70]linear[/color] blend between the two nearest trading posts — and because procedural posts must sit 70+ tiles from the haven (min spacing), the second-nearest post anchors at Lv 10+. The linear blend dragged the area level near the haven up to Lv 4-5 at just 30 tiles out, even though the wilderness curve said Lv 1-2. Switched to a [color=#88FF88]cubic (t³)[/color] blend so each post DOMINATES its immediate vicinity — the haven's Lv 1 anchor now stays in control through the 30-tile buffer and ramps toward the next post only when you're genuinely close to it. (2) The Audit #11 Slice 9 threat-corridor bias (T2+ active dungeons spilling their monster_type into the surrounding world) was rolling levels from the DUNGEON'S level range, not the area's — a T3 Chimaera Gorge within 80 tiles of the haven was spawning [color=#FF6644]Lv 50+ Chimaeras[/color] in the Lv 1-2 buffer. Now the rolled level is clamped to the area's level_range so the threat's monster TYPE still spawns (preserves the thematic spill) but at a level the player can actually fight. Area Lv HUD now matches what you'll encounter.")
+	display_game("")
+
 	# v0.9.479 — Starter-area Lv 1-2 buffer.
-	display_game("[color=#00FF00]v0.9.479[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.479[/color]")
 	display_game("  [color=#FFD700]Lv 1-2 buffer around the starter post — new characters get a ring of easier monsters before tougher ones[/color]")
 	display_game("  • [b]Stretched the early monster-level curve.[/b] Walking out of the starter post used to drop you into Lv 4-7 monsters by ~25 tiles. Now: distance 0-10 = safe zone (no spawns), [color=#88FF88]10-30 = Lv 1-2 buffer[/color] (the first ring outside the post), 30-60 = Lv 2-6 (gentle next ring), 60-150 = Lv 6-50 (catches up to the old curve at the 150-tile anchor). Endpoint at distance 150 (level 50) is preserved so the rest of the world is unaffected. New characters can fight a few Lv 1-2 monsters and grow before they have to engage tougher mobs.")
 	display_game("")
