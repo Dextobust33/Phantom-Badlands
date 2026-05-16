@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.469 — Audit #6 Slice 18: 6 new T7/T8/T9 chains close the ladder.
+	display_game("[color=#00FF00]v0.9.469[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Six new chains across T7-T9 close the chain ladder — chain content now spans every tier (T1-T9)[/color]")
+	display_game("  • [b]The largest single chain slice yet — six new 3-stage chains anchored at extreme-zone and apex posts, completing the chain ladder.[/b] [color=#4B0082]Void Walker's Pact[/color] @ Void's Edge → Wraith → Nazgul → Void Walker (Dimensional Prison boss). [color=#9400D3]Primordial Awakening[/color] @ Dragon's Rest → Dragon Wyrmling → Ancient Dragon → Primordial Dragon (Cataclysm boss). [color=#191970]The Cosmic Veil[/color] @ Primordial Sanctum → Void Walker → Time Weaver → Cosmic Horror (Madness Aura boss). [color=#2C0854]Death's Threshold[/color] @ Nether Gate → Elder Lich → Void Walker → Death Incarnate (Final Judgment boss — watch the ~30%% HP execute band). [color=#800080]Avatar of Ruin[/color] @ Apex Northeast → Cosmic Horror → Death Incarnate → Avatar of Chaos (Reality Shatter boss). [color=#C5B358]The End of All Things[/color] @ Apex Southwest → Avatar of Chaos → The Nameless One → Entropy (Universe Collapse boss — stacking decay, burst don't chip). Reward curve scales +20%% per tier from T6: T7 stages 1080/1440/2160 XP + 900 valor chain bonus, T8 stages 1300/1730/2600 XP + 1080 valor, T9 stages 1560/2080/3120 XP + 1300 valor. Six new chain titles ([color=#4B0082]Void Ender[/color], [color=#9400D3]Primordial Breaker[/color], [color=#191970]Horror Sealer[/color], [color=#2C0854]Death Defier[/color], [color=#800080]Chaos Unmaker[/color], [color=#C5B358]End Walker[/color]) bring the registry to 28. Chain content now spans T1-T9 across **15 frontier posts**. Audit #6 Slice 18 — chain ladder complete.")
+	display_game("")
+
 	# v0.9.468 — Audit #6 Slice 17: 2 new T6 quest chains.
-	display_game("[color=#00FF00]v0.9.468[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.468[/color]")
 	display_game("  [color=#FFD700]Two new T6 chain quests: Hydra Hunt + Phoenix's Final Flight[/color]")
 	display_game("  • [b]Chain content extends to T6 — the first chains anchored at the highest-tier deep-frontier posts.[/b] [color=#48D1CC]Hydra Hunt[/color] at Far East Station is a 3-stage chain into Hydra's Swamp: kill 6 Sirens → kill 5 Giant Spiders → sever every head on the Hydra (Hydra Regen boss — heals 10%% max HP from any single hit >10%% max HP). [color=#FFA500]Phoenix's Final Flight[/color] at High North Peak hunts the Phoenix's Nest: kill 6 Harpies → kill 5 Gryphons → end the Phoenix (Phoenix Rebirth boss — revives at 75%% HP once on first kill). Each chain pays 900 Valor + the boss's companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#48D1CC]Hydra Slayer[/color] and [color=#FFA500]Phoenix Ender[/color]). Chain content now spans T1-T6 across 9 frontier posts. Audit #6 Slice 17.")
 	display_game("")
