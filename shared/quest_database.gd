@@ -73,6 +73,9 @@ const CHAIN_TITLES = {
 	# Audit #6 Slice 14 — T3 chain titles.
 	"troll_render":       {"name": "Troll Render",       "color": "#5D4037"},
 	"stone_breaker":      {"name": "Stone Breaker",      "color": "#F0E68C"},
+	# Audit #6 Slice 15 — T4 chain titles.
+	"vampire_hunter":     {"name": "Vampire Hunter",     "color": "#8B0000"},
+	"brood_breaker":      {"name": "Brood Breaker",      "color": "#FF8C00"},
 }
 
 static func get_chain_title(title_id: String) -> Dictionary:
@@ -782,6 +785,110 @@ const QUESTS = {
 		"chain_total": 3,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 400, "egg": "Gargoyle", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "stone_breaker"}
+	},
+	# ===== "Vampire's Hunger" — Southport, 3 stages, T4 (Audit #6 Slice 15) =====
+	"vampirehunger_1": {
+		"id": "vampirehunger_1",
+		"name": "Vampire's Hunger I — Walking Dead",
+		"description": "Wights are stirring from the southern barrows, drawn by a hunger that isn't their own. Defeat 6 Wights to break the procession before it reaches the port.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 600 valor + Vampire Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "southport",
+		"target": 6,
+		"monster_type": "Wight",
+		"rewards": {"xp": 550, "valor": 75},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "vampirehunger",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "vampirehunger_2",
+		"chain_bonus": {}
+	},
+	"vampirehunger_2": {
+		"id": "vampirehunger_2",
+		"name": "Vampire's Hunger II — The Court Stirs",
+		"description": "Wraiths follow in the wights' wake — closer to the vampire, sharper of will. Cut down 5 Wraiths to break the inner court before the master appears.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 600 valor + Vampire Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "southport",
+		"target": 5,
+		"monster_type": "Wraith",
+		"rewards": {"xp": 700, "valor": 100},
+		"is_daily": false,
+		"prerequisite": "vampirehunger_1",
+		"chain_id": "vampirehunger",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "vampirehunger_3",
+		"chain_bonus": {}
+	},
+	"vampirehunger_3": {
+		"id": "vampirehunger_3",
+		"name": "Vampire's Hunger III — End the Master",
+		"description": "The Vampire holds court in the Vampire's Crypt. Find the dungeon and put an end to the bloodletting. Beware Blood Frenzy — every hit you land heals the vampire for 30% of damage dealt. Burst rotations work better than steady chip damage; healing breaks the loop.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 600 valor + Vampire Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "southport",
+		"target": 1,
+		"bounty_name": "Vampire",
+		"rewards": {"xp": 1100, "valor": 120},
+		"is_daily": false,
+		"prerequisite": "vampirehunger_2",
+		"chain_id": "vampirehunger",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 480, "egg": "Vampire", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "vampire_hunter"}
+	},
+	# ===== "Dragon Brood" — Frostgate, 3 stages, T4 (Audit #6 Slice 15) =====
+	"dragonbrood_1": {
+		"id": "dragonbrood_1",
+		"name": "Dragon Brood I — Scaled Skies",
+		"description": "Wyverns have been raiding caravans north of Frostgate, dragging horses and supplies up to whatever lair has them rallying. Down 6 Wyverns to break their flight before more wing in.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 600 valor + Dragon Wyrmling Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "frostgate",
+		"target": 6,
+		"monster_type": "Wyvern",
+		"rewards": {"xp": 550, "valor": 75},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "dragonbrood",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "dragonbrood_2",
+		"chain_bonus": {}
+	},
+	"dragonbrood_2": {
+		"id": "dragonbrood_2",
+		"name": "Dragon Brood II — Hatchling Surge",
+		"description": "The wyverns were running supplies for the Dragon Hatchery — and the hatchlings are already crawling out to feed. Cut down 5 Dragon Wyrmlings before they reach full size.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 600 valor + Dragon Wyrmling Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "frostgate",
+		"target": 5,
+		"monster_type": "Dragon Wyrmling",
+		"rewards": {"xp": 700, "valor": 100},
+		"is_daily": false,
+		"prerequisite": "dragonbrood_1",
+		"chain_id": "dragonbrood",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "dragonbrood_3",
+		"chain_bonus": {}
+	},
+	"dragonbrood_3": {
+		"id": "dragonbrood_3",
+		"name": "Dragon Brood III — Crush the Broodmother",
+		"description": "The Broodmother Wyrmling guards the Dragon Hatchery and lays the eggs that fuel the brood. Find the dungeon and end her line. Beware Hatchling Swarm — every four rounds she calls in a burst of damage as fresh hatchlings throw themselves at you. Plan your burns and cooldowns around her timer.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 600 valor + Dragon Wyrmling Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "frostgate",
+		"target": 1,
+		"bounty_name": "Broodmother Wyrmling",
+		"rewards": {"xp": 1100, "valor": 120},
+		"is_daily": false,
+		"prerequisite": "dragonbrood_2",
+		"chain_id": "dragonbrood",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 480, "egg": "Dragon Wyrmling", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "brood_breaker"}
 	}
 }
 

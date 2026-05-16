@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.466 — Audit #6 Slice 15: 2 new T4 quest chains.
+	display_game("[color=#00FF00]v0.9.466[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two new T4 chain quests: Vampire's Hunger + Dragon Brood[/color]")
+	display_game("  • [b]Two more chain quests anchored at frontier posts, this time T4.[/b] [color=#8B0000]Vampire's Hunger[/color] at Southport is a 3-stage chain into the Vampire's Crypt: kill 6 Wights → kill 5 Wraiths → slay the Vampire (Blood Frenzy boss). [color=#FF8C00]Dragon Brood[/color] at Frostgate puts you on the trail of the Dragon Hatchery: kill 6 Wyverns → kill 5 Dragon Wyrmlings → break the Broodmother (Hatchling Swarm boss). Each chain pays out 600 Valor + a tier-4 companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#8B0000]Vampire Hunter[/color] and [color=#FF8C00]Brood Breaker[/color]). Brings chain breadth to T1-T4 across the major frontier posts. Audit #6 Slice 15.")
+	display_game("")
+
 	# v0.9.465 — Audit #15 — Help page refresh.
-	display_game("[color=#00FF00]v0.9.465[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.465[/color]")
 	display_game("  [color=#FFD700]/help is current again — refreshed to cover every major v0.9.4xx addition[/color]")
 	display_game("  • [b]The Help page's 'New Features' block now reflects what's actually new[/b] — NPC vendors at category posts, Travel Stone, threat-corridor mechanics, regenerating quest board (no daily caps, 3 active max), Clan Vault panel, dungeon theme tiles on all 53 dungeons, Sanctuary tabs + Discovery unlocks, crafting transparency, Progression Vectors dashboard, combat loot scratch-off, and boss signatures. The inline Quests line in the basics section also names chains + the new 3-active cap, so anyone press-and-reading /help now sees what's there. Client-only release. Audit #15.")
 	display_game("")
