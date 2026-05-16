@@ -1502,8 +1502,18 @@ func get_post_anchored_level(x: int, y: int) -> int:
 		if total < 0.001:
 			post_blended = base_nearest
 		else:
+			# v0.9.480 — cubic blend (t^3) so each post DOMINATES its immediate
+			# vicinity instead of linearly bleeding into neighbors. Was: linear
+			# t = nearest/total — at d=30 from haven the blend already hit Lv 4
+			# because the second-nearest post (forced 70+ tiles away by spacing
+			# rules) anchors at Lv 10+. Cubic keeps the post's own anchor in
+			# control through ~50% of the gap, then ramps sharply near the
+			# other post. Result: haven Lv 1 stays Lv 1-2 in the buffer band,
+			# and other posts get a cleaner "level pocket" too. Wilderness
+			# floor still applies via max() below for apex zones.
 			var t = nearest_dist / total
-			post_blended = int(round(lerp(float(base_nearest), float(base_second), t)))
+			var t_curved = t * t * t
+			post_blended = int(round(lerp(float(base_nearest), float(base_second), t_curved)))
 
 	return max(post_blended, wilderness_level)
 

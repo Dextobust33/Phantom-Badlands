@@ -6105,6 +6105,15 @@ func trigger_encounter(peer_id: int):
 			var t_min: int = int(threat_zone.get("min_level", level_range.min))
 			var t_max: int = int(threat_zone.get("max_level", level_range.max))
 			var rolled_level: int = randi_range(maxi(1, t_min), maxi(t_min, t_max))
+			# v0.9.480 HOTFIX — clamp the rolled level to the area's natural
+			# range so a low-level zone (e.g., the v0.9.479 Lv 1-2 starter
+			# buffer) doesn't spill Lv 50+ dungeon monsters from a nearby
+			# T3+ dungeon. The threat's MONSTER_TYPE still spawns (preserves
+			# the "spilled threat" theme — you see Chimaeras where you'd
+			# expect Goblins) but at a level the player can actually engage.
+			# Without this clamp the threat-corridor turned the starter
+			# buffer into a kill zone and made the Area Lv HUD lie.
+			rolled_level = clamp(rolled_level, level_range.min, level_range.max)
 			monster = monster_db.generate_monster_by_name(threat_monster_type, rolled_level)
 			if monster.is_empty():
 				# Named monster missing from DB — fall through to biome pool.
