@@ -9877,6 +9877,73 @@ func _maybe_send_progression_hint(peer_id: int) -> void:
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
 
+func _maybe_send_quest_board_hint(peer_id: int) -> void:
+	"""Audit #3 Slice 5 — first quest-board open teaches the chain system, the
+	3-active cap, and that completing a quest immediately refills the slot."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_quest_board_hint:
+		return
+	character.seen_quest_board_hint = true
+	var title = "[color=#FFD700]📜 Quest Board[/color]"
+	var body = (
+		"You can hold [color=#FFE066]3[/color] active quests at a time. "
+		+ "Completing one immediately refills the slot with a new procedural quest — "
+		+ "the board never empties.\n\n"
+		+ "Look for [color=#FFAA00]⛓ CHAIN[/color] tagged quests at frontier posts: "
+		+ "3-stage adventures (KILL → KILL → BOSS_HUNT) with tier-scaled rewards plus "
+		+ "a companion egg + Home Stones + chain title on the final turn-in.\n\n"
+		+ "Under-Threat posts also surface [color=#FF8800]⚠ THREAT BOUNTY[/color] quests "
+		+ "pointing at the threatening dungeon."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
+func _maybe_send_dungeon_hint(peer_id: int) -> void:
+	"""Audit #3 Slice 5 — first dungeon entry teaches floors, boss-at-bottom,
+	all monsters are the boss's type, and the egg drop on victory."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_dungeon_hint:
+		return
+	character.seen_dungeon_hint = true
+	var title = "[color=#FFD700]🏰 Your First Dungeon[/color]"
+	var body = (
+		"Dungeons are multi-floor instances. Find the stairs on each floor; "
+		+ "the boss waits on the final floor.\n\n"
+		+ "Every monster inside matches the boss's type (Orc Stronghold = all Orcs etc.), "
+		+ "so you can prep gear and abilities for one matchup.\n\n"
+		+ "Bosses drop a guaranteed [color=#FFAA00]companion egg[/color] of their type, "
+		+ "themed [color=#CCAAFF]theme tiles[/color] add environmental hazards/buffs, "
+		+ "and the [color=#FF7F50]Combat Loot Scratch-Off[/color] adds bonus rewards each fight."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
+func _maybe_send_crafting_hint(peer_id: int) -> void:
+	"""Audit #3 Slice 5 — first crafting station open teaches the transparency
+	stack (material sources, quality odds, market avg, skill preview)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_crafting_hint:
+		return
+	character.seen_crafting_hint = true
+	var title = "[color=#FFD700]🛠 Crafting[/color]"
+	var body = (
+		"Each recipe shows you everything you need to plan the craft:\n\n"
+		+ "• [color=#88FF88]Material sources[/color] under each ingredient — where to gather it.\n"
+		+ "• [color=#88FFFF]Quality odds[/color] — Poor / Standard / Fine / Masterwork % at your skill.\n"
+		+ "• [color=#FFD700]Recent market avg[/color] — is the craft worth your time?\n"
+		+ "• [color=#FFE066]Coming Up[/color] — what unlocks at higher skill.\n\n"
+		+ "Pick ONE specialty per character (Blacksmith / Alchemy / Enchant / Scribe / "
+		+ "Construction). Use the bench's recipes to gain skill XP."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
 func _send_character_update_immediate(peer_id: int, force_full: bool):
 	"""Actually send character data update to client (full or delta)."""
 	if not characters.has(peer_id):
@@ -11704,6 +11771,8 @@ func handle_trading_post_quests(peer_id: int):
 		"active_count": character.active_quests.size(),
 		"max_quests": Character.MAX_ACTIVE_QUESTS
 	})
+	# Audit #3 Slice 5 — first quest-board open teaches chains + the 3-active cap.
+	_maybe_send_quest_board_hint(peer_id)
 
 func _generate_progression_quest(current_post_id: String, player_level: int, completed_quests: Array, active_quest_ids: Array) -> Dictionary:
 	"""Generate a dynamic exploration quest to guide player to the next trading post."""
@@ -18837,6 +18906,8 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 		"material_sources": sources_map,
 		"upcoming_unlocks": upcoming_unlocks,
 	})
+	# Audit #3 Slice 5 — first crafting-station open teaches the transparency stack.
+	_maybe_send_crafting_hint(peer_id)
 
 func _get_effective_craft_materials(peer_id: int) -> Dictionary:
 	"""Return {material_id: qty} of backpack pouch + player's own listings at current post.
@@ -22825,6 +22896,9 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	# know which dungeon they ended up in and what to look for.
 	if rescue_redirect_msg != "":
 		send_to_peer(peer_id, {"type": "text", "message": rescue_redirect_msg})
+
+	# Audit #3 Slice 5 — first dungeon entry teaches floors / boss / theme tiles.
+	_maybe_send_dungeon_hint(peer_id)
 
 func handle_dungeon_move(peer_id: int, message: Dictionary):
 	"""Handle player movement within dungeon"""
