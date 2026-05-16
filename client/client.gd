@@ -5057,10 +5057,12 @@ func update_online_players(players: Array):
 		var pclass = player.get("class", "Unknown")
 		var ptitle = player.get("title", "")
 		var pclan_tag = String(player.get("clan_tag", ""))
+		# Audit #14 Slice 8 — banner color from server (default purple).
+		var pclan_color = String(player.get("clan_banner_color", "#A335EE"))
 
 		# Audit #14 Slice 3 — render clan tag prefix before name.
 		if pclan_tag != "":
-			online_players_list.append_text("[color=#A335EE][%s][/color] " % pclan_tag)
+			online_players_list.append_text("[color=%s][%s][/color] " % [pclan_color, pclan_tag])
 
 		# Use push_meta/pop for reliable click detection (Godot 4.x uses pop() not pop_meta())
 		online_players_list.push_meta(pname)
@@ -18697,8 +18699,10 @@ func handle_server_message(message: Dictionary):
 			var sender = message.get("sender", "Unknown")
 			var text = message.get("message", "")
 			# Audit #14 Slice 3 — prepend [TAG] when sender has a clan.
+			# Audit #14 Slice 8 — use the sender's clan banner color.
 			var sender_tag = String(message.get("sender_clan_tag", ""))
-			var sender_label = ("[color=#A335EE][%s][/color] %s" % [sender_tag, sender]) if sender_tag != "" else sender
+			var sender_color = String(message.get("sender_clan_color", "#A335EE"))
+			var sender_label = ("[color=%s][%s][/color] %s" % [sender_color, sender_tag, sender]) if sender_tag != "" else sender
 			display_chat("[color=#00FFFF]%s:[/color] %s" % [sender_label, text])
 			# Refresh player list when someone joins, leaves, or dies
 			if "entered the realm" in text or "left the realm" in text or "has fallen" in text:
@@ -18717,8 +18721,10 @@ func handle_server_message(message: Dictionary):
 			var sender_name = message.get("sender_name", sender)  # Plain name for reply
 			var text = message.get("message", "")
 			# Audit #14 Slice 3 — clan tag on whispers.
+			# Audit #14 Slice 8 — use the sender's clan banner color.
 			var sender_tag = String(message.get("sender_clan_tag", ""))
-			var sender_label = ("[color=#A335EE][%s][/color] %s" % [sender_tag, sender]) if sender_tag != "" else sender
+			var sender_color = String(message.get("sender_clan_color", "#A335EE"))
+			var sender_label = ("[color=%s][%s][/color] %s" % [sender_color, sender_tag, sender]) if sender_tag != "" else sender
 			last_whisper_from = sender_name
 			display_chat("[color=#FF69B4][From %s]:[/color] %s" % [sender_label, text])
 			# Play notification sound
@@ -20561,7 +20567,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "vault", "clanvault",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "vault", "clanvault",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21557,6 +21563,18 @@ func process_command(text: String):
 				var cd_parts = text.split(" ", false, 1)
 				var cd_text = cd_parts[1].strip_edges() if cd_parts.size() > 1 else ""
 				send_to_server({"type": "clan_description_set", "text": cd_text})
+		"clancolor":
+			# Audit #14 Slice 8 — leader-only banner color setter.
+			# Usage: /clancolor #RRGGBB — sets the chat [TAG] color.
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var cc_parts = text.split(" ", false, 1)
+				var cc_color = cc_parts[1].strip_edges() if cc_parts.size() > 1 else ""
+				if cc_color == "":
+					display_game("[color=#FF8800]Usage: /clancolor #RRGGBB  (example: /clancolor #FFD700)[/color]")
+				else:
+					send_to_server({"type": "clan_banner_color_set", "color": cc_color})
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -24093,8 +24111,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.477 — Audit #14 Slice 8: clan banner color.
+	display_game("[color=#00FF00]v0.9.477[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan leaders can now set a banner color that colors the [TAG] marker everywhere it appears[/color]")
+	display_game("  • [b]Follow-up to v0.9.473 clan description.[/b] Use [color=#FFD700]/clancolor #RRGGBB[/color] (leader only) to set your clan's banner color. The color follows the [TAG] marker through every render site: player list, chat messages, whispers, invitation alerts, and the clan panel header itself. Default is the legacy purple ([color=#A335EE]#A335EE[/color]) so existing chats look the same until a leader picks a new color. Server validates `^#[0-9A-Fa-f]{6}$` — anything else is rejected. After change, server refreshes every online member's clan panel + broadcasts a fresh player list so chat tags re-color immediately for everyone. Audit #14 Slice 8.")
+	display_game("")
+
 	# v0.9.476 — Audit #3 Slice 5: 3 more first-time tutorial overlays.
-	display_game("[color=#00FF00]v0.9.476[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.476[/color]")
 	display_game("  [color=#FFD700]Three more one-time tutorial hints — first quest board, first dungeon entry, first crafting station[/color]")
 	display_game("  • [b]Stacks the v0.9.475 tutorial overlay infrastructure.[/b] Three new one-time-per-character teaching overlays fire on the matching first interaction:\n  • [color=#FFAA00]First quest board[/color] — explains the 3-active cap, the regenerating board (completing a quest immediately refills the slot), CHAIN-tagged adventures at frontier posts, and THREAT BOUNTY quests at Under-Threat posts.\n  • [color=#CCAAFF]First dungeon entry[/color] — explains floors / boss-at-bottom / all monsters match the boss type / guaranteed boss egg / theme tiles / combat loot scratch-off.\n  • [color=#88FFFF]First crafting station[/color] — explains the transparency stack (material sources, quality odds, recent market avg, skill progression preview) and the one-specialty-per-character lock-in.\n  Each fires once per character via a `seen_<topic>_hint` flag (`seen_quest_board_hint`, `seen_dungeon_hint`, `seen_crafting_hint`). Legacy characters get them on their first matching interaction. Audit #3 Slice 5.")
 	display_game("")
@@ -27928,7 +27952,9 @@ func _handle_clan_invitation_received(message: Dictionary) -> void:
 	var clan_name = String(message.get("clan_name", ""))
 	var clan_tag = String(message.get("clan_tag", ""))
 	var inviter = String(message.get("inviter_username", ""))
-	var line = "[color=#A335EE]%s invited you to join clan [color=#FFD700]%s[/color] [%s]. Open the [color=#9ACD32]Clan[/color] panel to accept or decline.[/color]" % [inviter, clan_name, clan_tag]
+	# Audit #14 Slice 8 — color the inviter's [TAG] with their clan banner color.
+	var clan_color = String(message.get("clan_banner_color", "#A335EE"))
+	var line = "[color=%s]%s invited you to join clan [color=#FFD700]%s[/color] [%s]. Open the [color=#9ACD32]Clan[/color] panel to accept or decline.[/color]" % [clan_color, inviter, clan_name, clan_tag]
 	display_chat(line)
 	display_game(line)
 

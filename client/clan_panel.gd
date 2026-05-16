@@ -329,7 +329,9 @@ func _render_in_clan_view() -> void:
 	header.scroll_active = false
 	header.add_theme_font_size_override("normal_font_size", 15)
 	header.custom_minimum_size = Vector2(0, 24)
-	header.text = "[color=#A335EE][b]%s[/b][/color]  [color=#FFD700][%s][/color]   [color=#888888]%d/%d members[/color]" % [clan_name, clan_tag, member_count, max_members]
+	# Audit #14 Slice 8 — banner color from server (default purple).
+	var banner_color: String = String(_data.get("banner_color", "#A335EE"))
+	header.text = "[color=%s][b]%s[/b][/color]  [color=%s][%s][/color]   [color=#888888]%d/%d members[/color]" % [banner_color, clan_name, banner_color, clan_tag, member_count, max_members]
 	_body_container.add_child(header)
 
 	# Audit #14 Slice 7 — leader-set clan description. Public to all viewers.
@@ -347,7 +349,7 @@ func _render_in_clan_view() -> void:
 		desc_label.text = "[color=#C8B0FF]%s[/color]" % description
 		_body_container.add_child(desc_label)
 	elif is_leader:
-		desc_label.text = "[color=#888888]No clan description set — use [color=#FFD700]/clandesc <text>[/color] to add one.[/color]"
+		desc_label.text = "[color=#888888]No clan description set — use [color=#FFD700]/clandesc <text>[/color] to add one, or [color=#FFD700]/clancolor #RRGGBB[/color] to set a banner color.[/color]"
 		_body_container.add_child(desc_label)
 
 	if is_leader:
