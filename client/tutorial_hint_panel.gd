@@ -53,12 +53,17 @@ func _build_layout() -> void:
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
 
-	# Centered panel container, capped at ~520x250.
+	# Use a full-rect CenterContainer to keep the panel centered on screen as
+	# the viewport resizes. (Setting PRESET_CENTER + KEEP_SIZE directly on the
+	# panel anchored it to (0,0) before the panel had a computed size, causing
+	# the top-left cutoff seen in v0.9.475/476 tutorial overlays.)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(center)
+
 	_root_panel = PanelContainer.new()
-	_root_panel.set_anchors_preset(Control.PRESET_CENTER)
 	_root_panel.custom_minimum_size = Vector2(520, 0)
-	_root_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_root_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	var panel_sb := StyleBoxFlat.new()
 	panel_sb.bg_color = Color(0.10, 0.08, 0.16, 0.98)
@@ -70,10 +75,7 @@ func _build_layout() -> void:
 	panel_sb.content_margin_top = 18
 	panel_sb.content_margin_bottom = 18
 	_root_panel.add_theme_stylebox_override("panel", panel_sb)
-	add_child(_root_panel)
-
-	# Recenter the panel after layout once we know its computed size.
-	_root_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
+	center.add_child(_root_panel)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
