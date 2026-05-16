@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.468 — Audit #6 Slice 17: 2 new T6 quest chains.
+	display_game("[color=#00FF00]v0.9.468[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two new T6 chain quests: Hydra Hunt + Phoenix's Final Flight[/color]")
+	display_game("  • [b]Chain content extends to T6 — the first chains anchored at the highest-tier deep-frontier posts.[/b] [color=#48D1CC]Hydra Hunt[/color] at Far East Station is a 3-stage chain into Hydra's Swamp: kill 6 Sirens → kill 5 Giant Spiders → sever every head on the Hydra (Hydra Regen boss — heals 10%% max HP from any single hit >10%% max HP). [color=#FFA500]Phoenix's Final Flight[/color] at High North Peak hunts the Phoenix's Nest: kill 6 Harpies → kill 5 Gryphons → end the Phoenix (Phoenix Rebirth boss — revives at 75%% HP once on first kill). Each chain pays 900 Valor + the boss's companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#48D1CC]Hydra Slayer[/color] and [color=#FFA500]Phoenix Ender[/color]). Chain content now spans T1-T6 across 9 frontier posts. Audit #6 Slice 17.")
+	display_game("")
+
 	# v0.9.467 — Audit #6 Slice 16: 2 new T5 quest chains.
-	display_game("[color=#00FF00]v0.9.467[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.467[/color]")
 	display_game("  [color=#FFD700]Two new T5 chain quests at deep-frontier posts: Lich's Curse + Demon Lord's Heir[/color]")
 	display_game("  • [b]Chain content now extends to T5 — the first chains anchored at deep-frontier trading posts (radius 250+).[/b] [color=#7755BB]Lich's Curse[/color] at Far West Haven is a 3-stage chain into the Lich's Sanctum: kill 6 Zombies → kill 5 Wraiths → end the Lich (Soul Burn boss — drains your primary resource on every hit). [color=#FF4500]Demon Lord's Heir[/color] at Deep South Port hunts the Demon Lord's Throne: kill 6 Demons → kill 5 Succubi → topple the Demon Lord (Soul Forge boss — heals 15%% max HP every 5 rounds, so burst him through). Each chain pays 750 Valor + the boss's companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#7755BB]Lich Ender[/color] and [color=#FF4500]Demon Slayer[/color]). Chain content now spans T1-T5 across 7 frontier posts. Audit #6 Slice 16.")
 	display_game("")

@@ -79,6 +79,9 @@ const CHAIN_TITLES = {
 	# Audit #6 Slice 16 — T5 chain titles.
 	"lich_ender":         {"name": "Lich Ender",         "color": "#7755BB"},
 	"demon_slayer":       {"name": "Demon Slayer",       "color": "#FF4500"},
+	# Audit #6 Slice 17 — T6 chain titles.
+	"hydra_slayer":       {"name": "Hydra Slayer",       "color": "#48D1CC"},
+	"phoenix_ender":      {"name": "Phoenix Ender",      "color": "#FFA500"},
 }
 
 static func get_chain_title(title_id: String) -> Dictionary:
@@ -996,6 +999,110 @@ const QUESTS = {
 		"chain_total": 3,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 600, "egg": "Demon Lord", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "demon_slayer"}
+	},
+	# ===== "Hydra Hunt" — Far East Station, 3 stages, T6 (Audit #6 Slice 17) =====
+	"hydrahunt_1": {
+		"id": "hydrahunt_1",
+		"name": "Hydra Hunt I — Bog's Vanguard",
+		"description": "Sirens have been luring caravan crews off the eastern road, dragging them into the bog. Down 6 Sirens to clear the song-trap before more crews vanish.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 900 valor + Hydra Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "far_east_station",
+		"target": 6,
+		"monster_type": "Siren",
+		"rewards": {"xp": 900, "valor": 120},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "hydrahunt",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "hydrahunt_2",
+		"chain_bonus": {}
+	},
+	"hydrahunt_2": {
+		"id": "hydrahunt_2",
+		"name": "Hydra Hunt II — Spinners in the Reeds",
+		"description": "Giant Spiders nest in the bog's reed-banks, fattened on hydra-leavings. Cut down 5 Giant Spiders to clear the approach to the hydra's pool.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 900 valor + Hydra Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "far_east_station",
+		"target": 5,
+		"monster_type": "Giant Spider",
+		"rewards": {"xp": 1200, "valor": 160},
+		"is_daily": false,
+		"prerequisite": "hydrahunt_1",
+		"chain_id": "hydrahunt",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "hydrahunt_3",
+		"chain_bonus": {}
+	},
+	"hydrahunt_3": {
+		"id": "hydrahunt_3",
+		"name": "Hydra Hunt III — Sever Every Head",
+		"description": "The Hydra coils at the center of the swamp, regenerating from anything you don't outright kill. Find the dungeon and end her. Beware Hydra Regen — any hit landing for more than 10%% of her max HP heals her for 10%% of max HP. Spread your burst across multiple hits or break the threshold once cleanly — chip damage works in your favor.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 900 valor + Hydra Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "far_east_station",
+		"target": 1,
+		"bounty_name": "Hydra",
+		"rewards": {"xp": 1800, "valor": 200},
+		"is_daily": false,
+		"prerequisite": "hydrahunt_2",
+		"chain_id": "hydrahunt",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 750, "egg": "Hydra", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "hydra_slayer"}
+	},
+	# ===== "Phoenix's Final Flight" — High North Peak, 3 stages, T6 (Audit #6 Slice 17) =====
+	"phoenixflight_1": {
+		"id": "phoenixflight_1",
+		"name": "Phoenix's Final Flight I — Skies of Ash",
+		"description": "Harpies have been wheeling above the northern peaks, scattering when the heat-thermal that lifts them surges. Bring down 6 Harpies to clear the air for the climb above.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 900 valor + Phoenix Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "high_north_peak",
+		"target": 6,
+		"monster_type": "Harpy",
+		"rewards": {"xp": 900, "valor": 120},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "phoenixflight",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "phoenixflight_2",
+		"chain_bonus": {}
+	},
+	"phoenixflight_2": {
+		"id": "phoenixflight_2",
+		"name": "Phoenix's Final Flight II — Sentinels of the Peak",
+		"description": "Gryphons patrol the highest ledges, keeping all lesser flyers from the phoenix's flame. Bring down 5 Gryphons to break the cordon and reach the summit.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 900 valor + Phoenix Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "high_north_peak",
+		"target": 5,
+		"monster_type": "Gryphon",
+		"rewards": {"xp": 1200, "valor": 160},
+		"is_daily": false,
+		"prerequisite": "phoenixflight_1",
+		"chain_id": "phoenixflight",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "phoenixflight_3",
+		"chain_bonus": {}
+	},
+	"phoenixflight_3": {
+		"id": "phoenixflight_3",
+		"name": "Phoenix's Final Flight III — End the Eternal",
+		"description": "The Phoenix nests at the peak, and the only way to put her down for good is to break her on her own coals. Find the dungeon and end the rebirth. Beware Phoenix Rebirth — when first killed, the Phoenix rises again at 75%% HP. Save your biggest cooldowns for the second life; the first kill is the warm-up.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 900 valor + Phoenix Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "high_north_peak",
+		"target": 1,
+		"bounty_name": "Phoenix",
+		"rewards": {"xp": 1800, "valor": 200},
+		"is_daily": false,
+		"prerequisite": "phoenixflight_2",
+		"chain_id": "phoenixflight",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 750, "egg": "Phoenix", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "phoenix_ender"}
 	}
 }
 
