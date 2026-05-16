@@ -24111,8 +24111,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.478 — Hotfix: tutorial overlay was cutting off in the top-left.
+	display_game("[color=#00FF00]v0.9.478[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotfix — tutorial overlay now centers correctly (was cut off in the top-left)[/color]")
+	display_game("  • Wrapped the TutorialHintPanel root in a [color=#FFE066]CenterContainer[/color] so it always centers on the viewport. The previous layout used `PRESET_CENTER + KEEP_SIZE` directly on the panel BEFORE the panel had a computed size, which anchored it at (0,0) — causing the v0.9.475/476 first-time hints (Quest Board / Dungeon / Crafting / Progression) to render cropped against the top-left edge of the screen. Client-only.")
+	display_game("")
+
 	# v0.9.477 — Audit #14 Slice 8: clan banner color.
-	display_game("[color=#00FF00]v0.9.477[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.477[/color]")
 	display_game("  [color=#FFD700]Clan leaders can now set a banner color that colors the [TAG] marker everywhere it appears[/color]")
 	display_game("  • [b]Follow-up to v0.9.473 clan description.[/b] Use [color=#FFD700]/clancolor #RRGGBB[/color] (leader only) to set your clan's banner color. The color follows the [TAG] marker through every render site: player list, chat messages, whispers, invitation alerts, and the clan panel header itself. Default is the legacy purple ([color=#A335EE]#A335EE[/color]) so existing chats look the same until a leader picks a new color. Server validates `^#[0-9A-Fa-f]{6}$` — anything else is rejected. After change, server refreshes every online member's clan panel + broadcasts a fresh player list so chat tags re-color immediately for everyone. Audit #14 Slice 8.")
 	display_game("")
