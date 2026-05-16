@@ -24,6 +24,36 @@ const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
 # limit when that lands.
 const MASTERY_USES_PER_COMBAT_CAP: int = 5
 
+# Audit #2 Slice 3 — niche-passive keyword tables. Used by Divine Favor
+# (Paladin) and Hunter's Mark (Ranger) to match the targeted monster
+# against an undead/demon or beast category. Substring match on the
+# monster's name so rare-variant prefixes ("Corrosive ", "Sundering ",
+# "★ ... Champion") still trigger the passive. Previously the exact-name
+# list silently failed against any variant.
+const _UNDEAD_DEMON_KEYWORDS: Array = [
+	"skeleton", "zombie", "wraith", "wight", "lich", "vampire",
+	"nazgul", "death incarnate",
+	"demon", "succubus", "balrog",
+]
+const _BEAST_KEYWORDS: Array = [
+	"rat", "wolf", "spider", "wyvern", "minotaur", "harpy",
+	"gryphon", "chimaera", "cerberus", "hydra", "serpent",
+	"phoenix", "sphinx", "dragon", "bear",
+]
+
+static func _monster_matches_keywords(monster: Dictionary, keywords: Array) -> bool:
+	"""Audit #2 Slice 3 — niche-passive substring match. Accepts variant
+	prefixes ("Corrosive Skeleton", "★ Lich Champion"). Returns true if the
+	monster's type field contains any keyword OR if its name (lowercased)
+	contains any keyword as a substring."""
+	var type_str = String(monster.get("type", "")).to_lower()
+	var name_str = String(monster.get("name", "")).to_lower()
+	for k in keywords:
+		var kw = String(k)
+		if kw in name_str or kw in type_str:
+			return true
+	return false
+
 # Audit #1 Slice 6a — deck/hand/draw runtime. Each combat builds a deck of
 # the character's accessible combat abilities (1 copy each) and draws the
 # top N into a hand. Players may only fire abilities that are currently in
@@ -5970,27 +6000,22 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 		total = int(total * (1.0 - lvl_penalty))
 
 	# === CLASS PASSIVE: Paladin Divine Favor ===
-	# +25% damage vs undead/demons
+	# +25% damage vs undead/demons. Audit #2 Slice 3 — substring match on the
+	# monster's name so rare-variant prefixes ("Corrosive Skeleton",
+	# "Sundering Vampire", "★ Lich Champion") still trigger the passive.
+	# Previously these silently failed because the exact-name list was checked
+	# against the prefixed name.
 	if effects.has("bonus_vs_undead"):
-		var monster_type = monster.get("type", "").to_lower()
-		var undead_demon_names = [
-			"skeleton", "zombie", "wraith", "wight", "lich", "elder lich", "vampire", "nazgul", "death incarnate",  # Undead
-			"demon", "demon lord", "balrog", "succubus"  # Demons
-		]
-		if "undead" in monster_type or "demon" in monster_type or monster.name.to_lower() in undead_demon_names:
+		if _monster_matches_keywords(monster, _UNDEAD_DEMON_KEYWORDS):
 			total = int(total * (1.0 + effects.get("bonus_vs_undead", 0)))
 			passive_messages.append("[color=#FFD700]Divine Favor: +%d%% vs undead![/color]" % int(effects.get("bonus_vs_undead", 0) * 100))
 
 	# === CLASS PASSIVE: Ranger Hunter's Mark ===
-	# +25% damage vs beasts (natural creatures, animals, monsters with animal forms)
+	# +25% damage vs beasts. Audit #2 Slice 3 — substring match (same fix as
+	# Divine Favor above) plus beast-list expansion to cover the dragons,
+	# phoenix, sphinx, dragon wyrmling that were previously missing.
 	if effects.has("bonus_vs_beasts"):
-		var monster_type = monster.get("type", "").to_lower()
-		var beast_names = [
-			"giant rat", "wolf", "dire wolf", "giant spider", "bear", "dire bear",  # Basic beasts
-			"wyvern", "gryphon", "chimaera", "cerberus", "hydra",  # Mythical beasts
-			"world serpent", "harpy", "minotaur"  # Part-beast creatures
-		]
-		if "beast" in monster_type or "animal" in monster_type or monster.name.to_lower() in beast_names:
+		if _monster_matches_keywords(monster, _BEAST_KEYWORDS):
 			total = int(total * (1.0 + effects.get("bonus_vs_beasts", 0)))
 			passive_messages.append("[color=#228B22]Hunter's Mark: +%d%% vs beasts![/color]" % int(effects.get("bonus_vs_beasts", 0) * 100))
 

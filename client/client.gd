@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.472 — Audit #2 Slice 3: niche-passive keyword fix + beast expansion.
+	display_game("[color=#00FF00]v0.9.472[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Paladin Divine Favor and Ranger Hunter's Mark now fire against rare variants — and the beast list grew[/color]")
+	display_game("  • [b]Niche-passive audit fix.[/b] Paladin's [color=#FFD700]Divine Favor[/color] (+25% vs undead/demons) and Ranger's [color=#228B22]Hunter's Mark[/color] (+25% vs beasts) were silently failing against rare-variant prefixes — fighting a Corrosive Skeleton or ★ Lich Champion gave NO bonus because the old code used exact-name matching against an unprefixed list. Now uses substring matching, so every variant (Corrosive / Sundering / Elite Champion) triggers the passive correctly. [b]Also expanded the beast list[/b] to cover all dragons (Young Dragon, Ancient Dragon, Primordial Dragon, Dragon Wyrmling), Phoenix, and Sphinx — beast-flavored mythical creatures that were previously absent from the Hunter's Mark trigger list. Audit #2 Slice 3.")
+	display_game("")
+
 	# v0.9.471 — Audit #12 Slice 5: abandoned-post bubble decay.
-	display_game("[color=#00FF00]v0.9.471[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.471[/color]")
 	display_game("  [color=#FFD700]Untended player posts now mechanically decay: inactive (7d) weakens the bubble; abandoned (30d) nulls it[/color]")
 	display_game("  • [b]Slice 4 (v0.9.460) made post inactivity visible. Slice 5 gives it teeth.[/b] When your post passes 7 days without you tending it (walking inside the bubble, building/demolishing, or feeding guards), the settler bubble loses 1 suppression — monsters spawning inside go up by 1 tier. At 30 days the post hits [color=#FF4444]⚠⚠ ABANDONED[/color] and ALL suppression is wiped — the bubble offers no protection at all until you tend it again. Tending is cheap (literally just walking through resets the clock) but the decay is real. Combined with the threat-corridor / threat-suppression layer (v0.9.464), untended posts in dangerous zones decay much faster in player experience. Both the chat `/post` view and the visual Post Status panel surface 'Bubble suppression weakened by inactivity (-1)' (inactive) or 'Bubble suppression FULLY DECAYED — no protection until tended' (abandoned) directly under the inactivity tag. Audit #12 Slice 5.")
 	display_game("")
