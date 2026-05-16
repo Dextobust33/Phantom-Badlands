@@ -4114,7 +4114,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
 					var _monster_tier: int = _get_monster_tier(killed_monster_level)
 					var _slvl: int = int(characters[peer_id].job_levels.get("soldier", 0))
-					var _bag: Dictionary = _build_combat_loot_bag(all_drops, _monster_tier, _final_flock_kills, _slvl)
+					var _bag: Dictionary = _build_combat_loot_bag(all_drops, _monster_tier, _final_flock_kills, _slvl, peer_id)
 					active_combat_loot[peer_id] = _bag
 					_combat_loot_bag_view = _serialize_combat_loot_bag_for_client(_bag, false)
 
@@ -9942,6 +9942,41 @@ func _maybe_send_progression_hint(peer_id: int) -> void:
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
 
+func _maybe_send_sanctuary_hint(peer_id: int) -> void:
+	"""Audit #3 Slice 6 — account-level Sanctuary teaching overlay. Fires the
+	first time the player opens the Sanctuary view with baddie points to
+	spend. Account-level flag (in house data) so it survives permadeath and
+	doesn't repeat on new characters."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var house = persistence.get_house(account_id)
+	if bool(house.get("seen_sanctuary_hint", false)):
+		return
+	var bp = int(house.get("baddie_points", 0))
+	if bp <= 0:
+		return  # Nothing to spend yet — wait for first death.
+	if not persistence.mark_sanctuary_hint_seen(account_id):
+		return
+	var title = "[color=#FFD700]🏛 Sanctuary[/color]"
+	var body = (
+		"You have [color=#FFE066]%d[/color] Baddie Point%s to spend on permanent account upgrades. " % [
+			bp,
+			"s" if bp != 1 else ""
+		]
+		+ "These survive permadeath — they're your account's persistent progression.\n\n"
+		+ "Upgrades are organized into 5 tabs:\n"
+		+ "• [color=#88FF88]Storage[/color] — bigger house, kennel, egg, companion slots.\n"
+		+ "• [color=#FF8888]Combat[/color] — % HP / resource / regen bonuses.\n"
+		+ "• [color=#FFE066]Stats[/color] — +1 per stat (max 10 each).\n"
+		+ "• [color=#88FFFF]Discovery[/color] — Bestiary / Compass / Region Atlas.\n"
+		+ "• [color=#FFAA70]Economy[/color] — starting Valor, XP & gathering bonuses.\n\n"
+		+ "Each tab shows an [color=#88FF88]✓ AFFORDABLE[/color] badge on rows you can buy right now."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+
 func _maybe_send_quest_board_hint(peer_id: int) -> void:
 	"""Audit #3 Slice 5 — first quest-board open teaches the chain system, the
 	3-active cap, and that completing a quest immediately refills the slot."""
@@ -10973,6 +11008,9 @@ func handle_house_request(peer_id: int):
 		"headstart_costs": persistence.MASTERY_HEADSTART_BP_PER_RANK,
 		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK
 	})
+	# Audit #3 Slice 6 — first Sanctuary open (with BP to spend) teaches the
+	# upgrade screen via the modal overlay.
+	_maybe_send_sanctuary_hint(peer_id)
 
 func handle_bestiary_request(peer_id: int):
 	"""Audit #13 Slice 2 — return the account's bestiary summary (sorted by
@@ -16576,15 +16614,61 @@ func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 			var qty: int = randi_range(1, 1 + tier_scale / 3)
 			return {"kind": "filler_part", "material_id": part_id, "quantity": qty}
 
-func _build_combat_loot_bag(real_drops: Array, monster_tier: int, flock_kills: int, soldier_level: int = 0) -> Dictionary:
+func _is_equipment_drop(item: Dictionary) -> bool:
+	"""True when this drop is a gear-slot item (weapon/armor/helm/shield/boots/
+	ring/amulet/etc) — the items players were getting reliably pre-scratch-off.
+	Eggs, materials, monster parts, tools, consumables, runes stay in the bag
+	(those still spawn the mystery-reveal moment). v0.9.481 — see
+	_build_combat_loot_bag for the pinning rationale."""
+	if item == null or item.is_empty():
+		return false
+	if bool(item.get("is_consumable", false)):
+		return false
+	var t: String = String(item.get("type", ""))
+	if t == "" or t == "companion_egg" or t == "crafting_material" or t == "monster_part":
+		return false
+	if t.begins_with("tool_") or bool(item.get("is_tool", false)):
+		return false
+	var equip_prefixes = [
+		"weapon_", "armor_", "helm_", "shield_", "boots_",
+		"ring_", "amulet_", "cape_", "gloves_", "belt_",
+		"necklace_", "trinket_", "off_hand_",
+	]
+	for p in equip_prefixes:
+		if t.begins_with(p):
+			return true
+	return false
+
+
+func _build_combat_loot_bag(real_drops: Array, monster_tier: int, flock_kills: int, soldier_level: int = 0, peer_id: int = -1) -> Dictionary:
 	"""Pre-roll the 16-slot bag. Real drops (everything roll_combat_drops gave
 	the player + any extras the flock-end path rolled) are placed into random
 	slot indices; the rest fill with filler outcomes. Bag is shuffled so the
 	player can't tell real from filler at a glance. Soldier-level passed
-	through so the budget pickup applies (replaces the old harvest_saves)."""
+	through so the budget pickup applies (replaces the old harvest_saves).
+
+	v0.9.481 — equipment drops are pulled out of the random slot pool and
+	pinned: awarded to inventory immediately on bag creation, and surfaced in
+	a `pinned` array the client renders as a banner row above the grid. The
+	pre-scratch-off rollout (v0.9.371) silently swallowed the existing direct
+	equipment cadence — players had to randomly hit the 1-of-16 equipment slot
+	with their 1 T1 reveal (~0.2% per fight vs the original ~3.3%). The
+	scratch-off is now PURE BONUS (eggs/materials/parts/tools/consumables/
+	currency/filler), while equipment lands every time it rolls. Drop rate at
+	the source is unchanged. peer_id is required for the inventory writes;
+	omit to skip pinning (unit-test path)."""
 	var slot_count: int = COMBAT_LOOT_SLOT_COUNT
 	var slots: Array = []
+	var pinned: Array = []
+	var bag_drops: Array = []
 	for d in real_drops:
+		if peer_id != -1 and _is_equipment_drop(d):
+			var payload: Dictionary = _award_real_combat_loot(peer_id, d)
+			if not payload.is_empty():
+				pinned.append(payload)
+		else:
+			bag_drops.append(d)
+	for d in bag_drops:
 		if slots.size() >= slot_count:
 			break
 		slots.append({"kind": "real", "drop": d, "revealed": false})
@@ -16596,6 +16680,7 @@ func _build_combat_loot_bag(real_drops: Array, monster_tier: int, flock_kills: i
 	var budget: int = _combat_loot_reveal_budget(monster_tier, flock_kills, soldier_level)
 	return {
 		"slots": slots,
+		"pinned": pinned,
 		"reveal_budget": budget,
 		"reveals_used": 0,
 		"monster_tier": monster_tier,
@@ -16777,8 +16862,13 @@ func _serialize_combat_loot_bag_for_client(bag: Dictionary, fully_revealed: bool
 			view_slots.append(_preview_slot_for_client(s))
 		else:
 			view_slots.append({"kind": "sealed", "revealed": false})
+	# v0.9.481 — pinned equipment payloads ride alongside the bag so the client
+	# can render the "Equipment Found" banner above the grid. Pinned items are
+	# already awarded to inventory at bag build time; the client view is purely
+	# informational.
 	return {
 		"slots": view_slots,
+		"pinned": bag.get("pinned", []).duplicate(true),
 		"reveal_budget": int(bag.get("reveal_budget", 0)),
 		"reveals_used": int(bag.get("reveals_used", 0)),
 		"monster_tier": int(bag.get("monster_tier", 1)),

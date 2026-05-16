@@ -20,6 +20,7 @@ const GRID_COLS := 4
 
 var _root_panel: PanelContainer
 var _header_label: RichTextLabel
+var _pinned_container: VBoxContainer  # v0.9.481 — "Equipment Found" banner row
 var _reveals_label: RichTextLabel
 var _grid: GridContainer
 var _done_button: Button
@@ -91,6 +92,15 @@ func _build_layout() -> void:
 	_header_label.add_theme_font_size_override("normal_font_size", 13)
 	_header_label.custom_minimum_size = Vector2(0, 20)
 	vbox.add_child(_header_label)
+
+	# v0.9.481 — pinned-equipment banner. Equipment drops are awarded directly
+	# (not buried in the random slot pool) so the pre-scratch-off cadence is
+	# preserved. The banner shows up only when pinned[] is non-empty; otherwise
+	# the container collapses to zero height so the layout is unchanged.
+	_pinned_container = VBoxContainer.new()
+	_pinned_container.add_theme_constant_override("separation", 2)
+	_pinned_container.visible = false
+	vbox.add_child(_pinned_container)
 
 	# Reveals counter
 	_reveals_label = RichTextLabel.new()
@@ -172,9 +182,64 @@ func open_bag(bag_view: Dictionary) -> void:
 	_monster_tier = int(bag_view.get("monster_tier", 1))
 	_cascade_active = false
 	_render_header()
+	_render_pinned(bag_view.get("pinned", []))
 	_render_reveals_counter()
 	_render_all_cards()
 	visible = true
+
+
+func _render_pinned(pinned: Array) -> void:
+	"""Render the equipment-found banner. v0.9.481 — pinned equipment is
+	already awarded server-side; this panel only displays what landed in
+	inventory so the player sees the gear they got."""
+	for child in _pinned_container.get_children():
+		child.queue_free()
+	if pinned.is_empty():
+		_pinned_container.visible = false
+		return
+	_pinned_container.visible = true
+	# Header line
+	var header := RichTextLabel.new()
+	header.bbcode_enabled = true
+	header.fit_content = true
+	header.scroll_active = false
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header.add_theme_font_size_override("normal_font_size", 14)
+	header.custom_minimum_size = Vector2(0, 22)
+	header.text = "[center][color=#FFD700][b]✦ Equipment Found ✦[/b][/color][/center]"
+	_pinned_container.add_child(header)
+	# One row per pinned item, styled by rarity.
+	for entry in pinned:
+		if not (entry is Dictionary):
+			continue
+		var row := RichTextLabel.new()
+		row.bbcode_enabled = true
+		row.fit_content = true
+		row.scroll_active = false
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_theme_font_size_override("normal_font_size", 13)
+		row.custom_minimum_size = Vector2(0, 18)
+		var name: String = String(entry.get("name", "Unknown Item"))
+		var color_hex: String = String(entry.get("color", "#FFFFFF"))
+		var symbol: String = String(entry.get("symbol", ""))
+		var sym_prefix: String = ("%s " % symbol) if symbol != "" else ""
+		var kind: String = String(entry.get("kind", "item"))
+		# Auto-salvaged or inventory-full variants get a small tag so the
+		# player understands what happened. The kind is what _award_real_combat_loot
+		# returns; "item" = normal pickup, "auto_salvaged" / "inv_full_salvaged"
+		# / "inv_full_lost" cover the other branches.
+		var suffix := ""
+		match kind:
+			"auto_salvaged":
+				suffix = " [color=#888888](auto-salvaged)[/color]"
+			"inv_full_salvaged":
+				suffix = " [color=#FF8800](inv full → salvaged)[/color]"
+			"inv_full_lost":
+				suffix = " [color=#FF4444](inv full, lost)[/color]"
+			_:
+				suffix = " [color=#888888]→ inventory[/color]"
+		row.text = "[center][color=%s]%s%s[/color]%s[/center]" % [color_hex, sym_prefix, name, suffix]
+		_pinned_container.add_child(row)
 
 
 func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, reveal_budget: int) -> void:
