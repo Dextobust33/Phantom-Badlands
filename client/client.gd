@@ -19483,8 +19483,16 @@ func handle_server_message(message: Dictionary):
 						var _loot_bag = message.get("loot_bag", {})
 						if _loot_bag is Dictionary and not _loot_bag.is_empty() and combat_loot_panel:
 							_combat_loot_victory_payload = victory_payload.duplicate(true)
-							_combat_loot_revealed_lines = []
-							_combat_loot_gear_drops = []
+							# v0.9.482 — seed the revealed-lines / gear-drops
+							# caches with the pinned items the server already
+							# put into victory_payload. Otherwise the first
+							# scratch-off reveal triggers _combat_loot_refresh_
+							# victory_card which rebuilds the loot list from
+							# these caches — and an empty cache wipes the pinned
+							# items right off the victory card after the very
+							# first click.
+							_combat_loot_revealed_lines = victory_payload.get("loot", []).duplicate()
+							_combat_loot_gear_drops = victory_payload.get("gear_drops", []).duplicate()
 							combat_loot_panel.open_bag(_loot_bag)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
@@ -24111,8 +24119,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.482 — Hotfix: pinned equipment now appears on the victory card too.
+	display_game("[color=#00FF00]v0.9.482[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotfix — guaranteed equipment drops now show in the victory card's Loot list + ★ ITEMS ACQUIRED banner, not just in the scratch-off panel[/color]")
+	display_game("  • v0.9.481 pinned equipment correctly into the inventory but the victory card's Loot section stayed empty, because the scratch-off skip path also skipped populating `drop_messages` and `drop_data`. Now when the scratch-off is on, the server backfills both from the bag's `pinned` array — so the player sees the equipment they got on the victory screen too. Also fixed a follow-on bug: the client cache that re-renders the victory card on each reveal was starting empty and would have wiped the pinned items on the first scratch-off click. Cache is now seeded from the initial victory payload so reveals append rather than replace.")
+	display_game("")
+
 	# v0.9.481 — Early-game survivability: threat-corridor stat downscale + pinned equipment.
-	display_game("[color=#00FF00]v0.9.481[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.481[/color]")
 	display_game("  [color=#FFD700]Early-game survivability pass — apex monsters at low levels stop one-shotting you, and the scratch-off no longer eats your gear drops[/color]")
 	display_game("  • [b]Threat-corridor stat downscale.[/b] v0.9.480 clamped the threat-corridor's [i]rolled level[/i] to the area's natural range so a T3 Chimaera in the Lv 1-2 buffer was labeled 'Lv 1' — but the [color=#FF6644]actual combat stats[/color] still used the monster's base level, leaving you to fight a 350-HP / 41-STR Chimaera wearing a Lv 1 tag. Win rate against threat-corridor monsters in low areas was effectively 0%. Now [color=#88FF88]_calculate_tiered_stat_scale[/color] applies a linear downscale (target / base) when target_level < base_level — a Lv 1 spawn of a base-44 Chimaera collapses to runt-tier stats (~17 HP, ~8 STR, ~3 DEF) while keeping its name and abilities. Apex monsters spilling into starter zones now read as tier-1-equivalent fights with thematic flavor — a Chimaera baby rather than a fully-grown apex with a misleading level tag. The fix is at the scaling function itself, so it catches every system that spawns a monster below its base level (threat corridor, forced monsters via scrolls, future content).")
 	display_game("  • [b]Combat scratch-off no longer buries equipment.[/b] Pre-scratch-off (before v0.9.371), combat equipment drops went straight to your inventory at ~3.3% per fight. The scratch-off swallowed that cadence — equipment was placed in a random slot, and at T1 monsters with only 1 reveal, you had a 1-in-16 chance to even SEE it (~0.2% effective per fight). Now [color=#88FF88]equipment drops are pinned[/color]: pulled out of the random slot pool, awarded directly to inventory, and surfaced in a new ✦ Equipment Found ✦ banner above the grid. The scratch-off is pure bonus content (eggs / materials / parts / tools / consumables / currency / filler). Drop rate at the source is unchanged — equipment now lands every time it rolls, restoring the pre-scratch-off cadence the user expected.")

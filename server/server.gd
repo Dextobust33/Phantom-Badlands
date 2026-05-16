@@ -4123,6 +4123,38 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				var drop_messages = []
 				var drop_data = []  # For client sound effects
 				var player_level = characters[peer_id].level
+				# v0.9.482 — when scratch-off is on, surface the PINNED equipment
+				# (already-awarded by _build_combat_loot_bag) into the victory
+				# card's Loot list and gear banner so the player sees what they
+				# got on the victory screen too, not just in the scratch-off
+				# panel. Mirrors the formatting the legacy inline path uses
+				# (BBCode line for drop_messages, structured dict for drop_data).
+				if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
+					var _pinned_src: Array = active_combat_loot.get(peer_id, {}).get("pinned", [])
+					for _p_entry in _pinned_src:
+						if not (_p_entry is Dictionary):
+							continue
+						var _p_name: String = String(_p_entry.get("name", "Unknown Item"))
+						var _p_color: String = String(_p_entry.get("color", "#FFFFFF"))
+						var _p_symbol: String = String(_p_entry.get("symbol", ""))
+						var _p_rarity: String = String(_p_entry.get("rarity", "common"))
+						var _p_level: int = int(_p_entry.get("level", 1))
+						var _p_kind: String = String(_p_entry.get("kind", "item"))
+						var _p_sym_pad: String = (_p_symbol + " ") if _p_symbol != "" else ""
+						drop_messages.append("[color=%s]%s%s[/color]" % [_p_color, _p_sym_pad, _p_name])
+						# Only feed the gear banner for actual gear pickups
+						# (kind == "item"). Auto-salvaged / inv-full variants
+						# stay in the loot list but not the ★ ITEMS ACQUIRED
+						# banner — they're not adds to the equipped inventory.
+						if _p_kind == "item":
+							drop_data.append({
+								"name": _p_name,
+								"rarity": _p_rarity,
+								"symbol": _p_symbol,
+								"color": _p_color,
+								"level": _p_level,
+								"level_diff": _p_level - player_level,
+							})
 				for item in all_drops:
 					if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
 						# Skip the inline award — bag path handles it on reveal.
