@@ -21226,8 +21226,29 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	var threat_state = _compute_post_threat_state(cx, cy)
 	if threat_state.get("threatened", false):
 		suppression = max(0, suppression - 1)
+	# Audit #12 Slice 5 — inactivity decay. Inactive posts (7-30d) lose 1
+	# additional suppression. Abandoned posts (30+d) lose ALL suppression —
+	# the bubble offers no protection until the owner tends the post again.
+	var inactivity_state = _compute_post_inactivity_state(post_meta)
+	if inactivity_state == "abandoned":
+		suppression = 0
+	elif inactivity_state == "inactive":
+		suppression = max(0, suppression - 1)
 	var effective_tier = wilderness_tier - suppression
 	return clamp(effective_tier, floor_tier, wilderness_tier)
+
+func _compute_post_inactivity_state(post_meta: Dictionary) -> String:
+	"""Audit #12 Slice 4/5 — return 'active' / 'inactive' / 'abandoned'
+	based on last_tended_at. Falls back to created_at when last_tended_at
+	is missing (legacy posts created before Slice 4)."""
+	var now_ts = Time.get_unix_time_from_system()
+	var tended_ts = float(post_meta.get("last_tended_at", post_meta.get("created_at", now_ts)))
+	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
+	if days_inactive >= float(POST_ABANDONED_THRESHOLD_DAYS):
+		return "abandoned"
+	if days_inactive >= float(POST_INACTIVE_THRESHOLD_DAYS):
+		return "inactive"
+	return "active"
 
 func _update_player_post_bubble_cache():
 	"""Build settler bubble cache and push to world_system. Slice 4 — called
@@ -24781,18 +24802,24 @@ func _build_player_post_status(post_meta: Dictionary, owner_username: String, is
 	# Audit #12 Slice 4 — inactivity surfacing. Both owner and visitors see
 	# how long since the post was last tended (arrival inside the bubble,
 	# build/demolish, feed). Tags escalate at INACTIVE (7d) and ABANDONED (30d).
+	# Slice 5 — surfaces the mechanical suppression decay alongside the tag.
 	var now_ts = Time.get_unix_time_from_system()
 	var tended_ts = float(post_meta.get("last_tended_at", post_meta.get("created_at", now_ts)))
 	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
 	var tend_color = "#88FF88"
 	var tend_tag = ""
+	var decay_line = ""
 	if days_inactive >= float(POST_ABANDONED_THRESHOLD_DAYS):
 		tend_color = "#FF4444"
 		tend_tag = "  [color=#FF4444]⚠⚠ ABANDONED[/color]"
+		decay_line = "    [color=#FF4444]Bubble suppression FULLY DECAYED — no protection until tended.[/color]"
 	elif days_inactive >= float(POST_INACTIVE_THRESHOLD_DAYS):
 		tend_color = "#FFAA44"
 		tend_tag = "  [color=#FFAA44]⚠ Inactive[/color]"
+		decay_line = "    [color=#FFAA44]Bubble suppression weakened by inactivity (-1)[/color]"
 	lines.append("  [color=%s]Last tended: %.1f days ago[/color]%s" % [tend_color, days_inactive, tend_tag])
+	if decay_line != "":
+		lines.append(decay_line)
 
 	return lines
 
@@ -24921,15 +24948,14 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 	if threat.get("threatened", false) and guards_total > 0:
 		threat["suppression_weakened"] = true
 
-	# Audit #12 Slice 4 — inactivity tracking.
+	# Audit #12 Slice 4 — inactivity tracking. Slice 5 — inactivity now
+	# erodes suppression: inactive removes 1, abandoned removes all. The
+	# `decay_suppression_state` flag is surfaced so the panel can label the
+	# weakening cue (mirrors the threat suppression_weakened flag).
 	var now_ts = Time.get_unix_time_from_system()
 	var tended_ts = float(post_meta.get("last_tended_at", post_meta.get("created_at", now_ts)))
 	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
-	var inactivity_state: String = "active"
-	if days_inactive >= float(POST_ABANDONED_THRESHOLD_DAYS):
-		inactivity_state = "abandoned"
-	elif days_inactive >= float(POST_INACTIVE_THRESHOLD_DAYS):
-		inactivity_state = "inactive"
+	var inactivity_state = _compute_post_inactivity_state(post_meta)
 
 	return {
 		"post_name": display_name,
@@ -24947,6 +24973,13 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 		"inactivity_state": inactivity_state,
 		"inactive_threshold_days": POST_INACTIVE_THRESHOLD_DAYS,
 		"abandoned_threshold_days": POST_ABANDONED_THRESHOLD_DAYS,
+		# Audit #12 Slice 5 — mechanical decay state. 'none' (no decay),
+		# 'weakened' (inactive: -1 suppression), 'fully_decayed' (abandoned:
+		# all suppression nulled).
+		"decay_suppression_state": (
+			"fully_decayed" if inactivity_state == "abandoned"
+			else ("weakened" if inactivity_state == "inactive" else "none")
+		),
 	}
 
 func handle_request_post_status_visual(peer_id: int) -> void:
