@@ -24093,8 +24093,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.476 — Audit #3 Slice 5: 3 more first-time tutorial overlays.
+	display_game("[color=#00FF00]v0.9.476[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three more one-time tutorial hints — first quest board, first dungeon entry, first crafting station[/color]")
+	display_game("  • [b]Stacks the v0.9.475 tutorial overlay infrastructure.[/b] Three new one-time-per-character teaching overlays fire on the matching first interaction:\n  • [color=#FFAA00]First quest board[/color] — explains the 3-active cap, the regenerating board (completing a quest immediately refills the slot), CHAIN-tagged adventures at frontier posts, and THREAT BOUNTY quests at Under-Threat posts.\n  • [color=#CCAAFF]First dungeon entry[/color] — explains floors / boss-at-bottom / all monsters match the boss type / guaranteed boss egg / theme tiles / combat loot scratch-off.\n  • [color=#88FFFF]First crafting station[/color] — explains the transparency stack (material sources, quality odds, recent market avg, skill progression preview) and the one-specialty-per-character lock-in.\n  Each fires once per character via a `seen_<topic>_hint` flag (`seen_quest_board_hint`, `seen_dungeon_hint`, `seen_crafting_hint`). Legacy characters get them on their first matching interaction. Audit #3 Slice 5.")
+	display_game("")
+
 	# v0.9.475 — Audit #3 Slice 4: tutorial hints now use a modal overlay.
-	display_game("[color=#00FF00]v0.9.475[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.475[/color]")
 	display_game("  [color=#FFD700]Tutorial hints now appear in a centered modal overlay — they can't be scrolled past or missed[/color]")
 	display_game("  • [b]Follow-up on v0.9.474.[/b] The first-level-up Progression Vectors hint was previously a chat-output text message that could be scrolled past or missed in the noise. Now it renders in a new [color=#FFE066]TutorialHintPanel[/color] modal overlay — centered on screen with a dim backdrop, gold-bordered card, gold title + body, and a 'Got it' button (also dismissible via Esc / Enter / Space). New server message type [color=#9ACD32]tutorial_hint[/color] carries {title, body} fields; client-side handler routes to the overlay instead of chat. Pattern is reusable for every future teaching message — saved as the [color=#88FF88]feedback_tutorial_overlay[/color] rule. Audit #3 Slice 4.")
 	display_game("")

@@ -42,6 +42,14 @@ extends Resource
 # hint on every level-up.
 @export var seen_progression_hint: bool = false
 
+# Audit #3 Slice 5 — additional one-time tutorial flags. All default false on
+# new characters; legacy characters get the hints on their first matching
+# interaction after this version ships. Each renders via the same
+# tutorial_hint_panel overlay introduced in Slice 4.
+@export var seen_quest_board_hint: bool = false
+@export var seen_dungeon_hint: bool = false
+@export var seen_crafting_hint: bool = false
+
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
 	"strength": 0.0, "constitution": 0.0, "dexterity": 0.0,
@@ -1336,6 +1344,10 @@ func to_dict() -> Dictionary:
 		"unspent_stat_points": unspent_stat_points,
 		# Audit #3 Slice 3 — one-time progression-hint flag
 		"seen_progression_hint": seen_progression_hint,
+		# Audit #3 Slice 5 — additional one-time tutorial flags
+		"seen_quest_board_hint": seen_quest_board_hint,
+		"seen_dungeon_hint": seen_dungeon_hint,
+		"seen_crafting_hint": seen_crafting_hint,
 		# Audit #4 Slice 1 — NPC Home Stone purchase counts (per-character
 		# lifetime). Pushed to client so the visual vendor panel can render
 		# owned-vs-cap rows.
@@ -1497,6 +1509,10 @@ func from_dict(data: Dictionary):
 	# Audit #3 Slice 3 — legacy chars default to false; first time we observe
 	# unspent points > 0 after this version, the hint fires once.
 	seen_progression_hint = bool(data.get("seen_progression_hint", false))
+	# Audit #3 Slice 5 — additional one-time tutorial flags (default false).
+	seen_quest_board_hint = bool(data.get("seen_quest_board_hint", false))
+	seen_dungeon_hint = bool(data.get("seen_dungeon_hint", false))
+	seen_crafting_hint = bool(data.get("seen_crafting_hint", false))
 	# Audit #4 Slice 1 — NPC stone purchase counts per character lifetime.
 	# Empty dict for legacy characters.
 	var stones_raw = data.get("npc_stones_bought", {})
