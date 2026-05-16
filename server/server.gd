@@ -9850,11 +9850,13 @@ func send_character_update(peer_id: int):
 		_send_character_update_immediate(peer_id, true)
 
 func _maybe_send_progression_hint(peer_id: int) -> void:
-	"""Audit #3 Slice 3 — one-shot teaching message about the Progression
+	"""Audit #3 Slice 3/4 — one-shot teaching message about the Progression
 	Vectors dashboard. Conditions: character has unspent stat points (i.e.,
 	they've leveled at least once since the system shipped) AND the
 	`seen_progression_hint` flag isn't set. Once fired, the flag is persisted
-	so it never repeats."""
+	so it never repeats. Slice 4 — switched payload to a dedicated
+	`tutorial_hint` message type rendered in a modal overlay (was a `text`
+	message routed to game_output where it could be scrolled past)."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
@@ -9863,17 +9865,16 @@ func _maybe_send_progression_hint(peer_id: int) -> void:
 	if character.unspent_stat_points <= 0:
 		return
 	character.seen_progression_hint = true
-	var msg = (
-		"[color=#FFD700]💡 Progression tip:[/color] You have "
-		+ "[color=#FFE066]%d[/color] unspent stat point%s. " % [
-			character.unspent_stat_points,
-			"s" if character.unspent_stat_points != 1 else ""
-		]
-		+ "Open [color=#9ACD32]/stats[/color] to spend them, or [color=#9ACD32]/status[/color] "
-		+ "to see every progression track you're advancing (XP, jobs, Sanctuary, Bestiary, "
-		+ "Compass, Atlas)."
+	var points = character.unspent_stat_points
+	var s_suffix = "s" if points != 1 else ""
+	var title = "[color=#FFD700]💡 Progression Tip[/color]"
+	var body = (
+		"You have [color=#FFE066]%d[/color] unspent stat point%s.\n\n" % [points, s_suffix]
+		+ "Type [color=#9ACD32]/stats[/color] to spend them, or "
+		+ "[color=#9ACD32]/status[/color] to see every progression track "
+		+ "you're advancing (XP, jobs, Sanctuary, Bestiary, Compass, Atlas)."
 	)
-	send_to_peer(peer_id, {"type": "text", "message": msg})
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
 
 func _send_character_update_immediate(peer_id: int, force_full: bool):

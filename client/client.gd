@@ -1305,6 +1305,11 @@ var clan_panel = null
 const ClanVaultPanelScript = preload("res://client/clan_vault_panel.gd")
 var clan_vault_panel = null
 
+# Audit #3 Slice 4 — modal tutorial-hint overlay (replaces game_output text
+# for first-time teaching messages per feedback_tutorial_overlay).
+const TutorialHintPanelScript = preload("res://client/tutorial_hint_panel.gd")
+var tutorial_hint_panel = null
+
 # Audit #13 Slice 2 — Bestiary panel (Sanctuary monster kill ledger).
 const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
 var bestiary_panel = null
@@ -1971,6 +1976,12 @@ func _ready():
 	clan_vault_panel.close_requested.connect(_on_clan_vault_panel_close)
 	clan_vault_panel.withdraw_requested.connect(_on_clan_vault_panel_withdraw)
 	clan_vault_panel.deposit_requested.connect(_on_clan_vault_panel_deposit)
+
+	# Audit #3 Slice 4 — tutorial-hint overlay (gets server pushes via
+	# `tutorial_hint` message; dismissal is local only — server already
+	# marked the seen flag at send time).
+	tutorial_hint_panel = TutorialHintPanelScript.new()
+	add_child(tutorial_hint_panel)
 
 	# Audit #13 Slice 2 — Bestiary panel.
 	bestiary_panel = BestiaryPanelScript.new()
@@ -18719,6 +18730,15 @@ func handle_server_message(message: Dictionary):
 			var text = message.get("message", "")
 			display_chat("[color=#FF69B4][To %s]:[/color] %s" % [target, text])
 
+		"tutorial_hint":
+			# Audit #3 Slice 4 — server-pushed one-time teaching message rendered
+			# in a modal overlay so it can't be scrolled past or missed in chat.
+			if tutorial_hint_panel:
+				tutorial_hint_panel.show_hint(
+					String(message.get("title", "Tip")),
+					String(message.get("body", ""))
+				)
+
 		"text":
 			# Clear game output if requested (e.g., rest command)
 			if message.get("clear_output", false):
@@ -24073,8 +24093,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.475 — Audit #3 Slice 4: tutorial hints now use a modal overlay.
+	display_game("[color=#00FF00]v0.9.475[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Tutorial hints now appear in a centered modal overlay — they can't be scrolled past or missed[/color]")
+	display_game("  • [b]Follow-up on v0.9.474.[/b] The first-level-up Progression Vectors hint was previously a chat-output text message that could be scrolled past or missed in the noise. Now it renders in a new [color=#FFE066]TutorialHintPanel[/color] modal overlay — centered on screen with a dim backdrop, gold-bordered card, gold title + body, and a 'Got it' button (also dismissible via Esc / Enter / Space). New server message type [color=#9ACD32]tutorial_hint[/color] carries {title, body} fields; client-side handler routes to the overlay instead of chat. Pattern is reusable for every future teaching message — saved as the [color=#88FF88]feedback_tutorial_overlay[/color] rule. Audit #3 Slice 4.")
+	display_game("")
+
 	# v0.9.474 — Audit #3 Slice 3: first-level-up progression hint.
-	display_game("[color=#00FF00]v0.9.474[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.474[/color]")
 	display_game("  [color=#FFD700]One-time tutorial nudge after your first level-up points new players at the Progression Vectors dashboard[/color]")
 	display_game("  • [b]Discoverability hook for the Progression Vectors dashboard (v0.9.437).[/b] The first time a character has unspent stat points (i.e., right after their first level-up under the new system), the server sends a one-shot teaching message: pointing at [color=#9ACD32]/stats[/color] to spend the bank, and [color=#9ACD32]/status[/color] to see every progression track you're advancing (XP, jobs, Sanctuary, Bestiary, Compass, Atlas). Fires once per character and is suppressed forever after via a `seen_progression_hint` flag on the character. Legacy characters get the hint on their next level-up (or next character_update if they already have unspent points). The Stats button's pulse + `+N` badge from v0.9.401 is still there for ongoing visibility; this hint is purely the one-time teaching moment. Audit #3 Slice 3.")
 	display_game("")
