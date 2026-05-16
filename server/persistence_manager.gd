@@ -2189,6 +2189,10 @@ func create_clan(leader_account_id: String, name: String, tag: String) -> Dictio
 		# public blurb (max 240 chars, basic charset). Empty by default; legacy
 		# clans read it as "" via .get(... , "").
 		"description": "",
+		# Audit #14 Slice 8 — banner color used to render the [TAG] marker in
+		# chat / whispers / player list / clan panel. Defaults to the legacy
+		# purple (#A335EE) so existing chat surfaces don't change.
+		"banner_color": CLAN_DEFAULT_BANNER_COLOR,
 		"created_at": int(Time.get_unix_time_from_system()),
 	}
 	accounts_data["accounts"][leader_account_id]["clan_id"] = clan_id
@@ -2198,6 +2202,8 @@ func create_clan(leader_account_id: String, name: String, tag: String) -> Dictio
 
 # Audit #14 Slice 7 — leader-only clan description setter.
 const CLAN_DESCRIPTION_MAX: int = 240
+# Audit #14 Slice 8 — leader-set banner color for the [TAG] marker.
+const CLAN_DEFAULT_BANNER_COLOR: String = "#A335EE"
 
 func set_clan_description(account_id: String, text: String) -> Dictionary:
 	"""Leader-only. Sets clans_data.clans[clan_id].description after basic
@@ -2224,6 +2230,29 @@ func set_clan_description(account_id: String, text: String) -> Dictionary:
 	clans_data["clans"][clan_id]["description"] = trimmed
 	save_clans()
 	return {"success": true, "description": trimmed}
+
+func set_clan_banner_color(account_id: String, hex_color: String) -> Dictionary:
+	"""Audit #14 Slice 8 — leader-only banner color setter. Validates
+	`#RRGGBB` hex format. Returns {success, reason, banner_color}."""
+	var clan_id = get_account_clan_id(account_id)
+	if clan_id == "":
+		return {"success": false, "reason": "You are not in a clan."}
+	var clan = clans_data.get("clans", {}).get(clan_id, {})
+	if clan.is_empty():
+		return {"success": false, "reason": "Clan not found."}
+	if String(clan.get("leader_account_id", "")) != account_id:
+		return {"success": false, "reason": "Only the clan leader can set the banner color."}
+	var trimmed = hex_color.strip_edges()
+	# Accept #RRGGBB only — case-insensitive.
+	var hex_re = RegEx.new()
+	hex_re.compile("^#[0-9A-Fa-f]{6}$")
+	if hex_re.search(trimmed) == null:
+		return {"success": false, "reason": "Banner color must be a #RRGGBB hex code (e.g., #FFD700)."}
+	# Normalize to uppercase for consistency.
+	trimmed = "#" + trimmed.substr(1).to_upper()
+	clans_data["clans"][clan_id]["banner_color"] = trimmed
+	save_clans()
+	return {"success": true, "banner_color": trimmed}
 
 func leave_clan(account_id: String) -> Dictionary:
 	"""Remove account from its clan. If account is the leader, the clan is

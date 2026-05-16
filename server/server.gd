@@ -1708,6 +1708,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #14 Slice 7 — leader-set clan description.
 		"clan_description_set":
 			handle_clan_description_set(peer_id, message)
+		# Audit #14 Slice 8 — leader-set clan banner color.
+		"clan_banner_color_set":
+			handle_clan_banner_color_set(peer_id, message)
 		# Combat scratch-off (user-requested 2026-05-14)
 		"combat_loot_reveal":
 			handle_combat_loot_reveal(peer_id, message)
@@ -2869,7 +2872,9 @@ func handle_chat(peer_id: int, message: Dictionary):
 		display_name = _format_full_titled_name(username, characters[peer_id])
 
 	# Audit #14 Slice 3 — attach sender clan tag so client can render [TAG].
+	# Audit #14 Slice 8 — also attach the clan banner color for the [TAG].
 	var sender_clan_tag = _get_clan_tag_for_peer(peer_id)
+	var sender_clan_color = _get_clan_banner_color_for_peer(peer_id)
 	# Broadcast to ALL peers EXCEPT the sender
 	for other_peer_id in peers.keys():
 		if peers[other_peer_id].authenticated and other_peer_id != peer_id:
@@ -2877,6 +2882,7 @@ func handle_chat(peer_id: int, message: Dictionary):
 				"type": "chat",
 				"sender": display_name,
 				"sender_clan_tag": sender_clan_tag,
+				"sender_clan_color": sender_clan_color,
 				"message": text
 			})
 
@@ -2927,7 +2933,9 @@ func handle_private_message(peer_id: int, message: Dictionary):
 	# Get sender's title prefix if they have one (realm + chain)
 	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
 	# Audit #14 Slice 3 — attach sender clan tag to whispers.
+	# Audit #14 Slice 8 — also attach clan banner color.
 	var sender_clan_tag = _get_clan_tag_for_peer(peer_id)
+	var sender_clan_color = _get_clan_banner_color_for_peer(peer_id)
 
 	# Send to target
 	send_to_peer(target_peer_id, {
@@ -2935,6 +2943,7 @@ func handle_private_message(peer_id: int, message: Dictionary):
 		"sender": sender_display,
 		"sender_name": sender_name,
 		"sender_clan_tag": sender_clan_tag,
+		"sender_clan_color": sender_clan_color,
 		"message": text
 	})
 
@@ -5644,18 +5653,35 @@ func _get_clan_tag_for_peer(peer_id: int) -> String:
 		return ""
 	return String(clan.get("tag", ""))
 
+func _get_clan_banner_color_for_peer(peer_id: int) -> String:
+	"""Audit #14 Slice 8 — resolve the clan banner color (#RRGGBB) for a peer,
+	or "" if none. Paired with _get_clan_tag_for_peer at every site that
+	attaches a [TAG] marker so the color follows the tag."""
+	if not peers.has(peer_id):
+		return ""
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return ""
+	var clan = persistence.get_clan_by_account(account_id)
+	if clan.is_empty():
+		return ""
+	return String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
+
 func broadcast_chat(message: String, sender: String = "System", sender_peer_id: int = -1):
 	"""Send a chat message to all connected players with characters. When the
 	sender is a player (sender_peer_id >= 0), include their clan_tag so the
 	client can render the [TAG] marker."""
 	var sender_clan_tag := ""
+	var sender_clan_color := ""
 	if sender_peer_id >= 0:
 		sender_clan_tag = _get_clan_tag_for_peer(sender_peer_id)
+		sender_clan_color = _get_clan_banner_color_for_peer(sender_peer_id)
 	for peer_id in characters.keys():
 		send_to_peer(peer_id, {
 			"type": "chat",
 			"sender": sender,
 			"sender_clan_tag": sender_clan_tag,
+			"sender_clan_color": sender_clan_color,
 			"message": message
 		})
 
@@ -5670,6 +5696,8 @@ func broadcast_player_list():
 			"class": char.class_type,
 			"title": char.title,
 			"clan_tag": _get_clan_tag_for_peer(pid),
+			# Audit #14 Slice 8 — banner color follows the tag.
+			"clan_banner_color": _get_clan_banner_color_for_peer(pid),
 			"appearance_variant": char.appearance_variant,
 			"appearance_color": char.appearance_color,
 			"appearance_color2": char.appearance_color2,
@@ -8376,6 +8404,7 @@ func _send_clan_info(peer_id: int) -> void:
 		"name": String(clan.get("name", "")),
 		"tag": String(clan.get("tag", "")),
 		"description": String(clan.get("description", "")),
+		"banner_color": String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR)),
 		"is_leader": leader_id == account_id,
 		"is_officer": officer_ids.has(account_id),
 		"officer_ids": officer_ids,
@@ -8536,11 +8565,16 @@ func handle_clan_invite(peer_id: int, message: Dictionary) -> void:
 	# Live notify the target if they're online
 	var target_peer = _find_peer_for_account(target_account_id)
 	if target_peer >= 0:
+		# Audit #14 Slice 8 — include banner color so the invitation line colors
+		# the [TAG] like everywhere else.
+		var inviter_clan = persistence.get_clan(clan_id)
+		var inviter_color = String(inviter_clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
 		send_to_peer(target_peer, {
 			"type": "clan_invitation_received",
 			"clan_id": clan_id,
 			"clan_name": String(result.get("clan_name", "")),
 			"clan_tag": String(result.get("clan_tag", "")),
+			"clan_banner_color": inviter_color,
 			"inviter_username": String(result.get("inviter_username", "")),
 		})
 		# Refresh their open panel if they have one
@@ -8882,6 +8916,28 @@ func handle_clan_description_set(peer_id: int, message: Dictionary) -> void:
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Clan description updated.[/color]"})
 	_refresh_all_online_clan_members(persistence.get_account_clan_id(account_id))
+
+
+func handle_clan_banner_color_set(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 Slice 8 — leader-only banner color setter. Validation lives in
+	persistence.set_clan_banner_color (hex regex). After success, refresh every
+	online clan member so the new color shows on their panel, and broadcast a
+	fresh player list so chat tags re-color immediately."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var hex = String(message.get("color", ""))
+	var result = persistence.set_clan_banner_color(account_id, hex)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Could not set banner color."))})
+		return
+	var new_color = String(result.get("banner_color", ""))
+	send_to_peer(peer_id, {"type": "text", "message": "[color=%s]Clan banner color updated to %s.[/color]" % [new_color, new_color]})
+	_refresh_all_online_clan_members(persistence.get_account_clan_id(account_id))
+	# Push fresh player list so [TAG] markers re-color in everyone's UI.
+	broadcast_player_list()
 
 
 func _push_clan_vault_to_all(clan_id: String) -> void:
