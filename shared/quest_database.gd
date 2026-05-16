@@ -1466,7 +1466,44 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 	if quest_id.begins_with("progression_to_"):
 		return _regenerate_progression_quest(quest_id)
 
+	# Audit #11 Slice 12 — threat-relief quest IDs (format:
+	# threat_<post_id>@<dungeon_type>). Server-side handle_trading_post_quests
+	# generates the rich variant from live threat state; this regen path
+	# rebuilds the minimal fields downstream code needs (trading_post + type
+	# + dungeon_type) so turn-in works after the live threat clears.
+	if quest_id.begins_with("threat_") and "@" in quest_id:
+		return _regenerate_threat_relief_quest(quest_id)
+
 	return {}
+
+func _regenerate_threat_relief_quest(quest_id: String) -> Dictionary:
+	"""Reconstruct a threat-relief quest from its ID. The live (rich) variant
+	is built server-side in _generate_threat_relief_quest; this regen path
+	supplies only the static fields needed once the quest is in
+	character.active_quests (trading_post + type + dungeon_type). Rewards
+	come from extra_data.stored_rewards on turn-in."""
+	# Strip prefix and split on '@' separator.
+	var rest = quest_id.substr(len("threat_"))
+	var at_idx = rest.find("@")
+	if at_idx < 0:
+		return {}
+	var post_id = rest.substr(0, at_idx)
+	var dungeon_type = rest.substr(at_idx + 1)
+	if post_id == "" or dungeon_type == "":
+		return {}
+	return {
+		"id": quest_id,
+		"name": "Drive Off the threat",
+		"description": "Threat-relief bounty.",
+		"type": QuestType.DUNGEON_CLEAR,
+		"trading_post": post_id,
+		"target": 1,
+		"dungeon_type": dungeon_type,
+		"rewards": {"xp": 0, "valor": 0},  # Real rewards come from extra_data.stored_rewards
+		"is_daily": false,
+		"prerequisite": "",
+		"is_threat_relief": true,
+	}
 
 func _regenerate_progression_quest(quest_id: String) -> Dictionary:
 	"""Regenerate a progression quest from its ID."""

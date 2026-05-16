@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.470 — Audit #11 Slice 12: NPC-post threat → quest hook.
+	display_game("[color=#00FF00]v0.9.470[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Under-Threat posts now surface a threat-relief bounty on their quest board[/color]")
+	display_game("  • [b]When you visit a trading post that's Under Threat, the quest board now offers a tier-scaled DUNGEON_CLEAR bounty pointing at the threatening dungeon.[/b] The bounty is marked [color=#FF8800]⚠ THREAT BOUNTY[/color] (dungeon-themed color), sorts to the top of the available list, and gives the threat marker an immediate player-facing reason — there's a paying job here. Clearing the threatening dungeon ticks the quest AND removes the threat naturally (threat state empties when the dungeon completes). Rewards scale with dungeon tier: T2 350 XP / 50 valor → T9 2700 XP / 300 valor. Quest id encodes <post>@<dungeon_type> so the same threat at the same post is one-and-done per character; new dungeons (or different types) generate fresh bounties. Stitches together the threat state (v0.9.454/v0.9.464) and the quest board into a single visible loop. Audit #11 Slice 12.")
+	display_game("")
+
 	# v0.9.469 — Audit #6 Slice 18: 6 new T7/T8/T9 chains close the ladder.
-	display_game("[color=#00FF00]v0.9.469[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.469[/color]")
 	display_game("  [color=#FFD700]Six new chains across T7-T9 close the chain ladder — chain content now spans every tier (T1-T9)[/color]")
 	display_game("  • [b]The largest single chain slice yet — six new 3-stage chains anchored at extreme-zone and apex posts, completing the chain ladder.[/b] [color=#4B0082]Void Walker's Pact[/color] @ Void's Edge → Wraith → Nazgul → Void Walker (Dimensional Prison boss). [color=#9400D3]Primordial Awakening[/color] @ Dragon's Rest → Dragon Wyrmling → Ancient Dragon → Primordial Dragon (Cataclysm boss). [color=#191970]The Cosmic Veil[/color] @ Primordial Sanctum → Void Walker → Time Weaver → Cosmic Horror (Madness Aura boss). [color=#2C0854]Death's Threshold[/color] @ Nether Gate → Elder Lich → Void Walker → Death Incarnate (Final Judgment boss — watch the ~30%% HP execute band). [color=#800080]Avatar of Ruin[/color] @ Apex Northeast → Cosmic Horror → Death Incarnate → Avatar of Chaos (Reality Shatter boss). [color=#C5B358]The End of All Things[/color] @ Apex Southwest → Avatar of Chaos → The Nameless One → Entropy (Universe Collapse boss — stacking decay, burst don't chip). Reward curve scales +20%% per tier from T6: T7 stages 1080/1440/2160 XP + 900 valor chain bonus, T8 stages 1300/1730/2600 XP + 1080 valor, T9 stages 1560/2080/3120 XP + 1300 valor. Six new chain titles ([color=#4B0082]Void Ender[/color], [color=#9400D3]Primordial Breaker[/color], [color=#191970]Horror Sealer[/color], [color=#2C0854]Death Defier[/color], [color=#800080]Chaos Unmaker[/color], [color=#C5B358]End Walker[/color]) bring the registry to 28. Chain content now spans T1-T9 across **15 frontier posts**. Audit #6 Slice 18 — chain ladder complete.")
 	display_game("")
@@ -35680,8 +35686,14 @@ func handle_quest_list(message: Dictionary):
 	# SECTION 3: Available quests to accept
 	if available_quests.size() > 0:
 		display_game("[color=#00FF00]=== Available Quests ===[/color]")
-		# Sort featured quests to the top
-		available_quests.sort_custom(func(a, b): return a.get("is_featured", false) and not b.get("is_featured", false))
+		# Sort: threat-relief bounties first, then featured, then others.
+		# Audit #11 Slice 12 — surface the post's Under Threat bounty at the top.
+		available_quests.sort_custom(func(a, b):
+			var a_threat = a.get("is_threat_relief", false)
+			var b_threat = b.get("is_threat_relief", false)
+			if a_threat != b_threat:
+				return a_threat
+			return a.get("is_featured", false) and not b.get("is_featured", false))
 		for i in range(available_quests.size()):
 			var quest = available_quests[i]
 			# v0.9.453 — daily-cadence framing retired (quests now regenerate
@@ -35690,11 +35702,15 @@ func handle_quest_list(message: Dictionary):
 			# Featured pick remains a per-board flair.
 			var daily_tag = ""
 			var featured_tag = " [color=#FFD700]★ FEATURED ★[/color]" if quest.get("is_featured", false) else ""
+			var threat_tag = ""
+			if quest.get("is_threat_relief", false):
+				var t_color = str(quest.get("threat_color", "#FF8800"))
+				threat_tag = " [color=%s]⚠ THREAT BOUNTY[/color]" % t_color
 			var tier_tag = _get_quest_tier_tag(quest)
 			var rewards = quest.get("rewards", {})
 			var reward_str = _format_rewards(rewards)
 			var key_name = get_item_select_key_name(key_index)
-			display_game("[%s] [color=#FFD700]%s[/color]%s%s%s" % [key_name, quest.get("name", "Quest"), featured_tag, daily_tag, tier_tag])
+			display_game("[%s] [color=#FFD700]%s[/color]%s%s%s%s" % [key_name, quest.get("name", "Quest"), threat_tag, featured_tag, daily_tag, tier_tag])
 			display_game("    %s" % quest.get("description", ""))
 			display_game("    [color=#00FF00]Rewards: %s[/color]" % reward_str)
 			display_game("")
