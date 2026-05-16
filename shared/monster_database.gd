@@ -1630,7 +1630,27 @@ func _estimate_player_equipment_defense(player_level: int) -> int:
 	return armor_defense
 
 func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
-	"""Calculate stat scaling using tiered percentages"""
+	"""Calculate stat scaling using tiered percentages.
+
+	v0.9.481 — added DOWN-scale path for target_level < base_level. The old
+	function only scaled UP from base_level and silently returned scale=1.0 when
+	the target was below base. That meant a T3 Chimaera (base_level 44) clamped
+	to "Lv 1" by the v0.9.480 threat-corridor fix still kept its full base_hp /
+	base_str / base_def — a zero-gear Lv 1 player would face a 350-HP, 41-STR
+	monster wearing a "Lv 1" name tag, ~0% win rate. The downscale uses a linear
+	ratio (target/base) so high-base monsters appearing well below their natural
+	level read as runts of their species rather than full-grown apex predators.
+	The max(5, base_scaled_*) clamps on the call site keep absolutely-tiny stats
+	from breaking math; the HP floor max(10, target_level*3) prevents instakills.
+	"""
+	if target_level < base_level:
+		# Down-scale: monster is spawning below its natural base level.
+		# Linear ratio with no floor — call-site min clamps (max(5/3/1) on base
+		# stats + max(10, level*3) HP floor) handle the very-low-stat edge cases.
+		# A Lv 1 spawn of a base-44 monster gets scale ~0.023 → stats collapse
+		# to the call-site floors, producing a tier-1-equivalent fight while
+		# preserving the monster's name/abilities so the threat narrative reads.
+		return float(target_level) / float(base_level)
 	var scale = 1.0
 	var current_level = base_level
 
