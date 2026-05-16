@@ -1509,15 +1509,34 @@ func get_post_anchored_level(x: int, y: int) -> int:
 
 func _distance_to_level(distance: float) -> int:
 	"""Convert distance from origin to monster level (0-2828 -> 1-10000).
-	   Expanded world with more gradual level progression."""
-	# Safe zone (distance 0-10)
+	   Expanded world with more gradual level progression.
+
+	   v0.9.479 — stretched the early curve so the immediate area outside the
+	   starter post is a Lv 1-2 buffer. Was: d=10-150 → lv 1-50 linear (put
+	   Lv 4-7 within 25 tiles of haven). Now: 10-30 → 1-2 (first ring of
+	   20 tiles), 30-60 → 2-6 (gentle next ring), 60-150 → 6-50 (catch up).
+	   Endpoint at d=150 = lv 50 preserved so the rest of the world is
+	   unaffected."""
+	# Safe zone (distance 0-10): no monsters spawn here.
 	if distance <= 10:
 		return 1
 
-	# Distance 10-150: Levels 1-50 (gentle curve for new players)
+	# Novice band (10-30): Lv 1-2 — first ring of 20 tiles around the
+	# starter post. New characters get to fight Lv 1-2 monsters before
+	# encountering anything tougher.
+	if distance <= 30:
+		var t = (distance - 10) / 20.0  # 0 to 1
+		return int(1 + t * 1)  # 1 to 2
+
+	# Easy band (30-60): Lv 2-6 — second ring, gentle ramp.
+	if distance <= 60:
+		var t = (distance - 30) / 30.0  # 0 to 1
+		return int(2 + t * 4)  # 2 to 6
+
+	# Distance 60-150: Levels 6-50 (catch up to old curve at the 150 anchor).
 	if distance <= 150:
-		var t = (distance - 10) / 140.0  # 0 to 1
-		return int(1 + t * 49)
+		var t = (distance - 60) / 90.0  # 0 to 1
+		return int(6 + t * 44)
 
 	# Distance 150-400: Levels 50-200 (moderate growth)
 	if distance <= 400:

@@ -24111,8 +24111,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.479 — Starter-area Lv 1-2 buffer.
+	display_game("[color=#00FF00]v0.9.479[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Lv 1-2 buffer around the starter post — new characters get a ring of easier monsters before tougher ones[/color]")
+	display_game("  • [b]Stretched the early monster-level curve.[/b] Walking out of the starter post used to drop you into Lv 4-7 monsters by ~25 tiles. Now: distance 0-10 = safe zone (no spawns), [color=#88FF88]10-30 = Lv 1-2 buffer[/color] (the first ring outside the post), 30-60 = Lv 2-6 (gentle next ring), 60-150 = Lv 6-50 (catches up to the old curve at the 150-tile anchor). Endpoint at distance 150 (level 50) is preserved so the rest of the world is unaffected. New characters can fight a few Lv 1-2 monsters and grow before they have to engage tougher mobs.")
+	display_game("")
+
 	# v0.9.478 — Hotfix: tutorial overlay was cutting off in the top-left.
-	display_game("[color=#00FF00]v0.9.478[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.478[/color]")
 	display_game("  [color=#FFD700]Hotfix — tutorial overlay now centers correctly (was cut off in the top-left)[/color]")
 	display_game("  • Wrapped the TutorialHintPanel root in a [color=#FFE066]CenterContainer[/color] so it always centers on the viewport. The previous layout used `PRESET_CENTER + KEEP_SIZE` directly on the panel BEFORE the panel had a computed size, which anchored it at (0,0) — causing the v0.9.475/476 first-time hints (Quest Board / Dungeon / Crafting / Progression) to render cropped against the top-left edge of the screen. Client-only.")
 	display_game("")
