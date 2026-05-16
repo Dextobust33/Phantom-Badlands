@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.471 — Audit #12 Slice 5: abandoned-post bubble decay.
+	display_game("[color=#00FF00]v0.9.471[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Untended player posts now mechanically decay: inactive (7d) weakens the bubble; abandoned (30d) nulls it[/color]")
+	display_game("  • [b]Slice 4 (v0.9.460) made post inactivity visible. Slice 5 gives it teeth.[/b] When your post passes 7 days without you tending it (walking inside the bubble, building/demolishing, or feeding guards), the settler bubble loses 1 suppression — monsters spawning inside go up by 1 tier. At 30 days the post hits [color=#FF4444]⚠⚠ ABANDONED[/color] and ALL suppression is wiped — the bubble offers no protection at all until you tend it again. Tending is cheap (literally just walking through resets the clock) but the decay is real. Combined with the threat-corridor / threat-suppression layer (v0.9.464), untended posts in dangerous zones decay much faster in player experience. Both the chat `/post` view and the visual Post Status panel surface 'Bubble suppression weakened by inactivity (-1)' (inactive) or 'Bubble suppression FULLY DECAYED — no protection until tended' (abandoned) directly under the inactivity tag. Audit #12 Slice 5.")
+	display_game("")
+
 	# v0.9.470 — Audit #11 Slice 12: NPC-post threat → quest hook.
-	display_game("[color=#00FF00]v0.9.470[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.470[/color]")
 	display_game("  [color=#FFD700]Under-Threat posts now surface a threat-relief bounty on their quest board[/color]")
 	display_game("  • [b]When you visit a trading post that's Under Threat, the quest board now offers a tier-scaled DUNGEON_CLEAR bounty pointing at the threatening dungeon.[/b] The bounty is marked [color=#FF8800]⚠ THREAT BOUNTY[/color] (dungeon-themed color), sorts to the top of the available list, and gives the threat marker an immediate player-facing reason — there's a paying job here. Clearing the threatening dungeon ticks the quest AND removes the threat naturally (threat state empties when the dungeon completes). Rewards scale with dungeon tier: T2 350 XP / 50 valor → T9 2700 XP / 300 valor. Quest id encodes <post>@<dungeon_type> so the same threat at the same post is one-and-done per character; new dungeons (or different types) generate fresh bounties. Stitches together the threat state (v0.9.454/v0.9.464) and the quest board into a single visible loop. Audit #11 Slice 12.")
 	display_game("")

@@ -261,6 +261,12 @@ func _render() -> void:
 			tend_color = "#FFAA44"
 			tend_tag = "   [color=#FFAA44]⚠ Inactive[/color]"
 	_inactivity_label.append_text("[color=%s]Last tended: %.1f days ago[/color]%s" % [tend_color, days_inactive, tend_tag])
+	# Audit #12 Slice 5 — surface mechanical decay alongside the tag.
+	var decay_state: String = String(_last_data.get("decay_suppression_state", "none"))
+	if decay_state == "fully_decayed":
+		_inactivity_label.append_text("\n[color=#FF4444]    Bubble suppression FULLY DECAYED — no protection until tended[/color]")
+	elif decay_state == "weakened":
+		_inactivity_label.append_text("\n[color=#FFAA44]    Bubble suppression weakened by inactivity (-1)[/color]")
 
 	# Per-guard list (owner only)
 	if is_owner and guards.size() > 0:
