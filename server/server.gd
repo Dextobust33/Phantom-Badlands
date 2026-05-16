@@ -11556,6 +11556,13 @@ func handle_trading_post_quests(peer_id: int):
 	if not progression_quest.is_empty():
 		available_quests.append(progression_quest)
 
+	# Audit #11 Slice 12 — threat-relief bounty. When the post is Under Threat,
+	# surface a DUNGEON_CLEAR quest pointing at the threatening dungeon so the
+	# threat marker has a player-facing reason ("there's a bounty here").
+	var threat_relief_quest = _generate_threat_relief_quest(tp, character.completed_quests, active_quest_ids)
+	if not threat_relief_quest.is_empty():
+		available_quests.append(threat_relief_quest)
+
 	# Add dungeon direction hints to dungeon quests
 	var tp_x = tp.center.x
 	var tp_y = tp.center.y
@@ -11687,6 +11694,67 @@ func _generate_progression_quest(current_post_id: String, player_level: int, com
 		"is_daily": false,
 		"prerequisite": "",
 		"is_progression": true  # Flag to identify progression quests
+	}
+
+# Audit #11 Slice 12 — threat-relief quest reward curve. Mirrors chain
+# final-stage scaling but slightly lower (single quest, not a chain).
+const _THREAT_RELIEF_REWARDS := {
+	2: {"xp":  350, "valor":  50},
+	3: {"xp":  600, "valor":  70},
+	4: {"xp":  800, "valor": 100},
+	5: {"xp": 1100, "valor": 130},
+	6: {"xp": 1500, "valor": 170},
+	7: {"xp": 1800, "valor": 200},
+	8: {"xp": 2200, "valor": 250},
+	9: {"xp": 2700, "valor": 300},
+}
+
+func _generate_threat_relief_quest(tp: Dictionary, completed_quests: Array, active_quest_ids: Array) -> Dictionary:
+	"""Audit #11 Slice 12 — when the post is Under Threat, generate a
+	DUNGEON_CLEAR quest pointing at the threatening dungeon's type. Quest id
+	encodes <post_id>@<dungeon_type> so quest_database can regenerate it
+	post-accept (no live state needed). Auto-disappears when threat state
+	empties (dungeon cleared)."""
+	var threat = _compute_post_threat_state(int(tp.center.x), int(tp.center.y))
+	if not threat.get("threatened", false):
+		return {}
+	var dungeon_type: String = str(threat.get("dungeon_type", ""))
+	if dungeon_type == "":
+		return {}
+	# Skip T1 — the threat scanner already filters those, but be defensive.
+	var tier: int = int(threat.get("tier", 1))
+	if tier < 2:
+		return {}
+	# Quest ID encodes post + dungeon_type so the same threat at the same post
+	# can only be claimed once per character; a different dungeon_type produces
+	# a separate quest_id even at the same post.
+	var quest_id := "threat_%s@%s" % [tp.id, dungeon_type]
+	if quest_id in active_quest_ids:
+		return {}
+	if quest_id in completed_quests:
+		return {}
+	var rewards: Dictionary = _THREAT_RELIEF_REWARDS.get(tier, {"xp": 500, "valor": 80})
+	var dungeon_name: String = str(threat.get("dungeon_name", "the threatening dungeon"))
+	var direction: String = str(threat.get("direction", "nearby"))
+	var distance: int = int(threat.get("distance", 0))
+	var color: String = str(threat.get("color", "#FF8800"))
+	var desc := "%s looms %s — about %d tiles from this post. Clear it to restore the post and end the threat.\n\n[color=%s]⚠ THREAT-RELIEF BOUNTY — completing this clears the post's Under Threat state.[/color]" % [
+		dungeon_name, direction, distance, color
+	]
+	return {
+		"id": quest_id,
+		"name": "Drive Off the %s" % dungeon_name,
+		"description": desc,
+		"type": QuestDatabaseScript.QuestType.DUNGEON_CLEAR,
+		"trading_post": tp.id,
+		"target": 1,
+		"dungeon_type": dungeon_type,
+		"rewards": rewards,
+		"is_daily": false,
+		"prerequisite": "",
+		"is_threat_relief": true,
+		"threat_color": color,
+		"threat_tier": tier,
 	}
 
 func handle_trading_post_recharge(peer_id: int):
@@ -24400,6 +24468,8 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 			"distance": dist,
 			"direction": _get_direction_text(post_x, post_y, instance.world_x, instance.world_y),
 			"color": dungeon_data.get("color", "#FF8800"),
+			"dungeon_type": instance.dungeon_type,
+			"instance_id": instance_id,
 		})
 	if threats.is_empty():
 		var empty_result = {"threatened": false}
@@ -24417,6 +24487,8 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		"direction": nearest.direction,
 		"color": nearest.color,
 		"count": threats.size(),
+		"dungeon_type": nearest.dungeon_type,
+		"instance_id": nearest.instance_id,
 	}
 	_threat_state_cache[cache_key] = result
 	if DIAG_TIMING_ENABLED:
