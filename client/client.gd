@@ -24073,8 +24073,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.474 — Audit #3 Slice 3: first-level-up progression hint.
+	display_game("[color=#00FF00]v0.9.474[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]One-time tutorial nudge after your first level-up points new players at the Progression Vectors dashboard[/color]")
+	display_game("  • [b]Discoverability hook for the Progression Vectors dashboard (v0.9.437).[/b] The first time a character has unspent stat points (i.e., right after their first level-up under the new system), the server sends a one-shot teaching message: pointing at [color=#9ACD32]/stats[/color] to spend the bank, and [color=#9ACD32]/status[/color] to see every progression track you're advancing (XP, jobs, Sanctuary, Bestiary, Compass, Atlas). Fires once per character and is suppressed forever after via a `seen_progression_hint` flag on the character. Legacy characters get the hint on their next level-up (or next character_update if they already have unspent points). The Stats button's pulse + `+N` badge from v0.9.401 is still there for ongoing visibility; this hint is purely the one-time teaching moment. Audit #3 Slice 3.")
+	display_game("")
+
 	# v0.9.473 — Audit #14 Slice 7: leader-set clan description.
-	display_game("[color=#00FF00]v0.9.473[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.473[/color]")
 	display_game("  [color=#FFD700]Clan leaders can now set a public description — visible to every member on the clan panel[/color]")
 	display_game("  • [b]Small clan-identity polish.[/b] Use [color=#FFD700]/clandesc <text>[/color] (leader only) to set a public description on your clan. Other members see it on their clan panel right under the clan name. Empty `/clandesc` clears it. 240-char cap; no BBCode brackets allowed (to prevent injection into other players' views). Lets clans communicate their playstyle / recruiting status / vibe without needing a separate broadcast. Foundation for future clan-identity polish (banner color, motto-in-chat). Audit #14 Slice 7.")
 	display_game("")
