@@ -76,6 +76,9 @@ const CHAIN_TITLES = {
 	# Audit #6 Slice 15 — T4 chain titles.
 	"vampire_hunter":     {"name": "Vampire Hunter",     "color": "#8B0000"},
 	"brood_breaker":      {"name": "Brood Breaker",      "color": "#FF8C00"},
+	# Audit #6 Slice 16 — T5 chain titles.
+	"lich_ender":         {"name": "Lich Ender",         "color": "#7755BB"},
+	"demon_slayer":       {"name": "Demon Slayer",       "color": "#FF4500"},
 }
 
 static func get_chain_title(title_id: String) -> Dictionary:
@@ -889,6 +892,110 @@ const QUESTS = {
 		"chain_total": 3,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 480, "egg": "Dragon Wyrmling", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "brood_breaker"}
+	},
+	# ===== "Lich's Curse" — Far West Haven, 3 stages, T5 (Audit #6 Slice 16) =====
+	"lichscurse_1": {
+		"id": "lichscurse_1",
+		"name": "Lich's Curse I — Shambling Vanguard",
+		"description": "Zombies have been pouring out of the western dust, all walking eastward in eerie unison. Defeat 6 Zombies before they swarm the haven.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 750 valor + Lich Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "far_west_haven",
+		"target": 6,
+		"monster_type": "Zombie",
+		"rewards": {"xp": 700, "valor": 95},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "lichscurse",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "lichscurse_2",
+		"chain_bonus": {}
+	},
+	"lichscurse_2": {
+		"id": "lichscurse_2",
+		"name": "Lich's Curse II — Wraiths in the Dust",
+		"description": "The zombies were bait — wraiths now boil out of the western tomb-lanes, bound to the lich's will. Bring down 5 Wraiths to break the binding before the lich himself appears.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 750 valor + Lich Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "far_west_haven",
+		"target": 5,
+		"monster_type": "Wraith",
+		"rewards": {"xp": 900, "valor": 125},
+		"is_daily": false,
+		"prerequisite": "lichscurse_1",
+		"chain_id": "lichscurse",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "lichscurse_3",
+		"chain_bonus": {}
+	},
+	"lichscurse_3": {
+		"id": "lichscurse_3",
+		"name": "Lich's Curse III — Burn the Sanctum",
+		"description": "The Lich rules from his sanctum, anchoring the western necrosis. Find the dungeon and end him. Beware Soul Burn — every hit he lands drains 5% of your primary resource max. Cast / strike at full mana or stamina before the fight; mid-fight regen barely keeps up.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 750 valor + Lich Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "far_west_haven",
+		"target": 1,
+		"bounty_name": "Lich",
+		"rewards": {"xp": 1400, "valor": 150},
+		"is_daily": false,
+		"prerequisite": "lichscurse_2",
+		"chain_id": "lichscurse",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 600, "egg": "Lich", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "lich_ender"}
+	},
+	# ===== "Demon Lord's Heir" — Deep South Port, 3 stages, T5 (Audit #6 Slice 16) =====
+	"demonlordheir_1": {
+		"id": "demonlordheir_1",
+		"name": "Demon Lord's Heir I — Infernal Foot Soldiers",
+		"description": "Demons have been hauling themselves up from the southern reefs, scarring the port walls with infernal claws. Cut down 6 Demons to thin the vanguard.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 750 valor + Demon Lord Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "deep_south_port",
+		"target": 6,
+		"monster_type": "Demon",
+		"rewards": {"xp": 700, "valor": 95},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "demonlordheir",
+		"chain_stage": 1,
+		"chain_total": 3,
+		"next_in_chain": "demonlordheir_2",
+		"chain_bonus": {}
+	},
+	"demonlordheir_2": {
+		"id": "demonlordheir_2",
+		"name": "Demon Lord's Heir II — The Queen's Court",
+		"description": "The Demon Lord's succubus courtiers have moved up the chain, charming sailors and dragging them down into the deep. Bring down 5 Succubi to break the spell before more dock crews fall.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 750 valor + Demon Lord Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.KILL_TYPE,
+		"trading_post": "deep_south_port",
+		"target": 5,
+		"monster_type": "Succubus",
+		"rewards": {"xp": 900, "valor": 125},
+		"is_daily": false,
+		"prerequisite": "demonlordheir_1",
+		"chain_id": "demonlordheir",
+		"chain_stage": 2,
+		"chain_total": 3,
+		"next_in_chain": "demonlordheir_3",
+		"chain_bonus": {}
+	},
+	"demonlordheir_3": {
+		"id": "demonlordheir_3",
+		"name": "Demon Lord's Heir III — Topple the Throne",
+		"description": "The Demon Lord holds his throne deep below. Find the dungeon and end his reign. Beware Soul Forge — every five rounds the Demon Lord heals himself for 15% of his max HP. Burst him through the threshold before the forge fires; if you let the fight stall, he'll outlast every burn you have.\n\n[color=#FFAA00]CHAIN: 3 stages | Final reward: 750 valor + Demon Lord Egg + Home Stones (Egg + Equipment)[/color]",
+		"type": QuestType.BOSS_HUNT,
+		"trading_post": "deep_south_port",
+		"target": 1,
+		"bounty_name": "Demon Lord",
+		"rewards": {"xp": 1400, "valor": 150},
+		"is_daily": false,
+		"prerequisite": "demonlordheir_2",
+		"chain_id": "demonlordheir",
+		"chain_stage": 3,
+		"chain_total": 3,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 600, "egg": "Demon Lord", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "demon_slayer"}
 	}
 }
 

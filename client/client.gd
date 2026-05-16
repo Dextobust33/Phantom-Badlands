@@ -24064,8 +24064,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.467 — Audit #6 Slice 16: 2 new T5 quest chains.
+	display_game("[color=#00FF00]v0.9.467[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two new T5 chain quests at deep-frontier posts: Lich's Curse + Demon Lord's Heir[/color]")
+	display_game("  • [b]Chain content now extends to T5 — the first chains anchored at deep-frontier trading posts (radius 250+).[/b] [color=#7755BB]Lich's Curse[/color] at Far West Haven is a 3-stage chain into the Lich's Sanctum: kill 6 Zombies → kill 5 Wraiths → end the Lich (Soul Burn boss — drains your primary resource on every hit). [color=#FF4500]Demon Lord's Heir[/color] at Deep South Port hunts the Demon Lord's Throne: kill 6 Demons → kill 5 Succubi → topple the Demon Lord (Soul Forge boss — heals 15%% max HP every 5 rounds, so burst him through). Each chain pays 750 Valor + the boss's companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#7755BB]Lich Ender[/color] and [color=#FF4500]Demon Slayer[/color]). Chain content now spans T1-T5 across 7 frontier posts. Audit #6 Slice 16.")
+	display_game("")
+
 	# v0.9.466 — Audit #6 Slice 15: 2 new T4 quest chains.
-	display_game("[color=#00FF00]v0.9.466[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.466[/color]")
 	display_game("  [color=#FFD700]Two new T4 chain quests: Vampire's Hunger + Dragon Brood[/color]")
 	display_game("  • [b]Two more chain quests anchored at frontier posts, this time T4.[/b] [color=#8B0000]Vampire's Hunger[/color] at Southport is a 3-stage chain into the Vampire's Crypt: kill 6 Wights → kill 5 Wraiths → slay the Vampire (Blood Frenzy boss). [color=#FF8C00]Dragon Brood[/color] at Frostgate puts you on the trail of the Dragon Hatchery: kill 6 Wyverns → kill 5 Dragon Wyrmlings → break the Broodmother (Hatchling Swarm boss). Each chain pays out 600 Valor + a tier-4 companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#8B0000]Vampire Hunter[/color] and [color=#FF8C00]Brood Breaker[/color]). Brings chain breadth to T1-T4 across the major frontier posts. Audit #6 Slice 15.")
 	display_game("")
