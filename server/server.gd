@@ -9838,11 +9838,43 @@ func send_character_update(peer_id: int):
 	"""Queue character data update for client. Actual send happens at end of frame."""
 	if not characters.has(peer_id):
 		return
+	# Audit #3 Slice 3 — one-time tutorial hint about the Progression Vectors
+	# dashboard. Fires after the FIRST level-up (when unspent_stat_points first
+	# ticks > 0) once per character. Cheap check; skipped immediately after
+	# the flag is set.
+	_maybe_send_progression_hint(peer_id)
 	if USE_DELTA_UPDATES:
 		# Batch: mark dirty, flush at end of _process()
 		pending_char_updates[peer_id] = true
 	else:
 		_send_character_update_immediate(peer_id, true)
+
+func _maybe_send_progression_hint(peer_id: int) -> void:
+	"""Audit #3 Slice 3 — one-shot teaching message about the Progression
+	Vectors dashboard. Conditions: character has unspent stat points (i.e.,
+	they've leveled at least once since the system shipped) AND the
+	`seen_progression_hint` flag isn't set. Once fired, the flag is persisted
+	so it never repeats."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_progression_hint:
+		return
+	if character.unspent_stat_points <= 0:
+		return
+	character.seen_progression_hint = true
+	var msg = (
+		"[color=#FFD700]💡 Progression tip:[/color] You have "
+		+ "[color=#FFE066]%d[/color] unspent stat point%s. " % [
+			character.unspent_stat_points,
+			"s" if character.unspent_stat_points != 1 else ""
+		]
+		+ "Open [color=#9ACD32]/stats[/color] to spend them, or [color=#9ACD32]/status[/color] "
+		+ "to see every progression track you're advancing (XP, jobs, Sanctuary, Bestiary, "
+		+ "Compass, Atlas)."
+	)
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+	save_character(peer_id)
 
 func _send_character_update_immediate(peer_id: int, force_full: bool):
 	"""Actually send character data update to client (full or delta)."""

@@ -36,6 +36,12 @@ extends Resource
 # the existing class-fixed stat scaling (2.5 pts/lv distributed by class).
 @export var unspent_stat_points: int = 0
 
+# Audit #3 Slice 3 — one-time tutorial nudge. Set to true the first time the
+# server sends the player a hint about the Progression Vectors dashboard
+# (triggered when unspent_stat_points first ticks > 0). Prevents repeating the
+# hint on every level-up.
+@export var seen_progression_hint: bool = false
+
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
 	"strength": 0.0, "constitution": 0.0, "dexterity": 0.0,
@@ -1328,6 +1334,8 @@ func to_dict() -> Dictionary:
 		},
 		# Audit #3 Slice 1 — banked stat-allocation points
 		"unspent_stat_points": unspent_stat_points,
+		# Audit #3 Slice 3 — one-time progression-hint flag
+		"seen_progression_hint": seen_progression_hint,
 		# Audit #4 Slice 1 — NPC Home Stone purchase counts (per-character
 		# lifetime). Pushed to client so the visual vendor panel can render
 		# owned-vs-cap rows.
@@ -1486,6 +1494,9 @@ func from_dict(data: Dictionary):
 	# Audit #3 Slice 1 — banked stat-allocation points. Legacy characters
 	# default to 0 (no retroactive grant — only future level-ups award points).
 	unspent_stat_points = int(data.get("unspent_stat_points", 0))
+	# Audit #3 Slice 3 — legacy chars default to false; first time we observe
+	# unspent points > 0 after this version, the hint fires once.
+	seen_progression_hint = bool(data.get("seen_progression_hint", false))
 	# Audit #4 Slice 1 — NPC stone purchase counts per character lifetime.
 	# Empty dict for legacy characters.
 	var stones_raw = data.get("npc_stones_bought", {})
