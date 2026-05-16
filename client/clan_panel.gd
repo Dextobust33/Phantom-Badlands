@@ -332,6 +332,24 @@ func _render_in_clan_view() -> void:
 	header.text = "[color=#A335EE][b]%s[/b][/color]  [color=#FFD700][%s][/color]   [color=#888888]%d/%d members[/color]" % [clan_name, clan_tag, member_count, max_members]
 	_body_container.add_child(header)
 
+	# Audit #14 Slice 7 — leader-set clan description. Public to all viewers.
+	# Leader sees an "Edit" hint pointing at /clandesc; missing description
+	# shows a soft "(no description)" placeholder for the leader so the affordance
+	# is discoverable.
+	var description: String = String(_data.get("description", ""))
+	var desc_label := RichTextLabel.new()
+	desc_label.bbcode_enabled = true
+	desc_label.fit_content = true
+	desc_label.scroll_active = false
+	desc_label.add_theme_font_size_override("normal_font_size", 12)
+	desc_label.custom_minimum_size = Vector2(0, 20)
+	if description != "":
+		desc_label.text = "[color=#C8B0FF]%s[/color]" % description
+		_body_container.add_child(desc_label)
+	elif is_leader:
+		desc_label.text = "[color=#888888]No clan description set — use [color=#FFD700]/clandesc <text>[/color] to add one.[/color]"
+		_body_container.add_child(desc_label)
+
 	if is_leader:
 		var leader_note := RichTextLabel.new()
 		leader_note.bbcode_enabled = true

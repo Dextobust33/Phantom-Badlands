@@ -20541,7 +20541,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "vault", "clanvault",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "vault", "clanvault",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21528,6 +21528,15 @@ func process_command(text: String):
 				open_clan_panel()
 			else:
 				display_game("You don't have a character yet")
+		"clandesc":
+			# Audit #14 Slice 7 — leader-only clan description setter.
+			# Usage: /clandesc <text> — sets the description; empty clears it.
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var cd_parts = text.split(" ", false, 1)
+				var cd_text = cd_parts[1].strip_edges() if cd_parts.size() > 1 else ""
+				send_to_server({"type": "clan_description_set", "text": cd_text})
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -24064,8 +24073,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.473 — Audit #14 Slice 7: leader-set clan description.
+	display_game("[color=#00FF00]v0.9.473[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan leaders can now set a public description — visible to every member on the clan panel[/color]")
+	display_game("  • [b]Small clan-identity polish.[/b] Use [color=#FFD700]/clandesc <text>[/color] (leader only) to set a public description on your clan. Other members see it on their clan panel right under the clan name. Empty `/clandesc` clears it. 240-char cap; no BBCode brackets allowed (to prevent injection into other players' views). Lets clans communicate their playstyle / recruiting status / vibe without needing a separate broadcast. Foundation for future clan-identity polish (banner color, motto-in-chat). Audit #14 Slice 7.")
+	display_game("")
+
 	# v0.9.472 — Audit #2 Slice 3: niche-passive keyword fix + beast expansion.
-	display_game("[color=#00FF00]v0.9.472[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.472[/color]")
 	display_game("  [color=#FFD700]Paladin Divine Favor and Ranger Hunter's Mark now fire against rare variants — and the beast list grew[/color]")
 	display_game("  • [b]Niche-passive audit fix.[/b] Paladin's [color=#FFD700]Divine Favor[/color] (+25% vs undead/demons) and Ranger's [color=#228B22]Hunter's Mark[/color] (+25% vs beasts) were silently failing against rare-variant prefixes — fighting a Corrosive Skeleton or ★ Lich Champion gave NO bonus because the old code used exact-name matching against an unprefixed list. Now uses substring matching, so every variant (Corrosive / Sundering / Elite Champion) triggers the passive correctly. [b]Also expanded the beast list[/b] to cover all dragons (Young Dragon, Ancient Dragon, Primordial Dragon, Dragon Wyrmling), Phoenix, and Sphinx — beast-flavored mythical creatures that were previously absent from the Hunter's Mark trigger list. Audit #2 Slice 3.")
 	display_game("")

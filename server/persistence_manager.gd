@@ -2185,12 +2185,45 @@ func create_clan(leader_account_id: String, name: String, tag: String) -> Dictio
 		# CLAN_VAULT_CAPACITY. Items are full item dicts (same shape as
 		# inventory entries: type, name, etc.).
 		"storage": [],
+		# Audit #14 Slice 7 — clan identity polish. Description is a leader-set
+		# public blurb (max 240 chars, basic charset). Empty by default; legacy
+		# clans read it as "" via .get(... , "").
+		"description": "",
 		"created_at": int(Time.get_unix_time_from_system()),
 	}
 	accounts_data["accounts"][leader_account_id]["clan_id"] = clan_id
 	save_clans()
 	save_accounts()
 	return {"success": true, "clan_id": clan_id, "clan": clans_data["clans"][clan_id]}
+
+# Audit #14 Slice 7 — leader-only clan description setter.
+const CLAN_DESCRIPTION_MAX: int = 240
+
+func set_clan_description(account_id: String, text: String) -> Dictionary:
+	"""Leader-only. Sets clans_data.clans[clan_id].description after basic
+	validation. Empty string clears the description. Returns
+	{success, reason, description}."""
+	var clan_id = get_account_clan_id(account_id)
+	if clan_id == "":
+		return {"success": false, "reason": "You are not in a clan."}
+	var clan = clans_data.get("clans", {}).get(clan_id, {})
+	if clan.is_empty():
+		return {"success": false, "reason": "Clan not found."}
+	if String(clan.get("leader_account_id", "")) != account_id:
+		return {"success": false, "reason": "Only the clan leader can set the description."}
+	var trimmed = text.strip_edges()
+	if trimmed.length() > CLAN_DESCRIPTION_MAX:
+		return {"success": false, "reason": "Description max %d characters (got %d)." % [CLAN_DESCRIPTION_MAX, trimmed.length()]}
+	# Allow letters/digits/spaces and common punctuation; reject control chars
+	# and BBCode brackets (which would let a leader inject formatting into other
+	# players' clan view).
+	var bad_re = RegEx.new()
+	bad_re.compile("[\\[\\]<>]")
+	if bad_re.search(trimmed) != null:
+		return {"success": false, "reason": "Description cannot contain [ ] < or > characters."}
+	clans_data["clans"][clan_id]["description"] = trimmed
+	save_clans()
+	return {"success": true, "description": trimmed}
 
 func leave_clan(account_id: String) -> Dictionary:
 	"""Remove account from its clan. If account is the leader, the clan is

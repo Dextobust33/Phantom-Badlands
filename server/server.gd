@@ -1705,6 +1705,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_clan_vault_deposit(peer_id, message)
 		"clan_vault_withdraw":
 			handle_clan_vault_withdraw(peer_id, message)
+		# Audit #14 Slice 7 — leader-set clan description.
+		"clan_description_set":
+			handle_clan_description_set(peer_id, message)
 		# Combat scratch-off (user-requested 2026-05-14)
 		"combat_loot_reveal":
 			handle_combat_loot_reveal(peer_id, message)
@@ -8372,6 +8375,7 @@ func _send_clan_info(peer_id: int) -> void:
 		"clan_id": clan_id,
 		"name": String(clan.get("name", "")),
 		"tag": String(clan.get("tag", "")),
+		"description": String(clan.get("description", "")),
 		"is_leader": leader_id == account_id,
 		"is_officer": officer_ids.has(account_id),
 		"officer_ids": officer_ids,
@@ -8856,6 +8860,28 @@ func handle_clan_vault_withdraw(peer_id: int, message: Dictionary) -> void:
 		"message": "[color=#88FF88]Withdrew [color=#FFD700]%s[/color] from the clan vault.[/color]" % item_name
 	})
 	_push_clan_vault_to_all(clan_id)
+
+func handle_clan_description_set(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 Slice 7 — leader-only clan description setter. Empty text
+	clears the description. Validation lives in persistence.set_clan_description
+	(length cap + charset). After success, push refreshed clan_info to every
+	online member so the new description shows up on their panels."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var text = String(message.get("text", ""))
+	var result = persistence.set_clan_description(account_id, text)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Could not set description."))})
+		return
+	var desc = String(result.get("description", ""))
+	if desc == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Clan description cleared.[/color]"})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Clan description updated.[/color]"})
+	_refresh_all_online_clan_members(persistence.get_account_clan_id(account_id))
 
 
 func _push_clan_vault_to_all(clan_id: String) -> void:
