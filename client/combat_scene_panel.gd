@@ -4561,10 +4561,14 @@ func show_victory_card(rewards: Dictionary) -> void:
 	if _victory_card_overlay == null or not is_instance_valid(_victory_card_overlay):
 		return
 
-	# Defeated-monster line.
+	# Defeated-monster line. v0.9.511 — also surface the niche-passive tag on
+	# the victory card so the player sees a satisfying capstone confirmation
+	# that their class bonus was relevant to the kill (pairs with the live
+	# combat tag from v0.9.510).
 	if _monster_name != "":
 		var name_color: String = _monster_name_color if _monster_name_color != "" else "#FFFFFF"
-		_victory_card_monster_label.text = "[center][color=#888888]Defeated:[/color] [color=%s][b]%s[/b][/color] [color=#888888](Lv %d)[/color][/center]" % [name_color, _monster_name, _monster_level]
+		var niche_tag := _get_niche_passive_tag()
+		_victory_card_monster_label.text = "[center][color=#888888]Defeated:[/color] [color=%s][b]%s[/b][/color] [color=#888888](Lv %d)[/color]%s[/center]" % [name_color, _monster_name, _monster_level, niche_tag]
 	else:
 		_victory_card_monster_label.text = ""
 
