@@ -5109,6 +5109,18 @@ func update_online_players(players: Array):
 		online_players_list.append_text("[color=#555555]No players online[/color]")
 		return
 
+	# Audit #14 v0.9.518 — Mentor count header. Reinforces the v0.9.517 ★ badge
+	# discoverability — at a glance, new players can see how many volunteers
+	# are around and what the ★ means.
+	var mentor_count: int = 0
+	for player in players:
+		if bool(player.get("mentor_active", false)):
+			mentor_count += 1
+	if mentor_count > 0:
+		online_players_list.append_text("[color=#FFD700]★ %d mentor%s online[/color] [color=#888888](type [/color][color=#9ACD32]/mentor[/color][color=#888888] to volunteer)[/color]\n\n" % [
+			mentor_count, "s" if mentor_count != 1 else ""
+		])
+
 	for player in players:
 		var pname = player.get("name", "Unknown")
 		var plevel = player.get("level", 1)
@@ -24339,8 +24351,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.518 — Audit #14 Clan tag on player posts + Mentor count in players list.
+	display_game("[color=#00FF00]v0.9.518[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two more multiplayer-visibility slices — see at a glance who owns each post + how many mentors are around.[/color]")
+	display_game("  • [b]Clan tag on player posts[/b] (Audit #14). The post status panel header now renders the post owner's [color=#A335EE][CLAN TAG][/color] in their clan's banner color. At a glance you can see which clan owns each outpost on the map. Read-only surface — first piece of the captured \"clan-shared posts\" item without an ownership rewrite.")
+	display_game("  • [b]Mentor count in players list[/b] (Audit #14). A line at the top of the players list now shows [color=#FFD700]★ N mentors online[/color] with a hint pointing at the [color=#9ACD32]/mentor[/color] command. Reinforces v0.9.517's mentor ★ badge — new players spot the volunteers without having to scan every name.")
+	display_game("  • Continues closing pieces of Audit #14 (~65% → ~72%). Remaining slate is heavy-design: PvP, full mentor matching, bounty, group dungeons.")
+	display_game("")
+
 	# v0.9.517 — Audit #14 Mentor + Audit #6 Repeatable starter chains + Audit #11 Threat corridor HUD.
-	display_game("[color=#00FF00]v0.9.517[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.517[/color]")
 	display_game("  [color=#FFD700]Big closing batch on the audit — mentor badges, repeatable T1 chains, and visible threat corridors.[/color]")
 	display_game("  • [b]Mentor Badge MVP[/b] (Audit #14). New [color=#FFD700]/mentor on[/color] (and [color=#FFD700]/mentor off[/color]) command toggles a ★ badge on your name in the players list. Volunteer system — gated at Lv 20+ so new players can find experienced help. No matching algorithm, no reward — purely a discoverability marker. First piece of the Mentor system.")
 	display_game("  • [b]Repeatable Starter Chains[/b] (Audit #6). T1 quest chains (Goblin Menace, Skeleton Lord, Wolf Pack, Rat Plague, Kobold Trouble) now have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in, then re-appear at their home post. Lets a high-level character with starter friends drop back to the early posts and run a chain together as a meaningful XP/valor activity. Higher-tier chains stay one-shot. Closes the [color=#FFAA66]\"repeatable chains\"[/color] audit pickup.")
@@ -24376,14 +24396,6 @@ func display_changelog():
 	display_game("  • Closes another beat of Audit #10's \"apex content\" captured item. Future beats can layer T9 encounter pools, zone-specific affinity weights, or named landmarks (statues / outposts) on top.")
 	display_game("")
 
-	# v0.9.513 — Apex content slice 2 (Apex Variants).
-	display_game("[color=#00FFFF]v0.9.513[/color]")
-	display_game("  [color=#FFD700]Apex Frontier gets teeth — monsters in the zone now spawn as buffed Apex Variants with bigger payouts and a first-time teaching overlay.[/color]")
-	display_game("  • [b]Apex Variants.[/b] Every monster spawned in the apex frontier zone (v0.9.512: distance > 1500 from origin) now gets the [color=#9F70FF]Apex[/color] prefix added to its name (\"Apex Goblin\", \"Apex Wraith\"), +25% HP, +10% damage, and a purple name color in combat. Doesn't apply to dungeon combat — dungeons have their own tier scaling.")
-	display_game("  • [b]Bigger rewards on apex kills.[/b] The +10% zone XP from v0.9.512 stacks with a new [color=#88FF88]+20% variant XP[/color] (total +30% per kill) and Apex Variants drop [color=#88FF88]+50% Soul Gems[/color] to balance the +25% HP they carry. Combat reward message names the bonus on every kill.")
-	display_game("  • [b]First-time tutorial overlay.[/b] When the player crosses into the apex frontier for the first time, a one-time modal explains the +XP / +gems / variant mechanics. New `seen_apex_frontier_hint` per-character flag.")
-	display_game("  • Closes another beat of Audit #10's \"apex content\" captured item. Future beats can stack named extreme zones, unique drops, or T9 encounter pools on top.")
-	display_game("")
 
 
 

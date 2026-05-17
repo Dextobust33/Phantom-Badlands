@@ -26390,10 +26390,21 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
 	var inactivity_state = _compute_post_inactivity_state(post_meta)
 
+	# Audit #14 v0.9.518 — Clan-shared post recognition (read-only). Surface the
+	# post owner's clan tag + banner color on the panel so visitors can see at a
+	# glance "this is XYZ clan's outpost." First piece of "clan-shared posts"
+	# captured item without an ownership rewrite.
+	var owner_clan = persistence.get_clan_by_username(owner_username)
+	var owner_clan_tag = String(owner_clan.get("tag", ""))
+	var owner_clan_color = String(owner_clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR)) if not owner_clan.is_empty() else ""
+
 	return {
 		"post_name": display_name,
 		"owner": owner_username,
 		"is_owner": is_owner,
+		# Audit #14 v0.9.518 — owner clan identity (empty when owner has no clan).
+		"owner_clan_tag": owner_clan_tag,
+		"owner_clan_color": owner_clan_color,
 		"bubble_radius": radius,
 		"effective_tier": effective_tier,
 		"wilderness_tier": wilderness_tier,

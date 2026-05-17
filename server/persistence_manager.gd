@@ -2187,6 +2187,18 @@ func get_clan_by_account(account_id: String) -> Dictionary:
 	var clan_id = get_account_clan_id(account_id)
 	return get_clan(clan_id)
 
+func get_clan_by_username(username: String) -> Dictionary:
+	"""Audit #14 v0.9.518 — Lookup clan by account username (case-insensitive).
+	Used by player-post panels where the owner is identified by username (not
+	a live peer/account_id). Returns {} if no account / no clan."""
+	if username == "":
+		return {}
+	var username_lower = username.to_lower()
+	var account_id = accounts_data.get("username_to_id", {}).get(username_lower, "")
+	if account_id == "":
+		return {}
+	return get_clan_by_account(account_id)
+
 func _normalize_clan_key(text: String) -> String:
 	return text.strip_edges().to_lower()
 
