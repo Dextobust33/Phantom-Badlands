@@ -122,6 +122,11 @@ const TILE_RENDER = {
 	# evoking a settlement's communal water source.
 	"bench":         {"char": "n", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
 	"well":          {"char": "w", "color": "#4488FF", "blocks_move": true,  "blocks_los": false},
+	# Audit #12 v0.9.520 — two more cosmetic buildables, bringing the catalogue
+	# to 11. Pylon is a mid-tier wayfinding marker. Garden Plot is decorative
+	# greenery at the cheapest tier.
+	"pylon":         {"char": "p", "color": "#DDDDFF", "blocks_move": false, "blocks_los": false},
+	"garden_plot":   {"char": "g", "color": "#5A8A3A", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

@@ -20758,7 +20758,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21791,6 +21791,12 @@ func process_command(text: String):
 				else:
 					display_game("[color=#FF8800]Usage: /mentor on  or  /mentor off[/color]")
 					display_game("  [color=#888888]Volunteer to be visible as a mentor (Lv 20+). New players see a [color=#FFD700]★[/color] on your name.[/color]")
+		"mentors":
+			# Audit #14 v0.9.520 — list online mentors with name + level + class.
+			if has_character:
+				send_to_server({"type": "mentor_list"})
+			else:
+				display_game("You don't have a character yet")
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -24351,8 +24357,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.520 — Audit #15 Help refresh + Audit #14 /mentors + Audit #12 Pylon + Garden Plot.
+	display_game("[color=#00FF00]v0.9.520[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Help page brought up to date, mentor discoverability extended, and the cosmetic catalogue grows to 11.[/color]")
+	display_game("  • [b]Help page Recent Additions section[/b] (Audit #15). [color=#9ACD32]/help[/color] now ends with a [color=#FFD700]RECENT ADDITIONS[/color] section listing the v0.9.4xx-5xx features (Mentor system, Apex Frontier, Apex Variants, Repeatable T1 chains, Threat Corridor HUD, Sanctuary Stable, Tier Ascension Fusion, Hybrid Fusion, Help Buttons rollout, Clan polish, Status page, Cosmetic buildables catalogue). Last help page refresh was v0.9.465 — this catches up 50+ versions.")
+	display_game("  • [b]/mentors command[/b] (Audit #14). New chat command listing online mentors by name + level + class with a hint pointing at [color=#9ACD32]/w <name>[/color]. Pairs with the [color=#FFD700]★ N mentors online[/color] header (v0.9.518) — new players can find a specific mentor to whisper.")
+	display_game("  • [b]Pylon + Garden Plot[/b] (Audit #12). Two more cosmetic buildables — Pylon ([color=#DDDDFF]p[/color], walkable, Construction skill 11) is a wayfinding marker; Garden Plot ([color=#5A8A3A]g[/color], walkable, Construction skill 4) is the new cheapest entry-level decoration. Catalogue now spans 11 structures across Construction skill 4 → 25.")
+	display_game("  • Continues the audit-completion push — Audit #15 ~85% → 92%, Audit #14 ~74% → 76%, Audit #12 ~80% → 82%.")
+	display_game("")
+
 	# v0.9.519 — Audit #3 First market hint + Audit #14 Clan outpost indicator.
-	display_game("[color=#00FF00]v0.9.519[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.519[/color]")
 	display_game("  [color=#FFD700]One more teaching moment, one more clan visibility cue.[/color]")
 	display_game("  • [b]First Market visit tutorial overlay[/b] (Audit #3). New `seen_market_hint` per-character flag — first time a player browses the market, a modal explains Valor, listings, supply/demand markup, and the Halfling/Knight/own-post listing bonuses. Continues the tutorial-overlay infra from v0.9.475/476/483/508/513.")
 	display_game("  • [b]Clan Outpost indicator on post panel[/b] (Audit #14). When you visit a post built by one of your [color=#A335EE]clan-mates[/color], the post status panel header now appends a [color=#A335EE]✦ Clan Outpost[/color] tag in the clan's banner color. Extends v0.9.518's owner clan tag into useful navigation for clan members — at a glance you know which posts on the map are friendly territory.")
@@ -24386,15 +24401,6 @@ func display_changelog():
 	display_game("  • Continues Audit #12 structure variety + Audit #15 help coverage + closes a small Audit #6 polish item.")
 	display_game("")
 
-	# v0.9.515 — Audit #12 cosmetic structures (Brazier + Fountain) + Audit #15 help panel coverage.
-	display_game("[color=#00FFFF]v0.9.515[/color]")
-	display_game("  [color=#FFD700]Two more cosmetic buildables to fill out your settlement, plus help buttons on three more panels.[/color]")
-	display_game("  • [b]Brazier[/b] (Construction skill 13, [color=#FF8800]f[/color] tile, walkable). New mid-tier light source between Torch (skill 8) and Lamp Post (skill 15). 2 iron ore + 1 wooden plank + 2 magic dust.")
-	display_game("  • [b]Fountain[/b] (Construction skill 22, [color=#6BAEFF]u[/color] tile, blocks movement). New centerpiece structure — place at the heart of your settlement plaza. 4 stone block + 2 magic dust + 1 arcane crystal.")
-	display_game("  • [b]Admin shortcut updated[/b]: \"Give Cosmetic Structures (1 of each)\" now drops Brazier + Fountain alongside the existing 5.")
-	display_game("  • [b]Help buttons[/b] added to the Fusion Station, Companion Kennel, and Post Status panels. Each opens a topic-specific overlay explaining the screen's mechanics. Extends the help-buttons-everywhere rollout (started v0.9.485) to 14 panels.")
-	display_game("  • Closes another beat of Audit #12 structure variety; continues the Audit #15 help-coverage rollout.")
-	display_game("")
 
 
 
@@ -26774,7 +26780,22 @@ func show_help():
 [color=#AAAAAA]Bug:[/color] "/bug <desc>" to report | [color=#AAAAAA]Condition:[/color] Pristine→Excellent→Good→Worn→Damaged→BROKEN. Repair@merchants.
 [color=#AAAAAA]Formulas:[/color] HP=50+CON×5+class | Mana=INT×3+WIS×1.5 | Stam=STR+CON | Energy=(WIT+DEX)×0.75 | DEF=CON/2+gear
 [color=#FF4444]Chat:[/color] All commands need [color=#00FFFF]/[/color] prefix (e.g. /help, /who). Text without / goes to chat. Combat keywords work without /.
-[color=#00FFFF]v0.9.83:[/color] Item locking, 53 dungeons (all monsters), 5x blacksmith upgrades, quest scaling, bug fixes.
+
+[b][color=#FFD700]══ RECENT ADDITIONS ══[/color][/b]
+[color=#00FFFF]Mentor System:[/color] [color=#9ACD32]/mentor on[/color] (Lv 20+) volunteers you as a mentor — gold [color=#FFD700]★[/color] shows on your name. [color=#9ACD32]/mentors[/color] lists who's online.
+[color=#00FFFF]Apex Frontier:[/color] >1500 tiles from origin = [color=#9F70FF]⚡ APEX[/color] zone. +10%% XP. Four named zones (Burning Reach NE / Frostbound Verge NW / Sundered Hollows SW / Cinder Wastes SE).
+[color=#00FFFF]Apex Variants:[/color] Every monster spawned in apex frontier is an [color=#9F70FF]Apex[/color] variant — +25%% HP, +10%% damage, +30%% XP total, +50%% Soul Gems. Drops Apex Crystal (750 valor) at 12%% rate.
+[color=#00FFFF]Repeatable T1 chains:[/color] Goblin Menace, Skeleton Lord, Wolf Pack, Rat Plague, Kobold Trouble all repeat after 24h cooldown.
+[color=#00FFFF]Threat Corridor HUD:[/color] Within 80 tiles of an active T2+ world dungeon, the Area line surfaces [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color].
+[color=#00FFFF]Sanctuary Stable:[/color] Magenta [color=#FF80FF]C[/color] tile at T5+ posts — live kennel access mid-character (Deposit / Withdraw / Return / Check Out / Fuse). Build one yourself (Construction Lv 35).
+[color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any sub-tier mix) + Ascension Catalyst → same type at tier+1. Keeps your favorite pet, raises rank. Catalysts drop T6+.
+[color=#00FFFF]Hybrid Fusion:[/color] 2 different sub-tier 5+ + Hybrid Catalyst → blended companion. Catalysts drop T5+.
+[color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
+[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
+[color=#00FFFF]Status page:[/color] Progression Vectors dashboard names every advanceable track. Includes Quest Chains completed + titles earned.
+[color=#00FFFF]Cosmetic buildables:[/color] Banner, Lamp Post, Torch, Statue, Signpost, Brazier, Fountain, Bench, Well, Pylon, Garden Plot — Construction skill 4 → 25.
+
+[color=#808080]Open [/color][color=#00FFFF]More → Changes[/color][color=#808080] for the per-version detailed history.[/color]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
 	display_game(help_text)
 
@@ -27591,7 +27612,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.507 — drop one of each cosmetic structure for testing.
 			# v0.9.515 — brazier + fountain added.
 			# v0.9.516 — bench + well added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well"]:
+			# v0.9.520 — pylon + garden_plot added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()

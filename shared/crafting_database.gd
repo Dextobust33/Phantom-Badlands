@@ -3125,6 +3125,32 @@ const RECIPES = {
 		"craft_time": 4.0,
 		"description": "A round stone well with a rope-and-bucket draw. Blocks movement — evokes a settlement's communal water source."
 	},
+	# Audit #12 v0.9.520 — two more cosmetic recipes. Pylon is a mid-tier
+	# wayfinding marker; Garden Plot is the cheapest decorative greenery.
+	"pylon_build": {
+		"name": "Pylon",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 11,
+		"difficulty": 15,
+		"materials": {"stone_block": 2, "magic_dust": 1},
+		"output_type": "structure",
+		"structure_type": "pylon",
+		"specialist_only": false,
+		"craft_time": 2.0,
+		"description": "A pale stone pylon humming with faint arcane light. Walkable. Use it as a wayfinding marker or boundary stone."
+	},
+	"garden_plot_build": {
+		"name": "Garden Plot",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 4,
+		"difficulty": 8,
+		"materials": {"wooden_plank": 1, "herb": 2},
+		"output_type": "structure",
+		"structure_type": "garden_plot",
+		"specialist_only": false,
+		"craft_time": 1.5,
+		"description": "A tended patch of herbs and wildflowers. Walkable. The cheapest decoration — soothing greenery for your settlement."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
