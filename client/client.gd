@@ -936,6 +936,8 @@ var hud_area_is_hotspot: bool = false
 var hud_area_is_safe: bool = true
 # Audit #10 v0.9.512 — apex frontier flag from location updates.
 var hud_is_apex_frontier: bool = false
+# Audit #10 v0.9.514 — named apex zone (Burning Reach / Frostbound Verge / etc).
+var hud_apex_zone_name: String = ""
 var hud_nearest_post: Dictionary = {}  # Nearest NPC post info for compass line
 var hud_post_threat: Dictionary = {"threatened": false}  # Slice 6 — dynamic post threat state
 # Audit #13 Slice 3 — Sanctuary Compass payload. Server-stamped per location
@@ -18702,6 +18704,7 @@ func handle_server_message(message: Dictionary):
 			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
 			hud_area_is_safe = bool(message.get("area_is_safe", true))
 			hud_is_apex_frontier = bool(message.get("is_apex_frontier", false))
+			hud_apex_zone_name = String(message.get("apex_zone_name", ""))
 			hud_nearest_post = message.get("nearest_post", {})
 			# Slice 6 — threat state of the nearest NPC post (dynamic post state)
 			hud_post_threat = message.get("nearest_post_threat", {"threatened": false})
@@ -24297,8 +24300,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.514 — Apex content slice 3 (Named Zones + Apex Crystal drop).
+	display_game("[color=#00FF00]v0.9.514[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Apex Frontier gets identity — four named zones replace the generic \"APEX\" tag, and Apex Variants drop a new high-value sellable consumable.[/color]")
+	display_game("  • [b]Named apex zones.[/b] The apex frontier (distance > 1500 from origin) now resolves to one of four flavored quadrants — [color=#9F70FF]Burning Reach[/color] (NE), [color=#9F70FF]Frostbound Verge[/color] (NW), [color=#9F70FF]Sundered Hollows[/color] (SW), [color=#9F70FF]Cinder Wastes[/color] (SE). The region label's apex tag now shows the zone name (e.g., \"⚡ Burning Reach +10% XP\") instead of the generic \"APEX\" tag. Gives the frontier a recognizable geography rather than one undifferentiated ring.")
+	display_game("  • [b]Apex Crystal — new sellable drop.[/b] Apex Variants now have a [color=#88FF88]12% chance[/color] to drop an [color=#9F70FF]Apex Crystal[/color] on kill — a flat-value consumable worth [color=#FFD700]750 valor[/color] at any market, scaling cleanly with the apex grind. Pure economy reward (no in-combat use), gives the apex frontier its first unique drop separate from the generic +XP / +50% gems bonuses.")
+	display_game("  • Closes another beat of Audit #10's \"apex content\" captured item. Future beats can layer T9 encounter pools, zone-specific affinity weights, or named landmarks (statues / outposts) on top.")
+	display_game("")
+
 	# v0.9.513 — Apex content slice 2 (Apex Variants).
-	display_game("[color=#00FF00]v0.9.513[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.513[/color]")
 	display_game("  [color=#FFD700]Apex Frontier gets teeth — monsters in the zone now spawn as buffed Apex Variants with bigger payouts and a first-time teaching overlay.[/color]")
 	display_game("  • [b]Apex Variants.[/b] Every monster spawned in the apex frontier zone (v0.9.512: distance > 1500 from origin) now gets the [color=#9F70FF]Apex[/color] prefix added to its name (\"Apex Goblin\", \"Apex Wraith\"), +25% HP, +10% damage, and a purple name color in combat. Doesn't apply to dungeon combat — dungeons have their own tier scaling.")
 	display_game("  • [b]Bigger rewards on apex kills.[/b] The +10% zone XP from v0.9.512 stacks with a new [color=#88FF88]+20% variant XP[/color] (total +30% per kill) and Apex Variants drop [color=#88FF88]+50% Soul Gems[/color] to balance the +25% HP they carry. Combat reward message names the bonus on every kill.")
@@ -24328,14 +24339,6 @@ func display_changelog():
 	display_game("  • [b]Clan motto (new).[/b] Leaders can set a short [color=#A89BD8]tagline[/color] up to 50 characters via [color=#9ACD32]/clanmotto <text>[/color] (or empty to clear). Renders italic below the description on the clan panel — pairs with v0.9.473 description / v0.9.477 banner color as the third piece of clan identity polish. Help topic + leader-empty-state placeholder updated to surface the new command.")
 	display_game("")
 
-	# v0.9.509 — Owner-post listing bonus.
-	display_game("[color=#00FFFF]v0.9.509[/color]")
-	display_game("  [color=#FFD700]+25% valor bonus when you list items at your own player post — reward for the settlement you built.[/color]")
-	display_game("  • [b]Owner-post listing bonus.[/b] When you list an item (single or bulk) at a trading post your account owns, the server credits an additional [color=#88FF88]+25% valor[/color] directly to your balance. The listing's price for OTHER players is unchanged — buyers pay the same as they would at an NPC post, so the bonus is a pure seller-side reward, not a tax on visitors. Detection is automatic via post id format (`player_<account_username>_<index>`) — works on every enclosure your account has built and named.")
-	display_game("  • [b]Preview shows the boost.[/b] The bulk-list confirm dialog (`market_list_preview_result`) now includes the owner-bonus amount so you see the boosted total before you commit. Single-item and bulk-list both surface a green chat line on success showing the bonus credited.")
-	display_game("  • [b]Market Help topic updated[/b] to explain the new bonus.")
-	display_game("  • Closes Audit #11 captured item \"Owner-discount listings — Player-only.\"")
-	display_game("")
 
 
 
@@ -25378,9 +25381,15 @@ func update_region_label():
 		# Audit #10 v0.9.512 — apex frontier tag. Distance > 1500 from origin.
 		# Indicates +10% XP combat bonus on kills here. Purple tone visually
 		# distinct from the orange hotspot DANGER tag.
+		# v0.9.514 — also surfaces the apex zone NAME (Burning Reach / etc.)
+		# when set, so the apex frontier feels like distinct named regions
+		# rather than one flat zone.
 		var apex_tag = ""
 		if hud_is_apex_frontier:
-			apex_tag = " [color=#9F70FF]⚡ APEX +10% XP[/color]"
+			if hud_apex_zone_name != "":
+				apex_tag = " [color=#9F70FF]⚡ %s +10%% XP[/color]" % hud_apex_zone_name
+			else:
+				apex_tag = " [color=#9F70FF]⚡ APEX +10% XP[/color]"
 		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s%s" % [hud_area_level, danger, apex_tag]
 
 	# Slice 6k — Region line now shows the authored region name (e.g.,
