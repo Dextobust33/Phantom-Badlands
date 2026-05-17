@@ -211,7 +211,10 @@ const DAMAGE_STACK_STEP_PX := 70.0
 # v0.9.415 — was 0.35s; popups linger 1.0s + fade 0.35s, so two popups within
 # ~1.35s would overlap. Use a window slightly longer than full popup lifetime
 # so consecutive popups always stack instead of overdrawing each other.
-const DAMAGE_STACK_RESET_S := 1.5
+# v0.9.501: bumped from 1.5 → 3.0 so the stack accumulates across the full
+# new ~2.7s linger of a damage popup (otherwise a rapid second hit reuses
+# the same offset and overlaps the still-visible first popup).
+const DAMAGE_STACK_RESET_S := 3.0
 # v0.9.415 — cap stack so rapid bursts don't push popups off the panel.
 # At 70px/step, 210px = 4 popups visible before plateauing. Beyond that the
 # topmost slot is reused and new popups overlap the previous topmost, but
@@ -1082,10 +1085,10 @@ func _populate_battlefield_overlay() -> void:
 			_overlay_player_ascii.text = "[center]" + p_bumped + "[/center]"
 		else:
 			_overlay_player_ascii.text = ""
-	# Player HP bar + name.
+	# Player HP bar + name. v0.9.501 — animate drain via _animate_bar_value.
 	if _overlay_player_hp_bar and is_instance_valid(_overlay_player_hp_bar):
 		_overlay_player_hp_bar.max_value = maxi(1, _player_max_hp)
-		_overlay_player_hp_bar.value = clampi(_player_hp, 0, _player_max_hp)
+		_animate_bar_value(_overlay_player_hp_bar, clampi(_player_hp, 0, _player_max_hp))
 	# v0.9.415 — wire resource bar (MP/SP/Energy) under the HP bar.
 	if _overlay_player_resource_bar and is_instance_valid(_overlay_player_resource_bar):
 		_overlay_player_resource_bar.max_value = maxi(1, _player_resource_max)
@@ -1110,7 +1113,7 @@ func _populate_battlefield_overlay() -> void:
 		var c_max_hp := maxi(1, 30 + c_level * 5 + c_sub_tier * 10 + c_hp_bonus)
 		var c_cur_hp := int(_companion_data.get("combat_hp", c_max_hp))
 		_overlay_companion_hp_bar.max_value = c_max_hp
-		_overlay_companion_hp_bar.value = clampi(c_cur_hp, 0, c_max_hp)
+		_animate_bar_value(_overlay_companion_hp_bar, clampi(c_cur_hp, 0, c_max_hp))
 	if _overlay_companion_name and is_instance_valid(_overlay_companion_name):
 		_overlay_companion_name.text = str(_companion_data.get("name", "Companion"))
 
@@ -2704,6 +2707,15 @@ func populate(payload: Dictionary) -> void:
 	preserved if missing so partial refreshes don't blow away other state."""
 	if not is_inside_tree():
 		return
+	# v0.9.501 — drop the "hp_drain_initialized" meta so the first refresh
+	# after a new combat starts snaps the bar to the starting HP instead of
+	# animating from the previous combat's final value (which would look
+	# wrong, e.g., draining from 0 → max on a clean re-engage).
+	for bar in [_player_hp_bar, _monster_hp_bar, _companion_hp_bar,
+			_lufia_player_hp_bar, _lufia_monster_hp_bar,
+			_overlay_player_hp_bar, _overlay_companion_hp_bar]:
+		if bar != null and is_instance_valid(bar):
+			bar.remove_meta("hp_drain_initialized")
 	if payload.has("player_class"):
 		_player_class = str(payload["player_class"])
 	if payload.has("player_name"):
@@ -3217,14 +3229,36 @@ func _refresh_player() -> void:
 
 func _refresh_player_hp() -> void:
 	_player_hp_bar.max_value = _player_max_hp
-	_player_hp_bar.value = clampi(_player_hp, 0, _player_max_hp)
+	_animate_bar_value(_player_hp_bar, clampi(_player_hp, 0, _player_max_hp))
 	_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
 	# v0.9.385 — mirror to the Lufia in-box HP widget when it exists.
 	if _lufia_player_hp_bar and is_instance_valid(_lufia_player_hp_bar):
 		_lufia_player_hp_bar.max_value = _player_max_hp
-		_lufia_player_hp_bar.value = clampi(_player_hp, 0, _player_max_hp)
+		_animate_bar_value(_lufia_player_hp_bar, clampi(_player_hp, 0, _player_max_hp))
 	if _lufia_player_hp_text and is_instance_valid(_lufia_player_hp_text):
 		_lufia_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
+
+
+# v0.9.501 — Combat readability: tween HP/companion/monster bar drain over
+# ~1 second instead of snapping. Kills any in-progress tween on the bar so
+# rapid hits don't queue stale tweens. Text labels (e.g., "HP 84/150") still
+# update instantly via the caller — the bar is the dramatic reveal; the
+# number is the truth.
+func _animate_bar_value(bar: ProgressBar, target: float, dur: float = 1.0) -> void:
+	if bar == null or not is_instance_valid(bar):
+		return
+	var prev = bar.get_meta("hp_drain_tween", null)
+	if prev != null and is_instance_valid(prev):
+		prev.kill()
+	# Special case: first frame of combat / panel rebuild — snap, don't drain
+	# from 0 → max which would look like the player was at 0 HP a moment ago.
+	if not bar.has_meta("hp_drain_initialized"):
+		bar.value = target
+		bar.set_meta("hp_drain_initialized", true)
+		return
+	var t := create_tween()
+	bar.set_meta("hp_drain_tween", t)
+	t.tween_property(bar, "value", target, dur).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func update_companion_data(data: Dictionary) -> void:
@@ -3252,7 +3286,7 @@ func update_companion_combat_hp(current_hp: int, max_hp: int, is_ko: bool) -> vo
 	else:
 		_companion_hp_row.visible = true
 		_companion_hp_bar.max_value = maxi(1, max_hp)
-		_companion_hp_bar.value = clampi(current_hp, 0, max_hp)
+		_animate_bar_value(_companion_hp_bar, clampi(current_hp, 0, max_hp))
 		_companion_hp_text.text = "HP %d / %d" % [maxi(0, current_hp), max_hp]
 	# Grey-out the companion ASCII art when KO.
 	if _companion_art and is_instance_valid(_companion_art):
@@ -3403,11 +3437,11 @@ func _refresh_monster_hp() -> void:
 			_lufia_monster_hp_text.text = "HP ???"
 		return
 	_monster_hp_bar.max_value = _monster_max_hp
-	_monster_hp_bar.value = clampi(_monster_hp, 0, _monster_max_hp)
+	_animate_bar_value(_monster_hp_bar, clampi(_monster_hp, 0, _monster_max_hp))
 	_monster_hp_text.text = "HP %d / %d" % [maxi(0, _monster_hp), _monster_max_hp]
 	if _lufia_monster_hp_bar and is_instance_valid(_lufia_monster_hp_bar):
 		_lufia_monster_hp_bar.max_value = _monster_max_hp
-		_lufia_monster_hp_bar.value = clampi(_monster_hp, 0, _monster_max_hp)
+		_animate_bar_value(_lufia_monster_hp_bar, clampi(_monster_hp, 0, _monster_max_hp))
 		# v0.9.395 — tint the Lufia bar fill to the monster's affinity color.
 		# _monster_name_color is supplied per-monster from the server payload
 		# (matches the name-tint in the monster name label).
@@ -3719,8 +3753,10 @@ func show_dot_tick(amount: int, dot_type: String, target_is_player: bool) -> voi
 	local_anchor += Vector2(spread_x, spread_y)
 	label.position = local_anchor
 
+	# v0.9.501: DoT tick lifetime ~3× longer to match the readability ask
+	# applied to direct-hit damage popups.
 	var float_distance := 40.0
-	var lifetime := 0.85
+	var lifetime := 2.55
 	var t := create_tween().set_parallel(true)
 	t.tween_property(label, "position", local_anchor + Vector2(0, -float_distance), lifetime).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	t.tween_property(label, "modulate:a", 0.0, lifetime * 0.55).set_delay(lifetime * 0.45)
@@ -3870,10 +3906,12 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 
 	# Linger in place, then fade with a subtle scale shrink (no upward drift).
 	# v0.9.439: 1.0/0.35 → 0.65/0.25. Inter-attack delay also dropped to 0.45,
-	# so the popup fades just before the next attack lands. Review FX is the
-	# escape hatch if a player misses anything.
-	var linger_time := 0.65
-	var fade_time := 0.25
+	# so the popup fades just before the next attack lands.
+	# v0.9.501: per playtest readability ask, ~3× longer dwell so players can
+	# actually read the damage before the next attack lands. 0.65/0.25 → 1.95/0.75
+	# (total ~2.7s vs previous 0.9s).
+	var linger_time := 1.95
+	var fade_time := 0.75
 	t.tween_property(label, "modulate:a", 0.0, fade_time).set_delay(linger_time)
 	t.tween_property(label, "scale", rest_scale * 0.85, fade_time).set_delay(linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	t.tween_callback(label.queue_free).set_delay(linger_time + fade_time)
