@@ -1793,6 +1793,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_companion_stable_deposit(peer_id, message)
 		"companion_stable_refresh":
 			handle_companion_stable_refresh(peer_id)
+		# Audit #4 Slice 1A.iii (v0.9.489) — mid-character fusion at the Stable.
+		"stable_fusion":
+			handle_stable_fusion(peer_id, message)
 		"rescue_npc_response":
 			handle_rescue_npc_response(peer_id, message)
 		"engage_bounty":
@@ -7026,11 +7029,15 @@ func _player_is_at_companion_stable(character) -> bool:
 	return false
 
 func _build_companion_stable_payload(peer_id: int) -> Dictionary:
-	"""Snapshot of kennel + collected companions for the stable UI."""
+	"""Snapshot of kennel + collected + registered companions for the stable
+	UI. v0.9.489 added registered for the new Fuse tab; only non-checked-out
+	slots are surfaced (checked-out ones are already shown as [REGISTERED]
+	on the active collected entry)."""
 	var character = characters[peer_id]
 	var account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
 	var house = persistence.get_house(account_id) if account_id != "" else null
 	var kennel: Array = []
+	var registered_pub: Array = []
 	var kennel_capacity := 0
 	if house != null:
 		var kennel_raw = house.get("companion_kennel", {}).get("companions", [])
@@ -7053,6 +7060,30 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 					"hybrid_partner_type": c.get("hybrid_partner_type", ""),
 				})
 		kennel_capacity = persistence.get_kennel_capacity(account_id)
+		var reg_raw = house.get("registered_companions", {}).get("companions", [])
+		for i in range(reg_raw.size()):
+			var c = reg_raw[i]
+			if not (c is Dictionary):
+				continue
+			# Skip checked-out registered slots — the player has them as
+			# active and can't fuse them yet. They must deposit first.
+			if c.get("checked_out_by", null) != null:
+				continue
+			registered_pub.append({
+				"index": i,
+				"id": c.get("id", ""),
+				"name": c.get("name", "Unknown"),
+				"monster_type": c.get("monster_type", ""),
+				"tier": int(c.get("tier", 1)),
+				"sub_tier": int(c.get("sub_tier", 1)),
+				"level": int(c.get("level", 1)),
+				"variant": c.get("variant", "Normal"),
+				"variant_color": c.get("variant_color", "#FFFFFF"),
+				"variant_color2": c.get("variant_color2", ""),
+				"variant_pattern": c.get("variant_pattern", "solid"),
+				"bonuses": c.get("bonuses", {}),
+				"hybrid_partner_type": c.get("hybrid_partner_type", ""),
+			})
 	# Collected companions (player-side; includes whatever is currently active).
 	var collected: Array = []
 	for i in range(character.collected_companions.size()):
@@ -7081,6 +7112,7 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 	return {
 		"kennel": kennel,
 		"collected": collected,
+		"registered": registered_pub,
 		"kennel_capacity": kennel_capacity,
 	}
 
@@ -7099,10 +7131,9 @@ func _handle_companion_stable_station(peer_id: int, character) -> void:
 			"title": "[color=#FFD700]Companion Stable[/color]",
 			"body": (
 				"You have found a [color=#FFD700]Companion Stable[/color] — a living link to your Sanctuary's companion storage.\n\n"
-				+ "[color=#A335EE]Deposit[/color] a non-registered companion → sends it to the Sanctuary kennel.\n"
-				+ "[color=#A335EE]Deposit[/color] a [color=#FF80FF][REGISTERED][/color] companion → returns to its registered slot (still registered, just not on your character).\n"
-				+ "[color=#A335EE]Withdraw[/color] → brings a kennel companion back into your roster.\n\n"
-				+ "Registration is separate from storage — depositing never changes a companion's registered status.\n\n"
+				+ "[color=#FFD700]Manage tab:[/color] Deposit / Withdraw / Return to Slot.\n"
+				+ "[color=#FFD700]Fuse tab:[/color] Same-type fusion (3 companions of the same type + sub-tier → 1 of the next sub-tier). Inputs can come from the kennel or registered slots. If any input is registered, the output is auto-registered.\n\n"
+				+ "Deposit and registration are independent — depositing never changes a companion's registered status.\n\n"
 				+ "Companion Stables appear at [color=#87CEEB]Tier 5+ trading posts[/color]."
 			),
 		})
@@ -11853,6 +11884,208 @@ func _check_variant_inheritance(kennel: Array, indices: Array) -> Dictionary:
 		"color2": kennel[int(indices[0])].get("variant_color2", ""),
 		"pattern": kennel[int(indices[0])].get("variant_pattern", "solid"),
 	}
+
+func _check_variant_inheritance_list(companions: Array) -> Dictionary:
+	"""List-based variant inheritance for stable fusion (inputs come from mixed sources)."""
+	if companions.is_empty():
+		return {}
+	var first_variant = companions[0].get("variant", "")
+	for comp in companions:
+		if comp.get("variant", "") != first_variant:
+			return {}
+	return {
+		"name": first_variant,
+		"color": companions[0].get("variant_color", ""),
+		"color2": companions[0].get("variant_color2", ""),
+		"pattern": companions[0].get("variant_pattern", "solid"),
+	}
+
+# ===== STABLE FUSION (Audit #4 Slice 1A.iii — v0.9.489) =====
+# Mid-character fusion accessible from the Companion Stable. Differs from
+# the Sanctuary's F-tile fusion in two ways:
+#   • Inputs can come from kennel OR registered slots (caller tags each)
+#   • If any input was registered, the output is auto-registered (preserves
+#     death-insurance status). Other registered inputs' slots are freed.
+
+func _resolve_stable_fusion_inputs(account_id: String, inputs: Array) -> Dictionary:
+	"""Resolve tagged inputs ([{source: kennel|registered, index: int}, ...])
+	to companion dicts. Returns {ok, companions, registered_slots, error}."""
+	var house = persistence.get_house(account_id)
+	if house == null:
+		return {"ok": false, "error": "No Sanctuary found.", "companions": [], "registered_slots": []}
+	var kennel: Array = house.get("companion_kennel", {}).get("companions", [])
+	var registered: Array = house.get("registered_companions", {}).get("companions", [])
+	var companions: Array = []
+	var registered_slots: Array = []
+	var seen: Dictionary = {}
+	for input_entry in inputs:
+		if not (input_entry is Dictionary):
+			return {"ok": false, "error": "Malformed input.", "companions": [], "registered_slots": []}
+		var source = String(input_entry.get("source", ""))
+		var idx = int(input_entry.get("index", -1))
+		var key = "%s:%d" % [source, idx]
+		if seen.has(key):
+			return {"ok": false, "error": "Duplicate companion selected.", "companions": [], "registered_slots": []}
+		seen[key] = true
+		if source == "kennel":
+			if idx < 0 or idx >= kennel.size():
+				return {"ok": false, "error": "Invalid kennel selection.", "companions": [], "registered_slots": []}
+			companions.append(kennel[idx])
+		elif source == "registered":
+			if idx < 0 or idx >= registered.size():
+				return {"ok": false, "error": "Invalid registered slot.", "companions": [], "registered_slots": []}
+			var slot_data = registered[idx]
+			if slot_data.get("checked_out_by", null) != null:
+				return {"ok": false, "error": "A selected registered companion is currently in use — deposit it first.", "companions": [], "registered_slots": []}
+			companions.append(slot_data)
+			registered_slots.append(idx)
+		else:
+			return {"ok": false, "error": "Invalid input source.", "companions": [], "registered_slots": []}
+	return {"ok": true, "companions": companions, "registered_slots": registered_slots, "error": ""}
+
+func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
+	"""Stable-mid-character fusion. Tagged inputs from kennel + registered.
+	Output is registered if any input was registered (slot-preserving),
+	otherwise added to kennel."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not _player_is_at_companion_stable(character):
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Companion Stable."})
+		return
+	var account_id = peers[peer_id].account_id
+	var fusion_type = String(message.get("fusion_type", "same"))
+	var inputs: Array = message.get("inputs", [])
+	var resolved = _resolve_stable_fusion_inputs(account_id, inputs)
+	if not bool(resolved.get("ok", false)):
+		send_to_peer(peer_id, {"type": "error", "message": String(resolved.get("error", "Invalid inputs."))})
+		return
+	var companions: Array = resolved["companions"]
+	var registered_slots: Array = resolved["registered_slots"]
+
+	# Type-specific validation + output generation.
+	var output: Dictionary = {}
+	if fusion_type == "same":
+		if companions.size() != 3:
+			send_to_peer(peer_id, {"type": "error", "message": "Same-type fusion requires exactly 3 companions!"})
+			return
+		var first = companions[0]
+		for comp in companions:
+			if comp.get("monster_type") != first.get("monster_type") or int(comp.get("sub_tier", 1)) != int(first.get("sub_tier", 1)):
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be same type and sub-tier!"})
+				return
+		var current_sub_tier = int(first.get("sub_tier", 1))
+		var new_sub_tier = mini(current_sub_tier + 1, 9)
+		var inherited = _check_variant_inheritance_list(companions)
+		output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited)
+	elif fusion_type == "mixed":
+		if companions.size() != 8:
+			send_to_peer(peer_id, {"type": "error", "message": "Mixed T9 fusion requires exactly 8 companions!"})
+			return
+		for comp in companions:
+			if int(comp.get("sub_tier", 1)) != 8:
+				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be sub-tier 8!"})
+				return
+		var random_type = companions[randi() % companions.size()].get("monster_type")
+		var inherited = _check_variant_inheritance_list(companions)
+		output = drop_tables.create_fusion_companion(random_type, 9, inherited)
+	elif fusion_type == "hybrid":
+		if companions.size() != 2:
+			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion requires exactly 2 companions!"})
+			return
+		var parent_a = companions[0]
+		var parent_b = companions[1]
+		if String(parent_a.get("monster_type", "")) == String(parent_b.get("monster_type", "")):
+			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion requires DIFFERENT monster types!"})
+			return
+		if int(parent_a.get("sub_tier", 1)) < 5 or int(parent_b.get("sub_tier", 1)) < 5:
+			send_to_peer(peer_id, {"type": "error", "message": "Both parents must be sub-tier 5 or higher!"})
+			return
+		var catalyst_idx = -1
+		for i in range(character.inventory.size()):
+			var item = character.inventory[i]
+			if String(item.get("type", "")) == "hybrid_catalyst" and int(item.get("quantity", 1)) >= 1:
+				catalyst_idx = i
+				break
+		if catalyst_idx == -1:
+			send_to_peer(peer_id, {"type": "error", "message": "You need a Hybrid Catalyst (T5+ dungeon chest drop)."})
+			return
+		output = drop_tables.create_hybrid_companion(parent_a, parent_b)
+		if not output.is_empty():
+			var cat_item = character.inventory[catalyst_idx]
+			if int(cat_item.get("quantity", 1)) > 1:
+				cat_item["quantity"] = int(cat_item.get("quantity", 1)) - 1
+			else:
+				character.remove_item(catalyst_idx)
+	else:
+		send_to_peer(peer_id, {"type": "error", "message": "Unknown fusion type."})
+		return
+	if output.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Fusion failed — unknown monster type!"})
+		return
+
+	# Consume parents from sources, descending index per source so removals
+	# don't shift remaining indices.
+	var house = persistence.get_house(account_id)
+	var kennel_to_remove: Array = []
+	var reg_to_remove: Array = []
+	for input_entry in inputs:
+		var source = String(input_entry.get("source", ""))
+		var idx = int(input_entry.get("index", -1))
+		if source == "kennel":
+			kennel_to_remove.append(idx)
+		elif source == "registered":
+			reg_to_remove.append(idx)
+	kennel_to_remove.sort()
+	kennel_to_remove.reverse()
+	reg_to_remove.sort()
+	reg_to_remove.reverse()
+	for idx in kennel_to_remove:
+		if idx >= 0 and idx < house.companion_kennel.companions.size():
+			house.companion_kennel.companions.remove_at(idx)
+	for idx in reg_to_remove:
+		if idx >= 0 and idx < house.registered_companions.companions.size():
+			house.registered_companions.companions.remove_at(idx)
+
+	# Place output. Inherit registration if any input was registered.
+	var was_registered_fusion = registered_slots.size() > 0
+	var output_msg: String
+	if was_registered_fusion:
+		var reg_cap = persistence.get_house_companion_capacity(account_id)
+		if house.registered_companions.companions.size() < reg_cap:
+			var output_with_reg = output.duplicate(true)
+			output_with_reg["registered_at"] = int(Time.get_unix_time_from_system())
+			output_with_reg.erase("checked_out_by")
+			output_with_reg.erase("checkout_time")
+			output_with_reg.erase("house_slot")
+			house.registered_companions.companions.append(output_with_reg)
+			output_msg = "[color=#FFD700]Fusion complete! %s registered to your Sanctuary.[/color]" % output.get("name", "Companion")
+		else:
+			# Fallback: registered slots somehow full, drop in kennel.
+			var to_kennel = output.duplicate(true)
+			to_kennel["stored_at"] = int(Time.get_unix_time_from_system())
+			house.companion_kennel.companions.append(to_kennel)
+			output_msg = "[color=#FFAA00]Fusion complete! %s sent to kennel (registered slots unexpectedly full).[/color]" % output.get("name", "Companion")
+	else:
+		var to_kennel = output.duplicate(true)
+		to_kennel["stored_at"] = int(Time.get_unix_time_from_system())
+		house.companion_kennel.companions.append(to_kennel)
+		output_msg = "[color=#FFD700]Fusion complete! %s added to kennel.[/color]" % output.get("name", "Companion")
+
+	persistence.save_house(account_id, house)
+	send_to_peer(peer_id, {"type": "text", "message": output_msg})
+
+	# Refresh both the Stable panel (current view) and house data (for Sanctuary).
+	var stable_payload = _build_companion_stable_payload(peer_id)
+	stable_payload["type"] = "companion_stable_open"
+	send_to_peer(peer_id, stable_payload)
+	var updated_house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": updated_house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+	send_character_update(peer_id)
 
 func _award_baddie_points_on_death(peer_id: int, character: Character, account_id: String, cause_of_death: String) -> int:
 	"""Calculate and award baddie points to house on character death"""
