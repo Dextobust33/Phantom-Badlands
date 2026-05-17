@@ -24239,8 +24239,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.499 — Audit #4 polish: aggro roles, ascended names, Companions help.
+	display_game("[color=#00FF00]v0.9.499[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companions page polish — aggro roles named, ascended companions get veteran prefixes, new ? Help button[/color]")
+	display_game("  • [b]Aggro Role in inspect.[/b] The companion inspect panel now has an Aggro Role section that names the role ([color=#FFD700]Tank[/color] / [color=#FFA500]Fighter[/color] / Default / [color=#87CEEB]Evasive[/color]) and explains what it means in combat — Tank draws hits, Evasive avoids them, etc. Closes the Audit #4 captured TWEAK 'surface role in inspect.' (Legacy game_output inspect + the hover tooltip already named the role; the visual panel inspect was the missing surface.)")
+	display_game("  • [b]Ascended companions get a veteran prefix.[/b] After v0.9.496's Tier Ascension Fusion, an ascended T1 Goblin still displayed as 'Goblin Companion' — invisible payoff. Now displays climb a step-ladder: +1 tier = [color=#FFAA66]Veteran[/color], +2 = Champion, +3 = Warlord, +4 = Tyrant, +5+ = Apex. Applies retroactively at display time so legacy ascended companions get renamed without server-side migration. Hybrid names ('Hybrid X-Y') are preserved and don't double-prefix.")
+	display_game("  • [b]? Help button on Companions page.[/b] Reusable HelpPanel pattern (introduced for the Companion Stable in v0.9.485) now extends to the Companions page header. Opens a topic that explains card info (REG / HYBRID markers, rarity tags, T<n>.<m> notation, veteran prefixes), the aggro role definitions, and the Sanctuary Registered section context. Continues the 'help button per major screen' UX rollout.")
+	display_game("")
+
 	# v0.9.498 — Audit #4 follow-up: Registered companions on Companions page.
-	display_game("[color=#00FF00]v0.9.498[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.498[/color]")
 	display_game("  [color=#FFD700]Sanctuary-registered companions now show up on the in-game Companions page[/color]")
 	display_game("  • Previously, the in-game Companions screen only listed the currently-active (checked-out) companion plus your collected roster — anything else registered to your Sanctuary was invisible until you visited a Companion Stable. v0.9.498 adds a [color=#FF80FF]Sanctuary Registered[/color] section to the Companions page that lists every companion in your account's registered slots, with type / tier / sub-tier / level / variant / hybrid markers. Read-only — full management still happens at any Tier 5+ NPC Companion Stable or the Sanctuary's Stable tile. The currently checked-out registered slot is dimmed and marked [CHECKED OUT] so you know which physical pet matches which slot. Server now ships a slim `account_registered_companions` array with each `character_update`. Closes a long-pending visibility gap (~30 min queue item from prior sessions).")
 	display_game("")
@@ -24262,12 +24270,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]New Companion Stable station at Tier 5+ trading posts — deposit/withdraw kennel companions WITHOUT having to die[/color]")
 	display_game("  • [b]The Sanctuary kennel is no longer a death-only resource.[/b] Companion Stables appear as a magenta [color=#FF80FF]C[/color] tile inside every Tier 5+ NPC post. Bump into one to open a side-by-side panel: your roster on the left, the Sanctuary kennel on the right. [color=#A335EE]Deposit[/color] a collected companion to send it to the kennel (frees a roster slot, makes the companion available as a Fusion input); [color=#A335EE]Withdraw[/color] a kennel companion to bring one back into your roster. This finally makes [b]Fusion[/b] usable across a single character's lifetime — collect, deposit, combine, withdraw, repeat. First-time interaction shows a teaching overlay so the flow is discoverable. Active companions currently registered (Home Stone) still need to be unregistered at the Sanctuary first to avoid losing the slot. Player-built version of the stable comes in v0.9.486. Audit #4 Slice 1A.")
 	display_game("  • [b]Reusable HelpPanel + ? Help button[/b] introduced as a generic UX pattern. The new Companion Stable panel has a ? Help button in its header that opens topic-aware help (HelpPanel registers topics in a dict). Going forward, most major screens will get a Help button that opens this same panel with a screen-specific topic — re-openable, never one-shot. Distinct from the existing tutorial_hint_panel which is for first-time teaching moments only.")
-	display_game("")
-
-	# v0.9.484 — Audit #4 Slice 4: Mixed-Type Hybrid Fusion v1.
-	display_game("[color=#00FFFF]v0.9.484[/color]")
-	display_game("  [color=#FFD700]New 'Hybrid' tab on the Fusion Station combines two different-type companions into a hybrid that blends their abilities[/color]")
-	display_game("  • [b]Hybrid fusion — 2 companions of DIFFERENT monster types (both sub-tier 5+) + 1 Hybrid Catalyst → a hybrid companion.[/b] The hybrid keeps parent A's monster type (drives sprite + base abilities) and stores parent B's type for ability blending. Bonuses = average of both parents + 10% [color=#88FF88]Hybrid Vigor[/color]. Tier = max(A.tier, B.tier); sub-tier resets to 1; variant inherits if both parents share one, else rolls fresh. Display name: 'Hybrid <A>-<B>'. Ability blending: passive becomes a static [color=#88FF88]Hybrid Vigor[/color] (+5% damage, no level gate); active stays parent A's signature; threshold becomes parent B's threshold (unlocks Lv 15+). New consumable [color=#FFD700]Hybrid Catalyst[/color] drops from Tier 5+ dungeon chests (weights T5=1, T6=2, T7=2, T8=2, T9=3) — slow but steady late-game supply. Closes the audit's 'Fusion OVERHAUL — add mixed-type fusion that combines abilities' decision. Audit #4 Slice 4.")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -32405,6 +32407,66 @@ func _short_bonus_label(key: String) -> String:
 		"crit_chance": return "Crit"
 		_: return key.capitalize()
 
+# v0.9.499 — Single source of truth for aggro role labeling. Thresholds match
+# the existing inline logic in display_companion_inspection + tooltip so all
+# three surfaces (inspect / tooltip / panel inspect) read the same.
+# Returns {label, color, short_desc} for use in display.
+func _get_aggro_role_info(aggro_value: int) -> Dictionary:
+	if aggro_value >= 50:
+		return {
+			"label": "Tank",
+			"color": "#FFD700",
+			"short_desc": "Frontliner. Draws enemy attacks — designed to soak hits so your character stays safe.",
+		}
+	elif aggro_value >= 30:
+		return {
+			"label": "Fighter",
+			"color": "#FFA500",
+			"short_desc": "Engaged participant. Targeted moderately often; balances damage output with attention drawn.",
+		}
+	elif aggro_value >= 20:
+		return {
+			"label": "Default",
+			"color": "#FFFFFF",
+			"short_desc": "Neutral engagement. Targeted at the baseline rate.",
+		}
+	else:
+		return {
+			"label": "Evasive",
+			"color": "#87CEEB",
+			"short_desc": "Backline. Rarely targeted — relies on positioning. Best paired with a tank or self.",
+		}
+
+# v0.9.499 — Authored ascended display name resolver. v0.9.496's Tier
+# Ascension Fusion bumps a companion's tier but leaves its name as the base
+# COMPANION_DATA companion_name. This helper applies a step-ladder of veteran
+# suffixes so the climb is visible: +1 tier from base = Veteran, +2 = Champion,
+# +3 = Warlord, +4 = Tyrant, +5+ = Apex. Used by all display surfaces.
+func _get_authored_companion_name(companion: Dictionary) -> String:
+	var base_name = str(companion.get("name", "Unknown"))
+	var monster_type = str(companion.get("monster_type", ""))
+	if monster_type == "" or not DropTables.COMPANION_DATA.has(monster_type):
+		return base_name
+	var base_tier = int(DropTables.COMPANION_DATA[monster_type].get("tier", 1))
+	var current_tier = int(companion.get("tier", base_tier))
+	var ascensions = current_tier - base_tier
+	if ascensions <= 0:
+		return base_name
+	# Hybrid companions already have a custom name ("Hybrid X-Y") — don't
+	# double-prefix. Same for any name that already starts with a veteran tag.
+	if base_name.begins_with("Hybrid ") or base_name.begins_with("Veteran ") \
+			or base_name.begins_with("Champion ") or base_name.begins_with("Warlord ") \
+			or base_name.begins_with("Tyrant ") or base_name.begins_with("Apex "):
+		return base_name
+	var prefix := ""
+	match ascensions:
+		1: prefix = "Veteran"
+		2: prefix = "Champion"
+		3: prefix = "Warlord"
+		4: prefix = "Tyrant"
+		_: prefix = "Apex"
+	return "%s %s" % [prefix, base_name]
+
 func _get_egg_art_for_panel(variant: String, color1: String, color2: String, pattern: String) -> String:
 	return MonsterArt.get_egg_art(variant, color1, color2, pattern, ui_scale_monster_art)
 
@@ -32417,7 +32479,8 @@ func format_companion_tooltip_bbcode(companion: Dictionary) -> String:
 	if companion == null or companion.is_empty():
 		return ""
 	var lines: Array = []
-	var comp_name: String = str(companion.get("name", "Unknown"))
+	# v0.9.499 — surface authored ascended prefix on the tooltip too.
+	var comp_name: String = _get_authored_companion_name(companion)
 	var monster_type: String = str(companion.get("monster_type", comp_name))
 	var level: int = int(companion.get("level", 1))
 	var tier: int = int(companion.get("tier", 1))
@@ -32706,7 +32769,10 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	var variant_bonus = ""
 	if variant_mult > 1.0:
 		variant_bonus = " [color=#FFD700](+%d%% stats)[/color]" % int((variant_mult - 1.0) * 100)
-	lines.append("%s[color=%s]%s %s[/color]%s" % [rarity_prefix, variant_color, variant, comp_name, variant_bonus])
+	# v0.9.499 — use authored ascended name so ascended companions show their
+	# veteran/champion/warlord/tyrant/apex prefix instead of the base name.
+	var display_name = _get_authored_companion_name(companion)
+	lines.append("%s[color=%s]%s %s[/color]%s" % [rarity_prefix, variant_color, variant, display_name, variant_bonus])
 	lines.append("[color=#AAAAAA]Level %d  |  Tier %d-%d  (x%.1f stats)[/color]" % [level, tier, sub_tier, sub_mult])
 
 	if level < 10000:
@@ -32723,6 +32789,17 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	var player_level = int(character_data.get("level", 1))
 	var dmg = _estimate_companion_damage(tier, player_level, bonuses, level, variant_mult, sub_tier)
 	lines.append("  [color=#FF6666]%d - %d[/color] per turn" % [int(dmg.min), int(dmg.max)])
+
+	# v0.9.499 — Aggro role with description (new on the panel inspect view;
+	# the legacy game_output inspect + tooltip already named the role).
+	var raw_aggro_inspect: int = int(bonuses.get("aggro", 25))
+	var role_info = _get_aggro_role_info(raw_aggro_inspect)
+	lines.append("")
+	lines.append("[color=#FF8800]── Aggro Role ──[/color]")
+	lines.append("  [color=%s][%s][/color]  [color=#888888]%d%%  draw chance per enemy turn[/color]" % [
+		role_info.color, role_info.label, raw_aggro_inspect
+	])
+	lines.append("  [color=#AAAAAA]%s[/color]" % role_info.short_desc)
 
 	lines.append("")
 	lines.append("[color=#808080]── In-Combat Bonuses ──[/color]")
