@@ -127,6 +127,11 @@ const TILE_RENDER = {
 	# greenery at the cheapest tier.
 	"pylon":         {"char": "p", "color": "#DDDDFF", "blocks_move": false, "blocks_los": false},
 	"garden_plot":   {"char": "g", "color": "#5A8A3A", "blocks_move": false, "blocks_los": false},
+	# Audit #12 v0.9.521 — two more cosmetic buildables, catalogue to 13.
+	# Tent is a low-cost shelter that blocks movement (creates camping pockets).
+	# Scarecrow is a tall thin walkable marker, cheap but distinctive.
+	"tent":          {"char": "v", "color": "#A0826D", "blocks_move": true,  "blocks_los": true},
+	"scarecrow":     {"char": "k", "color": "#C8B070", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

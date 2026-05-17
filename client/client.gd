@@ -18882,6 +18882,13 @@ func handle_server_message(message: Dictionary):
 			var sender_tag = String(message.get("sender_clan_tag", ""))
 			var sender_color = String(message.get("sender_clan_color", "#A335EE"))
 			var sender_label = ("[color=%s][%s][/color] %s" % [sender_color, sender_tag, sender]) if sender_tag != "" else sender
+			# Audit #14 v0.9.521 — [NEW Lv X] tag on whispers from low-level players,
+			# helps mentors prioritize. Only tags when sender Lv < 10 AND recipient
+			# Lv >= 20 (matches /mentor volunteer gate).
+			var sender_level = int(message.get("sender_level", 0))
+			var recipient_level = int(character_data.get("level", 0))
+			if sender_level > 0 and sender_level < 10 and recipient_level >= 20:
+				sender_label = "[color=#FFD700][NEW Lv %d][/color] %s" % [sender_level, sender_label]
 			last_whisper_from = sender_name
 			display_chat("[color=#FF69B4][From %s]:[/color] %s" % [sender_label, text])
 			# Play notification sound
@@ -23518,6 +23525,11 @@ func _build_progression_vectors_text(char: Dictionary) -> String:
 		regions_visited, atlas_suffix
 	]
 
+	# Audit #12 v0.9.521 — Spawn-point UX. Surfaces where the next character on
+	# this account will respawn after permadeath. Currently always the Crossroads
+	# (0,0); when player respawn-point setting lands, this line picks it up.
+	out += "[color=#88AAFF]Respawn point:[/color] [color=#FFD700]Crossroads[/color] [color=#888888](world origin — every new character starts here)[/color]\n"
+
 	# Audit #6 v0.9.516 — Quest chain completion + title surface. Closes the
 	# "chain-completion UI surface" item on the audit master. CHAIN_TITLES has
 	# 28 entries spanning T1-T9; not every chain grants a title but the count
@@ -24357,8 +24369,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.521 — Audit #12 spawn-point UX + Tent + Scarecrow + Audit #14 [NEW Lv X] whisper tag.
+	display_game("[color=#00FF00]v0.9.521[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Spawn-point captured item closed, catalogue grows to 13, mentor whispers gain a new-player tag.[/color]")
+	display_game("  • [b]Spawn-point UX[/b] (Audit #12). New [color=#88AAFF]Respawn point:[/color] line on the Status page's Progression Vectors dashboard. Currently always [color=#FFD700]Crossroads[/color] (world origin) — when player-set respawn points land, this line picks them up. Closes the captured spawn-point UX item.")
+	display_game("  • [b]Tent + Scarecrow[/b] (Audit #12). Tent ([color=#A0826D]v[/color], blocks movement, Construction skill 7, leather+plank+rope) creates camping pockets inside enclosures. Scarecrow ([color=#C8B070]k[/color], walkable, Construction skill 5, plank+rope+herb) is a distinctive low-cost decoration. Catalogue now spans 13 cosmetic structures.")
+	display_game("  • [b]Whisper [NEW Lv X] tag[/b] (Audit #14). When a Lv 20+ player (mentor-eligible) receives a whisper from a Lv < 10 player, the chat line now prepends [color=#FFD700][NEW Lv X][/color] so mentors can prioritize replies. Server adds [color=#9ACD32]sender_level[/color] to every whisper payload; client renders the tag based on its own level.")
+	display_game("  • Continues closing pieces of Audit #12 (~82% → ~88%) and Audit #14 (~76% → ~78%).")
+	display_game("")
+
 	# v0.9.520 — Audit #15 Help refresh + Audit #14 /mentors + Audit #12 Pylon + Garden Plot.
-	display_game("[color=#00FF00]v0.9.520[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.520[/color]")
 	display_game("  [color=#FFD700]Help page brought up to date, mentor discoverability extended, and the cosmetic catalogue grows to 11.[/color]")
 	display_game("  • [b]Help page Recent Additions section[/b] (Audit #15). [color=#9ACD32]/help[/color] now ends with a [color=#FFD700]RECENT ADDITIONS[/color] section listing the v0.9.4xx-5xx features (Mentor system, Apex Frontier, Apex Variants, Repeatable T1 chains, Threat Corridor HUD, Sanctuary Stable, Tier Ascension Fusion, Hybrid Fusion, Help Buttons rollout, Clan polish, Status page, Cosmetic buildables catalogue). Last help page refresh was v0.9.465 — this catches up 50+ versions.")
 	display_game("  • [b]/mentors command[/b] (Audit #14). New chat command listing online mentors by name + level + class with a hint pointing at [color=#9ACD32]/w <name>[/color]. Pairs with the [color=#FFD700]★ N mentors online[/color] header (v0.9.518) — new players can find a specific mentor to whisper.")
@@ -24391,15 +24412,6 @@ func display_changelog():
 	display_game("  • All three slices close real captured items on the audit master. The remaining work on the audit is heavy-design (PvP, full mentor matching, ability mastery — all explicitly deferred).")
 	display_game("")
 
-	# v0.9.516 — Audit #12 Bench + Well + Audit #15 help coverage + Audit #6 chain count surface.
-	display_game("[color=#00FFFF]v0.9.516[/color]")
-	display_game("  [color=#FFD700]Two more cosmetic buildables, help on two more panels, and a Quest Chain completion line on the Status page.[/color]")
-	display_game("  • [b]Bench[/b] (Construction skill 6, [color=#C4A882]n[/color] tile, walkable). Cheapest entry-level decoration — 2 wooden plank + 1 rope. Anyone with basic Construction can build one.")
-	display_game("  • [b]Well[/b] (Construction skill 18, [color=#4488FF]w[/color] tile, blocks movement). Mid-tier centerpiece evoking a settlement's communal water source. 3 stone block + 1 wooden plank + 2 rope.")
-	display_game("  • [b]Help buttons[/b] added to the Clan Vault and NPC Home Stone Vendor panels. The help-buttons-everywhere rollout now covers 16 panels.")
-	display_game("  • [b]Quest Chains surfaced[/b] on the Status page's Progression Vectors dashboard. New line shows [color=#FFAA66]X completed[/color] + [color=#FFD700]Y/28 titles[/color] earned. Closes the [color=#FFAA66]Audit #6[/color] \"chain-completion UI surface\" polish item.")
-	display_game("  • Continues Audit #12 structure variety + Audit #15 help coverage + closes a small Audit #6 polish item.")
-	display_game("")
 
 
 
@@ -27613,7 +27625,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.515 — brazier + fountain added.
 			# v0.9.516 — bench + well added.
 			# v0.9.520 — pylon + garden_plot added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot"]:
+			# v0.9.521 — tent + scarecrow added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()
