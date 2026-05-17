@@ -80,6 +80,77 @@ const HELP_TOPICS := {
 			+ "[color=#888888]Hover any card for a detail tooltip. Right-click for the full Inspect view (abilities, effective bonuses, role, art).[/color]"
 		),
 	},
+	"inventory_page": {
+		"title": "[color=#FFD700]Inventory[/color]",
+		"body": (
+			"Your character's carried items, equipment, and gathered materials.\n\n"
+			+ "[color=#FFD700]── Filter chips ──[/color] Click the chips at the top to toggle category visibility. Hidden categories don't take up screen space; toggle them back on when you need them.\n\n"
+			+ "[color=#FFD700]── Item rarity colors ──[/color]\n"
+			+ "  • [color=#FFFFFF]Common[/color] (white) → [color=#1EFF00]Uncommon[/color] (green) → [color=#0070DD]Rare[/color] (blue) → [color=#A335EE]Epic[/color] (purple) → [color=#FF8000]Legendary[/color] (orange) → [color=#FFD700]Mythic[/color] (gold).\n\n"
+			+ "[color=#FFD700]── Common actions ──[/color]\n"
+			+ "  • [b]Left-click[/b] an item to bring up its actions (Equip / Use / Discard / etc.).\n"
+			+ "  • [b]Hover[/b] for a detailed tooltip (stats, comparison to current gear, source for materials).\n"
+			+ "  • [b]Salvage[/b] turns items into [color=#FFD700]Salvage Essence[/color] (ESS) + a chance at bonus materials. Use it on duplicates and low-tier finds.\n"
+			+ "  • [b]Materials[/b] (gathered resources) live in their own group — use them as crafting inputs.\n\n"
+			+ "[color=#FFD700]── Equipment comparison ──[/color]\n"
+			+ "When you hover an equipable item the tooltip shows green/red deltas vs whatever's currently in that slot, including Sanctuary house bonuses (HP multipliers, resource max).\n\n"
+			+ "[color=#FFD700]── Home Stones ──[/color]\n"
+			+ "Special consumables (Egg / Supplies / Equipment / Companion) that send items to your Sanctuary — survive permadeath. Drop from Tier 4+ chests or buy at NPC posts (`/stones`).\n\n"
+			+ "[color=#888888]Capacity is shown at the top right. Upgrade in Sanctuary → Storage tier for more slots.[/color]"
+		),
+	},
+	"stats_page": {
+		"title": "[color=#FFD700]Stats & Progression[/color]",
+		"body": (
+			"Your character's stats, racial passives, class passives, and the [color=#FFD700]Progression Vectors[/color] dashboard.\n\n"
+			+ "[color=#FFD700]── Stat allocation ──[/color] You earn 1 stat point per level. Spend them on STR / CON / DEX / INT / WIS / WITS to taste. Sanctuary upgrades + race bonuses stack on top.\n\n"
+			+ "[color=#FFD700]── Class + Race passives ──[/color] Named here with full effect text. Each class has a passive that defines its identity; each race has its own. Both are always-on; you don't need to activate them.\n\n"
+			+ "[color=#FFD700]── Progression Vectors ──[/color] The dashboard names every track you're advancing:\n"
+			+ "  • Character XP + level progression\n"
+			+ "  • Stat-point bank (visible bank with current count + spend pointer to /stats)\n"
+			+ "  • [color=#FFD700]Sanctuary upgrades[/color] + Baddie Points (account-level, survive permadeath)\n"
+			+ "  • 10 [color=#FFD700]Job specialties[/color] with commit markers — you can only fully commit to one specialty per skill family\n"
+			+ "  • [color=#FFD700]Bestiary[/color] — kills per monster type unlock entries\n"
+			+ "  • [color=#FFD700]Compass[/color] — 3-tier post-discovery layered reveal (direction → distance → name)\n"
+			+ "  • [color=#FFD700]Atlas[/color] — regions visited per account\n"
+			+ "  • [color=#FFD700]Soul Gems[/color] — late-game crafting material progression\n"
+			+ "  • [color=#FFD700]Titles[/color] — rank progression (Jarl → High King → Elder → Eternal)\n\n"
+			+ "[color=#FFD700]── Why all in one place ──[/color] Players were missing systems they were already advancing. The dashboard makes every track visible at a glance, with the next milestone called out.\n\n"
+			+ "[color=#888888]Type [color=#9ACD32]/stats[/color] to spend stat points, [color=#9ACD32]/status[/color] for this dashboard.[/color]"
+		),
+	},
+	"crafting_page": {
+		"title": "[color=#FFD700]Crafting[/color]",
+		"body": (
+			"Combine materials into equipment, consumables, structures, and ingredients. The crafting station shows up to [b]7 transparency layers[/b] before you commit so you know what you're getting.\n\n"
+			+ "[color=#FFD700]── Specialty lock-in ──[/color] Each skill family (e.g., Blacksmithing) has multiple specialties (Weaponsmith / Armorer / etc.). When you reach skill 25 you commit to ONE specialty per family — that unlocks the specialist-only recipes. Switching specialties is expensive; choose carefully.\n\n"
+			+ "[color=#FFD700]── The 7 transparency layers ──[/color]\n"
+			+ "  1. [b]Materials needed[/b] — exact counts, highlighted red if you're short.\n"
+			+ "  2. [b]Skill required[/b] vs your current skill — green if you can craft.\n"
+			+ "  3. [b]Output preview[/b] — name + base stats of what you'll produce.\n"
+			+ "  4. [b]Material sources[/b] — where each input drops/spawns (reverse-lookup map).\n"
+			+ "  5. [b]Quality odds[/b] — your % chance per quality tier given current skill.\n"
+			+ "  6. [b]Sell-value preview[/b] — market rolling-average price for the output.\n"
+			+ "  7. [b]Skill progression preview[/b] — your next 3 locked recipes by skill_required + levels_away.\n\n"
+			+ "[color=#FFD700]── Quality scaling ──[/color] Higher quality = better base stats on the output. Skill ratio (your skill vs recipe difficulty) drives the odds; higher skill = better odds at higher quality tiers.\n\n"
+			+ "[color=#888888]Crafting skill levels via successful crafts at or near your current skill. Failed crafts return some materials.[/color]"
+		),
+	},
+	"market_page": {
+		"title": "[color=#FFD700]Market[/color]",
+		"body": (
+			"Player-driven economy at trading posts. List items for [color=#FFD700]Valor[/color] (the universal currency), buy other players' listings.\n\n"
+			+ "[color=#FFD700]── How pricing works ──[/color]\n"
+			+ "  • [color=#FFAA00]base_valor[/color] — what the seller receives immediately when listing.\n"
+			+ "  • [color=#FFAA00]markup_price[/color] — what the buyer pays. Includes a supply/demand markup that grows with the listed quantity at this post per category.\n"
+			+ "  • Difference is the [color=#FFAA00]post tax[/color] (revenue absorbed by the trading post).\n\n"
+			+ "[color=#FFD700]── Categories ──[/color] Equipment, Companion Eggs, Consumables, Tools, Runes, Materials, Monster Parts. Items stack in browse view EXCEPT equipment, eggs, and tools (each unique).\n\n"
+			+ "[color=#FFD700]── Bulk listing ──[/color] List all equipment / consumables+tools / materials in one click.\n\n"
+			+ "[color=#FFD700]── Network browse ──[/color] See listings from OTHER trading posts. To buy from another post, consume a [color=#FFD700]Travel Stone[/color] or physically travel there. Specialty + Threat-marked posts always require physical presence (geographic value preserved).\n\n"
+			+ "[color=#FFD700]── My Listings ──[/color] Track what you've listed across the network. Sort by category, price (asc/desc), name, or level.\n\n"
+			+ "[color=#888888]Valor balance shows top-right. Earn it from quests, monster drops, and listing items. Spend it on market buys, NPC vendors, Sanctuary upgrades (where applicable).[/color]"
+		),
+	},
 	"fusion_overview": {
 		"title": "[color=#FFD700]Fusion[/color]",
 		"body": (
