@@ -24239,8 +24239,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.501 — Combat readability pass: longer damage popups + animated HP drain.
+	display_game("[color=#00FF00]v0.9.501[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat readability — damage popups linger ~3× longer, HP bars now drain smoothly over 1 second[/color]")
+	display_game("  • [b]Floating damage numbers stay readable.[/b] Direct-hit damage popups went from 0.9s total (0.65 linger + 0.25 fade) to [color=#88FF88]2.7s[/color] (1.95 + 0.75) — ~3× longer dwell so you can actually read the number before the next attack lands. DoT/proc tick lifetime bumped 0.85s → 2.55s for parity. Stack-reset window grew 1.5s → 3.0s so rapid hits within a burst still fan up the screen instead of overlapping the still-visible previous popup.")
+	display_game("  • [b]HP bars drain over ~1 second instead of snapping.[/b] All combat HP bars (player, companion, monster, plus Lufia mirrors and the battlefield overlay) now animate from old value → new value over 1.0s with a TRANS_QUAD EASE_OUT curve. The numeric label (e.g., 'HP 84 / 150') still updates instantly — the number is the truth; the bar is the dramatic reveal. New helper `_animate_bar_value(bar, target, dur)` kills any in-progress tween so rapid hits don't queue stale tweens. Initial population at combat start snaps the bar (no anim from 0 → max).")
+	display_game("  • Pickup from 2026-05-17 playtest note. The third combat-readability ask (monster HP estimates should over-estimate, not undershoot) is queued for v0.9.502.")
+	display_game("")
+
 	# v0.9.500 — Audit #4 Slice 1A.ii: Player-built Companion Stable.
-	display_game("[color=#00FF00]v0.9.500[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.500[/color]")
 	display_game("  [color=#FFD700]Build your own Companion Stable at your settlement — Sanctuary access at your post[/color]")
 	display_game("  • [b]New Construction recipe: [color=#FF80FF]Companion Stable[/color].[/b] Skill 35, difficulty 50. Materials: 8 wooden plank + 4 iron ore + 2 heartwood + 2 arcane crystal + 3 magic dust. Place inside your own enclosure to get the same magenta [color=#FF80FF]C[/color] tile that lives at Tier 5+ NPC posts. Bump-interact opens the unified Companion Stable panel — deposit / withdraw / register / check-out + all 4 fusion modes (Same Type / Mixed T9 / Hybrid / Tier Ascend). Lets you self-host Sanctuary kennel access at your settlement without depending on a nearby T5+ NPC post. Closes Audit #4 Slice 1A.ii (deferred from v0.9.485). Server detection (`_player_is_at_companion_stable`) is tile-type agnostic so player-built Stables work identically to NPC-post Stables — no separate code path.")
 	display_game("")
@@ -24265,11 +24273,6 @@ func display_changelog():
 	display_game("  • The old [color=#FF8800]K[/color] (Kennel) block and [color=#FFD700]F[/color] (Fusion Station) tile in the Sanctuary are gone. A single [color=#FF8800]K[/color] Companion Stable tile replaces them, opening a unified tabbed panel — [b]Kennel[/b] tab (Register to Slot / Release per row) and [b]Fuse[/b] tab (Same Type + Mixed T9 modes). Single point of interaction; matches the visual style of the at-NPC-post Companion Stable. Hybrid + Tier Ascend modes are intentionally hidden here because their catalysts come from CHARACTER inventory — visit any Tier 5+ NPC Stable for those mid-character. Legacy F-tile screens (the old `display_house_kennel` + `display_house_fusion`) still exist as fallback code paths but are unreachable from the action bar. Audit #4 unification follow-up to Slice 1A (NPC Stable) + Slice 1B (Tier Ascension).")
 	display_game("")
 
-	# v0.9.496 — Audit #4 Slice 1B: Tier Ascension Fusion.
-	display_game("[color=#00FFFF]v0.9.496[/color]")
-	display_game("  [color=#FFD700]New Tier Ascend fusion — raise your favorite pet's tier without changing what it is[/color]")
-	display_game("  • [b]Tier Ascension Fusion[/b] joins the Stable's Fuse tab as a 4th mode (alongside Same Type, Mixed T9, and Hybrid). Select 3 companions of the [b]SAME monster type[/b] AND the [b]SAME tier[/b] (any sub-tier mix), plus consume 1 [color=#FFAA66]Ascension Catalyst[/color], to produce 1 companion of that same type at [b]tier+1[/b], sub-tier 1. Lower-tier companions are no longer relegated to fusion fodder — you can raise a Tier 1 Goblin all the way to Tier 9 without giving up the Goblin identity, abilities, or art. Variant inherits if all 3 parents share, else rolls fresh. Tier 9 is the cap. Inputs can come from the kennel or registered slots; the slot-preserving rule from prior fusions still applies (any registered input → output is auto-registered). [color=#FFAA66]Ascension Catalysts[/color] are a new T6+ dungeon chest drop (weights T6=1, T7=2, T8=2, T9=3) — rarer than Hybrid Catalysts since this is a more powerful effect (a 5-step tier climb across the full ladder, vs Hybrid's single capstone moment). Help text + admin shortcuts updated. Closes Audit #4 Slice 1B (Tier Ascension Fusion) — the 'make lower-tier mobs relevant' headline ask.")
-	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
