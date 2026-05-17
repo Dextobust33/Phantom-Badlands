@@ -7098,10 +7098,11 @@ func _handle_companion_stable_station(peer_id: int, character) -> void:
 			"type": "tutorial_hint",
 			"title": "[color=#FFD700]Companion Stable[/color]",
 			"body": (
-				"You have found a [color=#FFD700]Companion Stable[/color] — a living link to your Sanctuary's kennel.\n\n"
-				+ "[color=#A335EE]Deposit[/color] a companion to send it to the Sanctuary kennel.\n"
-				+ "[color=#A335EE]Withdraw[/color] a companion to bring one back into your party roster.\n\n"
-				+ "This is how you actively use [color=#FF80FF]Fusion[/color] across a single character's lifetime — collect, deposit, and combine without needing to die.\n\n"
+				"You have found a [color=#FFD700]Companion Stable[/color] — a living link to your Sanctuary's companion storage.\n\n"
+				+ "[color=#A335EE]Deposit[/color] a non-registered companion → sends it to the Sanctuary kennel.\n"
+				+ "[color=#A335EE]Deposit[/color] a [color=#FF80FF][REGISTERED][/color] companion → returns to its registered slot (still registered, just not on your character).\n"
+				+ "[color=#A335EE]Withdraw[/color] → brings a kennel companion back into your roster.\n\n"
+				+ "Registration is separate from storage — depositing never changes a companion's registered status.\n\n"
 				+ "Companion Stables appear at [color=#87CEEB]Tier 5+ trading posts[/color]."
 			),
 		})
@@ -7155,10 +7156,17 @@ func handle_companion_stable_withdraw(peer_id: int, message: Dictionary) -> void
 	send_character_update(peer_id)
 
 func handle_companion_stable_deposit(peer_id: int, message: Dictionary) -> void:
-	"""Deposit a collected companion to the kennel. If the companion is the
-	active registered-checkout one, also frees the registered slot so the
-	companion can be used as a fusion input (the whole reason the Stable
-	exists). Player re-registers the fused result later via a Home Stone."""
+	"""Deposit a collected companion to the Sanctuary. Behavior depends on
+	whether the active companion was checked out from a registered slot:
+	  • Registered active  → return to its registered slot (preserves the
+	    death-insurance status; companion stays registered, just not on the
+	    character anymore). Mirrors the on-death return path.
+	  • Non-registered     → goes to the kennel.
+
+	Deposit and registration are independent operations: the Stable only
+	moves companions between roster and Sanctuary storage; it never silently
+	changes the registration flag (v0.9.488 reverts v0.9.487 which had
+	mashed those concerns together)."""
 	if not characters.has(peer_id):
 		return
 	var character = characters[peer_id]
@@ -7174,16 +7182,38 @@ func handle_companion_stable_deposit(peer_id: int, message: Dictionary) -> void:
 	var is_active = (not character.active_companion.is_empty()
 		and character.active_companion.get("id", "") == companion.get("id", ""))
 	var was_registered = is_active and character.using_registered_companion
-	# If this is a registered-checkout active companion, free the registered
-	# slot first (mirrors `handle_house_unregister_companion` minus the
-	# checked_out_by guard — we ARE the checkout holder).
+
+	# Path 1: registered active — return to slot, preserving registration.
 	if was_registered:
 		var slot = int(character.registered_companion_slot)
-		var pre_house = persistence.get_house(account_id)
-		if pre_house != null and slot >= 0 and slot < int(pre_house.get("registered_companions", {}).get("companions", []).size()):
-			pre_house.registered_companions.companions.remove_at(slot)
-			persistence.save_house(account_id, pre_house)
-	# Strip registration metadata before the companion lands in the kennel.
+		# Use the live active_companion data (it reflects any XP/level gained
+		# this character) — same pattern as the on-death return path.
+		var slot_state = character.active_companion.duplicate(true)
+		slot_state.erase("checked_out_by")
+		slot_state.erase("checkout_time")
+		slot_state.erase("house_slot")
+		var ok = persistence.return_companion_to_house(account_id, slot, slot_state)
+		if not ok:
+			send_to_peer(peer_id, {"type": "error", "message": "Could not return companion to its registered slot."})
+			return
+		# Clear the on-character checkout state. The companion still exists
+		# in the registered slot, just not in active or collected.
+		character.collected_companions.remove_at(collected_index)
+		character.active_companion = {}
+		character.using_registered_companion = false
+		character.registered_companion_slot = -1
+		save_character(peer_id)
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#A335EE]%s returned to registered slot %d. Still registered.[/color]" % [companion.get("name", "Companion"), slot + 1],
+		})
+		var rp = _build_companion_stable_payload(peer_id)
+		rp["type"] = "companion_stable_open"
+		send_to_peer(peer_id, rp)
+		send_character_update(peer_id)
+		return
+
+	# Path 2: non-registered — goes to kennel.
 	var to_deposit = companion.duplicate(true)
 	to_deposit.erase("house_slot")
 	to_deposit.erase("registered_at")
@@ -7191,29 +7221,16 @@ func handle_companion_stable_deposit(peer_id: int, message: Dictionary) -> void:
 	to_deposit.erase("checkout_time")
 	var kennel_idx = persistence.add_companion_to_kennel(account_id, to_deposit)
 	if kennel_idx < 0:
-		# Roll back the unregister if kennel was full. Re-add at any slot
-		# index (order preservation isn't critical for registered companions
-		# — they're a flat list).
-		if was_registered:
-			var rb_house = persistence.get_house(account_id)
-			if rb_house != null:
-				rb_house.registered_companions.companions.append(companion.duplicate(true))
-				persistence.save_house(account_id, rb_house)
 		send_to_peer(peer_id, {"type": "error", "message": "Kennel is full! Upgrade in Sanctuary."})
 		return
-	# Remove from collected; clear active if needed.
 	character.collected_companions.remove_at(collected_index)
 	if is_active:
 		character.active_companion = {}
-		character.using_registered_companion = false
-		character.registered_companion_slot = -1
 	save_character(peer_id)
-	var msg_text: String
-	if was_registered:
-		msg_text = "[color=#A335EE]%s deposited to kennel. Registered slot freed — re-register the fused result later via a Home Stone (Companion).[/color]" % companion.get("name", "Companion")
-	else:
-		msg_text = "[color=#A335EE]%s has been sent to your Sanctuary's kennel.[/color]" % companion.get("name", "Companion")
-	send_to_peer(peer_id, {"type": "text", "message": msg_text})
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#A335EE]%s has been sent to your Sanctuary's kennel.[/color]" % companion.get("name", "Companion"),
+	})
 	var payload = _build_companion_stable_payload(peer_id)
 	payload["type"] = "companion_stable_open"
 	send_to_peer(peer_id, payload)
