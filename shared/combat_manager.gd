@@ -1850,13 +1850,17 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	# Audit #10 v0.9.512 — Apex frontier bonus. +10% XP when the monster is
 	# killed in the apex frontier zone (distance from origin > 1500 tiles).
 	# Server stamps `is_apex_frontier` on the monster dict at combat-start
-	# from the character's position at engagement time. First beat of apex
-	# content; future slices can stack T9 encounter pools / unique drops on
-	# top of this geometric definition.
+	# from the character's position at engagement time.
+	# v0.9.513 — Apex VARIANT bonus stacks +20% on top, rewarding the +25% HP
+	# / +10% damage the variant carries (so the extra HP isn't a flat XP/effort
+	# downgrade). Apex frontier + apex variant total = +30% XP.
 	var apex_xp_pct = 0
 	if monster.get("is_apex_frontier", false):
 		final_xp = int(final_xp * 1.10)
 		apex_xp_pct = 10
+	if monster.get("is_apex_variant", false):
+		final_xp = int(final_xp * 1.20)
+		apex_xp_pct += 20
 
 	# Gambit kill bonus: +1 gem awarded later
 	var gambit_kill = combat.get("gambit_kill", false)
@@ -1882,7 +1886,10 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if hotspot_xp_pct > 0:
 		messages.append("[color=#FF6600]Danger Zone Bonus: +%d%% XP and improved drop chance![/color]" % hotspot_xp_pct)
 	if apex_xp_pct > 0:
-		messages.append("[color=#9F70FF]⚡ Apex Frontier Bonus: +%d%% XP![/color]" % apex_xp_pct)
+		var apex_label = "Apex Frontier"
+		if monster.get("is_apex_variant", false):
+			apex_label = "Apex Variant"
+		messages.append("[color=#9F70FF]⚡ %s Bonus: +%d%% XP![/color]" % [apex_label, apex_xp_pct])
 
 	# Award experience
 	character.add_experience(final_xp)
@@ -6322,9 +6329,11 @@ func get_combat_display(peer_id: int) -> Dictionary:
 	var character = combat.character
 	var monster = combat.monster
 
-	# Get monster's class affinity for color coding
+	# Get monster's class affinity for color coding. v0.9.513 — monster may
+	# carry an explicit `name_color` override (e.g., apex variants set to
+	# purple by trigger_flock_encounter); that takes priority when present.
 	var affinity = monster.get("class_affinity", 0)
-	var name_color = _get_affinity_color(affinity)
+	var name_color = String(monster.get("name_color", "")) if monster.get("name_color", "") != "" else _get_affinity_color(affinity)
 
 	# Check if player knows this monster (has killed it at or above this level)
 	# Use base_name so killing any variant teaches you about the base monster type
@@ -6631,6 +6640,13 @@ func roll_gem_drops(monster: Dictionary, character: Character) -> int:
 	var lethality_divisor = cfg.get("gem_lethality_divisor", 1000)
 	var level_divisor = cfg.get("gem_level_divisor", 50)  # Reduced from 100 for more gems
 	var gem_count = max(1, int(lethality / lethality_divisor) + int(monster_level / level_divisor))
+
+	# Audit #10 v0.9.513 — apex variants drop bonus gems. Pairs with the +25% HP /
+	# +10% damage stat buff (making them harder) and the v0.9.512 +10% XP zone
+	# bonus, so apex frontier kills feel meaningfully rewarding vs the extra
+	# fight length.
+	if monster.get("is_apex_variant", false):
+		gem_count = int(round(gem_count * 1.50))
 
 	return gem_count
 

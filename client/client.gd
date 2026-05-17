@@ -24297,8 +24297,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.513 — Apex content slice 2 (Apex Variants).
+	display_game("[color=#00FF00]v0.9.513[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Apex Frontier gets teeth — monsters in the zone now spawn as buffed Apex Variants with bigger payouts and a first-time teaching overlay.[/color]")
+	display_game("  • [b]Apex Variants.[/b] Every monster spawned in the apex frontier zone (v0.9.512: distance > 1500 from origin) now gets the [color=#9F70FF]Apex[/color] prefix added to its name (\"Apex Goblin\", \"Apex Wraith\"), +25% HP, +10% damage, and a purple name color in combat. Doesn't apply to dungeon combat — dungeons have their own tier scaling.")
+	display_game("  • [b]Bigger rewards on apex kills.[/b] The +10% zone XP from v0.9.512 stacks with a new [color=#88FF88]+20% variant XP[/color] (total +30% per kill) and Apex Variants drop [color=#88FF88]+50% Soul Gems[/color] to balance the +25% HP they carry. Combat reward message names the bonus on every kill.")
+	display_game("  • [b]First-time tutorial overlay.[/b] When the player crosses into the apex frontier for the first time, a one-time modal explains the +XP / +gems / variant mechanics. New `seen_apex_frontier_hint` per-character flag.")
+	display_game("  • Closes another beat of Audit #10's \"apex content\" captured item. Future beats can stack named extreme zones, unique drops, or T9 encounter pools on top.")
+	display_game("")
+
 	# v0.9.512 — Apex Frontier (first beat) + Legacy variant reroll fix.
-	display_game("[color=#00FF00]v0.9.512[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.512[/color]")
 	display_game("  [color=#FFD700]First beat of Apex Content — far edges of the world now reward exploration. Plus a long-standing legacy-character visual bug fix.[/color]")
 	display_game("  • [b]Apex Frontier (Audit #10).[/b] Distance > 1500 tiles from origin is now an [color=#9F70FF]⚡ APEX[/color] zone. Monsters defeated in apex frontier deal +10% XP to the player. Visual: the Area line in the region label gains a [color=#9F70FF]⚡ APEX +10% XP[/color] tag when you're in the zone, and the combat reward message names the bonus on kill. First beat of \"apex content\" captured item — future slices can stack T9 encounter pools, unique drops, or named extreme zones on top of this geometric definition. Math note: zone uses squared-distance for cheap detection, no sqrt.")
 	display_game("  • [b]Legacy character appearance variant now stable.[/b] Characters created BEFORE the appearance variant system (no `appearance_variant` field saved to disk) were re-rolling a new variant on every `from_dict()` call. Symptom: hovering the character on the map showed \"Ivory\" while the Players Online popup showed \"Mint\" — same player, same session, two different colors. Fixed by seeding the reroll with `hash(character_name)` via a new `RandomNumberGenerator`-based helper (`DropTables._roll_egg_variant_with_rng`). Same character → same hash → same variant, deterministically, forever. New characters were never affected (their variant is rolled once at create_character and persisted before the first from_dict). Once a legacy character is next saved, the variant persists and the migration branch stops firing for them.")
@@ -24328,13 +24337,6 @@ func display_changelog():
 	display_game("  • Closes Audit #11 captured item \"Owner-discount listings — Player-only.\"")
 	display_game("")
 
-	# v0.9.508 — Aggro role tag in combat + signpost discoverability + v0.9.507 hint revert.
-	display_game("[color=#00FFFF]v0.9.508[/color]")
-	display_game("  [color=#FFD700]Companion aggro role tag in combat, first-time signpost overlay, and a v0.9.507 quest-board hint regression revert (THREAT BOUNTY quests ARE real).[/color]")
-	display_game("  • [b]Aggro role tag on companion in combat.[/b] The companion name label in both the main combat panel and the battlefield overlay now appends the aggro role inline — [color=#FFD700][TANK][/color] / [color=#FFA500][FIGHTER][/color] / [color=#FFFFFF][DEFAULT][/color] / [color=#87CEEB][EVASIVE][/color]. Pairs with the v0.9.499 Companions page surface so the role is named everywhere the companion appears, not just on the inspect screen. Players can pick a tank companion at the kennel and immediately see them \"drawing fire\" during the fight.")
-	display_game("  • [b]First-time signpost placement tutorial overlay.[/b] When a player places their first signpost, a one-time modal hint explains the bump-to-read / bump-as-owner-to-edit flow (60-char cap, chat-box input, persists across restarts). Mirrors the existing quest-board / dungeon / crafting / Companion Stable first-time hint pattern from Audit #3 Slice 4. Per-character flag (`seen_signpost_hint`) so it never repeats.")
-	display_game("  • [b]v0.9.507 hint regression reverted — THREAT BOUNTY quests are real.[/b] v0.9.507's \"hint accuracy\" fix was based on a too-narrow grep that missed the actual implementation (`_generate_threat_relief_quest` at server/server.gd, Audit #11 Slice 12 — already shipped). The quests appear at the top of under-threat trading posts' boards as \"⚠ THREAT BOUNTY\" entries pointing at the threatening dungeon. v0.9.508 restores the accurate hint mention. Sorry for the confusion if v0.9.507's hint made you doubt the system.")
-	display_game("")
 
 
 

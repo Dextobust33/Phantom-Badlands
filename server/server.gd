@@ -5410,7 +5410,7 @@ func send_location_update(peer_id: int):
 		"area_is_safe": area_level_hud <= 0,
 		# Audit #10 v0.9.512 — apex frontier marker. Drives the [⚡ APEX] tag
 		# in the region label + +10% XP/gold combat reward bonus.
-		"is_apex_frontier": world_system.is_apex_frontier(character.x, character.y),
+		"is_apex_frontier": _check_apex_frontier_entry(peer_id, character.x, character.y),
 		"nearest_post": nearest_post_hud,
 		# Slice 6 — dynamic post state. Client renders an "Under Threat" warning
 		# in the HUD when threatened=true. Always sent; client checks the flag.
@@ -7395,7 +7395,29 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 	# Audit #10 v0.9.512 — stamp apex frontier flag based on the character's
 	# position at engagement time. Combat reward calc reads this to apply the
 	# +10% XP bonus.
-	monster["is_apex_frontier"] = world_system.is_apex_frontier(character.x, character.y)
+	var in_apex = world_system.is_apex_frontier(character.x, character.y)
+	monster["is_apex_frontier"] = in_apex
+
+	# Audit #10 v0.9.513 — Apex monsters. When in the apex frontier zone,
+	# monsters spawn as "Apex" variants: +25% HP, +10% damage, "Apex "
+	# prefix on the name (so the player knows what they're fighting), and
+	# purple name color in combat. The flat XP bonus from v0.9.512 carries
+	# through unchanged (the buffed monster takes longer to kill, so the
+	# bonus rewards the extra effort). Doesn't apply in dungeon combat —
+	# dungeons have their own tier scaling and don't need a frontier overlay.
+	if in_apex and not is_dungeon_combat:
+		var apex_hp_mult = 1.25
+		var apex_dmg_mult = 1.10
+		monster["max_hp"] = int(monster.get("max_hp", 1) * apex_hp_mult)
+		monster["hp"] = monster["max_hp"]
+		monster["damage"] = int(monster.get("damage", 1) * apex_dmg_mult)
+		# Prefix name only if not already prefixed (defensive against double-stamp).
+		var existing_name = String(monster.get("name", ""))
+		if not existing_name.begins_with("Apex "):
+			monster["name"] = "Apex " + existing_name
+		# Mark for color rendering (purple, matches the v0.9.512 HUD tag).
+		monster["name_color"] = "#9F70FF"
+		monster["is_apex_variant"] = true
 
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
@@ -10433,6 +10455,39 @@ func _maybe_send_dungeon_hint(peer_id: int) -> void:
 		+ "Bosses drop a guaranteed [color=#FFAA00]companion egg[/color] of their type, "
 		+ "themed [color=#CCAAFF]theme tiles[/color] add environmental hazards/buffs, "
 		+ "and the [color=#FF7F50]Combat Loot Scratch-Off[/color] adds bonus rewards each fight."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
+func _check_apex_frontier_entry(peer_id: int, x: int, y: int) -> bool:
+	"""Audit #10 v0.9.513 — returns the apex frontier flag for this coord and
+	fires the first-time tutorial hint when applicable. Side-effect lives
+	inline with the location-update plumbing so the hint fires exactly when
+	the player crosses the frontier border, not on engagement or any other
+	indirect path."""
+	var in_apex = world_system.is_apex_frontier(x, y)
+	if in_apex:
+		_maybe_send_apex_frontier_hint(peer_id)
+	return in_apex
+
+func _maybe_send_apex_frontier_hint(peer_id: int) -> void:
+	"""Audit #10 v0.9.513 — first-time apex frontier entry overlay. Teaches the
+	+10% zone XP, +20% variant XP, +25% HP / +10% damage variant stats, and
+	+50% gems bonuses so the player knows the apex frontier is meaningful
+	endgame content rather than a flat distance penalty."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_apex_frontier_hint:
+		return
+	character.seen_apex_frontier_hint = true
+	var title = "[color=#9F70FF]⚡ Apex Frontier[/color]"
+	var body = (
+		"You've crossed into the [color=#9F70FF]Apex Frontier[/color] — the far edges of the world (1500+ tiles from origin).\n\n"
+		+ "• [color=#88FF88]+10%% XP[/color] on every kill in the frontier zone.\n"
+		+ "• Monsters here spawn as [color=#9F70FF]Apex Variants[/color] — \"Apex\" prefix, +25%% HP, +10%% damage, purple name color.\n"
+		+ "• Apex variants give an additional [color=#88FF88]+20%% XP[/color] (total +30%% per kill) and drop [color=#88FF88]+50%% Soul Gems[/color] to balance the extra effort.\n\n"
+		+ "Apex content is the first beat of endgame frontier rewards — future updates will stack named zones, unique drops, and T9 encounter pools on top of this geometric definition."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
