@@ -157,6 +157,12 @@ func _render_body() -> void:
 	else:
 		var tier_label = ["", "L1: kill counts", "L2: + highest level", "L3: + dates"][min(level, 3)]
 		_summary_label.append_text("[color=#88FF88]Unlocked: %s[/color]   [color=#A0A0A0]%d species · %d total kills[/color]" % [tier_label, unique_count, total_kills])
+		# v0.9.511 — niche-passive legend line for Paladin/Ranger.
+		var player_class := String(_summary.get("player_class", ""))
+		if player_class == "Paladin":
+			_summary_label.append_text("\n[color=#FFD700]✦[/color] [color=#A0A0A0]Divine Favor — +25% damage on this entry's species (undead / demons).[/color]")
+		elif player_class == "Ranger":
+			_summary_label.append_text("\n[color=#228B22]✦[/color] [color=#A0A0A0]Hunter's Mark — +25% damage on this entry's species (beasts).[/color]")
 
 	if level <= 0:
 		# Locked teaser body
@@ -203,7 +209,13 @@ func _make_row(entry: Dictionary, level: int) -> Control:
 	var name: String = String(entry.get("name", "(unknown)"))
 	var kills: int = int(entry.get("kills", 0))
 	var parts: PackedStringArray = PackedStringArray()
-	parts.append("[color=#DDDDDD]%s[/color]" % name)
+	# v0.9.511 — niche-passive tag. Paladin (Divine Favor vs undead/demons)
+	# and Ranger (Hunter's Mark vs beasts) get a small icon prefix on
+	# matching entries so they can scan their kill ledger and see which
+	# species their class passive applies to. Uses the same authoritative
+	# keyword matcher as combat_scene_panel / server damage calc.
+	var niche_prefix := _get_niche_passive_prefix(name)
+	parts.append("%s[color=#DDDDDD]%s[/color]" % [niche_prefix, name])
 	parts.append("[color=#FFD700]× %d[/color]" % kills)
 	if level >= 2:
 		parts.append("[color=#88B8FF]Lv %d top[/color]" % int(entry.get("highest_level", 0)))
@@ -214,6 +226,24 @@ func _make_row(entry: Dictionary, level: int) -> Control:
 	label.text = "  ".join(parts)
 	row.add_child(label)
 	return row
+
+
+func _get_niche_passive_prefix(monster_name: String) -> String:
+	"""v0.9.511 — returns a short colored icon prefix if the player's class
+	passive (Paladin Divine Favor, Ranger Hunter's Mark) applies to this
+	monster. Empty string for classes without a niche or monsters that
+	don't match. summary.player_class is injected client-side before render."""
+	var player_class := String(_summary.get("player_class", ""))
+	if monster_name == "":
+		return ""
+	var monster_dict := {"name": monster_name, "type": monster_name}
+	if player_class == "Paladin":
+		if CombatManager._monster_matches_keywords(monster_dict, CombatManager._UNDEAD_DEMON_KEYWORDS):
+			return "[color=#FFD700]✦[/color] "
+	elif player_class == "Ranger":
+		if CombatManager._monster_matches_keywords(monster_dict, CombatManager._BEAST_KEYWORDS):
+			return "[color=#228B22]✦[/color] "
+	return ""
 
 
 func _fmt_date(ts: int) -> String:

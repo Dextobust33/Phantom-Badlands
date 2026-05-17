@@ -24294,8 +24294,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.511 — Niche-passive surface extended to Bestiary + Victory card.
+	display_game("[color=#00FF00]v0.9.511[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Niche-passive coverage rounded out — bestiary kill ledger + victory card both flag matching species for Paladin / Ranger.[/color]")
+	display_game("  • [b]Bestiary niche-passive icon.[/b] Each entry's name now gets a [color=#FFD700]✦[/color] prefix when the player's class passive applies (Paladin → gold ✦ on undead/demons; Ranger → green ✦ on beasts). Header legend names the passive so the icon's meaning is obvious. Lets a Paladin / Ranger scan their kill ledger and see exactly which species their +25% damage bonus targets.")
+	display_game("  • [b]Victory card niche-passive tag.[/b] The end-of-combat \"Defeated:\" line also appends [color=#FFD700][DIVINE FAVOR +25%][/color] / [color=#228B22][HUNTER'S MARK +25%][/color] when applicable. Pairs with v0.9.510's live combat tag so the bonus is acknowledged from start to finish of the encounter.")
+	display_game("  • Continues closing Audit #2 by making the niche-passive bonus visible on every surface where the relevant species appears, not just hidden in damage numbers.")
+	display_game("")
+
 	# v0.9.510 — Niche-passive combat surface + Clan motto.
-	display_game("[color=#00FF00]v0.9.510[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.510[/color]")
 	display_game("  [color=#FFD700]Paladins and Rangers now see their class-niche damage bonus live on the monster name in combat. Clan leaders can set a short motto.[/color]")
 	display_game("  • [b]Niche-passive surface in combat.[/b] Paladins fighting undead/demons see [color=#FFD700][DIVINE FAVOR +25%][/color] inline with the monster name; Rangers fighting beasts see [color=#228B22][HUNTER'S MARK +25%][/color]. The tag uses the same authoritative keyword lists + substring matcher as the server's damage calc, so what you see is what actually applies (no drift, variant prefixes like \"Corrosive Skeleton\" still match). Closes Audit #2 captured item by making the bonus discoverable at the moment it triggers, rather than hidden in damage numbers.")
 	display_game("  • [b]Clan motto (new).[/b] Leaders can set a short [color=#A89BD8]tagline[/color] up to 50 characters via [color=#9ACD32]/clanmotto <text>[/color] (or empty to clear). Renders italic below the description on the clan panel — pairs with v0.9.473 description / v0.9.477 banner color as the third piece of clan identity polish. Help topic + leader-empty-state placeholder updated to surface the new command.")
@@ -24326,15 +24334,6 @@ func display_changelog():
 	display_game("  • [b]Admin shortcut:[/b] new \"Give Cosmetic Structures (1 of each)\" button on the Items page drops Banner + Lamp Post + Torch + Statue + Signpost into inventory in one click.")
 	display_game("")
 
-	# v0.9.506 — Cosmetic buildable structures batch 2 (Torch + Statue).
-	display_game("[color=#00FFFF]v0.9.506[/color]")
-	display_game("  [color=#FFD700]Two more buildable cosmetic structures — Torch (entry-level light) and Statue (centerpiece monument)[/color]")
-	display_game("  • [b]New Construction recipes:[/b]")
-	display_game("    • [color=#FF6600]Torch[/color] [color=#FF6600]t[/color] — Skill 8, difficulty 12. Materials: 1 wooden plank + 1 magic dust + 1 rope. Walkable, low-skill entry. Pairs well with the v0.9.505 Lamp Post for atmospheric lighting.")
-	display_game("    • [color=#E0E0E0]Statue[/color] [color=#E0E0E0]M[/color] — Skill 25, difficulty 35. Materials: 6 stone block + 1 magic dust + 1 heartwood. [b]Blocks movement[/b] — place as a centerpiece or memorial. Costs significantly more than walkable cosmetics; pick the location deliberately.")
-	display_game("  • Both non-specialist recipes (no specialty job lock-in). Place inside your own enclosure. Pure cosmetic — no mechanical effect.")
-	display_game("  • Continues the v0.9.505 catalogue. Audit #12 cosmetic catalogue now has 4 entries (Banner / Lamp Post / Torch / Statue) spanning skill 8 → 25. More variants in future batches.")
-	display_game("")
 
 
 
@@ -27426,6 +27425,9 @@ func _handle_bestiary_data(message: Dictionary) -> void:
 	if not bestiary_panel:
 		return
 	var summary: Dictionary = message.get("summary", {})
+	# v0.9.511 — inject player_class so the bestiary can flag niche-passive
+	# matches (Paladin/Ranger). Same authoritative keyword lists as combat.
+	summary["player_class"] = String(character_data.get("class", ""))
 	if bestiary_panel.visible:
 		bestiary_panel.refresh(summary)
 
