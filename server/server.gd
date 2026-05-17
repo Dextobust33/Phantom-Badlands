@@ -30971,6 +30971,14 @@ func handle_gm_giveconsumable(peer_id: int, message: Dictionary):
 		"slow": "scroll_slow", "doom": "scroll_doom",
 		"resurrect": "scroll_resurrect_lesser", "timestop": "scroll_time_stop",
 		"bane": "potion_dragon_bane",
+		# v0.9.490 — Home Stone admin shorthands for testing the
+		# Register / Kennel / Stable workflow.
+		"homecomp": "home_stone_companion",
+		"homecompanion": "home_stone_companion",
+		"homeegg": "home_stone_egg",
+		"homeequip": "home_stone_equipment",
+		"homeequipment": "home_stone_equipment",
+		"homesupplies": "home_stone_supplies",
 	}
 	if shorthands.has(item_type):
 		item_type = shorthands[item_type]

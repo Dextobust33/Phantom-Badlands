@@ -1283,6 +1283,12 @@ var _combat_loot_revealed_lines: Array = []
 var _combat_loot_gear_drops: Array = []
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
+
+# v0.9.490 — global re-openable HelpPanel for topic-based help (Home Stone
+# choice, etc.). Distinct from the one-shot tutorial_hint_panel. Topics live
+# in HelpPanel.HELP_TOPICS — call _show_help_topic(key) to surface one.
+const GlobalHelpPanelScript = preload("res://client/help_panel.gd")
+var global_help_panel = null
 var numpad_help_panel = null
 # v0.9.372 — show the numpad-controls popup once per new character. Players
 # can toggle this off so future characters they create skip it.
@@ -1944,6 +1950,10 @@ func _ready():
 	scratch_off_panel.rhythm_beat.connect(_on_scratch_off_rhythm_beat)
 
 	# v0.9.372 — numpad controls popup (new-character help).
+	# v0.9.490 — global HelpPanel for topic-based help surfaces.
+	global_help_panel = GlobalHelpPanelScript.new()
+	add_child(global_help_panel)
+
 	numpad_help_panel = NumpadHelpPanelScript.new()
 	add_child(numpad_help_panel)
 	numpad_help_panel.dismissed.connect(_on_numpad_help_dismissed)
@@ -6040,7 +6050,7 @@ func update_action_bar():
 			{"label": "Cancel", "action_type": "local", "action_data": "home_stone_cancel", "enabled": true},
 			{"label": "Register", "action_type": "local", "action_data": "home_stone_register", "enabled": true},
 			{"label": "Kennel", "action_type": "local", "action_data": "home_stone_kennel", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "Help", "action_type": "local", "action_data": "home_stone_help", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -13217,6 +13227,12 @@ func execute_local_action(action: String):
 			pending_home_stone_choice = false
 			send_to_server({"type": "home_stone_companion_response", "choice": "kennel"})
 			update_action_bar()
+		"home_stone_help":
+			# v0.9.490 — open the global HelpPanel on the home_stone_companion
+			# topic. Doesn't close the choice prompt; player can read help and
+			# then pick Register or Kennel.
+			if global_help_panel:
+				global_help_panel.show_topic("home_stone_companion")
 		# v0.9.426 — dead-code duplicate "home_stone_cancel" case removed. The
 		# earlier case at the "home_stone_cancel" handler (calling
 		# _cancel_home_stone) is the one that fires for both selection variants
@@ -18315,15 +18331,28 @@ func handle_server_message(message: Dictionary):
 			var hs_comp_name = message.get("companion_name", "Companion")
 			var hs_can_register = message.get("can_register", false)
 			var hs_can_kennel = message.get("can_kennel", false)
-			display_game("[color=#FFD700]Send %s home with Home Stone:[/color]" % hs_comp_name)
+			# v0.9.490 — rewritten prompt. The old "Send X home" phrasing was
+			# misleading because Register doesn't really "send home" — it locks
+			# the companion into a death-resistant slot. Clearly distinguish the
+			# two paths and add a Help action for full detail.
+			display_game("[color=#FFD700]═══════ HOME STONE (COMPANION) ═══════[/color]")
+			display_game("[color=#FFFFFF]Choose what to do with [b]%s[/b]:[/color]" % hs_comp_name)
+			display_game("")
 			if hs_can_register:
-				display_game("[color=#00FF00]Register[/color] - Survives death, checkout on new character")
+				display_game("[color=#00FF00]✦ Register[/color] — lock into a [color=#FF80FF]death-resistant slot[/color] in your Sanctuary.")
+				display_game("    The companion stays bound to your account. Survives permadeath.")
+				display_game("    Check it out as your active companion on any future character.")
 			else:
-				display_game("[color=#808080]Register - FULL (no slots)[/color]")
+				display_game("[color=#808080]✦ Register — UNAVAILABLE (slots full)[/color]")
+			display_game("")
 			if hs_can_kennel:
-				display_game("[color=#A335EE]Kennel[/color] - Store for fusion (dismisses companion)")
+				display_game("[color=#A335EE]✦ Kennel[/color] — bulk storage for [color=#FFD700]fusion inputs[/color].")
+				display_game("    The companion is dismissed from your active slot and stored.")
+				display_game("    Useful for stockpiling fusion ingredients. NOT death-resistant.")
 			else:
-				display_game("[color=#808080]Kennel - FULL (no slots)[/color]")
+				display_game("[color=#808080]✦ Kennel — UNAVAILABLE (kennel full)[/color]")
+			display_game("")
+			display_game("[color=#888888]Press [b]Help[/b] for full details on Registered vs Kennel companions.[/color]")
 			update_action_bar()
 
 		"character_list":
@@ -21771,7 +21800,7 @@ func process_command(text: String):
 		"giveconsumable":
 			if parts.size() < 2:
 				display_game("[color=#FF0000]Usage: /giveconsumable <type> [tier][/color]")
-				display_game("[color=#808080]Shorthands: potion, mana, stamina, energy, elixir, scroll, tome, home[/color]")
+				display_game("[color=#808080]Shorthands: potion, mana, stamina, energy, elixir, scroll, tome, home (supplies), homecomp, homeegg, homeequip[/color]")
 				display_game("[color=#808080]Scrolls: rage, haste, forcefield, precision, vampirism, thorns[/color]")
 				display_game("[color=#808080]Full types: health_potion, scroll_rage, home_stone_egg, etc.[/color]")
 			else:
@@ -27370,6 +27399,7 @@ func display_gm_help():
 	display_game("[color=#FFD700]Items & Spawning:[/color]")
 	display_game("  /giveitem [tier] [slot]      Give random item (tier 1-9)")
 	display_game("  /giveconsumable <type> [tier] Give specific consumable")
+	display_game("    [color=#808080]Home stone shorthands: home, homecomp, homeegg, homeequip[/color]")
 	display_game("  /givetool <subtype> [tier]    Give tool (pickaxe/axe/sickle/rod)")
 	display_game("  /giveegg [monster type]      Give incubating egg")
 	display_game("  /givecompanion [type] [tier] Give hatched companion")
