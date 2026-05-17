@@ -539,7 +539,8 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 			})
 
 	# Step 6: Place stations inside main room
-	_place_stations(chunk_manager, main_room, is_crossroads, px, py, door_tiles)
+	var post_tier = int(post.get("tier", 1))
+	_place_stations(chunk_manager, main_room, is_crossroads, px, py, door_tiles, post_tier)
 
 	# Step 7: Post marker at center (placed after stations to ensure it wins)
 	chunk_manager.set_tile(px, py, {
@@ -549,7 +550,7 @@ static func stamp_post_into_chunks(post: Dictionary, chunk_manager) -> void:
 
 # ===== STATION PLACEMENT =====
 
-static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads: bool, px: int, py: int, door_tiles: Dictionary = {}) -> void:
+static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads: bool, px: int, py: int, door_tiles: Dictionary = {}, post_tier: int = 1) -> void:
 	"""Scatter all crafting stations, services, and commerce randomly inside the main
 	room. Each station is placed on a unique floor tile such that no two stations are
 	cardinally adjacent (so players can always walk around any station). Placement is
@@ -581,6 +582,13 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 		"healer", "healer",
 		"market", "market",
 	]
+
+	# Audit #4 Slice 1A — Companion Stable at T5+ posts. Live Sanctuary kennel
+	# access mid-character (deposit/withdraw companions without dying). Gated
+	# at tier 5 so players need to travel; deeper posts have more reason to
+	# exist. Player-built version comes in v0.9.486.
+	if post_tier >= 5:
+		stations.append("companion_stable")
 
 	# Deterministic RNG so layout is stable per post but varies between posts.
 	var rng = RandomNumberGenerator.new()
@@ -737,7 +745,8 @@ static func _stamp_legacy_post(post: Dictionary, chunk_manager) -> void:
 		door_coords["%d,%d" % [px + offset, max_y]] = true
 		door_coords["%d,%d" % [min_x, py + offset]] = true
 		door_coords["%d,%d" % [max_x, py + offset]] = true
-	_place_stations(chunk_manager, synthetic_main, is_crossroads, px, py, door_coords)
+	var legacy_post_tier = int(post.get("tier", 1))
+	_place_stations(chunk_manager, synthetic_main, is_crossroads, px, py, door_coords, legacy_post_tier)
 
 # ===== WATER PROXIMITY CHECK =====
 # Duplicated from WorldSystem so it can run in a static context during post generation.

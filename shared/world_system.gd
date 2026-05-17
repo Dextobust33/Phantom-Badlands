@@ -95,6 +95,11 @@ const TILE_RENDER = {
 	"throne":        {"char": "T", "color": "#FFD700", "blocks_move": true, "blocks_los": false},
 	"blacksmith":    {"char": "B", "color": "#DAA520", "blocks_move": true, "blocks_los": false},
 	"healer":        {"char": "H", "color": "#00FF88", "blocks_move": true, "blocks_los": false},
+	# Audit #4 Slice 1A — Companion Stable. Live access to Sanctuary kennel
+	# mid-character. Appears at T5+ NPC posts; blocks_move so players bump-
+	# interact (matching blacksmith/healer pattern). Magenta to read distinct
+	# from the cargo-storage C glyph (#AAAAFF).
+	"companion_stable": {"char": "C", "color": "#FF80FF", "blocks_move": true, "blocks_los": false},
 	"tower":         {"char": "^", "color": "#FFFFFF", "blocks_move": false, "blocks_los": false},
 	"storage":       {"char": "C", "color": "#AAAAFF", "blocks_move": false, "blocks_los": false},
 	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": true, "blocks_los": false},

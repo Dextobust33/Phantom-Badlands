@@ -1,0 +1,169 @@
+extends Control
+class_name HelpPanel
+
+# Audit #4 Slice 1A (v0.9.485) — reusable in-place help overlay. Distinct from
+# TutorialHintPanel (which is a one-shot, server-pushed teaching modal): this
+# panel is reopenable from any screen via a small Help button, drawing topic
+# content from a static registry below. New screens add a `help_topic_key`
+# and we expand this file as the help-button-everywhere UX rolls out.
+#
+# Usage:
+#   var hp := HelpPanel.new()
+#   add_child(hp)
+#   hp.show_topic("companion_stable")
+#
+# Topics live in HELP_TOPICS below. Each entry is {title, body} BBCode strings.
+
+signal dismissed
+
+const HELP_TOPICS := {
+	"companion_stable": {
+		"title": "[color=#FFD700]Companion Stable[/color]",
+		"body": (
+			"A [color=#FFD700]Companion Stable[/color] (the magenta [color=#FF80FF]C[/color] tile at Tier 5+ trading posts) is a living link to your Sanctuary's kennel. "
+			+ "Bump into the tile to open the stable.\n\n"
+			+ "[color=#A335EE]✦ Deposit[/color] — send a collected companion to the Sanctuary kennel. Frees up your party roster and makes the companion available as a [b]Fusion[/b] input.\n\n"
+			+ "[color=#A335EE]✦ Withdraw[/color] — bring a kennel companion back into your party roster. Useful for fielding a fused result, or rotating in a stored companion mid-character.\n\n"
+			+ "[color=#FF8888]Restrictions[/color]:\n"
+			+ "  • Cannot deposit a companion currently checked out as [b]registered[/b]. Unregister it at the Sanctuary first.\n"
+			+ "  • Kennel must have space (upgrade at the Sanctuary if full).\n\n"
+			+ "[color=#87CEEB]This is the system that makes Fusion accessible mid-character — you no longer have to die to combine companions.[/color]"
+		),
+	},
+	"fusion_overview": {
+		"title": "[color=#FFD700]Fusion[/color]",
+		"body": (
+			"At the [color=#FFD700]Fusion Station[/color] in your Sanctuary, you can combine kennel companions in three ways:\n\n"
+			+ "[color=#A335EE]✦ Same Type[/color] — 3 companions of the same monster type and the same sub-tier → 1 companion of the next sub-tier. Path to maxing within a tier.\n\n"
+			+ "[color=#A335EE]✦ Mixed T9[/color] — 8 companions of mixed types, all at sub-tier 8 → 1 random Tier 9 companion. The endgame catch path.\n\n"
+			+ "[color=#A335EE]✦ Hybrid[/color] — 2 companions of [b]different[/b] monster types, both at sub-tier 5+, plus 1 [color=#FFD700]Hybrid Catalyst[/color] → a hybrid companion that blends both parents' bonuses and inherits the second parent's threshold ability.\n\n"
+			+ "[color=#FFD700]Hybrid Catalysts[/color] drop from Tier 5+ dungeon chests.\n\n"
+			+ "[color=#87CEEB]Walk to a Companion Stable (Tier 5+ NPC posts) to deposit/withdraw without needing to die.[/color]"
+		),
+	},
+}
+
+var _root_panel: PanelContainer
+var _title_label: RichTextLabel
+var _body_label: RichTextLabel
+var _close_button: Button
+
+
+func _ready() -> void:
+	set_anchors_preset(Control.PRESET_FULL_RECT)
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	_build_layout()
+	visible = false
+
+
+func show_topic(topic_key: String) -> void:
+	var topic = HELP_TOPICS.get(topic_key, null)
+	if topic == null:
+		# Fallback: render the key itself so missing topics are at least visible.
+		_set_content("[color=#FF6644]Help topic missing[/color]", "No content registered for '%s'." % topic_key)
+	else:
+		_set_content(str(topic.get("title", "")), str(topic.get("body", "")))
+	visible = true
+	if _close_button:
+		_close_button.grab_focus()
+
+
+func _set_content(title_bb: String, body_bb: String) -> void:
+	if _title_label:
+		_title_label.clear()
+		_title_label.append_text(title_bb)
+	if _body_label:
+		_body_label.clear()
+		_body_label.append_text(body_bb)
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key = event.keycode
+		if key == KEY_ESCAPE or key == KEY_ENTER or key == KEY_KP_ENTER:
+			get_viewport().set_input_as_handled()
+			_on_close()
+
+
+func _build_layout() -> void:
+	# Dim backdrop.
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.65)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(dim)
+
+	# CenterContainer for reliable on-screen centering (see v0.9.478 hotfix).
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(center)
+
+	_root_panel = PanelContainer.new()
+	_root_panel.custom_minimum_size = Vector2(560, 0)
+
+	var panel_sb := StyleBoxFlat.new()
+	panel_sb.bg_color = Color(0.08, 0.10, 0.16, 0.98)
+	panel_sb.border_color = Color(0.53, 0.81, 0.92, 1.0)  # skyblue border — distinct from TutorialHintPanel's gold
+	panel_sb.set_border_width_all(2)
+	panel_sb.set_corner_radius_all(8)
+	panel_sb.content_margin_left = 22
+	panel_sb.content_margin_right = 22
+	panel_sb.content_margin_top = 18
+	panel_sb.content_margin_bottom = 18
+	_root_panel.add_theme_stylebox_override("panel", panel_sb)
+	center.add_child(_root_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+	_root_panel.add_child(vbox)
+
+	_title_label = RichTextLabel.new()
+	_title_label.bbcode_enabled = true
+	_title_label.fit_content = true
+	_title_label.scroll_active = false
+	_title_label.add_theme_font_size_override("normal_font_size", 18)
+	_title_label.custom_minimum_size = Vector2(0, 26)
+	vbox.add_child(_title_label)
+
+	_body_label = RichTextLabel.new()
+	_body_label.bbcode_enabled = true
+	_body_label.fit_content = true
+	_body_label.scroll_active = true
+	_body_label.add_theme_font_size_override("normal_font_size", 14)
+	_body_label.custom_minimum_size = Vector2(516, 280)
+	vbox.add_child(_body_label)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 6)
+	vbox.add_child(spacer)
+
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(btn_row)
+
+	_close_button = Button.new()
+	_close_button.text = "Close  (Esc / Enter)"
+	_close_button.custom_minimum_size = Vector2(220, 32)
+	_close_button.focus_mode = Control.FOCUS_ALL
+	_close_button.pressed.connect(_on_close)
+	btn_row.add_child(_close_button)
+
+
+func _on_close() -> void:
+	visible = false
+	dismissed.emit()
+
+
+static func make_help_button(topic_key: String, help_panel: HelpPanel) -> Button:
+	"""Convenience: returns a small '?' Help button that opens help_panel
+	on the given topic_key. Caller is responsible for adding to a layout."""
+	var btn := Button.new()
+	btn.text = "?  Help"
+	btn.tooltip_text = "Open help for this screen"
+	btn.custom_minimum_size = Vector2(72, 26)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.pressed.connect(func(): help_panel.show_topic(topic_key))
+	return btn
