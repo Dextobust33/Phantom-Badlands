@@ -27,6 +27,9 @@ var _vbox: VBoxContainer
 var _body_container: VBoxContainer
 var _status_label: RichTextLabel
 
+# v0.9.504 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
+
 # Last snapshot pushed from server.
 var _has_clan: bool = false
 var _data: Dictionary = {}
@@ -114,6 +117,13 @@ func _build_layout() -> void:
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_hbox.add_child(title_label)
+
+	# v0.9.504 — Help button + clan_page topic.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("clan_page", _help_panel)
+	title_hbox.add_child(help_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "✕ Close"

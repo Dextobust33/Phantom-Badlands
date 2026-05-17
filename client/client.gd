@@ -24258,8 +24258,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.504 — Help buttons batch 2: Sanctuary / Clan / Bestiary / Ability.
+	display_game("[color=#00FF00]v0.9.504[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]? Help buttons on 4 more screens — completes the major-panel rollout[/color]")
+	display_game("  • Continues from v0.9.503 (Inventory / Stats / Crafting / Market). Now adds:")
+	display_game("    • [color=#FFD700]Sanctuary[/color] — 5 tabs (Storage / Combat / Stats / Discovery / Economy), Baddie Points, walkable tiles, affordability cues.")
+	display_game("    • [color=#FFD700]Clan[/color] — joining, leader perks, banner color, description, vault, chat tag.")
+	display_game("    • [color=#FFD700]Bestiary[/color] — account-level kill ledger, variant grouping, how it pairs with the HP discovery system.")
+	display_game("    • [color=#FFD700]Ability/Deck[/color] — hand-of-3 draw system, variable-cost abilities, slot mapping, deck variants, off-affinity counters.")
+	display_game("  • [b]Every major panel in the game now has a ? Help button.[/b] The pattern (HelpPanel topic registry + reusable Help button factory in `help_panel.gd`) is stable; future panels just register a topic and add `HelpPanelScript.make_help_button(topic, _help_panel)` to their header.")
+	display_game("")
+
 	# v0.9.503 — Help buttons across 4 major screens (Inventory / Stats / Crafting / Market).
-	display_game("[color=#00FF00]v0.9.503[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.503[/color]")
 	display_game("  [color=#FFD700]? Help buttons on 4 more screens — Inventory, Stats, Crafting, Market[/color]")
 	display_game("  • Continues the 'help button per major screen' UX rollout (started with the Companion Stable in v0.9.485, extended to the Companions page in v0.9.499). Each screen's header now has a [b]?[/b] [color=#87CEEB]Help[/color] button that opens a topic-aware overlay explaining what's on the page and how to use it. Topics:")
 	display_game("    • [color=#FFD700]Inventory[/color] — item categories + rarity colors, common actions (equip / use / salvage / discard), equipment comparison with house multipliers, Home Stone overview.")
@@ -24291,13 +24302,6 @@ func display_changelog():
 	display_game("  • [b]New Construction recipe: [color=#FF80FF]Companion Stable[/color].[/b] Skill 35, difficulty 50. Materials: 8 wooden plank + 4 iron ore + 2 heartwood + 2 arcane crystal + 3 magic dust. Place inside your own enclosure to get the same magenta [color=#FF80FF]C[/color] tile that lives at Tier 5+ NPC posts. Bump-interact opens the unified Companion Stable panel — deposit / withdraw / register / check-out + all 4 fusion modes (Same Type / Mixed T9 / Hybrid / Tier Ascend). Lets you self-host Sanctuary kennel access at your settlement without depending on a nearby T5+ NPC post. Closes Audit #4 Slice 1A.ii (deferred from v0.9.485). Server detection (`_player_is_at_companion_stable`) is tile-type agnostic so player-built Stables work identically to NPC-post Stables — no separate code path.")
 	display_game("")
 
-	# v0.9.499 — Audit #4 polish: aggro roles, ascended names, Companions help.
-	display_game("[color=#00FFFF]v0.9.499[/color]")
-	display_game("  [color=#FFD700]Companions page polish — aggro roles named, ascended companions get veteran prefixes, new ? Help button[/color]")
-	display_game("  • [b]Aggro Role in inspect.[/b] The companion inspect panel now has an Aggro Role section that names the role ([color=#FFD700]Tank[/color] / [color=#FFA500]Fighter[/color] / Default / [color=#87CEEB]Evasive[/color]) and explains what it means in combat — Tank draws hits, Evasive avoids them, etc. Closes the Audit #4 captured TWEAK 'surface role in inspect.' (Legacy game_output inspect + the hover tooltip already named the role; the visual panel inspect was the missing surface.)")
-	display_game("  • [b]Ascended companions get a veteran prefix.[/b] After v0.9.496's Tier Ascension Fusion, an ascended T1 Goblin still displayed as 'Goblin Companion' — invisible payoff. Now displays climb a step-ladder: +1 tier = [color=#FFAA66]Veteran[/color], +2 = Champion, +3 = Warlord, +4 = Tyrant, +5+ = Apex. Applies retroactively at display time so legacy ascended companions get renamed without server-side migration. Hybrid names ('Hybrid X-Y') are preserved and don't double-prefix.")
-	display_game("  • [b]? Help button on Companions page.[/b] Reusable HelpPanel pattern (introduced for the Companion Stable in v0.9.485) now extends to the Companions page header. Opens a topic that explains card info (REG / HYBRID markers, rarity tags, T<n>.<m> notation, veteran prefixes), the aggro role definitions, and the Sanctuary Registered section context. Continues the 'help button per major screen' UX rollout.")
-	display_game("")
 
 
 
