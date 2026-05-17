@@ -3006,6 +3006,25 @@ const RECIPES = {
 		"specialist_only": true,
 		"craft_time": 6.0
 	},
+	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
+	# open the same Companion Stable UI as the NPC-post Stable (deposit /
+	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
+	# get Sanctuary kennel access at their own settlement without relying on
+	# a T5+ NPC post nearby. Skill 35 places this in the "high-value mid-game
+	# structure" tier alongside quest_board / market_stall — significant
+	# investment but reachable before the endgame.
+	"companion_stable_build": {
+		"name": "Companion Stable",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 35,
+		"difficulty": 50,
+		"materials": {"wooden_plank": 8, "iron_ore": 4, "heartwood": 2, "arcane_crystal": 2, "magic_dust": 3},
+		"output_type": "structure",
+		"structure_type": "companion_stable",
+		"specialist_only": true,
+		"craft_time": 7.0,
+		"description": "A pet-keeper's outpost. Bump-interact to open your Sanctuary's kennel and fusion station — deposit, withdraw, register, and fuse companions without traveling to an NPC post."
+	},
 	"market_stall": {
 		"name": "Market Stall",
 		"skill": CraftingSkill.CONSTRUCTION,
