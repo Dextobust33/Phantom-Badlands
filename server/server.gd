@@ -13438,6 +13438,20 @@ func handle_market_list_item(peer_id: int, message: Dictionary):
 	if bonus > 0:
 		base_valor = int(base_valor * (1.0 + bonus))
 
+	# Audit #11 v0.9.509 — owner-discount listing bonus. Sellers listing at
+	# their OWN player post get +25% paid directly to their valor (separate
+	# from the listing's base_valor so buyers still see normal prices). NPC
+	# trading posts and other players' posts are unaffected. Player post ids
+	# are formatted "player_<account_username>_<index>" — owner check is on
+	# the account username (not character name) because posts are
+	# account-owned via the enclosure system.
+	var owner_post_bonus_applied = false
+	var owner_bonus_amount = 0
+	var seller_username = _get_username(peer_id)
+	if seller_username != "" and post_id.begins_with("player_" + seller_username + "_"):
+		owner_bonus_amount = int(base_valor * 0.25)
+		owner_post_bonus_applied = true
+
 	# Listed item reflects only the portion being sold
 	var listed_item = item.duplicate()
 	listed_item["quantity"] = list_qty
@@ -13459,9 +13473,10 @@ func handle_market_list_item(peer_id: int, message: Dictionary):
 	else:
 		character.inventory.remove_at(index)
 
-	# Add listing and award valor
+	# Add listing and award valor (base + optional owner bonus paid directly)
 	var listing_id = persistence.add_market_listing(post_id, listing)
-	persistence.add_valor(account_id, base_valor)
+	var seller_award = base_valor + owner_bonus_amount
+	persistence.add_valor(account_id, seller_award)
 
 	save_character(peer_id)
 
@@ -13470,8 +13485,12 @@ func handle_market_list_item(peer_id: int, message: Dictionary):
 		"listing_id": listing_id,
 		"base_valor": base_valor,
 		"item_name": item.get("name", "item"),
-		"total_valor": persistence.get_valor(account_id)
+		"total_valor": persistence.get_valor(account_id),
+		"owner_post_bonus": owner_post_bonus_applied,
+		"owner_bonus_amount": owner_bonus_amount
 	})
+	if owner_post_bonus_applied:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]+%d valor Owner Post Bonus — listing at your own settlement.[/color]" % owner_bonus_amount})
 	send_character_update(peer_id)
 
 func handle_market_list_material(peer_id: int, message: Dictionary):
@@ -14306,6 +14325,10 @@ func handle_market_list_preview(peer_id: int, message: Dictionary):
 
 	var list_type = str(message.get("list_type", ""))
 	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	# Audit #11 v0.9.509 — preview the owner-post bonus so the confirm dialog
+	# shows the boosted total.
+	var preview_seller_username = _get_username(peer_id)
+	var preview_owner_bonus_active = (preview_seller_username != "" and post_id.begins_with("player_" + preview_seller_username + "_"))
 	var total_valor = 0
 	var count = 0
 
@@ -14394,11 +14417,14 @@ func handle_market_list_preview(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Invalid list type."})
 		return
 
+	var preview_owner_bonus = int(total_valor * 0.25) if preview_owner_bonus_active else 0
 	send_to_peer(peer_id, {
 		"type": "market_list_preview_result",
 		"list_type": list_type,
 		"count": count,
-		"total_valor": total_valor
+		"total_valor": total_valor,
+		"owner_post_bonus_active": preview_owner_bonus_active,
+		"owner_bonus_amount": preview_owner_bonus
 	})
 
 func handle_market_list_all(peer_id: int, message: Dictionary):
@@ -14415,6 +14441,11 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 
 	var list_type = message.get("list_type", "")
 	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	# Audit #11 v0.9.509 — owner-discount bonus also applies to bulk listings.
+	# Listings keep their normal base_valor (buyers unaffected); the seller
+	# receives a +25% top-up paid directly to valor at the end.
+	var seller_username_bulk = _get_username(peer_id)
+	var owner_post_bonus_active = (seller_username_bulk != "" and post_id.begins_with("player_" + seller_username_bulk + "_"))
 	var total_valor = 0
 	var count = 0
 	var now = int(Time.get_unix_time_from_system())
@@ -14601,15 +14632,24 @@ func handle_market_list_all(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "market_error", "message": "Nothing to list!"})
 		return
 
-	persistence.add_valor(account_id, total_valor)
+	# Audit #11 v0.9.509 — apply owner-post bonus once on the aggregated total
+	# so the seller's payout reflects the +25% even though individual listings
+	# kept their normal base_valor.
+	var owner_bonus_total = 0
+	if owner_post_bonus_active:
+		owner_bonus_total = int(total_valor * 0.25)
+	persistence.add_valor(account_id, total_valor + owner_bonus_total)
 	save_character(peer_id)
 
 	send_to_peer(peer_id, {
 		"type": "market_list_all_success",
 		"count": count,
 		"total_valor": total_valor,
+		"owner_bonus_amount": owner_bonus_total,
 		"new_valor": persistence.get_valor(account_id)
 	})
+	if owner_post_bonus_active and owner_bonus_total > 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]+%d valor Owner Post Bonus — bulk listing at your own settlement.[/color]" % owner_bonus_total})
 	send_character_update(peer_id)
 
 # ===== BUY ORDERS (Audit #9 Slice 2) =====

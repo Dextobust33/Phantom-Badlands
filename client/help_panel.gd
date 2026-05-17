@@ -146,6 +146,7 @@ const HELP_TOPICS := {
 			+ "  • Difference is the [color=#FFAA00]post tax[/color] (revenue absorbed by the trading post).\n\n"
 			+ "[color=#FFD700]── Categories ──[/color] Equipment, Companion Eggs, Consumables, Tools, Runes, Materials, Monster Parts. Items stack in browse view EXCEPT equipment, eggs, and tools (each unique).\n\n"
 			+ "[color=#FFD700]── Bulk listing ──[/color] List all equipment / consumables+tools / materials in one click.\n\n"
+			+ "[color=#FFD700]── Owner-post bonus (v0.9.509) ──[/color] List items at your OWN player post (any enclosure your account built) for a [color=#88FF88]+25% valor[/color] top-up paid directly to your balance. The listing's price for other players is unchanged — buyers pay the same as they would at an NPC post. Rewards investing in your own settlement.\n\n"
 			+ "[color=#FFD700]── Network browse ──[/color] See listings from OTHER trading posts. To buy from another post, consume a [color=#FFD700]Travel Stone[/color] or physically travel there. Specialty + Threat-marked posts always require physical presence (geographic value preserved).\n\n"
 			+ "[color=#FFD700]── My Listings ──[/color] Track what you've listed across the network. Sort by category, price (asc/desc), name, or level.\n\n"
 			+ "[color=#888888]Valor balance shows top-right. Earn it from quests, monster drops, and listing items. Spend it on market buys, NPC vendors, Sanctuary upgrades (where applicable).[/color]"

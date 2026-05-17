@@ -24285,8 +24285,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.509 — Owner-post listing bonus.
+	display_game("[color=#00FF00]v0.9.509[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]+25% valor bonus when you list items at your own player post — reward for the settlement you built.[/color]")
+	display_game("  • [b]Owner-post listing bonus.[/b] When you list an item (single or bulk) at a trading post your account owns, the server credits an additional [color=#88FF88]+25% valor[/color] directly to your balance. The listing's price for OTHER players is unchanged — buyers pay the same as they would at an NPC post, so the bonus is a pure seller-side reward, not a tax on visitors. Detection is automatic via post id format (`player_<account_username>_<index>`) — works on every enclosure your account has built and named.")
+	display_game("  • [b]Preview shows the boost.[/b] The bulk-list confirm dialog (`market_list_preview_result`) now includes the owner-bonus amount so you see the boosted total before you commit. Single-item and bulk-list both surface a green chat line on success showing the bonus credited.")
+	display_game("  • [b]Market Help topic updated[/b] to explain the new bonus.")
+	display_game("  • Closes Audit #11 captured item \"Owner-discount listings — Player-only.\"")
+	display_game("")
+
 	# v0.9.508 — Aggro role tag in combat + signpost discoverability + v0.9.507 hint revert.
-	display_game("[color=#00FF00]v0.9.508[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.508[/color]")
 	display_game("  [color=#FFD700]Companion aggro role tag in combat, first-time signpost overlay, and a v0.9.507 quest-board hint regression revert (THREAT BOUNTY quests ARE real).[/color]")
 	display_game("  • [b]Aggro role tag on companion in combat.[/b] The companion name label in both the main combat panel and the battlefield overlay now appends the aggro role inline — [color=#FFD700][TANK][/color] / [color=#FFA500][FIGHTER][/color] / [color=#FFFFFF][DEFAULT][/color] / [color=#87CEEB][EVASIVE][/color]. Pairs with the v0.9.499 Companions page surface so the role is named everywhere the companion appears, not just on the inspect screen. Players can pick a tank companion at the kennel and immediately see them \"drawing fire\" during the fight.")
 	display_game("  • [b]First-time signpost placement tutorial overlay.[/b] When a player places their first signpost, a one-time modal hint explains the bump-to-read / bump-as-owner-to-edit flow (60-char cap, chat-box input, persists across restarts). Mirrors the existing quest-board / dungeon / crafting / Companion Stable first-time hint pattern from Audit #3 Slice 4. Per-character flag (`seen_signpost_hint`) so it never repeats.")
@@ -24321,16 +24330,6 @@ func display_changelog():
 	display_game("  • Small additive slice to Audit #12 (player building). The catalogue of buildable structures grows incrementally; more variants can land in future small batches.")
 	display_game("")
 
-	# v0.9.504 — Help buttons batch 2: Sanctuary / Clan / Bestiary / Ability.
-	display_game("[color=#00FFFF]v0.9.504[/color]")
-	display_game("  [color=#FFD700]? Help buttons on 4 more screens — completes the major-panel rollout[/color]")
-	display_game("  • Continues from v0.9.503 (Inventory / Stats / Crafting / Market). Now adds:")
-	display_game("    • [color=#FFD700]Sanctuary[/color] — 5 tabs (Storage / Combat / Stats / Discovery / Economy), Baddie Points, walkable tiles, affordability cues.")
-	display_game("    • [color=#FFD700]Clan[/color] — joining, leader perks, banner color, description, vault, chat tag.")
-	display_game("    • [color=#FFD700]Bestiary[/color] — account-level kill ledger, variant grouping, how it pairs with the HP discovery system.")
-	display_game("    • [color=#FFD700]Ability/Deck[/color] — hand-of-3 draw system, variable-cost abilities, slot mapping, deck variants, off-affinity counters.")
-	display_game("  • [b]Every major panel in the game now has a ? Help button.[/b] The pattern (HelpPanel topic registry + reusable Help button factory in `help_panel.gd`) is stable; future panels just register a topic and add `HelpPanelScript.make_help_button(topic, _help_panel)` to their header.")
-	display_game("")
 
 
 
