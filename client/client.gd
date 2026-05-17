@@ -20597,7 +20597,7 @@ func send_input():
 	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "vault", "clanvault",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
-		"tp", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
+		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
 		"giveconsumable", "spawnwish", "setjob", "givetool",
 		"banip", "unbanip", "resetpw", "testfx", "spritesize", "altsprite", "condensed", "admin"]
 	# Combat commands as typed fallback (action bar is preferred)
@@ -21744,6 +21744,16 @@ func process_command(text: String):
 				display_game("[color=#FF0000]Usage: /tp <x> <y>[/color]")
 			else:
 				send_to_server({"type": "gm_teleport", "x": int(parts[1]), "y": int(parts[2])})
+		"tpstable":
+			# Audit #4 Slice 1A admin tool — teleport to the nearest T5+ NPC
+			# post with a Companion Stable. Saves the overland trek when
+			# testing the v0.9.485 deposit/withdraw flow.
+			send_to_server({"type": "gm_tp_stable"})
+		"teststable":
+			# Audit #4 Slice 1A admin tool — seed +3 collected and +3 kennel
+			# companions of distinct monster_types so the Companion Stable
+			# panel has content to deposit and withdraw immediately.
+			send_to_server({"type": "gm_test_stable"})
 		"completequest":
 			var quest_index = int(parts[1]) if parts.size() > 1 else -1
 			send_to_server({"type": "gm_completequest", "index": quest_index})
@@ -27369,6 +27379,8 @@ func display_gm_help():
 	display_game("")
 	display_game("[color=#FFD700]World & Quests:[/color]")
 	display_game("  /tp <x> <y>          Teleport to coordinates")
+	display_game("  /tpstable            Teleport to nearest T5+ Companion Stable")
+	display_game("  /teststable          Seed +3 collected and +3 kennel companions for Companion Stable testing")
 	display_game("  /completequest [n]   Complete quest (or all)")
 	display_game("  /resetquests         Clear all active quests")
 	display_game("  /broadcast <msg>     Server-wide announcement")
