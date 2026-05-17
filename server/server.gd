@@ -7115,11 +7115,18 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 					and character.active_companion.get("id", "") == c.get("id", "")),
 				"hybrid_partner_type": c.get("hybrid_partner_type", ""),
 			})
+	# v0.9.494 — surface Hybrid Catalyst count so the Stable's Fuse tab can
+	# enable/disable Hybrid mode and show "X catalysts available" hint.
+	var hybrid_catalyst_count := 0
+	for it in character.inventory:
+		if String(it.get("type", "")) == "hybrid_catalyst":
+			hybrid_catalyst_count += int(it.get("quantity", 1))
 	return {
 		"kennel": kennel,
 		"collected": collected,
 		"registered": registered_pub,
 		"kennel_capacity": kennel_capacity,
+		"hybrid_catalyst_count": hybrid_catalyst_count,
 	}
 
 func _handle_companion_stable_station(peer_id: int, character) -> void:

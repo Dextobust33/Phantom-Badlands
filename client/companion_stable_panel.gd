@@ -32,8 +32,17 @@ const HelpPanelScript = preload("res://client/help_panel.gd")
 const TAB_MANAGE := "manage"
 const TAB_FUSE := "fuse"
 
-# Fuse-tab fusion mode (only "same" implemented in v0.9.489).
+# Fuse-tab fusion modes. v0.9.489 shipped Same; v0.9.494 adds Mixed + Hybrid.
 const FUSE_SAME := "same"
+const FUSE_MIXED := "mixed"
+const FUSE_HYBRID := "hybrid"
+
+# Per-mode selection caps and sub_tier filters.
+const FUSE_MODE_RULES := {
+	"same":   {"cap": 3, "min_sub_tier": 1, "max_sub_tier": 9},  # any sub_tier; validated to match
+	"mixed":  {"cap": 8, "min_sub_tier": 8, "max_sub_tier": 8},
+	"hybrid": {"cap": 2, "min_sub_tier": 5, "max_sub_tier": 9},
+}
 
 var _current_tab: String = TAB_MANAGE
 var _current_fuse_mode: String = FUSE_SAME
@@ -43,6 +52,7 @@ var _kennel: Array = []
 var _collected: Array = []
 var _registered: Array = []  # NEW v0.9.489 — non-checked-out registered slots
 var _kennel_capacity: int = 30
+var _hybrid_catalyst_count: int = 0  # v0.9.494
 
 # Fuse-tab selection state. Each entry: {source: "kennel"|"registered", index: int, companion: Dictionary}
 var _fuse_selection: Array = []
@@ -66,6 +76,9 @@ var _manage_registered_list: HFlowContainer
 
 # Fuse-tab nodes.
 var _fuse_view: Control
+var _fuse_mode_same_btn: Button  # v0.9.494
+var _fuse_mode_mixed_btn: Button
+var _fuse_mode_hybrid_btn: Button
 var _fuse_hint_label: RichTextLabel
 var _fuse_candidates_list: VBoxContainer
 var _fuse_candidates_empty: Label
@@ -98,6 +111,7 @@ func show_with_payload(payload: Dictionary) -> void:
 	_collected = payload.get("collected", [])
 	_registered = payload.get("registered", [])
 	_kennel_capacity = int(payload.get("kennel_capacity", 30))
+	_hybrid_catalyst_count = int(payload.get("hybrid_catalyst_count", 0))
 	# Drop any stale fuse selections (e.g., after a successful fusion the
 	# previously-selected indices may no longer exist).
 	_fuse_selection = _fuse_selection.filter(func(sel):
@@ -346,15 +360,52 @@ func _build_manage_row(c: Dictionary, is_collected: bool) -> Control:
 func _refresh_fuse() -> void:
 	if _fuse_hint_label == null:
 		return
-	# Hint by mode (only Same supported in v0.9.489).
+	# Mode tab button visuals.
+	if _fuse_mode_same_btn:
+		_fuse_mode_same_btn.button_pressed = (_current_fuse_mode == FUSE_SAME)
+	if _fuse_mode_mixed_btn:
+		_fuse_mode_mixed_btn.button_pressed = (_current_fuse_mode == FUSE_MIXED)
+	if _fuse_mode_hybrid_btn:
+		_fuse_mode_hybrid_btn.button_pressed = (_current_fuse_mode == FUSE_HYBRID)
+	# Mode-specific hint.
 	_fuse_hint_label.clear()
-	_fuse_hint_label.append_text(
-		"[color=#FFD700]Same Type Fusion[/color] — Select [b]3[/b] companions of the same monster type AND same sub-tier. "
-		+ "They will combine into [b]1[/b] companion of the next sub-tier (sub_tier 8 caps out).\n"
-		+ "[color=#888888]Inputs can come from kennel or registered slots. If any input is registered, the output is automatically registered (slot-preserving).[/color]"
-	)
+	match _current_fuse_mode:
+		FUSE_SAME:
+			_fuse_hint_label.append_text(
+				"[color=#FFD700]Same Type Fusion[/color] — Select [b]3[/b] companions of the same monster type AND same sub-tier. "
+				+ "They combine into [b]1[/b] companion of the next sub-tier (sub_tier 8 caps out).\n"
+				+ "[color=#888888]Inputs can come from kennel or registered slots. If any input is registered, the output is automatically registered (slot-preserving).[/color]"
+			)
+		FUSE_MIXED:
+			_fuse_hint_label.append_text(
+				"[color=#FF00FF]Mixed T9 Fusion[/color] — Select [b]8[/b] companions all at [b]sub-tier 8[/b]. Types can differ. "
+				+ "Output is a [b]random Tier 9[/b] companion (rolls from one of the selected types).\n"
+				+ "[color=#888888]Inputs can be kennel or registered. If any input is registered, output is auto-registered.[/color]"
+			)
+		FUSE_HYBRID:
+			_fuse_hint_label.append_text(
+				"[color=#FF66FF]Hybrid Fusion[/color] — Select [b]2[/b] companions of [b]DIFFERENT[/b] monster types, both at sub-tier [b]5+[/b]. "
+				+ "Output is a hybrid that blends both parents' bonuses + abilities. Consumes [color=#FFD700]1 Hybrid Catalyst[/color].\n"
+				+ "[color=#888888]Catalysts available: %d. Inputs can be kennel or registered. If any input is registered, output is auto-registered.[/color]" % _hybrid_catalyst_count
+			)
 	_populate_fuse_candidates()
 	_refresh_fuse_selection_state()
+
+
+func _set_fuse_mode(mode: String) -> void:
+	if mode == _current_fuse_mode:
+		return
+	_current_fuse_mode = mode
+	_fuse_selection = []  # mode switch invalidates any in-progress selection
+	_refresh_fuse()
+
+
+func _candidate_matches_mode(c: Dictionary, mode: String) -> bool:
+	var rules: Dictionary = FUSE_MODE_RULES.get(mode, FUSE_MODE_RULES[FUSE_SAME])
+	var st = int(c.get("sub_tier", 1))
+	if st < int(rules.get("min_sub_tier", 1)) or st > int(rules.get("max_sub_tier", 9)):
+		return false
+	return true
 
 
 func _populate_fuse_candidates() -> void:
@@ -362,19 +413,28 @@ func _populate_fuse_candidates() -> void:
 		return
 	for child in _fuse_candidates_list.get_children():
 		child.queue_free()
-	# Build unified candidate list. For same-type mode all kennel + registered
-	# (non-checked-out) are candidates.
+	# Build unified candidate list filtered by the current mode's sub_tier rule.
 	var candidates: Array = []
 	for i in range(_kennel.size()):
-		candidates.append({"source": "kennel", "index": i, "companion": _kennel[i]})
+		if _candidate_matches_mode(_kennel[i], _current_fuse_mode):
+			candidates.append({"source": "kennel", "index": i, "companion": _kennel[i]})
 	for i in range(_registered.size()):
-		candidates.append({"source": "registered", "index": i, "companion": _registered[i]})
+		if _candidate_matches_mode(_registered[i], _current_fuse_mode):
+			candidates.append({"source": "registered", "index": i, "companion": _registered[i]})
 	if candidates.is_empty():
 		var lbl := RichTextLabel.new()
 		lbl.bbcode_enabled = true
 		lbl.fit_content = true
 		lbl.scroll_active = false
-		lbl.append_text("[color=#808080]No fusion candidates yet. Deposit companions or register some via a Home Stone (Companion).[/color]")
+		var msg := ""
+		match _current_fuse_mode:
+			FUSE_SAME:
+				msg = "[color=#808080]No fusion candidates yet. Deposit companions or register some via a Home Stone (Companion).[/color]"
+			FUSE_MIXED:
+				msg = "[color=#808080]No sub-tier 8 companions available. Build them up via Same Type fusion first.[/color]"
+			FUSE_HYBRID:
+				msg = "[color=#808080]No sub-tier 5+ companions available. Build them up via Same Type fusion first.[/color]"
+		lbl.append_text(msg)
 		_fuse_candidates_list.add_child(lbl)
 		return
 	# Sort: by monster_type then sub_tier so same-type same-sub-tier groups
@@ -479,15 +539,14 @@ func _toggle_fuse_selection(cand: Dictionary) -> void:
 	var source = String(cand.source)
 	var idx = int(cand.index)
 	if _is_fuse_selected(source, idx):
-		# Remove
 		var new_selection: Array = []
 		for sel in _fuse_selection:
 			if not (String(sel.source) == source and int(sel.index) == idx):
 				new_selection.append(sel)
 		_fuse_selection = new_selection
 	else:
-		# Add — cap at 3 for same-type fusion.
-		if _fuse_selection.size() >= 3:
+		var cap = int(FUSE_MODE_RULES.get(_current_fuse_mode, FUSE_MODE_RULES[FUSE_SAME]).get("cap", 3))
+		if _fuse_selection.size() >= cap:
 			return
 		_fuse_selection.append(cand)
 	_populate_fuse_candidates()
@@ -499,41 +558,76 @@ func _refresh_fuse_selection_state() -> void:
 		return
 	_fuse_selection_label.clear()
 	var count = _fuse_selection.size()
-	var color := "#00FF00" if count == 3 else ("#FFAA00" if count > 0 else "#AAAAAA")
-	_fuse_selection_label.append_text("[color=%s]Selected: %d / 3[/color]" % [color, count])
-	# Validate same-type same-sub-tier and decide enable.
+	var cap = int(FUSE_MODE_RULES.get(_current_fuse_mode, FUSE_MODE_RULES[FUSE_SAME]).get("cap", 3))
+	var color := "#00FF00" if count == cap else ("#FFAA00" if count > 0 else "#AAAAAA")
+	_fuse_selection_label.append_text("[color=%s]Selected: %d / %d[/color]" % [color, count, cap])
+	var any_registered = false
+	for sel in _fuse_selection:
+		if String(sel.source) == "registered":
+			any_registered = true
+			break
+	var dest_str = "registered slot (slot-preserving)" if any_registered else "kennel"
 	var fuse_ready = false
 	var preview := ""
-	if count == 3:
-		var first: Dictionary = _fuse_selection[0].companion
-		var same_type = true
-		var same_st = true
-		for sel in _fuse_selection:
-			if sel.companion.get("monster_type") != first.get("monster_type"):
-				same_type = false
-			if int(sel.companion.get("sub_tier", 1)) != int(first.get("sub_tier", 1)):
-				same_st = false
-		if not same_type:
-			preview = "[color=#FF6644]All 3 must share the same monster type.[/color]"
-		elif not same_st:
-			preview = "[color=#FF6644]All 3 must share the same sub-tier.[/color]"
-		else:
-			fuse_ready = true
-			var any_registered = false
-			for sel in _fuse_selection:
-				if String(sel.source) == "registered":
-					any_registered = true
-					break
-			var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
-			var dest = "registered slot (slot-preserving)" if any_registered else "kennel"
-			preview = "[color=#88FF88]→ %s T%d.%d will be added to %s.[/color]" % [
-				str(first.get("monster_type", "?")),
-				int(first.get("tier", 1)),
-				new_st,
-				dest,
-			]
-	elif count > 0:
-		preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (3 - count)
+	match _current_fuse_mode:
+		FUSE_SAME:
+			if count == cap:
+				var first: Dictionary = _fuse_selection[0].companion
+				var same_type = true
+				var same_st = true
+				for sel in _fuse_selection:
+					if sel.companion.get("monster_type") != first.get("monster_type"):
+						same_type = false
+					if int(sel.companion.get("sub_tier", 1)) != int(first.get("sub_tier", 1)):
+						same_st = false
+				if not same_type:
+					preview = "[color=#FF6644]All 3 must share the same monster type.[/color]"
+				elif not same_st:
+					preview = "[color=#FF6644]All 3 must share the same sub-tier.[/color]"
+				else:
+					fuse_ready = true
+					var new_st = mini(int(first.get("sub_tier", 1)) + 1, 9)
+					preview = "[color=#88FF88]→ %s T%d.%d will be added to %s.[/color]" % [
+						str(first.get("monster_type", "?")),
+						int(first.get("tier", 1)),
+						new_st,
+						dest_str,
+					]
+			elif count > 0:
+				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
+		FUSE_MIXED:
+			if count == cap:
+				var all_st8 = true
+				for sel in _fuse_selection:
+					if int(sel.companion.get("sub_tier", 1)) != 8:
+						all_st8 = false
+						break
+				if not all_st8:
+					preview = "[color=#FF6644]All 8 must be at sub-tier 8.[/color]"
+				else:
+					fuse_ready = true
+					preview = "[color=#88FF88]→ Random T9 companion will be added to %s.[/color]" % dest_str
+			elif count > 0:
+				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
+		FUSE_HYBRID:
+			if count == cap:
+				var a: Dictionary = _fuse_selection[0].companion
+				var b: Dictionary = _fuse_selection[1].companion
+				if a.get("monster_type") == b.get("monster_type"):
+					preview = "[color=#FF6644]Hybrid requires DIFFERENT monster types.[/color]"
+				elif int(a.get("sub_tier", 1)) < 5 or int(b.get("sub_tier", 1)) < 5:
+					preview = "[color=#FF6644]Both must be at sub-tier 5 or higher.[/color]"
+				elif _hybrid_catalyst_count < 1:
+					preview = "[color=#FF6644]Need 1 Hybrid Catalyst (T5+ dungeon chest drop).[/color]"
+				else:
+					fuse_ready = true
+					preview = "[color=#88FF88]→ Hybrid %s-%s will be added to %s (consumes 1 catalyst).[/color]" % [
+						str(a.get("monster_type", "?")),
+						str(b.get("monster_type", "?")),
+						dest_str,
+					]
+			elif count > 0:
+				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
 	if preview != "":
 		_fuse_selection_label.append_text("    " + preview)
 	if _fuse_button:
@@ -543,13 +637,13 @@ func _refresh_fuse_selection_state() -> void:
 
 
 func _on_fuse_button_pressed() -> void:
-	if _fuse_selection.size() != 3:
+	var cap = int(FUSE_MODE_RULES.get(_current_fuse_mode, FUSE_MODE_RULES[FUSE_SAME]).get("cap", 3))
+	if _fuse_selection.size() != cap:
 		return
 	var inputs: Array = []
 	for sel in _fuse_selection:
 		inputs.append({"source": String(sel.source), "index": int(sel.index)})
-	emit_signal("fuse_requested", FUSE_SAME, inputs)
-	# Clear local selection; server response will refresh state.
+	emit_signal("fuse_requested", _current_fuse_mode, inputs)
 	_fuse_selection = []
 
 
@@ -680,6 +774,16 @@ func _make_tab_button(text: String, tab_id: String) -> Button:
 	return btn
 
 
+func _make_fuse_mode_button(text: String, mode_id: String) -> Button:
+	var btn := Button.new()
+	btn.text = text
+	btn.toggle_mode = true
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.custom_minimum_size = Vector2(110, 26)
+	btn.pressed.connect(func(): _set_fuse_mode(mode_id))
+	return btn
+
+
 func _build_manage_view() -> Control:
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
@@ -792,6 +896,17 @@ func _build_manage_column(title_bb: String, is_collected: bool) -> Control:
 func _build_fuse_view() -> Control:
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
+
+	# v0.9.494 — mode selector (Same Type / Mixed T9 / Hybrid).
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 6)
+	vb.add_child(mode_row)
+	_fuse_mode_same_btn = _make_fuse_mode_button("Same Type", FUSE_SAME)
+	mode_row.add_child(_fuse_mode_same_btn)
+	_fuse_mode_mixed_btn = _make_fuse_mode_button("Mixed T9", FUSE_MIXED)
+	mode_row.add_child(_fuse_mode_mixed_btn)
+	_fuse_mode_hybrid_btn = _make_fuse_mode_button("Hybrid", FUSE_HYBRID)
+	mode_row.add_child(_fuse_mode_hybrid_btn)
 
 	_fuse_hint_label = RichTextLabel.new()
 	_fuse_hint_label.bbcode_enabled = true
