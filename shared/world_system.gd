@@ -104,6 +104,11 @@ const TILE_RENDER = {
 	"storage":       {"char": "C", "color": "#AAAAFF", "blocks_move": false, "blocks_los": false},
 	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": true, "blocks_los": false},
 	"post_marker":   {"char": "P", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
+	# Audit #12 Slice 6 (v0.9.505) — cosmetic player-buildable structures.
+	# Banner: walkable; bump-interact shows owner + clan tag. Lamp post:
+	# walkable; pure decoration with a warm-glow color.
+	"banner":        {"char": "Y", "color": "#FFD700", "blocks_move": false, "blocks_los": false},
+	"lamp_post":     {"char": "i", "color": "#FFFF99", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

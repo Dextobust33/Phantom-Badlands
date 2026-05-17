@@ -3006,6 +3006,34 @@ const RECIPES = {
 		"specialist_only": true,
 		"craft_time": 6.0
 	},
+	# Audit #12 Slice 6 (v0.9.505) — cosmetic structures for post variety.
+	# Walkable (don't block movement) so they're decoration without claiming
+	# tactical tiles. No specialty lock-in — low skill_required so any
+	# Construction-trained player can build them.
+	"banner_build": {
+		"name": "Banner",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 12,
+		"difficulty": 18,
+		"materials": {"wooden_plank": 2, "leather": 2, "rope": 1},
+		"output_type": "structure",
+		"structure_type": "banner",
+		"specialist_only": false,
+		"craft_time": 2.5,
+		"description": "A walkable banner pole that flies your colors over your settlement. Pure cosmetic — marks territory."
+	},
+	"lamp_post_build": {
+		"name": "Lamp Post",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 15,
+		"difficulty": 22,
+		"materials": {"iron_ore": 2, "wooden_plank": 1, "magic_dust": 1},
+		"output_type": "structure",
+		"structure_type": "lamp_post",
+		"specialist_only": false,
+		"craft_time": 3.0,
+		"description": "A glowing lamp post. Walkable, decorative. Marks paths and adds warmth to a settlement."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players

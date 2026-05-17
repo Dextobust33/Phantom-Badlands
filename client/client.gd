@@ -24258,8 +24258,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.505 — Cosmetic buildable structures (Banner + Lamp Post).
+	display_game("[color=#00FF00]v0.9.505[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two new buildable cosmetic structures — Banner and Lamp Post — for personalizing your settlement[/color]")
+	display_game("  • [b]New Construction recipes:[/b]")
+	display_game("    • [color=#FFD700]Banner[/color] [color=#FFD700]Y[/color] — Skill 12, difficulty 18. Materials: 2 wooden plank + 2 leather + 1 rope. Walkable tile that marks territory or paths.")
+	display_game("    • [color=#FFFF99]Lamp Post[/color] [color=#FFFF99]i[/color] — Skill 15, difficulty 22. Materials: 2 iron ore + 1 wooden plank + 1 magic dust. Walkable tile for atmosphere and pathways.")
+	display_game("  • Both are non-specialist recipes (no specialty job lock-in required). Place inside your own enclosure like other decorations. Pure cosmetic — no mechanical effect, just self-expression for the settlement you've built.")
+	display_game("  • Small additive slice to Audit #12 (player building). The catalogue of buildable structures grows incrementally; more variants can land in future small batches.")
+	display_game("")
+
 	# v0.9.504 — Help buttons batch 2: Sanctuary / Clan / Bestiary / Ability.
-	display_game("[color=#00FF00]v0.9.504[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.504[/color]")
 	display_game("  [color=#FFD700]? Help buttons on 4 more screens — completes the major-panel rollout[/color]")
 	display_game("  • Continues from v0.9.503 (Inventory / Stats / Crafting / Market). Now adds:")
 	display_game("    • [color=#FFD700]Sanctuary[/color] — 5 tabs (Storage / Combat / Stats / Discovery / Economy), Baddie Points, walkable tiles, affordability cues.")
@@ -24296,11 +24306,6 @@ func display_changelog():
 	display_game("  • Pickup from 2026-05-17 playtest note. The third combat-readability ask (monster HP estimates should over-estimate, not undershoot) is queued for v0.9.502.")
 	display_game("")
 
-	# v0.9.500 — Audit #4 Slice 1A.ii: Player-built Companion Stable.
-	display_game("[color=#00FFFF]v0.9.500[/color]")
-	display_game("  [color=#FFD700]Build your own Companion Stable at your settlement — Sanctuary access at your post[/color]")
-	display_game("  • [b]New Construction recipe: [color=#FF80FF]Companion Stable[/color].[/b] Skill 35, difficulty 50. Materials: 8 wooden plank + 4 iron ore + 2 heartwood + 2 arcane crystal + 3 magic dust. Place inside your own enclosure to get the same magenta [color=#FF80FF]C[/color] tile that lives at Tier 5+ NPC posts. Bump-interact opens the unified Companion Stable panel — deposit / withdraw / register / check-out + all 4 fusion modes (Same Type / Mixed T9 / Hybrid / Tier Ascend). Lets you self-host Sanctuary kennel access at your settlement without depending on a nearby T5+ NPC post. Closes Audit #4 Slice 1A.ii (deferred from v0.9.485). Server detection (`_player_is_at_companion_stable`) is tile-type agnostic so player-built Stables work identically to NPC-post Stables — no separate code path.")
-	display_game("")
 
 
 
