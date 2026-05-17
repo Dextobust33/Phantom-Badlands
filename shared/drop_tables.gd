@@ -2194,6 +2194,26 @@ func _roll_egg_variant() -> Dictionary:
 
 	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
 
+func _roll_egg_variant_with_rng(rng: RandomNumberGenerator) -> Dictionary:
+	"""v0.9.512 — deterministic variant roll using a caller-supplied RNG.
+	Used by character.gd's legacy appearance_variant migration so the same
+	character always rolls the same variant across `from_dict()` calls
+	(fixes the v0.9.408+ bug where map hover + Players Online popup showed
+	different variants for the same legacy character). Same weighting as
+	`_roll_egg_variant()` — only the RNG source differs."""
+	var total_weight = 0
+	for variant in EGG_VARIANTS:
+		total_weight += variant.rarity
+
+	var roll = rng.randi() % total_weight
+	var current = 0
+	for variant in EGG_VARIANTS:
+		current += variant.rarity
+		if roll < current:
+			return variant.duplicate()
+
+	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
+
 func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
 	"""Roll for an egg drop from a defeated monster. Returns egg info if dropped."""
 	var drop_chance = EGG_DROP_CHANCE_BY_TIER.get(monster_tier, 0)
