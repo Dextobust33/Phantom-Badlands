@@ -13143,10 +13143,42 @@ func _get_market_post_id(peer_id: int) -> String:
 		return player_post
 	return ""
 
+func _maybe_send_market_hint(peer_id: int) -> void:
+	"""Audit #3 v0.9.519 — first market browse teaches the player about Valor,
+	market listings, supply/demand markup, and seller-side bonuses. Fires once
+	per character; flag persists across logouts via to_dict / from_dict."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_market_hint:
+		return
+	character.seen_market_hint = true
+	var title = "[color=#FFD700]$ The Market[/color]"
+	var body = (
+		"The [color=#FFD700]Market[/color] lets you list items for sale and buy items others have listed. "
+		+ "All transactions use [color=#FFD700]Valor[/color] — the universal currency earned from quests, "
+		+ "kills, and your own market sales.\n\n"
+		+ "[color=#FFD700]── Listing items ──[/color]\n"
+		+ "When you list an item, you receive the [color=#88FF88]base Valor[/color] [b]immediately[/b]. "
+		+ "Buyers pay a [color=#FF8888]supply-and-demand markup[/color] on top — your payout is unaffected.\n"
+		+ "  • [color=#FFD700]Halflings[/color] earn +15% Valor on listings (racial).\n"
+		+ "  • [color=#A335EE]Knights[/color] earn +10% Valor on listings.\n"
+		+ "  • [color=#88FF88]Listing at your own player post[/color] earns +25% extra Valor (v0.9.509).\n"
+		+ "Bulk-list buttons let you dump all equipment / consumables / materials at once.\n\n"
+		+ "[color=#FFD700]── Browsing & buying ──[/color]\n"
+		+ "Items stack by id (except uniques: equipment, eggs, tools). Markup scales with current "
+		+ "supply per post per category — restocking a flooded category becomes cheaper for the buyer.\n\n"
+		+ "[color=#9ACD32]Curiosity Trader[/color] (exotic posts) rotates 4 rare items daily."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
 func handle_market_browse(peer_id: int, message: Dictionary):
 	"""Browse market listings at current trading post or player post."""
 	if not characters.has(peer_id):
 		return
+	# Audit #3 v0.9.519 — first market visit teaching overlay.
+	_maybe_send_market_hint(peer_id)
 
 	var post_id = _get_market_post_id(peer_id)
 	if post_id.is_empty():
@@ -26397,6 +26429,18 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 	var owner_clan = persistence.get_clan_by_username(owner_username)
 	var owner_clan_tag = String(owner_clan.get("tag", ""))
 	var owner_clan_color = String(owner_clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR)) if not owner_clan.is_empty() else ""
+	# Audit #14 v0.9.519 — Clan outpost indicator. When the viewer shares a clan
+	# with the owner, surface a flag so the panel can highlight the post as
+	# "✦ Clan Outpost." Extends the v0.9.518 tag display into useful navigation
+	# for clan members.
+	var is_clan_outpost: bool = false
+	if not owner_clan.is_empty() and viewer_peer_id >= 0 and peers.has(viewer_peer_id):
+		var viewer_account_id = String(peers[viewer_peer_id].get("account_id", ""))
+		if viewer_account_id != "":
+			var viewer_clan_id = persistence.get_account_clan_id(viewer_account_id)
+			var owner_clan_id = String(owner_clan.get("clan_id", ""))
+			if viewer_clan_id != "" and viewer_clan_id == owner_clan_id and not is_owner:
+				is_clan_outpost = true
 
 	return {
 		"post_name": display_name,
@@ -26405,6 +26449,9 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 		# Audit #14 v0.9.518 — owner clan identity (empty when owner has no clan).
 		"owner_clan_tag": owner_clan_tag,
 		"owner_clan_color": owner_clan_color,
+		# Audit #14 v0.9.519 — true when the viewer shares a clan with the owner
+		# AND is not the owner themselves; drives the "✦ Clan Outpost" tag.
+		"is_clan_outpost": is_clan_outpost,
 		"bubble_radius": radius,
 		"effective_tier": effective_tier,
 		"wilderness_tier": wilderness_tier,
