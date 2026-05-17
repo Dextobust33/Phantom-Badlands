@@ -239,6 +239,74 @@ const HELP_TOPICS := {
 			+ "[color=#87CEEB]Walk to a Companion Stable (Tier 5+ NPC posts) to deposit/withdraw without needing to die.[/color]"
 		),
 	},
+	# Audit #15 v0.9.515 — three more help topics covering Fusion Panel, Kennel Panel,
+	# and Post Status Panel. Continues the help-button-everywhere rollout started at
+	# v0.9.485.
+	"fusion_panel": {
+		"title": "[color=#FFD700]Fusion Station[/color]",
+		"body": (
+			"The Fusion Station lets you combine companions in your kennel + registered slots to upgrade them. Four modes via the tabs at the top.\n\n"
+			+ "[color=#FFD700]── Same Type ──[/color]\n"
+			+ "Pick 3 companions of the same monster type AND the same sub-tier → 1 companion of the next sub-tier. Caps at sub-tier 8 within a tier. The bread-and-butter path to maxing a sub-tier ladder.\n\n"
+			+ "[color=#FFD700]── Mixed T9 ──[/color]\n"
+			+ "Select exactly 8 [b]Tier 8, sub-tier 8[/b] companions (types can differ) → 1 random Tier 9 companion. The capstone fusion — only available once you've ground all the way to T8.8 across enough species.\n\n"
+			+ "[color=#FFD700]── Hybrid ──[/color]\n"
+			+ "Select exactly 2 companions of [b]different[/b] monster types, both at sub-tier 5+. Consumes 1 [color=#FFD700]Hybrid Catalyst[/color] (drops from T5+ dungeon chests). Produces a hybrid that blends bonuses from both parents and inherits the second parent's threshold ability. Lets you fuse synergies across species.\n\n"
+			+ "[color=#FFD700]── Tier Ascend ──[/color]\n"
+			+ "Select 3 companions of the [b]same monster type AND same tier[/b] (any sub-tier mix). Consumes 1 [color=#FFD700]Ascension Catalyst[/color] (drops from T6+ dungeon chests). Produces 1 companion of the [b]same type at tier+1, sub-tier 1[/b]. Lets you keep your favorite pet's identity while climbing the tier ladder. Output gets a [color=#FFAA66]Veteran/Champion/Warlord/Tyrant/Apex[/color] prefix marking how many tier-steps you've climbed.\n\n"
+			+ "[color=#FF8888]Notes[/color]:\n"
+			+ "  • Inputs can come from the kennel OR registered slots.\n"
+			+ "  • If ANY input is registered, the output is auto-registered (slot-preserving).\n"
+			+ "  • Registered active companion can't be fused directly — use 'Return to Slot' on a Companion Stable first.\n"
+			+ "  • Kennel must have free space for non-registered outputs (upgrade via the Sanctuary)."
+		),
+	},
+	"kennel_panel": {
+		"title": "[color=#FFD700]Companion Kennel[/color]",
+		"body": (
+			"The kennel is your Sanctuary's bulk companion storage — separate from the small Registered slot ladder. Designed for stockpiling [color=#FFD700]fusion inputs[/color].\n\n"
+			+ "[color=#FFD700]── Card actions ──[/color]\n"
+			+ "Right-click any card for actions:\n"
+			+ "  • [color=#FFD700]Release[/color] — permanently delete the companion. Frees a kennel slot.\n"
+			+ "  • [color=#FFD700]Register[/color] — move from kennel into a [color=#FF80FF]Registered slot[/color] (account-permadeath-resistant). Requires a free registered slot.\n\n"
+			+ "[color=#FFD700]── Sorting ──[/color]\n"
+			+ "Header buttons toggle the sort key (level / tier / sub-tier / variant / name / type) and ascending/descending order. Great for hunting same-tier or same-type groups for Tier Ascend / Same Type fusions.\n\n"
+			+ "[color=#FFD700]── How to fill ──[/color]\n"
+			+ "  • Bring an active companion to a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts or player-built) and Deposit it.\n"
+			+ "  • Wild eggs hatched into kennel storage.\n"
+			+ "  • Tier Ascend Fusion outputs (if no inputs were registered) land here.\n\n"
+			+ "[color=#FFD700]── Capacity ──[/color]\n"
+			+ "Default kennel capacity is 30. Upgrade via the Sanctuary's Companions tab (Kennel Capacity track) to push it to 500 at max upgrade.\n\n"
+			+ "[color=#FF8888]Kenneled companions are NOT death-resistant.[/color] If you die without a surviving Registered slot, you lose them. For your main pet, use the Register slot instead."
+		),
+	},
+	"post_status_panel": {
+		"title": "[color=#FFD700]Post Status[/color]",
+		"body": (
+			"The status panel shows the live state of a player-built post — its settler bubble, guard force, threat exposure, and inactivity. Open it by bumping the [color=#FFD700]P[/color] post marker at the center of your settlement.\n\n"
+			+ "[color=#FFD700]── Settler Bubble ──[/color]\n"
+			+ "The radius around the post within which monster spawn tier is suppressed. Bigger bubble = safer immediate surroundings.\n"
+			+ "  • Base radius = 12 tiles.\n"
+			+ "  • [color=#FFD700]+2 tiles[/color] per [color=#C0C0C0]Guard[/color] within 40 tiles of the post center.\n"
+			+ "  • [color=#FFD700]+4 tiles[/color] per Guard stationed inside a [color=#FFFFFF]Tower[/color].\n"
+			+ "  • Max radius = 35 tiles. Unguarded posts collapse to the 12-tile minimum — a marker zone with little real suppression.\n\n"
+			+ "[color=#FFD700]── Threat tags ──[/color]\n"
+			+ "[color=#FF6600]⚠ Under Threat[/color] appears when a nearby dungeon is active. Threatened posts:\n"
+			+ "  • Charge [color=#FF8888]+20% market markup[/color] for visitors.\n"
+			+ "  • Apply [color=#FF8888]+50% service prices[/color] at the post's vendors.\n"
+			+ "  • Bias monster spawns in the surrounding 80-tile corridor toward the dungeon's type.\n"
+			+ "  • Lose [color=#FF8888]1 effective suppression[/color] on the settler bubble (spawn tier rises +1 in the bubble until threat clears).\n"
+			+ "  • Inject a [color=#FF6600]⚠ THREAT BOUNTY[/color] quest into the post's quest board for the matching dungeon.\n"
+			+ "Clear the threatening dungeon to remove the marker.\n\n"
+			+ "[color=#FFD700]── Inactivity tags ──[/color]\n"
+			+ "Tracked via `last_tended_at` — refreshes when the owner moves inside, builds/demolishes, or feeds guards. \n"
+			+ "  • [color=#FFAA00]⚠ Inactive (7d)[/color] — owner hasn't touched the post in 7+ days. Settler bubble suppression weakens by [color=#FF8888]-1[/color].\n"
+			+ "  • [color=#FF8888]⚠⚠ ABANDONED (30d)[/color] — owner hasn't touched the post in 30+ days. Suppression drops to [color=#FF8888]0[/color] — no protection at all.\n"
+			+ "Both tags stack with threat erosion. Visit the post (move within its bubble) to reset the timer.\n\n"
+			+ "[color=#FFD700]── Feed All ──[/color]\n"
+			+ "The button at the bottom feeds all guards at this post in one tap. Guards need food to keep contributing to the bubble; check the per-guard rows above to see who's hungry."
+		),
+	},
 }
 
 var _root_panel: PanelContainer

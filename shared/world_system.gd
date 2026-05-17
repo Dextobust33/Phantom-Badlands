@@ -112,6 +112,11 @@ const TILE_RENDER = {
 	"torch":         {"char": "t", "color": "#FF6600", "blocks_move": false, "blocks_los": false},
 	"statue":        {"char": "M", "color": "#E0E0E0", "blocks_move": true,  "blocks_los": false},
 	"signpost":      {"char": "r", "color": "#C4A882", "blocks_move": true,  "blocks_los": false},
+	# Audit #12 v0.9.515 — two more cosmetic buildables continuing the v0.9.505-507
+	# catalogue. Brazier sits between Torch (8) and Lamp Post (15) in skill tier;
+	# walkable. Fountain is a high-tier centerpiece that blocks movement.
+	"brazier":       {"char": "f", "color": "#FF8800", "blocks_move": false, "blocks_los": false},
+	"fountain":      {"char": "u", "color": "#6BAEFF", "blocks_move": true,  "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

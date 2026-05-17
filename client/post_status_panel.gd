@@ -25,6 +25,9 @@ var _feed_hint_label: RichTextLabel
 
 var _last_data: Dictionary = {}
 
+# Audit #15 v0.9.515 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: HelpPanel
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -92,6 +95,13 @@ func _build_layout() -> void:
 	_header_label.custom_minimum_size = Vector2(0, 26)
 	_header_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_hbox.add_child(_header_label)
+
+	# Audit #15 v0.9.515 — Help button.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("post_status_panel", _help_panel)
+	title_hbox.add_child(help_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "✕ Close"

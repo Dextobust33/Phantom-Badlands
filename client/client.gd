@@ -24300,8 +24300,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.515 — Audit #12 cosmetic structures (Brazier + Fountain) + Audit #15 help panel coverage.
+	display_game("[color=#00FF00]v0.9.515[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two more cosmetic buildables to fill out your settlement, plus help buttons on three more panels.[/color]")
+	display_game("  • [b]Brazier[/b] (Construction skill 13, [color=#FF8800]f[/color] tile, walkable). New mid-tier light source between Torch (skill 8) and Lamp Post (skill 15). 2 iron ore + 1 wooden plank + 2 magic dust.")
+	display_game("  • [b]Fountain[/b] (Construction skill 22, [color=#6BAEFF]u[/color] tile, blocks movement). New centerpiece structure — place at the heart of your settlement plaza. 4 stone block + 2 magic dust + 1 arcane crystal.")
+	display_game("  • [b]Admin shortcut updated[/b]: \"Give Cosmetic Structures (1 of each)\" now drops Brazier + Fountain alongside the existing 5.")
+	display_game("  • [b]Help buttons[/b] added to the Fusion Station, Companion Kennel, and Post Status panels. Each opens a topic-specific overlay explaining the screen's mechanics. Extends the help-buttons-everywhere rollout (started v0.9.485) to 14 panels.")
+	display_game("  • Closes another beat of Audit #12 structure variety; continues the Audit #15 help-coverage rollout.")
+	display_game("")
+
 	# v0.9.514 — Apex content slice 3 (Named Zones + Apex Crystal drop).
-	display_game("[color=#00FF00]v0.9.514[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.514[/color]")
 	display_game("  [color=#FFD700]Apex Frontier gets identity — four named zones replace the generic \"APEX\" tag, and Apex Variants drop a new high-value sellable consumable.[/color]")
 	display_game("  • [b]Named apex zones.[/b] The apex frontier (distance > 1500 from origin) now resolves to one of four flavored quadrants — [color=#9F70FF]Burning Reach[/color] (NE), [color=#9F70FF]Frostbound Verge[/color] (NW), [color=#9F70FF]Sundered Hollows[/color] (SW), [color=#9F70FF]Cinder Wastes[/color] (SE). The region label's apex tag now shows the zone name (e.g., \"⚡ Burning Reach +10% XP\") instead of the generic \"APEX\" tag. Gives the frontier a recognizable geography rather than one undifferentiated ring.")
 	display_game("  • [b]Apex Crystal — new sellable drop.[/b] Apex Variants now have a [color=#88FF88]12% chance[/color] to drop an [color=#9F70FF]Apex Crystal[/color] on kill — a flat-value consumable worth [color=#FFD700]750 valor[/color] at any market, scaling cleanly with the apex grind. Pure economy reward (no in-combat use), gives the apex frontier its first unique drop separate from the generic +XP / +50% gems bonuses.")
@@ -24332,12 +24342,6 @@ func display_changelog():
 	display_game("  • Continues closing Audit #2 by making the niche-passive bonus visible on every surface where the relevant species appears, not just hidden in damage numbers.")
 	display_game("")
 
-	# v0.9.510 — Niche-passive combat surface + Clan motto.
-	display_game("[color=#00FFFF]v0.9.510[/color]")
-	display_game("  [color=#FFD700]Paladins and Rangers now see their class-niche damage bonus live on the monster name in combat. Clan leaders can set a short motto.[/color]")
-	display_game("  • [b]Niche-passive surface in combat.[/b] Paladins fighting undead/demons see [color=#FFD700][DIVINE FAVOR +25%][/color] inline with the monster name; Rangers fighting beasts see [color=#228B22][HUNTER'S MARK +25%][/color]. The tag uses the same authoritative keyword lists + substring matcher as the server's damage calc, so what you see is what actually applies (no drift, variant prefixes like \"Corrosive Skeleton\" still match). Closes Audit #2 captured item by making the bonus discoverable at the moment it triggers, rather than hidden in damage numbers.")
-	display_game("  • [b]Clan motto (new).[/b] Leaders can set a short [color=#A89BD8]tagline[/color] up to 50 characters via [color=#9ACD32]/clanmotto <text>[/color] (or empty to clear). Renders italic below the description on the clan panel — pairs with v0.9.473 description / v0.9.477 banner color as the third piece of clan identity polish. Help topic + leader-empty-state placeholder updated to surface the new command.")
-	display_game("")
 
 
 
@@ -27517,7 +27521,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_givestructure", "structure_type": "companion_stable"})
 		"give_cosmetic_structures_set":
 			# v0.9.507 — drop one of each cosmetic structure for testing.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost"]:
+			# v0.9.515 — brazier + fountain added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()

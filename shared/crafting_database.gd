@@ -3070,6 +3070,34 @@ const RECIPES = {
 		"craft_time": 2.5,
 		"description": "A wooden signpost with carved letters. Bump into it to read; bump as the owner to edit the text (60 chars max). Useful for marking landmarks, telling travelers your post's purpose, or leaving messages."
 	},
+	# Audit #12 v0.9.515 — two more cosmetic Construction recipes. Brazier fills
+	# the gap between Torch (skill 8) and Lamp Post (skill 15); Fountain is a
+	# blocking centerpiece companion to Statue but cheaper at the iron/crystal
+	# level.
+	"brazier_build": {
+		"name": "Brazier",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 13,
+		"difficulty": 18,
+		"materials": {"iron_ore": 2, "wooden_plank": 1, "magic_dust": 2},
+		"output_type": "structure",
+		"structure_type": "brazier",
+		"specialist_only": false,
+		"craft_time": 2.5,
+		"description": "A standing iron brazier with a steady flame. Walkable. Mid-tier light source between Torch and Lamp Post."
+	},
+	"fountain_build": {
+		"name": "Fountain",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 22,
+		"difficulty": 30,
+		"materials": {"stone_block": 4, "magic_dust": 2, "arcane_crystal": 1},
+		"output_type": "structure",
+		"structure_type": "fountain",
+		"specialist_only": false,
+		"craft_time": 4.5,
+		"description": "A sculpted stone fountain. Blocks movement — place as a centerpiece in your settlement plaza."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
