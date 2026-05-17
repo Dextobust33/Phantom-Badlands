@@ -34,6 +34,24 @@ const HELP_TOPICS := {
 			+ "  • Kennel must have space (upgrade at the Sanctuary if full)."
 		),
 	},
+	"home_stone_companion": {
+		"title": "[color=#FFD700]Home Stone (Companion) — Register vs Kennel[/color]",
+		"body": (
+			"You're holding a [color=#FFD700]Home Stone (Companion)[/color]. It binds your active companion to your Sanctuary — but [b]how[/b] it binds depends on your choice.\n\n"
+			+ "[color=#00FF00]✦ REGISTER[/color] — death-resistant slot.\n"
+			+ "  • Companion is locked into one of your account's [color=#FF80FF]Registered slots[/color] in the Sanctuary.\n"
+			+ "  • [b]Survives permadeath.[/b] On character death, the companion's current state (XP, level, sub-tier) is saved.\n"
+			+ "  • You can check it out as your active companion on any future character.\n"
+			+ "  • Registered slots are limited (default 2; upgrade in Sanctuary). Use them for your [color=#FFD700]most valuable[/color] long-term companions.\n"
+			+ "  • Cannot be directly fused while registered — deposit it back to its slot via a Companion Stable to make it a fusion input.\n\n"
+			+ "[color=#A335EE]✦ KENNEL[/color] — bulk storage.\n"
+			+ "  • Companion is dismissed from active and stored in the Sanctuary kennel.\n"
+			+ "  • [b]NOT death-resistant.[/b] Kenneled companions are gone if you have no surviving registered slot when the character dies.\n"
+			+ "  • Designed for [color=#FFD700]fusion inputs[/color] — stockpile candidates for combining at the Companion Stable's Fuse tab.\n"
+			+ "  • Kennel capacity is much larger than registered slots (default 30; also upgradeable).\n\n"
+			+ "[color=#87CEEB]Decision rule[/color]: If it's your main pet you want to keep across deaths → Register. If it's a stockpile companion you'll feed into fusion → Kennel."
+		),
+	},
 	"fusion_overview": {
 		"title": "[color=#FFD700]Fusion[/color]",
 		"body": (

@@ -600,7 +600,13 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 		rarity_tag = str(info.get("tier", ""))
 	var rarity_prefix = ("[color=%s][%s][/color] " % [rarity_color, rarity_tag]) if rarity_tag != "" else ""
 	var active_marker = "[color=#00FFFF]★[/color] " if is_active else ""
-	name_lbl.text = "%s%s[color=%s]%s[/color]" % [active_marker, rarity_prefix, variant_color, name]
+	# v0.9.490 — surface registration status on the card. Active companion
+	# carries `house_slot` >= 0 when checked out from a registered slot
+	# (see character.gd `_check_out_registered_companion`).
+	var registered_marker = ""
+	if is_active and int(c.get("house_slot", -1)) >= 0:
+		registered_marker = "[color=#FF80FF][REG][/color] "
+	name_lbl.text = "%s%s%s[color=%s]%s[/color]" % [active_marker, registered_marker, rarity_prefix, variant_color, name]
 	vbox.add_child(name_lbl)
 
 	var meta := RichTextLabel.new()
