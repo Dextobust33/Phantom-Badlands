@@ -542,6 +542,10 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
 		{"weight": 2, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 1, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
+		# Audit #4 Slice 4 — Hybrid Catalyst gates mixed-type fusion at the
+		# Fusion Station. Low weight at T5 (first appearance), rises slightly
+		# through T9 so late-game players have a steady but slow supply.
+		{"weight": 1, "item_type": "hybrid_catalyst", "rarity": "rare"},
 	],
 	6: [
 		{"weight": 8, "item_type": "potion_master", "rarity": "common"},
@@ -564,6 +568,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 2, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
+		{"weight": 2, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
 	],
 	7: [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
@@ -585,6 +590,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "charm_taunt", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 3, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
+		{"weight": 2, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
 	],
 	8: [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
@@ -603,6 +609,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 4, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 3, "item_type": "travel_stone", "rarity": "epic"},  # Audit #9 Slice 5 — network buy currency
+		{"weight": 3, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
 	],
 	9: [
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "common"},
@@ -626,6 +633,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "potion_revive_companion", "rarity": "uncommon"},
 		{"weight": 5, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 4, "item_type": "travel_stone", "rarity": "epic"},  # Audit #9 Slice 5 — network buy currency
+		{"weight": 4, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
 	],
 }
 
@@ -1627,11 +1635,15 @@ func get_all_companion_abilities(tier: int, companion_level: int) -> Array:
 
 # ===== NEW MONSTER-SPECIFIC COMPANION ABILITY SYSTEM =====
 
-func get_monster_companion_abilities(monster_type: String, companion_level: int, variant_multiplier: float = 1.0, sub_tier: int = 1) -> Dictionary:
+func get_monster_companion_abilities(monster_type: String, companion_level: int, variant_multiplier: float = 1.0, sub_tier: int = 1, hybrid_partner_type: String = "") -> Dictionary:
 	"""Get all abilities for a companion based on monster type and level.
 	Returns dict with 'passive', 'active', 'threshold' keys, each containing scaled ability data.
 	variant_multiplier: Applies to base values for rarer variants (from VARIANT_STAT_MULTIPLIERS).
-	sub_tier: Dungeon sub-tier multiplier applied on top of variant mult."""
+	sub_tier: Dungeon sub-tier multiplier applied on top of variant mult.
+	hybrid_partner_type: Audit #4 Slice 4 — when non-empty, swaps the threshold
+	slot with the partner's threshold and replaces the passive with a static
+	'Hybrid Vigor' passive. Active stays from monster_type so the hybrid keeps
+	a recognizable signature ability from parent A."""
 
 	var result = {"passive": {}, "active": {}, "threshold": {}}
 
@@ -1664,6 +1676,24 @@ func get_monster_companion_abilities(monster_type: String, companion_level: int,
 			result.active = tier_abilities[1]
 		if tier_abilities.size() >= 3:
 			result.threshold = tier_abilities[2]
+
+	# Audit #4 Slice 4 — hybrid ability blend. Applied last so the parent_a
+	# lookup above provides the base scaling envelope; we then overwrite the
+	# passive with Hybrid Vigor and the threshold with parent_b's threshold.
+	if hybrid_partner_type != "":
+		# Static "Hybrid Vigor" passive — flat +5% damage. Always active (no
+		# level gate) so hybrids feel distinct from the moment of fusion.
+		result.passive = {
+			"name": "Hybrid Vigor",
+			"effect": "attack_percent",
+			"base": 5,
+			"value": 5,
+			"description": "Hybrid lineage grants +5% damage."
+		}
+		if companion_level >= 15 and COMPANION_MONSTER_ABILITIES.has(hybrid_partner_type):
+			var partner_abilities = COMPANION_MONSTER_ABILITIES[hybrid_partner_type]
+			if partner_abilities.has("threshold"):
+				result.threshold = _scale_companion_ability(partner_abilities.threshold, companion_level, effective_mult)
 
 	return result
 
@@ -1856,6 +1886,81 @@ func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_
 		"tier": companion_data.get("tier", 1),
 		"sub_tier": new_sub_tier,
 		"bonuses": companion_data.get("bonuses", {}).duplicate(),
+		"level": 1,
+		"xp": 0,
+		"battles_fought": 0,
+		"variant": variant.get("name", "MISSING_VARIANT"),
+		"variant_color": variant.get("color", "#FF00FF"),
+		"variant_color2": variant.get("color2", ""),
+		"variant_pattern": variant.get("pattern", "solid"),
+		"variant_rarity": variant.get("rarity", 10),
+		"obtained_at": int(Time.get_unix_time_from_system()),
+	}
+
+# Audit #4 Slice 4 — Mixed-type Hybrid Fusion (v1)
+# Combines two companions of DIFFERENT monster_types into one hybrid:
+# - monster_type stays as parent_a's type (drives default ability lookup +
+#   sprite/art); hybrid_partner_type stores parent_b for ability blending
+# - bonuses dict: averaged numeric fields from both parents + 10% vigor
+# - hybrid_partner_type signals get_monster_companion_abilities to swap the
+#   THRESHOLD slot with parent_b's threshold and replace the PASSIVE with
+#   a static "Hybrid Vigor" passive; ACTIVE stays as parent_a's
+# - tier = max(A.tier, B.tier); sub_tier resets to 1 so the hybrid has its
+#   own ladder forward
+# - variant inherits if both parents share one, else rolls fresh
+func create_hybrid_companion(parent_a: Dictionary, parent_b: Dictionary) -> Dictionary:
+	var a_type = String(parent_a.get("monster_type", ""))
+	var b_type = String(parent_b.get("monster_type", ""))
+	if a_type == "" or b_type == "" or a_type == b_type:
+		return {}
+	var a_data = COMPANION_DATA.get(a_type, {})
+	if a_data.is_empty():
+		return {}
+
+	var a_bonuses: Dictionary = parent_a.get("bonuses", {})
+	var b_bonuses: Dictionary = parent_b.get("bonuses", {})
+	var merged_bonuses := {}
+	var all_keys := {}
+	for k in a_bonuses.keys():
+		all_keys[k] = true
+	for k in b_bonuses.keys():
+		all_keys[k] = true
+	for k in all_keys.keys():
+		var av = float(a_bonuses.get(k, 0))
+		var bv = float(b_bonuses.get(k, 0))
+		# Average + 10% hybrid vigor. round() keeps the int feel of the
+		# existing bonuses dict (most fields are ints in COMPANION_DATA).
+		merged_bonuses[k] = int(round((av + bv) * 0.5 * 1.10))
+
+	var a_variant = String(parent_a.get("variant", ""))
+	var b_variant = String(parent_b.get("variant", ""))
+	var variant := {}
+	if a_variant != "" and a_variant == b_variant:
+		variant = {
+			"name": a_variant,
+			"color": parent_a.get("variant_color", "#FFFFFF"),
+			"color2": parent_a.get("variant_color2", ""),
+			"pattern": parent_a.get("variant_pattern", "solid"),
+			"rarity": parent_a.get("variant_rarity", 10),
+		}
+	else:
+		variant = _roll_egg_variant()
+
+	var a_tier = int(parent_a.get("tier", 1))
+	var b_tier = int(parent_b.get("tier", 1))
+	var output_tier = max(a_tier, b_tier)
+	var base_name = a_data.get("companion_name", a_type + " Companion")
+	var display_name = "Hybrid %s-%s" % [a_type, b_type]
+
+	return {
+		"id": "hybrid_" + a_type.to_lower().replace(" ", "_") + "_" + b_type.to_lower().replace(" ", "_") + "_" + str(randi()) + "_" + str(int(Time.get_unix_time_from_system())),
+		"monster_type": a_type,
+		"hybrid_partner_type": b_type,
+		"name": display_name,
+		"base_companion_name": base_name,
+		"tier": output_tier,
+		"sub_tier": 1,
+		"bonuses": merged_bonuses,
 		"level": 1,
 		"xp": 0,
 		"battles_fought": 0,
@@ -3601,7 +3706,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -3771,6 +3876,8 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"home_stone_supplies": "Home Stone (Supplies)",
 		"home_stone_equipment": "Home Stone (Equipment)",
 		"home_stone_companion": "Home Stone (Companion)",
+		# Audit #4 Slice 4 — mixed-type fusion catalyst
+		"hybrid_catalyst": "Hybrid Catalyst",
 		# Material Pouches/Gems (special - don't prefix with tier)
 		"essence_pouch": "Material Pouch",
 		"gem_small": "Gem",
@@ -3779,7 +3886,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
 		return base_name
 
 	return tier_name + " " + base_name

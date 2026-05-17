@@ -1054,7 +1054,8 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		var monster_type = companion.get("monster_type", "")
 		var variant_mult = character.get_variant_stat_multiplier()
 		var companion_sub_tier = companion.get("sub_tier", 1)
-		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier)
+		var hybrid_partner_type = String(companion.get("hybrid_partner_type", ""))
+		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier, hybrid_partner_type)
 		# Store for use by active/threshold handlers later
 		combat_state["companion_abilities"] = companion_abilities
 
@@ -7033,7 +7034,8 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		var monster_type = companion.get("monster_type", "")
 		var variant_mult = character.get_variant_stat_multiplier()
 		var companion_sub_tier = companion.get("sub_tier", 1)
-		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier)
+		var hybrid_partner_type = String(companion.get("hybrid_partner_type", ""))
+		var companion_abilities = drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, companion_sub_tier, hybrid_partner_type)
 		combat_state["companion_abilities"] = companion_abilities
 
 		if not companion_abilities.passive.is_empty():

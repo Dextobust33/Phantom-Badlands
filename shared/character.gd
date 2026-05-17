@@ -3513,10 +3513,11 @@ func get_companion_scaled_abilities() -> Dictionary:
 	var companion_level = active_companion.get("level", 1)
 	var variant_mult = get_variant_stat_multiplier()
 	var sub_tier = active_companion.get("sub_tier", 1)
+	var hybrid_partner_type = String(active_companion.get("hybrid_partner_type", ""))
 
 	# Get scaled abilities from drop_tables
 	var drop_tables = preload("res://shared/drop_tables.gd").new()
-	return drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, sub_tier)
+	return drop_tables.get_monster_companion_abilities(monster_type, companion_level, variant_mult, sub_tier, hybrid_partner_type)
 
 func get_companion_level() -> int:
 	"""Get active companion's level."""
