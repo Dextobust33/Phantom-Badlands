@@ -1310,6 +1310,11 @@ var clan_vault_panel = null
 const TutorialHintPanelScript = preload("res://client/tutorial_hint_panel.gd")
 var tutorial_hint_panel = null
 
+# Audit #4 Slice 1A (v0.9.485) — visual panel for the Companion Stable at T5+
+# NPC posts. Live Sanctuary kennel access mid-character.
+const CompanionStablePanelScript = preload("res://client/companion_stable_panel.gd")
+var companion_stable_panel = null
+
 # Audit #13 Slice 2 — Bestiary panel (Sanctuary monster kill ledger).
 const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
 var bestiary_panel = null
@@ -1983,6 +1988,13 @@ func _ready():
 	# marked the seen flag at send time).
 	tutorial_hint_panel = TutorialHintPanelScript.new()
 	add_child(tutorial_hint_panel)
+
+	# Audit #4 Slice 1A (v0.9.485) — Companion Stable panel.
+	companion_stable_panel = CompanionStablePanelScript.new()
+	add_child(companion_stable_panel)
+	companion_stable_panel.deposit_requested.connect(_on_companion_stable_deposit)
+	companion_stable_panel.withdraw_requested.connect(_on_companion_stable_withdraw)
+	companion_stable_panel.close_requested.connect(_on_companion_stable_close)
 
 	# Audit #13 Slice 2 — Bestiary panel.
 	bestiary_panel = BestiaryPanelScript.new()
@@ -18746,6 +18758,12 @@ func handle_server_message(message: Dictionary):
 					String(message.get("body", ""))
 				)
 
+		"companion_stable_open":
+			# Audit #4 Slice 1A (v0.9.485) — Companion Stable bump-interaction
+			# opens the kennel deposit/withdraw panel.
+			if companion_stable_panel:
+				companion_stable_panel.show_with_payload(message)
+
 		"text":
 			# Clear game output if requested (e.g., rest command)
 			if message.get("clear_output", false):
@@ -24120,8 +24138,27 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.485 — Audit #4 Slice 1A: Companion Stable (live Sanctuary kennel access).
+	display_game("[color=#00FF00]v0.9.485[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New Companion Stable station at Tier 5+ trading posts — deposit/withdraw kennel companions WITHOUT having to die[/color]")
+	display_game("  • [b]The Sanctuary kennel is no longer a death-only resource.[/b] Companion Stables appear as a magenta [color=#FF80FF]C[/color] tile inside every Tier 5+ NPC post. Bump into one to open a side-by-side panel: your roster on the left, the Sanctuary kennel on the right. [color=#A335EE]Deposit[/color] a collected companion to send it to the kennel (frees a roster slot, makes the companion available as a Fusion input); [color=#A335EE]Withdraw[/color] a kennel companion to bring one back into your roster. This finally makes [b]Fusion[/b] usable across a single character's lifetime — collect, deposit, combine, withdraw, repeat. First-time interaction shows a teaching overlay so the flow is discoverable. Active companions currently registered (Home Stone) still need to be unregistered at the Sanctuary first to avoid losing the slot. Player-built version of the stable comes in v0.9.486. Audit #4 Slice 1A.")
+	display_game("  • [b]Reusable HelpPanel + ? Help button[/b] introduced as a generic UX pattern. The new Companion Stable panel has a ? Help button in its header that opens topic-aware help (HelpPanel registers topics in a dict). Going forward, most major screens will get a Help button that opens this same panel with a screen-specific topic — re-openable, never one-shot. Distinct from the existing tutorial_hint_panel which is for first-time teaching moments only.")
+	display_game("")
+
+	# v0.9.484 — Audit #4 Slice 4: Mixed-Type Hybrid Fusion v1.
+	display_game("[color=#00FFFF]v0.9.484[/color]")
+	display_game("  [color=#FFD700]New 'Hybrid' tab on the Fusion Station combines two different-type companions into a hybrid that blends their abilities[/color]")
+	display_game("  • [b]Hybrid fusion — 2 companions of DIFFERENT monster types (both sub-tier 5+) + 1 Hybrid Catalyst → a hybrid companion.[/b] The hybrid keeps parent A's monster type (drives sprite + base abilities) and stores parent B's type for ability blending. Bonuses = average of both parents + 10% [color=#88FF88]Hybrid Vigor[/color]. Tier = max(A.tier, B.tier); sub-tier resets to 1; variant inherits if both parents share one, else rolls fresh. Display name: 'Hybrid <A>-<B>'. Ability blending: passive becomes a static [color=#88FF88]Hybrid Vigor[/color] (+5% damage, no level gate); active stays parent A's signature; threshold becomes parent B's threshold (unlocks Lv 15+). New consumable [color=#FFD700]Hybrid Catalyst[/color] drops from Tier 5+ dungeon chests (weights T5=1, T6=2, T7=2, T8=2, T9=3) — slow but steady late-game supply. Closes the audit's 'Fusion OVERHAUL — add mixed-type fusion that combines abilities' decision. Audit #4 Slice 4.")
+	display_game("")
+
+	# v0.9.483 — Audit #3 Slice 6: Sanctuary tutorial overlay.
+	display_game("[color=#00FFFF]v0.9.483[/color]")
+	display_game("  [color=#FFD700]First-time Sanctuary visit now triggers a teaching overlay — closes the four-slice tutorial pass[/color]")
+	display_game("  • [b]Final piece of the discoverability arc started in v0.9.474.[/b] The first time you open your Sanctuary, a [color=#FFE066]tutorial_hint[/color] modal overlay explains what it is: an account-level home that survives permadeath, holds your upgrade trees + storage + companion kennel + Fusion Station, and where registered companions return after death. Fires once per ACCOUNT (not per character) via a new `seen_sanctuary_hint` flag on the house. Closes the four-slice teaching-overlay pass: first level-up (v0.9.474), first quest board / dungeon / crafting (v0.9.476), first Sanctuary open (v0.9.483) — all rendered through the same dismissible modal infrastructure shipped in v0.9.475. Audit #3 Slice 6.")
+	display_game("")
+
 	# v0.9.482 — Hotfix: pinned equipment now appears on the victory card too.
-	display_game("[color=#00FF00]v0.9.482[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.482[/color]")
 	display_game("  [color=#FFD700]Hotfix — guaranteed equipment drops now show in the victory card's Loot list + ★ ITEMS ACQUIRED banner, not just in the scratch-off panel[/color]")
 	display_game("  • v0.9.481 pinned equipment correctly into the inventory but the victory card's Loot section stayed empty, because the scratch-off skip path also skipped populating `drop_messages` and `drop_data`. Now when the scratch-off is on, the server backfills both from the bag's `pinned` array — so the player sees the equipment they got on the victory screen too. Also fixed a follow-on bug: the client cache that re-renders the victory card on each reveal was starting empty and would have wiped the pinned items on the first scratch-off click. Cache is now seeded from the initial victory payload so reveals append rather than replace.")
 	display_game("")
@@ -24132,777 +24169,6 @@ func display_changelog():
 	display_game("  • [b]Threat-corridor stat downscale.[/b] v0.9.480 clamped the threat-corridor's [i]rolled level[/i] to the area's natural range so a T3 Chimaera in the Lv 1-2 buffer was labeled 'Lv 1' — but the [color=#FF6644]actual combat stats[/color] still used the monster's base level, leaving you to fight a 350-HP / 41-STR Chimaera wearing a Lv 1 tag. Win rate against threat-corridor monsters in low areas was effectively 0%. Now [color=#88FF88]_calculate_tiered_stat_scale[/color] applies a linear downscale (target / base) when target_level < base_level — a Lv 1 spawn of a base-44 Chimaera collapses to runt-tier stats (~17 HP, ~8 STR, ~3 DEF) while keeping its name and abilities. Apex monsters spilling into starter zones now read as tier-1-equivalent fights with thematic flavor — a Chimaera baby rather than a fully-grown apex with a misleading level tag. The fix is at the scaling function itself, so it catches every system that spawns a monster below its base level (threat corridor, forced monsters via scrolls, future content).")
 	display_game("  • [b]Combat scratch-off no longer buries equipment.[/b] Pre-scratch-off (before v0.9.371), combat equipment drops went straight to your inventory at ~3.3% per fight. The scratch-off swallowed that cadence — equipment was placed in a random slot, and at T1 monsters with only 1 reveal, you had a 1-in-16 chance to even SEE it (~0.2% effective per fight). Now [color=#88FF88]equipment drops are pinned[/color]: pulled out of the random slot pool, awarded directly to inventory, and surfaced in a new ✦ Equipment Found ✦ banner above the grid. The scratch-off is pure bonus content (eggs / materials / parts / tools / consumables / currency / filler). Drop rate at the source is unchanged — equipment now lands every time it rolls, restoring the pre-scratch-off cadence the user expected.")
 	display_game("")
-
-	# v0.9.480 — Hotfix: starter buffer + threat-corridor clamp.
-	display_game("[color=#00FFFF]v0.9.480[/color]")
-	display_game("  [color=#FFD700]Hotfix — starter buffer now actually delivers Lv 1-2 monsters, and Area Lv stops lying about encounter difficulty[/color]")
-	display_game("  • [b]Two layered bugs broke v0.9.479's starter buffer.[/b] (1) Post-anchored level used a [color=#FFAA70]linear[/color] blend between the two nearest trading posts — and because procedural posts must sit 70+ tiles from the haven (min spacing), the second-nearest post anchors at Lv 10+. The linear blend dragged the area level near the haven up to Lv 4-5 at just 30 tiles out, even though the wilderness curve said Lv 1-2. Switched to a [color=#88FF88]cubic (t³)[/color] blend so each post DOMINATES its immediate vicinity — the haven's Lv 1 anchor now stays in control through the 30-tile buffer and ramps toward the next post only when you're genuinely close to it. (2) The Audit #11 Slice 9 threat-corridor bias (T2+ active dungeons spilling their monster_type into the surrounding world) was rolling levels from the DUNGEON'S level range, not the area's — a T3 Chimaera Gorge within 80 tiles of the haven was spawning [color=#FF6644]Lv 50+ Chimaeras[/color] in the Lv 1-2 buffer. Now the rolled level is clamped to the area's level_range so the threat's monster TYPE still spawns (preserves the thematic spill) but at a level the player can actually fight. Area Lv HUD now matches what you'll encounter.")
-	display_game("")
-
-	# v0.9.479 — Starter-area Lv 1-2 buffer.
-	display_game("[color=#00FFFF]v0.9.479[/color]")
-	display_game("  [color=#FFD700]Lv 1-2 buffer around the starter post — new characters get a ring of easier monsters before tougher ones[/color]")
-	display_game("  • [b]Stretched the early monster-level curve.[/b] Walking out of the starter post used to drop you into Lv 4-7 monsters by ~25 tiles. Now: distance 0-10 = safe zone (no spawns), [color=#88FF88]10-30 = Lv 1-2 buffer[/color] (the first ring outside the post), 30-60 = Lv 2-6 (gentle next ring), 60-150 = Lv 6-50 (catches up to the old curve at the 150-tile anchor). Endpoint at distance 150 (level 50) is preserved so the rest of the world is unaffected. New characters can fight a few Lv 1-2 monsters and grow before they have to engage tougher mobs.")
-	display_game("")
-
-	# v0.9.478 — Hotfix: tutorial overlay was cutting off in the top-left.
-	display_game("[color=#00FFFF]v0.9.478[/color]")
-	display_game("  [color=#FFD700]Hotfix — tutorial overlay now centers correctly (was cut off in the top-left)[/color]")
-	display_game("  • Wrapped the TutorialHintPanel root in a [color=#FFE066]CenterContainer[/color] so it always centers on the viewport. The previous layout used `PRESET_CENTER + KEEP_SIZE` directly on the panel BEFORE the panel had a computed size, which anchored it at (0,0) — causing the v0.9.475/476 first-time hints (Quest Board / Dungeon / Crafting / Progression) to render cropped against the top-left edge of the screen. Client-only.")
-	display_game("")
-
-	# v0.9.477 — Audit #14 Slice 8: clan banner color.
-	display_game("[color=#00FFFF]v0.9.477[/color]")
-	display_game("  [color=#FFD700]Clan leaders can now set a banner color that colors the [TAG] marker everywhere it appears[/color]")
-	display_game("  • [b]Follow-up to v0.9.473 clan description.[/b] Use [color=#FFD700]/clancolor #RRGGBB[/color] (leader only) to set your clan's banner color. The color follows the [TAG] marker through every render site: player list, chat messages, whispers, invitation alerts, and the clan panel header itself. Default is the legacy purple ([color=#A335EE]#A335EE[/color]) so existing chats look the same until a leader picks a new color. Server validates `^#[0-9A-Fa-f]{6}$` — anything else is rejected. After change, server refreshes every online member's clan panel + broadcasts a fresh player list so chat tags re-color immediately for everyone. Audit #14 Slice 8.")
-	display_game("")
-
-	# v0.9.476 — Audit #3 Slice 5: 3 more first-time tutorial overlays.
-	display_game("[color=#00FFFF]v0.9.476[/color]")
-	display_game("  [color=#FFD700]Three more one-time tutorial hints — first quest board, first dungeon entry, first crafting station[/color]")
-	display_game("  • [b]Stacks the v0.9.475 tutorial overlay infrastructure.[/b] Three new one-time-per-character teaching overlays fire on the matching first interaction:\n  • [color=#FFAA00]First quest board[/color] — explains the 3-active cap, the regenerating board (completing a quest immediately refills the slot), CHAIN-tagged adventures at frontier posts, and THREAT BOUNTY quests at Under-Threat posts.\n  • [color=#CCAAFF]First dungeon entry[/color] — explains floors / boss-at-bottom / all monsters match the boss type / guaranteed boss egg / theme tiles / combat loot scratch-off.\n  • [color=#88FFFF]First crafting station[/color] — explains the transparency stack (material sources, quality odds, recent market avg, skill progression preview) and the one-specialty-per-character lock-in.\n  Each fires once per character via a `seen_<topic>_hint` flag (`seen_quest_board_hint`, `seen_dungeon_hint`, `seen_crafting_hint`). Legacy characters get them on their first matching interaction. Audit #3 Slice 5.")
-	display_game("")
-
-	# v0.9.475 — Audit #3 Slice 4: tutorial hints now use a modal overlay.
-	display_game("[color=#00FFFF]v0.9.475[/color]")
-	display_game("  [color=#FFD700]Tutorial hints now appear in a centered modal overlay — they can't be scrolled past or missed[/color]")
-	display_game("  • [b]Follow-up on v0.9.474.[/b] The first-level-up Progression Vectors hint was previously a chat-output text message that could be scrolled past or missed in the noise. Now it renders in a new [color=#FFE066]TutorialHintPanel[/color] modal overlay — centered on screen with a dim backdrop, gold-bordered card, gold title + body, and a 'Got it' button (also dismissible via Esc / Enter / Space). New server message type [color=#9ACD32]tutorial_hint[/color] carries {title, body} fields; client-side handler routes to the overlay instead of chat. Pattern is reusable for every future teaching message — saved as the [color=#88FF88]feedback_tutorial_overlay[/color] rule. Audit #3 Slice 4.")
-	display_game("")
-
-	# v0.9.474 — Audit #3 Slice 3: first-level-up progression hint.
-	display_game("[color=#00FFFF]v0.9.474[/color]")
-	display_game("  [color=#FFD700]One-time tutorial nudge after your first level-up points new players at the Progression Vectors dashboard[/color]")
-	display_game("  • [b]Discoverability hook for the Progression Vectors dashboard (v0.9.437).[/b] The first time a character has unspent stat points (i.e., right after their first level-up under the new system), the server sends a one-shot teaching message: pointing at [color=#9ACD32]/stats[/color] to spend the bank, and [color=#9ACD32]/status[/color] to see every progression track you're advancing (XP, jobs, Sanctuary, Bestiary, Compass, Atlas). Fires once per character and is suppressed forever after via a `seen_progression_hint` flag on the character. Legacy characters get the hint on their next level-up (or next character_update if they already have unspent points). The Stats button's pulse + `+N` badge from v0.9.401 is still there for ongoing visibility; this hint is purely the one-time teaching moment. Audit #3 Slice 3.")
-	display_game("")
-
-	# v0.9.473 — Audit #14 Slice 7: leader-set clan description.
-	display_game("[color=#00FFFF]v0.9.473[/color]")
-	display_game("  [color=#FFD700]Clan leaders can now set a public description — visible to every member on the clan panel[/color]")
-	display_game("  • [b]Small clan-identity polish.[/b] Use [color=#FFD700]/clandesc <text>[/color] (leader only) to set a public description on your clan. Other members see it on their clan panel right under the clan name. Empty `/clandesc` clears it. 240-char cap; no BBCode brackets allowed (to prevent injection into other players' views). Lets clans communicate their playstyle / recruiting status / vibe without needing a separate broadcast. Foundation for future clan-identity polish (banner color, motto-in-chat). Audit #14 Slice 7.")
-	display_game("")
-
-	# v0.9.472 — Audit #2 Slice 3: niche-passive keyword fix + beast expansion.
-	display_game("[color=#00FFFF]v0.9.472[/color]")
-	display_game("  [color=#FFD700]Paladin Divine Favor and Ranger Hunter's Mark now fire against rare variants — and the beast list grew[/color]")
-	display_game("  • [b]Niche-passive audit fix.[/b] Paladin's [color=#FFD700]Divine Favor[/color] (+25% vs undead/demons) and Ranger's [color=#228B22]Hunter's Mark[/color] (+25% vs beasts) were silently failing against rare-variant prefixes — fighting a Corrosive Skeleton or ★ Lich Champion gave NO bonus because the old code used exact-name matching against an unprefixed list. Now uses substring matching, so every variant (Corrosive / Sundering / Elite Champion) triggers the passive correctly. [b]Also expanded the beast list[/b] to cover all dragons (Young Dragon, Ancient Dragon, Primordial Dragon, Dragon Wyrmling), Phoenix, and Sphinx — beast-flavored mythical creatures that were previously absent from the Hunter's Mark trigger list. Audit #2 Slice 3.")
-	display_game("")
-
-	# v0.9.471 — Audit #12 Slice 5: abandoned-post bubble decay.
-	display_game("[color=#00FFFF]v0.9.471[/color]")
-	display_game("  [color=#FFD700]Untended player posts now mechanically decay: inactive (7d) weakens the bubble; abandoned (30d) nulls it[/color]")
-	display_game("  • [b]Slice 4 (v0.9.460) made post inactivity visible. Slice 5 gives it teeth.[/b] When your post passes 7 days without you tending it (walking inside the bubble, building/demolishing, or feeding guards), the settler bubble loses 1 suppression — monsters spawning inside go up by 1 tier. At 30 days the post hits [color=#FF4444]⚠⚠ ABANDONED[/color] and ALL suppression is wiped — the bubble offers no protection at all until you tend it again. Tending is cheap (literally just walking through resets the clock) but the decay is real. Combined with the threat-corridor / threat-suppression layer (v0.9.464), untended posts in dangerous zones decay much faster in player experience. Both the chat `/post` view and the visual Post Status panel surface 'Bubble suppression weakened by inactivity (-1)' (inactive) or 'Bubble suppression FULLY DECAYED — no protection until tended' (abandoned) directly under the inactivity tag. Audit #12 Slice 5.")
-	display_game("")
-
-	# v0.9.470 — Audit #11 Slice 12: NPC-post threat → quest hook.
-	display_game("[color=#00FFFF]v0.9.470[/color]")
-	display_game("  [color=#FFD700]Under-Threat posts now surface a threat-relief bounty on their quest board[/color]")
-	display_game("  • [b]When you visit a trading post that's Under Threat, the quest board now offers a tier-scaled DUNGEON_CLEAR bounty pointing at the threatening dungeon.[/b] The bounty is marked [color=#FF8800]⚠ THREAT BOUNTY[/color] (dungeon-themed color), sorts to the top of the available list, and gives the threat marker an immediate player-facing reason — there's a paying job here. Clearing the threatening dungeon ticks the quest AND removes the threat naturally (threat state empties when the dungeon completes). Rewards scale with dungeon tier: T2 350 XP / 50 valor → T9 2700 XP / 300 valor. Quest id encodes <post>@<dungeon_type> so the same threat at the same post is one-and-done per character; new dungeons (or different types) generate fresh bounties. Stitches together the threat state (v0.9.454/v0.9.464) and the quest board into a single visible loop. Audit #11 Slice 12.")
-	display_game("")
-
-	# v0.9.469 — Audit #6 Slice 18: 6 new T7/T8/T9 chains close the ladder.
-	display_game("[color=#00FFFF]v0.9.469[/color]")
-	display_game("  [color=#FFD700]Six new chains across T7-T9 close the chain ladder — chain content now spans every tier (T1-T9)[/color]")
-	display_game("  • [b]The largest single chain slice yet — six new 3-stage chains anchored at extreme-zone and apex posts, completing the chain ladder.[/b] [color=#4B0082]Void Walker's Pact[/color] @ Void's Edge → Wraith → Nazgul → Void Walker (Dimensional Prison boss). [color=#9400D3]Primordial Awakening[/color] @ Dragon's Rest → Dragon Wyrmling → Ancient Dragon → Primordial Dragon (Cataclysm boss). [color=#191970]The Cosmic Veil[/color] @ Primordial Sanctum → Void Walker → Time Weaver → Cosmic Horror (Madness Aura boss). [color=#2C0854]Death's Threshold[/color] @ Nether Gate → Elder Lich → Void Walker → Death Incarnate (Final Judgment boss — watch the ~30%% HP execute band). [color=#800080]Avatar of Ruin[/color] @ Apex Northeast → Cosmic Horror → Death Incarnate → Avatar of Chaos (Reality Shatter boss). [color=#C5B358]The End of All Things[/color] @ Apex Southwest → Avatar of Chaos → The Nameless One → Entropy (Universe Collapse boss — stacking decay, burst don't chip). Reward curve scales +20%% per tier from T6: T7 stages 1080/1440/2160 XP + 900 valor chain bonus, T8 stages 1300/1730/2600 XP + 1080 valor, T9 stages 1560/2080/3120 XP + 1300 valor. Six new chain titles ([color=#4B0082]Void Ender[/color], [color=#9400D3]Primordial Breaker[/color], [color=#191970]Horror Sealer[/color], [color=#2C0854]Death Defier[/color], [color=#800080]Chaos Unmaker[/color], [color=#C5B358]End Walker[/color]) bring the registry to 28. Chain content now spans T1-T9 across **15 frontier posts**. Audit #6 Slice 18 — chain ladder complete.")
-	display_game("")
-
-	# v0.9.468 — Audit #6 Slice 17: 2 new T6 quest chains.
-	display_game("[color=#00FFFF]v0.9.468[/color]")
-	display_game("  [color=#FFD700]Two new T6 chain quests: Hydra Hunt + Phoenix's Final Flight[/color]")
-	display_game("  • [b]Chain content extends to T6 — the first chains anchored at the highest-tier deep-frontier posts.[/b] [color=#48D1CC]Hydra Hunt[/color] at Far East Station is a 3-stage chain into Hydra's Swamp: kill 6 Sirens → kill 5 Giant Spiders → sever every head on the Hydra (Hydra Regen boss — heals 10%% max HP from any single hit >10%% max HP). [color=#FFA500]Phoenix's Final Flight[/color] at High North Peak hunts the Phoenix's Nest: kill 6 Harpies → kill 5 Gryphons → end the Phoenix (Phoenix Rebirth boss — revives at 75%% HP once on first kill). Each chain pays 900 Valor + the boss's companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#48D1CC]Hydra Slayer[/color] and [color=#FFA500]Phoenix Ender[/color]). Chain content now spans T1-T6 across 9 frontier posts. Audit #6 Slice 17.")
-	display_game("")
-
-	# v0.9.467 — Audit #6 Slice 16: 2 new T5 quest chains.
-	display_game("[color=#00FFFF]v0.9.467[/color]")
-	display_game("  [color=#FFD700]Two new T5 chain quests at deep-frontier posts: Lich's Curse + Demon Lord's Heir[/color]")
-	display_game("  • [b]Chain content now extends to T5 — the first chains anchored at deep-frontier trading posts (radius 250+).[/b] [color=#7755BB]Lich's Curse[/color] at Far West Haven is a 3-stage chain into the Lich's Sanctum: kill 6 Zombies → kill 5 Wraiths → end the Lich (Soul Burn boss — drains your primary resource on every hit). [color=#FF4500]Demon Lord's Heir[/color] at Deep South Port hunts the Demon Lord's Throne: kill 6 Demons → kill 5 Succubi → topple the Demon Lord (Soul Forge boss — heals 15%% max HP every 5 rounds, so burst him through). Each chain pays 750 Valor + the boss's companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#7755BB]Lich Ender[/color] and [color=#FF4500]Demon Slayer[/color]). Chain content now spans T1-T5 across 7 frontier posts. Audit #6 Slice 16.")
-	display_game("")
-
-	# v0.9.466 — Audit #6 Slice 15: 2 new T4 quest chains.
-	display_game("[color=#00FFFF]v0.9.466[/color]")
-	display_game("  [color=#FFD700]Two new T4 chain quests: Vampire's Hunger + Dragon Brood[/color]")
-	display_game("  • [b]Two more chain quests anchored at frontier posts, this time T4.[/b] [color=#8B0000]Vampire's Hunger[/color] at Southport is a 3-stage chain into the Vampire's Crypt: kill 6 Wights → kill 5 Wraiths → slay the Vampire (Blood Frenzy boss). [color=#FF8C00]Dragon Brood[/color] at Frostgate puts you on the trail of the Dragon Hatchery: kill 6 Wyverns → kill 5 Dragon Wyrmlings → break the Broodmother (Hatchling Swarm boss). Each chain pays out 600 Valor + a tier-4 companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#8B0000]Vampire Hunter[/color] and [color=#FF8C00]Brood Breaker[/color]). Brings chain breadth to T1-T4 across the major frontier posts. Audit #6 Slice 15.")
-	display_game("")
-
-	# v0.9.465 — Audit #15 — Help page refresh.
-	display_game("[color=#00FFFF]v0.9.465[/color]")
-	display_game("  [color=#FFD700]/help is current again — refreshed to cover every major v0.9.4xx addition[/color]")
-	display_game("  • [b]The Help page's 'New Features' block now reflects what's actually new[/b] — NPC vendors at category posts, Travel Stone, threat-corridor mechanics, regenerating quest board (no daily caps, 3 active max), Clan Vault panel, dungeon theme tiles on all 53 dungeons, Sanctuary tabs + Discovery unlocks, crafting transparency, Progression Vectors dashboard, combat loot scratch-off, and boss signatures. The inline Quests line in the basics section also names chains + the new 3-active cap, so anyone press-and-reading /help now sees what's there. Client-only release. Audit #15.")
-	display_game("")
-
-	# v0.9.464 — Audit #11 Slice 11: post threat-tier suppression.
-	display_game("[color=#00FFFF]v0.9.464[/color]")
-	display_game("  [color=#FFD700]Threatened player posts now lose 1 bubble suppression — your base is mechanically weaker while a dungeon is uncleared nearby[/color]")
-	display_game("  • [b]When a T2+ active dungeon sits within 80 tiles of your player post, the post's settler bubble suppression drops by 1 (floor at 0) until you clear the threat.[/b] In practical terms, monsters spawning inside your bubble now spawn one tier higher than usual while threatened — your village is mechanically more dangerous to defend. Combined with the threat-corridor encounters from v0.9.454 (which already biased random encounters to spawn the dungeon's monster_type in the same zone) and the +50% service costs / +20% market markup that already existed, the Under Threat marker now has a third mechanical bite that hits your own base. The post status panel surfaces 'Bubble suppression weakened (-1) while threatened' under the Under Threat banner when this applies. Clearing the dungeon restores full suppression. Audit #11 Slice 11.")
-	display_game("")
-
-	# v0.9.463 — Audit #6 Slice 14: 2 new T3 quest chains.
-	display_game("[color=#00FFFF]v0.9.463[/color]")
-	display_game("  [color=#FFD700]Two new T3 chain quests: Trollish Tide + Stone Vigil[/color]")
-	display_game("  • [b]The first quest chains anchored to mid-tier trading posts are now live.[/b] [color=#5D4037]Trollish Tide[/color] at Eastwatch is a 3-stage chain: kill 6 Trolls → kill 5 Ogres → slay the Troll King at his Troll Den (T3 boss). [color=#F0E68C]Stone Vigil[/color] at Highland Post mirrors the structure for the cliff-cult: kill 5 Gargoyles → kill 4 Harpies → break the Gargoyle Sentinel in his Cathedral. Each chain pays out 500 Valor + a tier-3 companion egg + Home Stones (Egg + Equipment) on the final turn-in, plus two new chain titles ([color=#5D4037]Troll Render[/color] and [color=#F0E68C]Stone Breaker[/color]). Continues the breadth push the master memo flagged after the daily-quest model was retired in v0.9.453. Audit #6 Slice 14.")
-	display_game("")
-
-	# v0.9.462 — Audit #5 Slice 19: final 8 theme tiles, 53/53 dungeons complete.
-	display_game("[color=#00FFFF]v0.9.462[/color]")
-	display_game("  [color=#FFD700]ALL 53 DUNGEONS NOW HAVE THEMED ENVIRONMENTAL TILES — Audit #5 dungeon themes 100%[/color]")
-	display_game("  • [b]The final eight dungeons gained themed environmental tiles, closing out Audit #5's headline OVERHAUL of dungeon distinctness.[/b] The new tiles span T5/T8/T9 (the last gaps): [color=#228B22]Vorpal Briar (V)[/color] in Jabberwock Thicket — thorny brambles cost +1 step (closes T5); [color=#A335EE]Reality Tear (R)[/color] in Cosmic Horror Realm — banks 20% monster-miss for 2 rounds of your next combat; [color=#4488FF]Time Fragment (I)[/color] in Time Weaver Loom — banks +15% damage for 3 rounds of your next combat; [color=#FF00AA]Soul Vortex (O)[/color] in Death Domain — persistent ~4% max HP drain; [color=#FF00FF]Chaos Warp (W)[/color] in Chaos Sanctum — persistent ~5% max HP damage; [color=#9999AA]Void Whisper (N)[/color] in Nameless Void — costs +2 steps to cross; [color=#FFFFAA]Divine Blood (D)[/color] in God Slayer Arena — heals ~8% max HP on step, the strongest heal tile in the pool; [color=#884466]Decay Mote (U)[/color] in Entropy End — persistent ~6% max HP rot, the strongest persistent damage tile in the pool. Theme tile coverage is now [color=#FFD700]53 of 53 dungeons (100%)[/color]. Combined with the 52 unique boss signatures (Slices 1-12), Audit #5's twin OVERHAUL decisions — bosses-not-unique and dungeons-feel-same — are both fully realized. Audit #5 Slice 19.")
-	display_game("")
-
-	# v0.9.461 — Audit #5 Slice 18: 6 more dungeon theme tiles (T6+T7 batch).
-	display_game("[color=#00FFFF]v0.9.461[/color]")
-	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles — all of T6 done[/color]")
-	display_game("  • [b]Ancient Dragon Lair, Golem Foundry, Nazgul Shadow Keep, Primordial Dragon Domain, World Serpent Coil, and Elder Lich Phylactery each gained a themed environmental tile,[/b] finishing T6 coverage and bringing T7 to 3 of 4. The new tiles: [color=#FFD700]Gold Hoard (G)[/color] in Ancient Dragon Lair — ancient dragons sleep on coin piles, step to grab 5-10 Valor (consumed); [color=#909090]Molten Slag (S)[/color] in Golem Foundry — hot industrial floor costs +1 step; [color=#A335EE]Shadow Pool (Q)[/color] in Nazgul Shadow Keep — cold shadow saps ~3% max HP on step; [color=#FF4500]Dragon Breath (F)[/color] in Primordial Dragon Domain — lingering primordial fire burns ~5% max HP, the strongest persistent damage tile in the pool; [color=#003344]Coiled Scale (Z)[/color] in World Serpent Coil — the floor IS the serpent, costs +2 steps to cross; [color=#AA66FF]Phylactery Shard (Y)[/color] in Elder Lich Phylactery — rare buff pickup that banks +15% damage for 3 rounds of your next combat. Coverage now [color=#88FF88]45 of 53 dungeons themed[/color]. Audit #5 Slice 18.")
-	display_game("")
-
-	# v0.9.460 — Audit #12 Slice 4: post inactivity surfacing.
-	display_game("[color=#00FFFF]v0.9.460[/color]")
-	display_game("  [color=#FFD700]Player posts now show how long since they were last tended[/color]")
-	display_game("  • [b]Every player post tracks when its owner last interacted with it — arriving inside the bubble, building or demolishing tiles inside it, or using /feedall to refill its guards.[/b] The post-status panel now shows a [color=#88FF88]Last tended: Xd ago[/color] line for both owners and visitors. After [color=#FFAA44]7 days[/color] without tending the post is tagged [color=#FFAA44]⚠ Inactive[/color]; after [color=#FF4444]30 days[/color] it flips to [color=#FF4444]⚠⚠ ABANDONED[/color]. No mechanical consequence yet — this slice surfaces inactivity so you can see at a glance which bases are stale before a future slice adds decay or reclaim mechanics. Audit #12 Slice 4.")
-	display_game("")
-
-	# v0.9.459 — Audit #5 Slice 17: 6 more dungeon theme tiles.
-	display_game("[color=#00FFFF]v0.9.459[/color]")
-	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles[/color]")
-	display_game("  • [b]Shrieker Caverns, Chimaera Gorge, Succubus Parlor, Lich Sanctum, Demon Lord Throne, and Titan Colosseum each gained a themed environmental tile[/b], completing T3+T4 coverage and starting T5. The new tiles: [color=#B080FF]Sound Echo (h)[/color] in Shrieker Caverns — disorienting echoes cost +1 step to cross; [color=#66CC00]Venom Drip (k)[/color] in Chimaera Gorge — persistent ~2% max HP poison damage; [color=#FF80CC]Allure Petal (l)[/color] in Succubus Parlor — heals ~4% max HP on step (consumed); [color=#6644AA]Soul Residue (j)[/color] in Lich Sanctum — touching one banks 20% monster-miss for 2 rounds of your next combat; [color=#FF6600]Infernal Brazier (e)[/color] in Demon Lord Throne — banks +15% damage for 3 rounds of your next combat; [color=#909090]Stone Stairs (H)[/color] in Titan Colosseum — titan-scale stonework costs +2 steps to scramble up. Coverage now [color=#88FF88]39 of 53 dungeons themed[/color]. Audit #5 Slice 17.")
-	display_game("")
-
-	# v0.9.458 — Audit #14 Slice 6: visual Clan Vault panel.
-	display_game("[color=#00FFFF]v0.9.458[/color]")
-	display_game("  [color=#FFD700]Clan Vault now has a real UI panel — no more chat-only deposits[/color]")
-	display_game("  • [b]The clan vault that shipped as a `/vault` chat-command MVP in v0.9.446 is now a real panel.[/b] Open the Clan view (More → Clan) and you'll see a new [color=#FFD700]Open Vault[/color] button — click it to see the vault contents in a proper modal with capacity counter, rarity-colored item names, and a one-click Withdraw button per row. A [color=#FFD700]Deposit[/color] tab at the top lists your full inventory with a Deposit button per item, so you don't have to remember slot numbers. Any clan member can deposit or withdraw; whenever a member acts, the vault auto-refreshes on every other online member's screen so you never see stale state. The original `/vault` chat commands still work as a fallback. Audit #14 Slice 6.")
-	display_game("")
-
-	# v0.9.457 — Audit #5 Slice 16: 6 more dungeon theme tiles.
-	display_game("[color=#00FFFF]v0.9.457[/color]")
-	display_game("  [color=#FFD700]Six more dungeons get themed environmental tiles[/color]")
-	display_game("  • [b]Gnoll Pack Den, Kelpie Marsh, Wyvern Roost, Ogre Bog, Demon Gate, and Gryphon Aerie each gained a themed environmental tile,[/b] filling out the T2-T4 mid-game with the pattern that established at Slice 1 and grew through Slice 15. The new tiles: [color=#8B2500]Torn Carrion (y)[/color] in Gnoll Pack Den — pack-kill scraps that heal ~2% max HP on step (consumed), counter-balancing the boss's Pack Frenzy ramp; [color=#556B2F]Bog Patches (u)[/color] in Kelpie Marsh — persistent +1 step cost wading the marsh; [color=#FFE4B5]Feather Down (f)[/color] in Wyvern Roost — soft wyvern feathers heal ~3% max HP on step (consumed); [color=#5D4037]Sinking Mud (v)[/color] in Ogre Bog — persistent +2 step cost where the ogres trampled it deep; [color=#DC143C]Hellfire Runes (z)[/color] at Demon Gate — persistent ~3% max HP burn, pairs with the boss's stacking curse; [color=#B0E0E6]Wind Currents (a)[/color] in Gryphon Aerie — rare buff pickup that banks +15% damage for 3 rounds of your next combat. Coverage now 33 of 53 dungeons themed. Also fixes a latent rendering bug where the Slice 15 theme glyphs (caltrops/grave dust/maze runes/prism shards/blinding sand/frost shards) were showing as `?` fallbacks on the dungeon map — now they render with their proper glyph + color. Audit #5 Slice 16.")
-	display_game("")
-
-	# v0.9.456 — Audit #11 Slice 10: NPC vendors at the remaining 5 categories.
-	display_game("[color=#00FFFF]v0.9.456[/color]")
-	display_game("  [color=#FFD700]Every NPC post category now has its own vendor[/color]")
-	display_game("  • [b]Five more themed NPC traders join the market browse at their post categories,[/b] completing the vendor system that started with Slice 3b (exotic) and Slice 8 (mine/farm/shrine). The new vendors are: [color=#FFE0A0][HAVEN] Innkeeper[/color] (restoration & traveler supplies — Elixir, Greater Health/Mana/Stamina/Energy Potions, Minor Elixir); [color=#FFA070][MARKET] Trade Master[/color] (generalist mix — Home Stone Egg, Mysterious Box, Elixir, Scroll of Haste, Charm of Taunt, Greater Health Potion); [color=#88AAFF][TOWER] Lookout[/color] (scout & foresight — Reclaimer Lantern, Scroll of Monster Selection, Scroll of Precision, Elixir, Mysterious Box, Charm of Taunt); [color=#AA8866][CAMP] Outfitter[/color] (basic traveler supplies at low prices — Standard Health/Mana/Stamina/Energy Potions, Cursed Coin, Scroll of Haste); [color=#A0A0A0][FORTRESS] Quartermaster[/color] (heavy combat & equipment — Home Stone Equipment, Scrolls of Forcefield/Stone Skin/Rage, Boss Slayer Tonic, Charm of Taunt). Three slots per day per post, same deterministic rotation as the existing vendors. Every NPC post category in the world now has a destination identity. Audit #11 Slice 10.")
-	display_game("")
-
-	# v0.9.455 — Audit #9 Slice 5: Travel Stone / network buy.
-	display_game("[color=#00FFFF]v0.9.455[/color]")
-	display_game("  [color=#FFD700]New consumable: Travel Stone — buy from remote posts without traveling[/color]")
-	display_game("  • [b]Travel Stones let you buy from any market listing in the network browse view without leaving your current post.[/b] Click any remote listing in Network Browse, and if you have at least one Travel Stone in your inventory you'll get a 'Buy (Stone x N)' button. Confirming spends one stone and one valor payment at the listing's full markup price, and the item is delivered straight to your inventory / pouch / egg incubator. The audit's geographic value is preserved: specialty discounts (mine -15% on materials, etc.) still require you to actually visit the specialty post, and threat multipliers still bite at threatened posts. Travel Stones drop from Tier 5+ dungeon chests at low rates, and the Curiosity Trader at exotic posts sells them for 3000 Valor (when they're in today's stock rotation). Audit #9 Slice 5.")
-	display_game("")
-
-	# v0.9.454 — Audit #11 Slice 9: threat-corridor wandering monsters.
-	display_game("[color=#00FFFF]v0.9.454[/color]")
-	display_game("  [color=#FFD700]Threatened-post dungeons now spill their monsters into the surrounding world[/color]")
-	display_game("  • [b]Standing within 80 tiles of an active T2+ world dungeon now puts you in a 'threat corridor.'[/b] Random encounters in this zone spawn THAT dungeon's monster_type at the dungeon's tier-appropriate level instead of the biome default — orc patrols spilling out of an Orc Stronghold, wights drifting from a barrow, etc. Gives the [color=#FF6600]⚠ Under Threat[/color] post marker (v0.9.326) actual mechanical bite. Encounters in the corridor are flagged in combat: '⚠ Spilled from [Dungeon Name] — you're in the threat corridor.' Tells you (a) the encounter is unusual, (b) which dungeon to clear if you want it to stop, and (c) roughly where that dungeon is from your encounter location. T1 dungeons still skip the corridor — newbie content shouldn't terrorize starter posts. Audit #11 Slice 9.")
-	display_game("")
-
-	# v0.9.453 — Audit #6 Slice 13: regenerating quest board (supersedes Slice 12).
-	display_game("[color=#00FFFF]v0.9.453[/color]")
-	display_game("  [color=#FFD700]Quest board now regenerates continuously — no more daily caps[/color]")
-	display_game("  • [b]Procedural quests are back, but the daily-cap model is gone for good.[/b] Trading post boards now show 5-6 quests at starter posts / 7-8 at mid-tier / 8-10 at endgame, and the slot of every quest you complete is immediately filled with a new procedural one. No 24-hour cooldown, no \"do a couple of quests then wait until tomorrow.\" You can keep working through the board as long as you have time. The slice supersedes yesterday's chain-only model (v0.9.452) — the original audit signal was about the cap mechanic, not the kill-task content itself. Chain campaigns are unaffected and still alongside the procedural quests.")
-	display_game("  • [b]Active quest cap lowered from 5 to 3.[/b] With the board never running dry, hoarding accepts is no longer a viable strategy — triage to your top 3 and rotate as you complete. The board is the parking lot, not your inventory.")
-	display_game("  • [b][DAILY] row tag removed and the featured pick relabelled '★ FEATURED ★'[/b] (was '★ TODAY'S BOUNTY ★') — daily-cadence framing retired across the UI. Already-active dailies on existing characters complete normally; in-flight cooldown entries from before this release naturally fold into the new sliding window. Audit #6 Slice 13.")
-	display_game("")
-
-	# v0.9.451 — Audit #11 Slice 8: NPC vendors at mine/farm/shrine.
-	display_game("[color=#00FFFF]v0.9.451[/color]")
-	display_game("  [color=#FFD700]Three more post categories now host themed NPC vendors[/color]")
-	display_game("  • [b]Mine, farm, and shrine posts each now host a category-themed NPC trader at the top of the market browse,[/b] joining the Curiosity Trader that exotic posts got in v0.9.450. The vendors are: [color=#FF8C42][FORGE] Forge Master[/color] at mine posts (equipment & defensive theme — Home Stone Equipment, Charm of Taunt, Revival Potion, Stone Skin and Forcefield scrolls, Greater Elixir); [color=#80E060][FARM] Provisioner[/color] at farm posts (restoration & supplies theme — Home Stone Supplies, health potions, elixirs, Revival Potion); [color=#7FD7FF][SHRINE] Mystic[/color] at shrine posts (magical & spiritual theme — Home Stone Egg, Haste/Rage/Precision/Vampirism scrolls, Divine Elixir). Three slots per day per post, deterministically rotated by post + day hash — every visitor sees the same items today; tomorrow rolls fresh. NPC prices stay fixed (no supply markup, no specialty discount) but threat multiplier still applies. Pairs each of #9's specialty-discount categories (Slice 3) with a destination-vendor identity (Slice 3b pattern). Audit #11 Slice 8.")
-	display_game("")
-
-	# v0.9.450 — Audit #9 Slice 3b: Exotic post rare-item access.
-	display_game("[color=#00FFFF]v0.9.450[/color]")
-	display_game("  [color=#FFD700]Exotic posts now host a Curiosity Trader with rotating rare stock[/color]")
-	display_game("  • [b]Visit an exotic post and you'll find a Curiosity Trader's daily stock at the top of the market browse, tagged [color=#A335EE][EXOTIC][/color].[/b] Four rotating items per post per day, picked deterministically from a curated pool of ten rare items — Home Stones (Egg / Supplies / Equipment / Companion), Mysterious Box, Boss Slayer Tonic, Reclaimer Lantern, Floor Skip Charm, Elixir, and Cursed Coin. Every player visiting the same exotic post sees the same stock on the same day; tomorrow rolls a fresh selection so the post stays worth checking. NPC prices are fixed — no supply markup, no specialty discount applies — but a threatened post still hikes everything (bandits charge more regardless of source). Stock is unlimited per day, so the items are a destination-vendor reason to travel to exotics rather than a daily limited resource. Closes the audit captured decision 'exotic posts → rare-item access.' Audit #9 Slice 3b.")
-	display_game("")
-
-	# v0.9.449 — Audit #13 Slice 6: Sanctuary affordability discovery.
-	display_game("[color=#00FFFF]v0.9.449[/color]")
-	display_game("  [color=#FFD700]Sanctuary: upgrade screen surfaces what you can afford right now[/color]")
-	display_game("  • [b]Affordability is now visible at a glance from anywhere on the upgrade screen.[/b] The tab strip across the top shows a green +N badge per tab whenever any upgrades there are buyable — so you can see 'Storage +2  Combat  Stats +1  Discovery +1  Economy' without paging through every tab. A summary line under your Baddie Points reads 'X upgrades affordable on this tab — Y total across all tabs.' Every affordable row now wears a green ✓ AFFORDABLE tag on its name line (maxed rows get a blue ✦ MAX). In the visual panel, affordable cards get a brighter green border + 2px outline so they pop in the grid, and each tab button shows its affordable count in green next to the label. Closes the audit's 'Discoverability — TWEAK — Sanctuary screen highlights affordable upgrades' decision. Audit #13 Slice 6.")
-	display_game("")
-
-	# v0.9.448 — Audit #13 Slice 5: Sanctuary tab categorization.
-	display_game("[color=#00FFFF]v0.9.448[/color]")
-	display_game("  [color=#FFD700]Sanctuary: upgrades reorganized into 5 named tabs[/color]")
-	display_game("  • [b]The upgrade screen now has 5 categorized tabs — Storage, Combat, Stats, Discovery, Economy — instead of the previous 3-page mash-up.[/b] The old Base Upgrades page had 13 entries mixing storage, companion slots, discovery upgrades, posts, and economy bonuses; finding the upgrade you wanted meant reading the whole list. The new tabs put each upgrade with its peers: Storage groups all the slot expansions (inventory / kennel / egg / companion / posts / sanctum) so you can see your hoarding capacity in one place. Combat groups HP, resource max, regen, and flee chance. Discovery groups the three account-level qualitative unlocks (Bestiary / Compass / Region Atlas) so they're easy to find. The visual panel also gained the Compass and Region Atlas upgrades — they were only ever visible in the text view by accident (a latent bug since v0.9.444). A tab strip across the top names all 5 categories at once with the current one highlighted, so the full landscape is visible whether you're paging or just orienting. Audit #13 Slice 5.")
-	display_game("")
-
-	# v0.9.447 — Audit #8 Layer 7: skill progression preview.
-	display_game("[color=#00FFFF]v0.9.447[/color]")
-	display_game("  [color=#FFD700]Crafting: 'Coming Up' preview shows what unlocks at higher skill[/color]")
-	display_game("  • [b]The crafting recipe list now ends with a 'Coming Up' footer naming the next 3 recipes you'll unlock at higher skill levels[/b], with the level required and how many levels away each one is. Tells you what you're working toward when you grind a craft skill — and at a glance whether the next thing is a 1-level bump or a 20-level slog. Closes layer 7 (the final layer) of the crafting transparency stack — every recipe now answers what you can make, what materials you need, where to find them, what quality odds look like, what it sells for, and now what you're building toward. Visual panel mirrored. Audit #8 Layer 7.")
-	display_game("")
-
-	# v0.9.446 — Audit #14 Slice 5: Clan Vault MVP.
-	display_game("[color=#00FFFF]v0.9.446[/color]")
-	display_game("  [color=#FFD700]New: Clan Vault — shared item storage for clan members[/color]")
-	display_game("  • [b]Clans now have a shared vault for up to 30 items.[/b] Any clan member can deposit items from their inventory or withdraw items the clan has stored. Use [color=#88FF88]/vault[/color] to see contents, [color=#88FF88]/vault deposit <slot>[/color] to put your inventory slot into the vault, and [color=#88FF88]/vault take <N>[/color] to pull a vault slot into your inventory. When you deposit or withdraw, every online clan member sees the updated vault automatically. UI integration with the clan panel will come in a follow-up — this MVP is chat-command only so the underlying mechanic is proved first. Audit #14 Slice 5.")
-	display_game("")
-
-	# v0.9.445 — Audit #8 Layer 6: crafting sell-value preview.
-	display_game("[color=#00FFFF]v0.9.445[/color]")
-	display_game("  [color=#FFD700]Crafting recipes now show recent market avg price[/color]")
-	display_game("  • [b]Crafting recipe details now include a 'Recent market avg' line[/b] when other players have actually sold the same item recently. Uses the same rolling-average history that already powers the market browse `(avg N)` badges (Slice 4 of audit #9). Helps you tell at a glance whether a craft is worth your time — if Iron Swords typically sell for 80 Valor and your materials are worth 200 in total, the recipe is a loss; conversely a Masterwork might fetch 5× more on the market than what you'd get from salvage. Stat-varied equipment averages across rolls (same caveat as the market badge — the average is a hint, not a quote). Audit #8 Layer 6.")
-	display_game("")
-
-	# v0.9.444 — Audit #13 Slice 4: Region Atlas Sanctuary upgrade.
-	display_game("[color=#00FFFF]v0.9.444[/color]")
-	display_game("  [color=#FFD700]New Sanctuary upgrade: Region Atlas (account-wide region ledger)[/color]")
-	display_game("  • [b]New `region_atlas` Sanctuary upgrade (3 levels, 800/3000/12000 BP).[/b] Tracks which regions your account has visited — always recorded server-side regardless of upgrade level, so unlocking later uses the full history. Level 1: count visited. Level 2: + sorted region list (the names show up on the inspect dashboard). Level 3: + completion ratio (e.g. 12/47 visited). Surfaced in the Progression Vectors section of the Status page alongside Bestiary and Compass. Third qualitative Sanctuary unlock after Bestiary v0.9.343 and Compass v0.9.432 — keeps exploration tracked and visible. Audit #13 Slice 4.")
-	display_game("")
-
-	# v0.9.443 — Audit #11 Slice 7: persistent NPC rumor cache.
-	display_game("[color=#00FFFF]v0.9.443[/color]")
-	display_game("  [color=#FFD700]NPC posts: revisits show the same rumor, walking on-and-off doesn't spam[/color]")
-	display_game("  • [b]Walking on-and-off an NPC post tile no longer re-fires the greeting every step.[/b] A 60-second per-player cooldown gates the message so you only see it once when you actually arrive.")
-	display_game("  • [b]Re-visiting a post — including after a reconnect — now shows the SAME rumor for 30 minutes,[/b] matching the way legacy trading posts work. Each NPC has a consistent narrative for your account, so you can leave and come back without losing the thread. After 30 min the rumor rerolls (or sooner if a new dungeon threat appears nearby — threats always run fresh). Different accounts at the same post still get their own rumors. Audit #11 Slice 7.")
-	display_game("")
-
-	# v0.9.442 — Audit #2 Slice 2: Class & Race section in inspect.
-	display_game("[color=#00FFFF]v0.9.442[/color]")
-	display_game("  [color=#FFD700]Status page: both class passive AND race passive named in one block[/color]")
-	display_game("  • [b]Replaced the single-line class passive on the inspect page with a 'Class & Race' section listing both passives by name with full effect text.[/b] Race passives (Human Ambition / Elf Forest Heritage / Dwarf Last Stand / Ogre Hearty / Halfling Light-Footed / Orc Berserker / Gnome Arcane Tinkerer / Undead Cursed Resilience) were applied at runtime but never named on any player-facing surface — now the Race line tells you what your racial passive does and the Class line tells you what your class passive does, color-coded to match each identity. Audit #2 Slice 2 closes the visibility gap.")
-	display_game("")
-
-	# v0.9.441 — Audit #4 Slice 3: small overworld egg chance.
-	display_game("[color=#00FFFF]v0.9.441[/color]")
-	display_game("  [color=#FFD700]Companion eggs can drop from overworld T1-T2 monster kills[/color]")
-	display_game("  • [b]T1 monsters: 3% egg drop chance.[/b] T2 monsters: 1% egg drop chance. T3+ still dungeon-only — dungeons remain the canonical path to mid-tier companions, but new players who haven't reached a dungeon yet can now find low-tier eggs through normal exploration. The egg reveals on the post-combat scratch-off panel like any other drop. Of-the-same-monster-type the player just killed; variant rolled at egg creation per existing rules. Closes the longstanding 'eggs only from dungeons' gate noted in the audit (#4 Slice 3).")
-	display_game("")
-
-	# v0.9.439/440 — Combat pacing trim + Review FX button (renamed Review Damage v0.9.440).
-	display_game("[color=#00FFFF]v0.9.439/440[/color]")
-	display_game("  [color=#FFD700]Combat: faster pacing across the board + new Review Damage button[/color]")
-	display_game("  • [b]~25% pacing trim on combat transitions and animations.[/b] Action→FX lockout 0.30→0.15s. Inter-attack 0.65→0.45s. Post-final-attack 0.40→0.25s. Separator 0.45→0.25s. Ambient 0.12→0.06s. End-of-action grace 0.60→0.30s. Action-phase fade-in tweens 0.20/0.25/0.28→0.12/0.15/0.18s. Fade-out 0.25/0.22→0.15/0.13s. Lunge 0.10→0.07s. Damage popup linger 1.0/0.35→0.65/0.25s. Miss popup 0.85/0.35→0.55/0.25s. The whole loop snaps closed faster — less waiting between rounds.")
-	display_game("  • [b]New 'Review Damage' button on the combat panel.[/b] Top-right corner during action selection (larger / bumped font in v0.9.440). Press it to re-open the FX scene and re-read the latest fight's per-actor strips. Strips become mouse-scrollable in review mode — newest entry is auto-pinned to the bottom but the player is free to scroll up to read older lines, with the position preserved until they choose to fire a new ability. History limit bumped 5→30 lines so you can read deep into the fight. Press 'Back' (in the same corner during review) to return to hand selection.")
-	display_game("")
-
-	# v0.9.437/438 — Audit #3 Slice 2: Progression Vectors dashboard.
-	display_game("[color=#00FFFF]v0.9.437/438[/color]")
-	display_game("  [color=#FFD700]Status page now lists every advanceable track[/color]")
-	display_game("  • [b]New 'Progression Vectors' section on the character status page surfaces every track you can advance in one place.[/b] Unspent stat points (with a hint to spend them), Sanctuary upgrades + Baddie Point balance, all 5 gathering jobs and 5 specialty jobs with current level / XP% / commit status, Bestiary unique species and total kill count, Compass posts-visited count, and Soul Gems. Each entry shows the next milestone or commit hint so you know what the action is. Was hard to tell at a glance what was even progressing — this is the discoverability surface for everything else the game tracks.")
-	display_game("")
-
-	# v0.9.436 — Old Soldier harvest minigame removed; folded into scratch-off.
-	display_game("[color=#00FFFF]v0.9.436[/color]")
-	display_game("  [color=#FFD700]Old harvest minigame replaced by the combat scratch-off[/color]")
-	display_game("  • [b]The post-combat 'Press Space to harvest' prompt is gone.[/b] The combat scratch-off (v0.9.434) is now the single post-combat loot surface. Old harvest_pick / harvest_stop / harvest_done action handlers, the Skip Harvest setting toggle, the Soldier harvest mastery minigame screens, and the entire server-side harvest dispatch (handle_harvest_start / _choice / _end + active_harvests state) all removed.")
-	display_game("  • [b]Soldier-job benefits fold into the scratch-off[/b] — your Soldier level adds bonus reveals on top of the tier-scaled base (Lv 20: +1, Lv 50: +2, Lv 80: +3). Mirrors the old harvest_saves table. The monster-part drop bonus that already scales with soldier_level via roll_monster_part_drop is untouched, so Soldiers still get more parts per kill on average.")
-	display_game("")
-
-	# v0.9.435 — Combat scratch-off fixes.
-	display_game("[color=#00FFFF]v0.9.435[/color]")
-	display_game("  [color=#FFD700]Combat scratch-off: 3 fixes[/color]")
-	display_game("  • [b]Flock reveal count off by one[/b] — fixed. flock_counts increments only for chain monsters; the final kill that triggers the panel was missing from the total. A 4-wolf flock now correctly gives 4 reveals (was 3).")
-	display_game("  • [b]Panel centering[/b] — fixed. Loot Reveal now centers in the play area like the other gathering minigames. Was anchored top-left because the panel was parented to the root VBox instead of game_output_container.")
-	display_game("  • [b]Victory card lists what you got[/b] — each card you reveal now adds its drop to the victory card's loot list (and equipment fires the rarity banner). After you press Done or run out of reveals, the panel closes and the card shows the full list of what you collected from the bag.")
-	display_game("")
-
-	# v0.9.434 — Combat scratch-off (user-requested 2026-05-14).
-	display_game("[color=#00FFFF]v0.9.434[/color]")
-	display_game("  [color=#FFD700]Combat loot: scratch-off reveal grid[/color]")
-	display_game("  • [b]Every winning combat now opens a 16-card reveal grid instead of dumping loot directly into your inventory.[/b] Click cards to reveal what's underneath; click Done early or run out of reveals and the remaining cards cascade-flip to show what you missed (those drops are NOT awarded). Reveals are tier-scaled: T1-2 monsters give 1, T3-5 give 2, T6+ give 3. Flocks add +1 reveal per kill beyond the first — a 5-monster T3 flock gives 6 reveals on the aggregated panel at the end. Every slot has SOMETHING (drops to current rates + filler of small Valor / Salvage Essence / T1 materials / Monster Parts) so every click pays off.")
-	display_game("")
-
-	# v0.9.433 — Audit #14 Slice 4: Clan ranks/officers.
-	display_game("[color=#00FFFF]v0.9.433[/color]")
-	display_game("  [color=#FFD700]Clans: new Officer rank — non-leaders can finally help run the clan[/color]")
-	display_game("  • [b]Leaders can now promote any member to Officer (and demote them back).[/b] Officers can invite new players and kick regular members. Leaders retain full power — they can kick anyone (including officers) and they're the only role allowed to promote/demote. The clan panel now shows a colored rank badge ([color=#FFD700]LEADER[/color] / [color=#66DDFF]OFFICER[/color] / [color=#888888]MEMBER[/color]) on every roster row, plus the rank-action buttons your viewer rank is allowed to use. Unblocks the 'leader has to be online for the clan to grow' problem.")
-	display_game("")
-
-	# v0.9.432 — Audit #13 Slice 3: Sanctuary Compass.
-	display_game("[color=#00FFFF]v0.9.432[/color]")
-	display_game("  [color=#FFD700]Sanctuary: new Compass upgrade — direction to nearest unvisited post[/color]")
-	display_game("  • [b]New Sanctuary upgrade (3 levels, 1000 / 4000 / 15000 BP) adds a HUD compass line above the map[/b] pointing toward the nearest NPC post your account hasn't yet visited. L1 shows direction (↑↓←→ and diagonals). L2 adds distance. L3 adds the post name. The ledger always records visits, so you can unlock the compass later and immediately use the full account history. Once every post on the map has been visited, the line reads 'All posts visited.' Available on the Sanctuary 'Base Upgrades' page.")
-	display_game("")
-
-	# v0.9.424 — Recharge variable-cost popup fix + ability card "Free" label fix.
-	display_game("[color=#00FFFF]v0.9.424[/color]")
-	display_game("  [color=#FFD700]Combat: Recharge fires directly[/color]")
-	display_game("  • [b]Recharge no longer pops the variable-cost spend dialog.[/b] The card's resource_type was set, so it tripped the action-bar's 'cost==0 + resource_type set = variable-cost' branch and asked the player how much to spend. Recharge has no cost at all — it's a free card with a fixed effect. Cleared the resource_type so it routes to direct-execute.")
-	display_game("  [color=#FFD700]Combat: card cost label when out of resource[/color]")
-	display_game("  • [b]Cards no longer read 'Free' when you can't afford their floor cost.[/b] Variable-cost abilities compute planned spend as `min(current, ceiling)` — when current is 0, the spend is 0, which the card label rendered as 'Free'. Now returns the FLOOR cost when below the affordability threshold, so the player sees the minimum they'd need to spend.")
-	display_game("")
-
-	# v0.9.423 — ability content overhaul: deck/hand auto-cycle, ability changes, balance pass.
-	display_game("[color=#00FFFF]v0.9.423[/color]")
-	display_game("  [color=#FFD700]Combat: auto-cycle hand every turn[/color]")
-	display_game("  • [b]Every player action draws a fresh 3-card hand next round.[/b] Basic attack: all 3 cards discard, draw 3 new ones. Ability play: that card consumed, other 2 discard, draw 3 new ones. Solves the 'stuck with uncastable cards' problem and keeps each round's options fresh.")
-	display_game("  [color=#FFD700]Combat: ability changes[/color]")
-	display_game("  • [b]Cloak and Teleport removed from combat[/b] — these are out-of-combat utilities only (slip past overworld monsters / fast-travel). They no longer appear in your deck or ability panel. Migrated out of existing characters' deck collections + equipped slots automatically.")
-	display_game("  • [b]All or Nothing removed entirely[/b]. The 97%-fail-doubles-monster-stats mechanic was a fight-ender more often than a hail mary. Action bar slot 0 (R key) in combat is now empty.")
-	display_game("  • [b]Tactical Retreat → Recharge[/b]: surrender your turn and restore 50% of your max primary resource (mana/stam/energy). Replaces the old free-mulligan effect (the new auto-cycle already handles mulligans). Internal name preserved so existing decks unaffected.")
-	display_game("  • [b]Haste → Arcane Surge[/b]: +40-60% spell damage AND a 7-25% double-cast chance on damage spells for 4 rounds (variable cost scales both). Replaces the old speed buff — mages weren't getting much value from +20% speed. Magic Bolt, Blast, and Meteor roll for double-cast each cast.")
-	display_game("  • [b]Vanish → Phantom Strike[/b] (display rename only — internal name preserved). The 'vanish' label suggested an escape; the actual mechanic is 'auto-crit next attack', so the new name matches what it does.")
-	display_game("  • [b]Banish loot chance 50% → 70%[/b]. Effective full-win rate jumps from 20-37.5% → 28-52.5%, less punishing for an endgame ability.")
-	display_game("  • [b]Pickpocket per-fight cap[/b] now rolls 2-4 (was 1-3). The 25-level, 20-energy ability now delivers more value across a long fight.")
-	display_game("  • [b]Forethought simplified[/b] — pay 1 resource to skip the monster's turn. The hand mulligan is now automatic via the auto-cycle.")
-	display_game("")
-
-	# v0.9.422 — post-victory transition fix + ~20% pacing speedup.
-	display_game("[color=#00FFFF]v0.9.422[/color]")
-	display_game("  [color=#FFD700]Combat: no more back-to-battle flash after victory[/color]")
-	display_game("  • [b]Pressing Space on the victory / loot screen now hides the combat panel immediately[/b] instead of briefly re-exposing the battle scene before game_output appears. acknowledge_continue now zeroes _combat_scene_linger_until_ms (was leaving the 2.2s victory-FX linger active) and clears _combat_scene_force_visible so the panel can hide on the next frame.")
-	display_game("  [color=#FFD700]Combat: ~20% faster pacing[/color]")
-	display_game("  • [b]Inter-attack and end-of-round delays shaved across the board[/b]. INTER_ATTACK_DELAY 0.78s → 0.65s, POST_FINAL_ATTACK_DELAY 0.55s → 0.40s, SEPARATOR_DELAY 0.6s → 0.45s, AMBIENT_DELAY 0.15s → 0.12s, END_ACTION_PHASE_GRACE 0.9s → 0.6s, action-phase fade-in lockout 0.45s → 0.30s. Turns flow faster and the gap between rounds (when you're picking your next ability) is noticeably shorter, without losing popup readability or attack-by-attack separation.")
-	display_game("")
-
-	# v0.9.421 — character XP from gathering + companion ghost fix + scratch-off XP display.
-	display_game("[color=#00FFFF]v0.9.421[/color]")
-	display_game("  [color=#FFD700]Gathering: character XP restored[/color]")
-	display_game("  • [b]Fishing / mining / logging / foraging now grant character XP again[/b], not just job XP. The v0.9.371 scratch-off rewrite called add_fishing_xp / add_mining_xp / add_logging_xp directly — these functions only update the per-skill XP and never call add_experience, so character level XP stopped landing. Foraging used add_job_xp which DOES compute char_xp_gained but the scratch-off caller ignored it. Both paths now apply the legacy taper (1.0× below skill 20 / 0.5× below 50 / 0.2× above 50) and call add_experience.")
-	display_game("  • Scratch-off summary now shows both [color=#FF8800]+N Job XP[/color] and [color=#00BFFF]+N Character XP[/color] lines, plus character-level-up notification if the session bumped your character level.")
-	display_game("  [color=#FFD700]Combat: companion ghost fix[/color]")
-	display_game("  • [b]New characters with no active companion no longer show the previous character's companion in the FX overlay[/b]. _refresh_companion early-returns when companion_data is empty but wasn't clearing the cached _companion_art.text — the FX overlay's _overlay_companion_ascii reads from that text, so stale BBCode lingered across permadeath. Now also clears overlay companion ASCII / name / HP bar fields when there's no companion.")
-	display_game("")
-
-
-	# v0.9.416 — testfx pacing demo bug fixes: FX-scene persistence, strip rendering, scroll-following, firehose-in-testfx.
-	display_game("[color=#00FFFF]v0.9.416[/color]")
-	display_game("  [color=#FFD700]Combat polish: /testfx pacing walkthrough fixed[/color]")
-	display_game("  • [b]FX scene now persists across all 8 demo steps.[/b] Previously _drain_combat_queue's queue-empty branch always scheduled end_action_phase_after(0.9), so the action phase ended between steps — Phase 3 onward would fire on the small box-row portraits instead of the big overlay blocks. Now guarded by _testfx_step_active so production combat still auto-ends action phase, but the walkthrough keeps the FX scene up throughout.")
-	display_game("  • [b]Per-actor overlay log strips render even when empty.[/b] Was: fit_content=true collapsed the strip height to 0 with no content, so the dark bg never showed. Now fit_content=false + brighter bg (alpha 0.78→0.88) + 1px border + clip_contents so each strip is always a visible bordered box at the top of the overlay.")
-	display_game("  • [b]Strips auto-scroll to newest line.[/b] Was: scroll_active=false showed the TOP of accumulated content, so lines past the strip height fell off the bottom invisibly. Now scroll_active=true + scroll_following=true keeps the newest line visible (mouse_filter IGNORE so users can't accidentally scroll away).")
-	display_game("  • [b]Firehose log forced during testfx[/b] (condensed_combat_log toggled off for the demo, restored on exit) so each queued mock message lands on its strip immediately. Condensed mode would have buffered them until end-of-round and left strips empty across phases.")
-	display_game("  • Phase-4 mock now uses the canonical `Round N` format so _extract_round_number detects it and broadcasts the divider to all 3 strips.")
-	display_game("  [color=#FFD700]testfx pacing: defaults[/color]")
-	display_game("  • Demo now [b]auto-forces LUFIA layout[/b] on entry (no-op if already set) so the action-phase + overlay path is exercised. testfx is only meaningful with the FX scene in play.")
-	display_game("")
-
-	# v0.9.415 — combat scene polish: 3-strip per-actor logs, custom display fonts, mid-popup positioning, damage popup z-index.
-	display_game("[color=#00FFFF]v0.9.415[/color]")
-	display_game("  [color=#FFD700]Combat scene: 3-strip per-actor combat log[/color]")
-	display_game("  • [b]During action phase, each actor (player / monster / companion) gets its own small bordered log strip[/b] at the top of the FX overlay. Player attacks land in the left strip, monster attacks in the center strip (under the monster art), companion attacks in the right strip. Round dividers (`──── Round N ────`) broadcast to all 3 so each strip keeps its round boundaries.")
-	display_game("  • Strips hold up to OVERLAY_LOG_LINE_LIMIT recent lines per actor; lines route by classifying the message's source from server formatting conventions (`Your X` → companion, `The X` → monster, `You` → player).")
-	display_game("  [color=#FFD700]Combat scene: custom display fonts for damage popups[/color]")
-	display_game("  • Damage popups now use [b]Fredoka Bold for normal hits and Bowlby One for crits[/b] — runtime-loaded TTFs (no .import sidecar required) cached in _display_font_* members. MISS popups use Fredoka Bold for the same readable-but-energetic feel. Fonts live in `font/display/`.")
-	display_game("  [color=#FFD700]Combat scene: damage popup polish[/color]")
-	display_game("  • [b]Popups draw IN FRONT of the combat-log strips[/b] (z_index 100→130) so the damage number doesn't get hidden behind a strip when the spawn point overlaps.")
-	display_game("  • [b]Crit shake no longer flings popups off the top of the screen[/b]. Was: crit shake tweened from an unclamped local_anchor, which let high stacks shake above the viewport. Now shake_base is captured AFTER the on-screen clamp so the shake stays inside the visible area.")
-	display_game("  • Stack reset window 0.35s → 1.5s + max stack offset capped at 210px. Popups still stack vertically when fired rapid-fire, but stop walking off the top of the screen.")
-	display_game("  [color=#FFD700]Combat scene: actor lift + layout polish[/color]")
-	display_game("  • [b]Player and companion overlay blocks lifted up ~22px (name-tag height)[/b] so the strip + ASCII + HP bar + name column sit a bit higher. Monster strip nudged DOWN by the same amount so it sits further from the goblin's lower ASCII edge.")
-	display_game("  • [b]Player ASCII now centered over its HP bar[/b] (was left-aligned, looked offset since HP bar anchors 0.12-0.88).")
-	display_game("  • Resource bar (mana / energy / stamina) added under HP bar in the overlay block — color-coded by class (mage→blue, rogue→green, fighter→yellow).")
-	display_game("  [color=#FFD700]/testfx upgrades[/color]")
-	display_game("  • [b]/testfx pacing[/b] command added — a step-through walkthrough of the full combat lifecycle (8 phases: enter, single attack, back-to-back, round divider, crit/miss, ability, victory, exit) so each beat can be tuned in real time. SPACE advances, R redoes, Q quits.")
-	display_game("  • Combat speed cycle now includes a 'Slow' tier at ~3× Normal as a dev/QA mode for visual verification.")
-	display_game("")
-
-	# v0.9.407 — Cobalt-on-parchment fix + battlefield overlay no longer overlaps monster.
-	display_game("[color=#00FFFF]v0.9.407[/color]")
-	display_game("  [color=#FFD700]Combat: Cobalt visibility fix[/color]")
-	display_game("  • v0.9.406 paints a [b]light parchment bg behind dark variants[/b] (Cobalt, Obsidian, Midnight…) for contrast — but the brightness check was running AFTER an upstream readability transform that pre-brightened Cobalt to a pastel. Result: the bg never picked parchment for Cobalt, and the pastel-on-dark-plum stayed barely visible.")
-	display_game("  • Removed the pre-brightening for the battle player + companion ASCII. Raw variant color (e.g., Cobalt #0047AB at brightness 0.24) now reaches both the bg picker AND the ASCII renderer — bg correctly paints parchment, ASCII renders dark Cobalt on parchment = high contrast.")
-	display_game("  [color=#FFD700]Combat: battlefield overlay no longer overlaps monster[/color]")
-	display_game("  • v0.9.406 positioned the battlefield overlay at [b]-220px[/b] from the party row, which placed it inside the monster's vertical band — characters revealed on TOP of the monster ASCII. Repositioned to sit AT the party-row band (where the boxes were), so when the boxes fade out the overlay reveals in that same space at battlefield-scale.")
-	display_game("  • [b]Overlay font size is now visibly bigger[/b] than the boxed version: the BBCode inline [font_size=N] tags are bumped +2 (player from font 2 → 4, companion from 1 → 3) so the battlefield characters read as larger than the in-box portraits, not identical to them.")
-	display_game("")
-
-	# v0.9.406 — full restart on combat visuals: original bg + contrasting portrait bg + battlefield overlay.
-	display_game("[color=#00FFFF]v0.9.406[/color]")
-	display_game("  [color=#FFD700]Combat visuals — full reset per feedback[/color]")
-	display_game("  • [b]Reverted combat bg to original dark plum + Lufia box bg to original dark navy.[/b] The mid-gray neutral experiment didn't help.")
-	display_game("  • [b]Dynamic contrasting portrait bg[/b]: when the player or companion's variant is dark (brightness < 0.45 — Cobalt, Obsidian, Midnight, etc.), a [b]light parchment color is painted directly behind their portrait[/b], so dark variants pop against high-luminance bg. Bright variants keep the transparent bg (no visible frame, matches box).")
-	display_game("  • [b]Removed the brightening hacks[/b] from v0.9.404/405 — they couldn't get there.")
-	display_game("  [color=#FFD700]Combat: Lufia battlefield reveal — proper transition[/color]")
-	display_game("  • Restored the [b]full party row fade-out[/b] when you play a card (was scaled back in v0.9.405 to keep portraits in their boxes — but you wanted the row to actually disappear, with characters appearing on the battlefield elsewhere).")
-	display_game("  • [b]New battlefield overlay[/b] appears at a different position than the boxes, showing the same player + companion ASCII art at a [b]larger font size[/b]. Slides + fades in when action starts; slides + fades out when action ends. Characters now visibly transition to the battlefield instead of just disappearing.")
-	display_game("")
-
-	# v0.9.405 — aggressive ASCII brightening + Lufia action phase keeps portraits visible.
-	display_game("[color=#00FFFF]v0.9.405[/color]")
-	display_game("  [color=#FFD700]Battle ASCII visibility (pass 2)[/color]")
-	display_game("  • Replaced v0.9.404's HSV-value floor (which still left low-saturation dark colors dim) with a [b]lerp-toward-white[/b] of strength up to 0.55. Cobalt (#0047AB, brightness 0.24) now renders as a pastel light-blue (~#80A0DB) that reads against any dark bg. Bright variants (Gold, Ivory) are untouched (brightness ≥ 0.55 short-circuits).")
-	display_game("  [color=#FFD700]Combat Lufia action phase — portraits stay visible[/color]")
-	display_game("  • Previously the whole party box row faded out during action phase, including the portraits — characters disappeared completely. Now [b]only the stats columns fade[/b] (name, HP/XP bars, deck info). Portraits stay on the battlefield, framed by the still-visible box outline — closer to the Lufia II command-vs-action read.")
-	display_game("  • [b]Kill transitions no longer end too fast[/b]: on combat_end (victory/defeat), the action-phase end is rescheduled to 1.8s instead of firing instantly, so the killing FX gets room to land before the stats return.")
-	display_game("")
-
-	# v0.9.404 — force-brighten battle ASCII variant colors.
-	display_game("[color=#00FFFF]v0.9.404[/color]")
-	display_game("  [color=#FFD700]Battle ASCII visibility[/color]")
-	display_game("  • Variant colors used in the battle ASCII (player + companion) are now [b]force-floored to HSV value 0.85[/b]. Cobalt (#0047AB, v≈0.67) renders as a vibrant brighter Cobalt; bright variants are unchanged. This bypasses any upstream readability processing that didn't fully cover the battle path — dark variants like Cobalt, Midnight, Obsidian no longer disappear into the combat bg.")
-	display_game("")
-
-	# v0.9.403 — Lufia battlefield reveal (slice 1) + universal-contrast combat bg.
-	display_game("[color=#00FFFF]v0.9.403[/color]")
-	display_game("  [color=#FFD700]Combat: Lufia II battlefield reveal — slice 1[/color]")
-	display_game("  • When you play a card, the [b]party stat box row fades out[/b] so FX play on a clear stage. Boxes fade back in 1.5s after the server's combat_update arrives (gives the damage popups room to land). The monster stays on screen the whole time.")
-	display_game("  • No-op in standard layout (no boxes to hide).")
-	display_game("  • Future slice: sequential per-actor reveals + larger party portraits during action (server payload would need per-event sequencing first).")
-	display_game("  [color=#FFD700]Combat background[/color]")
-	display_game("  • [b]Combat bg lifted to mid-dark neutral gray[/b] `(0.22, 0.20, 0.22)`. Old `(0.04, 0.03, 0.05)` was near-black plum — great for bright variants (Crimson, Gold) but zero contrast for mid-dark variants (Cobalt, Onyx). Neutral gray gives readable contrast across the whole variant palette.")
-	display_game("  • Lufia box bg matches the same neutral so boxes feel integrated with the battlefield.")
-	display_game("")
-
-	# v0.9.402 — removed portrait/stats divider.
-	display_game("[color=#00FFFF]v0.9.402[/color]")
-	display_game("  [color=#FFD700]Portrait/stats divider removed[/color]")
-	display_game("  • The thin border between the portrait area and the stat bars (added in v0.9.400) didn't look good. Reverted — portrait holders are direct hbox siblings again with no frame. The neutralized box bg from v0.9.400 alone provides the contrast for variant-colored ASCII.")
-	display_game("")
-
-	# v0.9.401 — Stats shortcut reminder + neutralized box bg + portrait border.
-	display_game("[color=#00FFFF]v0.9.401[/color]")
-	display_game("  [color=#FFD700]Stat-point reminder[/color]")
-	display_game("  • [b]The Stats shortcut button now flashes when you have unspent stat points[/b]. Shows \"Stats +N\" in bright yellow with a slow opacity pulse so you remember to spend them. Click the button to open the stat allocation panel as usual. Pulse clears once you've spent every point.")
-	display_game("  [color=#FFD700]Portrait contrast, take 3[/color]")
-	display_game("  • [b]Lufia box bg neutralized[/b] `(0.06, 0.05, 0.10)` → `(0.08, 0.08, 0.09)` — old bg leaned too blue and collided with cool variants (Cobalt etc.).")
-	display_game("  • [b]Thin subtle border around the portrait area[/b] (transparent bg, 1px warm-tan partial-alpha). Delineates the portrait without recoloring anything (so no inversion like v0.9.398).")
-	display_game("")
-
-	# v0.9.399 — reverted bad-looking portrait frame; kept sprite-after-combat fix.
-	display_game("[color=#00FFFF]v0.9.399[/color]")
-	display_game("  [color=#FFD700]Revert: portrait contrast frame (looked inverted)[/color]")
-	display_game("  • The v0.9.398 warm-dark portrait frame + black ASCII outline made variant-tinted art look color-inverted (especially on cool variants like Cobalt). Reverted to the simpler structure — sprite + ASCII holders sit directly in the box with no separate bg panel and no text outline.")
-	display_game("  • [b]Sprite-after-combat fix from v0.9.398 retained[/b]: the overworld sprite still reappears immediately when you press Space after combat instead of waiting for the next movement.")
-	display_game("")
-
-	# v0.9.397 — coord / post info moved to a styled top-left box.
-	display_game("[color=#00FFFF]v0.9.397[/color]")
-	display_game("  [color=#FFD700]Map HUD polish[/color]")
-	display_game("  • [b]Coordinates + nearest post info now render in a styled top-LEFT box[/b] on the map, mirroring the area/region/biome/weather box on the top-right. Same dark navy bg + 2px golden border + rounded corners.")
-	display_game("  • The inline coord/post header that the server emitted above the ASCII map block is stripped client-side now (it's redundant with the new box and was taking vertical space the map needs).")
-	display_game("  • The box hovers as an overlay on map_display, so it stays visible even when you zoom the map in past the scroll threshold.")
-	display_game("")
-
-	# v0.9.396 — damage popup pass 4: no box, no drift, linger + fade.
-	display_game("[color=#00FFFF]v0.9.396[/color]")
-	display_game("  [color=#FFD700]Damage popup pass 4[/color]")
-	display_game("  • [b]No more boxy background[/b] — the bordered Panel is gone. Numbers now use a thick text outline as their border, so the border hugs the letterforms instead of a rectangle around them. Outline thickness scales with font size (~font/5).")
-	display_game("  • [b]No more upward drift[/b] — popups linger in place for 1.0s, then fade with a subtle scale-shrink over 0.35s. Replaces the drift-up motion.")
-	display_game("  • Kept: thin + tall scale (0.70, 1.55), white-flash spawn, rotation jitter, crit shake, no-overlap vertical stack.")
-	display_game("")
-
-	# v0.9.395 — monster HP / affinity / damage popup pass 3 + companion bar align + no-overlap stack.
-	display_game("[color=#00FFFF]v0.9.395[/color]")
-	display_game("  [color=#FFD700]Lufia layout polish[/color]")
-	display_game("  • [b]Monster HP bar enlarged to 440×20[/b] (was 220×12) and [b]tinted to the monster's class-affinity color[/b] (same color as the monster's name).")
-	display_game("  • [b]Companion HP and XP bars now line up vertically[/b]. Each row was centering independently so different trailing-text widths shifted bar X. Both rows now left-anchor inside the stats column.")
-	display_game("  [color=#FFD700]Damage popup pass 3[/color]")
-	display_game("  • [b]Thinner + taller[/b] via scale (0.70, 1.55) — was (0.85, 1.30). Font 40 / 58 crit (was 36 / 52).")
-	display_game("  • [b]White-flash impact[/b]: each number spawns white and tweens to its damage color over 0.22s — every hit reads as a quick visual punch.")
-	display_game("  • [b]Slight random rotation per spawn[/b] (±4° normal, ±7° crit) so identical hits don't feel mechanical.")
-	display_game("  • [b]Crit shake[/b] during hold — small wobble around the anchor before the drift-up.")
-	display_game("  • [b]No more overlap on rapid hits[/b]: each new damage popup within 0.35s of the previous stacks 70px above it, like a Lufia damage tower. Gap of 0.35s+ resets the stack.")
-	display_game("")
-
-	# v0.9.394 — damage popup pass 2 + companion portrait width back to 200.
-	display_game("[color=#00FFFF]v0.9.394[/color]")
-	display_game("  [color=#FFD700]Damage popup pass 2[/color]")
-	display_game("  • [b]Border is now thin (1px) and a contrasting near-black[/b] so the bright damage color is the focal point, not the frame. Was 2-3px matching-color before.")
-	display_game("  • [b]Numbers rendered tall and narrow[/b] via persistent panel scale (0.85, 1.30) — the SNES JRPG look where damage feels like impact. Font size also bumped (36 / 52 crit, was 32 / 44).")
-	display_game("  • [b]Squash-out exit animation[/b] instead of plain fade: numbers compress to scale (0.45, 0.15) while drifting up and fading. Replaces v0.9.392's hold-then-fade.")
-	display_game("  [color=#FFD700]Lufia portrait[/color]")
-	display_game("  • Companion portrait width back to 200 (240 was too generous). [center] alignment from v0.9.393 still in effect.")
-	display_game("")
-
-	# v0.9.393 — companion ASCII centered + slightly wider companion portrait.
-	display_game("[color=#00FFFF]v0.9.393[/color]")
-	display_game("  [color=#FFD700]Lufia companion portrait[/color]")
-	display_game("  • [b]Companion ASCII is now [center]-aligned[/b] inside its portrait holder, so the (typically line-padded) monster art centers horizontally instead of left-aligning and showing dead space on one side.")
-	display_game("  • Companion portrait widened 200 → 240 so wide monster art (Minotaur, etc.) has enough breathing room and isn't clipped on the right.")
-	display_game("")
-
-	# v0.9.392 — Lufia player portrait narrowed + Lufia-style damage popups.
-	display_game("[color=#00FFFF]v0.9.392[/color]")
-	display_game("  [color=#FFD700]Combat polish[/color]")
-	display_game("  • [b]Damage popups redesigned, Lufia II style[/b]: bordered panel (border color matches damage color), [b]larger font[/b] (32 / 44 for crits, was 22 / 30), thicker outline, pop-in scale on appearance, then [b]holds still for 0.5s[/b] so you can read the number before it drifts up and fades. Total lifetime 1.5s (was 1.0s).")
-	display_game("  • [b]Lufia player portrait narrowed[/b] (140px wide, was 200) so there's no longer a big dead gap between the player ASCII and the stat bars. Companion portrait stays 200 wide for the wider monster art.")
-	display_game("")
-
-	# v0.9.391 — map auto-center fix (layout-settling) + horizontal clamp.
-	display_game("[color=#00FFFF]v0.9.391[/color]")
-	display_game("  [color=#FFD700]Map zoom fixes[/color]")
-	display_game("  • [b]Auto-center now reads layout correctly at high zoom[/b]. Root cause: _sync_map_sprites_overlay was called immediately after map_display.append_text(), but RichTextLabel's paragraph offsets don't update until the next process frame — so the auto-center scrolled to 0 (top of content) and the @ ended up below the visible area. Now _sync awaits one process_frame after the should-show check, so paragraph offsets are valid by the time we compute ideal_scroll. Same fix resolves the in-combat sprite-position weirdness at high zoom (same stale-layout root).")
-	display_game("  • [b]Map font is now capped so content fits horizontally[/b]. RichTextLabel has no horizontal scroll, so zooming past viewport_width / (46 × 0.6) would truncate the right edge of the map. Effective font size is clamped to that cap, even if the user's slider says higher. The cap is dynamic — bigger viewports allow more zoom.")
-	display_game("")
-
-	# v0.9.390 — Lufia tighten + monster HP relocation + dungeon legend / tile-message persistence.
-	display_game("[color=#00FFFF]v0.9.390[/color]")
-	display_game("  [color=#FFD700]Lufia layout polish[/color]")
-	display_game("  • [b]Tightened portrait → stats spacing[/b] (HBox separation 8 → 2) so there's no more dead gap between the ASCII art and the HP/XP bars.")
-	display_game("  • [b]Monster HP bar moved to a bordered strip at the top of the monster column[/b] in Lufia mode (was the bottom-right of the shared HP strip). Centered, content-sized, same border palette as the party stat boxes.")
-	display_game("  • [b]Shared HP strip hidden in Lufia[/b] — the player HP now lives inside the player stat box and the monster HP at the top, so the bottom-left bar is redundant.")
-	display_game("  [color=#FFD700]Dungeons[/color]")
-	display_game("  • [b]Map legend now appears in the dungeon floor view[/b], not just on the entrance warning. Players can see what every special glyph (w, +, ^, etc.) does at any time without remembering the warning.")
-	display_game("  • [b]Special-tile messages persist on-screen[/b]. Previously, stepping on a blood font / lava pool / etc. flashed a one-line description that the next dungeon_state immediately cleared. Now display_dungeon_floor re-appends the most recent tile message under the floor status, and it's cleared only when you move onto a different tile that doesn't generate one.")
-	display_game("")
-
-	# v0.9.389 — Lufia portrait box bumped, player font bigger, bars swapped.
-	display_game("[color=#00FFFF]v0.9.389[/color]")
-	display_game("  [color=#FFD700]Lufia portrait tuning[/color]")
-	display_game("  • Portrait box bumped from 144×96 → [b]200×180[/b] so the tall Minotaur ASCII (~75 rows at font_size 1) isn't cut vertically.")
-	display_game("  • Player class ASCII now renders at [b]font_size 2[/b] (was 1) so the figure is actually legible. Companion stays at font_size 1 since monster art is much taller.")
-	display_game("  • Companion stat-box bar order swapped — [b]HP on top, XP below[/b] (was XP/HP).")
-	display_game("")
-
-	# v0.9.388 — Lufia compact boxes + map auto-pan to keep @ centered.
-	display_game("[color=#00FFFF]v0.9.388[/color]")
-	display_game("  [color=#FFD700]Lufia layout: compact boxes + map auto-pan[/color]")
-	display_game("  • [b]Lufia boxes are now content-sized and centered[/b] instead of stretched across the screen. HP / XP bars are fixed-width (120px) instead of expanding to fill, matching the SNES Lufia II reference.")
-	display_game("  • [b]Companion ASCII portrait widened to 144×96[/b] so wide monster art (e.g., Minotaur ~150 chars wide at font_size 1) isn't horizontally clipped.")
-	display_game("  • [b]Map auto-pans to keep your @ centered[/b] when zoomed in past where the map needs to scroll. Previously the scroll bar stayed at 0 and the @ disappeared off the bottom of the visible area. The auto-center reads the actual @ row's Y from the RichTextLabel and sets the scroll value to put it at the viewport midpoint.")
-	display_game("  • [b]Sprite stays on its tile while the map scrolls[/b]. The map scrollbar's value_changed signal now re-syncs the sprite overlay so the sprite tracks its tile through any scroll motion.")
-	display_game("")
-
-	# v0.9.387 — map sprite live-resize + scroll-offset fix.
-	display_game("[color=#00FFFF]v0.9.387[/color]")
-	display_game("  [color=#FFD700]Map sprite fixes (follow-up to v0.9.386)[/color]")
-	display_game("  • [b]Sprite repositions instantly when you change Map Display %[/b] — previously the sprite stayed at the old size/position until you moved one tile. _on_window_resized now triggers a deferred sprite-overlay sync so the new font metrics take effect immediately.")
-	display_game("  • [b]Sprite stays centered at extreme zoom (140%+)[/b] where the map overflows and the RichTextLabel scrolls internally. The Y-position calculation now subtracts the scroll bar value so the sprite sits on the visible row, not the content-space row.")
-	display_game("")
-
-	# v0.9.386 — map sprite scales with map font.
-	display_game("[color=#00FFFF]v0.9.386[/color]")
-	display_game("  [color=#FFD700]Map sprite scales with the map font setting[/color]")
-	display_game("  • The overworld player sprite was hardcoded to 32px, so it only aligned correctly at one specific configuration (2560×1440 + ui_scale_map=0.80). Sprite size now scales proportionally with the current map font_size; remote players + companion trails use the same dynamic size so the whole layer scales together.")
-	display_game("")
-
-	# v0.9.385 — chrono / lufia render ASCII portraits at tiny font size + lufia in-box HP / deck.
-	display_game("[color=#00FFFF]v0.9.385[/color]")
-	display_game("  [color=#FFD700]Combat layouts: ASCII portraits + Lufia stat-box bars[/color]")
-	display_game("  • [b]Player and companion now render their full battle ASCII art[/b] in chrono / lufia, just at a tiny font_size (so the ~180×260 art fits in a 96×96 portrait box). Battle is meant to be ASCII; sprites stay overworld-only.")
-	display_game("  • [b]Lufia stat box: HP bar + deck/hand/discard counter inside each player box[/b], beside the portrait — matches the SNES Lufia II reference. The deck/hand/discard row stands in for the SP/MP gauge a traditional JRPG would show.")
-	display_game("  • Portrait box bumped from 72×72 to 96×96 so the small-font ASCII has enough room to be readable.")
-	display_game("")
-
-	# v0.9.384 — bounded ASCII rendering (first hotfix pass).
-	display_game("[color=#00FFFF]v0.9.384[/color]")
-	display_game("  [color=#FFD700]Combat layouts: art rendering hotfix[/color]")
-	display_game("  • [b]Companion portrait actually bounded[/b] in chrono / lufia. The companion ASCII label had [color=#FFAA33]fit_content = true[/color] by default — [color=#FFAA33]custom_minimum_size[/color] was only a floor, so the label grew to the natural ~250×200 size of the ASCII content. Now [color=#FFAA33]fit_content = false[/color] in compact builders.")
-	display_game("  • Fixed an issue where populate() would re-show the full battle ASCII over the compact party row, dominating the scene. (Replaced in v0.9.385 with the tiny-font approach.)")
-	display_game("")
-
-	# v0.9.383 — combat layout rebuild for both chrono and lufia.
-	display_game("[color=#00FFFF]v0.9.383[/color]")
-	display_game("  [color=#FFD700]Combat layouts: third pass on chrono + lufia[/color]")
-	display_game("  • [b]Chrono fixes[/b]: player ASCII was getting clipped because the full battle ASCII was inflating the bottom party row and starving the monster of vertical room. Now uses the small sprite only (~72px) — monster gets ~80% of the scene area, party row is a tight strip beneath it.")
-	display_game("  • [b]Lufia II rewritten properly[/b]: each party member is now a [b]stat box with portrait on the LEFT and stats on the RIGHT[/b] (name + companion XP / HP bars beside the portrait, not above it). Matches the SNES reference much closer.")
-	display_game("  • [b]Combat log shrinks[/b] in chrono/lufia so the scene actually gets the vertical room it needs. Combat log stays as-is in the standard layout.")
-	display_game("")
-
-	# v0.9.382 — bridge bug fix + chrono visible again + Lufia rewrite.
-	display_game("[color=#00FFFF]v0.9.382[/color]")
-	display_game("  [color=#FFD700]Bug fixes: bridges, chrono monster art, Lufia layout[/color]")
-	display_game("  • [b]Bridges no longer become impassable after a server restart.[/b] On startup, the server re-stamps every placed tile into the world map, and the re-stamp logic was forcing bridges to block movement. Fixed — bridges placed before v0.9.382 will be walkable again after this restart.")
-	display_game("  • [b]Chrono layout: monster ASCII is visible again[/b]. v0.9.381 wrapped the monster in a centering container that collapsed it to zero height. Replaced with a proper expand-fill arrangement.")
-	display_game("  • [b]Lufia II layout rewritten[/b] to match the reference — monster at the top, party members in bordered stat boxes at the bottom (one box per member, each holding their portrait + name).")
-	display_game("")
-
-	# v0.9.381 — chrono sizing fix + new Lufia II layout + warned deploys.
-	display_game("[color=#00FFFF]v0.9.381[/color]")
-	display_game("  [color=#FFD700]Combat layout polish + new Lufia II prototype[/color]")
-	display_game("  • [b]Chrono layout sizing fixes[/b]: monster ASCII no longer clips, player and companion sprites scaled down so the monster takes the spotlight at the top of the scene.")
-	display_game("  • [b]New layout: /layout lufia[/b] — Lufia II style. Monster on the LEFT, your character + companion stacked vertically on the RIGHT.")
-	display_game("  • Available layouts: [color=#FFD700]standard[/color] / [color=#FFD700]chrono[/color] / [color=#FFD700]lufia[/color]. Setting persists between sessions.")
-	display_game("  [color=#FFD700]Server-side: 1-minute warning before every restart[/color]")
-	display_game("  • From v0.9.381 onward, every server deploy sends a [color=#FFAA33]1-minute warning toast and chat broadcast[/color] to all online players so you can finish combat / trades / dungeon runs before the restart kicks you. The countdown shows warnings at 4m / 3m / 2m / 1m / 30s.")
-	display_game("")
-
-	# v0.9.380 — combat layout prototype: Chrono Trigger style.
-	display_game("[color=#00FFFF]v0.9.380[/color]")
-	display_game("  [color=#FFD700]Combat layout prototype — Chrono Trigger style[/color]")
-	display_game("  • [b]New /layout command[/b]. Swap the combat scene between the original layout and a Chrono Trigger style layout. Try both and see which feels right.")
-	display_game("")
-
-	# v0.9.379 — actual fix for the residual 5s freeze.
-	display_game("[color=#00FFFF]v0.9.379[/color]")
-	display_game("  [color=#FFD700]The other 5-second freeze is gone: road A* is now time-bounded[/color]")
-	display_game("  • Fresh logs after v0.9.378 pinpointed the residual ~5s freeze: it was the road pathfinding (A*) trying to connect two posts every 5 minutes — when the path was long/hard, a single A* search burned 4-5 seconds in one frame.")
-	display_game("  • Fix: A* now takes a wall-clock time budget (150 ms per pair, 200 ms total per check). If it doesn't find a path inside that window, it bails out cleanly; the next 5-minute tick retries. No single frame can be frozen by road pathfinding anymore.")
-	display_game("  • The dungeon-spawn queue from v0.9.377 + the road A* budget here together cover the two periodic causes of the ~5s server freezes that players have been reporting.")
-	display_game("")
-
-	# v0.9.378 — diagnostic-only release.
-	display_game("[color=#00FFFF]v0.9.378[/color]")
-	display_game("  [color=#FFD700]Diagnostic refinements (no player-facing change)[/color]")
-	display_game("  • Server-side timing extended to the remaining per-frame blocks (road A*, decay timers, network flush, character save flush) so the residual freeze could be pinpointed. The pinpoint paid off — see v0.9.379.")
-	display_game("")
-
-	# v0.9.377 changes
-	display_game("[color=#00FFFF]v0.9.377[/color]")
-	display_game("  [color=#FFD700]Server-side fix: ~5s freeze pinpointed + spread out[/color]")
-	display_game("  • [b]Identified the cause of intermittent ~5-second server freezes.[/b] The world-dungeon spawner was generating up to 8 dungeons (BSP floor gen + monster spawns) in a single server tick, locking the frame for ~5s. Diagnostic logs over the past week showed the spike pattern matched the spawn catch-up timing exactly.")
-	display_game("  • [b]Fix: spawn queue.[/b] When the spawner decides it needs more dungeons, it now queues them and drains ONE per server frame. The same 8-dungeon catch-up is now spread across 8 frames instead of compressed into one — no more 5-second pauses.")
-	display_game("  • [b]Diagnostic timing got more granular[/b]: spike logs now show a per-region breakdown (threat / merchants / node_respawns / geo_events / chunk_save / peer_io / buffer_process) so we can pinpoint smaller persistent spikes. Spike logging is rate-limited so the log stays readable.")
-	display_game("  • No client-facing changes; this is purely a server stability fix.")
-	display_game("")
-
-	# v0.9.376 changes
-	display_game("[color=#00FFFF]v0.9.376[/color]")
-	display_game("  [color=#FFD700]Tool crafting slot pool + duplicate fix + structure pool retuned[/color]")
-	display_game("  • [b]Tool recipes now roll a dedicated slot pool.[/b] New slot kinds:")
-	display_game("    – [color=#FFC15F]🛠 + / 🛠 ++[/color] Durability boost: +25%% / +50%% to max durability.")
-	display_game("    – [color=#7FF0BB]⚡ + / ⚡ ++[/color] Efficiency boost: easier scratch-off minigame when using the crafted tool (slower bar, wider hit zone).")
-	display_game("    – Plus bonus crafts (✕2 / ✕3 / ✕4) and material refunds.")
-	display_game("  • [b]Bonus craft slots now actually grant bonus items.[/b] v0.9.375 counted ✕2 / ✕3 / ✕4 reveals but didn't pass them through — fixed.")
-	display_game("  • [b]Structure pool retuned[/b]: dropped the placeholder HP slots (no per-tile HP system to wire them to) and redistributed weight into more bonus kits + material refunds.")
-	display_game("")
-
-	# v0.9.375 changes
-	display_game("[color=#00FFFF]v0.9.375[/color]")
-	display_game("  [color=#FFD700]Crafting slot pools — recipes only roll bonuses that matter to them[/color]")
-	display_game("  • [b]Quality is gone from items where it didn't mean anything.[/b] Each recipe now picks a slot pool that fits its output: Equipment/consumables/runes/upgrades/enchantments use the Quality pool; structures and materials use bonus-craft + refund pools.")
-	display_game("  • New slot kinds on the scratch ticket: [color=#FFD700]✕2 / ✕3 / ✕4[/color] bonus craft, [color=#5FF0E0]↺ Mat refund[/color]. Higher skill shifts the distribution toward the better slots.")
-	display_game("  • Subtitle on each craft panel tells you which pool that recipe rolls from.")
-	display_game("")
-
-	# v0.9.371 changes
-	display_game("[color=#00FFFF]v0.9.371[/color]")
-	display_game("  [color=#FFD700]Scratch-off expanded to mining / logging / foraging — each with its own targeting motion[/color]")
-	display_game("  • [b]Mining / Logging / Foraging now use the scratch-off ticket[/b] at all tiers — themed per job (color, glyphs, ambient texture).")
-	display_game("  • [b]Each job has a unique targeting motion[/b]:")
-	display_game("    – [color=#7AD8FF]Fishing[/color]: wavy water bar sweeps L→R")
-	display_game("    – [color=#9ACD32]Logging[/color]: vertical bar pendulum-swings L↔R — slow at the extremes, fast through center. [color=#9ACD32]Chop[/color] sound at each turnaround.")
-	display_game("    – [color=#FFAA33]Mining[/color]: horizontal strike band jumps between rows. [color=#FFAA33]Chink[/color] sound at each strike.")
-	display_game("    – [color=#FFEE55]Foraging[/color]: circular spotlight drifts on a winding path across the canvas.")
-	display_game("  • [b]Bar randomization[/b]: each session randomizes the bar's starting position and direction so the rhythm isn't predictable. No more waiting through a full cycle to reach a specific slot.")
-	display_game("  • [b]Panel positioning[/b]: minigame now fills the play area (Game Output section) instead of being centered on the full window.")
-	display_game("  • Completion summary adapts per job (Mining XP / Logging XP / Foraging XP + correct return hint).")
-	display_game("")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	# v0.9.327 changes
-	display_game("[color=#00FFFF]v0.9.327[/color]")
-	display_game("  [color=#FFD700]Settler bubbles scale with investment (Audit #12 Slice 1)[/color]")
-	display_game("  • [b]Player-post settler bubbles are no longer flat 25 tiles.[/b] An unguarded post collapses to a 12-tile marker zone (no real suppression). Each guard you station within 40 tiles of the post pushes the bubble out: +2 per plain guard, +4 per tower-stationed guard. Cap at radius 35.")
-	display_game("  • [b]The investment math is now visible[/b]: the HUD shows \"Bubble: r=N  guards=M (K towered)\" while you're inside any bubble — your own or someone else's. A dim brown tone when guards=0 hints that the zone offers no protection.")
-	display_game("  • [b]Tier suppression now uses the same guard set[/b] (within 40 tiles, not within the live bubble) — so a guard parked just outside a small bubble still helps it grow and suppress. Hiring your next guard always pays out.")
-	display_game("  • [b]Casual vs invested split is real now[/b]: 0 guards = marker only, 2 guards = ~16 radius and T-2 suppression, 5 guards w/ 1 tower = ~26 radius. Walk into someone's well-defended post and the bubble line will show you why they're safe.")
-	display_game("  • [b]Why[/b]: with the post-anchored world, guards needed to be load-bearing rather than decoration. Now the food-economy cost (guards eat food) directly translates into how much safe territory you control. Foundation for #12 design work — future slices will explore tier formulas, decay timelines, and more buildable structures.")
-	display_game("")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
 
@@ -27248,6 +26514,8 @@ func show_help():
 	# New features section (added separately to avoid format string complexity)
 	display_game("")
 	display_game("[b][color=#FFD700]══ NEW FEATURES ══[/color][/b]")
+	display_game("[color=#FF80FF]Companion Stable (T5+ posts):[/color] Bump the magenta C tile at any Tier 5+ NPC post to deposit/withdraw kennel companions WITHOUT dying.")
+	display_game("  Finally makes Fusion usable across one character's lifetime — collect, deposit, combine, withdraw, repeat. First visit shows a teaching overlay.")
 	display_game("[color=#FFD700]Quest Board Regenerates:[/color] No more daily caps — your post board refills the moment you turn in a quest.")
 	display_game("  3 active at a time max (triage to your top three). Chain quests still run alongside the procedural board.")
 	display_game("[color=#A335EE]NPC Vendors at Category Posts:[/color] Exotic / mine / farm / shrine / haven / market / tower / camp / fortress posts")
@@ -32816,6 +32084,24 @@ func _on_fusion_panel_close() -> void:
 	pending_house_action = ""
 	display_house_main()
 	update_action_bar()
+
+
+# Audit #4 Slice 1A (v0.9.485) — Companion Stable signal handlers.
+func _on_companion_stable_deposit(collected_index: int) -> void:
+	send_to_server({
+		"type": "companion_stable_deposit",
+		"collected_index": collected_index,
+	})
+
+func _on_companion_stable_withdraw(kennel_index: int) -> void:
+	send_to_server({
+		"type": "companion_stable_withdraw",
+		"kennel_index": kennel_index,
+	})
+
+func _on_companion_stable_close() -> void:
+	# Panel hides itself locally; no server message required.
+	pass
 
 func _on_fusion_panel_tab_changed(tab_id: String) -> void:
 	fusion_panel_tab = tab_id

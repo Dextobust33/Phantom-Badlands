@@ -1786,6 +1786,13 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_blacksmith_choice(peer_id, message)
 		"healer_choice":
 			handle_healer_choice(peer_id, message)
+		# Audit #4 Slice 1A (v0.9.485) — live Sanctuary kennel access.
+		"companion_stable_withdraw":
+			handle_companion_stable_withdraw(peer_id, message)
+		"companion_stable_deposit":
+			handle_companion_stable_deposit(peer_id, message)
+		"companion_stable_refresh":
+			handle_companion_stable_refresh(peer_id)
 		"rescue_npc_response":
 			handle_rescue_npc_response(peer_id, message)
 		"engage_bounty":
@@ -3037,6 +3044,10 @@ func handle_move(peer_id: int, message: Dictionary):
 					return
 				elif bump_type == "healer":
 					_handle_healer_station(peer_id, character)
+					return
+				elif bump_type == "companion_stable":
+					# Audit #4 Slice 1A — live Sanctuary kennel access at T5+ posts.
+					_handle_companion_stable_station(peer_id, character)
 					return
 				elif bump_type == "guard":
 					_handle_guard_post_interact(peer_id, character, target_pos.x, target_pos.y)
@@ -6991,6 +7002,196 @@ func handle_healer_choice(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {"type": "text", "message": msg})
 	send_to_peer(peer_id, {"type": "healer_done"})
 	save_character(peer_id)
+	send_character_update(peer_id)
+
+# ===== COMPANION STABLE (Audit #4 Slice 1A — v0.9.485) =====
+# Live Sanctuary kennel access mid-character. Blacksmith/healer-style bump
+# interaction at T5+ NPC posts. Player can withdraw a kennel companion into
+# their collected_companions list and deposit a collected companion back to
+# the kennel, enabling fusion without permadeath.
+
+func _player_is_at_companion_stable(character) -> bool:
+	"""True if any cardinal neighbor is a companion_stable tile. Companion
+	Stables are blocking, so the player stands adjacent and bump-interacts."""
+	if not chunk_manager:
+		return false
+	for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+		var tile = chunk_manager.get_tile(character.x + offset.x, character.y + offset.y)
+		if tile.get("type", "") == "companion_stable":
+			return true
+	return false
+
+func _build_companion_stable_payload(peer_id: int) -> Dictionary:
+	"""Snapshot of kennel + collected companions for the stable UI."""
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
+	var house = persistence.get_house(account_id) if account_id != "" else null
+	var kennel: Array = []
+	var kennel_capacity := 0
+	if house != null:
+		var kennel_raw = house.get("companion_kennel", {}).get("companions", [])
+		for i in range(kennel_raw.size()):
+			var c = kennel_raw[i]
+			if c is Dictionary:
+				kennel.append({
+					"index": i,
+					"id": c.get("id", ""),
+					"name": c.get("name", "Unknown"),
+					"monster_type": c.get("monster_type", ""),
+					"tier": int(c.get("tier", 1)),
+					"sub_tier": int(c.get("sub_tier", 1)),
+					"level": int(c.get("level", 1)),
+					"variant": c.get("variant", "Normal"),
+					"variant_color": c.get("variant_color", "#FFFFFF"),
+					"variant_color2": c.get("variant_color2", ""),
+					"variant_pattern": c.get("variant_pattern", "solid"),
+					"bonuses": c.get("bonuses", {}),
+					"hybrid_partner_type": c.get("hybrid_partner_type", ""),
+				})
+		kennel_capacity = persistence.get_kennel_capacity(account_id)
+	# Collected companions (player-side; includes whatever is currently active).
+	var collected: Array = []
+	for i in range(character.collected_companions.size()):
+		var c = character.collected_companions[i]
+		if c is Dictionary:
+			collected.append({
+				"index": i,
+				"id": c.get("id", ""),
+				"name": c.get("name", "Unknown"),
+				"monster_type": c.get("monster_type", ""),
+				"tier": int(c.get("tier", 1)),
+				"sub_tier": int(c.get("sub_tier", 1)),
+				"level": int(c.get("level", 1)),
+				"variant": c.get("variant", "Normal"),
+				"variant_color": c.get("variant_color", "#FFFFFF"),
+				"variant_color2": c.get("variant_color2", ""),
+				"variant_pattern": c.get("variant_pattern", "solid"),
+				"bonuses": c.get("bonuses", {}),
+				"is_active": (not character.active_companion.is_empty()
+					and character.active_companion.get("id", "") == c.get("id", "")),
+				"using_registered": (character.using_registered_companion
+					and not character.active_companion.is_empty()
+					and character.active_companion.get("id", "") == c.get("id", "")),
+				"hybrid_partner_type": c.get("hybrid_partner_type", ""),
+			})
+	return {
+		"kennel": kennel,
+		"collected": collected,
+		"kennel_capacity": kennel_capacity,
+	}
+
+func _handle_companion_stable_station(peer_id: int, character) -> void:
+	"""Bump entry-point: opens the Companion Stable UI on the client.
+	First-time interaction fires the seen_companion_stable_hint overlay."""
+	var payload = _build_companion_stable_payload(peer_id)
+	payload["type"] = "companion_stable_open"
+	send_to_peer(peer_id, payload)
+	# First-time tutorial overlay. character.seen_companion_stable_hint set after.
+	if not character.seen_companion_stable_hint:
+		character.seen_companion_stable_hint = true
+		save_character(peer_id)
+		send_to_peer(peer_id, {
+			"type": "tutorial_hint",
+			"title": "[color=#FFD700]Companion Stable[/color]",
+			"body": (
+				"You have found a [color=#FFD700]Companion Stable[/color] — a living link to your Sanctuary's kennel.\n\n"
+				+ "[color=#A335EE]Deposit[/color] a companion to send it to the Sanctuary kennel.\n"
+				+ "[color=#A335EE]Withdraw[/color] a companion to bring one back into your party roster.\n\n"
+				+ "This is how you actively use [color=#FF80FF]Fusion[/color] across a single character's lifetime — collect, deposit, and combine without needing to die.\n\n"
+				+ "Companion Stables appear at [color=#87CEEB]Tier 5+ trading posts[/color]."
+			),
+		})
+
+func handle_companion_stable_refresh(peer_id: int) -> void:
+	"""Re-send the kennel/collected snapshot (after an action or external change)."""
+	if not characters.has(peer_id):
+		return
+	if not _player_is_at_companion_stable(characters[peer_id]):
+		send_to_peer(peer_id, {"type": "error", "message": "You are no longer at a Companion Stable."})
+		return
+	var payload = _build_companion_stable_payload(peer_id)
+	payload["type"] = "companion_stable_open"
+	send_to_peer(peer_id, payload)
+
+func handle_companion_stable_withdraw(peer_id: int, message: Dictionary) -> void:
+	"""Withdraw a kennel companion into the player's collected_companions list."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not _player_is_at_companion_stable(character):
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Companion Stable."})
+		return
+	var kennel_index = int(message.get("kennel_index", -1))
+	var account_id = peers[peer_id].account_id
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No Sanctuary found."})
+		return
+	var kennel = house.get("companion_kennel", {}).get("companions", [])
+	if kennel_index < 0 or kennel_index >= kennel.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid kennel selection."})
+		return
+	var companion = persistence.remove_companion_from_kennel(account_id, kennel_index)
+	if companion.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Failed to withdraw companion."})
+		return
+	# Strip kennel metadata; companion is now a normal collected companion.
+	companion.erase("stored_at")
+	companion.erase("house_slot")
+	character.collected_companions.append(companion)
+	save_character(peer_id)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#A335EE]%s has been withdrawn from your Sanctuary.[/color]" % companion.get("name", "Companion"),
+	})
+	# Refresh the panel with new state.
+	var payload = _build_companion_stable_payload(peer_id)
+	payload["type"] = "companion_stable_open"
+	send_to_peer(peer_id, payload)
+	send_character_update(peer_id)
+
+func handle_companion_stable_deposit(peer_id: int, message: Dictionary) -> void:
+	"""Deposit a collected companion to the kennel. Blocks deposit of the
+	active companion if it's currently checked out as a registered companion
+	(player must unregister via Sanctuary first to avoid losing the slot)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not _player_is_at_companion_stable(character):
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Companion Stable."})
+		return
+	var collected_index = int(message.get("collected_index", -1))
+	if collected_index < 0 or collected_index >= character.collected_companions.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid companion selection."})
+		return
+	var companion = character.collected_companions[collected_index]
+	var is_active = (not character.active_companion.is_empty()
+		and character.active_companion.get("id", "") == companion.get("id", ""))
+	if is_active and character.using_registered_companion:
+		send_to_peer(peer_id, {
+			"type": "error",
+			"message": "Active companion is registered — unregister it at the Sanctuary before depositing.",
+		})
+		return
+	var account_id = peers[peer_id].account_id
+	var kennel_idx = persistence.add_companion_to_kennel(account_id, companion.duplicate(true))
+	if kennel_idx < 0:
+		send_to_peer(peer_id, {"type": "error", "message": "Kennel is full! Upgrade in Sanctuary."})
+		return
+	# Remove from collected; if it was the active companion, clear active too.
+	character.collected_companions.remove_at(collected_index)
+	if is_active:
+		character.active_companion = {}
+		character.using_registered_companion = false
+		character.registered_companion_slot = -1
+	save_character(peer_id)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#A335EE]%s has been sent to your Sanctuary's kennel.[/color]" % companion.get("name", "Companion"),
+	})
+	var payload = _build_companion_stable_payload(peer_id)
+	payload["type"] = "companion_stable_open"
+	send_to_peer(peer_id, payload)
 	send_character_update(peer_id)
 
 # ===== BUG REPORT HANDLER =====

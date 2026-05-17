@@ -49,6 +49,11 @@ extends Resource
 @export var seen_quest_board_hint: bool = false
 @export var seen_dungeon_hint: bool = false
 @export var seen_crafting_hint: bool = false
+# Audit #4 Slice 1A (v0.9.485) — first-time Companion Stable interaction
+# overlay. Companion Stable tiles appear at T5+ NPC posts and grant live
+# Sanctuary kennel access mid-character. Hint explains the deposit/withdraw
+# flow so the player understands they can finally fuse without dying.
+@export var seen_companion_stable_hint: bool = false
 
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
@@ -1348,6 +1353,8 @@ func to_dict() -> Dictionary:
 		"seen_quest_board_hint": seen_quest_board_hint,
 		"seen_dungeon_hint": seen_dungeon_hint,
 		"seen_crafting_hint": seen_crafting_hint,
+		# Audit #4 Slice 1A (v0.9.485) — first-time Companion Stable hint flag
+		"seen_companion_stable_hint": seen_companion_stable_hint,
 		# Audit #4 Slice 1 — NPC Home Stone purchase counts (per-character
 		# lifetime). Pushed to client so the visual vendor panel can render
 		# owned-vs-cap rows.
@@ -1513,6 +1520,10 @@ func from_dict(data: Dictionary):
 	seen_quest_board_hint = bool(data.get("seen_quest_board_hint", false))
 	seen_dungeon_hint = bool(data.get("seen_dungeon_hint", false))
 	seen_crafting_hint = bool(data.get("seen_crafting_hint", false))
+	# Audit #4 Slice 1A (v0.9.485) — Companion Stable hint flag. Defaults
+	# false for legacy characters; they get the hint on their first stable
+	# interaction after this version ships.
+	seen_companion_stable_hint = bool(data.get("seen_companion_stable_hint", false))
 	# Audit #4 Slice 1 — NPC stone purchase counts per character lifetime.
 	# Empty dict for legacy characters.
 	var stones_raw = data.get("npc_stones_bought", {})
