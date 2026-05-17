@@ -18026,9 +18026,22 @@ func _get_base_monster_name(monster_name: String) -> String:
 func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
 	"""Estimate enemy HP based on knowledge from killing similar monsters.
 	Uses base monster name so variants share knowledge with base type.
-	Returns 0 if no estimate available."""
+	Returns 0 if no estimate available.
+
+	v0.9.502 — Cross-level estimates are padded UPWARD to ensure the
+	displayed max_hp typically exceeds the monster's true HP. Background:
+	the server's actual HP calc includes a hyperbolic hp_multiplier (2.0×
+	asymptoting to 7.0×) keyed on expected player gear at the target level.
+	The client's tiered_stat_scale formula tracks only the base scaling
+	curve, so cross-level extrapolation systematically undershoots — players
+	would see 'HP 0/x' on a monster that's still alive (looks bugged). The
+	pad ensures the discovery system narrows downward toward truth as the
+	player accumulates same-level kills, rather than undershooting from
+	below."""
 	var base_name = _get_base_monster_name(enemy_name)
-	# First check exact match
+	# Exact-level match: known_hp = damage dealt in last kill, which is
+	# always ≥ actual HP (you can't kill with less damage than HP). Return
+	# unpadded.
 	var enemy_key = "%s_%d" % [base_name, enemy_level]
 	if known_enemy_hp.has(enemy_key):
 		return known_enemy_hp[enemy_key]
@@ -18061,7 +18074,13 @@ func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
 			var target_scale = _calculate_tiered_stat_scale(enemy_level)
 			# Ratio of scales gives us the multiplier
 			var scale_ratio = target_scale / known_scale if known_scale > 0 else 1.0
-			return int(best_hp * scale_ratio)
+			var raw_estimate: float = float(best_hp) * scale_ratio
+			# v0.9.502 — pad upward to bias estimates above truth. Pad
+			# grows with the level gap (less confidence over larger jumps)
+			# and is capped at +50%. 4% per level of gap.
+			var level_gap: int = abs(enemy_level - best_level)
+			var pad: float = 1.0 + minf(float(level_gap) * 0.04, 0.50)
+			return int(raw_estimate * pad)
 
 	return 0
 
@@ -24239,8 +24258,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.502 — Combat readability slice 2/2: HP estimates bias upward.
+	display_game("[color=#00FF00]v0.9.502[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Monster HP estimates now over-estimate slightly instead of undershooting — no more 'monster shows 1/x HP but won't die'[/color]")
+	display_game("  • [b]Root cause:[/b] the client's HP estimation extrapolated across levels using only the base stat-scale curve, but the server's actual HP calc layers a hyperbolic [color=#FFAA66]hp_multiplier[/color] on top (2× → 7× asymptote, keyed on expected player gear at the target level). So when the player had killed a Lv 5 monster and then met a Lv 10 of the same type, the client estimate could be e.g. 281 HP while actual was 330 — the bar would drain to 0 with the monster still alive. Looked like a bug.")
+	display_game("  • [b]Fix:[/b] cross-level estimates are now padded upward by 4% per level of gap, capped at +50%. Same-level data (`known_hp = damage dealt` from a real kill) is still returned unpadded — it's always ≥ actual HP by construction. As the player kills more monsters AT the displayed level, the system narrows toward truth from above instead of guessing low. Pad is invisible to the player; just feels like 'this monster has more HP than I thought' rather than 'why isn't this dying.'")
+	display_game("  • Closes the third combat-readability ask from the 2026-05-17 playtest note. Pairs with v0.9.501's longer damage popups + animated HP drain.")
+	display_game("")
+
 	# v0.9.501 — Combat readability pass: longer damage popups + animated HP drain.
-	display_game("[color=#00FF00]v0.9.501[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.501[/color]")
 	display_game("  [color=#FFD700]Combat readability — damage popups linger ~3× longer, HP bars now drain smoothly over 1 second[/color]")
 	display_game("  • [b]Floating damage numbers stay readable.[/b] Direct-hit damage popups went from 0.9s total (0.65 linger + 0.25 fade) to [color=#88FF88]2.7s[/color] (1.95 + 0.75) — ~3× longer dwell so you can actually read the number before the next attack lands. DoT/proc tick lifetime bumped 0.85s → 2.55s for parity. Stack-reset window grew 1.5s → 3.0s so rapid hits within a burst still fan up the screen instead of overlapping the still-visible previous popup.")
 	display_game("  • [b]HP bars drain over ~1 second instead of snapping.[/b] All combat HP bars (player, companion, monster, plus Lufia mirrors and the battlefield overlay) now animate from old value → new value over 1.0s with a TRANS_QUAD EASE_OUT curve. The numeric label (e.g., 'HP 84 / 150') still updates instantly — the number is the truth; the bar is the dramatic reveal. New helper `_animate_bar_value(bar, target, dur)` kills any in-progress tween so rapid hits don't queue stale tweens. Initial population at combat start snaps the bar (no anim from 0 → max).")
@@ -24267,11 +24294,6 @@ func display_changelog():
 	display_game("  • Previously, the in-game Companions screen only listed the currently-active (checked-out) companion plus your collected roster — anything else registered to your Sanctuary was invisible until you visited a Companion Stable. v0.9.498 adds a [color=#FF80FF]Sanctuary Registered[/color] section to the Companions page that lists every companion in your account's registered slots, with type / tier / sub-tier / level / variant / hybrid markers. Read-only — full management still happens at any Tier 5+ NPC Companion Stable or the Sanctuary's Stable tile. The currently checked-out registered slot is dimmed and marked [CHECKED OUT] so you know which physical pet matches which slot. Server now ships a slim `account_registered_companions` array with each `character_update`. Closes a long-pending visibility gap (~30 min queue item from prior sessions).")
 	display_game("")
 
-	# v0.9.497 — Audit #4 follow-up: Unified Sanctuary Companion Stable.
-	display_game("[color=#00FFFF]v0.9.497[/color]")
-	display_game("  [color=#FFD700]Sanctuary's Kennel + Fusion stations merged into one Companion Stable[/color]")
-	display_game("  • The old [color=#FF8800]K[/color] (Kennel) block and [color=#FFD700]F[/color] (Fusion Station) tile in the Sanctuary are gone. A single [color=#FF8800]K[/color] Companion Stable tile replaces them, opening a unified tabbed panel — [b]Kennel[/b] tab (Register to Slot / Release per row) and [b]Fuse[/b] tab (Same Type + Mixed T9 modes). Single point of interaction; matches the visual style of the at-NPC-post Companion Stable. Hybrid + Tier Ascend modes are intentionally hidden here because their catalysts come from CHARACTER inventory — visit any Tier 5+ NPC Stable for those mid-character. Legacy F-tile screens (the old `display_house_kennel` + `display_house_fusion`) still exist as fallback code paths but are unreachable from the action bar. Audit #4 unification follow-up to Slice 1A (NPC Stable) + Slice 1B (Tier Ascension).")
-	display_game("")
 
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
