@@ -24369,8 +24369,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.522 — Audit #6 Repeatable T2 chains + Audit #10 Apex Zone name in combat + Audit #3 First chain hint.
+	display_game("[color=#00FF00]v0.9.522[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Six more chains become repeatable, the apex zone name appears in combat rewards, and the first chain quest gets a teaching overlay.[/color]")
+	display_game("  • [b]Repeatable T2 chains[/b] (Audit #6). [color=#FFAA00]Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt[/color] now also have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in, then reappear at their home post. Extends v0.9.517's repeatable starter chains to mid-game — 11 chains now repeatable across T1+T2.")
+	display_game("  • [b]Apex Zone names in combat reward[/b] (Audit #10). The combat reward bonus message now uses the named zone — \"⚡ [color=#9F70FF]Burning Reach[/color] Bonus: +10% XP\" instead of the generic \"⚡ Apex Frontier Bonus\". Variant kills still take precedence with the \"Apex Variant\" label. Server stamps `apex_zone_name` on the monster at engagement; combat_manager reads it for the message.")
+	display_game("  • [b]First chain quest tutorial overlay[/b] (Audit #3). New `seen_chain_hint` per-character flag — when a player accepts their first chain quest, a modal explains stages, the auto-add of next stage, the final-stage egg + Home Stones + chain title rewards, and the 24h repeatable cooldown on T1+T2 chains.")
+	display_game("  • Audit progress: #6 ~99% → ~99%, #10 ~97% → ~98%, #3 ~96% → ~97%.")
+	display_game("")
+
 	# v0.9.521 — Audit #12 spawn-point UX + Tent + Scarecrow + Audit #14 [NEW Lv X] whisper tag.
-	display_game("[color=#00FF00]v0.9.521[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.521[/color]")
 	display_game("  [color=#FFD700]Spawn-point captured item closed, catalogue grows to 13, mentor whispers gain a new-player tag.[/color]")
 	display_game("  • [b]Spawn-point UX[/b] (Audit #12). New [color=#88AAFF]Respawn point:[/color] line on the Status page's Progression Vectors dashboard. Currently always [color=#FFD700]Crossroads[/color] (world origin) — when player-set respawn points land, this line picks them up. Closes the captured spawn-point UX item.")
 	display_game("  • [b]Tent + Scarecrow[/b] (Audit #12). Tent ([color=#A0826D]v[/color], blocks movement, Construction skill 7, leather+plank+rope) creates camping pockets inside enclosures. Scarecrow ([color=#C8B070]k[/color], walkable, Construction skill 5, plank+rope+herb) is a distinctive low-cost decoration. Catalogue now spans 13 cosmetic structures.")
@@ -24403,14 +24412,6 @@ func display_changelog():
 	display_game("  • Continues closing pieces of Audit #14 (~65% → ~72%). Remaining slate is heavy-design: PvP, full mentor matching, bounty, group dungeons.")
 	display_game("")
 
-	# v0.9.517 — Audit #14 Mentor + Audit #6 Repeatable starter chains + Audit #11 Threat corridor HUD.
-	display_game("[color=#00FFFF]v0.9.517[/color]")
-	display_game("  [color=#FFD700]Big closing batch on the audit — mentor badges, repeatable T1 chains, and visible threat corridors.[/color]")
-	display_game("  • [b]Mentor Badge MVP[/b] (Audit #14). New [color=#FFD700]/mentor on[/color] (and [color=#FFD700]/mentor off[/color]) command toggles a ★ badge on your name in the players list. Volunteer system — gated at Lv 20+ so new players can find experienced help. No matching algorithm, no reward — purely a discoverability marker. First piece of the Mentor system.")
-	display_game("  • [b]Repeatable Starter Chains[/b] (Audit #6). T1 quest chains (Goblin Menace, Skeleton Lord, Wolf Pack, Rat Plague, Kobold Trouble) now have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in, then re-appear at their home post. Lets a high-level character with starter friends drop back to the early posts and run a chain together as a meaningful XP/valor activity. Higher-tier chains stay one-shot. Closes the [color=#FFAA66]\"repeatable chains\"[/color] audit pickup.")
-	display_game("  • [b]Threat Corridor HUD[/b] (Audit #11). When you're within 80 tiles of an active T2+ world dungeon, the Area line now surfaces a [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color] tag — naming the species biased into nearby spawns AND the dungeon driving it. Visualizes the existing Slice 9 mechanic from v0.9.454 (which silently biased spawns toward dungeon monster types) so players can SEE what's wandering at them and why.")
-	display_game("  • All three slices close real captured items on the audit master. The remaining work on the audit is heavy-design (PvP, full mentor matching, ability mastery — all explicitly deferred).")
-	display_game("")
 
 
 

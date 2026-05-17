@@ -7427,6 +7427,10 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 	# +10% XP bonus.
 	var in_apex = world_system.is_apex_frontier(character.x, character.y)
 	monster["is_apex_frontier"] = in_apex
+	# Audit #10 v0.9.522 — stamp the apex zone NAME too so the combat reward
+	# message can use it (Burning Reach / Frostbound Verge / etc.) instead of
+	# a generic "Apex Frontier" label.
+	monster["apex_zone_name"] = world_system.get_apex_zone_name(character.x, character.y) if in_apex else ""
 
 	# Audit #10 v0.9.513 — Apex monsters. When in the apex frontier zone,
 	# monsters spawn as "Apex" variants: +25% HP, +10% damage, "Apex "
@@ -13204,6 +13208,35 @@ func _maybe_send_market_hint(peer_id: int) -> void:
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
 
+func _maybe_send_chain_hint(peer_id: int, quest: Dictionary) -> void:
+	"""Audit #3 v0.9.522 — first chain quest accepted teaches multi-stage rewards.
+	Fires once per character; flag persists via to_dict / from_dict."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_chain_hint:
+		return
+	character.seen_chain_hint = true
+	var total_stages = int(quest.get("chain_total", 1))
+	var title = "[color=#FFAA00]⛓ Chain Quests[/color]"
+	var body = (
+		"You've accepted a [color=#FFAA00]⛓ CHAIN[/color] quest — a multi-stage adventure.\n\n"
+		+ "[color=#FFD700]── How chains work ──[/color]\n"
+		+ "  • [color=#FFD700]%d stages[/color]: KILL stages thin the threat → BOSS_HUNT finale at a dungeon.\n" % total_stages
+		+ "  • Each stage you complete is turned in at the same trading post.\n"
+		+ "  • The [b]next[/b] stage auto-appears on your active quests after turn-in — no need to re-visit the quest board mid-chain.\n\n"
+		+ "[color=#FFD700]── Final-stage rewards ──[/color]\n"
+		+ "  • [color=#88FF88]Base valor[/color] + XP from the boss kill.\n"
+		+ "  • [color=#88FF88]Chain bonus valor[/color] on top.\n"
+		+ "  • A [color=#A335EE]Companion Egg[/color] of the chain's monster type.\n"
+		+ "  • [color=#FFD700]Home Stones[/color] (Egg + Equipment / Companion) — these survive permadeath via your Sanctuary.\n"
+		+ "  • A [color=#FFD700]Chain Title[/color] (worn via Titles command).\n\n"
+		+ "[color=#FFD700]── Repeatable starter chains ──[/color]\n"
+		+ "T1 + T2 chains have a [color=#9ACD32]24h cooldown[/color] after completion — they reappear, so you can run them again on the same character. Great for valor / egg / title farming."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
 func handle_market_browse(peer_id: int, message: Dictionary):
 	"""Browse market listings at current trading post or player post."""
 	if not characters.has(peer_id):
@@ -15414,6 +15447,10 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 
 	if result.success:
 		var quest = quest_db.get_quest(quest_id, character.level, completed_at_post, character.name)
+
+		# Audit #3 v0.9.522 — first chain-quest accepted teaches stages + bonus.
+		if String(quest.get("chain_id", "")) != "":
+			_maybe_send_chain_hint(peer_id, quest)
 
 		# For BOSS_HUNT quests with named bounty, register the bounty
 		if quest.get("type") == quest_db.QuestType.BOSS_HUNT and quest.has("bounty_name"):
