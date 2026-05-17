@@ -3034,6 +3034,30 @@ const RECIPES = {
 		"craft_time": 3.0,
 		"description": "A glowing lamp post. Walkable, decorative. Marks paths and adds warmth to a settlement."
 	},
+	"torch_build": {
+		"name": "Torch",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 8,
+		"difficulty": 12,
+		"materials": {"wooden_plank": 1, "magic_dust": 1, "rope": 1},
+		"output_type": "structure",
+		"structure_type": "torch",
+		"specialist_only": false,
+		"craft_time": 2.0,
+		"description": "A small mounted torch. Walkable, casts a warm glow. The entry-level light source for your settlement."
+	},
+	"statue_build": {
+		"name": "Statue",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 25,
+		"difficulty": 35,
+		"materials": {"stone_block": 6, "magic_dust": 1, "heartwood": 1},
+		"output_type": "structure",
+		"structure_type": "statue",
+		"specialist_only": false,
+		"craft_time": 5.0,
+		"description": "A marble monument. Blocks movement — place as a centerpiece or memorial in your settlement."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
