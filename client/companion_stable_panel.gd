@@ -378,9 +378,9 @@ func _refresh_fuse() -> void:
 			)
 		FUSE_MIXED:
 			_fuse_hint_label.append_text(
-				"[color=#FF00FF]Mixed T9 Fusion[/color] — Select [b]8[/b] companions all at [b]sub-tier 8[/b]. Types can differ. "
+				"[color=#FF00FF]Mixed T9 Fusion[/color] — Select [b]8[/b] companions all at [b]T8.8 (Tier 8, sub-tier 8)[/b]. Types can differ. "
 				+ "Output is a [b]random Tier 9[/b] companion (rolls from one of the selected types).\n"
-				+ "[color=#888888]Inputs can be kennel or registered. If any input is registered, output is auto-registered.[/color]"
+				+ "[color=#888888]The capstone fusion — only maxed-out Tier 8 companions count as inputs. Inputs can be kennel or registered.[/color]"
 			)
 		FUSE_HYBRID:
 			_fuse_hint_label.append_text(
@@ -404,6 +404,9 @@ func _candidate_matches_mode(c: Dictionary, mode: String) -> bool:
 	var rules: Dictionary = FUSE_MODE_RULES.get(mode, FUSE_MODE_RULES[FUSE_SAME])
 	var st = int(c.get("sub_tier", 1))
 	if st < int(rules.get("min_sub_tier", 1)) or st > int(rules.get("max_sub_tier", 9)):
+		return false
+	# v0.9.495 — Mixed T9 specifically requires T8.8 (Tier 8 + sub-tier 8).
+	if mode == FUSE_MIXED and int(c.get("tier", 1)) != 8:
 		return false
 	return true
 
@@ -431,7 +434,7 @@ func _populate_fuse_candidates() -> void:
 			FUSE_SAME:
 				msg = "[color=#808080]No fusion candidates yet. Deposit companions or register some via a Home Stone (Companion).[/color]"
 			FUSE_MIXED:
-				msg = "[color=#808080]No sub-tier 8 companions available. Build them up via Same Type fusion first.[/color]"
+				msg = "[color=#808080]No T8.8 companions available. Mixed T9 needs Tier 8 companions maxed to sub-tier 8 — the capstone of the tier ladder.[/color]"
 			FUSE_HYBRID:
 				msg = "[color=#808080]No sub-tier 5+ companions available. Build them up via Same Type fusion first.[/color]"
 		lbl.append_text(msg)
@@ -597,13 +600,13 @@ func _refresh_fuse_selection_state() -> void:
 				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
 		FUSE_MIXED:
 			if count == cap:
-				var all_st8 = true
+				var all_t88 = true
 				for sel in _fuse_selection:
-					if int(sel.companion.get("sub_tier", 1)) != 8:
-						all_st8 = false
+					if int(sel.companion.get("tier", 1)) != 8 or int(sel.companion.get("sub_tier", 1)) != 8:
+						all_t88 = false
 						break
-				if not all_st8:
-					preview = "[color=#FF6644]All 8 must be at sub-tier 8.[/color]"
+				if not all_t88:
+					preview = "[color=#FF6644]All 8 must be T8.8 (Tier 8, sub-tier 8).[/color]"
 				else:
 					fuse_ready = true
 					preview = "[color=#88FF88]→ Random T9 companion will be added to %s.[/color]" % dest_str
