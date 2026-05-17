@@ -1345,6 +1345,24 @@ func is_apex_frontier(x: int, y: int) -> bool:
 	var dist_sq = x * x + y * y
 	return dist_sq > APEX_FRONTIER_DISTANCE * APEX_FRONTIER_DISTANCE
 
+func get_apex_zone_name(x: int, y: int) -> String:
+	"""Audit #10 v0.9.514 — named extreme zones inside the apex frontier.
+	Returns one of four flavored quadrant names so the apex frontier feels
+	like a region with identity, not just a geometric distance. Pairs with
+	the apex variant system from v0.9.513. Empty string when outside the
+	apex frontier."""
+	if not is_apex_frontier(x, y):
+		return ""
+	# Cardinal quadrant from origin. Ties go to the more "positive" quadrant.
+	if x >= 0 and y >= 0:
+		return "Burning Reach"        # NE — fire / arid theme
+	elif x < 0 and y >= 0:
+		return "Frostbound Verge"     # NW — ice / cold theme
+	elif x < 0 and y < 0:
+		return "Sundered Hollows"     # SW — undead / decay theme
+	else:
+		return "Cinder Wastes"        # SE — ash / volcanic theme
+
 func is_safe_zone(x: int, y: int) -> bool:
 	"""Check if location is a safe zone (NPC post, trading post, structure interior)"""
 	# New system: check NPC posts

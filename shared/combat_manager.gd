@@ -2174,6 +2174,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"gems_earned": gems_earned,
 		"summon_next_fight": combat.get("summon_next_fight", ""),
 		"is_rare_variant": monster.get("is_rare_variant", false),
+		"is_apex_variant": monster.get("is_apex_variant", false),  # v0.9.514 — server uses this to roll Apex Crystal drop
 		"wish_pending": combat.get("wish_pending", false),
 		"wish_options": combat.get("wish_options", []),
 		"is_dungeon_combat": combat.get("is_dungeon_combat", false),

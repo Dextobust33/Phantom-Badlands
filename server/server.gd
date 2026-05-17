@@ -4129,6 +4129,16 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if not tool_drop.is_empty():
 					all_drops.append(tool_drop)
 
+				# Audit #10 v0.9.514 — Apex Crystal drop. 12% chance per apex
+				# variant kill. Flat 750-valor sellable trade good; pairs with
+				# the +50% gem / +30% XP variant bonuses to make apex frontier
+				# kills feel materially distinct. Future apex-only crafting
+				# recipes can take Apex Crystal as input (deferred).
+				if result.get("is_apex_variant", false) and randi() % 100 < 12:
+					var apex_item = drop_tables._generate_item({"item_type": "apex_crystal", "rarity": "epic"}, max(1, killed_monster_level))
+					if not apex_item.is_empty():
+						all_drops.append(apex_item)
+
 				# Combat scratch-off bag (user-requested 2026-05-14) — when the
 				# feature flag is on, we route all drops through the 16-slot
 				# reveal panel instead of awarding inline. Currency/XP still go
@@ -5411,6 +5421,10 @@ func send_location_update(peer_id: int):
 		# Audit #10 v0.9.512 — apex frontier marker. Drives the [⚡ APEX] tag
 		# in the region label + +10% XP/gold combat reward bonus.
 		"is_apex_frontier": _check_apex_frontier_entry(peer_id, character.x, character.y),
+		# Audit #10 v0.9.514 — apex zone name (Burning Reach / Frostbound Verge
+		# / Sundered Hollows / Cinder Wastes). Empty string outside the apex
+		# frontier; client only renders the line when non-empty.
+		"apex_zone_name": world_system.get_apex_zone_name(character.x, character.y),
 		"nearest_post": nearest_post_hud,
 		# Slice 6 — dynamic post state. Client renders an "Under Threat" warning
 		# in the HUD when threatened=true. Always sent; client checks the flag.

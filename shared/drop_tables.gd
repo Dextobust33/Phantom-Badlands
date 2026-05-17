@@ -3774,7 +3774,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "apex_crystal" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -3948,6 +3948,10 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"hybrid_catalyst": "Hybrid Catalyst",
 		# Audit #4 Slice 1B (v0.9.496) — tier-ascension fusion catalyst
 		"ascension_catalyst": "Ascension Catalyst",
+		# Audit #10 v0.9.514 — apex variant trade good. Rare drop from apex
+		# frontier kills; sells for high valor at any market or saved for
+		# future apex-only crafting recipes.
+		"apex_crystal": "Apex Crystal",
 		# Material Pouches/Gems (special - don't prefix with tier)
 		"essence_pouch": "Material Pouch",
 		"gem_small": "Gem",
@@ -3956,13 +3960,17 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "apex_crystal" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
 		return base_name
 
 	return tier_name + " " + base_name
 
 func _calculate_consumable_value(tier: int, item_type: String) -> int:
 	"""Calculate base value of a consumable based on tier."""
+	# Audit #10 v0.9.514 — Apex Crystal is a flat-value apex frontier trade good
+	# (doesn't scale with monster tier since the frontier zone is its own gate).
+	if item_type == "apex_crystal":
+		return 750
 	# Base values per tier (exponential scaling)
 	var tier_values = {
 		1: 10,      # Minor
