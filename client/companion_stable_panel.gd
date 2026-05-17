@@ -160,11 +160,13 @@ func _build_row(c: Dictionary, is_collected: bool) -> Control:
 		action_btn.text = "→ Deposit"
 		action_btn.tooltip_text = "Send to Sanctuary kennel"
 		var disabled := false
-		# v0.9.487 — registered deposit is allowed (frees the slot so the
-		# companion can be fused). Surface the consequence in the tooltip.
+		# v0.9.488 — deposit and registration are independent operations.
+		# Registered companions return to their slot (registration preserved);
+		# others go to the kennel.
 		if bool(c.get("using_registered", false)):
-			action_btn.tooltip_text = "Frees the Registered slot. Re-register the result later via a Home Stone (Companion)."
-		if _kennel.size() >= _kennel_capacity:
+			action_btn.text = "→ Return to Slot"
+			action_btn.tooltip_text = "Return to its registered Sanctuary slot. Still registered; just not on your character anymore."
+		elif _kennel.size() >= _kennel_capacity:
 			disabled = true
 			action_btn.tooltip_text = "Kennel is full — upgrade at the Sanctuary."
 		action_btn.disabled = disabled

@@ -25,8 +25,8 @@ const HELP_TOPICS := {
 			+ "[color=#A335EE]✦ Deposit[/color] — send a collected companion to the Sanctuary kennel. Frees up your party roster and makes the companion available as a [b]Fusion[/b] input.\n\n"
 			+ "[color=#A335EE]✦ Withdraw[/color] — bring a kennel companion back into your party roster. Useful for fielding a fused result, or rotating in a stored companion mid-character.\n\n"
 			+ "[color=#FF8888]Notes[/color]:\n"
-			+ "  • Depositing a [color=#FF80FF][REGISTERED][/color] companion automatically frees its registered slot — useful when you want to fuse your main companion. Re-register the fused result later via a [color=#FFD700]Home Stone (Companion)[/color].\n"
-			+ "  • Kennel must have space (upgrade at the Sanctuary if full).\n\n"
+			+ "  • Deposit and registration are independent. A [color=#FF80FF][REGISTERED][/color] companion deposited here [b]returns to its registered slot[/b] (still registered, just not on your character).\n"
+			+ "  • Non-registered companions go to the kennel. Kennel must have space (upgrade at the Sanctuary if full).\n\n"
 			+ "[color=#87CEEB]This is the system that makes Fusion accessible mid-character — you no longer have to die to combine companions.[/color]"
 		),
 	},
