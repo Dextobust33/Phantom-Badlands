@@ -151,6 +151,80 @@ const HELP_TOPICS := {
 			+ "[color=#888888]Valor balance shows top-right. Earn it from quests, monster drops, and listing items. Spend it on market buys, NPC vendors, Sanctuary upgrades (where applicable).[/color]"
 		),
 	},
+	"sanctuary_page": {
+		"title": "[color=#FFD700]Sanctuary[/color]",
+		"body": (
+			"Your account-level home that survives permadeath. Spend [color=#FF6600]Baddie Points[/color] (earned on character death) on permanent upgrades that buff every future character.\n\n"
+			+ "[color=#FFD700]── 5 tabs ──[/color]\n"
+			+ "  • [color=#88FF88]Storage[/color] — house storage, kennel, egg incubator, companion slots — all the bigger-bag upgrades.\n"
+			+ "  • [color=#FF8888]Combat[/color] — HP / resource max / regen, defensive bonuses.\n"
+			+ "  • [color=#FFAA66]Stats[/color] — stat bonuses (STR/CON/DEX/INT/WIS/WITS) that stack with racial + character points.\n"
+			+ "  • [color=#87CEEB]Discovery[/color] — Bestiary, Compass, Atlas qualitative unlocks.\n"
+			+ "  • [color=#FFD700]Economy[/color] — starting Valor, flee chance, gathering / XP bonuses.\n\n"
+			+ "[color=#FFD700]── Visibility cues ──[/color]\n"
+			+ "  • Tab strip shows a [color=#88FF88]+N[/color] badge for each tab containing affordable upgrades.\n"
+			+ "  • Top-of-page summary shows total affordable across all tabs.\n"
+			+ "  • Each row tags [color=#88FF88]✓ AFFORDABLE[/color] or [color=#FFD700]✦ MAX[/color] so you know what to spend on next.\n\n"
+			+ "[color=#FFD700]── Walkable tiles ──[/color]\n"
+			+ "  • [color=#FFD700]S[/color] Storage chest — items sent home via Home Stones.\n"
+			+ "  • [color=#00FFFF]U[/color] Upgrades — opens this panel.\n"
+			+ "  • [color=#A335EE]C[/color] Companion slots — registered companions (death-resistant).\n"
+			+ "  • [color=#FF8800]K[/color] Companion Stable — unified kennel + fusion station (v0.9.497).\n"
+			+ "  • [color=#FF6600]D[/color] Door — exit to character select / play.\n\n"
+			+ "[color=#888888]Baddie Point formula: scales with character level + total XP at death. Higher-level deaths give more BP.[/color]"
+		),
+	},
+	"clan_page": {
+		"title": "[color=#FFD700]Clans[/color]",
+		"body": (
+			"A clan is a persistent player group with shared identity, chat tag, and a [color=#FFD700]vault[/color] for sharing items.\n\n"
+			+ "[color=#FFD700]── Joining a clan ──[/color]\n"
+			+ "  • [b]Create[/b] one yourself — sets you as the leader. Costs Valor.\n"
+			+ "  • [b]Accept[/b] an invitation from another leader. Pending invites surface in the panel.\n\n"
+			+ "[color=#FFD700]── Leader perks ──[/color]\n"
+			+ "  • Invite / kick members (limited capacity per clan tier).\n"
+			+ "  • Set the public description ([color=#9ACD32]/clandesc[/color] up to 240 chars).\n"
+			+ "  • Set the clan's [color=#FFD700]banner color[/color] ([color=#9ACD32]/clancolor #RRGGBB[/color]). The [TAG] marker follows the color through chat, whispers, player list, and the panel.\n"
+			+ "  • Disband the clan.\n\n"
+			+ "[color=#FFD700]── Clan Vault ──[/color]\n"
+			+ "Shared 30-slot inventory. Any member can deposit or withdraw. Open via the [b]Vault[/b] button on the clan panel, or the legacy [color=#9ACD32]/vault[/color] chat command. Auto-refreshes when another member acts.\n\n"
+			+ "[color=#FFD700]── Chat ──[/color]\n"
+			+ "Your clan tag prefixes your name in chat, whispers, and the player list. Whisper a clanmate from anywhere in the world.\n\n"
+			+ "[color=#888888]Banner color is account-wide; tag visibility is global so other players know your affiliation at a glance.[/color]"
+		),
+	},
+	"bestiary_page": {
+		"title": "[color=#FFD700]Bestiary[/color]",
+		"body": (
+			"Account-level ledger of monster kills. Earned via the [color=#FFD700]Bestiary[/color] Sanctuary upgrade (Discovery tab).\n\n"
+			+ "[color=#FFD700]── Why it matters ──[/color] Different monster types unlock different lore + drops. The Bestiary tracks which monster types you've killed and at what cumulative count. Locked monsters appear as [color=#888888]???[/color] until you've fought one.\n\n"
+			+ "[color=#FFD700]── How to fill it ──[/color] Every kill on a new monster type adds an entry. Subsequent kills tick up the count. Variants (Corrosive / Frenzied / Cursed / etc.) share the entry with their base species — they're the same monster ledger-wise.\n\n"
+			+ "[color=#FFD700]── How it pairs with HP discovery ──[/color] The client's known-HP system separately tracks how much damage you've dealt killing each (monster + level) pair. Used to estimate monster HP on the bar. Independent from the Bestiary, but both grow with combat experience.\n\n"
+			+ "[color=#FFD700]── Tier coverage ──[/color] Bestiary entries span all 9 monster tiers (T1 Lv 1-5 → T9 Lv 5001+). The display groups by tier so you can see your progression at a glance.\n\n"
+			+ "[color=#888888]Account-level — survives permadeath. Visit your Sanctuary → Bestiary to view.[/color]"
+		),
+	},
+	"ability_page": {
+		"title": "[color=#FFD700]Combat Deck & Ability Mapping[/color]",
+		"body": (
+			"Each combat turn you draw a hand of 3 abilities from your deck. Spend resources (Mana / Stamina / Energy depending on class) to play them.\n\n"
+			+ "[color=#FFD700]── Hand of 3 ──[/color]\n"
+			+ "  • Draw 3 random abilities from your deck at the start of each turn.\n"
+			+ "  • Discarded cards reshuffle when the deck runs empty.\n"
+			+ "  • Pick the card that fits the moment, or auto-attack for free.\n\n"
+			+ "[color=#FFD700]── Variable-cost abilities ──[/color]\n"
+			+ "  • Some abilities scale with resources spent (more mana → bigger fireball). Floor is ~30% of nominal so even low-resource turns have a viable play.\n"
+			+ "  • Damage / heal / buff effects scale with cost.\n\n"
+			+ "[color=#FFD700]── Ability mapping ──[/color]\n"
+			+ "  • Open via Settings → Abilities, or right-click an ability in the picker.\n"
+			+ "  • Assign abilities to slots 1-5 for quick-play during combat. Slots auto-fill with your unlocked abilities; remap any time.\n\n"
+			+ "[color=#FFD700]── Deck variants ──[/color]\n"
+			+ "Some character builds unlock alternate deck cards (Forethought, Tactical Retreat, etc.) via class progression. These appear in the picker once unlocked.\n\n"
+			+ "[color=#FFD700]── Off-affinity counters ──[/color]\n"
+			+ "Universal counter cards (planned) will let any class deal with abilities outside its primary affinity. Coming in a future update.\n\n"
+			+ "[color=#888888]Tap the ? on the combat panel mid-fight for context-sensitive ability info.[/color]"
+		),
+	},
 	"fusion_overview": {
 		"title": "[color=#FFD700]Fusion[/color]",
 		"body": (

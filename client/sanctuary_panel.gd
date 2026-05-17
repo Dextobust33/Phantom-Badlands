@@ -46,6 +46,9 @@ var _upgrade_page: int = 0
 
 var _root_panel: PanelContainer
 var _title_label: Label
+
+# v0.9.504 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _bp_label: RichTextLabel
 var _tab_storage_btn: Button
 var _tab_upgrades_btn: Button
@@ -119,6 +122,13 @@ func _build_layout() -> void:
 	_bp_label.custom_minimum_size = Vector2(0, 22)
 	_bp_label.add_theme_font_size_override("normal_font_size", 14)
 	header.add_child(_bp_label)
+
+	# v0.9.504 — Help button + sanctuary_page topic.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("sanctuary_page", _help_panel)
+	header.add_child(help_btn)
 
 	# Tabs
 	var tab_row := HBoxContainer.new()

@@ -13,6 +13,9 @@ signal close_requested
 
 var _root_panel: PanelContainer
 var _header_label: RichTextLabel
+
+# v0.9.504 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _summary_label: RichTextLabel
 var _body_scroll: ScrollContainer
 var _body_vbox: VBoxContainer
@@ -84,6 +87,13 @@ func _build_layout() -> void:
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_hbox.add_child(title_label)
+
+	# v0.9.504 — Help button + bestiary_page topic.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("bestiary_page", _help_panel)
+	title_hbox.add_child(help_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "✕ Close"

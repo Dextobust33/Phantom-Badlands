@@ -46,6 +46,9 @@ const MASTERY_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", 
 
 var _root_panel: PanelContainer
 var _title_label: Label
+
+# v0.9.504 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _path_label_node: RichTextLabel
 var _slots_row: HBoxContainer
 var _slot_cards: Array = []        # Array of PanelContainers, one per slot
@@ -109,6 +112,13 @@ func _build_layout() -> void:
 	_path_label_node.custom_minimum_size = Vector2(0, 22)
 	_path_label_node.add_theme_font_size_override("normal_font_size", 14)
 	header.add_child(_path_label_node)
+
+	# v0.9.504 — Help button + ability_page topic.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("ability_page", _help_panel)
+	header.add_child(help_btn)
 
 	# v0.9.322 — slot row / status row removed (deck system replaced
 	# slot-equip). Status + cancel-choose still allocated as dummy instances
