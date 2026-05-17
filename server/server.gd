@@ -7117,16 +7117,22 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 			})
 	# v0.9.494 — surface Hybrid Catalyst count so the Stable's Fuse tab can
 	# enable/disable Hybrid mode and show "X catalysts available" hint.
+	# v0.9.496 — same for Ascension Catalyst (Tier Ascension Fusion).
 	var hybrid_catalyst_count := 0
+	var ascension_catalyst_count := 0
 	for it in character.inventory:
-		if String(it.get("type", "")) == "hybrid_catalyst":
+		var it_type = String(it.get("type", ""))
+		if it_type == "hybrid_catalyst":
 			hybrid_catalyst_count += int(it.get("quantity", 1))
+		elif it_type == "ascension_catalyst":
+			ascension_catalyst_count += int(it.get("quantity", 1))
 	return {
 		"kennel": kennel,
 		"collected": collected,
 		"registered": registered_pub,
 		"kennel_capacity": kennel_capacity,
 		"hybrid_catalyst_count": hybrid_catalyst_count,
+		"ascension_catalyst_count": ascension_catalyst_count,
 	}
 
 func _handle_companion_stable_station(peer_id: int, character) -> void:
@@ -11937,6 +11943,68 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 			})
 			send_character_update(peer_id)
 
+	elif fusion_type == "ascend":
+		# Audit #4 Slice 1B (v0.9.496) — Tier Ascension Fusion. 3 same-type +
+		# same-tier kennel companions (any sub_tier) → 1 companion of the SAME
+		# monster_type at tier+1, sub_tier 1. Consumes 1 Ascension Catalyst.
+		if indices.size() != 3:
+			send_to_peer(peer_id, {"type": "error", "message": "Tier Ascension requires exactly 3 companions!"})
+			return
+		var first_asc = kennel[int(indices[0])]
+		var asc_type = String(first_asc.get("monster_type", ""))
+		var asc_tier = int(first_asc.get("tier", 1))
+		if asc_tier >= 9:
+			send_to_peer(peer_id, {"type": "error", "message": "Tier 9 is the maximum — cannot ascend further!"})
+			return
+		var asc_parents: Array = []
+		for idx in indices:
+			var comp = kennel[int(idx)]
+			if String(comp.get("monster_type", "")) != asc_type:
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same monster type!"})
+				return
+			if int(comp.get("tier", 1)) != asc_tier:
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same tier (sub-tier may differ)!"})
+				return
+			asc_parents.append(comp)
+		if not characters.has(peer_id):
+			send_to_peer(peer_id, {"type": "error", "message": "Character context missing."})
+			return
+		var character = characters[peer_id]
+		var asc_catalyst_idx = -1
+		for i in range(character.inventory.size()):
+			var item = character.inventory[i]
+			if String(item.get("type", "")) == "ascension_catalyst" and int(item.get("quantity", 1)) >= 1:
+				asc_catalyst_idx = i
+				break
+		if asc_catalyst_idx == -1:
+			send_to_peer(peer_id, {"type": "error", "message": "You need an Ascension Catalyst (drops from T6+ dungeon chests)."})
+			return
+		var inherited_asc = _check_variant_inheritance(kennel, indices)
+		var output = drop_tables.create_ascended_companion(asc_parents, inherited_asc)
+		if output.is_empty():
+			send_to_peer(peer_id, {"type": "error", "message": "Tier Ascension failed!"})
+			return
+		var asc_cat_item = character.inventory[asc_catalyst_idx]
+		if int(asc_cat_item.get("quantity", 1)) > 1:
+			asc_cat_item["quantity"] = int(asc_cat_item.get("quantity", 1)) - 1
+		else:
+			character.remove_item(asc_catalyst_idx)
+		var int_indices = []
+		for idx in indices:
+			int_indices.append(int(idx))
+		if persistence.fuse_companions(account_id, int_indices, output):
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FFAA66]Tier Ascension! Created %s (T%d-1)![/color]" % [output.name, output.tier]
+			})
+			var updated_house = persistence.get_house(account_id)
+			send_to_peer(peer_id, {
+				"type": "house_update",
+				"house": updated_house,
+				"upgrade_costs": persistence.HOUSE_UPGRADES
+			})
+			send_character_update(peer_id)
+
 func _check_variant_inheritance(kennel: Array, indices: Array) -> Dictionary:
 	"""Check if all companions in the fusion share the same variant for inheritance."""
 	var first_variant = kennel[int(indices[0])].get("variant", "")
@@ -12085,6 +12153,44 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 				cat_item["quantity"] = int(cat_item.get("quantity", 1)) - 1
 			else:
 				character.remove_item(catalyst_idx)
+	elif fusion_type == "ascend":
+		# Audit #4 Slice 1B (v0.9.496) — Tier Ascension Fusion. 3 companions
+		# of the SAME monster_type AND the same tier (any sub_tier) → 1
+		# companion of the SAME monster_type at tier+1, sub_tier 1. Requires
+		# 1 Ascension Catalyst (T6+ chest drop).
+		if companions.size() != 3:
+			send_to_peer(peer_id, {"type": "error", "message": "Tier Ascension requires exactly 3 companions!"})
+			return
+		var first_asc = companions[0]
+		var asc_type = String(first_asc.get("monster_type", ""))
+		var asc_tier = int(first_asc.get("tier", 1))
+		if asc_tier >= 9:
+			send_to_peer(peer_id, {"type": "error", "message": "Tier 9 is the maximum — cannot ascend further!"})
+			return
+		for comp in companions:
+			if String(comp.get("monster_type", "")) != asc_type:
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same monster type!"})
+				return
+			if int(comp.get("tier", 1)) != asc_tier:
+				send_to_peer(peer_id, {"type": "error", "message": "All 3 must be the same tier (sub-tier may differ)!"})
+				return
+		var asc_catalyst_idx = -1
+		for i in range(character.inventory.size()):
+			var item = character.inventory[i]
+			if String(item.get("type", "")) == "ascension_catalyst" and int(item.get("quantity", 1)) >= 1:
+				asc_catalyst_idx = i
+				break
+		if asc_catalyst_idx == -1:
+			send_to_peer(peer_id, {"type": "error", "message": "You need an Ascension Catalyst (T6+ dungeon chest drop)."})
+			return
+		var inherited_asc = _check_variant_inheritance_list(companions)
+		output = drop_tables.create_ascended_companion(companions, inherited_asc)
+		if not output.is_empty():
+			var cat_item_asc = character.inventory[asc_catalyst_idx]
+			if int(cat_item_asc.get("quantity", 1)) > 1:
+				cat_item_asc["quantity"] = int(cat_item_asc.get("quantity", 1)) - 1
+			else:
+				character.remove_item(asc_catalyst_idx)
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "Unknown fusion type."})
 		return
@@ -31100,6 +31206,11 @@ func handle_gm_giveconsumable(peer_id: int, message: Dictionary):
 		"homeequip": "home_stone_equipment",
 		"homeequipment": "home_stone_equipment",
 		"homesupplies": "home_stone_supplies",
+		# v0.9.494/v0.9.496 — Fusion catalyst admin shorthands.
+		"hybcat": "hybrid_catalyst",
+		"hybrid": "hybrid_catalyst",
+		"asccat": "ascension_catalyst",
+		"ascend": "ascension_catalyst",
 	}
 	if shorthands.has(item_type):
 		item_type = shorthands[item_type]

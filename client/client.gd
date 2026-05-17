@@ -24179,8 +24179,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.496 — Audit #4 Slice 1B: Tier Ascension Fusion.
+	display_game("[color=#00FF00]v0.9.496[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New Tier Ascend fusion — raise your favorite pet's tier without changing what it is[/color]")
+	display_game("  • [b]Tier Ascension Fusion[/b] joins the Stable's Fuse tab as a 4th mode (alongside Same Type, Mixed T9, and Hybrid). Select 3 companions of the [b]SAME monster type[/b] AND the [b]SAME tier[/b] (any sub-tier mix), plus consume 1 [color=#FFAA66]Ascension Catalyst[/color], to produce 1 companion of that same type at [b]tier+1[/b], sub-tier 1. Lower-tier companions are no longer relegated to fusion fodder — you can raise a Tier 1 Goblin all the way to Tier 9 without giving up the Goblin identity, abilities, or art. Variant inherits if all 3 parents share, else rolls fresh. Tier 9 is the cap. Inputs can come from the kennel or registered slots; the slot-preserving rule from prior fusions still applies (any registered input → output is auto-registered). [color=#FFAA66]Ascension Catalysts[/color] are a new T6+ dungeon chest drop (weights T6=1, T7=2, T8=2, T9=3) — rarer than Hybrid Catalysts since this is a more powerful effect (a 5-step tier climb across the full ladder, vs Hybrid's single capstone moment). Help text + admin shortcuts updated. Closes Audit #4 Slice 1B (Tier Ascension Fusion) — the 'make lower-tier mobs relevant' headline ask.")
+	display_game("")
+
 	# v0.9.485 — Audit #4 Slice 1A: Companion Stable (live Sanctuary kennel access).
-	display_game("[color=#00FF00]v0.9.485[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.485[/color]")
 	display_game("  [color=#FFD700]New Companion Stable station at Tier 5+ trading posts — deposit/withdraw kennel companions WITHOUT having to die[/color]")
 	display_game("  • [b]The Sanctuary kennel is no longer a death-only resource.[/b] Companion Stables appear as a magenta [color=#FF80FF]C[/color] tile inside every Tier 5+ NPC post. Bump into one to open a side-by-side panel: your roster on the left, the Sanctuary kennel on the right. [color=#A335EE]Deposit[/color] a collected companion to send it to the kennel (frees a roster slot, makes the companion available as a Fusion input); [color=#A335EE]Withdraw[/color] a kennel companion to bring one back into your roster. This finally makes [b]Fusion[/b] usable across a single character's lifetime — collect, deposit, combine, withdraw, repeat. First-time interaction shows a teaching overlay so the flow is discoverable. Active companions currently registered (Home Stone) still need to be unregistered at the Sanctuary first to avoid losing the slot. Player-built version of the stable comes in v0.9.486. Audit #4 Slice 1A.")
 	display_game("  • [b]Reusable HelpPanel + ? Help button[/b] introduced as a generic UX pattern. The new Companion Stable panel has a ? Help button in its header that opens topic-aware help (HelpPanel registers topics in a dict). Going forward, most major screens will get a Help button that opens this same panel with a screen-specific topic — re-openable, never one-shot. Distinct from the existing tutorial_hint_panel which is for first-time teaching moments only.")
@@ -24202,13 +24208,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.482[/color]")
 	display_game("  [color=#FFD700]Hotfix — guaranteed equipment drops now show in the victory card's Loot list + ★ ITEMS ACQUIRED banner, not just in the scratch-off panel[/color]")
 	display_game("  • v0.9.481 pinned equipment correctly into the inventory but the victory card's Loot section stayed empty, because the scratch-off skip path also skipped populating `drop_messages` and `drop_data`. Now when the scratch-off is on, the server backfills both from the bag's `pinned` array — so the player sees the equipment they got on the victory screen too. Also fixed a follow-on bug: the client cache that re-renders the victory card on each reveal was starting empty and would have wiped the pinned items on the first scratch-off click. Cache is now seeded from the initial victory payload so reveals append rather than replace.")
-	display_game("")
-
-	# v0.9.481 — Early-game survivability: threat-corridor stat downscale + pinned equipment.
-	display_game("[color=#00FFFF]v0.9.481[/color]")
-	display_game("  [color=#FFD700]Early-game survivability pass — apex monsters at low levels stop one-shotting you, and the scratch-off no longer eats your gear drops[/color]")
-	display_game("  • [b]Threat-corridor stat downscale.[/b] v0.9.480 clamped the threat-corridor's [i]rolled level[/i] to the area's natural range so a T3 Chimaera in the Lv 1-2 buffer was labeled 'Lv 1' — but the [color=#FF6644]actual combat stats[/color] still used the monster's base level, leaving you to fight a 350-HP / 41-STR Chimaera wearing a Lv 1 tag. Win rate against threat-corridor monsters in low areas was effectively 0%. Now [color=#88FF88]_calculate_tiered_stat_scale[/color] applies a linear downscale (target / base) when target_level < base_level — a Lv 1 spawn of a base-44 Chimaera collapses to runt-tier stats (~17 HP, ~8 STR, ~3 DEF) while keeping its name and abilities. Apex monsters spilling into starter zones now read as tier-1-equivalent fights with thematic flavor — a Chimaera baby rather than a fully-grown apex with a misleading level tag. The fix is at the scaling function itself, so it catches every system that spawns a monster below its base level (threat corridor, forced monsters via scrolls, future content).")
-	display_game("  • [b]Combat scratch-off no longer buries equipment.[/b] Pre-scratch-off (before v0.9.371), combat equipment drops went straight to your inventory at ~3.3% per fight. The scratch-off swallowed that cadence — equipment was placed in a random slot, and at T1 monsters with only 1 reveal, you had a 1-in-16 chance to even SEE it (~0.2% effective per fight). Now [color=#88FF88]equipment drops are pinned[/color]: pulled out of the random slot pool, awarded directly to inventory, and surfaced in a new ✦ Equipment Found ✦ banner above the grid. The scratch-off is pure bonus content (eggs / materials / parts / tools / consumables / currency / filler). Drop rate at the source is unchanged — equipment now lands every time it rolls, restoring the pre-scratch-off cadence the user expected.")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -27348,6 +27347,13 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_giveconsumable", "item_type": "reclaimer_lantern", "tier": 6})
 			send_to_server({"type": "gm_giveconsumable", "item_type": "floor_skip_charm", "tier": 6})
 			send_to_server({"type": "gm_giveitem", "tier": 6, "slot": ""})
+		"give_hybrid_catalyst_x3":
+			# v0.9.496 — fusion catalyst shortcuts for Stable / Sanctuary testing.
+			for i in range(3):
+				send_to_server({"type": "gm_giveconsumable", "item_type": "hybrid_catalyst", "tier": 6})
+		"give_ascension_catalyst_x3":
+			for i in range(3):
+				send_to_server({"type": "gm_giveconsumable", "item_type": "ascension_catalyst", "tier": 6})
 		"enter_dungeon_t1":
 			close_admin_menu()
 			send_to_server({"type": "gm_enter_dungeon", "tier": 1})
