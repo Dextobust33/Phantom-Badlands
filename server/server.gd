@@ -1871,6 +1871,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_giveall(peer_id)
 		"gm_teleport":
 			handle_gm_teleport(peer_id, message)
+		"gm_tp_stable":
+			handle_gm_tp_stable(peer_id)
+		"gm_test_stable":
+			handle_gm_test_stable(peer_id)
 		"gm_completequest":
 			handle_gm_completequest(peer_id, message)
 		"gm_resetquests":
@@ -30534,6 +30538,128 @@ func handle_gm_heal(peer_id: int):
 	send_character_update(peer_id)
 	save_character(peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Fully healed! HP, mana, stamina, and energy restored.[/color]"})
+
+func handle_gm_tp_stable(peer_id: int):
+	"""Find the nearest T5+ NPC post that has a companion_stable tile and
+	teleport the player to a floor tile adjacent to it. Used for v0.9.485
+	Companion Stable testing — saves the long overland trek to a T5 post."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	if chunk_manager == null or chunk_manager.npc_posts.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] No NPC posts available.[/color]"})
+		return
+	var ch = characters[peer_id]
+	# Find closest T5+ post.
+	var posts = chunk_manager.npc_posts
+	var best_post = null
+	var best_d2 = -1
+	for post in posts:
+		if int(post.get("tier", 1)) < 5:
+			continue
+		var dx = int(post.get("x", 0)) - ch.x
+		var dy = int(post.get("y", 0)) - ch.y
+		var d2 = dx * dx + dy * dy
+		if best_d2 < 0 or d2 < best_d2:
+			best_d2 = d2
+			best_post = post
+	if best_post == null:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] No T5+ posts found in world.[/color]"})
+		return
+	# Scan the post's interior for a companion_stable tile. Posts are roughly
+	# centered at (px, py) with their main_room extents; scan a generous 24-tile
+	# radius around center to cover any layout.
+	var px = int(best_post.get("x", 0))
+	var py = int(best_post.get("y", 0))
+	var stable_pos = Vector2i(-99999, -99999)
+	for dx in range(-24, 25):
+		for dy in range(-24, 25):
+			var tile = chunk_manager.get_tile(px + dx, py + dy)
+			if tile.get("type", "") == "companion_stable":
+				stable_pos = Vector2i(px + dx, py + dy)
+				break
+		if stable_pos.x != -99999:
+			break
+	if stable_pos.x == -99999:
+		# Fallback: teleport to post center if no stable found (post might be
+		# legacy or migration didn't run).
+		ch.x = px
+		ch.y = py
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00][GM] Teleported to T5+ post '%s' at (%d, %d) — no companion_stable found (legacy post?).[/color]" % [best_post.get("name", "?"), px, py]})
+	else:
+		# Land on the first walkable cardinal neighbor.
+		var landing = Vector2i(px, py)  # safe fallback
+		for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+			var nbr = stable_pos + offset
+			var ntile = chunk_manager.get_tile(nbr.x, nbr.y)
+			if not bool(ntile.get("blocks_move", true)):
+				landing = nbr
+				break
+		ch.x = landing.x
+		ch.y = landing.y
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Teleported to '%s' adjacent to Companion Stable at (%d, %d). Bump the C tile to open.[/color]" % [best_post.get("name", "?"), stable_pos.x, stable_pos.y]})
+	if ch.in_dungeon:
+		ch.exit_dungeon()
+	send_character_update(peer_id)
+	send_location_update(peer_id)
+	save_character(peer_id)
+
+func handle_gm_test_stable(peer_id: int):
+	"""Seed deposit/withdraw testing: add 3 distinct test companions to
+	collected and 3 distinct test companions to the kennel so the player can
+	immediately test both directions of the Companion Stable v0.9.485 flow.
+	Different monster_types so they aren't auto-fuseable; tier 1 sub_tier 1
+	so they don't interfere with real progression."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+	# Pick 6 distinct monster_types (3 for collected, 3 for kennel).
+	var pool := ["Goblin", "Wolf", "Skeleton", "Kobold", "Giant Rat", "Orc"]
+	var made_collected := 0
+	var made_kennel := 0
+	for i in range(pool.size()):
+		var mt = pool[i]
+		var cd = DropTables.COMPANION_DATA.get(mt, {})
+		if cd.is_empty():
+			continue
+		var variant = drop_tables._roll_egg_variant()
+		var c = {
+			"id": "gmstable_" + mt.to_lower().replace(" ", "_") + "_" + str(i) + "_" + str(randi()),
+			"monster_type": mt,
+			"name": cd.get("companion_name", mt + " Companion"),
+			"tier": int(cd.get("tier", 1)),
+			"sub_tier": 1,
+			"level": 1,
+			"xp": 0,
+			"bonuses": cd.get("bonuses", {}).duplicate(),
+			"battles_fought": 0,
+			"variant": variant.get("name", "Normal"),
+			"variant_color": variant.get("color", "#FFFFFF"),
+			"variant_color2": variant.get("color2", ""),
+			"variant_pattern": variant.get("pattern", "solid"),
+			"variant_rarity": variant.get("rarity", 10),
+			"obtained_at": int(Time.get_unix_time_from_system()),
+		}
+		if made_collected < 3:
+			ch.collected_companions.append(c)
+			made_collected += 1
+		elif made_kennel < 3:
+			persistence.add_companion_to_kennel(account_id, c)
+			made_kennel += 1
+		else:
+			break
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#00FF00][GM] Stable test seed: +%d collected, +%d kennel. Walk to a Companion Stable and try Deposit + Withdraw.[/color]" % [made_collected, made_kennel],
+	})
 
 func handle_gm_broadcast(peer_id: int, message: Dictionary):
 	if not _is_admin(peer_id):
