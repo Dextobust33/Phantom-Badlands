@@ -66,6 +66,9 @@ var _pending_same_label: String = ""
 var _mixed_confirm_dialog: ConfirmationDialog
 var _hybrid_confirm_dialog: ConfirmationDialog
 
+# Audit #15 v0.9.515 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: HelpPanel
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -113,6 +116,13 @@ func _build_layout() -> void:
 	_summary_label.custom_minimum_size = Vector2(0, 22)
 	_summary_label.add_theme_font_size_override("normal_font_size", 13)
 	header.add_child(_summary_label)
+
+	# Audit #15 v0.9.515 — Help button.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("fusion_panel", _help_panel)
+	header.add_child(help_btn)
 
 	# Tabs
 	var tab_row := HBoxContainer.new()
