@@ -17,6 +17,11 @@ var _dismiss_button: Button
 
 
 func _ready() -> void:
+	# top_level=true makes this a true viewport-anchored overlay — it ignores
+	# parent transform/layout, preventing it from perturbing sibling sizing
+	# even while hidden. (v0.9.487 fix: nested CenterContainer+PRESET_FULL_RECT
+	# was shrinking the map when added as a Control sibling.)
+	top_level = true
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_layout()
@@ -30,6 +35,10 @@ func show_hint(title: String, body: String) -> void:
 	if _body_label:
 		_body_label.clear()
 		_body_label.append_text(body)
+	# Always bring to front so we draw on top of any other panel that may
+	# have been added later (e.g., Companion Stable panel arrives in the same
+	# message burst as the first-time tutorial hint).
+	move_to_front()
 	visible = true
 	if _dismiss_button:
 		_dismiss_button.grab_focus()

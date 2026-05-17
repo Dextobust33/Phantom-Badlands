@@ -24,8 +24,8 @@ const HELP_TOPICS := {
 			+ "Bump into the tile to open the stable.\n\n"
 			+ "[color=#A335EE]✦ Deposit[/color] — send a collected companion to the Sanctuary kennel. Frees up your party roster and makes the companion available as a [b]Fusion[/b] input.\n\n"
 			+ "[color=#A335EE]✦ Withdraw[/color] — bring a kennel companion back into your party roster. Useful for fielding a fused result, or rotating in a stored companion mid-character.\n\n"
-			+ "[color=#FF8888]Restrictions[/color]:\n"
-			+ "  • Cannot deposit a companion currently checked out as [b]registered[/b]. Unregister it at the Sanctuary first.\n"
+			+ "[color=#FF8888]Notes[/color]:\n"
+			+ "  • Depositing a [color=#FF80FF][REGISTERED][/color] companion automatically frees its registered slot — useful when you want to fuse your main companion. Re-register the fused result later via a [color=#FFD700]Home Stone (Companion)[/color].\n"
 			+ "  • Kennel must have space (upgrade at the Sanctuary if full).\n\n"
 			+ "[color=#87CEEB]This is the system that makes Fusion accessible mid-character — you no longer have to die to combine companions.[/color]"
 		),
@@ -50,6 +50,10 @@ var _close_button: Button
 
 
 func _ready() -> void:
+	# top_level=true so this overlay never perturbs sibling layout (v0.9.487
+	# fix). Without it, a hidden modal can still shrink the map area via
+	# nested CenterContainer+PRESET_FULL_RECT pressure on the parent.
+	top_level = true
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_layout()

@@ -35,6 +35,10 @@ var _help_panel: Control = null
 
 
 func _ready() -> void:
+	# top_level=true keeps this modal isolated from the parent's layout —
+	# without it, the nested CenterContainer + PRESET_FULL_RECT was shrinking
+	# the ASCII map area in the right column even while hidden (v0.9.487 fix).
+	top_level = true
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_PASS
 	_build_layout()
@@ -126,6 +130,11 @@ func _build_row(c: Dictionary, is_collected: bool) -> Control:
 	var active_marker := ""
 	if is_collected and bool(c.get("is_active", false)):
 		active_marker = "  [color=#FFD700][ACTIVE][/color]"
+	# v0.9.487 — depositing a registered companion is now allowed (frees the
+	# slot). Flag it visually so the player knows the deposit will also
+	# unregister them.
+	if is_collected and bool(c.get("using_registered", false)):
+		active_marker += "  [color=#FF80FF][REGISTERED][/color]"
 	var variant_str = str(c.get("variant", "Normal"))
 	var variant_bbcode := ""
 	if variant_str != "" and variant_str != "Normal":
@@ -151,11 +160,10 @@ func _build_row(c: Dictionary, is_collected: bool) -> Control:
 		action_btn.text = "→ Deposit"
 		action_btn.tooltip_text = "Send to Sanctuary kennel"
 		var disabled := false
-		# Block deposit of registered-checkout active companion server-side too,
-		# but disable here for clarity.
+		# v0.9.487 — registered deposit is allowed (frees the slot so the
+		# companion can be fused). Surface the consequence in the tooltip.
 		if bool(c.get("using_registered", false)):
-			disabled = true
-			action_btn.tooltip_text = "Unregister at the Sanctuary first."
+			action_btn.tooltip_text = "Frees the Registered slot. Re-register the result later via a Home Stone (Companion)."
 		if _kennel.size() >= _kennel_capacity:
 			disabled = true
 			action_btn.tooltip_text = "Kennel is full — upgrade at the Sanctuary."
