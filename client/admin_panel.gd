@@ -142,6 +142,9 @@ func _render_page() -> void:
 			_subtitle_subline("Enables Hybrid fusion (2 different monster types, both sub-tier 5+).")
 			_add_button("Give 3x Ascension Catalyst", "give_ascension_catalyst_x3", Color(1, 0.67, 0.4))
 			_subtitle_subline("Enables Tier Ascend fusion (3 same monster type + same tier → tier+1).")
+			# v0.9.500 — Companion Stable structure for testing player-built Stables.
+			_add_button("Give Companion Stable (structure)", "give_companion_stable_structure", Color(1, 0.5, 1))
+			_subtitle_subline("A buildable Companion Stable. Place inside your own enclosure to get Sanctuary kennel access at your post.")
 			_add_separator()
 			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
 			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")

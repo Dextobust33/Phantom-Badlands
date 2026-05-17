@@ -24239,8 +24239,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.500 — Audit #4 Slice 1A.ii: Player-built Companion Stable.
+	display_game("[color=#00FF00]v0.9.500[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Build your own Companion Stable at your settlement — Sanctuary access at your post[/color]")
+	display_game("  • [b]New Construction recipe: [color=#FF80FF]Companion Stable[/color].[/b] Skill 35, difficulty 50. Materials: 8 wooden plank + 4 iron ore + 2 heartwood + 2 arcane crystal + 3 magic dust. Place inside your own enclosure to get the same magenta [color=#FF80FF]C[/color] tile that lives at Tier 5+ NPC posts. Bump-interact opens the unified Companion Stable panel — deposit / withdraw / register / check-out + all 4 fusion modes (Same Type / Mixed T9 / Hybrid / Tier Ascend). Lets you self-host Sanctuary kennel access at your settlement without depending on a nearby T5+ NPC post. Closes Audit #4 Slice 1A.ii (deferred from v0.9.485). Server detection (`_player_is_at_companion_stable`) is tile-type agnostic so player-built Stables work identically to NPC-post Stables — no separate code path.")
+	display_game("")
+
 	# v0.9.499 — Audit #4 polish: aggro roles, ascended names, Companions help.
-	display_game("[color=#00FF00]v0.9.499[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.499[/color]")
 	display_game("  [color=#FFD700]Companions page polish — aggro roles named, ascended companions get veteran prefixes, new ? Help button[/color]")
 	display_game("  • [b]Aggro Role in inspect.[/b] The companion inspect panel now has an Aggro Role section that names the role ([color=#FFD700]Tank[/color] / [color=#FFA500]Fighter[/color] / Default / [color=#87CEEB]Evasive[/color]) and explains what it means in combat — Tank draws hits, Evasive avoids them, etc. Closes the Audit #4 captured TWEAK 'surface role in inspect.' (Legacy game_output inspect + the hover tooltip already named the role; the visual panel inspect was the missing surface.)")
 	display_game("  • [b]Ascended companions get a veteran prefix.[/b] After v0.9.496's Tier Ascension Fusion, an ascended T1 Goblin still displayed as 'Goblin Companion' — invisible payoff. Now displays climb a step-ladder: +1 tier = [color=#FFAA66]Veteran[/color], +2 = Champion, +3 = Warlord, +4 = Tyrant, +5+ = Apex. Applies retroactively at display time so legacy ascended companions get renamed without server-side migration. Hybrid names ('Hybrid X-Y') are preserved and don't double-prefix.")
@@ -24263,13 +24269,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.496[/color]")
 	display_game("  [color=#FFD700]New Tier Ascend fusion — raise your favorite pet's tier without changing what it is[/color]")
 	display_game("  • [b]Tier Ascension Fusion[/b] joins the Stable's Fuse tab as a 4th mode (alongside Same Type, Mixed T9, and Hybrid). Select 3 companions of the [b]SAME monster type[/b] AND the [b]SAME tier[/b] (any sub-tier mix), plus consume 1 [color=#FFAA66]Ascension Catalyst[/color], to produce 1 companion of that same type at [b]tier+1[/b], sub-tier 1. Lower-tier companions are no longer relegated to fusion fodder — you can raise a Tier 1 Goblin all the way to Tier 9 without giving up the Goblin identity, abilities, or art. Variant inherits if all 3 parents share, else rolls fresh. Tier 9 is the cap. Inputs can come from the kennel or registered slots; the slot-preserving rule from prior fusions still applies (any registered input → output is auto-registered). [color=#FFAA66]Ascension Catalysts[/color] are a new T6+ dungeon chest drop (weights T6=1, T7=2, T8=2, T9=3) — rarer than Hybrid Catalysts since this is a more powerful effect (a 5-step tier climb across the full ladder, vs Hybrid's single capstone moment). Help text + admin shortcuts updated. Closes Audit #4 Slice 1B (Tier Ascension Fusion) — the 'make lower-tier mobs relevant' headline ask.")
-	display_game("")
-
-	# v0.9.485 — Audit #4 Slice 1A: Companion Stable (live Sanctuary kennel access).
-	display_game("[color=#00FFFF]v0.9.485[/color]")
-	display_game("  [color=#FFD700]New Companion Stable station at Tier 5+ trading posts — deposit/withdraw kennel companions WITHOUT having to die[/color]")
-	display_game("  • [b]The Sanctuary kennel is no longer a death-only resource.[/b] Companion Stables appear as a magenta [color=#FF80FF]C[/color] tile inside every Tier 5+ NPC post. Bump into one to open a side-by-side panel: your roster on the left, the Sanctuary kennel on the right. [color=#A335EE]Deposit[/color] a collected companion to send it to the kennel (frees a roster slot, makes the companion available as a Fusion input); [color=#A335EE]Withdraw[/color] a kennel companion to bring one back into your roster. This finally makes [b]Fusion[/b] usable across a single character's lifetime — collect, deposit, combine, withdraw, repeat. First-time interaction shows a teaching overlay so the flow is discoverable. Active companions currently registered (Home Stone) still need to be unregistered at the Sanctuary first to avoid losing the slot. Player-built version of the stable comes in v0.9.486. Audit #4 Slice 1A.")
-	display_game("  • [b]Reusable HelpPanel + ? Help button[/b] introduced as a generic UX pattern. The new Companion Stable panel has a ? Help button in its header that opens topic-aware help (HelpPanel registers topics in a dict). Going forward, most major screens will get a Help button that opens this same panel with a screen-specific topic — re-openable, never one-shot. Distinct from the existing tutorial_hint_panel which is for first-time teaching moments only.")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -27416,6 +27415,9 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"give_ascension_catalyst_x3":
 			for i in range(3):
 				send_to_server({"type": "gm_giveconsumable", "item_type": "ascension_catalyst", "tier": 6})
+		"give_companion_stable_structure":
+			# v0.9.500 — player-built Companion Stable testing shortcut.
+			send_to_server({"type": "gm_givestructure", "structure_type": "companion_stable"})
 		"enter_dungeon_t1":
 			close_admin_menu()
 			send_to_server({"type": "gm_enter_dungeon", "tier": 1})

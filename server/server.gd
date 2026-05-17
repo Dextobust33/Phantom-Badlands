@@ -1865,6 +1865,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_setbp(peer_id, message)
 		"gm_giveitem":
 			handle_gm_giveitem(peer_id, message)
+		"gm_givestructure":
+			handle_gm_givestructure(peer_id, message)
 		"gm_giveegg":
 			handle_gm_giveegg(peer_id, message)
 		"gm_givecompanion":
@@ -21875,7 +21877,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -22010,7 +22012,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:
@@ -30826,6 +30828,39 @@ func handle_gm_giveitem(peer_id: int, message: Dictionary):
 	save_character(peer_id)
 	var item_name = item.get("name", "Unknown Item")
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received: %s (Tier %d)[/color]" % [item_name, tier]})
+
+func handle_gm_givestructure(peer_id: int, message: Dictionary):
+	"""v0.9.500 — admin shortcut to drop a buildable structure directly into
+	inventory, bypassing the crafting skill gate. Used for testing
+	player-built structures (e.g., the v0.9.500 Companion Stable) without
+	grinding Construction recipes."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var structure_type = String(message.get("structure_type", ""))
+	if structure_type == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Usage: structure_type required[/color]"})
+		return
+	if not (structure_type in BUILDING_TYPES):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Unknown structure_type: %s[/color]" % structure_type})
+		return
+	var display_name = structure_type.replace("_", " ").capitalize()
+	var item = {
+		"id": "structure_%d" % randi(),
+		"name": display_name,
+		"type": "structure",
+		"structure_type": structure_type,
+		"is_consumable": true,
+		"quantity": 1,
+		"rarity": "common",
+	}
+	ch.inventory.append(item)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received: %s (structure)[/color]" % display_name})
 
 func handle_gm_giveegg(peer_id: int, message: Dictionary):
 	if not _is_admin(peer_id):
