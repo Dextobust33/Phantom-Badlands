@@ -3428,6 +3428,29 @@ func _refresh_companion() -> void:
 	_companion_art.text = art_text
 
 
+func _get_niche_passive_tag() -> String:
+	"""v0.9.510 — return a colored "[DIVINE FAVOR +25%]" / "[HUNTER'S MARK +25%]"
+	tag for the current monster if the player's class passive applies. Empty
+	string for classes without a damage-by-type niche, or monsters that don't
+	match. Uses CombatManager's authoritative keyword lists + substring match
+	helper so the tag tracks 1:1 with the actual damage bonus applied
+	server-side (no drift)."""
+	if _monster_name == "":
+		return ""
+	# CombatManager._monster_matches_keywords looks at monster.type and
+	# monster.name (lowercased) for substring matches. The combat panel only
+	# holds the display name; pass it as both fields so variant prefixes
+	# ("Corrosive Skeleton", "★ Lich Champion") still match.
+	var monster_dict := {"name": _monster_name, "type": _monster_name}
+	if _player_class == "Paladin":
+		if CombatManager._monster_matches_keywords(monster_dict, CombatManager._UNDEAD_DEMON_KEYWORDS):
+			return " [color=#FFD700][DIVINE FAVOR +25%][/color]"
+	elif _player_class == "Ranger":
+		if CombatManager._monster_matches_keywords(monster_dict, CombatManager._BEAST_KEYWORDS):
+			return " [color=#228B22][HUNTER'S MARK +25%][/color]"
+	return ""
+
+
 func _refresh_monster() -> void:
 	if _monster_name == "":
 		_monster_name_label.text = ""
@@ -3436,7 +3459,15 @@ func _refresh_monster() -> void:
 		_monster_hp_text.text = ""
 		return
 
-	_monster_name_label.text = "[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]" % [_monster_name_color, _monster_name, _monster_level]
+	# v0.9.510 — niche-passive surface. Paladin's Divine Favor (+25% vs
+	# undead/demons) and Ranger's Hunter's Mark (+25% vs beasts) silently
+	# apply during combat. Surfacing the tag on the monster name makes the
+	# passive's relevance discoverable per encounter. Closes Audit #2
+	# captured item "niche-passive audit (undead/beast frequency)" by
+	# making the bonus visible at the point it triggers, rather than hidden
+	# in the damage formula.
+	var niche_tag := _get_niche_passive_tag()
+	_monster_name_label.text = "[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]%s" % [_monster_name_color, _monster_name, _monster_level, niche_tag]
 	_monster_art_label.text = _monster_art_bbcode
 	_monster_hp_bar.visible = true
 	_refresh_monster_hp()

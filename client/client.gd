@@ -20731,7 +20731,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "vault", "clanvault",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21727,6 +21727,15 @@ func process_command(text: String):
 				var cd_parts = text.split(" ", false, 1)
 				var cd_text = cd_parts[1].strip_edges() if cd_parts.size() > 1 else ""
 				send_to_server({"type": "clan_description_set", "text": cd_text})
+		"clanmotto":
+			# Audit #14 v0.9.510 — leader-only clan motto setter (short tagline).
+			# Usage: /clanmotto <text> — sets the motto (max 50 chars); empty clears.
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var cm_parts = text.split(" ", false, 1)
+				var cm_text = cm_parts[1].strip_edges() if cm_parts.size() > 1 else ""
+				send_to_server({"type": "clan_motto_set", "text": cm_text})
 		"clancolor":
 			# Audit #14 Slice 8 — leader-only banner color setter.
 			# Usage: /clancolor #RRGGBB — sets the chat [TAG] color.
@@ -24285,8 +24294,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.510 — Niche-passive combat surface + Clan motto.
+	display_game("[color=#00FF00]v0.9.510[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Paladins and Rangers now see their class-niche damage bonus live on the monster name in combat. Clan leaders can set a short motto.[/color]")
+	display_game("  • [b]Niche-passive surface in combat.[/b] Paladins fighting undead/demons see [color=#FFD700][DIVINE FAVOR +25%][/color] inline with the monster name; Rangers fighting beasts see [color=#228B22][HUNTER'S MARK +25%][/color]. The tag uses the same authoritative keyword lists + substring matcher as the server's damage calc, so what you see is what actually applies (no drift, variant prefixes like \"Corrosive Skeleton\" still match). Closes Audit #2 captured item by making the bonus discoverable at the moment it triggers, rather than hidden in damage numbers.")
+	display_game("  • [b]Clan motto (new).[/b] Leaders can set a short [color=#A89BD8]tagline[/color] up to 50 characters via [color=#9ACD32]/clanmotto <text>[/color] (or empty to clear). Renders italic below the description on the clan panel — pairs with v0.9.473 description / v0.9.477 banner color as the third piece of clan identity polish. Help topic + leader-empty-state placeholder updated to surface the new command.")
+	display_game("")
+
 	# v0.9.509 — Owner-post listing bonus.
-	display_game("[color=#00FF00]v0.9.509[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.509[/color]")
 	display_game("  [color=#FFD700]+25% valor bonus when you list items at your own player post — reward for the settlement you built.[/color]")
 	display_game("  • [b]Owner-post listing bonus.[/b] When you list an item (single or bulk) at a trading post your account owns, the server credits an additional [color=#88FF88]+25% valor[/color] directly to your balance. The listing's price for OTHER players is unchanged — buyers pay the same as they would at an NPC post, so the bonus is a pure seller-side reward, not a tax on visitors. Detection is automatic via post id format (`player_<account_username>_<index>`) — works on every enclosure your account has built and named.")
 	display_game("  • [b]Preview shows the boost.[/b] The bulk-list confirm dialog (`market_list_preview_result`) now includes the owner-bonus amount so you see the boosted total before you commit. Single-item and bulk-list both surface a green chat line on success showing the bonus credited.")
@@ -24320,15 +24336,6 @@ func display_changelog():
 	display_game("  • Continues the v0.9.505 catalogue. Audit #12 cosmetic catalogue now has 4 entries (Banner / Lamp Post / Torch / Statue) spanning skill 8 → 25. More variants in future batches.")
 	display_game("")
 
-	# v0.9.505 — Cosmetic buildable structures (Banner + Lamp Post).
-	display_game("[color=#00FFFF]v0.9.505[/color]")
-	display_game("  [color=#FFD700]Two new buildable cosmetic structures — Banner and Lamp Post — for personalizing your settlement[/color]")
-	display_game("  • [b]New Construction recipes:[/b]")
-	display_game("    • [color=#FFD700]Banner[/color] [color=#FFD700]Y[/color] — Skill 12, difficulty 18. Materials: 2 wooden plank + 2 leather + 1 rope. Walkable tile that marks territory or paths.")
-	display_game("    • [color=#FFFF99]Lamp Post[/color] [color=#FFFF99]i[/color] — Skill 15, difficulty 22. Materials: 2 iron ore + 1 wooden plank + 1 magic dust. Walkable tile for atmosphere and pathways.")
-	display_game("  • Both are non-specialist recipes (no specialty job lock-in required). Place inside your own enclosure like other decorations. Pure cosmetic — no mechanical effect, just self-expression for the settlement you've built.")
-	display_game("  • Small additive slice to Audit #12 (player building). The catalogue of buildable structures grows incrementally; more variants can land in future small batches.")
-	display_game("")
 
 
 

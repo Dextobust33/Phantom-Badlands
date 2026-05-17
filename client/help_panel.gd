@@ -185,6 +185,7 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]── Leader perks ──[/color]\n"
 			+ "  • Invite / kick members (limited capacity per clan tier).\n"
 			+ "  • Set the public description ([color=#9ACD32]/clandesc[/color] up to 240 chars).\n"
+			+ "  • Set a short tagline / motto ([color=#9ACD32]/clanmotto[/color] up to 50 chars). Renders below the description on the clan panel.\n"
 			+ "  • Set the clan's [color=#FFD700]banner color[/color] ([color=#9ACD32]/clancolor #RRGGBB[/color]). The [TAG] marker follows the color through chat, whispers, player list, and the panel.\n"
 			+ "  • Disband the clan.\n\n"
 			+ "[color=#FFD700]── Clan Vault ──[/color]\n"
