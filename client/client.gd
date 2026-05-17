@@ -1886,6 +1886,7 @@ func _ready():
 		fusion_panel.tab_changed.connect(_on_fusion_panel_tab_changed)
 		fusion_panel.same_fusion_pressed.connect(_on_fusion_panel_same_pressed)
 		fusion_panel.mixed_fusion_pressed.connect(_on_fusion_panel_mixed_pressed)
+		fusion_panel.hybrid_fusion_pressed.connect(_on_fusion_panel_hybrid_pressed)
 
 	# Setup ability panel
 	if ability_panel:
@@ -32781,7 +32782,32 @@ func _populate_fusion_panel() -> void:
 	var kennel_companions = kennel.get("companions", [])
 	var groups = _get_fuseable_groups(kennel_companions)
 	var t8_companions = _get_t8_companions(kennel_companions)
-	fusion_panel.populate(groups, t8_companions, fusion_panel_tab)
+	var hybrid_candidates = _get_hybrid_candidates(kennel_companions)
+	var catalyst_count = _count_hybrid_catalysts()
+	fusion_panel.populate(groups, t8_companions, fusion_panel_tab, hybrid_candidates, catalyst_count)
+
+
+func _get_hybrid_candidates(kennel_companions: Array) -> Array:
+	# Audit #4 Slice 4 — companions eligible for hybrid fusion (sub_tier >= 5).
+	# Mirrors _get_t8_companions's {companion, index} envelope.
+	var out: Array = []
+	for i in range(kennel_companions.size()):
+		var c = kennel_companions[i]
+		if int(c.get("sub_tier", 1)) >= 5:
+			out.append({"companion": c, "index": i})
+	return out
+
+
+func _count_hybrid_catalysts() -> int:
+	# Sum quantity across all hybrid_catalyst stacks (usually 1 stack).
+	if character_data.is_empty():
+		return 0
+	var inv: Array = character_data.get("inventory", [])
+	var total := 0
+	for item in inv:
+		if String(item.get("type", "")) == "hybrid_catalyst":
+			total += int(item.get("quantity", 1))
+	return total
 
 func _on_fusion_panel_close() -> void:
 	house_mode = "main"
@@ -32803,6 +32829,11 @@ func _on_fusion_panel_mixed_pressed(indices: Array) -> void:
 	if indices.size() != 8:
 		return
 	send_to_server({"type": "house_fusion", "fusion_type": "mixed", "indices": indices})
+
+func _on_fusion_panel_hybrid_pressed(indices: Array) -> void:
+	if indices.size() != 2:
+		return
+	send_to_server({"type": "house_fusion", "fusion_type": "hybrid", "indices": indices})
 
 # === Ability panel (More → Abilities) ===
 

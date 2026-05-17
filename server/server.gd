@@ -11541,6 +11541,63 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				"upgrade_costs": persistence.HOUSE_UPGRADES
 			})
 
+	elif fusion_type == "hybrid":
+		# Audit #4 Slice 4 — mixed-type hybrid fusion. Two parents of DIFFERENT
+		# monster_types, both at sub_tier >= 5, plus one Hybrid Catalyst from
+		# inventory. Output keeps parent_a's monster_type (and base ability
+		# signature) but stores parent_b's type in hybrid_partner_type so the
+		# ability resolver blends in Hybrid Vigor passive + parent_b's threshold.
+		if indices.size() != 2:
+			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion requires exactly 2 companions!"})
+			return
+		var parent_a = kennel[int(indices[0])]
+		var parent_b = kennel[int(indices[1])]
+		if String(parent_a.get("monster_type", "")) == String(parent_b.get("monster_type", "")):
+			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion requires DIFFERENT monster types!"})
+			return
+		if int(parent_a.get("sub_tier", 1)) < 5 or int(parent_b.get("sub_tier", 1)) < 5:
+			send_to_peer(peer_id, {"type": "error", "message": "Both parents must be sub-tier 5 or higher!"})
+			return
+		# Find a Hybrid Catalyst in the character's inventory.
+		if not characters.has(peer_id):
+			send_to_peer(peer_id, {"type": "error", "message": "Character context missing."})
+			return
+		var character = characters[peer_id]
+		var catalyst_idx = -1
+		for i in range(character.inventory.size()):
+			var item = character.inventory[i]
+			if String(item.get("type", "")) == "hybrid_catalyst" and int(item.get("quantity", 1)) >= 1:
+				catalyst_idx = i
+				break
+		if catalyst_idx == -1:
+			send_to_peer(peer_id, {"type": "error", "message": "You need a Hybrid Catalyst (drops from T5+ dungeon chests)."})
+			return
+		var output = drop_tables.create_hybrid_companion(parent_a, parent_b)
+		if output.is_empty():
+			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion failed!"})
+			return
+		# Consume one catalyst from the stack (same pattern as inventory discard).
+		var catalyst_item = character.inventory[catalyst_idx]
+		if int(catalyst_item.get("quantity", 1)) > 1:
+			catalyst_item["quantity"] = int(catalyst_item.get("quantity", 1)) - 1
+		else:
+			character.remove_item(catalyst_idx)
+		var int_indices = []
+		for idx in indices:
+			int_indices.append(int(idx))
+		if persistence.fuse_companions(account_id, int_indices, output):
+			send_to_peer(peer_id, {
+				"type": "text",
+				"message": "[color=#FF66FF]Hybrid Fusion! Created %s (T%d-1)![/color]" % [output.name, output.tier]
+			})
+			var updated_house = persistence.get_house(account_id)
+			send_to_peer(peer_id, {
+				"type": "house_update",
+				"house": updated_house,
+				"upgrade_costs": persistence.HOUSE_UPGRADES
+			})
+			send_character_update(peer_id)
+
 func _check_variant_inheritance(kennel: Array, indices: Array) -> Dictionary:
 	"""Check if all companions in the fusion share the same variant for inheritance."""
 	var first_variant = kennel[int(indices[0])].get("variant", "")
