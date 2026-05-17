@@ -137,6 +137,12 @@ func _render_page() -> void:
 			_add_button("Give Egg (random monster type)", "give_egg")
 			_add_button("Give Companion (random, T5)", "give_companion_t5")
 			_add_separator()
+			# v0.9.496 — fusion catalyst shortcuts for Stable / Sanctuary testing.
+			_add_button("Give 3x Hybrid Catalyst", "give_hybrid_catalyst_x3", Color(1, 0.5, 1))
+			_subtitle_subline("Enables Hybrid fusion (2 different monster types, both sub-tier 5+).")
+			_add_button("Give 3x Ascension Catalyst", "give_ascension_catalyst_x3", Color(1, 0.67, 0.4))
+			_subtitle_subline("Enables Tier Ascend fusion (3 same monster type + same tier → tier+1).")
+			_add_separator()
 			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
 			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")
 			_add_separator()

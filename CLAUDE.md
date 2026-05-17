@@ -38,6 +38,16 @@ Phantom Badlands is a text-based multiplayer RPG built with **Godot 4.6** and GD
 - Chat commands can exist as fallbacks but shouldn't be the primary interface
 - See `docs/action-bar-states.md` for the full state machine
 
+## Admin Commands: /admin UI, Not Chat
+
+**IMPORTANT: All NEW admin/dev/testing tools go through the visual `/admin` panel — not new `/command` chat shorthands.**
+
+- Visual panel: `client/admin_panel.gd`. Pages are `root` / `test_b2` / `items` / `combat` / `misc` / `world` (see `_current_page`).
+- Pattern: each button emits `action_triggered(action_id)` → client.gd's `_on_admin_panel_action()` dispatches a `gm_*` server message → `handle_gm_*` server handler gated by `_is_admin(peer_id)`.
+- Do NOT extend the `command_keywords` array or `process_command()` match statement with new top-level admin commands. The `/gmhelp` chat list and existing `/setlevel`, `/tp`, `/giveconsumable`, etc. are legacy.
+- Existing chat admin commands stay as fallbacks — don't migrate in a cleanup pass without explicit ask (muscle memory).
+- Same principle generalizes: **UI control over chat controls** for all new features (player or admin). Chat is a legacy fallback surface, never the primary interface for new mechanics.
+
 ## Player-Visible Output Rule
 
 **CRITICAL: All feature results MUST be visible to the player.**

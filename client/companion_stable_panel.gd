@@ -32,16 +32,19 @@ const HelpPanelScript = preload("res://client/help_panel.gd")
 const TAB_MANAGE := "manage"
 const TAB_FUSE := "fuse"
 
-# Fuse-tab fusion modes. v0.9.489 shipped Same; v0.9.494 adds Mixed + Hybrid.
+# Fuse-tab fusion modes. v0.9.489 shipped Same; v0.9.494 adds Mixed + Hybrid;
+# v0.9.496 adds Ascend (tier ascension).
 const FUSE_SAME := "same"
 const FUSE_MIXED := "mixed"
 const FUSE_HYBRID := "hybrid"
+const FUSE_ASCEND := "ascend"
 
 # Per-mode selection caps and sub_tier filters.
 const FUSE_MODE_RULES := {
 	"same":   {"cap": 3, "min_sub_tier": 1, "max_sub_tier": 9},  # any sub_tier; validated to match
 	"mixed":  {"cap": 8, "min_sub_tier": 8, "max_sub_tier": 8},
 	"hybrid": {"cap": 2, "min_sub_tier": 5, "max_sub_tier": 9},
+	"ascend": {"cap": 3, "min_sub_tier": 1, "max_sub_tier": 9},  # any sub_tier; validated for same monster_type + same tier; tier<9
 }
 
 var _current_tab: String = TAB_MANAGE
@@ -53,6 +56,7 @@ var _collected: Array = []
 var _registered: Array = []  # NEW v0.9.489 — non-checked-out registered slots
 var _kennel_capacity: int = 30
 var _hybrid_catalyst_count: int = 0  # v0.9.494
+var _ascension_catalyst_count: int = 0  # v0.9.496
 
 # Fuse-tab selection state. Each entry: {source: "kennel"|"registered", index: int, companion: Dictionary}
 var _fuse_selection: Array = []
@@ -79,6 +83,7 @@ var _fuse_view: Control
 var _fuse_mode_same_btn: Button  # v0.9.494
 var _fuse_mode_mixed_btn: Button
 var _fuse_mode_hybrid_btn: Button
+var _fuse_mode_ascend_btn: Button  # v0.9.496
 var _fuse_hint_label: RichTextLabel
 var _fuse_candidates_list: VBoxContainer
 var _fuse_candidates_empty: Label
@@ -112,6 +117,7 @@ func show_with_payload(payload: Dictionary) -> void:
 	_registered = payload.get("registered", [])
 	_kennel_capacity = int(payload.get("kennel_capacity", 30))
 	_hybrid_catalyst_count = int(payload.get("hybrid_catalyst_count", 0))
+	_ascension_catalyst_count = int(payload.get("ascension_catalyst_count", 0))
 	# Drop any stale fuse selections (e.g., after a successful fusion the
 	# previously-selected indices may no longer exist).
 	_fuse_selection = _fuse_selection.filter(func(sel):
@@ -367,6 +373,8 @@ func _refresh_fuse() -> void:
 		_fuse_mode_mixed_btn.button_pressed = (_current_fuse_mode == FUSE_MIXED)
 	if _fuse_mode_hybrid_btn:
 		_fuse_mode_hybrid_btn.button_pressed = (_current_fuse_mode == FUSE_HYBRID)
+	if _fuse_mode_ascend_btn:
+		_fuse_mode_ascend_btn.button_pressed = (_current_fuse_mode == FUSE_ASCEND)
 	# Mode-specific hint.
 	_fuse_hint_label.clear()
 	match _current_fuse_mode:
@@ -388,6 +396,12 @@ func _refresh_fuse() -> void:
 				+ "Output is a hybrid that blends both parents' bonuses + abilities. Consumes [color=#FFD700]1 Hybrid Catalyst[/color].\n"
 				+ "[color=#888888]Catalysts available: %d. Inputs can be kennel or registered. If any input is registered, output is auto-registered.[/color]" % _hybrid_catalyst_count
 			)
+		FUSE_ASCEND:
+			_fuse_hint_label.append_text(
+				"[color=#FFAA66]Tier Ascension[/color] — Select [b]3[/b] companions of the [b]SAME[/b] monster type AND [b]SAME tier[/b] (any sub-tier). "
+				+ "They combine into [b]1[/b] companion of the [b]same type at tier+1[/b], sub-tier 1. Consumes [color=#FFD700]1 Ascension Catalyst[/color].\n"
+				+ "[color=#888888]Catalysts available: %d. Lets you keep your favorite pet's identity while raising its rank. Tier 9 is the cap. Inputs can be kennel or registered.[/color]" % _ascension_catalyst_count
+			)
 	_populate_fuse_candidates()
 	_refresh_fuse_selection_state()
 
@@ -407,6 +421,9 @@ func _candidate_matches_mode(c: Dictionary, mode: String) -> bool:
 		return false
 	# v0.9.495 — Mixed T9 specifically requires T8.8 (Tier 8 + sub-tier 8).
 	if mode == FUSE_MIXED and int(c.get("tier", 1)) != 8:
+		return false
+	# v0.9.496 — Tier Ascension requires tier < 9 (T9 is the cap).
+	if mode == FUSE_ASCEND and int(c.get("tier", 1)) >= 9:
 		return false
 	return true
 
@@ -437,6 +454,8 @@ func _populate_fuse_candidates() -> void:
 				msg = "[color=#808080]No T8.8 companions available. Mixed T9 needs Tier 8 companions maxed to sub-tier 8 — the capstone of the tier ladder.[/color]"
 			FUSE_HYBRID:
 				msg = "[color=#808080]No sub-tier 5+ companions available. Build them up via Same Type fusion first.[/color]"
+			FUSE_ASCEND:
+				msg = "[color=#808080]No ascendable companions available. Tier Ascension accepts any sub-tier but excludes Tier 9 (already maxed).[/color]"
 		lbl.append_text(msg)
 		_fuse_candidates_list.add_child(lbl)
 		return
@@ -627,6 +646,34 @@ func _refresh_fuse_selection_state() -> void:
 					preview = "[color=#88FF88]→ Hybrid %s-%s will be added to %s (consumes 1 catalyst).[/color]" % [
 						str(a.get("monster_type", "?")),
 						str(b.get("monster_type", "?")),
+						dest_str,
+					]
+			elif count > 0:
+				preview = "[color=#888888]Pick %d more to enable Fuse.[/color]" % (cap - count)
+		FUSE_ASCEND:
+			if count == cap:
+				var first_asc: Dictionary = _fuse_selection[0].companion
+				var same_asc_type = true
+				var same_asc_tier = true
+				for sel in _fuse_selection:
+					if sel.companion.get("monster_type") != first_asc.get("monster_type"):
+						same_asc_type = false
+					if int(sel.companion.get("tier", 1)) != int(first_asc.get("tier", 1)):
+						same_asc_tier = false
+				if not same_asc_type:
+					preview = "[color=#FF6644]All 3 must share the same monster type.[/color]"
+				elif not same_asc_tier:
+					preview = "[color=#FF6644]All 3 must share the same tier.[/color]"
+				elif int(first_asc.get("tier", 1)) >= 9:
+					preview = "[color=#FF6644]Tier 9 is the cap — cannot ascend further.[/color]"
+				elif _ascension_catalyst_count < 1:
+					preview = "[color=#FF6644]Need 1 Ascension Catalyst (T6+ dungeon chest drop).[/color]"
+				else:
+					fuse_ready = true
+					var new_tier = int(first_asc.get("tier", 1)) + 1
+					preview = "[color=#88FF88]→ %s T%d.1 will be added to %s (consumes 1 catalyst).[/color]" % [
+						str(first_asc.get("monster_type", "?")),
+						new_tier,
 						dest_str,
 					]
 			elif count > 0:
@@ -910,6 +957,8 @@ func _build_fuse_view() -> Control:
 	mode_row.add_child(_fuse_mode_mixed_btn)
 	_fuse_mode_hybrid_btn = _make_fuse_mode_button("Hybrid", FUSE_HYBRID)
 	mode_row.add_child(_fuse_mode_hybrid_btn)
+	_fuse_mode_ascend_btn = _make_fuse_mode_button("Tier Ascend", FUSE_ASCEND)
+	mode_row.add_child(_fuse_mode_ascend_btn)
 
 	_fuse_hint_label = RichTextLabel.new()
 	_fuse_hint_label.bbcode_enabled = true

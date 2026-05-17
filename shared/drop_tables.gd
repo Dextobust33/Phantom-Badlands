@@ -569,6 +569,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 2, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
 		{"weight": 2, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
+		{"weight": 1, "item_type": "ascension_catalyst", "rarity": "rare"},  # Audit #4 Slice 1B (v0.9.496) — tier-ascension fusion catalyst
 	],
 	7: [
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
@@ -591,6 +592,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 3, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 3, "item_type": "travel_stone", "rarity": "rare"},  # Audit #9 Slice 5 — network buy currency
 		{"weight": 2, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
+		{"weight": 2, "item_type": "ascension_catalyst", "rarity": "rare"},  # Audit #4 Slice 1B (v0.9.496) — tier-ascension fusion catalyst
 	],
 	8: [
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
@@ -610,6 +612,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 4, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 3, "item_type": "travel_stone", "rarity": "epic"},  # Audit #9 Slice 5 — network buy currency
 		{"weight": 3, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
+		{"weight": 2, "item_type": "ascension_catalyst", "rarity": "rare"},  # Audit #4 Slice 1B (v0.9.496) — tier-ascension fusion catalyst
 	],
 	9: [
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "common"},
@@ -634,6 +637,7 @@ const CONSUMABLE_DROPS = {
 		{"weight": 5, "item_type": "ability_tome", "rarity": "rare"},
 		{"weight": 4, "item_type": "travel_stone", "rarity": "epic"},  # Audit #9 Slice 5 — network buy currency
 		{"weight": 4, "item_type": "hybrid_catalyst", "rarity": "rare"},  # Audit #4 Slice 4 — mixed-type fusion catalyst
+		{"weight": 3, "item_type": "ascension_catalyst", "rarity": "rare"},  # Audit #4 Slice 1B (v0.9.496) — tier-ascension fusion catalyst
 	],
 }
 
@@ -1964,6 +1968,50 @@ func create_hybrid_companion(parent_a: Dictionary, parent_b: Dictionary) -> Dict
 		"level": 1,
 		"xp": 0,
 		"battles_fought": 0,
+		"variant": variant.get("name", "MISSING_VARIANT"),
+		"variant_color": variant.get("color", "#FF00FF"),
+		"variant_color2": variant.get("color2", ""),
+		"variant_pattern": variant.get("pattern", "solid"),
+		"variant_rarity": variant.get("rarity", 10),
+		"obtained_at": int(Time.get_unix_time_from_system()),
+	}
+
+# Audit #4 Slice 1B (v0.9.496) — Tier Ascension Fusion
+# Combines 3 same-monster_type / same-tier companions (any sub_tier) into one
+# companion of the SAME monster_type at tier+1, sub_tier 1. The pet's identity
+# (type, art, name, ability lookup) is preserved — only its raw tier-damage
+# scaling jumps. Bonuses come from COMPANION_DATA since the monster_type is
+# unchanged. Variant inherits if all parents share, else rolls fresh.
+# Requires: tier < 9 (T9 is the cap), 1 Ascension Catalyst consumable.
+func create_ascended_companion(parents: Array, inherited_variant: Dictionary = {}) -> Dictionary:
+	if parents.size() < 1:
+		return {}
+	var first = parents[0]
+	var monster_type = String(first.get("monster_type", ""))
+	var current_tier = int(first.get("tier", 1))
+	if monster_type == "" or current_tier >= 9:
+		return {}
+	var companion_data = COMPANION_DATA.get(monster_type, {})
+	if companion_data.is_empty():
+		return {}
+
+	var variant = inherited_variant
+	if variant.is_empty():
+		variant = _roll_egg_variant()
+
+	var new_tier = current_tier + 1
+
+	return {
+		"id": "ascended_" + monster_type.to_lower().replace(" ", "_") + "_" + str(randi()) + "_" + str(int(Time.get_unix_time_from_system())),
+		"monster_type": monster_type,
+		"name": companion_data.get("companion_name", monster_type + " Companion"),
+		"tier": new_tier,
+		"sub_tier": 1,
+		"bonuses": companion_data.get("bonuses", {}).duplicate(),
+		"level": 1,
+		"xp": 0,
+		"battles_fought": 0,
+		"ascended_from_tier": current_tier,
 		"variant": variant.get("name", "MISSING_VARIANT"),
 		"variant_color": variant.get("color", "#FF00FF"),
 		"variant_color2": variant.get("color2", ""),
@@ -3706,7 +3754,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	# Check if this is a consumable (potions, resource restorers, scrolls, tomes, etc.)
 	# Consumables use TIER system, not rarity - tier is based on monster level
-	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
+	var is_consumable = item_type.begins_with("potion_") or item_type.begins_with("gold_") or item_type.begins_with("gem_") or item_type.begins_with("scroll_") or item_type.begins_with("mana_") or item_type.begins_with("stamina_") or item_type.begins_with("energy_") or item_type.begins_with("elixir_") or item_type.begins_with("tome_") or item_type.begins_with("home_stone_") or item_type.begins_with("charm_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type in ["health_potion", "mana_potion", "stamina_potion", "energy_potion", "elixir", "boss_slayer_tonic", "reclaimer_lantern", "floor_skip_charm"]
 
 	var final_rarity: String
 	var final_level = monster_level
@@ -3878,6 +3926,8 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		"home_stone_companion": "Home Stone (Companion)",
 		# Audit #4 Slice 4 — mixed-type fusion catalyst
 		"hybrid_catalyst": "Hybrid Catalyst",
+		# Audit #4 Slice 1B (v0.9.496) — tier-ascension fusion catalyst
+		"ascension_catalyst": "Ascension Catalyst",
 		# Material Pouches/Gems (special - don't prefix with tier)
 		"essence_pouch": "Material Pouch",
 		"gem_small": "Gem",
@@ -3886,7 +3936,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
 		return base_name
 
 	return tier_name + " " + base_name

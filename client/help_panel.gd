@@ -27,10 +27,11 @@ const HELP_TOPICS := {
 			+ "[color=#A335EE]✦ Withdraw[/color] — pull a kennel companion into your roster.\n"
 			+ "[color=#A335EE]✦ Check Out[/color] (v0.9.493) — pull a Sanctuary-registered companion onto your character as the new active. Closes the death-and-respawn detour. Requires no current active.\n\n"
 			+ "[color=#FFD700]FUSE TAB[/color]\n"
-			+ "Mid-character fusion. Three modes via the selector at the top:\n"
+			+ "Mid-character fusion. Four modes via the selector at the top:\n"
 			+ "  • [color=#FFD700]Same Type[/color] — 3 of same monster type AND sub-tier → next sub-tier (max sub-tier 8).\n"
 			+ "  • [color=#FF00FF]Mixed T9[/color] — 8 [b]T8.8[/b] companions (Tier 8, sub-tier 8) → random Tier 9 companion. The capstone fusion.\n"
 			+ "  • [color=#FF66FF]Hybrid[/color] — 2 different monster types both sub-tier 5+, consumes 1 [color=#FFD700]Hybrid Catalyst[/color] → hybrid blend.\n"
+			+ "  • [color=#FFAA66]Tier Ascend[/color] — 3 of same monster type AND same tier (any sub-tier), consumes 1 [color=#FFD700]Ascension Catalyst[/color] → same type at tier+1, sub-tier 1. Keeps your pet's identity while raising rank.\n"
 			+ "Inputs can come from kennel OR registered slots in any mode. If any input is registered, the output is auto-registered (slot-preserving). Otherwise it goes to the kennel.\n\n"
 			+ "[color=#FF8888]Notes[/color]:\n"
 			+ "  • Deposit and registration are independent operations. Depositing never changes registration status.\n"
@@ -59,11 +60,12 @@ const HELP_TOPICS := {
 	"fusion_overview": {
 		"title": "[color=#FFD700]Fusion[/color]",
 		"body": (
-			"At the [color=#FFD700]Fusion Station[/color] in your Sanctuary, you can combine kennel companions in three ways:\n\n"
+			"At the [color=#FFD700]Fusion Station[/color] in your Sanctuary (or a Companion Stable's Fuse tab), you can combine kennel companions in four ways:\n\n"
 			+ "[color=#A335EE]✦ Same Type[/color] — 3 companions of the same monster type and the same sub-tier → 1 companion of the next sub-tier. Path to maxing within a tier.\n\n"
 			+ "[color=#A335EE]✦ Mixed T9[/color] — 8 [b]T8.8[/b] companions (Tier 8, sub-tier 8). Types can differ. → 1 random Tier 9 companion. The capstone fusion.\n\n"
 			+ "[color=#A335EE]✦ Hybrid[/color] — 2 companions of [b]different[/b] monster types, both at sub-tier 5+, plus 1 [color=#FFD700]Hybrid Catalyst[/color] → a hybrid companion that blends both parents' bonuses and inherits the second parent's threshold ability.\n\n"
-			+ "[color=#FFD700]Hybrid Catalysts[/color] drop from Tier 5+ dungeon chests.\n\n"
+			+ "[color=#A335EE]✦ Tier Ascend[/color] — 3 companions of the [b]same monster type and same tier[/b] (any sub-tier mix), plus 1 [color=#FFD700]Ascension Catalyst[/color] → 1 companion of the [b]same type at tier+1[/b], sub-tier 1. Lets you raise your favorite pet's rank without changing what it is.\n\n"
+			+ "[color=#FFD700]Hybrid Catalysts[/color] drop from Tier 5+ dungeon chests. [color=#FFD700]Ascension Catalysts[/color] drop from Tier 6+ dungeon chests.\n\n"
 			+ "[color=#87CEEB]Walk to a Companion Stable (Tier 5+ NPC posts) to deposit/withdraw without needing to die.[/color]"
 		),
 	},
