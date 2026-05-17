@@ -123,6 +123,9 @@ var _fulfill_order: Dictionary = {}
 
 var _root_panel: PanelContainer
 var _title_label: Label
+
+# v0.9.503 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _valor_label: RichTextLabel
 var _specialty_label: RichTextLabel  # Audit #9 Slice 3 — post specialty header
 var _tab_browse_btn: Button
@@ -195,6 +198,14 @@ func _build_layout() -> void:
 	_valor_label.custom_minimum_size = Vector2(0, 22)
 	_valor_label.add_theme_font_size_override("normal_font_size", 14)
 	header.add_child(_valor_label)
+
+	# v0.9.503 — Help button on the Market header. Opens market_page topic
+	# (pricing, categories, bulk listing, Travel Stone / network browse).
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("market_page", _help_panel)
+	header.add_child(help_btn)
 
 	# Specialty header (Audit #9 Slice 3). Sits below the title row; hidden
 	# when post has no specialty. Bright green to draw the eye to the discount.

@@ -29,6 +29,9 @@ var _allow_skill_switch: bool = true
 
 var _root_panel: PanelContainer
 var _title_label: Label
+
+# v0.9.503 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _skill_label: Label
 var _bonus_label: RichTextLabel
 var _skill_chip_row: HBoxContainer
@@ -101,6 +104,14 @@ func _build_layout() -> void:
 	_bonus_label.custom_minimum_size = Vector2(0, 20)
 	_bonus_label.add_theme_font_size_override("normal_font_size", 12)
 	header.add_child(_bonus_label)
+
+	# v0.9.503 — Help button on the Crafting header. Opens crafting_page
+	# topic (7 transparency layers, specialty lock-in, quality scaling).
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("crafting_page", _help_panel)
+	header.add_child(help_btn)
 
 	# Skill chips (only visible when we're allowed to switch — i.e., not station-locked)
 	_skill_chip_row = HBoxContainer.new()

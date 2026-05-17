@@ -24258,8 +24258,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.503 — Help buttons across 4 major screens (Inventory / Stats / Crafting / Market).
+	display_game("[color=#00FF00]v0.9.503[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]? Help buttons on 4 more screens — Inventory, Stats, Crafting, Market[/color]")
+	display_game("  • Continues the 'help button per major screen' UX rollout (started with the Companion Stable in v0.9.485, extended to the Companions page in v0.9.499). Each screen's header now has a [b]?[/b] [color=#87CEEB]Help[/color] button that opens a topic-aware overlay explaining what's on the page and how to use it. Topics:")
+	display_game("    • [color=#FFD700]Inventory[/color] — item categories + rarity colors, common actions (equip / use / salvage / discard), equipment comparison with house multipliers, Home Stone overview.")
+	display_game("    • [color=#FFD700]Stats[/color] — stat allocation, racial + class passives, the 9-track Progression Vectors dashboard (XP / stat bank / Sanctuary / jobs / Bestiary / Compass / Atlas / Soul Gems / Titles).")
+	display_game("    • [color=#FFD700]Crafting[/color] — the 7-layer transparency stack (materials + skill + output + sources + quality odds + sell value + skill progression), specialty lock-in, quality scaling.")
+	display_game("    • [color=#FFD700]Market[/color] — Valor currency, base_valor vs markup_price + post tax, categories, bulk listing, Travel Stone / network browse, my listings.")
+	display_game("  • Batched release — 4 small slices in one version bump. Continues the rollout; remaining screens (Sanctuary, Clan, Bestiary, etc.) come in future batches.")
+	display_game("")
+
 	# v0.9.502 — Combat readability slice 2/2: HP estimates bias upward.
-	display_game("[color=#00FF00]v0.9.502[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.502[/color]")
 	display_game("  [color=#FFD700]Monster HP estimates now over-estimate slightly instead of undershooting — no more 'monster shows 1/x HP but won't die'[/color]")
 	display_game("  • [b]Root cause:[/b] the client's HP estimation extrapolated across levels using only the base stat-scale curve, but the server's actual HP calc layers a hyperbolic [color=#FFAA66]hp_multiplier[/color] on top (2× → 7× asymptote, keyed on expected player gear at the target level). So when the player had killed a Lv 5 monster and then met a Lv 10 of the same type, the client estimate could be e.g. 281 HP while actual was 330 — the bar would drain to 0 with the monster still alive. Looked like a bug.")
 	display_game("  • [b]Fix:[/b] cross-level estimates are now padded upward by 4% per level of gap, capped at +50%. Same-level data (`known_hp = damage dealt` from a real kill) is still returned unpadded — it's always ≥ actual HP by construction. As the player kills more monsters AT the displayed level, the system narrows toward truth from above instead of guessing low. Pad is invisible to the player; just feels like 'this monster has more HP than I thought' rather than 'why isn't this dying.'")
@@ -24288,11 +24299,6 @@ func display_changelog():
 	display_game("  • [b]? Help button on Companions page.[/b] Reusable HelpPanel pattern (introduced for the Companion Stable in v0.9.485) now extends to the Companions page header. Opens a topic that explains card info (REG / HYBRID markers, rarity tags, T<n>.<m> notation, veteran prefixes), the aggro role definitions, and the Sanctuary Registered section context. Continues the 'help button per major screen' UX rollout.")
 	display_game("")
 
-	# v0.9.498 — Audit #4 follow-up: Registered companions on Companions page.
-	display_game("[color=#00FFFF]v0.9.498[/color]")
-	display_game("  [color=#FFD700]Sanctuary-registered companions now show up on the in-game Companions page[/color]")
-	display_game("  • Previously, the in-game Companions screen only listed the currently-active (checked-out) companion plus your collected roster — anything else registered to your Sanctuary was invisible until you visited a Companion Stable. v0.9.498 adds a [color=#FF80FF]Sanctuary Registered[/color] section to the Companions page that lists every companion in your account's registered slots, with type / tier / sub-tier / level / variant / hybrid markers. Read-only — full management still happens at any Tier 5+ NPC Companion Stable or the Sanctuary's Stable tile. The currently checked-out registered slot is dimmed and marked [CHECKED OUT] so you know which physical pet matches which slot. Server now ships a slim `account_registered_companions` array with each `character_update`. Closes a long-pending visibility gap (~30 min queue item from prior sessions).")
-	display_game("")
 
 
 

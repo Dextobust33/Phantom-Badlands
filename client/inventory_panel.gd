@@ -48,6 +48,9 @@ var _selected_card_index: int = -1  # selection within visible cards array
 var _root_panel: PanelContainer
 var _capacity_label: Label
 var _resources_label: RichTextLabel
+
+# v0.9.503 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _bonus_label: RichTextLabel
 var _filter_chips: HBoxContainer
 var _paperdoll_grid: GridContainer
@@ -132,6 +135,15 @@ func _build_layout() -> void:
 	_resources_label.custom_minimum_size = Vector2(0, 20)
 	_resources_label.add_theme_font_size_override("normal_font_size", 12)
 	header.add_child(_resources_label)
+
+	# v0.9.503 — Reusable ? Help button on the Inventory header. Opens the
+	# inventory_page HELP_TOPICS entry (item categories, rarity colors,
+	# common actions, equipment comparison, Home Stones).
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("inventory_page", _help_panel)
+	header.add_child(help_btn)
 
 	# Filter chips row
 	_filter_chips = HBoxContainer.new()
