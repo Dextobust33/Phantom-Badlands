@@ -2966,13 +2966,15 @@ func handle_private_message(peer_id: int, message: Dictionary):
 	var sender_clan_tag = _get_clan_tag_for_peer(peer_id)
 	var sender_clan_color = _get_clan_banner_color_for_peer(peer_id)
 
-	# Send to target
+	# Send to target. Audit #14 v0.9.521 — include sender level so the recipient
+	# can tag whispers from new players with [NEW Lv X]. Helps mentors prioritize.
 	send_to_peer(target_peer_id, {
 		"type": "private_message",
 		"sender": sender_display,
 		"sender_name": sender_name,
 		"sender_clan_tag": sender_clan_tag,
 		"sender_clan_color": sender_clan_color,
+		"sender_level": int(characters[peer_id].level),
 		"message": text
 	})
 
@@ -22171,7 +22173,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -22306,7 +22308,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:

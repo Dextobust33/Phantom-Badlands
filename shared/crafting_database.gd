@@ -3151,6 +3151,31 @@ const RECIPES = {
 		"craft_time": 1.5,
 		"description": "A tended patch of herbs and wildflowers. Walkable. The cheapest decoration — soothing greenery for your settlement."
 	},
+	# Audit #12 v0.9.521 — Tent (blocking) + Scarecrow (walkable).
+	"tent_build": {
+		"name": "Tent",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 7,
+		"difficulty": 11,
+		"materials": {"wooden_plank": 1, "leather": 3, "rope": 2},
+		"output_type": "structure",
+		"structure_type": "tent",
+		"specialist_only": false,
+		"craft_time": 2.0,
+		"description": "A small leather travel tent. Blocks movement — create camping pockets inside your enclosure to break up sightlines."
+	},
+	"scarecrow_build": {
+		"name": "Scarecrow",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 5,
+		"difficulty": 8,
+		"materials": {"wooden_plank": 2, "rope": 1, "herb": 1},
+		"output_type": "structure",
+		"structure_type": "scarecrow",
+		"specialist_only": false,
+		"craft_time": 1.5,
+		"description": "A straw-stuffed sentinel watching over your garden. Walkable. Cheap, distinctive, slightly unsettling."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
