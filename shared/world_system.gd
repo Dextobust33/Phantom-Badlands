@@ -117,6 +117,11 @@ const TILE_RENDER = {
 	# walkable. Fountain is a high-tier centerpiece that blocks movement.
 	"brazier":       {"char": "f", "color": "#FF8800", "blocks_move": false, "blocks_los": false},
 	"fountain":      {"char": "u", "color": "#6BAEFF", "blocks_move": true,  "blocks_los": false},
+	# Audit #12 v0.9.516 — two more cosmetic buildables. Bench is the cheapest
+	# entry-level decoration (walkable). Well is a mid-tier blocking centerpiece
+	# evoking a settlement's communal water source.
+	"bench":         {"char": "n", "color": "#C4A882", "blocks_move": false, "blocks_los": false},
+	"well":          {"char": "w", "color": "#4488FF", "blocks_move": true,  "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

@@ -280,6 +280,43 @@ const HELP_TOPICS := {
 			+ "[color=#FF8888]Kenneled companions are NOT death-resistant.[/color] If you die without a surviving Registered slot, you lose them. For your main pet, use the Register slot instead."
 		),
 	},
+	"clan_vault_panel": {
+		"title": "[color=#FFD700]Clan Vault[/color]",
+		"body": (
+			"A shared inventory for your clan. Any clan member can deposit items and any clan member can withdraw — designed for distributing gear, materials, and consumables across the roster.\n\n"
+			+ "[color=#FFD700]── Tabs ──[/color]\n"
+			+ "  • [color=#FFD700]Vault[/color] — items currently stored. Each row has a [color=#88FF88]Withdraw[/color] button.\n"
+			+ "  • [color=#FFD700]Deposit[/color] — your inventory, with a [color=#88FF88]Deposit[/color] button on each row.\n\n"
+			+ "[color=#FFD700]── Capacity ──[/color]\n"
+			+ "Default 30 slots, shared across the entire clan. Stackable items consolidate by item id; uniques (equipment, eggs, tools) take one slot each.\n\n"
+			+ "[color=#FFD700]── Sync ──[/color]\n"
+			+ "The vault auto-refreshes when another clan member deposits or withdraws while you have the panel open. No need to close and reopen to see fresh state.\n\n"
+			+ "[color=#FFD700]── Chat fallback ──[/color]\n"
+			+ "`/vault` lists the vault contents in chat; `/vaultdep <slot>` deposits an inventory slot; `/vaultwd <index>` withdraws a vault slot. Use these as power-user shortcuts.\n\n"
+			+ "[color=#FF8888]Notes[/color]:\n"
+			+ "  • Any clan member can withdraw — there is no leader-only / officer-only gating. Treat the vault as a shared trust pool.\n"
+			+ "  • [b]Soulbound[/b] items can't be deposited.\n"
+			+ "  • Capacity upgrades are coming in a future clan-storage tier; for now, manage what fits."
+		),
+	},
+	"stones_panel": {
+		"title": "[color=#FFD700]NPC Home Stone Vendor[/color]",
+		"body": (
+			"Home Stones are special consumables that move things into your [color=#FFD700]Sanctuary[/color] — surviving permadeath. Buy them here for Valor.\n\n"
+			+ "[color=#FFD700]── Stone types ──[/color]\n"
+			+ "  • [color=#A335EE]Egg[/color] (500 valor, cap 3) — sends one incubating egg to Sanctuary storage. Use when you're carrying a high-value egg you don't want to lose to a deathrun.\n"
+			+ "  • [color=#9ACD32]Supplies[/color] (800 valor, cap 5) — sends up to 10 consumables to Sanctuary storage. Pre-stash potions / scrolls for your next character.\n"
+			+ "  • [color=#FFD700]Equipment[/color] (1500 valor, cap 2) — sends one equipped item to Sanctuary storage. Best for irreplaceable gear (chest finds, crafted exotics).\n"
+			+ "  • [color=#FF6347]Companion[/color] (3000 valor, cap 2) — [b]registers[/b] your active companion to a Sanctuary slot. Survives permadeath. The single most valuable purchase here for serious pet investment.\n\n"
+			+ "[color=#FFD700]── Cap rules ──[/color]\n"
+			+ "Caps are per-character lifetime purchase limits at this NPC. Once you hit a stone's cap, you cannot buy more of it on this character (the row disables). Stones drop in T4+ chests as a non-buy alternative.\n\n"
+			+ "[color=#FFD700]── How to use ──[/color]\n"
+			+ "After buying, the stone appears in your inventory. Use it from inventory to trigger the transfer. The Companion stone in particular opens a register-or-kennel choice modal.\n\n"
+			+ "[color=#FF8888]Notes[/color]:\n"
+			+ "  • You must be at an NPC trading post to see this vendor.\n"
+			+ "  • Chat fallbacks: `/stones` (list) + `/buystone <type>` (purchase)."
+		),
+	},
 	"post_status_panel": {
 		"title": "[color=#FFD700]Post Status[/color]",
 		"body": (

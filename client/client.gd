@@ -23475,6 +23475,20 @@ func _build_progression_vectors_text(char: Dictionary) -> String:
 		regions_visited, atlas_suffix
 	]
 
+	# Audit #6 v0.9.516 — Quest chain completion + title surface. Closes the
+	# "chain-completion UI surface" item on the audit master. CHAIN_TITLES has
+	# 28 entries spanning T1-T9; not every chain grants a title but the count
+	# is a decent ladder reference.
+	var completed_chains_arr = char.get("completed_chains", [])
+	var chains_done: int = completed_chains_arr.size() if completed_chains_arr is Array else 0
+	var earned_titles_arr = char.get("earned_titles", [])
+	var titles_earned: int = earned_titles_arr.size() if earned_titles_arr is Array else 0
+	# 28 = total chain titles in CHAIN_TITLES (T1-T9 ladder). Inlined since GDScript
+	# doesn't allow function-local consts; update if the ladder grows.
+	out += "[color=#FFAA66]Quest Chains:[/color] %d completed  •  [color=#FFD700]%d/28 titles[/color] earned\n" % [
+		chains_done, titles_earned
+	]
+
 	# --- Currencies / pouch ---
 	var soul_gems_raw = char.get("soul_gems", [])
 	var soul_gem_count: int = 0
@@ -24300,8 +24314,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.516 — Audit #12 Bench + Well + Audit #15 help coverage + Audit #6 chain count surface.
+	display_game("[color=#00FF00]v0.9.516[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two more cosmetic buildables, help on two more panels, and a Quest Chain completion line on the Status page.[/color]")
+	display_game("  • [b]Bench[/b] (Construction skill 6, [color=#C4A882]n[/color] tile, walkable). Cheapest entry-level decoration — 2 wooden plank + 1 rope. Anyone with basic Construction can build one.")
+	display_game("  • [b]Well[/b] (Construction skill 18, [color=#4488FF]w[/color] tile, blocks movement). Mid-tier centerpiece evoking a settlement's communal water source. 3 stone block + 1 wooden plank + 2 rope.")
+	display_game("  • [b]Help buttons[/b] added to the Clan Vault and NPC Home Stone Vendor panels. The help-buttons-everywhere rollout now covers 16 panels.")
+	display_game("  • [b]Quest Chains surfaced[/b] on the Status page's Progression Vectors dashboard. New line shows [color=#FFAA66]X completed[/color] + [color=#FFD700]Y/28 titles[/color] earned. Closes the [color=#FFAA66]Audit #6[/color] \"chain-completion UI surface\" polish item.")
+	display_game("  • Continues Audit #12 structure variety + Audit #15 help coverage + closes a small Audit #6 polish item.")
+	display_game("")
+
 	# v0.9.515 — Audit #12 cosmetic structures (Brazier + Fountain) + Audit #15 help panel coverage.
-	display_game("[color=#00FF00]v0.9.515[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.515[/color]")
 	display_game("  [color=#FFD700]Two more cosmetic buildables to fill out your settlement, plus help buttons on three more panels.[/color]")
 	display_game("  • [b]Brazier[/b] (Construction skill 13, [color=#FF8800]f[/color] tile, walkable). New mid-tier light source between Torch (skill 8) and Lamp Post (skill 15). 2 iron ore + 1 wooden plank + 2 magic dust.")
 	display_game("  • [b]Fountain[/b] (Construction skill 22, [color=#6BAEFF]u[/color] tile, blocks movement). New centerpiece structure — place at the heart of your settlement plaza. 4 stone block + 2 magic dust + 1 arcane crystal.")
@@ -24334,13 +24358,6 @@ func display_changelog():
 	display_game("  • [b]Legacy character appearance variant now stable.[/b] Characters created BEFORE the appearance variant system (no `appearance_variant` field saved to disk) were re-rolling a new variant on every `from_dict()` call. Symptom: hovering the character on the map showed \"Ivory\" while the Players Online popup showed \"Mint\" — same player, same session, two different colors. Fixed by seeding the reroll with `hash(character_name)` via a new `RandomNumberGenerator`-based helper (`DropTables._roll_egg_variant_with_rng`). Same character → same hash → same variant, deterministically, forever. New characters were never affected (their variant is rolled once at create_character and persisted before the first from_dict). Once a legacy character is next saved, the variant persists and the migration branch stops firing for them.")
 	display_game("")
 
-	# v0.9.511 — Niche-passive surface extended to Bestiary + Victory card.
-	display_game("[color=#00FFFF]v0.9.511[/color]")
-	display_game("  [color=#FFD700]Niche-passive coverage rounded out — bestiary kill ledger + victory card both flag matching species for Paladin / Ranger.[/color]")
-	display_game("  • [b]Bestiary niche-passive icon.[/b] Each entry's name now gets a [color=#FFD700]✦[/color] prefix when the player's class passive applies (Paladin → gold ✦ on undead/demons; Ranger → green ✦ on beasts). Header legend names the passive so the icon's meaning is obvious. Lets a Paladin / Ranger scan their kill ledger and see exactly which species their +25% damage bonus targets.")
-	display_game("  • [b]Victory card niche-passive tag.[/b] The end-of-combat \"Defeated:\" line also appends [color=#FFD700][DIVINE FAVOR +25%][/color] / [color=#228B22][HUNTER'S MARK +25%][/color] when applicable. Pairs with v0.9.510's live combat tag so the bonus is acknowledged from start to finish of the encounter.")
-	display_game("  • Continues closing Audit #2 by making the niche-passive bonus visible on every surface where the relevant species appears, not just hidden in damage numbers.")
-	display_game("")
 
 
 
@@ -27522,7 +27539,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"give_cosmetic_structures_set":
 			# v0.9.507 — drop one of each cosmetic structure for testing.
 			# v0.9.515 — brazier + fountain added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain"]:
+			# v0.9.516 — bench + well added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()
