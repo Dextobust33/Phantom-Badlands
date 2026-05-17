@@ -26,6 +26,7 @@ const CLAN_NAME_MAX = 24
 const CLAN_TAG_MIN = 2
 const CLAN_TAG_MAX = 5
 const CLAN_MAX_MEMBERS = 30
+const CLAN_MOTTO_MAX = 50  # Audit #14 v0.9.510 — short tagline shown on clan panel.
 const GUARDS_FILE = "user://data/guards.json"
 const BAN_LIST_FILE = "user://data/ban_list.json"
 
@@ -2307,6 +2308,30 @@ func mark_sanctuary_hint_seen(account_id: String) -> bool:
 	houses_data["houses"][account_id]["seen_sanctuary_hint"] = true
 	save_houses()
 	return true
+
+func set_clan_motto(account_id: String, text: String) -> Dictionary:
+	"""Audit #14 v0.9.510 — leader-only clan motto setter. Short tagline (max
+	50 chars) shown on the clan panel below the description. Empty string
+	clears. Same charset rules as description (no BBCode brackets to prevent
+	injection)."""
+	var clan_id = get_account_clan_id(account_id)
+	if clan_id == "":
+		return {"success": false, "reason": "You are not in a clan."}
+	var clan = clans_data.get("clans", {}).get(clan_id, {})
+	if clan.is_empty():
+		return {"success": false, "reason": "Clan not found."}
+	if String(clan.get("leader_account_id", "")) != account_id:
+		return {"success": false, "reason": "Only the clan leader can set the motto."}
+	var trimmed = text.strip_edges()
+	if trimmed.length() > CLAN_MOTTO_MAX:
+		return {"success": false, "reason": "Motto max %d characters (got %d)." % [CLAN_MOTTO_MAX, trimmed.length()]}
+	var bad_re = RegEx.new()
+	bad_re.compile("[\\[\\]<>]")
+	if bad_re.search(trimmed) != null:
+		return {"success": false, "reason": "Motto cannot contain [ ] < or > characters."}
+	clans_data["clans"][clan_id]["motto"] = trimmed
+	save_clans()
+	return {"success": true, "motto": trimmed}
 
 func set_clan_banner_color(account_id: String, hex_color: String) -> Dictionary:
 	"""Audit #14 Slice 8 — leader-only banner color setter. Validates

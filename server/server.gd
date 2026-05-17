@@ -1710,6 +1710,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #14 Slice 7 — leader-set clan description.
 		"clan_description_set":
 			handle_clan_description_set(peer_id, message)
+		"clan_motto_set":
+			handle_clan_motto_set(peer_id, message)
 		# Audit #14 Slice 8 — leader-set clan banner color.
 		"clan_banner_color_set":
 			handle_clan_banner_color_set(peer_id, message)
@@ -8793,6 +8795,7 @@ func _send_clan_info(peer_id: int) -> void:
 		"name": String(clan.get("name", "")),
 		"tag": String(clan.get("tag", "")),
 		"description": String(clan.get("description", "")),
+		"motto": String(clan.get("motto", "")),
 		"banner_color": String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR)),
 		"is_leader": leader_id == account_id,
 		"is_officer": officer_ids.has(account_id),
@@ -9304,6 +9307,29 @@ func handle_clan_description_set(peer_id: int, message: Dictionary) -> void:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Clan description cleared.[/color]"})
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Clan description updated.[/color]"})
+	_refresh_all_online_clan_members(persistence.get_account_clan_id(account_id))
+
+
+func handle_clan_motto_set(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 v0.9.510 — leader-only clan motto setter. Empty text clears.
+	Validation lives in persistence.set_clan_motto (length cap + charset).
+	After success, push refreshed clan_info to every online member so the new
+	motto shows up on their panels."""
+	if not peers.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var text = String(message.get("text", ""))
+	var result = persistence.set_clan_motto(account_id, text)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Could not set motto."))})
+		return
+	var motto = String(result.get("motto", ""))
+	if motto == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Clan motto cleared.[/color]"})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Clan motto updated.[/color]"})
 	_refresh_all_online_clan_members(persistence.get_account_clan_id(account_id))
 
 

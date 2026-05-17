@@ -359,8 +359,21 @@ func _render_in_clan_view() -> void:
 		desc_label.text = "[color=#C8B0FF]%s[/color]" % description
 		_body_container.add_child(desc_label)
 	elif is_leader:
-		desc_label.text = "[color=#888888]No clan description set — use [color=#FFD700]/clandesc <text>[/color] to add one, or [color=#FFD700]/clancolor #RRGGBB[/color] to set a banner color.[/color]"
+		desc_label.text = "[color=#888888]No clan description set — use [color=#FFD700]/clandesc <text>[/color] to add one, [color=#FFD700]/clanmotto <text>[/color] for a short tagline, or [color=#FFD700]/clancolor #RRGGBB[/color] to set a banner color.[/color]"
 		_body_container.add_child(desc_label)
+
+	# Audit #14 v0.9.510 — leader-set clan motto (short tagline, max 50 chars).
+	# Italics + softer color so it reads as a subtitle below the description.
+	var motto: String = String(_data.get("motto", ""))
+	if motto != "":
+		var motto_label := RichTextLabel.new()
+		motto_label.bbcode_enabled = true
+		motto_label.fit_content = true
+		motto_label.scroll_active = false
+		motto_label.add_theme_font_size_override("normal_font_size", 11)
+		motto_label.custom_minimum_size = Vector2(0, 18)
+		motto_label.text = "[color=#A89BD8][i]\"%s\"[/i][/color]" % motto
+		_body_container.add_child(motto_label)
 
 	if is_leader:
 		var leader_note := RichTextLabel.new()
