@@ -5408,6 +5408,9 @@ func send_location_update(peer_id: int):
 		"area_level": area_level_hud,
 		"area_is_hotspot": is_area_hotspot,
 		"area_is_safe": area_level_hud <= 0,
+		# Audit #10 v0.9.512 — apex frontier marker. Drives the [⚡ APEX] tag
+		# in the region label + +10% XP/gold combat reward bonus.
+		"is_apex_frontier": world_system.is_apex_frontier(character.x, character.y),
 		"nearest_post": nearest_post_hud,
 		# Slice 6 — dynamic post state. Client renders an "Under Threat" warning
 		# in the HUD when threatened=true. Always sent; client checks the flag.
@@ -7388,6 +7391,11 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 
 	# Generate another monster of the same type at the same level
 	var monster = monster_db.generate_monster_by_name(monster_name, monster_level)
+
+	# Audit #10 v0.9.512 — stamp apex frontier flag based on the character's
+	# position at engagement time. Combat reward calc reads this to apply the
+	# +10% XP bonus.
+	monster["is_apex_frontier"] = world_system.is_apex_frontier(character.x, character.y)
 
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)

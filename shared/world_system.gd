@@ -133,6 +133,12 @@ const TIER_ZONES = [
 	[1200, 2000],   # T6
 ]
 
+# Audit #10 v0.9.512 — Apex frontier. The far edge of the world (1500+ tiles
+# from origin) carries a +10% XP / +10% gold reward on monster kills as a
+# nudge to push into the edges. First beat of "apex content"; future slices
+# can stack on T9 encounter pools, unique drops, or named extreme zones.
+const APEX_FRONTIER_DISTANCE = 1500
+
 # Gathering job mapping for node types
 const NODE_TO_JOB = {
 	"stone": "mining",
@@ -1329,6 +1335,15 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
 
 	return output
+
+func is_apex_frontier(x: int, y: int) -> bool:
+	"""Audit #10 v0.9.512 — true when the coord is in the apex frontier zone
+	(distance from origin > APEX_FRONTIER_DISTANCE). Used for visual marker
+	in region label + +10% XP/gold combat reward bonus. First beat of apex
+	content; future slices stack T9 encounter pools / unique drops / named
+	extreme zones on top of this geometric definition."""
+	var dist_sq = x * x + y * y
+	return dist_sq > APEX_FRONTIER_DISTANCE * APEX_FRONTIER_DISTANCE
 
 func is_safe_zone(x: int, y: int) -> bool:
 	"""Check if location is a safe zone (NPC post, trading post, structure interior)"""

@@ -1847,6 +1847,17 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		final_xp = int(final_xp * hotspot_xp_mult)
 		hotspot_xp_pct = int((hotspot_xp_mult - 1.0) * 100)
 
+	# Audit #10 v0.9.512 — Apex frontier bonus. +10% XP when the monster is
+	# killed in the apex frontier zone (distance from origin > 1500 tiles).
+	# Server stamps `is_apex_frontier` on the monster dict at combat-start
+	# from the character's position at engagement time. First beat of apex
+	# content; future slices can stack T9 encounter pools / unique drops on
+	# top of this geometric definition.
+	var apex_xp_pct = 0
+	if monster.get("is_apex_frontier", false):
+		final_xp = int(final_xp * 1.10)
+		apex_xp_pct = 10
+
 	# Gambit kill bonus: +1 gem awarded later
 	var gambit_kill = combat.get("gambit_kill", false)
 
@@ -1870,6 +1881,8 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		messages.append("[color=#FFD700]You gain %d experience![/color]" % final_xp)
 	if hotspot_xp_pct > 0:
 		messages.append("[color=#FF6600]Danger Zone Bonus: +%d%% XP and improved drop chance![/color]" % hotspot_xp_pct)
+	if apex_xp_pct > 0:
+		messages.append("[color=#9F70FF]⚡ Apex Frontier Bonus: +%d%% XP![/color]" % apex_xp_pct)
 
 	# Award experience
 	character.add_experience(final_xp)

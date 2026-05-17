@@ -934,6 +934,8 @@ var crafting_upcoming_unlocks: Array = []  # Audit #8 Layer 7: next 3 locked rec
 var hud_area_level: int = 0  # Last known area level for Status HUD
 var hud_area_is_hotspot: bool = false
 var hud_area_is_safe: bool = true
+# Audit #10 v0.9.512 — apex frontier flag from location updates.
+var hud_is_apex_frontier: bool = false
 var hud_nearest_post: Dictionary = {}  # Nearest NPC post info for compass line
 var hud_post_threat: Dictionary = {"threatened": false}  # Slice 6 — dynamic post threat state
 # Audit #13 Slice 3 — Sanctuary Compass payload. Server-stamped per location
@@ -18699,6 +18701,7 @@ func handle_server_message(message: Dictionary):
 			hud_area_level = int(message.get("area_level", 0))
 			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
 			hud_area_is_safe = bool(message.get("area_is_safe", true))
+			hud_is_apex_frontier = bool(message.get("is_apex_frontier", false))
 			hud_nearest_post = message.get("nearest_post", {})
 			# Slice 6 — threat state of the nearest NPC post (dynamic post state)
 			hud_post_threat = message.get("nearest_post_threat", {"threatened": false})
@@ -24294,8 +24297,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.512 — Apex Frontier (first beat) + Legacy variant reroll fix.
+	display_game("[color=#00FF00]v0.9.512[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]First beat of Apex Content — far edges of the world now reward exploration. Plus a long-standing legacy-character visual bug fix.[/color]")
+	display_game("  • [b]Apex Frontier (Audit #10).[/b] Distance > 1500 tiles from origin is now an [color=#9F70FF]⚡ APEX[/color] zone. Monsters defeated in apex frontier deal +10% XP to the player. Visual: the Area line in the region label gains a [color=#9F70FF]⚡ APEX +10% XP[/color] tag when you're in the zone, and the combat reward message names the bonus on kill. First beat of \"apex content\" captured item — future slices can stack T9 encounter pools, unique drops, or named extreme zones on top of this geometric definition. Math note: zone uses squared-distance for cheap detection, no sqrt.")
+	display_game("  • [b]Legacy character appearance variant now stable.[/b] Characters created BEFORE the appearance variant system (no `appearance_variant` field saved to disk) were re-rolling a new variant on every `from_dict()` call. Symptom: hovering the character on the map showed \"Ivory\" while the Players Online popup showed \"Mint\" — same player, same session, two different colors. Fixed by seeding the reroll with `hash(character_name)` via a new `RandomNumberGenerator`-based helper (`DropTables._roll_egg_variant_with_rng`). Same character → same hash → same variant, deterministically, forever. New characters were never affected (their variant is rolled once at create_character and persisted before the first from_dict). Once a legacy character is next saved, the variant persists and the migration branch stops firing for them.")
+	display_game("")
+
 	# v0.9.511 — Niche-passive surface extended to Bestiary + Victory card.
-	display_game("[color=#00FF00]v0.9.511[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.511[/color]")
 	display_game("  [color=#FFD700]Niche-passive coverage rounded out — bestiary kill ledger + victory card both flag matching species for Paladin / Ranger.[/color]")
 	display_game("  • [b]Bestiary niche-passive icon.[/b] Each entry's name now gets a [color=#FFD700]✦[/color] prefix when the player's class passive applies (Paladin → gold ✦ on undead/demons; Ranger → green ✦ on beasts). Header legend names the passive so the icon's meaning is obvious. Lets a Paladin / Ranger scan their kill ledger and see exactly which species their +25% damage bonus targets.")
 	display_game("  • [b]Victory card niche-passive tag.[/b] The end-of-combat \"Defeated:\" line also appends [color=#FFD700][DIVINE FAVOR +25%][/color] / [color=#228B22][HUNTER'S MARK +25%][/color] when applicable. Pairs with v0.9.510's live combat tag so the bonus is acknowledged from start to finish of the encounter.")
@@ -24326,13 +24336,6 @@ func display_changelog():
 	display_game("  • [b]v0.9.507 hint regression reverted — THREAT BOUNTY quests are real.[/b] v0.9.507's \"hint accuracy\" fix was based on a too-narrow grep that missed the actual implementation (`_generate_threat_relief_quest` at server/server.gd, Audit #11 Slice 12 — already shipped). The quests appear at the top of under-threat trading posts' boards as \"⚠ THREAT BOUNTY\" entries pointing at the threatening dungeon. v0.9.508 restores the accurate hint mention. Sorry for the confusion if v0.9.507's hint made you doubt the system.")
 	display_game("")
 
-	# v0.9.507 — Interactive Signpost + latent walkable-structure bug fix + hint clarity.
-	display_game("[color=#00FFFF]v0.9.507[/color]")
-	display_game("  [color=#FFD700]First INTERACTIVE buildable structure — the Signpost. Plus a fix that makes Banners, Lamp Posts, and Torches actually walkable as advertised.[/color]")
-	display_game("  • [b]New: [color=#C4A882]Signpost[/color] [color=#C4A882]r[/color] (Construction skill 10, difficulty 15).[/b] Materials: 3 wooden plank + 1 ink + 1 rope. Bump into a signpost to read its text; as the owner, bump it to open an edit prompt that takes up to 60 characters. The first interactive buildable in the catalogue — leaves landmarks, post directions, or messages for travelers. Text persists across server restarts and is removed when the signpost is demolished.")
-	display_game("  • [b]Latent v0.9.505 bug fix — Banner / Lamp Post / Torch now actually walkable.[/b] The build pipeline was overriding `blocks_move` to true for every structure except Door/Bridge, so the new cosmetics were placed as blocking despite the tile-render saying walkable. Now consults `WorldSystem.TILE_RENDER` as the canonical source — fixes the bug and prevents future regressions. [color=#FFAA88]Note:[/color] structures placed under v0.9.505/.506 will remain blocking until demolished and rebuilt.")
-	display_game("  • [b]Admin shortcut:[/b] new \"Give Cosmetic Structures (1 of each)\" button on the Items page drops Banner + Lamp Post + Torch + Statue + Signpost into inventory in one click.")
-	display_game("")
 
 
 
@@ -25370,7 +25373,13 @@ func update_region_label():
 		var danger = ""
 		if hud_area_is_hotspot:
 			danger = " [color=#FF0000]!DANGER[/color]"
-		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s" % [hud_area_level, danger]
+		# Audit #10 v0.9.512 — apex frontier tag. Distance > 1500 from origin.
+		# Indicates +10% XP combat bonus on kills here. Purple tone visually
+		# distinct from the orange hotspot DANGER tag.
+		var apex_tag = ""
+		if hud_is_apex_frontier:
+			apex_tag = " [color=#9F70FF]⚡ APEX +10% XP[/color]"
+		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s%s" % [hud_area_level, danger, apex_tag]
 
 	# Slice 6k — Region line now shows the authored region name (e.g.,
 	# "Greenmeadow Reach") instead of the generic tier name. Tier color +

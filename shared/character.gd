@@ -1499,10 +1499,18 @@ func from_dict(data: Dictionary):
 	appearance_color2 = data.get("appearance_color2", "")
 	appearance_pattern = data.get("appearance_pattern", "solid")
 	if appearance_variant.is_empty():
-		# `_roll_egg_variant` is non-static — instantiate DropTables for the call,
-		# matching the existing pattern at character.gd:3041.
+		# v0.9.512 — deterministic seed from the character name so legacy chars
+		# (created before the appearance system) roll the SAME variant on every
+		# `from_dict()` call. Previously used `randf()` non-deterministically,
+		# causing map hover + Players Online popup to show different variants
+		# for the same character within one session (see
+		# [[project-legacy-variant-reroll]]). New chars are unaffected — they
+		# get rolled at create_character time and persisted before the first
+		# from_dict, so this branch only fires for the legacy-empty case.
 		var dt_for_variant = preload("res://shared/drop_tables.gd").new()
-		var variant = dt_for_variant._roll_egg_variant()
+		var variant_rng = RandomNumberGenerator.new()
+		variant_rng.seed = hash(name)
+		var variant = dt_for_variant._roll_egg_variant_with_rng(variant_rng)
 		appearance_variant = str(variant.get("name", "Crimson"))
 		appearance_color = str(variant.get("color", "#DC143C"))
 		appearance_color2 = str(variant.get("color2", ""))
