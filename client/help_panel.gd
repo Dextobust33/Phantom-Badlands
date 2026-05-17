@@ -20,14 +20,18 @@ const HELP_TOPICS := {
 	"companion_stable": {
 		"title": "[color=#FFD700]Companion Stable[/color]",
 		"body": (
-			"A [color=#FFD700]Companion Stable[/color] (the magenta [color=#FF80FF]C[/color] tile at Tier 5+ trading posts) is a living link to your Sanctuary's kennel. "
-			+ "Bump into the tile to open the stable.\n\n"
-			+ "[color=#A335EE]✦ Deposit[/color] — send a collected companion to the Sanctuary kennel. Frees up your party roster and makes the companion available as a [b]Fusion[/b] input.\n\n"
-			+ "[color=#A335EE]✦ Withdraw[/color] — bring a kennel companion back into your party roster. Useful for fielding a fused result, or rotating in a stored companion mid-character.\n\n"
+			"A [color=#FFD700]Companion Stable[/color] (the magenta [color=#FF80FF]C[/color] tile at Tier 5+ trading posts) is a living link to your Sanctuary's companion storage. Bump the tile to open it.\n\n"
+			+ "[color=#FFD700]MANAGE TAB[/color]\n"
+			+ "[color=#A335EE]✦ Deposit[/color] — non-registered active companion → kennel. Frees a roster slot.\n"
+			+ "[color=#A335EE]✦ Return to Slot[/color] — a [color=#FF80FF][REGISTERED][/color] companion goes back to its registered slot (still registered).\n"
+			+ "[color=#A335EE]✦ Withdraw[/color] — pull a kennel companion into your roster.\n\n"
+			+ "[color=#FFD700]FUSE TAB (v0.9.489)[/color]\n"
+			+ "Mid-character fusion. Pick 3 companions of the same monster type AND sub-tier from either the kennel or registered slots, then press Fuse. The result is auto-registered if any input was registered (slot-preserving), or added to the kennel otherwise.\n"
+			+ "[color=#888888]Currently supports Same Type fusion. Mixed T9 + Hybrid will land in a follow-up.[/color]\n\n"
 			+ "[color=#FF8888]Notes[/color]:\n"
-			+ "  • Deposit and registration are independent. A [color=#FF80FF][REGISTERED][/color] companion deposited here [b]returns to its registered slot[/b] (still registered, just not on your character).\n"
-			+ "  • Non-registered companions go to the kennel. Kennel must have space (upgrade at the Sanctuary if full).\n\n"
-			+ "[color=#87CEEB]This is the system that makes Fusion accessible mid-character — you no longer have to die to combine companions.[/color]"
+			+ "  • Deposit and registration are independent operations. Depositing never changes registration status.\n"
+			+ "  • Registered companions that are currently your active companion are NOT fuseable — deposit them first (use 'Return to Slot') to make them available.\n"
+			+ "  • Kennel must have space (upgrade at the Sanctuary if full)."
 		),
 	},
 	"fusion_overview": {

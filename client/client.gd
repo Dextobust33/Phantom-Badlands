@@ -1994,6 +1994,7 @@ func _ready():
 	add_child(companion_stable_panel)
 	companion_stable_panel.deposit_requested.connect(_on_companion_stable_deposit)
 	companion_stable_panel.withdraw_requested.connect(_on_companion_stable_withdraw)
+	companion_stable_panel.fuse_requested.connect(_on_companion_stable_fuse)
 	companion_stable_panel.close_requested.connect(_on_companion_stable_close)
 
 	# Audit #13 Slice 2 — Bestiary panel.
@@ -32109,6 +32110,16 @@ func _on_companion_stable_withdraw(kennel_index: int) -> void:
 	send_to_server({
 		"type": "companion_stable_withdraw",
 		"kennel_index": kennel_index,
+	})
+
+func _on_companion_stable_fuse(fusion_type: String, inputs: Array) -> void:
+	# v0.9.489 — mid-character fusion via the Stable. Inputs are tagged
+	# [{source: "kennel"|"registered", index: int}, ...]. Server validates
+	# per fusion_type and auto-registers the output if any input was registered.
+	send_to_server({
+		"type": "stable_fusion",
+		"fusion_type": fusion_type,
+		"inputs": inputs,
 	})
 
 func _on_companion_stable_close() -> void:
