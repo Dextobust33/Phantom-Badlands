@@ -335,6 +335,13 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 # Format: {granted_by: String, granted_by_id: int, granted_at: int (unix timestamp)}
 @export var knight_status: Dictionary = {}  # Knighted by High King
 @export var mentee_status: Dictionary = {}  # Mentored by Elder
+# Audit #14 v0.9.517 — Mentor Badge MVP. Volunteer flag set by `/mentor on`.
+# Surfaces a ★ badge on the player's name in chat / players list / map hover so
+# new players can identify experienced volunteers. No matching algorithm yet.
+@export var mentor_active: bool = false
+# Audit #6 v0.9.517 — Repeatable starter chains. Tracks per-chain cooldown unix
+# timestamps for chains marked `repeatable: true`. Format: {chain_id: timestamp_ready}.
+@export var chain_cooldowns: Dictionary = {}
 
 # Guardian Death Save - granted by Eternal (permanent until used)
 @export var guardian_death_save: bool = false
@@ -1426,6 +1433,8 @@ func to_dict() -> Dictionary:
 		"title_data": title_data,
 		"knight_status": knight_status,
 		"mentee_status": mentee_status,
+		"mentor_active": mentor_active,
+		"chain_cooldowns": chain_cooldowns,
 		"guardian_death_save": guardian_death_save,
 		"guardian_granted_by": guardian_granted_by,
 		"pilgrimage_progress": pilgrimage_progress,
@@ -1666,6 +1675,8 @@ func from_dict(data: Dictionary):
 	title_data = data.get("title_data", {})
 	knight_status = data.get("knight_status", {})
 	mentee_status = data.get("mentee_status", {})
+	mentor_active = bool(data.get("mentor_active", false))
+	chain_cooldowns = data.get("chain_cooldowns", {})
 	guardian_death_save = data.get("guardian_death_save", false)
 	guardian_granted_by = data.get("guardian_granted_by", "")
 	pilgrimage_progress = data.get("pilgrimage_progress", {})

@@ -159,6 +159,9 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
+		# Audit #6 v0.9.517 — Repeatable starter chain. 24h cooldown after turn-in,
+		# then the goblin_menace_1 starter reappears at Haven.
+		"repeatable": true,
 		# Bonus dispensed on top of base rewards on final-stage turn-in
 		"chain_bonus": {"valor": 240, "egg": "Goblin", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "goblin_bane"}
 	},
@@ -195,6 +198,8 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
+		# Audit #6 v0.9.517 — Repeatable T1 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 150, "egg": "Skeleton", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "crypt_cleanser"}
 	},
 	# ===== "The Wolf Pack" — Crossroads, 3 stages =====
@@ -247,6 +252,8 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
+		# Audit #6 v0.9.517 — Repeatable T1 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 200, "egg": "Wolf", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "pack_hunter"}
 	},
 	# ===== "The Web Spreads" — East Market, 2 stages, T2 =====
@@ -317,6 +324,8 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
+		# Audit #6 v0.9.517 — Repeatable T1 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 150, "egg": "Giant Rat", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "rat_slayer"}
 	},
 	# ===== "Kobold Trouble" — Crossroads, 2 stages, T1 =====
@@ -352,6 +361,8 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
+		# Audit #6 v0.9.517 — Repeatable T1 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 150, "egg": "Kobold", "home_stones": ["home_stone_egg", "home_stone_companion"], "chain_title": "tunnel_crawler"}
 	},
 	# ===== "Orc Threat" — East Market, 3 stages, T2 =====
@@ -1625,10 +1636,16 @@ func _regenerate_dynamic_quest(quest_id: String, player_level: int = -1, quests_
 	# Fallback to unscaled version (for backward compatibility)
 	return _generate_quest_for_tier(trading_post_id, quest_id, quest_tier, post_distance)
 
-func get_chain_starters_for_post(trading_post_id: String, completed_chains: Array, active_quest_ids: Array, completed_quests: Array) -> Array:
+func get_chain_starters_for_post(trading_post_id: String, completed_chains: Array, active_quest_ids: Array, completed_quests: Array, chain_cooldowns: Dictionary = {}) -> Array:
 	"""Audit #6 Slice 1 — return chain stage-1 quests available at this post.
 	Filters out chains the character has already completed or already started
-	(i.e., is currently doing some stage of the chain)."""
+	(i.e., is currently doing some stage of the chain).
+
+	Audit #6 v0.9.517 — `chain_cooldowns` (chain_id → unix_timestamp_ready) lets
+	repeatable chains reappear after their cooldown elapses. If the final stage
+	is marked `repeatable: true` and the cooldown has passed, the stage-1
+	starter is offered again. Chains never marked repeatable stay one-shot."""
+	var now: int = int(Time.get_unix_time_from_system())
 	var available: Array = []
 	for quest_id in QUESTS:
 		var quest = QUESTS[quest_id]
@@ -1638,7 +1655,13 @@ func get_chain_starters_for_post(trading_post_id: String, completed_chains: Arra
 			continue
 		var chain_id = String(quest.get("chain_id", ""))
 		if chain_id in completed_chains:
-			continue
+			# Repeatable check: chain must be marked repeatable AND cooldown elapsed.
+			var is_repeatable = _chain_is_repeatable(chain_id)
+			if not is_repeatable:
+				continue
+			var ready_at = int(chain_cooldowns.get(chain_id, 0))
+			if ready_at > now:
+				continue
 		# Skip if any stage of this chain is currently active or already completed
 		var chain_in_progress = false
 		for other_id in QUESTS:
@@ -1652,6 +1675,18 @@ func get_chain_starters_for_post(trading_post_id: String, completed_chains: Arra
 			continue
 		available.append(quest.duplicate(true))
 	return available
+
+func _chain_is_repeatable(chain_id: String) -> bool:
+	"""Audit #6 v0.9.517 — true if any quest in `chain_id` has `repeatable: true`
+	on its definition. Conventionally placed on the final stage so the cooldown
+	stamp aligns with chain completion."""
+	for qid in QUESTS:
+		var q = QUESTS[qid]
+		if String(q.get("chain_id", "")) != chain_id:
+			continue
+		if bool(q.get("repeatable", false)):
+			return true
+	return false
 
 func get_quests_for_trading_post(trading_post_id: String) -> Array:
 	"""Get all quests offered at a specific Trading Post (with scaled rewards)."""
