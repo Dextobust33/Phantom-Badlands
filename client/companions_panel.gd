@@ -61,6 +61,9 @@ var _registered_flow: HFlowContainer
 var _registered_companions: Array = []
 var _registered_capacity: int = 2
 
+# v0.9.499 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
+
 # Eggs tab nodes
 var _eggs_tab: VBoxContainer
 var _egg_grid: HFlowContainer
@@ -140,6 +143,16 @@ func _build_layout() -> void:
 	_capacity_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_capacity_label.custom_minimum_size = Vector2(0, 22)
 	header.add_child(_capacity_label)
+
+	# v0.9.499 — Reusable Help button + HelpPanel for the Companions page.
+	# Topic "companions_page" registered in help_panel.gd's HELP_TOPICS dict
+	# explains card info, aggro roles, ascended prefixes, and the Sanctuary
+	# Registered section.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("companions_page", _help_panel)
+	header.add_child(help_btn)
 
 	# Tabs
 	var tab_row := HBoxContainer.new()
@@ -589,7 +602,10 @@ func _rebuild_registered_section() -> void:
 
 
 func _make_registered_card(rc: Dictionary) -> Control:
+	# v0.9.499 — surface authored ascended prefix on registered cards.
 	var name = str(rc.get("name", "Unknown"))
+	if client_ref and client_ref.has_method("_get_authored_companion_name"):
+		name = str(client_ref._get_authored_companion_name(rc))
 	var monster_type = str(rc.get("monster_type", ""))
 	var tier = int(rc.get("tier", 1))
 	var sub_tier = int(rc.get("sub_tier", 1))
@@ -703,7 +719,10 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 	name_lbl.scroll_active = false
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	name_lbl.add_theme_font_size_override("normal_font_size", 13)
+	# v0.9.499 — surface authored ascended prefix on companion cards.
 	var name = str(c.get("name", "?"))
+	if client_ref and client_ref.has_method("_get_authored_companion_name"):
+		name = str(client_ref._get_authored_companion_name(c))
 	var variant = str(c.get("variant", "Normal"))
 	var variant_color = str(c.get("variant_color", "#FFFFFF"))
 	var rarity_color = "#FFFFFF"

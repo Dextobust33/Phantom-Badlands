@@ -57,6 +57,28 @@ const HELP_TOPICS := {
 			+ "[color=#87CEEB]Decision rule[/color]: If it's your main pet you want to keep across deaths → Register. If it's a stockpile companion you'll feed into fusion → Kennel."
 		),
 	},
+	"companions_page": {
+		"title": "[color=#FFD700]Companions Page[/color]",
+		"body": (
+			"Your active pet, your collected roster, and your Sanctuary-registered companions — all on one page.\n\n"
+			+ "[color=#FFD700]Active Companion[/color] — the pet currently fighting alongside you. Shown at the top with full ability text + XP bar.\n\n"
+			+ "[color=#FFD700]Sanctuary Registered[/color] (when present) — companions stored in your account's permadeath-resistant slots. Read-only here; manage at any Tier 5+ NPC [color=#A335EE]Companion Stable[/color] or the Sanctuary's K tile. The currently checked-out slot is dimmed and marked [color=#FFD700][CHECKED OUT][/color].\n\n"
+			+ "[color=#FFD700]Roster[/color] — your collected (non-registered) companions. Left-click to activate; right-click for Inspect / Release.\n\n"
+			+ "[color=#FFD700]── Card info ──[/color]\n"
+			+ "  • [color=#FF80FF][REG][/color] — currently checked out from a Sanctuary slot.\n"
+			+ "  • [color=#FF80FF][HYBRID×X][/color] — a Hybrid Fusion result; the X is the partner monster type.\n"
+			+ "  • Color-coded rarity tag — variant tier from [color=#888888][C][/color] common up to [color=#FFD700][P][/color] prismatic.\n"
+			+ "  • [b]T<n>.<m>[/b] — Tier <n>, sub-tier <m>. Sub-tier is the within-tier ladder (1-8). T9 is the cap.\n"
+			+ "  • [color=#FFAA66]Veteran/Champion/Warlord/Tyrant/Apex[/color] prefix — appears on companions ascended via Tier Ascension Fusion. The prefix tells you how many tier-steps above the base species the companion has climbed.\n\n"
+			+ "[color=#FFD700]── Aggro Roles ──[/color]\n"
+			+ "Each companion has an Aggro value (0-100%) controlling how often enemies target it instead of you. Roles:\n"
+			+ "  • [color=#FFD700]Tank[/color] (50%+) — Frontliner. Draws enemy attacks; designed to soak hits so your character stays safe.\n"
+			+ "  • [color=#FFA500]Fighter[/color] (30-49%) — Engaged participant. Balances damage with attention drawn.\n"
+			+ "  • [color=#FFFFFF]Default[/color] (20-29%) — Neutral. Targeted at the baseline rate.\n"
+			+ "  • [color=#87CEEB]Evasive[/color] (<20%) — Backline. Rarely targeted; relies on positioning. Pair with a tank or your character.\n\n"
+			+ "[color=#888888]Hover any card for a detail tooltip. Right-click for the full Inspect view (abilities, effective bonuses, role, art).[/color]"
+		),
+	},
 	"fusion_overview": {
 		"title": "[color=#FFD700]Fusion[/color]",
 		"body": (
