@@ -24369,8 +24369,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.523 — Audit #3 First companion hatch hint + Audit #11 Threat count in HUD.
+	display_game("[color=#00FF00]v0.9.523[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New-companion teaching overlay + multi-threat awareness on the Area line.[/color]")
+	display_game("  • [b]First companion hatch tutorial overlay[/b] (Audit #3). When your first egg hatches, a modal explains the companion system — active companion, aggro roles (Tank/Fighter/Default/Evasive), egg drop chances, Home Stone (Egg) for permadeath safety, and all four fusion modes at a Companion Stable. New [color=#A335EE]seen_companion_hint[/color] per-character flag.")
+	display_game("  • [b]Threat corridor count[/b] (Audit #11). The [color=#FF6600]⚠ Threat:[/color] tag on the Area line now appends [color=#FF8888](+N more)[/color] when multiple T2+ world dungeons threaten the same 80-tile corridor. Visualizes how saturated a zone is — a single threat is one nibble, multiple stacked threats means caution. Extends v0.9.517's single-threat HUD.")
+	display_game("  • Audit progress: #3 ~97% → ~98%, #11 ~97% → ~98%.")
+	display_game("")
+
 	# v0.9.522 — Audit #6 Repeatable T2 chains + Audit #10 Apex Zone name in combat + Audit #3 First chain hint.
-	display_game("[color=#00FF00]v0.9.522[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.522[/color]")
 	display_game("  [color=#FFD700]Six more chains become repeatable, the apex zone name appears in combat rewards, and the first chain quest gets a teaching overlay.[/color]")
 	display_game("  • [b]Repeatable T2 chains[/b] (Audit #6). [color=#FFAA00]Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt[/color] now also have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in, then reappear at their home post. Extends v0.9.517's repeatable starter chains to mid-game — 11 chains now repeatable across T1+T2.")
 	display_game("  • [b]Apex Zone names in combat reward[/b] (Audit #10). The combat reward bonus message now uses the named zone — \"⚡ [color=#9F70FF]Burning Reach[/color] Bonus: +10% XP\" instead of the generic \"⚡ Apex Frontier Bonus\". Variant kills still take precedence with the \"Apex Variant\" label. Server stamps `apex_zone_name` on the monster at engagement; combat_manager reads it for the message.")
@@ -24404,13 +24412,6 @@ func display_changelog():
 	display_game("  • Continues closing pieces of Audit #3 and Audit #14. Audit #14 climbing — more clan visibility, more discoverability.")
 	display_game("")
 
-	# v0.9.518 — Audit #14 Clan tag on player posts + Mentor count in players list.
-	display_game("[color=#00FFFF]v0.9.518[/color]")
-	display_game("  [color=#FFD700]Two more multiplayer-visibility slices — see at a glance who owns each post + how many mentors are around.[/color]")
-	display_game("  • [b]Clan tag on player posts[/b] (Audit #14). The post status panel header now renders the post owner's [color=#A335EE][CLAN TAG][/color] in their clan's banner color. At a glance you can see which clan owns each outpost on the map. Read-only surface — first piece of the captured \"clan-shared posts\" item without an ownership rewrite.")
-	display_game("  • [b]Mentor count in players list[/b] (Audit #14). A line at the top of the players list now shows [color=#FFD700]★ N mentors online[/color] with a hint pointing at the [color=#9ACD32]/mentor[/color] command. Reinforces v0.9.517's mentor ★ badge — new players spot the volunteers without having to scan every name.")
-	display_game("  • Continues closing pieces of Audit #14 (~65% → ~72%). Remaining slate is heavy-design: PvP, full mentor matching, bounty, group dungeons.")
-	display_game("")
 
 
 
@@ -25474,13 +25475,19 @@ func update_region_label():
 		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
 		# threat-corridor mechanic so players SEE the active hostile spillover
 		# from a nearby T2+ dungeon (existing mechanic since v0.9.454).
+		# v0.9.523 — append "+N more" when multiple T2+ dungeons threaten this
+		# corridor so players know they're in a saturated zone.
 		var threat_tag = ""
 		if not hud_threat_corridor.is_empty():
 			var dname = String(hud_threat_corridor.get("dungeon_name", ""))
 			var mtype = String(hud_threat_corridor.get("monster_type", ""))
 			var tcolor = String(hud_threat_corridor.get("color", "#FF6600"))
+			var tcount = int(hud_threat_corridor.get("threat_count", 1))
 			if dname != "" and mtype != "":
-				threat_tag = " [color=%s]⚠ Threat: %s spillover from %s[/color]" % [tcolor, mtype, dname]
+				var more_md = ""
+				if tcount > 1:
+					more_md = " [color=#FF8888](+%d more)[/color]" % (tcount - 1)
+				threat_tag = " [color=%s]⚠ Threat: %s spillover from %s[/color]%s" % [tcolor, mtype, dname, more_md]
 		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s%s%s" % [hud_area_level, danger, apex_tag, threat_tag]
 
 	# Slice 6k — Region line now shows the authored region name (e.g.,

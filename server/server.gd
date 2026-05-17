@@ -3218,6 +3218,8 @@ func handle_move(peer_id: int, message: Dictionary):
 				"type": "text",
 				"message": "[color=#00FF00]%s is now your companion![/color] Visit [color=#00FFFF]More → Companions[/color] to manage." % companion.name
 			})
+			# Audit #3 v0.9.523 — first companion hatched teaches the system.
+			_maybe_send_companion_hint(peer_id, companion)
 
 	# Party snake movement: move followers in chain behind leader
 	if _is_party_leader(peer_id):
@@ -13204,6 +13206,38 @@ func _maybe_send_market_hint(peer_id: int) -> void:
 		+ "Items stack by id (except uniques: equipment, eggs, tools). Markup scales with current "
 		+ "supply per post per category — restocking a flooded category becomes cheaper for the buyer.\n\n"
 		+ "[color=#9ACD32]Curiosity Trader[/color] (exotic posts) rotates 4 rare items daily."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
+func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
+	"""Audit #3 v0.9.523 — first companion hatched teaches the companion system
+	(roster, active companion, aggro roles, fusion, registration). Fires once
+	per character; flag persists via to_dict / from_dict."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_companion_hint:
+		return
+	character.seen_companion_hint = true
+	var comp_name = String(companion.get("name", "your companion"))
+	var title = "[color=#A335EE]✦ Companions[/color]"
+	var body = (
+		"You just hatched [color=#A335EE]%s[/color] — your first companion. Companions fight beside you in combat, share XP, and grow stronger as you do.\n\n" % comp_name
+		+ "[color=#FFD700]── Active companion ──[/color]\n"
+		+ "  • Only one companion is active at a time. It fights with you and earns 10%% of monster XP.\n"
+		+ "  • Each monster type has unique abilities — passive (always on), active (cast in combat), and threshold (triggers at low HP).\n"
+		+ "  • Visit [color=#00FFFF]More → Companions[/color] to activate / swap / inspect.\n\n"
+		+ "[color=#FFD700]── Aggro roles ──[/color]\n"
+		+ "Each companion has an Aggro % controlling how often enemies target it instead of you. Roles:\n"
+		+ "  • [color=#FFD700]Tank[/color] (50%+) — soak hits\n"
+		+ "  • [color=#FFA500]Fighter[/color] (30-49%) — balanced\n"
+		+ "  • [color=#FFFFFF]Default[/color] (20-29%) — neutral\n"
+		+ "  • [color=#87CEEB]Evasive[/color] (<20%) — backline\n\n"
+		+ "[color=#FFD700]── Eggs ──[/color]\n"
+		+ "Eggs hatch as you walk (steps remaining). Drop chances: T1 monsters 3% / T2 monsters 1% on overworld; dungeon bosses guarantee an egg of their type. Use [color=#FFD700]Home Stone (Egg)[/color] to send an incubating egg to your Sanctuary so it survives permadeath.\n\n"
+		+ "[color=#FFD700]── Fusion ──[/color]\n"
+		+ "At a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next sub-tier), Mixed T9 (8 T8.8s → 1 T9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -26092,9 +26126,13 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 	{} if not in a threat zone. Iterates active_dungeons (~60-70 entries on
 	the live world) — cheap because trigger_encounter is a per-encounter call,
 	not a per-frame poll. Same filters as _compute_post_threat_state (not
-	completed, no owner, tier >= 2)."""
+	completed, no owner, tier >= 2).
+
+	v0.9.523 — also tallies the total count of T2+ threats in radius so the
+	HUD can show "+N more" when multiple dungeons threaten the same area."""
 	var best: Dictionary = {}
 	var best_dist_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS + 1
+	var threat_count: int = 0
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
 		if instance.get("completed_at", 0) > 0:
@@ -26114,6 +26152,7 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 		var dist_sq = dx * dx + dy * dy
 		if dist_sq > THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS:
 			continue
+		threat_count += 1
 		if dist_sq < best_dist_sq:
 			best_dist_sq = dist_sq
 			var boss = dungeon_data.get("boss", {})
@@ -26125,6 +26164,8 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 				"max_level": int(dungeon_data.get("max_level", 10)),
 				"color": String(dungeon_data.get("color", "#FF8800")),
 			}
+	if not best.is_empty():
+		best["threat_count"] = threat_count
 	return best
 
 func _get_post_threat_info(peer_id: int) -> Dictionary:
