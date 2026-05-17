@@ -21,6 +21,10 @@ class_name CompanionStablePanel
 signal deposit_requested(collected_index: int)
 signal withdraw_requested(kennel_index: int)
 signal fuse_requested(fusion_type: String, inputs: Array)
+# v0.9.493 — check out a registered companion from the Sanctuary as the
+# player's new active companion (closes the deposit/withdraw/check-out loop
+# at one tile).
+signal checkout_requested(slot_index: int)
 signal close_requested
 
 const HelpPanelScript = preload("res://client/help_panel.gd")
@@ -57,6 +61,8 @@ var _collected_list: VBoxContainer
 var _kennel_list: VBoxContainer
 var _collected_empty: Label
 var _kennel_empty: Label
+# v0.9.493 — Sanctuary Registered section in the Manage tab.
+var _manage_registered_list: HFlowContainer
 
 # Fuse-tab nodes.
 var _fuse_view: Control
@@ -138,6 +144,109 @@ func _refresh_manage() -> void:
 		"[color=#808080]No collected companions. Catch one in the world to start.[/color]")
 	_populate_manage_list(_kennel_list, _kennel, false, _kennel_empty,
 		"[color=#808080]Sanctuary kennel empty.[/color]")
+	# v0.9.493 — populate the registered section below.
+	_populate_manage_registered()
+
+
+func _player_has_active_companion() -> bool:
+	# The collected entries carry an is_active flag mirrored from the server.
+	for c in _collected:
+		if bool(c.get("is_active", false)):
+			return true
+	return false
+
+
+func _populate_manage_registered() -> void:
+	if _manage_registered_list == null:
+		return
+	for child in _manage_registered_list.get_children():
+		child.queue_free()
+	if _registered.is_empty():
+		var lbl := RichTextLabel.new()
+		lbl.bbcode_enabled = true
+		lbl.fit_content = true
+		lbl.scroll_active = false
+		lbl.append_text("[color=#808080]No registered companions yet. Use a [color=#FFD700]Home Stone (Companion)[/color] on your active companion to register it into a Sanctuary slot.[/color]")
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_manage_registered_list.add_child(lbl)
+		return
+	var blocked_by_active = _player_has_active_companion()
+	for c in _registered:
+		_manage_registered_list.add_child(_build_manage_registered_card(c, blocked_by_active))
+
+
+func _build_manage_registered_card(c: Dictionary, blocked_by_active: bool) -> Control:
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	var rarity_color = _variant_color_for(c)
+	var slot_is_checked_out = bool(c.get("is_active", false))
+	if slot_is_checked_out:
+		sb.bg_color = Color(0.18, 0.12, 0.22, 0.95)
+		sb.border_color = Color(1.0, 0.84, 0.0, 0.95)
+		sb.set_border_width_all(2)
+	else:
+		sb.bg_color = Color(0.13, 0.10, 0.18, 0.95)
+		sb.border_color = rarity_color
+		sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	card.add_theme_stylebox_override("panel", sb)
+	card.custom_minimum_size = Vector2(260, 0)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 4)
+	card.add_child(vb)
+
+	var info := RichTextLabel.new()
+	info.bbcode_enabled = true
+	info.fit_content = true
+	info.scroll_active = false
+	info.add_theme_font_size_override("normal_font_size", 12)
+	var slot_idx = int(c.get("index", -1))
+	var hybrid_marker := ""
+	var partner = str(c.get("hybrid_partner_type", ""))
+	if partner != "":
+		hybrid_marker = "  [color=#FF80FF][HYBRID×%s][/color]" % partner
+	var active_marker = "  [color=#FFD700][ACTIVE][/color]" if slot_is_checked_out else ""
+	var variant_str = str(c.get("variant", "Normal"))
+	var variant_bbcode := ""
+	if variant_str != "" and variant_str != "Normal":
+		variant_bbcode = "[color=%s]%s[/color] " % [rarity_color.to_html(false), variant_str]
+	info.append_text(
+		"[b]%s[/b]%s%s\n[color=#888888]Slot %d  %s T%d.%d  Lv %d[/color]" % [
+			c.get("name", "Unknown"),
+			hybrid_marker,
+			active_marker,
+			slot_idx + 1,
+			variant_bbcode + str(c.get("monster_type", "")),
+			int(c.get("tier", 1)),
+			int(c.get("sub_tier", 1)),
+			int(c.get("level", 1)),
+		]
+	)
+	vb.add_child(info)
+
+	var btn := Button.new()
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.custom_minimum_size = Vector2(0, 26)
+	if slot_is_checked_out:
+		btn.text = "Already Active"
+		btn.disabled = true
+		btn.tooltip_text = "This companion is currently on your character."
+	elif blocked_by_active:
+		btn.text = "← Check Out"
+		btn.disabled = true
+		btn.tooltip_text = "Deposit your current active companion first."
+	else:
+		btn.text = "← Check Out"
+		btn.tooltip_text = "Bring this companion onto your character as the new active."
+		btn.pressed.connect(func(): emit_signal("checkout_requested", slot_idx))
+	vb.add_child(btn)
+
+	return card
 
 
 func _populate_manage_list(container: VBoxContainer, items: Array, is_collected: bool, empty_label: Label, empty_text: String) -> void:
@@ -580,7 +689,7 @@ func _build_manage_view() -> Control:
 	hint.fit_content = true
 	hint.scroll_active = false
 	hint.add_theme_font_size_override("normal_font_size", 12)
-	hint.append_text("[color=#888888]Deposit a collected companion to send it to the kennel — or withdraw a kennel companion into your roster. Registered companions return to their slot (registration preserved).[/color]")
+	hint.append_text("[color=#888888]Deposit collected → kennel. Withdraw kennel → roster. Registered companions return to their slot (registration preserved). Check Out registered → roster (no logout needed).[/color]")
 	vb.add_child(hint)
 
 	var body_hb := HBoxContainer.new()
@@ -591,6 +700,39 @@ func _build_manage_view() -> Control:
 
 	body_hb.add_child(_build_manage_column("[color=#87CEEB]Your Roster (Collected)[/color]", true))
 	body_hb.add_child(_build_manage_column("[color=#A335EE]Sanctuary Kennel[/color]", false))
+
+	# v0.9.493 — Sanctuary Registered section below the 2-column body.
+	var reg_panel := PanelContainer.new()
+	var reg_sb := StyleBoxFlat.new()
+	reg_sb.bg_color = Color(0.08, 0.08, 0.12, 0.95)
+	reg_sb.border_color = Color(1.0, 0.5, 1.0, 0.5)
+	reg_sb.set_border_width_all(1)
+	reg_sb.set_corner_radius_all(6)
+	reg_sb.content_margin_left = 10
+	reg_sb.content_margin_right = 10
+	reg_sb.content_margin_top = 8
+	reg_sb.content_margin_bottom = 8
+	reg_panel.add_theme_stylebox_override("panel", reg_sb)
+	reg_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vb.add_child(reg_panel)
+
+	var reg_vb := VBoxContainer.new()
+	reg_vb.add_theme_constant_override("separation", 6)
+	reg_panel.add_child(reg_vb)
+
+	var reg_header := RichTextLabel.new()
+	reg_header.bbcode_enabled = true
+	reg_header.fit_content = true
+	reg_header.scroll_active = false
+	reg_header.add_theme_font_size_override("normal_font_size", 14)
+	reg_header.append_text("[color=#FF80FF]Sanctuary Registered[/color]   [color=#888888](death-resistant slots — click Check Out to bring one onto your character)[/color]")
+	reg_vb.add_child(reg_header)
+
+	_manage_registered_list = HFlowContainer.new()
+	_manage_registered_list.add_theme_constant_override("h_separation", 8)
+	_manage_registered_list.add_theme_constant_override("v_separation", 6)
+	_manage_registered_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reg_vb.add_child(_manage_registered_list)
 
 	return vb
 

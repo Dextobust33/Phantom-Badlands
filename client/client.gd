@@ -2005,6 +2005,7 @@ func _ready():
 	companion_stable_panel.deposit_requested.connect(_on_companion_stable_deposit)
 	companion_stable_panel.withdraw_requested.connect(_on_companion_stable_withdraw)
 	companion_stable_panel.fuse_requested.connect(_on_companion_stable_fuse)
+	companion_stable_panel.checkout_requested.connect(_on_companion_stable_checkout)
 	companion_stable_panel.close_requested.connect(_on_companion_stable_close)
 
 	# Audit #13 Slice 2 — Bestiary panel.
@@ -32150,6 +32151,13 @@ func _on_companion_stable_fuse(fusion_type: String, inputs: Array) -> void:
 		"type": "stable_fusion",
 		"fusion_type": fusion_type,
 		"inputs": inputs,
+	})
+
+func _on_companion_stable_checkout(slot_index: int) -> void:
+	# v0.9.493 — check out a registered companion as the new active.
+	send_to_server({
+		"type": "companion_stable_checkout",
+		"slot_index": slot_index,
 	})
 
 func _on_companion_stable_close() -> void:
