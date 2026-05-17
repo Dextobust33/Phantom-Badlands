@@ -66,6 +66,8 @@ extends Resource
 @export var seen_market_hint: bool = false
 # Audit #3 v0.9.522 — first chain quest accepted teaches multi-stage rewards.
 @export var seen_chain_hint: bool = false
+# Audit #3 v0.9.523 — first companion hatched teaches the companion system.
+@export var seen_companion_hint: bool = false
 
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
@@ -1376,6 +1378,7 @@ func to_dict() -> Dictionary:
 		"seen_apex_frontier_hint": seen_apex_frontier_hint,
 		"seen_market_hint": seen_market_hint,
 		"seen_chain_hint": seen_chain_hint,
+		"seen_companion_hint": seen_companion_hint,
 		# Audit #4 Slice 1A (v0.9.485) — first-time Companion Stable hint flag
 		"seen_companion_stable_hint": seen_companion_stable_hint,
 		# Audit #4 Slice 1 — NPC Home Stone purchase counts (per-character
@@ -1557,6 +1560,7 @@ func from_dict(data: Dictionary):
 	seen_apex_frontier_hint = bool(data.get("seen_apex_frontier_hint", false))
 	seen_market_hint = bool(data.get("seen_market_hint", false))
 	seen_chain_hint = bool(data.get("seen_chain_hint", false))
+	seen_companion_hint = bool(data.get("seen_companion_hint", false))
 	# Audit #4 Slice 1A (v0.9.485) — Companion Stable hint flag. Defaults
 	# false for legacy characters; they get the hint on their first stable
 	# interaction after this version ships.
