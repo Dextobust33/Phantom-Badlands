@@ -1718,6 +1718,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #14 v0.9.517 — Mentor Badge MVP.
 		"mentor_toggle":
 			handle_mentor_toggle(peer_id, message)
+		# Audit #14 v0.9.520 — /mentors list command.
+		"mentor_list":
+			handle_mentor_list(peer_id)
 		# Combat scratch-off (user-requested 2026-05-14)
 		"combat_loot_reveal":
 			handle_combat_loot_reveal(peer_id, message)
@@ -9434,6 +9437,32 @@ func handle_mentor_toggle(peer_id: int, message: Dictionary) -> void:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]Mentor mode disabled.[/color]"})
 	broadcast_player_list()
 	send_character_update(peer_id)
+
+
+func handle_mentor_list(peer_id: int) -> void:
+	"""Audit #14 v0.9.520 — /mentors lists online mentors (mentor_active=true).
+	Discoverability surface for the v0.9.517 mentor MVP — lets new players find
+	specific volunteers by name + level + class to whisper or seek out."""
+	if not peers.has(peer_id):
+		return
+	var mentors: Array = []
+	for pid in characters.keys():
+		var char = characters[pid]
+		if not char.mentor_active:
+			continue
+		mentors.append({
+			"name": char.name,
+			"level": char.level,
+			"class": char.class_type,
+		})
+	if mentors.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]No mentors currently online. Type [color=#9ACD32]/mentor on[/color][color=#888888] (Lv 20+) to volunteer.[/color]"})
+		return
+	var lines: Array = ["[color=#FFD700]★ Mentors online (%d)[/color]" % mentors.size()]
+	for m in mentors:
+		lines.append("  [color=#FFD700]★[/color] %s [color=#888888]Lv %d %s[/color]" % [String(m.get("name", "")), int(m.get("level", 1)), String(m.get("class", "")).capitalize()])
+	lines.append("[color=#888888]Whisper a mentor with [color=#9ACD32]/w <name> <message>[/color][color=#888888] if you need a hand.[/color]")
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
 
 func _push_clan_vault_to_all(clan_id: String) -> void:
@@ -22142,7 +22171,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -22277,7 +22306,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:
