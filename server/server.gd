@@ -11851,9 +11851,13 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		if indices.size() != 8:
 			send_to_peer(peer_id, {"type": "error", "message": "Mixed T9 fusion requires exactly 8 companions!"})
 			return
+		# v0.9.495 — require T8.8 specifically (Tier 8 AND sub-tier 8). Was
+		# only checking sub_tier == 8, which let lower-tier sub_tier 8s
+		# through. Mixed T9 is the capstone; only maxed-out T8 inputs count.
 		for idx in indices:
-			if int(kennel[int(idx)].get("sub_tier", 1)) != 8:
-				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be sub-tier 8!"})
+			var comp = kennel[int(idx)]
+			if int(comp.get("tier", 1)) != 8 or int(comp.get("sub_tier", 1)) != 8:
+				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be T8.8 (Tier 8, sub-tier 8)!"})
 				return
 		var random_type = kennel[int(indices[randi() % indices.size()])].get("monster_type")
 		var inherited = _check_variant_inheritance(kennel, indices)
@@ -12043,9 +12047,12 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 		if companions.size() != 8:
 			send_to_peer(peer_id, {"type": "error", "message": "Mixed T9 fusion requires exactly 8 companions!"})
 			return
+		# v0.9.495 — Mixed T9 is the capstone fusion; all 8 inputs must be
+		# T8.8 (Tier 8, sub-tier 8). Previously only checked sub_tier == 8,
+		# which let lower-tier sub_tier 8s through (e.g. T1.8 Goblins).
 		for comp in companions:
-			if int(comp.get("sub_tier", 1)) != 8:
-				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be sub-tier 8!"})
+			if int(comp.get("tier", 1)) != 8 or int(comp.get("sub_tier", 1)) != 8:
+				send_to_peer(peer_id, {"type": "error", "message": "All 8 must be T8.8 (Tier 8, sub-tier 8)!"})
 				return
 		var random_type = companions[randi() % companions.size()].get("monster_type")
 		var inherited = _check_variant_inheritance_list(companions)

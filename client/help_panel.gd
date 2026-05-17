@@ -29,7 +29,7 @@ const HELP_TOPICS := {
 			+ "[color=#FFD700]FUSE TAB[/color]\n"
 			+ "Mid-character fusion. Three modes via the selector at the top:\n"
 			+ "  • [color=#FFD700]Same Type[/color] — 3 of same monster type AND sub-tier → next sub-tier (max sub-tier 8).\n"
-			+ "  • [color=#FF00FF]Mixed T9[/color] — 8 companions all at sub-tier 8 → random Tier 9 companion.\n"
+			+ "  • [color=#FF00FF]Mixed T9[/color] — 8 [b]T8.8[/b] companions (Tier 8, sub-tier 8) → random Tier 9 companion. The capstone fusion.\n"
 			+ "  • [color=#FF66FF]Hybrid[/color] — 2 different monster types both sub-tier 5+, consumes 1 [color=#FFD700]Hybrid Catalyst[/color] → hybrid blend.\n"
 			+ "Inputs can come from kennel OR registered slots in any mode. If any input is registered, the output is auto-registered (slot-preserving). Otherwise it goes to the kennel.\n\n"
 			+ "[color=#FF8888]Notes[/color]:\n"
@@ -61,7 +61,7 @@ const HELP_TOPICS := {
 		"body": (
 			"At the [color=#FFD700]Fusion Station[/color] in your Sanctuary, you can combine kennel companions in three ways:\n\n"
 			+ "[color=#A335EE]✦ Same Type[/color] — 3 companions of the same monster type and the same sub-tier → 1 companion of the next sub-tier. Path to maxing within a tier.\n\n"
-			+ "[color=#A335EE]✦ Mixed T9[/color] — 8 companions of mixed types, all at sub-tier 8 → 1 random Tier 9 companion. The endgame catch path.\n\n"
+			+ "[color=#A335EE]✦ Mixed T9[/color] — 8 [b]T8.8[/b] companions (Tier 8, sub-tier 8). Types can differ. → 1 random Tier 9 companion. The capstone fusion.\n\n"
 			+ "[color=#A335EE]✦ Hybrid[/color] — 2 companions of [b]different[/b] monster types, both at sub-tier 5+, plus 1 [color=#FFD700]Hybrid Catalyst[/color] → a hybrid companion that blends both parents' bonuses and inherits the second parent's threshold ability.\n\n"
 			+ "[color=#FFD700]Hybrid Catalysts[/color] drop from Tier 5+ dungeon chests.\n\n"
 			+ "[color=#87CEEB]Walk to a Companion Stable (Tier 5+ NPC posts) to deposit/withdraw without needing to die.[/color]"

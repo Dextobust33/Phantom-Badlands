@@ -37238,19 +37238,22 @@ func _get_fuseable_groups(kennel_companions: Array) -> Array:
 	return result
 
 func _count_t8_companions(kennel_companions: Array) -> int:
-	"""Count companions with sub_tier == 8"""
+	"""Count companions valid for Mixed T9 fusion: T8.8 (Tier 8, sub-tier 8).
+	v0.9.495 — added tier check; was previously counting any sub_tier 8."""
 	var count = 0
 	for comp in kennel_companions:
-		if int(comp.get("sub_tier", 1)) == 8:
+		if int(comp.get("tier", 1)) == 8 and int(comp.get("sub_tier", 1)) == 8:
 			count += 1
 	return count
 
 func _get_t8_companions(kennel_companions: Array) -> Array:
-	"""Get all sub-tier 8 companions with their indices"""
+	"""Get all T8.8 (Tier 8, sub-tier 8) companions with their kennel indices.
+	v0.9.495 — added tier check to match Mixed T9's capstone intent."""
 	var result = []
 	for i in range(kennel_companions.size()):
-		if int(kennel_companions[i].get("sub_tier", 1)) == 8:
-			result.append({"index": i, "companion": kennel_companions[i]})
+		var c = kennel_companions[i]
+		if int(c.get("tier", 1)) == 8 and int(c.get("sub_tier", 1)) == 8:
+			result.append({"index": i, "companion": c})
 	return result
 
 func _get_house_kennel_capacity() -> int:
