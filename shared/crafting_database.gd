@@ -3058,6 +3058,18 @@ const RECIPES = {
 		"craft_time": 5.0,
 		"description": "A marble monument. Blocks movement — place as a centerpiece or memorial in your settlement."
 	},
+	"signpost_build": {
+		"name": "Signpost",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 10,
+		"difficulty": 15,
+		"materials": {"wooden_plank": 3, "ink": 1, "rope": 1},
+		"output_type": "structure",
+		"structure_type": "signpost",
+		"specialist_only": false,
+		"craft_time": 2.5,
+		"description": "A wooden signpost with carved letters. Bump into it to read; bump as the owner to edit the text (60 chars max). Useful for marking landmarks, telling travelers your post's purpose, or leaving messages."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players

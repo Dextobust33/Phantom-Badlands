@@ -12,6 +12,11 @@ const CORPSES_FILE = "user://data/corpses.json"
 const HOUSES_FILE = "user://data/houses.json"
 const PLAYER_TILES_FILE = "user://data/player_tiles.json"
 const PLAYER_POSTS_FILE = "user://data/player_posts.json"
+# Audit #12 v0.9.507 — Signpost text storage. Keyed by "x_y" world coord. Each
+# entry: {text, owner_username, set_at}. Persisted across restarts; cleared
+# on map wipe.
+const SIGNPOST_TEXTS_FILE = "user://data/signpost_texts.json"
+const SIGNPOST_TEXT_MAX = 60
 const MARKET_FILE = "user://data/market_data.json"
 # Audit #14 Slice 1 — clans persistence. {clans: {clan_id: {name, tag,
 # leader_account_id, member_ids[], created_at}}, next_clan_id: int}.
@@ -93,6 +98,7 @@ var corpses_data: Dictionary = {}  # {"corpses": [...]}
 var houses_data: Dictionary = {}  # {"houses": {account_id: house_data}}
 var player_tiles_data: Dictionary = {}  # {"tiles": {username: [{x, y, type}]}}
 var player_posts_data: Dictionary = {}  # {"posts": {username: [{name, center_x, center_y, created_at}]}}
+var signpost_texts_data: Dictionary = {}  # {"signposts": {"x_y": {text, owner_username, set_at}}}
 var market_data: Dictionary = {}  # {"listings": {post_id: [...]}, "next_id": 1}
 # Audit #14 Slice 1 — clans cache. Loaded on startup, saved on every mutation.
 var clans_data: Dictionary = {}  # {"clans": {clan_id: clan_dict}, "next_clan_id": int}
@@ -108,6 +114,7 @@ func _ready():
 	load_houses()
 	load_player_tiles()
 	load_player_posts()
+	load_signpost_texts()
 	load_player_storage()
 	load_market_data()
 	load_clans()
@@ -1911,6 +1918,59 @@ func clear_all_player_posts():
 	"""Clear all player post data (called on map wipe)."""
 	player_posts_data = {"posts": {}}
 	save_player_posts()
+
+# ===== SIGNPOST TEXTS (v0.9.507) =====
+
+func load_signpost_texts():
+	"""Load signpost text data."""
+	var data = _safe_load(SIGNPOST_TEXTS_FILE)
+	if data.is_empty():
+		signpost_texts_data = {"signposts": {}}
+	else:
+		signpost_texts_data = data
+	if not signpost_texts_data.has("signposts"):
+		signpost_texts_data["signposts"] = {}
+
+func save_signpost_texts():
+	"""Save signpost text data."""
+	_safe_save(SIGNPOST_TEXTS_FILE, signpost_texts_data)
+
+func _signpost_key(x: int, y: int) -> String:
+	return "%d_%d" % [x, y]
+
+func get_signpost_text(x: int, y: int) -> Dictionary:
+	"""Get the signpost entry at world coord. Returns {} if not set."""
+	if not signpost_texts_data.has("signposts"):
+		return {}
+	var key = _signpost_key(x, y)
+	return signpost_texts_data.signposts.get(key, {})
+
+func set_signpost_text(x: int, y: int, text: String, owner_username: String):
+	"""Store signpost text at world coord. Truncates text to SIGNPOST_TEXT_MAX."""
+	if not signpost_texts_data.has("signposts"):
+		signpost_texts_data["signposts"] = {}
+	var clean = text.strip_edges().substr(0, SIGNPOST_TEXT_MAX)
+	var key = _signpost_key(x, y)
+	signpost_texts_data.signposts[key] = {
+		"text": clean,
+		"owner_username": owner_username,
+		"set_at": Time.get_unix_time_from_system()
+	}
+	save_signpost_texts()
+
+func remove_signpost_text(x: int, y: int):
+	"""Remove signpost text (called when signpost is demolished)."""
+	if not signpost_texts_data.has("signposts"):
+		return
+	var key = _signpost_key(x, y)
+	if signpost_texts_data.signposts.has(key):
+		signpost_texts_data.signposts.erase(key)
+		save_signpost_texts()
+
+func clear_all_signpost_texts():
+	"""Clear all signpost text data (called on map wipe)."""
+	signpost_texts_data = {"signposts": {}}
+	save_signpost_texts()
 
 # ===== VALOR (Account-Level Currency) =====
 
