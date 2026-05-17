@@ -1796,6 +1796,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #4 Slice 1A.iii (v0.9.489) — mid-character fusion at the Stable.
 		"stable_fusion":
 			handle_stable_fusion(peer_id, message)
+		# Audit #4 Slice 1A.iv (v0.9.493) — mid-character check-out at the Stable.
+		"companion_stable_checkout":
+			handle_companion_stable_checkout(peer_id, message)
 		"rescue_npc_response":
 			handle_rescue_npc_response(peer_id, message)
 		"engage_bounty":
@@ -7140,6 +7143,54 @@ func _handle_companion_stable_station(peer_id: int, character) -> void:
 				+ "Companion Stables appear at [color=#87CEEB]Tier 5+ trading posts[/color]."
 			),
 		})
+
+func handle_companion_stable_checkout(peer_id: int, message: Dictionary) -> void:
+	"""v0.9.493 — Check out a registered companion as the player's active.
+	Closes the gap where players had to log out + use Char Select → Sanctuary
+	to retrieve a registered companion mid-character. Requires no current
+	active (deposit first if you have one) and the slot must not already be
+	checked out."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not _player_is_at_companion_stable(character):
+		send_to_peer(peer_id, {"type": "error", "message": "You must be at a Companion Stable."})
+		return
+	if not character.active_companion.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Deposit your active companion first before checking out another."})
+		return
+	var slot_index = int(message.get("slot_index", -1))
+	var account_id = peers[peer_id].account_id
+	var house = persistence.get_house(account_id)
+	if house == null:
+		send_to_peer(peer_id, {"type": "error", "message": "No Sanctuary found."})
+		return
+	var registered = house.get("registered_companions", {}).get("companions", [])
+	if slot_index < 0 or slot_index >= registered.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid registered slot."})
+		return
+	if registered[slot_index].get("checked_out_by", null) != null:
+		send_to_peer(peer_id, {"type": "error", "message": "That companion is already checked out."})
+		return
+	# Hand off to the existing helper which also mirrors into collected_companions.
+	_checkout_companion_for_character(account_id, character, slot_index, character.name)
+	save_character(peer_id)
+	var name = String(character.active_companion.get("name", "Companion"))
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#A335EE]%s checked out from Sanctuary slot %d. Now your active companion.[/color]" % [name, slot_index + 1],
+	})
+	# Refresh Stable panel + house.
+	var payload = _build_companion_stable_payload(peer_id)
+	payload["type"] = "companion_stable_open"
+	send_to_peer(peer_id, payload)
+	var updated_house = persistence.get_house(account_id)
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": updated_house,
+		"upgrade_costs": persistence.HOUSE_UPGRADES
+	})
+	send_character_update(peer_id)
 
 func handle_companion_stable_refresh(peer_id: int) -> void:
 	"""Re-send the kennel/collected snapshot (after an action or external change)."""
