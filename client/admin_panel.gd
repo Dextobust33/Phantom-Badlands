@@ -145,6 +145,9 @@ func _render_page() -> void:
 			# v0.9.500 — Companion Stable structure for testing player-built Stables.
 			_add_button("Give Companion Stable (structure)", "give_companion_stable_structure", Color(1, 0.5, 1))
 			_subtitle_subline("A buildable Companion Stable. Place inside your own enclosure to get Sanctuary kennel access at your post.")
+			# v0.9.507 — cosmetic structure set for testing buildable catalogue.
+			_add_button("Give Cosmetic Structures (1 of each)", "give_cosmetic_structures_set", Color(1, 0.84, 0))
+			_subtitle_subline("Banner + Lamp Post + Torch + Statue + Signpost. Bump into a placed signpost to read or (as owner) edit its text.")
 			_add_separator()
 			_add_button("Test Dungeon Chest Drops (1 of each new item)", "give_chest_test_kit", Color(1, 0.84, 0))
 			_subtitle_subline("Boss-Slayer Tonic, Reclaimer's Lantern, Floor Skip Charm + a T6 equipment piece.")

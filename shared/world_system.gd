@@ -111,6 +111,7 @@ const TILE_RENDER = {
 	"lamp_post":     {"char": "i", "color": "#FFFF99", "blocks_move": false, "blocks_los": false},
 	"torch":         {"char": "t", "color": "#FF6600", "blocks_move": false, "blocks_los": false},
 	"statue":        {"char": "M", "color": "#E0E0E0", "blocks_move": true,  "blocks_los": false},
+	"signpost":      {"char": "r", "color": "#C4A882", "blocks_move": true,  "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

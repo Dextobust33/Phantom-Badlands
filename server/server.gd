@@ -1646,6 +1646,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_build_demolish(peer_id, message)
 		"name_post":
 			handle_name_post(peer_id, message)
+		"signpost_set_text":
+			handle_signpost_set_text(peer_id, message)
 		"inn_rest":
 			handle_inn_rest(peer_id)
 		"storage_access":
@@ -3066,6 +3068,9 @@ func handle_move(peer_id: int, message: Dictionary):
 					return
 				elif bump_type == "throne":
 					send_to_peer(peer_id, {"type": "throne_interact"})
+					return
+				elif bump_type == "signpost":
+					_handle_signpost_interact(peer_id, character, target_pos.x, target_pos.y)
 					return
 
 	# Check for player collision (can't move onto another player's space)
@@ -10369,8 +10374,9 @@ func _maybe_send_quest_board_hint(peer_id: int) -> void:
 		+ "Look for [color=#FFAA00]⛓ CHAIN[/color] tagged quests at frontier posts: "
 		+ "3-stage adventures (KILL → KILL → BOSS_HUNT) with tier-scaled rewards plus "
 		+ "a companion egg + Home Stones + chain title on the final turn-in.\n\n"
-		+ "Under-Threat posts also surface [color=#FF8800]⚠ THREAT BOUNTY[/color] quests "
-		+ "pointing at the threatening dungeon."
+		+ "Posts that show the [color=#FF8800]⚠ Under Threat[/color] marker have harder "
+		+ "monsters in their bubble and a +50% service / +20% market markup — clearing "
+		+ "the threatening dungeon (the post status panel names the direction) lifts the markup."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -21877,7 +21883,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -22012,7 +22018,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:
@@ -22084,9 +22090,15 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	else:
 		character.inventory.remove_at(item_index)
 
-	# Determine tile properties — stations block movement (interact by bump), doors/bridges don't
-	var blocks_move = structure_type not in ["door", "bridge"]
-	var blocks_los = structure_type == "wall"
+	# Determine tile properties — consult WorldSystem.TILE_RENDER as the canonical
+	# source of truth so walkable cosmetic structures (banner / lamp_post / torch)
+	# don't get clobbered to blocking. Fall back to the legacy
+	# stations-block-by-default rule for any type not in TILE_RENDER. Fixes a
+	# latent v0.9.505 bug where banner + lamp_post placed as blocking despite
+	# their tile-render entry marking them walkable.
+	var tile_render: Dictionary = WorldSystem.TILE_RENDER.get(structure_type, {})
+	var blocks_move = tile_render.get("blocks_move", structure_type not in ["door", "bridge"])
+	var blocks_los = tile_render.get("blocks_los", structure_type == "wall")
 
 	# Place tile in chunk manager
 	var tile_data = {
@@ -22174,6 +22186,11 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 
 	# Remove from tracking
 	persistence.remove_player_tile(username, tx, ty)
+
+	# Signpost-specific: drop the stored text so a future signpost at the same
+	# coord doesn't inherit a previous owner's text.
+	if tile_type == "signpost":
+		persistence.remove_signpost_text(tx, ty)
 
 	# Re-check enclosures if wall/door was removed (may break an enclosure)
 	var enclosure_msg = ""
@@ -23092,6 +23109,78 @@ func _handle_guard_post_interact(peer_id: int, character, gx: int, gy: int):
 			"in_tower": guard.get("in_tower", false),
 			"feed_food_cost": GUARD_FEED_FOOD_COST,
 		})
+
+func _handle_signpost_interact(peer_id: int, character, sx: int, sy: int):
+	"""Handle player bumping into a signpost. Sends current text + ownership
+	flag back. v0.9.507."""
+	var username = _get_username(peer_id)
+	var entry = persistence.get_signpost_text(sx, sy)
+	# Owner falls back to the tile's `owner` field if no text has been set
+	# yet (signpost was just placed and never written to).
+	var tile_owner = ""
+	if chunk_manager:
+		var tile = chunk_manager.get_tile(sx, sy)
+		tile_owner = tile.get("owner", "")
+	var text_owner = entry.get("owner_username", tile_owner)
+	var is_owner = (username != "" and username == text_owner)
+	send_to_peer(peer_id, {
+		"type": "signpost_view",
+		"x": sx,
+		"y": sy,
+		"text": entry.get("text", ""),
+		"owner_username": text_owner,
+		"is_owner": is_owner,
+		"text_max": PersistenceManager.SIGNPOST_TEXT_MAX
+	})
+
+func handle_signpost_set_text(peer_id: int, message: Dictionary):
+	"""Owner-only signpost text update. Player must be adjacent to the target
+	signpost tile (cardinal). v0.9.507."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	if username == "":
+		return
+	var sx = int(message.get("x", 0))
+	var sy = int(message.get("y", 0))
+	var raw_text = String(message.get("text", "")).strip_edges()
+	if raw_text.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8080]Sign text cannot be empty.[/color]"})
+		return
+	if not chunk_manager:
+		return
+	# Verify the target tile is actually a signpost
+	var tile = chunk_manager.get_tile(sx, sy)
+	if tile.get("type", "") != "signpost":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8080]No signpost at that location.[/color]"})
+		return
+	# Verify the player is cardinally adjacent (or standing on, though signposts block_move)
+	var dx = abs(character.x - sx)
+	var dy = abs(character.y - sy)
+	if (dx + dy) > 1:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8080]You must be next to the sign to edit it.[/color]"})
+		return
+	# Ownership check: tile owner or existing text owner must match
+	var entry = persistence.get_signpost_text(sx, sy)
+	var text_owner = entry.get("owner_username", tile.get("owner", ""))
+	if text_owner != "" and text_owner != username:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8080]Only %s can edit this sign.[/color]" % text_owner})
+		return
+	# Persist (length cap applied inside set_signpost_text)
+	persistence.set_signpost_text(sx, sy, raw_text, username)
+	# Confirm back to the player + send the updated view
+	var stored = persistence.get_signpost_text(sx, sy)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Sign updated: \"%s\"[/color]" % stored.get("text", "")})
+	send_to_peer(peer_id, {
+		"type": "signpost_view",
+		"x": sx,
+		"y": sy,
+		"text": stored.get("text", ""),
+		"owner_username": username,
+		"is_owner": true,
+		"text_max": PersistenceManager.SIGNPOST_TEXT_MAX
+	})
 
 func handle_guard_hire(peer_id: int, message: Dictionary):
 	"""Handle hiring a guard at a guard post."""
@@ -31954,6 +32043,7 @@ func _execute_map_wipe_same_seed(keep_market: bool):
 		# Clear player-built tiles
 		persistence.clear_all_player_tiles()
 		persistence.clear_all_player_posts()
+		persistence.clear_all_signpost_texts()
 		player_enclosures.clear()
 		player_post_names.clear()
 		enclosure_tile_lookup.clear()
@@ -32011,7 +32101,8 @@ func _execute_full_wipe(admin_peer_id: int):
 		"user://data/realm_state.json", "user://data/realm_state.json.bak",
 		"user://data/corpses.json", "user://data/corpses.json.bak",
 		"user://data/houses.json", "user://data/houses.json.bak",
-		"user://data/player_posts.json", "user://data/player_posts.json.bak"]:
+		"user://data/player_posts.json", "user://data/player_posts.json.bak",
+		"user://data/signpost_texts.json", "user://data/signpost_texts.json.bak"]:
 		if FileAccess.file_exists(filepath):
 			DirAccess.remove_absolute(filepath)
 	characters.clear()
@@ -32050,6 +32141,7 @@ func _execute_map_wipe(admin_peer_id: int):
 		# Clear all player-built tiles (they don't survive map wipe)
 		persistence.clear_all_player_tiles()
 		persistence.clear_all_player_posts()
+		persistence.clear_all_signpost_texts()
 		player_enclosures.clear()
 		player_post_names.clear()
 		enclosure_tile_lookup.clear()

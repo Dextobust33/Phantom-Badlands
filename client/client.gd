@@ -1021,6 +1021,13 @@ var enclosure_has_storage: bool = false
 var pending_post_naming: bool = false
 var pending_post_naming_index: int = -1
 
+# Signpost editing (v0.9.507). When set, the next chat-input submit is consumed
+# as the new sign text and sent to the server.
+var pending_signpost_edit_x: int = 0
+var pending_signpost_edit_y: int = 0
+var pending_signpost_edit_active: bool = false
+var pending_signpost_text_max: int = 60
+
 # Storage chest mode
 var storage_mode: bool = false
 var storage_items: Array = []
@@ -19919,6 +19926,8 @@ func handle_server_message(message: Dictionary):
 			_handle_guard_post_interact(message)
 		"guard_result":
 			_handle_guard_result(message)
+		"signpost_view":
+			_handle_signpost_view(message)
 
 		# Quest messages
 		"quest_list":
@@ -20577,6 +20586,24 @@ func send_input():
 		pending_post_naming = false
 		send_to_server({"type": "name_post", "name": post_name, "enclosure_index": pending_post_naming_index})
 		pending_post_naming_index = -1
+		input_field.placeholder_text = ""
+		return
+
+	# Check for pending signpost edit (v0.9.507)
+	if pending_signpost_edit_active:
+		var sign_text = text.strip_edges().left(pending_signpost_text_max)
+		if sign_text.is_empty():
+			display_game("[color=#808080]Sign edit cancelled.[/color]")
+			pending_signpost_edit_active = false
+			input_field.placeholder_text = ""
+			return
+		send_to_server({
+			"type": "signpost_set_text",
+			"x": pending_signpost_edit_x,
+			"y": pending_signpost_edit_y,
+			"text": sign_text
+		})
+		pending_signpost_edit_active = false
 		input_field.placeholder_text = ""
 		return
 
@@ -24258,8 +24285,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.507 — Interactive Signpost + latent walkable-structure bug fix + hint clarity.
+	display_game("[color=#00FF00]v0.9.507[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]First INTERACTIVE buildable structure — the Signpost. Plus a fix that makes Banners, Lamp Posts, and Torches actually walkable as advertised.[/color]")
+	display_game("  • [b]New: [color=#C4A882]Signpost[/color] [color=#C4A882]r[/color] (Construction skill 10, difficulty 15).[/b] Materials: 3 wooden plank + 1 ink + 1 rope. Bump into a signpost to read its text; as the owner, bump it to open an edit prompt that takes up to 60 characters. The first interactive buildable in the catalogue — leaves landmarks, post directions, or messages for travelers. Text persists across server restarts and is removed when the signpost is demolished.")
+	display_game("  • [b]Latent v0.9.505 bug fix — Banner / Lamp Post / Torch now actually walkable.[/b] The build pipeline was overriding `blocks_move` to true for every structure except Door/Bridge, so the new cosmetics were placed as blocking despite the tile-render saying walkable. Now consults `WorldSystem.TILE_RENDER` as the canonical source — fixes the bug and prevents future regressions. [color=#FFAA88]Note:[/color] structures placed under v0.9.505/.506 will remain blocking until demolished and rebuilt.")
+	display_game("  • [b]Quest Board tutorial hint accuracy.[/b] The hint previously promised \"THREAT BOUNTY\" quests that didn't actually exist in the system. Updated to describe what threatened posts ACTUALLY do — harder bubble monsters, +50% service / +20% market markup, and direction pointing to the threatening dungeon via the post status panel.")
+	display_game("  • [b]Admin shortcut:[/b] new \"Give Cosmetic Structures (1 of each)\" button on the Items page drops Banner + Lamp Post + Torch + Statue + Signpost into inventory in one click.")
+	display_game("")
+
 	# v0.9.506 — Cosmetic buildable structures batch 2 (Torch + Statue).
-	display_game("[color=#00FF00]v0.9.506[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.506[/color]")
 	display_game("  [color=#FFD700]Two more buildable cosmetic structures — Torch (entry-level light) and Statue (centerpiece monument)[/color]")
 	display_game("  • [b]New Construction recipes:[/b]")
 	display_game("    • [color=#FF6600]Torch[/color] [color=#FF6600]t[/color] — Skill 8, difficulty 12. Materials: 1 wooden plank + 1 magic dust + 1 rope. Walkable, low-skill entry. Pairs well with the v0.9.505 Lamp Post for atmospheric lighting.")
@@ -24300,13 +24336,6 @@ func display_changelog():
 	display_game("  • Batched release — 4 small slices in one version bump. Continues the rollout; remaining screens (Sanctuary, Clan, Bestiary, etc.) come in future batches.")
 	display_game("")
 
-	# v0.9.502 — Combat readability slice 2/2: HP estimates bias upward.
-	display_game("[color=#00FFFF]v0.9.502[/color]")
-	display_game("  [color=#FFD700]Monster HP estimates now over-estimate slightly instead of undershooting — no more 'monster shows 1/x HP but won't die'[/color]")
-	display_game("  • [b]Root cause:[/b] the client's HP estimation extrapolated across levels using only the base stat-scale curve, but the server's actual HP calc layers a hyperbolic [color=#FFAA66]hp_multiplier[/color] on top (2× → 7× asymptote, keyed on expected player gear at the target level). So when the player had killed a Lv 5 monster and then met a Lv 10 of the same type, the client estimate could be e.g. 281 HP while actual was 330 — the bar would drain to 0 with the monster still alive. Looked like a bug.")
-	display_game("  • [b]Fix:[/b] cross-level estimates are now padded upward by 4% per level of gap, capped at +50%. Same-level data (`known_hp = damage dealt` from a real kill) is still returned unpadded — it's always ≥ actual HP by construction. As the player kills more monsters AT the displayed level, the system narrows toward truth from above instead of guessing low. Pad is invisible to the player; just feels like 'this monster has more HP than I thought' rather than 'why isn't this dying.'")
-	display_game("  • Closes the third combat-readability ask from the 2026-05-17 playtest note. Pairs with v0.9.501's longer damage popups + animated HP drain.")
-	display_game("")
 
 
 
@@ -27461,6 +27490,10 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"give_companion_stable_structure":
 			# v0.9.500 — player-built Companion Stable testing shortcut.
 			send_to_server({"type": "gm_givestructure", "structure_type": "companion_stable"})
+		"give_cosmetic_structures_set":
+			# v0.9.507 — drop one of each cosmetic structure for testing.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost"]:
+				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()
 			send_to_server({"type": "gm_enter_dungeon", "tier": 1})
@@ -34289,6 +34322,31 @@ func handle_quest_board_interact():
 func handle_throne_interact():
 	"""Handle bumping into the throne — show title claim interface."""
 	open_title_menu()
+
+func _handle_signpost_view(message: Dictionary):
+	"""Handle bumping into a signpost — display its text and offer edit prompt
+	if the player is the owner. v0.9.507."""
+	var sx = int(message.get("x", 0))
+	var sy = int(message.get("y", 0))
+	var text = String(message.get("text", ""))
+	var owner = String(message.get("owner_username", ""))
+	var is_owner = bool(message.get("is_owner", false))
+	var text_max = int(message.get("text_max", 60))
+	display_game("[color=#FFD700]═══ Signpost ═══[/color]")
+	if text.is_empty():
+		display_game("[color=#808080](The sign is blank.)[/color]")
+	else:
+		display_game("[color=#FFE0A0]\"%s\"[/color]" % text)
+	if owner != "":
+		display_game("[color=#808080]Placed by: %s[/color]" % owner)
+	if is_owner:
+		display_game("[color=#88FF88]This is your signpost. Click the chat box and type the new sign text (max %d chars), then press Enter. Send empty to skip.[/color]" % text_max)
+		pending_signpost_edit_x = sx
+		pending_signpost_edit_y = sy
+		pending_signpost_edit_active = true
+		pending_signpost_text_max = text_max
+		if input_field:
+			input_field.placeholder_text = "Sign text (max %d chars)..." % text_max
 
 func _handle_guard_post_interact(message: Dictionary):
 	"""Handle bumping into a guard post — show guard status/hire UI."""
