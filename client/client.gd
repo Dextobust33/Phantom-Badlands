@@ -24351,8 +24351,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.519 — Audit #3 First market hint + Audit #14 Clan outpost indicator.
+	display_game("[color=#00FF00]v0.9.519[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]One more teaching moment, one more clan visibility cue.[/color]")
+	display_game("  • [b]First Market visit tutorial overlay[/b] (Audit #3). New `seen_market_hint` per-character flag — first time a player browses the market, a modal explains Valor, listings, supply/demand markup, and the Halfling/Knight/own-post listing bonuses. Continues the tutorial-overlay infra from v0.9.475/476/483/508/513.")
+	display_game("  • [b]Clan Outpost indicator on post panel[/b] (Audit #14). When you visit a post built by one of your [color=#A335EE]clan-mates[/color], the post status panel header now appends a [color=#A335EE]✦ Clan Outpost[/color] tag in the clan's banner color. Extends v0.9.518's owner clan tag into useful navigation for clan members — at a glance you know which posts on the map are friendly territory.")
+	display_game("  • Continues closing pieces of Audit #3 and Audit #14. Audit #14 climbing — more clan visibility, more discoverability.")
+	display_game("")
+
 	# v0.9.518 — Audit #14 Clan tag on player posts + Mentor count in players list.
-	display_game("[color=#00FF00]v0.9.518[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.518[/color]")
 	display_game("  [color=#FFD700]Two more multiplayer-visibility slices — see at a glance who owns each post + how many mentors are around.[/color]")
 	display_game("  • [b]Clan tag on player posts[/b] (Audit #14). The post status panel header now renders the post owner's [color=#A335EE][CLAN TAG][/color] in their clan's banner color. At a glance you can see which clan owns each outpost on the map. Read-only surface — first piece of the captured \"clan-shared posts\" item without an ownership rewrite.")
 	display_game("  • [b]Mentor count in players list[/b] (Audit #14). A line at the top of the players list now shows [color=#FFD700]★ N mentors online[/color] with a hint pointing at the [color=#9ACD32]/mentor[/color] command. Reinforces v0.9.517's mentor ★ badge — new players spot the volunteers without having to scan every name.")
@@ -24388,13 +24396,6 @@ func display_changelog():
 	display_game("  • Closes another beat of Audit #12 structure variety; continues the Audit #15 help-coverage rollout.")
 	display_game("")
 
-	# v0.9.514 — Apex content slice 3 (Named Zones + Apex Crystal drop).
-	display_game("[color=#00FFFF]v0.9.514[/color]")
-	display_game("  [color=#FFD700]Apex Frontier gets identity — four named zones replace the generic \"APEX\" tag, and Apex Variants drop a new high-value sellable consumable.[/color]")
-	display_game("  • [b]Named apex zones.[/b] The apex frontier (distance > 1500 from origin) now resolves to one of four flavored quadrants — [color=#9F70FF]Burning Reach[/color] (NE), [color=#9F70FF]Frostbound Verge[/color] (NW), [color=#9F70FF]Sundered Hollows[/color] (SW), [color=#9F70FF]Cinder Wastes[/color] (SE). The region label's apex tag now shows the zone name (e.g., \"⚡ Burning Reach +10% XP\") instead of the generic \"APEX\" tag. Gives the frontier a recognizable geography rather than one undifferentiated ring.")
-	display_game("  • [b]Apex Crystal — new sellable drop.[/b] Apex Variants now have a [color=#88FF88]12% chance[/color] to drop an [color=#9F70FF]Apex Crystal[/color] on kill — a flat-value consumable worth [color=#FFD700]750 valor[/color] at any market, scaling cleanly with the apex grind. Pure economy reward (no in-combat use), gives the apex frontier its first unique drop separate from the generic +XP / +50% gems bonuses.")
-	display_game("  • Closes another beat of Audit #10's \"apex content\" captured item. Future beats can layer T9 encounter pools, zone-specific affinity weights, or named landmarks (statues / outposts) on top.")
-	display_game("")
 
 
 

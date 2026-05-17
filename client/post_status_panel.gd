@@ -214,6 +214,8 @@ func _render() -> void:
 	# Audit #14 v0.9.518 — Owner's clan identity for visual recognition.
 	var owner_clan_tag: String = String(_last_data.get("owner_clan_tag", ""))
 	var owner_clan_color: String = String(_last_data.get("owner_clan_color", "#A335EE"))
+	# Audit #14 v0.9.519 — true when viewer is a clan-mate of the owner.
+	var is_clan_outpost: bool = bool(_last_data.get("is_clan_outpost", false))
 	var bubble_radius: int = int(_last_data.get("bubble_radius", 0))
 	var eff_tier: int = int(_last_data.get("effective_tier", 1))
 	var wild_tier: int = int(_last_data.get("wilderness_tier", 1))
@@ -227,13 +229,18 @@ func _render() -> void:
 	_header_label.clear()
 	# Audit #14 v0.9.518 — render owner's clan tag inline so visitors can see
 	# at a glance which clan controls this outpost.
+	# Audit #14 v0.9.519 — append "✦ Clan Outpost" tag when viewer shares the
+	# owner's clan; promotes the visit from "stranger's post" to "ally's post."
 	var clan_tag_md: String = ""
 	if owner_clan_tag != "":
 		clan_tag_md = " [color=%s][%s][/color]" % [owner_clan_color, owner_clan_tag]
+	var clan_outpost_md: String = ""
+	if is_clan_outpost:
+		clan_outpost_md = "  [color=%s]✦ Clan Outpost[/color]" % owner_clan_color
 	if is_owner:
 		_header_label.append_text("[color=#9AFF9A]─── %s ───[/color]%s" % [post_name, clan_tag_md])
 	else:
-		_header_label.append_text("[color=#A0C8E0]─── %s ───[/color]%s   [color=#888888](owner: %s)[/color]" % [post_name, clan_tag_md, owner])
+		_header_label.append_text("[color=#A0C8E0]─── %s ───[/color]%s%s   [color=#888888](owner: %s)[/color]" % [post_name, clan_tag_md, clan_outpost_md, owner])
 
 	# Bubble line
 	_bubble_label.visible = true
