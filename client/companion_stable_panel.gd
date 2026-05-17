@@ -323,6 +323,10 @@ func _build_fuse_candidate_row(cand: Dictionary) -> Control:
 		source_tag = "  [color=#A335EE][KENNEL][/color]"
 	else:
 		source_tag = "  [color=#FF80FF][REG][/color]"
+		# v0.9.491 — surface the currently-active registered companion.
+		# Fusing it auto-clears the active state server-side.
+		if bool(c.get("is_active", false)):
+			source_tag += "  [color=#FFD700][ACTIVE][/color]"
 	var hybrid_marker := ""
 	var partner = str(c.get("hybrid_partner_type", ""))
 	if partner != "":

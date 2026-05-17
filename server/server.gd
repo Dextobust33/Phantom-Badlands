@@ -7065,10 +7065,12 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 			var c = reg_raw[i]
 			if not (c is Dictionary):
 				continue
-			# Skip checked-out registered slots — the player has them as
-			# active and can't fuse them yet. They must deposit first.
-			if c.get("checked_out_by", null) != null:
-				continue
+			# v0.9.491 — surface checked-out registered slots too so the
+			# active registered companion is visible (and fuseable) in the
+			# Fuse tab. The is_active flag tells the client to render the
+			# [ACTIVE] marker. Fusion of an active checkout slot clears the
+			# character's active state automatically (handle_stable_fusion).
+			var is_active_checkout = (c.get("checked_out_by", null) != null)
 			registered_pub.append({
 				"index": i,
 				"id": c.get("id", ""),
@@ -7083,6 +7085,7 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 				"variant_pattern": c.get("variant_pattern", "solid"),
 				"bonuses": c.get("bonuses", {}),
 				"hybrid_partner_type": c.get("hybrid_partner_type", ""),
+				"is_active": is_active_checkout,
 			})
 	# Collected companions (player-side; includes whatever is currently active).
 	var collected: Array = []
@@ -11935,8 +11938,8 @@ func _resolve_stable_fusion_inputs(account_id: String, inputs: Array) -> Diction
 			if idx < 0 or idx >= registered.size():
 				return {"ok": false, "error": "Invalid registered slot.", "companions": [], "registered_slots": []}
 			var slot_data = registered[idx]
-			if slot_data.get("checked_out_by", null) != null:
-				return {"ok": false, "error": "A selected registered companion is currently in use — deposit it first.", "companions": [], "registered_slots": []}
+			# v0.9.491 — checked-out slots (active companion) are accepted.
+			# Handler clears active state on consumption.
 			companions.append(slot_data)
 			registered_slots.append(idx)
 		else:
@@ -12024,6 +12027,18 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 		send_to_peer(peer_id, {"type": "error", "message": "Fusion failed — unknown monster type!"})
 		return
 
+	# v0.9.491 — if the active registered companion is among the inputs,
+	# we must clear character active state after consumption (the underlying
+	# companion data is being destroyed in fusion).
+	var consumed_active_slot := -1
+	if character.using_registered_companion:
+		var active_slot := int(character.registered_companion_slot)
+		for input_entry in inputs:
+			if String(input_entry.get("source", "")) == "registered" \
+					and int(input_entry.get("index", -1)) == active_slot:
+				consumed_active_slot = active_slot
+				break
+
 	# Consume parents from sources, descending index per source so removals
 	# don't shift remaining indices.
 	var house = persistence.get_house(account_id)
@@ -12073,6 +12088,23 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 		output_msg = "[color=#FFD700]Fusion complete! %s added to kennel.[/color]" % output.get("name", "Companion")
 
 	persistence.save_house(account_id, house)
+
+	# v0.9.491 — clear character active state if the active registered slot
+	# was consumed. Also strip the companion from collected_companions (the
+	# checkout path mirrors it there for combat use).
+	if consumed_active_slot >= 0:
+		var active_id = String(character.active_companion.get("id", ""))
+		character.active_companion = {}
+		character.using_registered_companion = false
+		character.registered_companion_slot = -1
+		# Remove the mirrored entry from collected_companions.
+		var keep: Array = []
+		for comp in character.collected_companions:
+			if String(comp.get("id", "")) != active_id:
+				keep.append(comp)
+		character.collected_companions = keep
+		save_character(peer_id)
+
 	send_to_peer(peer_id, {"type": "text", "message": output_msg})
 
 	# Refresh both the Stable panel (current view) and house data (for Sanctuary).
