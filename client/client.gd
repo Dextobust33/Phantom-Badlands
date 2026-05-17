@@ -667,7 +667,9 @@ const HOUSE_TILE_PLAYER = "@"     # Player marker
 # House map - single large layout (29 wide x 19 tall) with dedicated facility zones
 # Legend: # = wall, C = companion slot, K = kennel, F = fusion, S = storage, U = upgrades, D = door
 # Zones are well-separated so facilities never touch even at max upgrades
-# C and K tiles are placed dynamically based on upgrade levels
+# C tiles are placed dynamically (companion roster slots, grow with upgrades).
+# K is a single fixed Companion Stable tile (v0.9.497 unification of the old
+# kennel block + separate F fusion tile into one Stable station).
 const HOUSE_MAP_BASE = [
 	"#############################",
 	"#                           #",
@@ -676,9 +678,9 @@ const HOUSE_MAP_BASE = [
 	"#                           #",
 	"#                           #",
 	"#                           #",
-	"#                      F    #",
 	"#                           #",
 	"#                           #",
+	"#         K                 #",
 	"#                           #",
 	"#                           #",
 	"#   S                  U    #",
@@ -700,15 +702,11 @@ const COMPANION_POSITIONS = [
 	[2, 16], [3, 16]      # upgrades 7-8
 ]
 
-# Kennel tile positions (row, col) - base 1, up to 10 with upgrades
-# Grows as a block in the left-middle area
-const KENNEL_POSITIONS = [
-	[7, 4],                       # base 1
-	[7, 5], [7, 6],              # upgrades 1-2 (first row)
-	[8, 4], [8, 5], [8, 6],     # upgrades 3-5 (second row)
-	[9, 4], [9, 5], [9, 6],     # upgrades 6-8 (third row)
-	[10, 4]                       # upgrade 9
-]
+# v0.9.497 — KENNEL_POSITIONS retired. The K tile is now a single fixed
+# position in HOUSE_MAP_BASE above (a unified Companion Stable). kennel_capacity
+# upgrades still grow the internal capacity; just no longer a visible block.
+# Kept here for any downstream code that still imports it; size 0 = no-op.
+const KENNEL_POSITIONS: Array = []
 
 # Minimum viewport size for house map (fallback if panel size unavailable)
 const HOUSE_VIEWPORT_W_MIN = 21
@@ -1320,6 +1318,10 @@ var tutorial_hint_panel = null
 # NPC posts. Live Sanctuary kennel access mid-character.
 const CompanionStablePanelScript = preload("res://client/companion_stable_panel.gd")
 var companion_stable_panel = null
+
+# v0.9.497 — unified Sanctuary Companion Stable (replaces K + F tile flows).
+const SanctuaryStablePanelScript = preload("res://client/sanctuary_stable_panel.gd")
+var sanctuary_stable_panel = null
 
 # Audit #13 Slice 2 — Bestiary panel (Sanctuary monster kill ledger).
 const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
@@ -2008,6 +2010,14 @@ func _ready():
 	companion_stable_panel.checkout_requested.connect(_on_companion_stable_checkout)
 	companion_stable_panel.close_requested.connect(_on_companion_stable_close)
 
+	# v0.9.497 — Unified Sanctuary Companion Stable panel (replaces K + F tile flows).
+	sanctuary_stable_panel = SanctuaryStablePanelScript.new()
+	add_child(sanctuary_stable_panel)
+	sanctuary_stable_panel.release_requested.connect(_on_sanctuary_stable_release)
+	sanctuary_stable_panel.register_requested.connect(_on_sanctuary_stable_register)
+	sanctuary_stable_panel.fuse_requested.connect(_on_sanctuary_stable_fuse)
+	sanctuary_stable_panel.close_requested.connect(_on_sanctuary_stable_close)
+
 	# Audit #13 Slice 2 — Bestiary panel.
 	bestiary_panel = BestiaryPanelScript.new()
 	add_child(bestiary_panel)
@@ -2605,6 +2615,15 @@ func _process(delta):
 			and pending_house_action == "")
 		if fusion_panel.visible != _fusion_should_show:
 			fusion_panel.visible = _fusion_should_show
+
+	# v0.9.497 — Sync unified Sanctuary Stable panel (shows on the K tile,
+	# replaces the old kennel+fusion split). Visible whenever house_mode == "stable".
+	var _sanct_stable_should_show: bool = false
+	if sanctuary_stable_panel:
+		_sanct_stable_should_show = (game_state == GameState.HOUSE_SCREEN
+			and house_mode == "stable")
+		if sanctuary_stable_panel.visible != _sanct_stable_should_show:
+			sanctuary_stable_panel.visible = _sanct_stable_should_show
 
 	# Sync ability panel — shows for ability_mode (Settings → Abilities). Hide for the
 	# keyboard sub-states (press_keybind, choose_ability, etc.) so the text prompt
@@ -6330,6 +6349,21 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif house_mode == "stable":
+			# v0.9.497 — Unified Sanctuary Companion Stable. The panel handles
+			# its own internal tabs/buttons; the action bar just shows Back.
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "house_stable_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif house_mode == "kennel":
 			var kennel = house_data.get("companion_kennel", {})
 			var kennel_companions = kennel.get("companions", [])
@@ -6486,12 +6520,18 @@ func update_action_bar():
 					interact_action = "house_play"
 					interact_enabled = true
 				"K":
-					interact_label = "Kennel"
-					interact_action = "house_kennel"
+					# v0.9.497 — K now opens the unified Sanctuary Companion Stable
+					# (kennel + 4 fusion modes in one panel). Legacy "Kennel"/"Fusion"
+					# screens still exist as fallback if anything still routes to them.
+					interact_label = "Stable"
+					interact_action = "house_stable"
 					interact_enabled = true
 				"F":
-					interact_label = "Fusion"
-					interact_action = "house_fusion"
+					# Legacy F tile (no longer placed on new layouts; kept walkable
+					# so save-state players on it aren't softlocked). Routes to the
+					# same unified Stable.
+					interact_label = "Stable"
+					interact_action = "house_stable"
 					interact_enabled = true
 
 			# Slice 3 — Mastery button always visible from main; lights up when account has any record
@@ -13100,6 +13140,22 @@ func execute_local_action(action: String):
 			pending_house_action = ""
 			house_unregister_companion_slot = -1
 			# Server will send updated house_data
+		# v0.9.497 — Unified Sanctuary Companion Stable. The K tile in the
+		# Sanctuary now opens this single panel instead of the legacy split
+		# kennel/fusion screens. Legacy "house_kennel" / "house_fusion" actions
+		# (below) remain as fallback so any old code path still works.
+		"house_stable":
+			house_mode = "stable"
+			pending_house_action = ""
+			display_house_stable()
+			update_action_bar()
+		"house_stable_back":
+			house_mode = "main"
+			pending_house_action = ""
+			if sanctuary_stable_panel:
+				sanctuary_stable_panel.visible = false
+			display_house_main()
+			update_action_bar()
 		# Kennel actions
 		"house_kennel":
 			house_mode = "kennel"
@@ -18311,6 +18367,10 @@ func handle_server_message(message: Dictionary):
 					display_house_kennel()
 				elif house_mode == "fusion":
 					display_house_fusion()
+				elif house_mode == "stable":
+					# v0.9.497 — Unified Sanctuary Companion Stable refresh after
+					# kennel/fusion mutations from the server.
+					display_house_stable()
 				elif house_mode == "mastery":
 					display_house_mastery()
 				else:
@@ -24179,8 +24239,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.497 — Audit #4 follow-up: Unified Sanctuary Companion Stable.
+	display_game("[color=#00FF00]v0.9.497[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sanctuary's Kennel + Fusion stations merged into one Companion Stable[/color]")
+	display_game("  • The old [color=#FF8800]K[/color] (Kennel) block and [color=#FFD700]F[/color] (Fusion Station) tile in the Sanctuary are gone. A single [color=#FF8800]K[/color] Companion Stable tile replaces them, opening a unified tabbed panel — [b]Kennel[/b] tab (Register to Slot / Release per row) and [b]Fuse[/b] tab (Same Type + Mixed T9 modes). Single point of interaction; matches the visual style of the at-NPC-post Companion Stable. Hybrid + Tier Ascend modes are intentionally hidden here because their catalysts come from CHARACTER inventory — visit any Tier 5+ NPC Stable for those mid-character. Legacy F-tile screens (the old `display_house_kennel` + `display_house_fusion`) still exist as fallback code paths but are unreachable from the action bar. Audit #4 unification follow-up to Slice 1A (NPC Stable) + Slice 1B (Tier Ascension).")
+	display_game("")
+
 	# v0.9.496 — Audit #4 Slice 1B: Tier Ascension Fusion.
-	display_game("[color=#00FF00]v0.9.496[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.496[/color]")
 	display_game("  [color=#FFD700]New Tier Ascend fusion — raise your favorite pet's tier without changing what it is[/color]")
 	display_game("  • [b]Tier Ascension Fusion[/b] joins the Stable's Fuse tab as a 4th mode (alongside Same Type, Mixed T9, and Hybrid). Select 3 companions of the [b]SAME monster type[/b] AND the [b]SAME tier[/b] (any sub-tier mix), plus consume 1 [color=#FFAA66]Ascension Catalyst[/color], to produce 1 companion of that same type at [b]tier+1[/b], sub-tier 1. Lower-tier companions are no longer relegated to fusion fodder — you can raise a Tier 1 Goblin all the way to Tier 9 without giving up the Goblin identity, abilities, or art. Variant inherits if all 3 parents share, else rolls fresh. Tier 9 is the cap. Inputs can come from the kennel or registered slots; the slot-preserving rule from prior fusions still applies (any registered input → output is auto-registered). [color=#FFAA66]Ascension Catalysts[/color] are a new T6+ dungeon chest drop (weights T6=1, T7=2, T8=2, T9=3) — rarer than Hybrid Catalysts since this is a more powerful effect (a 5-step tier climb across the full ladder, vs Hybrid's single capstone moment). Help text + admin shortcuts updated. Closes Audit #4 Slice 1B (Tier Ascension Fusion) — the 'make lower-tier mobs relevant' headline ask.")
 	display_game("")
@@ -24202,12 +24268,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.483[/color]")
 	display_game("  [color=#FFD700]First-time Sanctuary visit now triggers a teaching overlay — closes the four-slice tutorial pass[/color]")
 	display_game("  • [b]Final piece of the discoverability arc started in v0.9.474.[/b] The first time you open your Sanctuary, a [color=#FFE066]tutorial_hint[/color] modal overlay explains what it is: an account-level home that survives permadeath, holds your upgrade trees + storage + companion kennel + Fusion Station, and where registered companions return after death. Fires once per ACCOUNT (not per character) via a new `seen_sanctuary_hint` flag on the house. Closes the four-slice teaching-overlay pass: first level-up (v0.9.474), first quest board / dungeon / crafting (v0.9.476), first Sanctuary open (v0.9.483) — all rendered through the same dismissible modal infrastructure shipped in v0.9.475. Audit #3 Slice 6.")
-	display_game("")
-
-	# v0.9.482 — Hotfix: pinned equipment now appears on the victory card too.
-	display_game("[color=#00FFFF]v0.9.482[/color]")
-	display_game("  [color=#FFD700]Hotfix — guaranteed equipment drops now show in the victory card's Loot list + ★ ITEMS ACQUIRED banner, not just in the scratch-off panel[/color]")
-	display_game("  • v0.9.481 pinned equipment correctly into the inventory but the victory card's Loot section stayed empty, because the scratch-off skip path also skipped populating `drop_messages` and `drop_data`. Now when the scratch-off is on, the server backfills both from the bag's `pinned` array — so the player sees the equipment they got on the victory screen too. Also fixed a follow-on bug: the client cache that re-renders the victory card on each reveal was starting empty and would have wiped the pinned items on the first scratch-off click. Cache is now seeded from the initial victory payload so reveals append rather than replace.")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -32170,6 +32230,29 @@ func _on_companion_stable_close() -> void:
 	# Panel hides itself locally; no server message required.
 	pass
 
+# v0.9.497 — Unified Sanctuary Stable signal handlers. Route into the existing
+# house_kennel_* / house_fusion server message types (no server change needed).
+func _on_sanctuary_stable_release(kennel_index: int) -> void:
+	send_to_server({"type": "house_kennel_release", "index": kennel_index})
+
+func _on_sanctuary_stable_register(kennel_index: int) -> void:
+	send_to_server({"type": "house_kennel_register", "index": kennel_index})
+
+func _on_sanctuary_stable_fuse(fusion_type: String, indices: Array) -> void:
+	send_to_server({
+		"type": "house_fusion",
+		"fusion_type": fusion_type,
+		"indices": indices,
+	})
+
+func _on_sanctuary_stable_close() -> void:
+	# Closing returns to the Sanctuary main view.
+	if game_state == GameState.HOUSE_SCREEN:
+		house_mode = "main"
+		pending_house_action = ""
+		display_house_main()
+		update_action_bar()
+
 func _on_fusion_panel_tab_changed(tab_id: String) -> void:
 	fusion_panel_tab = tab_id
 
@@ -36708,6 +36791,8 @@ func _init_house_player_position():
 
 func _is_house_tile_walkable(tile: String) -> bool:
 	"""Check if a tile can be walked on"""
+	# F retained in walkable set so legacy save-state players who land on
+	# an old F tile aren't softlocked, but new layouts no longer place F.
 	return tile in [" ", ".", "C", "S", "U", "D", "K", "F"]
 
 func _clamp_house_player_position():
@@ -36809,8 +36894,8 @@ func _render_house_map() -> String:
 
 	# Legend
 	lines.append("[color=#808080]Legend:[/color]")
-	lines.append("[color=#00FF00]@[/color]=You [color=#A335EE]C[/color]=Companion [color=#FF8800]K[/color]=Kennel")
-	lines.append("[color=#FFD700]S[/color]=Storage [color=#00FFFF]U[/color]=Upgrade [color=#FFD700]F[/color]=Fusion")
+	lines.append("[color=#00FF00]@[/color]=You [color=#A335EE]C[/color]=Companion [color=#FF8800]K[/color]=Stable")
+	lines.append("[color=#FFD700]S[/color]=Storage [color=#00FFFF]U[/color]=Upgrade")
 	lines.append("[color=#FF6600]D[/color]=Door (Play)")
 	lines.append("")
 
@@ -36823,8 +36908,8 @@ func _render_house_map() -> String:
 			"S": standing_on = "[color=#FFD700]Storage Chest[/color] - Press %s" % _interact_key
 			"U": standing_on = "[color=#00FFFF]Upgrades[/color] - Press %s" % _interact_key
 			"D": standing_on = "[color=#FF6600]Door[/color] - Press %s to Play" % _interact_key
-			"K": standing_on = "[color=#FF8800]Companion Kennel[/color] - Press %s" % _interact_key
-			"F": standing_on = "[color=#FFD700]Fusion Station[/color] - Press %s" % _interact_key
+			"K": standing_on = "[color=#FF8800]Companion Stable[/color] - Press %s" % _interact_key
+			"F": standing_on = "[color=#FF8800]Companion Stable[/color] - Press %s" % _interact_key
 		lines.append("[color=#FFFFFF]Standing on: " + standing_on + "[/color]")
 	else:
 		lines.append("[color=#808080]Move with numpad or arrows (diagonals supported)[/color]")
@@ -37070,6 +37155,29 @@ func display_house_companions():
 	display_game("")
 	display_game("[color=#A335EE]════════════════════════════════════[/color]")
 	update_action_bar()
+
+func display_house_stable():
+	"""v0.9.497 — Unified Sanctuary Companion Stable. Populates and shows
+	the SanctuaryStablePanel with kennel + capacity data from house_data."""
+	if sanctuary_stable_panel == null:
+		return
+	game_output.clear()
+	house_mode = "stable"
+	_update_house_map()
+	var kennel = house_data.get("companion_kennel", {})
+	var reg = house_data.get("registered_companions", {})
+	var payload = {
+		"kennel": kennel.get("companions", []),
+		"kennel_capacity": _get_house_kennel_capacity(),
+		"registered_count": reg.get("companions", []).size(),
+		"registered_capacity": _get_house_companion_capacity(),
+	}
+	sanctuary_stable_panel.show_with_data(payload)
+	display_game("[color=#FFD700]═══════ COMPANION STABLE ═══════[/color]")
+	display_game("")
+	display_game("[color=#888888]Sanctuary's unified kennel + fusion station.[/color]")
+	display_game("[color=#888888]Press %s to close.[/color]" % get_action_key_name(0))
+
 
 func display_house_kennel():
 	"""Display the companion kennel (bulk storage for fusion)"""
