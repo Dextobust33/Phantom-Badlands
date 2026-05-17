@@ -1297,6 +1297,11 @@ func create_house(account_id: String) -> Dictionary:
 		"baddie_points": 0,
 		"total_baddie_points_earned": 0,
 
+		# Audit #3 Slice 6 — account-level tutorial nudge. Set to true after
+		# the player has been shown the Sanctuary teaching overlay. Persists
+		# across permadeath (account-level, not character-level).
+		"seen_sanctuary_hint": false,
+
 		"upgrades": {
 			"house_size": 0,
 			"storage_slots": 0,
@@ -2230,6 +2235,18 @@ func set_clan_description(account_id: String, text: String) -> Dictionary:
 	clans_data["clans"][clan_id]["description"] = trimmed
 	save_clans()
 	return {"success": true, "description": trimmed}
+
+func mark_sanctuary_hint_seen(account_id: String) -> bool:
+	"""Audit #3 Slice 6 — flip the account-level flag so the Sanctuary
+	tutorial overlay only fires once. Returns true if the flag was newly
+	set (i.e., should fire), false if already seen or no house."""
+	if not houses_data.has("houses") or not houses_data["houses"].has(account_id):
+		return false
+	if bool(houses_data["houses"][account_id].get("seen_sanctuary_hint", false)):
+		return false
+	houses_data["houses"][account_id]["seen_sanctuary_hint"] = true
+	save_houses()
+	return true
 
 func set_clan_banner_color(account_id: String, hex_color: String) -> Dictionary:
 	"""Audit #14 Slice 8 — leader-only banner color setter. Validates
