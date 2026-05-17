@@ -24285,12 +24285,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.508 — Aggro role tag in combat + signpost discoverability + v0.9.507 hint revert.
+	display_game("[color=#00FF00]v0.9.508[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Companion aggro role tag in combat, first-time signpost overlay, and a v0.9.507 quest-board hint regression revert (THREAT BOUNTY quests ARE real).[/color]")
+	display_game("  • [b]Aggro role tag on companion in combat.[/b] The companion name label in both the main combat panel and the battlefield overlay now appends the aggro role inline — [color=#FFD700][TANK][/color] / [color=#FFA500][FIGHTER][/color] / [color=#FFFFFF][DEFAULT][/color] / [color=#87CEEB][EVASIVE][/color]. Pairs with the v0.9.499 Companions page surface so the role is named everywhere the companion appears, not just on the inspect screen. Players can pick a tank companion at the kennel and immediately see them \"drawing fire\" during the fight.")
+	display_game("  • [b]First-time signpost placement tutorial overlay.[/b] When a player places their first signpost, a one-time modal hint explains the bump-to-read / bump-as-owner-to-edit flow (60-char cap, chat-box input, persists across restarts). Mirrors the existing quest-board / dungeon / crafting / Companion Stable first-time hint pattern from Audit #3 Slice 4. Per-character flag (`seen_signpost_hint`) so it never repeats.")
+	display_game("  • [b]v0.9.507 hint regression reverted — THREAT BOUNTY quests are real.[/b] v0.9.507's \"hint accuracy\" fix was based on a too-narrow grep that missed the actual implementation (`_generate_threat_relief_quest` at server/server.gd, Audit #11 Slice 12 — already shipped). The quests appear at the top of under-threat trading posts' boards as \"⚠ THREAT BOUNTY\" entries pointing at the threatening dungeon. v0.9.508 restores the accurate hint mention. Sorry for the confusion if v0.9.507's hint made you doubt the system.")
+	display_game("")
+
 	# v0.9.507 — Interactive Signpost + latent walkable-structure bug fix + hint clarity.
-	display_game("[color=#00FF00]v0.9.507[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.507[/color]")
 	display_game("  [color=#FFD700]First INTERACTIVE buildable structure — the Signpost. Plus a fix that makes Banners, Lamp Posts, and Torches actually walkable as advertised.[/color]")
 	display_game("  • [b]New: [color=#C4A882]Signpost[/color] [color=#C4A882]r[/color] (Construction skill 10, difficulty 15).[/b] Materials: 3 wooden plank + 1 ink + 1 rope. Bump into a signpost to read its text; as the owner, bump it to open an edit prompt that takes up to 60 characters. The first interactive buildable in the catalogue — leaves landmarks, post directions, or messages for travelers. Text persists across server restarts and is removed when the signpost is demolished.")
 	display_game("  • [b]Latent v0.9.505 bug fix — Banner / Lamp Post / Torch now actually walkable.[/b] The build pipeline was overriding `blocks_move` to true for every structure except Door/Bridge, so the new cosmetics were placed as blocking despite the tile-render saying walkable. Now consults `WorldSystem.TILE_RENDER` as the canonical source — fixes the bug and prevents future regressions. [color=#FFAA88]Note:[/color] structures placed under v0.9.505/.506 will remain blocking until demolished and rebuilt.")
-	display_game("  • [b]Quest Board tutorial hint accuracy.[/b] The hint previously promised \"THREAT BOUNTY\" quests that didn't actually exist in the system. Updated to describe what threatened posts ACTUALLY do — harder bubble monsters, +50% service / +20% market markup, and direction pointing to the threatening dungeon via the post status panel.")
 	display_game("  • [b]Admin shortcut:[/b] new \"Give Cosmetic Structures (1 of each)\" button on the Items page drops Banner + Lamp Post + Torch + Statue + Signpost into inventory in one click.")
 	display_game("")
 
@@ -24325,16 +24332,6 @@ func display_changelog():
 	display_game("  • [b]Every major panel in the game now has a ? Help button.[/b] The pattern (HelpPanel topic registry + reusable Help button factory in `help_panel.gd`) is stable; future panels just register a topic and add `HelpPanelScript.make_help_button(topic, _help_panel)` to their header.")
 	display_game("")
 
-	# v0.9.503 — Help buttons across 4 major screens (Inventory / Stats / Crafting / Market).
-	display_game("[color=#00FFFF]v0.9.503[/color]")
-	display_game("  [color=#FFD700]? Help buttons on 4 more screens — Inventory, Stats, Crafting, Market[/color]")
-	display_game("  • Continues the 'help button per major screen' UX rollout (started with the Companion Stable in v0.9.485, extended to the Companions page in v0.9.499). Each screen's header now has a [b]?[/b] [color=#87CEEB]Help[/color] button that opens a topic-aware overlay explaining what's on the page and how to use it. Topics:")
-	display_game("    • [color=#FFD700]Inventory[/color] — item categories + rarity colors, common actions (equip / use / salvage / discard), equipment comparison with house multipliers, Home Stone overview.")
-	display_game("    • [color=#FFD700]Stats[/color] — stat allocation, racial + class passives, the 9-track Progression Vectors dashboard (XP / stat bank / Sanctuary / jobs / Bestiary / Compass / Atlas / Soul Gems / Titles).")
-	display_game("    • [color=#FFD700]Crafting[/color] — the 7-layer transparency stack (materials + skill + output + sources + quality odds + sell value + skill progression), specialty lock-in, quality scaling.")
-	display_game("    • [color=#FFD700]Market[/color] — Valor currency, base_valor vs markup_price + post tax, categories, bulk listing, Travel Stone / network browse, my listings.")
-	display_game("  • Batched release — 4 small slices in one version bump. Continues the rollout; remaining screens (Sanctuary, Clan, Bestiary, etc.) come in future batches.")
-	display_game("")
 
 
 
