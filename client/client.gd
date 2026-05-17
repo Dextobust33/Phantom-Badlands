@@ -938,6 +938,9 @@ var hud_area_is_safe: bool = true
 var hud_is_apex_frontier: bool = false
 # Audit #10 v0.9.514 — named apex zone (Burning Reach / Frostbound Verge / etc).
 var hud_apex_zone_name: String = ""
+# Audit #11 v0.9.517 — threat corridor info from location_update. Empty when
+# not in a corridor; otherwise {dungeon_name, monster_type, tier, color}.
+var hud_threat_corridor: Dictionary = {}
 var hud_nearest_post: Dictionary = {}  # Nearest NPC post info for compass line
 var hud_post_threat: Dictionary = {"threatened": false}  # Slice 6 — dynamic post threat state
 # Audit #13 Slice 3 — Sanctuary Compass payload. Server-stamped per location
@@ -5118,6 +5121,10 @@ func update_online_players(players: Array):
 		# Audit #14 Slice 3 — render clan tag prefix before name.
 		if pclan_tag != "":
 			online_players_list.append_text("[color=%s][%s][/color] " % [pclan_color, pclan_tag])
+
+		# Audit #14 v0.9.517 — Mentor Badge MVP. ★ before the name.
+		if bool(player.get("mentor_active", false)):
+			online_players_list.append_text("[color=#FFD700]★[/color] ")
 
 		# Use push_meta/pop for reliable click detection (Godot 4.x uses pop() not pop_meta())
 		online_players_list.push_meta(pname)
@@ -18705,6 +18712,8 @@ func handle_server_message(message: Dictionary):
 			hud_area_is_safe = bool(message.get("area_is_safe", true))
 			hud_is_apex_frontier = bool(message.get("is_apex_frontier", false))
 			hud_apex_zone_name = String(message.get("apex_zone_name", ""))
+			# Audit #11 v0.9.517 — threat corridor info.
+			hud_threat_corridor = message.get("threat_corridor", {}) if message.get("threat_corridor", {}) is Dictionary else {}
 			hud_nearest_post = message.get("nearest_post", {})
 			# Slice 6 — threat state of the nearest NPC post (dynamic post state)
 			hud_post_threat = message.get("nearest_post_threat", {"threatened": false})
@@ -20737,7 +20746,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21754,6 +21763,22 @@ func process_command(text: String):
 					display_game("[color=#FF8800]Usage: /clancolor #RRGGBB  (example: /clancolor #FFD700)[/color]")
 				else:
 					send_to_server({"type": "clan_banner_color_set", "color": cc_color})
+		"mentor":
+			# Audit #14 v0.9.517 — Mentor Badge MVP.
+			# Usage: /mentor on | /mentor off — toggles a ★ badge on your name
+			# so new players can find experienced volunteers.
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var mp = text.split(" ", false, 1)
+				var marg = mp[1].strip_edges().to_lower() if mp.size() > 1 else ""
+				if marg in ["on", "yes", "true", "1"]:
+					send_to_server({"type": "mentor_toggle", "active": true})
+				elif marg in ["off", "no", "false", "0"]:
+					send_to_server({"type": "mentor_toggle", "active": false})
+				else:
+					display_game("[color=#FF8800]Usage: /mentor on  or  /mentor off[/color]")
+					display_game("  [color=#888888]Volunteer to be visible as a mentor (Lv 20+). New players see a [color=#FFD700]★[/color] on your name.[/color]")
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -24314,8 +24339,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.517 — Audit #14 Mentor + Audit #6 Repeatable starter chains + Audit #11 Threat corridor HUD.
+	display_game("[color=#00FF00]v0.9.517[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Big closing batch on the audit — mentor badges, repeatable T1 chains, and visible threat corridors.[/color]")
+	display_game("  • [b]Mentor Badge MVP[/b] (Audit #14). New [color=#FFD700]/mentor on[/color] (and [color=#FFD700]/mentor off[/color]) command toggles a ★ badge on your name in the players list. Volunteer system — gated at Lv 20+ so new players can find experienced help. No matching algorithm, no reward — purely a discoverability marker. First piece of the Mentor system.")
+	display_game("  • [b]Repeatable Starter Chains[/b] (Audit #6). T1 quest chains (Goblin Menace, Skeleton Lord, Wolf Pack, Rat Plague, Kobold Trouble) now have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in, then re-appear at their home post. Lets a high-level character with starter friends drop back to the early posts and run a chain together as a meaningful XP/valor activity. Higher-tier chains stay one-shot. Closes the [color=#FFAA66]\"repeatable chains\"[/color] audit pickup.")
+	display_game("  • [b]Threat Corridor HUD[/b] (Audit #11). When you're within 80 tiles of an active T2+ world dungeon, the Area line now surfaces a [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color] tag — naming the species biased into nearby spawns AND the dungeon driving it. Visualizes the existing Slice 9 mechanic from v0.9.454 (which silently biased spawns toward dungeon monster types) so players can SEE what's wandering at them and why.")
+	display_game("  • All three slices close real captured items on the audit master. The remaining work on the audit is heavy-design (PvP, full mentor matching, ability mastery — all explicitly deferred).")
+	display_game("")
+
 	# v0.9.516 — Audit #12 Bench + Well + Audit #15 help coverage + Audit #6 chain count surface.
-	display_game("[color=#00FF00]v0.9.516[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.516[/color]")
 	display_game("  [color=#FFD700]Two more cosmetic buildables, help on two more panels, and a Quest Chain completion line on the Status page.[/color]")
 	display_game("  • [b]Bench[/b] (Construction skill 6, [color=#C4A882]n[/color] tile, walkable). Cheapest entry-level decoration — 2 wooden plank + 1 rope. Anyone with basic Construction can build one.")
 	display_game("  • [b]Well[/b] (Construction skill 18, [color=#4488FF]w[/color] tile, blocks movement). Mid-tier centerpiece evoking a settlement's communal water source. 3 stone block + 1 wooden plank + 2 rope.")
@@ -24351,12 +24385,6 @@ func display_changelog():
 	display_game("  • Closes another beat of Audit #10's \"apex content\" captured item. Future beats can stack named extreme zones, unique drops, or T9 encounter pools on top.")
 	display_game("")
 
-	# v0.9.512 — Apex Frontier (first beat) + Legacy variant reroll fix.
-	display_game("[color=#00FFFF]v0.9.512[/color]")
-	display_game("  [color=#FFD700]First beat of Apex Content — far edges of the world now reward exploration. Plus a long-standing legacy-character visual bug fix.[/color]")
-	display_game("  • [b]Apex Frontier (Audit #10).[/b] Distance > 1500 tiles from origin is now an [color=#9F70FF]⚡ APEX[/color] zone. Monsters defeated in apex frontier deal +10% XP to the player. Visual: the Area line in the region label gains a [color=#9F70FF]⚡ APEX +10% XP[/color] tag when you're in the zone, and the combat reward message names the bonus on kill. First beat of \"apex content\" captured item — future slices can stack T9 encounter pools, unique drops, or named extreme zones on top of this geometric definition. Math note: zone uses squared-distance for cheap detection, no sqrt.")
-	display_game("  • [b]Legacy character appearance variant now stable.[/b] Characters created BEFORE the appearance variant system (no `appearance_variant` field saved to disk) were re-rolling a new variant on every `from_dict()` call. Symptom: hovering the character on the map showed \"Ivory\" while the Players Online popup showed \"Mint\" — same player, same session, two different colors. Fixed by seeding the reroll with `hash(character_name)` via a new `RandomNumberGenerator`-based helper (`DropTables._roll_egg_variant_with_rng`). Same character → same hash → same variant, deterministically, forever. New characters were never affected (their variant is rolled once at create_character and persisted before the first from_dict). Once a legacy character is next saved, the variant persists and the migration branch stops firing for them.")
-	display_game("")
 
 
 
@@ -25411,7 +25439,17 @@ func update_region_label():
 				apex_tag = " [color=#9F70FF]⚡ %s +10%% XP[/color]" % hud_apex_zone_name
 			else:
 				apex_tag = " [color=#9F70FF]⚡ APEX +10% XP[/color]"
-		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s%s" % [hud_area_level, danger, apex_tag]
+		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
+		# threat-corridor mechanic so players SEE the active hostile spillover
+		# from a nearby T2+ dungeon (existing mechanic since v0.9.454).
+		var threat_tag = ""
+		if not hud_threat_corridor.is_empty():
+			var dname = String(hud_threat_corridor.get("dungeon_name", ""))
+			var mtype = String(hud_threat_corridor.get("monster_type", ""))
+			var tcolor = String(hud_threat_corridor.get("color", "#FF6600"))
+			if dname != "" and mtype != "":
+				threat_tag = " [color=%s]⚠ Threat: %s spillover from %s[/color]" % [tcolor, mtype, dname]
+		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s%s%s" % [hud_area_level, danger, apex_tag, threat_tag]
 
 	# Slice 6k — Region line now shows the authored region name (e.g.,
 	# "Greenmeadow Reach") instead of the generic tier name. Tier color +

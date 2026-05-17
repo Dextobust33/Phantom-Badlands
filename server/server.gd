@@ -1715,6 +1715,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #14 Slice 8 — leader-set clan banner color.
 		"clan_banner_color_set":
 			handle_clan_banner_color_set(peer_id, message)
+		# Audit #14 v0.9.517 — Mentor Badge MVP.
+		"mentor_toggle":
+			handle_mentor_toggle(peer_id, message)
 		# Combat scratch-off (user-requested 2026-05-14)
 		"combat_loot_reveal":
 			handle_combat_loot_reveal(peer_id, message)
@@ -5425,6 +5428,12 @@ func send_location_update(peer_id: int):
 		# / Sundered Hollows / Cinder Wastes). Empty string outside the apex
 		# frontier; client only renders the line when non-empty.
 		"apex_zone_name": world_system.get_apex_zone_name(character.x, character.y),
+		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
+		# threat-zone mechanic (T2+ active dungeons within 80 tiles spill their
+		# monster type into nearby spawns). Empty dict outside threat corridors;
+		# otherwise contains dungeon_name + monster_type + color so the client
+		# can render a HUD line naming the threat.
+		"threat_corridor": _get_threat_zone_dungeon_at(character.x, character.y),
 		"nearest_post": nearest_post_hud,
 		# Slice 6 — dynamic post state. Client renders an "Under Threat" warning
 		# in the HUD when threatened=true. Always sent; client checks the flag.
@@ -5777,6 +5786,8 @@ func broadcast_player_list():
 			"clan_tag": _get_clan_tag_for_peer(pid),
 			# Audit #14 Slice 8 — banner color follows the tag.
 			"clan_banner_color": _get_clan_banner_color_for_peer(pid),
+			# Audit #14 v0.9.517 — Mentor Badge MVP.
+			"mentor_active": bool(char.mentor_active),
 			"appearance_variant": char.appearance_variant,
 			"appearance_color": char.appearance_color,
 			"appearance_color2": char.appearance_color2,
@@ -9399,6 +9410,32 @@ func handle_clan_banner_color_set(peer_id: int, message: Dictionary) -> void:
 	broadcast_player_list()
 
 
+func handle_mentor_toggle(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 v0.9.517 — Mentor Badge MVP. /mentor on|off toggles a volunteer
+	flag on the character. Mentors get a ★ badge in their name renders (chat,
+	players list, map hover) so new players can spot experienced volunteers.
+	No matching algorithm, no reward — purely a discoverability/identity marker.
+
+	Gate: character must be Lv 20+ to volunteer. Avoids brand-new characters
+	flagging themselves as mentors to grief / confuse newcomers."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	const MENTOR_LEVEL_REQUIRED: int = 20
+	var requested = bool(message.get("active", false))
+	if requested and character.level < MENTOR_LEVEL_REQUIRED:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]You must be at least Lv %d to volunteer as a mentor.[/color]" % MENTOR_LEVEL_REQUIRED})
+		return
+	character.mentor_active = requested
+	save_character(peer_id)
+	if requested:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]★ Mentor mode enabled.[/color] Other players can now see the [color=#FFD700]★[/color] badge on your name. Help out new arrivals — they're learning the game."})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]Mentor mode disabled.[/color]"})
+	broadcast_player_list()
+	send_character_update(peer_id)
+
+
 func _push_clan_vault_to_all(clan_id: String) -> void:
 	"""Re-send the vault list to every online clan member so anyone viewing
 	the vault sees the change immediately. Mirrors _refresh_all_online_clan_members."""
@@ -12728,9 +12765,10 @@ func handle_trading_post_quests(peer_id: int):
 	var available_quests = quest_db.get_available_quests_for_player(
 		tp.id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
 
-	# Audit #6 Slice 1 — append chain starters available at this post
+	# Audit #6 Slice 1 — append chain starters available at this post.
+	# v0.9.517: pass chain_cooldowns so repeatable T1 chains can reappear.
 	var chain_starters = quest_db.get_chain_starters_for_post(
-		tp.id, character.completed_chains, active_quest_ids, character.completed_quests)
+		tp.id, character.completed_chains, active_quest_ids, character.completed_quests, character.chain_cooldowns)
 	for chain_quest in chain_starters:
 		available_quests.append(chain_quest)
 
@@ -15532,6 +15570,28 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 					character.completed_chains.append(chain_id)
 				chain_completed = true
 				chain_progress_msg += "[color=#FFD700]Chain complete: %s![/color]" % chain_id.replace("_", " ").capitalize()
+				# Audit #6 v0.9.517 — Repeatable starter chains. T1 chains marked
+				# `repeatable: true` on the final stage get a 24h cooldown stamped
+				# into character.chain_cooldowns. After the cooldown elapses, the
+				# stage-1 starter at the chain's home post becomes available again.
+				if bool(quest.get("repeatable", false)):
+					# 86400 = 24h cooldown.
+					var ready_at = int(Time.get_unix_time_from_system()) + 86400
+					character.chain_cooldowns[chain_id] = ready_at
+					# Scrub the chain's stage quests from completed_quests so that
+					# after the cooldown elapses, re-accepting the stage-1 quest
+					# passes the can_accept_quest "already completed" gate AND the
+					# chain_in_progress check in get_chain_starters_for_post stops
+					# tripping. completed_chains keeps the chain_id permanently so
+					# the title remains earned even when scrubbed.
+					var to_scrub: Array = []
+					for cqid in character.completed_quests:
+						var cq = quest_db.get_quest(cqid)
+						if not cq.is_empty() and String(cq.get("chain_id", "")) == chain_id:
+							to_scrub.append(cqid)
+					for cqid in to_scrub:
+						character.completed_quests.erase(cqid)
+					chain_progress_msg += "  [color=#9ACD32](Repeatable in 24h)[/color]"
 			elif next_in_chain != "":
 				# Mid-chain — auto-add the next stage to active quests
 				var next_quest = quest_db.get_quest(next_in_chain)
