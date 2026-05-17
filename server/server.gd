@@ -10431,6 +10431,36 @@ func _send_character_update_immediate(peer_id: int, force_full: bool):
 	char_dict["valor"] = persistence.get_valor(peers[peer_id].account_id) if peers.has(peer_id) else 0
 	# Projected leaderboard rank
 	char_dict["projected_rank"] = _calculate_projected_rank(character)
+	# v0.9.498 — surface account-level registered companions on the in-game
+	# Companions page. Slim copy with only display fields (no sensitive data,
+	# just what the panel needs to render). The active checked-out registered
+	# companion is already in collected_companions with `house_slot >= 0`;
+	# this list shows ALL registered slots so players can see what's still
+	# in their Sanctuary even from in-game.
+	if peers.has(peer_id):
+		var account_id = peers[peer_id].account_id
+		var house = persistence.get_house(account_id)
+		var reg_block = house.get("registered_companions", {})
+		var reg_companions: Array = reg_block.get("companions", [])
+		var slim_registered: Array = []
+		for slot_idx in range(reg_companions.size()):
+			var rc: Dictionary = reg_companions[slot_idx]
+			slim_registered.append({
+				"slot": slot_idx,
+				"name": rc.get("name", "Unknown"),
+				"monster_type": rc.get("monster_type", ""),
+				"tier": int(rc.get("tier", 1)),
+				"sub_tier": int(rc.get("sub_tier", 1)),
+				"level": int(rc.get("level", 1)),
+				"variant": rc.get("variant", "Normal"),
+				"variant_color": rc.get("variant_color", "#FFFFFF"),
+				"variant_color2": rc.get("variant_color2", ""),
+				"variant_pattern": rc.get("variant_pattern", "solid"),
+				"checked_out_by": rc.get("checked_out_by", null),
+				"hybrid_partner_type": rc.get("hybrid_partner_type", ""),
+			})
+		char_dict["account_registered_companions"] = slim_registered
+		char_dict["account_registered_capacity"] = persistence.get_house_companion_capacity(account_id)
 	# Audit #6 Slice 9 — DELIVER quests carry their progress as a live count of
 	# inventory/material possession rather than a stored integer. Inject the
 	# live value here so the client UI shows "have / target" accurately without
