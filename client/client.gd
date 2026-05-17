@@ -24239,8 +24239,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.498 — Audit #4 follow-up: Registered companions on Companions page.
+	display_game("[color=#00FF00]v0.9.498[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Sanctuary-registered companions now show up on the in-game Companions page[/color]")
+	display_game("  • Previously, the in-game Companions screen only listed the currently-active (checked-out) companion plus your collected roster — anything else registered to your Sanctuary was invisible until you visited a Companion Stable. v0.9.498 adds a [color=#FF80FF]Sanctuary Registered[/color] section to the Companions page that lists every companion in your account's registered slots, with type / tier / sub-tier / level / variant / hybrid markers. Read-only — full management still happens at any Tier 5+ NPC Companion Stable or the Sanctuary's Stable tile. The currently checked-out registered slot is dimmed and marked [CHECKED OUT] so you know which physical pet matches which slot. Server now ships a slim `account_registered_companions` array with each `character_update`. Closes a long-pending visibility gap (~30 min queue item from prior sessions).")
+	display_game("")
+
 	# v0.9.497 — Audit #4 follow-up: Unified Sanctuary Companion Stable.
-	display_game("[color=#00FF00]v0.9.497[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.497[/color]")
 	display_game("  [color=#FFD700]Sanctuary's Kennel + Fusion stations merged into one Companion Stable[/color]")
 	display_game("  • The old [color=#FF8800]K[/color] (Kennel) block and [color=#FFD700]F[/color] (Fusion Station) tile in the Sanctuary are gone. A single [color=#FF8800]K[/color] Companion Stable tile replaces them, opening a unified tabbed panel — [b]Kennel[/b] tab (Register to Slot / Release per row) and [b]Fuse[/b] tab (Same Type + Mixed T9 modes). Single point of interaction; matches the visual style of the at-NPC-post Companion Stable. Hybrid + Tier Ascend modes are intentionally hidden here because their catalysts come from CHARACTER inventory — visit any Tier 5+ NPC Stable for those mid-character. Legacy F-tile screens (the old `display_house_kennel` + `display_house_fusion`) still exist as fallback code paths but are unreachable from the action bar. Audit #4 unification follow-up to Slice 1A (NPC Stable) + Slice 1B (Tier Ascension).")
 	display_game("")
@@ -24262,12 +24268,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.484[/color]")
 	display_game("  [color=#FFD700]New 'Hybrid' tab on the Fusion Station combines two different-type companions into a hybrid that blends their abilities[/color]")
 	display_game("  • [b]Hybrid fusion — 2 companions of DIFFERENT monster types (both sub-tier 5+) + 1 Hybrid Catalyst → a hybrid companion.[/b] The hybrid keeps parent A's monster type (drives sprite + base abilities) and stores parent B's type for ability blending. Bonuses = average of both parents + 10% [color=#88FF88]Hybrid Vigor[/color]. Tier = max(A.tier, B.tier); sub-tier resets to 1; variant inherits if both parents share one, else rolls fresh. Display name: 'Hybrid <A>-<B>'. Ability blending: passive becomes a static [color=#88FF88]Hybrid Vigor[/color] (+5% damage, no level gate); active stays parent A's signature; threshold becomes parent B's threshold (unlocks Lv 15+). New consumable [color=#FFD700]Hybrid Catalyst[/color] drops from Tier 5+ dungeon chests (weights T5=1, T6=2, T7=2, T8=2, T9=3) — slow but steady late-game supply. Closes the audit's 'Fusion OVERHAUL — add mixed-type fusion that combines abilities' decision. Audit #4 Slice 4.")
-	display_game("")
-
-	# v0.9.483 — Audit #3 Slice 6: Sanctuary tutorial overlay.
-	display_game("[color=#00FFFF]v0.9.483[/color]")
-	display_game("  [color=#FFD700]First-time Sanctuary visit now triggers a teaching overlay — closes the four-slice tutorial pass[/color]")
-	display_game("  • [b]Final piece of the discoverability arc started in v0.9.474.[/b] The first time you open your Sanctuary, a [color=#FFE066]tutorial_hint[/color] modal overlay explains what it is: an account-level home that survives permadeath, holds your upgrade trees + storage + companion kennel + Fusion Station, and where registered companions return after death. Fires once per ACCOUNT (not per character) via a new `seen_sanctuary_hint` flag on the house. Closes the four-slice teaching-overlay pass: first level-up (v0.9.474), first quest board / dungeon / crafting (v0.9.476), first Sanctuary open (v0.9.483) — all rendered through the same dismissible modal infrastructure shipped in v0.9.475. Audit #3 Slice 6.")
 	display_game("")
 
 	display_game("[color=#808080]Press [%s] to go back to More menu.[/color]" % get_action_key_name(0))
@@ -32351,7 +32351,10 @@ func _populate_companions_panel() -> void:
 	else:
 		var companions = character_data.get("collected_companions", [])
 		var active = character_data.get("active_companion", {})
-		companions_panel.populate_companions(companions, active, companion_sort_option, companion_sort_ascending)
+		# v0.9.498 — surface account-level registered companions on the panel.
+		var registered = character_data.get("account_registered_companions", [])
+		var reg_cap = int(character_data.get("account_registered_capacity", 2))
+		companions_panel.populate_companions(companions, active, companion_sort_option, companion_sort_ascending, registered, reg_cap)
 
 func _format_companion_abilities_summary(c: Dictionary) -> String:
 	# Compact 1-2 line summary for active companion section

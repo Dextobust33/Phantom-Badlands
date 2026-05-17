@@ -51,6 +51,16 @@ var _no_active_label: Label
 var _companion_grid: HFlowContainer
 var _companion_empty: Label
 
+# v0.9.498 — registered (Sanctuary) section. Read-only mini-list; full
+# management still lives at the Companion Stable. Surfaces the account-level
+# registered companions list (which the server now ships in character_update)
+# so players don't have to walk to a Stable just to remember what's stored.
+var _registered_section: PanelContainer
+var _registered_header: RichTextLabel
+var _registered_flow: HFlowContainer
+var _registered_companions: Array = []
+var _registered_capacity: int = 2
+
 # Eggs tab nodes
 var _eggs_tab: VBoxContainer
 var _egg_grid: HFlowContainer
@@ -199,6 +209,26 @@ func _build_layout() -> void:
 	_no_active_label.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	_no_active_label.add_theme_font_size_override("font_size", 13)
 	_companions_tab.add_child(_no_active_label)
+
+	# v0.9.498 — Registered (Sanctuary) section. Always built; visibility is
+	# controlled in _rebuild_registered_section (hidden when list is empty).
+	_registered_section = _make_subpanel()
+	_registered_section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_companions_tab.add_child(_registered_section)
+	var reg_vbox := VBoxContainer.new()
+	reg_vbox.add_theme_constant_override("separation", 4)
+	_registered_section.add_child(reg_vbox)
+	_registered_header = RichTextLabel.new()
+	_registered_header.bbcode_enabled = true
+	_registered_header.fit_content = true
+	_registered_header.scroll_active = false
+	_registered_header.add_theme_font_size_override("normal_font_size", 13)
+	reg_vbox.add_child(_registered_header)
+	_registered_flow = HFlowContainer.new()
+	_registered_flow.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_registered_flow.add_theme_constant_override("h_separation", 6)
+	_registered_flow.add_theme_constant_override("v_separation", 4)
+	reg_vbox.add_child(_registered_flow)
 
 	# Companion grid (scrollable)
 	var grid_panel := _make_subpanel()
@@ -406,7 +436,7 @@ func _make_tab_button(label: String, callback: Callable) -> Button:
 
 # === Public API ===
 
-func populate_companions(companions: Array, active_companion: Dictionary, sort_option: String, sort_ascending: bool) -> void:
+func populate_companions(companions: Array, active_companion: Dictionary, sort_option: String, sort_ascending: bool, registered: Array = [], registered_capacity: int = 0) -> void:
 	if not is_inside_tree():
 		return
 	_current_tab = TAB_COMPANIONS
@@ -414,12 +444,15 @@ func populate_companions(companions: Array, active_companion: Dictionary, sort_o
 	_active_companion = active_companion
 	_sort_option = sort_option
 	_sort_ascending = sort_ascending
+	_registered_companions = registered
+	_registered_capacity = registered_capacity
 	_inspect_view = {}
 	_set_tab(TAB_COMPANIONS)
 	_update_header()
 	_update_tab_styles()
 	_update_sort_buttons()
 	_rebuild_active_section()
+	_rebuild_registered_section()
 	_rebuild_companion_grid()
 
 
@@ -533,6 +566,87 @@ func _rebuild_active_section() -> void:
 		_active_abilities.text = str(client_ref._format_companion_abilities_summary(c))
 	else:
 		_active_abilities.text = ""
+
+
+# v0.9.498 — Render the account-level registered companions list. Read-only;
+# inspection/check-out happens at a Companion Stable (T5+ NPC post). Hidden
+# when the registered list is empty (e.g., no registered companions yet).
+func _rebuild_registered_section() -> void:
+	if _registered_section == null:
+		return
+	for child in _registered_flow.get_children():
+		child.queue_free()
+	if _registered_companions.is_empty():
+		_registered_section.visible = false
+		return
+	_registered_section.visible = true
+	var cap_text := "%d" % _registered_capacity if _registered_capacity > 0 else "?"
+	_registered_header.text = "[color=#FF80FF]Sanctuary Registered:[/color] %d / %s   [color=#888888](survives permadeath — manage at a Companion Stable)[/color]" % [
+		_registered_companions.size(), cap_text
+	]
+	for rc in _registered_companions:
+		_registered_flow.add_child(_make_registered_card(rc))
+
+
+func _make_registered_card(rc: Dictionary) -> Control:
+	var name = str(rc.get("name", "Unknown"))
+	var monster_type = str(rc.get("monster_type", ""))
+	var tier = int(rc.get("tier", 1))
+	var sub_tier = int(rc.get("sub_tier", 1))
+	var level = int(rc.get("level", 1))
+	var variant = str(rc.get("variant", "Normal"))
+	var variant_color_raw = str(rc.get("variant_color", "#FFFFFF"))
+	var rarity_color := Color(1, 1, 1)
+	if variant_color_raw.begins_with("#") and variant_color_raw.length() >= 7:
+		rarity_color = Color.html(variant_color_raw)
+	var checked_out = rc.get("checked_out_by")
+
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	if checked_out != null and String(checked_out) != "":
+		# Currently checked out — dim the card.
+		sb.bg_color = Color(0.10, 0.07, 0.10, 0.95)
+		sb.border_color = Color(rarity_color.r * 0.6, rarity_color.g * 0.6, rarity_color.b * 0.6, 0.7)
+	else:
+		sb.bg_color = Color(0.12, 0.08, 0.13, 0.95)
+		sb.border_color = rarity_color
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	card.add_theme_stylebox_override("panel", sb)
+	card.custom_minimum_size = Vector2(220, 0)
+
+	var lbl := RichTextLabel.new()
+	lbl.bbcode_enabled = true
+	lbl.fit_content = true
+	lbl.scroll_active = false
+	lbl.add_theme_font_size_override("normal_font_size", 12)
+	var checkout_marker := ""
+	if checked_out != null and String(checked_out) != "":
+		checkout_marker = "  [color=#FFD700][CHECKED OUT][/color]"
+	var variant_bb := ""
+	if variant != "" and variant != "Normal":
+		variant_bb = "[color=%s]%s[/color] " % [variant_color_raw, variant]
+	var hybrid_marker := ""
+	var partner = str(rc.get("hybrid_partner_type", ""))
+	if partner != "":
+		hybrid_marker = "  [color=#FF80FF][HYBRID×%s][/color]" % partner
+	lbl.append_text(
+		"[b]%s[/b]%s%s\n[color=#888888]%s T%d.%d  Lv %d[/color]" % [
+			name,
+			checkout_marker,
+			hybrid_marker,
+			variant_bb + monster_type,
+			tier,
+			sub_tier,
+			level,
+		]
+	)
+	card.add_child(lbl)
+	return card
 
 
 func _rebuild_companion_grid() -> void:
