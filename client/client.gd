@@ -24258,8 +24258,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.506 — Cosmetic buildable structures batch 2 (Torch + Statue).
+	display_game("[color=#00FF00]v0.9.506[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two more buildable cosmetic structures — Torch (entry-level light) and Statue (centerpiece monument)[/color]")
+	display_game("  • [b]New Construction recipes:[/b]")
+	display_game("    • [color=#FF6600]Torch[/color] [color=#FF6600]t[/color] — Skill 8, difficulty 12. Materials: 1 wooden plank + 1 magic dust + 1 rope. Walkable, low-skill entry. Pairs well with the v0.9.505 Lamp Post for atmospheric lighting.")
+	display_game("    • [color=#E0E0E0]Statue[/color] [color=#E0E0E0]M[/color] — Skill 25, difficulty 35. Materials: 6 stone block + 1 magic dust + 1 heartwood. [b]Blocks movement[/b] — place as a centerpiece or memorial. Costs significantly more than walkable cosmetics; pick the location deliberately.")
+	display_game("  • Both non-specialist recipes (no specialty job lock-in). Place inside your own enclosure. Pure cosmetic — no mechanical effect.")
+	display_game("  • Continues the v0.9.505 catalogue. Audit #12 cosmetic catalogue now has 4 entries (Banner / Lamp Post / Torch / Statue) spanning skill 8 → 25. More variants in future batches.")
+	display_game("")
+
 	# v0.9.505 — Cosmetic buildable structures (Banner + Lamp Post).
-	display_game("[color=#00FF00]v0.9.505[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.505[/color]")
 	display_game("  [color=#FFD700]Two new buildable cosmetic structures — Banner and Lamp Post — for personalizing your settlement[/color]")
 	display_game("  • [b]New Construction recipes:[/b]")
 	display_game("    • [color=#FFD700]Banner[/color] [color=#FFD700]Y[/color] — Skill 12, difficulty 18. Materials: 2 wooden plank + 2 leather + 1 rope. Walkable tile that marks territory or paths.")
@@ -24298,13 +24308,6 @@ func display_changelog():
 	display_game("  • Closes the third combat-readability ask from the 2026-05-17 playtest note. Pairs with v0.9.501's longer damage popups + animated HP drain.")
 	display_game("")
 
-	# v0.9.501 — Combat readability pass: longer damage popups + animated HP drain.
-	display_game("[color=#00FFFF]v0.9.501[/color]")
-	display_game("  [color=#FFD700]Combat readability — damage popups linger ~3× longer, HP bars now drain smoothly over 1 second[/color]")
-	display_game("  • [b]Floating damage numbers stay readable.[/b] Direct-hit damage popups went from 0.9s total (0.65 linger + 0.25 fade) to [color=#88FF88]2.7s[/color] (1.95 + 0.75) — ~3× longer dwell so you can actually read the number before the next attack lands. DoT/proc tick lifetime bumped 0.85s → 2.55s for parity. Stack-reset window grew 1.5s → 3.0s so rapid hits within a burst still fan up the screen instead of overlapping the still-visible previous popup.")
-	display_game("  • [b]HP bars drain over ~1 second instead of snapping.[/b] All combat HP bars (player, companion, monster, plus Lufia mirrors and the battlefield overlay) now animate from old value → new value over 1.0s with a TRANS_QUAD EASE_OUT curve. The numeric label (e.g., 'HP 84 / 150') still updates instantly — the number is the truth; the bar is the dramatic reveal. New helper `_animate_bar_value(bar, target, dur)` kills any in-progress tween so rapid hits don't queue stale tweens. Initial population at combat start snaps the bar (no anim from 0 → max).")
-	display_game("  • Pickup from 2026-05-17 playtest note. The third combat-readability ask (monster HP estimates should over-estimate, not undershoot) is queued for v0.9.502.")
-	display_game("")
 
 
 
