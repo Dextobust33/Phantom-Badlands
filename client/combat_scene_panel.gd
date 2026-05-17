@@ -1115,7 +1115,16 @@ func _populate_battlefield_overlay() -> void:
 		_overlay_companion_hp_bar.max_value = c_max_hp
 		_animate_bar_value(_overlay_companion_hp_bar, clampi(c_cur_hp, 0, c_max_hp))
 	if _overlay_companion_name and is_instance_valid(_overlay_companion_name):
-		_overlay_companion_name.text = str(_companion_data.get("name", "Companion"))
+		var overlay_name := str(_companion_data.get("name", "Companion"))
+		# v0.9.508 — append aggro role tag (Label, no BBCode, plain text).
+		if client_ref != null and client_ref.has_method("_get_aggro_role_info"):
+			var ov_bonuses: Dictionary = _companion_data.get("bonuses", {})
+			var ov_aggro := int(ov_bonuses.get("aggro", 25))
+			var ov_role: Dictionary = client_ref._get_aggro_role_info(ov_aggro)
+			var ov_label := str(ov_role.get("label", ""))
+			if ov_label != "":
+				overlay_name += " [%s]" % ov_label.to_upper()
+		_overlay_companion_name.text = overlay_name
 
 	# Reposition (handles window resize / layout shifts).
 	_position_battlefield_overlay()
@@ -3343,8 +3352,17 @@ func _refresh_companion() -> void:
 	var sub_tier := int(_companion_data.get("sub_tier", _companion_data.get("tier", 1)))
 	var variant_color := str(_companion_data.get("variant_color", "#FFFFFF"))
 	# Tier badge inline with the name — gives players a quick "T2 Crimson"
-	# read on the companion's stat presence.
-	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d T%d %s[/color]" % [variant_color, name, level, sub_tier, variant]
+	# read on the companion's stat presence. v0.9.508 — aggro role tag.
+	var role_tag := ""
+	if client_ref != null and client_ref.has_method("_get_aggro_role_info"):
+		var bonuses_for_aggro: Dictionary = _companion_data.get("bonuses", {})
+		var aggro_value := int(bonuses_for_aggro.get("aggro", 25))
+		var role_info: Dictionary = client_ref._get_aggro_role_info(aggro_value)
+		var role_label := str(role_info.get("label", ""))
+		var role_color := str(role_info.get("color", "#FFFFFF"))
+		if role_label != "":
+			role_tag = " [color=%s][b][%s][/b][/color]" % [role_color, role_label.to_upper()]
+	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d T%d %s[/color]%s" % [variant_color, name, level, sub_tier, variant, role_tag]
 
 	# XP bar shows progress to next companion level. Formula matches
 	# character.gd:get_companion_xp_to_next_level (pow(level+1, 2.0) * 15).

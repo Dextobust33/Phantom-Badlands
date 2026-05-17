@@ -10374,9 +10374,9 @@ func _maybe_send_quest_board_hint(peer_id: int) -> void:
 		+ "Look for [color=#FFAA00]⛓ CHAIN[/color] tagged quests at frontier posts: "
 		+ "3-stage adventures (KILL → KILL → BOSS_HUNT) with tier-scaled rewards plus "
 		+ "a companion egg + Home Stones + chain title on the final turn-in.\n\n"
-		+ "Posts that show the [color=#FF8800]⚠ Under Threat[/color] marker have harder "
-		+ "monsters in their bubble and a +50% service / +20% market markup — clearing "
-		+ "the threatening dungeon (the post status panel names the direction) lifts the markup."
+		+ "Under-Threat posts also surface [color=#FF8800]⚠ THREAT BOUNTY[/color] quests "
+		+ "pointing at the threatening dungeon — clear it to lift the post's "
+		+ "+50% service / +20% market markup and earn the tier-scaled reward."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -10399,6 +10399,30 @@ func _maybe_send_dungeon_hint(peer_id: int) -> void:
 		+ "Bosses drop a guaranteed [color=#FFAA00]companion egg[/color] of their type, "
 		+ "themed [color=#CCAAFF]theme tiles[/color] add environmental hazards/buffs, "
 		+ "and the [color=#FF7F50]Combat Loot Scratch-Off[/color] adds bonus rewards each fight."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
+func _maybe_send_signpost_hint(peer_id: int) -> void:
+	"""Audit #12 v0.9.508 — first-time signpost placement overlay. Teaches the
+	bump-to-read / bump-as-owner-to-edit flow. Pairs with the v0.9.507 signpost
+	feature so new players know they can leave messages and read others'."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_signpost_hint:
+		return
+	character.seen_signpost_hint = true
+	var title = "[color=#FFD700]🪧 Signpost Placed[/color]"
+	var body = (
+		"You just placed your first [color=#FFE0A0]Signpost[/color] — the first "
+		+ "interactive buildable structure.\n\n"
+		+ "• [color=#88FF88]Bump into your own signpost[/color] to set or change the "
+		+ "text (60 character max). Type the new text in the chat box and press Enter.\n"
+		+ "• [color=#88FF88]Anyone bumping any signpost[/color] sees the text — useful "
+		+ "for landmark labels, post-purpose hints, or messages for travelers.\n\n"
+		+ "Signpost text persists across server restarts. Demolishing the signpost "
+		+ "clears its text."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -22110,6 +22134,11 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if structure_type == "wall":
 		tile_data["placed_at"] = Time.get_unix_time_from_system()
 	chunk_manager.set_tile(tx, ty, tile_data)
+
+	# Audit #12 v0.9.508 — first-time signpost placement teaches the bump-to-edit
+	# flow. Cheap no-op for repeat placements (flag-gated).
+	if structure_type == "signpost":
+		_maybe_send_signpost_hint(peer_id)
 
 	# Track placed tile (include placed_at for wall decay tracking)
 	var tile_meta = {}
