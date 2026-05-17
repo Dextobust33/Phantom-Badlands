@@ -289,6 +289,8 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
+		# Audit #6 v0.9.522 — Repeatable T2 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 275, "egg": "Giant Spider", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "web_severer"}
 	},
 	# ===== "Rat Plague" — Haven, 2 stages, T1 =====
@@ -415,6 +417,8 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
+		# Audit #6 v0.9.522 — Repeatable T2 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 310, "egg": "Orc", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "orc_slayer"}
 	},
 	# ===== "Hobgoblin Discipline" — South Gate, 3 stages, T2 =====
@@ -467,6 +471,8 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
+		# Audit #6 v0.9.522 — Repeatable T2 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 310, "egg": "Hobgoblin", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "iron_breaker"}
 	},
 	# ===== "Mimic Hunt" — West Shrine, 2 stages, T2 =====
@@ -502,6 +508,8 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
+		# Audit #6 v0.9.522 — Repeatable T2 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 320, "egg": "Mimic", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "mimic_hunter"}
 	},
 	# ===== "Barrow's Curse" — South Gate, 2 stages, T2 =====
@@ -537,6 +545,8 @@ const QUESTS = {
 		"chain_stage": 2,
 		"chain_total": 2,
 		"next_in_chain": "",
+		# Audit #6 v0.9.522 — Repeatable T2 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 315, "egg": "Wight", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "barrow_walker"}
 	},
 	# ===== "Gnoll Pack Hunt" — West Shrine, 3 stages, T2 =====
@@ -589,6 +599,8 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
+		# Audit #6 v0.9.522 — Repeatable T2 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 305, "egg": "Gnoll", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "pack_master"}
 	},
 

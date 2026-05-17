@@ -1886,9 +1886,16 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if hotspot_xp_pct > 0:
 		messages.append("[color=#FF6600]Danger Zone Bonus: +%d%% XP and improved drop chance![/color]" % hotspot_xp_pct)
 	if apex_xp_pct > 0:
+		# Audit #10 v0.9.522 — use the apex zone NAME (Burning Reach / Frostbound
+		# Verge / Sundered Hollows / Cinder Wastes) when available instead of the
+		# generic "Apex Frontier" label. Variant kills still take precedence with
+		# the "Apex Variant" label.
+		var apex_zone_name = String(monster.get("apex_zone_name", ""))
 		var apex_label = "Apex Frontier"
 		if monster.get("is_apex_variant", false):
 			apex_label = "Apex Variant"
+		elif apex_zone_name != "":
+			apex_label = apex_zone_name
 		messages.append("[color=#9F70FF]⚡ %s Bonus: +%d%% XP![/color]" % [apex_label, apex_xp_pct])
 
 	# Award experience
