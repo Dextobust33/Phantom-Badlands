@@ -3098,6 +3098,33 @@ const RECIPES = {
 		"craft_time": 4.5,
 		"description": "A sculpted stone fountain. Blocks movement — place as a centerpiece in your settlement plaza."
 	},
+	# Audit #12 v0.9.516 — two more cosmetic Construction recipes. Bench is the
+	# cheapest entry-level decoration anyone with even basic Construction can
+	# afford. Well is mid-tier blocking centerpiece — sits below Fountain in cost.
+	"bench_build": {
+		"name": "Bench",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 6,
+		"difficulty": 10,
+		"materials": {"wooden_plank": 2, "rope": 1},
+		"output_type": "structure",
+		"structure_type": "bench",
+		"specialist_only": false,
+		"craft_time": 1.5,
+		"description": "A simple wooden bench. Walkable. The cheapest entry-level decoration — anyone with even basic Construction skill can build one."
+	},
+	"well_build": {
+		"name": "Well",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 18,
+		"difficulty": 24,
+		"materials": {"stone_block": 3, "wooden_plank": 1, "rope": 2},
+		"output_type": "structure",
+		"structure_type": "well",
+		"specialist_only": false,
+		"craft_time": 4.0,
+		"description": "A round stone well with a rope-and-bucket draw. Blocks movement — evokes a settlement's communal water source."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players

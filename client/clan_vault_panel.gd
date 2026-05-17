@@ -25,6 +25,9 @@ var _vault_data: Dictionary = {}
 var _inventory: Array = []
 var _mode: String = "vault"   # "vault" or "deposit"
 
+# Audit #15 v0.9.516 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: HelpPanel
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -113,6 +116,13 @@ func _build_layout() -> void:
 	title_label.add_theme_font_size_override("font_size", 20)
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_hbox.add_child(title_label)
+
+	# Audit #15 v0.9.516 — Help button.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("clan_vault_panel", _help_panel)
+	title_hbox.add_child(help_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "✕ Close"
