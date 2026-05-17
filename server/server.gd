@@ -12089,20 +12089,44 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 
 	persistence.save_house(account_id, house)
 
-	# v0.9.491 — clear character active state if the active registered slot
-	# was consumed. Also strip the companion from collected_companions (the
-	# checkout path mirrors it there for combat use).
+	# v0.9.491+v0.9.492 — handle character active state when the active
+	# registered slot was consumed in the fusion.
 	if consumed_active_slot >= 0:
 		var active_id = String(character.active_companion.get("id", ""))
+		# Step 1: clear the OLD active state (the companion data is gone).
 		character.active_companion = {}
 		character.using_registered_companion = false
 		character.registered_companion_slot = -1
-		# Remove the mirrored entry from collected_companions.
 		var keep: Array = []
 		for comp in character.collected_companions:
 			if String(comp.get("id", "")) != active_id:
 				keep.append(comp)
 		character.collected_companions = keep
+
+		# Step 2 (v0.9.492): if the fusion output was auto-registered, also
+		# auto-check-it-out as the new active companion. This preserves the
+		# "I had an active pet" continuity — the player's main pet was just
+		# upgraded; they should still have a pet on their character.
+		# The output is the LAST entry in registered_companions (we just appended).
+		if was_registered_fusion:
+			var house_now = persistence.get_house(account_id)
+			var new_slot_idx = int(house_now.registered_companions.companions.size()) - 1
+			if new_slot_idx >= 0:
+				var checked_out = persistence.checkout_companion_from_house(account_id, new_slot_idx, character.name)
+				if not checked_out.is_empty():
+					var new_active = checked_out.duplicate()
+					new_active.erase("registered_at")
+					new_active.erase("checked_out_by")
+					new_active.erase("checkout_time")
+					new_active["house_slot"] = new_slot_idx
+					character.active_companion = new_active
+					character.using_registered_companion = true
+					character.registered_companion_slot = new_slot_idx
+					# Mirror into collected_companions so combat code (which
+					# reads from there) sees the new companion.
+					character.collected_companions.append(new_active)
+					# Augment the success message so the player knows.
+					output_msg += "  [color=#00FFFF]→ Now your active companion.[/color]"
 		save_character(peer_id)
 
 	send_to_peer(peer_id, {"type": "text", "message": output_msg})
