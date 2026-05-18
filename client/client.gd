@@ -24741,8 +24741,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.541 — Crafting Boost server core (Slice 1).
+	display_game("[color=#00FF00]v0.9.541[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Server foundation for the Crafting Boost system — spend extra materials for a better quality distribution. (UI lands in Slice 2.)[/color]")
+	display_game("  • [b]Boost tiers[/b] (Audit #4, crafting overhaul Slice 1). Three settings: [color=#9ACD32]None[/color] (1.0× materials, vanilla odds), [color=#FFAA66]Refined[/color] (1.5× materials, +5% Masterwork / +5% Fine / -5% Standard / -5% Poor), [color=#A335EE]Master[/color] (2.5× materials, +15% Masterwork / +5% Fine / -10% Standard, [b]no Poor results[/b]). Quality shifts are renormalized to 100% so the preview math stays clean. Mutually exclusive with Tempered (which already gambles materials for a different reward).")
+	display_game("  • [b]Specialist discount[/b]: committed crafters (Halfling/Knight matched to the recipe's skill) save -10% on the extra Boost cost at Job Lv 20-39 and -20% at Job Lv 40+. Base 1.0× recipe cost is never reduced — only the [i]extra[/i] above 1.0×.")
+	display_game("  • [b]Server-only this slice[/b]: client UI for picking a boost tier ships in Slice 2 — for now the default is [color=#9ACD32]None[/color] for back-compat with any unmodified clients. The roll itself, material consumption, and the scratch-off completion path all already honor the boost shift.")
+	display_game("")
+
 	# v0.9.540 — Audit #14 friend list (focused project #4).
-	display_game("[color=#00FF00]v0.9.540[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.540[/color]")
 	display_game("  [color=#FFD700]Persistent friend graph with request/accept consent flow, plus a block list that silences unwanted whispers.[/color]")
 	display_game("  • [b]/friend[/b] command suite (Audit #14, focused project #4). Sub-commands:")
 	display_game("    [color=#9ACD32]/friend add <user>[/color] — send a friend request. Mutual outgoing requests auto-accept.")
@@ -24784,13 +24792,6 @@ func display_changelog():
 	display_game("  • Audit #14 progress: ~95% → ~98%.")
 	display_game("")
 
-	# v0.9.536 — Final audit close: player count header + help refresh.
-	display_game("[color=#00FFFF]v0.9.536[/color]")
-	display_game("  [color=#FFD700]Audit close-out — total online count on the players panel + a full help-page refresh covering everything shipped this audit cycle.[/color]")
-	display_game("  • [b]Players list count header[/b] (Audit #14). Top of the players panel now reads [color=#88FFCC][b]N online[/b][/color] [color=#888888]([/color][color=#9ACD32]M active[/color][color=#888888], [/color][color=#FFAA66]K AFK[/color][color=#888888])[/color]. At-a-glance world busyness without scanning the list.")
-	display_game("  • [b]Help page RECENT ADDITIONS refresh[/b] (Audit #15). show_help() now documents all v0.9.529-535 features: the three social chat channels ([color=#9ACD32]/c[/color] / [color=#9ACD32]/p[/color] / [color=#9ACD32]/clist[/color]), the [color=#9ACD32]/afk[/color] status badge, clan presence indicators (online dots, N/M header chip, login/logout broadcasts), the threat-HUD tile-distance readout, and the full 23-structure cosmetic catalogue.")
-	display_game("  • Twelve releases (v0.9.524 → v0.9.536) shipped this audit cycle. Audits #3, #6, #10, #11 at 99%+; #12 at 99%; #14 at ~95%; #15 at ~97%. Comprehensive audit close.")
-	display_game("")
 
 
 
