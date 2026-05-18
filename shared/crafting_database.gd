@@ -3176,6 +3176,33 @@ const RECIPES = {
 		"craft_time": 1.5,
 		"description": "A straw-stuffed sentinel watching over your garden. Walkable. Cheap, distinctive, slightly unsettling."
 	},
+	# Audit #12 v0.9.527 — two more cosmetic Construction recipes. Crate is a
+	# blocking storage prop at mid-cheap skill; Cairn is the new cheapest entry
+	# tier (skill 3) — even more entry-level than Garden Plot.
+	"crate_build": {
+		"name": "Crate",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 9,
+		"difficulty": 13,
+		"materials": {"wooden_plank": 3, "iron_ore": 1, "rope": 1},
+		"output_type": "structure",
+		"structure_type": "crate",
+		"specialist_only": false,
+		"craft_time": 2.0,
+		"description": "A sturdy wooden storage crate. Blocks movement — stack a few to form makeshift barricades or mark a depot inside your enclosure."
+	},
+	"cairn_build": {
+		"name": "Cairn",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 3,
+		"difficulty": 6,
+		"materials": {"stone_block": 3},
+		"output_type": "structure",
+		"structure_type": "cairn",
+		"specialist_only": false,
+		"craft_time": 1.0,
+		"description": "A balanced pile of waystones. Walkable. The cheapest cosmetic — three stone blocks and a steady hand. Marks paths, boundaries, or memorials."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players

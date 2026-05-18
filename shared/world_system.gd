@@ -132,6 +132,11 @@ const TILE_RENDER = {
 	# Scarecrow is a tall thin walkable marker, cheap but distinctive.
 	"tent":          {"char": "v", "color": "#A0826D", "blocks_move": true,  "blocks_los": true},
 	"scarecrow":     {"char": "k", "color": "#C8B070", "blocks_move": false, "blocks_los": false},
+	# Audit #12 v0.9.527 — catalogue 13 → 15. Crate is a mid-cost wooden storage
+	# prop that blocks movement; Cairn is the cheapest walkable waymarker (rock
+	# pile) anyone with starter Construction can stack.
+	"crate":         {"char": "c", "color": "#B8916A", "blocks_move": true,  "blocks_los": false},
+	"cairn":         {"char": "a", "color": "#A0A0A0", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

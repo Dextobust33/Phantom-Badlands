@@ -24373,8 +24373,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.527 — Audit #12 catalogue 13→15 (Crate + Cairn).
+	display_game("[color=#00FF00]v0.9.527[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two more cosmetic buildables — the catalogue is now fifteen structures spanning skill 3 through 35.[/color]")
+	display_game("  • [b]Crate[/b] ([color=#B8916A]c[/color], blocks movement, Construction skill 9). 3 wooden plank + 1 iron ore + 1 rope. A storage-themed blocker — stack a few to form makeshift barricades or mark a depot inside your enclosure.")
+	display_game("  • [b]Cairn[/b] ([color=#A0A0A0]a[/color], walkable, Construction skill 3). 3 stone block. The new cheapest cosmetic — three stone blocks and a steady hand. Marks paths, boundaries, or memorials. More entry-level than Garden Plot.")
+	display_game("  • Catalogue now: Cairn (3) · Garden Plot (4) · Scarecrow (5) · Bench (6) · Tent (7) · Torch (8) · Crate (9) · Signpost (10) · Pylon (11) · Banner (12) · Brazier (13) · Lamp Post (15) · Well (18) · Fountain (22) · Statue (25). Fifteen options, every skill tier covered.")
+	display_game("  • Audit #12 progress: ~92% → ~94%.")
+	display_game("")
+
 	# v0.9.526 — Narrow the v0.9.525 rip: restore world-state systems, keep no-cooldown for player-facing repeats.
-	display_game("[color=#00FF00]v0.9.526[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.526[/color]")
 	display_game("  [color=#FFD700]v0.9.525 was over-broad — restoring world-state respawn/decay/rotation systems while keeping the no-cooldown rule for player-facing repeatable quests.[/color]")
 	display_game("  • [b]Kept ripped:[/b] Repeatable chain 24h cooldown (T1/T2/T3 chains still immediately repeatable). Daily quest 24h cooldown (any \"daily\" quest still immediately re-acceptable). These are the actual problem — player-facing \"come back in 24h\" gates.")
 	display_game("  • [b]Restored:[/b] Wall decay (72h grace on un-enclosed walls), water node respawn (5min), near-post non-water node respawn (4min), guard food upkeep, post inactivity decay, NPC vendor daily stock rotation, dynamic quest board date seeding.")
@@ -24412,23 +24421,6 @@ func display_changelog():
 	display_game("  • Audit progress: #3 ~97% → ~98%, #11 ~97% → ~98%.")
 	display_game("")
 
-	# v0.9.522 — Audit #6 Repeatable T2 chains + Audit #10 Apex Zone name in combat + Audit #3 First chain hint.
-	display_game("[color=#00FFFF]v0.9.522[/color]")
-	display_game("  [color=#FFD700]Six more chains become repeatable, the apex zone name appears in combat rewards, and the first chain quest gets a teaching overlay.[/color]")
-	display_game("  • [b]Repeatable T2 chains[/b] (Audit #6). [color=#FFAA00]Web Spreads, Orc Threat, Hobgoblin Discipline, Mimic Hunt, Barrow's Curse, Gnoll Pack Hunt[/color] now also have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in, then reappear at their home post. Extends v0.9.517's repeatable starter chains to mid-game — 11 chains now repeatable across T1+T2.")
-	display_game("  • [b]Apex Zone names in combat reward[/b] (Audit #10). The combat reward bonus message now uses the named zone — \"⚡ [color=#9F70FF]Burning Reach[/color] Bonus: +10% XP\" instead of the generic \"⚡ Apex Frontier Bonus\". Variant kills still take precedence with the \"Apex Variant\" label. Server stamps `apex_zone_name` on the monster at engagement; combat_manager reads it for the message.")
-	display_game("  • [b]First chain quest tutorial overlay[/b] (Audit #3). New `seen_chain_hint` per-character flag — when a player accepts their first chain quest, a modal explains stages, the auto-add of next stage, the final-stage egg + Home Stones + chain title rewards, and the 24h repeatable cooldown on T1+T2 chains.")
-	display_game("  • Audit progress: #6 ~99% → ~99%, #10 ~97% → ~98%, #3 ~96% → ~97%.")
-	display_game("")
-
-	# v0.9.521 — Audit #12 spawn-point UX + Tent + Scarecrow + Audit #14 [NEW Lv X] whisper tag.
-	display_game("[color=#00FFFF]v0.9.521[/color]")
-	display_game("  [color=#FFD700]Spawn-point captured item closed, catalogue grows to 13, mentor whispers gain a new-player tag.[/color]")
-	display_game("  • [b]Spawn-point UX[/b] (Audit #12). New [color=#88AAFF]Respawn point:[/color] line on the Status page's Progression Vectors dashboard. Currently always [color=#FFD700]Crossroads[/color] (world origin) — when player-set respawn points land, this line picks them up. Closes the captured spawn-point UX item.")
-	display_game("  • [b]Tent + Scarecrow[/b] (Audit #12). Tent ([color=#A0826D]v[/color], blocks movement, Construction skill 7, leather+plank+rope) creates camping pockets inside enclosures. Scarecrow ([color=#C8B070]k[/color], walkable, Construction skill 5, plank+rope+herb) is a distinctive low-cost decoration. Catalogue now spans 13 cosmetic structures.")
-	display_game("  • [b]Whisper [NEW Lv X] tag[/b] (Audit #14). When a Lv 20+ player (mentor-eligible) receives a whisper from a Lv < 10 player, the chat line now prepends [color=#FFD700][NEW Lv X][/color] so mentors can prioritize replies. Server adds [color=#9ACD32]sender_level[/color] to every whisper payload; client renders the tag based on its own level.")
-	display_game("  • Continues closing pieces of Audit #12 (~82% → ~88%) and Audit #14 (~76% → ~78%).")
-	display_game("")
 
 
 
@@ -27657,7 +27649,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.516 — bench + well added.
 			# v0.9.520 — pylon + garden_plot added.
 			# v0.9.521 — tent + scarecrow added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow"]:
+			# v0.9.527 — crate + cairn added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()
