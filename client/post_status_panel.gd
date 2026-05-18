@@ -322,6 +322,16 @@ func _render() -> void:
 		_inactivity_label.append_text("\n[color=#FF4444]    Bubble suppression FULLY DECAYED — no protection until tended[/color]")
 	elif decay_state == "weakened":
 		_inactivity_label.append_text("\n[color=#FFAA44]    Bubble suppression weakened by inactivity (-1)[/color]")
+	# Audit #12 Slice 6 (v0.9.561) — auto-reclaim warning banner. Red when the
+	# post is within the warning window; players still have time to save the
+	# post by visiting (which auto-resets last_tended_at via the existing decay
+	# touch path). For clan-shared posts, ANY clan member's visit also resets.
+	var is_reclaim_warning: bool = bool(_last_data.get("is_reclaim_warning", false))
+	var days_until_reclaim: float = float(_last_data.get("days_until_reclaim", 999.0))
+	if is_reclaim_warning and days_until_reclaim > 0.0:
+		_inactivity_label.append_text("\n[color=#FF2020]    ⚠⚠ AUTO-RECLAIM in %.1f days — walls + structures will be wiped. Visit the post to reset the timer.[/color]" % days_until_reclaim)
+	elif is_reclaim_warning and days_until_reclaim <= 0.0:
+		_inactivity_label.append_text("\n[color=#FF2020]    ⚠⚠ AUTO-RECLAIM IMMINENT — next server sweep will reclaim this post.[/color]")
 
 	# Per-guard list (owner only)
 	if is_owner and guards.size() > 0:
