@@ -24373,8 +24373,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.528 — Audit #3 tutorial hints batch (gather + equip).
+	display_game("[color=#00FF00]v0.9.528[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two more first-touch teaching overlays — gather minigame and equipment slots.[/color]")
+	display_game("  • [b]First gather hint[/b] (Audit #3). First time you start fishing, mining, or logging, a modal explains the wait→react minigame, tier scaling (T1-T9 nodes need 1/2/3 reactions), how skill XP works, and how equipped tools (rod/pickaxe/axe) cut wait time and boost yield. New [color=#A335EE]seen_gather_hint[/color] per-character flag — fires once per character across all three gather types.")
+	display_game("  • [b]First equip hint[/b] (Audit #3). First time you equip a piece of gear, a modal explains the seven slots (Weapon/Armor/Helm/Shield/Boots/Ring/Amulet), the inventory comparison view, tier + variant rarity, the Salvage flow for low-tier gear, and Home Stone (Equipment) for permadeath protection. New [color=#A335EE]seen_equip_hint[/color] per-character flag.")
+	display_game("  • Tutorial overlays now cover: progression, quest board, dungeons, crafting, signposts, apex frontier, market, chains, companions, companion stable, [b]gather[/b], [b]equip[/b]. Twelve first-touch hints; Audit #3 ~98% → ~99%.")
+	display_game("")
+
 	# v0.9.527 — Audit #12 catalogue 13→15 (Crate + Cairn).
-	display_game("[color=#00FF00]v0.9.527[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.527[/color]")
 	display_game("  [color=#FFD700]Two more cosmetic buildables — the catalogue is now fifteen structures spanning skill 3 through 35.[/color]")
 	display_game("  • [b]Crate[/b] ([color=#B8916A]c[/color], blocks movement, Construction skill 9). 3 wooden plank + 1 iron ore + 1 rope. A storage-themed blocker — stack a few to form makeshift barricades or mark a depot inside your enclosure.")
 	display_game("  • [b]Cairn[/b] ([color=#A0A0A0]a[/color], walkable, Construction skill 3). 3 stone block. The new cheapest cosmetic — three stone blocks and a steady hand. Marks paths, boundaries, or memorials. More entry-level than Garden Plot.")
@@ -24413,13 +24421,6 @@ func display_changelog():
 	display_game("  • Audit progress: #6 ~99% → ~99.5%, #10 ~98% → ~99%.")
 	display_game("")
 
-	# v0.9.523 — Audit #3 First companion hatch hint + Audit #11 Threat count in HUD.
-	display_game("[color=#00FFFF]v0.9.523[/color]")
-	display_game("  [color=#FFD700]New-companion teaching overlay + multi-threat awareness on the Area line.[/color]")
-	display_game("  • [b]First companion hatch tutorial overlay[/b] (Audit #3). When your first egg hatches, a modal explains the companion system — active companion, aggro roles (Tank/Fighter/Default/Evasive), egg drop chances, Home Stone (Egg) for permadeath safety, and all four fusion modes at a Companion Stable. New [color=#A335EE]seen_companion_hint[/color] per-character flag.")
-	display_game("  • [b]Threat corridor count[/b] (Audit #11). The [color=#FF6600]⚠ Threat:[/color] tag on the Area line now appends [color=#FF8888](+N more)[/color] when multiple T2+ world dungeons threaten the same 80-tile corridor. Visualizes how saturated a zone is — a single threat is one nibble, multiple stacked threats means caution. Extends v0.9.517's single-threat HUD.")
-	display_game("  • Audit progress: #3 ~97% → ~98%, #11 ~97% → ~98%.")
-	display_game("")
 
 
 
