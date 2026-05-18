@@ -9882,6 +9882,10 @@ func handle_inventory_equip(peer_id: int, message: Dictionary):
 			"message": "[color=#00FF00]You equip %s.[/color]" % equip_item.get("name", "item")
 		})
 
+	# Audit #3 v0.9.528 — first equip teaches slot mapping, comparison view,
+	# salvage, and Home Stone (Equipment) permadeath protection.
+	_maybe_send_equip_hint(peer_id, equip_item)
+
 	send_character_update(peer_id)
 
 func handle_inventory_unequip(peer_id: int, message: Dictionary):
@@ -13243,6 +13247,87 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 		+ "Eggs hatch as you walk (steps remaining). Drop chances: T1 monsters 3% / T2 monsters 1% on overworld; dungeon bosses guarantee an egg of their type. Use [color=#FFD700]Home Stone (Egg)[/color] to send an incubating egg to your Sanctuary so it survives permadeath.\n\n"
 		+ "[color=#FFD700]── Fusion ──[/color]\n"
 		+ "At a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next sub-tier), Mixed T9 (8 T8.8s → 1 T9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
+func _maybe_send_gather_hint(peer_id: int, gather_type: String) -> void:
+	"""Audit #3 v0.9.528 — first gather session (fish/mine/log) teaches the
+	wait→reaction minigame, skill XP, tier scaling, and tool bonuses. One
+	flag covers all three gather types — the first to fire sets the flag.
+	Fires once per character; flag persists via to_dict / from_dict."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_gather_hint:
+		return
+	character.seen_gather_hint = true
+	var skill_label = "Fishing"
+	var verb_present = "fishing"
+	var action = "cast the line"
+	var node_label = "fish splashing in water (~)"
+	var color = "#4488FF"
+	var icon = "🎣"
+	if gather_type == "mining":
+		skill_label = "Mining"
+		verb_present = "mining"
+		action = "swing the pickaxe"
+		node_label = "ore deposits in mountains (*)"
+		color = "#B87333"
+		icon = "⛏"
+	elif gather_type == "logging":
+		skill_label = "Logging"
+		verb_present = "chopping wood"
+		action = "swing the axe"
+		node_label = "dense forest patches (%)"
+		color = "#8B5A2B"
+		icon = "🪓"
+	var title = "[color=%s]%s Gathering[/color]" % [color, icon]
+	var body = (
+		"You started %s — your first gather session.\n\n" % verb_present
+		+ "[color=#FFD700]── The minigame ──[/color]\n"
+		+ "  • [color=#FFD700]Wait phase[/color] — patience. The action bar shows a [b]Wait...[/b] message; do nothing until it clears.\n"
+		+ "  • [color=#FFD700]React phase[/color] — a target key appears. Hit it before the window closes to %s and land the catch.\n"
+		+ "  • Miss the window → you lose the catch but keep your tool.\n\n"
+		+ "[color=#FFD700]── Tier scaling ──[/color]\n"
+		+ "  • Nodes are tiered (T1–T9) based on distance from origin. Higher tier = better drops.\n"
+		+ "  • T1–T2 need 1 reaction; T3–T5 need 2; T6+ need 3.\n"
+		+ "  • Find nodes by exploring: %s.\n\n"
+		+ "[color=#FFD700]── Skill XP ──[/color]\n"
+		+ "  • Each successful gather raises your [color=%s]%s skill[/color]. Higher skill = faster waits + wider react windows + better drop rolls.\n"
+		+ "  • Equipped tools (rod/pickaxe/axe) further reduce wait time and boost yield.\n\n"
+		+ "Materials feed Crafting, Salvage Essence, and Sanctuary projects. Gather steady, gather safe."
+	) % [action, node_label, color, skill_label]
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
+
+func _maybe_send_equip_hint(peer_id: int, item: Dictionary) -> void:
+	"""Audit #3 v0.9.528 — first equipment equip teaches slot mapping,
+	comparison view, salvage, and the press-Equip-twice unequip flow.
+	Fires once per character; flag persists via to_dict / from_dict."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_equip_hint:
+		return
+	character.seen_equip_hint = true
+	var item_name = String(item.get("name", "your gear"))
+	var title = "[color=#FFD700]⚔ Equipment[/color]"
+	var body = (
+		"You just equipped [color=#FFD700]%s[/color] — your first piece of gear. Equipment lives in seven slots: [color=#FFD700]Weapon, Armor, Helm, Shield, Boots, Ring, Amulet[/color].\n\n" % item_name
+		+ "[color=#FFD700]── Slot rules ──[/color]\n"
+		+ "  • Items go into the matching slot automatically.\n"
+		+ "  • Equipping a new item to an occupied slot swaps the old one back into your inventory.\n"
+		+ "  • Open [color=#00FFFF]Inventory[/color] (i) → select an item → [color=#88FF88]Equip[/color] to wear it.\n\n"
+		+ "[color=#FFD700]── Comparison view ──[/color]\n"
+		+ "  • Hovering an inventory item shows side-by-side stats vs your current slot, including Sanctuary HP / resource multipliers.\n"
+		+ "  • Greens are upgrades; reds are downgrades.\n\n"
+		+ "[color=#FFD700]── Tier + bonuses ──[/color]\n"
+		+ "  • Gear is tiered T1–T9 with prefix/suffix bonuses (e.g., \"of the Bear\" = +CON).\n"
+		+ "  • Variant colors mark rarity: white → green → blue → purple → orange → red.\n\n"
+		+ "[color=#FFD700]── Salvage ──[/color]\n"
+		+ "  • Don't sell low-tier gear — [color=#88FF88]Salvage[/color] it for [color=#FFD700]Salvage Essence[/color] used to upgrade tools and craft consumables.\n\n"
+		+ "[color=#FFD700]Home Stone (Equipment)[/color] (T5+ loot) lets one equipped piece survive permadeath by stashing it in your Sanctuary storage."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -19447,6 +19532,9 @@ func handle_fish_start(peer_id: int):
 		send_to_peer(peer_id, {"type": "error", "message": "No fishing spot here! Look for fish splashing in water nearby."})
 		return
 
+	# Audit #3 v0.9.528 — first gather session tutorial overlay.
+	_maybe_send_gather_hint(peer_id, "fishing")
+
 	# Get water type and fishing data
 	var water_type = world_system.get_fishing_type(character.x, character.y)
 	var base_wait_time = drop_tables.get_fishing_wait_time(character.fishing_skill)
@@ -19598,6 +19686,9 @@ func handle_mine_start(peer_id: int):
 	if gathering_node.is_empty() or gathering_node.type != "mining":
 		send_to_peer(peer_id, {"type": "error", "message": "No ore vein here! Search the mountains for exposed ore."})
 		return
+
+	# Audit #3 v0.9.528 — first gather session tutorial overlay.
+	_maybe_send_gather_hint(peer_id, "mining")
 
 	# Get ore tier from the node
 	var base_ore_tier = gathering_node.tier
@@ -19773,6 +19864,9 @@ func handle_log_start(peer_id: int):
 	if gathering_node.is_empty() or gathering_node.type != "logging":
 		send_to_peer(peer_id, {"type": "error", "message": "No harvestable tree here! Search the forest for fallen logs."})
 		return
+
+	# Audit #3 v0.9.528 — first gather session tutorial overlay.
+	_maybe_send_gather_hint(peer_id, "logging")
 
 	# Get wood tier from the node
 	var base_wood_tier = gathering_node.tier
