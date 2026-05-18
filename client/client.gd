@@ -8659,8 +8659,27 @@ func update_action_bar():
 			fourth_action = {"label": "Help", "action_type": "local", "action_data": "help", "enabled": true}
 		# Forge button if at Infernal Forge with Unforged Crown, or "Fire Mt" at fire mountain
 		# Or gathering actions (Fish/Mine/Chop) at appropriate tiles, or Dungeon at dungeon entrances
+		# Audit #14 PvP Slice C V1 (v0.9.553) — in apex zone, if an adjacent
+		# player exists, slot 4 becomes "Attack [Name]" (highest priority).
+		# Attack action triggers instant dice-roll PvP resolution.
 		var fifth_action: Dictionary
-		if forge_available:
+		var pvp_adjacent_target_name: String = ""
+		if hud_in_pvp_zone:
+			var my_x: int = character_data.get("x", 0)
+			var my_y: int = character_data.get("y", 0)
+			for npe in _cached_nearby_players:
+				if not (npe is Dictionary):
+					continue
+				var nx: int = int(npe.get("x", 0))
+				var ny: int = int(npe.get("y", 0))
+				var dx_p: int = abs(nx - my_x)
+				var dy_p: int = abs(ny - my_y)
+				if dx_p <= 1 and dy_p <= 1 and (dx_p + dy_p) > 0:
+					pvp_adjacent_target_name = String(npe.get("name", ""))
+					break
+		if pvp_adjacent_target_name != "":
+			fifth_action = {"label": "⚔ %s" % pvp_adjacent_target_name, "action_type": "local", "action_data": "pvp_attack_adjacent", "enabled": true}
+		elif forge_available:
 			fifth_action = {"label": "Forge", "action_type": "local", "action_data": "forge_crown", "enabled": true}
 		elif at_fire_mountain:
 			fifth_action = {"label": "Fire Mt", "action_type": "local", "action_data": "check_forge", "enabled": true}
@@ -12473,6 +12492,29 @@ func execute_local_action(action: String):
 			# Engage bounty target at this location
 			if at_bounty and bounty_quest_id != "":
 				send_to_server({"type": "engage_bounty", "quest_id": bounty_quest_id})
+		"pvp_attack_adjacent":
+			# Audit #14 PvP Slice C V1 (v0.9.553) — attack the first adjacent
+			# player in the apex zone. Server validates apex + adjacency + state.
+			if hud_in_pvp_zone:
+				var my_x: int = character_data.get("x", 0)
+				var my_y: int = character_data.get("y", 0)
+				var target_name: String = ""
+				for npe in _cached_nearby_players:
+					if not (npe is Dictionary):
+						continue
+					var nx: int = int(npe.get("x", 0))
+					var ny: int = int(npe.get("y", 0))
+					var dx_p: int = abs(nx - my_x)
+					var dy_p: int = abs(ny - my_y)
+					if dx_p <= 1 and dy_p <= 1 and (dx_p + dy_p) > 0:
+						target_name = String(npe.get("name", ""))
+						break
+				if target_name != "":
+					send_to_server({"type": "attack_player", "target": target_name})
+				else:
+					display_game("[color=#FFA500]No adjacent player to attack.[/color]")
+			else:
+				display_game("[color=#FFA500]You can only attack players in the Apex Frontier.[/color]")
 		"enter_dungeon":
 			# Enter a dungeon at this location
 			enter_dungeon_at_location()
