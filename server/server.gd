@@ -1502,6 +1502,14 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_unblock_user(peer_id, message)
 		"block_list":
 			handle_block_list(peer_id)
+		# Audit #14 PvP Slice B (v0.9.552) — Duel system. Bilateral consent
+		# with agreed stakes. See [[audit-14-multiplayer]] PvP section.
+		"duel_request":
+			handle_duel_request(peer_id, message)
+		"duel_accept":
+			handle_duel_accept(peer_id, message)
+		"duel_decline":
+			handle_duel_decline(peer_id, message)
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
@@ -3454,6 +3462,219 @@ func handle_clan_list(peer_id: int) -> void:
 		"clan_color": String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR)),
 		"members": online_mates,
 	})
+
+# =============================================================================
+# Audit #14 PvP Slice B (v0.9.552) — Duel system
+# =============================================================================
+# Bilateral consent + agreed stakes. Works at any level, any zone (independent
+# of apex zone auto-PvP, which arrives in Slice C). V1 stakes: "none" (bragging
+# rights only) or "valor_10" (10% of proposer's current valor, capped by both
+# players' available valor). V1 resolution: instant dice roll comparing both
+# players' "duel power" (level + STR + DEX + weapon damage with variance).
+# Combat-scene PvP encounter is Slice B.2 (richer feel, longer turn-based).
+# Richer stakes (items / eggs / non-registered companions) is Slice C.
+
+const DUEL_REQUEST_TTL_SEC: float = 60.0
+const DUEL_STAKES_VALOR_PCT: float = 0.10
+
+# Outgoing duel requests, keyed by (challenger_peer_id, target_peer_id) pair.
+# Cleared when accepted, declined, expired, or either peer disconnects.
+var pending_duel_requests: Dictionary = {}
+
+func _duel_request_key(challenger: int, target: int) -> String:
+	return "%d->%d" % [challenger, target]
+
+func _resolve_username_to_peer(username: String) -> int:
+	"""Helper: scan online peers for a player with this character name (case
+	insensitive). Returns -1 if not online or ambiguous."""
+	if username == "":
+		return -1
+	var lower = username.to_lower()
+	for pid in characters:
+		var ch = characters[pid]
+		if String(ch.name).to_lower() == lower:
+			return pid
+	return -1
+
+func _get_duel_stakes_valor(peer_id: int, stakes: String) -> int:
+	"""Compute the valor wager for a duel based on the chosen stakes string.
+	Caps at the player's current valor so we never wager more than they have."""
+	if stakes != "valor_10":
+		return 0
+	if not peers.has(peer_id):
+		return 0
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return 0
+	var current_valor = persistence.get_valor(account_id)
+	var wager = int(floor(float(current_valor) * DUEL_STAKES_VALOR_PCT))
+	return max(0, wager)
+
+func handle_duel_request(peer_id: int, message: Dictionary) -> void:
+	"""V1 — process /duel <target> <stakes> command. Validates target is online,
+	not self, not in party with self, not currently in combat, neither
+	currently in another duel request. Queues the request + sends modal to
+	target. Times out after DUEL_REQUEST_TTL_SEC (handled by client/server
+	cleanup)."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var target_name = String(message.get("target", "")).strip_edges()
+	var stakes = String(message.get("stakes", "none"))
+	if stakes != "none" and stakes != "valor_10":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Unknown stakes '%s'. Use 'none' or 'valor_10'.[/color]" % stakes})
+		return
+	if target_name == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Usage: /duel <player> [stakes][/color]"})
+		return
+	var target_peer = _resolve_username_to_peer(target_name)
+	if target_peer < 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]No such online player: %s[/color]" % target_name})
+		return
+	if target_peer == peer_id:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You can't duel yourself.[/color]"})
+		return
+	if combat_mgr.is_in_combat(peer_id) or combat_mgr.is_in_combat(target_peer):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]One of you is in combat — wait until it ends.[/color]"})
+		return
+	# Prevent stacked requests — only one outgoing per challenger to a target.
+	var key = _duel_request_key(peer_id, target_peer)
+	if pending_duel_requests.has(key):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You already have a pending duel request to %s.[/color]" % target_name})
+		return
+	var challenger_wager = _get_duel_stakes_valor(peer_id, stakes)
+	var target_wager = _get_duel_stakes_valor(target_peer, stakes)
+	pending_duel_requests[key] = {
+		"challenger": peer_id,
+		"target": target_peer,
+		"stakes": stakes,
+		"challenger_wager": challenger_wager,
+		"target_wager": target_wager,
+		"created_at": Time.get_unix_time_from_system(),
+	}
+	var challenger_name = String(characters[peer_id].name)
+	var stakes_label = ""
+	if stakes == "valor_10":
+		stakes_label = "10%% valor (%d vs %d)" % [challenger_wager, target_wager]
+	else:
+		stakes_label = "nothing (bragging rights)"
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#9ACD32]Duel request sent to %s — stakes: %s. They have %ds to respond.[/color]" % [target_name, stakes_label, int(DUEL_REQUEST_TTL_SEC)]
+	})
+	send_to_peer(target_peer, {
+		"type": "duel_request",
+		"challenger_name": challenger_name,
+		"challenger_peer_id": peer_id,
+		"stakes": stakes,
+		"stakes_label": stakes_label,
+		"challenger_wager": challenger_wager,
+		"target_wager": target_wager,
+		"ttl_sec": int(DUEL_REQUEST_TTL_SEC),
+	})
+
+func handle_duel_accept(peer_id: int, message: Dictionary) -> void:
+	"""Target accepts the duel. Server resolves instantly via dice-roll and
+	pays out stakes to the winner from the loser's valor. V1 — no combat
+	scene yet; that's Slice B.2."""
+	var challenger_peer = int(message.get("challenger_peer_id", -1))
+	var key = _duel_request_key(challenger_peer, peer_id)
+	if not pending_duel_requests.has(key):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Duel request not found or expired.[/color]"})
+		return
+	var req: Dictionary = pending_duel_requests[key]
+	pending_duel_requests.erase(key)
+	# Both must still be online + out of combat.
+	if not characters.has(challenger_peer) or not characters.has(peer_id):
+		return
+	if combat_mgr.is_in_combat(challenger_peer) or combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]One of you entered combat — duel cancelled.[/color]"})
+		return
+	_resolve_duel(challenger_peer, peer_id, String(req.get("stakes", "none")), int(req.get("challenger_wager", 0)), int(req.get("target_wager", 0)))
+
+func handle_duel_decline(peer_id: int, message: Dictionary) -> void:
+	"""Target declines. Notify challenger; drop the request."""
+	var challenger_peer = int(message.get("challenger_peer_id", -1))
+	var key = _duel_request_key(challenger_peer, peer_id)
+	if not pending_duel_requests.has(key):
+		return
+	pending_duel_requests.erase(key)
+	if characters.has(challenger_peer) and characters.has(peer_id):
+		var target_name = String(characters[peer_id].name)
+		send_to_peer(challenger_peer, {"type": "text", "message": "[color=#FFA500]%s declined your duel request.[/color]" % target_name})
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You declined the duel.[/color]"})
+
+func _compute_duel_power(character) -> int:
+	"""V1 duel power formula. Higher is stronger. Pulls from level + base stats +
+	weapon damage. Variance comes from the caller's randf_range. This is a
+	stand-in until Slice B.2 lands a full combat-scene PvP encounter."""
+	if character == null:
+		return 0
+	var weapon = character.equipped.get("weapon", {})
+	var weapon_dmg = int(weapon.get("damage", 0)) if weapon is Dictionary else 0
+	# Use total (with bonuses) so gear matters but level + class stats matter too.
+	var str_val = character.get_total_stat("strength")
+	var dex_val = character.get_total_stat("dexterity")
+	var lvl = int(character.level)
+	return lvl * 5 + str_val * 2 + dex_val + weapon_dmg
+
+func _resolve_duel(challenger_peer: int, target_peer: int, stakes: String, challenger_wager: int, target_wager: int) -> void:
+	"""V1 instant dice-roll resolution. Each player rolls their duel power
+	with a 0.7-1.3× random multiplier (so weaker players have a chance and
+	stronger players aren't auto-win). Higher rolled value wins. Winner takes
+	the loser's wagered valor (capped by what they have at resolution time).
+	Both players see a chat message with both rolls + winner."""
+	var ch_char = characters[challenger_peer]
+	var tg_char = characters[target_peer]
+	var ch_power = _compute_duel_power(ch_char)
+	var tg_power = _compute_duel_power(tg_char)
+	var ch_roll = int(float(ch_power) * randf_range(0.7, 1.3))
+	var tg_roll = int(float(tg_power) * randf_range(0.7, 1.3))
+	var winner_peer = challenger_peer if ch_roll >= tg_roll else target_peer
+	var loser_peer = target_peer if winner_peer == challenger_peer else challenger_peer
+	var winner_name = String(characters[winner_peer].name)
+	var loser_name = String(characters[loser_peer].name)
+	# Stakes payout (valor only in V1). Recompute loser's current valor in
+	# case it changed between request and resolution.
+	var actual_payout = 0
+	if stakes == "valor_10":
+		var loser_account_id = String(peers.get(loser_peer, {}).get("account_id", ""))
+		var winner_account_id = String(peers.get(winner_peer, {}).get("account_id", ""))
+		if loser_account_id != "" and winner_account_id != "":
+			var loser_current_valor = persistence.get_valor(loser_account_id)
+			var loser_wager_at_resolution = int(floor(float(loser_current_valor) * DUEL_STAKES_VALOR_PCT))
+			actual_payout = min(loser_wager_at_resolution, loser_current_valor)
+			if actual_payout > 0:
+				persistence.spend_valor(loser_account_id, actual_payout)
+				persistence.add_valor(winner_account_id, actual_payout)
+	# Build the announcement message. Both players see the same lines.
+	var stakes_summary = ""
+	if stakes == "valor_10" and actual_payout > 0:
+		stakes_summary = " — [color=#FFD700]%s won %d valor.[/color]" % [winner_name, actual_payout]
+	elif stakes == "valor_10":
+		stakes_summary = " [color=#808080](no payout — loser had no valor to wager)[/color]"
+	var msg = (
+		"[color=#9F70FF]⚔ Duel resolved![/color] "
+		+ "[color=#FFD700]%s[/color] (roll %d) vs [color=#FFD700]%s[/color] (roll %d)."
+		+ "\n  → [color=#88FF88]%s wins![/color]%s"
+	) % [String(characters[challenger_peer].name), ch_roll, String(characters[target_peer].name), tg_roll, winner_name, stakes_summary]
+	send_to_peer(challenger_peer, {"type": "text", "message": msg})
+	send_to_peer(target_peer, {"type": "text", "message": msg})
+	# Notify both clients with a structured duel_resolved message in case
+	# they want to play a sound or pop a result modal in a future slice.
+	for pid in [challenger_peer, target_peer]:
+		send_to_peer(pid, {
+			"type": "duel_resolved",
+			"challenger_name": String(characters[challenger_peer].name),
+			"target_name": String(characters[target_peer].name),
+			"challenger_roll": ch_roll,
+			"target_roll": tg_roll,
+			"winner_name": winner_name,
+			"loser_name": loser_name,
+			"payout": actual_payout,
+			"stakes": stakes,
+		})
 
 func handle_party_message(peer_id: int, message: Dictionary) -> void:
 	"""Audit #14 v0.9.530 — party-channel chat. Broadcasts to every member
@@ -6544,6 +6765,17 @@ func handle_disconnect(peer_id: int):
 	# so a reconnect starts fresh (and re-receives the transition warning
 	# next time they walk into the zone).
 	_pvp_zone_last_state.erase(peer_id)
+
+	# Audit #14 PvP Slice B (v0.9.552) — drop any pending duel requests
+	# this peer was party to (challenger or target). Disconnect = implicit
+	# decline; no need to notify the other side beyond the offline drop.
+	var stale_duel_keys: Array = []
+	for key in pending_duel_requests:
+		var req: Dictionary = pending_duel_requests[key]
+		if int(req.get("challenger", -1)) == peer_id or int(req.get("target", -1)) == peer_id:
+			stale_duel_keys.append(key)
+	for key in stale_duel_keys:
+		pending_duel_requests.erase(key)
 
 	# Decrement IP connection count
 	if peer_ip != "" and ip_connection_counts.has(peer_ip):
