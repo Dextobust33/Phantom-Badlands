@@ -1275,7 +1275,7 @@ func generate_ascii_map(center_x: int, center_y: int, radius: int = 7) -> String
 
 	return "\n".join(map_lines)
 
-func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_centers: Array = [], current_post_threatened: bool = false) -> String:
+func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_centers: Array = [], current_post_threatened: bool = false, pvp_sack_locations: Array = []) -> String:
 	"""Generate complete map display with location info header.
 	Slice 6j — explored_tiles dict (key: "x,y", value: true) is mutated in
 	place: LOS-visible tiles are marked, and LOS-blocked tiles that were
@@ -1290,6 +1290,15 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	var threatened_post_set: Dictionary = {}
 	for ck in threatened_post_centers:
 		threatened_post_set[String(ck)] = true
+
+	# Audit #14 Slice D.2 — PvP sacks dropped at apex death tiles. Each entry
+	# in pvp_sack_locations is a dict with x,y; build "x,y" → true lookup so
+	# the renderer can stamp the gold $ glyph in one hash check per tile.
+	var pvp_sack_set: Dictionary = {}
+	for sack in pvp_sack_locations:
+		var sx = int(sack.get("x", -9999))
+		var sy = int(sack.get("y", -9999))
+		pvp_sack_set["%d,%d" % [sx, sy]] = true
 
 	# Check if at NPC post (new system)
 	if chunk_manager and chunk_manager.is_npc_post_tile(center_x, center_y):
@@ -1314,7 +1323,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 			output += _get_compass_line(center_x, center_y, post)
 			output += "\n"
 			output += "[center]"
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set)
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
 			output += "[/center]"
 			# Minimap — zoomed-out overview at small font, appended below the main map
 			output += "\n" + _generate_minimap(center_x, center_y, dungeon_locations)
@@ -1328,7 +1337,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 		output += "[color=#00FF00]Safe[/color] - [color=#87CEEB]%s[/color]\n" % tp.get("quest_giver", "Quest Giver")
 		output += "[center]"
 		if chunk_manager:
-			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set)
+			output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
 		else:
 			output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 		output += "[/center]"
@@ -1377,7 +1386,7 @@ func generate_map_display(center_x: int, center_y: int, radius: int = 11, nearby
 	# Add the main map (centered)
 	output += "[center]"
 	if chunk_manager:
-		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set)
+		output += _generate_new_map(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations, explored_tiles, threatened_post_set, pvp_sack_set)
 	else:
 		output += generate_ascii_map_with_merchants(center_x, center_y, radius, nearby_players, dungeon_locations, depleted_nodes, corpse_locations, bounty_locations)
 	output += "[/center]"
@@ -1958,7 +1967,7 @@ func bresenham_line(x0: int, y0: int, x1: int, y1: int) -> Array[Vector2i]:
 
 # ===== NEW MAP RENDERER (Chunk-based with LOS) =====
 
-func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}) -> String:
+func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players: Array = [], dungeon_locations: Array = [], depleted_nodes: Array = [], corpse_locations: Array = [], bounty_locations: Array = [], explored_tiles: Dictionary = {}, threatened_post_set: Dictionary = {}, pvp_sack_set: Dictionary = {}) -> String:
 	"""Generate ASCII map using chunk-based tile data with LOS raycasting.
 	Slice 6j — explored_tiles is mutated in place: any tile that resolves
 	to LOS-visible inside the vision circle is added to the set, and any
@@ -2095,7 +2104,7 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				line_parts.append("[color=#FF4400] ![/color]")
 				continue
 
-			# Priority: players > dungeons > bounties > corpses > entities > terrain
+			# Priority: players > dungeons > bounties > corpses > sacks > merchants > terrain
 			if player_positions.has(pos_key):
 				var players_here = player_positions[pos_key]
 				var first_player = players_here[0]
@@ -2113,6 +2122,11 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				line_parts.append("[color=#FF4500] ![/color]")
 			elif corpse_positions.has(pos_key):
 				line_parts.append("[color=#FF0000] X[/color]")
+			elif pvp_sack_set.has(pos_key):
+				# Audit #14 Slice D.2 — PvP loot sack dropped at apex death tile.
+				# Gold $ marks claimable contents (valor + gear + eggs + companion).
+				# Any player walking onto the tile auto-claims via handle_move.
+				line_parts.append("[color=#FFD700] $[/color]")
 			elif is_merchant_at(x, y):
 				var merchant_color = _get_merchant_map_color(x, y)
 				var merchant_char = _get_merchant_map_char(x, y)
