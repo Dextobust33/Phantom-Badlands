@@ -1510,6 +1510,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_duel_accept(peer_id, message)
 		"duel_decline":
 			handle_duel_decline(peer_id, message)
+		# Audit #14 PvP Slice C V1 (v0.9.553) — Apex zone auto-PvP. In apex
+		# frontier any player can attack any other player without consent.
+		"attack_player":
+			handle_attack_player(peer_id, message)
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
@@ -3675,6 +3679,165 @@ func _resolve_duel(challenger_peer: int, target_peer: int, stakes: String, chall
 			"payout": actual_payout,
 			"stakes": stakes,
 		})
+
+# =============================================================================
+# Audit #14 PvP Slice C V1 (v0.9.553) — Apex zone auto-PvP
+# =============================================================================
+# Zone IS the consent — anyone in apex frontier can be attacked by anyone else
+# in apex frontier. V1 uses the same instant dice-roll as the duel system for
+# speed of shipping. Slice B.2 will replace both duel + apex resolution with
+# a full combat-scene encounter (decks/hands/abilities).
+#
+# Loot transfer on KO (V1): 15% of victim's valor + 1 random equipped item
+# + 3 random non-equipped inventory items, all transferred DIRECTLY to the
+# killer's inventory. No sack tile yet — that's Slice D (along with eggs +
+# 1 non-registered companion drop). Killer's inventory cap respected.
+#
+# Respawn: KO'd player moves to their spawn post coords (or 0,0 if no spawn
+# post set) with full HP. Character + remaining gear preserved (permadeath
+# stays PvE-only per audit lock).
+
+const PVP_KO_VALOR_PCT: float = 0.15
+const PVP_KO_INVENTORY_DROP_COUNT: int = 3
+
+func handle_attack_player(peer_id: int, message: Dictionary) -> void:
+	"""V1 — direct attack on another player in the apex zone. Validates: both
+	online, both in apex zone, attacker adjacent to target, attacker not in
+	combat. Resolves via dice-roll; on KO, transfers loot and respawns the
+	victim. Slice B.2 will route this through a full combat-scene encounter."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var target_name = String(message.get("target", "")).strip_edges()
+	if target_name == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Usage: attack <player>[/color]"})
+		return
+	var target_peer = _resolve_username_to_peer(target_name)
+	if target_peer < 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]No such online player: %s[/color]" % target_name})
+		return
+	if target_peer == peer_id:
+		return
+	var attacker = characters[peer_id]
+	var victim = characters[target_peer]
+	if not world_system.is_apex_frontier(attacker.x, attacker.y):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You can only attack other players in the Apex Frontier.[/color]"})
+		return
+	if not world_system.is_apex_frontier(victim.x, victim.y):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s is not in the Apex Frontier.[/color]" % target_name})
+		return
+	# Adjacent (Chebyshev distance 1) — same gate as bump interactions.
+	var dx = abs(attacker.x - victim.x)
+	var dy = abs(attacker.y - victim.y)
+	if dx > 1 or dy > 1 or (dx == 0 and dy == 0):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You need to be adjacent to %s.[/color]" % target_name})
+		return
+	if combat_mgr.is_in_combat(peer_id) or combat_mgr.is_in_combat(target_peer):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]One of you is in combat — can't engage right now.[/color]"})
+		return
+	# Resolve via dice-roll (same formula as duel).
+	var att_power = _compute_duel_power(attacker)
+	var vic_power = _compute_duel_power(victim)
+	var att_roll = int(float(att_power) * randf_range(0.7, 1.3))
+	var vic_roll = int(float(vic_power) * randf_range(0.7, 1.3))
+	var att_won = att_roll >= vic_roll
+	var winner_peer = peer_id if att_won else target_peer
+	var loser_peer = target_peer if att_won else peer_id
+	var winner_name = String(characters[winner_peer].name)
+	var loser_name = String(characters[loser_peer].name)
+	var msg = (
+		"[color=#FF2020]⚔ APEX ATTACK![/color] "
+		+ "[color=#FFD700]%s[/color] (roll %d) vs [color=#FFD700]%s[/color] (roll %d)."
+		+ "\n  → [color=#88FF88]%s wins![/color]"
+	) % [String(attacker.name), att_roll, String(victim.name), vic_roll, winner_name]
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+	send_to_peer(target_peer, {"type": "text", "message": msg})
+	# Transfer loot + respawn the loser.
+	_apply_apex_ko(winner_peer, loser_peer)
+
+func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
+	"""V1 — transfer 15% valor + 1 equipped + 3 inventory items from loser to
+	winner. Respawn loser at spawn post with full HP. Saves both characters.
+	Skips item transfer when winner's inventory is full (loot is lost rather
+	than blocking the KO). Eggs + non-registered companion drops are Slice D."""
+	if not characters.has(winner_peer) or not characters.has(loser_peer):
+		return
+	var winner = characters[winner_peer]
+	var loser = characters[loser_peer]
+	# 1) Valor transfer.
+	var loser_account_id = String(peers.get(loser_peer, {}).get("account_id", ""))
+	var winner_account_id = String(peers.get(winner_peer, {}).get("account_id", ""))
+	var valor_transferred = 0
+	if loser_account_id != "" and winner_account_id != "":
+		var loser_valor = persistence.get_valor(loser_account_id)
+		valor_transferred = int(floor(float(loser_valor) * PVP_KO_VALOR_PCT))
+		if valor_transferred > 0:
+			persistence.spend_valor(loser_account_id, valor_transferred)
+			persistence.add_valor(winner_account_id, valor_transferred)
+	# 2) 1 random equipped item — pick a random non-empty slot.
+	var equipped_slots = ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
+	var equipped_with_items: Array = []
+	for slot in equipped_slots:
+		var item = loser.equipped.get(slot, null)
+		if item != null and item is Dictionary and not item.is_empty():
+			equipped_with_items.append(slot)
+	var transferred_items: Array = []
+	if not equipped_with_items.is_empty():
+		var drop_slot = equipped_with_items[randi() % equipped_with_items.size()]
+		var dropped_item = loser.equipped[drop_slot]
+		loser.equipped[drop_slot] = {}
+		# Push to winner if they have inventory room.
+		var winner_inv_max = 40  # Mirrors Character.MAX_INVENTORY_SIZE
+		if winner.inventory.size() < winner_inv_max:
+			winner.inventory.append(dropped_item)
+			transferred_items.append(String(dropped_item.get("name", drop_slot.capitalize())))
+		# else: item is lost (winner inventory full). Acceptable V1.
+	# 3) Up to 3 random non-equipped inventory items.
+	var inv_indices: Array = []
+	for i in range(loser.inventory.size()):
+		inv_indices.append(i)
+	inv_indices.shuffle()
+	var n_to_drop = min(PVP_KO_INVENTORY_DROP_COUNT, inv_indices.size())
+	# Remove from highest index first so earlier indices stay valid.
+	var picked_indices: Array = inv_indices.slice(0, n_to_drop)
+	picked_indices.sort()
+	picked_indices.reverse()
+	for idx in picked_indices:
+		var item = loser.inventory[idx]
+		loser.inventory.remove_at(idx)
+		var winner_inv_max = 40  # Mirrors Character.MAX_INVENTORY_SIZE
+		if winner.inventory.size() < winner_inv_max:
+			winner.inventory.append(item)
+			transferred_items.append(String(item.get("name", "item")))
+	# 4) Respawn loser at spawn post with full HP.
+	var respawn_x = 0
+	var respawn_y = 0
+	# Try the character's set spawn post first; fall back to origin.
+	# Account's spawn_post is stored on character via spawn_post_x/y if any
+	# slice has set it. For V1 just use 0,0 as a safe default.
+	loser.x = respawn_x
+	loser.y = respawn_y
+	loser.current_hp = loser.get_total_max_hp()
+	# Send updates to both players.
+	send_character_update(winner_peer)
+	send_character_update(loser_peer)
+	if winner_account_id != "":
+		persistence.save_character(winner_account_id, winner)
+	if loser_account_id != "":
+		persistence.save_character(loser_account_id, loser)
+	# Push fresh location to loser so client snaps to the spawn point.
+	send_location_update(loser_peer)
+	send_location_update(winner_peer)
+	# Loot summary message.
+	var loot_msg = "[color=#FF8800]✦ LOOT TRANSFERRED:[/color] [color=#FFD700]%d valor[/color]" % valor_transferred
+	if not transferred_items.is_empty():
+		loot_msg += " + [color=#9ACD32]%d items[/color] (%s)" % [transferred_items.size(), ", ".join(transferred_items)]
+	loot_msg += " [color=#808080]→[/color] [color=#88FF88]%s[/color]" % String(winner.name)
+	send_to_peer(winner_peer, {"type": "text", "message": loot_msg})
+	send_to_peer(loser_peer, {"type": "text", "message": loot_msg})
+	# Loser respawn notification.
+	send_to_peer(loser_peer, {"type": "text", "message": "[color=#FFA500]You've been respawned at your home post. Your character survives — only loot transferred.[/color]"})
 
 func handle_party_message(peer_id: int, message: Dictionary) -> void:
 	"""Audit #14 v0.9.530 — party-channel chat. Broadcasts to every member
@@ -6422,6 +6585,9 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 				"class": other_char.get("class_type", ""),
 				"companion": comp_data,
 				"in_my_party": is_party_mate,
+				# Audit #14 PvP Slice C V1 (v0.9.553) — x/y already present
+				# above; client uses them to detect adjacency for the PvP
+				# attack action bar surface in apex zone.
 				# Appearance variant — drives the recolor of this player's
 				# class ASCII art in hover tooltips, popup, etc. on the
 				# requesting client.
