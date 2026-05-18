@@ -29,18 +29,13 @@ func can_accept_quest(character: Character, quest_id: String) -> Dictionary:
 	if quest.is_empty():
 		return {"can_accept": false, "reason": "Quest not found"}
 
-	# Audit #6 v0.9.517 — Repeatable chains skip the "already completed" gate
-	# IF the chain's cooldown has elapsed. The chain-final-stage `repeatable: true`
-	# flag is propagated to the chain via _chain_is_repeatable (server scrubs the
-	# stage's completed_quests entry on cooldown stamp anyway, so this path
-	# mainly catches edge cases / stale state).
+	# v0.9.525 — Repeatable chains skip the "already completed" gate immediately
+	# (no wall-clock cooldown per [[no-real-time-gates]]). Server scrubs the
+	# chain's stage entries from completed_quests on chain completion, so this
+	# path mainly catches edge cases / stale state.
 	if not quest.is_daily and character.has_completed_quest(quest_id):
 		var chain_id = String(quest.get("chain_id", ""))
-		var allow_repeat = false
-		if chain_id != "" and quest_db._chain_is_repeatable(chain_id):
-			var ready_at = int(character.chain_cooldowns.get(chain_id, 0))
-			if ready_at > 0 and ready_at <= int(Time.get_unix_time_from_system()):
-				allow_repeat = true
+		var allow_repeat = chain_id != "" and quest_db._chain_is_repeatable(chain_id)
 		if not allow_repeat:
 			return {"can_accept": false, "reason": "You have already completed this quest"}
 

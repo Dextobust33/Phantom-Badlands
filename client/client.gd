@@ -24373,8 +24373,22 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.525 — Hotfix: rip ALL real-world time gates.
+	display_game("[color=#00FF00]v0.9.525[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]No more real-world clock gates anywhere. Permadeath sessions don't punish players who can only play in bursts — or in marathons.[/color]")
+	display_game("  • [b]Repeatable chains are instant.[/b] T1/T2/T3 chains (13 total) reappear [color=#9ACD32]immediately[/color] after completion — no 24h cooldown. Run them as much as you want for valor / eggs / titles. T4+ stay one-shot (achievement-style).")
+	display_game("  • [b]Daily quests are no longer daily.[/b] The 24h re-accept cooldown on daily quests is ripped — any \"daily\" quest can be re-accepted immediately after turn-in. Combined with the v0.9.453 regenerating quest board, the quest pipeline is now fully wall-clock-free.")
+	display_game("  • [b]Walls don't decay.[/b] The 72-hour grace period that crumbled un-enclosed walls is disabled. Build whatever you want, whenever you want — your structures stay.")
+	display_game("  • [b]Water never depletes.[/b] Fishing tiles are now infinite — no 5-minute respawn timer. Mining / forestry nodes near posts no longer respawn-then-deplete either; once gathered, they stay gathered (consistent with far-from-post behaviour).")
+	display_game("  • [b]Guards stay forever.[/b] The food-decay system that removed guards over real-time days is disabled. Once hired, they hold their post until you dismiss them.")
+	display_game("  • [b]Posts don't go \"abandoned\".[/b] The 7d Inactive / 30d Abandoned decay tags on player posts are gone. Take any break you want.")
+	display_game("  • [b]NPC vendor stock is stable.[/b] The Curiosity Trader / Forge Master / Provisioner / Mystic etc. no longer rotate their pool daily — each post has its own stable inventory. Different posts still carry different goods (so traveling rewards variety), but you don't have to chase a daily-reset window.")
+	display_game("  • [b]Dynamic quest board content is stable.[/b] Quests at each board index no longer rotate by date. The regenerating slide-forward window (v0.9.453) still keeps the board fresh as you complete things.")
+	display_game("  • [b]Reason:[/b] this game is built for any session length — permadeath, exploration, settlement-building. Real-world clock gates punish bursts and marathons alike. Saved as a permanent workflow rule.")
+	display_game("")
+
 	# v0.9.524 — Audit #6 Repeatable T3 chains + Audit #10 Apex Zone affinity.
-	display_game("[color=#00FF00]v0.9.524[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.524[/color]")
 	display_game("  [color=#FFD700]All T3 chains now repeatable; apex zones get themed affinity descriptors.[/color]")
 	display_game("  • [b]Repeatable T3 chains[/b] (Audit #6). [color=#FFAA00]Trollish Tide[/color] and [color=#FFAA00]Stone Vigil[/color] now also have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in. All 13 chains at T1+T2+T3 are now repeatable. Higher tiers (T4-T9) stay one-shot — those are the achievement-style content.")
 	display_game("  • [b]Apex Zone affinity descriptors[/b] (Audit #10). The HUD apex tag now appends each zone's affinity theme — [color=#9F70FF]Burning Reach (Fire)[/color], [color=#9F70FF]Frostbound Verge (Ice)[/color], [color=#9F70FF]Sundered Hollows (Shadow)[/color], [color=#9F70FF]Cinder Wastes (Ash)[/color]. Pure cosmetic flavor — gives each named zone a thematic identity beyond just a quadrant name.")
@@ -24407,14 +24421,6 @@ func display_changelog():
 	display_game("  • Continues closing pieces of Audit #12 (~82% → ~88%) and Audit #14 (~76% → ~78%).")
 	display_game("")
 
-	# v0.9.520 — Audit #15 Help refresh + Audit #14 /mentors + Audit #12 Pylon + Garden Plot.
-	display_game("[color=#00FFFF]v0.9.520[/color]")
-	display_game("  [color=#FFD700]Help page brought up to date, mentor discoverability extended, and the cosmetic catalogue grows to 11.[/color]")
-	display_game("  • [b]Help page Recent Additions section[/b] (Audit #15). [color=#9ACD32]/help[/color] now ends with a [color=#FFD700]RECENT ADDITIONS[/color] section listing the v0.9.4xx-5xx features (Mentor system, Apex Frontier, Apex Variants, Repeatable T1 chains, Threat Corridor HUD, Sanctuary Stable, Tier Ascension Fusion, Hybrid Fusion, Help Buttons rollout, Clan polish, Status page, Cosmetic buildables catalogue). Last help page refresh was v0.9.465 — this catches up 50+ versions.")
-	display_game("  • [b]/mentors command[/b] (Audit #14). New chat command listing online mentors by name + level + class with a hint pointing at [color=#9ACD32]/w <name>[/color]. Pairs with the [color=#FFD700]★ N mentors online[/color] header (v0.9.518) — new players can find a specific mentor to whisper.")
-	display_game("  • [b]Pylon + Garden Plot[/b] (Audit #12). Two more cosmetic buildables — Pylon ([color=#DDDDFF]p[/color], walkable, Construction skill 11) is a wayfinding marker; Garden Plot ([color=#5A8A3A]g[/color], walkable, Construction skill 4) is the new cheapest entry-level decoration. Catalogue now spans 11 structures across Construction skill 4 → 25.")
-	display_game("  • Continues the audit-completion push — Audit #15 ~85% → 92%, Audit #14 ~74% → 76%, Audit #12 ~80% → 82%.")
-	display_game("")
 
 
 
@@ -26813,7 +26819,7 @@ func show_help():
 [color=#00FFFF]Mentor System:[/color] [color=#9ACD32]/mentor on[/color] (Lv 20+) volunteers you as a mentor — gold [color=#FFD700]★[/color] shows on your name. [color=#9ACD32]/mentors[/color] lists who's online.
 [color=#00FFFF]Apex Frontier:[/color] >1500 tiles from origin = [color=#9F70FF]⚡ APEX[/color] zone. +10%% XP. Four named zones (Burning Reach NE / Frostbound Verge NW / Sundered Hollows SW / Cinder Wastes SE).
 [color=#00FFFF]Apex Variants:[/color] Every monster spawned in apex frontier is an [color=#9F70FF]Apex[/color] variant — +25%% HP, +10%% damage, +30%% XP total, +50%% Soul Gems. Drops Apex Crystal (750 valor) at 12%% rate.
-[color=#00FFFF]Repeatable T1 chains:[/color] Goblin Menace, Skeleton Lord, Wolf Pack, Rat Plague, Kobold Trouble all repeat after 24h cooldown.
+[color=#00FFFF]Repeatable starter chains:[/color] T1 + T2 + T3 chains (13 total) are immediately repeatable after completion. Higher tiers stay one-shot.
 [color=#00FFFF]Threat Corridor HUD:[/color] Within 80 tiles of an active T2+ world dungeon, the Area line surfaces [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color].
 [color=#00FFFF]Sanctuary Stable:[/color] Magenta [color=#FF80FF]C[/color] tile at T5+ posts — live kennel access mid-character (Deposit / Withdraw / Return / Check Out / Fuse). Build one yourself (Construction Lv 35).
 [color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any sub-tier mix) + Ascension Catalyst → same type at tier+1. Keeps your favorite pet, raises rank. Catalysts drop T6+.

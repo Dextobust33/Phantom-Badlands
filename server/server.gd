@@ -1146,14 +1146,13 @@ func _process(delta):
 		if DIAG_TIMING_ENABLED:
 			_diag_guard_decay_us = Time.get_ticks_usec() - _gd_start_us
 
-	# Wall decay timer
-	wall_decay_timer += delta
-	if wall_decay_timer >= WALL_DECAY_CHECK_INTERVAL:
-		wall_decay_timer = 0.0
-		var _wd_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
-		_tick_wall_decay()
-		if DIAG_TIMING_ENABLED:
-			_diag_wall_decay_us = Time.get_ticks_usec() - _wd_start_us
+	# v0.9.525 — Wall decay ripped per [[no-real-time-gates]]. Un-enclosed walls
+	# no longer crumble after 72h. Timer / function kept in code for back-compat
+	# but the tick path is gated off.
+	# wall_decay_timer += delta
+	# if wall_decay_timer >= WALL_DECAY_CHECK_INTERVAL:
+	# 	wall_decay_timer = 0.0
+	# 	_tick_wall_decay()
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -13269,7 +13268,7 @@ func _maybe_send_chain_hint(peer_id: int, quest: Dictionary) -> void:
 		+ "  • [color=#FFD700]Home Stones[/color] (Egg + Equipment / Companion) — these survive permadeath via your Sanctuary.\n"
 		+ "  • A [color=#FFD700]Chain Title[/color] (worn via Titles command).\n\n"
 		+ "[color=#FFD700]── Repeatable starter chains ──[/color]\n"
-		+ "T1 + T2 chains have a [color=#9ACD32]24h cooldown[/color] after completion — they reappear, so you can run them again on the same character. Great for valor / egg / title farming."
+		+ "T1, T2, and T3 chains are [color=#9ACD32]immediately repeatable[/color] — they reappear on the quest board after completion, so you can run them as many times as you like. Great for valor / egg / title farming. Higher-tier chains (T4+) stay one-shot."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
@@ -15707,20 +15706,17 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 					character.completed_chains.append(chain_id)
 				chain_completed = true
 				chain_progress_msg += "[color=#FFD700]Chain complete: %s![/color]" % chain_id.replace("_", " ").capitalize()
-				# Audit #6 v0.9.517 — Repeatable starter chains. T1 chains marked
-				# `repeatable: true` on the final stage get a 24h cooldown stamped
-				# into character.chain_cooldowns. After the cooldown elapses, the
-				# stage-1 starter at the chain's home post becomes available again.
+				# Audit #6 v0.9.517 + v0.9.525 — Repeatable starter chains. Chains
+				# marked `repeatable: true` on the final stage immediately become
+				# available again at the chain's home post. v0.9.525 ripped the
+				# 24h cooldown per [[no-real-time-gates]] — gameplay-driven gates
+				# only (steps/kills/completions), no wall-clock timers.
 				if bool(quest.get("repeatable", false)):
-					# 86400 = 24h cooldown.
-					var ready_at = int(Time.get_unix_time_from_system()) + 86400
-					character.chain_cooldowns[chain_id] = ready_at
 					# Scrub the chain's stage quests from completed_quests so that
-					# after the cooldown elapses, re-accepting the stage-1 quest
-					# passes the can_accept_quest "already completed" gate AND the
-					# chain_in_progress check in get_chain_starters_for_post stops
-					# tripping. completed_chains keeps the chain_id permanently so
-					# the title remains earned even when scrubbed.
+					# re-accepting stage 1 passes the can_accept_quest "already
+					# completed" gate AND the chain_in_progress check in
+					# get_chain_starters_for_post stops tripping. completed_chains
+					# keeps the chain_id permanently so the title remains earned.
 					var to_scrub: Array = []
 					for cqid in character.completed_quests:
 						var cq = quest_db.get_quest(cqid)
@@ -15728,7 +15724,7 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 							to_scrub.append(cqid)
 					for cqid in to_scrub:
 						character.completed_quests.erase(cqid)
-					chain_progress_msg += "  [color=#9ACD32](Repeatable in 24h)[/color]"
+					chain_progress_msg += "  [color=#9ACD32](Repeatable — available again now)[/color]"
 			elif next_in_chain != "":
 				# Mid-chain — auto-add the next stage to active quests
 				var next_quest = quest_db.get_quest(next_in_chain)
@@ -22732,17 +22728,12 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	var effective_tier = wilderness_tier - suppression
 	return clamp(effective_tier, floor_tier, wilderness_tier)
 
-func _compute_post_inactivity_state(post_meta: Dictionary) -> String:
-	"""Audit #12 Slice 4/5 — return 'active' / 'inactive' / 'abandoned'
-	based on last_tended_at. Falls back to created_at when last_tended_at
-	is missing (legacy posts created before Slice 4)."""
-	var now_ts = Time.get_unix_time_from_system()
-	var tended_ts = float(post_meta.get("last_tended_at", post_meta.get("created_at", now_ts)))
-	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
-	if days_inactive >= float(POST_ABANDONED_THRESHOLD_DAYS):
-		return "abandoned"
-	if days_inactive >= float(POST_INACTIVE_THRESHOLD_DAYS):
-		return "inactive"
+func _compute_post_inactivity_state(_post_meta: Dictionary) -> String:
+	"""v0.9.525 — Inactivity decay ripped per [[no-real-time-gates]]. Posts
+	never tag as 'inactive' (7d) or 'abandoned' (30d) anymore — the wall-clock
+	gate was incompatible with the game's any-session-length design. Always
+	returns 'active'. The `last_tended_at` field stays on posts for back-compat
+	but no longer drives decay."""
 	return "active"
 
 func _update_player_post_bubble_cache():
@@ -23846,36 +23837,11 @@ func _find_nearby_tower(gx: int, gy: int, search_radius: int = 2) -> bool:
 	return false
 
 func _tick_guard_decay():
-	"""Check all active guards for food expiry. Remove expired guards."""
-	if active_guards.is_empty():
-		return
-	var now = Time.get_unix_time_from_system()
-	var expired = []
-	for pos_key in active_guards:
-		var guard = active_guards[pos_key]
-		var days_since_fed = (now - guard.get("last_fed", now)) / 86400.0
-		if days_since_fed >= guard.get("food_remaining", 0):
-			expired.append(pos_key)
-
-	if expired.is_empty():
-		return
-
-	for pos_key in expired:
-		var guard = active_guards[pos_key]
-		var owner = guard.get("owner", "")
-		active_guards.erase(pos_key)
-		# Notify owner if online
-		for pid in peers:
-			if _get_username(pid) == owner:
-				send_to_peer(pid, {
-					"type": "text",
-					"message": "[color=#FF8800]Your guard at %s has left — out of food![/color]" % pos_key
-				})
-				break
-
-	_update_guard_cache()
-	persistence.save_guards(active_guards)
-	log_message("Guard decay: %d guards expired" % expired.size())
+	"""v0.9.525 — Guard food decay ripped per [[no-real-time-gates]]. Guards
+	no longer consume food over time; once hired they stay forever (until
+	dismissed). The `food_remaining` / `last_fed` fields remain on guard
+	dicts for back-compat but no longer drive removal."""
+	return
 
 func _tick_wall_decay():
 	"""Remove orphan walls (not part of any enclosure) after grace period."""

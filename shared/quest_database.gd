@@ -1657,11 +1657,11 @@ func get_chain_starters_for_post(trading_post_id: String, completed_chains: Arra
 	Filters out chains the character has already completed or already started
 	(i.e., is currently doing some stage of the chain).
 
-	Audit #6 v0.9.517 — `chain_cooldowns` (chain_id → unix_timestamp_ready) lets
-	repeatable chains reappear after their cooldown elapses. If the final stage
-	is marked `repeatable: true` and the cooldown has passed, the stage-1
-	starter is offered again. Chains never marked repeatable stay one-shot."""
-	var now: int = int(Time.get_unix_time_from_system())
+	v0.9.525 — chains marked `repeatable: true` reappear IMMEDIATELY after
+	completion (no wall-clock cooldown per [[no-real-time-gates]] feedback memo).
+	The `chain_cooldowns` parameter is kept for API back-compat but now ignored.
+	If the player wants chain X again and X is repeatable, they get it on the
+	next quest-board refresh. Chains never marked repeatable stay one-shot."""
 	var available: Array = []
 	for quest_id in QUESTS:
 		var quest = QUESTS[quest_id]
@@ -1671,12 +1671,8 @@ func get_chain_starters_for_post(trading_post_id: String, completed_chains: Arra
 			continue
 		var chain_id = String(quest.get("chain_id", ""))
 		if chain_id in completed_chains:
-			# Repeatable check: chain must be marked repeatable AND cooldown elapsed.
-			var is_repeatable = _chain_is_repeatable(chain_id)
-			if not is_repeatable:
-				continue
-			var ready_at = int(chain_cooldowns.get(chain_id, 0))
-			if ready_at > now:
+			# Repeatable check: only offer again if chain is marked repeatable.
+			if not _chain_is_repeatable(chain_id):
 				continue
 		# Skip if any stage of this chain is currently active or already completed
 		var chain_in_progress = false
@@ -1868,9 +1864,12 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 # ===== DATE + DIRECTION HELPERS =====
 
 static func _get_date_string() -> String:
-	"""Returns YYYYMMDD string from system time for daily quest seeding."""
-	var dt = Time.get_datetime_dict_from_system()
-	return "%04d%02d%02d" % [dt.year, dt.month, dt.day]
+	"""v0.9.525 — Daily rotation ripped per [[no-real-time-gates]]. Returns a
+	static string so each (post, character, index) seed is stable — quest
+	content at any board slot doesn't change based on wall-clock date.
+	The regenerating quest board (Slice 13 v0.9.453) still slides forward as
+	quests are completed, so players always see fresh procedural content."""
+	return "v0.9.525-static"
 
 static func _get_direction_text(from: Vector2i, to: Vector2i) -> String:
 	"""Get compass direction from one point to another (e.g. 'north', 'southeast')."""
