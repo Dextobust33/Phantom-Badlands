@@ -3710,6 +3710,29 @@ func _resolve_duel(challenger_peer: int, target_peer: int, stakes: String, chall
 const PVP_KO_VALOR_PCT: float = 0.15
 const PVP_KO_INVENTORY_DROP_COUNT: int = 3
 
+# Audit #14 PvP Slice D.2 (v0.9.557) — visible loot sack tile. Replaces
+# direct transfer from Slice C/D V1 with a sack dropped at the death position
+# that ANYONE can claim by walking onto the tile. Bounty payouts stay direct
+# to killer (bounty contracts the assassin, not the looter — separate concern).
+# Memory-only storage V1; sacks lost on server restart.
+# Keyed by "x,y" string. Value is a sack dict (see _drop_pvp_sack below).
+var active_pvp_sacks: Dictionary = {}
+
+func _pvp_sack_key(x: int, y: int) -> String:
+	return "%d,%d" % [x, y]
+
+func _get_visible_pvp_sacks(center_x: int, center_y: int, radius: int) -> Array:
+	"""Return sacks within vision_radius of the given coord. Map rendering
+	pipeline uses this to stamp $ markers."""
+	var visible: Array = []
+	for key in active_pvp_sacks:
+		var sack: Dictionary = active_pvp_sacks[key]
+		var sx = int(sack.get("x", 0))
+		var sy = int(sack.get("y", 0))
+		if abs(sx - center_x) <= radius and abs(sy - center_y) <= radius:
+			visible.append(sack)
+	return visible
+
 func handle_attack_player(peer_id: int, message: Dictionary) -> void:
 	"""V1 — direct attack on another player in the apex zone. Validates: both
 	online, both in apex zone, attacker adjacent to target, attacker not in
@@ -3767,62 +3790,60 @@ func handle_attack_player(peer_id: int, message: Dictionary) -> void:
 	_apply_apex_ko(winner_peer, loser_peer)
 
 func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
-	"""V1 — transfer 15% valor + 1 equipped + 3 inventory items from loser to
-	winner. Respawn loser at spawn post with full HP. Saves both characters.
-	Skips item transfer when winner's inventory is full (loot is lost rather
-	than blocking the KO). Eggs + non-registered companion drops are Slice D."""
+	"""Slice D.2 (v0.9.557) — drop a VISIBLE loot sack at the loser's death
+	tile. Replaces the Slice C/D V1 direct-transfer flow. Contents:
+	  - 15% of loser's valor (taken from account upfront, locked in sack)
+	  - 1 random equipped item (slot emptied immediately)
+	  - up to 3 random non-equipped inventory items
+	  - up to 3 random unhatched eggs
+	  - 1 random non-active companion
+	Sack is claimable by ANY player who walks onto its tile (including the
+	killer, the victim returning, or a third-party scavenger).
+	Bounty payout stays DIRECT to killer (bounties pay for the kill, not for
+	looting the body — separate concern, audit framing intact).
+	Respawn loser at origin (0,0) with full HP. Saves loser character."""
 	if not characters.has(winner_peer) or not characters.has(loser_peer):
 		return
 	var winner = characters[winner_peer]
 	var loser = characters[loser_peer]
-	# 1) Valor transfer.
+	var death_x = int(loser.x)
+	var death_y = int(loser.y)
 	var loser_account_id = String(peers.get(loser_peer, {}).get("account_id", ""))
 	var winner_account_id = String(peers.get(winner_peer, {}).get("account_id", ""))
-	var valor_transferred = 0
-	if loser_account_id != "" and winner_account_id != "":
+	# 1) Pull 15% valor from the loser's account into the sack pool.
+	var sack_valor = 0
+	if loser_account_id != "":
 		var loser_valor = persistence.get_valor(loser_account_id)
-		valor_transferred = int(floor(float(loser_valor) * PVP_KO_VALOR_PCT))
-		if valor_transferred > 0:
-			persistence.spend_valor(loser_account_id, valor_transferred)
-			persistence.add_valor(winner_account_id, valor_transferred)
-	# 2) 1 random equipped item — pick a random non-empty slot.
+		sack_valor = int(floor(float(loser_valor) * PVP_KO_VALOR_PCT))
+		if sack_valor > 0:
+			persistence.spend_valor(loser_account_id, sack_valor)
+	# 2) 1 random equipped item — pick a random non-empty slot, push to sack.
 	var equipped_slots = ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
 	var equipped_with_items: Array = []
 	for slot in equipped_slots:
 		var item = loser.equipped.get(slot, null)
 		if item != null and item is Dictionary and not item.is_empty():
 			equipped_with_items.append(slot)
-	var transferred_items: Array = []
+	var sack_items: Array = []
 	if not equipped_with_items.is_empty():
 		var drop_slot = equipped_with_items[randi() % equipped_with_items.size()]
 		var dropped_item = loser.equipped[drop_slot]
 		loser.equipped[drop_slot] = {}
-		# Push to winner if they have inventory room.
-		var winner_inv_max = 40  # Mirrors Character.MAX_INVENTORY_SIZE
-		if winner.inventory.size() < winner_inv_max:
-			winner.inventory.append(dropped_item)
-			transferred_items.append(String(dropped_item.get("name", drop_slot.capitalize())))
-		# else: item is lost (winner inventory full). Acceptable V1.
+		sack_items.append(dropped_item)
 	# 3) Up to 3 random non-equipped inventory items.
 	var inv_indices: Array = []
 	for i in range(loser.inventory.size()):
 		inv_indices.append(i)
 	inv_indices.shuffle()
 	var n_to_drop = min(PVP_KO_INVENTORY_DROP_COUNT, inv_indices.size())
-	# Remove from highest index first so earlier indices stay valid.
 	var picked_indices: Array = inv_indices.slice(0, n_to_drop)
 	picked_indices.sort()
 	picked_indices.reverse()
 	for idx in picked_indices:
-		var item = loser.inventory[idx]
+		sack_items.append(loser.inventory[idx])
 		loser.inventory.remove_at(idx)
-		var winner_inv_max = 40  # Mirrors Character.MAX_INVENTORY_SIZE
-		if winner.inventory.size() < winner_inv_max:
-			winner.inventory.append(item)
-			transferred_items.append(String(item.get("name", "item")))
 	# 4) Up to 3 random unhatched eggs.
-	# Slice D V1 (v0.9.554) — eggs added to direct transfer. Visible sack
-	# tile + bump-claim mechanic deferred to Slice D.2.
+	var sack_eggs: Array = []
 	var eggs_arr: Array = loser.incubating_eggs
 	if eggs_arr.size() > 0:
 		var egg_indices: Array = []
@@ -3834,11 +3855,10 @@ func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
 		picked_eggs.sort()
 		picked_eggs.reverse()
 		for ei in picked_eggs:
-			var egg = eggs_arr[ei]
+			sack_eggs.append(eggs_arr[ei])
 			eggs_arr.remove_at(ei)
-			winner.incubating_eggs.append(egg)
-			transferred_items.append("egg (%s)" % String(egg.get("name", "?")))
 	# 5) 1 random non-active companion.
+	var sack_companion: Dictionary = {}
 	var collected: Array = loser.collected_companions
 	var active_comp_id: String = ""
 	if loser.active_companion is Dictionary and not loser.active_companion.is_empty():
@@ -3848,48 +3868,135 @@ func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
 		var c: Dictionary = collected[i]
 		var cid: String = String(c.get("id", ""))
 		if cid != "" and cid == active_comp_id:
-			continue  # skip the currently-active companion
+			continue
 		eligible_comp_indices.append(i)
 	if not eligible_comp_indices.is_empty():
 		var comp_idx = eligible_comp_indices[randi() % eligible_comp_indices.size()]
-		var stolen_companion = collected[comp_idx]
+		sack_companion = collected[comp_idx]
 		collected.remove_at(comp_idx)
-		winner.collected_companions.append(stolen_companion)
-		transferred_items.append("companion %s" % String(stolen_companion.get("name", "?")))
-	# 6) Respawn loser at spawn post with full HP.
-	var respawn_x = 0
-	var respawn_y = 0
-	# Try the character's set spawn post first; fall back to origin.
-	# Account's spawn_post is stored on character via spawn_post_x/y if any
-	# slice has set it. For V1 just use 0,0 as a safe default.
-	loser.x = respawn_x
-	loser.y = respawn_y
+	# 6) Drop the sack at the death tile (only if something to claim).
+	var sack_has_contents = sack_valor > 0 or not sack_items.is_empty() or not sack_eggs.is_empty() or not sack_companion.is_empty()
+	if sack_has_contents:
+		var sack_key = _pvp_sack_key(death_x, death_y)
+		# If a sack already exists at this tile (rare — same tile KO twice
+		# before claim), merge new contents in.
+		var existing = active_pvp_sacks.get(sack_key, {})
+		if existing.is_empty():
+			active_pvp_sacks[sack_key] = {
+				"x": death_x,
+				"y": death_y,
+				"valor": sack_valor,
+				"items": sack_items,
+				"eggs": sack_eggs,
+				"companion": sack_companion,
+				"victim_name": String(loser.name),
+				"killer_name": String(winner.name),
+				"created_at": Time.get_unix_time_from_system(),
+			}
+		else:
+			existing["valor"] = int(existing.get("valor", 0)) + sack_valor
+			var existing_items: Array = existing.get("items", [])
+			existing_items.append_array(sack_items)
+			existing["items"] = existing_items
+			var existing_eggs: Array = existing.get("eggs", [])
+			existing_eggs.append_array(sack_eggs)
+			existing["eggs"] = existing_eggs
+			if existing.get("companion", {}).is_empty() and not sack_companion.is_empty():
+				existing["companion"] = sack_companion
+			active_pvp_sacks[sack_key] = existing
+	# 7) Respawn loser at spawn post with full HP.
+	loser.x = 0
+	loser.y = 0
 	loser.current_hp = loser.get_total_max_hp()
-	# Send updates to both players.
-	send_character_update(winner_peer)
+	# Send updates.
 	send_character_update(loser_peer)
-	if winner_account_id != "":
-		persistence.save_character(winner_account_id, winner)
 	if loser_account_id != "":
 		persistence.save_character(loser_account_id, loser)
-	# Push fresh location to loser so client snaps to the spawn point.
 	send_location_update(loser_peer)
-	send_location_update(winner_peer)
-	# Audit #14 PvP Slice E (v0.9.556) — bounty payout. If the victim had
-	# any active bounties, killer collects the full pool on top of the loot
-	# transfer. Bounty closes (cleared from the dict) after the first KO.
+	# Bounty payout — direct to killer (separate from sack loot).
 	var bounty_payout = _payout_bounties_on_ko(winner_peer, String(loser.name))
-	# Loot summary message.
-	var loot_msg = "[color=#FF8800]✦ LOOT TRANSFERRED:[/color] [color=#FFD700]%d valor[/color]" % valor_transferred
-	if not transferred_items.is_empty():
-		loot_msg += " + [color=#9ACD32]%d items[/color] (%s)" % [transferred_items.size(), ", ".join(transferred_items)]
-	loot_msg += " [color=#808080]→[/color] [color=#88FF88]%s[/color]" % String(winner.name)
+	# Surface chat messages.
+	if sack_has_contents:
+		var summary_parts: Array = []
+		if sack_valor > 0:
+			summary_parts.append("%d valor" % sack_valor)
+		if not sack_items.is_empty():
+			summary_parts.append("%d items" % sack_items.size())
+		if not sack_eggs.is_empty():
+			summary_parts.append("%d eggs" % sack_eggs.size())
+		if not sack_companion.is_empty():
+			summary_parts.append("1 companion")
+		var sack_summary = ", ".join(summary_parts)
+		var sack_msg = "[color=#FFD700]💰 LOOT SACK[/color] dropped at [color=#9ACD32](%d, %d)[/color] — [color=#FFD78A]%s[/color]. Anyone can claim it." % [death_x, death_y, sack_summary]
+		send_to_peer(winner_peer, {"type": "text", "message": sack_msg})
+		send_to_peer(loser_peer, {"type": "text", "message": sack_msg})
+	else:
+		send_to_peer(winner_peer, {"type": "text", "message": "[color=#808080]No loot to drop — %s had nothing on them.[/color]" % String(loser.name)})
 	if bounty_payout > 0:
-		loot_msg += "\n[color=#FFD700]💰 BOUNTY COLLECTED — +%d valor to %s.[/color]" % [bounty_payout, String(winner.name)]
-	send_to_peer(winner_peer, {"type": "text", "message": loot_msg})
-	send_to_peer(loser_peer, {"type": "text", "message": loot_msg})
+		send_to_peer(winner_peer, {"type": "text", "message": "[color=#FFD700]💰 BOUNTY COLLECTED — +%d valor to %s.[/color]" % [bounty_payout, String(winner.name)]})
 	# Loser respawn notification.
-	send_to_peer(loser_peer, {"type": "text", "message": "[color=#FFA500]You've been respawned at your home post. Your character survives — only loot transferred.[/color]"})
+	send_to_peer(loser_peer, {"type": "text", "message": "[color=#FFA500]You've been respawned at origin. Your character survives — loot dropped at the death tile.[/color]"})
+
+func _claim_pvp_sack(claimant_peer: int, x: int, y: int) -> bool:
+	"""Transfer all sack contents to claimant. Called from handle_move when a
+	player walks onto a sack tile. Items lost (sack stays!) if claimant's
+	inventory is full — but valor + eggs + companion always transfer (no
+	cap on those). Returns true if anything was claimed."""
+	if not characters.has(claimant_peer):
+		return false
+	var key = _pvp_sack_key(x, y)
+	if not active_pvp_sacks.has(key):
+		return false
+	var sack: Dictionary = active_pvp_sacks[key]
+	var claimant = characters[claimant_peer]
+	var claimant_account_id = String(peers.get(claimant_peer, {}).get("account_id", ""))
+	var claimed_parts: Array = []
+	# Valor.
+	var sack_valor = int(sack.get("valor", 0))
+	if sack_valor > 0 and claimant_account_id != "":
+		persistence.add_valor(claimant_account_id, sack_valor)
+		claimed_parts.append("[color=#FFD700]%d valor[/color]" % sack_valor)
+	# Items — push to inventory respecting cap.
+	var sack_items: Array = sack.get("items", [])
+	var items_claimed: Array = []
+	var items_lost: Array = []
+	for it in sack_items:
+		if claimant.inventory.size() < 40:
+			claimant.inventory.append(it)
+			items_claimed.append(it)
+		else:
+			items_lost.append(it)
+	if not items_claimed.is_empty():
+		var names: Array = []
+		for it in items_claimed:
+			names.append(String(it.get("name", "item")))
+		claimed_parts.append("[color=#9ACD32]%d items[/color] (%s)" % [items_claimed.size(), ", ".join(names)])
+	# Eggs — push to incubating slots (no cap enforced V1).
+	var sack_eggs: Array = sack.get("eggs", [])
+	for egg in sack_eggs:
+		claimant.incubating_eggs.append(egg)
+	if not sack_eggs.is_empty():
+		claimed_parts.append("[color=#FF80FF]%d eggs[/color]" % sack_eggs.size())
+	# Companion.
+	var sack_companion: Dictionary = sack.get("companion", {})
+	if not sack_companion.is_empty():
+		claimant.collected_companions.append(sack_companion)
+		claimed_parts.append("[color=#A0E0FF]companion %s[/color]" % String(sack_companion.get("name", "?")))
+	# Remove sack.
+	active_pvp_sacks.erase(key)
+	# Persist + notify claimant.
+	if claimant_account_id != "":
+		persistence.save_character(claimant_account_id, claimant)
+	send_character_update(claimant_peer)
+	var victim_name = String(sack.get("victim_name", "unknown"))
+	if claimed_parts.is_empty():
+		send_to_peer(claimant_peer, {"type": "text", "message": "[color=#808080]The loot sack was empty.[/color]"})
+		return false
+	var claim_msg = "[color=#FFD700]💰 SACK CLAIMED[/color] from %s's drop — got %s." % [victim_name, ", ".join(claimed_parts)]
+	if not items_lost.is_empty():
+		claim_msg += " [color=#FFA500](%d items dropped — inventory full)[/color]" % items_lost.size()
+	send_to_peer(claimant_peer, {"type": "text", "message": claim_msg})
+	return true
 
 # =============================================================================
 # Audit #14 PvP Slice E (v0.9.556) — Bounty system
@@ -4456,6 +4563,15 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Party snake movement: move followers in chain behind leader
 	if _is_party_leader(peer_id):
 		_move_party_followers(peer_id, old_x, old_y)
+
+	# Audit #14 PvP Slice D.2 (v0.9.557) — auto-claim any PvP loot sack on
+	# the tile the player just stepped onto. Fires once per move; sack is
+	# removed from active_pvp_sacks so re-stepping is a no-op.
+	if not active_pvp_sacks.is_empty() and characters.has(peer_id):
+		var ch = characters[peer_id]
+		var step_key = _pvp_sack_key(int(ch.x), int(ch.y))
+		if active_pvp_sacks.has(step_key):
+			_claim_pvp_sack(peer_id, int(ch.x), int(ch.y))
 
 	# Send location and character updates
 	send_location_update(peer_id)
@@ -6494,6 +6610,11 @@ func send_location_update(peer_id: int):
 	# Get visible corpses for map display
 	var visible_corpses = persistence.get_visible_corpses(character.x, character.y, vision_radius)
 
+	# Audit #14 PvP Slice D.2 (v0.9.557) — visible loot sacks. Renders as $
+	# overlay at each sack tile. Server is authoritative; client renders from
+	# the map_display string returned below.
+	var visible_pvp_sacks = _get_visible_pvp_sacks(character.x, character.y, vision_radius)
+
 	# Gather bounty locations for this player's active bounty quests
 	var bounty_locs = []
 	for quest_id in active_bounties:
@@ -6533,7 +6654,7 @@ func send_location_update(peer_id: int):
 						persistence.record_post_visit(visit_account_id, visit_post_name)
 
 	# Get complete map display (includes location info at top)
-	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles, threatened_post_centers, current_post_threatened)
+	var map_display = world_system.generate_map_display(character.x, character.y, vision_radius, nearby_players, dungeon_locations, depleted_keys, visible_corpses, bounty_locs, character.explored_tiles, threatened_post_centers, current_post_threatened, visible_pvp_sacks)
 
 	# Check for gathering node at this location OR adjacent tiles
 	var gathering_node = get_gathering_node_nearby(character.x, character.y)
