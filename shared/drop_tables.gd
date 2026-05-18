@@ -4088,6 +4088,9 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 		# frontier kills; sells for high valor at any market or saved for
 		# future apex-only crafting recipes.
 		"apex_crystal": "Apex Crystal",
+		# Audit #10 v0.9.565 — apex-exclusive utility consumable. Instant full
+		# HP + full resource restore on use. Apex variants drop at 8% rate.
+		"apex_sigil": "Apex Sigil",
 		# Material Pouches/Gems (special - don't prefix with tier)
 		"essence_pouch": "Material Pouch",
 		"gem_small": "Gem",
@@ -4096,7 +4099,7 @@ func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String
 	var base_name = base_names.get(item_type, "Consumable")
 
 	# Items that don't use tier prefix
-	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "apex_crystal" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
+	if item_type == "essence_pouch" or item_type == "gem_small" or item_type.begins_with("home_stone_") or item_type.begins_with("tome_") or item_type == "mysterious_box" or item_type == "cursed_coin" or item_type == "hybrid_catalyst" or item_type == "ascension_catalyst" or item_type == "apex_crystal" or item_type == "apex_sigil" or item_type == "scroll_resurrect_lesser" or item_type == "scroll_resurrect_greater" or item_type == "potion_revive_companion" or item_type == "charm_taunt" or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern" or item_type == "floor_skip_charm":
 		return base_name
 
 	return tier_name + " " + base_name
@@ -4107,6 +4110,10 @@ func _calculate_consumable_value(tier: int, item_type: String) -> int:
 	# (doesn't scale with monster tier since the frontier zone is its own gate).
 	if item_type == "apex_crystal":
 		return 750
+	# Audit #10 v0.9.565 — Apex Sigil is a utility consumable, not for resale.
+	# Set a modest value so vendor sell doesn't tempt players to dump it.
+	if item_type == "apex_sigil":
+		return 200
 	# Base values per tier (exponential scaling)
 	var tier_values = {
 		1: 10,      # Minor
