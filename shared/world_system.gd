@@ -147,6 +147,11 @@ const TILE_RENDER = {
 	# Shrine is a gilded prestige monument, high-skill blocking centerpiece.
 	"hedge":         {"char": "h", "color": "#4A8A4A", "blocks_move": true,  "blocks_los": true},
 	"shrine":        {"char": "q", "color": "#DAA520", "blocks_move": true,  "blocks_los": false},
+	# Audit #12 v0.9.534 — catalogue 19 → 21. Lectern is a wooden scholarly
+	# blocking prop; Mosaic is the first walkable FLOOR decoration in the
+	# catalogue (purely visual — no movement/los effect).
+	"lectern":       {"char": "l", "color": "#8B6914", "blocks_move": true,  "blocks_los": false},
+	"mosaic":        {"char": "m", "color": "#C8B0DD", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 
