@@ -6066,6 +6066,12 @@ func send_location_update(peer_id: int):
 		# Audit #10 v0.9.524 — short affinity descriptor for the apex zone
 		# (Fire / Ice / Shadow / Ash). Pure cosmetic — adds flavor to the HUD tag.
 		"apex_zone_affinity": world_system.get_apex_zone_affinity(character.x, character.y),
+		# Audit #14 PvP Slice A (v0.9.551) — apex frontier is a PvP zone. The
+		# flag drives the client HUD red ⚔ banner + the per-session entry
+		# warning (sent by _check_pvp_zone_transition below). Combat + loot
+		# sack arrive in Slices B / C. Duel system is independent of zone
+		# (mutual-consent any-zone, deferred to Slice B).
+		"in_pvp_zone": _check_pvp_zone_transition(peer_id, character.x, character.y),
 		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
 		# threat-zone mechanic (T2+ active dungeons within 80 tiles spill their
 		# monster type into nearby spawns). Empty dict outside threat corridors;
@@ -6533,6 +6539,11 @@ func handle_disconnect(peer_id: int):
 	# Audit #14 v0.9.533 — clear any AFK state so a reconnecting player
 	# doesn't inherit a stale [AFK] badge.
 	afk_status.erase(peer_id)
+
+	# Audit #14 PvP Slice A (v0.9.551) — clear per-peer PvP zone tracker
+	# so a reconnect starts fresh (and re-receives the transition warning
+	# next time they walk into the zone).
+	_pvp_zone_last_state.erase(peer_id)
 
 	# Decrement IP connection count
 	if peer_ip != "" and ip_connection_counts.has(peer_ip):
@@ -11231,6 +11242,31 @@ func _check_apex_frontier_entry(peer_id: int, x: int, y: int) -> bool:
 		_maybe_send_apex_frontier_hint(peer_id)
 	return in_apex
 
+# Audit #14 PvP Slice A (v0.9.551) — Apex frontier doubles as a PvP zone.
+# Track per-peer last-known state so we can fire a chat warning every time
+# the player TRANSITIONS into the zone (not on every tile inside it). The
+# first-time crossing is also covered by the apex tutorial hint, but the
+# recurring warning is a safety reminder — players might forget after long
+# stretches of PvE or after coming back to the game later.
+var _pvp_zone_last_state: Dictionary = {}  # peer_id → bool
+
+func _check_pvp_zone_transition(peer_id: int, x: int, y: int) -> bool:
+	"""Returns true if (x, y) is in the PvP zone (currently == apex frontier).
+	Side-effect: on false→true transition, emits a red chat warning so the
+	player knows they're now exposed to other players. State per peer; cleared
+	on disconnect via handle_disconnect cleanup."""
+	var in_pvp = world_system.is_apex_frontier(x, y)
+	var was_in = bool(_pvp_zone_last_state.get(peer_id, false))
+	if in_pvp and not was_in:
+		# Transition false→true — send the warning. Chat surface (not modal)
+		# because the modal is a one-shot per character (apex tutorial hint).
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF2020]⚔ APEX PvP ZONE — other players may attack you here. Watch your back.[/color]"
+		})
+	_pvp_zone_last_state[peer_id] = in_pvp
+	return in_pvp
+
 func _maybe_send_apex_frontier_hint(peer_id: int) -> void:
 	"""Audit #10 v0.9.513 — first-time apex frontier entry overlay. Teaches the
 	+10% zone XP, +20% variant XP, +25% HP / +10% damage variant stats, and
@@ -11248,6 +11284,8 @@ func _maybe_send_apex_frontier_hint(peer_id: int) -> void:
 		+ "• [color=#88FF88]+10%% XP[/color] on every kill in the frontier zone.\n"
 		+ "• Monsters here spawn as [color=#9F70FF]Apex Variants[/color] — \"Apex\" prefix, +25%% HP, +10%% damage, purple name color.\n"
 		+ "• Apex variants give an additional [color=#88FF88]+20%% XP[/color] (total +30%% per kill) and drop [color=#88FF88]+50%% Soul Gems[/color] to balance the extra effort.\n\n"
+		+ "[color=#FF2020]⚔ Apex zones are PvP zones.[/color] Other players can attack you here — KO drops a loot sack with valor, items, eggs, and a companion. Your character survives (permadeath is PvE-only); you respawn at your home post.\n"
+		+ "Want to PvP without the apex risk? Use [color=#FFD700]/duel <player>[/color] anywhere — both players must consent and agree on stakes (which can be nothing, valor only, or full apex stakes).\n\n"
 		+ "Apex content is the first beat of endgame frontier rewards — future updates will stack named zones, unique drops, and T9 encounter pools on top of this geometric definition."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})

@@ -945,6 +945,9 @@ var hud_is_apex_frontier: bool = false
 var hud_apex_zone_name: String = ""
 # Audit #10 v0.9.524 — short affinity descriptor for the apex zone (Fire / Ice / Shadow / Ash).
 var hud_apex_zone_affinity: String = ""
+# Audit #14 PvP Slice A (v0.9.551) — currently inside a PvP zone (apex frontier).
+# Drives the red ⚔ banner in the HUD. Combat + loot sack arrive in Slices B/C.
+var hud_in_pvp_zone: bool = false
 # Audit #11 v0.9.517 — threat corridor info from location_update. Empty when
 # not in a corridor; otherwise {dungeon_name, monster_type, tier, color}.
 var hud_threat_corridor: Dictionary = {}
@@ -18817,6 +18820,8 @@ func handle_server_message(message: Dictionary):
 			hud_apex_zone_name = String(message.get("apex_zone_name", ""))
 			# Audit #10 v0.9.524 — apex zone affinity descriptor.
 			hud_apex_zone_affinity = String(message.get("apex_zone_affinity", ""))
+			# Audit #14 PvP Slice A (v0.9.551) — PvP zone flag (currently == apex).
+			hud_in_pvp_zone = bool(message.get("in_pvp_zone", false))
 			# Audit #11 v0.9.517 — threat corridor info.
 			hud_threat_corridor = message.get("threat_corridor", {}) if message.get("threat_corridor", {}) is Dictionary else {}
 			hud_nearest_post = message.get("nearest_post", {})
@@ -25956,6 +25961,12 @@ func update_region_label():
 				apex_tag = " [color=#9F70FF]⚡ %s%s +10%% XP[/color]" % [hud_apex_zone_name, aff_md]
 			else:
 				apex_tag = " [color=#9F70FF]⚡ APEX +10% XP[/color]"
+		# Audit #14 PvP Slice A (v0.9.551) — append a red ⚔ tag when in PvP
+		# zone (currently == apex frontier). Doubled up with the purple apex tag
+		# so players see BOTH "endgame zone with bonuses" and "PvP zone with
+		# risk" tones distinct from each other.
+		if hud_in_pvp_zone:
+			apex_tag += " [color=#FF2020]⚔ PvP[/color]"
 		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
 		# threat-corridor mechanic so players SEE the active hostile spillover
 		# from a nearby T2+ dungeon (existing mechanic since v0.9.454).
