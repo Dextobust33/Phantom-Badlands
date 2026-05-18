@@ -2323,6 +2323,11 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		if world_system.is_trading_post_tile(character.x, character.y):
 			trigger_trading_post_encounter(peer_id)
 
+	# Audit #14 v0.9.531 — notify online clanmates that this player just
+	# logged in. Helps clanmates spot when their crew shows up. Skipped if
+	# the player isn't in a clan.
+	_notify_clanmates_login(peer_id)
+
 	# Check for saved combat state (disconnect recovery)
 	if not character.saved_combat_state.is_empty():
 		var saved_state = character.saved_combat_state
@@ -2990,6 +2995,49 @@ func handle_private_message(peer_id: int, message: Dictionary):
 		"target": target_name,
 		"message": text
 	})
+
+func _notify_clanmates_login(peer_id: int) -> void:
+	"""Audit #14 v0.9.531 — push a [CLAN] notification to every online
+	clanmate when a player enters the world. Sent only to clan members
+	other than the caller; sender themselves doesn't see their own login
+	notification. No-op if the player isn't authenticated or isn't in a
+	clan."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		return
+	var sender_name = characters[peer_id].name
+	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
+	var clan = persistence.get_clan(clan_id)
+	var clan_tag = String(clan.get("tag", ""))
+	var clan_color = String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
+	for other_peer_id in peers.keys():
+		if other_peer_id == peer_id:
+			continue
+		if not peers[other_peer_id].authenticated:
+			continue
+		if not characters.has(other_peer_id):
+			continue
+		var other_account_id = String(peers[other_peer_id].get("account_id", ""))
+		if other_account_id == "":
+			continue
+		if persistence.get_account_clan_id(other_account_id) != clan_id:
+			continue
+		# Push a dedicated payload type so the client can render with the
+		# clan banner color and the [CLAN] channel marker. Uses the same
+		# styling family as clan_message.
+		send_to_peer(other_peer_id, {
+			"type": "clan_login",
+			"sender": sender_display,
+			"clan_tag": clan_tag,
+			"clan_color": clan_color,
+		})
 
 func handle_party_message(peer_id: int, message: Dictionary) -> void:
 	"""Audit #14 v0.9.530 — party-channel chat. Broadcasts to every member
@@ -8970,8 +9018,12 @@ func _send_clan_info(peer_id: int) -> void:
 		var pacc = String(peers[pid].get("account_id", ""))
 		if pacc != "":
 			online_account_ids[pacc] = true
+	var online_count := 0
 	for m in members:
-		m["is_online"] = online_account_ids.has(String(m.get("account_id", "")))
+		var member_online = online_account_ids.has(String(m.get("account_id", "")))
+		m["is_online"] = member_online
+		if member_online:
+			online_count += 1
 	# Audit #14 Slice 4 — rank info for the client. is_officer drives Promote /
 	# Demote / Kick / Invite button visibility on the viewer's roster.
 	var officer_ids: Array = clan.get("officer_ids", [])
@@ -8990,6 +9042,9 @@ func _send_clan_info(peer_id: int) -> void:
 		"created_at": int(clan.get("created_at", 0)),
 		"members": members,
 		"member_count": members.size(),
+		# Audit #14 v0.9.531 — online_count drives the "N/M online" header
+		# on the clan panel. Computed from the is_online flag stamped above.
+		"online_count": online_count,
 		"max_members": persistence.CLAN_MAX_MEMBERS,
 		"invitations": invitations,
 	})
@@ -22456,7 +22511,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -22591,7 +22646,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:

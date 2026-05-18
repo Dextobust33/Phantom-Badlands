@@ -325,6 +325,8 @@ func _render_in_clan_view() -> void:
 	var clan_tag: String = String(_data.get("tag", ""))
 	var member_count: int = int(_data.get("member_count", 0))
 	var max_members: int = int(_data.get("max_members", 30))
+	# Audit #14 v0.9.531 — online_count drives the "● N online" header chip.
+	var online_count: int = int(_data.get("online_count", 0))
 	var is_leader: bool = bool(_data.get("is_leader", false))
 	# Audit #14 Slice 4 — viewer's own rank. Officers see Invite + Kick (for
 	# regular members only). Leaders see everything.
@@ -341,7 +343,7 @@ func _render_in_clan_view() -> void:
 	header.custom_minimum_size = Vector2(0, 24)
 	# Audit #14 Slice 8 — banner color from server (default purple).
 	var banner_color: String = String(_data.get("banner_color", "#A335EE"))
-	header.text = "[color=%s][b]%s[/b][/color]  [color=%s][%s][/color]   [color=#888888]%d/%d members[/color]" % [banner_color, clan_name, banner_color, clan_tag, member_count, max_members]
+	header.text = "[color=%s][b]%s[/b][/color]  [color=%s][%s][/color]   [color=#888888]%d/%d members[/color]   [color=#66FF66]●[/color] [color=#AAFFAA]%d online[/color]" % [banner_color, clan_name, banner_color, clan_tag, member_count, max_members, online_count]
 	_body_container.add_child(header)
 
 	# Audit #14 Slice 7 — leader-set clan description. Public to all viewers.

@@ -137,6 +137,11 @@ const TILE_RENDER = {
 	# pile) anyone with starter Construction can stack.
 	"crate":         {"char": "c", "color": "#B8916A", "blocks_move": true,  "blocks_los": false},
 	"cairn":         {"char": "a", "color": "#A0A0A0", "blocks_move": false, "blocks_los": false},
+	# Audit #12 v0.9.531 — catalogue 15 → 17. Pedestal is a marble display
+	# block (mid-tier blocking centerpiece); Cage is a wrought-iron cage prop
+	# slightly higher skill, also blocking.
+	"pedestal":      {"char": "d", "color": "#DDDDDD", "blocks_move": true,  "blocks_los": false},
+	"cage":          {"char": "e", "color": "#555555", "blocks_move": true,  "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 
