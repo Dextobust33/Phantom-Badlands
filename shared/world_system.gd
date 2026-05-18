@@ -1383,6 +1383,22 @@ func get_apex_zone_name(x: int, y: int) -> String:
 	else:
 		return "Cinder Wastes"        # SE — ash / volcanic theme
 
+func get_apex_zone_affinity(x: int, y: int) -> String:
+	"""Audit #10 v0.9.524 — short affinity descriptor for the apex zone, paired
+	with get_apex_zone_name. Pure cosmetic flavor — adds (Fire) / (Ice) /
+	(Shadow) / (Ash) to the apex tag so the four zones read as distinct themes.
+	Empty string when outside the apex frontier."""
+	if not is_apex_frontier(x, y):
+		return ""
+	if x >= 0 and y >= 0:
+		return "Fire"        # Burning Reach
+	elif x < 0 and y >= 0:
+		return "Ice"         # Frostbound Verge
+	elif x < 0 and y < 0:
+		return "Shadow"      # Sundered Hollows
+	else:
+		return "Ash"         # Cinder Wastes
+
 func is_safe_zone(x: int, y: int) -> bool:
 	"""Check if location is a safe zone (NPC post, trading post, structure interior)"""
 	# New system: check NPC posts

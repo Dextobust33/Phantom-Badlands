@@ -5435,6 +5435,9 @@ func send_location_update(peer_id: int):
 		# / Sundered Hollows / Cinder Wastes). Empty string outside the apex
 		# frontier; client only renders the line when non-empty.
 		"apex_zone_name": world_system.get_apex_zone_name(character.x, character.y),
+		# Audit #10 v0.9.524 — short affinity descriptor for the apex zone
+		# (Fire / Ice / Shadow / Ash). Pure cosmetic — adds flavor to the HUD tag.
+		"apex_zone_affinity": world_system.get_apex_zone_affinity(character.x, character.y),
 		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
 		# threat-zone mechanic (T2+ active dungeons within 80 tiles spill their
 		# monster type into nearby spawns). Empty dict outside threat corridors;

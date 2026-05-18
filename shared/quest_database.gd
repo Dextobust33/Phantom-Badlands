@@ -770,6 +770,8 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
+		# Audit #6 v0.9.524 — Repeatable T3 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 400, "egg": "Troll", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "troll_render"}
 	},
 	# ===== "Stone Vigil" — Highland Post, 3 stages, T3 (Audit #6 Slice 14) =====
@@ -822,6 +824,8 @@ const QUESTS = {
 		"chain_stage": 3,
 		"chain_total": 3,
 		"next_in_chain": "",
+		# Audit #6 v0.9.524 — Repeatable T3 starter chain.
+		"repeatable": true,
 		"chain_bonus": {"valor": 400, "egg": "Gargoyle", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "stone_breaker"}
 	},
 	# ===== "Vampire's Hunger" — Southport, 3 stages, T4 (Audit #6 Slice 15) =====

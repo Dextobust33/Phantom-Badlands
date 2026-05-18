@@ -938,6 +938,8 @@ var hud_area_is_safe: bool = true
 var hud_is_apex_frontier: bool = false
 # Audit #10 v0.9.514 — named apex zone (Burning Reach / Frostbound Verge / etc).
 var hud_apex_zone_name: String = ""
+# Audit #10 v0.9.524 — short affinity descriptor for the apex zone (Fire / Ice / Shadow / Ash).
+var hud_apex_zone_affinity: String = ""
 # Audit #11 v0.9.517 — threat corridor info from location_update. Empty when
 # not in a corridor; otherwise {dungeon_name, monster_type, tier, color}.
 var hud_threat_corridor: Dictionary = {}
@@ -18724,6 +18726,8 @@ func handle_server_message(message: Dictionary):
 			hud_area_is_safe = bool(message.get("area_is_safe", true))
 			hud_is_apex_frontier = bool(message.get("is_apex_frontier", false))
 			hud_apex_zone_name = String(message.get("apex_zone_name", ""))
+			# Audit #10 v0.9.524 — apex zone affinity descriptor.
+			hud_apex_zone_affinity = String(message.get("apex_zone_affinity", ""))
 			# Audit #11 v0.9.517 — threat corridor info.
 			hud_threat_corridor = message.get("threat_corridor", {}) if message.get("threat_corridor", {}) is Dictionary else {}
 			hud_nearest_post = message.get("nearest_post", {})
@@ -24369,8 +24373,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.524 — Audit #6 Repeatable T3 chains + Audit #10 Apex Zone affinity.
+	display_game("[color=#00FF00]v0.9.524[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]All T3 chains now repeatable; apex zones get themed affinity descriptors.[/color]")
+	display_game("  • [b]Repeatable T3 chains[/b] (Audit #6). [color=#FFAA00]Trollish Tide[/color] and [color=#FFAA00]Stone Vigil[/color] now also have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in. All 13 chains at T1+T2+T3 are now repeatable. Higher tiers (T4-T9) stay one-shot — those are the achievement-style content.")
+	display_game("  • [b]Apex Zone affinity descriptors[/b] (Audit #10). The HUD apex tag now appends each zone's affinity theme — [color=#9F70FF]Burning Reach (Fire)[/color], [color=#9F70FF]Frostbound Verge (Ice)[/color], [color=#9F70FF]Sundered Hollows (Shadow)[/color], [color=#9F70FF]Cinder Wastes (Ash)[/color]. Pure cosmetic flavor — gives each named zone a thematic identity beyond just a quadrant name.")
+	display_game("  • Audit progress: #6 ~99% → ~99.5%, #10 ~98% → ~99%.")
+	display_game("")
+
 	# v0.9.523 — Audit #3 First companion hatch hint + Audit #11 Threat count in HUD.
-	display_game("[color=#00FF00]v0.9.523[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.523[/color]")
 	display_game("  [color=#FFD700]New-companion teaching overlay + multi-threat awareness on the Area line.[/color]")
 	display_game("  • [b]First companion hatch tutorial overlay[/b] (Audit #3). When your first egg hatches, a modal explains the companion system — active companion, aggro roles (Tank/Fighter/Default/Evasive), egg drop chances, Home Stone (Egg) for permadeath safety, and all four fusion modes at a Companion Stable. New [color=#A335EE]seen_companion_hint[/color] per-character flag.")
 	display_game("  • [b]Threat corridor count[/b] (Audit #11). The [color=#FF6600]⚠ Threat:[/color] tag on the Area line now appends [color=#FF8888](+N more)[/color] when multiple T2+ world dungeons threaten the same 80-tile corridor. Visualizes how saturated a zone is — a single threat is one nibble, multiple stacked threats means caution. Extends v0.9.517's single-threat HUD.")
@@ -24404,13 +24416,6 @@ func display_changelog():
 	display_game("  • Continues the audit-completion push — Audit #15 ~85% → 92%, Audit #14 ~74% → 76%, Audit #12 ~80% → 82%.")
 	display_game("")
 
-	# v0.9.519 — Audit #3 First market hint + Audit #14 Clan outpost indicator.
-	display_game("[color=#00FFFF]v0.9.519[/color]")
-	display_game("  [color=#FFD700]One more teaching moment, one more clan visibility cue.[/color]")
-	display_game("  • [b]First Market visit tutorial overlay[/b] (Audit #3). New `seen_market_hint` per-character flag — first time a player browses the market, a modal explains Valor, listings, supply/demand markup, and the Halfling/Knight/own-post listing bonuses. Continues the tutorial-overlay infra from v0.9.475/476/483/508/513.")
-	display_game("  • [b]Clan Outpost indicator on post panel[/b] (Audit #14). When you visit a post built by one of your [color=#A335EE]clan-mates[/color], the post status panel header now appends a [color=#A335EE]✦ Clan Outpost[/color] tag in the clan's banner color. Extends v0.9.518's owner clan tag into useful navigation for clan members — at a glance you know which posts on the map are friendly territory.")
-	display_game("  • Continues closing pieces of Audit #3 and Audit #14. Audit #14 climbing — more clan visibility, more discoverability.")
-	display_game("")
 
 
 
@@ -25466,10 +25471,13 @@ func update_region_label():
 		# v0.9.514 — also surfaces the apex zone NAME (Burning Reach / etc.)
 		# when set, so the apex frontier feels like distinct named regions
 		# rather than one flat zone.
+		# v0.9.524 — appends the zone's affinity (Fire / Ice / Shadow / Ash)
+		# next to the zone name for flavor distinction.
 		var apex_tag = ""
 		if hud_is_apex_frontier:
 			if hud_apex_zone_name != "":
-				apex_tag = " [color=#9F70FF]⚡ %s +10%% XP[/color]" % hud_apex_zone_name
+				var aff_md = (" (%s)" % hud_apex_zone_affinity) if hud_apex_zone_affinity != "" else ""
+				apex_tag = " [color=#9F70FF]⚡ %s%s +10%% XP[/color]" % [hud_apex_zone_name, aff_md]
 			else:
 				apex_tag = " [color=#9F70FF]⚡ APEX +10% XP[/color]"
 		# Audit #11 v0.9.517 — Threat corridor HUD. Surfaces existing Slice 9
