@@ -18939,6 +18939,39 @@ func handle_server_message(message: Dictionary):
 				login_tag_prefix = "[color=%s][%s][/color] " % [login_clan_color, login_clan_tag]
 			display_chat("[color=#66FF66]●[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged in.[/color]" % [login_tag_prefix, login_sender])
 
+		"clan_logout":
+			# Audit #14 v0.9.532 — mirror of clan_login. Gray dot for offline.
+			var logout_sender = String(message.get("sender", "Unknown"))
+			var logout_clan_tag = String(message.get("clan_tag", ""))
+			var logout_clan_color = String(message.get("clan_color", "#88FFCC"))
+			var logout_tag_prefix = ""
+			if logout_clan_tag != "":
+				logout_tag_prefix = "[color=%s][%s][/color] " % [logout_clan_color, logout_clan_tag]
+			display_chat("[color=#666666]○[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged out.[/color]" % [logout_tag_prefix, logout_sender])
+
+		"clan_list_result":
+			# Audit #14 v0.9.532 — /clist response. Render a compact roster of
+			# online clanmates so the player can see who's around without
+			# scrolling /who. Self is tagged "(you)" for clarity.
+			var clist_tag = String(message.get("clan_tag", ""))
+			var clist_color = String(message.get("clan_color", "#88FFCC"))
+			var clist_members: Array = message.get("members", [])
+			var clist_header = "[color=%s][b][CLAN]" % clist_color
+			if clist_tag != "":
+				clist_header += " [%s]" % clist_tag
+			clist_header += " %d online[/b][/color]" % clist_members.size()
+			display_game(clist_header)
+			if clist_members.size() == 0:
+				display_game("[color=#808080]  (no clanmates online — you're flying solo.)[/color]")
+			else:
+				for mate_entry in clist_members:
+					var mate = mate_entry as Dictionary
+					var mate_name = String(mate.get("name", "Unknown"))
+					var mate_level = int(mate.get("level", 1))
+					var mate_class = String(mate.get("class", ""))
+					var mate_self_tag = " [color=#FFD700](you)[/color]" if bool(mate.get("is_self", false)) else ""
+					display_game("  [color=#66FF66]●[/color] [color=#DDDDDD]%s[/color] [color=#888888]Lv %d %s[/color]%s" % [mate_name, mate_level, mate_class.capitalize(), mate_self_tag])
+
 		"party_message":
 			# Audit #14 v0.9.530 — party-channel chat. Server broadcasts to every
 			# party member (including the sender). Render with a distinct purple
@@ -20822,7 +20855,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "p", "pc", "partychat", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21649,6 +21682,10 @@ func process_command(text: String):
 			else:
 				display_game("[color=#FF0000]Usage: /c <message>[/color]")
 				display_game("[color=#808080]Sends a message to all online clan members. Alias: /cc, /clanchat.[/color]")
+		"clist", "clanlist", "clanonline":
+			# Audit #14 v0.9.532 — list online clanmates with level + class.
+			# Server returns clan_list_result; client renders compact roster.
+			send_to_server({"type": "clan_list"})
 		"p", "pc", "partychat":
 			# Audit #14 v0.9.530 — party-channel chat. Broadcasts to all party
 			# members. Server gates by party membership.
@@ -24446,8 +24483,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.532 — Audit #14 clan logout notification + /clist.
+	display_game("[color=#00FF00]v0.9.532[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan presence finishes — logout mirrors login, and /clist shows who's currently around.[/color]")
+	display_game("  • [b]Clan-mate logout notifications[/b] (Audit #14). Mirror of v0.9.531's login overlay — when a clanmate disconnects, every online member sees [color=#666666]○[/color] [color=#88FFCC][CLAN][/color] [name] has logged out. in chat. Together with the login pings, you always know your crew's presence in real time.")
+	display_game("  • [b]/clist command[/b] (Audit #14). New chat command (aliases [color=#9ACD32]/clanlist[/color], [color=#9ACD32]/clanonline[/color]) prints a compact roster of currently-online clanmates with name + level + class. You appear tagged [color=#FFD700](you)[/color]. Saves a /who scroll when you just want to coordinate with your own crew.")
+	display_game("  • Audit #14 progress: ~88% → ~91%.")
+	display_game("")
+
 	# v0.9.531 — Audit #14 clan presence batch + Audit #12 catalogue 15 → 17.
-	display_game("[color=#00FF00]v0.9.531[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.531[/color]")
 	display_game("  [color=#FFD700]Three-slice batch — clan login notifications, online count header, and two more cosmetic structures.[/color]")
 	display_game("  • [b]Clan-mate login notifications[/b] (Audit #14). When a clanmate logs in, every online member of their clan sees a subtle [color=#66FF66]●[/color] [color=#88FFCC][CLAN][/color] [name] has logged in. line in chat. Sender doesn't see their own notification. Pairs with v0.9.529's clan chat — now you know who showed up to /c with.")
 	display_game("  • [b]Clan online count[/b] (Audit #14). The More → Clan panel header now ends with [color=#66FF66]●[/color] [color=#AAFFAA]N online[/color] alongside the existing N/M members chip. Server tallies online_count from the same online_account_ids set that stamps the per-member is_online flag.")
@@ -24479,14 +24524,6 @@ func display_changelog():
 	display_game("  • Tutorial overlays now cover: progression, quest board, dungeons, crafting, signposts, apex frontier, market, chains, companions, companion stable, [b]gather[/b], [b]equip[/b]. Twelve first-touch hints; Audit #3 ~98% → ~99%.")
 	display_game("")
 
-	# v0.9.527 — Audit #12 catalogue 13→15 (Crate + Cairn).
-	display_game("[color=#00FFFF]v0.9.527[/color]")
-	display_game("  [color=#FFD700]Two more cosmetic buildables — the catalogue is now fifteen structures spanning skill 3 through 35.[/color]")
-	display_game("  • [b]Crate[/b] ([color=#B8916A]c[/color], blocks movement, Construction skill 9). 3 wooden plank + 1 iron ore + 1 rope. A storage-themed blocker — stack a few to form makeshift barricades or mark a depot inside your enclosure.")
-	display_game("  • [b]Cairn[/b] ([color=#A0A0A0]a[/color], walkable, Construction skill 3). 3 stone block. The new cheapest cosmetic — three stone blocks and a steady hand. Marks paths, boundaries, or memorials. More entry-level than Garden Plot.")
-	display_game("  • Catalogue now: Cairn (3) · Garden Plot (4) · Scarecrow (5) · Bench (6) · Tent (7) · Torch (8) · Crate (9) · Signpost (10) · Pylon (11) · Banner (12) · Brazier (13) · Lamp Post (15) · Well (18) · Fountain (22) · Statue (25). Fifteen options, every skill tier covered.")
-	display_game("  • Audit #12 progress: ~92% → ~94%.")
-	display_game("")
 
 
 
