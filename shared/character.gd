@@ -74,6 +74,10 @@ extends Resource
 # Audit #3 v0.9.528 — first equip teaches slot mapping, comparison view,
 # salvage, and dual-wield equip flow.
 @export var seen_equip_hint: bool = false
+# Audit #14 Slice F polish v0.9.560 — first time the character walks into a
+# clan-shared post owned by another clan-mate, explain the bump-decay /
+# build / demolish permissions + /clanposts discovery surface.
+@export var seen_clan_post_hint: bool = false
 
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
@@ -1396,6 +1400,9 @@ func to_dict() -> Dictionary:
 		# Audit #3 v0.9.528 — first gather + first equip hint flags
 		"seen_gather_hint": seen_gather_hint,
 		"seen_equip_hint": seen_equip_hint,
+		# Audit #14 Slice F polish v0.9.560 — first time a clan member walks
+		# onto a clan-shared post (not their own) explains the mechanic.
+		"seen_clan_post_hint": seen_clan_post_hint,
 		# Audit #4 Slice 1A (v0.9.485) — first-time Companion Stable hint flag
 		"seen_companion_stable_hint": seen_companion_stable_hint,
 		# Audit #4 Slice 1 — NPC Home Stone purchase counts (per-character
@@ -1583,6 +1590,9 @@ func from_dict(data: Dictionary):
 	# gather session / next equip.
 	seen_gather_hint = bool(data.get("seen_gather_hint", false))
 	seen_equip_hint = bool(data.get("seen_equip_hint", false))
+	# Audit #14 Slice F polish v0.9.560 — first time a clan member arrives
+	# at a clan-shared post (not their own) the overlay fires.
+	seen_clan_post_hint = bool(data.get("seen_clan_post_hint", false))
 	# Audit #4 Slice 1A (v0.9.485) — Companion Stable hint flag. Defaults
 	# false for legacy characters; they get the hint on their first stable
 	# interaction after this version ships.
