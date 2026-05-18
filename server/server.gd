@@ -1472,6 +1472,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_private_message(peer_id, message)
 		"clan_message":
 			handle_clan_message(peer_id, message)
+		"clan_list":
+			handle_clan_list(peer_id)
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
@@ -3038,6 +3040,87 @@ func _notify_clanmates_login(peer_id: int) -> void:
 			"clan_tag": clan_tag,
 			"clan_color": clan_color,
 		})
+
+func _notify_clanmates_logout(peer_id: int) -> void:
+	"""Audit #14 v0.9.532 — mirror of _notify_clanmates_login. Pushes a
+	clan_logout payload to every online clanmate when a player disconnects.
+	Must fire BEFORE peer cleanup so account/clan resolution still works.
+	No-op if the peer isn't authenticated, has no character, or isn't in a
+	clan."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		return
+	var sender_name = characters[peer_id].name
+	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
+	var clan = persistence.get_clan(clan_id)
+	var clan_tag = String(clan.get("tag", ""))
+	var clan_color = String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
+	for other_peer_id in peers.keys():
+		if other_peer_id == peer_id:
+			continue
+		if not peers[other_peer_id].authenticated:
+			continue
+		if not characters.has(other_peer_id):
+			continue
+		var other_account_id = String(peers[other_peer_id].get("account_id", ""))
+		if other_account_id == "":
+			continue
+		if persistence.get_account_clan_id(other_account_id) != clan_id:
+			continue
+		send_to_peer(other_peer_id, {
+			"type": "clan_logout",
+			"sender": sender_display,
+			"clan_tag": clan_tag,
+			"clan_color": clan_color,
+		})
+
+func handle_clan_list(peer_id: int) -> void:
+	"""Audit #14 v0.9.532 — /clist chat command. Returns the caller's online
+	clanmates with name + level + class so they can see who's around to /c
+	with without scrolling /who. Sent as a `clan_list_result` payload."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]You're not in a clan. Use /clan to create or join one.[/color]"})
+		return
+	var online_mates: Array = []
+	for other_peer_id in peers.keys():
+		if not peers[other_peer_id].authenticated:
+			continue
+		if not characters.has(other_peer_id):
+			continue
+		var other_account_id = String(peers[other_peer_id].get("account_id", ""))
+		if other_account_id == "":
+			continue
+		if persistence.get_account_clan_id(other_account_id) != clan_id:
+			continue
+		var ch = characters[other_peer_id]
+		online_mates.append({
+			"name": String(ch.name),
+			"level": int(ch.level),
+			"class": String(ch.class_type),
+			"is_self": other_peer_id == peer_id,
+		})
+	var clan = persistence.get_clan(clan_id)
+	send_to_peer(peer_id, {
+		"type": "clan_list_result",
+		"clan_tag": String(clan.get("tag", "")),
+		"clan_color": String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR)),
+		"members": online_mates,
+	})
 
 func handle_party_message(peer_id: int, message: Dictionary) -> void:
 	"""Audit #14 v0.9.530 — party-channel chat. Broadcasts to every member
@@ -6044,6 +6127,11 @@ func handle_disconnect(peer_id: int):
 	var char_name = ""
 	if characters.has(peer_id):
 		char_name = characters[peer_id].name
+
+	# Audit #14 v0.9.532 — notify online clanmates that this player is
+	# leaving. Mirrors v0.9.531's clan_login notification. Must fire BEFORE
+	# peer cleanup so account_id → clan_id resolves correctly.
+	_notify_clanmates_logout(peer_id)
 
 	# Decrement IP connection count
 	if peer_ip != "" and ip_connection_counts.has(peer_ip):
