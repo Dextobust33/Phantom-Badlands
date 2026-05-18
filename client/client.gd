@@ -996,6 +996,12 @@ var craft_quantity: int = 1  # Bulk crafting quantity
 var crafting_temper_mode: bool = false  # Selecting a temper target stat
 const TEMPER_TARGETS = ["attack", "defense", "hp", "speed"]
 const TEMPER_TARGET_LABELS = ["ATK +15%", "DEF +15%", "HP +20%", "SPD +1"]
+# Audit #4 Slice 2 — Boost selector state. The panel is the source of truth
+# for the active tier; this mirror lets the text-mode hotkey path and the
+# craft_item send share state without round-tripping through populate.
+var crafting_boost_tier: String = "none"
+var crafting_boost_memory: Dictionary = {}  # recipe_id -> tier (mirrors panel memory)
+const CRAFT_BOOST_TIERS = ["none", "refined", "master"]
 var crafting_page: int = 0  # Page for recipe list
 var awaiting_craft_result: bool = false  # Waiting for player to acknowledge craft result
 var last_crafted_recipe_id: String = ""  # Recipe ID of last craft for "craft another"
@@ -1848,6 +1854,7 @@ func _ready():
 		crafting_panel.craft_pressed.connect(_on_craft_panel_craft_pressed)
 		crafting_panel.quantity_changed.connect(_on_craft_panel_qty_changed)
 		crafting_panel.skill_changed.connect(_on_craft_panel_skill_changed)
+		crafting_panel.boost_tier_changed.connect(_on_craft_panel_boost_tier_changed)
 
 	# Setup market panel
 	if market_panel:
@@ -8266,31 +8273,41 @@ func update_action_bar():
 			# Recipe confirm — show quantity controls for bulk-craftable recipes
 			var sel_recipe = crafting_recipes[crafting_selected_recipe] if crafting_selected_recipe < crafting_recipes.size() else {}
 			var is_bulk = sel_recipe.get("bulk_craftable", false) and sel_recipe.get("max_craftable", 1) > 1
+			# Audit #4 Slice 2 — boost buttons share the same three slots in
+			# both bulk + non-bulk recipe detail views. Active tier is marked
+			# with a leading ●.
+			var _none_label = ("● None" if crafting_boost_tier == "none" else "None")
+			var _refined_label = ("● Refined" if crafting_boost_tier == "refined" else "Refined")
+			var _master_label = ("● Master" if crafting_boost_tier == "master" else "Master")
 			if is_bulk:
+				# Boost forces qty=1; -Qty/+Qty/Max hide once boosted.
+				var _show_qty = (crafting_boost_tier == "none")
 				current_actions = [
 					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
 					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
-					{"label": "-Qty", "action_type": "local", "action_data": "craft_qty_down", "enabled": craft_quantity > 1},
-					{"label": "+Qty", "action_type": "local", "action_data": "craft_qty_up", "enabled": craft_quantity < sel_recipe.get("max_craftable", 1)},
-					{"label": "Max", "action_type": "local", "action_data": "craft_qty_max", "enabled": craft_quantity < sel_recipe.get("max_craftable", 1)},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": ("-Qty" if _show_qty else "---"), "action_type": ("local" if _show_qty else "none"), "action_data": ("craft_qty_down" if _show_qty else ""), "enabled": _show_qty and craft_quantity > 1},
+					{"label": ("+Qty" if _show_qty else "---"), "action_type": ("local" if _show_qty else "none"), "action_data": ("craft_qty_up" if _show_qty else ""), "enabled": _show_qty and craft_quantity < sel_recipe.get("max_craftable", 1)},
+					{"label": ("Max" if _show_qty else "---"), "action_type": ("local" if _show_qty else "none"), "action_data": ("craft_qty_max" if _show_qty else ""), "enabled": _show_qty and craft_quantity < sel_recipe.get("max_craftable", 1)},
+					{"label": _none_label, "action_type": "local", "action_data": "craft_boost_none", "enabled": true},
+					{"label": _refined_label, "action_type": "local", "action_data": "craft_boost_refined", "enabled": true},
+					{"label": _master_label, "action_type": "local", "action_data": "craft_boost_master", "enabled": true},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 			else:
-				# Check if this is an equipment recipe that can be tempered
+				# Check if this is an equipment recipe that can be tempered.
+				# Temper + Boost are mutually exclusive server-side; the boost
+				# row sits next to the Temper button so the player picks one.
 				var can_temper = sel_recipe.get("can_craft", false) and sel_recipe.get("output_type", "") in ["weapon", "armor"]
 				current_actions = [
 					{"label": "Cancel", "action_type": "local", "action_data": "crafting_recipe_cancel", "enabled": true},
 					{"label": "Craft!", "action_type": "local", "action_data": "crafting_confirm", "enabled": true},
-					{"label": "Temper", "action_type": "local", "action_data": "crafting_temper_select", "enabled": can_temper},
+					{"label": "Temper", "action_type": "local", "action_data": "crafting_temper_select", "enabled": can_temper and crafting_boost_tier == "none"},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": _none_label, "action_type": "local", "action_data": "craft_boost_none", "enabled": true},
+					{"label": _refined_label, "action_type": "local", "action_data": "craft_boost_refined", "enabled": true},
+					{"label": _master_label, "action_type": "local", "action_data": "craft_boost_master", "enabled": true},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
@@ -12859,6 +12876,12 @@ func execute_local_action(action: String):
 				craft_quantity = crafting_recipes[crafting_selected_recipe].get("max_craftable", 1)
 			display_craft_recipe_details()
 			update_action_bar()
+		"craft_boost_none":
+			_set_craft_boost_tier("none")
+		"craft_boost_refined":
+			_set_craft_boost_tier("refined")
+		"craft_boost_master":
+			_set_craft_boost_tier("master")
 		"crafting_prev_page":
 			crafting_page = max(0, crafting_page - 1)
 			display_craft_recipe_list()
@@ -24741,12 +24764,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.542 — Crafting Boost UI (Slice 2).
+	display_game("[color=#00FF00]v0.9.542[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The Crafting Boost selector lands on the recipe panel — pick None / Refined / Master and watch the quality odds + material costs redraw live.[/color]")
+	display_game("  • [b]Boost selector[/b] (Audit #4, crafting overhaul Slice 2). The recipe details panel grows a three-button row: [color=#9ACD32]None[/color] / [color=#FFAA66]Refined (+50% mats)[/color] / [color=#A335EE]Master (+150% mats)[/color]. Clicking a tier instantly redraws the [b]Layer-5 quality odds[/b] (Poor / Standard / Fine / Masterwork %) and the [b]material requirement totals[/b] so you can see exactly what you're paying for before you commit.")
+	display_game("  • [b]Per-recipe memory[/b]. Your last-picked tier is remembered per recipe for the session — pick Master on Iron Sword, switch to a different recipe, and Iron Sword still has Master pre-selected when you come back. Memory resets on app restart (client-side only, no server change).")
+	display_game("  • [b]Text-mode parity[/b]. The chat-fallback recipe view shows the same selector with hotkeys [color=#9ACD32][1][/color] / [color=#FFAA66][2][/color] / [color=#A335EE][3][/color] on the action bar (slots 5-7). Pick a tier from either surface — both stay in sync. CRAFT button label updates to [color=#FFAA66]REFINED CRAFT[/color] / [color=#A335EE]MASTER CRAFT[/color] when boosted.")
+	display_game("  • [b]Cross-system guards[/b]. Boost forces quantity = 1 (matching the server enforcement from Slice 1) — the +/-Qty/Max steppers hide once a boost is active. Temper button disables when a boost is active too (the two cost-gambling systems are mutually exclusive). Affordability is recomputed per tier; the CRAFT button greys out if you can't pay the boosted cost.")
+	display_game("")
+
 	# v0.9.541 — Crafting Boost server core (Slice 1).
-	display_game("[color=#00FF00]v0.9.541[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FFD700]Server foundation for the Crafting Boost system — spend extra materials for a better quality distribution. (UI lands in Slice 2.)[/color]")
-	display_game("  • [b]Boost tiers[/b] (Audit #4, crafting overhaul Slice 1). Three settings: [color=#9ACD32]None[/color] (1.0× materials, vanilla odds), [color=#FFAA66]Refined[/color] (1.5× materials, +5% Masterwork / +5% Fine / -5% Standard / -5% Poor), [color=#A335EE]Master[/color] (2.5× materials, +15% Masterwork / +5% Fine / -10% Standard, [b]no Poor results[/b]). Quality shifts are renormalized to 100% so the preview math stays clean. Mutually exclusive with Tempered (which already gambles materials for a different reward).")
+	display_game("[color=#00FFFF]v0.9.541[/color]")
+	display_game("  [color=#FFD700]Server foundation for the Crafting Boost system — spend extra materials for a better quality distribution.[/color]")
+	display_game("  • [b]Boost tiers[/b] (Audit #4, crafting overhaul Slice 1). Three settings: [color=#9ACD32]None[/color] (1.0× materials, vanilla odds), [color=#FFAA66]Refined[/color] (1.5× materials, +5% Masterwork / +5% Fine / -5% Standard / -5% Poor), [color=#A335EE]Master[/color] (2.5× materials, +15% Masterwork / +5% Fine / -10% Standard, [b]no Poor results[/b]). Quality shifts are renormalized to 100% so the preview math stays clean. Mutually exclusive with Tempered.")
 	display_game("  • [b]Specialist discount[/b]: committed crafters (Halfling/Knight matched to the recipe's skill) save -10% on the extra Boost cost at Job Lv 20-39 and -20% at Job Lv 40+. Base 1.0× recipe cost is never reduced — only the [i]extra[/i] above 1.0×.")
-	display_game("  • [b]Server-only this slice[/b]: client UI for picking a boost tier ships in Slice 2 — for now the default is [color=#9ACD32]None[/color] for back-compat with any unmodified clients. The roll itself, material consumption, and the scratch-off completion path all already honor the boost shift.")
 	display_game("")
 
 	# v0.9.540 — Audit #14 friend list (focused project #4).
@@ -24784,13 +24815,6 @@ func display_changelog():
 	display_game("  • Closes one of the focused-project items called out in the v0.9.536 audit cycle close. Audit #15 progress: ~97% → ~99%.")
 	display_game("")
 
-	# v0.9.537 — Audit #14 functional mentor reward bonus.
-	display_game("[color=#00FFFF]v0.9.537[/color]")
-	display_game("  [color=#FFD700]Mentoring becomes a real gameplay incentive — partying with a new player now grants the whole party a +25% XP bonus.[/color]")
-	display_game("  • [b]Mentor + mentee party XP bonus[/b] (Audit #14). When a Lv 20+ player with [color=#9ACD32]/mentor on[/color] is partied together with at least one Lv < 10 player, [b]every surviving party member earns +25% XP[/b] on victory. The reward log shows [color=#FFD700]✦ Mentor bonus: +25% XP for the party![/color] so you know it fired. Mentor and mentee must be different characters; the bonus applies per-fight and folds into the same XP product as house bonuses + level-gap scaling.")
-	display_game("  • [b]Why this matters[/b]: until today, [color=#9ACD32]/mentor on[/color] was purely cosmetic — a gold [color=#FFD700]★[/color] badge on your name. v0.9.537 makes it functional: mentors get a real reason to party with low-level players, mentees get a meaningful XP boost during their most fragile levels, and the existing /mentors listing + ★ badge + [NEW Lv X] whisper tags become coordination tools with actual stakes behind them.")
-	display_game("  • Audit #14 progress: ~95% → ~98%.")
-	display_game("")
 
 
 
@@ -32295,16 +32319,28 @@ func display_craft_recipe_details():
 
 	var recipe = crafting_recipes[crafting_selected_recipe]
 	var name = recipe.get("name", "Unknown")
+	var recipe_id = str(recipe.get("id", ""))
 	var skill_req = recipe.get("skill_required", 1)
 	var difficulty = recipe.get("difficulty", 10)
 	var success_chance = recipe.get("success_chance", 50)
 	var can_craft = recipe.get("can_craft", false)
 	var materials = recipe.get("materials", {})
 
+	# Audit #4 Slice 2 — restore last-used boost for this recipe.
+	crafting_boost_tier = String(crafting_boost_memory.get(recipe_id, "none"))
+	if not (crafting_boost_tier in CRAFT_BOOST_TIERS):
+		crafting_boost_tier = "none"
+	var boost_cfg: Dictionary = CraftingDatabase.BOOST_CONFIG.get(crafting_boost_tier, CraftingDatabase.BOOST_CONFIG["none"])
+	var boost_shift: Dictionary = boost_cfg.get("shift", {})
+	var boost_no_poor: bool = bool(boost_cfg.get("no_poor", false))
+	var boost_mat_mult: float = float(boost_cfg.get("mat_mult", 1.0))
+
 	var is_bulk = recipe.get("bulk_craftable", false) and recipe.get("max_craftable", 1) > 1
 	var max_qty = recipe.get("max_craftable", 1) if is_bulk else 1
-	# Clamp quantity to max
-	if is_bulk:
+	# Clamp quantity to max — boost forces qty=1, matching the server.
+	if crafting_boost_tier != "none":
+		craft_quantity = 1
+	elif is_bulk:
 		craft_quantity = clampi(craft_quantity, 1, max_qty)
 	else:
 		craft_quantity = 1
@@ -32314,15 +32350,20 @@ func display_craft_recipe_details():
 	display_game("")
 	display_game("Skill Required: %d" % skill_req)
 	display_game("Difficulty: %d" % difficulty)
-	if is_bulk:
+	if is_bulk and crafting_boost_tier == "none":
 		display_game("[color=#87CEEB]Quantity: %d[/color] (max %d)" % [craft_quantity, max_qty])
 	display_game("")
-	var mat_label = "Materials Required:" if craft_quantity <= 1 else "Materials Required (x%d):" % craft_quantity
-	display_game("[color=#87CEEB]%s[/color]" % mat_label)
+	var mat_scale: float = boost_mat_mult * float(craft_quantity)
+	var mat_label_suffix := ""
+	if crafting_boost_tier != "none":
+		mat_label_suffix = " [boosted +%d%%]" % int(round((boost_mat_mult - 1.0) * 100))
+	elif craft_quantity > 1:
+		mat_label_suffix = " (x%d)" % craft_quantity
+	display_game("[color=#87CEEB]Materials Required%s:[/color]" % mat_label_suffix)
 
-	# Display materials with owned count (scaled by quantity)
+	# Display materials with owned count (scaled by quantity + boost mult)
 	for mat_id in materials:
-		var required = materials[mat_id] * craft_quantity
+		var required = ceili(float(int(materials[mat_id])) * mat_scale)
 		if mat_id.begins_with("@"):
 			# Group material — show group name + total owned across matching parts
 			var owned = _count_group_materials(mat_id)
@@ -32346,10 +32387,16 @@ func display_craft_recipe_details():
 				display_game("    [color=#808080]from: %s[/color]" % src_line)
 
 	display_game("")
-	# Audit #8 Layer 5 — quality odds preview. Server computes the bucket
-	# distribution and ships it as `quality_odds` per recipe. Falls back to the
-	# old generic line for locked/gated recipes (no odds attached).
-	var odds = recipe.get("quality_odds", {})
+	# Audit #8 Layer 5 — quality odds preview. Recomputed locally when a
+	# boost is active; falls back to the server-supplied `quality_odds` field
+	# when on the None tier.
+	var odds: Dictionary
+	if crafting_boost_tier == "none":
+		odds = recipe.get("quality_odds", {})
+		if odds == null or typeof(odds) != TYPE_DICTIONARY or odds.is_empty():
+			odds = CraftingDatabase.quality_distribution(success_chance)
+	else:
+		odds = CraftingDatabase.quality_distribution(success_chance, boost_shift, boost_no_poor)
 	if odds and typeof(odds) == TYPE_DICTIONARY and not odds.is_empty():
 		var poor_pct = int(odds.get("poor", 0))
 		var std_pct = int(odds.get("standard", 0))
@@ -32362,6 +32409,17 @@ func display_craft_recipe_details():
 		display_game("[color=#808080]Quality depends on skill vs difficulty.[/color]")
 		display_game("[color=#808080]Higher skill = better quality items![/color]")
 	display_game("")
+
+	# Audit #4 Slice 2 — Boost selector row. Hotkeys 1/2/3 → None/Refined/Master.
+	var boost_marker := func(tier: String) -> String:
+		return "[color=#FFD700]●[/color] " if crafting_boost_tier == tier else "  "
+	display_game("[color=#87CEEB]Boost:[/color]  %s[%s] None  %s[%s] [color=#FFAA66]Refined[/color] (+50%% mats)  %s[%s] [color=#A335EE]Master[/color] (+150%% mats, no Poor)" % [
+		boost_marker.call("none"), get_action_key_name(5),
+		boost_marker.call("refined"), get_action_key_name(6),
+		boost_marker.call("master"), get_action_key_name(7),
+	])
+	display_game("")
+
 	# Audit #8 Layer 6 (v0.9.445) — sell-value preview. Pulls from Slice 4 of #9's
 	# rolling market average history; 0 when no sales have been recorded yet, in
 	# which case we skip rendering rather than show a misleading zero.
@@ -32370,14 +32428,36 @@ func display_craft_recipe_details():
 		display_game("[color=#FFD700]Recent market avg:[/color] %d Valor  [color=#808080](rolling avg of recent sales by all players)[/color]" % market_avg)
 		display_game("")
 
-	if can_craft:
-		var craft_label = "CRAFT %dx!" % craft_quantity if craft_quantity > 1 else "CRAFT!"
+	# Treat affordability as TIER-dependent: server enforces boosted costs.
+	var boosted_affordable := _boost_costs_affordable(materials, boost_mat_mult, craft_quantity)
+	if (can_craft or crafting_boost_tier != "none") and boosted_affordable:
+		var prefix := ""
+		if crafting_boost_tier == "refined":
+			prefix = "REFINED "
+		elif crafting_boost_tier == "master":
+			prefix = "MASTER "
+		var craft_label = "%sCRAFT %dx!" % [prefix, craft_quantity] if craft_quantity > 1 else "%sCRAFT!" % prefix
 		display_game("[%s] [color=#00FF00]%s[/color] | [%s] Cancel" % [get_action_key_name(1), craft_label, get_action_key_name(0)])
-		if is_bulk:
+		if is_bulk and crafting_boost_tier == "none":
 			display_game("[%s] -Qty | [%s] +Qty | [%s] Max" % [get_action_key_name(2), get_action_key_name(3), get_action_key_name(4)])
 	else:
 		display_game("[color=#FF4444]Missing required materials![/color]")
 		display_game("[%s] Cancel" % get_action_key_name(0))
+
+
+func _boost_costs_affordable(materials: Dictionary, mat_mult: float, qty: int) -> bool:
+	"""Mirror server's per-material check using ceili. Group keys count via
+	_count_group_materials so monster-part costs respect the boost too."""
+	for mat_id in materials.keys():
+		var required: int = ceili(float(int(materials[mat_id])) * mat_mult * float(qty))
+		var owned: int
+		if String(mat_id).begins_with("@"):
+			owned = _count_group_materials(mat_id)
+		else:
+			owned = int(crafting_materials.get(mat_id, 0))
+		if owned < required:
+			return false
+	return true
 
 func _count_group_materials(group_key: String) -> int:
 	"""Count total matching materials for a group key (e.g., '@attack:minor')."""
@@ -32461,6 +32541,42 @@ func _on_craft_panel_skill_changed(skill: String) -> void:
 	crafting_selected_recipe = -1
 	craft_quantity = 1
 	request_craft_list(skill)
+
+func _set_craft_boost_tier(tier: String) -> void:
+	"""Audit #4 Slice 2 — single entry point for setting boost from anywhere
+	(action bar slots 5/6/7, future commands, etc.). Syncs both surfaces."""
+	if not (tier in CRAFT_BOOST_TIERS):
+		tier = "none"
+	crafting_boost_tier = tier
+	if crafting_selected_recipe >= 0 and crafting_selected_recipe < crafting_recipes.size():
+		var rid := str(crafting_recipes[crafting_selected_recipe].get("id", ""))
+		if rid != "":
+			crafting_boost_memory[rid] = tier
+	if tier != "none":
+		craft_quantity = 1
+	# Push to the panel so its visible state matches.
+	if crafting_panel and crafting_panel.has_method("set_boost_tier"):
+		crafting_panel.set_boost_tier(tier)
+	display_craft_recipe_details()
+	update_action_bar()
+
+
+func _on_craft_panel_boost_tier_changed(tier: String) -> void:
+	"""Audit #4 Slice 2 — keep client mirror + per-recipe memory aligned with
+	the panel selection. craft_quantity is forced to 1 server-side when a
+	boost is active, so mirror that locally too."""
+	if not (tier in CRAFT_BOOST_TIERS):
+		tier = "none"
+	crafting_boost_tier = tier
+	if crafting_selected_recipe >= 0 and crafting_selected_recipe < crafting_recipes.size():
+		var rid := str(crafting_recipes[crafting_selected_recipe].get("id", ""))
+		if rid != "":
+			crafting_boost_memory[rid] = tier
+	if tier != "none":
+		craft_quantity = 1
+	# Repaint the text fallback so /admin-style players see the same odds.
+	display_craft_recipe_details()
+	update_action_bar()
 
 # === Market panel integration ===
 
@@ -33540,8 +33656,17 @@ func confirm_craft():
 	var recipe = crafting_recipes[crafting_selected_recipe]
 	var recipe_id = recipe.get("id", "")
 
+	# Audit #4 Slice 2 — pull the active boost tier from the panel (source of
+	# truth). Fall back to the client mirror if the panel hasn't been set up.
+	var boost_tier := crafting_boost_tier
+	if crafting_panel and crafting_panel.has_method("get_boost_tier"):
+		boost_tier = crafting_panel.get_boost_tier()
+
 	var msg = {"type": "craft_item", "recipe_id": recipe_id}
-	if craft_quantity > 1:
+	if boost_tier != "none":
+		msg["boost_tier"] = boost_tier
+		# Server forces quantity=1 when boost is active; don't even send qty.
+	elif craft_quantity > 1:
 		msg["quantity"] = craft_quantity
 	send_to_server(msg)
 
@@ -33722,6 +33847,9 @@ func close_crafting():
 	can_craft_another = false
 	last_crafted_recipe_id = ""
 	crafting_preserve_page = false
+	# Audit #4 Slice 2 — clear the active tier but keep per-recipe memory so
+	# reopening crafting later restores the player's last choice.
+	crafting_boost_tier = "none"
 
 	if at_trading_post:
 		_display_trading_post_ui()
