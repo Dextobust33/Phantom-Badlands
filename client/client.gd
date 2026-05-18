@@ -18904,6 +18904,28 @@ func handle_server_message(message: Dictionary):
 			var text = message.get("message", "")
 			display_chat("[color=#FF69B4][To %s]:[/color] %s" % [target, text])
 
+		"clan_message":
+			# Audit #14 v0.9.529 — clan-channel chat. Server broadcasts to every
+			# online member of the sender's clan (including the sender, with
+			# is_own=true). Render with the clan tag + banner color so it reads
+			# distinct from global chat and whispers.
+			var clan_sender = String(message.get("sender", "Unknown"))
+			var clan_sender_name = String(message.get("sender_name", clan_sender))
+			var clan_text = String(message.get("message", ""))
+			var clan_tag = String(message.get("clan_tag", ""))
+			var clan_color = String(message.get("clan_color", "#88FFCC"))
+			var is_own = bool(message.get("is_own", false))
+			var tag_prefix = ""
+			if clan_tag != "":
+				tag_prefix = "[color=%s][%s][/color] " % [clan_color, clan_tag]
+			var arrow = "to" if is_own else "from"
+			# Color-coded so clan chat is immediately distinguishable in the chat
+			# stream. Sea-green channel marker, sender name keeps title coloring.
+			display_chat("[color=#88FFCC][CLAN %s %s%s]:[/color] %s" % [arrow, tag_prefix, clan_sender, clan_text])
+			if not is_own:
+				last_whisper_from = clan_sender_name
+				play_whisper_notification()
+
 		"tutorial_hint":
 			# Audit #3 Slice 4 — server-pushed one-time teaching message rendered
 			# in a modal overlay so it can't be scrolled past or missed in chat.
@@ -20769,7 +20791,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21586,6 +21608,16 @@ func process_command(text: String):
 				send_to_server({"type": "private_message", "target": last_whisper_from, "message": msg})
 			else:
 				display_game("[color=#FF0000]Usage: /reply <message>[/color]")
+		"c", "cc", "clanchat":
+			# Audit #14 v0.9.529 — clan-channel chat. Broadcasts to all online
+			# members of the caller's clan. Server gates by clan membership.
+			if parts.size() > 1:
+				var clan_msg_parts = parts.slice(1)
+				var clan_msg = " ".join(clan_msg_parts)
+				send_to_server({"type": "clan_message", "message": clan_msg})
+			else:
+				display_game("[color=#FF0000]Usage: /c <message>[/color]")
+				display_game("[color=#808080]Sends a message to all online clan members. Alias: /cc, /clanchat.[/color]")
 		"watch":
 			if parts.size() > 1:
 				var target = parts[1]
@@ -24373,8 +24405,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.529 — Audit #14 clan chat + Audit #15 help refresh.
+	display_game("[color=#00FF00]v0.9.529[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan-channel chat plus a refreshed help page Recent Additions section.[/color]")
+	display_game("  • [b]Clan chat[/b] (Audit #14). New [color=#9ACD32]/c <message>[/color] command (aliases [color=#9ACD32]/cc[/color], [color=#9ACD32]/clanchat[/color]) broadcasts to every online member of your clan. Renders with [color=#88FFCC][CLAN][/color] channel marker + clan banner color + tag. Empty clans see [color=#808080](No other clan members online.)[/color] confirmation so you know whether anyone heard you. Server gates by clan membership; non-members get the standard \"join a clan\" hint.")
+	display_game("  • [b]Help page refresh[/b] (Audit #15). RECENT ADDITIONS section now includes [color=#9ACD32]/c[/color] clan chat, [color=#FFD700][NEW Lv X][/color] whisper tag for mentor-eligible players, the twelve first-touch tutorial overlays (incl. gather + equip), the no-real-time-gates rule clarification, and the full 15-structure cosmetic catalogue.")
+	display_game("  • Audit progress: #14 ~78% → ~82%, #15 ~92% → ~94%.")
+	display_game("")
+
 	# v0.9.528 — Audit #3 tutorial hints batch (gather + equip).
-	display_game("[color=#00FF00]v0.9.528[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.528[/color]")
 	display_game("  [color=#FFD700]Two more first-touch teaching overlays — gather minigame and equipment slots.[/color]")
 	display_game("  • [b]First gather hint[/b] (Audit #3). First time you start fishing, mining, or logging, a modal explains the wait→react minigame, tier scaling (T1-T9 nodes need 1/2/3 reactions), how skill XP works, and how equipped tools (rod/pickaxe/axe) cut wait time and boost yield. New [color=#A335EE]seen_gather_hint[/color] per-character flag — fires once per character across all three gather types.")
 	display_game("  • [b]First equip hint[/b] (Audit #3). First time you equip a piece of gear, a modal explains the seven slots (Weapon/Armor/Helm/Shield/Boots/Ring/Amulet), the inventory comparison view, tier + variant rarity, the Salvage flow for low-tier gear, and Home Stone (Equipment) for permadeath protection. New [color=#A335EE]seen_equip_hint[/color] per-character flag.")
@@ -24413,13 +24453,6 @@ func display_changelog():
 	display_game("  • [b]Reason:[/b] this game is built for any session length — permadeath, exploration, settlement-building. Real-world clock gates punish bursts and marathons alike. Saved as a permanent workflow rule.")
 	display_game("")
 
-	# v0.9.524 — Audit #6 Repeatable T3 chains + Audit #10 Apex Zone affinity.
-	display_game("[color=#00FFFF]v0.9.524[/color]")
-	display_game("  [color=#FFD700]All T3 chains now repeatable; apex zones get themed affinity descriptors.[/color]")
-	display_game("  • [b]Repeatable T3 chains[/b] (Audit #6). [color=#FFAA00]Trollish Tide[/color] and [color=#FFAA00]Stone Vigil[/color] now also have a [color=#9ACD32]24h cooldown[/color] after final-stage turn-in. All 13 chains at T1+T2+T3 are now repeatable. Higher tiers (T4-T9) stay one-shot — those are the achievement-style content.")
-	display_game("  • [b]Apex Zone affinity descriptors[/b] (Audit #10). The HUD apex tag now appends each zone's affinity theme — [color=#9F70FF]Burning Reach (Fire)[/color], [color=#9F70FF]Frostbound Verge (Ice)[/color], [color=#9F70FF]Sundered Hollows (Shadow)[/color], [color=#9F70FF]Cinder Wastes (Ash)[/color]. Pure cosmetic flavor — gives each named zone a thematic identity beyond just a quadrant name.")
-	display_game("  • Audit progress: #6 ~99% → ~99.5%, #10 ~98% → ~99%.")
-	display_game("")
 
 
 
@@ -26827,9 +26860,12 @@ func show_help():
 [color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any sub-tier mix) + Ascension Catalyst → same type at tier+1. Keeps your favorite pet, raises rank. Catalysts drop T6+.
 [color=#00FFFF]Hybrid Fusion:[/color] 2 different sub-tier 5+ + Hybrid Catalyst → blended companion. Catalysts drop T5+.
 [color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
-[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
-[color=#00FFFF]Status page:[/color] Progression Vectors dashboard names every advanceable track. Includes Quest Chains completed + titles earned.
-[color=#00FFFF]Cosmetic buildables:[/color] Banner, Lamp Post, Torch, Statue, Signpost, Brazier, Fountain, Bench, Well, Pylon, Garden Plot — Construction skill 4 → 25.
+[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts. [color=#9ACD32]/c <msg>[/color] broadcasts to online clan members.
+[color=#00FFFF]Whisper tags:[/color] Whispers from Lv < 10 players display a gold [color=#FFD700][NEW Lv X][/color] tag for Lv 20+ recipients — mentors can prioritize newbies.
+[color=#00FFFF]Tutorial overlays:[/color] Twelve first-touch teaching modals (progression, quest board, dungeons, crafting, signposts, apex frontier, market, chains, companions, companion stable, gather, equip).
+[color=#00FFFF]Status page:[/color] Progression Vectors dashboard names every advanceable track. Includes Quest Chains completed + titles earned. Respawn point line.
+[color=#00FFFF]No real-time gates:[/color] Daily quests + repeatable chains have no 24h cooldown — re-accept and re-run as fast as you like. World-state systems (resource regrowth, vendor rotation, post inactivity, wall decay) still tick normally.
+[color=#00FFFF]Cosmetic buildables:[/color] Cairn, Garden Plot, Scarecrow, Bench, Tent, Torch, Crate, Signpost, Pylon, Banner, Brazier, Lamp Post, Well, Fountain, Statue — fifteen structures across Construction skill 3 → 25.
 
 [color=#808080]Open [/color][color=#00FFFF]More → Changes[/color][color=#808080] for the per-version detailed history.[/color]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]

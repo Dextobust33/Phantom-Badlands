@@ -1470,6 +1470,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_chat(peer_id, message)
 		"private_message":
 			handle_private_message(peer_id, message)
+		"clan_message":
+			handle_clan_message(peer_id, message)
 		"move":
 			handle_move(peer_id, message)
 		"hunt":
@@ -2986,6 +2988,68 @@ func handle_private_message(peer_id: int, message: Dictionary):
 		"target": target_name,
 		"message": text
 	})
+
+func handle_clan_message(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 v0.9.529 — clan-channel chat. Broadcasts to all online
+	members of the sender's clan (including the sender for confirmation).
+	Requires authentication AND clan membership."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You must have a character to chat!"})
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		send_to_peer(peer_id, {"type": "error", "message": "Not authenticated."})
+		return
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]You're not in a clan. Use /clan to create or join one.[/color]"})
+		return
+	var text = String(message.get("message", ""))
+	if text.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Message cannot be empty!"})
+		return
+	text = text.left(MAX_CHAT_LENGTH)
+	text = _sanitize_chat_text(text)
+
+	var sender_name = characters[peer_id].name
+	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
+	var clan = persistence.get_clan(clan_id)
+	var clan_tag = String(clan.get("tag", ""))
+	var clan_color = String(clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
+
+	# Broadcast to every online peer whose account is in the same clan.
+	# Includes the sender so they see their own message echoed (matches
+	# whisper-sent confirmation pattern).
+	var delivered = 0
+	for other_peer_id in peers.keys():
+		if not peers[other_peer_id].authenticated:
+			continue
+		if not characters.has(other_peer_id):
+			continue
+		var other_account_id = String(peers[other_peer_id].get("account_id", ""))
+		if other_account_id == "":
+			continue
+		if persistence.get_account_clan_id(other_account_id) != clan_id:
+			continue
+		send_to_peer(other_peer_id, {
+			"type": "clan_message",
+			"sender": sender_display,
+			"sender_name": sender_name,
+			"clan_tag": clan_tag,
+			"clan_color": clan_color,
+			"message": text,
+			"is_own": other_peer_id == peer_id,
+		})
+		delivered += 1
+	# If only the sender heard it, surface the lonely-clan signal so they
+	# know nobody else picked it up. Saves a "did anyone get that?" trip.
+	if delivered <= 1:
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#808080](No other clan members online.)[/color]"
+		})
 
 func handle_move(peer_id: int, message: Dictionary):
 	if not characters.has(peer_id):
