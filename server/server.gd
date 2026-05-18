@@ -18954,6 +18954,13 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	# finalize (which sends craft_result + grants XP/inventory).
 	var quality: int = CraftingDatabaseScript.roll_quality(skill_level, int(recipe.get("difficulty", 1)), total_bonus, best_score, boost_shift, boost_no_poor)
 
+	# Audit #4 Slice 3.5 (v0.9.544) — stash the scratch-off reveal data so
+	# _finalize_craft can include it in craft_result. Lets the new unified
+	# summary panel render the full chain: reveals → score → result.
+	session["craft_scratch_awarded"] = awarded
+	session["craft_scratch_missed"] = missed
+	session["craft_refund_pct"] = mini(refund_count * 25, 100)
+	session["craft_duplicate_count"] = duplicate_count
 	# Stash session for _finalize_craft's tool branch to read, then send
 	# the panel-close message and run finalize. Erase active_gathering
 	# AFTER finalize so the tool branch can still see the session.
@@ -22886,6 +22893,23 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 		_broadcast_achievement(character.name,
 			"[color=#A335EE]%s[/color] crafted a [color=#A335EE]Masterwork %s[/color]!" % [character.name, recipe.name], peer_id)
 
+	# Audit #4 Slice 3.5 (v0.9.544) — Unified Craft Summary payload.
+	# Pull scratch-off reveal data + session metadata so the client panel can
+	# render the full transparent chain: boost → reveals → score → quality.
+	var _craft_session: Dictionary = pending_craft_sessions.get(peer_id, {})
+	var _scratch_awarded: Array = _craft_session.get("craft_scratch_awarded", [])
+	var _scratch_missed: Array = _craft_session.get("craft_scratch_missed", [])
+	var _refund_pct: int = int(_craft_session.get("craft_refund_pct", 0))
+	var _duplicate_count: int = int(_craft_session.get("craft_duplicate_count", 0))
+	var _consumed_materials: Dictionary = _craft_session.get("craft_consumed_materials", {})
+	var _boost_cfg: Dictionary = CraftingDatabaseScript.BOOST_CONFIG.get(boost_tier, {"mat_mult": 1.0})
+	var _boost_mat_mult: float = float(_boost_cfg.get("mat_mult", 1.0))
+	# Effective success_chance the roll used — for showing "Score N → +X% success".
+	var _effective_success_chance: int = CraftingDatabaseScript.calculate_success_chance(skill_level, int(recipe.get("difficulty", 1)), total_bonus, score)
+	# Tool slot bonuses that the scratch-off applied (only meaningful on tool crafts).
+	var _tool_durability_pct: int = int(_craft_session.get("craft_tool_durability_pct", 0))
+	var _tool_efficiency_tier: int = int(_craft_session.get("craft_tool_efficiency_tier", 0))
+
 	send_to_peer(peer_id, {
 		"type": "craft_result",
 		"success": true,
@@ -22910,6 +22934,23 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 		"score": score,
 		"boost_tier": boost_tier,
 		"specialist_save": specialist_save_fired,
+		# Audit #4 Slice 3.5 — transparency payload for the unified summary.
+		"summary": {
+			"boost_tier": boost_tier,
+			"boost_mat_mult": _boost_mat_mult,
+			"consumed_materials": _consumed_materials,
+			"scratch_awarded": _scratch_awarded,
+			"scratch_missed": _scratch_missed,
+			"best_score": score,
+			"score_bonus_pct": maxi(0, score) * 15,
+			"effective_success_chance": _effective_success_chance,
+			"refund_pct": _refund_pct,
+			"duplicate_count": _duplicate_count,
+			"tool_durability_pct": _tool_durability_pct,
+			"tool_efficiency_tier": _tool_efficiency_tier,
+			"is_tempered": is_tempered,
+			"temper_target": temper_target,
+		},
 	})
 
 	send_character_update(peer_id)

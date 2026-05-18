@@ -1295,9 +1295,8 @@ var scratch_off_panel = null
 # Audit #4 Slice 3 — Crafting reveal animation panel.
 const CraftRevealPanelScript = preload("res://client/craft_reveal_panel.gd")
 var craft_reveal_panel = null
-# Stash the result payload so we can render text-mode log + craft-again hints
-# AFTER the dismissal of the reveal panel (keeps the existing flow intact).
-var _pending_craft_result_payload: Dictionary = {}
+# Audit #4 Slice 3.5 (v0.9.544) — text-page dump removed; the unified summary
+# panel is the sole result surface. No payload-stashing var needed.
 # Combat scratch-off (user-requested 2026-05-14)
 const CombatLootPanelScript = preload("res://client/combat_loot_panel.gd")
 var combat_loot_panel = null
@@ -1982,9 +1981,12 @@ func _ready():
 
 	# Audit #4 Slice 3 — Crafting reveal animation panel. Modal overlay on
 	# the root window; instantiated once and reused for every craft.
+	# Slice 3.5 (v0.9.544) — also handles craft_again_requested so the panel
+	# is the sole result surface (replaces the old text-page).
 	craft_reveal_panel = CraftRevealPanelScript.new()
 	add_child(craft_reveal_panel)
 	craft_reveal_panel.dismissed.connect(_on_craft_reveal_dismissed)
+	craft_reveal_panel.craft_again_requested.connect(_on_craft_reveal_again)
 
 	# v0.9.372 — numpad controls popup (new-character help).
 	# v0.9.490 — global HelpPanel for topic-based help surfaces.
@@ -24742,8 +24744,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.544 — Unified Craft Summary panel (Slice 3.5 — playtest fix).
+	display_game("[color=#00FF00]v0.9.544[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Reveal panel and crafting-success page are now one screen with full transparency — boost choice, materials paid, scratch-off reveals, and how everything chained into the final result.[/color]")
+	display_game("  • [b]Unified Craft Summary[/b] (Audit #4 Slice 3.5 — playtest feedback). The old thin reveal-animation panel + the trailing 'Crafting Success!' text page are now combined into a single result modal. Sections: Boost tier badge → final quality + name → Materials Paid (with boost cost annotation) → Scratch-Off Reveals (each card with its effect tagged) → Score → Success → Quality [b]chain line[/b] → Bonuses Applied (refund / duplicates / tool durability/efficiency) → Item Stats → XP Gained.")
+	display_game("  • [b]Scratch-off transparency[/b]. Every revealed slot now shows what it did: Standard tier → +15% success, Fine → +30%, Masterwork → +45%, plus +25%/50% durability, +1/+2 efficiency, refund and duplicate cards. Lets you see exactly why a craft rolled the way it did.")
+	display_game("  • [b]Craft Again button[/b]. The panel's own [color=#9ACD32]Craft Again (Q)[/color] button re-issues the same recipe with the same boost tier — chain Master crafts without re-navigating. Disabled when you can't afford another at the current boost cost.")
+	display_game("  • [b]Behavior change[/b]: faster dismissal hold (0.4s vs 1.0s), border tint matches the rolled quality, no more separate text-page dump after dismiss (the panel is the result; game_output gets just a one-line chat breadcrumb).")
+	display_game("")
+
 	# v0.9.543 — Crafting reveal animation + specialist save + trivia cleanup (Slice 3).
-	display_game("[color=#00FF00]v0.9.543[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.543[/color]")
 	display_game("  [color=#FFD700]The crafting reveal moment lands — every craft now plays a tweened animation modal that pays off the boost commitment.[/color]")
 	display_game("  • [b]Reveal animation panel[/b] (Audit #4, crafting overhaul Slice 3). After every craft, a 360×280 modal pops with a card-flip reveal: shimmering [color=#888888]???[/color] over phase 1, then a card-flip + name/quality fade-in over phase 2, then a color sweep + stat multiplier subtitle (×0.5 / ×1.0 / ×1.25 / ×1.5) over phase 3. Refined / Master crafts get a tier badge above the card so the commitment is visible.")
 	display_game("  • [b]Specialist save[/b] (Audit #4). 5% chance on Refined or Master rolls to bump the quality one tier (capped at Masterwork). Fires for committed crafter specialists (Halfling / Knight matched to the recipe skill). When it triggers, the reveal panel shows [color=#FFD700]★ Specialist Save — one tier higher! ★[/color]. Replaces the old trivia 0→1 score-save boon.")
@@ -24782,17 +24793,6 @@ func display_changelog():
 	display_game("  • Audit #14 progress: ~99% → ~100% — the social surface is fully wired now: chat → presence → trade history → friend graph → block list.")
 	display_game("")
 
-	# v0.9.539 — Audit #14 trade history (focused project #3).
-	display_game("[color=#00FFFF]v0.9.539[/color]")
-	display_game("  [color=#FFD700]A persistent rolling log of every trade you've made — account-level, survives permadeath.[/color]")
-	display_game("  • [b]/trades [N][/b] (Audit #14, focused project #3). New chat command prints your last N trade-history entries (default 10, max 50, alias [color=#9ACD32]/tradehistory[/color]). Each entry shows timestamp + event kind + counterparty + items/valor.")
-	display_game("  • [b]What gets logged[/b]:")
-	display_game("    [color=#FF8866]BOUGHT[/color] — every market purchase (price + seller name)")
-	display_game("    [color=#88FF88]SOLD[/color] — every market sale (price + buyer name), even when you're offline")
-	display_game("    [color=#A335EE]TRADE[/color] — every direct trade completion (counts of items/companions/eggs exchanged + partner name)")
-	display_game("  • [b]Persistence[/b]: stored on your ACCOUNT (not character) so the log survives permadeath. Capped at 50 entries per account — oldest drops first as new ones arrive. Backed by [color=#9ACD32]persistence.add_trade_history_entry[/color] + [color=#9ACD32]get_trade_history[/color] APIs.")
-	display_game("  • Audit #14 progress: ~98% → ~99%.")
-	display_game("")
 
 
 
@@ -33655,146 +33655,93 @@ func confirm_craft():
 # at v0.9.372; these renderers had been unreachable for ~170 versions.
 
 func handle_craft_result(message: Dictionary):
-	"""Handle crafting result from server.
-	Audit #4 Slice 3 — open the reveal animation modal first; the text-mode
-	log + craft-again hints render after the player dismisses the panel."""
-	# Stash for the dismiss handler.
-	_pending_craft_result_payload = message.duplicate()
-
-	# Build the reveal payload from the result fields the server already sends.
-	var quality_name = message.get("quality_name", "Standard")
-	var quality_color = message.get("quality_color", "#FFFFFF")
-	var recipe_name = message.get("recipe_name", "item")
-	var crafted_item = message.get("crafted_item", {})
-	var stats_summary := ""
-	if not crafted_item.is_empty():
-		var parts: Array = []
-		if crafted_item.has("attack"): parts.append("ATK %d" % int(crafted_item.attack))
-		if crafted_item.has("defense"): parts.append("DEF %d" % int(crafted_item.defense))
-		if crafted_item.has("hp"): parts.append("HP %d" % int(crafted_item.hp))
-		if crafted_item.has("speed"): parts.append("SPD %d" % int(crafted_item.speed))
-		if crafted_item.has("mana"): parts.append("MP %d" % int(crafted_item.mana))
-		stats_summary = "  ".join(parts)
-
-	if craft_reveal_panel:
-		craft_reveal_panel.open({
-			"recipe_name": recipe_name,
-			"quality_name": quality_name,
-			"quality_color": quality_color,
-			"stats_summary": stats_summary,
-			"boost_tier": String(message.get("boost_tier", "none")),
-			"specialist_save": bool(message.get("specialist_save", false)),
-		})
-	else:
-		# Fallback (panel failed to init): render text immediately.
-		_render_craft_result_text(message)
-
-
-func _on_craft_reveal_dismissed() -> void:
-	"""Audit #4 Slice 3 — reveal animation finished. Render the existing text
-	log to game_output so the player still sees XP gains / level-ups / hints,
-	and so the craft-again flow continues to work via action_bar slots."""
-	if _pending_craft_result_payload.is_empty():
-		return
-	var msg = _pending_craft_result_payload
-	_pending_craft_result_payload = {}
-	_render_craft_result_text(msg)
-
-
-func _render_craft_result_text(message: Dictionary):
-	"""Render the post-reveal text log into game_output. Preserves the existing
-	craft-again / continue flow that downstream code depends on."""
-	var success = message.get("success", false)
-	var recipe_name = message.get("recipe_name", "item")
-	var quality_name = message.get("quality_name", "Standard")
-	var quality_color = message.get("quality_color", "#FFFFFF")
-	var xp_gained = message.get("xp_gained", 0)
-	var leveled_up = message.get("leveled_up", false)
-	var new_level = message.get("new_level", 1)
-	var skill_name = message.get("skill_name", "crafting")
-	var result_message = message.get("message", "")
-
-	game_output.clear()
-
-	# Show minigame score if applicable
-	var score = message.get("score", -1)
-	if score >= 0:
-		display_game("[color=#808080]Challenge Score: %d/3[/color]" % score)
-		display_game("")
-
-	# Crafting always succeeds (at least Poor quality)
-	display_game("[color=#00FF00]===== CRAFTING SUCCESS! =====[/color]")
-	display_game("")
-	display_game("[color=%s]✦ %s %s ✦[/color]" % [quality_color, quality_name, recipe_name])
-	display_game("")
-	display_game(result_message)
-
-	# Show item stats if equipment was crafted
-	var crafted_item = message.get("crafted_item", {})
-	if not crafted_item.is_empty():
-		var item_type = crafted_item.get("type", "")
-		if item_type == "weapon" or item_type.ends_with("_crafted"):
-			var stats_line = "  "
-			if crafted_item.has("attack"):
-				stats_line += "[color=#FF4444]ATK %d[/color]  " % crafted_item.attack
-			if crafted_item.has("defense"):
-				stats_line += "[color=#4444FF]DEF %d[/color]  " % crafted_item.defense
-			if crafted_item.has("hp"):
-				stats_line += "[color=#00FF00]HP %d[/color]  " % crafted_item.hp
-			if crafted_item.has("speed"):
-				stats_line += "[color=#FFFF00]SPD %d[/color]  " % crafted_item.speed
-			if crafted_item.has("mana"):
-				stats_line += "[color=#00BFFF]MP %d[/color]  " % crafted_item.mana
-			display_game(stats_line)
-			display_game("[color=#808080]  Lv%d — Added to inventory[/color]" % crafted_item.get("level", 1))
-		elif item_type == "structure":
-			display_game("[color=#808080]  Added to inventory — use in Build mode[/color]")
-		elif item_type == "tool":
-			display_game("[color=#808080]  Added to inventory — equip from Inventory > Tools[/color]")
-		else:
-			display_game("[color=#808080]  Added to inventory[/color]")
-
-	display_game("")
-	display_game("[color=#00BFFF]+%d %s XP[/color]" % [xp_gained, skill_name.capitalize()])
-
-	# Show character XP from crafting
-	var char_xp_gained = message.get("char_xp_gained", 0)
-	if char_xp_gained > 0:
-		display_game("[color=#FF00FF]+%d XP[/color]" % char_xp_gained)
-
-	if leveled_up:
-		display_game("[color=#FFFF00]★ %s skill increased to %d! ★[/color]" % [skill_name.capitalize(), new_level])
-
-	# Job XP is awarded silently in the background (used for recipe gating)
-
-	# Update materials from craft result (server sends post-craft materials)
-	var updated_mats = message.get("materials", {})
+	"""Audit #4 Slice 3.5 (v0.9.544) — Unified Craft Summary panel.
+	The panel is the only result surface; replaces the old text-page dump
+	and the old thin reveal-animation panel. Everything the player needs
+	to understand the craft lives in the panel: boost choice → material
+	cost → scratch-off reveals → score → final quality + stats + XP."""
+	# Pull session updates that affect ongoing state.
+	var updated_mats: Dictionary = message.get("materials", {})
 	if not updated_mats.is_empty():
 		crafting_materials = updated_mats
 
-	# Check if player can craft same recipe again
-	last_crafted_recipe_id = message.get("recipe_id", "")
+	# Pre-compute can_craft_again before opening the panel — it shows the
+	# button only when affordable. Boost matters: we re-check against the
+	# active boost tier so the button reflects what would actually run.
+	last_crafted_recipe_id = String(message.get("recipe_id", ""))
+	var boost_tier: String = String(message.get("boost_tier", "none"))
+	var boost_cfg: Dictionary = CraftingDatabase.BOOST_CONFIG.get(boost_tier, CraftingDatabase.BOOST_CONFIG["none"])
+	var boost_mat_mult: float = float(boost_cfg.get("mat_mult", 1.0))
 	can_craft_another = false
 	for r in crafting_recipes:
 		if r.get("id", "") == last_crafted_recipe_id:
-			var mats = r.get("materials", {})
-			var has_all = true
+			if r.get("locked", false) or r.get("specialist_gated", false):
+				break
+			var mats: Dictionary = r.get("materials", {})
+			var has_all := true
 			for mat_id in mats:
-				if int(crafting_materials.get(mat_id, 0)) < int(mats[mat_id]):
+				var required := ceili(float(int(mats[mat_id])) * boost_mat_mult)
+				var owned: int
+				if String(mat_id).begins_with("@"):
+					owned = _count_group_materials(String(mat_id))
+				else:
+					owned = int(crafting_materials.get(mat_id, 0))
+				if owned < required:
 					has_all = false
 					break
-			can_craft_another = has_all and not r.get("locked", false) and not r.get("specialist_gated", false)
+			can_craft_another = has_all
 			break
 
-	display_game("")
-	if can_craft_another:
-		display_game("[color=#808080]Press [%s] to craft another, [%s] to return to recipes[/color]" % [get_action_key_name(0), get_action_key_name(1)])
-	else:
-		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+	# Leave a single chat-history breadcrumb so /history catches it.
+	var quality_name_log := String(message.get("quality_name", "Standard"))
+	var recipe_name_log := String(message.get("recipe_name", "item"))
+	var quality_color_log := String(message.get("quality_color", "#FFFFFF"))
+	game_output.clear()
+	display_game("[color=%s]✦ %s %s crafted ✦[/color]" % [quality_color_log, quality_name_log, recipe_name_log])
 
-	# Set flag to prevent craft_list from overwriting the result
+	# Open the panel — the panel renders the full transparent breakdown.
+	if craft_reveal_panel:
+		craft_reveal_panel.open(message, can_craft_another)
 	awaiting_craft_result = true
 	crafting_selected_recipe = -1
+	update_action_bar()
+
+
+func _on_craft_reveal_dismissed() -> void:
+	"""Panel closed via Continue / Space / Escape. Resume normal crafting
+	flow — the chat-history breadcrumb is already in game_output from
+	handle_craft_result."""
+	awaiting_craft_result = false
+	can_craft_another = false
+	# Refresh recipe list (preserves page).
+	if crafting_mode:
+		crafting_preserve_page = true
+		request_craft_list(crafting_skill)
+	update_action_bar()
+
+
+func _on_craft_reveal_again() -> void:
+	"""Panel's 'Craft Again' button. Reissues the same recipe with the same
+	boost tier so the player can rapid-fire batches."""
+	if last_crafted_recipe_id == "":
+		_on_craft_reveal_dismissed()
+		return
+	# Re-select the recipe so display state stays consistent.
+	for ri in range(crafting_recipes.size()):
+		if crafting_recipes[ri].get("id", "") == last_crafted_recipe_id:
+			crafting_selected_recipe = ri
+			break
+	can_craft_another = false
+	awaiting_craft_result = true
+	game_output.clear()
+	var rname := ""
+	if crafting_selected_recipe >= 0 and crafting_selected_recipe < crafting_recipes.size():
+		rname = String(crafting_recipes[crafting_selected_recipe].get("name", "item"))
+	display_game("[color=#FFD700]Crafting %s...[/color]" % rname)
+	var msg := {"type": "craft_item", "recipe_id": last_crafted_recipe_id}
+	if crafting_boost_tier != "none":
+		msg["boost_tier"] = crafting_boost_tier
+	send_to_server(msg)
 	update_action_bar()
 
 func close_crafting():
