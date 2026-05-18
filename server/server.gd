@@ -2106,6 +2106,9 @@ func handle_list_characters(peer_id: int):
 		# (Sanctuary headstart purchases) will spend baddie points to apply
 		# these records as starting ranks on a new character.
 		"account_mastery_records": persistence.get_account_mastery_records(account_id),
+		# Slice 6e/6f (v0.9.549) — account-level ability variant imprints.
+		# Survives permadeath; future Sanctuary surface will browse these.
+		"account_variant_imprints": persistence.get_account_variant_imprints(account_id),
 	})
 
 func handle_select_character(peer_id: int, message: Dictionary):
@@ -2232,6 +2235,14 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	if character.initialize_deck_collection_if_needed():
 		persistence.save_character(account_id, character)
 		log_message("Mastery: initialized combat deck collection for %s" % char_name)
+
+	# Slice 6e/6f (v0.9.549) — sync account-level Variant Imprints to the
+	# character cache so combat_manager._count_imprint_stacks reads fresh.
+	# The account is authoritative; the character mirror is rebuilt on every
+	# load + every imprint write (no save needed — character cache is
+	# transient, only the account-level imprint dict is persisted).
+	if persistence != null:
+		character.set_variant_imprints(persistence.get_account_variant_imprints(account_id))
 
 	# Restore quest state from saved quests (survives server restart)
 	for quest_data in character.active_quests:
@@ -5097,6 +5108,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	"""Slice 6b — apply the player's rank-up choice. Choice is 'copy'
 	(+1 copy in combat_deck_collection) or 'effect' (+1 ability_effect_ranks).
+	Slice 6e/6f (v0.9.549) — adds 'variant' choice that writes a trait_id
+	from the queued variant_offer to account-level ability_variant_imprints.
 	Pops the queued choice. Tolerates client-driven popups for queued choices
 	that were made out-of-combat or replayed after disconnect."""
 	if not characters.has(peer_id):
@@ -5104,21 +5117,74 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	var character = characters[peer_id]
 	var ability_name = str(message.get("ability", ""))
 	var choice = str(message.get("choice", ""))
-	if ability_name == "" or (choice != "copy" and choice != "effect"):
+	if ability_name == "" or (choice != "copy" and choice != "effect" and choice != "variant"):
 		return
 	# Pop the matching queued choice (first entry matching ability+rank). Allow
 	# any matching ability if no rank is provided — robust to client/server lag.
 	var queue: Array = character.pending_rank_choices
 	var matched_idx = -1
+	var matched_choice: Dictionary = {}
 	for i in range(queue.size()):
 		var q = queue[i]
 		if str(q.get("ability", "")) == ability_name:
 			matched_idx = i
+			matched_choice = q
 			break
 	if matched_idx < 0:
 		# No queued choice — drop silently. Could be a duplicate response.
 		return
 	character.pending_rank_choices.remove_at(matched_idx)
+	# Slice 6f — variant choice path. Refuses if the queued choice didn't
+	# carry a variant_offer (companion wasn't active at rank-up time) or if
+	# the stack is full. Persists to account, mirrors back to character cache.
+	if choice == "variant":
+		var rc_account_id_v = peers.get(peer_id, {}).get("account_id", "")
+		var offer: Dictionary = matched_choice.get("variant_offer", {})
+		if offer.is_empty() or rc_account_id_v == "":
+			send_to_peer(peer_id, {
+				"type": "rank_choice_applied",
+				"ability": ability_name,
+				"choice": choice,
+				"ok": false,
+				"reason": "No variant offer available for this rank-up.",
+				"next_pending": character.pending_rank_choices[0] if not character.pending_rank_choices.is_empty() else null
+			})
+			return
+		var trait_id: String = String(offer.get("trait_id", ""))
+		var imprint_result = persistence.add_variant_imprint(rc_account_id_v, ability_name, trait_id)
+		if not imprint_result.get("ok", false):
+			send_to_peer(peer_id, {
+				"type": "rank_choice_applied",
+				"ability": ability_name,
+				"choice": choice,
+				"ok": false,
+				"reason": String(imprint_result.get("reason", "Could not imprint")),
+				"next_pending": character.pending_rank_choices[0] if not character.pending_rank_choices.is_empty() else null
+			})
+			return
+		# Mirror the updated stack onto the character cache so combat_manager
+		# sees it immediately (next ability cast applies the new rider).
+		var full_imprints: Dictionary = persistence.get_account_variant_imprints(rc_account_id_v)
+		character.set_variant_imprints(full_imprints)
+		send_to_peer(peer_id, {
+			"type": "rank_choice_applied",
+			"ability": ability_name,
+			"choice": choice,
+			"new_copy_count": int(character.combat_deck_collection.get(ability_name, 1)),
+			"new_effect_rank": int(character.ability_effect_ranks.get(ability_name, 0)),
+			"variant_stack": imprint_result.get("stack_after", []),
+			"variant_trait_id": trait_id,
+			"variant_trait_name": String(offer.get("trait_name", "")),
+			"variant_companion_name": String(offer.get("companion_name", "")),
+			"variant_imprints": full_imprints,
+			"ok": true,
+			"next_pending": character.pending_rank_choices[0] if not character.pending_rank_choices.is_empty() else null
+		})
+		# Persist character (no character mutation here besides cache mirror,
+		# but save anyway so cache stays consistent with disk).
+		if persistence != null and rc_account_id_v != "":
+			persistence.save_character(rc_account_id_v, character)
+		return
 	var apply_result = character.apply_rank_choice(ability_name, choice)
 	if not apply_result.get("ok", false):
 		# Choice refused (e.g., ability not currently accessible). Re-queue

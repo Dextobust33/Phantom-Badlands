@@ -133,6 +133,11 @@ var monster_database: Node = null
 # Titles reference for title item drops
 const TitlesScript = preload("res://shared/titles.gd")
 
+# Drop tables script reference for static lookups (variant traits, etc.)
+# Used alongside the `drop_tables` Node instance — script is preloaded so
+# const tables are accessible without going through the instance.
+const DropTablesScript = preload("res://shared/drop_tables.gd")
+
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
 
@@ -2782,10 +2787,19 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# Player picks between "+1 Copy in Deck" and "+10% Damage" via popup.
 				# Queue persists across disconnect; client pops popup on next event.
 				var queued_choice := {"ability": ability_name, "new_rank": new_rank, "queued_at": Time.get_unix_time_from_system()}
+				# Slice 6e/6f (v0.9.549) — Variant Imprint offer. When the
+				# player has an active companion AND that companion type maps
+				# to a trait AND the ability's imprint stack isn't full, queue
+				# a third "✦ Imprint" option alongside +1 Card / +Damage.
+				var variant_offer: Dictionary = _build_variant_offer_for_rank_up(combat, ability_name)
+				if not variant_offer.is_empty():
+					queued_choice["variant_offer"] = variant_offer
 				if not (combat.character.pending_rank_choices is Array):
 					combat.character.pending_rank_choices = []
 				combat.character.pending_rank_choices.append(queued_choice)
 				var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — choose [color=#87CEEB]+1 Card[/color] or [color=#FFB6C1]+10%% Damage[/color]." % [ability_name.replace("_", " ").capitalize(), new_rank, rank_label]
+				if not variant_offer.is_empty():
+					rank_msg += " [color=%s]✦ Imprint: %s (from %s)[/color] also available." % [variant_offer.get("color", "#FFD700"), variant_offer.get("trait_name", "?"), variant_offer.get("companion_name", "?")]
 				if not result.has("messages"):
 					result["messages"] = []
 				result.messages.append(rank_msg)
@@ -2794,6 +2808,12 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# Sanctuary headstart purchases).
 				result["mastery_rank_changed"] = {"ability": ability_name, "new_rank": new_rank}
 				result["rank_up_choice_pending"] = queued_choice
+		# Audit #1 Slice 6f (v0.9.549) — Variant Imprint riders. Apply after
+		# the ability resolves, before the card is consumed, so monster.current_hp
+		# already reflects the base damage. damage_dealt = monster_hp_before -
+		# monster.current_hp captures the ability's actual damage output.
+		var imprint_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
+		_apply_imprint_riders_after_cast(combat, ability_name, imprint_damage_dealt, result)
 		# Audit #1 Slice 6a — successful ability use moves the card from
 		# hand to discard and refills the hand. Done after mastery tracking
 		# so a rank-up notification still ties to the card just played.
@@ -4078,15 +4098,166 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 	character's class path — rank 0 caster of an off-archetype ability gets
 	0.80 (mastery) × 0.75 (off-affinity) = 0.60 of baseline damage; rank 4
 	erases the penalty entirely. Universal abilities (cloak, all_or_nothing,
-	forethought, tactical_retreat, teleport) bypass off-affinity. Returns
-	the modified damage."""
+	forethought, tactical_retreat, teleport) bypass off-affinity.
+	Slice 6e/6f (v0.9.549) adds Variant Imprint riders — when the ability
+	has 'bonus_damage' imprints stacked, each stack adds +2% damage.
+	Returns the modified damage."""
 	var damage_bonus = character.get_skill_damage_bonus(ability_name)
 	var dmg = float(base_damage)
 	if damage_bonus > 0:
 		dmg = dmg * (1.0 + damage_bonus / 100.0)
 	dmg = dmg * character.get_ability_damage_mult(ability_name)
 	dmg = dmg * character.get_off_affinity_damage_mult(ability_name)
+	# Slice 6e/6f — Variant Imprint damage rider.
+	var dmg_stacks = _count_imprint_stacks(character, ability_name, "bonus_damage")
+	if dmg_stacks > 0:
+		var per_stack = float(DropTablesScript.VARIANT_TRAIT_CATEGORIES.get("bonus_damage", {}).get("per_stack_pct", 0.0))
+		dmg = dmg * (1.0 + (per_stack * dmg_stacks) / 100.0)
 	return int(dmg)
+
+# Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprint support helpers.
+func _build_variant_offer_for_rank_up(combat: Dictionary, ability_name: String) -> Dictionary:
+	"""Build the variant_offer dict for a rank-up choice when the player has an
+	active companion that maps to a trait AND the ability's imprint stack
+	isn't full. Returns {} when no offer should be presented (no companion,
+	unmapped companion, or stack at max). Returned dict shape:
+	  {trait_id, trait_name, companion_name, color, description}
+	The trait_id is what the server writes to persistence when the player
+	picks the variant; the other fields are display-only."""
+	if not combat.has("character") or combat.character == null:
+		return {}
+	var character = combat.character
+	if not character.has_active_companion():
+		return {}
+	var companion: Dictionary = character.active_companion
+	var monster_type: String = String(companion.get("monster_type", ""))
+	if monster_type == "":
+		return {}
+	var trait_id: String = DropTablesScript.get_variant_trait_for_companion(monster_type)
+	if trait_id == "":
+		return {}
+	var trait_info: Dictionary = DropTablesScript.get_variant_trait_info(trait_id)
+	if trait_info.is_empty():
+		return {}
+	# Stack-cap check — read from the character cache (server keeps this in
+	# sync with account-level storage via character_list / character_update).
+	var current_stacks: int = character.get_variant_imprints(ability_name).size()
+	if current_stacks >= DropTablesScript.VARIANT_IMPRINT_MAX_STACKS:
+		return {}
+	return {
+		"trait_id": trait_id,
+		"trait_name": String(trait_info.get("name", trait_id)),
+		"companion_name": String(companion.get("name", monster_type)),
+		"companion_type": monster_type,
+		"color": String(trait_info.get("color", "#FFD700")),
+		"description": String(trait_info.get("description", "")),
+		"current_stacks": current_stacks,
+		"max_stacks": DropTablesScript.VARIANT_IMPRINT_MAX_STACKS,
+	}
+
+func _count_imprint_stacks(character: Character, ability_name: String, trait_id: String) -> int:
+	"""Count how many copies of a specific trait are imprinted on an ability.
+	Reads from the character's local cache (server syncs from account)."""
+	if character == null or ability_name == "" or trait_id == "":
+		return 0
+	var stack: Array = character.get_variant_imprints(ability_name)
+	var n = 0
+	for t in stack:
+		if String(t) == trait_id:
+			n += 1
+	return n
+
+func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, damage_dealt: int, result: Dictionary) -> void:
+	"""Slice 6f (v0.9.549) — Apply Variant Imprint side-effects after a damage
+	ability resolves. Iterates the ability's imprint stack from the account
+	cache and applies each trait's central effect:
+	  - bonus_damage: already in apply_skill_damage_bonus (no-op here)
+	  - crit:        flat +2 dmg per stack (post-hoc bonus damage)
+	  - bleed:       +1 monster_bleed/turn × stacks for 2 turns
+	  - poison:      +1 monster_poison/turn × stacks for 3 turns
+	  - enemy_miss:  enemy_distracted += 2 per stack (capped at 75)
+	  - lifesteal:   heal player by 2% × stacks of damage_dealt
+	  - mana_drain:  drain 2 × stacks from monster.current_mp (if it has any)
+	  - stun:        roll 1% × stacks; if hit, monster_stunned = true (1 turn)
+	  - charm:       roll 1% × stacks; if hit, monster_charmed = true (1 turn)
+	  - absorb:      forcefield_shield += 2 × stacks (player damage absorption)
+	Only fires when damage_dealt > 0 (utility abilities don't trigger riders).
+	Results are appended to result.messages with a ✦ marker for visibility."""
+	if damage_dealt <= 0:
+		return
+	if combat == null or not combat.has("character") or combat.character == null:
+		return
+	var character = combat.character
+	var imprints: Array = character.get_variant_imprints(ability_name)
+	if imprints.is_empty():
+		return
+	# Tally stacks per trait category.
+	var stacks_by_trait: Dictionary = {}
+	for t in imprints:
+		var tid = String(t)
+		stacks_by_trait[tid] = int(stacks_by_trait.get(tid, 0)) + 1
+	var monster = combat.get("monster", null)
+	if not result.has("messages"):
+		result["messages"] = []
+	var msgs: Array = result["messages"]
+	for trait_id in stacks_by_trait:
+		var n: int = int(stacks_by_trait[trait_id])
+		if n <= 0:
+			continue
+		var info: Dictionary = DropTablesScript.get_variant_trait_info(trait_id)
+		var t_name: String = String(info.get("name", trait_id))
+		var t_color: String = String(info.get("color", "#FFD700"))
+		match trait_id:
+			"bonus_damage":
+				pass  # Already folded into apply_skill_damage_bonus.
+			"crit":
+				if monster != null:
+					var bonus = 2 * n
+					monster.current_hp = max(0, monster.current_hp - bonus)
+					msgs.append("[color=%s]✦ %s flares — +%d dmg from imprint.[/color]" % [t_color, t_name, bonus])
+			"bleed":
+				combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + n
+				combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 2)
+				msgs.append("[color=%s]✦ %s applies bleed (+%d/turn for 2T).[/color]" % [t_color, t_name, n])
+			"poison":
+				combat["monster_poison"] = int(combat.get("monster_poison", 0)) + n
+				combat["monster_poison_duration"] = max(int(combat.get("monster_poison_duration", 0)), 3)
+				msgs.append("[color=%s]✦ %s applies poison (+%d/turn for 3T).[/color]" % [t_color, t_name, n])
+			"enemy_miss":
+				var current_dist = int(combat.get("enemy_distracted", 0))
+				combat["enemy_distracted"] = min(75, current_dist + 2 * n)
+				msgs.append("[color=%s]✦ %s — enemy distracted (+%d%% miss).[/color]" % [t_color, t_name, 2 * n])
+			"lifesteal":
+				var heal = int(ceil(damage_dealt * (0.02 * n)))
+				if heal > 0:
+					var max_hp = character.get_total_max_hp()
+					var before = character.current_hp
+					character.current_hp = min(max_hp, character.current_hp + heal)
+					var actual = character.current_hp - before
+					if actual > 0:
+						msgs.append("[color=%s]✦ %s drains %d HP.[/color]" % [t_color, t_name, actual])
+			"mana_drain":
+				if monster != null:
+					var drain = 2 * n
+					var cur_mp = int(monster.get("current_mp", monster.get("mp", 0)))
+					if cur_mp > 0:
+						monster["current_mp"] = max(0, cur_mp - drain)
+						msgs.append("[color=%s]✦ %s drains %d mana from %s.[/color]" % [t_color, t_name, drain, String(monster.get("name", "enemy"))])
+			"stun":
+				var stun_pct = 1.0 * n
+				if randf() * 100.0 < stun_pct:
+					combat["monster_stunned"] = true
+					combat["monster_stunned_duration"] = max(int(combat.get("monster_stunned_duration", 0)), 1)
+					msgs.append("[color=%s]✦ %s — %s is stunned![/color]" % [t_color, t_name, String(monster.get("name", "enemy")) if monster else "enemy"])
+			"charm":
+				var charm_pct = 1.0 * n
+				if randf() * 100.0 < charm_pct:
+					combat["monster_charmed"] = true
+					combat["monster_charmed_duration"] = max(int(combat.get("monster_charmed_duration", 0)), 1)
+					msgs.append("[color=%s]✦ %s — %s is mesmerized![/color]" % [t_color, t_name, String(monster.get("name", "enemy")) if monster else "enemy"])
+			"absorb":
+				combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + 2 * n
+				msgs.append("[color=%s]✦ %s — +%d damage absorption.[/color]" % [t_color, t_name, 2 * n])
 
 func process_use_item(peer_id: int, item_index: int, target: String = "self") -> Dictionary:
 	"""Process using an item during combat. Returns result with messages.

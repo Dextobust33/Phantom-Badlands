@@ -329,6 +329,7 @@ func create_account(username: String, password: String) -> Dictionary:
 		"is_admin": false,
 		"mastery_records": {},  # ability_name → highest rank ever achieved on any character (Slice 2)
 		"pending_headstarts": {},  # ability_name → rank queued for next character (Slice 3)
+		"ability_variant_imprints": {},  # ability_name → Array of trait_ids (Slice 6e/6f, v0.9.549)
 		"clan_id": ""  # Audit #14 Slice 1 — empty until player joins/creates a clan
 	}
 
@@ -747,6 +748,62 @@ func update_account_mastery_record(account_id: String, ability_name: String, new
 	account["mastery_records"][ability_name] = new_rank
 	save_accounts()
 	return true
+
+# Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprints
+# Account-level imprint store. Persists past permadeath (same shape as
+# mastery_records). Each ability can hold up to VARIANT_IMPRINT_MAX_STACKS
+# trait ids; same trait can repeat (4× crit imprints = 4 stacks).
+const _IMPRINT_MAX_STACKS_DEFAULT: int = 4
+
+func get_account_variant_imprints(account_id: String) -> Dictionary:
+	"""Return account's variant imprints map (ability_name → Array of trait_ids).
+	Deep duplicate so callers can't mutate the live dict accidentally."""
+	if not accounts_data.accounts.has(account_id):
+		return {}
+	var account = accounts_data.accounts[account_id]
+	return account.get("ability_variant_imprints", {}).duplicate(true)
+
+func get_variant_imprints_for_ability(account_id: String, ability_name: String) -> Array:
+	"""Return the imprint stack for a single ability — Array of trait_ids,
+	newest at the end. Empty Array if none."""
+	if not accounts_data.accounts.has(account_id):
+		return []
+	var account = accounts_data.accounts[account_id]
+	var imprints = account.get("ability_variant_imprints", {})
+	var stack = imprints.get(ability_name, [])
+	if stack is Array:
+		return stack.duplicate()
+	return []
+
+func add_variant_imprint(account_id: String, ability_name: String, trait_id: String, max_stacks: int = _IMPRINT_MAX_STACKS_DEFAULT) -> Dictionary:
+	"""Append a trait_id to the imprint stack for an ability. Refuses if the
+	stack already holds max_stacks entries (caller passes the ability's
+	current rank so headstart-purchased ranks can't bypass the cap). Returns
+	{ok, stack_after, reason}."""
+	var result := {"ok": false, "stack_after": [], "reason": ""}
+	if not accounts_data.accounts.has(account_id):
+		result["reason"] = "Unknown account"
+		return result
+	if ability_name == "" or trait_id == "":
+		result["reason"] = "Empty ability or trait id"
+		return result
+	var account = accounts_data.accounts[account_id]
+	if not account.has("ability_variant_imprints"):
+		account["ability_variant_imprints"] = {}
+	var imprints: Dictionary = account["ability_variant_imprints"]
+	var stack: Array = imprints.get(ability_name, [])
+	if not (stack is Array):
+		stack = []
+	if stack.size() >= max_stacks:
+		result["stack_after"] = stack.duplicate()
+		result["reason"] = "Imprint stack already at max (%d)" % max_stacks
+		return result
+	stack.append(trait_id)
+	imprints[ability_name] = stack
+	save_accounts()
+	result["ok"] = true
+	result["stack_after"] = stack.duplicate()
+	return result
 
 # ===== PENDING MARKET DELIVERIES (Audit #9 Slice 2b) =====
 # When a seller fulfills a buy order and the buyer is offline (or their

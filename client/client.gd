@@ -618,6 +618,11 @@ var available_spawn_posts: Array = []
 # server's character_list payload. Survives permadeath. Future Sanctuary
 # upgrades will spend baddie points to apply these as starting ranks.
 var account_mastery_records: Dictionary = {}
+# Slice 6e/6f (v0.9.549) — account-level Variant Imprints map (ability_name →
+# Array of trait_ids). Mirrors server's account.ability_variant_imprints.
+# Synced via character_list payload + each rank_choice_applied response when
+# the player picks the variant choice.
+var account_variant_imprints: Dictionary = {}
 var last_whisper_from = ""  # For /reply command
 
 # House (Sanctuary) data - roguelite meta-progression
@@ -16623,7 +16628,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 var _rank_choice_popup: AcceptDialog = null
 var _rank_choice_pending_ability: String = ""
 
-func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_count: int, current_effect_rank: int) -> void:
+func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_count: int, current_effect_rank: int, variant_offer: Dictionary = {}) -> void:
 	if ability_name == "":
 		return
 	# If a popup is already up for the same ability, don't double-stack.
@@ -16651,24 +16656,39 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 	var next_effect_rank = min(current_effect_rank + 1, rank_mults_local.size() - 1)
 	var dmg_pct = int((rank_mults_local[next_effect_rank] - 1.0) * 100) if next_effect_rank < rank_mults_local.size() else 20
 	var dmg_str = ("+%d%%" % dmg_pct) if dmg_pct >= 0 else ("%d%%" % dmg_pct)
+	# Slice 6f (v0.9.549) — Variant Imprint third option when companion was
+	# active at rank-up time. variant_offer carries trait_id / trait_name /
+	# companion_name / description / stack info from the server.
+	var has_variant: bool = variant_offer is Dictionary and not variant_offer.is_empty() and variant_offer.has("trait_id")
+	var variant_line: String = ""
+	if has_variant:
+		var v_name = String(variant_offer.get("trait_name", "Imprint"))
+		var v_comp = String(variant_offer.get("companion_name", "your companion"))
+		var v_desc = String(variant_offer.get("description", ""))
+		var v_cur = int(variant_offer.get("current_stacks", 0))
+		var v_max = int(variant_offer.get("max_stacks", 4))
+		variant_line = "\n  • ✦ Imprint: %s (from %s) — %s [stack %d/%d]" % [v_name, v_comp, v_desc, v_cur + 1, v_max]
 	_rank_choice_popup.title = "Mastery Rank %d (%s) — %s" % [new_rank, rank_label, ability_label]
 	_rank_choice_popup.dialog_text = (
 		"You've reached a new mastery rank with %s.\n" +
 		"Choose how to invest this rank:\n\n" +
 		"  • +1 Card: add a copy to your combat deck (currently %d).\n" +
-		"  • +10%% Damage: scale damage to %s (effect rank %d → %d)."
-	) % [ability_label, current_copy_count, dmg_str, current_effect_rank, next_effect_rank]
-	# Add the two action buttons
+		"  • +10%% Damage: scale damage to %s (effect rank %d → %d).%s"
+	) % [ability_label, current_copy_count, dmg_str, current_effect_rank, next_effect_rank, variant_line]
+	# Add the action buttons
 	var btn_copy = _rank_choice_popup.add_button("+1 Card", true, "copy")
 	btn_copy.set_meta("rank_choice_button", true)
 	var btn_effect = _rank_choice_popup.add_button("+%s Damage" % dmg_str, true, "effect")
 	btn_effect.set_meta("rank_choice_button", true)
-	_rank_choice_popup.popup_centered(Vector2(440, 220))
+	if has_variant:
+		var btn_variant = _rank_choice_popup.add_button("✦ %s" % String(variant_offer.get("trait_name", "Imprint")), true, "variant")
+		btn_variant.set_meta("rank_choice_button", true)
+	_rank_choice_popup.popup_centered(Vector2(540 if has_variant else 440, 260 if has_variant else 220))
 
 func _on_rank_choice_picked(action: String) -> void:
 	if _rank_choice_pending_ability == "":
 		return
-	if action != "copy" and action != "effect":
+	if action != "copy" and action != "effect" and action != "variant":
 		return
 	send_to_server({
 		"type": "rank_choice_response",
@@ -18510,6 +18530,8 @@ func handle_server_message(message: Dictionary):
 			# (per ability). Future Sanctuary headstart UI will read from
 			# this dict to show what's available to spend baddie points on.
 			account_mastery_records = message.get("account_mastery_records", {})
+			# Slice 6e/6f (v0.9.549) — account-level imprint cache from character_list.
+			account_variant_imprints = message.get("account_variant_imprints", {})
 			# Don't switch to character select if we're on death screen or house screen
 			if game_state == GameState.DEAD or game_state == GameState.HOUSE_SCREEN:
 				return
@@ -19588,11 +19610,15 @@ func handle_server_message(message: Dictionary):
 			# picks +1 Copy in Deck or +10% Damage. Auto-pause UX: client modal
 			# blocks input until response sent. Choice survives disconnect via
 			# character.pending_rank_choices.
+			# Slice 6f (v0.9.549) — variant_offer when an active companion's
+			# trait can be imprinted as a 3rd option.
+			var ruc_variant: Dictionary = message.get("variant_offer", {}) if message.has("variant_offer") else {}
 			_show_rank_choice_popup(
 				str(message.get("ability", "")),
 				int(message.get("new_rank", 0)),
 				int(message.get("current_copy_count", 1)),
-				int(message.get("current_effect_rank", 0))
+				int(message.get("current_effect_rank", 0)),
+				ruc_variant
 			)
 
 		"rank_choice_applied":
@@ -19610,13 +19636,30 @@ func handle_server_message(message: Dictionary):
 					var dmg_pct = int((ra_mults[new_er] - 1.0) * 100) if new_er < ra_mults.size() else 20
 					var dmg_str = ("+%d%%" % dmg_pct) if dmg_pct >= 0 else ("%d%%" % dmg_pct)
 					display_game("[color=#FFB6C1]%s — damage modifier now %s.[/color]" % [ra_label, dmg_str])
+				elif ra_choice == "variant":
+					# Slice 6f (v0.9.549) — variant imprint applied to account.
+					var v_name = str(message.get("variant_trait_name", "Imprint"))
+					var v_comp = str(message.get("variant_companion_name", "your companion"))
+					var v_stack = message.get("variant_stack", [])
+					var v_count = (v_stack.size() if v_stack is Array else 0)
+					display_game("[color=#FFD700]✦ %s — imprinted [color=#FF80FF]%s[/color] (from %s). Stack now ×%d.[/color]" % [ra_label, v_name, v_comp, v_count])
+					# Cache the fresh account-level imprint map for inspect surfaces.
+					var v_full = message.get("variant_imprints", null)
+					if v_full is Dictionary:
+						account_variant_imprints = v_full.duplicate(true)
+			elif ra_choice == "variant":
+				# Variant write failed (e.g., stack full). Surface the reason.
+				var v_reason = str(message.get("reason", "Could not imprint."))
+				display_game("[color=#FFA500]Imprint refused: %s[/color]" % v_reason)
 			var next_pending = message.get("next_pending", null)
 			if next_pending != null and typeof(next_pending) == TYPE_DICTIONARY:
+				var np_variant: Dictionary = next_pending.get("variant_offer", {}) if next_pending.has("variant_offer") else {}
 				_show_rank_choice_popup(
 					str(next_pending.get("ability", "")),
 					int(next_pending.get("new_rank", 0)),
 					1,
-					0
+					0,
+					np_variant
 				)
 
 		"cull_ability_card_result":

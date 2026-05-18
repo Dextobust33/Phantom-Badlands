@@ -308,6 +308,14 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 @export var pending_rank_choices: Array = []  # [{ability, new_rank, queued_at}]
 @export var deck_collection_initialized: bool = false  # one-shot init guard
 
+# Slice 6e/6f (v0.9.549) — Variant Imprints. Account-level cache mirrored
+# onto the character at load so combat code can read without hitting
+# persistence. Server syncs from `account.ability_variant_imprints` on
+# character_loaded + after every imprint write. Shape:
+#   {ability_name: [trait_id_1, trait_id_2, ...]}
+# Up to 4 trait ids per ability (matches mastery rank cap).
+@export var ability_variant_imprints: Dictionary = {}
+
 # Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
 # but inlined here so character.gd doesn't have to depend on the global script
 # load order. Slice 1 — gentle scaling: rank 0 -20%, rank 2 baseline, rank 4 +20%.
@@ -2937,6 +2945,28 @@ func apply_rank_choice(ability_name: String, choice: String) -> Dictionary:
 		result["new_effect_rank"] = new_effect
 		result["ok"] = true
 	return result
+
+# Slice 6e/6f (v0.9.549) — Variant Imprint accessors. The character cache is
+# kept in sync with account-level storage by the server. Read-only here;
+# writes go through persistence.add_variant_imprint then the server pushes
+# the updated stack back via character_update / rank_choice_applied.
+func get_variant_imprints(ability_name: String) -> Array:
+	"""Returns the imprint stack (Array of trait_ids) for one ability. Empty
+	Array if none. Duplicate so callers can't mutate the cached dict."""
+	var stack = ability_variant_imprints.get(ability_name, [])
+	if stack is Array:
+		return stack.duplicate()
+	return []
+
+func get_all_variant_imprints() -> Dictionary:
+	"""Returns a deep duplicate of the full imprint map."""
+	return ability_variant_imprints.duplicate(true)
+
+func set_variant_imprints(imprints: Dictionary) -> void:
+	"""Replace the imprint cache with a fresh snapshot from the account.
+	Called by server after character_loaded + after every imprint write."""
+	if imprints is Dictionary:
+		ability_variant_imprints = imprints.duplicate(true)
 
 func cull_ability_card(ability_name: String) -> Dictionary:
 	"""Slice 6c — permanently remove one copy of an ability card from the deck.
