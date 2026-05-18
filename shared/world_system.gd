@@ -142,6 +142,11 @@ const TILE_RENDER = {
 	# slightly higher skill, also blocking.
 	"pedestal":      {"char": "d", "color": "#DDDDDD", "blocks_move": true,  "blocks_los": false},
 	"cage":          {"char": "e", "color": "#555555", "blocks_move": true,  "blocks_los": false},
+	# Audit #12 v0.9.533 — catalogue 17 → 19. Hedge is a manicured greenery
+	# section that blocks BOTH movement AND line-of-sight (like a soft wall).
+	# Shrine is a gilded prestige monument, high-skill blocking centerpiece.
+	"hedge":         {"char": "h", "color": "#4A8A4A", "blocks_move": true,  "blocks_los": true},
+	"shrine":        {"char": "q", "color": "#DAA520", "blocks_move": true,  "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

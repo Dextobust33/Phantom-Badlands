@@ -57,6 +57,9 @@ const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
 
 var server = TCPServer.new()
 var peers = {}
+# Audit #14 v0.9.533 — per-peer AFK state. In-memory only; clears on
+# disconnect. Key: peer_id. Value: {afk: bool, reason: String}.
+var afk_status: Dictionary = {}
 var next_peer_id = 1
 var characters = {}
 var pending_flocks = {}  # peer_id -> {monster_name, monster_level}
@@ -1474,6 +1477,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_clan_message(peer_id, message)
 		"clan_list":
 			handle_clan_list(peer_id)
+		"set_afk":
+			handle_set_afk(peer_id, message)
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
@@ -2905,6 +2910,9 @@ func handle_chat(peer_id: int, message: Dictionary):
 	text = text.left(MAX_CHAT_LENGTH)
 	text = _sanitize_chat_text(text)
 
+	# Audit #14 v0.9.533 — chatting clears AFK. No-op when not AFK.
+	_clear_afk_on_action(peer_id)
+
 	var username = peers[peer_id].username
 	print("Chat from %s: %s" % [username, text])
 
@@ -3081,6 +3089,38 @@ func _notify_clanmates_logout(peer_id: int) -> void:
 			"clan_color": clan_color,
 		})
 
+func handle_set_afk(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 v0.9.533 — toggle the caller's AFK status. Auto-clears on
+	the next "move" or "chat" action server-side via the same flag so the
+	player doesn't need to remember to /afk off when they come back. The
+	reason string is optional and capped to 60 chars."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var want_afk = bool(message.get("afk", true))
+	if not want_afk:
+		afk_status.erase(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]You are no longer AFK.[/color]"})
+	else:
+		var reason = String(message.get("reason", "")).left(60)
+		reason = _sanitize_chat_text(reason)
+		afk_status[peer_id] = {"afk": true, "reason": reason}
+		var label = "[AFK]"
+		if reason != "":
+			label += " — " + reason
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA66]You are now %s. Move or chat to clear.[/color]" % label})
+	# Refresh player list so other clients see the AFK badge immediately.
+	broadcast_player_list()
+
+func _clear_afk_on_action(peer_id: int) -> void:
+	"""Audit #14 v0.9.533 — auto-clear AFK when the player resumes activity.
+	Called from move and chat handlers; cheap no-op when not AFK."""
+	if afk_status.has(peer_id):
+		afk_status.erase(peer_id)
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]You are no longer AFK.[/color]"})
+		broadcast_player_list()
+
 func handle_clan_list(peer_id: int) -> void:
 	"""Audit #14 v0.9.532 — /clist chat command. Returns the caller's online
 	clanmates with name + level + class so they can see who's around to /c
@@ -3108,11 +3148,14 @@ func handle_clan_list(peer_id: int) -> void:
 		if persistence.get_account_clan_id(other_account_id) != clan_id:
 			continue
 		var ch = characters[other_peer_id]
+		var mate_afk = afk_status.get(other_peer_id, {})
 		online_mates.append({
 			"name": String(ch.name),
 			"level": int(ch.level),
 			"class": String(ch.class_type),
 			"is_self": other_peer_id == peer_id,
+			"afk": bool(mate_afk.get("afk", false)),
+			"afk_reason": String(mate_afk.get("reason", "")),
 		})
 	var clan = persistence.get_clan(clan_id)
 	send_to_peer(peer_id, {
@@ -3225,6 +3268,9 @@ func handle_clan_message(peer_id: int, message: Dictionary) -> void:
 func handle_move(peer_id: int, message: Dictionary):
 	if not characters.has(peer_id):
 		return
+
+	# Audit #14 v0.9.533 — moving clears AFK status. No-op when not AFK.
+	_clear_afk_on_action(peer_id)
 
 	# Party followers can't move independently
 	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
@@ -6025,6 +6071,10 @@ func broadcast_player_list():
 	var player_list = []
 	for pid in characters.keys():
 		var char = characters[pid]
+		# Audit #14 v0.9.533 — surface AFK badge to all viewers.
+		var afk_entry = afk_status.get(pid, {})
+		var afk_flag = bool(afk_entry.get("afk", false))
+		var afk_reason = String(afk_entry.get("reason", ""))
 		player_list.append({
 			"name": char.name,
 			"level": char.level,
@@ -6035,6 +6085,8 @@ func broadcast_player_list():
 			"clan_banner_color": _get_clan_banner_color_for_peer(pid),
 			# Audit #14 v0.9.517 — Mentor Badge MVP.
 			"mentor_active": bool(char.mentor_active),
+			"afk": afk_flag,
+			"afk_reason": afk_reason,
 			"appearance_variant": char.appearance_variant,
 			"appearance_color": char.appearance_color,
 			"appearance_color2": char.appearance_color2,
@@ -6132,6 +6184,10 @@ func handle_disconnect(peer_id: int):
 	# leaving. Mirrors v0.9.531's clan_login notification. Must fire BEFORE
 	# peer cleanup so account_id → clan_id resolves correctly.
 	_notify_clanmates_logout(peer_id)
+
+	# Audit #14 v0.9.533 — clear any AFK state so a reconnecting player
+	# doesn't inherit a stale [AFK] badge.
+	afk_status.erase(peer_id)
 
 	# Decrement IP connection count
 	if peer_ip != "" and ip_connection_counts.has(peer_ip):
@@ -22599,7 +22655,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -22734,7 +22790,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:
