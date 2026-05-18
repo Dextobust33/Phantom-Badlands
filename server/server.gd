@@ -1110,6 +1110,14 @@ func _process(delta):
 		if DIAG_TIMING_ENABLED:
 			_diag_check_dungeon_spawns_us = Time.get_ticks_usec() - _cds_start_us
 
+	# Audit #12 Slice 6 (v0.9.561) — periodic abandoned-post reclaim sweep.
+	# Runs every POST_RECLAIM_SWEEP_INTERVAL seconds (5 min). Cheap walk over
+	# player_post_names; most posts skip on the threshold gate immediately.
+	_post_reclaim_sweep_timer += delta
+	if _post_reclaim_sweep_timer >= POST_RECLAIM_SWEEP_INTERVAL:
+		_post_reclaim_sweep_timer = 0.0
+		_check_post_reclaim_sweep()
+
 	# v0.9.377 — drain one queued dungeon spawn per frame (BSP gen + monster
 	# spawn was bursting ~5s frames; one-per-frame keeps each frame bounded).
 	var _drain_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
@@ -23956,6 +23964,13 @@ const BUBBLE_GROW_PER_TOWER_GUARD: int = 4
 # only makes inactivity VISIBLE so the natural follow-on can add decay/reclaim.
 const POST_INACTIVE_THRESHOLD_DAYS: int = 30
 const POST_ABANDONED_THRESHOLD_DAYS: int = 90
+# Audit #12 Slice 6 (v0.9.561) — post auto-reclaim. Posts abandoned past this
+# threshold are mechanically reclaimed by the server: walls + structures wiped,
+# enclosure entry removed, location freed for other players to build. Owner
+# gets a panel countdown starting at WARNING_THRESHOLD so they can still save
+# the post by visiting.
+const POST_RECLAIM_THRESHOLD_DAYS: int = 120
+const POST_RECLAIM_WARNING_DAYS: int = 14
 
 # Building-template kits (post-Slice-5 follow-up). A kit places multiple
 # tiles in a fixed layout when used, replacing the per-tile build grind for
@@ -28357,6 +28372,12 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 		"inactivity_state": inactivity_state,
 		"inactive_threshold_days": POST_INACTIVE_THRESHOLD_DAYS,
 		"abandoned_threshold_days": POST_ABANDONED_THRESHOLD_DAYS,
+		# Audit #12 Slice 6 (v0.9.561) — auto-reclaim countdown. days_until_reclaim
+		# is float; <=0 means a sweep tick away from removal. is_reclaim_warning
+		# triggers the red panel banner.
+		"reclaim_threshold_days": POST_RECLAIM_THRESHOLD_DAYS,
+		"days_until_reclaim": float(POST_RECLAIM_THRESHOLD_DAYS) - days_inactive,
+		"is_reclaim_warning": (POST_RECLAIM_THRESHOLD_DAYS - days_inactive) <= float(POST_RECLAIM_WARNING_DAYS),
 		# Audit #12 Slice 5 — mechanical decay state. 'none' (no decay),
 		# 'weakened' (inactive: -1 suppression), 'fully_decayed' (abandoned:
 		# all suppression nulled).
@@ -28534,6 +28555,158 @@ func _touch_clan_post_tended_at(actor_username: String, x: int, y: int) -> void:
 			if d <= float(radius):
 				player_post_names[owner_username][i]["last_tended_at"] = now_ts
 				return  # one post per tick is enough
+
+# =============================================================================
+# Audit #12 Slice 6 (v0.9.561) — Post auto-reclaim
+# =============================================================================
+# Posts abandoned past POST_RECLAIM_THRESHOLD_DAYS are mechanically reclaimed
+# by the server: walls + structures + guards inside the enclosure are wiped,
+# the post entry is removed from memory + persistence, and the location is
+# freed up for any other player to build on. Owner gets a panel countdown
+# starting at WARNING days before reclaim so they can save the post by
+# visiting (which resets last_tended_at to fresh via the existing decay path).
+#
+# Clan-shared posts get extra protection automatically — any clan member's
+# visit resets the decay timer (Audit #14 Slice F wiring), so the timer only
+# climbs when EVERY clan member has gone silent.
+
+var _post_reclaim_sweep_timer: float = 0.0
+const POST_RECLAIM_SWEEP_INTERVAL: float = 300.0  # 5 minutes — way more than enough granularity for a 120-day countdown.
+
+func _reclaim_player_post(owner_username: String, post_index: int) -> bool:
+	"""Destructive: wipe an abandoned post's walls / structures / guards,
+	remove its enclosure entry, free the location. Returns true if the post
+	was successfully reclaimed.
+
+	Safety: caller MUST verify days-inactive >= POST_RECLAIM_THRESHOLD_DAYS
+	before calling. This function trusts the gate."""
+	if not player_post_names.has(owner_username):
+		return false
+	if post_index < 0 or post_index >= player_post_names[owner_username].size():
+		return false
+	var meta = player_post_names[owner_username][post_index]
+	var post_name = String(meta.get("name", "[unnamed]"))
+	if post_name == "":
+		post_name = "[unnamed]"
+	# Get enclosure tile positions before we remove the post — needed for the
+	# wall + structure cleanup pass.
+	var enclosure_positions: Array = []
+	if player_enclosures.has(owner_username) and post_index < player_enclosures[owner_username].size():
+		enclosure_positions = player_enclosures[owner_username][post_index].duplicate()
+	# Collect all player-tile coords inside the enclosure so we can remove
+	# them. Walls + doors + interior structures all live in player_tiles_data.
+	var owner_tiles = persistence.get_player_tiles(owner_username).duplicate()
+	var enclosure_set: Dictionary = {}
+	for pos in enclosure_positions:
+		enclosure_set[Vector2i(int(pos.x), int(pos.y))] = true
+	# Also include the wall ring — walls live on the bounding tiles, not the
+	# interior. Use the bubble radius as a generous bound for the wall sweep.
+	var c = meta.get("center", Vector2i.ZERO)
+	var cx: int
+	var cy: int
+	if c is Vector2i:
+		cx = c.x
+		cy = c.y
+	else:
+		cx = int(c.get("x", 0))
+		cy = int(c.get("y", 0))
+	var meta_for_compute = meta.duplicate()
+	meta_for_compute["_owner"] = owner_username
+	var radius = _compute_effective_post_radius(meta_for_compute)
+	var tiles_removed = 0
+	var guards_removed = 0
+	for td in owner_tiles:
+		var tx = int(td.get("x", 0))
+		var ty = int(td.get("y", 0))
+		# Tile is part of this post if it's inside the enclosure OR within the
+		# post's bubble radius (walls + adjacent structures).
+		var dx = float(tx - cx)
+		var dy = float(ty - cy)
+		var in_bubble = sqrt(dx * dx + dy * dy) <= float(radius)
+		if not in_bubble and not enclosure_set.has(Vector2i(tx, ty)):
+			continue
+		var tile_type = String(td.get("type", ""))
+		# Guard tiles → also remove from active_guards.
+		if tile_type == "guard":
+			var gkey = "%d,%d" % [tx, ty]
+			if active_guards.has(gkey):
+				active_guards.erase(gkey)
+				guards_removed += 1
+		# Signposts → also drop their saved text.
+		if tile_type == "signpost":
+			persistence.remove_signpost_text(tx, ty)
+		if chunk_manager:
+			chunk_manager.remove_tile_modification(tx, ty)
+		persistence.remove_player_tile(owner_username, tx, ty)
+		tiles_removed += 1
+	# Unmark + clear enclosure lookup so the safe-zone flags go away too.
+	if not enclosure_positions.is_empty():
+		_unmark_enclosure_safe(enclosure_positions)
+		_remove_enclosure_from_tile_lookup(enclosure_positions)
+	# Drop the enclosure entry (player_enclosures + player_post_names) at this
+	# index, then re-index the remaining entries so future lookups stay correct.
+	if player_enclosures.has(owner_username) and post_index < player_enclosures[owner_username].size():
+		player_enclosures[owner_username].remove_at(post_index)
+	player_post_names[owner_username].remove_at(post_index)
+	persistence.remove_player_post(owner_username, post_index)
+	# Persist tile + guard mutations.
+	if chunk_manager:
+		chunk_manager.save_dirty_chunks()
+	if guards_removed > 0:
+		_update_guard_cache()
+		persistence.save_guards(active_guards)
+	# Re-index the enclosure_tile_lookup for any later posts (their enc_idx
+	# shifted down by 1).
+	for i in range(post_index, player_enclosures.get(owner_username, []).size()):
+		_update_enclosure_tile_lookup(player_enclosures[owner_username][i], owner_username, i)
+	_update_player_post_bubble_cache()
+	# Notify the owner if online.
+	for peer_id in peers.keys():
+		if not peers[peer_id].get("authenticated", false):
+			continue
+		if _get_username(peer_id) != owner_username:
+			continue
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FF4444]⚠⚠ %s has been reclaimed by the wilds after %d+ days untended. Walls and structures inside the bubble have been wiped.[/color]" % [post_name, POST_RECLAIM_THRESHOLD_DAYS],
+		})
+		# Modal overlay too so the player can't miss it.
+		send_to_peer(peer_id, {
+			"type": "tutorial_hint",
+			"title": "[color=#FF4444]⚠⚠ Post Reclaimed[/color]",
+			"body": (
+				"Your post [color=#FFE066]%s[/color] was untended for [color=#FF8800]%d+ days[/color] and has been reclaimed by the wilds.\n\n" % [post_name, POST_RECLAIM_THRESHOLD_DAYS]
+				+ "  • Walls + structures inside the bubble are gone\n"
+				+ "  • The post slot has been freed (you can build again)\n"
+				+ "  • Any other player can now build at this location\n\n"
+				+ "To prevent this in future: just visit the post once every %d days to reset the decay timer. Sharing the post with a clan ([color=#9ACD32]Share with Clan[/color] button on the post panel) means ANY clan member's visit keeps it alive." % POST_RECLAIM_THRESHOLD_DAYS
+			),
+		})
+		break
+	log_message("Reclaimed abandoned post: %s/%s (idx %d, %d tiles, %d guards)" % [owner_username, post_name, post_index, tiles_removed, guards_removed])
+	return true
+
+func _check_post_reclaim_sweep() -> void:
+	"""Periodic sweep: walk every player post and reclaim any whose
+	last_tended_at exceeds the threshold. Runs every POST_RECLAIM_SWEEP_INTERVAL
+	seconds, batched in _process(). Cheap — most posts are well below the
+	threshold and the early `continue` skips them immediately."""
+	var now_ts = Time.get_unix_time_from_system()
+	var threshold_seconds = float(POST_RECLAIM_THRESHOLD_DAYS) * 86400.0
+	# Snapshot the keys list so removals mid-iteration don't break the loop.
+	var owners = player_post_names.keys().duplicate()
+	for owner in owners:
+		if not player_post_names.has(owner):
+			continue
+		# Iterate posts in REVERSE so removals (which shift indices) don't
+		# corrupt the next index.
+		var posts = player_post_names[owner]
+		for i in range(posts.size() - 1, -1, -1):
+			var meta = posts[i]
+			var tended = float(meta.get("last_tended_at", meta.get("created_at", now_ts)))
+			if now_ts - tended < threshold_seconds:
+				continue
+			_reclaim_player_post(owner, i)
 
 func _maybe_send_clan_post_hint(peer_id: int, x: int, y: int) -> void:
 	"""Audit #14 Slice F polish v0.9.560 — first time a clan member walks
