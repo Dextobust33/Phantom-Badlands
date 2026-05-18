@@ -21142,7 +21142,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors", "duel", "bounty",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "clanpost", "vault", "clanvault", "mentor", "mentors", "duel", "bounty",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -22295,6 +22295,22 @@ func process_command(text: String):
 					display_game("[color=#FF8800]Usage: /clancolor #RRGGBB  (example: /clancolor #FFD700)[/color]")
 				else:
 					send_to_server({"type": "clan_banner_color_set", "color": cc_color})
+		"clanpost":
+			# Audit #14 Slice F (v0.9.558) — share/revert a post with your clan.
+			# Usage: /clanpost share  → flag the post you're standing in as
+			#        clan-shared (clan members get build/demolish + decay reset).
+			# Usage: /clanpost revert → flip it back to private (owner-only).
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var cp_parts = text.split(" ", false, 1)
+				var cp_arg = cp_parts[1].strip_edges().to_lower() if cp_parts.size() > 1 else ""
+				if cp_arg == "share":
+					send_to_server({"type": "clan_post_share"})
+				elif cp_arg == "revert":
+					send_to_server({"type": "clan_post_revert"})
+				else:
+					display_game("[color=#FF8800]Usage: /clanpost share  |  /clanpost revert  (stand inside the post first)[/color]")
 		"mentor":
 			# Audit #14 v0.9.517 — Mentor Badge MVP.
 			# Usage: /mentor on | /mentor off — toggles a ★ badge on your name
