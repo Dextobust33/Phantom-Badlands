@@ -2625,6 +2625,41 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	log_message("Character created: %s (%s %s) for peer %d" % [char_name, char_race, char_class, peer_id])
 	update_player_list()
 
+	# Audit #3 Tutorial Initiative Slice 2 (v0.9.564) — Pathfinder onboarding.
+	# Auto-add the starter chain's first stage so new players don't miss it,
+	# and auto-grant a Goblin companion egg so they have a pet to incubate
+	# from minute one (also addresses Audit #4's "tutorial companion gift"
+	# captured item). Existing characters who skip creation get neither — the
+	# chain stays visible on Haven's quest board for them as a normal quest.
+	var pf_quest = quest_db.get_quest("pathfinder_1")
+	if not pf_quest.is_empty():
+		var pf_added = character.add_quest(
+			"pathfinder_1",
+			int(pf_quest.get("target", 3)),
+			character.x,
+			character.y,
+			String(pf_quest.get("description", "")),
+			character.level,
+			0,
+			{
+				"quest_name": String(pf_quest.get("name", "Pathfinder's Trial I")),
+				"quest_type": int(pf_quest.get("type", quest_db.QuestType.GATHER)),
+				"gather_job": String(pf_quest.get("gather_job", "fishing")),
+			}
+		)
+		if pf_added:
+			log_message("Auto-added Pathfinder's Trial Stage 1 to %s" % char_name)
+	# Tutorial companion gift — Goblin egg ready to hatch in incubator.
+	if drop_tables:
+		var tutorial_egg = drop_tables.get_egg_for_monster("Goblin")
+		if not tutorial_egg.is_empty():
+			tutorial_egg["tutorial_gift"] = true
+			character.incubating_eggs.append(tutorial_egg)
+	# Mark backfill flag so the welcome overlay only fires for fresh chars
+	# (not retroactively for legacy characters on next login).
+	character.seen_welcome_overlay = true
+	persistence.save_character(account_id, character)
+
 	send_to_peer(peer_id, {
 		"type": "character_created",
 		"character": character.to_dict(),
@@ -2637,6 +2672,22 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	broadcast_chat("[color=#00FF00]%s has entered the realm.[/color]" % char_name)
 
 	send_location_update(peer_id)
+
+	# Welcome tutorial overlay — fires after location_update so the panel is
+	# layered on top of the map. Names the chain + companion gift + Haven so
+	# the first 60 seconds of play have an obvious next step.
+	send_to_peer(peer_id, {
+		"type": "tutorial_hint",
+		"title": "[color=#9ACD32]Welcome to Phantom Badlands, %s![/color]" % char_name,
+		"body": (
+			"You start at [color=#FFD700]Haven[/color], the safest post in the world. Everyone passes through here at least once.\n\n"
+			+ "Two things are already waiting for you:\n"
+			+ "  • [color=#9ACD32]Pathfinder's Trial[/color] is in your quest log. Four short stages (fish 3 → mine 2 → kill 2 → kill 3) — each one rewards a piece of starter gear (weapon, armor, boots, ring) so you fill out your equipment slots without ever leaving Haven's safe bubble.\n"
+			+ "  • A [color=#FF80FF]Goblin egg[/color] in your incubator — walk around to hatch it. Your first companion fights alongside you and gains XP from your kills.\n\n"
+			+ "Press the [color=#FFAA66]Help[/color] (?) button on any panel for context, or type [color=#9ACD32]/topics[/color] to see every help topic at once.\n\n"
+			+ "Good luck out there."
+		),
+	})
 
 	# Check if spawning at a Trading Post and trigger the encounter
 	if world_system.is_trading_post_tile(character.x, character.y):

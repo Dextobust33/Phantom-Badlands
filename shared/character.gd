@@ -78,6 +78,11 @@ extends Resource
 # clan-shared post owned by another clan-mate, explain the bump-decay /
 # build / demolish permissions + /clanposts discovery surface.
 @export var seen_clan_post_hint: bool = false
+# Audit #3 Tutorial Initiative Slice 2 v0.9.564 — first-character welcome
+# overlay flag. Set true when the welcome modal fires at character creation.
+# Existing characters created before this version get set true on first load
+# (via the deserialize path) so they don't see the overlay mid-game.
+@export var seen_welcome_overlay: bool = false
 
 # Fractional stat accumulators (for class-specific stat gains that use decimals)
 @export var stat_accumulator: Dictionary = {
@@ -1403,6 +1408,8 @@ func to_dict() -> Dictionary:
 		# Audit #14 Slice F polish v0.9.560 — first time a clan member walks
 		# onto a clan-shared post (not their own) explains the mechanic.
 		"seen_clan_post_hint": seen_clan_post_hint,
+		# Audit #3 Tutorial Slice 2 v0.9.564 — welcome overlay flag.
+		"seen_welcome_overlay": seen_welcome_overlay,
 		# Audit #4 Slice 1A (v0.9.485) — first-time Companion Stable hint flag
 		"seen_companion_stable_hint": seen_companion_stable_hint,
 		# Audit #4 Slice 1 — NPC Home Stone purchase counts (per-character
@@ -1593,6 +1600,10 @@ func from_dict(data: Dictionary):
 	# Audit #14 Slice F polish v0.9.560 — first time a clan member arrives
 	# at a clan-shared post (not their own) the overlay fires.
 	seen_clan_post_hint = bool(data.get("seen_clan_post_hint", false))
+	# Audit #3 Tutorial Slice 2 v0.9.564 — welcome overlay flag. Default true
+	# for legacy characters (they were already created without it; don't
+	# fire it mid-game). Fresh characters set this true at creation.
+	seen_welcome_overlay = bool(data.get("seen_welcome_overlay", true))
 	# Audit #4 Slice 1A (v0.9.485) — Companion Stable hint flag. Defaults
 	# false for legacy characters; they get the hint on their first stable
 	# interaction after this version ships.
