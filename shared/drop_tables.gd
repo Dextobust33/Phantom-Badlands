@@ -5313,3 +5313,41 @@ func generate_mystery_box_item(box_tier: int) -> Dictionary:
 	var item_level = randi_range(lvl_range[0], lvl_range[1])
 
 	return _generate_item(item_entry, item_level)
+
+# =============================================================================
+# Audit #3 Tutorial Initiative (v0.9.562) — Starter kit generator
+# =============================================================================
+# Generates a Tier 1 item for one of weapon / armor / helm / boots / shield
+# / accessory. Consumed by the Pathfinder's Trial starter chain's per-stage
+# reward path so a zero-gear character can fill empty equipment slots through
+# the safe gather/kill loop the chain walks them through.
+#
+# This game's weapons are class-agnostic at the item level — class identity
+# comes from passives + stat scaling, not item type. So a single Tier 1
+# weapon entry serves every class path.
+
+const STARTER_KIT_SLOT_MAP: Dictionary = {
+	"weapon": "weapon_rusty",
+	"armor": "armor_leather",
+	"helm": "helm_cloth",
+	"boots": "boots_cloth",
+	"shield": "shield_wood",
+	"accessory": "ring_copper",
+}
+
+func get_starter_kit_item(slot: String) -> Dictionary:
+	"""Returns a Tier 1 item for the given slot. Returns {} if slot unknown.
+	Common rarity, level 1 — the chain is designed for fresh characters; if
+	an experienced player runs it they'll just get a Tier 1 item to salvage."""
+	if slot == "":
+		return {}
+	var item_type = String(STARTER_KIT_SLOT_MAP.get(slot, ""))
+	if item_type == "":
+		return {}
+	var entry = {"item_type": item_type, "rarity": "common"}
+	var item = _generate_item(entry, 1)
+	if item.is_empty():
+		return {}
+	# Tag for future surfaces (inspect lineage, achievement, etc.).
+	item["starter_kit"] = true
+	return item
