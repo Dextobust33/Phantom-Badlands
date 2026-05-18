@@ -227,11 +227,13 @@ func _rebuild_content() -> void:
 			sc_body.text = _format_reveal_lines(awarded, is_tool_recipe)
 			_content.add_child(sc_body)
 
-	# === Section 3: Roll math — show the actual roll vs threshold bands ===
+	# === Section 3: Roll math — actual roll vs threshold bands + reveal impact ===
 	var best_score := int(summary.get("best_score", -1))
 	var distribution: Dictionary = summary.get("distribution", {})
 	var bands: Dictionary = summary.get("bands", {})
 	var roll_value := int(summary.get("roll", -1))
+	var baseline_dist: Dictionary = summary.get("baseline_distribution", {})
+	var baseline_success: int = int(summary.get("baseline_success_chance", 0))
 	if best_score >= 0 or not distribution.is_empty():
 		_content.add_child(_make_separator())
 		var chain_header := Label.new()
@@ -252,9 +254,31 @@ func _rebuild_content() -> void:
 		chain_body.scroll_active = false
 		chain_body.add_theme_font_size_override("normal_font_size", 12)
 		var lines: Array = []
-		lines.append("  • Reveal score: [color=#FFFFFF]%s[/color] → adds [color=#FFFFFF]+%d%%[/color] to base success chance" % [score_label, bonus_pct])
-		lines.append("  • Effective success chance after skill/boost/score: [color=#FFFFFF]%d%%[/color]" % success_chance)
-		# Threshold bands (only show populated ones).
+
+		# Reveal impact: show baseline vs effective when a scratch-off ran.
+		if best_score >= 0 and not baseline_dist.is_empty() and bonus_pct > 0:
+			var base_mw := int(baseline_dist.get("masterwork", 0))
+			var base_poor := int(baseline_dist.get("poor", 0))
+			var eff_mw := int(distribution.get("masterwork", 0))
+			var eff_poor := int(distribution.get("poor", 0))
+			lines.append("  [color=#FFFFFF]Reveal impact:[/color]")
+			lines.append("    • Without reveals: [color=#FFFFFF]%d%% success[/color] → Poor [color=#FFFFFF]%d%%[/color] / Std [color=#00FF00]%d%%[/color] / Fine [color=#0070DD]%d%%[/color] / MW [color=#A335EE]%d%%[/color]" % [
+				baseline_success, base_poor, int(baseline_dist.get("standard", 0)), int(baseline_dist.get("fine", 0)), base_mw
+			])
+			lines.append("    • With your +%d%% from reveals: [color=#FFFFFF]%d%% success[/color] → Poor [color=#FFFFFF]%d%%[/color] / Std [color=#00FF00]%d%%[/color] / Fine [color=#0070DD]%d%%[/color] / MW [color=#A335EE]%d%%[/color]" % [
+				bonus_pct, success_chance, eff_poor, int(distribution.get("standard", 0)), int(distribution.get("fine", 0)), eff_mw
+			])
+			var mw_gain := eff_mw - base_mw
+			var poor_drop := base_poor - eff_poor
+			if mw_gain > 0 or poor_drop > 0:
+				lines.append("    • Net effect: [color=#A335EE]Masterwork +%d%%[/color], [color=#FFFFFF]Poor −%d%%[/color] of the roll range" % [maxi(0, mw_gain), maxi(0, poor_drop)])
+			lines.append("")
+		else:
+			lines.append("  • Reveal score: [color=#FFFFFF]%s[/color] → adds [color=#FFFFFF]+%d%%[/color] success chance" % [score_label, bonus_pct])
+			lines.append("  • Effective success chance: [color=#FFFFFF]%d%%[/color]" % success_chance)
+
+		# Threshold bands with explicit roll ranges (always show — this is the
+		# bucket map used to grade the roll).
 		if not distribution.is_empty():
 			var band_parts: Array = []
 			for k in ["poor", "standard", "fine", "masterwork"]:
@@ -274,7 +298,7 @@ func _rebuild_content() -> void:
 						continue
 				band_parts.append("[color=%s]%s %d%%[/color]" % [color, k.capitalize(), pct])
 			if not band_parts.is_empty():
-				lines.append("  • Quality bands: %s" % "  ".join(band_parts))
+				lines.append("  • Roll bands: %s" % "  ".join(band_parts))
 		# Actual roll outcome.
 		if roll_value >= 0:
 			lines.append("  • Rolled [color=#FFD700]%d[/color] out of 100 → lands in [color=%s]%s[/color] band" % [roll_value, _quality_color.to_html(false), quality_name])

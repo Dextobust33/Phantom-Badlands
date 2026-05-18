@@ -20891,7 +20891,13 @@ func handle_craft_list(peer_id: int, message: Dictionary):
 			continue
 
 		var can_craft = not is_locked and not specialist_gated and _has_materials_in_dict(recipe.materials, effective_mats, character.crafting_materials)
-		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, total_success_bonus) if not is_locked and not specialist_gated else 0
+		# Audit #4 Slice 3.7 (v0.9.546) — the recipe preview must match the
+		# formula the actual craft uses. Auto-skip path uses score=3 (35 base
+		# + 45). Scratch-off path uses score=0 baseline (35 base) — reveals
+		# add up to +45% from there. The legacy `score=-1` formula (50 base)
+		# is no longer accurate to either path.
+		var _preview_score: int = 3 if (skill_level - recipe.difficulty) >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP else 0
+		var success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, recipe.difficulty, total_success_bonus, _preview_score) if not is_locked and not specialist_gated else 0
 
 		# Build a description of what this recipe does
 		var description = _get_recipe_description(recipe)
@@ -22921,6 +22927,17 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 	# Audit #4 Slice 3.6 (v0.9.545) — full roll math from roll_quality_detailed.
 	var _roll_math: Dictionary = _craft_session.get("craft_roll_data", {})
 	var _is_tool_recipe: bool = String(recipe.get("output_type", "")).to_lower() == "tool"
+	# Audit #4 Slice 3.7 (v0.9.546) — baseline distribution at score=0 so the
+	# panel can show what the bands WOULD have been without the player's
+	# reveals. Answers "what did my +X% success chance actually do?"
+	# Only meaningful when the scratch-off ran (score >= 0).
+	var _baseline_success_chance: int = 0
+	var _baseline_distribution: Dictionary = {}
+	if score >= 0:
+		var _baseline_shift: Dictionary = _boost_cfg.get("shift", {})
+		var _baseline_no_poor: bool = bool(_boost_cfg.get("no_poor", false))
+		_baseline_success_chance = CraftingDatabaseScript.calculate_success_chance(skill_level, int(recipe.get("difficulty", 1)), total_bonus, 0)
+		_baseline_distribution = CraftingDatabaseScript.quality_distribution(_baseline_success_chance, _baseline_shift, _baseline_no_poor)
 
 	send_to_peer(peer_id, {
 		"type": "craft_result",
@@ -22968,6 +22985,11 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 			"distribution": _roll_math.get("distribution", {}),
 			"bands": _roll_math.get("bands", {}),
 			"is_tool_recipe": _is_tool_recipe,
+			# Slice 3.7 (v0.9.546) — baseline (no-reveal) distribution for the
+			# before/after comparison. Lets the panel say "your reveals shifted
+			# 15% of rolls out of Poor into Masterwork".
+			"baseline_success_chance": _baseline_success_chance,
+			"baseline_distribution": _baseline_distribution,
 		},
 	})
 
