@@ -9,6 +9,9 @@ class_name PostStatusPanel
 
 signal close_requested
 signal feed_all_requested
+# Audit #14 Slice F v2 (v0.9.559) — owner-only Share/Revert buttons fire these.
+signal clan_share_requested
+signal clan_revert_requested
 
 var _root_panel: PanelContainer
 var _vbox: VBoxContainer
@@ -22,6 +25,10 @@ var _threat_label: RichTextLabel
 var _inactivity_label: RichTextLabel
 var _feed_button: Button
 var _feed_hint_label: RichTextLabel
+# Audit #14 Slice F v2 (v0.9.559) — Clan-share row.
+var _clan_share_row: HBoxContainer
+var _clan_share_label: RichTextLabel
+var _clan_share_button: Button
 
 var _last_data: Dictionary = {}
 
@@ -163,6 +170,28 @@ func _build_layout() -> void:
 	_guards_list_vbox.add_theme_constant_override("separation", 2)
 	_guards_section.add_child(_guards_list_vbox)
 
+	# Audit #14 Slice F v2 (v0.9.559) — Clan-share row. Visible to owner only:
+	# label states current shared-with status, button toggles Share/Revert.
+	_clan_share_row = HBoxContainer.new()
+	_clan_share_row.add_theme_constant_override("separation", 10)
+	_vbox.add_child(_clan_share_row)
+
+	_clan_share_label = RichTextLabel.new()
+	_clan_share_label.bbcode_enabled = true
+	_clan_share_label.fit_content = true
+	_clan_share_label.scroll_active = false
+	_clan_share_label.add_theme_font_size_override("normal_font_size", 12)
+	_clan_share_label.custom_minimum_size = Vector2(0, 22)
+	_clan_share_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_clan_share_row.add_child(_clan_share_label)
+
+	_clan_share_button = Button.new()
+	_clan_share_button.text = "Share with Clan"
+	_clan_share_button.focus_mode = Control.FOCUS_NONE
+	_clan_share_button.custom_minimum_size = Vector2(160, 32)
+	_clan_share_button.pressed.connect(_on_clan_share_button_pressed)
+	_clan_share_row.add_child(_clan_share_button)
+
 	# Spacer
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 4)
@@ -205,6 +234,7 @@ func _render() -> void:
 		_guards_section.visible = false
 		_feed_button.visible = false
 		_feed_hint_label.visible = false
+		_clan_share_row.visible = false
 		return
 
 	_empty_label.visible = false
@@ -321,6 +351,26 @@ func _render() -> void:
 	else:
 		_guards_section.visible = false
 
+	# Audit #14 Slice F v2 (v0.9.559) — Clan-share row. Owner-only. Three states:
+	# (a) owner has no clan → row hidden (nothing to share with).
+	# (b) post not shared yet → label "Not shared." + button "Share with Clan".
+	# (c) post already shared → label shows [TAG] + button "Make Private".
+	var is_clan_shared: bool = bool(_last_data.get("is_clan_shared", false))
+	var shared_tag: String = String(_last_data.get("shared_with_clan_tag", ""))
+	var shared_color: String = String(_last_data.get("shared_with_clan_color", "#A335EE"))
+	var owner_clan_id: String = String(_last_data.get("viewer_clan_id", ""))
+	if is_owner and (owner_clan_id != "" or is_clan_shared):
+		_clan_share_row.visible = true
+		_clan_share_label.clear()
+		if is_clan_shared:
+			_clan_share_label.append_text("  [color=%s]✦ Shared with [%s][/color]  [color=#888888]— clan members can build/demolish/refresh decay[/color]" % [shared_color, shared_tag])
+			_clan_share_button.text = "Make Private"
+		else:
+			_clan_share_label.append_text("  [color=#888888]Private post. Sharing lets your clan-mates build, demolish, and keep the decay timer fresh.[/color]")
+			_clan_share_button.text = "Share with Clan"
+	else:
+		_clan_share_row.visible = false
+
 	# Feed All button + hint (owner only)
 	if is_owner and not feedall.is_empty():
 		var feedable: int = int(feedall.get("feedable", 0))
@@ -342,3 +392,13 @@ func _render() -> void:
 	else:
 		_feed_button.visible = false
 		_feed_hint_label.visible = false
+
+
+func _on_clan_share_button_pressed() -> void:
+	# Audit #14 Slice F v2 (v0.9.559) — button toggles between Share and Revert
+	# based on the current shared state. Emits the right signal; client.gd wires
+	# both to the existing server handlers.
+	if bool(_last_data.get("is_clan_shared", false)):
+		clan_revert_requested.emit()
+	else:
+		clan_share_requested.emit()

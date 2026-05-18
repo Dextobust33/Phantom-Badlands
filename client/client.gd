@@ -2017,6 +2017,9 @@ func _ready():
 	add_child(post_status_panel)
 	post_status_panel.close_requested.connect(_on_post_status_panel_close)
 	post_status_panel.feed_all_requested.connect(_on_post_status_panel_feed_all)
+	# Audit #14 Slice F v2 (v0.9.559) — clan share/revert from panel buttons.
+	post_status_panel.clan_share_requested.connect(_on_post_status_panel_clan_share)
+	post_status_panel.clan_revert_requested.connect(_on_post_status_panel_clan_revert)
 
 	# Audit #14 Slice 1 — clan create/roster panel.
 	clan_panel = ClanPanelScript.new()
@@ -21142,7 +21145,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "clanpost", "vault", "clanvault", "mentor", "mentors", "duel", "bounty",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "clanpost", "clanposts", "vault", "clanvault", "mentor", "mentors", "duel", "bounty",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -22300,6 +22303,9 @@ func process_command(text: String):
 			# Usage: /clanpost share  → flag the post you're standing in as
 			#        clan-shared (clan members get build/demolish + decay reset).
 			# Usage: /clanpost revert → flip it back to private (owner-only).
+			# v0.9.559: panel-button is now the primary surface (post status
+			# panel "Share with Clan" / "Make Private"); chat command kept as
+			# the legacy fallback.
 			if not has_character:
 				display_game("You don't have a character yet")
 			else:
@@ -22310,7 +22316,14 @@ func process_command(text: String):
 				elif cp_arg == "revert":
 					send_to_server({"type": "clan_post_revert"})
 				else:
-					display_game("[color=#FF8800]Usage: /clanpost share  |  /clanpost revert  (stand inside the post first)[/color]")
+					display_game("[color=#FF8800]Usage: /clanpost share  |  /clanpost revert  (stand inside the post first; you can also use the buttons on the post status panel)[/color]")
+		"clanposts":
+			# Audit #14 Slice F v2 (v0.9.559) — discovery list of every post
+			# shared with your clan (name, owner, location, last-tended state).
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				send_to_server({"type": "clan_posts_list"})
 		"mentor":
 			# Audit #14 v0.9.517 — Mentor Badge MVP.
 			# Usage: /mentor on | /mentor off — toggles a ★ badge on your name
@@ -27916,6 +27929,15 @@ func _on_post_status_panel_feed_all() -> void:
 	"""Feed All button → reuses existing guard_feed_all message. Server
 	pushes a fresh post_status_data after success so the panel refreshes."""
 	send_to_server({"type": "guard_feed_all"})
+
+func _on_post_status_panel_clan_share() -> void:
+	"""Audit #14 Slice F v2 (v0.9.559) — Share button on the panel. Same
+	server handler the /clanpost share chat command hits."""
+	send_to_server({"type": "clan_post_share"})
+
+func _on_post_status_panel_clan_revert() -> void:
+	"""Audit #14 Slice F v2 (v0.9.559) — Make Private button on the panel."""
+	send_to_server({"type": "clan_post_revert"})
 
 func _handle_post_status_data(message: Dictionary) -> void:
 	"""Server data feed for the post status panel. Always update the panel's
