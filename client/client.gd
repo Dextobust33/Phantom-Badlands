@@ -20280,6 +20280,13 @@ func handle_server_message(message: Dictionary):
 			# Server already sent a chat message via "text"; structured payload
 			# reserved for future polish (sound, modal). V1 just no-op.
 			pass
+		# Audit #14 PvP Slice E (v0.9.556) — Bounty system
+		"bounty_posted_on_you":
+			_handle_bounty_posted_on_you(message)
+		"bounty_list_result":
+			_handle_bounty_list_result(message)
+		"bounty_on_result":
+			_handle_bounty_on_result(message)
 		# Audit #13 Slice 2 — Bestiary panel feed
 		"bestiary_data":
 			_handle_bestiary_data(message)
@@ -21135,7 +21142,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors", "duel",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors", "duel", "bounty",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -22336,6 +22343,50 @@ func process_command(text: String):
 							display_game("[color=#FF8800]Unknown stakes '%s'. Use 'valor' or omit for none.[/color]" % st)
 							return
 					send_to_server({"type": "duel_request", "target": target_name, "stakes": stakes})
+		"bounty":
+			# Audit #14 PvP Slice E (v0.9.556) — Bounty system. Player-funded
+			# bounties on other players, collected on apex-zone KO.
+			#   /bounty                       — show this help
+			#   /bounty post <player> <valor> — pay valor upfront, lock as bounty
+			#   /bounty list                  — list all active bounties
+			#   /bounty on <player>           — show bounties on a specific target
+			#   /bounty cancel <player>       — cancel YOUR bounties on target (refund)
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var bp = text.split(" ", false)
+				if bp.size() < 2:
+					display_game("[color=#FFD700]💰 Bounty system[/color] — post valor on another player; payable to whoever KOs them in the apex zone.")
+					display_game("  [color=#9ACD32]/bounty post <player> <valor>[/color]   pay valor upfront to bounty a player (min 50)")
+					display_game("  [color=#9ACD32]/bounty list[/color]                    list all active bounties (sorted by total)")
+					display_game("  [color=#9ACD32]/bounty on <player>[/color]              show bounty postings on one target")
+					display_game("  [color=#9ACD32]/bounty cancel <player>[/color]         cancel ALL your bounties on target (full refund)")
+				else:
+					var sub = bp[1].strip_edges().to_lower()
+					if sub == "post":
+						if bp.size() < 4:
+							display_game("[color=#FF8800]Usage: /bounty post <player> <valor>[/color]")
+						else:
+							var b_target = bp[2].strip_edges()
+							var b_amount = int(bp[3].strip_edges())
+							if b_amount <= 0:
+								display_game("[color=#FF8800]Bounty amount must be a positive number.[/color]")
+							else:
+								send_to_server({"type": "bounty_post", "target": b_target, "amount": b_amount})
+					elif sub == "list":
+						send_to_server({"type": "bounty_list"})
+					elif sub == "on":
+						if bp.size() < 3:
+							display_game("[color=#FF8800]Usage: /bounty on <player>[/color]")
+						else:
+							send_to_server({"type": "bounty_on", "target": bp[2].strip_edges()})
+					elif sub == "cancel":
+						if bp.size() < 3:
+							display_game("[color=#FF8800]Usage: /bounty cancel <player>[/color]")
+						else:
+							send_to_server({"type": "bounty_cancel", "target": bp[2].strip_edges()})
+					else:
+						display_game("[color=#FF8800]Unknown subcommand '%s'. Use post / list / on / cancel.[/color]" % sub)
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -28212,6 +28263,50 @@ func _on_duel_request_response(action: String) -> void:
 	if _duel_request_popup != null and is_instance_valid(_duel_request_popup):
 		_duel_request_popup.hide()
 	_duel_request_challenger_peer = -1
+
+# Audit #14 PvP Slice E (v0.9.556) — Bounty system handlers
+func _handle_bounty_posted_on_you(message: Dictionary) -> void:
+	"""Target-side notification — flash a chat banner (already sent as text)
+	plus log to the in-game chat for visibility. Reserved for future HUD
+	banner / sound polish."""
+	var poster = String(message.get("poster_name", "Someone"))
+	var amount = int(message.get("amount", 0))
+	var total = int(message.get("total_bounty", amount))
+	display_chat("[color=#FF2020]💰 %s placed a [color=#FFD700]%d valor[/color] bounty on you (total %d).[/color]" % [poster, amount, total])
+
+func _handle_bounty_list_result(message: Dictionary) -> void:
+	"""Render the public bounty board sorted by total bounty desc."""
+	var entries = message.get("entries", [])
+	if not (entries is Array) or entries.is_empty():
+		display_game("[color=#808080]No active bounties.[/color]")
+		return
+	display_game("[color=#FFD700]═══════ 💰 BOUNTY BOARD ═══════[/color]")
+	for e in entries:
+		if not (e is Dictionary):
+			continue
+		var name = String(e.get("target_name", "?"))
+		var total = int(e.get("total_bounty", 0))
+		var count = int(e.get("posting_count", 1))
+		var online = bool(e.get("online", false))
+		var online_tag = "" if online else " [color=#808080](offline)[/color]"
+		display_game("  [color=#FF8800]%s[/color]%s — [color=#FFD700]%d valor[/color] [color=#808080](%d postings)[/color]" % [name, online_tag, total, count])
+	display_game("[color=#808080]/bounty on <player> for per-posting details. Bounties collect on apex-zone KO.[/color]")
+
+func _handle_bounty_on_result(message: Dictionary) -> void:
+	"""Render bounties on a specific target — show each posting + poster + amount."""
+	var target_name = String(message.get("target_name", "?"))
+	var bounties = message.get("bounties", [])
+	var total = int(message.get("total_bounty", 0))
+	if not (bounties is Array) or bounties.is_empty():
+		display_game("[color=#808080]No bounties on %s.[/color]" % target_name)
+		return
+	display_game("[color=#FFD700]💰 Bounties on [color=#FF8800]%s[/color][/color] — total [color=#FFD700]%d valor[/color] across %d postings:" % [target_name, total, bounties.size()])
+	for b in bounties:
+		if not (b is Dictionary):
+			continue
+		var poster = String(b.get("poster_character_name", "?"))
+		var amount = int(b.get("amount_valor", 0))
+		display_game("  • [color=#9ACD32]%s[/color] — [color=#FFD700]%d valor[/color]" % [poster, amount])
 
 func _handle_clan_invitation_received(message: Dictionary) -> void:
 	"""Live invitation alert — fires when another player invites you. Shown as
