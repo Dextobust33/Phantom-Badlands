@@ -1787,6 +1787,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #14 Slice F v2 (v0.9.559) — clan-shared post discovery.
 		"clan_posts_list":
 			handle_clan_posts_list(peer_id)
+		# Audit #14 PvP Slice B.2 (v0.9.563) — combat-scene PvP action.
+		"pvp_combat_action":
+			handle_pvp_combat_action(peer_id, message)
 		# Audit #14 v0.9.517 — Mentor Badge MVP.
 		"mentor_toggle":
 			handle_mentor_toggle(peer_id, message)
@@ -3785,25 +3788,280 @@ func handle_attack_player(peer_id: int, message: Dictionary) -> void:
 	if combat_mgr.is_in_combat(peer_id) or combat_mgr.is_in_combat(target_peer):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]One of you is in combat — can't engage right now.[/color]"})
 		return
-	# Resolve via dice-roll (same formula as duel).
-	var att_power = _compute_duel_power(attacker)
-	var vic_power = _compute_duel_power(victim)
-	var att_roll = int(float(att_power) * randf_range(0.7, 1.3))
-	var vic_roll = int(float(vic_power) * randf_range(0.7, 1.3))
-	var att_won = att_roll >= vic_roll
-	var winner_peer = peer_id if att_won else target_peer
-	var loser_peer = target_peer if att_won else peer_id
-	var winner_name = String(characters[winner_peer].name)
-	var loser_name = String(characters[loser_peer].name)
-	var msg = (
-		"[color=#FF2020]⚔ APEX ATTACK![/color] "
-		+ "[color=#FFD700]%s[/color] (roll %d) vs [color=#FFD700]%s[/color] (roll %d)."
-		+ "\n  → [color=#88FF88]%s wins![/color]"
-	) % [String(attacker.name), att_roll, String(victim.name), vic_roll, winner_name]
-	send_to_peer(peer_id, {"type": "text", "message": msg})
-	send_to_peer(target_peer, {"type": "text", "message": msg})
-	# Transfer loot + respawn the loser.
-	_apply_apex_ko(winner_peer, loser_peer)
+	if _is_in_pvp_combat(peer_id) or _is_in_pvp_combat(target_peer):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]One of you is already in a PvP fight — can't engage right now.[/color]"})
+		return
+	# Slice B.2 (v0.9.563) — launch a real combat-scene PvP fight instead of
+	# the instant dice-roll. Each player picks Attack / Special / Defend per
+	# round; HP 0 still routes to _apply_apex_ko for the sack drop.
+	_start_pvp_combat(peer_id, target_peer)
+
+# =============================================================================
+# Audit #14 PvP Slice B.2 (v0.9.563) — Combat-scene PvP
+# =============================================================================
+# Replaces apex auto-attack's instant dice-roll with a real turn-based combat
+# scene where both players pick from 3 actions (Attack / Special / Defend)
+# until one player's PvP HP hits zero. Final KO routes to the existing
+# _apply_apex_ko flow so the sack-drop + bounty-payout machinery from Slice
+# D.2 / E carries through unchanged.
+#
+# Designed as a parallel system to combat_manager — does not touch the PvE
+# combat infrastructure. Action set is intentionally smaller than the full
+# deck system so both players can engage without learning a new game.
+#
+# Damage formulas (V1, all variants are simple stat-scaling × variance):
+#   Attack:  STR×2 + weapon_dmg                 — ±25% variance
+#   Special: max(INT, DEX)×3 + weapon_dmg/2     — ±25% variance, ignores DEF/2
+#   Defend:  0 damage dealt; halves incoming damage this round
+# Simultaneous reveal — both players submit, both abilities resolve at once.
+#
+# PvP HP starts at character.get_total_max_hp() so the fight scales naturally
+# with gear/level. Character's actual current_hp is NOT touched during PvP
+# (only on KO via _apply_apex_ko's existing victim respawn path).
+
+const PVP_COMBAT_MAX_ROUNDS: int = 15  # Safety cap; HP 0 normally ends it.
+var active_pvp_combats: Dictionary = {}  # combat_id (String) → state Dictionary
+
+func _is_in_pvp_combat(peer_id: int) -> bool:
+	for state in active_pvp_combats.values():
+		if int(state.get("p1_peer", -1)) == peer_id or int(state.get("p2_peer", -1)) == peer_id:
+			return true
+	return false
+
+func _pvp_combat_id_for(peer_id: int) -> String:
+	for cid in active_pvp_combats.keys():
+		var state = active_pvp_combats[cid]
+		if int(state.get("p1_peer", -1)) == peer_id or int(state.get("p2_peer", -1)) == peer_id:
+			return cid
+	return ""
+
+func _pvp_max_hp(character) -> int:
+	# Cap PvP fights at a sane upper bound so a Lv 500 character vs a Lv 5
+	# character isn't a flat curb-stomp. Real character HP can be 50k+ at
+	# endgame; PvP HP tops out at 2000 (still 4-8 round fights with the
+	# damage curve below).
+	return min(2000, character.get_total_max_hp())
+
+func _pvp_basic_attack_damage(attacker) -> int:
+	var dmg = attacker.strength * 2 + attacker.get_weapon_damage()
+	return max(1, int(dmg * randf_range(0.75, 1.25)))
+
+func _pvp_special_damage(attacker) -> int:
+	var caster_stat = max(int(attacker.intelligence), int(attacker.dexterity))
+	var dmg = caster_stat * 3 + attacker.get_weapon_damage() / 2
+	return max(1, int(dmg * randf_range(0.75, 1.25)))
+
+func _pvp_apply_defense(raw_damage: int, defender, defender_defended: bool) -> int:
+	var dmg = float(raw_damage)
+	# Light DEF mitigation — full DEF mitigation in PvE would make stat-stacked
+	# tanks unkillable. PvP only applies half of DEF.
+	dmg = max(1.0, dmg - float(defender.get_total_defense()) * 0.5)
+	if defender_defended:
+		dmg = dmg * 0.5
+	return max(1, int(dmg))
+
+func _start_pvp_combat(attacker_peer: int, defender_peer: int) -> void:
+	"""Launch a fresh combat-scene PvP fight. Sends pvp_combat_start to both
+	peers with their full visible state. Either player can act first — first
+	round waits for both to submit before resolving."""
+	if not characters.has(attacker_peer) or not characters.has(defender_peer):
+		return
+	var attacker = characters[attacker_peer]
+	var defender = characters[defender_peer]
+	var combat_id = "pvp_%d_%d_%d" % [attacker_peer, defender_peer, Time.get_unix_time_from_system()]
+	var p1_max = _pvp_max_hp(attacker)
+	var p2_max = _pvp_max_hp(defender)
+	active_pvp_combats[combat_id] = {
+		"p1_peer": attacker_peer,
+		"p2_peer": defender_peer,
+		"p1_name": String(attacker.name),
+		"p2_name": String(defender.name),
+		"p1_hp": p1_max,
+		"p2_hp": p2_max,
+		"p1_max_hp": p1_max,
+		"p2_max_hp": p2_max,
+		"p1_action": "",
+		"p2_action": "",
+		"round": 1,
+		"log": [],
+		"started_at": Time.get_unix_time_from_system(),
+	}
+	for pair in [[attacker_peer, "p1", "p2"], [defender_peer, "p2", "p1"]]:
+		var pid = int(pair[0])
+		var me_key = pair[1]
+		var op_key = pair[2]
+		send_to_peer(pid, {
+			"type": "pvp_combat_start",
+			"combat_id": combat_id,
+			"my_name": String(active_pvp_combats[combat_id]["%s_name" % me_key]),
+			"my_hp": int(active_pvp_combats[combat_id]["%s_hp" % me_key]),
+			"my_max_hp": int(active_pvp_combats[combat_id]["%s_max_hp" % me_key]),
+			"opponent_name": String(active_pvp_combats[combat_id]["%s_name" % op_key]),
+			"opponent_hp": int(active_pvp_combats[combat_id]["%s_hp" % op_key]),
+			"opponent_max_hp": int(active_pvp_combats[combat_id]["%s_max_hp" % op_key]),
+			"round": 1,
+		})
+	log_message("PvP combat started: %s vs %s (combat_id=%s, hp %d / %d)" % [attacker.name, defender.name, combat_id, p1_max, p2_max])
+
+func handle_pvp_combat_action(peer_id: int, message: Dictionary) -> void:
+	"""Player submitted an action for the current round. Server stores it and,
+	when both players have submitted, resolves the round simultaneously."""
+	var combat_id = _pvp_combat_id_for(peer_id)
+	if combat_id == "":
+		return
+	var state: Dictionary = active_pvp_combats[combat_id]
+	var action = String(message.get("action", "")).to_lower()
+	if action not in ["attack", "special", "defend"]:
+		return
+	var is_p1 = int(state["p1_peer"]) == peer_id
+	var slot = "p1_action" if is_p1 else "p2_action"
+	if String(state.get(slot, "")) != "":
+		return  # Already submitted this round; ignore.
+	state[slot] = action
+	# Notify opponent that I've submitted (without revealing my action).
+	var opponent_peer = int(state["p2_peer"]) if is_p1 else int(state["p1_peer"])
+	send_to_peer(opponent_peer, {
+		"type": "pvp_combat_opponent_submitted",
+		"round": int(state.get("round", 1)),
+	})
+	# Also notify the actor.
+	send_to_peer(peer_id, {
+		"type": "pvp_combat_self_submitted",
+		"action": action,
+		"round": int(state.get("round", 1)),
+	})
+	# If both submitted, resolve the round.
+	if String(state["p1_action"]) != "" and String(state["p2_action"]) != "":
+		_resolve_pvp_round(combat_id)
+
+func _resolve_pvp_round(combat_id: String) -> void:
+	var state: Dictionary = active_pvp_combats[combat_id]
+	var p1_peer = int(state["p1_peer"])
+	var p2_peer = int(state["p2_peer"])
+	if not characters.has(p1_peer) or not characters.has(p2_peer):
+		_end_pvp_combat(combat_id, -1, "abandoned")
+		return
+	var p1 = characters[p1_peer]
+	var p2 = characters[p2_peer]
+	var p1_act = String(state["p1_action"])
+	var p2_act = String(state["p2_action"])
+	var p1_defended = p1_act == "defend"
+	var p2_defended = p2_act == "defend"
+	var p1_raw = 0
+	var p2_raw = 0
+	if p1_act == "attack":
+		p1_raw = _pvp_basic_attack_damage(p1)
+	elif p1_act == "special":
+		p1_raw = _pvp_special_damage(p1)
+	if p2_act == "attack":
+		p2_raw = _pvp_basic_attack_damage(p2)
+	elif p2_act == "special":
+		p2_raw = _pvp_special_damage(p2)
+	# Apply each player's outgoing damage to the OPPONENT's HP with defense.
+	var p2_damage_dealt = _pvp_apply_defense(p1_raw, p2, p2_defended) if p1_raw > 0 else 0
+	var p1_damage_dealt = _pvp_apply_defense(p2_raw, p1, p1_defended) if p2_raw > 0 else 0
+	state["p1_hp"] = max(0, int(state["p1_hp"]) - p1_damage_dealt)
+	state["p2_hp"] = max(0, int(state["p2_hp"]) - p2_damage_dealt)
+	# Build the round log line for both players.
+	var round_num = int(state.get("round", 1))
+	var log_line = "[color=#FFD700]Round %d:[/color] %s %s | %s %s" % [
+		round_num,
+		String(state["p1_name"]), _format_pvp_action(p1_act, p2_damage_dealt),
+		String(state["p2_name"]), _format_pvp_action(p2_act, p1_damage_dealt),
+	]
+	var log: Array = state.get("log", [])
+	log.append(log_line)
+	if log.size() > 8:
+		log = log.slice(log.size() - 8, log.size())
+	state["log"] = log
+	# Clear actions for next round.
+	state["p1_action"] = ""
+	state["p2_action"] = ""
+	state["round"] = round_num + 1
+	# Check for KO.
+	var p1_ko = int(state["p1_hp"]) <= 0
+	var p2_ko = int(state["p2_hp"]) <= 0
+	if p1_ko and p2_ko:
+		# Mutual KO — the attacker (p1) "loses" by convention (defender survives
+		# their last stand). This is a rare edge case.
+		_end_pvp_combat(combat_id, p2_peer, "mutual_p2_wins")
+		return
+	if p2_ko:
+		_end_pvp_combat(combat_id, p1_peer, "ko")
+		return
+	if p1_ko:
+		_end_pvp_combat(combat_id, p2_peer, "ko")
+		return
+	if round_num >= PVP_COMBAT_MAX_ROUNDS:
+		# Cap hit — higher HP wins.
+		var winner = p1_peer if int(state["p1_hp"]) >= int(state["p2_hp"]) else p2_peer
+		_end_pvp_combat(combat_id, winner, "round_cap")
+		return
+	# Push fresh state to both players.
+	for pair in [[p1_peer, "p1", "p2"], [p2_peer, "p2", "p1"]]:
+		var pid = int(pair[0])
+		var me_key = pair[1]
+		var op_key = pair[2]
+		send_to_peer(pid, {
+			"type": "pvp_combat_state",
+			"combat_id": combat_id,
+			"my_hp": int(state["%s_hp" % me_key]),
+			"my_max_hp": int(state["%s_max_hp" % me_key]),
+			"opponent_hp": int(state["%s_hp" % op_key]),
+			"opponent_max_hp": int(state["%s_max_hp" % op_key]),
+			"round": int(state["round"]),
+			"log": log.duplicate(),
+		})
+
+func _format_pvp_action(action: String, dmg_dealt: int) -> String:
+	match action:
+		"attack":
+			return "[color=#FF8888]Attack (%d)[/color]" % dmg_dealt
+		"special":
+			return "[color=#88B8FF]Special (%d)[/color]" % dmg_dealt
+		"defend":
+			return "[color=#88FF88]Defend[/color]"
+		_:
+			return "—"
+
+func _end_pvp_combat(combat_id: String, winner_peer: int, reason: String) -> void:
+	if not active_pvp_combats.has(combat_id):
+		return
+	var state: Dictionary = active_pvp_combats[combat_id]
+	var p1_peer = int(state["p1_peer"])
+	var p2_peer = int(state["p2_peer"])
+	var loser_peer = -1
+	if winner_peer == p1_peer:
+		loser_peer = p2_peer
+	elif winner_peer == p2_peer:
+		loser_peer = p1_peer
+	# Notify both peers that combat is over.
+	for pid in [p1_peer, p2_peer]:
+		if characters.has(pid):
+			send_to_peer(pid, {
+				"type": "pvp_combat_end",
+				"combat_id": combat_id,
+				"winner_peer": winner_peer,
+				"winner_name": String(characters[winner_peer].name) if characters.has(winner_peer) else "",
+				"reason": reason,
+				"round": int(state.get("round", 1)),
+			})
+	active_pvp_combats.erase(combat_id)
+	# Apply the apex KO loot sack only when there's a real winner + loser
+	# (skips abandoned-disconnect cases). Uses the existing Slice D.2 flow.
+	if winner_peer > 0 and loser_peer > 0 and reason in ["ko", "mutual_p2_wins", "round_cap"]:
+		_apply_apex_ko(winner_peer, loser_peer)
+	log_message("PvP combat ended: id=%s winner=%d reason=%s" % [combat_id, winner_peer, reason])
+
+func _cleanup_pvp_combats_for_peer(peer_id: int) -> void:
+	"""Called from disconnect cleanup — the disconnecting player loses any
+	active PvP combat by default (don't reward rage-quit)."""
+	var combat_id = _pvp_combat_id_for(peer_id)
+	if combat_id == "":
+		return
+	var state = active_pvp_combats[combat_id]
+	var other_peer = int(state["p2_peer"]) if int(state["p1_peer"]) == peer_id else int(state["p1_peer"])
+	_end_pvp_combat(combat_id, other_peer, "disconnect")
 
 func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
 	"""Slice D.2 (v0.9.557) — drop a VISIBLE loot sack at the loser's death
@@ -7350,6 +7608,8 @@ func handle_disconnect(peer_id: int):
 	# so a reconnect starts fresh (and re-receives the transition warning
 	# next time they walk into the zone).
 	_pvp_zone_last_state.erase(peer_id)
+	# Slice B.2 (v0.9.563) — disconnecting player forfeits any active PvP combat.
+	_cleanup_pvp_combats_for_peer(peer_id)
 
 	# Audit #14 PvP Slice B (v0.9.552) — drop any pending duel requests
 	# this peer was party to (challenger or target). Disconnect = implicit

@@ -1337,6 +1337,11 @@ var stats_panel = null
 const PostStatusPanelScript = preload("res://client/post_status_panel.gd")
 var post_status_panel = null
 
+# Audit #14 PvP Slice B.2 (v0.9.563) — combat-scene PvP panel. Modal opens on
+# pvp_combat_start, updates on pvp_combat_state, closes on pvp_combat_end.
+const PvPCombatPanelScript = preload("res://client/pvp_combat_panel.gd")
+var pvp_combat_panel = null
+
 # Audit #14 Slice 1 — visual clan create/roster panel (no chat-command-first).
 const ClanPanelScript = preload("res://client/clan_panel.gd")
 var clan_panel = null
@@ -2020,6 +2025,11 @@ func _ready():
 	# Audit #14 Slice F v2 (v0.9.559) — clan share/revert from panel buttons.
 	post_status_panel.clan_share_requested.connect(_on_post_status_panel_clan_share)
 	post_status_panel.clan_revert_requested.connect(_on_post_status_panel_clan_revert)
+
+	# Audit #14 PvP Slice B.2 (v0.9.563) — combat-scene PvP modal.
+	pvp_combat_panel = PvPCombatPanelScript.new()
+	add_child(pvp_combat_panel)
+	pvp_combat_panel.action_submitted.connect(_on_pvp_combat_action_submitted)
 
 	# Audit #14 Slice 1 — clan create/roster panel.
 	clan_panel = ClanPanelScript.new()
@@ -20257,6 +20267,18 @@ func handle_server_message(message: Dictionary):
 		"post_status_data":
 			_handle_post_status_data(message)
 
+		# Audit #14 PvP Slice B.2 (v0.9.563) — combat-scene PvP messages.
+		"pvp_combat_start":
+			pvp_combat_panel.open_combat(message)
+		"pvp_combat_state":
+			pvp_combat_panel.update_state(message)
+		"pvp_combat_opponent_submitted":
+			pvp_combat_panel.note_opponent_submitted()
+		"pvp_combat_self_submitted":
+			pass  # Server echoes the picked action; panel already greyed.
+		"pvp_combat_end":
+			pvp_combat_panel.end_combat(message)
+
 		# Combat scratch-off (user-requested 2026-05-14)
 		"combat_loot_reveal_result":
 			_handle_combat_loot_reveal_result(message)
@@ -27483,7 +27505,7 @@ func show_help():
 [color=#00FFFF]Severe Threat:[/color] When 2+ T2+ active dungeons share an 80-tile threat corridor around a post, the post is [color=#FF2020]Severely Threatened[/color] — market markup escalates to +50%, service prices to +100%, player-post bubble suppression doubles. Clearing one dungeon steps it back to normal.
 [color=#00FFFF]Variant Imprints:[/color] Rank up an ability while a companion is active → 3rd ✦ Imprint option on the popup. 10 trait categories ([color=#FF6B6B]Predator's Mark[/color], [color=#FFD700]Hunter's Eye[/color], [color=#B22222]Rending[/color], etc.) cover all 53 companion types. Account-level, stackable to 4. View at [color=#FFD700]Sanctuary → Imprints[/color].
 [color=#00FFFF]/duel <player> [valor]:[/color] Bilateral PvP, any zone, any level. Mutual-consent modal + agreed stakes (none or 10% valor). Instant dice-roll resolution comparing duel power (level + STR + DEX + weapon dmg, ±30% variance).
-[color=#00FFFF]Apex PvP:[/color] Apex Frontier (>1500 tiles) is now a [color=#FF2020]⚔ PvP zone[/color] — adjacent players can be attacked without consent. KO drops a gold [color=#FFD700]$[/color] sack at the death tile (15% valor + 1 equipped + 3 inventory + up to 3 eggs + 1 non-active companion). Any player who walks onto the tile auto-claims it — killer, returning victim, or third-party scavenger. Victim respawns at origin with full HP — character survives (permadeath stays PvE-only).
+[color=#00FFFF]Apex PvP:[/color] Apex Frontier (>1500 tiles) is now a [color=#FF2020]⚔ PvP zone[/color] — adjacent players can be attacked without consent. Triggering the attack opens a [b]combat-scene[/b] modal where both players pick from [color=#FF8888]Attack[/color] / [color=#88B8FF]Special[/color] / [color=#88FF88]Defend[/color] each round; both submit, both resolve simultaneously. HP 0 ends the fight (round cap 15). KO drops a gold [color=#FFD700]$[/color] sack at the death tile (15% valor + 1 equipped + 3 inventory + up to 3 eggs + 1 non-active companion). Any player who walks onto the tile auto-claims it. Victim respawns at origin with full HP — character survives (permadeath stays PvE-only).
 [color=#00FFFF]Bounties:[/color] [color=#9ACD32]/bounty post <player> <valor>[/color] (min 50, escrowed) places a public bounty. Collected when the target is KO'd in the apex zone. [color=#9ACD32]/bounty list[/color] shows the board, [color=#9ACD32]/bounty on <player>[/color] checks a single target, [color=#9ACD32]/bounty cancel <player>[/color] refunds yours.
 [color=#00FFFF]Clan-shared posts:[/color] Owner stands inside their post → [b]Share with Clan[/b] button on the post status panel (or [color=#9ACD32]/clanpost share[/color]). Clan-mates then get build + demolish permissions AND keep the decay timer fresh just by visiting. [color=#9ACD32]/clanposts[/color] lists every post shared with your clan, freshest-first.
 [color=#00FFFF]Pathfinder's Trial:[/color] New starter chain at [color=#FFD700]Haven[/color] (4 stages): fish 3 → mine 2 → kill 2 → kill 3. Each stage rewards a piece of Tier 1 gear ([color=#9AFF9A]weapon → armor → boots → ring[/color]) plus a final companion egg + [color=#9ACD32]Pathfinder[/color] title. Designed for fresh characters with empty slots.
@@ -27942,6 +27964,12 @@ func _on_post_status_panel_clan_share() -> void:
 func _on_post_status_panel_clan_revert() -> void:
 	"""Audit #14 Slice F v2 (v0.9.559) — Make Private button on the panel."""
 	send_to_server({"type": "clan_post_revert"})
+
+func _on_pvp_combat_action_submitted(action: String) -> void:
+	"""Audit #14 PvP Slice B.2 (v0.9.563) — panel button → server. Greys the
+	buttons until the server pushes a new pvp_combat_state."""
+	pvp_combat_panel.note_self_submitted(action)
+	send_to_server({"type": "pvp_combat_action", "action": action})
 
 func _handle_post_status_data(message: Dictionary) -> void:
 	"""Server data feed for the post status panel. Always update the panel's
