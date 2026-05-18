@@ -167,7 +167,8 @@ var build_cooldown: Dictionary = {}  # peer_id -> timestamp — prevents rapid b
 # Soldier harvest session tracking (post-combat 3-choice)
 # active_harvests (old Soldier harvest minigame) removed v0.9.436. Soldier
 # benefits fold into the combat scratch-off via reveal-budget bonuses.
-var active_crafts: Dictionary = {}  # peer_id -> {recipe_id, skill_name, post_bonus, job_bonus, questions, correct_answers}
+# Audit #4 Slice 3 (v0.9.543) — removed active_crafts dict. Held the trivia
+# minigame's pending-craft state; trivia was dead since v0.9.372.
 # Rescue system tracking
 var dungeon_npcs: Dictionary = {}  # instance_id -> {floor_num: npc_data}
 var dungeon_traps: Dictionary = {}  # instance_id -> {floor_num: [{x, y, type, triggered}]}
@@ -1670,8 +1671,6 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_craft_list(peer_id, message)
 		"craft_item":
 			handle_craft_item(peer_id, message)
-		"craft_challenge_answer":
-			handle_craft_challenge_answer(peer_id, message)
 		"use_rune":
 			handle_use_rune(peer_id, message)
 		# Building system handlers
@@ -6536,16 +6535,10 @@ func handle_disconnect(peer_id: int):
 	# tile and walking onto it will no-op (handle_dungeon_skip_final_chest
 	# also no-ops). Reconnect persistence for this state is a follow-up.
 	pending_final_chest.erase(peer_id)
-	# Refund materials from pending craft challenge on disconnect
-	if active_crafts.has(peer_id):
-		var craft = active_crafts[peer_id]
-		var consumed = craft.get("consumed_materials", {})
-		if characters.has(peer_id) and not consumed.is_empty():
-			var char = characters[peer_id]
-			for mat_id in consumed:
-				char.add_crafting_material(mat_id, consumed[mat_id])
-			log_message("Refunded crafting materials for disconnected player %d" % peer_id)
-		active_crafts.erase(peer_id)
+	# Audit #4 Slice 3 (v0.9.543) — old craft-challenge disconnect refund
+	# removed alongside the dead trivia code. Scratch-off-mode craft sessions
+	# are refunded via active_gathering.erase below + the existing
+	# `consumed_materials` tracking inside _complete_scratch_off_fishing.
 	# Clear active gathering sessions
 	active_gathering.erase(peer_id)
 	gathering_cooldown.erase(peer_id)
@@ -18982,7 +18975,7 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	})
 
 	# Finalize the actual craft (sends craft_result). DUPLICATE bumps quantity.
-	_finalize_craft(peer_id, character, recipe_id, recipe, quality, skill_name, skill_level, total_bonus, best_score, effective_quantity, temper_target, is_tempered)
+	_finalize_craft(peer_id, character, recipe_id, recipe, quality, skill_name, skill_level, total_bonus, best_score, effective_quantity, temper_target, is_tempered, boost_tier)
 	pending_craft_sessions.erase(peer_id)
 
 
@@ -21469,6 +21462,13 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	# Auto-skip: trivially easy recipe score=3, manual skip score=1 (lower quality)
 	var auto_score = 3 if skill_gap >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP else 1
 	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, tempered_bonus, auto_score, _boost_shift, _boost_no_poor)
+	# Audit #4 Slice 3 — Specialist save: 5% chance on Refined/Master rolls to
+	# bump one quality tier (capped at Masterwork). Replaces the old trivia
+	# 0→1 score-save with a parallel boon on the boost mechanic.
+	var specialist_save_fired := false
+	if boost_tier in ["refined", "master"] and _is_specialist and quality < CraftingDatabaseScript.CraftingQuality.MASTERWORK and randf() < 0.05:
+		quality = quality + 1
+		specialist_save_fired = true
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
@@ -21932,7 +21932,9 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		"job_xp_gained": job_xp_gained,
 		"job_leveled_up": job_leveled_up,
 		"job_new_level": job_new_level,
-		"job_name": matching_job
+		"job_name": matching_job,
+		"boost_tier": boost_tier,
+		"specialist_save": specialist_save_fired,
 	})
 
 	send_character_update(peer_id)
@@ -22473,107 +22475,19 @@ func _quality_to_rarity(quality: int) -> String:
 		_:
 			return "common"
 
-func _generate_craft_challenge(skill_name: String, job_level: int, is_specialist: bool) -> Dictionary:
-	"""Generate a 3-round crafting challenge. Returns client_rounds and correct_answers."""
-	var questions = CraftingDatabaseScript.CRAFT_CHALLENGE_QUESTIONS.get(skill_name, [])
-	if questions.is_empty():
-		# Fallback to blacksmithing if skill not found
-		questions = CraftingDatabaseScript.CRAFT_CHALLENGE_QUESTIONS.get("blacksmithing", [])
+# Audit #4 Slice 3 (v0.9.543) — removed _generate_craft_challenge and
+# handle_craft_challenge_answer. Trivia minigame was replaced by the scratch-off
+# at v0.9.372; the call sites had already been gone for ~170 versions.
 
-	# Pick 3 random question sets (non-repeating)
-	var indices = range(questions.size())
-	var shuffled_indices = []
-	for idx in indices:
-		shuffled_indices.append(idx)
-	shuffled_indices.shuffle()
-	var picked = shuffled_indices.slice(0, 3)
-
-	var client_rounds = []
-	var correct_answers = []
-
-	# Specialist hints: Lv1-19 = 1 hint (round 1), Lv20-39 = 2 hints, Lv40+ = all 3
-	var hints_available = 0
-	if is_specialist:
-		if job_level >= 40:
-			hints_available = 3
-		elif job_level >= 20:
-			hints_available = 2
-		else:
-			hints_available = 1
-
-	for round_idx in range(3):
-		var q_data = questions[picked[round_idx]]
-		var opts = q_data["opts"].duplicate()
-		# opts[0] is always correct. Shuffle and track where correct ended up.
-		var correct_label = opts[0]
-		opts.shuffle()
-		var correct_idx = opts.find(correct_label)
-		correct_answers.append(correct_idx)
-
-		# Build client round data
-		var hint_index = -1
-		if round_idx < hints_available:
-			# Mark one WRONG answer as "[Risky]"
-			var wrong_indices = []
-			for i in range(3):
-				if i != correct_idx:
-					wrong_indices.append(i)
-			hint_index = wrong_indices[randi() % wrong_indices.size()]
-
-		client_rounds.append({
-			"question": q_data["q"],
-			"options": opts,
-			"hint_index": hint_index,
-		})
-
-	return {
-		"client_rounds": client_rounds,
-		"correct_answers": correct_answers,
-	}
-
-func handle_craft_challenge_answer(peer_id: int, message: Dictionary):
-	"""Handle player's answers to the crafting challenge minigame."""
-	if not characters.has(peer_id):
-		return
-	if not active_crafts.has(peer_id):
-		send_to_peer(peer_id, {"type": "error", "message": "No active crafting challenge!"})
-		return
-
-	var character = characters[peer_id]
-	var craft = active_crafts[peer_id]
-	var answers = message.get("answers", [])
-	var correct_answers = craft.get("correct_answers", [])
-
-	# Score the answers
-	var score = 0
-	for i in range(mini(answers.size(), correct_answers.size())):
-		if int(answers[i]) == int(correct_answers[i]):
-			score += 1
-
-	# Specialist save: if score is 0, chance to become 1
-	if score == 0 and craft.get("is_specialist", false):
-		var save_chance = mini(50, craft.get("job_level", 0))
-		if randi() % 100 < save_chance:
-			score = 1
-
-	# Roll quality with score
-	var recipe = craft["recipe"]
-	var skill_level = craft["skill_level"]
-	var total_bonus = craft["total_bonus"]
-	var skill_name = craft["skill_name"]
-	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, total_bonus, score)
-
-	# Clean up pending craft
-	active_crafts.erase(peer_id)
-
-	# Re-inject into the crafting pipeline by calling the result handler
-	var craft_quantity = craft.get("quantity", 1)
-	var craft_temper = craft.get("temper_target", "")
-	var craft_is_tempered = craft.get("is_tempered", false)
-	_finalize_craft(peer_id, character, craft["recipe_id"], recipe, quality, skill_name, skill_level, total_bonus, score, craft_quantity, craft_temper, craft_is_tempered)
-
-func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1, quantity: int = 1, temper_target: String = "", is_tempered: bool = false):
+func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Dictionary, quality: int, skill_name: String, skill_level: int, total_bonus: int, score: int = -1, quantity: int = 1, temper_target: String = "", is_tempered: bool = false, boost_tier: String = "none"):
 	"""Finalize a craft after quality is determined. Handles all output types."""
+	# Audit #4 Slice 3 — Specialist save: 5% chance on Refined/Master to bump
+	# one quality tier (capped at Masterwork). Applied before item creation so
+	# stats reflect the bumped quality.
+	var specialist_save_fired := false
+	if boost_tier in ["refined", "master"] and character.can_use_specialist_recipe(skill_name) and quality < CraftingDatabaseScript.CraftingQuality.MASTERWORK and randf() < 0.05:
+		quality = quality + 1
+		specialist_save_fired = true
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
@@ -22994,6 +22908,8 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 		"job_new_level": job_new_level,
 		"job_name": matching_job,
 		"score": score,
+		"boost_tier": boost_tier,
+		"specialist_save": specialist_save_fired,
 	})
 
 	send_character_update(peer_id)
