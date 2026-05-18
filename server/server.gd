@@ -1514,6 +1514,16 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# frontier any player can attack any other player without consent.
 		"attack_player":
 			handle_attack_player(peer_id, message)
+		# Audit #14 PvP Slice E (v0.9.556) — Bounty system. Player-funded
+		# bounties on other players, payable to whoever KOs them in apex zone.
+		"bounty_post":
+			handle_bounty_post(peer_id, message)
+		"bounty_list":
+			handle_bounty_list(peer_id, message)
+		"bounty_on":
+			handle_bounty_on(peer_id, message)
+		"bounty_cancel":
+			handle_bounty_cancel(peer_id, message)
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
@@ -3865,15 +3875,244 @@ func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
 	# Push fresh location to loser so client snaps to the spawn point.
 	send_location_update(loser_peer)
 	send_location_update(winner_peer)
+	# Audit #14 PvP Slice E (v0.9.556) — bounty payout. If the victim had
+	# any active bounties, killer collects the full pool on top of the loot
+	# transfer. Bounty closes (cleared from the dict) after the first KO.
+	var bounty_payout = _payout_bounties_on_ko(winner_peer, String(loser.name))
 	# Loot summary message.
 	var loot_msg = "[color=#FF8800]✦ LOOT TRANSFERRED:[/color] [color=#FFD700]%d valor[/color]" % valor_transferred
 	if not transferred_items.is_empty():
 		loot_msg += " + [color=#9ACD32]%d items[/color] (%s)" % [transferred_items.size(), ", ".join(transferred_items)]
 	loot_msg += " [color=#808080]→[/color] [color=#88FF88]%s[/color]" % String(winner.name)
+	if bounty_payout > 0:
+		loot_msg += "\n[color=#FFD700]💰 BOUNTY COLLECTED — +%d valor to %s.[/color]" % [bounty_payout, String(winner.name)]
 	send_to_peer(winner_peer, {"type": "text", "message": loot_msg})
 	send_to_peer(loser_peer, {"type": "text", "message": loot_msg})
 	# Loser respawn notification.
 	send_to_peer(loser_peer, {"type": "text", "message": "[color=#FFA500]You've been respawned at your home post. Your character survives — only loot transferred.[/color]"})
+
+# =============================================================================
+# Audit #14 PvP Slice E (v0.9.556) — Bounty system
+# =============================================================================
+# Player-funded bounties on other players. Poster pays valor upfront (locked
+# in escrow); bounty pays out to whoever KOs the target in the apex zone.
+# Multiple bounties on the same target stack — killer claims all on KO.
+#
+# Design decisions from user 2026-05-18:
+# - Posting: anyone can post on anyone (free PvP, no anti-grief gates V1)
+# - Visibility: public list + private notification (target sees they're hunted)
+# - Pricing: poster names the amount (free-market — bigger bounties attract hunters)
+# - Collection: apex zone only (preserves PvE safety; bounties don't override
+#   the existing zone-PvP consent model)
+# - Storage: memory-only V1 (lost on server restart, acceptable for first cut)
+#
+# Per audit memo, bounties are "THE connecting mechanic — pure player-to-player
+# content engine." Layered on top of the apex auto-PvP loop from Slice C.
+
+# target_character_name (lowercased) → Array of bounty entries.
+# Each entry: {poster_account_id, poster_character_name, amount_valor, posted_at}
+var active_bounties_on_players: Dictionary = {}
+
+const BOUNTY_MIN_AMOUNT: int = 50
+
+func _bounty_key(target_name: String) -> String:
+	return target_name.to_lower().strip_edges()
+
+func _get_bounties_on(target_name: String) -> Array:
+	"""Returns the bounty list for a target (lowercased key). Empty array if none."""
+	var key = _bounty_key(target_name)
+	if not active_bounties_on_players.has(key):
+		return []
+	return active_bounties_on_players[key]
+
+func _total_bounty_on(target_name: String) -> int:
+	"""Sum all bounty amounts on a target — what the killer would claim."""
+	var total = 0
+	for b in _get_bounties_on(target_name):
+		total += int(b.get("amount_valor", 0))
+	return total
+
+func handle_bounty_post(peer_id: int, message: Dictionary) -> void:
+	"""V1 — `/bounty post <target> <amount>`. Validates poster has the valor,
+	target is online (V1 simplification — V2 could allow bountying offline
+	players using account lookup), poster isn't self-bountying, amount meets
+	min. Deducts valor from poster, locks as bounty, notifies target."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var target_name = String(message.get("target", "")).strip_edges()
+	var amount = int(message.get("amount", 0))
+	if target_name == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Usage: /bounty post <player> <valor>[/color]"})
+		return
+	if amount < BOUNTY_MIN_AMOUNT:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Minimum bounty: %d valor.[/color]" % BOUNTY_MIN_AMOUNT})
+		return
+	# Self-check
+	if String(characters[peer_id].name).to_lower() == target_name.to_lower():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You can't post a bounty on yourself.[/color]"})
+		return
+	# Target must be online for V1.
+	var target_peer = _resolve_username_to_peer(target_name)
+	if target_peer < 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]No such online player: %s[/color]" % target_name})
+		return
+	var poster_account_id = String(peers[peer_id].account_id)
+	if poster_account_id == "":
+		return
+	var poster_valor = persistence.get_valor(poster_account_id)
+	if poster_valor < amount:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Not enough valor — you have %d, bounty costs %d.[/color]" % [poster_valor, amount]})
+		return
+	if not persistence.spend_valor(poster_account_id, amount):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Failed to lock bounty valor.[/color]"})
+		return
+	# Add the bounty entry.
+	var key = _bounty_key(target_name)
+	if not active_bounties_on_players.has(key):
+		active_bounties_on_players[key] = []
+	var entry = {
+		"poster_account_id": poster_account_id,
+		"poster_character_name": String(characters[peer_id].name),
+		"amount_valor": amount,
+		"posted_at": Time.get_unix_time_from_system(),
+	}
+	active_bounties_on_players[key].append(entry)
+	var target_canonical = String(characters[target_peer].name)
+	var poster_name = String(characters[peer_id].name)
+	var new_total = _total_bounty_on(target_canonical)
+	# Confirm to poster
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#FFD700]💰 Bounty posted on %s for %d valor (total bounty now %d).[/color]" % [target_canonical, amount, new_total]
+	})
+	# Notify target privately
+	send_to_peer(target_peer, {
+		"type": "text",
+		"message": "[color=#FF2020]💰 BOUNTY POSTED — %s placed %d valor on your head. Total bounty: %d. Watch your back in the apex zone.[/color]" % [poster_name, amount, new_total]
+	})
+	# Push a structured event the client can also surface as a HUD banner.
+	send_to_peer(target_peer, {
+		"type": "bounty_posted_on_you",
+		"poster_name": poster_name,
+		"amount": amount,
+		"total_bounty": new_total,
+	})
+
+func handle_bounty_list(peer_id: int, message: Dictionary) -> void:
+	"""Send back all active bounties — public board view. Per-target row with
+	target name + total bounty + number of postings."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var entries: Array = []
+	for key in active_bounties_on_players:
+		var bounties = active_bounties_on_players[key]
+		if bounties.is_empty():
+			continue
+		var total = 0
+		for b in bounties:
+			total += int(b.get("amount_valor", 0))
+		# Look up canonical name from first entry (preserves original casing
+		# from when first bounty was posted). Falls back to the key.
+		var canonical = String(bounties[0].get("target_name", key))
+		# We never stored target_name; derive from any online player matching the key
+		var resolved_peer = _resolve_username_to_peer(key)
+		if resolved_peer >= 0 and characters.has(resolved_peer):
+			canonical = String(characters[resolved_peer].name)
+		entries.append({
+			"target_name": canonical,
+			"total_bounty": total,
+			"posting_count": bounties.size(),
+			"online": resolved_peer >= 0,
+		})
+	# Sort by total bounty descending (highest first).
+	entries.sort_custom(func(a, b): return int(a.get("total_bounty", 0)) > int(b.get("total_bounty", 0)))
+	send_to_peer(peer_id, {
+		"type": "bounty_list_result",
+		"entries": entries,
+	})
+
+func handle_bounty_on(peer_id: int, message: Dictionary) -> void:
+	"""Send back the individual bounty postings on one target — poster + amount
+	per row. Used by `/bounty on <player>`."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var target_name = String(message.get("target", "")).strip_edges()
+	if target_name == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Usage: /bounty on <player>[/color]"})
+		return
+	var bounties = _get_bounties_on(target_name)
+	send_to_peer(peer_id, {
+		"type": "bounty_on_result",
+		"target_name": target_name,
+		"bounties": bounties.duplicate(true),
+		"total_bounty": _total_bounty_on(target_name),
+	})
+
+func handle_bounty_cancel(peer_id: int, message: Dictionary) -> void:
+	"""Cancel all of the caller's bounties on a target — full refund. V1
+	cancels ALL of poster's postings on the target in one shot (simpler than
+	per-posting selection)."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		return
+	var target_name = String(message.get("target", "")).strip_edges()
+	if target_name == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Usage: /bounty cancel <player>[/color]"})
+		return
+	var poster_account_id = String(peers[peer_id].account_id)
+	if poster_account_id == "":
+		return
+	var key = _bounty_key(target_name)
+	if not active_bounties_on_players.has(key):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]No bounties on %s.[/color]" % target_name})
+		return
+	var bounties: Array = active_bounties_on_players[key]
+	var refund_total = 0
+	var remaining: Array = []
+	for b in bounties:
+		if String(b.get("poster_account_id", "")) == poster_account_id:
+			refund_total += int(b.get("amount_valor", 0))
+		else:
+			remaining.append(b)
+	if refund_total <= 0:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You have no bounties to cancel on %s.[/color]" % target_name})
+		return
+	if remaining.is_empty():
+		active_bounties_on_players.erase(key)
+	else:
+		active_bounties_on_players[key] = remaining
+	persistence.add_valor(poster_account_id, refund_total)
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#88FF88]💰 Bounty canceled — %d valor refunded.[/color]" % refund_total
+	})
+
+func _payout_bounties_on_ko(killer_peer: int, victim_name: String) -> int:
+	"""Called from _apply_apex_ko after the loot transfer block. Returns total
+	bounty paid out to killer (0 if none). Clears all bounties on victim on
+	successful KO — bounty closes after the first KO. Caller is responsible
+	for surfacing the payout message."""
+	if not characters.has(killer_peer):
+		return 0
+	var key = _bounty_key(victim_name)
+	if not active_bounties_on_players.has(key):
+		return 0
+	var bounties: Array = active_bounties_on_players[key]
+	var total = 0
+	for b in bounties:
+		total += int(b.get("amount_valor", 0))
+	if total <= 0:
+		active_bounties_on_players.erase(key)
+		return 0
+	var killer_account_id = String(peers.get(killer_peer, {}).get("account_id", ""))
+	if killer_account_id == "":
+		return 0
+	persistence.add_valor(killer_account_id, total)
+	active_bounties_on_players.erase(key)
+	return total
 
 func handle_party_message(peer_id: int, message: Dictionary) -> void:
 	"""Audit #14 v0.9.530 — party-channel chat. Broadcasts to every member
