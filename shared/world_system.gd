@@ -157,6 +157,12 @@ const TILE_RENDER = {
 	# tribal aesthetic).
 	"easel":         {"char": "y", "color": "#6B4A28", "blocks_move": true,  "blocks_los": false},
 	"totem":         {"char": "z", "color": "#A0522D", "blocks_move": true,  "blocks_los": false},
+	# Audit #12 v0.9.548 — catalogue 23 → 25. Obelisk fills the skill-20 gap
+	# (granite memorial pillar, blocking, high-tier prestige). Sundial fills
+	# the skill-24 gap (bronze gnomon on stone disc, walkable — second floor
+	# decoration in the catalogue after Mosaic).
+	"obelisk":       {"char": "I", "color": "#909090", "blocks_move": true,  "blocks_los": false},
+	"sundial":       {"char": "o", "color": "#C9A86A", "blocks_move": false, "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

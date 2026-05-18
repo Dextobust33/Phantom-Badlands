@@ -25651,13 +25651,21 @@ func update_tool_status_overlay():
 		sections.append("[color=#9ACD32]Nearest:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [name_, direction, distance])
 		# Slice 6 — dynamic post state. Append "Under Threat" line when the
 		# nearest post is currently menaced by a tier-2+ active dungeon.
+		# Slice 13 (v0.9.548) — severe threat (2+ threatening dungeons) gets
+		# a redder ⚠⚠ banner so players can tell at a glance whether prices
+		# are merely inflated or the post is mechanically downgraded.
 		if hud_post_threat.get("threatened", false):
 			var threat_dungeon = String(hud_post_threat.get("dungeon_name", "dungeon"))
 			var threat_dir = String(hud_post_threat.get("direction", ""))
 			var threat_dist = int(hud_post_threat.get("distance", 0))
 			var threat_tier = int(hud_post_threat.get("tier", 1))
 			var threat_color = String(hud_post_threat.get("color", "#FF8800"))
-			sections.append("[color=#FF6347]⚠ Under Threat:[/color] [color=%s]%s[/color] [color=#AAAAAA]T%d %s ~%d[/color]" % [threat_color, threat_dungeon, threat_tier, threat_dir, threat_dist])
+			var threat_count = int(hud_post_threat.get("count", 1))
+			var threat_severe = bool(hud_post_threat.get("severe", false))
+			if threat_severe:
+				sections.append("[color=#FF2020]⚠⚠ SEVERELY THREATENED ([color=#FFCC44]%d dungeons[/color]):[/color] [color=%s]%s[/color] [color=#AAAAAA]T%d %s ~%d[/color]" % [threat_count, threat_color, threat_dungeon, threat_tier, threat_dir, threat_dist])
+			else:
+				sections.append("[color=#FF6347]⚠ Under Threat:[/color] [color=%s]%s[/color] [color=#AAAAAA]T%d %s ~%d[/color]" % [threat_color, threat_dungeon, threat_tier, threat_dir, threat_dist])
 
 	# --- Materials pouch total ---
 	var mats = character_data.get("crafting_materials", {})
@@ -28054,7 +28062,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.533 — hedge + shrine added.
 			# v0.9.534 — lectern + mosaic added.
 			# v0.9.535 — easel + totem added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem"]:
+			# v0.9.548 — obelisk + sundial added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem", "obelisk", "sundial"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()
@@ -31030,10 +31039,16 @@ func handle_blacksmith_encounter(message: Dictionary):
 	display_game("")
 
 	# Audit #11 Slice 8 — threat banner.
+	# Slice 13 (v0.9.548) — severe variant when 2+ T2+ dungeons in corridor.
 	if bool(message.get("under_threat", false)):
 		var mult = float(message.get("threat_mult", 1.5))
 		var pct = int(round((mult - 1.0) * 100.0))
-		display_game("[color=#FF4400][b]⚠ Under Threat — prices +%d%%[/b][/color]" % pct)
+		var sev = bool(message.get("threat_severe", false))
+		var tc = int(message.get("threat_count", 1))
+		if sev:
+			display_game("[color=#FF2020][b]⚠⚠ SEVERELY THREATENED — prices +%d%% (%d dungeons)[/b][/color]" % [pct, tc])
+		else:
+			display_game("[color=#FF4400][b]⚠ Under Threat — prices +%d%%[/b][/color]" % pct)
 		display_game("")
 
 	display_game(message.get("message", ""))
@@ -31172,10 +31187,16 @@ func handle_healer_encounter(message: Dictionary):
 	display_game("")
 
 	# Audit #11 Slice 8 — threat banner above the encounter copy.
+	# Slice 13 (v0.9.548) — severe variant when 2+ T2+ dungeons in corridor.
 	if bool(message.get("under_threat", false)):
 		var mult = float(message.get("threat_mult", 1.5))
 		var pct = int(round((mult - 1.0) * 100.0))
-		display_game("[color=#FF4400][b]⚠ Under Threat — prices +%d%%[/b][/color]" % pct)
+		var sev = bool(message.get("threat_severe", false))
+		var tc = int(message.get("threat_count", 1))
+		if sev:
+			display_game("[color=#FF2020][b]⚠⚠ SEVERELY THREATENED — prices +%d%% (%d dungeons)[/b][/color]" % [pct, tc])
+		else:
+			display_game("[color=#FF4400][b]⚠ Under Threat — prices +%d%%[/b][/color]" % pct)
 		display_game("")
 
 	display_game(message.get("message", ""))
@@ -35728,13 +35749,21 @@ func _handle_market_browse_result(message: Dictionary):
 	# Audit #11 Slice 7 — threat banner prepended to the specialty line when
 	# the post is currently Under Threat. The server already inflated
 	# markup_price in each listing; this banner explains the why.
+	# Slice 13 (v0.9.548) — severe variant (2+ T2+ dungeons in corridor) gets
+	# the redder ⚠⚠ banner with the dungeon count.
 	var threat_info: Dictionary = message.get("threat_info", {})
 	if threat_info.get("threatened", false):
 		var dungeon = String(threat_info.get("dungeon_name", "a nearby dungeon"))
 		var dir_text = String(threat_info.get("direction", ""))
 		var dist = int(threat_info.get("distance", 0))
 		var mult_pct = int(round((float(threat_info.get("multiplier", 1.0)) - 1.0) * 100.0))
-		var banner = "[color=#FF6644]Under Threat — prices +%d%% (%s, %d tiles %s)[/color]" % [mult_pct, dungeon, dist, dir_text]
+		var t_severe = bool(threat_info.get("severe", false))
+		var t_count = int(threat_info.get("count", 1))
+		var banner: String
+		if t_severe:
+			banner = "[color=#FF2020]⚠⚠ SEVERELY THREATENED — prices +%d%% ([color=#FFCC44]%d dungeons[/color] in the corridor)[/color]" % [mult_pct, t_count]
+		else:
+			banner = "[color=#FF6644]Under Threat — prices +%d%% (%s, %d tiles %s)[/color]" % [mult_pct, dungeon, dist, dir_text]
 		if market_specialty_summary != "":
 			market_specialty_summary = banner + "    " + market_specialty_summary
 		else:

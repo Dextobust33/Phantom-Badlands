@@ -3266,6 +3266,35 @@ const RECIPES = {
 		"craft_time": 2.5,
 		"description": "A tall painted totem carved with spirit faces. Blocks movement — tribal / folk aesthetic. Place a row along a settlement boundary for ceremonial flair."
 	},
+	# Audit #12 v0.9.548 — two more cosmetic Construction recipes. Obelisk fills
+	# the skill-20 gap between Shrine (19) and Fountain (22) as a high-tier
+	# blocking memorial pillar. Sundial fills the skill-24 gap below Statue
+	# (25) as a walkable astronomical floor decoration (second walkable floor
+	# decoration in the catalogue after Mosaic).
+	"obelisk_build": {
+		"name": "Obelisk",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 20,
+		"difficulty": 27,
+		"materials": {"stone_block": 4, "magic_dust": 1, "ink": 1},
+		"output_type": "structure",
+		"structure_type": "obelisk",
+		"specialist_only": false,
+		"craft_time": 3.5,
+		"description": "A tall granite obelisk inscribed with worn glyphs. Blocks movement — a prestige memorial pillar that suits a memorial avenue or central plaza."
+	},
+	"sundial_build": {
+		"name": "Sundial",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 24,
+		"difficulty": 32,
+		"materials": {"stone_block": 2, "iron_ore": 2, "ink": 1},
+		"output_type": "structure",
+		"structure_type": "sundial",
+		"specialist_only": false,
+		"craft_time": 3.0,
+		"description": "A bronze gnomon set into a flat stone disc. WALKABLE — second floor decoration in the catalogue after Mosaic. A piece of decorative astronomy for a courtyard or scholar's garden."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
