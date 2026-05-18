@@ -3810,7 +3810,43 @@ func _apply_apex_ko(winner_peer: int, loser_peer: int) -> void:
 		if winner.inventory.size() < winner_inv_max:
 			winner.inventory.append(item)
 			transferred_items.append(String(item.get("name", "item")))
-	# 4) Respawn loser at spawn post with full HP.
+	# 4) Up to 3 random unhatched eggs.
+	# Slice D V1 (v0.9.554) — eggs added to direct transfer. Visible sack
+	# tile + bump-claim mechanic deferred to Slice D.2.
+	var eggs_arr: Array = loser.incubating_eggs
+	if eggs_arr.size() > 0:
+		var egg_indices: Array = []
+		for i in range(eggs_arr.size()):
+			egg_indices.append(i)
+		egg_indices.shuffle()
+		var n_eggs = min(3, egg_indices.size())
+		var picked_eggs: Array = egg_indices.slice(0, n_eggs)
+		picked_eggs.sort()
+		picked_eggs.reverse()
+		for ei in picked_eggs:
+			var egg = eggs_arr[ei]
+			eggs_arr.remove_at(ei)
+			winner.incubating_eggs.append(egg)
+			transferred_items.append("egg (%s)" % String(egg.get("name", "?")))
+	# 5) 1 random non-active companion.
+	var collected: Array = loser.collected_companions
+	var active_comp_id: String = ""
+	if loser.active_companion is Dictionary and not loser.active_companion.is_empty():
+		active_comp_id = String(loser.active_companion.get("id", ""))
+	var eligible_comp_indices: Array = []
+	for i in range(collected.size()):
+		var c: Dictionary = collected[i]
+		var cid: String = String(c.get("id", ""))
+		if cid != "" and cid == active_comp_id:
+			continue  # skip the currently-active companion
+		eligible_comp_indices.append(i)
+	if not eligible_comp_indices.is_empty():
+		var comp_idx = eligible_comp_indices[randi() % eligible_comp_indices.size()]
+		var stolen_companion = collected[comp_idx]
+		collected.remove_at(comp_idx)
+		winner.collected_companions.append(stolen_companion)
+		transferred_items.append("companion %s" % String(stolen_companion.get("name", "?")))
+	# 6) Respawn loser at spawn post with full HP.
 	var respawn_x = 0
 	var respawn_y = 0
 	# Try the character's set spawn post first; fall back to origin.
