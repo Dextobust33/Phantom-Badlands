@@ -24744,8 +24744,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.546 — Reveal impact + recipe preview alignment (Slice 3.7 — playtest fix).
+	display_game("[color=#00FF00]v0.9.546[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The recipe preview and the post-craft summary now use the same success-chance formula, and the panel shows exactly what your scratch-off reveals did to the bands.[/color]")
+	display_game("  • [b]Recipe preview honesty[/b] (Audit #4 Slice 3.7, playtest feedback). The recipe panel's quoted success chance used the legacy [color=#888888]50-base[/color] formula even though the actual scratch-off path starts from a [color=#888888]35-base[/color] floor and adds reveal score on top. Result: a Standard reveal (+15%) looked like it 'did nothing' because both gave 46%. Fixed: the preview now uses score=0 (or score=3 for auto-skip recipes) so the displayed % matches the no-reveal floor your reveals are stacking on.")
+	display_game("  • [b]Reveal Impact section[/b]. The post-craft 'How the Roll Worked' panel now shows a before/after band comparison: [color=#FFFFFF]Without reveals: 31% success → Poor 53% / Std 30% / Fine 15% / MW 2%[/color]   vs   [color=#FFFFFF]With your +15%: 46% → Poor 38% / Std 30% / Fine 15% / MW 17%[/color]. Plus a single 'Net effect' line: [color=#A335EE]Masterwork +15%, Poor −15% of the roll range[/color]. Answers the literal question 'what did the +15% actually affect?'")
+	display_game("")
+
 	# v0.9.545 — Concrete reveal labels + full roll breakdown (Slice 3.6 — playtest fix).
-	display_game("[color=#00FF00]v0.9.545[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.545[/color]")
 	display_game("  [color=#FFD700]Crafting summary now shows you the actual dice roll vs the threshold bands, and translates abstract bonus labels into concrete gameplay effects.[/color]")
 	display_game("  • [b]Real roll math[/b] (Audit #4 Slice 3.6, playtest feedback). The 'Chain' section is now a 'How the Roll Worked' breakdown showing: reveal score → +X% success chance → effective Y% → quality bands with explicit roll ranges ([color=#FFFFFF]Poor 30% (rolls 0–29)[/color] [color=#00FF00]Standard 40% (rolls 30–69)[/color] etc.) → actual roll value ([color=#FFD700]Rolled 47 out of 100[/color]) → which band it landed in. You can now see exactly why a Refined craft rolled Poor.")
 	display_game("  • [b]Concrete bonus descriptions[/b]. The old abstract 'Efficiency Tier +1' / 'Tool Durability +25%' labels now unpack into player-facing effects: [color=#88FF88]'Easier gathering minigame — −5% rhythm bar speed, +15% wider hit zone when you use this tool'[/color]. Tool-only bonuses are also flagged on non-tool recipes so you know they had no effect.")
@@ -24779,12 +24786,6 @@ func display_changelog():
 	display_game("  • [b]Cross-system guards[/b]. Boost forces quantity = 1 (matching the server enforcement from Slice 1) — the +/-Qty/Max steppers hide once a boost is active. Temper button disables when a boost is active too (the two cost-gambling systems are mutually exclusive). Affordability is recomputed per tier; the CRAFT button greys out if you can't pay the boosted cost.")
 	display_game("")
 
-	# v0.9.541 — Crafting Boost server core (Slice 1).
-	display_game("[color=#00FFFF]v0.9.541[/color]")
-	display_game("  [color=#FFD700]Server foundation for the Crafting Boost system — spend extra materials for a better quality distribution.[/color]")
-	display_game("  • [b]Boost tiers[/b] (Audit #4, crafting overhaul Slice 1). Three settings: [color=#9ACD32]None[/color] (1.0× materials, vanilla odds), [color=#FFAA66]Refined[/color] (1.5× materials, +5% Masterwork / +5% Fine / -5% Standard / -5% Poor), [color=#A335EE]Master[/color] (2.5× materials, +15% Masterwork / +5% Fine / -10% Standard, [b]no Poor results[/b]). Quality shifts are renormalized to 100% so the preview math stays clean. Mutually exclusive with Tempered.")
-	display_game("  • [b]Specialist discount[/b]: committed crafters (Halfling/Knight matched to the recipe's skill) save -10% on the extra Boost cost at Job Lv 20-39 and -20% at Job Lv 40+. Base 1.0× recipe cost is never reduced — only the [i]extra[/i] above 1.0×.")
-	display_game("")
 
 
 
