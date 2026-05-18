@@ -518,7 +518,11 @@ func _refresh_detail() -> void:
 	var boost_mat_mult: float = float(boost_cfg.get("mat_mult", 1.0))
 
 	var meta_lines := []
-	meta_lines.append("[color=#87CEEB]Skill Req:[/color] %d   [color=#87CEEB]Difficulty:[/color] %d   [color=#87CEEB]Success:[/color] %d%%" % [skill_req, difficulty, success_chance])
+	# Audit #4 Slice 3.8 (v0.9.547) — "Quality Rating" replaces "Success". Crafts
+	# never fail — this number is the roll pivot that controls where the quality
+	# bands sit, not a chance of failure. Higher = better quality distribution.
+	meta_lines.append("[color=#87CEEB]Skill Req:[/color] %d   [color=#87CEEB]Difficulty:[/color] %d   [color=#87CEEB]Quality Rating:[/color] %d%%" % [skill_req, difficulty, success_chance])
+	meta_lines.append("[color=#888888]Crafts always produce an item — even a Poor roll gives 50%% stats.[/color]")
 	# Audit #8 Layer 5 — quality odds bar (recomputed live when boost changes).
 	# Server seeds `quality_odds` for the base distribution; recompute via
 	# CraftingDatabase.quality_distribution when a boost is active.

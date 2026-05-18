@@ -256,16 +256,19 @@ func _rebuild_content() -> void:
 		var lines: Array = []
 
 		# Reveal impact: show baseline vs effective when a scratch-off ran.
+		# Audit #4 Slice 3.8 (v0.9.547) — "Quality Rating" replaces "success
+		# chance" everywhere — there's no fail outcome, this is just the roll
+		# pivot that sets the quality band sizes.
 		if best_score >= 0 and not baseline_dist.is_empty() and bonus_pct > 0:
 			var base_mw := int(baseline_dist.get("masterwork", 0))
 			var base_poor := int(baseline_dist.get("poor", 0))
 			var eff_mw := int(distribution.get("masterwork", 0))
 			var eff_poor := int(distribution.get("poor", 0))
 			lines.append("  [color=#FFFFFF]Reveal impact:[/color]")
-			lines.append("    • Without reveals: [color=#FFFFFF]%d%% success[/color] → Poor [color=#FFFFFF]%d%%[/color] / Std [color=#00FF00]%d%%[/color] / Fine [color=#0070DD]%d%%[/color] / MW [color=#A335EE]%d%%[/color]" % [
+			lines.append("    • Without reveals: [color=#FFFFFF]Quality Rating %d%%[/color] → Poor [color=#FFFFFF]%d%%[/color] / Std [color=#00FF00]%d%%[/color] / Fine [color=#0070DD]%d%%[/color] / MW [color=#A335EE]%d%%[/color]" % [
 				baseline_success, base_poor, int(baseline_dist.get("standard", 0)), int(baseline_dist.get("fine", 0)), base_mw
 			])
-			lines.append("    • With your +%d%% from reveals: [color=#FFFFFF]%d%% success[/color] → Poor [color=#FFFFFF]%d%%[/color] / Std [color=#00FF00]%d%%[/color] / Fine [color=#0070DD]%d%%[/color] / MW [color=#A335EE]%d%%[/color]" % [
+			lines.append("    • With your +%d%% from reveals: [color=#FFFFFF]Quality Rating %d%%[/color] → Poor [color=#FFFFFF]%d%%[/color] / Std [color=#00FF00]%d%%[/color] / Fine [color=#0070DD]%d%%[/color] / MW [color=#A335EE]%d%%[/color]" % [
 				bonus_pct, success_chance, eff_poor, int(distribution.get("standard", 0)), int(distribution.get("fine", 0)), eff_mw
 			])
 			var mw_gain := eff_mw - base_mw
@@ -274,8 +277,9 @@ func _rebuild_content() -> void:
 				lines.append("    • Net effect: [color=#A335EE]Masterwork +%d%%[/color], [color=#FFFFFF]Poor −%d%%[/color] of the roll range" % [maxi(0, mw_gain), maxi(0, poor_drop)])
 			lines.append("")
 		else:
-			lines.append("  • Reveal score: [color=#FFFFFF]%s[/color] → adds [color=#FFFFFF]+%d%%[/color] success chance" % [score_label, bonus_pct])
-			lines.append("  • Effective success chance: [color=#FFFFFF]%d%%[/color]" % success_chance)
+			lines.append("  • Reveal score: [color=#FFFFFF]%s[/color] → adds [color=#FFFFFF]+%d%%[/color] Quality Rating" % [score_label, bonus_pct])
+			lines.append("  • Quality Rating: [color=#FFFFFF]%d%%[/color]" % success_chance)
+		lines.append("  [color=#888888]Crafts always produce an item. Quality Rating only shifts the band sizes — even the lowest rating still rolls a Poor (50%% stats) at worst.[/color]")
 
 		# Threshold bands with explicit roll ranges (always show — this is the
 		# bucket map used to grade the roll).

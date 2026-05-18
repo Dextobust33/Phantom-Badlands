@@ -24744,8 +24744,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.547 — Rename "Success" → "Quality Rating" + never-fail clarity (Slice 3.8 — playtest fix).
+	display_game("[color=#00FF00]v0.9.547[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]'Success Chance' was misleading — crafts never fail. Renamed to 'Quality Rating' across the recipe panel and post-craft summary.[/color]")
+	display_game("  • [b]Quality Rating[/b] (Audit #4 Slice 3.8, playtest feedback). The number that controls quality band sizes is now labeled [color=#FFFFFF]Quality Rating[/color] instead of [color=#888888]Success Chance[/color] — the previous name implied a fail/succeed outcome that doesn't exist. Crafts always produce an item; even the lowest Quality Rating still rolls Poor (50% stats) at worst.")
+	display_game("  • [b]Never-fail clarity[/b]. Both the recipe panel and the post-craft summary now spell it out: [color=#888888]'Crafts always produce an item — even a Poor roll gives 50% stats. Quality Rating only shifts the band sizes.'[/color] No more wondering if a 31% Quality Rating means a 69% chance of losing your materials.")
+	display_game("  • [b]Note[/b]: Tempered crafts are still a separate gambling mechanic and CAN consume materials without producing the item (the result message says 'Tempering failed!'). Boost crafts cannot fail.")
+	display_game("")
+
 	# v0.9.546 — Reveal impact + recipe preview alignment (Slice 3.7 — playtest fix).
-	display_game("[color=#00FF00]v0.9.546[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.546[/color]")
 	display_game("  [color=#FFD700]The recipe preview and the post-craft summary now use the same success-chance formula, and the panel shows exactly what your scratch-off reveals did to the bands.[/color]")
 	display_game("  • [b]Recipe preview honesty[/b] (Audit #4 Slice 3.7, playtest feedback). The recipe panel's quoted success chance used the legacy [color=#888888]50-base[/color] formula even though the actual scratch-off path starts from a [color=#888888]35-base[/color] floor and adds reveal score on top. Result: a Standard reveal (+15%) looked like it 'did nothing' because both gave 46%. Fixed: the preview now uses score=0 (or score=3 for auto-skip recipes) so the displayed % matches the no-reveal floor your reveals are stacking on.")
 	display_game("  • [b]Reveal Impact section[/b]. The post-craft 'How the Roll Worked' panel now shows a before/after band comparison: [color=#FFFFFF]Without reveals: 31% success → Poor 53% / Std 30% / Fine 15% / MW 2%[/color]   vs   [color=#FFFFFF]With your +15%: 46% → Poor 38% / Std 30% / Fine 15% / MW 17%[/color]. Plus a single 'Net effect' line: [color=#A335EE]Masterwork +15%, Poor −15% of the roll range[/color]. Answers the literal question 'what did the +15% actually affect?'")
@@ -24777,14 +24785,6 @@ func display_changelog():
 	display_game("  • [b]Dismiss the panel[/b] with Space / Enter / Escape / OK button after a 1.0s minimum-hold. The existing text-log result (XP / level-ups / craft-again hints) still renders to game_output once the panel closes — flow is unchanged after the reveal.")
 	display_game("")
 
-	# v0.9.542 — Crafting Boost UI (Slice 2).
-	display_game("[color=#00FFFF]v0.9.542[/color]")
-	display_game("  [color=#FFD700]The Crafting Boost selector lands on the recipe panel — pick None / Refined / Master and watch the quality odds + material costs redraw live.[/color]")
-	display_game("  • [b]Boost selector[/b] (Audit #4, crafting overhaul Slice 2). The recipe details panel grows a three-button row: [color=#9ACD32]None[/color] / [color=#FFAA66]Refined (+50% mats)[/color] / [color=#A335EE]Master (+150% mats)[/color]. Clicking a tier instantly redraws the [b]Layer-5 quality odds[/b] (Poor / Standard / Fine / Masterwork %) and the [b]material requirement totals[/b] so you can see exactly what you're paying for before you commit.")
-	display_game("  • [b]Per-recipe memory[/b]. Your last-picked tier is remembered per recipe for the session — pick Master on Iron Sword, switch to a different recipe, and Iron Sword still has Master pre-selected when you come back. Memory resets on app restart (client-side only, no server change).")
-	display_game("  • [b]Text-mode parity[/b]. The chat-fallback recipe view shows the same selector with hotkeys [color=#9ACD32][1][/color] / [color=#FFAA66][2][/color] / [color=#A335EE][3][/color] on the action bar (slots 5-7). Pick a tier from either surface — both stay in sync. CRAFT button label updates to [color=#FFAA66]REFINED CRAFT[/color] / [color=#A335EE]MASTER CRAFT[/color] when boosted.")
-	display_game("  • [b]Cross-system guards[/b]. Boost forces quantity = 1 (matching the server enforcement from Slice 1) — the +/-Qty/Max steppers hide once a boost is active. Temper button disables when a boost is active too (the two cost-gambling systems are mutually exclusive). Affordability is recomputed per tier; the CRAFT button greys out if you can't pay the boosted cost.")
-	display_game("")
 
 
 
