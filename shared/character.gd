@@ -2520,12 +2520,11 @@ func has_completed_quest(quest_id: String) -> bool:
 	"""Check if player has completed this quest"""
 	return quest_id in completed_quests
 
-func can_accept_daily_quest(quest_id: String) -> bool:
-	"""Check if daily quest cooldown has expired"""
-	if not daily_quest_cooldowns.has(quest_id):
-		return true
-	var cooldown_end = daily_quest_cooldowns[quest_id]
-	return Time.get_unix_time_from_system() >= cooldown_end
+func can_accept_daily_quest(_quest_id: String) -> bool:
+	"""v0.9.525 — Daily quest 24h cooldown ripped per [[no-real-time-gates]].
+	Daily quests are now immediately re-acceptable. The `daily_quest_cooldowns`
+	field is kept for back-compat (legacy save data) but unused."""
+	return true
 
 func get_quest_progress(quest_id: String) -> Dictionary:
 	"""Get progress for an active quest. Returns empty dict if not found."""
