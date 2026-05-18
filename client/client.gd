@@ -1009,11 +1009,11 @@ var can_craft_another: bool = false  # Whether player has materials for another 
 var crafting_preserve_page: bool = false  # Don't reset page on next craft_list response
 const CRAFTING_PAGE_SIZE = 5
 
-# Crafting challenge minigame state
-var crafting_challenge_mode: bool = false
-var craft_challenge_data: Dictionary = {}  # {rounds, skill_name}
-var craft_challenge_round: int = 0  # Current round (0-2)
-var craft_challenge_answers: Array = []  # Player's answers so far
+# Audit #4 Slice 3 (v0.9.543) — old crafting challenge (trivia minigame) state
+# removed. Trivia was replaced by the scratch-off at v0.9.372 and the server
+# stopped sending craft_challenge messages then; client state lingered until
+# the Slice 3 cleanup pass. The variables stayed permanently false and
+# untouched, so removing them is safe.
 
 # Building mode
 var build_mode: bool = false
@@ -1292,6 +1292,12 @@ var stones_panel = null
 
 const ScratchOffPanelScript = preload("res://client/scratch_off_panel.gd")
 var scratch_off_panel = null
+# Audit #4 Slice 3 — Crafting reveal animation panel.
+const CraftRevealPanelScript = preload("res://client/craft_reveal_panel.gd")
+var craft_reveal_panel = null
+# Stash the result payload so we can render text-mode log + craft-again hints
+# AFTER the dismissal of the reveal panel (keeps the existing flow intact).
+var _pending_craft_result_payload: Dictionary = {}
 # Combat scratch-off (user-requested 2026-05-14)
 const CombatLootPanelScript = preload("res://client/combat_loot_panel.gd")
 var combat_loot_panel = null
@@ -1974,6 +1980,12 @@ func _ready():
 	scratch_off_panel.auto_skip_toggled.connect(_on_scratch_off_auto_skip_toggled)
 	scratch_off_panel.rhythm_beat.connect(_on_scratch_off_rhythm_beat)
 
+	# Audit #4 Slice 3 — Crafting reveal animation panel. Modal overlay on
+	# the root window; instantiated once and reused for every craft.
+	craft_reveal_panel = CraftRevealPanelScript.new()
+	add_child(craft_reveal_panel)
+	craft_reveal_panel.dismissed.connect(_on_craft_reveal_dismissed)
+
 	# v0.9.372 — numpad controls popup (new-character help).
 	# v0.9.490 — global HelpPanel for topic-based help surfaces.
 	global_help_panel = GlobalHelpPanelScript.new()
@@ -2582,7 +2594,6 @@ func _process(delta):
 	if crafting_panel:
 		_craft_should_show = (crafting_mode
 			and crafting_skill != ""
-			and not crafting_challenge_mode
 			and not crafting_temper_mode
 			and not awaiting_craft_result
 			and game_state == GameState.PLAYING)
@@ -3141,7 +3152,7 @@ func _process(delta):
 				set_meta("questkey_%d_pressed" % i, false)
 
 	# Crafting recipe selection with keybinds (1-5 for recipes on current page)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0 and not crafting_challenge_mode and not awaiting_craft_result:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and crafting_mode and crafting_skill != "" and crafting_selected_recipe < 0 and not awaiting_craft_result:
 		for i in range(5):  # Only 5 recipes per page
 			if is_item_select_key_pressed(i):
 				if is_item_key_blocked_by_action_bar(i):
@@ -8217,28 +8228,6 @@ func update_action_bar():
 				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
 				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
 			]
-	elif crafting_challenge_mode:
-		# Crafting challenge minigame — 3 answer options
-		var rounds = craft_challenge_data.get("rounds", [])
-		if craft_challenge_round < rounds.size():
-			var round_opts = rounds[craft_challenge_round].get("options", [])
-			var opt_buttons = []
-			for i in range(round_opts.size()):
-				opt_buttons.append({"label": round_opts[i].substr(0, 18), "action_type": "local", "action_data": "craft_challenge_pick_%d" % i, "enabled": true})
-			while opt_buttons.size() < 3:
-				opt_buttons.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
-			current_actions = [
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				opt_buttons[0],
-				opt_buttons[1],
-				opt_buttons[2],
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
-			]
 	elif crafting_mode:
 		# Temper target selection sub-mode
 		if crafting_temper_mode:
@@ -11496,13 +11485,8 @@ func execute_local_action(action: String):
 
 	# Old harvest_pick_ handler removed v0.9.436.
 
-	# Handle crafting challenge answer picks (craft_challenge_pick_0, etc.)
-	if action.begins_with("craft_challenge_pick_"):
-		var pick_idx = int(action.replace("craft_challenge_pick_", ""))
-		var rounds = craft_challenge_data.get("rounds", [])
-		if pick_idx >= 0 and craft_challenge_round < rounds.size() and pick_idx < rounds[craft_challenge_round].get("options", []).size():
-			handle_craft_challenge_pick(pick_idx)
-		return
+	# Audit #4 Slice 3 (v0.9.543) — craft_challenge_pick_* handler removed
+	# alongside the trivia minigame's dead code.
 
 	# Handle dynamic job commit actions (job_commit_mining, job_commit_logging, etc.)
 	if action.begins_with("job_commit_") and action != "job_commit_cancel" and action != "job_commit_yes":
@@ -19458,9 +19442,6 @@ func handle_server_message(message: Dictionary):
 				# Don't refresh crafting at player station
 				if crafting_mode:
 					pass  # Keep crafting display as-is
-				# Don't refresh during crafting challenge minigame
-				if crafting_challenge_mode:
-					pass  # Keep challenge display as-is
 				# Don't refresh Material Pouch when opened from More menu
 				if more_mode and pending_inventory_action == "viewing_materials":
 					pass  # Keep materials display as-is
@@ -20582,9 +20563,6 @@ func handle_server_message(message: Dictionary):
 
 		"craft_result":
 			handle_craft_result(message)
-
-		"craft_challenge":
-			handle_craft_challenge(message)
 
 		"build_result":
 			handle_build_result(message)
@@ -24764,8 +24742,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.543 — Crafting reveal animation + specialist save + trivia cleanup (Slice 3).
+	display_game("[color=#00FF00]v0.9.543[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The crafting reveal moment lands — every craft now plays a tweened animation modal that pays off the boost commitment.[/color]")
+	display_game("  • [b]Reveal animation panel[/b] (Audit #4, crafting overhaul Slice 3). After every craft, a 360×280 modal pops with a card-flip reveal: shimmering [color=#888888]???[/color] over phase 1, then a card-flip + name/quality fade-in over phase 2, then a color sweep + stat multiplier subtitle (×0.5 / ×1.0 / ×1.25 / ×1.5) over phase 3. Refined / Master crafts get a tier badge above the card so the commitment is visible.")
+	display_game("  • [b]Specialist save[/b] (Audit #4). 5% chance on Refined or Master rolls to bump the quality one tier (capped at Masterwork). Fires for committed crafter specialists (Halfling / Knight matched to the recipe skill). When it triggers, the reveal panel shows [color=#FFD700]★ Specialist Save — one tier higher! ★[/color]. Replaces the old trivia 0→1 score-save boon.")
+	display_game("  • [b]Trivia code cleanup[/b]. v0.9.372 replaced the 3-round trivia minigame with the scratch-off; ~170 versions later, the unreachable code finally gets deleted. Removed: `CRAFT_CHALLENGE_QUESTIONS` (50 question-sets across 5 skills), `_generate_craft_challenge`, `handle_craft_challenge_answer`, `active_crafts` dict + disconnect refund, server dispatch + handler. Client: `crafting_challenge_mode` + 3 sibling vars, `handle_craft_challenge` / `display_craft_challenge_round` / `handle_craft_challenge_pick`, `craft_challenge` message dispatch, `craft_challenge_pick_*` action handler, action bar branch. Net ~200 lines removed across server/client/shared.")
+	display_game("  • [b]Dismiss the panel[/b] with Space / Enter / Escape / OK button after a 1.0s minimum-hold. The existing text-log result (XP / level-ups / craft-again hints) still renders to game_output once the panel closes — flow is unchanged after the reveal.")
+	display_game("")
+
 	# v0.9.542 — Crafting Boost UI (Slice 2).
-	display_game("[color=#00FF00]v0.9.542[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.542[/color]")
 	display_game("  [color=#FFD700]The Crafting Boost selector lands on the recipe panel — pick None / Refined / Master and watch the quality odds + material costs redraw live.[/color]")
 	display_game("  • [b]Boost selector[/b] (Audit #4, crafting overhaul Slice 2). The recipe details panel grows a three-button row: [color=#9ACD32]None[/color] / [color=#FFAA66]Refined (+50% mats)[/color] / [color=#A335EE]Master (+150% mats)[/color]. Clicking a tier instantly redraws the [b]Layer-5 quality odds[/b] (Poor / Standard / Fine / Masterwork %) and the [b]material requirement totals[/b] so you can see exactly what you're paying for before you commit.")
 	display_game("  • [b]Per-recipe memory[/b]. Your last-picked tier is remembered per recipe for the session — pick Master on Iron Sword, switch to a different recipe, and Iron Sword still has Master pre-selected when you come back. Memory resets on app restart (client-side only, no server change).")
@@ -24807,13 +24794,6 @@ func display_changelog():
 	display_game("  • Audit #14 progress: ~98% → ~99%.")
 	display_game("")
 
-	# v0.9.538 — Audit #15 persistent help discovery (/topics + /topic).
-	display_game("[color=#00FFFF]v0.9.538[/color]")
-	display_game("  [color=#FFD700]Every help-panel topic is now reachable from anywhere in the world.[/color]")
-	display_game("  • [b]/topics[/b] (Audit #15). Lists every registered HELP_TOPICS key alongside its title — no need to know which panel owns a topic to find it. Default sort alphabetical.")
-	display_game("  • [b]/topic <key>[/b] (Audit #15). Opens any topic by key in the global help panel from anywhere. Aliases: [color=#9ACD32]/viewtopic[/color]. Pairs with [color=#9ACD32]/topics[/color] for full discoverability — topics used to be reachable only via the panel that owns the [b]?[/b] button.")
-	display_game("  • Closes one of the focused-project items called out in the v0.9.536 audit cycle close. Audit #15 progress: ~97% → ~99%.")
-	display_game("")
 
 
 
@@ -33670,73 +33650,60 @@ func confirm_craft():
 		msg["quantity"] = craft_quantity
 	send_to_server(msg)
 
-func handle_craft_challenge(message: Dictionary):
-	"""Handle crafting challenge minigame from server."""
-	crafting_challenge_mode = true
-	craft_challenge_data = message
-	craft_challenge_round = 0
-	craft_challenge_answers = []
-	display_craft_challenge_round()
-	update_action_bar()
-
-func display_craft_challenge_round():
-	"""Display the current crafting challenge round."""
-	var rounds = craft_challenge_data.get("rounds", [])
-	if craft_challenge_round >= rounds.size():
-		return
-	var round_data = rounds[craft_challenge_round]
-	var skill_name = craft_challenge_data.get("skill_name", "crafting")
-
-	game_output.clear()
-	display_game("[color=#FFD700]═══════ CRAFTING CHALLENGE (%s) ═══════[/color]" % skill_name.capitalize())
-	display_game("[color=#808080]Round %d/3[/color]" % (craft_challenge_round + 1))
-	display_game("")
-	display_game("[color=#FFFF00]%s[/color]" % round_data.get("question", "What do you do?"))
-	display_game("")
-
-	var opts = round_data.get("options", [])
-	var hint_idx = round_data.get("hint_index", -1)
-	for i in range(opts.size()):
-		var label = opts[i]
-		var hint = ""
-		if i == hint_idx:
-			hint = " [color=#FFAA00][Risky][/color]"
-		var key_name = get_action_key_name(5 + i)
-		display_game("[%s] %s%s" % [key_name, label, hint])
-
-	display_game("")
-	# Show progress
-	if craft_challenge_round > 0:
-		display_game("[color=#808080]Answers so far: %d/3[/color]" % craft_challenge_answers.size())
-
-func handle_craft_challenge_pick(choice_idx: int):
-	"""Handle player picking an answer in the crafting challenge."""
-	craft_challenge_answers.append(choice_idx)
-	craft_challenge_round += 1
-
-	if craft_challenge_round >= 3:
-		# All rounds answered — send to server
-		# Consume all held item select keys to prevent double-trigger
-		# (key still held from challenge answer would select a recipe on next frame)
-		for i in range(9):
-			if is_item_select_key_pressed(i):
-				_consume_item_select_key(i)
-		send_to_server({
-			"type": "craft_challenge_answer",
-			"answers": craft_challenge_answers,
-		})
-		crafting_challenge_mode = false
-		game_output.clear()
-		display_game("[color=#FFD700]Crafting...[/color]")
-		display_game("[color=#808080]Evaluating your technique...[/color]")
-		update_action_bar()
-	else:
-		# Show next round
-		display_craft_challenge_round()
-		update_action_bar()
+# Audit #4 Slice 3 (v0.9.543) — handle_craft_challenge, display_craft_challenge_round,
+# and handle_craft_challenge_pick removed. Trivia minigame replaced by scratch-off
+# at v0.9.372; these renderers had been unreachable for ~170 versions.
 
 func handle_craft_result(message: Dictionary):
-	"""Handle crafting result from server"""
+	"""Handle crafting result from server.
+	Audit #4 Slice 3 — open the reveal animation modal first; the text-mode
+	log + craft-again hints render after the player dismisses the panel."""
+	# Stash for the dismiss handler.
+	_pending_craft_result_payload = message.duplicate()
+
+	# Build the reveal payload from the result fields the server already sends.
+	var quality_name = message.get("quality_name", "Standard")
+	var quality_color = message.get("quality_color", "#FFFFFF")
+	var recipe_name = message.get("recipe_name", "item")
+	var crafted_item = message.get("crafted_item", {})
+	var stats_summary := ""
+	if not crafted_item.is_empty():
+		var parts: Array = []
+		if crafted_item.has("attack"): parts.append("ATK %d" % int(crafted_item.attack))
+		if crafted_item.has("defense"): parts.append("DEF %d" % int(crafted_item.defense))
+		if crafted_item.has("hp"): parts.append("HP %d" % int(crafted_item.hp))
+		if crafted_item.has("speed"): parts.append("SPD %d" % int(crafted_item.speed))
+		if crafted_item.has("mana"): parts.append("MP %d" % int(crafted_item.mana))
+		stats_summary = "  ".join(parts)
+
+	if craft_reveal_panel:
+		craft_reveal_panel.open({
+			"recipe_name": recipe_name,
+			"quality_name": quality_name,
+			"quality_color": quality_color,
+			"stats_summary": stats_summary,
+			"boost_tier": String(message.get("boost_tier", "none")),
+			"specialist_save": bool(message.get("specialist_save", false)),
+		})
+	else:
+		# Fallback (panel failed to init): render text immediately.
+		_render_craft_result_text(message)
+
+
+func _on_craft_reveal_dismissed() -> void:
+	"""Audit #4 Slice 3 — reveal animation finished. Render the existing text
+	log to game_output so the player still sees XP gains / level-ups / hints,
+	and so the craft-again flow continues to work via action_bar slots."""
+	if _pending_craft_result_payload.is_empty():
+		return
+	var msg = _pending_craft_result_payload
+	_pending_craft_result_payload = {}
+	_render_craft_result_text(msg)
+
+
+func _render_craft_result_text(message: Dictionary):
+	"""Render the post-reveal text log into game_output. Preserves the existing
+	craft-again / continue flow that downstream code depends on."""
 	var success = message.get("success", false)
 	var recipe_name = message.get("recipe_name", "item")
 	var quality_name = message.get("quality_name", "Standard")
@@ -33834,11 +33801,7 @@ func close_crafting():
 	"""Close crafting menu and return to previous state"""
 	crafting_mode = false
 	crafting_entered_via_station = false
-	crafting_challenge_mode = false
 	crafting_temper_mode = false
-	craft_challenge_data = {}
-	craft_challenge_round = 0
-	craft_challenge_answers = []
 	crafting_skill = ""
 	crafting_recipes = []
 	crafting_selected_recipe = -1
@@ -34994,10 +34957,6 @@ func handle_station_interact(message: Dictionary):
 	crafting_mode = true
 	crafting_entered_via_station = true
 	crafting_selected_recipe = -1
-	crafting_challenge_mode = false
-	craft_challenge_data = {}
-	craft_challenge_round = 0
-	craft_challenge_answers = []
 	# Pre-mark held keys to prevent double-trigger
 	for i in range(10):
 		var action_key = "action_%d" % i

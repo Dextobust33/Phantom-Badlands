@@ -159,70 +159,9 @@ const PART_GROUP_DISPLAY = {
 	"wits": "Ear",
 }
 
-# ===== CRAFTING CHALLENGE QUESTIONS =====
-# 10 question sets per skill, each with 3 options (index 0 is always correct)
-const CRAFT_CHALLENGE_QUESTIONS = {
-	"blacksmithing": [
-		{"q": "The metal is cooling. What do you do?", "opts": ["Reheat to orange glow", "Hammer faster", "Quench it now"]},
-		{"q": "The blade is warping. How do you fix it?", "opts": ["Flatten on the anvil face", "Plunge into oil", "Bend it back by hand"]},
-		{"q": "You see bubbles forming in the steel.", "opts": ["Flux the impurities", "Ignore and continue", "Add more coal"]},
-		{"q": "The edge needs to be hardened.", "opts": ["Heat to cherry red then quench", "Cold hammer the edge", "File it sharper"]},
-		{"q": "The tang connection is loose.", "opts": ["Rivet and peen the joint", "Add more solder", "Wrap with wire"]},
-		{"q": "How should you start the forging?", "opts": ["Draw out the billet first", "Start at the tip", "Shape the guard"]},
-		{"q": "The alloy needs tempering.", "opts": ["Heat gently then air cool", "Plunge into ice water", "Leave it in the forge"]},
-		{"q": "You notice scale forming on the surface.", "opts": ["Wire brush and reflux", "Sand it down later", "Scrape with a chisel"]},
-		{"q": "The piece needs to be joined.", "opts": ["Forge weld at white heat", "Use cold rivets only", "Twist the pieces together"]},
-		{"q": "Final finishing step?", "opts": ["Progressive grit polishing", "Single rough pass", "Leave the forge scale"]},
-	],
-	"alchemy": [
-		{"q": "The mixture is bubbling violently.", "opts": ["Reduce the heat slowly", "Add more catalyst", "Stir vigorously"]},
-		{"q": "The solution turned the wrong color.", "opts": ["Add the reagent drop by drop", "Pour in more solvent", "Start over"]},
-		{"q": "When should you add the catalyst?", "opts": ["After the base stabilizes", "Immediately at the start", "When it starts smoking"]},
-		{"q": "The potion needs to be concentrated.", "opts": ["Simmer on low heat", "Boil rapidly", "Add a thickening agent"]},
-		{"q": "Sediment is forming at the bottom.", "opts": ["Filter through silk cloth", "Shake vigorously", "Ignore it"]},
-		{"q": "The extract needs to be preserved.", "opts": ["Add stabilizing salts", "Cork it immediately", "Expose to moonlight"]},
-		{"q": "How do you test the potency?", "opts": ["Smell the vapor carefully", "Taste a drop", "Pour it on metal"]},
-		{"q": "The ingredients are reacting too fast.", "opts": ["Add a buffer solution", "Stir clockwise rapidly", "Remove from heat"]},
-		{"q": "The distillation process stalls.", "opts": ["Check the condenser seal", "Increase flame to maximum", "Add water"]},
-		{"q": "Final step before bottling?", "opts": ["Strain and decant", "Cool naturally", "Add a preservative pinch"]},
-	],
-	"enchanting": [
-		{"q": "The rune circle is flickering.", "opts": ["Realign the focus crystal", "Add more mana", "Draw the circle again"]},
-		{"q": "Which alignment for the sigil?", "opts": ["Align to the item's material", "Point north always", "Random orientation"]},
-		{"q": "The enchantment is resisting.", "opts": ["Channel energy through the gem", "Force more power", "Wait for it to settle"]},
-		{"q": "The glyph sequence matters.", "opts": ["Inner circle first, then outer", "Outer to inner", "All at once"]},
-		{"q": "The binding is unstable.", "opts": ["Anchor with a ward stone", "Press on quickly", "Dispel and restart"]},
-		{"q": "How to strengthen the enchantment?", "opts": ["Layer the runes precisely", "Use a bigger crystal", "Double the mana input"]},
-		{"q": "The essence is dissipating.", "opts": ["Seal the circle boundaries", "Add more reagents", "Chant louder"]},
-		{"q": "Interference from the environment.", "opts": ["Ground the excess energy", "Move to a new location", "Ignore and continue"]},
-		{"q": "The item is resisting the enchantment.", "opts": ["Attune through slow contact", "Strike it with lightning", "Submerge in mana"]},
-		{"q": "Final sealing step?", "opts": ["Trace the binding seal", "Break the circle cleanly", "Flood with energy"]},
-	],
-	"scribing": [
-		{"q": "The ink is bleeding on the parchment.", "opts": ["Switch to finer nib", "Use thicker ink", "Press harder"]},
-		{"q": "The scroll design requires precision.", "opts": ["Use broad strokes for borders", "Freehand everything", "Use a single line weight"]},
-		{"q": "The magical ink is fading.", "opts": ["Recharge with essence drops", "Write faster", "Use normal ink instead"]},
-		{"q": "The binding spell needs a focus.", "opts": ["Inscribe the focus glyph first", "Skip the focus", "Use a random symbol"]},
-		{"q": "The parchment is curling.", "opts": ["Weight the corners flat", "Roll it tighter", "Moisten and press"]},
-		{"q": "Complex diagram ahead. Best approach?", "opts": ["Cross-hatch for shading", "Single bold lines only", "Dot stippling"]},
-		{"q": "The tome needs page reinforcement.", "opts": ["Apply sizing to the paper", "Use thicker pages", "Glue pages together"]},
-		{"q": "You notice an error in the text.", "opts": ["Carefully scrape and rewrite", "Cross it out", "Leave it and continue"]},
-		{"q": "The map scale needs to be set.", "opts": ["Measure and grid first", "Estimate by eye", "Copy from memory"]},
-		{"q": "Finishing the illuminated border.", "opts": ["Fine detail with thin brush", "Broad sweeping strokes", "Skip the decoration"]},
-	],
-	"construction": [
-		{"q": "The foundation is shifting.", "opts": ["Brace the corners first", "Add more weight on top", "Dig deeper"]},
-		{"q": "The load distribution is uneven.", "opts": ["Add a center support pillar", "Shift everything left", "Remove the top layer"]},
-		{"q": "The joint needs reinforcement.", "opts": ["Buttress with cross-beams", "Use more nails", "Lash with rope"]},
-		{"q": "The wall is bowing outward.", "opts": ["Install flying buttresses", "Push it back", "Thin the wall"]},
-		{"q": "The mortar isn't setting.", "opts": ["Adjust the sand-to-lime ratio", "Add more water", "Heat it with fire"]},
-		{"q": "How to waterproof the structure?", "opts": ["Apply pitch to seams", "Build a moat", "Use thicker stone"]},
-		{"q": "The roof angle matters for snow.", "opts": ["Steep pitch for shedding", "Flat for easy building", "Moderate for balance"]},
-		{"q": "Choosing the right wood for beams.", "opts": ["Seasoned hardwood", "Green softwood", "Any available lumber"]},
-		{"q": "The doorframe is sagging.", "opts": ["Install a header beam", "Remove the door", "Add more hinges"]},
-		{"q": "Final structural check?", "opts": ["Test load-bearing capacity", "Visual inspection only", "Move in immediately"]},
-	],
-}
+# Audit #4 Slice 3 (v0.9.543) — CRAFT_CHALLENGE_QUESTIONS removed alongside
+# the dead trivia code path. The scratch-off minigame (v0.9.372) replaced
+# trivia at the call site; only this orphan const remained.
 
 # Auto-skip threshold: if skill - difficulty >= this, skip the minigame
 const CRAFT_CHALLENGE_AUTO_SKIP = 30
