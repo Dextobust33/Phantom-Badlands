@@ -6445,6 +6445,21 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif house_mode == "imprints":
+			# Audit #1 Slice 6g (v0.9.550) — Imprint Atlas action bar.
+			# Read-only view; only Back is needed.
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "house_imprints_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif house_mode == "kennel":
 			var kennel = house_data.get("companion_kennel", {})
 			var kennel_companions = kennel.get("companions", [])
@@ -6622,6 +6637,13 @@ func update_action_bar():
 				if int(rk) > 0:
 					has_mastery_records = true
 					break
+			# Audit #1 Slice 6g (v0.9.550) — Imprints button always visible.
+			# Lights up when the account has any imprinted ability.
+			var has_imprints: bool = false
+			for st in account_variant_imprints.values():
+				if st is Array and st.size() > 0:
+					has_imprints = true
+					break
 			# Audit #13 Slice 2 — Bestiary button. Always visible on the Sanctuary
 			# main view; the panel itself shows a "locked" teaser when the upgrade
 			# isn't purchased yet, so players can discover the feature.
@@ -6630,7 +6652,7 @@ func update_action_bar():
 				{"label": "Logout", "action_type": "local", "action_data": "house_logout", "enabled": true},
 				{"label": "Mastery", "action_type": "local", "action_data": "house_mastery", "enabled": has_mastery_records},
 				{"label": "Bestiary", "action_type": "local", "action_data": "house_bestiary", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Imprints", "action_type": "local", "action_data": "house_imprints", "enabled": has_imprints},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -13101,6 +13123,18 @@ func execute_local_action(action: String):
 			pending_house_action = ""
 			house_mastery_page = 0
 			display_house_mastery()
+			update_action_bar()
+		"house_imprints":
+			# Audit #1 Slice 6g (v0.9.550) — Imprint Atlas Sanctuary page.
+			# Read-only view of all account-level variant imprints across
+			# every ability. Always accessible (account-level is the right
+			# scope; no upgrade purchase required to view).
+			house_mode = "imprints"
+			pending_house_action = ""
+			display_house_imprints()
+			update_action_bar()
+		"house_imprints_back":
+			display_house_main()
 			update_action_bar()
 		"mastery_prev":
 			house_mastery_page = max(0, house_mastery_page - 1)
@@ -38714,6 +38748,86 @@ func _select_companion_unregister(display_index: int):
 		house_unregister_companion_slot = display_index
 
 	display_house_companions()
+	update_action_bar()
+
+func display_house_imprints():
+	"""Audit #1 Slice 6g (v0.9.550) — Imprint Atlas Sanctuary page.
+	Lists every account-level Variant Imprint stack across all abilities,
+	grouped by ability with companion-named provenance for each stack.
+	Read-only — imprints can only be earned via rank-up popup with active
+	companion. Empty state hints at how to earn them."""
+	_populate_sanctuary_panel()
+	game_output.clear()
+	house_mode = "imprints"
+	_update_house_map()
+
+	display_game("[color=#FFD700]═══════ IMPRINT ATLAS ═══════[/color]")
+	display_game("[color=#808080]Companion-influenced ability upgrades. Each rank-up with an active companion lets you imprint their trait onto the ability as a permanent passive rider.[/color]")
+	display_game("")
+
+	# Build a reverse lookup: trait_id → list of (companion_name) sources
+	# from the static COMPANION_VARIANT_TRAIT map. Used to label each stack
+	# entry with the companion type that originally gave the trait. Since
+	# the imprint stack stores only trait_id (not the source companion), we
+	# pick the first companion mapped to that trait as a representative.
+	# Future v2: store source companion per imprint to show actual history.
+	var trait_categories: Dictionary = DropTables.VARIANT_TRAIT_CATEGORIES if Engine.has_singleton("DropTables") else {}
+	if trait_categories.is_empty():
+		# DropTables is not always a singleton — preload via script.
+		var dt_script = load("res://shared/drop_tables.gd")
+		if dt_script != null:
+			trait_categories = dt_script.VARIANT_TRAIT_CATEGORIES
+
+	if account_variant_imprints.is_empty():
+		display_game("[color=#808080]No imprints yet.[/color]")
+		display_game("")
+		display_game("[color=#AAAAAA]To earn imprints:[/color]")
+		display_game("[color=#808080]  • Have a companion active during combat.[/color]")
+		display_game("[color=#808080]  • Rank up an ability while the companion is with you.[/color]")
+		display_game("[color=#808080]  • The rank-up popup offers a 3rd ✦ Imprint button — pick it.[/color]")
+		display_game("[color=#808080]  • Each ability can stack up to 4 imprints (account-level, survives permadeath).[/color]")
+		display_game("")
+		display_game("[color=#FFD700]══════════════════════════════[/color]")
+		update_action_bar()
+		return
+
+	# Header line: total imprints across all abilities + count of distinct
+	# abilities imprinted.
+	var total_stacks = 0
+	var abilities_with_imprints = 0
+	for st in account_variant_imprints.values():
+		if st is Array and st.size() > 0:
+			abilities_with_imprints += 1
+			total_stacks += st.size()
+	display_game("[color=#FFD700]%d imprint stacks[/color] across [color=#9ACD32]%d abilities[/color]" % [total_stacks, abilities_with_imprints])
+	display_game("")
+
+	# Sort abilities alphabetically for stable display.
+	var sorted_abilities: Array = account_variant_imprints.keys()
+	sorted_abilities.sort()
+
+	for ab_name in sorted_abilities:
+		var stack = account_variant_imprints[ab_name]
+		if not (stack is Array) or stack.is_empty():
+			continue
+		var pretty_name = String(ab_name).replace("_", " ").capitalize()
+		display_game("[color=#87CEEB]━━━ %s ━━━[/color]  [color=#808080](%d/4)[/color]" % [pretty_name, stack.size()])
+		# Tally stacks by trait for compact display
+		var counts_by_trait: Dictionary = {}
+		for t in stack:
+			var tid = String(t)
+			counts_by_trait[tid] = int(counts_by_trait.get(tid, 0)) + 1
+		# Render each trait line
+		for trait_id in counts_by_trait:
+			var n = int(counts_by_trait[trait_id])
+			var info: Dictionary = trait_categories.get(trait_id, {})
+			var t_name = String(info.get("name", trait_id))
+			var t_color = String(info.get("color", "#FFD700"))
+			var t_desc = String(info.get("description", ""))
+			display_game("  [color=%s]✦ %s[/color] [color=#FFD700]×%d[/color]  [color=#808080]%s[/color]" % [t_color, t_name, n, t_desc])
+		display_game("")
+
+	display_game("[color=#FFD700]══════════════════════════════[/color]")
 	update_action_bar()
 
 # ===== BUILDING SYSTEM =====
