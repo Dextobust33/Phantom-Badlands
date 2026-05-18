@@ -18926,6 +18926,19 @@ func handle_server_message(message: Dictionary):
 				last_whisper_from = clan_sender_name
 				play_whisper_notification()
 
+		"clan_login":
+			# Audit #14 v0.9.531 — clan-mate login notification. Server pushes
+			# this only to online clanmates (sender themselves doesn't see it).
+			# Rendered subtly in the chat strip so it doesn't compete with
+			# clan_message — just enough signal to notice your crew showed up.
+			var login_sender = String(message.get("sender", "Unknown"))
+			var login_clan_tag = String(message.get("clan_tag", ""))
+			var login_clan_color = String(message.get("clan_color", "#88FFCC"))
+			var login_tag_prefix = ""
+			if login_clan_tag != "":
+				login_tag_prefix = "[color=%s][%s][/color] " % [login_clan_color, login_clan_tag]
+			display_chat("[color=#66FF66]●[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged in.[/color]" % [login_tag_prefix, login_sender])
+
 		"party_message":
 			# Audit #14 v0.9.530 — party-channel chat. Server broadcasts to every
 			# party member (including the sender). Render with a distinct purple
@@ -24433,8 +24446,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.531 — Audit #14 clan presence batch + Audit #12 catalogue 15 → 17.
+	display_game("[color=#00FF00]v0.9.531[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three-slice batch — clan login notifications, online count header, and two more cosmetic structures.[/color]")
+	display_game("  • [b]Clan-mate login notifications[/b] (Audit #14). When a clanmate logs in, every online member of their clan sees a subtle [color=#66FF66]●[/color] [color=#88FFCC][CLAN][/color] [name] has logged in. line in chat. Sender doesn't see their own notification. Pairs with v0.9.529's clan chat — now you know who showed up to /c with.")
+	display_game("  • [b]Clan online count[/b] (Audit #14). The More → Clan panel header now ends with [color=#66FF66]●[/color] [color=#AAFFAA]N online[/color] alongside the existing N/M members chip. Server tallies online_count from the same online_account_ids set that stamps the per-member is_online flag.")
+	display_game("  • [b]Pedestal + Cage[/b] (Audit #12). Pedestal ([color=#DDDDDD]d[/color], blocks movement, Construction skill 14, 3 stone block + 1 magic dust) — polished marble display block for trophies/monuments. Cage ([color=#555555]e[/color], blocks movement, Construction skill 16, 3 iron ore + 1 wooden plank + 1 rope) — wrought-iron decorative menagerie prop. Catalogue spans 17 structures across Construction skill 3 → 25.")
+	display_game("  • Audit progress: #14 ~85% → ~88%, #12 ~94% → ~96%.")
+	display_game("")
+
 	# v0.9.530 — Audit #14 party chat + clan roster online indicator.
-	display_game("[color=#00FF00]v0.9.530[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.530[/color]")
 	display_game("  [color=#FFD700]Party-channel chat plus a live online indicator on the clan roster.[/color]")
 	display_game("  • [b]Party chat[/b] (Audit #14). New [color=#9ACD32]/p <message>[/color] command (aliases [color=#9ACD32]/pc[/color], [color=#9ACD32]/partychat[/color]) broadcasts to every member of your party. Renders with a distinct [color=#FFAA66][PARTY][/color] channel marker so it reads apart from clan chat ([color=#88FFCC][CLAN][/color]) and whispers ([color=#FF69B4][From][/color]). Server gates by party membership; non-members get the standard \"walk into another player to invite\" hint.")
 	display_game("  • [b]Clan roster online indicator[/b] (Audit #14). The More → Clan roster now prefixes each member with a [color=#66FF66]●[/color] green dot when they're currently online or a [color=#666666]○[/color] gray dot when offline. Server stamps `is_online` on every member of `_send_clan_info` by cross-referencing the live peers map. Refreshes on every panel open.")
@@ -24466,14 +24488,6 @@ func display_changelog():
 	display_game("  • Audit #12 progress: ~92% → ~94%.")
 	display_game("")
 
-	# v0.9.526 — Narrow the v0.9.525 rip: restore world-state systems, keep no-cooldown for player-facing repeats.
-	display_game("[color=#00FFFF]v0.9.526[/color]")
-	display_game("  [color=#FFD700]v0.9.525 was over-broad — restoring world-state respawn/decay/rotation systems while keeping the no-cooldown rule for player-facing repeatable quests.[/color]")
-	display_game("  • [b]Kept ripped:[/b] Repeatable chain 24h cooldown (T1/T2/T3 chains still immediately repeatable). Daily quest 24h cooldown (any \"daily\" quest still immediately re-acceptable). These are the actual problem — player-facing \"come back in 24h\" gates.")
-	display_game("  • [b]Restored:[/b] Wall decay (72h grace on un-enclosed walls), water node respawn (5min), near-post non-water node respawn (4min), guard food upkeep, post inactivity decay, NPC vendor daily stock rotation, dynamic quest board date seeding.")
-	display_game("  • [b]Post inactivity thresholds bumped[/b] — [color=#FFAA00]30d Inactive[/color] (was 7d) and [color=#FF8888]90d Abandoned[/color] (was 30d). Players who take a couple weeks off don't get penalized. Life gets busy.")
-	display_game("  • [b]Rule clarified:[/b] real-world clock gates are bad ONLY when they tell a player \"wait N hours to do this again.\" World-state mechanics (resources regrowing, structures aging, vendors rotating) are fine — they're flavor, not roadblocks. Saved as workflow guidance.")
-	display_game("")
 
 
 
@@ -27710,7 +27724,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.520 — pylon + garden_plot added.
 			# v0.9.521 — tent + scarecrow added.
 			# v0.9.527 — crate + cairn added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn"]:
+			# v0.9.531 — pedestal + cage added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()

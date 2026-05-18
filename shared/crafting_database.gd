@@ -3203,6 +3203,33 @@ const RECIPES = {
 		"craft_time": 1.0,
 		"description": "A balanced pile of waystones. Walkable. The cheapest cosmetic — three stone blocks and a steady hand. Marks paths, boundaries, or memorials."
 	},
+	# Audit #12 v0.9.531 — two more cosmetic Construction recipes. Pedestal is
+	# a polished marble display block (mid-tier blocking centerpiece); Cage is
+	# a wrought-iron cage prop slightly higher skill.
+	"pedestal_build": {
+		"name": "Pedestal",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 14,
+		"difficulty": 19,
+		"materials": {"stone_block": 3, "magic_dust": 1},
+		"output_type": "structure",
+		"structure_type": "pedestal",
+		"specialist_only": false,
+		"craft_time": 2.5,
+		"description": "A polished marble display pedestal. Blocks movement — place a few in your hall as plinths for trophies, monuments, or memorial markers."
+	},
+	"cage_build": {
+		"name": "Cage",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 16,
+		"difficulty": 22,
+		"materials": {"iron_ore": 3, "wooden_plank": 1, "rope": 1},
+		"output_type": "structure",
+		"structure_type": "cage",
+		"specialist_only": false,
+		"craft_time": 3.0,
+		"description": "A wrought-iron cage on a wooden frame. Blocks movement — decorative menagerie prop or aesthetic detention motif for your settlement."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
