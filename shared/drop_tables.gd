@@ -1144,6 +1144,142 @@ func roll_soul_gem_drop(monster_tier: int) -> Dictionary:
 		}
 	return {}
 
+# =============================================================================
+# Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprints
+# =============================================================================
+# When an ability ranks up while a companion is active, the player can imprint
+# that companion's signature trait onto the ability as a passive rider.
+# Imprints are account-level (persist past permadeath, mirror mastery_records),
+# stackable up to the ability's rank cap (4 stacks max per ability), and small
+# in magnitude (flavor, not power spike).
+#
+# Architecture:
+#   - 10 trait CATEGORIES below cover all 53 companion types (Wolf and Mimic
+#     both grant Hunter's Eye, Skeleton and Goblin both grant Distract, etc.)
+#   - Each category has display name + per-stack magnitude + effect description
+#   - COMPANION_VARIANT_TRAIT maps each of 53 companion types to one category,
+#     anchored to the companion's existing active.effect for thematic continuity
+#   - Stack effect = per_stack_magnitude × stack_count, capped at 4 stacks
+#
+# Used by combat_manager (read at ability-cast time to apply riders) +
+# rank-up popup (offers "✦ Imprint: <trait_name> (from <companion>)" as a
+# third button when companion is active).
+const VARIANT_TRAIT_CATEGORIES = {
+	"bonus_damage": {
+		"name": "Predator's Mark",
+		"per_stack_pct": 2.0,
+		"description": "+2% ability damage per stack",
+		"color": "#FF6B6B",
+	},
+	"crit": {
+		"name": "Hunter's Eye",
+		"per_stack_pct": 2.0,
+		"description": "+2% crit chance on cast per stack",
+		"color": "#FFD700",
+	},
+	"bleed": {
+		"name": "Rending",
+		"per_stack_dmg": 1,
+		"duration": 2,
+		"description": "Applies bleed: +1 dmg/turn for 2 turns per stack",
+		"color": "#B22222",
+	},
+	"poison": {
+		"name": "Toxic Strike",
+		"per_stack_dmg": 1,
+		"duration": 3,
+		"description": "Applies poison: +1 dmg/turn for 3 turns per stack",
+		"color": "#7FBE2E",
+	},
+	"stun": {
+		"name": "Stagger",
+		"per_stack_pct": 1.0,
+		"description": "+1% stun chance on cast per stack",
+		"color": "#FFC04D",
+	},
+	"enemy_miss": {
+		"name": "Distract",
+		"per_stack_pct": 2.0,
+		"description": "+2% next-enemy-miss chance per stack",
+		"color": "#9CB4FF",
+	},
+	"lifesteal": {
+		"name": "Bloodletter",
+		"per_stack_pct": 2.0,
+		"description": "+2% lifesteal on cast per stack",
+		"color": "#D62828",
+	},
+	"mana_drain": {
+		"name": "Soul Tax",
+		"per_stack_amount": 2,
+		"description": "Drain 2 enemy mana per stack on cast",
+		"color": "#9D4EDD",
+	},
+	"charm": {
+		"name": "Mesmerize",
+		"per_stack_pct": 1.0,
+		"description": "+1% charm chance per stack (1 turn)",
+		"color": "#FF6FB5",
+	},
+	"absorb": {
+		"name": "Aegis",
+		"per_stack_amount": 2,
+		"description": "+2 damage absorption per stack on cast",
+		"color": "#7FD7FF",
+	},
+}
+
+# All 53 companion types → trait category. Mapping anchored to the companion's
+# existing active.effect field so the trait extends the companion's identity.
+# Multi-effect actives map to the dominant flavor (e.g., Giant has stun + dmg
+# → maps to bonus_damage as the primary; Demon Lord lifesteal+dmg → lifesteal).
+const COMPANION_VARIANT_TRAIT = {
+	# T1
+	"Goblin": "enemy_miss", "Giant Rat": "bleed", "Kobold": "bonus_damage",
+	"Skeleton": "enemy_miss", "Wolf": "crit",
+	# T2
+	"Orc": "bonus_damage", "Hobgoblin": "bonus_damage", "Gnoll": "bleed",
+	"Zombie": "poison", "Giant Spider": "poison", "Wight": "lifesteal",
+	"Siren": "charm", "Kelpie": "bonus_damage", "Mimic": "crit",
+	# T3
+	"Ogre": "bonus_damage", "Troll": "bonus_damage", "Wraith": "mana_drain",
+	"Wyvern": "crit", "Minotaur": "bleed", "Gargoyle": "stun",
+	"Harpy": "enemy_miss", "Shrieker": "stun",
+	# T4
+	"Giant": "bonus_damage", "Dragon Wyrmling": "bonus_damage", "Demon": "bonus_damage",
+	"Vampire": "lifesteal", "Gryphon": "crit", "Chimaera": "bonus_damage",
+	"Succubus": "charm",
+	# T5
+	"Ancient Dragon": "bonus_damage", "Demon Lord": "lifesteal", "Lich": "mana_drain",
+	"Titan": "bonus_damage", "Balrog": "bonus_damage", "Cerberus": "bonus_damage",
+	"Jabberwock": "crit",
+	# T6
+	"Elemental": "bonus_damage", "Iron Golem": "stun", "Sphinx": "charm",
+	"Hydra": "bonus_damage", "Phoenix": "bonus_damage", "Nazgul": "enemy_miss",
+	# T7
+	"Void Walker": "crit", "World Serpent": "stun", "Elder Lich": "lifesteal",
+	"Primordial Dragon": "bonus_damage",
+	# T8
+	"Cosmic Horror": "charm", "Time Weaver": "stun", "Death Incarnate": "bonus_damage",
+	# T9
+	"Avatar of Chaos": "bonus_damage", "The Nameless One": "bonus_damage",
+	"God Slayer": "crit", "Entropy": "poison",
+}
+
+# Max stacks of imprints any single ability can hold (matches mastery rank cap).
+const VARIANT_IMPRINT_MAX_STACKS = 4
+
+static func get_variant_trait_for_companion(monster_type: String) -> String:
+	"""Returns the trait category id (e.g., 'crit') for a companion type, or ''
+	if the companion isn't mapped. Defensive — unmapped companions just don't
+	offer a variant imprint at rank-up."""
+	return COMPANION_VARIANT_TRAIT.get(monster_type, "")
+
+static func get_variant_trait_info(category_id: String) -> Dictionary:
+	"""Returns the category dict (name, per_stack_*, description, color) for a
+	trait id, or {} if unknown."""
+	return VARIANT_TRAIT_CATEGORIES.get(category_id, {})
+
 # ===== COMPANION & EGG SYSTEM =====
 # Every monster in the game has a companion variant and egg
 # Companions are miniature versions that fight alongside the player
