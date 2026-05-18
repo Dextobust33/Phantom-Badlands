@@ -18926,6 +18926,24 @@ func handle_server_message(message: Dictionary):
 				last_whisper_from = clan_sender_name
 				play_whisper_notification()
 
+		"party_message":
+			# Audit #14 v0.9.530 — party-channel chat. Server broadcasts to every
+			# party member (including the sender). Render with a distinct purple
+			# channel marker so it reads apart from clan chat + whispers.
+			var party_sender = String(message.get("sender", "Unknown"))
+			var party_sender_name = String(message.get("sender_name", party_sender))
+			var party_text = String(message.get("message", ""))
+			var party_clan_tag = String(message.get("clan_tag", ""))
+			var party_clan_color = String(message.get("clan_color", "#FFAA66"))
+			var party_is_own = bool(message.get("is_own", false))
+			var party_tag_prefix = ""
+			if party_clan_tag != "":
+				party_tag_prefix = "[color=%s][%s][/color] " % [party_clan_color, party_clan_tag]
+			var party_arrow = "to" if party_is_own else "from"
+			display_chat("[color=#FFAA66][PARTY %s %s%s]:[/color] %s" % [party_arrow, party_tag_prefix, party_sender, party_text])
+			if not party_is_own:
+				last_whisper_from = party_sender_name
+
 		"tutorial_hint":
 			# Audit #3 Slice 4 — server-pushed one-time teaching message rendered
 			# in a modal overlay so it can't be scrolled past or missed in chat.
@@ -20791,7 +20809,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "p", "pc", "partychat", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21618,6 +21636,16 @@ func process_command(text: String):
 			else:
 				display_game("[color=#FF0000]Usage: /c <message>[/color]")
 				display_game("[color=#808080]Sends a message to all online clan members. Alias: /cc, /clanchat.[/color]")
+		"p", "pc", "partychat":
+			# Audit #14 v0.9.530 — party-channel chat. Broadcasts to all party
+			# members. Server gates by party membership.
+			if parts.size() > 1:
+				var party_msg_parts = parts.slice(1)
+				var party_msg = " ".join(party_msg_parts)
+				send_to_server({"type": "party_message", "message": party_msg})
+			else:
+				display_game("[color=#FF0000]Usage: /p <message>[/color]")
+				display_game("[color=#808080]Sends a message to all party members. Alias: /pc, /partychat.[/color]")
 		"watch":
 			if parts.size() > 1:
 				var target = parts[1]
@@ -24405,8 +24433,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.530 — Audit #14 party chat + clan roster online indicator.
+	display_game("[color=#00FF00]v0.9.530[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Party-channel chat plus a live online indicator on the clan roster.[/color]")
+	display_game("  • [b]Party chat[/b] (Audit #14). New [color=#9ACD32]/p <message>[/color] command (aliases [color=#9ACD32]/pc[/color], [color=#9ACD32]/partychat[/color]) broadcasts to every member of your party. Renders with a distinct [color=#FFAA66][PARTY][/color] channel marker so it reads apart from clan chat ([color=#88FFCC][CLAN][/color]) and whispers ([color=#FF69B4][From][/color]). Server gates by party membership; non-members get the standard \"walk into another player to invite\" hint.")
+	display_game("  • [b]Clan roster online indicator[/b] (Audit #14). The More → Clan roster now prefixes each member with a [color=#66FF66]●[/color] green dot when they're currently online or a [color=#666666]○[/color] gray dot when offline. Server stamps `is_online` on every member of `_send_clan_info` by cross-referencing the live peers map. Refreshes on every panel open.")
+	display_game("  • Three chat channels now color-coded: [color=#FF69B4]whisper[/color], [color=#88FFCC]clan[/color], [color=#FFAA66]party[/color]. Audit #14 progress: ~82% → ~85%.")
+	display_game("")
+
 	# v0.9.529 — Audit #14 clan chat + Audit #15 help refresh.
-	display_game("[color=#00FF00]v0.9.529[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.529[/color]")
 	display_game("  [color=#FFD700]Clan-channel chat plus a refreshed help page Recent Additions section.[/color]")
 	display_game("  • [b]Clan chat[/b] (Audit #14). New [color=#9ACD32]/c <message>[/color] command (aliases [color=#9ACD32]/cc[/color], [color=#9ACD32]/clanchat[/color]) broadcasts to every online member of your clan. Renders with [color=#88FFCC][CLAN][/color] channel marker + clan banner color + tag. Empty clans see [color=#808080](No other clan members online.)[/color] confirmation so you know whether anyone heard you. Server gates by clan membership; non-members get the standard \"join a clan\" hint.")
 	display_game("  • [b]Help page refresh[/b] (Audit #15). RECENT ADDITIONS section now includes [color=#9ACD32]/c[/color] clan chat, [color=#FFD700][NEW Lv X][/color] whisper tag for mentor-eligible players, the twelve first-touch tutorial overlays (incl. gather + equip), the no-real-time-gates rule clarification, and the full 15-structure cosmetic catalogue.")
@@ -24439,19 +24475,6 @@ func display_changelog():
 	display_game("  • [b]Rule clarified:[/b] real-world clock gates are bad ONLY when they tell a player \"wait N hours to do this again.\" World-state mechanics (resources regrowing, structures aging, vendors rotating) are fine — they're flavor, not roadblocks. Saved as workflow guidance.")
 	display_game("")
 
-	# v0.9.525 — Hotfix: rip ALL real-world time gates.
-	display_game("[color=#00FFFF]v0.9.525[/color]")
-	display_game("  [color=#FFD700]No more real-world clock gates anywhere. Permadeath sessions don't punish players who can only play in bursts — or in marathons.[/color]")
-	display_game("  • [b]Repeatable chains are instant.[/b] T1/T2/T3 chains (13 total) reappear [color=#9ACD32]immediately[/color] after completion — no 24h cooldown. Run them as much as you want for valor / eggs / titles. T4+ stay one-shot (achievement-style).")
-	display_game("  • [b]Daily quests are no longer daily.[/b] The 24h re-accept cooldown on daily quests is ripped — any \"daily\" quest can be re-accepted immediately after turn-in. Combined with the v0.9.453 regenerating quest board, the quest pipeline is now fully wall-clock-free.")
-	display_game("  • [b]Walls don't decay.[/b] The 72-hour grace period that crumbled un-enclosed walls is disabled. Build whatever you want, whenever you want — your structures stay.")
-	display_game("  • [b]Water never depletes.[/b] Fishing tiles are now infinite — no 5-minute respawn timer. Mining / forestry nodes near posts no longer respawn-then-deplete either; once gathered, they stay gathered (consistent with far-from-post behaviour).")
-	display_game("  • [b]Guards stay forever.[/b] The food-decay system that removed guards over real-time days is disabled. Once hired, they hold their post until you dismiss them.")
-	display_game("  • [b]Posts don't go \"abandoned\".[/b] The 7d Inactive / 30d Abandoned decay tags on player posts are gone. Take any break you want.")
-	display_game("  • [b]NPC vendor stock is stable.[/b] The Curiosity Trader / Forge Master / Provisioner / Mystic etc. no longer rotate their pool daily — each post has its own stable inventory. Different posts still carry different goods (so traveling rewards variety), but you don't have to chase a daily-reset window.")
-	display_game("  • [b]Dynamic quest board content is stable.[/b] Quests at each board index no longer rotate by date. The regenerating slide-forward window (v0.9.453) still keeps the board fresh as you complete things.")
-	display_game("  • [b]Reason:[/b] this game is built for any session length — permadeath, exploration, settlement-building. Real-world clock gates punish bursts and marathons alike. Saved as a permanent workflow rule.")
-	display_game("")
 
 
 

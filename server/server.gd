@@ -1472,6 +1472,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_private_message(peer_id, message)
 		"clan_message":
 			handle_clan_message(peer_id, message)
+		"party_message":
+			handle_party_message(peer_id, message)
 		"move":
 			handle_move(peer_id, message)
 		"hunt":
@@ -2988,6 +2990,44 @@ func handle_private_message(peer_id: int, message: Dictionary):
 		"target": target_name,
 		"message": text
 	})
+
+func handle_party_message(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 v0.9.530 — party-channel chat. Broadcasts to every member
+	of the caller's party (including the caller for self-echo). Requires
+	authentication AND party membership."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	if not characters.has(peer_id):
+		send_to_peer(peer_id, {"type": "error", "message": "You must have a character to chat!"})
+		return
+	var party_members = _get_party_members(peer_id)
+	if party_members.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]You're not in a party. Walk into another player to invite.[/color]"})
+		return
+	var text = String(message.get("message", ""))
+	if text.is_empty():
+		send_to_peer(peer_id, {"type": "error", "message": "Message cannot be empty!"})
+		return
+	text = text.left(MAX_CHAT_LENGTH)
+	text = _sanitize_chat_text(text)
+
+	var sender_name = characters[peer_id].name
+	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
+	var sender_clan_tag = _get_clan_tag_for_peer(peer_id)
+	var sender_clan_color = _get_clan_banner_color_for_peer(peer_id)
+
+	for other_peer_id in party_members:
+		if not characters.has(other_peer_id):
+			continue
+		send_to_peer(other_peer_id, {
+			"type": "party_message",
+			"sender": sender_display,
+			"sender_name": sender_name,
+			"clan_tag": sender_clan_tag,
+			"clan_color": sender_clan_color,
+			"message": text,
+			"is_own": other_peer_id == peer_id,
+		})
 
 func handle_clan_message(peer_id: int, message: Dictionary) -> void:
 	"""Audit #14 v0.9.529 — clan-channel chat. Broadcasts to all online
@@ -8920,6 +8960,18 @@ func _send_clan_info(peer_id: int) -> void:
 		return
 	var members = persistence.get_clan_member_summary(clan_id)
 	var leader_id = String(clan.get("leader_account_id", ""))
+	# Audit #14 v0.9.530 — stamp is_online on each member by checking the
+	# live peers map. Lets the clan roster render a green dot next to
+	# currently-connected members.
+	var online_account_ids := {}
+	for pid in peers.keys():
+		if not peers[pid].authenticated:
+			continue
+		var pacc = String(peers[pid].get("account_id", ""))
+		if pacc != "":
+			online_account_ids[pacc] = true
+	for m in members:
+		m["is_online"] = online_account_ids.has(String(m.get("account_id", "")))
 	# Audit #14 Slice 4 — rank info for the client. is_officer drives Promote /
 	# Demote / Kick / Invite button visibility on the viewer's roster.
 	var officer_ids: Array = clan.get("officer_ids", [])
