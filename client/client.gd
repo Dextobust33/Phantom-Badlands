@@ -18973,6 +18973,58 @@ func handle_server_message(message: Dictionary):
 				logout_tag_prefix = "[color=%s][%s][/color] " % [logout_clan_color, logout_clan_tag]
 			display_chat("[color=#666666]○[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged out.[/color]" % [logout_tag_prefix, logout_sender])
 
+		"trade_history_result":
+			# Audit #14 v0.9.539 — /trades response. Format each entry by kind.
+			var th_entries: Array = message.get("entries", [])
+			var th_limit = int(message.get("limit", 10))
+			display_game("[color=#FFD700]══════ TRADE HISTORY (last %d) ══════[/color]" % th_limit)
+			if th_entries.is_empty():
+				display_game("[color=#808080]  (no trades on record yet — direct trades and market purchases show up here.)[/color]")
+			else:
+				for raw_entry in th_entries:
+					var th_entry = raw_entry as Dictionary
+					var ts = int(th_entry.get("timestamp", 0))
+					var date_str = "—"
+					if ts > 0:
+						var dt = Time.get_datetime_dict_from_unix_time(ts)
+						date_str = "%04d-%02d-%02d %02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute]
+					var kind = String(th_entry.get("kind", ""))
+					var line = "[color=#888888]%s[/color] " % date_str
+					match kind:
+						"market_buy":
+							var qty = int(th_entry.get("quantity", 1))
+							var qty_text = " x%d" % qty if qty > 1 else ""
+							var seller = String(th_entry.get("counterparty_name", ""))
+							line += "[color=#FF8866]BOUGHT[/color] [color=#DDDDDD]%s%s[/color] [color=#888888]for[/color] [color=#FFD700]%d valor[/color]" % [
+								String(th_entry.get("item_name", "item")), qty_text, int(th_entry.get("price_valor", 0))
+							]
+							if seller != "":
+								line += " [color=#888888]from %s[/color]" % seller
+						"market_sale":
+							var sqty = int(th_entry.get("quantity", 1))
+							var sqty_text = " x%d" % sqty if sqty > 1 else ""
+							var buyer = String(th_entry.get("counterparty_name", ""))
+							line += "[color=#88FF88]SOLD[/color] [color=#DDDDDD]%s%s[/color] [color=#888888]for[/color] [color=#FFD700]%d valor[/color]" % [
+								String(th_entry.get("item_name", "item")), sqty_text, int(th_entry.get("price_valor", 0))
+							]
+							if buyer != "":
+								line += " [color=#888888]to %s[/color]" % buyer
+						"direct_trade":
+							var rec_items = int(th_entry.get("items_received", 0))
+							var rec_comps = int(th_entry.get("companions_received", 0))
+							var rec_eggs = int(th_entry.get("eggs_received", 0))
+							var gv_items = int(th_entry.get("items_given", 0))
+							var gv_comps = int(th_entry.get("companions_given", 0))
+							var gv_eggs = int(th_entry.get("eggs_given", 0))
+							var rec_total = rec_items + rec_comps + rec_eggs
+							var gv_total = gv_items + gv_comps + gv_eggs
+							var partner = String(th_entry.get("counterparty_name", "(unknown)"))
+							line += "[color=#A335EE]TRADE[/color] with [color=#DDDDDD]%s[/color] [color=#888888]— gave[/color] %d [color=#888888]/ received[/color] %d" % [partner, gv_total, rec_total]
+						_:
+							line += "[color=#888888](unknown event)[/color]"
+					display_game(line)
+			display_game("")
+
 		"clan_list_result":
 			# Audit #14 v0.9.532 — /clist response. Render a compact roster of
 			# online clanmates so the player can see who's around without
@@ -20889,7 +20941,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21743,6 +21795,13 @@ func process_command(text: String):
 				display_game("  [color=#9ACD32]%s[/color] [color=#888888]— %s[/color]" % [tkey, stripped])
 			display_game("")
 			display_game("[color=#808080]Use [/color][color=#9ACD32]/topic <key>[/color][color=#808080] to open one in the help panel.[/color]")
+		"trades", "tradehistory":
+			# Audit #14 v0.9.539 — request the caller's trade history.
+			# Optional [N] arg = how many entries (default 10, max 50).
+			var trade_limit = 10
+			if parts.size() > 1:
+				trade_limit = clampi(int(parts[1]), 1, 50)
+			send_to_server({"type": "trade_history", "limit": trade_limit})
 		"topic", "viewtopic":
 			# Audit #15 v0.9.538 — open any registered help topic by key in
 			# the global help panel. Pairs with /topics for discovery.
@@ -24566,8 +24625,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.539 — Audit #14 trade history (focused project #3).
+	display_game("[color=#00FF00]v0.9.539[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]A persistent rolling log of every trade you've made — account-level, survives permadeath.[/color]")
+	display_game("  • [b]/trades [N][/b] (Audit #14, focused project #3). New chat command prints your last N trade-history entries (default 10, max 50, alias [color=#9ACD32]/tradehistory[/color]). Each entry shows timestamp + event kind + counterparty + items/valor.")
+	display_game("  • [b]What gets logged[/b]:")
+	display_game("    [color=#FF8866]BOUGHT[/color] — every market purchase (price + seller name)")
+	display_game("    [color=#88FF88]SOLD[/color] — every market sale (price + buyer name), even when you're offline")
+	display_game("    [color=#A335EE]TRADE[/color] — every direct trade completion (counts of items/companions/eggs exchanged + partner name)")
+	display_game("  • [b]Persistence[/b]: stored on your ACCOUNT (not character) so the log survives permadeath. Capped at 50 entries per account — oldest drops first as new ones arrive. Backed by [color=#9ACD32]persistence.add_trade_history_entry[/color] + [color=#9ACD32]get_trade_history[/color] APIs.")
+	display_game("  • Audit #14 progress: ~98% → ~99%.")
+	display_game("")
+
 	# v0.9.538 — Audit #15 persistent help discovery (/topics + /topic).
-	display_game("[color=#00FF00]v0.9.538[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.538[/color]")
 	display_game("  [color=#FFD700]Every help-panel topic is now reachable from anywhere in the world.[/color]")
 	display_game("  • [b]/topics[/b] (Audit #15). Lists every registered HELP_TOPICS key alongside its title — no need to know which panel owns a topic to find it. Default sort alphabetical.")
 	display_game("  • [b]/topic <key>[/b] (Audit #15). Opens any topic by key in the global help panel from anywhere. Aliases: [color=#9ACD32]/viewtopic[/color]. Pairs with [color=#9ACD32]/topics[/color] for full discoverability — topics used to be reachable only via the panel that owns the [b]?[/b] button.")
@@ -24598,13 +24669,6 @@ func display_changelog():
 	display_game("  • Audit progress: #15 ~94% → ~96%, #12 ~98% → ~99%.")
 	display_game("")
 
-	# v0.9.534 — Audit #11 threat distance + Audit #12 catalogue 19 → 21.
-	display_game("[color=#00FFFF]v0.9.534[/color]")
-	display_game("  [color=#FFD700]Threat HUD gains a tile-distance readout; the cosmetic catalogue adds its first walkable floor decoration.[/color]")
-	display_game("  • [b]Threat tile distance[/b] (Audit #11). The [color=#FF6600]⚠ Threat:[/color] tag on the Area line now appends [color=#FFBBAA](N tiles)[/color] showing the actual distance to the nearest spillover dungeon. Lets you gauge \"is this threat right on top of me, or 60 tiles off?\" at a glance.")
-	display_game("  • [b]Lectern + Mosaic[/b] (Audit #12). Lectern ([color=#8B6914]l[/color], blocks movement, Construction skill 12, 2 wooden plank + 1 ink + 1 leather) — wooden reading lectern with a scribed tome; library/sermon flavor. Mosaic ([color=#C8B0DD]m[/color], [b]walkable floor decoration[/b], Construction skill 17, 3 stone block + 1 magic dust + 1 ink) — the first floor-decoration entry in the catalogue. Place a row for grand entryways.")
-	display_game("  • Catalogue now spans 21 structures across Construction skill 3 → 25, with mixed walkable / blocking / line-of-sight blocking / floor types. Audit progress: #11 ~98% → ~99%, #12 ~97% → ~98%.")
-	display_game("")
 
 
 
@@ -27029,6 +27093,7 @@ func show_help():
 [color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
 [color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
 [color=#00FFFF]Help discovery:[/color] [color=#9ACD32]/topics[/color] lists every help-panel topic key + title; [color=#9ACD32]/topic <key>[/color] opens any topic from anywhere.
+[color=#00FFFF]Trade history:[/color] [color=#9ACD32]/trades [N][/color] (default 10, max 50) — your rolling log of direct trades and market buys/sales, account-level + persistent across deaths.
 [color=#00FFFF]Mentor reward bonus:[/color] A Lv 20+ [color=#9ACD32]/mentor on[/color] partied with a Lv < 10 player grants [color=#FFD700]+25% XP[/color] to the whole party on every kill.
 [color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
 [color=#00FFFF]/afk status:[/color] [color=#9ACD32]/afk [reason][/color] marks you away ([color=#FFAA66][AFK][/color] badge); auto-clears on move/chat. [color=#9ACD32]/back[/color] to clear explicitly.

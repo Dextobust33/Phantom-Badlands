@@ -246,6 +246,42 @@ func save_accounts():
 	"""Save accounts data to file"""
 	_safe_save(ACCOUNTS_FILE, accounts_data)
 
+# Audit #14 v0.9.539 — Trade history (focused project #3). Account-level
+# rolling log capped at TRADE_HISTORY_CAP entries (newest first). Used by
+# the /trades chat command to surface direct-trade + market-buy +
+# market-sale events with timestamp + counterparty + items + valor.
+const TRADE_HISTORY_CAP: int = 50
+
+func add_trade_history_entry(account_id: String, entry: Dictionary) -> void:
+	"""Push a trade history entry to the account, capped at the front. Adds
+	a timestamp if the caller didn't supply one. Persists immediately so
+	the log survives crash/restart even if no other account state changed."""
+	if not accounts_data.accounts.has(account_id):
+		return
+	var account = accounts_data.accounts[account_id]
+	if not account.has("trade_history"):
+		account["trade_history"] = []
+	var history: Array = account["trade_history"]
+	if not entry.has("timestamp"):
+		entry["timestamp"] = int(Time.get_unix_time_from_system())
+	history.push_front(entry.duplicate(true))
+	while history.size() > TRADE_HISTORY_CAP:
+		history.pop_back()
+	save_accounts()
+
+func get_trade_history(account_id: String, limit: int = 10) -> Array:
+	"""Return the newest N trade history entries for the account. limit <= 0
+	returns everything. Returns [] if account missing."""
+	if not accounts_data.accounts.has(account_id):
+		return []
+	var history: Array = accounts_data.accounts[account_id].get("trade_history", [])
+	if limit <= 0:
+		return history.duplicate(true)
+	var out: Array = []
+	for i in range(min(limit, history.size())):
+		out.append(history[i].duplicate(true) if history[i] is Dictionary else history[i])
+	return out
+
 func create_account(username: String, password: String) -> Dictionary:
 	"""Create a new account with hashed password"""
 	# Validate username
@@ -326,6 +362,13 @@ func authenticate(username: String, password: String) -> Dictionary:
 		"character_slots": account.character_slots,
 		"max_characters": account.max_characters
 	}
+
+func get_username_for_account(account_id: String) -> String:
+	"""Resolve account_id → username (display name). Audit #14 v0.9.539 trade
+	history uses this for the counterparty label when the trader is offline."""
+	if not accounts_data.accounts.has(account_id):
+		return ""
+	return String(accounts_data.accounts[account_id].get("username", ""))
 
 func get_account_characters(account_id: String) -> Array:
 	"""Get list of character summaries for an account"""
