@@ -22655,7 +22655,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -22790,7 +22790,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:

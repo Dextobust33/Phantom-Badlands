@@ -3284,6 +3284,33 @@ const RECIPES = {
 		"craft_time": 3.0,
 		"description": "An ornate floor mosaic of stone tesserae bound with arcane pigment. WALKABLE — the first floor decoration in the catalogue. Place a few in a row for a grand entryway path."
 	},
+	# Audit #12 v0.9.535 — two more cosmetic Construction recipes. Easel is a
+	# cheap artistic blocking prop; Totem is a tall painted pillar (tribal /
+	# folk aesthetic, mid-skill blocking).
+	"easel_build": {
+		"name": "Easel",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 6,
+		"difficulty": 10,
+		"materials": {"wooden_plank": 2, "ink": 1},
+		"output_type": "structure",
+		"structure_type": "easel",
+		"specialist_only": false,
+		"craft_time": 1.5,
+		"description": "A wooden artist's easel holding a half-finished painting. Blocks movement. Low-cost flavor prop for studios, galleries, or scholarly corners."
+	},
+	"totem_build": {
+		"name": "Totem",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 13,
+		"difficulty": 18,
+		"materials": {"wooden_plank": 3, "ink": 2, "leather": 1},
+		"output_type": "structure",
+		"structure_type": "totem",
+		"specialist_only": false,
+		"craft_time": 2.5,
+		"description": "A tall painted totem carved with spirit faces. Blocks movement — tribal / folk aesthetic. Place a row along a settlement boundary for ceremonial flair."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players

@@ -152,6 +152,11 @@ const TILE_RENDER = {
 	# catalogue (purely visual — no movement/los effect).
 	"lectern":       {"char": "l", "color": "#8B6914", "blocks_move": true,  "blocks_los": false},
 	"mosaic":        {"char": "m", "color": "#C8B0DD", "blocks_move": false, "blocks_los": false},
+	# Audit #12 v0.9.535 — catalogue 21 → 23. Easel is a low-skill artist's
+	# prop (blocking); Totem is a tall painted pillar (blocking, mid-skill,
+	# tribal aesthetic).
+	"easel":         {"char": "y", "color": "#6B4A28", "blocks_move": true,  "blocks_los": false},
+	"totem":         {"char": "z", "color": "#A0522D", "blocks_move": true,  "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

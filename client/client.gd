@@ -24515,8 +24515,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.535 — Audit #15 clan help refresh + Audit #12 catalogue 21 → 23.
+	display_game("[color=#00FF00]v0.9.535[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Clan panel help button now lists every social command + indicator. Catalogue picks up two more cosmetic structures.[/color]")
+	display_game("  • [b]Clan page help refresh[/b] (Audit #15). The ? Help button on the Clan panel now covers [color=#9ACD32]/c[/color], [color=#9ACD32]/p[/color], [color=#9ACD32]/clist[/color], [color=#9ACD32]/afk[/color], [color=#9ACD32]/mentor[/color], the [color=#FFD700][NEW Lv X][/color] whisper tag, the green/gray/orange member dot codes, the N/M online header chip, and the login/logout chat broadcasts — one place to discover the full clan presence surface.")
+	display_game("  • [b]Easel + Totem[/b] (Audit #12). Easel ([color=#6B4A28]y[/color], blocks movement, Construction skill 6, 2 wooden plank + 1 ink) — cheap artistic prop for studios or scholarly corners. Totem ([color=#A0522D]z[/color], blocks movement, Construction skill 13, 3 wooden plank + 2 ink + 1 leather) — tall painted pillar with tribal aesthetic. Catalogue spans 23 structures.")
+	display_game("  • Audit progress: #15 ~94% → ~96%, #12 ~98% → ~99%.")
+	display_game("")
+
 	# v0.9.534 — Audit #11 threat distance + Audit #12 catalogue 19 → 21.
-	display_game("[color=#00FF00]v0.9.534[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.534[/color]")
 	display_game("  [color=#FFD700]Threat HUD gains a tile-distance readout; the cosmetic catalogue adds its first walkable floor decoration.[/color]")
 	display_game("  • [b]Threat tile distance[/b] (Audit #11). The [color=#FF6600]⚠ Threat:[/color] tag on the Area line now appends [color=#FFBBAA](N tiles)[/color] showing the actual distance to the nearest spillover dungeon. Lets you gauge \"is this threat right on top of me, or 60 tiles off?\" at a glance.")
 	display_game("  • [b]Lectern + Mosaic[/b] (Audit #12). Lectern ([color=#8B6914]l[/color], blocks movement, Construction skill 12, 2 wooden plank + 1 ink + 1 leather) — wooden reading lectern with a scribed tome; library/sermon flavor. Mosaic ([color=#C8B0DD]m[/color], [b]walkable floor decoration[/b], Construction skill 17, 3 stone block + 1 magic dust + 1 ink) — the first floor-decoration entry in the catalogue. Place a row for grand entryways.")
@@ -24548,13 +24556,6 @@ func display_changelog():
 	display_game("  • Audit progress: #14 ~85% → ~88%, #12 ~94% → ~96%.")
 	display_game("")
 
-	# v0.9.530 — Audit #14 party chat + clan roster online indicator.
-	display_game("[color=#00FFFF]v0.9.530[/color]")
-	display_game("  [color=#FFD700]Party-channel chat plus a live online indicator on the clan roster.[/color]")
-	display_game("  • [b]Party chat[/b] (Audit #14). New [color=#9ACD32]/p <message>[/color] command (aliases [color=#9ACD32]/pc[/color], [color=#9ACD32]/partychat[/color]) broadcasts to every member of your party. Renders with a distinct [color=#FFAA66][PARTY][/color] channel marker so it reads apart from clan chat ([color=#88FFCC][CLAN][/color]) and whispers ([color=#FF69B4][From][/color]). Server gates by party membership; non-members get the standard \"walk into another player to invite\" hint.")
-	display_game("  • [b]Clan roster online indicator[/b] (Audit #14). The More → Clan roster now prefixes each member with a [color=#66FF66]●[/color] green dot when they're currently online or a [color=#666666]○[/color] gray dot when offline. Server stamps `is_online` on every member of `_send_clan_info` by cross-referencing the live peers map. Refreshes on every panel open.")
-	display_game("  • Three chat channels now color-coded: [color=#FF69B4]whisper[/color], [color=#88FFCC]clan[/color], [color=#FFAA66]party[/color]. Audit #14 progress: ~82% → ~85%.")
-	display_game("")
 
 
 
@@ -27803,7 +27804,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.531 — pedestal + cage added.
 			# v0.9.533 — hedge + shrine added.
 			# v0.9.534 — lectern + mosaic added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic"]:
+			# v0.9.535 — easel + totem added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()
