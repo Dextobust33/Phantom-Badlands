@@ -2229,6 +2229,22 @@ func clear_all_player_posts():
 	player_posts_data = {"posts": {}}
 	save_player_posts()
 
+# Audit #14 PvP Slice F (v0.9.558) — Clan-shared posts. Set/clear clan_id on a
+# single post in place so the share/revert flow doesn't have to rebuild the
+# entire post record. Returns false if the post isn't found. Legacy posts
+# without clan_id default to "" (private).
+func set_post_clan_id(username: String, index: int, clan_id: String) -> bool:
+	if not player_posts_data.has("posts"):
+		return false
+	if not player_posts_data.posts.has(username):
+		return false
+	var posts = player_posts_data.posts[username]
+	if index < 0 or index >= posts.size():
+		return false
+	posts[index]["clan_id"] = String(clan_id)
+	save_player_posts()
+	return true
+
 # ===== SIGNPOST TEXTS (v0.9.507) =====
 
 func load_signpost_texts():

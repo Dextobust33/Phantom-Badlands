@@ -1771,6 +1771,11 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 		# Audit #14 Slice 8 — leader-set clan banner color.
 		"clan_banner_color_set":
 			handle_clan_banner_color_set(peer_id, message)
+		# Audit #14 Slice F (v0.9.558) — clan-shared posts.
+		"clan_post_share":
+			handle_clan_post_share(peer_id, message)
+		"clan_post_revert":
+			handle_clan_post_revert(peer_id, message)
 		# Audit #14 v0.9.517 — Mentor Badge MVP.
 		"mentor_toggle":
 			handle_mentor_toggle(peer_id, message)
@@ -4666,7 +4671,12 @@ func handle_move(peer_id: int, message: Dictionary):
 	# Audit #12 Slice 4 — touch last_tended_at any time the owner is inside
 	# their bubble. Bumps every move within the bubble; cheap and reliable.
 	# Posts the owner never visits stay marked Inactive/Abandoned.
-	_touch_post_tended_at(_get_username(peer_id), new_pos.x, new_pos.y)
+	# Audit #14 Slice F (v0.9.558) — also bump any clan-shared post whose
+	# bubble contains the new position, so clan-mates keep each other's
+	# shared posts alive even when the owner is offline.
+	var actor_username_move = _get_username(peer_id)
+	_touch_post_tended_at(actor_username_move, new_pos.x, new_pos.y)
+	_touch_clan_post_tended_at(actor_username_move, new_pos.x, new_pos.y)
 
 	# Check for Infernal Forge (Fire Mountain) with Unforged Crown
 	if new_pos.x == -400 and new_pos.y == 0:
@@ -24097,10 +24107,11 @@ func handle_build_place(peer_id: int, message: Dictionary):
 		if _has_nearby_guard_post(tx, ty, 10):
 			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Too close to another guard post! Must be 10+ tiles away."})
 			return
-	# Structures (non-wall/door/guard) can only be placed inside an enclosure you own
+	# Structures (non-wall/door/guard) can only be placed inside an enclosure you
+	# own OR a clan-shared one you have permission on (Audit #14 Slice F).
 	elif structure_type not in ENCLOSURE_WALL_TYPES:
-		if not _is_in_own_enclosure(tx, ty, username):
-			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Structures must be placed inside your enclosure!"})
+		if not _is_in_own_or_clan_enclosure(tx, ty, username):
+			send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Structures must be placed inside your (or a clan-shared) enclosure!"})
 			return
 
 	# Check tile limit
@@ -24167,8 +24178,10 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	# Audit #12 Slice 4 — placing tiles inside one of your bubbles counts as
 	# tending. Touch is based on placement coordinate so adjacent-bubble plays
 	# (e.g., placing a guard just inside your post from across the wall) still
-	# bump tended_at correctly.
+	# bump tended_at correctly. Audit #14 Slice F — also bumps clan-shared
+	# posts the actor has permission on.
 	_touch_post_tended_at(username, tx, ty)
+	_touch_clan_post_tended_at(username, tx, ty)
 
 func handle_build_demolish(peer_id: int, message: Dictionary):
 	"""Handle player demolishing a tile they placed."""
@@ -24191,9 +24204,23 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 		return
 
 	var tile = chunk_manager.get_tile(tx, ty)
-	var tile_owner = tile.get("owner", "")
-	if tile_owner != username:
-		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "You can only demolish your own structures!"})
+	var tile_owner = String(tile.get("owner", ""))
+	# Audit #14 Slice F (v0.9.558) — clan-mates can demolish on each other's
+	# clan-shared posts. Resolve the tile's enclosure to its post meta; if it's
+	# clan-shared and the actor is in the same clan, allow the demolish.
+	var demolish_ok = (tile_owner == username)
+	if not demolish_ok and tile_owner != "":
+		var enc_key = Vector2i(tx, ty)
+		if enclosure_tile_lookup.has(enc_key):
+			var enc_hit = enclosure_tile_lookup[enc_key]
+			var enc_owner = String(enc_hit.get("owner", ""))
+			var enc_idx_check = int(enc_hit.get("enclosure_idx", -1))
+			if enc_owner == tile_owner and player_post_names.has(enc_owner) and enc_idx_check >= 0 and enc_idx_check < player_post_names[enc_owner].size():
+				var enc_meta = player_post_names[enc_owner][enc_idx_check]
+				if _can_act_on_post(username, enc_owner, enc_meta):
+					demolish_ok = true
+	if not demolish_ok:
+		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "You can only demolish your own (or clan-shared) structures!"})
 		return
 
 	var tile_type = tile.get("type", "")
@@ -24237,7 +24264,9 @@ func handle_build_demolish(peer_id: int, message: Dictionary):
 	send_to_peer(peer_id, {"type": "build_result", "success": true, "message": msg})
 	send_location_update(peer_id)
 	# Audit #12 Slice 4 — demolishing counts as tending (active management).
+	# Audit #14 Slice F — also bumps clan-shared posts.
 	_touch_post_tended_at(username, tx, ty)
+	_touch_clan_post_tended_at(username, tx, ty)
 
 func _get_posts_for_account(account_id: String) -> Array:
 	"""Slice 5 — returns the player posts owned by a given account, formatted
@@ -24713,6 +24742,7 @@ func _check_enclosures_after_build(username: String, peer_id: int = -1) -> Strin
 			"tier": DEFAULT_PLAYER_POST_TIER,
 			"bubble_radius": DEFAULT_PLAYER_POST_BUBBLE_RADIUS,
 			"account_id": creator_account_id,
+			"clan_id": "",
 		})
 		# Send naming prompt to player
 		if peer_id >= 0:
@@ -24809,6 +24839,7 @@ func _recheck_enclosures_after_demolish(username: String) -> String:
 				"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
 				"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
 				"account_id": String(meta.get("account_id", "")),
+				"clan_id": String(meta.get("clan_id", "")),
 			})
 		var max_posts = _get_max_post_count_for_username(username)
 		# Slice 4 — post broken → refresh bubble cache so vanished bubbles
@@ -25003,6 +25034,7 @@ func _rebuild_enclosures_for_player(username: String):
 			var matched_tier = DEFAULT_PLAYER_POST_TIER
 			var matched_radius = DEFAULT_PLAYER_POST_BUBBLE_RADIUS
 			var matched_account_id = ""
+			var matched_clan_id = ""
 			for sp in saved_posts:
 				var sc = Vector2i(int(sp.get("center_x", sp.get("center", {}).get("x", 0))), int(sp.get("center_y", sp.get("center", {}).get("y", 0))))
 				if abs(center.x - sc.x) <= 1 and abs(center.y - sc.y) <= 1:
@@ -25011,6 +25043,7 @@ func _rebuild_enclosures_for_player(username: String):
 					matched_tier = int(sp.get("tier", DEFAULT_PLAYER_POST_TIER))
 					matched_radius = int(sp.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS))
 					matched_account_id = String(sp.get("account_id", ""))
+					matched_clan_id = String(sp.get("clan_id", ""))
 					break
 			if matched_account_id == "":
 				matched_account_id = fallback_account_id
@@ -25021,6 +25054,7 @@ func _rebuild_enclosures_for_player(username: String):
 				"tier": matched_tier,
 				"bubble_radius": matched_radius,
 				"account_id": matched_account_id,
+				"clan_id": matched_clan_id,
 			})
 		player_post_names[username] = rebuilt_names
 		# Reconnect rebuilt enclosures to road network
@@ -25061,6 +25095,7 @@ func handle_name_post(peer_id: int, message: Dictionary):
 		"tier": int(meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
 		"bubble_radius": int(meta.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
 		"account_id": String(meta.get("account_id", peers[peer_id].get("account_id", ""))),
+		"clan_id": String(meta.get("clan_id", "")),
 	})
 	send_to_peer(peer_id, {"type": "post_named", "name": name_text})
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]Post established: %s[/color]" % name_text})
@@ -25475,9 +25510,11 @@ func handle_guard_feed_all(peer_id: int) -> void:
 	send_to_peer(peer_id, {"type": "text", "message": "\n".join(report_lines)})
 	send_character_update(peer_id)
 	save_character(peer_id)
-	# Audit #12 Slice 4 — feeding counts as tending this post.
+	# Audit #12 Slice 4 — feeding counts as tending this post. Audit #14
+	# Slice F — also bumps clan-shared posts.
 	if fed_count > 0:
 		_touch_post_tended_at(username, character.x, character.y)
+		_touch_clan_post_tended_at(username, character.x, character.y)
 	# Audit #12 UI remediation — push fresh post_status_data so the visual
 	# panel (if open) immediately reflects the new food-days values.
 	handle_request_post_status_visual(peer_id)
@@ -27982,6 +28019,13 @@ func _build_player_post_status(post_meta: Dictionary, owner_username: String, is
 	lines.append("[color=%s]─── %s ───[/color]" % [header_color, display_name])
 	if not is_owner:
 		lines.append("  Owner: %s" % owner_username)
+	# Audit #14 Slice F (v0.9.558) — surface clan-shared status.
+	var post_clan_id = String(post_meta.get("clan_id", ""))
+	if post_clan_id != "":
+		var clan_data = persistence.clans_data.get("clans", {}).get(post_clan_id, {})
+		var clan_tag = String(clan_data.get("tag", "?"))
+		var banner_color = String(clan_data.get("banner_color", "#A335EE"))
+		lines.append("  [color=%s]✦ Shared with [%s] — clan members can build, demolish, refresh decay[/color]" % [banner_color, clan_tag])
 	var tier_part = "T%d" % effective_tier
 	if effective_tier < wilderness_tier:
 		tier_part = "T%d  (wild T%d)" % [effective_tier, wilderness_tier]
@@ -28374,6 +28418,176 @@ func _touch_post_tended_at(username: String, x: int, y: int) -> void:
 			best_idx = i
 	if best_idx >= 0:
 		player_post_names[username][best_idx]["last_tended_at"] = now_ts
+
+# =============================================================================
+# Audit #14 PvP Slice F (v0.9.558) — Clan-shared posts
+# =============================================================================
+# Convert-existing-post path: owner flips a post to clan-shared. All members of
+# the owner's clan then count as "in their own enclosure" for build/demolish
+# permissions, and their visits reset the decay timer. Owner alone can revert.
+# Bubble suppression is spatial (already applies to anyone walking through), so
+# no extra wiring needed there.
+
+func _post_clan_id_for(meta: Dictionary) -> String:
+	return String(meta.get("clan_id", ""))
+
+func _viewer_clan_id_for_username(viewer_username: String) -> String:
+	"""Resolve a username → clan_id via the account lookup."""
+	if viewer_username == "":
+		return ""
+	var acc = persistence.find_account_for_character(viewer_username)
+	if acc == "":
+		return ""
+	return persistence.get_account_clan_id(acc)
+
+func _can_act_on_post(actor_username: String, post_owner: String, meta: Dictionary) -> bool:
+	"""True if the actor is the owner OR a clan-mate when the post is shared.
+	Used as the build/demolish/decay-touch gate."""
+	if actor_username == post_owner:
+		return true
+	var clan_id = _post_clan_id_for(meta)
+	if clan_id == "":
+		return false
+	return _viewer_clan_id_for_username(actor_username) == clan_id
+
+func _is_in_own_or_clan_enclosure(x: int, y: int, username: String) -> bool:
+	"""Build gate that also accepts clan-shared enclosures the actor can act on.
+	Mirrors _is_in_own_enclosure's scan, then folds in the clan permission."""
+	var key = Vector2i(x, y)
+	if not enclosure_tile_lookup.has(key):
+		return false
+	var hit = enclosure_tile_lookup[key]
+	var owner = String(hit.get("owner", ""))
+	if owner == "":
+		return false
+	if owner == username:
+		return true
+	var enc_idx = int(hit.get("enclosure_idx", -1))
+	if not player_post_names.has(owner) or enc_idx < 0 or enc_idx >= player_post_names[owner].size():
+		return false
+	var meta = player_post_names[owner][enc_idx]
+	return _can_act_on_post(username, owner, meta)
+
+func _touch_clan_post_tended_at(actor_username: String, x: int, y: int) -> void:
+	"""Walk every clan-shared post the actor's clan owns and bump last_tended_at
+	on the one whose bubble contains (x, y). Mirrors _touch_post_tended_at but
+	keyed on clan membership instead of ownership."""
+	if actor_username == "":
+		return
+	var clan_id = _viewer_clan_id_for_username(actor_username)
+	if clan_id == "":
+		return
+	var now_ts = int(Time.get_unix_time_from_system())
+	for owner_username in player_post_names.keys():
+		if owner_username == actor_username:
+			continue  # _touch_post_tended_at already handled the actor's own posts
+		var posts = player_post_names[owner_username]
+		for i in range(posts.size()):
+			var meta = posts[i]
+			if String(meta.get("clan_id", "")) != clan_id:
+				continue
+			var c = meta.get("center", Vector2i.ZERO)
+			var cx: int
+			var cy: int
+			if c is Vector2i:
+				cx = c.x
+				cy = c.y
+			else:
+				cx = int(c.get("x", 0))
+				cy = int(c.get("y", 0))
+			var meta_for_compute = meta.duplicate()
+			meta_for_compute["_owner"] = owner_username
+			var radius = _compute_effective_post_radius(meta_for_compute)
+			var dx = float(x - cx)
+			var dy = float(y - cy)
+			var d = sqrt(dx * dx + dy * dy)
+			if d <= float(radius):
+				player_post_names[owner_username][i]["last_tended_at"] = now_ts
+				return  # one post per tick is enough
+
+func _find_post_at_current_tile(x: int, y: int) -> Dictionary:
+	"""Return {found, owner, post_index, meta} for the post whose enclosure
+	contains (x, y). Returns {"found": false} otherwise. Used by the
+	/clanpost share + revert commands so the player just stands inside their
+	post to act on it."""
+	var key = Vector2i(x, y)
+	if not enclosure_tile_lookup.has(key):
+		return {"found": false}
+	var hit = enclosure_tile_lookup[key]
+	var owner = String(hit.get("owner", ""))
+	var enc_idx = int(hit.get("enclosure_idx", -1))
+	if owner == "" or enc_idx < 0:
+		return {"found": false}
+	if not player_post_names.has(owner) or enc_idx >= player_post_names[owner].size():
+		return {"found": false}
+	return {"found": true, "owner": owner, "post_index": enc_idx, "meta": player_post_names[owner][enc_idx]}
+
+func handle_clan_post_share(peer_id: int, _message: Dictionary) -> void:
+	"""Owner stands inside their post → shares with their clan. No-op if already
+	shared, owner isn't in a clan, or actor isn't the owner."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You must be in a clan to share a post.[/color]"})
+		return
+	var hit = _find_post_at_current_tile(int(character.x), int(character.y))
+	if not hit.get("found", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Stand inside the post you want to share.[/color]"})
+		return
+	var owner = String(hit.owner)
+	if owner != username:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Only the post owner can share it with a clan.[/color]"})
+		return
+	var post_index = int(hit.post_index)
+	var meta = player_post_names[username][post_index]
+	if String(meta.get("clan_id", "")) == clan_id:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]This post is already shared with your clan.[/color]"})
+		return
+	player_post_names[username][post_index]["clan_id"] = clan_id
+	persistence.set_post_clan_id(username, post_index, clan_id)
+	var post_name = String(meta.get("name", "your post"))
+	if post_name == "":
+		post_name = "your post"
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]✦ Shared %s with your clan. Members can now build, demolish, and refresh the decay timer.[/color]" % post_name})
+	# Notify other online clan members so they know they can now build here.
+	for other_peer in peers:
+		if other_peer == peer_id or not peers[other_peer].get("authenticated", false):
+			continue
+		var other_acc = String(peers[other_peer].get("account_id", ""))
+		if other_acc == "" or persistence.get_account_clan_id(other_acc) != clan_id:
+			continue
+		send_to_peer(other_peer, {"type": "text", "message": "[color=#9ACD32]✦ Clan post available — %s shared %s with the clan.[/color]" % [String(character.name), post_name]})
+
+func handle_clan_post_revert(peer_id: int, _message: Dictionary) -> void:
+	"""Owner stands inside their shared post → reverts it to private."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var username = _get_username(peer_id)
+	var hit = _find_post_at_current_tile(int(character.x), int(character.y))
+	if not hit.get("found", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Stand inside the post you want to make private again.[/color]"})
+		return
+	var owner = String(hit.owner)
+	if owner != username:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]Only the post owner can revert it to private.[/color]"})
+		return
+	var post_index = int(hit.post_index)
+	var meta = player_post_names[username][post_index]
+	var existing_clan = String(meta.get("clan_id", ""))
+	if existing_clan == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]This post isn't shared with any clan.[/color]"})
+		return
+	player_post_names[username][post_index]["clan_id"] = ""
+	persistence.set_post_clan_id(username, post_index, "")
+	var post_name = String(meta.get("name", "your post"))
+	if post_name == "":
+		post_name = "your post"
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]✦ %s is private again — only you can build, demolish, and reset its decay timer.[/color]" % post_name})
 
 
 func _find_player_post_at(x: int, y: int, username: String) -> Dictionary:
@@ -34021,6 +34235,7 @@ func handle_gm_build_test_post(peer_id: int, message: Dictionary):
 			"tier": int(last.get("tier", DEFAULT_PLAYER_POST_TIER)),
 			"bubble_radius": int(last.get("bubble_radius", DEFAULT_PLAYER_POST_BUBBLE_RADIUS)),
 			"account_id": String(last.get("account_id", peers[peer_id].get("account_id", ""))),
+			"clan_id": String(last.get("clan_id", "")),
 		})
 
 	# _update_guard_cache cascades into _update_player_post_bubble_cache, so
