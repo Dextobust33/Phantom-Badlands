@@ -77,6 +77,22 @@ const QUALITY_NAMES = {
 # XP per craft based on recipe difficulty
 const BASE_CRAFT_XP = 25
 
+# ===== CRAFTING BOOST CONFIG =====
+# Audit #4 — Crafting Minigame overhaul (Slice 1).
+# Players can opt into spending extra materials for a better quality distribution.
+# - mat_mult: multiplier applied to every recipe material cost
+# - shift:    +/- percentage-point shifts applied to each quality bucket
+#             (applied AFTER the base roll_quality distribution is computed,
+#             then renormalized to sum to 100)
+# - no_poor:  if true, Poor outcomes are converted to Standard (Master floor)
+# Specialist crafters (Lv 40+ in the recipe's skill) get -20% off mat_mult cost;
+# Lv 20-39 get -10%. See apply_specialist_discount().
+const BOOST_CONFIG = {
+	"none":    {"mat_mult": 1.0, "shift": {"masterwork": 0,  "fine": 0, "standard": 0,   "poor": 0},   "no_poor": false},
+	"refined": {"mat_mult": 1.5, "shift": {"masterwork": 5,  "fine": 5, "standard": -5,  "poor": -5},  "no_poor": false},
+	"master":  {"mat_mult": 2.5, "shift": {"masterwork": 15, "fine": 5, "standard": -10, "poor": -10}, "no_poor": true}
+}
+
 # ===== UPGRADE & ENCHANTMENT CAPS =====
 # Max upgrade levels that can be applied to a single item via crafting
 const MAX_UPGRADE_LEVELS = 50
@@ -3922,30 +3938,34 @@ static func calculate_success_chance(skill_level: int, difficulty: int, post_bon
 		base = 50 + (skill_level - difficulty) * 2 + post_bonus
 	return clampi(base, 5, 95)  # Always 5-95% chance
 
-static func roll_quality(skill_level: int, difficulty: int, post_bonus: int = 0, minigame_score: int = -1) -> CraftingQuality:
-	"""Roll for crafting quality based on skill vs difficulty"""
+static func roll_quality(skill_level: int, difficulty: int, post_bonus: int = 0, minigame_score: int = -1, quality_shift: Dictionary = {}, no_poor: bool = false) -> CraftingQuality:
+	"""Roll for crafting quality. quality_shift/no_poor come from BOOST_CONFIG.
+	Implementation: compute the boosted distribution, then roll a single 0-99
+	against the cumulative thresholds so the boost is honored exactly."""
 	var success_chance = calculate_success_chance(skill_level, difficulty, post_bonus, minigame_score)
+	var dist = quality_distribution(success_chance, quality_shift, no_poor)
 	var roll = randi() % 100
-
-	# Quality thresholds based on success chance vs roll
-	# Higher skill = more likely to get better quality
-	if roll > success_chance + 30:
-		return CraftingQuality.POOR  # No complete failures — always produce something
-	elif roll > success_chance + 15:
+	# Walk the buckets in worst→best order so cumulative thresholds map cleanly
+	var cum = dist["poor"]
+	if roll < cum:
 		return CraftingQuality.POOR
-	elif roll > success_chance - 15:
+	cum += dist["standard"]
+	if roll < cum:
 		return CraftingQuality.STANDARD
-	elif roll > success_chance - 30:
+	cum += dist["fine"]
+	if roll < cum:
 		return CraftingQuality.FINE
-	else:
-		return CraftingQuality.MASTERWORK
+	return CraftingQuality.MASTERWORK
 
-static func quality_distribution(success_chance: int) -> Dictionary:
+static func quality_distribution(success_chance: int, quality_shift: Dictionary = {}, no_poor: bool = false) -> Dictionary:
 	"""Audit #8 Layer 5 — return the % chance of each quality bucket given a
 	success_chance value. Mirrors roll_quality's bucket logic exactly: walks
 	all 100 possible roll values (0-99 from `randi() % 100`) and tallies which
 	quality each one produces. Returns {poor, standard, fine, masterwork} %s
-	(integers, summing to 100). Player-facing odds preview before crafting."""
+	(integers, summing to 100). Player-facing odds preview before crafting.
+
+	quality_shift / no_poor come from BOOST_CONFIG and let the player buy a
+	better distribution by spending extra materials."""
 	var counts := {"poor": 0, "standard": 0, "fine": 0, "masterwork": 0}
 	for roll in range(100):
 		if roll > success_chance + 15:
@@ -3956,7 +3976,40 @@ static func quality_distribution(success_chance: int) -> Dictionary:
 			counts["fine"] += 1
 		else:
 			counts["masterwork"] += 1
+
+	# Apply boost shifts (additive %-points), clamp, then renormalize to sum to 100.
+	if quality_shift.size() > 0 or no_poor:
+		for k in ["poor", "standard", "fine", "masterwork"]:
+			counts[k] = max(0, counts[k] + int(quality_shift.get(k, 0)))
+		if no_poor:
+			counts["standard"] += counts["poor"]
+			counts["poor"] = 0
+		var total = counts["poor"] + counts["standard"] + counts["fine"] + counts["masterwork"]
+		if total != 100 and total > 0:
+			# Renormalize by scaling, then patch any rounding drift onto Standard
+			var scaled := {}
+			var running := 0
+			for k in ["poor", "standard", "fine", "masterwork"]:
+				scaled[k] = int(round(float(counts[k]) * 100.0 / float(total)))
+				running += scaled[k]
+			scaled["standard"] += 100 - running
+			counts = scaled
 	return counts
+
+static func apply_specialist_discount(mat_mult: float, job_level: int, is_specialist: bool) -> float:
+	"""Specialist (Halfling/Knight matched to the recipe's skill) gets a discount
+	on Boost material cost. Lv 40+: -20%, Lv 20-39: -10%, below that: no discount.
+	Non-specialists pay full mat_mult. The discount only applies to the EXTRA
+	cost above 1.0× — base recipe cost is never reduced."""
+	if mat_mult <= 1.0 or not is_specialist:
+		return mat_mult
+	var extra = mat_mult - 1.0
+	var discount = 0.0
+	if job_level >= 40:
+		discount = 0.2
+	elif job_level >= 20:
+		discount = 0.1
+	return 1.0 + extra * (1.0 - discount)
 
 static func calculate_craft_xp(difficulty: int, quality: CraftingQuality) -> int:
 	"""Calculate XP gained from crafting"""

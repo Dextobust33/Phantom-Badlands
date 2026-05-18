@@ -18937,6 +18937,9 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	var quantity: int = int(session.get("craft_quantity", 1))
 	var temper_target: String = String(session.get("craft_temper_target", ""))
 	var is_tempered: bool = bool(session.get("craft_is_tempered", false))
+	var boost_tier: String = String(session.get("craft_boost_tier", "none"))
+	var boost_shift: Dictionary = session.get("craft_boost_shift", {})
+	var boost_no_poor: bool = bool(session.get("craft_boost_no_poor", false))
 
 	# v0.9.375 — apply slot bonuses BEFORE _finalize_craft.
 	# REFUND: each slot returns 25% of consumed materials (cap 100%).
@@ -18956,7 +18959,7 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 
 	# Roll quality with derived score, then hand off to the existing craft
 	# finalize (which sends craft_result + grants XP/inventory).
-	var quality: int = CraftingDatabaseScript.roll_quality(skill_level, int(recipe.get("difficulty", 1)), total_bonus, best_score)
+	var quality: int = CraftingDatabaseScript.roll_quality(skill_level, int(recipe.get("difficulty", 1)), total_bonus, best_score, boost_shift, boost_no_poor)
 
 	# Stash session for _finalize_craft's tool branch to read, then send
 	# the panel-close message and run finalize. Erase active_gathering
@@ -21203,6 +21206,24 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		is_tempered = false
 		temper_target = ""
 
+	# Audit #4 — Crafting Boost (Slice 1). Player opts into spending extra
+	# materials for a better quality distribution. Mutually exclusive with
+	# tempered (which already gambles materials for a different reward).
+	var boost_tier = String(message.get("boost_tier", "none"))
+	if not CraftingDatabaseScript.BOOST_CONFIG.has(boost_tier):
+		boost_tier = "none"
+	if is_tempered and boost_tier != "none":
+		boost_tier = "none"  # tempered wins; silently ignore boost
+	var _boost_cfg = CraftingDatabaseScript.BOOST_CONFIG[boost_tier]
+	var _boost_mat_mult: float = float(_boost_cfg.get("mat_mult", 1.0))
+	# Specialist discount on the EXTRA boost cost (not the base 1.0×).
+	var _is_specialist = character.can_use_specialist_recipe(skill_name)
+	var _job_name = character.CRAFT_SKILL_TO_JOB.get(skill_name.to_lower(), "")
+	var _job_level = int(character.job_levels.get(_job_name, 1)) if _job_name != "" else 1
+	_boost_mat_mult = CraftingDatabaseScript.apply_specialist_discount(_boost_mat_mult, _job_level, _is_specialist)
+	var _boost_shift: Dictionary = _boost_cfg.get("shift", {})
+	var _boost_no_poor: bool = bool(_boost_cfg.get("no_poor", false))
+
 	# Bulk crafting: read quantity (only for bulk-craftable types)
 	var quantity = clampi(int(message.get("quantity", 1)), 1, 99)
 	var is_bulk_type = recipe.output_type in CraftingDatabaseScript.BULK_CRAFTABLE_TYPES
@@ -21210,9 +21231,11 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		quantity = 1
 	if is_tempered:
 		quantity = 1  # No bulk tempering
+	if boost_tier != "none":
+		quantity = 1  # No bulk boost — one premium craft at a time
 
-	# Material scale factor: tempered crafting costs 50% more materials
-	var material_scale = 1.5 if is_tempered else 1.0
+	# Material scale factor: tempered = 1.5×, boost = boost_mat_mult, otherwise 1.0×
+	var material_scale: float = 1.5 if is_tempered else _boost_mat_mult
 
 	# Auto-pull from player's own market listings at this post to cover any backpack shortage.
 	# Deducts per-unit Valor from the player (symmetric to cancelling listings).
@@ -21303,7 +21326,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				]
 			})
 
-	# Check materials (scaled by quantity and temper factor)
+	# Check materials (scaled by quantity, temper factor, or boost mult)
 	if is_tempered:
 		# Manual check: 1.5× materials needed (ceili to round up)
 		var has_all = true
@@ -21318,6 +21341,22 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 				break
 		if not has_all:
 			send_to_peer(peer_id, {"type": "error", "message": "Tempered crafting requires 50%% more materials!"})
+			return
+	elif boost_tier != "none":
+		# Boost: extra materials based on _boost_mat_mult (specialist-discounted)
+		var has_all = true
+		for mat_id in recipe.materials:
+			var needed = ceili(recipe.materials[mat_id] * _boost_mat_mult)
+			if mat_id.begins_with("@"):
+				if DropTables.get_total_for_group(mat_id, character.crafting_materials) < needed:
+					has_all = false
+					break
+			elif character.crafting_materials.get(mat_id, 0) < needed:
+				has_all = false
+				break
+		if not has_all:
+			var _boost_label = "Refined" if boost_tier == "refined" else "Master"
+			send_to_peer(peer_id, {"type": "error", "message": "%s Boost requires %d%% more materials!" % [_boost_label, int(round((_boost_mat_mult - 1.0) * 100))]})
 			return
 	elif quantity > 1:
 		if not character.has_crafting_materials_scaled(recipe.materials, quantity):
@@ -21398,6 +21437,9 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"craft_quantity": quantity,
 			"craft_temper_target": temper_target,
 			"craft_is_tempered": is_tempered,
+			"craft_boost_tier": boost_tier,
+			"craft_boost_shift": _boost_shift,
+			"craft_boost_no_poor": _boost_no_poor,
 		}
 
 		var craft_initial_slots: Array = []
@@ -21426,7 +21468,7 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 
 	# Auto-skip: trivially easy recipe score=3, manual skip score=1 (lower quality)
 	var auto_score = 3 if skill_gap >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP else 1
-	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, tempered_bonus, auto_score)
+	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, tempered_bonus, auto_score, _boost_shift, _boost_no_poor)
 	var quality_name = CraftingDatabaseScript.QUALITY_NAMES[quality]
 	var quality_color = CraftingDatabaseScript.QUALITY_COLORS[quality]
 
