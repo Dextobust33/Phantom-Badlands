@@ -20231,6 +20231,13 @@ func handle_server_message(message: Dictionary):
 		# Audit #14 Slice 2 — live invitation alert
 		"clan_invitation_received":
 			_handle_clan_invitation_received(message)
+		# Audit #14 PvP Slice B (v0.9.552) — duel request modal
+		"duel_request":
+			_handle_duel_request(message)
+		"duel_resolved":
+			# Server already sent a chat message via "text"; structured payload
+			# reserved for future polish (sound, modal). V1 just no-op.
+			pass
 		# Audit #13 Slice 2 — Bestiary panel feed
 		"bestiary_data":
 			_handle_bestiary_data(message)
@@ -21086,7 +21093,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors", "duel",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -22261,6 +22268,32 @@ func process_command(text: String):
 				send_to_server({"type": "mentor_list"})
 			else:
 				display_game("You don't have a character yet")
+		"duel":
+			# Audit #14 PvP Slice B (v0.9.552) — Duel request. Bilateral consent,
+			# agreed stakes. Usage:
+			#   /duel <player>            — duel with no stakes (bragging rights)
+			#   /duel <player> valor      — wager 10% of valor on the outcome
+			if not has_character:
+				display_game("You don't have a character yet")
+			else:
+				var dp = text.split(" ", false)
+				if dp.size() < 2:
+					display_game("[color=#FF8800]Usage: /duel <player> [valor][/color]")
+					display_game("  [color=#888888]Adds the player as a duel target. They must accept before the duel resolves.[/color]")
+					display_game("  [color=#888888]Optional 'valor' wager: 10%% of your current valor.[/color]")
+				else:
+					var target_name = dp[1].strip_edges()
+					var stakes = "none"
+					if dp.size() >= 3:
+						var st = dp[2].strip_edges().to_lower()
+						if st in ["valor", "valor_10", "v"]:
+							stakes = "valor_10"
+						elif st in ["none", "nothing", "n", "free"]:
+							stakes = "none"
+						else:
+							display_game("[color=#FF8800]Unknown stakes '%s'. Use 'valor' or omit for none.[/color]" % st)
+							return
+					send_to_server({"type": "duel_request", "target": target_name, "stakes": stakes})
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -28074,6 +28107,65 @@ func _handle_bestiary_data(message: Dictionary) -> void:
 	summary["player_class"] = String(character_data.get("class", ""))
 	if bestiary_panel.visible:
 		bestiary_panel.refresh(summary)
+
+var _duel_request_popup: AcceptDialog = null
+var _duel_request_challenger_peer: int = -1
+
+func _handle_duel_request(message: Dictionary) -> void:
+	"""Audit #14 PvP Slice B (v0.9.552) — incoming duel request modal.
+	Show challenger name + stakes summary + Accept/Decline buttons. Auto-pause
+	UX: modal blocks input until the player responds (or timeout — V1 has no
+	client-side TTL, server times out if no response, so player can ignore)."""
+	var challenger_name = String(message.get("challenger_name", "Unknown"))
+	var challenger_peer = int(message.get("challenger_peer_id", -1))
+	var stakes_label = String(message.get("stakes_label", ""))
+	var stakes = String(message.get("stakes", "none"))
+	var ttl = int(message.get("ttl_sec", 60))
+	_duel_request_challenger_peer = challenger_peer
+	# Build / reuse the dialog
+	if _duel_request_popup == null or not is_instance_valid(_duel_request_popup):
+		_duel_request_popup = AcceptDialog.new()
+		_duel_request_popup.exclusive = true
+		_duel_request_popup.dialog_hide_on_ok = false
+		_duel_request_popup.get_ok_button().visible = false
+		add_child(_duel_request_popup)
+		_duel_request_popup.custom_action.connect(_on_duel_request_response)
+	# Clear any prior buttons
+	for child in _duel_request_popup.get_children():
+		if child is Button and child.has_meta("duel_request_button"):
+			child.queue_free()
+	_duel_request_popup.title = "⚔ Duel Request"
+	var stakes_line = "Stakes: %s" % stakes_label
+	if stakes == "valor_10":
+		var ch_w = int(message.get("challenger_wager", 0))
+		var tg_w = int(message.get("target_wager", 0))
+		stakes_line += "\n  • %s wagers %d valor\n  • You wager %d valor" % [challenger_name, ch_w, tg_w]
+	_duel_request_popup.dialog_text = (
+		"%s is challenging you to a duel.\n\n"
+		+ "%s\n\n"
+		+ "Resolved instantly via dice roll comparing both fighters' duel power "
+		+ "(level + STR + DEX + weapon damage, ±30%% variance).\n\n"
+		+ "[%ds to respond]"
+	) % [challenger_name, stakes_line, ttl]
+	var btn_decline = _duel_request_popup.add_button("Decline", true, "decline")
+	btn_decline.set_meta("duel_request_button", true)
+	var btn_accept = _duel_request_popup.add_button("Accept", true, "accept")
+	btn_accept.set_meta("duel_request_button", true)
+	_duel_request_popup.popup_centered(Vector2(500, 280))
+	# Also chat the request so it's in the log even if the player dismisses
+	# the modal accidentally.
+	display_chat("[color=#9F70FF]⚔ %s challenges you to a duel — %s.[/color]" % [challenger_name, stakes_label])
+
+func _on_duel_request_response(action: String) -> void:
+	if _duel_request_challenger_peer < 0:
+		return
+	if action == "accept":
+		send_to_server({"type": "duel_accept", "challenger_peer_id": _duel_request_challenger_peer})
+	elif action == "decline":
+		send_to_server({"type": "duel_decline", "challenger_peer_id": _duel_request_challenger_peer})
+	if _duel_request_popup != null and is_instance_valid(_duel_request_popup):
+		_duel_request_popup.hide()
+	_duel_request_challenger_peer = -1
 
 func _handle_clan_invitation_received(message: Dictionary) -> void:
 	"""Live invitation alert — fires when another player invites you. Shown as
