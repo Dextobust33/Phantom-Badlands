@@ -17288,6 +17288,20 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		# Award valor via persistence (quest_manager no longer handles this)
 		var valor_reward = result.rewards.get("valor", 0)
 
+		# Audit #3 Tutorial (v0.9.562) — per-stage starter-kit reward. Chain
+		# stages can carry a `starter_kit_slot` field ("weapon" / "armor" /
+		# "helm" / "boots" / "shield" / "accessory") that resolves to a Tier 1
+		# item via drop_tables.get_starter_kit_item. Designed for the
+		# Pathfinder's Trial starter chain so a zero-gear character builds up
+		# their equipment slot-by-slot through safe gather/kill loops.
+		var starter_kit_slot = String(quest.get("starter_kit_slot", ""))
+		var starter_kit_msg = ""
+		if starter_kit_slot != "" and drop_tables:
+			var kit_item = drop_tables.get_starter_kit_item(starter_kit_slot)
+			if not kit_item.is_empty():
+				character.add_item(kit_item)
+				starter_kit_msg = "[color=#9ACD32]Starter kit reward: %s acquired![/color]\n" % kit_item.get("name", "starter item")
+
 		# Audit #6 Slice 1 — chain bonus on final-stage turn-in
 		var chain_id = String(quest.get("chain_id", ""))
 		var chain_stage = int(quest.get("chain_stage", 0))
@@ -17376,8 +17390,10 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 		if result.leveled_up:
 			unlocked_abilities = character.get_newly_unlocked_abilities(old_level, result.new_level)
 
-		# Stitch chain progress message into the result message
+		# Stitch starter-kit reward + chain progress messages into the result.
 		var full_msg = result.message
+		if starter_kit_msg != "":
+			full_msg += "\n" + starter_kit_msg
 		if chain_progress_msg != "":
 			full_msg += "\n" + chain_progress_msg
 

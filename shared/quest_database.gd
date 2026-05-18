@@ -91,6 +91,8 @@ const CHAIN_TITLES = {
 	# Audit #6 Slice 18 — T9 chain titles.
 	"chaos_unmaker":      {"name": "Chaos Unmaker",      "color": "#800080"},
 	"end_walker":         {"name": "End Walker",         "color": "#C5B358"},
+	# Audit #3 Tutorial Initiative (v0.9.562) — Pathfinder's Trial starter chain.
+	"pathfinder":         {"name": "Pathfinder",         "color": "#9ACD32"},
 }
 
 static func get_chain_title(title_id: String) -> Dictionary:
@@ -1451,6 +1453,84 @@ const QUESTS = {
 		"chain_total": 3,
 		"next_in_chain": "",
 		"chain_bonus": {"valor": 1300, "egg": "Entropy", "home_stones": ["home_stone_egg", "home_stone_equipment"], "chain_title": "end_walker"}
+	},
+	# ===== Audit #3 Tutorial Initiative (v0.9.562) — Pathfinder's Trial =====
+	# 4-stage starter chain at Haven. Designed for fresh characters with empty
+	# equipment slots — each stage rewards one piece of class-agnostic Tier 1
+	# gear via the new starter_kit_slot field (resolved server-side via
+	# drop_tables.get_starter_kit_item). Tasks stay inside the starter post
+	# bubble (fishing + mining nodes near Haven, weakest mobs in the safe ring)
+	# so a zero-gear character can finish the chain without dying. Final stage
+	# adds a companion egg + Pathfinder title + bonus valor.
+	"pathfinder_1": {
+		"id": "pathfinder_1",
+		"name": "Pathfinder's Trial I — Trail Rations",
+		"description": "Welcome to the Badlands. Before you head out, gather a meal. Fish 3 times at the water near Haven.\n\n[color=#9ACD32]STARTER CHAIN: 4 stages | This stage rewards a weapon[/color]",
+		"type": QuestType.GATHER,
+		"trading_post": "haven",
+		"target": 3,
+		"gather_job": "fishing",
+		"rewards": {"xp": 60, "valor": 10},
+		"is_daily": false,
+		"prerequisite": "",
+		"chain_id": "pathfinder",
+		"chain_stage": 1,
+		"chain_total": 4,
+		"next_in_chain": "pathfinder_2",
+		"chain_bonus": {},
+		"starter_kit_slot": "weapon"
+	},
+	"pathfinder_2": {
+		"id": "pathfinder_2",
+		"name": "Pathfinder's Trial II — Quarry Stones",
+		"description": "A well-armored traveler outlives a clever one. Mine 2 ore from the rock veins near Haven.\n\n[color=#9ACD32]STARTER CHAIN: 4 stages | This stage rewards armor[/color]",
+		"type": QuestType.GATHER,
+		"trading_post": "haven",
+		"target": 2,
+		"gather_job": "mining",
+		"rewards": {"xp": 80, "valor": 15},
+		"is_daily": false,
+		"prerequisite": "pathfinder_1",
+		"chain_id": "pathfinder",
+		"chain_stage": 2,
+		"chain_total": 4,
+		"next_in_chain": "pathfinder_3",
+		"chain_bonus": {},
+		"starter_kit_slot": "armor"
+	},
+	"pathfinder_3": {
+		"id": "pathfinder_3",
+		"name": "Pathfinder's Trial III — Mark the Edge",
+		"description": "Trail's worn — now test the ground. Defeat 2 monsters near Haven.\n\n[color=#9ACD32]STARTER CHAIN: 4 stages | This stage rewards boots[/color]",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "haven",
+		"target": 2,
+		"rewards": {"xp": 100, "valor": 20},
+		"is_daily": false,
+		"prerequisite": "pathfinder_2",
+		"chain_id": "pathfinder",
+		"chain_stage": 3,
+		"chain_total": 4,
+		"next_in_chain": "pathfinder_4",
+		"chain_bonus": {},
+		"starter_kit_slot": "boots"
+	},
+	"pathfinder_4": {
+		"id": "pathfinder_4",
+		"name": "Pathfinder's Trial IV — Take the Trail",
+		"description": "One more pass before you leave the safety of the post. Defeat 3 more monsters and earn the right to call yourself a Pathfinder.\n\n[color=#9ACD32]STARTER CHAIN: 4 stages | Final reward: ring + 100 valor + companion egg + Pathfinder title[/color]",
+		"type": QuestType.KILL_ANY,
+		"trading_post": "haven",
+		"target": 3,
+		"rewards": {"xp": 150, "valor": 25},
+		"is_daily": false,
+		"prerequisite": "pathfinder_3",
+		"chain_id": "pathfinder",
+		"chain_stage": 4,
+		"chain_total": 4,
+		"next_in_chain": "",
+		"chain_bonus": {"valor": 100, "egg": "Goblin", "chain_title": "pathfinder"},
+		"starter_kit_slot": "accessory"
 	}
 }
 
