@@ -3257,6 +3257,33 @@ const RECIPES = {
 		"craft_time": 4.0,
 		"description": "A small gilded shrine etched with sigils. Blocks movement — a prestige centerpiece. Sits between Well (skill 18) and Fountain (22) in the high-tier blocking lineup."
 	},
+	# Audit #12 v0.9.534 — two more cosmetic Construction recipes. Lectern is a
+	# scholarly blocking prop at mid-skill; Mosaic is the first walkable floor
+	# decoration in the catalogue — purely visual, no movement/LOS effect.
+	"lectern_build": {
+		"name": "Lectern",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 12,
+		"difficulty": 17,
+		"materials": {"wooden_plank": 2, "ink": 1, "leather": 1},
+		"output_type": "structure",
+		"structure_type": "lectern",
+		"specialist_only": false,
+		"craft_time": 2.0,
+		"description": "A wooden reading lectern with a scribed tome. Blocks movement — scholarly flavor for libraries, scribe halls, or sermon platforms inside your settlement."
+	},
+	"mosaic_build": {
+		"name": "Mosaic",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 17,
+		"difficulty": 23,
+		"materials": {"stone_block": 3, "magic_dust": 1, "ink": 1},
+		"output_type": "structure",
+		"structure_type": "mosaic",
+		"specialist_only": false,
+		"craft_time": 3.0,
+		"description": "An ornate floor mosaic of stone tesserae bound with arcane pigment. WALKABLE — the first floor decoration in the catalogue. Place a few in a row for a grand entryway path."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players

@@ -24515,8 +24515,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.534 — Audit #11 threat distance + Audit #12 catalogue 19 → 21.
+	display_game("[color=#00FF00]v0.9.534[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Threat HUD gains a tile-distance readout; the cosmetic catalogue adds its first walkable floor decoration.[/color]")
+	display_game("  • [b]Threat tile distance[/b] (Audit #11). The [color=#FF6600]⚠ Threat:[/color] tag on the Area line now appends [color=#FFBBAA](N tiles)[/color] showing the actual distance to the nearest spillover dungeon. Lets you gauge \"is this threat right on top of me, or 60 tiles off?\" at a glance.")
+	display_game("  • [b]Lectern + Mosaic[/b] (Audit #12). Lectern ([color=#8B6914]l[/color], blocks movement, Construction skill 12, 2 wooden plank + 1 ink + 1 leather) — wooden reading lectern with a scribed tome; library/sermon flavor. Mosaic ([color=#C8B0DD]m[/color], [b]walkable floor decoration[/b], Construction skill 17, 3 stone block + 1 magic dust + 1 ink) — the first floor-decoration entry in the catalogue. Place a row for grand entryways.")
+	display_game("  • Catalogue now spans 21 structures across Construction skill 3 → 25, with mixed walkable / blocking / line-of-sight blocking / floor types. Audit progress: #11 ~98% → ~99%, #12 ~97% → ~98%.")
+	display_game("")
+
 	# v0.9.533 — Audit #14 /afk status + Audit #12 catalogue 17 → 19.
-	display_game("[color=#00FF00]v0.9.533[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.533[/color]")
 	display_game("  [color=#FFD700]Away-from-keyboard status, plus two more cosmetic buildables.[/color]")
 	display_game("  • [b]/afk status[/b] (Audit #14). [color=#9ACD32]/afk[/color] (alias [color=#9ACD32]/away[/color]) marks you as away with an optional reason: [color=#9ACD32]/afk grabbing coffee[/color]. Your name now renders [color=#FFAA66][AFK][/color] in the players list and /clist roster; clanmates' dots flip to orange ●. Auto-clears the moment you move, chat, or use [color=#9ACD32]/back[/color] — no need to remember to toggle off.")
 	display_game("  • [b]Hedge + Shrine[/b] (Audit #12). Hedge ([color=#4A8A4A]h[/color], blocks movement AND line-of-sight, Construction skill 8, 1 wooden plank + 3 herb + 1 rope) is a soft-wall greenery section — break up sightlines without harsh stone. Shrine ([color=#DAA520]q[/color], blocks movement, Construction skill 19, 3 stone block + 2 magic dust + 1 arcane crystal + 1 heartwood) is a gilded prestige centerpiece. Catalogue spans 19 structures.")
@@ -24548,13 +24556,6 @@ func display_changelog():
 	display_game("  • Three chat channels now color-coded: [color=#FF69B4]whisper[/color], [color=#88FFCC]clan[/color], [color=#FFAA66]party[/color]. Audit #14 progress: ~82% → ~85%.")
 	display_game("")
 
-	# v0.9.529 — Audit #14 clan chat + Audit #15 help refresh.
-	display_game("[color=#00FFFF]v0.9.529[/color]")
-	display_game("  [color=#FFD700]Clan-channel chat plus a refreshed help page Recent Additions section.[/color]")
-	display_game("  • [b]Clan chat[/b] (Audit #14). New [color=#9ACD32]/c <message>[/color] command (aliases [color=#9ACD32]/cc[/color], [color=#9ACD32]/clanchat[/color]) broadcasts to every online member of your clan. Renders with [color=#88FFCC][CLAN][/color] channel marker + clan banner color + tag. Empty clans see [color=#808080](No other clan members online.)[/color] confirmation so you know whether anyone heard you. Server gates by clan membership; non-members get the standard \"join a clan\" hint.")
-	display_game("  • [b]Help page refresh[/b] (Audit #15). RECENT ADDITIONS section now includes [color=#9ACD32]/c[/color] clan chat, [color=#FFD700][NEW Lv X][/color] whisper tag for mentor-eligible players, the twelve first-touch tutorial overlays (incl. gather + equip), the no-real-time-gates rule clarification, and the full 15-structure cosmetic catalogue.")
-	display_game("  • Audit progress: #14 ~78% → ~82%, #15 ~92% → ~94%.")
-	display_game("")
 
 
 
@@ -25639,11 +25640,16 @@ func update_region_label():
 			var mtype = String(hud_threat_corridor.get("monster_type", ""))
 			var tcolor = String(hud_threat_corridor.get("color", "#FF6600"))
 			var tcount = int(hud_threat_corridor.get("threat_count", 1))
+			# Audit #11 v0.9.534 — tile distance to nearest threat dungeon.
+			var tdist = int(hud_threat_corridor.get("distance", 0))
 			if dname != "" and mtype != "":
 				var more_md = ""
 				if tcount > 1:
 					more_md = " [color=#FF8888](+%d more)[/color]" % (tcount - 1)
-				threat_tag = " [color=%s]⚠ Threat: %s spillover from %s[/color]%s" % [tcolor, mtype, dname, more_md]
+				var dist_md = ""
+				if tdist > 0:
+					dist_md = " [color=#FFBBAA](%d tiles)[/color]" % tdist
+				threat_tag = " [color=%s]⚠ Threat: %s spillover from %s[/color]%s%s" % [tcolor, mtype, dname, dist_md, more_md]
 		area_line = "[color=#9ACD32]Area:[/color] [color=#FF8800]Lv ~%d[/color]%s%s%s" % [hud_area_level, danger, apex_tag, threat_tag]
 
 	# Slice 6k — Region line now shows the authored region name (e.g.,
@@ -27796,7 +27802,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.527 — crate + cairn added.
 			# v0.9.531 — pedestal + cage added.
 			# v0.9.533 — hedge + shrine added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine"]:
+			# v0.9.534 — lectern + mosaic added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()
