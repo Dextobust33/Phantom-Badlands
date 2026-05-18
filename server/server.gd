@@ -1776,6 +1776,9 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_clan_post_share(peer_id, message)
 		"clan_post_revert":
 			handle_clan_post_revert(peer_id, message)
+		# Audit #14 Slice F v2 (v0.9.559) — clan-shared post discovery.
+		"clan_posts_list":
+			handle_clan_posts_list(peer_id)
 		# Audit #14 v0.9.517 — Mentor Badge MVP.
 		"mentor_toggle":
 			handle_mentor_toggle(peer_id, message)
@@ -28292,6 +28295,25 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 	var owner_clan = persistence.get_clan_by_username(owner_username)
 	var owner_clan_tag = String(owner_clan.get("tag", ""))
 	var owner_clan_color = String(owner_clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR)) if not owner_clan.is_empty() else ""
+	# Audit #14 Slice F (v0.9.558) — actual shared-with-clan state from the
+	# post's clan_id field (set via /clanpost share). May differ from the
+	# owner's current clan if they re-joined a different clan after sharing.
+	# v0.9.559 surfaces this on the visual panel + drives the Share/Revert
+	# buttons in the panel UI.
+	var post_shared_clan_id = String(post_meta.get("clan_id", ""))
+	var shared_with_clan_tag = ""
+	var shared_with_clan_color = ""
+	if post_shared_clan_id != "":
+		var shared_clan = persistence.clans_data.get("clans", {}).get(post_shared_clan_id, {})
+		shared_with_clan_tag = String(shared_clan.get("tag", ""))
+		shared_with_clan_color = String(shared_clan.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
+	# Surface the viewer's current clan_id so the panel can decide whether to
+	# offer the Share button (owner must be in a clan).
+	var owner_current_clan_id = ""
+	if is_owner and viewer_peer_id >= 0 and peers.has(viewer_peer_id):
+		var v_acc = String(peers[viewer_peer_id].get("account_id", ""))
+		if v_acc != "":
+			owner_current_clan_id = persistence.get_account_clan_id(v_acc)
 	# Audit #14 v0.9.519 — Clan outpost indicator. When the viewer shares a clan
 	# with the owner, surface a flag so the panel can highlight the post as
 	# "✦ Clan Outpost." Extends the v0.9.518 tag display into useful navigation
@@ -28315,6 +28337,12 @@ func _compute_player_post_status_data(post_meta: Dictionary, owner_username: Str
 		# Audit #14 v0.9.519 — true when the viewer shares a clan with the owner
 		# AND is not the owner themselves; drives the "✦ Clan Outpost" tag.
 		"is_clan_outpost": is_clan_outpost,
+		# Audit #14 Slice F (v0.9.558) — actual shared-with-clan state. The
+		# v0.9.559 panel surfaces this + offers Share/Revert buttons for owners.
+		"is_clan_shared": post_shared_clan_id != "",
+		"shared_with_clan_tag": shared_with_clan_tag,
+		"shared_with_clan_color": shared_with_clan_color,
+		"viewer_clan_id": owner_current_clan_id,
 		"bubble_radius": radius,
 		"effective_tier": effective_tier,
 		"wilderness_tier": wilderness_tier,
@@ -28553,6 +28581,8 @@ func handle_clan_post_share(peer_id: int, _message: Dictionary) -> void:
 	if post_name == "":
 		post_name = "your post"
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]✦ Shared %s with your clan. Members can now build, demolish, and refresh the decay timer.[/color]" % post_name})
+	# v0.9.559 — refresh the post status panel so the share button flips state.
+	handle_request_post_status_visual(peer_id)
 	# Notify other online clan members so they know they can now build here.
 	for other_peer in peers:
 		if other_peer == peer_id or not peers[other_peer].get("authenticated", false):
@@ -28588,6 +28618,67 @@ func handle_clan_post_revert(peer_id: int, _message: Dictionary) -> void:
 	if post_name == "":
 		post_name = "your post"
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]✦ %s is private again — only you can build, demolish, and reset its decay timer.[/color]" % post_name})
+	# v0.9.559 — refresh the panel so the button flips back to "Share with Clan".
+	handle_request_post_status_visual(peer_id)
+
+func handle_clan_posts_list(peer_id: int) -> void:
+	"""V1 discovery surface — list every post shared with the player's clan.
+	Renders to chat (text message) with name + owner + location + last-tended
+	state. Visual panel can come later if the chat list proves out."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	var clan_id = persistence.get_account_clan_id(account_id)
+	if clan_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You must be in a clan to see clan-shared posts.[/color]"})
+		return
+	var clan_data = persistence.clans_data.get("clans", {}).get(clan_id, {})
+	var clan_tag = String(clan_data.get("tag", "?"))
+	var banner_color = String(clan_data.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
+	var matches: Array = []
+	for owner_username in player_post_names.keys():
+		var posts = player_post_names[owner_username]
+		for i in range(posts.size()):
+			var meta = posts[i]
+			if String(meta.get("clan_id", "")) != clan_id:
+				continue
+			var c = meta.get("center", Vector2i.ZERO)
+			var cx: int
+			var cy: int
+			if c is Vector2i:
+				cx = c.x
+				cy = c.y
+			else:
+				cx = int(c.get("x", 0))
+				cy = int(c.get("y", 0))
+			matches.append({
+				"name": String(meta.get("name", "[unnamed]")),
+				"owner": owner_username,
+				"x": cx,
+				"y": cy,
+				"inactivity_state": _compute_post_inactivity_state(meta),
+				"days_inactive": max(0.0, (Time.get_unix_time_from_system() - float(meta.get("last_tended_at", meta.get("created_at", Time.get_unix_time_from_system())))) / 86400.0),
+			})
+	if matches.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]No posts are currently shared with [%s][color=%s][/color]. Use [color=#9ACD32]/clanpost share[/color] to share one.[/color]" % [clan_tag, banner_color]})
+		return
+	# Stable sort: most-recently-tended first (smallest days_inactive).
+	matches.sort_custom(func(a, b): return float(a.get("days_inactive", 0)) < float(b.get("days_inactive", 0)))
+	var lines: Array = ["[color=%s]✦ Posts shared with [%s] (%d)[/color]" % [banner_color, clan_tag, matches.size()]]
+	for m in matches:
+		var name_str = String(m["name"])
+		if name_str == "":
+			name_str = "[unnamed]"
+		var inactivity_state = String(m.get("inactivity_state", "active"))
+		var state_tag = ""
+		if inactivity_state == "abandoned":
+			state_tag = "  [color=#FF4444]⚠⚠ ABANDONED[/color]"
+		elif inactivity_state == "inactive":
+			state_tag = "  [color=#FFAA44]⚠ Inactive[/color]"
+		lines.append("  [color=#9AFF9A]%s[/color]  ([color=#5F9EA0]%d, %d[/color])  owner [color=#A0C8E0]%s[/color]  last tended [color=#FFFFFF]%.1fd[/color]%s" % [
+			name_str, int(m["x"]), int(m["y"]), String(m["owner"]), float(m["days_inactive"]), state_tag,
+		])
+	send_to_peer(peer_id, {"type": "text", "message": "\n".join(lines)})
 
 
 func _find_player_post_at(x: int, y: int, username: String) -> Dictionary:
