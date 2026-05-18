@@ -5828,6 +5828,15 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					var apex_item = drop_tables._generate_item({"item_type": "apex_crystal", "rarity": "epic"}, max(1, killed_monster_level))
 					if not apex_item.is_empty():
 						all_drops.append(apex_item)
+				# Audit #10 v0.9.565 — Apex Sigil drop. 8% chance per apex variant
+				# kill. Consumable: instant full HP + resource restore (mana /
+				# stamina / energy). Apex-exclusive utility consumable — keeps
+				# players alive when biting off more than they can chew in the
+				# frontier instead of relying on inventory potion stockpile.
+				if result.get("is_apex_variant", false) and randi() % 100 < 8:
+					var sigil_item = drop_tables._generate_item({"item_type": "apex_sigil", "rarity": "epic"}, max(1, killed_monster_level))
+					if not sigil_item.is_empty():
+						all_drops.append(sigil_item)
 
 				# Combat scratch-off bag (user-requested 2026-05-14) — when the
 				# feature flag is on, we route all drops through the 16-slot
@@ -9452,6 +9461,13 @@ func handle_inventory_use(peer_id: int, message: Dictionary):
 	# Escape scroll — safe dungeon exit
 	if item_type == "escape_scroll" or item.get("item_type", "") == "escape_scroll":
 		_use_escape_scroll(peer_id, index)
+		return
+
+	# Audit #10 v0.9.565 — Apex Sigil: instant full HP + resource restore.
+	# Apex-exclusive utility consumable; keeps players alive when biting off
+	# more than they can chew in the frontier zone.
+	if item_type == "apex_sigil" or item.get("item_type", "") == "apex_sigil":
+		_use_apex_sigil(peer_id, index)
 		return
 
 	# Audit #5 discoverability — Dungeon Compass: reveals nearest world dungeon
@@ -30877,6 +30893,34 @@ func _use_escape_scroll(peer_id: int, item_index: int):
 			send_location_update(pid)
 			send_character_update(pid)
 			save_character(pid)
+
+func _use_apex_sigil(peer_id: int, item_index: int) -> void:
+	"""Audit #10 v0.9.565 — Apex Sigil consumable. Instant full HP + full
+	resource restore. Usable anywhere (including combat). Apex-exclusive
+	utility item that drops at 8% from apex variant kills."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if item_index < 0 or item_index >= character.inventory.size():
+		return
+	var item = character.inventory[item_index]
+	if String(item.get("item_type", "")) != "apex_sigil":
+		return
+	character.remove_item(item_index)
+	var pre_hp = int(character.current_hp)
+	character.current_hp = character.get_total_max_hp()
+	# Restore all three class resource pools (mana / stamina / energy) —
+	# universal across class paths so the sigil is usable by anyone.
+	character.current_mana = character.get_total_max_mana()
+	character.current_stamina = character.get_total_max_stamina()
+	character.current_energy = character.get_total_max_energy()
+	var hp_gained = character.current_hp - pre_hp
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "[color=#9F70FF]✦ The Apex Sigil flares — restored to full HP (+%d) and resources![/color]" % hp_gained,
+	})
+	send_character_update(peer_id)
+	save_character(peer_id)
 
 # ===== DUNGEON MONSTER ENTITY SYSTEM =====
 
