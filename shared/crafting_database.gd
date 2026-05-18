@@ -3295,6 +3295,35 @@ const RECIPES = {
 		"craft_time": 3.0,
 		"description": "A bronze gnomon set into a flat stone disc. WALKABLE — second floor decoration in the catalogue after Mosaic. A piece of decorative astronomy for a courtyard or scholar's garden."
 	},
+	# Audit #12 v0.9.560 — catalogue 25 → 27. Birdbath fills the skill-7 gap
+	# between Garden Plot (4) and Torch (8) as a low-tier walkable garden
+	# ornament. Beehive fills the skill-11 gap above Crate (9) as a low-mid
+	# blocking apiary prop, complementing the existing garden cluster
+	# (Garden Plot / Scarecrow).
+	"birdbath_build": {
+		"name": "Birdbath",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 7,
+		"difficulty": 10,
+		"materials": {"stone_block": 1, "wooden_plank": 1},
+		"output_type": "structure",
+		"structure_type": "birdbath",
+		"specialist_only": false,
+		"craft_time": 1.5,
+		"description": "A shallow stone basin on a carved plinth. Walkable. Low-tier garden ornament — pair with Garden Plot and Hedge for a courtyard look."
+	},
+	"beehive_build": {
+		"name": "Beehive",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 11,
+		"difficulty": 15,
+		"materials": {"wooden_plank": 2, "rope": 1, "herb": 2},
+		"output_type": "structure",
+		"structure_type": "beehive",
+		"specialist_only": false,
+		"craft_time": 2.0,
+		"description": "A stacked wooden hive humming with bees. Blocks movement. Apiary aesthetic — pair with Garden Plot and Birdbath for an orchard look."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players

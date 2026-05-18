@@ -163,6 +163,11 @@ const TILE_RENDER = {
 	# decoration in the catalogue after Mosaic).
 	"obelisk":       {"char": "I", "color": "#909090", "blocks_move": true,  "blocks_los": false},
 	"sundial":       {"char": "o", "color": "#C9A86A", "blocks_move": false, "blocks_los": false},
+	# Audit #12 v0.9.560 — catalogue 25 → 27. Birdbath is a low-tier walkable
+	# stone basin (garden ornament); Beehive is a low-mid blocking wooden hive
+	# (apiary aesthetic for orchard/garden settlements).
+	"birdbath":      {"char": "u", "color": "#87CEEB", "blocks_move": false, "blocks_los": false},
+	"beehive":       {"char": "n", "color": "#DAA520", "blocks_move": true,  "blocks_los": false},
 	"void":          {"char": " ", "color": "#111111", "blocks_move": true, "blocks_los": true},
 }
 

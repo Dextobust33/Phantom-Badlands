@@ -4680,6 +4680,8 @@ func handle_move(peer_id: int, message: Dictionary):
 	var actor_username_move = _get_username(peer_id)
 	_touch_post_tended_at(actor_username_move, new_pos.x, new_pos.y)
 	_touch_clan_post_tended_at(actor_username_move, new_pos.x, new_pos.y)
+	# Audit #14 Slice F polish v0.9.560 — first-time clan-shared post overlay.
+	_maybe_send_clan_post_hint(peer_id, new_pos.x, new_pos.y)
 
 	# Check for Infernal Forge (Fire Mountain) with Unforged Crown
 	if new_pos.x == -400 and new_pos.y == 0:
@@ -23922,7 +23924,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 const DEFAULT_MAX_PLAYER_ENCLOSURES = 5
 const MAX_ENCLOSURE_SIZE = 25  # 25x25 bounding box max
 const MAX_PLAYER_TILES = 200
-const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem"]
+const BUILDING_TYPES = ["wall", "door", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "tower", "inn", "quest_board", "storage", "blacksmith", "healer", "market", "guard", "bridge", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem", "obelisk", "sundial", "birdbath", "beehive"]
 const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT require enclosure ownership
 
 # Post-anchored world Slice 3 — player post settler bubble defaults.
@@ -24057,7 +24059,7 @@ func handle_build_place(peer_id: int, message: Dictionary):
 	if existing_tile.get("owner", "") != "":
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Someone already built here!"})
 		return
-	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem"]:
+	if existing_type in ["wall", "door", "void", "forge", "apothecary", "workbench", "enchant_table", "writing_desk", "post_marker", "market", "inn", "quest_board", "throne", "companion_stable", "banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine", "lectern", "mosaic", "easel", "totem", "obelisk", "sundial", "birdbath", "beehive"]:
 		send_to_peer(peer_id, {"type": "build_result", "success": false, "message": "Cannot build on this tile!"})
 		return
 	if world_system:
@@ -28532,6 +28534,73 @@ func _touch_clan_post_tended_at(actor_username: String, x: int, y: int) -> void:
 			if d <= float(radius):
 				player_post_names[owner_username][i]["last_tended_at"] = now_ts
 				return  # one post per tick is enough
+
+func _maybe_send_clan_post_hint(peer_id: int, x: int, y: int) -> void:
+	"""Audit #14 Slice F polish v0.9.560 — first time a clan member walks
+	into a clan-shared post that isn't their own, fire a tutorial overlay
+	explaining build/demolish permissions, decay-reset on visits, and the
+	/clanposts discovery command. One-shot per character."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if character.seen_clan_post_hint:
+		return
+	var actor_username = String(character.name)
+	if actor_username == "":
+		return
+	var clan_id = _viewer_clan_id_for_username(actor_username)
+	if clan_id == "":
+		return
+	# Find a clan-shared post (owned by someone else) whose bubble contains (x, y).
+	var matched_post_name = ""
+	var matched_owner = ""
+	for owner_username in player_post_names.keys():
+		if owner_username == actor_username:
+			continue
+		var posts = player_post_names[owner_username]
+		for meta in posts:
+			if String(meta.get("clan_id", "")) != clan_id:
+				continue
+			var c = meta.get("center", Vector2i.ZERO)
+			var cx: int
+			var cy: int
+			if c is Vector2i:
+				cx = c.x
+				cy = c.y
+			else:
+				cx = int(c.get("x", 0))
+				cy = int(c.get("y", 0))
+			var meta_for_compute = meta.duplicate()
+			meta_for_compute["_owner"] = owner_username
+			var radius = _compute_effective_post_radius(meta_for_compute)
+			var dx = float(x - cx)
+			var dy = float(y - cy)
+			if sqrt(dx * dx + dy * dy) <= float(radius):
+				matched_post_name = String(meta.get("name", "your clan's post"))
+				if matched_post_name == "":
+					matched_post_name = "your clan's post"
+				matched_owner = owner_username
+				break
+		if matched_owner != "":
+			break
+	if matched_owner == "":
+		return
+	character.seen_clan_post_hint = true
+	var clan_data = persistence.clans_data.get("clans", {}).get(clan_id, {})
+	var clan_tag = String(clan_data.get("tag", "?"))
+	var banner_color = String(clan_data.get("banner_color", persistence.CLAN_DEFAULT_BANNER_COLOR))
+	var title = "[color=%s]✦ Clan Outpost — %s[/color]" % [banner_color, clan_tag]
+	var body = (
+		"You've walked into [color=#9AFF9A]%s[/color], a post owned by [color=#A0C8E0]%s[/color] and shared with your clan.\n\n" % [matched_post_name, matched_owner]
+		+ "Because it's clan-shared, you can:\n"
+		+ "  • [color=#88FF88]Build[/color] new structures inside the enclosure\n"
+		+ "  • [color=#88FF88]Demolish[/color] any structure inside it\n"
+		+ "  • [color=#88FF88]Reset its decay timer[/color] just by walking through (so it stays alive even when the owner is offline)\n\n"
+		+ "Type [color=#9ACD32]/clanposts[/color] anywhere to list every post shared with your clan (sorted by freshness — abandoned shared posts float to the bottom).\n\n"
+		+ "Only the owner can revert the post to private."
+	)
+	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
+	save_character(peer_id)
 
 func _find_post_at_current_tile(x: int, y: int) -> Dictionary:
 	"""Return {found, owner, post_index, meta} for the post whose enclosure
