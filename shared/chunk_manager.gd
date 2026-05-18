@@ -145,17 +145,20 @@ func is_tile_modified(world_x: int, world_y: int) -> bool:
 
 func deplete_node(world_x: int, world_y: int, tile_type: String = "") -> void:
 	"""Mark a gathering node as depleted.
+	Water nodes respawn after NODE_RESPAWN_TIME. Other nodes are normally permanent,
+	EXCEPT nodes close to a trading post — those respawn on POST_NODE_RESPAWN_TIME so
+	beginner areas can't be permanently farmed out.
 
-	v0.9.525 — Time-based respawn ripped per [[no-real-time-gates]]:
-	  • Water nodes: NEVER deplete (infinite fishing — the tile stays gatherable).
-	  • All other nodes (stone / ore / tree / dense_brush near or far from posts):
-	    DEPLETED_PERMANENT.
-	The previous 5-min water / 4-min near-post respawn was a wall-clock gate."""
-	if tile_type == "water":
-		# Skip depletion entirely — water is infinite.
-		return
+	v0.9.526 — restored after v0.9.525 over-rip. World-state respawn is fine
+	per the narrowed [[no-real-time-gates]] rule (only player-facing repeat
+	cooldowns are banned)."""
 	var coord_key = "%d,%d" % [world_x, world_y]
-	depleted_nodes[coord_key] = DEPLETED_PERMANENT
+	if tile_type == "water":
+		depleted_nodes[coord_key] = Time.get_unix_time_from_system() + NODE_RESPAWN_TIME
+	elif _is_near_npc_post(world_x, world_y, POST_RESOURCE_RADIUS):
+		depleted_nodes[coord_key] = Time.get_unix_time_from_system() + POST_NODE_RESPAWN_TIME
+	else:
+		depleted_nodes[coord_key] = DEPLETED_PERMANENT
 
 func _is_near_npc_post(world_x: int, world_y: int, radius: int) -> bool:
 	"""Returns true if (x, y) is within `radius` tiles of any NPC post center."""

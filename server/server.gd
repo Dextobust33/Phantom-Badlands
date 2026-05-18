@@ -1146,13 +1146,16 @@ func _process(delta):
 		if DIAG_TIMING_ENABLED:
 			_diag_guard_decay_us = Time.get_ticks_usec() - _gd_start_us
 
-	# v0.9.525 — Wall decay ripped per [[no-real-time-gates]]. Un-enclosed walls
-	# no longer crumble after 72h. Timer / function kept in code for back-compat
-	# but the tick path is gated off.
-	# wall_decay_timer += delta
-	# if wall_decay_timer >= WALL_DECAY_CHECK_INTERVAL:
-	# 	wall_decay_timer = 0.0
-	# 	_tick_wall_decay()
+	# Wall decay timer. v0.9.526 — restored after v0.9.525 over-rip: world-state
+	# decay is fine per the narrowed [[no-real-time-gates]] rule (only player-
+	# facing repeat cooldowns are banned).
+	wall_decay_timer += delta
+	if wall_decay_timer >= WALL_DECAY_CHECK_INTERVAL:
+		wall_decay_timer = 0.0
+		var _wd_start_us: int = Time.get_ticks_usec() if DIAG_TIMING_ENABLED else 0
+		_tick_wall_decay()
+		if DIAG_TIMING_ENABLED:
+			_diag_wall_decay_us = Time.get_ticks_usec() - _wd_start_us
 
 	# Check for new connections
 	if server.is_connection_available():
@@ -22273,8 +22276,8 @@ const BUBBLE_GROW_PER_TOWER_GUARD: int = 4
 # or fed guards there). Surface tags on the post-status panel let owners + other
 # players see that a base is being neglected. No actual cleanup yet; this slice
 # only makes inactivity VISIBLE so the natural follow-on can add decay/reclaim.
-const POST_INACTIVE_THRESHOLD_DAYS: int = 7
-const POST_ABANDONED_THRESHOLD_DAYS: int = 30
+const POST_INACTIVE_THRESHOLD_DAYS: int = 30
+const POST_ABANDONED_THRESHOLD_DAYS: int = 90
 
 # Building-template kits (post-Slice-5 follow-up). A kit places multiple
 # tiles in a fixed layout when used, replacing the per-tile build grind for
@@ -22728,12 +22731,22 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	var effective_tier = wilderness_tier - suppression
 	return clamp(effective_tier, floor_tier, wilderness_tier)
 
-func _compute_post_inactivity_state(_post_meta: Dictionary) -> String:
-	"""v0.9.525 — Inactivity decay ripped per [[no-real-time-gates]]. Posts
-	never tag as 'inactive' (7d) or 'abandoned' (30d) anymore — the wall-clock
-	gate was incompatible with the game's any-session-length design. Always
-	returns 'active'. The `last_tended_at` field stays on posts for back-compat
-	but no longer drives decay."""
+func _compute_post_inactivity_state(post_meta: Dictionary) -> String:
+	"""Audit #12 Slice 4/5 — return 'active' / 'inactive' / 'abandoned'
+	based on last_tended_at. Falls back to created_at when last_tended_at
+	is missing (legacy posts created before Slice 4).
+
+	v0.9.526 — restored after v0.9.525 over-rip. World-state inactivity is
+	fine per the narrowed [[no-real-time-gates]] rule. Thresholds bumped to
+	30d Inactive / 90d Abandoned (was 7d / 30d) so players who take a couple
+	of weeks off don't immediately get penalized."""
+	var now_ts = Time.get_unix_time_from_system()
+	var tended_ts = float(post_meta.get("last_tended_at", post_meta.get("created_at", now_ts)))
+	var days_inactive = max(0.0, (now_ts - tended_ts) / 86400.0)
+	if days_inactive >= float(POST_ABANDONED_THRESHOLD_DAYS):
+		return "abandoned"
+	if days_inactive >= float(POST_INACTIVE_THRESHOLD_DAYS):
+		return "inactive"
 	return "active"
 
 func _update_player_post_bubble_cache():
@@ -23837,11 +23850,39 @@ func _find_nearby_tower(gx: int, gy: int, search_radius: int = 2) -> bool:
 	return false
 
 func _tick_guard_decay():
-	"""v0.9.525 — Guard food decay ripped per [[no-real-time-gates]]. Guards
-	no longer consume food over time; once hired they stay forever (until
-	dismissed). The `food_remaining` / `last_fed` fields remain on guard
-	dicts for back-compat but no longer drive removal."""
-	return
+	"""Check all active guards for food expiry. Remove expired guards.
+
+	v0.9.526 — restored after v0.9.525 over-rip. Guard upkeep is world-state
+	mechanic, fine per the narrowed [[no-real-time-gates]] rule."""
+	if active_guards.is_empty():
+		return
+	var now = Time.get_unix_time_from_system()
+	var expired = []
+	for pos_key in active_guards:
+		var guard = active_guards[pos_key]
+		var days_since_fed = (now - guard.get("last_fed", now)) / 86400.0
+		if days_since_fed >= guard.get("food_remaining", 0):
+			expired.append(pos_key)
+
+	if expired.is_empty():
+		return
+
+	for pos_key in expired:
+		var guard = active_guards[pos_key]
+		var owner = guard.get("owner", "")
+		active_guards.erase(pos_key)
+		# Notify owner if online
+		for pid in peers:
+			if _get_username(pid) == owner:
+				send_to_peer(pid, {
+					"type": "text",
+					"message": "[color=#FF8800]Your guard at %s has left — out of food![/color]" % pos_key
+				})
+				break
+
+	_update_guard_cache()
+	persistence.save_guards(active_guards)
+	log_message("Guard decay: %d guards expired" % expired.size())
 
 func _tick_wall_decay():
 	"""Remove orphan walls (not part of any enclosure) after grace period."""

@@ -24373,8 +24373,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.526 — Narrow the v0.9.525 rip: restore world-state systems, keep no-cooldown for player-facing repeats.
+	display_game("[color=#00FF00]v0.9.526[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]v0.9.525 was over-broad — restoring world-state respawn/decay/rotation systems while keeping the no-cooldown rule for player-facing repeatable quests.[/color]")
+	display_game("  • [b]Kept ripped:[/b] Repeatable chain 24h cooldown (T1/T2/T3 chains still immediately repeatable). Daily quest 24h cooldown (any \"daily\" quest still immediately re-acceptable). These are the actual problem — player-facing \"come back in 24h\" gates.")
+	display_game("  • [b]Restored:[/b] Wall decay (72h grace on un-enclosed walls), water node respawn (5min), near-post non-water node respawn (4min), guard food upkeep, post inactivity decay, NPC vendor daily stock rotation, dynamic quest board date seeding.")
+	display_game("  • [b]Post inactivity thresholds bumped[/b] — [color=#FFAA00]30d Inactive[/color] (was 7d) and [color=#FF8888]90d Abandoned[/color] (was 30d). Players who take a couple weeks off don't get penalized. Life gets busy.")
+	display_game("  • [b]Rule clarified:[/b] real-world clock gates are bad ONLY when they tell a player \"wait N hours to do this again.\" World-state mechanics (resources regrowing, structures aging, vendors rotating) are fine — they're flavor, not roadblocks. Saved as workflow guidance.")
+	display_game("")
+
 	# v0.9.525 — Hotfix: rip ALL real-world time gates.
-	display_game("[color=#00FF00]v0.9.525[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.525[/color]")
 	display_game("  [color=#FFD700]No more real-world clock gates anywhere. Permadeath sessions don't punish players who can only play in bursts — or in marathons.[/color]")
 	display_game("  • [b]Repeatable chains are instant.[/b] T1/T2/T3 chains (13 total) reappear [color=#9ACD32]immediately[/color] after completion — no 24h cooldown. Run them as much as you want for valor / eggs / titles. T4+ stay one-shot (achievement-style).")
 	display_game("  • [b]Daily quests are no longer daily.[/b] The 24h re-accept cooldown on daily quests is ripped — any \"daily\" quest can be re-accepted immediately after turn-in. Combined with the v0.9.453 regenerating quest board, the quest pipeline is now fully wall-clock-free.")
