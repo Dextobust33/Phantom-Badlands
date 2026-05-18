@@ -506,6 +506,10 @@ func _build_member_row(member: Dictionary, viewer_is_leader: bool, viewer_is_off
 	var leader_flag: bool = bool(member.get("is_leader", false))
 	var officer_flag: bool = bool(member.get("is_officer", false))
 	var rank: String = String(member.get("rank", "member"))
+	# Audit #14 v0.9.530 — server stamps is_online on each member by checking
+	# the live peers map. Roster row prefixes a green ● for online members,
+	# gray ○ for offline.
+	var online_flag: bool = bool(member.get("is_online", false))
 
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -543,10 +547,13 @@ func _build_member_row(member: Dictionary, viewer_is_leader: bool, viewer_is_off
 	name_label.add_theme_font_size_override("normal_font_size", 13)
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.custom_minimum_size = Vector2(0, 22)
+	# Online dot — green ● for online, gray ○ for offline. Placed before
+	# the leader star + username so it's the first visual on the row.
+	var online_marker = "[color=#66FF66]●[/color] " if online_flag else "[color=#666666]○[/color] "
 	if leader_flag:
-		name_label.text = "[color=#FFD700]★ %s[/color]" % username
+		name_label.text = "%s[color=#FFD700]★ %s[/color]" % [online_marker, username]
 	else:
-		name_label.text = "[color=#DDDDDD]%s[/color]" % username
+		name_label.text = "%s[color=#DDDDDD]%s[/color]" % [online_marker, username]
 	row.add_child(name_label)
 
 	# Rank-action buttons.
