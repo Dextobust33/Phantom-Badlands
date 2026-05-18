@@ -1479,6 +1479,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_clan_list(peer_id)
 		"set_afk":
 			handle_set_afk(peer_id, message)
+		"trade_history":
+			handle_trade_history(peer_id, message)
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
@@ -3120,6 +3122,23 @@ func _clear_afk_on_action(peer_id: int) -> void:
 		afk_status.erase(peer_id)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]You are no longer AFK.[/color]"})
 		broadcast_player_list()
+
+func handle_trade_history(peer_id: int, message: Dictionary) -> void:
+	"""Audit #14 v0.9.539 — /trades chat command. Return the caller's
+	trade history capped at the requested limit (default 10, max 50).
+	Sent as `trade_history_result` payload — client formats the entries."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var limit = clampi(int(message.get("limit", 10)), 1, persistence.TRADE_HISTORY_CAP)
+	var entries = persistence.get_trade_history(account_id, limit)
+	send_to_peer(peer_id, {
+		"type": "trade_history_result",
+		"entries": entries,
+		"limit": limit,
+	})
 
 func handle_clan_list(peer_id: int) -> void:
 	"""Audit #14 v0.9.532 — /clist chat command. Returns the caller's online
@@ -14510,6 +14529,33 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 	# reflects what players actually pay at this post.
 	var paid_per_unit = int(price / maxi(buy_qty, 1))
 	_record_market_sale(String(item.get("name", "")), paid_per_unit)
+
+	# Audit #14 v0.9.539 — trade history (focused project #3). Log market
+	# purchase to buyer's account and (if known) market sale to seller's
+	# account. Seller may be offline; entry is stored on their account
+	# regardless so they see it when they next /trades.
+	var seller_name = String(listing.get("seller_name", ""))
+	if seller_name == "" and seller_account_id != "":
+		seller_name = String(persistence.get_username_for_account(seller_account_id))
+	persistence.add_trade_history_entry(buyer_account_id, {
+		"kind": "market_buy",
+		"item_name": String(item.get("name", "item")),
+		"item_tier": int(item.get("tier", 1)),
+		"quantity": buy_qty,
+		"price_valor": price,
+		"post_id": post_id,
+		"counterparty_name": seller_name,
+	})
+	if seller_account_id != "":
+		persistence.add_trade_history_entry(seller_account_id, {
+			"kind": "market_sale",
+			"item_name": String(item.get("name", "item")),
+			"item_tier": int(item.get("tier", 1)),
+			"quantity": buy_qty,
+			"price_valor": price,
+			"post_id": post_id,
+			"counterparty_name": String(character.name),
+		})
 
 	var qty_text = " x%d" % buy_qty if buy_qty > 1 else ""
 	send_to_peer(peer_id, {
@@ -31333,6 +31379,34 @@ func _execute_trade(peer_id_a: int, peer_id_b: int):
 		"received_companions": companions_from_a.size(),
 		"received_eggs": eggs_from_a.size()
 	})
+
+	# Audit #14 v0.9.539 — trade history. Log a direct_trade entry to each
+	# side's account. Item/companion/egg COUNTS only (no per-item detail —
+	# keeps storage cheap, matches what trade_complete already surfaces).
+	var account_a = String(peers.get(peer_id_a, {}).get("account_id", ""))
+	var account_b = String(peers.get(peer_id_b, {}).get("account_id", ""))
+	if account_a != "":
+		persistence.add_trade_history_entry(account_a, {
+			"kind": "direct_trade",
+			"counterparty_name": String(char_b.name),
+			"items_received": items_from_b.size(),
+			"companions_received": companions_from_b.size(),
+			"eggs_received": eggs_from_b.size(),
+			"items_given": items_from_a.size(),
+			"companions_given": companions_from_a.size(),
+			"eggs_given": eggs_from_a.size(),
+		})
+	if account_b != "":
+		persistence.add_trade_history_entry(account_b, {
+			"kind": "direct_trade",
+			"counterparty_name": String(char_a.name),
+			"items_received": items_from_a.size(),
+			"companions_received": companions_from_a.size(),
+			"eggs_received": eggs_from_a.size(),
+			"items_given": items_from_b.size(),
+			"companions_given": companions_from_b.size(),
+			"eggs_given": eggs_from_b.size(),
+		})
 
 	# Send character updates
 	send_character_update(peer_id_a)
