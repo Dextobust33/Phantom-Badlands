@@ -9,6 +9,16 @@ signal recipe_selected(recipe_index: int)
 signal craft_pressed(recipe_index: int, quantity: int)
 signal quantity_changed(quantity: int)
 signal skill_changed(skill: String)
+signal boost_tier_changed(tier: String)
+
+# Audit #4 Slice 2 — Boost selector (None / Refined / Master).
+# Server enforces mutual exclusion with Tempered and forces quantity=1
+# when boost != none; panel mirrors both rules visually.
+const BOOST_TIERS := [
+	{"id": "none",    "label": "None",     "color": Color(0.75, 0.75, 0.75)},
+	{"id": "refined", "label": "Refined",  "color": Color(1.0, 0.67, 0.40)},
+	{"id": "master",  "label": "Master",   "color": Color(0.64, 0.21, 0.93)},
+]
 
 const SKILL_CHIPS := [
 	{"id": "blacksmithing", "label": "Forge", "color": Color(1.0, 0.4, 0.0)},
@@ -26,6 +36,16 @@ var _selected_index: int = -1
 var _upcoming_unlocks: Array = []  # Audit #8 Layer 7: next 3 locked recipes preview
 var _craft_quantity: int = 1
 var _allow_skill_switch: bool = true
+
+# Audit #4 Slice 2 — Boost selector state.
+# _boost_tier is the currently-active tier for the selected recipe.
+# _boost_memory persists the last-picked tier per recipe across selections
+# (client-side only; resets on app restart per the locked design).
+var _boost_tier: String = "none"
+var _boost_memory: Dictionary = {}  # recipe_id -> "none" / "refined" / "master"
+var _boost_row: HBoxContainer
+var _boost_buttons: Dictionary = {}  # tier_id -> Button
+var _boost_label: Label
 
 var _root_panel: PanelContainer
 var _title_label: Label
@@ -186,6 +206,29 @@ func _build_layout() -> void:
 	_detail_materials.add_theme_font_size_override("normal_font_size", 16)
 	_detail_materials.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_root.add_child(_detail_materials)
+
+	# Audit #4 Slice 2 — Boost selector row.
+	# Live preview: clicking a tier redraws odds + material costs immediately.
+	_boost_row = HBoxContainer.new()
+	_boost_row.add_theme_constant_override("separation", 6)
+	_detail_root.add_child(_boost_row)
+
+	_boost_label = Label.new()
+	_boost_label.text = "Boost:"
+	_boost_label.add_theme_color_override("font_color", Color(0.55, 0.81, 0.92))
+	_boost_label.add_theme_font_size_override("font_size", 14)
+	_boost_row.add_child(_boost_label)
+
+	for tier_def in BOOST_TIERS:
+		var btn := Button.new()
+		btn.toggle_mode = true
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.add_theme_font_size_override("font_size", 13)
+		btn.custom_minimum_size = Vector2(0, 28)
+		btn.add_theme_color_override("font_color", tier_def["color"])
+		btn.pressed.connect(_on_boost_tier_pressed.bind(tier_def["id"]))
+		_boost_row.add_child(btn)
+		_boost_buttons[tier_def["id"]] = btn
 
 	# Quantity stepper
 	_qty_row = HBoxContainer.new()
@@ -443,6 +486,7 @@ func _refresh_detail() -> void:
 
 	var recipe = _recipes[_selected_index]
 	var name = str(recipe.get("name", "?"))
+	var recipe_id := str(recipe.get("id", ""))
 	var skill_req = int(recipe.get("skill_required", 1))
 	var difficulty = int(recipe.get("difficulty", 10))
 	var success_chance = int(recipe.get("success_chance", 50))
@@ -452,17 +496,39 @@ func _refresh_detail() -> void:
 	var is_locked = recipe.get("locked", false)
 	var is_specialist_gated = recipe.get("specialist_gated", false)
 
-	if is_bulk:
+	# Restore last-used boost for this recipe, if any.
+	_boost_tier = String(_boost_memory.get(recipe_id, "none"))
+	if not CraftingDatabase.BOOST_CONFIG.has(_boost_tier):
+		_boost_tier = "none"
+
+	# Boost forces quantity=1 (server enforces this too).
+	if _boost_tier != "none":
+		_craft_quantity = 1
+	elif is_bulk:
 		_craft_quantity = clampi(_craft_quantity, 1, max_qty)
 	else:
 		_craft_quantity = 1
 
 	_detail_title.text = name
 
+	# Resolve boost config for shift/no_poor/mat_mult.
+	var boost_cfg: Dictionary = CraftingDatabase.BOOST_CONFIG[_boost_tier]
+	var boost_shift: Dictionary = boost_cfg.get("shift", {})
+	var boost_no_poor: bool = bool(boost_cfg.get("no_poor", false))
+	var boost_mat_mult: float = float(boost_cfg.get("mat_mult", 1.0))
+
 	var meta_lines := []
 	meta_lines.append("[color=#87CEEB]Skill Req:[/color] %d   [color=#87CEEB]Difficulty:[/color] %d   [color=#87CEEB]Success:[/color] %d%%" % [skill_req, difficulty, success_chance])
-	# Audit #8 Layer 5 — quality odds bar
-	var odds = recipe.get("quality_odds", {})
+	# Audit #8 Layer 5 — quality odds bar (recomputed live when boost changes).
+	# Server seeds `quality_odds` for the base distribution; recompute via
+	# CraftingDatabase.quality_distribution when a boost is active.
+	var odds: Dictionary
+	if _boost_tier == "none":
+		odds = recipe.get("quality_odds", {})
+		if odds == null or typeof(odds) != TYPE_DICTIONARY or odds.is_empty():
+			odds = CraftingDatabase.quality_distribution(success_chance)
+	else:
+		odds = CraftingDatabase.quality_distribution(success_chance, boost_shift, boost_no_poor)
 	if odds and typeof(odds) == TYPE_DICTIONARY and not odds.is_empty():
 		var p = int(odds.get("poor", 0))
 		var s = int(odds.get("standard", 0))
@@ -479,22 +545,32 @@ func _refresh_detail() -> void:
 		meta_lines.append("[color=#888888]%s[/color]" % description)
 	_detail_meta.text = "\n".join(meta_lines)
 
-	# Materials
+	# Materials (scaled by boost mat_mult × quantity; boost forces qty=1, so
+	# the two never compound). Server uses ceili — mirror exactly.
+	var mat_scale := boost_mat_mult * float(_craft_quantity)
 	var mat_lines := []
 	var materials = recipe.get("materials", {})
 	for mat_id in materials.keys():
-		var required = int(materials[mat_id]) * _craft_quantity
+		var required = ceili(float(int(materials[mat_id])) * mat_scale)
 		var owned = _resolve_owned(mat_id)
 		var mat_name = _material_display_name(mat_id)
 		var color = "#00FF00" if owned >= required else "#FF4444"
 		mat_lines.append("  [color=%s]%s: %d/%d[/color]" % [color, mat_name, owned, required])
+	var mat_header := "Materials"
+	if _boost_tier != "none":
+		mat_header += " (boosted)"
+	elif _craft_quantity > 1:
+		mat_header += " (x%d)" % _craft_quantity
 	if mat_lines.size() > 0:
-		_detail_materials.text = "[color=#87CEEB]Materials (x%d):[/color]\n%s" % [_craft_quantity, "\n".join(mat_lines)]
+		_detail_materials.text = "[color=#87CEEB]%s:[/color]\n%s" % [mat_header, "\n".join(mat_lines)]
 	else:
 		_detail_materials.text = "[color=#888888](no materials needed)[/color]"
 
-	# Quantity row
-	_qty_row.visible = is_bulk and not is_locked and not is_specialist_gated
+	# Refresh boost selector buttons (labels, costs, pressed state, disabled).
+	_refresh_boost_buttons(can_craft, is_locked, is_specialist_gated)
+
+	# Quantity row — hidden when a boost is active (server forces qty=1).
+	_qty_row.visible = is_bulk and not is_locked and not is_specialist_gated and _boost_tier == "none"
 	_qty_label.text = str(_craft_quantity)
 	_qty_minus.disabled = _craft_quantity <= 1
 	_qty_plus.disabled = _craft_quantity >= max_qty
@@ -507,12 +583,63 @@ func _refresh_detail() -> void:
 	elif is_specialist_gated:
 		_craft_button.text = "Specialist Job Required"
 		_craft_button.disabled = true
-	elif not can_craft:
+	elif not _can_afford_with_boost(materials, boost_mat_mult, _craft_quantity):
+		# Boost may put a craftable recipe out of reach — recompute against
+		# the boosted cost so the button reflects the real state.
+		_craft_button.text = "Missing Materials"
+		_craft_button.disabled = true
+	elif not can_craft and _boost_tier == "none":
 		_craft_button.text = "Missing Materials"
 		_craft_button.disabled = true
 	else:
-		_craft_button.text = "CRAFT %dx" % _craft_quantity if _craft_quantity > 1 else "CRAFT"
+		var prefix := ""
+		if _boost_tier == "refined":
+			prefix = "REFINED "
+		elif _boost_tier == "master":
+			prefix = "MASTER "
+		_craft_button.text = "%sCRAFT %dx" % [prefix, _craft_quantity] if _craft_quantity > 1 else "%sCRAFT" % prefix
 		_craft_button.disabled = false
+
+
+func _refresh_boost_buttons(can_craft: bool, is_locked: bool, is_specialist_gated: bool) -> void:
+	"""Sync boost button labels (with cost annotation), pressed state, and
+	disabled state. Disabled when the recipe is locked/gated or when the
+	boosted material cost is unaffordable."""
+	var hide_row: bool = is_locked or is_specialist_gated
+	_boost_row.visible = not hide_row
+	if hide_row:
+		return
+	var recipe = _recipes[_selected_index]
+	var materials: Dictionary = recipe.get("materials", {})
+	for tier_def in BOOST_TIERS:
+		var tier_id: String = tier_def["id"]
+		var btn: Button = _boost_buttons[tier_id]
+		var cfg: Dictionary = CraftingDatabase.BOOST_CONFIG[tier_id]
+		var mat_mult: float = float(cfg.get("mat_mult", 1.0))
+		var label: String = tier_def["label"]
+		if tier_id == "refined":
+			label += " (+50% mats)"
+		elif tier_id == "master":
+			label += " (+150% mats)"
+		btn.text = label
+		btn.button_pressed = (tier_id == _boost_tier)
+		# Disable a tier when the player can't afford its material cost.
+		# `can_craft` (None tier) is gated by the server's check (which already
+		# includes pulling from your own listings), so trust it for "none".
+		if tier_id == "none":
+			btn.disabled = not can_craft and _boost_tier != "none"
+		else:
+			btn.disabled = not _can_afford_with_boost(materials, mat_mult, 1)
+
+
+func _can_afford_with_boost(materials: Dictionary, mat_mult: float, qty: int) -> bool:
+	"""Mirror server's per-material check using ceili. Group keys (@stat:tier)
+	use the client's group-counting helper via client_ref."""
+	for mat_id in materials.keys():
+		var required := ceili(float(int(materials[mat_id])) * mat_mult * float(qty))
+		if _resolve_owned(mat_id) < required:
+			return false
+	return true
 
 
 func _show_detail_empty(empty: bool) -> void:
@@ -523,6 +650,8 @@ func _show_detail_empty(empty: bool) -> void:
 	_detail_meta.visible = not empty
 	_detail_materials.visible = not empty
 	_qty_row.visible = not empty and _qty_row.visible
+	if _boost_row:
+		_boost_row.visible = not empty and _boost_row.visible
 	_craft_button.visible = not empty
 
 
@@ -593,3 +722,39 @@ func _on_craft_pressed() -> void:
 
 func _on_close_pressed() -> void:
 	emit_signal("close_requested")
+
+
+func _on_boost_tier_pressed(tier_id: String) -> void:
+	"""Audit #4 Slice 2 — switch boost tier on the active recipe. Persists to
+	per-recipe memory, redraws odds + material costs, and notifies client.gd."""
+	if not CraftingDatabase.BOOST_CONFIG.has(tier_id):
+		tier_id = "none"
+	if _selected_index < 0 or _selected_index >= _recipes.size():
+		return
+	var recipe = _recipes[_selected_index]
+	var recipe_id := str(recipe.get("id", ""))
+	_boost_tier = tier_id
+	if recipe_id != "":
+		_boost_memory[recipe_id] = tier_id
+	_refresh_detail()
+	emit_signal("boost_tier_changed", tier_id)
+
+
+# === Public API for client.gd to keep its state in sync ===
+
+func get_boost_tier() -> String:
+	return _boost_tier
+
+
+func set_boost_tier(tier_id: String) -> void:
+	"""External entry point — used by the text-mode hotkey path so both
+	surfaces share state. No-op if the tier doesn't exist."""
+	if not CraftingDatabase.BOOST_CONFIG.has(tier_id):
+		return
+	_boost_tier = tier_id
+	if _selected_index >= 0 and _selected_index < _recipes.size():
+		var recipe = _recipes[_selected_index]
+		var recipe_id := str(recipe.get("id", ""))
+		if recipe_id != "":
+			_boost_memory[recipe_id] = tier_id
+	_refresh_detail()
