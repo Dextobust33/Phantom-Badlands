@@ -7850,6 +7850,33 @@ func _skip_inactive_members(combat: Dictionary):
 			break
 		combat.current_turn_index += 1
 
+func _has_mentor_mentee_pair(combat: Dictionary) -> bool:
+	"""Audit #14 v0.9.537 — detect a mentor+mentee party composition.
+	True when at least one surviving member is a Lv 20+ mentor (mentor_active)
+	AND at least one OTHER surviving member is a Lv < 10 mentee. Drives the
+	+25%% party XP bonus that turns /mentor on into a real gameplay incentive
+	(previously cosmetic ★ badge only).
+
+	Note: mentor and mentee must be DIFFERENT characters — a single
+	character can't be both."""
+	var has_mentor = false
+	var has_mentee = false
+	for pid in combat.members:
+		if pid in combat.dead_members:
+			continue
+		var character = combat.characters.get(pid)
+		if character == null:
+			continue
+		var is_mentor = int(character.level) >= 20 and bool(character.mentor_active)
+		var is_mentee = int(character.level) < 10
+		# A character can be one or the other but not both (Lv < 10 can't
+		# also be Lv >= 20). So no overlap concern.
+		if is_mentor:
+			has_mentor = true
+		if is_mentee:
+			has_mentee = true
+	return has_mentor and has_mentee
+
 func _process_party_victory(combat: Dictionary) -> Dictionary:
 	"""Process victory for all surviving party members."""
 	var monster = combat.monster
@@ -7858,6 +7885,14 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 
 	messages.append("[color=#00FF00]══════ VICTORY! ══════[/color]")
 	messages.append("[color=#00FF00]The party defeated %s![/color]" % monster.get("name", "monster"))
+
+	# Audit #14 v0.9.537 — mentor+mentee party XP bonus. Detected once for
+	# the whole party (composition doesn't change mid-victory-processing);
+	# applied per-member as a flat 1.25× multiplier alongside house bonuses.
+	var mentor_bonus = _has_mentor_mentee_pair(combat)
+	var mentor_mult = 1.25 if mentor_bonus else 1.0
+	if mentor_bonus:
+		messages.append("[color=#FFD700]✦ Mentor bonus: +25%% XP for the party![/color]")
 
 	# Each surviving member gets FULL rewards (not split)
 	for pid in combat.members:
@@ -7884,7 +7919,8 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 
 		# House XP bonus
 		var house_xp_mult = 1.0 + (character.house_bonuses.get("xp_bonus", 0) / 100.0)
-		var final_xp = int(base_xp * xp_multiplier * house_xp_mult)
+		# Audit #14 v0.9.537 — mentor bonus folded into the XP product.
+		var final_xp = int(base_xp * xp_multiplier * house_xp_mult * mentor_mult)
 
 		# Gem drops
 		var gems = 0

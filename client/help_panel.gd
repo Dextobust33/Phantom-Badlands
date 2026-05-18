@@ -196,7 +196,7 @@ const HELP_TOPICS := {
 			+ "  • [color=#9ACD32]/p <msg>[/color] — party-channel chat ([color=#FFAA66][PARTY][/color] marker). Aliases [color=#9ACD32]/pc[/color], [color=#9ACD32]/partychat[/color].\n"
 			+ "  • [color=#9ACD32]/clist[/color] — compact roster of online clanmates with level + class. Aliases [color=#9ACD32]/clanlist[/color], [color=#9ACD32]/clanonline[/color].\n"
 			+ "  • [color=#9ACD32]/afk[/color] [reason] — mark yourself away ([color=#FFAA66][AFK][/color] badge). Auto-clears on move or chat. Explicit clear: [color=#9ACD32]/back[/color].\n"
-			+ "  • [color=#9ACD32]/mentor on[/color] (Lv 20+) — volunteer as a mentor (gold [color=#FFD700]★[/color]). [color=#9ACD32]/mentors[/color] lists who's around.\n"
+			+ "  • [color=#9ACD32]/mentor on[/color] (Lv 20+) — volunteer as a mentor (gold [color=#FFD700]★[/color]). [color=#9ACD32]/mentors[/color] lists who's around. [color=#FFD700]Party with a Lv < 10 player and the whole party earns +25%% XP on every kill.[/color]\n"
 			+ "  • Whispers from Lv <10 players to Lv 20+ recipients render a [color=#FFD700][NEW Lv X][/color] tag.\n\n"
 			+ "[color=#FFD700]── Live indicators ──[/color]\n"
 			+ "  • The clan roster shows a [color=#66FF66]●[/color] green dot on online members, [color=#666666]○[/color] gray on offline; orange [color=#FFAA66]●[/color] when a member is AFK.\n"
