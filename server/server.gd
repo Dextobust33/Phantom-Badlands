@@ -18952,7 +18952,10 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 
 	# Roll quality with derived score, then hand off to the existing craft
 	# finalize (which sends craft_result + grants XP/inventory).
-	var quality: int = CraftingDatabaseScript.roll_quality(skill_level, int(recipe.get("difficulty", 1)), total_bonus, best_score, boost_shift, boost_no_poor)
+	# Audit #4 Slice 3.6 (v0.9.545) — capture the full roll math.
+	var _roll_data: Dictionary = CraftingDatabaseScript.roll_quality_detailed(skill_level, int(recipe.get("difficulty", 1)), total_bonus, best_score, boost_shift, boost_no_poor)
+	var quality: int = int(_roll_data["quality"])
+	session["craft_roll_data"] = _roll_data
 
 	# Audit #4 Slice 3.5 (v0.9.544) — stash the scratch-off reveal data so
 	# _finalize_craft can include it in craft_result. Lets the new unified
@@ -21468,7 +21471,13 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 
 	# Auto-skip: trivially easy recipe score=3, manual skip score=1 (lower quality)
 	var auto_score = 3 if skill_gap >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP else 1
-	var quality = CraftingDatabaseScript.roll_quality(skill_level, recipe.difficulty, tempered_bonus, auto_score, _boost_shift, _boost_no_poor)
+	# Audit #4 Slice 3.6 (v0.9.545) — capture the full roll math (roll value +
+	# distribution + bands) so the summary panel can show the player exactly
+	# which threshold their roll landed in.
+	var _roll_data: Dictionary = CraftingDatabaseScript.roll_quality_detailed(skill_level, recipe.difficulty, tempered_bonus, auto_score, _boost_shift, _boost_no_poor)
+	var quality = int(_roll_data["quality"])
+	# Stash on a peer-keyed slot so _finalize_craft can read it later.
+	pending_craft_sessions[peer_id] = {"craft_roll_data": _roll_data}
 	# Audit #4 Slice 3 — Specialist save: 5% chance on Refined/Master rolls to
 	# bump one quality tier (capped at Masterwork). Replaces the old trivia
 	# 0→1 score-save with a parallel boon on the boost mechanic.
@@ -22909,6 +22918,9 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 	# Tool slot bonuses that the scratch-off applied (only meaningful on tool crafts).
 	var _tool_durability_pct: int = int(_craft_session.get("craft_tool_durability_pct", 0))
 	var _tool_efficiency_tier: int = int(_craft_session.get("craft_tool_efficiency_tier", 0))
+	# Audit #4 Slice 3.6 (v0.9.545) — full roll math from roll_quality_detailed.
+	var _roll_math: Dictionary = _craft_session.get("craft_roll_data", {})
+	var _is_tool_recipe: bool = String(recipe.get("output_type", "")).to_lower() == "tool"
 
 	send_to_peer(peer_id, {
 		"type": "craft_result",
@@ -22950,6 +22962,12 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 			"tool_efficiency_tier": _tool_efficiency_tier,
 			"is_tempered": is_tempered,
 			"temper_target": temper_target,
+			# Slice 3.6 — full roll math so the panel can show "rolled X (lands
+			# in Standard band 25-64)" instead of just the final quality.
+			"roll": int(_roll_math.get("roll", -1)),
+			"distribution": _roll_math.get("distribution", {}),
+			"bands": _roll_math.get("bands", {}),
+			"is_tool_recipe": _is_tool_recipe,
 		},
 	})
 

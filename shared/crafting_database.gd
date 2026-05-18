@@ -3877,24 +3877,54 @@ static func calculate_success_chance(skill_level: int, difficulty: int, post_bon
 		base = 50 + (skill_level - difficulty) * 2 + post_bonus
 	return clampi(base, 5, 95)  # Always 5-95% chance
 
+static func roll_quality_detailed(skill_level: int, difficulty: int, post_bonus: int = 0, minigame_score: int = -1, quality_shift: Dictionary = {}, no_poor: bool = false) -> Dictionary:
+	"""Audit #4 Slice 3.6 (v0.9.545) — roll quality AND expose the math so the
+	summary panel can show the player exactly why they got what they got.
+	Returns {quality, roll, distribution, success_chance, bands}, where:
+	  quality: CraftingQuality enum value
+	  roll: 0-99 integer that the cumulative thresholds were compared against
+	  distribution: {poor, standard, fine, masterwork} percentage points
+	  success_chance: int 5-95
+	  bands: {poor, standard, fine, masterwork} dict of [lo, hi] inclusive
+	         ranges showing which roll values map to each bucket"""
+	var success_chance: int = calculate_success_chance(skill_level, difficulty, post_bonus, minigame_score)
+	var dist: Dictionary = quality_distribution(success_chance, quality_shift, no_poor)
+	var roll: int = randi() % 100
+	# Worst→best cumulative bands (matches how the roll is bucketed below).
+	var bands: Dictionary = {}
+	var lo: int = 0
+	for k in ["poor", "standard", "fine", "masterwork"]:
+		var span: int = int(dist[k])
+		if span > 0:
+			bands[k] = [lo, lo + span - 1]
+			lo += span
+		else:
+			bands[k] = [-1, -1]  # empty band — sentinel for "not reachable this roll"
+	# Bucket the roll using the same cumulative thresholds.
+	var quality: int = CraftingQuality.MASTERWORK
+	var cum: int = int(dist["poor"])
+	if roll < cum:
+		quality = CraftingQuality.POOR
+	else:
+		cum += int(dist["standard"])
+		if roll < cum:
+			quality = CraftingQuality.STANDARD
+		else:
+			cum += int(dist["fine"])
+			if roll < cum:
+				quality = CraftingQuality.FINE
+	return {
+		"quality": quality,
+		"roll": roll,
+		"distribution": dist,
+		"success_chance": success_chance,
+		"bands": bands,
+	}
+
 static func roll_quality(skill_level: int, difficulty: int, post_bonus: int = 0, minigame_score: int = -1, quality_shift: Dictionary = {}, no_poor: bool = false) -> CraftingQuality:
-	"""Roll for crafting quality. quality_shift/no_poor come from BOOST_CONFIG.
-	Implementation: compute the boosted distribution, then roll a single 0-99
-	against the cumulative thresholds so the boost is honored exactly."""
-	var success_chance = calculate_success_chance(skill_level, difficulty, post_bonus, minigame_score)
-	var dist = quality_distribution(success_chance, quality_shift, no_poor)
-	var roll = randi() % 100
-	# Walk the buckets in worst→best order so cumulative thresholds map cleanly
-	var cum = dist["poor"]
-	if roll < cum:
-		return CraftingQuality.POOR
-	cum += dist["standard"]
-	if roll < cum:
-		return CraftingQuality.STANDARD
-	cum += dist["fine"]
-	if roll < cum:
-		return CraftingQuality.FINE
-	return CraftingQuality.MASTERWORK
+	"""Back-compat wrapper. Callers that want the math should use
+	roll_quality_detailed instead."""
+	return roll_quality_detailed(skill_level, difficulty, post_bonus, minigame_score, quality_shift, no_poor)["quality"]
 
 static func quality_distribution(success_chance: int, quality_shift: Dictionary = {}, no_poor: bool = false) -> Dictionary:
 	"""Audit #8 Layer 5 — return the % chance of each quality bucket given a

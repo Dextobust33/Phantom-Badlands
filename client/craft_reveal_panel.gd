@@ -201,6 +201,7 @@ func _rebuild_content() -> void:
 		_content.add_child(mat_body)
 
 	# === Section 2: Scratch-off Reveals ===
+	var is_tool_recipe: bool = bool(summary.get("is_tool_recipe", false))
 	var awarded: Array = summary.get("scratch_awarded", [])
 	var missed: Array = summary.get("scratch_missed", [])
 	if not awarded.is_empty() or not missed.is_empty():
@@ -223,42 +224,83 @@ func _rebuild_content() -> void:
 			sc_body.fit_content = true
 			sc_body.scroll_active = false
 			sc_body.add_theme_font_size_override("normal_font_size", 12)
-			sc_body.text = _format_reveal_lines(awarded)
+			sc_body.text = _format_reveal_lines(awarded, is_tool_recipe)
 			_content.add_child(sc_body)
 
-	# === Section 3: Score → Success chain ===
+	# === Section 3: Roll math — show the actual roll vs threshold bands ===
 	var best_score := int(summary.get("best_score", -1))
-	if best_score >= 0:
+	var distribution: Dictionary = summary.get("distribution", {})
+	var bands: Dictionary = summary.get("bands", {})
+	var roll_value := int(summary.get("roll", -1))
+	if best_score >= 0 or not distribution.is_empty():
 		_content.add_child(_make_separator())
-		var chain := RichTextLabel.new()
-		chain.bbcode_enabled = true
-		chain.fit_content = true
-		chain.scroll_active = false
-		chain.add_theme_font_size_override("normal_font_size", 12)
+		var chain_header := Label.new()
+		chain_header.text = "How the Roll Worked"
+		chain_header.add_theme_color_override("font_color", Color(0.55, 0.81, 0.92))
+		chain_header.add_theme_font_size_override("font_size", 13)
+		_content.add_child(chain_header)
+
 		var bonus_pct := int(summary.get("score_bonus_pct", 0))
 		var success_chance := int(summary.get("effective_success_chance", 50))
-		var score_label := "no reveals"
+		var score_label := "no reveals (score 0)"
 		if best_score > 0:
-			score_label = "best tier %d" % best_score
-		chain.text = "[color=#87CEEB]Chain:[/color]  reveal score (%s) → +%d%% success → final %d%% success chance → rolled [color=%s]%s[/color]" % [
-			score_label, bonus_pct, success_chance, _quality_color.to_html(false), quality_name
-		]
-		_content.add_child(chain)
+			score_label = "best score %d from your reveals" % best_score
+
+		var chain_body := RichTextLabel.new()
+		chain_body.bbcode_enabled = true
+		chain_body.fit_content = true
+		chain_body.scroll_active = false
+		chain_body.add_theme_font_size_override("normal_font_size", 12)
+		var lines: Array = []
+		lines.append("  • Reveal score: [color=#FFFFFF]%s[/color] → adds [color=#FFFFFF]+%d%%[/color] to base success chance" % [score_label, bonus_pct])
+		lines.append("  • Effective success chance after skill/boost/score: [color=#FFFFFF]%d%%[/color]" % success_chance)
+		# Threshold bands (only show populated ones).
+		if not distribution.is_empty():
+			var band_parts: Array = []
+			for k in ["poor", "standard", "fine", "masterwork"]:
+				var pct := int(distribution.get(k, 0))
+				if pct <= 0:
+					continue
+				var color := "#FFFFFF"
+				match k:
+					"poor": color = "#FFFFFF"
+					"standard": color = "#00FF00"
+					"fine": color = "#0070DD"
+					"masterwork": color = "#A335EE"
+				if bands.has(k):
+					var lh: Array = bands[k]
+					if lh.size() >= 2 and int(lh[0]) >= 0:
+						band_parts.append("[color=%s]%s %d%% (rolls %d–%d)[/color]" % [color, k.capitalize(), pct, int(lh[0]), int(lh[1])])
+						continue
+				band_parts.append("[color=%s]%s %d%%[/color]" % [color, k.capitalize(), pct])
+			if not band_parts.is_empty():
+				lines.append("  • Quality bands: %s" % "  ".join(band_parts))
+		# Actual roll outcome.
+		if roll_value >= 0:
+			lines.append("  • Rolled [color=#FFD700]%d[/color] out of 100 → lands in [color=%s]%s[/color] band" % [roll_value, _quality_color.to_html(false), quality_name])
+		else:
+			lines.append("  • Result: [color=%s]%s[/color]" % [_quality_color.to_html(false), quality_name])
+		chain_body.text = "\n".join(lines)
+		_content.add_child(chain_body)
 
 	# === Section 4: Bonus effects applied (refund / duplicate / tool bonuses) ===
+	# Concrete descriptions only — abstract numbers like "efficiency tier 1"
+	# get unpacked into "rhythm bar X% slower, hit zone X% wider".
 	var bonus_lines: Array = []
 	var refund_pct := int(summary.get("refund_pct", 0))
 	var duplicate_count := int(summary.get("duplicate_count", 0))
 	var tool_dur := int(summary.get("tool_durability_pct", 0))
 	var tool_eff := int(summary.get("tool_efficiency_tier", 0))
 	if refund_pct > 0:
-		bonus_lines.append("  [color=#88FF88]• %d%% material refund returned to your pouch[/color]" % refund_pct)
+		bonus_lines.append("  [color=#88FF88]• %d%% of consumed materials refunded to your pouch[/color]" % refund_pct)
 	if duplicate_count > 0:
-		bonus_lines.append("  [color=#88FF88]• +%d duplicate copies crafted[/color]" % duplicate_count)
-	if tool_dur > 0:
-		bonus_lines.append("  [color=#88FF88]• +%d%% tool durability[/color]" % tool_dur)
-	if tool_eff > 0:
-		bonus_lines.append("  [color=#88FF88]• Tool efficiency tier %d[/color]" % tool_eff)
+		bonus_lines.append("  [color=#88FF88]• +%d extra copies crafted[/color]" % duplicate_count)
+	if tool_dur > 0 and is_tool_recipe:
+		bonus_lines.append("  [color=#88FF88]• +%d%% durability on the tool — lasts longer before breaking[/color]" % tool_dur)
+	if tool_eff > 0 and is_tool_recipe:
+		var spd_pct := 5 if tool_eff == 1 else 10
+		var wid_pct := 15 if tool_eff == 1 else 30
+		bonus_lines.append("  [color=#88FF88]• Gathering minigame easier when using this tool — −%d%% rhythm bar speed, +%d%% wider hit zone[/color]" % [spd_pct, wid_pct])
 	if not bonus_lines.is_empty():
 		_content.add_child(_make_separator())
 		var bonus_body := RichTextLabel.new()
@@ -337,39 +379,56 @@ func _make_separator() -> HSeparator:
 	return sep
 
 
-func _format_reveal_lines(awarded: Array) -> String:
-	"""Render each awarded slot with its effect. Quality cards show the
-	score-tier they granted; bonus cards show what they did."""
+func _format_reveal_lines(awarded: Array, is_tool_recipe: bool) -> String:
+	"""Render each awarded slot with its concrete gameplay effect.
+	Quality cards: granted score (feeds success_chance, fed roll bands).
+	Tool bonus cards: only meaningful on tool recipes — describe the
+	specific gathering-minigame change so 'Efficiency Tier +1' isn't
+	an abstract number."""
 	var lines: Array = []
-	# Tally quality reveals — best wins, but show all so the player knows
-	# the lesser-tier reveals were 'used up' by the higher one.
 	for slot in awarded:
 		var kind := String(slot.get("kind", "BASE"))
 		var name := String(slot.get("name", ""))
 		var effect := ""
 		match kind:
 			"DURABILITY_UP_1":
-				effect = "[color=#88FF88]+25% tool durability[/color]"
+				if is_tool_recipe:
+					effect = "[color=#88FF88]+25% durability — tool lasts longer before breaking[/color]"
+				else:
+					effect = "[color=#888888]+25% durability (no effect on non-tool recipes)[/color]"
 			"DURABILITY_UP_2":
-				effect = "[color=#88FF88]+50% tool durability[/color]"
+				if is_tool_recipe:
+					effect = "[color=#88FF88]+50% durability — tool lasts much longer before breaking[/color]"
+				else:
+					effect = "[color=#888888]+50% durability (no effect on non-tool recipes)[/color]"
 			"EFFICIENCY_UP_1":
-				effect = "[color=#88FF88]efficiency tier +1[/color]"
+				if is_tool_recipe:
+					effect = "[color=#88FF88]Easier gathering minigame — −5% rhythm bar speed, +15% wider hit zone when you use this tool[/color]"
+				else:
+					effect = "[color=#888888]Easier minigame (no effect on non-tool recipes)[/color]"
 			"EFFICIENCY_UP_2":
-				effect = "[color=#88FF88]efficiency tier +2[/color]"
+				if is_tool_recipe:
+					effect = "[color=#88FF88]Much easier gathering minigame — −10% rhythm bar speed, +30% wider hit zone when you use this tool[/color]"
+				else:
+					effect = "[color=#888888]Much easier minigame (no effect on non-tool recipes)[/color]"
 			"REFUND":
-				effect = "[color=#88FF88]+25% material refund[/color]"
+				effect = "[color=#88FF88]+25% of consumed materials refunded to your pouch[/color]"
 			"DUPLICATE":
-				effect = "[color=#88FF88]+1 duplicate[/color]"
+				effect = "[color=#88FF88]+1 extra copy of this craft[/color]"
 			"DUPLICATE_2":
-				effect = "[color=#88FF88]+2 duplicates[/color]"
+				effect = "[color=#88FF88]+2 extra copies of this craft[/color]"
 			"DUPLICATE_3":
-				effect = "[color=#88FF88]+3 duplicates[/color]"
-			"STANDARD":
-				effect = "[color=#00FF00]Standard tier → score 1 (+15% success)[/color]"
-			"FINE":
-				effect = "[color=#0070DD]Fine tier → score 2 (+30% success)[/color]"
-			"MASTERWORK":
-				effect = "[color=#A335EE]Masterwork tier → score 3 (+45% success)[/color]"
+				effect = "[color=#88FF88]+3 extra copies of this craft[/color]"
+			"BASE":
+				effect = "[color=#FFFFFF]Standard slot → score 1 (+15% success chance)[/color]"
+			"QUALITY_UP_1":
+				effect = "[color=#00FF00]Refined slot → score 1 (+15% success chance)[/color]"
+			"QUALITY_UP_2":
+				effect = "[color=#0070DD]Polished slot → score 2 (+30% success chance)[/color]"
+			"QUALITY_UP_3":
+				effect = "[color=#A335EE]Masterful slot → score 3 (+45% success chance)[/color]"
+			"DUD":
+				effect = "[color=#666666]Empty slot — no effect[/color]"
 			_:
 				effect = "[color=#888888]%s[/color]" % name
 		lines.append("  ✓ %s" % effect)
