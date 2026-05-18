@@ -7106,8 +7106,11 @@ func _handle_blacksmith_station(peer_id: int, character):
 	var bs_account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
 
 	# Audit #11 Slice 8 — services cost more at threatened posts.
+	# Audit #11 Slice 13 (v0.9.548) — severe threat picks the harsher mult.
 	var threat_info = _get_post_threat_info(peer_id)
 	var threatened: bool = bool(threat_info.get("threatened", false))
+	var threat_severe: bool = bool(threat_info.get("severe", false))
+	var threat_service_mult: float = POST_THREAT_SERVICE_MULT_SEVERE if threat_severe else POST_THREAT_SERVICE_MULT
 
 	# Check if player has damaged gear
 	var damaged_items = []
@@ -7122,7 +7125,7 @@ func _handle_blacksmith_station(peer_id: int, character):
 				var repair_cost = int(wear * item_level * 25)
 				var valor_cost = max(1, repair_cost / 10)
 				if threatened:
-					valor_cost = int(ceil(valor_cost * POST_THREAT_SERVICE_MULT))
+					valor_cost = int(ceil(valor_cost * threat_service_mult))
 				damaged_items.append({
 					"slot": slot_name,
 					"name": item.get("name", slot_name.capitalize()),
@@ -7178,7 +7181,9 @@ func _handle_blacksmith_station(peer_id: int, character):
 		"player_valor": persistence.get_valor(bs_account_id),
 		"player_materials": character.crafting_materials.duplicate(),
 		"under_threat": threatened,
-		"threat_mult": POST_THREAT_SERVICE_MULT if threatened else 1.0,
+		"threat_mult": threat_service_mult if threatened else 1.0,
+		"threat_severe": threat_severe,
+		"threat_count": int(threat_info.get("count", 1)) if threatened else 0,
 	})
 
 func check_blacksmith_encounter(_peer_id: int) -> bool:
@@ -7499,12 +7504,15 @@ func _handle_healer_station(peer_id: int, character):
 	var cure_all_cost = max(1, level * 180 / 10)
 
 	# Audit #11 Slice 8 — services cost more at threatened posts.
+	# Audit #11 Slice 13 (v0.9.548) — severe threat picks the harsher mult.
 	var threat_info = _get_post_threat_info(peer_id)
 	var threatened: bool = bool(threat_info.get("threatened", false))
+	var threat_severe: bool = bool(threat_info.get("severe", false))
+	var threat_service_mult: float = POST_THREAT_SERVICE_MULT_SEVERE if threat_severe else POST_THREAT_SERVICE_MULT
 	if threatened:
-		quick_heal_cost = int(ceil(quick_heal_cost * POST_THREAT_SERVICE_MULT))
-		full_heal_cost = int(ceil(full_heal_cost * POST_THREAT_SERVICE_MULT))
-		cure_all_cost = int(ceil(cure_all_cost * POST_THREAT_SERVICE_MULT))
+		quick_heal_cost = int(ceil(quick_heal_cost * threat_service_mult))
+		full_heal_cost = int(ceil(full_heal_cost * threat_service_mult))
+		cure_all_cost = int(ceil(cure_all_cost * threat_service_mult))
 
 	var has_debuffs = character.poison_active or character.blind_active or character.has_debuff("weakness")
 
@@ -7549,7 +7557,9 @@ func _handle_healer_station(peer_id: int, character):
 		"max_hp": character.get_total_max_hp(),
 		"companion": companion_payload,
 		"under_threat": threatened,
-		"threat_mult": POST_THREAT_SERVICE_MULT if threatened else 1.0,
+		"threat_mult": threat_service_mult if threatened else 1.0,
+		"threat_severe": threat_severe,
+		"threat_count": int(threat_info.get("count", 1)) if threatened else 0,
 	})
 
 func check_healer_encounter(_peer_id: int) -> bool:
@@ -23472,9 +23482,13 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	var force = _count_post_guard_force(cx, cy, owner)
 	var suppression = int(force.get("guards", 0)) + int(force.get("tower_guards", 0))
 	# Audit #11 Slice 11 — threat erodes suppression.
+	# Audit #11 Slice 13 (v0.9.548) — severe threat (2+ T2+ dungeons in
+	# corridor) doubles the erode to -2. Bubble offers half as much
+	# protection while the post is overwhelmed.
 	var threat_state = _compute_post_threat_state(cx, cy)
 	if threat_state.get("threatened", false):
-		suppression = max(0, suppression - 1)
+		var threat_erode = 2 if bool(threat_state.get("severe", false)) else 1
+		suppression = max(0, suppression - threat_erode)
 	# Audit #12 Slice 5 — inactivity decay. Inactive posts (7-30d) lose 1
 	# additional suppression. Abandoned posts (30+d) lose ALL suppression —
 	# the bubble offers no protection until the owner tends the post again.
@@ -26832,6 +26846,18 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		return empty_result
 	threats.sort_custom(func(a, b): return a.distance < b.distance)
 	var nearest = threats[0]
+	# Audit #11 Slice 13 (v0.9.548) — severe threat. When 2+ T2+ dungeons share
+	# the corridor around a post, the post is "severely threatened" — the same
+	# downstream code paths (market markup, service prices, player-post bubble
+	# suppression) escalate to harsher multipliers. Spatial gate (count of
+	# active dungeons) deliberately avoids real-time gates per
+	# [[no-real-time-gates]] feedback — clearing one of the threatening
+	# dungeons immediately steps the post back down to "normal threat".
+	var max_threat_tier = nearest.tier
+	for t in threats:
+		if int(t.tier) > max_threat_tier:
+			max_threat_tier = int(t.tier)
+	var severe = threats.size() >= SEVERE_THREAT_DUNGEON_COUNT
 	var result = {
 		"threatened": true,
 		"dungeon_name": nearest.name,
@@ -26842,6 +26868,8 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		"count": threats.size(),
 		"dungeon_type": nearest.dungeon_type,
 		"instance_id": nearest.instance_id,
+		"severe": severe,
+		"max_tier": max_threat_tier,
 	}
 	_threat_state_cache[cache_key] = result
 	if DIAG_TIMING_ENABLED:
@@ -26876,6 +26904,15 @@ const POST_THREAT_PRICE_MULT: float = 1.20
 # economy is supposed to *bite* — players who linger at threatened posts pay
 # for the convenience.
 const POST_THREAT_SERVICE_MULT: float = 1.50
+
+# Audit #11 Slice 13 (v0.9.548) — severe threat escalation. When 2+ T2+
+# active dungeons sit within the threat corridor of a post, market markup
+# and service prices jump from "merely threatened" to "severely threatened".
+# The post is effectively downgraded — prices punitive, settler-bubble
+# suppression doubled (player posts only). Spatial gate, no wall-clock.
+const SEVERE_THREAT_DUNGEON_COUNT: int = 2
+const POST_THREAT_PRICE_MULT_SEVERE: float = 1.50
+const POST_THREAT_SERVICE_MULT_SEVERE: float = 2.00
 
 # Audit #11 Slice 9 — threat corridor. A player within this distance of an
 # active T2+ world dungeon stands in the "danger zone" between the dungeon
@@ -26952,14 +26989,20 @@ func _get_post_threat_info(peer_id: int) -> Dictionary:
 	var threat = _compute_post_threat_state(character.x, character.y)
 	if not threat.get("threatened", false):
 		return {"threatened": false}
+	# Audit #11 Slice 13 (v0.9.548) — severe threat path picks the harsher
+	# multipliers. Caller branches on `severe` for service prices.
+	var is_severe = bool(threat.get("severe", false))
+	var mult = POST_THREAT_PRICE_MULT_SEVERE if is_severe else POST_THREAT_PRICE_MULT
 	return {
 		"threatened": true,
-		"multiplier": POST_THREAT_PRICE_MULT,
+		"multiplier": mult,
 		"dungeon_name": String(threat.get("dungeon_name", "")),
 		"tier": int(threat.get("tier", 0)),
 		"distance": int(threat.get("distance", 0)),
 		"direction": String(threat.get("direction", "nearby")),
 		"color": String(threat.get("color", "#FF6644")),
+		"severe": is_severe,
+		"count": int(threat.get("count", 1)),
 	}
 
 func _build_threat_rumor_line(px: int, py: int, quest_giver: String, personality: String = "warm") -> String:
