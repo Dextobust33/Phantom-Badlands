@@ -20889,7 +20889,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21720,6 +21720,43 @@ func process_command(text: String):
 			# Audit #14 v0.9.532 — list online clanmates with level + class.
 			# Server returns clan_list_result; client renders compact roster.
 			send_to_server({"type": "clan_list"})
+		"topics", "helplist", "helptopics":
+			# Audit #15 v0.9.538 — persistent help discovery. Lists every
+			# HELP_TOPICS key + title so players can find a topic without
+			# knowing which panel owns it.
+			var topic_keys = GlobalHelpPanelScript.HELP_TOPICS.keys()
+			topic_keys.sort()
+			display_game("[color=#FFD700]══════ HELP TOPICS (%d) ══════[/color]" % topic_keys.size())
+			for tkey in topic_keys:
+				var topic_entry = GlobalHelpPanelScript.HELP_TOPICS.get(tkey, {})
+				var title_bb = String(topic_entry.get("title", tkey))
+				# Strip BBCode wrapping color tags for the listing — we just
+				# want the plain title text. RichTextLabel's bbcode parser
+				# would render it but a per-entry color overlay is cleaner.
+				var stripped = title_bb
+				while stripped.find("[") >= 0 and stripped.find("]") >= 0:
+					var open_b = stripped.find("[")
+					var close_b = stripped.find("]", open_b)
+					if close_b < 0:
+						break
+					stripped = stripped.substr(0, open_b) + stripped.substr(close_b + 1)
+				display_game("  [color=#9ACD32]%s[/color] [color=#888888]— %s[/color]" % [tkey, stripped])
+			display_game("")
+			display_game("[color=#808080]Use [/color][color=#9ACD32]/topic <key>[/color][color=#808080] to open one in the help panel.[/color]")
+		"topic", "viewtopic":
+			# Audit #15 v0.9.538 — open any registered help topic by key in
+			# the global help panel. Pairs with /topics for discovery.
+			if parts.size() < 2:
+				display_game("[color=#FF0000]Usage: /topic <key>[/color]")
+				display_game("[color=#808080]Run [/color][color=#9ACD32]/topics[/color][color=#808080] to see all keys.[/color]")
+			else:
+				var topic_arg = String(parts[1]).to_lower()
+				if not GlobalHelpPanelScript.HELP_TOPICS.has(topic_arg):
+					display_game("[color=#FF0000]Unknown topic '%s'.[/color] Run [color=#9ACD32]/topics[/color] for the list." % topic_arg)
+				elif global_help_panel:
+					global_help_panel.show_topic(topic_arg)
+				else:
+					display_game("[color=#FF0000]Help panel not ready.[/color]")
 		"afk", "away":
 			# Audit #14 v0.9.533 — toggle AFK badge. /afk alone sets you AFK
 			# with no reason; /afk <reason> attaches a short note. Auto-clears
@@ -24529,8 +24566,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.538 — Audit #15 persistent help discovery (/topics + /topic).
+	display_game("[color=#00FF00]v0.9.538[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Every help-panel topic is now reachable from anywhere in the world.[/color]")
+	display_game("  • [b]/topics[/b] (Audit #15). Lists every registered HELP_TOPICS key alongside its title — no need to know which panel owns a topic to find it. Default sort alphabetical.")
+	display_game("  • [b]/topic <key>[/b] (Audit #15). Opens any topic by key in the global help panel from anywhere. Aliases: [color=#9ACD32]/viewtopic[/color]. Pairs with [color=#9ACD32]/topics[/color] for full discoverability — topics used to be reachable only via the panel that owns the [b]?[/b] button.")
+	display_game("  • Closes one of the focused-project items called out in the v0.9.536 audit cycle close. Audit #15 progress: ~97% → ~99%.")
+	display_game("")
+
 	# v0.9.537 — Audit #14 functional mentor reward bonus.
-	display_game("[color=#00FF00]v0.9.537[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.537[/color]")
 	display_game("  [color=#FFD700]Mentoring becomes a real gameplay incentive — partying with a new player now grants the whole party a +25% XP bonus.[/color]")
 	display_game("  • [b]Mentor + mentee party XP bonus[/b] (Audit #14). When a Lv 20+ player with [color=#9ACD32]/mentor on[/color] is partied together with at least one Lv < 10 player, [b]every surviving party member earns +25% XP[/b] on victory. The reward log shows [color=#FFD700]✦ Mentor bonus: +25% XP for the party![/color] so you know it fired. Mentor and mentee must be different characters; the bonus applies per-fight and folds into the same XP product as house bonuses + level-gap scaling.")
 	display_game("  • [b]Why this matters[/b]: until today, [color=#9ACD32]/mentor on[/color] was purely cosmetic — a gold [color=#FFD700]★[/color] badge on your name. v0.9.537 makes it functional: mentors get a real reason to party with low-level players, mentees get a meaningful XP boost during their most fragile levels, and the existing /mentors listing + ★ badge + [NEW Lv X] whisper tags become coordination tools with actual stakes behind them.")
@@ -24561,13 +24606,6 @@ func display_changelog():
 	display_game("  • Catalogue now spans 21 structures across Construction skill 3 → 25, with mixed walkable / blocking / line-of-sight blocking / floor types. Audit progress: #11 ~98% → ~99%, #12 ~97% → ~98%.")
 	display_game("")
 
-	# v0.9.533 — Audit #14 /afk status + Audit #12 catalogue 17 → 19.
-	display_game("[color=#00FFFF]v0.9.533[/color]")
-	display_game("  [color=#FFD700]Away-from-keyboard status, plus two more cosmetic buildables.[/color]")
-	display_game("  • [b]/afk status[/b] (Audit #14). [color=#9ACD32]/afk[/color] (alias [color=#9ACD32]/away[/color]) marks you as away with an optional reason: [color=#9ACD32]/afk grabbing coffee[/color]. Your name now renders [color=#FFAA66][AFK][/color] in the players list and /clist roster; clanmates' dots flip to orange ●. Auto-clears the moment you move, chat, or use [color=#9ACD32]/back[/color] — no need to remember to toggle off.")
-	display_game("  • [b]Hedge + Shrine[/b] (Audit #12). Hedge ([color=#4A8A4A]h[/color], blocks movement AND line-of-sight, Construction skill 8, 1 wooden plank + 3 herb + 1 rope) is a soft-wall greenery section — break up sightlines without harsh stone. Shrine ([color=#DAA520]q[/color], blocks movement, Construction skill 19, 3 stone block + 2 magic dust + 1 arcane crystal + 1 heartwood) is a gilded prestige centerpiece. Catalogue spans 19 structures.")
-	display_game("  • Audit progress: #14 ~91% → ~93%, #12 ~96% → ~97%.")
-	display_game("")
 
 
 
@@ -26990,6 +27028,7 @@ func show_help():
 [color=#00FFFF]Hybrid Fusion:[/color] 2 different sub-tier 5+ + Hybrid Catalyst → blended companion. Catalysts drop T5+.
 [color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
 [color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
+[color=#00FFFF]Help discovery:[/color] [color=#9ACD32]/topics[/color] lists every help-panel topic key + title; [color=#9ACD32]/topic <key>[/color] opens any topic from anywhere.
 [color=#00FFFF]Mentor reward bonus:[/color] A Lv 20+ [color=#9ACD32]/mentor on[/color] partied with a Lv < 10 player grants [color=#FFD700]+25% XP[/color] to the whole party on every kill.
 [color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
 [color=#00FFFF]/afk status:[/color] [color=#9ACD32]/afk [reason][/color] marks you away ([color=#FFAA66][AFK][/color] badge); auto-clears on move/chat. [color=#9ACD32]/back[/color] to clear explicitly.
