@@ -1864,12 +1864,13 @@ func _scale_quest_for_player(quest: Dictionary, player_level: int, quests_comple
 # ===== DATE + DIRECTION HELPERS =====
 
 static func _get_date_string() -> String:
-	"""v0.9.525 — Daily rotation ripped per [[no-real-time-gates]]. Returns a
-	static string so each (post, character, index) seed is stable — quest
-	content at any board slot doesn't change based on wall-clock date.
-	The regenerating quest board (Slice 13 v0.9.453) still slides forward as
-	quests are completed, so players always see fresh procedural content."""
-	return "v0.9.525-static"
+	"""Returns YYYYMMDD string from system time for daily quest seeding.
+
+	v0.9.526 — restored after v0.9.525 over-rip. World-state daily rotation
+	is fine per the narrowed [[no-real-time-gates]] rule (only player-facing
+	repeat cooldowns are banned)."""
+	var dt = Time.get_datetime_dict_from_system()
+	return "%04d%02d%02d" % [dt.year, dt.month, dt.day]
 
 static func _get_direction_text(from: Vector2i, to: Vector2i) -> String:
 	"""Get compass direction from one point to another (e.g. 'north', 'southeast')."""

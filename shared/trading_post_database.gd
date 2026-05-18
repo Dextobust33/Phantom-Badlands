@@ -955,23 +955,24 @@ func category_has_npc_stock(category: String) -> bool:
 	return CATEGORY_STOCK_POOLS.has(category) and not CATEGORY_STOCK_POOLS[category].is_empty()
 
 func get_npc_daily_stock(post_id: String, category: String) -> Array:
-	"""Audit #11 Slice 8 (generalises Audit #9 Slice 3b).
+	"""Audit #11 Slice 8 (generalises Audit #9 Slice 3b). Deterministic
+	per-post-per-day NPC stock. Hashes post_id with days-since-epoch and
+	the category so different categories roll independently. Returns Array
+	of vendor_config.slots_per_day pool entries (or fewer if the pool is
+	smaller).
 
-	v0.9.525 — Per-day rotation ripped per [[no-real-time-gates]]. The seed
-	is now post_id + category only, so each post's stock is STATIC over its
-	lifetime — no daily reroll. Different posts still have different stock
-	(seed varies by post_id), so the world still has variety; what's gone is
-	the wall-clock pressure to re-visit on a specific day. Function name kept
-	("daily_stock") for back-compat with callers.
-
-	Returns Array of vendor_config.slots_per_day pool entries (or fewer if
-	the pool is smaller)."""
+	v0.9.526 — restored after v0.9.525 over-rip. World-state daily rotation
+	is fine per the narrowed [[no-real-time-gates]] rule."""
 	if not category_has_npc_stock(category):
 		return []
 	var pool: Array = CATEGORY_STOCK_POOLS[category]
 	var cfg: Dictionary = CATEGORY_VENDOR_CONFIG.get(category, {})
 	var slots: int = int(cfg.get("slots_per_day", 3))
-	var seed_str := "%s|%s" % [category, post_id]
+	# Days since epoch — UTC truncation is fine, all players use the
+	# server's clock so the day boundary is consistent.
+	var seconds_since_epoch: int = int(Time.get_unix_time_from_system())
+	var day_index: int = seconds_since_epoch / 86400
+	var seed_str := "%s|%s|%d" % [category, post_id, day_index]
 	var seed_hash: int = seed_str.hash()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_hash
