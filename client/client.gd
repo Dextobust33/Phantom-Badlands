@@ -5140,6 +5140,11 @@ func update_online_players(players: Array):
 		if bool(player.get("mentor_active", false)):
 			online_players_list.append_text("[color=#FFD700]★[/color] ")
 
+		# Audit #14 v0.9.533 — [AFK] badge before the name when set.
+		var pafk = bool(player.get("afk", false))
+		if pafk:
+			online_players_list.append_text("[color=#FFAA66][AFK][/color] ")
+
 		# Use push_meta/pop for reliable click detection (Godot 4.x uses pop() not pop_meta())
 		online_players_list.push_meta(pname)
 		if not ptitle.is_empty():
@@ -5148,7 +5153,12 @@ func update_online_players(players: Array):
 		else:
 			online_players_list.append_text(pname)
 		online_players_list.pop()
-		online_players_list.append_text(" Lv%d %s\n" % [plevel, pclass])
+		online_players_list.append_text(" Lv%d %s" % [plevel, pclass])
+		# Append AFK reason after stat line so it's visible but doesn't crowd the name.
+		var pafk_reason = String(player.get("afk_reason", ""))
+		if pafk and pafk_reason != "":
+			online_players_list.append_text(" [color=#FFAA66](%s)[/color]" % pafk_reason)
+		online_players_list.append_text("\n")
 
 func _get_title_display_info(title_id: String) -> Dictionary:
 	"""Get display info for a title (color, prefix, name)"""
@@ -18970,7 +18980,17 @@ func handle_server_message(message: Dictionary):
 					var mate_level = int(mate.get("level", 1))
 					var mate_class = String(mate.get("class", ""))
 					var mate_self_tag = " [color=#FFD700](you)[/color]" if bool(mate.get("is_self", false)) else ""
-					display_game("  [color=#66FF66]●[/color] [color=#DDDDDD]%s[/color] [color=#888888]Lv %d %s[/color]%s" % [mate_name, mate_level, mate_class.capitalize(), mate_self_tag])
+					# Audit #14 v0.9.533 — surface AFK status on the /clist roster.
+					var mate_afk_tag = ""
+					var mate_is_afk = bool(mate.get("afk", false))
+					if mate_is_afk:
+						var mate_afk_reason = String(mate.get("afk_reason", ""))
+						if mate_afk_reason != "":
+							mate_afk_tag = " [color=#FFAA66][AFK: %s][/color]" % mate_afk_reason
+						else:
+							mate_afk_tag = " [color=#FFAA66][AFK][/color]"
+					var dot_color = "#FFAA66" if mate_is_afk else "#66FF66"
+					display_game("  [color=%s]●[/color] [color=#DDDDDD]%s[/color] [color=#888888]Lv %d %s[/color]%s%s" % [dot_color, mate_name, mate_level, mate_class.capitalize(), mate_self_tag, mate_afk_tag])
 
 		"party_message":
 			# Audit #14 v0.9.530 — party-channel chat. Server broadcasts to every
@@ -20855,7 +20875,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21686,6 +21706,18 @@ func process_command(text: String):
 			# Audit #14 v0.9.532 — list online clanmates with level + class.
 			# Server returns clan_list_result; client renders compact roster.
 			send_to_server({"type": "clan_list"})
+		"afk", "away":
+			# Audit #14 v0.9.533 — toggle AFK badge. /afk alone sets you AFK
+			# with no reason; /afk <reason> attaches a short note. Auto-clears
+			# on any subsequent move or chat.
+			var reason_text = ""
+			if parts.size() > 1:
+				reason_text = " ".join(parts.slice(1))
+			send_to_server({"type": "set_afk", "afk": true, "reason": reason_text})
+		"back", "afkoff", "here":
+			# Audit #14 v0.9.533 — explicit AFK clear (the auto-clear on move/chat
+			# handles most cases; this is for completeness).
+			send_to_server({"type": "set_afk", "afk": false})
 		"p", "pc", "partychat":
 			# Audit #14 v0.9.530 — party-channel chat. Broadcasts to all party
 			# members. Server gates by party membership.
@@ -24483,8 +24515,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.533 — Audit #14 /afk status + Audit #12 catalogue 17 → 19.
+	display_game("[color=#00FF00]v0.9.533[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Away-from-keyboard status, plus two more cosmetic buildables.[/color]")
+	display_game("  • [b]/afk status[/b] (Audit #14). [color=#9ACD32]/afk[/color] (alias [color=#9ACD32]/away[/color]) marks you as away with an optional reason: [color=#9ACD32]/afk grabbing coffee[/color]. Your name now renders [color=#FFAA66][AFK][/color] in the players list and /clist roster; clanmates' dots flip to orange ●. Auto-clears the moment you move, chat, or use [color=#9ACD32]/back[/color] — no need to remember to toggle off.")
+	display_game("  • [b]Hedge + Shrine[/b] (Audit #12). Hedge ([color=#4A8A4A]h[/color], blocks movement AND line-of-sight, Construction skill 8, 1 wooden plank + 3 herb + 1 rope) is a soft-wall greenery section — break up sightlines without harsh stone. Shrine ([color=#DAA520]q[/color], blocks movement, Construction skill 19, 3 stone block + 2 magic dust + 1 arcane crystal + 1 heartwood) is a gilded prestige centerpiece. Catalogue spans 19 structures.")
+	display_game("  • Audit progress: #14 ~91% → ~93%, #12 ~96% → ~97%.")
+	display_game("")
+
 	# v0.9.532 — Audit #14 clan logout notification + /clist.
-	display_game("[color=#00FF00]v0.9.532[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.532[/color]")
 	display_game("  [color=#FFD700]Clan presence finishes — logout mirrors login, and /clist shows who's currently around.[/color]")
 	display_game("  • [b]Clan-mate logout notifications[/b] (Audit #14). Mirror of v0.9.531's login overlay — when a clanmate disconnects, every online member sees [color=#666666]○[/color] [color=#88FFCC][CLAN][/color] [name] has logged out. in chat. Together with the login pings, you always know your crew's presence in real time.")
 	display_game("  • [b]/clist command[/b] (Audit #14). New chat command (aliases [color=#9ACD32]/clanlist[/color], [color=#9ACD32]/clanonline[/color]) prints a compact roster of currently-online clanmates with name + level + class. You appear tagged [color=#FFD700](you)[/color]. Saves a /who scroll when you just want to coordinate with your own crew.")
@@ -24516,13 +24556,6 @@ func display_changelog():
 	display_game("  • Audit progress: #14 ~78% → ~82%, #15 ~92% → ~94%.")
 	display_game("")
 
-	# v0.9.528 — Audit #3 tutorial hints batch (gather + equip).
-	display_game("[color=#00FFFF]v0.9.528[/color]")
-	display_game("  [color=#FFD700]Two more first-touch teaching overlays — gather minigame and equipment slots.[/color]")
-	display_game("  • [b]First gather hint[/b] (Audit #3). First time you start fishing, mining, or logging, a modal explains the wait→react minigame, tier scaling (T1-T9 nodes need 1/2/3 reactions), how skill XP works, and how equipped tools (rod/pickaxe/axe) cut wait time and boost yield. New [color=#A335EE]seen_gather_hint[/color] per-character flag — fires once per character across all three gather types.")
-	display_game("  • [b]First equip hint[/b] (Audit #3). First time you equip a piece of gear, a modal explains the seven slots (Weapon/Armor/Helm/Shield/Boots/Ring/Amulet), the inventory comparison view, tier + variant rarity, the Salvage flow for low-tier gear, and Home Stone (Equipment) for permadeath protection. New [color=#A335EE]seen_equip_hint[/color] per-character flag.")
-	display_game("  • Tutorial overlays now cover: progression, quest board, dungeons, crafting, signposts, apex frontier, market, chains, companions, companion stable, [b]gather[/b], [b]equip[/b]. Twelve first-touch hints; Audit #3 ~98% → ~99%.")
-	display_game("")
 
 
 
@@ -27762,7 +27795,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			# v0.9.521 — tent + scarecrow added.
 			# v0.9.527 — crate + cairn added.
 			# v0.9.531 — pedestal + cage added.
-			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage"]:
+			# v0.9.533 — hedge + shrine added.
+			for st in ["banner", "lamp_post", "torch", "statue", "signpost", "brazier", "fountain", "bench", "well", "pylon", "garden_plot", "tent", "scarecrow", "crate", "cairn", "pedestal", "cage", "hedge", "shrine"]:
 				send_to_server({"type": "gm_givestructure", "structure_type": st})
 		"enter_dungeon_t1":
 			close_admin_menu()

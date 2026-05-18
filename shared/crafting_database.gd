@@ -3230,6 +3230,33 @@ const RECIPES = {
 		"craft_time": 3.0,
 		"description": "A wrought-iron cage on a wooden frame. Blocks movement — decorative menagerie prop or aesthetic detention motif for your settlement."
 	},
+	# Audit #12 v0.9.533 — two more cosmetic Construction recipes. Hedge is a
+	# soft-wall blocker (movement + line-of-sight) at low-mid skill; Shrine is
+	# a high-skill gilded prestige centerpiece, blocking but eye-catching.
+	"hedge_build": {
+		"name": "Hedge",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 8,
+		"difficulty": 12,
+		"materials": {"wooden_plank": 1, "herb": 3, "rope": 1},
+		"output_type": "structure",
+		"structure_type": "hedge",
+		"specialist_only": false,
+		"craft_time": 2.0,
+		"description": "A trimmed leafy hedge section. Blocks movement and line-of-sight — use it as a soft wall to break up sightlines without the harsh look of stone."
+	},
+	"shrine_build": {
+		"name": "Shrine",
+		"skill": CraftingSkill.CONSTRUCTION,
+		"skill_required": 19,
+		"difficulty": 26,
+		"materials": {"stone_block": 3, "magic_dust": 2, "arcane_crystal": 1, "heartwood": 1},
+		"output_type": "structure",
+		"structure_type": "shrine",
+		"specialist_only": false,
+		"craft_time": 4.0,
+		"description": "A small gilded shrine etched with sigils. Blocks movement — a prestige centerpiece. Sits between Well (skill 18) and Fountain (22) in the high-tier blocking lineup."
+	},
 	# Audit #4 Slice 1A.ii (v0.9.500) — Player-built Companion Stable. Bumps
 	# open the same Companion Stable UI as the NPC-post Stable (deposit /
 	# withdraw / return-to-slot / check-out + 4 fusion modes). Lets players
