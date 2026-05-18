@@ -5111,6 +5111,19 @@ func update_online_players(players: Array):
 		online_players_list.append_text("[color=#555555]No players online[/color]")
 		return
 
+	# Audit #14 v0.9.536 — total online count header. First line of the panel
+	# so players see how busy the world is without having to count names.
+	# Tallies AFK separately so the number reflects "actively around" too.
+	var afk_count: int = 0
+	for player in players:
+		if bool(player.get("afk", false)):
+			afk_count += 1
+	var active_count: int = players.size() - afk_count
+	var count_line = "[color=#88FFCC][b]%d online[/b][/color]" % players.size()
+	if afk_count > 0:
+		count_line += " [color=#888888]([/color][color=#9ACD32]%d active[/color][color=#888888], [/color][color=#FFAA66]%d AFK[/color][color=#888888])[/color]" % [active_count, afk_count]
+	online_players_list.append_text(count_line + "\n")
+
 	# Audit #14 v0.9.518 — Mentor count header. Reinforces the v0.9.517 ★ badge
 	# discoverability — at a glance, new players can see how many volunteers
 	# are around and what the ★ means.
@@ -5119,9 +5132,10 @@ func update_online_players(players: Array):
 		if bool(player.get("mentor_active", false)):
 			mentor_count += 1
 	if mentor_count > 0:
-		online_players_list.append_text("[color=#FFD700]★ %d mentor%s online[/color] [color=#888888](type [/color][color=#9ACD32]/mentor[/color][color=#888888] to volunteer)[/color]\n\n" % [
+		online_players_list.append_text("[color=#FFD700]★ %d mentor%s online[/color] [color=#888888](type [/color][color=#9ACD32]/mentor[/color][color=#888888] to volunteer)[/color]\n" % [
 			mentor_count, "s" if mentor_count != 1 else ""
 		])
+	online_players_list.append_text("\n")
 
 	for player in players:
 		var pname = player.get("name", "Unknown")
@@ -24515,8 +24529,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.536 — Final audit close: player count header + help refresh.
+	display_game("[color=#00FF00]v0.9.536[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Audit close-out — total online count on the players panel + a full help-page refresh covering everything shipped this audit cycle.[/color]")
+	display_game("  • [b]Players list count header[/b] (Audit #14). Top of the players panel now reads [color=#88FFCC][b]N online[/b][/color] [color=#888888]([/color][color=#9ACD32]M active[/color][color=#888888], [/color][color=#FFAA66]K AFK[/color][color=#888888])[/color]. At-a-glance world busyness without scanning the list.")
+	display_game("  • [b]Help page RECENT ADDITIONS refresh[/b] (Audit #15). show_help() now documents all v0.9.529-535 features: the three social chat channels ([color=#9ACD32]/c[/color] / [color=#9ACD32]/p[/color] / [color=#9ACD32]/clist[/color]), the [color=#9ACD32]/afk[/color] status badge, clan presence indicators (online dots, N/M header chip, login/logout broadcasts), the threat-HUD tile-distance readout, and the full 23-structure cosmetic catalogue.")
+	display_game("  • Twelve releases (v0.9.524 → v0.9.536) shipped this audit cycle. Audits #3, #6, #10, #11 at 99%+; #12 at 99%; #14 at ~95%; #15 at ~97%. Comprehensive audit close.")
+	display_game("")
+
 	# v0.9.535 — Audit #15 clan help refresh + Audit #12 catalogue 21 → 23.
-	display_game("[color=#00FF00]v0.9.535[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.535[/color]")
 	display_game("  [color=#FFD700]Clan panel help button now lists every social command + indicator. Catalogue picks up two more cosmetic structures.[/color]")
 	display_game("  • [b]Clan page help refresh[/b] (Audit #15). The ? Help button on the Clan panel now covers [color=#9ACD32]/c[/color], [color=#9ACD32]/p[/color], [color=#9ACD32]/clist[/color], [color=#9ACD32]/afk[/color], [color=#9ACD32]/mentor[/color], the [color=#FFD700][NEW Lv X][/color] whisper tag, the green/gray/orange member dot codes, the N/M online header chip, and the login/logout chat broadcasts — one place to discover the full clan presence surface.")
 	display_game("  • [b]Easel + Totem[/b] (Audit #12). Easel ([color=#6B4A28]y[/color], blocks movement, Construction skill 6, 2 wooden plank + 1 ink) — cheap artistic prop for studios or scholarly corners. Totem ([color=#A0522D]z[/color], blocks movement, Construction skill 13, 3 wooden plank + 2 ink + 1 leather) — tall painted pillar with tribal aesthetic. Catalogue spans 23 structures.")
@@ -24547,14 +24569,6 @@ func display_changelog():
 	display_game("  • Audit #14 progress: ~88% → ~91%.")
 	display_game("")
 
-	# v0.9.531 — Audit #14 clan presence batch + Audit #12 catalogue 15 → 17.
-	display_game("[color=#00FFFF]v0.9.531[/color]")
-	display_game("  [color=#FFD700]Three-slice batch — clan login notifications, online count header, and two more cosmetic structures.[/color]")
-	display_game("  • [b]Clan-mate login notifications[/b] (Audit #14). When a clanmate logs in, every online member of their clan sees a subtle [color=#66FF66]●[/color] [color=#88FFCC][CLAN][/color] [name] has logged in. line in chat. Sender doesn't see their own notification. Pairs with v0.9.529's clan chat — now you know who showed up to /c with.")
-	display_game("  • [b]Clan online count[/b] (Audit #14). The More → Clan panel header now ends with [color=#66FF66]●[/color] [color=#AAFFAA]N online[/color] alongside the existing N/M members chip. Server tallies online_count from the same online_account_ids set that stamps the per-member is_online flag.")
-	display_game("  • [b]Pedestal + Cage[/b] (Audit #12). Pedestal ([color=#DDDDDD]d[/color], blocks movement, Construction skill 14, 3 stone block + 1 magic dust) — polished marble display block for trophies/monuments. Cage ([color=#555555]e[/color], blocks movement, Construction skill 16, 3 iron ore + 1 wooden plank + 1 rope) — wrought-iron decorative menagerie prop. Catalogue spans 17 structures across Construction skill 3 → 25.")
-	display_game("  • Audit progress: #14 ~85% → ~88%, #12 ~94% → ~96%.")
-	display_game("")
 
 
 
@@ -26974,12 +26988,16 @@ func show_help():
 [color=#00FFFF]Tier Ascension Fusion:[/color] 3 same-monster + same-tier (any sub-tier mix) + Ascension Catalyst → same type at tier+1. Keeps your favorite pet, raises rank. Catalysts drop T6+.
 [color=#00FFFF]Hybrid Fusion:[/color] 2 different sub-tier 5+ + Hybrid Catalyst → blended companion. Catalysts drop T5+.
 [color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
-[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts. [color=#9ACD32]/c <msg>[/color] broadcasts to online clan members.
+[color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
+[color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
+[color=#00FFFF]/afk status:[/color] [color=#9ACD32]/afk [reason][/color] marks you away ([color=#FFAA66][AFK][/color] badge); auto-clears on move/chat. [color=#9ACD32]/back[/color] to clear explicitly.
+[color=#00FFFF]Clan presence:[/color] Green/gray/orange ● dots on the clan roster, N/M online header chip, login/logout chat broadcasts to clanmates.
 [color=#00FFFF]Whisper tags:[/color] Whispers from Lv < 10 players display a gold [color=#FFD700][NEW Lv X][/color] tag for Lv 20+ recipients — mentors can prioritize newbies.
 [color=#00FFFF]Tutorial overlays:[/color] Twelve first-touch teaching modals (progression, quest board, dungeons, crafting, signposts, apex frontier, market, chains, companions, companion stable, gather, equip).
 [color=#00FFFF]Status page:[/color] Progression Vectors dashboard names every advanceable track. Includes Quest Chains completed + titles earned. Respawn point line.
+[color=#00FFFF]Threat HUD:[/color] [color=#FF6600]⚠ Threat[/color] tag on Area line shows spillover monster type + dungeon + tile distance + (+N more) when multiple T2+ dungeons threaten.
 [color=#00FFFF]No real-time gates:[/color] Daily quests + repeatable chains have no 24h cooldown — re-accept and re-run as fast as you like. World-state systems (resource regrowth, vendor rotation, post inactivity, wall decay) still tick normally.
-[color=#00FFFF]Cosmetic buildables:[/color] Cairn, Garden Plot, Scarecrow, Bench, Tent, Torch, Crate, Signpost, Pylon, Banner, Brazier, Lamp Post, Well, Fountain, Statue — fifteen structures across Construction skill 3 → 25.
+[color=#00FFFF]Cosmetic buildables:[/color] Cairn, Garden Plot, Easel, Scarecrow, Bench, Tent, Torch, Hedge, Crate, Signpost, Pylon, Banner, Brazier, Totem, Lectern, Pedestal, Lamp Post, Cage, Mosaic, Well, Shrine, Fountain, Statue — twenty-three structures across Construction skill 3 → 25, mixing walkable / blocking / line-of-sight / floor types.
 
 [color=#808080]Open [/color][color=#00FFFF]More → Changes[/color][color=#808080] for the per-version detailed history.[/color]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
