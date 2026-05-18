@@ -24744,8 +24744,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.545 — Concrete reveal labels + full roll breakdown (Slice 3.6 — playtest fix).
+	display_game("[color=#00FF00]v0.9.545[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Crafting summary now shows you the actual dice roll vs the threshold bands, and translates abstract bonus labels into concrete gameplay effects.[/color]")
+	display_game("  • [b]Real roll math[/b] (Audit #4 Slice 3.6, playtest feedback). The 'Chain' section is now a 'How the Roll Worked' breakdown showing: reveal score → +X% success chance → effective Y% → quality bands with explicit roll ranges ([color=#FFFFFF]Poor 30% (rolls 0–29)[/color] [color=#00FF00]Standard 40% (rolls 30–69)[/color] etc.) → actual roll value ([color=#FFD700]Rolled 47 out of 100[/color]) → which band it landed in. You can now see exactly why a Refined craft rolled Poor.")
+	display_game("  • [b]Concrete bonus descriptions[/b]. The old abstract 'Efficiency Tier +1' / 'Tool Durability +25%' labels now unpack into player-facing effects: [color=#88FF88]'Easier gathering minigame — −5% rhythm bar speed, +15% wider hit zone when you use this tool'[/color]. Tool-only bonuses are also flagged on non-tool recipes so you know they had no effect.")
+	display_game("  • [b]Correct slot names[/b]. Quality cards now use the actual in-game names: [color=#FFFFFF]Standard[/color] (BASE, +15% success), [color=#00FF00]Refined[/color] (QUALITY_UP_1, +15%), [color=#0070DD]Polished[/color] (QUALITY_UP_2, +30%), [color=#A335EE]Masterful[/color] (QUALITY_UP_3, +45%). Each reveal line states both the score and the success boost so the math is visible.")
+	display_game("")
+
 	# v0.9.544 — Unified Craft Summary panel (Slice 3.5 — playtest fix).
-	display_game("[color=#00FF00]v0.9.544[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.544[/color]")
 	display_game("  [color=#FFD700]Reveal panel and crafting-success page are now one screen with full transparency — boost choice, materials paid, scratch-off reveals, and how everything chained into the final result.[/color]")
 	display_game("  • [b]Unified Craft Summary[/b] (Audit #4 Slice 3.5 — playtest feedback). The old thin reveal-animation panel + the trailing 'Crafting Success!' text page are now combined into a single result modal. Sections: Boost tier badge → final quality + name → Materials Paid (with boost cost annotation) → Scratch-Off Reveals (each card with its effect tagged) → Score → Success → Quality [b]chain line[/b] → Bonuses Applied (refund / duplicates / tool durability/efficiency) → Item Stats → XP Gained.")
 	display_game("  • [b]Scratch-off transparency[/b]. Every revealed slot now shows what it did: Standard tier → +15% success, Fine → +30%, Masterwork → +45%, plus +25%/50% durability, +1/+2 efficiency, refund and duplicate cards. Lets you see exactly why a craft rolled the way it did.")
@@ -24778,20 +24786,6 @@ func display_changelog():
 	display_game("  • [b]Specialist discount[/b]: committed crafters (Halfling/Knight matched to the recipe's skill) save -10% on the extra Boost cost at Job Lv 20-39 and -20% at Job Lv 40+. Base 1.0× recipe cost is never reduced — only the [i]extra[/i] above 1.0×.")
 	display_game("")
 
-	# v0.9.540 — Audit #14 friend list (focused project #4).
-	display_game("[color=#00FFFF]v0.9.540[/color]")
-	display_game("  [color=#FFD700]Persistent friend graph with request/accept consent flow, plus a block list that silences unwanted whispers.[/color]")
-	display_game("  • [b]/friend[/b] command suite (Audit #14, focused project #4). Sub-commands:")
-	display_game("    [color=#9ACD32]/friend add <user>[/color] — send a friend request. Mutual outgoing requests auto-accept.")
-	display_game("    [color=#9ACD32]/friend accept <user>[/color] — accept an incoming request.")
-	display_game("    [color=#9ACD32]/friend reject <user>[/color] / [color=#9ACD32]/friend cancel <user>[/color] — decline incoming / cancel outgoing.")
-	display_game("    [color=#9ACD32]/friend remove <user>[/color] — bidirectional removal.")
-	display_game("    [color=#9ACD32]/friend list[/color] (alias [color=#9ACD32]/friends[/color]) — roster with online status + current character + level + class + AFK badge.")
-	display_game("    [color=#9ACD32]/friend requests[/color] (alias [color=#9ACD32]/freq[/color]) — pending incoming + outgoing.")
-	display_game("  • [b]/block[/b] + [b]/unblock[/b] + [b]/blocklist[/b] (Audit #14). Blocking silently drops whispers from the blocked user (they don't know they were blocked — opaque), auto-removes any existing friendship, and cancels pending requests in both directions. Mirror of clan presence — coverage parity for individual-account social.")
-	display_game("  • [b]Account-level persistence[/b]. Friends, requests, and block list all stored on your ACCOUNT — they survive permadeath. Mutual mirror state stays consistent across both sides for every operation.")
-	display_game("  • Audit #14 progress: ~99% → ~100% — the social surface is fully wired now: chat → presence → trade history → friend graph → block list.")
-	display_game("")
 
 
 
