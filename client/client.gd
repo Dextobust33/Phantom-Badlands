@@ -24529,8 +24529,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.537 — Audit #14 functional mentor reward bonus.
+	display_game("[color=#00FF00]v0.9.537[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Mentoring becomes a real gameplay incentive — partying with a new player now grants the whole party a +25% XP bonus.[/color]")
+	display_game("  • [b]Mentor + mentee party XP bonus[/b] (Audit #14). When a Lv 20+ player with [color=#9ACD32]/mentor on[/color] is partied together with at least one Lv < 10 player, [b]every surviving party member earns +25% XP[/b] on victory. The reward log shows [color=#FFD700]✦ Mentor bonus: +25% XP for the party![/color] so you know it fired. Mentor and mentee must be different characters; the bonus applies per-fight and folds into the same XP product as house bonuses + level-gap scaling.")
+	display_game("  • [b]Why this matters[/b]: until today, [color=#9ACD32]/mentor on[/color] was purely cosmetic — a gold [color=#FFD700]★[/color] badge on your name. v0.9.537 makes it functional: mentors get a real reason to party with low-level players, mentees get a meaningful XP boost during their most fragile levels, and the existing /mentors listing + ★ badge + [NEW Lv X] whisper tags become coordination tools with actual stakes behind them.")
+	display_game("  • Audit #14 progress: ~95% → ~98%.")
+	display_game("")
+
 	# v0.9.536 — Final audit close: player count header + help refresh.
-	display_game("[color=#00FF00]v0.9.536[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.536[/color]")
 	display_game("  [color=#FFD700]Audit close-out — total online count on the players panel + a full help-page refresh covering everything shipped this audit cycle.[/color]")
 	display_game("  • [b]Players list count header[/b] (Audit #14). Top of the players panel now reads [color=#88FFCC][b]N online[/b][/color] [color=#888888]([/color][color=#9ACD32]M active[/color][color=#888888], [/color][color=#FFAA66]K AFK[/color][color=#888888])[/color]. At-a-glance world busyness without scanning the list.")
 	display_game("  • [b]Help page RECENT ADDITIONS refresh[/b] (Audit #15). show_help() now documents all v0.9.529-535 features: the three social chat channels ([color=#9ACD32]/c[/color] / [color=#9ACD32]/p[/color] / [color=#9ACD32]/clist[/color]), the [color=#9ACD32]/afk[/color] status badge, clan presence indicators (online dots, N/M header chip, login/logout broadcasts), the threat-HUD tile-distance readout, and the full 23-structure cosmetic catalogue.")
@@ -24561,13 +24569,6 @@ func display_changelog():
 	display_game("  • Audit progress: #14 ~91% → ~93%, #12 ~96% → ~97%.")
 	display_game("")
 
-	# v0.9.532 — Audit #14 clan logout notification + /clist.
-	display_game("[color=#00FFFF]v0.9.532[/color]")
-	display_game("  [color=#FFD700]Clan presence finishes — logout mirrors login, and /clist shows who's currently around.[/color]")
-	display_game("  • [b]Clan-mate logout notifications[/b] (Audit #14). Mirror of v0.9.531's login overlay — when a clanmate disconnects, every online member sees [color=#666666]○[/color] [color=#88FFCC][CLAN][/color] [name] has logged out. in chat. Together with the login pings, you always know your crew's presence in real time.")
-	display_game("  • [b]/clist command[/b] (Audit #14). New chat command (aliases [color=#9ACD32]/clanlist[/color], [color=#9ACD32]/clanonline[/color]) prints a compact roster of currently-online clanmates with name + level + class. You appear tagged [color=#FFD700](you)[/color]. Saves a /who scroll when you just want to coordinate with your own crew.")
-	display_game("  • Audit #14 progress: ~88% → ~91%.")
-	display_game("")
 
 
 
@@ -26989,6 +26990,7 @@ func show_help():
 [color=#00FFFF]Hybrid Fusion:[/color] 2 different sub-tier 5+ + Hybrid Catalyst → blended companion. Catalysts drop T5+.
 [color=#00FFFF]Help Buttons:[/color] Most panels (Inventory, Companions, Crafting, Market, Stats, Sanctuary, Vault, Stones, etc.) have a [b]? Help[/b] button in the header with topic-specific guidance.
 [color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
+[color=#00FFFF]Mentor reward bonus:[/color] A Lv 20+ [color=#9ACD32]/mentor on[/color] partied with a Lv < 10 player grants [color=#FFD700]+25% XP[/color] to the whole party on every kill.
 [color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
 [color=#00FFFF]/afk status:[/color] [color=#9ACD32]/afk [reason][/color] marks you away ([color=#FFAA66][AFK][/color] badge); auto-clears on move/chat. [color=#9ACD32]/back[/color] to clear explicitly.
 [color=#00FFFF]Clan presence:[/color] Green/gray/orange ● dots on the clan roster, N/M online header chip, login/logout chat broadcasts to clanmates.
