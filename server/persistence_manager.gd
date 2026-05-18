@@ -363,6 +363,215 @@ func authenticate(username: String, password: String) -> Dictionary:
 		"max_characters": account.max_characters
 	}
 
+# Audit #14 v0.9.540 — Friend list (focused project #4). Account-level
+# friend graph with request/accept consent flow, plus account-level block
+# list. All persistent across permadeath. Keyed by account_id throughout.
+#
+# Account structure additions:
+#   "friends": [account_id, ...]                 — confirmed bidirectional
+#   "friend_requests_incoming": [account_id]     — waiting for ME to accept
+#   "friend_requests_outgoing": [account_id]     — I asked, waiting on them
+#   "blocked": [account_id]                      — accounts I've blocked
+
+func get_account_id_by_username(username: String) -> String:
+	"""Case-insensitive username → account_id lookup. Used by friend/block
+	commands so players can refer to each other by their login username."""
+	if username == "":
+		return ""
+	var lower = username.to_lower()
+	if not accounts_data.has("username_to_id"):
+		return ""
+	return String(accounts_data.username_to_id.get(lower, ""))
+
+func _ensure_social_arrays(account_id: String) -> void:
+	"""Lazy-initialize friends/requests/blocked arrays on accounts that
+	predate the friend system (so legacy accounts work without migration)."""
+	if not accounts_data.accounts.has(account_id):
+		return
+	var account = accounts_data.accounts[account_id]
+	if not account.has("friends"):
+		account["friends"] = []
+	if not account.has("friend_requests_incoming"):
+		account["friend_requests_incoming"] = []
+	if not account.has("friend_requests_outgoing"):
+		account["friend_requests_outgoing"] = []
+	if not account.has("blocked"):
+		account["blocked"] = []
+
+func get_friends(account_id: String) -> Array:
+	if not accounts_data.accounts.has(account_id):
+		return []
+	_ensure_social_arrays(account_id)
+	return accounts_data.accounts[account_id].friends.duplicate()
+
+func get_friend_requests_incoming(account_id: String) -> Array:
+	if not accounts_data.accounts.has(account_id):
+		return []
+	_ensure_social_arrays(account_id)
+	return accounts_data.accounts[account_id].friend_requests_incoming.duplicate()
+
+func get_friend_requests_outgoing(account_id: String) -> Array:
+	if not accounts_data.accounts.has(account_id):
+		return []
+	_ensure_social_arrays(account_id)
+	return accounts_data.accounts[account_id].friend_requests_outgoing.duplicate()
+
+func get_blocked(account_id: String) -> Array:
+	if not accounts_data.accounts.has(account_id):
+		return []
+	_ensure_social_arrays(account_id)
+	return accounts_data.accounts[account_id].blocked.duplicate()
+
+func is_friend(account_a: String, account_b: String) -> bool:
+	if not accounts_data.accounts.has(account_a):
+		return false
+	_ensure_social_arrays(account_a)
+	return account_b in accounts_data.accounts[account_a].friends
+
+func is_blocked(viewer_account: String, target_account: String) -> bool:
+	"""True if viewer has blocked target. Asymmetric — viewer.blocked controls
+	whether target's messages reach viewer."""
+	if not accounts_data.accounts.has(viewer_account):
+		return false
+	_ensure_social_arrays(viewer_account)
+	return target_account in accounts_data.accounts[viewer_account].blocked
+
+func send_friend_request(from_account: String, to_account: String) -> Dictionary:
+	"""Add to_account → from_account's outgoing and from_account → to_account's
+	incoming. Validates: not self, accounts exist, not already friends, neither
+	party has blocked the other, request not already pending."""
+	if from_account == to_account:
+		return {"success": false, "reason": "You cannot friend yourself."}
+	if not accounts_data.accounts.has(from_account):
+		return {"success": false, "reason": "Your account is invalid."}
+	if not accounts_data.accounts.has(to_account):
+		return {"success": false, "reason": "Target account not found."}
+	_ensure_social_arrays(from_account)
+	_ensure_social_arrays(to_account)
+	if to_account in accounts_data.accounts[from_account].friends:
+		return {"success": false, "reason": "Already friends."}
+	if to_account in accounts_data.accounts[from_account].blocked:
+		return {"success": false, "reason": "You have blocked this user. Unblock first."}
+	if from_account in accounts_data.accounts[to_account].blocked:
+		return {"success": false, "reason": "That user has blocked you."}
+	if to_account in accounts_data.accounts[from_account].friend_requests_outgoing:
+		return {"success": false, "reason": "Request already pending."}
+	# Symmetric incoming request: auto-accept (both sides asked, easy win).
+	if to_account in accounts_data.accounts[from_account].friend_requests_incoming:
+		return accept_friend_request(from_account, to_account)
+	accounts_data.accounts[from_account].friend_requests_outgoing.append(to_account)
+	accounts_data.accounts[to_account].friend_requests_incoming.append(from_account)
+	save_accounts()
+	return {"success": true, "auto_accepted": false}
+
+func accept_friend_request(my_account: String, requester_account: String) -> Dictionary:
+	"""Move requester from my incoming → both sides' friends. Cleans up the
+	matching outgoing entry on the requester side. Idempotent if the friend
+	pair already exists."""
+	if not accounts_data.accounts.has(my_account):
+		return {"success": false, "reason": "Your account is invalid."}
+	if not accounts_data.accounts.has(requester_account):
+		return {"success": false, "reason": "Requester account not found."}
+	_ensure_social_arrays(my_account)
+	_ensure_social_arrays(requester_account)
+	if requester_account in accounts_data.accounts[my_account].friends:
+		return {"success": false, "reason": "Already friends."}
+	# Allow accept even if the incoming entry is missing (could have been
+	# cleared by a block/unblock cycle) — as long as outgoing on the
+	# requester side has us, treat as a mutual ask.
+	var had_request = requester_account in accounts_data.accounts[my_account].friend_requests_incoming
+	if not had_request:
+		# Mutual outgoing? Counts as auto-accept.
+		if my_account not in accounts_data.accounts[requester_account].friend_requests_outgoing:
+			return {"success": false, "reason": "No pending request from that user."}
+	accounts_data.accounts[my_account].friend_requests_incoming.erase(requester_account)
+	accounts_data.accounts[requester_account].friend_requests_outgoing.erase(my_account)
+	# Also clean up mirror entries in case the symmetric pair has stale state.
+	accounts_data.accounts[my_account].friend_requests_outgoing.erase(requester_account)
+	accounts_data.accounts[requester_account].friend_requests_incoming.erase(my_account)
+	if requester_account not in accounts_data.accounts[my_account].friends:
+		accounts_data.accounts[my_account].friends.append(requester_account)
+	if my_account not in accounts_data.accounts[requester_account].friends:
+		accounts_data.accounts[requester_account].friends.append(my_account)
+	save_accounts()
+	return {"success": true}
+
+func reject_friend_request(my_account: String, requester_account: String) -> Dictionary:
+	if not accounts_data.accounts.has(my_account):
+		return {"success": false, "reason": "Your account is invalid."}
+	_ensure_social_arrays(my_account)
+	if requester_account not in accounts_data.accounts[my_account].friend_requests_incoming:
+		return {"success": false, "reason": "No pending request from that user."}
+	accounts_data.accounts[my_account].friend_requests_incoming.erase(requester_account)
+	if accounts_data.accounts.has(requester_account):
+		_ensure_social_arrays(requester_account)
+		accounts_data.accounts[requester_account].friend_requests_outgoing.erase(my_account)
+	save_accounts()
+	return {"success": true}
+
+func cancel_outgoing_request(my_account: String, target_account: String) -> Dictionary:
+	if not accounts_data.accounts.has(my_account):
+		return {"success": false, "reason": "Your account is invalid."}
+	_ensure_social_arrays(my_account)
+	if target_account not in accounts_data.accounts[my_account].friend_requests_outgoing:
+		return {"success": false, "reason": "No outgoing request to that user."}
+	accounts_data.accounts[my_account].friend_requests_outgoing.erase(target_account)
+	if accounts_data.accounts.has(target_account):
+		_ensure_social_arrays(target_account)
+		accounts_data.accounts[target_account].friend_requests_incoming.erase(my_account)
+	save_accounts()
+	return {"success": true}
+
+func remove_friend(my_account: String, target_account: String) -> Dictionary:
+	"""Bidirectional friend removal. Either side can initiate; both sides'
+	friend lists are scrubbed."""
+	if not accounts_data.accounts.has(my_account):
+		return {"success": false, "reason": "Your account is invalid."}
+	_ensure_social_arrays(my_account)
+	if target_account not in accounts_data.accounts[my_account].friends:
+		return {"success": false, "reason": "Not friends."}
+	accounts_data.accounts[my_account].friends.erase(target_account)
+	if accounts_data.accounts.has(target_account):
+		_ensure_social_arrays(target_account)
+		accounts_data.accounts[target_account].friends.erase(my_account)
+	save_accounts()
+	return {"success": true}
+
+func block_account(my_account: String, target_account: String) -> Dictionary:
+	"""Add target to blocked. Also bidirectionally removes any friend relation
+	and cancels any pending requests in either direction so the social state
+	is consistent post-block."""
+	if my_account == target_account:
+		return {"success": false, "reason": "You cannot block yourself."}
+	if not accounts_data.accounts.has(my_account):
+		return {"success": false, "reason": "Your account is invalid."}
+	if not accounts_data.accounts.has(target_account):
+		return {"success": false, "reason": "Target account not found."}
+	_ensure_social_arrays(my_account)
+	_ensure_social_arrays(target_account)
+	if target_account in accounts_data.accounts[my_account].blocked:
+		return {"success": false, "reason": "Already blocked."}
+	accounts_data.accounts[my_account].blocked.append(target_account)
+	# Strip friendship + requests in both directions.
+	accounts_data.accounts[my_account].friends.erase(target_account)
+	accounts_data.accounts[target_account].friends.erase(my_account)
+	accounts_data.accounts[my_account].friend_requests_incoming.erase(target_account)
+	accounts_data.accounts[my_account].friend_requests_outgoing.erase(target_account)
+	accounts_data.accounts[target_account].friend_requests_incoming.erase(my_account)
+	accounts_data.accounts[target_account].friend_requests_outgoing.erase(my_account)
+	save_accounts()
+	return {"success": true}
+
+func unblock_account(my_account: String, target_account: String) -> Dictionary:
+	if not accounts_data.accounts.has(my_account):
+		return {"success": false, "reason": "Your account is invalid."}
+	_ensure_social_arrays(my_account)
+	if target_account not in accounts_data.accounts[my_account].blocked:
+		return {"success": false, "reason": "Not blocked."}
+	accounts_data.accounts[my_account].blocked.erase(target_account)
+	save_accounts()
+	return {"success": true}
+
 func get_username_for_account(account_id: String) -> String:
 	"""Resolve account_id → username (display name). Audit #14 v0.9.539 trade
 	history uses this for the counterparty label when the trader is offline."""

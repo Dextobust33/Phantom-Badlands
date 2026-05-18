@@ -18973,6 +18973,66 @@ func handle_server_message(message: Dictionary):
 				logout_tag_prefix = "[color=%s][%s][/color] " % [logout_clan_color, logout_clan_tag]
 			display_chat("[color=#666666]○[/color] [color=#88FFCC][CLAN][/color] %s%s [color=#888888]has logged out.[/color]" % [logout_tag_prefix, logout_sender])
 
+		"friend_list_result":
+			# Audit #14 v0.9.540 — /friend list response. Renders friends
+			# with online status + current character info (parallels /clist).
+			var fl_entries: Array = message.get("entries", [])
+			var online_friends = 0
+			for raw in fl_entries:
+				if bool((raw as Dictionary).get("online", false)):
+					online_friends += 1
+			display_game("[color=#FFD700]══════ FRIENDS (%d total, %d online) ══════[/color]" % [fl_entries.size(), online_friends])
+			if fl_entries.is_empty():
+				display_game("[color=#808080]  (no friends yet — try [/color][color=#9ACD32]/friend add <username>[/color][color=#808080] to send a request.)[/color]")
+			else:
+				for raw_entry in fl_entries:
+					var fl_entry = raw_entry as Dictionary
+					var fl_user = String(fl_entry.get("username", "(unknown)"))
+					if bool(fl_entry.get("online", false)):
+						var fl_afk = bool(fl_entry.get("afk", false))
+						var dot_color = "#FFAA66" if fl_afk else "#66FF66"
+						var afk_tag = " [color=#FFAA66][AFK][/color]" if fl_afk else ""
+						display_game("  [color=%s]●[/color] [color=#DDDDDD]%s[/color] [color=#888888]as[/color] [color=#FFD700]%s[/color] [color=#888888]Lv %d %s[/color]%s" % [
+							dot_color, fl_user, String(fl_entry.get("character_name", "?")),
+							int(fl_entry.get("level", 1)), String(fl_entry.get("class", "")).capitalize(), afk_tag
+						])
+					else:
+						display_game("  [color=#666666]○[/color] [color=#888888]%s [offline][/color]" % fl_user)
+			display_game("")
+
+		"friend_requests_result":
+			# Audit #14 v0.9.540 — /friend requests response. Two sections.
+			var fr_incoming: Array = message.get("incoming", [])
+			var fr_outgoing: Array = message.get("outgoing", [])
+			display_game("[color=#FFD700]══════ FRIEND REQUESTS ══════[/color]")
+			display_game("[color=#9ACD32]Incoming (%d)[/color] — waiting for you to accept" % fr_incoming.size())
+			if fr_incoming.is_empty():
+				display_game("[color=#808080]  (none)[/color]")
+			else:
+				for raw in fr_incoming:
+					var fr_user = String((raw as Dictionary).get("username", "(unknown)"))
+					display_game("  [color=#DDDDDD]%s[/color] [color=#888888]— [/color][color=#9ACD32]/friend accept %s[/color][color=#888888] or [/color][color=#FF6666]/friend reject %s[/color]" % [fr_user, fr_user, fr_user])
+			display_game("[color=#88AAFF]Outgoing (%d)[/color] — waiting on them" % fr_outgoing.size())
+			if fr_outgoing.is_empty():
+				display_game("[color=#808080]  (none)[/color]")
+			else:
+				for raw in fr_outgoing:
+					var fr_user = String((raw as Dictionary).get("username", "(unknown)"))
+					display_game("  [color=#DDDDDD]%s[/color] [color=#888888]— [/color][color=#9ACD32]/friend cancel %s[/color]" % [fr_user, fr_user])
+			display_game("")
+
+		"block_list_result":
+			# Audit #14 v0.9.540 — /blocklist response.
+			var bl_entries: Array = message.get("entries", [])
+			display_game("[color=#FFD700]══════ BLOCKED USERS (%d) ══════[/color]" % bl_entries.size())
+			if bl_entries.is_empty():
+				display_game("[color=#808080]  (no users blocked.)[/color]")
+			else:
+				for raw in bl_entries:
+					var bl_user = String((raw as Dictionary).get("username", "(unknown)"))
+					display_game("  [color=#FF8866]✕[/color] [color=#DDDDDD]%s[/color] [color=#888888]— [/color][color=#9ACD32]/unblock %s[/color]" % [bl_user, bl_user])
+			display_game("")
+
 		"trade_history_result":
 			# Audit #14 v0.9.539 — /trades response. Format each entry by kind.
 			var th_entries: Array = message.get("entries", [])
@@ -20941,7 +21001,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "vault", "clanvault", "mentor", "mentors",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -21802,6 +21862,62 @@ func process_command(text: String):
 			if parts.size() > 1:
 				trade_limit = clampi(int(parts[1]), 1, 50)
 			send_to_server({"type": "trade_history", "limit": trade_limit})
+		"friend", "friends":
+			# Audit #14 v0.9.540 — friend list (focused project #4). Single
+			# command with sub-args: add/accept/reject/cancel/remove/list/requests.
+			# Default behavior (no sub-arg, or /friends) is "list".
+			var sub = "list"
+			if parts.size() > 1:
+				sub = String(parts[1]).to_lower()
+			match sub:
+				"list", "":
+					send_to_server({"type": "friend_list"})
+				"requests", "req", "reqs":
+					send_to_server({"type": "friend_requests"})
+				"add", "invite":
+					if parts.size() > 2:
+						send_to_server({"type": "friend_add", "username": String(parts[2])})
+					else:
+						display_game("[color=#FF0000]Usage: /friend add <username>[/color]")
+				"accept":
+					if parts.size() > 2:
+						send_to_server({"type": "friend_accept", "username": String(parts[2])})
+					else:
+						display_game("[color=#FF0000]Usage: /friend accept <username>[/color]")
+				"reject", "decline":
+					if parts.size() > 2:
+						send_to_server({"type": "friend_reject", "username": String(parts[2])})
+					else:
+						display_game("[color=#FF0000]Usage: /friend reject <username>[/color]")
+				"cancel":
+					if parts.size() > 2:
+						send_to_server({"type": "friend_cancel", "username": String(parts[2])})
+					else:
+						display_game("[color=#FF0000]Usage: /friend cancel <username>[/color]")
+				"remove", "delete", "del":
+					if parts.size() > 2:
+						send_to_server({"type": "friend_remove", "username": String(parts[2])})
+					else:
+						display_game("[color=#FF0000]Usage: /friend remove <username>[/color]")
+				_:
+					display_game("[color=#FF0000]Unknown subcommand '%s'. Try: list, requests, add, accept, reject, cancel, remove.[/color]" % sub)
+		"freq":
+			# Convenience alias for /friend requests.
+			send_to_server({"type": "friend_requests"})
+		"block":
+			# Audit #14 v0.9.540 — block a user (silences whispers + future
+			# friend requests + auto-removes from friend list).
+			if parts.size() > 1:
+				send_to_server({"type": "block_user", "username": String(parts[1])})
+			else:
+				display_game("[color=#FF0000]Usage: /block <username>[/color]")
+		"unblock":
+			if parts.size() > 1:
+				send_to_server({"type": "unblock_user", "username": String(parts[1])})
+			else:
+				display_game("[color=#FF0000]Usage: /unblock <username>[/color]")
+		"blocklist", "blocked":
+			send_to_server({"type": "block_list"})
 		"topic", "viewtopic":
 			# Audit #15 v0.9.538 — open any registered help topic by key in
 			# the global help panel. Pairs with /topics for discovery.
@@ -24625,8 +24741,23 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.540 — Audit #14 friend list (focused project #4).
+	display_game("[color=#00FF00]v0.9.540[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Persistent friend graph with request/accept consent flow, plus a block list that silences unwanted whispers.[/color]")
+	display_game("  • [b]/friend[/b] command suite (Audit #14, focused project #4). Sub-commands:")
+	display_game("    [color=#9ACD32]/friend add <user>[/color] — send a friend request. Mutual outgoing requests auto-accept.")
+	display_game("    [color=#9ACD32]/friend accept <user>[/color] — accept an incoming request.")
+	display_game("    [color=#9ACD32]/friend reject <user>[/color] / [color=#9ACD32]/friend cancel <user>[/color] — decline incoming / cancel outgoing.")
+	display_game("    [color=#9ACD32]/friend remove <user>[/color] — bidirectional removal.")
+	display_game("    [color=#9ACD32]/friend list[/color] (alias [color=#9ACD32]/friends[/color]) — roster with online status + current character + level + class + AFK badge.")
+	display_game("    [color=#9ACD32]/friend requests[/color] (alias [color=#9ACD32]/freq[/color]) — pending incoming + outgoing.")
+	display_game("  • [b]/block[/b] + [b]/unblock[/b] + [b]/blocklist[/b] (Audit #14). Blocking silently drops whispers from the blocked user (they don't know they were blocked — opaque), auto-removes any existing friendship, and cancels pending requests in both directions. Mirror of clan presence — coverage parity for individual-account social.")
+	display_game("  • [b]Account-level persistence[/b]. Friends, requests, and block list all stored on your ACCOUNT — they survive permadeath. Mutual mirror state stays consistent across both sides for every operation.")
+	display_game("  • Audit #14 progress: ~99% → ~100% — the social surface is fully wired now: chat → presence → trade history → friend graph → block list.")
+	display_game("")
+
 	# v0.9.539 — Audit #14 trade history (focused project #3).
-	display_game("[color=#00FF00]v0.9.539[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.539[/color]")
 	display_game("  [color=#FFD700]A persistent rolling log of every trade you've made — account-level, survives permadeath.[/color]")
 	display_game("  • [b]/trades [N][/b] (Audit #14, focused project #3). New chat command prints your last N trade-history entries (default 10, max 50, alias [color=#9ACD32]/tradehistory[/color]). Each entry shows timestamp + event kind + counterparty + items/valor.")
 	display_game("  • [b]What gets logged[/b]:")
@@ -24661,13 +24792,6 @@ func display_changelog():
 	display_game("  • Twelve releases (v0.9.524 → v0.9.536) shipped this audit cycle. Audits #3, #6, #10, #11 at 99%+; #12 at 99%; #14 at ~95%; #15 at ~97%. Comprehensive audit close.")
 	display_game("")
 
-	# v0.9.535 — Audit #15 clan help refresh + Audit #12 catalogue 21 → 23.
-	display_game("[color=#00FFFF]v0.9.535[/color]")
-	display_game("  [color=#FFD700]Clan panel help button now lists every social command + indicator. Catalogue picks up two more cosmetic structures.[/color]")
-	display_game("  • [b]Clan page help refresh[/b] (Audit #15). The ? Help button on the Clan panel now covers [color=#9ACD32]/c[/color], [color=#9ACD32]/p[/color], [color=#9ACD32]/clist[/color], [color=#9ACD32]/afk[/color], [color=#9ACD32]/mentor[/color], the [color=#FFD700][NEW Lv X][/color] whisper tag, the green/gray/orange member dot codes, the N/M online header chip, and the login/logout chat broadcasts — one place to discover the full clan presence surface.")
-	display_game("  • [b]Easel + Totem[/b] (Audit #12). Easel ([color=#6B4A28]y[/color], blocks movement, Construction skill 6, 2 wooden plank + 1 ink) — cheap artistic prop for studios or scholarly corners. Totem ([color=#A0522D]z[/color], blocks movement, Construction skill 13, 3 wooden plank + 2 ink + 1 leather) — tall painted pillar with tribal aesthetic. Catalogue spans 23 structures.")
-	display_game("  • Audit progress: #15 ~94% → ~96%, #12 ~98% → ~99%.")
-	display_game("")
 
 
 
@@ -27094,6 +27218,7 @@ func show_help():
 [color=#00FFFF]Clan polish:[/color] [color=#9ACD32]/clandesc[/color], [color=#9ACD32]/clanmotto[/color], [color=#9ACD32]/clancolor #RRGGBB[/color] for leaders. Clan tag + ✦ Clan Outpost on member-built posts.
 [color=#00FFFF]Help discovery:[/color] [color=#9ACD32]/topics[/color] lists every help-panel topic key + title; [color=#9ACD32]/topic <key>[/color] opens any topic from anywhere.
 [color=#00FFFF]Trade history:[/color] [color=#9ACD32]/trades [N][/color] (default 10, max 50) — your rolling log of direct trades and market buys/sales, account-level + persistent across deaths.
+[color=#00FFFF]Friend list:[/color] [color=#9ACD32]/friend add|accept|reject|cancel|remove|list|requests[/color] — account-level bidirectional friends, online status + current character on the list. [color=#9ACD32]/block <user>[/color] silences whispers from a user; [color=#9ACD32]/blocklist[/color] shows your blocks.
 [color=#00FFFF]Mentor reward bonus:[/color] A Lv 20+ [color=#9ACD32]/mentor on[/color] partied with a Lv < 10 player grants [color=#FFD700]+25% XP[/color] to the whole party on every kill.
 [color=#00FFFF]Social chat channels:[/color] [color=#9ACD32]/c[/color] clan chat ([color=#88FFCC][CLAN][/color]), [color=#9ACD32]/p[/color] party chat ([color=#FFAA66][PARTY][/color]), [color=#9ACD32]/clist[/color] online clanmates roster.
 [color=#00FFFF]/afk status:[/color] [color=#9ACD32]/afk [reason][/color] marks you away ([color=#FFAA66][AFK][/color] badge); auto-clears on move/chat. [color=#9ACD32]/back[/color] to clear explicitly.

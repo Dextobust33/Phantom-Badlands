@@ -1481,6 +1481,26 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_set_afk(peer_id, message)
 		"trade_history":
 			handle_trade_history(peer_id, message)
+		"friend_add":
+			handle_friend_add(peer_id, message)
+		"friend_accept":
+			handle_friend_accept(peer_id, message)
+		"friend_reject":
+			handle_friend_reject(peer_id, message)
+		"friend_cancel":
+			handle_friend_cancel(peer_id, message)
+		"friend_remove":
+			handle_friend_remove(peer_id, message)
+		"friend_list":
+			handle_friend_list(peer_id)
+		"friend_requests":
+			handle_friend_requests(peer_id)
+		"block_user":
+			handle_block_user(peer_id, message)
+		"unblock_user":
+			handle_unblock_user(peer_id, message)
+		"block_list":
+			handle_block_list(peer_id)
 		"party_message":
 			handle_party_message(peer_id, message)
 		"move":
@@ -2982,6 +3002,15 @@ func handle_private_message(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "%s is not online!" % target_name})
 		return
 
+	# Audit #14 v0.9.540 — block list. If the recipient has blocked the
+	# sender's account, silently drop the whisper. No feedback to sender
+	# (the block is supposed to be opaque — they shouldn't know they were
+	# blocked vs. ignored). Still echo to the sender via private_message_sent
+	# below so their own client renders normally.
+	var sender_account_id = String(peers.get(peer_id, {}).get("account_id", ""))
+	var target_account_id = String(peers.get(target_peer_id, {}).get("account_id", ""))
+	var whisper_blocked = sender_account_id != "" and target_account_id != "" and persistence.is_blocked(target_account_id, sender_account_id)
+
 	# Get sender's title prefix if they have one (realm + chain)
 	var sender_display = _format_full_titled_name(sender_name, characters[peer_id])
 	# Audit #14 Slice 3 — attach sender clan tag to whispers.
@@ -2991,15 +3020,18 @@ func handle_private_message(peer_id: int, message: Dictionary):
 
 	# Send to target. Audit #14 v0.9.521 — include sender level so the recipient
 	# can tag whispers from new players with [NEW Lv X]. Helps mentors prioritize.
-	send_to_peer(target_peer_id, {
-		"type": "private_message",
-		"sender": sender_display,
-		"sender_name": sender_name,
-		"sender_clan_tag": sender_clan_tag,
-		"sender_clan_color": sender_clan_color,
-		"sender_level": int(characters[peer_id].level),
-		"message": text
-	})
+	# Audit #14 v0.9.540 — skip target delivery when the recipient has the
+	# sender blocked; sender still sees their own echo (opaque block).
+	if not whisper_blocked:
+		send_to_peer(target_peer_id, {
+			"type": "private_message",
+			"sender": sender_display,
+			"sender_name": sender_name,
+			"sender_clan_tag": sender_clan_tag,
+			"sender_clan_color": sender_clan_color,
+			"sender_level": int(characters[peer_id].level),
+			"message": text
+		})
 
 	# Send confirmation to sender
 	send_to_peer(peer_id, {
@@ -3138,6 +3170,235 @@ func handle_trade_history(peer_id: int, message: Dictionary) -> void:
 		"type": "trade_history_result",
 		"entries": entries,
 		"limit": limit,
+	})
+
+func _resolve_friend_target(peer_id: int, username: String) -> Dictionary:
+	"""Audit #14 v0.9.540 — shared username → account_id resolver for the
+	friend/block command surface. Returns {account_id, error} where error is
+	empty on success. Sends client-facing error message on miss."""
+	if username == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Usage: include a username.[/color]"})
+		return {"account_id": "", "error": "missing"}
+	var target_id = persistence.get_account_id_by_username(username)
+	if target_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]No account named '%s'.[/color]" % username})
+		return {"account_id": "", "error": "not_found"}
+	return {"account_id": target_id, "error": ""}
+
+func _peer_id_for_account(account_id: String) -> int:
+	"""Find the connected peer_id for an account_id, or -1 if offline. Used
+	to deliver real-time friend request notifications."""
+	for pid in peers.keys():
+		if not peers[pid].authenticated:
+			continue
+		if String(peers[pid].get("account_id", "")) == account_id:
+			return pid
+	return -1
+
+func handle_friend_add(peer_id: int, message: Dictionary) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var target_name = String(message.get("username", ""))
+	var resolved = _resolve_friend_target(peer_id, target_name)
+	if resolved.error != "":
+		return
+	var target_account = resolved.account_id
+	var result = persistence.send_friend_request(my_account, target_account)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Request failed."))})
+		return
+	if result.get("auto_accepted", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]Friend added: %s (mutual request).[/color]" % target_name})
+		var their_pid = _peer_id_for_account(target_account)
+		if their_pid >= 0:
+			send_to_peer(their_pid, {"type": "text", "message": "[color=#88FF88]Friend added: %s (mutual request).[/color]" % String(persistence.get_username_for_account(my_account))})
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]Friend request sent to %s.[/color]" % target_name})
+		var their_pid2 = _peer_id_for_account(target_account)
+		if their_pid2 >= 0:
+			send_to_peer(their_pid2, {"type": "text", "message": "[color=#9ACD32]Friend request from %s. /friend accept %s to accept, /friend reject %s to decline.[/color]" % [String(persistence.get_username_for_account(my_account)), String(persistence.get_username_for_account(my_account)), String(persistence.get_username_for_account(my_account))]})
+
+func handle_friend_accept(peer_id: int, message: Dictionary) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var target_name = String(message.get("username", ""))
+	var resolved = _resolve_friend_target(peer_id, target_name)
+	if resolved.error != "":
+		return
+	var result = persistence.accept_friend_request(my_account, resolved.account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Accept failed."))})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88]You are now friends with %s.[/color]" % target_name})
+	var their_pid = _peer_id_for_account(resolved.account_id)
+	if their_pid >= 0:
+		send_to_peer(their_pid, {"type": "text", "message": "[color=#88FF88]%s accepted your friend request.[/color]" % String(persistence.get_username_for_account(my_account))})
+
+func handle_friend_reject(peer_id: int, message: Dictionary) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var resolved = _resolve_friend_target(peer_id, String(message.get("username", "")))
+	if resolved.error != "":
+		return
+	var result = persistence.reject_friend_request(my_account, resolved.account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Reject failed."))})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]Friend request rejected.[/color]"})
+
+func handle_friend_cancel(peer_id: int, message: Dictionary) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var resolved = _resolve_friend_target(peer_id, String(message.get("username", "")))
+	if resolved.error != "":
+		return
+	var result = persistence.cancel_outgoing_request(my_account, resolved.account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Cancel failed."))})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]Outgoing friend request cancelled.[/color]"})
+
+func handle_friend_remove(peer_id: int, message: Dictionary) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var resolved = _resolve_friend_target(peer_id, String(message.get("username", "")))
+	if resolved.error != "":
+		return
+	var result = persistence.remove_friend(my_account, resolved.account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Remove failed."))})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#888888]Removed %s from friends.[/color]" % String(message.get("username", ""))})
+
+func handle_friend_list(peer_id: int) -> void:
+	"""Send the caller's friend list with online status + current character
+	info for each online friend. Same online_account_ids pattern as the
+	clan roster (v0.9.530-531)."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var friend_ids = persistence.get_friends(my_account)
+	# Build online_account_id → {character_name, level, class, afk} map.
+	var online_info: Dictionary = {}
+	for pid in peers.keys():
+		if not peers[pid].authenticated:
+			continue
+		if not characters.has(pid):
+			continue
+		var pacc = String(peers[pid].get("account_id", ""))
+		if pacc == "":
+			continue
+		var ch = characters[pid]
+		var afk_entry = afk_status.get(pid, {})
+		online_info[pacc] = {
+			"character_name": String(ch.name),
+			"level": int(ch.level),
+			"class": String(ch.class_type),
+			"afk": bool(afk_entry.get("afk", false)),
+		}
+	var entries: Array = []
+	for fid in friend_ids:
+		var fid_str = String(fid)
+		var entry = {
+			"account_id": fid_str,
+			"username": persistence.get_username_for_account(fid_str),
+			"online": online_info.has(fid_str),
+		}
+		if entry.online:
+			var info = online_info[fid_str]
+			entry["character_name"] = info.character_name
+			entry["level"] = info.level
+			entry["class"] = info.class
+			entry["afk"] = info.afk
+		entries.append(entry)
+	send_to_peer(peer_id, {
+		"type": "friend_list_result",
+		"entries": entries,
+	})
+
+func handle_friend_requests(peer_id: int) -> void:
+	"""Return both incoming + outgoing pending requests for the caller."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var incoming_ids = persistence.get_friend_requests_incoming(my_account)
+	var outgoing_ids = persistence.get_friend_requests_outgoing(my_account)
+	var incoming: Array = []
+	var outgoing: Array = []
+	for aid in incoming_ids:
+		incoming.append({"username": persistence.get_username_for_account(String(aid))})
+	for aid in outgoing_ids:
+		outgoing.append({"username": persistence.get_username_for_account(String(aid))})
+	send_to_peer(peer_id, {
+		"type": "friend_requests_result",
+		"incoming": incoming,
+		"outgoing": outgoing,
+	})
+
+func handle_block_user(peer_id: int, message: Dictionary) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var target_name = String(message.get("username", ""))
+	var resolved = _resolve_friend_target(peer_id, target_name)
+	if resolved.error != "":
+		return
+	var result = persistence.block_account(my_account, resolved.account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Block failed."))})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8866]Blocked %s. Whispers, friend requests, and trade invites from them are now silenced.[/color]" % target_name})
+
+func handle_unblock_user(peer_id: int, message: Dictionary) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var target_name = String(message.get("username", ""))
+	var resolved = _resolve_friend_target(peer_id, target_name)
+	if resolved.error != "":
+		return
+	var result = persistence.unblock_account(my_account, resolved.account_id)
+	if not result.get("success", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % String(result.get("reason", "Unblock failed."))})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]Unblocked %s.[/color]" % target_name})
+
+func handle_block_list(peer_id: int) -> void:
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var my_account = String(peers[peer_id].get("account_id", ""))
+	if my_account == "":
+		return
+	var blocked_ids = persistence.get_blocked(my_account)
+	var entries: Array = []
+	for bid in blocked_ids:
+		entries.append({"username": persistence.get_username_for_account(String(bid))})
+	send_to_peer(peer_id, {
+		"type": "block_list_result",
+		"entries": entries,
 	})
 
 func handle_clan_list(peer_id: int) -> void:
