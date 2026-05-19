@@ -275,8 +275,9 @@ var _lufia_monster_hp_text: Label
 # Reference to the shared HP strip so Lufia can hide it (player + monster
 # HP both live inside their respective Lufia widgets).
 var _shared_hp_strip: HBoxContainer
-const HAND_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
-const HAND_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", "#FF6644"]
+# v0.9.567 — extended to R6 (Legend, Mythic) to match character.gd.
+const HAND_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
+const HAND_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", "#FF6644", "#FF44FF", "#88FFFF"]
 
 
 func _ready() -> void:
@@ -2489,8 +2490,8 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 
 
 func _rank_from_uses(uses: int) -> int:
-	# Mirrors MASTERY_RANK_THRESHOLDS = [30, 150, 600, 2400].
-	var thresholds = [30, 150, 600, 2400]
+	# v0.9.567 — mirrors character.gd MASTERY_RANK_THRESHOLDS (extended to R6).
+	var thresholds = [10, 50, 250, 1200, 4000, 10000]
 	var rank = 0
 	for t in thresholds:
 		if uses >= int(t):

@@ -1629,17 +1629,14 @@ func get_post_anchored_level(x: int, y: int) -> int:
 		if total < 0.001:
 			post_blended = base_nearest
 		else:
-			# v0.9.480 — cubic blend (t^3) so each post DOMINATES its immediate
-			# vicinity instead of linearly bleeding into neighbors. Was: linear
-			# t = nearest/total — at d=30 from haven the blend already hit Lv 4
-			# because the second-nearest post (forced 70+ tiles away by spacing
-			# rules) anchors at Lv 10+. Cubic keeps the post's own anchor in
-			# control through ~50% of the gap, then ramps sharply near the
-			# other post. Result: haven Lv 1 stays Lv 1-2 in the buffer band,
-			# and other posts get a cleaner "level pocket" too. Wilderness
-			# floor still applies via max() below for apex zones.
+			# v0.9.567 — quadratic blend (t^2). Was cubic (t^3) in v0.9.480
+			# which kept the post's own anchor dominant through ~50% of the
+			# gap; user feedback that level clamping around the start post
+			# was too strong. Quadratic still favors the nearest post (so
+			# Haven's Lv 1-2 pocket persists) but ramps up to the next post's
+			# level noticeably sooner. Wilderness floor still applies below.
 			var t = nearest_dist / total
-			var t_curved = t * t * t
+			var t_curved = t * t
 			post_blended = int(round(lerp(float(base_nearest), float(base_second), t_curved)))
 
 	return max(post_blended, wilderness_level)
@@ -1648,31 +1645,31 @@ func _distance_to_level(distance: float) -> int:
 	"""Convert distance from origin to monster level (0-2828 -> 1-10000).
 	   Expanded world with more gradual level progression.
 
-	   v0.9.479 — stretched the early curve so the immediate area outside the
-	   starter post is a Lv 1-2 buffer. Was: d=10-150 → lv 1-50 linear (put
-	   Lv 4-7 within 25 tiles of haven). Now: 10-30 → 1-2 (first ring of
-	   20 tiles), 30-60 → 2-6 (gentle next ring), 60-150 → 6-50 (catch up).
-	   Endpoint at d=150 = lv 50 preserved so the rest of the world is
-	   unaffected."""
+	   v0.9.567 — tightened the early curve so monsters scale up faster as
+	   you leave Haven. User feedback: the v0.9.479 buffer rings were too
+	   protective. Was: 10-30 → 1-2, 30-60 → 2-6, 60-150 → 6-50. Now:
+	   10-20 → 1-2 (tight 10-tile novice ring), 20-40 → 2-6 (compact ramp),
+	   40-150 → 6-50 (faster catch-up). Endpoint at d=150 = lv 50 preserved
+	   so the rest of the world is unaffected."""
 	# Safe zone (distance 0-10): no monsters spawn here.
 	if distance <= 10:
 		return 1
 
-	# Novice band (10-30): Lv 1-2 — first ring of 20 tiles around the
-	# starter post. New characters get to fight Lv 1-2 monsters before
-	# encountering anything tougher.
-	if distance <= 30:
-		var t = (distance - 10) / 20.0  # 0 to 1
+	# Novice band (10-20): Lv 1-2 — tight 10-tile ring around the starter
+	# post. New characters still get a brief Lv 1-2 introduction, but it
+	# falls off faster than the v0.9.479 20-tile buffer.
+	if distance <= 20:
+		var t = (distance - 10) / 10.0  # 0 to 1
 		return int(1 + t * 1)  # 1 to 2
 
-	# Easy band (30-60): Lv 2-6 — second ring, gentle ramp.
-	if distance <= 60:
-		var t = (distance - 30) / 30.0  # 0 to 1
+	# Easy band (20-40): Lv 2-6 — compact second ring, sharper ramp.
+	if distance <= 40:
+		var t = (distance - 20) / 20.0  # 0 to 1
 		return int(2 + t * 4)  # 2 to 6
 
-	# Distance 60-150: Levels 6-50 (catch up to old curve at the 150 anchor).
+	# Distance 40-150: Levels 6-50 (catch up to old curve at the 150 anchor).
 	if distance <= 150:
-		var t = (distance - 60) / 90.0  # 0 to 1
+		var t = (distance - 40) / 110.0  # 0 to 1
 		return int(6 + t * 44)
 
 	# Distance 150-400: Levels 50-200 (moderate growth)

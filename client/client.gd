@@ -11083,8 +11083,8 @@ func _estimate_outgoing_damage_multiplier(is_spell: bool) -> float:
 func _get_ability_rank_progress(ability_name: String) -> Dictionary:
 	# Returns {rank, uses, next_threshold, uses_remaining, at_max} for an
 	# ability so the combat hand card can show "uses until next rank-up".
-	# Mirrors character.gd MASTERY_RANK_THRESHOLDS.
-	var thresholds = [30, 150, 600, 2400]
+	# v0.9.567 — mirrors character.gd MASTERY_RANK_THRESHOLDS (extended to R6).
+	var thresholds = [10, 50, 250, 1200, 4000, 10000]
 	var uses_dict = character_data.get("ability_uses", {})
 	var uses = int(uses_dict.get(ability_name, 0)) if uses_dict is Dictionary else 0
 	var rank = 0
@@ -16684,15 +16684,15 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	var desc = _get_ability_description_text(ability_name)
 	var ability_uses = character_data.get("ability_uses", {})
 	var uses = int(ability_uses.get(ability_name, 0))
-	# Inline rank computation (mirrors character.gd MASTERY_RANK_THRESHOLDS)
-	var thresholds = [30, 150, 600, 2400]
+	# v0.9.567 — inline rank computation (mirrors character.gd, extended to R6)
+	var thresholds = [10, 50, 250, 1200, 4000, 10000]
 	var rank = 0
 	for t in thresholds:
 		if uses >= int(t): rank += 1
 		else: break
-	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master"]
-	var rank_mults = [0.80, 0.90, 1.00, 1.10, 1.20]
-	var rank_name = rank_names[rank] if rank < rank_names.size() else "Master"
+	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
+	var rank_mults = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
+	var rank_name = rank_names[rank] if rank < rank_names.size() else "Mythic"
 	# Slice 6b — damage modifier comes from EFFECT rank (player-chosen) not USE rank.
 	# Use rank still drives the rank name + progress bar.
 	var effect_ranks_now = character_data.get("ability_effect_ranks", {})
@@ -16788,9 +16788,10 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 			if child.has_meta("rank_choice_button"):
 				child.queue_free()
 	var ability_label = ability_name.replace("_", " ").capitalize()
-	var rank_names_local := ["Untrained", "Novice", "Adept", "Expert", "Master"]
-	var rank_label = rank_names_local[new_rank] if new_rank >= 0 and new_rank < rank_names_local.size() else "Master"
-	var rank_mults_local := [0.80, 0.90, 1.00, 1.10, 1.20]
+	# v0.9.567 — extended to R6 (Legend, Mythic).
+	var rank_names_local := ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
+	var rank_label = rank_names_local[new_rank] if new_rank >= 0 and new_rank < rank_names_local.size() else "Mythic"
+	var rank_mults_local := [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
 	var next_effect_rank = min(current_effect_rank + 1, rank_mults_local.size() - 1)
 	var dmg_pct = int((rank_mults_local[next_effect_rank] - 1.0) * 100) if next_effect_rank < rank_mults_local.size() else 20
 	var dmg_str = ("+%d%%" % dmg_pct) if dmg_pct >= 0 else ("%d%%" % dmg_pct)
@@ -25102,8 +25103,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.567 — Mastery cap to R6 + threat-corridor falloff sharpened.
+	display_game("[color=#00FF00]v0.9.567[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player-feedback tuning pass: more mastery headroom, faster early ranks, and monsters scale up sooner outside Haven.[/color]")
+	display_game("  • [b]Mastery cap raised to R6[/b]. Added [color=#FF44FF]Legend (R5)[/color] +30% damage and [color=#88FFFF]Mythic (R6)[/color] +45% damage on top of the existing R4 Master ceiling. The Atlas, headstart page, and rank-up popup all display the new tiers automatically.")
+	display_game("  • [b]Faster early ranks[/b]. Use-threshold reductions: [color=#9ACD32]Novice[/color] 30→10, [color=#9ACD32]Adept[/color] 150→50, [color=#9ACD32]Expert[/color] 600→250, [color=#FFD700]Master[/color] 2400→1200. New: [color=#FF44FF]Legend[/color] 4000, [color=#88FFFF]Mythic[/color] 10000. First two ranks now land in roughly a third of the uses — the early grind is noticeably shorter.")
+	display_game("  • [b]Threat-corridor falloff[/b]. Monsters scale up faster as you leave Haven. The novice ring shrank from 20 tiles to 10 (d=10-20 = Lv 1-2), the easy band tightened (d=20-40 = Lv 2-6), and the post-blend curve relaxed from cubic to quadratic so neighbor-post levels reach in sooner. Lv 1 pocket persists; the protective bubble just stops sooner.")
+	display_game("")
+
 	# v0.9.566 — Mastery Atlas + bug-fix bundle.
-	display_game("[color=#00FF00]v0.9.566[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.566[/color]")
 	display_game("  [color=#FFD700]New Sanctuary tab consolidating everything you've learned, plus a bundle of player-reported fixes.[/color]")
 	display_game("  • [b]Mastery Atlas[/b]. New Sanctuary tab joins four data sources per ability — current rank on this character, account ceiling (best-ever), variant imprints stacked, and headstart queued for next character — into one read-only page so you can see your investment at a glance.")
 	display_game("  • [b]Monster HP discovery upward bump[/b]. If you've dealt more damage than the recorded ceiling and the monster is still alive, the known HP grows so the bar resizes truthfully instead of pinning at 1/N (was: prior low-damage kills could leave a stale 4-HP estimate on a 30-HP monster).")
@@ -25138,14 +25147,6 @@ func display_changelog():
 	display_game("  • [b]Correct slot names[/b]. Quality cards now use the actual in-game names: [color=#FFFFFF]Standard[/color] (BASE, +15% success), [color=#00FF00]Refined[/color] (QUALITY_UP_1, +15%), [color=#0070DD]Polished[/color] (QUALITY_UP_2, +30%), [color=#A335EE]Masterful[/color] (QUALITY_UP_3, +45%). Each reveal line states both the score and the success boost so the math is visible.")
 	display_game("")
 
-	# v0.9.544 — Unified Craft Summary panel (Slice 3.5 — playtest fix).
-	display_game("[color=#00FFFF]v0.9.544[/color]")
-	display_game("  [color=#FFD700]Reveal panel and crafting-success page are now one screen with full transparency — boost choice, materials paid, scratch-off reveals, and how everything chained into the final result.[/color]")
-	display_game("  • [b]Unified Craft Summary[/b] (Audit #4 Slice 3.5 — playtest feedback). The old thin reveal-animation panel + the trailing 'Crafting Success!' text page are now combined into a single result modal. Sections: Boost tier badge → final quality + name → Materials Paid (with boost cost annotation) → Scratch-Off Reveals (each card with its effect tagged) → Score → Success → Quality [b]chain line[/b] → Bonuses Applied (refund / duplicates / tool durability/efficiency) → Item Stats → XP Gained.")
-	display_game("  • [b]Scratch-off transparency[/b]. Every revealed slot now shows what it did: Standard tier → +15% success, Fine → +30%, Masterwork → +45%, plus +25%/50% durability, +1/+2 efficiency, refund and duplicate cards. Lets you see exactly why a craft rolled the way it did.")
-	display_game("  • [b]Craft Again button[/b]. The panel's own [color=#9ACD32]Craft Again (Q)[/color] button re-issues the same recipe with the same boost tier — chain Master crafts without re-navigating. Disabled when you can't afford another at the current boost cost.")
-	display_game("  • [b]Behavior change[/b]: faster dismissal hold (0.4s vs 1.0s), border tint matches the rolled quality, no more separate text-page dump after dismiss (the panel is the result; game_output gets just a one-line chat breadcrumb).")
-	display_game("")
 
 
 
@@ -38957,14 +38958,15 @@ func display_house_mastery():
 	if total_pages > 1:
 		display_game("[color=#AAAAAA]Page %d/%d[/color]" % [house_mastery_page + 1, total_pages])
 
-	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+	# v0.9.567 — extended to R6 (Legend, Mythic).
+	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
 	var slot = 1
 	for i in range(start_idx, end_idx):
 		var ab_name: String = sorted_abilities[i]
 		var ceiling = int(records[ab_name])
 		var pending_rank = int(pending.get(ab_name, 0))
 		var pretty_name: String = ab_name.replace("_", " ").capitalize()
-		var ceil_label: String = rank_names[ceiling] if ceiling < rank_names.size() else "Master"
+		var ceil_label: String = rank_names[ceiling] if ceiling < rank_names.size() else "Mythic"
 
 		# Headroom: can bump up to min(max_rank, ceiling)
 		var allowed_max = mini(max_rank, ceiling)
@@ -38986,7 +38988,7 @@ func display_house_mastery():
 		var ceiling_color = "#9ACD32" if ceiling >= 4 else ("#88FF88" if ceiling >= 3 else "#A0A0A0")
 		display_game("[color=#FFD700][%s][/color] [color=#FFFFFF]%s[/color] [color=%s](recorded: R%d %s)[/color]%s" % [get_item_select_key_name(slot - 1), pretty_name, ceiling_color, ceiling, ceil_label, pending_label])
 		if can_buy:
-			var nbuy_label: String = rank_names[next_rank] if next_rank < rank_names.size() else "Master"
+			var nbuy_label: String = rank_names[next_rank] if next_rank < rank_names.size() else "Mythic"
 			display_game("    [color=#88FF88]→ Buy R%d %s[/color] for [color=#FF6600]%d BP[/color]" % [next_rank, nbuy_label, next_cost])
 		else:
 			# At cap — next press refunds all
@@ -39290,9 +39292,8 @@ func display_house_mastery_atlas():
 		if dt_script != null:
 			trait_categories = dt_script.VARIANT_TRAIT_CATEGORIES
 
-	# Mirror the rank labels the existing Mastery page uses so the two
-	# screens read consistently.
-	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+	# v0.9.567 — mirror the extended rank labels (R6 = Mythic).
+	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
 
 	# Build the union of ability names across all four sources so we surface
 	# even rarely-used abilities that only show up in one of them (e.g., a
