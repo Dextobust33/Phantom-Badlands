@@ -365,6 +365,10 @@ var sort_menu_page: int = 0  # 0 = main sorts, 1 = more options (rarity, compare
 # Combat action bar swap settings (per-client)
 var swap_attack_outsmart: bool = false  # Swap Attack (slot 0) with Outsmart (slot 3)
 var disable_tutorial: bool = false  # Skip tutorial on new character creation
+# v0.9.566 — autoskip toggle for combat loot reveal panel. When true, the
+# panel auto-clicks random unrevealed cells once opened. Persisted with the
+# rest of the keybind/settings file.
+var autoskip_loot_reveal: bool = false
 
 # Settings mode
 var settings_mode: bool = false
@@ -1467,6 +1471,11 @@ var damage_dealt_to_current_enemy: int = 0
 var current_enemy_hp: int = -1  # Actual HP from server (-1 = unknown)
 var current_enemy_max_hp: int = -1  # Actual max HP from server
 var analyze_revealed_max_hp: int = -1  # Actual max HP revealed by Analyze ability this combat
+# v0.9.566 — set true the moment a victory/kill server message arrives. Used
+# by _discover_enemy_hp to lift the "clamp HP to 1 while still in combat"
+# guard so the kill animation drains the monster bar all the way to 0
+# instead of leaving it pinned at 1.
+var enemy_killed_this_fight: bool = false
 var current_forcefield: int = 0  # Current forcefield/shield value from combat
 
 # Shield bar overlay (created dynamically)
@@ -2090,6 +2099,8 @@ func _ready():
 	combat_loot_panel.slot_clicked.connect(_on_combat_loot_slot_clicked)
 	combat_loot_panel.done_pressed.connect(_on_combat_loot_done_pressed)
 	combat_loot_panel.closed.connect(_on_combat_loot_closed)
+	# v0.9.566 — autoskip toggle persists across sessions via keybind file.
+	combat_loot_panel.autoskip_toggled.connect(_on_combat_loot_autoskip_toggled)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -6476,6 +6487,20 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif house_mode == "mastery_atlas":
+			# v0.9.566 — Mastery Atlas action bar. Read-only; only Back.
+			current_actions = [
+				{"label": "Back", "action_type": "local", "action_data": "house_mastery_atlas_back", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif house_mode == "kennel":
 			var kennel = house_data.get("companion_kennel", {})
 			var kennel_companions = kennel.get("companions", [])
@@ -6663,13 +6688,18 @@ func update_action_bar():
 			# Audit #13 Slice 2 — Bestiary button. Always visible on the Sanctuary
 			# main view; the panel itself shows a "locked" teaser when the upgrade
 			# isn't purchased yet, so players can discover the feature.
+			# v0.9.566 — Mastery Atlas. Read-only consolidation of every ability
+			# the account has touched: current-character rank, account ceiling
+			# (best-ever), imprint stacks, headstart queued for next character.
+			# Always visible from main; the page itself shows an empty-state
+			# hint if the account has no records yet.
 			current_actions = [
 				{"label": interact_label, "action_type": "local", "action_data": interact_action, "enabled": interact_enabled},
 				{"label": "Logout", "action_type": "local", "action_data": "house_logout", "enabled": true},
 				{"label": "Mastery", "action_type": "local", "action_data": "house_mastery", "enabled": has_mastery_records},
 				{"label": "Bestiary", "action_type": "local", "action_data": "house_bestiary", "enabled": true},
 				{"label": "Imprints", "action_type": "local", "action_data": "house_imprints", "enabled": has_imprints},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Atlas", "action_type": "local", "action_data": "house_mastery_atlas", "enabled": true},
 				{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -13116,13 +13146,17 @@ func execute_local_action(action: String):
 			send_to_server({"type": "dungeon_state"})  # Request fresh dungeon state
 			update_action_bar()
 		"dungeon_move_n":
-			send_to_server({"type": "dungeon_move", "direction": "n"})
+			if not _combat_loot_reveal_active():
+				send_to_server({"type": "dungeon_move", "direction": "n"})
 		"dungeon_move_s":
-			send_to_server({"type": "dungeon_move", "direction": "s"})
+			if not _combat_loot_reveal_active():
+				send_to_server({"type": "dungeon_move", "direction": "s"})
 		"dungeon_move_w":
-			send_to_server({"type": "dungeon_move", "direction": "w"})
+			if not _combat_loot_reveal_active():
+				send_to_server({"type": "dungeon_move", "direction": "w"})
 		"dungeon_move_e":
-			send_to_server({"type": "dungeon_move", "direction": "e"})
+			if not _combat_loot_reveal_active():
+				send_to_server({"type": "dungeon_move", "direction": "e"})
 		# Bless stat selection actions
 		"bless_stat_str":
 			_send_bless_with_stat("strength")
@@ -13192,6 +13226,18 @@ func execute_local_action(action: String):
 			display_house_imprints()
 			update_action_bar()
 		"house_imprints_back":
+			display_house_main()
+			update_action_bar()
+		"house_mastery_atlas":
+			# v0.9.566 — Mastery Atlas. Read-only consolidation page that
+			# joins ability_uses (current rank on active char) + mastery_records
+			# (account ceiling, best-ever) + variant_imprints (companion-
+			# imprinted riders) + pending_headstarts (queued for next char).
+			house_mode = "mastery_atlas"
+			pending_house_action = ""
+			display_house_mastery_atlas()
+			update_action_bar()
+		"house_mastery_atlas_back":
 			display_house_main()
 			update_action_bar()
 		"mastery_prev":
@@ -18045,23 +18091,47 @@ func _discover_enemy_hp(enemy_name: String, enemy_level: int, damage_dealt: int)
 	var base_name = _get_base_monster_name(enemy_name)
 	var enemy_key = "%s_%d" % [base_name, enemy_level]
 
+	# v0.9.566 — `enemy_killed_this_fight` is set true by the combat result
+	# handler the moment a victory/kill message arrives. Until that flag is
+	# set, the in_combat clamp keeps the bar pinned at 1 even if the player's
+	# damage estimate exceeds known HP (so they don't see "0 HP, still alive"
+	# during the round). On confirmed kill, the clamp lifts and the bar
+	# animates to 0 like it should.
+	# v0.9.566 fix — upward observation: if the player has dealt MORE damage
+	# than the recorded ceiling and the monster is still alive, the recorded
+	# HP is stale (e.g., previous kill was via Outsmart with low damage). Bump
+	# the known HP up so the bar resizes truthfully on the next refresh.
 	if analyze_revealed_max_hp > 0:
 		var current = max(0, analyze_revealed_max_hp - damage_dealt)
-		if current == 0 and in_combat:
+		if current == 0 and in_combat and not enemy_killed_this_fight:
 			current = 1
 		return {"current": current, "max": analyze_revealed_max_hp, "known": true, "is_estimate": false}
 
 	if known_enemy_hp.has(enemy_key):
 		var max_hp = int(known_enemy_hp[enemy_key])
+		if damage_dealt > max_hp and in_combat and not enemy_killed_this_fight:
+			# Monster has absorbed more damage than we thought possible. Grow
+			# the ceiling so the next paint shows a believable bar instead of
+			# pinning at 1/N.
+			max_hp = damage_dealt + max(1, int(damage_dealt * 0.25))
+			known_enemy_hp[enemy_key] = max_hp
+			var monster_key = "monster_%s" % base_name
+			if known_enemy_hp.has(monster_key) and known_enemy_hp[monster_key] is Dictionary:
+				known_enemy_hp[monster_key][enemy_level] = max_hp
 		var current2 = max(0, max_hp - damage_dealt)
-		if current2 == 0 and in_combat:
+		if current2 == 0 and in_combat and not enemy_killed_this_fight:
 			current2 = 1
 		return {"current": current2, "max": max_hp, "known": true, "is_estimate": false}
 
 	var est = estimate_enemy_hp(base_name, enemy_level)
 	if est > 0:
+		if damage_dealt > est and in_combat and not enemy_killed_this_fight:
+			# Same upward bump for the estimate path. Don't store yet — the
+			# estimate is computed on the fly from other levels; let
+			# record_enemy_defeated handle persistence on the kill.
+			est = damage_dealt + max(1, int(damage_dealt * 0.25))
 		var current3 = max(0, est - damage_dealt)
-		if current3 == 0 and in_combat:
+		if current3 == 0 and in_combat and not enemy_killed_this_fight:
 			current3 = 1
 		return {"current": current3, "max": est, "known": true, "is_estimate": true}
 
@@ -19910,6 +19980,14 @@ func handle_server_message(message: Dictionary):
 			update_player_hp_bar()  # Refresh HP bar to hide shield
 
 			if message.get("victory", false):
+				# v0.9.566 — lift the "clamp HP to 1 while still in combat"
+				# guard so the monster HP bar can drain to 0 visually before
+				# the panel hides. Re-issue the bar update so the new floor
+				# of 0 propagates immediately (the earlier killing-blow tick
+				# already added the damage, it was just clamped at 1).
+				enemy_killed_this_fight = true
+				if current_enemy_name != "":
+					update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
 				# A4 — play victory FX on the battle scene + extend the linger
 				# so the monster slump and VICTORY banner finish before the
 				# panel hides for the loot/level-up screen.
@@ -20042,6 +20120,9 @@ func handle_server_message(message: Dictionary):
 							# first click.
 							_combat_loot_revealed_lines = victory_payload.get("loot", []).duplicate()
 							_combat_loot_gear_drops = victory_payload.get("gear_drops", []).duplicate()
+							# v0.9.566 — inject persisted autoskip preference so
+							# the panel honors the user's setting on every open.
+							_loot_bag["autoskip_enabled"] = autoskip_loot_reveal
 							combat_loot_panel.open_bag(_loot_bag)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
@@ -20924,6 +21005,7 @@ func _process_combat_start(message: Dictionary):
 	current_enemy_is_boss = message.get("is_boss", false)
 	damage_dealt_to_current_enemy = 0
 	analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
+	enemy_killed_this_fight = false  # v0.9.566 — reset HP-bar drain guard
 
 	# Start boss border pulse for boss fights
 	if current_enemy_is_boss:
@@ -22764,6 +22846,8 @@ func _load_keybinds():
 					disable_tutorial = data["disable_tutorial"]
 				if data.has("show_numpad_popup"):
 					show_numpad_popup = bool(data["show_numpad_popup"])
+				if data.has("autoskip_loot_reveal"):
+					autoskip_loot_reveal = bool(data["autoskip_loot_reveal"])
 				# Load UI scale settings
 				if data.has("ui_scale_monster_art"):
 					ui_scale_monster_art = clampf(float(data["ui_scale_monster_art"]), 0.5, 3.0)
@@ -22800,6 +22884,7 @@ func _save_keybinds():
 	save_data["swap_attack_outsmart"] = swap_attack_outsmart
 	save_data["disable_tutorial"] = disable_tutorial
 	save_data["show_numpad_popup"] = show_numpad_popup
+	save_data["autoskip_loot_reveal"] = autoskip_loot_reveal
 	# Include UI scale settings
 	save_data["ui_scale_monster_art"] = ui_scale_monster_art
 	save_data["ui_scale_map"] = ui_scale_map
@@ -23722,8 +23807,18 @@ func send_to_server(data: Dictionary):
 	var json_str = JSON.stringify(data) + "\n"
 	connection.put_data(json_str.to_utf8_buffer())
 
+func _combat_loot_reveal_active() -> bool:
+	"""Audit bug fix v0.9.566 — true while the combat loot scratch-off / victory
+	reveal panel is up. Movement entry points consult this so players can't walk
+	away mid-reveal (used to be possible — they'd return to find the panel still
+	there but their position changed)."""
+	return combat_loot_panel != null and combat_loot_panel.visible
+
 func send_move(direction: int):
 	if not connected or not has_character:
+		return
+	# v0.9.566 — block movement while the post-combat loot reveal is up.
+	if _combat_loot_reveal_active():
 		return
 
 	send_to_server({"type": "move", "direction": direction})
@@ -23736,6 +23831,9 @@ func _on_move_button(direction: int):
 		return
 	# Block movement until the player acknowledges a triggered trap.
 	if dungeon_mode and awaiting_dungeon_trap_ack:
+		return
+	# v0.9.566 — block movement while combat loot reveal panel is up.
+	if _combat_loot_reveal_active():
 		return
 
 	var current_time = Time.get_ticks_msec() / 1000.0
@@ -24422,6 +24520,7 @@ func _handle_party_combat_start(message: Dictionary):
 	current_enemy_name = monster_name
 	current_enemy_level = monster_level
 	damage_dealt_to_current_enemy = 0
+	enemy_killed_this_fight = false  # v0.9.566 — reset HP-bar drain guard
 	xp_before_combat = character_data.get("experience", 0)
 
 	# Set party combat mode
@@ -25003,8 +25102,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.566 — Mastery Atlas + bug-fix bundle.
+	display_game("[color=#00FF00]v0.9.566[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]New Sanctuary tab consolidating everything you've learned, plus a bundle of player-reported fixes.[/color]")
+	display_game("  • [b]Mastery Atlas[/b]. New Sanctuary tab joins four data sources per ability — current rank on this character, account ceiling (best-ever), variant imprints stacked, and headstart queued for next character — into one read-only page so you can see your investment at a glance.")
+	display_game("  • [b]Monster HP discovery upward bump[/b]. If you've dealt more damage than the recorded ceiling and the monster is still alive, the known HP grows so the bar resizes truthfully instead of pinning at 1/N (was: prior low-damage kills could leave a stale 4-HP estimate on a 30-HP monster).")
+	display_game("  • [b]Kill animation drains to 0[/b]. The monster HP bar no longer stalls at 1 on a confirmed kill — the in-combat clamp now lifts on victory so the bar actually empties.")
+	display_game("  • [b]Companion regen in dungeons[/b]. Active companions now recover HP on dungeon rest and meditate the same way they do on overworld rest — full message line included.")
+	display_game("  • [b]Movement blocked during loot reveal[/b]. You can't accidentally wander off the loot-reveal screen anymore; movement is gated until the panel closes.")
+	display_game("  • [b]Autoskip toggle[/b]. New checkbox in the loot-reveal panel top-right auto-picks random unrevealed cells until your reveal budget runs out. Persists across sessions.")
+	display_game("  • [b]Red ! disambiguation[/b]. Under-Threat post markers now show as [color=#FFAA00]amber ![/color], bounty targets as [color=#FFD700]gold ?[/color], and hotzone tiles stay [color=#FF4444]red ![/color] — three distinct glyphs/colors. Legend below the map enumerates them.")
+	display_game("  • [b]Welcome modal fixes[/b]. Starter chain text no longer claims you stay inside Haven's safe bubble (the gather stages take you outside it). Added a 'Turning in stages' paragraph that explains the Haven [color=#FFD700]P[/color] tile + Turn In button. Tutorial egg is now a random T1 monster instead of always Goblin.")
+	display_game("")
+
 	# v0.9.547 — Rename "Success" → "Quality Rating" + never-fail clarity (Slice 3.8 — playtest fix).
-	display_game("[color=#00FF00]v0.9.547[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.547[/color]")
 	display_game("  [color=#FFD700]'Success Chance' was misleading — crafts never fail. Renamed to 'Quality Rating' across the recipe panel and post-craft summary.[/color]")
 	display_game("  • [b]Quality Rating[/b] (Audit #4 Slice 3.8, playtest feedback). The number that controls quality band sizes is now labeled [color=#FFFFFF]Quality Rating[/color] instead of [color=#888888]Success Chance[/color] — the previous name implied a fail/succeed outcome that doesn't exist. Crafts always produce an item; even the lowest Quality Rating still rolls Poor (50% stats) at worst.")
 	display_game("  • [b]Never-fail clarity[/b]. Both the recipe panel and the post-craft summary now spell it out: [color=#888888]'Crafts always produce an item — even a Poor roll gives 50% stats. Quality Rating only shifts the band sizes.'[/color] No more wondering if a 31% Quality Rating means a 69% chance of losing your materials.")
@@ -25035,14 +25147,6 @@ func display_changelog():
 	display_game("  • [b]Behavior change[/b]: faster dismissal hold (0.4s vs 1.0s), border tint matches the rolled quality, no more separate text-page dump after dismiss (the panel is the result; game_output gets just a one-line chat breadcrumb).")
 	display_game("")
 
-	# v0.9.543 — Crafting reveal animation + specialist save + trivia cleanup (Slice 3).
-	display_game("[color=#00FFFF]v0.9.543[/color]")
-	display_game("  [color=#FFD700]The crafting reveal moment lands — every craft now plays a tweened animation modal that pays off the boost commitment.[/color]")
-	display_game("  • [b]Reveal animation panel[/b] (Audit #4, crafting overhaul Slice 3). After every craft, a 360×280 modal pops with a card-flip reveal: shimmering [color=#888888]???[/color] over phase 1, then a card-flip + name/quality fade-in over phase 2, then a color sweep + stat multiplier subtitle (×0.5 / ×1.0 / ×1.25 / ×1.5) over phase 3. Refined / Master crafts get a tier badge above the card so the commitment is visible.")
-	display_game("  • [b]Specialist save[/b] (Audit #4). 5% chance on Refined or Master rolls to bump the quality one tier (capped at Masterwork). Fires for committed crafter specialists (Halfling / Knight matched to the recipe skill). When it triggers, the reveal panel shows [color=#FFD700]★ Specialist Save — one tier higher! ★[/color]. Replaces the old trivia 0→1 score-save boon.")
-	display_game("  • [b]Trivia code cleanup[/b]. v0.9.372 replaced the 3-round trivia minigame with the scratch-off; ~170 versions later, the unreachable code finally gets deleted. Removed: `CRAFT_CHALLENGE_QUESTIONS` (50 question-sets across 5 skills), `_generate_craft_challenge`, `handle_craft_challenge_answer`, `active_crafts` dict + disconnect refund, server dispatch + handler. Client: `crafting_challenge_mode` + 3 sibling vars, `handle_craft_challenge` / `display_craft_challenge_round` / `handle_craft_challenge_pick`, `craft_challenge` message dispatch, `craft_challenge_pick_*` action handler, action bar branch. Net ~200 lines removed across server/client/shared.")
-	display_game("  • [b]Dismiss the panel[/b] with Space / Enter / Escape / OK button after a 1.0s minimum-hold. The existing text-log result (XP / level-ups / craft-again hints) still renders to game_output once the panel closes — flow is unchanged after the reveal.")
-	display_game("")
 
 
 
@@ -28079,6 +28183,12 @@ func _on_combat_loot_closed() -> void:
 	scene."""
 	pass
 
+func _on_combat_loot_autoskip_toggled(enabled: bool) -> void:
+	"""Player toggled the Autoskip checkbox in the loot reveal panel. Persist
+	so the preference survives session restart."""
+	autoskip_loot_reveal = enabled
+	_save_keybinds()
+
 func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
 	"""Server confirmed a reveal — update the panel, sync character, and
 	accumulate the revealed item into the cached victory-card payload so the
@@ -30717,7 +30827,7 @@ func update_map(map_text: String):
 		main_text = _strip_remote_player_glyphs(main_text)
 		map_display.append_text(main_text)
 		if show_map_legend:
-			map_display.append_text("\n[color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water[/font_size][/color]")
+			map_display.append_text("\n[color=#8B7355][font_size=13]@ You  A Player  D Dungeon  T Tree  * Ore  ~ Water  [/font_size][/color][color=#FFAA00][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Threat  [/font_size][/color][color=#FFD700][font_size=13]?[/font_size][/color][color=#8B7355][font_size=13] Bounty  [/font_size][/color][color=#FF4444][font_size=13]![/font_size][/color][color=#8B7355][font_size=13] Hotzone  X Corpse  $ Sack[/font_size][/color]")
 
 	if minimap_display:
 		minimap_display.clear()
@@ -39143,6 +39253,164 @@ func display_house_imprints():
 
 	display_game("[color=#FFD700]══════════════════════════════[/color]")
 	update_action_bar()
+
+
+func display_house_mastery_atlas():
+	"""v0.9.566 — Mastery Atlas. Read-only consolidation of every ability
+	the account has touched into one Sanctuary page. Each ability row joins
+	four data sources: current rank on the active character (ability_uses),
+	account ceiling / best-ever (mastery_records), variant imprints stacked
+	(account_variant_imprints), and headstart queued for next character
+	(pending_headstarts). All four are already pushed to the client; this
+	function only reformats them — no new server traffic."""
+	_populate_sanctuary_panel()
+	game_output.clear()
+	house_mode = "mastery_atlas"
+	_update_house_map()
+
+	display_game("[color=#FFD700]═══════ MASTERY ATLAS ═══════[/color]")
+	display_game("[color=#808080]Every ability you've touched, at a glance.[/color]")
+	display_game("[color=#808080]Current rank (this character) · Account best · Imprints · Headstart queued.[/color]")
+	display_game("")
+
+	# Pull all four data sources. All are account-level except ability_uses
+	# (per-character). Empty if the source isn't loaded yet.
+	var current_uses: Dictionary = character_data.get("ability_uses", {})
+	var ceiling_records: Dictionary = house_data.get("mastery_records", {})
+	var pending_headstarts: Dictionary = house_data.get("pending_headstarts", {})
+	var max_rank: int = int(house_data.get("headstart_max_rank", 3))
+
+	# Resolve variant trait metadata for compact imprint summaries (same
+	# pattern as display_house_imprints — reuse the static map).
+	var trait_categories: Dictionary = {}
+	if Engine.has_singleton("DropTables"):
+		trait_categories = DropTables.VARIANT_TRAIT_CATEGORIES
+	if trait_categories.is_empty():
+		var dt_script = load("res://shared/drop_tables.gd")
+		if dt_script != null:
+			trait_categories = dt_script.VARIANT_TRAIT_CATEGORIES
+
+	# Mirror the rank labels the existing Mastery page uses so the two
+	# screens read consistently.
+	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+
+	# Build the union of ability names across all four sources so we surface
+	# even rarely-used abilities that only show up in one of them (e.g., a
+	# fresh character with only ability_uses but no record yet).
+	var all_abilities: Dictionary = {}
+	for k in current_uses.keys():
+		all_abilities[String(k)] = true
+	for k in ceiling_records.keys():
+		all_abilities[String(k)] = true
+	for k in account_variant_imprints.keys():
+		all_abilities[String(k)] = true
+	for k in pending_headstarts.keys():
+		all_abilities[String(k)] = true
+
+	if all_abilities.is_empty():
+		display_game("[color=#808080]No ability data yet.[/color]")
+		display_game("")
+		display_game("[color=#AAAAAA]Use abilities in combat to start filling this Atlas. Each ability you[/color]")
+		display_game("[color=#AAAAAA]land tracks rank progress on this character, best-ever rank on the[/color]")
+		display_game("[color=#AAAAAA]account (survives permadeath), imprints from companions, and headstart[/color]")
+		display_game("[color=#AAAAAA]ranks you've queued for the next character.[/color]")
+		display_game("")
+		display_game("[color=#FFD700]══════════════════════════════[/color]")
+		update_action_bar()
+		return
+
+	# Summary line for quick scan: total abilities tracked + how many have
+	# imprints / headstart queued (the two "investment" axes).
+	var total_abilities := all_abilities.size()
+	var imprinted_count := 0
+	for st in account_variant_imprints.values():
+		if st is Array and st.size() > 0:
+			imprinted_count += 1
+	var queued_count := 0
+	for v in pending_headstarts.values():
+		if int(v) > 0:
+			queued_count += 1
+	display_game("[color=#FFD700]%d abilities tracked[/color]   [color=#87CEEB]%d imprinted[/color]   [color=#9ACD32]%d headstart queued[/color]" % [total_abilities, imprinted_count, queued_count])
+	display_game("")
+
+	# Sort alphabetically for stable layout. Show every ability, even if its
+	# row is mostly blank (R0 / no imprints / no headstart) — the empty cells
+	# are themselves useful info ("haven't touched this yet").
+	var sorted_abilities: Array = all_abilities.keys()
+	sorted_abilities.sort()
+	for ab_name in sorted_abilities:
+		var pretty_name: String = String(ab_name).replace("_", " ").capitalize()
+		var cur_rank := int(current_uses.get(ab_name, 0))
+		var ceiling := int(ceiling_records.get(ab_name, 0))
+		var imprint_stack = account_variant_imprints.get(ab_name, [])
+		var imprint_count := 0
+		if imprint_stack is Array:
+			imprint_count = imprint_stack.size()
+		var pending_rank := int(pending_headstarts.get(ab_name, 0))
+
+		# Color the ability name by its ceiling tier — gold for Master, lime
+		# for Expert+, white for novice/adept, gray if untouched.
+		var name_color := "#A0A0A0"
+		if ceiling >= 4:
+			name_color = "#FFD700"
+		elif ceiling >= 3:
+			name_color = "#9ACD32"
+		elif ceiling >= 1:
+			name_color = "#FFFFFF"
+
+		display_game("[color=%s]━━ %s ━━[/color]" % [name_color, pretty_name])
+
+		# Row 1: current rank on this character. Show "—" if zero so the
+		# player can tell apart "this character hasn't trained it" from
+		# "trained but legitimately R0" (the latter is impossible — R0 IS
+		# untrained — but rendering "—" reads cleaner).
+		var cur_label = rank_names[cur_rank] if cur_rank < rank_names.size() else "Master"
+		if cur_rank > 0:
+			display_game("  [color=#88FF88]Current:[/color] R%d %s" % [cur_rank, cur_label])
+		else:
+			display_game("  [color=#808080]Current:[/color] [color=#808080]—[/color]")
+
+		# Row 2: account ceiling (best-ever, survives permadeath). Same
+		# treatment as Current for consistency.
+		var ceil_label = rank_names[ceiling] if ceiling < rank_names.size() else "Master"
+		if ceiling > 0:
+			display_game("  [color=#87CEEB]Best ever:[/color] R%d %s" % [ceiling, ceil_label])
+		else:
+			display_game("  [color=#808080]Best ever:[/color] [color=#808080]—[/color]")
+
+		# Row 3: imprints stacked. If any, list trait names + counts so the
+		# player can see what's wired in at a glance.
+		if imprint_count > 0:
+			var counts_by_trait: Dictionary = {}
+			for t in imprint_stack:
+				var tid = String(t)
+				counts_by_trait[tid] = int(counts_by_trait.get(tid, 0)) + 1
+			var trait_summaries: Array = []
+			for trait_id in counts_by_trait:
+				var n = int(counts_by_trait[trait_id])
+				var info: Dictionary = trait_categories.get(trait_id, {})
+				var t_name = String(info.get("name", trait_id))
+				var t_color = String(info.get("color", "#FFD700"))
+				trait_summaries.append("[color=%s]✦ %s ×%d[/color]" % [t_color, t_name, n])
+			display_game("  [color=#FFD700]Imprints (%d/4):[/color] %s" % [imprint_count, ", ".join(trait_summaries)])
+		else:
+			display_game("  [color=#808080]Imprints:[/color] [color=#808080]none[/color]")
+
+		# Row 4: headstart queued for next character. Show what rank the
+		# next char will spawn at; mention the cap so the player knows when
+		# they're tapped out.
+		if pending_rank > 0:
+			var pname = rank_names[pending_rank] if pending_rank < rank_names.size() else "Master"
+			display_game("  [color=#9ACD32]Headstart:[/color] R%d %s [color=#808080](max R%d)[/color]" % [pending_rank, pname, max_rank])
+		else:
+			display_game("  [color=#808080]Headstart:[/color] [color=#808080]—[/color]")
+		display_game("")
+
+	display_game("[color=#808080]→ Use the Mastery tab to spend Baddie Points on headstart ranks.[/color]")
+	display_game("[color=#808080]→ Use the Imprints tab for detailed trait descriptions per stack.[/color]")
+	display_game("[color=#FFD700]══════════════════════════════[/color]")
+	update_action_bar()
+
 
 # ===== BUILDING SYSTEM =====
 
