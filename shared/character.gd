@@ -328,12 +328,15 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 # Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
 # but inlined here so character.gd doesn't have to depend on the global script
 # load order. Slice 1 — gentle scaling: rank 0 -20%, rank 2 baseline, rank 4 +20%.
-# Thresholds 3x'd (was 10/50/200/1000) on user feedback to slow the grind. The
-# 200-use backfill still lands at rank 2 with the new curve so no migration
-# needed for existing characters.
-const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]
-const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]
-const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
+# v0.9.567 — extended to R6 (Legend, Mythic) + softened early thresholds. User
+# feedback: 4 ranks isn't enough headroom and the first ranks took too long.
+# Was: [30, 150, 600, 2400] / 5 names / 5 mult entries. Now: 7 ranks total,
+# early-rank cost roughly halved. R5 Legend = +30% damage, R6 Mythic = +45%.
+# Backfill still uses 200 uses so legacy characters now land between R3-R4 on
+# load instead of capping at R2 — small QoL bump as a side effect.
+const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 250, 1200, 4000, 10000]
+const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
+const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
 const MASTERY_RANK_BACKFILL_USES: int = 200
 
 # Audit #1 Slice 4 — off-affinity counter damage multipliers (mirrors
