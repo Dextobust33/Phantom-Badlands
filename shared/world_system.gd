@@ -2106,7 +2106,12 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 			# players / dungeons / corpses / bounties still read normally; only
 			# unoccupied post tiles flip to the warning indicator.
 			if threatened_post_set.has(pos_key) and not (player_positions.has(pos_key) or dungeon_positions.has(pos_key) or corpse_positions.has(pos_key) or bounty_positions.has(pos_key)):
-				line_parts.append("[color=#FF4400] ![/color]")
+				# v0.9.566 — distinct amber "!" for Under Threat posts. Color
+				# (#FFAA00 amber) differentiates from the red-orange bounty !
+				# (#FF4500) and the bright red hotzone ! (#FF0000), so all four
+				# warning families on the map read as distinct shades at a
+				# glance. Legend below the map documents this; see also help.
+				line_parts.append("[color=#FFAA00] ![/color]")
 				continue
 
 			# Priority: players > dungeons > bounties > corpses > sacks > merchants > terrain
@@ -2124,7 +2129,10 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 				var dungeon_color = dungeon.get("color", "#A335EE")
 				line_parts.append("[color=%s] D[/color]" % dungeon_color)
 			elif bounty_positions.has(pos_key):
-				line_parts.append("[color=#FF4500] ![/color]")
+				# v0.9.566 — bounty target uses gold ? to read distinct from
+				# the red ! hotzone glyph (player feedback). "?" reads as
+				# "find this target" — known location, named monster.
+				line_parts.append("[color=#FFD700] ?[/color]")
 			elif corpse_positions.has(pos_key):
 				line_parts.append("[color=#FF0000] X[/color]")
 			elif pvp_sack_set.has(pos_key):
@@ -3197,8 +3205,9 @@ func generate_ascii_map_with_merchants(center_x: int, center_y: int, radius: int
 				else:
 					line_parts.append("[color=%s] D[/color]" % dungeon_color)
 			elif bounty_positions.has(pos_key):
-				# Show bounty target as red-orange !
-				line_parts.append("[color=#FF4500] ![/color]")
+				# v0.9.566 — bounty marker is gold ? to read distinct from
+				# hotzone red !.
+				line_parts.append("[color=#FFD700] ?[/color]")
 			elif corpse_positions.has(pos_key):
 				# Show corpse as red X
 				line_parts.append("[color=#FF0000] X[/color]")

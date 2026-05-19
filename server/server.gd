@@ -2649,9 +2649,13 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		)
 		if pf_added:
 			log_message("Auto-added Pathfinder's Trial Stage 1 to %s" % char_name)
-	# Tutorial companion gift — Goblin egg ready to hatch in incubator.
+	# Tutorial companion gift — random T1 monster egg ready to hatch in
+	# incubator. Randomized so two friends creating characters at the same
+	# time don't both get a Goblin (v0.9.566 fix — was hardcoded Goblin).
 	if drop_tables:
-		var tutorial_egg = drop_tables.get_egg_for_monster("Goblin")
+		var t1_pool = ["Goblin", "Giant Rat", "Kobold", "Skeleton", "Wolf"]
+		var picked_monster = t1_pool[randi() % t1_pool.size()]
+		var tutorial_egg = drop_tables.get_egg_for_monster(picked_monster)
 		if not tutorial_egg.is_empty():
 			tutorial_egg["tutorial_gift"] = true
 			character.incubating_eggs.append(tutorial_egg)
@@ -2682,8 +2686,10 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"body": (
 			"You start at [color=#FFD700]Haven[/color], the safest post in the world. Everyone passes through here at least once.\n\n"
 			+ "Two things are already waiting for you:\n"
-			+ "  • [color=#9ACD32]Pathfinder's Trial[/color] is in your quest log. Four short stages (fish 3 → mine 2 → kill 2 → kill 3) — each one rewards a piece of starter gear (weapon, armor, boots, ring) so you fill out your equipment slots without ever leaving Haven's safe bubble.\n"
-			+ "  • A [color=#FF80FF]Goblin egg[/color] in your incubator — walk around to hatch it. Your first companion fights alongside you and gains XP from your kills.\n\n"
+			+ "  • [color=#9ACD32]Pathfinder's Trial[/color] is in your quest log. Four short stages (fish 3 → mine 2 → kill 2 → kill 3) — each one rewards a piece of starter gear (weapon, armor, boots, ring). The first two stages take you just outside Haven to gather; the kill stages happen wherever you find a fight.\n"
+			+ "  • A [color=#FF80FF]Tier 1 monster egg[/color] in your incubator — walk around to hatch it. Your first companion fights alongside you and gains XP from your kills.\n\n"
+			+ "[color=#FFD700]── Turning in stages ──[/color]\n"
+			+ "When a stage shows [color=#88FF88]complete[/color] in your quest log, walk back onto Haven (the gold [color=#FFD700]P[/color] post marker) and open the quest log — completed stages have a [color=#88FF88]Turn In[/color] button. The next stage appears automatically on turn-in; no need to revisit the quest board mid-chain.\n\n"
 			+ "Press the [color=#FFAA66]Help[/color] (?) button on any panel for context, or type [color=#9ACD32]/topics[/color] to see every help topic at once.\n\n"
 			+ "Good luck out there."
 		),
@@ -31389,6 +31395,13 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 
+	# v0.9.566 — companion recovers a similar % on dungeon rest (matches the
+	# overworld rest path). Skipped when KO'd; only healers revive.
+	var companion_heal_amount: int = 0
+	if character.has_active_companion() and not character.is_companion_ko():
+		var comp_heal_percent: float = randf_range(0.10, 0.25)
+		companion_heal_amount = character.regen_companion(comp_heal_percent)
+
 	# Build rest message
 	var rest_msg = "[color=#808080](Consumed 1 %s)[/color]\n" % food_name
 	if hp_full:
@@ -31400,6 +31413,14 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"]:
 		rest_msg += " and %d Energy" % energy_regen
 	rest_msg += ".[/color]"
+	# v0.9.566 — surface companion recovery so it's clear the rest brought
+	# the pet back too. KO callout matches overworld wording.
+	if character.has_active_companion():
+		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		if character.is_companion_ko():
+			rest_msg += "\n[color=#FF6666]Your %s is knocked out and needs a healer to revive.[/color]" % comp_name
+		elif companion_heal_amount > 0:
+			rest_msg += "\n[color=#3DD9FF]Your %s recovers %d HP.[/color]" % [comp_name, companion_heal_amount]
 
 	# Tick status effects
 	_tick_dungeon_rest_status_effects(peer_id, character)
@@ -31471,6 +31492,18 @@ func _handle_dungeon_meditate(peer_id: int, character: Character, food_name: Str
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 		meditate_msg += "[color=#66CCCC]You meditate and recover %d HP and %d Mana.%s[/color]" % [heal_amount, mana_regen, bonus_text]
+
+	# v0.9.566 — companion recovers on dungeon meditate, matching overworld
+	# meditate. Skipped when KO'd.
+	if character.has_active_companion() and not character.is_companion_ko():
+		var comp_meditate_percent: float = randf_range(0.10, 0.25)
+		var comp_heal_amount: int = character.regen_companion(comp_meditate_percent)
+		if comp_heal_amount > 0:
+			var comp_name: String = str(character.active_companion.get("name", "your companion"))
+			meditate_msg += "\n[color=#3DD9FF]Your %s recovers %d HP.[/color]" % [comp_name, comp_heal_amount]
+	elif character.has_active_companion() and character.is_companion_ko():
+		var comp_name2: String = str(character.active_companion.get("name", "your companion"))
+		meditate_msg += "\n[color=#FF6666]Your %s is knocked out and needs a healer to revive.[/color]" % comp_name2
 
 	# Tick status effects
 	_tick_dungeon_rest_status_effects(peer_id, character)

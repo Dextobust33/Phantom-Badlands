@@ -14,12 +14,18 @@ class_name CombatLootPanel
 signal slot_clicked(slot_index: int)
 signal done_pressed
 signal closed
+# v0.9.566 — autoskip checkbox state changed by user. Client persists it.
+signal autoskip_toggled(enabled: bool)
 
 const SLOT_COUNT := 16
 const GRID_COLS := 4
+# v0.9.566 — delay between auto-picks when autoskip is on. Slow enough to read
+# each card's reveal pop, fast enough that the panel clears quickly.
+const AUTOSKIP_INTERVAL: float = 0.35
 
 var _root_panel: PanelContainer
 var _header_label: RichTextLabel
+var _autoskip_checkbox: CheckBox
 var _pinned_container: VBoxContainer  # v0.9.481 — "Equipment Found" banner row
 var _reveals_label: RichTextLabel
 var _grid: GridContainer
@@ -34,6 +40,9 @@ var _reveal_budget: int = 0
 var _flock_kills: int = 1
 var _monster_tier: int = 1
 var _cascade_active: bool = false
+# v0.9.566 — autoskip state. Toggle persists across panel opens via client.gd.
+var _autoskip_enabled: bool = false
+var _autoskip_timer: Timer = null
 
 
 func _ready() -> void:
@@ -75,13 +84,32 @@ func _build_layout() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	_root_panel.add_child(vbox)
 
-	# Title
+	# Title row — title centered, autoskip toggle in top-right corner.
+	# v0.9.566: autoskip lets players skip the click-fest after the novelty
+	# of the reveal animation wears off.
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(title_row)
+
+	var title_left_spacer := Control.new()
+	title_left_spacer.custom_minimum_size = Vector2(120, 0)
+	title_row.add_child(title_left_spacer)
+
 	var title := Label.new()
 	title.text = "Loot Reveal"
 	title.add_theme_color_override("font_color", Color(1, 0.84, 0))
 	title.add_theme_font_size_override("font_size", 22)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(title)
+
+	_autoskip_checkbox = CheckBox.new()
+	_autoskip_checkbox.text = "Autoskip"
+	_autoskip_checkbox.tooltip_text = "When on, the panel auto-clicks random unrevealed cells until your reveal budget runs out, then auto-closes."
+	_autoskip_checkbox.focus_mode = Control.FOCUS_NONE
+	_autoskip_checkbox.custom_minimum_size = Vector2(120, 0)
+	_autoskip_checkbox.toggled.connect(_on_autoskip_toggled)
+	title_row.add_child(_autoskip_checkbox)
 
 	# Header — tier + flock info
 	_header_label = RichTextLabel.new()
@@ -181,11 +209,76 @@ func open_bag(bag_view: Dictionary) -> void:
 	_flock_kills = int(bag_view.get("flock_kills", 1))
 	_monster_tier = int(bag_view.get("monster_tier", 1))
 	_cascade_active = false
+	# v0.9.566 — restore persisted autoskip preference. Client passes it via
+	# bag_view["autoskip_enabled"] (added in client.gd at open_bag callsite).
+	_autoskip_enabled = bool(bag_view.get("autoskip_enabled", false))
+	if _autoskip_checkbox != null:
+		_autoskip_checkbox.set_pressed_no_signal(_autoskip_enabled)
 	_render_header()
 	_render_pinned(bag_view.get("pinned", []))
 	_render_reveals_counter()
 	_render_all_cards()
 	visible = true
+	# Kick off autoskip if enabled. Defer one frame so the panel finishes
+	# layout before the first auto-click fires.
+	if _autoskip_enabled:
+		call_deferred("_start_autoskip")
+
+
+func _start_autoskip() -> void:
+	"""v0.9.566 — start the auto-pick timer. Picks one random unrevealed cell
+	per AUTOSKIP_INTERVAL seconds until budget is exhausted, then auto-presses
+	Done to trigger the cascade reveal of the remaining cells."""
+	if not _autoskip_enabled or _cascade_active:
+		return
+	if _autoskip_timer != null:
+		return
+	_autoskip_timer = Timer.new()
+	_autoskip_timer.wait_time = AUTOSKIP_INTERVAL
+	_autoskip_timer.one_shot = false
+	_autoskip_timer.timeout.connect(_on_autoskip_tick)
+	add_child(_autoskip_timer)
+	_autoskip_timer.start()
+
+
+func _stop_autoskip() -> void:
+	if _autoskip_timer != null:
+		_autoskip_timer.stop()
+		_autoskip_timer.queue_free()
+		_autoskip_timer = null
+
+
+func _on_autoskip_tick() -> void:
+	# Stop if user toggled off or budget exhausted or cascade firing.
+	if not _autoskip_enabled or _cascade_active:
+		_stop_autoskip()
+		return
+	if _reveals_used >= _reveal_budget:
+		_stop_autoskip()
+		# Trigger Done so the remaining unrevealed cells cascade-reveal.
+		_on_done_pressed()
+		return
+	# Build pool of unrevealed slot indices and pick one at random.
+	var unrevealed: Array[int] = []
+	for i in range(_slots_data.size()):
+		var slot: Dictionary = _slots_data[i]
+		if not bool(slot.get("revealed", false)):
+			unrevealed.append(i)
+	if unrevealed.is_empty():
+		_stop_autoskip()
+		_on_done_pressed()
+		return
+	var pick = unrevealed[randi() % unrevealed.size()]
+	emit_signal("slot_clicked", pick)
+
+
+func _on_autoskip_toggled(pressed: bool) -> void:
+	_autoskip_enabled = pressed
+	autoskip_toggled.emit(pressed)
+	if pressed:
+		_start_autoskip()
+	else:
+		_stop_autoskip()
 
 
 func _render_pinned(pinned: Array) -> void:
@@ -428,4 +521,5 @@ func _on_done_pressed() -> void:
 		return
 	_cascade_active = true
 	_done_button.disabled = true
+	_stop_autoskip()  # v0.9.566 — cancel autoskip timer if still running.
 	emit_signal("done_pressed")
