@@ -14639,6 +14639,13 @@ func trigger_trading_post_encounter(peer_id: int):
 		var distance_multiplier = 3.5 + (distance_from_origin / 50.0) * 7.0  # 3.5x base at origin, +7x per 50 distance
 		recharge_cost = int(base_cost * distance_multiplier)
 
+	# v0.9.580 — surface the post's threat state in the entry payload so the
+	# client can render a clear warning when the player walks onto a
+	# threatened post. Closes the user-reported gap "the ! at 0,0 doesn't
+	# say what it is when you go there." The same compute_post_threat_state
+	# data the HUD uses; cached per-tick so this is cheap.
+	var entry_threat: Dictionary = _compute_post_threat_state(tp_x, tp_y)
+
 	send_to_peer(peer_id, {
 		"type": "trading_post_start",
 		"id": tp_id,
@@ -14654,7 +14661,17 @@ func trigger_trading_post_encounter(peer_id: int):
 		# Audit #5 discoverability — free dungeon rumors per trading post.
 		# Refresh every 30 min via cache. Players still need to travel to
 		# act on them; compass + rumors are the two discoverability tools.
-		"rumors": _get_trading_post_rumors(tp_id, tp_x, tp_y, peer_id)
+		"rumors": _get_trading_post_rumors(tp_id, tp_x, tp_y, peer_id),
+		# v0.9.580 — threat info for the entry banner. Field names match the
+		# return shape of _compute_post_threat_state (tier not dungeon_tier).
+		"under_threat": bool(entry_threat.get("threatened", false)),
+		"threat_dungeon_name": String(entry_threat.get("dungeon_name", "")),
+		"threat_dungeon_type": String(entry_threat.get("dungeon_type", "")),
+		"threat_tier": int(entry_threat.get("tier", 0)),
+		"threat_distance": int(entry_threat.get("distance", 0)),
+		"threat_direction": String(entry_threat.get("direction", "")),
+		"threat_severe": bool(entry_threat.get("severe", false)),
+		"threat_count": int(entry_threat.get("count", 0)),
 	})
 
 func _handle_market_interact(peer_id: int, _character):

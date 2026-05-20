@@ -25,6 +25,10 @@ func _get_trading_post_art():
 
 # Character script for thematic item display
 const CharacterScript = preload("res://shared/character.gd")
+# v0.9.580 — client-side access to trading-post names so the "Turn in elsewhere"
+# hint in display_quest_list can be replaced with "Turn in at <PostName>". Just
+# need the static const TRADING_POSTS — no instantiation required.
+const TradingPostDBScript = preload("res://shared/trading_post_database.gd")
 
 func _recolor_ascii_art(art: String, new_color: String) -> String:
 	"""Replace ALL color tags in ASCII art with a new color for variety"""
@@ -25181,8 +25185,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.580 — Two bug fixes from user playtest report.
+	display_game("[color=#00FF00]v0.9.580[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug fix pair from player report. Both small but visible.[/color]")
+	display_game("  • [b]Quest turn-in hint now names the destination[/b]. The active-quest list used to say [color=#808080](Turn in elsewhere)[/color] when the player wasn't at the right post — leaving them to guess WHERE to go. Now it reads [color=#888888](Turn in at Haven)[/color] / [color=#888888](Turn in at Crossroads)[/color] etc. Fixes the Pathfinder's Trial confusion where the chain is Haven-issued but players were at Crossroads.")
+	display_game("  • [b]Trading post entry now surfaces threat status[/b]. The map shows an amber [color=#FFAA00]![/color] for Under-Threat posts, but walking onto the post tile previously gave no on-screen explanation. Now the entry banner reads [color=#FFAA00]⚠ Under Threat — <Dungeon Name> (T<n>) looms <N> tiles <direction>.[/color] for normal threat, escalating to [color=#FF2020]⚠⚠ SEVERELY THREATENED[/color] when 2+ T2+ dungeons share the corridor. Also names the consequences (higher markups, ⚠ THREAT BOUNTY quests) + the cure (clear the dungeon).")
+	display_game("  • [b]Server changes[/b]: trading_post_start payload now includes under_threat + threat_dungeon_name + threat_tier + threat_distance + threat_direction + threat_severe + threat_count. Computation reuses _compute_post_threat_state which is already cached per-tick + per-3s — no perf cost.")
+	display_game("")
+
 	# v0.9.579 — Patreon tame-QoL bonuses (T2+ Sanctuary slot, T3 kennel-tier).
-	display_game("[color=#00FF00]v0.9.579[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.579[/color]")
 	display_game("  [color=#FFD700]The v0.9.578 Patreon scaffolding gets its promised tame-QoL layer: T2+ supporters get an extra Sanctuary registered slot, T3 supporters get a free kennel-tier bump.[/color]")
 	display_game("  • [b]Tier 2 (Founder) — +1 Sanctuary registered slot[/b]. Adds one extra death-resistant companion slot on top of whatever upgrade level the player has bought. Stacks correctly: a Founder who's also bought 3 kennel upgrades has base+3+1 slots.")
 	display_game("  • [b]Tier 3 (Patron) — +1 free kennel-tier bump[/b]. The kennel capacity calculation gets a free level-up (clamped at the table max of 500 slots). Saves ~5000 Baddie Points the player would otherwise spend on the first kennel-tier upgrade.")
@@ -25226,14 +25238,6 @@ func display_changelog():
 	display_game("  • [b]Client-only[/b]. No server change; server stays on v0.9.574 binary `815eeaf1fc9dd6e336f6e50787f3c7d4`.")
 	display_game("")
 
-	# v0.9.574 — Combat loot ✦ +2 Reveals bonus cell (Slice 1 of scratch-off engagement mechanics).
-	display_game("[color=#00FFFF]v0.9.574[/color]")
-	display_game("  [color=#FFD700]A rare gold cell hides in your combat loot grid — flip it for [color=#88FF88]+2 reveals[/color] to your budget. Net [color=#88FF88]+1 reveal[/color] gained after the click cost.[/color]")
-	display_game("  • [b]✦ +2 Reveals cell[/b] (user direction 2026-05-20, Slice 1 of the scratch-off engagement mechanics). Each filler slot in the combat loot grid now has a [color=#FFD700]1-in-12[/color] chance of rolling as a [color=#FFD700]+2 Reveals[/color] bonus cell. Flip it like any other slot — costs 1 reveal — and it grants +2 reveals back to your budget. Cell is marked with a gold [color=#FFD700]✦[/color] sparkle prefix on reveal so the lucky pull reads obviously special.")
-	display_game("  • [b]How it changes play[/b]: when your budget is tight and you've already taken the obviously-valuable cells, gambling a click on an unrevealed cell now has real upside potential — you might hit a +2 and unlock the rest of the grid. Adds a tension layer to budget management without making greedy plays the only correct move.")
-	display_game("  • [b]Help topic updated[/b]: `combat_loot` now documents the +2 mechanic + drop rate so players can scan for it strategically.")
-	display_game("  • [b]Coming soon[/b]: same mechanic for gathering scratch-off + craft reveal panels in a future slice. Other brainstormed mechanics (combo bonus, trap cell, mystery cell, double-or-nothing, chain reveal, foresight peek) parked for design review — see [color=#888888]project_next_session_polish_qol.md[/color] in the dev memory.")
-	display_game("")
 
 
 
@@ -35552,6 +35556,24 @@ func _display_trading_post_ui():
 
 	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
 	display_game("[color=#87CEEB]%s greets you.[/color]" % quest_giver)
+	# v0.9.580 — threat banner. Closes the user-reported gap "the ! at (0,0)
+	# doesn't say what it is when you go there." When the post is threatened
+	# by a nearby T2+ dungeon, surface the dungeon name + direction + tier
+	# so the player knows WHY the post is flagged amber. Severe variant
+	# escalates color/wording when 2+ T2+ dungeons share the corridor.
+	if bool(trading_post_data.get("under_threat", false)):
+		var t_name = String(trading_post_data.get("threat_dungeon_name", "an active dungeon"))
+		var t_tier = int(trading_post_data.get("threat_tier", 2))
+		var t_dist = int(trading_post_data.get("threat_distance", 0))
+		var t_dir = String(trading_post_data.get("threat_direction", ""))
+		var t_severe = bool(trading_post_data.get("threat_severe", false))
+		var t_count = int(trading_post_data.get("threat_count", 1))
+		display_game("")
+		if t_severe:
+			display_game("[color=#FF2020]⚠⚠ SEVERELY THREATENED — %d active dungeons in the corridor[/color]" % t_count)
+		else:
+			display_game("[color=#FFAA00]⚠ Under Threat — %s (T%d) looms %d tiles %s.[/color]" % [t_name, t_tier, t_dist, t_dir])
+		display_game("[color=#888888]Threatened posts charge higher markups + ⚠ THREAT BOUNTY quests appear on the board. Clear the dungeon to restore the post.[/color]")
 	display_game("")
 	display_game("[color=#808080]Walk into tiles to interact:[/color]")
 	display_game("  [color=#FF8800]F[/color] Forge  [color=#00CC66]A[/color] Apothecary  [color=#AA44FF]E[/color] Enchant Table  [color=#87CEEB]S[/color] Scribe  [color=#AA7744]W[/color] Workbench")
@@ -36766,7 +36788,11 @@ func handle_quest_list(message: Dictionary):
 				if quest_tp == current_quest_tp_id:
 					turn_in_hint = " [color=#00FF00](Turn in above!)[/color]"
 				else:
-					turn_in_hint = " [color=#808080](Turn in elsewhere)[/color]"
+					# v0.9.580 — name the destination so the player isn't left
+					# guessing where to go. Falls back to the post id capitalized
+					# if the lookup misses (defensive, shouldn't happen normally).
+					var _tp_name = String(TradingPostDBScript.TRADING_POSTS.get(quest_tp, {}).get("name", quest_tp.capitalize()))
+					turn_in_hint = " [color=#808080](Turn in at %s)[/color]" % _tp_name
 
 			display_game("  [color=%s]%s[/color] - %d/%d%s" % [status_color, quest.get("name", "Quest"), progress, target, turn_in_hint])
 
