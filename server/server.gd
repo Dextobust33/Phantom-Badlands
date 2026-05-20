@@ -228,7 +228,20 @@ const WORLD_THREAT_REFRESH_INTERVAL = 3.0
 # 100-300ms buffer_process baseline. Added per-msg-type breakdown inside
 # handle_message so a stuttery frame attributes its time to a specific
 # message type. Flip back off after the cause is identified + fixed.
-const DIAG_TIMING_ENABLED := true
+#
+# v0.9.577 — flipped to FALSE. Per project_server_freeze_investigation
+# memo the two 5s freeze causes are fixed (LOS cache + shared tile cache
+# landed in the 2026-05-13 perf session, total move spike dropped
+# 200-240ms → mostly below the 80ms diag emit threshold). Leaving
+# diagnostic timing on costs ~30+ `Time.get_ticks_usec()` syscalls per
+# server _process tick + per-message-type bookkeeping inside
+# handle_message. With the freezes resolved, that overhead is no longer
+# earning its keep. Flip back to `true` and re-deploy if regressions
+# appear — every diag block is gated on this single const so toggling
+# is a one-line change. Remaining perf lever (per the memo) is
+# cross-render tile caching in `generate_tile`'s procedural noise
+# pipeline; not pursued here.
+const DIAG_TIMING_ENABLED := false
 const DIAG_FRAME_SPIKE_MS := 100  # log frame if any tick exceeds this
 const DIAG_THREAT_SCAN_SPIKE_MS := 50  # log frame if cumulative threat scan exceeds this
 # v0.9.377 — rate-limit spike logging. Without throttling we get 20+ identical
