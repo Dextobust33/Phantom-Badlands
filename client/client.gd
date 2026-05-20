@@ -25187,8 +25187,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.588 — Variant Imprint button restored at rank-up.
+	display_game("[color=#00FF00]v0.9.588[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Fixes the invisible \"✦ Imprint\" option at ability rank-up. v0.9.549 shipped the feature but the server's `rank_up_choice` payload was dropping the `variant_offer` field, so the 3rd button never showed even with an active companion that qualified (e.g., Gnoll → Rending). Rank up Strike with a Gnoll active now offers Bleed alongside +1 Card / +10% Damage.[/color]")
+	display_game("  • [b]One-line server fix[/b]: the queued rank choice carried `variant_offer` correctly all the way through combat_manager and the character's pending_rank_choices queue — but the message that surfaces the popup left it on the floor. Now forwarded. `next_pending` (chained rank-ups in one combat) was already correct because it's the raw queued dict.")
+	display_game("  • [b]Reminder of how Imprints work[/b]: only offered when (1) you have an active companion, (2) its monster type maps to a trait (53 mapped — Gnoll = Rending bleed, Wolf = Hunter's Eye crit, Goblin = Distract miss, etc.), and (3) that ability hasn't reached 4 imprints yet. Each imprint is a small permanent passive rider, account-level (survives permadeath like mastery records).")
+	display_game("")
+
 	# v0.9.587 — Enemy HP bar discovery-overflow fix.
-	display_game("[color=#00FF00]v0.9.587[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.587[/color]")
 	display_game("  [color=#FFD700]Fixes the confusing HP bar jump when you out-damage a monster whose HP you didn't fully know yet. Example: hit a Lv4 Hobgoblin for 23 (sees \"25/48\"), then for another 27 — used to show \"12/62\" because the bar quietly inflated the max to your damage+25%. Now shows \"0/48 (still alive!)\" with the bar truly depleted, so the discovery moment reads instead of stealth-resizing.[/color]")
 	display_game("  • [b]Behavior change[/b]: when total damage exceeds the known/estimated HP and the monster is still alive, the displayed max stays put and the bar drains to 0 with a \"still alive!\" tag. The known HP still gets bumped silently on confirmed kill (so future fights start from a more accurate estimate), but no longer balloons mid-fight.")
 	display_game("  • [b]Why it broke[/b]: v0.9.566's upward-observation fix grew the displayed ceiling to [color=#888888]damage_dealt + 25%[/color] when the player out-damaged the estimate. The intent was \"don't pin the bar at 1\", but the side effect was that both halves of the HP label jumped simultaneously — confusing because the bar appeared to refill while you were attacking.")

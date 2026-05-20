@@ -5577,12 +5577,17 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	# on character.pending_rank_choices so disconnect doesn't drop the choice.
 	if result.has("rank_up_choice_pending"):
 		var rcp = result.rank_up_choice_pending
+		# v0.9.588 — forward variant_offer so the client's 3rd "✦ Imprint" button
+		# actually surfaces. Combat manager builds it correctly (v0.9.549) but
+		# this payload was dropping the field, so the imprint option was invisible
+		# even when companion + ability + stack all qualified.
 		send_to_peer(peer_id, {
 			"type": "rank_up_choice",
 			"ability": rcp.get("ability", ""),
 			"new_rank": int(rcp.get("new_rank", 0)),
 			"current_effect_rank": int(characters[peer_id].ability_effect_ranks.get(rcp.get("ability", ""), 0)) if characters.has(peer_id) else 0,
 			"current_copy_count": int(characters[peer_id].combat_deck_collection.get(rcp.get("ability", ""), 1)) if characters.has(peer_id) else 1,
+			"variant_offer": rcp.get("variant_offer", {}),
 		})
 
 	# Accumulate messages in combat log for death screen
