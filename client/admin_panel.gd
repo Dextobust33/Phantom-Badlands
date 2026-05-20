@@ -113,6 +113,7 @@ func _render_page() -> void:
 			_add_button("Items — give items, consumables, materials", "_page_items")
 			_add_button("Combat — spawn monsters, godmode", "_page_combat")
 			_add_button("Misc — heal, reset quests, revive companion", "_page_misc")
+			_add_button("Patreon — fulfill supporter tiers (nearest player)", "_page_patreon", Color(0.95, 0.55, 1.0))
 			_add_separator()
 			_add_button("Close", "_close", Color(0.7, 0.7, 0.7))
 		"test_b2":
@@ -186,6 +187,24 @@ func _render_page() -> void:
 			_add_button("Show /gmhelp text reference", "show_gmhelp")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"patreon":
+			# v0.9.578 — Patreon supporter-tier fulfillment. Manual flow: walk
+			# up to the player (within 5 tiles), open this page, pick a tier.
+			# Server resolves nearest-online-player and flips the tier on
+			# their account. Hard rule: cosmetic + tame QoL only — never
+			# combat advantage.
+			_title_label.text = "ADMIN — PATREON FULFILLMENT"
+			_subtitle_label.text = "[color=#aaaaaa]Sets the nearest online player's account.patreon_tier. Walk within 5 tiles of the supporter before pressing. Cosmetic title is auto-granted; tame QoL bonuses (Sanctuary slot at T2+, kennel-tier at T3) are scoped for a follow-up.[/color]"
+			_add_button("Tier 0 — None (clear support)", "gm_set_patreon_tier_0", Color(0.85, 0.85, 0.85))
+			_subtitle_subline("Removes any patreon title from the nearest player.")
+			_add_button("Tier 1 — Supporter ($5/mo)", "gm_set_patreon_tier_1", Color(0.5, 1.0, 0.5))
+			_subtitle_subline("Green [Supporter] title.")
+			_add_button("Tier 2 — Founder ($10/mo)", "gm_set_patreon_tier_2", Color(1.0, 0.84, 0))
+			_subtitle_subline("Gold [Founder] title.")
+			_add_button("Tier 3 — Patron ($20/mo)", "gm_set_patreon_tier_3", Color(0.64, 0.21, 0.93))
+			_subtitle_subline("Purple [Patron] title.")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 
 
 func _add_button(label: String, action_id: String, font_color: Color = Color(1, 1, 1)) -> void:
@@ -253,6 +272,9 @@ func _on_button_pressed(action_id: String) -> void:
 			_render_page()
 		"_page_world":
 			_current_page = "world"
+			_render_page()
+		"_page_patreon":
+			_current_page = "patreon"
 			_render_page()
 		_:
 			emit_signal("action_triggered", action_id)

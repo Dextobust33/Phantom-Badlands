@@ -56,6 +56,16 @@ enum QuestType {
 # Storage: character.earned_titles array. Display: /titles command + optional
 # active_chain_title (future slice).
 const CHAIN_TITLES = {
+	# v0.9.578 — Patreon-supporter titles. Granted manually by the admin via
+	# the /admin → Patreon sub-page after the user fulfills a Patreon pledge.
+	# Stored on the ACCOUNT (not the character) via persistence.patreon_tier;
+	# server auto-syncs the corresponding title into earned_titles on character
+	# load so the title wears alongside chain titles. Cosmetic-only — no
+	# gameplay perks attached to these tier names. Hard rule (per memo): NO
+	# combat advantage tied to Patreon tiers, ever.
+	"patreon_supporter":  {"name": "Supporter",          "color": "#88FF88"},
+	"patreon_founder":    {"name": "Founder",            "color": "#FFD700"},
+	"patreon_patron":     {"name": "Patron",             "color": "#A335EE"},
 	"goblin_bane":        {"name": "Goblin Bane",        "color": "#FF7F00"},
 	"crypt_cleanser":     {"name": "Crypt Cleanser",     "color": "#C0C0C0"},
 	"pack_hunter":        {"name": "Pack Hunter",        "color": "#8B4513"},

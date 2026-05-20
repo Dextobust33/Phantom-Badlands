@@ -2021,6 +2021,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_hire_test_guard(peer_id, message)
 		"gm_settler_diag":
 			handle_gm_settler_diag(peer_id)
+		"gm_set_patreon_tier":
+			handle_gm_set_patreon_tier(peer_id, message)
 		"dungeon_skip_final_chest":
 			handle_dungeon_skip_final_chest(peer_id)
 		# Open Market handlers
@@ -2400,6 +2402,13 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	# completed BEFORE this slice shipped. Walks completed_chains, looks up the
 	# final-stage quest, reads chain_bonus.chain_title, adds to earned_titles.
 	_backfill_chain_titles(peer_id)
+
+	# v0.9.578 — sync Patreon supporter title from account-level tier into
+	# character.earned_titles so the title can be worn the same way as any
+	# chain title. Granted manually via /admin → Patreon (server-side gate
+	# below in handle_gm_set_patreon_tier). Hard rule: cosmetic only —
+	# never apply combat stats here. Tier 0 = nothing to grant.
+	_sync_patreon_title_for_peer(peer_id)
 
 	# Broadcast join message to other players (include title if present)
 	var display_name = _format_full_titled_name(char_name, character)
@@ -21145,6 +21154,41 @@ func handle_set_chain_title(peer_id: int, message: Dictionary) -> void:
 	send_to_peer(peer_id, {"type": "text", "message": "[color=%s]Now wearing: %s[/color]" % [String(info.get("color", "#FFD700")), String(info.get("name", title_id))]})
 	send_character_update(peer_id)
 
+func _sync_patreon_title_for_peer(peer_id: int) -> void:
+	"""v0.9.578 — Ensure the character's earned_titles list reflects the
+	account's patreon_tier. Called from character_load. Idempotent: removes
+	stale higher-tier titles if the account was downgraded, adds the
+	matching title if the account is at tier ≥ 1.
+
+	Hard rule (per memo): cosmetic only — never apply combat stats here.
+	Tame QoL bonuses (extra Sanctuary slot at T2+, free kennel-tier at T3)
+	are NOT wired in V1; they'd live on the Sanctuary slot computation, not
+	here on title sync."""
+	if not characters.has(peer_id):
+		return
+	if not peers.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = String(peers[peer_id].get("account_id", ""))
+	if account_id == "":
+		return
+	var tier: int = persistence.get_patreon_tier(account_id)
+	# Target title for this tier (empty string if tier == 0).
+	var target_title: String = String(persistence.PATREON_TIER_TITLES.get(tier, ""))
+	# Strip any stale patreon titles that don't match the current tier.
+	var stale_changed = false
+	for stale_id in persistence.PATREON_TIER_TITLES.values():
+		if stale_id != target_title and String(stale_id) in character.earned_titles:
+			character.earned_titles.erase(String(stale_id))
+			stale_changed = true
+	# Add the current tier's title if missing.
+	if target_title != "" and target_title not in character.earned_titles:
+		character.earned_titles.append(target_title)
+		stale_changed = true
+	if stale_changed:
+		save_character(peer_id)
+
+
 func _backfill_chain_titles(peer_id: int) -> void:
 	"""Audit #6 Slice 10 — migration. For each completed_chains entry, find the
 	final-stage quest in QUESTS, read chain_bonus.chain_title, append to
@@ -35202,6 +35246,72 @@ func handle_gm_settler_diag(peer_id: int):
 
 	for line in lines:
 		send_to_peer(peer_id, {"type": "text", "message": line})
+
+
+# v0.9.578 — Patreon tier admin handler. Targets the NEAREST online player
+# (within ~5 tiles, same chunk) so the admin walks up to the supporter and
+# fulfills their pledge in-person. Cleaner than a username-text-input field
+# in the visual /admin panel + makes the action consensual / verifiable.
+#
+# message.tier = 0..3 (None / Supporter / Founder / Patron).
+func handle_gm_set_patreon_tier(peer_id: int, message: Dictionary) -> void:
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var admin_char = characters[peer_id]
+	var tier: int = int(message.get("tier", 0))
+	if tier < 0 or tier > persistence.PATREON_TIER_PATRON:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00][GM] Patreon tier out of range (0-3).[/color]"})
+		return
+
+	# Find nearest online player (within 5 tiles, same coordinate area).
+	# Skip self — admin can't set their own tier this way.
+	var best_peer: int = -1
+	var best_dist_sq: int = 36  # > 5² = exclude anything ≥6 tiles away
+	for other_peer in characters:
+		if other_peer == peer_id:
+			continue
+		var other_char = characters[other_peer]
+		var dx = int(other_char.x) - int(admin_char.x)
+		var dy = int(other_char.y) - int(admin_char.y)
+		var dist_sq = dx * dx + dy * dy
+		if dist_sq < best_dist_sq:
+			best_dist_sq = dist_sq
+			best_peer = other_peer
+	if best_peer == -1:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00][GM] No online player within 5 tiles. Walk up to the supporter and try again.[/color]"})
+		return
+
+	# Resolve the target's account_id and write the tier.
+	if not peers.has(best_peer):
+		return
+	var target_account_id = String(peers[best_peer].get("account_id", ""))
+	if target_account_id == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00][GM] Target has no account_id — cannot fulfill.[/color]"})
+		return
+	var ok: bool = persistence.set_patreon_tier(target_account_id, tier)
+	if not ok:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00][GM] Failed to write tier (account row missing?).[/color]"})
+		return
+	# Re-sync the target's character titles immediately so the change is
+	# visible without a relog. Also push a character_update so client UI
+	# reflects the new earned_titles.
+	_sync_patreon_title_for_peer(best_peer)
+	send_character_update(best_peer)
+
+	var tier_labels: Array = ["None", "Supporter", "Founder", "Patron"]
+	var tlabel: String = tier_labels[tier] if tier < tier_labels.size() else "?"
+	var target_name = String(characters[best_peer].name)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#88FF88][GM] Patreon tier set: %s → %s.[/color]" % [target_name, tlabel]})
+	# Private notification to the supporter — feels less arbitrary if they
+	# see it land.
+	if tier > 0:
+		send_to_peer(best_peer, {"type": "text", "message": "[color=#FFD700]✦ Thank you for supporting Phantom Badlands! Your %s title is now available — set it with /set_title.[/color]" % tlabel.to_lower()})
+	else:
+		send_to_peer(best_peer, {"type": "text", "message": "[color=#888888]Patreon tier set to None.[/color]"})
+
 
 func _execute_respawn_gatherables():
 	"""Respawn all depleted gathering nodes. Keeps everything else intact."""

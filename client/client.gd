@@ -25181,8 +25181,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.578 — Patreon supporter tier scaffolding + fulfillment UI.
+	display_game("[color=#00FF00]v0.9.578[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Scaffolding for the upcoming Patreon launch. Three new cosmetic supporter titles, account-level tier persistence, and a /admin fulfillment flow for manual pledge matching.[/color]")
+	display_game("  • [b]Three new chain titles[/b]: [color=#88FF88][Supporter][/color] (Tier 1 / $5), [color=#FFD700][Founder][/color] (Tier 2 / $10), [color=#A335EE][Patron][/color] (Tier 3 / $20). Wearable like any other earned title. [b]Hard rule[/b]: cosmetic only — no combat advantage tied to Patreon tiers, ever.")
+	display_game("  • [b]Account-level persistence[/b]. `persistence.patreon_tier` field stored on the account dict (same store as Sanctuary data + valor). Set/get helpers; tier auto-syncs into character.earned_titles at character load so the title appears alongside chain titles. Idempotent — downgrades cleanly remove higher-tier stale titles.")
+	display_game("  • [b]Fulfillment flow[/b] (admin only). [color=#9ACD32]/admin → Patreon[/color] sub-page has Tier 0-3 buttons. Admin walks within 5 tiles of the supporter, picks a tier; server resolves nearest-online-player and writes the account flag. Supporter gets a private thank-you chat line.")
+	display_game("  • [b]Tame QoL bonuses[/b] (T2+ extra Sanctuary slot, T3 free kennel-tier unlock) are [color=#888888]scoped for a follow-up[/color]. V1 ships the title + tier infrastructure so the Patreon page can launch with concrete rewards even before the QoL bonuses land.")
+	display_game("  • [b]No client-facing /patreon command yet[/b]. Will land alongside the actual Patreon URL once the page is published.")
+	display_game("")
+
 	# v0.9.577 — Performance pass: server DIAG_TIMING_ENABLED flipped off.
-	display_game("[color=#00FF00]v0.9.577[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.577[/color]")
 	display_game("  [color=#FFD700]Server-side performance win: ~30+ syscalls per server tick removed by retiring the freeze-investigation timing instrumentation.[/color]")
 	display_game("  • [b]DIAG_TIMING_ENABLED → false[/b]. The diagnostic timing scaffolding added during the 2026-05 freeze investigations measured per-region costs (threat scans, merchant movement, character saves, etc.) by sprinkling [color=#888888]Time.get_ticks_usec()[/color] calls throughout the server's [color=#888888]_process[/color] tick. Both 5s freeze causes were fixed weeks ago (LOS cache + shared tile cache), so the instrumentation cost is no longer earning its keep. Flipping the const to false makes the GDScript compiler dead-code-eliminate every gated block.")
 	display_game("  • [b]Player-felt impact[/b]: small but non-zero. Each diag block was a ticks-usec read + a few subtractions; cumulatively ~30+ syscalls per tick. Frees up a tiny amount of headroom for the procedural noise pipeline that's the next perf lever (per the server_freeze_investigation memo).")
@@ -25223,14 +25233,6 @@ func display_changelog():
 	display_game("  • [b]No new keybinds[/b]. The action bar still drives Back (slot 0 across all these screens) and the breadcrumb is purely visual context. Future polish slices may add a clickable-breadcrumb option, but V1 keeps it as a passive header.")
 	display_game("")
 
-	# v0.9.572 — Companion Border Tier visual layer (paired with v0.9.570's data + stat layer).
-	display_game("[color=#00FFFF]v0.9.572[/color]")
-	display_game("  [color=#FFD700]The Border Tier visual finally lands — your companion's ASCII art now glows in its border-tier color. The rare-border Goblin you've been hauling around since v0.9.570 finally LOOKS rare.[/color]")
-	display_game("  • [b]Outline recolor[/b]. The first and last non-whitespace character on every line of companion ASCII art gets re-tinted to the border-tier's hue: [color=#FFFFFF]Common white[/color], [color=#1EFF00]Uncommon green[/color], [color=#0070DD]Rare blue[/color], [color=#A335EE]Epic purple[/color], [color=#FF8000]Legendary orange[/color], [color=#FFD700]Mythic gold[/color]. The natural body color (variant pattern) stays intact in the middle of each line — so a Crimson Wolf with a Rare border keeps its red body and gains a blue silhouette glow.")
-	display_game("  • [b]Applies everywhere[/b]: combat scene companion art, the corner Active Companion overlay, the chat-style Inspect view, the panel-style Inspect view, and the map-hover tooltip when you mouse over an allied companion. Single helper function `_apply_companion_border_tier()` reused at every render site so the look stays consistent.")
-	display_game("  • [b]Performance[/b]: zero new cost. The recolor pass is one regex on the already-rendered art string — same cost as the existing variant pattern recolor, just a second pass with different parameters. Tier 0 (None, 60%% of companions) short-circuits the call entirely.")
-	display_game("  • [b]Note[/b]: ASCII shadow layer (offset semi-transparent copy of the art behind the main one) is still scoped as a future cosmetic-polish slice — the border was the higher-impact half of the pair.")
-	display_game("")
 
 
 
@@ -28745,6 +28747,13 @@ func _on_admin_panel_action(action_id: String) -> void:
 		"gm_settler_diag":
 			close_admin_menu()
 			send_to_server({"type": "gm_settler_diag"})
+		# v0.9.578 — Patreon supporter tier fulfillment. Walk within 5 tiles
+		# of the supporter, /admin → Patreon, pick the tier. Server resolves
+		# nearest-online-player and writes account.patreon_tier.
+		"gm_set_patreon_tier_0", "gm_set_patreon_tier_1", "gm_set_patreon_tier_2", "gm_set_patreon_tier_3":
+			close_admin_menu()
+			var _tier := int(action_id.substr(action_id.length() - 1))
+			send_to_server({"type": "gm_set_patreon_tier", "tier": _tier})
 
 func display_gm_help():
 	"""Display all available GM/Admin commands"""
