@@ -6303,6 +6303,7 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 			else:
+				# v0.9.569 — orphan slot 6 replaced with ? Help → settings_menu topic.
 				current_actions = [
 					{"label": "Back", "action_type": "local", "action_data": "settings_close", "enabled": true},
 					{"label": "Actions", "action_type": "local", "action_data": "settings_action_keys", "enabled": true},
@@ -6310,7 +6311,7 @@ func update_action_bar():
 					{"label": "Items", "action_type": "local", "action_data": "settings_item_keys", "enabled": true},
 					{"label": "Reset", "action_type": "local", "action_data": "settings_reset", "enabled": true},
 					{"label": "Game", "action_type": "local", "action_data": "settings_game", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "? Help", "action_type": "local", "action_data": "help_settings_menu", "enabled": true},
 					{"label": "Abilities", "action_type": "local", "action_data": "settings_abilities", "enabled": true},
 					{"label": "UI Scale", "action_type": "local", "action_data": "settings_ui_scale", "enabled": true},
 					{"label": "Sound", "action_type": "local", "action_data": "settings_sound", "enabled": true},
@@ -7243,8 +7244,9 @@ func update_action_bar():
 				"eggs":
 					add_label = "Add Egg"
 					has_items_to_remove = trade_my_eggs.size() > 0
+			# v0.9.569 — orphan slot 0 replaced with ? Help → trade_window topic.
 			current_actions = [
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_trade_window", "enabled": true},
 				{"label": add_label, "action_type": "local", "action_data": "trade_add", "enabled": true},
 				{"label": "Remove", "action_type": "local", "action_data": "trade_remove", "enabled": has_items_to_remove},
 				{"label": ready_label, "action_type": "local", "action_data": "trade_toggle_ready", "enabled": true},
@@ -7626,6 +7628,7 @@ func update_action_bar():
 	elif not pending_dungeon_warning.is_empty():
 		# Dungeon level warning - awaiting confirmation
 		# Check if hard mode is available (player has cleared this dungeon before)
+		# v0.9.569 — slot 3 (orphan "---") replaced with ? Help → dungeon_select topic.
 		var dw_type = pending_dungeon_warning.get("dungeon_type", "")
 		var dw_completions = character_data.get("dungeons_completed", {})
 		var hard_unlocked = dw_completions.get(dw_type, 0) > 0
@@ -7633,7 +7636,7 @@ func update_action_bar():
 			{"label": "Enter", "action_type": "local", "action_data": "dungeon_warning_confirm", "enabled": true},
 			{"label": "Cancel", "action_type": "local", "action_data": "dungeon_warning_cancel", "enabled": true},
 			{"label": "Hard Mode", "action_type": "local", "action_data": "dungeon_enter_hard", "enabled": hard_unlocked},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "? Help", "action_type": "local", "action_data": "help_dungeon_select", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7919,10 +7922,11 @@ func update_action_bar():
 			]
 		else:
 			# Item selection mode
+			# v0.9.569 — slot 2 (orphan "---") replaced with ? Help → build_mode topic.
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "build_close", "enabled": true},
 				{"label": "Demolish", "action_type": "local", "action_data": "build_demolish", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_build_mode", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -8131,6 +8135,7 @@ func update_action_bar():
 			var auto_labels = {0: "Auto:OFF", 1: "Auto:Com", 2: "Auto:Unc", 3: "Auto:Rar", 4: "Auto:Epic", 5: "Auto:Leg"}
 			var affix_count = character_data.get("auto_salvage_affixes", []).size()
 			var affix_label = "Affix(%d)" % affix_count if affix_count > 0 else "Affix"
+			# v0.9.569 — slot 8 (orphan "---") replaced with ? Help → salvage_menu topic.
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
 				{"label": "All(<Lv%d)" % threshold, "action_type": "local", "action_data": "salvage_below_level", "enabled": true},
@@ -8140,7 +8145,7 @@ func update_action_bar():
 				{"label": "Materials", "action_type": "local", "action_data": "view_materials", "enabled": true},
 				{"label": auto_labels.get(auto_rarity, "Auto:OFF"), "action_type": "local", "action_data": "cycle_auto_salvage", "enabled": true},
 				{"label": affix_label, "action_type": "local", "action_data": "affix_filter", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_salvage_menu", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_inventory_action == "salvage_all_confirm":
@@ -8681,9 +8686,10 @@ func update_action_bar():
 			]
 	elif quest_view_mode:
 		# Quest selection sub-menu (triggered by bumping quest board)
+		# v0.9.569 — slot 1 (orphan "---") replaced with ? Help → quest_log topic.
 		current_actions = [
 			{"label": "Back", "action_type": "local", "action_data": "trading_post_cancel", "enabled": true},
-			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			{"label": "? Help", "action_type": "local", "action_data": "help_quest_log", "enabled": true},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -13261,16 +13267,23 @@ func execute_local_action(action: String):
 		"house_mastery_atlas_back":
 			display_house_main()
 			update_action_bar()
-		"help_mastery_page", "help_imprints_page", "help_mastery_atlas":
-			# v0.9.568 — Help coverage sweep. The three in-game-output Sanctuary
-			# screens (mastery / imprints / atlas) don't have a standalone panel
-			# to attach a button to, so the ? Help slot on the action bar opens
-			# the global HelpPanel on the matching topic.
+		"help_mastery_page", "help_imprints_page", "help_mastery_atlas", \
+		"help_settings_menu", "help_salvage_menu", "help_trade_window", \
+		"help_build_mode", "help_quest_log", "help_dungeon_select":
+			# v0.9.568 + v0.9.569 — Help coverage sweep. In-game-output screens
+			# without a standalone panel get a ? Help action-bar slot that
+			# opens the global HelpPanel on the matching topic.
 			if global_help_panel:
 				var topic_map := {
 					"help_mastery_page": "mastery_page",
 					"help_imprints_page": "imprints_page",
 					"help_mastery_atlas": "mastery_atlas",
+					"help_settings_menu": "settings_menu",
+					"help_salvage_menu": "salvage_menu",
+					"help_trade_window": "trade_window",
+					"help_build_mode": "build_mode",
+					"help_quest_log": "quest_log",
+					"help_dungeon_select": "dungeon_select",
 				}
 				var topic_key = topic_map.get(action, "")
 				if topic_key != "":
@@ -25143,8 +25156,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.569 — Polish batch #2: dead-code prune in combat_scene_panel + 6 more Help topics + 6 ? Help action-bar slots.
+	display_game("[color=#00FF00]v0.9.569[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Polish pass #2: removed ~85 lines of unreachable combat-scene-panel dead code and extended Help coverage into Settings, Salvage, Trade, Build, Quest Log, and Dungeon Entry screens.[/color]")
+	display_game("  • [b]Dead-code prune[/b] (Slice A). [color=#888888]combat_scene_panel.gd[/color] carried two pre-Lufia layout build functions (LAYOUT_STANDARD, LAYOUT_CHRONO) and a dispatch match that hadn't been able to reach them since v0.9.417 — the `combat_layout` const has been pinned to Lufia for ~150 versions. Pruned: the two build functions, the match block, four `if combat_layout == LAYOUT_STANDARD: return` guards in start/end action-phase and review code, the LAYOUT_STANDARD / LAYOUT_CHRONO consts, and the dead [color=#888888]_overlay_player_resource_bar[/color] placeholder block (always-null var with a guarded consumer). Same behavior, ~85 fewer lines for future maintainers to read.")
+	display_game("  • [b]Help coverage continued[/b] (Slice B). Six new HelpPanel topics added — Settings & Keybinds, Salvage, Trade Window, Build Mode, Quests, Dungeon Entry — and ? Help action-bar slots wired into each screen. Topics cover the things players ask in chat: how to rebind keys, what's safe to salvage, the two-step confirm in trades, placement direction in build mode, quest types + turn-in flow, and what the underleveled-dungeon warning actually means.")
+	display_game("")
+
 	# v0.9.568 — Polish batch: rank label consolidation + Help coverage sweep + Bounty Board panel.
-	display_game("[color=#00FF00]v0.9.568[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.568[/color]")
 	display_game("  [color=#FFD700]Polish pass: every active system gets a ? Help button, the v0.9.556 bounty system moves out of chat into a real panel, and stale rank labels caught up to the v0.9.567 R6 cap.[/color]")
 	display_game("  • [b]Help coverage sweep[/b]. ? Help buttons added to Combat (deck + resource costs + 'can't afford abilities? → here's how to find gear'), Loot Reveal, PvP Combat, Gathering Scratch-Off, Craft Reveal, and the three Sanctuary pages — Mastery Headstart, Imprints Atlas, and Mastery Atlas. Eight new HelpPanel topics explain what each system is, how it works, and where it connects to other systems.")
 	display_game("  • [b]Bounty Board panel[/b] (Slice 3 of polish batch). The v0.9.556 chat-only bounty system now opens a real UI on [color=#9ACD32]/bounty list[/color] (or [color=#9ACD32]/bountyboard[/color] / [color=#9ACD32]/bb[/color]). Post Bounty form inline, click [color=#88FFCC]› view postings[/color] (or press 1-9) to drill into a target, [color=#FF8888]cancel all my postings[/color] for full refund from the drill-down. Chat fallbacks still work for muscle memory.")
@@ -25181,12 +25201,6 @@ func display_changelog():
 	display_game("  • [b]Note[/b]: Tempered crafts are still a separate gambling mechanic and CAN consume materials without producing the item (the result message says 'Tempering failed!'). Boost crafts cannot fail.")
 	display_game("")
 
-	# v0.9.546 — Reveal impact + recipe preview alignment (Slice 3.7 — playtest fix).
-	display_game("[color=#00FFFF]v0.9.546[/color]")
-	display_game("  [color=#FFD700]The recipe preview and the post-craft summary now use the same success-chance formula, and the panel shows exactly what your scratch-off reveals did to the bands.[/color]")
-	display_game("  • [b]Recipe preview honesty[/b] (Audit #4 Slice 3.7, playtest feedback). The recipe panel's quoted success chance used the legacy [color=#888888]50-base[/color] formula even though the actual scratch-off path starts from a [color=#888888]35-base[/color] floor and adds reveal score on top. Result: a Standard reveal (+15%) looked like it 'did nothing' because both gave 46%. Fixed: the preview now uses score=0 (or score=3 for auto-skip recipes) so the displayed % matches the no-reveal floor your reveals are stacking on.")
-	display_game("  • [b]Reveal Impact section[/b]. The post-craft 'How the Roll Worked' panel now shows a before/after band comparison: [color=#FFFFFF]Without reveals: 31% success → Poor 53% / Std 30% / Fine 15% / MW 2%[/color]   vs   [color=#FFFFFF]With your +15%: 46% → Poor 38% / Std 30% / Fine 15% / MW 17%[/color]. Plus a single 'Net effect' line: [color=#A335EE]Masterwork +15%, Poor −15% of the roll range[/color]. Answers the literal question 'what did the +15% actually affect?'")
-	display_game("")
 
 
 
