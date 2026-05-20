@@ -412,6 +412,8 @@ const HELP_TOPICS := {
 			+ "You can't move on the world map while the loot panel is open (v0.9.566). Close or autoskip to resume travel.\n\n"
 			+ "[color=#FFD700]── Tiers & quality ──[/color]\n"
 			+ "Higher-tier monsters drop higher-tier items + larger budgets. Apex-variant monsters have a chance at unique exclusive drops (Apex Sigil, Apex Crystal — see /admin or apex zones).\n\n"
+			+ "[color=#FFD700]── ✦ +2 Reveals bonus cell ──[/color]\n"
+			+ "Rare gold-colored cells in the grid grant [color=#FFD700]+2 reveals[/color] to your budget when flipped. Cost: 1 reveal (same as any flip) → net [color=#88FF88]+1 reveal[/color] gained. They roll about [color=#FFD700]1-in-12[/color] of the filler slots. Worth gambling a click on an unrevealed cell if your budget is tight and you've already taken the obvious cells — you might hit one and unlock the rest of the grid.\n\n"
 			+ "[color=#888888]Loot is tracked per player in party combat — everyone gets a full personal reveal panel.[/color]"
 		),
 	},

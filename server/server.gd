@@ -19824,9 +19824,19 @@ func _combat_loot_reveal_budget(monster_tier: int, flock_kills: int, soldier_lev
 
 func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 	"""Roll a single filler slot — one of: small Valor, Salvage Essence, a T1
-	material, or a Monster Part. Quantities scale lightly with tier so a T7
-	filler isn't insulting (still way less than a real drop). Returns a dict
-	with `kind` and the kind-specific payload."""
+	material, a Monster Part, OR a +2 Reveals bonus cell. Quantities scale
+	lightly with tier so a T7 filler isn't insulting (still way less than a
+	real drop). Returns a dict with `kind` and the kind-specific payload.
+
+	v0.9.574 — +2 Reveals bonus cell added per user direction. ~1/12 chance
+	(8.3%) per filler slot to roll a +2 cell. When revealed, the cell costs
+	1 reveal to flip (like any other) but grants +2 reveals to the budget
+	(net +1). Adds tension: gamble a click on the unrevealed grid hoping
+	you hit a +2 vs play the cells you can already see."""
+	# +2 Reveals rolls FIRST as a separate ~1/12 chance, then falls
+	# through to the regular 4-option filler roll if it misses.
+	if (randi() % 12) == 0:
+		return {"kind": "filler_plus_two"}
 	var roll = randi() % 4
 	var tier_scale: int = clampi(monster_tier, 1, 9)
 	match roll:
@@ -19981,6 +19991,17 @@ func _award_combat_loot_slot(peer_id: int, slot: Dictionary) -> Dictionary:
 				"name": "%s x%d" % [p_name, p_qty],
 				"color": "#FF6600",
 				"rarity": "common",
+			}
+		"filler_plus_two":
+			# v0.9.574 — +2 Reveals bonus cell. No inventory change, just signals
+			# the reveal handler to bump bag.reveal_budget by +2. Returns a
+			# `bonus_reveals: 2` field the handler reads.
+			return {
+				"kind": "filler_plus_two",
+				"name": "+2 Reveals!",
+				"color": "#FFD700",
+				"rarity": "rare",  # marks the reveal animation as a "good roll"
+				"bonus_reveals": 2,
 			}
 		"real":
 			# Re-uses the existing flock-end branching so eggs / mats / parts
@@ -20177,6 +20198,12 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 	slots[slot_index]["revealed"] = true
 	bag["reveals_used"] = int(bag.get("reveals_used", 0)) + 1
 	var awarded = _award_combat_loot_slot(peer_id, slots[slot_index])
+	# v0.9.574 — +2 Reveals bonus cell. If the awarded slot grants bonus
+	# reveals, bump the bag's budget BEFORE the auto-close check below.
+	# Net effect: this reveal cost 1 to flip + grants +2 budget = +1 net.
+	var bonus_reveals: int = int(awarded.get("bonus_reveals", 0)) if awarded is Dictionary else 0
+	if bonus_reveals > 0:
+		bag["reveal_budget"] = int(bag.get("reveal_budget", 0)) + bonus_reveals
 	send_to_peer(peer_id, {
 		"type": "combat_loot_reveal_result",
 		"slot_index": slot_index,

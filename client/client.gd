@@ -25175,8 +25175,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.574 — Combat loot ✦ +2 Reveals bonus cell (Slice 1 of scratch-off engagement mechanics).
+	display_game("[color=#00FF00]v0.9.574[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]A rare gold cell hides in your combat loot grid — flip it for [color=#88FF88]+2 reveals[/color] to your budget. Net [color=#88FF88]+1 reveal[/color] gained after the click cost.[/color]")
+	display_game("  • [b]✦ +2 Reveals cell[/b] (user direction 2026-05-20, Slice 1 of the scratch-off engagement mechanics). Each filler slot in the combat loot grid now has a [color=#FFD700]1-in-12[/color] chance of rolling as a [color=#FFD700]+2 Reveals[/color] bonus cell. Flip it like any other slot — costs 1 reveal — and it grants +2 reveals back to your budget. Cell is marked with a gold [color=#FFD700]✦[/color] sparkle prefix on reveal so the lucky pull reads obviously special.")
+	display_game("  • [b]How it changes play[/b]: when your budget is tight and you've already taken the obviously-valuable cells, gambling a click on an unrevealed cell now has real upside potential — you might hit a +2 and unlock the rest of the grid. Adds a tension layer to budget management without making greedy plays the only correct move.")
+	display_game("  • [b]Help topic updated[/b]: `combat_loot` now documents the +2 mechanic + drop rate so players can scan for it strategically.")
+	display_game("  • [b]Coming soon[/b]: same mechanic for gathering scratch-off + craft reveal panels in a future slice. Other brainstormed mechanics (combo bonus, trap cell, mystery cell, double-or-nothing, chain reveal, foresight peek) parked for design review — see [color=#888888]project_next_session_polish_qol.md[/color] in the dev memory.")
+	display_game("")
+
 	# v0.9.573 — Nested-menu breadcrumbs (UX direction: "getting to nested menus is very unintuitive").
-	display_game("[color=#00FF00]v0.9.573[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.573[/color]")
 	display_game("  [color=#FFD700]Every deeply-nested screen now shows where you are in the menu tree at a glance.[/color]")
 	display_game("  • [b]Breadcrumb headers[/b] (Audit #10 Slice 1). The top of each Sanctuary sub-page (Storage / Companion Stable / Fusion Station / Mastery Headstart / Imprint Atlas / Mastery Atlas / Bestiary) now reads [color=#888888]Sanctuary › <PageName>[/color] above the existing header. Same treatment on the More → Jobs paths ([color=#888888]More › Jobs[/color], [color=#888888]More › Jobs › Commit[/color]) and More → Companions ([color=#888888]More › Companions[/color]).")
 	display_game("  • [b]Single helper[/b]: `_render_breadcrumb(parts: Array)` emits the path line in subtle grey so it informs without competing with the gold section header. Easy to drop into more screens as they're identified.")
@@ -25212,12 +25221,6 @@ func display_changelog():
 	display_game("  • [b]Lazy backfill on existing rosters[/b]. The first time you load a character with companions, each companion rolls a fresh border tier so you get a delightful surprise on the roster. Eggs roll too — the value carries through to the hatched companion.")
 	display_game("")
 
-	# v0.9.569 — Polish batch #2: dead-code prune in combat_scene_panel + 6 more Help topics + 6 ? Help action-bar slots.
-	display_game("[color=#00FFFF]v0.9.569[/color]")
-	display_game("  [color=#FFD700]Polish pass #2: removed ~85 lines of unreachable combat-scene-panel dead code and extended Help coverage into Settings, Salvage, Trade, Build, Quest Log, and Dungeon Entry screens.[/color]")
-	display_game("  • [b]Dead-code prune[/b] (Slice A). [color=#888888]combat_scene_panel.gd[/color] carried two pre-Lufia layout build functions (LAYOUT_STANDARD, LAYOUT_CHRONO) and a dispatch match that hadn't been able to reach them since v0.9.417 — the `combat_layout` const has been pinned to Lufia for ~150 versions. Pruned: the two build functions, the match block, four `if combat_layout == LAYOUT_STANDARD: return` guards in start/end action-phase and review code, the LAYOUT_STANDARD / LAYOUT_CHRONO consts, and the dead [color=#888888]_overlay_player_resource_bar[/color] placeholder block (always-null var with a guarded consumer). Same behavior, ~85 fewer lines for future maintainers to read.")
-	display_game("  • [b]Help coverage continued[/b] (Slice B). Six new HelpPanel topics added — Settings & Keybinds, Salvage, Trade Window, Build Mode, Quests, Dungeon Entry — and ? Help action-bar slots wired into each screen. Topics cover the things players ask in chat: how to rebind keys, what's safe to salvage, the two-step confirm in trades, placement direction in build mode, quest types + turn-in flow, and what the underleveled-dungeon warning actually means.")
-	display_game("")
 
 
 

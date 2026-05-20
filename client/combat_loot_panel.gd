@@ -460,6 +460,11 @@ func _render_card(slot_index: int) -> void:
 	# Equipment reveals get the rarity symbol too.
 	var symbol: String = String(slot.get("symbol", ""))
 	var sym_prefix: String = ("[color=%s]%s[/color] " % [color_hex, symbol]) if symbol != "" else ""
+	# v0.9.574 — +2 Reveals bonus cell gets a sparkle prefix so the lucky
+	# pull reads obviously special. The cell already uses gold (#FFD700)
+	# from the server side; the sparkle adds the "you found something" beat.
+	if kind == "filler_plus_two":
+		sym_prefix = "[color=#FFD700]✦[/color] " + sym_prefix
 	# Wrap in center + small font for compact reveal cards.
 	var label_text: String = "[center]%s[color=%s]%s%s[/color][/center]" % [miss_prefix, color_hex, sym_prefix, name]
 	# Add subtle kind tag underneath for context.
@@ -493,6 +498,8 @@ func _kind_display_name(kind: String) -> String:
 			return "Mat"
 		"filler_part":
 			return "Part"
+		"filler_plus_two":
+			return "Bonus Reveals"
 		_:
 			return ""
 
