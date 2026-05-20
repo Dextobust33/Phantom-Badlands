@@ -25156,8 +25156,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.570 — Polish batch #3: Market multi-listing discoverability + Companion border tiers (double-rarity stat layer).
+	display_game("[color=#00FF00]v0.9.570[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Market 'List' button got loud and transparent, and companions roll a new ◆ Border tier on creation that stacks stat bonuses on top of variant rarity.[/color]")
+	display_game("  • [b]Market — Sell / Bulk List button is no longer tiny[/b]. The dropdown that hid every selling path got renamed to [color=#88FF88]Sell / Bulk List ▾[/color], bumped to 220×36, accent-green styled, and every menu row now reads its count: `Bulk: All Equipment (14)`. Empty categories grey out so the menu reads honestly. Direct fix to the 'tiny dropdown is easy to miss or not understand' pain point.")
+	display_game("  • [b]Companion Border Tiers[/b] (NEW system). Every companion now rolls a second independent rarity at creation — the [color=#FFD700]◆ Border tier[/color] — that grants a stat multiplier ON TOP of variant rarity. Seven tiers: None (60%) → Common +5% → Uncommon +12% → Rare +25% → Epic +50% → Legendary +100% → Mythic +200%. Mythic borders are 1-in-5000 rolls.")
+	display_game("  • [b]Stacks across the existing rarity scale[/b]. An Epic variant Goblin (+50%) with a Rare border (+25%) is now stronger than an Epic + no border — the visible badges multiply. Inspect view shows both badges side by side: [color=#A335EE][E][/color] [color=#0070DD]◆ Rare Border[/color] [b]Crimson Goblin[/b] (+50% stats)(+25% stats).")
+	display_game("  • [b]Fusion preservation[/b]. Same Type + Mixed T9 + Tier Ascend fusions all preserve the HIGHEST border tier among the inputs. Rare borders survive fusion — encourages keeping a rare-border companion in your fusion stack rather than fusing it away. Hybrid fusion rolls fresh (different types, no clean inheritance path).")
+	display_game("  • [b]Lazy backfill on existing rosters[/b]. The first time you load a character with companions, each companion rolls a fresh border tier so you get a delightful surprise on the roster. Eggs roll too — the value carries through to the hatched companion.")
+	display_game("")
+
 	# v0.9.569 — Polish batch #2: dead-code prune in combat_scene_panel + 6 more Help topics + 6 ? Help action-bar slots.
-	display_game("[color=#00FF00]v0.9.569[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.569[/color]")
 	display_game("  [color=#FFD700]Polish pass #2: removed ~85 lines of unreachable combat-scene-panel dead code and extended Help coverage into Settings, Salvage, Trade, Build, Quest Log, and Dungeon Entry screens.[/color]")
 	display_game("  • [b]Dead-code prune[/b] (Slice A). [color=#888888]combat_scene_panel.gd[/color] carried two pre-Lufia layout build functions (LAYOUT_STANDARD, LAYOUT_CHRONO) and a dispatch match that hadn't been able to reach them since v0.9.417 — the `combat_layout` const has been pinned to Lufia for ~150 versions. Pruned: the two build functions, the match block, four `if combat_layout == LAYOUT_STANDARD: return` guards in start/end action-phase and review code, the LAYOUT_STANDARD / LAYOUT_CHRONO consts, and the dead [color=#888888]_overlay_player_resource_bar[/color] placeholder block (always-null var with a guarded consumer). Same behavior, ~85 fewer lines for future maintainers to read.")
 	display_game("  • [b]Help coverage continued[/b] (Slice B). Six new HelpPanel topics added — Settings & Keybinds, Salvage, Trade Window, Build Mode, Quests, Dungeon Entry — and ? Help action-bar slots wired into each screen. Topics cover the things players ask in chat: how to rebind keys, what's safe to salvage, the two-step confirm in trades, placement direction in build mode, quest types + turn-in flow, and what the underleveled-dungeon warning actually means.")
@@ -25193,13 +25203,6 @@ func display_changelog():
 	display_game("  • [b]Welcome modal fixes[/b]. Starter chain text no longer claims you stay inside Haven's safe bubble (the gather stages take you outside it). Added a 'Turning in stages' paragraph that explains the Haven [color=#FFD700]P[/color] tile + Turn In button. Tutorial egg is now a random T1 monster instead of always Goblin.")
 	display_game("")
 
-	# v0.9.547 — Rename "Success" → "Quality Rating" + never-fail clarity (Slice 3.8 — playtest fix).
-	display_game("[color=#00FFFF]v0.9.547[/color]")
-	display_game("  [color=#FFD700]'Success Chance' was misleading — crafts never fail. Renamed to 'Quality Rating' across the recipe panel and post-craft summary.[/color]")
-	display_game("  • [b]Quality Rating[/b] (Audit #4 Slice 3.8, playtest feedback). The number that controls quality band sizes is now labeled [color=#FFFFFF]Quality Rating[/color] instead of [color=#888888]Success Chance[/color] — the previous name implied a fail/succeed outcome that doesn't exist. Crafts always produce an item; even the lowest Quality Rating still rolls Poor (50% stats) at worst.")
-	display_game("  • [b]Never-fail clarity[/b]. Both the recipe panel and the post-craft summary now spell it out: [color=#888888]'Crafts always produce an item — even a Poor roll gives 50% stats. Quality Rating only shifts the band sizes.'[/color] No more wondering if a 31% Quality Rating means a 69% chance of losing your materials.")
-	display_game("  • [b]Note[/b]: Tempered crafts are still a separate gambling mechanic and CAN consume materials without producing the item (the result message says 'Tempering failed!'). Boost crafts cannot fail.")
-	display_game("")
 
 
 
@@ -33194,6 +33197,14 @@ func _populate_market_panel() -> void:
 	# When inspecting a specific listing, drive the right-side detail too
 	if pending_market_action == "inspect" and not market_inspected_listing.is_empty():
 		market_panel.populate_inspect(market_inspected_listing, account_valor)
+	# v0.9.570 — refresh the Sell/List menu's per-category count badges. The
+	# panel previously gave no signal about what was listable; now every
+	# row reads `Bulk: All Equipment (14)` so the player can see the
+	# inventory at a glance without opening sub-menus.
+	if market_panel.has_method("update_bulk_counts"):
+		var inv = character_data.get("inventory", [])
+		var eggs = character_data.get("incubating_eggs", [])
+		market_panel.update_bulk_counts(inv if inv is Array else [], eggs if eggs is Array else [])
 
 func _on_market_panel_close() -> void:
 	exit_market()
@@ -34125,7 +34136,25 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	# v0.9.499 — use authored ascended name so ascended companions show their
 	# veteran/champion/warlord/tyrant/apex prefix instead of the base name.
 	var display_name = _get_authored_companion_name(companion)
-	lines.append("%s[color=%s]%s %s[/color]%s" % [rarity_prefix, variant_color, variant, display_name, variant_bonus])
+	# v0.9.570 — second rarity badge for the companion's border tier (the
+	# double-rarity stat layer). Renders alongside the variant badge.
+	var border_tier_id := int(companion.get("border_tier", 0))
+	var border_badge := ""
+	var border_bonus := ""
+	if border_tier_id > 0:
+		var bt_color := "#FFFFFF"
+		var bt_name := "Common"
+		var bt_mult := 1.0
+		match border_tier_id:
+			1: bt_color = "#FFFFFF"; bt_name = "Common";    bt_mult = 1.05
+			2: bt_color = "#1EFF00"; bt_name = "Uncommon";  bt_mult = 1.12
+			3: bt_color = "#0070DD"; bt_name = "Rare";      bt_mult = 1.25
+			4: bt_color = "#A335EE"; bt_name = "Epic";      bt_mult = 1.50
+			5: bt_color = "#FF8000"; bt_name = "Legendary"; bt_mult = 2.00
+			6: bt_color = "#FFD700"; bt_name = "Mythic";    bt_mult = 3.00
+		border_badge = "[color=%s]◆ %s Border[/color] " % [bt_color, bt_name]
+		border_bonus = " [color=%s](+%d%% stats)[/color]" % [bt_color, int((bt_mult - 1.0) * 100)]
+	lines.append("%s%s[color=%s]%s %s[/color]%s%s" % [rarity_prefix, border_badge, variant_color, variant, display_name, variant_bonus, border_bonus])
 	lines.append("[color=#AAAAAA]Level %d  |  Tier %d-%d  (x%.1f stats)[/color]" % [level, tier, sub_tier, sub_mult])
 
 	if level < 10000:

@@ -1761,6 +1761,12 @@ func from_dict(data: Dictionary):
 	collected_companions = data.get("collected_companions", [])
 
 	# Migrate companions: add level/xp/pattern/sub_tier fields if missing (for existing saves)
+	# v0.9.570 — also roll a border_tier for legacy companions per the
+	# memo's "lazy roll on first load" backfill plan. The roll uses the
+	# same weighted distribution as fresh companions so existing players
+	# get a fair chance at high-tier borders on their roster.
+	var _dt_script = preload("res://shared/drop_tables.gd")
+	var _dt_instance = _dt_script.new()
 	for companion in collected_companions:
 		if not companion.has("level"):
 			companion["level"] = 1
@@ -1772,6 +1778,20 @@ func from_dict(data: Dictionary):
 			companion["variant_pattern"] = "solid"
 		if not companion.has("sub_tier"):
 			companion["sub_tier"] = 1
+		if not companion.has("border_tier"):
+			companion["border_tier"] = _dt_instance.roll_border_tier()
+	# Same backfill for the active companion (it's a separate dict from
+	# collected_companions and would otherwise miss the roll).
+	if active_companion is Dictionary and not active_companion.is_empty():
+		if not active_companion.has("border_tier"):
+			active_companion["border_tier"] = _dt_instance.roll_border_tier()
+	# Eggs get border_tier rolled too — the value carries through to the
+	# hatched companion so the player can see their roll early.
+	for egg in incubating_eggs:
+		if not egg.has("border_tier"):
+			egg["border_tier"] = _dt_instance.roll_border_tier()
+	# Free the temporary DropTables instance — Node.new() needs explicit cleanup.
+	_dt_instance.queue_free()
 
 	# Deduplicate collected_companions by ID (keep highest level copy)
 	var seen_ids = {}

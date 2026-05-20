@@ -2003,13 +2003,18 @@ func get_egg_for_monster(monster_name: String, pre_rolled_variant: Dictionary = 
 		"variant_color": variant.get("color", "#FF00FF"),  # Hot pink = obvious error
 		"variant_color2": variant.get("color2", ""),
 		"variant_pattern": variant.get("pattern", "solid"),
-		"variant_rarity": variant_rarity
+		"variant_rarity": variant_rarity,
+		# v0.9.570 — border tier rolled at creation; persists through hatch.
+		"border_tier": roll_border_tier(),
 	}
 
-func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_variant: Dictionary = {}) -> Dictionary:
+func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_variant: Dictionary = {}, inherited_border_tier: int = -1) -> Dictionary:
 	"""Create a companion directly from fusion (not an egg).
 	Uses the egg variant system for proper variant rolling.
-	inherited_variant: If all inputs share a variant, pass it to inherit."""
+	inherited_variant: If all inputs share a variant, pass it to inherit.
+	v0.9.570 — inherited_border_tier: pass the HIGHEST border_tier from inputs
+	to preserve it; pass -1 to roll fresh. Memo design: rare borders shouldn't
+	wash out via fusion."""
 	var companion_data = COMPANION_DATA.get(monster_name, {})
 	if companion_data.is_empty():
 		return {}
@@ -2018,6 +2023,10 @@ func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_
 	var variant = inherited_variant
 	if variant.is_empty():
 		variant = _roll_egg_variant()
+
+	var bt: int = inherited_border_tier
+	if bt < 0:
+		bt = roll_border_tier()
 
 	return {
 		"id": "fused_" + monster_name.to_lower().replace(" ", "_") + "_" + str(randi()) + "_" + str(int(Time.get_unix_time_from_system())),
@@ -2034,6 +2043,7 @@ func create_fusion_companion(monster_name: String, new_sub_tier: int, inherited_
 		"variant_color2": variant.get("color2", ""),
 		"variant_pattern": variant.get("pattern", "solid"),
 		"variant_rarity": variant.get("rarity", 10),
+		"border_tier": bt,
 		"obtained_at": int(Time.get_unix_time_from_system()),
 	}
 
@@ -2109,6 +2119,7 @@ func create_hybrid_companion(parent_a: Dictionary, parent_b: Dictionary) -> Dict
 		"variant_color2": variant.get("color2", ""),
 		"variant_pattern": variant.get("pattern", "solid"),
 		"variant_rarity": variant.get("rarity", 10),
+		"border_tier": roll_border_tier(),  # v0.9.570 — hybrid rolls fresh (no inheritance — types differ)
 		"obtained_at": int(Time.get_unix_time_from_system()),
 	}
 
@@ -2135,6 +2146,15 @@ func create_ascended_companion(parents: Array, inherited_variant: Dictionary = {
 	if variant.is_empty():
 		variant = _roll_egg_variant()
 
+	# v0.9.570 — Tier Ascend output preserves the HIGHEST border_tier from
+	# parents per the design memo. Encourages keeping a rare-border companion
+	# in your fusion stack rather than fusing it away.
+	var best_border: int = 0
+	for p in parents:
+		var pbt = int(p.get("border_tier", 0))
+		if pbt > best_border:
+			best_border = pbt
+
 	var new_tier = current_tier + 1
 
 	return {
@@ -2153,6 +2173,7 @@ func create_ascended_companion(parents: Array, inherited_variant: Dictionary = {
 		"variant_color2": variant.get("color2", ""),
 		"variant_pattern": variant.get("pattern", "solid"),
 		"variant_rarity": variant.get("rarity", 10),
+		"border_tier": best_border,
 		"obtained_at": int(Time.get_unix_time_from_system()),
 	}
 
@@ -2365,10 +2386,57 @@ func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
 
 	return {}
 
-func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int = 1, sub_tier: int = 1) -> int:
+# v0.9.570 — Companion Border Tiers (double-rarity stat layer).
+# Second independent rarity roll on every companion (in addition to variant
+# rarity). Drives a stat multiplier AND a visual cue. User-direction:
+# "double rarity increasing stats even further than the current rarity scale."
+# Distribution heavily weighted to no-border so the layer feels earned.
+const BORDER_TIERS: Array = [
+	{"id": 0, "name": "None",       "color": "#666666", "stat_mult": 1.00, "weight": 6000},  # 60.00%
+	{"id": 1, "name": "Common",     "color": "#FFFFFF", "stat_mult": 1.05, "weight": 2500},  # 25.00%
+	{"id": 2, "name": "Uncommon",   "color": "#1EFF00", "stat_mult": 1.12, "weight": 1000},  # 10.00%
+	{"id": 3, "name": "Rare",       "color": "#0070DD", "stat_mult": 1.25, "weight":  400},  #  4.00%
+	{"id": 4, "name": "Epic",       "color": "#A335EE", "stat_mult": 1.50, "weight":   80},  #  0.80%
+	{"id": 5, "name": "Legendary",  "color": "#FF8000", "stat_mult": 2.00, "weight":   18},  #  0.18%
+	{"id": 6, "name": "Mythic",     "color": "#FFD700", "stat_mult": 3.00, "weight":    2},  #  0.02%
+]
+# Total weight = 10000 — keeps the math simple.
+
+func roll_border_tier() -> int:
+	"""Roll a border tier (0-6) using the weighted distribution above."""
+	var total_weight = 0
+	for tier in BORDER_TIERS:
+		total_weight += int(tier.get("weight", 0))
+	var roll = randi() % total_weight
+	var accumulator = 0
+	for tier in BORDER_TIERS:
+		accumulator += int(tier.get("weight", 0))
+		if roll < accumulator:
+			return int(tier.get("id", 0))
+	return 0  # fallback
+
+
+func get_border_tier_info(tier_id: int) -> Dictionary:
+	"""Lookup a border-tier entry by id. Returns the BORDER_TIERS[0] entry
+	(None) on out-of-range so callers never blow up."""
+	for tier in BORDER_TIERS:
+		if int(tier.get("id", -1)) == tier_id:
+			return tier
+	return BORDER_TIERS[0] if BORDER_TIERS.size() > 0 else {}
+
+
+func get_companion_border_mult(border_tier: int) -> float:
+	"""Stat multiplier for a given border tier. Used by combat damage formula
+	and HP-on-display computations to fold border-tier into the final value."""
+	var info = get_border_tier_info(border_tier)
+	return float(info.get("stat_mult", 1.0))
+
+
+func get_companion_attack_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int = 1, sub_tier: int = 1, border_tier: int = 0) -> int:
 	"""Calculate damage dealt by companion in combat.
 	Damage scales with tier, player level, companion level, and sub-tier for meaningful progression
-	without trivializing combat."""
+	without trivializing combat.
+	v0.9.570 — border_tier multiplier folded in for the double-rarity stat layer."""
 	# Base damage scales with tier (T1=5, T2=10, ... T9=45)
 	var tier_damage = companion_tier * 5
 	# Player level adds moderate scaling (reduced from 0.5 to 0.3)
@@ -2382,12 +2450,16 @@ func get_companion_attack_damage(companion_tier: int, player_level: int, compani
 	total = int(total * (1.0 + float(attack_bonus) / 100.0))
 	# Apply sub-tier multiplier (1.0x to 1.7x for sub-tiers 1-8)
 	total = int(total * COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
+	# v0.9.570 — apply border-tier multiplier (1.00x base, up to 3.00x Mythic)
+	total = int(total * get_companion_border_mult(border_tier))
 	return total
 
-func estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0, sub_tier: int = 1) -> Dictionary:
+func estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0, sub_tier: int = 1, border_tier: int = 0) -> Dictionary:
 	"""Estimate companion damage range for display purposes.
-	Returns {min, max, avg} damage values."""
-	var base = get_companion_attack_damage(companion_tier, player_level, companion_bonuses, companion_level, sub_tier)
+	Returns {min, max, avg} damage values.
+	v0.9.570 — border_tier param folded into the estimate so tooltips match
+	the in-combat damage."""
+	var base = get_companion_attack_damage(companion_tier, player_level, companion_bonuses, companion_level, sub_tier, border_tier)
 	# Apply variant multiplier
 	base = int(base * variant_mult)
 	# Damage has 80-120% variance
