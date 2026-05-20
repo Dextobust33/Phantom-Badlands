@@ -521,6 +521,136 @@ const HELP_TOPICS := {
 			+ "[color=#888888]This page is read-only — to add imprints, you must rank up an ability with the right companion active.[/color]"
 		),
 	},
+	# v0.9.569 — Help coverage continued. Six more topics covering nested
+	# in-game-output screens that v0.9.568 didn't reach: settings + keybinds,
+	# salvage, trade window, build mode, quest log, dungeon select.
+	"settings_menu": {
+		"title": "[color=#FFD700]Settings & Keybinds[/color]",
+		"body": (
+			"All client-side preferences live here. Open via [color=#9ACD32]/settings[/color] or the action bar.\n\n"
+			+ "[color=#FFD700]── Audio ──[/color]\n"
+			+ "  • [b]Master volume[/b] — overall slider.\n"
+			+ "  • [b]Music / SFX[/b] — separate sliders so you can mute one without the other.\n"
+			+ "  • [b]Ambient toggle[/b] — silences zone-ambient noise without touching SFX.\n\n"
+			+ "[color=#FFD700]── Display ──[/color]\n"
+			+ "  • [b]UI scale[/b] — separate multipliers for monster ASCII art, world map, chat text. Useful on high-DPI displays.\n"
+			+ "  • [b]Map font size[/b] — adjust the world-map character grid.\n"
+			+ "  • [b]Combat font size[/b] — adjust combat scene panel text.\n\n"
+			+ "[color=#FFD700]── Keybinds ──[/color]\n"
+			+ "Action bar has 10 slots, default-bound to: [color=#9ACD32]Space[/color] / [color=#9ACD32]Q[/color] / [color=#9ACD32]W[/color] / [color=#9ACD32]E[/color] / [color=#9ACD32]R[/color] / [color=#9ACD32]1[/color] / [color=#9ACD32]2[/color] / [color=#9ACD32]3[/color] / [color=#9ACD32]4[/color] / [color=#9ACD32]5[/color]. Rebind any slot via [b]Settings → Keybinds[/b], pick the slot to rebind, press the new key. The default scheme is designed around WASD movement — `R` is the contextual location action (Fish/Mine/Chop/Dungeon/Forge/Quests depending on current tile).\n\n"
+			+ "[color=#FFD700]── Combat items ──[/color]\n"
+			+ "Map consumables to combat slots so you can use them mid-fight via the action bar. Default 5 slots; assign via Settings → Combat Items.\n\n"
+			+ "[color=#FFD700]── Quality of life ──[/color]\n"
+			+ "  • [b]Autoskip loot reveal[/b] — when on, the post-combat scratch-off auto-flips your reveal budget instantly.\n"
+			+ "  • [b]Chat timestamps[/b] — toggle the `[HH:MM]` prefix on chat lines.\n\n"
+			+ "[color=#888888]Settings persist to user://keybinds.json + user://connection_settings.json — survive client updates.[/color]"
+		),
+	},
+	"salvage_menu": {
+		"title": "[color=#FFD700]Salvage[/color]",
+		"body": (
+			"Convert unwanted items into [color=#FFD700]Salvage Essence (ESS)[/color] + a chance at bonus materials. Open from Inventory → Salvage.\n\n"
+			+ "[color=#FFD700]── How it works ──[/color]\n"
+			+ "  • Pick an item from your inventory using [color=#9ACD32]1-5[/color] (or click).\n"
+			+ "  • The salvage view shows the ESS yield + the bonus-mat odds for that specific item.\n"
+			+ "  • Confirm to consume the item and credit your account with ESS.\n\n"
+			+ "[color=#FFD700]── What to salvage ──[/color]\n"
+			+ "  • [b]Duplicate equipment[/b] — most efficient ESS source.\n"
+			+ "  • [b]Low-tier finds[/b] you've outgrown — early Tier 1-2 gear once you're at Tier 4+.\n"
+			+ "  • [b]Equipment you can't equip[/b] — wrong class / wrong slot.\n"
+			+ "  • [b]Not[/b]: anything you might want to bring home via Home Stone (Equipment) for a future character.\n\n"
+			+ "[color=#FFD700]── Bonus material rolls ──[/color]\n"
+			+ "Some salvage rolls drop their constituent materials (gem fragments, magic dust, refined metal). Higher-tier items roll more often. The exact value table lives in `drop_tables.gd` SALVAGE_VALUES — see the bonus-mat row on the salvage panel for the per-item odds.\n\n"
+			+ "[color=#FFD700]── ESS uses ──[/color]\n"
+			+ "Salvage Essence is a crafting material in its own right — required for high-tier recipes, especially specialty smithing. It's also a market-tradeable resource.\n\n"
+			+ "[color=#888888]Salvaged items are gone forever — no undo. Double-check before confirming.[/color]"
+		),
+	},
+	"trade_window": {
+		"title": "[color=#FFD700]Trade Window[/color]",
+		"body": (
+			"Direct player-to-player trade. Initiate by bumping into another player and selecting [color=#88FFCC]Trade[/color] from the action bar, or via [color=#9ACD32]/trade <player>[/color].\n\n"
+			+ "[color=#FFD700]── Tabs ──[/color]\n"
+			+ "  • [color=#FFD700]Items[/color] — equipment, consumables, materials.\n"
+			+ "  • [color=#FFD700]Companions[/color] — non-active, non-registered companions only.\n"
+			+ "  • [color=#FFD700]Eggs[/color] — incubating eggs (frozen or active).\n\n"
+			+ "[color=#FFD700]── How to add ──[/color]\n"
+			+ "Click an item / companion / egg row on your side to add it to your offer. Click again to remove.\n\n"
+			+ "[color=#FFD700]── Confirm step ──[/color]\n"
+			+ "Trades use a [b]two-step confirm[/b]:\n"
+			+ "  1. Both players click [color=#88FF88]Ready[/color] to lock their offer.\n"
+			+ "  2. Both players click [color=#FFD700]Confirm[/color] AGAIN to finalize. If either side changes their offer between Ready and Confirm, both Readys reset.\n"
+			+ "This prevents last-second swaps from completing without your awareness.\n\n"
+			+ "[color=#FFD700]── Restrictions ──[/color]\n"
+			+ "  • Active companions can't be traded — dismiss first.\n"
+			+ "  • Registered (Sanctuary) companions can't be traded — they're account-bound.\n"
+			+ "  • Soulbound equipment can't be traded.\n"
+			+ "  • Valor can be added as part of either offer.\n\n"
+			+ "[color=#888888]Cancel at any time before final confirm — both inventories are unchanged.[/color]"
+		),
+	},
+	"build_mode": {
+		"title": "[color=#FFD700]Build Mode[/color]",
+		"body": (
+			"Place structures from your inventory onto the world map. Used to construct enclosures (player posts), guard towers, decorations, and crafting stations.\n\n"
+			+ "[color=#FFD700]── Flow ──[/color]\n"
+			+ "  1. Open inventory → select a buildable item (walls, posts, structures).\n"
+			+ "  2. Pick [color=#88FF88]Build[/color] — enters build mode showing direction prompts.\n"
+			+ "  3. Press a direction key ([color=#9ACD32]W/A/S/D[/color] or arrow keys) — places the structure on the adjacent tile in that direction.\n"
+			+ "  4. Press [color=#9ACD32]Esc[/color] or [color=#9ACD32]Q[/color] to cancel before placing.\n\n"
+			+ "[color=#FFD700]── Demolish ──[/color]\n"
+			+ "Same flow but pick [color=#FF8888]Demolish[/color] from the action bar. Direction selects which adjacent tile to clear. Refunds a portion of materials.\n\n"
+			+ "[color=#FFD700]── Placement rules ──[/color]\n"
+			+ "  • Must be inside your own enclosure (or a clan-shared one if you're a clan member).\n"
+			+ "  • The very first signpost can be placed anywhere walkable — that's how you START a new post.\n"
+			+ "  • Some structures are tile-blocking (walls, towers, large decorations); some are walkable (paths, low decorations).\n"
+			+ "  • Specialty stations (Blacksmith, Healer, Trading Post, Companion Stable) require specific recipes + crafting skill thresholds.\n\n"
+			+ "[color=#FFD700]── Settler bubble + decay ──[/color]\n"
+			+ "Posts you've built reduce monster spawn tier in a radius around them (the [b]settler bubble[/b]). Towers + Guards extend the radius. Untouched posts decay (Inactive 7d → Abandoned 30d → Auto-reclaim 120d) — visit regularly to keep the bubble healthy. See the post status panel (bump the [color=#FFD700]P[/color] tile) for live bubble + decay state.\n\n"
+			+ "[color=#888888]Build recipes unlock at Construction skill thresholds — see Crafting → Construction for what's available.[/color]"
+		),
+	},
+	"quest_log": {
+		"title": "[color=#FFD700]Quests[/color]",
+		"body": (
+			"Quest objectives, turn-ins, and rewards. Access via the quest board at any trading post (bump the [color=#9ACD32]Q[/color] tile) or via [color=#9ACD32]/quests[/color].\n\n"
+			+ "[color=#FFD700]── Quest types ──[/color]\n"
+			+ "  • [color=#88FF88]Gather[/color] — fish / mine / chop N of a resource.\n"
+			+ "  • [color=#FFA500]Kill[/color] — slay N of a monster type / level range.\n"
+			+ "  • [color=#A335EE]Boss[/color] — kill a specific named boss (often dungeon-tied).\n"
+			+ "  • [color=#FF6600]⚠ Threat Bounty[/color] — clear a threatening dungeon to restore the post's safety.\n"
+			+ "  • [color=#FFD700]Chain[/color] — multi-stage quest line (Pathfinder's Trial, etc.). Each stage rewards an item; completing the chain awards a title + bonus rewards.\n"
+			+ "  • [color=#5C9DFF]Daily[/color] — refresh on server reset; smaller rewards but reliable.\n"
+			+ "  • [color=#FF4488]Hotzone[/color] — temporary biome-bonus quest while a hotzone is active.\n\n"
+			+ "[color=#FFD700]── Accepting + tracking ──[/color]\n"
+			+ "From the quest board, press [color=#9ACD32]1-5[/color] to accept a quest. Accepted quests appear in your active list (max 5 concurrent — abandon one to take another). Progress ticks automatically as you fight / gather / explore.\n\n"
+			+ "[color=#FFD700]── Turn-in ──[/color]\n"
+			+ "Return to the quest board at the issuing post. Completed quests show a [color=#88FF88]✓ Turn In[/color] option. Most quest rewards = valor + XP; chain quests + threat bounties layer in equipment / consumables / titles.\n\n"
+			+ "[color=#FFD700]── Abandoning ──[/color]\n"
+			+ "From the active list, abandon a quest to free a slot. No penalty — but you lose progress on it.\n\n"
+			+ "[color=#888888]Compass and threat-bounty hints point you to the right post / monster zone when a quest needs a specific location.[/color]"
+		),
+	},
+	"dungeon_select": {
+		"title": "[color=#FFD700]Dungeon Entry[/color]",
+		"body": (
+			"Walking onto a [color=#FFD700]D[/color] tile prompts a dungeon entry confirmation. Each dungeon has a monster theme, a recommended level, and a guaranteed boss.\n\n"
+			+ "[color=#FFD700]── What you see ──[/color]\n"
+			+ "  • [b]Name[/b] (e.g., Orc Stronghold) + monster type (all encounters share the boss's species).\n"
+			+ "  • [b]Recommended level[/b] — your character's level vs the dungeon's `min_level`.\n"
+			+ "  • [b]Floors[/b] — number of encounters before the boss.\n"
+			+ "  • [b]Tier[/b] — drop quality / monster strength scaling.\n\n"
+			+ "[color=#FFD700]── Underleveled warning ──[/color]\n"
+			+ "If your level is below the recommended threshold, a [color=#FF8888]Level Warning[/color] appears with [color=#FF8888]Enter Anyway[/color] / [color=#88FF88]Cancel[/color]. The dungeon does NOT block you — but the monsters scale to the dungeon's level, not yours. Bring a party or come back stronger.\n\n"
+			+ "[color=#FFD700]── Party dungeons ──[/color]\n"
+			+ "If you're the party leader, entry creates a shared instance for all party members. Snake-formation movement; party combat for each encounter; party loot on the boss. Each member gets a guaranteed boss egg.\n\n"
+			+ "[color=#FFD700]── Dying inside ──[/color]\n"
+			+ "Death in a dungeon is still permadeath. Use Cloak (Lv 20+) to escape if a fight goes south. Solo / no-cloak deaths drop a sack at the death tile (apex-zone PvP rules apply for non-dungeon zones; in dungeon, the corpse cleans up on instance close).\n\n"
+			+ "[color=#FFD700]── Threat-corridor dungeons ──[/color]\n"
+			+ "A dungeon that spawns near a settled post marks the post as [color=#FF6600]⚠ Under Threat[/color] until cleared. Threatened posts charge +20% market markup; the threat bounty quest in the post's quest board awards a juicy bonus for clearing the specific dungeon.\n\n"
+			+ "[color=#888888]Dungeons despawn 60s after completion. World map shows a fresh one spawned elsewhere within minutes.[/color]"
+		),
+	},
 	"bounty_board": {
 		"title": "[color=#FFD700]💰 Bounty Board[/color]",
 		"body": (

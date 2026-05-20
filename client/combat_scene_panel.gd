@@ -7,12 +7,10 @@ class_name CombatScenePanel
 # the left, ASCII monster art on the right (mismatched by design — see
 # project_combat_juice.md for the decision).
 #
-# v0.9.417 — Lufia II is the only combat layout. Earlier prototypes
-# (LAYOUT_STANDARD, LAYOUT_CHRONO) are dead-code conditionals kept around
-# because they don't run anymore — see set_layout removal + combat_layout
-# const below. Cleanup pass to delete the dead branches is a follow-up.
-const LAYOUT_STANDARD := "standard"
-const LAYOUT_CHRONO := "chrono"
+# v0.9.417 — Lufia II layout. Earlier prototypes (LAYOUT_STANDARD,
+# LAYOUT_CHRONO) were unreachable after the Lufia switch; their build
+# functions + early-return guards + dispatch match were pruned in
+# v0.9.569's dead-code pass.
 const LAYOUT_LUFIA := "lufia"
 const combat_layout: String = LAYOUT_LUFIA
 
@@ -336,18 +334,9 @@ func _build_layout() -> void:
 	root_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root_panel.add_child(root_vbox)
 
-	# === Top: scene (player vs monster) — layout-specific arrangement ===
-	# v0.9.380 — dispatch by combat_layout. Both layouts share the bottom
-	# strips (HP / status / totals / hand / log) since those are pure
-	# data displays, not arrangement-sensitive.
-	var scene_root: Control
-	match combat_layout:
-		LAYOUT_CHRONO:
-			scene_root = _build_scene_section_chrono()
-		LAYOUT_LUFIA:
-			scene_root = _build_scene_section_lufia()
-		_:
-			scene_root = _build_scene_section_standard()
+	# === Top: scene (player vs monster) — Lufia II arrangement ===
+	# v0.9.569 — pruned the dispatch match + dead alternates (standard / chrono).
+	var scene_root: Control = _build_scene_section_lufia()
 	root_vbox.add_child(scene_root)
 
 	# === Shared HP strip — player on left, monster on right, same row ===
@@ -442,71 +431,6 @@ func _build_layout() -> void:
 	call_deferred("_position_help_button")
 
 
-func _build_scene_section_standard() -> Control:
-	"""Standard layout: HBox with player+companion column on the left and
-	monster column on the right. v0.9.380 — extracted from the original
-	`_build_layout` body; same visual result as before this refactor."""
-	_scene_section = HBoxContainer.new()
-	_scene_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_scene_section.size_flags_stretch_ratio = 2.0
-	_scene_section.add_theme_constant_override("separation", 8)
-	_scene_section.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	_player_col = _build_player_column()
-	_scene_section.add_child(_player_col)
-
-	_monster_col = _build_monster_column()
-	_scene_section.add_child(_monster_col)
-	return _scene_section
-
-
-func _build_scene_section_chrono() -> Control:
-	"""Chrono Trigger / Mother 2 style: monster centered + large at the top,
-	small party row underneath.
-
-	v0.9.383 — third rewrite. Earlier versions inflated the party row to
-	~280px because the full 180x260 battle ASCII art was bundled into the
-	player block, starving the monster of vertical space. This version:
-	  - Player block contains ONLY the small sprite (~72×72) — no battle
-	    ASCII (it's hidden / unused in vertical layouts).
-	  - Companion content shrunk to ~72×72 ASCII portrait.
-	  - Scene stretch_ratio bumped to 4.0 (vs log_section's 1.0) so the
-	    vertical layout actually gets the vertical room it needs.
-	  - Inner stretch 4:1 between monster and party row → monster ~80%."""
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_stretch_ratio = 4.0  # Bumped from 2.0 so vertical layouts dominate the panel
-	vbox.add_theme_constant_override("separation", 6)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scene_section = vbox
-
-	# Top: monster, centered, fills the upper 80% of scene_section.
-	_monster_col = _build_monster_column()
-	_monster_col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_monster_col.size_flags_stretch_ratio = 4.0
-	_monster_col.custom_minimum_size = Vector2(480, 0)
-	vbox.add_child(_monster_col)
-
-	# Bottom: small party row, ~20% of scene_section. Sprite-only — no
-	# battle ASCII inflating the minimum height.
-	var party_row := HBoxContainer.new()
-	party_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	party_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	party_row.size_flags_stretch_ratio = 1.0
-	party_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	party_row.add_theme_constant_override("separation", 24)
-	party_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(party_row)
-
-	party_row.add_child(_build_compact_player_block(COMPACT_PORTRAIT_PX))
-	party_row.add_child(_build_compact_companion_block(COMPACT_PORTRAIT_PX))
-
-	_player_col = party_row
-	return vbox
-
-
 func _build_scene_section_lufia() -> Control:
 	"""Lufia II style per SNES reference: enemy occupies the upper ~75% of
 	the scene; party members live in a row of BORDERED STAT BOXES at the
@@ -566,11 +490,7 @@ func start_action_phase() -> void:
 
 	v0.9.412 — also hide the running-totals banner, hand strip, and status
 	strip while in the FX scene. Frees vertical room for the overlay so the
-	bigger ASCII blocks don't get cut off by adjacent UI.
-
-	No-op in LAYOUT_STANDARD."""
-	if combat_layout == LAYOUT_STANDARD:
-		return
+	bigger ASCII blocks don't get cut off by adjacent UI."""
 	if _action_phase_active:
 		return
 	_action_phase_active = true
@@ -614,8 +534,6 @@ func end_action_phase() -> void:
 	"""v0.9.406 — hide the battlefield overlay and slide the party row back.
 	v0.9.412 — restore the running-totals / hand / status strips that were
 	collapsed during the action phase."""
-	if combat_layout == LAYOUT_STANDARD:
-		return
 	_cancel_action_phase_timer()
 	if not _action_phase_active:
 		return
@@ -658,7 +576,8 @@ var _overlay_player_ascii: RichTextLabel = null
 var _overlay_player_hp_bar: ProgressBar = null
 # v0.9.415 — secondary resource bar (MP/SP/energy depending on class) under
 # the HP bar. Populated from the same data the in-box stats line uses.
-var _overlay_player_resource_bar: ProgressBar = null
+# v0.9.569 — _overlay_player_resource_bar removed. Placeholder was assigned
+# null and the consumer block (animate_overlay_state) was unreachable.
 var _overlay_player_name: Label = null
 var _overlay_companion_block: Control = null
 var _overlay_companion_ascii: RichTextLabel = null
@@ -776,9 +695,6 @@ func start_review_phase() -> void:
 	if _action_phase_active:
 		# Already on the FX scene from a real action phase — nothing to do.
 		return
-	if combat_layout == LAYOUT_STANDARD:
-		# Standard layout has no overlay to review.
-		return
 	_in_review_phase = true
 	# Show the back button instead of pause/resume, since there's no queue to
 	# pause during review.
@@ -869,13 +785,9 @@ func _update_review_button_visibility() -> void:
 	  • The combat panel is visible
 	  • We're NOT currently in an action phase (FX scene already up)
 	  • We're NOT in review (the pause button doubles as Back)
-	  • Combat layout supports the overlay (not LAYOUT_STANDARD)
 	  • There's actually log content to review
 	"""
 	if _review_button == null or not is_instance_valid(_review_button):
-		return
-	if combat_layout == LAYOUT_STANDARD:
-		_review_button.visible = false
 		return
 	if _action_phase_active or _in_review_phase:
 		_review_button.visible = false
@@ -965,8 +877,6 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	hp_bar.custom_minimum_size = Vector2(0, 8)
 	block.add_child(hp_bar)
 
-	var resource_bar: ProgressBar = null  # kept for assignment below; unused now
-
 	# Name label — under the bar.
 	var name_lbl := Label.new()
 	name_lbl.add_theme_font_size_override("font_size", 11)
@@ -984,7 +894,6 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	if is_player:
 		_overlay_player_ascii = ascii
 		_overlay_player_hp_bar = hp_bar
-		_overlay_player_resource_bar = resource_bar
 		_overlay_player_name = name_lbl
 	else:
 		_overlay_companion_ascii = ascii
@@ -1122,13 +1031,9 @@ func _populate_battlefield_overlay() -> void:
 	if _overlay_player_hp_bar and is_instance_valid(_overlay_player_hp_bar):
 		_overlay_player_hp_bar.max_value = maxi(1, _player_max_hp)
 		_animate_bar_value(_overlay_player_hp_bar, clampi(_player_hp, 0, _player_max_hp))
-	# v0.9.415 — wire resource bar (MP/SP/Energy) under the HP bar.
-	if _overlay_player_resource_bar and is_instance_valid(_overlay_player_resource_bar):
-		_overlay_player_resource_bar.max_value = maxi(1, _player_resource_max)
-		_overlay_player_resource_bar.value = clampi(_player_resource_cur, 0, _player_resource_max)
-		var fill := _overlay_player_resource_bar.get_theme_stylebox("fill")
-		if fill is StyleBoxFlat:
-			(fill as StyleBoxFlat).bg_color = _player_resource_color
+	# v0.9.415 / v0.9.569 — resource bar block removed; placeholder var was
+	# always null so the consumer was unreachable. If a resource bar comes
+	# back, re-introduce it in _build_compact_player_block and wire here.
 	if _overlay_player_name and is_instance_valid(_overlay_player_name):
 		_overlay_player_name.text = _player_name
 
@@ -3191,9 +3096,11 @@ func _battle_brighten_color_hex(hex: String) -> String:
 
 func _is_compact_layout() -> bool:
 	"""v0.9.384 — chrono / lufia render the same battle ASCII as standard
-	but at a tiny font size + clipped to a small portrait box. This helper
-	centralizes the layout check (sizes and font sizes branch on it)."""
-	return combat_layout != LAYOUT_STANDARD
+	but at a tiny font size + clipped to a small portrait box.
+	v0.9.569 — only Lufia layout remains (standard / chrono pruned), so
+	this is effectively `true`. Helper kept as a single switch point in
+	case a future non-compact alternate gets added."""
+	return true
 
 
 const COMPACT_PORTRAIT_PX := 96  # v0.9.385 — square chrono party-row portrait size (px)
