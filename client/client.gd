@@ -25187,8 +25187,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.589 — Two field-drop bugs from a sweep prompted by the Imprint fix.
+	display_game("[color=#00FF00]v0.9.589[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]A sweep for bugs like v0.9.588's (server constructs a payload but drops a field the client expects) caught two CRITICAL invisible-since-shipped bugs and several medium ones. Two of the two criticals fixed here.[/color]")
+	display_game("  • [b]NPC vendor + network buy confirmation[/b]: server was sending [color=#888888]market_buy_result[/color] but the only client handler is [color=#888888]market_buy_success[/color]. NPC vendor purchases (exotic / mine / farm / shrine stocks) and network buys completed silently — inventory + valor updated, but no \"Purchase successful\" panel, no \"Bought X\" line, no transition back to the market menu. Renamed both server payloads to match the client's expected handler.")
+	display_game("  • [b]Crucible boss fight start[/b]: was using the pre-v0.9.x combat schema ([color=#888888]monster[/color] / [color=#888888]enemy_hp[/color] / [color=#888888]player_hp[/color]) instead of the modern [color=#888888]combat_state[/color] envelope every other encounter uses. Crucible fights showed \"Enemy\" placeholder, no ASCII art, no HP bar, no first-strike warning. Now routes through [color=#888888]combat_mgr.get_combat_display()[/color] like dungeons and overworld fights.")
+	display_game("  • [b]Still open (medium impact, planned for follow-up)[/b]: combat_restored payload misses visual fields on reconnect (boss border pulse won't fire); instant-craft path of [color=#888888]craft_result[/color] omits the Audit #8 Quality Rating summary block — instant-craft recipes show a stripped panel.")
+	display_game("")
+
 	# v0.9.588 — Variant Imprint button restored at rank-up.
-	display_game("[color=#00FF00]v0.9.588[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.588[/color]")
 	display_game("  [color=#FFD700]Fixes the invisible \"✦ Imprint\" option at ability rank-up. v0.9.549 shipped the feature but the server's `rank_up_choice` payload was dropping the `variant_offer` field, so the 3rd button never showed even with an active companion that qualified (e.g., Gnoll → Rending). Rank up Strike with a Gnoll active now offers Bleed alongside +1 Card / +10% Damage.[/color]")
 	display_game("  • [b]One-line server fix[/b]: the queued rank choice carried `variant_offer` correctly all the way through combat_manager and the character's pending_rank_choices queue — but the message that surfaces the popup left it on the floor. Now forwarded. `next_pending` (chained rank-ups in one combat) was already correct because it's the raw queued dict.")
 	display_game("  • [b]Reminder of how Imprints work[/b]: only offered when (1) you have an active companion, (2) its monster type maps to a trait (53 mapped — Gnoll = Rending bleed, Wolf = Hunter's Eye crit, Goblin = Distract miss, etc.), and (3) that ability hasn't reached 4 imprints yet. Each imprint is a small permanent passive rider, account-level (survives permadeath like mastery records).")
