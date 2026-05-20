@@ -25193,8 +25193,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.584 — Pathfinder belt-and-suspenders + Services screen cleanup.
+	display_game("[color=#00FF00]v0.9.584[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8888]Defensive follow-up to v0.9.583. Player reported the Pathfinder turn-in STILL wasn't appearing despite the deploy + a separate UI bug.[/color]")
+	display_game("  • [b]Pathfinder check now matches on quest_id prefix too[/b]. All three turn-in code paths now accept the quest if its [color=#888888]chain_id[/color] is 'pathfinder' OR its [color=#888888]quest_id[/color] begins with 'pathfinder_'. If get_quest mutates the chain_id field for any reason, the prefix match still catches it. Diagnostic print added so the server log records when the branch fires.")
+	display_game("  • [b]Crossroads Services screen replaced[/b]. Pressing Back from the Quest Board used to render an outdated chat-command-era 'Services: [Q] Shop | [W] Quests | [E] Heal' line that no longer matches the actual bump-to-interact tile system. Now re-uses `_display_trading_post_ui()` so the legend reads the same as the normal entry view (F Forge / A Apothecary / Q Quest Board / etc.).")
+	display_game("")
+
 	# v0.9.583 — Hotfix: Pathfinder turn-in actually works at the Quest Board now.
-	display_game("[color=#00FF00]v0.9.583[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.583[/color]")
 	display_game("  [color=#FF8888]Hotfix for an incomplete v0.9.582 fix — the Pathfinder turn-in flexibility patched 2 of 3 quest-turn-in code paths but missed the third one (the Quest Board UI handler), which is the path players actually trigger when they bump the Q tile. Direct user report.[/color]")
 	display_game("  • [b]handle_trading_post_quests now has the pathfinder branch[/b]. Bumping the Q tile at ANY starter post (haven/crossroads/south_gate/east_market/west_shrine) now correctly surfaces completed Pathfinder quests in the turn-in list.")
 	display_game("  • [b]My apology[/b]: I should have audited all three quest-turn-in code paths in v0.9.582 instead of two. The pattern in the codebase (separate handlers each with their own can_turn_in logic) made it easy to miss.")
@@ -25238,15 +25245,6 @@ func display_changelog():
 	display_game("  • [b]Launch doc[/b]: `docs/PATREON_LAUNCH.md` in the repo. Step-by-step for actually publishing the Patreon page when ready.")
 	display_game("")
 
-	# v0.9.578 — Patreon supporter tier scaffolding + fulfillment UI.
-	display_game("[color=#00FFFF]v0.9.578[/color]")
-	display_game("  [color=#FFD700]Scaffolding for the upcoming Patreon launch. Three new cosmetic supporter titles, account-level tier persistence, and a /admin fulfillment flow for manual pledge matching.[/color]")
-	display_game("  • [b]Three new chain titles[/b]: [color=#88FF88][Supporter][/color] (Tier 1 / $5), [color=#FFD700][Founder][/color] (Tier 2 / $10), [color=#A335EE][Patron][/color] (Tier 3 / $20). Wearable like any other earned title. [b]Hard rule[/b]: cosmetic only — no combat advantage tied to Patreon tiers, ever.")
-	display_game("  • [b]Account-level persistence[/b]. `persistence.patreon_tier` field stored on the account dict (same store as Sanctuary data + valor). Set/get helpers; tier auto-syncs into character.earned_titles at character load so the title appears alongside chain titles. Idempotent — downgrades cleanly remove higher-tier stale titles.")
-	display_game("  • [b]Fulfillment flow[/b] (admin only). [color=#9ACD32]/admin → Patreon[/color] sub-page has Tier 0-3 buttons. Admin walks within 5 tiles of the supporter, picks a tier; server resolves nearest-online-player and writes the account flag. Supporter gets a private thank-you chat line.")
-	display_game("  • [b]Tame QoL bonuses[/b] (T2+ extra Sanctuary slot, T3 free kennel-tier unlock) are [color=#888888]scoped for a follow-up[/color]. V1 ships the title + tier infrastructure so the Patreon page can launch with concrete rewards even before the QoL bonuses land.")
-	display_game("  • [b]No client-facing /patreon command yet[/b]. Will land alongside the actual Patreon URL once the page is published.")
-	display_game("")
 
 
 
@@ -35771,21 +35769,20 @@ func leave_trading_post():
 	send_to_server({"type": "trading_post_leave"})
 
 func cancel_trading_post_action():
-	"""Cancel pending Trading Post action and return to main menu"""
+	"""Cancel pending Trading Post action and return to main menu.
+
+	v0.9.584 — was rendering an outdated 'Services: [Q] Shop | [W] Quests
+	| [E] Heal' chat-command-era line that no longer matched the actual
+	bump-to-interact tile system. Now re-uses _display_trading_post_ui()
+	which prints the correct walkable-tile legend (F Forge / A Apothecary
+	/ Q Quest Board / etc.) consistent with the normal post-entry view.
+	Closes player report: 'none of that is accurate.'"""
 	quest_view_mode = false
 	pending_trading_post_action = ""
 	available_quests = []
 	quests_to_turn_in = []
 	update_action_bar()
-
-	# Re-display Trading Post menu
-	var tp_name = trading_post_data.get("name", "Trading Post")
-	game_output.clear()
-	display_game("[color=#FFD700]===== %s =====[/color]" % tp_name)
-	display_game("")
-	display_game("Services: [%s] Shop | [%s] Quests | [%s] Heal" % [get_action_key_name(1), get_action_key_name(2), get_action_key_name(3)])
-	display_game("")
-	display_game("[color=#808080]Walk in any direction to leave.[/color]")
+	_display_trading_post_ui()
 
 # ===== OPEN MARKET FUNCTIONS =====
 
