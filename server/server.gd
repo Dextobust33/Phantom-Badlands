@@ -14844,6 +14844,14 @@ func handle_trading_post_quests(peer_id: int):
 			var dest_post_id = quest_data.quest_id.replace("progression_to_", "")
 			if tp.id == dest_post_id:
 				can_turn_in = true
+		elif String(quest.get("chain_id", "")) == "pathfinder" and tp.id in STARTER_TRADING_POSTS:
+			# v0.9.583 — Pathfinder starter chain accepts turn-in at ANY starter
+			# post. v0.9.582 patched two of the three quest-turn-in code paths
+			# but missed THIS one (the Quest Board UI handler), which is the
+			# path the player actually triggers when they bump the Q tile.
+			# Closes the user-reported "I still have no way of turning in my
+			# starter Quest at the questboard in the Crossroads post" bug.
+			can_turn_in = true
 
 		# Audit #6 Slice 9 — DELIVER quests use live inventory count for completion
 		var meets_target = quest_data.progress >= quest_data.target
