@@ -25013,6 +25013,7 @@ func display_job_overview():
 	var specialty_job_name = character_data.get("specialty_job", "")
 
 	if job_page == 0:
+		_render_breadcrumb(["More", "Jobs"])
 		display_game("[color=#FFD700]═══════ JOBS ═══════[/color] [color=#808080](Page 1/2 — Gathering)[/color]")
 		display_game("")
 		display_game("[color=#FF8800]── Gathering Jobs ──[/color]")
@@ -25037,6 +25038,7 @@ func display_job_overview():
 				display_game("[color=#FFFF00]Use buttons 1-5 to commit to a gathering job.[/color]")
 		display_game("[color=#808080][%s] Back | [%s] Next Page >[/color]" % [get_action_key_name(0), get_action_key_name(2)])
 	else:
+		_render_breadcrumb(["More", "Jobs"])
 		display_game("[color=#FFD700]═══════ JOBS ═══════[/color] [color=#808080](Page 2/2 — Specialty)[/color]")
 		display_game("")
 		display_game("[color=#A335EE]── Specialty Jobs ──[/color]")
@@ -25115,6 +25117,7 @@ func _display_job_entry(jname: String, jlevels: Dictionary, jxp: Dictionary, is_
 func display_job_commit_confirm(job_name: String, category: String):
 	"""Show commitment confirmation dialog."""
 	game_output.clear()
+	_render_breadcrumb(["More", "Jobs", "Commit"])
 	display_game("[color=#FFD700]═══════ COMMIT TO JOB ═══════[/color]")
 	display_game("")
 	display_game("[color=#FF4444]⚠ WARNING: This is PERMANENT! ⚠[/color]")
@@ -25172,8 +25175,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.573 — Nested-menu breadcrumbs (UX direction: "getting to nested menus is very unintuitive").
+	display_game("[color=#00FF00]v0.9.573[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Every deeply-nested screen now shows where you are in the menu tree at a glance.[/color]")
+	display_game("  • [b]Breadcrumb headers[/b] (Audit #10 Slice 1). The top of each Sanctuary sub-page (Storage / Companion Stable / Fusion Station / Mastery Headstart / Imprint Atlas / Mastery Atlas / Bestiary) now reads [color=#888888]Sanctuary › <PageName>[/color] above the existing header. Same treatment on the More → Jobs paths ([color=#888888]More › Jobs[/color], [color=#888888]More › Jobs › Commit[/color]) and More → Companions ([color=#888888]More › Companions[/color]).")
+	display_game("  • [b]Single helper[/b]: `_render_breadcrumb(parts: Array)` emits the path line in subtle grey so it informs without competing with the gold section header. Easy to drop into more screens as they're identified.")
+	display_game("  • [b]No new keybinds[/b]. The action bar still drives Back (slot 0 across all these screens) and the breadcrumb is purely visual context. Future polish slices may add a clickable-breadcrumb option, but V1 keeps it as a passive header.")
+	display_game("")
+
 	# v0.9.572 — Companion Border Tier visual layer (paired with v0.9.570's data + stat layer).
-	display_game("[color=#00FF00]v0.9.572[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.572[/color]")
 	display_game("  [color=#FFD700]The Border Tier visual finally lands — your companion's ASCII art now glows in its border-tier color. The rare-border Goblin you've been hauling around since v0.9.570 finally LOOKS rare.[/color]")
 	display_game("  • [b]Outline recolor[/b]. The first and last non-whitespace character on every line of companion ASCII art gets re-tinted to the border-tier's hue: [color=#FFFFFF]Common white[/color], [color=#1EFF00]Uncommon green[/color], [color=#0070DD]Rare blue[/color], [color=#A335EE]Epic purple[/color], [color=#FF8000]Legendary orange[/color], [color=#FFD700]Mythic gold[/color]. The natural body color (variant pattern) stays intact in the middle of each line — so a Crimson Wolf with a Rare border keeps its red body and gains a blue silhouette glow.")
 	display_game("  • [b]Applies everywhere[/b]: combat scene companion art, the corner Active Companion overlay, the chat-style Inspect view, the panel-style Inspect view, and the map-hover tooltip when you mouse over an allied companion. Single helper function `_apply_companion_border_tier()` reused at every render site so the look stays consistent.")
@@ -25208,14 +25219,6 @@ func display_changelog():
 	display_game("  • [b]Help coverage continued[/b] (Slice B). Six new HelpPanel topics added — Settings & Keybinds, Salvage, Trade Window, Build Mode, Quests, Dungeon Entry — and ? Help action-bar slots wired into each screen. Topics cover the things players ask in chat: how to rebind keys, what's safe to salvage, the two-step confirm in trades, placement direction in build mode, quest types + turn-in flow, and what the underleveled-dungeon warning actually means.")
 	display_game("")
 
-	# v0.9.568 — Polish batch: rank label consolidation + Help coverage sweep + Bounty Board panel.
-	display_game("[color=#00FFFF]v0.9.568[/color]")
-	display_game("  [color=#FFD700]Polish pass: every active system gets a ? Help button, the v0.9.556 bounty system moves out of chat into a real panel, and stale rank labels caught up to the v0.9.567 R6 cap.[/color]")
-	display_game("  • [b]Help coverage sweep[/b]. ? Help buttons added to Combat (deck + resource costs + 'can't afford abilities? → here's how to find gear'), Loot Reveal, PvP Combat, Gathering Scratch-Off, Craft Reveal, and the three Sanctuary pages — Mastery Headstart, Imprints Atlas, and Mastery Atlas. Eight new HelpPanel topics explain what each system is, how it works, and where it connects to other systems.")
-	display_game("  • [b]Bounty Board panel[/b] (Slice 3 of polish batch). The v0.9.556 chat-only bounty system now opens a real UI on [color=#9ACD32]/bounty list[/color] (or [color=#9ACD32]/bountyboard[/color] / [color=#9ACD32]/bb[/color]). Post Bounty form inline, click [color=#88FFCC]› view postings[/color] (or press 1-9) to drill into a target, [color=#FF8888]cancel all my postings[/color] for full refund from the drill-down. Chat fallbacks still work for muscle memory.")
-	display_game("  • [b]Rank label consolidation[/b]. A leftover [color=#FF8888]'Skilled'[/color] label in the death-screen mastery recap (predating the v0.9.567 R6 cap) wasn't updating to the post-v0.9.567 set. All four duplicated rank-name arrays in client.gd now reference a single MASTERY_RANK_NAMES const. Death-screen now correctly reads [color=#FFD700]'R3 Expert'[/color] instead of [color=#FF8888]'R3 Skilled'[/color]. Headstart page text also updated: 'R3 (R4-R6 remain earnable through play)' instead of the stale single-rank phrasing.")
-	display_game("  • [b]Stale constants cleanup[/b]. Dead pre-v0.9.567 MASTERY_* duplicates in shared/constants.gd (5-rank labels, 4-step thresholds) removed — they weren't being read anywhere, but they were a trap for future maintainers. Source of truth now lives in shared/character.gd + server/persistence_manager.gd.")
-	display_game("")
 
 
 
@@ -25275,6 +25278,7 @@ func display_changelog():
 func display_bestiary():
 	"""Display monster tiers and Home Stone drop information"""
 	game_output.clear()
+	_render_breadcrumb(["Sanctuary", "Bestiary"])
 	display_game("[color=#FFD700]═══════ BESTIARY ═══════[/color]")
 	display_game("")
 
@@ -25460,6 +25464,7 @@ func display_companions():
 	var collected_companions = character_data.get("collected_companions", [])
 	var soul_gems = character_data.get("soul_gems", [])
 
+	_render_breadcrumb(["More", "Companions"])
 	display_game("[color=#FFD700]═══════ COMPANIONS ═══════[/color]")
 	display_game("")
 
@@ -38478,6 +38483,21 @@ func _update_house_map():
 			lines.append("[color=#808080]Press %s to return[/color]" % get_action_key_name(0))
 			map_display.append_text("\n".join(lines))
 
+# v0.9.573 — Breadcrumb helper for nested in-game-output screens. User
+# feedback: "Currently getting to nested menus is very unintuitive." This
+# renders a small grey path line above each screen's header so the player
+# can see where they are in the menu tree at a glance. Used by every
+# Sanctuary sub-page; other deeply-nested screens should adopt the same
+# helper as their authors visit them.
+func _render_breadcrumb(parts: Array) -> void:
+	if parts.is_empty():
+		return
+	var crumbs := []
+	for p in parts:
+		crumbs.append(String(p))
+	display_game("[color=#888888]%s[/color]" % " › ".join(crumbs))
+
+
 func display_house_main():
 	"""Display the main house/sanctuary view"""
 	game_output.clear()
@@ -38573,6 +38593,7 @@ func display_house_storage():
 	house_mode = "storage"
 	_update_house_map()
 
+	_render_breadcrumb(["Sanctuary", "Storage Chest"])
 	display_game("[color=#FFD700]═══════ STORAGE CHEST ═══════[/color]")
 	display_game("")
 
@@ -38712,6 +38733,7 @@ func display_house_stable():
 		"registered_capacity": _get_house_companion_capacity(),
 	}
 	sanctuary_stable_panel.show_with_data(payload)
+	_render_breadcrumb(["Sanctuary", "Companion Stable"])
 	display_game("[color=#FFD700]═══════ COMPANION STABLE ═══════[/color]")
 	display_game("")
 	display_game("[color=#888888]Sanctuary's unified kennel + fusion station.[/color]")
@@ -38790,6 +38812,7 @@ func display_house_fusion():
 	var kennel = house_data.get("companion_kennel", {})
 	var kennel_companions = kennel.get("companions", [])
 
+	_render_breadcrumb(["Sanctuary", "Fusion Station"])
 	display_game("[color=#FFD700]═══════ FUSION STATION ═══════[/color]")
 
 	if house_fusion_type == "":
@@ -39165,6 +39188,7 @@ func display_house_mastery():
 	var max_rank: int = int(house_data.get("headstart_max_rank", 3))
 	var bp = int(house_data.get("baddie_points", 0))
 
+	_render_breadcrumb(["Sanctuary", "Mastery Headstart"])
 	display_game("[color=#FFD700]═══════ MASTERY HEADSTART ═══════[/color]")
 	display_game("[color=#808080]Spend Baddie Points to start your next character with rank already in an ability.[/color]")
 	display_game("")
@@ -39426,6 +39450,7 @@ func display_house_imprints():
 	house_mode = "imprints"
 	_update_house_map()
 
+	_render_breadcrumb(["Sanctuary", "Imprint Atlas"])
 	display_game("[color=#FFD700]═══════ IMPRINT ATLAS ═══════[/color]")
 	display_game("[color=#808080]Companion-influenced ability upgrades. Each rank-up with an active companion lets you imprint their trait onto the ability as a permanent passive rider.[/color]")
 	display_game("")
@@ -39509,6 +39534,7 @@ func display_house_mastery_atlas():
 	house_mode = "mastery_atlas"
 	_update_house_map()
 
+	_render_breadcrumb(["Sanctuary", "Mastery Atlas"])
 	display_game("[color=#FFD700]═══════ MASTERY ATLAS ═══════[/color]")
 	display_game("[color=#808080]Every ability you've touched, at a glance.[/color]")
 	display_game("[color=#808080]Current rank (this character) · Account best · Imprints · Headstart queued.[/color]")
