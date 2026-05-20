@@ -31,6 +31,9 @@ var _status_label: RichTextLabel
 
 var _waiting_for_resolve: bool = false
 
+# v0.9.568 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -166,6 +169,27 @@ func _build_layout() -> void:
 	_vbox = VBoxContainer.new()
 	_vbox.add_theme_constant_override("separation", 10)
 	_root_panel.add_child(_vbox)
+
+	# v0.9.568 — Help coverage sweep. Top-right ? button + pvp_combat topic.
+	var header_row := HBoxContainer.new()
+	header_row.add_theme_constant_override("separation", 8)
+	_vbox.add_child(header_row)
+
+	var header_title := RichTextLabel.new()
+	header_title.bbcode_enabled = true
+	header_title.fit_content = true
+	header_title.scroll_active = false
+	header_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_title.custom_minimum_size = Vector2(0, 22)
+	header_title.add_theme_font_size_override("normal_font_size", 14)
+	header_title.append_text("[color=#FF6688]⚔ PvP Combat[/color]")
+	header_row.add_child(header_title)
+
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("pvp_combat", _help_panel)
+	header_row.add_child(help_btn)
 
 	# Opponent header + HP
 	_opponent_header = RichTextLabel.new()

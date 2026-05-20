@@ -355,6 +355,212 @@ const HELP_TOPICS := {
 			+ "The button at the bottom feeds all guards at this post in one tap. Guards need food to keep contributing to the bubble; check the per-guard rows above to see who's hungry."
 		),
 	},
+	# v0.9.568 — Help coverage sweep. Eight new topics covering combat,
+	# loot reveal, PvP combat, gathering scratch-off, craft reveal, and the
+	# Sanctuary's Mastery / Imprints / Atlas pages. Filling the gaps the
+	# audit identified — every active player-facing system should have a
+	# ? button explaining what it is and how to interact.
+	"combat_scene": {
+		"title": "[color=#FFD700]Combat[/color]",
+		"body": (
+			"Turn-based combat. You and any allies act first; monsters resolve after. Each turn you draw a [color=#FFD700]hand of 3 ability cards[/color] from your deck — pick one, or auto-attack for free.\n\n"
+			+ "[color=#FFD700]── Hand of 3 ──[/color]\n"
+			+ "  • 3 random cards drawn from your full deck each turn.\n"
+			+ "  • Cards you don't play go to discard; deck reshuffles when empty.\n"
+			+ "  • Cards show their [b]resource cost[/b], [b]damage type[/b], and [b]status effects[/b] (if any).\n"
+			+ "  • [color=#9ACD32]Auto-attack[/color] is always free — useful when resources are dry.\n\n"
+			+ "[color=#FFD700]── Resource costs ──[/color]\n"
+			+ "Your class uses ONE primary resource for abilities:\n"
+			+ "  • [color=#5C9DFF]Mana[/color] — Wizard, Sorcerer, Cleric, Druid (INT/WIS classes).\n"
+			+ "  • [color=#FF8866]Stamina[/color] — Fighter, Barbarian, Paladin (STR/CON classes).\n"
+			+ "  • [color=#FFEE55]Energy[/color] — Rogue, Ranger (DEX/WITS classes).\n"
+			+ "Resources regen [color=#88FF88]every turn[/color] (faster outside combat). Hit zero and you're stuck on auto-attacks until they refill.\n\n"
+			+ "[color=#FFD700]── Variable-cost abilities ──[/color]\n"
+			+ "Some cards [b]scale[/b] with how much resource you spend (e.g., bigger fireball for more mana). Floor is ~30% of nominal so low-resource turns still have a viable play.\n\n"
+			+ "[color=#FFD700]── Status effects ──[/color]\n"
+			+ "  • [color=#FF6644]Burn / Bleed / Poison[/color] — damage-over-time, ticks on the affected actor's turn.\n"
+			+ "  • [color=#5C9DFF]Freeze / Stun[/color] — target skips their next action.\n"
+			+ "  • [color=#A335EE]Vulnerable / Weakened[/color] — incoming/outgoing damage modifiers.\n"
+			+ "Status icons appear on the target's portrait. Hover for remaining duration + strength.\n\n"
+			+ "[color=#FFD700]── Mastery (ability rank) ──[/color]\n"
+			+ "Each ability you use accumulates uses → ranks up. Higher rank = more damage. R0 [color=#FF8888]Untrained[/color] hits at 80%; R6 [color=#88FFFF]Mythic[/color] hits at 145%. Rank thresholds: 10 / 50 / 250 / 1200 / 4000 / 10000 uses. See [color=#9ACD32]/abilities[/color] for your current ranks.\n\n"
+			+ "[color=#FFD700]── Can't afford your abilities? ──[/color]\n"
+			+ "If your resource pool is too small for the cards you draw, [b]upgrade gear[/b]:\n"
+			+ "  • [color=#FFD700]Equipment[/color] is the main lever — armor, accessories, weapons all roll resource bonuses at higher tiers. Tier 5+ gear typically rolls +N max resource lines.\n"
+			+ "  • [color=#88FF88]Sources[/color] — drops from monster kills (scratch-off), dungeon chests, crafting (specialty recipes), market listings, salvaging for materials → crafting.\n"
+			+ "  • [color=#A335EE]Sanctuary upgrades[/color] — the [color=#FFAA66]Combat[/color] tab in Sanctuary boosts max resource pool account-wide. Spend Baddie Points (earned on death).\n"
+			+ "  • [color=#9ACD32]Stat allocation[/color] — INT raises Mana, CON raises Stamina, DEX raises Energy. Spend points in /stats.\n"
+			+ "  • [color=#FFD700]Consumables[/color] — Mana / Stamina potions and similar can be brought into combat (mapped via Settings → Combat Items).\n\n"
+			+ "[color=#FFD700]── Flee / Item / Companion ──[/color]\n"
+			+ "  • [b]Flee[/b] — chance-based escape, scales with Sanctuary Economy upgrade.\n"
+			+ "  • [b]Item[/b] — use a mapped consumable.\n"
+			+ "  • [b]Companion[/b] — your active pet acts alongside you (auto-targeted)."
+		),
+	},
+	"combat_loot": {
+		"title": "[color=#FFD700]Loot Reveal[/color]",
+		"body": (
+			"After winning a fight, the loot panel pops up with a [color=#FFD700]16-slot scratch-off grid[/color]. Click cells to reveal rewards — gold, items, materials, and the occasional surprise.\n\n"
+			+ "[color=#FFD700]── How it works ──[/color]\n"
+			+ "  • Total reveals = the monster's tier-scaled budget, [color=#88FF88]+1 per flock kill[/color] (group fights).\n"
+			+ "  • Each click reveals one cell. Once you've used your reveals, remaining cells stay hidden and you move on.\n"
+			+ "  • Rare drops (equipment, eggs, special consumables) are [color=#FFD700]pinned[/color] — they'll always appear within your reveal budget regardless of click order.\n"
+			+ "  • Common drops (gold, materials) make up the bulk of the grid.\n\n"
+			+ "[color=#FFD700]── Skipping ──\n"
+			+ "Click [color=#88FF88]Skip Reveal[/color] (or toggle [b]Autoskip[/b]) to instantly take everything within your budget. Useful for grinding when you don't care about the click-by-click reveal. The toggle is persisted across sessions.\n\n"
+			+ "[color=#FFD700]── Movement is blocked ──[/color]\n"
+			+ "You can't move on the world map while the loot panel is open (v0.9.566). Close or autoskip to resume travel.\n\n"
+			+ "[color=#FFD700]── Tiers & quality ──[/color]\n"
+			+ "Higher-tier monsters drop higher-tier items + larger budgets. Apex-variant monsters have a chance at unique exclusive drops (Apex Sigil, Apex Crystal — see /admin or apex zones).\n\n"
+			+ "[color=#888888]Loot is tracked per player in party combat — everyone gets a full personal reveal panel.[/color]"
+		),
+	},
+	"pvp_combat": {
+		"title": "[color=#FFD700]PvP Combat[/color]",
+		"body": (
+			"Player-versus-player turn-based duel (v0.9.563). Triggered when one player attacks another in a PvP-enabled zone, or via [color=#9ACD32]/duel[/color]. [color=#FF6688]No PvE deck or abilities here[/color] — V1 keeps it simple and accessible.\n\n"
+			+ "[color=#FFD700]── Three actions per round ──[/color]\n"
+			+ "  • [color=#FF8866]Attack[/color] — STR×2 + weapon damage, ±25% variance. Affected by opponent's DEF.\n"
+			+ "  • [color=#5C9DFF]Special[/color] — max(INT, DEX)×3 + weapon/2, ±25% variance. Mostly ignores DEF — counter-play to stat-tanky opponents.\n"
+			+ "  • [color=#88FF88]Defend[/color] — zero outgoing damage this round, halves incoming. Great for bait + recovery.\n\n"
+			+ "[color=#FFD700]── Simultaneous reveal ──[/color]\n"
+			+ "Both players pick an action in private, then both reveal at the same time. No turn-order advantage. Mind-game the matchup: Attack beats Special on raw damage; Special beats Attack on tanky targets; Defend trades initiative for safety.\n\n"
+			+ "[color=#FFD700]── Round cap & HP ──[/color]\n"
+			+ "  • [b]15 rounds max[/b] — if neither player is KO'd, higher remaining HP wins.\n"
+			+ "  • [b]PvP HP starts at character max but caps at 2000[/b]. Prevents endgame-vs-newbie curb-stomps. Your real HP is unaffected by the PvP fight.\n\n"
+			+ "[color=#FFD700]── KO consequences ──[/color]\n"
+			+ "Loser drops a [color=#FFD700]sack[/color] (v0.9.557) the winner can loot. Any [color=#FFAA00]bounty[/color] (v0.9.556) on the loser pays out to the winner.\n\n"
+			+ "[color=#FFD700]── Disconnect ──[/color]\n"
+			+ "Mid-fight disconnect = forfeit. Don't expect to flee by Alt-F4.\n\n"
+			+ "[color=#888888]/duel — consensual PvP, any zone — still uses the legacy instant dice-roll. The full turn-based scene only fires in PvP-enabled zones or via attack on a flagged player.[/color]"
+		),
+	},
+	"scratch_off": {
+		"title": "[color=#FFD700]Gathering Minigame[/color]",
+		"body": (
+			"Fishing, Mining, and Logging all use the same two-phase minigame.\n\n"
+			+ "[color=#FFD700]── Phase 1: Wait ──[/color]\n"
+			+ "A timer ticks before the prompt appears. [b]Don't press anything[/b] — pressing too early fails the catch. The wait phase varies; resist the urge.\n\n"
+			+ "[color=#FFD700]── Phase 2: Reaction ──[/color]\n"
+			+ "When the prompt appears, press the [color=#88FF88]correct key[/color] within the window. Hit = success → catch added to inventory. Miss = no catch. The window length depends on your skill level + tool quality.\n\n"
+			+ "[color=#FFD700]── Tier scaling ──[/color]\n"
+			+ "  • Mining has [b]9 tiers[/b], Logging [b]6 tiers[/b], Fishing scales similarly.\n"
+			+ "  • Higher tiers = better materials but require multiple successful reactions per catch (T1-2: 1 hit, T3-5: 2 hits, T6+: 3 hits).\n"
+			+ "  • Higher-tier ore / wood / fish spawn farther from origin or in specific biomes.\n\n"
+			+ "[color=#FFD700]── Tools ──[/color]\n"
+			+ "Better tools widen the reaction window. Tools drop in chests or craft at specialty stations.\n\n"
+			+ "[color=#FFD700]── What you catch ──[/color]\n"
+			+ "  • [color=#88FF88]Materials[/color] — crafting inputs (ore, wood, fish meat).\n"
+			+ "  • [color=#FFD700]Rare drops[/color] — chance at consumables, runes, or even small XP/valor boosts.\n"
+			+ "  • [b]Skill XP[/b] — each successful catch ranks up the relevant gathering skill.\n\n"
+			+ "[color=#888888]Salvage materials for Salvage Essence + bonus material rolls. Visit a crafting station to turn raw materials into gear.[/color]"
+		),
+	},
+	"craft_reveal": {
+		"title": "[color=#FFD700]Craft Reveal & Boost[/color]",
+		"body": (
+			"After committing to a craft, the [color=#FFD700]Craft Reveal[/color] panel animates the result — quality rating, output stats, and any rare bonuses. Crafting outcomes have hidden variance; the reveal shows you what you actually got.\n\n"
+			+ "[color=#FFD700]── Boost mechanic ──[/color]\n"
+			+ "Before the reveal commits, you can spend extra resources to [color=#88FF88]Boost[/color]:\n"
+			+ "  • [b]Boost cost[/b] = a chunk of extra materials (varies by recipe).\n"
+			+ "  • [b]Boost effect[/b] = improves the quality roll significantly + can unlock affixes the unboosted roll can't reach.\n"
+			+ "  • [color=#FF8888]No undo[/color] — once you Boost or Skip, the result is locked.\n\n"
+			+ "[color=#FFD700]── Quality Rating ──[/color]\n"
+			+ "Each craft gets a Quality Rating that scales the output's base stats. Higher rating = stronger gear. Driven by:\n"
+			+ "  • Your skill level vs the recipe difficulty.\n"
+			+ "  • Whether you Boosted.\n"
+			+ "  • Random variance (small).\n\n"
+			+ "[color=#FFD700]── Reveal animation ──[/color]\n"
+			+ "The numbers count up to their final values. Click anywhere to skip the animation if you don't want to wait.\n\n"
+			+ "[color=#888888]Crafted items get is_consumable / item_type tags automatically — they'll route correctly to inventory and market.[/color]"
+		),
+	},
+	"mastery_page": {
+		"title": "[color=#FFD700]Ability Mastery & Headstart[/color]",
+		"body": (
+			"Each ability you use accumulates [color=#FFD700]uses[/color] → ranks up → does more damage. This page lets you spend [color=#FF6600]Baddie Points[/color] to start your [b]next character[/b] with rank already in an ability.\n\n"
+			+ "[color=#FFD700]── Ranks ──[/color]\n"
+			+ "  • R0 [color=#FF8888]Untrained[/color] — 80% damage.\n"
+			+ "  • R1 [color=#FFAA88]Novice[/color] — 90% (10 uses).\n"
+			+ "  • R2 [color=#FFD700]Adept[/color] — 100% baseline (50 uses).\n"
+			+ "  • R3 [color=#88FF88]Expert[/color] — 110% (250 uses).\n"
+			+ "  • R4 [color=#0070DD]Master[/color] — 120% (1200 uses).\n"
+			+ "  • R5 [color=#FF44FF]Legend[/color] — 130% (4000 uses).\n"
+			+ "  • R6 [color=#88FFFF]Mythic[/color] — 145% (10000 uses).\n\n"
+			+ "[color=#FFD700]── Records vs current ──[/color]\n"
+			+ "Your [b]account ceiling[/b] (best ever) is what you can Headstart up to. Each row shows it as `recorded: R<n> <Rank>`. Even after permadeath, ceilings persist — that's the carrot.\n\n"
+			+ "[color=#FFD700]── Headstart purchase ──[/color]\n"
+			+ "  • Press [color=#9ACD32]1-5[/color] to cycle a row's queued rank: R0 → R1 → … → cap → R0 (refund).\n"
+			+ "  • Each cycle step deducts the BP cost: R1 = 25, R2 = 100, R3 = 500 (cumulative 625 BP for full R3).\n"
+			+ "  • Cap is R3. Ranks R4-R6 remain earnable through play — Headstart doesn't trivialize the long-tail ranks.\n\n"
+			+ "[color=#FFD700]── How it lands ──[/color]\n"
+			+ "Your queued headstarts apply when you create your NEXT character. They appear as starting ability_uses sufficient to reach the queued rank. Refund at any time before that character is created.\n\n"
+			+ "[color=#FFD700]── Earning ranks faster ──[/color]\n"
+			+ "Use the ability in combat. Tier-matched fights give richer use-credit per ability. Lower-tier farming is less efficient per minute but works for completionism."
+		),
+	},
+	"imprints_page": {
+		"title": "[color=#FFD700]Variant Imprints[/color]",
+		"body": (
+			"[color=#FFD700]Variant Imprints[/color] are companion-influenced upgrades to your abilities (v0.9.549). When you rank up an ability while a companion is active, the rank-up popup offers a 3rd choice: [color=#A335EE]✦ Imprint[/color] — a trait inherited from the companion that adds a permanent rider to that ability.\n\n"
+			+ "[color=#FFD700]── How imprints stack ──[/color]\n"
+			+ "  • Each ability holds up to [b]4 imprints[/b].\n"
+			+ "  • Imprints are [color=#FFD700]account-level[/color] — they survive permadeath.\n"
+			+ "  • Stacking the same trait twice intensifies its effect; stacking different traits gives you a hybrid loadout.\n\n"
+			+ "[color=#FFD700]── Trait categories ──[/color]\n"
+			+ "10 trait categories total, each mapped from a set of companion species' [b]active.effect[/b] field. Common traits:\n"
+			+ "  • [color=#FF6644]Burn[/color] — adds burn damage-over-time\n"
+			+ "  • [color=#5C9DFF]Freeze[/color] — chance to freeze on hit\n"
+			+ "  • [color=#88FF88]Heal[/color] — heals you for a fraction of damage dealt\n"
+			+ "  • [color=#A335EE]Vulnerable[/color] — marks target for bonus follow-up damage\n"
+			+ "  • [b]…and 6 more[/b] — see this page for what your companions can imprint.\n\n"
+			+ "[color=#FFD700]── How riders fire ──[/color]\n"
+			+ "Imprint riders are applied centrally during ability resolution. The ability fires its primary effect, then each imprint rider triggers in order. Visible status icons appear on the target portrait when a rider hits.\n\n"
+			+ "[color=#FFD700]── Building a loadout ──[/color]\n"
+			+ "Pair companions whose active.effect matches the build you want. 53 companions are mapped to imprint traits — see the [b]Inspect[/b] view on any companion card for its trait. Rank-up popup respects whatever companion is active at that moment.\n\n"
+			+ "[color=#888888]This page is read-only — to add imprints, you must rank up an ability with the right companion active.[/color]"
+		),
+	},
+	"bounty_board": {
+		"title": "[color=#FFD700]💰 Bounty Board[/color]",
+		"body": (
+			"Player-funded bounties (Audit #14 Slice E, v0.9.556). Post valor on another player's head — payable to whoever KOs them in an apex-zone PvP fight.\n\n"
+			+ "[color=#FFD700]── Post a bounty ──[/color]\n"
+			+ "Fill in the target's character name + amount of valor → press [color=#88FF88]Post Bounty[/color]. The valor leaves your balance immediately and locks as a bounty. Min posting: [color=#FFD700]50 valor[/color].\n\n"
+			+ "[color=#FFD700]── Multiple postings stack ──[/color]\n"
+			+ "Anyone can post a bounty on anyone else. Multiple postings on the same target stack — the board shows the sum. Each posting is paid out separately on KO.\n\n"
+			+ "[color=#FFD700]── Drilling into a target ──[/color]\n"
+			+ "Click [color=#88FFCC]› view postings[/color] (or press the row's number key 1-9) to see each individual posting on that target — poster name + amount per row. Useful for assessing who's gunning for whom.\n\n"
+			+ "[color=#FFD700]── Cancel your postings ──[/color]\n"
+			+ "From the drill-down view, click [color=#FF8888]Cancel ALL my postings on this target[/color] for a full refund. The server verifies poster identity — you can only cancel your own.\n\n"
+			+ "[color=#FFD700]── Payout ──[/color]\n"
+			+ "When the target is KO'd in an apex-zone PvP fight, all bounty postings on them pay out to the winner. Stacking bounties = a juicier reward for the eventual hunter.\n\n"
+			+ "[color=#FFD700]── Chat fallback ──[/color]\n"
+			+ "  • [color=#9ACD32]/bounty list[/color] — re-opens this panel.\n"
+			+ "  • [color=#9ACD32]/bountyboard[/color] / [color=#9ACD32]/bb[/color] — same thing, shorter alias.\n"
+			+ "  • [color=#9ACD32]/bounty post / on / cancel[/color] — legacy V1 commands, fully functional.\n\n"
+			+ "[color=#888888]Target must be online to receive a bounty for the first time (so they know they're marked). Offline players that already have bounties still show on the board (offline) tag.[/color]"
+		),
+	},
+	"mastery_atlas": {
+		"title": "[color=#FFD700]Mastery Atlas[/color]",
+		"body": (
+			"The Mastery Atlas (v0.9.566) consolidates every ability your account has touched into one page. Read-only — no new server traffic, just a clearer view of where you stand.\n\n"
+			+ "[color=#FFD700]── Four data sources per ability ──[/color]\n"
+			+ "Each row joins:\n"
+			+ "  • [color=#88FF88]Current[/color] — rank on this character (from ability_uses). Resets on permadeath.\n"
+			+ "  • [color=#87CEEB]Best ever[/color] — account ceiling from mastery_records. Survives permadeath. The number you can headstart up to.\n"
+			+ "  • [color=#FFD700]Imprints[/color] — variant imprints stacked on this ability (account-level). Up to 4 per ability.\n"
+			+ "  • [color=#9ACD32]Headstart[/color] — what rank your NEXT character will start at (queued via the Mastery Headstart page).\n\n"
+			+ "[color=#FFD700]── Sorting ──[/color]\n"
+			+ "The page lists abilities sorted by name. Look for gaps between Current and Best Ever to spot abilities you haven't grinded yet this character.\n\n"
+			+ "[color=#FFD700]── How to fill it ──[/color]\n"
+			+ "Use abilities in combat. Each use ticks ability_uses; new account-ceiling records when you reach a higher rank than ever before; new imprints when you rank up with a companion active.\n\n"
+			+ "[color=#FFD700]── Why it exists ──[/color]\n"
+			+ "Before the Atlas, mastery records / imprints / headstarts each had their own page. The Atlas gives you one place to see your full ability investment at a glance — useful for planning the next headstart purchase or the next companion pairing.\n\n"
+			+ "[color=#888888]See the Mastery Headstart page to spend Baddie Points. See the Imprint Atlas for the full trait breakdown per ability.[/color]"
+		),
+	},
 }
 
 var _root_panel: PanelContainer

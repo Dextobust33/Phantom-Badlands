@@ -305,6 +305,11 @@ var saved_connections: Array = []  # Array of {name, ip, port}
 const CONNECTION_CONFIG_PATH = "user://connection_settings.json"
 const KEYBIND_CONFIG_PATH = "user://keybinds.json"
 
+# v0.9.568 — single source of truth for ability mastery rank labels in client.gd
+# (mirrors character.MASTERY_RANK_NAMES, extended to R6 in v0.9.567). Replaces
+# the inline arrays that had drifted out of sync at the v0.9.567 cap bump.
+const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
+
 # UI Scale settings (multipliers on top of automatic resolution scaling)
 var ui_scale_monster_art: float = 1.0  # Monster ASCII art in combat
 var ui_scale_map: float = 1.0          # World map display
@@ -1327,6 +1332,10 @@ const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 const GlobalHelpPanelScript = preload("res://client/help_panel.gd")
 var global_help_panel = null
 var numpad_help_panel = null
+# v0.9.568 — Bounty Board panel (Slice 3 of v0.9.568 polish batch). Lifts the
+# v0.9.556 chat-only bounty system into UI per the "UI over chat" direction.
+const BountyBoardPanelScript = preload("res://client/bounty_board_panel.gd")
+var bounty_board_panel = null
 # v0.9.372 — show the numpad-controls popup once per new character. Players
 # can toggle this off so future characters they create skip it.
 var show_numpad_popup: bool = true
@@ -2019,6 +2028,16 @@ func _ready():
 	add_child(numpad_help_panel)
 	numpad_help_panel.dismissed.connect(_on_numpad_help_dismissed)
 	numpad_help_panel.persistent_toggled.connect(_on_numpad_help_persistent_toggled)
+
+	# v0.9.568 — Bounty Board panel. Modal opens via /bounty list or /bountyboard
+	# / /bb. Posts/views/cancels route back through the existing bounty_* server
+	# messages (Audit #14 Slice E payloads unchanged).
+	bounty_board_panel = BountyBoardPanelScript.new()
+	add_child(bounty_board_panel)
+	bounty_board_panel.post_bounty_requested.connect(_on_bounty_board_post_requested)
+	bounty_board_panel.view_postings_requested.connect(_on_bounty_board_view_postings_requested)
+	bounty_board_panel.cancel_mine_requested.connect(_on_bounty_board_cancel_mine_requested)
+	bounty_board_panel.list_refresh_requested.connect(_on_bounty_board_list_refresh_requested)
 
 	# Audit #3 Slice 1 (UI remediation) — stat allocation panel.
 	stats_panel = StatsPanelScript.new()
@@ -4851,13 +4870,12 @@ func display_death_screen(message: Dictionary):
 	if mastery_records.size() > 0:
 		display_game("")
 		display_game("[center][color=#9ACD32][b]Mastery Records Preserved[/b][/color][/center]")
-		var rank_names = ["Untrained", "Novice", "Adept", "Skilled", "Master"]
 		var ability_lines: Array = []
 		for ability_name in mastery_records.keys():
 			var rec_rank = int(mastery_records[ability_name])
 			if rec_rank <= 0:
 				continue
-			var rname = rank_names[rec_rank] if rec_rank < rank_names.size() else "Master"
+			var rname = MASTERY_RANK_NAMES[rec_rank] if rec_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 			ability_lines.append("%s [color=#FFD700]R%d %s[/color]" % [str(ability_name).replace("_", " ").capitalize(), rec_rank, rname])
 		ability_lines.sort()
 		for line in ability_lines:
@@ -6445,11 +6463,12 @@ func update_action_bar():
 			var sorted_abilities: Array = mastery_recs.keys()
 			sorted_abilities.sort()
 			var max_page = maxi(0, (sorted_abilities.size() - 1) / 5)
+			# v0.9.568 — slot 7 (orphan "---") replaced with ? Help → mastery_page topic.
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
 				{"label": "< Prev", "action_type": "local", "action_data": "mastery_prev", "enabled": house_mastery_page > 0},
 				{"label": "Next >", "action_type": "local", "action_data": "mastery_next", "enabled": house_mastery_page < max_page},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_mastery_page", "enabled": true},
 				{"label": "1-5: Cycle", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "rank +1", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "(refund @cap)", "action_type": "none", "action_data": "", "enabled": false},
@@ -6474,10 +6493,11 @@ func update_action_bar():
 			]
 		elif house_mode == "imprints":
 			# Audit #1 Slice 6g (v0.9.550) — Imprint Atlas action bar.
-			# Read-only view; only Back is needed.
+			# Read-only view; Back + ? Help.
+			# v0.9.568 — slot 1 (orphan "---") replaced with ? Help → imprints_page topic.
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "house_imprints_back", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_imprints_page", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -6488,10 +6508,11 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif house_mode == "mastery_atlas":
-			# v0.9.566 — Mastery Atlas action bar. Read-only; only Back.
+			# v0.9.566 — Mastery Atlas action bar. Read-only; Back + ? Help.
+			# v0.9.568 — slot 1 (orphan "---") replaced with ? Help → mastery_atlas topic.
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "house_mastery_atlas_back", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_mastery_atlas", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -13240,6 +13261,20 @@ func execute_local_action(action: String):
 		"house_mastery_atlas_back":
 			display_house_main()
 			update_action_bar()
+		"help_mastery_page", "help_imprints_page", "help_mastery_atlas":
+			# v0.9.568 — Help coverage sweep. The three in-game-output Sanctuary
+			# screens (mastery / imprints / atlas) don't have a standalone panel
+			# to attach a button to, so the ? Help slot on the action bar opens
+			# the global HelpPanel on the matching topic.
+			if global_help_panel:
+				var topic_map := {
+					"help_mastery_page": "mastery_page",
+					"help_imprints_page": "imprints_page",
+					"help_mastery_atlas": "mastery_atlas",
+				}
+				var topic_key = topic_map.get(action, "")
+				if topic_key != "":
+					global_help_panel.show_topic(topic_key)
 		"mastery_prev":
 			house_mastery_page = max(0, house_mastery_page - 1)
 			display_house_mastery()
@@ -16685,14 +16720,14 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	var ability_uses = character_data.get("ability_uses", {})
 	var uses = int(ability_uses.get(ability_name, 0))
 	# v0.9.567 — inline rank computation (mirrors character.gd, extended to R6)
+	# v0.9.568 — rank label now sourced from the module-level MASTERY_RANK_NAMES const
 	var thresholds = [10, 50, 250, 1200, 4000, 10000]
 	var rank = 0
 	for t in thresholds:
 		if uses >= int(t): rank += 1
 		else: break
-	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
 	var rank_mults = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
-	var rank_name = rank_names[rank] if rank < rank_names.size() else "Mythic"
+	var rank_name = MASTERY_RANK_NAMES[rank] if rank < MASTERY_RANK_NAMES.size() else "Mythic"
 	# Slice 6b — damage modifier comes from EFFECT rank (player-chosen) not USE rank.
 	# Use rank still drives the rank name + progress bar.
 	var effect_ranks_now = character_data.get("ability_effect_ranks", {})
@@ -16719,7 +16754,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	var next_preview = ""
 	if rank < rank_mults.size() - 1:
 		var next_rank = rank + 1
-		var next_name = rank_names[next_rank] if next_rank < rank_names.size() else "Master"
+		var next_name = MASTERY_RANK_NAMES[next_rank] if next_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 		# Compute the effect-rank delta the player would gain by picking "+10% Damage"
 		var effect_ranks = character_data.get("ability_effect_ranks", {})
 		var cur_effect = int(effect_ranks.get(ability_name, 0))
@@ -16788,9 +16823,8 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 			if child.has_meta("rank_choice_button"):
 				child.queue_free()
 	var ability_label = ability_name.replace("_", " ").capitalize()
-	# v0.9.567 — extended to R6 (Legend, Mythic).
-	var rank_names_local := ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
-	var rank_label = rank_names_local[new_rank] if new_rank >= 0 and new_rank < rank_names_local.size() else "Mythic"
+	# v0.9.567 — extended to R6 (Legend, Mythic). v0.9.568 — rank labels via const.
+	var rank_label = MASTERY_RANK_NAMES[new_rank] if new_rank >= 0 and new_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 	var rank_mults_local := [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
 	var next_effect_rank = min(current_effect_rank + 1, rank_mults_local.size() - 1)
 	var dmg_pct = int((rank_mults_local[next_effect_rank] - 1.0) * 100) if next_effect_rank < rank_mults_local.size() else 20
@@ -21250,7 +21284,7 @@ func send_input():
 
 	# Commands
 	# Reduced command set - most actions available via action bar
-	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "clanpost", "clanposts", "vault", "clanvault", "mentor", "mentors", "duel", "bounty",
+	var command_keywords = ["help", "clear", "who", "players", "examine", "ex", "watch", "unwatch", "bug", "report", "search", "find", "trade", "companion", "pet", "donate", "crucible", "whisper", "w", "msg", "tell", "reply", "r", "c", "cc", "clanchat", "clist", "clanlist", "clanonline", "p", "pc", "partychat", "afk", "away", "back", "afkoff", "here", "topics", "helplist", "helptopics", "topic", "viewtopic", "trades", "tradehistory", "friend", "friends", "freq", "block", "unblock", "blocklist", "blocked", "fish", "craft", "dungeons", "dungeon", "materials", "mats", "quests", "quest", "debughatch", "catches", "deck", "titles", "title", "set_title", "settitle", "post", "feedall", "feed_all", "stones", "buystone", "stats", "spendstat", "clan", "clandesc", "clancolor", "clanmotto", "clanpost", "clanposts", "vault", "clanvault", "mentor", "mentors", "duel", "bounty", "bountyboard", "bb",
 		"setlevel", "setgold", "setmonstergems", "setxp", "godmode", "setbp",
 		"giveitem", "giveegg", "givecompanion", "spawnmonster", "givemats", "giveall",
 		"tp", "tpstable", "teststable", "completequest", "resetquests", "heal", "broadcast", "gmhelp",
@@ -22508,7 +22542,10 @@ func process_command(text: String):
 							else:
 								send_to_server({"type": "bounty_post", "target": b_target, "amount": b_amount})
 					elif sub == "list":
-						send_to_server({"type": "bounty_list"})
+						# v0.9.568 — open the new Bounty Board panel. The
+						# panel itself fires the bounty_list request on open
+						# and refreshes its row table from bounty_list_result.
+						_open_bounty_board()
 					elif sub == "on":
 						if bp.size() < 3:
 							display_game("[color=#FF8800]Usage: /bounty on <player>[/color]")
@@ -22521,6 +22558,9 @@ func process_command(text: String):
 							send_to_server({"type": "bounty_cancel", "target": bp[2].strip_edges()})
 					else:
 						display_game("[color=#FF8800]Unknown subcommand '%s'. Use post / list / on / cancel.[/color]" % sub)
+		"bountyboard", "bb":
+			# v0.9.568 — explicit Bounty Board panel shortcut.
+			_open_bounty_board()
 		"titles", "title":
 			# Audit #6 Slice 10 — list earned chain titles. Server formats and
 			# replies with a `text` payload (renders via existing chat path).
@@ -25103,8 +25143,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.568 — Polish batch: rank label consolidation + Help coverage sweep + Bounty Board panel.
+	display_game("[color=#00FF00]v0.9.568[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Polish pass: every active system gets a ? Help button, the v0.9.556 bounty system moves out of chat into a real panel, and stale rank labels caught up to the v0.9.567 R6 cap.[/color]")
+	display_game("  • [b]Help coverage sweep[/b]. ? Help buttons added to Combat (deck + resource costs + 'can't afford abilities? → here's how to find gear'), Loot Reveal, PvP Combat, Gathering Scratch-Off, Craft Reveal, and the three Sanctuary pages — Mastery Headstart, Imprints Atlas, and Mastery Atlas. Eight new HelpPanel topics explain what each system is, how it works, and where it connects to other systems.")
+	display_game("  • [b]Bounty Board panel[/b] (Slice 3 of polish batch). The v0.9.556 chat-only bounty system now opens a real UI on [color=#9ACD32]/bounty list[/color] (or [color=#9ACD32]/bountyboard[/color] / [color=#9ACD32]/bb[/color]). Post Bounty form inline, click [color=#88FFCC]› view postings[/color] (or press 1-9) to drill into a target, [color=#FF8888]cancel all my postings[/color] for full refund from the drill-down. Chat fallbacks still work for muscle memory.")
+	display_game("  • [b]Rank label consolidation[/b]. A leftover [color=#FF8888]'Skilled'[/color] label in the death-screen mastery recap (predating the v0.9.567 R6 cap) wasn't updating to the post-v0.9.567 set. All four duplicated rank-name arrays in client.gd now reference a single MASTERY_RANK_NAMES const. Death-screen now correctly reads [color=#FFD700]'R3 Expert'[/color] instead of [color=#FF8888]'R3 Skilled'[/color]. Headstart page text also updated: 'R3 (R4-R6 remain earnable through play)' instead of the stale single-rank phrasing.")
+	display_game("  • [b]Stale constants cleanup[/b]. Dead pre-v0.9.567 MASTERY_* duplicates in shared/constants.gd (5-rank labels, 4-step thresholds) removed — they weren't being read anywhere, but they were a trap for future maintainers. Source of truth now lives in shared/character.gd + server/persistence_manager.gd.")
+	display_game("")
+
 	# v0.9.567 — Mastery cap to R6 + threat-corridor falloff sharpened.
-	display_game("[color=#00FF00]v0.9.567[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.567[/color]")
 	display_game("  [color=#FFD700]Player-feedback tuning pass: more mastery headroom, faster early ranks, and monsters scale up sooner outside Haven.[/color]")
 	display_game("  • [b]Mastery cap raised to R6[/b]. Added [color=#FF44FF]Legend (R5)[/color] +30% damage and [color=#88FFFF]Mythic (R6)[/color] +45% damage on top of the existing R4 Master ceiling. The Atlas, headstart page, and rank-up popup all display the new tiers automatically.")
 	display_game("  • [b]Faster early ranks[/b]. Use-threshold reductions: [color=#9ACD32]Novice[/color] 30→10, [color=#9ACD32]Adept[/color] 150→50, [color=#9ACD32]Expert[/color] 600→250, [color=#FFD700]Master[/color] 2400→1200. New: [color=#FF44FF]Legend[/color] 4000, [color=#88FFFF]Mythic[/color] 10000. First two ranks now land in roughly a third of the uses — the early grind is noticeably shorter.")
@@ -25139,13 +25188,6 @@ func display_changelog():
 	display_game("  • [b]Reveal Impact section[/b]. The post-craft 'How the Roll Worked' panel now shows a before/after band comparison: [color=#FFFFFF]Without reveals: 31% success → Poor 53% / Std 30% / Fine 15% / MW 2%[/color]   vs   [color=#FFFFFF]With your +15%: 46% → Poor 38% / Std 30% / Fine 15% / MW 17%[/color]. Plus a single 'Net effect' line: [color=#A335EE]Masterwork +15%, Poor −15% of the roll range[/color]. Answers the literal question 'what did the +15% actually affect?'")
 	display_game("")
 
-	# v0.9.545 — Concrete reveal labels + full roll breakdown (Slice 3.6 — playtest fix).
-	display_game("[color=#00FFFF]v0.9.545[/color]")
-	display_game("  [color=#FFD700]Crafting summary now shows you the actual dice roll vs the threshold bands, and translates abstract bonus labels into concrete gameplay effects.[/color]")
-	display_game("  • [b]Real roll math[/b] (Audit #4 Slice 3.6, playtest feedback). The 'Chain' section is now a 'How the Roll Worked' breakdown showing: reveal score → +X% success chance → effective Y% → quality bands with explicit roll ranges ([color=#FFFFFF]Poor 30% (rolls 0–29)[/color] [color=#00FF00]Standard 40% (rolls 30–69)[/color] etc.) → actual roll value ([color=#FFD700]Rolled 47 out of 100[/color]) → which band it landed in. You can now see exactly why a Refined craft rolled Poor.")
-	display_game("  • [b]Concrete bonus descriptions[/b]. The old abstract 'Efficiency Tier +1' / 'Tool Durability +25%' labels now unpack into player-facing effects: [color=#88FF88]'Easier gathering minigame — −5% rhythm bar speed, +15% wider hit zone when you use this tool'[/color]. Tool-only bonuses are also flagged on non-tool recipes so you know they had no effect.")
-	display_game("  • [b]Correct slot names[/b]. Quality cards now use the actual in-game names: [color=#FFFFFF]Standard[/color] (BASE, +15% success), [color=#00FF00]Refined[/color] (QUALITY_UP_1, +15%), [color=#0070DD]Polished[/color] (QUALITY_UP_2, +30%), [color=#A335EE]Masterful[/color] (QUALITY_UP_3, +45%). Each reveal line states both the score and the success boost so the math is visible.")
-	display_game("")
 
 
 
@@ -28456,8 +28498,18 @@ func _handle_bounty_posted_on_you(message: Dictionary) -> void:
 	display_chat("[color=#FF2020]💰 %s placed a [color=#FFD700]%d valor[/color] bounty on you (total %d).[/color]" % [poster, amount, total])
 
 func _handle_bounty_list_result(message: Dictionary) -> void:
-	"""Render the public bounty board sorted by total bounty desc."""
-	var entries = message.get("entries", [])
+	"""v0.9.568 — Route bounty_list to the BountyBoardPanel when it's open OR
+	when the request was fired via the panel/its shortcuts. Falls back to the
+	chat-style display_game render if the panel was never instantiated (no-UI
+	mode) for safety. The panel auto-opens on /bounty list and /bountyboard."""
+	var entries: Array = message.get("entries", [])
+	# Always feed the panel so it stays fresh whether or not it's visible.
+	if bounty_board_panel:
+		bounty_board_panel.apply_list(entries)
+		if bounty_board_panel.visible:
+			return
+	# Chat fallback — only fires if the panel never opened (i.e., the player
+	# triggered the request via something we haven't routed yet).
 	if not (entries is Array) or entries.is_empty():
 		display_game("[color=#808080]No active bounties.[/color]")
 		return
@@ -28473,11 +28525,43 @@ func _handle_bounty_list_result(message: Dictionary) -> void:
 		display_game("  [color=#FF8800]%s[/color]%s — [color=#FFD700]%d valor[/color] [color=#808080](%d postings)[/color]" % [name, online_tag, total, count])
 	display_game("[color=#808080]/bounty on <player> for per-posting details. Bounties collect on apex-zone KO.[/color]")
 
+
+# v0.9.568 — Bounty Board panel signal handlers.
+func _on_bounty_board_post_requested(target_name: String, amount: int) -> void:
+	send_to_server({"type": "bounty_post", "target": target_name, "amount": amount})
+
+
+func _on_bounty_board_view_postings_requested(target_name: String) -> void:
+	send_to_server({"type": "bounty_on", "target": target_name})
+
+
+func _on_bounty_board_cancel_mine_requested(target_name: String) -> void:
+	send_to_server({"type": "bounty_cancel", "target": target_name})
+
+
+func _on_bounty_board_list_refresh_requested() -> void:
+	send_to_server({"type": "bounty_list"})
+
+
+func _open_bounty_board() -> void:
+	if not has_character:
+		display_game("You don't have a character yet")
+		return
+	if bounty_board_panel == null:
+		return
+	var v = int(character_data.get("valor", 0))
+	bounty_board_panel.open_board(v)
+
 func _handle_bounty_on_result(message: Dictionary) -> void:
-	"""Render bounties on a specific target — show each posting + poster + amount."""
+	"""Render bounties on a specific target — show each posting + poster + amount.
+	v0.9.568 — Route to BountyBoardPanel's detail strip when open."""
 	var target_name = String(message.get("target_name", "?"))
 	var bounties = message.get("bounties", [])
 	var total = int(message.get("total_bounty", 0))
+	if bounty_board_panel and bounty_board_panel.visible:
+		var arr: Array = bounties if (bounties is Array) else []
+		bounty_board_panel.apply_postings(target_name, arr, total)
+		return
 	if not (bounties is Array) or bounties.is_empty():
 		display_game("[color=#808080]No bounties on %s.[/color]" % target_name)
 		return
@@ -38936,7 +39020,14 @@ func display_house_mastery():
 	display_game("[color=#808080]Spend Baddie Points to start your next character with rank already in an ability.[/color]")
 	display_game("")
 	display_game("[color=#FF6600]Baddie Points: %d[/color]" % bp)
-	display_game("[color=#808080]Max headstart rank: R%d (R%d remains earnable through play)[/color]" % [max_rank, max_rank + 1])
+	# v0.9.568 — text reflects v0.9.567 cap raise to R6: anything above the
+	# headstart cap is earnable through play (not a single rank above max_rank).
+	var play_range_low = max_rank + 1
+	var play_range_high = MASTERY_RANK_NAMES.size() - 1  # cap rank (e.g., 6 = Mythic)
+	if play_range_high > play_range_low:
+		display_game("[color=#808080]Max headstart rank: R%d (R%d-R%d remain earnable through play)[/color]" % [max_rank, play_range_low, play_range_high])
+	else:
+		display_game("[color=#808080]Max headstart rank: R%d (R%d remains earnable through play)[/color]" % [max_rank, play_range_low])
 	display_game("")
 
 	var sorted_abilities: Array = records.keys()
@@ -38958,15 +39049,14 @@ func display_house_mastery():
 	if total_pages > 1:
 		display_game("[color=#AAAAAA]Page %d/%d[/color]" % [house_mastery_page + 1, total_pages])
 
-	# v0.9.567 — extended to R6 (Legend, Mythic).
-	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
+	# v0.9.567 — extended to R6 (Legend, Mythic). v0.9.568 — sourced from const.
 	var slot = 1
 	for i in range(start_idx, end_idx):
 		var ab_name: String = sorted_abilities[i]
 		var ceiling = int(records[ab_name])
 		var pending_rank = int(pending.get(ab_name, 0))
 		var pretty_name: String = ab_name.replace("_", " ").capitalize()
-		var ceil_label: String = rank_names[ceiling] if ceiling < rank_names.size() else "Mythic"
+		var ceil_label: String = MASTERY_RANK_NAMES[ceiling] if ceiling < MASTERY_RANK_NAMES.size() else "Mythic"
 
 		# Headroom: can bump up to min(max_rank, ceiling)
 		var allowed_max = mini(max_rank, ceiling)
@@ -38982,13 +39072,13 @@ func display_house_mastery():
 		# Build line
 		var pending_label: String = ""
 		if pending_rank > 0:
-			var pname: String = rank_names[pending_rank] if pending_rank < rank_names.size() else "Master"
+			var pname: String = MASTERY_RANK_NAMES[pending_rank] if pending_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 			pending_label = " [color=#9ACD32]queued: R%d %s[/color]" % [pending_rank, pname]
 
 		var ceiling_color = "#9ACD32" if ceiling >= 4 else ("#88FF88" if ceiling >= 3 else "#A0A0A0")
 		display_game("[color=#FFD700][%s][/color] [color=#FFFFFF]%s[/color] [color=%s](recorded: R%d %s)[/color]%s" % [get_item_select_key_name(slot - 1), pretty_name, ceiling_color, ceiling, ceil_label, pending_label])
 		if can_buy:
-			var nbuy_label: String = rank_names[next_rank] if next_rank < rank_names.size() else "Mythic"
+			var nbuy_label: String = MASTERY_RANK_NAMES[next_rank] if next_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 			display_game("    [color=#88FF88]→ Buy R%d %s[/color] for [color=#FF6600]%d BP[/color]" % [next_rank, nbuy_label, next_cost])
 		else:
 			# At cap — next press refunds all
@@ -39293,7 +39383,7 @@ func display_house_mastery_atlas():
 			trait_categories = dt_script.VARIANT_TRAIT_CATEGORIES
 
 	# v0.9.567 — mirror the extended rank labels (R6 = Mythic).
-	var rank_names = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
+	# v0.9.568 — sourced from the module-level MASTERY_RANK_NAMES const.
 
 	# Build the union of ability names across all four sources so we surface
 	# even rarely-used abilities that only show up in one of them (e.g., a
@@ -39365,7 +39455,7 @@ func display_house_mastery_atlas():
 		# player can tell apart "this character hasn't trained it" from
 		# "trained but legitimately R0" (the latter is impossible — R0 IS
 		# untrained — but rendering "—" reads cleaner).
-		var cur_label = rank_names[cur_rank] if cur_rank < rank_names.size() else "Master"
+		var cur_label = MASTERY_RANK_NAMES[cur_rank] if cur_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 		if cur_rank > 0:
 			display_game("  [color=#88FF88]Current:[/color] R%d %s" % [cur_rank, cur_label])
 		else:
@@ -39373,7 +39463,7 @@ func display_house_mastery_atlas():
 
 		# Row 2: account ceiling (best-ever, survives permadeath). Same
 		# treatment as Current for consistency.
-		var ceil_label = rank_names[ceiling] if ceiling < rank_names.size() else "Master"
+		var ceil_label = MASTERY_RANK_NAMES[ceiling] if ceiling < MASTERY_RANK_NAMES.size() else "Mythic"
 		if ceiling > 0:
 			display_game("  [color=#87CEEB]Best ever:[/color] R%d %s" % [ceiling, ceil_label])
 		else:
@@ -39401,7 +39491,7 @@ func display_house_mastery_atlas():
 		# next char will spawn at; mention the cap so the player knows when
 		# they're tapped out.
 		if pending_rank > 0:
-			var pname = rank_names[pending_rank] if pending_rank < rank_names.size() else "Master"
+			var pname = MASTERY_RANK_NAMES[pending_rank] if pending_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 			display_game("  [color=#9ACD32]Headstart:[/color] R%d %s [color=#808080](max R%d)[/color]" % [pending_rank, pname, max_rank])
 		else:
 			display_game("  [color=#808080]Headstart:[/color] [color=#808080]—[/color]")

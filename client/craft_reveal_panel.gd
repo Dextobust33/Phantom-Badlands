@@ -38,6 +38,9 @@ var _root_panel: PanelContainer
 var _root_stylebox: StyleBoxFlat
 var _content: VBoxContainer
 var _craft_again_button: Button
+
+# v0.9.568 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _continue_button: Button
 
 var _quality_color: Color = Color(0, 1, 0)
@@ -79,9 +82,31 @@ func _build_layout() -> void:
 	_root_panel.add_theme_stylebox_override("panel", _root_stylebox)
 	center.add_child(_root_panel)
 
+	# v0.9.568 — outer VBox wraps a persistent header row (with ? help button)
+	# and the inner _content VBox that gets cleared/rebuilt per craft. The
+	# help button can't live inside _content because _rebuild_content()
+	# free()s every child on each open().
+	var outer_vbox := VBoxContainer.new()
+	outer_vbox.add_theme_constant_override("separation", 6)
+	_root_panel.add_child(outer_vbox)
+
+	var header_row := HBoxContainer.new()
+	header_row.add_theme_constant_override("separation", 8)
+	outer_vbox.add_child(header_row)
+
+	var header_spacer := Control.new()
+	header_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_row.add_child(header_spacer)
+
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("craft_reveal", _help_panel)
+	header_row.add_child(help_btn)
+
 	_content = VBoxContainer.new()
 	_content.add_theme_constant_override("separation", 8)
-	_root_panel.add_child(_content)
+	outer_vbox.add_child(_content)
 
 	# Button row built once; content body is rebuilt per-craft.
 	# (We rebuild children of _content on each open() so the body can grow

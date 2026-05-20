@@ -38,6 +38,9 @@ var _slots_data: Array = []  # Mirror of server-pushed slot view
 var _reveals_used: int = 0
 var _reveal_budget: int = 0
 var _flock_kills: int = 1
+
+# v0.9.568 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
 var _monster_tier: int = 1
 var _cascade_active: bool = false
 # v0.9.566 — autoskip state. Toggle persists across panel opens via client.gd.
@@ -91,9 +94,15 @@ func _build_layout() -> void:
 	title_row.add_theme_constant_override("separation", 8)
 	vbox.add_child(title_row)
 
-	var title_left_spacer := Control.new()
-	title_left_spacer.custom_minimum_size = Vector2(120, 0)
-	title_row.add_child(title_left_spacer)
+	# v0.9.568 — replace the left visual spacer with the Help button so the
+	# title stays centered between symmetric controls (help on the left,
+	# autoskip checkbox on the right).
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("combat_loot", _help_panel)
+	help_btn.custom_minimum_size = Vector2(120, 0)
+	title_row.add_child(help_btn)
 
 	var title := Label.new()
 	title.text = "Loot Reveal"

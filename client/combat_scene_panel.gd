@@ -296,6 +296,9 @@ func _notification(what: int) -> void:
 		NOTIFICATION_RESIZED:
 			if _review_button and is_instance_valid(_review_button) and _review_button.visible:
 				_position_review_button()
+			# v0.9.568 — keep ? Help button anchored to top-left on resize.
+			if _help_button and is_instance_valid(_help_button) and _help_button.visible:
+				_position_help_button()
 		NOTIFICATION_VISIBILITY_CHANGED:
 			if not visible:
 				if _review_button and is_instance_valid(_review_button):
@@ -425,6 +428,18 @@ func _build_layout() -> void:
 	_review_button.pressed.connect(_on_review_button_pressed)
 	add_child(_review_button)
 	call_deferred("_position_review_button")
+
+	# v0.9.568 — Help coverage sweep. Floating top-LEFT ? button (mirrors the
+	# review button's pattern but on the opposite corner; always visible
+	# while the combat panel is up). Topic: combat_scene.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	_help_button = HelpPanelScript.make_help_button("combat_scene", _help_panel)
+	_help_button.z_index = 50
+	_help_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_help_button)
+	call_deferred("_position_help_button")
 
 
 func _build_scene_section_standard() -> Control:
@@ -662,6 +677,11 @@ const OVERLAY_LOG_LINE_LIMIT := 30  # v0.9.439: 5 → 30. Strips are scrollable 
 # player can freeze the message-drain pacing and read what just happened.
 # Connected to client.toggle_combat_pause() via client_ref.
 var _pause_button: Button = null
+# v0.9.568 — Help coverage sweep. Floating top-LEFT ? button (mirrors the
+# review button's pattern but on the opposite corner; always visible while
+# the combat panel is up). Reusable HelpPanel attached.
+var _help_panel: Control = null
+var _help_button: Button = null
 # v0.9.439 — Review FX. When in hand-selection (overlay hidden), this button
 # (top-right of the combat panel root) lets the player re-enter the FX scene
 # with the latest round's per-actor strips scrollable for re-reading.
@@ -830,6 +850,18 @@ func _position_review_button() -> void:
 	var btn_h: float = _review_button.custom_minimum_size.y
 	_review_button.size = Vector2(btn_w, btn_h)
 	_review_button.position = Vector2(maxf(0.0, panel_w - btn_w - 8.0), 6.0)
+
+
+func _position_help_button() -> void:
+	"""v0.9.568 — anchor ? Help button to the top-LEFT of the combat panel.
+	Mirrors the Review FX button on the opposite corner so the two corners
+	stay symmetric. Stays visible whenever the combat panel itself is."""
+	if _help_button == null or not is_instance_valid(_help_button):
+		return
+	var btn_w: float = _help_button.custom_minimum_size.x
+	var btn_h: float = _help_button.custom_minimum_size.y
+	_help_button.size = Vector2(btn_w, btn_h)
+	_help_button.position = Vector2(8.0, 6.0)
 
 
 func _update_review_button_visibility() -> void:
