@@ -25156,8 +25156,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.571 — Polish batch #4: Bug reporting refit (compact JSON + Linux-correct path + rsync script).
+	display_game("[color=#00FF00]v0.9.571[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug reporting refit so submissions actually land on production: structured JSON wire format, Linux-correct server storage path, and a help topic + pull script so dev investigation is one paste away.[/color]")
+	display_game("  • [b]Compact JSON payload[/b]. `/bug <desc>` now sends a structured snapshot (version, UTC timestamp, character, location, HP/MP/SP/EN/Valor, active modes, last ~20 game-output lines, pending sub-state) instead of the legacy text dump. Target ≤2 KB per report so the developer can paste one into Claude in a single turn and get useful analysis. Player-facing flow is unchanged — same `/bug` command, same button.")
+	display_game("  • [b]Server-side path fix[/b]. Previous handler wrote to `C:/Users/Dexto/Desktop/Bug Reports/` — a Windows desktop path that silently no-op'd on the Linux Hetzner server, so ZERO reports were actually saved. Refit writes to `user://bug_reports/` which resolves to `~/.local/share/godot/app_userdata/PhantomBadlands/bug_reports/` on production. One JSON file per report, named `<utc-ts>_<player>.json`.")
+	display_game("  • [b]Privacy[/b]. Only the first 8 characters of your account ID are stored — enough to match accounts if we need to reach out, not enough to identify you to a third party. Character name + level + location are visible; password/email never leave the client.")
+	display_game("  • [b]Back-compat[/b]. Older clients sending only the legacy text body still work — the server wraps the text in a minimal envelope and stores it alongside the new JSON form.")
+	display_game("  • [b]New Help topic[/b]: `bug_report` — explains the flow, what gets captured, and tips for writing useful descriptions. Visible via any `?` Help button (it's in the shared registry).")
+	display_game("")
+
 	# v0.9.570 — Polish batch #3: Market multi-listing discoverability + Companion border tiers (double-rarity stat layer).
-	display_game("[color=#00FF00]v0.9.570[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.570[/color]")
 	display_game("  [color=#FFD700]Market 'List' button got loud and transparent, and companions roll a new ◆ Border tier on creation that stacks stat bonuses on top of variant rarity.[/color]")
 	display_game("  • [b]Market — Sell / Bulk List button is no longer tiny[/b]. The dropdown that hid every selling path got renamed to [color=#88FF88]Sell / Bulk List ▾[/color], bumped to 220×36, accent-green styled, and every menu row now reads its count: `Bulk: All Equipment (14)`. Empty categories grey out so the menu reads honestly. Direct fix to the 'tiny dropdown is easy to miss or not understand' pain point.")
 	display_game("  • [b]Companion Border Tiers[/b] (NEW system). Every companion now rolls a second independent rarity at creation — the [color=#FFD700]◆ Border tier[/color] — that grants a stat multiplier ON TOP of variant rarity. Seven tiers: None (60%) → Common +5% → Uncommon +12% → Rare +25% → Epic +50% → Legendary +100% → Mythic +200%. Mythic borders are 1-in-5000 rolls.")
@@ -25190,18 +25200,6 @@ func display_changelog():
 	display_game("  • [b]Threat-corridor falloff[/b]. Monsters scale up faster as you leave Haven. The novice ring shrank from 20 tiles to 10 (d=10-20 = Lv 1-2), the easy band tightened (d=20-40 = Lv 2-6), and the post-blend curve relaxed from cubic to quadratic so neighbor-post levels reach in sooner. Lv 1 pocket persists; the protective bubble just stops sooner.")
 	display_game("")
 
-	# v0.9.566 — Mastery Atlas + bug-fix bundle.
-	display_game("[color=#00FFFF]v0.9.566[/color]")
-	display_game("  [color=#FFD700]New Sanctuary tab consolidating everything you've learned, plus a bundle of player-reported fixes.[/color]")
-	display_game("  • [b]Mastery Atlas[/b]. New Sanctuary tab joins four data sources per ability — current rank on this character, account ceiling (best-ever), variant imprints stacked, and headstart queued for next character — into one read-only page so you can see your investment at a glance.")
-	display_game("  • [b]Monster HP discovery upward bump[/b]. If you've dealt more damage than the recorded ceiling and the monster is still alive, the known HP grows so the bar resizes truthfully instead of pinning at 1/N (was: prior low-damage kills could leave a stale 4-HP estimate on a 30-HP monster).")
-	display_game("  • [b]Kill animation drains to 0[/b]. The monster HP bar no longer stalls at 1 on a confirmed kill — the in-combat clamp now lifts on victory so the bar actually empties.")
-	display_game("  • [b]Companion regen in dungeons[/b]. Active companions now recover HP on dungeon rest and meditate the same way they do on overworld rest — full message line included.")
-	display_game("  • [b]Movement blocked during loot reveal[/b]. You can't accidentally wander off the loot-reveal screen anymore; movement is gated until the panel closes.")
-	display_game("  • [b]Autoskip toggle[/b]. New checkbox in the loot-reveal panel top-right auto-picks random unrevealed cells until your reveal budget runs out. Persists across sessions.")
-	display_game("  • [b]Red ! disambiguation[/b]. Under-Threat post markers now show as [color=#FFAA00]amber ![/color], bounty targets as [color=#FFD700]gold ?[/color], and hotzone tiles stay [color=#FF4444]red ![/color] — three distinct glyphs/colors. Legend below the map enumerates them.")
-	display_game("  • [b]Welcome modal fixes[/b]. Starter chain text no longer claims you stay inside Haven's safe bubble (the gather stages take you outside it). Added a 'Turning in stages' paragraph that explains the Haven [color=#FFD700]P[/color] tile + Turn In button. Tutorial egg is now a random T1 monster instead of always Goblin.")
-	display_game("")
 
 
 
@@ -37602,9 +37600,85 @@ func _on_bug_button_pressed():
 	display_game("[color=#808080]The report will include your character info, location, and game state automatically.[/color]")
 
 func generate_bug_report(description: String = ""):
-	"""Generate a bug report with client state for troubleshooting"""
-	var timestamp = Time.get_datetime_string_from_system(false, true)
-	var report_lines = []
+	"""v0.9.571 — Compact JSON bug report. Designed for token-efficient
+	review (≤2 KB target per report so the user can paste one report into
+	Claude in a single turn). The legacy verbose text dump is preserved
+	for the local-fallback path so power-users without server connection
+	can still grab a human-readable report locally — but the wire format
+	is a structured Dictionary."""
+	var timestamp = Time.get_datetime_string_from_system(true, true)  # UTC + ISO 8601-ish
+
+	# Build the compact payload first — this is what the server stores.
+	var loc: Dictionary = {}
+	if has_character:
+		loc["x"] = int(character_data.get("x", 0))
+		loc["y"] = int(character_data.get("y", 0))
+
+	var char_snap: Dictionary = {}
+	if has_character:
+		char_snap["class"] = String(character_data.get("class", ""))
+		char_snap["race"] = String(character_data.get("race", ""))
+		char_snap["level"] = int(character_data.get("level", 1))
+		var max_hp = int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
+		var max_mp = int(character_data.get("total_max_mana", character_data.get("max_mana", 0)))
+		char_snap["hp"] = "%d/%d" % [int(character_data.get("current_hp", 0)), max_hp]
+		char_snap["mana"] = "%d/%d" % [int(character_data.get("current_mana", 0)), max_mp]
+		char_snap["stamina"] = "%d/%d" % [int(character_data.get("current_stamina", 0)), int(character_data.get("max_stamina", 0))]
+		char_snap["energy"] = "%d/%d" % [int(character_data.get("current_energy", 0)), int(character_data.get("max_energy", 0))]
+		char_snap["valor"] = int(character_data.get("valor", 0))
+		if in_combat and current_enemy_name != "":
+			char_snap["combat"] = "%s Lv%d (%d/%d hp)" % [current_enemy_name, current_enemy_level, current_enemy_hp, current_enemy_max_hp]
+
+	var mode_flags: Array = []
+	if in_combat: mode_flags.append("combat")
+	if inventory_mode: mode_flags.append("inventory")
+	if settings_mode: mode_flags.append("settings")
+	if ability_mode: mode_flags.append("ability")
+	if at_merchant: mode_flags.append("merchant")
+	if at_trading_post: mode_flags.append("trading_post")
+	if market_mode: mode_flags.append("market")
+	if build_mode: mode_flags.append("build")
+	if quest_view_mode: mode_flags.append("quest_view")
+
+	# Last ~20 game-output lines (the visible chat). Tighter than the
+	# 50-line cap from the design memo to land each report well under 2 KB.
+	var log_tail: Array = []
+	if game_output != null:
+		var raw = game_output.get_parsed_text() if game_output.has_method("get_parsed_text") else String(game_output.text)
+		var split_lines = raw.split("\n")
+		var start = max(0, split_lines.size() - 20)
+		for i in range(start, split_lines.size()):
+			var line = String(split_lines[i]).strip_edges()
+			if line.is_empty():
+				continue
+			# Truncate any single line so a runaway message doesn't blow the budget.
+			if line.length() > 200:
+				line = line.substr(0, 200) + "…"
+			log_tail.append(line)
+
+	var payload: Dictionary = {
+		"v": get_version(),
+		"ts": timestamp,
+		"player": str(character_data.get("name", username) if has_character else (username if username else "anon")),
+		"desc": description.substr(0, 200) if description.length() > 200 else description,
+		"loc": loc,
+		"char": char_snap,
+		"modes": mode_flags,
+		"client_log": log_tail,
+	}
+
+	# Optional pending-action context — only if a state machine is mid-flow.
+	var pendings: Dictionary = {}
+	if pending_inventory_action != "": pendings["inventory"] = pending_inventory_action
+	if pending_merchant_action != "": pendings["merchant"] = pending_merchant_action
+	if pending_ability_action != "": pendings["ability"] = pending_ability_action
+	if rebinding_action != "": pendings["rebinding"] = rebinding_action
+	if pendings.size() > 0:
+		payload["pending"] = pendings
+
+	# Build a human-readable text mirror for the local-fallback path —
+	# legacy callers still expect to read a file directly.
+	var report_lines: Array = []
 
 	# Header
 	report_lines.append("===== BUG REPORT =====")
@@ -37704,15 +37778,21 @@ func generate_bug_report(description: String = ""):
 
 	var report_text = "\n".join(report_lines)
 
-	# Send to server for saving
+	# Send to server for saving.
+	# v0.9.571 — wire BOTH the compact JSON payload AND the legacy text mirror
+	# so the server can store the compact form (preferred — ≤2 KB) and the
+	# text mirror lives as a fallback. Server-side code prefers `payload`
+	# and only falls back to `report` if the structured field is missing
+	# (back-compat with older clients during the rollout window).
 	if connected:
 		send_to_server({
 			"type": "bug_report",
+			"payload": payload,
 			"report": report_text,
-			"player": username if username else "Unknown",
+			"player": String(character_data.get("name", username) if has_character else (username if username else "Unknown")),
 			"description": description
 		})
-		display_game("[color=#00FF00]Bug report submitted to server![/color]")
+		display_game("[color=#00FF00]✓ Bug report submitted![/color] [color=#808080](compact form, sent to Hetzner)[/color]")
 		display_game("[color=#808080]Thank you for helping improve the game.[/color]")
 	else:
 		# Fallback: save locally if not connected

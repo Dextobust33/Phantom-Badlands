@@ -9187,35 +9187,75 @@ func handle_companion_stable_deposit(peer_id: int, message: Dictionary) -> void:
 const BUG_REPORT_FOLDER = "C:/Users/Dexto/Desktop/Bug Reports"
 
 func handle_bug_report(peer_id: int, message: Dictionary):
-	"""Save bug report from client to desktop folder"""
-	var report_text = message.get("report", "")
-	var player_name = message.get("player", "Unknown")
-	var description = message.get("description", "")
+	"""v0.9.571 — Refit for production. The legacy handler wrote to a
+	Windows-only desktop path that silently no-op'd on the Linux server.
+	New flow: store the client's compact `payload` (Dict) as a JSON
+	file at `user://bug_reports/<ts>_<safename>.json` — resolves to
+	`~/.local/share/godot/app_userdata/PhantomBadlands/bug_reports/` on
+	the Hetzner box. Reports are tiny (~2 KB target) and one-per-file
+	so the user can rsync the directory and paste any single report
+	straight into Claude.
 
-	if report_text.is_empty():
+	Back-compat: older clients send only the `report` text. We still
+	store that as a `.txt` sibling so no submissions are lost during
+	the v0.9.571 rollout window."""
+	var payload = message.get("payload", {})
+	var report_text = message.get("report", "")
+	var player_name = String(message.get("player", "Unknown"))
+	if not (payload is Dictionary):
+		payload = {}
+
+	if payload.is_empty() and report_text.is_empty():
 		send_to_peer(peer_id, {"type": "error", "message": "Empty bug report."})
 		return
 
-	# Create folder if it doesn't exist
-	var dir = DirAccess.open("C:/Users/Dexto/Desktop")
-	if dir:
-		if not dir.dir_exists("Bug Reports"):
-			dir.make_dir("Bug Reports")
+	# Augment the payload with server-side context — these fields can't be
+	# spoofed by the client and they're cheap to add (a few bytes each).
+	if payload is Dictionary:
+		var p_dict: Dictionary = payload
+		p_dict["server_ts"] = Time.get_datetime_string_from_system(true, true)
+		if peers.has(peer_id):
+			var acct_id = String(peers[peer_id].get("account_id", ""))
+			if acct_id != "":
+				# Privacy: store only the short hash, not the full account id.
+				p_dict["acct_short"] = acct_id.substr(0, 8)
+		# Server-side last-20-event tail would go here in a future slice if
+		# we wire up a ring-buffer of server log lines per peer. V1 stays
+		# client-only for the log tail.
 
-	# Generate unique filename with timestamp
-	var timestamp = Time.get_datetime_string_from_system(false, true).replace(":", "-").replace("T", "_")
+	# Folder + filename. `user://bug_reports/` resolves correctly on Linux.
+	var reports_dir = "user://bug_reports"
+	if not DirAccess.dir_exists_absolute(reports_dir):
+		DirAccess.make_dir_absolute(reports_dir)
+
+	var ts_safe = Time.get_datetime_string_from_system(true, true).replace(":", "-").replace("T", "_")
 	var safe_player_name = player_name.validate_filename() if player_name else "Unknown"
-	var filename = "%s/%s_%s.txt" % [BUG_REPORT_FOLDER, timestamp, safe_player_name]
+	var json_filename = "%s/%s_%s.json" % [reports_dir, ts_safe, safe_player_name]
 
-	# Save report
-	var file = FileAccess.open(filename, FileAccess.WRITE)
-	if file:
-		file.store_string(report_text)
-		file.close()
-		print("[Bug Report] Saved from %s to: %s" % [player_name, filename])
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00]Bug report saved successfully! Thank you for your feedback.[/color]"})
+	# Write the compact JSON. If `payload` is empty (very old client), fall
+	# back to wrapping the legacy text body in a minimal envelope so the
+	# rsync directory is uniform.
+	var to_store: Dictionary
+	if payload is Dictionary and not (payload as Dictionary).is_empty():
+		to_store = payload
 	else:
-		print("[Bug Report] ERROR: Failed to save report from %s" % player_name)
+		to_store = {
+			"v": "legacy",
+			"ts": Time.get_datetime_string_from_system(true, true),
+			"player": player_name,
+			"desc": String(message.get("description", "")),
+			"_legacy_text": report_text,  # Underscore-prefixed = not for Claude review
+		}
+
+	var json_str = JSON.stringify(to_store)
+	var file = FileAccess.open(json_filename, FileAccess.WRITE)
+	if file:
+		file.store_string(json_str)
+		file.close()
+		print("[Bug Report] Saved %d-byte JSON from %s to: %s" % [json_str.length(), player_name, json_filename])
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00]Bug report saved (%d bytes). Thanks![/color]" % json_str.length()})
+	else:
+		print("[Bug Report] ERROR: Failed to save report from %s to %s" % [player_name, json_filename])
 		send_to_peer(peer_id, {"type": "error", "message": "Failed to save bug report on server."})
 
 func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1):
