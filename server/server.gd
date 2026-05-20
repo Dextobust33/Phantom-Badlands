@@ -14628,7 +14628,9 @@ func trigger_trading_post_encounter(peer_id: int):
 		if quest.is_empty():
 			continue
 		var _quest_belongs_here: bool = quest.get("trading_post", "") == tp_id
-		var _is_pathfinder: bool = String(quest.get("chain_id", "")) == "pathfinder"
+		# v0.9.584 — belt-and-suspenders: match by quest_id prefix too in
+		# case get_quest's returned dict loses chain_id for any reason.
+		var _is_pathfinder: bool = String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")
 		if _quest_belongs_here or (_is_pathfinder and _is_current_starter_post):
 			# Audit #6 Slice 9 — DELIVER quests use live inventory count
 			if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
@@ -14844,14 +14846,20 @@ func handle_trading_post_quests(peer_id: int):
 			var dest_post_id = quest_data.quest_id.replace("progression_to_", "")
 			if tp.id == dest_post_id:
 				can_turn_in = true
-		elif String(quest.get("chain_id", "")) == "pathfinder" and tp.id in STARTER_TRADING_POSTS:
+		elif (String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")) and tp.id in STARTER_TRADING_POSTS:
 			# v0.9.583 — Pathfinder starter chain accepts turn-in at ANY starter
 			# post. v0.9.582 patched two of the three quest-turn-in code paths
 			# but missed THIS one (the Quest Board UI handler), which is the
 			# path the player actually triggers when they bump the Q tile.
-			# Closes the user-reported "I still have no way of turning in my
-			# starter Quest at the questboard in the Crossroads post" bug.
+			# v0.9.584 — belt-and-suspenders: also match on quest_id prefix
+			# (pathfinder_1/2/3/4) so the check works even if get_quest's
+			# returned dict somehow loses chain_id. The user reported v0.9.583
+			# still wasn't working; this fallback makes the check robust
+			# against any get_quest mutation we haven't identified yet.
 			can_turn_in = true
+			# v0.9.584 — diagnostic log: prints to server console when this
+			# branch fires so we can verify the path is exercised live.
+			print("[DIAG] Pathfinder turn-in allowed: quest_id=%s tp.id=%s chain_id=%s" % [quest_data.quest_id, str(tp.id), String(quest.get("chain_id", "(none)"))])
 
 		# Audit #6 Slice 9 — DELIVER quests use live inventory count for completion
 		var meets_target = quest_data.progress >= quest_data.target
@@ -17722,8 +17730,10 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 			var destinations = quest.get("destinations", [])
 			if tp.id in destinations:
 				can_turn_in = true
-		elif String(quest.get("chain_id", "")) == "pathfinder":
+		elif String(quest.get("chain_id", "")) == "pathfinder" or String(quest_id).begins_with("pathfinder_"):
 			# v0.9.582 — Pathfinder's Trial (starter chain) is turn-in-able at
+			# v0.9.584 — same belt-and-suspenders prefix match as the quest
+			# board UI handler.
 			# ANY starter trading post. Original anchor "haven" assumed players
 			# spawn at Haven, but they actually spawn at (0,0) Crossroads —
 			# leaving the chain un-turn-in-able. Player-reported: "starter quest
