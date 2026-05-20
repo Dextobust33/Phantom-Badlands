@@ -30,13 +30,15 @@ echo "From: ${SERVER_USER}@${SERVER_IP}:${REMOTE_DIR}/"
 echo "To:   ${LOCAL_DIR}/"
 echo ""
 
-# Use rsync over SSH. The trailing slash on REMOTE_DIR pulls contents
-# (not the directory itself).
-rsync -avz \
-    -e "ssh -i \"$SSH_KEY\" -o StrictHostKeyChecking=accept-new" \
-    "${SERVER_USER}@${SERVER_IP}:${REMOTE_DIR}/" \
+# Use scp -r instead of rsync — rsync isn't installed in Git Bash on
+# Windows but scp ships with Windows OpenSSH. Reports are tiny (~2 KB
+# per file, expected dozens) so pulling the whole directory every time
+# is fine. The trailing /* pulls contents into LOCAL_DIR (not the
+# bug_reports directory itself).
+scp -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -r \
+    "${SERVER_USER}@${SERVER_IP}:${REMOTE_DIR}/*" \
     "${LOCAL_DIR}/" \
-    2>&1 | tail -20
+    2>&1 | tail -20 || echo "(scp returned non-zero — likely no reports yet)"
 
 echo ""
 echo "=== Rebuilding _index.txt ==="
@@ -59,9 +61,21 @@ for f in "${LOCAL_DIR}"/*.json; do
     printf "%s | %-20s | %s | %s\n" "$ts" "$player" "$(basename "$f")" "$desc" >> "$INDEX"
 done
 
-echo "$(wc -l < "$INDEX") reports indexed."
+REPORT_COUNT=$(wc -l < "$INDEX" | tr -d '[:space:]')
+echo "${REPORT_COUNT} reports indexed."
 echo ""
 echo "=== Summary ==="
-ls -la "$LOCAL_DIR"/*.json 2>/dev/null | tail -10
+if [ "${REPORT_COUNT}" = "0" ]; then
+    echo "(No reports yet — directory is empty. After a player runs /bug,"
+    echo " re-run this script and the report will rsync down.)"
+else
+    # Use nullglob so the literal *.json doesn't fall through to listing CWD.
+    shopt -s nullglob
+    json_files=("${LOCAL_DIR}"/*.json)
+    shopt -u nullglob
+    if [ ${#json_files[@]} -gt 0 ]; then
+        ls -la "${json_files[@]}" | tail -10
+    fi
+fi
 echo ""
 echo "Next: cat ${LOCAL_DIR}/_index.txt"
