@@ -25193,8 +25193,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.585 — ROOT CAUSE of the Pathfinder turn-in bug: npc_ prefix mismatch.
+	display_game("[color=#00FF00]v0.9.585[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Found the actual root cause after three previous attempts. Procedural NPC posts are normalized with an [b]npc_[/b] prefix on their id (so Crossroads is [color=#888888]'npc_crossroads'[/color] at runtime, not bare [color=#888888]'crossroads'[/color]). My v0.9.582/583/584 STARTER_TRADING_POSTS membership checks used bare names — so the pathfinder branch never fired for any procedural post.[/color]")
+	display_game("  • [b]Fix[/b]: strip the [color=#888888]npc_[/color] prefix from [color=#888888]tp.id[/color] before the membership check, in all three quest-turn-in code paths. Confirmed by inspecting tst3's character file — the threat-bounty quest id is [color=#888888]threat_npc_crossroads@orc_stronghold[/color], proof that the runtime post id has the prefix.")
+	display_game("  • [b]How I missed it three times[/b]: static analysis assumed [color=#888888]STARTER_TRADING_POSTS[/color] was the right comparand. The two-tier post system (legacy hardcoded TRADING_POSTS const vs procedural chunk_manager NPC posts) means the same post has two different id formats at different layers. Lesson: when a fix relies on string equality with a const list, sanity-check the live runtime value via the character file or a print, not just the source.")
+	display_game("  • [b]Diagnostic print removed[/b] — it never fired in v0.9.584 because the branch was never reached. The character-file inspection (tst3's quest data) is what cracked it.")
+	display_game("")
+
 	# v0.9.584 — Pathfinder belt-and-suspenders + Services screen cleanup.
-	display_game("[color=#00FF00]v0.9.584[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.584[/color]")
 	display_game("  [color=#FF8888]Defensive follow-up to v0.9.583. Player reported the Pathfinder turn-in STILL wasn't appearing despite the deploy + a separate UI bug.[/color]")
 	display_game("  • [b]Pathfinder check now matches on quest_id prefix too[/b]. All three turn-in code paths now accept the quest if its [color=#888888]chain_id[/color] is 'pathfinder' OR its [color=#888888]quest_id[/color] begins with 'pathfinder_'. If get_quest mutates the chain_id field for any reason, the prefix match still catches it. Diagnostic print added so the server log records when the branch fires.")
 	display_game("  • [b]Crossroads Services screen replaced[/b]. Pressing Back from the Quest Board used to render an outdated chat-command-era 'Services: [Q] Shop | [W] Quests | [E] Heal' line that no longer matches the actual bump-to-interact tile system. Now re-uses `_display_trading_post_ui()` so the legend reads the same as the normal entry view (F Forge / A Apothecary / Q Quest Board / etc.).")
@@ -25235,15 +25243,6 @@ func display_changelog():
 	display_game("  • [b]Server changes[/b]: trading_post_start payload now includes under_threat + threat_dungeon_name + threat_tier + threat_distance + threat_direction + threat_severe + threat_count. Computation reuses _compute_post_threat_state which is already cached per-tick + per-3s — no perf cost.")
 	display_game("")
 
-	# v0.9.579 — Patreon tame-QoL bonuses (T2+ Sanctuary slot, T3 kennel-tier).
-	display_game("[color=#00FFFF]v0.9.579[/color]")
-	display_game("  [color=#FFD700]The v0.9.578 Patreon scaffolding gets its promised tame-QoL layer: T2+ supporters get an extra Sanctuary registered slot, T3 supporters get a free kennel-tier bump.[/color]")
-	display_game("  • [b]Tier 2 (Founder) — +1 Sanctuary registered slot[/b]. Adds one extra death-resistant companion slot on top of whatever upgrade level the player has bought. Stacks correctly: a Founder who's also bought 3 kennel upgrades has base+3+1 slots.")
-	display_game("  • [b]Tier 3 (Patron) — +1 free kennel-tier bump[/b]. The kennel capacity calculation gets a free level-up (clamped at the table max of 500 slots). Saves ~5000 Baddie Points the player would otherwise spend on the first kennel-tier upgrade.")
-	display_game("  • [b]Hard rule (unchanged)[/b]: tame QoL only. Slot count and kennel size are convenience, not power. Per the [color=#888888]project_patreon_founder[/color] memo, anything that grants combat advantage is off-limits forever.")
-	display_game("  • [b]Implementation[/b]: surgical edits to `persistence_manager.get_house_companion_capacity` (T2+ adds +1) and `persistence_manager.get_kennel_capacity` (T3 bumps the level up one before the table lookup). No client-side change — both calculations are server-only.")
-	display_game("  • [b]Launch doc[/b]: `docs/PATREON_LAUNCH.md` in the repo. Step-by-step for actually publishing the Patreon page when ready.")
-	display_game("")
 
 
 
