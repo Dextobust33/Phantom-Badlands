@@ -25185,8 +25185,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.581 — Gathering/craft scratch-off ✦ +2 Scratches bonus cell.
+	display_game("[color=#00FF00]v0.9.581[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The v0.9.574 combat-loot +2 cell mechanic ports to gathering + crafting scratch-offs. One implementation, both surfaces.[/color]")
+	display_game("  • [b]✦ +2 Scratches bonus cell[/b] (new slot kind `BAR_BONUS`). Each scratch-off slot rolls a [color=#FFD700]1-in-12[/color] chance of being a gold +2 bonus. Revealing it grants [color=#88FF88]+2 to scratches_remaining[/color]; the reveal click cost 1, so the net effect is [color=#88FF88]+1 scratch gained[/color]. Same engagement layer as the combat-loot version.")
+	display_game("  • [b]One implementation, both surfaces[/b]: gathering scratch-off (Fishing / Mining / Logging / Foraging) AND craft scratch-off use the same engine, so adding the kind to `_roll_scratch_off_slot_kind` + `_build_scratch_off_slot` + the reveal handler covers both at once. Server pre-rolls BAR_BONUS BEFORE the existing DUD/NORMAL/LUCKY/JACKPOT distribution.")
+	display_game("  • [b]Visual[/b]: gold border + ✦ BONUS tag (matches the v0.9.574 combat-loot card style). Reveal pop fires the same way as other slot kinds.")
+	display_game("  • [b]Help[/b]: the `scratch_off` Help topic now documents the +2 mechanic + drop rate.")
+	display_game("  • [b]Design rationale[/b]: see `project_scratch_off_engagement_design.md` in the dev memory — three options considered (bar-time, free scratches, quality boost), Option B (free scratches via scratches_remaining bump) won for simplicity + direct parallelism with combat-loot.")
+	display_game("")
+
 	# v0.9.580 — Two bug fixes from user playtest report.
-	display_game("[color=#00FF00]v0.9.580[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.580[/color]")
 	display_game("  [color=#FFD700]Bug fix pair from player report. Both small but visible.[/color]")
 	display_game("  • [b]Quest turn-in hint now names the destination[/b]. The active-quest list used to say [color=#808080](Turn in elsewhere)[/color] when the player wasn't at the right post — leaving them to guess WHERE to go. Now it reads [color=#888888](Turn in at Haven)[/color] / [color=#888888](Turn in at Crossroads)[/color] etc. Fixes the Pathfinder's Trial confusion where the chain is Haven-issued but players were at Crossroads.")
 	display_game("  • [b]Trading post entry now surfaces threat status[/b]. The map shows an amber [color=#FFAA00]![/color] for Under-Threat posts, but walking onto the post tile previously gave no on-screen explanation. Now the entry banner reads [color=#FFAA00]⚠ Under Threat — <Dungeon Name> (T<n>) looms <N> tiles <direction>.[/color] for normal threat, escalating to [color=#FF2020]⚠⚠ SEVERELY THREATENED[/color] when 2+ T2+ dungeons share the corridor. Also names the consequences (higher markups, ⚠ THREAT BOUNTY quests) + the cure (clear the dungeon).")
@@ -25230,13 +25240,6 @@ func display_changelog():
 	display_game("  • [b]Client-only[/b] — no server change. Server stays on v0.9.574 binary.")
 	display_game("")
 
-	# v0.9.575 — Two small QoL hints from the polish backlog.
-	display_game("[color=#00FFFF]v0.9.575[/color]")
-	display_game("  [color=#FFD700]Two small QoL hints from the polish backlog: a wounded-companion remedy nudge and a quest-stage turn-in pointer.[/color]")
-	display_game("  • [b]Wounded-companion HP hint[/b]. The corner companion overlay's HP line now names the remedy directly: at KO it reads [color=#FF6666]'KO'd — rest or visit H tile'[/color]; below ⅓ HP it reads [color=#FFAA33]'HP X / Y — wounded, rest or visit H'[/color]. New players no longer have to guess that healers live at NPC posts (the H tile).")
-	display_game("  • [b]Quest-stage turn-in pointer[/b]. When a quest stage completes the chat now follows up with [color=#88FF88]'› Return to the quest board (Q tile) at the issuing post to turn this in.'[/color] One green line, fires once per quest (gated by the same `quests_sound_played` set that throttles the completion sound). Plugs the polish-backlog gap where the welcome modal teaches turn-in but the quest log doesn't surface the next-step hint on completion.")
-	display_game("  • [b]Client-only[/b]. No server change; server stays on v0.9.574 binary `815eeaf1fc9dd6e336f6e50787f3c7d4`.")
-	display_game("")
 
 
 
