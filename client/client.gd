@@ -18167,51 +18167,41 @@ func _discover_enemy_hp(enemy_name: String, enemy_level: int, damage_dealt: int)
 	var base_name = _get_base_monster_name(enemy_name)
 	var enemy_key = "%s_%d" % [base_name, enemy_level]
 
-	# v0.9.566 — `enemy_killed_this_fight` is set true by the combat result
-	# handler the moment a victory/kill message arrives. Until that flag is
-	# set, the in_combat clamp keeps the bar pinned at 1 even if the player's
-	# damage estimate exceeds known HP (so they don't see "0 HP, still alive"
-	# during the round). On confirmed kill, the clamp lifts and the bar
-	# animates to 0 like it should.
-	# v0.9.566 fix — upward observation: if the player has dealt MORE damage
-	# than the recorded ceiling and the monster is still alive, the recorded
-	# HP is stale (e.g., previous kill was via Outsmart with low damage). Bump
-	# the known HP up so the bar resizes truthfully on the next refresh.
+	# v0.9.587 — when the player has dealt MORE damage than the known ceiling
+	# and the monster is still alive, the previously-recorded HP was a low
+	# observation (e.g., prior Outsmart kill at partial damage). Don't grow
+	# the displayed max mid-fight — that was confusing (HP suddenly jumped
+	# from "25/48" → "12/62" because the ceiling balloons to dmg+25%). Show
+	# a depleted bar at the KNOWN max + a "still alive" hint so the player
+	# learns the estimate was wrong in a readable way. Known HP gets bumped
+	# silently on confirmed kill (see record_enemy_defeated).
 	if analyze_revealed_max_hp > 0:
 		var current = max(0, analyze_revealed_max_hp - damage_dealt)
 		if current == 0 and in_combat and not enemy_killed_this_fight:
 			current = 1
-		return {"current": current, "max": analyze_revealed_max_hp, "known": true, "is_estimate": false}
+		return {"current": current, "max": analyze_revealed_max_hp, "known": true, "is_estimate": false, "exceeded": false}
 
 	if known_enemy_hp.has(enemy_key):
 		var max_hp = int(known_enemy_hp[enemy_key])
-		if damage_dealt > max_hp and in_combat and not enemy_killed_this_fight:
-			# Monster has absorbed more damage than we thought possible. Grow
-			# the ceiling so the next paint shows a believable bar instead of
-			# pinning at 1/N.
-			max_hp = damage_dealt + max(1, int(damage_dealt * 0.25))
-			known_enemy_hp[enemy_key] = max_hp
-			var monster_key = "monster_%s" % base_name
-			if known_enemy_hp.has(monster_key) and known_enemy_hp[monster_key] is Dictionary:
-				known_enemy_hp[monster_key][enemy_level] = max_hp
+		var exceeded = damage_dealt > max_hp and in_combat and not enemy_killed_this_fight
 		var current2 = max(0, max_hp - damage_dealt)
-		if current2 == 0 and in_combat and not enemy_killed_this_fight:
+		# Keep the bar depleted (0) when the estimate was beat so the player
+		# sees the discovery moment. Pre-v0.9.587 we pinned at 1 to avoid the
+		# "0 HP, still alive" confusion, but that hides the depletion. The
+		# exceeded flag drives a "still alive!" tag in the label instead.
+		if current2 == 0 and in_combat and not enemy_killed_this_fight and not exceeded:
 			current2 = 1
-		return {"current": current2, "max": max_hp, "known": true, "is_estimate": false}
+		return {"current": current2, "max": max_hp, "known": true, "is_estimate": false, "exceeded": exceeded}
 
 	var est = estimate_enemy_hp(base_name, enemy_level)
 	if est > 0:
-		if damage_dealt > est and in_combat and not enemy_killed_this_fight:
-			# Same upward bump for the estimate path. Don't store yet — the
-			# estimate is computed on the fly from other levels; let
-			# record_enemy_defeated handle persistence on the kill.
-			est = damage_dealt + max(1, int(damage_dealt * 0.25))
+		var est_exceeded = damage_dealt > est and in_combat and not enemy_killed_this_fight
 		var current3 = max(0, est - damage_dealt)
-		if current3 == 0 and in_combat and not enemy_killed_this_fight:
+		if current3 == 0 and in_combat and not enemy_killed_this_fight and not est_exceeded:
 			current3 = 1
-		return {"current": current3, "max": est, "known": true, "is_estimate": true}
+		return {"current": current3, "max": est, "known": true, "is_estimate": true, "exceeded": est_exceeded}
 
-	return {"current": 0, "max": 0, "known": false, "is_estimate": false}
+	return {"current": 0, "max": 0, "known": false, "is_estimate": false, "exceeded": false}
 
 
 func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int, actual_hp: int = -1, actual_max_hp: int = -1):
@@ -18227,7 +18217,7 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	# Mirror to combat scene panel (A1 — Combat Juice)
 	if combat_scene_panel and in_combat:
 		if discovered.known:
-			combat_scene_panel.update_monster_hp(int(discovered.current), int(discovered.max), true)
+			combat_scene_panel.update_monster_hp(int(discovered.current), int(discovered.max), true, bool(discovered.get("exceeded", false)))
 		else:
 			combat_scene_panel.update_monster_hp(0, 1, false)
 
@@ -18274,10 +18264,14 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 		if fill:
 			animate_hp_bar_change(fill, percent, false)
 		if hp_label:
-			if discovered.is_estimate:
-				hp_label.text = "~%d/%d" % [int(discovered.current), int(discovered.max)]
+			var prefix = "~" if discovered.is_estimate else ""
+			# v0.9.587 — when the player exceeds their known/estimated HP and
+			# the monster is still alive, tag the bar so the discovery moment
+			# reads clearly instead of looking like a stuck "1 HP" sliver.
+			if discovered.get("exceeded", false):
+				hp_label.text = "%s0/%d  (still alive!)" % [prefix, int(discovered.max)]
 			else:
-				hp_label.text = "%d/%d" % [int(discovered.current), int(discovered.max)]
+				hp_label.text = "%s%d/%d" % [prefix, int(discovered.current), int(discovered.max)]
 	else:
 		if fill:
 			animate_hp_bar_change(fill, 100.0, false)
@@ -25193,8 +25187,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.587 — Enemy HP bar discovery-overflow fix.
+	display_game("[color=#00FF00]v0.9.587[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Fixes the confusing HP bar jump when you out-damage a monster whose HP you didn't fully know yet. Example: hit a Lv4 Hobgoblin for 23 (sees \"25/48\"), then for another 27 — used to show \"12/62\" because the bar quietly inflated the max to your damage+25%. Now shows \"0/48 (still alive!)\" with the bar truly depleted, so the discovery moment reads instead of stealth-resizing.[/color]")
+	display_game("  • [b]Behavior change[/b]: when total damage exceeds the known/estimated HP and the monster is still alive, the displayed max stays put and the bar drains to 0 with a \"still alive!\" tag. The known HP still gets bumped silently on confirmed kill (so future fights start from a more accurate estimate), but no longer balloons mid-fight.")
+	display_game("  • [b]Why it broke[/b]: v0.9.566's upward-observation fix grew the displayed ceiling to [color=#888888]damage_dealt + 25%[/color] when the player out-damaged the estimate. The intent was \"don't pin the bar at 1\", but the side effect was that both halves of the HP label jumped simultaneously — confusing because the bar appeared to refill while you were attacking.")
+	display_game("")
+
 	# v0.9.586 — Chain auto-advance extra_data + starter kit stats.
-	display_game("[color=#00FF00]v0.9.586[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.586[/color]")
 	display_game("  [color=#FFD700]Two bugs from continued playtest: Pathfinder II (mine 2 ore) wasn't progressing, and the Tier 1 starter gear felt too weak to matter. Both fixed.[/color]")
 	display_game("  • [b]Mid-chain quest auto-advance now stores the full extra_data[/b]. When a chain stage was turned in, the next stage was added with an empty `{}` for extra_data — so [color=#888888]quest_type[/color] and [color=#888888]gather_job[/color] were missing. GATHER chain stages silently skipped progress checks (Pathfinder II = mine 2 ore stuck at 0/2). DELIVER chain stages would have hit the same trap. Refactored the extra_data builder out of [color=#888888]accept_quest[/color] into [color=#888888]build_quest_extra_data()[/color] and called it from the auto-advance path too. Added fallback resolution in [color=#888888]check_gathering_progress[/color] and [color=#888888]count_delivery_progress[/color] so existing broken quests on saved characters self-heal on the next tick — your tst3 character's stuck mine quest will start counting kills the next time you mine an ore.")
 	display_game("  • [b]Starter kit gear bumped Lv1 → Lv5[/b]. The Pathfinder reward gear (Rusty Weapon / Leather Armor / Cloth Helm / Cloth Boots / Wood Shield / Copper Ring) was generated at level 1 common, which after the rarity_mult/wear math rounded to +0 or +1 per slot — the helm and boots literally gave 0 defense. Bumped to level 5, common. Base stats now scale to roughly +5-7 attack on the weapon, +5 defense + 7 HP on the armor, +3 defense on the helm/boots, etc. — a noticeable reward instead of a tag of pity.")

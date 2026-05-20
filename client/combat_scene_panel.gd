@@ -43,6 +43,7 @@ var _monster_art_bbcode: String = ""
 var _monster_hp: int = -1
 var _monster_max_hp: int = -1
 var _monster_hp_known: bool = false
+var _monster_hp_exceeded: bool = false  # v0.9.587 — true when player has dealt > known max, monster still alive
 
 const LOG_LINE_LIMIT := 80
 var _log_lines: Array = []
@@ -2777,10 +2778,11 @@ func update_player_hp(current: int, max_hp: int) -> void:
 		_refresh_player_hp()
 
 
-func update_monster_hp(current: int, max_hp: int, known: bool) -> void:
+func update_monster_hp(current: int, max_hp: int, known: bool, exceeded: bool = false) -> void:
 	_monster_hp = current
 	_monster_max_hp = maxi(1, max_hp)
 	_monster_hp_known = known
+	_monster_hp_exceeded = exceeded
 	if is_inside_tree():
 		_refresh_monster_hp()
 
@@ -3444,7 +3446,14 @@ func _refresh_monster_hp() -> void:
 		return
 	_monster_hp_bar.max_value = _monster_max_hp
 	_animate_bar_value(_monster_hp_bar, clampi(_monster_hp, 0, _monster_max_hp))
-	_monster_hp_text.text = "HP %d / %d" % [maxi(0, _monster_hp), _monster_max_hp]
+	# v0.9.587 — when the player has out-damaged the known ceiling but the
+	# monster's still alive, label the bar so the discovery moment reads.
+	var hp_text: String
+	if _monster_hp_exceeded:
+		hp_text = "HP 0 / %d  (still alive!)" % _monster_max_hp
+	else:
+		hp_text = "HP %d / %d" % [maxi(0, _monster_hp), _monster_max_hp]
+	_monster_hp_text.text = hp_text
 	if _lufia_monster_hp_bar and is_instance_valid(_lufia_monster_hp_bar):
 		_lufia_monster_hp_bar.max_value = _monster_max_hp
 		_animate_bar_value(_lufia_monster_hp_bar, clampi(_monster_hp, 0, _monster_max_hp))
@@ -3455,7 +3464,7 @@ func _refresh_monster_hp() -> void:
 		if fill_sb != null:
 			fill_sb.bg_color = Color.from_string(_monster_name_color, Color("#FFAA22"))
 	if _lufia_monster_hp_text and is_instance_valid(_lufia_monster_hp_text):
-		_lufia_monster_hp_text.text = "HP %d / %d" % [maxi(0, _monster_hp), _monster_max_hp]
+		_lufia_monster_hp_text.text = hp_text
 
 
 func _refresh_log() -> void:
