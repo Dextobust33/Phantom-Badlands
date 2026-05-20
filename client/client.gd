@@ -20534,6 +20534,11 @@ func handle_server_message(message: Dictionary):
 			if message.get("completed", false) and quest_id != "" and not quests_sound_played.has(quest_id):
 				quests_sound_played[quest_id] = true
 				play_quest_complete_sound()
+				# v0.9.575 — stage-complete turn-in hint. Quest log doesn't
+				# visually flag "where do I go now?" — the chat line below
+				# names the surface (quest board / Q tile at issuing post)
+				# so new players don't have to guess. Per polish backlog.
+				display_game("[color=#88FF88]› Return to the quest board (Q tile) at the issuing post to turn this in.[/color]")
 
 		"quest_log":
 			handle_quest_log(message)
@@ -25175,8 +25180,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.575 — Two small QoL hints from the polish backlog.
+	display_game("[color=#00FF00]v0.9.575[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two small QoL hints from the polish backlog: a wounded-companion remedy nudge and a quest-stage turn-in pointer.[/color]")
+	display_game("  • [b]Wounded-companion HP hint[/b]. The corner companion overlay's HP line now names the remedy directly: at KO it reads [color=#FF6666]'KO'd — rest or visit H tile'[/color]; below ⅓ HP it reads [color=#FFAA33]'HP X / Y — wounded, rest or visit H'[/color]. New players no longer have to guess that healers live at NPC posts (the H tile).")
+	display_game("  • [b]Quest-stage turn-in pointer[/b]. When a quest stage completes the chat now follows up with [color=#88FF88]'› Return to the quest board (Q tile) at the issuing post to turn this in.'[/color] One green line, fires once per quest (gated by the same `quests_sound_played` set that throttles the completion sound). Plugs the polish-backlog gap where the welcome modal teaches turn-in but the quest log doesn't surface the next-step hint on completion.")
+	display_game("  • [b]Client-only[/b]. No server change; server stays on v0.9.574 binary `815eeaf1fc9dd6e336f6e50787f3c7d4`.")
+	display_game("")
+
 	# v0.9.574 — Combat loot ✦ +2 Reveals bonus cell (Slice 1 of scratch-off engagement mechanics).
-	display_game("[color=#00FF00]v0.9.574[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.574[/color]")
 	display_game("  [color=#FFD700]A rare gold cell hides in your combat loot grid — flip it for [color=#88FF88]+2 reveals[/color] to your budget. Net [color=#88FF88]+1 reveal[/color] gained after the click cost.[/color]")
 	display_game("  • [b]✦ +2 Reveals cell[/b] (user direction 2026-05-20, Slice 1 of the scratch-off engagement mechanics). Each filler slot in the combat loot grid now has a [color=#FFD700]1-in-12[/color] chance of rolling as a [color=#FFD700]+2 Reveals[/color] bonus cell. Flip it like any other slot — costs 1 reveal — and it grants +2 reveals back to your budget. Cell is marked with a gold [color=#FFD700]✦[/color] sparkle prefix on reveal so the lucky pull reads obviously special.")
 	display_game("  • [b]How it changes play[/b]: when your budget is tight and you've already taken the obviously-valuable cells, gambling a click on an unrevealed cell now has real upside potential — you might hit a +2 and unlock the rest of the grid. Adds a tension layer to budget management without making greedy plays the only correct move.")
@@ -25211,15 +25224,6 @@ func display_changelog():
 	display_game("  • [b]New Help topic[/b]: `bug_report` — explains the flow, what gets captured, and tips for writing useful descriptions. Visible via any `?` Help button (it's in the shared registry).")
 	display_game("")
 
-	# v0.9.570 — Polish batch #3: Market multi-listing discoverability + Companion border tiers (double-rarity stat layer).
-	display_game("[color=#00FFFF]v0.9.570[/color]")
-	display_game("  [color=#FFD700]Market 'List' button got loud and transparent, and companions roll a new ◆ Border tier on creation that stacks stat bonuses on top of variant rarity.[/color]")
-	display_game("  • [b]Market — Sell / Bulk List button is no longer tiny[/b]. The dropdown that hid every selling path got renamed to [color=#88FF88]Sell / Bulk List ▾[/color], bumped to 220×36, accent-green styled, and every menu row now reads its count: `Bulk: All Equipment (14)`. Empty categories grey out so the menu reads honestly. Direct fix to the 'tiny dropdown is easy to miss or not understand' pain point.")
-	display_game("  • [b]Companion Border Tiers[/b] (NEW system). Every companion now rolls a second independent rarity at creation — the [color=#FFD700]◆ Border tier[/color] — that grants a stat multiplier ON TOP of variant rarity. Seven tiers: None (60%) → Common +5% → Uncommon +12% → Rare +25% → Epic +50% → Legendary +100% → Mythic +200%. Mythic borders are 1-in-5000 rolls.")
-	display_game("  • [b]Stacks across the existing rarity scale[/b]. An Epic variant Goblin (+50%) with a Rare border (+25%) is now stronger than an Epic + no border — the visible badges multiply. Inspect view shows both badges side by side: [color=#A335EE][E][/color] [color=#0070DD]◆ Rare Border[/color] [b]Crimson Goblin[/b] (+50% stats)(+25% stats).")
-	display_game("  • [b]Fusion preservation[/b]. Same Type + Mixed T9 + Tier Ascend fusions all preserve the HIGHEST border tier among the inputs. Rare borders survive fusion — encourages keeping a rare-border companion in your fusion stack rather than fusing it away. Hybrid fusion rolls fresh (different types, no clean inheritance path).")
-	display_game("  • [b]Lazy backfill on existing rosters[/b]. The first time you load a character with companions, each companion rolls a fresh border tier so you get a delightful surprise on the roster. Eggs roll too — the value carries through to the hatched companion.")
-	display_game("")
 
 
 
@@ -25949,12 +25953,14 @@ func update_companion_art_overlay():
 	comp_combat_hp = clampi(comp_combat_hp, 0, comp_max_hp)
 	var hp_color: String
 	var hp_text: String
+	# v0.9.575 — Wounded/KO'd companions now name the healer remedy directly
+	# so new players know they can rest or visit a healer (H tile at NPC posts).
 	if comp_combat_hp <= 0:
 		hp_color = "#FF6666"
-		hp_text = "KO'd — needs healer"
+		hp_text = "KO'd — rest or visit H tile"
 	elif comp_combat_hp < comp_max_hp / 3:
 		hp_color = "#FFAA33"
-		hp_text = "HP %d / %d" % [comp_combat_hp, comp_max_hp]
+		hp_text = "HP %d / %d — wounded, rest or visit H" % [comp_combat_hp, comp_max_hp]
 	else:
 		hp_color = "#FF6666"
 		hp_text = "HP %d / %d" % [comp_combat_hp, comp_max_hp]
