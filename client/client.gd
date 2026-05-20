@@ -25181,8 +25181,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.577 — Performance pass: server DIAG_TIMING_ENABLED flipped off.
+	display_game("[color=#00FF00]v0.9.577[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Server-side performance win: ~30+ syscalls per server tick removed by retiring the freeze-investigation timing instrumentation.[/color]")
+	display_game("  • [b]DIAG_TIMING_ENABLED → false[/b]. The diagnostic timing scaffolding added during the 2026-05 freeze investigations measured per-region costs (threat scans, merchant movement, character saves, etc.) by sprinkling [color=#888888]Time.get_ticks_usec()[/color] calls throughout the server's [color=#888888]_process[/color] tick. Both 5s freeze causes were fixed weeks ago (LOS cache + shared tile cache), so the instrumentation cost is no longer earning its keep. Flipping the const to false makes the GDScript compiler dead-code-eliminate every gated block.")
+	display_game("  • [b]Player-felt impact[/b]: small but non-zero. Each diag block was a ticks-usec read + a few subtractions; cumulatively ~30+ syscalls per tick. Frees up a tiny amount of headroom for the procedural noise pipeline that's the next perf lever (per the server_freeze_investigation memo).")
+	display_game("  • [b]Reversible[/b]: if regressions appear, flip the const back to true and re-deploy. Every diag block is gated on this single const so toggling is a one-line change.")
+	display_game("")
+
 	# v0.9.576 — Breadcrumb coverage extended (Slice 10 continued).
-	display_game("[color=#00FF00]v0.9.576[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.576[/color]")
 	display_game("  [color=#FFD700]Three more chat-style screens get the breadcrumb header so the nested-menu trail stays consistent across all the non-panel surfaces.[/color]")
 	display_game("  • [b]Clan Vault[/b] chat-fallback view now displays [color=#888888]Clan › Vault[/color].")
 	display_game("  • [b]Bounty Board[/b] chat-fallback view (when the panel isn't visible) displays [color=#888888]/bounty list › Bounty Board[/color].")
@@ -25224,15 +25232,6 @@ func display_changelog():
 	display_game("  • [b]Note[/b]: ASCII shadow layer (offset semi-transparent copy of the art behind the main one) is still scoped as a future cosmetic-polish slice — the border was the higher-impact half of the pair.")
 	display_game("")
 
-	# v0.9.571 — Polish batch #4: Bug reporting refit (compact JSON + Linux-correct path + rsync script).
-	display_game("[color=#00FFFF]v0.9.571[/color]")
-	display_game("  [color=#FFD700]Bug reporting refit so submissions actually land on production: structured JSON wire format, Linux-correct server storage path, and a help topic + pull script so dev investigation is one paste away.[/color]")
-	display_game("  • [b]Compact JSON payload[/b]. `/bug <desc>` now sends a structured snapshot (version, UTC timestamp, character, location, HP/MP/SP/EN/Valor, active modes, last ~20 game-output lines, pending sub-state) instead of the legacy text dump. Target ≤2 KB per report so the developer can paste one into Claude in a single turn and get useful analysis. Player-facing flow is unchanged — same `/bug` command, same button.")
-	display_game("  • [b]Server-side path fix[/b]. Previous handler wrote to `C:/Users/Dexto/Desktop/Bug Reports/` — a Windows desktop path that silently no-op'd on the Linux Hetzner server, so ZERO reports were actually saved. Refit writes to `user://bug_reports/` which resolves to `~/.local/share/godot/app_userdata/PhantomBadlands/bug_reports/` on production. One JSON file per report, named `<utc-ts>_<player>.json`.")
-	display_game("  • [b]Privacy[/b]. Only the first 8 characters of your account ID are stored — enough to match accounts if we need to reach out, not enough to identify you to a third party. Character name + level + location are visible; password/email never leave the client.")
-	display_game("  • [b]Back-compat[/b]. Older clients sending only the legacy text body still work — the server wraps the text in a minimal envelope and stores it alongside the new JSON form.")
-	display_game("  • [b]New Help topic[/b]: `bug_report` — explains the flow, what gets captured, and tips for writing useful descriptions. Visible via any `?` Help button (it's in the shared registry).")
-	display_game("")
 
 
 
