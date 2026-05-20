@@ -16325,8 +16325,12 @@ func _handle_market_buy_npc_stock(peer_id: int, listing_id: String, requested_qt
 	character.inventory.append(fresh_item)
 	save_character(peer_id)
 
+	# v0.9.589 — was sending `market_buy_result` which has no client handler;
+	# only `market_buy_success` is wired up to _handle_market_buy_success.
+	# NPC vendor purchases were silently succeeding (inventory + valor updated
+	# via send_character_update) but no confirmation UI ever appeared.
 	send_to_peer(peer_id, {
-		"type": "market_buy_result",
+		"type": "market_buy_success",
 		"success": true,
 		"item_name": String(matched_entry.get("display_name", fresh_item.get("name", "Item"))),
 		"quantity": buy_qty,
@@ -16486,8 +16490,11 @@ func handle_market_network_buy(peer_id: int, message: Dictionary):
 
 	save_character(peer_id)
 
+	# v0.9.589 — same fix as the NPC vendor branch above: was sending
+	# `market_buy_result` which has no client handler. Network buys completed
+	# silently with no confirmation panel transition.
 	send_to_peer(peer_id, {
-		"type": "market_buy_result",
+		"type": "market_buy_success",
 		"success": true,
 		"item_name": String(item.get("name", "Item")),
 		"quantity": buy_qty,
@@ -33107,15 +33114,22 @@ func _spawn_crucible_boss(peer_id: int):
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 	if result.success:
+		# v0.9.589 — was using the pre-display_state schema (monster/enemy_hp/
+		# player_hp), which the modern _process_combat_start can't read. Result:
+		# Crucible bosses showed "Enemy" placeholder, no ASCII art, no HP bar,
+		# no first-strike warning. Now uses the same combat_state envelope as
+		# every other encounter (see line 29965 for the canonical pattern).
+		var display_state = combat_mgr.get_combat_display(peer_id)
+		display_state["is_crucible"] = true
+		display_state["is_boss_fight"] = true
 		send_to_peer(peer_id, {
 			"type": "combat_start",
-			"monster": monster,
-			"enemy_hp": monster.hp,
-			"enemy_max_hp": monster.hp,
-			"player_hp": character.current_hp,
-			"player_max_hp": character.get_total_max_hp(),
-			"special_message": "[color=#FF4444]CRUCIBLE BOSS %d/10: %s (Lv.%d)[/color]" % [boss_num, monster.name, boss_level],
-			"extra_combat_text": result.get("extra_combat_text", "")
+			"message": "[color=#FF4444]CRUCIBLE BOSS %d/10: %s (Lv.%d)[/color]" % [boss_num, monster.name, boss_level],
+			"combat_state": display_state,
+			"is_boss": true,
+			"is_crucible": true,
+			"use_client_art": true,
+			"extra_combat_text": result.get("extra_combat_text", ""),
 		})
 		if result.get("combat_ended", false):
 			_handle_instant_death_at_combat_start(peer_id, monster.name)
