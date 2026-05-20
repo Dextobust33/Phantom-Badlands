@@ -25193,8 +25193,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.583 — Hotfix: Pathfinder turn-in actually works at the Quest Board now.
+	display_game("[color=#00FF00]v0.9.583[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8888]Hotfix for an incomplete v0.9.582 fix — the Pathfinder turn-in flexibility patched 2 of 3 quest-turn-in code paths but missed the third one (the Quest Board UI handler), which is the path players actually trigger when they bump the Q tile. Direct user report.[/color]")
+	display_game("  • [b]handle_trading_post_quests now has the pathfinder branch[/b]. Bumping the Q tile at ANY starter post (haven/crossroads/south_gate/east_market/west_shrine) now correctly surfaces completed Pathfinder quests in the turn-in list.")
+	display_game("  • [b]My apology[/b]: I should have audited all three quest-turn-in code paths in v0.9.582 instead of two. The pattern in the codebase (separate handlers each with their own can_turn_in logic) made it easy to miss.")
+	display_game("")
+
 	# v0.9.582 — Five player-reported bug fixes from a single playtest session.
-	display_game("[color=#00FF00]v0.9.582[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.582[/color]")
 	display_game("  [color=#FFD700]Five bugs fixed from a player-feedback report. Starter chain is unblocked, abandons are safer, the quest log scrolls right, and threatened-post info no longer vanishes.[/color]")
 	display_game("  • [b]Pathfinder's Trial turn-in flexibility[/b]. The starter chain was anchored to Haven (0,10) but players spawn at Crossroads (0,0) — leaving the quest un-turn-in-able. Pathfinder quests now accept turn-in at ANY of the 5 starter posts (haven/crossroads/south_gate/east_market/west_shrine). Both server (handle_quest_turn_in + quests_to_turn_in query) and client (turn-in hint reads 'Turn in at any starter post') updated.")
 	display_game("  • [b]2-step abandon confirm[/b]. Pressing a quest's number key in the quest log no longer instantly abandons it. First press marks 'Press %d again within 3 seconds to confirm'; second press of the SAME key confirms. Any other input cancels. Pathfinder chain quests can't be abandoned at all (it's the new-player tutorial).")
@@ -25241,13 +25248,6 @@ func display_changelog():
 	display_game("  • [b]No client-facing /patreon command yet[/b]. Will land alongside the actual Patreon URL once the page is published.")
 	display_game("")
 
-	# v0.9.577 — Performance pass: server DIAG_TIMING_ENABLED flipped off.
-	display_game("[color=#00FFFF]v0.9.577[/color]")
-	display_game("  [color=#FFD700]Server-side performance win: ~30+ syscalls per server tick removed by retiring the freeze-investigation timing instrumentation.[/color]")
-	display_game("  • [b]DIAG_TIMING_ENABLED → false[/b]. The diagnostic timing scaffolding added during the 2026-05 freeze investigations measured per-region costs (threat scans, merchant movement, character saves, etc.) by sprinkling [color=#888888]Time.get_ticks_usec()[/color] calls throughout the server's [color=#888888]_process[/color] tick. Both 5s freeze causes were fixed weeks ago (LOS cache + shared tile cache), so the instrumentation cost is no longer earning its keep. Flipping the const to false makes the GDScript compiler dead-code-eliminate every gated block.")
-	display_game("  • [b]Player-felt impact[/b]: small but non-zero. Each diag block was a ticks-usec read + a few subtractions; cumulatively ~30+ syscalls per tick. Frees up a tiny amount of headroom for the procedural noise pipeline that's the next perf lever (per the server_freeze_investigation memo).")
-	display_game("  • [b]Reversible[/b]: if regressions appear, flip the const back to true and re-deploy. Every diag block is gated on this single const so toggling is a one-line change.")
-	display_game("")
 
 
 
