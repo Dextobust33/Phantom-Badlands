@@ -648,6 +648,8 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	var companion_level = companion.get("level", 1)
 	var companion_bonuses = companion.get("bonuses", {})
 	var companion_sub_tier = companion.get("sub_tier", 1)
+	# v0.9.570 — companion border tier (double-rarity stat layer). 0-6 → 1.00x-3.00x.
+	var companion_border_tier = int(companion.get("border_tier", 0))
 
 	# 95% hit chance for companions
 	if randi() % 100 >= 95:
@@ -657,10 +659,16 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	# Calculate companion damage (now scales with companion level and sub-tier)
 	var companion_damage = 0
 	if drop_tables:
-		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses, companion_level, companion_sub_tier)
+		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses, companion_level, companion_sub_tier, companion_border_tier)
 	else:
 		# Fallback formula matching drop_tables
 		companion_damage = companion_tier * 5 + int(character.level * 0.3) + int(companion_level * 0.5)
+		# v0.9.570 — apply border multiplier even in the fallback path.
+		var border_mult: float = 1.0
+		var border_table = [1.00, 1.05, 1.12, 1.25, 1.50, 2.00, 3.00]
+		if companion_border_tier >= 0 and companion_border_tier < border_table.size():
+			border_mult = border_table[companion_border_tier]
+		companion_damage = int(companion_damage * border_mult)
 
 	# Apply variant multiplier
 	var variant_mult = character.get_variant_stat_multiplier()

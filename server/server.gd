@@ -13934,7 +13934,14 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 		var current_sub_tier = int(first.get("sub_tier", 1))
 		var new_sub_tier = mini(current_sub_tier + 1, 9)
 		var inherited = _check_variant_inheritance(kennel, indices)
-		var output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited)
+		# v0.9.570 — pass the highest border_tier from inputs so rare borders
+		# survive Same Type fusion.
+		var best_border := 0
+		for idx in indices:
+			var bt = int(kennel[int(idx)].get("border_tier", 0))
+			if bt > best_border:
+				best_border = bt
+		var output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited, best_border)
 		if output.is_empty():
 			send_to_peer(peer_id, {"type": "error", "message": "Fusion failed — unknown monster type!"})
 			return
@@ -13967,7 +13974,13 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				return
 		var random_type = kennel[int(indices[randi() % indices.size()])].get("monster_type")
 		var inherited = _check_variant_inheritance(kennel, indices)
-		var output = drop_tables.create_fusion_companion(random_type, 9, inherited)
+		# v0.9.570 — Mixed T9 inherits the highest border_tier across all 8 inputs.
+		var mixed_best_border := 0
+		for idx in indices:
+			var bt = int(kennel[int(idx)].get("border_tier", 0))
+			if bt > mixed_best_border:
+				mixed_best_border = bt
+		var output = drop_tables.create_fusion_companion(random_type, 9, inherited, mixed_best_border)
 		if output.is_empty():
 			send_to_peer(peer_id, {"type": "error", "message": "Fusion failed!"})
 			return
@@ -14210,7 +14223,13 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 		var current_sub_tier = int(first.get("sub_tier", 1))
 		var new_sub_tier = mini(current_sub_tier + 1, 9)
 		var inherited = _check_variant_inheritance_list(companions)
-		output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited)
+		# v0.9.570 — highest border_tier inheritance for same-type stable fusion.
+		var best_border := 0
+		for c in companions:
+			var bt = int(c.get("border_tier", 0))
+			if bt > best_border:
+				best_border = bt
+		output = drop_tables.create_fusion_companion(first.monster_type, new_sub_tier, inherited, best_border)
 	elif fusion_type == "mixed":
 		if companions.size() != 8:
 			send_to_peer(peer_id, {"type": "error", "message": "Mixed T9 fusion requires exactly 8 companions!"})
@@ -14224,7 +14243,13 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 				return
 		var random_type = companions[randi() % companions.size()].get("monster_type")
 		var inherited = _check_variant_inheritance_list(companions)
-		output = drop_tables.create_fusion_companion(random_type, 9, inherited)
+		# v0.9.570 — Mixed T9 (stable variant): inherit highest border_tier across inputs.
+		var mixed_best_border := 0
+		for c in companions:
+			var bt = int(c.get("border_tier", 0))
+			if bt > mixed_best_border:
+				mixed_best_border = bt
+		output = drop_tables.create_fusion_companion(random_type, 9, inherited, mixed_best_border)
 	elif fusion_type == "hybrid":
 		if companions.size() != 2:
 			send_to_peer(peer_id, {"type": "error", "message": "Hybrid fusion requires exactly 2 companions!"})

@@ -377,7 +377,29 @@ func _build_layout() -> void:
 	action_row.add_theme_constant_override("separation", 8)
 	root_vbox.add_child(action_row)
 
-	_list_button = _make_action_btn("List ▾", _on_list_menu_pressed)
+	# v0.9.570 — discoverability fix per user feedback: the original "List ▾"
+	# was a small, easy-to-miss dropdown that hid the entire selling surface.
+	# Renamed to make the action obvious, bumped size, and the menu items
+	# below now carry per-category count badges so players see what's
+	# available BEFORE they click. Single-item picker + bulk-list paths
+	# still live behind the same menu — keeps server contract unchanged.
+	_list_button = _make_action_btn("📤  Sell / Bulk List  ▾", _on_list_menu_pressed)
+	_list_button.custom_minimum_size = Vector2(220, 36)
+	_list_button.add_theme_font_size_override("font_size", 15)
+	# Accent the button so it pops out from neighbors (Pull All / Close).
+	var list_btn_sb := StyleBoxFlat.new()
+	list_btn_sb.bg_color = Color(0.20, 0.45, 0.25, 0.95)
+	list_btn_sb.border_color = Color(0.45, 0.85, 0.50, 1)
+	list_btn_sb.set_border_width_all(2)
+	list_btn_sb.set_corner_radius_all(4)
+	list_btn_sb.content_margin_left = 12
+	list_btn_sb.content_margin_right = 12
+	list_btn_sb.content_margin_top = 6
+	list_btn_sb.content_margin_bottom = 6
+	_list_button.add_theme_stylebox_override("normal", list_btn_sb)
+	var list_btn_hover := list_btn_sb.duplicate() as StyleBoxFlat
+	list_btn_hover.bg_color = Color(0.28, 0.55, 0.33, 0.97)
+	_list_button.add_theme_stylebox_override("hover", list_btn_hover)
 	action_row.add_child(_list_button)
 
 	_pull_all_button = _make_action_btn("Pull All", _on_pull_all_pressed)
@@ -941,6 +963,77 @@ func _on_cancel_pressed() -> void:
 
 func _on_pull_all_pressed() -> void:
 	emit_signal("pull_all_pressed")
+
+
+func update_bulk_counts(inventory: Array, incubating_eggs: Array) -> void:
+	"""v0.9.570 — refresh the dropdown menu's per-category labels with live
+	counts from the player's inventory. Called by client.gd whenever the
+	market panel is populated. Empty categories render `(0 items)` so the
+	menu remains transparent about what's listable."""
+	if _list_menu == null:
+		return
+	var counts := {
+		"equipment": 0,
+		"consumable": 0,
+		"tool": 0,
+		"material": 0,
+		"food": 0,
+		"egg": int(incubating_eggs.size()) if incubating_eggs is Array else 0,
+	}
+	for entry in inventory:
+		if not (entry is Dictionary):
+			continue
+		# Items may carry both `type` (broad) and `item_type` (specific).
+		# Mirror the dual-type rule from CLAUDE.md so the count matches
+		# what the server's bulk-list filter actually picks up.
+		var t = String(entry.get("type", ""))
+		var it = String(entry.get("item_type", ""))
+		# Resolve to the most specific category we recognize.
+		if t == "equipment" or it == "equipment" or it in ["weapon", "armor", "helm", "boots", "shield", "accessory", "ring"]:
+			counts["equipment"] += 1
+			continue
+		if t == "consumable" or it == "consumable" or it.ends_with("_potion") or it == "escape_scroll" or it.ends_with("_scroll"):
+			counts["consumable"] += 1
+			continue
+		if t == "tool" or it == "tool" or it in ["fishing_rod", "pickaxe", "axe", "hammer", "structure"]:
+			counts["tool"] += 1
+			continue
+		# Food vs. generic materials — food items have type/item_type "food".
+		if t == "food" or it == "food":
+			counts["food"] += 1
+			continue
+		if t == "material" or it == "material" or it == "monster_part" or t == "monster_part":
+			counts["material"] += 1
+			continue
+
+	for i in range(LIST_MENU_ITEMS.size()):
+		var entry = LIST_MENU_ITEMS[i]
+		if entry["id"] == "_separator":
+			continue
+		var base_label = String(entry["label"])
+		var n: int = 0
+		match entry["id"]:
+			"list_inventory":
+				n = inventory.size() if inventory is Array else 0
+			"list_material":
+				# Material picker spans materials + food + monster_parts.
+				n = counts["material"] + counts["food"]
+			"list_egg":
+				n = counts["egg"]
+			"bulk_equipment":
+				n = counts["equipment"]
+			"bulk_consumable":
+				n = counts["consumable"]
+			"bulk_tool":
+				n = counts["tool"]
+			"bulk_material":
+				n = counts["material"]
+			"bulk_food":
+				n = counts["food"]
+		var labeled = "%s  (%d)" % [base_label, n]
+		_list_menu.set_item_text(i, labeled)
+		# Grey out zero-item rows so the menu reads honestly.
+		_list_menu.set_item_disabled(i, n <= 0 and entry["id"] != "_separator")
 
 
 func _on_list_menu_pressed() -> void:
