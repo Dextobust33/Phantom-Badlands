@@ -3352,6 +3352,23 @@ func _refresh_companion() -> void:
 				if v_color2 != "":
 					v_color2 = _battle_lift_color(v_color2)
 				raw_art = client_ref._recolor_ascii_art_pattern(raw_art, v_color, v_color2, v_pattern)
+			# v0.9.572 — companion border tier visual. Re-color the outermost
+			# non-whitespace character of every art line in the border-tier's
+			# hue so a Rare-bordered Goblin gets a blue silhouette outline,
+			# Epic gets purple, Mythic gets gold. The natural body color of
+			# the art (variant pattern recolor above) stays intact in the
+			# middle of each line. Tier 0 (None) skips the call entirely.
+			var _border_tier := int(_companion_data.get("border_tier", 0))
+			var _border_color_for_tier := ""
+			match _border_tier:
+				1: _border_color_for_tier = "#FFFFFF"  # Common
+				2: _border_color_for_tier = "#1EFF00"  # Uncommon
+				3: _border_color_for_tier = "#0070DD"  # Rare
+				4: _border_color_for_tier = "#A335EE"  # Epic
+				5: _border_color_for_tier = "#FF8000"  # Legendary
+				6: _border_color_for_tier = "#FFD700"  # Mythic
+			if _border_color_for_tier != "":
+				raw_art = MonsterArt.apply_variant_border(raw_art, _border_color_for_tier)
 			# v0.9.385 — compact layouts use a tiny font_size so the companion
 			# ASCII fits in the COMPACT_PORTRAIT_PX box.
 			# v0.9.393 — also wrap in [center] for compact layouts so the

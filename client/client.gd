@@ -35,6 +35,22 @@ func _recolor_ascii_art(art: String, new_color: String) -> String:
 	var new_tag = "[color=%s]" % new_color
 	return color_regex.sub(art, new_tag, true)  # true = replace all matches
 
+
+# v0.9.572 — Companion Border Tier visual layer (paired with the v0.9.570
+# data + stat layer). Recolors the outermost non-whitespace character of
+# each art line in the border tier's signature color so a Rare-bordered
+# companion gets a blue silhouette outline, Epic gets purple, Mythic gold.
+# The natural body color of the art (variant pattern recolor) stays intact.
+# Tier 0 (None) is a no-op so the function is safe to call on every
+# companion render without conditioning at each call site.
+const _BORDER_TIER_COLORS: Array = ["", "#FFFFFF", "#1EFF00", "#0070DD", "#A335EE", "#FF8000", "#FFD700"]
+
+func _apply_companion_border_tier(art: String, border_tier: int) -> String:
+	if art == "" or border_tier <= 0 or border_tier >= _BORDER_TIER_COLORS.size():
+		return art
+	return MonsterArt.apply_variant_border(art, _BORDER_TIER_COLORS[border_tier])
+
+
 func _recolor_ascii_art_pattern(art: String, color1: String, color2: String, pattern: String) -> String:
 	"""Apply pattern-based coloring to ASCII art for visual variety.
 	Patterns: solid, gradient_down, gradient_up, middle, striped, edges,
@@ -25156,8 +25172,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.572 — Companion Border Tier visual layer (paired with v0.9.570's data + stat layer).
+	display_game("[color=#00FF00]v0.9.572[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The Border Tier visual finally lands — your companion's ASCII art now glows in its border-tier color. The rare-border Goblin you've been hauling around since v0.9.570 finally LOOKS rare.[/color]")
+	display_game("  • [b]Outline recolor[/b]. The first and last non-whitespace character on every line of companion ASCII art gets re-tinted to the border-tier's hue: [color=#FFFFFF]Common white[/color], [color=#1EFF00]Uncommon green[/color], [color=#0070DD]Rare blue[/color], [color=#A335EE]Epic purple[/color], [color=#FF8000]Legendary orange[/color], [color=#FFD700]Mythic gold[/color]. The natural body color (variant pattern) stays intact in the middle of each line — so a Crimson Wolf with a Rare border keeps its red body and gains a blue silhouette glow.")
+	display_game("  • [b]Applies everywhere[/b]: combat scene companion art, the corner Active Companion overlay, the chat-style Inspect view, the panel-style Inspect view, and the map-hover tooltip when you mouse over an allied companion. Single helper function `_apply_companion_border_tier()` reused at every render site so the look stays consistent.")
+	display_game("  • [b]Performance[/b]: zero new cost. The recolor pass is one regex on the already-rendered art string — same cost as the existing variant pattern recolor, just a second pass with different parameters. Tier 0 (None, 60%% of companions) short-circuits the call entirely.")
+	display_game("  • [b]Note[/b]: ASCII shadow layer (offset semi-transparent copy of the art behind the main one) is still scoped as a future cosmetic-polish slice — the border was the higher-impact half of the pair.")
+	display_game("")
+
 	# v0.9.571 — Polish batch #4: Bug reporting refit (compact JSON + Linux-correct path + rsync script).
-	display_game("[color=#00FF00]v0.9.571[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.571[/color]")
 	display_game("  [color=#FFD700]Bug reporting refit so submissions actually land on production: structured JSON wire format, Linux-correct server storage path, and a help topic + pull script so dev investigation is one paste away.[/color]")
 	display_game("  • [b]Compact JSON payload[/b]. `/bug <desc>` now sends a structured snapshot (version, UTC timestamp, character, location, HP/MP/SP/EN/Valor, active modes, last ~20 game-output lines, pending sub-state) instead of the legacy text dump. Target ≤2 KB per report so the developer can paste one into Claude in a single turn and get useful analysis. Player-facing flow is unchanged — same `/bug` command, same button.")
 	display_game("  • [b]Server-side path fix[/b]. Previous handler wrote to `C:/Users/Dexto/Desktop/Bug Reports/` — a Windows desktop path that silently no-op'd on the Linux Hetzner server, so ZERO reports were actually saved. Refit writes to `user://bug_reports/` which resolves to `~/.local/share/godot/app_userdata/PhantomBadlands/bug_reports/` on production. One JSON file per report, named `<utc-ts>_<player>.json`.")
@@ -25192,13 +25217,6 @@ func display_changelog():
 	display_game("  • [b]Stale constants cleanup[/b]. Dead pre-v0.9.567 MASTERY_* duplicates in shared/constants.gd (5-rank labels, 4-step thresholds) removed — they weren't being read anywhere, but they were a trap for future maintainers. Source of truth now lives in shared/character.gd + server/persistence_manager.gd.")
 	display_game("")
 
-	# v0.9.567 — Mastery cap to R6 + threat-corridor falloff sharpened.
-	display_game("[color=#00FFFF]v0.9.567[/color]")
-	display_game("  [color=#FFD700]Player-feedback tuning pass: more mastery headroom, faster early ranks, and monsters scale up sooner outside Haven.[/color]")
-	display_game("  • [b]Mastery cap raised to R6[/b]. Added [color=#FF44FF]Legend (R5)[/color] +30% damage and [color=#88FFFF]Mythic (R6)[/color] +45% damage on top of the existing R4 Master ceiling. The Atlas, headstart page, and rank-up popup all display the new tiers automatically.")
-	display_game("  • [b]Faster early ranks[/b]. Use-threshold reductions: [color=#9ACD32]Novice[/color] 30→10, [color=#9ACD32]Adept[/color] 150→50, [color=#9ACD32]Expert[/color] 600→250, [color=#FFD700]Master[/color] 2400→1200. New: [color=#FF44FF]Legend[/color] 4000, [color=#88FFFF]Mythic[/color] 10000. First two ranks now land in roughly a third of the uses — the early grind is noticeably shorter.")
-	display_game("  • [b]Threat-corridor falloff[/b]. Monsters scale up faster as you leave Haven. The novice ring shrank from 20 tiles to 10 (d=10-20 = Lv 1-2), the easy band tightened (d=20-40 = Lv 2-6), and the post-blend curve relaxed from cubic to quadratic so neighbor-post levels reach in sooner. Lv 1 pocket persists; the protective bubble just stops sooner.")
-	display_game("")
 
 
 
@@ -25941,6 +25959,8 @@ func update_companion_art_overlay():
 
 		# Apply pattern-based coloring for visual variety
 		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+		# v0.9.572 — overlay also gets the border-tier silhouette outline.
+		art_str = _apply_companion_border_tier(art_str, int(active_companion.get("border_tier", 0)))
 
 		# Use font_size=2 for tiny art display, centered
 		overlay_text += "[center][font_size=2]" + art_str + "[/font_size][/center]"
@@ -26816,6 +26836,8 @@ func display_companion_inspection(companion: Dictionary):
 	if art_lines.size() > 0:
 		art_str = "\n".join(art_lines)
 		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+		# v0.9.572 — inspect view picks up the border-tier silhouette outline.
+		art_str = _apply_companion_border_tier(art_str, int(companion.get("border_tier", 0)))
 
 	# Display side-by-side using table if art exists
 	if art_str != "":
@@ -31293,6 +31315,8 @@ func _build_map_companion_tooltip(companion: Dictionary) -> String:
 	if art_lines.size() > 0:
 		var art_str = "\n".join(art_lines)
 		art_str = _recolor_ascii_art_pattern(art_str, v_color, v_color2, v_pattern)
+		# v0.9.572 — map-hover tooltip also picks up border tier.
+		art_str = _apply_companion_border_tier(art_str, int(companion.get("border_tier", 0)))
 		lines.append("")
 		lines.append("[font_size=4]%s[/font_size]" % art_str)
 	lines.append("")
@@ -34239,6 +34263,8 @@ func _build_companion_inspect_bbcode(companion: Dictionary) -> String:
 	if art_lines.size() > 0:
 		var art_str = "\n".join(art_lines)
 		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+		# v0.9.572 — panel-style inspect view also picks up the border tier.
+		art_str = _apply_companion_border_tier(art_str, int(companion.get("border_tier", 0)))
 		var art_font_size = int(5 * ui_scale_monster_art)
 		if art_font_size < 1:
 			art_font_size = 1
