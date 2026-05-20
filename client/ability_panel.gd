@@ -330,7 +330,7 @@ func _get_rank_progress_text(ability_name: String) -> String:
 	"""Returns BBCode progress text: 'R2 Adept (45/200)' or 'R4 Master ★' at cap."""
 	var uses = int(_ability_uses.get(ability_name, 0))
 	var rank = _get_ability_rank(ability_name)
-	var name = MASTERY_RANK_NAMES[rank] if rank < MASTERY_RANK_NAMES.size() else "Master"
+	var name = MASTERY_RANK_NAMES[rank] if rank < MASTERY_RANK_NAMES.size() else "Mythic"
 	var color = MASTERY_RANK_COLORS[rank] if rank < MASTERY_RANK_COLORS.size() else "#FFFFFF"
 	if rank >= MASTERY_RANK_THRESHOLDS.size():
 		return "[color=%s]R%d %s ★[/color]" % [color, rank, name]

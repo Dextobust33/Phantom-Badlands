@@ -133,37 +133,12 @@ const TRICKSTER_ABILITIES = {
 # Path thresholds (which path is active based on highest stat)
 const PATH_STAT_THRESHOLD = 10  # Stat must be > 10 to unlock path abilities
 
-# ===== ABILITY MASTERY (Slice 1 — use-progression) =====
-# Audit #1: replace fixed level-unlock with use-based mastery. All abilities
-# are accessible from L1, but rank 0 hits at -20% damage. Each rank up adds
-# +10% damage; max rank caps at +20% over baseline. Ranks 1-4 are reached
-# at 10 / 50 / 200 / 1000 cumulative uses; rank 2 (~200 uses) = baseline so
-# existing characters can be backfilled to that point without a balance
-# shock. Slay-the-Spire-style deck building (pruning, modifiers, off-affinity
-# counter, account-level persistence, headstart purchase) lands in later
-# slices.
-const MASTERY_RANK_THRESHOLDS: Array = [30, 150, 600, 2400]  # uses needed to reach ranks 1-4 (rank 0 = no uses required). 3x slower than the v0.9.236 first cut.
-const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20]  # rank 0 → 4
-const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master"]
-const MASTERY_RANK_BACKFILL_USES: int = 200  # Existing characters get this many uses on archetype abilities at first load — puts them at rank 2 (baseline) so balance doesn't shift retroactively
-
-# ===== OFF-AFFINITY COUNTER (Audit #1 Slice 4 — v0.9.323) =====
-# Using an ability that doesn't match your class path costs damage. As you
-# grind use-progression rank on the off-archetype ability, the penalty
-# softens linearly. Mastery + counter together: rank 0 off-affinity is
-# brutal (mastery 0.80 × off 0.75 = 0.60 of baseline). Rank 4 erases the
-# whole gap (1.20 × 1.00 = 1.20 baseline — same as on-affinity max).
-# This is the "off-affinity mastery softens the −25% penalty" headline
-# from the combat audit. Universal abilities (cloak, all_or_nothing,
-# forethought, tactical_retreat, teleport) bypass this entirely.
-const OFF_AFFINITY_BASE_PENALTY: float = 0.25  # Rank 0 = full -25% damage
-const OFF_AFFINITY_MULT_BY_RANK: Array = [0.75, 0.81, 0.87, 0.94, 1.0]  # multiply ability damage by this when off-affinity
-# Slice 3 — Sanctuary headstart purchases. Baddie-point cost to start a new
-# character at each rank. Index = rank, value = BP cost for that step (R0 free).
-# Cumulative cost to R3 = 25 + 100 + 500 = 625 BP. Capped below max rank so
-# dying still has bite — R4 must always be earned through play.
-const MASTERY_HEADSTART_BP_PER_RANK: Array = [0, 25, 100, 500]
-const MASTERY_HEADSTART_MAX_RANK: int = 3
+# ===== ABILITY MASTERY (Audit #1 — use-progression) =====
+# Source of truth lives in `shared/character.gd` (MASTERY_RANK_* + OFF_AFFINITY_*)
+# and `server/persistence_manager.gd` (MASTERY_HEADSTART_*). The pre-v0.9.567
+# duplicates that lived here drifted (5-rank labels, 4-step thresholds) and
+# were unreferenced — removed in v0.9.568 so a future reader doesn't trust
+# them. Update the upstream sources, not this file.
 
 # Class Descriptions
 const CLASS_DESCRIPTIONS = {

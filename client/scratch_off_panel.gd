@@ -27,6 +27,9 @@ const GRID_ROWS := 4
 const RIPPLE_GLYPH := "~ ~ ~"      # legacy default for non-themed fallback
 const FISH_SILHOUETTE := "<><"     # legacy default for non-themed fallback
 
+# v0.9.568 — reusable HelpPanel attached to the header ? Help button.
+var _help_panel: Control = null
+
 # v0.9.369 — per-job theming. Hidden-slot glyph + ambient texture differ by
 # job; bar palette + panel border swap too. Themed scratch-off across all
 # four gathering systems.
@@ -466,6 +469,13 @@ func _build_layout() -> void:
 	_toggle_btn.add_theme_font_size_override("font_size", 15)
 	_toggle_btn.pressed.connect(_on_toggle_pressed)
 	header_row.add_child(_toggle_btn)
+
+	# v0.9.568 — Help coverage sweep. ? button + scratch_off topic.
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	_help_panel = HelpPanelScript.new()
+	add_child(_help_panel)
+	var help_btn = HelpPanelScript.make_help_button("scratch_off", _help_panel)
+	header_row.add_child(help_btn)
 
 	_subtitle_label = RichTextLabel.new()
 	_subtitle_label.bbcode_enabled = true

@@ -2782,7 +2782,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 			var rank_result = combat.character.record_mastery_use(ability_name)
 			if rank_result.get("ranked_up", false):
 				var new_rank = int(rank_result.get("new_rank", 0))
-				var rank_label = combat.character.MASTERY_RANK_NAMES[new_rank] if new_rank < combat.character.MASTERY_RANK_NAMES.size() else "Master"
+				var rank_label = combat.character.MASTERY_RANK_NAMES[new_rank] if new_rank < combat.character.MASTERY_RANK_NAMES.size() else "Mythic"
 				# Slice 6b — rank-up no longer auto-grants the damage bonus.
 				# Player picks between "+1 Copy in Deck" and "+10% Damage" via popup.
 				# Queue persists across disconnect; client pops popup on next event.
