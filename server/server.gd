@@ -17864,12 +17864,21 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 						character.completed_quests.erase(cqid)
 					chain_progress_msg += "  [color=#9ACD32](Repeatable — available again now)[/color]"
 			elif next_in_chain != "":
-				# Mid-chain — auto-add the next stage to active quests
+				# Mid-chain — auto-add the next stage to active quests.
+				# v0.9.586 — Build full extra_data via quest_manager helper so
+				# stored fields (quest_type, gather_job, delivery_item_*) match
+				# what the progress-check functions expect. Previously passed
+				# `{}`, silently breaking GATHER + DELIVER chain stage 2+.
 				var next_quest = quest_db.get_quest(next_in_chain)
 				if not next_quest.is_empty():
 					var next_target = int(next_quest.get("target", 1))
+					if next_quest.has("kill_count"):
+						next_target = int(next_quest.kill_count)
+					elif int(next_quest.get("type", -1)) == quest_db.QuestType.KILL_LEVEL or int(next_quest.get("type", -1)) == quest_db.QuestType.BOSS_HUNT:
+						next_target = 1
 					var ndesc = String(next_quest.get("description", ""))
-					character.add_quest(next_in_chain, next_target, character.x, character.y, ndesc, character.level, 0, {})
+					var nextra = quest_mgr.build_quest_extra_data(next_quest, character.name)
+					character.add_quest(next_in_chain, next_target, character.x, character.y, ndesc, character.level, 0, nextra)
 					chain_progress_msg = "[color=#FFAA00]Chain advances! Next: %s[/color]" % next_quest.get("name", "")
 
 		if valor_reward > 0 and peers.has(peer_id):

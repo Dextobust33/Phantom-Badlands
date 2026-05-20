@@ -70,31 +70,39 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 	var quest_description = description if not description.is_empty() else quest.get("description", "")
 
 	# Build extra data to store with quest (prevents regeneration issues for random quests)
+	var extra_data = build_quest_extra_data(quest, character.name)
+
+	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description, player_level, completed_at_post, extra_data):
+		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}
+
+	return {"success": false, "message": "Failed to accept quest"}
+
+func build_quest_extra_data(quest: Dictionary, character_name: String) -> Dictionary:
+	# v0.9.586 — Extracted from accept_quest so chain auto-advance (server.gd
+	# handle_quest_turn_in) can store the same fields. Prior to this, mid-chain
+	# advance passed empty `{}` so any progress check that reads from stored
+	# data (GATHER's gather_job, DELIVER's delivery_item_name/type, count_delivery
+	# quest_type lookup) was silently broken for chain stage 2+.
+	var quest_type = quest.get("type", -1)
 	var extra_data = {
 		"quest_name": quest.get("name", "Unknown Quest"),
-		"quest_type": quest_type
+		"quest_type": quest_type,
 	}
-	# Store rewards at accept time so they don't change on turn-in
 	var base_rewards = quest.get("rewards", {"xp": 0, "valor": 0})
 	extra_data["stored_rewards"] = {
 		"xp": base_rewards.get("xp", 0),
-		"valor": base_rewards.get("valor", 0)
+		"valor": base_rewards.get("valor", 0),
 	}
-	# For dungeon quests, store the specific dungeon type
 	if quest_type == QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
 		extra_data["dungeon_type"] = quest.get("dungeon_type", "")
-	# For monster type quests, store the specific monster type and level requirement
 	if quest_type == QuestDatabaseScript.QuestType.KILL_TYPE:
 		extra_data["monster_type"] = quest.get("monster_type", "")
 		if quest.has("min_monster_level"):
 			extra_data["min_monster_level"] = quest.get("min_monster_level", 0)
-	# For KILL_TIER quests, store the required tier
 	if quest_type == QuestDatabaseScript.QuestType.KILL_TIER:
 		extra_data["required_tier"] = quest.get("required_tier", 1)
-	# For exploration quests, store destinations for turn-in at destination
 	if quest_type == QuestDatabaseScript.QuestType.EXPLORATION:
 		extra_data["destinations"] = quest.get("destinations", [])
-	# For BOSS_HUNT quests with named bounty, store bounty fields
 	if quest_type == QuestDatabaseScript.QuestType.BOSS_HUNT:
 		if quest.has("bounty_name"):
 			extra_data["bounty_name"] = quest.get("bounty_name", "")
@@ -102,32 +110,17 @@ func accept_quest(character: Character, quest_id: String, origin_x: int, origin_
 			extra_data["bounty_level"] = quest.get("bounty_level", 1)
 			extra_data["bounty_x"] = quest.get("bounty_x", 0)
 			extra_data["bounty_y"] = quest.get("bounty_y", 0)
-	# For RESCUE quests, store NPC type, dungeon type, and rescue floor
 	if quest_type == QuestDatabaseScript.QuestType.RESCUE:
 		extra_data["rescue_npc_type"] = quest.get("rescue_npc_type", "merchant")
 		extra_data["dungeon_type"] = quest.get("dungeon_type", "")
 		extra_data["rescue_floor"] = quest.get("rescue_floor", 1)
-
-	# For GATHER quests, store gathering job type
 	if quest_type == QuestDatabaseScript.QuestType.GATHER:
 		extra_data["gather_job"] = quest.get("gather_job", "")
-
-	# Audit #6 Slice 9 — DELIVER quests: store delivery item name/type so the
-	# completion check (`is_quest_complete`) doesn't need to re-resolve the
-	# original quest dict on every check. Item name is the lookup key against
-	# crafting_materials (for materials) or inventory.name (for inv-resident
-	# types like consumables/runes/parts).
 	if quest_type == QuestDatabaseScript.QuestType.DELIVER:
 		extra_data["delivery_item_name"] = quest.get("delivery_item_name", "")
 		extra_data["delivery_item_type"] = quest.get("delivery_item_type", "")
-
-	# Store character name for per-character quest regeneration
-	extra_data["character_name"] = character.name
-
-	if character.add_quest(quest_id, target, origin_x, origin_y, quest_description, player_level, completed_at_post, extra_data):
-		return {"success": true, "message": "Quest '%s' accepted!" % quest.name}
-
-	return {"success": false, "message": "Failed to accept quest"}
+	extra_data["character_name"] = character_name
+	return extra_data
 
 # ===== PROGRESS TRACKING =====
 
@@ -323,11 +316,20 @@ func is_quest_complete(character: Character, quest_id: String) -> bool:
 	var quest_data = character.get_quest_progress(quest_id)
 	if quest_data.is_empty():
 		return false
+	# v0.9.586 — Backfill quest_type from quest_db if missing (chain auto-advance
+	# stored before fix). Without this, DELIVER chain stages fall through to
+	# the progress>=target check (always true since progress is 0) — false positive.
+	var quest_type = int(quest_data.get("quest_type", -1))
+	if quest_type == -1:
+		var quest_def = quest_db.get_quest(quest_id)
+		if not quest_def.is_empty():
+			quest_type = int(quest_def.get("type", -1))
+			quest_data["quest_type"] = quest_type
 	# Audit #6 Slice 9 — DELIVER quests check current inventory/material counts
 	# rather than a tracked progress integer. Players accumulate items by any
 	# means (kill+salvage, buy, fulfill, craft, loot) and the quest unlocks the
 	# moment they're holding enough. Items are consumed on turn-in.
-	if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
+	if quest_type == QuestDatabaseScript.QuestType.DELIVER:
 		var have = count_delivery_progress(character, quest_data)
 		return have >= int(quest_data.get("target", 0))
 	return quest_data.progress >= quest_data.target
@@ -339,6 +341,15 @@ func count_delivery_progress(character: Character, quest_data: Dictionary) -> in
 	inventory matching by name + type."""
 	var item_name = String(quest_data.get("delivery_item_name", ""))
 	var item_type = String(quest_data.get("delivery_item_type", ""))
+	# v0.9.586 — Backfill from quest_db for chain-auto-advanced quests.
+	if item_name.is_empty():
+		var quest_def = quest_db.get_quest(quest_data.get("quest_id", ""))
+		if not quest_def.is_empty():
+			item_name = String(quest_def.get("delivery_item_name", ""))
+			item_type = String(quest_def.get("delivery_item_type", ""))
+			if item_name != "":
+				quest_data["delivery_item_name"] = item_name
+				quest_data["delivery_item_type"] = item_type
 	if item_name.is_empty():
 		return 0
 	if item_type == "material":
@@ -741,10 +752,23 @@ func check_gathering_progress(character: Character, gather_job: String) -> Array
 	for quest_data in character.active_quests:
 		var quest_id = quest_data.quest_id
 		var quest_type = quest_data.get("quest_type", -1)
+		var required_job = quest_data.get("gather_job", "")
+		# v0.9.586 — Fallback for chain-auto-advanced quests stored before
+		# the fix landed (quest_type / gather_job missing from extra_data).
+		# Resolve from quest_db on the fly. Backfill stored fields once we
+		# have them so future ticks skip the lookup.
+		if quest_type == -1 or required_job == "":
+			var quest_def = quest_db.get_quest(quest_id)
+			if not quest_def.is_empty():
+				if quest_type == -1:
+					quest_type = int(quest_def.get("type", -1))
+					quest_data["quest_type"] = quest_type
+				if required_job == "":
+					required_job = String(quest_def.get("gather_job", ""))
+					if required_job != "":
+						quest_data["gather_job"] = required_job
 		if quest_type != QuestDatabaseScript.QuestType.GATHER:
 			continue
-
-		var required_job = quest_data.get("gather_job", "")
 		if required_job != "" and required_job != gather_job:
 			continue
 

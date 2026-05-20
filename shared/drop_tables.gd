@@ -5416,15 +5416,19 @@ const STARTER_KIT_SLOT_MAP: Dictionary = {
 
 func get_starter_kit_item(slot: String) -> Dictionary:
 	"""Returns a Tier 1 item for the given slot. Returns {} if slot unknown.
-	Common rarity, level 1 — the chain is designed for fresh characters; if
-	an experienced player runs it they'll just get a Tier 1 item to salvage."""
+	v0.9.586 — Bumped from level 1 → level 5 because lv1 common gear rounds
+	to 0–1 stat points after rarity_mult/wear math (helm/boots gave +0 def),
+	so a fresh character could barely feel the reward. Level 5 puts base_bonus
+	in the 3–8 range across slots while staying inside Pathfinder's intended
+	cadence — the chain's Lv 1-2 mob fights become meaningfully easier and
+	the gear is still salvage-fodder by ~Lv 8 like before."""
 	if slot == "":
 		return {}
 	var item_type = String(STARTER_KIT_SLOT_MAP.get(slot, ""))
 	if item_type == "":
 		return {}
 	var entry = {"item_type": item_type, "rarity": "common"}
-	var item = _generate_item(entry, 1)
+	var item = _generate_item(entry, 5)
 	if item.is_empty():
 		return {}
 	# Tag for future surfaces (inspect lineage, achievement, etc.).
