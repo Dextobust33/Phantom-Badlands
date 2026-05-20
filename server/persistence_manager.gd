@@ -1686,11 +1686,17 @@ func get_house_storage_capacity(account_id: String) -> int:
 	return base_slots + (upgrade_level * HOUSE_UPGRADES.storage_slots.effect)
 
 func get_house_companion_capacity(account_id: String) -> int:
-	"""Get total registered companion slots for a house"""
+	"""Get total registered companion slots for a house.
+	v0.9.579 — Patreon T2+ supporters get +1 slot (tame QoL). Hard rule per
+	[[patreon-founder]] memo: slot count is convenience, not power."""
 	var house = get_house(account_id)
 	var base_slots = house.registered_companions.slots
 	var upgrade_level = house.upgrades.get("companion_slots", 0)
-	return base_slots + (upgrade_level * HOUSE_UPGRADES.companion_slots.effect)
+	var total = base_slots + (upgrade_level * HOUSE_UPGRADES.companion_slots.effect)
+	var tier = int(house.get("patreon_tier", 0))
+	if tier >= PATREON_TIER_FOUNDER:
+		total += 1
+	return total
 
 func get_egg_capacity(account_id: String) -> int:
 	"""Get total egg incubation slots (base 3 + egg_slots upgrade)"""
@@ -1958,9 +1964,15 @@ func unregister_companion_from_house(account_id: String, slot: int) -> Dictionar
 	return companion
 
 func get_kennel_capacity(account_id: String) -> int:
-	"""Get total kennel slots for a house based on upgrade level."""
+	"""Get total kennel slots for a house based on upgrade level.
+	v0.9.579 — Patreon T3 (Patron) supporters get one free kennel-tier
+	bump (capped at the table max). Tame QoL — saves BP, doesn't grant
+	any combat advantage. Hard rule per [[patreon-founder]] memo."""
 	var house = get_house(account_id)
-	var level = house.get("upgrades", {}).get("kennel_capacity", 0)
+	var level = int(house.get("upgrades", {}).get("kennel_capacity", 0))
+	var tier = int(house.get("patreon_tier", 0))
+	if tier >= PATREON_TIER_PATRON:
+		level = mini(level + 1, KENNEL_CAPACITY_TABLE.size() - 1)
 	return KENNEL_CAPACITY_TABLE[clampi(level, 0, KENNEL_CAPACITY_TABLE.size() - 1)]
 
 func add_companion_to_kennel(account_id: String, companion: Dictionary) -> int:

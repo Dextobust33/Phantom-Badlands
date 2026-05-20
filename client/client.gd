@@ -25181,8 +25181,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.579 — Patreon tame-QoL bonuses (T2+ Sanctuary slot, T3 kennel-tier).
+	display_game("[color=#00FF00]v0.9.579[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The v0.9.578 Patreon scaffolding gets its promised tame-QoL layer: T2+ supporters get an extra Sanctuary registered slot, T3 supporters get a free kennel-tier bump.[/color]")
+	display_game("  • [b]Tier 2 (Founder) — +1 Sanctuary registered slot[/b]. Adds one extra death-resistant companion slot on top of whatever upgrade level the player has bought. Stacks correctly: a Founder who's also bought 3 kennel upgrades has base+3+1 slots.")
+	display_game("  • [b]Tier 3 (Patron) — +1 free kennel-tier bump[/b]. The kennel capacity calculation gets a free level-up (clamped at the table max of 500 slots). Saves ~5000 Baddie Points the player would otherwise spend on the first kennel-tier upgrade.")
+	display_game("  • [b]Hard rule (unchanged)[/b]: tame QoL only. Slot count and kennel size are convenience, not power. Per the [color=#888888]project_patreon_founder[/color] memo, anything that grants combat advantage is off-limits forever.")
+	display_game("  • [b]Implementation[/b]: surgical edits to `persistence_manager.get_house_companion_capacity` (T2+ adds +1) and `persistence_manager.get_kennel_capacity` (T3 bumps the level up one before the table lookup). No client-side change — both calculations are server-only.")
+	display_game("  • [b]Launch doc[/b]: `docs/PATREON_LAUNCH.md` in the repo. Step-by-step for actually publishing the Patreon page when ready.")
+	display_game("")
+
 	# v0.9.578 — Patreon supporter tier scaffolding + fulfillment UI.
-	display_game("[color=#00FF00]v0.9.578[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.578[/color]")
 	display_game("  [color=#FFD700]Scaffolding for the upcoming Patreon launch. Three new cosmetic supporter titles, account-level tier persistence, and a /admin fulfillment flow for manual pledge matching.[/color]")
 	display_game("  • [b]Three new chain titles[/b]: [color=#88FF88][Supporter][/color] (Tier 1 / $5), [color=#FFD700][Founder][/color] (Tier 2 / $10), [color=#A335EE][Patron][/color] (Tier 3 / $20). Wearable like any other earned title. [b]Hard rule[/b]: cosmetic only — no combat advantage tied to Patreon tiers, ever.")
 	display_game("  • [b]Account-level persistence[/b]. `persistence.patreon_tier` field stored on the account dict (same store as Sanctuary data + valor). Set/get helpers; tier auto-syncs into character.earned_titles at character load so the title appears alongside chain titles. Idempotent — downgrades cleanly remove higher-tier stale titles.")
@@ -25225,13 +25235,6 @@ func display_changelog():
 	display_game("  • [b]Coming soon[/b]: same mechanic for gathering scratch-off + craft reveal panels in a future slice. Other brainstormed mechanics (combo bonus, trap cell, mystery cell, double-or-nothing, chain reveal, foresight peek) parked for design review — see [color=#888888]project_next_session_polish_qol.md[/color] in the dev memory.")
 	display_game("")
 
-	# v0.9.573 — Nested-menu breadcrumbs (UX direction: "getting to nested menus is very unintuitive").
-	display_game("[color=#00FFFF]v0.9.573[/color]")
-	display_game("  [color=#FFD700]Every deeply-nested screen now shows where you are in the menu tree at a glance.[/color]")
-	display_game("  • [b]Breadcrumb headers[/b] (Audit #10 Slice 1). The top of each Sanctuary sub-page (Storage / Companion Stable / Fusion Station / Mastery Headstart / Imprint Atlas / Mastery Atlas / Bestiary) now reads [color=#888888]Sanctuary › <PageName>[/color] above the existing header. Same treatment on the More → Jobs paths ([color=#888888]More › Jobs[/color], [color=#888888]More › Jobs › Commit[/color]) and More → Companions ([color=#888888]More › Companions[/color]).")
-	display_game("  • [b]Single helper[/b]: `_render_breadcrumb(parts: Array)` emits the path line in subtle grey so it informs without competing with the gold section header. Easy to drop into more screens as they're identified.")
-	display_game("  • [b]No new keybinds[/b]. The action bar still drives Back (slot 0 across all these screens) and the breadcrumb is purely visual context. Future polish slices may add a clickable-breadcrumb option, but V1 keeps it as a passive header.")
-	display_game("")
 
 
 
