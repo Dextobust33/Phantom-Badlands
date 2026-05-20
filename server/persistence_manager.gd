@@ -2335,6 +2335,52 @@ func clear_all_valor():
 			houses[account_id]["valor"] = 0
 	_safe_save(HOUSES_FILE, houses)
 
+
+# ===== PATREON TIER (Account-Level supporter flag) =====
+#
+# v0.9.578 — Manual fulfillment of Patreon pledges. The Patreon page handles
+# billing; the admin manually flips this tier via the /admin panel after
+# matching the supporter to their in-game account. Tier values:
+#   0 = None (default)
+#   1 = Supporter ($5/mo)  → green title
+#   2 = Founder   ($10/mo) → gold title
+#   3 = Patron    ($20/mo) → purple title
+# Hard rule (per memo): cosmetic + tame QoL only. NO combat advantage tied
+# to Patreon tiers. Future tame QoL: extra Sanctuary registered slot at T2+,
+# free kennel-tier unlock at T3.
+
+const PATREON_TIER_NONE: int = 0
+const PATREON_TIER_SUPPORTER: int = 1
+const PATREON_TIER_FOUNDER: int = 2
+const PATREON_TIER_PATRON: int = 3
+
+# Maps tier int → chain_title id stored in character.earned_titles. The
+# character-side sync happens at character load (see server.gd character_load).
+const PATREON_TIER_TITLES: Dictionary = {
+	1: "patreon_supporter",
+	2: "patreon_founder",
+	3: "patreon_patron",
+}
+
+
+func get_patreon_tier(account_id: String) -> int:
+	"""Get the patreon tier for an account (0 if not a supporter)."""
+	var house = get_house(account_id)
+	return int(house.get("patreon_tier", 0))
+
+
+func set_patreon_tier(account_id: String, tier: int) -> bool:
+	"""Set the patreon tier for an account. Returns false if the account
+	doesn't exist or the tier is out of range."""
+	if tier < 0 or tier > PATREON_TIER_PATRON:
+		return false
+	var house = get_house(account_id)
+	if house.is_empty():
+		return false
+	house["patreon_tier"] = tier
+	save_house(account_id, house)
+	return true
+
 # ===== OPEN MARKET DATA =====
 
 func load_market_data():
