@@ -25187,8 +25187,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.590 — Remaining audit findings closed.
+	display_game("[color=#00FF00]v0.9.590[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The medium + minor field-drop bugs from the v0.9.589 audit sweep are now closed. Four fixes in one batched release.[/color]")
+	display_game("  • [b]Reconnect into mid-fight now keeps boss / flock visuals[/b]. The combat_restored payload was missing [color=#888888]is_boss[/color] / [color=#888888]is_flock[/color] / [color=#888888]flock_count[/color] / [color=#888888]combat_bg_color[/color], so reconnecting into a boss skipped the border pulse and lost the recolored ASCII art. Fields now sourced from the saved combat state on restore.")
+	display_game("  • [b]Instant-craft panel no longer renders stripped[/b]. Enchant / rune / structure / scroll / map / repair / reforge / temper recipes (the ones that bypass the scratch-off) were sending [color=#888888]craft_result[/color] without [color=#888888]score[/color] or [color=#888888]summary[/color], so the Quality Rating panel rendered with empty roll bands and no boost indicator. Now sends a minimal summary with [color=#888888]is_instant_craft: true[/color] so the panel can render a clean version without scratch-off-specific noise.")
+	display_game("  • [b]Flee combat_end now includes character[/b]. Flee-side stamina cost / buff strip / position updates land in the HUD immediately instead of waiting for the next [color=#888888]character_update[/color] tick.")
+	display_game("  • [b]house_update payloads unified via [color=#888888]_send_house_update()[/color] helper[/b]. 13 hand-rolled sites consolidated into one; mastery_records / pending_headstarts / headstart_costs / headstart_max_rank now ship with every house refresh, so a future mastery-touching action can't regress the cache.")
+	display_game("")
+
 	# v0.9.589 — Two field-drop bugs from a sweep prompted by the Imprint fix.
-	display_game("[color=#00FF00]v0.9.589[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.589[/color]")
 	display_game("  [color=#FFD700]A sweep for bugs like v0.9.588's (server constructs a payload but drops a field the client expects) caught two CRITICAL invisible-since-shipped bugs and several medium ones. Two of the two criticals fixed here.[/color]")
 	display_game("  • [b]NPC vendor + network buy confirmation[/b]: server was sending [color=#888888]market_buy_result[/color] but the only client handler is [color=#888888]market_buy_success[/color]. NPC vendor purchases (exotic / mine / farm / shrine stocks) and network buys completed silently — inventory + valor updated, but no \"Purchase successful\" panel, no \"Bought X\" line, no transition back to the market menu. Renamed both server payloads to match the client's expected handler.")
 	display_game("  • [b]Crucible boss fight start[/b]: was using the pre-v0.9.x combat schema ([color=#888888]monster[/color] / [color=#888888]enemy_hp[/color] / [color=#888888]player_hp[/color]) instead of the modern [color=#888888]combat_state[/color] envelope every other encounter uses. Crucible fights showed \"Enemy\" placeholder, no ASCII art, no HP bar, no first-strike warning. Now routes through [color=#888888]combat_mgr.get_combat_display()[/color] like dungeons and overworld fights.")

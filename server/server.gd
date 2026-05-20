@@ -2443,18 +2443,34 @@ func handle_select_character(peer_id: int, message: Dictionary):
 			# Clear saved state now that it's restored
 			character.saved_combat_state = {}
 			save_character(peer_id)
-			# Send combat start to client
+			# Send combat start to client.
+			# v0.9.590 — include the visual fields a fresh combat_start would carry
+			# so a reconnect mid-fight gets the boss border pulse, recolored ASCII
+			# art, and flock messaging. Pre-v0.9.590 this payload only had the
+			# basic monster_name/level + combat_state; client's _process_combat_start
+			# reads `is_boss` / `combat_bg_color` / `flock_art_color` / etc. off the
+			# top-level message, so reconnecting into a boss looked like a normal
+			# encounter (no border pulse, default ASCII coloring).
 			var monster = saved_state.get("monster", {})
-			send_to_peer(peer_id, {
+			var rec_monster_name = String(monster.get("name", "Unknown"))
+			var rec_bg_color = combat_mgr.get_monster_combat_bg_color(rec_monster_name)
+			var rec_flock_remaining = int(saved_state.get("flock_remaining", 0))
+			var rec_is_flock = rec_flock_remaining > 1
+			var rec_payload := {
 				"type": "combat_start",
 				"message": result.message,
 				"combat_state": result.combat_state,
-				"monster_name": monster.get("name", "Unknown"),
-				"monster_level": monster.get("level", 1),
+				"monster_name": rec_monster_name,
+				"monster_level": int(monster.get("level", 1)),
 				"use_client_art": true,
 				"combat_restored": true,
-				"extra_combat_text": result.get("extra_combat_text", "")
-			})
+				"combat_bg_color": rec_bg_color,
+				"is_boss": bool(monster.get("is_boss", false)),
+				"is_flock": rec_is_flock,
+				"flock_count": rec_flock_remaining if rec_flock_remaining > 0 else 1,
+				"extra_combat_text": result.get("extra_combat_text", ""),
+			}
+			send_to_peer(peer_id, rec_payload)
 		else:
 			# Failed to restore - clear invalid state
 			character.saved_combat_state = {}
@@ -6135,12 +6151,17 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				characters[peer_id].y = flee_pos.y
 				save_character(peer_id)
 
-			# Always send combat_end for flee
+			# Always send combat_end for flee.
+			# v0.9.590 — include character so flee-side stamina cost, buff stripping,
+			# or position change reflects in the HUD immediately. Pre-fix, those
+			# changes only landed on the next character_update tick (movement,
+			# inventory action, etc.).
 			send_to_peer(peer_id, {
 				"type": "combat_end",
 				"fled": true,
 				"new_x": characters[peer_id].x,
-				"new_y": characters[peer_id].y
+				"new_y": characters[peer_id].y,
+				"character": characters[peer_id].to_dict(),
 			})
 
 			# Check if fleeing from dungeon - stay in dungeon but relocate
@@ -9072,12 +9093,7 @@ func handle_companion_stable_checkout(peer_id: int, message: Dictionary) -> void
 	var payload = _build_companion_stable_payload(peer_id)
 	payload["type"] = "companion_stable_open"
 	send_to_peer(peer_id, payload)
-	var updated_house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": updated_house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
-	})
+	_send_house_update(peer_id)
 	send_character_update(peer_id)
 
 func handle_companion_stable_refresh(peer_id: int) -> void:
@@ -13528,6 +13544,29 @@ func handle_change_password(peer_id: int, message: Dictionary):
 
 # ===== HOUSE (SANCTUARY) HANDLERS =====
 
+func _send_house_update(peer_id: int) -> void:
+	"""v0.9.590 — Single source of truth for house_update payloads. Previously
+	13 send_to_peer sites hand-rolled their own field sets; only one included
+	mastery_records / pending_headstarts / headstart_costs / headstart_max_rank.
+	When the client receives a house_update missing those fields, it preserves
+	its cached values (via `if message.has(...)`), so the gap was mostly latent —
+	but new mastery-mutating actions could regress it. Funneling through this
+	helper guarantees all fields ship together so the cache stays accurate."""
+	if not peers.has(peer_id) or not peers[peer_id].authenticated:
+		return
+	var hsu_account_id = String(peers[peer_id].get("account_id", ""))
+	if hsu_account_id == "":
+		return
+	send_to_peer(peer_id, {
+		"type": "house_update",
+		"house": persistence.get_house(hsu_account_id),
+		"upgrade_costs": persistence.HOUSE_UPGRADES,
+		"mastery_records": persistence.get_account_mastery_records(hsu_account_id),
+		"pending_headstarts": persistence.get_pending_headstarts(hsu_account_id),
+		"headstart_costs": persistence.MASTERY_HEADSTART_BP_PER_RANK,
+		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK,
+	})
+
 func handle_house_request(peer_id: int):
 	"""Send house data to authenticated user"""
 	if not peers.has(peer_id) or not peers[peer_id].authenticated:
@@ -13585,16 +13624,7 @@ func handle_mastery_headstart_set(peer_id: int, message: Dictionary):
 		"message": ("[color=#00FF00]%s[/color]" if result.get("success", false) else "[color=#FF0000]%s[/color]") % result.get("message", "")
 	})
 	# Refresh house data so the client UI updates BP balance + pending state
-	var house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES,
-		"mastery_records": persistence.get_account_mastery_records(account_id),
-		"pending_headstarts": persistence.get_pending_headstarts(account_id),
-		"headstart_costs": persistence.MASTERY_HEADSTART_BP_PER_RANK,
-		"headstart_max_rank": persistence.MASTERY_HEADSTART_MAX_RANK
-	})
+	_send_house_update(peer_id)
 
 func handle_house_upgrade(peer_id: int, message: Dictionary):
 	"""Handle house upgrade purchase"""
@@ -13613,12 +13643,7 @@ func handle_house_upgrade(peer_id: int, message: Dictionary):
 			"message": "[color=#00FF00]%s[/color]" % result.message
 		})
 		# Send updated house data
-		var house = persistence.get_house(account_id)
-		send_to_peer(peer_id, {
-			"type": "house_update",
-			"house": house,
-			"upgrade_costs": persistence.HOUSE_UPGRADES
-		})
+		_send_house_update(peer_id)
 	else:
 		send_to_peer(peer_id, {
 			"type": "text",
@@ -13655,12 +13680,7 @@ func handle_house_discard_item(peer_id: int, message: Dictionary):
 	})
 
 	# Send updated house data
-	var updated_house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": updated_house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
-	})
+	_send_house_update(peer_id)
 
 func _withdraw_house_storage_items(account_id: String, character, indices: Array, peer_id: int):
 	"""Move items from house storage to character inventory during character select"""
@@ -13754,12 +13774,7 @@ func handle_house_unregister_companion(peer_id: int, message: Dictionary):
 	})
 
 	# Send updated house data
-	var updated_house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": updated_house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
-	})
+	_send_house_update(peer_id)
 
 func handle_house_register_companion_from_storage(peer_id: int, message: Dictionary):
 	"""Handle registering a companion from storage to registered companions"""
@@ -13814,12 +13829,7 @@ func handle_house_register_companion_from_storage(peer_id: int, message: Diction
 	})
 
 	# Send updated house data
-	var updated_house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": updated_house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
-	})
+	_send_house_update(peer_id)
 
 func handle_home_stone_companion_response(peer_id: int, message: Dictionary):
 	"""Handle player's choice for Home Stone (Companion) - Register or Kennel.
@@ -13926,12 +13936,7 @@ func handle_house_kennel_release(peer_id: int, message: Dictionary):
 		"type": "text",
 		"message": "[color=#FF8800]Released %s from kennel.[/color]" % companion.get("name", "companion")
 	})
-	var updated_house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": updated_house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
-	})
+	_send_house_update(peer_id)
 
 func handle_house_kennel_register(peer_id: int, message: Dictionary):
 	"""Move a companion from kennel to registered_companions"""
@@ -13958,12 +13963,7 @@ func handle_house_kennel_register(peer_id: int, message: Dictionary):
 		"type": "text",
 		"message": "[color=#00FF00]%s registered! Will survive death.[/color]" % companion.get("name", "companion")
 	})
-	var updated_house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": updated_house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
-	})
+	_send_house_update(peer_id)
 
 func handle_house_fusion(peer_id: int, message: Dictionary):
 	"""Handle companion fusion request"""
@@ -14020,12 +14020,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				"type": "text",
 				"message": "[color=#FFD700]Fusion complete! Created %s (T%d-%d)![/color]" % [output.name, output.tier, new_sub_tier]
 			})
-			var updated_house = persistence.get_house(account_id)
-			send_to_peer(peer_id, {
-				"type": "house_update",
-				"house": updated_house,
-				"upgrade_costs": persistence.HOUSE_UPGRADES
-			})
+			_send_house_update(peer_id)
 
 	elif fusion_type == "mixed":
 		if indices.size() != 8:
@@ -14059,12 +14054,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				"type": "text",
 				"message": "[color=#FF00FF]T9 Fusion! Created %s (T%d-9)![/color]" % [output.name, output.tier]
 			})
-			var updated_house = persistence.get_house(account_id)
-			send_to_peer(peer_id, {
-				"type": "house_update",
-				"house": updated_house,
-				"upgrade_costs": persistence.HOUSE_UPGRADES
-			})
+			_send_house_update(peer_id)
 
 	elif fusion_type == "hybrid":
 		# Audit #4 Slice 4 — mixed-type hybrid fusion. Two parents of DIFFERENT
@@ -14115,12 +14105,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				"type": "text",
 				"message": "[color=#FF66FF]Hybrid Fusion! Created %s (T%d-1)![/color]" % [output.name, output.tier]
 			})
-			var updated_house = persistence.get_house(account_id)
-			send_to_peer(peer_id, {
-				"type": "house_update",
-				"house": updated_house,
-				"upgrade_costs": persistence.HOUSE_UPGRADES
-			})
+			_send_house_update(peer_id)
 			send_character_update(peer_id)
 
 	elif fusion_type == "ascend":
@@ -14177,12 +14162,7 @@ func handle_house_fusion(peer_id: int, message: Dictionary):
 				"type": "text",
 				"message": "[color=#FFAA66]Tier Ascension! Created %s (T%d-1)![/color]" % [output.name, output.tier]
 			})
-			var updated_house = persistence.get_house(account_id)
-			send_to_peer(peer_id, {
-				"type": "house_update",
-				"house": updated_house,
-				"upgrade_costs": persistence.HOUSE_UPGRADES
-			})
+			_send_house_update(peer_id)
 			send_character_update(peer_id)
 
 func _check_variant_inheritance(kennel: Array, indices: Array) -> Dictionary:
@@ -14498,12 +14478,7 @@ func handle_stable_fusion(peer_id: int, message: Dictionary) -> void:
 	var stable_payload = _build_companion_stable_payload(peer_id)
 	stable_payload["type"] = "companion_stable_open"
 	send_to_peer(peer_id, stable_payload)
-	var updated_house = persistence.get_house(account_id)
-	send_to_peer(peer_id, {
-		"type": "house_update",
-		"house": updated_house,
-		"upgrade_costs": persistence.HOUSE_UPGRADES
-	})
+	_send_house_update(peer_id)
 	send_character_update(peer_id)
 
 func _award_baddie_points_on_death(peer_id: int, character: Character, account_id: String, cause_of_death: String) -> int:
@@ -23485,7 +23460,18 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		_broadcast_achievement(character.name,
 			"[color=#A335EE]%s[/color] crafted a [color=#A335EE]Masterwork %s[/color]!" % [character.name, recipe.name], peer_id)
 
-	# Send result (include updated materials so client can check can_craft_another)
+	# Send result (include updated materials so client can check can_craft_another).
+	# v0.9.590 — include score + summary so the craft_reveal_panel doesn't render
+	# a stripped panel for instant-craft recipes. The scratch-off path
+	# (_finalize_craft) populates summary with reveal data + roll math; the
+	# instant-craft path has no scratch-off to reference, so summary signals
+	# is_instant_craft=true and leaves the scratch-off fields empty. The panel
+	# uses this to suppress the reveals strip + roll-band visualization for these
+	# specialty recipes (enchant / rune / structure / scroll / map / repair /
+	# reforge / temper) while still showing header + quality + crafted item.
+	var ic_consumed: Dictionary = {}
+	for ic_mat_id in recipe.get("materials", {}):
+		ic_consumed[ic_mat_id] = int(recipe["materials"][ic_mat_id])
 	send_to_peer(peer_id, {
 		"type": "craft_result",
 		"success": true,
@@ -23507,8 +23493,32 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		"job_leveled_up": job_leveled_up,
 		"job_new_level": job_new_level,
 		"job_name": matching_job,
+		"score": -1,  # No scratch-off ran for instant-craft recipes
 		"boost_tier": boost_tier,
 		"specialist_save": specialist_save_fired,
+		"summary": {
+			"boost_tier": boost_tier,
+			"boost_mat_mult": 1.0,
+			"consumed_materials": ic_consumed,
+			"scratch_awarded": [],
+			"scratch_missed": [],
+			"best_score": -1,
+			"score_bonus_pct": 0,
+			"effective_success_chance": 0,
+			"refund_pct": 0,
+			"duplicate_count": 0,
+			"tool_durability_pct": 0,
+			"tool_efficiency_tier": 0,
+			"is_tempered": false,
+			"temper_target": "",
+			"roll": -1,
+			"distribution": {},
+			"bands": {},
+			"is_tool_recipe": false,
+			"baseline_success_chance": 0,
+			"baseline_distribution": {},
+			"is_instant_craft": true,  # Signals "no scratch-off path; suppress reveal/roll UI"
+		},
 	})
 
 	send_character_update(peer_id)
