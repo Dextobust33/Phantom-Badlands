@@ -18726,6 +18726,7 @@ func handle_server_message(message: Dictionary):
 			# misleading because Register doesn't really "send home" — it locks
 			# the companion into a death-resistant slot. Clearly distinguish the
 			# two paths and add a Help action for full detail.
+			_render_breadcrumb(["Inventory", "Home Stone (Companion)"])
 			display_game("[color=#FFD700]═══════ HOME STONE (COMPANION) ═══════[/color]")
 			display_game("[color=#FFFFFF]Choose what to do with [b]%s[/b]:[/color]" % hs_comp_name)
 			display_game("")
@@ -25180,8 +25181,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.576 — Breadcrumb coverage extended (Slice 10 continued).
+	display_game("[color=#00FF00]v0.9.576[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three more chat-style screens get the breadcrumb header so the nested-menu trail stays consistent across all the non-panel surfaces.[/color]")
+	display_game("  • [b]Clan Vault[/b] chat-fallback view now displays [color=#888888]Clan › Vault[/color].")
+	display_game("  • [b]Bounty Board[/b] chat-fallback view (when the panel isn't visible) displays [color=#888888]/bounty list › Bounty Board[/color].")
+	display_game("  • [b]Home Stone (Companion)[/b] Register/Kennel prompt displays [color=#888888]Inventory › Home Stone (Companion)[/color].")
+	display_game("  • [b]Client-only[/b] — no server change. Server stays on v0.9.574 binary.")
+	display_game("")
+
 	# v0.9.575 — Two small QoL hints from the polish backlog.
-	display_game("[color=#00FF00]v0.9.575[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.575[/color]")
 	display_game("  [color=#FFD700]Two small QoL hints from the polish backlog: a wounded-companion remedy nudge and a quest-stage turn-in pointer.[/color]")
 	display_game("  • [b]Wounded-companion HP hint[/b]. The corner companion overlay's HP line now names the remedy directly: at KO it reads [color=#FF6666]'KO'd — rest or visit H tile'[/color]; below ⅓ HP it reads [color=#FFAA33]'HP X / Y — wounded, rest or visit H'[/color]. New players no longer have to guess that healers live at NPC posts (the H tile).")
 	display_game("  • [b]Quest-stage turn-in pointer[/b]. When a quest stage completes the chat now follows up with [color=#88FF88]'› Return to the quest board (Q tile) at the issuing post to turn this in.'[/color] One green line, fires once per quest (gated by the same `quests_sound_played` set that throttles the completion sound). Plugs the polish-backlog gap where the welcome modal teaches turn-in but the quest log doesn't surface the next-step hint on completion.")
@@ -28415,6 +28425,7 @@ func _handle_clan_vault_list_result(message: Dictionary) -> void:
 		})
 		return
 
+	_render_breadcrumb(["Clan", "Vault"])
 	display_game("[color=#FFD700]═══════ CLAN VAULT ═══════[/color]")
 	if clan_name != "":
 		display_game("[color=#888888]%s [%s][/color]   [color=#88FF88]%d / %d[/color]" % [clan_name, clan_tag, items.size(), capacity])
@@ -28564,6 +28575,7 @@ func _handle_bounty_list_result(message: Dictionary) -> void:
 	if not (entries is Array) or entries.is_empty():
 		display_game("[color=#808080]No active bounties.[/color]")
 		return
+	_render_breadcrumb(["/bounty list", "Bounty Board"])
 	display_game("[color=#FFD700]═══════ 💰 BOUNTY BOARD ═══════[/color]")
 	for e in entries:
 		if not (e is Dictionary):
