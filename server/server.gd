@@ -14621,7 +14621,8 @@ func trigger_trading_post_encounter(peer_id: int):
 	# (matches the handle_quest_turn_in pathfinder branch below). Without this
 	# parallel check, the quest wouldn't appear in quests_to_turn_in on the
 	# QUEST BOARD even though the server-side turn-in would now accept it.
-	var _is_current_starter_post: bool = tp_id in STARTER_TRADING_POSTS
+	# v0.9.585 — strip "npc_" prefix; procedural NPC posts get prefixed ids.
+	var _is_current_starter_post: bool = String(tp_id).trim_prefix("npc_") in STARTER_TRADING_POSTS
 	var quests_to_turn_in = []
 	for quest_data in character.active_quests:
 		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
@@ -14846,20 +14847,16 @@ func handle_trading_post_quests(peer_id: int):
 			var dest_post_id = quest_data.quest_id.replace("progression_to_", "")
 			if tp.id == dest_post_id:
 				can_turn_in = true
-		elif (String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")) and tp.id in STARTER_TRADING_POSTS:
-			# v0.9.583 — Pathfinder starter chain accepts turn-in at ANY starter
-			# post. v0.9.582 patched two of the three quest-turn-in code paths
-			# but missed THIS one (the Quest Board UI handler), which is the
-			# path the player actually triggers when they bump the Q tile.
-			# v0.9.584 — belt-and-suspenders: also match on quest_id prefix
-			# (pathfinder_1/2/3/4) so the check works even if get_quest's
-			# returned dict somehow loses chain_id. The user reported v0.9.583
-			# still wasn't working; this fallback makes the check robust
-			# against any get_quest mutation we haven't identified yet.
+		elif (String(quest.get("chain_id", "")) == "pathfinder" or String(quest_data.quest_id).begins_with("pathfinder_")) and String(tp.id).trim_prefix("npc_") in STARTER_TRADING_POSTS:
+			# v0.9.585 — ROOT CAUSE FOUND. Procedural NPC posts (chunk_manager's
+			# get_npc_post_at) pass through _normalize_npc_post which prefixes
+			# their id with "npc_" — so at runtime `tp.id` is "npc_crossroads"
+			# not "crossroads". My v0.9.582/583/584 checks used bare names in
+			# STARTER_TRADING_POSTS, so `"npc_crossroads" in [...]` was always
+			# false and the pathfinder branch NEVER fired. Strip the "npc_"
+			# prefix before the membership check. Confirmed by inspecting
+			# tst3's character file (threat quest id is `threat_npc_crossroads@...`).
 			can_turn_in = true
-			# v0.9.584 — diagnostic log: prints to server console when this
-			# branch fires so we can verify the path is exercised live.
-			print("[DIAG] Pathfinder turn-in allowed: quest_id=%s tp.id=%s chain_id=%s" % [quest_data.quest_id, str(tp.id), String(quest.get("chain_id", "(none)"))])
 
 		# Audit #6 Slice 9 — DELIVER quests use live inventory count for completion
 		var meets_target = quest_data.progress >= quest_data.target
@@ -17732,15 +17729,10 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 				can_turn_in = true
 		elif String(quest.get("chain_id", "")) == "pathfinder" or String(quest_id).begins_with("pathfinder_"):
 			# v0.9.582 — Pathfinder's Trial (starter chain) is turn-in-able at
-			# v0.9.584 — same belt-and-suspenders prefix match as the quest
-			# board UI handler.
-			# ANY starter trading post. Original anchor "haven" assumed players
-			# spawn at Haven, but they actually spawn at (0,0) Crossroads —
-			# leaving the chain un-turn-in-able. Player-reported: "starter quest
-			# shouldn't be sending the player to other posts as they don't yet
-			# have gear." Closes that loop by letting players turn in wherever
-			# they accepted it.
-			if tp.id in STARTER_TRADING_POSTS:
+			# ANY starter post. v0.9.585 — strip "npc_" prefix because procedural
+			# NPC posts are normalized to ids like "npc_crossroads" not bare
+			# "crossroads". Was the root cause of the bug user kept reporting.
+			if String(tp.id).trim_prefix("npc_") in STARTER_TRADING_POSTS:
 				can_turn_in = true
 
 		if not can_turn_in:
