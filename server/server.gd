@@ -14617,10 +14617,19 @@ func trigger_trading_post_encounter(peer_id: int):
 		tp_id, character.completed_quests, active_quest_ids, character.daily_quest_cooldowns, character.level, character.name)
 
 	# Check for quests ready to turn in
+	# v0.9.582 — Pathfinder starter chain accepts turn-in at ANY starter post
+	# (matches the handle_quest_turn_in pathfinder branch below). Without this
+	# parallel check, the quest wouldn't appear in quests_to_turn_in on the
+	# QUEST BOARD even though the server-side turn-in would now accept it.
+	var _is_current_starter_post: bool = tp_id in STARTER_TRADING_POSTS
 	var quests_to_turn_in = []
 	for quest_data in character.active_quests:
 		var quest = quest_db.get_quest(quest_data.quest_id, -1, 0, character.name)
-		if not quest.is_empty() and quest.get("trading_post", "") == tp_id:
+		if quest.is_empty():
+			continue
+		var _quest_belongs_here: bool = quest.get("trading_post", "") == tp_id
+		var _is_pathfinder: bool = String(quest.get("chain_id", "")) == "pathfinder"
+		if _quest_belongs_here or (_is_pathfinder and _is_current_starter_post):
 			# Audit #6 Slice 9 — DELIVER quests use live inventory count
 			if int(quest_data.get("quest_type", -1)) == QuestDatabaseScript.QuestType.DELIVER:
 				if quest_mgr.count_delivery_progress(character, quest_data) >= int(quest_data.get("target", 0)):
@@ -14645,6 +14654,30 @@ func trigger_trading_post_encounter(peer_id: int):
 	# say what it is when you go there." The same compute_post_threat_state
 	# data the HUD uses; cached per-tick so this is cheap.
 	var entry_threat: Dictionary = _compute_post_threat_state(tp_x, tp_y)
+
+	# v0.9.582 — one-shot tutorial_hint modal on first threatened-post entry.
+	# The v0.9.580 entry banner can scroll past in game_output; this modal
+	# is a strong unmissable overlay that fires exactly once per character.
+	# Closes the second iteration of "doesn't say what it is when you go
+	# there" feedback after v0.9.580's banner-only fix proved insufficient.
+	if bool(entry_threat.get("threatened", false)) and not character.seen_threatened_post_hint:
+		character.seen_threatened_post_hint = true
+		var _t_name = String(entry_threat.get("dungeon_name", "a nearby dungeon"))
+		var _t_tier = int(entry_threat.get("tier", 2))
+		var _t_dir = String(entry_threat.get("direction", ""))
+		var _t_dist = int(entry_threat.get("distance", 0))
+		var _t_severe = bool(entry_threat.get("severe", false))
+		var _t_count = int(entry_threat.get("count", 1))
+		var _hint_title = "[color=#FFAA00]⚠ Threatened Post[/color]"
+		var _hint_body = (
+			"This post is currently [color=#FFAA00]Under Threat[/color] from a nearby Tier-%d dungeon: [b]%s[/b] (~%d tiles %s).\n\n" % [_t_tier, _t_name, _t_dist, _t_dir]
+			+ "While threatened, the post charges [color=#FF8888]+20%% market markup[/color], its vendors apply [color=#FF8888]+50%% service prices[/color], and the [color=#FFAA00]amber ![/color] on the map marks the post center.\n\n"
+			+ "Check the post's [color=#FFD700]Q tile (quest board)[/color] for a new [color=#FFAA00]⚠ THREAT BOUNTY[/color] quest that pays out for clearing the threatening dungeon. Clearing it restores the post.\n\n"
+			+ ("[color=#FF2020]⚠⚠ This post is SEVERELY THREATENED — %d Tier-2+ dungeons share the corridor. Markups and bubble erosion stack harder.[/color]\n\n" % _t_count) if _t_severe else ""
+			+ "[color=#888888]This message only shows the first time you enter a threatened post.[/color]"
+		)
+		send_to_peer(peer_id, {"type": "tutorial_hint", "title": _hint_title, "body": _hint_body})
+		save_character(peer_id)
 
 	send_to_peer(peer_id, {
 		"type": "trading_post_start",
@@ -17680,6 +17713,16 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 			# Exploration quests can be turned in at their destination too
 			var destinations = quest.get("destinations", [])
 			if tp.id in destinations:
+				can_turn_in = true
+		elif String(quest.get("chain_id", "")) == "pathfinder":
+			# v0.9.582 — Pathfinder's Trial (starter chain) is turn-in-able at
+			# ANY starter trading post. Original anchor "haven" assumed players
+			# spawn at Haven, but they actually spawn at (0,0) Crossroads —
+			# leaving the chain un-turn-in-able. Player-reported: "starter quest
+			# shouldn't be sending the player to other posts as they don't yet
+			# have gear." Closes that loop by letting players turn in wherever
+			# they accepted it.
+			if tp.id in STARTER_TRADING_POSTS:
 				can_turn_in = true
 
 		if not can_turn_in:

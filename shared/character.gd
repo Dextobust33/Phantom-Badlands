@@ -49,6 +49,10 @@ extends Resource
 @export var seen_quest_board_hint: bool = false
 @export var seen_dungeon_hint: bool = false
 @export var seen_crafting_hint: bool = false
+# v0.9.582 — fires once on first entry to a threatened post. Closes user
+# feedback "the ! at 0,0 doesn't say what it is when you go there" — the
+# v0.9.580 entry banner scrolls past in game_output, but this modal won't.
+@export var seen_threatened_post_hint: bool = false
 # Audit #4 Slice 1A (v0.9.485) — first-time Companion Stable interaction
 # overlay. Companion Stable tiles appear at T5+ NPC posts and grant live
 # Sanctuary kennel access mid-character. Hint explains the deposit/withdraw
@@ -1400,6 +1404,7 @@ func to_dict() -> Dictionary:
 		"seen_quest_board_hint": seen_quest_board_hint,
 		"seen_dungeon_hint": seen_dungeon_hint,
 		"seen_crafting_hint": seen_crafting_hint,
+		"seen_threatened_post_hint": seen_threatened_post_hint,
 		"seen_signpost_hint": seen_signpost_hint,
 		"seen_apex_frontier_hint": seen_apex_frontier_hint,
 		"seen_market_hint": seen_market_hint,
@@ -1590,6 +1595,7 @@ func from_dict(data: Dictionary):
 	seen_quest_board_hint = bool(data.get("seen_quest_board_hint", false))
 	seen_dungeon_hint = bool(data.get("seen_dungeon_hint", false))
 	seen_crafting_hint = bool(data.get("seen_crafting_hint", false))
+	seen_threatened_post_hint = bool(data.get("seen_threatened_post_hint", false))
 	seen_signpost_hint = bool(data.get("seen_signpost_hint", false))
 	seen_apex_frontier_hint = bool(data.get("seen_apex_frontier_hint", false))
 	seen_market_hint = bool(data.get("seen_market_hint", false))

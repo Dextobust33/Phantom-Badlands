@@ -1212,6 +1212,11 @@ var current_quest_tp_id: String = ""  # Trading post ID for quest menu
 # Quest log abandonment mode
 var quest_log_mode: bool = false
 var quest_log_quests: Array = []  # Array of {id, name, progress, target}
+# v0.9.582 — 2-step abandonment confirm. First press of a quest's number key
+# in quest_log_mode marks the index as pending; second press of the SAME key
+# within 3 seconds confirms. Any other input clears the pending state.
+var _pending_quest_abandon_index: int = -1
+var _pending_quest_abandon_at_time: float = 0.0
 
 # Wish selection mode (from wish_granter monsters)
 var wish_selection_mode: bool = false
@@ -13694,6 +13699,9 @@ func acknowledge_continue():
 	# Reset quest log mode if active
 	quest_log_mode = false
 	quest_log_quests = []
+	# v0.9.582 — clear the abandonment-confirm pending state when leaving quest log
+	_pending_quest_abandon_index = -1
+	_pending_quest_abandon_at_time = 0.0
 	# Keep recent XP gain highlight visible until next XP gain
 	game_output.clear()
 	# Reset combat background when player continues (not during flock)
@@ -25185,8 +25193,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.582 — Five player-reported bug fixes from a single playtest session.
+	display_game("[color=#00FF00]v0.9.582[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Five bugs fixed from a player-feedback report. Starter chain is unblocked, abandons are safer, the quest log scrolls right, and threatened-post info no longer vanishes.[/color]")
+	display_game("  • [b]Pathfinder's Trial turn-in flexibility[/b]. The starter chain was anchored to Haven (0,10) but players spawn at Crossroads (0,0) — leaving the quest un-turn-in-able. Pathfinder quests now accept turn-in at ANY of the 5 starter posts (haven/crossroads/south_gate/east_market/west_shrine). Both server (handle_quest_turn_in + quests_to_turn_in query) and client (turn-in hint reads 'Turn in at any starter post') updated.")
+	display_game("  • [b]2-step abandon confirm[/b]. Pressing a quest's number key in the quest log no longer instantly abandons it. First press marks 'Press %d again within 3 seconds to confirm'; second press of the SAME key confirms. Any other input cancels. Pathfinder chain quests can't be abandoned at all (it's the new-player tutorial).")
+	display_game("  • [b]Quest log scrolls to top on open[/b]. Previously the RichTextLabel auto-scrolled to the bottom — showing the Chain Atlas first and hiding active quests. Now `_scroll_game_output_to_top()` runs after render so active quests are visible immediately.")
+	display_game("  • [b]Threatened post tutorial_hint[/b]. The v0.9.580 entry banner could scroll past in game_output; now a strong unmissable modal fires the FIRST time a character enters a threatened post (gated by new `seen_threatened_post_hint` field). Explains the amber `!`, the +20%% market markup, the +50%% service prices, and points to the THREAT BOUNTY quest on the post's quest board.")
+	display_game("  • [b]Client/server contracts updated[/b]: `chain_id` field surfaced in quest payloads so the client can identify Pathfinder quests for the flexible-turn-in hint.")
+	display_game("")
+
 	# v0.9.581 — Gathering/craft scratch-off ✦ +2 Scratches bonus cell.
-	display_game("[color=#00FF00]v0.9.581[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.581[/color]")
 	display_game("  [color=#FFD700]The v0.9.574 combat-loot +2 cell mechanic ports to gathering + crafting scratch-offs. One implementation, both surfaces.[/color]")
 	display_game("  • [b]✦ +2 Scratches bonus cell[/b] (new slot kind `BAR_BONUS`). Each scratch-off slot rolls a [color=#FFD700]1-in-12[/color] chance of being a gold +2 bonus. Revealing it grants [color=#88FF88]+2 to scratches_remaining[/color]; the reveal click cost 1, so the net effect is [color=#88FF88]+1 scratch gained[/color]. Same engagement layer as the combat-loot version.")
 	display_game("  • [b]One implementation, both surfaces[/b]: gathering scratch-off (Fishing / Mining / Logging / Foraging) AND craft scratch-off use the same engine, so adding the kind to `_roll_scratch_off_slot_kind` + `_build_scratch_off_slot` + the reveal handler covers both at once. Server pre-rolls BAR_BONUS BEFORE the existing DUD/NORMAL/LUCKY/JACKPOT distribution.")
@@ -25231,14 +25249,6 @@ func display_changelog():
 	display_game("  • [b]Reversible[/b]: if regressions appear, flip the const back to true and re-deploy. Every diag block is gated on this single const so toggling is a one-line change.")
 	display_game("")
 
-	# v0.9.576 — Breadcrumb coverage extended (Slice 10 continued).
-	display_game("[color=#00FFFF]v0.9.576[/color]")
-	display_game("  [color=#FFD700]Three more chat-style screens get the breadcrumb header so the nested-menu trail stays consistent across all the non-panel surfaces.[/color]")
-	display_game("  • [b]Clan Vault[/b] chat-fallback view now displays [color=#888888]Clan › Vault[/color].")
-	display_game("  • [b]Bounty Board[/b] chat-fallback view (when the panel isn't visible) displays [color=#888888]/bounty list › Bounty Board[/color].")
-	display_game("  • [b]Home Stone (Companion)[/b] Register/Kennel prompt displays [color=#888888]Inventory › Home Stone (Companion)[/color].")
-	display_game("  • [b]Client-only[/b] — no server change. Server stays on v0.9.574 binary.")
-	display_game("")
 
 
 
@@ -36787,9 +36797,18 @@ func handle_quest_list(message: Dictionary):
 			# Color based on completion and location
 			var status_color = "#00FF00" if is_complete else "#FFFF00"
 			var turn_in_hint = ""
+			# v0.9.582 — Pathfinder starter chain is special: it accepts
+			# turn-in at ANY starter post (server check mirrors). When the
+			# completed quest belongs to that chain, surface that — players
+			# don't have to navigate to a specific post they may not know.
+			var _quest_chain_id = String(quest.get("chain_id", ""))
+			var _is_pathfinder = _quest_chain_id == "pathfinder"
+			var _at_any_starter = current_quest_tp_id in ["haven", "crossroads", "south_gate", "east_market", "west_shrine"]
 			if is_complete:
-				if quest_tp == current_quest_tp_id:
+				if quest_tp == current_quest_tp_id or (_is_pathfinder and _at_any_starter):
 					turn_in_hint = " [color=#00FF00](Turn in above!)[/color]"
+				elif _is_pathfinder:
+					turn_in_hint = " [color=#88FF88](Turn in at any starter post)[/color]"
 				else:
 					# v0.9.580 — name the destination so the player isn't left
 					# guessing where to go. Falls back to the post id capitalized
@@ -37342,11 +37361,19 @@ func handle_quest_log(message: Dictionary):
 			var key_name = get_item_select_key_name(i)
 			display_game("  [color=#FFFF00][%s][/color] %s (%s)" % [key_name, q.get("name", "Unknown"), prog_text])
 		display_game("")
-		display_game("[color=#808080]Press [%s] to close | Press shown key to abandon quest[/color]" % get_action_key_name(0))
+		display_game("[color=#808080]Press [%s] to close | Press shown key to abandon quest (2-step confirm)[/color]" % get_action_key_name(0))
 	else:
 		display_game("[color=#00FFFF]Visit a Trading Post to accept new quests![/color]")
 		display_game("")
 		display_game("[color=#808080]Press [%s] to continue[/color]" % get_action_key_name(0))
+
+	# v0.9.582 — scroll to TOP after rendering the quest log so the player
+	# lands on their active quests (the most-relevant info). Without this,
+	# the RichTextLabel auto-scrolls to the bottom which shows the Chain
+	# Atlas first and hides what they came to read. Per user feedback:
+	# "the scroll of the window vertically should start at the top so
+	# players can see their active quests."
+	call_deferred("_scroll_game_output_to_top")
 
 	pending_continue = true
 	update_action_bar()
@@ -37356,8 +37383,26 @@ func cancel_quest_action():
 	quest_view_mode = false
 	update_action_bar()
 
+func _scroll_game_output_to_top() -> void:
+	"""v0.9.582 — helper to scroll game_output to the top after a render.
+	RichTextLabel auto-scrolls to bottom on append_text; this resets to
+	the top so screens like the quest log land the player on the most
+	relevant info instead of the chain atlas at the bottom."""
+	await get_tree().process_frame
+	if game_output and is_instance_valid(game_output):
+		game_output.scroll_to_line(0)
+
+
 func abandon_quest_by_index(index: int):
-	"""Abandon a quest from the quest log by index"""
+	"""Abandon a quest from the quest log by index.
+
+	v0.9.582 — TWO-STEP CONFIRM. Pressing a number key once now marks the
+	quest as "pending abandon" and shows a warning; pressing the same key
+	a second time within 3 seconds confirms. Any other input clears the
+	pending state. Closes the user-reported gap that accidental abandons
+	were too easy — especially catastrophic for the starter Pathfinder
+	chain. The Pathfinder chain ALSO gets an extra refuse: it cannot be
+	abandoned at all (its progress fuels the in-game tutorial)."""
 	if index < 0 or index >= quest_log_quests.size():
 		return
 
@@ -37369,7 +37414,26 @@ func abandon_quest_by_index(index: int):
 		display_game("[color=#FF0000]Invalid quest selection[/color]")
 		return
 
-	# Send abandon request to server
+	# v0.9.582 — Pathfinder chain is unabandonable (it's the new-player
+	# tutorial). Other chain quests still abandon normally with the confirm.
+	var _is_pathfinder: bool = String(quest.get("chain_id", "")) == "pathfinder"
+	if _is_pathfinder:
+		display_game("[color=#FFAA00]%s is part of the starter Pathfinder chain and can't be abandoned. Complete it to earn your starter gear, or play around it.[/color]" % quest_name)
+		_pending_quest_abandon_index = -1
+		return
+
+	# Two-step confirm: if this is the first press OR a different index,
+	# enter pending state. Second press of the SAME index within 3s confirms.
+	var now = Time.get_ticks_msec() / 1000.0
+	if _pending_quest_abandon_index != index or (now - _pending_quest_abandon_at_time) > 3.0:
+		_pending_quest_abandon_index = index
+		_pending_quest_abandon_at_time = now
+		display_game("[color=#FF8800]Abandon %s? Press %d again within 3 seconds to confirm. Press any other key to cancel.[/color]" % [quest_name, index + 1])
+		return
+
+	# Second press within window — actually abandon.
+	_pending_quest_abandon_index = -1
+	_pending_quest_abandon_at_time = 0.0
 	send_to_server({"type": "quest_abandon", "quest_id": quest_id})
 
 	# Mark the corresponding action bar hotkey as pressed to prevent it from
