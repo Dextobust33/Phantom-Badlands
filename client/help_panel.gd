@@ -651,6 +651,36 @@ const HELP_TOPICS := {
 			+ "[color=#888888]Dungeons despawn 60s after completion. World map shows a fresh one spawned elsewhere within minutes.[/color]"
 		),
 	},
+	"bug_report": {
+		"title": "[color=#FFD700]Bug Reporting[/color]",
+		"body": (
+			"Hit a bug? Help us track it down with a one-step report. Two ways to submit:\n\n"
+			+ "[color=#FFD700]── How to report ──[/color]\n"
+			+ "  • [color=#9ACD32]/bug <one-line description>[/color] in chat — submits immediately.\n"
+			+ "  • [color=#9ACD32]/bug[/color] alone — prompts for an optional description, press Enter to submit without one.\n"
+			+ "  • [b]Bug button[/b] (top-right of the chat area, if visible) — same flow as `/bug` alone.\n\n"
+			+ "[color=#FFD700]── What gets captured ──[/color]\n"
+			+ "Auto-captured (no input from you):\n"
+			+ "  • Game version + UTC timestamp\n"
+			+ "  • Your character (name, class, race, level)\n"
+			+ "  • Map location (x, y)\n"
+			+ "  • HP / Mana / Stamina / Energy / Valor balance\n"
+			+ "  • Active modes (combat, inventory, market, build, etc.)\n"
+			+ "  • Active combat target if you're fighting\n"
+			+ "  • Last ~20 chat-output lines (so we see what just happened)\n"
+			+ "  • Pending sub-state (e.g., 'salvage_select') if any\n\n"
+			+ "Tight JSON format — target [color=#88FF88]≤2 KB per report[/color] so the developer can paste a single report into Claude and get useful analysis in one turn.\n\n"
+			+ "[color=#FFD700]── What happens next ──[/color]\n"
+			+ "Reports land on the production server in a per-file JSON folder. The dev pulls them down periodically, picks the ones to investigate, and feeds them to Claude for analysis. You get a [color=#88FF88]✓ submitted[/color] confirmation immediately.\n\n"
+			+ "[color=#FFD700]── Good descriptions ──[/color]\n"
+			+ "Not required but extremely helpful. Aim for one of:\n"
+			+ "  • What you were doing right before the bug.\n"
+			+ "  • What you expected vs what happened.\n"
+			+ "  • A button you clicked that didn't do what its label said.\n"
+			+ "Don't worry about being precise — the auto-capture fills in most of the context.\n\n"
+			+ "[color=#888888]Privacy: only the first 8 characters of your account ID are stored — enough to match your account if we need to reach out, not enough to identify you to a third party.[/color]"
+		),
+	},
 	"bounty_board": {
 		"title": "[color=#FFD700]💰 Bounty Board[/color]",
 		"body": (
