@@ -776,6 +776,10 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 				kind_label.text = "★ LUCKY"
 			"JACKPOT":
 				kind_label.text = "★★★"
+			"BAR_BONUS":
+				# v0.9.581 — +2 Scratches bonus cell. Gold sparkle.
+				kind_label.text = "✦ BONUS"
+				kind_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))
 			"BASE":
 				kind_label.text = "◇"
 			"QUALITY_UP_1":
@@ -947,6 +951,15 @@ func _palette_for_slot(slot: Dictionary) -> Dictionary:
 				"bg": Color(0.22, 0.16, 0.04, 1.0),
 				"border": Color(1.0, 0.84, 0.20, 1.0),
 				"kind_color": Color(1.0, 0.84, 0.20),
+				"name_color": Color(1.0, 0.94, 0.55),
+			}
+		"BAR_BONUS":
+			# v0.9.581 — +2 Scratches bonus. Gold-bordered, matches the
+			# v0.9.574 combat-loot +2 cell visually.
+			return {
+				"bg": Color(0.20, 0.16, 0.04, 1.0),
+				"border": Color(1.0, 0.84, 0.0, 1.0),
+				"kind_color": Color(1.0, 0.84, 0.0),
 				"name_color": Color(1.0, 0.94, 0.55),
 			}
 		_:

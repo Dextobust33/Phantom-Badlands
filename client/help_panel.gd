@@ -455,6 +455,8 @@ const HELP_TOPICS := {
 			+ "  • [color=#88FF88]Materials[/color] — crafting inputs (ore, wood, fish meat).\n"
 			+ "  • [color=#FFD700]Rare drops[/color] — chance at consumables, runes, or even small XP/valor boosts.\n"
 			+ "  • [b]Skill XP[/b] — each successful catch ranks up the relevant gathering skill.\n\n"
+			+ "[color=#FFD700]── ✦ +2 Scratches bonus cell ──[/color]\n"
+			+ "Rare gold-bordered cells (~[color=#FFD700]1-in-12[/color] per slot) grant [color=#FFD700]+2 scratches[/color] to your remaining budget when revealed. Cost: 1 scratch (same as any reveal) → net [color=#88FF88]+1 scratch gained[/color]. Same mechanic as the combat-loot +2 cell, ported to gathering AND craft scratch-offs.\n\n"
 			+ "[color=#888888]Salvage materials for Salvage Essence + bonus material rolls. Visit a crafting station to turn raw materials into gear.[/color]"
 		),
 	},

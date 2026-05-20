@@ -19389,7 +19389,15 @@ func _roll_scratch_off_slot_kind(skill: int) -> String:
 	  NORMAL 70 / LUCKY 15 / JACKPOT 5 / DUD 10
 	Fishing skill biases DUD → JACKPOT (-0.2% dud, +0.2% jackpot per level,
 	capped). Gives a sense of progression: high-skill players see fewer
-	empty slots and more big wins."""
+	empty slots and more big wins.
+
+	v0.9.581 — pre-roll BAR_BONUS at ~1/12 (8.3%) BEFORE the regular
+	distribution. Mirrors the v0.9.574 combat-loot +2 Reveals mechanic.
+	When revealed, the cell grants +2 to scratches_remaining (net +1 since
+	the click cost 1). Covers both gathering AND craft scratch-off because
+	they share this engine. Design memo: project_scratch_off_engagement_design."""
+	if (randi() % 12) == 0:
+		return "BAR_BONUS"
 	var skill_bias = mini(skill, 50)
 	var dud_chance = maxi(2, 10 - int(skill_bias * 0.2))  # 10% at L1, floor at 2% past L40
 	var jackpot_chance = mini(20, 5 + int(skill_bias * 0.2))  # 5% at L1, cap 20%
@@ -19438,6 +19446,21 @@ func _build_scratch_off_slot(kind: String, job_type: String, tier_or_water, skil
 			"tier": 0,
 			"is_consumable": false,
 			"quantity": 0,
+		}
+	if kind == "BAR_BONUS":
+		# v0.9.581 — +2 scratches bonus cell. No catch, no quantity. The
+		# `bonus_scratches` field is read by handle_scratch_off_reveal to
+		# bump session.scratches_remaining. Gold color so the reveal pops.
+		return {
+			"kind": "BAR_BONUS",
+			"item": "bar_bonus",
+			"name": "+2 Scratches!",
+			"type": "bar_bonus",
+			"value": 0,
+			"tier": 0,
+			"is_consumable": false,
+			"quantity": 0,
+			"bonus_scratches": 2,
 		}
 	# Roll a catch. For JACKPOT, retry up to 20 times for a high-value entry.
 	var catch_data = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
@@ -19641,6 +19664,15 @@ func handle_scratch_off_reveal(peer_id: int, message: Dictionary) -> void:
 	else:
 		revealed_positions.append(slot_index)
 		session["revealed_positions"] = revealed_positions
+		# v0.9.581 — BAR_BONUS slot grants +2 scratches BEFORE the
+		# auto-complete check below. Net effect: this scratch cost 1
+		# + granted 2 = +1 scratch gained. Cleanly matches the v0.9.574
+		# combat-loot +2 Reveals pattern.
+		var revealed_slot = slots[slot_index]
+		var bonus_scratches: int = int(revealed_slot.get("bonus_scratches", 0)) if revealed_slot is Dictionary else 0
+		if bonus_scratches > 0:
+			scratches_remaining += bonus_scratches
+			session["scratches_remaining"] = scratches_remaining
 		send_to_peer(peer_id, {
 			"type": "scratch_off_revealed",
 			"slot_index": slot_index,
