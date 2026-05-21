@@ -2188,6 +2188,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"victory": true,
 		"monster_name": monster.name,
 		"monster_base_name": monster.get("base_name", monster.name),  # For flock generation
+		"monster_base_level": monster.get("base_level", 1),  # Intrinsic base level — client HP estimation
+		"monster_max_hp": monster.max_hp,  # Authoritative HP truth for client discovery cache
+		"monster_variant_type": monster.get("variant_type", ""),  # Variant tag for client HP normalization
 		"monster_level": monster.level,
 		"flock_chance": flock,
 		"dropped_items": all_drops,
@@ -2637,6 +2640,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"monster_name": monster.name,
 			"monster_level": monster.level,
 			"monster_base_name": monster.get("base_name", monster.name),
+			"monster_base_level": monster.get("base_level", 1),
+			"monster_max_hp": monster.max_hp,
+			"monster_variant_type": monster.get("variant_type", ""),
 			"flock_chance": monster.get("flock_chance", 0),
 			"dropped_items": all_drops,
 			"gems_earned": gems_earned,
@@ -2672,6 +2678,9 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				"monster_name": monster.name,
 				"monster_level": monster.level,
 				"monster_base_name": monster.get("base_name", monster.name),
+				"monster_base_level": monster.get("base_level", 1),
+				"monster_max_hp": monster.max_hp,
+				"monster_variant_type": monster.get("variant_type", ""),
 				"flock_chance": monster.get("flock_chance", 0),
 				"dropped_items": [],
 				"gems_earned": 0,
@@ -3856,6 +3865,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					"victory": true,
 					"monster_name": monster.name,
 					"monster_level": monster.level,
+					"monster_base_name": monster.get("base_name", monster.name),
+					"monster_base_level": monster.get("base_level", 1),
+					"monster_max_hp": monster.max_hp,
+					"monster_variant_type": monster.get("variant_type", ""),
 					"flock_chance": 0,  # No flock after perfect heist
 					"dropped_items": dropped_items,
 					"gems_earned": gems_earned,
@@ -6546,6 +6559,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"player_max_energy": character.max_energy,
 		"monster_name": monster.name,
 		"monster_base_name": monster.get("base_name", monster.name),  # Original name for art lookup
+		"monster_base_level": monster.get("base_level", 1),  # Intrinsic base level — client HP estimation
 		"monster_level": monster.level,
 		"monster_hp": display_hp,
 		"monster_max_hp": display_max_hp,
@@ -7474,6 +7488,12 @@ func process_party_combat_action(leader_id: int, acting_peer_id: int, action: Co
 			"messages": messages,
 			"combat_ended": true,
 			"victory": true,
+			"monster_name": monster.name,
+			"monster_base_name": monster.get("base_name", monster.name),
+			"monster_base_level": monster.get("base_level", 1),
+			"monster_max_hp": monster.max_hp,
+			"monster_variant_type": monster.get("variant_type", ""),
+			"monster_level": monster.level,
 			"member_rewards": victory_result.get("member_rewards", {})
 		}
 
@@ -7669,6 +7689,12 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 			"messages": messages,
 			"combat_ended": true,
 			"victory": true,
+			"monster_name": monster.name,
+			"monster_base_name": monster.get("base_name", monster.name),
+			"monster_base_level": monster.get("base_level", 1),
+			"monster_max_hp": monster.max_hp,
+			"monster_variant_type": monster.get("variant_type", ""),
+			"monster_level": monster.level,
 			"member_rewards": victory_result.get("member_rewards", {})
 		}
 

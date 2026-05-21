@@ -1569,6 +1569,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var monster = {
 		"name": monster_name,
 		"base_name": base_stats.name,  # Original name without variant prefix/suffix (for art lookup)
+		"base_level": base_stats.base_level,  # Intrinsic monster base level — needed for accurate HP estimation in client-side discovery system
 		"level": target_level,
 		"max_hp": scaled_hp,
 		"current_hp": scaled_hp,

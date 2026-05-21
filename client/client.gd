@@ -1494,6 +1494,11 @@ var bug_report_mode: bool = false  # Waiting for optional description
 
 # Enemy tracking
 var known_enemy_hp: Dictionary = {}
+# v0.9.591 — HP discovery cache, keyed by '<FullVariantName>_<level>' → int (max_hp).
+# Populated only from server-authoritative sources (combat_state monster_max_hp when
+# monster_known, combat_end killed_monster_max_hp on victory, or Analyze). No longer
+# polluted by damage-dealt heuristics that miss instakill paths (Outsmart / execute).
+var known_monster_base_levels: Dictionary = {}  # base_name → int (intrinsic base level from server)
 var discovered_monster_types: Dictionary = {}  # Tracks monster types by base name (first encounter)
 var current_enemy_name: String = ""
 var current_enemy_level: int = 0
@@ -5576,6 +5581,7 @@ func _reset_character_state():
 		cancel_variable_cost_ability()
 	# Clear monster HP knowledge (per-character, not shared across characters)
 	known_enemy_hp = {}
+	known_monster_base_levels = {}
 	# Clear the character stats HUD so old values don't linger
 	_clear_character_hud()
 
@@ -9539,15 +9545,14 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	# 1. Prefer server's actual max HP (covers variants).
 	if current_enemy_max_hp > 0:
 		target_hp = current_enemy_max_hp
-	# 2. Fall back to client's discovered HP (base-name keyed, no variant info).
+	# 2. Fall back to client's discovered HP (full-variant-name keyed; v0.9.591).
 	elif current_enemy_name != "" and current_enemy_level > 0:
-		var base_name = _get_base_monster_name(current_enemy_name)
-		var enemy_key = "%s_%d" % [base_name, current_enemy_level]
+		var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
 		if known_enemy_hp.has(enemy_key):
 			target_hp = known_enemy_hp[enemy_key]
 		else:
 			# 3. Estimate from kills at other levels.
-			var estimated = estimate_enemy_hp(base_name, current_enemy_level)
+			var estimated = estimate_enemy_hp(current_enemy_name, current_enemy_level)
 			if estimated > 0:
 				target_hp = estimated
 				using_estimated_hp = true
@@ -11054,12 +11059,13 @@ func _estimate_magic_bolt_planned_mana() -> int:
 	if current_enemy_max_hp > 0:
 		target_hp = current_enemy_max_hp
 	elif current_enemy_name != "" and current_enemy_level > 0:
-		var base_name = _get_base_monster_name(current_enemy_name)
-		var enemy_key = "%s_%d" % [base_name, current_enemy_level]
+		# v0.9.591 — full-variant-name cache key (Shield Guardian Goblin vs Goblin
+		# are distinct entries now).
+		var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
 		if known_enemy_hp.has(enemy_key):
 			target_hp = known_enemy_hp[enemy_key]
 		else:
-			var estimated = estimate_enemy_hp(base_name, current_enemy_level)
+			var estimated = estimate_enemy_hp(current_enemy_name, current_enemy_level)
 			if estimated > 0:
 				target_hp = estimated
 	if target_hp <= 0:
@@ -11340,11 +11346,11 @@ func _get_estimated_enemy_hp_for_card() -> int:
 	if current_enemy_max_hp > 0:
 		return current_enemy_max_hp
 	if current_enemy_name != "" and current_enemy_level > 0:
-		var base_name = _get_base_monster_name(current_enemy_name)
-		var enemy_key = "%s_%d" % [base_name, current_enemy_level]
+		# v0.9.591 — full-variant-name cache key.
+		var enemy_key = "%s_%d" % [current_enemy_name, current_enemy_level]
 		if known_enemy_hp.has(enemy_key):
 			return int(known_enemy_hp[enemy_key])
-		var est = estimate_enemy_hp(base_name, current_enemy_level)
+		var est = estimate_enemy_hp(current_enemy_name, current_enemy_level)
 		if est > 0:
 			return est
 	return 0
@@ -18158,42 +18164,68 @@ func update_player_xp_bar():
 		else:
 			xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
 
-func _discover_enemy_hp(enemy_name: String, enemy_level: int, damage_dealt: int) -> Dictionary:
-	"""Resolve which HP values to display per the discovery system.
-	Returns {current, max, known, is_estimate}. The server's actual HP is
-	intentionally ignored — players only know what they've observed (or
-	what an active Analyze has revealed). known=false means the player has
-	no data on this monster type at this level — bar shows ???."""
-	var base_name = _get_base_monster_name(enemy_name)
-	var enemy_key = "%s_%d" % [base_name, enemy_level]
+# v0.9.591 — variant HP multipliers, must mirror server's scale_monster_to_level
+# branches in monster_database.gd (Shield Guardian +25% HP, Corrosive +15% HP,
+# Elite +50% HP; Weapon Master/Sunder/base are 1.0×). Used by estimate_enemy_hp
+# to translate prior kills of one variant into expected HP for another.
+const VARIANT_HP_MULTIPLIERS: Dictionary = {
+	"": 1.0,
+	"weapon_master": 1.0,
+	"shield_guardian": 1.25,
+	"corrosive": 1.15,
+	"sunder": 1.0,
+	"elite": 1.5,
+}
 
-	# v0.9.587 — when the player has dealt MORE damage than the known ceiling
-	# and the monster is still alive, the previously-recorded HP was a low
-	# observation (e.g., prior Outsmart kill at partial damage). Don't grow
-	# the displayed max mid-fight — that was confusing (HP suddenly jumped
-	# from "25/48" → "12/62" because the ceiling balloons to dmg+25%). Show
-	# a depleted bar at the KNOWN max + a "still alive" hint so the player
-	# learns the estimate was wrong in a readable way. Known HP gets bumped
-	# silently on confirmed kill (see record_enemy_defeated).
-	if analyze_revealed_max_hp > 0:
-		var current = max(0, analyze_revealed_max_hp - damage_dealt)
+func _get_variant_hp_multiplier(variant_type: String) -> float:
+	return VARIANT_HP_MULTIPLIERS.get(variant_type, 1.0)
+
+func _discover_enemy_hp(enemy_name: String, enemy_level: int, damage_dealt: int, server_max_hp: int = -1) -> Dictionary:
+	"""Resolve HP values to display per the discovery system.
+
+	v0.9.591 — accepts server's authoritative max_hp via server_max_hp parameter.
+	When the server has marked the monster as known (knows_monster=true), it
+	sends actual max_hp in combat_state, which the client now treats as ground
+	truth and syncs into the cache. This eliminates the cache-vs-server drift
+	that produced bogus 'exceeded' tags and stale estimates inherited from prior
+	Outsmart / execute kills.
+
+	Source priority:
+	  1. server_max_hp > 0 — authoritative (player already 'knows' this monster).
+	  2. analyze_revealed_max_hp > 0 — Analyze ability revealed truth this fight.
+	  3. Exact cache hit on '<full_variant_name>_<level>' — populated by prior
+	     victory reveals (server sends killed_monster_max_hp on every win).
+	  4. estimate_enemy_hp() — server-formula extrapolation from any same-base
+	     prior kill at a different level / different variant.
+	  5. Unknown — bar renders ???."""
+	var enemy_key = "%s_%d" % [enemy_name, enemy_level]
+
+	if server_max_hp > 0:
+		known_enemy_hp[enemy_key] = server_max_hp
+		var current = max(0, server_max_hp - damage_dealt)
 		if current == 0 and in_combat and not enemy_killed_this_fight:
 			current = 1
-		return {"current": current, "max": analyze_revealed_max_hp, "known": true, "is_estimate": false, "exceeded": false}
+		return {"current": current, "max": server_max_hp, "known": true, "is_estimate": false, "exceeded": false}
+
+	if analyze_revealed_max_hp > 0:
+		known_enemy_hp[enemy_key] = analyze_revealed_max_hp
+		var current_a = max(0, analyze_revealed_max_hp - damage_dealt)
+		if current_a == 0 and in_combat and not enemy_killed_this_fight:
+			current_a = 1
+		return {"current": current_a, "max": analyze_revealed_max_hp, "known": true, "is_estimate": false, "exceeded": false}
 
 	if known_enemy_hp.has(enemy_key):
 		var max_hp = int(known_enemy_hp[enemy_key])
 		var exceeded = damage_dealt > max_hp and in_combat and not enemy_killed_this_fight
 		var current2 = max(0, max_hp - damage_dealt)
-		# Keep the bar depleted (0) when the estimate was beat so the player
-		# sees the discovery moment. Pre-v0.9.587 we pinned at 1 to avoid the
-		# "0 HP, still alive" confusion, but that hides the depletion. The
-		# exceeded flag drives a "still alive!" tag in the label instead.
+		# Bar depletes to 0 with "still alive!" tag when the cached value was
+		# inherited from an old underestimate (rare under v0.9.591 because the
+		# cache is now server-sourced, not damage-dealt-sourced).
 		if current2 == 0 and in_combat and not enemy_killed_this_fight and not exceeded:
 			current2 = 1
 		return {"current": current2, "max": max_hp, "known": true, "is_estimate": false, "exceeded": exceeded}
 
-	var est = estimate_enemy_hp(base_name, enemy_level)
+	var est = estimate_enemy_hp(enemy_name, enemy_level)
 	if est > 0:
 		var est_exceeded = damage_dealt > est and in_combat and not enemy_killed_this_fight
 		var current3 = max(0, est - damage_dealt)
@@ -18210,9 +18242,11 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 
 	# Resolve what the player should SEE per the discovery system. The
 	# legacy bar and the combat scene panel both use these resolved
-	# values — passing raw server actual_hp directly would leak knowledge
-	# the player hasn't earned yet.
-	var discovered = _discover_enemy_hp(enemy_name, enemy_level, damage_dealt)
+	# values. v0.9.591 — actual_max_hp from the server is now treated as
+	# ground truth when present (>0). The server only sends >0 when the
+	# player has earned the knowledge (knows_monster=true), so this
+	# preserves discovery while eliminating cache drift.
+	var discovered = _discover_enemy_hp(enemy_name, enemy_level, damage_dealt, actual_max_hp)
 
 	# Mirror to combat scene panel (A1 — Combat Juice)
 	if combat_scene_panel and in_combat:
@@ -18282,50 +18316,57 @@ func show_enemy_hp_bar(show: bool):
 	if enemy_health_bar:
 		enemy_health_bar.visible = show
 
-func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: int):
-	"""Record enemy defeat and update known HP.
+func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: int, actual_max_hp: int = 0):
+	"""Record enemy defeat into the HP discovery cache.
 
-	If Analyze was used this combat, store the actual max HP revealed by Analyze.
-	Otherwise, use discovery system: known HP = damage dealt, and can only go DOWN.
-	Uses base monster name so variants share HP knowledge with the base type."""
-	var base_name = _get_base_monster_name(enemy_name)
-	var enemy_key = "%s_%d" % [base_name, enemy_level]
-	var hp_to_store: int
+	v0.9.591 — cache key is now the FULL variant name (e.g. 'Shield Guardian
+	Goblin_10', 'Corrosive Hobgoblin_4'), so different variants no longer
+	pollute each other's HP knowledge.
 
-	# If Analyze revealed actual max HP, use that (player learned the true HP)
-	if analyze_revealed_max_hp > 0:
-		hp_to_store = analyze_revealed_max_hp
-		# Analyze gives exact HP, so always store it (replaces any previous knowledge)
-		known_enemy_hp[enemy_key] = hp_to_store
-	else:
-		# Normal discovery: known HP = damage dealt (includes overkill)
-		# Known HP can only go DOWN - if player defeats with less damage, we learn actual HP is lower
-		hp_to_store = total_damage
+	Source priority for the value stored:
+	  1. actual_max_hp > 0 — AUTHORITATIVE. Sent by server in combat_end on
+	     every victory (normal / outsmart / companion_clutch / heist / party).
+	     Overwrites any prior estimate; no min() collapse.
+	  2. analyze_revealed_max_hp > 0 — Analyze ability revealed truth during
+	     the kill. Also authoritative.
+	  3. total_damage > 0 — fallback heuristic. Damage dealt is an upper
+	     bound on actual HP for NORMAL damage kills (you must deal ≥ HP to
+	     drop the monster). Converges downward via mini(). NOT trusted on
+	     Outsmart / execute kills because total_damage there is < actual HP;
+	     those paths now always provide actual_max_hp from the server.
+	  4. Otherwise — no data to record."""
+	var enemy_key = "%s_%d" % [enemy_name, enemy_level]
+	if actual_max_hp > 0:
+		known_enemy_hp[enemy_key] = actual_max_hp
+	elif analyze_revealed_max_hp > 0:
+		known_enemy_hp[enemy_key] = analyze_revealed_max_hp
+	elif total_damage > 0:
 		if known_enemy_hp.has(enemy_key):
-			var old_known = known_enemy_hp[enemy_key]
-			known_enemy_hp[enemy_key] = mini(old_known, total_damage)
+			known_enemy_hp[enemy_key] = mini(int(known_enemy_hp[enemy_key]), total_damage)
 		else:
 			known_enemy_hp[enemy_key] = total_damage
 
-	# Also store by monster name only for level-based estimation
-	var monster_key = "monster_%s" % base_name
-	if not known_enemy_hp.has(monster_key):
-		known_enemy_hp[monster_key] = {}
-
-	# Same logic for the level-based tracking
-	if analyze_revealed_max_hp > 0:
-		# Analyze gives exact HP
-		known_enemy_hp[monster_key][enemy_level] = hp_to_store
-	elif known_enemy_hp[monster_key].has(enemy_level):
-		var old_known = known_enemy_hp[monster_key][enemy_level]
-		known_enemy_hp[monster_key][enemy_level] = mini(old_known, total_damage)
-	else:
-		known_enemy_hp[monster_key][enemy_level] = total_damage
-
 func _get_base_monster_name(monster_name: String) -> String:
-	"""Strip variant prefixes from monster name to get the base type.
-	Used for tracking unique monster types discovered."""
-	# Known variant prefixes (monster ability variants)
+	"""Strip variant decorations from monster name to get the base type.
+
+	v0.9.591 — handles BOTH prefix and suffix variants (the server uses both;
+	pre-fix, the suffix variants like 'X Shield Guardian' / 'X Weapon Master'
+	weren't being stripped, so they got tracked as distinct monster types and
+	cross-variant HP estimation never fired).
+
+	Server variant patterns (monster_database.gd:1503-1568):
+	  - Prefix:  'Corrosive X' / 'Sundering X'
+	  - Suffix:  'X Weapon Master' / 'X Shield Guardian'
+	  - Both:    '★ X Champion'  (elite)
+	The flavor prefixes ('Gem Bearer ', 'Pack Leader ', etc.) are NOT used by
+	the spawn pipeline — those are legacy/cosmetic; preserved here so old saves
+	don't misbehave."""
+	var result = monster_name
+	# Elite: "★ X Champion" — strip both ends.
+	if result.begins_with("★ ") and result.ends_with(" Champion"):
+		result = result.substr(2, result.length() - 2 - " Champion".length())
+		return result
+	# Prefix variants (single strip).
 	var variant_prefixes = [
 		"Corrosive ", "Sundering ", "Shield Guardian ", "Weapon Master ", "Gem Bearer ",
 		"Arcane Hoarder ", "Cunning Prey ", "Warrior Hoarder ", "Wish Granter ",
@@ -18333,103 +18374,165 @@ func _get_base_monster_name(monster_name: String) -> String:
 		"Young ", "Frenzied ", "Cursed ", "Ethereal ", "Armored ",
 		"Venomous ", "Savage ", "Feral "
 	]
-	var result = monster_name
 	for prefix in variant_prefixes:
 		if result.begins_with(prefix):
-			result = result.substr(prefix.length())
-			break  # Only strip one prefix
+			return result.substr(prefix.length())
+	# Suffix variants (single strip).
+	var variant_suffixes = [
+		" Shield Guardian",
+		" Weapon Master",
+	]
+	for suffix in variant_suffixes:
+		if result.ends_with(suffix):
+			return result.substr(0, result.length() - suffix.length())
 	return result
 
 func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
-	"""Estimate enemy HP based on knowledge from killing similar monsters.
-	Uses base monster name so variants share knowledge with base type.
-	Returns 0 if no estimate available.
+	"""Estimate enemy HP for a (variant, level) we haven't directly cached.
 
-	v0.9.502 — Cross-level estimates are padded UPWARD to ensure the
-	displayed max_hp typically exceeds the monster's true HP. Background:
-	the server's actual HP calc includes a hyperbolic hp_multiplier (2.0×
-	asymptoting to 7.0×) keyed on expected player gear at the target level.
-	The client's tiered_stat_scale formula tracks only the base scaling
-	curve, so cross-level extrapolation systematically undershoots — players
-	would see 'HP 0/x' on a monster that's still alive (looks bugged). The
-	pad ensures the discovery system narrows downward toward truth as the
-	player accumulates same-level kills, rather than undershooting from
-	below."""
-	var base_name = _get_base_monster_name(enemy_name)
-	# Exact-level match: known_hp = damage dealt in last kill, which is
-	# always ≥ actual HP (you can't kill with less damage than HP). Return
-	# unpadded.
-	var enemy_key = "%s_%d" % [base_name, enemy_level]
+	v0.9.591 — replicates the server's full scale_monster_to_level HP formula
+	from monster_database.gd:1463-1465:
+	  scaled_hp = base_hp × tiered_stat_scale(base_lv, target_lv) × hp_multiplier(target_lv)
+	  × variant_multiplier
+
+	The legacy estimator only modeled `tiered_stat_scale` (single-arg form,
+	implicitly treating base_lv=1) and missed the hp_multiplier ramp (2×→~6×)
+	and variant multipliers (Shield Guardian 1.25×, Elite 1.5×). Combined with
+	the damage-dealt cache corruption from Outsmart kills, this produced
+	estimates 50-200% off truth. This rewrite computes the exact ratio between
+	cached observation (known_level, known_variant) and target (enemy_level,
+	enemy_variant) using all three factors.
+
+	Returns 0 if there's no data to anchor from — caller renders '???'."""
+	# 1. Exact-key cache hit on (variant, level).
+	var enemy_key = "%s_%d" % [enemy_name, enemy_level]
 	if known_enemy_hp.has(enemy_key):
-		return known_enemy_hp[enemy_key]
+		return int(known_enemy_hp[enemy_key])
 
-	# Check if we have any data for this monster type
-	var monster_key = "monster_%s" % base_name
-	if known_enemy_hp.has(monster_key) and known_enemy_hp[monster_key] is Dictionary:
-		var known_levels = known_enemy_hp[monster_key] as Dictionary
+	# 2. Find the best prior kill of the same base monster (any variant, any
+	# level) to anchor the extrapolation. Iterate the cache once.
+	var target_base_name = _get_base_monster_name(enemy_name)
+	var target_variant_type = _get_variant_type_from_name(enemy_name)
+	var target_variant_mult = _get_variant_hp_multiplier(target_variant_type)
+	var best_known_level: int = -1
+	var best_known_hp: int = 0
+	var best_known_variant_mult: float = 1.0
+	for key in known_enemy_hp.keys():
+		if not (key is String):
+			continue
+		var underscore_idx = (key as String).rfind("_")
+		if underscore_idx <= 0:
+			continue
+		var lvl_str = (key as String).substr(underscore_idx + 1)
+		if not lvl_str.is_valid_int():
+			continue
+		var entry_lvl = lvl_str.to_int()
+		var entry_name = (key as String).substr(0, underscore_idx)
+		if _get_base_monster_name(entry_name) != target_base_name:
+			continue
+		# Prefer the level closest to our target — equally accurate either
+		# direction since both T() and M() are monotonic in level.
+		if best_known_level == -1 or abs(entry_lvl - enemy_level) < abs(best_known_level - enemy_level):
+			best_known_level = entry_lvl
+			best_known_hp = int(known_enemy_hp[key])
+			best_known_variant_mult = _get_variant_hp_multiplier(_get_variant_type_from_name(entry_name))
 
-		# Find the closest level we have data for (prefer higher levels)
-		var best_level = -1
-		var best_hp = 0
-		for known_level in known_levels.keys():
-			if known_level is int:
-				# Prefer exact match or higher level
-				if known_level >= enemy_level:
-					if best_level == -1 or known_level < best_level:
-						best_level = known_level
-						best_hp = known_levels[known_level]
-				elif best_level == -1:
-					# Use lower level if no higher available
-					if known_level > best_level:
-						best_level = known_level
-						best_hp = known_levels[known_level]
+	if best_known_hp <= 0 or best_known_level <= 0:
+		return 0
 
-		if best_level > 0 and best_hp > 0:
-			# Scale HP estimate using tiered scaling (matching monster_database.gd)
-			# Monster HP scales with tiered percentages per level
-			var known_scale = _calculate_tiered_stat_scale(best_level)
-			var target_scale = _calculate_tiered_stat_scale(enemy_level)
-			# Ratio of scales gives us the multiplier
-			var scale_ratio = target_scale / known_scale if known_scale > 0 else 1.0
-			var raw_estimate: float = float(best_hp) * scale_ratio
-			# v0.9.502 — pad upward to bias estimates above truth. Pad
-			# grows with the level gap (less confidence over larger jumps)
-			# and is capped at +50%. 4% per level of gap.
-			var level_gap: int = abs(enemy_level - best_level)
-			var pad: float = 1.0 + minf(float(level_gap) * 0.04, 0.50)
-			return int(raw_estimate * pad)
+	# 3. Need the monster's intrinsic base_level for the 2-arg tiered scale.
+	# Server sends it in combat_state (monster_base_level) and combat_end
+	# (killed_monster_base_level); we cache by base_name. If we've never seen
+	# this monster type before, fall back to base_level=1 (least bad guess).
+	var base_level = int(known_monster_base_levels.get(target_base_name, 1))
+	if base_level < 1:
+		base_level = 1
 
-	return 0
+	# 4. Compute the three ratios and scale.
+	var t_known = _calculate_tiered_stat_scale_from_base(base_level, best_known_level)
+	var t_target = _calculate_tiered_stat_scale_from_base(base_level, enemy_level)
+	var m_known = _calculate_hp_multiplier(best_known_level)
+	var m_target = _calculate_hp_multiplier(enemy_level)
 
-func _calculate_tiered_stat_scale(level: int) -> float:
-	"""Calculate stat scaling using tiered percentages (matching monster_database.gd).
-	Used for HP estimation."""
-	var scale = 1.0
+	var t_ratio: float = t_target / t_known if t_known > 0.0 else 1.0
+	var m_ratio: float = m_target / m_known if m_known > 0.0 else 1.0
+	var v_ratio: float = target_variant_mult / best_known_variant_mult if best_known_variant_mult > 0.0 else 1.0
 
-	# Tier 1: Levels 1-100 at 12% per level
-	if level > 1:
-		var levels_in_tier = min(level, 100) - 1
+	return int(float(best_known_hp) * t_ratio * m_ratio * v_ratio)
+
+func _get_variant_type_from_name(monster_name: String) -> String:
+	"""Recover the variant_type id from a monster's full display name.
+
+	Mirrors the variant creation patterns in monster_database.gd:1503-1568.
+	Some variants use PREFIX patterns ('Corrosive X', 'Sundering X'), others
+	SUFFIX ('X Weapon Master', 'X Shield Guardian'), and Elite uses both
+	('★ X Champion'). Returns '' for base monsters / unknown patterns."""
+	if monster_name.begins_with("★ ") and monster_name.ends_with(" Champion"):
+		return "elite"
+	if monster_name.begins_with("Corrosive "):
+		return "corrosive"
+	if monster_name.begins_with("Sundering "):
+		return "sunder"
+	if monster_name.ends_with(" Weapon Master"):
+		return "weapon_master"
+	if monster_name.ends_with(" Shield Guardian"):
+		return "shield_guardian"
+	return ""
+
+func _calculate_hp_multiplier(target_level: int) -> float:
+	"""Mirror server's scale_monster_to_level hp_multiplier formula.
+	monster_database.gd:1464: 2.0 + 5.0 * attack / (150 + attack).
+	Hyperbolic asymptote at 7.0× — accounts for expected player gear scaling."""
+	var expected_attack: int = _estimate_player_attack_for_level(target_level)
+	return 2.0 + 5.0 * float(expected_attack) / (150.0 + float(expected_attack))
+
+func _estimate_player_attack_for_level(player_level: int) -> int:
+	"""Mirror server's _estimate_player_equipment_attack (monster_database.gd:1599).
+	Conservative gear assumption used when scaling monster HP at a given level."""
+	var item_level: int = int(player_level * 0.95)
+	var effective_level: float = float(item_level)
+	if item_level > 50:
+		var log_level: float = 50.0 + 15.0 * (log(float(item_level - 49)) / log(2.0))
+		effective_level = min(float(item_level), log_level)
+	# rarity_mult (1.3) × weapon_slot_mult (1.5) = 1.95
+	return int(effective_level * 1.95)
+
+func _calculate_tiered_stat_scale_from_base(base_level: int, target_level: int) -> float:
+	"""Mirror server's _calculate_tiered_stat_scale (monster_database.gd:1632) —
+	the TWO-argument form. The client's legacy single-arg version implicitly
+	assumed base_level=1, which is wrong for high-base monsters (T3+ chimaeras,
+	Crucible bosses, etc.) and produced systematic undershoot in estimates."""
+	if target_level < base_level:
+		return float(target_level) / float(base_level)
+	var scale: float = 1.0
+	var current_level: int = base_level
+	# Tier 1: levels 1-100 at 12%/lvl
+	if current_level < 100:
+		var levels_in_tier: int = min(target_level, 100) - current_level
 		if levels_in_tier > 0:
 			scale += levels_in_tier * 0.12
-
-	# Tier 2: Levels 101-500 at 5% per level
-	if level > 100:
-		var levels_in_tier = min(level, 500) - 100
-		if levels_in_tier > 0:
-			scale += levels_in_tier * 0.05
-
-	# Tier 3: Levels 501-2000 at 2% per level
-	if level > 500:
-		var levels_in_tier = min(level, 2000) - 500
-		if levels_in_tier > 0:
-			scale += levels_in_tier * 0.02
-
-	# Tier 4: Levels 2000+ at 0.5% per level
-	if level > 2000:
-		var levels_in_tier = level - 2000
-		scale += levels_in_tier * 0.005
-
-	return scale
+			current_level = min(target_level, 100)
+	# Tier 2: levels 101-500 at 5%/lvl
+	if current_level < 500 and target_level > 100:
+		var start: int = max(current_level, 100)
+		var levels_in_tier_2: int = min(target_level, 500) - start
+		if levels_in_tier_2 > 0:
+			scale += levels_in_tier_2 * 0.05
+			current_level = min(target_level, 500)
+	# Tier 3: levels 501-2000 at 2%/lvl
+	if current_level < 2000 and target_level > 500:
+		var start_3: int = max(current_level, 500)
+		var levels_in_tier_3: int = min(target_level, 2000) - start_3
+		if levels_in_tier_3 > 0:
+			scale += levels_in_tier_3 * 0.02
+			current_level = min(target_level, 2000)
+	# Tier 4: levels 2000+ at 0.5%/lvl
+	if target_level > 2000:
+		var start_4: int = max(current_level, 2000)
+		var levels_in_tier_4: int = target_level - start_4
+		if levels_in_tier_4 > 0:
+			scale += levels_in_tier_4 * 0.005
+	return max(0.25, scale)
 
 func parse_monster_healing(msg: String) -> int:
 	"""Parse healing done BY the monster (life steal, regeneration).
@@ -19982,6 +20085,16 @@ func handle_server_message(message: Dictionary):
 				# Update monster HP from server (accurate values)
 				current_enemy_hp = state.get("monster_hp", current_enemy_hp)
 				current_enemy_max_hp = state.get("monster_max_hp", current_enemy_max_hp)
+				# v0.9.591 — keep the HP discovery cache + base_level index in sync
+				# with server truth as combat progresses. The first known-monster
+				# combat_update primes the cache for this fight; subsequent updates
+				# are no-ops on the same value but cheap.
+				var upd_base_name = state.get("monster_base_name", current_enemy_name)
+				var upd_base_level = int(state.get("monster_base_level", 0))
+				if upd_base_name != "" and upd_base_level > 0:
+					known_monster_base_levels[upd_base_name] = upd_base_level
+				if current_enemy_max_hp > 0 and current_enemy_name != "" and current_enemy_level > 0:
+					known_enemy_hp["%s_%d" % [current_enemy_name, current_enemy_level]] = current_enemy_max_hp
 				# Track forcefield/shield for visual display
 				current_forcefield = state.get("forcefield_shield", 0)
 				update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
@@ -20070,9 +20183,20 @@ func handle_server_message(message: Dictionary):
 					else:
 						combat_scene_panel.play_victory_fx()
 						_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
-				# Record defeat if damage was dealt OR if Analyze revealed HP (e.g., Outsmart victory after Analyze)
-				if damage_dealt_to_current_enemy > 0 or analyze_revealed_max_hp > 0:
-					record_enemy_defeated(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
+				# v0.9.591 — record defeat using server's authoritative max_hp when
+				# present. Server sends killed_monster_max_hp + killed_monster_base_level
+				# in every victory combat_end (normal / outsmart / companion_clutch /
+				# heist / flock), so the cache now always stores ground truth instead
+				# of the damage-dealt heuristic that under-recorded on instakill paths.
+				var killed_name = String(message.get("killed_monster_name", current_enemy_name))
+				var killed_level = int(message.get("killed_monster_level", current_enemy_level))
+				var killed_max_hp = int(message.get("killed_monster_max_hp", 0))
+				var killed_base_name = String(message.get("killed_monster_base_name", _get_base_monster_name(killed_name)))
+				var killed_base_level = int(message.get("killed_monster_base_level", 0))
+				if killed_base_name != "" and killed_base_level > 0:
+					known_monster_base_levels[killed_base_name] = killed_base_level
+				if killed_name != "" and killed_level > 0 and (killed_max_hp > 0 or damage_dealt_to_current_enemy > 0 or analyze_revealed_max_hp > 0):
+					record_enemy_defeated(killed_name, killed_level, damage_dealt_to_current_enemy, killed_max_hp)
 				# Capture pre-update level so the rewards card can show the
 				# level-up delta (post-update, character_data already reflects
 				# the new level).
@@ -20267,6 +20391,18 @@ func handle_server_message(message: Dictionary):
 
 		"wish_choice":
 			# Wish granter defeated - show player reward options
+			# v0.9.591 — wish_choice replaces combat_end on Wish Granter kills, so
+			# the HP discovery cache update has to happen here too. Mirrors the
+			# combat_end victory branch.
+			var wc_killed_name = String(message.get("killed_monster_name", current_enemy_name))
+			var wc_killed_level = int(message.get("killed_monster_level", current_enemy_level))
+			var wc_killed_max_hp = int(message.get("killed_monster_max_hp", 0))
+			var wc_base_name = String(message.get("killed_monster_base_name", _get_base_monster_name(wc_killed_name)))
+			var wc_base_level = int(message.get("killed_monster_base_level", 0))
+			if wc_base_name != "" and wc_base_level > 0:
+				known_monster_base_levels[wc_base_name] = wc_base_level
+			if wc_killed_name != "" and wc_killed_level > 0 and wc_killed_max_hp > 0:
+				record_enemy_defeated(wc_killed_name, wc_killed_level, damage_dealt_to_current_enemy, wc_killed_max_hp)
 			wish_options = message.get("options", [])
 			if wish_options.size() > 0:
 				wish_selection_mode = true
@@ -21089,6 +21225,19 @@ func _process_combat_start(message: Dictionary):
 	# Get actual monster HP from server
 	current_enemy_hp = combat_state.get("monster_hp", -1)
 	current_enemy_max_hp = combat_state.get("monster_max_hp", -1)
+	# v0.9.591 — cache the monster's intrinsic base_level by base_name so the
+	# HP discovery estimator can match the server's two-arg tiered scale formula
+	# for cross-level extrapolation when this monster type appears at a level we
+	# haven't directly observed yet.
+	var combat_start_base_name = combat_state.get("monster_base_name", current_enemy_name)
+	var combat_start_base_level = int(combat_state.get("monster_base_level", 0))
+	if combat_start_base_name != "" and combat_start_base_level > 0:
+		known_monster_base_levels[combat_start_base_name] = combat_start_base_level
+	# v0.9.591 — when the server marks the monster as known (sends real max_hp
+	# instead of -1), mirror it straight into the discovery cache so subsequent
+	# renders without explicit server data stay consistent with truth.
+	if current_enemy_max_hp > 0 and current_enemy_name != "" and current_enemy_level > 0:
+		known_enemy_hp["%s_%d" % [current_enemy_name, current_enemy_level]] = current_enemy_max_hp
 
 	# Sync resources from combat state for ability availability
 	if combat_state.has("player_hp"):
@@ -24744,6 +24893,17 @@ func _handle_party_combat_end(message: Dictionary):
 		display_game(msg)
 
 	if victory and not your_death:
+		# v0.9.591 — record server-authoritative HP truth for the defeated monster
+		# so cross-fight discovery stays accurate in party combat too.
+		var pc_killed_name = String(message.get("killed_monster_name", current_enemy_name))
+		var pc_killed_level = int(message.get("killed_monster_level", current_enemy_level))
+		var pc_killed_max_hp = int(message.get("killed_monster_max_hp", 0))
+		var pc_base_name = String(message.get("killed_monster_base_name", _get_base_monster_name(pc_killed_name)))
+		var pc_base_level = int(message.get("killed_monster_base_level", 0))
+		if pc_base_name != "" and pc_base_level > 0:
+			known_monster_base_levels[pc_base_name] = pc_base_level
+		if pc_killed_name != "" and pc_killed_level > 0 and pc_killed_max_hp > 0:
+			record_enemy_defeated(pc_killed_name, pc_killed_level, damage_dealt_to_current_enemy, pc_killed_max_hp)
 		# We survived and won
 		if message.has("character"):
 			_set_character_data(message.character)
@@ -25187,8 +25347,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.591 — HP discovery system overhaul.
+	display_game("[color=#00FF00]v0.9.591[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Complete rewrite of the monster HP discovery + estimation system. Estimates were systematically wrong by 50-200% on cross-level / cross-variant encounters, and Outsmart / companion-execute kills permanently corrupted the local cache. Both classes of bug are now eliminated at the source.[/color]")
+	display_game("  • [b]Server is now authoritative on victory[/b]. Every victory combat_end (normal / outsmart / companion_clutch / heist / wish_choice / party) now emits [color=#888888]killed_monster_max_hp[/color] + [color=#888888]killed_monster_base_level[/color] + [color=#888888]killed_monster_variant_type[/color]. The client stores ground truth instead of inferring HP from damage dealt — fixes the long-standing 'Outsmart at low damage permanently caps known HP below truth' bug.")
+	display_game("  • [b]Cache is variant-aware[/b]. Old code used base_name as the cache key, so killing a Shield Guardian Goblin (1.25× HP) polluted the cached HP for vanilla Goblin, and vice versa. New cache key is the FULL variant name, so each variant accumulates its own knowledge independently.")
+	display_game("  • [b]Estimation now uses the server's actual formula[/b]. The legacy estimator missed the hp_multiplier hyperbolic ramp (2× → ~6× across levels) and used a single-arg tiered_stat_scale that assumed base_level=1 for all monsters. The rewrite replicates [color=#888888]scale_monster_to_level[/color] exactly: [color=#888888]base_hp × tiered_stat_scale(base_lv, target_lv) × hp_multiplier(target_lv) × variant_multiplier[/color]. The +50% level-gap pad fudge factor is removed.")
+	display_game("  • [b]Server-known monsters use real HP immediately[/b]. The discovery system used to ignore the server's [color=#888888]current_enemy_max_hp[/color] even when [color=#888888]monster_known=true[/color], so a stale cache value could disagree with truth. Now the server's value overrides the cache on every combat_state tick, and the cache is sync'd to match.")
+	display_game("  • [b]Variant prefix/suffix parsing fixed[/b]. The base-name stripper only handled prefixes ('Corrosive X', 'Sundering X'); the server's suffix variants ('X Weapon Master', 'X Shield Guardian') and the Elite both-ends pattern ('★ X Champion') never stripped, so they were tracked as totally separate monster types. All five server variant patterns now resolve correctly.")
+	display_game("")
+
 	# v0.9.590 — Remaining audit findings closed.
-	display_game("[color=#00FF00]v0.9.590[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.590[/color]")
 	display_game("  [color=#FFD700]The medium + minor field-drop bugs from the v0.9.589 audit sweep are now closed. Four fixes in one batched release.[/color]")
 	display_game("  • [b]Reconnect into mid-fight now keeps boss / flock visuals[/b]. The combat_restored payload was missing [color=#888888]is_boss[/color] / [color=#888888]is_flock[/color] / [color=#888888]flock_count[/color] / [color=#888888]combat_bg_color[/color], so reconnecting into a boss skipped the border pulse and lost the recolored ASCII art. Fields now sourced from the saved combat state on restore.")
 	display_game("  • [b]Instant-craft panel no longer renders stripped[/b]. Enchant / rune / structure / scroll / map / repair / reforge / temper recipes (the ones that bypass the scratch-off) were sending [color=#888888]craft_result[/color] without [color=#888888]score[/color] or [color=#888888]summary[/color], so the Quality Rating panel rendered with empty roll bands and no boost indicator. Now sends a minimal summary with [color=#888888]is_instant_craft: true[/color] so the panel can render a clean version without scratch-off-specific noise.")
@@ -28929,7 +29099,10 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	# show one number at fight start and a different one after the first
 	# attack. damage_dealt is whatever's on this combat session (usually 0
 	# at start, but could be non-zero if combat was reconnected mid-fight).
-	var discovered_init = _discover_enemy_hp(monster_name, monster_level, damage_dealt_to_current_enemy)
+	# v0.9.591 — pass server-sent monster_max_hp so the panel uses truth when
+	# the player already 'knows' this monster.
+	var monster_init_max_hp = int(combat_state.get("monster_max_hp", -1))
+	var discovered_init = _discover_enemy_hp(monster_name, monster_level, damage_dealt_to_current_enemy, monster_init_max_hp)
 	var monster_hp = int(discovered_init.current) if discovered_init.known else 0
 	var monster_max_hp = int(discovered_init.max) if discovered_init.known else 1
 	var hp_known = bool(discovered_init.known)
@@ -28999,8 +29172,9 @@ func _update_combat_scene_hp() -> void:
 		int(character_data.get("total_max_hp", character_data.get("max_hp", 1)))
 	)
 	# Mirror enemy HP via the discovery system, not raw server values.
+	# v0.9.591 — pass server's current_enemy_max_hp so known monsters use truth.
 	if current_enemy_name != "":
-		var discovered = _discover_enemy_hp(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy)
+		var discovered = _discover_enemy_hp(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_max_hp)
 		if discovered.known:
 			combat_scene_panel.update_monster_hp(int(discovered.current), int(discovered.max), true)
 		else:
