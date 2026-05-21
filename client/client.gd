@@ -13170,9 +13170,11 @@ func execute_local_action(action: String):
 			combat_msg_queue.clear()
 			combat_phase_paused = false
 			combat_phase_timer = 0.0
-			if combat_scene_panel and combat_scene_panel.has_method("end_action_phase"):
-				if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
-					combat_scene_panel.end_action_phase()
+			# v0.9.593 — use _force_end_action_phase so the persistent-FX overlay
+			# actually tears down on combat end. The regular end_action_phase is a
+			# no-op once persistent mode is active.
+			if combat_scene_panel and combat_scene_panel.has_method("_force_end_action_phase"):
+				combat_scene_panel._force_end_action_phase()
 			_combat_scene_linger_until_ms = 0
 			_combat_scene_force_visible = false
 			# v0.9.426 — explicitly hide the panel + show game_output in the same
@@ -13665,9 +13667,9 @@ func acknowledge_continue():
 	combat_msg_queue.clear()
 	combat_phase_paused = false
 	combat_phase_timer = 0.0
-	if combat_scene_panel and combat_scene_panel.has_method("end_action_phase"):
-		if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
-			combat_scene_panel.end_action_phase()
+	# v0.9.593 — _force_end_action_phase tears down the persistent overlay too.
+	if combat_scene_panel and combat_scene_panel.has_method("_force_end_action_phase"):
+		combat_scene_panel._force_end_action_phase()
 	# v0.9.422 — zero out the linger window so the combat panel hides on the
 	# next frame after the player acknowledges. Without this, the 2.2s victory
 	# FX linger left over from play_victory_fx kept the panel visible after the
@@ -19036,9 +19038,9 @@ func handle_server_message(message: Dictionary):
 			_pending_victory_fx_play = false
 			_pending_victory_card_payload = null
 			_pending_combat_end_chrome = {}
-			if combat_scene_panel and combat_scene_panel.has_method("end_action_phase"):
-				if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
-					combat_scene_panel.end_action_phase()
+			# v0.9.593 — _force_end_action_phase tears down the persistent overlay too.
+			if combat_scene_panel and combat_scene_panel.has_method("_force_end_action_phase"):
+				combat_scene_panel._force_end_action_phase()
 			# A4 — play the death FX in the battle scene before the death
 			# screen takes over. Linger keeps the panel visible past the
 			# game_state transition so the slump animation completes.
@@ -21147,6 +21149,10 @@ func _process_combat_start(message: Dictionary):
 		input_field.release_focus()
 
 	in_combat = true
+	# v0.9.593 — clear any persistent-FX state from a previous combat so the
+	# new fight's Round 1 fires the normal fade-in transition.
+	if combat_scene_panel and combat_scene_panel.has_method("reset_for_new_combat"):
+		combat_scene_panel.reset_for_new_combat()
 	flock_pending = false
 	flock_monster_name = ""
 	combat_item_mode = false
@@ -25361,8 +25367,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.593 — Persistent FX overlay after Round 1.
+	display_game("[color=#00FF00]v0.9.593[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Combat polish: once Round 1 of a fight ends, the battlefield FX overlay stays up for the rest of the battle instead of fading in and out every round. The transition was too jarring. Hand strip (ability cards), totals strip, and status strip are visible alongside the overlay so you can still see + click cards while the battlefield view persists.[/color]")
+	display_game("  • [b]New persistent-FX flag[/b] in combat_scene_panel. Set true on the first [color=#888888]end_action_phase[/color] of a combat; while true, [color=#888888]start_action_phase[/color] / [color=#888888]end_action_phase[/color] are no-ops on the overlay — the overlay stays as the backdrop and the strips overlay it as the action UI.")
+	display_game("  • [b]_force_end_action_phase()[/b] new method does the full tear-down (overlay fade + party row restore) — called only from combat-end paths (combat_end / acknowledge / death / testfx demos) so victory / defeat / flee still transition cleanly back to the action-bar view.")
+	display_game("  • [b]reset_for_new_combat()[/b] new method resets the persistent flag + overlay visibility so a new combat's Round 1 fires the normal fade-in transition. Called from [color=#888888]_process_combat_start[/color] for every new fight.")
+	display_game("")
+
 	# v0.9.592 — Rank-up notification naming + log cleanup.
-	display_game("[color=#00FF00]v0.9.592[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.592[/color]")
 	display_game("  [color=#FFD700]Audit follow-up to a player report: 'Tactical Retreat ranked up on my Barbarian but I don't even have that ability.' Two findings — one UX naming bug, one log cleanup. Confirmed there are NO hidden auto-triggered abilities; rank-up only fires from explicit player casts.[/color]")
 	display_game("  • [b]Rank-up notification now uses the card's display name[/b]. Two abilities have display names that don't match the capitalize-with-underscores transform: [color=#888888]tactical_retreat[/color] → 'Recharge', [color=#888888]vanish[/color] → 'Phantom Strike'. The rank-up text was using the raw internal id, so playing the Recharge card produced 'Tactical retreat ranked up!' — players couldn't connect that to the card they actually played. New helper [color=#888888]_ability_display_name()[/color] in both client and server maps all four mismatches (also Pickpocket→Steal, Perfect Heist→Heist) so every rank-up / cull / mastery message agrees with the card text.")
 	display_game("  • [b]Confirmed universal abilities ARE in every class's deck[/b]. Forethought and Recharge are auto-added by [color=#888888]initialize_deck_collection_if_needed()[/color]. They show up in your hand and rank up when played. Not a bug — design intent — but the naming bug above made it look like one.")
@@ -30074,8 +30088,9 @@ func _run_combat_fx_demo(in_action_phase: bool = false) -> void:
 	await get_tree().create_timer(2.5).timeout
 	# v0.9.415 — release the action-phase wrapper too, otherwise the overlay
 	# stays up after the demo and the next real combat starts confused.
-	if in_action_phase and combat_scene_panel.has_method("end_action_phase"):
-		combat_scene_panel.end_action_phase()
+	# v0.9.593 — _force_end_action_phase to bypass the persistent-mode no-op.
+	if in_action_phase and combat_scene_panel.has_method("_force_end_action_phase"):
+		combat_scene_panel._force_end_action_phase()
 		await get_tree().create_timer(0.4).timeout
 	_combat_scene_force_visible = false
 	display_game("[color=#888888]FX demo complete.[/color]")
@@ -30268,9 +30283,9 @@ func _run_combat_step_demo(mode: String) -> void:
 		await step.action.call()
 		idx += 1
 
-	# Teardown
-	if in_action and combat_scene_panel.has_method("end_action_phase"):
-		combat_scene_panel.end_action_phase()
+	# Teardown — v0.9.593: _force_end_action_phase to bypass persistent-mode no-op.
+	if in_action and combat_scene_panel.has_method("_force_end_action_phase"):
+		combat_scene_panel._force_end_action_phase()
 		await get_tree().create_timer(0.4).timeout
 	_combat_scene_force_visible = false
 	_testfx_step_active = false
@@ -30370,9 +30385,9 @@ func _run_combat_pacing_demo() -> void:
 		display_game("[color=#888888]  fired. SPACE for next step.[/color]")
 		idx += 1
 
-	# Teardown — make sure action phase is ended.
-	if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
-		combat_scene_panel.end_action_phase()
+	# Teardown — v0.9.593: _force_end_action_phase to bypass persistent-mode no-op.
+	if combat_scene_panel.has_method("_force_end_action_phase"):
+		combat_scene_panel._force_end_action_phase()
 		await get_tree().create_timer(0.4).timeout
 	_combat_scene_force_visible = false
 	_testfx_step_active = false
@@ -30458,8 +30473,9 @@ func _run_pacing_step_body(id: int) -> void:
 			await get_tree().create_timer(1.8).timeout
 		8:
 			# Action-phase EXIT: overlay fades, box row returns.
-			if combat_scene_panel.has_method("end_action_phase"):
-				combat_scene_panel.end_action_phase()
+			# v0.9.593 — testfx step 8 needs a full teardown, bypass persistent mode.
+			if combat_scene_panel.has_method("_force_end_action_phase"):
+				combat_scene_panel._force_end_action_phase()
 			await get_tree().create_timer(0.6).timeout
 
 

@@ -263,6 +263,14 @@ var _companion_portrait_bg: Panel = null
 # v0.9.403 — Lufia II battlefield reveal: stat boxes hide during action phase
 # (FX play out on a clear stage), then return for next-turn command select.
 var _action_phase_active: bool = false
+# v0.9.593 — persistent FX mode. After Round 1 of a combat, the battlefield
+# overlay stays up for the rest of the fight instead of fading in/out every
+# round. Set to true on the FIRST end_action_phase of a combat (per memo
+# `project-persistent-fx-screen`); reset when combat actually ends via
+# `_force_end_action_phase()`. While true, start_action_phase / end_action_phase
+# skip their fade tweens — the overlay is the persistent backdrop and the
+# hand / totals / status strips are visible alongside it.
+var _fx_persistent_active: bool = false
 var _action_phase_tween: Tween = null
 var _action_phase_end_timer: SceneTreeTimer = null
 # v0.9.390 — Lufia mode also relocates the monster HP bar to a bordered
@@ -501,6 +509,12 @@ func start_action_phase() -> void:
 		_review_button.visible = false
 	_ensure_battlefield_overlay()
 	_populate_battlefield_overlay()
+	# v0.9.593 — when the persistent-FX flag is already true (Round 2+ of a
+	# combat), the overlay and strips are both visible from the prior frame's
+	# stable state. Skip the fade-in tween + strip-hide so the player doesn't
+	# see flicker. Only the internal overlay refresh (_populate above) matters.
+	if _fx_persistent_active:
+		return
 	# v0.9.412 — collapse non-essential strips so the overlay has more room.
 	# v0.9.425 — also hide the totals' wrapping PanelContainer so its yellow-gold
 	# border doesn't draw underneath the FX scene (hiding only the inner HBox
@@ -534,9 +548,72 @@ func start_action_phase() -> void:
 func end_action_phase() -> void:
 	"""v0.9.406 — hide the battlefield overlay and slide the party row back.
 	v0.9.412 — restore the running-totals / hand / status strips that were
-	collapsed during the action phase."""
+	collapsed during the action phase.
+	v0.9.593 — once Round 1's action phase ends, switch into persistent-FX
+	mode: keep the overlay visible for the rest of combat (hand strip + totals
+	+ status come back ALONGSIDE the overlay, not instead of it). Subsequent
+	`end_action_phase` calls during the same combat are no-ops on the visual
+	side. Combat-end paths use `_force_end_action_phase()` to actually tear
+	down the overlay."""
 	_cancel_action_phase_timer()
 	if not _action_phase_active:
+		return
+	_action_phase_active = false
+	# v0.9.593 — persistent mode: restore strips so the player sees their hand
+	# cards in the normal location, but keep the overlay visible. The party row
+	# (_player_col) stays faded since the overlay represents the player on the
+	# battlefield. No tween needed — just toggle visibility.
+	if not _fx_persistent_active:
+		_fx_persistent_active = true
+		if _totals_strip_frame and is_instance_valid(_totals_strip_frame):
+			_totals_strip_frame.visible = true
+		if _totals_strip and is_instance_valid(_totals_strip):
+			_totals_strip.visible = true
+		if _hand_strip and is_instance_valid(_hand_strip):
+			_hand_strip.visible = true
+		if _status_strip and is_instance_valid(_status_strip):
+			_status_strip.visible = true
+		# Review FX button is unnecessary while the overlay is always on.
+		if _review_button and is_instance_valid(_review_button):
+			_review_button.visible = false
+		return
+	# Already persistent — _action_phase_active was a transient round flag,
+	# nothing to do visually.
+	return
+
+func reset_for_new_combat() -> void:
+	"""v0.9.593 — called by client.gd when a new combat starts so any persistent
+	FX state from a previous fight doesn't leak in. Forces a clean slate: flag
+	off, overlay hidden, _action_phase_active false, strips visible. The next
+	start_action_phase call will fire the normal Round 1 fade-in transition."""
+	_fx_persistent_active = false
+	_action_phase_active = false
+	_cancel_action_phase_timer()
+	_kill_action_phase_tween()
+	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
+		_battlefield_overlay.visible = false
+		_battlefield_overlay.modulate.a = 0.0
+	if _player_col and is_instance_valid(_player_col):
+		_player_col.modulate.a = 1.0
+	if _totals_strip_frame and is_instance_valid(_totals_strip_frame):
+		_totals_strip_frame.visible = true
+	if _totals_strip and is_instance_valid(_totals_strip):
+		_totals_strip.visible = true
+	if _hand_strip and is_instance_valid(_hand_strip):
+		_hand_strip.visible = true
+	if _status_strip and is_instance_valid(_status_strip):
+		_status_strip.visible = true
+
+func _force_end_action_phase() -> void:
+	"""v0.9.593 — actually tear down the battlefield overlay. Called only from
+	combat-end paths (combat_end, party_combat_end, continue acknowledge). This
+	is the path that used to be the normal `end_action_phase` before the
+	persistent-FX mode landed — it does the full overlay-fade + party-row
+	restore + Review FX button reappear so victory / defeat / flee can
+	transition cleanly back to the action UI."""
+	_cancel_action_phase_timer()
+	_fx_persistent_active = false
+	if not _action_phase_active and not (_battlefield_overlay and is_instance_valid(_battlefield_overlay) and _battlefield_overlay.visible):
 		return
 	_action_phase_active = false
 	# v0.9.439 — overlay is fading out; show Review FX button so the player can
