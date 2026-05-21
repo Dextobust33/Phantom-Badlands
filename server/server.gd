@@ -5683,6 +5683,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var killed_monster_name = result.get("monster_name", "")
 			var killed_monster_base_name = result.get("monster_base_name", killed_monster_name)
 			var killed_monster_level = result.get("monster_level", 1)
+			# HP discovery: forward the actual max_hp + intrinsic base_level + variant tag
+			# to the client so it caches authoritative truth instead of relying on the
+			# damage-dealt heuristic (which under-records on Outsmart / execute kills).
+			var killed_monster_max_hp = int(result.get("monster_max_hp", 0))
+			var killed_monster_base_level = int(result.get("monster_base_level", 1))
+			var killed_monster_variant_type = String(result.get("monster_variant_type", ""))
 			if killed_monster_base_name != "":
 				characters[peer_id].record_monster_kill(killed_monster_base_name, killed_monster_level)
 				# Audit #13 Slice 2 — account-level bestiary ledger.
@@ -5743,7 +5749,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"flock_incoming": true,
 					"flock_monster": summon_next,
 					"drops_pending": true,
-					"summoned": true  # Flag to show different message
+					"summoned": true,  # Flag to show different message
+					# HP discovery reveal — see record_enemy_defeated() on client.
+					"killed_monster_name": killed_monster_name,
+					"killed_monster_base_name": killed_monster_base_name,
+					"killed_monster_base_level": killed_monster_base_level,
+					"killed_monster_level": killed_monster_level,
+					"killed_monster_max_hp": killed_monster_max_hp,
+					"killed_monster_variant_type": killed_monster_variant_type,
 				})
 				save_character(peer_id)
 				return
@@ -5797,7 +5810,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"character": characters[peer_id].to_dict(),
 					"flock_incoming": true,
 					"flock_monster": monster_name,
-					"drops_pending": true  # Indicate drops will come later
+					"drops_pending": true,  # Indicate drops will come later
+					"killed_monster_name": killed_monster_name,
+					"killed_monster_base_name": killed_monster_base_name,
+					"killed_monster_base_level": killed_monster_base_level,
+					"killed_monster_level": killed_monster_level,
+					"killed_monster_max_hp": killed_monster_max_hp,
+					"killed_monster_variant_type": killed_monster_variant_type,
 				})
 
 				# Save character
@@ -6044,6 +6063,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						"drop_data": drop_data,
 						# Combat scratch-off — empty when flag is off.
 						"loot_bag": _combat_loot_bag_view,
+						"killed_monster_name": killed_monster_name,
+						"killed_monster_base_name": killed_monster_base_name,
+						"killed_monster_base_level": killed_monster_base_level,
+						"killed_monster_level": killed_monster_level,
+						"killed_monster_max_hp": killed_monster_max_hp,
+						"killed_monster_variant_type": killed_monster_variant_type,
 					})
 				else:
 					send_to_peer(peer_id, {
@@ -6056,6 +6081,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 						# Combat scratch-off — when present, client renders the
 						# 16-slot reveal grid instead of the flat loot list.
 						"loot_bag": _combat_loot_bag_view,
+						"killed_monster_name": killed_monster_name,
+						"killed_monster_base_name": killed_monster_base_name,
+						"killed_monster_base_level": killed_monster_base_level,
+						"killed_monster_level": killed_monster_level,
+						"killed_monster_max_hp": killed_monster_max_hp,
+						"killed_monster_variant_type": killed_monster_variant_type,
 					})
 
 				# === ACHIEVEMENT BROADCASTS ===
@@ -36385,6 +36416,10 @@ func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: D
 	var monster_name = monster.get("name", "Monster")
 	var monster_level = monster.get("level", 1)
 	var monster_base_name = monster.get("base_name", monster_name)
+	# HP discovery — see record_enemy_defeated() on client.
+	var monster_max_hp_truth = int(monster.get("max_hp", 0))
+	var monster_base_level_truth = int(monster.get("base_level", 1))
+	var monster_variant_type_truth = String(monster.get("variant_type", ""))
 
 	# Process drops for each surviving member (similar to solo combat victory)
 	for pid in party_members:
@@ -36519,7 +36554,13 @@ func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: D
 			"total_gems": total_gems,
 			"drop_data": drop_data,
 			"xp_earned": rewards.get("xp", 0),
-			"gold_earned": 0
+			"gold_earned": 0,
+			"killed_monster_name": monster_name,
+			"killed_monster_base_name": monster_base_name,
+			"killed_monster_base_level": monster_base_level_truth,
+			"killed_monster_level": monster_level,
+			"killed_monster_max_hp": monster_max_hp_truth,
+			"killed_monster_variant_type": monster_variant_type_truth,
 		})
 
 	# End party combat (cleans up combat state)
