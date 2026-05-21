@@ -16848,6 +16848,20 @@ func _get_ability_tooltip(ability_name: String) -> String:
 var _rank_choice_popup: AcceptDialog = null
 var _rank_choice_pending_ability: String = ""
 
+func _ability_display_name(ability_name: String) -> String:
+	"""v0.9.592 — return the player-facing display name for an internal ability id.
+	Two cards have display names that don't match capitalize-with-underscores:
+	tactical_retreat → 'Recharge' and vanish → 'Phantom Strike'. Without this,
+	rank-up / cull / mastery messages used the raw internal id (e.g. 'Tactical
+	retreat') while the actual card in the player's hand showed 'Recharge' —
+	players couldn't connect the two. Mirrors combat_manager._ability_display_name."""
+	match ability_name:
+		"tactical_retreat": return "Recharge"
+		"vanish": return "Phantom Strike"
+		"perfect_heist": return "Heist"
+		"pickpocket": return "Steal"
+	return ability_name.replace("_", " ").capitalize()
+
 func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_count: int, current_effect_rank: int, variant_offer: Dictionary = {}) -> void:
 	if ability_name == "":
 		return
@@ -16869,7 +16883,7 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 			# Avoid removing structural children — only buttons we added previously
 			if child.has_meta("rank_choice_button"):
 				child.queue_free()
-	var ability_label = ability_name.replace("_", " ").capitalize()
+	var ability_label = _ability_display_name(ability_name)
 	# v0.9.567 — extended to R6 (Legend, Mythic). v0.9.568 — rank labels via const.
 	var rank_label = MASTERY_RANK_NAMES[new_rank] if new_rank >= 0 and new_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 	var rank_mults_local := [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
@@ -19965,7 +19979,7 @@ func handle_server_message(message: Dictionary):
 			var ra_ability = str(message.get("ability", ""))
 			var ra_choice = str(message.get("choice", ""))
 			if message.get("ok", false):
-				var ra_label = ra_ability.replace("_", " ").capitalize()
+				var ra_label = _ability_display_name(ra_ability)
 				if ra_choice == "copy":
 					display_game("[color=#87CEEB]%s — added +1 copy to deck (now %d).[/color]" % [ra_label, int(message.get("new_copy_count", 1))])
 				elif ra_choice == "effect":
@@ -20006,7 +20020,7 @@ func handle_server_message(message: Dictionary):
 			# fresh counts, refresh the ability panel UI, and notify the player.
 			var cull_ok = bool(message.get("ok", false))
 			var cull_ability = str(message.get("ability", ""))
-			var cull_label = cull_ability.replace("_", " ").capitalize()
+			var cull_label = _ability_display_name(cull_ability)
 			if cull_ok:
 				var fresh_collection = message.get("collection", {})
 				if fresh_collection is Dictionary:
@@ -25347,8 +25361,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.592 — Rank-up notification naming + log cleanup.
+	display_game("[color=#00FF00]v0.9.592[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Audit follow-up to a player report: 'Tactical Retreat ranked up on my Barbarian but I don't even have that ability.' Two findings — one UX naming bug, one log cleanup. Confirmed there are NO hidden auto-triggered abilities; rank-up only fires from explicit player casts.[/color]")
+	display_game("  • [b]Rank-up notification now uses the card's display name[/b]. Two abilities have display names that don't match the capitalize-with-underscores transform: [color=#888888]tactical_retreat[/color] → 'Recharge', [color=#888888]vanish[/color] → 'Phantom Strike'. The rank-up text was using the raw internal id, so playing the Recharge card produced 'Tactical retreat ranked up!' — players couldn't connect that to the card they actually played. New helper [color=#888888]_ability_display_name()[/color] in both client and server maps all four mismatches (also Pickpocket→Steal, Perfect Heist→Heist) so every rank-up / cull / mastery message agrees with the card text.")
+	display_game("  • [b]Confirmed universal abilities ARE in every class's deck[/b]. Forethought and Recharge are auto-added by [color=#888888]initialize_deck_collection_if_needed()[/color]. They show up in your hand and rank up when played. Not a bug — design intent — but the naming bug above made it look like one.")
+	display_game("  • [b]Log noise fix[/b]: [color=#888888]_animate_bar_value[/color] in combat_scene_panel called [color=#888888]get_meta('hp_drain_tween', null)[/color] without first checking [color=#888888]has_meta[/color], which prints an error in Godot 4.6 even with a default. Guard added so the error spam no longer drowns out useful log lines during combat.")
+	display_game("")
+
 	# v0.9.591 — HP discovery system overhaul.
-	display_game("[color=#00FF00]v0.9.591[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.591[/color]")
 	display_game("  [color=#FFD700]Complete rewrite of the monster HP discovery + estimation system. Estimates were systematically wrong by 50-200% on cross-level / cross-variant encounters, and Outsmart / companion-execute kills permanently corrupted the local cache. Both classes of bug are now eliminated at the source.[/color]")
 	display_game("  • [b]Server is now authoritative on victory[/b]. Every victory combat_end (normal / outsmart / companion_clutch / heist / wish_choice / party) now emits [color=#888888]killed_monster_max_hp[/color] + [color=#888888]killed_monster_base_level[/color] + [color=#888888]killed_monster_variant_type[/color]. The client stores ground truth instead of inferring HP from damage dealt — fixes the long-standing 'Outsmart at low damage permanently caps known HP below truth' bug.")
 	display_game("  • [b]Cache is variant-aware[/b]. Old code used base_name as the cache key, so killing a Shield Guardian Goblin (1.25× HP) polluted the cached HP for vanilla Goblin, and vice versa. New cache key is the FULL variant name, so each variant accumulates its own knowledge independently.")

@@ -2814,7 +2814,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				if not (combat.character.pending_rank_choices is Array):
 					combat.character.pending_rank_choices = []
 				combat.character.pending_rank_choices.append(queued_choice)
-				var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — choose [color=#87CEEB]+1 Card[/color] or [color=#FFB6C1]+10%% Damage[/color]." % [ability_name.replace("_", " ").capitalize(), new_rank, rank_label]
+				var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — choose [color=#87CEEB]+1 Card[/color] or [color=#FFB6C1]+10%% Damage[/color]." % [_ability_display_name(combat.character, ability_name), new_rank, rank_label]
 				if not variant_offer.is_empty():
 					rank_msg += " [color=%s]✦ Imprint: %s (from %s)[/color] also available." % [variant_offer.get("color", "#FFD700"), variant_offer.get("trait_name", "?"), variant_offer.get("companion_name", "?")]
 				if not result.has("messages"):
@@ -7134,6 +7134,23 @@ func _cycle_hand_after_attack(combat_state: Dictionary) -> void:
 	combat_state["combat_hand"] = []
 	combat_state["combat_discard"] = discard
 	_draw_to_hand(combat_state)
+
+func _ability_display_name(_character, ability_name: String) -> String:
+	"""v0.9.592 — return the player-facing display name for an internal ability
+	id. Must match what the client renders on the actual card in hand; the
+	character-level display field disagrees with the in-combat card text for
+	four abilities (pickpocket/perfect_heist 'card vs panel' mismatch +
+	tactical_retreat/vanish 'internal-name vs card' mismatch), so we keep a
+	single override map here mirroring client.gd:_ability_display_name. Without
+	this, the rank-up notification used the raw internal id ('Tactical retreat')
+	while the card in the player's hand showed 'Recharge' — players couldn't
+	connect the two and reported phantom ranks-ups on abilities they 'don't have'."""
+	match ability_name:
+		"tactical_retreat": return "Recharge"
+		"vanish": return "Phantom Strike"
+		"perfect_heist": return "Heist"
+		"pickpocket": return "Steal"
+	return ability_name.replace("_", " ").capitalize()
 
 func _ability_alias_to_card(ability_name: String) -> String:
 	"""Normalize an inbound ability command (which may be an alias like
