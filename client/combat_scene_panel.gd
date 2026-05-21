@@ -3198,7 +3198,12 @@ func _refresh_player_hp() -> void:
 func _animate_bar_value(bar: ProgressBar, target: float, dur: float = 1.0) -> void:
 	if bar == null or not is_instance_valid(bar):
 		return
-	var prev = bar.get_meta("hp_drain_tween", null)
+	# v0.9.591 — Godot 4.6 prints an error when get_meta() is called on a key
+	# that hasn't been set, even with a default value. Check has_meta first to
+	# avoid log spam on every bar refresh.
+	var prev = null
+	if bar.has_meta("hp_drain_tween"):
+		prev = bar.get_meta("hp_drain_tween")
 	if prev != null and is_instance_valid(prev):
 		prev.kill()
 	# Special case: first frame of combat / panel rebuild — snap, don't drain
