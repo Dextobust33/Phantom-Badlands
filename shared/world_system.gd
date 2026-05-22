@@ -1639,48 +1639,42 @@ func get_post_anchored_level(x: int, y: int) -> int:
 	if chunk_manager == null or chunk_manager.npc_posts.is_empty():
 		return wilderness_level
 
-	# v0.9.615 — top-3 nearest IDW. Replaces v0.9.614's "all posts IDW" (which
-	# elevated levels by +70 because cumulative far-post contribution dominated
-	# the nearest in starter zones — Lv 18 area became Lv 89). The fix limits
-	# the calc set to the 3 nearest posts: only nearby posts influence the
-	# blend, so no cumulative far-post elevation. The 3rd-nearest is the
-	# "swap candidate" — when the player moves and a 4th post becomes closer
-	# than the current 3rd, the 3rd→4th swap happens at the LOWEST-weight
-	# slot. With 1/(d²+1) weighting and typical post spacing, the 3rd-nearest
-	# has a weight ~100× smaller than the nearest, so a swap at that slot
-	# produces sub-1-level discontinuity (vs the 5-15 level cliff with the
-	# nearest+second-nearest pair selection).
+	# v0.9.616 — all-posts 1/d⁴ IDW. v0.9.615's top-3 1/d² had residual cliffs
+	# (player report: 18→26 at the same (44,-57)→(45,-57) tiles) because the
+	# top-3 set's 3rd slot could SWAP between posts with very different
+	# anchors. The swap's discontinuity was proportional to (slot_weight ×
+	# anchor_diff): even at low slot weight (~0.000156), a 35-level anchor
+	# gap produced an 8-level jump.
 	#
-	# Robust to procedural map regeneration. The calc set is determined by
-	# spatial proximity, not by post count — fewer posts (sparse maps) just
-	# means top.size() ends up smaller; the code handles 0/1/2 gracefully.
-	# Cumulative far-post elevation cannot recur because the set is hard-
-	# capped at 3 regardless of how many posts the map contains.
-	const TOP_N_POSTS: int = 3
-	var top: Array = []  # entries: {cx: float, cy: float, d2: float}
+	# Fix: remove discrete set membership entirely. Use ALL posts with
+	# weight 1/(d⁴ + 1). The fourth-power falloff makes far posts contribute
+	# negligibly even in aggregate:
+	#   At d=15 (nearest): weight ≈ 1/50625
+	#   At d=200 (far):    weight ≈ 1/1.6e9 = 31600× smaller
+	#   50 far posts × that weight ≈ 0.15% of nearest's weight
+	# v0.9.614 used 1/d² which had only 100× ratio per 10× distance — 50
+	# far posts cumulatively reached ~28% of nearest's weight, pulling the
+	# blend up to Lv 89. With p=4, cumulative far-post weight is sub-1%.
+	#
+	# Continuity: every post always contributes, weight changes smoothly
+	# as the player moves. No set membership = no discrete swap cliffs.
+	# A swap-equivalent (4th post becoming nearer than the old 3rd) is now
+	# a smooth weight redistribution worth ~0.05 levels at the boundary.
+	#
+	# Robust to procedural map regeneration: bounded post count (~18 in
+	# starter network, 100-tile spacing) keeps total cumulative far-post
+	# weight well under 1% of nearest. Validates for any future map config.
+	var total_weight: float = 0.0
+	var weighted_sum: float = 0.0
 	for post in chunk_manager.npc_posts:
 		var cx: float = float(post.get("x", 0))
 		var cy: float = float(post.get("y", 0))
 		var dx: float = float(x) - cx
 		var dy: float = float(y) - cy
 		var d2: float = dx * dx + dy * dy
-		# Inserted-sorted into top by d2 ascending. Keep at most TOP_N_POSTS.
-		var inserted: bool = false
-		for i in range(top.size()):
-			if d2 < float(top[i].get("d2", INF)):
-				top.insert(i, {"cx": cx, "cy": cy, "d2": d2})
-				inserted = true
-				break
-		if not inserted and top.size() < TOP_N_POSTS:
-			top.append({"cx": cx, "cy": cy, "d2": d2})
-		if top.size() > TOP_N_POSTS:
-			top.resize(TOP_N_POSTS)
-
-	var total_weight: float = 0.0
-	var weighted_sum: float = 0.0
-	for entry in top:
-		var weight: float = 1.0 / (float(entry["d2"]) + 1.0)
-		var origin_dist: float = sqrt(float(entry["cx"]) * float(entry["cx"]) + float(entry["cy"]) * float(entry["cy"]))
+		var d4: float = d2 * d2
+		var weight: float = 1.0 / (d4 + 1.0)
+		var origin_dist: float = sqrt(cx * cx + cy * cy)
 		var anchor_level: float = float(_distance_to_level(origin_dist))
 		total_weight += weight
 		weighted_sum += weight * anchor_level
