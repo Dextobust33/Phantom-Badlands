@@ -25821,8 +25821,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.622 — FX overlay torn down on loot panel close.
+	display_game("[color=#00FF00]v0.9.622[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug fix: '[i]Now a fight with a Gargoyle is stuck on my screen and not clearing.[/i]' The FX battlefield overlay was set visible during combat's action phases, and end_action_phase enters persistent-FX mode (overlay stays for the rest of combat, no auto-fade). Loot panel layered over it. When loot closed + victory card dismissed via Space/movement, the FX overlay was exposed underneath with nothing to clear it.[/color]")
+	display_game("  • [b]Fix[/b]: [color=#888888]_on_combat_loot_closed[/color] now calls [color=#888888]_force_end_action_phase()[/color] before refreshing the victory card. This tweens the FX overlay to alpha=0 + sets visible=false. Review Damage button still works (it calls [color=#888888]start_review_phase[/color] which rebuilds the overlay from scratch).")
+	display_game("")
+
 	# v0.9.621 — Escape scroll bulk count + Review Damage persistence.
-	display_game("[color=#00FF00]v0.9.621[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.621[/color]")
 	display_game("  [color=#FFD700]Two follow-ups. (1) Bulk Equipment STILL showed '(1)' after listing everything — root cause: escape scrolls are excluded from consumable bulk-list, but they have rarity, so the count fell through to equipment. (2) The v0.9.619 Review Damage button fix worked initially but [color=#888888]end_action_phase[/color]'s persistent-FX branch hides it ~1s later, so the button flashed and disappeared before the player could click.[/color]")
 	display_game("  • [b]Escape scrolls count as 0 in both buckets[/b]. Client filter now does an unconditional [color=#888888]continue[/color] for ALL consumable items (even escape-scroll-excluded ones) so they can't fall through to equipment. Mirrors server intent: escape scrolls aren't bulk-listable in either category.")
 	display_game("  • [b]Review Damage button stays visible during victory interlude[/b]. The persistent-FX hide at [color=#888888]end_action_phase[/color] (line ~626) now skips the button when [color=#888888]_victory_interlude_active[/color] is true. Combined with v0.9.619's [color=#888888]_update_review_button_visibility[/color] override, the button is now shown reliably the whole time the victory card is up.")
@@ -29107,15 +29113,24 @@ func _on_combat_loot_done_pressed() -> void:
 func _on_combat_loot_closed() -> void:
 	"""Combat loot panel finished its close animation. v0.9.602/v0.9.604:
 	  (1) Refresh the victory card ONCE with the accumulated loot lines.
-	      Per-reveal redraw was removed from _combat_loot_accumulate_reveal
-	      because the background flicker was visually jarring.
-	  (2) Auto-clear pending_continue so the player can move again without
-	      having to press Space — the loot reveal IS the acknowledgement.
-	  (3) v0.9.604 — set _post_loot_victory_persists so the safety net at
-	      line ~2802 doesn't immediately auto-hide the card on the next
-	      frame (it would otherwise, because pending_continue is now false
-	      and combat is over). The card stays up until the player's first
-	      movement input dismisses it."""
+	  (2) Auto-clear pending_continue so the player can move again.
+	  (3) v0.9.604 — set _post_loot_victory_persists so the safety net
+	      doesn't immediately auto-hide the card.
+	  (4) v0.9.622 — tear down the FX battlefield overlay BEFORE showing
+	      the victory card. Without this, the overlay (set visible during
+	      combat's action phases) persists through the loot reveal because
+	      end_action_phase enters persistent-FX mode (no fade-out). Once
+	      the loot panel hides and the victory card eventually dismisses
+	      (Space or movement), the FX scene was exposed underneath with
+	      nothing to clear it. Player report: 'Now a fight with a Gargoyle
+	      is stuck on my screen... It seems like maybe I moved or pressed
+	      space quickly and it stayed up.' _force_end_action_phase tweens
+	      the overlay to alpha=0 + sets visible=false, and the Review FX
+	      button (top-right) can still re-open it via start_review_phase."""
+	# (4) FX teardown — must run BEFORE refresh_victory_card so the
+	# overlay fade isn't interrupted by panel visibility refresh.
+	if combat_scene_panel and combat_scene_panel.has_method("_force_end_action_phase"):
+		combat_scene_panel._force_end_action_phase()
 	# (1) Final atomic redraw of the victory card with the full loot list.
 	#     This also forces panel.visible = true and extends linger — see
 	#     _combat_loot_refresh_victory_card.
