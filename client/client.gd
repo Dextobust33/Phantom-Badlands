@@ -448,6 +448,12 @@ signal _testfx_advance(cmd: String)
 var _testfx_step_active: bool = false
 var _combat_scene_was_in_combat: bool = false  # transition tracking
 var _combat_scene_was_flock_pending: bool = false  # tracks flock_pending true→false to extend linger across the continue press
+# v0.9.610 — set true in combat_end when flock_incoming arrives. Tells the
+# next _populate_combat_scene_panel that this fight is a chain continuation
+# (don't reset _flock_history). Race-free replacement for the frame-tracked
+# `_combat_scene_was_flock_pending` which missed cases where combat_end +
+# combat_start arrived in the same _process tick.
+var _pending_flock_archive: bool = false
 var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
 var _victory_legacy_view: bool = false  # player toggled to the old full-screen text view via [L]; suppresses the scene panel until they toggle back or continue
 var _last_displayed_round: int = 0  # round number we last drew a divider for; reset on each combat_start
@@ -2303,6 +2309,12 @@ func _ready():
 		# Set initial muted appearance
 		music_toggle.text = "♪"
 		music_toggle.modulate = Color(0.5, 0.5, 0.5)
+	# v0.9.610 — visible autoskip toggle buttons in the top StatsBar/LevelRow,
+	# next to music_toggle. Player feedback: the Settings > Game text menu
+	# isn't a visible UI element ("a UI element the player can see"). These
+	# buttons are persistent and clickable from anywhere outside combat.
+	# Tooltip names them; emoji + green/gray modulate signal current state.
+	_create_minigame_skip_toggles()
 
 	# Connect chat tab buttons
 	if chat_tab_button:
@@ -2580,6 +2592,88 @@ func _on_music_finished():
 	if not music_muted and music_player:
 		music_player.play()
 
+var _loot_skip_btn: Button = null
+var _gather_skip_btn: Button = null
+var _craft_skip_btn: Button = null
+
+
+func _create_minigame_skip_toggles() -> void:
+	"""v0.9.610 — three small toggle buttons in StatsBar/LevelRow next to
+	music_toggle. Loot / Gather / Craft autoskip. State shown by color
+	modulate (green = ON / skipping, gray = OFF / normal). Click toggles.
+	The visual UI replaces relying on the Settings > Game chat menu the
+	user said wasn't visible enough."""
+	if music_toggle == null:
+		return
+	var level_row = music_toggle.get_parent()
+	if level_row == null:
+		return
+	_loot_skip_btn = _make_skip_toggle("🪙", "Toggle: Auto-skip Combat Loot Reveal")
+	_gather_skip_btn = _make_skip_toggle("⛏", "Toggle: Skip Gathering Minigame (lower yield)")
+	_craft_skip_btn = _make_skip_toggle("🔨", "Toggle: Skip Crafting Minigame (lower quality)")
+	level_row.add_child(_loot_skip_btn)
+	level_row.add_child(_gather_skip_btn)
+	level_row.add_child(_craft_skip_btn)
+	_loot_skip_btn.pressed.connect(_on_loot_skip_toggle_pressed)
+	_gather_skip_btn.pressed.connect(_on_gather_skip_toggle_pressed)
+	_craft_skip_btn.pressed.connect(_on_craft_skip_toggle_pressed)
+	_refresh_minigame_skip_toggle_visuals()
+
+
+func _make_skip_toggle(label: String, tooltip: String) -> Button:
+	"""Build one of the StatsBar skip toggle buttons. Matches music_toggle's
+	visual weight so the three new buttons sit cleanly alongside it."""
+	var btn := Button.new()
+	btn.text = label
+	btn.tooltip_text = tooltip
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.flat = true
+	btn.add_theme_font_size_override("font_size", 14)
+	btn.custom_minimum_size = Vector2(28, 24)
+	return btn
+
+
+func _refresh_minigame_skip_toggle_visuals() -> void:
+	"""Repaint each toggle's modulate so green = currently ON, gray = OFF.
+	Called after any toggle press AND on combat_end so server-driven state
+	changes (skip_gather/craft are character fields) stay in sync."""
+	if _loot_skip_btn and is_instance_valid(_loot_skip_btn):
+		_loot_skip_btn.modulate = Color(0.4, 1.0, 0.4) if autoskip_loot_reveal else Color(0.5, 0.5, 0.5)
+	if _gather_skip_btn and is_instance_valid(_gather_skip_btn):
+		var g_on: bool = bool(character_data.get("skip_gather_minigame", false))
+		_gather_skip_btn.modulate = Color(0.4, 1.0, 0.4) if g_on else Color(0.5, 0.5, 0.5)
+	if _craft_skip_btn and is_instance_valid(_craft_skip_btn):
+		var c_on: bool = bool(character_data.get("skip_craft_minigame", false))
+		_craft_skip_btn.modulate = Color(0.4, 1.0, 0.4) if c_on else Color(0.5, 0.5, 0.5)
+
+
+func _on_loot_skip_toggle_pressed() -> void:
+	"""Top-bar Loot toggle: same path as the Settings entry + the in-panel
+	checkbox, just always-accessible."""
+	autoskip_loot_reveal = not autoskip_loot_reveal
+	_save_keybinds()
+	_refresh_minigame_skip_toggle_visuals()
+
+
+func _on_gather_skip_toggle_pressed() -> void:
+	"""Top-bar Gather toggle: persists server-side via setting_change since
+	the skip_gather_minigame value lives on the character (not in keybinds)."""
+	var current: bool = bool(character_data.get("skip_gather_minigame", false))
+	var new_value: bool = not current
+	character_data["skip_gather_minigame"] = new_value
+	send_to_server({"type": "setting_change", "setting": "skip_gather_minigame", "value": new_value})
+	_refresh_minigame_skip_toggle_visuals()
+
+
+func _on_craft_skip_toggle_pressed() -> void:
+	"""Top-bar Craft toggle: same server-side persistence as gather."""
+	var current: bool = bool(character_data.get("skip_craft_minigame", false))
+	var new_value: bool = not current
+	character_data["skip_craft_minigame"] = new_value
+	send_to_server({"type": "setting_change", "setting": "skip_craft_minigame", "value": new_value})
+	_refresh_minigame_skip_toggle_visuals()
+
+
 func _on_music_toggle_pressed():
 	"""Toggle background music on/off"""
 	music_muted = not music_muted
@@ -2845,6 +2939,19 @@ func _process(delta):
 		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up or _action_phase_pending or _victory_pending) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
+		# v0.9.610 — keep the bottom ResourceBarsOverlay (the floating HP /
+		# Resource RichTextLabel above the action bar) in lockstep with the
+		# combat scene panel. v0.9.601 only hid it on `in_combat`, but the
+		# combat scene stays up across action phase + victory card + flock
+		# transitions where `in_combat` briefly flips. Tying the overlay to
+		# `_combat_scene_should_show` means "if the combat panel is on
+		# screen, the overlay is hidden." Out of combat the overlay shows.
+		# Player feedback: "they show up on the FX screen and while out of
+		# combat" — the FX screen showing was the bug.
+		if resource_bars_overlay and is_instance_valid(resource_bars_overlay):
+			var _want_overlay_visible: bool = (not _combat_scene_should_show) and has_character
+			if resource_bars_overlay.visible != _want_overlay_visible:
+				resource_bars_overlay.visible = _want_overlay_visible
 
 	# Hide the text game_output whenever a visual panel is showing
 	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show or _kennel_should_show or _fusion_should_show or _ability_should_show or _combat_scene_should_show
@@ -18095,16 +18202,13 @@ func update_player_hp_bar():
 	if not player_health_bar or not has_character:
 		return
 
-	# v0.9.609 — hide the bottom-of-screen StatsBar HP/resource bars during
-	# combat. The combat scene panel shows full HP + resource bars directly
-	# (v0.9.601 pre-FX + FX overlay parity), so the bottom widgets are
-	# redundant clutter during a fight. Player feedback: "the redundant HP:
-	# and Resource: bars just above the action bars never got removed."
-	# v0.9.601 only hid the `resource_bars_overlay` RichTextLabel — this is
-	# the actual StatsBar widget. Re-shown when combat ends.
-	player_health_bar.visible = not in_combat
-	if resource_bar:
-		resource_bar.visible = not in_combat
+	# v0.9.610 — REVERTED the v0.9.609 in-combat hide. StatsBar is at the
+	# TOP of the screen (RootContainer → StatsBar → PlayerHealthBar +
+	# ResourceBar), not the bottom. v0.9.609 misread the layout and hid
+	# the top-of-screen bars, which broke the first combat scene visuals.
+	# The bars the user wants hidden are the ResourceBarsOverlay (a
+	# RichTextLabel just above the action bar) — handled by
+	# update_resource_bars_overlay + the _process sync gate.
 
 	var current_hp = character_data.get("current_hp", 0)
 	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))  # Use equipment-boosted HP
@@ -18309,12 +18413,8 @@ func update_resource_bar():
 	if not resource_bar or not has_character:
 		return
 
-	# v0.9.609 — same gate as update_player_hp_bar. The combat scene panel
-	# carries its own resource bar (v0.9.601 pre-FX + FX overlay parity),
-	# so the bottom-row StatsBar widget is redundant during a fight. The
-	# previous v0.9.601 fix only handled `resource_bars_overlay` (the
-	# RichTextLabel) — this is the actual ProgressBar widget.
-	resource_bar.visible = not in_combat
+	# v0.9.610 — REVERTED the v0.9.609 in-combat hide (see update_player_hp_bar
+	# for why). StatsBar lives at the top of the screen and must stay visible.
 
 	var path = _get_player_active_path()
 	var current_val = 0
@@ -19929,6 +20029,11 @@ func handle_server_message(message: Dictionary):
 				update_player_xp_bar()
 				update_currency_display()
 				update_companion_art_overlay()
+				# v0.9.610 — server-side skip_craft / skip_gather are character
+				# fields, so the top-bar toggle colors need to reflect any
+				# server-driven change (e.g., legacy chat command on another
+				# session). _refresh repaints modulate only — cheap.
+				_refresh_minigame_skip_toggle_visuals()
 				# Audit #4 Slice 1 (UI remediation) — refresh stones panel
 				# bought-counts/valor live after each purchase.
 				_refresh_stones_panel_if_open()
@@ -20524,6 +20629,15 @@ func handle_server_message(message: Dictionary):
 				# Check for incoming flock encounter
 				if message.get("flock_incoming", false):
 					flock_pending = true
+					# v0.9.610 — archive the just-finished fight's log into the
+					# panel's _flock_history NOW, before the next combat_start
+					# might land in the same _process tick. Set
+					# _pending_flock_archive so the upcoming
+					# _populate_combat_scene_panel call knows NOT to
+					# reset_flock_history (the chain is continuing).
+					if combat_scene_panel and combat_scene_panel.has_method("clear_log"):
+						combat_scene_panel.clear_log(true)
+					_pending_flock_archive = true
 					flock_monster_name = message.get("flock_monster", "enemy")
 					var _flock_warn = "[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name
 					var _flock_prompt = "[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0)
@@ -24075,6 +24189,7 @@ func _toggle_skip_craft_minigame():
 	var new_value = not current
 	character_data["skip_craft_minigame"] = new_value
 	send_to_server({"type": "setting_change", "setting": "skip_craft_minigame", "value": new_value})
+	_refresh_minigame_skip_toggle_visuals()
 	game_output.clear()
 	if new_value:
 		display_game("[color=#00FF00]Skip Craft Minigame: ENABLED[/color]")
@@ -24094,6 +24209,7 @@ func _toggle_skip_gather_minigame():
 	var new_value = not current
 	character_data["skip_gather_minigame"] = new_value
 	send_to_server({"type": "setting_change", "setting": "skip_gather_minigame", "value": new_value})
+	_refresh_minigame_skip_toggle_visuals()
 	game_output.clear()
 	if new_value:
 		display_game("[color=#00FF00]Skip Gather Minigame: ENABLED[/color]")
@@ -24115,6 +24231,7 @@ func _toggle_autoskip_loot_reveal():
 	via _save_keybinds)."""
 	autoskip_loot_reveal = not autoskip_loot_reveal
 	_save_keybinds()
+	_refresh_minigame_skip_toggle_visuals()
 	game_output.clear()
 	if autoskip_loot_reveal:
 		display_game("[color=#00FF00]Autoskip Combat Loot Reveal: ENABLED[/color]")
@@ -25701,8 +25818,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.610 — Player follow-up fixes to v0.9.609.
+	display_game("[color=#00FF00]v0.9.610[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Four player-reported fixes following v0.9.609. (1) Reverted the StatsBar hide — those are TOP-of-screen bars and shouldn't go away during combat. (2) The actual bottom HP/Resource overlay (ResourceBarsOverlay) now hides whenever the combat panel is up, including the FX scene. (3) Review FX button finally works — was rendering behind the victory card. (4) Flock chain log archives across all fights now, not just the most recent. (5) Visible UI toggles for autoskip preferences (Loot / Gather / Craft) live in the top StatsBar next to the music toggle.[/color]")
+	display_game("  • [b]StatsBar restored[/b]. v0.9.609 hid [color=#888888]$RootContainer/StatsBar/PlayerHealthBar[/color] + [color=#888888]ResourceBar[/color] during combat — but StatsBar lives at the TOP of the screen, not the bottom. The pre-FX Lufia layout was missing its top HP/resource bars as a result. Both update functions no longer gate visibility.")
+	display_game("  • [b]Bottom ResourceBarsOverlay hides via _process gate[/b]. The bars 'just above the action bar, just under gameoutput' are the [color=#888888]ResourceBarsOverlay[/color] (a floating RichTextLabel). v0.9.601's [color=#888888]in_combat[/color] check missed transitions where in_combat briefly toggled (flock chain handoff, action phase). Now driven by [color=#888888]_combat_scene_should_show[/color] in _process — if the combat panel is on screen for any reason (action phase / victory card / linger / flock pending), the bottom overlay is hidden.")
+	display_game("  • [b]Review FX button works now[/b]. Battlefield overlay z_index=100; victory card z=150 — clicking Review FX did fire [color=#888888]start_review_phase[/color] but the FX overlay was rendering BEHIND the victory card and the player saw no change. Now [color=#888888]start_review_phase[/color] temporarily hides the victory card; [color=#888888]end_review_phase[/color] restores it when [color=#888888]_victory_interlude_active[/color] is still true.")
+	display_game("  • [b]Flock chain log archive is race-free[/b]. Previous logic depended on [color=#888888]_combat_scene_was_flock_pending[/color] (a per-frame mirror of [color=#888888]flock_pending[/color]) — but when [color=#888888]combat_end[/color] + [color=#888888]combat_start[/color] arrived in the same _process tick, the tracker never saw the true→false flip and the archive missed. Now [color=#888888]clear_log(archive=true)[/color] fires inline in [color=#888888]combat_end[/color] when [color=#888888]flock_incoming=true[/color]; new [color=#888888]_pending_flock_archive[/color] flag tells the upcoming combat_start to preserve [color=#888888]_flock_history[/color] instead of resetting it.")
+	display_game("  • [b]Visible top-bar autoskip toggles[/b] (Player feedback: 'your fix regarding the skip minigame ignored my directive of a UI element the player can see'). Three small buttons in [color=#888888]StatsBar/LevelRow[/color] next to the music toggle: [color=#FFD700]🪙[/color] Loot, [color=#FFD700]⛏[/color] Gather, [color=#FFD700]🔨[/color] Craft. Green modulate = autoskip ON; gray = OFF. Click to toggle. Persists via the same path as the existing in-panel checkbox + Settings menu. Refreshes on every character_update so server-driven changes stay in sync.")
+	display_game("")
+
 	# v0.9.609 — Post-victory review, bottom-bar cleanup, settings autoskip.
-	display_game("[color=#00FF00]v0.9.609[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.609[/color]")
 	display_game("  [color=#FFD700]Four player-reported fixes around the post-combat experience. (1) L-key + Review FX button finally work on the victory screen so you can re-read the combat log / re-watch the FX. (2) The redundant bottom-of-screen HP+resource bars now actually hide during combat — v0.9.601 hid the wrong widget. (3) Autoskip Combat Loot can be toggled from Settings > Game outside combat, since the in-panel checkbox moves too fast to click.[/color]")
 	display_game("  • [b]Press [L] from the victory screen[/b] to toggle the legacy combat-log view. The v0.9.602 loot-close path cleared [color=#888888]pending_continue[/color] BEFORE the player sees the final victory card, but the old L-key handler required [color=#888888]pending_continue=true[/color] — so the toggle was dead for the entire window the prompt was visible. Now uses [color=#888888]is_victory_interlude_active()[/color] alone.")
 	display_game("  • [b]Review FX button surfaces over the victory card[/b]. The button (top-right of the combat panel) was at z_index 50; the victory card overlay is z=150, so the button was rendering BEHIND the card and unclickable. Bumped to z=200 + added an explicit visibility refresh when the victory card shows.")
@@ -29536,13 +29663,19 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	"""A1 — render the combat scene panel from the current combat_state."""
 	if combat_scene_panel == null:
 		return
-	# Flock chain log archival: if we just finished a fight that had a flock
-	# queued behind it (`_combat_scene_was_flock_pending` was true on the last
-	# _process tick), archive the previous fight's log into the panel's flock
-	# history so the [L] legacy view can replay all fights in the chain.
-	# Otherwise this is a fresh encounter — drop any stale history.
-	if _combat_scene_was_flock_pending:
-		combat_scene_panel.clear_log(true)
+	# v0.9.610 — replaced the racy `_combat_scene_was_flock_pending` per-frame
+	# tracker with `_pending_flock_archive` set explicitly at combat_end when
+	# flock_incoming is true. Race-free: even if combat_end + combat_start
+	# arrive in the same _process tick, the flag survives because we set it
+	# inline in the message handler. The actual archive happened at
+	# combat_end via `clear_log(true)`; here we just preserve the history
+	# instead of nuking it via reset_flock_history.
+	if _pending_flock_archive:
+		_pending_flock_archive = false
+		# Log was already archived + cleared at combat_end. Nothing to do
+		# here — _flock_history retains the prior fights; _log_lines is
+		# fresh for the new mob's events.
+		pass
 	else:
 		if combat_scene_panel.has_method("reset_flock_history"):
 			combat_scene_panel.reset_flock_history()
