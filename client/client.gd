@@ -25821,8 +25821,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.619 — Review Damage button shows on victory screen again.
+	display_game("[color=#00FF00]v0.9.619[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Fix: 🩸 Review Damage button was hidden during the entire victory window. Root cause: _drain_combat_queue's queue-empty branch fires show_victory_card BEFORE it schedules end_action_phase_after(grace), so at victory-card-display time _action_phase_active is still TRUE — and _update_review_button_visibility hard-hides the button while action phase is active. Then end_action_phase runs, persistent FX kicks in, hides the button again. The button only became visible AFTER the player had already pressed Continue — too late to use.[/color]")
+	display_game("  • [b]Fix[/b]: when [color=#888888]_victory_interlude_active[/color] is true, override the [color=#888888]_action_phase_active[/color] gate. Victory card up = we WANT the Review button visible regardless of stale action-phase state.")
+	display_game("")
+
 	# v0.9.618 — Pull-down level math. Permanent design from deep-dive memo.
-	display_game("[color=#00FF00]v0.9.618[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.618[/color]")
 	display_game("  [color=#FFD700]Permanent level math fix. Posts now create LOW-level pockets near settlements, never elevate. Five iterations across v0.9.595/614/615/616/617 all had tradeoffs because the procedural network has [b]60 posts[/b] (not the ~18 the legacy comments said), so 'far-post weight is negligible' math was calibrated for the wrong scenario. Deep-dive memo (project_level_math_redesign.md) diagnosed the root cause: '[i]near vs slightly-less-near with a much higher anchor[/i].' The new design structurally cannot elevate.[/color]")
 	display_game("  • [b]Pull-down blend[/b]: posts contribute ONLY when their anchor is BELOW the wilderness curve. Bounded influence radius (R=140) with smoothstep taper at the cutoff (TAPER=30). Continuous everywhere — max single-step jump = 1 across simulated probes (vs v0.9.595's 73, v0.9.615's 41). Cannot elevate by construction.")
 	display_game("  • [b]Effects[/b]: at the user's worst spot (-39,-58), level drops from 32 (v0.9.616) / 24 (v0.9.595) to 16 (matches wilderness floor). Mid-band (origin distance 200-400) sees a ~7-12% level decrease near posts — feature: settlements feel slightly safer than open wilderness. Apex zones (beyond the post network) unchanged.")

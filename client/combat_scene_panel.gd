@@ -996,10 +996,21 @@ func _update_review_button_visibility() -> void:
 	  • We're NOT currently in an action phase (FX scene already up)
 	  • We're NOT in review (the pause button doubles as Back)
 	  • There's actually log content to review
+
+	v0.9.619 — override the _action_phase_active gate when the victory
+	interlude is active. Timing problem: _drain_combat_queue's queue-empty
+	branch fires show_victory_card BEFORE it schedules end_action_phase_
+	after(grace), so at victory-card-display time _action_phase_active is
+	still TRUE — the button stays hidden through the whole victory window.
+	Then end_action_phase runs, persistent FX kicks in, explicitly hides
+	the button again (line ~626). The button only ever appears AFTER the
+	player has acknowledged the victory card via Continue — too late to be
+	useful. Player report: 'review damage button seems to be missing from
+	the victory screen now.'
 	"""
 	if _review_button == null or not is_instance_valid(_review_button):
 		return
-	if _action_phase_active or _in_review_phase:
+	if _in_review_phase:
 		_review_button.visible = false
 		return
 	if not visible:
@@ -1008,6 +1019,17 @@ func _update_review_button_visibility() -> void:
 	var has_log := _overlay_player_log_lines.size() > 0 \
 		or _overlay_monster_log_lines.size() > 0 \
 		or _overlay_companion_log_lines.size() > 0
+	# v0.9.619 — if the victory card is up, we WANT the button visible.
+	# action_phase_active is stale during the victory interlude.
+	if _victory_interlude_active:
+		_review_button.visible = has_log
+		if _review_button.visible:
+			_position_review_button()
+		return
+	# Original gate: don't show during active rounds or review.
+	if _action_phase_active:
+		_review_button.visible = false
+		return
 	_review_button.visible = has_log
 	if _review_button.visible:
 		_position_review_button()
