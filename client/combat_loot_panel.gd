@@ -471,12 +471,25 @@ func _render_card(slot_index: int) -> void:
 	var color_hex: String = String(slot.get("color", "#FFFFFF"))
 	var name: String = String(slot.get("name", ""))
 	var kind: String = String(slot.get("kind", "item"))
-	var dim_fac: float = 0.55 if bool(slot.get("missed", false)) else 1.0
+	var is_missed: bool = bool(slot.get("missed", false))
+	# v0.9.602 — player-picked reveals (revealed AND not missed) get a thicker
+	# brighter border + gold star marker so they pop visually from the
+	# cascade-revealed "what you missed" tiles. Player report: the picked-vs-
+	# missed distinction wasn't clear enough.
+	var is_picked: bool = not is_missed
+	var dim_fac: float = 0.55 if is_missed else 1.0
 	var rgb := Color.html(color_hex) if color_hex != "" else Color.WHITE
 	sb.bg_color = Color(rgb.r * 0.25 * dim_fac, rgb.g * 0.25 * dim_fac, rgb.b * 0.25 * dim_fac, 1.0)
-	sb.border_color = Color(rgb.r, rgb.g, rgb.b, 0.6 if bool(slot.get("missed", false)) else 1.0)
+	sb.border_color = Color(rgb.r, rgb.g, rgb.b, 0.6 if is_missed else 1.0)
+	# Picked reveals get a 3px border (vs 2px for missed) so they read
+	# bolder. The keyboard-focus border (also 3px, yellow) still wins when
+	# active because _apply_focus_visuals paints AFTER _render_card.
+	sb.set_border_width_all(3 if is_picked else 2)
 	card.add_theme_stylebox_override("panel", sb)
-	var miss_prefix: String = "[color=#888888][i](missed)[/i][/color] " if bool(slot.get("missed", false)) else ""
+	var miss_prefix: String = "[color=#888888][i](missed)[/i][/color] " if is_missed else ""
+	# v0.9.602 — gold ★ on picked tiles so the player-earned loot is visually
+	# unambiguous next to the cascade reveals.
+	var pick_prefix: String = "[color=#FFD700]★[/color] " if is_picked else ""
 	# Equipment reveals get the rarity symbol too.
 	var symbol: String = String(slot.get("symbol", ""))
 	var sym_prefix: String = ("[color=%s]%s[/color] " % [color_hex, symbol]) if symbol != "" else ""
@@ -486,7 +499,7 @@ func _render_card(slot_index: int) -> void:
 	if kind == "filler_plus_two":
 		sym_prefix = "[color=#FFD700]✦[/color] " + sym_prefix
 	# Wrap in center + small font for compact reveal cards.
-	var label_text: String = "[center]%s[color=%s]%s%s[/color][/center]" % [miss_prefix, color_hex, sym_prefix, name]
+	var label_text: String = "[center]%s%s[color=%s]%s%s[/color][/center]" % [pick_prefix, miss_prefix, color_hex, sym_prefix, name]
 	# Add subtle kind tag underneath for context.
 	var kind_label: String = _kind_display_name(kind)
 	if kind_label != "":
@@ -561,7 +574,29 @@ func _on_done_pressed() -> void:
 	emit_signal("done_pressed")
 
 
-# === v0.9.596 keyboard navigation ===
+# === v0.9.596 / v0.9.602 keyboard navigation ===
+#
+# v0.9.602 — added QWERTY-grid direct-binding. Each grid slot has its own
+# single keypress so the player doesn't have to navigate with arrow keys
+# (which feels clunky and left a focus trail before the v0.9.602 fix).
+# Arrow keys + Enter still work as a fallback.
+#
+# QWERTY-grid layout (positionally matches the 4×4 slot grid like a
+# touch-typist's left hand):
+#   Row 0: 1  2  3  4         slots  0  1  2  3
+#   Row 1: Q  W  E  R         slots  4  5  6  7
+#   Row 2: A  S  D  F         slots  8  9 10 11
+#   Row 3: Z  X  C  V         slots 12 13 14 15
+#
+# A single keypress immediately attempts to reveal that slot (same path
+# as a click). Useful keys (Enter / Space / arrows / WASD / Tab) still work.
+const _QWERTY_SLOT_KEYS := {
+	KEY_1: 0, KEY_2: 1, KEY_3: 2, KEY_4: 3,
+	KEY_Q: 4, KEY_W: 5, KEY_E: 6, KEY_R: 7,
+	KEY_A: 8, KEY_S: 9, KEY_D: 10, KEY_F: 11,
+	KEY_Z: 12, KEY_X: 13, KEY_C: 14, KEY_V: 15,
+}
+
 
 func _input(event: InputEvent) -> void:
 	if not visible or _cascade_active:
@@ -569,18 +604,29 @@ func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	var k: int = event.keycode
-	# Arrow keys / WASD — move focus.
+	# v0.9.602 — direct QWERTY-grid slot keys. Take priority over WASD-as-
+	# arrows so A/S/D press the slot, not the focus arrow. Arrow keys
+	# (KEY_LEFT/RIGHT/UP/DOWN) are still available for focus nav.
+	if _QWERTY_SLOT_KEYS.has(k):
+		var slot_idx: int = int(_QWERTY_SLOT_KEYS[k])
+		# Update focus to that slot so the visual confirms the press.
+		_focused_target = "grid"
+		_focused_slot = slot_idx
+		_apply_focus_visuals()
+		_on_card_clicked(slot_idx)
+		get_viewport().set_input_as_handled()
+		return
 	match k:
-		KEY_LEFT, KEY_A:
+		KEY_LEFT:
 			_move_focus(-1, 0)
 			get_viewport().set_input_as_handled()
-		KEY_RIGHT, KEY_D:
+		KEY_RIGHT:
 			_move_focus(1, 0)
 			get_viewport().set_input_as_handled()
-		KEY_UP, KEY_W:
+		KEY_UP:
 			_move_focus(0, -1)
 			get_viewport().set_input_as_handled()
-		KEY_DOWN, KEY_S:
+		KEY_DOWN:
 			_move_focus(0, 1)
 			get_viewport().set_input_as_handled()
 		KEY_TAB:
@@ -593,9 +639,8 @@ func _input(event: InputEvent) -> void:
 			_apply_focus_visuals()
 			get_viewport().set_input_as_handled()
 		KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
-			# Activate. Space is ALSO captured by client.gd action-bar slot 0,
-			# but the v0.9.596 _combat_loot_reveal_active() gate on the "flock"
-			# action prevents that from advancing victory while the panel is up.
+			# Activate. Space is gated upstream by trigger_action's loot-reveal
+			# check (v0.9.596 / v0.9.602) so the action bar doesn't fire too.
 			if _focused_target == "done":
 				_on_done_pressed()
 			else:
@@ -645,24 +690,29 @@ func _first_unrevealed_slot() -> int:
 
 
 func _apply_focus_visuals() -> void:
-	"""Paint the focused element with a bright yellow border so the player can
-	see where keyboard input will land. Unfocused cards keep their normal
-	purple border."""
+	"""Paint the focused element with a bright yellow border. v0.9.602 — fixed
+	the focus-color trail bug: previously this only reset the border WIDTH on
+	non-focused cards, so cards the player navigated THROUGH kept the yellow
+	border permanently. Now we re-call `_render_card(i)` to restore the
+	natural state (sealed purple / rarity-colored / dim missed) before
+	overlaying focus on the currently-focused card."""
 	for i in range(_cards.size()):
 		var card = _cards[i]
 		if not is_instance_valid(card):
 			continue
-		var sb = card.get_theme_stylebox("panel")
-		if not (sb is StyleBoxFlat):
-			continue
 		var is_focused_card: bool = (_focused_target == "grid" and i == _focused_slot)
 		if is_focused_card:
-			(sb as StyleBoxFlat).border_color = Color(1.0, 0.86, 0.20, 1)
-			(sb as StyleBoxFlat).set_border_width_all(3)
+			# Restore natural state first, then apply focus border on top.
+			# _render_card replaces the stylebox so we grab the new one.
+			_render_card(i)
+			var fsb = card.get_theme_stylebox("panel")
+			if fsb is StyleBoxFlat:
+				(fsb as StyleBoxFlat).border_color = Color(1.0, 0.86, 0.20, 1)
+				(fsb as StyleBoxFlat).set_border_width_all(3)
 		else:
-			# Preserve any color the reveal animation set (rarity coloring);
-			# only reset the width.
-			(sb as StyleBoxFlat).set_border_width_all(2)
+			# Restore the natural stylebox — kills any lingering yellow border
+			# from when this card had focus a moment ago.
+			_render_card(i)
 	# Done button highlight.
 	if _done_button != null:
 		if _focused_target == "done":
