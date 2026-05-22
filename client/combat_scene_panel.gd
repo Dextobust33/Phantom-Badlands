@@ -440,6 +440,41 @@ func _build_layout() -> void:
 	add_child(_review_button)
 	call_deferred("_position_review_button")
 
+	# v0.9.611 — pagination controls for Review FX across flock chains.
+	# Sit just below the Review FX button in a horizontal row. Hidden by
+	# default; shown only while in review phase AND total fights > 1.
+	_review_prev_btn = Button.new()
+	_review_prev_btn.text = "◀ Prev Fight"
+	_review_prev_btn.tooltip_text = "Show the previous fight in this flock chain"
+	_review_prev_btn.add_theme_font_size_override("font_size", 13)
+	_review_prev_btn.custom_minimum_size = Vector2(118, 30)
+	_review_prev_btn.focus_mode = Control.FOCUS_NONE
+	_review_prev_btn.z_index = 200
+	_review_prev_btn.visible = false
+	_review_prev_btn.pressed.connect(_on_review_prev_pressed)
+	add_child(_review_prev_btn)
+
+	_review_next_btn = Button.new()
+	_review_next_btn.text = "Next Fight ▶"
+	_review_next_btn.tooltip_text = "Show the next fight in this flock chain"
+	_review_next_btn.add_theme_font_size_override("font_size", 13)
+	_review_next_btn.custom_minimum_size = Vector2(118, 30)
+	_review_next_btn.focus_mode = Control.FOCUS_NONE
+	_review_next_btn.z_index = 200
+	_review_next_btn.visible = false
+	_review_next_btn.pressed.connect(_on_review_next_pressed)
+	add_child(_review_next_btn)
+
+	_review_pagination_label = Label.new()
+	_review_pagination_label.text = ""
+	_review_pagination_label.add_theme_font_size_override("font_size", 13)
+	_review_pagination_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.5))
+	_review_pagination_label.z_index = 200
+	_review_pagination_label.visible = false
+	_review_pagination_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_review_pagination_label)
+	call_deferred("_position_review_pagination_widgets")
+
 	# v0.9.568 — Help coverage sweep. Floating top-LEFT ? button (mirrors the
 	# review button's pattern but on the opposite corner; always visible
 	# while the combat panel is up). Topic: combat_scene.
@@ -816,10 +851,26 @@ func start_review_phase() -> void:
 	# is hidden.
 	if _victory_card_overlay and is_instance_valid(_victory_card_overlay):
 		_victory_card_overlay.visible = false
+	# v0.9.611 — snapshot the current (live) fight's overlay strips before
+	# entering review, so paginating BACK to "current" can restore them.
+	_review_live_player_lines = _overlay_player_log_lines.duplicate()
+	_review_live_monster_lines = _overlay_monster_log_lines.duplicate()
+	_review_live_companion_lines = _overlay_companion_log_lines.duplicate()
+	_review_fight_index = -1
 	start_action_phase()
 	# Hide the review-launch button while in review.
 	if _review_button and is_instance_valid(_review_button):
 		_review_button.visible = false
+	# v0.9.611 — show the pagination row + label if flock chain has >1 fight.
+	if _flock_history.size() > 0:
+		if _review_prev_btn and is_instance_valid(_review_prev_btn):
+			_review_prev_btn.visible = true
+		if _review_next_btn and is_instance_valid(_review_next_btn):
+			_review_next_btn.visible = true
+		if _review_pagination_label and is_instance_valid(_review_pagination_label):
+			_review_pagination_label.visible = true
+		_position_review_pagination_widgets()
+		_update_review_pagination_label()
 
 
 func end_review_phase() -> void:
@@ -840,6 +891,22 @@ func end_review_phase() -> void:
 	# this is the right re-show signal.
 	if _victory_interlude_active and _victory_card_overlay and is_instance_valid(_victory_card_overlay):
 		_victory_card_overlay.visible = true
+	# v0.9.611 — restore the live-fight strip lines and hide pagination row.
+	# Snapshot was taken in start_review_phase. We DON'T tear down the
+	# arrays — if combat resumes (e.g., they hit Continue), the new
+	# fight's clear_log handles the swap.
+	if _review_fight_index != -1:
+		_overlay_player_log_lines = _review_live_player_lines.duplicate()
+		_overlay_monster_log_lines = _review_live_monster_lines.duplicate()
+		_overlay_companion_log_lines = _review_live_companion_lines.duplicate()
+		_refresh_overlay_strips_from_lines()
+		_review_fight_index = -1
+	if _review_prev_btn and is_instance_valid(_review_prev_btn):
+		_review_prev_btn.visible = false
+	if _review_next_btn and is_instance_valid(_review_next_btn):
+		_review_next_btn.visible = false
+	if _review_pagination_label and is_instance_valid(_review_pagination_label):
+		_review_pagination_label.visible = false
 	# Show the review button again so the player can re-enter at will.
 	_update_review_button_visibility()
 
@@ -887,6 +954,28 @@ func _position_review_button() -> void:
 	var btn_h: float = _review_button.custom_minimum_size.y
 	_review_button.size = Vector2(btn_w, btn_h)
 	_review_button.position = Vector2(maxf(0.0, panel_w - btn_w - 8.0), 6.0)
+
+
+func _position_review_pagination_widgets() -> void:
+	"""v0.9.611 — anchor the prev/label/next pagination row just under the
+	Review FX button at top-right. Hidden until review phase starts."""
+	var panel_w: float = size.x
+	var top_y: float = 44.0  # below the review button
+	var spacing: float = 6.0
+	if _review_pagination_label and is_instance_valid(_review_pagination_label):
+		var lbl_w: float = 140.0
+		_review_pagination_label.size = Vector2(lbl_w, 26)
+		_review_pagination_label.position = Vector2(maxf(0.0, panel_w - lbl_w - 8.0), top_y)
+		top_y += _review_pagination_label.size.y + 4.0
+	if _review_prev_btn and is_instance_valid(_review_prev_btn) and _review_next_btn and is_instance_valid(_review_next_btn):
+		var prev_w: float = _review_prev_btn.custom_minimum_size.x
+		var next_w: float = _review_next_btn.custom_minimum_size.x
+		var btn_h: float = _review_prev_btn.custom_minimum_size.y
+		_review_prev_btn.size = Vector2(prev_w, btn_h)
+		_review_next_btn.size = Vector2(next_w, btn_h)
+		var right_edge: float = panel_w - 8.0
+		_review_next_btn.position = Vector2(maxf(0.0, right_edge - next_w), top_y)
+		_review_prev_btn.position = Vector2(maxf(0.0, right_edge - next_w - spacing - prev_w), top_y)
 
 
 func _position_help_button() -> void:
@@ -3262,6 +3351,8 @@ func clear_overlay_logs() -> void:
 func clear_log(archive: bool = false) -> void:
 	# When archive=true and there's a current log, snapshot it into _flock_history
 	# so the [L] legacy view can replay prior fights from this flock chain.
+	# v0.9.611 — also archive the per-actor overlay strips (player / monster /
+	# companion log lines) so Review FX can swap to a prior fight's content.
 	if archive and _log_lines.size() > 0 and _monster_name != "":
 		_flock_history.append({
 			"monster_name": _monster_name,
@@ -3269,12 +3360,22 @@ func clear_log(archive: bool = false) -> void:
 			"level": _monster_level,
 			"art": _monster_art_bbcode,
 			"lines": _log_lines.duplicate(),
+			"overlay_player_lines": _overlay_player_log_lines.duplicate(),
+			"overlay_monster_lines": _overlay_monster_log_lines.duplicate(),
+			"overlay_companion_lines": _overlay_companion_log_lines.duplicate(),
 		})
 		if _flock_history.size() > FLOCK_HISTORY_LIMIT:
 			_flock_history = _flock_history.slice(_flock_history.size() - FLOCK_HISTORY_LIMIT)
 	_log_lines.clear()
+	# v0.9.611 — also clear the overlay strips for the new fight, so the
+	# FX scene starts fresh per encounter (without this, prior fight's
+	# strips would persist and stack with the new fight's events).
+	_overlay_player_log_lines.clear()
+	_overlay_monster_log_lines.clear()
+	_overlay_companion_log_lines.clear()
 	if is_inside_tree():
 		_refresh_log()
+		_refresh_overlay_strips_from_lines()
 
 
 func reset_flock_history() -> void:
@@ -3283,6 +3384,110 @@ func reset_flock_history() -> void:
 
 func get_flock_history() -> Array:
 	return _flock_history.duplicate()
+
+
+# v0.9.611 — Review-FX pagination across flock chain. -1 = current (live)
+# fight, 0..N-1 indexes _flock_history. Buttons + key handler swap which
+# fight the per-actor overlay strips show.
+var _review_fight_index: int = -1
+var _review_prev_btn: Button = null
+var _review_next_btn: Button = null
+var _review_pagination_label: Label = null
+# Cached snapshot of the current fight's overlay strip lines, captured the
+# moment we enter review mode. Restoring this when the player paginates
+# back to "current" avoids touching live arrays for past fights.
+var _review_live_player_lines: Array = []
+var _review_live_monster_lines: Array = []
+var _review_live_companion_lines: Array = []
+
+
+func _refresh_overlay_strips_from_lines() -> void:
+	"""v0.9.611 — paint the three per-actor overlay RichTextLabels from
+	the current _overlay_*_log_lines arrays. Used by clear_log and by
+	the review-pagination swap path so the strips reflect whatever fight
+	is being viewed."""
+	if _overlay_player_log and is_instance_valid(_overlay_player_log):
+		_overlay_player_log.text = "\n".join(_overlay_player_log_lines)
+	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
+		_overlay_monster_log.text = "\n".join(_overlay_monster_log_lines)
+	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
+		_overlay_companion_log.text = "\n".join(_overlay_companion_log_lines)
+
+
+func _swap_review_to_fight(idx: int) -> void:
+	"""v0.9.611 — swap the per-actor strips to the requested fight.
+	idx == -1: live current fight (restored from _review_live_*_lines)
+	idx >= 0: archived entry from _flock_history.
+	Out of bounds is clamped to -1."""
+	var total: int = _flock_history.size() + 1
+	if total <= 1:
+		return
+	# Clamp to valid range [0, _flock_history.size()] where last is current.
+	var linear: int = total - 1 if idx == -1 else idx
+	linear = clampi(linear, 0, total - 1)
+	if linear == total - 1:
+		_review_fight_index = -1
+		_overlay_player_log_lines = _review_live_player_lines.duplicate()
+		_overlay_monster_log_lines = _review_live_monster_lines.duplicate()
+		_overlay_companion_log_lines = _review_live_companion_lines.duplicate()
+		# Restore the monster header to the current fight's monster.
+		_review_fight_index = -1
+	else:
+		_review_fight_index = linear
+		var entry: Dictionary = _flock_history[linear]
+		_overlay_player_log_lines = (entry.get("overlay_player_lines", []) as Array).duplicate()
+		_overlay_monster_log_lines = (entry.get("overlay_monster_lines", []) as Array).duplicate()
+		_overlay_companion_log_lines = (entry.get("overlay_companion_lines", []) as Array).duplicate()
+	_refresh_overlay_strips_from_lines()
+	_update_review_pagination_label()
+
+
+func _update_review_pagination_label() -> void:
+	if _review_pagination_label == null or not is_instance_valid(_review_pagination_label):
+		return
+	var total: int = _flock_history.size() + 1
+	var current: int = total if _review_fight_index == -1 else (_review_fight_index + 1)
+	var tag: String = "  (current)" if _review_fight_index == -1 else ""
+	_review_pagination_label.text = "Fight %d of %d%s" % [current, total, tag]
+	# Hide arrows when single-fight (nothing to paginate).
+	if _review_prev_btn:
+		_review_prev_btn.visible = total > 1
+		_review_prev_btn.disabled = (_review_fight_index == 0)
+	if _review_next_btn:
+		_review_next_btn.visible = total > 1
+		_review_next_btn.disabled = (_review_fight_index == -1)
+
+
+func _on_review_prev_pressed() -> void:
+	_swap_review_to_fight(_review_fight_index_step(-1))
+
+
+func _on_review_next_pressed() -> void:
+	_swap_review_to_fight(_review_fight_index_step(1))
+
+
+func _review_fight_index_step(delta: int) -> int:
+	var total: int = _flock_history.size() + 1
+	var linear: int = total - 1 if _review_fight_index == -1 else _review_fight_index
+	linear = clampi(linear + delta, 0, total - 1)
+	if linear == total - 1:
+		return -1
+	return linear
+
+
+func _input(event: InputEvent) -> void:
+	"""v0.9.611 — ← / → during review phase cycles through flock fights."""
+	if not _in_review_phase:
+		return
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	match event.keycode:
+		KEY_LEFT, KEY_BRACKETLEFT:
+			_on_review_prev_pressed()
+			get_viewport().set_input_as_handled()
+		KEY_RIGHT, KEY_BRACKETRIGHT:
+			_on_review_next_pressed()
+			get_viewport().set_input_as_handled()
 
 
 func get_log_lines() -> Array:

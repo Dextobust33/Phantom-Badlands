@@ -456,6 +456,10 @@ var _combat_scene_was_flock_pending: bool = false  # tracks flock_pending true�
 var _pending_flock_archive: bool = false
 var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
 var _victory_legacy_view: bool = false  # player toggled to the old full-screen text view via [L]; suppresses the scene panel until they toggle back or continue
+# v0.9.611 — index of the flock fight currently shown in the legacy text
+# view. -1 means "current fight" (panel's live log); 0..N-1 indexes into
+# combat_scene_panel.get_flock_history(). ← / → cycles through fights.
+var _legacy_view_fight_index: int = -1
 var _last_displayed_round: int = 0  # round number we last drew a divider for; reset on each combat_start
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
@@ -4311,57 +4315,33 @@ func _input(event):
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
 		if input_field == null or not input_field.has_focus():
 			if combat_scene_panel:
-				# v0.9.609 — dropped the `pending_continue` requirement. The
-				# v0.9.602 loot-close path clears pending_continue before the
-				# player sees the final victory card, so the old gate blocked
-				# the L-toggle for the entire window the prompt was visible.
-				# Player report: "Pressing L on the victory screen isn't
-				# bringing it up." Use the victory-interlude flag alone — it
-				# stays true while the card is up.
+				# v0.9.609 — dropped the `pending_continue` requirement.
 				var _victory_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active()
 				var _death_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active() and game_state == GameState.DEAD
 				if _victory_up or _death_up:
-					# Toggle into the legacy wall-of-text view. Combat
-					# messages no longer mirror to game_output while the
-					# panel is up, so we replay the panel's log here so the
-					# legacy view actually has content to show. Header is
-					# the monster name + ASCII art so the legacy view opens
-					# with the same visual anchor it always has.
+					# v0.9.611 — paginated. Open the legacy view on the CURRENT
+					# fight. The handler below intercepts ← / → / [ / ] inside
+					# the legacy view to flip to prior fights in the chain.
 					_victory_legacy_view = not _victory_legacy_view
-					if _victory_legacy_view and combat_scene_panel.has_method("get_log_lines"):
-						game_output.clear()
-						# Flock chain: replay archived fights from earlier in the
-						# chain ABOVE the current fight's log so players can
-						# review the whole encounter, not just the final fight.
-						if combat_scene_panel.has_method("get_flock_history"):
-							var _flock_hist: Array = combat_scene_panel.get_flock_history()
-							var _idx := 1
-							for _entry in _flock_hist:
-								var _hdr_name = "[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]" % [str(_entry.get("color", "#FFFFFF")), str(_entry.get("monster_name", "Enemy")), int(_entry.get("level", 1))]
-								display_game("[color=#5C4D33]──── Fight %d ────[/color]" % _idx)
-								display_game(_hdr_name)
-								var _hdr_art = str(_entry.get("art", ""))
-								if _hdr_art != "":
-									display_game(_hdr_art)
-								display_game("")
-								for _ln in _entry.get("lines", []):
-									display_game(_ln)
-								display_game("")
-								_idx += 1
-							if _flock_hist.size() > 0:
-								display_game("[color=#5C4D33]──── Fight %d (current) ────[/color]" % _idx)
-						if combat_scene_panel.has_method("get_monster_header_bbcode"):
-							var header: Array = combat_scene_panel.get_monster_header_bbcode()
-							if header.size() == 2:
-								display_game(header[0])
-								display_game(header[1])
-								display_game("")
-						display_game("[color=#5C4D33]──────── Combat Log ────────[/color]")
-						for line in combat_scene_panel.get_log_lines():
-							display_game(line)
-						display_game("[color=#5C4D33]──────────────────────────[/color]")
+					if _victory_legacy_view:
+						_legacy_view_fight_index = -1  # current fight
+						_render_legacy_combat_log()
 					get_viewport().set_input_as_handled()
 					return
+		# v0.9.611 — pagination inside the legacy combat log view. ←/→ or
+		# [/] cycles through flock fights without leaving the view. Bounds
+		# clamp so you can't run off either end.
+		if _victory_legacy_view and event is InputEventKey and event.pressed and not event.echo:
+			if input_field == null or not input_field.has_focus():
+				match event.keycode:
+					KEY_LEFT, KEY_BRACKETLEFT:
+						_legacy_view_step(-1)
+						get_viewport().set_input_as_handled()
+						return
+					KEY_RIGHT, KEY_BRACKETRIGHT:
+						_legacy_view_step(1)
+						get_viewport().set_input_as_handled()
+						return
 
 	# Handle gathering pattern key presses (Q, W, E, R during reaction phase)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -18202,13 +18182,14 @@ func update_player_hp_bar():
 	if not player_health_bar or not has_character:
 		return
 
-	# v0.9.610 — REVERTED the v0.9.609 in-combat hide. StatsBar is at the
-	# TOP of the screen (RootContainer → StatsBar → PlayerHealthBar +
-	# ResourceBar), not the bottom. v0.9.609 misread the layout and hid
-	# the top-of-screen bars, which broke the first combat scene visuals.
-	# The bars the user wants hidden are the ResourceBarsOverlay (a
-	# RichTextLabel just above the action bar) — handled by
-	# update_resource_bars_overlay + the _process sync gate.
+	# v0.9.611 — StatsBar HP bar is PERMANENTLY removed from the UI per
+	# player feedback: "Those bars are redundant and need removed they
+	# are no longer needed as they are displayed elsewhere." HP is shown
+	# via the combat scene panel (in combat) and the ResourceBarsOverlay
+	# (out of combat), so the top-of-screen StatsBar bar is pure
+	# duplicate clutter. We still compute + run the update so internal
+	# refs (Fill child stylebox etc.) don't break if anyone reads them.
+	player_health_bar.visible = false
 
 	var current_hp = character_data.get("current_hp", 0)
 	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))  # Use equipment-boosted HP
@@ -18413,8 +18394,9 @@ func update_resource_bar():
 	if not resource_bar or not has_character:
 		return
 
-	# v0.9.610 — REVERTED the v0.9.609 in-combat hide (see update_player_hp_bar
-	# for why). StatsBar lives at the top of the screen and must stay visible.
+	# v0.9.611 — StatsBar resource bar is PERMANENTLY removed (see
+	# update_player_hp_bar for why).
+	resource_bar.visible = false
 
 	var path = _get_player_active_path()
 	var current_val = 0
@@ -25818,8 +25800,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.611 — StatsBar bars removed for real; flock pagination for L + Review FX.
+	display_game("[color=#00FF00]v0.9.611[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three follow-up fixes. v0.9.610 wrongly restored the redundant StatsBar HP/Resource bars — they're now permanently removed since the combat panel + ResourceBarsOverlay cover the same ground. Combat log [L] and Review FX both now paginate one fight at a time when the flock chain has 2+ fights, so players can step back through each encounter to see what happened.[/color]")
+	display_game("  • [b]StatsBar HP / resource bars removed[/b]. Both [color=#888888]player_health_bar.visible[/color] and [color=#888888]resource_bar.visible[/color] now hard-set to false. Player feedback: '[i]Those bars are redundant and need removed they are no longer needed as they are displayed elsewhere.[/i]' HP + resource now live exclusively on the combat scene panel (in combat) and the ResourceBarsOverlay (out of combat).")
+	display_game("  • [b][L] combat log paginates per fight[/b]. Single-fight encounters open the legacy view as before. Multi-fight flock chains open at the CURRENT fight; press [color=#FFD700][←][/color] / [color=#FFD700][→][/color] (or [color=#FFD700][[][/color] / [color=#FFD700][]][/color]) to flip to prior fights one at a time. Header shows [color=#FFD700]◀  Fight N of M  ▶[/color]. Each page has that fight's monster header / ASCII art / log lines.")
+	display_game("  • [b]Review FX paginates per fight[/b]. New ◀ Prev Fight / Next Fight ▶ buttons + 'Fight N of M' label appear just below the Review FX button when in review phase on a flock chain. Clicking (or pressing ← / →) swaps the per-actor overlay strips to a different fight's content. [color=#888888]clear_log[/color] now archives [color=#888888]overlay_player_log_lines[/color] / [color=#888888]overlay_monster_log_lines[/color] / [color=#888888]overlay_companion_log_lines[/color] into [color=#888888]_flock_history[/color] so each entry carries enough state for the strips to swap.")
+	display_game("")
+
 	# v0.9.610 — Player follow-up fixes to v0.9.609.
-	display_game("[color=#00FF00]v0.9.610[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.610[/color]")
 	display_game("  [color=#FFD700]Four player-reported fixes following v0.9.609. (1) Reverted the StatsBar hide — those are TOP-of-screen bars and shouldn't go away during combat. (2) The actual bottom HP/Resource overlay (ResourceBarsOverlay) now hides whenever the combat panel is up, including the FX scene. (3) Review FX button finally works — was rendering behind the victory card. (4) Flock chain log archives across all fights now, not just the most recent. (5) Visible UI toggles for autoskip preferences (Loot / Gather / Craft) live in the top StatsBar next to the music toggle.[/color]")
 	display_game("  • [b]StatsBar restored[/b]. v0.9.609 hid [color=#888888]$RootContainer/StatsBar/PlayerHealthBar[/color] + [color=#888888]ResourceBar[/color] during combat — but StatsBar lives at the TOP of the screen, not the bottom. The pre-FX Lufia layout was missing its top HP/resource bars as a result. Both update functions no longer gate visibility.")
 	display_game("  • [b]Bottom ResourceBarsOverlay hides via _process gate[/b]. The bars 'just above the action bar, just under gameoutput' are the [color=#888888]ResourceBarsOverlay[/color] (a floating RichTextLabel). v0.9.601's [color=#888888]in_combat[/color] check missed transitions where in_combat briefly toggled (flock chain handoff, action phase). Now driven by [color=#888888]_combat_scene_should_show[/color] in _process — if the combat panel is on screen for any reason (action phase / victory card / linger / flock pending), the bottom overlay is hidden.")
@@ -29657,6 +29647,95 @@ func _get_variant_border_color(variant_type: String) -> String:
 			return "#FFD700"  # gold — rare & dangerous
 		_:
 			return ""
+
+
+func _render_legacy_combat_log() -> void:
+	"""v0.9.611 — render the [L] legacy text view for ONE fight at a time.
+	`_legacy_view_fight_index` decides which:
+	  -1            = current fight (panel's live log_lines)
+	  0..N-1        = archived flock fight from combat_scene_panel._flock_history
+	Footer offers ← / → to flip between fights, [L] to close."""
+	if combat_scene_panel == null:
+		return
+	game_output.clear()
+	var history: Array = []
+	if combat_scene_panel.has_method("get_flock_history"):
+		history = combat_scene_panel.get_flock_history()
+	# Total fights in chain = archived + 1 (current)
+	var total: int = history.size() + 1
+	# Clamp index to valid range
+	if _legacy_view_fight_index < -1:
+		_legacy_view_fight_index = -1
+	if _legacy_view_fight_index >= history.size():
+		_legacy_view_fight_index = -1
+	# Compute display fight number (1-indexed): current is the last, archives
+	# count from 1 to history.size().
+	var fight_num: int
+	if _legacy_view_fight_index == -1:
+		fight_num = total
+	else:
+		fight_num = _legacy_view_fight_index + 1
+	# Header bar: ◀ Fight N of M ▶
+	var nav_left: String = "◀" if total > 1 else " "
+	var nav_right: String = "▶" if total > 1 else " "
+	var current_tag: String = "  [color=#888888](current)[/color]" if _legacy_view_fight_index == -1 else ""
+	display_game("[color=#5C4D33]──────── %s   Fight %d of %d%s   %s ────────[/color]" % [nav_left, fight_num, total, current_tag, nav_right])
+	# Render content per source
+	var monster_name: String = ""
+	var monster_color: String = "#FFFFFF"
+	var monster_level: int = 0
+	var monster_art: String = ""
+	var log_lines: Array = []
+	if _legacy_view_fight_index == -1:
+		# Live: pull header + log from the panel
+		if combat_scene_panel.has_method("get_monster_header_bbcode"):
+			var header: Array = combat_scene_panel.get_monster_header_bbcode()
+			if header.size() == 2:
+				display_game(header[0])
+				display_game(header[1])
+				display_game("")
+		if combat_scene_panel.has_method("get_log_lines"):
+			log_lines = combat_scene_panel.get_log_lines()
+	else:
+		var entry: Dictionary = history[_legacy_view_fight_index]
+		monster_name = str(entry.get("monster_name", "Enemy"))
+		monster_color = str(entry.get("color", "#FFFFFF"))
+		monster_level = int(entry.get("level", 0))
+		monster_art = str(entry.get("art", ""))
+		log_lines = entry.get("lines", [])
+		display_game("[color=%s][b]%s[/b][/color]  [color=#FFD700]Lv %d[/color]" % [monster_color, monster_name, monster_level])
+		if monster_art != "":
+			display_game(monster_art)
+		display_game("")
+	display_game("[color=#5C4D33]──────── Combat Log ────────[/color]")
+	for line in log_lines:
+		display_game(line)
+	display_game("[color=#5C4D33]──────────────────────────[/color]")
+	if total > 1:
+		display_game("[color=#888888]Press [← →] to cycle fights · [L] to close[/color]")
+	else:
+		display_game("[color=#888888]Press [L] to close[/color]")
+
+
+func _legacy_view_step(delta: int) -> void:
+	"""v0.9.611 — flip the legacy view to a different fight. delta = -1 / +1.
+	Wraps through the archive entries (0..N-1) and the current fight (-1
+	displayed as the highest index)."""
+	if combat_scene_panel == null:
+		return
+	var history: Array = []
+	if combat_scene_panel.has_method("get_flock_history"):
+		history = combat_scene_panel.get_flock_history()
+	# Linearize: archive_0, archive_1, ..., archive_N-1, current.
+	# Map index to linear: current (-1) → N, archive_i → i.
+	var n: int = history.size()
+	var linear: int = n if _legacy_view_fight_index == -1 else _legacy_view_fight_index
+	linear = clampi(linear + delta, 0, n)
+	if linear == n:
+		_legacy_view_fight_index = -1
+	else:
+		_legacy_view_fight_index = linear
+	_render_legacy_combat_log()
 
 
 func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
