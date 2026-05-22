@@ -212,6 +212,16 @@ var _world_threat_states: Dictionary = {}
 var _world_threat_refresh_timer: float = 0.0
 const WORLD_THREAT_REFRESH_INTERVAL = 3.0
 
+# v0.9.598 — per-post "safe window" after the last threatening dungeon was
+# cleared. Key: "x,y" of the post (matches the cache_key format other threat
+# code uses). Value: unix timestamp the cooldown ends. New T2+ world dungeons
+# whose spawn location would be within THREAT_CORRIDOR_RADIUS of a post in
+# cooldown are rejected at `_create_world_dungeon` time.
+# In-memory only — a server restart resets cooldowns. Acceptable: short
+# enough timer that losing it isn't user-visible, and persistence cost would
+# outweigh the benefit.
+var _post_threat_cooldown_until: Dictionary = {}
+
 # v0.9.362 — diagnostic timing. Logs hot-path timings to identify the
 # cause of intermittent ~5s freezes reported by players.
 # v0.9.377 — root cause identified: _check_dungeon_spawns was bursting up
@@ -27910,6 +27920,15 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		var ed = active_dungeons[eid]
 		existing_coords[Vector2i(ed.world_x, ed.world_y)] = true
 
+	# v0.9.598 — T2+ dungeons only spawn near posts that (a) aren't already at
+	# MAX_CONCURRENT_POST_THREATS active threats, and (b) aren't inside the
+	# post-cleared cooldown window. T1 dungeons don't count as threats so they
+	# bypass this gate.
+	var dungeon_tier: int = int(dungeon_data.get("tier", 1))
+	var enforce_threat_limits: bool = dungeon_tier >= 2 and chunk_manager != null
+	var now_unix: int = int(Time.get_unix_time_from_system()) if enforce_threat_limits else 0
+	var r_sq_local: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS
+
 	for _attempt in range(max_attempts):
 		# Add more randomness to position (within 100 tiles of tier's base location)
 		# This creates a wider spread of dungeons across the map
@@ -27919,11 +27938,36 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 		world_y = spawn_loc.y + offset_y
 
 		# Check if this location overlaps with a trading post, NPC post, or existing dungeon
-		if not trading_post_db.is_trading_post_tile(world_x, world_y) \
-				and not world_system.is_safe_zone(world_x, world_y) \
-				and not existing_coords.has(Vector2i(world_x, world_y)):
-			found_valid = true
-			break
+		if trading_post_db.is_trading_post_tile(world_x, world_y) \
+				or world_system.is_safe_zone(world_x, world_y) \
+				or existing_coords.has(Vector2i(world_x, world_y)):
+			continue
+
+		# v0.9.598 — for T2+ spawn candidates, check every post within the
+		# corridor radius. Reject the candidate if ANY nearby post is already
+		# at the concurrent-threat cap or still inside its post-cleared cooldown
+		# window. Other attempts may find a valid offset.
+		if enforce_threat_limits:
+			var blocked := false
+			for post in chunk_manager.npc_posts:
+				var px: int = int(post.get("x", 0))
+				var py: int = int(post.get("y", 0))
+				var dpx: int = px - int(world_x)
+				var dpy: int = py - int(world_y)
+				if dpx * dpx + dpy * dpy > r_sq_local:
+					continue  # This post wouldn't be threatened by this spawn
+				var post_key := "%d,%d" % [px, py]
+				if _post_in_threat_cooldown(post_key, now_unix):
+					blocked = true
+					break
+				if _count_active_threats_near_post(px, py) >= MAX_CONCURRENT_POST_THREATS:
+					blocked = true
+					break
+			if blocked:
+				continue
+
+		found_valid = true
+		break
 
 	if not found_valid:
 		# Couldn't find a valid location after max attempts, skip this dungeon
@@ -28006,6 +28050,9 @@ func _mark_world_dungeon_completed(x: int, y: int):
 		if inst.world_x == x and inst.world_y == y:
 			inst["completed_at"] = int(Time.get_unix_time_from_system())
 			log_message("World dungeon %s at (%d,%d) marked completed (player entered)" % [instance_id, x, y])
+			# v0.9.598 — if this was the last T2+ threat for any nearby post,
+			# stamp that post's 10-min cooldown.
+			_stamp_post_cooldowns_for_cleared_dungeon(int(inst.world_x), int(inst.world_y), instance_id)
 			break
 
 func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: int = -1) -> Array:
@@ -28533,6 +28580,12 @@ const POST_THREAT_SERVICE_MULT_SEVERE: float = 2.00
 # wights drifting from a barrow, etc. Gives the Slice 6 "Under Threat" marker
 # mechanical bite without inventing a new entity system.
 const THREAT_CORRIDOR_RADIUS: int = 80
+# v0.9.598 — concurrent-threat cap + post-cleared cooldown. Player feedback
+# said new dungeons spawn faster than they can be cleared, drowning posts.
+# Both knobs gate the spawn side of `_create_world_dungeon`; the per-post
+# cooldown also clamps the post's threat-state cache so the UI agrees.
+const MAX_CONCURRENT_POST_THREATS: int = 3
+const POST_THREAT_COOLDOWN_SECONDS: int = 600  # 10 minutes
 # v0.9.597 — threat zone is now a cone aimed from each dungeon at the nearest
 # threatened post, not a 80-tile circle. Player report: monsters spilling out
 # of the dungeon affected too large a radius. Cone is tight (~35° half-angle)
@@ -28542,6 +28595,79 @@ const THREAT_CONE_HALF_ANGLE_DEG: float = 35.0
 const THREAT_CONE_LENGTH_BUFFER: int = 15  # tiles past the post the cone reaches
 # Precomputed cos² of the half-angle for sqrt-free containment check.
 const THREAT_CONE_HALF_ANGLE_COS_SQ: float = 0.67101  # cos(35°)² ≈ 0.8192²
+
+func _count_active_threats_near_post(post_x: int, post_y: int, exclude_instance_id: String = "") -> int:
+	"""v0.9.598 — count active T2+ world dungeons within THREAT_CORRIDOR_RADIUS
+	of (post_x, post_y). Used both at spawn time (cap check) and at clear time
+	(was this the last threat?). `exclude_instance_id` lets the clear-side caller
+	exclude the just-cleared dungeon when counting REMAINING threats."""
+	var count: int = 0
+	var r_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS
+	for instance_id in active_dungeons:
+		if instance_id == exclude_instance_id:
+			continue
+		var inst = active_dungeons[instance_id]
+		if inst.get("completed_at", 0) > 0:
+			continue
+		if inst.has("owner_peer_id"):
+			continue
+		var dungeon_data = DungeonDatabaseScript.get_dungeon(inst.dungeon_type)
+		if dungeon_data.is_empty():
+			continue
+		if int(dungeon_data.get("tier", 1)) < 2:
+			continue
+		var dx := int(inst.get("world_x", 0)) - post_x
+		var dy := int(inst.get("world_y", 0)) - post_y
+		if dx * dx + dy * dy <= r_sq:
+			count += 1
+	return count
+
+
+func _post_in_threat_cooldown(post_key: String, now: int) -> bool:
+	"""True if the post's safe-window from a recent clear is still active."""
+	if not _post_threat_cooldown_until.has(post_key):
+		return false
+	if int(_post_threat_cooldown_until[post_key]) > now:
+		return true
+	# Expired — clean up so the dict doesn't grow unbounded.
+	_post_threat_cooldown_until.erase(post_key)
+	return false
+
+
+func _stamp_post_cooldowns_for_cleared_dungeon(inst_x: int, inst_y: int, instance_id: String) -> void:
+	"""v0.9.598 — when a T2+ world dungeon is cleared, find every post it was
+	threatening (within THREAT_CORRIDOR_RADIUS). For each post where this was
+	the LAST active threat, stamp the 10-minute cooldown so new T2+ dungeons
+	can't immediately spawn in to replace it.
+
+	Caller already wrote `completed_at` on the dungeon, so we exclude it from
+	the remaining-threats count via `exclude_instance_id`."""
+	if chunk_manager == null:
+		return
+	# Cheap tier+ownership precheck so non-threat dungeons don't trigger.
+	if not active_dungeons.has(instance_id):
+		return
+	var inst = active_dungeons[instance_id]
+	if inst.has("owner_peer_id"):
+		return
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(inst.dungeon_type)
+	if dungeon_data.is_empty() or int(dungeon_data.get("tier", 1)) < 2:
+		return
+	var now: int = int(Time.get_unix_time_from_system())
+	var cooldown_end: int = now + POST_THREAT_COOLDOWN_SECONDS
+	var r_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS
+	for post in chunk_manager.npc_posts:
+		var px: int = int(post.get("x", 0))
+		var py: int = int(post.get("y", 0))
+		var ddx := px - inst_x
+		var ddy := py - inst_y
+		if ddx * ddx + ddy * ddy > r_sq:
+			continue
+		# Was this dungeon the last active threat for this post?
+		if _count_active_threats_near_post(px, py, instance_id) == 0:
+			var post_key := "%d,%d" % [px, py]
+			_post_threat_cooldown_until[post_key] = cooldown_end
+
 
 func _dungeon_target_post_for_threat(inst_x: int, inst_y: int) -> Dictionary:
 	"""Find the nearest NPC post within THREAT_CORRIDOR_RADIUS of this dungeon.
@@ -30621,6 +30747,9 @@ func _complete_dungeon(peer_id: int):
 		if instance.get("owner_peer_id", -1) < 0:
 			instance["completed_at"] = int(Time.get_unix_time_from_system())
 			log_message("World dungeon %s marked as completed, will despawn in %d seconds" % [instance_id, DUNGEON_DESPAWN_DELAY])
+			# v0.9.598 — same hook as _mark_world_dungeon_completed: post enters
+			# 10-min cooldown if this was the last T2+ threat for it.
+			_stamp_post_cooldowns_for_cleared_dungeon(int(instance.get("world_x", 0)), int(instance.get("world_y", 0)), instance_id)
 
 	# Remove from dungeon
 	if active_dungeons.has(instance_id):
