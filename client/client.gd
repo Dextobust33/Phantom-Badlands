@@ -25821,8 +25821,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.616 — All-posts 1/d⁴ IDW. Continuous everywhere, no swap cliffs.
+	display_game("[color=#00FF00]v0.9.616[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]v0.9.615's top-3 1/d² still had cliffs — player report: '(45,-57) is Lv ~26' (vs (44,-57) at Lv ~18, an 8-level jump). Math diagnosed: top-N has a discrete SWAP cliff whenever the swap-slot's post has a different anchor than the previous occupant. Fix: drop discrete set membership, use ALL posts with steeper p=4 falloff.[/color]")
+	display_game("  • [b]1/(d⁴ + 1) weighting[/b]. Far posts contribute essentially nothing: a post 10× farther has 1/10000th the weight (vs 1/100th for p=2). At typical post spacing, 50 far posts cumulatively contribute <0.2% of the nearest's weight — no elevation risk. v0.9.614's catastrophic Lv 89 inflation cannot recur even with all-posts because the falloff is steeper.")
+	display_game("  • [b]Every post always contributes[/b]. No discrete set membership → no swap cliffs anywhere. As the player moves, every post's weight changes smoothly. The boundary case (a 4th post becoming nearer than the 3rd) is now sub-0.1 level instead of 8 levels.")
+	display_game("  • [b]Math at (44,-57)[/b]: nearest at d≈15 dominates with weight ~2e-5; the entire rest of the network contributes ~3% of nearest's weight. Blend stays close to the nearest's anchor (Lv 18) regardless of what's elsewhere on the map.")
+	display_game("")
+
 	# v0.9.615 — Top-3 nearest IDW blend (replaces broken v0.9.614 all-posts IDW).
-	display_game("[color=#00FF00]v0.9.615[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.615[/color]")
 	display_game("  [color=#FF4444][b]Hotfix[/b][/color][color=#FFD700] for v0.9.614's catastrophic level inflation. The 'weight all posts by 1/d²' approach elevated starter-zone monster levels from ~18 to ~89 because 50 distant high-tier posts cumulatively outweighed the nearest one. Math intuition was wrong: per-post influence WAS small, but cumulative far-post influence wasn't. v0.9.615 caps the calc set to the 3 NEAREST posts — solves both the v0.9.614 elevation bug AND the original (44,-57)→(45,-57) cliff that motivated this work.[/color]")
 	display_game("  • [b]Top-3 nearest IDW[/b]. [color=#888888]get_post_anchored_level[/color] now sorts posts by d², takes the 3 nearest, and blends them by [color=#888888]w = 1/(d² + 1)[/color]. Only nearby posts influence the local level — no more cumulative far-post elevation. Nearest still dominates its own pocket (its weight is ~100× the 3rd-nearest's at typical post spacing).")
 	display_game("  • [b]Cliff fix preserved[/b]. The second-nearest-swap cliff (smoothstep era) happened because when the 2nd-nearest post identity flipped, the blend re-targeted a very different anchor. With top-3, the SWAP happens at the lowest-weight slot (the 3rd-nearest = farthest in the set), so the discontinuity is sub-1 level instead of 5-15.")
