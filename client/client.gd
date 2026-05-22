@@ -2919,6 +2919,13 @@ func _process(delta):
 		if _victory_card_up and not pending_continue and not _now_in_combat and not _post_loot_victory_persists:
 			combat_scene_panel.hide_victory_card()
 			_victory_card_up = false
+			# v0.9.625 — also tear down any stuck FX overlay. The autoskip
+			# loot flow can leave the FX overlay visible if hide_fx_overlay_only
+			# was called but the panel later re-shows for some reason. Safety
+			# net is the catch-all: when no combat reason remains, ensure the
+			# overlay is gone too.
+			if combat_scene_panel.has_method("hide_fx_overlay_only"):
+				combat_scene_panel.hide_fx_overlay_only()
 		# Death interlude is active — keep the scene visible while the
 		# in-panel death card is showing.
 		var _death_card_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active()
@@ -4117,11 +4124,16 @@ func _process(delta):
 						pending_party_bump = ""
 						update_action_bar()
 					# v0.9.604 — first movement after a loot reveal dismisses
-					# the persisted victory card. Clearing the flag here lets
-					# the safety net fire on the next frame, which calls
-					# hide_victory_card cleanly. Movement proceeds normally.
+					# the persisted victory card. v0.9.625 — explicit
+					# cleanup (don't rely on next-frame safety net) so the
+					# move-triggers-encounter race can't leave stale state.
 					if _post_loot_victory_persists:
 						_post_loot_victory_persists = false
+						if combat_scene_panel:
+							if combat_scene_panel.has_method("hide_victory_card"):
+								combat_scene_panel.hide_victory_card()
+							if combat_scene_panel.has_method("hide_fx_overlay_only"):
+								combat_scene_panel.hide_fx_overlay_only()
 					send_move(move_dir)
 					# Don't clear trading post UI - server will notify if we leave.
 					# In build mode, redraw the active build prompt so the menu
@@ -4334,6 +4346,17 @@ func _input(event):
 				_victory_legacy_view = false
 				if game_output and is_instance_valid(game_output):
 					game_output.clear()
+			# v0.9.625 — explicit cleanup instead of waiting for the safety
+			# net's next-frame fire. If the safety net's `not _now_in_combat`
+			# gate happens to fail (e.g., new encounter triggered same frame),
+			# the cleanup would never run. Do it here unconditionally so the
+			# user's "Press Space to continue" actually finishes the cleanup
+			# atomically. Player report: stuck FX scene with autoskip on.
+			if combat_scene_panel:
+				if combat_scene_panel.has_method("hide_victory_card"):
+					combat_scene_panel.hide_victory_card()
+				if combat_scene_panel.has_method("hide_fx_overlay_only"):
+					combat_scene_panel.hide_fx_overlay_only()
 			get_viewport().set_input_as_handled()
 			return
 
@@ -25821,8 +25844,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.625 — explicit cleanup on Space/movement dismiss (autoskip stuck fix).
+	display_game("[color=#00FF00]v0.9.625[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]v0.9.624's reset_for_new_combat only fires on NEW combat. Player confirmed: '[i]I can move around but this is stuck on my screen and overlays everything... only clears if I get in a new combat.[/i]' Means the cleanup chain isn't running BEFORE a new combat starts. Belt-and-suspenders: Space and movement dismiss paths now do explicit hide_victory_card + hide_fx_overlay_only instead of relying on the next-frame safety net (which has a [color=#888888]not _now_in_combat[/color] gate that can race-fail).[/color]")
+	display_game("  • [b]Three cleanup sites[/b]: (1) Safety net in _process now ALSO calls hide_fx_overlay_only when it dismisses a stale victory card. (2) Space-dismiss intercept (post-loot) explicitly calls hide_victory_card + hide_fx_overlay_only inline. (3) Movement-dismiss path same. The state can't leak past any of the three exit paths now.")
+	display_game("")
+
+	# v0.9.624 — reset_for_new_combat dismisses stale victory interlude.
+	display_game("[color=#00FFFF]v0.9.624[/color]")
+	display_game("  [color=#FFD700]Stuck FX scene persisted. User clarified: '[i]I can move around but this is stuck on my screen and overlays everything... only clears if I get in a new combat... Auto-Skip combat loot reveal on if it matters.[/i]' Race: autoskip + movement = new random encounter triggers in the same frame as victory dismissal. The [color=#888888]_process[/color] safety net skips dismissal when [color=#888888]_now_in_combat=true[/color], so [color=#888888]_victory_interlude_active[/color] gets stuck. Result: new combat shows FX overlay AND Review Damage button stays visible (v0.9.621 honored the stuck flag).[/color]")
+	display_game("  • [b]Fix[/b]: [color=#888888]reset_for_new_combat[/color] now dismisses any stale victory card + sets [color=#888888]_victory_interlude_active = false[/color] + clears [color=#888888]_in_review_phase[/color]. Every new combat starts from a clean slate regardless of what state the previous one left behind.")
+	display_game("")
+
 	# v0.9.623 — hide_fx_overlay_only stops the pre-FX layout from leaking through.
-	display_game("[color=#00FF00]v0.9.623[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.623[/color]")
 	display_game("  [color=#FFD700]v0.9.622 fixed the stuck FX scene, but the wrong method ([color=#888888]_force_end_action_phase[/color]) also tweens the pre-FX Lufia layout BACK IN. Player report: '[i]No I'm seeing the Start of combat Screen stuck up there like it swapped scenes (not the fx one).[/i]' Replaced with a targeted [color=#888888]hide_fx_overlay_only[/color] that clears the FX overlay without restoring the pre-FX party row.[/color]")
 	display_game("")
 
