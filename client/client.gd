@@ -2919,11 +2919,12 @@ func _process(delta):
 		if _victory_card_up and not pending_continue and not _now_in_combat and not _post_loot_victory_persists:
 			combat_scene_panel.hide_victory_card()
 			_victory_card_up = false
-			# v0.9.625 — also tear down any stuck FX overlay. The autoskip
-			# loot flow can leave the FX overlay visible if hide_fx_overlay_only
-			# was called but the panel later re-shows for some reason. Safety
-			# net is the catch-all: when no combat reason remains, ensure the
-			# overlay is gone too.
+			# v0.9.625 — also tear down any stuck FX overlay.
+			# v0.9.626 — nuke deferred payload so it can't re-open the card.
+			# v0.9.627 — zero linger so panel hides THIS frame.
+			_pending_victory_card_payload = null
+			_pending_victory_fx_play = false
+			_combat_scene_linger_until_ms = 0
 			if combat_scene_panel.has_method("hide_fx_overlay_only"):
 				combat_scene_panel.hide_fx_overlay_only()
 		# Death interlude is active — keep the scene visible while the
@@ -4124,16 +4125,16 @@ func _process(delta):
 						pending_party_bump = ""
 						update_action_bar()
 					# v0.9.604 — first movement after a loot reveal dismisses
-					# the persisted victory card. v0.9.625 — explicit
-					# cleanup (don't rely on next-frame safety net) so the
-					# move-triggers-encounter race can't leave stale state.
-					# v0.9.626 — also nuke deferred victory payload + FX flag
-					# so _drain_combat_queue empty branch can't re-open the
-					# dismissed card.
+					# the persisted victory card.
+					# v0.9.625 — explicit cleanup.
+					# v0.9.626 — nuke deferred victory payload + FX flag.
+					# v0.9.627 — zero linger so panel hides THIS frame
+					# instead of lingering for 2.4s (3-4 movement ticks).
 					if _post_loot_victory_persists:
 						_post_loot_victory_persists = false
 						_pending_victory_card_payload = null
 						_pending_victory_fx_play = false
+						_combat_scene_linger_until_ms = 0
 						if combat_scene_panel:
 							if combat_scene_panel.has_method("hide_victory_card"):
 								combat_scene_panel.hide_victory_card()
@@ -4353,11 +4354,17 @@ func _input(event):
 					game_output.clear()
 			# v0.9.625 — explicit cleanup instead of waiting for the safety
 			# net's next-frame fire.
-			# v0.9.626 — also nuke the deferred victory payload + FX flag
-			# so they can't fire later from _drain_combat_queue empty
-			# branch and re-open the card we just dismissed.
+			# v0.9.626 — also nuke the deferred victory payload + FX flag.
+			# v0.9.627 — zero _combat_scene_linger_until_ms. The 2400ms
+			# linger added by _combat_loot_refresh_victory_card kept
+			# _is_lingering=true for ~2.4s after dismiss, which is 3-4
+			# movement ticks — the panel stayed visible the whole time.
+			# Player report: 'I can often move 3 or 4 spaces before it
+			# finally clears.' Dismiss is an explicit acknowledgement
+			# that the panel is done; no linger needed.
 			_pending_victory_card_payload = null
 			_pending_victory_fx_play = false
+			_combat_scene_linger_until_ms = 0
 			if combat_scene_panel:
 				if combat_scene_panel.has_method("hide_victory_card"):
 					combat_scene_panel.hide_victory_card()
@@ -25850,8 +25857,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.627 — Clear linger window on dismiss.
+	display_game("[color=#00FF00]v0.9.627[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]v0.9.626 fixed the deferred-payload re-open, but the panel still lingered ~2.4s after dismiss. Player report: '[i]I can often move 3 or 4 spaces before it finally clears.[/i]' Root cause: [color=#888888]_combat_loot_refresh_victory_card[/color] extends [color=#888888]_combat_scene_linger_until_ms[/color] by 2400ms, and my dismiss paths weren't zeroing it. Now all three dismiss sites (Space intercept, movement, safety net) set [color=#888888]_combat_scene_linger_until_ms = 0[/color] so the panel hides on the same frame as dismiss.[/color]")
+	display_game("")
+
 	# v0.9.626 — Real root cause: deferred victory payload re-opening dismissed card.
-	display_game("[color=#00FF00]v0.9.626[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.626[/color]")
 	display_game("  [color=#FFD700]Apologies for the iteration. Actual root cause: [color=#888888]_drain_combat_queue[/color]'s queue-empty branch fires [color=#888888]show_victory_card[/color] from [color=#888888]_pending_victory_card_payload[/color] (set at combat_end when the combat message queue was non-empty — v0.9.413 deferred-display pattern). If the queue finishes draining AFTER the player has already dismissed via Space/movement, that branch re-opens the dismissed victory card. _victory_interlude_active flips back to true. Panel sticks visible with Review Damage button.[/color]")
 	display_game("  • [b]Fix[/b]: nuke [color=#888888]_pending_victory_card_payload[/color] + [color=#888888]_pending_victory_fx_play[/color] in (1) _on_combat_loot_closed (loot path already shows the card via _combat_loot_refresh_victory_card, the pending payload is redundant), (2) Space-dismiss intercept, (3) movement-dismiss path. With these flags cleared, _drain_combat_queue's empty branch becomes a no-op and can't re-open the dismissed card.")
 	display_game("")
