@@ -1554,16 +1554,28 @@ func update_player_post_bubbles(bubbles: Array):
 	Slice 4 of post-anchored world overhaul."""
 	player_post_bubbles = bubbles
 
-func _bubble_level_at(x: int, y: int) -> int:
-	"""Returns the monster level from the closest covering player post settler
-	bubble, or -1 if no bubble covers (x, y). The bubble's effective tier
-	(already accounting for guard/tower suppression on the server) is mapped
-	to a level via level_for_tier(). Returns -1 to signal 'no bubble' so the
-	caller can fall back to the trading-post anchored level."""
+# v0.9.605 — falloff zone past the bubble's hard radius. Beyond `radius` and
+# within `radius + BUBBLE_FALLOFF_TILES`, the bubble's level lerps toward the
+# post-anchored level via smoothstep. Without this, walking one tile out of a
+# bubble produces a 15-20+ level cliff (player report: "44,-57 area is Lv 18,
+# 45,-57 is Lv 38"). 8 tiles is enough to feel smooth, narrow enough that the
+# bubble's safe zone stays a meaningful pocket.
+const BUBBLE_FALLOFF_TILES: int = 8
+
+func _bubble_influence_at(x: int, y: int) -> Dictionary:
+	"""v0.9.605 — replaces _bubble_level_at. Returns the best bubble's tier-
+	level plus a 0.0-1.0 weight: 1.0 deep inside the radius, smoothstep falloff
+	to 0.0 over BUBBLE_FALLOFF_TILES tiles past the radius. Returns
+	{weight: 0.0} when no bubble has influence at (x, y).
+
+	Result shape: {level: int, weight: float}. Caller uses the weight to lerp
+	between the bubble's level and the post-anchored level so bubble edges
+	don't snap. 'Best' = highest weight, then closer to center as tiebreak."""
 	if player_post_bubbles.is_empty():
-		return -1
-	var nearest_dist = INF
-	var nearest_tier = -1
+		return {"weight": 0.0}
+	var best_weight: float = 0.0
+	var best_level: int = -1
+	var best_dist: float = INF
 	for bubble in player_post_bubbles:
 		var bx = float(bubble.get("x", 0))
 		var by = float(bubble.get("y", 0))
@@ -1571,24 +1583,54 @@ func _bubble_level_at(x: int, y: int) -> int:
 		var dx = float(x) - bx
 		var dy = float(y) - by
 		var d = sqrt(dx * dx + dy * dy)
-		if d <= radius and d < nearest_dist:
-			nearest_dist = d
-			nearest_tier = int(bubble.get("effective_tier", 1))
-	if nearest_tier < 0:
-		return -1
-	return level_for_tier(nearest_tier)
+		var falloff_end: float = radius + float(BUBBLE_FALLOFF_TILES)
+		if d >= falloff_end:
+			continue
+		var weight: float
+		if d <= radius:
+			weight = 1.0
+		else:
+			# In the falloff band — smoothstep from 1.0 (at radius) to 0.0
+			# (at radius + BUBBLE_FALLOFF_TILES).
+			var t: float = 1.0 - (d - radius) / float(BUBBLE_FALLOFF_TILES)
+			weight = t * t * (3.0 - 2.0 * t)
+		# Higher-weight bubble wins; ties go to the closer center.
+		if weight > best_weight or (weight == best_weight and d < best_dist):
+			best_weight = weight
+			best_dist = d
+			best_level = level_for_tier(int(bubble.get("effective_tier", 1)))
+	if best_level < 0 or best_weight <= 0.0:
+		return {"weight": 0.0}
+	return {"level": best_level, "weight": best_weight}
+
+
+# Legacy single-int variant kept for any external callers; new code should use
+# _bubble_influence_at and respect the weight.
+func _bubble_level_at(x: int, y: int) -> int:
+	var info = _bubble_influence_at(x, y)
+	if float(info.get("weight", 0.0)) >= 1.0:
+		return int(info.get("level", -1))
+	return -1
 
 func get_post_anchored_level(x: int, y: int) -> int:
 	"""Post-anchored monster level for (x, y).
 
-	Player post settler bubbles take precedence (Slice 4) — when (x, y) is
-	inside any bubble, the bubble's effective tier sets the level. Otherwise
-	each formal trading post anchors the level at the radial-curve value of
-	its own location, and positions between posts blend linearly between the
-	two nearest anchors (Slice 2). The wilderness radial curve is the floor
-	so apex zones beyond the post network keep their existing difficulty."""
-	var bubble_level = _bubble_level_at(x, y)
-	if bubble_level >= 0:
+	Player post settler bubbles influence the level (Slice 4) — fully inside
+	a bubble, the bubble's effective tier sets the level. Within
+	BUBBLE_FALLOFF_TILES past the bubble's radius (v0.9.605), the bubble
+	level is smoothstep-blended toward the post-anchored level so leaving a
+	safe zone ramps smoothly instead of cliffing. Each formal trading post
+	anchors the level at the radial-curve value of its own location, and
+	positions between posts blend smoothstep between the two nearest anchors
+	(Slice 2 + v0.9.595). The wilderness radial curve is the floor so apex
+	zones beyond the post network keep their existing difficulty."""
+	var bubble_info = _bubble_influence_at(x, y)
+	var bubble_weight: float = float(bubble_info.get("weight", 0.0))
+	var bubble_level: int = int(bubble_info.get("level", -1))
+	# Fully inside any bubble — return the bubble level directly. The
+	# post-anchored math below is skipped only when the bubble fully
+	# dominates (weight 1.0).
+	if bubble_weight >= 1.0 and bubble_level >= 0:
 		return bubble_level
 	var wilderness_level = _distance_to_level(sqrt(float(x * x + y * y)))
 	# Slice 6L — anchor against procedurally-generated NPC posts so the level
@@ -1647,7 +1689,15 @@ func get_post_anchored_level(x: int, y: int) -> int:
 			var t_curved = t * t * (3.0 - 2.0 * t)
 			post_blended = int(round(lerp(float(base_nearest), float(base_second), t_curved)))
 
-	return max(post_blended, wilderness_level)
+	var world_level: int = max(post_blended, wilderness_level)
+	# v0.9.605 — blend in the bubble's level by its falloff weight. Inside a
+	# bubble (weight 1.0) we already returned the bubble level above. Here
+	# we handle the falloff band (0 < weight < 1) — the world level lerps
+	# toward the bubble level as the player nears the bubble center. Result:
+	# no more 15-20+ level cliff at the bubble radius.
+	if bubble_weight > 0.0 and bubble_level >= 0:
+		return int(round(lerp(float(world_level), float(bubble_level), bubble_weight)))
+	return world_level
 
 func _distance_to_level(distance: float) -> int:
 	"""Convert distance from origin to monster level (0-2828 -> 1-10000).
