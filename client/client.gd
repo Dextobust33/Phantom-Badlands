@@ -14602,10 +14602,74 @@ func _get_player_resource_info() -> Dictionary:
 			}
 
 func get_compact_stats_bbcode(item: Dictionary) -> String:
-	"""Compact multi-stat BBCode string for a single item (cards / paper-doll slots)."""
+	"""Compact multi-stat BBCode string for a single item (cards / paper-doll slots).
+
+	v0.9.608 — appends chase-affix tokens (v0.9.599 damage_mult/crit/on-hit
+	+ v0.9.606 ability ranks) so players can see them at a glance on the
+	inventory card without hovering. Player feedback: 'when players are
+	assessing gear in their inventory they often only look at the card
+	summary and don't actually hover or inspect the item.'"""
 	var bonuses = _compute_item_bonuses(item)
 	var rb = item.get("rarity_bonuses", {})
-	return _format_stat_totals_bbcode(bonuses, rb)
+	var base_text: String = _format_stat_totals_bbcode(bonuses, rb)
+	var chase_tokens: Array = _format_chase_affix_tokens(item.get("affixes", {}))
+	if chase_tokens.is_empty():
+		return base_text
+	if base_text == "":
+		return " ".join(chase_tokens)
+	return base_text + " " + " ".join(chase_tokens)
+
+
+func _format_chase_affix_tokens(affixes: Dictionary) -> Array:
+	"""v0.9.608 — short BBCode tokens for chase affixes, matching the
+	'+N STAT' shape used by _format_stat_totals_bbcode. Designed to sit
+	alongside ATK/DEF/HP tokens on the inventory card. Abbreviated names
+	to fit horizontal space. Gold color (#FFD700) for the v0.9.606
+	ability-rank tokens to mark them as chase; v0.9.599 stat chase
+	affixes use their existing thematic colors."""
+	var tokens: Array = []
+	# v0.9.599 chase stats
+	if affixes.has("damage_mult"):
+		tokens.append("[color=#FFAA66]+%d%% DMG[/color]" % int(affixes["damage_mult"]))
+	if affixes.has("crit_chance_bonus"):
+		tokens.append("[color=#FFD700]+%d%% CRIT[/color]" % int(affixes["crit_chance_bonus"]))
+	if affixes.has("crit_damage_bonus"):
+		tokens.append("[color=#FFD700]+%d%% CDMG[/color]" % int(affixes["crit_damage_bonus"]))
+	if affixes.has("extra_turn_chance"):
+		tokens.append("[color=#FF99FF]+%d%% TURN[/color]" % int(affixes["extra_turn_chance"]))
+	if affixes.has("hp_on_kill"):
+		tokens.append("[color=#90EE90]+%d HP/kill[/color]" % int(affixes["hp_on_kill"]))
+	if affixes.has("mana_on_hit"):
+		tokens.append("[color=#9999FF]+%d MP/hit[/color]" % int(affixes["mana_on_hit"]))
+	if affixes.has("stamina_on_hit"):
+		tokens.append("[color=#FFCC00]+%d SP/hit[/color]" % int(affixes["stamina_on_hit"]))
+	if affixes.has("energy_on_hit"):
+		tokens.append("[color=#66FF66]+%d EN/hit[/color]" % int(affixes["energy_on_hit"]))
+	# v0.9.606 specific damage abilities — abbreviated names so the
+	# +X token fits next to ATK/DEF/HP tokens without overflow.
+	const _ABILITY_SHORT := {
+		"cleave": "Clv",
+		"power_strike": "PStrk",
+		"shield_bash": "SBash",
+		"devastate": "Dvst",
+		"magic_bolt": "MBolt",
+		"blast": "Blst",
+		"meteor": "Mtr",
+		"ambush": "Amb",
+		"exploit": "Expl",
+	}
+	for ability_key in _ABILITY_SHORT.keys():
+		var affix_key: String = "ability_rank_%s" % ability_key
+		if affixes.has(affix_key):
+			tokens.append("[color=#FFD700]+%d %s[/color]" % [int(affixes[affix_key]), _ABILITY_SHORT[ability_key]])
+	# Archetype rolls
+	if affixes.has("ability_rank_warrior_dmg"):
+		tokens.append("[color=#FFD700]+%d War[/color]" % int(affixes["ability_rank_warrior_dmg"]))
+	if affixes.has("ability_rank_mage_dmg"):
+		tokens.append("[color=#FFD700]+%d Mag[/color]" % int(affixes["ability_rank_mage_dmg"]))
+	if affixes.has("ability_rank_trickster_dmg"):
+		tokens.append("[color=#FFD700]+%d Trk[/color]" % int(affixes["ability_rank_trickster_dmg"]))
+	return tokens
 
 func get_equipped_totals_bbcode(equipped: Dictionary) -> String:
 	"""Compact multi-stat BBCode string for the sum of all equipped items.
@@ -14963,6 +15027,55 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		if rb_diff != 0:
 			var c = rb_color if rb_diff > 0 else "#808080"
 			all_diffs[rb_label] = "[color=%s]%+d%s[/color]" % [c, rb_diff, rb_label]
+
+	# v0.9.608 — chase affix diffs (v0.9.599 stat affixes + v0.9.606 ability
+	# ranks). Without this, swapping a "+3 Cleave" item for a plain version
+	# showed no diff on the card because chase affixes don't roll into
+	# _compute_item_bonuses. Each chase affix gets its own diff entry.
+	var new_affixes: Dictionary = new_item.get("affixes", {})
+	var old_affixes: Dictionary = {}
+	if old_item != null and old_item is Dictionary:
+		old_affixes = old_item.get("affixes", {})
+	var chase_compare: Array = [
+		["damage_mult", "%DMG", "#FFAA66"],
+		["crit_chance_bonus", "%CRIT", "#FFD700"],
+		["crit_damage_bonus", "%CDMG", "#FFD700"],
+		["extra_turn_chance", "%TURN", "#FF99FF"],
+		["hp_on_kill", "HP/k", "#90EE90"],
+		["mana_on_hit", "MP/h", "#9999FF"],
+		["stamina_on_hit", "SP/h", "#FFCC00"],
+		["energy_on_hit", "EN/h", "#66FF66"],
+	]
+	for ch_info in chase_compare:
+		var ch_key: String = ch_info[0]
+		var ch_label: String = ch_info[1]
+		var ch_color: String = ch_info[2]
+		var ch_diff: int = int(new_affixes.get(ch_key, 0)) - int(old_affixes.get(ch_key, 0))
+		if ch_diff != 0:
+			var c = ch_color if ch_diff > 0 else "#808080"
+			all_diffs[ch_label] = "[color=%s]%+d%s[/color]" % [c, ch_diff, ch_label]
+	# v0.9.606 ability rank diffs
+	var ability_rank_compare: Array = [
+		["ability_rank_cleave", "Clv"],
+		["ability_rank_power_strike", "PStrk"],
+		["ability_rank_shield_bash", "SBash"],
+		["ability_rank_devastate", "Dvst"],
+		["ability_rank_magic_bolt", "MBolt"],
+		["ability_rank_blast", "Blst"],
+		["ability_rank_meteor", "Mtr"],
+		["ability_rank_ambush", "Amb"],
+		["ability_rank_exploit", "Expl"],
+		["ability_rank_warrior_dmg", "War"],
+		["ability_rank_mage_dmg", "Mag"],
+		["ability_rank_trickster_dmg", "Trk"],
+	]
+	for ab_info in ability_rank_compare:
+		var ab_key: String = ab_info[0]
+		var ab_label: String = ab_info[1]
+		var ab_diff: int = int(new_affixes.get(ab_key, 0)) - int(old_affixes.get(ab_key, 0))
+		if ab_diff != 0:
+			var c = "#FFD700" if ab_diff > 0 else "#808080"
+			all_diffs[ab_label] = "[color=%s]%+d %s[/color]" % [c, ab_diff, ab_label]
 
 	# Assemble in priority order: pinned stats first, then remaining
 	var diff_parts: Array = []
@@ -25521,8 +25634,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.608 — Chase affix visibility: cards + combat log.
+	display_game("[color=#00FF00]v0.9.608[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player feedback: 'It's hard to tell if it worked or not... players are assessing gear in their inventory only look at the card summary and don't actually hover.' Two visibility fixes so chase affixes (v0.9.599 stats + v0.9.606 ability ranks) are obvious without hovering, and so the gear bonus is visible firing during combat.[/color]")
+	display_game("  • [b]Inventory card now shows chase affix tokens at a glance[/b]. Compact tokens sit next to the existing ATK/DEF/HP/etc. tokens on every item card. Abbreviations: [color=#FFD700]+3 Clv[/color] / [color=#FFD700]+2 War[/color] / [color=#FFAA66]+15% DMG[/color] / [color=#FFD700]+8% CRIT[/color] / [color=#90EE90]+25 HP/k[/color] / [color=#9999FF]+5 MP/h[/color] etc. Gold (#FFD700) marks the v0.9.606 ability-rank chase rolls; v0.9.599 stat chase affixes keep their thematic colors.")
+	display_game("  • [b]Comparison view extended[/b]. Comparing a new item against your equipped one now diffs the chase affix values too. Swap [color=#888888]Helm of Cleaving (+2)[/color] for [color=#888888]Helm of the Warrior (+1)[/color] and you'll see [color=#FFD700]-2 Clv[/color] [color=#FFD700]+1 War[/color] right on the card.")
+	display_game("  • [b]Combat log shows gear bonus firing[/b]. When a damage ability lands AND gear contributes a +X rank, a gold tag appears in the combat log: [color=#FFD700]✦ Gear: +3 to Cleave (effective rank lifted)[/color]. One line per cast, same channel as the imprint rider messages. Real-time confirmation that the +X gear is actually working.")
+	display_game("")
+
 	# v0.9.607 — Admin UI for +abilities testing.
-	display_game("[color=#00FF00]v0.9.607[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.607[/color]")
 	display_game("  [color=#FFD700]Admin shortcut to test the v0.9.606 +X to ability gear without grinding epic+ drops. /admin → Abilities page now has a single 'Spawn full +abilities test kit (5 items)' button + per-ability buttons for each individual affix.[/color]")
 	display_game("  • [b]Kit button[/b]: spawns 5 items at item level 60, epic rarity, one in each of weapon / ring / amulet / helm / boots so you can equip them all simultaneously and test stacking. Specific Cleave (+3 weapon) + archetype Warrior (+2 helm + +1 boots) means equipped Cleave gets effective +6 (specific 3 + archetype 3).")
 	display_game("  • [b]Per-affix buttons[/b]: 9 specific damage abilities + 3 archetype rolls, each at +3 (or +2 for archetypes). Lets you focus-test one affix at a time.")

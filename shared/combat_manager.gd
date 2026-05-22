@@ -2890,6 +2890,16 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# monster.current_hp captures the ability's actual damage output.
 		var imprint_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
 		_apply_imprint_riders_after_cast(combat, ability_name, imprint_damage_dealt, result)
+		# v0.9.608 — log gear's +X ability rank bonus if present. Tells the
+		# player in real-time that their +Cleave gear is actually working.
+		# Format mirrors imprint riders: small gold tag, fires once per cast.
+		if imprint_damage_dealt > 0:
+			var gear_rank_bonus: int = combat.character.get_ability_rank_bonus(ability_name)
+			if gear_rank_bonus > 0:
+				var ability_label_disp: String = _ability_display_name(combat.character, ability_name)
+				if not result.has("messages"):
+					result["messages"] = []
+				result.messages.append("[color=#FFD700]✦ Gear: +%d to %s (effective rank lifted)[/color]" % [gear_rank_bonus, ability_label_disp])
 		# v0.9.599 — chase-affix on-hit procs ride the same damage value so
 		# ability hits also trigger resource regen. result.messages is the
 		# shared sink; reuse it.
