@@ -2866,11 +2866,75 @@ func get_ability_effect_rank(ability_name: String) -> int:
 
 func get_ability_damage_mult(ability_name: String) -> float:
 	"""Damage multiplier from effect rank (Slice 6b — decoupled from use rank).
-	Rank 0 = 0.80, rank 4 = 1.20."""
-	var rank = get_ability_effect_rank(ability_name)
-	if rank < 0 or rank >= MASTERY_RANK_DAMAGE_MULT.size():
-		return 1.0
-	return float(MASTERY_RANK_DAMAGE_MULT[rank])
+	Rank 0 = 0.80, rank 4 = 1.20, rank 6 = 1.45 (table max).
+
+	v0.9.606 (Phase A of +abilities arc) — gear can contribute additional
+	effective ranks via 'ability_rank_*' affixes. Effective rank beyond the
+	table's last index gains a flat +10% per rank (rank 7 = 1.55, rank 8 =
+	1.65, etc.). This is the uncapped chase mechanic per user direction:
+	'it shouldn't be capped at the abilities normal max rank. This is a way
+	to get additional power past the normal ability cap from just upgrading
+	the rank of the ability.'"""
+	var base_rank: int = get_ability_effect_rank(ability_name)
+	var gear_bonus: int = get_ability_rank_bonus(ability_name)
+	var effective_rank: int = max(0, base_rank + gear_bonus)
+	return _compute_rank_multiplier(effective_rank)
+
+
+static func _compute_rank_multiplier(rank: int) -> float:
+	"""Pure rank → multiplier helper. In-table = direct lookup, above table
+	= +10% per extra rank. Used by get_ability_damage_mult."""
+	if rank < 0:
+		return float(MASTERY_RANK_DAMAGE_MULT[0])
+	if rank < MASTERY_RANK_DAMAGE_MULT.size():
+		return float(MASTERY_RANK_DAMAGE_MULT[rank])
+	var extra: int = rank - (MASTERY_RANK_DAMAGE_MULT.size() - 1)
+	return float(MASTERY_RANK_DAMAGE_MULT[-1]) + float(extra) * 0.10
+
+
+# v0.9.606 Phase A — +X to ability gear. The affix system writes integer
+# bonuses to `affixes.ability_rank_<name>` for specific abilities and
+# `affixes.ability_rank_<archetype>_dmg` for archetype-wide rolls. Gear
+# bonuses sum across all equipped items + apply to mastery rank in
+# get_ability_damage_mult. Only damage-dealing abilities have the
+# multiplier mechanic for now; Phase B will extend to non-damage abilities
+# (buffs / debuffs / utility get their own per-rank scaling).
+const _WARRIOR_DAMAGE_ABILITIES = ["power_strike", "shield_bash", "cleave", "devastate"]
+const _MAGE_DAMAGE_ABILITIES = ["magic_bolt", "blast", "meteor", "banish"]
+const _TRICKSTER_DAMAGE_ABILITIES = ["ambush", "exploit"]
+
+func get_ability_rank_bonus(ability_name: String) -> int:
+	"""v0.9.606 — sum of gear-granted effective rank bonuses for this ability.
+	Reads two affix categories per equipped item, both wear-affected (they
+	scale damage so they should respect item condition):
+	  ability_rank_<ability_name> — specific ability roll (e.g., +2 to Cleave)
+	  ability_rank_<archetype>_dmg — archetype-wide roll (+1 to all warrior
+	      damage abilities), where archetype maps from the ability's damage
+	      list (_WARRIOR_DAMAGE_ABILITIES / _MAGE_DAMAGE_ABILITIES /
+	      _TRICKSTER_DAMAGE_ABILITIES). Non-damage abilities return 0 —
+	      Phase B will extend the system to cover them."""
+	var specific_key: String = "ability_rank_%s" % ability_name
+	var archetype_key: String = ""
+	if ability_name in _WARRIOR_DAMAGE_ABILITIES:
+		archetype_key = "ability_rank_warrior_dmg"
+	elif ability_name in _MAGE_DAMAGE_ABILITIES:
+		archetype_key = "ability_rank_mage_dmg"
+	elif ability_name in _TRICKSTER_DAMAGE_ABILITIES:
+		archetype_key = "ability_rank_trickster_dmg"
+	var total: int = 0
+	for slot in equipped.keys():
+		var item = equipped[slot]
+		if item == null or not item is Dictionary:
+			continue
+		var affixes: Dictionary = item.get("affixes", {})
+		var wear: int = int(item.get("wear", 0))
+		var wear_penalty: float = 1.0 - (float(wear) / 100.0)
+		if affixes.has(specific_key):
+			total += int(float(affixes[specific_key]) * wear_penalty)
+		if archetype_key != "" and affixes.has(archetype_key):
+			total += int(float(affixes[archetype_key]) * wear_penalty)
+	return total
+
 
 # === Audit #1 Slice 4 — Off-affinity counter ===
 
