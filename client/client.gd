@@ -1946,6 +1946,11 @@ func _ready():
 		market_panel.order_cancel_pressed.connect(_on_market_panel_order_cancel_pressed)
 		market_panel.order_create_picker_requested.connect(_on_market_panel_order_create_picker_requested)
 		market_panel.order_create_submit.connect(_on_market_panel_order_create_submit)
+		# v0.9.594 — in-panel picker signals (inventory / material / egg).
+		market_panel.picker_confirm_inventory.connect(_on_market_picker_inventory)
+		market_panel.picker_confirm_material.connect(_on_market_picker_material)
+		market_panel.picker_confirm_egg.connect(_on_market_picker_egg)
+		market_panel.picker_cancelled.connect(_on_market_picker_cancelled)
 
 	# Setup companions panel
 	if companions_panel:
@@ -2684,11 +2689,13 @@ func _process(delta):
 			crafting_panel.visible = _craft_should_show
 
 	# Sync market panel visibility — show for browse, my_listings, inspect, and the
-	# empty/main state. Hide for keyboard sub-states (list flows, qty entry, buy_confirm).
+	# empty/main state. v0.9.594 — also stay visible during in-panel listing
+	# pickers ("list_select" / "list_material" / "list_egg") so the new
+	# clickable picker overlay can render on top of the body.
 	var _market_should_show: bool = false
 	if market_panel:
 		_market_should_show = (market_mode
-			and pending_market_action in ["", "browse", "my_listings", "inspect", "orders", "orders_inspect", "orders_create"]
+			and pending_market_action in ["", "browse", "my_listings", "inspect", "orders", "orders_inspect", "orders_create", "list_select", "list_material", "list_egg"]
 			and game_state == GameState.PLAYING)
 		if market_panel.visible != _market_should_show:
 			market_panel.visible = _market_should_show
@@ -12253,22 +12260,18 @@ func execute_local_action(action: String):
 			market_page = 0
 			send_to_server({"type": "market_browse", "category": market_category, "page": 0, "sort": market_sort})
 		"market_list":
+			# v0.9.594 — action-bar entry to the picker uses the new in-panel
+			# UI flow same as the dropdown menu.
 			pending_market_action = "list_select"
 			market_list_page = 0
-			# Pre-mark held keys
-			for i in range(9):
-				if is_item_select_key_pressed(i):
-					set_meta("marketlistkey_%d_pressed" % i, true)
-			display_market_list_select()
+			if market_panel:
+				market_panel.open_inventory_picker(character_data.get("inventory", []))
 			update_action_bar()
 		"market_list_material":
 			pending_market_action = "list_material"
 			market_mat_page = 0
-			# Pre-mark held keys
-			for i in range(9):
-				if is_item_select_key_pressed(i):
-					set_meta("marketmatkey_%d_pressed" % i, true)
-			display_market_list_materials()
+			if market_panel:
+				market_panel.open_material_picker(character_data.get("crafting_materials", {}))
 			update_action_bar()
 		"market_my_listings":
 			market_my_page = 0
@@ -19804,16 +19807,22 @@ func handle_server_message(message: Dictionary):
 				# Don't refresh during storage mode
 				if storage_mode:
 					pass  # Keep storage display as-is
-				# Refresh market list views after selling, but don't refresh other market modes
+				# Refresh market list views after selling. v0.9.594 — these
+				# states now drive the in-panel picker. Refresh its row cache
+				# from the new inventory/materials/eggs payload instead of the
+				# chat-based display_* functions.
 				if market_mode:
 					if pending_market_action == "list_material":
-						display_market_list_materials()
+						if market_panel and market_panel.is_picker_open():
+							market_panel.open_material_picker(character_data.get("crafting_materials", {}))
 						update_action_bar()
 					elif pending_market_action == "list_select":
-						display_market_list_select()
+						if market_panel and market_panel.is_picker_open():
+							market_panel.open_inventory_picker(character_data.get("inventory", []))
 						update_action_bar()
 					elif pending_market_action == "list_egg":
-						display_market_list_eggs()
+						if market_panel and market_panel.is_picker_open():
+							market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
 						update_action_bar()
 					elif pending_market_action != "":
 						pass  # Don't refresh for other market modes
@@ -25367,8 +25376,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.594 — Market listing picker + bulk-count fix.
+	display_game("[color=#00FF00]v0.9.594[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two market UX fixes in one release. The Sell / Bulk List menu's count badges were wrong (Equipment / Consumables always 0; Materials always greyed out) because of a field-shape mismatch. Then the listing flow has been moved from the chat picker into the market panel — single items, materials, and eggs are now clickable in-panel with an inline quantity stepper.[/color]")
+	display_game("  • [b]Bulk count fix[/b]: equipment items carry [color=#888888]type: \"weapon_iron\"[/color] / [color=#888888]\"armor_chain\"[/color] (suffix variants) not bare [color=#888888]\"equipment\"[/color], so the old string-match never hit. Consumables now match the [color=#888888]is_consumable[/color] flag the server uses. Materials + food live in [color=#888888]crafting_materials[/color] (a separate dict from inventory) and are looked up against [color=#888888]CraftingDatabase.MATERIALS[/color]. Result: every Sell / Bulk List row now reads accurate counts.")
+	display_game("  • [b]In-panel listing picker[/b]: clicking \"List from Inventory\" / \"List Materials\" / \"List Egg from Incubator\" now opens a clickable overlay inside the market panel — scrollable item rows, selection highlight, quantity stepper for stackables, Confirm + Cancel buttons. Replaces the legacy chat-driven flow that used number-key item selection + chat-typed quantities.")
+	display_game("  • [b]Auto-refresh[/b]: after a successful listing the picker stays open and re-renders against the new inventory state, so you can list a second item without leaving the picker. Server contract unchanged ([color=#888888]market_list_item[/color] / [color=#888888]market_list_material[/color] / [color=#888888]market_list_egg[/color]) — only the UI plumbing changed, so existing server-side rules + valor math are exactly the same.")
+	display_game("")
+
 	# v0.9.593 — Persistent FX overlay after Round 1.
-	display_game("[color=#00FF00]v0.9.593[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.593[/color]")
 	display_game("  [color=#FFD700]Combat polish: once Round 1 of a fight ends, the battlefield FX overlay stays up for the rest of the battle instead of fading in and out every round. The transition was too jarring. Hand strip (ability cards), totals strip, and status strip are visible alongside the overlay so you can still see + click cards while the battlefield view persists.[/color]")
 	display_game("  • [b]New persistent-FX flag[/b] in combat_scene_panel. Set true on the first [color=#888888]end_action_phase[/color] of a combat; while true, [color=#888888]start_action_phase[/color] / [color=#888888]end_action_phase[/color] are no-ops on the overlay — the overlay stays as the backdrop and the strips overlay it as the action UI.")
 	display_game("  • [b]_force_end_action_phase()[/b] new method does the full tear-down (overlay fade + party row restore) — called only from combat-end paths (combat_end / acknowledge / death / testfx demos) so victory / defeat / flee still transition cleanly back to the action-bar view.")
@@ -25422,13 +25439,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Fixes the confusing HP bar jump when you out-damage a monster whose HP you didn't fully know yet. Example: hit a Lv4 Hobgoblin for 23 (sees \"25/48\"), then for another 27 — used to show \"12/62\" because the bar quietly inflated the max to your damage+25%. Now shows \"0/48 (still alive!)\" with the bar truly depleted, so the discovery moment reads instead of stealth-resizing.[/color]")
 	display_game("  • [b]Behavior change[/b]: when total damage exceeds the known/estimated HP and the monster is still alive, the displayed max stays put and the bar drains to 0 with a \"still alive!\" tag. The known HP still gets bumped silently on confirmed kill (so future fights start from a more accurate estimate), but no longer balloons mid-fight.")
 	display_game("  • [b]Why it broke[/b]: v0.9.566's upward-observation fix grew the displayed ceiling to [color=#888888]damage_dealt + 25%[/color] when the player out-damaged the estimate. The intent was \"don't pin the bar at 1\", but the side effect was that both halves of the HP label jumped simultaneously — confusing because the bar appeared to refill while you were attacking.")
-	display_game("")
-
-	# v0.9.586 — Chain auto-advance extra_data + starter kit stats.
-	display_game("[color=#00FFFF]v0.9.586[/color]")
-	display_game("  [color=#FFD700]Two bugs from continued playtest: Pathfinder II (mine 2 ore) wasn't progressing, and the Tier 1 starter gear felt too weak to matter. Both fixed.[/color]")
-	display_game("  • [b]Mid-chain quest auto-advance now stores the full extra_data[/b]. When a chain stage was turned in, the next stage was added with an empty `{}` for extra_data — so [color=#888888]quest_type[/color] and [color=#888888]gather_job[/color] were missing. GATHER chain stages silently skipped progress checks (Pathfinder II = mine 2 ore stuck at 0/2). DELIVER chain stages would have hit the same trap. Refactored the extra_data builder out of [color=#888888]accept_quest[/color] into [color=#888888]build_quest_extra_data()[/color] and called it from the auto-advance path too. Added fallback resolution in [color=#888888]check_gathering_progress[/color] and [color=#888888]count_delivery_progress[/color] so existing broken quests on saved characters self-heal on the next tick — your tst3 character's stuck mine quest will start counting kills the next time you mine an ore.")
-	display_game("  • [b]Starter kit gear bumped Lv1 → Lv5[/b]. The Pathfinder reward gear (Rusty Weapon / Leather Armor / Cloth Helm / Cloth Boots / Wood Shield / Copper Ring) was generated at level 1 common, which after the rarity_mult/wear math rounded to +0 or +1 per slot — the helm and boots literally gave 0 defense. Bumped to level 5, common. Base stats now scale to roughly +5-7 attack on the weapon, +5 defense + 7 HP on the armor, +3 defense on the helm/boots, etc. — a noticeable reward instead of a tag of pity.")
 	display_game("")
 
 	# v0.9.585 — ROOT CAUSE of the Pathfinder turn-in bug: npc_ prefix mismatch.
@@ -33521,7 +33531,14 @@ func _populate_market_panel() -> void:
 	if market_panel.has_method("update_bulk_counts"):
 		var inv = character_data.get("inventory", [])
 		var eggs = character_data.get("incubating_eggs", [])
-		market_panel.update_bulk_counts(inv if inv is Array else [], eggs if eggs is Array else [])
+		# v0.9.594 — materials live in crafting_materials, not inventory.
+		# Pass the dict through so material/food bulk counts can be computed.
+		var mats = character_data.get("crafting_materials", {})
+		market_panel.update_bulk_counts(
+			inv if inv is Array else [],
+			eggs if eggs is Array else [],
+			mats if mats is Dictionary else {}
+		)
 
 func _on_market_panel_close() -> void:
 	exit_market()
@@ -33666,25 +33683,25 @@ func _on_market_panel_refresh() -> void:
 func _on_market_panel_list_action(action_id: String) -> void:
 	match action_id:
 		"list_inventory":
+			# v0.9.594 — picker now lives inside the market panel. Keep the
+			# state flag (used by character_update refresh + visibility) but
+			# render through the panel instead of game_output.
 			pending_market_action = "list_select"
 			market_list_page = 0
-			for i in range(9):
-				if is_item_select_key_pressed(i):
-					set_meta("marketlistkey_%d_pressed" % i, true)
-			display_market_list_select()
+			if market_panel:
+				market_panel.open_inventory_picker(character_data.get("inventory", []))
 			update_action_bar()
 		"list_material":
 			pending_market_action = "list_material"
 			market_mat_page = 0
-			for i in range(9):
-				if is_item_select_key_pressed(i):
-					set_meta("marketmatkey_%d_pressed" % i, true)
-			display_market_list_materials()
+			if market_panel:
+				market_panel.open_material_picker(character_data.get("crafting_materials", {}))
 			update_action_bar()
 		"list_egg":
 			pending_market_action = "list_egg"
 			market_egg_page = 0
-			display_market_list_eggs()
+			if market_panel:
+				market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
 			update_action_bar()
 		# v0.9.269: route through preview flow so player gets a confirmation
 		# popup with count + total valor before anything is listed. Also fixes
@@ -33702,6 +33719,35 @@ func _on_market_panel_list_action(action_id: String) -> void:
 			send_to_server({"type": "market_list_preview", "list_type": "materials"})
 		"bulk_food":
 			send_to_server({"type": "market_list_preview", "list_type": "food"})
+
+# === v0.9.594 In-panel listing pickers ===
+# Replaces the legacy chat-driven flows (display_market_list_select /
+# _materials / _eggs + chat-typed quantities). Server contract unchanged:
+# same `market_list_item` / `market_list_material` / `market_list_egg`
+# messages, just sourced from clickable UI rows instead of game_output keys.
+
+func _on_market_picker_inventory(inv_index: int, quantity: int) -> void:
+	if inv_index < 0:
+		return
+	send_to_server({"type": "market_list_item", "index": inv_index, "quantity": quantity})
+
+func _on_market_picker_material(mat_name: String, quantity: int) -> void:
+	if mat_name.is_empty() or quantity <= 0:
+		return
+	send_to_server({"type": "market_list_material", "material_name": mat_name, "quantity": quantity})
+
+func _on_market_picker_egg(egg_index: int) -> void:
+	if egg_index < 0:
+		return
+	send_to_server({"type": "market_list_egg", "index": egg_index})
+
+func _on_market_picker_cancelled() -> void:
+	# User clicked Back/Cancel in the picker — return to market main.
+	pending_market_action = ""
+	if market_panel:
+		market_panel.close_picker()
+	display_market_main()
+	update_action_bar()
 
 # === Companions panel integration ===
 
@@ -36070,6 +36116,9 @@ func exit_market():
 	market_pull_qty_available = 0
 	market_list_flash = ""
 	market_egg_page = 0
+	# v0.9.594 — close in-panel listing picker if it was open.
+	if market_panel and market_panel.is_picker_open():
+		market_panel.close_picker()
 	input_field.release_focus()
 	input_field.placeholder_text = ""
 	set_meta("hotkey_0_pressed", true)
@@ -36764,16 +36813,30 @@ func _handle_market_list_success(message: Dictionary):
 	input_field.placeholder_text = ""
 	input_field.release_focus()
 	market_list_flash = "[color=#00FF00]Listed %s! +%s Valor[/color]" % [item_name, format_number(valor_earned)]
-	# Stay in listing mode so player can list more items
+	# Stay in listing mode so player can list more items. v0.9.594 — when the
+	# in-panel picker is up, refresh its row cache (the chat displays go to a
+	# hidden game_output behind the panel). Set status for the success flash.
+	var picker_open: bool = market_panel and market_panel.is_picker_open()
 	if was_egg:
 		pending_market_action = "list_egg"
-		display_market_list_eggs()
+		if picker_open:
+			market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
+		else:
+			display_market_list_eggs()
 	elif was_material:
 		pending_market_action = "list_material"
-		display_market_list_materials()
+		if picker_open:
+			market_panel.open_material_picker(character_data.get("crafting_materials", {}))
+		else:
+			display_market_list_materials()
 	else:
 		pending_market_action = "list_select"
-		display_market_list_select()
+		if picker_open:
+			market_panel.open_inventory_picker(character_data.get("inventory", []))
+		else:
+			display_market_list_select()
+	if picker_open and market_panel.has_method("set_status"):
+		market_panel.set_status("[color=#00FF00]Listed %s! +%s Valor[/color]" % [item_name, format_number(valor_earned)])
 	update_action_bar()
 
 func _handle_market_buy_success(message: Dictionary):
