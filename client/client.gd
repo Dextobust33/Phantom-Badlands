@@ -25418,8 +25418,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.600 — Combat buffs carry through flock encounters.
+	display_game("[color=#00FF00]v0.9.600[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player feedback: ability buffs (War Cry, Berserk, Iron Skin, Fortify, etc.) should carry through to the next monster in a flock chain instead of getting reset between each mob. Now they do — the buff persists for the entire flock encounter and only clears when combat is truly over.[/color]")
+	display_game("  • [b]Root cause[/b]: [color=#888888]combat_manager.end_combat[/color] was called inside [color=#888888]process_ability_command[/color] / [color=#888888]process_attack[/color] the moment a monster died. That call cleared [color=#888888]character.active_buffs[/color] BEFORE the server got a chance to roll the flock chance and queue the next mob. By the time the second monster spawned, every buff was gone.")
+	display_game("  • [b]Fix[/b]: [color=#888888]end_combat[/color] now takes a [color=#888888]preserve_buffs[/color] flag. Combat manager sets it true whenever the victory result has [color=#888888]flock_chance > 0[/color] OR [color=#888888]summon_next_fight[/color] set (summoner abilities also chain). Server clears the preserved buffs in the non-flock-victory branch (the case where the flock roll FAILS), so non-chain outcomes still cleanse cleanly.")
+	display_game("")
+
 	# v0.9.599 — Rank-up UI clarity + Imprint 3x buff + 6 chase affixes.
-	display_game("[color=#00FF00]v0.9.599[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.599[/color]")
 	display_game("  [color=#FFD700]Three things batched. (1) The rank-up popup's '+-9% Damage' button now reads clearly. (2) Imprints — the third rank-up option from your active companion — are 3x stronger across the board. (3) New chase-tier affixes can roll on epic+ gear: % damage, % crit chance, % crit damage, % extra turn, +HP on kill, +resource on hit. Loot is more interesting now.[/color]")
 	display_game("  • [b]Rank-up popup clarity[/b]: button label now shows the ACTUAL gain (\"+10% Damage\") instead of the malformed \"+-9% Damage\" / \"++0% Damage\" that came from prepending '+' to an already-signed string. Dialog text now shows '80%% → 90%% damage (+10%%)' so you see exactly what's changing instead of comparing absolute % from baseline. The final rank (5→6) gain is +15%, which the old hardcoded '+10%' text also lied about — fixed.")
 	display_game("  • [b]Imprint values 3x'd[/b]: per-stack values bumped across all 10 trait categories so the third rank-up option actually competes with +1 Card and +Damage. bonus_damage / crit / lifesteal / enemy_miss go 2%→6% per stack (max 24% at 4 stacks). stun / charm go 1%→3% per stack. mana_drain / absorb go 2→6 per stack. Bleed and poison switched from flat +1/turn to 5% of the ability's hit damage per stack per turn — they now scale with your power instead of being meaningless at high levels.")
@@ -25500,13 +25507,6 @@ func display_changelog():
 	display_game("  • [b]Instant-craft panel no longer renders stripped[/b]. Enchant / rune / structure / scroll / map / repair / reforge / temper recipes (the ones that bypass the scratch-off) were sending [color=#888888]craft_result[/color] without [color=#888888]score[/color] or [color=#888888]summary[/color], so the Quality Rating panel rendered with empty roll bands and no boost indicator. Now sends a minimal summary with [color=#888888]is_instant_craft: true[/color] so the panel can render a clean version without scratch-off-specific noise.")
 	display_game("  • [b]Flee combat_end now includes character[/b]. Flee-side stamina cost / buff strip / position updates land in the HUD immediately instead of waiting for the next [color=#888888]character_update[/color] tick.")
 	display_game("  • [b]house_update payloads unified via [color=#888888]_send_house_update()[/color] helper[/b]. 13 hand-rolled sites consolidated into one; mastery_records / pending_headstarts / headstart_costs / headstart_max_rank now ship with every house refresh, so a future mastery-touching action can't regress the cache.")
-	display_game("")
-
-	# v0.9.583 — Hotfix: Pathfinder turn-in actually works at the Quest Board now.
-	display_game("[color=#00FFFF]v0.9.583[/color]")
-	display_game("  [color=#FF8888]Hotfix for an incomplete v0.9.582 fix — the Pathfinder turn-in flexibility patched 2 of 3 quest-turn-in code paths but missed the third one (the Quest Board UI handler), which is the path players actually trigger when they bump the Q tile. Direct user report.[/color]")
-	display_game("  • [b]handle_trading_post_quests now has the pathfinder branch[/b]. Bumping the Q tile at ANY starter post (haven/crossroads/south_gate/east_market/west_shrine) now correctly surfaces completed Pathfinder quests in the turn-in list.")
-	display_game("  • [b]My apology[/b]: I should have audited all three quest-turn-in code paths in v0.9.582 instead of two. The pattern in the codebase (separate handlers each with their own can_turn_in logic) made it easy to miss.")
 	display_game("")
 
 	# v0.9.582 — Five player-reported bug fixes from a single playtest session.
