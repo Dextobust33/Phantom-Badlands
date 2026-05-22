@@ -1348,6 +1348,14 @@ var combat_loot_panel = null
 var _combat_loot_victory_payload: Dictionary = {}
 var _combat_loot_revealed_lines: Array = []
 var _combat_loot_gear_drops: Array = []
+# v0.9.604 — when the loot panel closes we clear pending_continue so the
+# player can move without pressing Space. But the existing safety net at
+# line 2797 ("if _victory_card_up and not pending_continue and not in_combat:
+# hide") would then immediately auto-hide the victory card. This flag tells
+# the safety net to KEEP the card visible until the player's first movement
+# input dismisses it. Set true in _on_combat_loot_closed, cleared the moment
+# any movement key is detected.
+var _post_loot_victory_persists: bool = false
 
 const NumpadHelpPanelScript = preload("res://client/numpad_help_panel.gd")
 
@@ -2794,7 +2802,12 @@ func _process(delta):
 		# without dismissing the card, hide it now so it doesn't outlive its
 		# purpose.
 		var _victory_card_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active()
-		if _victory_card_up and not pending_continue and not _now_in_combat:
+		# v0.9.604 — `_post_loot_victory_persists` keeps the card up after the
+		# loot panel closes (when pending_continue was auto-cleared per
+		# v0.9.602) until the player's first movement input dismisses it.
+		# Without this gate, the safety net hides the card on the very next
+		# frame after _on_combat_loot_closed clears pending_continue.
+		if _victory_card_up and not pending_continue and not _now_in_combat and not _post_loot_victory_persists:
 			combat_scene_panel.hide_victory_card()
 			_victory_card_up = false
 		# Death interlude is active — keep the scene visible while the
@@ -3983,6 +3996,12 @@ func _process(delta):
 					if pending_party_bump != "":
 						pending_party_bump = ""
 						update_action_bar()
+					# v0.9.604 — first movement after a loot reveal dismisses
+					# the persisted victory card. Clearing the flag here lets
+					# the safety net fire on the next frame, which calls
+					# hide_victory_card cleanly. Movement proceeds normally.
+					if _post_loot_victory_persists:
+						_post_loot_victory_persists = false
 					send_move(move_dir)
 					# Don't clear trading post UI - server will notify if we leave.
 					# In build mode, redraw the active build prompt so the menu
@@ -8941,6 +8960,15 @@ func trigger_action(index: int):
 	# Single gate at the top covers every action_type — only the loot panel's
 	# own input handler should reach the player during the cascade.
 	if _combat_loot_reveal_active():
+		return
+	# v0.9.604 — same blanket gate for the gathering/crafting scratch-off
+	# panel. Player report: "I pressed Q when mining and it opened my
+	# inventory in the background." The scratch_off panel's own _input()
+	# consumes the QWERTY key for slot selection, but the action bar's
+	# _process polling sees the key pressed and fires whatever slot 1 (Q)
+	# is bound to — typically inventory. Gating trigger_action stops the
+	# leak.
+	if scratch_off_panel != null and scratch_off_panel.visible:
 		return
 
 	match action.action_type:
@@ -21210,6 +21238,10 @@ func _process_combat_start(message: Dictionary):
 	# v0.9.601 — combat scene now shows HP + resource bars; the bottom-of-
 	# screen resource_bars_overlay is redundant during a fight. Hide it.
 	update_resource_bars_overlay()
+	# v0.9.604 — clear the post-loot victory-card persistence flag if a new
+	# fight starts before the player moved. Otherwise the safety net would
+	# keep treating the card as "should stay" even though combat resumed.
+	_post_loot_victory_persists = false
 	# v0.9.593 — clear any persistent-FX state from a previous combat so the
 	# new fight's Round 1 fires the normal fade-in transition.
 	if combat_scene_panel and combat_scene_panel.has_method("reset_for_new_combat"):
@@ -25428,8 +25460,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.604 — Victory card persistence + gating action bar during scratchoff.
+	display_game("[color=#00FF00]v0.9.604[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two follow-up fixes. The v0.9.603 victory card was being auto-hidden by a safety net the moment pending_continue cleared. And the QWERTY gather/craft keys were also leaking through to the action bar (e.g. pressing Q to scratch a mining tile would ALSO open the inventory in the background).[/color]")
+	display_game("  • [b]Victory card now stays visible after the loot panel closes[/b]. New flag [color=#888888]_post_loot_victory_persists[/color] tells the [color=#888888]_process[/color] safety net (line ~2802) to NOT auto-hide the card just because pending_continue is false. Card stays up until the player's first movement input dismisses it. Cleared automatically if a new combat starts before the player moved (no stale state).")
+	display_game("  • [b]Action bar gated during gathering / crafting scratchoff[/b]. Player report: '[i]I pressed Q when mining and it opened my inventory in the background.[/i]' Same blanket gate the combat-loot reveal got in v0.9.602: [color=#888888]trigger_action[/color] returns early if [color=#888888]scratch_off_panel.visible[/color] is true. The QWERTY key still hits the scratch_off panel's own input handler — it just doesn't fall through to whatever slot 1 (Q) was bound to in the overworld action bar.")
+	display_game("")
+
 	# v0.9.603 — Scratchoff polish round 2: key labels everywhere + scrap cascade + victory card fix.
-	display_game("[color=#00FF00]v0.9.603[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.603[/color]")
 	display_game("  [color=#FFD700]Follow-up to v0.9.602. Four fixes from the next round of playtest feedback: combat-loot tiles now show their key letter instead of '?', the cascade reveal of missed tiles is scrapped entirely, the victory card actually appears after the loot panel closes, and the QWERTY scheme now works in gathering / crafting scratchoffs (with key letters on each tile).[/color]")
 	display_game("  • [b]Loot tiles show the key letter[/b]. Sealed tiles used to render a generic '?'. Now each tile displays the QWERTY key bound to it — [color=#D4C376]1[/color] / [color=#D4C376]Q[/color] / [color=#D4C376]A[/color] / [color=#D4C376]Z[/color] in the leftmost column, etc. Press the key on the tile and that tile reveals.")
 	display_game("  • [b]Missed-tile cascade scrapped[/b]. Player feedback: '[i]It doesn't stay on the screen long enough for players to really read any of it and it's not exactly helpful because they can't go back and change their options.[/i]' Removed the 60ms-per-card animation and the trailing 0.6s hold. The panel now closes immediately when you press Done (or auto-Done fires after the last reveal). Accumulated loot is on the victory card behind.")
@@ -25549,13 +25588,6 @@ func display_changelog():
 	display_game("  • [b]house_update payloads unified via [color=#888888]_send_house_update()[/color] helper[/b]. 13 hand-rolled sites consolidated into one; mastery_records / pending_headstarts / headstart_costs / headstart_max_rank now ship with every house refresh, so a future mastery-touching action can't regress the cache.")
 	display_game("")
 
-	# v0.9.580 — Two bug fixes from user playtest report.
-	display_game("[color=#00FFFF]v0.9.580[/color]")
-	display_game("  [color=#FFD700]Bug fix pair from player report. Both small but visible.[/color]")
-	display_game("  • [b]Quest turn-in hint now names the destination[/b]. The active-quest list used to say [color=#808080](Turn in elsewhere)[/color] when the player wasn't at the right post — leaving them to guess WHERE to go. Now it reads [color=#888888](Turn in at Haven)[/color] / [color=#888888](Turn in at Crossroads)[/color] etc. Fixes the Pathfinder's Trial confusion where the chain is Haven-issued but players were at Crossroads.")
-	display_game("  • [b]Trading post entry now surfaces threat status[/b]. The map shows an amber [color=#FFAA00]![/color] for Under-Threat posts, but walking onto the post tile previously gave no on-screen explanation. Now the entry banner reads [color=#FFAA00]⚠ Under Threat — <Dungeon Name> (T<n>) looms <N> tiles <direction>.[/color] for normal threat, escalating to [color=#FF2020]⚠⚠ SEVERELY THREATENED[/color] when 2+ T2+ dungeons share the corridor. Also names the consequences (higher markups, ⚠ THREAT BOUNTY quests) + the cure (clear the dungeon).")
-	display_game("  • [b]Server changes[/b]: trading_post_start payload now includes under_threat + threat_dungeon_name + threat_tier + threat_distance + threat_direction + threat_severe + threat_count. Computation reuses _compute_post_threat_state which is already cached per-tick + per-3s — no perf cost.")
-	display_game("")
 
 
 
@@ -28623,15 +28655,21 @@ func _on_combat_loot_done_pressed() -> void:
 	send_to_server({"type": "combat_loot_done"})
 
 func _on_combat_loot_closed() -> void:
-	"""Combat loot panel finished its close animation. v0.9.602:
+	"""Combat loot panel finished its close animation. v0.9.602/v0.9.604:
 	  (1) Refresh the victory card ONCE with the accumulated loot lines.
 	      Per-reveal redraw was removed from _combat_loot_accumulate_reveal
 	      because the background flicker was visually jarring.
 	  (2) Auto-clear pending_continue so the player can move again without
 	      having to press Space — the loot reveal IS the acknowledgement.
-	      The Continue action stays available on the action bar but is no
-	      longer a blocker."""
+	  (3) v0.9.604 — set _post_loot_victory_persists so the safety net at
+	      line ~2802 doesn't immediately auto-hide the card on the next
+	      frame (it would otherwise, because pending_continue is now false
+	      and combat is over). The card stays up until the player's first
+	      movement input dismisses it."""
 	# (1) Final atomic redraw of the victory card with the full loot list.
+	#     This also forces panel.visible = true and extends linger — see
+	#     _combat_loot_refresh_victory_card.
+	_post_loot_victory_persists = true
 	_combat_loot_refresh_victory_card()
 	# (2) Drop the movement gate. _on_combat_loot_closed only fires after a
 	# legitimate cascade-finish (server-acknowledged), so this can't be
