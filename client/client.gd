@@ -14497,6 +14497,17 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 				lines.append("")
 				lines.append("[color=#00FF88]Slot empty — equipping is a strict upgrade[/color]")
 
+	# v0.9.606 — Chase affix lines (damage_mult, crit_chance_bonus, on-hit,
+	# on-kill, ability_rank, etc.). These don't slot into the regular stat
+	# bonus list because they have their own combat hooks. Show each as a
+	# separate gold-tinted line so the chase nature reads visually.
+	var chase_lines: Array = _format_chase_affix_lines(item.get("affixes", {}))
+	if not chase_lines.is_empty():
+		lines.append("")
+		lines.append("[color=#FFD700]Special:[/color]")
+		for line_text in chase_lines:
+			lines.append("  " + line_text)
+
 	# Crafter / enchanter
 	var crafted_by: String = str(item.get("crafted_by", ""))
 	var enchanted_by: String = str(item.get("enchanted_by", ""))
@@ -14508,6 +14519,56 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 			lines.append("[color=#888]Enchanted by[/color] [color=#A335EE]%s[/color]" % enchanted_by)
 
 	return "\n".join(lines)
+
+
+func _format_chase_affix_lines(affixes: Dictionary) -> Array:
+	"""v0.9.606 — turn chase-tier affixes into tooltip-ready BBCode lines.
+	Covers both the v0.9.599 chase stat affixes (damage_mult, crit_chance_bonus,
+	etc.) and the v0.9.606 +X to ability affixes. Each entry: 'key in affixes'
+	→ formatted display string. Unknown keys are ignored (so back-compat with
+	old items doesn't surface garbage)."""
+	var out: Array = []
+	# v0.9.599 chase stat affixes
+	if affixes.has("damage_mult"):
+		out.append("[color=#FFAA66]+%d%% Damage[/color]" % int(affixes["damage_mult"]))
+	if affixes.has("crit_chance_bonus"):
+		out.append("[color=#FFD700]+%d%% Crit Chance[/color]" % int(affixes["crit_chance_bonus"]))
+	if affixes.has("crit_damage_bonus"):
+		out.append("[color=#FFD700]+%d%% Crit Damage[/color]" % int(affixes["crit_damage_bonus"]))
+	if affixes.has("extra_turn_chance"):
+		out.append("[color=#FF99FF]+%d%% Extra Turn[/color]" % int(affixes["extra_turn_chance"]))
+	if affixes.has("hp_on_kill"):
+		out.append("[color=#90EE90]+%d HP on Kill[/color]" % int(affixes["hp_on_kill"]))
+	if affixes.has("mana_on_hit"):
+		out.append("[color=#9999FF]+%d Mana on Hit[/color]" % int(affixes["mana_on_hit"]))
+	if affixes.has("stamina_on_hit"):
+		out.append("[color=#FFCC00]+%d Stamina on Hit[/color]" % int(affixes["stamina_on_hit"]))
+	if affixes.has("energy_on_hit"):
+		out.append("[color=#66FF66]+%d Energy on Hit[/color]" % int(affixes["energy_on_hit"]))
+	# v0.9.606 Phase A — +X to specific damage abilities
+	const _ABILITY_DISPLAY := {
+		"cleave": "Cleave",
+		"power_strike": "Power Strike",
+		"shield_bash": "Shield Bash",
+		"devastate": "Devastate",
+		"magic_bolt": "Magic Bolt",
+		"blast": "Blast",
+		"meteor": "Meteor",
+		"ambush": "Ambush",
+		"exploit": "Exploit",
+	}
+	for ability_key in _ABILITY_DISPLAY.keys():
+		var affix_key: String = "ability_rank_%s" % ability_key
+		if affixes.has(affix_key):
+			out.append("[color=#FFD700]+%d to %s[/color]" % [int(affixes[affix_key]), _ABILITY_DISPLAY[ability_key]])
+	# Archetype-wide rolls
+	if affixes.has("ability_rank_warrior_dmg"):
+		out.append("[color=#FFD700]+%d to Warrior damage abilities[/color]" % int(affixes["ability_rank_warrior_dmg"]))
+	if affixes.has("ability_rank_mage_dmg"):
+		out.append("[color=#FFD700]+%d to Mage damage abilities[/color]" % int(affixes["ability_rank_mage_dmg"]))
+	if affixes.has("ability_rank_trickster_dmg"):
+		out.append("[color=#FFD700]+%d to Trickster damage abilities[/color]" % int(affixes["ability_rank_trickster_dmg"]))
+	return out
 
 func _get_player_resource_info() -> Dictionary:
 	"""Returns class-resource metadata used to filter and scale resource/regen stat displays.
@@ -25460,8 +25521,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.606 — Phase A of +abilities arc: gear can roll +X to damage abilities.
+	display_game("[color=#00FF00]v0.9.606[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Round 1 of the multi-release gear-abilities arc. Damage abilities can now be powered up via gear that rolls '+X to <ability>' or '+X to <archetype> damage abilities'. Each +1 lifts the ability's effective mastery rank, and unlike normal mastery progression, gear-granted ranks are NOT capped at the table max — every rank past 6 adds +10% damage indefinitely. This is the chase-power direction.[/color]")
+	display_game("  • [b]New chase affixes[/b] in CHASE_SUFFIX_POOL: [color=#FFD700]of Cleaving[/color] / [color=#FFD700]Striking[/color] / [color=#FFD700]Bashing[/color] / [color=#FFD700]Crushing[/color] (Power Strike / Shield Bash / Devastate) / [color=#FFD700]Bolting[/color] / [color=#FFD700]Blast[/color] / [color=#FFD700]Comet[/color] / [color=#FFD700]Stalking[/color] / [color=#FFD700]Plunder[/color] for specific damage abilities, plus [color=#FFD700]of the Warrior[/color] / [color=#FFD700]of the Mage[/color] / [color=#FFD700]of the Trickster[/color] for archetype-wide rolls. Specific rolls +1 to +3 by item level; archetype rolls slightly weaker (+1 to +2) since they boost multiple abilities at once.")
+	display_game("  • [b]Stacking[/b]: gear bonuses sum across all equipped slots. A Warrior with [color=#888888]Helm of Cleaving (+2)[/color] + [color=#888888]Boots of the Warrior (+1)[/color] gets effective +3 to Cleave (specific +2 + archetype +1) AND +1 to Power Strike / Shield Bash / Devastate (archetype only). At rank 0 base, +3 effective rank = 1.10× damage (rank 3 from the table). At rank 6 base + same gear = effective rank 9 = 1.75× damage (table max 1.45× + 3 × 10% past-cap bonus).")
+	display_game("  • [b]Tooltip section[/b]: hovering an item with any chase affix (v0.9.599 stats + new v0.9.606 ability ranks) now shows a [color=#FFD700]Special:[/color] section listing each chase roll with a friendly label.")
+	display_game("  • [b]Roadmap[/b]: Phase B (next release) fixes the rank-up popup's '+X% Damage' option being meaningless on non-damage abilities (War Cry, Iron Skin, Vanish, etc.). Each ability type gets an appropriate rank-up effect (buffs → magnitude/duration, debuffs → chance/duration, utility → ability-specific). Phase C extends the +X gear arc to cover non-damage abilities once Phase B's per-ability scaling lands.")
+	display_game("")
+
 	# v0.9.605 — Bubble edge smoothing.
-	display_game("[color=#00FF00]v0.9.605[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.605[/color]")
 	display_game("  [color=#FFD700]Player report: '[i]at 44,-57 area is Lv ~18, moving one east to 45,-57 area is Lv ~38[/i]'. A 20-level cliff in one tile. Root cause: v0.9.595's smoothstep blend fixed post-to-post midpoints, but player-post settler bubbles still had a hard edge at their radius — inside used [color=#888888]level_for_tier(tier)[/color] (discrete), outside fell through to the smooth post-anchored blend, and the boundary snapped.[/color]")
 	display_game("  • [b]Bubble falloff[/b]: [color=#888888]_bubble_level_at[/color] replaced by [color=#888888]_bubble_influence_at[/color] returning [color=#888888]{level, weight}[/color]. Weight is 1.0 deep inside the radius, smoothstep-falloff to 0.0 over [color=#FFD700]BUBBLE_FALLOFF_TILES = 8[/color] tiles past the radius. [color=#888888]get_post_anchored_level[/color] lerps the world level toward the bubble level by that weight when the player is in the falloff band.")
 	display_game("  • [b]Effect[/b]: a 20-level cliff at the bubble edge becomes a 20-level ramp over 8 tiles (~2.5 levels per step). Safe-zone pockets still feel like safe zones — the inner radius is unchanged. Apex zones outside the post network are unchanged. Existing legacy [color=#888888]_bubble_level_at[/color] kept as a thin wrapper that returns the discrete level only when weight is 1.0 (covers any external callers that ignored the falloff).")

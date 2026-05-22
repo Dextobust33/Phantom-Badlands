@@ -4400,6 +4400,26 @@ const CHASE_SUFFIX_POOL = [
 	{"name": "of Refresh", "stat": "mana_on_hit", "base": 1, "per_level": 0.10},
 	{"name": "of Replenishment", "stat": "stamina_on_hit", "base": 1, "per_level": 0.10},
 	{"name": "of Energizing", "stat": "energy_on_hit", "base": 1, "per_level": 0.10},
+	# v0.9.606 Phase A — +X to specific damage abilities (D2-style +skills).
+	# `base 1, per_level 0.02` produces +1 at item level 1, +2 around level 50,
+	# +3 around level 100. Stacks across slots additively, no per-item cap.
+	# Specific ability rolls — picked by the player who recognizes the name.
+	{"name": "of Cleaving", "stat": "ability_rank_cleave", "base": 1, "per_level": 0.02},
+	{"name": "of Striking", "stat": "ability_rank_power_strike", "base": 1, "per_level": 0.02},
+	{"name": "of Bashing", "stat": "ability_rank_shield_bash", "base": 1, "per_level": 0.02},
+	{"name": "of Crushing", "stat": "ability_rank_devastate", "base": 1, "per_level": 0.02},
+	{"name": "of Bolting", "stat": "ability_rank_magic_bolt", "base": 1, "per_level": 0.02},
+	{"name": "of the Blast", "stat": "ability_rank_blast", "base": 1, "per_level": 0.02},
+	{"name": "of the Comet", "stat": "ability_rank_meteor", "base": 1, "per_level": 0.02},
+	{"name": "of Stalking", "stat": "ability_rank_ambush", "base": 1, "per_level": 0.02},
+	{"name": "of Plunder", "stat": "ability_rank_exploit", "base": 1, "per_level": 0.02},
+	# Archetype-wide rolls — affects every damage ability in that archetype.
+	# Slightly weaker per-stack (base 1, per_level 0.015 ≈ +1 to +2 range)
+	# since it covers multiple abilities. A Warrior with "of the Warrior +1"
+	# gets +1 to Power Strike, Cleave, Devastate, AND Shield Bash all at once.
+	{"name": "of the Warrior", "stat": "ability_rank_warrior_dmg", "base": 1, "per_level": 0.015},
+	{"name": "of the Mage", "stat": "ability_rank_mage_dmg", "base": 1, "per_level": 0.015},
+	{"name": "of the Trickster", "stat": "ability_rank_trickster_dmg", "base": 1, "per_level": 0.015},
 ]
 # % chance that an epic+ bonus-stat roll picks from CHASE_SUFFIX_POOL instead
 # of the regular combined pool. ~25% on epic, scaling to ~50% on artifact so
@@ -4455,6 +4475,20 @@ const RUNE_AFFIX_CAPS = {
 	"mana_on_hit": {"minor": 3, "greater": 7, "supreme": 12},
 	"stamina_on_hit": {"minor": 3, "greater": 7, "supreme": 12},
 	"energy_on_hit": {"minor": 3, "greater": 7, "supreme": 12},
+	# v0.9.606 Phase A — +X to damage abilities. Small integer caps; the
+	# real chase is stacking across multiple slots, not maxing one slot.
+	"ability_rank_cleave": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_power_strike": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_shield_bash": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_devastate": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_magic_bolt": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_blast": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_meteor": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_ambush": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_exploit": {"minor": 1, "greater": 2, "supreme": 3},
+	"ability_rank_warrior_dmg": {"minor": 1, "greater": 2, "supreme": 2},
+	"ability_rank_mage_dmg": {"minor": 1, "greater": 2, "supreme": 2},
+	"ability_rank_trickster_dmg": {"minor": 1, "greater": 2, "supreme": 2},
 }
 
 func _get_affixes_for_stat(stat: String, is_prefix: bool) -> Array:
