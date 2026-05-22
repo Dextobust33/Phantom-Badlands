@@ -1639,55 +1639,39 @@ func get_post_anchored_level(x: int, y: int) -> int:
 	if chunk_manager == null or chunk_manager.npc_posts.is_empty():
 		return wilderness_level
 
-	var nearest_dist = INF
-	var nearest_post_origin_dist = 0.0
-	var second_dist = INF
-	var second_post_origin_dist = 0.0
+	# v0.9.614 — inverse-distance² weighted blend across ALL nearby NPC posts.
+	# Replaces the v0.9.567/v0.9.595 nearest+second-nearest pair selection,
+	# which had a residual "second-nearest-swap" cliff: when the player
+	# crossed a region where the second-nearest post identity flipped to a
+	# new post with a very different anchor level, the blend target jumped
+	# by `|new_second - old_second| * blend_weight`. Player report:
+	# "(44,-57) is Lv ~18, moving one east to (45,-57) is Lv ~38."
+	#
+	# IDW formula: level = Σ(w_i × anchor_i) / Σ(w_i) where w_i = 1/(d² + ε).
+	# - Far posts contribute negligible weight (1/100² ≈ 0.0001 vs 1/10² = 0.01,
+	#   so a post 10× closer has 100× the influence). Nearest post still
+	#   dominates its own pocket.
+	# - As you move, EVERY post's weight shifts smoothly. No identity-swap
+	#   discontinuity because no post enters/leaves the calculation set.
+	# - ε = 1.0 prevents singularity at exact post coordinates (a player
+	#   standing on a post gets that post's anchor level, not infinity).
+	var idw_total_weight: float = 0.0
+	var idw_weighted_sum: float = 0.0
 	for post in chunk_manager.npc_posts:
-		var cx = int(post.get("x", 0))
-		var cy = int(post.get("y", 0))
-		var dx = float(x - cx)
-		var dy = float(y - cy)
-		var d = sqrt(dx * dx + dy * dy)
-		if d < nearest_dist:
-			second_dist = nearest_dist
-			second_post_origin_dist = nearest_post_origin_dist
-			nearest_dist = d
-			nearest_post_origin_dist = sqrt(float(cx * cx + cy * cy))
-		elif d < second_dist:
-			second_dist = d
-			second_post_origin_dist = sqrt(float(cx * cx + cy * cy))
+		var cx: float = float(post.get("x", 0))
+		var cy: float = float(post.get("y", 0))
+		var dx: float = float(x) - cx
+		var dy: float = float(y) - cy
+		var d2: float = dx * dx + dy * dy
+		var weight: float = 1.0 / (d2 + 1.0)
+		var origin_dist: float = sqrt(cx * cx + cy * cy)
+		var anchor_level: float = float(_distance_to_level(origin_dist))
+		idw_total_weight += weight
+		idw_weighted_sum += weight * anchor_level
 
-	if nearest_dist == INF:
-		return wilderness_level
-
-	var base_nearest = _distance_to_level(nearest_post_origin_dist)
-	var post_blended: int
-	if second_dist == INF:
-		post_blended = base_nearest
-	else:
-		var base_second = _distance_to_level(second_post_origin_dist)
-		var total = nearest_dist + second_dist
-		if total < 0.001:
-			post_blended = base_nearest
-		else:
-			# v0.9.595 — smoothstep blend (3t² - 2t³). Was quadratic (t²) in
-			# v0.9.567. The quadratic curve produced a discontinuity at the
-			# midpoint between two posts: just before the swap (nearest=A) it
-			# blends 0.75·A + 0.25·B; just after the swap (nearest=B) it blends
-			# 0.75·B + 0.25·A — a |0.5·(B-A)| level cliff. With anchor gaps of
-			# 14-30 levels between adjacent posts that produced visible 7-15
-			# level jumps in one tile (user-reported "lvl 16 → 25 in one space").
-			#
-			# Smoothstep evaluates to exactly 0.5 at t=0.5, so the two halves of
-			# the swap produce the same blend (mathematical continuity at the
-			# midpoint). The "anchor pocket" intent is preserved — smoothstep
-			# is flat near both endpoints (derivative 0 at t=0 and t=1), so
-			# each post's level still dominates its own half. Wilderness floor
-			# still applies below.
-			var t = nearest_dist / total
-			var t_curved = t * t * (3.0 - 2.0 * t)
-			post_blended = int(round(lerp(float(base_nearest), float(base_second), t_curved)))
+	var post_blended: int = wilderness_level
+	if idw_total_weight > 0.0:
+		post_blended = int(round(idw_weighted_sum / idw_total_weight))
 
 	var world_level: int = max(post_blended, wilderness_level)
 	# v0.9.605 — blend in the bubble's level by its falloff weight. Inside a
