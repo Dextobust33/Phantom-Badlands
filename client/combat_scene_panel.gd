@@ -621,8 +621,16 @@ func end_action_phase() -> void:
 			_hand_strip.visible = true
 		if _status_strip and is_instance_valid(_status_strip):
 			_status_strip.visible = true
-		# Review FX button is unnecessary while the overlay is always on.
-		if _review_button and is_instance_valid(_review_button):
+		# Review FX button is unnecessary while the overlay is always on
+		# (between rounds in persistent-FX mode). v0.9.621 — exception:
+		# during the victory interlude the button is exactly how the player
+		# accesses Review FX, so leave it alone. v0.9.619 made
+		# _update_review_button_visibility show the button during victory;
+		# but end_action_phase fires AFTER show_victory_card (queue-drain
+		# order), and was overwriting that to false. Player report:
+		# "Review Damage pops up for a second on the Victory screen in the
+		# top right but disappears before the player can click it."
+		if _review_button and is_instance_valid(_review_button) and not _victory_interlude_active:
 			_review_button.visible = false
 		return
 	# Already persistent — _action_phase_active was a transient round flag,
