@@ -248,6 +248,12 @@ var _combat_discard_count: int = 0
 # null in non-lufia layouts.
 var _lufia_player_hp_bar: ProgressBar
 var _lufia_player_hp_text: Label
+# v0.9.601 — resource bar (mana/stamina/energy) for the pre-FX Lufia player
+# box. Mirrors the FX overlay so resource is visible in both combat views;
+# pairs with the v0.9.601 removal of the bottom resource_bars_overlay
+# during combat (info was redundant once the combat scene shows it).
+var _lufia_player_resource_bar: ProgressBar = null
+var _lufia_player_resource_text: Label = null
 var _lufia_player_deck_label: Label
 # v0.9.405 — refs to the stats VBox inside each Lufia stat box so the
 # action-phase transition can fade ONLY the stats (HP bars, deck info,
@@ -657,10 +663,20 @@ var _overlay_player_hp_bar: ProgressBar = null
 # v0.9.569 — _overlay_player_resource_bar removed. Placeholder was assigned
 # null and the consumer block (animate_overlay_state) was unreachable.
 var _overlay_player_name: Label = null
+# v0.9.601 — extras to mirror pre-FX info into the FX overlay: HP cur/max
+# text, resource bar (mana/stamina/energy), deck/hand/discard counts.
+var _overlay_player_hp_text: Label = null
+var _overlay_player_resource_bar: ProgressBar = null
+var _overlay_player_resource_text: Label = null
+var _overlay_player_deck_label: Label = null
 var _overlay_companion_block: Control = null
 var _overlay_companion_ascii: RichTextLabel = null
 var _overlay_companion_hp_bar: ProgressBar = null
 var _overlay_companion_name: Label = null
+# v0.9.601 — companion HP text + XP bar/text to match the pre-FX box.
+var _overlay_companion_hp_text: Label = null
+var _overlay_companion_xp_bar: ProgressBar = null
+var _overlay_companion_xp_text: Label = null
 var _battlefield_overlay_rest_y: float = 0.0
 var _overlay_player_block_baseline: Vector2 = Vector2.ZERO
 var _overlay_companion_block_baseline: Vector2 = Vector2.ZERO
@@ -922,10 +938,13 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	positioned (no parent layout) so it can be lunged via position tweens.
 	v0.9.412 — block bumped 220×160 → 320×280 so the ASCII art (often
 	75+ lines tall at the bumped font_size) fits without vertical clipping.
-	Hidden UI strips during action phase free the space to make this fit."""
+	v0.9.601 — ASCII anchor shrunk 0-0.78 → 0-0.62 to free room for the
+	new info row beneath (HP text, resource/XP bar, deck label). All info
+	widgets live in a VBoxContainer anchored at the bottom of the block —
+	cleaner than 7 individually-anchored rows."""
 	var block := Control.new()
 	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	block.custom_minimum_size = Vector2(320, 280)
+	block.custom_minimum_size = Vector2(320, 300)
 
 	# ASCII label fills the top portion of the block.
 	var ascii := RichTextLabel.new()
@@ -937,25 +956,107 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	ascii.anchor_left = 0.0
 	ascii.anchor_top = 0.0
 	ascii.anchor_right = 1.0
-	ascii.anchor_bottom = 0.78
+	ascii.anchor_bottom = 0.60
 	if _mono_font:
 		ascii.add_theme_font_override("normal_font", _mono_font)
 		ascii.add_theme_font_override("bold_font", _mono_font)
 		ascii.add_theme_font_override("mono_font", _mono_font)
 	block.add_child(ascii)
 
-	# HP bar — fixed width, just under the ASCII.
-	# v0.9.415 — resource bar reverted; HP bar back to 0.80-0.86 for both
-	# blocks (no overlap with ASCII at anchor 0.0-0.78).
-	var hp_bar := _make_hp_bar(Color("#FF4444"))
-	hp_bar.anchor_left = 0.12
-	hp_bar.anchor_right = 0.88
-	hp_bar.anchor_top = 0.80
-	hp_bar.anchor_bottom = 0.86
-	hp_bar.custom_minimum_size = Vector2(0, 8)
-	block.add_child(hp_bar)
+	# v0.9.601 — info VBox at the bottom 40% of the block. HP bar+text,
+	# resource/XP bar+text, deck label (player only), name. Anchored as a
+	# group so changes to row order or sizing don't require re-tuning
+	# individual percentages.
+	var info_vbox := VBoxContainer.new()
+	info_vbox.anchor_left = 0.05
+	info_vbox.anchor_right = 0.95
+	info_vbox.anchor_top = 0.62
+	info_vbox.anchor_bottom = 1.0
+	info_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_vbox.alignment = BoxContainer.ALIGNMENT_BEGIN
+	info_vbox.add_theme_constant_override("separation", 2)
+	block.add_child(info_vbox)
 
-	# Name label — under the bar.
+	# HP bar
+	var hp_bar := _make_hp_bar(Color("#FF4444"))
+	hp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hp_bar.custom_minimum_size = Vector2(0, 10)
+	info_vbox.add_child(hp_bar)
+
+	# HP cur/max text (small, centered).
+	var hp_text := Label.new()
+	hp_text.add_theme_font_size_override("font_size", 11)
+	hp_text.add_theme_color_override("font_color", Color(0.95, 0.95, 0.95))
+	hp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	hp_text.add_theme_constant_override("outline_size", 2)
+	hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hp_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_vbox.add_child(hp_text)
+
+	if is_player:
+		# Player resource bar (mana/stamina/energy depending on class).
+		var res_bar := _make_hp_bar(Color("#3DD9FF"))
+		res_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		res_bar.custom_minimum_size = Vector2(0, 8)
+		info_vbox.add_child(res_bar)
+
+		var res_text := Label.new()
+		res_text.add_theme_font_size_override("font_size", 10)
+		res_text.add_theme_color_override("font_color", Color(0.8, 0.92, 0.98))
+		res_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		res_text.add_theme_constant_override("outline_size", 2)
+		res_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		res_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		res_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info_vbox.add_child(res_text)
+
+		# Deck info — "Deck N · Hand M · Discard K"
+		var deck_lbl := Label.new()
+		deck_lbl.add_theme_font_size_override("font_size", 10)
+		deck_lbl.add_theme_color_override("font_color", Color(0.82, 0.78, 0.55))
+		deck_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		deck_lbl.add_theme_constant_override("outline_size", 2)
+		deck_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		deck_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		deck_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info_vbox.add_child(deck_lbl)
+
+		_overlay_player_resource_bar = res_bar
+		_overlay_player_resource_text = res_text
+		_overlay_player_deck_label = deck_lbl
+	else:
+		# Companion XP bar + text (mirrors pre-FX Lufia box).
+		var xp_bar := ProgressBar.new()
+		xp_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		xp_bar.custom_minimum_size = Vector2(0, 8)
+		xp_bar.show_percentage = false
+		var xp_bg := StyleBoxFlat.new()
+		xp_bg.bg_color = Color(0.1, 0.1, 0.12)
+		xp_bg.border_color = Color(0.25, 0.22, 0.18)
+		xp_bg.set_border_width_all(1)
+		xp_bg.set_corner_radius_all(2)
+		xp_bar.add_theme_stylebox_override("background", xp_bg)
+		var xp_fill := StyleBoxFlat.new()
+		xp_fill.bg_color = Color("#3DD9FF")
+		xp_fill.set_corner_radius_all(2)
+		xp_bar.add_theme_stylebox_override("fill", xp_fill)
+		info_vbox.add_child(xp_bar)
+
+		var xp_text := Label.new()
+		xp_text.add_theme_font_size_override("font_size", 10)
+		xp_text.add_theme_color_override("font_color", Color(0.7, 0.85, 0.95))
+		xp_text.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+		xp_text.add_theme_constant_override("outline_size", 2)
+		xp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		xp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		xp_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info_vbox.add_child(xp_text)
+
+		_overlay_companion_xp_bar = xp_bar
+		_overlay_companion_xp_text = xp_text
+
+	# Name label sits at the bottom of the VBox.
 	var name_lbl := Label.new()
 	name_lbl.add_theme_font_size_override("font_size", 11)
 	name_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
@@ -963,19 +1064,18 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	name_lbl.add_theme_constant_override("outline_size", 2)
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	name_lbl.anchor_left = 0.0
-	name_lbl.anchor_right = 1.0
-	name_lbl.anchor_top = 0.90
-	name_lbl.anchor_bottom = 1.0
-	block.add_child(name_lbl)
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_vbox.add_child(name_lbl)
 
 	if is_player:
 		_overlay_player_ascii = ascii
 		_overlay_player_hp_bar = hp_bar
+		_overlay_player_hp_text = hp_text
 		_overlay_player_name = name_lbl
 	else:
 		_overlay_companion_ascii = ascii
 		_overlay_companion_hp_bar = hp_bar
+		_overlay_companion_hp_text = hp_text
 		_overlay_companion_name = name_lbl
 	return block
 
@@ -1109,9 +1209,24 @@ func _populate_battlefield_overlay() -> void:
 	if _overlay_player_hp_bar and is_instance_valid(_overlay_player_hp_bar):
 		_overlay_player_hp_bar.max_value = maxi(1, _player_max_hp)
 		_animate_bar_value(_overlay_player_hp_bar, clampi(_player_hp, 0, _player_max_hp))
-	# v0.9.415 / v0.9.569 — resource bar block removed; placeholder var was
-	# always null so the consumer was unreachable. If a resource bar comes
-	# back, re-introduce it in _build_compact_player_block and wire here.
+	if _overlay_player_hp_text and is_instance_valid(_overlay_player_hp_text):
+		_overlay_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
+	# v0.9.601 — resource bar restored (was removed in v0.9.569 because the
+	# placeholder was unreachable). Mirrors the data the pre-FX Lufia box
+	# now shows and the bottom resource_bars_overlay used to show outside
+	# combat. Color reflects class resource type via _player_resource_color.
+	if _overlay_player_resource_bar and is_instance_valid(_overlay_player_resource_bar):
+		_overlay_player_resource_bar.max_value = maxi(1, _player_resource_max)
+		_animate_bar_value(_overlay_player_resource_bar, clampi(_player_resource_cur, 0, _player_resource_max))
+		var res_fill: StyleBox = _overlay_player_resource_bar.get_theme_stylebox("fill")
+		if res_fill is StyleBoxFlat:
+			(res_fill as StyleBoxFlat).bg_color = _player_resource_color
+	if _overlay_player_resource_text and is_instance_valid(_overlay_player_resource_text):
+		_overlay_player_resource_text.text = "%d / %d" % [maxi(0, _player_resource_cur), _player_resource_max]
+	# Deck info — driven by the same source as the pre-FX deck label.
+	if _overlay_player_deck_label and is_instance_valid(_overlay_player_deck_label):
+		var hand_size_for_overlay: int = _combat_hand.size() if _combat_hand is Array else 0
+		_overlay_player_deck_label.text = "Deck %d · Hand %d · Discard %d" % [_combat_deck_count, hand_size_for_overlay, _combat_discard_count]
 	if _overlay_player_name and is_instance_valid(_overlay_player_name):
 		_overlay_player_name.text = _player_name
 
@@ -1121,15 +1236,27 @@ func _populate_battlefield_overlay() -> void:
 			_overlay_companion_ascii.text = _bump_inline_font_size(_companion_art.text, 1)
 		else:
 			_overlay_companion_ascii.text = ""
+	# v0.9.601 — compute companion stats once, used by HP bar/text + XP bar/text.
+	var c_level: int = int(_companion_data.get("level", 1))
+	var c_sub_tier: int = int(_companion_data.get("sub_tier", _companion_data.get("tier", 1)))
+	var c_bonuses: Dictionary = _companion_data.get("bonuses", {})
+	var c_hp_bonus: int = int(c_bonuses.get("hp_bonus", 0))
+	var c_max_hp: int = maxi(1, 30 + c_level * 5 + c_sub_tier * 10 + c_hp_bonus)
+	var c_cur_hp: int = int(_companion_data.get("combat_hp", c_max_hp))
 	if _overlay_companion_hp_bar and is_instance_valid(_overlay_companion_hp_bar):
-		var c_level := int(_companion_data.get("level", 1))
-		var c_sub_tier := int(_companion_data.get("sub_tier", _companion_data.get("tier", 1)))
-		var c_bonuses: Dictionary = _companion_data.get("bonuses", {})
-		var c_hp_bonus := int(c_bonuses.get("hp_bonus", 0))
-		var c_max_hp := maxi(1, 30 + c_level * 5 + c_sub_tier * 10 + c_hp_bonus)
-		var c_cur_hp := int(_companion_data.get("combat_hp", c_max_hp))
 		_overlay_companion_hp_bar.max_value = c_max_hp
 		_animate_bar_value(_overlay_companion_hp_bar, clampi(c_cur_hp, 0, c_max_hp))
+	if _overlay_companion_hp_text and is_instance_valid(_overlay_companion_hp_text):
+		_overlay_companion_hp_text.text = "HP %d / %d" % [maxi(0, c_cur_hp), c_max_hp]
+	# v0.9.601 — XP bar mirrors pre-FX companion XP row. XP formula matches
+	# character.gd's companion_xp_for_next: pow(level+1, 2.0) * 15.
+	if _overlay_companion_xp_bar and is_instance_valid(_overlay_companion_xp_bar):
+		var c_xp_cur: int = int(_companion_data.get("xp", 0))
+		var c_xp_needed: int = int(round(pow(float(c_level + 1), 2.0) * 15.0))
+		_overlay_companion_xp_bar.max_value = maxi(1, c_xp_needed)
+		_animate_bar_value(_overlay_companion_xp_bar, clampi(c_xp_cur, 0, c_xp_needed))
+		if _overlay_companion_xp_text and is_instance_valid(_overlay_companion_xp_text):
+			_overlay_companion_xp_text.text = "Lv %d · %d / %d" % [c_level, c_xp_cur, c_xp_needed]
 	if _overlay_companion_name and is_instance_valid(_overlay_companion_name):
 		var overlay_name := str(_companion_data.get("name", "Companion"))
 		# v0.9.508 — append aggro role tag (Label, no BBCode, plain text).
@@ -1394,6 +1521,26 @@ func _build_lufia_player_box_content() -> HBoxContainer:
 	_lufia_player_hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_lufia_player_hp_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hp_row.add_child(_lufia_player_hp_text)
+
+	# v0.9.601 — resource (mana / stamina / energy) row, same pattern as HP.
+	# Mirrors the new FX overlay row so resource is visible during combat
+	# (pairs with the v0.9.601 hide of the bottom resource_bars_overlay
+	# during combat — the info was redundant once the combat scene shows it).
+	var res_row := HBoxContainer.new()
+	res_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	res_row.add_theme_constant_override("separation", 6)
+	res_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stats.add_child(res_row)
+	_lufia_player_resource_bar = _make_hp_bar(Color("#3DD9FF"))
+	_lufia_player_resource_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_lufia_player_resource_bar.custom_minimum_size = Vector2(COMPACT_BAR_W, 8)
+	res_row.add_child(_lufia_player_resource_bar)
+	_lufia_player_resource_text = Label.new()
+	_lufia_player_resource_text.add_theme_font_size_override("font_size", 11)
+	_lufia_player_resource_text.add_theme_color_override("font_color", Color(0.85, 0.92, 0.98))
+	_lufia_player_resource_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_lufia_player_resource_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	res_row.add_child(_lufia_player_resource_text)
 
 	# Deck info: "Deck N · Hand M · Discard K"
 	_lufia_player_deck_label = Label.new()
@@ -1986,7 +2133,12 @@ func _build_running_totals_strip() -> Control:
 	at a glance. Player feedback: previous totals were easy to miss in
 	the bottom of the scene above the cards."""
 	var frame := PanelContainer.new()
-	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# v0.9.601 — SIZE_SHRINK_CENTER (was SIZE_EXPAND_FILL): shrinks the frame
+	# to fit the three short totals labels + centers horizontally. Old setting
+	# stretched the frame across the entire screen width so the yellow-gold
+	# border ran across the player/companion ASCII columns even though the
+	# actual "You: N  Foe: N" content only needs ~250-400 px.
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_totals_strip_frame = frame  # v0.9.425 — keep a handle so action-phase can hide the border
 
@@ -2002,7 +2154,10 @@ func _build_running_totals_strip() -> Control:
 	frame.add_theme_stylebox_override("panel", sb)
 
 	_totals_strip = HBoxContainer.new()
-	_totals_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Shrink the inner HBox to its content too — combined with the centered
+	# frame above, the strip reads as a tight bordered chip rather than a
+	# full-width banner.
+	_totals_strip.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_totals_strip.alignment = BoxContainer.ALIGNMENT_CENTER
 	_totals_strip.add_theme_constant_override("separation", 36)
 	_totals_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2397,6 +2552,10 @@ func _refresh_hand() -> void:
 	if _lufia_player_deck_label and is_instance_valid(_lufia_player_deck_label):
 		var hand_size := _combat_hand.size()
 		_lufia_player_deck_label.text = "Deck %d · Hand %d · Discard %d" % [_combat_deck_count, hand_size, _combat_discard_count]
+	# v0.9.601 — mirror to the FX overlay deck label too.
+	if _overlay_player_deck_label and is_instance_valid(_overlay_player_deck_label):
+		var hand_size_overlay := _combat_hand.size()
+		_overlay_player_deck_label.text = "Deck %d · Hand %d · Discard %d" % [_combat_deck_count, hand_size_overlay, _combat_discard_count]
 
 
 func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
@@ -3265,6 +3424,37 @@ func _refresh_player_hp() -> void:
 		_animate_bar_value(_lufia_player_hp_bar, clampi(_player_hp, 0, _player_max_hp))
 	if _lufia_player_hp_text and is_instance_valid(_lufia_player_hp_text):
 		_lufia_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
+	# v0.9.601 — mirror to FX overlay HP widgets when overlay exists.
+	if _overlay_player_hp_bar and is_instance_valid(_overlay_player_hp_bar):
+		_overlay_player_hp_bar.max_value = _player_max_hp
+		_animate_bar_value(_overlay_player_hp_bar, clampi(_player_hp, 0, _player_max_hp))
+	if _overlay_player_hp_text and is_instance_valid(_overlay_player_hp_text):
+		_overlay_player_hp_text.text = "HP %d / %d" % [maxi(0, _player_hp), _player_max_hp]
+	# Resource bar — mirror to pre-FX Lufia + FX overlay using current cached
+	# values. Color reflects class resource type.
+	_refresh_player_resource()
+
+
+func _refresh_player_resource() -> void:
+	"""v0.9.601 — paint the new player resource bars (pre-FX Lufia + FX overlay)
+	from _player_resource_cur/max/color. Called from _refresh_player_hp and
+	from refresh() so resource updates land with every payload."""
+	if _lufia_player_resource_bar and is_instance_valid(_lufia_player_resource_bar):
+		_lufia_player_resource_bar.max_value = maxi(1, _player_resource_max)
+		_animate_bar_value(_lufia_player_resource_bar, clampi(_player_resource_cur, 0, _player_resource_max))
+		var lufia_fill: StyleBox = _lufia_player_resource_bar.get_theme_stylebox("fill")
+		if lufia_fill is StyleBoxFlat:
+			(lufia_fill as StyleBoxFlat).bg_color = _player_resource_color
+	if _lufia_player_resource_text and is_instance_valid(_lufia_player_resource_text):
+		_lufia_player_resource_text.text = "%d / %d" % [maxi(0, _player_resource_cur), _player_resource_max]
+	if _overlay_player_resource_bar and is_instance_valid(_overlay_player_resource_bar):
+		_overlay_player_resource_bar.max_value = maxi(1, _player_resource_max)
+		_animate_bar_value(_overlay_player_resource_bar, clampi(_player_resource_cur, 0, _player_resource_max))
+		var ov_fill: StyleBox = _overlay_player_resource_bar.get_theme_stylebox("fill")
+		if ov_fill is StyleBoxFlat:
+			(ov_fill as StyleBoxFlat).bg_color = _player_resource_color
+	if _overlay_player_resource_text and is_instance_valid(_overlay_player_resource_text):
+		_overlay_player_resource_text.text = "%d / %d" % [maxi(0, _player_resource_cur), _player_resource_max]
 
 
 # v0.9.501 — Combat readability: tween HP/companion/monster bar drain over
