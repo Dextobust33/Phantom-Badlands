@@ -8934,6 +8934,15 @@ func trigger_action(index: int):
 	if not action.enabled:
 		return
 
+	# v0.9.602 — blanket gate: while the loot scratch-off is still revealing,
+	# NO action bar input should fire. Previous v0.9.596 fix only gated the
+	# "flock" action_type, but in dungeons slot 0 is bound to "inventory"
+	# (action_type "local"), so Space was opening the inventory mid-reveal.
+	# Single gate at the top covers every action_type — only the loot panel's
+	# own input handler should reach the player during the cascade.
+	if _combat_loot_reveal_active():
+		return
+
 	match action.action_type:
 		"combat":
 			# Check for variable cost ability (cost = 0 means variable)
@@ -8946,13 +8955,8 @@ func trigger_action(index: int):
 		"server":
 			send_to_server({"type": action.action_data})
 		"flock":
-			# v0.9.596 — gate the Continue/flock advance while the loot scratch-
-			# off is still revealing. Without this, Space (slot 0 hotkey) skips
-			# the loot panel straight to the victory continue path, bypassing the
-			# minigame. The reveal sets `_cascade_active` once Done is pressed,
-			# but until then the player should not be able to advance.
-			if _combat_loot_reveal_active():
-				return
+			# v0.9.596/v0.9.602 — the loot-reveal gate is enforced at the top
+			# of this function now; no per-action_type check needed.
 			continue_flock_encounter()
 
 func send_combat_command(command: String):
@@ -25424,8 +25428,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.602 — Combat-loot polish: 5 bugs + QWERTY scratchoff nav + PICKED marker.
+	display_game("[color=#00FF00]v0.9.602[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Seven combat-loot / dungeon fixes batched. Victory screen flicker, Space-to-move requirement, dungeon healing tiles not updating HP, Space-opens-inventory bug, focus-color-trail bug, QWERTY-grid keyboard scheme, and PICKED marker on player-revealed loot.[/color]")
+	display_game("  • [b]Victory screen no longer flickers during loot reveal[/b]. Was redrawing the victory card behind the scratch-off on every reveal. Now redraws ONCE atomically when the cascade finishes — the entire loot list appears in one frame instead of growing line-by-line behind a flashing background.")
+	display_game("  • [b]Move freely after loot reveal[/b]. The [color=#888888]_on_combat_loot_closed[/color] handler now clears [color=#888888]pending_continue[/color] so the player can walk away from the victory screen without having to press Space. The cascade IS the acknowledgement.")
+	display_game("  • [b]Dungeon HP/resource/buff tiles now update the client[/b]. [color=#888888]server.gd::handle_dungeon_move[/color] was missing the [color=#888888]send_character_update[/color] call that the overworld move has. Result: Wyvern Down (and ~9 other healing tiles) silently restored HP server-side, but the client display stayed stale until the next combat. Same gap also affected damage tiles, resource regen, poison ticks, and pending_* status metas (sacred ground / war banner / spectral veil / etc.) — the blanket fix covers all tile types.")
+	display_game("  • [b]Space no longer opens inventory in dungeon during loot reveal[/b]. v0.9.596 added a loot-reveal gate to the [color=#888888]flock[/color] action_type only; in dungeons slot 0 binds to [color=#888888]Items[/color] (action_type [color=#888888]local[/color]) so Space still leaked through. The gate is now at the top of [color=#888888]trigger_action[/color] — blocks every action_type while the loot panel is up.")
+	display_game("  • [b]Focus-color trail bug[/b]. Arrow-navigating across the loot grid used to leave the yellow focus border on every card you passed through. [color=#888888]_apply_focus_visuals[/color] reset the border WIDTH but not the COLOR. Now re-renders the natural stylebox for non-focused cards (sealed purple / rarity color / dim missed) and overlays focus only on the current target.")
+	display_game("  • [b]QWERTY-grid loot selection[/b]: each of the 16 loot tiles is now bound to a single key in a positional layout. [color=#FFD700]1 2 3 4[/color] / [color=#FFD700]Q W E R[/color] / [color=#FFD700]A S D F[/color] / [color=#FFD700]Z X C V[/color] — top to bottom, left to right. Press the key and that tile reveals immediately. Arrow keys + Enter still work as fallback. Gathering scratch-off keeps arrow nav this release (jittered slot positions need an on-card key overlay — follow-up).")
+	display_game("  • [b]PICKED marker[/b]: player-revealed loot tiles now get a gold ★ prefix and thicker border. Cascade auto-reveals (the ones the player didn't pick) stay dimmed with the existing [i]missed[/i] tag. Picked vs missed is unambiguous at a glance now.")
+	display_game("")
+
 	# v0.9.601 — Combat UI: totals border, FX overlay info parity, no more redundant resource bar.
-	display_game("[color=#00FF00]v0.9.601[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.601[/color]")
 	display_game("  [color=#FFD700]Three combat-UI fixes batched. Yellow totals border was running across the entire screen instead of just hugging the 'You / Foe' text. The FX overlay was missing info the pre-FX combat scene had (HP cur/max, resource bar, deck info, companion XP). The bottom-of-screen HP/Stamina bar overlapped the new combat-scene info as redundant clutter during fights.[/color]")
 	display_game("  • [b]Totals border[/b]: switched the running-totals PanelContainer's [color=#888888]size_flags_horizontal[/color] from [color=#888888]SIZE_EXPAND_FILL[/color] to [color=#888888]SIZE_SHRINK_CENTER[/color]. The frame now shrinks to fit 'You: N  Foe: N' and centers in the parent column — no more border slicing through the player/companion ASCII art.")
 	display_game("  • [b]FX overlay info parity[/b]: ASCII space dropped from 78% → 60% of each character block, and a VBoxContainer with the extras now anchors the bottom 40%: HP cur/max text, resource bar + text (player) / XP bar + text (companion), deck info ([color=#888888]Deck N · Hand M · Discard K[/color]), name. Resource bar color reflects class type (mana / stamina / energy).")
@@ -25522,16 +25538,6 @@ func display_changelog():
 	display_game("  • [b]Instant-craft panel no longer renders stripped[/b]. Enchant / rune / structure / scroll / map / repair / reforge / temper recipes (the ones that bypass the scratch-off) were sending [color=#888888]craft_result[/color] without [color=#888888]score[/color] or [color=#888888]summary[/color], so the Quality Rating panel rendered with empty roll bands and no boost indicator. Now sends a minimal summary with [color=#888888]is_instant_craft: true[/color] so the panel can render a clean version without scratch-off-specific noise.")
 	display_game("  • [b]Flee combat_end now includes character[/b]. Flee-side stamina cost / buff strip / position updates land in the HUD immediately instead of waiting for the next [color=#888888]character_update[/color] tick.")
 	display_game("  • [b]house_update payloads unified via [color=#888888]_send_house_update()[/color] helper[/b]. 13 hand-rolled sites consolidated into one; mastery_records / pending_headstarts / headstart_costs / headstart_max_rank now ship with every house refresh, so a future mastery-touching action can't regress the cache.")
-	display_game("")
-
-	# v0.9.582 — Five player-reported bug fixes from a single playtest session.
-	display_game("[color=#00FFFF]v0.9.582[/color]")
-	display_game("  [color=#FFD700]Five bugs fixed from a player-feedback report. Starter chain is unblocked, abandons are safer, the quest log scrolls right, and threatened-post info no longer vanishes.[/color]")
-	display_game("  • [b]Pathfinder's Trial turn-in flexibility[/b]. The starter chain was anchored to Haven (0,10) but players spawn at Crossroads (0,0) — leaving the quest un-turn-in-able. Pathfinder quests now accept turn-in at ANY of the 5 starter posts (haven/crossroads/south_gate/east_market/west_shrine). Both server (handle_quest_turn_in + quests_to_turn_in query) and client (turn-in hint reads 'Turn in at any starter post') updated.")
-	display_game("  • [b]2-step abandon confirm[/b]. Pressing a quest's number key in the quest log no longer instantly abandons it. First press marks 'Press %d again within 3 seconds to confirm'; second press of the SAME key confirms. Any other input cancels. Pathfinder chain quests can't be abandoned at all (it's the new-player tutorial).")
-	display_game("  • [b]Quest log scrolls to top on open[/b]. Previously the RichTextLabel auto-scrolled to the bottom — showing the Chain Atlas first and hiding active quests. Now `_scroll_game_output_to_top()` runs after render so active quests are visible immediately.")
-	display_game("  • [b]Threatened post tutorial_hint[/b]. The v0.9.580 entry banner could scroll past in game_output; now a strong unmissable modal fires the FIRST time a character enters a threatened post (gated by new `seen_threatened_post_hint` field). Explains the amber `!`, the +20%% market markup, the +50%% service prices, and points to the THREAT BOUNTY quest on the post's quest board.")
-	display_game("  • [b]Client/server contracts updated[/b]: `chain_id` field surfaced in quest payloads so the client can identify Pathfinder quests for the flexible-turn-in hint.")
 	display_game("")
 
 	# v0.9.581 — Gathering/craft scratch-off ✦ +2 Scratches bonus cell.
@@ -28618,10 +28624,24 @@ func _on_combat_loot_done_pressed() -> void:
 	send_to_server({"type": "combat_loot_done"})
 
 func _on_combat_loot_closed() -> void:
-	"""Combat loot panel finished its close animation. No-op for now — the
-	regular victory-card continue flow handles advancing past the victory
-	scene."""
-	pass
+	"""Combat loot panel finished its close animation. v0.9.602:
+	  (1) Refresh the victory card ONCE with the accumulated loot lines.
+	      Per-reveal redraw was removed from _combat_loot_accumulate_reveal
+	      because the background flicker was visually jarring.
+	  (2) Auto-clear pending_continue so the player can move again without
+	      having to press Space — the loot reveal IS the acknowledgement.
+	      The Continue action stays available on the action bar but is no
+	      longer a blocker."""
+	# (1) Final atomic redraw of the victory card with the full loot list.
+	_combat_loot_refresh_victory_card()
+	# (2) Drop the movement gate. _on_combat_loot_closed only fires after a
+	# legitimate cascade-finish (server-acknowledged), so this can't be
+	# tripped by a misclick.
+	if pending_continue:
+		pending_continue = false
+		# Refresh action bar so the Continue button updates to whatever the
+		# next state surface is (overworld move / dungeon move).
+		update_action_bar()
 
 func _on_combat_loot_autoskip_toggled(enabled: bool) -> void:
 	"""Player toggled the Autoskip checkbox in the loot reveal panel. Persist
@@ -28714,9 +28734,12 @@ func _combat_loot_accumulate_reveal(reveal: Dictionary) -> void:
 		_:
 			line = "[color=%s]%s[/color]" % [color, name]
 	_combat_loot_revealed_lines.append(line)
-	# Re-render the victory card so the loot list grows in real time. Cheap —
-	# show_victory_card just rebuilds the inner vboxes.
-	_combat_loot_refresh_victory_card()
+	# v0.9.602 — DO NOT redraw the victory card on every reveal. Player
+	# feedback: the per-reveal redraw is jarring (background recomposites with
+	# each click during the scratch-off). Instead, we accumulate the loot
+	# lines silently and refresh the victory card ONCE in
+	# _on_combat_loot_closed when the cascade finishes. The whole loot list
+	# appears atomically when the panel closes.
 
 func _combat_loot_refresh_victory_card() -> void:
 	if _combat_loot_victory_payload.is_empty():

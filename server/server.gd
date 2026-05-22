@@ -27347,6 +27347,16 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	# Send updated dungeon state FIRST (clears game_output), then event texts AFTER
 	_send_dungeon_state(peer_id)
 
+	# v0.9.602 — character_update so HP heal/damage tiles, mana/stamina/energy
+	# regen, poison ticks, and pending_* status metas land on the client. The
+	# overworld move handler (handle_move) already sends this; dungeon move
+	# was missing it, leaving the player's stats stale until the next combat
+	# or character_update from another source. Player report: "HP doesn't
+	# seem to be updating after stepping on the wyvern down special tiles."
+	# Affected ~9 healing tile types + all damage tiles + all status metas —
+	# the blanket fix covers every tile effect at once.
+	send_character_update(peer_id)
+
 	# Send event texts AFTER dungeon state so they appear below the dungeon status
 	for event_text in dungeon_event_texts:
 		send_to_peer(peer_id, {"type": "text", "message": event_text})
