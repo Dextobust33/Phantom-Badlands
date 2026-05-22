@@ -16859,6 +16859,13 @@ func _get_ability_tooltip(ability_name: String) -> String:
 # across multiple rank-ups in a session to keep the UI consistent and avoid leaks.
 var _rank_choice_popup: AcceptDialog = null
 var _rank_choice_pending_ability: String = ""
+# v0.9.597 — track our custom buttons by reference. Godot 4's AcceptDialog
+# parents `add_button` results inside an internal HBox, NOT as direct children
+# of the dialog. The previous clear-loop `for child in popup.get_children()`
+# walked direct children and never saw the buttons — so each new rank-up
+# popup appended NEW buttons on top of the OLD set. Player saw two full
+# 3-button sets (one per active companion across the swap).
+var _rank_choice_custom_buttons: Array = []
 
 func _ability_display_name(ability_name: String) -> String:
 	"""v0.9.592 — return the player-facing display name for an internal ability id.
@@ -16889,12 +16896,18 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 		_rank_choice_popup.get_ok_button().visible = false
 		add_child(_rank_choice_popup)
 		_rank_choice_popup.custom_action.connect(_on_rank_choice_picked)
-	# Clear any prior custom buttons
-	for child in _rank_choice_popup.get_children():
-		if child is Button and child.get_parent() == _rank_choice_popup and child != _rank_choice_popup.get_ok_button():
-			# Avoid removing structural children — only buttons we added previously
-			if child.has_meta("rank_choice_button"):
-				child.queue_free()
+	# v0.9.597 — clear any prior custom buttons. Track-by-array (not via
+	# popup.get_children()) because AcceptDialog parents add_button results
+	# inside an internal HBox node, not the dialog itself. Old loop walked
+	# direct children and never saw the buttons → they accumulated forever.
+	for btn in _rank_choice_custom_buttons:
+		if is_instance_valid(btn):
+			# `remove_button` detaches the button from the dialog's internal
+			# layout; `free()` then deletes it synchronously so the new
+			# `add_button` calls below don't render alongside the corpses.
+			_rank_choice_popup.remove_button(btn)
+			btn.free()
+	_rank_choice_custom_buttons.clear()
 	var ability_label = _ability_display_name(ability_name)
 	# v0.9.567 — extended to R6 (Legend, Mythic). v0.9.568 — rank labels via const.
 	var rank_label = MASTERY_RANK_NAMES[new_rank] if new_rank >= 0 and new_rank < MASTERY_RANK_NAMES.size() else "Mythic"
@@ -16921,14 +16934,18 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 		"  • +1 Card: add a copy to your combat deck (currently %d).\n" +
 		"  • +10%% Damage: scale damage to %s (effect rank %d → %d).%s"
 	) % [ability_label, current_copy_count, dmg_str, current_effect_rank, next_effect_rank, variant_line]
-	# Add the action buttons
+	# Add the action buttons. v0.9.597 — record each in _rank_choice_custom_buttons
+	# so the next popup can detach + free them via remove_button.
 	var btn_copy = _rank_choice_popup.add_button("+1 Card", true, "copy")
 	btn_copy.set_meta("rank_choice_button", true)
+	_rank_choice_custom_buttons.append(btn_copy)
 	var btn_effect = _rank_choice_popup.add_button("+%s Damage" % dmg_str, true, "effect")
 	btn_effect.set_meta("rank_choice_button", true)
+	_rank_choice_custom_buttons.append(btn_effect)
 	if has_variant:
 		var btn_variant = _rank_choice_popup.add_button("✦ %s" % String(variant_offer.get("trait_name", "Imprint")), true, "variant")
 		btn_variant.set_meta("rank_choice_button", true)
+		_rank_choice_custom_buttons.append(btn_variant)
 	_rank_choice_popup.popup_centered(Vector2(540 if has_variant else 440, 260 if has_variant else 220))
 
 func _on_rank_choice_picked(action: String) -> void:
@@ -25383,8 +25400,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.597 — Rank-up duplicates + dungeon spillover cone.
+	display_game("[color=#00FF00]v0.9.597[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two player-reported issues. (1) Ability rank-up popup showing duplicate option sets when a different ability had been ranked earlier in the session. (2) Dungeon spillover encounters affecting too large an area — should be a narrow cone from the dungeon toward its threatened post, not a wide circle.[/color]")
+	display_game("  • [b]Rank-up popup duplicate buttons[/b]. AcceptDialog parents the buttons added via [color=#888888]add_button(...)[/color] inside an internal HBox, NOT as direct children of the dialog. The old clear-loop [color=#888888]for child in popup.get_children()[/color] walked direct children only and never saw the buttons, so each new rank-up popup appended NEW buttons on top of the OLD set without removing them. Player saw 6 buttons (two full sets of +1 Card / +Damage / Imprint, one with the old companion's trait and one with the current companion's). Fix: track our custom buttons in a client-owned array and call [color=#888888]remove_button[/color] + [color=#888888]free[/color] synchronously before adding the new set.")
+	display_game("  • [b]Dungeon spillover cone[/b]. The threat corridor in [color=#888888]server.gd::_get_threat_zone_dungeon_at[/color] used to be a 80-tile circle centered on each active T2+ dungeon — too wide; players walking 70 tiles to the side of the dungeon still got hit with spillover encounters. Replaced with a per-dungeon CONE aimed at the nearest threatened post (within 80 tiles). Cone half-angle 35°, length [color=#888888]min(80, dist(D→P) + 15)[/color]. Anyone walking laterally around the dungeon is now clearly outside the zone. Isolated dungeons with no post in range emit no cone — they're not actively threatening anyone, so they don't pollute the surrounding terrain.")
+	display_game("  • [b]Cone math is sqrt-free[/b]. Containment compares [color=#888888]cos²(angle)[/color] against [color=#888888]cos²(half_angle)[/color] using only dot products + squared distances, so the per-encounter check stays cheap even with 60+ active dungeons.")
+	display_game("")
+
 	# v0.9.596 — Minigame keyboard nav + 2 bugs.
-	display_game("[color=#00FF00]v0.9.596[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.596[/color]")
 	display_game("  [color=#FFD700]Three player-reported issues batched. (1) Keyboard input across the minigames so you don't have to alternate to the mouse. (2) Space could skip the combat-loot scratch-off straight to the victory screen, bypassing the reveal. (3) Threat-relief (\"Drive Off the X\") quests were paying out 0 XP / 0 valor.[/color]")
 	display_game("  • [b]Keyboard nav in combat loot scratch-off[/b]. Arrow keys / WASD move focus across the 4x4 reveal grid (the focused card glows yellow); Enter / Space reveals the focused card; Tab cycles to the Done button; Down from the bottom row also reaches Done. Focus auto-advances to the next unrevealed card after each reveal so you can hammer Enter without re-aiming.")
 	display_game("  • [b]Keyboard nav in gathering scratch-off (fishing / mining / logging / foraging)[/b]. Same scheme but spatial: cards are jittered in a 4x4 grid, so arrow keys pick the nearest hidden card in the requested direction (with a small lateral penalty so 'Right' isn't fooled by a diagonal). Enter / Space activates — the existing bar-over-slot timing check still applies, so a mistimed press counts as a miss exactly like a mistimed click. T toggles auto-skip; Tab jumps to the next hidden slot.")
@@ -25448,14 +25473,6 @@ func display_changelog():
 	display_game("  • [b]NPC vendor + network buy confirmation[/b]: server was sending [color=#888888]market_buy_result[/color] but the only client handler is [color=#888888]market_buy_success[/color]. NPC vendor purchases (exotic / mine / farm / shrine stocks) and network buys completed silently — inventory + valor updated, but no \"Purchase successful\" panel, no \"Bought X\" line, no transition back to the market menu. Renamed both server payloads to match the client's expected handler.")
 	display_game("  • [b]Crucible boss fight start[/b]: was using the pre-v0.9.x combat schema ([color=#888888]monster[/color] / [color=#888888]enemy_hp[/color] / [color=#888888]player_hp[/color]) instead of the modern [color=#888888]combat_state[/color] envelope every other encounter uses. Crucible fights showed \"Enemy\" placeholder, no ASCII art, no HP bar, no first-strike warning. Now routes through [color=#888888]combat_mgr.get_combat_display()[/color] like dungeons and overworld fights.")
 	display_game("  • [b]Still open (medium impact, planned for follow-up)[/b]: combat_restored payload misses visual fields on reconnect (boss border pulse won't fire); instant-craft path of [color=#888888]craft_result[/color] omits the Audit #8 Quality Rating summary block — instant-craft recipes show a stripped panel.")
-	display_game("")
-
-	# v0.9.585 — ROOT CAUSE of the Pathfinder turn-in bug: npc_ prefix mismatch.
-	display_game("[color=#00FFFF]v0.9.585[/color]")
-	display_game("  [color=#FFD700]Found the actual root cause after three previous attempts. Procedural NPC posts are normalized with an [b]npc_[/b] prefix on their id (so Crossroads is [color=#888888]'npc_crossroads'[/color] at runtime, not bare [color=#888888]'crossroads'[/color]). My v0.9.582/583/584 STARTER_TRADING_POSTS membership checks used bare names — so the pathfinder branch never fired for any procedural post.[/color]")
-	display_game("  • [b]Fix[/b]: strip the [color=#888888]npc_[/color] prefix from [color=#888888]tp.id[/color] before the membership check, in all three quest-turn-in code paths. Confirmed by inspecting tst3's character file — the threat-bounty quest id is [color=#888888]threat_npc_crossroads@orc_stronghold[/color], proof that the runtime post id has the prefix.")
-	display_game("  • [b]How I missed it three times[/b]: static analysis assumed [color=#888888]STARTER_TRADING_POSTS[/color] was the right comparand. The two-tier post system (legacy hardcoded TRADING_POSTS const vs procedural chunk_manager NPC posts) means the same post has two different id formats at different layers. Lesson: when a fix relies on string equality with a const list, sanity-check the live runtime value via the character file or a print, not just the source.")
-	display_game("  • [b]Diagnostic print removed[/b] — it never fired in v0.9.584 because the branch was never reached. The character-file inspection (tst3's quest data) is what cracked it.")
 	display_game("")
 
 	# v0.9.584 — Pathfinder belt-and-suspenders + Services screen cleanup.

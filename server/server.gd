@@ -28533,17 +28533,94 @@ const POST_THREAT_SERVICE_MULT_SEVERE: float = 2.00
 # wights drifting from a barrow, etc. Gives the Slice 6 "Under Threat" marker
 # mechanical bite without inventing a new entity system.
 const THREAT_CORRIDOR_RADIUS: int = 80
+# v0.9.597 — threat zone is now a cone aimed from each dungeon at the nearest
+# threatened post, not a 80-tile circle. Player report: monsters spilling out
+# of the dungeon affected too large a radius. Cone is tight (~35° half-angle)
+# along the dungeon→post axis, extending to `distance(D→P) + buffer`. Anyone
+# walking laterally around the dungeon now stays out of the spillover.
+const THREAT_CONE_HALF_ANGLE_DEG: float = 35.0
+const THREAT_CONE_LENGTH_BUFFER: int = 15  # tiles past the post the cone reaches
+# Precomputed cos² of the half-angle for sqrt-free containment check.
+const THREAT_CONE_HALF_ANGLE_COS_SQ: float = 0.67101  # cos(35°)² ≈ 0.8192²
+
+func _dungeon_target_post_for_threat(inst_x: int, inst_y: int) -> Dictionary:
+	"""Find the nearest NPC post within THREAT_CORRIDOR_RADIUS of this dungeon.
+	That's the post the dungeon is 'aimed at' for cone-based spillover. Returns
+	{x, y, dist} or {} if no post in range."""
+	if chunk_manager == null:
+		return {}
+	var best_post_x: int = 0
+	var best_post_y: int = 0
+	var best_dist_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS + 1
+	var found: bool = false
+	for post in chunk_manager.npc_posts:
+		var px: int = int(post.get("x", 0))
+		var py: int = int(post.get("y", 0))
+		var ddx := px - inst_x
+		var ddy := py - inst_y
+		var d_sq := ddx * ddx + ddy * ddy
+		if d_sq > THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS:
+			continue
+		if d_sq < best_dist_sq:
+			best_dist_sq = d_sq
+			best_post_x = px
+			best_post_y = py
+			found = true
+	if not found:
+		return {}
+	return {
+		"x": best_post_x,
+		"y": best_post_y,
+		"dist": int(sqrt(float(best_dist_sq))),
+	}
+
+
+func _point_in_threat_cone(
+	point_x: int, point_y: int,
+	apex_x: int, apex_y: int,
+	target_x: int, target_y: int,
+	max_length: float
+) -> bool:
+	"""Sqrt-free cone containment check: is (point) within `max_length` of
+	apex AND within THREAT_CONE_HALF_ANGLE_DEG of the apex→target axis?
+	Compares cos²(angle) ≥ cos²(half_angle) to avoid sqrt; only valid when
+	the point is in front of the apex (dot product ≥ 0)."""
+	var to_pt_x := float(point_x - apex_x)
+	var to_pt_y := float(point_y - apex_y)
+	var pt_dist_sq := to_pt_x * to_pt_x + to_pt_y * to_pt_y
+	if pt_dist_sq > max_length * max_length:
+		return false
+	if pt_dist_sq < 1.0:
+		return true  # Standing on the dungeon — always in zone
+	var to_tgt_x := float(target_x - apex_x)
+	var to_tgt_y := float(target_y - apex_y)
+	var tgt_dist_sq := to_tgt_x * to_tgt_x + to_tgt_y * to_tgt_y
+	if tgt_dist_sq < 1.0:
+		return false  # Target == apex, no axis
+	var dot := to_pt_x * to_tgt_x + to_pt_y * to_tgt_y
+	if dot < 0.0:
+		return false  # Behind the dungeon
+	# cos(angle) = dot / (|p|*|t|) → cos²(angle) = dot² / (|p|²*|t|²)
+	# In-cone when cos²(angle) ≥ cos²(half_angle). Multiply both sides by
+	# |p|²*|t|² (always positive) to keep it sqrt-free.
+	return dot * dot >= THREAT_CONE_HALF_ANGLE_COS_SQ * pt_dist_sq * tgt_dist_sq
+
 
 func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
-	"""Audit #11 Slice 9 — locate the closest active T2+ world dungeon within
-	THREAT_CORRIDOR_RADIUS of (x, y). Returns the dungeon's encounter info or
-	{} if not in a threat zone. Iterates active_dungeons (~60-70 entries on
-	the live world) — cheap because trigger_encounter is a per-encounter call,
-	not a per-frame poll. Same filters as _compute_post_threat_state (not
-	completed, no owner, tier >= 2).
+	"""Audit #11 Slice 9 — locate the closest active T2+ world dungeon whose
+	threat cone contains (x, y). Returns the dungeon's encounter info or
+	{} if not in any cone.
 
-	v0.9.523 — also tallies the total count of T2+ threats in radius so the
-	HUD can show "+N more" when multiple dungeons threaten the same area."""
+	v0.9.597 — switched from circular radius to a per-dungeon cone aimed at
+	the nearest threatened post. Each dungeon picks its target post via
+	_dungeon_target_post_for_threat; (x, y) is in the dungeon's zone only if
+	it sits within the cone (length ≈ dist(D→P) + buffer, half-angle 35°).
+	Isolated dungeons (no post in range) emit no cone and don't spill out at
+	all — consistent with 'no post to threaten = no threat'.
+
+	Same upstream filters as _compute_post_threat_state (not completed, no
+	owner, tier >= 2). v0.9.523 — tallies total cones (x, y) is in, so the
+	HUD can show '+N more' for overlapping cones."""
 	var best: Dictionary = {}
 	var best_dist_sq: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS + 1
 	var threat_count: int = 0
@@ -28561,11 +28638,23 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 			continue  # T1 dungeons are starter content, not threats
 		var inst_x = int(instance.get("world_x", 0))
 		var inst_y = int(instance.get("world_y", 0))
+		# v0.9.597 — find the post this dungeon is aimed at. No post in range
+		# means no threat cone (dungeon isn't actively threatening anything).
+		var target_post: Dictionary = _dungeon_target_post_for_threat(inst_x, inst_y)
+		if target_post.is_empty():
+			continue
+		var post_dist: int = int(target_post.get("dist", 0))
+		var cone_length: float = float(min(THREAT_CORRIDOR_RADIUS, post_dist + THREAT_CONE_LENGTH_BUFFER))
+		if not _point_in_threat_cone(
+			x, y,
+			inst_x, inst_y,
+			int(target_post.get("x", 0)), int(target_post.get("y", 0)),
+			cone_length
+		):
+			continue
 		var dx = inst_x - x
 		var dy = inst_y - y
 		var dist_sq = dx * dx + dy * dy
-		if dist_sq > THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS:
-			continue
 		threat_count += 1
 		if dist_sq < best_dist_sq:
 			best_dist_sq = dist_sq
