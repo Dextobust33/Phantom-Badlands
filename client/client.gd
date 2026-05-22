@@ -25521,8 +25521,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.607 — Admin UI for +abilities testing.
+	display_game("[color=#00FF00]v0.9.607[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Admin shortcut to test the v0.9.606 +X to ability gear without grinding epic+ drops. /admin → Abilities page now has a single 'Spawn full +abilities test kit (5 items)' button + per-ability buttons for each individual affix.[/color]")
+	display_game("  • [b]Kit button[/b]: spawns 5 items at item level 60, epic rarity, one in each of weapon / ring / amulet / helm / boots so you can equip them all simultaneously and test stacking. Specific Cleave (+3 weapon) + archetype Warrior (+2 helm + +1 boots) means equipped Cleave gets effective +6 (specific 3 + archetype 3).")
+	display_game("  • [b]Per-affix buttons[/b]: 9 specific damage abilities + 3 archetype rolls, each at +3 (or +2 for archetypes). Lets you focus-test one affix at a time.")
+	display_game("  • [b]Server contract[/b]: new [color=#888888]gm_give_ability_gear[/color] handler accepts {affix_key, affix_value, slot, item_level}, generates a base item via the existing drop_tables.generate_* helpers, force-writes the affix onto item.affixes, and bumps rarity to epic so the tooltip's 'Special:' section surfaces the chase context. [color=#888888]gm_give_ability_kit[/color] batches 5 of those calls into the curated test set.")
+	display_game("")
+
 	# v0.9.606 — Phase A of +abilities arc: gear can roll +X to damage abilities.
-	display_game("[color=#00FF00]v0.9.606[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.606[/color]")
 	display_game("  [color=#FFD700]Round 1 of the multi-release gear-abilities arc. Damage abilities can now be powered up via gear that rolls '+X to <ability>' or '+X to <archetype> damage abilities'. Each +1 lifts the ability's effective mastery rank, and unlike normal mastery progression, gear-granted ranks are NOT capped at the table max — every rank past 6 adds +10% damage indefinitely. This is the chase-power direction.[/color]")
 	display_game("  • [b]New chase affixes[/b] in CHASE_SUFFIX_POOL: [color=#FFD700]of Cleaving[/color] / [color=#FFD700]Striking[/color] / [color=#FFD700]Bashing[/color] / [color=#FFD700]Crushing[/color] (Power Strike / Shield Bash / Devastate) / [color=#FFD700]Bolting[/color] / [color=#FFD700]Blast[/color] / [color=#FFD700]Comet[/color] / [color=#FFD700]Stalking[/color] / [color=#FFD700]Plunder[/color] for specific damage abilities, plus [color=#FFD700]of the Warrior[/color] / [color=#FFD700]of the Mage[/color] / [color=#FFD700]of the Trickster[/color] for archetype-wide rolls. Specific rolls +1 to +3 by item level; archetype rolls slightly weaker (+1 to +2) since they boost multiple abilities at once.")
 	display_game("  • [b]Stacking[/b]: gear bonuses sum across all equipped slots. A Warrior with [color=#888888]Helm of Cleaving (+2)[/color] + [color=#888888]Boots of the Warrior (+1)[/color] gets effective +3 to Cleave (specific +2 + archetype +1) AND +1 to Power Strike / Shield Bash / Devastate (archetype only). At rank 0 base, +3 effective rank = 1.10× damage (rank 3 from the table). At rank 6 base + same gear = effective rank 9 = 1.75× damage (table max 1.45× + 3 × 10% past-cap bonus).")
@@ -25622,48 +25630,9 @@ func display_changelog():
 	display_game("  • [b]Example[/b]: Haven (Lv 1) → adjacent post (Lv 30). Old curve: lvl 8 just before midpoint → lvl 23 just after (15-level cliff). New curve: lvl 16 on both sides (continuous). The starter-zone protection is unchanged — Haven's tight Lv 1-2 pocket inside 20 tiles still holds.")
 	display_game("")
 
-	# v0.9.594 — Market listing picker + bulk-count fix.
-	display_game("[color=#00FFFF]v0.9.594[/color]")
-	display_game("  [color=#FFD700]Two market UX fixes in one release. The Sell / Bulk List menu's count badges were wrong (Equipment / Consumables always 0; Materials always greyed out) because of a field-shape mismatch. Then the listing flow has been moved from the chat picker into the market panel — single items, materials, and eggs are now clickable in-panel with an inline quantity stepper.[/color]")
-	display_game("  • [b]Bulk count fix[/b]: equipment items carry [color=#888888]type: \"weapon_iron\"[/color] / [color=#888888]\"armor_chain\"[/color] (suffix variants) not bare [color=#888888]\"equipment\"[/color], so the old string-match never hit. Consumables now match the [color=#888888]is_consumable[/color] flag the server uses. Materials + food live in [color=#888888]crafting_materials[/color] (a separate dict from inventory) and are looked up against [color=#888888]CraftingDatabase.MATERIALS[/color]. Result: every Sell / Bulk List row now reads accurate counts.")
-	display_game("  • [b]In-panel listing picker[/b]: clicking \"List from Inventory\" / \"List Materials\" / \"List Egg from Incubator\" now opens a clickable overlay inside the market panel — scrollable item rows, selection highlight, quantity stepper for stackables, Confirm + Cancel buttons. Replaces the legacy chat-driven flow that used number-key item selection + chat-typed quantities.")
-	display_game("  • [b]Auto-refresh[/b]: after a successful listing the picker stays open and re-renders against the new inventory state, so you can list a second item without leaving the picker. Server contract unchanged ([color=#888888]market_list_item[/color] / [color=#888888]market_list_material[/color] / [color=#888888]market_list_egg[/color]) — only the UI plumbing changed, so existing server-side rules + valor math are exactly the same.")
+
 	display_game("")
 
-	# v0.9.593 — Persistent FX overlay after Round 1.
-	display_game("[color=#00FFFF]v0.9.593[/color]")
-	display_game("  [color=#FFD700]Combat polish: once Round 1 of a fight ends, the battlefield FX overlay stays up for the rest of the battle instead of fading in and out every round. The transition was too jarring. Hand strip (ability cards), totals strip, and status strip are visible alongside the overlay so you can still see + click cards while the battlefield view persists.[/color]")
-	display_game("  • [b]New persistent-FX flag[/b] in combat_scene_panel. Set true on the first [color=#888888]end_action_phase[/color] of a combat; while true, [color=#888888]start_action_phase[/color] / [color=#888888]end_action_phase[/color] are no-ops on the overlay — the overlay stays as the backdrop and the strips overlay it as the action UI.")
-	display_game("  • [b]_force_end_action_phase()[/b] new method does the full tear-down (overlay fade + party row restore) — called only from combat-end paths (combat_end / acknowledge / death / testfx demos) so victory / defeat / flee still transition cleanly back to the action-bar view.")
-	display_game("  • [b]reset_for_new_combat()[/b] new method resets the persistent flag + overlay visibility so a new combat's Round 1 fires the normal fade-in transition. Called from [color=#888888]_process_combat_start[/color] for every new fight.")
-	display_game("")
-
-	# v0.9.592 — Rank-up notification naming + log cleanup.
-	display_game("[color=#00FFFF]v0.9.592[/color]")
-	display_game("  [color=#FFD700]Audit follow-up to a player report: 'Tactical Retreat ranked up on my Barbarian but I don't even have that ability.' Two findings — one UX naming bug, one log cleanup. Confirmed there are NO hidden auto-triggered abilities; rank-up only fires from explicit player casts.[/color]")
-	display_game("  • [b]Rank-up notification now uses the card's display name[/b]. Two abilities have display names that don't match the capitalize-with-underscores transform: [color=#888888]tactical_retreat[/color] → 'Recharge', [color=#888888]vanish[/color] → 'Phantom Strike'. The rank-up text was using the raw internal id, so playing the Recharge card produced 'Tactical retreat ranked up!' — players couldn't connect that to the card they actually played. New helper [color=#888888]_ability_display_name()[/color] in both client and server maps all four mismatches (also Pickpocket→Steal, Perfect Heist→Heist) so every rank-up / cull / mastery message agrees with the card text.")
-	display_game("  • [b]Confirmed universal abilities ARE in every class's deck[/b]. Forethought and Recharge are auto-added by [color=#888888]initialize_deck_collection_if_needed()[/color]. They show up in your hand and rank up when played. Not a bug — design intent — but the naming bug above made it look like one.")
-	display_game("  • [b]Log noise fix[/b]: [color=#888888]_animate_bar_value[/color] in combat_scene_panel called [color=#888888]get_meta('hp_drain_tween', null)[/color] without first checking [color=#888888]has_meta[/color], which prints an error in Godot 4.6 even with a default. Guard added so the error spam no longer drowns out useful log lines during combat.")
-	display_game("")
-
-	# v0.9.591 — HP discovery system overhaul.
-	display_game("[color=#00FFFF]v0.9.591[/color]")
-	display_game("  [color=#FFD700]Complete rewrite of the monster HP discovery + estimation system. Estimates were systematically wrong by 50-200% on cross-level / cross-variant encounters, and Outsmart / companion-execute kills permanently corrupted the local cache. Both classes of bug are now eliminated at the source.[/color]")
-	display_game("  • [b]Server is now authoritative on victory[/b]. Every victory combat_end (normal / outsmart / companion_clutch / heist / wish_choice / party) now emits [color=#888888]killed_monster_max_hp[/color] + [color=#888888]killed_monster_base_level[/color] + [color=#888888]killed_monster_variant_type[/color]. The client stores ground truth instead of inferring HP from damage dealt — fixes the long-standing 'Outsmart at low damage permanently caps known HP below truth' bug.")
-	display_game("  • [b]Cache is variant-aware[/b]. Old code used base_name as the cache key, so killing a Shield Guardian Goblin (1.25× HP) polluted the cached HP for vanilla Goblin, and vice versa. New cache key is the FULL variant name, so each variant accumulates its own knowledge independently.")
-	display_game("  • [b]Estimation now uses the server's actual formula[/b]. The legacy estimator missed the hp_multiplier hyperbolic ramp (2× → ~6× across levels) and used a single-arg tiered_stat_scale that assumed base_level=1 for all monsters. The rewrite replicates [color=#888888]scale_monster_to_level[/color] exactly: [color=#888888]base_hp × tiered_stat_scale(base_lv, target_lv) × hp_multiplier(target_lv) × variant_multiplier[/color]. The +50% level-gap pad fudge factor is removed.")
-	display_game("  • [b]Server-known monsters use real HP immediately[/b]. The discovery system used to ignore the server's [color=#888888]current_enemy_max_hp[/color] even when [color=#888888]monster_known=true[/color], so a stale cache value could disagree with truth. Now the server's value overrides the cache on every combat_state tick, and the cache is sync'd to match.")
-	display_game("  • [b]Variant prefix/suffix parsing fixed[/b]. The base-name stripper only handled prefixes ('Corrosive X', 'Sundering X'); the server's suffix variants ('X Weapon Master', 'X Shield Guardian') and the Elite both-ends pattern ('★ X Champion') never stripped, so they were tracked as totally separate monster types. All five server variant patterns now resolve correctly.")
-	display_game("")
-
-	# v0.9.590 — Remaining audit findings closed.
-	display_game("[color=#00FFFF]v0.9.590[/color]")
-	display_game("  [color=#FFD700]The medium + minor field-drop bugs from the v0.9.589 audit sweep are now closed. Four fixes in one batched release.[/color]")
-	display_game("  • [b]Reconnect into mid-fight now keeps boss / flock visuals[/b]. The combat_restored payload was missing [color=#888888]is_boss[/color] / [color=#888888]is_flock[/color] / [color=#888888]flock_count[/color] / [color=#888888]combat_bg_color[/color], so reconnecting into a boss skipped the border pulse and lost the recolored ASCII art. Fields now sourced from the saved combat state on restore.")
-	display_game("  • [b]Instant-craft panel no longer renders stripped[/b]. Enchant / rune / structure / scroll / map / repair / reforge / temper recipes (the ones that bypass the scratch-off) were sending [color=#888888]craft_result[/color] without [color=#888888]score[/color] or [color=#888888]summary[/color], so the Quality Rating panel rendered with empty roll bands and no boost indicator. Now sends a minimal summary with [color=#888888]is_instant_craft: true[/color] so the panel can render a clean version without scratch-off-specific noise.")
-	display_game("  • [b]Flee combat_end now includes character[/b]. Flee-side stamina cost / buff strip / position updates land in the HUD immediately instead of waiting for the next [color=#888888]character_update[/color] tick.")
-	display_game("  • [b]house_update payloads unified via [color=#888888]_send_house_update()[/color] helper[/b]. 13 hand-rolled sites consolidated into one; mastery_records / pending_headstarts / headstart_costs / headstart_max_rank now ship with every house refresh, so a future mastery-touching action can't regress the cache.")
-	display_game("")
 
 
 
@@ -29237,6 +29206,33 @@ func _on_admin_panel_action(action_id: String) -> void:
 			close_admin_menu()
 			var _tier := int(action_id.substr(action_id.length() - 1))
 			send_to_server({"type": "gm_set_patreon_tier", "tier": _tier})
+		# v0.9.607 — +abilities gear test (admin shortcut for v0.9.606 testing).
+		"give_ability_kit":
+			send_to_server({"type": "gm_give_ability_kit", "item_level": 60})
+		"give_ability_cleave_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_cleave", "affix_value": 3, "slot": "weapon", "item_level": 60})
+		"give_ability_power_strike_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_power_strike", "affix_value": 3, "slot": "weapon", "item_level": 60})
+		"give_ability_shield_bash_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_shield_bash", "affix_value": 3, "slot": "weapon", "item_level": 60})
+		"give_ability_devastate_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_devastate", "affix_value": 3, "slot": "weapon", "item_level": 60})
+		"give_ability_magic_bolt_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_magic_bolt", "affix_value": 3, "slot": "ring", "item_level": 60})
+		"give_ability_blast_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_blast", "affix_value": 3, "slot": "ring", "item_level": 60})
+		"give_ability_meteor_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_meteor", "affix_value": 3, "slot": "ring", "item_level": 60})
+		"give_ability_ambush_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_ambush", "affix_value": 3, "slot": "amulet", "item_level": 60})
+		"give_ability_exploit_3":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_exploit", "affix_value": 3, "slot": "amulet", "item_level": 60})
+		"give_ability_warrior_dmg_2":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_warrior_dmg", "affix_value": 2, "slot": "helm", "item_level": 60})
+		"give_ability_mage_dmg_2":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_mage_dmg", "affix_value": 2, "slot": "helm", "item_level": 60})
+		"give_ability_trickster_dmg_2":
+			send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_trickster_dmg", "affix_value": 2, "slot": "helm", "item_level": 60})
 
 func display_gm_help():
 	"""Display all available GM/Admin commands"""

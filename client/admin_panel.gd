@@ -20,7 +20,7 @@ var _title_label: Label
 var _subtitle_label: RichTextLabel
 var _button_column: VBoxContainer
 
-var _current_page: String = "root"  # "root" | "test_b2" | "items" | "combat" | "misc" | "world"
+var _current_page: String = "root"  # "root" | "test_b2" | "items" | "combat" | "misc" | "world" | "patreon" | "abilities"
 
 
 func _ready() -> void:
@@ -114,6 +114,7 @@ func _render_page() -> void:
 			_add_button("Combat — spawn monsters, godmode", "_page_combat")
 			_add_button("Misc — heal, reset quests, revive companion", "_page_misc")
 			_add_button("Patreon — fulfill supporter tiers (nearest player)", "_page_patreon", Color(0.95, 0.55, 1.0))
+			_add_button("Abilities — test +X to ability gear (v0.9.606)", "_page_abilities", Color(1, 0.84, 0))
 			_add_separator()
 			_add_button("Close", "_close", Color(0.7, 0.7, 0.7))
 		"test_b2":
@@ -185,6 +186,35 @@ func _render_page() -> void:
 			_add_button("Revive Companion (full HP)", "gm_revive_companion")
 			_add_button("Reset Active Quests", "gm_resetquests")
 			_add_button("Show /gmhelp text reference", "show_gmhelp")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"abilities":
+			# v0.9.607 — admin page for testing the v0.9.606 +X to ability
+			# gear. Kit button covers stacking + multi-slot in one shot;
+			# individual buttons let you bias toward a specific ability.
+			_title_label.text = "ADMIN — +ABILITIES GEAR (v0.9.606)"
+			_subtitle_label.text = "[color=#aaaaaa]Spawn gear with forced [color=#FFD700]ability_rank_*[/color] affixes to test the v0.9.606 +X to ability mechanic without grinding epic+ drops. Each +1 lifts the ability's effective mastery rank; past rank 6 the multiplier keeps growing (+10% per extra rank, uncapped).[/color]"
+			_add_button("Spawn full +abilities test kit (5 items)", "give_ability_kit", Color(1, 0.84, 0))
+			_subtitle_subline("Weapon +3 Cleave / Ring +3 Magic Bolt / Amulet +3 Ambush / Helm +2 Warrior / Boots +1 Warrior. Equip all 5 to test specific + archetype stacking (Cleave ends up at +6).")
+			_add_separator()
+			# Specific damage abilities
+			_add_button("Weapon: +3 to Cleave", "give_ability_cleave_3", Color(0.95, 0.65, 0.55))
+			_add_button("Weapon: +3 to Power Strike", "give_ability_power_strike_3", Color(0.95, 0.65, 0.55))
+			_add_button("Weapon: +3 to Shield Bash", "give_ability_shield_bash_3", Color(0.95, 0.65, 0.55))
+			_add_button("Weapon: +3 to Devastate", "give_ability_devastate_3", Color(0.95, 0.65, 0.55))
+			_add_separator()
+			_add_button("Ring: +3 to Magic Bolt", "give_ability_magic_bolt_3", Color(0.6, 0.75, 1))
+			_add_button("Ring: +3 to Blast", "give_ability_blast_3", Color(0.6, 0.75, 1))
+			_add_button("Ring: +3 to Meteor", "give_ability_meteor_3", Color(0.6, 0.75, 1))
+			_add_separator()
+			_add_button("Amulet: +3 to Ambush", "give_ability_ambush_3", Color(0.85, 0.65, 1.0))
+			_add_button("Amulet: +3 to Exploit", "give_ability_exploit_3", Color(0.85, 0.65, 1.0))
+			_add_separator()
+			# Archetype-wide rolls
+			_add_button("Helm: +2 to Warrior damage", "give_ability_warrior_dmg_2", Color(1, 0.84, 0))
+			_add_button("Helm: +2 to Mage damage", "give_ability_mage_dmg_2", Color(1, 0.84, 0))
+			_add_button("Helm: +2 to Trickster damage", "give_ability_trickster_dmg_2", Color(1, 0.84, 0))
+			_subtitle_subline("Archetype rolls affect every damage ability in that archetype — handy for testing the get_ability_rank_bonus archetype lookup path.")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"patreon":
@@ -275,6 +305,9 @@ func _on_button_pressed(action_id: String) -> void:
 			_render_page()
 		"_page_patreon":
 			_current_page = "patreon"
+			_render_page()
+		"_page_abilities":
+			_current_page = "abilities"
 			_render_page()
 		_:
 			emit_signal("action_triggered", action_id)

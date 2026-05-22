@@ -1973,6 +1973,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_setbp(peer_id, message)
 		"gm_giveitem":
 			handle_gm_giveitem(peer_id, message)
+		"gm_give_ability_gear":
+			handle_gm_give_ability_gear(peer_id, message)
+		"gm_give_ability_kit":
+			handle_gm_give_ability_kit(peer_id, message)
 		"gm_givestructure":
 			handle_gm_givestructure(peer_id, message)
 		"gm_giveegg":
@@ -34553,6 +34557,111 @@ func handle_gm_giveitem(peer_id: int, message: Dictionary):
 	save_character(peer_id)
 	var item_name = item.get("name", "Unknown Item")
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Received: %s (Tier %d)[/color]" % [item_name, tier]})
+
+
+func handle_gm_give_ability_gear(peer_id: int, message: Dictionary):
+	"""v0.9.607 — admin shortcut for testing the v0.9.606 +X to ability gear.
+	Spawns a single item with a specific `ability_rank_*` affix forced onto
+	it at the requested magnitude. Slot defaults to weapon; client picks
+	which slot per-button so a test kit can stack across multiple slots."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var affix_key: String = String(message.get("affix_key", ""))
+	var affix_value: int = clampi(int(message.get("affix_value", 1)), 1, 10)
+	var item_level: int = clampi(int(message.get("item_level", 60)), 1, 500)
+	var slot_hint: String = String(message.get("slot", "weapon"))
+	if affix_key == "":
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Missing affix_key.[/color]"})
+		return
+	# Generate a base item — use generate_weapon/shield helpers when slot is
+	# explicit; for armor / accessory slots fall back to _generate_item with
+	# a representative item_type so the slot is correct.
+	var item: Dictionary
+	match slot_hint:
+		"weapon":
+			item = drop_tables.generate_weapon(item_level)
+		"shield":
+			item = drop_tables.generate_shield(item_level)
+		"helm":
+			item = drop_tables._generate_item({"item_type": "helm_steel"}, item_level)
+		"armor":
+			item = drop_tables._generate_item({"item_type": "armor_chain"}, item_level)
+		"boots":
+			item = drop_tables._generate_item({"item_type": "boots_leather"}, item_level)
+		"ring":
+			item = drop_tables._generate_item({"item_type": "ring_basic"}, item_level)
+		"amulet":
+			item = drop_tables._generate_item({"item_type": "amulet_basic"}, item_level)
+		_:
+			item = drop_tables.generate_weapon(item_level)
+	if item.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF0000][GM] Failed to generate base item.[/color]"})
+		return
+	# Force the ability_rank affix onto the item AND bump rarity so the
+	# tooltip shows the chase context (and the +ability shows in the
+	# "Special:" section).
+	if not item.has("affixes"):
+		item["affixes"] = {}
+	item["affixes"][affix_key] = affix_value
+	item["rarity"] = "epic"
+	ch.inventory.append(item)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	var item_name: String = item.get("name", "Test Item")
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Spawned [b]%s[/b] with [color=#FFD700]%s = +%d[/color] (slot %s, lv %d).[/color]" % [item_name, affix_key, affix_value, slot_hint, item_level]})
+
+
+func handle_gm_give_ability_kit(peer_id: int, message: Dictionary):
+	"""v0.9.607 — spawns a curated set of items to test the v0.9.606 +X
+	abilities feature in one shot. Covers: specific damage abilities
+	(Cleave / Magic Bolt / Ambush), an archetype-wide roll (Warrior),
+	and multi-slot stacking (helm + boots both affect Warrior damage
+	abilities so Cleave gets specific + archetype simultaneously).
+	5 items at item_level 60 (epic rarity)."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var item_level: int = clampi(int(message.get("item_level", 60)), 1, 500)
+	# Spec list: each entry produces one item. Slot mix lets the kit stack
+	# across multiple equipped slots so the player can verify gear bonus
+	# summation across slots (helm + boots both grant warrior_dmg → Cleave
+	# gets +1 archetype on top of +3 specific from the weapon).
+	var kit: Array = [
+		{"slot": "weapon", "item_type": "", "affix_key": "ability_rank_cleave", "affix_value": 3, "name_suffix": " of Cleaving [Test]"},
+		{"slot": "ring", "item_type": "ring_basic", "affix_key": "ability_rank_magic_bolt", "affix_value": 3, "name_suffix": " of Bolting [Test]"},
+		{"slot": "amulet", "item_type": "amulet_basic", "affix_key": "ability_rank_ambush", "affix_value": 3, "name_suffix": " of Stalking [Test]"},
+		{"slot": "helm", "item_type": "helm_steel", "affix_key": "ability_rank_warrior_dmg", "affix_value": 2, "name_suffix": " of the Warrior [Test]"},
+		{"slot": "boots", "item_type": "boots_leather", "affix_key": "ability_rank_warrior_dmg", "affix_value": 1, "name_suffix": " of the Warrior [Test]"},
+	]
+	var spawned: Array = []
+	for spec in kit:
+		var item: Dictionary
+		if spec["slot"] == "weapon":
+			item = drop_tables.generate_weapon(item_level)
+		else:
+			item = drop_tables._generate_item({"item_type": spec["item_type"]}, item_level)
+		if item.is_empty():
+			continue
+		if not item.has("affixes"):
+			item["affixes"] = {}
+		item["affixes"][spec["affix_key"]] = spec["affix_value"]
+		item["rarity"] = "epic"
+		# Append a [Test] suffix to the name so kit items are easy to spot
+		# in the inventory and don't get confused with real drops.
+		item["name"] = item.get("name", "Item") + " " + String(spec.get("name_suffix", "[Test]"))
+		ch.inventory.append(item)
+		spawned.append(item["name"])
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Spawned ability test kit (lv %d): %d items.[/color]" % [item_level, spawned.size()]})
+
 
 func handle_gm_givestructure(peer_id: int, message: Dictionary):
 	"""v0.9.500 — admin shortcut to drop a buildable structure directly into
