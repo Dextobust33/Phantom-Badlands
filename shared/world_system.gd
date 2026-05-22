@@ -1639,52 +1639,67 @@ func get_post_anchored_level(x: int, y: int) -> int:
 	if chunk_manager == null or chunk_manager.npc_posts.is_empty():
 		return wilderness_level
 
-	# v0.9.617 — HOLDING STATE. Reverted to v0.9.595 smoothstep after IDW
-	# experiments (v0.9.614/615/616) produced either elevated baselines or
-	# residual cliffs. The smoothstep blend has a known second-nearest-swap
-	# cliff at midpoints between posts (5-15 level jumps in pathological
-	# spots) but its BASELINE is correct. A deep-dive design effort is
-	# scheduled to produce a permanent solution that's both continuous AND
-	# baseline-correct. Until then, this restores predictable level
-	# readings across the whole map.
-	var nearest_dist = INF
-	var nearest_post_origin_dist = 0.0
-	var second_dist = INF
-	var second_post_origin_dist = 0.0
+	# v0.9.618 — PERMANENT DESIGN. Pull-down blend across nearby posts.
+	#
+	# Posts contribute ONLY when their anchor is LOWER than the wilderness
+	# curve. Cannot elevate by construction. Aligns with the original design
+	# intent — posts are settlements (safe pockets), not difficulty
+	# elevators. The wilderness curve encodes danger-by-distance; posts only
+	# modulate it DOWN in the immediate vicinity.
+	#
+	# Why this replaces v0.9.595/614/615/616/617:
+	# - v0.9.595 smoothstep: discrete swap of "second-nearest" identity caused
+	#   5-73 level cliffs at perpendicular bisectors between posts.
+	# - v0.9.614 all-posts 1/d²: cumulative far-post weight elevated baseline
+	#   to Lv 89 (catastrophic).
+	# - v0.9.615 top-3 1/d²: discrete 3rd-slot swap caused 8-level cliffs.
+	# - v0.9.616 all-posts 1/d⁴: failed differently — with 60 posts (the
+	#   real network density, NOT the 18 the legacy comments assumed) the
+	#   nearest+second pair often have anchors differing by 30-60 levels.
+	#   The 3.3× weight ratio of nearest:second wasn't enough to suppress
+	#   the high anchor; blend landed 10-15 levels above wilderness.
+	# - v0.9.617 hold: returned to v0.9.595's cliff to escape the elevation.
+	#
+	# The pull-down design eliminates the entire failure-mode class:
+	#   * No post can elevate (anchor < wilderness gate).
+	#   * Continuous everywhere (taper at the influence radius boundary
+	#     means weight reaches zero smoothly as a post leaves the band).
+	#   * Robust to procedural map regeneration — the formula doesn't care
+	#     how many posts exist, only which ones are close AND under-baseline.
+	const POST_INFLUENCE_RADIUS: float = 140.0  # blend radius — ~2x post spacing
+	const POST_TAPER_BAND: float = 30.0          # smoothstep taper width at the cutoff
+	var total_w: float = 0.0
+	var sum_down: float = 0.0
 	for post in chunk_manager.npc_posts:
-		var cx = int(post.get("x", 0))
-		var cy = int(post.get("y", 0))
-		var dx = float(x - cx)
-		var dy = float(y - cy)
-		var d = sqrt(dx * dx + dy * dy)
-		if d < nearest_dist:
-			second_dist = nearest_dist
-			second_post_origin_dist = nearest_post_origin_dist
-			nearest_dist = d
-			nearest_post_origin_dist = sqrt(float(cx * cx + cy * cy))
-		elif d < second_dist:
-			second_dist = d
-			second_post_origin_dist = sqrt(float(cx * cx + cy * cy))
+		var cx: float = float(post.get("x", 0))
+		var cy: float = float(post.get("y", 0))
+		var dx: float = float(x) - cx
+		var dy: float = float(y) - cy
+		var d: float = sqrt(dx * dx + dy * dy)
+		if d >= POST_INFLUENCE_RADIUS:
+			continue
+		var taper: float = 1.0
+		if d > POST_INFLUENCE_RADIUS - POST_TAPER_BAND:
+			var u: float = (POST_INFLUENCE_RADIUS - d) / POST_TAPER_BAND
+			taper = u * u * (3.0 - 2.0 * u)  # smoothstep ramp-down at the boundary
+		var w: float = taper / (d * d + 1.0)
+		var origin_dist: float = sqrt(cx * cx + cy * cy)
+		var anchor: float = float(_distance_to_level(origin_dist))
+		# Only posts whose anchor is BELOW wilderness contribute. This is
+		# the structural guarantee — no high-tier outer post can elevate a
+		# tile above its wilderness baseline.
+		if anchor < float(wilderness_level):
+			total_w += w
+			sum_down += w * anchor
 
-	if nearest_dist == INF:
-		return wilderness_level
-
-	var base_nearest = _distance_to_level(nearest_post_origin_dist)
-	var post_blended: int
-	if second_dist == INF:
-		post_blended = base_nearest
-	else:
-		var base_second = _distance_to_level(second_post_origin_dist)
-		var total = nearest_dist + second_dist
-		if total < 0.001:
-			post_blended = base_nearest
-		else:
-			# v0.9.595 smoothstep blend.
-			var t = nearest_dist / total
-			var t_curved = t * t * (3.0 - 2.0 * t)
-			post_blended = int(round(lerp(float(base_nearest), float(base_second), t_curved)))
-
-	var world_level: int = max(post_blended, wilderness_level)
+	var world_level: int = wilderness_level
+	if total_w > 0.0:
+		var weighted_anchor: float = sum_down / total_w
+		# Saturating strength: close-to-post tiles pull all the way to the
+		# weighted anchor; distant-but-still-in-band tiles barely pull.
+		# The 0.005 floor keeps lone-far-post influences gentle.
+		var strength: float = clamp(total_w / (total_w + 0.005), 0.0, 1.0)
+		world_level = int(round(lerp(float(wilderness_level), weighted_anchor, strength)))
 	# v0.9.605 — blend in the bubble's level by its falloff weight. Inside a
 	# bubble (weight 1.0) we already returned the bubble level above. Here
 	# we handle the falloff band (0 < weight < 1) — the world level lerps

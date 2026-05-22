@@ -25821,8 +25821,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.618 — Pull-down level math. Permanent design from deep-dive memo.
+	display_game("[color=#00FF00]v0.9.618[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Permanent level math fix. Posts now create LOW-level pockets near settlements, never elevate. Five iterations across v0.9.595/614/615/616/617 all had tradeoffs because the procedural network has [b]60 posts[/b] (not the ~18 the legacy comments said), so 'far-post weight is negligible' math was calibrated for the wrong scenario. Deep-dive memo (project_level_math_redesign.md) diagnosed the root cause: '[i]near vs slightly-less-near with a much higher anchor[/i].' The new design structurally cannot elevate.[/color]")
+	display_game("  • [b]Pull-down blend[/b]: posts contribute ONLY when their anchor is BELOW the wilderness curve. Bounded influence radius (R=140) with smoothstep taper at the cutoff (TAPER=30). Continuous everywhere — max single-step jump = 1 across simulated probes (vs v0.9.595's 73, v0.9.615's 41). Cannot elevate by construction.")
+	display_game("  • [b]Effects[/b]: at the user's worst spot (-39,-58), level drops from 32 (v0.9.616) / 24 (v0.9.595) to 16 (matches wilderness floor). Mid-band (origin distance 200-400) sees a ~7-12% level decrease near posts — feature: settlements feel slightly safer than open wilderness. Apex zones (beyond the post network) unchanged.")
+	display_game("  • [b]What stays the same[/b]: [color=#888888]_distance_to_level[/color] curve unchanged. Player-post settler bubbles unchanged. Hotspot multiplier unchanged. Threat corridor downscale unchanged. Procedural placement unchanged.")
+	display_game("")
+
 	# v0.9.617 — Hold: revert to v0.9.595 smoothstep while deep-dive design lands.
-	display_game("[color=#00FF00]v0.9.617[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.617[/color]")
 	display_game("  [color=#FFD700]Holding state. v0.9.616's all-posts 1/d⁴ IDW elevated baseline (Lv 18 area read as Lv 32). Reverted to v0.9.595 smoothstep — known-good baseline, known 5-15 level swap cliff at midpoints between posts. A proper deep-dive design effort is underway; v0.9.617 keeps levels predictable across the whole map until the permanent fix lands.[/color]")
 	display_game("  • [b]Trade-off accepted[/b]: smoothstep returns the swap cliff (the original (44,-57)→(45,-57) Lv 18→38 issue) but eliminates the IDW baseline drift. A research agent is auditing the full level pipeline (post placement, anchor formula, bubble influence, wilderness curve) to design a permanent solution that has BOTH correct baseline AND no cliffs.")
 	display_game("  • [b]Parallel work[/b]: multi-active-companion design memo is being researched in parallel. Combat strips, save format, imprint stacking, party logic all need scoping before any code. Memo will land in the dev memory under [color=#888888]project_multi_companion_design[/color].")
