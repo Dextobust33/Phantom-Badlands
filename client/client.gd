@@ -25376,8 +25376,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.595 — Monster level smoothing between trading posts.
+	display_game("[color=#00FF00]v0.9.595[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Fixes the level cliff at the midpoint between two trading posts. Player report: \"lvl 16 then move one space and it jumps to lvl 25.\" Root cause was the quadratic blend curve (t²) used since v0.9.567 — when the nearest+second-nearest post swap at the midpoint, the function evaluated to different values on each side because t² isn't symmetric around 0.5. Adjacent posts with ~15-30 level gaps produced 7-15 level jumps in one tile.[/color]")
+	display_game("  • [b]Smoothstep blend curve[/b] ([color=#888888]t·t·(3-2t)[/color]) replaces the old [color=#888888]t·t[/color] in [color=#888888]world_system.gd::get_post_anchored_level[/color]. Smoothstep evaluates to exactly 0.5 at t=0.5, so the midpoint between two posts is continuous — both halves of the swap produce the same blended level. The \"anchor pocket\" feel is preserved: smoothstep is flat near both endpoints, so each post's level still dominates its own half of the gap.")
+	display_game("  • [b]Example[/b]: Haven (Lv 1) → adjacent post (Lv 30). Old curve: lvl 8 just before midpoint → lvl 23 just after (15-level cliff). New curve: lvl 16 on both sides (continuous). The starter-zone protection is unchanged — Haven's tight Lv 1-2 pocket inside 20 tiles still holds.")
+	display_game("")
+
 	# v0.9.594 — Market listing picker + bulk-count fix.
-	display_game("[color=#00FF00]v0.9.594[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.594[/color]")
 	display_game("  [color=#FFD700]Two market UX fixes in one release. The Sell / Bulk List menu's count badges were wrong (Equipment / Consumables always 0; Materials always greyed out) because of a field-shape mismatch. Then the listing flow has been moved from the chat picker into the market panel — single items, materials, and eggs are now clickable in-panel with an inline quantity stepper.[/color]")
 	display_game("  • [b]Bulk count fix[/b]: equipment items carry [color=#888888]type: \"weapon_iron\"[/color] / [color=#888888]\"armor_chain\"[/color] (suffix variants) not bare [color=#888888]\"equipment\"[/color], so the old string-match never hit. Consumables now match the [color=#888888]is_consumable[/color] flag the server uses. Materials + food live in [color=#888888]crafting_materials[/color] (a separate dict from inventory) and are looked up against [color=#888888]CraftingDatabase.MATERIALS[/color]. Result: every Sell / Bulk List row now reads accurate counts.")
 	display_game("  • [b]In-panel listing picker[/b]: clicking \"List from Inventory\" / \"List Materials\" / \"List Egg from Incubator\" now opens a clickable overlay inside the market panel — scrollable item rows, selection highlight, quantity stepper for stackables, Confirm + Cancel buttons. Replaces the legacy chat-driven flow that used number-key item selection + chat-typed quantities.")
@@ -25432,13 +25439,6 @@ func display_changelog():
 	display_game("  [color=#FFD700]Fixes the invisible \"✦ Imprint\" option at ability rank-up. v0.9.549 shipped the feature but the server's `rank_up_choice` payload was dropping the `variant_offer` field, so the 3rd button never showed even with an active companion that qualified (e.g., Gnoll → Rending). Rank up Strike with a Gnoll active now offers Bleed alongside +1 Card / +10% Damage.[/color]")
 	display_game("  • [b]One-line server fix[/b]: the queued rank choice carried `variant_offer` correctly all the way through combat_manager and the character's pending_rank_choices queue — but the message that surfaces the popup left it on the floor. Now forwarded. `next_pending` (chained rank-ups in one combat) was already correct because it's the raw queued dict.")
 	display_game("  • [b]Reminder of how Imprints work[/b]: only offered when (1) you have an active companion, (2) its monster type maps to a trait (53 mapped — Gnoll = Rending bleed, Wolf = Hunter's Eye crit, Goblin = Distract miss, etc.), and (3) that ability hasn't reached 4 imprints yet. Each imprint is a small permanent passive rider, account-level (survives permadeath like mastery records).")
-	display_game("")
-
-	# v0.9.587 — Enemy HP bar discovery-overflow fix.
-	display_game("[color=#00FFFF]v0.9.587[/color]")
-	display_game("  [color=#FFD700]Fixes the confusing HP bar jump when you out-damage a monster whose HP you didn't fully know yet. Example: hit a Lv4 Hobgoblin for 23 (sees \"25/48\"), then for another 27 — used to show \"12/62\" because the bar quietly inflated the max to your damage+25%. Now shows \"0/48 (still alive!)\" with the bar truly depleted, so the discovery moment reads instead of stealth-resizing.[/color]")
-	display_game("  • [b]Behavior change[/b]: when total damage exceeds the known/estimated HP and the monster is still alive, the displayed max stays put and the bar drains to 0 with a \"still alive!\" tag. The known HP still gets bumped silently on confirmed kill (so future fights start from a more accurate estimate), but no longer balloons mid-fight.")
-	display_game("  • [b]Why it broke[/b]: v0.9.566's upward-observation fix grew the displayed ceiling to [color=#888888]damage_dealt + 25%[/color] when the player out-damaged the estimate. The intent was \"don't pin the bar at 1\", but the side effect was that both halves of the HP label jumped simultaneously — confusing because the bar appeared to refill while you were attacking.")
 	display_game("")
 
 	# v0.9.585 — ROOT CAUSE of the Pathfinder turn-in bug: npc_ prefix mismatch.
