@@ -25821,8 +25821,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.615 — Top-3 nearest IDW blend (replaces broken v0.9.614 all-posts IDW).
+	display_game("[color=#00FF00]v0.9.615[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF4444][b]Hotfix[/b][/color][color=#FFD700] for v0.9.614's catastrophic level inflation. The 'weight all posts by 1/d²' approach elevated starter-zone monster levels from ~18 to ~89 because 50 distant high-tier posts cumulatively outweighed the nearest one. Math intuition was wrong: per-post influence WAS small, but cumulative far-post influence wasn't. v0.9.615 caps the calc set to the 3 NEAREST posts — solves both the v0.9.614 elevation bug AND the original (44,-57)→(45,-57) cliff that motivated this work.[/color]")
+	display_game("  • [b]Top-3 nearest IDW[/b]. [color=#888888]get_post_anchored_level[/color] now sorts posts by d², takes the 3 nearest, and blends them by [color=#888888]w = 1/(d² + 1)[/color]. Only nearby posts influence the local level — no more cumulative far-post elevation. Nearest still dominates its own pocket (its weight is ~100× the 3rd-nearest's at typical post spacing).")
+	display_game("  • [b]Cliff fix preserved[/b]. The second-nearest-swap cliff (smoothstep era) happened because when the 2nd-nearest post identity flipped, the blend re-targeted a very different anchor. With top-3, the SWAP happens at the lowest-weight slot (the 3rd-nearest = farthest in the set), so the discontinuity is sub-1 level instead of 5-15.")
+	display_game("  • [b]Math sanity[/b]: at the (44,-57) starter zone, blend = ~18 (matches nearest post's anchor). Earlier reports of 18→38 cliff should now show as ~18→~19 across the same tile boundary. At apex zones beyond the post network, wilderness curve still serves as the floor.")
+	display_game("  • [b]Sorry for the v0.9.614 danger window[/b]. Players in threat corridors during the brief v0.9.614 deploy may have encountered level 80-90 mobs unexpectedly. The math is now safer than the original v0.9.595 baseline.")
+	display_game("")
+
 	# v0.9.614 — Inverse-distance level blend kills the second-nearest-swap cliff.
-	display_game("[color=#00FF00]v0.9.614[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.614[/color]")
 	display_game("  [color=#FFD700]Player report kept happening: '(44,-57) is Lv ~18, moving one east to (45,-57) is Lv ~38.' v0.9.605's bubble falloff didn't address this — it's a different cliff (the 'second-nearest-post-swap' residual documented in the level-smoothing memo). When the player crosses a midpoint where the SECOND-nearest post identity flips, the smoothstep blend recomputes against a different anchor and the level jumps. Eliminated by switching to inverse-distance² weighting across all nearby posts.[/color]")
 	display_game("  • [b]Inverse-distance² weighted blend[/b]. [color=#888888]get_post_anchored_level[/color] now iterates every NPC post and weights each by [color=#888888]1/(d² + 1)[/color], producing a continuous level field. Far posts contribute almost nothing (1/100² = 0.0001 vs 1/10² = 0.01 — 100× less influence). Nearest post still dominates its own pocket. As the player moves, every post's weight shifts smoothly — no identity swap because no post enters or leaves the calculation set.")
 	display_game("  • [b]Bubble layer unchanged[/b]. The v0.9.605 player-post settler bubble falloff still runs ON TOP of the IDW post anchor blend. Safe zones inside bubbles work exactly the same — only the open-world post anchor math changed.")

@@ -1639,39 +1639,55 @@ func get_post_anchored_level(x: int, y: int) -> int:
 	if chunk_manager == null or chunk_manager.npc_posts.is_empty():
 		return wilderness_level
 
-	# v0.9.614 — inverse-distance² weighted blend across ALL nearby NPC posts.
-	# Replaces the v0.9.567/v0.9.595 nearest+second-nearest pair selection,
-	# which had a residual "second-nearest-swap" cliff: when the player
-	# crossed a region where the second-nearest post identity flipped to a
-	# new post with a very different anchor level, the blend target jumped
-	# by `|new_second - old_second| * blend_weight`. Player report:
-	# "(44,-57) is Lv ~18, moving one east to (45,-57) is Lv ~38."
+	# v0.9.615 — top-3 nearest IDW. Replaces v0.9.614's "all posts IDW" (which
+	# elevated levels by +70 because cumulative far-post contribution dominated
+	# the nearest in starter zones — Lv 18 area became Lv 89). The fix limits
+	# the calc set to the 3 nearest posts: only nearby posts influence the
+	# blend, so no cumulative far-post elevation. The 3rd-nearest is the
+	# "swap candidate" — when the player moves and a 4th post becomes closer
+	# than the current 3rd, the 3rd→4th swap happens at the LOWEST-weight
+	# slot. With 1/(d²+1) weighting and typical post spacing, the 3rd-nearest
+	# has a weight ~100× smaller than the nearest, so a swap at that slot
+	# produces sub-1-level discontinuity (vs the 5-15 level cliff with the
+	# nearest+second-nearest pair selection).
 	#
-	# IDW formula: level = Σ(w_i × anchor_i) / Σ(w_i) where w_i = 1/(d² + ε).
-	# - Far posts contribute negligible weight (1/100² ≈ 0.0001 vs 1/10² = 0.01,
-	#   so a post 10× closer has 100× the influence). Nearest post still
-	#   dominates its own pocket.
-	# - As you move, EVERY post's weight shifts smoothly. No identity-swap
-	#   discontinuity because no post enters/leaves the calculation set.
-	# - ε = 1.0 prevents singularity at exact post coordinates (a player
-	#   standing on a post gets that post's anchor level, not infinity).
-	var idw_total_weight: float = 0.0
-	var idw_weighted_sum: float = 0.0
+	# Robust to procedural map regeneration. The calc set is determined by
+	# spatial proximity, not by post count — fewer posts (sparse maps) just
+	# means top.size() ends up smaller; the code handles 0/1/2 gracefully.
+	# Cumulative far-post elevation cannot recur because the set is hard-
+	# capped at 3 regardless of how many posts the map contains.
+	const TOP_N_POSTS: int = 3
+	var top: Array = []  # entries: {cx: float, cy: float, d2: float}
 	for post in chunk_manager.npc_posts:
 		var cx: float = float(post.get("x", 0))
 		var cy: float = float(post.get("y", 0))
 		var dx: float = float(x) - cx
 		var dy: float = float(y) - cy
 		var d2: float = dx * dx + dy * dy
-		var weight: float = 1.0 / (d2 + 1.0)
-		var origin_dist: float = sqrt(cx * cx + cy * cy)
+		# Inserted-sorted into top by d2 ascending. Keep at most TOP_N_POSTS.
+		var inserted: bool = false
+		for i in range(top.size()):
+			if d2 < float(top[i].get("d2", INF)):
+				top.insert(i, {"cx": cx, "cy": cy, "d2": d2})
+				inserted = true
+				break
+		if not inserted and top.size() < TOP_N_POSTS:
+			top.append({"cx": cx, "cy": cy, "d2": d2})
+		if top.size() > TOP_N_POSTS:
+			top.resize(TOP_N_POSTS)
+
+	var total_weight: float = 0.0
+	var weighted_sum: float = 0.0
+	for entry in top:
+		var weight: float = 1.0 / (float(entry["d2"]) + 1.0)
+		var origin_dist: float = sqrt(float(entry["cx"]) * float(entry["cx"]) + float(entry["cy"]) * float(entry["cy"]))
 		var anchor_level: float = float(_distance_to_level(origin_dist))
-		idw_total_weight += weight
-		idw_weighted_sum += weight * anchor_level
+		total_weight += weight
+		weighted_sum += weight * anchor_level
 
 	var post_blended: int = wilderness_level
-	if idw_total_weight > 0.0:
-		post_blended = int(round(idw_weighted_sum / idw_total_weight))
+	if total_weight > 0.0:
+		post_blended = int(round(weighted_sum / total_weight))
 
 	var world_level: int = max(post_blended, wilderness_level)
 	# v0.9.605 — blend in the bubble's level by its falloff weight. Inside a
