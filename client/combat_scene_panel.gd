@@ -637,6 +637,39 @@ func end_action_phase() -> void:
 	# nothing to do visually.
 	return
 
+func hide_fx_overlay_only() -> void:
+	"""v0.9.623 — tear down the FX battlefield overlay WITHOUT restoring the
+	pre-FX Lufia layout (party row). Used by the loot-panel close path when
+	transitioning straight to the victory card. _force_end_action_phase
+	tweens _player_col modulate back to 1.0, which makes the pre-FX scene
+	visible underneath the victory card — and when the player dismisses
+	the card, the pre-FX layout is exposed. Player report v0.9.622 fix:
+	'No I'm seeing the Start of combat Screen stuck up there like it
+	swapped scenes (not the fx one).'
+
+	This variant clears just the overlay state. The pre-FX layout stays
+	hidden (modulate 0); reset_for_new_combat handles the full restore
+	when a fresh combat starts."""
+	_cancel_action_phase_timer()
+	_fx_persistent_active = false
+	_action_phase_active = false
+	_kill_action_phase_tween()
+	if _battlefield_overlay and is_instance_valid(_battlefield_overlay):
+		_battlefield_overlay.visible = false
+		_battlefield_overlay.modulate.a = 0.0
+	# Strip restoration is OK to do — they sit alongside the victory card
+	# and don't have a "fade in" tween that would flash visually.
+	if _totals_strip_frame and is_instance_valid(_totals_strip_frame):
+		_totals_strip_frame.visible = true
+	if _totals_strip and is_instance_valid(_totals_strip):
+		_totals_strip.visible = true
+	if _hand_strip and is_instance_valid(_hand_strip):
+		_hand_strip.visible = true
+	if _status_strip and is_instance_valid(_status_strip):
+		_status_strip.visible = true
+	call_deferred("_update_review_button_visibility")
+
+
 func reset_for_new_combat() -> void:
 	"""v0.9.593 — called by client.gd when a new combat starts so any persistent
 	FX state from a previous fight doesn't leak in. Forces a clean slate: flag
