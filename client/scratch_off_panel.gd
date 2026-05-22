@@ -760,12 +760,17 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 		ripple_top.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		inner.add_child(ripple_top)
 
-		var silhouette := Label.new()
-		silhouette.text = String(theme["silhouette"])
-		silhouette.add_theme_color_override("font_color", theme["silhouette_color"])
-		silhouette.add_theme_font_size_override("font_size", 18)
-		silhouette.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		inner.add_child(silhouette)
+		# v0.9.603 — show the QWERTY key letter for this slot in place of the
+		# generic theme silhouette. Jittered slot positions don't match the
+		# positional QWERTY layout 1:1, so the player needs to see the actual
+		# key on each tile. Theme silhouette color preserved for flavor.
+		var key_lbl := Label.new()
+		var key_str: String = _SLOT_KEY_LABELS[slot_index] if slot_index >= 0 and slot_index < _SLOT_KEY_LABELS.size() else String(theme["silhouette"])
+		key_lbl.text = key_str
+		key_lbl.add_theme_color_override("font_color", theme["silhouette_color"])
+		key_lbl.add_theme_font_size_override("font_size", 22)
+		key_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		inner.add_child(key_lbl)
 
 		var ripple_bot := Label.new()
 		ripple_bot.text = String(theme["ambient_glyph"])
@@ -1094,7 +1099,27 @@ func _resolve_slot_pick(slot_index: int) -> void:
 		slot_missed.emit(slot_index)
 
 
-# === v0.9.596 keyboard navigation ===
+# === v0.9.596 / v0.9.603 keyboard navigation ===
+#
+# v0.9.603 — same QWERTY-grid direct-binding combat loot got in v0.9.602.
+# Player report: "Players also don't appear to be able to use the QWERTY
+# Nav in the other scratchoffs like gathering or crafting." Each slot
+# index 0-15 gets a direct keypress. Pressing the key fires the
+# bar-over-slot timing check (slot_clicked on hit, slot_missed on miss)
+# exactly like a mouse click on that card.
+#
+# Slots in this panel are JITTERED inside their grid cells, so the
+# positional key layout doesn't match the visual layout 1:1. The
+# corresponding key letter is rendered on each hidden card so the player
+# can see which key reveals which tile regardless of jitter.
+const _QWERTY_SLOT_KEYS := {
+	KEY_1: 0, KEY_2: 1, KEY_3: 2, KEY_4: 3,
+	KEY_Q: 4, KEY_W: 5, KEY_E: 6, KEY_R: 7,
+	KEY_A: 8, KEY_S: 9, KEY_D: 10, KEY_F: 11,
+	KEY_Z: 12, KEY_X: 13, KEY_C: 14, KEY_V: 15,
+}
+const _SLOT_KEY_LABELS := ["1", "2", "3", "4", "Q", "W", "E", "R", "A", "S", "D", "F", "Z", "X", "C", "V"]
+
 
 func _input(event: InputEvent) -> void:
 	if not visible or _auto_skip or _scratches_remaining <= 0:
@@ -1102,17 +1127,27 @@ func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	var k: int = event.keycode
+	# v0.9.603 — direct QWERTY-grid slot keys. Takes priority over the WASD
+	# arrow nav so A/S/D press their slot, not move focus. Arrow keys still
+	# move focus for players who prefer to navigate that way.
+	if _QWERTY_SLOT_KEYS.has(k):
+		var slot_idx: int = int(_QWERTY_SLOT_KEYS[k])
+		_kb_focused_slot = slot_idx
+		_apply_kb_focus_visuals()
+		_resolve_slot_pick(slot_idx)
+		get_viewport().set_input_as_handled()
+		return
 	match k:
-		KEY_LEFT, KEY_A:
+		KEY_LEFT:
 			_move_kb_focus(-1, 0)
 			get_viewport().set_input_as_handled()
-		KEY_RIGHT, KEY_D:
+		KEY_RIGHT:
 			_move_kb_focus(1, 0)
 			get_viewport().set_input_as_handled()
-		KEY_UP, KEY_W:
+		KEY_UP:
 			_move_kb_focus(0, -1)
 			get_viewport().set_input_as_handled()
-		KEY_DOWN, KEY_S:
+		KEY_DOWN:
 			_move_kb_focus(0, 1)
 			get_viewport().set_input_as_handled()
 		KEY_TAB:
