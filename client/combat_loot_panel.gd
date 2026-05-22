@@ -382,37 +382,27 @@ func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, re
 
 
 func finish(final_bag: Dictionary) -> void:
-	"""Server says done — cascade-flip the remaining cards (which are NOT
-	awarded; they're shown so the player sees what they missed). After a brief
-	pause, hide and emit closed."""
+	"""Server says done — close the panel immediately.
+
+	v0.9.603 — scrapped the cascade-reveal animation per player feedback:
+	'It doesn't stay on the screen long enough for players to really read any
+	of it and it's not exactly helpful because they can't go back and change
+	their options.' The cascade was flipping missed tiles one-by-one with a
+	60ms-per-card stagger; total reveal time was up to ~1.5s and there was
+	no payoff. Now we just close the panel — the accumulated loot is already
+	on the victory card (v0.9.602 atomic refresh path)."""
 	_cascade_active = true
 	_done_button.disabled = true
+	# Still mirror the final slot state internally so anyone querying the
+	# panel post-close sees the correct "missed" labels. Just no animation.
 	var final_slots: Array = final_bag.get("slots", [])
-	# Reveal any still-sealed cards with the server's final state. Cascade
-	# them so the player sees the flip rather than an instant pop.
-	var unrevealed: Array = []
 	for i in range(min(final_slots.size(), _cards.size())):
 		if not bool(_slots_data[i].get("revealed", false)):
 			_slots_data[i] = final_slots[i].duplicate(true)
 			_slots_data[i]["revealed"] = true
-			_slots_data[i]["missed"] = true  # client marker so it renders dim
-			unrevealed.append(i)
-	for offset_i in range(unrevealed.size()):
-		var idx_local: int = unrevealed[offset_i]
-		var captured_local := idx_local
-		var delay := 0.06 * float(offset_i)
-		_call_deferred_after(delay, func():
-			if not is_inside_tree():
-				return
-			_render_card(captured_local)
-			_play_reveal_pop(captured_local))
-	# After the cascade completes, hide the panel and emit `closed` so the
-	# client wiring can advance the post-victory flow.
-	var total_delay: float = 0.06 * float(unrevealed.size()) + 0.6
-	_call_deferred_after(total_delay, func():
-		if is_inside_tree():
-			visible = false
-			emit_signal("closed"))
+			_slots_data[i]["missed"] = true
+	visible = false
+	emit_signal("closed")
 
 
 func _call_deferred_after(delay: float, fn: Callable) -> void:
@@ -461,11 +451,15 @@ func _render_card(slot_index: int) -> void:
 	var revealed: bool = bool(slot.get("revealed", false))
 	var sb: StyleBoxFlat = card.get_theme_stylebox("panel").duplicate()
 	if not revealed:
-		# Sealed card
+		# Sealed card. v0.9.603 — show the QWERTY key letter for this slot
+		# instead of a generic "?". Player can read it and press that key.
+		# Light yellow tint matches the focus highlight palette without
+		# overwhelming the unrevealed look.
 		sb.bg_color = Color(0.10, 0.08, 0.14, 1.0)
 		sb.border_color = Color(0.55, 0.45, 0.85, 1)
 		card.add_theme_stylebox_override("panel", sb)
-		lbl.text = "[center][color=#888888][font_size=20]?[/font_size][/color][/center]"
+		var key_label: String = _SLOT_KEY_LABELS[slot_index] if slot_index >= 0 and slot_index < _SLOT_KEY_LABELS.size() else "?"
+		lbl.text = "[center][color=#D4C376][font_size=22][b]%s[/b][/font_size][/color][/center]" % key_label
 		return
 	# Revealed — colored by kind. Missed (cascade) renders dim.
 	var color_hex: String = String(slot.get("color", "#FFFFFF"))
@@ -596,6 +590,11 @@ const _QWERTY_SLOT_KEYS := {
 	KEY_A: 8, KEY_S: 9, KEY_D: 10, KEY_F: 11,
 	KEY_Z: 12, KEY_X: 13, KEY_C: 14, KEY_V: 15,
 }
+# v0.9.603 — inverse map: slot index → key label rendered on the sealed
+# tile. Replaces the generic "?" so the player can see at a glance which
+# key reveals each tile (player report: "no indicator on the Loot card
+# that indicates what keys the player can press").
+const _SLOT_KEY_LABELS := ["1", "2", "3", "4", "Q", "W", "E", "R", "A", "S", "D", "F", "Z", "X", "C", "V"]
 
 
 func _input(event: InputEvent) -> void:

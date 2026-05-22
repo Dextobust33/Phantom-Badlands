@@ -25428,8 +25428,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.603 — Scratchoff polish round 2: key labels everywhere + scrap cascade + victory card fix.
+	display_game("[color=#00FF00]v0.9.603[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Follow-up to v0.9.602. Four fixes from the next round of playtest feedback: combat-loot tiles now show their key letter instead of '?', the cascade reveal of missed tiles is scrapped entirely, the victory card actually appears after the loot panel closes, and the QWERTY scheme now works in gathering / crafting scratchoffs (with key letters on each tile).[/color]")
+	display_game("  • [b]Loot tiles show the key letter[/b]. Sealed tiles used to render a generic '?'. Now each tile displays the QWERTY key bound to it — [color=#D4C376]1[/color] / [color=#D4C376]Q[/color] / [color=#D4C376]A[/color] / [color=#D4C376]Z[/color] in the leftmost column, etc. Press the key on the tile and that tile reveals.")
+	display_game("  • [b]Missed-tile cascade scrapped[/b]. Player feedback: '[i]It doesn't stay on the screen long enough for players to really read any of it and it's not exactly helpful because they can't go back and change their options.[/i]' Removed the 60ms-per-card animation and the trailing 0.6s hold. The panel now closes immediately when you press Done (or auto-Done fires after the last reveal). Accumulated loot is on the victory card behind.")
+	display_game("  • [b]Victory card actually shows after loot[/b]. v0.9.602 regression: removing the per-reveal redraw meant [color=#888888]_combat_loot_refresh_victory_card[/color] only fired once at panel-close — but it didn't force [color=#888888]combat_scene_panel.visible = true[/color] or extend the linger window. If the player took longer than ~2.2s to reveal tiles, the combat panel auto-hid behind the loot panel; when loot closed and we tried to show the victory card, the parent panel was hidden so nothing rendered. Fix forces panel visibility + extends linger before the call, mirroring the deferred-victory-card path.")
+	display_game("  • [b]QWERTY nav in gathering + crafting[/b]. The v0.9.602 keyboard scheme only landed in combat loot. Player report: '[i]Players also don't appear to be able to use the QWERTY Nav in the other scratchoffs like gathering or crafting.[/i]' Same [color=#888888]1234 / QWER / ASDF / ZXCV[/color] grid now wired into [color=#888888]scratch_off_panel.gd[/color]. Slot positions in gathering / crafting are jittered, so each hidden tile now renders its key letter where the theme silhouette used to be — the player can see which key reveals which tile regardless of layout.")
+	display_game("")
+
 	# v0.9.602 — Combat-loot polish: 5 bugs + QWERTY scratchoff nav + PICKED marker.
-	display_game("[color=#00FF00]v0.9.602[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.602[/color]")
 	display_game("  [color=#FFD700]Seven combat-loot / dungeon fixes batched. Victory screen flicker, Space-to-move requirement, dungeon healing tiles not updating HP, Space-opens-inventory bug, focus-color-trail bug, QWERTY-grid keyboard scheme, and PICKED marker on player-revealed loot.[/color]")
 	display_game("  • [b]Victory screen no longer flickers during loot reveal[/b]. Was redrawing the victory card behind the scratch-off on every reveal. Now redraws ONCE atomically when the cascade finishes — the entire loot list appears in one frame instead of growing line-by-line behind a flashing background.")
 	display_game("  • [b]Move freely after loot reveal[/b]. The [color=#888888]_on_combat_loot_closed[/color] handler now clears [color=#888888]pending_continue[/color] so the player can walk away from the victory screen without having to press Space. The cascade IS the acknowledgement.")
@@ -25538,16 +25547,6 @@ func display_changelog():
 	display_game("  • [b]Instant-craft panel no longer renders stripped[/b]. Enchant / rune / structure / scroll / map / repair / reforge / temper recipes (the ones that bypass the scratch-off) were sending [color=#888888]craft_result[/color] without [color=#888888]score[/color] or [color=#888888]summary[/color], so the Quality Rating panel rendered with empty roll bands and no boost indicator. Now sends a minimal summary with [color=#888888]is_instant_craft: true[/color] so the panel can render a clean version without scratch-off-specific noise.")
 	display_game("  • [b]Flee combat_end now includes character[/b]. Flee-side stamina cost / buff strip / position updates land in the HUD immediately instead of waiting for the next [color=#888888]character_update[/color] tick.")
 	display_game("  • [b]house_update payloads unified via [color=#888888]_send_house_update()[/color] helper[/b]. 13 hand-rolled sites consolidated into one; mastery_records / pending_headstarts / headstart_costs / headstart_max_rank now ship with every house refresh, so a future mastery-touching action can't regress the cache.")
-	display_game("")
-
-	# v0.9.581 — Gathering/craft scratch-off ✦ +2 Scratches bonus cell.
-	display_game("[color=#00FFFF]v0.9.581[/color]")
-	display_game("  [color=#FFD700]The v0.9.574 combat-loot +2 cell mechanic ports to gathering + crafting scratch-offs. One implementation, both surfaces.[/color]")
-	display_game("  • [b]✦ +2 Scratches bonus cell[/b] (new slot kind `BAR_BONUS`). Each scratch-off slot rolls a [color=#FFD700]1-in-12[/color] chance of being a gold +2 bonus. Revealing it grants [color=#88FF88]+2 to scratches_remaining[/color]; the reveal click cost 1, so the net effect is [color=#88FF88]+1 scratch gained[/color]. Same engagement layer as the combat-loot version.")
-	display_game("  • [b]One implementation, both surfaces[/b]: gathering scratch-off (Fishing / Mining / Logging / Foraging) AND craft scratch-off use the same engine, so adding the kind to `_roll_scratch_off_slot_kind` + `_build_scratch_off_slot` + the reveal handler covers both at once. Server pre-rolls BAR_BONUS BEFORE the existing DUD/NORMAL/LUCKY/JACKPOT distribution.")
-	display_game("  • [b]Visual[/b]: gold border + ✦ BONUS tag (matches the v0.9.574 combat-loot card style). Reveal pop fires the same way as other slot kinds.")
-	display_game("  • [b]Help[/b]: the `scratch_off` Help topic now documents the +2 mechanic + drop rate.")
-	display_game("  • [b]Design rationale[/b]: see `project_scratch_off_engagement_design.md` in the dev memory — three options considered (bar-time, free scratches, quality boost), Option B (free scratches via scratches_remaining bump) won for simplicity + direct parallelism with combat-loot.")
 	display_game("")
 
 	# v0.9.580 — Two bug fixes from user playtest report.
@@ -28746,6 +28745,17 @@ func _combat_loot_refresh_victory_card() -> void:
 		return
 	if combat_scene_panel == null or not combat_scene_panel.has_method("show_victory_card"):
 		return
+	# v0.9.603 — force the panel visible + extend linger before drawing the
+	# card. The loot reveal can take longer than the post-combat linger
+	# window (default ~2.2s), in which case the combat_scene_panel auto-hides
+	# while the loot panel is on top. When the loot panel closes and this
+	# function fires to swap the card in, show_victory_card flips the
+	# _victory_card_overlay.visible = true on a HIDDEN parent panel — so
+	# nothing renders. Player report: "After all of the loot tiles have been
+	# picked the player screen is no longer going to the victory screen."
+	# Mirrors the deferred-victory-card path at line 30883+.
+	_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2400)
+	combat_scene_panel.visible = true
 	var payload: Dictionary = _combat_loot_victory_payload.duplicate(true)
 	payload["loot"] = _combat_loot_revealed_lines.duplicate()
 	payload["gear_drops"] = _combat_loot_gear_drops.duplicate()
