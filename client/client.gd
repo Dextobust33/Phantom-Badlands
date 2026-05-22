@@ -4127,8 +4127,13 @@ func _process(delta):
 					# the persisted victory card. v0.9.625 — explicit
 					# cleanup (don't rely on next-frame safety net) so the
 					# move-triggers-encounter race can't leave stale state.
+					# v0.9.626 — also nuke deferred victory payload + FX flag
+					# so _drain_combat_queue empty branch can't re-open the
+					# dismissed card.
 					if _post_loot_victory_persists:
 						_post_loot_victory_persists = false
+						_pending_victory_card_payload = null
+						_pending_victory_fx_play = false
 						if combat_scene_panel:
 							if combat_scene_panel.has_method("hide_victory_card"):
 								combat_scene_panel.hide_victory_card()
@@ -4347,11 +4352,12 @@ func _input(event):
 				if game_output and is_instance_valid(game_output):
 					game_output.clear()
 			# v0.9.625 — explicit cleanup instead of waiting for the safety
-			# net's next-frame fire. If the safety net's `not _now_in_combat`
-			# gate happens to fail (e.g., new encounter triggered same frame),
-			# the cleanup would never run. Do it here unconditionally so the
-			# user's "Press Space to continue" actually finishes the cleanup
-			# atomically. Player report: stuck FX scene with autoskip on.
+			# net's next-frame fire.
+			# v0.9.626 — also nuke the deferred victory payload + FX flag
+			# so they can't fire later from _drain_combat_queue empty
+			# branch and re-open the card we just dismissed.
+			_pending_victory_card_payload = null
+			_pending_victory_fx_play = false
 			if combat_scene_panel:
 				if combat_scene_panel.has_method("hide_victory_card"):
 					combat_scene_panel.hide_victory_card()
@@ -25844,8 +25850,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.626 — Real root cause: deferred victory payload re-opening dismissed card.
+	display_game("[color=#00FF00]v0.9.626[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Apologies for the iteration. Actual root cause: [color=#888888]_drain_combat_queue[/color]'s queue-empty branch fires [color=#888888]show_victory_card[/color] from [color=#888888]_pending_victory_card_payload[/color] (set at combat_end when the combat message queue was non-empty — v0.9.413 deferred-display pattern). If the queue finishes draining AFTER the player has already dismissed via Space/movement, that branch re-opens the dismissed victory card. _victory_interlude_active flips back to true. Panel sticks visible with Review Damage button.[/color]")
+	display_game("  • [b]Fix[/b]: nuke [color=#888888]_pending_victory_card_payload[/color] + [color=#888888]_pending_victory_fx_play[/color] in (1) _on_combat_loot_closed (loot path already shows the card via _combat_loot_refresh_victory_card, the pending payload is redundant), (2) Space-dismiss intercept, (3) movement-dismiss path. With these flags cleared, _drain_combat_queue's empty branch becomes a no-op and can't re-open the dismissed card.")
+	display_game("")
+
 	# v0.9.625 — explicit cleanup on Space/movement dismiss (autoskip stuck fix).
-	display_game("[color=#00FF00]v0.9.625[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.625[/color]")
 	display_game("  [color=#FFD700]v0.9.624's reset_for_new_combat only fires on NEW combat. Player confirmed: '[i]I can move around but this is stuck on my screen and overlays everything... only clears if I get in a new combat.[/i]' Means the cleanup chain isn't running BEFORE a new combat starts. Belt-and-suspenders: Space and movement dismiss paths now do explicit hide_victory_card + hide_fx_overlay_only instead of relying on the next-frame safety net (which has a [color=#888888]not _now_in_combat[/color] gate that can race-fail).[/color]")
 	display_game("  • [b]Three cleanup sites[/b]: (1) Safety net in _process now ALSO calls hide_fx_overlay_only when it dismisses a stale victory card. (2) Space-dismiss intercept (post-loot) explicitly calls hide_victory_card + hide_fx_overlay_only inline. (3) Movement-dismiss path same. The state can't leak past any of the three exit paths now.")
 	display_game("")
@@ -29169,15 +29181,20 @@ func _on_combat_loot_closed() -> void:
 	      button (top-right) can still re-open it via start_review_phase."""
 	# (4) FX teardown — must run BEFORE refresh_victory_card so the
 	# overlay state is cleaned up before the victory card lays over it.
-	# v0.9.623: switched from _force_end_action_phase to hide_fx_overlay_only.
-	# _force_end_action_phase tweens _player_col modulate BACK to 1.0, which
-	# made the pre-FX Lufia layout visible underneath the victory card —
-	# and when the player dismissed the card, the pre-FX scene was exposed.
-	# Player report: "I'm seeing the Start of combat Screen stuck up there
-	# like it swapped scenes (not the fx one)." hide_fx_overlay_only clears
-	# the battlefield overlay without restoring the pre-FX layout.
 	if combat_scene_panel and combat_scene_panel.has_method("hide_fx_overlay_only"):
 		combat_scene_panel.hide_fx_overlay_only()
+	# v0.9.626 — clear the deferred victory display flags. They were set
+	# at combat_end when the combat message queue was non-empty (v0.9.413
+	# pattern: defer the victory card until paced attacks finish). The
+	# queue-empty branch in _drain_combat_queue consumes them by calling
+	# show_victory_card — but if that fires AFTER the player has already
+	# dismissed the victory card via Space/movement, the card re-opens
+	# and sticks the panel visible. _combat_loot_refresh_victory_card
+	# (called below) already shows the card, so the pending payload is
+	# redundant and must not be consumed later. Player report: stuck
+	# combat scene after Space-mash during loot reveal + victory display.
+	_pending_victory_card_payload = null
+	_pending_victory_fx_play = false
 	# (1) Final atomic redraw of the victory card with the full loot list.
 	#     This also forces panel.visible = true and extends linger — see
 	#     _combat_loot_refresh_victory_card.
