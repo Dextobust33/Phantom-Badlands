@@ -20212,6 +20212,9 @@ func handle_server_message(message: Dictionary):
 			# where acknowledge_continue's sync hit a race with state change.
 			call_deferred("_sync_map_sprites_overlay")
 			in_combat = false
+			# v0.9.601 — restore the bottom resource bars overlay (hidden during
+			# combat as redundant with the in-combat HP + resource bars).
+			update_resource_bars_overlay()
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
 			# Audit #1 Slice 6a — wipe hand state at end of combat. Cards
@@ -21200,6 +21203,9 @@ func _process_combat_start(message: Dictionary):
 		input_field.release_focus()
 
 	in_combat = true
+	# v0.9.601 — combat scene now shows HP + resource bars; the bottom-of-
+	# screen resource_bars_overlay is redundant during a fight. Hide it.
+	update_resource_bars_overlay()
 	# v0.9.593 — clear any persistent-FX state from a previous combat so the
 	# new fight's Round 1 fires the normal fade-in transition.
 	if combat_scene_panel and combat_scene_panel.has_method("reset_for_new_combat"):
@@ -25418,8 +25424,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.601 — Combat UI: totals border, FX overlay info parity, no more redundant resource bar.
+	display_game("[color=#00FF00]v0.9.601[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three combat-UI fixes batched. Yellow totals border was running across the entire screen instead of just hugging the 'You / Foe' text. The FX overlay was missing info the pre-FX combat scene had (HP cur/max, resource bar, deck info, companion XP). The bottom-of-screen HP/Stamina bar overlapped the new combat-scene info as redundant clutter during fights.[/color]")
+	display_game("  • [b]Totals border[/b]: switched the running-totals PanelContainer's [color=#888888]size_flags_horizontal[/color] from [color=#888888]SIZE_EXPAND_FILL[/color] to [color=#888888]SIZE_SHRINK_CENTER[/color]. The frame now shrinks to fit 'You: N  Foe: N' and centers in the parent column — no more border slicing through the player/companion ASCII art.")
+	display_game("  • [b]FX overlay info parity[/b]: ASCII space dropped from 78% → 60% of each character block, and a VBoxContainer with the extras now anchors the bottom 40%: HP cur/max text, resource bar + text (player) / XP bar + text (companion), deck info ([color=#888888]Deck N · Hand M · Discard K[/color]), name. Resource bar color reflects class type (mana / stamina / energy).")
+	display_game("  • [b]Pre-FX resource bar[/b]: added a resource row to the pre-FX Lufia player box so the info is visible in both combat views, not just the FX overlay.")
+	display_game("  • [b]Bottom HP/resource bar[/b]: now hides during combat. The in-combat scene shows both HP and resource directly, so the bottom overlay was redundant. Still visible outside combat as a quick-glance affordance.")
+	display_game("")
+
 	# v0.9.600 — Combat buffs carry through flock encounters.
-	display_game("[color=#00FF00]v0.9.600[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.600[/color]")
 	display_game("  [color=#FFD700]Player feedback: ability buffs (War Cry, Berserk, Iron Skin, Fortify, etc.) should carry through to the next monster in a flock chain instead of getting reset between each mob. Now they do — the buff persists for the entire flock encounter and only clears when combat is truly over.[/color]")
 	display_game("  • [b]Root cause[/b]: [color=#888888]combat_manager.end_combat[/color] was called inside [color=#888888]process_ability_command[/color] / [color=#888888]process_attack[/color] the moment a monster died. That call cleared [color=#888888]character.active_buffs[/color] BEFORE the server got a chance to roll the flock chance and queue the next mob. By the time the second monster spawned, every buff was gone.")
 	display_game("  • [b]Fix[/b]: [color=#888888]end_combat[/color] now takes a [color=#888888]preserve_buffs[/color] flag. Combat manager sets it true whenever the victory result has [color=#888888]flock_chance > 0[/color] OR [color=#888888]summon_next_fight[/color] set (summoner abilities also chain). Server clears the preserved buffs in the non-flock-victory branch (the case where the flock roll FAILS), so non-chain outcomes still cleanse cleanly.")
@@ -26314,10 +26329,19 @@ func hide_companion_art_overlay():
 		companion_art_overlay.visible = false
 
 func update_resource_bars_overlay():
-	"""Update the resource bars overlay in the bottom-right of the game output, left of companion art."""
+	"""Update the resource bars overlay in the bottom-right of the game output, left of companion art.
+
+	v0.9.601 — hide during combat. The combat scene (pre-FX Lufia box AND FX
+	overlay) now shows player HP + resource bars directly, so the bottom-of-
+	screen overlay is redundant during a fight. Player feedback: 'we have a
+	redundant HP and resource bar under the gameoutput that doesn't need to be
+	there anymore.' Still shown outside combat as a quick-glance affordance."""
 	if resource_bars_overlay == null or not has_character:
 		if resource_bars_overlay:
 			resource_bars_overlay.visible = false
+		return
+	if in_combat:
+		resource_bars_overlay.visible = false
 		return
 
 	var current_hp = character_data.get("current_hp", 0)
