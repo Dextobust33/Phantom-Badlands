@@ -27,6 +27,12 @@ signal order_fulfill_pressed(order: Dictionary, quantity: int)
 signal order_cancel_pressed(order: Dictionary)
 signal order_create_picker_requested(category: String)
 signal order_create_submit(item_type: String, item_name: String, quantity: int, per_unit_valor: int)
+# v0.9.594 — in-panel listing pickers (inventory / material / egg) replacing
+# the legacy chat-based selection flow.
+signal picker_confirm_inventory(inv_index: int, quantity: int)
+signal picker_confirm_material(mat_name: String, quantity: int)
+signal picker_confirm_egg(egg_index: int)
+signal picker_cancelled
 
 const TAB_BROWSE := "browse"
 const TAB_MY := "my_listings"
@@ -123,6 +129,27 @@ var _fulfill_order: Dictionary = {}
 
 var _root_panel: PanelContainer
 var _title_label: Label
+
+# v0.9.594 — listing picker overlay state.
+var _picker_panel: PanelContainer = null
+var _picker_mode: String = ""  # "" / "inventory" / "material" / "egg"
+var _picker_title_label: Label = null
+var _picker_items_vbox: VBoxContainer = null
+var _picker_selected_label: RichTextLabel = null
+var _picker_qty_input: SpinBox = null
+var _picker_qty_row: HBoxContainer = null
+var _picker_confirm_btn: Button = null
+var _picker_max_btn: Button = null
+# Active picker payload, refreshed on each open_*_picker call so
+# character_update / inventory_update can re-render mid-pick.
+var _picker_inventory_cache: Array = []
+var _picker_materials_cache: Dictionary = {}
+var _picker_eggs_cache: Array = []
+# Currently-selected pick — bound to row index in the cache for the current mode.
+var _picker_selected_index: int = -1
+var _picker_selected_name: String = ""
+var _picker_selected_max: int = 1
+var _picker_selected_stackable: bool = false
 
 # v0.9.503 — reusable HelpPanel attached to the header ? Help button.
 var _help_panel: Control = null
@@ -444,6 +471,136 @@ func _build_layout() -> void:
 
 	_show_detail_empty(true)
 	_update_tab_styles()
+
+	# v0.9.594 — picker overlay sits on top of the body when active.
+	_build_picker_overlay()
+
+
+func _build_picker_overlay() -> void:
+	"""In-panel item picker that replaces display_market_list_select /
+	_materials / _eggs (chat-based). Sits on top of the browse view; toggled
+	via open_inventory_picker / open_material_picker / open_egg_picker."""
+	_picker_panel = PanelContainer.new()
+	_picker_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_picker_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.05, 0.04, 0.98)
+	sb.border_color = Color(0.55, 0.45, 0.33, 1)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 10
+	sb.content_margin_top = 10
+	sb.content_margin_right = 10
+	sb.content_margin_bottom = 10
+	_picker_panel.add_theme_stylebox_override("panel", sb)
+	_picker_panel.visible = false
+	add_child(_picker_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	_picker_panel.add_child(vbox)
+
+	# Header row: title + Back button
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	vbox.add_child(header)
+
+	_picker_title_label = Label.new()
+	_picker_title_label.text = "Select an item to list"
+	_picker_title_label.add_theme_color_override("font_color", Color(1, 0.84, 0))
+	_picker_title_label.add_theme_font_size_override("font_size", 18)
+	_picker_title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_picker_title_label)
+
+	var back_btn := _make_action_btn("← Back", _on_picker_back_pressed)
+	back_btn.custom_minimum_size = Vector2(90, 30)
+	header.add_child(back_btn)
+
+	# Scrollable list of selectable item rows
+	var list_sub := _make_subpanel()
+	list_sub.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_sub.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(list_sub)
+
+	var list_scroll := ScrollContainer.new()
+	list_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	list_sub.add_child(list_scroll)
+
+	_picker_items_vbox = VBoxContainer.new()
+	_picker_items_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_picker_items_vbox.add_theme_constant_override("separation", 3)
+	list_scroll.add_child(_picker_items_vbox)
+
+	# Footer: selected item summary + qty stepper + Confirm
+	var footer_sub := _make_subpanel()
+	footer_sub.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(footer_sub)
+
+	var footer_vbox := VBoxContainer.new()
+	footer_vbox.add_theme_constant_override("separation", 6)
+	footer_sub.add_child(footer_vbox)
+
+	_picker_selected_label = RichTextLabel.new()
+	_picker_selected_label.bbcode_enabled = true
+	_picker_selected_label.fit_content = true
+	_picker_selected_label.scroll_active = false
+	_picker_selected_label.add_theme_font_size_override("normal_font_size", 14)
+	_picker_selected_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_picker_selected_label.text = "[color=#808080]Click an item above to select.[/color]"
+	footer_vbox.add_child(_picker_selected_label)
+
+	_picker_qty_row = HBoxContainer.new()
+	_picker_qty_row.add_theme_constant_override("separation", 8)
+	_picker_qty_row.visible = false
+	footer_vbox.add_child(_picker_qty_row)
+
+	var qty_lbl := Label.new()
+	qty_lbl.text = "Qty:"
+	qty_lbl.add_theme_font_size_override("font_size", 14)
+	_picker_qty_row.add_child(qty_lbl)
+
+	_picker_qty_input = SpinBox.new()
+	_picker_qty_input.min_value = 1
+	_picker_qty_input.max_value = 9999
+	_picker_qty_input.step = 1
+	_picker_qty_input.value = 1
+	_picker_qty_input.custom_minimum_size = Vector2(120, 28)
+	_picker_qty_row.add_child(_picker_qty_input)
+
+	_picker_max_btn = _make_action_btn("Max", _on_picker_max_pressed)
+	_picker_max_btn.custom_minimum_size = Vector2(70, 28)
+	_picker_qty_row.add_child(_picker_max_btn)
+
+	var footer_actions := HBoxContainer.new()
+	footer_actions.add_theme_constant_override("separation", 8)
+	footer_vbox.add_child(footer_actions)
+
+	_picker_confirm_btn = _make_action_btn("Confirm Listing", _on_picker_confirm_pressed)
+	_picker_confirm_btn.custom_minimum_size = Vector2(180, 36)
+	_picker_confirm_btn.add_theme_font_size_override("font_size", 15)
+	_picker_confirm_btn.disabled = true
+	# Style — green to match Sell button so the action reads as commit.
+	var confirm_sb := StyleBoxFlat.new()
+	confirm_sb.bg_color = Color(0.20, 0.45, 0.25, 0.95)
+	confirm_sb.border_color = Color(0.45, 0.85, 0.50, 1)
+	confirm_sb.set_border_width_all(2)
+	confirm_sb.set_corner_radius_all(4)
+	confirm_sb.content_margin_left = 12
+	confirm_sb.content_margin_right = 12
+	confirm_sb.content_margin_top = 6
+	confirm_sb.content_margin_bottom = 6
+	_picker_confirm_btn.add_theme_stylebox_override("normal", confirm_sb)
+	footer_actions.add_child(_picker_confirm_btn)
+
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer_actions.add_child(spacer)
+
+	var cancel := _make_action_btn("Cancel", _on_picker_back_pressed)
+	cancel.custom_minimum_size = Vector2(120, 32)
+	footer_actions.add_child(cancel)
 
 
 func _make_subpanel() -> PanelContainer:
@@ -965,11 +1122,315 @@ func _on_pull_all_pressed() -> void:
 	emit_signal("pull_all_pressed")
 
 
-func update_bulk_counts(inventory: Array, incubating_eggs: Array) -> void:
+func is_picker_open() -> bool:
+	return _picker_panel != null and _picker_panel.visible
+
+
+func open_inventory_picker(inventory: Array) -> void:
+	"""v0.9.594 — replaces display_market_list_select. Renders unequipped/
+	unlocked inventory items as clickable rows; stackables show qty stepper."""
+	_picker_mode = "inventory"
+	_picker_inventory_cache = inventory if inventory is Array else []
+	_picker_title_label.text = "List from Inventory"
+	_rebuild_picker_rows()
+	_clear_picker_selection()
+	_picker_panel.visible = true
+
+
+func open_material_picker(crafting_materials: Dictionary) -> void:
+	"""v0.9.594 — replaces display_market_list_materials. Renders crafting
+	materials with qty > 0 as clickable rows. All materials are stackable."""
+	_picker_mode = "material"
+	_picker_materials_cache = crafting_materials if crafting_materials is Dictionary else {}
+	_picker_title_label.text = "List Materials"
+	_rebuild_picker_rows()
+	_clear_picker_selection()
+	_picker_panel.visible = true
+
+
+func open_egg_picker(incubating_eggs: Array) -> void:
+	"""v0.9.594 — replaces display_market_list_eggs. Renders incubating eggs
+	as clickable rows. Eggs are non-stackable (one egg per listing)."""
+	_picker_mode = "egg"
+	_picker_eggs_cache = incubating_eggs if incubating_eggs is Array else []
+	_picker_title_label.text = "List Egg from Incubator"
+	_rebuild_picker_rows()
+	_clear_picker_selection()
+	_picker_panel.visible = true
+
+
+func refresh_picker() -> void:
+	"""Re-render with whatever cache is current. Use after character_update /
+	inventory_update so the picker stays in sync with server state."""
+	if _picker_mode == "" or _picker_panel == null or not _picker_panel.visible:
+		return
+	_rebuild_picker_rows()
+	# If a selection is no longer valid (e.g., item disappeared), clear it.
+	if _picker_selected_index < 0:
+		_clear_picker_selection()
+
+
+func close_picker() -> void:
+	if _picker_panel == null:
+		return
+	_picker_panel.visible = false
+	_picker_mode = ""
+	_picker_inventory_cache = []
+	_picker_materials_cache = {}
+	_picker_eggs_cache = []
+	_clear_picker_selection()
+
+
+func _clear_picker_selection() -> void:
+	_picker_selected_index = -1
+	_picker_selected_name = ""
+	_picker_selected_max = 1
+	_picker_selected_stackable = false
+	if _picker_selected_label:
+		_picker_selected_label.text = "[color=#808080]Click an item above to select.[/color]"
+	if _picker_qty_row:
+		_picker_qty_row.visible = false
+	if _picker_qty_input:
+		_picker_qty_input.value = 1
+		_picker_qty_input.max_value = 1
+	if _picker_confirm_btn:
+		_picker_confirm_btn.disabled = true
+
+
+func _rebuild_picker_rows() -> void:
+	if _picker_items_vbox == null:
+		return
+	for child in _picker_items_vbox.get_children():
+		child.queue_free()
+	match _picker_mode:
+		"inventory":
+			_build_inventory_rows()
+		"material":
+			_build_material_rows()
+		"egg":
+			_build_egg_rows()
+
+
+func _build_inventory_rows() -> void:
+	var any_listable := false
+	for idx in range(_picker_inventory_cache.size()):
+		var item = _picker_inventory_cache[idx]
+		if not (item is Dictionary) or item.is_empty():
+			continue
+		if item.get("equipped", false) or item.get("locked", false):
+			continue
+		any_listable = true
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.custom_minimum_size = Vector2(0, 28)
+		btn.add_theme_font_size_override("font_size", 14)
+		var name := String(item.get("name", "Unknown"))
+		var rarity := String(item.get("rarity", "common"))
+		var color := _rarity_color_hex(rarity)
+		var level_text := ""
+		if item.has("level"):
+			level_text = "  Lv%d" % int(item.level)
+		var qty := int(item.get("quantity", 1))
+		var qty_text := ""
+		if qty > 1:
+			qty_text = "  x%d" % qty
+		# Plain text on the button (no BBCode in Button.text). Use color via
+		# theme override per-rarity for the label feel.
+		btn.text = "%s%s%s" % [name, level_text, qty_text]
+		btn.add_theme_color_override("font_color", Color.from_string(color, Color.WHITE))
+		var captured_idx := idx
+		btn.pressed.connect(func(): _on_picker_inventory_row_pressed(captured_idx))
+		_picker_items_vbox.add_child(btn)
+	if not any_listable:
+		var lbl := Label.new()
+		lbl.text = "Your inventory has no listable items."
+		lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+		lbl.add_theme_font_size_override("font_size", 14)
+		_picker_items_vbox.add_child(lbl)
+
+
+func _build_material_rows() -> void:
+	# Sort materials by tier (ascending) then name so the picker reads
+	# consistently across opens.
+	var entries: Array = []
+	for mat_name in _picker_materials_cache.keys():
+		var qty := int(_picker_materials_cache[mat_name])
+		if qty <= 0:
+			continue
+		var mat_info: Dictionary = CraftingDatabase.MATERIALS.get(mat_name, {})
+		entries.append({
+			"name": String(mat_name),
+			"qty": qty,
+			"tier": int(mat_info.get("tier", 0)),
+			"display": String(mat_info.get("name", mat_name)),
+			"type": String(mat_info.get("type", "")),
+		})
+	entries.sort_custom(func(a, b):
+		if a.tier != b.tier:
+			return a.tier < b.tier
+		return a.display < b.display
+	)
+	if entries.is_empty():
+		var lbl := Label.new()
+		lbl.text = "You have no materials."
+		lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+		lbl.add_theme_font_size_override("font_size", 14)
+		_picker_items_vbox.add_child(lbl)
+		return
+	for i in range(entries.size()):
+		var e: Dictionary = entries[i]
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.custom_minimum_size = Vector2(0, 28)
+		btn.add_theme_font_size_override("font_size", 14)
+		btn.text = "%s  (T%d, %s)  x%d" % [e.display, e.tier, e.type, e.qty]
+		var captured_name: String = e.name
+		var captured_qty: int = e.qty
+		var captured_display: String = e.display
+		btn.pressed.connect(func(): _on_picker_material_row_pressed(captured_name, captured_qty, captured_display))
+		_picker_items_vbox.add_child(btn)
+
+
+func _build_egg_rows() -> void:
+	if _picker_eggs_cache.is_empty():
+		var lbl := Label.new()
+		lbl.text = "You have no incubating eggs."
+		lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+		lbl.add_theme_font_size_override("font_size", 14)
+		_picker_items_vbox.add_child(lbl)
+		return
+	for idx in range(_picker_eggs_cache.size()):
+		var egg = _picker_eggs_cache[idx]
+		if not (egg is Dictionary):
+			continue
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.custom_minimum_size = Vector2(0, 28)
+		btn.add_theme_font_size_override("font_size", 14)
+		var comp_name := String(egg.get("companion_name", "Unknown"))
+		var variant := String(egg.get("variant", "Normal"))
+		var variant_color := String(egg.get("variant_color", "#FFAA00"))
+		var tier := int(egg.get("tier", 1))
+		var sub_tier := int(egg.get("sub_tier", 1))
+		var frozen_tag := "  [FROZEN]" if bool(egg.get("frozen", false)) else ""
+		btn.text = "%s %s Egg  (T%d-%d)%s" % [variant, comp_name, tier, sub_tier, frozen_tag]
+		btn.add_theme_color_override("font_color", Color.from_string(variant_color, Color.WHITE))
+		var captured_idx := idx
+		btn.pressed.connect(func(): _on_picker_egg_row_pressed(captured_idx))
+		_picker_items_vbox.add_child(btn)
+
+
+func _on_picker_inventory_row_pressed(idx: int) -> void:
+	if idx < 0 or idx >= _picker_inventory_cache.size():
+		return
+	var item = _picker_inventory_cache[idx]
+	if not (item is Dictionary) or item.is_empty():
+		return
+	_picker_selected_index = idx
+	_picker_selected_name = String(item.get("name", "Unknown"))
+	# Stackable inventory items are anything with quantity > 1 (consumables,
+	# tools, materials, etc.). Equipment + eggs are quantity 1.
+	var qty := int(item.get("quantity", 1))
+	_picker_selected_max = qty
+	_picker_selected_stackable = qty > 1
+	_picker_selected_label.text = "[color=#FFD700]Selected:[/color] [color=#87CEEB]%s[/color]  (have %d)" % [_picker_selected_name, qty]
+	if _picker_selected_stackable:
+		_picker_qty_row.visible = true
+		_picker_qty_input.max_value = qty
+		_picker_qty_input.value = qty  # default: list all
+	else:
+		_picker_qty_row.visible = false
+		_picker_qty_input.max_value = 1
+		_picker_qty_input.value = 1
+	_picker_confirm_btn.disabled = false
+
+
+func _on_picker_material_row_pressed(mat_name: String, qty: int, display: String) -> void:
+	_picker_selected_index = -1
+	_picker_selected_name = mat_name
+	_picker_selected_max = qty
+	_picker_selected_stackable = true
+	_picker_selected_label.text = "[color=#FFD700]Selected:[/color] [color=#87CEEB]%s[/color]  (have %d)" % [display, qty]
+	_picker_qty_row.visible = true
+	_picker_qty_input.max_value = qty
+	_picker_qty_input.value = qty
+	_picker_confirm_btn.disabled = false
+
+
+func _on_picker_egg_row_pressed(idx: int) -> void:
+	if idx < 0 or idx >= _picker_eggs_cache.size():
+		return
+	var egg = _picker_eggs_cache[idx]
+	if not (egg is Dictionary):
+		return
+	_picker_selected_index = idx
+	var comp_name := String(egg.get("companion_name", "Unknown"))
+	var variant := String(egg.get("variant", "Normal"))
+	var tier := int(egg.get("tier", 1))
+	var sub_tier := int(egg.get("sub_tier", 1))
+	_picker_selected_name = "%s %s Egg (T%d-%d)" % [variant, comp_name, tier, sub_tier]
+	_picker_selected_stackable = false
+	_picker_selected_max = 1
+	_picker_selected_label.text = "[color=#FFD700]Selected:[/color] [color=#87CEEB]%s[/color]" % _picker_selected_name
+	_picker_qty_row.visible = false
+	_picker_qty_input.max_value = 1
+	_picker_qty_input.value = 1
+	_picker_confirm_btn.disabled = false
+
+
+func _on_picker_max_pressed() -> void:
+	if _picker_qty_input:
+		_picker_qty_input.value = _picker_qty_input.max_value
+
+
+func _on_picker_back_pressed() -> void:
+	close_picker()
+	emit_signal("picker_cancelled")
+
+
+func _on_picker_confirm_pressed() -> void:
+	if _picker_confirm_btn.disabled:
+		return
+	match _picker_mode:
+		"inventory":
+			if _picker_selected_index < 0:
+				return
+			var qty: int = 1
+			if _picker_selected_stackable:
+				qty = clampi(int(_picker_qty_input.value), 1, _picker_selected_max)
+			emit_signal("picker_confirm_inventory", _picker_selected_index, qty)
+		"material":
+			if _picker_selected_name == "":
+				return
+			var qty: int = clampi(int(_picker_qty_input.value), 1, _picker_selected_max)
+			emit_signal("picker_confirm_material", _picker_selected_name, qty)
+		"egg":
+			if _picker_selected_index < 0:
+				return
+			emit_signal("picker_confirm_egg", _picker_selected_index)
+	# Server response (market_list_success / market_error / character_update)
+	# closes the picker via the caller. Disable confirm in the meantime so
+	# fast double-clicks don't re-fire.
+	_picker_confirm_btn.disabled = true
+
+
+func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_materials: Dictionary = {}) -> void:
 	"""v0.9.570 — refresh the dropdown menu's per-category labels with live
-	counts from the player's inventory. Called by client.gd whenever the
-	market panel is populated. Empty categories render `(0 items)` so the
-	menu remains transparent about what's listable."""
+	counts. Mirrors `server.handle_market_list_preview` so the menu numbers
+	match what the server would actually list.
+
+	v0.9.594 — bug fix:
+	  * Equipment items carry `type: "weapon_iron"` / `"armor_chain"` etc.
+	    (suffix variants), not bare `"equipment"`. The previous string match
+	    against `["weapon","armor",...]` only matched the rare unsuffixed
+	    item_type, so equipment + consumable rows always showed 0.
+	  * Materials + food live in `character.crafting_materials` (separate
+	    dict), not in inventory — those rows used to be permanently greyed
+	    out. Now consumed via the new third arg + `CraftingDatabase.MATERIALS`
+	    type lookup."""
 	if _list_menu == null:
 		return
 	var counts := {
@@ -980,31 +1441,51 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array) -> void:
 		"food": 0,
 		"egg": int(incubating_eggs.size()) if incubating_eggs is Array else 0,
 	}
+	# Server filter mirror — see handle_market_list_preview in server.gd.
+	# Equipment: not tool/structure/treasure_chest, not consumable, has
+	# `slot` or `rarity` (covers both crafted and dropped gear).
+	# Consumable: `is_consumable` flag OR _is_consumable_type(itype),
+	# excluding tool/structure/treasure_chest/escape_scroll.
+	# Tool: type in ["tool", "structure"], excluding treasure_chest.
 	for entry in inventory:
 		if not (entry is Dictionary):
 			continue
-		# Items may carry both `type` (broad) and `item_type` (specific).
-		# Mirror the dual-type rule from CLAUDE.md so the count matches
-		# what the server's bulk-list filter actually picks up.
+		if entry.is_empty() or entry.get("equipped", false) or entry.get("locked", false):
+			continue
 		var t = String(entry.get("type", ""))
 		var it = String(entry.get("item_type", ""))
-		# Resolve to the most specific category we recognize.
-		if t == "equipment" or it == "equipment" or it in ["weapon", "armor", "helm", "boots", "shield", "accessory", "ring"]:
+		# Exclude treasure chests entirely from bulk lists.
+		if t == "treasure_chest" or it == "treasure_chest":
+			continue
+		# Tools (incl. structures) — match server's tools bucket.
+		if t == "tool" or t == "structure":
+			counts["tool"] += int(entry.get("quantity", 1))
+			continue
+		# Consumables — `is_consumable` flag OR consumable-type match.
+		# Server excludes escape_scroll because it's a special movement item.
+		var is_consumable: bool = bool(entry.get("is_consumable", false)) or _is_consumable_match(t)
+		if is_consumable and it != "escape_scroll":
+			counts["consumable"] += int(entry.get("quantity", 1))
+			continue
+		# Equipment — server uses `has("slot") or has("rarity")` as the
+		# discriminator after consumable/tool/treasure_chest are filtered out.
+		if entry.has("slot") or entry.has("rarity"):
 			counts["equipment"] += 1
 			continue
-		if t == "consumable" or it == "consumable" or it.ends_with("_potion") or it == "escape_scroll" or it.ends_with("_scroll"):
-			counts["consumable"] += 1
-			continue
-		if t == "tool" or it == "tool" or it in ["fishing_rod", "pickaxe", "axe", "hammer", "structure"]:
-			counts["tool"] += 1
-			continue
-		# Food vs. generic materials — food items have type/item_type "food".
-		if t == "food" or it == "food":
-			counts["food"] += 1
-			continue
-		if t == "material" or it == "material" or it == "monster_part" or t == "monster_part":
-			counts["material"] += 1
-			continue
+	# Materials + food live in crafting_materials. CraftingDatabase is a
+	# global class_name, so its constants are directly accessible.
+	var food_types := ["plant", "herb", "fungus", "fish"]
+	if crafting_materials is Dictionary:
+		for mat_name in crafting_materials.keys():
+			var qty: int = int(crafting_materials[mat_name])
+			if qty <= 0:
+				continue
+			var mat_info = CraftingDatabase.MATERIALS.get(mat_name, {})
+			var mat_type: String = String(mat_info.get("type", ""))
+			if mat_type in food_types:
+				counts["food"] += 1
+			else:
+				counts["material"] += 1
 
 	for i in range(LIST_MENU_ITEMS.size()):
 		var entry = LIST_MENU_ITEMS[i]
@@ -1034,6 +1515,26 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array) -> void:
 		_list_menu.set_item_text(i, labeled)
 		# Grey out zero-item rows so the menu reads honestly.
 		_list_menu.set_item_disabled(i, n <= 0 and entry["id"] != "_separator")
+
+
+func _is_consumable_match(item_type: String) -> bool:
+	"""Mirror server.gd `_is_consumable_type` so bulk counts match what the
+	server will accept. Kept private to the panel — client.gd has its own
+	copy for inventory/use flows."""
+	return (item_type == "consumable"
+		or item_type.begins_with("potion_") or item_type.begins_with("mana_")
+		or item_type.begins_with("stamina_") or item_type.begins_with("energy_")
+		or item_type.begins_with("scroll_") or item_type.begins_with("tome_")
+		or item_type.begins_with("elixir_") or item_type.begins_with("charm_")
+		or item_type == "essence_pouch" or item_type.begins_with("gem_")
+		or item_type == "mysterious_box" or item_type == "cursed_coin"
+		or item_type == "soul_gem" or item_type.begins_with("home_stone_")
+		or item_type == "health_potion" or item_type == "mana_potion"
+		or item_type == "stamina_potion" or item_type == "energy_potion"
+		or item_type == "elixir" or item_type == "ability_tome"
+		or item_type == "boss_slayer_tonic" or item_type == "reclaimer_lantern"
+		or item_type == "floor_skip_charm"
+		or item_type == "scroll" or item_type == "area_map")
 
 
 func _on_list_menu_pressed() -> void:
