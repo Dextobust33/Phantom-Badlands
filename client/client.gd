@@ -25821,8 +25821,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.614 — Inverse-distance level blend kills the second-nearest-swap cliff.
+	display_game("[color=#00FF00]v0.9.614[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player report kept happening: '(44,-57) is Lv ~18, moving one east to (45,-57) is Lv ~38.' v0.9.605's bubble falloff didn't address this — it's a different cliff (the 'second-nearest-post-swap' residual documented in the level-smoothing memo). When the player crosses a midpoint where the SECOND-nearest post identity flips, the smoothstep blend recomputes against a different anchor and the level jumps. Eliminated by switching to inverse-distance² weighting across all nearby posts.[/color]")
+	display_game("  • [b]Inverse-distance² weighted blend[/b]. [color=#888888]get_post_anchored_level[/color] now iterates every NPC post and weights each by [color=#888888]1/(d² + 1)[/color], producing a continuous level field. Far posts contribute almost nothing (1/100² = 0.0001 vs 1/10² = 0.01 — 100× less influence). Nearest post still dominates its own pocket. As the player moves, every post's weight shifts smoothly — no identity swap because no post enters or leaves the calculation set.")
+	display_game("  • [b]Bubble layer unchanged[/b]. The v0.9.605 player-post settler bubble falloff still runs ON TOP of the IDW post anchor blend. Safe zones inside bubbles work exactly the same — only the open-world post anchor math changed.")
+	display_game("  • [b]Perf[/b]: was O(N) for nearest+second find, now O(N) for full weighted sum. Same complexity. Post count is bounded (~50 in the starter network); negligible cost per tile query.")
+	display_game("")
+
 	# v0.9.613 — Flock archive captures fight content (drain-timing fix).
-	display_game("[color=#00FF00]v0.9.613[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.613[/color]")
 	display_game("  [color=#FFD700]Bug fix: per-fight combat logs in flock chains were missing the actual attacks and damage. The [L] view and Review FX strips only showed end-of-combat / next-fight intro messages. Root cause: clear_log(true) fired immediately on combat_end, but combat messages drain at a paced rhythm AFTER combat_end arrives — so the archive captured an empty fight, and the real fight content drained into the NEXT fight's archive.[/color]")
 	display_game("  • [b]Archive deferred to queue-drain[/b]. combat_end's flock_incoming branch now sets [color=#888888]_pending_flock_archive_request = true[/color] instead of calling [color=#888888]clear_log(true)[/color] inline. [color=#888888]_drain_combat_queue[/color]'s queue-empty branch consumes the flag, calls clear_log(true), and emits the 'But wait... you hear more Xs approaching' chrome AFTER the archive — so those lines land in the NEXT fight's intro instead of getting buried at the end of the archived fight.")
 	display_game("  • [b]Effect[/b]: each archived flock fight now contains its full sequence — Round dividers, every attack ('YOU 25 damage'), every monster strike, ability casts, status effects, defeat / XP / passive chrome. [L] and Review FX show the complete play-by-play per fight.")
@@ -25973,12 +25981,6 @@ func display_changelog():
 	display_game("  • [b]Threat-relief quests now pay correctly[/b]. Root cause: classic two-paths-read-same-field. The regen path in [color=#888888]quest_database._regenerate_threat_relief_quest[/color] returned [color=#888888]rewards: {xp: 0, valor: 0}[/color] with a comment saying real rewards came from [color=#888888]extra_data.stored_rewards[/color] — but [color=#888888]build_quest_extra_data[/color] reads [color=#888888]quest.rewards[/color] to BUILD [color=#888888]stored_rewards[/color], so the zeros got stored and paid out. Moved the tier-rewards table into [color=#888888]quest_database.gd[/color] with a [color=#888888]get_threat_relief_rewards(dungeon_type)[/color] helper (tier read from DungeonDatabase); the regen path now populates rewards. Added a self-heal in [color=#888888]calculate_rewards[/color]: any active quest with [color=#888888]stored_rewards={0,0}[/color] re-derives from the current quest object at turn-in, so previously-broken accepted quests on your character self-heal.")
 	display_game("")
 
-	# v0.9.595 — Monster level smoothing between trading posts.
-	display_game("[color=#00FFFF]v0.9.595[/color]")
-	display_game("  [color=#FFD700]Fixes the level cliff at the midpoint between two trading posts. Player report: \"lvl 16 then move one space and it jumps to lvl 25.\" Root cause was the quadratic blend curve (t²) used since v0.9.567 — when the nearest+second-nearest post swap at the midpoint, the function evaluated to different values on each side because t² isn't symmetric around 0.5. Adjacent posts with ~15-30 level gaps produced 7-15 level jumps in one tile.[/color]")
-	display_game("  • [b]Smoothstep blend curve[/b] ([color=#888888]t·t·(3-2t)[/color]) replaces the old [color=#888888]t·t[/color] in [color=#888888]world_system.gd::get_post_anchored_level[/color]. Smoothstep evaluates to exactly 0.5 at t=0.5, so the midpoint between two posts is continuous — both halves of the swap produce the same blended level. The \"anchor pocket\" feel is preserved: smoothstep is flat near both endpoints, so each post's level still dominates its own half of the gap.")
-	display_game("  • [b]Example[/b]: Haven (Lv 1) → adjacent post (Lv 30). Old curve: lvl 8 just before midpoint → lvl 23 just after (15-level cliff). New curve: lvl 16 on both sides (continuous). The starter-zone protection is unchanged — Haven's tight Lv 1-2 pocket inside 20 tiles still holds.")
-	display_game("")
 
 
 	display_game("")
