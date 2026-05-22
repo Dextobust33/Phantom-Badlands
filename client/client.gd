@@ -25460,8 +25460,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.605 — Bubble edge smoothing.
+	display_game("[color=#00FF00]v0.9.605[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player report: '[i]at 44,-57 area is Lv ~18, moving one east to 45,-57 area is Lv ~38[/i]'. A 20-level cliff in one tile. Root cause: v0.9.595's smoothstep blend fixed post-to-post midpoints, but player-post settler bubbles still had a hard edge at their radius — inside used [color=#888888]level_for_tier(tier)[/color] (discrete), outside fell through to the smooth post-anchored blend, and the boundary snapped.[/color]")
+	display_game("  • [b]Bubble falloff[/b]: [color=#888888]_bubble_level_at[/color] replaced by [color=#888888]_bubble_influence_at[/color] returning [color=#888888]{level, weight}[/color]. Weight is 1.0 deep inside the radius, smoothstep-falloff to 0.0 over [color=#FFD700]BUBBLE_FALLOFF_TILES = 8[/color] tiles past the radius. [color=#888888]get_post_anchored_level[/color] lerps the world level toward the bubble level by that weight when the player is in the falloff band.")
+	display_game("  • [b]Effect[/b]: a 20-level cliff at the bubble edge becomes a 20-level ramp over 8 tiles (~2.5 levels per step). Safe-zone pockets still feel like safe zones — the inner radius is unchanged. Apex zones outside the post network are unchanged. Existing legacy [color=#888888]_bubble_level_at[/color] kept as a thin wrapper that returns the discrete level only when weight is 1.0 (covers any external callers that ignored the falloff).")
+	display_game("")
+
 	# v0.9.604 — Victory card persistence + gating action bar during scratchoff.
-	display_game("[color=#00FF00]v0.9.604[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.604[/color]")
 	display_game("  [color=#FFD700]Two follow-up fixes. The v0.9.603 victory card was being auto-hidden by a safety net the moment pending_continue cleared. And the QWERTY gather/craft keys were also leaking through to the action bar (e.g. pressing Q to scratch a mining tile would ALSO open the inventory in the background).[/color]")
 	display_game("  • [b]Victory card now stays visible after the loot panel closes[/b]. New flag [color=#888888]_post_loot_victory_persists[/color] tells the [color=#888888]_process[/color] safety net (line ~2802) to NOT auto-hide the card just because pending_continue is false. Card stays up until the player's first movement input dismisses it. Cleared automatically if a new combat starts before the player moved (no stale state).")
 	display_game("  • [b]Action bar gated during gathering / crafting scratchoff[/b]. Player report: '[i]I pressed Q when mining and it opened my inventory in the background.[/i]' Same blanket gate the combat-loot reveal got in v0.9.602: [color=#888888]trigger_action[/color] returns early if [color=#888888]scratch_off_panel.visible[/color] is true. The QWERTY key still hits the scratch_off panel's own input handler — it just doesn't fall through to whatever slot 1 (Q) was bound to in the overworld action bar.")
