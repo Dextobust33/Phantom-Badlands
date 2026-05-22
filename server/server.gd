@@ -5110,13 +5110,20 @@ func handle_move(peer_id: int, message: Dictionary):
 	if world_system.check_merchant_encounter(new_pos.x, new_pos.y):
 		trigger_merchant_encounter(peer_id)
 	# Check for monster encounter (only if no merchant and not cloaked)
-	elif not character.cloak_active and world_system.check_encounter(new_pos.x, new_pos.y):
-		# Starter area safety: halve encounters for low-level players near origin
-		var _dist = abs(new_pos.x) + abs(new_pos.y)
-		if _dist <= 20 and character.level < 10 and randf() < 0.5:
-			pass  # Suppressed encounter for new player safety
-		else:
-			trigger_encounter(peer_id)
+	# v0.9.620 — pass player level so check_encounter can scale the rate down
+	# for over-leveled tiles. Threat-corridor tiles bypass scaling so dungeon
+	# spillover monsters still pull the player into danger regardless of
+	# level gap.
+	elif not character.cloak_active:
+		var _threat_zone: Dictionary = _get_threat_zone_dungeon_at(new_pos.x, new_pos.y)
+		var _in_threat: bool = not _threat_zone.is_empty()
+		if world_system.check_encounter(new_pos.x, new_pos.y, character.level, _in_threat):
+			# Starter area safety: halve encounters for low-level players near origin
+			var _dist = abs(new_pos.x) + abs(new_pos.y)
+			if _dist <= 20 and character.level < 10 and randf() < 0.5:
+				pass  # Suppressed encounter for new player safety
+			else:
+				trigger_encounter(peer_id)
 
 func handle_hunt(peer_id: int):
 	"""Handle hunt action - actively search for monsters with increased encounter chance"""
