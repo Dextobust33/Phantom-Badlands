@@ -16913,8 +16913,26 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 	var rank_label = MASTERY_RANK_NAMES[new_rank] if new_rank >= 0 and new_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 	var rank_mults_local := [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
 	var next_effect_rank = min(current_effect_rank + 1, rank_mults_local.size() - 1)
-	var dmg_pct = int((rank_mults_local[next_effect_rank] - 1.0) * 100) if next_effect_rank < rank_mults_local.size() else 20
-	var dmg_str = ("+%d%%" % dmg_pct) if dmg_pct >= 0 else ("%d%%" % dmg_pct)
+	# v0.9.599 — show the actual DELTA gained at this rank-up rather than the
+	# new absolute % from baseline. Old display:
+	#   button: "+%s Damage" % dmg_str → "+-10% Damage" or "++10% Damage"
+	#                                     (double-sign because dmg_str carried
+	#                                      its own sign and the format string
+	#                                      hardcoded a leading "+")
+	#   dialog: "+10%% Damage: scale damage to -10%% (effect rank 0 → 1)"
+	#           — hardcoded "+10%" was also wrong at the final rank step
+	#             (5 → 6 is +15%, not +10%)
+	# New: compute the gain dynamically; show current→new absolute on the dialog
+	# so the player sees what's actually changing without negative-sign confusion.
+	var current_mult_safe: float = rank_mults_local[clampi(current_effect_rank, 0, rank_mults_local.size() - 1)]
+	var next_mult: float = rank_mults_local[next_effect_rank]
+	var delta_pct: int = int(round((next_mult - current_mult_safe) * 100))
+	var current_total_pct: int = int(round(current_mult_safe * 100))
+	var next_total_pct: int = int(round(next_mult * 100))
+	# Button: clean delta (always non-negative since each rank is a gain). Dialog:
+	# absolute current→new so the player sees the ability's true power level.
+	var dmg_button_label: String = "+%d%% Damage" % delta_pct
+	var dmg_dialog_str: String = "%d%% → %d%% damage (+%d%%)" % [current_total_pct, next_total_pct, delta_pct]
 	# Slice 6f (v0.9.549) — Variant Imprint third option when companion was
 	# active at rank-up time. variant_offer carries trait_id / trait_name /
 	# companion_name / description / stack info from the server.
@@ -16932,14 +16950,14 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 		"You've reached a new mastery rank with %s.\n" +
 		"Choose how to invest this rank:\n\n" +
 		"  • +1 Card: add a copy to your combat deck (currently %d).\n" +
-		"  • +10%% Damage: scale damage to %s (effect rank %d → %d).%s"
-	) % [ability_label, current_copy_count, dmg_str, current_effect_rank, next_effect_rank, variant_line]
+		"  • +%d%% Damage: %s (effect rank %d → %d).%s"
+	) % [ability_label, current_copy_count, delta_pct, dmg_dialog_str, current_effect_rank, next_effect_rank, variant_line]
 	# Add the action buttons. v0.9.597 — record each in _rank_choice_custom_buttons
 	# so the next popup can detach + free them via remove_button.
 	var btn_copy = _rank_choice_popup.add_button("+1 Card", true, "copy")
 	btn_copy.set_meta("rank_choice_button", true)
 	_rank_choice_custom_buttons.append(btn_copy)
-	var btn_effect = _rank_choice_popup.add_button("+%s Damage" % dmg_str, true, "effect")
+	var btn_effect = _rank_choice_popup.add_button(dmg_button_label, true, "effect")
 	btn_effect.set_meta("rank_choice_button", true)
 	_rank_choice_custom_buttons.append(btn_effect)
 	if has_variant:
@@ -25400,8 +25418,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.599 — Rank-up UI clarity + Imprint 3x buff + 6 chase affixes.
+	display_game("[color=#00FF00]v0.9.599[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three things batched. (1) The rank-up popup's '+-9% Damage' button now reads clearly. (2) Imprints — the third rank-up option from your active companion — are 3x stronger across the board. (3) New chase-tier affixes can roll on epic+ gear: % damage, % crit chance, % crit damage, % extra turn, +HP on kill, +resource on hit. Loot is more interesting now.[/color]")
+	display_game("  • [b]Rank-up popup clarity[/b]: button label now shows the ACTUAL gain (\"+10% Damage\") instead of the malformed \"+-9% Damage\" / \"++0% Damage\" that came from prepending '+' to an already-signed string. Dialog text now shows '80%% → 90%% damage (+10%%)' so you see exactly what's changing instead of comparing absolute % from baseline. The final rank (5→6) gain is +15%, which the old hardcoded '+10%' text also lied about — fixed.")
+	display_game("  • [b]Imprint values 3x'd[/b]: per-stack values bumped across all 10 trait categories so the third rank-up option actually competes with +1 Card and +Damage. bonus_damage / crit / lifesteal / enemy_miss go 2%→6% per stack (max 24% at 4 stacks). stun / charm go 1%→3% per stack. mana_drain / absorb go 2→6 per stack. Bleed and poison switched from flat +1/turn to 5% of the ability's hit damage per stack per turn — they now scale with your power instead of being meaningless at high levels.")
+	display_game("  • [b]Six chase affixes[/b]: D2-style 'chase' rolls in a new CHASE_SUFFIX_POOL. Drops only on epic+ items, gated by rarity (25% chance on epic bonus-slots, 35% on legendary, 50% on artifact). damage_mult / crit_chance_bonus / crit_damage_bonus / extra_turn_chance (turn-based attack-speed equivalent) / hp_on_kill / mana_on_hit / stamina_on_hit / energy_on_hit. Each has 2-3 named affix flavors and scales with item level. Combat hooks: damage_mult + crit affixes in calculate_damage; on-hit resource on both auto-attack and ability hits; on-kill HP fires after revive checks so Phoenix-rebirth bosses can't double-pay; extra_turn_chance currently rolls on ability hits only (auto-attack hook follow-up).")
+	display_game("  • [b]Roadmap[/b]: this is round 1 of a multi-release loot arc. Next: gear +X to abilities (D2 +skills), then a skill tree. The CHASE_SUFFIX_POOL is intentionally extensible — future affixes drop in as one-line entries.")
+	display_game("")
+
 	# v0.9.598 — Threat pacing: 3-concurrent cap + 10-min post cooldown.
-	display_game("[color=#00FF00]v0.9.598[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.598[/color]")
 	display_game("  [color=#FFD700]Player feedback: new dungeons spawn faster than you can clear the current ones, drowning posts. Two new pacing knobs on the spawn side — both gate `_create_world_dungeon` so T2+ dungeons stop piling up on posts that already have their hands full.[/color]")
 	display_game("  • [b]Max 3 concurrent threats per post[/b]. When considering a spawn location, the server now checks every NPC post within 80 tiles. If any of them is already at 3 active T2+ threats, that candidate location is rejected and the spawn-attempt loop tries again. Existing severe-threat escalation (2+ dungeons = severe) is preserved; 3 is the new ceiling. T1 dungeons aren't gated — they don't count as threats.")
 	display_game("  • [b]10-minute post-cleared cooldown[/b]. When the LAST T2+ threatening dungeon for a post is cleared, that post enters a 600-second safe window. No new T2+ dungeon can spawn within the corridor radius (80 tiles) of that post during the cooldown. Lets you breathe between threat cycles. Tracked in memory only — server restart resets cooldowns (acceptable tradeoff for short timer).")
@@ -25473,13 +25500,6 @@ func display_changelog():
 	display_game("  • [b]Instant-craft panel no longer renders stripped[/b]. Enchant / rune / structure / scroll / map / repair / reforge / temper recipes (the ones that bypass the scratch-off) were sending [color=#888888]craft_result[/color] without [color=#888888]score[/color] or [color=#888888]summary[/color], so the Quality Rating panel rendered with empty roll bands and no boost indicator. Now sends a minimal summary with [color=#888888]is_instant_craft: true[/color] so the panel can render a clean version without scratch-off-specific noise.")
 	display_game("  • [b]Flee combat_end now includes character[/b]. Flee-side stamina cost / buff strip / position updates land in the HUD immediately instead of waiting for the next [color=#888888]character_update[/color] tick.")
 	display_game("  • [b]house_update payloads unified via [color=#888888]_send_house_update()[/color] helper[/b]. 13 hand-rolled sites consolidated into one; mastery_records / pending_headstarts / headstart_costs / headstart_max_rank now ship with every house refresh, so a future mastery-touching action can't regress the cache.")
-	display_game("")
-
-	# v0.9.584 — Pathfinder belt-and-suspenders + Services screen cleanup.
-	display_game("[color=#00FFFF]v0.9.584[/color]")
-	display_game("  [color=#FF8888]Defensive follow-up to v0.9.583. Player reported the Pathfinder turn-in STILL wasn't appearing despite the deploy + a separate UI bug.[/color]")
-	display_game("  • [b]Pathfinder check now matches on quest_id prefix too[/b]. All three turn-in code paths now accept the quest if its [color=#888888]chain_id[/color] is 'pathfinder' OR its [color=#888888]quest_id[/color] begins with 'pathfinder_'. If get_quest mutates the chain_id field for any reason, the prefix match still catches it. Diagnostic print added so the server log records when the branch fires.")
-	display_game("  • [b]Crossroads Services screen replaced[/b]. Pressing Back from the Quest Board used to render an outdated chat-command-era 'Services: [Q] Shop | [W] Quests | [E] Heal' line that no longer matches the actual bump-to-interact tile system. Now re-uses `_display_trading_post_ui()` so the legend reads the same as the normal entry view (F Forge / A Apothecary / Q Quest Board / etc.).")
 	display_game("")
 
 	# v0.9.583 — Hotfix: Pathfinder turn-in actually works at the Quest Board now.

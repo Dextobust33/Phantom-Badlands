@@ -1052,6 +1052,80 @@ func get_equipment_bonuses() -> Dictionary:
 
 	return bonuses
 
+
+# === v0.9.599 chase loot affixes ===
+# Six new affix categories that don't fit the flat-bonus shape of
+# get_equipment_bonuses. Each affix value is the integer (or %-int) the
+# server-side affix roll wrote into item.affixes; getters here sum them
+# across all equipped items, respecting wear penalty for stat affixes and
+# leaving proc-style affixes (hp_on_kill etc.) at face value since procs
+# resolve at trigger time, not equip time.
+
+func _sum_affix_across_equipped(affix_key: String, apply_wear: bool = true) -> float:
+	"""Helper for the chase-loot getters. Iterates equipped items, reads
+	`item.affixes[affix_key]` (default 0), optionally applies wear penalty,
+	and returns the float sum. Centralizes the boilerplate so a future affix
+	category is one-liner away."""
+	var total: float = 0.0
+	for slot in equipped.keys():
+		var item = equipped[slot]
+		if item == null or not item is Dictionary:
+			continue
+		var affixes: Dictionary = item.get("affixes", {})
+		if not affixes.has(affix_key):
+			continue
+		var v: float = float(affixes[affix_key])
+		if apply_wear:
+			var wear: int = int(item.get("wear", 0))
+			var wear_penalty: float = 1.0 - (float(wear) / 100.0)
+			v *= wear_penalty
+		total += v
+	return total
+
+
+func get_damage_mult_bonus() -> float:
+	"""Returns the multiplicative damage multiplier from %damage affixes.
+	A return of 1.15 means +15% damage on top of base. Wear-affected."""
+	return 1.0 + (_sum_affix_across_equipped("damage_mult") / 100.0)
+
+
+func get_crit_chance_bonus() -> float:
+	"""Returns crit chance bonus in percent (0-100). Adds to class-passive
+	crit chance at damage roll time. Wear-affected."""
+	return _sum_affix_across_equipped("crit_chance_bonus")
+
+
+func get_crit_damage_bonus() -> float:
+	"""Returns crit damage bonus in percent (multiplier add). A 30 here
+	means the crit multiplier is +30% over baseline. Wear-affected."""
+	return _sum_affix_across_equipped("crit_damage_bonus")
+
+
+func get_extra_turn_chance() -> float:
+	"""Returns % chance (0-100) to act again on the player's turn. Game is
+	turn-based so this is the equivalent of D2's attack speed. Wear-affected."""
+	return _sum_affix_across_equipped("extra_turn_chance")
+
+
+func get_on_hit_resource(resource: String) -> int:
+	"""Returns the flat amount of the named resource ("mana"/"stamina"/
+	"energy") restored on each ability hit. Reads from affix keys
+	mana_on_hit / stamina_on_hit / energy_on_hit. Procs aren't wear-
+	affected — they're triggered events, not constant stats."""
+	var key: String = ""
+	match resource:
+		"mana": key = "mana_on_hit"
+		"stamina": key = "stamina_on_hit"
+		"energy": key = "energy_on_hit"
+		_: return 0
+	return int(_sum_affix_across_equipped(key, false))
+
+
+func get_on_kill_hp() -> int:
+	"""Returns the flat HP restored on each monster kill. Reads from
+	hp_on_kill affix. Not wear-affected."""
+	return int(_sum_affix_across_equipped("hp_on_kill", false))
+
 func _get_rarity_multiplier(rarity: String) -> float:
 	"""Get multiplier for item rarity - NERFED for balance"""
 	match rarity:

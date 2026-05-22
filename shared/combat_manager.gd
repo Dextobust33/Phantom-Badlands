@@ -1731,6 +1731,11 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			character.current_hp = max(1, character.current_hp)
 			messages.append("[color=#FF00FF]The %s reflects [color=#FF8800]%d[/color] damage![/color]" % [monster.name, reflect_damage])
 
+		# v0.9.599 — chase-affix on-hit procs (resource regen). Fires on every
+		# successful auto-attack hit. Ability hits are handled in their own
+		# damage paths (see process_ability_command).
+		_apply_on_hit_chase_procs(character, damage, messages)
+
 		if monster.current_hp <= 0:
 			# Monster defeated - process victory with ability bonuses
 			return _process_victory_with_abilities(combat, messages)
@@ -1753,6 +1758,49 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		"messages": messages,
 		"combat_ended": false
 	}
+
+func _apply_on_hit_chase_procs(character: Character, damage: int, messages: Array) -> void:
+	"""v0.9.599 — chase-affix on-hit triggers. Restores small flat resource on
+	each successful ability/auto-attack hit. Resource pool matches the affix
+	key (mana_on_hit / stamina_on_hit / energy_on_hit). damage > 0 gate so
+	0-damage cosmetic hits don't pay out."""
+	if damage <= 0 or character == null:
+		return
+	var mana_gain: int = character.get_on_hit_resource("mana")
+	var stam_gain: int = character.get_on_hit_resource("stamina")
+	var energy_gain: int = character.get_on_hit_resource("energy")
+	if mana_gain > 0:
+		var before: int = character.current_mana
+		character.current_mana = mini(character.get_total_max_mana(), character.current_mana + mana_gain)
+		var actual: int = character.current_mana - before
+		if actual > 0:
+			messages.append("[color=#5C9CE5]>> +%d mana from gear[/color]" % actual)
+	if stam_gain > 0:
+		var before2: int = character.current_stamina
+		character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + stam_gain)
+		var actual2: int = character.current_stamina - before2
+		if actual2 > 0:
+			messages.append("[color=#FFA500]>> +%d stamina from gear[/color]" % actual2)
+	if energy_gain > 0:
+		var before3: int = character.current_energy
+		character.current_energy = mini(character.get_total_max_energy(), character.current_energy + energy_gain)
+		var actual3: int = character.current_energy - before3
+		if actual3 > 0:
+			messages.append("[color=#FFFF66]>> +%d energy from gear[/color]" % actual3)
+
+
+func _apply_on_kill_chase_procs(character: Character, messages: Array) -> void:
+	"""v0.9.599 — chase-affix on-kill triggers. HP heal on monster death. Called
+	once per kill from `_process_victory_with_abilities` after the revive checks
+	(so a Phoenix-rebirth boss doesn't pay out twice)."""
+	if character == null:
+		return
+	var hp_gain: int = character.get_on_kill_hp()
+	if hp_gain > 0:
+		var actual: int = character.heal(hp_gain)
+		if actual > 0:
+			messages.append("[color=#90EE90]>> +%d HP on kill (gear)[/color]" % actual)
+
 
 func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dictionary:
 	"""Process monster defeat with all ability effects (death message, bonuses, curses)"""
@@ -1792,6 +1840,10 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if death_msg != "":
 		messages.append("[color=#FFD700]%s[/color]" % death_msg)
 	messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
+
+	# v0.9.599 — chase-affix on-kill procs. Past the revive checks so a
+	# Phoenix-rebirth boss doesn't pay out twice in one fight.
+	_apply_on_kill_chase_procs(character, messages)
 
 	# Death curse ability: deal damage on death (nerfed from 25% to 10%, reduced by WIS)
 	# Undead racial: immune to death curses
@@ -2831,6 +2883,23 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# monster.current_hp captures the ability's actual damage output.
 		var imprint_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
 		_apply_imprint_riders_after_cast(combat, ability_name, imprint_damage_dealt, result)
+		# v0.9.599 — chase-affix on-hit procs ride the same damage value so
+		# ability hits also trigger resource regen. result.messages is the
+		# shared sink; reuse it.
+		if not result.has("messages"):
+			result["messages"] = []
+		_apply_on_hit_chase_procs(combat.character, imprint_damage_dealt, result.messages)
+		# v0.9.599 — chase-affix extra turn chance. Roll only on damage-
+		# dealing hits and only if the action wasn't already going to skip
+		# the monster turn (Analyze / Pickpocket etc. are free actions and
+		# shouldn't double-up). Sets skip_monster_turn so the monster doesn't
+		# act this round. Bounded: per-cast roll, not recursive — no infinite
+		# extra-turn chain even at 100% chance.
+		if imprint_damage_dealt > 0 and not result.get("skip_monster_turn", false):
+			var et_pct: float = combat.character.get_extra_turn_chance()
+			if et_pct > 0 and randf() * 100.0 < et_pct:
+				result["skip_monster_turn"] = true
+				result.messages.append("[color=#FFD700]>> Extra turn! Your gear quickens you.[/color]")
 		# Audit #1 Slice 6a — successful ability use moves the card from
 		# hand to discard and refills the hand. Done after mastery tracking
 		# so a rank-up notification still ties to the card just played.
@@ -4190,20 +4259,22 @@ func _count_imprint_stacks(character: Character, ability_name: String, trait_id:
 
 func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, damage_dealt: int, result: Dictionary) -> void:
 	"""Slice 6f (v0.9.549) — Apply Variant Imprint side-effects after a damage
-	ability resolves. Iterates the ability's imprint stack from the account
-	cache and applies each trait's central effect:
-	  - bonus_damage: already in apply_skill_damage_bonus (no-op here)
-	  - crit:        flat +2 dmg per stack (post-hoc bonus damage)
-	  - bleed:       +1 monster_bleed/turn × stacks for 2 turns
-	  - poison:      +1 monster_poison/turn × stacks for 3 turns
-	  - enemy_miss:  enemy_distracted += 2 per stack (capped at 75)
-	  - lifesteal:   heal player by 2% × stacks of damage_dealt
-	  - mana_drain:  drain 2 × stacks from monster.current_mp (if it has any)
-	  - stun:        roll 1% × stacks; if hit, monster_stunned = true (1 turn)
-	  - charm:       roll 1% × stacks; if hit, monster_charmed = true (1 turn)
-	  - absorb:      forcefield_shield += 2 × stacks (player damage absorption)
-	Only fires when damage_dealt > 0 (utility abilities don't trigger riders).
-	Results are appended to result.messages with a ✦ marker for visibility."""
+	ability resolves. v0.9.599 — values 3x'd per user feedback that imprints
+	felt 'extremely weak / lackluster' vs +1 Card and +Damage. Magnitudes now
+	read from DropTablesScript.VARIANT_TRAIT_CATEGORIES so future tuning lives
+	in one place. Bleed/poison rescaled from flat +1/turn to % of hit damage
+	per turn — scales with the character's actual power level.
+	  - bonus_damage: folded into apply_skill_damage_bonus (no-op here)
+	  - crit:        +6 flat bonus dmg per stack (post-hoc add)
+	  - bleed:       +5% of hit damage per stack per turn for 2 turns
+	  - poison:      +5% of hit damage per stack per turn for 3 turns
+	  - enemy_miss:  enemy_distracted += 6 per stack (capped at 75)
+	  - lifesteal:   heal player by 6% × stacks of damage_dealt
+	  - mana_drain:  drain 6 × stacks from monster.current_mp
+	  - stun:        roll 3% × stacks; if hit, monster_stunned = true (1 turn)
+	  - charm:       roll 3% × stacks; if hit, monster_charmed = true (1 turn)
+	  - absorb:      forcefield_shield += 6 × stacks (player damage absorption)
+	Only fires when damage_dealt > 0 (utility abilities don't trigger riders)."""
 	if damage_dealt <= 0:
 		return
 	if combat == null or not combat.has("character") or combat.character == null:
@@ -4233,23 +4304,34 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 				pass  # Already folded into apply_skill_damage_bonus.
 			"crit":
 				if monster != null:
-					var bonus = 2 * n
+					# v0.9.599 — 2→6 per stack. Treat as bonus damage tick.
+					var bonus: int = 6 * n
 					monster.current_hp = max(0, monster.current_hp - bonus)
 					msgs.append("[color=%s]✦ %s flares — +%d dmg from imprint.[/color]" % [t_color, t_name, bonus])
 			"bleed":
-				combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + n
-				combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 2)
-				msgs.append("[color=%s]✦ %s applies bleed (+%d/turn for 2T).[/color]" % [t_color, t_name, n])
+				# v0.9.599 — flat per_stack_dmg → % of hit damage per stack.
+				# Reads per_stack_pct_of_hit from VARIANT_TRAIT_CATEGORIES.
+				var pct: float = float(info.get("per_stack_pct_of_hit", 5.0))
+				var dur: int = int(info.get("duration", 2))
+				var bleed_per_turn: int = int(ceil(damage_dealt * (pct / 100.0) * n))
+				combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + bleed_per_turn
+				combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), dur)
+				msgs.append("[color=%s]✦ %s applies bleed (+%d/turn for %dT).[/color]" % [t_color, t_name, bleed_per_turn, dur])
 			"poison":
-				combat["monster_poison"] = int(combat.get("monster_poison", 0)) + n
-				combat["monster_poison_duration"] = max(int(combat.get("monster_poison_duration", 0)), 3)
-				msgs.append("[color=%s]✦ %s applies poison (+%d/turn for 3T).[/color]" % [t_color, t_name, n])
+				var pct2: float = float(info.get("per_stack_pct_of_hit", 5.0))
+				var dur2: int = int(info.get("duration", 3))
+				var poison_per_turn: int = int(ceil(damage_dealt * (pct2 / 100.0) * n))
+				combat["monster_poison"] = int(combat.get("monster_poison", 0)) + poison_per_turn
+				combat["monster_poison_duration"] = max(int(combat.get("monster_poison_duration", 0)), dur2)
+				msgs.append("[color=%s]✦ %s applies poison (+%d/turn for %dT).[/color]" % [t_color, t_name, poison_per_turn, dur2])
 			"enemy_miss":
-				var current_dist = int(combat.get("enemy_distracted", 0))
-				combat["enemy_distracted"] = min(75, current_dist + 2 * n)
-				msgs.append("[color=%s]✦ %s — enemy distracted (+%d%% miss).[/color]" % [t_color, t_name, 2 * n])
+				# v0.9.599 — 2→6 per stack.
+				var current_dist: int = int(combat.get("enemy_distracted", 0))
+				combat["enemy_distracted"] = min(75, current_dist + 6 * n)
+				msgs.append("[color=%s]✦ %s — enemy distracted (+%d%% miss).[/color]" % [t_color, t_name, 6 * n])
 			"lifesteal":
-				var heal = int(ceil(damage_dealt * (0.02 * n)))
+				# v0.9.599 — 0.02 → 0.06 per stack.
+				var heal: int = int(ceil(damage_dealt * (0.06 * n)))
 				if heal > 0:
 					var max_hp = character.get_total_max_hp()
 					var before = character.current_hp
@@ -4259,26 +4341,30 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 						msgs.append("[color=%s]✦ %s drains %d HP.[/color]" % [t_color, t_name, actual])
 			"mana_drain":
 				if monster != null:
-					var drain = 2 * n
+					# v0.9.599 — 2→6 per stack.
+					var drain: int = 6 * n
 					var cur_mp = int(monster.get("current_mp", monster.get("mp", 0)))
 					if cur_mp > 0:
 						monster["current_mp"] = max(0, cur_mp - drain)
 						msgs.append("[color=%s]✦ %s drains %d mana from %s.[/color]" % [t_color, t_name, drain, String(monster.get("name", "enemy"))])
 			"stun":
-				var stun_pct = 1.0 * n
+				# v0.9.599 — 1→3% per stack.
+				var stun_pct: float = 3.0 * n
 				if randf() * 100.0 < stun_pct:
 					combat["monster_stunned"] = true
 					combat["monster_stunned_duration"] = max(int(combat.get("monster_stunned_duration", 0)), 1)
 					msgs.append("[color=%s]✦ %s — %s is stunned![/color]" % [t_color, t_name, String(monster.get("name", "enemy")) if monster else "enemy"])
 			"charm":
-				var charm_pct = 1.0 * n
+				# v0.9.599 — 1→3% per stack.
+				var charm_pct: float = 3.0 * n
 				if randf() * 100.0 < charm_pct:
 					combat["monster_charmed"] = true
 					combat["monster_charmed_duration"] = max(int(combat.get("monster_charmed_duration", 0)), 1)
 					msgs.append("[color=%s]✦ %s — %s is mesmerized![/color]" % [t_color, t_name, String(monster.get("name", "enemy")) if monster else "enemy"])
 			"absorb":
-				combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + 2 * n
-				msgs.append("[color=%s]✦ %s — +%d damage absorption.[/color]" % [t_color, t_name, 2 * n])
+				# v0.9.599 — 2→6 per stack.
+				combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + 6 * n
+				msgs.append("[color=%s]✦ %s — +%d damage absorption.[/color]" % [t_color, t_name, 6 * n])
 
 func process_use_item(peer_id: int, item_index: int, target: String = "self") -> Dictionary:
 	"""Process using an item during combat. Returns result with messages.
@@ -6161,6 +6247,12 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	if effects.has("crit_chance_bonus"):
 		crit_chance += int(effects.get("crit_chance_bonus", 0) * 100)
 
+	# v0.9.599 — chase affix: %crit chance from gear (any class can crit now).
+	# Sums across equipped items in get_crit_chance_bonus().
+	var crit_chance_chase: int = int(character.get_crit_chance_bonus())
+	if crit_chance_chase > 0:
+		crit_chance += crit_chance_chase
+
 	crit_chance = min(crit_chance, 75)  # Cap at 75% even with bonuses
 	var is_crit = (randi() % 100) < crit_chance
 
@@ -6176,6 +6268,12 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var companion_crit_damage = int(character.get_companion_bonus("crit_damage")) + combat.get("companion_crit_damage", 0)
 	if is_crit and companion_crit_damage > 0:
 		final_crit_damage += companion_crit_damage / 100.0
+
+	# v0.9.599 — chase affix: %crit damage from gear. Only matters on crits.
+	if is_crit:
+		var crit_dmg_chase: float = character.get_crit_damage_bonus()
+		if crit_dmg_chase > 0:
+			final_crit_damage += crit_dmg_chase / 100.0
 
 	if is_crit:
 		raw_damage = int(raw_damage * final_crit_damage)
@@ -6199,6 +6297,14 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# +15% spell damage (applied to all attacks for Wizards)
 	if effects.has("spell_damage_bonus"):
 		raw_damage = int(raw_damage * (1.0 + effects.get("spell_damage_bonus", 0)))
+
+	# v0.9.599 — chase affix: %damage multiplier from gear. Applies after all
+	# the buff/passive multipliers but before defense reduction so it scales
+	# the actual outgoing damage. damage_mult getter sums across equipped
+	# items and returns 1.0 + sum/100 (e.g., 1.18 for two pieces totaling 18%).
+	var dmg_mult_chase: float = character.get_damage_mult_bonus()
+	if dmg_mult_chase > 1.0:
+		raw_damage = int(raw_damage * dmg_mult_chase)
 
 	# Monster defense reduces damage by a percentage (not flat)
 	var defense_constant = cfg.get("defense_formula_constant", 100)

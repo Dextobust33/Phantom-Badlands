@@ -1167,64 +1167,68 @@ func roll_soul_gem_drop(monster_tier: int) -> Dictionary:
 const VARIANT_TRAIT_CATEGORIES = {
 	"bonus_damage": {
 		"name": "Predator's Mark",
-		"per_stack_pct": 2.0,
-		"description": "+2% ability damage per stack",
+		"per_stack_pct": 6.0,
+		"description": "+6% ability damage per stack",
 		"color": "#FF6B6B",
 	},
 	"crit": {
 		"name": "Hunter's Eye",
-		"per_stack_pct": 2.0,
-		"description": "+2% crit chance on cast per stack",
+		"per_stack_pct": 6.0,
+		"description": "+6% crit chance on cast per stack",
 		"color": "#FFD700",
 	},
 	"bleed": {
 		"name": "Rending",
-		"per_stack_dmg": 1,
+		# v0.9.599 — was flat +1 dmg/turn (didn't scale with character power).
+		# Now: +5% of the ability's hit damage per stack, applied per turn for
+		# `duration` turns. A 100-dmg Cleave with 4 Rending stacks bleeds for
+		# 20 dmg/turn for 2 turns = +40 total damage. Scales with the character.
+		"per_stack_pct_of_hit": 5.0,
 		"duration": 2,
-		"description": "Applies bleed: +1 dmg/turn for 2 turns per stack",
+		"description": "Applies bleed: 5% of hit damage per turn for 2 turns per stack",
 		"color": "#B22222",
 	},
 	"poison": {
 		"name": "Toxic Strike",
-		"per_stack_dmg": 1,
+		"per_stack_pct_of_hit": 5.0,
 		"duration": 3,
-		"description": "Applies poison: +1 dmg/turn for 3 turns per stack",
+		"description": "Applies poison: 5% of hit damage per turn for 3 turns per stack",
 		"color": "#7FBE2E",
 	},
 	"stun": {
 		"name": "Stagger",
-		"per_stack_pct": 1.0,
-		"description": "+1% stun chance on cast per stack",
+		"per_stack_pct": 3.0,
+		"description": "+3% stun chance on cast per stack",
 		"color": "#FFC04D",
 	},
 	"enemy_miss": {
 		"name": "Distract",
-		"per_stack_pct": 2.0,
-		"description": "+2% next-enemy-miss chance per stack",
+		"per_stack_pct": 6.0,
+		"description": "+6% next-enemy-miss chance per stack",
 		"color": "#9CB4FF",
 	},
 	"lifesteal": {
 		"name": "Bloodletter",
-		"per_stack_pct": 2.0,
-		"description": "+2% lifesteal on cast per stack",
+		"per_stack_pct": 6.0,
+		"description": "+6% lifesteal on cast per stack",
 		"color": "#D62828",
 	},
 	"mana_drain": {
 		"name": "Soul Tax",
-		"per_stack_amount": 2,
-		"description": "Drain 2 enemy mana per stack on cast",
+		"per_stack_amount": 6,
+		"description": "Drain 6 enemy mana per stack on cast",
 		"color": "#9D4EDD",
 	},
 	"charm": {
 		"name": "Mesmerize",
-		"per_stack_pct": 1.0,
-		"description": "+1% charm chance per stack (1 turn)",
+		"per_stack_pct": 3.0,
+		"description": "+3% charm chance per stack (1 turn)",
 		"color": "#FF6FB5",
 	},
 	"absorb": {
 		"name": "Aegis",
-		"per_stack_amount": 2,
-		"description": "+2 damage absorption per stack on cast",
+		"per_stack_amount": 6,
+		"description": "+6 damage absorption per stack on cast",
 		"color": "#7FD7FF",
 	},
 }
@@ -4371,6 +4375,41 @@ const SPECIALTY_AFFIX_STATS = {
 	}
 }
 
+# v0.9.599 — chase-tier suffix pool. D2-style chase affixes that only roll
+# at epic+ rarity AND only on the bonus-stat slot (not the guaranteed prefix
+# or suffix). Makes them feel rare/exciting while preserving the existing
+# affix landscape on common→rare gear.
+const CHASE_SUFFIX_POOL = [
+	# % damage multiplier (multiplicative on top of flat attack)
+	{"name": "of Power", "stat": "damage_mult", "base": 5, "per_level": 0.20},
+	{"name": "of Devastation", "stat": "damage_mult", "base": 8, "per_level": 0.25},
+	{"name": "of the Vanquisher", "stat": "damage_mult", "base": 12, "per_level": 0.30},
+	# % crit chance (adds to class-passive crit base)
+	{"name": "of Precision", "stat": "crit_chance_bonus", "base": 3, "per_level": 0.10},
+	{"name": "of the Critical", "stat": "crit_chance_bonus", "base": 5, "per_level": 0.12},
+	# % crit damage bonus
+	{"name": "of Slaughter", "stat": "crit_damage_bonus", "base": 15, "per_level": 0.40},
+	{"name": "of Carnage", "stat": "crit_damage_bonus", "base": 25, "per_level": 0.55},
+	# % chance for an extra turn (turn-based attack-speed equivalent)
+	{"name": "of Frenzy", "stat": "extra_turn_chance", "base": 3, "per_level": 0.08},
+	{"name": "of Haste", "stat": "extra_turn_chance", "base": 5, "per_level": 0.10},
+	# HP-on-kill — triggers on every monster kill
+	{"name": "of the Reaper", "stat": "hp_on_kill", "base": 5, "per_level": 1.0},
+	{"name": "of Bloodthirst", "stat": "hp_on_kill", "base": 10, "per_level": 1.5},
+	# Resource-on-hit — per ability cast that lands
+	{"name": "of Refresh", "stat": "mana_on_hit", "base": 1, "per_level": 0.10},
+	{"name": "of Replenishment", "stat": "stamina_on_hit", "base": 1, "per_level": 0.10},
+	{"name": "of Energizing", "stat": "energy_on_hit", "base": 1, "per_level": 0.10},
+]
+# % chance that an epic+ bonus-stat roll picks from CHASE_SUFFIX_POOL instead
+# of the regular combined pool. ~25% on epic, scaling to ~50% on artifact so
+# the highest rarities ARE the chase tier. Tunable.
+const CHASE_ROLL_CHANCE_BY_RARITY = {
+	"epic": 25,
+	"legendary": 35,
+	"artifact": 50,
+}
+
 # Proc Suffixes - Special effects that trigger on hit/being hit (Tier 6+ only)
 # These are rarer and more powerful than regular affixes
 # Format: {name, proc_type, value, chance (% per hit)}
@@ -4406,6 +4445,16 @@ const RUNE_AFFIX_CAPS = {
 	"int_bonus": {"minor": 2, "greater": 8, "supreme": 16},
 	"wis_bonus": {"minor": 2, "greater": 8, "supreme": 16},
 	"wits_bonus": {"minor": 2, "greater": 8, "supreme": 16},
+	# v0.9.599 — chase affix caps (only used by enchanter runes if they ever
+	# get added; currently chase affixes are drop-only).
+	"damage_mult": {"minor": 8, "greater": 18, "supreme": 30},
+	"crit_chance_bonus": {"minor": 5, "greater": 10, "supreme": 15},
+	"crit_damage_bonus": {"minor": 25, "greater": 50, "supreme": 80},
+	"extra_turn_chance": {"minor": 4, "greater": 8, "supreme": 12},
+	"hp_on_kill": {"minor": 15, "greater": 40, "supreme": 80},
+	"mana_on_hit": {"minor": 3, "greater": 7, "supreme": 12},
+	"stamina_on_hit": {"minor": 3, "greater": 7, "supreme": 12},
+	"energy_on_hit": {"minor": 3, "greater": 7, "supreme": 12},
 }
 
 func _get_affixes_for_stat(stat: String, is_prefix: bool) -> Array:
@@ -4582,20 +4631,27 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 		total_roll_quality += result.quality
 		affix_count += 1
 
-		# Bonus stats for epic+ (count - 2 extra affixes from combined pool)
+		# Bonus stats for epic+ (count - 2 extra affixes from combined pool).
+		# v0.9.599 — each bonus slot has a rarity-scaled chance to roll from
+		# CHASE_SUFFIX_POOL instead of the regular combined pool. Makes the
+		# new D2-style affixes feel like genuine chase rolls — common→rare
+		# items never get them; epic gets a chance; artifact has a coin-flip.
 		var bonus_count = count - 2
 		var combined_pool = PREFIX_POOL + SUFFIX_POOL
+		var chase_chance: int = int(CHASE_ROLL_CHANCE_BY_RARITY.get(rarity, 0))
 		for _b in range(bonus_count):
+			var roll_from_chase: bool = chase_chance > 0 and (randi() % 100) < chase_chance
+			var pool_for_roll: Array = CHASE_SUFFIX_POOL if roll_from_chase else combined_pool
 			# Try to pick an affix with a stat we haven't used (up to 5 attempts)
 			var picked = null
 			for _attempt in range(5):
-				var candidate = combined_pool[randi() % combined_pool.size()]
+				var candidate = pool_for_roll[randi() % pool_for_roll.size()]
 				if candidate.stat not in used_stats:
 					picked = candidate
 					break
 			if picked == null:
 				# All stats used, just pick any
-				picked = combined_pool[randi() % combined_pool.size()]
+				picked = pool_for_roll[randi() % pool_for_roll.size()]
 			result = _calculate_affix_value(picked, item_level, roll_range)
 			if affixes.has(picked.stat):
 				affixes[picked.stat] += result.value
