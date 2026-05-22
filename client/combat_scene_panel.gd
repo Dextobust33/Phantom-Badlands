@@ -426,7 +426,14 @@ func _build_layout() -> void:
 	_review_button.add_theme_font_size_override("font_size", 15)
 	_review_button.custom_minimum_size = Vector2(168, 36)
 	_review_button.focus_mode = Control.FOCUS_NONE
-	_review_button.z_index = 50
+	# v0.9.609 — bumped z_index past the victory card overlay (z=150) so the
+	# button is clickable from the victory screen too. Player feedback:
+	# "the player should be able to toggle off of the Victory Screen to see
+	# the combat log or look back at the FX screen before so they can see
+	# what all happened in the fight." The button's _update_review_button_
+	# visibility already shows it whenever the action phase isn't active +
+	# log content exists; only the z-ordering was blocking it.
+	_review_button.z_index = 200
 	_review_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	_review_button.visible = false
 	_review_button.pressed.connect(_on_review_button_pressed)
@@ -4926,6 +4933,11 @@ func show_victory_card(rewards: Dictionary) -> void:
 	if _log_scroll:
 		_log_scroll.visible = false
 	_victory_interlude_active = true
+	# v0.9.609 — refresh the Review FX button visibility now that the
+	# victory card is up. Without this call, the button might stay hidden
+	# from a stale check earlier in the action phase even though there's
+	# log content the player can now review.
+	_update_review_button_visibility()
 	# Subtle slide-in: fade from invisible to full alpha
 	_victory_card_overlay.modulate.a = 0.0
 	var t := create_tween()

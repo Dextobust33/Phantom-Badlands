@@ -4204,7 +4204,14 @@ func _input(event):
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
 		if input_field == null or not input_field.has_focus():
 			if combat_scene_panel:
-				var _victory_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active() and pending_continue
+				# v0.9.609 — dropped the `pending_continue` requirement. The
+				# v0.9.602 loot-close path clears pending_continue before the
+				# player sees the final victory card, so the old gate blocked
+				# the L-toggle for the entire window the prompt was visible.
+				# Player report: "Pressing L on the victory screen isn't
+				# bringing it up." Use the victory-interlude flag alone — it
+				# stays true while the card is up.
+				var _victory_up = combat_scene_panel.has_method("is_victory_interlude_active") and combat_scene_panel.is_victory_interlude_active()
 				var _death_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active() and game_state == GameState.DEAD
 				if _victory_up or _death_up:
 					# Toggle into the legacy wall-of-text view. Combat
@@ -4494,10 +4501,15 @@ func _input(event):
 			elif keycode == KEY_4:
 				_toggle_skip_gather_minigame()
 			elif keycode == KEY_5:
-				_toggle_disable_tutorial()
+				# v0.9.609 — autoskip combat loot toggle. Mirrors
+				# autoskip_loot_reveal (normally only flippable from the
+				# loot panel checkbox, which moves too fast to click).
+				_toggle_autoskip_loot_reveal()
 			elif keycode == KEY_6:
-				_toggle_map_legend()
+				_toggle_disable_tutorial()
 			elif keycode == KEY_7:
+				_toggle_map_legend()
+			elif keycode == KEY_8:
 				settings_submenu = "stat_priority"
 				game_output.clear()
 				_display_stat_priority_settings()
@@ -18083,6 +18095,17 @@ func update_player_hp_bar():
 	if not player_health_bar or not has_character:
 		return
 
+	# v0.9.609 — hide the bottom-of-screen StatsBar HP/resource bars during
+	# combat. The combat scene panel shows full HP + resource bars directly
+	# (v0.9.601 pre-FX + FX overlay parity), so the bottom widgets are
+	# redundant clutter during a fight. Player feedback: "the redundant HP:
+	# and Resource: bars just above the action bars never got removed."
+	# v0.9.601 only hid the `resource_bars_overlay` RichTextLabel — this is
+	# the actual StatsBar widget. Re-shown when combat ends.
+	player_health_bar.visible = not in_combat
+	if resource_bar:
+		resource_bar.visible = not in_combat
+
 	var current_hp = character_data.get("current_hp", 0)
 	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))  # Use equipment-boosted HP
 	var percent = (float(current_hp) / float(max_hp)) * 100.0
@@ -18285,6 +18308,13 @@ func _update_shield_bar(max_hp: int):
 func update_resource_bar():
 	if not resource_bar or not has_character:
 		return
+
+	# v0.9.609 — same gate as update_player_hp_bar. The combat scene panel
+	# carries its own resource bar (v0.9.601 pre-FX + FX overlay parity),
+	# so the bottom-row StatsBar widget is redundant during a fight. The
+	# previous v0.9.601 fix only handled `resource_bars_overlay` (the
+	# RichTextLabel) — this is the actual ProgressBar widget.
+	resource_bar.visible = not in_combat
 
 	var path = _get_player_active_path()
 	var current_val = 0
@@ -20421,6 +20451,9 @@ func handle_server_message(message: Dictionary):
 			# v0.9.601 — restore the bottom resource bars overlay (hidden during
 			# combat as redundant with the in-combat HP + resource bars).
 			update_resource_bars_overlay()
+			# v0.9.609 — also restore the StatsBar HP / resource widgets.
+			update_player_hp_bar()
+			update_resource_bar()
 			combat_item_mode = false
 			combat_outsmart_failed = false  # Reset for next combat
 			# Audit #1 Slice 6a — wipe hand state at end of combat. Cards
@@ -21412,6 +21445,11 @@ func _process_combat_start(message: Dictionary):
 	# v0.9.601 — combat scene now shows HP + resource bars; the bottom-of-
 	# screen resource_bars_overlay is redundant during a fight. Hide it.
 	update_resource_bars_overlay()
+	# v0.9.609 — also hide the StatsBar's PlayerHealthBar + ResourceBar
+	# (the actual bottom-row widgets, separate from the overlay) since the
+	# combat scene shows the same info.
+	update_player_hp_bar()
+	update_resource_bar()
 	# v0.9.604 — clear the post-loot victory-card persistence flag if a new
 	# fight starts before the player moved. Otherwise the safety net would
 	# keep treating the card as "should stay" even though combat resumed.
@@ -23996,13 +24034,20 @@ func display_game_settings():
 	var skip_gather = character_data.get("skip_gather_minigame", false)
 	var skip_gather_status = "[color=#00FF00]ON[/color]" if skip_gather else "[color=#FF6666]OFF[/color]"
 	display_game("[4] Skip Gather Minigame: %s" % skip_gather_status)
+	# v0.9.609 — Autoskip Combat Loot. Player feedback: the in-panel toggle
+	# is impossible to disable mid-game because the minigame moves too fast.
+	# This Settings entry lets you flip it OUTSIDE combat. Stored in the
+	# client keybinds file (autoskip_loot_reveal) — keeps in sync with the
+	# in-panel checkbox.
+	var skip_loot_status = "[color=#00FF00]ON[/color]" if autoskip_loot_reveal else "[color=#FF6666]OFF[/color]"
+	display_game("[5] Autoskip Combat Loot Reveal: %s" % skip_loot_status)
 	# Old Skip Harvest Minigame setting removed v0.9.436.
 	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
-	display_game("[5] Tutorial on New Character: %s" % tutorial_status)
+	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
-	display_game("[6] Map Legend: %s" % legend_status)
+	display_game("[7] Map Legend: %s" % legend_status)
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
-	display_game("[7] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
+	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
 	if skip_craft or skip_gather:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -24061,6 +24106,28 @@ func _toggle_skip_gather_minigame():
 	if settings_mode and settings_submenu == "game":
 		game_output.clear()
 		display_game_settings()
+
+func _toggle_autoskip_loot_reveal():
+	"""v0.9.609 — flip the autoskip_loot_reveal preference from the Settings >
+	Game menu so the player can disable autoskip BEFORE entering combat,
+	without trying to click the in-panel checkbox during the cascade.
+	Mirrors the persistence path used by the in-panel toggle (keybinds.json
+	via _save_keybinds)."""
+	autoskip_loot_reveal = not autoskip_loot_reveal
+	_save_keybinds()
+	game_output.clear()
+	if autoskip_loot_reveal:
+		display_game("[color=#00FF00]Autoskip Combat Loot Reveal: ENABLED[/color]")
+		display_game("[color=#FFFF00]Loot reveal will auto-complete instead of waiting for clicks.[/color]")
+		display_game("[color=#808080]Disable in Settings > Game anytime.[/color]")
+	else:
+		display_game("[color=#FF6666]Autoskip Combat Loot Reveal: DISABLED[/color]")
+		display_game("[color=#808080]You'll click each tile yourself.[/color]")
+	await get_tree().create_timer(1.5).timeout
+	if settings_mode and settings_submenu == "game":
+		game_output.clear()
+		display_game_settings()
+
 
 func _toggle_disable_tutorial():
 	"""Toggle whether tutorial shows on new character creation."""
@@ -25634,8 +25701,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.609 — Post-victory review, bottom-bar cleanup, settings autoskip.
+	display_game("[color=#00FF00]v0.9.609[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Four player-reported fixes around the post-combat experience. (1) L-key + Review FX button finally work on the victory screen so you can re-read the combat log / re-watch the FX. (2) The redundant bottom-of-screen HP+resource bars now actually hide during combat — v0.9.601 hid the wrong widget. (3) Autoskip Combat Loot can be toggled from Settings > Game outside combat, since the in-panel checkbox moves too fast to click.[/color]")
+	display_game("  • [b]Press [L] from the victory screen[/b] to toggle the legacy combat-log view. The v0.9.602 loot-close path cleared [color=#888888]pending_continue[/color] BEFORE the player sees the final victory card, but the old L-key handler required [color=#888888]pending_continue=true[/color] — so the toggle was dead for the entire window the prompt was visible. Now uses [color=#888888]is_victory_interlude_active()[/color] alone.")
+	display_game("  • [b]Review FX button surfaces over the victory card[/b]. The button (top-right of the combat panel) was at z_index 50; the victory card overlay is z=150, so the button was rendering BEHIND the card and unclickable. Bumped to z=200 + added an explicit visibility refresh when the victory card shows.")
+	display_game("  • [b]Bottom HP+resource bars hide during combat[/b]. The v0.9.601 fix hid [color=#888888]resource_bars_overlay[/color] (a RichTextLabel) but the actual visible bars are [color=#888888]$RootContainer/StatsBar/PlayerHealthBar[/color] + [color=#888888]ResourceBar[/color] — two separate widgets that were missed. Now gated on [color=#888888]in_combat[/color] in both update functions + explicit refresh on combat start/end.")
+	display_game("  • [b]Settings > Game — Autoskip Combat Loot[/b]. New entry [5]; the existing Skip Craft / Gather Minigame toggles are now [3] [4], Tutorial [6], Map Legend [7], Stat Compare [8]. Flips [color=#888888]autoskip_loot_reveal[/color] (the client-side keybinds preference the in-panel checkbox saves to), so you can disable autoskip BEFORE entering combat instead of trying to click the in-panel checkbox during the fast cascade.")
+	display_game("")
+
 	# v0.9.608 — Chase affix visibility: cards + combat log.
-	display_game("[color=#00FF00]v0.9.608[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.608[/color]")
 	display_game("  [color=#FFD700]Player feedback: 'It's hard to tell if it worked or not... players are assessing gear in their inventory only look at the card summary and don't actually hover.' Two visibility fixes so chase affixes (v0.9.599 stats + v0.9.606 ability ranks) are obvious without hovering, and so the gear bonus is visible firing during combat.[/color]")
 	display_game("  • [b]Inventory card now shows chase affix tokens at a glance[/b]. Compact tokens sit next to the existing ATK/DEF/HP/etc. tokens on every item card. Abbreviations: [color=#FFD700]+3 Clv[/color] / [color=#FFD700]+2 War[/color] / [color=#FFAA66]+15% DMG[/color] / [color=#FFD700]+8% CRIT[/color] / [color=#90EE90]+25 HP/k[/color] / [color=#9999FF]+5 MP/h[/color] etc. Gold (#FFD700) marks the v0.9.606 ability-rank chase rolls; v0.9.599 stat chase affixes keep their thematic colors.")
 	display_game("  • [b]Comparison view extended[/b]. Comparing a new item against your equipped one now diffs the chase affix values too. Swap [color=#888888]Helm of Cleaving (+2)[/color] for [color=#888888]Helm of the Warrior (+1)[/color] and you'll see [color=#FFD700]-2 Clv[/color] [color=#FFD700]+1 War[/color] right on the card.")
