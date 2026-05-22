@@ -1629,14 +1629,22 @@ func get_post_anchored_level(x: int, y: int) -> int:
 		if total < 0.001:
 			post_blended = base_nearest
 		else:
-			# v0.9.567 — quadratic blend (t^2). Was cubic (t^3) in v0.9.480
-			# which kept the post's own anchor dominant through ~50% of the
-			# gap; user feedback that level clamping around the start post
-			# was too strong. Quadratic still favors the nearest post (so
-			# Haven's Lv 1-2 pocket persists) but ramps up to the next post's
-			# level noticeably sooner. Wilderness floor still applies below.
+			# v0.9.595 — smoothstep blend (3t² - 2t³). Was quadratic (t²) in
+			# v0.9.567. The quadratic curve produced a discontinuity at the
+			# midpoint between two posts: just before the swap (nearest=A) it
+			# blends 0.75·A + 0.25·B; just after the swap (nearest=B) it blends
+			# 0.75·B + 0.25·A — a |0.5·(B-A)| level cliff. With anchor gaps of
+			# 14-30 levels between adjacent posts that produced visible 7-15
+			# level jumps in one tile (user-reported "lvl 16 → 25 in one space").
+			#
+			# Smoothstep evaluates to exactly 0.5 at t=0.5, so the two halves of
+			# the swap produce the same blend (mathematical continuity at the
+			# midpoint). The "anchor pocket" intent is preserved — smoothstep
+			# is flat near both endpoints (derivative 0 at t=0 and t=1), so
+			# each post's level still dominates its own half. Wilderness floor
+			# still applies below.
 			var t = nearest_dist / total
-			var t_curved = t * t
+			var t_curved = t * t * (3.0 - 2.0 * t)
 			post_blended = int(round(lerp(float(base_nearest), float(base_second), t_curved)))
 
 	return max(post_blended, wilderness_level)
