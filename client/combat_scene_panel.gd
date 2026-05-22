@@ -674,7 +674,25 @@ func reset_for_new_combat() -> void:
 	"""v0.9.593 — called by client.gd when a new combat starts so any persistent
 	FX state from a previous fight doesn't leak in. Forces a clean slate: flag
 	off, overlay hidden, _action_phase_active false, strips visible. The next
-	start_action_phase call will fire the normal Round 1 fade-in transition."""
+	start_action_phase call will fire the normal Round 1 fade-in transition.
+
+	v0.9.624 — ALSO dismiss any stale victory interlude. Edge case: with
+	autoskip loot enabled + fast movement, the player can trigger a new
+	random encounter in the same frame as victory dismissal. The
+	_process safety net at client.gd:2802 skips dismissal when
+	_now_in_combat is true, so _victory_interlude_active gets stuck.
+	Result: new combat shows FX overlay AND Review Damage button stays
+	visible (v0.9.621 honored the stuck flag), making the screen feel
+	frozen. Player report: 'this is stuck on my screen and overlays
+	everything... only clears if I get in a new combat... Auto-Skip
+	combat loot reveal on if it matters.' Clearing the victory interlude
+	here ensures every new combat starts from a clean slate."""
+	if _victory_card_overlay and is_instance_valid(_victory_card_overlay) and _victory_card_overlay.visible:
+		_victory_card_overlay.visible = false
+	if _log_scroll and is_instance_valid(_log_scroll):
+		_log_scroll.visible = true
+	_victory_interlude_active = false
+	_in_review_phase = false
 	_fx_persistent_active = false
 	_action_phase_active = false
 	_cancel_action_phase_timer()
