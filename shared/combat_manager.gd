@@ -1286,7 +1286,14 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 
 	# Check if combat ended
 	if result.has("combat_ended") and result.combat_ended:
-		end_combat(peer_id, result.get("victory", false))
+		# v0.9.600 — preserve buffs if a flock or summoner chain might
+		# continue. Server rolls the actual flock chance; if it fails, server
+		# clears buffs in the non-flock branch. Summoners always continue.
+		var _preserve: bool = result.get("victory", false) and (
+			int(result.get("flock_chance", 0)) > 0
+			or String(result.get("summon_next_fight", "")) != ""
+		)
+		end_combat(peer_id, result.get("victory", false), _preserve)
 		return result
 
 	# Monster's turn (if still alive and didn't already act this round)
@@ -2913,7 +2920,9 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 
 	# Check if combat ended
 	if result.has("combat_ended") and result.combat_ended:
-		end_combat(peer_id, result.get("victory", false))
+		# v0.9.600 — preserve buffs through potential flock continuations.
+		var _preserve: bool = result.get("victory", false) and int(result.get("flock_chance", 0)) > 0
+		end_combat(peer_id, result.get("victory", false), _preserve)
 		return result
 
 	# === GEAR RESOURCE REGEN (skipped on CC ability turns to prevent spend/regen loops) ===
@@ -2938,7 +2947,12 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# Process full victory with rewards (XP, items, etc.)
 		result.messages.append("[color=#00FF00]Your companion finishes off the %s![/color]" % combat.monster.name)
 		var victory_result = _process_victory_with_abilities(combat, result.messages)
-		end_combat(peer_id, true)
+		# v0.9.600 — preserve buffs if a flock or summoner chain might continue.
+		var _preserve: bool = (
+			int(victory_result.get("flock_chance", 0)) > 0
+			or String(victory_result.get("summon_next_fight", "")) != ""
+		)
+		end_combat(peer_id, true, _preserve)
 		return victory_result
 
 	# Monster's turn (if still alive and ability didn't end turn specially)
@@ -6553,8 +6567,15 @@ func get_combat_summary(peer_id: int) -> Dictionary:
 		"player_hp_at_start": combat.get("player_hp_at_start", 0),
 	}
 
-func end_combat(peer_id: int, victory: bool):
-	"""End combat and clean up"""
+func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
+	"""End combat and clean up.
+
+	v0.9.600 — `preserve_buffs` flag added so flock chains keep War Cry /
+	Berserk / Iron Skin / etc. active across mob transitions. Player feedback:
+	'ability buffs used in combat should carry through to flock encounters.'
+	Callers pass `true` when the victory result carries `flock_chance > 0`;
+	server.gd later clears buffs explicitly in the non-flock victory branch
+	if the flock roll actually fails (so non-flock outcomes still cleanse)."""
 	if active_combats.has(peer_id):
 		var combat = active_combats[peer_id]
 		var character = combat.character
@@ -6588,8 +6609,10 @@ func end_combat(peer_id: int, victory: bool):
 		# Mark character as not in combat
 		character.in_combat = false
 
-		# Clear combat buffs (round-based)
-		character.clear_buffs()
+		# Clear combat buffs (round-based). v0.9.600 — skipped when
+		# preserve_buffs is set (flock chain might continue).
+		if not preserve_buffs:
+			character.clear_buffs()
 
 		# Tick persistent buffs (battle-based) - reduces remaining battles by 1
 		var expired_persistent = character.tick_persistent_buffs()

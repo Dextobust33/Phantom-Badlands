@@ -5832,7 +5832,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# Save character
 				save_character(peer_id)
 			else:
-				# Flock ended or no flock - collect all accumulated drops
+				# Flock ended or no flock - collect all accumulated drops.
+				# v0.9.600 — when flock_chance > 0 but the roll failed,
+				# combat_manager.end_combat preserved buffs optimistically.
+				# Combat is truly over here, so cleanse them now. No-op when
+				# combat_manager already cleared (flock_chance was 0).
+				characters[peer_id].clear_buffs()
 				var all_drops = []
 				if pending_flock_drops.has(peer_id):
 					all_drops = pending_flock_drops[peer_id]
