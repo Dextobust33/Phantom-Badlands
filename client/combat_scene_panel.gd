@@ -3475,19 +3475,9 @@ func _review_fight_index_step(delta: int) -> int:
 	return linear
 
 
-func _input(event: InputEvent) -> void:
-	"""v0.9.611 — ← / → during review phase cycles through flock fights."""
-	if not _in_review_phase:
-		return
-	if not (event is InputEventKey) or not event.pressed or event.echo:
-		return
-	match event.keycode:
-		KEY_LEFT, KEY_BRACKETLEFT:
-			_on_review_prev_pressed()
-			get_viewport().set_input_as_handled()
-		KEY_RIGHT, KEY_BRACKETRIGHT:
-			_on_review_next_pressed()
-			get_viewport().set_input_as_handled()
+# v0.9.612 — removed the keyboard ← / → pagination handler. The arrow
+# keys conflict with overworld movement; players now use the visible
+# ◀ Prev Fight / Next Fight ▶ buttons exclusively.
 
 
 func get_log_lines() -> Array:
