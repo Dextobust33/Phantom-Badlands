@@ -454,6 +454,12 @@ var _combat_scene_was_flock_pending: bool = false  # tracks flock_pending true�
 # `_combat_scene_was_flock_pending` which missed cases where combat_end +
 # combat_start arrived in the same _process tick.
 var _pending_flock_archive: bool = false
+# v0.9.613 — set in combat_end's flock_incoming branch; consumed in
+# _drain_combat_queue's queue-empty branch. Holds the clear_log(true)
+# archive call until the paced combat messages have all drained into
+# _log_lines, so the archived snapshot includes the full fight content
+# (attacks, damage, abilities) and not just the post-combat chrome.
+var _pending_flock_archive_request: bool = false
 var _combat_scene_linger_until_ms: int = 0     # holds panel visible briefly after combat ends
 var _victory_legacy_view: bool = false  # player toggled to the old full-screen text view via [L]; suppresses the scene panel until they toggle back or continue
 # v0.9.611 — index of the flock fight currently shown in the legacy text
@@ -20620,14 +20626,20 @@ func handle_server_message(message: Dictionary):
 				# Check for incoming flock encounter
 				if message.get("flock_incoming", false):
 					flock_pending = true
-					# v0.9.610 — archive the just-finished fight's log into the
-					# panel's _flock_history NOW, before the next combat_start
-					# might land in the same _process tick. Set
-					# _pending_flock_archive so the upcoming
-					# _populate_combat_scene_panel call knows NOT to
-					# reset_flock_history (the chain is continuing).
-					if combat_scene_panel and combat_scene_panel.has_method("clear_log"):
-						combat_scene_panel.clear_log(true)
+					# v0.9.613 — DEFER the archive until the combat message
+					# queue has fully drained. Per v0.9.610 we used to call
+					# clear_log(true) inline here, but combat messages
+					# (attacks, damage) drain at a paced rhythm AFTER
+					# combat_end arrives. Firing the archive now captures
+					# an EMPTY _log_lines for this fight; the actual damage
+					# messages then drain into _log_lines and end up
+					# archived as the NEXT fight's content. Player report:
+					# "some [fights] don't show anything in the combat
+					# strips aside from Tactical Discipline: -20% cost."
+					# Setting `_pending_flock_archive_request = true` makes
+					# _drain_combat_queue's queue-empty branch fire the
+					# archive at the correct moment.
+					_pending_flock_archive_request = true
 					_pending_flock_archive = true
 					flock_monster_name = message.get("flock_monster", "enemy")
 					var _flock_warn = "[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name
@@ -25809,8 +25821,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.613 — Flock archive captures fight content (drain-timing fix).
+	display_game("[color=#00FF00]v0.9.613[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Bug fix: per-fight combat logs in flock chains were missing the actual attacks and damage. The [L] view and Review FX strips only showed end-of-combat / next-fight intro messages. Root cause: clear_log(true) fired immediately on combat_end, but combat messages drain at a paced rhythm AFTER combat_end arrives — so the archive captured an empty fight, and the real fight content drained into the NEXT fight's archive.[/color]")
+	display_game("  • [b]Archive deferred to queue-drain[/b]. combat_end's flock_incoming branch now sets [color=#888888]_pending_flock_archive_request = true[/color] instead of calling [color=#888888]clear_log(true)[/color] inline. [color=#888888]_drain_combat_queue[/color]'s queue-empty branch consumes the flag, calls clear_log(true), and emits the 'But wait... you hear more Xs approaching' chrome AFTER the archive — so those lines land in the NEXT fight's intro instead of getting buried at the end of the archived fight.")
+	display_game("  • [b]Effect[/b]: each archived flock fight now contains its full sequence — Round dividers, every attack ('YOU 25 damage'), every monster strike, ability casts, status effects, defeat / XP / passive chrome. [L] and Review FX show the complete play-by-play per fight.")
+	display_game("")
+
 	# v0.9.612 — Right bars hidden, mouse-only pagination, Space dismisses victory.
-	display_game("[color=#00FF00]v0.9.612[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.612[/color]")
 	display_game("  [color=#FFD700]Three corrections to v0.9.611. (1) I had the bar layout backwards — the StatsBar HP/resource bars (top of screen) stay visible; the ResourceBarsOverlay (below the GameOutput window) is the redundant one and is now hidden everywhere. (2) Arrow-key pagination conflicted with overworld movement; dropped in favor of clickable in-view buttons. (3) Pressing Space on the post-loot victory screen now dismisses the card and returns to overworld instead of doing nothing.[/color]")
 	display_game("  • [b]StatsBar restored, ResourceBarsOverlay hidden[/b]. v0.9.611's permanent removal targeted the wrong bar. Now reverted: StatsBar HP+resource visible always (default scene behavior). The ResourceBarsOverlay (RichTextLabel below the GameOutput window) is forced to [color=#888888]visible = false[/color] every _process tick. Provisional — once player confirms the layout is right, the overlay node + its update path get deleted from the codebase entirely.")
 	display_game("  • [b]Mouse-only flock pagination[/b]. Arrow keys conflict with overworld movement, so they were dropped from both surfaces. [L] combat log: clickable [color=#FFD700]◀ Prev Fight[/color] / [color=#FFD700]Next Fight ▶[/color] BBCode links in the footer, dispatched through [color=#888888]game_output.meta_clicked[/color]. Review FX: existing visible Prev/Next buttons (added in v0.9.611) are now the only paginator.")
@@ -31449,6 +31468,24 @@ func _drain_combat_queue():
 			var chrome_args: Dictionary = _pending_combat_end_chrome
 			_pending_combat_end_chrome = {}
 			_emit_combat_end_chrome(chrome_args)
+		# v0.9.613 — fire the deferred flock archive NOW that all combat
+		# messages have drained into _log_lines. Archive captures the full
+		# fight content (attacks / damage / abilities / death / XP / passive
+		# chrome) — every line that came from the server for this fight.
+		# Then the chrome chain below (flock-warn text, next combat_start)
+		# starts a fresh log for the next mob.
+		if _pending_flock_archive_request:
+			_pending_flock_archive_request = false
+			if combat_scene_panel and combat_scene_panel.has_method("clear_log"):
+				combat_scene_panel.clear_log(true)
+			# v0.9.613 — emit the "More Xs approaching" + "Press [Space]"
+			# lines AFTER the archive + clear so they land in the NEXT
+			# fight's log (chain intro), not the just-archived fight's log.
+			if flock_pending:
+				var _fwarn: String = "[color=#FF4444]But wait... you hear more %ss approaching![/color]" % flock_monster_name
+				var _fprompt: String = "[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0)
+				_combat_text_to_outputs(_fwarn)
+				_combat_text_to_outputs(_fprompt)
 		if _pending_victory_fx_play and combat_scene_panel:
 			_pending_victory_fx_play = false
 			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
