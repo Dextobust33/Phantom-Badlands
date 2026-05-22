@@ -25821,8 +25821,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.617 — Hold: revert to v0.9.595 smoothstep while deep-dive design lands.
+	display_game("[color=#00FF00]v0.9.617[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Holding state. v0.9.616's all-posts 1/d⁴ IDW elevated baseline (Lv 18 area read as Lv 32). Reverted to v0.9.595 smoothstep — known-good baseline, known 5-15 level swap cliff at midpoints between posts. A proper deep-dive design effort is underway; v0.9.617 keeps levels predictable across the whole map until the permanent fix lands.[/color]")
+	display_game("  • [b]Trade-off accepted[/b]: smoothstep returns the swap cliff (the original (44,-57)→(45,-57) Lv 18→38 issue) but eliminates the IDW baseline drift. A research agent is auditing the full level pipeline (post placement, anchor formula, bubble influence, wilderness curve) to design a permanent solution that has BOTH correct baseline AND no cliffs.")
+	display_game("  • [b]Parallel work[/b]: multi-active-companion design memo is being researched in parallel. Combat strips, save format, imprint stacking, party logic all need scoping before any code. Memo will land in the dev memory under [color=#888888]project_multi_companion_design[/color].")
+	display_game("")
+
 	# v0.9.616 — All-posts 1/d⁴ IDW. Continuous everywhere, no swap cliffs.
-	display_game("[color=#00FF00]v0.9.616[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.616[/color]")
 	display_game("  [color=#FFD700]v0.9.615's top-3 1/d² still had cliffs — player report: '(45,-57) is Lv ~26' (vs (44,-57) at Lv ~18, an 8-level jump). Math diagnosed: top-N has a discrete SWAP cliff whenever the swap-slot's post has a different anchor than the previous occupant. Fix: drop discrete set membership, use ALL posts with steeper p=4 falloff.[/color]")
 	display_game("  • [b]1/(d⁴ + 1) weighting[/b]. Far posts contribute essentially nothing: a post 10× farther has 1/10000th the weight (vs 1/100th for p=2). At typical post spacing, 50 far posts cumulatively contribute <0.2% of the nearest's weight — no elevation risk. v0.9.614's catastrophic Lv 89 inflation cannot recur even with all-posts because the falloff is steeper.")
 	display_game("  • [b]Every post always contributes[/b]. No discrete set membership → no swap cliffs anywhere. As the player moves, every post's weight changes smoothly. The boundary case (a 4th post becoming nearer than the 3rd) is now sub-0.1 level instead of 8 levels.")

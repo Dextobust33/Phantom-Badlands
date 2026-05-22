@@ -1639,49 +1639,50 @@ func get_post_anchored_level(x: int, y: int) -> int:
 	if chunk_manager == null or chunk_manager.npc_posts.is_empty():
 		return wilderness_level
 
-	# v0.9.616 — all-posts 1/d⁴ IDW. v0.9.615's top-3 1/d² had residual cliffs
-	# (player report: 18→26 at the same (44,-57)→(45,-57) tiles) because the
-	# top-3 set's 3rd slot could SWAP between posts with very different
-	# anchors. The swap's discontinuity was proportional to (slot_weight ×
-	# anchor_diff): even at low slot weight (~0.000156), a 35-level anchor
-	# gap produced an 8-level jump.
-	#
-	# Fix: remove discrete set membership entirely. Use ALL posts with
-	# weight 1/(d⁴ + 1). The fourth-power falloff makes far posts contribute
-	# negligibly even in aggregate:
-	#   At d=15 (nearest): weight ≈ 1/50625
-	#   At d=200 (far):    weight ≈ 1/1.6e9 = 31600× smaller
-	#   50 far posts × that weight ≈ 0.15% of nearest's weight
-	# v0.9.614 used 1/d² which had only 100× ratio per 10× distance — 50
-	# far posts cumulatively reached ~28% of nearest's weight, pulling the
-	# blend up to Lv 89. With p=4, cumulative far-post weight is sub-1%.
-	#
-	# Continuity: every post always contributes, weight changes smoothly
-	# as the player moves. No set membership = no discrete swap cliffs.
-	# A swap-equivalent (4th post becoming nearer than the old 3rd) is now
-	# a smooth weight redistribution worth ~0.05 levels at the boundary.
-	#
-	# Robust to procedural map regeneration: bounded post count (~18 in
-	# starter network, 100-tile spacing) keeps total cumulative far-post
-	# weight well under 1% of nearest. Validates for any future map config.
-	var total_weight: float = 0.0
-	var weighted_sum: float = 0.0
+	# v0.9.617 — HOLDING STATE. Reverted to v0.9.595 smoothstep after IDW
+	# experiments (v0.9.614/615/616) produced either elevated baselines or
+	# residual cliffs. The smoothstep blend has a known second-nearest-swap
+	# cliff at midpoints between posts (5-15 level jumps in pathological
+	# spots) but its BASELINE is correct. A deep-dive design effort is
+	# scheduled to produce a permanent solution that's both continuous AND
+	# baseline-correct. Until then, this restores predictable level
+	# readings across the whole map.
+	var nearest_dist = INF
+	var nearest_post_origin_dist = 0.0
+	var second_dist = INF
+	var second_post_origin_dist = 0.0
 	for post in chunk_manager.npc_posts:
-		var cx: float = float(post.get("x", 0))
-		var cy: float = float(post.get("y", 0))
-		var dx: float = float(x) - cx
-		var dy: float = float(y) - cy
-		var d2: float = dx * dx + dy * dy
-		var d4: float = d2 * d2
-		var weight: float = 1.0 / (d4 + 1.0)
-		var origin_dist: float = sqrt(cx * cx + cy * cy)
-		var anchor_level: float = float(_distance_to_level(origin_dist))
-		total_weight += weight
-		weighted_sum += weight * anchor_level
+		var cx = int(post.get("x", 0))
+		var cy = int(post.get("y", 0))
+		var dx = float(x - cx)
+		var dy = float(y - cy)
+		var d = sqrt(dx * dx + dy * dy)
+		if d < nearest_dist:
+			second_dist = nearest_dist
+			second_post_origin_dist = nearest_post_origin_dist
+			nearest_dist = d
+			nearest_post_origin_dist = sqrt(float(cx * cx + cy * cy))
+		elif d < second_dist:
+			second_dist = d
+			second_post_origin_dist = sqrt(float(cx * cx + cy * cy))
 
-	var post_blended: int = wilderness_level
-	if total_weight > 0.0:
-		post_blended = int(round(weighted_sum / total_weight))
+	if nearest_dist == INF:
+		return wilderness_level
+
+	var base_nearest = _distance_to_level(nearest_post_origin_dist)
+	var post_blended: int
+	if second_dist == INF:
+		post_blended = base_nearest
+	else:
+		var base_second = _distance_to_level(second_post_origin_dist)
+		var total = nearest_dist + second_dist
+		if total < 0.001:
+			post_blended = base_nearest
+		else:
+			# v0.9.595 smoothstep blend.
+			var t = nearest_dist / total
+			var t_curved = t * t * (3.0 - 2.0 * t)
+			post_blended = int(round(lerp(float(base_nearest), float(base_second), t_curved)))
 
 	var world_level: int = max(post_blended, wilderness_level)
 	# v0.9.605 — blend in the bubble's level by its falloff weight. Inside a
