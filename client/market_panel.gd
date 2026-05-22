@@ -1472,10 +1472,17 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_mater
 			continue
 		# Consumables — `is_consumable` flag OR consumable-type match.
 		# Server excludes escape_scroll because it's a special movement item.
+		# v0.9.621 — when a consumable is excluded by the escape_scroll filter,
+		# `continue` UNCONDITIONALLY so it doesn't fall through to equipment.
+		# Previous bug: an escape-scroll inventory entry (qty=3) carried rarity,
+		# so it hit the equipment fallback and the bulk badge showed "(1)"
+		# even though server's bulk-list excluded escape scrolls. Player
+		# report: "Bulk all equipment still shows (1)... Scroll of Escape x3."
 		var is_consumable: bool = bool(entry.get("is_consumable", false)) or _is_consumable_match(t)
-		if is_consumable and it != "escape_scroll":
-			counts["consumable"] += int(entry.get("quantity", 1))
-			continue
+		if is_consumable:
+			if it != "escape_scroll":
+				counts["consumable"] += int(entry.get("quantity", 1))
+			continue  # ALWAYS skip equipment check for consumables (even excluded ones)
 		# Equipment — server uses `has("slot") or has("rarity")` as the
 		# discriminator after consumable/tool/rune/treasure_chest are filtered
 		# out. Mirroring that filter here keeps the badge accurate.

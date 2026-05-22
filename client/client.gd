@@ -25821,8 +25821,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.621 — Escape scroll bulk count + Review Damage persistence.
+	display_game("[color=#00FF00]v0.9.621[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two follow-ups. (1) Bulk Equipment STILL showed '(1)' after listing everything — root cause: escape scrolls are excluded from consumable bulk-list, but they have rarity, so the count fell through to equipment. (2) The v0.9.619 Review Damage button fix worked initially but [color=#888888]end_action_phase[/color]'s persistent-FX branch hides it ~1s later, so the button flashed and disappeared before the player could click.[/color]")
+	display_game("  • [b]Escape scrolls count as 0 in both buckets[/b]. Client filter now does an unconditional [color=#888888]continue[/color] for ALL consumable items (even escape-scroll-excluded ones) so they can't fall through to equipment. Mirrors server intent: escape scrolls aren't bulk-listable in either category.")
+	display_game("  • [b]Review Damage button stays visible during victory interlude[/b]. The persistent-FX hide at [color=#888888]end_action_phase[/color] (line ~626) now skips the button when [color=#888888]_victory_interlude_active[/color] is true. Combined with v0.9.619's [color=#888888]_update_review_button_visibility[/color] override, the button is now shown reliably the whole time the victory card is up.")
+	display_game("")
+
 	# v0.9.620 — Bulk-listing rune fix + over-leveled encounter scaling.
-	display_game("[color=#00FF00]v0.9.620[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.620[/color]")
 	display_game("  [color=#FFD700]Two player-reported fixes. (1) Bulk Equipment badge stayed at '(1)' after listing all equipment because the client's count formula was matching ANY item with a `rarity` field — including runes, which the server excludes from the equipment bulk. (2) Over-leveled characters moving through low-level areas were getting spammed with trivial encounters. Now scales down based on player_level vs area_level for random movement; Hunt + threat-corridor bypass the scaling.[/color]")
 	display_game("  • [b]Bulk count predicate matches server filter[/b]: client now skips `type == 'rune'` BEFORE the equipment check. Mirrors [color=#888888]server.gd:16883[/color] exactly. Badge reads honestly after every bulk listing.")
 	display_game("  • [b]Random encounter rate scales with level diff[/b]. Each level player is above the area level → -5% encounter rate. Floor at 10% (still some pressure in starter zones). At +5 levels above: 75%. +10: 50%. +18+: 10%. Hunt action keeps its own roll (server.gd:5233, unchanged). Threat-corridor tiles bypass scaling — dungeon spillover monsters still pull the player into danger zones at full rate so threat mechanics feel intentional.")
