@@ -25821,8 +25821,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.623 — hide_fx_overlay_only stops the pre-FX layout from leaking through.
+	display_game("[color=#00FF00]v0.9.623[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]v0.9.622 fixed the stuck FX scene, but the wrong method ([color=#888888]_force_end_action_phase[/color]) also tweens the pre-FX Lufia layout BACK IN. Player report: '[i]No I'm seeing the Start of combat Screen stuck up there like it swapped scenes (not the fx one).[/i]' Replaced with a targeted [color=#888888]hide_fx_overlay_only[/color] that clears the FX overlay without restoring the pre-FX party row.[/color]")
+	display_game("")
+
 	# v0.9.622 — FX overlay torn down on loot panel close.
-	display_game("[color=#00FF00]v0.9.622[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.622[/color]")
 	display_game("  [color=#FFD700]Bug fix: '[i]Now a fight with a Gargoyle is stuck on my screen and not clearing.[/i]' The FX battlefield overlay was set visible during combat's action phases, and end_action_phase enters persistent-FX mode (overlay stays for the rest of combat, no auto-fade). Loot panel layered over it. When loot closed + victory card dismissed via Space/movement, the FX overlay was exposed underneath with nothing to clear it.[/color]")
 	display_game("  • [b]Fix[/b]: [color=#888888]_on_combat_loot_closed[/color] now calls [color=#888888]_force_end_action_phase()[/color] before refreshing the victory card. This tweens the FX overlay to alpha=0 + sets visible=false. Review Damage button still works (it calls [color=#888888]start_review_phase[/color] which rebuilds the overlay from scratch).")
 	display_game("")
@@ -29128,9 +29133,16 @@ func _on_combat_loot_closed() -> void:
 	      the overlay to alpha=0 + sets visible=false, and the Review FX
 	      button (top-right) can still re-open it via start_review_phase."""
 	# (4) FX teardown — must run BEFORE refresh_victory_card so the
-	# overlay fade isn't interrupted by panel visibility refresh.
-	if combat_scene_panel and combat_scene_panel.has_method("_force_end_action_phase"):
-		combat_scene_panel._force_end_action_phase()
+	# overlay state is cleaned up before the victory card lays over it.
+	# v0.9.623: switched from _force_end_action_phase to hide_fx_overlay_only.
+	# _force_end_action_phase tweens _player_col modulate BACK to 1.0, which
+	# made the pre-FX Lufia layout visible underneath the victory card —
+	# and when the player dismissed the card, the pre-FX scene was exposed.
+	# Player report: "I'm seeing the Start of combat Screen stuck up there
+	# like it swapped scenes (not the fx one)." hide_fx_overlay_only clears
+	# the battlefield overlay without restoring the pre-FX layout.
+	if combat_scene_panel and combat_scene_panel.has_method("hide_fx_overlay_only"):
+		combat_scene_panel.hide_fx_overlay_only()
 	# (1) Final atomic redraw of the victory card with the full loot list.
 	#     This also forces panel.visible = true and extends linger — see
 	#     _combat_loot_refresh_victory_card.
