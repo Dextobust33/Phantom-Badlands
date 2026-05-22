@@ -2319,6 +2319,11 @@ func _ready():
 	# buttons are persistent and clickable from anywhere outside combat.
 	# Tooltip names them; emoji + green/gray modulate signal current state.
 	_create_minigame_skip_toggles()
+	# v0.9.612 — game_output meta_clicked: routes BBCode [url=meta] taps to
+	# specific handlers (currently only the L-view flock pagination links).
+	if game_output and is_instance_valid(game_output):
+		if not game_output.meta_clicked.is_connected(_on_game_output_meta_clicked):
+			game_output.meta_clicked.connect(_on_game_output_meta_clicked)
 
 	# Connect chat tab buttons
 	if chat_tab_button:
@@ -2943,19 +2948,17 @@ func _process(delta):
 		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up or _action_phase_pending or _victory_pending) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
-		# v0.9.610 — keep the bottom ResourceBarsOverlay (the floating HP /
-		# Resource RichTextLabel above the action bar) in lockstep with the
-		# combat scene panel. v0.9.601 only hid it on `in_combat`, but the
-		# combat scene stays up across action phase + victory card + flock
-		# transitions where `in_combat` briefly flips. Tying the overlay to
-		# `_combat_scene_should_show` means "if the combat panel is on
-		# screen, the overlay is hidden." Out of combat the overlay shows.
-		# Player feedback: "they show up on the FX screen and while out of
-		# combat" — the FX screen showing was the bug.
+		# v0.9.612 — ResourceBarsOverlay is PROVISIONALLY removed (the bar
+		# below the GameOutput window). StatsBar at the top already shows
+		# HP+resource so this overlay was always redundant. Hard-set visible
+		# false every tick so it never appears regardless of state. Once
+		# the user confirms this layout is correct, the overlay node + its
+		# update function will be deleted from the codebase entirely
+		# (per user direction "We don't need dead unused code clogging up
+		# the project").
 		if resource_bars_overlay and is_instance_valid(resource_bars_overlay):
-			var _want_overlay_visible: bool = (not _combat_scene_should_show) and has_character
-			if resource_bars_overlay.visible != _want_overlay_visible:
-				resource_bars_overlay.visible = _want_overlay_visible
+			if resource_bars_overlay.visible:
+				resource_bars_overlay.visible = false
 
 	# Hide the text game_output whenever a visual panel is showing
 	var _hide_text = _inv_should_show or _craft_should_show or _market_should_show or _comp_should_show or _sanct_should_show or _kennel_should_show or _fusion_should_show or _ability_should_show or _combat_scene_should_show
@@ -4307,6 +4310,27 @@ func _input(event):
 		get_viewport().set_input_as_handled()
 		return
 
+	# v0.9.612 — Space on the post-loot victory card dismisses it. The
+	# v0.9.604 loot-close path clears pending_continue + sets
+	# _post_loot_victory_persists, leaving the card up until the player
+	# moves. The card prompt says "Press [Space] to continue" but Space
+	# was no-op because action slot 0 had nothing to fire (continue
+	# already auto-cleared). This intercept handles Space explicitly:
+	# clear the flag → safety net hides card next frame → overworld
+	# returns. Movement input does the same thing via the v0.9.604 path,
+	# this just gives the player an explicit Space-to-acknowledge.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
+		if _post_loot_victory_persists and (input_field == null or not input_field.has_focus()):
+			_post_loot_victory_persists = false
+			# Also close the legacy view if it was open — Space is "I'm
+			# done with the victory recap, take me back."
+			if _victory_legacy_view:
+				_victory_legacy_view = false
+				if game_output and is_instance_valid(game_output):
+					game_output.clear()
+			get_viewport().set_input_as_handled()
+			return
+
 	# Handle [L] toggle to the legacy full-screen text view during the
 	# rewards / death interlude — players who want the wall-of-text
 	# play-by-play can pop it open before pressing Space to continue. The
@@ -4328,20 +4352,10 @@ func _input(event):
 						_render_legacy_combat_log()
 					get_viewport().set_input_as_handled()
 					return
-		# v0.9.611 — pagination inside the legacy combat log view. ←/→ or
-		# [/] cycles through flock fights without leaving the view. Bounds
-		# clamp so you can't run off either end.
-		if _victory_legacy_view and event is InputEventKey and event.pressed and not event.echo:
-			if input_field == null or not input_field.has_focus():
-				match event.keycode:
-					KEY_LEFT, KEY_BRACKETLEFT:
-						_legacy_view_step(-1)
-						get_viewport().set_input_as_handled()
-						return
-					KEY_RIGHT, KEY_BRACKETRIGHT:
-						_legacy_view_step(1)
-						get_viewport().set_input_as_handled()
-						return
+		# v0.9.612 — keyboard pagination removed (← / → conflict with overworld
+		# movement). Players navigate flock pages by clicking the in-view
+		# "◀ Prev Fight" / "Next Fight ▶" BBCode links, dispatched through
+		# game_output.meta_clicked → _on_game_output_meta_clicked.
 
 	# Handle gathering pattern key presses (Q, W, E, R during reaction phase)
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -18182,14 +18196,11 @@ func update_player_hp_bar():
 	if not player_health_bar or not has_character:
 		return
 
-	# v0.9.611 — StatsBar HP bar is PERMANENTLY removed from the UI per
-	# player feedback: "Those bars are redundant and need removed they
-	# are no longer needed as they are displayed elsewhere." HP is shown
-	# via the combat scene panel (in combat) and the ResourceBarsOverlay
-	# (out of combat), so the top-of-screen StatsBar bar is pure
-	# duplicate clutter. We still compute + run the update so internal
-	# refs (Fill child stylebox etc.) don't break if anyone reads them.
-	player_health_bar.visible = false
+	# v0.9.612 — REVERTED v0.9.611's permanent hide. After 3 rounds of
+	# back-and-forth, the actual ask was the OTHER bar: the
+	# ResourceBarsOverlay below the GameOutput window. StatsBar bars stay
+	# visible (default scene behavior). The redundant overlay is handled
+	# by hide_resource_bars_overlay_forever in _process.
 
 	var current_hp = character_data.get("current_hp", 0)
 	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))  # Use equipment-boosted HP
@@ -18394,9 +18405,7 @@ func update_resource_bar():
 	if not resource_bar or not has_character:
 		return
 
-	# v0.9.611 — StatsBar resource bar is PERMANENTLY removed (see
-	# update_player_hp_bar for why).
-	resource_bar.visible = false
+	# v0.9.612 — REVERTED v0.9.611's hide (see update_player_hp_bar for why).
 
 	var path = _get_player_active_path()
 	var current_val = 0
@@ -25800,8 +25809,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.612 — Right bars hidden, mouse-only pagination, Space dismisses victory.
+	display_game("[color=#00FF00]v0.9.612[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three corrections to v0.9.611. (1) I had the bar layout backwards — the StatsBar HP/resource bars (top of screen) stay visible; the ResourceBarsOverlay (below the GameOutput window) is the redundant one and is now hidden everywhere. (2) Arrow-key pagination conflicted with overworld movement; dropped in favor of clickable in-view buttons. (3) Pressing Space on the post-loot victory screen now dismisses the card and returns to overworld instead of doing nothing.[/color]")
+	display_game("  • [b]StatsBar restored, ResourceBarsOverlay hidden[/b]. v0.9.611's permanent removal targeted the wrong bar. Now reverted: StatsBar HP+resource visible always (default scene behavior). The ResourceBarsOverlay (RichTextLabel below the GameOutput window) is forced to [color=#888888]visible = false[/color] every _process tick. Provisional — once player confirms the layout is right, the overlay node + its update path get deleted from the codebase entirely.")
+	display_game("  • [b]Mouse-only flock pagination[/b]. Arrow keys conflict with overworld movement, so they were dropped from both surfaces. [L] combat log: clickable [color=#FFD700]◀ Prev Fight[/color] / [color=#FFD700]Next Fight ▶[/color] BBCode links in the footer, dispatched through [color=#888888]game_output.meta_clicked[/color]. Review FX: existing visible Prev/Next buttons (added in v0.9.611) are now the only paginator.")
+	display_game("  • [b]Space dismisses the post-loot victory card[/b]. The card prompt reads 'Press [Space] to continue' but Space was no-op after the v0.9.604 loot-close flow cleared [color=#888888]pending_continue[/color]. Now an explicit intercept: if [color=#888888]_post_loot_victory_persists[/color] is true and Space is pressed, clear the flag (safety net hides the card) AND close the legacy [L] view if open. Movement input still works as an alternative.")
+	display_game("")
+
 	# v0.9.611 — StatsBar bars removed for real; flock pagination for L + Review FX.
-	display_game("[color=#00FF00]v0.9.611[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.611[/color]")
 	display_game("  [color=#FFD700]Three follow-up fixes. v0.9.610 wrongly restored the redundant StatsBar HP/Resource bars — they're now permanently removed since the combat panel + ResourceBarsOverlay cover the same ground. Combat log [L] and Review FX both now paginate one fight at a time when the flock chain has 2+ fights, so players can step back through each encounter to see what happened.[/color]")
 	display_game("  • [b]StatsBar HP / resource bars removed[/b]. Both [color=#888888]player_health_bar.visible[/color] and [color=#888888]resource_bar.visible[/color] now hard-set to false. Player feedback: '[i]Those bars are redundant and need removed they are no longer needed as they are displayed elsewhere.[/i]' HP + resource now live exclusively on the combat scene panel (in combat) and the ResourceBarsOverlay (out of combat).")
 	display_game("  • [b][L] combat log paginates per fight[/b]. Single-fight encounters open the legacy view as before. Multi-fight flock chains open at the CURRENT fight; press [color=#FFD700][←][/color] / [color=#FFD700][→][/color] (or [color=#FFD700][[][/color] / [color=#FFD700][]][/color]) to flip to prior fights one at a time. Header shows [color=#FFD700]◀  Fight N of M  ▶[/color]. Each page has that fight's monster header / ASCII art / log lines.")
@@ -29649,6 +29666,19 @@ func _get_variant_border_color(variant_type: String) -> String:
 			return ""
 
 
+func _on_game_output_meta_clicked(meta) -> void:
+	"""v0.9.612 — dispatch clicks on BBCode [url=...] links in game_output.
+	Currently the L-view flock pagination links are the only consumers."""
+	var meta_str: String = str(meta)
+	match meta_str:
+		"legacy_prev":
+			if _victory_legacy_view:
+				_legacy_view_step(-1)
+		"legacy_next":
+			if _victory_legacy_view:
+				_legacy_view_step(1)
+
+
 func _render_legacy_combat_log() -> void:
 	"""v0.9.611 — render the [L] legacy text view for ONE fight at a time.
 	`_legacy_view_fight_index` decides which:
@@ -29712,9 +29742,23 @@ func _render_legacy_combat_log() -> void:
 		display_game(line)
 	display_game("[color=#5C4D33]──────────────────────────[/color]")
 	if total > 1:
-		display_game("[color=#888888]Press [← →] to cycle fights · [L] to close[/color]")
+		# v0.9.612 — clickable BBCode pagination. Dim out the link the
+		# player can't use (e.g., already at fight 1 = no Prev).
+		var prev_disabled: bool = (_legacy_view_fight_index == 0)
+		var next_disabled: bool = (_legacy_view_fight_index == -1)
+		var prev_link: String
+		var next_link: String
+		if prev_disabled:
+			prev_link = "[color=#444444]◀ Prev Fight[/color]"
+		else:
+			prev_link = "[color=#FFD700][url=legacy_prev]◀ Prev Fight[/url][/color]"
+		if next_disabled:
+			next_link = "[color=#444444]Next Fight ▶[/color]"
+		else:
+			next_link = "[color=#FFD700][url=legacy_next]Next Fight ▶[/url][/color]"
+		display_game("%s     %s     [color=#888888][L] to close[/color]" % [prev_link, next_link])
 	else:
-		display_game("[color=#888888]Press [L] to close[/color]")
+		display_game("[color=#888888][L] to close[/color]")
 
 
 func _legacy_view_step(delta: int) -> void:
