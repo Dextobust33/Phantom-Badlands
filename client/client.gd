@@ -2917,16 +2917,17 @@ func _process(delta):
 		# Without this gate, the safety net hides the card on the very next
 		# frame after _on_combat_loot_closed clears pending_continue.
 		if _victory_card_up and not pending_continue and not _now_in_combat and not _post_loot_victory_persists:
-			combat_scene_panel.hide_victory_card()
-			_victory_card_up = false
-			# v0.9.625 — also tear down any stuck FX overlay.
-			# v0.9.626 — nuke deferred payload so it can't re-open the card.
+			# v0.9.625 — tear down stuck FX overlay.
+			# v0.9.626 — nuke deferred payload.
 			# v0.9.627 — zero linger so panel hides THIS frame.
+			# v0.9.628 — hide FX before card to prevent 1-frame ASCII flash.
 			_pending_victory_card_payload = null
 			_pending_victory_fx_play = false
 			_combat_scene_linger_until_ms = 0
 			if combat_scene_panel.has_method("hide_fx_overlay_only"):
 				combat_scene_panel.hide_fx_overlay_only()
+			combat_scene_panel.hide_victory_card()
+			_victory_card_up = false
 		# Death interlude is active — keep the scene visible while the
 		# in-panel death card is showing.
 		var _death_card_up = combat_scene_panel.has_method("is_death_interlude_active") and combat_scene_panel.is_death_interlude_active()
@@ -4135,11 +4136,14 @@ func _process(delta):
 						_pending_victory_card_payload = null
 						_pending_victory_fx_play = false
 						_combat_scene_linger_until_ms = 0
+						# v0.9.628 — FX hides first (under the card),
+						# then card hides. Prevents 1-frame monster ASCII
+						# flash when the card hides first and exposes FX.
 						if combat_scene_panel:
-							if combat_scene_panel.has_method("hide_victory_card"):
-								combat_scene_panel.hide_victory_card()
 							if combat_scene_panel.has_method("hide_fx_overlay_only"):
 								combat_scene_panel.hide_fx_overlay_only()
+							if combat_scene_panel.has_method("hide_victory_card"):
+								combat_scene_panel.hide_victory_card()
 					send_move(move_dir)
 					# Don't clear trading post UI - server will notify if we leave.
 					# In build mode, redraw the active build prompt so the menu
@@ -4365,11 +4369,18 @@ func _input(event):
 			_pending_victory_card_payload = null
 			_pending_victory_fx_play = false
 			_combat_scene_linger_until_ms = 0
+			# v0.9.628 — hide FX overlay BEFORE the victory card. Victory
+			# card z=150 covers FX overlay z=100 during display; if the
+			# card hides first, the FX overlay is exposed for the render
+			# frame between the two .visible=false sets and the player
+			# sees a monster-ASCII flash. Reversing the order: FX goes
+			# invisible while still under the card (no visual change),
+			# then card hides (revealing the now-invisible FX = nothing).
 			if combat_scene_panel:
-				if combat_scene_panel.has_method("hide_victory_card"):
-					combat_scene_panel.hide_victory_card()
 				if combat_scene_panel.has_method("hide_fx_overlay_only"):
 					combat_scene_panel.hide_fx_overlay_only()
+				if combat_scene_panel.has_method("hide_victory_card"):
+					combat_scene_panel.hide_victory_card()
 			get_viewport().set_input_as_handled()
 			return
 
@@ -25857,8 +25868,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.628 — Hide FX overlay BEFORE victory card to kill monster-ASCII flash.
+	display_game("[color=#00FF00]v0.9.628[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player report: '[i]I keep seeing a flash of the monster ASCII art after the victory screen clears when I press or move.[/i]' Z-order issue: victory card z=150 sits above FX overlay z=100. Hiding the card first exposed the FX overlay for one render frame before [color=#888888]hide_fx_overlay_only[/color] ran. Swapped the order in all three dismiss paths so FX hides first (under the card → no visual change), THEN card hides.[/color]")
+	display_game("")
+
 	# v0.9.627 — Clear linger window on dismiss.
-	display_game("[color=#00FF00]v0.9.627[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.627[/color]")
 	display_game("  [color=#FFD700]v0.9.626 fixed the deferred-payload re-open, but the panel still lingered ~2.4s after dismiss. Player report: '[i]I can often move 3 or 4 spaces before it finally clears.[/i]' Root cause: [color=#888888]_combat_loot_refresh_victory_card[/color] extends [color=#888888]_combat_scene_linger_until_ms[/color] by 2400ms, and my dismiss paths weren't zeroing it. Now all three dismiss sites (Space intercept, movement, safety net) set [color=#888888]_combat_scene_linger_until_ms = 0[/color] so the panel hides on the same frame as dismiss.[/color]")
 	display_game("")
 
