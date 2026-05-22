@@ -14983,16 +14983,11 @@ func _generate_progression_quest(current_post_id: String, player_level: int, com
 
 # Audit #11 Slice 12 — threat-relief quest reward curve. Mirrors chain
 # final-stage scaling but slightly lower (single quest, not a chain).
-const _THREAT_RELIEF_REWARDS := {
-	2: {"xp":  350, "valor":  50},
-	3: {"xp":  600, "valor":  70},
-	4: {"xp":  800, "valor": 100},
-	5: {"xp": 1100, "valor": 130},
-	6: {"xp": 1500, "valor": 170},
-	7: {"xp": 1800, "valor": 200},
-	8: {"xp": 2200, "valor": 250},
-	9: {"xp": 2700, "valor": 300},
-}
+# v0.9.596 — Threat-relief reward table moved to QuestDatabase so the regen
+# path (quest_database._regenerate_threat_relief_quest) can populate the
+# quest.rewards field from the same source. Server still derives the live tier
+# the same way (via _compute_post_threat_state); QuestDatabase.get_threat_relief_rewards
+# wraps the lookup so both paths agree.
 
 func _generate_threat_relief_quest(tp: Dictionary, completed_quests: Array, active_quest_ids: Array) -> Dictionary:
 	"""Audit #11 Slice 12 — when the post is Under Threat, generate a
@@ -15018,7 +15013,7 @@ func _generate_threat_relief_quest(tp: Dictionary, completed_quests: Array, acti
 		return {}
 	if quest_id in completed_quests:
 		return {}
-	var rewards: Dictionary = _THREAT_RELIEF_REWARDS.get(tier, {"xp": 500, "valor": 80})
+	var rewards: Dictionary = QuestDatabaseScript.get_threat_relief_rewards(dungeon_type)
 	var dungeon_name: String = str(threat.get("dungeon_name", "the threatening dungeon"))
 	var direction: String = str(threat.get("direction", "nearby"))
 	var distance: int = int(threat.get("distance", 0))
