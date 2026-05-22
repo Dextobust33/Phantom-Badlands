@@ -792,7 +792,14 @@ func _on_review_button_pressed() -> void:
 func start_review_phase() -> void:
 	"""v0.9.439 — re-show the FX scene from the action-selection view. Re-uses
 	start_action_phase's visual transition. Strips switch to mouse-scrollable.
-	The pause button doubles as 'Back to Hand' until end_review_phase fires."""
+	The pause button doubles as 'Back to Hand' until end_review_phase fires.
+
+	v0.9.610 — hide the victory card overlay while review is active. Without
+	this, the battlefield overlay (z=100) draws behind the victory card
+	(z=150) and the user sees no visible change when clicking Review FX.
+	Card is restored in end_review_phase. Player report: 'The Review Damage
+	button doesn't seem to work, it's supposed to take the player back to
+	the FX screen.'"""
 	if _action_phase_active:
 		# Already on the FX scene from a real action phase — nothing to do.
 		return
@@ -803,6 +810,12 @@ func start_review_phase() -> void:
 	# Make per-actor strips mouse-scrollable. Default was MOUSE_FILTER_IGNORE
 	# so events passed through to the parent; STOP captures wheel + scrollbar.
 	_set_overlay_strips_scrollable(true)
+	# v0.9.610 — temporarily hide the victory card so the FX overlay reads.
+	# We DON'T touch _victory_interlude_active so the safety net + L-key
+	# state still know the card is logically up; just the rendered overlay
+	# is hidden.
+	if _victory_card_overlay and is_instance_valid(_victory_card_overlay):
+		_victory_card_overlay.visible = false
 	start_action_phase()
 	# Hide the review-launch button while in review.
 	if _review_button and is_instance_valid(_review_button):
@@ -810,7 +823,9 @@ func start_review_phase() -> void:
 
 
 func end_review_phase() -> void:
-	"""v0.9.439 — exit Review FX. Restores the hand-selection view."""
+	"""v0.9.439 — exit Review FX. Restores the hand-selection view.
+	v0.9.610 — also restore the victory card overlay if the player launched
+	review FROM the victory screen (interlude still active)."""
 	if not _in_review_phase:
 		return
 	_in_review_phase = false
@@ -820,6 +835,11 @@ func end_review_phase() -> void:
 	# Restore pause button label so the next real action phase shows ⏸ PAUSE.
 	set_pause_button_label(false)
 	end_action_phase()
+	# v0.9.610 — if the victory card was hidden by start_review_phase,
+	# restore it now. _victory_interlude_active stays true the whole time so
+	# this is the right re-show signal.
+	if _victory_interlude_active and _victory_card_overlay and is_instance_valid(_victory_card_overlay):
+		_victory_card_overlay.visible = true
 	# Show the review button again so the player can re-enter at will.
 	_update_review_button_visibility()
 
