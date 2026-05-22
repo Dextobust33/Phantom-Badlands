@@ -8946,6 +8946,13 @@ func trigger_action(index: int):
 		"server":
 			send_to_server({"type": action.action_data})
 		"flock":
+			# v0.9.596 — gate the Continue/flock advance while the loot scratch-
+			# off is still revealing. Without this, Space (slot 0 hotkey) skips
+			# the loot panel straight to the victory continue path, bypassing the
+			# minigame. The reveal sets `_cascade_active` once Done is pressed,
+			# but until then the player should not be able to advance.
+			if _combat_loot_reveal_active():
+				return
 			continue_flock_encounter()
 
 func send_combat_command(command: String):
@@ -25376,8 +25383,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.596 — Minigame keyboard nav + 2 bugs.
+	display_game("[color=#00FF00]v0.9.596[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three player-reported issues batched. (1) Keyboard input across the minigames so you don't have to alternate to the mouse. (2) Space could skip the combat-loot scratch-off straight to the victory screen, bypassing the reveal. (3) Threat-relief (\"Drive Off the X\") quests were paying out 0 XP / 0 valor.[/color]")
+	display_game("  • [b]Keyboard nav in combat loot scratch-off[/b]. Arrow keys / WASD move focus across the 4x4 reveal grid (the focused card glows yellow); Enter / Space reveals the focused card; Tab cycles to the Done button; Down from the bottom row also reaches Done. Focus auto-advances to the next unrevealed card after each reveal so you can hammer Enter without re-aiming.")
+	display_game("  • [b]Keyboard nav in gathering scratch-off (fishing / mining / logging / foraging)[/b]. Same scheme but spatial: cards are jittered in a 4x4 grid, so arrow keys pick the nearest hidden card in the requested direction (with a small lateral penalty so 'Right' isn't fooled by a diagonal). Enter / Space activates — the existing bar-over-slot timing check still applies, so a mistimed press counts as a miss exactly like a mistimed click. T toggles auto-skip; Tab jumps to the next hidden slot.")
+	display_game("  • [b]Space-skip bug in combat loot[/b]. The Continue action (slot 0 / Space) used to fire `continue_flock_encounter` whenever the action bar said it was enabled — even with the loot panel up. Added a [color=#888888]_combat_loot_reveal_active()[/color] gate in [color=#888888]trigger_action()[/color] so Space can't bypass the reveal. The same gate already existed on the movement path; the action-bar path just hadn't been wired through.")
+	display_game("  • [b]Threat-relief quests now pay correctly[/b]. Root cause: classic two-paths-read-same-field. The regen path in [color=#888888]quest_database._regenerate_threat_relief_quest[/color] returned [color=#888888]rewards: {xp: 0, valor: 0}[/color] with a comment saying real rewards came from [color=#888888]extra_data.stored_rewards[/color] — but [color=#888888]build_quest_extra_data[/color] reads [color=#888888]quest.rewards[/color] to BUILD [color=#888888]stored_rewards[/color], so the zeros got stored and paid out. Moved the tier-rewards table into [color=#888888]quest_database.gd[/color] with a [color=#888888]get_threat_relief_rewards(dungeon_type)[/color] helper (tier read from DungeonDatabase); the regen path now populates rewards. Added a self-heal in [color=#888888]calculate_rewards[/color]: any active quest with [color=#888888]stored_rewards={0,0}[/color] re-derives from the current quest object at turn-in, so previously-broken accepted quests on your character self-heal.")
+	display_game("")
+
 	# v0.9.595 — Monster level smoothing between trading posts.
-	display_game("[color=#00FF00]v0.9.595[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.595[/color]")
 	display_game("  [color=#FFD700]Fixes the level cliff at the midpoint between two trading posts. Player report: \"lvl 16 then move one space and it jumps to lvl 25.\" Root cause was the quadratic blend curve (t²) used since v0.9.567 — when the nearest+second-nearest post swap at the midpoint, the function evaluated to different values on each side because t² isn't symmetric around 0.5. Adjacent posts with ~15-30 level gaps produced 7-15 level jumps in one tile.[/color]")
 	display_game("  • [b]Smoothstep blend curve[/b] ([color=#888888]t·t·(3-2t)[/color]) replaces the old [color=#888888]t·t[/color] in [color=#888888]world_system.gd::get_post_anchored_level[/color]. Smoothstep evaluates to exactly 0.5 at t=0.5, so the midpoint between two posts is continuous — both halves of the swap produce the same blended level. The \"anchor pocket\" feel is preserved: smoothstep is flat near both endpoints, so each post's level still dominates its own half of the gap.")
 	display_game("  • [b]Example[/b]: Haven (Lv 1) → adjacent post (Lv 30). Old curve: lvl 8 just before midpoint → lvl 23 just after (15-level cliff). New curve: lvl 16 on both sides (continuous). The starter-zone protection is unchanged — Haven's tight Lv 1-2 pocket inside 20 tiles still holds.")
@@ -25432,13 +25448,6 @@ func display_changelog():
 	display_game("  • [b]NPC vendor + network buy confirmation[/b]: server was sending [color=#888888]market_buy_result[/color] but the only client handler is [color=#888888]market_buy_success[/color]. NPC vendor purchases (exotic / mine / farm / shrine stocks) and network buys completed silently — inventory + valor updated, but no \"Purchase successful\" panel, no \"Bought X\" line, no transition back to the market menu. Renamed both server payloads to match the client's expected handler.")
 	display_game("  • [b]Crucible boss fight start[/b]: was using the pre-v0.9.x combat schema ([color=#888888]monster[/color] / [color=#888888]enemy_hp[/color] / [color=#888888]player_hp[/color]) instead of the modern [color=#888888]combat_state[/color] envelope every other encounter uses. Crucible fights showed \"Enemy\" placeholder, no ASCII art, no HP bar, no first-strike warning. Now routes through [color=#888888]combat_mgr.get_combat_display()[/color] like dungeons and overworld fights.")
 	display_game("  • [b]Still open (medium impact, planned for follow-up)[/b]: combat_restored payload misses visual fields on reconnect (boss border pulse won't fire); instant-craft path of [color=#888888]craft_result[/color] omits the Audit #8 Quality Rating summary block — instant-craft recipes show a stripped panel.")
-	display_game("")
-
-	# v0.9.588 — Variant Imprint button restored at rank-up.
-	display_game("[color=#00FFFF]v0.9.588[/color]")
-	display_game("  [color=#FFD700]Fixes the invisible \"✦ Imprint\" option at ability rank-up. v0.9.549 shipped the feature but the server's `rank_up_choice` payload was dropping the `variant_offer` field, so the 3rd button never showed even with an active companion that qualified (e.g., Gnoll → Rending). Rank up Strike with a Gnoll active now offers Bleed alongside +1 Card / +10% Damage.[/color]")
-	display_game("  • [b]One-line server fix[/b]: the queued rank choice carried `variant_offer` correctly all the way through combat_manager and the character's pending_rank_choices queue — but the message that surfaces the popup left it on the floor. Now forwarded. `next_pending` (chained rank-ups in one combat) was already correct because it's the raw queued dict.")
-	display_game("  • [b]Reminder of how Imprints work[/b]: only offered when (1) you have an active companion, (2) its monster type maps to a trait (53 mapped — Gnoll = Rending bleed, Wolf = Hunter's Eye crit, Goblin = Distract miss, etc.), and (3) that ability hasn't reached 4 imprints yet. Each imprint is a small permanent passive rider, account-level (survives permadeath like mastery records).")
 	display_game("")
 
 	# v0.9.585 — ROOT CAUSE of the Pathfinder turn-in bug: npc_ prefix mismatch.

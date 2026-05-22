@@ -17,6 +17,32 @@ const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
 # (chains-only), matching Slice 12's behavior.
 const DYNAMIC_DAILIES_ENABLED: bool = true
 
+# v0.9.596 — Threat-relief quest rewards by dungeon tier. Lives here (instead
+# of inside server.gd) so `_regenerate_threat_relief_quest` can populate the
+# rewards from a single source of truth. Previously the server held this map
+# and the regen path returned {xp: 0, valor: 0}, which `build_quest_extra_data`
+# faithfully stored as `stored_rewards: {0, 0}` — so every threat quest paid
+# out 0 XP / 0 valor at turn-in. Classic two-paths-read-same-field bug.
+const THREAT_RELIEF_REWARDS_BY_TIER := {
+	2: {"xp":  350, "valor":  50},
+	3: {"xp":  600, "valor":  70},
+	4: {"xp":  800, "valor": 100},
+	5: {"xp": 1100, "valor": 130},
+	6: {"xp": 1500, "valor": 170},
+	7: {"xp": 1800, "valor": 200},
+	8: {"xp": 2200, "valor": 250},
+	9: {"xp": 2700, "valor": 300},
+}
+const THREAT_RELIEF_REWARDS_DEFAULT := {"xp": 500, "valor": 80}
+
+static func get_threat_relief_rewards(dungeon_type: String) -> Dictionary:
+	"""Look up the appropriate {xp, valor} reward for a threat-relief quest
+	pointing at the given dungeon_type. Tier is read from DungeonDatabase
+	DUNGEON_TYPES so the formula stays in sync with dungeon balance edits."""
+	var dungeon_info: Dictionary = DungeonDatabaseScript.DUNGEON_TYPES.get(dungeon_type, {})
+	var tier: int = int(dungeon_info.get("tier", 0))
+	return THREAT_RELIEF_REWARDS_BY_TIER.get(tier, THREAT_RELIEF_REWARDS_DEFAULT)
+
 # Quest type constants
 enum QuestType {
 	KILL_ANY,           # 0 - Kill X monsters of any type
@@ -1595,10 +1621,15 @@ func get_quest(quest_id: String, player_level: int = -1, quests_completed_at_pos
 
 func _regenerate_threat_relief_quest(quest_id: String) -> Dictionary:
 	"""Reconstruct a threat-relief quest from its ID. The live (rich) variant
-	is built server-side in _generate_threat_relief_quest; this regen path
-	supplies only the static fields needed once the quest is in
-	character.active_quests (trading_post + type + dungeon_type). Rewards
-	come from extra_data.stored_rewards on turn-in."""
+	is built server-side in `_generate_threat_relief_quest`; this regen path
+	is hit when `accept_quest` and turn-in look up the quest by id.
+
+	v0.9.596 — rewards are now populated here via THREAT_RELIEF_REWARDS_BY_TIER
+	(tier derived from dungeon_type via DungeonDatabase). Previously this
+	returned {xp: 0, valor: 0} and relied on `extra_data.stored_rewards` —
+	but `build_quest_extra_data` reads `quest.rewards` to BUILD stored_rewards,
+	so the zeros were what got stored and what got paid out at turn-in. Bug
+	report: 'The last two I completed gave 0 XP and valor.'"""
 	# Strip prefix and split on '@' separator.
 	var rest = quest_id.substr(len("threat_"))
 	var at_idx = rest.find("@")
@@ -1608,6 +1639,7 @@ func _regenerate_threat_relief_quest(quest_id: String) -> Dictionary:
 	var dungeon_type = rest.substr(at_idx + 1)
 	if post_id == "" or dungeon_type == "":
 		return {}
+	var rewards: Dictionary = get_threat_relief_rewards(dungeon_type)
 	return {
 		"id": quest_id,
 		"name": "Drive Off the threat",
@@ -1616,7 +1648,7 @@ func _regenerate_threat_relief_quest(quest_id: String) -> Dictionary:
 		"trading_post": post_id,
 		"target": 1,
 		"dungeon_type": dungeon_type,
-		"rewards": {"xp": 0, "valor": 0},  # Real rewards come from extra_data.stored_rewards
+		"rewards": rewards,
 		"is_daily": false,
 		"prerequisite": "",
 		"is_threat_relief": true,

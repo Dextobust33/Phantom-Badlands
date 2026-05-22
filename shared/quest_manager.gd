@@ -369,7 +369,19 @@ func calculate_rewards(character: Character, quest_id: String) -> Dictionary:
 	var base_rewards: Dictionary
 	var quest_type: int = -1
 
-	if not stored_rewards.is_empty():
+	# v0.9.596 — self-heal: treat stored_rewards={xp:0, valor:0} the same as
+	# missing. Existing characters with threat-relief quests accepted under
+	# the pre-v0.9.596 bug have stored_rewards={0,0} baked in; without this
+	# fallback they'd still pay out 0 at turn-in even after the regen-path
+	# fix below. Re-derives from get_quest, which now returns the correct
+	# rewards via QuestDatabase.get_threat_relief_rewards.
+	var stored_is_zero: bool = (
+		not stored_rewards.is_empty()
+		and int(stored_rewards.get("xp", 0)) == 0
+		and int(stored_rewards.get("valor", 0)) == 0
+		and int(stored_rewards.get("gems", 0)) == 0
+	)
+	if not stored_rewards.is_empty() and not stored_is_zero:
 		# Use rewards locked in at accept time
 		base_rewards = stored_rewards
 		quest_type = quest_data.get("quest_type", -1)

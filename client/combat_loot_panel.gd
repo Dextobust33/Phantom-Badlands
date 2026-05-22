@@ -34,6 +34,11 @@ var _done_button: Button
 var _cards: Array = []  # Array[PanelContainer], indexed by slot
 var _card_labels: Array = []  # Array[RichTextLabel] mirror of _cards
 
+# v0.9.596 — keyboard navigation. _focused_target is "grid" or "done";
+# _focused_slot is the active grid index (0-15) when target is "grid".
+var _focused_slot: int = 0
+var _focused_target: String = "grid"  # "grid" or "done"
+
 var _slots_data: Array = []  # Mirror of server-pushed slot view
 var _reveals_used: int = 0
 var _reveal_budget: int = 0
@@ -227,6 +232,12 @@ func open_bag(bag_view: Dictionary) -> void:
 	_render_pinned(bag_view.get("pinned", []))
 	_render_reveals_counter()
 	_render_all_cards()
+	# v0.9.596 — seed keyboard focus on the first unrevealed card so the
+	# player can press Enter/Space immediately without first reaching for the
+	# mouse. Autoskip path skips visuals entirely.
+	_focused_target = "grid"
+	_focused_slot = _first_unrevealed_slot()
+	_apply_focus_visuals()
 	visible = true
 	# Kick off autoskip if enabled. Defer one frame so the panel finishes
 	# layout before the first auto-click fires.
@@ -359,6 +370,15 @@ func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, re
 	_render_card(slot_index)
 	_render_reveals_counter()
 	_play_reveal_pop(slot_index)
+	# v0.9.596 — advance keyboard focus to the next unrevealed card so the
+	# player can hammer Enter without re-aiming. If everything is revealed,
+	# move focus to the Done button.
+	if _focused_target == "grid" and _focused_slot == slot_index:
+		if _reveals_used >= _reveal_budget:
+			_focused_target = "done"
+		else:
+			_focused_slot = _first_unrevealed_slot()
+		_apply_focus_visuals()
 
 
 func finish(final_bag: Dictionary) -> void:
@@ -539,3 +559,113 @@ func _on_done_pressed() -> void:
 	_done_button.disabled = true
 	_stop_autoskip()  # v0.9.566 — cancel autoskip timer if still running.
 	emit_signal("done_pressed")
+
+
+# === v0.9.596 keyboard navigation ===
+
+func _input(event: InputEvent) -> void:
+	if not visible or _cascade_active:
+		return
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var k: int = event.keycode
+	# Arrow keys / WASD — move focus.
+	match k:
+		KEY_LEFT, KEY_A:
+			_move_focus(-1, 0)
+			get_viewport().set_input_as_handled()
+		KEY_RIGHT, KEY_D:
+			_move_focus(1, 0)
+			get_viewport().set_input_as_handled()
+		KEY_UP, KEY_W:
+			_move_focus(0, -1)
+			get_viewport().set_input_as_handled()
+		KEY_DOWN, KEY_S:
+			_move_focus(0, 1)
+			get_viewport().set_input_as_handled()
+		KEY_TAB:
+			# Cycle grid <-> done button.
+			if _focused_target == "grid":
+				_focused_target = "done"
+			else:
+				_focused_target = "grid"
+				_focused_slot = _first_unrevealed_slot()
+			_apply_focus_visuals()
+			get_viewport().set_input_as_handled()
+		KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+			# Activate. Space is ALSO captured by client.gd action-bar slot 0,
+			# but the v0.9.596 _combat_loot_reveal_active() gate on the "flock"
+			# action prevents that from advancing victory while the panel is up.
+			if _focused_target == "done":
+				_on_done_pressed()
+			else:
+				_on_card_clicked(_focused_slot)
+			get_viewport().set_input_as_handled()
+
+
+func _move_focus(dx: int, dy: int) -> void:
+	"""Arrow-key movement. Moving outside the grid drops focus to the Done
+	button (for Down off the bottom row). Up from the Done button returns to
+	the bottom-most matching column of the grid."""
+	if _focused_target == "done":
+		if dy < 0:
+			# Up from Done → bottom row of grid.
+			_focused_target = "grid"
+			var rows := int(ceil(float(SLOT_COUNT) / float(GRID_COLS)))
+			_focused_slot = clampi((rows - 1) * GRID_COLS, 0, SLOT_COUNT - 1)
+			_apply_focus_visuals()
+		# Left/Right/Down from Done: no-op (only one footer button currently).
+		return
+	# Grid movement.
+	var col := _focused_slot % GRID_COLS
+	var row := int(_focused_slot / GRID_COLS)
+	var rows := int(ceil(float(SLOT_COUNT) / float(GRID_COLS)))
+	var new_col := col + dx
+	var new_row := row + dy
+	# Vertical out-of-bounds — bottom row Down → Done button.
+	if new_row >= rows:
+		_focused_target = "done"
+		_apply_focus_visuals()
+		return
+	# Clamp horizontals; wrap is overkill for a 4x4.
+	new_col = clampi(new_col, 0, GRID_COLS - 1)
+	new_row = clampi(new_row, 0, rows - 1)
+	var new_index: int = new_row * GRID_COLS + new_col
+	if new_index >= SLOT_COUNT:
+		new_index = SLOT_COUNT - 1
+	_focused_slot = new_index
+	_apply_focus_visuals()
+
+
+func _first_unrevealed_slot() -> int:
+	for i in range(_slots_data.size()):
+		if not bool(_slots_data[i].get("revealed", false)):
+			return i
+	return 0
+
+
+func _apply_focus_visuals() -> void:
+	"""Paint the focused element with a bright yellow border so the player can
+	see where keyboard input will land. Unfocused cards keep their normal
+	purple border."""
+	for i in range(_cards.size()):
+		var card = _cards[i]
+		if not is_instance_valid(card):
+			continue
+		var sb = card.get_theme_stylebox("panel")
+		if not (sb is StyleBoxFlat):
+			continue
+		var is_focused_card: bool = (_focused_target == "grid" and i == _focused_slot)
+		if is_focused_card:
+			(sb as StyleBoxFlat).border_color = Color(1.0, 0.86, 0.20, 1)
+			(sb as StyleBoxFlat).set_border_width_all(3)
+		else:
+			# Preserve any color the reveal animation set (rarity coloring);
+			# only reset the width.
+			(sb as StyleBoxFlat).set_border_width_all(2)
+	# Done button highlight.
+	if _done_button != null:
+		if _focused_target == "done":
+			_done_button.add_theme_color_override("font_color", Color(1.0, 0.86, 0.20, 1))
+		else:
+			_done_button.remove_theme_color_override("font_color")

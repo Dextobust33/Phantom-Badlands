@@ -229,6 +229,12 @@ var _canvas: Control
 var _scratches_label: RichTextLabel
 
 var _slot_cards: Array = []  # parallel to slot index; Control or null
+
+# v0.9.596 — keyboard navigation. Cards are jittered into a 4x4 grid, so
+# arrow keys do spatial nearest-neighbor instead of grid-index walking.
+# Enter / Space activates the focused slot (same click path; the bar-over-
+# slot timing check still applies, so a mistimed press counts as a miss).
+var _kb_focused_slot: int = -1
 var _slot_positions: Array = []  # parallel; Vector2 each
 var _slot_hidden: Array = []     # v0.9.367 — parallel bool; true if card is still hidden
 var _prev_slots: Array = []      # v0.9.367 — previous frame slot states for transition detection
@@ -417,6 +423,12 @@ func refresh(snapshot: Dictionary) -> void:
 	_update_bar_visibility()
 	# Stash for next refresh's transition detection.
 	_prev_slots = slots.duplicate(true)
+	# v0.9.596 — keyboard focus: seed on first refresh, advance after each
+	# reveal so the next Enter press doesn't fall on an already-revealed slot.
+	if _kb_focused_slot < 0 or not _is_slot_still_hidden(_kb_focused_slot):
+		_ensure_kb_focus_valid()
+	else:
+		_apply_kb_focus_visuals()
 
 
 func _build_layout() -> void:
@@ -1061,10 +1073,154 @@ func _on_card_clicked(event: InputEvent, slot_index: int) -> void:
 			# halt auto-skip via the toggle first.
 			if _auto_skip:
 				return
-			if _is_bar_over_slot(slot_index):
-				slot_clicked.emit(slot_index)
-			else:
-				slot_missed.emit(slot_index)
+			# Sync keyboard focus with the mouse pick so the next arrow-key
+			# press resumes from where the player just clicked.
+			_kb_focused_slot = slot_index
+			_apply_kb_focus_visuals()
+			_resolve_slot_pick(slot_index)
+
+
+func _resolve_slot_pick(slot_index: int) -> void:
+	"""Common path for mouse-click + keyboard activation. Emits slot_clicked
+	on a timed hit, slot_missed otherwise. Slot validity (still hidden, in
+	bounds) is checked here so callers stay simple."""
+	if _auto_skip or _scratches_remaining <= 0:
+		return
+	if slot_index < 0 or slot_index >= _slot_cards.size():
+		return
+	if _is_bar_over_slot(slot_index):
+		slot_clicked.emit(slot_index)
+	else:
+		slot_missed.emit(slot_index)
+
+
+# === v0.9.596 keyboard navigation ===
+
+func _input(event: InputEvent) -> void:
+	if not visible or _auto_skip or _scratches_remaining <= 0:
+		return
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var k: int = event.keycode
+	match k:
+		KEY_LEFT, KEY_A:
+			_move_kb_focus(-1, 0)
+			get_viewport().set_input_as_handled()
+		KEY_RIGHT, KEY_D:
+			_move_kb_focus(1, 0)
+			get_viewport().set_input_as_handled()
+		KEY_UP, KEY_W:
+			_move_kb_focus(0, -1)
+			get_viewport().set_input_as_handled()
+		KEY_DOWN, KEY_S:
+			_move_kb_focus(0, 1)
+			get_viewport().set_input_as_handled()
+		KEY_TAB:
+			# Cycle to next unrevealed slot in linear order.
+			_focus_next_unrevealed()
+			get_viewport().set_input_as_handled()
+		KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+			_ensure_kb_focus_valid()
+			if _kb_focused_slot >= 0:
+				_resolve_slot_pick(_kb_focused_slot)
+			get_viewport().set_input_as_handled()
+		KEY_T:
+			# Quick toggle for auto-skip without reaching for the mouse.
+			_on_toggle_pressed()
+			get_viewport().set_input_as_handled()
+
+
+func _is_slot_still_hidden(slot_index: int) -> bool:
+	"""A slot is still hidden if its card is in place and the slot's
+	stored data marks it unrevealed. _prev_slots holds the latest snapshot
+	from refresh()."""
+	if slot_index < 0 or slot_index >= _prev_slots.size():
+		return false
+	var slot_data = _prev_slots[slot_index]
+	return (slot_data is Dictionary) and slot_data.is_empty()
+
+
+func _ensure_kb_focus_valid() -> void:
+	"""Move focus to the first hidden slot if the current one is gone."""
+	if _kb_focused_slot >= 0 and _is_slot_still_hidden(_kb_focused_slot):
+		return
+	for i in range(_slot_positions.size()):
+		if _is_slot_still_hidden(i):
+			_kb_focused_slot = i
+			_apply_kb_focus_visuals()
+			return
+	_kb_focused_slot = -1
+	_apply_kb_focus_visuals()
+
+
+func _focus_next_unrevealed() -> void:
+	var start: int = _kb_focused_slot + 1
+	var n: int = _slot_positions.size()
+	if n <= 0:
+		return
+	for step in range(n):
+		var i: int = (start + step) % n
+		if _is_slot_still_hidden(i):
+			_kb_focused_slot = i
+			_apply_kb_focus_visuals()
+			return
+
+
+func _move_kb_focus(dx: int, dy: int) -> void:
+	"""Spatial nearest-neighbor in the requested direction. Scores candidates
+	by projected distance along (dx, dy) with a small lateral-offset penalty
+	so the chosen slot reads as 'in that direction' even when the layout is
+	jittered."""
+	_ensure_kb_focus_valid()
+	if _kb_focused_slot < 0 or _kb_focused_slot >= _slot_positions.size():
+		return
+	var current_pos: Vector2 = _slot_positions[_kb_focused_slot]
+	var best_idx: int = -1
+	var best_score: float = INF
+	for i in range(_slot_positions.size()):
+		if i == _kb_focused_slot:
+			continue
+		if not _is_slot_still_hidden(i):
+			continue
+		var diff: Vector2 = _slot_positions[i] - current_pos
+		# Direction component along (dx, dy). Must be positive (i.e., the
+		# candidate is roughly in the requested direction).
+		var direction: float = diff.x * float(dx) + diff.y * float(dy)
+		if direction <= 0.5:
+			continue
+		# Lateral offset = cross-product magnitude. Penalize sideways drift
+		# so "Right" prefers the slot to the right over one diagonally down.
+		var lateral: float = absf(diff.x * float(dy) - diff.y * float(dx))
+		var score: float = direction + lateral * 0.7
+		if score < best_score:
+			best_score = score
+			best_idx = i
+	if best_idx >= 0:
+		_kb_focused_slot = best_idx
+		_apply_kb_focus_visuals()
+
+
+func _apply_kb_focus_visuals() -> void:
+	"""Bright yellow border on the focused card; everyone else keeps their
+	job-themed border. Width bumps from 2 → 3 on the focused card."""
+	var theme: Dictionary = _get_theme()
+	var hidden_border: Color = theme.get("hidden_border", Color(0.8, 0.8, 0.8, 1))
+	for i in range(_slot_cards.size()):
+		var card = _slot_cards[i]
+		if not is_instance_valid(card):
+			continue
+		var sb = card.get_theme_stylebox("panel")
+		if not (sb is StyleBoxFlat):
+			continue
+		if i == _kb_focused_slot:
+			(sb as StyleBoxFlat).border_color = Color(1.0, 0.86, 0.20, 1)
+			(sb as StyleBoxFlat).set_border_width_all(3)
+		else:
+			# Reset to theme border only for still-hidden cards; revealed
+			# cards have their own palette color we shouldn't stomp.
+			if _is_slot_still_hidden(i):
+				(sb as StyleBoxFlat).border_color = hidden_border
+			(sb as StyleBoxFlat).set_border_width_all(2)
 
 
 func _is_bar_over_slot(slot_index: int) -> bool:
