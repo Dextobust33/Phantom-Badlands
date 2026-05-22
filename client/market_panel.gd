@@ -1461,6 +1461,15 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_mater
 		if t == "tool" or t == "structure":
 			counts["tool"] += int(entry.get("quantity", 1))
 			continue
+		# v0.9.620 — runes are excluded from equipment bulk-list by the server
+		# (server.gd:16883: `if itype == "tool" or itype == "rune" or itype ==
+		# "structure" or itype == "treasure_chest": continue`). Without this
+		# exclusion the client counted runes under equipment because runes
+		# carry the `rarity` field, hitting the `or entry.has("rarity")`
+		# fallback below. Player report: bulk equipment badge still showed
+		# "(1)" after listing all equipment, but bulk-list said nothing to list.
+		if t == "rune":
+			continue
 		# Consumables — `is_consumable` flag OR consumable-type match.
 		# Server excludes escape_scroll because it's a special movement item.
 		var is_consumable: bool = bool(entry.get("is_consumable", false)) or _is_consumable_match(t)
@@ -1468,7 +1477,8 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_mater
 			counts["consumable"] += int(entry.get("quantity", 1))
 			continue
 		# Equipment — server uses `has("slot") or has("rarity")` as the
-		# discriminator after consumable/tool/treasure_chest are filtered out.
+		# discriminator after consumable/tool/rune/treasure_chest are filtered
+		# out. Mirroring that filter here keeps the badge accurate.
 		if entry.has("slot") or entry.has("rarity"):
 			counts["equipment"] += 1
 			continue

@@ -1477,8 +1477,16 @@ func is_guard_suppressed(x: int, y: int) -> bool:
 			return true
 	return false
 
-func check_encounter(x: int, y: int) -> bool:
-	"""Check if player encounters a monster (roll)"""
+func check_encounter(x: int, y: int, player_level: int = 0, bypass_level_scaling: bool = false) -> bool:
+	"""Check if player encounters a monster (roll).
+
+	v0.9.620 — scale encounter rate down when the player is significantly
+	above the area's level. High-level characters travelling through their
+	old starter zone shouldn't get spammed with trivial encounters that
+	aren't relevant to them anymore. Hunt action + threat-corridor
+	spillovers pass `bypass_level_scaling=true` so the explicit-action
+	rate stays full and threat dungeons can still pull players into
+	danger zones regardless of level gap."""
 	if is_safe_zone(x, y):
 		return false
 	if is_guard_suppressed(x, y):
@@ -1491,6 +1499,16 @@ func check_encounter(x: int, y: int) -> bool:
 		var tile = chunk_manager.get_tile(x, y)
 		if tile.get("type", "") == "path":
 			rate *= 0.5
+	# v0.9.620 — level-diff scaling. -5% per level above area, floored at 10%.
+	# Player at +5 levels above area: 75% rate. +10: 50%. +18+: 10% (floor).
+	# Keeps SOME encounter pressure in safe zones (10% floor) so over-leveled
+	# players aren't completely insulated; just no longer spammed.
+	if not bypass_level_scaling and player_level > 0 and rate > 0.0:
+		var area_level: int = get_post_anchored_level(x, y)
+		var level_diff: int = player_level - area_level
+		if level_diff > 0:
+			var scale: float = clamp(1.0 - float(level_diff) * 0.05, 0.1, 1.0)
+			rate *= scale
 	return randf() < rate
 
 func get_monster_level_range(x: int, y: int) -> Dictionary:

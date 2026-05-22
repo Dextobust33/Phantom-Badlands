@@ -25821,8 +25821,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.620 — Bulk-listing rune fix + over-leveled encounter scaling.
+	display_game("[color=#00FF00]v0.9.620[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two player-reported fixes. (1) Bulk Equipment badge stayed at '(1)' after listing all equipment because the client's count formula was matching ANY item with a `rarity` field — including runes, which the server excludes from the equipment bulk. (2) Over-leveled characters moving through low-level areas were getting spammed with trivial encounters. Now scales down based on player_level vs area_level for random movement; Hunt + threat-corridor bypass the scaling.[/color]")
+	display_game("  • [b]Bulk count predicate matches server filter[/b]: client now skips `type == 'rune'` BEFORE the equipment check. Mirrors [color=#888888]server.gd:16883[/color] exactly. Badge reads honestly after every bulk listing.")
+	display_game("  • [b]Random encounter rate scales with level diff[/b]. Each level player is above the area level → -5% encounter rate. Floor at 10% (still some pressure in starter zones). At +5 levels above: 75%. +10: 50%. +18+: 10%. Hunt action keeps its own roll (server.gd:5233, unchanged). Threat-corridor tiles bypass scaling — dungeon spillover monsters still pull the player into danger zones at full rate so threat mechanics feel intentional.")
+	display_game("")
+
 	# v0.9.619 — Review Damage button shows on victory screen again.
-	display_game("[color=#00FF00]v0.9.619[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.619[/color]")
 	display_game("  [color=#FFD700]Fix: 🩸 Review Damage button was hidden during the entire victory window. Root cause: _drain_combat_queue's queue-empty branch fires show_victory_card BEFORE it schedules end_action_phase_after(grace), so at victory-card-display time _action_phase_active is still TRUE — and _update_review_button_visibility hard-hides the button while action phase is active. Then end_action_phase runs, persistent FX kicks in, hides the button again. The button only became visible AFTER the player had already pressed Continue — too late to use.[/color]")
 	display_game("  • [b]Fix[/b]: when [color=#888888]_victory_interlude_active[/color] is true, override the [color=#888888]_action_phase_active[/color] gate. Victory card up = we WANT the Review button visible regardless of stale action-phase state.")
 	display_game("")
