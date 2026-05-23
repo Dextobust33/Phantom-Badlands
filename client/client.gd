@@ -1116,7 +1116,7 @@ var job_commit_category: String = "" # "gathering" or "specialty"
 # Companions mode
 var companions_mode: bool = false
 var companions_page: int = 0
-var pending_companion_action: String = ""  # "", "release_select", "release_confirm", "release_all_warn", "release_all_confirm", "inspect"
+var pending_companion_action: String = ""  # "", "release_select", "release_confirm" (warn), "release_final", "release_all_warn", "release_all_confirm", "inspect"
 var release_target_companion: Dictionary = {}  # Companion being released
 var inspecting_companion: Dictionary = {}  # Companion being inspected
 const COMPANIONS_PAGE_SIZE = 5
@@ -7961,12 +7961,26 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		elif pending_companion_action == "release_confirm":
-			# Confirmation screen for releasing a companion
-			var comp_name = release_target_companion.get("name", "Unknown")
-			var variant = release_target_companion.get("variant", "Normal")
+			# v0.9.630 — first warning. The "Continue" button transitions to
+			# the final confirmation; only the final stage sends to server.
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "release_cancel", "enabled": true},
-				{"label": "CONFIRM", "action_type": "local", "action_data": "release_confirm", "enabled": true},
+				{"label": "Continue", "action_type": "local", "action_data": "release_continue", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
+		elif pending_companion_action == "release_final":
+			# v0.9.630 — final confirmation stage. Only this button actually
+			# fires the delete.
+			current_actions = [
+				{"label": "Cancel", "action_type": "local", "action_data": "release_cancel", "enabled": true},
+				{"label": "FINAL CONFIRM", "action_type": "local", "action_data": "release_final_execute", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11977,7 +11991,38 @@ func execute_local_action(action: String):
 			release_target_companion = {}
 			display_companions()
 			update_action_bar()
-		"release_confirm":
+		"release_continue":
+			# v0.9.630 — second-stage transition. First warning was shown
+			# in the "release_confirm" state; this transitions to the
+			# "release_final" state which shows the FINAL CONFIRMATION
+			# screen. Mirror of the release-all flow's warn→continue→final
+			# pattern. Player report: "There should be a warning /
+			# confirmation before releasing companions in case of
+			# misclicks as well as an explanation as to what it does."
+			if release_target_companion.is_empty():
+				return
+			pending_companion_action = "release_final"
+			game_output.clear()
+			var _final_name = release_target_companion.get("name", "Unknown")
+			var _final_variant = release_target_companion.get("variant", "Normal")
+			var _final_variant_color = release_target_companion.get("variant_color", "#FFFFFF")
+			var _final_level = release_target_companion.get("level", 1)
+			display_game("[color=#FF0000]══════ FINAL CONFIRMATION ══════[/color]")
+			display_game("")
+			display_game("[color=#FF0000]ARE YOU ABSOLUTELY SURE?[/color]")
+			display_game("")
+			display_game("[color=#FFAA00]You are about to PERMANENTLY DELETE:[/color]")
+			display_game("")
+			display_game("  [color=%s]%s %s[/color] [color=#AAAAAA]Level %d[/color]" % [_final_variant_color, _final_variant, _final_name, _final_level])
+			display_game("")
+			display_game("[color=#FF0000]THIS CANNOT BE UNDONE.[/color]")
+			display_game("")
+			display_game("[color=#808080]Press FINAL CONFIRM to delete this companion forever.[/color]")
+			display_game("[color=#808080]Press Cancel to keep them.[/color]")
+			update_action_bar()
+		"release_final_execute":
+			# v0.9.630 — actual delete fires here, after two confirmation
+			# screens.
 			if not release_target_companion.is_empty():
 				send_to_server({"type": "release_companion", "id": release_target_companion.get("id", "")})
 				pending_companion_action = ""
@@ -25868,8 +25913,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.630 — Release confirm + hatched border_tier + BBCode safety.
+	display_game("[color=#00FF00]v0.9.630[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three companion fixes.[/color]")
+	display_game("  • [b]Release companion has a 2-stage confirmation now[/b]. Player report: misclicks could permanently delete a companion. First stage shows a full explanation (what release does, no resources returned, Sanctuary-registered ones unaffected) + Continue button. Second stage is the FINAL CONFIRM. Mirrors the existing Release All flow.")
+	display_game("  • [b]Hatched companions inherit border_tier from their egg[/b]. Player report: '[i]a lot of my companions don't seem to have a border.[/i]' Root cause: both [color=#888888]character.gd::_hatch_egg[/color] and the server's home-stone hatch were building the new companion dict without copying [color=#888888]border_tier[/color] from the egg. Egg had it (rolled at create) but companion didn't → display fell back to Tier 0 = no border. Fixed both paths.")
+	display_game("  • [b]v0.9.629 regression fix[/b]: my 2-char bold edge color broke pattern-recolored art (Ringed Zombie Thrall and others using gradient/striped/diagonal patterns). Their lines have inline [color=#888888][color=X]...[/color][/color] tags per line; my edge wrap corrupted the BBCode. [color=#888888]apply_variant_border[/color] now skips lines with inline tags — those keep their pattern color without the border-tier highlight. Trade-off accepted: pattern color already carries visual identity.")
+	display_game("")
+
 	# v0.9.629 — Companion border tier: 2-char bold edge per line.
-	display_game("[color=#00FF00]v0.9.629[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.629[/color]")
 	display_game("  [color=#FFD700]Player report: '[i]Companion borders only show up in the Inspect page not in combat, when hovered on the ASCII map, or in the GameOutput overlay window.[/i]' Code was actually present in all 4 surfaces (v0.9.572), but the border was a single edge character recolor per line — too subtle to notice. Inspect appeared bordered because its [color=#888888][table][/color] BBCode draws cell borders.[/color]")
 	display_game("  • [b]Fix[/b]: [color=#888888]MonsterArt._color_line_edges[/color] now colors the FIRST TWO and LAST TWO non-whitespace characters per line + wraps them in [color=#888888][b][/color] for bold. Width unchanged — no chars added, no layout skew. Border tier color reads visibly now across combat panel, map hover, GameOutput overlay, and Inspect.")
 	display_game("")
@@ -27543,14 +27596,24 @@ func activate_companion_by_index(index: int):
 		var variant = companion.get("variant", "Normal")
 		var variant_color = companion.get("variant_color", "#FFFFFF")
 		var comp_level = companion.get("level", 1)
-		display_game("[color=#FF0000]═══════ CONFIRM RELEASE ═══════[/color]")
+		display_game("[color=#FF0000]═══════ RELEASE COMPANION ═══════[/color]")
 		display_game("")
-		display_game("[color=#FFAA00]Are you sure you want to PERMANENTLY release:[/color]")
+		display_game("[color=#FFAA00]You're about to release:[/color]")
 		display_game("")
 		display_game("  [color=%s]%s %s[/color] [color=#AAAAAA]Level %d[/color]" % [variant_color, variant, comp_name, comp_level])
 		display_game("")
-		display_game("[color=#FF6666]This action cannot be undone![/color]")
+		# v0.9.630 — explain what release actually does so the player can
+		# make an informed decision.
+		display_game("[color=#E6CC80]What 'release' does:[/color]")
+		display_game("  [color=#888888]• Permanently deletes the companion from your collection.[/color]")
+		display_game("  [color=#888888]• Returns NO resources, materials, or essence.[/color]")
+		display_game("  [color=#888888]• Frees a slot in your collection.[/color]")
+		display_game("  [color=#888888]• Companions registered to your Sanctuary are NOT affected.[/color]")
 		display_game("")
+		display_game("[color=#FF6666]This action cannot be undone.[/color]")
+		display_game("")
+		display_game("[color=#808080]Press Continue to proceed to the final confirmation.[/color]")
+		display_game("[color=#808080]Press Cancel to go back.[/color]")
 		update_action_bar()
 		return
 

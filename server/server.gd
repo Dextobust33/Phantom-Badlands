@@ -11498,6 +11498,9 @@ func _process_home_stone_egg(peer_id: int, character, egg_index: int, item_name:
 		"variant_color": egg.get("variant_color", "#FFFFFF"),
 		"variant_color2": egg.get("variant_color2", ""),
 		"variant_pattern": egg.get("variant_pattern", "solid"),
+		# v0.9.630 — preserve egg's border_tier so home-stone-hatched
+		# companions keep their cosmetic rarity (matches normal _hatch_egg).
+		"border_tier": int(egg.get("border_tier", 0)),
 		"level": 1,
 		"xp": 0
 	}
