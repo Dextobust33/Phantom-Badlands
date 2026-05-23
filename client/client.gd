@@ -25868,8 +25868,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.629 — Companion border tier: 2-char bold edge per line.
+	display_game("[color=#00FF00]v0.9.629[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Player report: '[i]Companion borders only show up in the Inspect page not in combat, when hovered on the ASCII map, or in the GameOutput overlay window.[/i]' Code was actually present in all 4 surfaces (v0.9.572), but the border was a single edge character recolor per line — too subtle to notice. Inspect appeared bordered because its [color=#888888][table][/color] BBCode draws cell borders.[/color]")
+	display_game("  • [b]Fix[/b]: [color=#888888]MonsterArt._color_line_edges[/color] now colors the FIRST TWO and LAST TWO non-whitespace characters per line + wraps them in [color=#888888][b][/color] for bold. Width unchanged — no chars added, no layout skew. Border tier color reads visibly now across combat panel, map hover, GameOutput overlay, and Inspect.")
+	display_game("")
+
 	# v0.9.628 — Hide FX overlay BEFORE victory card to kill monster-ASCII flash.
-	display_game("[color=#00FF00]v0.9.628[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.628[/color]")
 	display_game("  [color=#FFD700]Player report: '[i]I keep seeing a flash of the monster ASCII art after the victory screen clears when I press or move.[/i]' Z-order issue: victory card z=150 sits above FX overlay z=100. Hiding the card first exposed the FX overlay for one render frame before [color=#888888]hide_fx_overlay_only[/color] ran. Swapped the order in all three dismiss paths so FX hides first (under the card → no visual change), THEN card hides.[/color]")
 	display_game("")
 

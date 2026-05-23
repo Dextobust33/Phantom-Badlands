@@ -5433,6 +5433,11 @@ static func _line_has_renderable_chars(line: String) -> bool:
 
 
 static func _color_line_edges(line: String, border_color: String) -> String:
+	# v0.9.629 — expand from single edge char to TWO outside chars + bold per
+	# line so the companion border tier reads visibly across all surfaces
+	# (was barely noticeable before). Width unchanged — no chars added, just
+	# the existing edge characters recolored and bolded. Preserves ASCII
+	# layout / aspect ratio (no skew).
 	if line.length() == 0:
 		return line
 	var first_idx = -1
@@ -5449,20 +5454,35 @@ static func _color_line_edges(line: String, border_color: String) -> String:
 		if c != " " and c != "\t":
 			last_idx = i
 			break
-	if first_idx == last_idx:
-		# Only one non-whitespace character on this line.
-		return line.substr(0, first_idx) \
-			+ "[color=%s]%s[/color]" % [border_color, line[first_idx]] \
-			+ line.substr(first_idx + 1)
+	# Extend the left edge to include the second non-ws char if it's
+	# adjacent. Skip-over-whitespace would color non-edge chars, so we
+	# require contiguity.
+	var left_end: int = first_idx
+	if first_idx + 1 <= last_idx and line[first_idx + 1] != " " and line[first_idx + 1] != "\t":
+		left_end = first_idx + 1
+	# Extend the right edge symmetrically.
+	var right_start: int = last_idx
+	if last_idx - 1 >= first_idx and line[last_idx - 1] != " " and line[last_idx - 1] != "\t":
+		right_start = last_idx - 1
+	# If the two ranges overlap or touch (short line), color the whole
+	# non-ws span as a single bold block.
+	if left_end >= right_start - 1:
+		var leading_short = line.substr(0, first_idx)
+		var body_short = line.substr(first_idx, last_idx - first_idx + 1)
+		var trailing_short = line.substr(last_idx + 1)
+		return leading_short \
+			+ "[b][color=%s]%s[/color][/b]" % [border_color, body_short] \
+			+ trailing_short
+	# Two distinct edges with body between.
 	var leading = line.substr(0, first_idx)
-	var first_char = line[first_idx]
-	var middle = line.substr(first_idx + 1, last_idx - first_idx - 1)
-	var last_char = line[last_idx]
+	var left_chunk = line.substr(first_idx, left_end - first_idx + 1)
+	var middle = line.substr(left_end + 1, right_start - left_end - 1)
+	var right_chunk = line.substr(right_start, last_idx - right_start + 1)
 	var trailing = line.substr(last_idx + 1)
 	return leading \
-		+ "[color=%s]%s[/color]" % [border_color, first_char] \
+		+ "[b][color=%s]%s[/color][/b]" % [border_color, left_chunk] \
 		+ middle \
-		+ "[color=%s]%s[/color]" % [border_color, last_char] \
+		+ "[b][color=%s]%s[/color][/b]" % [border_color, right_chunk] \
 		+ trailing
 
 # ===== EGG ASCII ART SYSTEM =====
