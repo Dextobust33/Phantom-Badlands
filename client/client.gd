@@ -25913,8 +25913,21 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.633 — Companion border polish + FX overlay layout rework.
+	display_game("[color=#00FF00]v0.9.633[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two follow-ups + an FX overlay rework.[/color]")
+	display_game("  • [b]Hover tooltip border[/b]: [color=#888888]format_companion_tooltip_bbcode[/color] was the one render surface still missing the [color=#888888]_apply_companion_border_tier[/color] step. Every other surface had it; the hover preview went straight from pattern recolor to the font_size wrap. Border now shows on companion-screen card hovers.")
+	display_game("  • [b]Border edge style settled[/b]: 6-char width + bold from the v0.9.629–631 probes were chasing a rendering theory; the real fix landed in v0.9.632 (data layer). Reverted to 2 outer characters per edge, no bold — cleaner read now that the border actually applies everywhere.")
+	display_game("  • [b]FX overlay layout reflow[/b]. Player report: HP bars sat too high, ASCII overflowed onto bars, strips were stranded at the top of the GameOutput area. New layout:")
+	display_game("    [color=#888888]–[/color] Overlay extends from GameOutput top to GameOutput bottom (claims the side space beside the monster ASCII).")
+	display_game("    [color=#888888]–[/color] Each side block is a VBoxContainer with [color=#888888]ALIGNMENT_END[/color] — strip + ASCII + info stack at the BOTTOM. Empty space collects above.")
+	display_game("    [color=#888888]–[/color] Strip moved INSIDE the block (was external). Now bottom-aligns with ASCII content height — sits directly above the ASCII art's actual top edge.")
+	display_game("    [color=#888888]–[/color] ASCII uses [color=#888888]fit_content[/color] so it sizes to the art naturally — no clipping, no overflow, HP bar sits flush against the art's true bottom.")
+	display_game("    [color=#888888]–[/color] Monster strip now sits just below the monster's bottom edge (was clamped above the column).")
+	display_game("")
+
 	# v0.9.632 — Real fix: active_companion was missing border_tier field.
-	display_game("[color=#00FF00]v0.9.632[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.632[/color]")
 	display_game("  [color=#FFD700]The actual companion border fix.[/color] Player report (v3-4): '[i]The border is clear on inspect and not being applied anywhere else.[/i]'")
 	display_game("  • [b]Root cause[/b]: [color=#888888]activate_hatched_companion[/color] in character.gd built a fresh dict for [color=#888888]active_companion[/color] and never copied the [color=#888888]border_tier[/color] field over. The Inspect view reads from [color=#888888]collected_companions[/color] (intact record — border rendered). Mini overlay, combat scene panel, and any other surface that reads from [color=#888888]active_companion[/color] saw border_tier=0 and silently skipped the render.")
 	display_game("  • [b]Not a rendering problem.[/b] The previous 5 fix attempts (v0.9.629–631 — bold edge, 2-char width, BBCode safety, 6-char width) were all chasing a visual-subtlety hypothesis that didn't exist. The data never reached the renderer on those surfaces. My apologies for the iterations.")
@@ -35266,6 +35279,13 @@ func format_companion_tooltip_bbcode(companion: Dictionary) -> String:
 	if art_lines.size() > 0:
 		var art_str: String = "\n".join(art_lines)
 		art_str = _recolor_ascii_art_pattern(art_str, variant_color, variant_color2, variant_pattern)
+		# v0.9.633 — companion-panel hover tooltip was the one render surface
+		# missing the border-tier application step. Every other surface (mini
+		# overlay, inspect, map hover, panel inspect, combat scene) calls
+		# _apply_companion_border_tier after the pattern recolor; this one
+		# went straight to the font_size wrap. Player report: 'the border
+		# isn't working on the companion screen when hovering a companion.'
+		art_str = _apply_companion_border_tier(art_str, int(companion.get("border_tier", 0)))
 		lines.append("")
 		var art_font_size: int = clampi(int(5 * ui_scale_monster_art), 4, 9)
 		lines.append("[font_size=%d]%s[/font_size]" % [art_font_size, art_str])
