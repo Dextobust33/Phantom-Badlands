@@ -3596,6 +3596,13 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 		"variant_color": variant_color,
 		"variant_color2": variant_color2,
 		"variant_pattern": variant_pattern,
+		# v0.9.630 — preserve the egg's pre-rolled border_tier. Without this,
+		# hatched companions had no border_tier field set, falling back to
+		# Tier 0 on display ("no border"). Player report: many companions
+		# have no border at all. Egg.border_tier was rolled at egg creation
+		# (drop_tables.create_egg / character.gd:1871 backfill) and carries
+		# the cosmetic rarity through to the live companion.
+		"border_tier": int(egg.get("border_tier", 0)),
 		"level": 1,
 		"xp": 0
 	}

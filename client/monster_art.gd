@@ -5418,6 +5418,20 @@ static func apply_variant_border(art: String, border_color_hex: String) -> Strin
 			if not _line_has_renderable_chars(line):
 				out_lines.append(line)
 				continue
+		# v0.9.630 — skip lines that have INLINE BBCode tags (more than just
+		# wrapping). Pattern-recolored art (gradient / striped / diagonal /
+		# etc. via client.gd::_recolor_ascii_art_pattern) wraps each line in
+		# its own [color=X]...[/color] tags. _color_line_edges would treat
+		# the leading `[` as the first non-ws char and wrap `[c` in
+		# [b][color=...]...[/color][/b] — corrupting the BBCode. Result:
+		# literal `olor=red]X[/color]` text visible on screen. Player report
+		# v0.9.629 regression: "Ringed Zombie Thrall... color tags on each
+		# line." Trade-off: pattern-recolored lines don't get the border-
+		# tier highlight, but the variant pattern color already carries
+		# visual identity.
+		if line.count("[color") >= 2 or line.count("[/color") >= 2 or (line.count("[color") >= 1 and line.count("[/color") >= 1):
+			out_lines.append(line)
+			continue
 		out_lines.append(_color_line_edges(line, border_color_hex))
 	return "\n".join(out_lines)
 
