@@ -5468,16 +5468,32 @@ static func _color_line_edges(line: String, border_color: String) -> String:
 		if c != " " and c != "\t":
 			last_idx = i
 			break
-	# Extend the left edge to include the second non-ws char if it's
-	# adjacent. Skip-over-whitespace would color non-edge chars, so we
-	# require contiguity.
+	# v0.9.631 — debug probe per user direction: expand from 2 to SIX
+	# outer chars per edge. If the user's white-tier Skeleton still shows
+	# no border at this width, the rendering hypothesis is wrong and the
+	# bug lives elsewhere (data, code path, or call site). Contiguity is
+	# still required — we stop at the first whitespace on either side so
+	# we never colour non-edge interior chars.
+	const EDGE_CHARS: int = 6
 	var left_end: int = first_idx
-	if first_idx + 1 <= last_idx and line[first_idx + 1] != " " and line[first_idx + 1] != "\t":
-		left_end = first_idx + 1
+	for k in range(1, EDGE_CHARS):
+		var nxt: int = first_idx + k
+		if nxt > last_idx:
+			break
+		var nc = line[nxt]
+		if nc == " " or nc == "\t":
+			break
+		left_end = nxt
 	# Extend the right edge symmetrically.
 	var right_start: int = last_idx
-	if last_idx - 1 >= first_idx and line[last_idx - 1] != " " and line[last_idx - 1] != "\t":
-		right_start = last_idx - 1
+	for k in range(1, EDGE_CHARS):
+		var prv: int = last_idx - k
+		if prv < first_idx:
+			break
+		var pc = line[prv]
+		if pc == " " or pc == "\t":
+			break
+		right_start = prv
 	# If the two ranges overlap or touch (short line), color the whole
 	# non-ws span as a single bold block.
 	if left_end >= right_start - 1:
