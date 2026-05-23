@@ -3624,6 +3624,16 @@ func activate_hatched_companion(companion_id: String) -> bool:
 				"variant_color": companion.get("variant_color", "#FFFFFF"),
 				"variant_color2": companion.get("variant_color2", ""),
 				"variant_pattern": companion.get("variant_pattern", "solid"),
+				# v0.9.632 — preserve border_tier on activation. The active
+				# companion dict was missing this field, so the mini overlay,
+				# combat scene panel, and any other surface that reads from
+				# character.active_companion silently fell back to tier 0 (no
+				# border). Inspect view reads from collected_companions where
+				# the field is intact, which is why the border rendered on
+				# Inspect but nowhere else. Player report: "On the Inspect
+				# Screen it has a White border. On hover, when activated, in
+				# combat, it does not have the white border."
+				"border_tier": int(companion.get("border_tier", 0)),
 				"level": companion.get("level", 1),
 				"xp": companion.get("xp", 0)
 			}
