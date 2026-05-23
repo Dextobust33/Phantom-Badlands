@@ -829,21 +829,17 @@ func _ensure_battlefield_overlay() -> void:
 	_battlefield_overlay.visible = false
 	parent.add_child(_battlefield_overlay)
 
-	# v0.9.415 — per-actor log strips at the TOP of the overlay (above the
-	# character blocks). Built first so they sit beneath blocks in z-order
-	# but logically above in layout. Each is a small RichTextLabel that
-	# scrolls a 3-5 line history of that actor's combat messages.
-	_overlay_player_log = _build_overlay_log_label("left")
-	_battlefield_overlay.add_child(_overlay_player_log)
+	# v0.9.633 — monster strip is the only externally-positioned strip now.
+	# Player + companion strips moved INTO their respective character blocks
+	# (as the first child of each block's VBoxContainer with ALIGNMENT_END)
+	# so they bottom-align with their ASCII art naturally.
 	_overlay_monster_log = _build_overlay_log_label("center")
 	_battlefield_overlay.add_child(_overlay_monster_log)
-	_overlay_companion_log = _build_overlay_log_label("right")
-	_battlefield_overlay.add_child(_overlay_companion_log)
 
-	# Player block — bigger ASCII font (3) + mini HP bar + name underneath.
+	# Player block — VBox with strip + ASCII + info, bottom-aligned.
 	_overlay_player_block = _build_overlay_character_block(true)
 	_battlefield_overlay.add_child(_overlay_player_block)
-	# Companion block — smaller ASCII font (2) since companion art is often wider.
+	# Companion block — same structure as player block.
 	_overlay_companion_block = _build_overlay_character_block(false)
 	_battlefield_overlay.add_child(_overlay_companion_block)
 
@@ -1139,38 +1135,45 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	new info row beneath (HP text, resource/XP bar, deck label). All info
 	widgets live in a VBoxContainer anchored at the bottom of the block —
 	cleaner than 7 individually-anchored rows."""
-	var block := Control.new()
+	# v0.9.633 — block is now a VBoxContainer with ALIGNMENT_END so its
+	# children (strip + ASCII + info) stack from the BOTTOM up. Empty space
+	# collects at the TOP. Strip sits just above the ASCII; ASCII fit_content
+	# sizes itself to the art so HP bar is right below the art's bottom edge.
+	# Strip is inside the block now (was a separate overlay child) so its
+	# vertical position tracks the ASCII content height.
+	var block := VBoxContainer.new()
 	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	block.alignment = BoxContainer.ALIGNMENT_END
+	block.add_theme_constant_override("separation", 8)
 	block.custom_minimum_size = Vector2(320, 300)
 
-	# ASCII label fills the top portion of the block.
+	# Strip lives INSIDE the block VBox as the first item (top of stack).
+	var strip := _build_overlay_log_label("left" if is_player else "right")
+	strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	strip.custom_minimum_size = Vector2(0, 140)
+	block.add_child(strip)
+
+	# ASCII RichTextLabel — fit_content=true so the RTL sizes to art height.
+	# clip_contents still on as a defensive backstop for absurdly tall art.
 	var ascii := RichTextLabel.new()
 	ascii.bbcode_enabled = true
-	ascii.fit_content = false
+	ascii.fit_content = true
 	ascii.scroll_active = false
 	ascii.autowrap_mode = TextServer.AUTOWRAP_OFF
 	ascii.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ascii.anchor_left = 0.0
-	ascii.anchor_top = 0.0
-	ascii.anchor_right = 1.0
-	ascii.anchor_bottom = 0.60
+	ascii.clip_contents = true
+	ascii.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if _mono_font:
 		ascii.add_theme_font_override("normal_font", _mono_font)
 		ascii.add_theme_font_override("bold_font", _mono_font)
 		ascii.add_theme_font_override("mono_font", _mono_font)
 	block.add_child(ascii)
 
-	# v0.9.601 — info VBox at the bottom 40% of the block. HP bar+text,
-	# resource/XP bar+text, deck label (player only), name. Anchored as a
-	# group so changes to row order or sizing don't require re-tuning
-	# individual percentages.
+	# Info VBox at the bottom of the stack (HP bar, resource bar, name).
 	var info_vbox := VBoxContainer.new()
-	info_vbox.anchor_left = 0.05
-	info_vbox.anchor_right = 0.95
-	info_vbox.anchor_top = 0.62
-	info_vbox.anchor_bottom = 1.0
 	info_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_vbox.alignment = BoxContainer.ALIGNMENT_BEGIN
+	info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info_vbox.add_theme_constant_override("separation", 2)
 	block.add_child(info_vbox)
 
@@ -1265,11 +1268,13 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 	info_vbox.add_child(name_lbl)
 
 	if is_player:
+		_overlay_player_log = strip
 		_overlay_player_ascii = ascii
 		_overlay_player_hp_bar = hp_bar
 		_overlay_player_hp_text = hp_text
 		_overlay_player_name = name_lbl
 	else:
+		_overlay_companion_log = strip
 		_overlay_companion_ascii = ascii
 		_overlay_companion_hp_bar = hp_bar
 		_overlay_companion_hp_text = hp_text
@@ -1279,29 +1284,39 @@ func _build_overlay_character_block(is_player: bool) -> Control:
 
 func _position_battlefield_overlay() -> void:
 	"""v0.9.411 — overlay sits AT the party-row vertical band. Player block
-	on the left, companion block on the right, each at fixed local positions
-	inside the overlay so they can be lunged via position tweens.
-
-	v0.9.412 — overlay can now claim the vertical space freed by the hidden
-	totals/hand/status strips during action phase. Grows UP from the box
-	row position toward the monster, capped so it doesn't touch monster art."""
+	on the left, companion block on the right.
+	v0.9.633 — overlay extended UP to the top of GameOutput so the player
+	and companion columns can claim the full vertical space LEFT and RIGHT
+	of the monster ASCII. The monster sits in the column gap and stays
+	visible because the overlay itself doesn't draw anything (just a Control
+	parent for its children, which only occupy the side columns).
+	Block columns become TALL: strip at top, ASCII filling middle, info at
+	bottom — no clipping needed because the column has the height for it.
+	"""
 	if _battlefield_overlay == null or not is_instance_valid(_battlefield_overlay):
 		return
 	if _player_col == null or not is_instance_valid(_player_col):
 		return
 	var rect: Rect2 = Rect2(_player_col.global_position, _player_col.size)
-	# Vertical room: prefer 280px (matches block height) so the ASCII fits.
-	# If the box row is shorter, grow upward (toward monster) by extending the
-	# overlay height above the box top while keeping the bottom anchored to
-	# the box top so we don't push into damage banner area below.
-	# v0.9.418 — overlay min height bumped 280 → 340 to accommodate taller log
-	# strips (so each strip fits a full round of messages without scrolling).
-	# Monster-art gap reduced 8 → 4 so the overlay can grow upward when there's
-	# little vertical room. If the clamp still kicks in, the strip-vs-block
-	# split keeps strips at their floor (100px) and lets the block shrink last.
+	# v0.9.633 — extend overlay to span the FULL height of GameOutput:
+	# top = GameOutput.top + small pad, bottom = GameOutput.bottom - small pad.
+	# This puts the HP bars (which sit at the BOTTOM of each side column)
+	# at the same vertical level as the ability cards / hand row, matching
+	# the user's direction. Falls back to monster-bottom clamp if GameOutput
+	# isn't accessible.
 	var overlay_h: float = maxf(rect.size.y, 340.0)
 	var overlay_y: float = rect.position.y - (overlay_h - rect.size.y)
-	if _monster_col and is_instance_valid(_monster_col):
+	var game_output_rect: Rect2 = Rect2()
+	if client_ref and is_instance_valid(client_ref):
+		var goc = client_ref.get("game_output_container")
+		if goc and is_instance_valid(goc):
+			game_output_rect = Rect2(goc.global_position, goc.size)
+			overlay_y = game_output_rect.position.y + 8.0
+			var overlay_bottom: float = game_output_rect.position.y + game_output_rect.size.y - 8.0
+			overlay_h = overlay_bottom - overlay_y
+	# Safety: don't let the overlay top go below the monster (would clip into it).
+	# This only triggers if GameOutput isn't accessible.
+	if game_output_rect.size == Vector2.ZERO and _monster_col and is_instance_valid(_monster_col):
 		var monster_bottom: float = _monster_col.global_position.y + _monster_col.size.y
 		if overlay_y < monster_bottom + 4.0:
 			overlay_y = monster_bottom + 4.0
@@ -1310,80 +1325,54 @@ func _position_battlefield_overlay() -> void:
 	_battlefield_overlay.global_position = Vector2(rect.position.x, overlay_y)
 	_battlefield_overlay_rest_y = _battlefield_overlay.position.y
 
-	# v0.9.415 — state the user confirmed worked well: 3-strip log visible
-	# at top of overlay, player flush-left, companion flush-right, monster
-	# strip 320px centered under the goblin.
-	# v0.9.418 — strip height bumped from 0.22/60-110 to 0.30/100-140 so a full
-	# round of messages fits without internal scrolling. Block height auto-
-	# derives from the remaining overlay space below the strip row.
+	# v0.9.633 — Block is a VBoxContainer with strip + ASCII + info, all
+	# bottom-aligned. Block fills the full overlay height; VBox alignment
+	# pushes content to the bottom so empty space collects at the TOP.
+	# Effect: HP bars sit at the very bottom (= ability-card level), ASCII
+	# directly above HP bar (no gap), strip directly above ASCII art.
 	var block_w: float = 320.0
 	var edge_pad: float = 16.0
-	var log_strip_h: float = clampf(overlay_h * 0.30, 100.0, 140.0)
-	var log_gap: float = 4.0
-	var bottom_pad: float = 0.0
-	var block_y: float = log_strip_h + log_gap
-	var block_h: float = overlay_h - block_y - bottom_pad
-	# v0.9.415 — per-user request, lift the player AND companion columns up
-	# by ~name-tag height so their ASCII / stats / name / log strip all sit
-	# a bit higher. Monster strip stays where it is.
-	var actor_lift: float = 22.0
+	var block_y: float = 4.0
+	var block_h: float = overlay_h - 8.0
 	if _overlay_player_block and is_instance_valid(_overlay_player_block):
-		_overlay_player_block.position = Vector2(edge_pad, block_y - actor_lift)
+		_overlay_player_block.position = Vector2(edge_pad, block_y)
 		_overlay_player_block.size = Vector2(block_w, block_h)
 		_overlay_player_block_baseline = _overlay_player_block.position
 	if _overlay_companion_block and is_instance_valid(_overlay_companion_block):
-		_overlay_companion_block.position = Vector2(rect.size.x - block_w - edge_pad, block_y - actor_lift)
+		_overlay_companion_block.position = Vector2(rect.size.x - block_w - edge_pad, block_y)
 		_overlay_companion_block.size = Vector2(block_w, block_h)
 		_overlay_companion_block_baseline = _overlay_companion_block.position
 
-	# Three log strips across the top of the overlay. All three use the same
-	# width (block_w) so they read as a consistent row of "actor speech".
-	# Player aligned over player block, companion over companion block,
-	# monster centered UNDER the actual monster art (right-aligned in Lufia
-	# layout, so it sits well right of the overlay's geometric center).
-	# v0.9.415 — separate Y positions: player/companion at the very top of
-	# the overlay so they sit further from their own ASCII below; monster
-	# offset DOWN so it sits further from the goblin's ASCII above.
-	var log_w_actor: float = block_w
-	var log_w_monster: float = block_w  # match the other two for visual rhythm
-	var log_y_actor: float = 4.0
-	# v0.9.415 — monster strip nudged DOWN by ~actor_lift so it sits further
-	# from the goblin's lower ASCII edge above it (matches the amount the
-	# player/companion columns were lifted upward).
-	var log_y_monster: float = 4.0 + actor_lift
-	if _overlay_player_log and is_instance_valid(_overlay_player_log):
-		# Same lift as the player block above so the column moves as one.
-		_overlay_player_log.position = Vector2(edge_pad, log_y_actor - actor_lift)
-		_overlay_player_log.size = Vector2(log_w_actor, log_strip_h)
-	if _overlay_companion_log and is_instance_valid(_overlay_companion_log):
-		_overlay_companion_log.position = Vector2(rect.size.x - log_w_actor - edge_pad, log_y_actor - actor_lift)
-		_overlay_companion_log.size = Vector2(log_w_actor, log_strip_h)
-	# v0.9.418 — pause button: top-right corner of the overlay, inside the
-	# rect so it sits over the companion strip's top-right corner. z_index
-	# above the strip keeps it clickable. Strips use scroll_following so
-	# newest text is at the bottom — covering the top-right corner only
-	# obscures the oldest line that's about to scroll off.
+	# Pause button — top-right of overlay. z_index 5 stays above strips.
 	if _pause_button and is_instance_valid(_pause_button):
 		var btn_w: float = 86.0
 		var btn_h: float = 26.0
 		_pause_button.position = Vector2(rect.size.x - btn_w - 4.0, 2.0)
 		_pause_button.size = Vector2(btn_w, btn_h)
+
+	# Monster log — centered under the monster art, top of overlay.
+	var log_w_monster: float = block_w
+	var log_strip_h_monster: float = clampf(overlay_h * 0.20, 100.0, 140.0)
 	if _overlay_monster_log and is_instance_valid(_overlay_monster_log):
-		# Anchor monster log horizontally under the monster art. _monster_col
-		# / _monster_art_label live in a different parent than _player_col,
-		# so use their global position to get the actual on-screen center.
 		var monster_center_global_x: float = rect.position.x + rect.size.x * 0.5
 		if _monster_art_label and is_instance_valid(_monster_art_label):
 			monster_center_global_x = _monster_art_label.global_position.x + _monster_art_label.size.x * 0.5
 		elif _monster_col and is_instance_valid(_monster_col):
 			monster_center_global_x = _monster_col.global_position.x + _monster_col.size.x * 0.5
 		var monster_local_x: float = monster_center_global_x - rect.position.x - log_w_monster * 0.5
-		# Loose clamp: just don't escape the overlay. Allow overlap with the
-		# player/companion strip if the monster sits there — readability of
-		# the actual on-target position wins over zone separation.
 		monster_local_x = clampf(monster_local_x, 0.0, rect.size.x - log_w_monster)
-		_overlay_monster_log.position = Vector2(monster_local_x, log_y_monster)
-		_overlay_monster_log.size = Vector2(log_w_monster, log_strip_h)
+		# v0.9.633 — monster strip sits JUST BELOW the monster ASCII (per user
+		# direction). The strip is centered horizontally on the monster and
+		# the player/companion blocks are on the sides, so vertical overlap
+		# between the monster strip and the block columns is fine — they
+		# don't share horizontal space. Bottom safety clamp keeps the strip
+		# from extending past the overlay's bottom edge.
+		var monster_strip_y: float = 4.0
+		if _monster_col and is_instance_valid(_monster_col):
+			var monster_bottom_local: float = (_monster_col.global_position.y + _monster_col.size.y) - overlay_y
+			monster_strip_y = clampf(monster_bottom_local + 8.0, 4.0, overlay_h - log_strip_h_monster - 4.0)
+		_overlay_monster_log.position = Vector2(monster_local_x, monster_strip_y)
+		_overlay_monster_log.size = Vector2(log_w_monster, log_strip_h_monster)
 
 
 func _populate_battlefield_overlay() -> void:
@@ -1398,6 +1387,11 @@ func _populate_battlefield_overlay() -> void:
 	# offset to the left of the bar).
 	if _overlay_player_ascii and is_instance_valid(_overlay_player_ascii):
 		if _player_ascii_label and is_instance_valid(_player_ascii_label):
+			# v0.9.633 — restore the +1 font bump. Earlier in this release I
+			# de-bumped because the art overflowed the 0.62 ASCII area, but
+			# now that the strips moved out of the overlay's top (freeing the
+			# entire overlay height for the block), the ASCII area is ~210px
+			# tall and the bumped fonts fit comfortably.
 			var p_bumped = _bump_inline_font_size(_player_ascii_label.text, 1)
 			_overlay_player_ascii.text = "[center]" + p_bumped + "[/center]"
 		else:
@@ -1427,7 +1421,9 @@ func _populate_battlefield_overlay() -> void:
 	if _overlay_player_name and is_instance_valid(_overlay_player_name):
 		_overlay_player_name.text = _player_name
 
-	# Companion ASCII + stats. v0.9.415 — bump dropped +2 → +1 to match player.
+	# Companion ASCII + stats.
+	# v0.9.633 — bump restored. See player block above for rationale (strips
+	# moved out → block has the full overlay height → bumped art fits).
 	if _overlay_companion_ascii and is_instance_valid(_overlay_companion_ascii):
 		if _companion_art and is_instance_valid(_companion_art):
 			_overlay_companion_ascii.text = _bump_inline_font_size(_companion_art.text, 1)

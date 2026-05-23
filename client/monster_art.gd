@@ -5447,11 +5447,13 @@ static func _line_has_renderable_chars(line: String) -> bool:
 
 
 static func _color_line_edges(line: String, border_color: String) -> String:
-	# v0.9.629 — expand from single edge char to TWO outside chars + bold per
-	# line so the companion border tier reads visibly across all surfaces
-	# (was barely noticeable before). Width unchanged — no chars added, just
-	# the existing edge characters recolored and bolded. Preserves ASCII
-	# layout / aspect ratio (no skew).
+	# v0.9.633 (pending) — final settled state after the v0.9.629→632 arc:
+	# the real bug was data-loss in active_companion (fixed in v0.9.632), not
+	# rendering subtlety. Now that the border actually reaches all surfaces,
+	# the visual width is dialled down per user direction:
+	#   • TWO outer characters per edge per line (not 6 — that was a probe).
+	#   • NO bold wrapping (cleaner, less weight).
+	# Contiguity still required so we never colour non-edge interior chars.
 	if line.length() == 0:
 		return line
 	var first_idx = -1
@@ -5468,13 +5470,7 @@ static func _color_line_edges(line: String, border_color: String) -> String:
 		if c != " " and c != "\t":
 			last_idx = i
 			break
-	# v0.9.631 — debug probe per user direction: expand from 2 to SIX
-	# outer chars per edge. If the user's white-tier Skeleton still shows
-	# no border at this width, the rendering hypothesis is wrong and the
-	# bug lives elsewhere (data, code path, or call site). Contiguity is
-	# still required — we stop at the first whitespace on either side so
-	# we never colour non-edge interior chars.
-	const EDGE_CHARS: int = 6
+	const EDGE_CHARS: int = 2
 	var left_end: int = first_idx
 	for k in range(1, EDGE_CHARS):
 		var nxt: int = first_idx + k
@@ -5495,13 +5491,13 @@ static func _color_line_edges(line: String, border_color: String) -> String:
 			break
 		right_start = prv
 	# If the two ranges overlap or touch (short line), color the whole
-	# non-ws span as a single bold block.
+	# non-ws span as a single block.
 	if left_end >= right_start - 1:
 		var leading_short = line.substr(0, first_idx)
 		var body_short = line.substr(first_idx, last_idx - first_idx + 1)
 		var trailing_short = line.substr(last_idx + 1)
 		return leading_short \
-			+ "[b][color=%s]%s[/color][/b]" % [border_color, body_short] \
+			+ "[color=%s]%s[/color]" % [border_color, body_short] \
 			+ trailing_short
 	# Two distinct edges with body between.
 	var leading = line.substr(0, first_idx)
@@ -5510,9 +5506,9 @@ static func _color_line_edges(line: String, border_color: String) -> String:
 	var right_chunk = line.substr(right_start, last_idx - right_start + 1)
 	var trailing = line.substr(last_idx + 1)
 	return leading \
-		+ "[b][color=%s]%s[/color][/b]" % [border_color, left_chunk] \
+		+ "[color=%s]%s[/color]" % [border_color, left_chunk] \
 		+ middle \
-		+ "[b][color=%s]%s[/color][/b]" % [border_color, right_chunk] \
+		+ "[color=%s]%s[/color]" % [border_color, right_chunk] \
 		+ trailing
 
 # ===== EGG ASCII ART SYSTEM =====
