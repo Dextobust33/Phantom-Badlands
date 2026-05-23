@@ -25913,8 +25913,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.632 — Real fix: active_companion was missing border_tier field.
+	display_game("[color=#00FF00]v0.9.632[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The actual companion border fix.[/color] Player report (v3-4): '[i]The border is clear on inspect and not being applied anywhere else.[/i]'")
+	display_game("  • [b]Root cause[/b]: [color=#888888]activate_hatched_companion[/color] in character.gd built a fresh dict for [color=#888888]active_companion[/color] and never copied the [color=#888888]border_tier[/color] field over. The Inspect view reads from [color=#888888]collected_companions[/color] (intact record — border rendered). Mini overlay, combat scene panel, and any other surface that reads from [color=#888888]active_companion[/color] saw border_tier=0 and silently skipped the render.")
+	display_game("  • [b]Not a rendering problem.[/b] The previous 5 fix attempts (v0.9.629–631 — bold edge, 2-char width, BBCode safety, 6-char width) were all chasing a visual-subtlety hypothesis that didn't exist. The data never reached the renderer on those surfaces. My apologies for the iterations.")
+	display_game("  • The 6-char edge width from v0.9.631 stays (cleaner read at small fonts now that it's actually applied).")
+	display_game("")
+
 	# v0.9.631 — Border edge width: 2 → 6 chars (probe per user direction).
-	display_game("[color=#00FF00]v0.9.631[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.631[/color]")
 	display_game("  [color=#FFD700]Border probe.[/color] User direction: my 'too subtle / too small font' hypothesis is unconvincing. Edge-recolor width bumped from 2 chars to [b]SIX[/b] outside characters per edge per line. If the white tier on the Skeleton still doesn't read in combat / hover at this width, the rendering hypothesis is wrong and the bug is in the data layer or a call site that's silently bypassing the border step.")
 	display_game("")
 
