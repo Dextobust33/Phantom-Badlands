@@ -25913,8 +25913,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.631 — Border edge width: 2 → 6 chars (probe per user direction).
+	display_game("[color=#00FF00]v0.9.631[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Border probe.[/color] User direction: my 'too subtle / too small font' hypothesis is unconvincing. Edge-recolor width bumped from 2 chars to [b]SIX[/b] outside characters per edge per line. If the white tier on the Skeleton still doesn't read in combat / hover at this width, the rendering hypothesis is wrong and the bug is in the data layer or a call site that's silently bypassing the border step.")
+	display_game("")
+
 	# v0.9.630 — Release confirm + hatched border_tier + BBCode safety.
-	display_game("[color=#00FF00]v0.9.630[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.630[/color]")
 	display_game("  [color=#FFD700]Three companion fixes.[/color]")
 	display_game("  • [b]Release companion has a 2-stage confirmation now[/b]. Player report: misclicks could permanently delete a companion. First stage shows a full explanation (what release does, no resources returned, Sanctuary-registered ones unaffected) + Continue button. Second stage is the FINAL CONFIRM. Mirrors the existing Release All flow.")
 	display_game("  • [b]Hatched companions inherit border_tier from their egg[/b]. Player report: '[i]a lot of my companions don't seem to have a border.[/i]' Root cause: both [color=#888888]character.gd::_hatch_egg[/color] and the server's home-stone hatch were building the new companion dict without copying [color=#888888]border_tier[/color] from the egg. Egg had it (rolled at create) but companion didn't → display fell back to Tier 0 = no border. Fixed both paths.")
