@@ -725,6 +725,21 @@ const HELP_TOPICS := {
 			+ "[color=#888888]See the Mastery Headstart page to spend Baddie Points. See the Imprint Atlas for the full trait breakdown per ability.[/color]"
 		),
 	},
+	"title_selection": {
+		"title": "[color=#FFD700]Titles[/color]",
+		"body": (
+			"Titles are earned by accomplishment and stay tied to your character. They unlock special abilities you can fire from the Title menu using the [color=#87CEEB]Q / W / E / R[/color] action-bar slots.\n\n"
+			+ "[color=#FFD700]── How you earn one ──[/color]\n"
+			+ "Different titles have different earn conditions — first kill on a tier boss, top of a leaderboard, completing a Pilgrimage stage, etc. Once earned, a title appears in the [color=#9ACD32]Claimable[/color] list here.\n\n"
+			+ "[color=#FFD700]── Active title ──[/color]\n"
+			+ "Only one title can be equipped at a time. Equipping a title makes its abilities available on the Q/W/E/R slots while this menu is open. Some abilities cost Valor; others are free. The cost is shown on the button.\n\n"
+			+ "[color=#FFD700]── Lost on death ──[/color]\n"
+			+ "Like everything else on a character, your active title is lost on permadeath. The accomplishment that earned it for you the first time still counts for account stats, but the title itself doesn't carry over.\n\n"
+			+ "[color=#FFD700]── Why use them ──[/color]\n"
+			+ "Title abilities are designed for moments where your normal kit isn't enough — server-wide buffs, instant rescues, area effects. Use them when the moment calls for it, not on cooldown.\n\n"
+			+ "[color=#888888]Press [Back] to leave the menu. Press [1-9] to select a target when a title ability asks for one.[/color]"
+		),
+	},
 }
 
 var _root_panel: PanelContainer

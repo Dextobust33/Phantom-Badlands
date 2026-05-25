@@ -6637,11 +6637,12 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 			else:
+				# v0.9.639 — slot 3 (orphan) replaced with ? Help → sanctuary_page topic.
 				current_actions = [
 					{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
 					{"label": "Prev", "action_type": "local", "action_data": "house_storage_prev", "enabled": house_storage_page > 0},
 					{"label": "Next", "action_type": "local", "action_data": "house_storage_next", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "? Help", "action_type": "local", "action_data": "help_sanctuary_page", "enabled": true},
 					{"label": "Withdraw", "action_type": "local", "action_data": "house_withdraw_start", "enabled": storage_items.size() > 0},
 					{"label": "Discard", "action_type": "local", "action_data": "house_discard_start", "enabled": storage_items.size() > 0},
 					{"label": "Register", "action_type": "local", "action_data": "house_register_start", "enabled": has_stored_companions and kennel_has_space},
@@ -6684,9 +6685,10 @@ func update_action_bar():
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				]
 			else:
+				# v0.9.639 — slot 1 (orphan) replaced with ? Help → sanctuary_page topic.
 				current_actions = [
 					{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
-					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+					{"label": "? Help", "action_type": "local", "action_data": "help_sanctuary_page", "enabled": true},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 					{"label": "Checkout", "action_type": "local", "action_data": "house_checkout_start", "enabled": has_available},
@@ -6703,12 +6705,13 @@ func update_action_bar():
 			var sus_label: String = sus_tab["label"]
 			var sus_count: int = sus_tab["ids"].size()
 			var sus_buy_hint: String = "1-%d=Buy" % sus_count if sus_count > 0 else ""
+			# v0.9.639 — slot 4 (orphan) replaced with ? Help → sanctuary_page topic.
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "house_main", "enabled": true},
 				{"label": "< Prev", "action_type": "local", "action_data": "upgrades_prev", "enabled": house_upgrades_page > 0},
 				{"label": "Next >", "action_type": "local", "action_data": "upgrades_next", "enabled": house_upgrades_page < SANCTUARY_UPGRADE_TABS.size() - 1},
 				{"label": sus_label, "action_type": "none", "action_data": "", "enabled": false},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_sanctuary_page", "enabled": true},
 				{"label": sus_buy_hint, "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -7693,6 +7696,9 @@ func update_action_bar():
 			]
 		else:
 			# Main title menu - show abilities as Q/W/E/R
+			# v0.9.639 — Added a `? Help` button in slot 5 (orphan before). Topic
+			# explains how titles are earned, equipped, and how the Q/W/E/R
+			# ability slots work.
 			var ability_labels = []
 			var ability_ids = abilities.keys()
 			for i in range(4):
@@ -7707,7 +7713,7 @@ func update_action_bar():
 				ability_labels[1],
 				ability_labels[2],
 				ability_labels[3],
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "? Help", "action_type": "local", "action_data": "help_title_selection", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -11947,9 +11953,14 @@ func execute_local_action(action: String):
 			display_changelog()
 			update_action_bar()
 		"bestiary":
-			pending_more_action = "bestiary"
-			display_bestiary()
-			update_action_bar()
+			# v0.9.639 — Route More→Bestiary to the dedicated panel
+			# (open_bestiary_panel) instead of the legacy game_output tier list.
+			# The panel is server-fetched and shows real kill counts unlocked
+			# progressively via Sanctuary Bestiary upgrade levels. The legacy
+			# display_bestiary() function stays defined as a fallback but is
+			# no longer the primary surface for this action. Matches the
+			# Sanctuary "house_bestiary" entry that already used the panel.
+			open_bestiary_panel()
 		"pouch_menu":
 			pending_more_action = "viewing_materials"
 			pending_inventory_action = "viewing_materials"
@@ -13618,10 +13629,14 @@ func execute_local_action(action: String):
 			update_action_bar()
 		"help_mastery_page", "help_imprints_page", "help_mastery_atlas", \
 		"help_settings_menu", "help_salvage_menu", "help_trade_window", \
-		"help_build_mode", "help_quest_log", "help_dungeon_select":
+		"help_build_mode", "help_quest_log", "help_dungeon_select", \
+		"help_title_selection", "help_sanctuary_page":
 			# v0.9.568 + v0.9.569 — Help coverage sweep. In-game-output screens
 			# without a standalone panel get a ? Help action-bar slot that
 			# opens the global HelpPanel on the matching topic.
+			# v0.9.639 — added help_title_selection for the title menu screen
+			# and help_sanctuary_page for the Sanctuary storage / companions /
+			# upgrades sub-pages (one shared topic covers all tabs).
 			if global_help_panel:
 				var topic_map := {
 					"help_mastery_page": "mastery_page",
@@ -13633,6 +13648,8 @@ func execute_local_action(action: String):
 					"help_build_mode": "build_mode",
 					"help_quest_log": "quest_log",
 					"help_dungeon_select": "dungeon_select",
+					"help_title_selection": "title_selection",
+					"help_sanctuary_page": "sanctuary_page",
 				}
 				var topic_key = topic_map.get(action, "")
 				if topic_key != "":
@@ -26023,8 +26040,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.639 — Polish batch: login timeout, emoji sweep, Help coverage.
+	display_game("[color=#00FF00]v0.9.639[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Five fixes from the polish backlog + an active login-screen bug.[/color]")
+	display_game("  • [b]Login screen no longer kicks players after 90 seconds[/b]. Player report: 'if players sit too long on the login screen it stops accepting login attempts.' AUTH_TIMEOUT bumped 90s → 30 min so you can step away from the keyboard without being reaped. Still bounded so genuinely abandoned bot connections eventually free up the slot.")
+	display_game("  • [b]Combat-log decorative emoji stripped[/b] (same player-font issue that broke 🪙 in v0.9.636). SMP-range emoji (🩸 💀 😠 👁️ 🔓 👻 💨 🔥 🛡️ 🏰 📯 🗡️ 🎲 🔍 💥 🪓 📖 🌿 🍄 🌸 🌱 🔒 🏠 📦 🐾 🥚 🏃 💰 📚 💪 🎯 🧠) replaced or removed from combat-log effects, momentum display, foraging art, locked quest indicator, and all 24 Sanctuary upgrade icons. BBCode color / pulse / wave / shake / fade wrappers retained so the visual signal stays.")
+	display_game("  • [b]Title menu has a [color=#FFD700]? Help[/color] button now[/b]. New help topic explains earning / equipping / Q-W-E-R abilities / permadeath consequences.")
+	display_game("  • [b]Sanctuary sub-pages get Help buttons[/b]. Storage, Companions, and Upgrades tabs now have a [color=#FFD700]? Help[/color] slot pointing to the existing comprehensive sanctuary_page topic.")
+	display_game("  • [b]More → Bestiary opens the dedicated panel now[/b] instead of the legacy chat-output tier list. The Sanctuary entry already used the panel; both entries now consistent.")
+	display_game("")
+
 	# v0.9.638 — Imprint × ability audit follow-ups.
-	display_game("[color=#00FF00]v0.9.638[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.638[/color]")
 	display_game("  [color=#FFD700]4 more buff/debuff abilities now respect rank-up +Damage and Predator's Mark imprint.[/color]")
 	display_game("  • Per your direction after v0.9.637 (\"the wyvern imprint on buff abilities likely isn't the only one with a similar problem\") I audited every ability × imprint combination. The v0.9.637 helper was wired into War Cry / Berserk / Iron Skin / Fortify / Rally but missed these:")
 	display_game("    [color=#888888]–[/color] [b]Haste (Arcane Surge)[/b] — both spell damage bonus AND double-cast chance now scale.")
@@ -32108,50 +32135,56 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = enhanced.replace("poison", "[color=#00FF00]☠ poison[/color]")
 
 	# Monster ability effects
+	# v0.9.639 — Stripped SMP-range decorative emoji (🩸 💀 😠 👁️ 🔓 👻 💨 ⚔️ ⚠️
+	# ↩️ ✨ ♻️) and the BMP variation-selector emoji from these decorations.
+	# Same player-font issue that broke 🪙 in v0.9.636 — fonts without the SMP
+	# range render the emoji as a hex codepoint box. The BBCode color + pulse/
+	# wave/shake/fade wrappers already provide the visual signal, so the
+	# emoji were decorative noise.
 	if "MULTI" in upper_msg and "STRIKE" in upper_msg:
-		enhanced = enhanced.replace("multi-strike", "[shake rate=15 level=4][color=#FF6347]⚔️ multi-strike ⚔️[/color][/shake]")
-		enhanced = enhanced.replace("Multi-Strike", "[shake rate=15 level=4][color=#FF6347]⚔️ Multi-Strike ⚔️[/color][/shake]")
+		enhanced = enhanced.replace("multi-strike", "[shake rate=15 level=4][color=#FF6347]multi-strike[/color][/shake]")
+		enhanced = enhanced.replace("Multi-Strike", "[shake rate=15 level=4][color=#FF6347]Multi-Strike[/color][/shake]")
 	if "LIFE STEAL" in upper_msg or "LIFESTEAL" in upper_msg:
-		enhanced = enhanced.replace("life steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]🩸 life steal 🩸[/pulse]")
-		enhanced = enhanced.replace("Life Steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]🩸 Life Steal 🩸[/pulse]")
-		enhanced = enhanced.replace("steals life", "[pulse freq=2.0 color=#8B0000 ease=-2.0]🩸 steals life 🩸[/pulse]")
+		enhanced = enhanced.replace("life steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]life steal[/pulse]")
+		enhanced = enhanced.replace("Life Steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]Life Steal[/pulse]")
+		enhanced = enhanced.replace("steals life", "[pulse freq=2.0 color=#8B0000 ease=-2.0]steals life[/pulse]")
 	if "REGENERAT" in upper_msg:
-		enhanced = enhanced.replace("regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]♻️ regenerates ♻️[/pulse]")
-		enhanced = enhanced.replace("Regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]♻️ Regenerates ♻️[/pulse]")
+		enhanced = enhanced.replace("regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]regenerates[/pulse]")
+		enhanced = enhanced.replace("Regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]Regenerates[/pulse]")
 	if "REFLECT" in upper_msg:
-		enhanced = enhanced.replace("reflects", "[color=#FFD700]↩️ reflects ↩️[/color]")
-		enhanced = enhanced.replace("Reflects", "[color=#FFD700]↩️ Reflects ↩️[/color]")
-		enhanced = enhanced.replace("reflected", "[color=#FFD700]↩️ reflected ↩️[/color]")
+		enhanced = enhanced.replace("reflects", "[color=#FFD700]reflects[/color]")
+		enhanced = enhanced.replace("Reflects", "[color=#FFD700]Reflects[/color]")
+		enhanced = enhanced.replace("reflected", "[color=#FFD700]reflected[/color]")
 	if "DRAIN" in upper_msg:
-		enhanced = enhanced.replace("drains", "[wave amp=8 freq=4][color=#9932CC]💀 drains 💀[/color][/wave]")
-		enhanced = enhanced.replace("Drains", "[wave amp=8 freq=4][color=#9932CC]💀 Drains 💀[/color][/wave]")
-		enhanced = enhanced.replace("drained", "[wave amp=8 freq=4][color=#9932CC]💀 drained 💀[/color][/wave]")
+		enhanced = enhanced.replace("drains", "[wave amp=8 freq=4][color=#9932CC]drains[/color][/wave]")
+		enhanced = enhanced.replace("Drains", "[wave amp=8 freq=4][color=#9932CC]Drains[/color][/wave]")
+		enhanced = enhanced.replace("drained", "[wave amp=8 freq=4][color=#9932CC]drained[/color][/wave]")
 	if "ENRAGE" in upper_msg:
-		enhanced = enhanced.replace("enrages", "[shake rate=20 level=6][color=#FF0000]😠 enrages 😠[/color][/shake]")
-		enhanced = enhanced.replace("Enrages", "[shake rate=20 level=6][color=#FF0000]😠 Enrages 😠[/color][/shake]")
-		enhanced = enhanced.replace("enraged", "[shake rate=20 level=6][color=#FF0000]😠 enraged 😠[/color][/shake]")
+		enhanced = enhanced.replace("enrages", "[shake rate=20 level=6][color=#FF0000]enrages[/color][/shake]")
+		enhanced = enhanced.replace("Enrages", "[shake rate=20 level=6][color=#FF0000]Enrages[/color][/shake]")
+		enhanced = enhanced.replace("enraged", "[shake rate=20 level=6][color=#FF0000]enraged[/color][/shake]")
 	if "AMBUSH" in upper_msg:
-		enhanced = enhanced.replace("ambushes", "[fade start=0 length=6][color=#FF4500]⚠️ ambushes ⚠️[/color][/fade]")
-		enhanced = enhanced.replace("Ambushes", "[fade start=0 length=6][color=#FF4500]⚠️ Ambushes ⚠️[/color][/fade]")
+		enhanced = enhanced.replace("ambushes", "[fade start=0 length=6][color=#FF4500]ambushes[/color][/fade]")
+		enhanced = enhanced.replace("Ambushes", "[fade start=0 length=6][color=#FF4500]Ambushes[/color][/fade]")
 	if "SUMMON" in upper_msg:
-		enhanced = enhanced.replace("summons", "[wave amp=12 freq=3][color=#9932CC]✨ summons ✨[/color][/wave]")
-		enhanced = enhanced.replace("Summons", "[wave amp=12 freq=3][color=#9932CC]✨ Summons ✨[/color][/wave]")
+		enhanced = enhanced.replace("summons", "[wave amp=12 freq=3][color=#9932CC]summons[/color][/wave]")
+		enhanced = enhanced.replace("Summons", "[wave amp=12 freq=3][color=#9932CC]Summons[/color][/wave]")
 	if "CURSE" in upper_msg:
-		enhanced = enhanced.replace("curses", "[wave amp=10 freq=4][color=#800080]👁️ curses 👁️[/color][/wave]")
-		enhanced = enhanced.replace("Curses", "[wave amp=10 freq=4][color=#800080]👁️ Curses 👁️[/color][/wave]")
-		enhanced = enhanced.replace("cursed", "[wave amp=10 freq=4][color=#800080]👁️ cursed 👁️[/color][/wave]")
+		enhanced = enhanced.replace("curses", "[wave amp=10 freq=4][color=#800080]curses[/color][/wave]")
+		enhanced = enhanced.replace("Curses", "[wave amp=10 freq=4][color=#800080]Curses[/color][/wave]")
+		enhanced = enhanced.replace("cursed", "[wave amp=10 freq=4][color=#800080]cursed[/color][/wave]")
 	if "DISARM" in upper_msg:
-		enhanced = enhanced.replace("disarms", "[color=#FFA500]🔓 disarms 🔓[/color]")
-		enhanced = enhanced.replace("Disarms", "[color=#FFA500]🔓 Disarms 🔓[/color]")
-		enhanced = enhanced.replace("disarmed", "[color=#FFA500]🔓 disarmed 🔓[/color]")
+		enhanced = enhanced.replace("disarms", "[color=#FFA500]disarms[/color]")
+		enhanced = enhanced.replace("Disarms", "[color=#FFA500]Disarms[/color]")
+		enhanced = enhanced.replace("disarmed", "[color=#FFA500]disarmed[/color]")
 	if "ETHEREAL" in upper_msg or "PHASE" in upper_msg:
-		enhanced = enhanced.replace("phases", "[fade start=0 length=8][color=#ADD8E6]👻 phases 👻[/color][/fade]")
-		enhanced = enhanced.replace("ethereal", "[fade start=0 length=8][color=#ADD8E6]👻 ethereal 👻[/color][/fade]")
+		enhanced = enhanced.replace("phases", "[fade start=0 length=8][color=#ADD8E6]phases[/color][/fade]")
+		enhanced = enhanced.replace("ethereal", "[fade start=0 length=8][color=#ADD8E6]ethereal[/color][/fade]")
 	if "FLEE" in upper_msg and "MONSTER" in upper_msg:
-		enhanced = enhanced.replace("flees", "[fade start=0 length=10][color=#808080]💨 flees 💨[/color][/fade]")
+		enhanced = enhanced.replace("flees", "[fade start=0 length=10][color=#808080]flees[/color][/fade]")
 	if "DEATH CURSE" in upper_msg:
-		enhanced = enhanced.replace("death curse", "[shake rate=25 level=8][color=#8B0000]💀 DEATH CURSE 💀[/color][/shake]")
-		enhanced = enhanced.replace("Death Curse", "[shake rate=25 level=8][color=#8B0000]💀 DEATH CURSE 💀[/color][/shake]")
+		enhanced = enhanced.replace("death curse", "[shake rate=25 level=8][color=#8B0000]DEATH CURSE[/color][/shake]")
+		enhanced = enhanced.replace("Death Curse", "[shake rate=25 level=8][color=#8B0000]DEATH CURSE[/color][/shake]")
 
 	# Ability cast gets magic sparkle
 	if "CAST" in upper_msg or "INVOKE" in upper_msg:
@@ -32166,57 +32199,57 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = enhanced.replace("blocked", "[color=#4169E1]▣ blocked ▣[/color]")
 		enhanced = enhanced.replace("Blocked", "[color=#4169E1]▣ Blocked ▣[/color]")
 
-	# Mage abilities - magical sparkle effects
+	# Mage abilities - magical sparkle effects (v0.9.639 — emoji stripped, BBCode wrappers retained)
 	if "FIREBALL" in upper_msg:
-		enhanced = enhanced.replace("Fireball", "[wave amp=15 freq=4][color=#FF4500]🔥 Fireball 🔥[/color][/wave]")
-		enhanced = enhanced.replace("fireball", "[wave amp=15 freq=4][color=#FF4500]🔥 fireball 🔥[/color][/wave]")
+		enhanced = enhanced.replace("Fireball", "[wave amp=15 freq=4][color=#FF4500]Fireball[/color][/wave]")
+		enhanced = enhanced.replace("fireball", "[wave amp=15 freq=4][color=#FF4500]fireball[/color][/wave]")
 	if "BOLT" in upper_msg or "MANA BOLT" in upper_msg:
-		enhanced = enhanced.replace("Mana Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]⚡ Mana Bolt ⚡[/pulse]")
-		enhanced = enhanced.replace("Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]⚡ Bolt ⚡[/pulse]")
+		enhanced = enhanced.replace("Mana Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]Mana Bolt[/pulse]")
+		enhanced = enhanced.replace("Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]Bolt[/pulse]")
 	if "MEDITATE" in upper_msg:
-		enhanced = enhanced.replace("Meditate", "[fade start=2 length=8][color=#9932CC]✨ Meditate ✨[/color][/fade]")
-		enhanced = enhanced.replace("meditate", "[fade start=2 length=8][color=#9932CC]✨ meditate ✨[/color][/fade]")
+		enhanced = enhanced.replace("Meditate", "[fade start=2 length=8][color=#9932CC]Meditate[/color][/fade]")
+		enhanced = enhanced.replace("meditate", "[fade start=2 length=8][color=#9932CC]meditate[/color][/fade]")
 	if "FORCEFIELD" in upper_msg:
-		enhanced = enhanced.replace("Forcefield", "[pulse freq=2.0 color=#4169E1 ease=-2.0]🛡️ Forcefield 🛡️[/pulse]")
+		enhanced = enhanced.replace("Forcefield", "[pulse freq=2.0 color=#4169E1 ease=-2.0]Forcefield[/pulse]")
 
 	# Warrior abilities - impact effects
 	if "POWER STRIKE" in upper_msg or "POWERSTRIKE" in upper_msg:
-		enhanced = enhanced.replace("Power Strike", "[shake rate=20 level=5][color=#FF6347]💥 Power Strike 💥[/color][/shake]")
+		enhanced = enhanced.replace("Power Strike", "[shake rate=20 level=5][color=#FF6347]Power Strike[/color][/shake]")
 	if "BERSERK" in upper_msg:
-		enhanced = enhanced.replace("Berserk", "[shake rate=30 level=10][color=#FF0000]⚔️ BERSERK ⚔️[/color][/shake]")
-		enhanced = enhanced.replace("berserk", "[shake rate=30 level=10][color=#FF0000]⚔️ berserk ⚔️[/color][/shake]")
+		enhanced = enhanced.replace("Berserk", "[shake rate=30 level=10][color=#FF0000]BERSERK[/color][/shake]")
+		enhanced = enhanced.replace("berserk", "[shake rate=30 level=10][color=#FF0000]berserk[/color][/shake]")
 	if "FORTIFY" in upper_msg:
-		enhanced = enhanced.replace("Fortify", "[color=#FFD700]🏰 Fortify 🏰[/color]")
+		enhanced = enhanced.replace("Fortify", "[color=#FFD700]Fortify[/color]")
 	if "RALLY" in upper_msg:
-		enhanced = enhanced.replace("Rally", "[wave amp=10 freq=3][color=#FFD700]📯 Rally 📯[/color][/wave]")
+		enhanced = enhanced.replace("Rally", "[wave amp=10 freq=3][color=#FFD700]Rally[/color][/wave]")
 
 	# Trickster abilities - sneaky effects
 	if "BACKSTAB" in upper_msg:
-		enhanced = enhanced.replace("Backstab", "[fade start=0 length=6][color=#00FF00]🗡️ Backstab 🗡️[/color][/fade]")
+		enhanced = enhanced.replace("Backstab", "[fade start=0 length=6][color=#00FF00]Backstab[/color][/fade]")
 	if "SABOTAGE" in upper_msg:
-		enhanced = enhanced.replace("Sabotage", "[wave amp=8 freq=5][color=#32CD32]⚙️ Sabotage ⚙️[/color][/wave]")
+		enhanced = enhanced.replace("Sabotage", "[wave amp=8 freq=5][color=#32CD32]Sabotage[/color][/wave]")
 	if "GAMBIT" in upper_msg:
-		enhanced = enhanced.replace("Gambit", "[rainbow freq=1.5 sat=0.8 val=0.9]🎲 Gambit 🎲[/rainbow]")
+		enhanced = enhanced.replace("Gambit", "[rainbow freq=1.5 sat=0.8 val=0.9]Gambit[/rainbow]")
 	if "ANALYZE" in upper_msg:
-		enhanced = enhanced.replace("Analyze", "[pulse freq=2.0 color=#00FFFF ease=-2.0]🔍 Analyze 🔍[/pulse]")
+		enhanced = enhanced.replace("Analyze", "[pulse freq=2.0 color=#00FFFF ease=-2.0]Analyze[/pulse]")
 
 	# Universal abilities
 	if "CLOAK" in upper_msg:
-		enhanced = enhanced.replace("Cloak", "[fade start=0 length=10][color=#9932CC]👁️ Cloak 👁️[/color][/fade]")
+		enhanced = enhanced.replace("Cloak", "[fade start=0 length=10][color=#9932CC]Cloak[/color][/fade]")
 		enhanced = enhanced.replace("cloaked", "[fade start=0 length=10][color=#9932CC]cloaked[/color][/fade]")
 
 	# Haste ability - speed effect
 	if "HASTE" in upper_msg:
-		enhanced = enhanced.replace("Haste", "[wave amp=8 freq=6][color=#00FFFF]⚡ Haste ⚡[/color][/wave]")
-		enhanced = enhanced.replace("haste", "[wave amp=8 freq=6][color=#00FFFF]⚡ haste ⚡[/color][/wave]")
+		enhanced = enhanced.replace("Haste", "[wave amp=8 freq=6][color=#00FFFF]Haste[/color][/wave]")
+		enhanced = enhanced.replace("haste", "[wave amp=8 freq=6][color=#00FFFF]haste[/color][/wave]")
 
 	# Paralyze ability - static effect
 	if "PARALYZE" in upper_msg or "PARALYZ" in upper_msg:
-		enhanced = enhanced.replace("paralyze", "[shake rate=15 level=4][color=#FFFF00]⚡ paralyze ⚡[/color][/shake]")
-		enhanced = enhanced.replace("Paralyze", "[shake rate=15 level=4][color=#FFFF00]⚡ Paralyze ⚡[/color][/shake]")
+		enhanced = enhanced.replace("paralyze", "[shake rate=15 level=4][color=#FFFF00]paralyze[/color][/shake]")
+		enhanced = enhanced.replace("Paralyze", "[shake rate=15 level=4][color=#FFFF00]Paralyze[/color][/shake]")
 		enhanced = enhanced.replace("paralyzed", "[shake rate=15 level=4][color=#FFFF00]paralyzed[/color][/shake]")
 
-	# Banish ability - dimensional effect
+	# Banish ability - dimensional effect (✦ U+2726 is BMP, renders reliably)
 	if "BANISH" in upper_msg:
 		enhanced = enhanced.replace("banish", "[fade start=0 length=8][color=#FF00FF]✦ banish ✦[/color][/fade]")
 		enhanced = enhanced.replace("Banish", "[fade start=0 length=8][color=#FF00FF]✦ Banish ✦[/color][/fade]")
@@ -33417,7 +33450,7 @@ func display_gathering_round():
 			var stars = ""
 			for _i in range(max_mom):
 				stars += "[color=#FFD700]★[/color]" if _i < mom else "[color=#444444]☆[/color]"
-			display_game("[color=#228B22]🪓[/color] MOMENTUM: %s (%d/%d)" % [stars, mom, max_mom])
+			display_game("[color=#228B22]>>[/color] MOMENTUM: %s (%d/%d)" % [stars, mom, max_mom])
 			var next_milestone = 3 if mom < 3 else (5 if mom < 5 else (7 if mom < 7 else 0))
 			if next_milestone > 0:
 				display_game("[color=#808080]Next bonus at %d![/color]" % next_milestone)
@@ -33428,9 +33461,9 @@ func display_gathering_round():
 			# Discovery journal
 			if gathering_discoveries.size() > 0:
 				var disc_list = ", ".join(gathering_discoveries)
-				display_game("[color=#9ACD32]📖 Discoveries:[/color] [color=#00FF00]%s[/color]" % disc_list)
+				display_game("[color=#9ACD32]Discoveries:[/color] [color=#00FF00]%s[/color]" % disc_list)
 			else:
-				display_game("[color=#808080]📖 No discoveries yet this session[/color]")
+				display_game("[color=#808080]No discoveries yet this session[/color]")
 			display_game("")
 		"fishing":
 			pass  # No special indicator — art shows below
@@ -33576,11 +33609,11 @@ func handle_gathering_result(message: Dictionary):
 			var stars = ""
 			for _i in range(max_mom):
 				stars += "[color=#FFD700]★[/color]" if _i < mom else "[color=#444444]☆[/color]"
-			display_game("[color=#228B22]🪓[/color] MOMENTUM: %s (%d/%d)" % [stars, mom, max_mom])
+			display_game("[color=#228B22]>>[/color] MOMENTUM: %s (%d/%d)" % [stars, mom, max_mom])
 		"foraging":
 			if gathering_discoveries.size() > 0:
 				var disc_list = ", ".join(gathering_discoveries)
-				display_game("[color=#9ACD32]📖 Discoveries:[/color] [color=#00FF00]%s[/color]" % disc_list)
+				display_game("[color=#9ACD32]Discoveries:[/color] [color=#00FF00]%s[/color]" % disc_list)
 
 	display_game("[color=#FFD700]Chain: %d  |  Materials in chain: %d[/color]" % [gathering_chain_count, gathering_chain_materials.size()])
 
@@ -34066,7 +34099,8 @@ func _get_gathering_ascii_art(job_type: String, num_options: int = 3, chosen: in
 		"logging":
 			return "[color=#228B22]        /\\\n       /||\\\n      / || \\\n     /  ||  \\[/color]\n     %s\n[color=#228B22]     |  ||  |[/color]" % slots
 		"foraging":
-			return "[color=#9ACD32]   🌿 ~ 🍄 ~ 🌿\n[/color]     %s\n[color=#9ACD32]  ~  🌸  🌱  🌸  ~[/color]" % slots
+			# v0.9.639 — was 🌿🍄🌸🌱 (SMP), replaced with ASCII glyphs.
+			return "[color=#9ACD32]   *  ~  o  ~  *\n[/color]     %s\n[color=#9ACD32]  ~  *  v  *  ~[/color]" % slots
 		"fishing":
 			return "[color=#87CEEB]     ~~ o ~~\n      /|\\\n[/color]     %s\n[color=#0077BE]   ≈≈≈≈≈≈≈≈≈≈≈≈[/color]" % slots
 		_:
@@ -38285,7 +38319,7 @@ func handle_quest_list(message: Dictionary):
 		display_game("[color=#808080]=== Locked Quests ===[/color]")
 		for quest in locked_quests:
 			var prereq_name = quest.get("prerequisite_name", "another quest")
-			display_game("  [color=#555555]🔒 %s[/color]" % quest.get("name", "Quest"))
+			display_game("  [color=#555555][LOCKED] %s[/color]" % quest.get("name", "Quest"))
 			display_game("    [color=#808080]Requires: Complete '%s' first[/color]" % prereq_name)
 			display_game("")
 
@@ -39796,32 +39830,35 @@ func _display_corpse_loot_confirmation():
 
 # ===== HOUSE (SANCTUARY) DISPLAY FUNCTIONS =====
 
+# v0.9.639 — Icons swept from SMP-range emoji (which tofu on some players'
+# fonts — same root cause as the v0.9.636 🪙 fix) to short ASCII tokens.
+# Each chosen to read as a clear label for the upgrade type.
 const HOUSE_UPGRADE_DISPLAY = {
-	"house_size": {"name": "Expand Sanctuary", "desc": "Larger house with more room", "icon": "🏠"},
-	"storage_slots": {"name": "Storage Expansion", "desc": "+10 storage slots", "icon": "📦"},
-	"companion_slots": {"name": "Companion Kennel", "desc": "+1 registered companion slot", "icon": "🐾"},
-	"egg_slots": {"name": "Incubation Chamber", "desc": "+1 egg incubation slot", "icon": "🥚"},
-	"flee_chance": {"name": "Escape Training", "desc": "+2% flee chance", "icon": "🏃"},
-	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting Valor", "icon": "💰"},
-	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "📚"},
-	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "⛏️"},
-	"kennel_capacity": {"name": "Kennel Expansion", "desc": "More kennel slots", "icon": "🏠"},
-	"post_slots": {"name": "Land Surveyor", "desc": "+1 max player post", "icon": "🏗️"},
-	"companion_sanctum": {"name": "Companion Sanctum", "desc": "+1 free Home Stone (Companion) at new character start", "icon": "🔮"},
-	"bestiary": {"name": "Bestiary", "desc": "Account-level monster kill ledger. L1: kills, L2: + level, L3: + dates.", "icon": "📖"},
-	"compass": {"name": "Sanctuary Compass", "desc": "HUD compass points to nearest unvisited NPC post. L1: direction, L2: + distance, L3: + post name.", "icon": "🧭"},
-	"region_atlas": {"name": "Region Atlas", "desc": "Account-level region ledger. L1: count visited, L2: + sorted region list, L3: + completion ratio (visited / total).", "icon": "🗺"},
+	"house_size": {"name": "Expand Sanctuary", "desc": "Larger house with more room", "icon": "[H]"},
+	"storage_slots": {"name": "Storage Expansion", "desc": "+10 storage slots", "icon": "[#]"},
+	"companion_slots": {"name": "Companion Kennel", "desc": "+1 registered companion slot", "icon": "[C]"},
+	"egg_slots": {"name": "Incubation Chamber", "desc": "+1 egg incubation slot", "icon": "[E]"},
+	"flee_chance": {"name": "Escape Training", "desc": "+2% flee chance", "icon": "[>]"},
+	"starting_gold": {"name": "Family Inheritance", "desc": "+50 starting Valor", "icon": "[$]"},
+	"xp_bonus": {"name": "Ancestral Wisdom", "desc": "+1% XP bonus", "icon": "[X]"},
+	"gathering_bonus": {"name": "Homesteading", "desc": "+5% gathering bonus", "icon": "[G]"},
+	"kennel_capacity": {"name": "Kennel Expansion", "desc": "More kennel slots", "icon": "[K]"},
+	"post_slots": {"name": "Land Surveyor", "desc": "+1 max player post", "icon": "[P]"},
+	"companion_sanctum": {"name": "Companion Sanctum", "desc": "+1 free Home Stone (Companion) at new character start", "icon": "[S]"},
+	"bestiary": {"name": "Bestiary", "desc": "Account-level monster kill ledger. L1: kills, L2: + level, L3: + dates.", "icon": "[B]"},
+	"compass": {"name": "Sanctuary Compass", "desc": "HUD compass points to nearest unvisited NPC post. L1: direction, L2: + distance, L3: + post name.", "icon": "[N]"},
+	"region_atlas": {"name": "Region Atlas", "desc": "Account-level region ledger. L1: count visited, L2: + sorted region list, L3: + completion ratio (visited / total).", "icon": "[A]"},
 	# Combat bonuses
-	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "❤️"},
-	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "🔮"},
-	"resource_regen": {"name": "Flow", "desc": "+5% resource regen", "icon": "✨"},
+	"hp_bonus": {"name": "Vitality", "desc": "+5% max HP", "icon": "[+]"},
+	"resource_max": {"name": "Reservoir", "desc": "+5% max resources", "icon": "[~]"},
+	"resource_regen": {"name": "Flow", "desc": "+5% resource regen", "icon": "[*]"},
 	# Stat training
-	"str_bonus": {"name": "Strength Training", "desc": "+1 STR", "icon": "💪"},
-	"con_bonus": {"name": "Constitution Training", "desc": "+1 CON", "icon": "🛡️"},
-	"dex_bonus": {"name": "Dexterity Training", "desc": "+1 DEX", "icon": "🎯"},
-	"int_bonus": {"name": "Intelligence Training", "desc": "+1 INT", "icon": "🧠"},
-	"wis_bonus": {"name": "Wisdom Training", "desc": "+1 WIS", "icon": "👁️"},
-	"wits_bonus": {"name": "Wits Training", "desc": "+1 WITS", "icon": "⚡"}
+	"str_bonus": {"name": "Strength Training", "desc": "+1 STR", "icon": "[!]"},
+	"con_bonus": {"name": "Constitution Training", "desc": "+1 CON", "icon": "[D]"},
+	"dex_bonus": {"name": "Dexterity Training", "desc": "+1 DEX", "icon": "[o]"},
+	"int_bonus": {"name": "Intelligence Training", "desc": "+1 INT", "icon": "[I]"},
+	"wis_bonus": {"name": "Wisdom Training", "desc": "+1 WIS", "icon": "[W]"},
+	"wits_bonus": {"name": "Wits Training", "desc": "+1 WITS", "icon": "[T]"}
 }
 
 # Audit #13 Slice 5 — Sanctuary upgrade categorization. Single source of truth
