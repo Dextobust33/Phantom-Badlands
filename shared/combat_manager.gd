@@ -4459,15 +4459,19 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 						monster["current_mp"] = max(0, cur_mp - drain)
 						msgs.append("[color=%s]✦ %s drains %d mana from %s.[/color]" % [t_color, t_name, drain, String(monster.get("name", "enemy"))])
 			"stun":
-				# v0.9.599 — 1→3% per stack.
-				var stun_pct: float = 3.0 * n
+				# v0.9.641 — 3→5% per stack. Variant-imprints memo: 'current 1%
+				# roll per cast is intentionally tiny. May want to make these
+				# more visible / felt by either a chance bump or guaranteed
+				# once per N casts.' Bumped to 5%/stack = 20% at max 4 stacks,
+				# noticeably more felt without crossing into oppressive territory.
+				var stun_pct: float = 5.0 * n
 				if randf() * 100.0 < stun_pct:
 					combat["monster_stunned"] = true
 					combat["monster_stunned_duration"] = max(int(combat.get("monster_stunned_duration", 0)), 1)
 					msgs.append("[color=%s]✦ %s — %s is stunned![/color]" % [t_color, t_name, String(monster.get("name", "enemy")) if monster else "enemy"])
 			"charm":
-				# v0.9.599 — 1→3% per stack.
-				var charm_pct: float = 3.0 * n
+				# v0.9.641 — 3→5% per stack. Same memo direction as stun above.
+				var charm_pct: float = 5.0 * n
 				if randf() * 100.0 < charm_pct:
 					combat["monster_charmed"] = true
 					combat["monster_charmed_duration"] = max(int(combat.get("monster_charmed_duration", 0)), 1)

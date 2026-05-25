@@ -1197,8 +1197,8 @@ const VARIANT_TRAIT_CATEGORIES = {
 	},
 	"stun": {
 		"name": "Stagger",
-		"per_stack_pct": 3.0,
-		"description": "+3% stun chance on cast per stack",
+		"per_stack_pct": 5.0,
+		"description": "+5% stun chance on cast per stack",
 		"color": "#FFC04D",
 	},
 	"enemy_miss": {
@@ -1221,8 +1221,8 @@ const VARIANT_TRAIT_CATEGORIES = {
 	},
 	"charm": {
 		"name": "Mesmerize",
-		"per_stack_pct": 3.0,
-		"description": "+3% charm chance per stack (1 turn)",
+		"per_stack_pct": 5.0,
+		"description": "+5% charm chance per stack (1 turn)",
 		"color": "#FF6FB5",
 	},
 	"absorb": {
@@ -1258,7 +1258,14 @@ const COMPANION_VARIANT_TRAIT = {
 	"Titan": "bonus_damage", "Balrog": "bonus_damage", "Cerberus": "bonus_damage",
 	"Jabberwock": "crit",
 	# T6
-	"Elemental": "bonus_damage", "Iron Golem": "stun", "Sphinx": "charm",
+	# v0.9.641 — Iron Golem remapped stun → absorb. Player-direction follow-up
+	# from the variant-imprints memo's V2 candidates: 'no companion currently
+	# maps to absorb. Either remap an existing one or add a new T5+ companion
+	# with an absorb-flavored active.' Iron Golem's defensive construct theme
+	# fits Aegis better than Stagger; stun is still covered at T3 (Gargoyle,
+	# Shrieker) + T6 (kept on Time Weaver T8 and World Serpent T7) so the
+	# stun pool doesn't lose meaningful coverage.
+	"Elemental": "bonus_damage", "Iron Golem": "absorb", "Sphinx": "charm",
 	"Hydra": "bonus_damage", "Phoenix": "bonus_damage", "Nazgul": "enemy_miss",
 	# T7
 	"Void Walker": "crit", "World Serpent": "stun", "Elder Lich": "lifesteal",
