@@ -5,8 +5,15 @@ extends Control
 # CONFIGURE THESE FOR YOUR GITHUB REPO
 const GITHUB_OWNER = "Dextobust33"
 const GITHUB_REPO = "Phantom-Badlands"
-const GAME_EXECUTABLE = "PhantomBadlandsClient.exe"
 const MAX_DOWNLOAD_RETRIES = 3
+
+# Platform-specific client executable. Windows ships an .exe, Linux ships an
+# .x86_64 binary. Picked at runtime so one launcher codebase serves both.
+func _is_linux() -> bool:
+	return OS.get_name() == "Linux"
+
+func _client_executable() -> String:
+	return "PhantomBadlandsClient.x86_64" if _is_linux() else "PhantomBadlandsClient.exe"
 
 @onready var status_label = $VBox/StatusLabel
 @onready var progress_bar = $VBox/ProgressBar
@@ -87,11 +94,17 @@ func _on_version_check_completed(result: int, response_code: int, headers: Packe
 		remote_version
 	]
 
-	# Find the Windows client asset
+	# Find the client asset for THIS platform. Linux client zips carry "linux"
+	# in their name (e.g. phantom-badlands-client-linux-vX.Y.Z.zip); the Windows
+	# zip does not. Match accordingly so each launcher grabs the right build.
+	var want_linux = _is_linux()
 	var assets = data.get("assets", [])
 	for asset in assets:
-		var name = asset.get("name", "")
-		if "client" in name.to_lower() and name.ends_with(".zip"):
+		var aname = asset.get("name", "").to_lower()
+		if not (aname.ends_with(".zip") and "client" in aname):
+			continue
+		var is_linux_asset = "linux" in aname
+		if is_linux_asset == want_linux:
 			download_url = asset.get("browser_download_url", "")
 			break
 
@@ -169,6 +182,12 @@ func _on_download_completed(result: int, response_code: int, headers: PackedStri
 	DirAccess.remove_absolute(zip_path)
 
 	if success:
+		# ZIP extraction does not preserve the Unix executable bit, so the
+		# freshly-extracted Linux binary must be made runnable before launch.
+		if _is_linux():
+			var exe_path = game_path.path_join(_client_executable())
+			if FileAccess.file_exists(exe_path):
+				OS.execute("chmod", ["+x", exe_path])
 		_save_local_version(remote_version)
 		local_version = remote_version
 		version_label.text = "Local: %s | Latest: %s" % [local_version, remote_version]
@@ -206,7 +225,7 @@ func _extract_zip(zip_path: String, destination: String) -> bool:
 	return true
 
 func _enable_play_if_installed():
-	var exe_path = game_path.path_join(GAME_EXECUTABLE)
+	var exe_path = game_path.path_join(_client_executable())
 	play_button.disabled = not FileAccess.file_exists(exe_path)
 	if play_button.disabled:
 		play_button.text = "Game Not Found"
@@ -214,7 +233,7 @@ func _enable_play_if_installed():
 		play_button.text = "Play Phantom Badlands"
 
 func _on_play_pressed():
-	var exe_path = game_path.path_join(GAME_EXECUTABLE)
+	var exe_path = game_path.path_join(_client_executable())
 	if FileAccess.file_exists(exe_path):
 		status_label.text = "Launching game..."
 		OS.create_process(exe_path, [])
