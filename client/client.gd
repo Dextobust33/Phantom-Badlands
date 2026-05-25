@@ -20016,9 +20016,18 @@ func handle_server_message(message: Dictionary):
 				last_item_use_result = text_msg
 				awaiting_item_use_result = false
 			elif inventory_mode and pending_inventory_action == "awaiting_salvage_result":
-				# Capture the salvage result so display_inventory() can surface it
-				# in the visual panel's status row after the refresh.
-				last_item_use_result = text_msg
+				# v0.9.634 — Render the bulk-salvage result directly in game_output
+				# so the player can actually read it. Previously cached into
+				# last_item_use_result for the panel's inline status row, but
+				# (a) the status row is a tiny 13pt inline label squeezed between
+				# action buttons, and (b) any incidental character_update arriving
+				# after the salvage (party action, save tick, periodic broadcast)
+				# re-ran display_inventory, which called set_status("") since the
+				# cache was already consumed on the first display — wiping the
+				# message before the player could read it. game_output is the
+				# right surface: persistent, scrollable, untouched by
+				# display_inventory.
+				display_game(text_msg)
 			else:
 				display_game(text_msg)
 			# v0.9.390 — capture dungeon special-tile messages so the next
@@ -20411,6 +20420,18 @@ func handle_server_message(message: Dictionary):
 				send_to_server({"type": "get_abilities"})
 
 		"combat_start":
+			# v0.9.634 — DIAG: log buffs visible to client at flock-mob spawn so
+			# we can confirm whether the next encounter sees buffs as carried.
+			# Only logs on flock continuations (is_flock=true) to keep noise low.
+			if message.get("is_flock", false):
+				var _cs_state: Dictionary = message.get("combat_state", {})
+				var _cs_char: Dictionary = _cs_state.get("character", {})
+				var _cs_buffs_raw: Array = _cs_char.get("active_buffs", [])
+				var _cs_btypes: Array = []
+				for _csb in _cs_buffs_raw:
+					if _csb is Dictionary:
+						_cs_btypes.append(String(_csb.get("type", "?")))
+				print("[FLOCK-BUFF-DIAG-CLIENT] flock combat_start buffs_in_state=%s local_active_buffs=%s" % [_cs_btypes, character_data.get("active_buffs", [])])
 			# If pending_continue is active (e.g., egg hatching celebration), queue combat for after
 			if pending_continue:
 				queued_combat_message = message.duplicate(true)
@@ -20667,6 +20688,17 @@ func handle_server_message(message: Dictionary):
 			update_player_hp_bar()  # Refresh HP bar to hide shield
 
 			if message.get("victory", false):
+				# v0.9.634 — DIAG: log incoming buffs at combat_end so we can
+				# compare against the server's [FLOCK-BUFF-DIAG] log lines and
+				# confirm whether the client sees the same buff list the server
+				# preserved. Strip once root-caused.
+				var _v_char: Dictionary = message.get("character", {})
+				var _v_buffs_raw: Array = _v_char.get("active_buffs", [])
+				var _v_btypes: Array = []
+				for _vb in _v_buffs_raw:
+					if _vb is Dictionary:
+						_v_btypes.append(String(_vb.get("type", "?")))
+				print("[FLOCK-BUFF-DIAG-CLIENT] combat_end victory flock_incoming=%s incoming_buffs=%s" % [message.get("flock_incoming", false), _v_btypes])
 				# v0.9.566 — lift the "clamp HP to 1 while still in combat"
 				# guard so the monster HP bar can drain to 0 visually before
 				# the panel hides. Re-issue the bar update so the new floor
@@ -25913,8 +25945,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.634 — Job XP grant fixes (gathering + soldier) + Salvage All visibility.
+	display_game("[color=#00FF00]v0.9.634[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Three bug fixes — all the same root pattern: 'two paths populate the same field, only some do it right.'[/color]")
+	display_game("  • [b]Gathering jobs now actually gain XP from the scratch-off minigame.[/b] Player report: '[i]It doesn't seem like job experience is being granted for Gathering Jobs.[/i]' The scratch-off completion path called the legacy [color=#888888]add_fishing_xp[/color] / [color=#888888]add_mining_xp[/color] / [color=#888888]add_logging_xp[/color] funcs (which only update the legacy 0-100 skill driving drop weights / wait times / crit) but never [color=#888888]add_job_xp[/color]. Committed fishing / mining / logging jobs gained ZERO from the minigame. Autoskip + the legacy chain path were already correct. Foraging was already correct. Fix calls [color=#888888]add_job_xp[/color] alongside the legacy skill update.")
+	display_game("  • [b]Soldier job now gains XP from combat[/b]. Same class of bug — [color=#888888]character.add_experience(final_xp)[/color] was called at 4 combat-XP sites (solo kill, full-reward, perfect heist, party combat per member) but no site granted soldier job XP. Fix: each site now also calls [color=#888888]add_job_xp('soldier', max(1, int(base_xp * 0.25)))[/color]. 25% of base monster XP (uncompounded) per kill — balanced against combat being a far more frequent activity than crafting (which grants 50%).")
+	display_game("  • [b]Salvage All result message no longer vanishes[/b]. Bulk-salvage result text used to cache into the inventory panel's tiny inline status row, but any incidental [color=#888888]character_update[/color] (party action, save tick) re-ran [color=#888888]display_inventory[/color] and called [color=#888888]set_status('')[/color] since the cache was already consumed. Now routes directly to [color=#888888]game_output[/color] (the persistent chat) so the player can actually read what they got.")
+	display_game("  • Internal: 6 diagnostic [color=#888888]print()[/color] lines added across server/client tagged [color=#888888][FLOCK-BUFF-DIAG][/color] to trace whether ability buffs are surviving flock-encounter chains. No user-visible effect; the next session will read the production logs and strip these once root-caused.")
+	display_game("")
+
 	# v0.9.633 — Companion border polish + FX overlay layout rework.
-	display_game("[color=#00FF00]v0.9.633[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.633[/color]")
 	display_game("  [color=#FFD700]Two follow-ups + an FX overlay rework.[/color]")
 	display_game("  • [b]Hover tooltip border[/b]: [color=#888888]format_companion_tooltip_bbcode[/color] was the one render surface still missing the [color=#888888]_apply_companion_border_tier[/color] step. Every other surface had it; the hover preview went straight from pattern recolor to the font_size wrap. Border now shows on companion-screen card hovers.")
 	display_game("  • [b]Border edge style settled[/b]: 6-char width + bold from the v0.9.629–631 probes were chasing a rendering theory; the real fix landed in v0.9.632 (data layer). Reverted to 2 outer characters per edge, no bold — cleaner read now that the border actually applies everywhere.")
