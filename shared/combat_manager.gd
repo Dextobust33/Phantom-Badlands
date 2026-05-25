@@ -3553,6 +3553,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# Variable cost (v0.9.263): damage magnitude scales with spend.
 			# Duration stays 4 rounds so the buff still "feels real" at floor.
 			var war_cry_bonus = max(1, int(35 * variable_fraction))
+			# v0.9.637 — rank-up +Damage + bonus_damage imprint now scale buff value.
+			war_cry_bonus = _apply_buff_value_modifiers(character, "war_cry", war_cry_bonus)
 			character.add_buff("damage", war_cry_bonus, 4)
 			messages.append("[color=#FF4444]WAR CRY![/color]")
 			messages.append("[color=#FFD700]+%d%% damage for 4 rounds![/color]" % war_cry_bonus)
@@ -3617,6 +3619,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var missing_hp_percent = 1.0 - hp_percent
 			var damage_bonus = max(1, int((75 + (missing_hp_percent * 125)) * variable_fraction))
 			var defense_penalty = int(-40 * variable_fraction)
+			# v0.9.637 — rank-up +Damage + bonus_damage imprint now scale buff value.
+			# (Defense penalty stays as-is — players don't pick rank-up to nerf
+			# themselves; only the positive buff scales.)
+			damage_bonus = _apply_buff_value_modifiers(character, "berserk", damage_bonus)
 			character.add_buff("damage", damage_bonus, 4)
 			character.add_buff("defense_penalty", defense_penalty, 4)
 			messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
@@ -3626,6 +3632,9 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# Variable cost (v0.9.263): reduction magnitude scales with spend.
 			# Duration stays 4 rounds.
 			var iron_skin_reduction = max(1, int(60 * variable_fraction))
+			# v0.9.637 — rank-up +Damage scales the buff value too (damage
+			# reduction is the "damage" knob for this ability).
+			iron_skin_reduction = _apply_buff_value_modifiers(character, "iron_skin", iron_skin_reduction)
 			character.add_buff("damage_reduction", iron_skin_reduction, 4)
 			messages.append("[color=#AAAAAA]IRON SKIN![/color]")
 			messages.append("[color=#00FF00]Block %d%% damage for 4 rounds![/color]" % iron_skin_reduction)
@@ -3654,6 +3663,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# Duration stays 5 rounds.
 			var str_stat = character.get_effective_stat("strength")
 			var defense_bonus = max(1, int((30 + sqrt(float(str_stat)) * 3) * variable_fraction))
+			# v0.9.637 — rank-up +Damage scales buff value.
+			defense_bonus = _apply_buff_value_modifiers(character, "fortify", defense_bonus)
 			character.add_buff("defense", defense_bonus, 5)
 			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for 5 rounds)[/color]" % defense_bonus)
 			is_buff_ability = true
@@ -3663,8 +3674,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# Duration stays 3 rounds.
 			var con_stat = character.get_effective_stat("constitution")
 			var heal_amount = max(1, int((30 + sqrt(float(con_stat)) * 10) * variable_fraction))
+			# v0.9.637 — rank-up +Damage scales BOTH heal amount AND STR buff for rally.
+			heal_amount = _apply_buff_value_modifiers(character, "rally", heal_amount)
 			var actual_heal = character.heal(heal_amount)
 			var str_bonus = max(1, int((10 + character.get_effective_stat("strength") / 5) * variable_fraction))
+			str_bonus = _apply_buff_value_modifiers(character, "rally", str_bonus)
 			character.add_buff("strength", str_bonus, 3)
 			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for 3 rounds![/color]" % [actual_heal, str_bonus])
 			is_buff_ability = true
@@ -4239,6 +4253,24 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 		dmg = dmg * (1.0 + (per_stack * dmg_stacks) / 100.0)
 	return int(dmg)
 
+# v0.9.637 — Buff-ability rank scaling. Player report: 'War Cry just got a
+# rank up and it had a Damage option or a crit chance option (from Wyvern).
+# Do either of these actually do anything for war cry?' Answer was no — buff
+# abilities (war_cry / berserk / iron_skin / fortify / rally) never piped
+# through apply_skill_damage_bonus, so the +Damage rank choice and the
+# bonus_damage Imprint were silent no-ops. This helper applies the same
+# scaling stack (rank mult + bonus_damage imprint) to the BUFF VALUE so the
+# choices have meaning on buff-only abilities. Caller multiplies their base
+# buff value through this before add_buff().
+func _apply_buff_value_modifiers(character: Character, ability_name: String, base_value: int) -> int:
+	var value: float = float(base_value)
+	value = value * character.get_ability_damage_mult(ability_name)
+	var bonus_damage_stacks: int = _count_imprint_stacks(character, ability_name, "bonus_damage")
+	if bonus_damage_stacks > 0:
+		var per_stack: float = float(DropTablesScript.VARIANT_TRAIT_CATEGORIES.get("bonus_damage", {}).get("per_stack_pct", 0.0))
+		value = value * (1.0 + (per_stack * bonus_damage_stacks) / 100.0)
+	return max(1, int(value))
+
 # Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprint support helpers.
 func _build_variant_offer_for_rank_up(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Build the variant_offer dict for a rank-up choice when the player has an
@@ -4308,9 +4340,15 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 	  - stun:        roll 3% × stacks; if hit, monster_stunned = true (1 turn)
 	  - charm:       roll 3% × stacks; if hit, monster_charmed = true (1 turn)
 	  - absorb:      forcefield_shield += 6 × stacks (player damage absorption)
-	Only fires when damage_dealt > 0 (utility abilities don't trigger riders)."""
-	if damage_dealt <= 0:
-		return
+	v0.9.637 — Relaxed the 'damage_dealt > 0' gate. Damage-required traits
+	(bonus_damage / crit / bleed / poison / lifesteal) still skip on 0-damage
+	casts because they have nothing to scale against. Cast-trigger traits
+	(stun / charm / enemy_miss / mana_drain / absorb) now fire on buff
+	abilities (War Cry / Berserk / Iron Skin / Fortify / Rally) too. Player
+	report: 'War Cry just got a rank up... do either of these actually do
+	anything for war cry?' Yes now — the cast-trigger traits proc, and the
+	+Damage rank-up / bonus_damage imprint scales the buff value via
+	_apply_buff_value_modifiers."""
 	if combat == null or not combat.has("character") or combat.character == null:
 		return
 	var character = combat.character
@@ -4335,16 +4373,29 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 		var t_color: String = String(info.get("color", "#FFD700"))
 		match trait_id:
 			"bonus_damage":
-				pass  # Already folded into apply_skill_damage_bonus.
+				pass  # Already folded into apply_skill_damage_bonus (damage abilities)
+				      # and _apply_buff_value_modifiers (buff abilities).
 			"crit":
-				if monster != null:
-					# v0.9.599 — 2→6 per stack. Treat as bonus damage tick.
+				# v0.9.637 — Damage abilities: flat bonus-dmg tick (legacy
+				# v0.9.599 behavior). Buff abilities (War Cry / Berserk /
+				# Iron Skin / Fortify / Rally) instead grant a crit_chance buff
+				# for 4 rounds — Hunter's Eye sees more crits during your
+				# pumped-up window. Player report: 'War Cry just got a rank up
+				# and it had a Damage option or a crit chance option (from
+				# Wyvern). Do either of these actually do anything for war cry?'
+				# Now yes.
+				if damage_dealt > 0 and monster != null:
 					var bonus: int = 6 * n
 					monster.current_hp = max(0, monster.current_hp - bonus)
 					msgs.append("[color=%s]✦ %s flares — +%d dmg from imprint.[/color]" % [t_color, t_name, bonus])
+				else:
+					var crit_buff_bonus: int = 6 * n
+					character.add_buff("crit_chance", crit_buff_bonus, 4)
+					msgs.append("[color=%s]✦ %s — +%d%% crit chance for 4 rounds.[/color]" % [t_color, t_name, crit_buff_bonus])
 			"bleed":
-				# v0.9.599 — flat per_stack_dmg → % of hit damage per stack.
-				# Reads per_stack_pct_of_hit from VARIANT_TRAIT_CATEGORIES.
+				# v0.9.637 — needs damage_dealt > 0 (bleed scales with hit dmg).
+				if damage_dealt <= 0:
+					continue
 				var pct: float = float(info.get("per_stack_pct_of_hit", 5.0))
 				var dur: int = int(info.get("duration", 2))
 				var bleed_per_turn: int = int(ceil(damage_dealt * (pct / 100.0) * n))
@@ -4352,6 +4403,9 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 				combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), dur)
 				msgs.append("[color=%s]✦ %s applies bleed (+%d/turn for %dT).[/color]" % [t_color, t_name, bleed_per_turn, dur])
 			"poison":
+				# v0.9.637 — needs damage_dealt > 0 (poison scales with hit dmg).
+				if damage_dealt <= 0:
+					continue
 				var pct2: float = float(info.get("per_stack_pct_of_hit", 5.0))
 				var dur2: int = int(info.get("duration", 3))
 				var poison_per_turn: int = int(ceil(damage_dealt * (pct2 / 100.0) * n))
@@ -4359,12 +4413,14 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 				combat["monster_poison_duration"] = max(int(combat.get("monster_poison_duration", 0)), dur2)
 				msgs.append("[color=%s]✦ %s applies poison (+%d/turn for %dT).[/color]" % [t_color, t_name, poison_per_turn, dur2])
 			"enemy_miss":
-				# v0.9.599 — 2→6 per stack.
+				# v0.9.637 — fires on cast (no damage needed). Buff abilities OK.
 				var current_dist: int = int(combat.get("enemy_distracted", 0))
 				combat["enemy_distracted"] = min(75, current_dist + 6 * n)
 				msgs.append("[color=%s]✦ %s — enemy distracted (+%d%% miss).[/color]" % [t_color, t_name, 6 * n])
 			"lifesteal":
-				# v0.9.599 — 0.02 → 0.06 per stack.
+				# v0.9.637 — needs damage_dealt > 0 (heals % of damage).
+				if damage_dealt <= 0:
+					continue
 				var heal: int = int(ceil(damage_dealt * (0.06 * n)))
 				if heal > 0:
 					var max_hp = character.get_total_max_hp()
@@ -6243,8 +6299,15 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var crit_damage = cfg.get("player_crit_damage", 1.5)
 
 	var crit_chance = crit_base + int(dex_stat * crit_per_dex)
-	# Add crit bonus from scrolls/potions
-	var crit_bonus = combat.get("crit_bonus", 0)
+	# v0.9.637 — Live-read crit_chance buff value. Previously the buff was
+	# snapshotted into combat.crit_bonus at combat START (line ~1060), so any
+	# mid-combat crit_chance buff (e.g., Wyvern crit imprint applied via War
+	# Cry cast) was invisible to the per-attack roll. Reading
+	# character.get_buff_value("crit_chance") here picks up both pre-combat
+	# and mid-combat crit buffs uniformly. The combat-start cache at line
+	# ~1060 is now redundant but harmless — leaving it for the rare caller
+	# that might still inspect combat.crit_bonus directly.
+	var crit_bonus = character.get_buff_value("crit_chance")
 	crit_chance += crit_bonus
 
 	# Add crit bonus from equipment rarity (weapon rarity_bonuses)

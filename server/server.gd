@@ -25859,19 +25859,44 @@ func _check_nearby_player_posts(peer_id: int, px: int, py: int):
 				return  # One hint per check
 
 func _check_nearby_corpses(peer_id: int, px: int, py: int):
-	"""Check for nearby corpses and send a compass hint."""
+	"""Check for nearby corpses and send a compass hint.
+
+	v0.9.637 — Rewritten. Old version iterated the persisted corpse list and
+	fired a hint for the FIRST in-range corpse, not the nearest. With multiple
+	corpses in the world that meant the compass routinely pointed at the wrong
+	one — player walked toward where the hint said, got close to a different
+	corpse, hint kept pointing back at the far iteration-order one. Player
+	report: 'pops up a good bit when you're not too close to a corpse then
+	falls off when you get around the area it's supposed to be.' Also reduced
+	range 75 → 40 tiles and added a distance-word so the player can tell how
+	close they're getting."""
 	var corpses = persistence.get_corpses()
+	var nearest_dist: int = 9999999
+	var nearest_corpse: Dictionary = {}
 	for corpse in corpses:
 		var cx = corpse.get("x", -9999)
 		var cy = corpse.get("y", -9999)
 		var dist = max(abs(px - cx), abs(py - cy))
-		if dist <= 75 and dist > 0:
-			var dir = _get_compass_direction(px, py, cx, cy)
-			# Toast overlay (client-side fading hint, top-right of game_output)
-			# instead of dumping into the scrolling chat — these messages
-			# arrive while the player is mid-movement and get lost otherwise.
-			send_to_peer(peer_id, {"type": "toast", "message": "[color=#FF6600]You sense fallen remains to the %s...[/color]" % dir, "duration": 6.0})
-			return  # One hint per check
+		if dist > 0 and dist < nearest_dist:
+			nearest_dist = dist
+			nearest_corpse = corpse
+	if nearest_corpse.is_empty() or nearest_dist > 40:
+		return
+	var cx = int(nearest_corpse.get("x", 0))
+	var cy = int(nearest_corpse.get("y", 0))
+	var dir = _get_compass_direction(px, py, cx, cy)
+	# Distance-word so the player gets a sense of how close they are. Bands
+	# tuned to the 40-tile range: 0-10 = very close, 11-20 = nearby, 21-40 =
+	# distant. Adjust thresholds in one place if you want different feel.
+	var proximity_word: String = "distant"
+	if nearest_dist <= 10:
+		proximity_word = "very close"
+	elif nearest_dist <= 20:
+		proximity_word = "nearby"
+	# Toast overlay (client-side fading hint, top-right of game_output)
+	# instead of dumping into the scrolling chat — these messages
+	# arrive while the player is mid-movement and get lost otherwise.
+	send_to_peer(peer_id, {"type": "toast", "message": "[color=#FF6600]You sense %s remains to the %s...[/color]" % [proximity_word, dir], "duration": 6.0})
 
 func _get_compass_direction(from_x: int, from_y: int, to_x: int, to_y: int) -> String:
 	"""Get compass direction string from one position to another."""
