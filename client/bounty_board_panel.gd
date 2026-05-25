@@ -235,7 +235,8 @@ func _build_layout() -> void:
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.custom_minimum_size = Vector2(0, 26)
 	title.add_theme_font_size_override("normal_font_size", 18)
-	title.append_text("[color=#FFD700]💰 Bounty Board[/color]")
+	# v0.9.636 — was 💰 (U+1F4B0 money bag), SMP range fonts tofu it.
+	title.append_text("[color=#FFD700]$ Bounty Board[/color]")
 	header_row.add_child(title)
 
 	_help_panel = HelpPanelScript.new()

@@ -2624,9 +2624,15 @@ func _create_minigame_skip_toggles() -> void:
 	var level_row = music_toggle.get_parent()
 	if level_row == null:
 		return
-	_loot_skip_btn = _make_skip_toggle("🪙", "Toggle: Auto-skip Combat Loot Reveal")
-	_gather_skip_btn = _make_skip_toggle("⛏", "Toggle: Skip Gathering Minigame (lower yield)")
-	_craft_skip_btn = _make_skip_toggle("🔨", "Toggle: Skip Crafting Minigame (lower quality)")
+	# v0.9.636 — emoji glyphs (🪙 ⛏ 🔨) tofu out on players' fonts that lack
+	# the SMP emoji range, showing the hex codepoint in a box. Player report:
+	# 'the circle icon that shows before + Valor on the loot screen is showing
+	# up as 01FR99 in a square box. The auto-skip combat icon in the top right
+	# looks the same.' Replaced with ASCII letters so every font renders them.
+	# Tooltips still describe the action so meaning is preserved.
+	_loot_skip_btn = _make_skip_toggle("$", "Toggle: Auto-skip Combat Loot Reveal")
+	_gather_skip_btn = _make_skip_toggle("G", "Toggle: Skip Gathering Minigame (lower yield)")
+	_craft_skip_btn = _make_skip_toggle("C", "Toggle: Skip Crafting Minigame (lower quality)")
 	level_row.add_child(_loot_skip_btn)
 	level_row.add_child(_gather_skip_btn)
 	level_row.add_child(_craft_skip_btn)
@@ -23352,7 +23358,7 @@ func process_command(text: String):
 			else:
 				var bp = text.split(" ", false)
 				if bp.size() < 2:
-					display_game("[color=#FFD700]💰 Bounty system[/color] — post valor on another player; payable to whoever KOs them in the apex zone.")
+					display_game("[color=#FFD700]$ Bounty system[/color] — post valor on another player; payable to whoever KOs them in the apex zone.")
 					display_game("  [color=#9ACD32]/bounty post <player> <valor>[/color]   pay valor upfront to bounty a player (min 50)")
 					display_game("  [color=#9ACD32]/bounty list[/color]                    list all active bounties (sorted by total)")
 					display_game("  [color=#9ACD32]/bounty on <player>[/color]              show bounty postings on one target")
@@ -26017,8 +26023,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.636 — Emoji-tofu hotfix.
+	display_game("[color=#00FF00]v0.9.636[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Hotfix for missing-glyph tofu on some players' fonts.[/color]")
+	display_game("  • Player report: '[i]the circle icon that shows before + Valor on the loot screen is showing up as 01FR99 in a square box. The auto-skip combat icon in the top right looks the same.[/i]' That's [color=#888888]🪙[/color] (U+1FA99) rendering as a hex codepoint box because the player's font doesn't include the Supplementary-Multilingual-Plane emoji range.")
+	display_game("  • Replaced SMP-range emoji with ASCII alternatives across the visible UI surfaces:")
+	display_game("    [color=#888888]–[/color] Loot-reveal Valor line: [color=#888888]🪙[/color] → [color=#FFD700]$[/color]")
+	display_game("    [color=#888888]–[/color] Top-bar autoskip toggles: [color=#888888]🪙 ⛏ 🔨[/color] → [color=#FFD700]$ G C[/color] (tooltips unchanged)")
+	display_game("    [color=#888888]–[/color] Bounty Board panel title, chat alerts, /bounty list header: [color=#888888]💰[/color] → [color=#FFD700]$[/color]")
+	display_game("    [color=#888888]–[/color] Tool slots: [color=#888888]🪓[/color] axe → [color=#FFD700]A[/color], [color=#888888]🎣[/color] rod → [color=#FFD700]R[/color]. Pickaxe (⛏) and Sickle (⚒) kept as-is — they're BMP and render in every font.")
+	display_game("  • Decorative combat-log emoji (🩸 💀 😠 etc.) left in place for now — they're surrounded by plain text, so even tofu reads as 'something happened.' Will sweep if reported.")
+	display_game("")
+
 	# v0.9.635 — Ten-fix batch: player-reported bugs + balance tuning.
-	display_game("[color=#00FF00]v0.9.635[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.635[/color]")
 	display_game("  [color=#FFD700]Ten player-reported issues fixed in one batch.[/color]")
 	display_game("  • [b]Crafting @-wildcard material miscount[/b]. Player report: '[i]Minor Rune of Vitality Lv3 says Missing Materials but the cost shows Heart 32/3 Magic Dust 346/3.[/i]' Server sends two material dicts ([color=#888888]materials[/color] = pouch+listings, [color=#888888]pouch_materials[/color] = pouch only). The display was counting hearts from both, but the server's can_craft check uses pouch-only (you can't consume from a market listing). Display now mirrors the server.")
 	display_game("  • [b]Hotzone gather tile visibility[/b]. Player report: '[i]players can't tell if there are gather locations in hotzones since its just a red exclamation mark.[/i]' Water / ore / tree / herb / mushroom / cactus / etc. inside hotzones now keep their NATIVE glyph in red instead of being overwritten by `!`. Players see what's at risk before entering.")
@@ -27154,7 +27172,11 @@ func update_tool_status_overlay():
 	# --- Tools (all 4 slots, empty ones shown so the player knows the slot exists) ---
 	var eq_tools = character_data.get("equipped_tools", {})
 	var slot_order = ["pickaxe", "axe", "sickle", "rod"]
-	var slot_icons = {"pickaxe": "⛏", "axe": "🪓", "sickle": "⚒", "rod": "🎣"}
+	# v0.9.636 — 🪓 (U+1FA93 axe) + 🎣 (U+1F3A3 fishing rod) live in the SMP
+	# emoji range; players whose fonts don't include it see hex tofu. Replaced
+	# with ASCII letters. Pickaxe (⛏ U+26CF) and Sickle (⚒ U+2692) are BMP
+	# and render reliably; kept as-is.
+	var slot_icons = {"pickaxe": "⛏", "axe": "A", "sickle": "⚒", "rod": "R"}
 	var tool_lines: Array[String] = []
 	for slot in slot_order:
 		var icon = slot_icons.get(slot, "*")
@@ -29497,7 +29519,11 @@ func _combat_loot_accumulate_reveal(reveal: Dictionary) -> void:
 		"monster_part":
 			line = "[color=%s]◆ PART: %s[/color]" % [color, name]
 		"filler_valor":
-			line = "[color=%s]🪙 %s[/color]" % [color, name]
+			# v0.9.636 — was 🪙 (U+1FA99 coin), but some players' fonts lack
+			# the Supplementary-Multilingual-Plane emoji range and render it
+			# as a tofu box showing the hex codepoint. Replaced with $ which
+			# is universally available and reads as currency.
+			line = "[color=%s]$ %s[/color]" % [color, name]
 		"filler_essence":
 			line = "[color=%s]✦ %s[/color]" % [color, name]
 		"filler_material":
@@ -29704,7 +29730,7 @@ func _handle_bounty_posted_on_you(message: Dictionary) -> void:
 	var poster = String(message.get("poster_name", "Someone"))
 	var amount = int(message.get("amount", 0))
 	var total = int(message.get("total_bounty", amount))
-	display_chat("[color=#FF2020]💰 %s placed a [color=#FFD700]%d valor[/color] bounty on you (total %d).[/color]" % [poster, amount, total])
+	display_chat("[color=#FF2020]$ %s placed a [color=#FFD700]%d valor[/color] bounty on you (total %d).[/color]" % [poster, amount, total])
 
 func _handle_bounty_list_result(message: Dictionary) -> void:
 	"""v0.9.568 — Route bounty_list to the BountyBoardPanel when it's open OR
@@ -29723,7 +29749,7 @@ func _handle_bounty_list_result(message: Dictionary) -> void:
 		display_game("[color=#808080]No active bounties.[/color]")
 		return
 	_render_breadcrumb(["/bounty list", "Bounty Board"])
-	display_game("[color=#FFD700]═══════ 💰 BOUNTY BOARD ═══════[/color]")
+	display_game("[color=#FFD700]═══════ $ BOUNTY BOARD ═══════[/color]")
 	for e in entries:
 		if not (e is Dictionary):
 			continue
@@ -29775,7 +29801,7 @@ func _handle_bounty_on_result(message: Dictionary) -> void:
 	if not (bounties is Array) or bounties.is_empty():
 		display_game("[color=#808080]No bounties on %s.[/color]" % target_name)
 		return
-	display_game("[color=#FFD700]💰 Bounties on [color=#FF8800]%s[/color][/color] — total [color=#FFD700]%d valor[/color] across %d postings:" % [target_name, total, bounties.size()])
+	display_game("[color=#FFD700]$ Bounties on [color=#FF8800]%s[/color][/color] — total [color=#FFD700]%d valor[/color] across %d postings:" % [target_name, total, bounties.size()])
 	for b in bounties:
 		if not (b is Dictionary):
 			continue
