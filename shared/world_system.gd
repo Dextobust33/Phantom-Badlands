@@ -2252,13 +2252,26 @@ func _generate_new_map(center_x: int, center_y: int, radius: int, nearby_players
 					else:
 						# Depleted node — show dim passable ground
 						line_parts.append("[color=#444444] ,[/color]")
+				elif in_hotzone and tile_type in GATHERABLE_TYPES:
+					# v0.9.635 — Keep the gather tile's NATIVE glyph visible inside
+					# hotzones, just tint it red. Player report: 'currently the
+					# players can't tell if there are gather locations in
+					# hotzones since its just a red exclamation mark.' Previously
+					# both branches below overwrote every passable / impassable
+					# hotzone tile with `!`, hiding ore (*), trees (T), water (~),
+					# herbs, etc. Now ~ / * / T / etc. show in red so players
+					# know what's at risk before entering.
+					var intensity = _get_hotspot_intensity_in_clusters(x, y, _hotspot_clusters)
+					var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
+					var render = TILE_RENDER.get(tile_type, TILE_RENDER["empty"])
+					line_parts.append("[color=%s] %s[/color]" % [hz_color, render.char])
 				elif in_hotzone and (tile_type == "empty" or not TILE_RENDER.get(tile_type, {}).get("blocks_move", false)):
-					# Passable tile in hotzone — show red ! with intensity gradient
+					# Passable empty tile in hotzone — show red ! with intensity gradient
 					var intensity = _get_hotspot_intensity_in_clusters(x, y, _hotspot_clusters)
 					var hz_color = "#FF0000" if intensity > 0.5 else "#FF4500"
 					line_parts.append("[color=%s] ![/color]" % hz_color)
 				elif in_hotzone:
-					# Non-passable tile in hotzone — show tile with dark red tint
+					# Non-passable, non-gather tile in hotzone — dark red `!`
 					line_parts.append("[color=#8B0000] ![/color]")
 				elif tile_type == "guard":
 					# Guard post — color based on active guard status

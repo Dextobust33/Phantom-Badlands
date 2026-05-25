@@ -978,7 +978,8 @@ var crafting_mode: bool = false
 var crafting_entered_via_station: bool = false  # True when opened by bumping a station (skip skill selection on back)
 var crafting_skill: String = ""  # "blacksmithing", "alchemy", "enchanting"
 var crafting_recipes: Array = []  # Available recipes from server
-var crafting_materials: Dictionary = {}  # Player's materials
+var crafting_materials: Dictionary = {}  # Effective materials (pouch + own market listings) — used for display + regular-material checks
+var crafting_pouch_materials: Dictionary = {}  # Pouch-only (no market listings) — used for @-wildcard group counts that mirror server's craft check
 var crafting_material_sources: Dictionary = {}  # Audit #7/#8: material_id -> Array of source dicts (where to find each material)
 var crafting_upcoming_unlocks: Array = []  # Audit #8 Layer 7: next 3 locked recipes {name, skill_required, output_type, levels_away}
 var hud_area_level: int = 0  # Last known area level for Status HUD
@@ -3052,7 +3053,7 @@ func _process(delta):
 	# Skip when in equip_confirm mode (that state uses action bar buttons, not item selection)
 	# Skip when in monster_select_mode (scroll selection takes priority)
 	# Skip sort_select and salvage_select (those use action bar buttons, not item selection)
-	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "affix_filter_select", "rune_apply"] and not monster_select_mode:
+	if game_state == GameState.PLAYING and not input_field.has_focus() and inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "viewing_materials", "awaiting_salvage_result", "salvage_consumables_confirm", "salvage_all_confirm", "salvage_below_confirm", "salvage_result_shown", "affix_filter_select", "rune_apply"] and not monster_select_mode:
 		for i in range(9):
 			if is_item_select_key_pressed(i):
 				# Skip if this key conflicts with a held action bar key
@@ -3872,7 +3873,7 @@ func _process(delta):
 	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode and not _testfx_step_active
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
-		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "affix_filter_select"]
+		var in_item_selection_mode = inventory_mode and pending_inventory_action != "" and pending_inventory_action not in ["equip_confirm", "sort_select", "salvage_select", "salvage_result_shown", "affix_filter_select"]
 
 		for i in range(10):  # All 10 action bar slots
 			# In quest_log_mode, only allow slots 0-4 (Continue button and others)
@@ -3999,6 +4000,24 @@ func _process(delta):
 						dungeon_dir = "e"
 
 				if dungeon_dir != "":
+					# v0.9.635 — dungeon movement also dismisses a persisted
+					# victory card so the player can see the dungeon HUD
+					# (floor / defeated / steps) underneath. The overworld
+					# path at line ~4134 already does this; this branch was
+					# missing the cleanup. Player report: 'When players move
+					# on the Space to continue Victory screen it stay on
+					# that victory screen. It should go back to the screen
+					# that shows their Floor, defeated, steps, etc.'
+					if _post_loot_victory_persists:
+						_post_loot_victory_persists = false
+						_pending_victory_card_payload = null
+						_pending_victory_fx_play = false
+						_combat_scene_linger_until_ms = 0
+						if combat_scene_panel:
+							if combat_scene_panel.has_method("hide_fx_overlay_only"):
+								combat_scene_panel.hide_fx_overlay_only()
+							if combat_scene_panel.has_method("hide_victory_card"):
+								combat_scene_panel.hide_victory_card()
 					send_to_server({"type": "dungeon_move", "direction": dungeon_dir})
 					last_move_time = current_time
 
@@ -4349,6 +4368,15 @@ func _input(event):
 	# this just gives the player an explicit Space-to-acknowledge.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		if _post_loot_victory_persists and (input_field == null or not input_field.has_focus()):
+			# v0.9.635 — Pitfall #7 fix. Player report: 'pressing Space on the
+			# Victory screen is having them rest.' _input() runs before
+			# _process(), so the intercept below dismisses the card — but the
+			# action-bar polling in _process() then sees Space STILL physically
+			# held and fires slot 0 (Rest). Marking hotkey_0_pressed locks the
+			# polling out until Space is released and re-pressed. set_input_as_handled
+			# below only blocks the event system; it does NOT block physical-key
+			# polling.
+			set_meta("hotkey_0_pressed", true)
 			_post_loot_victory_persists = false
 			# Also close the legacy view if it was open — Space is "I'm
 			# done with the victory recap, take me back."
@@ -8398,6 +8426,25 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
+		elif pending_inventory_action == "salvage_result_shown":
+			# v0.9.635 — Salvage finished, result text is in game_output, panel
+			# stays hidden until the player presses Continue. Without this, the
+			# panel reappears immediately and covers the result before the
+			# player can read it (panel sits inside GameOutputContainer at
+			# line ~2980 which hides game_output whenever any visual panel
+			# is shown).
+			current_actions = [
+				{"label": "Continue", "action_type": "local", "action_data": "salvage_result_continue", "enabled": true},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+			]
 		elif pending_inventory_action == "salvage_below_confirm":
 			current_actions = [
 				{"label": "Cancel", "action_type": "local", "action_data": "salvage_cancel", "enabled": true},
@@ -12298,6 +12345,16 @@ func execute_local_action(action: String):
 			display_game("[color=#AA66FF]Salvaging items below level threshold...[/color]")
 			update_action_bar()
 		"salvage_cancel":
+			pending_inventory_action = ""
+			display_inventory()
+			update_action_bar()
+		"salvage_result_continue":
+			# v0.9.635 — Player dismisses the salvage result. Clear the
+			# holding state so the inventory panel can reappear, and mark
+			# hotkey 0 as already-pressed (Pitfall #7) so the action-bar
+			# polling in _process doesn't immediately re-fire whatever the
+			# panel's slot 0 ends up being after the panel reopens.
+			set_meta("hotkey_0_pressed", true)
 			pending_inventory_action = ""
 			display_inventory()
 			update_action_bar()
@@ -18555,9 +18612,19 @@ func update_resource_bar():
 
 func _set_character_data(new_data: Dictionary):
 	"""Replace character_data, preserving account-level fields that to_dict() doesn't include."""
+	# v0.9.635 — Preserve projected_rank across non-character_update payloads.
+	# Only send_character_update injects projected_rank into the char_dict; all
+	# 31 other server sites that ship a `character` field send raw to_dict()
+	# which lacks it. Without this guard, every lucky_find / combat_end / merchant
+	# / movement payload wipes the rank → top-bar rank label flips to "--" until
+	# the next character_update arrives. Player report: "Rank at the top shows
+	# `--` a lot of the time and then will occasionally populate."
+	var _preserved_rank: int = int(character_data.get("projected_rank", 0))
 	character_data = new_data
 	if not character_data.has("valor"):
 		character_data["valor"] = account_valor
+	if not character_data.has("projected_rank") and _preserved_rank > 0:
+		character_data["projected_rank"] = _preserved_rank
 
 func _merge_character_delta(delta: Dictionary):
 	"""Merge a delta update into existing character_data. Only changed keys are sent."""
@@ -20205,12 +20272,17 @@ func handle_server_message(message: Dictionary):
 					elif pending_inventory_action == "unequip_item":
 						_show_unequip_slots()
 					elif pending_inventory_action == "awaiting_salvage_result":
-						# Salvage finished — refresh the visual inventory panel
-						# (otherwise it keeps showing the pre-salvage items) and
-						# let display_inventory() surface the captured result
-						# text in the panel's status row.
-						pending_inventory_action = ""
-						display_inventory()
+						# v0.9.635 — Don't auto-reopen the inventory panel. The
+						# v0.9.634 fix routed the salvage result to game_output,
+						# but the inventory panel reappearing on this branch
+						# instantly covers game_output (line ~2980 hides the
+						# text panel whenever any visual panel is shown).
+						# Player still couldn't read the result. Hold pending
+						# state at "salvage_result_shown" so the panel stays
+						# hidden, game_output stays visible with the result,
+						# and the action bar shows a Continue button. Player
+						# explicitly dismisses to reopen inventory.
+						pending_inventory_action = "salvage_result_shown"
 						update_action_bar()
 					elif pending_inventory_action == "lock_item":
 						# Lock mode - refresh inventory to show updated lock indicators
@@ -25945,8 +26017,23 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.635 — Ten-fix batch: player-reported bugs + balance tuning.
+	display_game("[color=#00FF00]v0.9.635[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Ten player-reported issues fixed in one batch.[/color]")
+	display_game("  • [b]Crafting @-wildcard material miscount[/b]. Player report: '[i]Minor Rune of Vitality Lv3 says Missing Materials but the cost shows Heart 32/3 Magic Dust 346/3.[/i]' Server sends two material dicts ([color=#888888]materials[/color] = pouch+listings, [color=#888888]pouch_materials[/color] = pouch only). The display was counting hearts from both, but the server's can_craft check uses pouch-only (you can't consume from a market listing). Display now mirrors the server.")
+	display_game("  • [b]Hotzone gather tile visibility[/b]. Player report: '[i]players can't tell if there are gather locations in hotzones since its just a red exclamation mark.[/i]' Water / ore / tree / herb / mushroom / cactus / etc. inside hotzones now keep their NATIVE glyph in red instead of being overwritten by `!`. Players see what's at risk before entering.")
+	display_game("  • [b]Repair Valor cost reduced 4x[/b]. Player report: '[i]reduce Valor costs for repairs, currently they seem pretty extreme.[/i]' Old formula wear% × level × 2.5 → new formula wear% × level × 0.625. A fully-broken Lv50 weapon: 3,125 valor (was 12,500). A 50%-wear Lv20 weapon: ~625 valor (was 2,500).")
+	display_game("  • [b]Corpse spawn fallback[/b]. Player report: '[i]What happens if a corpse tries to drop on water or in a hotzone?[/i]' Spawn loop tried 20 random locations; if all failed it used the last (invalid) one — corpse landed on water / mountain / trading post. Now falls back to the death tile when all attempts fail.")
+	display_game("  • [b]Space on Victory screen no longer triggers Rest[/b]. Player report: '[i]Players are pressing space as it says and it is having them rest.[/i]' Pitfall #7: `_input()` dismissed the card but `_process()` still polled Space as held and fired action-bar slot 0 (Rest). Now marks the hotkey as pressed in the dismiss path. Audit of every other 'Press Space to continue' surface (lucky_find / special_encounter / flock / dungeon / death / etc.) confirms only the post-loot victory case was affected.")
+	display_game("  • [b]Dungeon-victory movement also dismisses victory card[/b]. Player report: '[i]When players move on the Space to continue Victory screen it stay on that victory screen. It should go back to the screen that shows their Floor, defeated, steps, etc.[/i]' Overworld movement path had the dismiss logic; the dungeon movement path did not. Now mirrors.")
+	display_game("  • [b]Top-bar Rank no longer flips to `--`[/b]. Player report: '[i]Rank at the top shows `--` a lot of the time and then will occasionally populate.[/i]' Only [color=#888888]send_character_update[/color] injects `projected_rank`; 31 other server payloads (combat_end, lucky_find, merchant, etc.) send raw `to_dict()` without it. The client's `_set_character_data` now preserves the previous value when the new payload lacks the field.")
+	display_game("  • [b]Resource bar flicker on movement[/b]. Player report: '[i]a tiny health and resource bar popping up momentarily when players move.[/i]' The [color=#888888]_process[/color] tick hard-hides the overlay every frame (v0.9.612 provisional removal) but [color=#888888]update_resource_bars_overlay[/color] was still flipping visible=true on every refresh. Function collapsed to a no-op.")
+	display_game("  • [b]Salvage All result no longer vanishes[/b]. v0.9.634's game_output fix wasn't enough — the inventory panel covers game_output. New `salvage_result_shown` pending state holds the panel hidden until the player presses Continue, so they can actually read what they got.")
+	display_game("  • Internal: server-side changes mean a full warning + swap deploy. Diagnostics from v0.9.634 ([FLOCK-BUFF-DIAG]) still active — next session reads logs and strips them.")
+	display_game("")
+
 	# v0.9.634 — Job XP grant fixes (gathering + soldier) + Salvage All visibility.
-	display_game("[color=#00FF00]v0.9.634[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.634[/color]")
 	display_game("  [color=#FFD700]Three bug fixes — all the same root pattern: 'two paths populate the same field, only some do it right.'[/color]")
 	display_game("  • [b]Gathering jobs now actually gain XP from the scratch-off minigame.[/b] Player report: '[i]It doesn't seem like job experience is being granted for Gathering Jobs.[/i]' The scratch-off completion path called the legacy [color=#888888]add_fishing_xp[/color] / [color=#888888]add_mining_xp[/color] / [color=#888888]add_logging_xp[/color] funcs (which only update the legacy 0-100 skill driving drop weights / wait times / crit) but never [color=#888888]add_job_xp[/color]. Committed fishing / mining / logging jobs gained ZERO from the minigame. Autoskip + the legacy chain path were already correct. Foraging was already correct. Fix calls [color=#888888]add_job_xp[/color] alongside the legacy skill update.")
 	display_game("  • [b]Soldier job now gains XP from combat[/b]. Same class of bug — [color=#888888]character.add_experience(final_xp)[/color] was called at 4 combat-XP sites (solo kill, full-reward, perfect heist, party combat per member) but no site granted soldier job XP. Fix: each site now also calls [color=#888888]add_job_xp('soldier', max(1, int(base_xp * 0.25)))[/color]. 25% of base monster XP (uncompounded) per kill — balanced against combat being a far more frequent activity than crafting (which grants 50%).")
@@ -27034,57 +27121,17 @@ func update_resource_bars_overlay():
 	overlay) now shows player HP + resource bars directly, so the bottom-of-
 	screen overlay is redundant during a fight. Player feedback: 'we have a
 	redundant HP and resource bar under the gameoutput that doesn't need to be
-	there anymore.' Still shown outside combat as a quick-glance affordance."""
-	if resource_bars_overlay == null or not has_character:
-		if resource_bars_overlay:
-			resource_bars_overlay.visible = false
-		return
-	if in_combat:
+	there anymore.' Still shown outside combat as a quick-glance affordance.
+
+	v0.9.635 — Overlay is now PERMANENTLY hidden. The _process tick at line
+	~2974 hard-sets visible=false every frame (v0.9.612 provisional removal),
+	but this function was still flipping visible=true on every refresh —
+	producing a 1-frame flicker on movement. Player report: 'There is a tiny
+	health and resource bar popping up momentarily when players move.' Body
+	collapsed to a no-op so callers still type-check. The function and the
+	overlay node will be deleted in a follow-up cleanup pass."""
+	if resource_bars_overlay and is_instance_valid(resource_bars_overlay):
 		resource_bars_overlay.visible = false
-		return
-
-	var current_hp = character_data.get("current_hp", 0)
-	var max_hp = character_data.get("total_max_hp", character_data.get("max_hp", 1))
-
-	var path = _get_player_active_path()
-	var res_name = ""
-	var res_current = 0
-	var res_max = 1
-	var res_color = "#C8A96E"
-
-	match path:
-		"warrior":
-			res_name = "Stam"
-			res_current = character_data.get("current_stamina", 0)
-			res_max = max(character_data.get("total_max_stamina", character_data.get("max_stamina", 1)), 1)
-			res_color = "#FFCC00"
-		"mage":
-			res_name = "Mana"
-			res_current = character_data.get("current_mana", 0)
-			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
-			res_color = "#9999FF"
-		"trickster":
-			res_name = "Ener"
-			res_current = character_data.get("current_energy", 0)
-			res_max = max(character_data.get("total_max_energy", character_data.get("max_energy", 1)), 1)
-			res_color = "#66FF66"
-		_:
-			res_name = "Mana"
-			res_current = character_data.get("current_mana", 0)
-			res_max = max(character_data.get("total_max_mana", character_data.get("max_mana", 1)), 1)
-			res_color = "#9999FF"
-
-	# Single-line HP + resource bars, right-aligned inside the 2/3-wide left
-	# cell of StatusRow so they end at the same x as the right edge of the
-	# GameOutput window above.
-	var bar_width = 10
-	var hp_bar = _stat_bar("HP:", current_hp, max_hp, bar_width, "#FF4444")
-	var res_bar = _stat_bar("%s:" % res_name, res_current, res_max, bar_width, res_color)
-	var text = "[right]%s   %s[/right]" % [hp_bar, res_bar]
-
-	resource_bars_overlay.clear()
-	resource_bars_overlay.append_text(text)
-	resource_bars_overlay.visible = true
 
 func hide_resource_bars_overlay():
 	"""Hide the resource bars overlay."""
@@ -34080,6 +34127,13 @@ func handle_craft_list(message: Dictionary):
 	crafting_job_bonus = message.get("job_bonus", {})
 	crafting_recipes = message.get("recipes", [])
 	crafting_materials = message.get("materials", {})
+	# v0.9.635 — Track pouch-only materials separately so @-wildcard group
+	# counts match the server's can_craft check. Server intentionally excludes
+	# market listings from group consumption (remove_group_materials can only
+	# touch the pouch), so the display must too. Without this, players with
+	# listed monster parts saw 'Heart 32/3' in cyan but got 'Missing Materials'
+	# because the server saw only the unlisted hearts.
+	crafting_pouch_materials = message.get("pouch_materials", crafting_materials)
 	# Audit #7/#8 transparency — material → sources map sent with recipes
 	crafting_material_sources = message.get("material_sources", {})
 	# Audit #8 Layer 7 — next 3 locked recipes by lowest skill_required
@@ -34387,8 +34441,13 @@ func _boost_costs_affordable(materials: Dictionary, mat_mult: float, qty: int) -
 	return true
 
 func _count_group_materials(group_key: String) -> int:
-	"""Count total matching materials for a group key (e.g., '@attack:minor')."""
-	return DropTables.get_total_for_group(group_key, crafting_materials)
+	"""Count total matching materials for a group key (e.g., '@attack:minor').
+	v0.9.635 — Uses pouch-only materials to mirror the server's check.
+	Market-listed monster parts can't be consumed for crafting because
+	remove_group_materials only operates on the pouch, so listing them
+	should not inflate the displayed available count."""
+	var source: Dictionary = crafting_pouch_materials if not crafting_pouch_materials.is_empty() else crafting_materials
+	return DropTables.get_total_for_group(group_key, source)
 
 func _format_material_sources(mat_id: String) -> String:
 	# Audit #7/#8 transparency — render server-supplied source list for one material.
@@ -35682,6 +35741,11 @@ func handle_craft_result(message: Dictionary):
 	var updated_mats: Dictionary = message.get("materials", {})
 	if not updated_mats.is_empty():
 		crafting_materials = updated_mats
+	# v0.9.635 — Also refresh the pouch-only mirror so the post-craft can_craft
+	# recompute (~line 35738 below) uses the right source for @-wildcard counts.
+	var updated_pouch: Dictionary = message.get("pouch_materials", {})
+	if not updated_pouch.is_empty():
+		crafting_pouch_materials = updated_pouch
 
 	# Pre-compute can_craft_again before opening the panel — it shows the
 	# button only when affordable. Boost matters: we re-check against the

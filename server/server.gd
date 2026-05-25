@@ -8457,7 +8457,15 @@ func _handle_blacksmith_station(peer_id: int, character):
 			var wear = item.get("wear", 0)
 			if wear > 0:
 				var item_level = item.get("level", 1)
-				var repair_cost = int(wear * item_level * 25)
+				# v0.9.635 — 4x cheaper repairs. Player report: 'reduce Valor
+				# costs for repairs, currently they seem pretty extreme. Not
+				# sure players can keep up with the costs.' Old formula
+				# wear × level × 2.5 produced 12,500 valor to fully repair a
+				# Lv50 weapon, 87,500 to repair a fully-broken 7-slot kit.
+				# New formula wear × level × 0.625 brings the same kit to
+				# ~22k valor (Lv50 fully-broken) / Lv20 50% wear = 625 valor.
+				# Adjust the * 6 below if further tuning is needed.
+				var repair_cost = int(wear * item_level * 6)
 				var valor_cost = max(1, repair_cost / 10)
 				if threatened:
 					valor_cost = int(ceil(valor_cost * threat_service_mult))
@@ -34226,12 +34234,26 @@ func _create_corpse_from_character(character: Character, cause_of_death: String)
 	var spawn_location = _generate_random_location_at_distance(distance * 0.5)
 
 	# Avoid spawning corpse on impassable tiles, trading posts, or player enclosures
+	# v0.9.635 — Track whether we ever found a valid tile. Before this, the loop
+	# could exit after 20 failed attempts using the LAST (still-invalid)
+	# spawn_location, leaving corpses stranded on water / mountains / trading
+	# posts. Player report: 'What happens if a corpse tries to drop on water
+	# or in a hotzone, is it still visible etc.' Now if 20 attempts all fail,
+	# fall back to the player's death tile (last-known safe-ish location)
+	# rather than committing to an invalid roll.
+	var _found_valid_spawn: bool = false
 	for _attempt in range(20):
 		var tile = chunk_manager.get_tile(spawn_location.x, spawn_location.y) if chunk_manager else {}
 		var blocked = tile.get("blocks_move", false)
 		if not blocked and not trading_post_db.is_trading_post_tile(spawn_location.x, spawn_location.y) and not enclosure_tile_lookup.has(Vector2i(spawn_location.x, spawn_location.y)):
+			_found_valid_spawn = true
 			break
 		spawn_location = _generate_random_location_at_distance(distance * 0.5)
+	if not _found_valid_spawn:
+		# Fallback: use death tile. It was passable enough for the player to
+		# die there. Better than a stranded corpse on water/mountain.
+		spawn_location = Vector2i(death_x, death_y)
+		print("[CORPSE] 20 spawn attempts failed for %s — falling back to death tile (%d, %d)" % [character.name, death_x, death_y])
 
 	# Build corpse contents
 	var contents = {
