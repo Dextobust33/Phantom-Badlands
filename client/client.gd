@@ -7952,7 +7952,12 @@ func update_action_bar():
 			]
 		else:
 			# More menu - contains Companions, Eggs, Leaders, etc.
-			var party_action = {"label": "Party", "action_type": "local", "action_data": "party_menu", "enabled": true} if in_party else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
+			# v0.9.640 — slot 9 (the conditional party slot) now hosts a "Duel"
+			# button when the player isn't in a party. Opens the outgoing-duel
+			# dialog so /duel is discoverable for players who never typed the
+			# chat command. Party members keep the Party slot since duels and
+			# party gameplay don't usually mix.
+			var party_action = {"label": "Party", "action_type": "local", "action_data": "party_menu", "enabled": true} if in_party else {"label": "Duel", "action_type": "local", "action_data": "duel_dialog", "enabled": true}
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "more_close", "enabled": true},
 				{"label": "Companions", "action_type": "local", "action_data": "companions", "enabled": true},
@@ -11982,6 +11987,13 @@ func execute_local_action(action: String):
 			open_more_menu()
 		"more_close":
 			close_more_menu()
+		"duel_dialog":
+			# v0.9.640 — UI-over-chat for /duel. Opens the outgoing-duel dialog
+			# so players can pick target + stakes without remembering the chat
+			# syntax. Closes the More menu first so the dialog isn't competing
+			# for visual focus.
+			close_more_menu()
+			open_duel_outgoing_dialog()
 		"jobs_menu":
 			open_jobs_menu()
 		"job_close":
@@ -17349,6 +17361,33 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	lines.append(progress)
 	if next_preview != "":
 		lines.append(next_preview)
+	# v0.9.640 — Imprint stack inline. Player report from the Variant Imprints
+	# memo's V2 candidates: 'currently the only visibility is the rank-up
+	# message log + the popup at imprint time.' Surface the stacked imprints
+	# at inspect-time so players can plan without navigating to the Sanctuary
+	# Imprint Atlas page.
+	var imprints_for_ability: Array = []
+	var _imprints_dict: Dictionary = account_variant_imprints if account_variant_imprints is Dictionary else {}
+	var _raw_imprints: Variant = _imprints_dict.get(ability_name, [])
+	if _raw_imprints is Array:
+		imprints_for_ability = _raw_imprints
+	if imprints_for_ability.size() > 0:
+		var counts_by_trait: Dictionary = {}
+		for t in imprints_for_ability:
+			var tid: String = String(t)
+			counts_by_trait[tid] = int(counts_by_trait.get(tid, 0)) + 1
+		var trait_categories: Dictionary = {}
+		var dt_script = load("res://shared/drop_tables.gd")
+		if dt_script != null:
+			trait_categories = dt_script.VARIANT_TRAIT_CATEGORIES
+		lines.append("")
+		lines.append("Imprints (%d/4):" % imprints_for_ability.size())
+		for trait_id in counts_by_trait:
+			var n: int = int(counts_by_trait[trait_id])
+			var info: Dictionary = trait_categories.get(trait_id, {})
+			var t_name: String = String(info.get("name", trait_id))
+			var t_desc: String = String(info.get("description", ""))
+			lines.append("  ✦ %s ×%d — %s" % [t_name, n, t_desc])
 	return "\n".join(lines)
 
 # Slice 6b — rank-up choice popup. Auto-pause UX: modal blocks input until the
@@ -23341,14 +23380,16 @@ func process_command(text: String):
 			# agreed stakes. Usage:
 			#   /duel <player>            — duel with no stakes (bragging rights)
 			#   /duel <player> valor      — wager 10% of valor on the outcome
+			#   /duel                     — opens the dialog (v0.9.640)
 			if not has_character:
 				display_game("You don't have a character yet")
 			else:
 				var dp = text.split(" ", false)
 				if dp.size() < 2:
-					display_game("[color=#FF8800]Usage: /duel <player> [valor][/color]")
-					display_game("  [color=#888888]Adds the player as a duel target. They must accept before the duel resolves.[/color]")
-					display_game("  [color=#888888]Optional 'valor' wager: 10%% of your current valor.[/color]")
+					# v0.9.640 — UI-over-chat: bare /duel opens the dialog
+					# instead of just printing usage. Dialog lets the player
+					# pick target name + stakes without remembering syntax.
+					open_duel_outgoing_dialog()
 				else:
 					var target_name = dp[1].strip_edges()
 					var stakes = "none"
@@ -25374,6 +25415,10 @@ func display_more_menu():
 	display_game("[%s] [color=#AAAAFF]Pouch[/color] - View materials and essences" % get_action_key_name(7))
 	if in_party:
 		display_game("[%s] [color=#00BFFF]Party[/color] - Manage your party" % get_action_key_name(8))
+	else:
+		# v0.9.640 — Duel slot is the conditional party slot; show it on the
+		# overview so players know where to find the new dialog.
+		display_game("[%s] [color=#9F70FF]Duel[/color] - Challenge another player (opens dialog)" % get_action_key_name(8))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to go back.[/color]" % get_action_key_name(0))
 
@@ -26040,8 +26085,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.640 — /duel UI + imprint inspect visibility.
+	display_game("[color=#00FF00]v0.9.640[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]UI-over-chat for /duel + better imprint visibility.[/color]")
+	display_game("  • [b]Outgoing duel dialog[/b]. Typing [color=#888888]/duel[/color] with no arguments now opens a popup with a target-name text field + two challenge buttons (No Wager / Wager 10% Valor). Players don't need to remember the [color=#888888]/duel <name> [valor][/color] syntax to challenge another player.")
+	display_game("  • [b]Duel slot in More menu[/b]. Slot 9 (the conditional party slot) now hosts a [color=#9F70FF]Duel[/color] button when you're not in a party. Discoverable without knowing the chat command at all.")
+	display_game("  • [b]Imprint stack inline in ability tooltip[/b]. Inspecting an ability now lists all variant imprints stacked on it (trait name × count + description) at the bottom of the hover tooltip. From the variant-imprints memo's V2 candidates: 'currently the only visibility is the rank-up message log + the popup at imprint time.' Closes that gap so you can plan rank-up picks without navigating to the Sanctuary Imprint Atlas.")
+	display_game("")
+
 	# v0.9.639 — Polish batch: login timeout, emoji sweep, Help coverage.
-	display_game("[color=#00FF00]v0.9.639[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.639[/color]")
 	display_game("  [color=#FFD700]Five fixes from the polish backlog + an active login-screen bug.[/color]")
 	display_game("  • [b]Login screen no longer kicks players after 90 seconds[/b]. Player report: 'if players sit too long on the login screen it stops accepting login attempts.' AUTH_TIMEOUT bumped 90s → 30 min so you can step away from the keyboard without being reaped. Still bounded so genuinely abandoned bot connections eventually free up the slot.")
 	display_game("  • [b]Combat-log decorative emoji stripped[/b] (same player-font issue that broke 🪙 in v0.9.636). SMP-range emoji (🩸 💀 😠 👁️ 🔓 👻 💨 🔥 🛡️ 🏰 📯 🗡️ 🎲 🔍 💥 🪓 📖 🌿 🍄 🌸 🌱 🔒 🏠 📦 🐾 🥚 🏃 💰 📚 💪 🎯 🧠) replaced or removed from combat-log effects, momentum display, foraging art, locked quest indicator, and all 24 Sanctuary upgrade icons. BBCode color / pulse / wave / shake / fade wrappers retained so the visual signal stays.")
@@ -29715,6 +29768,12 @@ func _handle_bestiary_data(message: Dictionary) -> void:
 
 var _duel_request_popup: AcceptDialog = null
 var _duel_request_challenger_peer: int = -1
+# v0.9.640 — Outgoing duel dialog. Lets players send a challenge without
+# remembering the chat syntax. Opened by /duel (no args) OR by the
+# More → Duel button. Single dialog with LineEdit for target name and
+# two action buttons that imply stakes choice.
+var _duel_outgoing_popup: AcceptDialog = null
+var _duel_outgoing_input: LineEdit = null
 
 func _handle_duel_request(message: Dictionary) -> void:
 	"""Audit #14 PvP Slice B (v0.9.552) — incoming duel request modal.
@@ -29771,6 +29830,55 @@ func _on_duel_request_response(action: String) -> void:
 	if _duel_request_popup != null and is_instance_valid(_duel_request_popup):
 		_duel_request_popup.hide()
 	_duel_request_challenger_peer = -1
+
+func open_duel_outgoing_dialog(prefill_target: String = "") -> void:
+	"""v0.9.640 — Outgoing duel UI. Opens a dialog with a target-name LineEdit
+	and two Challenge buttons (no-wager / valor-10%). Matches the chat command
+	semantics in process_command's `duel` branch but is discoverable from the
+	More menu. Players don't need to know the /duel <name> [valor] syntax."""
+	if not has_character:
+		return
+	if _duel_outgoing_popup == null or not is_instance_valid(_duel_outgoing_popup):
+		_duel_outgoing_popup = AcceptDialog.new()
+		_duel_outgoing_popup.exclusive = true
+		_duel_outgoing_popup.dialog_hide_on_ok = false
+		_duel_outgoing_popup.get_ok_button().visible = false
+		_duel_outgoing_popup.title = "Send Duel Challenge"
+		_duel_outgoing_popup.dialog_text = (
+			"Challenge another player to a duel. Resolved instantly via dice roll "
+			+ "comparing both fighters' duel power (level + STR + DEX + weapon damage, "
+			+ "±30% variance).\n\n"
+			+ "Target must be online. They'll get a popup to Accept or Decline."
+		)
+		_duel_outgoing_input = LineEdit.new()
+		_duel_outgoing_input.placeholder_text = "Target player name"
+		_duel_outgoing_input.custom_minimum_size = Vector2(0, 28)
+		_duel_outgoing_popup.add_child(_duel_outgoing_input)
+		add_child(_duel_outgoing_popup)
+		_duel_outgoing_popup.add_cancel_button("Cancel")
+		_duel_outgoing_popup.add_button("Challenge (No Wager)", true, "duel_send_none")
+		_duel_outgoing_popup.add_button("Challenge (Wager 10% Valor)", true, "duel_send_valor")
+		_duel_outgoing_popup.custom_action.connect(_on_duel_outgoing_response)
+	if _duel_outgoing_input:
+		_duel_outgoing_input.text = prefill_target
+	_duel_outgoing_popup.popup_centered(Vector2(540, 240))
+	if _duel_outgoing_input:
+		_duel_outgoing_input.grab_focus()
+
+func _on_duel_outgoing_response(action: String) -> void:
+	if _duel_outgoing_input == null or not is_instance_valid(_duel_outgoing_input):
+		return
+	var target_name: String = _duel_outgoing_input.text.strip_edges()
+	if target_name == "":
+		display_game("[color=#FF8800]Enter a target player name first.[/color]")
+		return
+	var stakes: String = "none"
+	if action == "duel_send_valor":
+		stakes = "valor_10"
+	send_to_server({"type": "duel_request", "target": target_name, "stakes": stakes})
+	display_game("[color=#9F70FF]Duel challenge sent to [color=#FFD700]%s[/color] (stakes: %s).[/color]" % [target_name, "none" if stakes == "none" else "valor 10%"])
+	if _duel_outgoing_popup != null and is_instance_valid(_duel_outgoing_popup):
+		_duel_outgoing_popup.hide()
 
 # Audit #14 PvP Slice E (v0.9.556) — Bounty system handlers
 func _handle_bounty_posted_on_you(message: Dictionary) -> void:
