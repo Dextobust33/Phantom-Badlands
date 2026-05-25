@@ -170,18 +170,20 @@ Search client.gd for these to find where to add bypasses:
 
 **Godot executable:** `D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`
 
+**IMPORTANT — open game/test windows on the secondary monitor.** Always pass `--screen 1` when launching a Godot window so it opens on the user's secondary monitor (index 1), not the primary (index 0). The editor + project manager are already pinned to screen 1 via editor settings; `--screen 1` does the same for CLI-launched game windows. (`--headless` exports take no `--screen`.)
+
 **Preferred Launch (with output capture):**
 ```bash
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" server/server.tscn 2>&1 &
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 server/server.tscn 2>&1 &
 sleep 3
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" client/client.tscn 2>&1
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 client/client.tscn 2>&1
 ```
 Use `run_in_background: true` and 600000ms timeout. Read output file to see console messages.
 
 **Simple Launch:**
 ```bash
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" server/server.tscn &
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" client/client.tscn &
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 server/server.tscn &
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 client/client.tscn &
 ```
 
 **Validate GDScript:**
@@ -272,7 +274,9 @@ The combat simulator tests monster lethality against all 9 character classes to 
 **Website:** https://phantombadlands.com (GitHub Pages from `docs/`)
 **Game Server:** Hetzner Cloud CPX11 at `5.78.217.135:9080` (Hillsboro, OR — migrated from Oracle 2026-05-12 for ~16× compute, $6.99/mo)
 
-### Creating a Client Release:
+### Creating a Release — ALWAYS ship BOTH Windows AND Linux:
+**Every release publishes FOUR assets under ONE `vX.Y.Z` tag:** Windows client + Windows launcher + Linux client + Linux launcher. NEVER ship a Windows-only release — the website serves both platforms, and a missing launcher ZIP breaks new-player downloads for that platform.
+
 ```bash
 # 1. Bump version (NEVER reuse a version number)
 echo "X.Y.Z" > VERSION.txt
@@ -280,40 +284,32 @@ echo "X.Y.Z" > VERSION.txt
 # 2. Commit and push
 git add VERSION.txt && git commit -m "vX.Y.Z: description" && git push
 
-# 3. Export client
+# 3. Export Windows client + launcher, then stage the two Windows ZIPs
 "D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --export-release "Phantom-Badlands" "builds/PhantomBadlandsClient.exe"
-
-# 4. Create ZIPs (client + launcher — BOTH must be in every release)
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival\launcher" --export-release "Windows Desktop" "../builds/PhantomBadlandsLauncher.exe"
 cp VERSION.txt builds/VERSION.txt
 cp CREDITS.md builds/CREDITS.md
 powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsClient.exe', 'builds/PhantomBadlandsClient.pck', 'builds/libgdsqlite.windows.template_debug.x86_64.dll', 'builds/VERSION.txt', 'builds/CREDITS.md' -DestinationPath 'releases/phantom-badlands-client-vX.Y.Z.zip' -Force"
 powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsLauncher.exe' -DestinationPath 'releases/phantom-badlands-launcher.zip' -Force"
 
-# 5. Create GitHub release (MUST include both ZIPs)
-"/c/Program Files/GitHub CLI/gh.exe" release create vX.Y.Z releases/phantom-badlands-client-vX.Y.Z.zip releases/phantom-badlands-launcher.zip --title "vX.Y.Z" --notes "Description"
-```
-
-**CRITICAL:** The launcher ZIP must be included in EVERY release because the website download link points to `releases/latest/download/phantom-badlands-launcher.zip`. If missing, new players can't download.
-
-### Creating a Linux Client Release:
-The Linux client + launcher are exported by a dedicated script. Run it AFTER the Windows ZIPs are staged so the same `vX.Y.Z` GitHub release carries all four assets.
-```bash
-# Builds Linux client (single binary, PCK embedded) + Linux launcher, then ZIPs both.
+# 4. Build the two Linux ZIPs (reads VERSION.txt automatically; re-exports both Linux artifacts)
 bash build_linux_release.sh
-# Produces:
-#   releases/phantom-badlands-client-linux-vX.Y.Z.zip  (binary + libgdsqlite .so + VERSION + CREDITS)
-#   releases/phantom-badlands-launcher-linux.zip        (launcher binary)
-```
-- **Presets:** `Phantom-Badlands-Linux` (preset.2 in `export_presets.cfg`) and `Linux` (preset.1 in `launcher/export_presets.cfg`).
-- **sqlite .so:** the Linux client ships `libgdsqlite.linux.template_release.x86_64.so` flat next to the binary — same layout the production server uses (`~/phantom-badlands/`).
-- **Launcher cross-platform:** `launcher/launcher.gd` detects OS — `.x86_64` exe name on Linux, picks the `*-linux-*` client zip, and `chmod +x`'s the extracted client (ZIP drops the exec bit). The launcher binary itself the user chmods once (documented on the website).
-- **Single release, four assets:** include the Linux client/launcher ZIPs alongside the Windows ones in the same `gh release create` call:
-```bash
+#   → releases/phantom-badlands-client-linux-vX.Y.Z.zip  (binary + libgdsqlite .so + VERSION + CREDITS)
+#   → releases/phantom-badlands-launcher-linux.zip
+
+# 5. Create ONE GitHub release with ALL FOUR assets
 "/c/Program Files/GitHub CLI/gh.exe" release create vX.Y.Z \
   releases/phantom-badlands-client-vX.Y.Z.zip releases/phantom-badlands-launcher.zip \
   releases/phantom-badlands-client-linux-vX.Y.Z.zip releases/phantom-badlands-launcher-linux.zip \
   --title "vX.Y.Z" --notes "Description"
 ```
+
+**CRITICAL — both launcher ZIPs are mandatory.** The website download buttons point to `releases/latest/download/phantom-badlands-launcher.zip` (Windows) and `releases/latest/download/phantom-badlands-launcher-linux.zip` (Linux). Omitting either breaks new-player downloads for that platform.
+
+**Linux build details (all handled by `build_linux_release.sh`):**
+- **Presets:** `Phantom-Badlands-Linux` (preset.2 in `export_presets.cfg`) + `Linux` (preset.1 in `launcher/export_presets.cfg`). Linux client is a single binary (PCK embedded).
+- **sqlite .so:** ships flat next to the binary — same layout the production server uses (`~/phantom-badlands/`).
+- **Cross-platform launcher:** `launcher/launcher.gd` detects OS — `.x86_64` exe name on Linux, picks the `*-linux-*` client zip, `chmod +x`'s the extracted client (ZIP drops the exec bit). Asset naming: Linux zips carry `linux`; Windows zips don't — that's how the launcher disambiguates, so keep the convention.
 
 ### Deploying Server Updates:
 ```bash
@@ -347,7 +343,7 @@ ssh -i "$SSH_KEY" ubuntu@5.78.217.135 "sudo systemctl stop phantom-badlands"
 
 - **Update Help Page:** After mechanics change, update `client/client.gd` `show_help()` (~line 21639)
 - **Update Changelog:** When creating a release, update `display_changelog()` in `client/client.gd` (~line 19938) with new version's changes. Keep 5 most recent versions visible, remove oldest when adding new.
-- **Include launcher ZIP:** Every GitHub release MUST include `phantom-badlands-launcher.zip` alongside the client ZIP.
+- **Ship all FOUR release assets:** Every GitHub release MUST include all four ZIPs — Windows client + Windows launcher (`phantom-badlands-launcher.zip`) AND Linux client + Linux launcher (`phantom-badlands-launcher-linux.zip`). The website serves both platforms; a missing launcher ZIP breaks new-player downloads. Run `bash build_linux_release.sh` for the Linux pair.
 - **Deploy server:** After server-side changes, run `bash deploy_server.sh` to update the cloud server.
 - **After significant changes:** Remind user to create a release for players
 
