@@ -3322,6 +3322,10 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# with spend: full = 100 + INT × 8; floor = 30% of that.
 			var int_stat = character.get_effective_stat("intelligence")
 			var shield_value = int((100 + (int_stat * 8)) * variable_fraction)
+			# v0.9.638 — Forcefield is a buff (shield absorption) that never piped
+			# through apply_skill_damage_bonus. Scale via the same helper so
+			# rank-up +Damage / bonus_damage imprint amplify shield magnitude.
+			shield_value = _apply_buff_value_modifiers(character, "forcefield", shield_value)
 			combat["forcefield_shield"] = shield_value
 			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
 			is_buff_ability = true
@@ -3404,6 +3408,14 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var int_stat = character.get_effective_stat("intelligence")
 			var spell_damage_bonus = max(1, int((40 + int_stat / 4) * variable_fraction))
 			var double_cast_chance = max(1, int(25 * variable_fraction))  # 25% at full, 7-8% at floor
+			# v0.9.638 — Same fix as the warrior buff abilities (v0.9.637). Haste
+			# (Arcane Surge) is a buff that never piped through
+			# apply_skill_damage_bonus, so rank-up +Damage and bonus_damage
+			# imprint were silent no-ops. Scale both the damage bonus and the
+			# double-cast chance so the rank-up choice / Predator's Mark imprint
+			# actually feel meaningful.
+			spell_damage_bonus = _apply_buff_value_modifiers(character, "haste", spell_damage_bonus)
+			double_cast_chance = _apply_buff_value_modifiers(character, "haste", double_cast_chance)
 			character.add_buff("damage", spell_damage_bonus, 4)
 			combat["arcane_surge_double_cast"] = double_cast_chance
 			combat["arcane_surge_double_cast_duration"] = 4
@@ -3797,6 +3809,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# Stored as int percent (was bool flag pre-0.9.265). Consumer in
 			# process_monster_turn reads the int and applies accordingly.
 			var distract_pct = max(1, int(50 * variable_fraction))
+			# v0.9.638 — Distract is a debuff that never piped through
+			# apply_skill_damage_bonus. Scale via the same helper as the buff
+			# abilities so rank-up +Damage / bonus_damage imprint amplify the
+			# debuff magnitude.
+			distract_pct = _apply_buff_value_modifiers(character, "distract", distract_pct)
 			combat["enemy_distracted"] = distract_pct
 			messages.append("[color=#00FF00]DISTRACT![/color]")
 			messages.append("[color=#808080]The enemy is distracted! (-%d%% accuracy)[/color]" % distract_pct)
@@ -4018,6 +4035,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# 50% stack cap unchanged.
 			var wits = character.get_effective_stat("wits")
 			var debuff_amount = max(1, int((15 + wits / 3) * variable_fraction))
+			# v0.9.638 — Sabotage is a debuff that never piped through
+			# apply_skill_damage_bonus. Scale via the same helper so rank-up
+			# +Damage / bonus_damage imprint amplify the str/def reduction.
+			debuff_amount = _apply_buff_value_modifiers(character, "sabotage", debuff_amount)
 			# Store debuffs in combat state
 			var existing_sabotage = combat.get("monster_sabotaged", 0)
 			combat["monster_sabotaged"] = min(50, existing_sabotage + debuff_amount)  # Cap at 50%
