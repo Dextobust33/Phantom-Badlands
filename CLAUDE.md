@@ -295,6 +295,26 @@ powershell -Command "Compress-Archive -Path 'builds/PhantomBadlandsLauncher.exe'
 
 **CRITICAL:** The launcher ZIP must be included in EVERY release because the website download link points to `releases/latest/download/phantom-badlands-launcher.zip`. If missing, new players can't download.
 
+### Creating a Linux Client Release:
+The Linux client + launcher are exported by a dedicated script. Run it AFTER the Windows ZIPs are staged so the same `vX.Y.Z` GitHub release carries all four assets.
+```bash
+# Builds Linux client (single binary, PCK embedded) + Linux launcher, then ZIPs both.
+bash build_linux_release.sh
+# Produces:
+#   releases/phantom-badlands-client-linux-vX.Y.Z.zip  (binary + libgdsqlite .so + VERSION + CREDITS)
+#   releases/phantom-badlands-launcher-linux.zip        (launcher binary)
+```
+- **Presets:** `Phantom-Badlands-Linux` (preset.2 in `export_presets.cfg`) and `Linux` (preset.1 in `launcher/export_presets.cfg`).
+- **sqlite .so:** the Linux client ships `libgdsqlite.linux.template_release.x86_64.so` flat next to the binary — same layout the production server uses (`~/phantom-badlands/`).
+- **Launcher cross-platform:** `launcher/launcher.gd` detects OS — `.x86_64` exe name on Linux, picks the `*-linux-*` client zip, and `chmod +x`'s the extracted client (ZIP drops the exec bit). The launcher binary itself the user chmods once (documented on the website).
+- **Single release, four assets:** include the Linux client/launcher ZIPs alongside the Windows ones in the same `gh release create` call:
+```bash
+"/c/Program Files/GitHub CLI/gh.exe" release create vX.Y.Z \
+  releases/phantom-badlands-client-vX.Y.Z.zip releases/phantom-badlands-launcher.zip \
+  releases/phantom-badlands-client-linux-vX.Y.Z.zip releases/phantom-badlands-launcher-linux.zip \
+  --title "vX.Y.Z" --notes "Description"
+```
+
 ### Deploying Server Updates:
 ```bash
 # One-command deploy (exports, uploads, restarts):
