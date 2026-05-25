@@ -5790,12 +5790,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var gems_this_combat = result.get("gems_earned", 0)
 
 			if flock_chance > 0 and flock_roll < flock_chance:
-				# v0.9.634 — DIAG: confirm buffs survived end_combat into the flock branch.
-				var _bft: Array = []
-				for _b in characters[peer_id].active_buffs:
-					_bft.append(String(_b.get("type", "?")))
-				print("[FLOCK-BUFF-DIAG] flock TRIGGERED peer=%d chance=%d roll=%d carried_buffs=%s" % [peer_id, flock_chance, flock_roll, _bft])
 				# Flock triggered! Store drops for later, don't give items yet
+				# (v0.9.634 flock-buff diagnostic prints stripped in v0.9.642
+				# after the investigation concluded the carryover works correctly.)
 				var monster_name = result.get("monster_name", "")
 				# Use base_name for flock generation (variants like "Minotaur Shield Guardian" -> "Minotaur")
 				var monster_base_name = result.get("monster_base_name", monster_name)
@@ -5853,11 +5850,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# combat_manager.end_combat preserved buffs optimistically.
 				# Combat is truly over here, so cleanse them now. No-op when
 				# combat_manager already cleared (flock_chance was 0).
-				# v0.9.634 — DIAG: log what we're about to cleanse.
-				var _bf_nf: Array = []
-				for _b in characters[peer_id].active_buffs:
-					_bf_nf.append(String(_b.get("type", "?")))
-				print("[FLOCK-BUFF-DIAG] non-flock branch peer=%d flock_chance=%d roll=%d cleansing_buffs=%s" % [peer_id, flock_chance, flock_roll, _bf_nf])
+				# (v0.9.634 diagnostic print stripped in v0.9.642.)
 				characters[peer_id].clear_buffs()
 				var all_drops = []
 				if pending_flock_drops.has(peer_id):
@@ -9417,11 +9410,7 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		monster["name_color"] = "#9F70FF"
 		monster["is_apex_variant"] = true
 
-	# v0.9.634 — DIAG: confirm buffs survived all the way to the NEXT mob spawn.
-	var _bft_start: Array = []
-	for _b in character.active_buffs:
-		_bft_start.append(String(_b.get("type", "?")))
-	print("[FLOCK-BUFF-DIAG] trigger_flock_encounter peer=%d next_monster=%s buffs_at_spawn=%s" % [peer_id, monster_name, _bft_start])
+	# (v0.9.634 [FLOCK-BUFF-DIAG] print stripped in v0.9.642.)
 
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
