@@ -26085,8 +26085,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.641 — Imprint polish: Iron Golem → Aegis + Stagger/Mesmerize bump.
+	display_game("[color=#00FF00]v0.9.641[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Two follow-ups from the variant-imprints memo, closing the V2 design backlog.[/color]")
+	display_game("  • [b]Iron Golem now grants the [color=#7FD7FF]Aegis[/color] imprint[/b] (was Stagger). Aegis was the only trait no companion mapped to — the imprint was effectively unreachable. Iron Golem's defensive-construct theme fits Aegis (damage absorption shield) better than Stagger. Stun is still well-covered at T3 (Gargoyle, Shrieker) and T7-8 (World Serpent, Time Weaver) so the stun pool doesn't shrink meaningfully.")
+	display_game("  • [b][color=#FFC04D]Stagger[/color] and [color=#FF6FB5]Mesmerize[/color] imprint chance bumped 3%% → 5%% per stack[/b]. Max 4 stacks now = 20%% proc chance (was 12%%) so the procs are more 'felt' without crossing into oppressive territory. From the memo: 'current 1%% roll per cast is intentionally tiny. May want to make these more visible / felt.'")
+	display_game("")
+
 	# v0.9.640 — /duel UI + imprint inspect visibility.
-	display_game("[color=#00FF00]v0.9.640[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.640[/color]")
 	display_game("  [color=#FFD700]UI-over-chat for /duel + better imprint visibility.[/color]")
 	display_game("  • [b]Outgoing duel dialog[/b]. Typing [color=#888888]/duel[/color] with no arguments now opens a popup with a target-name text field + two challenge buttons (No Wager / Wager 10% Valor). Players don't need to remember the [color=#888888]/duel <name> [valor][/color] syntax to challenge another player.")
 	display_game("  • [b]Duel slot in More menu[/b]. Slot 9 (the conditional party slot) now hosts a [color=#9F70FF]Duel[/color] button when you're not in a party. Discoverable without knowing the chat command at all.")
