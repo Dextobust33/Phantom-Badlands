@@ -20554,18 +20554,7 @@ func handle_server_message(message: Dictionary):
 				send_to_server({"type": "get_abilities"})
 
 		"combat_start":
-			# v0.9.634 — DIAG: log buffs visible to client at flock-mob spawn so
-			# we can confirm whether the next encounter sees buffs as carried.
-			# Only logs on flock continuations (is_flock=true) to keep noise low.
-			if message.get("is_flock", false):
-				var _cs_state: Dictionary = message.get("combat_state", {})
-				var _cs_char: Dictionary = _cs_state.get("character", {})
-				var _cs_buffs_raw: Array = _cs_char.get("active_buffs", [])
-				var _cs_btypes: Array = []
-				for _csb in _cs_buffs_raw:
-					if _csb is Dictionary:
-						_cs_btypes.append(String(_csb.get("type", "?")))
-				print("[FLOCK-BUFF-DIAG-CLIENT] flock combat_start buffs_in_state=%s local_active_buffs=%s" % [_cs_btypes, character_data.get("active_buffs", [])])
+			# (v0.9.634 [FLOCK-BUFF-DIAG-CLIENT] print stripped in v0.9.642.)
 			# If pending_continue is active (e.g., egg hatching celebration), queue combat for after
 			if pending_continue:
 				queued_combat_message = message.duplicate(true)
@@ -20822,17 +20811,7 @@ func handle_server_message(message: Dictionary):
 			update_player_hp_bar()  # Refresh HP bar to hide shield
 
 			if message.get("victory", false):
-				# v0.9.634 — DIAG: log incoming buffs at combat_end so we can
-				# compare against the server's [FLOCK-BUFF-DIAG] log lines and
-				# confirm whether the client sees the same buff list the server
-				# preserved. Strip once root-caused.
-				var _v_char: Dictionary = message.get("character", {})
-				var _v_buffs_raw: Array = _v_char.get("active_buffs", [])
-				var _v_btypes: Array = []
-				for _vb in _v_buffs_raw:
-					if _vb is Dictionary:
-						_v_btypes.append(String(_vb.get("type", "?")))
-				print("[FLOCK-BUFF-DIAG-CLIENT] combat_end victory flock_incoming=%s incoming_buffs=%s" % [message.get("flock_incoming", false), _v_btypes])
+				# (v0.9.634 [FLOCK-BUFF-DIAG-CLIENT] print stripped in v0.9.642.)
 				# v0.9.566 — lift the "clamp HP to 1 while still in combat"
 				# guard so the monster HP bar can drain to 0 visually before
 				# the panel hides. Re-issue the bar update so the new floor
@@ -26085,8 +26064,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.642 — Flock-buff diagnostics stripped.
+	display_game("[color=#00FF00]v0.9.642[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Quiet release — strips the v0.9.634 flock-buff diagnostic prints from production server logs.[/color]")
+	display_game("  • The diagnostic investigation concluded the v0.9.600 buff-carryover mechanic works as designed. The perceived 'between fight' buff loss was actually 4-round buff durations (War Cry / Berserk / Iron Skin) ticking out within longer combats. The v0.9.637-638 buff-value scaling work addressed the underlying complaint by making each buff cast more impactful.")
+	display_game("  • Removed: 6 print sites + setup code across server.gd / combat_manager.gd / client.gd tagged [color=#888888][FLOCK-BUFF-DIAG][/color] and [color=#888888][FLOCK-BUFF-DIAG-CLIENT][/color]. Production server logs are quieter now.")
+	display_game("")
+
 	# v0.9.641 — Imprint polish: Iron Golem → Aegis + Stagger/Mesmerize bump.
-	display_game("[color=#00FF00]v0.9.641[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.641[/color]")
 	display_game("  [color=#FFD700]Two follow-ups from the variant-imprints memo, closing the V2 design backlog.[/color]")
 	display_game("  • [b]Iron Golem now grants the [color=#7FD7FF]Aegis[/color] imprint[/b] (was Stagger). Aegis was the only trait no companion mapped to — the imprint was effectively unreachable. Iron Golem's defensive-construct theme fits Aegis (damage absorption shield) better than Stagger. Stun is still well-covered at T3 (Gargoyle, Shrieker) and T7-8 (World Serpent, Time Weaver) so the stun pool doesn't shrink meaningfully.")
 	display_game("  • [b][color=#FFC04D]Stagger[/color] and [color=#FF6FB5]Mesmerize[/color] imprint chance bumped 3%% → 5%% per stack[/b]. Max 4 stacks now = 20%% proc chance (was 12%%) so the procs are more 'felt' without crossing into oppressive territory. From the memo: 'current 1%% roll per cast is intentionally tiny. May want to make these more visible / felt.'")

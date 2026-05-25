@@ -6719,15 +6719,15 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 
 		# Clear combat buffs (round-based). v0.9.600 — skipped when
 		# preserve_buffs is set (flock chain might continue).
-		# v0.9.634 — DIAG: log buff-carryover decision for the flock-regression
-		# investigation. Strip once the bug is root-caused.
-		var _buff_types_pre: Array = []
-		for _b in character.active_buffs:
-			_buff_types_pre.append(String(_b.get("type", "?")))
-		print("[FLOCK-BUFF-DIAG] end_combat peer=%d victory=%s preserve_buffs=%s pre_buffs=%s" % [peer_id, victory, preserve_buffs, _buff_types_pre])
+		# v0.9.642 — stripped v0.9.634's [FLOCK-BUFF-DIAG] prints. The
+		# investigation concluded the v0.9.600 carryover mechanic works
+		# correctly; the "buffs disappearing between flock encounters"
+		# perception was caused by buff durations (4 rounds for War Cry /
+		# Berserk / Iron Skin) ticking out naturally within longer combats.
+		# Subsequent v0.9.637-638 buff-value scaling work addressed the
+		# underlying complaint by making buff abilities more impactful.
 		if not preserve_buffs:
 			character.clear_buffs()
-			print("[FLOCK-BUFF-DIAG]   -> CLEARED in end_combat")
 
 		# Tick persistent buffs (battle-based) - reduces remaining battles by 1
 		var expired_persistent = character.tick_persistent_buffs()
