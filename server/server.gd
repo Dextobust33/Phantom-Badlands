@@ -298,7 +298,7 @@ const AUTO_SAVE_INTERVAL = 60.0  # Save every 60 seconds
 var auto_save_timer = 0.0
 
 # Connection security
-const AUTH_TIMEOUT = 90.0  # Kick unauthenticated connections after 90 seconds (time to enter login)
+const AUTH_TIMEOUT = 1800.0  # v0.9.639 — 90s → 30 min. Player report: 'if players sit too long on the login screen it stops accepting login attempts.' 90s was too aggressive — players stepping away from the keyboard at the login prompt got reaped. 30 min still bounds abandoned bot connections so they can't fill MAX_TOTAL_CONNECTIONS over time.
 const MAX_CONNECTIONS_PER_IP = 3  # Max simultaneous connections from one IP
 const CONNECTION_RATE_LIMIT = 5.0  # Seconds between connection attempts from same IP
 const MAX_TOTAL_CONNECTIONS = 200  # Total connection cap
