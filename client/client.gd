@@ -26023,8 +26023,20 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.638 — Imprint × ability audit follow-ups.
+	display_game("[color=#00FF00]v0.9.638[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]4 more buff/debuff abilities now respect rank-up +Damage and Predator's Mark imprint.[/color]")
+	display_game("  • Per your direction after v0.9.637 (\"the wyvern imprint on buff abilities likely isn't the only one with a similar problem\") I audited every ability × imprint combination. The v0.9.637 helper was wired into War Cry / Berserk / Iron Skin / Fortify / Rally but missed these:")
+	display_game("    [color=#888888]–[/color] [b]Haste (Arcane Surge)[/b] — both spell damage bonus AND double-cast chance now scale.")
+	display_game("    [color=#888888]–[/color] [b]Forcefield[/b] — shield absorption now scales.")
+	display_game("    [color=#888888]–[/color] [b]Distract[/b] — accuracy debuff magnitude now scales.")
+	display_game("    [color=#888888]–[/color] [b]Sabotage[/b] — str/def debuff magnitude now scales.")
+	display_game("  • All four inherit the v0.9.637 imprint-rider treatment: cast-trigger imprints (Distract / Stagger / Mesmerize / Soul Tax / Aegis) fire on these casts, and Wyvern crit grants a `crit_chance` buff for 4 rounds when used through them.")
+	display_game("  • Remaining \"no-op\" abilities (Cloak / Paralyze / Banish / Pickpocket / Analyze / Vanish / Perfect Heist / Forethought / Tactical Retreat) are pure utility / CC / instant-win — they have no scaling knob, so silent skip is by design.")
+	display_game("")
+
 	# v0.9.637 — Buff-ability rework + corpse hint accuracy.
-	display_game("[color=#00FF00]v0.9.637[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.637[/color]")
 	display_game("  [color=#FFD700]Buff-ability rank-up & imprints now mean something. Corpse hints point at the actual nearest corpse.[/color]")
 	display_game("  • [b]Rank-up [color=#FFB6C1]+Damage[/color] on buff abilities now scales the buff value[/b]. Player report: '[i]War Cry just got a rank up and it had a Damage option... do either of these actually do anything for war cry?[/i]' Was a no-op — War Cry / Berserk / Iron Skin / Fortify / Rally never piped through [color=#888888]apply_skill_damage_bonus[/color]. Now a new [color=#888888]_apply_buff_value_modifiers[/color] helper applies the rank multiplier (rank 0 = ×0.80, rank 4 = ×1.20, rank 6 = ×1.45) to the buff value itself. So a +10% Damage rank choice on War Cry makes your +35% damage buff become +38.5%.")
 	display_game("  • [b][color=#FF6B6B]Predator's Mark[/color] imprint also scales buff value[/b]. Same helper folds in [color=#888888]bonus_damage[/color] imprint stacks (6% per stack) for buff abilities, matching the damage-ability semantic.")
