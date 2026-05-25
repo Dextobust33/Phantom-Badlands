@@ -26023,8 +26023,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.637 — Buff-ability rework + corpse hint accuracy.
+	display_game("[color=#00FF00]v0.9.637[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Buff-ability rank-up & imprints now mean something. Corpse hints point at the actual nearest corpse.[/color]")
+	display_game("  • [b]Rank-up [color=#FFB6C1]+Damage[/color] on buff abilities now scales the buff value[/b]. Player report: '[i]War Cry just got a rank up and it had a Damage option... do either of these actually do anything for war cry?[/i]' Was a no-op — War Cry / Berserk / Iron Skin / Fortify / Rally never piped through [color=#888888]apply_skill_damage_bonus[/color]. Now a new [color=#888888]_apply_buff_value_modifiers[/color] helper applies the rank multiplier (rank 0 = ×0.80, rank 4 = ×1.20, rank 6 = ×1.45) to the buff value itself. So a +10% Damage rank choice on War Cry makes your +35% damage buff become +38.5%.")
+	display_game("  • [b][color=#FF6B6B]Predator's Mark[/color] imprint also scales buff value[/b]. Same helper folds in [color=#888888]bonus_damage[/color] imprint stacks (6% per stack) for buff abilities, matching the damage-ability semantic.")
+	display_game("  • [b][color=#FFD700]Hunter's Eye[/color] (Wyvern crit) imprint works on buff abilities[/b]. Casting War Cry / Berserk / Iron Skin / etc. with a Wyvern Imprint stack now adds a [color=#888888]crit_chance[/color] buff for 4 rounds (+6%/stack). Was a flat no-op because the rider gated on [color=#888888]damage_dealt > 0[/color]. Stacking 4 Wyvern Imprints = +24% crit chance window after every War Cry.")
+	display_game("  • [b]Cast-trigger imprints fire on buff abilities[/b]: Distract (Goblin/Skeleton/Harpy), Stagger (Gargoyle/Shrieker), Mesmerize (Siren), Soul Tax (Wraith), Aegis. Damage-required imprints (Rending/Toxic Strike/Bloodletter) still need a damage hit — they're rescaled by hit magnitude so buff casts have nothing to scale against.")
+	display_game("  • [b]Live crit_chance buff read[/b]. Per-attack crit roll was reading a combat-start snapshot, so mid-combat crit buffs (from imprints, potions, scrolls cast mid-fight) were invisible until next combat. Now reads [color=#888888]get_buff_value('crit_chance')[/color] live every attack.")
+	display_game("  • [b]Corpse hint accuracy[/b]. Old version iterated the corpse list and fired a hint for the FIRST in-range corpse, not the nearest. With multiple corpses in the world the compass routinely pointed at the wrong one. Now picks the nearest, range tightened 75 → 40 tiles, and the message says 'very close' (≤10) / 'nearby' (≤20) / 'distant' (≤40) so you can tell if you're warmer.")
+	display_game("")
+
 	# v0.9.636 — Emoji-tofu hotfix.
-	display_game("[color=#00FF00]v0.9.636[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.636[/color]")
 	display_game("  [color=#FFD700]Hotfix for missing-glyph tofu on some players' fonts.[/color]")
 	display_game("  • Player report: '[i]the circle icon that shows before + Valor on the loot screen is showing up as 01FR99 in a square box. The auto-skip combat icon in the top right looks the same.[/i]' That's [color=#888888]🪙[/color] (U+1FA99) rendering as a hex codepoint box because the player's font doesn't include the Supplementary-Multilingual-Plane emoji range.")
 	display_game("  • Replaced SMP-range emoji with ASCII alternatives across the visible UI surfaces:")
