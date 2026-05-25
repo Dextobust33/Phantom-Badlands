@@ -1973,6 +1973,12 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	# Award experience
 	character.add_experience(final_xp)
 
+	# v0.9.634 — Soldier job XP from combat. Mirrors the companion 10%-of-base
+	# pattern but at 25% so committed soldier jobs progress at a steady clip
+	# without outpacing the per-fight character XP. add_job_xp no-ops cleanly
+	# past trial cap on uncommitted jobs.
+	character.add_job_xp("soldier", max(1, int(base_xp * 0.25)))
+
 	# === COMPANION XP DISTRIBUTION ===
 	# Active companions gain 10% of monster XP
 	if character.has_active_companion():
@@ -2527,6 +2533,8 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		# Add XP
 		var old_level = character.level
 		var level_result = character.add_experience(final_xp)
+		# v0.9.634 — Soldier job XP (full-reward / death-save path).
+		character.add_job_xp("soldier", max(1, int(base_xp * 0.25)))
 
 		messages.append("[color=#FF00FF]+%d XP[/color]" % final_xp)
 
@@ -3918,6 +3926,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 				var heist_old_level = character.level
 				var level_result = character.add_experience(final_xp)
+				# v0.9.634 — Soldier job XP (perfect-heist path).
+				character.add_job_xp("soldier", max(1, int(base_xp * 0.25)))
 
 				messages.append("[color=#FF00FF]+%d XP[/color]" % final_xp)
 
@@ -6621,8 +6631,15 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 
 		# Clear combat buffs (round-based). v0.9.600 — skipped when
 		# preserve_buffs is set (flock chain might continue).
+		# v0.9.634 — DIAG: log buff-carryover decision for the flock-regression
+		# investigation. Strip once the bug is root-caused.
+		var _buff_types_pre: Array = []
+		for _b in character.active_buffs:
+			_buff_types_pre.append(String(_b.get("type", "?")))
+		print("[FLOCK-BUFF-DIAG] end_combat peer=%d victory=%s preserve_buffs=%s pre_buffs=%s" % [peer_id, victory, preserve_buffs, _buff_types_pre])
 		if not preserve_buffs:
 			character.clear_buffs()
+			print("[FLOCK-BUFF-DIAG]   -> CLEARED in end_combat")
 
 		# Tick persistent buffs (battle-based) - reduces remaining battles by 1
 		var expired_persistent = character.tick_persistent_buffs()
@@ -8303,6 +8320,8 @@ func _process_party_victory(combat: Dictionary) -> Dictionary:
 		character.experience += final_xp
 		if gems > 0:
 			character.add_crafting_material("monster_gem", gems)
+		# v0.9.634 — Soldier job XP (party combat path, per surviving member).
+		character.add_job_xp("soldier", max(1, int(base_xp * 0.25)))
 
 		# Level up check
 		while character.experience >= character.experience_to_next_level:

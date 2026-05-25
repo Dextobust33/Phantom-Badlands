@@ -5790,6 +5790,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var gems_this_combat = result.get("gems_earned", 0)
 
 			if flock_chance > 0 and flock_roll < flock_chance:
+				# v0.9.634 — DIAG: confirm buffs survived end_combat into the flock branch.
+				var _bft: Array = []
+				for _b in characters[peer_id].active_buffs:
+					_bft.append(String(_b.get("type", "?")))
+				print("[FLOCK-BUFF-DIAG] flock TRIGGERED peer=%d chance=%d roll=%d carried_buffs=%s" % [peer_id, flock_chance, flock_roll, _bft])
 				# Flock triggered! Store drops for later, don't give items yet
 				var monster_name = result.get("monster_name", "")
 				# Use base_name for flock generation (variants like "Minotaur Shield Guardian" -> "Minotaur")
@@ -5848,6 +5853,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# combat_manager.end_combat preserved buffs optimistically.
 				# Combat is truly over here, so cleanse them now. No-op when
 				# combat_manager already cleared (flock_chance was 0).
+				# v0.9.634 — DIAG: log what we're about to cleanse.
+				var _bf_nf: Array = []
+				for _b in characters[peer_id].active_buffs:
+					_bf_nf.append(String(_b.get("type", "?")))
+				print("[FLOCK-BUFF-DIAG] non-flock branch peer=%d flock_chance=%d roll=%d cleansing_buffs=%s" % [peer_id, flock_chance, flock_roll, _bf_nf])
 				characters[peer_id].clear_buffs()
 				var all_drops = []
 				if pending_flock_drops.has(peer_id):
@@ -9398,6 +9408,12 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		# Mark for color rendering (purple, matches the v0.9.512 HUD tag).
 		monster["name_color"] = "#9F70FF"
 		monster["is_apex_variant"] = true
+
+	# v0.9.634 — DIAG: confirm buffs survived all the way to the NEXT mob spawn.
+	var _bft_start: Array = []
+	for _b in character.active_buffs:
+		_bft_start.append(String(_b.get("type", "?")))
+	print("[FLOCK-BUFF-DIAG] trigger_flock_encounter peer=%d next_monster=%s buffs_at_spawn=%s" % [peer_id, monster_name, _bft_start])
 
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
@@ -19876,9 +19892,20 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		_:  # foraging or future jobs
 			skill_level_for_taper = int(character.job_levels.get(session_job, 1))
 			xp_result = character.add_job_xp(session_job, total_xp)
-	# Compute character XP. Prefer add_job_xp's returned value (foraging path);
-	# otherwise apply the legacy taper to total_xp (fishing/mining/logging).
-	var char_xp_gained: int = int(xp_result.get("char_xp_gained", 0))
+	# v0.9.634 FIX — Also grant JOB XP for fishing/mining/logging. The legacy
+	# add_fishing_xp / add_mining_xp / add_logging_xp funcs only update the
+	# legacy 0-100 skill (drop-weight / wait / crit modifier); they never
+	# touched job_xp[], so committed gathering jobs gained ZERO job XP from
+	# scratch-off sessions. Mirrors autoskip (~20697) and
+	# _end_gathering_session (~21169) which both call add_job_xp.
+	# No-ops cleanly past trial cap on uncommitted jobs.
+	var job_xp_result: Dictionary = xp_result
+	if session_job in ["fishing", "mining", "logging"]:
+		job_xp_result = character.add_job_xp(session_job, total_xp)
+	# Compute character XP. Prefer add_job_xp's returned value (any committed
+	# job path); otherwise apply the legacy taper to total_xp (uncommitted
+	# past trial cap, where add_job_xp returns 0 char_xp_gained).
+	var char_xp_gained: int = int(job_xp_result.get("char_xp_gained", 0))
 	if char_xp_gained == 0 and total_xp > 0:
 		var taper: float = 1.0
 		if skill_level_for_taper > 50:
