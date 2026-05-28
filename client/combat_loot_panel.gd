@@ -46,6 +46,11 @@ var _slots_data: Array = []  # Mirror of server-pushed slot view
 var _reveals_used: int = 0
 var _reveal_budget: int = 0
 var _flock_kills: int = 1
+# Tracks the kind of the most recently revealed slot so finish() can hold the
+# panel open briefly when the player just hit a special cell (especially trap
+# on the last reveal — the panel was auto-closing before the player could read
+# what happened).
+var _last_reveal_kind: String = ""
 
 # v0.9.568 — reusable HelpPanel attached to the header ? Help button.
 var _help_panel: Control = null
@@ -379,6 +384,7 @@ func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, re
 	# visual flourish on top of the base scale-pop. Sound dispatches via the
 	# play_sfx signal; client.gd wires those to existing SFX players.
 	var kind: String = String(reveal_data.get("kind", ""))
+	_last_reveal_kind = kind
 	match kind:
 		"filler_chain":
 			emit_signal("play_sfx", "chain")
@@ -430,7 +436,7 @@ func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, re
 
 
 func finish(final_bag: Dictionary) -> void:
-	"""Server says done — close the panel immediately.
+	"""Server says done — close the panel.
 
 	v0.9.603 — scrapped the cascade-reveal animation per player feedback:
 	'It doesn't stay on the screen long enough for players to really read any
@@ -438,7 +444,12 @@ func finish(final_bag: Dictionary) -> void:
 	their options.' The cascade was flipping missed tiles one-by-one with a
 	60ms-per-card stagger; total reveal time was up to ~1.5s and there was
 	no payoff. Now we just close the panel — the accumulated loot is already
-	on the victory card (v0.9.602 atomic refresh path)."""
+	on the victory card (v0.9.602 atomic refresh path).
+
+	v0.9.645 — when the last reveal was a special cell (trap especially),
+	hold the panel open ~1.4s so the player can read what happened. The
+	auto-close was firing the same frame as the trap reveal, so players only
+	found out they'd been trapped from the victory-screen breakdown."""
 	_cascade_active = true
 	_done_button.disabled = true
 	# Still mirror the final slot state internally so anyone querying the
@@ -449,8 +460,23 @@ func finish(final_bag: Dictionary) -> void:
 			_slots_data[i] = final_slots[i].duplicate(true)
 			_slots_data[i]["revealed"] = true
 			_slots_data[i]["missed"] = true
-	visible = false
-	emit_signal("closed")
+	# Hold open if the player just flipped a special — gives the FX time to
+	# play out AND lets them read the result line on the card itself.
+	var hold_seconds: float = 0.0
+	match _last_reveal_kind:
+		"filler_trap":
+			hold_seconds = 1.4
+		"filler_chain":
+			hold_seconds = 1.0  # neighbor cascade is ~0.5s; give a beat after
+		"filler_mystery", "filler_plus_two":
+			hold_seconds = 0.8
+	if hold_seconds <= 0.0:
+		visible = false
+		emit_signal("closed")
+		return
+	_call_deferred_after(hold_seconds, func():
+		visible = false
+		emit_signal("closed"))
 
 
 func _call_deferred_after(delay: float, fn: Callable) -> void:

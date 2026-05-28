@@ -12,8 +12,10 @@ PROJECT="C:\Users\Dexto\Documents\phantasia-revival"
 echo "=== Phantom Badlands Server Deploy ==="
 
 # Step 1: Export Linux server binary
+# --headless avoids flashing an editor window on the primary monitor during
+# export (CLAUDE.md: "Open game/test windows on the secondary monitor").
 echo "[1/4] Exporting Linux server binary..."
-"$GODOT" --path "$PROJECT" --export-release "Phantom-Badlands-Server-Linux" "builds/server/PhantomBadlandsServer.x86_64" 2>&1 | tail -1
+"$GODOT" --headless --path "$PROJECT" --export-release "Phantom-Badlands-Server-Linux" "builds/server/PhantomBadlandsServer.x86_64" 2>&1 | tail -1
 
 # Step 2: Stop service, upload, start service (the running binary holds a file lock)
 echo "[2/4] Stopping service and uploading..."
