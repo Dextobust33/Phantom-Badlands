@@ -2180,6 +2180,9 @@ func _ready():
 	combat_loot_panel.closed.connect(_on_combat_loot_closed)
 	# v0.9.566 — autoskip toggle persists across sessions via keybind file.
 	combat_loot_panel.autoskip_toggled.connect(_on_combat_loot_autoskip_toggled)
+	# Engagement arc — panel emits play_sfx("chain" | "mystery" | "trap" | "plus_two")
+	# when a special cell reveals. Dispatched to existing scratch SFX players.
+	combat_loot_panel.play_sfx.connect(_on_combat_loot_sfx)
 
 	# Connect main UI signals
 	send_button.pressed.connect(_on_send_button_pressed)
@@ -29544,6 +29547,30 @@ func _on_combat_loot_autoskip_toggled(enabled: bool) -> void:
 	autoskip_loot_reveal = enabled
 	_save_keybinds()
 
+
+func _on_combat_loot_sfx(name: String) -> void:
+	"""Engagement arc — panel asks for a sound effect by mechanic name. We
+	dispatch to existing scratch SFX players so no new audio assets are needed.
+	Players are nullable during early boot — guard each access."""
+	match name:
+		"chain":
+			# Bright jackpot ring — fires once when the chain cell flips.
+			if scratch_jackpot_player != null:
+				scratch_jackpot_player.play()
+		"mystery":
+			# EggFound chime — the "you found something rare" beat.
+			if egg_found_player != null:
+				egg_found_player.play()
+		"trap":
+			# Dud / vanish — the loss feedback.
+			if scratch_dud_player != null:
+				scratch_dud_player.play()
+		"plus_two":
+			# +2 Reveals already uses gem-gain in the existing flow; play a
+			# UI tick on top so the bonus has its own audio identity.
+			if gem_gain_player != null:
+				gem_gain_player.play()
+
 func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
 	"""Server confirmed a reveal — update the panel, sync character, and
 	accumulate the revealed item into the cached victory-card payload so the
@@ -29557,12 +29584,20 @@ func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
 		update_currency_display()
 	var reveal: Dictionary = message.get("reveal", {})
 	_combat_loot_accumulate_reveal(reveal)
+	# Chain reveal: server bundles the neighbor reveals in chain_neighbors[].
+	# Accumulate those into the victory payload too so the loot list reflects
+	# what the chain awarded, not just the triggering slot.
+	var chain_neighbors: Array = message.get("chain_neighbors", [])
+	for entry in chain_neighbors:
+		if entry is Dictionary:
+			_combat_loot_accumulate_reveal(entry.get("reveal", {}))
 	if combat_loot_panel:
 		combat_loot_panel.reveal_slot(
 			int(message.get("slot_index", -1)),
 			reveal,
 			int(message.get("reveals_used", 0)),
-			int(message.get("reveal_budget", 0))
+			int(message.get("reveal_budget", 0)),
+			chain_neighbors
 		)
 
 func _handle_combat_loot_done_result(message: Dictionary) -> void:
