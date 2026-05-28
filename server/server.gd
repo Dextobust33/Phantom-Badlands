@@ -20023,17 +20023,27 @@ func _combat_loot_reveal_budget(monster_tier: int, flock_kills: int, soldier_lev
 
 func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 	"""Roll a single filler slot — one of: small Valor, Salvage Essence, a T1
-	material, a Monster Part, OR a +2 Reveals bonus cell. Quantities scale
-	lightly with tier so a T7 filler isn't insulting (still way less than a
-	real drop). Returns a dict with `kind` and the kind-specific payload.
+	material, a Monster Part, OR one of four special cells (+2 Reveals / Chain /
+	Mystery / Trap). Quantities scale lightly with tier so a T7 filler isn't
+	insulting (still way less than a real drop). Returns a dict with `kind` and
+	the kind-specific payload.
 
-	v0.9.574 — +2 Reveals bonus cell added per user direction. ~1/12 chance
-	(8.3%) per filler slot to roll a +2 cell. When revealed, the cell costs
-	1 reveal to flip (like any other) but grants +2 reveals to the budget
-	(net +1). Adds tension: gamble a click on the unrevealed grid hoping
-	you hit a +2 vs play the cells you can already see."""
-	# +2 Reveals rolls FIRST as a separate ~1/12 chance, then falls
-	# through to the regular 4-option filler roll if it misses.
+	Special cells (each ~1/12 per slot, sequential pre-checks):
+	- filler_plus_two (v0.9.574): +2 reveals to budget on flip (net +1).
+	- filler_chain: auto-reveals 4 orthogonal neighbors for free on flip.
+	- filler_mystery: server pre-rolls an inflated payload; player can't see
+	  it's a mystery before flipping.
+	- filler_trap: costs an EXTRA reveal as penalty (-1 budget on top of the
+	  reveal it cost to flip). Disguised as a normal sealed card."""
+	# Trap rolls first — slightly more likely to land than the bonus cells so
+	# the player feels real tension on every click. All four use mutually
+	# exclusive 1/12 pre-checks; ~32% of filler slots become special overall.
+	if (randi() % 12) == 0:
+		return {"kind": "filler_trap"}
+	if (randi() % 12) == 0:
+		return {"kind": "filler_chain"}
+	if (randi() % 12) == 0:
+		return {"kind": "filler_mystery"}
 	if (randi() % 12) == 0:
 		return {"kind": "filler_plus_two"}
 	var roll = randi() % 4
@@ -20135,7 +20145,7 @@ func _build_combat_loot_bag(real_drops: Array, monster_tier: int, flock_kills: i
 		"soldier_level": soldier_level,
 	}
 
-func _award_combat_loot_slot(peer_id: int, slot: Dictionary) -> Dictionary:
+func _award_combat_loot_slot(peer_id: int, slot: Dictionary, monster_tier: int = 1) -> Dictionary:
 	"""Award the contents of a revealed slot to the player's inventory. Returns
 	a structured payload the client uses to render the reveal (name, color,
 	rarity, etc). Filler slots are awarded inline (currency / materials);
@@ -20201,6 +20211,95 @@ func _award_combat_loot_slot(peer_id: int, slot: Dictionary) -> Dictionary:
 				"color": "#FFD700",
 				"rarity": "rare",  # marks the reveal animation as a "good roll"
 				"bonus_reveals": 2,
+			}
+		"filler_chain":
+			# Chain reveal — flips 4 orthogonal neighbors for free. The handler
+			# resolves which neighbors exist + awards them in one batched push.
+			# This slot itself awards nothing; the value lives in the cascade.
+			return {
+				"kind": "filler_chain",
+				"name": "⚡ Chain Reveal!",
+				"color": "#5C9DFF",
+				"rarity": "rare",
+				"trigger_chain": true,
+			}
+		"filler_mystery":
+			# Mystery cell — pre-roll an inflated payload from a weighted pool.
+			# Bumped Valor / Salvage / material / monster-part outcomes plus a
+			# small chance at a T1 egg. The card back stays disguised as a normal
+			# sealed slot so the player can't pre-target it.
+			var tier_scale: int = clampi(monster_tier, 1, 9)
+			var mroll: int = randi() % 100
+			if mroll < 12:
+				# T1 egg — small but real chance, the standout outcome.
+				var egg_types = ["wolf", "boar", "fox", "rat"]
+				var egg_type: String = egg_types[randi() % egg_types.size()]
+				var egg_data: Dictionary = {
+					"monster_type": egg_type,
+					"tier": 1,
+					"sub_tier": 1,
+				}
+				var egg_cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+				var egg_result = character.add_egg(egg_data, egg_cap)
+				if egg_result.success:
+					return {
+						"kind": "filler_mystery",
+						"name": "Mystery: %s Egg!" % egg_type.capitalize(),
+						"color": "#88FF88",
+						"rarity": "rare",
+						"mystery_outcome": "egg",
+					}
+				# Egg roll missed — fall through to valor instead of awarding nothing.
+			if mroll < 50:
+				# Inflated valor — 3x the normal filler_valor roll.
+				var amount3: int = randi_range(2, 6) * tier_scale / 2
+				amount3 = max(1, amount3) * 3
+				if peers.has(peer_id):
+					var acct_id3: String = str(peers[peer_id].get("account_id", ""))
+					if acct_id3 != "":
+						persistence.add_valor(acct_id3, amount3)
+				return {
+					"kind": "filler_mystery",
+					"name": "Mystery: +%d Valor!" % amount3,
+					"amount": amount3,
+					"color": "#FFD700",
+					"rarity": "rare",
+					"mystery_outcome": "valor",
+				}
+			if mroll < 80:
+				# Inflated essence — 3x normal.
+				var ess_qty: int = randi_range(1, 2 + tier_scale / 3) * 3
+				character.salvage_essence += ess_qty
+				return {
+					"kind": "filler_mystery",
+					"name": "Mystery: +%d Salvage Essence!" % ess_qty,
+					"amount": ess_qty,
+					"color": "#AA66FF",
+					"rarity": "rare",
+					"mystery_outcome": "essence",
+				}
+			# Inflated material stack — 3x normal.
+			var t1_mats_m = ["iron_ore", "pine_wood", "wheat", "raw_hide"]
+			var mat_id_m: String = t1_mats_m[randi() % t1_mats_m.size()]
+			var mat_qty_m: int = randi_range(1, 2 + tier_scale / 4) * 3
+			character.add_crafting_material(mat_id_m, mat_qty_m)
+			var mat_name_m: String = CraftingDatabaseScript.get_material_name(mat_id_m)
+			return {
+				"kind": "filler_mystery",
+				"name": "Mystery: %s x%d!" % [mat_name_m, mat_qty_m],
+				"color": "#1EFF00",
+				"rarity": "rare",
+				"mystery_outcome": "material",
+			}
+		"filler_trap":
+			# Trap — costs 1 extra reveal as penalty. No inventory change.
+			# Handler reads `reveal_penalty` and decrements bag.reveal_budget.
+			return {
+				"kind": "filler_trap",
+				"name": "☠ Trap! -1 Reveal",
+				"color": "#FF4444",
+				"rarity": "common",
+				"reveal_penalty": 1,
 			}
 		"real":
 			# Re-uses the existing flock-end branching so eggs / mats / parts
@@ -20396,17 +20495,51 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 	# Award the slot's content, mark revealed, push the reveal-result.
 	slots[slot_index]["revealed"] = true
 	bag["reveals_used"] = int(bag.get("reveals_used", 0)) + 1
-	var awarded = _award_combat_loot_slot(peer_id, slots[slot_index])
+	var awarded = _award_combat_loot_slot(peer_id, slots[slot_index], int(bag.get("monster_tier", 1)))
 	# v0.9.574 — +2 Reveals bonus cell. If the awarded slot grants bonus
 	# reveals, bump the bag's budget BEFORE the auto-close check below.
 	# Net effect: this reveal cost 1 to flip + grants +2 budget = +1 net.
 	var bonus_reveals: int = int(awarded.get("bonus_reveals", 0)) if awarded is Dictionary else 0
 	if bonus_reveals > 0:
 		bag["reveal_budget"] = int(bag.get("reveal_budget", 0)) + bonus_reveals
+	# Trap: extra reveal penalty. Subtract from BUDGET so the cap drops by
+	# `reveal_penalty` (effective cost = 2 reveals for 0 reward).
+	var reveal_penalty: int = int(awarded.get("reveal_penalty", 0)) if awarded is Dictionary else 0
+	if reveal_penalty > 0:
+		bag["reveal_budget"] = max(int(bag.get("reveals_used", 0)), int(bag.get("reveal_budget", 0)) - reveal_penalty)
+	# Chain reveal: collect the orthogonal neighbors that still need to flip,
+	# then award + reveal each one in the same response. Neighbors don't cost
+	# extra reveals (chain pays for itself with a single flip-cost). Push the
+	# triggering slot's payload first so the client renders the shockwave
+	# before the cascade.
+	var chain_neighbor_payloads: Array = []
+	if awarded is Dictionary and bool(awarded.get("trigger_chain", false)):
+		var neighbor_indices: Array = _chain_neighbor_indices(slot_index)
+		for nidx in neighbor_indices:
+			if nidx < 0 or nidx >= slots.size():
+				continue
+			if bool(slots[nidx].get("revealed", false)):
+				continue
+			slots[nidx]["revealed"] = true
+			# Chain neighbors that ARE themselves chain cells don't recursively
+			# trigger more chains — strip the trigger flag from any nested award.
+			var n_award = _award_combat_loot_slot(peer_id, slots[nidx], int(bag.get("monster_tier", 1)))
+			if n_award is Dictionary and bool(n_award.get("trigger_chain", false)):
+				n_award["trigger_chain"] = false
+			# Bonus-reveal cells flipped by chain still grant their bonus.
+			var n_bonus: int = int(n_award.get("bonus_reveals", 0)) if n_award is Dictionary else 0
+			if n_bonus > 0:
+				bag["reveal_budget"] = int(bag.get("reveal_budget", 0)) + n_bonus
+			# Trap cells flipped by chain still bite (-1 budget each).
+			var n_pen: int = int(n_award.get("reveal_penalty", 0)) if n_award is Dictionary else 0
+			if n_pen > 0:
+				bag["reveal_budget"] = max(int(bag.get("reveals_used", 0)), int(bag.get("reveal_budget", 0)) - n_pen)
+			chain_neighbor_payloads.append({"slot_index": nidx, "reveal": n_award})
 	send_to_peer(peer_id, {
 		"type": "combat_loot_reveal_result",
 		"slot_index": slot_index,
 		"reveal": awarded,
+		"chain_neighbors": chain_neighbor_payloads,
 		"reveals_used": int(bag.reveals_used),
 		"reveal_budget": int(bag.reveal_budget),
 		"character": characters[peer_id].to_dict(),
@@ -20415,6 +20548,26 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 	if int(bag.reveals_used) >= int(bag.reveal_budget):
 		# Budget exhausted — auto-close (client will animate the cascade).
 		_finish_combat_loot(peer_id, true)
+
+
+func _chain_neighbor_indices(slot_index: int) -> Array:
+	"""Return the orthogonal (up/down/left/right) neighbor slot indices for the
+	16-slot 4x4 grid. Out-of-grid neighbors are skipped (corner cells get 2,
+	edge cells get 3, interior cells get 4)."""
+	var cols: int = 4
+	var rows: int = COMBAT_LOOT_SLOT_COUNT / cols
+	var col: int = slot_index % cols
+	var row: int = int(slot_index / cols)
+	var out: Array = []
+	if row > 0:
+		out.append((row - 1) * cols + col)
+	if row < rows - 1:
+		out.append((row + 1) * cols + col)
+	if col > 0:
+		out.append(row * cols + (col - 1))
+	if col < cols - 1:
+		out.append(row * cols + (col + 1))
+	return out
 
 func handle_combat_loot_done(peer_id: int) -> void:
 	"""Player pressed Done early — flip the remaining cards for the cascade so

@@ -16,6 +16,9 @@ signal done_pressed
 signal closed
 # v0.9.566 — autoskip checkbox state changed by user. Client persists it.
 signal autoskip_toggled(enabled: bool)
+# Engagement arc — emitted when a special cell reveals so client.gd can dispatch
+# the matching SFX. Names: "chain", "mystery", "trap", "plus_two".
+signal play_sfx(name: String)
 
 const SLOT_COUNT := 16
 const GRID_COLS := 4
@@ -355,8 +358,10 @@ func _render_pinned(pinned: Array) -> void:
 		_pinned_container.add_child(row)
 
 
-func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, reveal_budget: int) -> void:
-	"""Server confirmed a reveal — flip the card to show the awarded outcome."""
+func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, reveal_budget: int, chain_neighbors: Array = []) -> void:
+	"""Server confirmed a reveal — flip the card to show the awarded outcome.
+	When chain_neighbors[] is non-empty (the awarded slot was a Chain cell), the
+	panel cascades the neighbor reveals on a 60ms stagger after the shockwave."""
 	if slot_index < 0 or slot_index >= _cards.size():
 		return
 	if slot_index >= _slots_data.size():
@@ -370,6 +375,49 @@ func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, re
 	_render_card(slot_index)
 	_render_reveals_counter()
 	_play_reveal_pop(slot_index)
+	# Engagement-arc FX + SFX per kind. Each special cell gets a distinct
+	# visual flourish on top of the base scale-pop. Sound dispatches via the
+	# play_sfx signal; client.gd wires those to existing SFX players.
+	var kind: String = String(reveal_data.get("kind", ""))
+	match kind:
+		"filler_chain":
+			emit_signal("play_sfx", "chain")
+			_play_chain_shockwave(slot_index)
+		"filler_mystery":
+			emit_signal("play_sfx", "mystery")
+			_play_mystery_shimmer(slot_index)
+		"filler_trap":
+			emit_signal("play_sfx", "trap")
+			_play_trap_flash_and_shake(slot_index)
+		"filler_plus_two":
+			emit_signal("play_sfx", "plus_two")
+	# Chain neighbors cascade — server already revealed + awarded them; we just
+	# flip the visuals on a stagger so the player reads the chain pattern.
+	if not chain_neighbors.is_empty():
+		var stagger: float = 0.07
+		var delay: float = 0.15  # let the shockwave breathe before neighbors flip
+		for entry in chain_neighbors:
+			if not (entry is Dictionary):
+				continue
+			var n_idx: int = int(entry.get("slot_index", -1))
+			var n_reveal: Dictionary = entry.get("reveal", {})
+			if n_idx < 0 or n_idx >= _cards.size():
+				continue
+			var captured_idx := n_idx
+			var captured_reveal := n_reveal.duplicate(true)
+			_call_deferred_after(delay, func():
+				if captured_idx < _slots_data.size():
+					_slots_data[captured_idx] = captured_reveal
+					_slots_data[captured_idx]["revealed"] = true
+				_render_card(captured_idx)
+				_play_reveal_pop(captured_idx)
+				# Trap-in-chain still bites — flash + shake the neighbor too.
+				var nk: String = String(captured_reveal.get("kind", ""))
+				if nk == "filler_trap":
+					_play_trap_flash_and_shake(captured_idx)
+				elif nk == "filler_mystery":
+					_play_mystery_shimmer(captured_idx))
+			delay += stagger
 	# v0.9.596 — advance keyboard focus to the next unrevealed card so the
 	# player can hammer Enter without re-aiming. If everything is revealed,
 	# move focus to the Done button.
@@ -492,6 +540,15 @@ func _render_card(slot_index: int) -> void:
 	# from the server side; the sparkle adds the "you found something" beat.
 	if kind == "filler_plus_two":
 		sym_prefix = "[color=#FFD700]✦[/color] " + sym_prefix
+	# Same treatment for the three new special cells — each gets a distinct
+	# glyph prefix so the player can tell at a glance what kind of special
+	# they hit. Colors come from the server payload.
+	elif kind == "filler_chain":
+		sym_prefix = "[color=%s]⚡[/color] " % color_hex + sym_prefix
+	elif kind == "filler_mystery":
+		sym_prefix = "[color=%s]✦[/color] " % color_hex + sym_prefix
+	elif kind == "filler_trap":
+		sym_prefix = "[color=%s]☠[/color] " % color_hex + sym_prefix
 	# Wrap in center + small font for compact reveal cards.
 	var label_text: String = "[center]%s%s[color=%s]%s%s[/color][/center]" % [pick_prefix, miss_prefix, color_hex, sym_prefix, name]
 	# Add subtle kind tag underneath for context.
@@ -527,6 +584,12 @@ func _kind_display_name(kind: String) -> String:
 			return "Part"
 		"filler_plus_two":
 			return "Bonus Reveals"
+		"filler_chain":
+			return "Chain Reveal"
+		"filler_mystery":
+			return "Mystery"
+		"filler_trap":
+			return "Trap"
 		_:
 			return ""
 
@@ -543,6 +606,83 @@ func _play_reveal_pop(slot_index: int) -> void:
 	var tw := create_tween()
 	tw.tween_property(card, "scale", Vector2(1.05, 1.05), 0.10).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(card, "scale", Vector2(1.0, 1.0), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+func _play_chain_shockwave(slot_index: int) -> void:
+	"""Chain reveal — expanding cyan ring overlay centered on the triggering
+	cell. Fades out in ~0.35s. Tells the player which cell fired the chain
+	before the neighbor cards start flipping."""
+	if slot_index < 0 or slot_index >= _cards.size():
+		return
+	var card: Control = _cards[slot_index]
+	if not is_instance_valid(card):
+		return
+	var ring := Panel.new()
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.border_color = Color(0.36, 0.62, 1.0, 0.95)  # cyan-blue, matches #5C9DFF
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(8)
+	ring.add_theme_stylebox_override("panel", sb)
+	ring.z_index = 10
+	ring.size = card.size
+	ring.position = card.global_position - _grid.global_position
+	_grid.add_child(ring)
+	ring.pivot_offset = ring.size / 2.0
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2(3.2, 3.2), 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(Callable(ring, "queue_free"))
+
+
+func _play_mystery_shimmer(slot_index: int) -> void:
+	"""Mystery reveal — gold overlay flashes in then fades, giving the card a
+	`jackpot` shimmer beat on top of the base scale-pop."""
+	if slot_index < 0 or slot_index >= _cards.size():
+		return
+	var card: Control = _cards[slot_index]
+	if not is_instance_valid(card):
+		return
+	var glow := ColorRect.new()
+	glow.color = Color(1.0, 0.84, 0.0, 0.55)
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glow.size = card.size
+	glow.position = Vector2.ZERO
+	glow.z_index = 5
+	card.add_child(glow)
+	var tw := create_tween()
+	tw.tween_property(glow, "color:a", 0.0, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(Callable(glow, "queue_free"))
+
+
+func _play_trap_flash_and_shake(slot_index: int) -> void:
+	"""Trap reveal — red flash on the card + small shake of the panel root so
+	the punishment reads physical."""
+	if slot_index < 0 or slot_index >= _cards.size():
+		return
+	var card: Control = _cards[slot_index]
+	if not is_instance_valid(card):
+		return
+	var flash := ColorRect.new()
+	flash.color = Color(1.0, 0.15, 0.15, 0.75)
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash.size = card.size
+	flash.position = Vector2.ZERO
+	flash.z_index = 5
+	card.add_child(flash)
+	var tw := create_tween()
+	tw.tween_property(flash, "color:a", 0.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(Callable(flash, "queue_free"))
+	# Panel shake — translate root by a few pixels in a quick back-and-forth.
+	if _root_panel == null or not is_instance_valid(_root_panel):
+		return
+	var origin: Vector2 = _root_panel.position
+	var shake := create_tween()
+	shake.tween_property(_root_panel, "position", origin + Vector2(6, 0), 0.04)
+	shake.tween_property(_root_panel, "position", origin + Vector2(-5, 0), 0.05)
+	shake.tween_property(_root_panel, "position", origin + Vector2(3, 0), 0.04)
+	shake.tween_property(_root_panel, "position", origin, 0.04)
 
 
 # === Internal callbacks ===
