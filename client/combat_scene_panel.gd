@@ -19,6 +19,13 @@ static var _mono_font: FontFile = null
 
 var client_ref = null
 
+# v0.9.646 — per-element UI scale handles. The outer card PanelContainers are
+# captured during _build_scene_section_lufia so the click-to-resize edit mode
+# can target each independently. Monster ASCII uses Control.scale (text gets a
+# bit soft when scaled non-1.0 but the ASCII still reads clearly).
+var _player_party_box: PanelContainer = null
+var _companion_party_box: PanelContainer = null
+
 # Cached state (last populate call)
 var _player_class: String = ""
 var _player_name: String = ""
@@ -531,8 +538,13 @@ func _build_scene_section_lufia() -> Control:
 	party_box_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(party_box_row)
 
-	party_box_row.add_child(_build_lufia_party_box(_build_lufia_player_box_content()))
-	party_box_row.add_child(_build_lufia_party_box(_build_lufia_companion_box_content()))
+	# Capture the outer party-box PanelContainers so the UI scale system can
+	# resize each card independently (v0.9.646 click-to-resize). They're set
+	# as pivot-centered so Control.scale shrinks symmetrically.
+	_player_party_box = _build_lufia_party_box(_build_lufia_player_box_content())
+	_companion_party_box = _build_lufia_party_box(_build_lufia_companion_box_content())
+	party_box_row.add_child(_player_party_box)
+	party_box_row.add_child(_companion_party_box)
 
 	_player_col = party_box_row
 	return vbox
@@ -5432,3 +5444,73 @@ func is_death_interlude_active() -> bool:
 	"""True while the death card is showing or temporarily swapped out for
 	the legacy eulogy view. Drives panel-stays-visible logic on the client."""
 	return _death_interlude_active
+
+
+# === v0.9.646 — per-element UI scale registrations ===
+
+func attach_ui_scale_manager(manager: Node) -> void:
+	"""Called by client.gd once both the panel and the UIScaleManager exist.
+	Registers each scalable element with its own applier so the click-to-
+	resize edit mode can find them. Idempotent — re-attaching just re-applies
+	the saved scales."""
+	if manager == null:
+		return
+	# Monster ASCII — Control.scale around the label center so the art shrinks
+	# in place rather than slides toward a corner. ASCII at non-1.0 scale is
+	# slightly softer but still readable; the value is in fitting the art
+	# inside its container at low resolutions.
+	if _monster_art_label != null and is_instance_valid(_monster_art_label):
+		manager.register(
+			"combat_monster_ascii",
+			_monster_art_label,
+			func(s: float):
+				if _monster_art_label == null or not is_instance_valid(_monster_art_label):
+					return
+				_monster_art_label.pivot_offset = _monster_art_label.size / 2.0
+				_monster_art_label.scale = Vector2(s, s),
+			"Monster ASCII Art (Combat)"
+		)
+	# Player card — outer PanelContainer.scale, centered. Shrinking moves the
+	# player+companion HBox apart visually (good for low-res screens where the
+	# cards crowd the monster art).
+	if _player_party_box != null and is_instance_valid(_player_party_box):
+		manager.register(
+			"combat_player_card",
+			_player_party_box,
+			func(s: float):
+				if _player_party_box == null or not is_instance_valid(_player_party_box):
+					return
+				_player_party_box.pivot_offset = _player_party_box.size / 2.0
+				_player_party_box.scale = Vector2(s, s),
+			"Player Card (Combat)"
+		)
+	# Companion card — same pattern as player card.
+	if _companion_party_box != null and is_instance_valid(_companion_party_box):
+		manager.register(
+			"combat_companion_card",
+			_companion_party_box,
+			func(s: float):
+				if _companion_party_box == null or not is_instance_valid(_companion_party_box):
+					return
+				_companion_party_box.pivot_offset = _companion_party_box.size / 2.0
+				_companion_party_box.scale = Vector2(s, s),
+			"Companion Card (Combat)"
+		)
+	# Shared HP strip — the row containing both player + monster HP bars below
+	# the scene. Registered as both bars together so resizing affects the whole
+	# strip uniformly (per-side split can come in v2 if needed).
+	if _player_hp_bar != null and is_instance_valid(_player_hp_bar) and _player_hp_bar.get_parent() != null:
+		var strip_parent: Node = _player_hp_bar.get_parent()
+		while strip_parent != null and not (strip_parent is HBoxContainer and strip_parent.get_parent() != null and not (strip_parent.get_parent() is HBoxContainer)):
+			strip_parent = strip_parent.get_parent()
+		if strip_parent is Control:
+			manager.register(
+				"combat_hp_strip",
+				strip_parent,
+				func(s: float):
+					if strip_parent == null or not is_instance_valid(strip_parent):
+						return
+					strip_parent.pivot_offset = strip_parent.size / 2.0
+					strip_parent.scale = Vector2(s, s),
+				"HP Bars Strip (Combat)"
+			)
