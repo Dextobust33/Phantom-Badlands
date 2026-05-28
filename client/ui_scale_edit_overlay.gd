@@ -84,14 +84,12 @@ func _build_layout() -> void:
 	_banner.add_theme_stylebox_override("panel", sb)
 	_banner.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(_banner)
-	# Anchor banner to top-center.
-	_banner.anchor_left = 0.5
-	_banner.anchor_right = 0.5
-	_banner.anchor_top = 0.0
-	_banner.anchor_bottom = 0.0
-	_banner.offset_top = 14
-	_banner.offset_left = -240
-	_banner.offset_right = 240
+	# Anchor banner to top-center. v0.9.648 — earlier offset-based anchoring
+	# landed the banner off-screen (top-left) on some resolutions. Using the
+	# CENTER_TOP preset + a top offset is the reliable way to top-center a
+	# Control in Godot 4.
+	_banner.set_anchors_preset(Control.PRESET_CENTER_TOP, true)
+	_banner.position.y = 14
 
 	var banner_box := HBoxContainer.new()
 	banner_box.add_theme_constant_override("separation", 14)
