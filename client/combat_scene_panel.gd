@@ -21,10 +21,15 @@ var client_ref = null
 
 # v0.9.646 — per-element UI scale handles. The outer card PanelContainers are
 # captured during _build_scene_section_lufia so the click-to-resize edit mode
-# can target each independently. Monster ASCII uses Control.scale (text gets a
-# bit soft when scaled non-1.0 but the ASCII still reads clearly).
+# can target each independently.
 var _player_party_box: PanelContainer = null
 var _companion_party_box: PanelContainer = null
+# v0.9.650 — monster ASCII font multiplier applied at _refresh_monster() time.
+# Earlier versions used Control.scale on the label, which got clipped by the
+# parent art_holder's clip_contents=true so the ASCII never actually grew on
+# screen. Now we rewrite the font_size in the BBCode itself so the text re-
+# renders at the new size.
+var _monster_art_user_scale: float = 1.0
 
 # Cached state (last populate call)
 var _player_class: String = ""
@@ -4010,9 +4015,33 @@ func _refresh_monster() -> void:
 	# in the damage formula.
 	var niche_tag := _get_niche_passive_tag()
 	_monster_name_label.text = "[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]%s" % [_monster_name_color, _monster_name, _monster_level, niche_tag]
-	_monster_art_label.text = _monster_art_bbcode
+	# v0.9.650 — apply the per-element user scale by rewriting the font_size
+	# tag in the stored BBCode. Source BBCode looks like
+	# `[right][font_size=N]...[/font_size][/right]`; we multiply N by the
+	# user's chosen scale (default 1.0 = no change). Clamped to ≥ 2 so the
+	# ASCII stays visible at extreme shrink.
+	var art_bbcode_to_show: String = _monster_art_bbcode
+	if _monster_art_user_scale != 1.0 and art_bbcode_to_show != "":
+		var rx := RegEx.new()
+		rx.compile("font_size=(\\d+)")
+		var m: RegExMatch = rx.search(art_bbcode_to_show)
+		if m != null:
+			var old_size: int = int(m.get_string(1))
+			var new_size: int = max(2, int(round(old_size * _monster_art_user_scale)))
+			art_bbcode_to_show = art_bbcode_to_show.replace("font_size=%d" % old_size, "font_size=%d" % new_size)
+	_monster_art_label.text = art_bbcode_to_show
 	_monster_hp_bar.visible = true
 	_refresh_monster_hp()
+
+
+func set_monster_art_user_scale(scale: float) -> void:
+	"""Set the per-element scale multiplier for the monster ASCII and re-render.
+	Called by the UIScaleManager applier from attach_ui_scale_manager."""
+	_monster_art_user_scale = clampf(scale, 0.3, 3.0)
+	# Re-render — _refresh_monster bails early if there's no monster, which is
+	# the right behavior (nothing to scale until combat starts).
+	if _monster_name != "":
+		_refresh_monster()
 
 
 func _refresh_monster_hp() -> void:
@@ -5455,19 +5484,16 @@ func attach_ui_scale_manager(manager: Node) -> void:
 	the saved scales."""
 	if manager == null:
 		return
-	# Monster ASCII — Control.scale around the label center so the art shrinks
-	# in place rather than slides toward a corner. ASCII at non-1.0 scale is
-	# slightly softer but still readable; the value is in fitting the art
-	# inside its container at low resolutions.
+	# Monster ASCII — rewrites the font_size in the BBCode so the ASCII
+	# actually re-renders at the new size. The earlier v0.9.646 Control.scale
+	# path was clipped by art_holder.clip_contents, so the visible ASCII
+	# didn't change even when scale changed.
 	if _monster_art_label != null and is_instance_valid(_monster_art_label):
 		manager.register(
 			"combat_monster_ascii",
 			_monster_art_label,
 			func(s: float):
-				if _monster_art_label == null or not is_instance_valid(_monster_art_label):
-					return
-				_monster_art_label.pivot_offset = _monster_art_label.size / 2.0
-				_monster_art_label.scale = Vector2(s, s),
+				set_monster_art_user_scale(s),
 			"Monster ASCII Art (Combat)"
 		)
 	# Player card — outer PanelContainer.scale, centered. Shrinking moves the
