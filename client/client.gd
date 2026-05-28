@@ -2189,23 +2189,29 @@ func _ready():
 	ui_scale_edit_overlay = UIScaleEditOverlayScript.new()
 	add_child(ui_scale_edit_overlay)
 	ui_scale_edit_overlay.attach(ui_scale_manager)
-	# v0.9.647 — persistent "Resize UI" button next to Send. CLAUDE.md
-	# directive: UI buttons over keyboard shortcuts. Chat row is always
-	# visible (including during combat) so this is a one-place-fits-all entry
-	# point that doesn't require opening Settings.
-	if send_button != null and send_button.get_parent() != null:
-		var ui_scale_btn := Button.new()
-		ui_scale_btn.text = "Resize UI"
-		ui_scale_btn.focus_mode = Control.FOCUS_NONE
-		ui_scale_btn.custom_minimum_size = Vector2(80, 0)
-		ui_scale_btn.tooltip_text = "Click to enter UI scale edit mode, then click any UI element to resize it."
-		ui_scale_btn.add_theme_font_size_override("font_size", 11)
-		ui_scale_btn.pressed.connect(func():
-			if ui_scale_edit_overlay != null:
-				ui_scale_edit_overlay.enter_edit_mode())
-		var input_row: Node = send_button.get_parent()
-		input_row.add_child(ui_scale_btn)
-		input_row.move_child(ui_scale_btn, send_button.get_index() + 1)
+	# v0.9.648 — persistent "Resize UI" button anchored to the viewport's
+	# top-right corner. Always visible regardless of game state (combat,
+	# dungeon, overworld, menus). Floating outside the chat/map/HUD layout so
+	# it doesn't compete with content for space. CLAUDE.md directive: UI
+	# buttons over keyboard shortcuts.
+	var ui_scale_btn := Button.new()
+	ui_scale_btn.text = "Resize UI"
+	ui_scale_btn.focus_mode = Control.FOCUS_NONE
+	ui_scale_btn.tooltip_text = "Click to enter UI scale edit mode, then click any UI element to resize it."
+	ui_scale_btn.add_theme_font_size_override("font_size", 11)
+	ui_scale_btn.anchor_left = 1.0
+	ui_scale_btn.anchor_right = 1.0
+	ui_scale_btn.anchor_top = 0.0
+	ui_scale_btn.anchor_bottom = 0.0
+	ui_scale_btn.offset_left = -98
+	ui_scale_btn.offset_right = -8
+	ui_scale_btn.offset_top = 6
+	ui_scale_btn.offset_bottom = 28
+	ui_scale_btn.z_index = 200
+	ui_scale_btn.pressed.connect(func():
+		if ui_scale_edit_overlay != null:
+			ui_scale_edit_overlay.enter_edit_mode())
+	add_child(ui_scale_btn)
 	# Hand the manager to combat_scene_panel so it can register its scalable
 	# elements (monster ASCII, player/companion cards, HP/resource/XP bars).
 	if combat_scene_panel != null and combat_scene_panel.has_method("attach_ui_scale_manager"):
