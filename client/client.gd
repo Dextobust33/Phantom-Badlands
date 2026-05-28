@@ -1359,6 +1359,13 @@ var craft_reveal_panel = null
 # Combat scratch-off (user-requested 2026-05-14)
 const CombatLootPanelScript = preload("res://client/combat_loot_panel.gd")
 var combat_loot_panel = null
+# v0.9.646 — per-element UI scale system. Manager owns the registry +
+# persistence; overlay is the click-to-resize edit mode UX. Both nullable
+# during early boot; panels guard their register() calls accordingly.
+const UIScaleManagerScript = preload("res://client/ui_scale_manager.gd")
+const UIScaleEditOverlayScript = preload("res://client/ui_scale_edit_overlay.gd")
+var ui_scale_manager = null
+var ui_scale_edit_overlay = null
 # Cached victory-card payload so we can re-render the loot list after each
 # reveal (and especially after Done, when the panel closes and the player
 # wants to see what they got). Cleared when the next combat starts.
@@ -2173,6 +2180,36 @@ func _ready():
 	# game_output_container so the centering math matches other gathering
 	# minigames; the root client layout is a VBox so add_child(self) would
 	# anchor the panel top-left instead of centering it on the play area.
+	# v0.9.646 — instantiate UI scale manager + edit overlay BEFORE any panel
+	# that wants to register elements with it. Manager loads its saved config
+	# in _ready; register() applies the saved scale immediately so reload-
+	# after-restart looks identical to before-restart.
+	ui_scale_manager = UIScaleManagerScript.new()
+	add_child(ui_scale_manager)
+	ui_scale_edit_overlay = UIScaleEditOverlayScript.new()
+	add_child(ui_scale_edit_overlay)
+	ui_scale_edit_overlay.attach(ui_scale_manager)
+	# Hand the manager to combat_scene_panel so it can register its scalable
+	# elements (monster ASCII, player/companion cards, HP/resource/XP bars).
+	if combat_scene_panel != null and combat_scene_panel.has_method("attach_ui_scale_manager"):
+		combat_scene_panel.attach_ui_scale_manager(ui_scale_manager)
+	# Register the world map display so the player can resize it independently
+	# of the existing bulk ui_scale_map knob. Applier rebuilds the map font size
+	# via the existing _apply_ui_scale_changes path so the two systems compose.
+	if ui_scale_manager != null and map_display != null:
+		ui_scale_manager.register(
+			"world_map",
+			map_display,
+			func(scale: float):
+				if map_display == null:
+					return
+				var wh: float = get_viewport().get_visible_rect().size.y
+				var base_scale: float = wh / 720.0
+				var sz: int = int(MAP_BASE_FONT_SIZE * base_scale * ui_scale_map * scale)
+				map_display.add_theme_font_size_override("normal_font_size", max(6, sz)),
+			"World Map"
+		)
+
 	combat_loot_panel = CombatLootPanelScript.new()
 	game_output_container.add_child(combat_loot_panel)
 	combat_loot_panel.slot_clicked.connect(_on_combat_loot_slot_clicked)
@@ -4602,6 +4639,7 @@ func _input(event):
 				adjust_ui_scale("monster_art", 0.1)
 			elif keycode == KEY_4:
 				adjust_ui_scale("monster_art", -0.1)
+			elif keycode == KEY_5:
 				adjust_ui_scale("game_output", 0.1)
 			elif keycode == KEY_6:
 				adjust_ui_scale("game_output", -0.1)
@@ -4623,6 +4661,15 @@ func _input(event):
 				adjust_ui_scale("status_hud", -0.1)
 			elif keycode == KEY_9:
 				reset_ui_scales()
+			elif keycode == KEY_F:
+				# v0.9.646 — enter the click-to-resize edit mode. Closes the
+				# settings menu first so the overlay can see the underlying UI.
+				settings_submenu = ""
+				settings_mode = false
+				game_output.clear()
+				update_action_bar()
+				if ui_scale_edit_overlay != null:
+					ui_scale_edit_overlay.enter_edit_mode()
 			elif keycode == back_key:
 				settings_submenu = ""
 				game_output.clear()
@@ -24078,6 +24125,8 @@ func display_ui_scale_settings():
 	"""Display UI scale settings for adjustment"""
 	display_game("[color=#FFD700]===== UI SCALE SETTINGS =====[/color]")
 	display_game("[color=#808080]Adjust the size of different UI elements (0.5x - 3.0x)[/color]")
+	display_game("")
+	display_game("[color=#88FF88][F] Click-to-Resize Mode[/color] — close this menu, then click any UI element to resize it individually")
 	display_game("")
 	display_game("[color=#E6CC80]Map Display[/color] (ASCII terrain, player marker)")
 	display_game("[1] Increase  [2] Decrease  Current: [color=#00FFFF]%.0f%%[/color]" % (ui_scale_map * 100))
