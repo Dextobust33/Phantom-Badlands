@@ -4055,7 +4055,23 @@ func generate_unique(unique_id: String, monster_level: int) -> Dictionary:
 	which character.get_path_effect_total sums alongside Path talents."""
 	var u: Dictionary = UniqueDatabaseScript.get_unique(unique_id)
 	if u.is_empty():
-		return {}
+		# Set pieces (pillar 4 slice 2) share this generator: artifact stats
+		# at drop level + fixed name/lore + set_id. No individual signature —
+		# the set BONUS (by equipped-piece count) is the draw, summed by
+		# character.get_path_effect_total.
+		var p: Dictionary = UniqueDatabaseScript.find_set_piece(unique_id)
+		if p.is_empty():
+			return {}
+		var piece: Dictionary = _generate_item({"item_type": String(p.get("item_type", "ring_artifact"))}, monster_level, "artifact")
+		if piece.is_empty():
+			return {}
+		piece["is_set_piece"] = true
+		piece["set_id"] = String(p.get("set_id", ""))
+		piece["piece_id"] = unique_id
+		piece["name"] = String(p.get("name", unique_id))
+		piece["lore"] = String(p.get("lore", ""))
+		piece["value"] = int(piece.get("value", 100) * 3)
+		return piece
 	var item: Dictionary = _generate_item({"item_type": String(u.get("item_type", "ring_artifact"))}, monster_level, "artifact")
 	if item.is_empty():
 		return {}

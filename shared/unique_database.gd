@@ -99,10 +99,94 @@ const UNIQUES = {
 }
 
 
+# === SETS (pillar 4 slice 2) ===
+# Set pieces generate like uniques (artifact stats at drop level, fixed name +
+# lore + set_id) but carry NO individual signature — the chase is the set
+# bonus, which activates by equipped-piece count. Bonus effect dicts use the
+# same Path/unique key vocabulary and are summed by get_path_effect_total.
+const SETS = {
+	"gravewalkers_vigil": {
+		"name": "The Gravewalker's Vigil",
+		"bonuses": {
+			2: {"defense_pct": 10, "kill_cleanse": true},
+			3: {"death_save_per_combat": 1, "low_hp_damage_pct": 20},
+		},
+		"bonus_desc": {
+			2: "+10% defense; killing blows cleanse your poison and bleed",
+			3: "Once per combat, survive a lethal hit at 1 HP; +20% damage below half HP",
+		},
+		"pieces": {
+			"gravewalkers_cleaver": {"name": "Gravewalker's Cleaver", "item_type": "weapon_artifact", "lore": "It remembers every grave it dug."},
+			"gravewalkers_bulwark": {"name": "Gravewalker's Bulwark", "item_type": "shield_artifact", "lore": "Coffin-lid oak, iron-banded twice."},
+			"gravewalkers_visage": {"name": "Gravewalker's Visage", "item_type": "helm_artifact", "lore": "The dead do not yield. Neither will you."},
+		},
+	},
+	"stormcallers_regalia": {
+		"name": "Regalia of the Stormcaller",
+		"bonuses": {
+			2: {"spell_damage_pct": 10, "combat_regen_bonus_pct": 25},
+			3: {"double_cast_pct": 10, "burn_power_pct": 50},
+		},
+		"bonus_desc": {
+			2: "+10% spell damage; in-combat mana regen 25% stronger",
+			3: "+10% chance to cast spells twice; your burns tick 50% harder",
+		},
+		"pieces": {
+			"stormcallers_rod": {"name": "Stormcaller's Rod", "item_type": "weapon_artifact", "lore": "The sky answers. It does not ask why."},
+			"stormcallers_robes": {"name": "Stormcaller's Robes", "item_type": "armor_artifact", "lore": "Woven during the storm, from the storm."},
+			"stormcallers_eye": {"name": "Stormcaller's Eye", "item_type": "amulet_artifact", "lore": "It blinked once, in the year of the drowned sun."},
+		},
+	},
+	"magpies_hoard": {
+		"name": "The Magpie's Hoard",
+		"bonuses": {
+			2: {"valor_pct": 15, "flee_chance_pct": 8},
+			3: {"loot_reveal_bonus": 1, "crit_chance_pct": 5},
+		},
+		"bonus_desc": {
+			2: "+15% Valor from kills; +8% flee chance",
+			3: "+1 loot reveal on every victory; +5% critical hit chance",
+		},
+		"pieces": {
+			"magpies_steps": {"name": "Magpie's Steps", "item_type": "boots_artifact", "lore": "Always one hop ahead of the owner."},
+			"magpies_claw": {"name": "Magpie's Claw", "item_type": "ring_artifact", "lore": "It holds what it likes. It likes everything."},
+			"magpies_mantle": {"name": "Magpie's Mantle", "item_type": "armor_artifact", "lore": "Lined with a hundred shining little thefts."},
+		},
+	},
+}
+
+
 static func get_unique(unique_id: String) -> Dictionary:
 	return UNIQUES.get(unique_id, {})
+
+
+static func get_set(set_id: String) -> Dictionary:
+	return SETS.get(set_id, {})
+
+
+static func find_set_piece(piece_id: String) -> Dictionary:
+	"""Locate a set piece by id. Returns the piece dict + 'set_id' + 'set_name',
+	or {} when unknown."""
+	for set_id in SETS:
+		var pieces: Dictionary = SETS[set_id].get("pieces", {})
+		if pieces.has(piece_id):
+			var out: Dictionary = pieces[piece_id].duplicate()
+			out["set_id"] = set_id
+			out["set_name"] = String(SETS[set_id].get("name", set_id))
+			return out
+	return {}
 
 
 static func random_unique_id() -> String:
 	var keys: Array = UNIQUES.keys()
 	return String(keys[randi() % keys.size()])
+
+
+static func random_named_drop_id() -> String:
+	"""Uniform pool of all named drops: 15 uniques + 9 set pieces. The server
+	victory roll picks from this — set pieces are 9/24 of named drops, so a
+	3-piece set is a real chase."""
+	var pool: Array = UNIQUES.keys()
+	for set_id in SETS:
+		pool.append_array(SETS[set_id].get("pieces", {}).keys())
+	return String(pool[randi() % pool.size()])

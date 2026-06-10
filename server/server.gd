@@ -6002,7 +6002,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if result.get("is_boss_fight", false):
 					_unique_chance += 2.5
 				if randf() * 100.0 < _unique_chance:
-					var _unique_item: Dictionary = drop_tables.generate_unique(UniqueDatabaseScript.random_unique_id(), max(1, killed_monster_level))
+					var _unique_item: Dictionary = drop_tables.generate_unique(UniqueDatabaseScript.random_named_drop_id(), max(1, killed_monster_level))
 					if not _unique_item.is_empty():
 						all_drops.append(_unique_item)
 						log_message("UNIQUE DROP: %s for %s (chance was %.2f%%)" % [_unique_item.get("name", "?"), characters[peer_id].name, _unique_chance])

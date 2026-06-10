@@ -1441,6 +1441,9 @@ var bestiary_panel = null
 const PathsPanelScript = preload("res://client/paths_panel.gd")
 var paths_panel = null
 
+# Uniques & Sets (ARPG pillar 4) — set definitions for tooltip rendering.
+const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -14932,6 +14935,32 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 		if unique_lore != "":
 			lines.append("[color=#C4A882][i]\"%s\"[/i][/color]" % unique_lore)
 
+	# Set pieces (pillar 4 slice 2) — set name, equipped count, bonus tiers
+	# colored by active state. Set bonuses use the same effect vocabulary.
+	if item.get("is_set_piece", false):
+		var set_id: String = str(item.get("set_id", ""))
+		var set_def: Dictionary = UniqueDatabaseScript.get_set(set_id)
+		if not set_def.is_empty():
+			var equipped_count := 0
+			var eq_dict: Dictionary = character_data.get("equipped", {})
+			for eq_slot in eq_dict:
+				var eq_item = eq_dict[eq_slot]
+				if eq_item is Dictionary and str(eq_item.get("set_id", "")) == set_id:
+					equipped_count += 1
+			var piece_total: int = set_def.get("pieces", {}).size()
+			lines.append("")
+			lines.append("[color=#1EFF00]◆ %s (%d/%d equipped)[/color]" % [str(set_def.get("name", set_id)), equipped_count, piece_total])
+			var bonus_desc: Dictionary = set_def.get("bonus_desc", {})
+			var tier_keys: Array = bonus_desc.keys()
+			tier_keys.sort()
+			for tier in tier_keys:
+				var active: bool = equipped_count >= int(tier)
+				var tier_color := "#1EFF00" if active else "#777777"
+				lines.append("  [color=%s](%d) %s[/color]" % [tier_color, int(tier), str(bonus_desc[tier])])
+			var set_lore: String = str(item.get("lore", ""))
+			if set_lore != "":
+				lines.append("[color=#C4A882][i]\"%s\"[/i][/color]" % set_lore)
+
 	# Crafter / enchanter
 	var crafted_by: String = str(item.get("crafted_by", ""))
 	var enchanted_by: String = str(item.get("enchanted_by", ""))
@@ -26322,8 +26351,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.656 — Item Sets (ARPG arc pillar 4 complete).
+	display_game("[color=#00FF00]v0.9.656[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ ITEM SETS — pillar 4 complete.[/color]")
+	display_game("  • [b]3 sets of 3 pieces[/b], dropping from the same Empowered/boss hunt as uniques: [color=#1EFF00]The Gravewalker's Vigil[/color] (2pc: +10%% defense + kills cleanse your wounds / 3pc: survive one lethal hit per combat + +20%% damage below half HP), [color=#1EFF00]Regalia of the Stormcaller[/color] (2pc: +10%% spell damage + stronger mana regen / 3pc: spells can double-cast + burns tick 50%% harder), [color=#1EFF00]The Magpie's Hoard[/color] (2pc: +15%% Valor + flee / 3pc: +1 loot reveal + crit chance).")
+	display_game("  • [b]Bonuses activate by equipped count[/b] — 2 pieces wake the first bonus, the full set wakes both. Tooltips show the set roster with your progress and which bonuses are live.")
+	display_game("  • Set bonuses stack with uniques and your Path talents — they all speak the same language under the hood. Build around the overlap.")
+	display_game("")
+
 	# v0.9.655 — Uniques (ARPG arc pillar 4) + Empowered density 25%.
-	display_game("[color=#00FF00]v0.9.655[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.655[/color]")
 	display_game("  [color=#FF8000]★ UNIQUE ITEMS — hand-authored legendaries. ARPG arc pillar 4 begins.[/color]")
 	display_game("  • [b]15 named uniques[/b] with fixed rule-breaking signature powers: [color=#FF8000]Bloodletter's Hook[/color] (your bleeds tick double), [color=#FF8000]The Second Sun[/color] (spells can cast twice), [color=#FF8000]Juggernaut's Heart[/color] (stun immunity), [color=#FF8000]Phantom Shroud[/color] (first strike always crits), [color=#FF8000]The Hourglass, Unbroken[/color] (cheat death with frozen time), [color=#FF8000]Avarice, the Golden Burden[/color] (+1 loot reveal, -10%% XP)... and 9 more to discover.")
 	display_game("  • [b]The hunt[/b]: tiny base drop chance, but +0.75%% per Empowered modifier on the kill and +2.5%% from bosses — hunting elites IS the unique hunt. Uniques drop at the kill's level, so their stats scale forever; the signature never changes. Any class can find any unique — trade them on the market.")
@@ -29114,6 +29151,7 @@ func show_help():
 [color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%%
 [color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%%) - 35%% guaranteed drop!
 [color=#FF8000]★ UNIQUES:[/color] 15 named items with fixed rule-breaking powers (Bloodletter's Hook, The Second Sun, Juggernaut's Heart...). Tiny drop chance, [b]boosted by Empowered modifiers (+0.75%%/mod) and bosses (+2.5%%)[/b]. Stats scale to drop level — re-find them stronger forever. Tradeable on the market!
+[color=#1EFF00]◆ SETS:[/color] 3 item sets of 3 pieces (Gravewalker's Vigil, Stormcaller's Regalia, Magpie's Hoard). Equip 2 pieces for the first bonus, all 3 for the big one. Drop from the same Empowered/boss hunt as uniques.
 [color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%%HP)
 [color=#FFD700]Synergy*:[/color] Asterisk (*) after affix name = double bonus synergy (e.g., Arcane* Hoarder's Ring)
 

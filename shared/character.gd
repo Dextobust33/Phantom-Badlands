@@ -336,9 +336,10 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 @export var path_nodes: Array = []        # taken node ids (PathDatabase)
 @export var path_milestones: Array = []   # claimed milestone ids (+1 point each)
 
-# path_database.gd is dependency-free, so a preload here can't create a
-# load-order cycle (unlike Constants, which this file deliberately inlines).
+# path_database.gd / unique_database.gd are dependency-free, so preloads here
+# can't create a load-order cycle (unlike Constants, deliberately inlined).
 const PathDatabaseScript = preload("res://shared/path_database.gd")
+const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
 # Effect aggregation cache — path_nodes only ever appends (no respec), so the
 # cache is valid while the count matches.
 var _path_fx_cache: Dictionary = {}
@@ -3036,6 +3037,7 @@ func get_path_effect_total(effect_key: String) -> float:
 				_path_fx_cache[k] = float(_path_fx_cache.get(k, 0.0)) + num
 		_path_fx_cache_count = path_nodes.size()
 	var total: float = float(_path_fx_cache.get(effect_key, 0.0))
+	var set_counts: Dictionary = {}
 	for slot in equipped.keys():
 		var item = equipped[slot]
 		if item == null or not item is Dictionary:
@@ -3047,6 +3049,24 @@ func get_path_effect_total(effect_key: String) -> float:
 				total += 1.0 if uv else 0.0
 			elif uv is int or uv is float:
 				total += float(uv)
+		# Set pieces (pillar 4 slice 2) — tally equipped pieces per set.
+		var sid = String(item.get("set_id", ""))
+		if sid != "":
+			set_counts[sid] = int(set_counts.get(sid, 0)) + 1
+	# Set bonuses: every threshold tier at or below the equipped count is
+	# active (2pc stays on when the 3rd piece lands).
+	for sid in set_counts:
+		var set_def: Dictionary = UniqueDatabaseScript.get_set(sid)
+		var tiers: Dictionary = set_def.get("bonuses", {})
+		for tier in tiers:
+			if int(tier) <= int(set_counts[sid]):
+				var sfx: Dictionary = tiers[tier]
+				if sfx.has(effect_key):
+					var sv = sfx[effect_key]
+					if sv is bool:
+						total += 1.0 if sv else 0.0
+					elif sv is int or sv is float:
+						total += float(sv)
 	return total
 
 func has_path_effect(effect_key: String) -> bool:
