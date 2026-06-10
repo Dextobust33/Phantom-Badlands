@@ -495,6 +495,27 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 	Called by both regular attacks and ability usage."""
 	var bonuses = character.get_equipment_bonuses()
 
+	# Path: combat_resource_regen_pct (Second Wind — % of max primary
+	# resource per combat round, archetype-matched).
+	var path_regen_pct = character.get_path_effect_total("combat_resource_regen_pct")
+	if path_regen_pct > 0.0:
+		match character.get_class_path():
+			"warrior":
+				if character.current_stamina < character.get_total_max_stamina():
+					var st_amt = max(1, int(character.get_total_max_stamina() * path_regen_pct / 100.0))
+					character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + st_amt)
+					messages.append("[color=#FFD700]⚜ Second Wind restores %d stamina.[/color]" % st_amt)
+			"mage":
+				if character.current_mana < character.get_total_max_mana():
+					var mn_amt = max(1, int(character.get_total_max_mana() * path_regen_pct / 100.0))
+					character.current_mana = mini(character.get_total_max_mana(), character.current_mana + mn_amt)
+					messages.append("[color=#FFD700]⚜ Your Path restores %d mana.[/color]" % mn_amt)
+			"trickster":
+				if character.current_energy < character.get_total_max_energy():
+					var en_amt = max(1, int(character.get_total_max_energy() * path_regen_pct / 100.0))
+					character.current_energy = mini(character.get_total_max_energy(), character.current_energy + en_amt)
+					messages.append("[color=#FFD700]⚜ Your Path restores %d energy.[/color]" % en_amt)
+
 	# Combine gear mana_regen with buff mana_regen (from crafted consumables like Enchanted Kindling)
 	var mana_regen = bonuses.get("mana_regen", 0) + character.get_buff_value("mana_regen")
 	if mana_regen > 0 and character.current_mana < character.get_total_max_mana():
@@ -1391,6 +1412,11 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var abilities = monster.get("abilities", [])
 	var messages = []
 
+	# Path: a basic attack is not an ability — clear the last-ability-cost
+	# marker so a kill by attack doesn't refund a stale earlier cast
+	# (kill_cost_refund_pct reads this at victory).
+	character.set_meta("path_last_ability_cost", 0)
+
 	# === EQUIPMENT-BASED RESOURCE REGENERATION (at start of player turn) ===
 	_apply_gear_resource_regen(character, messages)
 
@@ -1402,6 +1428,11 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		if character.class_type == "Sage":
 			base_mana_regen_pct = 0.03
 		var base_regen = max(1, int(character.get_total_max_mana() * base_mana_regen_pct))
+		# Path: combat_regen_bonus_pct (Flowing Font — in-combat mana regen
+		# 50% stronger)
+		var path_regen_bonus = character.get_path_effect_total("combat_regen_bonus_pct")
+		if path_regen_bonus > 0.0:
+			base_regen = max(1, int(base_regen * (1.0 + path_regen_bonus / 100.0)))
 		var old_mana = character.current_mana
 		character.current_mana = mini(character.get_total_max_mana(), character.current_mana + base_regen)
 		var actual_regen = character.current_mana - old_mana
@@ -1500,6 +1531,16 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		combat.player_can_act = false
 		return {"success": true, "messages": messages, "combat_ended": false}
 
+	# Path: stun counters. stun_immune (Juggernaut's Resolve) and
+	# stun_duration_reduction (Unshakeable/Temporal Slip/Slippery) both
+	# negate the 1-turn web/lullaby skips at this single consumption point —
+	# the player shrugs the CC and acts normally.
+	if (combat.get("player_webbed", false) or combat.get("player_lulled", false)) \
+			and (character.has_path_effect("stun_immune") or character.get_path_effect_total("stun_duration_reduction") > 0.0):
+		combat["player_webbed"] = false
+		combat["player_lulled"] = false
+		messages.append("[color=#FFD700]Your Path steadies you — the stun cannot hold![/color]")
+
 	# === WEB STUN EFFECT (Constricting Web / boss_web_stun) ===
 	# Player struggles free this turn instead of acting. Web clears after one
 	# skipped turn so the boss can re-apply on a future hit.
@@ -1584,7 +1625,11 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		if actual_heal > 0:
 			messages.append("[color=#00FFFF]Companion heals %d HP.[/color]" % actual_heal)
 
-	if is_vanished or hit_roll < hit_chance:
+	# Path keystone — Phantom Strike: the first attack each combat cannot
+	# miss (the always-crit half lives in calculate_damage, which also stamps
+	# path_first_strike_done).
+	var path_first_strike_pending = character.has_path_effect("first_strike_autocrit") and not combat.get("path_first_strike_done", false)
+	if is_vanished or path_first_strike_pending or hit_roll < hit_chance:
 		# Hit!
 		var damage_result = calculate_damage(character, monster, combat)
 		var damage = damage_result.damage
@@ -1957,6 +2002,31 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		final_xp = int(final_xp * 1.20)
 		apex_xp_pct += 20
 
+	# Path: on-kill riders. kill_cost_refund_pct refunds part of the killing
+	# cast's cost (marker stamped in apply_variable_cost, zeroed by basic
+	# attacks); kill_cleanse purges the player's poison + bleed stacks.
+	var path_refund_pct = character.get_path_effect_total("kill_cost_refund_pct")
+	if path_refund_pct > 0.0:
+		var last_cost = int(character.get_meta("path_last_ability_cost", 0))
+		if last_cost > 0:
+			var refund = max(1, int(last_cost * path_refund_pct / 100.0))
+			match String(character.get_meta("path_last_ability_resource", "")):
+				"stamina":
+					character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + refund)
+				"mana":
+					character.current_mana = mini(character.get_total_max_mana(), character.current_mana + refund)
+				"energy":
+					character.current_energy = mini(character.get_total_max_energy(), character.current_energy + refund)
+				_:
+					refund = 0
+			if refund > 0:
+				messages.append("[color=#FFD700]⚜ Killing momentum refunds %d %s![/color]" % [refund, String(character.get_meta("path_last_ability_resource", "resource"))])
+			character.set_meta("path_last_ability_cost", 0)
+	if character.has_path_effect("kill_cleanse") and (character.poison_active or int(combat.get("player_bleed_stacks", 0)) > 0):
+		character.cure_poison()
+		combat["player_bleed_stacks"] = 0
+		messages.append("[color=#9ACD32]⚜ The kill purges your wounds — poison and bleed cleansed![/color]")
+
 	# Empowered kill callout (v0.9.651) — the +30%/mod XP is already baked
 	# into experience_reward at generation; this line tells the player WHY the
 	# number was bigger and that bonus reveals are coming. Reveal math here
@@ -1981,6 +2051,11 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		var xp_mult = 1.0 + passive_effects.get("xp_bonus", 0)
 		final_xp = int(final_xp * xp_mult)
 		messages.append("[color=#228B22]Hunter's Mark: +%d%% XP![/color]" % int(passive_effects.get("xp_bonus", 0) * 100))
+
+	# Path: xp_pct (Jackpot keystone -10% / Apex Hunter +10%)
+	var path_xp_pct = character.get_path_effect_total("xp_pct")
+	if path_xp_pct != 0.0:
+		final_xp = max(1, int(final_xp * (1.0 + path_xp_pct / 100.0)))
 
 	var effective_bonus_pct = int((xp_multiplier - 1.0) * 100)
 	if effective_bonus_pct > 0:
@@ -2383,6 +2458,14 @@ func process_flee(combat: Dictionary) -> Dictionary:
 		var flock_flee_bonus = flock_count * 15
 		flee_chance += flock_flee_bonus
 		messages.append("[color=#FFD700]Flock fatigue: +%d%% flee chance![/color]" % flock_flee_bonus)
+
+	# Path: flee_chance_pct — Fleet Footed +8 / Shadow Lord +15 /
+	# Juggernaut's Resolve keystone downside -15.
+	var path_flee = int(character.get_path_effect_total("flee_chance_pct"))
+	if path_flee != 0:
+		flee_chance += path_flee
+		if path_flee > 0:
+			messages.append("[color=#FFD700]⚜ Path: +%d%% flee chance![/color]" % path_flee)
 
 	flee_chance = clamp(flee_chance, 10, 95)  # Hardcap 10-95%
 
@@ -3223,7 +3306,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var magic_bolt_skill_bonus = character.get_skill_damage_bonus("magic_bolt")
-			base_damage = apply_skill_damage_bonus(character, "magic_bolt", base_damage)
+			base_damage = apply_skill_damage_bonus(character, "magic_bolt", base_damage, combat)
 			if magic_bolt_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(magic_bolt_skill_bonus))
 
@@ -3306,7 +3389,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var blast_skill_bonus = character.get_skill_damage_bonus("blast")
-			base_damage = apply_skill_damage_bonus(character, "blast", base_damage)
+			base_damage = apply_skill_damage_bonus(character, "blast", base_damage, combat)
 			if blast_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(blast_skill_bonus))
 
@@ -3391,7 +3474,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var meteor_skill_bonus = character.get_skill_damage_bonus("meteor")
-			base_damage = apply_skill_damage_bonus(character, "meteor", base_damage)
+			base_damage = apply_skill_damage_bonus(character, "meteor", base_damage, combat)
 			if meteor_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(meteor_skill_bonus))
 
@@ -3587,7 +3670,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ps_skill_bonus = character.get_skill_damage_bonus("power_strike")
-			base_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg)
+			base_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg, combat)
 			if ps_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(ps_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
@@ -3616,7 +3699,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var sb_skill_bonus = character.get_skill_damage_bonus("shield_bash")
-			base_dmg = apply_skill_damage_bonus(character, "shield_bash", base_dmg)
+			base_dmg = apply_skill_damage_bonus(character, "shield_bash", base_dmg, combat)
 			if sb_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(sb_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
@@ -3644,7 +3727,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var cleave_skill_bonus = character.get_skill_damage_bonus("cleave")
-			base_dmg = apply_skill_damage_bonus(character, "cleave", base_dmg)
+			base_dmg = apply_skill_damage_bonus(character, "cleave", base_dmg, combat)
 			if cleave_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(cleave_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
@@ -3696,7 +3779,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var dev_skill_bonus = character.get_skill_damage_bonus("devastate")
-			base_dmg = apply_skill_damage_bonus(character, "devastate", base_dmg)
+			base_dmg = apply_skill_damage_bonus(character, "devastate", base_dmg, combat)
 			if dev_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(dev_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
@@ -3913,7 +3996,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ambush_skill_bonus = character.get_skill_damage_bonus("ambush")
-			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg)
+			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg, combat)
 			if ambush_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(ambush_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
@@ -3951,7 +4034,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			raw_damage = max(10, raw_damage)  # Minimum 10 damage
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var exploit_skill_bonus = character.get_skill_damage_bonus("exploit")
-			var damage = apply_skill_damage_bonus(character, "exploit", raw_damage)
+			var damage = apply_skill_damage_bonus(character, "exploit", raw_damage, combat)
 			if exploit_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(exploit_skill_bonus))
 			monster.current_hp -= damage
@@ -4098,7 +4181,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult * variable_fraction)
 				# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 				var gambit_skill_bonus = character.get_skill_damage_bonus("gambit")
-				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg)
+				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg, combat)
 				if gambit_skill_bonus > 0:
 					messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(gambit_skill_bonus))
 				var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
@@ -4191,6 +4274,11 @@ func apply_skill_cost_reduction(character: Character, ability_name: String, base
 	if cost_reduction > 0:
 		cost = int(cost * (1.0 - cost_reduction / 100.0))
 
+	# Path: ability_cost_pct (Overload keystone +20% / Drillmaster -15%)
+	var path_cost_pct = character.get_path_effect_total("ability_cost_pct")
+	if path_cost_pct != 0.0:
+		cost = int(cost * (1.0 + path_cost_pct / 100.0))
+
 	return max(1, cost)
 
 func apply_variable_cost(character: Character, ability_name: String, combat: Dictionary) -> Dictionary:
@@ -4279,12 +4367,17 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 	result.ok = true
 	result.spent = spend
 	result.fraction = fraction
+	# Path: record the actual paid cost + resource so kill_cost_refund_pct
+	# (Momentum / Essence Tap / Efficient Violence) can refund it if this
+	# cast lands the killing blow. process_attack zeroes the marker.
+	character.set_meta("path_last_ability_cost", spend)
+	character.set_meta("path_last_ability_resource", resource_type)
 	# Partial-cast banner — only when fraction is meaningfully below 1.0
 	if fraction < 0.99:
 		result.messages.append("[color=#FFA500]Partial cast — %d/%d %s (%d%% effect).[/color]" % [spend, adj_ceiling, resource_type, int(fraction * 100)])
 	return result
 
-func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int) -> int:
+func apply_skill_damage_bonus(character: Character, ability_name: String, base_damage: int, combat = null) -> int:
 	"""Apply mastery + legacy skill_enhancement damage modifier to an
 	ability's damage. Mastery Slice 1 stacks the use-progression damage
 	multiplier (rank 0 = 0.80, rank 4 = 1.20) on top of any legacy
@@ -4308,6 +4401,19 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 	if dmg_stacks > 0:
 		var per_stack = float(DropTablesScript.VARIANT_TRAIT_CATEGORIES.get("bonus_damage", {}).get("per_stack_pct", 0.0))
 		dmg = dmg * (1.0 + (per_stack * dmg_stacks) / 100.0)
+	# Path of the Badlands — ability-damage effect keys (one funnel, all
+	# trees). spell_damage_pct/keystone live only on mage nodes, low_hp on
+	# Blood Frenzy, vs_disabled on Overwhelm; non-holders read 0 and skip.
+	var path_spell_pct = character.get_path_effect_total("spell_damage_pct") + character.get_path_effect_total("spell_damage_keystone_pct")
+	if path_spell_pct != 0.0:
+		dmg = dmg * (1.0 + path_spell_pct / 100.0)
+	var path_low_hp_pct = character.get_path_effect_total("low_hp_damage_pct")
+	if path_low_hp_pct != 0.0 and character.current_hp * 2 <= character.get_total_max_hp():
+		dmg = dmg * (1.0 + path_low_hp_pct / 100.0)
+	if combat != null and combat is Dictionary:
+		var path_vs_disabled = character.get_path_effect_total("vs_disabled_damage_pct")
+		if path_vs_disabled != 0.0 and (int(combat.get("monster_stunned", 0)) > 0 or int(combat.get("monster_charmed", 0)) > 0):
+			dmg = dmg * (1.0 + path_vs_disabled / 100.0)
 	return int(dmg)
 
 # v0.9.637 — Buff-ability rank scaling. Player report: 'War Cry just got a
@@ -4326,6 +4432,11 @@ func _apply_buff_value_modifiers(character: Character, ability_name: String, bas
 	if bonus_damage_stacks > 0:
 		var per_stack: float = float(DropTablesScript.VARIANT_TRAIT_CATEGORIES.get("bonus_damage", {}).get("per_stack_pct", 0.0))
 		value = value * (1.0 + (per_stack * bonus_damage_stacks) / 100.0)
+	# Path: buff_value_pct (Commanding Presence / Empowered Casting — buff
+	# effects 20% stronger)
+	var path_buff_pct = character.get_path_effect_total("buff_value_pct")
+	if path_buff_pct != 0.0:
+		value = value * (1.0 + path_buff_pct / 100.0)
 	return max(1, int(value))
 
 # Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprint support helpers.
@@ -4843,6 +4954,10 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		burn_raw = combat["monster_burn"]
 	var m_burn_damage = int(burn_raw)
 	var m_burn_duration = int(combat.get("monster_burn_duration", 0))
+	# Path: burn_power_pct (Kindling — your burns tick 50% harder)
+	var path_burn_pct = character.get_path_effect_total("burn_power_pct")
+	if m_burn_damage > 0 and path_burn_pct != 0.0:
+		m_burn_damage = max(1, int(m_burn_damage * (1.0 + path_burn_pct / 100.0)))
 	if m_burn_damage > 0 and m_burn_duration > 0:
 		monster.current_hp -= m_burn_damage
 		monster.current_hp = max(0, monster.current_hp)
@@ -4865,6 +4980,10 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		bleed_raw = combat["monster_bleed"]
 	var m_bleed_damage = int(bleed_raw)
 	var m_bleed_duration = int(combat.get("monster_bleed_duration", 0))
+	# Path: bleed_power_pct (Rending Blows — your bleeds tick 50% harder)
+	var path_bleed_pct = character.get_path_effect_total("bleed_power_pct")
+	if m_bleed_damage > 0 and path_bleed_pct != 0.0:
+		m_bleed_damage = max(1, int(m_bleed_damage * (1.0 + path_bleed_pct / 100.0)))
 	if m_bleed_damage > 0 and m_bleed_duration > 0:
 		monster.current_hp -= m_bleed_damage
 		monster.current_hp = max(0, monster.current_hp)
@@ -5257,6 +5376,35 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			# Check if reflection killed monster
 			if monster.current_hp <= 0:
 				return _process_victory(combat, messages)
+
+		# Path: melee_reflect_pct (Retribution node) + shock_thorns_int_pct
+		# (Static Veil — flat INT-scaled shock per hit taken). Same shape as
+		# the equipment reflect proc above; can kill the monster.
+		var path_reflect_pct = character.get_path_effect_total("melee_reflect_pct")
+		var path_shock_int_pct = character.get_path_effect_total("shock_thorns_int_pct")
+		if (path_reflect_pct > 0.0 and total_damage > 0) or path_shock_int_pct > 0.0:
+			var path_reflect_total = 0
+			if path_reflect_pct > 0.0 and total_damage > 0:
+				path_reflect_total += max(1, int(total_damage * path_reflect_pct / 100.0))
+			if path_shock_int_pct > 0.0:
+				path_reflect_total += max(1, int(character.get_effective_stat("intelligence") * path_shock_int_pct / 100.0))
+			if path_reflect_total > 0:
+				monster.current_hp -= path_reflect_total
+				monster.current_hp = max(0, monster.current_hp)
+				messages.append("[color=#9ACD32]Your Path punishes the blow — %d damage reflected![/color]" % path_reflect_total)
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
+
+		# Path keystone — Last Stand: once per combat, a lethal hit leaves
+		# you at 1 HP. Checked BEFORE the Dwarf racial so the once-per-combat
+		# talent absorbs the hit and the once-per-LIFE-style racial stays
+		# banked for a later disaster.
+		if character.current_hp <= 0 and character.has_path_effect("death_save_per_combat") and not combat.get("path_death_save_used", false):
+			combat["path_death_save_used"] = true
+			character.current_hp = 1
+			messages.append("[color=#FF4444]The %s attacks and deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, total_damage])
+			messages.append("[color=#FFD700][b]LAST STAND![/b] Your Path holds you at death's door — 1 HP![/color]")
+			return {"success": true, "message": "\n".join(messages), "path_last_stand": true}
 
 		# Check for Dwarf Last Stand (survive lethal damage with 1 HP)
 		if character.current_hp <= 0:
@@ -6419,8 +6567,17 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	if crit_chance_chase > 0:
 		crit_chance += crit_chance_chase
 
+	# Path: crit_chance_pct (Keen Eye — trickster filler)
+	crit_chance += int(character.get_path_effect_total("crit_chance_pct"))
+
 	crit_chance = min(crit_chance, 75)  # Cap at 75% even with bonuses
 	var is_crit = (randi() % 100) < crit_chance
+	# Path keystone — Phantom Strike: first attack each combat always crits
+	# (the cannot-miss half is handled in process_attack's hit roll).
+	if not is_crit and character.has_path_effect("first_strike_autocrit") and not combat.get("path_first_strike_done", false):
+		is_crit = true
+	if character.has_path_effect("first_strike_autocrit"):
+		combat["path_first_strike_done"] = true
 
 	# === CLASS PASSIVE: Thief Backstab crit damage bonus ===
 	# +50% crit damage multiplier (1.5x becomes 2.0x)
@@ -6441,8 +6598,32 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 		if crit_dmg_chase > 0:
 			final_crit_damage += crit_dmg_chase / 100.0
 
+	# Path keystone — Assassinate: crits +50%, non-crits -10%.
+	if is_crit:
+		final_crit_damage += character.get_path_effect_total("crit_damage_pct") / 100.0
+	else:
+		var path_noncrit = character.get_path_effect_total("noncrit_damage_pct")
+		if path_noncrit != 0.0:
+			raw_damage = max(1, int(raw_damage * (1.0 + path_noncrit / 100.0)))
+
 	if is_crit:
 		raw_damage = int(raw_damage * final_crit_damage)
+
+	# Path — attack-damage effect keys (basic attacks; abilities get theirs
+	# in apply_skill_damage_bonus): Sharpened Edge flat %, Blood Frenzy
+	# low-HP, Overwhelm vs stunned/charmed, First Blood vs full-HP targets.
+	var path_atk_pct = character.get_path_effect_total("attack_damage_pct")
+	if path_atk_pct != 0.0:
+		raw_damage = int(raw_damage * (1.0 + path_atk_pct / 100.0))
+	var path_low_hp_atk = character.get_path_effect_total("low_hp_damage_pct")
+	if path_low_hp_atk != 0.0 and character.current_hp * 2 <= character.get_total_max_hp():
+		raw_damage = int(raw_damage * (1.0 + path_low_hp_atk / 100.0))
+	var path_vs_disabled_atk = character.get_path_effect_total("vs_disabled_damage_pct")
+	if path_vs_disabled_atk != 0.0 and (int(combat.get("monster_stunned", 0)) > 0 or int(combat.get("monster_charmed", 0)) > 0):
+		raw_damage = int(raw_damage * (1.0 + path_vs_disabled_atk / 100.0))
+	var path_vs_full = character.get_path_effect_total("vs_full_hp_damage_pct")
+	if path_vs_full != 0.0 and int(monster.get("current_hp", 0)) >= int(monster.get("max_hp", 1)):
+		raw_damage = int(raw_damage * (1.0 + path_vs_full / 100.0))
 
 	# === CLASS PASSIVE: Sorcerer Chaos Magic ===
 	# 25% chance for double damage, 5% chance to backfire

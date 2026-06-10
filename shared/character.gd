@@ -336,6 +336,14 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 @export var path_nodes: Array = []        # taken node ids (PathDatabase)
 @export var path_milestones: Array = []   # claimed milestone ids (+1 point each)
 
+# path_database.gd is dependency-free, so a preload here can't create a
+# load-order cycle (unlike Constants, which this file deliberately inlines).
+const PathDatabaseScript = preload("res://shared/path_database.gd")
+# Effect aggregation cache — path_nodes only ever appends (no respec), so the
+# cache is valid while the count matches.
+var _path_fx_cache: Dictionary = {}
+var _path_fx_cache_count: int = -1
+
 # Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
 # but inlined here so character.gd doesn't have to depend on the global script
 # load order. Slice 1 — gentle scaling: rank 0 -20%, rank 2 baseline, rank 4 +20%.
@@ -1169,7 +1177,12 @@ func get_total_attack() -> int:
 func get_total_defense() -> int:
 	"""Get total defense including equipment"""
 	var bonuses = get_equipment_bonuses()
-	return (constitution / 2) + bonuses.defense
+	var total = (constitution / 2) + bonuses.defense
+	# Path: defense_pct (Iron Hide / Warded Robes — +8%)
+	var path_def_pct = get_path_effect_total("defense_pct")
+	if path_def_pct != 0.0:
+		total = int(total * (1.0 + path_def_pct / 100.0))
+	return total
 
 func get_equipment_defense() -> int:
 	"""Get defense bonus from equipment only (used for equipment reduction calculation)"""
@@ -1185,7 +1198,13 @@ func get_total_max_hp() -> int:
 	var base_total = max_hp + bonuses.max_hp + con_hp_bonus
 	# Apply house hp_bonus percentage
 	var house_hp_percent = house_bonuses.get("hp_bonus", 0)
-	return int(base_total * (1.0 + house_hp_percent / 100.0))
+	var total = int(base_total * (1.0 + house_hp_percent / 100.0))
+	# Path: max_hp_pct (keystone downsides — Last Stand / Archmage's Ward /
+	# Time Anchor / Phantom Strike all carry -10%)
+	var path_hp_pct = get_path_effect_total("max_hp_pct")
+	if path_hp_pct != 0.0:
+		total = int(total * (1.0 + path_hp_pct / 100.0))
+	return max(1, total)
 
 func get_total_max_mana() -> int:
 	"""Get total max mana including equipment bonuses and house bonuses.
@@ -1197,7 +1216,13 @@ func get_total_max_mana() -> int:
 	var base_total = max_mana + bonuses.max_mana + int_mana_bonus + wis_mana_bonus
 	# Apply house resource_max percentage
 	var house_resource_percent = house_bonuses.get("resource_max", 0)
-	return int(base_total * (1.0 + house_resource_percent / 100.0))
+	var total = int(base_total * (1.0 + house_resource_percent / 100.0))
+	# Path: max_resource_pct applies to the class-path primary resource only
+	if get_class_path() == "mage":
+		var path_res_pct = get_path_effect_total("max_resource_pct")
+		if path_res_pct != 0.0:
+			total = int(total * (1.0 + path_res_pct / 100.0))
+	return total
 
 func get_total_max_stamina() -> int:
 	"""Get total max stamina including equipment bonuses and house bonuses.
@@ -1209,7 +1234,13 @@ func get_total_max_stamina() -> int:
 	var base_total = max_stamina + bonuses.max_stamina + str_stamina_bonus + con_stamina_bonus
 	# Apply house resource_max percentage
 	var house_resource_percent = house_bonuses.get("resource_max", 0)
-	return int(base_total * (1.0 + house_resource_percent / 100.0))
+	var total = int(base_total * (1.0 + house_resource_percent / 100.0))
+	# Path: max_resource_pct applies to the class-path primary resource only
+	if get_class_path() == "warrior":
+		var path_res_pct = get_path_effect_total("max_resource_pct")
+		if path_res_pct != 0.0:
+			total = int(total * (1.0 + path_res_pct / 100.0))
+	return total
 
 func get_total_max_energy() -> int:
 	"""Get total max energy including equipment bonuses and house bonuses.
@@ -1220,7 +1251,13 @@ func get_total_max_energy() -> int:
 	var base_total = max_energy + bonuses.max_energy + equip_energy_bonus
 	# Apply house resource_max percentage
 	var house_resource_percent = house_bonuses.get("resource_max", 0)
-	return int(base_total * (1.0 + house_resource_percent / 100.0))
+	var total = int(base_total * (1.0 + house_resource_percent / 100.0))
+	# Path: max_resource_pct applies to the class-path primary resource only
+	if get_class_path() == "trickster":
+		var path_res_pct = get_path_effect_total("max_resource_pct")
+		if path_res_pct != 0.0:
+			total = int(total * (1.0 + path_res_pct / 100.0))
+	return total
 
 func get_equipment_procs() -> Dictionary:
 	"""Get all proc effects from equipped items.
@@ -1337,6 +1374,10 @@ func heal(amount: int) -> int:
 	"""Heal the character, return actual amount healed. Ogre racial applies 2x healing."""
 	var old_hp = current_hp
 	var heal_amount = int(amount * get_heal_multiplier())
+	# Path: healing_received_pct (Blood Frenzy keystone — -30%)
+	var path_heal_pct = get_path_effect_total("healing_received_pct")
+	if path_heal_pct != 0.0:
+		heal_amount = max(1, int(heal_amount * (1.0 + path_heal_pct / 100.0)))
 	current_hp = min(current_hp + heal_amount, get_total_max_hp())
 	return current_hp - old_hp
 
@@ -2358,6 +2399,9 @@ func _clamp_resources_to_max():
 
 func add_buff(buff_type: String, value: int, duration: int):
 	"""Add or refresh a combat buff (lasts rounds). If buff already exists, refreshes duration and uses higher value."""
+	# Path: buff_duration_bonus (War Drums / Lingering Enchantment / Lasting
+	# Tricks — combat buffs last +2 rounds)
+	duration += int(get_path_effect_total("buff_duration_bonus"))
 	for buff in active_buffs:
 		if buff.type == buff_type:
 			buff.value = max(buff.value, value)
@@ -2967,6 +3011,30 @@ func grant_path_milestone(milestone_id: String) -> bool:
 		return false
 	path_milestones.append(milestone_id)
 	return true
+
+func get_path_effect_total(effect_key: String) -> float:
+	"""Sum an effect key across all taken Path nodes (booleans count as 1.0).
+	The single funnel for ALL Path effect reads — combat math asks for an
+	effect key, never for a node id, so new nodes that reuse a key wire
+	themselves. Mirrors _sum_affix_across_equipped's role for gear."""
+	if _path_fx_cache_count != path_nodes.size():
+		_path_fx_cache.clear()
+		for node_id in path_nodes:
+			var node: Dictionary = PathDatabaseScript.find_node(String(node_id))
+			var fx: Dictionary = node.get("effect", {})
+			for k in fx:
+				var v = fx[k]
+				var num: float = 0.0
+				if v is bool:
+					num = 1.0 if v else 0.0
+				elif v is int or v is float:
+					num = float(v)
+				_path_fx_cache[k] = float(_path_fx_cache.get(k, 0.0)) + num
+		_path_fx_cache_count = path_nodes.size()
+	return float(_path_fx_cache.get(effect_key, 0.0))
+
+func has_path_effect(effect_key: String) -> bool:
+	return get_path_effect_total(effect_key) != 0.0
 
 
 # === Audit #1 Slice 4 — Off-affinity counter ===
