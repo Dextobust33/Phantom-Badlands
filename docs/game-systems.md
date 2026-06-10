@@ -1738,3 +1738,42 @@ A text input and "Broadcast" button allows the server admin to send a server-wid
 |------|-----------|
 | `server/server.gd` | `_on_map_wipe_button_pressed()`, `_on_map_wipe_step1_confirmed()`, `_on_map_wipe_final_confirmed()`, `_execute_map_wipe()`, `_send_broadcast()` |
 | `server/server.tscn` | `MapWipeButton`, `MapWipeDialog`, `MapWipeFinalDialog`, `BroadcastInput`, `BroadcastButton` |
+
+---
+
+## Sanctuary (House) System
+
+Account-level persistent home that survives character permadeath. Players see their Sanctuary after login, before character select.
+
+**Data Storage:** `user://data/houses.json` — managed by `persistence_manager.gd`.
+
+**Companion Kennel:** Bulk companion storage (30–500 slots) for the Fusion Station. Walk onto K tile.
+
+**Fusion Station:** Walk onto F tile. 3 same-type → 1 higher sub-tier. 8 mixed sub-tier 8 → random T9.
+
+**Game State Flow:** Login → HOUSE_SCREEN → Character Select → Playing
+
+**Baddie Points:** Meta-currency earned on character death. Formula in `persistence.calculate_baddie_points()`.
+
+**Registered Companions:** Companions registered to house survive character death:
+- Use Home Stone (Companion) to register active companion
+- `character.using_registered_companion` and `character.registered_companion_slot` track checkout
+- On death, `_award_baddie_points_on_death()` calls `persistence.return_companion_to_house()`
+
+**Home Stone Items:** Found in tier 5–7 loot:
+- `home_stone_egg` — Send one incubating egg to house storage
+- `home_stone_supplies` — Send up to 10 consumables to house storage
+- `home_stone_equipment` — Send one equipped item to house storage
+- `home_stone_companion` — Register active companion to house
+
+**Key Files:**
+- `server/persistence_manager.gd` — House CRUD, `HOUSE_UPGRADES` constants, `calculate_baddie_points()`
+- `server/server.gd` — `handle_house_request()`, `handle_house_upgrade()`, `_award_baddie_points_on_death()`
+- `client/client.gd` — `GameState.HOUSE_SCREEN`, `display_house_main()`, `display_house_storage()`, etc.
+- `shared/character.gd` — `house_bonuses`, `using_registered_companion`, `registered_companion_slot`
+- `shared/drop_tables.gd` — Home Stone item definitions in tier 5–7 tables
+
+**Client Variables:**
+- `house_data` — Current house data from server
+- `house_mode` — Current house tab: "", "main", "storage", "companions", "upgrades", "kennel", "fusion"
+- `pending_house_action` — Action state within house mode

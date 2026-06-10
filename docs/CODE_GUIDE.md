@@ -534,8 +534,18 @@ Art rules:
 - First element: `[color=#HEXCOLOR]`
 - Middle elements: Lines of ASCII art
 - Last element: `[/color]`
-- Small art (under 50 chars wide) is auto-centered
-- Wide art (over 50 chars) is displayed as-is
+- Small art (under 50 chars wide) is auto-centered with a border
+- Wide art (over 50 chars) is displayed as-is — preserve all whitespace
+
+Color palette by monster type:
+- Green `#00FF00` — Goblins, nature
+- Brown `#8B4513` — Animals
+- Gray `#808080` — Undead, golems
+- Red `#FF0000` — Demons, fire
+- Blue `#0070DD` — Water/ice
+- Purple `#A335EE` — Magical beings
+
+Source art files: `C:\Users\Dexto\Desktop\Phantasia_Project\ASCII\`
 
 ### 3e. Adding a New Gathering Catch
 

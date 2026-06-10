@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(git *)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
@@ -12,6 +13,7 @@
       "Bash(git checkout:*)",
       "Bash(git remote:*)",
       "Bash(git grep:*)",
+      "Bash(git branch:*)",
       "Bash(wc:*)",
       "Bash(powershell.exe:*)",
       "Bash(powershell:*)",
@@ -37,23 +39,23 @@
       "Bash(node:*)",
       "Bash(perl:*)",
       "Bash(xxd:*)",
+      "Bash(awk *)",
+      "Bash(echo *)",
+      "Bash(cp *)",
+      "Bash(kill *)",
+      "Bash(pkill *)",
+      "Bash(bash *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
       "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\":*)",
+      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" *)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\":*)",
+      "Bash('/c/Program Files/GitHub CLI/gh.exe' *)",
+      "Bash(/c/Program Files/GitHub CLI/gh.exe release *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-ChildItem *)",
       "WebSearch",
-      "WebFetch",
-      "Bash(git branch:*)",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://shared/chunk_manager.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://shared/npc_post_database.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://shared/world_system.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://shared/drop_tables.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://server/server.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://client/client.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://shared/character.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" server/server.tscn)",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" client/client.tscn)",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --check-only --script \"res://shared/crafting_database.gd\")",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --script \"res://admin_tool.gd\" -- promote Admin)",
-      "Bash(\"D:\\\\SteamLibrary\\\\steamapps\\\\common\\\\Godot Engine\\\\godot.windows.opt.tools.64.exe\" --headless --path \"C:\\\\Users\\\\Dexto\\\\Documents\\\\phantasia-revival\" --script \"res://admin_tool.gd\" -- promote Dextobust33)"
+      "WebFetch"
     ]
   }
 }
