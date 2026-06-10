@@ -1689,6 +1689,18 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		monster.current_hp -= damage
 		monster.current_hp = max(0, monster.current_hp)
 
+		# Path: crit_bleed (Serrated Tools — your critical hits apply a bleed
+		# of 30% of WIT per round for 3 rounds). Refreshes duration, keeps the
+		# higher tick value when one is already running.
+		if is_crit and damage > 0 and monster.current_hp > 0:
+			var path_crit_bleed_pct = character.get_path_effect_total("crit_bleed_wit_pct")
+			if path_crit_bleed_pct > 0.0:
+				var cb_tick = max(1, int(character.get_effective_stat("wits") * path_crit_bleed_pct / 100.0))
+				var cb_rounds = max(1, int(character.get_path_effect_total("crit_bleed_rounds")))
+				combat["monster_bleed"] = max(int(combat.get("monster_bleed", 0)), cb_tick)
+				combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), cb_rounds)
+				messages.append("[color=#9ACD32]⚜ Serrated wound — the %s bleeds (%d/round, %d rounds)![/color]" % [monster.name, cb_tick, cb_rounds])
+
 		# Audit #5 Slice 8 — Phase Mirror (Wraith Lord). 25% of damage dealt
 		# is reflected back to the player. Punishes hard hitters — softer
 		# damage nets better DPS. HP-floored at 1 (can't suicide on reflect).
@@ -2489,6 +2501,12 @@ func process_flee(combat: Dictionary) -> Dictionary:
 		if passive_effects.get("flee_no_damage", false):
 			combat["ninja_flee_protection"] = true
 			messages.append("[color=#191970]Shadow Step: You evade the counterattack![/color]")
+		# Path: Ghost Step — after a failed flee, +dodge until your next turn
+		# (consumed in the monster's hit-chance roll).
+		var path_ghost_dodge = character.get_path_effect_total("failed_flee_dodge_pct")
+		if path_ghost_dodge > 0.0:
+			combat["path_ghost_step_dodge"] = int(path_ghost_dodge)
+			messages.append("[color=#9F70FF]⚜ Ghost Step — you blur aside (+%d%% dodge)![/color]" % int(path_ghost_dodge))
 		combat.player_can_act = false
 		return {
 			"success": true,
@@ -2584,6 +2602,8 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		level_bonus = min(15, abs(level_diff))  # Up to +15% for fighting weaker monsters
 
 	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
+	# Path: outsmart_pct (Silver Tongue — +15% Outsmart success)
+	outsmart_chance += int(character.get_path_effect_total("outsmart_pct"))
 
 	# INT-based cap: High monster INT reduces maximum success chance
 	# Base max: 85% for tricksters, 70% for others. Reduced by monster INT/3
@@ -3445,6 +3465,10 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# through apply_skill_damage_bonus. Scale via the same helper so
 			# rank-up +Damage / bonus_damage imprint amplify shield magnitude.
 			shield_value = _apply_buff_value_modifiers(character, "forcefield", shield_value)
+			# Path keystone — Archmage's Ward: forcefield absorbs 50% more.
+			var path_ff_pct = character.get_path_effect_total("forcefield_power_pct")
+			if path_ff_pct != 0.0:
+				shield_value = int(shield_value * (1.0 + path_ff_pct / 100.0))
 			combat["forcefield_shield"] = shield_value
 			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
 			is_buff_ability = true
@@ -3898,6 +3922,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			if level_diff < 0:
 				level_bonus = min(15, abs(level_diff))
 			var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
+			# Path: outsmart_pct (Silver Tongue)
+			outsmart_chance += int(character.get_path_effect_total("outsmart_pct"))
 			# INT-based cap
 			var base_max_chance = 85 if is_trickster else 70
 			var max_chance = max(30, base_max_chance - int(monster_int / 3))
@@ -5032,6 +5058,13 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var dex_dodge = min(30, int(player_dex / 5))
 	hit_chance -= dex_dodge
 
+	# Path: Ghost Step — dodge window from this round's failed flee attempt.
+	# Consumed here so it covers exactly one monster turn (all its strikes).
+	var path_ghost_dodge = int(combat.get("path_ghost_step_dodge", 0))
+	if path_ghost_dodge > 0:
+		hit_chance -= path_ghost_dodge
+		combat.erase("path_ghost_step_dodge")
+
 	# WITS provides additional dodge for tricksters: -1% per 50 WITS (max -15%)
 	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
 	if is_trickster:
@@ -5439,6 +5472,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				messages.append("[color=#FFD700][b]COMPANION REVIVE![/b] %s pulls you back from death![/color]" % comp_name)
 				messages.append("[color=#00FF00]You are revived with %d HP![/color]" % revive_hp)
 				return {"success": true, "message": "\n".join(messages), "companion_revived": true}
+
+		# Path keystone — Time Anchor (mage): once per combat, surviving a hit
+		# that leaves you below 20% HP freezes time. Reuses the Time Stop
+		# scroll buff, which the next monster turn consumes (skipping it).
+		# Duration 2 so the round tick can't expire it before consumption —
+		# the consumer removes it explicitly, so it can't double-fire.
+		if character.current_hp > 0 and character.current_hp * 5 <= character.get_total_max_hp() \
+				and character.has_path_effect("clutch_time_stop_per_combat") and not combat.get("path_time_anchor_used", false):
+			combat["path_time_anchor_used"] = true
+			character.add_buff("time_stop", 1, 2)
+			messages.append("[color=#00CED1]⚜ [b]TIME ANCHOR![/b] Reality stutters — the next attack against you never comes![/color]")
 
 		character.current_hp = max(0, character.current_hp)
 

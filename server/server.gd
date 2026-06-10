@@ -6002,6 +6002,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					# is serialized so the budget shows correctly on open.
 					if _empowered_reveals > 0:
 						_bag["reveal_budget"] = int(_bag.get("reveal_budget", 0)) + _empowered_reveals
+					# Path keystone — Jackpot: +1 loot reveal on every victory.
+					var _path_jackpot: int = int(characters[peer_id].get_path_effect_total("loot_reveal_bonus"))
+					if _path_jackpot > 0:
+						_bag["reveal_budget"] = int(_bag.get("reveal_budget", 0)) + _path_jackpot
 					active_combat_loot[peer_id] = _bag
 					_combat_loot_bag_view = _serialize_combat_loot_bag_for_client(_bag, false)
 
@@ -20298,6 +20302,12 @@ func _award_combat_loot_slot(peer_id: int, slot: Dictionary, monster_tier: int =
 	match kind:
 		"filler_valor":
 			var amount: int = int(slot.get("amount", 0))
+			# Path: valor_pct (Profiteer — +15% Valor from kills). Combat
+			# loot is the kill-sourced valor surface, so it boosts here.
+			if characters.has(peer_id):
+				var _path_valor_pct: float = characters[peer_id].get_path_effect_total("valor_pct")
+				if _path_valor_pct > 0.0:
+					amount = max(1, int(amount * (1.0 + _path_valor_pct / 100.0)))
 			if peers.has(peer_id):
 				var acct_id: String = str(peers[peer_id].get("account_id", ""))
 				if acct_id != "":
