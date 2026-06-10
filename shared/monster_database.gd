@@ -1602,12 +1602,15 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 
 	# === EMPOWERED MODIFIER ROLL (v0.9.651 — ARPG arc pillar 1) ===
 	# Separate from the legacy variant rolls above (skipped when one already
-	# fired, mirroring their mutual-exclusion pattern). 15% of Lv5+ monsters.
+	# fired, mirroring their mutual-exclusion pattern). 25% of Lv5+ monsters
+	# (launched at 15% in v0.9.651; raised v0.9.655 after the Paths talent
+	# tree shipped the permadeath counterplay the higher density required —
+	# stun negation, reflects, on-kill cleansing in Bulwark/Aegis/Shadow).
 	# Modifier count gates by level: always 1; Lv20+ has 25% for 2; Lv40+ has
 	# an additional 10% for 3. Server grants +1 combat-loot reveal per modifier
 	# (+1 extra for Gilded) and drop_chance scales below.
 	var empowered_mods: Array = []
-	if not is_rare_variant and target_level >= 5 and randf() < 0.15:
+	if not is_rare_variant and target_level >= 5 and randf() < 0.25:
 		var mod_count = 1
 		if target_level >= 40 and randf() < 0.10:
 			mod_count = 3
