@@ -5731,6 +5731,16 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Get current drops
 			var current_drops = result.get("dropped_items", [])
 
+			# Empowered (v0.9.651) — +1 combat-loot reveal per modifier on the
+			# killed monster (+1 extra for Gilded). Mid-chain kills can't build
+			# the bag yet (it's built once at chain end), so the bonus rides
+			# pending_flock_drops as a marker dict — same lifecycle/cleanup as
+			# real drops, filtered back out before the bag is built.
+			var _empowered_kill_mods: Array = result.get("empowered_mods", [])
+			var _empowered_kill_reveals: int = 0
+			if _empowered_kill_mods.size() > 0:
+				_empowered_kill_reveals = _empowered_kill_mods.size() + (1 if "gilded" in _empowered_kill_mods else 0)
+
 			# Check for summoner ability - force a follow-up encounter
 			var summon_next = result.get("summon_next_fight", "")
 			if summon_next != "":
@@ -5740,6 +5750,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if not pending_flock_drops.has(peer_id):
 					pending_flock_drops[peer_id] = []
 				pending_flock_drops[peer_id].append_array(current_drops)
+				if _empowered_kill_reveals > 0:
+					pending_flock_drops[peer_id].append({"type": "empowered_reveal_bonus", "reveals": _empowered_kill_reveals})
 
 				# Store gems
 				var gems_this_combat = result.get("gems_earned", 0)
@@ -5808,6 +5820,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if not pending_flock_drops.has(peer_id):
 					pending_flock_drops[peer_id] = []
 				pending_flock_drops[peer_id].append_array(current_drops)
+				if _empowered_kill_reveals > 0:
+					pending_flock_drops[peer_id].append({"type": "empowered_reveal_bonus", "reveals": _empowered_kill_reveals})
 
 				# Accumulate gems for this flock
 				if not pending_flock_gems.has(peer_id):
@@ -5857,6 +5871,20 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					all_drops = pending_flock_drops[peer_id]
 					pending_flock_drops.erase(peer_id)
 				all_drops.append_array(current_drops)
+
+				# Empowered (v0.9.651) — extract reveal-bonus markers that
+				# mid-chain empowered kills appended, then add the FINAL kill's
+				# own bonus. Markers must never reach the bag or the legacy
+				# award loop as items.
+				var _empowered_reveals: int = 0
+				var _clean_drops: Array = []
+				for _d in all_drops:
+					if _d is Dictionary and String(_d.get("type", "")) == "empowered_reveal_bonus":
+						_empowered_reveals += int(_d.get("reveals", 0))
+					else:
+						_clean_drops.append(_d)
+				all_drops = _clean_drops
+				_empowered_reveals += _empowered_kill_reveals
 
 				# Collect total gems from flock
 				var total_gems = gems_this_combat
@@ -5951,6 +5979,11 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					var _monster_tier: int = _get_monster_tier(killed_monster_level)
 					var _slvl: int = int(characters[peer_id].job_levels.get("soldier", 0))
 					var _bag: Dictionary = _build_combat_loot_bag(all_drops, _monster_tier, _final_flock_kills, _slvl, peer_id)
+					# Empowered (v0.9.651) — bonus reveals from every empowered
+					# kill in this combat/chain, applied BEFORE the client view
+					# is serialized so the budget shows correctly on open.
+					if _empowered_reveals > 0:
+						_bag["reveal_budget"] = int(_bag.get("reveal_budget", 0)) + _empowered_reveals
 					active_combat_loot[peer_id] = _bag
 					_combat_loot_bag_view = _serialize_combat_loot_bag_for_client(_bag, false)
 

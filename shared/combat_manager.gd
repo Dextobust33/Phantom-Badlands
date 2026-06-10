@@ -256,6 +256,23 @@ const ABILITY_BOSS_UNKNOWABLE = "boss_unknowable"          # Each player attack 
 const ABILITY_BOSS_DIVINE_PUNISHMENT = "boss_divine_punishment"  # Every 4 monster turns, deals damage equal to (player_level × 5%) max HP. Scales with player power — anti-high-level
 const ABILITY_BOSS_DECAY = "boss_decay"                    # Each player turn START, +1 decay stack (uncapped); each stack ticks 2% player max HP at start of player turn. Self-decay — existing in the fight costs HP
 
+# Empowered modifiers (v0.9.651 — ARPG arc pillar 1). Combat-start callout
+# labels per modifier id. The behaviors themselves mostly ride existing
+# abilities injected at generation (see monster_database.EMPOWERED_MODIFIERS);
+# juggernaut/warded have bespoke hooks in process_monster_turn /
+# apply_ability_damage_modifiers. Colors mirror the generation table.
+const EMPOWERED_MOD_DISPLAY = {
+	"frenzied":     {"label": "FRENZIED — damage ramps every round",      "color": "#FF5555"},
+	"vampiric":     {"label": "VAMPIRIC — heals from its hits",           "color": "#C71585"},
+	"thorned":      {"label": "THORNED — reflects melee damage",          "color": "#9ACD32"},
+	"swift":        {"label": "SWIFT — strikes 2-3 times per turn",       "color": "#00E5EE"},
+	"juggernaut":   {"label": "JUGGERNAUT — massive bulk, immune to stun", "color": "#B8860B"},
+	"venomous":     {"label": "VENOMOUS — its attacks poison you",        "color": "#BA55D3"},
+	"warded":       {"label": "WARDED — resists ability damage",          "color": "#7B68EE"},
+	"gilded":       {"label": "GILDED — carries bonus loot",              "color": "#FFD700"},
+	"broodcalling": {"label": "BROODCALLING — its kin WILL avenge it",    "color": "#FF8C00"},
+}
+
 func get_monster_combat_bg_color(monster_name: String) -> String:
 	"""Get the contrasting background color for a monster's combat screen"""
 	var raw_art_array = _get_raw_monster_ascii_art(monster_name)
@@ -438,6 +455,12 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	if lvl_diff > 0:
 		var lvl_penalty = min(0.40, lvl_diff * 0.015)
 		mod_damage = int(mod_damage * (1.0 - lvl_penalty))
+	# Empowered Warded (v0.9.651): spell shield — 35% less ability damage.
+	# This funnel covers all ability-damage sites (solo + party adapter), so
+	# the modifier needs no per-ability edits. Basic attacks are unaffected,
+	# which is the build-check: Warded punishes pure casters, melee shrugs it.
+	if "warded" in monster.get("empowered_mods", []):
+		mod_damage = int(mod_damage * 0.65)
 	return max(1, mod_damage)
 
 func set_monster_database(db: Node):
@@ -1934,6 +1957,15 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		final_xp = int(final_xp * 1.20)
 		apex_xp_pct += 20
 
+	# Empowered kill callout (v0.9.651) — the +30%/mod XP is already baked
+	# into experience_reward at generation; this line tells the player WHY the
+	# number was bigger and that bonus reveals are coming. Reveal math here
+	# must match the server's: size + 1 extra for gilded.
+	var empowered_kill_mods: Array = monster.get("empowered_mods", [])
+	if empowered_kill_mods.size() > 0:
+		var emp_reveals = empowered_kill_mods.size() + (1 if "gilded" in empowered_kill_mods else 0)
+		messages.append("[color=#FFD700]⚡ Empowered foe defeated! +%d%% XP, +%d bonus loot reveal%s![/color]" % [empowered_kill_mods.size() * 30, emp_reveals, "s" if emp_reveals > 1 else ""])
+
 	# Gambit kill bonus: +1 gem awarded later
 	var gambit_kill = combat.get("gambit_kill", false)
 
@@ -2263,6 +2295,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"summon_next_fight": combat.get("summon_next_fight", ""),
 		"is_rare_variant": monster.get("is_rare_variant", false),
 		"is_apex_variant": monster.get("is_apex_variant", false),  # v0.9.514 — server uses this to roll Apex Crystal drop
+		# Empowered (v0.9.651) — server reads this to grant +1 combat-loot
+		# reveal per modifier (+1 extra for gilded); accumulates across flocks.
+		"empowered_mods": monster.get("empowered_mods", []),
 		"wish_pending": combat.get("wish_pending", false),
 		"wish_options": combat.get("wish_options", []),
 		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
@@ -4752,6 +4787,14 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	# Check if monster is stunned (Shield Bash, Paralyze, or companion)
 	var stun_turns = int(combat.get("monster_stunned", 0))
+	# Empowered Juggernaut (v0.9.651): immune to stun — shrugs it off and acts
+	# anyway. Single consumption-point hook so every stun source (Shield Bash,
+	# Paralyze, companion procs, imprint riders) is covered without touching
+	# the 7+ application sites.
+	if stun_turns > 0 and "juggernaut" in monster.get("empowered_mods", []):
+		combat.erase("monster_stunned")
+		stun_turns = 0
+		messages.append("[color=#B8860B]The juggernaut %s shrugs off the stun![/color]" % monster.name)
 	if stun_turns > 0:
 		combat["monster_stunned"] = stun_turns - 1
 		if stun_turns - 1 <= 0:
@@ -6815,6 +6858,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"is_rare_variant": monster.get("is_rare_variant", false),  # For visual indicator
 		"is_elite": monster.get("is_elite", false),  # Elite variant — stronger, better loot
 		"variant_type": monster.get("variant_type", ""),  # Specific variant ID for client-side border tinting on monster ASCII art
+		# Empowered (v0.9.651) — modifier ids for client-side border tint by
+		# mod count (1 blue / 2 purple / 3 orange). Additive; old clients ignore.
+		"is_empowered": monster.get("is_empowered", false),
+		"empowered_mods": monster.get("empowered_mods", []).duplicate() if monster.get("empowered_mods", []) is Array else [],
 		# Audit #11 Slice 9 — threat-corridor encounter tag. When the server
 		# spawned this monster via threat-zone bias, these fields name the
 		# source dungeon so the client can flag the encounter visually.
@@ -6919,12 +6966,28 @@ func generate_combat_start_message(character: Character, monster: Dictionary) ->
 
 func generate_encounter_text(monster: Dictionary) -> String:
 	"""Generate encounter text WITHOUT ASCII art (for client-side art rendering)"""
-	# Get class affinity color
+	# Get class affinity color. Empowered/apex monsters carry an explicit
+	# name_color override (rarity tint) that takes priority — same precedence
+	# rule as get_combat_display (v0.9.513).
 	var affinity = monster.get("class_affinity", 0)  # 0 = NEUTRAL
-	var name_color = _get_affinity_color(affinity)
+	var name_color = String(monster.get("name_color", "")) if String(monster.get("name_color", "")) != "" else _get_affinity_color(affinity)
 
 	# Build encounter message with colored monster name (color indicates class affinity)
 	var msg = "[color=#FFD700]You encounter a [/color][color=%s]%s[/color][color=#FFD700] (Lvl %d)![/color]" % [name_color, monster.name, monster.level]
+
+	# Empowered banner (v0.9.651) — one line per modifier so the player can
+	# read the threat and decide to fight or flee BEFORE committing a turn.
+	# This visibility is the permadeath counterplay contract: never ship an
+	# empowered behavior that isn't announced here.
+	var empowered_mods: Array = monster.get("empowered_mods", [])
+	if empowered_mods.size() > 0:
+		var mod_lines = []
+		for mod_id in empowered_mods:
+			var disp: Dictionary = EMPOWERED_MOD_DISPLAY.get(mod_id, {})
+			if not disp.is_empty():
+				mod_lines.append("[color=%s]  ◆ %s[/color]" % [disp.get("color", "#FFFFFF"), disp.get("label", mod_id)])
+		if mod_lines.size() > 0:
+			msg += "\n[color=%s]⚡ EMPOWERED FOE ⚡[/color]\n%s" % [name_color, "\n".join(mod_lines)]
 
 	# Show notable abilities
 	var abilities = monster.get("abilities", [])
@@ -7436,7 +7499,16 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 			"experience_reward": monster.get("experience_reward", 10),
 			"class_affinity": monster.get("class_affinity", 0),
 			"is_dungeon_monster": monster.get("is_dungeon_monster", false),
-			"is_boss": monster.get("is_boss", false)
+			"is_boss": monster.get("is_boss", false),
+			# Empowered (v0.9.651) — modifiers must survive reconnect so the
+			# juggernaut/warded hooks, name tint, and loot/flock bonuses hold.
+			"is_empowered": monster.get("is_empowered", false),
+			"empowered_mods": monster.get("empowered_mods", []),
+			"name_color": monster.get("name_color", ""),
+			"variant_type": monster.get("variant_type", ""),
+			"flock_chance": monster.get("flock_chance", 0),
+			"drop_chance": monster.get("drop_chance", 5),
+			"drop_table_id": monster.get("drop_table_id", "common")
 		},
 		"round": combat.get("round", 1),
 		"player_can_act": combat.get("player_can_act", true),
@@ -8168,6 +8240,12 @@ func _process_party_monster_phase(combat: Dictionary, max_actions: int = 0) -> D
 
 	# Check if monster is stunned
 	var stun_turns = int(combat.get("monster_stunned", 0))
+	# Empowered Juggernaut (v0.9.651): immune to stun — same shrug as the solo
+	# path in process_monster_turn.
+	if stun_turns > 0 and "juggernaut" in monster.get("empowered_mods", []):
+		combat["monster_stunned"] = 0
+		stun_turns = 0
+		messages.append("[color=#B8860B]The juggernaut %s shrugs off the stun![/color]" % monster.get("name", "monster"))
 	if stun_turns > 0:
 		combat["monster_stunned"] = stun_turns - 1
 		messages.append("[color=#808080]The %s is stunned![/color]" % monster.get("name", "monster"))

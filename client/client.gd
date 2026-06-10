@@ -26131,8 +26131,26 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.651 — Empowered monsters (ARPG arc pillar 1).
+	display_game("[color=#00FF00]v0.9.651[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]⚡ EMPOWERED MONSTERS — Diablo-style elite modifiers. The first slice of the ARPG direction.[/color]")
+	display_game("  • [b]15%% of Lv5+ monsters now spawn Empowered[/b] with 1-3 stacking modifiers that change how the fight plays: [color=#FF5555]Frenzied[/color] (ramping damage), [color=#C71585]Vampiric[/color] (lifesteal), [color=#9ACD32]Thorned[/color] (reflects melee), [color=#00E5EE]Swift[/color] (2-3 strikes/turn), [color=#B8860B]Juggernaut[/color] (+50%% HP, stun-immune), [color=#BA55D3]Venomous[/color] (poison), [color=#7B68EE]Warded[/color] (-35%% ability damage taken), [color=#FFD700]Gilded[/color] (harmless jackpot), [color=#FF8C00]Broodcalling[/color] (its kin WILL avenge it — guaranteed chain fight).")
+	display_game("  • [b]Risk is announced up front[/b]: every modifier is called out at combat start, and the name + ASCII border tint by danger — [color=#4FC3F7]blue[/color] = 1 mod, [color=#BA68C8]purple[/color] = 2 (Lv20+), [color=#FFB74D]orange[/color] = 3 (Lv40+). Read the banner, then fight or flee. Fleeing works exactly as before — no modifier reduces your escape chance.")
+	display_game("  • [b]Reward scales with risk[/b]: +30%% XP per modifier, +20%% drop chance per modifier, and +1 bonus loot reveal per modifier in the victory scratch-off (Gilded gives +2). Modifier bonuses accumulate across flock chains.")
+	display_game("  • Existing rare variants (Weapon Master / Shield Guardian / Corrosive / Sundering / ★ Champion) are untouched and roll separately.")
+	display_game("  • This is pillar 1 of 5 on the ARPG roadmap (modifiers → gear +ability ranks → skill tree → uniques → endgame runs).")
+	display_game("")
+
+	# v0.9.643-650 — catch-up summary (these releases shipped without changelog entries).
+	display_game("[color=#00FFFF]v0.9.643-650[/color]")
+	display_game("  [color=#FFD700]Catch-up notes — these releases shipped across late May.[/color]")
+	display_game("  • [b]Combat loot special cells[/b] (v0.9.644-645): the victory scratch-off gained [color=#00FFFF]Chain[/color] (auto-reveals 4 neighbors free), [color=#FFD700]Mystery[/color] (hidden inflated payload), and [color=#FF4444]Trap[/color] (-1 reveal) cells — each with its own FX. Panel holds open after special flips so you can read what happened.")
+	display_game("  • [b]Click-to-resize UI[/b] (v0.9.646-650): the [color=#FFD700]Resize[/color] button (top strip, next to the autoskip toggles) lets you click any registered element — monster ASCII, player/companion cards, HP strip, world map — and scale it with +/- buttons. Per-element sizes persist across sessions.")
+	display_game("  • Linux client + launcher now ship with every release (v0.9.643).")
+	display_game("")
+
 	# v0.9.642 — Flock-buff diagnostics stripped.
-	display_game("[color=#00FF00]v0.9.642[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.642[/color]")
 	display_game("  [color=#FFD700]Quiet release — strips the v0.9.634 flock-buff diagnostic prints from production server logs.[/color]")
 	display_game("  • The diagnostic investigation concluded the v0.9.600 buff-carryover mechanic works as designed. The perceived 'between fight' buff loss was actually 4-round buff durations (War Cry / Berserk / Iron Skin) ticking out within longer combats. The v0.9.637-638 buff-value scaling work addressed the underlying complaint by making each buff cast more impactful.")
 	display_game("  • Removed: 6 print sites + setup code across server.gd / combat_manager.gd / client.gd tagged [color=#888888][FLOCK-BUFF-DIAG][/color] and [color=#888888][FLOCK-BUFF-DIAG-CLIENT][/color]. Production server logs are quieter now.")
@@ -28838,6 +28856,13 @@ func show_help():
 [color=#AAAAAA]Wishes:[/color] Gems | Gear | Buff | Equip Upgrade(×12) | Permanent Stats
 [color=#00FFFF]HP Bar:[/color] [color=#FFFFFF]150/200[/color]=Known | [color=#808080]~150/200[/color]=Estimated | [color=#808080]???[/color]=Unknown. Kill to learn!
 
+[b][color=#FFD700]══ EMPOWERED MONSTERS ══[/color][/b]
+[color=#AAAAAA]15%% of Lv5+ monsters carry 1-3 stacking modifiers. Name color = danger: [color=#4FC3F7]1 mod[/color], [color=#BA68C8]2 mods[/color] (Lv20+), [color=#FFB74D]3 mods[/color] (Lv40+).[/color]
+[color=#AAAAAA]Modifiers are announced at combat start — read them, then fight or flee. Each mod = +30%% XP, +20%% drop chance, +1 loot reveal![/color]
+  [color=#FF5555]Frenzied[/color]=damage ramps/round | [color=#C71585]Vampiric[/color]=heals from hits | [color=#9ACD32]Thorned[/color]=reflects melee | [color=#00E5EE]Swift[/color]=2-3 strikes/turn
+  [color=#B8860B]Juggernaut[/color]=+50%% HP, stun-immune | [color=#BA55D3]Venomous[/color]=poison attacks | [color=#7B68EE]Warded[/color]=-35%% ability dmg taken
+  [color=#FFD700]Gilded[/color]=harmless, +2 loot reveals | [color=#FF8C00]Broodcalling[/color]=kin avenge it (guaranteed chain fight!)
+
 [b][color=#FFD700]══ ITEMS ══[/color][/b]
 [color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
 [color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
@@ -30478,6 +30503,16 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 			# get re-colored in the variant hue; the natural body color stays.
 			var variant_type = str(combat_state.get("variant_type", ""))
 			var border_color = _get_variant_border_color(variant_type)
+			# Empowered (v0.9.651) — when no legacy variant border applies,
+			# tint the silhouette by modifier count: 1 = blue, 2 = purple,
+			# 3 = orange (matches the name_color rarity ladder server-side).
+			if border_color == "":
+				var _emp_mods: Array = combat_state.get("empowered_mods", []) if combat_state.get("empowered_mods", []) is Array else []
+				match _emp_mods.size():
+					0: pass
+					1: border_color = "#4FC3F7"
+					2: border_color = "#BA68C8"
+					_: border_color = "#FFB74D"
 			if border_color != "":
 				raw_art = MonsterArt.apply_variant_border(raw_art, border_color)
 			# Use the original game-output font size — most monsters override

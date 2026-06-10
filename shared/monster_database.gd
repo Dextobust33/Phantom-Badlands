@@ -59,6 +59,40 @@ const ABILITY_DISGUISE = "disguise"              # Appears as weaker monster, re
 const ABILITY_XP_STEAL = "xp_steal"              # Steals 1-3% of player XP on hit (rare, punishing)
 const ABILITY_ITEM_STEAL = "item_steal"          # 5% chance to steal random equipped item
 
+# ============================================================================
+# EMPOWERED MODIFIERS (v0.9.651 — ARPG arc pillar 1)
+# ============================================================================
+# Diablo-2-style stacking elite affixes, rolled SEPARATELY from the legacy
+# variant system (Weapon Master / Corrosive / ★ Champion stay untouched).
+# 15% of eligible monsters (Lv5+, no legacy variant) become Empowered with
+# 1-3 modifiers; prefixes stack in the name ("Frenzied Gilded Wolf").
+#
+# Each entry: prefix (name), optional ability (existing combat ability the
+# modifier injects — behavior comes free from combat_manager), stat mults,
+# color (client callout/border tint). Modifiers without an ability get
+# bespoke hooks: juggernaut = stun shrug, warded = -35% ability damage in
+# apply_ability_damage_modifiers, gilded/broodcalling = loot/flock fields.
+#
+# COUNTERPLAY RULE (permadeath): nothing here may reduce flee chance, and
+# reflected/DoT damage relies on the existing can't-kill clamps (thorns and
+# poison both floor player HP at 1). Keep it that way.
+const EMPOWERED_MODIFIERS = {
+	"frenzied":     {"prefix": "Frenzied",     "ability": ABILITY_ENRAGE,       "str_mult": 1.10, "color": "#FF5555"},
+	"vampiric":     {"prefix": "Vampiric",     "ability": ABILITY_LIFE_STEAL,   "hp_mult": 1.15,  "color": "#C71585"},
+	"thorned":      {"prefix": "Thorned",      "ability": ABILITY_THORNS,       "def_mult": 1.20, "color": "#9ACD32"},
+	"swift":        {"prefix": "Swift",        "ability": ABILITY_MULTI_STRIKE, "color": "#00E5EE"},
+	"juggernaut":   {"prefix": "Juggernaut",   "hp_mult": 1.50, "def_mult": 1.15, "color": "#B8860B"},
+	"venomous":     {"prefix": "Venomous",     "ability": ABILITY_POISON,       "hp_mult": 1.10,  "color": "#BA55D3"},
+	"warded":       {"prefix": "Warded",       "hp_mult": 1.15, "color": "#7B68EE"},
+	"gilded":       {"prefix": "Gilded",       "color": "#FFD700"},
+	"broodcalling": {"prefix": "Broodcalling", "color": "#FF8C00"},
+}
+
+# Name color by modifier count — D2-style rarity ladder (1 = blue magic,
+# 2 = purple, 3 = orange). Client renders the monster name + ASCII border in
+# this color via the existing name_color override path (v0.9.513 apex pattern).
+const EMPOWERED_NAME_COLORS = {1: "#4FC3F7", 2: "#BA68C8", 3: "#FFB74D"}
+
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
 
@@ -1566,6 +1600,51 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 				if added >= 2:
 					break
 
+	# === EMPOWERED MODIFIER ROLL (v0.9.651 — ARPG arc pillar 1) ===
+	# Separate from the legacy variant rolls above (skipped when one already
+	# fired, mirroring their mutual-exclusion pattern). 15% of Lv5+ monsters.
+	# Modifier count gates by level: always 1; Lv20+ has 25% for 2; Lv40+ has
+	# an additional 10% for 3. Server grants +1 combat-loot reveal per modifier
+	# (+1 extra for Gilded) and drop_chance scales below.
+	var empowered_mods: Array = []
+	if not is_rare_variant and target_level >= 5 and randf() < 0.15:
+		var mod_count = 1
+		if target_level >= 40 and randf() < 0.10:
+			mod_count = 3
+		elif target_level >= 20 and randf() < 0.25:
+			mod_count = 2
+		var mod_pool = EMPOWERED_MODIFIERS.keys()
+		mod_pool.shuffle()
+		for mod_id in mod_pool:
+			if empowered_mods.size() >= mod_count:
+				break
+			var mod: Dictionary = EMPOWERED_MODIFIERS[mod_id]
+			# Skip when the monster already has this modifier's ability
+			# naturally — the prefix would promise nothing new.
+			var mod_ability = String(mod.get("ability", ""))
+			if mod_ability != "" and mod_ability in monster_abilities:
+				continue
+			empowered_mods.append(mod_id)
+			if mod_ability != "":
+				monster_abilities.append(mod_ability)
+			scaled_hp = max(10, int(scaled_hp * float(mod.get("hp_mult", 1.0))))
+			scaled_strength = max(3, int(scaled_strength * float(mod.get("str_mult", 1.0))))
+			scaled_defense = max(1, int(scaled_defense * float(mod.get("def_mult", 1.0))))
+			monster_name = String(mod.get("prefix", "")) + " " + monster_name
+		# +30% XP per modifier (additive), applied at generation like elite's 1.5x
+		if empowered_mods.size() > 0:
+			experience_reward = int(experience_reward * (1.0 + 0.30 * empowered_mods.size()))
+
+	# Empowered drop chance: +20 per modifier, Gilded adds +20 more on top.
+	var final_drop_chance: int = 100 if is_elite else int(base_stats.get("drop_chance", 5))
+	if empowered_mods.size() > 0:
+		final_drop_chance = min(100, final_drop_chance + 20 * empowered_mods.size() + (20 if "gilded" in empowered_mods else 0))
+
+	# Broodcalling: its kin WILL avenge it — guaranteed flock chain on kill.
+	var final_flock_chance: int = int(base_stats.get("flock_chance", 0))
+	if "broodcalling" in empowered_mods:
+		final_flock_chance = 100
+
 	var monster = {
 		"name": monster_name,
 		"base_name": base_stats.name,  # Original name without variant prefix/suffix (for art lookup)
@@ -1578,9 +1657,9 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"speed": base_stats.base_speed,  # Speed doesn't scale
 		"intelligence": intelligence,    # For Outsmart mechanic
 		"experience_reward": experience_reward,
-		"flock_chance": base_stats.get("flock_chance", 0),
+		"flock_chance": final_flock_chance,
 		"drop_table_id": base_stats.get("drop_table_id", "common"),
-		"drop_chance": 100 if is_elite else base_stats.get("drop_chance", 5),  # Elite = guaranteed drop
+		"drop_chance": final_drop_chance,  # Elite = guaranteed; empowered scales +20/mod
 		"description": base_stats.description,
 		# New fields for ability system
 		"class_affinity": base_stats.get("class_affinity", ClassAffinity.NEUTRAL),
@@ -1589,6 +1668,12 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		"is_rare_variant": is_rare_variant,
 		"is_elite": is_elite,
 		"variant_type": variant_type,  # "" / "weapon_master" / "shield_guardian" / "corrosive" / "sunder" / "elite" — drives client-side border tint on monster ASCII art
+		# Empowered (v0.9.651) — stacking modifier ids ("frenzied", "gilded", ...).
+		# name_color drives the D2-style rarity tint on name + ASCII border;
+		# empty string = fall through to affinity color (get_combat_display).
+		"is_empowered": empowered_mods.size() > 0,
+		"empowered_mods": empowered_mods,
+		"name_color": EMPOWERED_NAME_COLORS.get(empowered_mods.size(), "") if empowered_mods.size() > 0 else "",
 		"lethality": 0  # Placeholder, calculated below
 	}
 
