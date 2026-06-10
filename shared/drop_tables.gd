@@ -4046,6 +4046,32 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	return item
 
+const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
+
+func generate_unique(unique_id: String, monster_level: int) -> Dictionary:
+	"""Uniques (ARPG pillar 4) — build a named unique at the drop level.
+	Numeric stats come from the normal artifact-rarity generator (they scale
+	with level forever); the fixed signature lands in item.unique_effect,
+	which character.get_path_effect_total sums alongside Path talents."""
+	var u: Dictionary = UniqueDatabaseScript.get_unique(unique_id)
+	if u.is_empty():
+		return {}
+	var item: Dictionary = _generate_item({"item_type": String(u.get("item_type", "ring_artifact"))}, monster_level, "artifact")
+	if item.is_empty():
+		return {}
+	item["is_unique"] = true
+	item["unique_id"] = unique_id
+	item["name"] = String(u.get("name", unique_id))
+	item["lore"] = String(u.get("lore", ""))
+	item["unique_effect"] = u.get("unique_effect", {}).duplicate()
+	# Chase-style bonus affixes merge into the regular affix dict so the
+	# existing gear pipelines (display, get_equipment_bonuses) pick them up.
+	var bonus: Dictionary = u.get("bonus_affixes", {})
+	for k in bonus:
+		item["affixes"][k] = bonus[k]
+	item["value"] = int(item.get("value", 100) * 3)
+	return item
+
 func _get_tiered_consumable_name(item_type: String, tier_name: String) -> String:
 	"""Generate display name for tiered consumables using thematic names."""
 	# Thematic names by tier for common consumable types (more flavorful than "Minor/Lesser")

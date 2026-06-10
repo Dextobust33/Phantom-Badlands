@@ -14921,6 +14921,17 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 		for line_text in chase_lines:
 			lines.append("  " + line_text)
 
+	# Uniques (ARPG pillar 4) — fixed signature effect + lore line. The
+	# signature uses the Path effect-key vocabulary (same combat hooks).
+	if item.get("is_unique", false):
+		lines.append("")
+		lines.append("[color=#FF8000]★ UNIQUE[/color]")
+		for sig_line in _format_unique_effect_lines(item.get("unique_effect", {})):
+			lines.append("  " + sig_line)
+		var unique_lore: String = str(item.get("lore", ""))
+		if unique_lore != "":
+			lines.append("[color=#C4A882][i]\"%s\"[/i][/color]" % unique_lore)
+
 	# Crafter / enchanter
 	var crafted_by: String = str(item.get("crafted_by", ""))
 	var enchanted_by: String = str(item.get("enchanted_by", ""))
@@ -14933,6 +14944,47 @@ func format_item_tooltip_bbcode(item: Dictionary) -> String:
 
 	return "\n".join(lines)
 
+
+func _format_unique_effect_lines(ufx: Dictionary) -> Array:
+	"""Uniques (ARPG pillar 4) — render item.unique_effect keys (the Path
+	effect-key vocabulary) as readable gold signature lines."""
+	var out: Array = []
+	var _UNIQUE_FX_TEXT := {
+		"bleed_power_pct": "Your bleed effects tick +%d%% harder",
+		"burn_power_pct": "Your burn effects tick +%d%% harder",
+		"attack_damage_pct": "+%d%% attack damage",
+		"spell_damage_pct": "+%d%% spell damage",
+		"crit_chance_pct": "+%d%% critical hit chance",
+		"crit_bleed_wit_pct": "Critical hits apply a bleed (%d%% of WIT/round)",
+		"melee_reflect_pct": "Reflect %d%% of melee damage taken",
+		"defense_pct": "+%d%% defense",
+		"forcefield_power_pct": "Forcefield absorbs +%d%% more",
+		"buff_value_pct": "Your buff effects are +%d%% stronger",
+		"buff_duration_bonus": "Combat buffs last +%d rounds",
+		"flee_chance_pct": "%+d%% flee chance",
+		"failed_flee_dodge_pct": "+%d%% dodge after a failed flee",
+		"low_hp_damage_pct": "+%d%% damage below half HP",
+		"max_hp_pct": "%+d%% max HP",
+		"loot_reveal_bonus": "+%d loot reveal on every victory",
+		"xp_pct": "%+d%% XP",
+		"outsmart_pct": "+%d%% Outsmart success",
+		"valor_pct": "+%d%% Valor from kills",
+		"double_cast_pct": "+%d%% chance to cast spells twice",
+	}
+	for key in ufx:
+		match key:
+			"stun_immune":
+				out.append("[color=#FFD700]You are immune to stun[/color]")
+			"first_strike_autocrit":
+				out.append("[color=#FFD700]Your first attack each combat always crits and cannot miss[/color]")
+			"clutch_time_stop_per_combat":
+				out.append("[color=#FFD700]Once per combat, surviving below 20%% HP freezes time[/color]")
+			"crit_bleed_rounds":
+				pass  # folded into the crit_bleed_wit_pct line
+			_:
+				if _UNIQUE_FX_TEXT.has(key):
+					out.append("[color=#FFD700]%s[/color]" % (_UNIQUE_FX_TEXT[key] % int(ufx[key])))
+	return out
 
 func _format_chase_affix_lines(affixes: Dictionary) -> Array:
 	"""v0.9.606 — turn chase-tier affixes into tooltip-ready BBCode lines.
@@ -26270,8 +26322,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.655 — Uniques (ARPG arc pillar 4) + Empowered density 25%.
+	display_game("[color=#00FF00]v0.9.655[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ UNIQUE ITEMS — hand-authored legendaries. ARPG arc pillar 4 begins.[/color]")
+	display_game("  • [b]15 named uniques[/b] with fixed rule-breaking signature powers: [color=#FF8000]Bloodletter's Hook[/color] (your bleeds tick double), [color=#FF8000]The Second Sun[/color] (spells can cast twice), [color=#FF8000]Juggernaut's Heart[/color] (stun immunity), [color=#FF8000]Phantom Shroud[/color] (first strike always crits), [color=#FF8000]The Hourglass, Unbroken[/color] (cheat death with frozen time), [color=#FF8000]Avarice, the Golden Burden[/color] (+1 loot reveal, -10%% XP)... and 9 more to discover.")
+	display_game("  • [b]The hunt[/b]: tiny base drop chance, but +0.75%% per Empowered modifier on the kill and +2.5%% from bosses — hunting elites IS the unique hunt. Uniques drop at the kill's level, so their stats scale forever; the signature never changes. Any class can find any unique — trade them on the market.")
+	display_game("  • [b]Unique drops auto-pin[/b] to the victory banner with a [color=#FF8000]★ UNIQUE[/color] tag, signature lines, and a lore inscription in the tooltip.")
+	display_game("  [color=#FFD700]⚡ EMPOWERED DENSITY: 15%% → 25%%.[/color] The Paths talent tree shipped the counterplay (stun negation, reflects, cleanses) — now the Badlands bite back at full ARPG rhythm. 1 in 4 monsters carries modifiers.")
+	display_game("")
+
 	# v0.9.654 — Path of the Badlands (ARPG arc pillar 3).
-	display_game("[color=#00FF00]v0.9.654[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.654[/color]")
 	display_game("  [color=#FFD700]⚜ PATH OF THE BADLANDS — the talent tree. ARPG arc pillar 3.[/color]")
 	display_game("  • [b]A full skill tree per archetype[/b]: Path of the [color=#FF6666]Warlord[/color] (Onslaught / Bulwark / Warlord), the [color=#66CCFF]Archon[/color] (Destruction / Aegis / Wellspring), and the [color=#66FF66]Phantom[/color] (Lethality / Shadow / Fortune). 15 branch nodes each plus a keystone per class — 54 talents total, every one functional.")
 	display_game("  • [b]Earn Path points[/b]: 1 per 5 levels automatically, plus one-time feats (+1 each): first dungeon clear, first boss kill, first Empowered kill, first 3-modifier Empowered kill, 100 kills, first Apex Frontier kill. Feats toast when earned.")
@@ -29052,6 +29113,7 @@ func show_help():
 [color=#66CCCC]Mage:[/color] Wraith(t3), Lich(t5), Elemental/Sphinx(t6), Elder Lich(t7), Time Weaver(t8) - 35%%
 [color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%%
 [color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%%) - 35%% guaranteed drop!
+[color=#FF8000]★ UNIQUES:[/color] 15 named items with fixed rule-breaking powers (Bloodletter's Hook, The Second Sun, Juggernaut's Heart...). Tiny drop chance, [b]boosted by Empowered modifiers (+0.75%%/mod) and bosses (+2.5%%)[/b]. Stats scale to drop level — re-find them stronger forever. Tradeable on the market!
 [color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%%HP)
 [color=#FFD700]Synergy*:[/color] Asterisk (*) after affix name = double bonus synergy (e.g., Arcane* Hoarder's Ring)
 

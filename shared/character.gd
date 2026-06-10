@@ -3013,10 +3013,14 @@ func grant_path_milestone(milestone_id: String) -> bool:
 	return true
 
 func get_path_effect_total(effect_key: String) -> float:
-	"""Sum an effect key across all taken Path nodes (booleans count as 1.0).
-	The single funnel for ALL Path effect reads — combat math asks for an
-	effect key, never for a node id, so new nodes that reuse a key wire
-	themselves. Mirrors _sum_affix_across_equipped's role for gear."""
+	"""Sum an effect key across all taken Path nodes (booleans count as 1.0)
+	PLUS the signature effects of equipped UNIQUE items (pillar 4 — uniques
+	carry item.unique_effect dicts using the same key vocabulary, so every
+	hook wired for the talent tree works on gear automatically).
+	The single funnel for ALL build-effect reads — combat math asks for an
+	effect key, never for a node or item id. Path part is cached by node
+	count (append-only); the equipped part is summed per-read like
+	_sum_affix_across_equipped."""
 	if _path_fx_cache_count != path_nodes.size():
 		_path_fx_cache.clear()
 		for node_id in path_nodes:
@@ -3031,7 +3035,19 @@ func get_path_effect_total(effect_key: String) -> float:
 					num = float(v)
 				_path_fx_cache[k] = float(_path_fx_cache.get(k, 0.0)) + num
 		_path_fx_cache_count = path_nodes.size()
-	return float(_path_fx_cache.get(effect_key, 0.0))
+	var total: float = float(_path_fx_cache.get(effect_key, 0.0))
+	for slot in equipped.keys():
+		var item = equipped[slot]
+		if item == null or not item is Dictionary:
+			continue
+		var ufx = item.get("unique_effect", {})
+		if ufx is Dictionary and ufx.has(effect_key):
+			var uv = ufx[effect_key]
+			if uv is bool:
+				total += 1.0 if uv else 0.0
+			elif uv is int or uv is float:
+				total += float(uv)
+	return total
 
 func has_path_effect(effect_key: String) -> bool:
 	return get_path_effect_total(effect_key) != 0.0

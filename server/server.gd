@@ -52,6 +52,7 @@ const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd
 const TitlesScript = preload("res://shared/titles.gd")
 const CraftingDatabaseScript = preload("res://shared/crafting_database.gd")
 const PathDatabaseScript = preload("res://shared/path_database.gd")
+const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
 const NpcPostDatabaseScript = preload("res://shared/npc_post_database.gd")
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
@@ -5991,6 +5992,20 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					var sigil_item = drop_tables._generate_item({"item_type": "apex_sigil", "rarity": "epic"}, max(1, killed_monster_level))
 					if not sigil_item.is_empty():
 						all_drops.append(sigil_item)
+
+				# Uniques (ARPG pillar 4) — hand-authored named items. 0.25%
+				# base, +0.75% per Empowered modifier on the final kill, +2.5%
+				# on boss kills (3-mod elite ≈ 2.5%, boss ≈ 2.75%+). The drop
+				# is equipment, so the combat scratch-off auto-pins it into
+				# the banner row — the unique moment is loud for free.
+				var _unique_chance: float = 0.25 + 0.75 * float(_empowered_kill_mods.size())
+				if result.get("is_boss_fight", false):
+					_unique_chance += 2.5
+				if randf() * 100.0 < _unique_chance:
+					var _unique_item: Dictionary = drop_tables.generate_unique(UniqueDatabaseScript.random_unique_id(), max(1, killed_monster_level))
+					if not _unique_item.is_empty():
+						all_drops.append(_unique_item)
+						log_message("UNIQUE DROP: %s for %s (chance was %.2f%%)" % [_unique_item.get("name", "?"), characters[peer_id].name, _unique_chance])
 
 				# Combat scratch-off bag (user-requested 2026-05-14) — when the
 				# feature flag is on, we route all drops through the 16-slot
