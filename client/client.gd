@@ -26270,8 +26270,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.654 — Path of the Badlands (ARPG arc pillar 3).
+	display_game("[color=#00FF00]v0.9.654[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]⚜ PATH OF THE BADLANDS — the talent tree. ARPG arc pillar 3.[/color]")
+	display_game("  • [b]A full skill tree per archetype[/b]: Path of the [color=#FF6666]Warlord[/color] (Onslaught / Bulwark / Warlord), the [color=#66CCFF]Archon[/color] (Destruction / Aegis / Wellspring), and the [color=#66FF66]Phantom[/color] (Lethality / Shadow / Fortune). 15 branch nodes each plus a keystone per class — 54 talents total, every one functional.")
+	display_game("  • [b]Earn Path points[/b]: 1 per 5 levels automatically, plus one-time feats (+1 each): first dungeon clear, first boss kill, first Empowered kill, first 3-modifier Empowered kill, 100 kills, first Apex Frontier kill. Feats toast when earned.")
+	display_game("  • [b]Open via Stats → ⚜ Paths[/b]. Branches unlock top-down, every node costs 1 point, choices are [color=#FF6666]permanent for this life[/color] — the tree dies with your character, and a full clear is impossible. Build with intent.")
+	display_game("  • [b]★ Keystones trade power for downsides[/b]: Blood Frenzy (+35%% damage below half HP, -30%% healing), Juggernaut's Resolve (stun immunity, -15%% flee), Last Stand (survive one lethal hit per combat, -10%% max HP), Overload, Time Anchor, Assassinate, Phantom Strike, Jackpot, and more.")
+	display_game("  • [b]Counterplay nodes answer the Empowered monsters[/b]: stun negation, damage reflection, on-kill cleansing — the Bulwark/Aegis/Shadow branches are your tools against modifier stacks.")
+	display_game("  • [b]Class keystones[/b] (8 points spent to unlock): Drillmaster, Blood Rage, Crusader's Aura, Archmage, Chaos Theory, Transcendence, Cutpurse King, Apex Hunter, Shadow Lord.")
+	display_game("")
+
 	# v0.9.653 — Victory screen Space-dismiss returns a clean game output.
-	display_game("[color=#00FF00]v0.9.653[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.653[/color]")
 	display_game("  [color=#FFD700]Victory screen dismissal cleanup.[/color]")
 	display_game("  • [b]Pressing Space on the victory screen now clears the game output[/b]. Previously the stale encounter screen (monster ASCII + combat text) was still sitting there when the victory card closed. Now you get a clean view — and the right contextual screen repaints where one applies (dungeon floor status, trading post, dungeon entrance info, corpse info).")
 	display_game("  • [b]Pending combat messages are flushed before the dismissal repaint[/b] — deferred damage-totals/loot text can no longer re-print combat lines into the freshly cleared output after you've already dismissed.")
