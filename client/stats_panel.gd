@@ -14,6 +14,7 @@ class_name StatsPanel
 
 signal close_requested
 signal spend_requested(stat_name: String)
+signal paths_requested  # ⚜ Paths button — opens the Path of the Badlands panel
 
 const STAT_ORDER: Array = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
 const STAT_INFO: Dictionary = {
@@ -110,6 +111,17 @@ func _build_layout() -> void:
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	title_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_hbox.add_child(title_label)
+
+	# Paths (ARPG pillar 3) — entry point to the skill tree panel. Lives here
+	# because the Stats panel is the character-building surface (UI-buttons-
+	# over-hotkeys rule; More menu is full).
+	var paths_btn := Button.new()
+	paths_btn.text = "⚜ Paths"
+	paths_btn.focus_mode = Control.FOCUS_NONE
+	paths_btn.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))
+	paths_btn.tooltip_text = "Path of the Badlands — spend Path points on permanent talents"
+	paths_btn.pressed.connect(func(): paths_requested.emit())
+	title_hbox.add_child(paths_btn)
 
 	# v0.9.503 — Help button before Close, opens stats_page topic.
 	var HelpPanelScript = load("res://client/help_panel.gd")

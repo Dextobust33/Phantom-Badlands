@@ -329,6 +329,13 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 # Up to 4 trait ids per ability (matches mastery rank cap).
 @export var ability_variant_imprints: Dictionary = {}
 
+# Path of the Badlands (ARPG pillar 3, design 2026-06-10) — per-character
+# skill tree. Points earned are DERIVED (level/5 + milestones.size()), never
+# stored, so level-ups grant points with no hook. Only the taken node ids and
+# claimed milestone ids persist. Permadeath: dies with the character.
+@export var path_nodes: Array = []        # taken node ids (PathDatabase)
+@export var path_milestones: Array = []   # claimed milestone ids (+1 point each)
+
 # Ability mastery rank thresholds + damage multipliers. Mirrors Constants.MASTERY_*
 # but inlined here so character.gd doesn't have to depend on the global script
 # load order. Slice 1 — gentle scaling: rank 0 -20%, rank 2 baseline, rank 4 +20%.
@@ -1549,6 +1556,8 @@ func to_dict() -> Dictionary:
 		"combat_deck_collection": combat_deck_collection,
 		"pending_rank_choices": pending_rank_choices.duplicate(true),
 		"deck_collection_initialized": deck_collection_initialized,
+		"path_nodes": path_nodes.duplicate(),
+		"path_milestones": path_milestones.duplicate(),
 		"swap_attack_with_ability": swap_attack_with_ability,
 		"cloak_active": cloak_active,
 		"title": title,
@@ -1799,6 +1808,8 @@ func from_dict(data: Dictionary):
 	combat_deck_collection = data.get("combat_deck_collection", {})
 	pending_rank_choices = data.get("pending_rank_choices", [])
 	deck_collection_initialized = bool(data.get("deck_collection_initialized", false))
+	path_nodes = data.get("path_nodes", []) if data.get("path_nodes", []) is Array else []
+	path_milestones = data.get("path_milestones", []) if data.get("path_milestones", []) is Array else []
 	# Ensure keybinds has all slots (in case of legacy data)
 	for slot in DEFAULT_ABILITY_KEYBINDS.keys():
 		if not ability_keybinds.has(slot):
@@ -2934,6 +2945,28 @@ func get_ability_rank_bonus(ability_name: String) -> int:
 		if archetype_key != "" and affixes.has(archetype_key):
 			total += int(float(affixes[archetype_key]) * wear_penalty)
 	return total
+
+# === Path of the Badlands (ARPG pillar 3) ===
+
+func get_path_points_earned() -> int:
+	"""1 point per 5 levels + 1 per claimed milestone. Derived, never stored —
+	level-ups grant points automatically with no grant hook."""
+	return int(level / 5.0) + path_milestones.size()
+
+func get_path_points_available() -> int:
+	"""Every Path node costs exactly 1 point."""
+	return max(0, get_path_points_earned() - path_nodes.size())
+
+func has_path_node(node_id: String) -> bool:
+	return node_id in path_nodes
+
+func grant_path_milestone(milestone_id: String) -> bool:
+	"""Claim a one-time milestone (+1 Path point via the derived total).
+	Returns true only when newly granted."""
+	if milestone_id in path_milestones:
+		return false
+	path_milestones.append(milestone_id)
+	return true
 
 
 # === Audit #1 Slice 4 — Off-affinity counter ===

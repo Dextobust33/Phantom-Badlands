@@ -51,6 +51,7 @@ const QuestManagerScript = preload("res://shared/quest_manager.gd")
 const TradingPostDatabaseScript = preload("res://shared/trading_post_database.gd")
 const TitlesScript = preload("res://shared/titles.gd")
 const CraftingDatabaseScript = preload("res://shared/crafting_database.gd")
+const PathDatabaseScript = preload("res://shared/path_database.gd")
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
 const NpcPostDatabaseScript = preload("res://shared/npc_post_database.gd")
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
@@ -1597,6 +1598,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_inventory_lock(peer_id, message)
 		"inventory_salvage":
 			handle_inventory_salvage(peer_id, message)
+		"path_spend":
+			handle_path_spend(peer_id, message)
 		"auto_salvage_settings":
 			handle_auto_salvage_settings(peer_id, message)
 		"auto_salvage_affix_settings":
@@ -5644,6 +5647,21 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 		if result.has("victory") and result.victory:
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
+
+			# Path milestones (ARPG pillar 3) — one-time feats, +1 Path point
+			# each. grant helper no-ops when already claimed. Dungeon-clear
+			# milestone hooks at the dungeon completion site instead.
+			if characters[peer_id].monsters_killed >= 100:
+				_grant_path_milestone(peer_id, "hundred_kills")
+			if result.get("is_boss_fight", false):
+				_grant_path_milestone(peer_id, "first_boss_kill")
+			var _path_emp_mods: Array = result.get("empowered_mods", [])
+			if _path_emp_mods.size() > 0:
+				_grant_path_milestone(peer_id, "first_empowered_kill")
+			if _path_emp_mods.size() >= 3:
+				_grant_path_milestone(peer_id, "first_triple_empowered_kill")
+			if result.get("is_apex_frontier", false) or result.get("is_apex_variant", false):
+				_grant_path_milestone(peer_id, "first_apex_kill")
 
 			# Track pilgrimage progress for Elders
 			var char = characters[peer_id]
@@ -12303,6 +12321,60 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		"message": result_msg
 	})
 
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func handle_path_spend(peer_id: int, message: Dictionary):
+	"""Path of the Badlands (ARPG pillar 3) — spend 1 Path point on a node.
+	All gating server-side: archetype match, branch prereq order, class
+	keystone requirements, duplicate + point checks. Client paths_panel just
+	sends the node_id and re-renders from character_update."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var node_id = String(message.get("node_id", ""))
+	var node: Dictionary = PathDatabaseScript.find_node(node_id)
+	if node.is_empty():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Unknown Path node.[/color]"})
+		return
+	if character.has_path_node(node_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You have already walked that step of the Path.[/color]"})
+		return
+	if String(node.get("archetype", "")) != character.get_class_path():
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]That Path belongs to another archetype.[/color]"})
+		return
+	var class_lock = String(node.get("class_lock", ""))
+	if class_lock != "":
+		if class_lock != character.class_type:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]That keystone belongs to the %s class.[/color]" % class_lock})
+			return
+		if character.path_nodes.size() < PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Class keystones unlock after spending %d Path points (you have spent %d).[/color]" % [PathDatabaseScript.CLASS_KEYSTONE_SPEND_REQ, character.path_nodes.size()]})
+			return
+	else:
+		var prereq = PathDatabaseScript.get_prereq_id(node_id)
+		if prereq != "" and not character.has_path_node(prereq):
+			var prereq_node: Dictionary = PathDatabaseScript.find_node(prereq)
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]Requires %s first.[/color]" % String(prereq_node.get("name", "the previous node"))})
+			return
+	if character.get_path_points_available() < 1:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]No Path points available. Earn more by leveling (every 5 levels) and completing feats.[/color]"})
+		return
+	character.path_nodes.append(node_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ Path learned: [b]%s[/b][/color]\n[color=#C4A882]%s[/color]" % [String(node.get("name", node_id)), String(node.get("desc", ""))]})
+	save_character(peer_id)
+	send_character_update(peer_id)
+
+func _grant_path_milestone(peer_id: int, milestone_id: String) -> void:
+	"""Grant a one-time Path milestone (+1 point). No-op when already claimed.
+	Toast + character_update only on a fresh grant."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not character.grant_path_milestone(milestone_id):
+		return
+	var label = String(PathDatabaseScript.MILESTONES.get(milestone_id, milestone_id))
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]⚜ PATH MILESTONE: %s — +1 Path point![/color]" % label})
 	save_character(peer_id)
 	send_character_update(peer_id)
 
@@ -31121,6 +31193,9 @@ func _complete_dungeon(peer_id: int):
 		"boss_egg_lost_to_full": boss_egg_lost_to_full
 	})
 
+	# Path milestone (ARPG pillar 3) — first dungeon clear, +1 Path point.
+	_grant_path_milestone(peer_id, "first_dungeon_clear")
+
 	send_location_update(peer_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
@@ -31197,6 +31272,9 @@ func _complete_dungeon(peer_id: int):
 				"boss_egg_name": f_egg_name,
 				"boss_egg_lost_to_full": f_egg_lost
 			})
+
+			# Path milestone — party followers clear the dungeon too.
+			_grant_path_milestone(pid, "first_dungeon_clear")
 
 			# Place follower near leader's overworld position
 			follower.x = character.x

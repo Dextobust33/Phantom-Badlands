@@ -2295,6 +2295,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"summon_next_fight": combat.get("summon_next_fight", ""),
 		"is_rare_variant": monster.get("is_rare_variant", false),
 		"is_apex_variant": monster.get("is_apex_variant", false),  # v0.9.514 — server uses this to roll Apex Crystal drop
+		"is_apex_frontier": monster.get("is_apex_frontier", false),  # Path milestone: first apex-frontier kill
 		# Empowered (v0.9.651) — server reads this to grant +1 combat-loot
 		# reveal per modifier (+1 extra for gilded); accumulates across flocks.
 		"empowered_mods": monster.get("empowered_mods", []),

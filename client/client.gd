@@ -1437,6 +1437,10 @@ var sanctuary_stable_panel = null
 const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
 var bestiary_panel = null
 
+# Path of the Badlands (ARPG pillar 3) — skill tree panel.
+const PathsPanelScript = preload("res://client/paths_panel.gd")
+var paths_panel = null
+
 # Open Market system
 var market_mode: bool = false
 var market_listings: Array = []
@@ -2111,6 +2115,13 @@ func _ready():
 	add_child(stats_panel)
 	stats_panel.close_requested.connect(_on_stats_panel_close)
 	stats_panel.spend_requested.connect(_on_stats_panel_spend)
+	stats_panel.paths_requested.connect(_on_stats_panel_paths)
+
+	# Path of the Badlands (ARPG pillar 3) — skill tree panel.
+	paths_panel = PathsPanelScript.new()
+	add_child(paths_panel)
+	paths_panel.close_requested.connect(_on_paths_panel_close)
+	paths_panel.learn_requested.connect(_on_paths_panel_learn)
 
 	# Audit #12 UI remediation — post status panel + Feed All.
 	post_status_panel = PostStatusPanelScript.new()
@@ -20460,6 +20471,11 @@ func handle_server_message(message: Dictionary):
 				# after each /spendstat so the new stat value + decremented
 				# bank are visible immediately.
 				_refresh_stats_panel_if_open()
+				# Paths (ARPG pillar 3) — re-render the tree after each
+				# path_spend / milestone grant so node states + the points
+				# counter update without closing the panel.
+				if paths_panel and paths_panel.visible:
+					paths_panel.populate(character_data)
 				# Refresh companion section in the battle panel so XP / level
 				# changes (gained from kills mid-combat) show in real time.
 				if combat_scene_panel and in_combat and combat_scene_panel.has_method("update_companion_data"):
@@ -30013,6 +30029,31 @@ func close_bestiary_panel() -> void:
 
 func _on_bestiary_panel_close() -> void:
 	close_bestiary_panel()
+
+# === Path of the Badlands (ARPG pillar 3) ===
+
+func _on_stats_panel_paths() -> void:
+	open_paths_panel()
+
+func open_paths_panel() -> void:
+	"""Open the Paths skill-tree panel. Renders entirely from the local
+	character_data dict (tree definitions ship in shared/path_database.gd);
+	spends round-trip through the server which owns all validation."""
+	if not paths_panel:
+		return
+	if input_field and input_field.has_focus():
+		input_field.release_focus()
+	paths_panel.open(character_data)
+
+func close_paths_panel() -> void:
+	if paths_panel:
+		paths_panel.close()
+
+func _on_paths_panel_close() -> void:
+	close_paths_panel()
+
+func _on_paths_panel_learn(node_id: String) -> void:
+	send_to_server({"type": "path_spend", "node_id": node_id})
 
 func _handle_bestiary_data(message: Dictionary) -> void:
 	if not bestiary_panel:
