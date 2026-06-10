@@ -2038,6 +2038,12 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		character.cure_poison()
 		combat["player_bleed_stacks"] = 0
 		messages.append("[color=#9ACD32]⚜ The kill purges your wounds — poison and bleed cleansed![/color]")
+	# Path class keystone — Crusader's Aura (Paladin): heal 2% max HP on kill.
+	var path_kill_heal = character.get_path_effect_total("kill_heal_pct")
+	if path_kill_heal > 0.0 and character.current_hp < character.get_total_max_hp():
+		var kh_amt = character.heal(max(1, int(character.get_total_max_hp() * path_kill_heal / 100.0)))
+		if kh_amt > 0:
+			messages.append("[color=#FFD700]⚜ Crusader's Aura restores %d HP.[/color]" % kh_amt)
 
 	# Empowered kill callout (v0.9.651) — the +30%/mod XP is already baked
 	# into experience_reward at generation; this line tells the player WHY the
@@ -3380,7 +3386,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#FF00FF]You cast Magic Bolt for %d mana![/color]" % actual_mana_cost)
 			messages.append("[color=#00FFFF]The bolt strikes for %d damage![/color]" % final_damage)
 			# v0.9.423 — Arcane Surge double-cast roll
-			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0))
+			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_mb > 0 and randi() % 100 < dc_chance_mb:
 				monster.current_hp -= final_damage
 				monster.current_hp = max(0, monster.current_hp)
@@ -3443,7 +3449,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#FF00FF]You cast Blast![/color]")
 			messages.append("[color=#00FFFF]The explosion deals %d damage![/color]" % damage)
 			# v0.9.423 — Arcane Surge double-cast roll
-			var dc_chance_bl = int(combat.get("arcane_surge_double_cast", 0))
+			var dc_chance_bl = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_bl > 0 and randi() % 100 < dc_chance_bl:
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
@@ -3532,7 +3538,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			messages.append("[color=#FFD700][b]METEOR![/b][/color]")
 			messages.append("[color=#FF4444]A massive meteor crashes down for %d damage![/color]" % damage)
 			# v0.9.423 — Arcane Surge double-cast roll
-			var dc_chance_mt = int(combat.get("arcane_surge_double_cast", 0))
+			var dc_chance_mt = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_mt > 0 and randi() % 100 < dc_chance_mt:
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
@@ -3774,14 +3780,22 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var missing_hp_percent = 1.0 - hp_percent
 			var damage_bonus = max(1, int((75 + (missing_hp_percent * 125)) * variable_fraction))
 			var defense_penalty = int(-40 * variable_fraction)
+			# Path class keystone — Blood Rage (Barbarian): Berserk loses its
+			# defense penalty entirely.
+			if character.has_path_effect("berserk_no_penalty"):
+				defense_penalty = 0
 			# v0.9.637 — rank-up +Damage + bonus_damage imprint now scale buff value.
 			# (Defense penalty stays as-is — players don't pick rank-up to nerf
 			# themselves; only the positive buff scales.)
 			damage_bonus = _apply_buff_value_modifiers(character, "berserk", damage_bonus)
 			character.add_buff("damage", damage_bonus, 4)
-			character.add_buff("defense_penalty", defense_penalty, 4)
-			messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
-			messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), %d%% defense for 4 rounds![/color]" % [damage_bonus, defense_penalty])
+			if defense_penalty != 0:
+				character.add_buff("defense_penalty", defense_penalty, 4)
+				messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
+				messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), %d%% defense for 4 rounds![/color]" % [damage_bonus, defense_penalty])
+			else:
+				messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
+				messages.append("[color=#FFD700]⚜ Blood Rage: +%d%% damage for 4 rounds — no defense penalty![/color]" % damage_bonus)
 
 		"iron_skin":
 			# Variable cost (v0.9.263): reduction magnitude scales with spend.
@@ -3979,6 +3993,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var raw_chance = 50 + wits - monster.get("intelligence", 15)
 			raw_chance = clampi(raw_chance, 10, 90)
 			var success_chance = max(1, int(raw_chance * variable_fraction))
+			# Path class keystone — Cutpurse King (Thief): always succeeds.
+			if character.has_path_effect("pickpocket_always"):
+				success_chance = 100
 			var roll = randi() % 100
 			if roll < success_chance:
 				combat["pickpocket_count"] = pp_count + 1
@@ -3987,6 +4004,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var ore_tiers = ["copper_ore", "iron_ore", "steel_ore", "mithril_ore", "adamantine_ore", "orichalcum_ore", "void_ore", "celestial_ore", "primordial_ore"]
 				var ore_id = ore_tiers[mini(monster_tier - 1, ore_tiers.size() - 1)]
 				var stolen_qty = randi_range(1, 2) + (monster_tier / 3)
+				# Cutpurse King: 50% bigger hauls.
+				var path_pp_yield = character.get_path_effect_total("pickpocket_yield_pct")
+				if path_pp_yield > 0.0:
+					stolen_qty = max(1, int(stolen_qty * (1.0 + path_pp_yield / 100.0)))
 				character.add_crafting_material(ore_id, stolen_qty)
 				var mat_name = ore_id.replace("_", " ").capitalize()
 				messages.append("[color=#00FF00]PICKPOCKET SUCCESS![/color]")
@@ -4305,6 +4326,12 @@ func apply_skill_cost_reduction(character: Character, ability_name: String, base
 	if path_cost_pct != 0.0:
 		cost = int(cost * (1.0 + path_cost_pct / 100.0))
 
+	# Path class keystone — Shadow Lord (Ninja): Vanish costs 50% less.
+	if ability_name == "vanish":
+		var path_vanish_pct = character.get_path_effect_total("vanish_cost_pct")
+		if path_vanish_pct != 0.0:
+			cost = int(cost * (1.0 + path_vanish_pct / 100.0))
+
 	return max(1, cost)
 
 func apply_variable_cost(character: Character, ability_name: String, combat: Dictionary) -> Dictionary:
@@ -4440,6 +4467,13 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 		var path_vs_disabled = character.get_path_effect_total("vs_disabled_damage_pct")
 		if path_vs_disabled != 0.0 and (int(combat.get("monster_stunned", 0)) > 0 or int(combat.get("monster_charmed", 0)) > 0):
 			dmg = dmg * (1.0 + path_vs_disabled / 100.0)
+		# Path class keystone — Blood Rage ramp (+3%/round, capped) applies
+		# to abilities too.
+		var path_ramp = character.get_path_effect_total("ramp_damage_pct")
+		if path_ramp > 0.0:
+			var ramp_total = minf(character.get_path_effect_total("ramp_damage_cap"), path_ramp * float(combat.get("round", 0)))
+			if ramp_total > 0.0:
+				dmg = dmg * (1.0 + ramp_total / 100.0)
 	return int(dmg)
 
 # v0.9.637 — Buff-ability rank scaling. Player report: 'War Cry just got a
@@ -6668,18 +6702,31 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var path_vs_full = character.get_path_effect_total("vs_full_hp_damage_pct")
 	if path_vs_full != 0.0 and int(monster.get("current_hp", 0)) >= int(monster.get("max_hp", 1)):
 		raw_damage = int(raw_damage * (1.0 + path_vs_full / 100.0))
+	# Path class keystone — Blood Rage (Barbarian): +3% damage per combat
+	# round, capped (+30%).
+	var path_ramp = character.get_path_effect_total("ramp_damage_pct")
+	if path_ramp > 0.0:
+		var ramp_total = minf(character.get_path_effect_total("ramp_damage_cap"), path_ramp * float(combat.get("round", 0)))
+		if ramp_total > 0.0:
+			raw_damage = int(raw_damage * (1.0 + ramp_total / 100.0))
 
 	# === CLASS PASSIVE: Sorcerer Chaos Magic ===
 	# 25% chance for double damage, 5% chance to backfire
 	var backfire_damage = 0
 	if effects.has("double_damage_chance"):
+		# Path class keystone — Chaos Theory (Sorcerer): double-damage
+		# chance rises from 25% to 35% (backfire unchanged).
+		var dd_chance: float = float(effects.get("double_damage_chance", 0.25))
+		var path_sorc_pct: float = character.get_path_effect_total("sorcerer_double_pct") / 100.0
+		if path_sorc_pct > dd_chance:
+			dd_chance = path_sorc_pct
 		var chaos_roll = randf()
 		if chaos_roll < effects.get("backfire_chance", 0.10):
 			# Backfire: deal damage to self (capped at 15% max HP)
 			backfire_damage = mini(int(raw_damage * 0.5), int(character.get_total_max_hp() * 0.15))
 			raw_damage = int(raw_damage * 0.5)  # Halve the attack damage
 			passive_messages.append("[color=#9400D3]Chaos Magic backfires![/color]")
-		elif chaos_roll < effects.get("backfire_chance", 0.10) + effects.get("double_damage_chance", 0.25):
+		elif chaos_roll < effects.get("backfire_chance", 0.10) + dd_chance:
 			# Double damage
 			raw_damage = raw_damage * 2
 			passive_messages.append("[color=#9400D3]Chaos Magic surges: DOUBLE DAMAGE![/color]")
@@ -6725,8 +6772,13 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# against the prefixed name.
 	if effects.has("bonus_vs_undead"):
 		if _monster_matches_keywords(monster, _UNDEAD_DEMON_KEYWORDS):
-			total = int(total * (1.0 + effects.get("bonus_vs_undead", 0)))
-			passive_messages.append("[color=#FFD700]Divine Favor: +%d%% vs undead![/color]" % int(effects.get("bonus_vs_undead", 0) * 100))
+			var undead_bonus: float = float(effects.get("bonus_vs_undead", 0))
+			# Path class keystone — Crusader's Aura (Paladin) raises this.
+			var path_undead: float = character.get_path_effect_total("undead_bonus_pct") / 100.0
+			if path_undead > undead_bonus:
+				undead_bonus = path_undead
+			total = int(total * (1.0 + undead_bonus))
+			passive_messages.append("[color=#FFD700]Divine Favor: +%d%% vs undead![/color]" % int(undead_bonus * 100))
 
 	# === CLASS PASSIVE: Ranger Hunter's Mark ===
 	# +25% damage vs beasts. Audit #2 Slice 3 — substring match (same fix as
@@ -6734,8 +6786,13 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	# phoenix, sphinx, dragon wyrmling that were previously missing.
 	if effects.has("bonus_vs_beasts"):
 		if _monster_matches_keywords(monster, _BEAST_KEYWORDS):
-			total = int(total * (1.0 + effects.get("bonus_vs_beasts", 0)))
-			passive_messages.append("[color=#228B22]Hunter's Mark: +%d%% vs beasts![/color]" % int(effects.get("bonus_vs_beasts", 0) * 100))
+			var beast_bonus: float = float(effects.get("bonus_vs_beasts", 0))
+			# Path class keystone — Apex Hunter (Ranger) raises this.
+			var path_beast: float = character.get_path_effect_total("beast_bonus_pct") / 100.0
+			if path_beast > beast_bonus:
+				beast_bonus = path_beast
+			total = int(total * (1.0 + beast_bonus))
+			passive_messages.append("[color=#228B22]Hunter's Mark: +%d%% vs beasts![/color]" % int(beast_bonus * 100))
 
 	# === MONSTER BANE POTIONS ===
 	# Check for monster_bane_<type> buffs that give +damage% vs specific monster types

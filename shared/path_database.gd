@@ -135,7 +135,7 @@ const TREES = {
 			},
 		],
 		"class_keystones": {
-			"Thief": {"id": "ck_Thief", "name": "Cutpurse King", "desc": "CLASS KEYSTONE: Pickpocket always succeeds and yields 50% more Valor.", "effect": {"pickpocket_always": true, "pickpocket_yield_pct": 50}},
+			"Thief": {"id": "ck_Thief", "name": "Cutpurse King", "desc": "CLASS KEYSTONE: Pickpocket always succeeds and steals 50% more materials.", "effect": {"pickpocket_always": true, "pickpocket_yield_pct": 50}},
 			"Ranger": {"id": "ck_Ranger", "name": "Apex Hunter", "desc": "CLASS KEYSTONE: Your bonus vs beasts rises to +40%, and you gain +10% XP.", "effect": {"beast_bonus_pct": 40, "xp_pct": 10}},
 			"Ninja": {"id": "ck_Ninja", "name": "Shadow Lord", "desc": "CLASS KEYSTONE: Vanish costs 50% less, and your flee chance rises another 15%.", "effect": {"vanish_cost_pct": -50, "flee_chance_pct": 15}},
 		},

@@ -154,6 +154,12 @@ func _build_layout() -> void:
 	_points_label.custom_minimum_size = Vector2(170, 0)
 	title_hbox.add_child(_points_label)
 
+	# Reusable ? Help button → paths_page topic (help-button-per-screen UX).
+	var HelpPanelScript = load("res://client/help_panel.gd")
+	var help_panel = HelpPanelScript.new()
+	add_child(help_panel)
+	title_hbox.add_child(HelpPanelScript.make_help_button("paths_page", help_panel))
+
 	var close_btn := Button.new()
 	close_btn.text = "✕ Close"
 	close_btn.focus_mode = Control.FOCUS_NONE

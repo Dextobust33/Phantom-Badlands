@@ -106,6 +106,23 @@ const HELP_TOPICS := {
 			+ "[color=#888888]Capacity is shown at the top right. Upgrade in Sanctuary → Storage tier for more slots.[/color]"
 		),
 	},
+	"paths_page": {
+		"title": "[color=#FFD700]⚜ Path of the Badlands[/color]",
+		"body": (
+			"Your character's talent tree. Each archetype (Warrior / Mage / Trickster) has its own Path with three themed branches — choices are [b]permanent for this life[/b] and die with your character.\n\n"
+			+ "[color=#FFD700]── Earning Path points ──[/color]\n"
+			+ "  • [b]1 point every 5 levels[/b] (automatic).\n"
+			+ "  • [b]+1 per feat[/b] (once per character): first dungeon clear, first boss kill, first Empowered kill, first 3-modifier Empowered kill, 100 kills, first Apex Frontier kill.\n\n"
+			+ "[color=#FFD700]── Spending ──[/color]\n"
+			+ "  • Every node costs [b]1 point[/b]. Branches unlock top-down — take a node to reach the one below it.\n"
+			+ "  • The 5th node of each branch is a [color=#FFB74D]★ keystone[/color]: a big effect with a real downside. Read carefully — this is a permadeath game.\n"
+			+ "  • Your [b]class keystone[/b] (bottom row) unlocks after spending 8 points anywhere in your tree.\n"
+			+ "  • You can't take everything — a full tree costs more points than one life typically earns. Build with intent.\n\n"
+			+ "[color=#FFD700]── Reading the tree ──[/color]\n"
+			+ "  [color=#66FF66]Green ✓[/color] = learned   [color=#FFD700]Gold[/color] = available now   [color=#888888]Grey[/color] = locked (missing prereq or no points)\n\n"
+			+ "[color=#888888]Open from Stats → ⚜ Paths. The feats strip at the bottom shows which bonus points you've claimed.[/color]"
+		),
+	},
 	"stats_page": {
 		"title": "[color=#FFD700]Stats & Progression[/color]",
 		"body": (

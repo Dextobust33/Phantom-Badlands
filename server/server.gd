@@ -5486,6 +5486,14 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 	if cloak_was_dropped:
 		cloak_prefix = "[color=#9932CC]Your cloak fades as you meditate.[/color]\n"
 
+	# Path class keystone — Transcendence (Sage): Meditate also restores a
+	# flat % of max HP on top of the normal roll (applies even at full mana,
+	# and stacks with the not-full-HP heal below).
+	var path_meditate_heal = character.get_path_effect_total("meditate_heal_pct")
+	var transcendence_heal = 0
+	if path_meditate_heal > 0.0 and character.current_hp < character.get_total_max_hp():
+		transcendence_heal = character.heal(max(1, int(character.get_total_max_hp() * path_meditate_heal / 100.0)))
+
 	if at_full_hp:
 		# Full HP: focus entirely on mana
 		meditate_msg = "%s[color=#66CCCC]You meditate deeply and recover %d Mana.%s[/color]" % [cloak_prefix, mana_regen, bonus_text]
@@ -5496,6 +5504,9 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
 		meditate_msg = "%s[color=#66CCCC]You meditate and recover %d HP and %d Mana.%s[/color]" % [cloak_prefix, heal_amount, mana_regen, bonus_text]
+
+	if transcendence_heal > 0:
+		meditate_msg += "\n[color=#20B2AA]⚜ Transcendence restores %d more HP.[/color]" % transcendence_heal
 
 	# Phase B1 — companion recovers HP on meditate too. KO'd companions need
 	# a healer; the message tells the player so.

@@ -29019,6 +29019,10 @@ func show_help():
   [color=#B8860B]Juggernaut[/color]=+50%% HP, stun-immune | [color=#BA55D3]Venomous[/color]=poison attacks | [color=#7B68EE]Warded[/color]=-35%% ability dmg taken
   [color=#FFD700]Gilded[/color]=harmless, +2 loot reveals | [color=#FF8C00]Broodcalling[/color]=kin avenge it (guaranteed chain fight!)
 
+[b][color=#FFD700]══ ⚜ PATHS (TALENT TREE) ══[/color][/b]
+[color=#AAAAAA]Permanent talents for this life. Open via [/color][color=#FFD700]Stats → ⚜ Paths[/color][color=#AAAAAA]. Earn 1 point per 5 levels + 1 per feat (first dungeon/boss/Empowered/3-mod/100 kills/apex kill).[/color]
+[color=#AAAAAA]3 branches per archetype, unlock top-down, every node costs 1 point. Branch [color=#FFB74D]★ keystones[/color] trade power for a downside. Class keystone unlocks at 8 points spent. Choices are permanent — full clear is impossible, build with intent![/color]
+
 [b][color=#FFD700]══ ITEMS ══[/color][/b]
 [color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
 [color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
