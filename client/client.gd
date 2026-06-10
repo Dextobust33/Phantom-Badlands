@@ -4449,11 +4449,9 @@ func _input(event):
 			set_meta("hotkey_0_pressed", true)
 			_post_loot_victory_persists = false
 			# Also close the legacy view if it was open — Space is "I'm
-			# done with the victory recap, take me back."
-			if _victory_legacy_view:
-				_victory_legacy_view = false
-				if game_output and is_instance_valid(game_output):
-					game_output.clear()
+			# done with the victory recap, take me back." (game_output is
+			# cleared unconditionally below as of v0.9.653.)
+			_victory_legacy_view = false
 			# v0.9.625 — explicit cleanup instead of waiting for the safety
 			# net's next-frame fire.
 			# v0.9.626 — also nuke the deferred victory payload + FX flag.
@@ -4467,6 +4465,19 @@ func _input(event):
 			_pending_victory_card_payload = null
 			_pending_victory_fx_play = false
 			_combat_scene_linger_until_ms = 0
+			# v0.9.653 — flush everything still pending from the fight BEFORE
+			# the dismissal repaint (player request: 'process pending messages
+			# before processing a release'). Without this, deferred end-of-
+			# combat chrome (Damage totals / LOOT / Press-Space prompt) or
+			# leftover queue entries could re-print combat text into the
+			# freshly cleared game_output AFTER the player dismissed. Mirrors
+			# acknowledge_continue's v0.9.417 flush.
+			combat_msg_queue.clear()
+			combat_phase_paused = false
+			combat_phase_timer = 0.0
+			_pending_combat_end_chrome = {}
+			if combat_scene_panel and combat_scene_panel.has_method("_force_end_action_phase"):
+				combat_scene_panel._force_end_action_phase()
 			# v0.9.628 — hide FX overlay BEFORE the victory card. Victory
 			# card z=150 covers FX overlay z=100 during display; if the
 			# card hides first, the FX overlay is exposed for the render
@@ -4479,6 +4490,27 @@ func _input(event):
 					combat_scene_panel.hide_fx_overlay_only()
 				if combat_scene_panel.has_method("hide_victory_card"):
 					combat_scene_panel.hide_victory_card()
+			# v0.9.653 — player report: 'If they press space the gameoutput
+			# window still shows the monster ascii art with the encounter
+			# screen.' Clear it and repaint the contextual view, mirroring
+			# acknowledge_continue's tail (the no-loot-bag path, which already
+			# behaved correctly). hotkey_0_pressed above guarantees this Space
+			# press never falls through to Rest.
+			if game_output and is_instance_valid(game_output):
+				game_output.clear()
+			if not flock_pending:
+				reset_combat_background()
+			if at_trading_post:
+				quest_view_mode = false
+				_display_trading_post_ui()
+				update_action_bar()
+			elif dungeon_mode:
+				display_dungeon_floor()
+			else:
+				if at_dungeon_entrance and not dungeon_entrance_info.is_empty():
+					_display_dungeon_entrance_info()
+				if at_corpse and not corpse_info.is_empty():
+					_display_corpse_info()
 			get_viewport().set_input_as_handled()
 			return
 
@@ -26222,8 +26254,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.653 — Victory screen Space-dismiss returns a clean game output.
+	display_game("[color=#00FF00]v0.9.653[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]Victory screen dismissal cleanup.[/color]")
+	display_game("  • [b]Pressing Space on the victory screen now clears the game output[/b]. Previously the stale encounter screen (monster ASCII + combat text) was still sitting there when the victory card closed. Now you get a clean view — and the right contextual screen repaints where one applies (dungeon floor status, trading post, dungeon entrance info, corpse info).")
+	display_game("  • [b]Pending combat messages are flushed before the dismissal repaint[/b] — deferred damage-totals/loot text can no longer re-print combat lines into the freshly cleared output after you've already dismissed.")
+	display_game("  • Space on the victory screen still never triggers Rest.")
+	display_game("")
+
 	# v0.9.652 — Inventory bar declutter + panel-first salvage.
-	display_game("[color=#00FF00]v0.9.652[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.652[/color]")
 	display_game("  [color=#FFD700]The inventory action bar slims down — the visual panel is the interface now.[/color]")
 	display_game("  • [b]Action bar buttons removed[/b]: Equip, Unequip, Use, Inspect, Sort, Lock, Prev/Next Page. Everything they did lives in the Inventory panel: [b]double-click[/b] an item to equip or use it, [b]drag[/b] it onto its slot to equip, [b]drag a slot off[/b] the doll to unequip, [b]right-click[/b] for the full menu (Inspect / Use / Equip / Unequip / Lock / Salvage / Drop), [b]hover[/b] for stat comparisons. A hint line at the bottom of the panel spells this out.")
 	display_game("  • [b]NEW: right-click → Salvage[/b] breaks down a single item into crafting materials (with confirm). Locked items are always protected.")
