@@ -12192,6 +12192,41 @@ func handle_inventory_salvage(peer_id: int, message: Dictionary):
 		})
 		return
 
+	# v0.9.652 — single-item salvage (inventory panel right-click → Salvage).
+	# Same exclusion guards as bulk, but with specific denial feedback so the
+	# player knows WHY instead of a generic "no items match" line.
+	if mode == "single":
+		var target_index = int(message.get("index", -1))
+		if target_index < 0 or target_index >= inventory.size():
+			return
+		var target_item = inventory[target_index]
+		var t_type = String(target_item.get("type", ""))
+		var deny_reason = ""
+		if target_item.get("is_title_item", false):
+			deny_reason = "Title items cannot be salvaged."
+		elif target_item.get("locked", false):
+			deny_reason = "That item is locked — unlock it first (right-click → Unlock)."
+		elif t_type == "tool" or t_type == "rune" or t_type == "structure" or t_type == "treasure_chest":
+			deny_reason = "That item type cannot be salvaged."
+		if deny_reason != "":
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]%s[/color]" % deny_reason})
+			return
+		var single_result = drop_tables.get_salvage_value(target_item)
+		var single_mats: Dictionary = single_result.get("materials", {})
+		var salvaged_name = String(target_item.get("name", "item"))
+		character.remove_item(target_index)
+		var single_strings = []
+		for s_mat_id in single_mats:
+			character.add_crafting_material(s_mat_id, single_mats[s_mat_id])
+			single_strings.append("%dx %s" % [single_mats[s_mat_id], CraftingDatabaseScript.get_material_name(s_mat_id)])
+		var single_msg = "[color=#AA66FF]Salvaged %s![/color]" % salvaged_name
+		if not single_strings.is_empty():
+			single_msg += " [color=#00FF00]→ %s[/color]" % ", ".join(single_strings)
+		send_to_peer(peer_id, {"type": "text", "message": single_msg})
+		save_character(peer_id)
+		send_character_update(peer_id)
+		return
+
 	var threshold = max(1, character.level - 5)
 	var items_to_remove = []
 	var total_essence = 0

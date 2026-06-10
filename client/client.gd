@@ -8676,24 +8676,26 @@ func update_action_bar():
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 		else:
-			# Inventory sub-menu: Spacebar=Back, Q-R for inventory actions
-			var equipped = character_data.get("equipped", {})
-			var has_equipped = _count_equipped_items(equipped) > 0
-			var inv = character_data.get("inventory", [])
-			var total_pages = max(1, int(ceil(float(inv.size()) / INVENTORY_PAGE_SIZE)))
-			var has_prev = inventory_page > 0
-			var has_next = inventory_page < total_pages - 1
+			# Inventory main view: Spacebar=Back, Q=Salvage
+			# v0.9.652 — bar slimmed to Back + Salvage: the visual panel owns
+			# every other inventory verb now (double-click to equip/use, drag
+			# item → slot to equip, drag slot → anywhere to unequip, right-click
+			# context menu for Inspect/Use/Equip/Unequip/Lock/Salvage/Drop,
+			# panel Sort ▾ and Salvage ▾ dropdowns, grid scrolls so no paging).
+			# Salvage stays as the entry to the full submenu (auto-salvage
+			# rarity + affix filters). Legacy number-pick flows stay in code
+			# (panel-independent fallback) but have no bar entry.
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "inventory_back", "enabled": true},
-				{"label": "Inspect", "action_type": "local", "action_data": "inventory_inspect", "enabled": true},
-				{"label": "Use", "action_type": "local", "action_data": "inventory_use", "enabled": true},
-				{"label": "Equip", "action_type": "local", "action_data": "inventory_equip", "enabled": true},
-				{"label": "Unequip", "action_type": "local", "action_data": "inventory_unequip", "enabled": true},
-				{"label": "Sort", "action_type": "local", "action_data": "inventory_sort", "enabled": true},
 				{"label": "Salvage", "action_type": "local", "action_data": "inventory_salvage", "enabled": true},
-				{"label": "Lock", "action_type": "local", "action_data": "inventory_lock", "enabled": true},
-				{"label": "Prev Pg", "action_type": "local", "action_data": "inventory_prev_page", "enabled": has_prev},
-				{"label": "Next Pg", "action_type": "local", "action_data": "inventory_next_page", "enabled": has_next},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
 	elif crafting_mode:
 		# Temper target selection sub-mode
@@ -16321,6 +16323,95 @@ func _on_salvage_junk_confirmed() -> void:
 	pending_inventory_action = "awaiting_salvage_result"
 	send_to_server({"type": "inventory_salvage", "mode": "below_level"})
 	display_game("[color=#AA66FF]Salvaging junk...[/color]")
+	update_action_bar()
+
+# v0.9.652 — panel-first salvage. The action-bar Salvage button is gone; these
+# back the inventory panel's Salvage ▾ menu + right-click → Salvage. Bulk modes
+# reuse the awaiting_salvage_result read-the-result flow (v0.9.634); the
+# single-item path reuses the item-use status-row pattern instead so the panel
+# stays open.
+var _panel_salvage_index: int = -1
+
+func _panel_salvage_item(index: int, item: Dictionary) -> void:
+	if not inventory_mode or index < 0:
+		return
+	if item.get("locked", false):
+		if inventory_panel:
+			inventory_panel.set_status("[color=#FF6666]Locked items can't be salvaged — right-click → Unlock first.[/color]")
+		return
+	_panel_salvage_index = index
+	var dialog: ConfirmationDialog = get_node_or_null("/root/ClientScene/SalvageSingleConfirm")
+	if dialog == null:
+		dialog = ConfirmationDialog.new()
+		dialog.name = "SalvageSingleConfirm"
+		dialog.title = "Salvage Item"
+		dialog.ok_button_text = "Salvage"
+		dialog.cancel_button_text = "Cancel"
+		dialog.confirmed.connect(_on_panel_salvage_item_confirmed)
+		add_child(dialog)
+	dialog.dialog_text = "Break down %s into crafting materials?\nThis cannot be undone." % str(item.get("name", "this item"))
+	dialog.popup_centered()
+
+func _on_panel_salvage_item_confirmed() -> void:
+	if not inventory_mode or _panel_salvage_index < 0:
+		return
+	# Route the result text into the panel's status row (same path as item use)
+	awaiting_item_use_result = true
+	send_to_server({"type": "inventory_salvage", "mode": "single", "index": _panel_salvage_index})
+	_panel_salvage_index = -1
+
+func _panel_salvage_all_confirm() -> void:
+	if not inventory_mode:
+		return
+	var dialog: ConfirmationDialog = get_node_or_null("/root/ClientScene/SalvageAllConfirm")
+	if dialog == null:
+		dialog = ConfirmationDialog.new()
+		dialog.name = "SalvageAllConfirm"
+		dialog.title = "Salvage ALL Equipment"
+		dialog.ok_button_text = "Salvage All"
+		dialog.cancel_button_text = "Cancel"
+		dialog.confirmed.connect(_on_panel_salvage_all_confirmed)
+		add_child(dialog)
+	dialog.dialog_text = "Break down ALL unequipped equipment into crafting materials?\n(Locked items, consumables, tools, and runes are skipped.)"
+	dialog.popup_centered()
+
+func _on_panel_salvage_all_confirmed() -> void:
+	if not inventory_mode:
+		return
+	pending_inventory_action = "awaiting_salvage_result"
+	send_to_server({"type": "inventory_salvage", "mode": "all"})
+	display_game("[color=#AA66FF]Salvaging all equipment...[/color]")
+	update_action_bar()
+
+func _panel_salvage_consumables_confirm() -> void:
+	if not inventory_mode:
+		return
+	var dialog: ConfirmationDialog = get_node_or_null("/root/ClientScene/SalvageConsumablesConfirm")
+	if dialog == null:
+		dialog = ConfirmationDialog.new()
+		dialog.name = "SalvageConsumablesConfirm"
+		dialog.title = "Salvage Consumables"
+		dialog.ok_button_text = "Salvage"
+		dialog.cancel_button_text = "Cancel"
+		dialog.confirmed.connect(_on_panel_salvage_consumables_confirmed)
+		add_child(dialog)
+	dialog.dialog_text = "Break down ALL consumables (potions, scrolls) into crafting materials?\n(Locked consumables are skipped.)"
+	dialog.popup_centered()
+
+func _on_panel_salvage_consumables_confirmed() -> void:
+	if not inventory_mode:
+		return
+	pending_inventory_action = "awaiting_salvage_result"
+	send_to_server({"type": "inventory_salvage", "mode": "consumables"})
+	display_game("[color=#AA66FF]Salvaging consumables...[/color]")
+	update_action_bar()
+
+func _panel_open_full_salvage() -> void:
+	"""Salvage ▾ → Full Options. Opens the legacy salvage submenu (auto-salvage
+	rarity cycling + affix filters live there)."""
+	if not inventory_mode:
+		return
+	open_salvage_menu()
 	update_action_bar()
 
 func _on_inv_panel_materials() -> void:
@@ -26131,8 +26222,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.652 — Inventory bar declutter + panel-first salvage.
+	display_game("[color=#00FF00]v0.9.652[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FFD700]The inventory action bar slims down — the visual panel is the interface now.[/color]")
+	display_game("  • [b]Action bar buttons removed[/b]: Equip, Unequip, Use, Inspect, Sort, Lock, Prev/Next Page. Everything they did lives in the Inventory panel: [b]double-click[/b] an item to equip or use it, [b]drag[/b] it onto its slot to equip, [b]drag a slot off[/b] the doll to unequip, [b]right-click[/b] for the full menu (Inspect / Use / Equip / Unequip / Lock / Salvage / Drop), [b]hover[/b] for stat comparisons. A hint line at the bottom of the panel spells this out.")
+	display_game("  • [b]NEW: right-click → Salvage[/b] breaks down a single item into crafting materials (with confirm). Locked items are always protected.")
+	display_game("  • [b]Salvage Junk button upgraded to Salvage ▾[/b] with the full set: Junk (below your level) / ALL equipment / Consumables / Full Options (auto-salvage rarity + affix filters).")
+	display_game("  • The bar keeps just [color=#888888]Back[/color] and [color=#888888]Salvage[/color] (the latter opens the full salvage submenu as before).")
+	display_game("")
+
 	# v0.9.651 — Empowered monsters (ARPG arc pillar 1).
-	display_game("[color=#00FF00]v0.9.651[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.651[/color]")
 	display_game("  [color=#FFD700]⚡ EMPOWERED MONSTERS — Diablo-style elite modifiers. The first slice of the ARPG direction.[/color]")
 	display_game("  • [b]15%% of Lv5+ monsters now spawn Empowered[/b] with 1-3 stacking modifiers that change how the fight plays: [color=#FF5555]Frenzied[/color] (ramping damage), [color=#C71585]Vampiric[/color] (lifesteal), [color=#9ACD32]Thorned[/color] (reflects melee), [color=#00E5EE]Swift[/color] (2-3 strikes/turn), [color=#B8860B]Juggernaut[/color] (+50%% HP, stun-immune), [color=#BA55D3]Venomous[/color] (poison), [color=#7B68EE]Warded[/color] (-35%% ability damage taken), [color=#FFD700]Gilded[/color] (harmless jackpot), [color=#FF8C00]Broodcalling[/color] (its kin WILL avenge it — guaranteed chain fight).")
 	display_game("  • [b]Risk is announced up front[/b]: every modifier is called out at combat start, and the name + ASCII border tint by danger — [color=#4FC3F7]blue[/color] = 1 mod, [color=#BA68C8]purple[/color] = 2 (Lv20+), [color=#FFB74D]orange[/color] = 3 (Lv40+). Read the banner, then fight or flee. Fleeing works exactly as before — no modifier reduces your escape chance.")
@@ -28872,7 +28972,8 @@ func show_help():
   Runes stack in inventory. Sell on market under the Runes category.
 [color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x Valor or lose half)
 [color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10%% cost or +15%% dmg
-[color=#FF4444]Lock:[/color] Inventory→Lock (key 3) protects items from Sell All, Salvage All, and accidental discard.
+[color=#00FF00]Equip/Unequip:[/color] In the Inventory panel: [b]double-click[/b] an item to equip/use it, [b]drag[/b] it onto its slot to equip, [b]drag a slot off[/b] the doll to unequip, or [b]right-click[/b] for all options (Inspect/Use/Equip/Lock/Salvage/Drop).
+[color=#FF4444]Lock:[/color] Right-click an item → Lock protects it from Salvage All, accidental discard, and single salvage.
 [color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% = BROKEN (no stats). Repair via wandering blacksmiths only!
 
 [b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
@@ -28900,7 +29001,7 @@ func show_help():
 [color=#FF8800]Tempered Craft:[/color] Equipment recipes have a "Temper" option — target a bonus stat (+ATK/DEF/HP/SPD).
   Costs 50%% extra materials and halves success chance. Materials lost on failure! High risk, high reward.
 [color=#FFD700]Recipe Discovery:[/color] Advanced recipes (difficulty 50+) require Recipe Scrolls found in dungeon treasure (T4+).
-[color=#AA66FF]Salvage:[/color] Inventory→Salvage breaks down items into [color=#AA66FF]crafting materials[/color]. Higher rarity = more materials.
+[color=#AA66FF]Salvage:[/color] Breaks items into [color=#AA66FF]crafting materials[/color]. Right-click an item → Salvage, or use the panel's Salvage ▾ menu (Junk / All / Consumables / auto-salvage filters). Higher rarity = more materials.
 [color=#00FFFF]Material Pouch:[/color] Inventory→Materials shows resources (ore, wood, fish, monster parts). Max 999 per stack.
 [color=#A335EE]Companion Bonus:[/color] Wolf, Troll, Hobgoblin = +gathering yield. Kobold, Spider, Wyvern = +gathering hints.
 

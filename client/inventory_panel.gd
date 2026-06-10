@@ -65,6 +65,8 @@ var _tooltip_label: RichTextLabel
 var _context_menu: PopupMenu
 var _sort_menu: PopupMenu
 var _sort_button: Button
+var _salvage_menu: PopupMenu
+var _salvage_button: Button
 # Cached subject of the currently-open context menu
 var _ctx_kind: String = ""  # "card" | "slot"
 var _ctx_item: Dictionary = {}
@@ -80,6 +82,13 @@ const CTX_EQUIP := 3
 const CTX_UNEQUIP := 4
 const CTX_LOCK := 5
 const CTX_DROP := 6
+const CTX_SALVAGE := 7
+
+# Salvage ▾ menu ids (v0.9.652 — panel-first salvage)
+const SAL_JUNK := 1
+const SAL_ALL := 2
+const SAL_CONSUMABLES := 3
+const SAL_FULL := 4
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -320,7 +329,10 @@ func _build_layout() -> void:
 
 	_sort_button = _make_action_btn("Sort ▾", _on_sort_pressed)
 	action_row.add_child(_sort_button)
-	action_row.add_child(_make_action_btn("Salvage Junk", _on_salvage_pressed))
+	# v0.9.652 — "Salvage Junk" upgraded to a Salvage ▾ dropdown so all bulk
+	# salvage verbs live in the panel (per-item salvage is on right-click).
+	_salvage_button = _make_action_btn("Salvage ▾", _on_salvage_pressed)
+	action_row.add_child(_salvage_button)
 	action_row.add_child(_make_action_btn("Materials", _on_materials_pressed))
 
 	# Transient feedback (e.g., "Used Minor Health Potion: +50 HP")
@@ -335,6 +347,19 @@ func _build_layout() -> void:
 	action_row.add_child(_status_label)
 
 	action_row.add_child(_make_action_btn("Close (Space)", _on_close_pressed))
+
+	# v0.9.652 — persistent interaction hint. The action-bar Equip/Unequip
+	# buttons are gone; this line is the discoverability surface for the
+	# panel's direct-manipulation verbs. Keep it one line, dim, ASCII-only
+	# (no SMP emoji — player-font tofu, see v0.9.636).
+	var hint := RichTextLabel.new()
+	hint.bbcode_enabled = true
+	hint.fit_content = true
+	hint.scroll_active = false
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hint.add_theme_font_size_override("normal_font_size", 11)
+	hint.text = "[color=#8A7B5C]Tip: [color=#C4A882]double-click[/color] an item to equip or use it  ·  [color=#C4A882]drag[/color] it onto a slot to equip  ·  [color=#C4A882]drag a slot off[/color] to unequip  ·  [color=#C4A882]right-click[/color] for all options[/color]"
+	root_vbox.add_child(hint)
 
 	# Hover tooltip — top_level so it can extend beyond the panel and across clipping bounds
 	_tooltip = PanelContainer.new()
@@ -387,6 +412,18 @@ func _build_layout() -> void:
 		_sort_menu.set_item_metadata(idx, entry["key"])
 	_sort_menu.id_pressed.connect(_on_sort_menu_id_pressed)
 	add_child(_sort_menu)
+
+	# Salvage menu (v0.9.652) — opens from the Salvage ▾ button. Bulk verbs go
+	# through client-side confirm dialogs; Full Options opens the legacy
+	# submenu where auto-salvage rarity + affix filters live.
+	_salvage_menu = PopupMenu.new()
+	_salvage_menu.add_item("Salvage Junk (below your level)", SAL_JUNK)
+	_salvage_menu.add_item("Salvage ALL Equipment...", SAL_ALL)
+	_salvage_menu.add_item("Salvage Consumables...", SAL_CONSUMABLES)
+	_salvage_menu.add_separator()
+	_salvage_menu.add_item("Full Options (auto-salvage, filters)...", SAL_FULL)
+	_salvage_menu.id_pressed.connect(_on_salvage_menu_id_pressed)
+	add_child(_salvage_menu)
 
 func _make_subpanel() -> PanelContainer:
 	var p := PanelContainer.new()
@@ -630,7 +667,29 @@ func _on_sort_menu_id_pressed(id: int) -> void:
 	client_ref._panel_sort_inventory(str(key))
 
 func _on_salvage_pressed() -> void:
-	emit_signal("salvage_junk_requested")
+	# v0.9.652 — Salvage ▾ dropdown (mirrors the Sort ▾ pattern). Falls back to
+	# the original one-press junk salvage if the menu failed to build.
+	if _salvage_menu == null or _salvage_button == null:
+		emit_signal("salvage_junk_requested")
+		return
+	_hide_tooltip()
+	var btn_rect := Rect2(_salvage_button.global_position, _salvage_button.size)
+	_salvage_menu.position = Vector2i(btn_rect.position.x, btn_rect.position.y + btn_rect.size.y + 2)
+	_salvage_menu.popup()
+
+func _on_salvage_menu_id_pressed(id: int) -> void:
+	match id:
+		SAL_JUNK:
+			emit_signal("salvage_junk_requested")
+		SAL_ALL:
+			if client_ref and client_ref.has_method("_panel_salvage_all_confirm"):
+				client_ref._panel_salvage_all_confirm()
+		SAL_CONSUMABLES:
+			if client_ref and client_ref.has_method("_panel_salvage_consumables_confirm"):
+				client_ref._panel_salvage_consumables_confirm()
+		SAL_FULL:
+			if client_ref and client_ref.has_method("_panel_open_full_salvage"):
+				client_ref._panel_open_full_salvage()
 
 func _on_materials_pressed() -> void:
 	emit_signal("materials_requested")
@@ -758,6 +817,13 @@ func _populate_context_menu() -> void:
 	if not is_egg and not is_structure:
 		var lock_label = "Unlock" if _ctx_item.get("locked", false) else "Lock"
 		_context_menu.add_item(lock_label, CTX_LOCK)
+	# Salvage (v0.9.652) — single-item salvage. Mirrors the server's exclusion
+	# guards (no tools/runes/structures/eggs/title items, never locked).
+	if not is_tool and not is_rune and not is_egg and not is_structure \
+			and t != "treasure_chest" \
+			and not _ctx_item.get("is_title_item", false) \
+			and not _ctx_item.get("locked", false):
+		_context_menu.add_item("Salvage", CTX_SALVAGE)
 	# Drop — never available on locked items
 	if not _ctx_item.get("locked", false):
 		_context_menu.add_item("Drop", CTX_DROP)
@@ -795,6 +861,9 @@ func _on_context_menu_id_pressed(id: int) -> void:
 		CTX_LOCK:
 			if client_ref.has_method("_panel_toggle_lock"):
 				client_ref._panel_toggle_lock(_ctx_index)
+		CTX_SALVAGE:
+			if client_ref.has_method("_panel_salvage_item"):
+				client_ref._panel_salvage_item(_ctx_index, _ctx_item)
 		CTX_DROP:
 			if client_ref.has_method("_panel_drop_item"):
 				client_ref._panel_drop_item(_ctx_index, _ctx_item)
