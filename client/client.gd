@@ -1422,12 +1422,18 @@ var clan_vault_panel = null
 # Audit #3 Slice 4 — modal tutorial-hint overlay (replaces game_output text
 # for first-time teaching messages per feedback_tutorial_overlay).
 const TutorialHintPanelScript = preload("res://client/tutorial_hint_panel.gd")
+const GuidedIntroOverlayScript = preload("res://client/guided_intro_overlay.gd")
 var tutorial_hint_panel = null
 # New-player modal queue: teaching popups (and the numpad controls popup) show
 # strictly ONE AT A TIME, never stacked and never over combat. See
 # [[feedback_progressive_disclosure]].
 var _hint_queue: Array = []
 var _pending_numpad_open: bool = false
+var guided_intro_overlay = null
+var _pending_guided_intro: bool = false
+# The Welcome hint arrives as a server push shortly AFTER character_created, so
+# hold the numpad/tour until it has shown (fallback timer clears this).
+var _awaiting_welcome_hint: bool = false
 
 # Audit #4 Slice 1A (v0.9.485) — visual panel for the Companion Stable at T5+
 # NPC posts. Live Sanctuary kennel access mid-character.
@@ -2198,6 +2204,11 @@ func _ready():
 	add_child(tutorial_hint_panel)
 	tutorial_hint_panel.dismissed.connect(_drain_new_player_modals)
 
+	# Phase 2 — guided spotlight tour for brand-new players.
+	guided_intro_overlay = GuidedIntroOverlayScript.new()
+	add_child(guided_intro_overlay)
+	guided_intro_overlay.finished.connect(_on_guided_intro_finished)
+
 	# Audit #4 Slice 1A (v0.9.485) — Companion Stable panel.
 	companion_stable_panel = CompanionStablePanelScript.new()
 	add_child(companion_stable_panel)
@@ -2894,7 +2905,7 @@ func _on_window_resized():
 func _process(delta):
 	# Drain any queued new-player modal once combat/other modals clear. Cheap:
 	# only does work while something is actually pending.
-	if not _hint_queue.is_empty() or _pending_numpad_open:
+	if not _hint_queue.is_empty() or _pending_numpad_open or _pending_guided_intro:
 		_drain_new_player_modals()
 	# Clear action triggers from previous frame
 	action_triggered_this_frame.clear()
@@ -5403,14 +5414,26 @@ func update_character_list_display():
 	for child in char_list_container.get_children():
 		child.queue_free()
 
-	# Add character buttons
+	# Add character rows: [select button | delete button]
 	for char_info in character_list:
-		var btn = Button.new()
+		var row = HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
 		var char_race = char_info.get("race", "Human")
+		var btn = Button.new()
 		btn.text = "%s - Level %d %s %s" % [char_info.name, char_info.level, char_race, char_info["class"]]
 		btn.custom_minimum_size = Vector2(0, 40)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.pressed.connect(_on_character_selected.bind(char_info.name))
-		char_list_container.add_child(btn)
+		row.add_child(btn)
+		var del_btn = Button.new()
+		del_btn.text = "Delete"
+		del_btn.tooltip_text = "Permanently delete this character"
+		del_btn.custom_minimum_size = Vector2(64, 40)
+		del_btn.focus_mode = Control.FOCUS_NONE
+		del_btn.add_theme_color_override("font_color", Color(1, 0.5, 0.5))
+		del_btn.pressed.connect(_on_delete_character_pressed.bind(String(char_info.name), int(char_info.get("level", 1)), String(char_info.get("class", ""))))
+		row.add_child(del_btn)
+		char_list_container.add_child(row)
 
 	# Update create button state
 	if create_char_button:
@@ -5419,6 +5442,30 @@ func update_character_list_display():
 			create_char_button.text = "Max Characters (6)"
 		else:
 			create_char_button.text = "Create New Character"
+
+func _on_delete_character_pressed(char_name: String, level: int, char_class: String) -> void:
+	# Two deliberate clicks required (row Delete → "Delete Forever") so a
+	# character can't be removed by accident. The server refuses to delete the
+	# active character, and permadeath means there's no undo.
+	var dialog = ConfirmationDialog.new()
+	dialog.title = "Delete Character"
+	dialog.dialog_text = "Permanently delete [ %s ]  —  Level %d %s?\n\nThis CANNOT be undone." % [char_name, level, char_class]
+	dialog.ok_button_text = "Delete Forever"
+	dialog.cancel_button_text = "Cancel"
+	add_child(dialog)
+	dialog.confirmed.connect(_on_delete_character_confirmed.bind(char_name))
+	dialog.visibility_changed.connect(_free_dialog_when_hidden.bind(dialog))
+	dialog.popup_centered(Vector2i(440, 170))
+	var ok_btn = dialog.get_ok_button()
+	if ok_btn:
+		ok_btn.add_theme_color_override("font_color", Color(1, 0.45, 0.45))
+
+func _on_delete_character_confirmed(char_name: String) -> void:
+	send_to_server({"type": "delete_character", "name": char_name})
+
+func _free_dialog_when_hidden(d) -> void:
+	if is_instance_valid(d) and not d.visible:
+		d.queue_free()
 
 func update_leaderboard_display(entries: Array):
 	if not leaderboard_list:
@@ -20215,10 +20262,14 @@ func handle_server_message(message: Dictionary):
 			# the controls are visible while the tutorial text suggests
 			# pressing keys.
 			if show_numpad_popup and numpad_help_panel:
-				# Queue it behind the Welcome hint instead of opening immediately,
-				# so the two don't stack. _drain_new_player_modals shows the
-				# Welcome first, then this once it's dismissed.
+				# Order: Welcome hint → Controls popup → guided tour, one at a time.
+				# The Welcome hint is a server push that lands a moment after this,
+				# so hold the numpad/tour until it shows (fallback: 2.5s) rather
+				# than opening the numpad first and stacking the Welcome on top.
 				_pending_numpad_open = true
+				_pending_guided_intro = true
+				_awaiting_welcome_hint = true
+				get_tree().create_timer(2.5).timeout.connect(_on_welcome_hint_timeout)
 				_drain_new_player_modals()
 			# Ask if the player wants the tutorial (only if the setting hasn't
 			# turned it off). Previously we auto-started it, which was easy to
@@ -26782,8 +26833,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.658 — Guided intro tour + character deletion.
+	display_game("[color=#00FF00]v0.9.658[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Guided intro tour + character management.[/color]")
+	display_game("  • [b]Guided spotlight tour[/b] for new characters — the screen dims and walks you through the [color=#FFD700]world map[/color], [color=#FFD700]walls & doors[/color] (# / +), your [color=#FFD700]action bar[/color], and the [color=#FFD700]Stats[/color] button, one focused step at a time. Skippable, and it never interrupts combat.")
+	display_game("  • [b]Delete characters[/b] from the character-select screen — a red [color=#FF8080]Delete[/color] button with a 'Delete Forever' confirmation, so it can never happen by accident.")
+	display_game("  • [b]Popup order & polish[/b]: Welcome → Controls → tour now appear strictly one at a time in the right order; the starting post is correctly named [color=#FFD700]Crossroads[/color].")
+	display_game("")
+
 	# v0.9.657 — New-player experience overhaul (start of the UX pass).
-	display_game("[color=#00FF00]v0.9.657[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.657[/color]")
 	display_game("  [color=#1EFF00]◆ NEW-PLAYER EXPERIENCE — a calmer, clearer start.[/color]")
 	display_game("  • [b]Login & account creation split[/b] into two distinct screens — a blue Login and a green Create Account — so it's clear which you're doing.")
 	display_game("  • [b]Character creation is now a guided 3-step flow[/b]: ① choose your race, ② choose your path (Warrior / Mage / Trickster), ③ choose your class — with plain-English pitches, [color=#FFD700]beginner-friendly[/color] tags, and clearly labelled class & racial passives.")
@@ -34962,21 +35021,58 @@ func _enqueue_tutorial_hint(title: String, body: String) -> void:
 
 func _drain_new_player_modals() -> void:
 	# Show at most one new-player modal at a time. Never interrupt combat, never
-	# stack over another modal. Teaching hints go first, then the numpad popup.
+	# stack over another modal. Order: teaching hints → numpad popup → guided tour.
 	if in_combat:
 		return
 	if tutorial_hint_panel and tutorial_hint_panel.visible:
 		return
 	if numpad_help_panel and numpad_help_panel.visible:
 		return
+	if guided_intro_overlay and guided_intro_overlay.visible:
+		return
 	if not _hint_queue.is_empty():
+		_awaiting_welcome_hint = false  # the Welcome hint has arrived; show it first
 		var h = _hint_queue.pop_front()
 		if tutorial_hint_panel:
 			tutorial_hint_panel.show_hint(String(h.get("title", "Tip")), String(h.get("body", "")))
 		return
+	# Hold the numpad/tour until the Welcome hint has had its turn.
+	if _awaiting_welcome_hint:
+		return
 	if _pending_numpad_open and numpad_help_panel:
 		_pending_numpad_open = false
 		numpad_help_panel.open(show_numpad_popup)
+		return
+	if _pending_guided_intro:
+		_pending_guided_intro = false
+		_start_guided_intro()
+
+func _on_welcome_hint_timeout() -> void:
+	# Fallback if the Welcome hint never arrived — don't strand the numpad/tour.
+	if _awaiting_welcome_hint:
+		_awaiting_welcome_hint = false
+		_drain_new_player_modals()
+
+func _start_guided_intro() -> void:
+	if guided_intro_overlay == null:
+		return
+	var steps = [
+		{"target": map_display, "title": "This is the world", "body": "The map of the Badlands is drawn around your character at the [color=#00FF66]center[/color]. Move with the numpad or arrow keys.\n\nYou're safe inside a [color=#FFD700]post[/color] like this one — no monsters attack you here. Travel out into the open wilds between posts and you'll run into random monster encounters. The log tells you each time you enter or leave a post."},
+		{"target": map_display, "title": "Walls and doors", "body": "On the map, the [color=#CCCCCC]#[/color] symbols are [color=#CCCCCC]walls[/color] — they protect the post and block movement, so you can't walk through them. The [color=#CCAA00]+[/color] symbols are [color=#CCAA00]doors[/color] — step onto a door to pass through the wall and head out into the wilds, or back to safety."},
+		{"target": action_bar, "title": "Your action bar", "body": "[color=#FFD700]Space, Q, W, E, R[/color] and [color=#FFD700]1–5[/color] trigger these buttons. They change based on where you are and what you're doing."},
+		{"target": _stats_shortcut_btn, "title": "When you level up", "body": "Click [color=#9ACD32]Stats[/color] to spend points and check your progress. It sits in a row of shortcuts — [color=#FFD700]Companions, Eggs, Jobs, Inventory, Help[/color] and more — your way into everything else. Press [color=#FFAA66]?[/color] on any panel for help."},
+	]
+	# Drop steps whose target didn't build (defensive — keep the tour coherent).
+	var valid: Array = []
+	for s in steps:
+		var t = s.get("target")
+		if t == null or (t is Control and is_instance_valid(t)):
+			valid.append(s)
+	guided_intro_overlay.start(valid)
+
+func _on_guided_intro_finished() -> void:
+	# Surface anything that queued up while the tour was running.
+	_drain_new_player_modals()
 
 
 func _on_numpad_help_persistent_toggled(show_for_future: bool) -> void:

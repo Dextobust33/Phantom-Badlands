@@ -2740,7 +2740,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		"type": "tutorial_hint",
 		"title": "[color=#9ACD32]Welcome, %s![/color]" % char_name,
 		"body": (
-			"You're at [color=#FFD700]Haven[/color] — the safest post in the world.\n\n"
+			"You're at [color=#FFD700]Crossroads[/color] — the safest post in the world.\n\n"
 			+ "Two things are waiting for you:\n"
 			+ "  • [color=#9ACD32]Pathfinder's Trial[/color] — a starter quest in your log that rewards gear as you complete it.\n"
 			+ "  • A [color=#FF80FF]monster egg[/color] — just walk around to hatch your first companion.\n\n"
@@ -12627,9 +12627,9 @@ func _maybe_send_progression_hint(peer_id: int) -> void:
 	var title = "[color=#FFD700]💡 Progression Tip[/color]"
 	var body = (
 		"You have [color=#FFE066]%d[/color] unspent stat point%s.\n\n" % [points, s_suffix]
-		+ "Type [color=#9ACD32]/stats[/color] to spend them, or "
-		+ "[color=#9ACD32]/status[/color] to see every progression track "
-		+ "you're advancing (XP, jobs, Sanctuary, Bestiary, Compass, Atlas)."
+		+ "Click the [color=#9ACD32]Stats[/color] button (bottom-right of the screen, "
+		+ "just above Players Online) to spend them — the same screen shows every "
+		+ "progression track you're advancing (XP, jobs, Sanctuary, Bestiary, Compass, Atlas)."
 	)
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 	save_character(peer_id)
