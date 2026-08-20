@@ -1009,7 +1009,7 @@ secret = true
 [node name="ConfirmPasswordField" type="LineEdit" parent="LoginPanel/VBox" unique_id=496104516]
 custom_minimum_size = Vector2(0, 35)
 layout_mode = 2
-placeholder_text = "Confirm password (for registration)..."
+placeholder_text = "Confirm password..."
 secret = true
 
 [node name="ButtonContainer" type="HBoxContainer" parent="LoginPanel/VBox" unique_id=776726213]
@@ -1119,10 +1119,10 @@ fit_content = true
 visible = false
 layout_mode = 1
 anchors_preset = -1
-anchor_left = 0.25
-anchor_top = 0.1
-anchor_right = 0.75
-anchor_bottom = 0.9
+anchor_left = 0.23
+anchor_top = 0.06
+anchor_right = 0.77
+anchor_bottom = 0.94
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel_bg")
@@ -1158,7 +1158,9 @@ placeholder_text = "Enter character name..."
 
 [node name="RaceLabel" type="Label" parent="CharacterCreatePanel/VBox" unique_id=1908315121]
 layout_mode = 2
-text = "Race:"
+theme_override_colors/font_color = Color(1, 1, 0, 1)
+theme_override_font_sizes/font_size = 14
+text = "① Choose your race"
 
 [node name="RaceOption" type="OptionButton" parent="CharacterCreatePanel/VBox" unique_id=60741087]
 custom_minimum_size = Vector2(0, 35)

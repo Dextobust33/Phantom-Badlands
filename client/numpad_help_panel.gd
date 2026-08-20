@@ -101,6 +101,14 @@ func _build_layout() -> void:
 	grid_label.scroll_active = false
 	grid_label.add_theme_font_size_override("normal_font_size", 17)
 	grid_label.custom_minimum_size = Vector2(0, 200)
+	# The box-drawing grid only aligns in a monospace font. The label defaults
+	# to the proportional UI font, which is why the │ borders drifted. Force the
+	# same Consolas the ASCII map/art uses.
+	var _mono_font = load("res://font/Consolas/consolas.ttf")
+	if _mono_font:
+		grid_label.add_theme_font_override("normal_font", _mono_font)
+		grid_label.add_theme_font_override("bold_font", _mono_font)
+		grid_label.add_theme_font_override("mono_font", _mono_font)
 	# Use BBCode color spans on the key glyphs to draw the eye.
 	# Lines are intentionally short + symmetric for readability at any font.
 	var grid_text := "[center][color=#FFD700]"

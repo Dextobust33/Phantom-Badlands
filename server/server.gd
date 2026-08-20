@@ -2738,16 +2738,13 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# the first 60 seconds of play have an obvious next step.
 	send_to_peer(peer_id, {
 		"type": "tutorial_hint",
-		"title": "[color=#9ACD32]Welcome to Phantom Badlands, %s![/color]" % char_name,
+		"title": "[color=#9ACD32]Welcome, %s![/color]" % char_name,
 		"body": (
-			"You start at [color=#FFD700]Haven[/color], the safest post in the world. Everyone passes through here at least once.\n\n"
-			+ "Two things are already waiting for you:\n"
-			+ "  • [color=#9ACD32]Pathfinder's Trial[/color] is in your quest log. Four short stages (fish 3 → mine 2 → kill 2 → kill 3) — each one rewards a piece of starter gear (weapon, armor, boots, ring). The first two stages take you just outside Haven to gather; the kill stages happen wherever you find a fight.\n"
-			+ "  • A [color=#FF80FF]Tier 1 monster egg[/color] in your incubator — walk around to hatch it. Your first companion fights alongside you and gains XP from your kills.\n\n"
-			+ "[color=#FFD700]── Turning in stages ──[/color]\n"
-			+ "When a stage shows [color=#88FF88]complete[/color] in your quest log, walk back onto Haven (the gold [color=#FFD700]P[/color] post marker) and open the quest log — completed stages have a [color=#88FF88]Turn In[/color] button. The next stage appears automatically on turn-in; no need to revisit the quest board mid-chain.\n\n"
-			+ "Press the [color=#FFAA66]Help[/color] (?) button on any panel for context, or type [color=#9ACD32]/topics[/color] to see every help topic at once.\n\n"
-			+ "Good luck out there."
+			"You're at [color=#FFD700]Haven[/color] — the safest post in the world.\n\n"
+			+ "Two things are waiting for you:\n"
+			+ "  • [color=#9ACD32]Pathfinder's Trial[/color] — a starter quest in your log that rewards gear as you complete it.\n"
+			+ "  • A [color=#FF80FF]monster egg[/color] — just walk around to hatch your first companion.\n\n"
+			+ "Press [color=#FFAA66]?[/color] on any panel whenever you want help. Good luck out there."
 		),
 	})
 
@@ -12598,7 +12595,18 @@ func send_character_update(peer_id: int):
 	else:
 		_send_character_update_immediate(peer_id, true)
 
+func _hint_deferred_for_newbie(peer_id: int) -> bool:
+	# Phase 1 (UX arc): give brand-new characters a calm first minute. While a
+	# character is still level 1, DEFER the scattershot one-time teaching modals
+	# instead of firing them all on spawn / every step. Deferred, NOT dropped —
+	# callers return before their seen_* flag is set, so each hint fires later
+	# the next time its trigger condition is met (naturally spaced by play).
+	if not characters.has(peer_id):
+		return false
+	return int(characters[peer_id].level) < 2
+
 func _maybe_send_progression_hint(peer_id: int) -> void:
+	if _hint_deferred_for_newbie(peer_id): return
 	"""Audit #3 Slice 3/4 — one-shot teaching message about the Progression
 	Vectors dashboard. Conditions: character has unspent stat points (i.e.,
 	they've leveled at least once since the system shipped) AND the
@@ -12662,6 +12670,7 @@ func _maybe_send_sanctuary_hint(peer_id: int) -> void:
 	send_to_peer(peer_id, {"type": "tutorial_hint", "title": title, "body": body})
 
 func _maybe_send_quest_board_hint(peer_id: int) -> void:
+	if _hint_deferred_for_newbie(peer_id): return
 	"""Audit #3 Slice 5 — first quest-board open teaches the chain system, the
 	3-active cap, and that completing a quest immediately refills the slot."""
 	if not characters.has(peer_id):
@@ -12768,6 +12777,7 @@ func _maybe_send_apex_frontier_hint(peer_id: int) -> void:
 	save_character(peer_id)
 
 func _maybe_send_signpost_hint(peer_id: int) -> void:
+	if _hint_deferred_for_newbie(peer_id): return
 	"""Audit #12 v0.9.508 — first-time signpost placement overlay. Teaches the
 	bump-to-read / bump-as-owner-to-edit flow. Pairs with the v0.9.507 signpost
 	feature so new players know they can leave messages and read others'."""
@@ -14886,7 +14896,7 @@ func trigger_trading_post_encounter(peer_id: int):
 	# is a strong unmissable overlay that fires exactly once per character.
 	# Closes the second iteration of "doesn't say what it is when you go
 	# there" feedback after v0.9.580's banner-only fix proved insufficient.
-	if bool(entry_threat.get("threatened", false)) and not character.seen_threatened_post_hint:
+	if bool(entry_threat.get("threatened", false)) and not character.seen_threatened_post_hint and int(character.level) >= 2:
 		character.seen_threatened_post_hint = true
 		var _t_name = String(entry_threat.get("dungeon_name", "a nearby dungeon"))
 		var _t_tier = int(entry_threat.get("tier", 2))
@@ -15410,6 +15420,7 @@ func _get_market_post_id(peer_id: int) -> String:
 	return ""
 
 func _maybe_send_market_hint(peer_id: int) -> void:
+	if _hint_deferred_for_newbie(peer_id): return
 	"""Audit #3 v0.9.519 — first market browse teaches the player about Valor,
 	market listings, supply/demand markup, and seller-side bonuses. Fires once
 	per character; flag persists across logouts via to_dict / from_dict."""
@@ -15440,6 +15451,7 @@ func _maybe_send_market_hint(peer_id: int) -> void:
 	save_character(peer_id)
 
 func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
+	if _hint_deferred_for_newbie(peer_id): return
 	"""Audit #3 v0.9.523 — first companion hatched teaches the companion system
 	(roster, active companion, aggro roles, fusion, registration). Fires once
 	per character; flag persists via to_dict / from_dict."""
@@ -15472,6 +15484,7 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 	save_character(peer_id)
 
 func _maybe_send_gather_hint(peer_id: int, gather_type: String) -> void:
+	if _hint_deferred_for_newbie(peer_id): return
 	"""Audit #3 v0.9.528 — first gather session (fish/mine/log) teaches the
 	wait→reaction minigame, skill XP, tier scaling, and tool bonuses. One
 	flag covers all three gather types — the first to fire sets the flag.
@@ -15522,6 +15535,7 @@ func _maybe_send_gather_hint(peer_id: int, gather_type: String) -> void:
 	save_character(peer_id)
 
 func _maybe_send_equip_hint(peer_id: int, item: Dictionary) -> void:
+	if _hint_deferred_for_newbie(peer_id): return
 	"""Audit #3 v0.9.528 — first equipment equip teaches slot mapping,
 	comparison view, salvage, and the press-Equip-twice unequip flow.
 	Fires once per character; flag persists via to_dict / from_dict."""

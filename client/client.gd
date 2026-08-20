@@ -1423,6 +1423,11 @@ var clan_vault_panel = null
 # for first-time teaching messages per feedback_tutorial_overlay).
 const TutorialHintPanelScript = preload("res://client/tutorial_hint_panel.gd")
 var tutorial_hint_panel = null
+# New-player modal queue: teaching popups (and the numpad controls popup) show
+# strictly ONE AT A TIME, never stacked and never over combat. See
+# [[feedback_progressive_disclosure]].
+var _hint_queue: Array = []
+var _pending_numpad_open: bool = false
 
 # Audit #4 Slice 1A (v0.9.485) — visual panel for the Companion Stable at T5+
 # NPC posts. Live Sanctuary kennel access mid-character.
@@ -1873,6 +1878,30 @@ const CLASS_DESCRIPTIONS = {
 	"Ninja": "Trickster Path. Shadow warrior with superior escape abilities. Uses Energy.\n[color=#191970]Passive - Shadow Step:[/color] +40% flee success, take no damage when fleeing"
 }
 
+# Archetype-first character creation (2-step picker). Maps the 3 paths to their
+# 3 classes plus new-player-facing pitch copy. Class order within each path must
+# match the ClassOption dropdown so the confirm handler reads the right class.
+const ARCHETYPE_DATA = [
+	{"key": "Warrior", "pitch": "Tough. Hits hard up close.", "resource": "Stamina", "beginner": true, "classes": ["Fighter", "Barbarian", "Paladin"]},
+	{"key": "Mage", "pitch": "Ranged spells, big damage, fragile.", "resource": "Mana", "beginner": false, "classes": ["Wizard", "Sorcerer", "Sage"]},
+	{"key": "Trickster", "pitch": "Crits, evasion, escape.", "resource": "Energy", "beginner": false, "classes": ["Thief", "Ranger", "Ninja"]},
+]
+
+# Plain-text one-liners for the class buttons (Button can't render BBCode).
+const CLASS_CARD_SUMMARY = {
+	"Fighter": "Balanced melee. +15% defense, cheaper abilities.",
+	"Barbarian": "Berserker. More damage the lower your HP.",
+	"Paladin": "Holy knight. Self-heals each round, strong vs undead.",
+	"Wizard": "Pure spellcaster. +15% spell damage & crit.",
+	"Sorcerer": "High-risk mage. Chance to double spell damage.",
+	"Sage": "Efficient mage. -25% mana costs, stronger Meditate.",
+	"Thief": "Crit specialist. +50% crit damage, +15% crit chance.",
+	"Ranger": "Beast hunter. +25% vs beasts, extra XP & Valor.",
+	"Ninja": "Escape artist. +40% flee, no damage when fleeing.",
+}
+
+const BEGINNER_CLASSES = ["Fighter", "Paladin", "Ranger"]
+
 # ===== ABILITY SYSTEM CONSTANTS =====
 
 # Ability slots: [command, display_name, required_level, resource_cost, resource_type]
@@ -2167,6 +2196,7 @@ func _ready():
 	# marked the seen flag at send time).
 	tutorial_hint_panel = TutorialHintPanelScript.new()
 	add_child(tutorial_hint_panel)
+	tutorial_hint_panel.dismissed.connect(_drain_new_player_modals)
 
 	# Audit #4 Slice 1A (v0.9.485) — Companion Stable panel.
 	companion_stable_panel = CompanionStablePanelScript.new()
@@ -2272,6 +2302,8 @@ func _ready():
 		register_button.pressed.connect(_on_register_button_pressed)
 	if password_field:
 		password_field.text_submitted.connect(_on_password_submitted)
+	if confirm_password_field:
+		confirm_password_field.text_submitted.connect(_on_confirm_password_submitted)
 
 	# Connect character select signals
 	if create_char_button:
@@ -2860,6 +2892,10 @@ func _on_window_resized():
 		call_deferred("_sync_map_sprites_overlay")
 
 func _process(delta):
+	# Drain any queued new-player modal once combat/other modals clear. Cheap:
+	# only does work while something is actually pending.
+	if not _hint_queue.is_empty() or _pending_numpad_open:
+		_drain_new_player_modals()
 	# Clear action triggers from previous frame
 	action_triggered_this_frame.clear()
 	item_selection_consumed_this_frame.clear()
@@ -4940,6 +4976,8 @@ func show_login_panel():
 	hide_all_panels()
 	if login_panel:
 		login_panel.visible = true
+		# Always land on the clean Login screen (not the Create Account screen).
+		_set_login_mode("login")
 		# Clear password field for security
 		if password_field:
 			password_field.clear()
@@ -4988,6 +5026,8 @@ func show_character_create_panel():
 		char_create_panel.visible = true
 		_ensure_spawn_picker_built()
 		_populate_spawn_picker()
+		_ensure_class_picker_built()
+		_reset_class_picker_default()
 		if new_char_name_field:
 			new_char_name_field.clear()
 			new_char_name_field.grab_focus()
@@ -5731,7 +5771,137 @@ func request_player_list():
 
 # ===== LOGIN/REGISTER HANDLERS =====
 
+# The LoginPanel has two modes that share the same panel but reconfigure it so
+# that registering feels like a distinct "create account" screen (per UX arc).
+# "login": clean Login screen. "register": distinct Create Account screen with a
+# visible confirm-password field, different header/color, and a Back button.
+var _login_mode: String = "login"
+var _login_header_built: bool = false
+var _login_header_box: PanelContainer = null
+var _login_panel_base_style: StyleBox = null
+
+func _make_login_header_style(bg: Color, border: Color) -> StyleBoxFlat:
+	var sb = StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	return sb
+
+func _ensure_login_header_built() -> void:
+	# Wrap Title + Subtitle in a bordered PanelContainer so each screen
+	# (Login vs Create Account) carries its own strongly-colored header box.
+	if _login_header_built:
+		return
+	if login_panel == null:
+		return
+	var vbox = login_panel.get_node_or_null("VBox")
+	if vbox == null:
+		return
+	var title = vbox.get_node_or_null("Title")
+	var subtitle = vbox.get_node_or_null("Subtitle")
+	if title == null or subtitle == null:
+		return
+	_login_panel_base_style = login_panel.get_theme_stylebox("panel")
+	var box = PanelContainer.new()
+	box.name = "HeaderBox"
+	var inner = VBoxContainer.new()
+	inner.name = "HeaderInner"
+	inner.add_theme_constant_override("separation", 4)
+	box.add_child(inner)
+	vbox.add_child(box)
+	vbox.move_child(box, 0)
+	title.get_parent().remove_child(title)
+	inner.add_child(title)
+	subtitle.get_parent().remove_child(subtitle)
+	inner.add_child(subtitle)
+	_login_header_box = box
+	_login_header_built = true
+
+func _apply_login_panel_tint(panel_bg: Color, border: Color) -> void:
+	if login_panel == null:
+		return
+	var sb: StyleBoxFlat = null
+	if _login_panel_base_style is StyleBoxFlat:
+		sb = _login_panel_base_style.duplicate()
+	else:
+		sb = StyleBoxFlat.new()
+		sb.set_corner_radius_all(8)
+	sb.bg_color = panel_bg
+	sb.border_color = border
+	sb.set_border_width_all(2)
+	login_panel.add_theme_stylebox_override("panel", sb)
+
+func _set_login_mode(mode: String) -> void:
+	_login_mode = mode
+	if login_panel == null:
+		return
+	_ensure_login_header_built()
+	var vbox = login_panel.get_node_or_null("VBox")
+	if vbox == null:
+		return
+	var title = vbox.get_node_or_null("HeaderBox/HeaderInner/Title")
+	var subtitle = vbox.get_node_or_null("HeaderBox/HeaderInner/Subtitle")
+	if mode == "register":
+		var g_border = Color(0.48, 0.8, 0.2)
+		if _login_header_box:
+			_login_header_box.add_theme_stylebox_override("panel", _make_login_header_style(Color(0.09, 0.15, 0.05), g_border))
+		_apply_login_panel_tint(Color(0.08, 0.12, 0.06, 0.97), g_border)
+		if title:
+			title.text = "✦ CREATE ACCOUNT ✦"
+			title.add_theme_color_override("font_color", Color(0.65, 0.9, 0.25))
+		if subtitle:
+			subtitle.text = "New adventurer — pick a name others will see, then a password."
+			subtitle.add_theme_color_override("font_color", Color(0.72, 0.91, 0.53))
+		if confirm_password_field:
+			confirm_password_field.visible = true
+			confirm_password_field.clear()
+		if password_field:
+			password_field.clear()
+		if login_button:
+			login_button.text = "← Back"
+		if register_button:
+			register_button.text = "Create Account"
+		if login_status:
+			login_status.text = "[color=#888888]Password must be at least 4 characters.[/color]"
+		if username_field:
+			username_field.grab_focus()
+	else:
+		var b_border = Color(0.36, 0.58, 0.88)
+		if _login_header_box:
+			_login_header_box.add_theme_stylebox_override("panel", _make_login_header_style(Color(0.07, 0.11, 0.2), b_border))
+		_apply_login_panel_tint(Color(0.08, 0.1, 0.16, 0.97), b_border)
+		if title:
+			title.text = "Phantom Badlands"
+			title.add_theme_color_override("font_color", Color(1, 0.85, 0.3))
+		if subtitle:
+			subtitle.text = "Welcome back, adventurer."
+			subtitle.add_theme_color_override("font_color", Color(0.7, 0.82, 0.95))
+		if confirm_password_field:
+			confirm_password_field.visible = false
+			confirm_password_field.clear()
+		if login_button:
+			login_button.text = "Login"
+		if register_button:
+			register_button.text = "Create Account →"
+		if login_status:
+			login_status.text = "v" + get_version()
+
 func _on_login_button_pressed():
+	# In register mode this button acts as "← Back" to the Login screen.
+	if _login_mode == "register":
+		_set_login_mode("login")
+		if username_field and username_field.text.strip_edges() != "":
+			if password_field:
+				password_field.grab_focus()
+		elif username_field:
+			username_field.grab_focus()
+		return
+
 	var user = username_field.text.strip_edges()
 	var passwd = password_field.text
 
@@ -5750,18 +5920,31 @@ func _on_login_button_pressed():
 	})
 
 func _on_register_button_pressed():
+	# In login mode this button switches to the Create Account screen; it only
+	# submits a registration once we're already on that screen.
+	if _login_mode != "register":
+		_set_login_mode("register")
+		return
+
 	var user = username_field.text.strip_edges()
 	var passwd = password_field.text
 	var confirm_passwd = confirm_password_field.text
 
 	if user.is_empty() or passwd.is_empty():
 		if login_status:
-			login_status.text = "[color=#FF0000]Enter username and password[/color]"
+			login_status.text = "[color=#FF0000]Enter a username and password[/color]"
+		return
+
+	if passwd.length() < 4:
+		if login_status:
+			login_status.text = "[color=#FF0000]Password must be at least 4 characters[/color]"
 		return
 
 	if confirm_passwd.is_empty():
 		if login_status:
 			login_status.text = "[color=#FF0000]Please confirm your password[/color]"
+		if confirm_password_field:
+			confirm_password_field.grab_focus()
 		return
 
 	if passwd != confirm_passwd:
@@ -5779,7 +5962,18 @@ func _on_register_button_pressed():
 	})
 
 func _on_password_submitted(_text: String):
-	_on_login_button_pressed()
+	# Enter key behavior depends on which screen we're on.
+	if _login_mode == "register":
+		if confirm_password_field and confirm_password_field.text.is_empty():
+			confirm_password_field.grab_focus()
+		else:
+			_on_register_button_pressed()
+	else:
+		_on_login_button_pressed()
+
+func _on_confirm_password_submitted(_text: String):
+	if _login_mode == "register":
+		_on_register_button_pressed()
 
 # ===== CHARACTER SELECT HANDLERS =====
 
@@ -5826,7 +6020,7 @@ func _update_race_description():
 	if not race_option or not race_description:
 		return
 	var selected_race = race_option.get_item_text(race_option.selected)
-	race_description.text = RACE_DESCRIPTIONS.get(selected_race, "")
+	race_description.text = "Racial Passive: " + RACE_DESCRIPTIONS.get(selected_race, "")
 
 func _on_class_selected(_index: int):
 	_update_class_description()
@@ -5837,6 +6031,176 @@ func _update_class_description():
 	var selected_class = class_option.get_item_text(class_option.selected)
 	class_description.clear()
 	class_description.append_text(CLASS_DESCRIPTIONS.get(selected_class, ""))
+
+# ===== Archetype-first class picker (2-step) =====
+# Replaces the legacy Class dropdown with Step 1 (pick a path) → Step 2 (pick a
+# class within it). The hidden ClassOption dropdown remains the state holder that
+# _on_confirm_create_pressed reads, so the server contract is unchanged.
+var _class_picker_built: bool = false
+var _class_picker_box: VBoxContainer = null
+var _class_cards_box: VBoxContainer = null
+var _class_detail_label: RichTextLabel = null
+var _archetype_buttons: Dictionary = {}
+var _class_card_buttons: Array = []
+var _selected_archetype: String = ""
+var _selected_class: String = ""
+
+func _get_archetype_data(key: String) -> Variant:
+	for a in ARCHETYPE_DATA:
+		if a["key"] == key:
+			return a
+	return null
+
+func _make_card_style(selected: bool) -> StyleBoxFlat:
+	var sb = StyleBoxFlat.new()
+	if selected:
+		sb.bg_color = Color(0.18, 0.2, 0.16)
+		sb.border_color = Color(0.9, 0.8, 0.3)
+		sb.set_border_width_all(2)
+	else:
+		sb.bg_color = Color(0.1, 0.1, 0.12)
+		sb.border_color = Color(0.32, 0.32, 0.36)
+		sb.set_border_width_all(1)
+	sb.set_corner_radius_all(5)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	return sb
+
+func _apply_card_style(btn: Button, selected: bool) -> void:
+	var sb = _make_card_style(selected)
+	for st in ["normal", "hover", "pressed", "focus"]:
+		btn.add_theme_stylebox_override(st, sb)
+	btn.add_theme_color_override("font_color", Color(1, 1, 1) if selected else Color(0.8, 0.8, 0.82))
+	btn.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	btn.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
+
+func _ensure_class_picker_built() -> void:
+	if _class_picker_built:
+		return
+	if char_create_panel == null:
+		return
+	var vbox = char_create_panel.get_node_or_null("VBox")
+	if vbox == null:
+		return
+	var class_label = vbox.get_node_or_null("ClassLabel")
+	# Hide the legacy class dropdown UI; ClassOption stays as the hidden state
+	# holder that _on_confirm_create_pressed reads.
+	if class_label:
+		class_label.visible = false
+	if class_option:
+		class_option.visible = false
+	if class_description:
+		class_description.visible = false
+
+	var insert_at = class_label.get_index() if class_label else -1
+
+	var box = VBoxContainer.new()
+	box.name = "PathClassPicker"
+	box.add_theme_constant_override("separation", 5)
+
+	var path_header = Label.new()
+	path_header.text = "② Choose your path"
+	path_header.add_theme_font_size_override("font_size", 14)
+	path_header.add_theme_color_override("font_color", Color(1, 1, 0))
+	box.add_child(path_header)
+
+	var path_row = HBoxContainer.new()
+	path_row.add_theme_constant_override("separation", 6)
+	for arch in ARCHETYPE_DATA:
+		var b = Button.new()
+		b.custom_minimum_size = Vector2(0, 52)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.clip_text = false
+		var star = " ★" if arch["beginner"] else ""
+		b.text = "%s%s\n%s (%s)" % [String(arch["key"]).to_upper(), star, arch["pitch"], arch["resource"]]
+		b.add_theme_font_size_override("font_size", 11)
+		b.pressed.connect(_on_archetype_card_pressed.bind(String(arch["key"])))
+		_apply_card_style(b, false)
+		_archetype_buttons[String(arch["key"])] = b
+		path_row.add_child(b)
+	box.add_child(path_row)
+
+	var class_header = Label.new()
+	class_header.text = "③ Choose your class"
+	class_header.add_theme_font_size_override("font_size", 14)
+	class_header.add_theme_color_override("font_color", Color(1, 1, 0))
+	box.add_child(class_header)
+
+	_class_cards_box = VBoxContainer.new()
+	_class_cards_box.name = "ClassCardsBox"
+	_class_cards_box.add_theme_constant_override("separation", 4)
+	box.add_child(_class_cards_box)
+
+	_class_detail_label = RichTextLabel.new()
+	_class_detail_label.name = "ClassDetail"
+	_class_detail_label.bbcode_enabled = true
+	_class_detail_label.fit_content = true
+	_class_detail_label.scroll_active = false
+	_class_detail_label.custom_minimum_size = Vector2(0, 36)
+	_class_detail_label.add_theme_font_size_override("normal_font_size", 12)
+	box.add_child(_class_detail_label)
+
+	vbox.add_child(box)
+	if insert_at >= 0:
+		vbox.move_child(box, insert_at)
+	_class_picker_box = box
+	_class_picker_built = true
+
+func _populate_class_cards(archetype_key: String) -> void:
+	if _class_cards_box == null:
+		return
+	for child in _class_cards_box.get_children():
+		_class_cards_box.remove_child(child)
+		child.queue_free()
+	_class_card_buttons.clear()
+	var arch = _get_archetype_data(archetype_key)
+	if arch == null:
+		return
+	for cls in arch["classes"]:
+		var b = Button.new()
+		b.custom_minimum_size = Vector2(0, 44)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.clip_text = false
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		var star = "   ★ beginner-friendly" if cls in BEGINNER_CLASSES else ""
+		b.text = "%s%s\n%s" % [cls, star, CLASS_CARD_SUMMARY.get(cls, "")]
+		b.add_theme_font_size_override("font_size", 12)
+		b.set_meta("cls", cls)
+		b.pressed.connect(_on_class_card_pressed.bind(cls))
+		_apply_card_style(b, false)
+		_class_cards_box.add_child(b)
+		_class_card_buttons.append(b)
+
+func _on_archetype_card_pressed(key: String) -> void:
+	_selected_archetype = key
+	for k in _archetype_buttons:
+		_apply_card_style(_archetype_buttons[k], k == key)
+	_populate_class_cards(key)
+	# Auto-select the first class of the path so a valid class is always chosen.
+	var arch = _get_archetype_data(key)
+	if arch != null and arch["classes"].size() > 0:
+		_on_class_card_pressed(String(arch["classes"][0]))
+
+func _on_class_card_pressed(cls: String) -> void:
+	_selected_class = cls
+	# Drive the hidden dropdown that the confirm handler reads.
+	if class_option:
+		for i in range(class_option.item_count):
+			if class_option.get_item_text(i) == cls:
+				class_option.select(i)
+				break
+	for b in _class_card_buttons:
+		_apply_card_style(b, String(b.get_meta("cls", "")) == cls)
+	if _class_detail_label:
+		_class_detail_label.clear()
+		_class_detail_label.append_text("[b][color=#FFD700]%s — Class Passive[/color][/b]\n%s" % [cls, CLASS_DESCRIPTIONS.get(cls, "")])
+
+func _reset_class_picker_default() -> void:
+	_ensure_class_picker_built()
+	# Default to the beginner-friendly Warrior path / Fighter.
+	_on_archetype_card_pressed("Warrior")
 
 func _on_confirm_create_pressed():
 	var char_name = new_char_name_field.text.strip_edges()
@@ -7094,7 +7458,7 @@ func update_action_bar():
 				{"label": "Imprints", "action_type": "local", "action_data": "house_imprints", "enabled": has_imprints},
 				{"label": "Atlas", "action_type": "local", "action_data": "house_mastery_atlas", "enabled": true},
 				{"label": "Settings", "action_type": "local", "action_data": "settings", "enabled": true},
-				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
+				{"label": "Create Char", "action_type": "local", "action_data": "house_create_char", "enabled": can_create_character},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			]
@@ -13797,6 +14161,15 @@ func execute_local_action(action: String):
 			# Transition out of HOUSE_SCREEN so character_list handler shows select panel
 			game_state = GameState.CHARACTER_SELECT
 			send_to_server({"type": "request_character_list"})
+		"house_create_char":
+			# Persistent Sanctuary shortcut to make a character — especially for
+			# new players who don't know to walk to the Door. character_list and
+			# can_create_character are already loaded from the house load.
+			game_state = GameState.CHARACTER_SELECT
+			if can_create_character:
+				show_character_create_panel()
+			else:
+				show_character_select_panel()
 		"house_storage_prev":
 			house_storage_page = max(0, house_storage_page - 1)
 			display_house_storage()
@@ -19624,13 +19997,17 @@ func handle_server_message(message: Dictionary):
 			game_state = GameState.LOGIN_SCREEN
 
 		"register_success":
-			if login_status:
-				login_status.text = "[color=#00FF00]Account created! Please log in.[/color]"
-			# Clear password fields after successful registration
+			# Drop back to the clean Login screen (username stays prefilled) so the
+			# new player immediately logs in with the account they just made.
+			_set_login_mode("login")
 			if password_field:
 				password_field.text = ""
 			if confirm_password_field:
 				confirm_password_field.text = ""
+			if login_status:
+				login_status.text = "[color=#00FF00]Account created! Now log in below.[/color]"
+			if password_field:
+				password_field.grab_focus()
 
 		"register_failed":
 			if login_status:
@@ -19765,6 +20142,13 @@ func handle_server_message(message: Dictionary):
 			account_variant_imprints = message.get("account_variant_imprints", {})
 			# Don't switch to character select if we're on death screen or house screen
 			if game_state == GameState.DEAD or game_state == GameState.HOUSE_SCREEN:
+				# The character list arrives AFTER the Sanctuary first renders, so
+				# refresh it now that we know the real count — this shows/hides the
+				# new-player "Create Character" callout and fixes the button's
+				# enabled state for returning players.
+				if game_state == GameState.HOUSE_SCREEN and house_mode == "main":
+					display_house_main()
+					update_action_bar()
 				return
 			# Clear any stale state from death or previous session
 			has_character = false
@@ -19799,7 +20183,7 @@ func handle_server_message(message: Dictionary):
 				dungeon_mode = true
 				display_game("[color=#00FFFF]Reconnecting to dungeon...[/color]")
 			else:
-				display_character_status()
+				display_character_entry_summary(false)
 			request_player_list()
 			# Slice 6b — replay queued rank-up popups (mid-combat dropout safety)
 			_replay_pending_rank_choice()
@@ -19824,14 +20208,18 @@ func handle_server_message(message: Dictionary):
 			update_currency_display()
 			display_game("[color=#00FF00]%s[/color]" % message.get("message", ""))
 			display_title_holders(message.get("title_holders", []))
-			display_character_status()
+			display_character_entry_summary(true)
 			request_player_list()
 			# v0.9.372 — numpad controls popup (one-time per character if the
 			# persistent setting is on). Shown BEFORE the tutorial prompt so
 			# the controls are visible while the tutorial text suggests
 			# pressing keys.
 			if show_numpad_popup and numpad_help_panel:
-				numpad_help_panel.open(show_numpad_popup)
+				# Queue it behind the Welcome hint instead of opening immediately,
+				# so the two don't stack. _drain_new_player_modals shows the
+				# Welcome first, then this once it's dismissed.
+				_pending_numpad_open = true
+				_drain_new_player_modals()
 			# Ask if the player wants the tutorial (only if the setting hasn't
 			# turned it off). Previously we auto-started it, which was easy to
 			# miss or dismiss accidentally — the prompt lets players opt in.
@@ -20402,12 +20790,12 @@ func handle_server_message(message: Dictionary):
 
 		"tutorial_hint":
 			# Audit #3 Slice 4 — server-pushed one-time teaching message rendered
-			# in a modal overlay so it can't be scrolled past or missed in chat.
-			if tutorial_hint_panel:
-				tutorial_hint_panel.show_hint(
-					String(message.get("title", "Tip")),
-					String(message.get("body", ""))
-				)
+			# in a modal overlay. Queued so hints never stack on each other or on
+			# the numpad popup, and never pop over combat (drained when it ends).
+			_enqueue_tutorial_hint(
+				String(message.get("title", "Tip")),
+				String(message.get("body", ""))
+			)
 
 		"companion_stable_open":
 			# Audit #4 Slice 1A (v0.9.485) — Companion Stable bump-interaction
@@ -24999,7 +25387,7 @@ func connect_to_server():
 		display_game("[color=#00FFFF]Connection in progress...[/color]")
 		return
 
-	display_game("Connecting to %s:%d..." % [server_ip, server_port])
+	display_game("Connecting to server...")
 	var error = connection.connect_to_host(server_ip, server_port)
 	if error != OK:
 		display_game("[color=#FF0000]Failed to connect! Error: %d[/color]" % error)
@@ -25136,6 +25524,49 @@ func display_title_holders(holders: Array):
 					display_game("[color=#9400D3]  %d Elder%s walk the realm[/color]" % [count, "s" if count > 1 else ""])
 
 	display_game("[color=#FFD700]════════════════════════════════════════════════════[/color]")
+
+func display_character_entry_summary(is_new: bool) -> void:
+	# Progressive-disclosure entry view (see [[feedback_progressive_disclosure]]).
+	# Shown automatically when you enter the world (create or load a character)
+	# instead of the full 30+ line character sheet. The full sheet is always one
+	# click away via the "Status" action-bar button.
+	if not has_character:
+		return
+	game_output.clear()
+	_set_game_output_background(Color(0.08, 0.07, 0.06, 1.0))
+	var char = character_data
+	var text = ""
+	var char_title = "%s — %s %s Lv.%d" % [char.get("name", "Unknown"), char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
+	text += _header(char_title) + "\n"
+	if is_new:
+		text += "[color=#00FF88]You step into the Badlands for the first time.[/color]\n\n"
+	else:
+		text += "[color=#00FF88]Welcome back.[/color]\n\n"
+
+	# Core vitals only — one compact bar each.
+	var total_hp = char.get("total_max_hp", char.get("max_hp", 0))
+	text += _stat_bar("HP:  ", char.get("current_hp", 0), total_hp, 20, "#FF6666") + "\n"
+	var total_mana = char.get("total_max_mana", char.get("max_mana", 0))
+	var total_stamina = char.get("total_max_stamina", char.get("max_stamina", 0))
+	var total_energy = char.get("total_max_energy", char.get("max_energy", 0))
+	if total_mana > 0:
+		text += _stat_bar("Mana:", char.get("current_mana", 0), total_mana, 20, "#9999FF") + "\n"
+	elif total_stamina > 0:
+		text += _stat_bar("Stam:", char.get("current_stamina", 0), total_stamina, 20, "#FFCC00") + "\n"
+	elif total_energy > 0:
+		text += _stat_bar("Ener:", char.get("current_energy", 0), total_energy, 20, "#66FF66") + "\n"
+	var current_xp = char.get("experience", 0)
+	var xp_needed = char.get("experience_to_next_level", 100)
+	text += _stat_bar("XP:  ", current_xp, xp_needed, 20, "#FF00FF") + "\n\n"
+
+	if is_new:
+		text += "[color=#FFD700]Getting started:[/color] move with the numpad or arrow keys. Walk into a\n"
+		text += "monster to fight it, and visit [b]P[/b] trading posts for quests and gear.\n\n"
+
+	text += "[color=#808080]Press [b]Status[/b] on the action bar any time for your full sheet — stats,[/color]\n"
+	text += "[color=#808080]passives, equipment and companion.[/color]\n"
+
+	display_game(text)
 
 func display_character_status():
 	if not has_character:
@@ -26351,8 +26782,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.657 — New-player experience overhaul (start of the UX pass).
+	display_game("[color=#00FF00]v0.9.657[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ NEW-PLAYER EXPERIENCE — a calmer, clearer start.[/color]")
+	display_game("  • [b]Login & account creation split[/b] into two distinct screens — a blue Login and a green Create Account — so it's clear which you're doing.")
+	display_game("  • [b]Character creation is now a guided 3-step flow[/b]: ① choose your race, ② choose your path (Warrior / Mage / Trickster), ③ choose your class — with plain-English pitches, [color=#FFD700]beginner-friendly[/color] tags, and clearly labelled class & racial passives.")
+	display_game("  • [b]Sanctuary guidance[/b]: a persistent [color=#FFD700]Create Character[/color] button + a welcome callout, so new players never have to guess how to begin.")
+	display_game("  • [b]No more popup spam[/b]: teaching popups show one at a time (never stacked), stay quiet during your first level, and [b]never interrupt combat[/b]. The welcome message is trimmed to the essentials and the controls diagram lines up now.")
+	display_game("  • [b]Cleaner first look[/b]: entering the world shows a focused summary (name, vitals, XP) instead of a wall — your full sheet is one click away on the [color=#FFD700]Status[/color] button.")
+	display_game("")
+
 	# v0.9.656 — Item Sets (ARPG arc pillar 4 complete).
-	display_game("[color=#00FF00]v0.9.656[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.656[/color]")
 	display_game("  [color=#1EFF00]◆ ITEM SETS — pillar 4 complete.[/color]")
 	display_game("  • [b]3 sets of 3 pieces[/b], dropping from the same Empowered/boss hunt as uniques: [color=#1EFF00]The Gravewalker's Vigil[/color] (2pc: +10%% defense + kills cleanse your wounds / 3pc: survive one lethal hit per combat + +20%% damage below half HP), [color=#1EFF00]Regalia of the Stormcaller[/color] (2pc: +10%% spell damage + stronger mana regen / 3pc: spells can double-cast + burns tick 50%% harder), [color=#1EFF00]The Magpie's Hoard[/color] (2pc: +15%% Valor + flee / 3pc: +1 loot reveal + crit chance).")
 	display_game("  • [b]Bonuses activate by equipped count[/b] — 2 pieces wake the first bonus, the full set wakes both. Tooltips show the set roster with your progress and which bonuses are live.")
@@ -34513,6 +34954,29 @@ func _on_numpad_help_dismissed() -> void:
 	if numpad_help_panel:
 		numpad_help_panel.close()
 	_save_keybinds()
+	_drain_new_player_modals()
+
+func _enqueue_tutorial_hint(title: String, body: String) -> void:
+	_hint_queue.append({"title": title, "body": body})
+	_drain_new_player_modals()
+
+func _drain_new_player_modals() -> void:
+	# Show at most one new-player modal at a time. Never interrupt combat, never
+	# stack over another modal. Teaching hints go first, then the numpad popup.
+	if in_combat:
+		return
+	if tutorial_hint_panel and tutorial_hint_panel.visible:
+		return
+	if numpad_help_panel and numpad_help_panel.visible:
+		return
+	if not _hint_queue.is_empty():
+		var h = _hint_queue.pop_front()
+		if tutorial_hint_panel:
+			tutorial_hint_panel.show_hint(String(h.get("title", "Tip")), String(h.get("body", "")))
+		return
+	if _pending_numpad_open and numpad_help_panel:
+		_pending_numpad_open = false
+		numpad_help_panel.open(show_numpad_popup)
 
 
 func _on_numpad_help_persistent_toggled(show_for_future: bool) -> void:
@@ -40632,6 +41096,30 @@ func display_house_main():
 
 	display_game("[color=#FFD700]═══════ SANCTUARY ═══════[/color]")
 	display_game("")
+
+	# New-player guidance: brand-new accounts have no characters yet and often
+	# don't realize the green @ is them or that they must reach the Door. Show a
+	# prominent callout; the persistent "Create Character" action-bar button
+	# provides the one-click path. Hidden automatically once they have a hero.
+	if character_list.is_empty():
+		display_game("[color=#00FF88]★ Welcome! The green [b]@[/b] on the map is you.[/color]")
+		display_game("[color=#FFD700]   Press [b]Create Character[/b] on the bar below to make your first hero[/color]")
+		display_game("[color=#FFD700]   — or walk your @ to the Door [b]D[/b] and press Play.[/color]")
+		display_game("")
+
+	# Progressive disclosure: a brand-new account's legacy stats, storage,
+	# companions and bonuses are all empty/zero — pure noise on the first
+	# login. Show a short focused view and skip the wall. Returning players
+	# (who have characters) still get the full readout below.
+	if character_list.is_empty():
+		display_game("[color=#FFFFFF]Owner: %s[/color]" % username)
+		display_game("")
+		display_game("[color=#888888]This is your permanent home base — storage, companions and upgrades[/color]")
+		display_game("[color=#888888]stay safe here across every hero. It fills in as you play.[/color]")
+		display_game("")
+		display_game("[color=#FFD700]═══════════════════════════════════════[/color]")
+		update_action_bar()
+		return
 
 	# Owner and Baddie Points
 	var bp = house_data.get("baddie_points", 0)
