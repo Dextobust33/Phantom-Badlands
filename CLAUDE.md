@@ -141,7 +141,7 @@ Every release ships **FOUR assets under ONE `vX.Y.Z` tag**: Windows client + Win
 
 1. **Bump VERSION.txt** — never reuse a version number. The launcher compares local VERSION.txt against the GitHub release `tag_name`; matching versions skip the update.
 2. **Commit and push** the version bump.
-3. **Build Windows pair** — export `Phantom-Badlands` (client) + `Windows Desktop` (launcher) via Godot CLI, then `Compress-Archive` into `releases/phantom-badlands-client-vX.Y.Z.zip` and `releases/phantom-badlands-launcher.zip`. Client ZIP includes `PhantomBadlandsClient.exe`, `.pck`, `libgdsqlite.windows.template_debug.x86_64.dll`, VERSION.txt, CREDITS.md.
+3. **Build Windows pair** — export `Phantom-Badlands` (client) + `Windows Desktop` (launcher) via Godot CLI, then `Compress-Archive` into `releases/phantom-badlands-client-vX.Y.Z.zip` and `releases/phantom-badlands-launcher.zip`. Client ZIP includes `PhantomBadlandsClient.exe`, `.pck`, `libgdsqlite.windows.template_release.x86_64.dll`, VERSION.txt, CREDITS.md. (Release exports load the `windows.release.x86_64` GDExtension library, so ship the `template_release` DLL — NOT `template_debug`. Verified against the v0.9.656 asset.)
 4. **Build Linux pair** — `bash build_linux_release.sh` produces both Linux ZIPs (reads VERSION.txt automatically).
 5. **Send 1-minute in-game warning** via the production server's pending-shutdown countdown — same UI as "detecting remains". Players need time to finish combat / trades / dungeons.
 6. **`scp` the new server binary as `.new` first** so it's staged before the countdown elapses; swap into place during the window. If you miss the window, swap + `systemctl restart` again (players already disconnected).
