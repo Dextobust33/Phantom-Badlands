@@ -2686,7 +2686,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# and auto-grant a Goblin companion egg so they have a pet to incubate
 	# from minute one (also addresses Audit #4's "tutorial companion gift"
 	# captured item). Existing characters who skip creation get neither — the
-	# chain stays visible on Haven's quest board for them as a normal quest.
+	# chain stays visible on Crossroads' quest board for them as a normal quest.
 	var pf_quest = quest_db.get_quest("pathfinder_1")
 	if not pf_quest.is_empty():
 		var pf_added = character.add_quest(
@@ -2734,7 +2734,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	send_location_update(peer_id)
 
 	# Welcome tutorial overlay — fires after location_update so the panel is
-	# layered on top of the map. Names the chain + companion gift + Haven so
+	# layered on top of the map. Names the chain + companion gift + Crossroads so
 	# the first 60 seconds of play have an obvious next step.
 	send_to_peer(peer_id, {
 		"type": "tutorial_hint",

@@ -29677,14 +29677,14 @@ func show_help():
 [color=#A335EE]Companion Bonus:[/color] Wolf, Troll, Hobgoblin = +gathering yield. Kobold, Spider, Wyvern = +gathering hints.
 
 [b][color=#FFD700]══ WORLD ══[/color][/b]
-[color=#00FF00]Posts(58):[/color] Haven(0,10)=spawn | Crossroads(0,0)=throne | Frostgate(0,-100)=boss. Recharge([%s])!
+[color=#00FF00]Posts(58):[/color] Crossroads(0,0)=spawn & throne | Frostgate(0,-100)=boss. Recharge([%s])!
 [color=#FFD700]Merchants:[/color] Couriers on roads between posts with markets. Browse carried goods when encountered.
 [color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone, Boss Hunt, Dungeon Clear, Chains (multi-stage with egg+title bonuses). Board regenerates — no daily caps. Max 3 active.
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
   All monsters match dungeon theme (Orc Stronghold = Orcs). Sub-tiers (T3-1, T3-2) = harder variants, better loot!
   [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50%% stats, -20%% steps, +75%% XP, bonus loot)!
-[color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Haven. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
+[color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Crossroads. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
 
 [b][color=#FFD700]══ GUARDS & TOWERS ══[/color][/b]
 [color=#C0C0C0]Guard Post:[/color] Construction Lv15 recipe. Place anywhere (10-tile spacing). Bump to interact.
@@ -29790,7 +29790,7 @@ func show_help():
 [color=#00FFFF]Apex PvP:[/color] Apex Frontier (>1500 tiles) is now a [color=#FF2020]⚔ PvP zone[/color] — adjacent players can be attacked without consent. Triggering the attack opens a [b]combat-scene[/b] modal where both players pick from [color=#FF8888]Attack[/color] / [color=#88B8FF]Special[/color] / [color=#88FF88]Defend[/color] each round; both submit, both resolve simultaneously. HP 0 ends the fight (round cap 15). KO drops a gold [color=#FFD700]$[/color] sack at the death tile (15% valor + 1 equipped + 3 inventory + up to 3 eggs + 1 non-active companion). Any player who walks onto the tile auto-claims it. Victim respawns at origin with full HP — character survives (permadeath stays PvE-only).
 [color=#00FFFF]Bounties:[/color] [color=#9ACD32]/bounty post <player> <valor>[/color] (min 50, escrowed) places a public bounty. Collected when the target is KO'd in the apex zone. [color=#9ACD32]/bounty list[/color] shows the board, [color=#9ACD32]/bounty on <player>[/color] checks a single target, [color=#9ACD32]/bounty cancel <player>[/color] refunds yours.
 [color=#00FFFF]Clan-shared posts:[/color] Owner stands inside their post → [b]Share with Clan[/b] button on the post status panel (or [color=#9ACD32]/clanpost share[/color]). Clan-mates then get build + demolish permissions AND keep the decay timer fresh just by visiting. [color=#9ACD32]/clanposts[/color] lists every post shared with your clan, freshest-first.
-[color=#00FFFF]Pathfinder's Trial:[/color] New starter chain at [color=#FFD700]Haven[/color] (4 stages): fish 3 → mine 2 → kill 2 → kill 3. Each stage rewards a piece of Tier 1 gear ([color=#9AFF9A]weapon → armor → boots → ring[/color]) plus a final companion egg + [color=#9ACD32]Pathfinder[/color] title. Designed for fresh characters with empty slots.
+[color=#00FFFF]Pathfinder's Trial:[/color] New starter chain at [color=#FFD700]Crossroads[/color] (4 stages): fish 3 → mine 2 → kill 2 → kill 3. Each stage rewards a piece of Tier 1 gear ([color=#9AFF9A]weapon → armor → boots → ring[/color]) plus a final companion egg + [color=#9ACD32]Pathfinder[/color] title. Designed for fresh characters with empty slots.
 [color=#00FFFF]Post auto-reclaim:[/color] Posts untended for 120+ days are mechanically reclaimed — walls, structures, guards inside the bubble are wiped and the slot is freed. 14-day warning shows on the post status panel ([color=#FF2020]⚠⚠ AUTO-RECLAIM in Xd[/color]); any visit resets the timer to fresh. Clan-shared posts: any clan member's visit counts.
 
 [color=#808080]Open [/color][color=#00FFFF]More → Changes[/color][color=#808080] for the per-version detailed history.[/color]
@@ -29957,7 +29957,7 @@ func search_help(search_term: String):
 		{
 			"title": "TRADING POSTS & MERCHANTS",
 			"keywords": ["trading", "post", "posts", "merchant", "merchants", "shop", "buy", "sell", "upgrade", "gamble", "recharge", "heal", "haven", "crossroads", "quest", "quests", "safe"],
-			"content": "[color=#00FF00]Trading Posts (58):[/color] Safe zones with shops, quests, recharge\nHaven (0,10) - Spawn point, beginner quests\nCrossroads (0,0) - The High Seat, hotzone quests\nFrostgate (0,-100) - Boss hunts\n+55 more across the world!\n\n[color=#FFD700]Merchants (110):[/color] Roam between posts\n[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General\nServices: Buy, Sell, Gamble | Use [color=#AA66FF]Enchanting[/color] to upgrade gear!"
+			"content": "[color=#00FF00]Trading Posts (58):[/color] Safe zones with shops, quests, recharge\nCrossroads (0,0) - Spawn point, The High Seat, beginner + hotzone quests\nFrostgate (0,-100) - Boss hunts\n+56 more across the world!\n\n[color=#FFD700]Merchants (110):[/color] Roam between posts\n[color=#FF4444]$[/color]=Weaponsmith [color=#4488FF]$[/color]=Armorer [color=#AA44FF]$[/color]=Jeweler [color=#FFD700]$[/color]=General\nServices: Buy, Sell, Gamble | Use [color=#AA66FF]Enchanting[/color] to upgrade gear!"
 		},
 		{
 			"title": "LOOT & PROGRESSION",
@@ -30017,7 +30017,7 @@ func search_help(search_term: String):
 		{
 			"title": "DUNGEONS",
 			"keywords": ["dungeon", "dungeons", "floor", "floors", "boss", "instance", "clear", "entrance", "explore", "find", "first", "into", "depths", "haven", "companion", "egg", "pet"],
-			"content": "[color=#9932CC]Dungeon System[/color]\n\nDungeons are multi-floor instances that spawn in the wilderness!\n\n[color=#FFD700]Finding Your First Dungeon:[/color]\n• Get the [color=#00FFFF]\"Into the Depths\"[/color] quest at Haven after completing First Blood\n• Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads (0,0) in all directions\n• Look for [color=#9932CC]D[/color] on your map - that's a dungeon entrance!\n• Tier 1 dungeons: Goblin Caves, Wolf Den (levels 1-12)\n\n[color=#00FFFF]How Dungeons Work:[/color]\n• Press R at a dungeon entrance to view/enter\n• Navigate floors, fight monsters, find treasure\n• Boss awaits on the final floor!\n• Monsters scale to dungeon tier\n\n[color=#FFD700]Rewards:[/color]\n• XP and gold per floor cleared\n• [color=#FFD700]GUARANTEED[/color] companion egg on boss kill!\n• Treasure chests may contain bonus eggs\n• Dungeon quests give extra rewards\n\n[color=#00FFFF]Companion eggs ONLY drop from dungeons![/color]"
+			"content": "[color=#9932CC]Dungeon System[/color]\n\nDungeons are multi-floor instances that spawn in the wilderness!\n\n[color=#FFD700]Finding Your First Dungeon:[/color]\n• Get the [color=#00FFFF]\"Into the Depths\"[/color] quest at Crossroads after completing First Blood\n• Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads (0,0) in all directions\n• Look for [color=#9932CC]D[/color] on your map - that's a dungeon entrance!\n• Tier 1 dungeons: Goblin Caves, Wolf Den (levels 1-12)\n\n[color=#00FFFF]How Dungeons Work:[/color]\n• Press R at a dungeon entrance to view/enter\n• Navigate floors, fight monsters, find treasure\n• Boss awaits on the final floor!\n• Monsters scale to dungeon tier\n\n[color=#FFD700]Rewards:[/color]\n• XP and gold per floor cleared\n• [color=#FFD700]GUARANTEED[/color] companion egg on boss kill!\n• Treasure chests may contain bonus eggs\n• Dungeon quests give extra rewards\n\n[color=#00FFFF]Companion eggs ONLY drop from dungeons![/color]"
 		},
 		{
 			"title": "QUESTS",
