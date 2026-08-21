@@ -135,13 +135,16 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 **Website:** https://phantombadlands.com (GitHub Pages from `docs/`)
 **Game Server:** Hetzner Cloud CPX11 at `5.78.217.135:9080` (Hillsboro, OR — migrated from Oracle 2026-05-12 for ~16× compute, $6.99/mo)
 
-### ⚠ CRITICAL: wipe the Godot cache before ANY release export or server deploy
+### ⚠ CRITICAL: force a script recompile before ANY release export or server deploy
 
-Headless `--export-release` / `deploy_server.sh` can reuse a STALE `.godot/` script cache and ship OLD compiled code even though the source is current (symptom: dev build has features, packaged build doesn't; v0.9.657-659 all shipped stale — see `feedback_stale_godot_export_cache` memory). **Before exporting a client OR deploying the server:**
-1. `rm -rf .godot` (and `rm -rf launcher/.godot` when building the launcher).
-2. `godot --headless --path . --import`
-3. THEN export / deploy.
-Verify a fresh build by running the exe and checking `netstat -ano | grep 5.78.217.135` (current server IP) — NOT by grepping the pck (scripts are binary tokens, `script_export_mode=2`, not grep-able).
+Headless `--export-release` reuses a STALE compiled-script cache and ships OLD code even when the source is current (symptom: dev build has features, packaged build doesn't; v0.9.657-660 ALL shipped stale — see `feedback_stale_godot_export_cache` memory). **`rm -rf .godot` + `--import` does NOT fix it** (tested — still stale). The fix is an **editor-level recompile**:
+```
+godot --headless --editor --quit --path .        # recompiles scripts from source
+godot --headless --path . --export-release ...    # now current
+```
+`deploy_server.sh` now runs the `--editor --quit` step automatically. For LAUNCHER builds, run `--editor --quit` on the `launcher/` project too (separate cache). For Linux (`build_linux_release.sh`), do `--editor --quit` on BOTH projects first.
+
+**Verify a build is current by RUNNING it** — grepping the pck is USELESS (scripts are compressed binary tokens, `script_export_mode=2`). Temp `print(has_method("some_new_func"))` in `_ready`, run the exe, check stdout — that's how v0.9.661 was verified.
 
 ### Creating a release
 

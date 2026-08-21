@@ -26857,9 +26857,9 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.660 — Rebuild fix: prior builds shipped stale code.
-	display_game("[color=#00FF00]v0.9.660[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#1EFF00]◆ Build fix.[/color] Recent releases (v0.9.657-659) accidentally shipped with stale code, so their new features never actually applied. This build recompiles everything from source — the [b]combat pixel sprites[/b], [b]character deletion[/b], [b]guided intro[/b], [b]loot pacing[/b] and login/creation reworks are all really here now.")
+	# v0.9.661 — Rebuild fix (for real this time).
+	display_game("[color=#00FF00]v0.9.661[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Build fix.[/color] Releases v0.9.657-660 accidentally shipped with stale code (a build-cache bug), so their new features never applied. This build forces a full recompile from source — [b]combat pixel sprites[/b], [b]character deletion[/b], [b]guided intro[/b], [b]loot pacing[/b] and the login/creation reworks are all really here now. Verified.")
 	display_game("")
 
 	# v0.9.659 — Combat visual overhaul (part 1) + loot pacing.

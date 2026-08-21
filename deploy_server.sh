@@ -11,6 +11,13 @@ PROJECT="C:\Users\Dexto\Documents\phantasia-revival"
 
 echo "=== Phantom Badlands Server Deploy ==="
 
+# Step 0: Force a full script recompile. CRITICAL — headless --export-release
+# alone reuses a stale .godot script cache and ships OLD server code even when
+# the source is current (cost v0.9.657-660). --editor --quit recompiles from
+# source; --import alone does NOT. See feedback_stale_godot_export_cache memory.
+echo "[0/4] Recompiling scripts (--editor --quit)..."
+"$GODOT" --headless --editor --quit --path "$PROJECT" 2>&1 | tail -1
+
 # Step 1: Export Linux server binary
 # --headless avoids flashing an editor window on the primary monitor during
 # export (CLAUDE.md: "Open game/test windows on the secondary monitor").
