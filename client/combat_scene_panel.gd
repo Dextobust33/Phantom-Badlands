@@ -2738,6 +2738,27 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	effect_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(effect_label)
 
+	# v0.9.665 — mastery progress bar. A green fill (left→right) showing how
+	# close this ability is to its next rank-up; gold + full at max rank. Reads
+	# rank_progress from _resolve_card_info each refresh.
+	var mastery_bar := ProgressBar.new()
+	mastery_bar.name = "MasteryBar"
+	mastery_bar.custom_minimum_size = Vector2(0, 6)
+	mastery_bar.show_percentage = false
+	mastery_bar.min_value = 0.0
+	mastery_bar.max_value = 100.0
+	mastery_bar.value = 0.0
+	mastery_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bar_bg := StyleBoxFlat.new()
+	bar_bg.bg_color = Color(0, 0, 0, 0.55)
+	bar_bg.set_corner_radius_all(3)
+	mastery_bar.add_theme_stylebox_override("background", bar_bg)
+	var bar_fill := StyleBoxFlat.new()
+	bar_fill.bg_color = Color("#3FB03F")
+	bar_fill.set_corner_radius_all(3)
+	mastery_bar.add_theme_stylebox_override("fill", bar_fill)
+	vbox.add_child(mastery_bar)
+
 	# Click handler — pulls the current card name from meta on click.
 	cell.gui_input.connect(_on_hand_cell_input.bind(index))
 	cell.set_meta("card_name", "")
@@ -2815,6 +2836,9 @@ func _refresh_hand() -> void:
 			cell.tooltip_text = ""
 			if glyph_lbl:
 				glyph_lbl.text = ""
+			var empty_mbar: ProgressBar = cell.get_node_or_null("VBox/MasteryBar")
+			if empty_mbar:
+				empty_mbar.visible = false
 			_set_cell_dim(cell, true, false)
 			continue
 
@@ -2822,6 +2846,17 @@ func _refresh_hand() -> void:
 		var info = _resolve_card_info(card_name)
 		cell.set_meta("card_name", card_name)
 		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
+
+		# v0.9.665 — mastery progress fill: green bar toward next rank, gold+full
+		# at max rank.
+		var mbar: ProgressBar = cell.get_node_or_null("VBox/MasteryBar")
+		if mbar:
+			mbar.visible = true
+			var at_max_rank := bool(info.get("rank_at_max", false))
+			mbar.value = 100.0 if at_max_rank else float(info.get("rank_progress", 0.0)) * 100.0
+			var fill_sb = mbar.get_theme_stylebox("fill")
+			if fill_sb is StyleBoxFlat:
+				fill_sb.bg_color = Color("#FFD700") if at_max_rank else Color("#3FB03F")
 
 		# v0.9.425 — apply category theming to the cell stylebox + glyph.
 		var category_info: Dictionary = {}
@@ -2968,6 +3003,7 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 			var uses_dict = char_data.get("ability_uses", {})
 			var uses = int(uses_dict.get(card_name, 0)) if uses_dict is Dictionary else 0
 			info["rank"] = _rank_from_uses(uses)
+			info["rank_progress"] = _rank_progress_from_uses(uses)
 	# Affordability: compare cost to current resource on character_data.
 	var current_mana = 0
 	var current_stamina = 0
@@ -3005,6 +3041,19 @@ func _rank_from_uses(uses: int) -> int:
 		else:
 			break
 	return rank
+
+func _rank_progress_from_uses(uses: int) -> float:
+	# v0.9.665 — fraction (0-1) toward the NEXT mastery rank, for the card fill.
+	# Returns 1.0 at max rank. Mirrors _rank_from_uses thresholds.
+	var thresholds = [10, 50, 250, 1200, 4000, 10000]
+	var rank = _rank_from_uses(uses)
+	if rank >= thresholds.size():
+		return 1.0
+	var prev_t: int = 0 if rank == 0 else int(thresholds[rank - 1])
+	var next_t: int = int(thresholds[rank])
+	if next_t <= prev_t:
+		return 0.0
+	return clampf(float(uses - prev_t) / float(next_t - prev_t), 0.0, 1.0)
 
 
 func _short_resource_label(rt: String) -> String:
