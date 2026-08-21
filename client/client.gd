@@ -22592,7 +22592,11 @@ func _process_combat_start(message: Dictionary):
 	# combat_update divider logic emits state.round - 1 to match.
 	_last_displayed_round = 0
 	update_action_bar()
-	update_companion_art_overlay()  # Show companion during combat
+	# v0.9.663 — the combat scene panel now renders the companion in its own card,
+	# so the legacy game-output companion overlay is redundant during combat and
+	# only pokes through at the bottom-right (the "remnant"). Hide it in combat;
+	# the overworld movement handlers re-show it when combat ends.
+	hide_companion_art_overlay()
 
 	# Track XP before combat for two-color XP bar
 	# Only record at start of combat chain (not flock continuations)

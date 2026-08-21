@@ -434,7 +434,7 @@ func _build_layout() -> void:
 	# logs. Combat text now shows here in ONE readable band above the hand,
 	# mirroring the last few _log_lines. See _refresh_log.
 	_battle_log_frame = PanelContainer.new()
-	_battle_log_frame.custom_minimum_size = Vector2(0, 68)
+	_battle_log_frame.custom_minimum_size = Vector2(0, 122)
 	_battle_log_frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_battle_log_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var _blb_sb := StyleBoxFlat.new()
@@ -4417,8 +4417,9 @@ func _refresh_log() -> void:
 	_log_label.text = "\n".join(_log_lines)
 	# COMBAT REDESIGN — mirror the most recent lines into the always-visible band.
 	if _battle_log_band and is_instance_valid(_battle_log_band):
-		# v0.9.663 — 3 lines to fit the fixed-height band cleanly (newest at bottom).
-		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 3))
+		# v0.9.663 — show the last 6 lines so a full combat round is readable in
+		# the fixed-height band (newest at bottom).
+		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 6))
 		_battle_log_band.text = "\n".join(_tail)
 	# v0.9.415 — RichTextLabel.fit_content expands asynchronously: one frame
 	# isn't always enough for `get_v_scroll_bar().max_value` to reflect the
