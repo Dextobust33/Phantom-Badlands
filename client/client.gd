@@ -27135,8 +27135,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.666 — Combat feel: card mastery fill + resource regen.
+	display_game("[color=#00FF00]v0.9.666[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ RESOURCE REGEN.[/color] You now [b]passively regain resource every turn[/b] in combat (12%% of your max mana/stamina/energy), so you're no longer stuck spamming basic attacks for whole fights when you run dry. Regen gear and Path bonuses stack on top.")
+	display_game("  [color=#1EFF00]◆ Ability cards show mastery progress.[/color] Each ability card's background [b]fills left→right in its category color[/b] (red/orange for attacks, green for buffs, etc.) as you use it — when it fills completely, the ability is about to [b]rank up[/b]. See your progress toward every ability's next rank at a glance.")
+	display_game("")
+
 	# v0.9.665 — Itemization variety + legibility.
-	display_game("[color=#00FF00]v0.9.665[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.665[/color]")
 	display_game("  [color=#FF8000]★ MORE ITEM VARIETY.[/color] Way fewer duplicate drops. The affix name pools are roughly [b]doubled[/b], and items can now roll a [color=#FFD700]stat mutation[/color]: [b]Focused[/b] (concentrates power — one stat surges while another shrinks) or [b]Wild[/b] (gains an unexpected off-type stat). Class target-farm drops (Goblins→Trickster, Minotaurs→Warrior, etc.) now [b]always carry an affix[/b] instead of dropping as bare commons — so farming them feels rewarding, not repetitive.")
 	display_game("  [color=#1EFF00]◆ Legibility fixes.[/color] Dark monsters (Zombie, and others in muddy browns/purples) are [b]brightened[/b] so they no longer blend into the background. Dark companion/egg names — like an [b]Obsidian[/b] variant — are also floored to a readable color everywhere they appear (egg-hatch, companion panels, market, tags).")
 	display_game("")
