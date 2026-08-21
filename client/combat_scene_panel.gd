@@ -434,7 +434,7 @@ func _build_layout() -> void:
 	# logs. Combat text now shows here in ONE readable band above the hand,
 	# mirroring the last few _log_lines. See _refresh_log.
 	_battle_log_frame = PanelContainer.new()
-	_battle_log_frame.custom_minimum_size = Vector2(0, 62)
+	_battle_log_frame.custom_minimum_size = Vector2(0, 68)
 	_battle_log_frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_battle_log_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var _blb_sb := StyleBoxFlat.new()
@@ -449,8 +449,13 @@ func _build_layout() -> void:
 	_battle_log_frame.add_theme_stylebox_override("panel", _blb_sb)
 	_battle_log_band = RichTextLabel.new()
 	_battle_log_band.bbcode_enabled = true
-	_battle_log_band.fit_content = true
+	# v0.9.663 — fit_content=false + fill so the band stays a FIXED-height strip.
+	# Previously it grew with each line and, in a VBox, stole height from the
+	# scene section above — shrinking the monster as combat text accumulated.
+	_battle_log_band.fit_content = false
+	_battle_log_band.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_battle_log_band.scroll_active = false
+	_battle_log_band.clip_contents = true
 	_battle_log_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_battle_log_band.add_theme_font_size_override("normal_font_size", 14)
 	_battle_log_frame.add_child(_battle_log_band)
@@ -590,45 +595,47 @@ func _build_scene_section_lufia() -> Control:
 	  - Scene stretch_ratio = 4.0 so vertical layouts get real vertical
 	    room (log_section drops from 1.0 to a tight ~0.4 in _build_layout)
 	  - Monster:party_box_row inner stretch 3:1 → monster ~75%"""
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_stretch_ratio = 4.0
-	vbox.add_theme_constant_override("separation", 6)
-	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scene_section = vbox
+	# v0.9.663 — LEFT/RIGHT battlefield (user-directed). Party stacked on the
+	# left (~1/3 width), monster fills the right (~2/3) at FULL height. The
+	# monster gets its own zone so it's always the largest element and is never
+	# squeezed/covered by the cards (which used to stack below it) or the log
+	# band (which sits below this whole section).
+	var hbox := HBoxContainer.new()
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_stretch_ratio = 4.0
+	hbox.add_theme_constant_override("separation", 10)
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scene_section = hbox
 
-	# Top: monster, centered. Big.
-	_monster_col = _build_monster_column()
-	_monster_col.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_monster_col.size_flags_stretch_ratio = 3.0
-	_monster_col.custom_minimum_size = Vector2(480, 0)
-	vbox.add_child(_monster_col)
-
-	# Bottom: row of bordered stat boxes. v0.9.388 — row expands to full
-	# width of scene_section so ALIGNMENT_CENTER actually centers the boxes
-	# horizontally. Boxes themselves use SIZE_SHRINK_CENTER so they only
-	# take their content's width (no more stretching across the screen).
-	var party_box_row := HBoxContainer.new()
-	party_box_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	party_box_row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	party_box_row.size_flags_stretch_ratio = 1.0
-	party_box_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	party_box_row.add_theme_constant_override("separation", 12)
-	party_box_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(party_box_row)
-
-	# Capture the outer party-box PanelContainers so the UI scale system can
-	# resize each card independently (v0.9.646 click-to-resize). They're set
-	# as pivot-centered so Control.scale shrinks symmetrically.
+	# LEFT: party column — player card on top, companion below, centered
+	# vertically so the pair sits at the middle of the left band.
+	var party_col := VBoxContainer.new()
+	party_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	party_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	party_col.size_flags_stretch_ratio = 1.0
+	party_col.alignment = BoxContainer.ALIGNMENT_CENTER
+	party_col.add_theme_constant_override("separation", 12)
+	party_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Cards are content-sized + horizontally centered within the left band.
+	# Captured so the UIScaleManager can still resize each card (v0.9.646).
 	_player_party_box = _build_lufia_party_box(_build_lufia_player_box_content())
+	_player_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_companion_party_box = _build_lufia_party_box(_build_lufia_companion_box_content())
-	party_box_row.add_child(_player_party_box)
-	party_box_row.add_child(_companion_party_box)
+	_companion_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	party_col.add_child(_player_party_box)
+	party_col.add_child(_companion_party_box)
+	hbox.add_child(party_col)
+	_player_col = party_col
 
-	_player_col = party_box_row
-	return vbox
+	# RIGHT: monster fills the remaining ~2/3 width at full height.
+	_monster_col = _build_monster_column()
+	_monster_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_stretch_ratio = 2.0
+	hbox.add_child(_monster_col)
+
+	return hbox
 
 
 func start_action_phase() -> void:
@@ -1760,6 +1767,7 @@ func _build_lufia_player_box_content() -> HBoxContainer:
 	_player_portrait_bg.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_player_portrait_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_player_portrait_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_player_portrait_bg.clip_contents = true  # v0.9.663 — sprite/art can't spill the card
 	# Initial stylebox — gets repainted in set_player_ascii_art based on
 	# variant brightness. Use the box bg as default so no visible frame.
 	var pbg := StyleBoxFlat.new()
@@ -1865,6 +1873,7 @@ func _build_lufia_companion_box_content() -> HBoxContainer:
 	_companion_portrait_bg.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_companion_portrait_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_companion_portrait_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_companion_portrait_bg.clip_contents = true  # v0.9.663 — art can't spill the card
 	var cbg := StyleBoxFlat.new()
 	cbg.bg_color = Color(0.06, 0.05, 0.10, 0.0)
 	_companion_portrait_bg.add_theme_stylebox_override("panel", cbg)
@@ -4289,6 +4298,12 @@ func _reapply_monster_art_text() -> void:
 			var old_size: int = int(m.get_string(1))
 			var new_size: int = max(2, int(round(old_size * combined)))
 			art = art.replace("font_size=%d" % old_size, "font_size=%d" % new_size)
+	# v0.9.663 — center the art horizontally within its (full-width) column so it
+	# sits in the middle of the monster zone instead of drifting to a side. This
+	# is BBCode text alignment, so it doesn't touch the node position the lunge
+	# tweens animate.
+	if art != "" and not art.begins_with("[center]"):
+		art = "[center]" + art + "[/center]"
 	_monster_art_label.text = art
 
 
@@ -4316,12 +4331,12 @@ func _compute_monster_autofit_scale() -> float:
 	it's deterministic and flicker-free. Returns 1.0 when geometry isn't ready."""
 	if _monster_art_bbcode == "" or _mono_font == null:
 		return 1.0
-	if _scene_section == null or not is_instance_valid(_scene_section):
+	# v0.9.663 — the monster owns the right column now, so fit to THAT band
+	# (its own width × height), not the whole scene minus the party row.
+	if _monster_col == null or not is_instance_valid(_monster_col):
 		return 1.0
-	if _player_col == null or not is_instance_valid(_player_col):
-		return 1.0
-	var scene_size: Vector2 = _scene_section.size
-	if scene_size.x < 60.0 or scene_size.y < 60.0:
+	var band: Vector2 = _monster_col.size
+	if band.x < 60.0 or band.y < 60.0:
 		return 1.0
 	var base_size: int = 0
 	var rx := RegEx.new()
@@ -4347,8 +4362,8 @@ func _compute_monster_autofit_scale() -> float:
 		return 1.0
 	var art_w: float = float(cols) * char_w
 	var art_h: float = float(rows) * line_h
-	var avail_w: float = maxf(80.0, scene_size.x - 16.0)
-	var avail_h: float = maxf(80.0, scene_size.y - _player_col.size.y - MONSTER_CHROME_RESERVE)
+	var avail_w: float = maxf(80.0, band.x - 16.0)
+	var avail_h: float = maxf(80.0, band.y - MONSTER_CHROME_RESERVE)
 	var s: float = minf(avail_w / art_w, avail_h / art_h) * MONSTER_FILL_RATIO
 	return clampf(s, 0.25, 1.5)
 
@@ -4402,7 +4417,8 @@ func _refresh_log() -> void:
 	_log_label.text = "\n".join(_log_lines)
 	# COMBAT REDESIGN — mirror the most recent lines into the always-visible band.
 	if _battle_log_band and is_instance_valid(_battle_log_band):
-		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 4))
+		# v0.9.663 — 3 lines to fit the fixed-height band cleanly (newest at bottom).
+		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 3))
 		_battle_log_band.text = "\n".join(_tail)
 	# v0.9.415 — RichTextLabel.fit_content expands asynchronously: one frame
 	# isn't always enough for `get_v_scroll_bar().max_value` to reflect the
