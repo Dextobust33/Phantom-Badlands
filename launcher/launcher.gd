@@ -26,6 +26,15 @@ func _is_linux() -> bool:
 func _client_executable() -> String:
 	return "PhantomBadlandsClient.x86_64" if _is_linux() else "PhantomBadlandsClient.exe"
 
+# The file that MUST be present after a "content" update for THIS platform.
+# Windows content = the .pck; Linux content is baked into the single binary.
+func _expected_content_file() -> String:
+	return "PhantomBadlandsClient.x86_64" if _is_linux() else "PhantomBadlandsClient.pck"
+
+# The file that MUST be present after a "runtime" update for THIS platform.
+func _expected_runtime_file() -> String:
+	return "PhantomBadlandsClient.x86_64" if _is_linux() else "PhantomBadlandsClient.exe"
+
 @onready var status_label = $VBox/StatusLabel
 @onready var progress_bar = $VBox/ProgressBar
 @onready var play_button = $VBox/PlayButton
@@ -261,12 +270,26 @@ func _on_download_completed(result: int, response_code: int, _headers: PackedStr
 	progress_bar.value = 100
 	status_label.text = "Extracting update..."
 	await get_tree().process_frame
-	var success = _extract_zip(zip_path, game_path)
+	var written = _extract_zip(zip_path, game_path)
 	DirAccess.remove_absolute(zip_path)
-	if not success:
-		status_label.text = "Failed to extract update"
+	if written.is_empty():
+		status_label.text = "Failed to extract update (no files written)"
 		_enable_play_if_installed()
 		return
+
+	# PLATFORM GUARD: refuse to accept a bundle that didn't deliver THIS
+	# platform's runnable file. This is the check that was missing — the old
+	# launcher would extract a wrong-platform (e.g. Linux) zip on Windows,
+	# stamp VERSION.txt, and declare success while the real .exe/.pck stayed
+	# stale. If the expected file isn't in the bundle, abort WITHOUT marking
+	# the version, so the install is never left silently broken.
+	var bundle_name = String(_download_queue[0].get("name", ""))
+	var required = _expected_runtime_file() if bundle_name == "runtime" else _expected_content_file()
+	if not (required in written):
+		status_label.text = "Update was for the wrong platform (missing %s). Aborted — please re-download the launcher." % required
+		_enable_play_if_installed()
+		return
+
 	if _is_linux():
 		var exe_path = game_path.path_join(_client_executable())
 		if FileAccess.file_exists(exe_path):
@@ -276,22 +299,34 @@ func _on_download_completed(result: int, response_code: int, _headers: PackedStr
 	_download_queue.pop_front()
 	_process_download_queue()
 
-func _extract_zip(zip_path: String, destination: String) -> bool:
+# Extracts the zip and returns the list of file BASENAMES that were verifiably
+# written (open succeeded AND the file exists at the expected size afterward).
+# Returns an empty array on hard failure so callers can detect a bad update.
+func _extract_zip(zip_path: String, destination: String) -> Array:
+	var written: Array = []
 	var reader = ZIPReader.new()
 	if reader.open(zip_path) != OK:
-		return false
+		return []
 	for file_path in reader.get_files():
 		if file_path.ends_with("/"):
 			DirAccess.make_dir_recursive_absolute(destination.path_join(file_path))
-		else:
-			var content = reader.read_file(file_path)
-			var full_path = destination.path_join(file_path)
-			DirAccess.make_dir_recursive_absolute(full_path.get_base_dir())
-			var file = FileAccess.open(full_path, FileAccess.WRITE)
-			if file:
-				file.store_buffer(content)
+			continue
+		var content = reader.read_file(file_path)
+		var full_path = destination.path_join(file_path)
+		DirAccess.make_dir_recursive_absolute(full_path.get_base_dir())
+		# Clear a possible read-only attribute / stale handle by removing the
+		# old file first; FileAccess.WRITE can't overwrite a read-only file.
+		if FileAccess.file_exists(full_path):
+			DirAccess.remove_absolute(full_path)
+		var file = FileAccess.open(full_path, FileAccess.WRITE)
+		if file:
+			file.store_buffer(content)
+			file.close()
+			# Verify the write actually landed at the right size.
+			if FileAccess.file_exists(full_path) and FileAccess.open(full_path, FileAccess.READ).get_length() == content.size():
+				written.append(full_path.get_file())
 	reader.close()
-	return true
+	return written
 
 func _enable_play_if_installed():
 	var exe_path = game_path.path_join(_client_executable())
