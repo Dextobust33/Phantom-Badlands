@@ -1719,6 +1719,9 @@ const MUSIC_QUIET_GAP_MIN_MS := 120000  # 2 min of quiet between overworld track
 const MUSIC_QUIET_GAP_MAX_MS := 300000  # up to 5 min
 var _music_context: String = "overworld"
 var _music_quiet_until_ms: int = 0
+const MUSIC_FADE_SECS := 2.5  # slow fade in on start / fade out before a track ends
+var _music_fade_tween: Tween = null
+var _music_fading_out: bool = false
 var sfx_muted: bool = false
 
 # Base volume levels for each sound (used with volume multiplier)
@@ -2772,7 +2775,10 @@ func _apply_music_volume_now() -> void:
 
 func _on_music_volume_slider_changed(v: float) -> void:
 	music_volume = clampf(v, 0.0, 1.0)
-	_apply_music_volume_now()
+	# Take effect immediately unless a fade-out is in progress (let that finish).
+	if not _music_fading_out:
+		_kill_music_fade()
+		_apply_music_volume_now()
 
 func _play_random_track_for_context(ctx: String) -> void:
 	if music_player == null:
@@ -2783,8 +2789,34 @@ func _play_random_track_for_context(ctx: String) -> void:
 	var stream = load(pool[randi() % pool.size()])
 	if stream:
 		music_player.stream = stream
-		_apply_music_volume_now()
+		_music_fading_out = false
 		music_player.play()
+		_fade_music_in()
+
+func _music_target_db() -> float:
+	if music_volume <= 0.0:
+		return -80.0
+	return MUSIC_VOLUME_DB + (20.0 * log(music_volume) / log(10.0))
+
+func _kill_music_fade() -> void:
+	if _music_fade_tween and _music_fade_tween.is_valid():
+		_music_fade_tween.kill()
+	_music_fade_tween = null
+
+func _fade_music_in() -> void:
+	if music_player == null:
+		return
+	_kill_music_fade()
+	music_player.volume_db = -60.0
+	_music_fade_tween = create_tween()
+	_music_fade_tween.tween_property(music_player, "volume_db", _music_target_db(), MUSIC_FADE_SECS)
+
+func _fade_music_out() -> void:
+	if music_player == null:
+		return
+	_kill_music_fade()
+	_music_fade_tween = create_tween()
+	_music_fade_tween.tween_property(music_player, "volume_db", -60.0, MUSIC_FADE_SECS)
 
 func _update_context_music() -> void:
 	"""Timer-driven (0.5s). Switches track pools by context and runs the
@@ -2804,6 +2836,13 @@ func _update_context_music() -> void:
 	# Same context — overworld starts the next track once the quiet gap ends.
 	if ctx == "overworld" and not music_player.playing and Time.get_ticks_msec() >= _music_quiet_until_ms:
 		_play_random_track_for_context("overworld")
+	# Gently fade out before the current track ends (any context).
+	if music_player.playing and music_player.stream and not _music_fading_out:
+		var pos: float = music_player.get_playback_position()
+		var slen: float = music_player.stream.get_length()
+		if slen > 0.0 and pos >= slen - MUSIC_FADE_SECS:
+			_music_fading_out = true
+			_fade_music_out()
 
 func _on_music_finished():
 	"""Overworld: schedule a quiet gap before the next track. Posts/dungeon loop."""
@@ -3060,6 +3099,16 @@ func _process(delta):
 			and pending_house_action in ["", "withdraw_select", "discard_select", "register_select"])
 		if sanctuary_panel.visible != _sanct_should_show:
 			sanctuary_panel.visible = _sanct_should_show
+
+	# v0.9.663 — hide the overworld map-side boxes while in the sanctuary hub;
+	# they're empty/irrelevant there (region name label, minimap, companion art).
+	if game_state == GameState.HOUSE_SCREEN:
+		if region_label and is_instance_valid(region_label):
+			region_label.visible = false
+		if minimap_display and is_instance_valid(minimap_display):
+			minimap_display.visible = false
+		if companion_art_overlay and is_instance_valid(companion_art_overlay):
+			companion_art_overlay.visible = false
 
 	# Sync kennel panel — shows in HOUSE_SCREEN when on the K tile (house_mode == "kennel").
 	# Hide for keyboard sub-states (release_select, register_select); panel uses its own
@@ -30387,26 +30436,8 @@ func _on_screenshot_button_pressed() -> void:
 	if err == OK:
 		display_game("[color=#5CE05C]Screenshot saved: %s[/color]" % fname)
 		print("[SCREENSHOT] saved: ", path)
-		_debug_dump_boxes()  # TEMP — identify empty UI boxes
 	else:
 		display_game("[color=#FF6B6B]Screenshot failed (err %d)[/color]" % err)
-
-
-func _debug_dump_boxes() -> void:
-	# TEMP (v0.9.663) — list visible right-side UI controls so we can identify the
-	# empty sanctuary boxes (yellow box, companion box, green circle) by node path.
-	print("[BOXES] visible right-side controls (name | class | gpos | size):")
-	_debug_walk_boxes(get_tree().root)
-
-func _debug_walk_boxes(node: Node) -> void:
-	var c := node as Control
-	if c != null and c.is_visible_in_tree():
-		var sz: Vector2 = c.size
-		var gp: Vector2 = c.global_position
-		if sz.x >= 15 and sz.y >= 15 and gp.x > 950.0:
-			print("[BOX] ", node.name, " | ", node.get_class(), " | gpos=(", int(gp.x), ",", int(gp.y), ") size=(", int(sz.x), ",", int(sz.y), ") | ", node.get_path())
-	for ch in node.get_children():
-		_debug_walk_boxes(ch)
 
 
 func open_post_status_panel() -> void:
