@@ -27028,8 +27028,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.663 — Combat visual overhaul + responsive UI + music.
+	display_game("[color=#00FF00]v0.9.663[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ COMBAT SCREEN REBUILT.[/color] New side-by-side battlefield: your party (bigger pixel hero + companion) stacked on the [b]left[/b], the enemy [b]large and centered on the right[/b]. The monster now [b]auto-sizes[/b] to fill its space at any resolution, the attack animation plays [b]over[/b] the cards, and the combat log is a fixed, readable strip.")
+	display_game("  [color=#1EFF00]◆ Responsive UI — scales to your screen.[/color] The whole interface now scales cleanly: [b]readable on 4K[/b] (no more tiny text) and [b]fits small windows[/b] (no more cut-off). Drag between monitors freely.")
+	display_game("  [color=#1EFF00]◆ Music![/color] Contextual background tracks — a calm loop while browsing [b]posts[/b], a moody loop in [b]dungeons[/b], and rotating [b]overworld[/b] tracks that fade in, play, then rest for a few minutes so it never overwhelms. New [b]volume slider[/b] next to the ♪ toggle (top-right).")
+	display_game("  • Combat polish: resource bar labelled (EN/MN/ST), Deck/Discard colored, monster HP bar now empties on the kill, cards resized, companion stance tag toned down, ? Help moved out of the way.")
+	display_game("  • Sanctuary: removed the empty companion/region/minimap boxes that cluttered the hub.")
+	display_game("")
+
 	# v0.9.662 — Launcher platform fix + loot-as-chance for gathering/crafting.
-	display_game("[color=#00FF00]v0.9.662[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.662[/color]")
 	display_game("  [color=#FF8000]★ LAUNCHER FIX — updates actually apply now.[/color] Some launchers were downloading the wrong platform's files (e.g. the Linux build on a Windows PC), stamping the new version but leaving the real game stale — so 'updates' silently changed nothing. The launcher now verifies every file it writes and refuses to mark an update done unless it truly installed your platform's build.")
 	display_game("  [color=#1EFF00]◆ Loot-as-chance comes to gathering & crafting.[/color]")
 	display_game("  • [b]Gathering[/b] (fish / mine / chop / forage) mostly resolves [b]instantly[/b] now — a quick result line instead of the scratch-off every single time. About [color=#FFD700]1 in 8[/color] gathers (and [color=#FFD700]~1 in 2[/color] on a rich, high-tier node) pops the scratch-off with a [color=#FFD700]doubled reveal budget[/color] for a real haul.")
