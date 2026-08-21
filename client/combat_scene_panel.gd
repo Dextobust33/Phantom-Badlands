@@ -34,6 +34,7 @@ var _monster_art_user_scale: float = 1.0
 # band at any resolution (no spill onto the party cards at 1080p, no waste at
 # 1440p). Multiplies with the per-element user scale above.
 var _monster_art_auto_scale: float = 1.0
+var _last_autofit_band: Vector2 = Vector2.ZERO  # v0.9.663 — resize watchdog (see _process)
 
 # Cached state (last populate call)
 var _player_class: String = ""
@@ -311,7 +312,7 @@ var _lufia_player_hp_text: Label
 # during combat (info was redundant once the combat scene shows it).
 var _lufia_player_resource_bar: ProgressBar = null
 var _lufia_player_resource_text: Label = null
-var _lufia_player_deck_label: Label
+var _lufia_player_deck_label: RichTextLabel
 # v0.9.405 — refs to the stats VBox inside each Lufia stat box so the
 # action-phase transition can fade ONLY the stats (HP bars, deck info,
 # names) while leaving the portrait ASCII visible — characters now appear
@@ -377,6 +378,21 @@ func _notification(what: int) -> void:
 			if not visible:
 				if _review_button and is_instance_valid(_review_button):
 					_review_button.visible = false
+
+
+func _process(_delta: float) -> void:
+	# v0.9.663 — resize watchdog. Some size changes (notably toggling fullscreen
+	# on a different-resolution monitor) don't deliver a usable
+	# NOTIFICATION_RESIZED before the child columns re-layout, so the monster
+	# could stay at the old scale. Poll the monster band and re-fit when it moves.
+	if _monster_name == "" or not visible:
+		return
+	if _monster_col == null or not is_instance_valid(_monster_col):
+		return
+	var sz: Vector2 = _monster_col.size
+	if absf(sz.x - _last_autofit_band.x) > 2.0 or absf(sz.y - _last_autofit_band.y) > 2.0:
+		_last_autofit_band = sz
+		_apply_monster_autofit_deferred()
 
 
 func _load_mono_font() -> void:
@@ -611,9 +627,12 @@ func _build_scene_section_lufia() -> Control:
 	# LEFT: party column — player card on top, companion below, centered
 	# vertically so the pair sits at the middle of the left band.
 	var party_col := VBoxContainer.new()
-	party_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# v0.9.663 — party column hugs the cards (content width) instead of taking a
+	# fixed 1/3, so the monster's column starts closer to center and the big
+	# dead-space gap in the middle shrinks.
+	party_col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	party_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	party_col.size_flags_stretch_ratio = 1.0
+	party_col.custom_minimum_size = Vector2(360, 0)
 	party_col.alignment = BoxContainer.ALIGNMENT_CENTER
 	party_col.add_theme_constant_override("separation", 12)
 	party_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1767,7 +1786,9 @@ func _build_lufia_player_box_content() -> HBoxContainer:
 	_player_portrait_bg.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_player_portrait_bg.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_player_portrait_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_player_portrait_bg.clip_contents = true  # v0.9.663 — sprite/art can't spill the card
+	# v0.9.663 — NOT clipped (the sprite fits at rest) + raised z so the attack
+	# lunge animates OVER the stat bars / toward the monster instead of behind them.
+	_player_portrait_bg.z_index = 5
 	# Initial stylebox — gets repainted in set_player_ascii_art based on
 	# variant brightness. Use the box bg as default so no visible frame.
 	var pbg := StyleBoxFlat.new()
@@ -1845,10 +1866,12 @@ func _build_lufia_player_box_content() -> HBoxContainer:
 	res_row.add_child(_lufia_player_resource_text)
 
 	# Deck info: "Deck N · Hand M · Discard K"
-	_lufia_player_deck_label = Label.new()
-	_lufia_player_deck_label.add_theme_font_size_override("font_size", 11)
-	_lufia_player_deck_label.add_theme_color_override("font_color", Color(0.82, 0.78, 0.55))
-	_lufia_player_deck_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_lufia_player_deck_label = RichTextLabel.new()  # v0.9.663 — RTL for colored Deck/Discard
+	_lufia_player_deck_label.bbcode_enabled = true
+	_lufia_player_deck_label.fit_content = true
+	_lufia_player_deck_label.scroll_active = false
+	_lufia_player_deck_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_lufia_player_deck_label.add_theme_font_size_override("normal_font_size", 11)
 	_lufia_player_deck_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stats.add_child(_lufia_player_deck_label)
 	return hbox
@@ -2854,7 +2877,7 @@ func _refresh_hand() -> void:
 	# v0.9.385 — mirror deck / hand / discard into the Lufia in-box label.
 	if _lufia_player_deck_label and is_instance_valid(_lufia_player_deck_label):
 		var hand_size := _combat_hand.size()
-		_lufia_player_deck_label.text = "Deck %d · Hand %d · Discard %d" % [_combat_deck_count, hand_size, _combat_discard_count]
+		_lufia_player_deck_label.text = "[color=#5CE05C]Deck %d[/color] [color=#888888]· Hand %d ·[/color] [color=#FF6B6B]Discard %d[/color]" % [_combat_deck_count, hand_size, _combat_discard_count]
 	# v0.9.601 — mirror to the FX overlay deck label too.
 	if _overlay_player_deck_label and is_instance_valid(_overlay_player_deck_label):
 		var hand_size_overlay := _combat_hand.size()
@@ -2980,10 +3003,24 @@ func _rank_from_uses(uses: int) -> int:
 
 func _short_resource_label(rt: String) -> String:
 	match rt:
-		"mana": return "MP"
-		"stamina": return "SP"
+		"mana": return "MN"
+		"stamina": return "ST"
 		"energy": return "EN"
 	return ""
+
+
+func _resource_type_from_color(c: Color) -> String:
+	"""Derive the resource type from its bar color (server sends color, not the
+	type string). Nearest-match against the three known resource colors."""
+	var best := ""
+	var best_d := 0.35
+	for rt in ["mana", "stamina", "energy"]:
+		var rc := _resource_color(rt)
+		var d: float = absf(c.r - rc.r) + absf(c.g - rc.g) + absf(c.b - rc.b)
+		if d < best_d:
+			best_d = d
+			best = rt
+	return best
 
 
 func _resource_color(rt: String) -> Color:
@@ -3762,7 +3799,7 @@ const COMPACT_PORTRAIT_H := 138  # both portraits (was 180)
 # v0.9.392 — player portrait gets its own narrower width since player ASCII
 # (~100 chars wide at font_size 2 ≈ ~120px rendered) was leaving ~80px of dead
 # space on the right of the 200-wide portrait before the stat bars started.
-const COMPACT_PLAYER_PORTRAIT_W := 112  # (was 140)
+const COMPACT_PLAYER_PORTRAIT_W := 168  # v0.9.663 — matched to companion (COMPACT_PORTRAIT_W) so both cards are the same size + a bigger player sprite
 const COMPACT_BAR_W := 108  # v0.9.388 — fixed-width bars (no EXPAND_FILL stretch); v0.9.663 120->108
 # v0.9.663 — monster ASCII auto-fit tuning. FILL_RATIO leaves a margin so the art
 # never kisses the cards; CHROME_RESERVE accounts for the name + HP widgets that
@@ -4012,7 +4049,11 @@ func _refresh_player_resource() -> void:
 		if lufia_fill is StyleBoxFlat:
 			(lufia_fill as StyleBoxFlat).bg_color = _player_resource_color
 	if _lufia_player_resource_text and is_instance_valid(_lufia_player_resource_text):
-		_lufia_player_resource_text.text = "%d / %d" % [maxi(0, _player_resource_cur), _player_resource_max]
+		# v0.9.663 — prefix the short resource label (EN / MN / ST), derived from
+		# the bar color since the payload carries color not type.
+		var _rlbl := _short_resource_label(_resource_type_from_color(_player_resource_color))
+		var _rprefix := ("%s " % _rlbl) if _rlbl != "" else ""
+		_lufia_player_resource_text.text = "%s%d / %d" % [_rprefix, maxi(0, _player_resource_cur), _player_resource_max]
 	if _overlay_player_resource_bar and is_instance_valid(_overlay_player_resource_bar):
 		_overlay_player_resource_bar.max_value = maxi(1, _player_resource_max)
 		_animate_bar_value(_overlay_player_resource_bar, clampi(_player_resource_cur, 0, _player_resource_max))
