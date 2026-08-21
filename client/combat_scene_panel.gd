@@ -3382,6 +3382,17 @@ func update_monster_hp(current: int, max_hp: int, known: bool, exceeded: bool = 
 		_refresh_monster_hp()
 
 
+func set_monster_defeated() -> void:
+	"""v0.9.663 — drain the monster HP bar to 0 on the killing blow. Combat ends
+	via the victory path (no combat_update carries monster_hp=0), so without this
+	the bar keeps its last non-zero value when the monster dies."""
+	_monster_hp = 0
+	_monster_hp_known = true
+	_monster_hp_exceeded = false
+	if is_inside_tree():
+		_refresh_monster_hp()
+
+
 func update_companion(companion_data: Dictionary) -> void:
 	_companion_data = companion_data
 	if is_inside_tree():

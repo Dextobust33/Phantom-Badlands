@@ -21581,6 +21581,11 @@ func handle_server_message(message: Dictionary):
 				# in every victory combat_end (normal / outsmart / companion_clutch /
 				# heist / flock), so the cache now always stores ground truth instead
 				# of the damage-dealt heuristic that under-recorded on instakill paths.
+				# v0.9.663 — the monster is dead: drain its HP bar to 0. Combat ends
+				# via this victory path (not a combat_update carrying monster_hp=0),
+				# so the bar otherwise kept its last non-zero value on the kill.
+				if combat_scene_panel and combat_scene_panel.has_method("set_monster_defeated"):
+					combat_scene_panel.set_monster_defeated()
 				var killed_name = String(message.get("killed_monster_name", current_enemy_name))
 				var killed_level = int(message.get("killed_monster_level", current_enemy_level))
 				var killed_max_hp = int(message.get("killed_monster_max_hp", 0))
