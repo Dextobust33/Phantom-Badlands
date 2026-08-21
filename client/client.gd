@@ -491,6 +491,7 @@ var _stats_reminder_tween: Tween = null
 @onready var chat_output = $RootContainer/BottomStrip/ChatPanel/ChatOutput
 var shortcut_buttons_container: HBoxContainer = null
 @onready var map_display = $RootContainer/TopSection/MapPanel/MapDisplay
+@onready var map_panel = $RootContainer/TopSection/MapPanel  # v0.9.663 — hidden during combat so the combat scene fills the TopSection width
 # Map Sprites M1 — overlay node holding TextureRect sprites for visible
 # players, attached as a child of map_display so it inherits the map's
 # coordinate space.
@@ -3237,6 +3238,11 @@ func _process(delta):
 		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up or _action_phase_pending or _victory_pending) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
+		# v0.9.663 — hide the map panel while the combat scene is up so combat fills
+		# the full TopSection width (GameOutputContainer expands in the HBox).
+		if map_panel and is_instance_valid(map_panel):
+			if map_panel.visible == _combat_scene_should_show:
+				map_panel.visible = not _combat_scene_should_show
 		# v0.9.612 — ResourceBarsOverlay is PROVISIONALLY removed (the bar
 		# below the GameOutput window). StatsBar at the top already shows
 		# HP+resource so this overlay was always redundant. Hard-set visible
@@ -30423,6 +30429,10 @@ func _refresh_stats_panel_if_open() -> void:
 func _on_screenshot_button_pressed() -> void:
 	"""v0.9.663 — dev/QA screenshot. Saves the current frame to
 	res://claude_screenshots/ (project dir when run from source)."""
+	var _now_ss: int = Time.get_ticks_msec()
+	if _now_ss - int(get_meta("last_ss_ms", -9999)) < 800:
+		return  # debounce — the button was double-firing per click
+	set_meta("last_ss_ms", _now_ss)
 	await RenderingServer.frame_post_draw
 	var img: Image = get_viewport().get_texture().get_image()
 	if img == null:
