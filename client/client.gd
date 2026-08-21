@@ -26857,8 +26857,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.660 — Rebuild fix: prior builds shipped stale code.
+	display_game("[color=#00FF00]v0.9.660[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Build fix.[/color] Recent releases (v0.9.657-659) accidentally shipped with stale code, so their new features never actually applied. This build recompiles everything from source — the [b]combat pixel sprites[/b], [b]character deletion[/b], [b]guided intro[/b], [b]loot pacing[/b] and login/creation reworks are all really here now.")
+	display_game("")
+
 	# v0.9.659 — Combat visual overhaul (part 1) + loot pacing.
-	display_game("[color=#00FF00]v0.9.659[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.659[/color]")
 	display_game("  [color=#1EFF00]◆ COMBAT gets a visual overhaul.[/color]")
 	display_game("  • [b]Pixel battle sprites[/b] — your character now fights as a polished pixel-art hero (Time Fantasy battlers) instead of the old muddy art. Each class has several looks and your character gets a random one, so two Fighters differ. [b]Mages cast, rangers draw a bow, melee steps in and swings[/b] — every skill animates.")
 	display_game("  • [b]Cleaner battle screen[/b] — the old overlapping / scattered combat view is gone: one stable layout with a single readable combat log.")
