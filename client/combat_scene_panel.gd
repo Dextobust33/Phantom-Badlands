@@ -30,6 +30,10 @@ var _companion_party_box: PanelContainer = null
 # screen. Now we rewrite the font_size in the BBCode itself so the text re-
 # renders at the new size.
 var _monster_art_user_scale: float = 1.0
+# v0.9.663 — auto-fit: scale computed so the monster ASCII fills its available
+# band at any resolution (no spill onto the party cards at 1080p, no waste at
+# 1440p). Multiplies with the per-element user scale above.
+var _monster_art_auto_scale: float = 1.0
 
 # Cached state (last populate call)
 var _player_class: String = ""
@@ -365,6 +369,10 @@ func _notification(what: int) -> void:
 			# v0.9.568 — keep ? Help button anchored to top-left on resize.
 			if _help_button and is_instance_valid(_help_button) and _help_button.visible:
 				_position_help_button()
+			# v0.9.663 — re-fit the monster ASCII to the new band. Deferred so it
+			# runs after child containers have taken their new sizes.
+			if _monster_name != "":
+				call_deferred("_apply_monster_autofit_deferred")
 		NOTIFICATION_VISIBILITY_CHANGED:
 			if not visible:
 				if _review_button and is_instance_valid(_review_button):
@@ -1789,8 +1797,11 @@ func _build_lufia_player_box_content() -> HBoxContainer:
 	stats.add_child(name_label)
 
 	# HP row: fixed-width bar + "HP cur / max" text.
+	# v0.9.663 — left-align (BEGIN) so the HP and resource bars share the same
+	# left edge. SHRINK_CENTER centered each row independently, and the differing
+	# text widths pushed the two bars out of vertical alignment.
 	var hp_row := HBoxContainer.new()
-	hp_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	hp_row.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	hp_row.add_theme_constant_override("separation", 6)
 	hp_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stats.add_child(hp_row)
@@ -1810,7 +1821,7 @@ func _build_lufia_player_box_content() -> HBoxContainer:
 	# (pairs with the v0.9.601 hide of the bottom resource_bars_overlay
 	# during combat — the info was redundant once the combat scene shows it).
 	var res_row := HBoxContainer.new()
-	res_row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	res_row.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	res_row.add_theme_constant_override("separation", 6)
 	res_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stats.add_child(res_row)
@@ -3735,13 +3746,20 @@ const COMPACT_PORTRAIT_PX := 96  # v0.9.385 — square chrono party-row portrait
 # (~200 tall at font_size 1 with the font's minimum line height). Box height
 # dominates because monster art is taller than wide in our content; Barbarian
 # class art is 100×55 chars which fits at font_size 2.
-const COMPACT_PORTRAIT_W := 200  # v0.9.394 — back to 200 (240 was too much horizontal). [center] still helps when natural art is narrower.
-const COMPACT_PORTRAIT_H := 180
+# v0.9.663 — cards shrunk (user: "too large"). Height is the big lever since the
+# party-box row height drives how much vertical room the monster band gets.
+const COMPACT_PORTRAIT_W := 168  # companion portrait (was 200)
+const COMPACT_PORTRAIT_H := 138  # both portraits (was 180)
 # v0.9.392 — player portrait gets its own narrower width since player ASCII
 # (~100 chars wide at font_size 2 ≈ ~120px rendered) was leaving ~80px of dead
 # space on the right of the 200-wide portrait before the stat bars started.
-const COMPACT_PLAYER_PORTRAIT_W := 140
-const COMPACT_BAR_W := 120  # v0.9.388 — fixed-width bars (no EXPAND_FILL stretch)
+const COMPACT_PLAYER_PORTRAIT_W := 112  # (was 140)
+const COMPACT_BAR_W := 108  # v0.9.388 — fixed-width bars (no EXPAND_FILL stretch); v0.9.663 120->108
+# v0.9.663 — monster ASCII auto-fit tuning. FILL_RATIO leaves a margin so the art
+# never kisses the cards; CHROME_RESERVE accounts for the name + HP widgets that
+# share the monster column above the art.
+const MONSTER_FILL_RATIO := 0.9
+const MONSTER_CHROME_RESERVE := 84.0
 const COMPACT_ASCII_FONT_SIZE := 1  # v0.9.385 — companion ASCII font_size in compact layouts
 # v0.9.389 — player class ASCII uses a slightly larger font so the figure is
 # legible. Player art is ~100 chars wide, so font 2 stays inside the 200px box.
@@ -4114,7 +4132,10 @@ func _refresh_companion() -> void:
 		var role_label := str(role_info.get("label", ""))
 		var role_color := str(role_info.get("color", "#FFFFFF"))
 		if role_label != "":
-			role_tag = " [color=%s][b][%s][/b][/color]" % [role_color, role_label.to_upper()]
+			# v0.9.663 — conservatively sized: small font, title-case (not ALLCAPS),
+			# no bold, so it reads as a quiet stance label rather than shouting over
+			# the companion's name.
+			role_tag = "  [font_size=9][color=%s]%s[/color][/font_size]" % [role_color, role_label.capitalize()]
 	_companion_name_label.text = "[color=%s]%s[/color] [color=#888888]Lv %d T%d %s[/color]%s" % [variant_color, name, level, sub_tier, variant, role_tag]
 
 	# XP bar shows progress to next companion level. Formula matches
@@ -4243,18 +4264,93 @@ func _refresh_monster() -> void:
 	# `[right][font_size=N]...[/font_size][/right]`; we multiply N by the
 	# user's chosen scale (default 1.0 = no change). Clamped to ≥ 2 so the
 	# ASCII stays visible at extreme shrink.
-	var art_bbcode_to_show: String = _monster_art_bbcode
-	if _monster_art_user_scale != 1.0 and art_bbcode_to_show != "":
-		var rx := RegEx.new()
-		rx.compile("font_size=(\\d+)")
-		var m: RegExMatch = rx.search(art_bbcode_to_show)
-		if m != null:
-			var old_size: int = int(m.get_string(1))
-			var new_size: int = max(2, int(round(old_size * _monster_art_user_scale)))
-			art_bbcode_to_show = art_bbcode_to_show.replace("font_size=%d" % old_size, "font_size=%d" % new_size)
-	_monster_art_label.text = art_bbcode_to_show
+	# v0.9.663 — recompute auto-fit from current geometry, then render at the
+	# combined (auto × user) scale. The deferred re-apply corrects the scale once
+	# the panel has settled its post-visibility layout on the first combat.
+	_monster_art_auto_scale = _compute_monster_autofit_scale()
+	_reapply_monster_art_text()
+	call_deferred("_apply_monster_autofit_deferred")
 	_monster_hp_bar.visible = true
 	_refresh_monster_hp()
+
+
+func _reapply_monster_art_text() -> void:
+	"""Render _monster_art_bbcode into the label at the combined auto × user
+	scale by rewriting its baked font_size tag."""
+	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
+		return
+	var art: String = _monster_art_bbcode
+	var combined: float = _monster_art_auto_scale * _monster_art_user_scale
+	if not is_equal_approx(combined, 1.0) and art != "":
+		var rx := RegEx.new()
+		rx.compile("font_size=(\\d+)")
+		var m: RegExMatch = rx.search(art)
+		if m != null:
+			var old_size: int = int(m.get_string(1))
+			var new_size: int = max(2, int(round(old_size * combined)))
+			art = art.replace("font_size=%d" % old_size, "font_size=%d" % new_size)
+	_monster_art_label.text = art
+
+
+func _apply_monster_autofit_deferred() -> void:
+	"""Recompute the auto-fit scale after layout settles; re-render only if it
+	actually changed (avoids churn and infinite re-defer loops)."""
+	if _monster_name == "" or _monster_art_bbcode == "":
+		return
+	var new_scale: float = _compute_monster_autofit_scale()
+	if is_equal_approx(new_scale, _monster_art_auto_scale):
+		return
+	_monster_art_auto_scale = new_scale
+	_reapply_monster_art_text()
+
+
+func _strip_bbcode(s: String) -> String:
+	var rx := RegEx.new()
+	rx.compile("\\[[^\\]]*\\]")
+	return rx.sub(s, "", true)
+
+
+func _compute_monster_autofit_scale() -> float:
+	"""Scale so the monster ASCII fills its available band. Uses the mono font's
+	metrics + the raw art dimensions (rows × cols) rather than a render pass, so
+	it's deterministic and flicker-free. Returns 1.0 when geometry isn't ready."""
+	if _monster_art_bbcode == "" or _mono_font == null:
+		return 1.0
+	if _scene_section == null or not is_instance_valid(_scene_section):
+		return 1.0
+	if _player_col == null or not is_instance_valid(_player_col):
+		return 1.0
+	var scene_size: Vector2 = _scene_section.size
+	if scene_size.x < 60.0 or scene_size.y < 60.0:
+		return 1.0
+	var base_size: int = 0
+	var rx := RegEx.new()
+	rx.compile("font_size=(\\d+)")
+	var fm: RegExMatch = rx.search(_monster_art_bbcode)
+	if fm != null:
+		base_size = int(fm.get_string(1))
+	if base_size <= 0:
+		return 1.0
+	var raw: String = _strip_bbcode(_monster_art_bbcode).strip_edges()
+	if raw == "":
+		return 1.0
+	var lines: PackedStringArray = raw.split("\n")
+	var rows: int = lines.size()
+	var cols: int = 0
+	for l in lines:
+		cols = maxi(cols, (l as String).rstrip(" ").length())
+	if rows <= 0 or cols <= 0:
+		return 1.0
+	var char_w: float = _mono_font.get_string_size("W", HORIZONTAL_ALIGNMENT_LEFT, -1, base_size).x
+	var line_h: float = _mono_font.get_height(base_size)
+	if char_w <= 0.0 or line_h <= 0.0:
+		return 1.0
+	var art_w: float = float(cols) * char_w
+	var art_h: float = float(rows) * line_h
+	var avail_w: float = maxf(80.0, scene_size.x - 16.0)
+	var avail_h: float = maxf(80.0, scene_size.y - _player_col.size.y - MONSTER_CHROME_RESERVE)
+	var s: float = minf(avail_w / art_w, avail_h / art_h) * MONSTER_FILL_RATIO
+	return clampf(s, 0.25, 1.5)
 
 
 func set_monster_art_user_scale(scale: float) -> void:
