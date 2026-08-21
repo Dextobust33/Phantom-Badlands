@@ -467,6 +467,11 @@ var _victory_legacy_view: bool = false  # player toggled to the old full-screen 
 # combat_scene_panel.get_flock_history(). ← / → cycles through fights.
 var _legacy_view_fight_index: int = -1
 var _last_displayed_round: int = 0  # round number we last drew a divider for; reset on each combat_start
+# v0.9.664 — round divider is now queued BEFORE the first message of each round
+# (so it reads at round-start, not mid-round). The round number is known from
+# combat_start (round 1) + each combat_update's state.round (the upcoming round).
+var _combat_known_round: int = 1
+var _pending_round_divider: bool = false
 @onready var buff_display_label = $RootContainer/TopSection/GameOutputContainer/BuffDisplayLabel
 @onready var companion_art_overlay = $RootContainer/TopSection/GameOutputContainer/CompanionArtOverlay
 @onready var resource_bars_overlay = $RootContainer/TopSection/GameOutputContainer/ResourceBarsOverlay
@@ -1611,8 +1616,8 @@ var _combat_paused: bool = false
 # trim the dead time between events.
 const SEPARATOR_DELAY: float = 0.25         # v0.9.439: 0.45 → 0.25 (Review FX is the escape hatch)
 const INTER_ATTACK_DELAY: float = 0.45      # v0.9.439: 0.65 → 0.45
-const POST_FINAL_ATTACK_DELAY: float = 0.25 # v0.9.439: 0.40 → 0.25
-const AMBIENT_DELAY: float = 0.06           # v0.9.439: 0.12 → 0.06
+const POST_FINAL_ATTACK_DELAY: float = 0.50 # v0.9.664: 0.25 → 0.50 (linger on the killing blow before chrome/card)
+const AMBIENT_DELAY: float = 0.30           # v0.9.664: 0.06 → 0.30 (0.06 was unreadable — non-attack lines flew by)
 const END_ACTION_PHASE_GRACE: float = 0.30  # v0.9.439: 0.60 → 0.30
 
 # Per-turn one-liners (Combat Readability slice #1)
@@ -21458,12 +21463,21 @@ func handle_server_message(message: Dictionary):
 			if pending_continue:
 				queued_combat_message = message.duplicate(true)
 				return
+			# v0.9.664 — round 1 divider precedes round 1's first message.
+			_combat_known_round = 1
+			_pending_round_divider = true
 			_process_combat_start(message)
 
 		"combat_message":
 			var combat_msg = message.get("message", "")
 			# v0.9.417 — universal pacing (instant mode removed). All messages
 			# go through the queue so each beat gets its inter-attack gap.
+			# v0.9.664 — queue the round divider ahead of the round's FIRST message
+			# so it reads at round-start (previously emitted immediately from
+			# combat_update, landing mid-round while earlier messages still drained).
+			if _pending_round_divider:
+				_pending_round_divider = false
+				combat_msg_queue.append({"raw": "[color=#5C4D33]──────── Round %d ────────[/color]" % _combat_known_round})
 			combat_msg_queue.append({"raw": combat_msg})
 			if not combat_phase_paused:
 				_drain_combat_queue()
@@ -21591,12 +21605,11 @@ func handle_server_message(message: Dictionary):
 				# resolves, so state.round in the first combat_update is 2
 				# (with round 1's actions). Emit divider for state.round - 1
 				# so the label matches the round these messages came from.
-				var current_round = int(state.get("round", _last_displayed_round + 1))
-				var round_to_show: int = current_round - 1
-				if round_to_show > _last_displayed_round:
-					var divider = "[color=#5C4D33]──────── Round %d ────────[/color]" % round_to_show
-					_combat_text_to_outputs(divider)
-					_last_displayed_round = round_to_show
+				# v0.9.664 — defer the round divider: it's now queued before the FIRST
+				# message of the UPCOMING round (state.round) so it reads at round-start
+				# instead of landing mid-round. See the "combat_message" handler.
+				_combat_known_round = int(state.get("round", _combat_known_round + 1))
+				_pending_round_divider = true
 				var new_hp = state.get("player_hp", character_data.get("current_hp", 0))
 				var max_hp = state.get("player_max_hp", character_data.get("max_hp", 1))
 
