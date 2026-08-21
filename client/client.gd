@@ -33167,6 +33167,25 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 			or "outsmart" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 
+	# v0.9.664 — general ASCII travel FX: a short glyph trail that flies from the
+	# attacker to the target for attacks/skills. Skips mage casts (handled by the
+	# dedicated projectile above) to avoid a double effect.
+	if not ("You cast" in combat_msg and "#FF00FF" in combat_msg):
+		var _tactor := _classify_combat_actor(combat_msg)
+		if _tactor == "player" or _tactor == "companion" or _tactor == "monster":
+			if ("damage" in lower or "attacks" in lower or "smite" in lower
+					or "hits" in lower or "strike" in lower or "slash" in lower
+					or "bite" in lower or "claw" in lower or "stab" in lower):
+				var _tcolor := Color("#FFCC44")
+				if _tactor == "companion":
+					_tcolor = Color("#66DDFF")
+				elif _tactor == "monster":
+					_tcolor = Color("#FF5555")
+				var _tglyph := "»»➤"
+				if "cast" in lower or "spell" in lower:
+					_tglyph = "✦✧✦"
+				combat_scene_panel.play_travel_fx(_tactor, _tglyph, _tcolor)
+
 func _drain_combat_queue():
 	"""Display one queued combat message, then pause before showing the next."""
 	if combat_msg_queue.is_empty():

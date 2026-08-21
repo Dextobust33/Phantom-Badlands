@@ -5137,6 +5137,48 @@ func _play_impact_burst(local_pos: Vector2, color: Color) -> void:
 	t.chain().tween_callback(burst.queue_free)
 
 
+func play_travel_fx(attacker: String, glyph: String, color: Color) -> void:
+	"""v0.9.664 — a short ASCII trail that flies from the attacker to the target,
+	rotated to point along the path, ending in a small impact burst.
+	attacker = "player" | "companion" | "monster"."""
+	var from_node: Control = null
+	var to_node: Control = null
+	if attacker == "monster":
+		from_node = _monster_art_label
+		to_node = _player_party_box
+	elif attacker == "companion":
+		from_node = _companion_party_box
+		to_node = _monster_art_label
+	else:
+		from_node = _player_party_box
+		to_node = _monster_art_label
+	if from_node == null or not is_instance_valid(from_node):
+		return
+	if to_node == null or not is_instance_valid(to_node):
+		return
+	var start_global: Vector2 = from_node.global_position + from_node.size * 0.5
+	var end_global: Vector2 = to_node.global_position + to_node.size * 0.5
+	var label := Label.new()
+	label.text = glyph
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
+	label.add_theme_constant_override("outline_size", 4)
+	label.add_theme_font_size_override("font_size", 30)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 110
+	add_child(label)
+	label.reset_size()
+	var start_pos: Vector2 = start_global - global_position - label.size * 0.5
+	var end_pos: Vector2 = end_global - global_position - label.size * 0.5
+	label.position = start_pos
+	label.pivot_offset = label.size * 0.5
+	label.rotation = (end_pos - start_pos).angle()  # point the trail along the path
+	var t := create_tween()
+	t.tween_property(label, "position", end_pos, 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_callback(_play_impact_burst.bind(end_pos, color))
+	t.tween_callback(label.queue_free)
+
+
 func play_buff_aura(color: Color = Color("#33CCFF")) -> void:
 	"""Expanding ring of glyphs around the player sprite. Used for self-buffs
 	(Haste, Iron Skin, War Cry, Berserk, Fortify)."""
