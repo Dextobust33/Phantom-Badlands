@@ -12871,7 +12871,7 @@ func execute_local_action(action: String):
 			game_output.clear()
 			var _final_name = release_target_companion.get("name", "Unknown")
 			var _final_variant = release_target_companion.get("variant", "Normal")
-			var _final_variant_color = release_target_companion.get("variant_color", "#FFFFFF")
+			var _final_variant_color = _ensure_readable_color(release_target_companion.get("variant_color", "#FFFFFF"))
 			var _final_level = release_target_companion.get("level", 1)
 			display_game("[color=#FF0000]══════ FINAL CONFIRMATION ══════[/color]")
 			display_game("")
@@ -16844,7 +16844,7 @@ func _display_trade_companions_tab(companions: Array):
 		for i in range(trade_my_companions_data.size()):
 			var comp = trade_my_companions_data[i]
 			var variant = comp.get("variant", "")
-			var variant_color = comp.get("variant_color", "#FFFFFF")
+			var variant_color = _ensure_readable_color(comp.get("variant_color", "#FFFFFF"))
 			var name_str = comp.get("name", "Unknown")
 			if not variant.is_empty():
 				name_str = "[color=%s]%s[/color] %s" % [variant_color, variant, name_str]
@@ -16859,7 +16859,7 @@ func _display_trade_companions_tab(companions: Array):
 		for i in range(trade_partner_companions.size()):
 			var comp = trade_partner_companions[i]
 			var variant = comp.get("variant", "")
-			var variant_color = comp.get("variant_color", "#FFFFFF")
+			var variant_color = _ensure_readable_color(comp.get("variant_color", "#FFFFFF"))
 			var name_str = comp.get("name", "Unknown")
 			if not variant.is_empty():
 				name_str = "[color=%s]%s[/color] %s" % [variant_color, variant, name_str]
@@ -16930,7 +16930,7 @@ func _display_trade_companion_selection(companions: Array):
 		var prefix = "[color=#00FF00]✓[/color] " if in_offer else "  "
 		var active_str = " [color=#FFFF00](ACTIVE)[/color]" if is_active else ""
 		var variant = comp.get("variant", "")
-		var variant_color = comp.get("variant_color", "#FFFFFF")
+		var variant_color = _ensure_readable_color(comp.get("variant_color", "#FFFFFF"))
 		var name_str = comp.get("name", "Unknown")
 		if not variant.is_empty():
 			name_str = "[color=%s]%s[/color] %s" % [variant_color, variant, name_str]
@@ -26118,7 +26118,7 @@ func display_character_status():
 		var comp_name = active_companion.get("name", "Unknown")
 		var comp_level = active_companion.get("level", 1)
 		var comp_variant = active_companion.get("variant", "Normal")
-		var comp_variant_color = active_companion.get("variant_color", "#FFFFFF")
+		var comp_variant_color = _ensure_readable_color(active_companion.get("variant_color", "#FFFFFF"))
 		var comp_bonuses = active_companion.get("bonuses", {})
 		var comp_sub_tier = active_companion.get("sub_tier", 1)
 		var comp_monster_type = active_companion.get("monster_type", comp_name)
@@ -27905,7 +27905,7 @@ func display_companions():
 		var comp_xp = active_companion.get("xp", 0)
 		var comp_tier = active_companion.get("tier", 1)
 		var variant = active_companion.get("variant", "Normal")
-		var variant_color = active_companion.get("variant_color", "#FFFFFF")
+		var variant_color = _ensure_readable_color(active_companion.get("variant_color", "#FFFFFF"))
 		var bonuses = active_companion.get("bonuses", {})
 
 		# Calculate XP needed (formula: (level+1)^2.0 * 15) - matches server
@@ -28010,7 +28010,7 @@ func display_companions():
 			var comp_id = companion.get("id", "")
 			var comp_level = companion.get("level", 1)
 			var variant = companion.get("variant", "Normal")
-			var variant_color = companion.get("variant_color", "#FFFFFF")
+			var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
 			var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
 
 			# Get variant bonus indicator and rarity info
@@ -29020,7 +29020,7 @@ func activate_companion_by_index(index: int):
 		game_output.clear()
 		var comp_name = companion.get("name", "Unknown")
 		var variant = companion.get("variant", "Normal")
-		var variant_color = companion.get("variant_color", "#FFFFFF")
+		var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
 		var comp_level = companion.get("level", 1)
 		display_game("[color=#FF0000]═══════ RELEASE COMPANION ═══════[/color]")
 		display_game("")
@@ -29092,7 +29092,7 @@ func _display_companions_for_release():
 		var comp_id = companion.get("id", "")
 		var comp_level = companion.get("level", 1)
 		var variant = companion.get("variant", "Normal")
-		var variant_color = companion.get("variant_color", "#FFFFFF")
+		var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
 		var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
 		var rarity_info = _get_variant_rarity_info(variant)
 
@@ -29129,7 +29129,7 @@ func _display_companions_for_selection():
 		var comp_id = companion.get("id", "")
 		var comp_level = companion.get("level", 1)
 		var variant = companion.get("variant", "Normal")
-		var variant_color = companion.get("variant_color", "#FFFFFF")
+		var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
 		var is_active = not active_companion.is_empty() and active_companion.get("id", "") == comp_id
 		var rarity_info = _get_variant_rarity_info(variant)
 
@@ -29539,7 +29539,7 @@ func display_eggs():
 		var egg = eggs[i]
 		var egg_name = egg.get("companion_name", "Unknown")
 		var variant = egg.get("variant", "Normal")
-		var variant_color = egg.get("variant_color", "#FFAA00")
+		var variant_color = _ensure_readable_color(egg.get("variant_color", "#FFAA00"))
 		var variant_color2 = egg.get("variant_color2", "")
 		var variant_pattern = egg.get("variant_pattern", "solid")
 		var tier = egg.get("tier", 1)
@@ -37038,7 +37038,7 @@ func format_egg_tooltip_bbcode(egg: Dictionary) -> String:
 	var tier: int = int(egg.get("tier", 1))
 	var sub_tier: int = int(egg.get("sub_tier", 1))
 	var variant: String = str(egg.get("variant", "Normal"))
-	var variant_color: String = str(egg.get("variant_color", "#FFAA00"))
+	var variant_color: String = _ensure_readable_color(str(egg.get("variant_color", "#FFAA00")))
 	var is_frozen: bool = bool(egg.get("frozen", false))
 	var rarity_info: Dictionary = _get_variant_rarity_info(variant)
 	var rarity_color: String = str(rarity_info.get("color", "#FFFFFF"))
@@ -38019,7 +38019,9 @@ func handle_egg_hatched(message: Dictionary):
 	var companion = message.get("companion", {})
 	var companion_name = companion.get("name", "Companion")
 	var variant = companion.get("variant", "Normal")
-	var variant_color = companion.get("variant_color", "#FFFFFF")
+	# v0.9.665 — floor dark variant colors (e.g. Obsidian) so the hatched name is
+	# legible on the dark background instead of near-invisible.
+	var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
 	var tier = companion.get("tier", 1)
 	var bonuses = companion.get("bonuses", {})
 
@@ -38924,7 +38926,7 @@ func display_market_browse():
 			# Egg items show variant/tier info instead of rarity/level
 			if item.get("type", "") == "egg":
 				var variant = item.get("variant", "Normal")
-				var variant_color = item.get("variant_color", "#FFAA00")
+				var variant_color = _ensure_readable_color(item.get("variant_color", "#FFAA00"))
 				var egg_tier = item.get("tier", 1)
 				var egg_sub = item.get("sub_tier", 1)
 				var rinfo = _get_variant_rarity_info(variant)
@@ -39172,7 +39174,7 @@ func display_market_list_eggs():
 			var egg = eggs[i]
 			var egg_name = egg.get("companion_name", "Unknown")
 			var variant = egg.get("variant", "Normal")
-			var variant_color = egg.get("variant_color", "#FFAA00")
+			var variant_color = _ensure_readable_color(egg.get("variant_color", "#FFAA00"))
 			var tier = egg.get("tier", 1)
 			var sub_tier = egg.get("sub_tier", 1)
 			var is_frozen = egg.get("frozen", false)
@@ -39203,7 +39205,7 @@ func display_market_inspect():
 	if item_type == "egg":
 		# Show egg details with art
 		var variant = item.get("variant", "Normal")
-		var variant_color = item.get("variant_color", "#FFAA00")
+		var variant_color = _ensure_readable_color(item.get("variant_color", "#FFAA00"))
 		var egg_tier = item.get("tier", 1)
 		var egg_sub = item.get("sub_tier", 1)
 		var rinfo = _get_variant_rarity_info(variant)
@@ -39267,7 +39269,7 @@ func display_market_network_inspect():
 
 	if item_type == "egg":
 		var variant = item.get("variant", "Normal")
-		var variant_color = item.get("variant_color", "#FFAA00")
+		var variant_color = _ensure_readable_color(item.get("variant_color", "#FFAA00"))
 		var egg_tier = item.get("tier", 1)
 		var egg_sub = item.get("sub_tier", 1)
 		var rinfo = _get_variant_rarity_info(variant)
@@ -39347,7 +39349,7 @@ func display_market_buy_confirm():
 	# Show egg-specific info or standard item info
 	if item.get("type", "") == "egg":
 		var variant = item.get("variant", "Normal")
-		var variant_color = item.get("variant_color", "#FFAA00")
+		var variant_color = _ensure_readable_color(item.get("variant_color", "#FFAA00"))
 		var egg_tier = item.get("tier", 1)
 		var egg_sub = item.get("sub_tier", 1)
 		var rinfo = _get_variant_rarity_info(variant)
@@ -39429,7 +39431,7 @@ func display_market_my_listings():
 			var post_text = " [color=#808080]@%s[/color]" % post_name if not post_name.is_empty() else ""
 			if item.get("type", "") == "egg":
 				var variant = item.get("variant", "Normal")
-				var variant_color = item.get("variant_color", "#FFAA00")
+				var variant_color = _ensure_readable_color(item.get("variant_color", "#FFAA00"))
 				var egg_tier = item.get("tier", 1)
 				var egg_sub = item.get("sub_tier", 1)
 				var rinfo = _get_variant_rarity_info(variant)
@@ -41792,7 +41794,7 @@ func display_house_storage():
 			var type_indicator = ""
 			if is_stored_companion:
 				var variant = item.get("variant", "Normal")
-				var variant_color = item.get("variant_color", "#A335EE")
+				var variant_color = _ensure_readable_color(item.get("variant_color", "#A335EE"))
 				type_indicator = " [color=%s](%s)[/color]" % [variant_color, variant]
 
 			# Check if marked for withdrawal, discard, register, or pending
@@ -41842,7 +41844,7 @@ func display_house_companions():
 			var comp_name = companion.get("name", "Unknown")
 			var monster_type = companion.get("monster_type", "")
 			var variant = companion.get("variant", "Normal")
-			var variant_color = companion.get("variant_color", "#FFFFFF")
+			var variant_color = _ensure_readable_color(companion.get("variant_color", "#FFFFFF"))
 			var comp_level = companion.get("level", 1)
 			var comp_tier = companion.get("tier", 1)
 			var checked_out_by = companion.get("checked_out_by")
@@ -41926,7 +41928,7 @@ func display_house_kennel():
 			var comp = kennel_companions[i]
 			var display_idx = i - start + 1
 			var variant = comp.get("variant", "")
-			var variant_color = comp.get("variant_color", "#FFFFFF")
+			var variant_color = _ensure_readable_color(comp.get("variant_color", "#FFFFFF"))
 			var name = comp.get("name", "Unknown")
 			var tier = comp.get("tier", 1)
 			var sub_tier = int(comp.get("sub_tier", 1))
@@ -42044,7 +42046,7 @@ func display_house_fusion():
 				var selected = entry.index in house_fusion_selected
 				var marker = " [color=#00FF00][SELECTED][/color]" if selected else ""
 				var variant = comp.get("variant", "")
-				var variant_color = comp.get("variant_color", "#FFFFFF")
+				var variant_color = _ensure_readable_color(comp.get("variant_color", "#FFFFFF"))
 				var variant_tag = ""
 				if variant != "" and variant != "Normal":
 					variant_tag = "[color=%s][%s][/color] " % [variant_color, variant]
