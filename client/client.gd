@@ -1700,6 +1700,25 @@ var scratch_chink_player: AudioStreamPlayer = null    # v0.9.371 — strike-band
 # Volume control
 var sfx_volume: float = 1.0   # 0.0 to 1.0 multiplier for all SFX
 var music_volume: float = 1.0  # 0.0 to 1.0 multiplier for music
+# v0.9.663 — contextual music director. A 0.5s timer picks the context (posts /
+# dungeon / overworld). Posts + dungeon LOOP their track; overworld plays ONE
+# random track then goes QUIET for a few minutes before the next, so background
+# music never overwhelms. Everything still respects music_muted / music_volume.
+const MUSIC_POOLS := {
+	"overworld": [
+		"res://audio/Misc1.wav",
+		"res://audio/Misc2.wav",
+		"res://audio/Misc3.wav",
+		"res://audio/Misc4.wav",
+		"res://audio/Out of my dreams NES.wav",
+	],
+	"posts": ["res://audio/PostMusic1.wav"],
+	"dungeon": ["res://audio/Dungeon1.wav"],
+}
+const MUSIC_QUIET_GAP_MIN_MS := 120000  # 2 min of quiet between overworld tracks
+const MUSIC_QUIET_GAP_MAX_MS := 300000  # up to 5 min
+var _music_context: String = "overworld"
+var _music_quiet_until_ms: int = 0
 var sfx_muted: bool = false
 
 # Base volume levels for each sound (used with volume multiplier)
@@ -2433,6 +2452,39 @@ func _ready():
 		# Set initial muted appearance
 		music_toggle.text = "♪"
 		music_toggle.modulate = Color(0.5, 0.5, 0.5)
+		# v0.9.663 — dev screenshot button next to the music toggle. Saves the
+		# current frame to res://claude_screenshots/ (globalized to the project
+		# dir when running from source) so screenshots can be gathered instantly.
+		var _ss_parent = music_toggle.get_parent()
+		if _ss_parent:
+			var ss_btn := Button.new()
+			ss_btn.name = "ScreenshotButton"
+			ss_btn.text = "📷"
+			ss_btn.tooltip_text = "Save a screenshot (claude_screenshots folder)"
+			ss_btn.add_theme_font_size_override("font_size", 13)
+			ss_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+			ss_btn.pressed.connect(_on_screenshot_button_pressed)
+			_ss_parent.add_child(ss_btn)
+			_ss_parent.move_child(ss_btn, music_toggle.get_index())
+			# v0.9.663 — music volume slider next to the ♪ toggle.
+			var vol_slider := HSlider.new()
+			vol_slider.name = "MusicVolumeSlider"
+			vol_slider.min_value = 0.0
+			vol_slider.max_value = 1.0
+			vol_slider.step = 0.05
+			vol_slider.value = music_volume
+			vol_slider.custom_minimum_size = Vector2(84, 0)
+			vol_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			vol_slider.tooltip_text = "Music volume"
+			vol_slider.value_changed.connect(_on_music_volume_slider_changed)
+			_ss_parent.add_child(vol_slider)
+			_ss_parent.move_child(vol_slider, music_toggle.get_index() + 1)
+			# Context music director — 0.5s poll for posts/dungeon/overworld.
+			var _music_ctx_timer := Timer.new()
+			_music_ctx_timer.wait_time = 0.5
+			_music_ctx_timer.timeout.connect(_update_context_music)
+			add_child(_music_ctx_timer)
+			_music_ctx_timer.start()
 	# v0.9.610 — visible autoskip toggle buttons in the top StatsBar/LevelRow,
 	# next to music_toggle. Player feedback: the Settings > Game text menu
 	# isn't a visible UI element ("a UI element the player can see"). These
@@ -2704,21 +2756,62 @@ func _apply_volume_settings():
 			music_player.volume_db = MUSIC_VOLUME_DB + (20.0 * log(music_volume) / log(10.0))
 
 func _start_background_music():
-	"""Deferred music startup - load WAV file"""
-	var stream = load("res://audio/Out of my dreams NES.wav")
-	if stream:
-		music_player.stream = stream
-	# Apply music volume
+	"""Deferred music startup. Music defaults to muted (music_muted=true); the
+	context director + toggle drive actual playback."""
+	_apply_music_volume_now()
+	if not music_muted:
+		_play_random_track_for_context(_music_context)
+
+func _apply_music_volume_now() -> void:
+	if music_player == null:
+		return
 	if music_volume <= 0.0:
 		music_player.volume_db = -80.0
 	else:
 		music_player.volume_db = MUSIC_VOLUME_DB + (20.0 * log(music_volume) / log(10.0))
-	if not music_muted:
+
+func _on_music_volume_slider_changed(v: float) -> void:
+	music_volume = clampf(v, 0.0, 1.0)
+	_apply_music_volume_now()
+
+func _play_random_track_for_context(ctx: String) -> void:
+	if music_player == null:
+		return
+	var pool: Array = MUSIC_POOLS.get(ctx, MUSIC_POOLS["overworld"])
+	if pool.is_empty():
+		return
+	var stream = load(pool[randi() % pool.size()])
+	if stream:
+		music_player.stream = stream
+		_apply_music_volume_now()
 		music_player.play()
 
+func _update_context_music() -> void:
+	"""Timer-driven (0.5s). Switches track pools by context and runs the
+	overworld play-then-quiet cycle. No-op while muted."""
+	if music_player == null or music_muted:
+		return
+	var ctx := "overworld"
+	if post_status_panel and is_instance_valid(post_status_panel) and post_status_panel.visible:
+		ctx = "posts"
+	elif dungeon_mode:
+		ctx = "dungeon"
+	if ctx != _music_context:
+		_music_context = ctx
+		_music_quiet_until_ms = 0
+		_play_random_track_for_context(ctx)
+		return
+	# Same context — overworld starts the next track once the quiet gap ends.
+	if ctx == "overworld" and not music_player.playing and Time.get_ticks_msec() >= _music_quiet_until_ms:
+		_play_random_track_for_context("overworld")
+
 func _on_music_finished():
-	"""Restart music when it finishes (backup for loop)"""
-	if not music_muted and music_player:
+	"""Overworld: schedule a quiet gap before the next track. Posts/dungeon loop."""
+	if music_muted or music_player == null:
+		return
+	if _music_context == "overworld":
+		_music_quiet_until_ms = Time.get_ticks_msec() + randi_range(MUSIC_QUIET_GAP_MIN_MS, MUSIC_QUIET_GAP_MAX_MS)
+	else:
 		music_player.play()
 
 var _loot_skip_btn: Button = null
@@ -2818,7 +2911,7 @@ func _on_music_toggle_pressed():
 			music_toggle.text = "♪"
 			music_toggle.modulate = Color(0.5, 0.5, 0.5)
 	else:
-		music_player.play()
+		_play_random_track_for_context(_music_context)  # v0.9.663 — context-correct track
 		if music_toggle:
 			music_toggle.text = "♫"
 			music_toggle.modulate = Color(1, 1, 1)
@@ -30277,6 +30370,26 @@ func _refresh_stats_panel_if_open() -> void:
 	var stats: Dictionary = character_data.get("stats", {})
 	var unspent: int = int(character_data.get("unspent_stat_points", 0))
 	stats_panel.refresh(level, xp, xp_to_next, stats, unspent)
+
+func _on_screenshot_button_pressed() -> void:
+	"""v0.9.663 — dev/QA screenshot. Saves the current frame to
+	res://claude_screenshots/ (project dir when run from source)."""
+	await RenderingServer.frame_post_draw
+	var img: Image = get_viewport().get_texture().get_image()
+	if img == null:
+		display_game("[color=#FF6B6B]Screenshot failed (no image)[/color]")
+		return
+	var dir: String = ProjectSettings.globalize_path("res://claude_screenshots/")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var fname: String = "shot_%d.png" % Time.get_ticks_msec()
+	var path: String = dir.path_join(fname)
+	var err: int = img.save_png(path)
+	if err == OK:
+		display_game("[color=#5CE05C]Screenshot saved: %s[/color]" % fname)
+		print("[SCREENSHOT] saved: ", path)
+	else:
+		display_game("[color=#FF6B6B]Screenshot failed (err %d)[/color]" % err)
+
 
 func open_post_status_panel() -> void:
 	"""Audit #12 UI remediation — open the visual post status panel. Server
