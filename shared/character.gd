@@ -2137,13 +2137,13 @@ func add_experience(amount: int) -> Dictionary:
 
 	Audit #2 Slice 1 — bug fix + stack cap:
 	(1) `xp_bonus` is stored as a percent integer (1 per upgrade level, max 10),
-	    so it must be divided by 100 to become a multiplier. Previously this
-	    line read `1.0 + xp_bonus` directly, giving max-Sanctuary characters
-	    an 11× multiplier instead of 1.10×. Now matches combat_manager.gd's
+		so it must be divided by 100 to become a multiplier. Previously this
+		line read `1.0 + xp_bonus` directly, giving max-Sanctuary characters
+		an 11× multiplier instead of 1.10×. Now matches combat_manager.gd's
 	    party-path math (line ~7811).
 	(2) Combined multiplier (race × class passive × Sanctuary) capped at
-	    1.50× so the Human Ranger + max Sanctuary stack doesn't snowball.
-	    Per audit #2 "Ranger's +30% XP stacking with Human +10% | TWEAK —
+		1.50× so the Human Ranger + max Sanctuary stack doesn't snowball.
+		Per audit #2 "Ranger's +30% XP stacking with Human +10% | TWEAK —
 	    possible cap on XP-multiplier stacks."
 	Note: the class passive multiplier (Hunter's Mark) is applied by
 	combat_manager before this function is called and feeds in via `amount`,
@@ -2965,10 +2965,10 @@ func get_ability_rank_bonus(ability_name: String) -> int:
 	scale damage so they should respect item condition):
 	  ability_rank_<ability_name> — specific ability roll (e.g., +2 to Cleave)
 	  ability_rank_<archetype>_dmg — archetype-wide roll (+1 to all warrior
-	      damage abilities), where archetype maps from the ability's damage
-	      list (_WARRIOR_DAMAGE_ABILITIES / _MAGE_DAMAGE_ABILITIES /
-	      _TRICKSTER_DAMAGE_ABILITIES). Non-damage abilities return 0 —
-	      Phase B will extend the system to cover them."""
+		  damage abilities), where archetype maps from the ability's damage
+		  list (_WARRIOR_DAMAGE_ABILITIES / _MAGE_DAMAGE_ABILITIES /
+		  _TRICKSTER_DAMAGE_ABILITIES). Non-damage abilities return 0 —
+		  Phase B will extend the system to cover them."""
 	var specific_key: String = "ability_rank_%s" % ability_name
 	var archetype_key: String = ""
 	if ability_name in _WARRIOR_DAMAGE_ABILITIES:

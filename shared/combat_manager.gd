@@ -1,4 +1,4 @@
-﻿# combat_manager.gd
+# combat_manager.gd
 # Handles turn-based combat in Phantasia 4 style
 class_name CombatManager
 extends Node
@@ -4602,7 +4602,7 @@ func _apply_imprint_riders_after_cast(combat: Dictionary, ability_name: String, 
 		match trait_id:
 			"bonus_damage":
 				pass  # Already folded into apply_skill_damage_bonus (damage abilities)
-				      # and _apply_buff_value_modifiers (buff abilities).
+					  # and _apply_buff_value_modifiers (buff abilities).
 			"crit":
 				# v0.9.637 — Damage abilities: flat bonus-dmg tick (legacy
 				# v0.9.599 behavior). Buff abilities (War Cry / Berserk /
