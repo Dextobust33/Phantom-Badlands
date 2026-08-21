@@ -2648,16 +2648,18 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	sb.border_color = Color(0.55, 0.45, 0.30, 1)
 	sb.set_border_width_all(2)
 	sb.set_corner_radius_all(6)
-	sb.content_margin_left = 10
-	sb.content_margin_right = 10
-	sb.content_margin_top = 8
-	sb.content_margin_bottom = 8
+	# v0.9.665 — no content margins on the panel: the mastery fill spans the card
+	# edge-to-edge. Text padding lives on the inner "Pad" MarginContainer instead.
+	sb.content_margin_left = 0
+	sb.content_margin_right = 0
+	sb.content_margin_top = 0
+	sb.content_margin_bottom = 0
 	cell.add_theme_stylebox_override("panel", sb)
 
-	# v0.9.665 — mastery fill: a full-card background that grows LEFT->RIGHT as the
-	# ability nears its next rank-up (25% progress = left quarter filled). Added
-	# FIRST so it draws behind the card content; a ProgressBar fills value% of its
-	# own width, so it works regardless of the exact laid-out card size.
+	# v0.9.665 — mastery fill: the card's OWN background fills LEFT->RIGHT in its
+	# CATEGORY color as the ability nears its next rank-up (25% progress = left
+	# quarter colored). Not a bar — a ProgressBar layered edge-to-edge behind the
+	# card content, whose fill color is set to the category color each refresh.
 	var mastery_fill := ProgressBar.new()
 	mastery_fill.name = "MasteryFill"
 	mastery_fill.show_percentage = false
@@ -2667,8 +2669,12 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	mastery_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mastery_fill.add_theme_stylebox_override("background", StyleBoxEmpty.new())  # panel bg shows through
 	var mf_fill := StyleBoxFlat.new()
-	mf_fill.bg_color = Color(0.15, 0.52, 0.16, 0.42)  # translucent green — text stays readable
-	mf_fill.set_corner_radius_all(5)
+	mf_fill.bg_color = Color(0.5, 0.4, 0.3, 0.55)  # placeholder; recolored per-card in _refresh_hand
+	# Left corners match the card; right edge stays square (it's a partial fill).
+	mf_fill.corner_radius_top_left = 6
+	mf_fill.corner_radius_bottom_left = 6
+	mf_fill.corner_radius_top_right = 0
+	mf_fill.corner_radius_bottom_right = 0
 	mastery_fill.add_theme_stylebox_override("fill", mf_fill)
 	cell.add_child(mastery_fill)
 
@@ -2688,11 +2694,22 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cell.add_child(glyph_label)
 
+	# Padding wrapper — restores the text inset now that the panel has no content
+	# margins (so the mastery fill can reach the card edges).
+	var pad := MarginContainer.new()
+	pad.name = "Pad"
+	pad.add_theme_constant_override("margin_left", 10)
+	pad.add_theme_constant_override("margin_right", 10)
+	pad.add_theme_constant_override("margin_top", 8)
+	pad.add_theme_constant_override("margin_bottom", 8)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cell.add_child(pad)
+
 	var vbox := VBoxContainer.new()
 	vbox.name = "VBox"
 	vbox.add_theme_constant_override("separation", 4)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cell.add_child(vbox)
+	pad.add_child(vbox)
 
 	# Top row: hotkey number + ability name
 	var top_row := HBoxContainer.new()
@@ -2795,7 +2812,7 @@ func _refresh_hand() -> void:
 		return
 	for i in range(_hand_cells.size()):
 		var cell: PanelContainer = _hand_cells[i]
-		var vbox = cell.get_node("VBox")
+		var vbox = cell.get_node("Pad/VBox")
 		var top_row = vbox.get_child(0)
 		var middle_row = vbox.get_child(1)
 		var key_lbl: Label = top_row.get_child(0)
@@ -2844,8 +2861,20 @@ func _refresh_hand() -> void:
 		cell.set_meta("card_name", card_name)
 		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
 
-		# v0.9.665 — mastery fill grows LEFT->RIGHT with progress toward the next
-		# rank-up (gold + full at max). MasteryFill sits behind the card content.
+		# v0.9.425 — apply category theming to the cell stylebox + glyph.
+		var category_info: Dictionary = {}
+		if client_ref and client_ref.has_method("get_ability_category_info"):
+			category_info = client_ref.get_ability_category_info(card_name)
+		var category_color_hex := str(category_info.get("color", "#8C7656"))
+		cell.set_meta("category_color", category_color_hex)
+		cell.set_meta("category_tint_alpha", float(category_info.get("tint_alpha", 0.0)))
+		if glyph_lbl:
+			glyph_lbl.text = str(category_info.get("glyph", ""))
+			glyph_lbl.add_theme_color_override("font_color", Color(category_color_hex) * Color(1, 1, 1, 0.55))
+
+		# v0.9.665 — mastery fill: the card BG fills LEFT->RIGHT in its CATEGORY
+		# color as the ability nears its next rank-up (25% => left quarter). Full
+		# at max rank.
 		var mfill: ProgressBar = cell.get_node_or_null("MasteryFill")
 		if mfill:
 			mfill.visible = true
@@ -2853,17 +2882,9 @@ func _refresh_hand() -> void:
 			mfill.value = 100.0 if at_max_rank else float(info.get("rank_progress", 0.0)) * 100.0
 			var fsb = mfill.get_theme_stylebox("fill")
 			if fsb is StyleBoxFlat:
-				fsb.bg_color = Color(0.62, 0.50, 0.10, 0.5) if at_max_rank else Color(0.15, 0.52, 0.16, 0.42)
-
-		# v0.9.425 — apply category theming to the cell stylebox + glyph.
-		var category_info: Dictionary = {}
-		if client_ref and client_ref.has_method("get_ability_category_info"):
-			category_info = client_ref.get_ability_category_info(card_name)
-		cell.set_meta("category_color", str(category_info.get("color", "#8C7656")))
-		cell.set_meta("category_tint_alpha", float(category_info.get("tint_alpha", 0.0)))
-		if glyph_lbl:
-			glyph_lbl.text = str(category_info.get("glyph", ""))
-			glyph_lbl.add_theme_color_override("font_color", Color(str(category_info.get("color", "#FFFFFF"))) * Color(1, 1, 1, 0.55))
+				var cat_col := Color(category_color_hex)
+				cat_col.a = 0.85  # strong enough to read as the card coloring, text still legible
+				fsb.bg_color = cat_col
 
 		name_lbl.text = str(info.get("display", card_name))
 		name_lbl.add_theme_color_override("font_color", Color("#DDDDDD"))
