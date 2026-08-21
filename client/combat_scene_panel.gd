@@ -450,7 +450,7 @@ func _build_layout() -> void:
 	# logs. Combat text now shows here in ONE readable band above the hand,
 	# mirroring the last few _log_lines. See _refresh_log.
 	_battle_log_frame = PanelContainer.new()
-	_battle_log_frame.custom_minimum_size = Vector2(0, 122)
+	_battle_log_frame.custom_minimum_size = Vector2(0, 152)
 	_battle_log_frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_battle_log_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var _blb_sb := StyleBoxFlat.new()
@@ -2623,6 +2623,10 @@ func _build_hand_strip() -> HBoxContainer:
 	_hand_status_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_hand_status_label.add_theme_font_size_override("normal_font_size", 11)
 	_hand_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# v0.9.664 — reserve width so "Deck N · Discard M" isn't clipped (the RTL's
+	# fit_content was under-sizing its width vs the old plain Label).
+	_hand_status_label.custom_minimum_size = Vector2(168, 20)
+	_hand_status_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	outer.add_child(_hand_status_label)
 
 	return outer
@@ -4493,9 +4497,9 @@ func _refresh_log() -> void:
 	_log_label.text = "\n".join(_log_lines)
 	# COMBAT REDESIGN — mirror the most recent lines into the always-visible band.
 	if _battle_log_band and is_instance_valid(_battle_log_band):
-		# v0.9.663 — show the last 6 lines so a full combat round is readable in
-		# the fixed-height band (newest at bottom).
-		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 6))
+		# v0.9.664 — show the last 7 lines so a full combat round (divider + party
+		# + enemy actions + a status line) fits the taller band without clipping.
+		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 7))
 		_battle_log_band.text = "\n".join(_tail)
 	# v0.9.415 — RichTextLabel.fit_content expands asynchronously: one frame
 	# isn't always enough for `get_v_scroll_bar().max_value` to reflect the
