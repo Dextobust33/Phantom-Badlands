@@ -4527,13 +4527,6 @@ func _input(event):
 		_on_screenshot_button_pressed()
 		get_viewport().set_input_as_handled()
 		return
-	# v0.9.664 — F9 cycles the combat layout (Arena / Theater / Focus) in-combat
-	# so we can compare arrangements. Dev/exploration only.
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F9:
-		if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible and combat_scene_panel.has_method("cycle_combat_layout"):
-			combat_scene_panel.cycle_combat_layout()
-			get_viewport().set_input_as_handled()
-			return
 	# v0.9.415 — step-through testfx: SPACE advances, R redoes, Q aborts.
 	# Highest priority so it isn't eaten by combat / menus running concurrently.
 	if _testfx_step_active and event is InputEventKey and event.pressed and not event.echo:

@@ -83,6 +83,7 @@ var _log_section: PanelContainer
 var _overlay_retired: bool = true
 var _battle_log_frame: PanelContainer
 var _battle_log_band: RichTextLabel
+var _battle_log_scroll: ScrollContainer  # v0.9.664 — scrollback for the combat log
 
 # COMBAT REDESIGN (2026-08-20) — Time Fantasy pixel battler sprites replacing the
 # muddy ASCII player art. TEST slice: Fighter only. Frames named idle_0..2 /
@@ -448,40 +449,8 @@ func _build_layout() -> void:
 	# === Running damage totals strip (Combat readability #2) ===
 	root_vbox.add_child(_build_running_totals_strip())
 
-	# === COMBAT REDESIGN (2026-08-20) — unified combat log band ===
-	# The retired battlefield overlay used to host the (scattered) per-actor
-	# logs. Combat text now shows here in ONE readable band above the hand,
-	# mirroring the last few _log_lines. See _refresh_log.
-	_battle_log_frame = PanelContainer.new()
-	_battle_log_frame.custom_minimum_size = Vector2(0, 152)
-	_battle_log_frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_battle_log_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var _blb_sb := StyleBoxFlat.new()
-	_blb_sb.bg_color = Color(0.02, 0.02, 0.03, 0.8)
-	_blb_sb.border_color = Color(0.30, 0.26, 0.20, 1.0)
-	_blb_sb.set_border_width_all(1)
-	_blb_sb.set_corner_radius_all(4)
-	_blb_sb.content_margin_left = 8
-	_blb_sb.content_margin_right = 8
-	_blb_sb.content_margin_top = 4
-	_blb_sb.content_margin_bottom = 4
-	_battle_log_frame.add_theme_stylebox_override("panel", _blb_sb)
-	_battle_log_band = RichTextLabel.new()
-	_battle_log_band.bbcode_enabled = true
-	# v0.9.663 — fit_content=false + fill so the band stays a FIXED-height strip.
-	# Previously it grew with each line and, in a VBox, stole height from the
-	# scene section above — shrinking the monster as combat text accumulated.
-	_battle_log_band.fit_content = false
-	_battle_log_band.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_battle_log_band.scroll_active = false
-	_battle_log_band.clip_contents = true
-	_battle_log_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_battle_log_band.add_theme_font_size_override("normal_font_size", 14)
-	_battle_log_frame.add_child(_battle_log_band)
-	root_vbox.add_child(_battle_log_frame)
-
-	# === Audit #1 Slice 6a — combat hand row (cards drawn this combat) ===
-	root_vbox.add_child(_build_hand_strip())
+	# v0.9.664 - combat log + ability hand now live INSIDE the 2-column scene
+	# section (log=left-top, hand=right-bottom); see _build_scene_section_lufia.
 
 	# === Bottom: combat log mirror ===
 	# v0.9.429 — the legacy log strip is no longer attached to the layout.
@@ -603,31 +572,44 @@ func _build_layout() -> void:
 	call_deferred("_position_help_button")
 
 
-func _build_scene_section_lufia() -> Control:
-	# v0.9.664 — three explorable combat layouts; F9 cycles them in-combat.
-	if _combat_layout_variant == 2:
-		return _build_scene_v2_theater()
-	if _combat_layout_variant == 3:
-		return _build_scene_v3_focus()
-	# --- Variant 1: Arena (party left, monster right) — the default below. ---
-	"""Lufia II style per SNES reference: enemy occupies the upper ~75% of
-	the scene; party members live in a row of BORDERED STAT BOXES at the
-	bottom, each box arranged as [portrait LEFT | stats RIGHT VBox].
+func _build_log_panel() -> Control:
+	# v0.9.664 - scrollable combat-log panel (top of the LEFT column). Full log,
+	# auto-stuck to the bottom; wheel/drag to scroll back through the fight.
+	_battle_log_frame = PanelContainer.new()
+	_battle_log_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_battle_log_frame.size_flags_stretch_ratio = 2.0
+	_battle_log_frame.custom_minimum_size = Vector2(0, 120)
+	_battle_log_frame.mouse_filter = Control.MOUSE_FILTER_PASS
+	var _blb_sb := StyleBoxFlat.new()
+	_blb_sb.bg_color = Color(0.02, 0.02, 0.03, 0.8)
+	_blb_sb.border_color = Color(0.30, 0.26, 0.20, 1.0)
+	_blb_sb.set_border_width_all(1)
+	_blb_sb.set_corner_radius_all(4)
+	_blb_sb.content_margin_left = 8
+	_blb_sb.content_margin_right = 8
+	_blb_sb.content_margin_top = 4
+	_blb_sb.content_margin_bottom = 4
+	_battle_log_frame.add_theme_stylebox_override("panel", _blb_sb)
+	_battle_log_scroll = ScrollContainer.new()
+	_battle_log_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_battle_log_scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	_battle_log_frame.add_child(_battle_log_scroll)
+	_battle_log_band = RichTextLabel.new()
+	_battle_log_band.bbcode_enabled = true
+	_battle_log_band.fit_content = true
+	_battle_log_band.scroll_active = false
+	_battle_log_band.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_battle_log_band.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_battle_log_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_battle_log_band.add_theme_font_size_override("normal_font_size", 14)
+	_battle_log_scroll.add_child(_battle_log_band)
+	return _battle_log_frame
 
-	v0.9.383 — third rewrite. Two earlier attempts (v0.9.381 side-view,
-	v0.9.382 stacked portrait-above-stats) both failed because the full
-	battle ASCII was included inside the boxes and inflated their height
-	to consume most of the scene. This version:
-	  - Each box is HBox[ small portrait (~72×72) | VBox{name, xp, hp} ]
-	  - Total box height ~110-130px regardless of art content
-	  - Scene stretch_ratio = 4.0 so vertical layouts get real vertical
-	    room (log_section drops from 1.0 to a tight ~0.4 in _build_layout)
-	  - Monster:party_box_row inner stretch 3:1 → monster ~75%"""
-	# v0.9.663 — LEFT/RIGHT battlefield (user-directed). Party stacked on the
-	# left (~1/3 width), monster fills the right (~2/3) at FULL height. The
-	# monster gets its own zone so it's always the largest element and is never
-	# squeezed/covered by the cards (which used to stack below it) or the log
-	# band (which sits below this whole section).
+
+func _build_scene_section_lufia() -> Control:
+	# v0.9.664 - 2-column combat layout (user-directed):
+	#   LEFT  = scrollable combat log (top) + player & companion cards (bottom)
+	#   RIGHT = monster (top, its own zone - can't be covered) + ability hand (bottom)
 	var hbox := HBoxContainer.new()
 	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -635,40 +617,36 @@ func _build_scene_section_lufia() -> Control:
 	hbox.add_theme_constant_override("separation", 10)
 	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_scene_section = hbox
-
-	# LEFT: party column — player card on top, companion below, centered
-	# vertically so the pair sits at the middle of the left band.
-	var party_col := VBoxContainer.new()
-	# v0.9.663 — party column hugs the cards (content width) instead of taking a
-	# fixed 1/3, so the monster's column starts closer to center and the big
-	# dead-space gap in the middle shrinks.
-	party_col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	party_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	party_col.custom_minimum_size = Vector2(360, 0)
-	party_col.alignment = BoxContainer.ALIGNMENT_CENTER
-	party_col.add_theme_constant_override("separation", 12)
-	party_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Cards are content-sized + horizontally centered within the left band.
-	# Captured so the UIScaleManager can still resize each card (v0.9.646).
-	_player_party_box = _build_lufia_party_box(_build_lufia_player_box_content())
-	_player_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_companion_party_box = _build_lufia_party_box(_build_lufia_companion_box_content())
-	_companion_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	party_col.add_child(_player_party_box)
-	party_col.add_child(_companion_party_box)
-	hbox.add_child(party_col)
-	_player_col = party_col
-
-	# RIGHT: monster fills the remaining ~2/3 width at full height.
+	# LEFT column: log on top, party cards below.
+	var left := VBoxContainer.new()
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	left.size_flags_stretch_ratio = 1.0
+	left.add_theme_constant_override("separation", 8)
+	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	left.add_child(_build_log_panel())
+	_make_party_boxes()
+	left.add_child(_player_party_box)
+	left.add_child(_companion_party_box)
+	hbox.add_child(left)
+	_player_col = left
+	# RIGHT column: monster on top (big), ability hand below.
+	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right.size_flags_stretch_ratio = 1.5
+	right.add_theme_constant_override("separation", 8)
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_monster_col = _build_monster_column()
 	_monster_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_monster_col.size_flags_stretch_ratio = 2.0
-	hbox.add_child(_monster_col)
-
+	_monster_col.size_flags_stretch_ratio = 3.0
+	right.add_child(_monster_col)
+	var hand := _build_hand_strip()
+	hand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	right.add_child(hand)
+	hbox.add_child(right)
 	return hbox
-
-
 func _make_party_boxes() -> void:
 	_player_party_box = _build_lufia_party_box(_build_lufia_player_box_content())
 	_player_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -4602,18 +4580,18 @@ func _refresh_log() -> void:
 	if _battle_log_band and is_instance_valid(_battle_log_band):
 		# v0.9.664 — show the last 7 lines so a full combat round (divider + party
 		# + enemy actions + a status line) fits the taller band without clipping.
-		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 7))
-		_battle_log_band.text = "\n".join(_tail)
+		_battle_log_band.text = "
+".join(_log_lines)  # v0.9.664 full log (scrollback)
 	# v0.9.415 — RichTextLabel.fit_content expands asynchronously: one frame
 	# isn't always enough for `get_v_scroll_bar().max_value` to reflect the
 	# new content height, so the auto-scroll silently snaps to a stale max.
 	# Wait two frames AND re-apply after the resized signal lands.
 	await get_tree().process_frame
 	await get_tree().process_frame
-	if _log_scroll and is_instance_valid(_log_scroll):
-		var bar := _log_scroll.get_v_scroll_bar()
+	if _battle_log_scroll and is_instance_valid(_battle_log_scroll):
+		var bar := _battle_log_scroll.get_v_scroll_bar()
 		if bar:
-			_log_scroll.scroll_vertical = int(bar.max_value)
+			_battle_log_scroll.scroll_vertical = int(bar.max_value)
 
 
 # === A2 hit feedback ===
