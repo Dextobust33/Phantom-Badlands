@@ -9772,6 +9772,11 @@ func send_combat_command(command: String):
 	# is triggered after the next combat_update arrives (see message handler).
 	if combat_scene_panel and combat_scene_panel.has_method("start_action_phase"):
 		combat_scene_panel.start_action_phase()
+	# COMBAT REDESIGN — play the class-appropriate battler animation on the action
+	# (melee step+swing / mage cast / ranger bow). Fires on card play so it always
+	# animates and gets a head start before a killing blow's loot screen.
+	if combat_scene_panel and combat_scene_panel.has_method("play_battler_action"):
+		combat_scene_panel.play_battler_action()
 	# v0.9.409 — transition lockout: hold off draining the combat message
 	# queue so the action_phase fade-in finishes before the first attack FX
 	# fires. Without this, messages arrive mid-fade and attacks happen before
@@ -9786,6 +9791,22 @@ func send_combat_command(command: String):
 	combat_phase_timer = max(combat_phase_timer, 0.15)
 	combat_phase_paused = true
 	send_to_server({"type": "combat", "command": command})
+
+func _show_victory_card_deferred(payload) -> void:
+	if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.has_method("show_victory_card"):
+		combat_scene_panel.show_victory_card(payload)
+
+func _open_loot_bag_deferred(loot_bag: Dictionary, beat_done := false) -> void:
+	# Hold the loot minigame until the killing-blow battler animation finishes,
+	# THEN a ~1s beat so the kill lands before the reward UI pops. Polls at 80ms.
+	if combat_scene_panel and combat_scene_panel.has_method("is_battler_animating") and combat_scene_panel.is_battler_animating():
+		get_tree().create_timer(0.08).timeout.connect(_open_loot_bag_deferred.bind(loot_bag, beat_done))
+		return
+	if not beat_done:
+		get_tree().create_timer(1.0).timeout.connect(_open_loot_bag_deferred.bind(loot_bag, true))
+		return
+	if combat_loot_panel:
+		combat_loot_panel.open_bag(loot_bag)
 
 func _start_combat_command_animation(command: String):
 	"""Start an animation based on the combat command"""
@@ -19640,15 +19661,15 @@ func record_enemy_defeated(enemy_name: String, enemy_level: int, total_damage: i
 
 	Source priority for the value stored:
 	  1. actual_max_hp > 0 — AUTHORITATIVE. Sent by server in combat_end on
-	     every victory (normal / outsmart / companion_clutch / heist / party).
-	     Overwrites any prior estimate; no min() collapse.
+		 every victory (normal / outsmart / companion_clutch / heist / party).
+		 Overwrites any prior estimate; no min() collapse.
 	  2. analyze_revealed_max_hp > 0 — Analyze ability revealed truth during
-	     the kill. Also authoritative.
+		 the kill. Also authoritative.
 	  3. total_damage > 0 — fallback heuristic. Damage dealt is an upper
-	     bound on actual HP for NORMAL damage kills (you must deal ≥ HP to
-	     drop the monster). Converges downward via mini(). NOT trusted on
-	     Outsmart / execute kills because total_damage there is < actual HP;
-	     those paths now always provide actual_max_hp from the server.
+		 bound on actual HP for NORMAL damage kills (you must deal ≥ HP to
+		 drop the monster). Converges downward via mini(). NOT trusted on
+		 Outsmart / execute kills because total_damage there is < actual HP;
+		 those paths now always provide actual_max_hp from the server.
 	  4. Otherwise — no data to record."""
 	var enemy_key = "%s_%d" % [enemy_name, enemy_level]
 	if actual_max_hp > 0:
@@ -21705,7 +21726,10 @@ func handle_server_message(message: Dictionary):
 							# v0.9.566 — inject persisted autoskip preference so
 							# the panel honors the user's setting on every open.
 							_loot_bag["autoskip_enabled"] = autoskip_loot_reveal
-							combat_loot_panel.open_bag(_loot_bag)
+							# COMBAT REDESIGN — wait for the killing-blow battler
+							# animation to finish so the loot minigame doesn't pop
+							# over the swing/cast.
+							_open_loot_bag_deferred(_loot_bag)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
 				if message.has("character"):
@@ -26833,8 +26857,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.659 — Combat visual overhaul (part 1) + loot pacing.
+	display_game("[color=#00FF00]v0.9.659[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ COMBAT gets a visual overhaul.[/color]")
+	display_game("  • [b]Pixel battle sprites[/b] — your character now fights as a polished pixel-art hero (Time Fantasy battlers) instead of the old muddy art. Each class has several looks and your character gets a random one, so two Fighters differ. [b]Mages cast, rangers draw a bow, melee steps in and swings[/b] — every skill animates.")
+	display_game("  • [b]Cleaner battle screen[/b] — the old overlapping / scattered combat view is gone: one stable layout with a single readable combat log.")
+	display_game("  • [b]Loot is a treat again[/b] — the scratch-off no longer interrupts EVERY kill. Most kills drop loot instantly; about [color=#FFD700]1 in 4-5[/color] pops a bigger [color=#FFD700]jackpot scratch-off[/color] (Empowered elites far more often). Equipment drops at the same rate as before.")
+	display_game("  • Killing-blow polish — the reward screen waits a beat so you see the final hit land.")
+	display_game("")
+
 	# v0.9.658 — Guided intro tour + character deletion.
-	display_game("[color=#00FF00]v0.9.658[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.658[/color]")
 	display_game("  [color=#1EFF00]◆ Guided intro tour + character management.[/color]")
 	display_game("  • [b]Guided spotlight tour[/b] for new characters — the screen dims and walks you through the [color=#FFD700]world map[/color], [color=#FFD700]walls & doors[/color] (# / +), your [color=#FFD700]action bar[/color], and the [color=#FFD700]Stats[/color] button, one focused step at a time. Skippable, and it never interrupts combat.")
 	display_game("  • [b]Delete characters[/b] from the character-select screen — a red [color=#FF8080]Delete[/color] button with a 'Delete Forever' confirmation, so it can never happen by accident.")
@@ -30371,7 +30404,7 @@ func _on_combat_loot_closed() -> void:
 	      is stuck on my screen... It seems like maybe I moved or pressed
 	      space quickly and it stayed up.' _force_end_action_phase tweens
 	      the overlay to alpha=0 + sets visible=false, and the Review FX
-	      button (top-right) can still re-open it via start_review_phase."""
+		  button (top-right) can still re-open it via start_review_phase."""
 	# (4) FX teardown — must run BEFORE refresh_victory_card so the
 	# overlay state is cleaned up before the victory card lays over it.
 	if combat_scene_panel and combat_scene_panel.has_method("hide_fx_overlay_only"):
@@ -32946,9 +32979,11 @@ func _drain_combat_queue():
 		if _pending_victory_card_payload != null and combat_scene_panel and combat_scene_panel.has_method("show_victory_card"):
 			var payload = _pending_victory_card_payload
 			_pending_victory_card_payload = null
-			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
+			# COMBAT REDESIGN — keep the monster-death FX prompt, but wait ~1s
+			# before the reward card covers the kill so it doesn't feel rushed.
+			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 3200)
 			combat_scene_panel.visible = true
-			combat_scene_panel.show_victory_card(payload)
+			get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(payload))
 		if combat_scene_panel and combat_scene_panel.has_method("end_action_phase_after"):
 			if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
 				# v0.9.416 — testfx pacing walkthrough has its own explicit

@@ -73,6 +73,13 @@ var flock_counts = {}  # peer_id -> int (how many monsters in current flock chai
 # When the flag is OFF, the entire scratch-off path is bypassed and items award
 # inline like before — a safety lever for fast revert if a v1 bug ships.
 const COMBAT_LOOT_SCRATCH_OFF_ENABLED := true
+# Minigame-as-a-treat (2026-08-20) — the combat scratch-off is now a CHANCE per
+# kill, not every kill, so players aren't bombarded. When it fires it's a
+# jackpot (reveal budget x mult); non-scratch kills award loot inline (equipment
+# cadence unchanged). Empowered elites roll it far more often. All tunable.
+const COMBAT_SCRATCH_BASE_CHANCE := 0.22
+const COMBAT_SCRATCH_EMPOWERED_CHANCE := 0.60
+const COMBAT_SCRATCH_BUDGET_MULT := 4
 const COMBAT_LOOT_SLOT_COUNT := 16
 var active_combat_loot: Dictionary = {}
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
@@ -6015,11 +6022,15 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# drop_messages / drop_data stay empty so the existing combat_end
 				# send below ships the loot_bag field instead. Achievement +
 				# dungeon-state code after the send still runs normally.
+				# Minigame-as-a-treat — roll whether THIS kill shows the scratch-off.
+				var _do_scratch: bool = COMBAT_LOOT_SCRATCH_OFF_ENABLED and randf() < (COMBAT_SCRATCH_EMPOWERED_CHANCE if _empowered_reveals > 0 else COMBAT_SCRATCH_BASE_CHANCE)
 				var _combat_loot_bag_view: Dictionary = {}
-				if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
+				if _do_scratch:
 					var _monster_tier: int = _get_monster_tier(killed_monster_level)
 					var _slvl: int = int(characters[peer_id].job_levels.get("soldier", 0))
 					var _bag: Dictionary = _build_combat_loot_bag(all_drops, _monster_tier, _final_flock_kills, _slvl, peer_id)
+					# Jackpot: the scratch-off is rarer now, so bigger when it hits.
+					_bag["reveal_budget"] = int(_bag.get("reveal_budget", 0)) * COMBAT_SCRATCH_BUDGET_MULT
 					# Empowered (v0.9.651) — bonus reveals from every empowered
 					# kill in this combat/chain, applied BEFORE the client view
 					# is serialized so the budget shows correctly on open.
@@ -6043,7 +6054,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# got on the victory screen too, not just in the scratch-off
 				# panel. Mirrors the formatting the legacy inline path uses
 				# (BBCode line for drop_messages, structured dict for drop_data).
-				if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
+				if _do_scratch:
 					var _pinned_src: Array = active_combat_loot.get(peer_id, {}).get("pinned", [])
 					for _p_entry in _pinned_src:
 						if not (_p_entry is Dictionary):
@@ -6070,7 +6081,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 								"level_diff": _p_level - player_level,
 							})
 				for item in all_drops:
-					if COMBAT_LOOT_SCRATCH_OFF_ENABLED:
+					if _do_scratch:
 						# Skip the inline award — bag path handles it on reveal.
 						break
 					# Special handling for companion eggs

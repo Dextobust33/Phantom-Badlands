@@ -98,10 +98,18 @@ const CLASS_SPRITE_POOLS := {
 }
 var _battler_idle: Array = []
 var _battler_atk: Array = []
+var _battler_magic: Array = []
+var _battler_bow: Array = []
 var _battler_active: bool = false
 var _battler_frame: int = 0
 var _battler_atk_playing: bool = false
 var _battler_timer: Timer = null
+# Per-class action animation style: mages cast in place, rangers draw a bow,
+# everyone else steps forward and swings. Default (absent) = melee "atk".
+const BATTLER_ANIM_STYLE := {
+	"Wizard": "magic", "Sorcerer": "magic", "Sage": "magic",
+	"Ranger": "bow",
+}
 
 # Player column
 var _player_col: Control  # v0.9.382 — relaxed from VBoxContainer so Lufia (HBox of stat boxes) can use the same reference
@@ -3764,6 +3772,8 @@ func _load_battler(cls: String) -> bool:
 	var folder: String = BATTLER_DIR + "tf/" + id + "/"
 	var idle: Array = []
 	var atk: Array = []
+	var magic: Array = []
+	var bow: Array = []
 	for i in range(3):
 		var it = load(folder + "idle_%d.png" % i)
 		if it != null:
@@ -3771,10 +3781,18 @@ func _load_battler(cls: String) -> bool:
 		var at = load(folder + "atk_%d.png" % i)
 		if at != null:
 			atk.append(at)
+		var mg = load(folder + "magic_%d.png" % i)
+		if mg != null:
+			magic.append(mg)
+		var bw = load(folder + "bow_%d.png" % i)
+		if bw != null:
+			bow.append(bw)
 	if idle.is_empty():
 		return false
 	_battler_idle = idle
 	_battler_atk = atk
+	_battler_magic = magic
+	_battler_bow = bow
 	return true
 
 func _show_player_battler() -> void:
@@ -3801,6 +3819,71 @@ func _on_battler_tick() -> void:
 	_battler_frame = (_battler_frame + 1) % _battler_idle.size()
 	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
 		_player_sprite_rect.texture = _battler_idle[_battler_frame]
+
+func _set_sprite_texture(tex) -> void:
+	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+		_player_sprite_rect.texture = tex
+
+func play_battler_attack() -> void:
+	# Step forward toward the enemy, swing (atk frames), step back to idle.
+	if not _battler_active or _battler_atk_playing or _battler_idle.is_empty():
+		return
+	var rect = _player_sprite_rect
+	if rect == null or not is_instance_valid(rect):
+		return
+	_battler_atk_playing = true
+	var home: Vector2 = rect.position
+	var fwd: Vector2 = home + Vector2(22, 0)  # sprite is flipped to face right = toward enemy
+	var frames: Array = _battler_atk if not _battler_atk.is_empty() else _battler_idle
+	var t := create_tween()
+	t.tween_property(rect, "position", fwd, 0.10).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	for f in frames:
+		t.tween_callback(_set_sprite_texture.bind(f))
+		t.tween_interval(0.08)
+	t.tween_property(rect, "position", home, 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_callback(_end_battler_attack.bind(home))
+
+func _end_battler_attack(home = null) -> void:
+	_battler_atk_playing = false
+	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+		if home != null:
+			_player_sprite_rect.position = home
+		if not _battler_idle.is_empty():
+			_player_sprite_rect.texture = _battler_idle[_battler_frame % _battler_idle.size()]
+
+func play_battler_cast(frames: Array) -> void:
+	# Cast/bow: cycle frames with a small forward lean + step back (mages/archers
+	# don't rush in like melee, but a little motion reads better than none).
+	if not _battler_active or _battler_atk_playing or frames.is_empty():
+		return
+	var rect = _player_sprite_rect
+	if rect == null or not is_instance_valid(rect):
+		return
+	_battler_atk_playing = true
+	var home: Vector2 = rect.position
+	var fwd: Vector2 = home + Vector2(10, 0)
+	var t := create_tween()
+	t.tween_property(rect, "position", fwd, 0.12).set_trans(Tween.TRANS_SINE)
+	for f in frames:
+		t.tween_callback(_set_sprite_texture.bind(f))
+		t.tween_interval(0.10)
+	t.tween_property(rect, "position", home, 0.14).set_trans(Tween.TRANS_SINE)
+	t.tween_callback(_end_battler_attack.bind(home))
+
+func play_battler_action() -> void:
+	# Route a player action to the class-appropriate animation.
+	if not _battler_active:
+		return
+	var style: String = String(BATTLER_ANIM_STYLE.get(_player_class, "atk"))
+	if style == "magic" and not _battler_magic.is_empty():
+		play_battler_cast(_battler_magic)
+	elif style == "bow" and not _battler_bow.is_empty():
+		play_battler_cast(_battler_bow)
+	else:
+		play_battler_attack()
+
+func is_battler_animating() -> bool:
+	return _battler_active and _battler_atk_playing
 
 func _refresh_player() -> void:
 	# COMBAT REDESIGN test — pixel battler sprite for classes with a battler folder.
@@ -4263,6 +4346,11 @@ func _flash_node(node: CanvasItem, current_tween: Tween, is_crit: bool, tween_fi
 
 
 func lunge_player_forward() -> void:
+	# COMBAT REDESIGN — the pixel battler animates on card play (play_battler_action
+	# from client.send_combat_command), so the message-timed lunge is a no-op here
+	# to avoid double-firing.
+	if _battler_active:
+		return
 	# v0.9.411 — during action phase the in-box player portrait is faded
 	# (alpha 0) and the battlefield OVERLAY player block is what's visible.
 	# Lunge that instead so the player actually moves. Outside action phase
