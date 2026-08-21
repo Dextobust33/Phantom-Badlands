@@ -9914,6 +9914,16 @@ func trigger_action(index: int):
 			# of this function now; no per-action_type check needed.
 			continue_flock_encounter()
 
+# v0.9.664 — player commands that should NOT spawn a travel trail: self-buffs,
+# defensive stances, flee, and the mage bolt/blast/meteor trio (those keep their
+# dedicated arc projectile fired from the message dispatch).
+const _NO_TRAVEL_COMMANDS := [
+	"flee", "f", "run", "war_cry", "warcry", "iron_skin", "ironskin", "berserk",
+	"haste", "fortify", "shield", "forcefield", "cloak", "vanish", "teleport",
+	"defend", "guard", "block", "heal", "outsmart", "o",
+	"bolt", "magic_bolt", "blast", "meteor",
+]
+
 func send_combat_command(command: String):
 	if not connected:
 		display_game("[color=#FF0000]Not connected![/color]")
@@ -9936,6 +9946,14 @@ func send_combat_command(command: String):
 	# animates and gets a head start before a killing blow's loot screen.
 	if combat_scene_panel and combat_scene_panel.has_method("play_battler_action"):
 		combat_scene_panel.play_battler_action()
+	# v0.9.664 — fire the player's ASCII travel FX HERE (card play) so it flies in
+	# sync with the attack animation. The message-timed trail lagged a full server
+	# round-trip behind the client-side animation. Companion/monster trails still
+	# fire from the message dispatch (their animations are message-timed too).
+	if combat_scene_panel and combat_scene_panel.has_method("play_travel_fx"):
+		var _cmd_l := command.to_lower()
+		if not (_cmd_l in _NO_TRAVEL_COMMANDS):
+			combat_scene_panel.play_travel_fx("player", _travel_fx_type(_cmd_l))
 	# v0.9.409 — transition lockout: hold off draining the combat message
 	# queue so the action_phase fade-in finishes before the first attack FX
 	# fires. Without this, messages arrive mid-fade and attacks happen before
@@ -33167,26 +33185,19 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 			or "outsmart" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 
-	# v0.9.664 — general ASCII travel FX: a short random glyph trail that flies
-	# from the attacker to the target for attacks/skills (unique char pool + color
-	# per attack type). Skips mage casts (handled by the dedicated projectile
-	# above) to avoid a double effect.
-	if not ("You cast" in combat_msg and "#FF00FF" in combat_msg):
-		var _tactor := _classify_combat_actor(combat_msg)
-		# The classifier only tags "player" for " attacks" + "You " lines, so it
-		# misses player skills (smite/swing/stab, lowercase or colored "you").
-		# Detect a first-person line as the player's own action.
-		if _tactor != "companion" and _tactor != "monster":
-			if _strip_bbcode_for_classify(combat_msg).strip_edges().to_lower().begins_with("you "):
-				_tactor = "player"
-		if _tactor == "player" or _tactor == "companion" or _tactor == "monster":
-			if ("damage" in lower or "attacks" in lower or "smite" in lower
-					or "hits" in lower or "strike" in lower or "slash" in lower
-					or "bite" in lower or "claw" in lower or "stab" in lower
-					or "swing" in lower or "cleave" in lower or "bash" in lower
-					or "shoot" in lower or "pierce" in lower or "slam" in lower
-					or "hack" in lower or "burn" in lower or "blast" in lower):
-				combat_scene_panel.play_travel_fx(_tactor, _travel_fx_type(lower))
+	# v0.9.664 — COMPANION + MONSTER ASCII travel FX: a short random glyph trail
+	# (unique char pool + color per attack type) that flies attacker→target. The
+	# PLAYER's trail fires at card-play (send_combat_command) so it syncs with the
+	# client-side attack animation instead of lagging a server round-trip behind.
+	var _tactor := _classify_combat_actor(combat_msg)
+	if _tactor == "companion" or _tactor == "monster":
+		if ("damage" in lower or "attacks" in lower or "smite" in lower
+				or "hits" in lower or "strike" in lower or "slash" in lower
+				or "bite" in lower or "claw" in lower or "stab" in lower
+				or "swing" in lower or "cleave" in lower or "bash" in lower
+				or "shoot" in lower or "pierce" in lower or "slam" in lower
+				or "hack" in lower or "burn" in lower or "blast" in lower):
+			combat_scene_panel.play_travel_fx(_tactor, _travel_fx_type(lower))
 
 func _travel_fx_type(lower: String) -> String:
 	"""v0.9.664 — classify a combat line into a travel-FX element so the trail
