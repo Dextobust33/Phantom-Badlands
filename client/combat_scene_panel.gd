@@ -296,7 +296,7 @@ const COMBAT_HAND_SIZE := 3
 signal card_played(card_name: String)
 var _hand_strip: HBoxContainer
 var _hand_cells: Array = []  # Array of PanelContainers (5)
-var _hand_status_label: Label
+var _hand_status_label: RichTextLabel
 var _combat_hand: Array = []
 var _combat_deck_count: int = 0
 var _combat_discard_count: int = 0
@@ -591,6 +591,9 @@ func _build_layout() -> void:
 	_help_panel = HelpPanelScript.new()
 	add_child(_help_panel)
 	_help_button = HelpPanelScript.make_help_button("combat_scene", _help_panel)
+	# v0.9.663 — compact it; it used to be large and cover the party card.
+	_help_button.add_theme_font_size_override("font_size", 12)
+	_help_button.custom_minimum_size = Vector2(66, 26)
 	_help_button.z_index = 50
 	_help_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_help_button)
@@ -1132,7 +1135,10 @@ func _position_review_button() -> void:
 	var btn_w: float = _review_button.custom_minimum_size.x
 	var btn_h: float = _review_button.custom_minimum_size.y
 	_review_button.size = Vector2(btn_w, btn_h)
-	_review_button.position = Vector2(maxf(0.0, panel_w - btn_w - 8.0), 6.0)
+	# v0.9.663 — stack below the (top-right) help button so they don't overlap.
+	var _help_h: float = _help_button.custom_minimum_size.y if (_help_button and is_instance_valid(_help_button)) else 0.0
+	var _review_y: float = 6.0 + (_help_h + 6.0 if _help_h > 0.0 else 0.0)
+	_review_button.position = Vector2(maxf(0.0, panel_w - btn_w - 8.0), _review_y)
 
 
 func _position_review_pagination_widgets() -> void:
@@ -1166,7 +1172,9 @@ func _position_help_button() -> void:
 	var btn_w: float = _help_button.custom_minimum_size.x
 	var btn_h: float = _help_button.custom_minimum_size.y
 	_help_button.size = Vector2(btn_w, btn_h)
-	_help_button.position = Vector2(8.0, 6.0)
+	# v0.9.663 — top-RIGHT corner now (party card lives in the top-left in the
+	# left/right layout, so a top-left help button covered it).
+	_help_button.position = Vector2(maxf(8.0, size.x - btn_w - 8.0), 6.0)
 
 
 func _update_review_button_visibility() -> void:
@@ -2608,10 +2616,12 @@ func _build_hand_strip() -> HBoxContainer:
 		_hand_cells.append(cell)
 		_hand_strip.add_child(cell)
 
-	_hand_status_label = Label.new()
-	_hand_status_label.text = ""
-	_hand_status_label.add_theme_font_size_override("font_size", 11)
-	_hand_status_label.add_theme_color_override("font_color", Color("#888888"))
+	_hand_status_label = RichTextLabel.new()  # v0.9.663 — RTL for colored Deck/Discard
+	_hand_status_label.bbcode_enabled = true
+	_hand_status_label.fit_content = true
+	_hand_status_label.scroll_active = false
+	_hand_status_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_hand_status_label.add_theme_font_size_override("normal_font_size", 11)
 	_hand_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	outer.add_child(_hand_status_label)
 
@@ -2873,7 +2883,7 @@ func _refresh_hand() -> void:
 
 	# Status line
 	if _hand_status_label:
-		_hand_status_label.text = "Deck %d  ·  Discard %d" % [_combat_deck_count, _combat_discard_count]
+		_hand_status_label.text = "[color=#5CE05C]Deck %d[/color]  [color=#888888]·[/color]  [color=#FF6B6B]Discard %d[/color]" % [_combat_deck_count, _combat_discard_count]
 	# v0.9.385 — mirror deck / hand / discard into the Lufia in-box label.
 	if _lufia_player_deck_label and is_instance_valid(_lufia_player_deck_label):
 		var hand_size := _combat_hand.size()
@@ -3006,6 +3016,15 @@ func _short_resource_label(rt: String) -> String:
 		"mana": return "MN"
 		"stamina": return "ST"
 		"energy": return "EN"
+	return ""
+
+
+func _resource_type_for_class(cls: String) -> String:
+	"""Reliable player-resource type from class (matches character.gd get_class_path)."""
+	match cls:
+		"Wizard", "Sorcerer", "Sage": return "mana"
+		"Fighter", "Barbarian", "Paladin": return "stamina"
+		"Thief", "Ranger", "Ninja": return "energy"
 	return ""
 
 
@@ -4049,9 +4068,12 @@ func _refresh_player_resource() -> void:
 		if lufia_fill is StyleBoxFlat:
 			(lufia_fill as StyleBoxFlat).bg_color = _player_resource_color
 	if _lufia_player_resource_text and is_instance_valid(_lufia_player_resource_text):
-		# v0.9.663 — prefix the short resource label (EN / MN / ST), derived from
-		# the bar color since the payload carries color not type.
-		var _rlbl := _short_resource_label(_resource_type_from_color(_player_resource_color))
+		# v0.9.663 — prefix the short resource label (EN / MN / ST). Prefer the
+		# class mapping (reliable); fall back to matching the bar color.
+		var _rt := _resource_type_for_class(_player_class)
+		if _rt == "":
+			_rt = _resource_type_from_color(_player_resource_color)
+		var _rlbl := _short_resource_label(_rt)
 		var _rprefix := ("%s " % _rlbl) if _rlbl != "" else ""
 		_lufia_player_resource_text.text = "%s%d / %d" % [_rprefix, maxi(0, _player_resource_cur), _player_resource_max]
 	if _overlay_player_resource_bar and is_instance_valid(_overlay_player_resource_bar):
@@ -4339,12 +4361,14 @@ func _reapply_monster_art_text() -> void:
 			var old_size: int = int(m.get_string(1))
 			var new_size: int = max(2, int(round(old_size * combined)))
 			art = art.replace("font_size=%d" % old_size, "font_size=%d" % new_size)
-	# v0.9.663 — center the art horizontally within its (full-width) column so it
-	# sits in the middle of the monster zone instead of drifting to a side. This
-	# is BBCode text alignment, so it doesn't touch the node position the lunge
-	# tweens animate.
-	if art != "" and not art.begins_with("[center]"):
-		art = "[center]" + art + "[/center]"
+	# v0.9.663 — center the art horizontally within its (full-width) column. Strip
+	# any baked [right]/[left] alignment first (the server art carried a side
+	# alignment from the old layout, which overrode our [center]). This is BBCode
+	# text alignment, so it doesn't touch the node position the lunge tweens use.
+	if art != "":
+		art = art.replace("[right]", "").replace("[/right]", "").replace("[left]", "").replace("[/left]", "")
+		if not art.begins_with("[center]"):
+			art = "[center]" + art + "[/center]"
 	_monster_art_label.text = art
 
 
