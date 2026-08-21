@@ -8,3 +8,9 @@
 # Local build/release artifacts
 builds/
 releases/
+
+# Time Fantasy raw source packs (purchased, re-downloadable from itch.io).
+# We copy clean frames into the per-class / tf/ folders that ARE committed;
+# these raw packs (~3000 files) are source-only, not loaded at runtime.
+client/sprites/battlers/tf_svbattle/
+client/sprites/battlers/timefantasy_characters/

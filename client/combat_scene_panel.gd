@@ -69,6 +69,39 @@ const FLOCK_HISTORY_LIMIT := 16
 var _root_panel: PanelContainer
 var _scene_section: Control  # v0.9.380 — HBox in standard layout, VBox in chrono
 var _log_section: PanelContainer
+# COMBAT REDESIGN (2026-08-20): retire the floating battlefield overlay (the
+# source of the resolution-dependent overlap/scatter). Combat stays in the one
+# container layout; combat text shows in a single always-visible band below.
+var _overlay_retired: bool = true
+var _battle_log_frame: PanelContainer
+var _battle_log_band: RichTextLabel
+
+# COMBAT REDESIGN (2026-08-20) — Time Fantasy pixel battler sprites replacing the
+# muddy ASCII player art. TEST slice: Fighter only. Frames named idle_0..2 /
+# atk_0..2 (48x48) live in client/sprites/battlers/<folder>/. Battlers face LEFT
+# (RPG-Maker convention) so we flip_h to face the enemy.
+const BATTLER_DIR := "res://client/sprites/battlers/"
+# Each class has a POOL of Time Fantasy characters (ids under battlers/tf/<id>/).
+# A character gets a STABLE random pick from its class pool via hash(name) — no
+# selection UI, no server field; two same-class characters differ, and the same
+# character always looks the same. First-pass pools (verify vs tf_contact_sheet).
+const CLASS_SPRITE_POOLS := {
+	"Fighter": ["1_1", "2_1", "6_4"],
+	"Barbarian": ["6_2", "5_3", "7_8"],
+	"Paladin": ["4_7", "2_8", "3_8"],
+	"Wizard": ["1_6", "5_6", "2_6"],
+	"Sorcerer": ["4_5", "3_6", "1_5"],
+	"Sage": ["3_3", "5_7", "5_8"],
+	"Thief": ["5_7", "6_3", "7_5"],
+	"Ranger": ["3_4", "2_4", "6_1"],
+	"Ninja": ["4_5", "1_8", "7_3"],
+}
+var _battler_idle: Array = []
+var _battler_atk: Array = []
+var _battler_active: bool = false
+var _battler_frame: int = 0
+var _battler_atk_playing: bool = false
+var _battler_timer: Timer = null
 
 # Player column
 var _player_col: Control  # v0.9.382 — relaxed from VBoxContainer so Lufia (HBox of stat boxes) can use the same reference
@@ -380,6 +413,33 @@ func _build_layout() -> void:
 	# === Running damage totals strip (Combat readability #2) ===
 	root_vbox.add_child(_build_running_totals_strip())
 
+	# === COMBAT REDESIGN (2026-08-20) — unified combat log band ===
+	# The retired battlefield overlay used to host the (scattered) per-actor
+	# logs. Combat text now shows here in ONE readable band above the hand,
+	# mirroring the last few _log_lines. See _refresh_log.
+	_battle_log_frame = PanelContainer.new()
+	_battle_log_frame.custom_minimum_size = Vector2(0, 62)
+	_battle_log_frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_battle_log_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var _blb_sb := StyleBoxFlat.new()
+	_blb_sb.bg_color = Color(0.02, 0.02, 0.03, 0.8)
+	_blb_sb.border_color = Color(0.30, 0.26, 0.20, 1.0)
+	_blb_sb.set_border_width_all(1)
+	_blb_sb.set_corner_radius_all(4)
+	_blb_sb.content_margin_left = 8
+	_blb_sb.content_margin_right = 8
+	_blb_sb.content_margin_top = 4
+	_blb_sb.content_margin_bottom = 4
+	_battle_log_frame.add_theme_stylebox_override("panel", _blb_sb)
+	_battle_log_band = RichTextLabel.new()
+	_battle_log_band.bbcode_enabled = true
+	_battle_log_band.fit_content = true
+	_battle_log_band.scroll_active = false
+	_battle_log_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_battle_log_band.add_theme_font_size_override("normal_font_size", 14)
+	_battle_log_frame.add_child(_battle_log_band)
+	root_vbox.add_child(_battle_log_frame)
+
 	# === Audit #1 Slice 6a — combat hand row (cards drawn this combat) ===
 	root_vbox.add_child(_build_hand_strip())
 
@@ -565,6 +625,11 @@ func start_action_phase() -> void:
 	v0.9.412 — also hide the running-totals banner, hand strip, and status
 	strip while in the FX scene. Frees vertical room for the overlay so the
 	bigger ASCII blocks don't get cut off by adjacent UI."""
+	# COMBAT REDESIGN (2026-08-20): the floating overlay is retired — it caused
+	# the resolution-dependent overlap/scatter. Combat now stays in the single
+	# container layout (FX on the in-scene visuals, log in the band). No-op.
+	if _overlay_retired:
+		return
 	if _action_phase_active:
 		return
 	_action_phase_active = true
@@ -3675,7 +3740,82 @@ const COMPACT_ASCII_FONT_SIZE := 1  # v0.9.385 — companion ASCII font_size in 
 const COMPACT_PLAYER_ASCII_FONT_SIZE := 2
 
 
+func _ensure_battler_timer() -> void:
+	if _battler_timer != null:
+		return
+	_battler_timer = Timer.new()
+	_battler_timer.wait_time = 0.34
+	_battler_timer.one_shot = false
+	add_child(_battler_timer)
+	_battler_timer.timeout.connect(_on_battler_tick)
+
+func _battler_id_for(cls: String, char_name: String) -> String:
+	var pool: Array = CLASS_SPRITE_POOLS.get(cls, [])
+	if pool.is_empty():
+		return ""
+	# Stable per-character pick from the pool. Same name -> same sprite forever.
+	var idx: int = abs(char_name.hash()) % pool.size()
+	return String(pool[idx])
+
+func _load_battler(cls: String) -> bool:
+	var id: String = _battler_id_for(cls, _player_name)
+	if id == "":
+		return false
+	var folder: String = BATTLER_DIR + "tf/" + id + "/"
+	var idle: Array = []
+	var atk: Array = []
+	for i in range(3):
+		var it = load(folder + "idle_%d.png" % i)
+		if it != null:
+			idle.append(it)
+		var at = load(folder + "atk_%d.png" % i)
+		if at != null:
+			atk.append(at)
+	if idle.is_empty():
+		return false
+	_battler_idle = idle
+	_battler_atk = atk
+	return true
+
+func _show_player_battler() -> void:
+	_ensure_battler_timer()
+	_battler_active = true
+	_battler_frame = 0
+	_battler_atk_playing = false
+	if _ascii_outer and is_instance_valid(_ascii_outer):
+		_ascii_outer.visible = false
+	if _player_sprite_holder and is_instance_valid(_player_sprite_holder):
+		_player_sprite_holder.visible = true
+	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+		_player_sprite_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_player_sprite_rect.flip_h = true  # RPG-Maker battlers face left; face the enemy
+		_player_sprite_rect.texture = _battler_idle[0]
+		_player_sprite_rect.visible = true
+	if _player_sprite_placeholder and is_instance_valid(_player_sprite_placeholder):
+		_player_sprite_placeholder.visible = false
+	_battler_timer.start()
+
+func _on_battler_tick() -> void:
+	if not _battler_active or _battler_atk_playing or _battler_idle.is_empty():
+		return
+	_battler_frame = (_battler_frame + 1) % _battler_idle.size()
+	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+		_player_sprite_rect.texture = _battler_idle[_battler_frame]
+
 func _refresh_player() -> void:
+	# COMBAT REDESIGN test — pixel battler sprite for classes with a battler folder.
+	if _load_battler(_player_class):
+		_show_player_battler()
+		var _cc := ClassSprite.get_class_color(_player_class)
+		var _hx := "#%02X%02X%02X" % [int(_cc.r * 255), int(_cc.g * 255), int(_cc.b * 255)]
+		if _player_name_label:
+			_player_name_label.text = "[color=%s]%s[/color] [color=#888888](%s)[/color]" % [_hx, _player_name, _player_class]
+		_refresh_player_hp()
+		return
+	if _battler_active:
+		_battler_active = false
+		if _battler_timer:
+			_battler_timer.stop()
 	# Class ASCII art takes priority over the PNG sprite when available.
 	# Drop a file at `res://client/sprites/ascii/<Class>.txt` and it shows up
 	# here automatically; classes without one fall back to the LPC PNG.
@@ -4081,6 +4221,10 @@ func _refresh_monster_hp() -> void:
 
 func _refresh_log() -> void:
 	_log_label.text = "\n".join(_log_lines)
+	# COMBAT REDESIGN — mirror the most recent lines into the always-visible band.
+	if _battle_log_band and is_instance_valid(_battle_log_band):
+		var _tail: Array = _log_lines.slice(max(0, _log_lines.size() - 4))
+		_battle_log_band.text = "\n".join(_tail)
 	# v0.9.415 — RichTextLabel.fit_content expands asynchronously: one frame
 	# isn't always enough for `get_v_scroll_bar().max_value` to reflect the
 	# new content height, so the auto-scroll silently snaps to a stale max.
