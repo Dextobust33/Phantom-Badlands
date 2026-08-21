@@ -35,6 +35,9 @@ var _monster_art_user_scale: float = 1.0
 # 1440p). Multiplies with the per-element user scale above.
 var _monster_art_auto_scale: float = 1.0
 var _last_autofit_band: Vector2 = Vector2.ZERO  # v0.9.663 — resize watchdog (see _process)
+# v0.9.664 — combat layout exploration. F9 cycles 1=Arena / 2=Theater / 3=Focus.
+var _combat_layout_variant: int = 1
+var _last_refresh_payload: Dictionary = {}
 
 # Cached state (last populate call)
 var _player_class: String = ""
@@ -601,6 +604,12 @@ func _build_layout() -> void:
 
 
 func _build_scene_section_lufia() -> Control:
+	# v0.9.664 — three explorable combat layouts; F9 cycles them in-combat.
+	if _combat_layout_variant == 2:
+		return _build_scene_v2_theater()
+	if _combat_layout_variant == 3:
+		return _build_scene_v3_focus()
+	# --- Variant 1: Arena (party left, monster right) — the default below. ---
 	"""Lufia II style per SNES reference: enemy occupies the upper ~75% of
 	the scene; party members live in a row of BORDERED STAT BOXES at the
 	bottom, each box arranged as [portrait LEFT | stats RIGHT VBox].
@@ -658,6 +667,99 @@ func _build_scene_section_lufia() -> Control:
 	hbox.add_child(_monster_col)
 
 	return hbox
+
+
+func _make_party_boxes() -> void:
+	_player_party_box = _build_lufia_party_box(_build_lufia_player_box_content())
+	_player_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_companion_party_box = _build_lufia_party_box(_build_lufia_companion_box_content())
+	_companion_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+
+
+func _build_scene_v2_theater() -> Control:
+	# Variant 2: Theater — monster large on TOP, party as a centered row below.
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_stretch_ratio = 4.0
+	vbox.add_theme_constant_override("separation", 8)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scene_section = vbox
+	_monster_col = _build_monster_column()
+	_monster_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_stretch_ratio = 3.0
+	vbox.add_child(_monster_col)
+	var party_row := HBoxContainer.new()
+	party_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	party_row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	party_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	party_row.add_theme_constant_override("separation", 16)
+	party_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_make_party_boxes()
+	party_row.add_child(_player_party_box)
+	party_row.add_child(_companion_party_box)
+	vbox.add_child(party_row)
+	_player_col = party_row
+	return vbox
+
+
+func _build_scene_v3_focus() -> Control:
+	# Variant 3: Focus — monster dominates the width; party is a slim column
+	# tucked into the bottom-left (ALIGNMENT_END).
+	var hbox := HBoxContainer.new()
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.size_flags_stretch_ratio = 4.0
+	hbox.add_theme_constant_override("separation", 6)
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scene_section = hbox
+	var party_col := VBoxContainer.new()
+	party_col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	party_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	party_col.custom_minimum_size = Vector2(300, 0)
+	party_col.alignment = BoxContainer.ALIGNMENT_END
+	party_col.add_theme_constant_override("separation", 10)
+	party_col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_make_party_boxes()
+	party_col.add_child(_player_party_box)
+	party_col.add_child(_companion_party_box)
+	hbox.add_child(party_col)
+	_player_col = party_col
+	_monster_col = _build_monster_column()
+	_monster_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_monster_col.size_flags_stretch_ratio = 5.0
+	hbox.add_child(_monster_col)
+	return hbox
+
+
+func cycle_combat_layout() -> void:
+	"""v0.9.664 — dev/exploration: F9 cycles 1=Arena / 2=Theater / 3=Focus."""
+	_combat_layout_variant = (_combat_layout_variant % 3) + 1
+	_rebuild_scene_section()
+
+func _rebuild_scene_section() -> void:
+	if _scene_section == null or not is_instance_valid(_scene_section):
+		return
+	var old: Control = _scene_section
+	var parent: Node = old.get_parent()
+	if parent == null:
+		return
+	var idx: int = old.get_index()
+	var new_section: Control = _build_scene_section_lufia()  # sets _scene_section
+	parent.add_child(new_section)
+	parent.move_child(new_section, idx)
+	parent.remove_child(old)
+	old.queue_free()
+	_last_autofit_band = Vector2.ZERO  # force auto-fit recompute for the new band
+	call_deferred("_repopulate_after_rebuild")
+
+func _repopulate_after_rebuild() -> void:
+	if not _last_refresh_payload.is_empty():
+		populate(_last_refresh_payload)
+	if _battler_idle.size() > 0:
+		_show_player_battler()
 
 
 func start_action_phase() -> void:
@@ -3252,6 +3354,7 @@ func _make_hp_bar(fill_color: Color) -> ProgressBar:
 func populate(payload: Dictionary) -> void:
 	"""Refresh the panel from a payload dictionary. Optional keys are
 	preserved if missing so partial refreshes don't blow away other state."""
+	_last_refresh_payload = payload  # v0.9.664 — cached for layout-cycle re-populate
 	if not is_inside_tree():
 		return
 	# v0.9.501 — drop the "hp_drain_initialized" meta so the first refresh
