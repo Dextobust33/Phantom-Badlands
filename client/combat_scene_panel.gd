@@ -2658,25 +2658,27 @@ func _build_hand_cell(index: int) -> PanelContainer:
 
 	# v0.9.665 — mastery fill: the card's OWN background fills LEFT->RIGHT in its
 	# CATEGORY color as the ability nears its next rank-up (25% progress = left
-	# quarter colored). Not a bar — a ProgressBar layered edge-to-edge behind the
-	# card content, whose fill color is set to the category color each refresh.
-	var mastery_fill := ProgressBar.new()
-	mastery_fill.name = "MasteryFill"
-	mastery_fill.show_percentage = false
-	mastery_fill.min_value = 0.0
-	mastery_fill.max_value = 100.0
-	mastery_fill.value = 0.0
-	mastery_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mastery_fill.add_theme_stylebox_override("background", StyleBoxEmpty.new())  # panel bg shows through
-	var mf_fill := StyleBoxFlat.new()
-	mf_fill.bg_color = Color(0.5, 0.4, 0.3, 0.55)  # placeholder; recolored per-card in _refresh_hand
-	# Left corners match the card; right edge stays square (it's a partial fill).
-	mf_fill.corner_radius_top_left = 6
-	mf_fill.corner_radius_bottom_left = 6
-	mf_fill.corner_radius_top_right = 0
-	mf_fill.corner_radius_bottom_right = 0
-	mastery_fill.add_theme_stylebox_override("fill", mf_fill)
-	cell.add_child(mastery_fill)
+	# quarter colored; full = about to rank up). NOT a bar. FillLayer is a plain
+	# Control (PanelContainer stretches it to the whole card); its child ColorRect
+	# spans the left `progress` fraction via anchor_right (a plain Control respects
+	# child anchors, unlike a Container — so the width is exactly proportional).
+	var fill_layer := Control.new()
+	fill_layer.name = "FillLayer"
+	fill_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cell.add_child(fill_layer)
+	var fill_rect := ColorRect.new()
+	fill_rect.name = "Fill"
+	fill_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill_rect.color = Color(0.5, 0.4, 0.3, 0.0)  # recolored per-card in _refresh_hand
+	fill_rect.anchor_left = 0.0
+	fill_rect.anchor_top = 0.0
+	fill_rect.anchor_bottom = 1.0
+	fill_rect.anchor_right = 0.0  # = progress, set each refresh
+	fill_rect.offset_left = 0
+	fill_rect.offset_top = 0
+	fill_rect.offset_right = 0
+	fill_rect.offset_bottom = 0
+	fill_layer.add_child(fill_rect)
 
 	# v0.9.425 — category glyph rendered in the top-right corner of the card
 	# (anchored via top_right preset so it stays in place across resizes).
@@ -2850,9 +2852,9 @@ func _refresh_hand() -> void:
 			cell.tooltip_text = ""
 			if glyph_lbl:
 				glyph_lbl.text = ""
-			var empty_mfill: ProgressBar = cell.get_node_or_null("MasteryFill")
-			if empty_mfill:
-				empty_mfill.visible = false
+			var empty_fill: ColorRect = cell.get_node_or_null("FillLayer/Fill")
+			if empty_fill:
+				empty_fill.visible = false
 			_set_cell_dim(cell, true, false)
 			continue
 
@@ -2873,18 +2875,18 @@ func _refresh_hand() -> void:
 			glyph_lbl.add_theme_color_override("font_color", Color(category_color_hex) * Color(1, 1, 1, 0.55))
 
 		# v0.9.665 — mastery fill: the card BG fills LEFT->RIGHT in its CATEGORY
-		# color as the ability nears its next rank-up (25% => left quarter). Full
-		# at max rank.
-		var mfill: ProgressBar = cell.get_node_or_null("MasteryFill")
-		if mfill:
-			mfill.visible = true
+		# color as the ability nears its next rank-up (0 = no color, 0.25 => left
+		# quarter, full = about to rank up).
+		var fill_rect: ColorRect = cell.get_node_or_null("FillLayer/Fill")
+		if fill_rect:
 			var at_max_rank := bool(info.get("rank_at_max", false))
-			mfill.value = 100.0 if at_max_rank else float(info.get("rank_progress", 0.0)) * 100.0
-			var fsb = mfill.get_theme_stylebox("fill")
-			if fsb is StyleBoxFlat:
-				var cat_col := Color(category_color_hex)
-				cat_col.a = 0.85  # strong enough to read as the card coloring, text still legible
-				fsb.bg_color = cat_col
+			var prog := 1.0 if at_max_rank else clampf(float(info.get("rank_progress", 0.0)), 0.0, 1.0)
+			fill_rect.anchor_right = prog
+			fill_rect.offset_right = 0
+			fill_rect.visible = prog > 0.001
+			var cat_col := Color(category_color_hex)
+			cat_col.a = 0.55  # translucent so the card text stays readable
+			fill_rect.color = cat_col
 
 		name_lbl.text = str(info.get("display", card_name))
 		name_lbl.add_theme_color_override("font_color", Color("#DDDDDD"))
@@ -2960,15 +2962,11 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 		sb.bg_color = Color(0.06, 0.05, 0.06, 0.92)
 	else:
 		var category_color_hex = str(cell.get_meta("category_color", "#B08C4C"))
-		var tint_alpha = float(cell.get_meta("category_tint_alpha", 0.0))
-		var border := Color(category_color_hex)
-		var base_bg := Color(0.08, 0.07, 0.05, 0.95)
-		if tint_alpha > 0.0:
-			var tint := Color(category_color_hex)
-			tint.a = base_bg.a
-			base_bg = base_bg.lerp(tint, tint_alpha)
-		sb.border_color = border
-		sb.bg_color = base_bg
+		# v0.9.665 — base bg stays DARK so an unused card reads as "no color"; the
+		# mastery FillLayer provides the category color proportional to progress.
+		# Category still reads via the border + glyph.
+		sb.border_color = Color(category_color_hex)
+		sb.bg_color = Color(0.06, 0.055, 0.05, 0.95)
 
 
 func _resolve_card_info(card_name: String) -> Dictionary:
