@@ -21697,10 +21697,18 @@ func handle_server_message(message: Dictionary):
 						}
 						# v0.9.413 — defer if queue has unplayed messages so
 						# paced attacks finish before the card covers the panel.
+						# v0.9.662 — when the queue is ALREADY empty, mirror the
+						# drained-queue path's robustness (force the panel visible +
+						# extend linger + 1s beat) instead of a bare synchronous show.
+						# The bare show could land on a transient/hidden panel on a
+						# quick kill; the always-on loot bag used to re-establish the
+						# scene and mask it, but loot is now occasional (v0.9.662).
 						if not combat_msg_queue.is_empty():
 							_pending_victory_card_payload = victory_payload
 						else:
-							combat_scene_panel.show_victory_card(victory_payload)
+							_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 3200)
+							combat_scene_panel.visible = true
+							get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(victory_payload))
 
 						# Combat scratch-off (user-requested 2026-05-14) — when
 						# the server attaches a loot_bag, open the reveal panel

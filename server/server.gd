@@ -80,6 +80,10 @@ const COMBAT_LOOT_SCRATCH_OFF_ENABLED := true
 const COMBAT_SCRATCH_BASE_CHANCE := 0.125
 const COMBAT_SCRATCH_EMPOWERED_CHANCE := 0.60
 const COMBAT_SCRATCH_BUDGET_MULT := 4
+# Flock chains build toward a reward — each additional monster killed in the
+# chain raises the scratch-off odds (user-requested 2026-08-21), capped below 1.
+const COMBAT_SCRATCH_FLOCK_STEP := 0.12
+const COMBAT_SCRATCH_MAX_CHANCE := 0.90
 const COMBAT_LOOT_SLOT_COUNT := 16
 # Loot-as-chance for gathering + crafting (v0.9.662) — mirrors the combat
 # treat-rhythm. Most gathers/crafts resolve instantly (no minigame); the
@@ -6034,7 +6038,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# send below ships the loot_bag field instead. Achievement +
 				# dungeon-state code after the send still runs normally.
 				# Minigame-as-a-treat — roll whether THIS kill shows the scratch-off.
-				var _do_scratch: bool = COMBAT_LOOT_SCRATCH_OFF_ENABLED and randf() < (COMBAT_SCRATCH_EMPOWERED_CHANCE if _empowered_reveals > 0 else COMBAT_SCRATCH_BASE_CHANCE)
+				# Minigame-as-a-treat chance. Empowered kills roll far higher, and
+				# every extra monster in a flock chain ramps the odds toward a
+				# near-guaranteed reveal (COMBAT_SCRATCH_FLOCK_STEP per kill, capped).
+				var _scratch_chance: float = COMBAT_SCRATCH_EMPOWERED_CHANCE if _empowered_reveals > 0 else COMBAT_SCRATCH_BASE_CHANCE
+				_scratch_chance += float(max(0, _final_flock_kills - 1)) * COMBAT_SCRATCH_FLOCK_STEP
+				_scratch_chance = minf(_scratch_chance, COMBAT_SCRATCH_MAX_CHANCE)
+				var _do_scratch: bool = COMBAT_LOOT_SCRATCH_OFF_ENABLED and randf() < _scratch_chance
 				var _combat_loot_bag_view: Dictionary = {}
 				if _do_scratch:
 					var _monster_tier: int = _get_monster_tier(killed_monster_level)
