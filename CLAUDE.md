@@ -135,6 +135,14 @@ Use `run_in_background: true` and 600000ms timeout. Read output file to see cons
 **Website:** https://phantombadlands.com (GitHub Pages from `docs/`)
 **Game Server:** Hetzner Cloud CPX11 at `5.78.217.135:9080` (Hillsboro, OR — migrated from Oracle 2026-05-12 for ~16× compute, $6.99/mo)
 
+### ⚠ CRITICAL: wipe the Godot cache before ANY release export or server deploy
+
+Headless `--export-release` / `deploy_server.sh` can reuse a STALE `.godot/` script cache and ship OLD compiled code even though the source is current (symptom: dev build has features, packaged build doesn't; v0.9.657-659 all shipped stale — see `feedback_stale_godot_export_cache` memory). **Before exporting a client OR deploying the server:**
+1. `rm -rf .godot` (and `rm -rf launcher/.godot` when building the launcher).
+2. `godot --headless --path . --import`
+3. THEN export / deploy.
+Verify a fresh build by running the exe and checking `netstat -ano | grep 5.78.217.135` (current server IP) — NOT by grepping the pck (scripts are binary tokens, `script_export_mode=2`, not grep-able).
+
 ### Creating a release
 
 Every release ships **FOUR assets under ONE `vX.Y.Z` tag**: Windows client + Windows launcher + Linux client + Linux launcher. NEVER ship a Windows-only release — the website serves both platforms, and a missing launcher ZIP breaks new-player downloads.
