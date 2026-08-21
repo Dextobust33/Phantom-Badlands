@@ -4016,13 +4016,16 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 	var affixes = {} if is_consumable else _roll_affixes(final_rarity, final_level)
 	var affix_name = _get_affix_prefix(affixes)
 	var affix_suffix = _get_affix_suffix(affixes)
+	# v0.9.665 — surface a stat mutation (Focused / Wild) in the name so the
+	# player notices the special roll at a glance.
+	var mutation_prefix = ("%s " % affixes["mutation_name"]) if affixes.has("mutation_name") else ""
 
 	var item = {
 		"id": randi(),
 		"type": item_type,
 		"rarity": final_rarity,
 		"level": final_level,
-		"name": affix_name + _get_item_name(item_type, final_rarity) + affix_suffix,
+		"name": mutation_prefix + affix_name + _get_item_name(item_type, final_rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(final_rarity, final_level)
 	}
@@ -4319,6 +4322,28 @@ const PREFIX_POOL = [
 	{"name": "Energetic", "stat": "energy_bonus", "base": 5, "per_level": 1},
 	{"name": "Spider-spun", "stat": "energy_bonus", "base": 8, "per_level": 1.5},   # Giant Spider
 	{"name": "Void-touched", "stat": "energy_bonus", "base": 12, "per_level": 2},   # Void Walker
+	# v0.9.665 — expanded pool for more name variety (existing stat keys only).
+	{"name": "Savage", "stat": "attack_bonus", "base": 3, "per_level": 0.6},
+	{"name": "Bloodthirsty", "stat": "attack_bonus", "base": 5, "per_level": 0.9},
+	{"name": "Warmonger's", "stat": "attack_bonus", "base": 6, "per_level": 1.1},
+	{"name": "Bulwark", "stat": "defense_bonus", "base": 3, "per_level": 0.6},
+	{"name": "Ironhide", "stat": "defense_bonus", "base": 5, "per_level": 0.9},
+	{"name": "Warded", "stat": "defense_bonus", "base": 6, "per_level": 1.1},
+	{"name": "Robust", "stat": "hp_bonus", "base": 15, "per_level": 2.5},
+	{"name": "Vigorous", "stat": "hp_bonus", "base": 22, "per_level": 3.5},
+	{"name": "Bloodfont", "stat": "hp_bonus", "base": 35, "per_level": 5.5},
+	{"name": "Fleet", "stat": "speed_bonus", "base": 3, "per_level": 0.4},
+	{"name": "Nimble", "stat": "speed_bonus", "base": 4, "per_level": 0.5},
+	{"name": "Blurred", "stat": "speed_bonus", "base": 6, "per_level": 0.7},
+	{"name": "Mystic", "stat": "mana_bonus", "base": 12, "per_level": 2.5},
+	{"name": "Runebound", "stat": "mana_bonus", "base": 18, "per_level": 3.5},
+	{"name": "Astral", "stat": "mana_bonus", "base": 22, "per_level": 4.5},
+	{"name": "Tireless", "stat": "stamina_bonus", "base": 6, "per_level": 1.2},
+	{"name": "Bull-hearted", "stat": "stamina_bonus", "base": 9, "per_level": 1.7},
+	{"name": "Relentless", "stat": "stamina_bonus", "base": 12, "per_level": 2.2},
+	{"name": "Vital", "stat": "energy_bonus", "base": 6, "per_level": 1.2},
+	{"name": "Charged", "stat": "energy_bonus", "base": 9, "per_level": 1.7},
+	{"name": "Frenetic", "stat": "energy_bonus", "base": 13, "per_level": 2.2},
 ]
 
 # Suffix affixes: "of X" style names that appear AFTER the item name
@@ -4382,6 +4407,31 @@ const SUFFIX_POOL = [
 	{"name": "of the Kobold", "stat": "energy_bonus", "base": 6, "per_level": 1.2}, # Kobold
 	{"name": "of the Vampire", "stat": "energy_bonus", "base": 10, "per_level": 2}, # Vampire
 	{"name": "of the Void", "stat": "energy_bonus", "base": 15, "per_level": 3},    # Void Walker
+	# v0.9.665 — expanded pool for more name variety (existing stat keys only).
+	{"name": "of Might", "stat": "str_bonus", "base": 3, "per_level": 0.4},
+	{"name": "of the Colossus", "stat": "str_bonus", "base": 5, "per_level": 0.6},
+	{"name": "of Resilience", "stat": "con_bonus", "base": 3, "per_level": 0.4},
+	{"name": "of the Bastion", "stat": "con_bonus", "base": 5, "per_level": 0.6},
+	{"name": "of Finesse", "stat": "dex_bonus", "base": 3, "per_level": 0.4},
+	{"name": "of the Viper", "stat": "dex_bonus", "base": 5, "per_level": 0.6},
+	{"name": "of Genius", "stat": "int_bonus", "base": 3, "per_level": 0.4},
+	{"name": "of the Archmage", "stat": "int_bonus", "base": 5, "per_level": 0.6},
+	{"name": "of Insight", "stat": "wis_bonus", "base": 3, "per_level": 0.4},
+	{"name": "of the Oracle", "stat": "wis_bonus", "base": 5, "per_level": 0.6},
+	{"name": "of Guile", "stat": "wits_bonus", "base": 3, "per_level": 0.4},
+	{"name": "of the Trickster", "stat": "wits_bonus", "base": 5, "per_level": 0.6},
+	{"name": "of Ruin", "stat": "attack_bonus", "base": 3, "per_level": 0.5},
+	{"name": "of the Reaver", "stat": "attack_bonus", "base": 5, "per_level": 0.8},
+	{"name": "of the Sentinel", "stat": "defense_bonus", "base": 3, "per_level": 0.5},
+	{"name": "of the Aegis", "stat": "defense_bonus", "base": 5, "per_level": 0.8},
+	{"name": "of Endurance", "stat": "hp_bonus", "base": 18, "per_level": 3},
+	{"name": "of the Behemoth", "stat": "hp_bonus", "base": 28, "per_level": 4.5},
+	{"name": "of the Wellspring", "stat": "mana_bonus", "base": 15, "per_level": 3},
+	{"name": "of the Archon", "stat": "mana_bonus", "base": 22, "per_level": 4.5},
+	{"name": "of Tenacity", "stat": "stamina_bonus", "base": 8, "per_level": 1.5},
+	{"name": "of the Juggernaut", "stat": "stamina_bonus", "base": 13, "per_level": 2.5},
+	{"name": "of Momentum", "stat": "energy_bonus", "base": 8, "per_level": 1.5},
+	{"name": "of the Nightblade", "stat": "energy_bonus", "base": 13, "per_level": 2.5},
 ]
 
 # Specialty affix pools for class-focused merchants
@@ -4651,7 +4701,73 @@ func roll_affixes_for_specialty(specialty: String, rarity: String, item_level: i
 	if affix_count > 0:
 		affixes["roll_quality"] = int(total_roll_quality / affix_count)
 
+	# v0.9.665 — same stat-mutation layer as generic drops, so specialty items
+	# (merchants + weapon_master/shield_guardian) vary too.
+	_apply_stat_mutation(affixes, rarity, item_level, roll_range)
+
 	return affixes
+
+# v0.9.665 — stat mutations. A rarity-scaled chance for an item to roll a
+# mutated stat profile on top of its normal affixes, so two same-named drops can
+# still feel different. Keys that aren't real stats are skipped when scanning.
+const _MUTATION_META_KEYS = [
+	"prefix_name", "suffix_name", "roll_quality",
+	"proc_type", "proc_value", "proc_chance", "proc_name",
+	"mutation", "mutation_name",
+]
+
+func _mutation_prefix(affixes: Dictionary) -> String:
+	"""Name marker for a mutated item (e.g. 'Focused ' / 'Wild '), or '' if none."""
+	return ("%s " % affixes["mutation_name"]) if affixes.has("mutation_name") else ""
+
+func _get_mutation_chance(rarity: String) -> int:
+	match rarity:
+		"uncommon": return 8
+		"rare": return 12
+		"epic": return 16
+		"legendary": return 20
+		"artifact": return 25
+		_: return 0
+
+func _apply_stat_mutation(affixes: Dictionary, rarity: String, item_level: int, roll_range: Dictionary) -> void:
+	"""Mutate the rolled stat spread. FOCUSED (>=2 stats): concentrate power —
+	the highest stat x1.5, the lowest x0.5 (net-neutral, the player's 'skip a
+	stat, double another' idea without breaking affix names). WILD: gain one
+	off-type stat the item wouldn't normally carry. Tagged in `mutation` so the
+	name + inspect can surface it."""
+	var chance: int = _get_mutation_chance(rarity)
+	if chance <= 0 or (randi() % 100) >= chance:
+		return
+	var stat_keys: Array = []
+	for k in affixes.keys():
+		if k in _MUTATION_META_KEYS:
+			continue
+		stat_keys.append(k)
+	if stat_keys.is_empty():
+		return
+	var do_focused: bool = stat_keys.size() >= 2 and (randi() % 100) < 60
+	if do_focused:
+		stat_keys.sort_custom(func(a, b): return int(affixes[a]) < int(affixes[b]))
+		var lowest: String = stat_keys[0]
+		var highest: String = stat_keys[stat_keys.size() - 1]
+		affixes[highest] = maxi(1, int(affixes[highest] * 1.5))
+		affixes[lowest] = maxi(1, int(affixes[lowest] * 0.5))
+		affixes["mutation"] = "focused"
+		affixes["mutation_name"] = "Focused"
+	else:
+		# WILD — add an off-type stat not already on the item (modest value).
+		var combined: Array = PREFIX_POOL + SUFFIX_POOL
+		var picked = null
+		for _a in range(8):
+			var cand = combined[randi() % combined.size()]
+			if cand.stat not in stat_keys:
+				picked = cand
+				break
+		if picked != null:
+			var res: Dictionary = _calculate_affix_value(picked, item_level, roll_range)
+			affixes[picked.stat] = maxi(1, int(res.value * 0.6))
+			affixes["mutation"] = "wild"
+			affixes["mutation_name"] = "Wild"
 
 func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) -> Dictionary:
 	"""Roll for item affixes using D2-style guaranteed counts per rarity.
@@ -4748,6 +4864,11 @@ func _roll_affixes(rarity: String, item_level: int, is_crafted: bool = false) ->
 	# Store average roll quality
 	if affix_count > 0:
 		affixes["roll_quality"] = int(total_roll_quality / affix_count)
+
+	# v0.9.665 — stat mutation layer (Focused / Wild). Applied after the base
+	# affixes so it can concentrate or diversify the rolled stat profile, giving
+	# two same-named items genuinely different stat spreads.
+	_apply_stat_mutation(affixes, rarity, item_level, roll_range)
 
 	# Proc suffix handling (Tier 6+ only)
 	var tier = get_tier_for_level(item_level)
@@ -5281,6 +5402,7 @@ func generate_weapon(monster_level: int) -> Dictionary:
 	Weapons are biased toward attack bonuses."""
 	# Use D2 rarity weights based on monster tier
 	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
+	if rarity == "common": rarity = "uncommon"  # v0.9.665 — targeted rare-mob gear always carries >=1 affix (never a bare common)
 
 	# Pick a weapon type based on level tier
 	var weapon_type = "weapon_rusty"
@@ -5312,7 +5434,7 @@ func generate_weapon(monster_level: int) -> Dictionary:
 		"type": weapon_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Weapon Master's " + _get_item_name(weapon_type, rarity) + affix_suffix,
+		"name": _mutation_prefix(affixes) + affix_name + "Weapon Master's " + _get_item_name(weapon_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -5324,6 +5446,7 @@ func generate_shield(monster_level: int) -> Dictionary:
 	Shields are biased toward HP bonuses."""
 	# Use D2 rarity weights based on monster tier
 	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
+	if rarity == "common": rarity = "uncommon"  # v0.9.665 — targeted rare-mob gear always carries >=1 affix (never a bare common)
 
 	# Pick a shield type based on level tier
 	var shield_type = "shield_wood"
@@ -5355,7 +5478,7 @@ func generate_shield(monster_level: int) -> Dictionary:
 		"type": shield_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Guardian's " + _get_item_name(shield_type, rarity) + affix_suffix,
+		"name": _mutation_prefix(affixes) + affix_name + "Guardian's " + _get_item_name(shield_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -5365,6 +5488,7 @@ func generate_mage_gear(monster_level: int) -> Dictionary:
 	"""Generate mage-specific gear from an Arcane Hoarder monster.
 	Returns arcane ring or mystic amulet scaled to monster level."""
 	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
+	if rarity == "common": rarity = "uncommon"  # v0.9.665 — targeted rare-mob gear always carries >=1 affix (never a bare common)
 
 	# 50/50 ring or amulet
 	var is_ring = randf() < 0.5
@@ -5395,7 +5519,7 @@ func generate_mage_gear(monster_level: int) -> Dictionary:
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Arcane Hoarder's " + base_item_name + affix_suffix,
+		"name": _mutation_prefix(affixes) + affix_name + "Arcane Hoarder's " + base_item_name + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -5405,6 +5529,7 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 	"""Generate trickster-specific gear from a Cunning Prey monster.
 	Returns shadow ring, evasion amulet, or swift boots scaled to monster level."""
 	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
+	if rarity == "common": rarity = "uncommon"  # v0.9.665 — targeted rare-mob gear always carries >=1 affix (never a bare common)
 
 	# 33/33/33 distribution
 	var roll = randf()
@@ -5442,7 +5567,7 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Cunning Prey's " + base_item_name + affix_suffix,
+		"name": _mutation_prefix(affixes) + affix_name + "Cunning Prey's " + base_item_name + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -5452,6 +5577,7 @@ func generate_warrior_gear(monster_level: int) -> Dictionary:
 	"""Generate warrior-specific gear from a Warrior Hoarder monster.
 	Returns warlord blade or bulwark shield scaled to monster level."""
 	var rarity = _roll_rarity_for_tier(get_tier_for_level(monster_level))
+	if rarity == "common": rarity = "uncommon"  # v0.9.665 — targeted rare-mob gear always carries >=1 affix (never a bare common)
 
 	# 50/50 weapon or shield
 	var is_weapon = randf() < 0.5
@@ -5469,7 +5595,7 @@ func generate_warrior_gear(monster_level: int) -> Dictionary:
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
-		"name": affix_name + "Warrior Hoarder's " + _get_item_name(item_type, rarity) + affix_suffix,
+		"name": _mutation_prefix(affixes) + affix_name + "Warrior Hoarder's " + _get_item_name(item_type, rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(rarity, boosted_level),
 		"from_rare_monster": true
@@ -5494,7 +5620,7 @@ func generate_shop_item_with_specialty(item_type: String, rarity: String, item_l
 		"type": item_type,
 		"rarity": final_rarity,
 		"level": final_level,
-		"name": affix_name + _get_item_name(item_type, final_rarity) + affix_suffix,
+		"name": _mutation_prefix(affixes) + affix_name + _get_item_name(item_type, final_rarity) + affix_suffix,
 		"affixes": affixes,
 		"value": _calculate_item_value(final_rarity, final_level)
 	}
