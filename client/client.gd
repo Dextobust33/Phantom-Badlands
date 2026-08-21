@@ -27135,8 +27135,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.665 — Itemization variety + legibility.
+	display_game("[color=#00FF00]v0.9.665[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ MORE ITEM VARIETY.[/color] Way fewer duplicate drops. The affix name pools are roughly [b]doubled[/b], and items can now roll a [color=#FFD700]stat mutation[/color]: [b]Focused[/b] (concentrates power — one stat surges while another shrinks) or [b]Wild[/b] (gains an unexpected off-type stat). Class target-farm drops (Goblins→Trickster, Minotaurs→Warrior, etc.) now [b]always carry an affix[/b] instead of dropping as bare commons — so farming them feels rewarding, not repetitive.")
+	display_game("  [color=#1EFF00]◆ Legibility fixes.[/color] Dark monsters (Zombie, and others in muddy browns/purples) are [b]brightened[/b] so they no longer blend into the background. Dark companion/egg names — like an [b]Obsidian[/b] variant — are also floored to a readable color everywhere they appear (egg-hatch, companion panels, market, tags).")
+	display_game("")
+
 	# v0.9.664 — Combat layout refinements + ASCII travel FX + loot reveal mix.
-	display_game("[color=#00FF00]v0.9.664[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.664[/color]")
 	display_game("  [color=#FF8000]★ COMBAT ATTACK EFFECTS.[/color] Attacks and skills now fire a quick [b]ASCII effect that flies from the attacker to their target[/b] — a different look and color per damage type (fire, ice, lightning, poison, holy, arcane, or a plain strike). It launches [b]in sync with your swing/cast[/b].")
 	display_game("  [color=#1EFF00]◆ Combat screen reorganized.[/color] Cleaner two-column battlefield: [b]combat log + your party on the left[/b], [b]enemy + your cards on the right[/b]. The combat log is taller and you can now [b]scroll up[/b] to re-read what you missed, and round dividers land in the right place.")
 	display_game("  [color=#1EFF00]◆ Loot reveals — no more wasted picks.[/color] On big flock/jackpot hauls the reveal grid now [b]grows to fit your reveal budget[/b] (and keeps growing when you flip [color=#FFD700]+2 Reveals[/color] / [color=#FFD700]Chain[/color] cells), so you never end up with leftover reveals and nothing to spend them on. Cross a high budget and the [b]extra cards are upgraded[/b] — richer payouts and better bonus cells.")
