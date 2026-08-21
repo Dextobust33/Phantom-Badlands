@@ -28053,10 +28053,12 @@ func update_companion_art_overlay():
 	"""Update the companion art overlay in the bottom-right of the game output."""
 	if companion_art_overlay == null:
 		return
-	# v0.9.663 — never show the game-output companion overlay during combat; the
-	# combat scene panel renders the companion in its own card. Combat updates
-	# call this repeatedly, which kept re-showing the bottom-right "remnant".
-	if in_combat:
+	# v0.9.663 — never show the game-output companion overlay while the combat
+	# scene is up; the panel renders the companion in its own card. Guard on the
+	# panel's visibility (not just in_combat) because the victory/continue phase
+	# sets in_combat=false while the scene is still shown — that window was
+	# re-showing the bottom-right "remnant".
+	if in_combat or (combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible):
 		companion_art_overlay.visible = false
 		return
 
