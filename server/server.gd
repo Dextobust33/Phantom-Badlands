@@ -85,6 +85,14 @@ const COMBAT_SCRATCH_BUDGET_MULT := 4
 const COMBAT_SCRATCH_FLOCK_STEP := 0.12
 const COMBAT_SCRATCH_MAX_CHANCE := 0.90
 const COMBAT_LOOT_SLOT_COUNT := 16
+# v0.9.664 — the reveal budget (×BUDGET_MULT + empowered + path + flock) can far
+# exceed the default 16 slots, wasting reveals on a too-small grid. When it does,
+# grow the grid so the player always has (budget + MARGIN) cells to choose from,
+# capped at MAX_SLOTS. Budgets that cross UPGRADE_THRESHOLD add *upgraded* cells
+# (richer rewards + better special-cell odds) as the jackpot payoff.
+const COMBAT_LOOT_MAX_SLOTS := 30
+const COMBAT_LOOT_CHOICE_MARGIN := 3
+const COMBAT_LOOT_UPGRADE_THRESHOLD := 12
 # Loot-as-chance for gathering + crafting (v0.9.662) — mirrors the combat
 # treat-rhythm. Most gathers/crafts resolve instantly (no minigame); the
 # scratch-off fires ~1/8 of the time, or ~1/2 on a "lucky" node / rare recipe,
@@ -6061,6 +6069,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					var _path_jackpot: int = int(characters[peer_id].get_path_effect_total("loot_reveal_bonus"))
 					if _path_jackpot > 0:
 						_bag["reveal_budget"] = int(_bag.get("reveal_budget", 0)) + _path_jackpot
+					# v0.9.664 — grow the grid to match the (now possibly huge) budget
+					# so no reveals are wasted; jackpot budgets add upgraded cells.
+					_resize_combat_loot_bag_for_budget(_bag, _monster_tier)
 					active_combat_loot[peer_id] = _bag
 					_combat_loot_bag_view = _serialize_combat_loot_bag_for_client(_bag, false)
 
@@ -20321,6 +20332,62 @@ func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 			var qty: int = randi_range(1, 1 + tier_scale / 3)
 			return {"kind": "filler_part", "material_id": part_id, "quantity": qty}
 
+func _build_combat_loot_filler_upgraded(monster_tier: int) -> Dictionary:
+	"""v0.9.664 — a richer filler used for the EXTRA cells added when a jackpot
+	reveal budget crosses COMBAT_LOOT_UPGRADE_THRESHOLD. Better special-cell odds
+	(chain/mystery/+2 at ~1/6 vs the base 1/12), NEVER a trap, and a reward tier
+	boosted +3 so a huge pack actually pays off instead of drowning the player in
+	base filler."""
+	if (randi() % 6) == 0:
+		return {"kind": "filler_chain"}
+	if (randi() % 6) == 0:
+		return {"kind": "filler_mystery"}
+	if (randi() % 5) == 0:
+		return {"kind": "filler_plus_two"}
+	var tier_scale: int = clampi(monster_tier + 3, 1, 9)
+	var roll = randi() % 4
+	match roll:
+		0:
+			var amount: int = max(2, randi_range(4, 10) * tier_scale / 2)
+			return {"kind": "filler_valor", "amount": amount}
+		1:
+			var qty: int = randi_range(2, 3 + tier_scale / 3)
+			return {"kind": "filler_essence", "amount": qty}
+		2:
+			var t_mats = ["iron_ore", "pine_wood", "wheat", "raw_hide"]
+			var mat_id: String = t_mats[randi() % t_mats.size()]
+			var qty2: int = randi_range(2, 3 + tier_scale / 4)
+			return {"kind": "filler_material", "material_id": mat_id, "quantity": qty2}
+		_:
+			var part_id: String = "monster_hide" if (randi() % 2 == 0) else "monster_bone"
+			var qty3: int = randi_range(2, 2 + tier_scale / 3)
+			return {"kind": "filler_part", "material_id": part_id, "quantity": qty3}
+
+func _resize_combat_loot_bag_for_budget(bag: Dictionary, monster_tier: int) -> void:
+	"""v0.9.664 — grow the reveal grid so a big budget never wastes reveals on a
+	too-small bag (the user's 'extra wasted reveals don't feel good' report). Adds
+	filler cells until the grid is at least (budget + CHOICE_MARGIN) so there's
+	always a choice, capped at MAX_SLOTS. When the budget crosses UPGRADE_THRESHOLD
+	the ADDED cells are upgraded (richer + better special odds). If the budget
+	still exceeds the capped grid, clamp it so no reveal is ever wasted."""
+	var slots: Array = bag.get("slots", [])
+	var budget: int = int(bag.get("reveal_budget", 0))
+	var target: int = mini(COMBAT_LOOT_MAX_SLOTS, maxi(slots.size(), budget + COMBAT_LOOT_CHOICE_MARGIN))
+	var upgraded: bool = budget >= COMBAT_LOOT_UPGRADE_THRESHOLD
+	while slots.size() < target:
+		var filler: Dictionary
+		if upgraded:
+			filler = _build_combat_loot_filler_upgraded(monster_tier)
+		else:
+			filler = _build_combat_loot_filler(monster_tier)
+		filler["revealed"] = false
+		slots.append(filler)
+	slots.shuffle()
+	bag["slots"] = slots
+	# Never let the budget exceed the grid — no wasted reveals even at the cap.
+	if budget > slots.size():
+		bag["reveal_budget"] = slots.size()
+
 func _is_equipment_drop(item: Dictionary) -> bool:
 	"""True when this drop is a gear-slot item (weapon/armor/helm/shield/boots/
 	ring/amulet/etc) — the items players were getting reliably pre-scratch-off.
@@ -20770,7 +20837,7 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 	# before the cascade.
 	var chain_neighbor_payloads: Array = []
 	if awarded is Dictionary and bool(awarded.get("trigger_chain", false)):
-		var neighbor_indices: Array = _chain_neighbor_indices(slot_index)
+		var neighbor_indices: Array = _chain_neighbor_indices(slot_index, slots.size())
 		for nidx in neighbor_indices:
 			if nidx < 0 or nidx >= slots.size():
 				continue
@@ -20806,23 +20873,37 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 		_finish_combat_loot(peer_id, true)
 
 
-func _chain_neighbor_indices(slot_index: int) -> Array:
+func _combat_loot_grid_cols(total: int) -> int:
+	"""v0.9.664 — column count for a bag of `total` cells. MUST match the client's
+	_ensure_card_count() formula so chain neighbors line up with what the player
+	sees (4 cols default, 5 for 17-24, 6 beyond)."""
+	if total > 24:
+		return 6
+	elif total > 16:
+		return 5
+	return 4
+
+func _chain_neighbor_indices(slot_index: int, total: int) -> Array:
 	"""Return the orthogonal (up/down/left/right) neighbor slot indices for the
-	16-slot 4x4 grid. Out-of-grid neighbors are skipped (corner cells get 2,
-	edge cells get 3, interior cells get 4)."""
-	var cols: int = 4
-	var rows: int = COMBAT_LOOT_SLOT_COUNT / cols
+	dynamic grid. Out-of-grid neighbors are skipped, and a partial last row is
+	guarded so a chain never targets a non-existent cell."""
+	var cols: int = _combat_loot_grid_cols(total)
+	var rows: int = int(ceil(float(total) / float(cols)))
 	var col: int = slot_index % cols
 	var row: int = int(slot_index / cols)
 	var out: Array = []
 	if row > 0:
 		out.append((row - 1) * cols + col)
 	if row < rows - 1:
-		out.append((row + 1) * cols + col)
+		var below: int = (row + 1) * cols + col
+		if below < total:
+			out.append(below)
 	if col > 0:
 		out.append(row * cols + (col - 1))
 	if col < cols - 1:
-		out.append(row * cols + (col + 1))
+		var right: int = row * cols + (col + 1)
+		if right < total:
+			out.append(right)
 	return out
 
 func handle_combat_loot_done(peer_id: int) -> void:

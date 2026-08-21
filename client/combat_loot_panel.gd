@@ -220,6 +220,37 @@ func _build_card(slot_index: int) -> PanelContainer:
 	return card
 
 
+func _ensure_card_count(n: int) -> void:
+	"""v0.9.664 — the bag can grow past the default 16 slots (big flock / jackpot
+	budgets add cells so no reveal is wasted). Build/trim cards to match the bag,
+	and scale the column count so the grid stays roughly square."""
+	n = max(1, n)
+	if _grid == null:
+		return
+	# Scale columns so tall bags don't run off the panel.
+	var cols: int = GRID_COLS
+	if n > 24:
+		cols = 6
+	elif n > 16:
+		cols = 5
+	_grid.columns = cols
+	# Add missing cards.
+	while _cards.size() < n:
+		var card := _build_card(_cards.size())
+		_cards.append(card)
+		_grid.add_child(card)
+	# Remove extras (also trim the label mirror _build_card appended to).
+	while _cards.size() > n:
+		var idx := _cards.size() - 1
+		var card = _cards[idx]
+		if is_instance_valid(card):
+			_grid.remove_child(card)
+			card.queue_free()
+		_cards.remove_at(idx)
+		if idx < _card_labels.size():
+			_card_labels.remove_at(idx)
+
+
 # === Public API ===
 
 func open_bag(bag_view: Dictionary) -> void:
@@ -236,6 +267,7 @@ func open_bag(bag_view: Dictionary) -> void:
 	_autoskip_enabled = bool(bag_view.get("autoskip_enabled", false))
 	if _autoskip_checkbox != null:
 		_autoskip_checkbox.set_pressed_no_signal(_autoskip_enabled)
+	_ensure_card_count(_slots_data.size())
 	_render_header()
 	_render_pinned(bag_view.get("pinned", []))
 	_render_reveals_counter()
@@ -817,19 +849,23 @@ func _move_focus(dx: int, dy: int) -> void:
 	"""Arrow-key movement. Moving outside the grid drops focus to the Done
 	button (for Down off the bottom row). Up from the Done button returns to
 	the bottom-most matching column of the grid."""
+	# v0.9.664 — the grid is dynamic (up to COMBAT_LOOT_MAX_SLOTS), so read the
+	# live column/card count instead of the fixed 16-slot / GRID_COLS constants.
+	var grid_cols: int = _grid.columns if _grid != null else GRID_COLS
+	var total: int = _cards.size()
 	if _focused_target == "done":
 		if dy < 0:
 			# Up from Done → bottom row of grid.
 			_focused_target = "grid"
-			var rows := int(ceil(float(SLOT_COUNT) / float(GRID_COLS)))
-			_focused_slot = clampi((rows - 1) * GRID_COLS, 0, SLOT_COUNT - 1)
+			var rows0 := int(ceil(float(total) / float(grid_cols)))
+			_focused_slot = clampi((rows0 - 1) * grid_cols, 0, total - 1)
 			_apply_focus_visuals()
 		# Left/Right/Down from Done: no-op (only one footer button currently).
 		return
 	# Grid movement.
-	var col := _focused_slot % GRID_COLS
-	var row := int(_focused_slot / GRID_COLS)
-	var rows := int(ceil(float(SLOT_COUNT) / float(GRID_COLS)))
+	var col := _focused_slot % grid_cols
+	var row := int(_focused_slot / grid_cols)
+	var rows := int(ceil(float(total) / float(grid_cols)))
 	var new_col := col + dx
 	var new_row := row + dy
 	# Vertical out-of-bounds — bottom row Down → Done button.
@@ -837,12 +873,12 @@ func _move_focus(dx: int, dy: int) -> void:
 		_focused_target = "done"
 		_apply_focus_visuals()
 		return
-	# Clamp horizontals; wrap is overkill for a 4x4.
-	new_col = clampi(new_col, 0, GRID_COLS - 1)
+	# Clamp horizontals; wrap is overkill for the grid.
+	new_col = clampi(new_col, 0, grid_cols - 1)
 	new_row = clampi(new_row, 0, rows - 1)
-	var new_index: int = new_row * GRID_COLS + new_col
-	if new_index >= SLOT_COUNT:
-		new_index = SLOT_COUNT - 1
+	var new_index: int = new_row * grid_cols + new_col
+	if new_index >= total:
+		new_index = total - 1
 	_focused_slot = new_index
 	_apply_focus_visuals()
 
