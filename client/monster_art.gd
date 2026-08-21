@@ -843,7 +843,7 @@ static func _add_remaining_monsters(art_map: Dictionary) -> void:
 "                                                                                                                                                      ",
 "                                                                                                                                                      ",
 "                                                                                                                                                      ","[/color]"]
-	art_map["Zombie"] = ["[color=#808080]",
+	art_map["Zombie"] = ["[color=#9ACD32]",
 "                                                                                                                                                      ",
 "                                                                                                                                                      ",
 "                                                                                                                                                      ",
@@ -5257,6 +5257,38 @@ static func _add_remaining_monsters(art_map: Dictionary) -> void:
 "                                                                                                                                                      ","[/color]"]
 
 # Get ASCII art for a specific monster
+# v0.9.665 — floor on monster-art brightness. Each monster's art is a single
+# monochrome [color=#hex] block, so several dark base colors (#8B4513 brown,
+# #800080 purple, etc.) render nearly invisible against the near-black combat
+# background. Raise any color below the luminance floor toward white, preserving
+# hue, so every monster is legible. Already-bright colors pass through untouched.
+const MONSTER_ART_MIN_LUMA := 0.45
+
+static func _brighten_bbcode_colors(bbcode: String) -> String:
+	if bbcode.is_empty():
+		return bbcode
+	var re := RegEx.new()
+	re.compile("\\[color=#([0-9A-Fa-f]{6})\\]")
+	var matches := re.search_all(bbcode)
+	if matches.is_empty():
+		return bbcode
+	var result := ""
+	var last := 0
+	for m in matches:
+		result += bbcode.substr(last, m.get_start() - last)
+		var c := Color("#" + m.get_string(1))
+		var luma: float = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+		if luma < MONSTER_ART_MIN_LUMA:
+			if luma > 0.001:
+				var f: float = MONSTER_ART_MIN_LUMA / luma
+				c = Color(minf(1.0, c.r * f), minf(1.0, c.g * f), minf(1.0, c.b * f))
+			else:
+				c = Color(MONSTER_ART_MIN_LUMA, MONSTER_ART_MIN_LUMA, MONSTER_ART_MIN_LUMA)
+		result += "[color=#%02X%02X%02X]" % [int(round(c.r * 255)), int(round(c.g * 255)), int(round(c.b * 255))]
+		last = m.get_end()
+	result += bbcode.substr(last)
+	return result
+
 static func get_monster_ascii_art(monster_name: String) -> String:
 	var art_map = get_art_map()
 
@@ -5282,7 +5314,7 @@ static func get_monster_ascii_art(monster_name: String) -> String:
 	# Check for exact match first
 	if art_map.has(monster_name):
 		var art_lines = art_map[monster_name]
-		return "\n".join(art_lines)
+		return _brighten_bbcode_colors("\n".join(art_lines))
 
 	# Check for variant format "VARIANT:Name1,Name2,Name3"
 	for key in art_map.keys():
@@ -5291,14 +5323,14 @@ static func get_monster_ascii_art(monster_name: String) -> String:
 			for variant_name in variant_names:
 				if variant_name.strip_edges() == monster_name:
 					var art_lines = art_map[key]
-					return "\n".join(art_lines)
+					return _brighten_bbcode_colors("\n".join(art_lines))
 
 	# Check for partial match (monster name contains key or vice versa)
 	for key in art_map.keys():
 		if not key.begins_with("VARIANT:"):
 			if monster_name.to_lower().contains(key.to_lower()) or key.to_lower().contains(monster_name.to_lower()):
 				var art_lines = art_map[key]
-				return "\n".join(art_lines)
+				return _brighten_bbcode_colors("\n".join(art_lines))
 
 	# Return empty string if no art found
 	return ""
