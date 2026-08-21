@@ -2738,27 +2738,6 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	effect_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(effect_label)
 
-	# v0.9.665 — mastery progress bar. A green fill (left→right) showing how
-	# close this ability is to its next rank-up; gold + full at max rank. Reads
-	# rank_progress from _resolve_card_info each refresh.
-	var mastery_bar := ProgressBar.new()
-	mastery_bar.name = "MasteryBar"
-	mastery_bar.custom_minimum_size = Vector2(0, 6)
-	mastery_bar.show_percentage = false
-	mastery_bar.min_value = 0.0
-	mastery_bar.max_value = 100.0
-	mastery_bar.value = 0.0
-	mastery_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var bar_bg := StyleBoxFlat.new()
-	bar_bg.bg_color = Color(0, 0, 0, 0.55)
-	bar_bg.set_corner_radius_all(3)
-	mastery_bar.add_theme_stylebox_override("background", bar_bg)
-	var bar_fill := StyleBoxFlat.new()
-	bar_fill.bg_color = Color("#3FB03F")
-	bar_fill.set_corner_radius_all(3)
-	mastery_bar.add_theme_stylebox_override("fill", bar_fill)
-	vbox.add_child(mastery_bar)
-
 	# Click handler — pulls the current card name from meta on click.
 	cell.gui_input.connect(_on_hand_cell_input.bind(index))
 	cell.set_meta("card_name", "")
@@ -2836,9 +2815,6 @@ func _refresh_hand() -> void:
 			cell.tooltip_text = ""
 			if glyph_lbl:
 				glyph_lbl.text = ""
-			var empty_mbar: ProgressBar = cell.get_node_or_null("VBox/MasteryBar")
-			if empty_mbar:
-				empty_mbar.visible = false
 			_set_cell_dim(cell, true, false)
 			continue
 
@@ -2847,16 +2823,11 @@ func _refresh_hand() -> void:
 		cell.set_meta("card_name", card_name)
 		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
 
-		# v0.9.665 — mastery progress fill: green bar toward next rank, gold+full
-		# at max rank.
-		var mbar: ProgressBar = cell.get_node_or_null("VBox/MasteryBar")
-		if mbar:
-			mbar.visible = true
-			var at_max_rank := bool(info.get("rank_at_max", false))
-			mbar.value = 100.0 if at_max_rank else float(info.get("rank_progress", 0.0)) * 100.0
-			var fill_sb = mbar.get_theme_stylebox("fill")
-			if fill_sb is StyleBoxFlat:
-				fill_sb.bg_color = Color("#FFD700") if at_max_rank else Color("#3FB03F")
+		# v0.9.665 — mastery progress drives a whole-card color gradient (dark ->
+		# green as the ability nears its next rank-up; gold at max). _set_cell_dim
+		# reads these metas when it themes the card bg.
+		cell.set_meta("mastery_progress", float(info.get("rank_progress", 0.0)))
+		cell.set_meta("mastery_at_max", bool(info.get("rank_at_max", false)))
 
 		# v0.9.425 — apply category theming to the cell stylebox + glyph.
 		var category_info: Dictionary = {}
@@ -2937,21 +2908,35 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 	if empty:
 		sb.border_color = Color(0.20, 0.18, 0.14, 1)
 		sb.bg_color = Color(0.04, 0.04, 0.05, 0.85)
-	elif not can_afford:
-		sb.border_color = Color(0.35, 0.25, 0.20, 1)
-		sb.bg_color = Color(0.06, 0.05, 0.06, 0.92)
+		return
+	# v0.9.665 — mastery gradient: the whole card shifts from dark toward green as
+	# the ability nears its next rank-up (warm gold once maxed). Category stays on
+	# the border so both cues read.
+	var progress := clampf(float(cell.get_meta("mastery_progress", 0.0)), 0.0, 1.0)
+	var at_max := bool(cell.get_meta("mastery_at_max", false))
+	var dark_bg := Color(0.07, 0.06, 0.06, 0.95)
+	var mastery_bg: Color
+	if at_max:
+		mastery_bg = Color(0.34, 0.27, 0.06, 0.95)  # warm gold
 	else:
-		var category_color_hex = str(cell.get_meta("category_color", "#B08C4C"))
-		var tint_alpha = float(cell.get_meta("category_tint_alpha", 0.0))
-		var border := Color(category_color_hex)
-		var base_bg := Color(0.08, 0.07, 0.05, 0.95)
-		# Blend the base bg toward the category color at the configured alpha.
-		if tint_alpha > 0.0:
-			var tint := Color(category_color_hex)
-			tint.a = base_bg.a
-			base_bg = base_bg.lerp(tint, tint_alpha)
-		sb.border_color = border
-		sb.bg_color = base_bg
+		mastery_bg = dark_bg.lerp(Color(0.12, 0.40, 0.13, 0.95), progress)  # dark -> green
+	if not can_afford:
+		# Uncastable — dim it + muted border, but keep the progress color visible.
+		mastery_bg = mastery_bg.darkened(0.35)
+		mastery_bg.a = 0.9
+		sb.border_color = Color(0.35, 0.28, 0.22, 1)
+		sb.bg_color = mastery_bg
+		return
+	# Castable — category color on the border + a subtle category bg tint (halved
+	# so the mastery green still shows through).
+	var category_color_hex = str(cell.get_meta("category_color", "#B08C4C"))
+	var tint_alpha = float(cell.get_meta("category_tint_alpha", 0.0))
+	if tint_alpha > 0.0:
+		var tint := Color(category_color_hex)
+		tint.a = mastery_bg.a
+		mastery_bg = mastery_bg.lerp(tint, tint_alpha * 0.5)
+	sb.border_color = Color(category_color_hex)
+	sb.bg_color = mastery_bg
 
 
 func _resolve_card_info(card_name: String) -> Dictionary:
