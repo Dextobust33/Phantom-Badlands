@@ -26865,8 +26865,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.661 — Rebuild fix (for real this time).
-	display_game("[color=#00FF00]v0.9.661[/color] [color=#808080](Current)[/color]")
+	# v0.9.662 — Launcher platform fix + loot-as-chance for gathering/crafting.
+	display_game("[color=#00FF00]v0.9.662[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ LAUNCHER FIX — updates actually apply now.[/color] Some launchers were downloading the wrong platform's files (e.g. the Linux build on a Windows PC), stamping the new version but leaving the real game stale — so 'updates' silently changed nothing. The launcher now verifies every file it writes and refuses to mark an update done unless it truly installed your platform's build.")
+	display_game("  [color=#1EFF00]◆ Loot-as-chance comes to gathering & crafting.[/color]")
+	display_game("  • [b]Gathering[/b] (fish / mine / chop / forage) mostly resolves [b]instantly[/b] now — a quick result line instead of the scratch-off every single time. About [color=#FFD700]1 in 8[/color] gathers (and [color=#FFD700]~1 in 2[/color] on a rich, high-tier node) pops the scratch-off with a [color=#FFD700]doubled reveal budget[/color] for a real haul.")
+	display_game("  • [b]Crafting[/b] mostly resolves instantly at solid quality (no more minigame on every craft). The craft minigame now appears occasionally — far more often on rare, high-difficulty recipes — and when it does it can only [b]improve[/b] your result: top quality plus bonus duplicate / refund / tool slots.")
+	display_game("  • [b]Flock jackpots build[/b] — each extra monster you kill in a flock chain raises the scratch-off odds toward a near-guaranteed reveal, on top of the bigger budget a long flock already earns.")
+	display_game("  • Combat fix: the [b]victory screen[/b] no longer occasionally vanishes on a quick kill.")
+	display_game("")
+
+	# v0.9.661 — Rebuild fix.
+	display_game("[color=#00FFFF]v0.9.661[/color]")
 	display_game("  [color=#1EFF00]◆ Build fix.[/color] Releases v0.9.657-660 accidentally shipped with stale code (a build-cache bug), so their new features never applied. This build forces a full recompile from source — [b]combat pixel sprites[/b], [b]character deletion[/b], [b]guided intro[/b], [b]loot pacing[/b] and the login/creation reworks are all really here now. Verified.")
 	display_game("")
 
@@ -26905,14 +26915,6 @@ func display_changelog():
 	display_game("  • Set bonuses stack with uniques and your Path talents — they all speak the same language under the hood. Build around the overlap.")
 	display_game("")
 
-	# v0.9.655 — Uniques (ARPG arc pillar 4) + Empowered density 25%.
-	display_game("[color=#00FFFF]v0.9.655[/color]")
-	display_game("  [color=#FF8000]★ UNIQUE ITEMS — hand-authored legendaries. ARPG arc pillar 4 begins.[/color]")
-	display_game("  • [b]15 named uniques[/b] with fixed rule-breaking signature powers: [color=#FF8000]Bloodletter's Hook[/color] (your bleeds tick double), [color=#FF8000]The Second Sun[/color] (spells can cast twice), [color=#FF8000]Juggernaut's Heart[/color] (stun immunity), [color=#FF8000]Phantom Shroud[/color] (first strike always crits), [color=#FF8000]The Hourglass, Unbroken[/color] (cheat death with frozen time), [color=#FF8000]Avarice, the Golden Burden[/color] (+1 loot reveal, -10%% XP)... and 9 more to discover.")
-	display_game("  • [b]The hunt[/b]: tiny base drop chance, but +0.75%% per Empowered modifier on the kill and +2.5%% from bosses — hunting elites IS the unique hunt. Uniques drop at the kill's level, so their stats scale forever; the signature never changes. Any class can find any unique — trade them on the market.")
-	display_game("  • [b]Unique drops auto-pin[/b] to the victory banner with a [color=#FF8000]★ UNIQUE[/color] tag, signature lines, and a lore inscription in the tooltip.")
-	display_game("  [color=#FFD700]⚡ EMPOWERED DENSITY: 15%% → 25%%.[/color] The Paths talent tree shipped the counterplay (stun negation, reflects, cleanses) — now the Badlands bite back at full ARPG rhythm. 1 in 4 monsters carries modifiers.")
-	display_game("")
 
 	# v0.9.654 — Path of the Badlands (ARPG arc pillar 3).
 	display_game("[color=#00FFFF]v0.9.654[/color]")
