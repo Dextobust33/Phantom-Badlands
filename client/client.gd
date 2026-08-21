@@ -27135,8 +27135,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.664 — Combat layout refinements + ASCII travel FX + loot reveal mix.
+	display_game("[color=#00FF00]v0.9.664[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ COMBAT ATTACK EFFECTS.[/color] Attacks and skills now fire a quick [b]ASCII effect that flies from the attacker to their target[/b] — a different look and color per damage type (fire, ice, lightning, poison, holy, arcane, or a plain strike). It launches [b]in sync with your swing/cast[/b].")
+	display_game("  [color=#1EFF00]◆ Combat screen reorganized.[/color] Cleaner two-column battlefield: [b]combat log + your party on the left[/b], [b]enemy + your cards on the right[/b]. The combat log is taller and you can now [b]scroll up[/b] to re-read what you missed, and round dividers land in the right place.")
+	display_game("  [color=#1EFF00]◆ Loot reveals — no more wasted picks.[/color] On big flock/jackpot hauls the reveal grid now [b]grows to fit your reveal budget[/b] (and keeps growing when you flip [color=#FFD700]+2 Reveals[/color] / [color=#FFD700]Chain[/color] cells), so you never end up with leftover reveals and nothing to spend them on. Cross a high budget and the [b]extra cards are upgraded[/b] — richer payouts and better bonus cells.")
+	display_game("  • Every loot tile now shows the [b]key you can press[/b] to reveal it (no more blank tiles on the bigger grids).")
+	display_game("  • Login screen: a small [b]server picker[/b] at the bottom (Main / Local) for testing — defaults to the main server.")
+	display_game("")
+
 	# v0.9.663 — Combat visual overhaul + responsive UI + music.
-	display_game("[color=#00FF00]v0.9.663[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.663[/color]")
 	display_game("  [color=#FF8000]★ COMBAT SCREEN REBUILT.[/color] New side-by-side battlefield: your party (bigger pixel hero + companion) stacked on the [b]left[/b], the enemy [b]large and centered on the right[/b]. The monster now [b]auto-sizes[/b] to fill its space at any resolution, the attack animation plays [b]over[/b] the cards, and the combat log is a fixed, readable strip.")
 	display_game("  [color=#1EFF00]◆ Responsive UI — scales to your screen.[/color] The whole interface now scales cleanly: [b]readable on 4K[/b] (no more tiny text) and [b]fits small windows[/b] (no more cut-off). Drag between monitors freely.")
 	display_game("  [color=#1EFF00]◆ Music![/color] Contextual background tracks — a calm loop while browsing [b]posts[/b], a moody loop in [b]dungeons[/b], and rotating [b]overworld[/b] tracks that fade in, play, then rest for a few minutes so it never overwhelms. New [b]volume slider[/b] next to the ♪ toggle (top-right).")
