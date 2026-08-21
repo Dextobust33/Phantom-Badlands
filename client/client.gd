@@ -33167,24 +33167,50 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 			or "outsmart" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 
-	# v0.9.664 — general ASCII travel FX: a short glyph trail that flies from the
-	# attacker to the target for attacks/skills. Skips mage casts (handled by the
-	# dedicated projectile above) to avoid a double effect.
+	# v0.9.664 — general ASCII travel FX: a short random glyph trail that flies
+	# from the attacker to the target for attacks/skills (unique char pool + color
+	# per attack type). Skips mage casts (handled by the dedicated projectile
+	# above) to avoid a double effect.
 	if not ("You cast" in combat_msg and "#FF00FF" in combat_msg):
 		var _tactor := _classify_combat_actor(combat_msg)
+		# The classifier only tags "player" for " attacks" + "You " lines, so it
+		# misses player skills (smite/swing/stab, lowercase or colored "you").
+		# Detect a first-person line as the player's own action.
+		if _tactor != "companion" and _tactor != "monster":
+			if _strip_bbcode_for_classify(combat_msg).strip_edges().to_lower().begins_with("you "):
+				_tactor = "player"
 		if _tactor == "player" or _tactor == "companion" or _tactor == "monster":
 			if ("damage" in lower or "attacks" in lower or "smite" in lower
 					or "hits" in lower or "strike" in lower or "slash" in lower
-					or "bite" in lower or "claw" in lower or "stab" in lower):
-				var _tcolor := Color("#FFCC44")
-				if _tactor == "companion":
-					_tcolor = Color("#66DDFF")
-				elif _tactor == "monster":
-					_tcolor = Color("#FF5555")
-				var _tglyph := "»»➤"
-				if "cast" in lower or "spell" in lower:
-					_tglyph = "✦✧✦"
-				combat_scene_panel.play_travel_fx(_tactor, _tglyph, _tcolor)
+					or "bite" in lower or "claw" in lower or "stab" in lower
+					or "swing" in lower or "cleave" in lower or "bash" in lower
+					or "shoot" in lower or "pierce" in lower or "slam" in lower
+					or "hack" in lower or "burn" in lower or "blast" in lower):
+				combat_scene_panel.play_travel_fx(_tactor, _travel_fx_type(lower))
+
+func _travel_fx_type(lower: String) -> String:
+	"""v0.9.664 — classify a combat line into a travel-FX element so the trail
+	pulls from that element's char pool + color. Order matters: elemental keywords
+	win over the generic 'arcane' catch-all (so 'fire bolt' -> fire, not arcane)."""
+	if ("fire" in lower or "flame" in lower or "burn" in lower or "scorch" in lower
+			or "meteor" in lower or "inferno" in lower or "lava" in lower or "ember" in lower):
+		return "fire"
+	if ("ice" in lower or "frost" in lower or "freeze" in lower or "frozen" in lower
+			or "chill" in lower or "blizzard" in lower or "glacial" in lower):
+		return "ice"
+	if ("lightning" in lower or "shock" in lower or "thunder" in lower or "spark" in lower
+			or "storm" in lower or "electric" in lower or "volt" in lower):
+		return "lightning"
+	if ("poison" in lower or "toxic" in lower or "venom" in lower or "acid" in lower
+			or "plague" in lower or "corros" in lower or "blight" in lower):
+		return "poison"
+	if ("smite" in lower or "holy" in lower or "divine" in lower or "radiant" in lower
+			or "bless" in lower or "consecrat" in lower or "sacred" in lower or "judgment" in lower):
+		return "holy"
+	if ("cast" in lower or "spell" in lower or "arcane" in lower or "bolt" in lower
+			or "magic" in lower or "hex" in lower or "curse" in lower or "eldritch" in lower):
+		return "arcane"
+	return "physical"
 
 func _drain_combat_queue():
 	"""Display one queued combat message, then pause before showing the next."""

@@ -5137,10 +5137,41 @@ func _play_impact_burst(local_pos: Vector2, color: Color) -> void:
 	t.chain().tween_callback(burst.queue_free)
 
 
-func play_travel_fx(attacker: String, glyph: String, color: Color) -> void:
-	"""v0.9.664 — a short ASCII trail that flies from the attacker to the target,
-	rotated to point along the path, ending in a small impact burst.
-	attacker = "player" | "companion" | "monster"."""
+# v0.9.664 — each attack/skill type draws from its own random char pool + color.
+# Physical trails leave "color" empty and take the attacker's color instead.
+const _TRAVEL_FX_TYPES := {
+	"fire":      {"pool": "*^~×+=#%", "color": "#FF6622"},
+	"ice":       {"pool": "+.:*=<>~", "color": "#66DDFF"},
+	"lightning": {"pool": "zZ/\\~+×!", "color": "#FFEE44"},
+	"poison":    {"pool": "~.:;+*=%", "color": "#77CC33"},
+	"holy":      {"pool": "+*✦✧.~=", "color": "#FFE39A"},
+	"arcane":    {"pool": "✦✧●~*+=<", "color": "#CC66FF"},
+	"physical":  {"pool": "~*^+=xX/\\<>»«-", "color": ""},
+}
+
+func _random_trail_from_pool(pool: String) -> String:
+	# A fresh random ASCII trail each attack (not a fixed glyph).
+	var n: int = 2 + (randi() % 3)  # 2-4 chars
+	var s: String = ""
+	for i in range(n):
+		s += pool[randi() % pool.length()]
+	return s
+
+func play_travel_fx(attacker: String, fx_type: String = "physical") -> void:
+	"""v0.9.664 — a short RANDOM ASCII trail (unique char pool + color per attack
+	type) that flies from the attacker to the target, rotated along the path,
+	ending in an impact burst. attacker = player|companion|monster."""
+	var entry: Dictionary = _TRAVEL_FX_TYPES.get(fx_type, _TRAVEL_FX_TYPES["physical"])
+	var glyph: String = _random_trail_from_pool(entry["pool"])
+	var color: Color
+	if String(entry["color"]) == "":
+		color = Color("#FFCC44")  # player: gold
+		if attacker == "companion":
+			color = Color("#66DDFF")  # companion: cyan
+		elif attacker == "monster":
+			color = Color("#FF5555")  # monster: red
+	else:
+		color = Color(entry["color"])
 	var from_node: Control = null
 	var to_node: Control = null
 	if attacker == "monster":
@@ -5174,7 +5205,7 @@ func play_travel_fx(attacker: String, glyph: String, color: Color) -> void:
 	label.pivot_offset = label.size * 0.5
 	label.rotation = (end_pos - start_pos).angle()  # point the trail along the path
 	var t := create_tween()
-	t.tween_property(label, "position", end_pos, 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_property(label, "position", end_pos, 0.36).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	t.tween_callback(_play_impact_burst.bind(end_pos, color))
 	t.tween_callback(label.queue_free)
 
