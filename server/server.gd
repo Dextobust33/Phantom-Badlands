@@ -90,7 +90,7 @@ const COMBAT_LOOT_SLOT_COUNT := 16
 # grow the grid so the player always has (budget + MARGIN) cells to choose from,
 # capped at MAX_SLOTS. Budgets that cross UPGRADE_THRESHOLD add *upgraded* cells
 # (richer rewards + better special-cell odds) as the jackpot payoff.
-const COMBAT_LOOT_MAX_SLOTS := 30
+const COMBAT_LOOT_MAX_SLOTS := 36  # 6x6 — matches the client's 36 keyboard labels
 const COMBAT_LOOT_CHOICE_MARGIN := 3
 const COMBAT_LOOT_UPGRADE_THRESHOLD := 12
 # Loot-as-chance for gathering + crafting (v0.9.662) — mirrors the combat
@@ -20388,6 +20388,35 @@ func _resize_combat_loot_bag_for_budget(bag: Dictionary, monster_tier: int) -> v
 	if budget > slots.size():
 		bag["reveal_budget"] = slots.size()
 
+func _combat_loot_sealed_count(bag: Dictionary) -> int:
+	"""How many cells are still unrevealed."""
+	var c: int = 0
+	for s in bag.get("slots", []):
+		if not bool(s.get("revealed", false)):
+			c += 1
+	return c
+
+func _topup_combat_loot_grid(bag: Dictionary) -> void:
+	"""v0.9.664 — after a bonus-reveal cell (+2 Reveals / Chain) grows the budget
+	mid-session, append sealed cells so those extra reveals always have somewhere
+	to land instead of being wasted on an already-full grid (the user's report).
+	Appended cells are UPGRADED (bonus reveals should feel rewarding). Capped at
+	COMBAT_LOOT_MAX_SLOTS; if the cap is hit the budget is clamped so the counter
+	never strands reveals the player can't spend."""
+	var slots: Array = bag.slots
+	var remaining: int = int(bag.get("reveal_budget", 0)) - int(bag.get("reveals_used", 0))
+	var sealed: int = _combat_loot_sealed_count(bag)
+	var monster_tier: int = int(bag.get("monster_tier", 1))
+	while sealed < remaining and slots.size() < COMBAT_LOOT_MAX_SLOTS:
+		var filler: Dictionary = _build_combat_loot_filler_upgraded(monster_tier)
+		filler["revealed"] = false
+		slots.append(filler)
+		sealed += 1
+	bag["slots"] = slots
+	# Cap hit and still short — clamp so remaining reveals never exceed the grid.
+	if sealed < remaining:
+		bag["reveal_budget"] = int(bag.get("reveals_used", 0)) + sealed
+
 func _is_equipment_drop(item: Dictionary) -> bool:
 	"""True when this drop is a gear-slot item (weapon/armor/helm/shield/boots/
 	ring/amulet/etc) — the items players were getting reliably pre-scratch-off.
@@ -20811,6 +20840,12 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 	if slot_index < 0 or slot_index >= slots.size():
 		return
 	if bool(slots[slot_index].get("revealed", false)):
+		# v0.9.664 — already revealed server-side (e.g. a chain flipped it while
+		# the client still shows it sealed). If the whole grid is now revealed,
+		# finish so the client can't get stranded clicking a cell it thinks is
+		# sealed but the server won't re-reveal.
+		if _combat_loot_sealed_count(bag) == 0:
+			_finish_combat_loot(peer_id, true)
 		return
 	if int(bag.get("reveals_used", 0)) >= int(bag.get("reveal_budget", 0)):
 		send_to_peer(peer_id, {"type": "combat_loot_error", "reason": "No reveals remaining."})
@@ -20858,6 +20893,10 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 			if n_pen > 0:
 				bag["reveal_budget"] = max(int(bag.get("reveals_used", 0)), int(bag.get("reveal_budget", 0)) - n_pen)
 			chain_neighbor_payloads.append({"slot_index": nidx, "reveal": n_award})
+	# v0.9.664 — bonus/chain reveals may have grown the budget; top up the grid so
+	# those extra reveals have sealed cells to land on (no wasted reveals). Send
+	# the new total so the client can add the extra cards mid-session.
+	_topup_combat_loot_grid(bag)
 	send_to_peer(peer_id, {
 		"type": "combat_loot_reveal_result",
 		"slot_index": slot_index,
@@ -20865,11 +20904,14 @@ func handle_combat_loot_reveal(peer_id: int, message: Dictionary) -> void:
 		"chain_neighbors": chain_neighbor_payloads,
 		"reveals_used": int(bag.reveals_used),
 		"reveal_budget": int(bag.reveal_budget),
+		"total_slots": slots.size(),
 		"character": characters[peer_id].to_dict(),
 	})
 	save_character(peer_id)
-	if int(bag.reveals_used) >= int(bag.reveal_budget):
-		# Budget exhausted — auto-close (client will animate the cascade).
+	# Auto-close when the budget is spent OR every cell is already revealed —
+	# the latter guards against stranding the player with reveals left but no
+	# sealed cells to flip (v0.9.664 soft-lock fix).
+	if int(bag.reveals_used) >= int(bag.reveal_budget) or _combat_loot_sealed_count(bag) == 0:
 		_finish_combat_loot(peer_id, true)
 
 

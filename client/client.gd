@@ -570,6 +570,10 @@ var chat_tab: String = "chat"  # "chat" or "players"
 @onready var login_button = $LoginPanel/VBox/ButtonContainer/LoginButton
 @onready var register_button = $LoginPanel/VBox/ButtonContainer/RegisterButton
 @onready var login_status = $LoginPanel/VBox/StatusLabel
+# v0.9.664 — login-screen server picker (Main vs Local, etc). Built lazily and
+# pinned to the top of the login VBox; switching reconnects to the chosen host.
+var _server_picker: OptionButton = null
+var _server_picker_conns: Array = []
 
 # UI References - Character Select Panel
 @onready var char_select_panel = $CharacterSelectPanel
@@ -5146,6 +5150,7 @@ func show_login_panel():
 	hide_all_panels()
 	if login_panel:
 		login_panel.visible = true
+		_ensure_server_picker()
 		# Always land on the clean Login screen (not the Create Account screen).
 		_set_login_mode("login")
 		# Clear password field for security
@@ -5166,6 +5171,69 @@ func show_login_panel():
 					password_field.grab_focus()
 			else:
 				username_field.grab_focus()
+
+func _ensure_server_picker():
+	"""v0.9.664 — small, unobtrusive server dropdown pinned to the BOTTOM of the
+	login screen. Two fixed choices only: Phantom Badlands (main, the default) and
+	Local Server. Kept small + low so players don't change it by accident or think
+	they must pick a server before logging in."""
+	if login_panel == null:
+		return
+	var vbox = login_panel.get_node_or_null("VBox")
+	if vbox == null:
+		return
+	# Fixed choices — no legacy hosts, no raw IP in the label.
+	_server_picker_conns = [
+		{"ip": "5.78.217.135", "port": 9080, "label": "Phantom Badlands Main Server"},
+		{"ip": "localhost", "port": 9080, "label": "Local Server"},
+	]
+	if _server_picker == null or not is_instance_valid(_server_picker):
+		var row := HBoxContainer.new()
+		row.name = "ServerPickerRow"
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 6)
+		var lbl := Label.new()
+		lbl.text = "Server:"
+		lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		lbl.add_theme_font_size_override("font_size", 11)
+		row.add_child(lbl)
+		_server_picker = OptionButton.new()
+		_server_picker.name = "ServerPicker"
+		_server_picker.add_theme_font_size_override("font_size", 11)
+		_server_picker.custom_minimum_size = Vector2(210, 24)
+		_server_picker.item_selected.connect(_on_server_picker_selected)
+		row.add_child(_server_picker)
+		vbox.add_child(row)
+		vbox.move_child(row, vbox.get_child_count() - 1)  # pin to the bottom
+	_server_picker.clear()
+	for conn in _server_picker_conns:
+		_server_picker.add_item(str(conn["label"]))
+	# Reflect the current target — defaults to Main since server_ip defaults there.
+	var sel := 0
+	for i in range(_server_picker_conns.size()):
+		if str(_server_picker_conns[i]["ip"]) == server_ip:
+			sel = i
+			break
+	_server_picker.select(sel)
+
+func _on_server_picker_selected(idx: int):
+	"""Switch the active server + reconnect."""
+	if idx < 0 or idx >= _server_picker_conns.size():
+		return
+	var conn = _server_picker_conns[idx]
+	var new_ip := str(conn["ip"])
+	var new_port := int(conn["port"])
+	if new_ip == server_ip and new_port == server_port and connected:
+		return  # already on this host
+	server_ip = new_ip
+	server_port = new_port
+	_save_connection_settings()
+	if login_status:
+		login_status.text = "[color=#00FFFF]Connecting to %s...[/color]" % new_ip
+	reset_connection_state()
+	if connection and connection.get_status() != StreamPeerTCP.STATUS_NONE:
+		connection.disconnect_from_host()
+	call_deferred("connect_to_server")
 
 func show_character_select_panel():
 	hide_all_panels()
@@ -24640,6 +24708,14 @@ func _load_connection_settings():
 				# localhost is preserved (editor / dev). Skipped in editor so dev
 				# builds can keep testing locally.
 				if not OS.has_feature("editor"):
+					# v0.9.664 — exported/player builds ALWAYS start on the main
+					# server, regardless of any host last saved. The login-screen
+					# dropdown can switch to Local within a session, but that choice
+					# is never the persistent default for players, so they can't get
+					# stuck on a Local server that isn't running. (Dev/editor keeps
+					# the last-used host so local testing survives relaunches.)
+					server_ip = "5.78.217.135"
+					server_port = 9080
 					if server_ip == "129.213.166.185":
 						server_ip = "5.78.217.135"
 					# Rewrite any saved-connection entry that still has the Oracle IP
@@ -30741,7 +30817,8 @@ func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
 			reveal,
 			int(message.get("reveals_used", 0)),
 			int(message.get("reveal_budget", 0)),
-			chain_neighbors
+			chain_neighbors,
+			int(message.get("total_slots", 0))
 		)
 
 func _handle_combat_loot_done_result(message: Dictionary) -> void:

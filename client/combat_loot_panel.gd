@@ -220,6 +220,18 @@ func _build_card(slot_index: int) -> PanelContainer:
 	return card
 
 
+func _grow_grid_to(n: int) -> void:
+	"""v0.9.664 — extend the grid mid-session (bonus reveals added cells server
+	side). Pad _slots_data with sealed placeholders, rebuild the cards to match,
+	then render the newly-added sealed tiles."""
+	var old: int = _cards.size()
+	while _slots_data.size() < n:
+		_slots_data.append({"kind": "sealed", "revealed": false})
+	_ensure_card_count(n)
+	for i in range(old, _cards.size()):
+		_render_card(i)
+
+
 func _ensure_card_count(n: int) -> void:
 	"""v0.9.664 — the bag can grow past the default 16 slots (big flock / jackpot
 	budgets add cells so no reveal is wasted). Build/trim cards to match the bag,
@@ -395,10 +407,15 @@ func _render_pinned(pinned: Array) -> void:
 		_pinned_container.add_child(row)
 
 
-func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, reveal_budget: int, chain_neighbors: Array = []) -> void:
+func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, reveal_budget: int, chain_neighbors: Array = [], total_slots: int = 0) -> void:
 	"""Server confirmed a reveal — flip the card to show the awarded outcome.
 	When chain_neighbors[] is non-empty (the awarded slot was a Chain cell), the
-	panel cascades the neighbor reveals on a 60ms stagger after the shockwave."""
+	panel cascades the neighbor reveals on a 60ms stagger after the shockwave.
+	total_slots (v0.9.664): the server can GROW the grid mid-session when a bonus
+	reveal (+2 / Chain) adds budget — add the new sealed cards first so the extra
+	reveals have somewhere to land."""
+	if total_slots > _cards.size():
+		_grow_grid_to(total_slots)
 	if slot_index < 0 or slot_index >= _cards.size():
 		return
 	if slot_index >= _slots_data.size():
@@ -775,24 +792,27 @@ func _on_done_pressed() -> void:
 #
 # QWERTY-grid layout (positionally matches the 4×4 slot grid like a
 # touch-typist's left hand):
-#   Row 0: 1  2  3  4         slots  0  1  2  3
-#   Row 1: Q  W  E  R         slots  4  5  6  7
-#   Row 2: A  S  D  F         slots  8  9 10 11
-#   Row 3: Z  X  C  V         slots 12 13 14 15
-#
 # A single keypress immediately attempts to reveal that slot (same path
 # as a click). Useful keys (Enter / Space / arrows / WASD / Tab) still work.
+# v0.9.664 — extended from 16 to 30 keys (reading order: number row, then QWERTY
+# rows) so the grown grid (up to COMBAT_LOOT_MAX_SLOTS=30) never shows a keyless
+# "?" tile. The tile prints its own key, so a flat sequence reads fine even when
+# the column count varies (4/5/6).
 const _QWERTY_SLOT_KEYS := {
-	KEY_1: 0, KEY_2: 1, KEY_3: 2, KEY_4: 3,
-	KEY_Q: 4, KEY_W: 5, KEY_E: 6, KEY_R: 7,
-	KEY_A: 8, KEY_S: 9, KEY_D: 10, KEY_F: 11,
-	KEY_Z: 12, KEY_X: 13, KEY_C: 14, KEY_V: 15,
+	KEY_1: 0, KEY_2: 1, KEY_3: 2, KEY_4: 3, KEY_5: 4, KEY_6: 5, KEY_7: 6, KEY_8: 7, KEY_9: 8, KEY_0: 9,
+	KEY_Q: 10, KEY_W: 11, KEY_E: 12, KEY_R: 13, KEY_T: 14, KEY_Y: 15, KEY_U: 16, KEY_I: 17, KEY_O: 18, KEY_P: 19,
+	KEY_A: 20, KEY_S: 21, KEY_D: 22, KEY_F: 23, KEY_G: 24, KEY_H: 25, KEY_J: 26, KEY_K: 27, KEY_L: 28,
+	KEY_Z: 29, KEY_X: 30, KEY_C: 31, KEY_V: 32, KEY_B: 33, KEY_N: 34, KEY_M: 35,
 }
-# v0.9.603 — inverse map: slot index → key label rendered on the sealed
-# tile. Replaces the generic "?" so the player can see at a glance which
-# key reveals each tile (player report: "no indicator on the Loot card
-# that indicates what keys the player can press").
-const _SLOT_KEY_LABELS := ["1", "2", "3", "4", "Q", "W", "E", "R", "A", "S", "D", "F", "Z", "X", "C", "V"]
+# Inverse map: slot index → key label rendered on the sealed tile. Replaces the
+# generic "?" so the player can see at a glance which key reveals each tile.
+# 36 entries — matches COMBAT_LOOT_MAX_SLOTS so a fully-grown grid is all keyed.
+const _SLOT_KEY_LABELS := [
+	"1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+	"Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P",
+	"A", "S", "D", "F", "G", "H", "J", "K", "L",
+	"Z", "X", "C", "V", "B", "N", "M",
+]
 
 
 func _input(event: InputEvent) -> void:
