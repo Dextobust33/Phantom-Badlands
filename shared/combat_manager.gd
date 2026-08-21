@@ -490,10 +490,33 @@ func _process_status_ticks(character: Character, messages: Array) -> void:
 		else:
 			messages.append("[color=#00FF00]Your vision clears![/color]")
 
+# v0.9.665 — flat % of max primary resource regained per player turn, before any
+# gear/Path/buff regen. Raise to make cards castable more often; lower to make
+# resource management tighter.
+const BASE_COMBAT_REGEN_PCT := 12.0
+
 func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 	"""Apply equipment-based and buff-based resource regeneration at start of player turn.
 	Called by both regular attacks and ability usage."""
 	var bonuses = character.get_equipment_bonuses()
+
+	# v0.9.665 — BASE per-turn resource regen (gear-INDEPENDENT). Previously the
+	# only recovery was regen gear / Path nodes / the turn-costing RECHARGE action,
+	# so an under-geared player drained their pool and got stuck spamming the free
+	# basic attack across multiple fights. Now the class's PRIMARY resource
+	# trickles back a flat % of its max each player turn. Silent — the resource
+	# bar shows it. Tune BASE_COMBAT_REGEN_PCT to taste.
+	var base_pct := BASE_COMBAT_REGEN_PCT
+	match character.get_class_path():
+		"warrior":
+			var ms = character.get_total_max_stamina()
+			character.current_stamina = mini(ms, character.current_stamina + maxi(2, int(ms * base_pct / 100.0)))
+		"mage":
+			var mm = character.get_total_max_mana()
+			character.current_mana = mini(mm, character.current_mana + maxi(2, int(mm * base_pct / 100.0)))
+		"trickster":
+			var me = character.get_total_max_energy()
+			character.current_energy = mini(me, character.current_energy + maxi(2, int(me * base_pct / 100.0)))
 
 	# Path: combat_resource_regen_pct (Second Wind — % of max primary
 	# resource per combat round, archetype-matched).

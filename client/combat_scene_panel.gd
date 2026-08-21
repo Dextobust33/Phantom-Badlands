@@ -2654,6 +2654,24 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	sb.content_margin_bottom = 8
 	cell.add_theme_stylebox_override("panel", sb)
 
+	# v0.9.665 — mastery fill: a full-card background that grows LEFT->RIGHT as the
+	# ability nears its next rank-up (25% progress = left quarter filled). Added
+	# FIRST so it draws behind the card content; a ProgressBar fills value% of its
+	# own width, so it works regardless of the exact laid-out card size.
+	var mastery_fill := ProgressBar.new()
+	mastery_fill.name = "MasteryFill"
+	mastery_fill.show_percentage = false
+	mastery_fill.min_value = 0.0
+	mastery_fill.max_value = 100.0
+	mastery_fill.value = 0.0
+	mastery_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mastery_fill.add_theme_stylebox_override("background", StyleBoxEmpty.new())  # panel bg shows through
+	var mf_fill := StyleBoxFlat.new()
+	mf_fill.bg_color = Color(0.15, 0.52, 0.16, 0.42)  # translucent green — text stays readable
+	mf_fill.set_corner_radius_all(5)
+	mastery_fill.add_theme_stylebox_override("fill", mf_fill)
+	cell.add_child(mastery_fill)
+
 	# v0.9.425 — category glyph rendered in the top-right corner of the card
 	# (anchored via top_right preset so it stays in place across resizes).
 	# Color and text are populated in _refresh_hand from the ability table.
@@ -2815,6 +2833,9 @@ func _refresh_hand() -> void:
 			cell.tooltip_text = ""
 			if glyph_lbl:
 				glyph_lbl.text = ""
+			var empty_mfill: ProgressBar = cell.get_node_or_null("MasteryFill")
+			if empty_mfill:
+				empty_mfill.visible = false
 			_set_cell_dim(cell, true, false)
 			continue
 
@@ -2823,11 +2844,16 @@ func _refresh_hand() -> void:
 		cell.set_meta("card_name", card_name)
 		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
 
-		# v0.9.665 — mastery progress drives a whole-card color gradient (dark ->
-		# green as the ability nears its next rank-up; gold at max). _set_cell_dim
-		# reads these metas when it themes the card bg.
-		cell.set_meta("mastery_progress", float(info.get("rank_progress", 0.0)))
-		cell.set_meta("mastery_at_max", bool(info.get("rank_at_max", false)))
+		# v0.9.665 — mastery fill grows LEFT->RIGHT with progress toward the next
+		# rank-up (gold + full at max). MasteryFill sits behind the card content.
+		var mfill: ProgressBar = cell.get_node_or_null("MasteryFill")
+		if mfill:
+			mfill.visible = true
+			var at_max_rank := bool(info.get("rank_at_max", false))
+			mfill.value = 100.0 if at_max_rank else float(info.get("rank_progress", 0.0)) * 100.0
+			var fsb = mfill.get_theme_stylebox("fill")
+			if fsb is StyleBoxFlat:
+				fsb.bg_color = Color(0.62, 0.50, 0.10, 0.5) if at_max_rank else Color(0.15, 0.52, 0.16, 0.42)
 
 		# v0.9.425 — apply category theming to the cell stylebox + glyph.
 		var category_info: Dictionary = {}
@@ -2908,35 +2934,20 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 	if empty:
 		sb.border_color = Color(0.20, 0.18, 0.14, 1)
 		sb.bg_color = Color(0.04, 0.04, 0.05, 0.85)
-		return
-	# v0.9.665 — mastery gradient: the whole card shifts from dark toward green as
-	# the ability nears its next rank-up (warm gold once maxed). Category stays on
-	# the border so both cues read.
-	var progress := clampf(float(cell.get_meta("mastery_progress", 0.0)), 0.0, 1.0)
-	var at_max := bool(cell.get_meta("mastery_at_max", false))
-	var dark_bg := Color(0.07, 0.06, 0.06, 0.95)
-	var mastery_bg: Color
-	if at_max:
-		mastery_bg = Color(0.34, 0.27, 0.06, 0.95)  # warm gold
+	elif not can_afford:
+		sb.border_color = Color(0.35, 0.25, 0.20, 1)
+		sb.bg_color = Color(0.06, 0.05, 0.06, 0.92)
 	else:
-		mastery_bg = dark_bg.lerp(Color(0.12, 0.40, 0.13, 0.95), progress)  # dark -> green
-	if not can_afford:
-		# Uncastable — dim it + muted border, but keep the progress color visible.
-		mastery_bg = mastery_bg.darkened(0.35)
-		mastery_bg.a = 0.9
-		sb.border_color = Color(0.35, 0.28, 0.22, 1)
-		sb.bg_color = mastery_bg
-		return
-	# Castable — category color on the border + a subtle category bg tint (halved
-	# so the mastery green still shows through).
-	var category_color_hex = str(cell.get_meta("category_color", "#B08C4C"))
-	var tint_alpha = float(cell.get_meta("category_tint_alpha", 0.0))
-	if tint_alpha > 0.0:
-		var tint := Color(category_color_hex)
-		tint.a = mastery_bg.a
-		mastery_bg = mastery_bg.lerp(tint, tint_alpha * 0.5)
-	sb.border_color = Color(category_color_hex)
-	sb.bg_color = mastery_bg
+		var category_color_hex = str(cell.get_meta("category_color", "#B08C4C"))
+		var tint_alpha = float(cell.get_meta("category_tint_alpha", 0.0))
+		var border := Color(category_color_hex)
+		var base_bg := Color(0.08, 0.07, 0.05, 0.95)
+		if tint_alpha > 0.0:
+			var tint := Color(category_color_hex)
+			tint.a = base_bg.a
+			base_bg = base_bg.lerp(tint, tint_alpha)
+		sb.border_color = border
+		sb.bg_color = base_bg
 
 
 func _resolve_card_info(card_name: String) -> Dictionary:
