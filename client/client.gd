@@ -1647,7 +1647,7 @@ var rare_drop_player: AudioStreamPlayer = null
 # Background music
 var music_player: AudioStreamPlayer = null
 var music_muted: bool = true  # Start with music off
-const MUSIC_VOLUME_DB: float = -46.0  # Very quiet background
+const MUSIC_VOLUME_DB: float = -8.0  # Music gain at max slider (was -46, far too quiet); slider scales down from here
 
 # Level up sound
 var levelup_player: AudioStreamPlayer = null
@@ -30387,8 +30387,26 @@ func _on_screenshot_button_pressed() -> void:
 	if err == OK:
 		display_game("[color=#5CE05C]Screenshot saved: %s[/color]" % fname)
 		print("[SCREENSHOT] saved: ", path)
+		_debug_dump_boxes()  # TEMP — identify empty UI boxes
 	else:
 		display_game("[color=#FF6B6B]Screenshot failed (err %d)[/color]" % err)
+
+
+func _debug_dump_boxes() -> void:
+	# TEMP (v0.9.663) — list visible right-side UI controls so we can identify the
+	# empty sanctuary boxes (yellow box, companion box, green circle) by node path.
+	print("[BOXES] visible right-side controls (name | class | gpos | size):")
+	_debug_walk_boxes(get_tree().root)
+
+func _debug_walk_boxes(node: Node) -> void:
+	var c := node as Control
+	if c != null and c.is_visible_in_tree():
+		var sz: Vector2 = c.size
+		var gp: Vector2 = c.global_position
+		if sz.x >= 15 and sz.y >= 15 and gp.x > 950.0:
+			print("[BOX] ", node.name, " | ", node.get_class(), " | gpos=(", int(gp.x), ",", int(gp.y), ") size=(", int(sz.x), ",", int(sz.y), ") | ", node.get_path())
+	for ch in node.get_children():
+		_debug_walk_boxes(ch)
 
 
 func open_post_status_panel() -> void:
