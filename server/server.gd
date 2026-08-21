@@ -77,10 +77,21 @@ const COMBAT_LOOT_SCRATCH_OFF_ENABLED := true
 # kill, not every kill, so players aren't bombarded. When it fires it's a
 # jackpot (reveal budget x mult); non-scratch kills award loot inline (equipment
 # cadence unchanged). Empowered elites roll it far more often. All tunable.
-const COMBAT_SCRATCH_BASE_CHANCE := 0.22
+const COMBAT_SCRATCH_BASE_CHANCE := 0.125
 const COMBAT_SCRATCH_EMPOWERED_CHANCE := 0.60
 const COMBAT_SCRATCH_BUDGET_MULT := 4
 const COMBAT_LOOT_SLOT_COUNT := 16
+# Loot-as-chance for gathering + crafting (v0.9.662) — mirrors the combat
+# treat-rhythm. Most gathers/crafts resolve instantly (no minigame); the
+# scratch-off fires ~1/8 of the time, or ~1/2 on a "lucky" node / rare recipe,
+# and is jackpot-boosted when it does. All tunable.
+const GATHER_SCRATCH_BASE_CHANCE := 0.125
+const GATHER_SCRATCH_LUCKY_CHANCE := 0.50
+const GATHER_SCRATCH_LUCKY_TIER := 4      # gathering-node tier >= this = "rich" node
+const GATHER_SCRATCH_BUDGET_MULT := 2     # jackpot reveal budget when the minigame fires
+const CRAFT_SCRATCH_BASE_CHANCE := 0.125
+const CRAFT_SCRATCH_RARE_CHANCE := 0.50
+const CRAFT_SCRATCH_RARE_DIFFICULTY := 60 # recipe difficulty >= this = "rare" craft
 var active_combat_loot: Dictionary = {}
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
@@ -19862,6 +19873,17 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 		var kind = _roll_scratch_off_slot_kind(skill)
 		slots.append(_build_scratch_off_slot(kind, job_type, tier_or_water, skill, biome, node_type))
 
+	# Loot-as-chance (v0.9.662) — most gathers resolve INSTANTLY (no panel); the
+	# scratch-off is an occasional jackpot. Rich nodes (high tier) roll it far
+	# more often. Players who opted into skip_gather_minigame always auto-resolve.
+	var _node_tier: int = int(gathering_node.get("tier", 1))
+	var _is_lucky: bool = _node_tier >= GATHER_SCRATCH_LUCKY_TIER
+	var _show_minigame: bool = false
+	if not bool(character.skip_gather_minigame):
+		_show_minigame = randf() < (GATHER_SCRATCH_LUCKY_CHANCE if _is_lucky else GATHER_SCRATCH_BASE_CHANCE)
+	if _show_minigame:
+		scratch_budget = scratch_budget * GATHER_SCRATCH_BUDGET_MULT  # jackpot budget
+
 	# Tool pre-reveals at RANDOM positions.
 	var tool_subtype = _get_tool_subtype_for_job(job_type)
 	var tool = _find_tool_in_inventory(character, tool_subtype)
@@ -19897,6 +19919,28 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 		"node_y": gathering_node.get("node_y", character.y),
 	}
 	active_gathering[peer_id] = session
+
+	# Instant-resolve path (the common case). Reveal up to `scratch_budget`
+	# slots (no timing misses — fair vs. clean manual play), award them, and
+	# push a compact result with no panel. Reuses the full completion award/XP/
+	# quest pipeline via _complete_scratch_off_fishing.
+	if not _show_minigame:
+		var _auto_pos: Array = []
+		for i in range(slot_count):
+			_auto_pos.append(i)
+		_auto_pos.shuffle()
+		var _rp: Array = session["revealed_positions"]
+		var _target_reveals: int = min(scratch_budget, slot_count)
+		for pos in _auto_pos:
+			if _rp.size() >= _target_reveals:
+				break
+			if not (pos in _rp):
+				_rp.append(pos)
+		session["revealed_positions"] = _rp
+		session["scratches_remaining"] = 0
+		session["instant"] = true
+		_complete_scratch_off_fishing(peer_id)
+		return
 
 	var initial_slots: Array = []
 	for i in range(slot_count):
@@ -20133,6 +20177,7 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	save_character(peer_id)
 	send_to_peer(peer_id, {
 		"type": "scratch_off_complete",
+		"instant": bool(session.get("instant", false)),  # v0.9.662 loot-as-chance: no panel, compact toast
 		"awarded": awarded,
 		"missed": missed,
 		"xp_gained": total_xp,
@@ -20845,6 +20890,12 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 		else:
 			var cause = "miss" if (i in miss_positions) else "unscratched"
 			missed.append({"kind": kind, "name": name, "type": "craft", "cause": cause})
+
+	# Loot-as-chance (v0.9.662): the craft minigame is now a rare treat, so floor
+	# its quality score at the common auto-resolve value (2). A proc is always at
+	# least as good as an ordinary craft, with the upside of hitting 3 + the bonus
+	# slots (duplicates / refunds / tool bonuses) the auto path never gets.
+	best_score = maxi(best_score, 2)
 
 	# Pull crafting context out of the session.
 	var recipe_id: String = String(session.get("craft_recipe_id", ""))
@@ -23364,7 +23415,16 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	# Check auto-skip: if skill - difficulty >= threshold, skip minigame with score 3
 	# Also skip if player has skip_craft_minigame enabled (with reduced score)
 	var skill_gap = skill_level - recipe.difficulty
-	if skill_gap < CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP and not character.skip_craft_minigame:
+	# Loot-as-chance (v0.9.662) — the craft minigame is now an occasional treat.
+	# It appears only when the recipe isn't trivial AND the player hasn't opted
+	# out AND the ~1/8 roll hits (~1/2 for rare high-difficulty recipes).
+	# Otherwise the craft auto-resolves below at a fair quality score.
+	var _craft_wants_minigame: bool = skill_gap < CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP and not character.skip_craft_minigame
+	var _craft_show_minigame: bool = false
+	if _craft_wants_minigame:
+		var _rare_craft: bool = int(recipe.get("difficulty", 1)) >= CRAFT_SCRATCH_RARE_DIFFICULTY
+		_craft_show_minigame = randf() < (CRAFT_SCRATCH_RARE_CHANCE if _rare_craft else CRAFT_SCRATCH_BASE_CHANCE)
+	if _craft_show_minigame:
 		# v0.9.372 — replaced 3-round Q&A challenge with scratch-off minigame.
 		# Slot pool reflects skill (more good outcomes as skill grows), player
 		# reveals slots to determine score; best-reveal-wins feeds into the
@@ -23435,8 +23495,17 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 		})
 		return
 
-	# Auto-skip: trivially easy recipe score=3, manual skip score=1 (lower quality)
-	var auto_score = 3 if skill_gap >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP else 1
+	# Auto-resolve quality score (v0.9.662 loot-as-chance):
+	#  - trivially easy recipe (skill >> difficulty): 3
+	#  - player opted into skip_craft_minigame: 1 (the tradeoff they chose)
+	#  - common path (minigame simply didn't proc this craft): 2 (fair, no nerf)
+	var auto_score := 1
+	if skill_gap >= CraftingDatabaseScript.CRAFT_CHALLENGE_AUTO_SKIP:
+		auto_score = 3
+	elif character.skip_craft_minigame:
+		auto_score = 1
+	else:
+		auto_score = 2
 	# Audit #4 Slice 3.6 (v0.9.545) — capture the full roll math (roll value +
 	# distribution + bands) so the summary panel can show the player exactly
 	# which threshold their roll landed in.

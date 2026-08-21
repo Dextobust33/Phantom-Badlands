@@ -34875,6 +34875,11 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 	# v0.9.369 — header / XP label / hint vary per gathering job.
 	var session_job: String = String(message.get("job_type", scratch_off_job_type if scratch_off_job_type != "" else "fishing"))
 	var is_crafting: bool = bool(message.get("is_crafting", false))
+	# Loot-as-chance (v0.9.662) — instant gathers never opened a panel; show a
+	# compact one-liner in game_output rather than the full ticket summary.
+	if bool(message.get("instant", false)) and not is_crafting:
+		_show_instant_gather_summary(session_job, awarded, xp_gained, char_xp_gained, leveled_up, new_level, char_leveled_up, new_char_level)
+		return
 	# v0.9.372 — crafting scratch-off skips the gathering-style summary in
 	# game_output; the craft_result message that lands immediately after will
 	# render the crafting outcome instead.
@@ -34962,6 +34967,51 @@ func handle_scratch_off_complete(message: Dictionary) -> void:
 	# Refresh once more so the panel's "Cashing in..." footer + revealed slots
 	# show during the hold. Auto-pick loop is gated on close_at == 0.
 	_render_scratch_off_panel()
+	update_action_bar()
+
+func _show_instant_gather_summary(session_job: String, awarded: Array, xp_gained: int, char_xp_gained: int, leveled_up: bool, new_level: int, char_leveled_up: bool, new_char_level: int) -> void:
+	"""v0.9.662 loot-as-chance — compact result line for an instant (no-panel)
+	gather. This is now the COMMON case, so keep it terse (no game_output clear)."""
+	var header_color := "#00BFFF"
+	var label := "Fished"
+	match session_job:
+		"mining":
+			header_color = "#FFAA33"
+			label = "Mined"
+		"logging":
+			header_color = "#7AE07A"
+			label = "Chopped"
+		"foraging":
+			header_color = "#FFEE55"
+			label = "Foraged"
+		"fishing":
+			header_color = "#00BFFF"
+			label = "Fished"
+		_:
+			label = session_job.capitalize()
+	# Aggregate awarded (skip DUD) into a single line: "2x Iron Ore, ★ Lucky Trout".
+	var parts: Array = []
+	for slot in awarded:
+		var kind := String(slot.get("kind", "NORMAL"))
+		if kind == "DUD":
+			continue
+		var qty := int(slot.get("quantity", 1))
+		var nm := String(slot.get("name", "?"))
+		var tag := ""
+		if kind == "LUCKY":
+			tag = "[color=#1EFF00]★[/color] "
+		elif kind == "JACKPOT":
+			tag = "[color=#FFD700]★★★[/color] "
+		parts.append("%s%dx %s" % [tag, qty, nm])
+	var loot_str := ", ".join(parts) if parts.size() > 0 else "[color=#606060]nothing[/color]"
+	var xp_str := ""
+	if xp_gained > 0:
+		xp_str = "  [color=#FF8800]+%d XP[/color]" % xp_gained
+	display_game("[color=%s]%s:[/color] %s%s" % [header_color, label, loot_str, xp_str])
+	if leveled_up:
+		display_game("[color=#FFD700]★ %s leveled up to Lv%d![/color]" % [session_job.capitalize(), new_level])
+	if char_leveled_up:
+		display_game("[color=#FFD700]★ Character leveled up to Lv%d![/color]" % new_char_level)
 	update_action_bar()
 
 func _render_missed_line(slot: Dictionary) -> void:
