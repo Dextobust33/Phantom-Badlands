@@ -147,6 +147,20 @@ Every release ships **FOUR assets under ONE `vX.Y.Z` tag**: Windows client + Win
 6. **`scp` the new server binary as `.new` first** so it's staged before the countdown elapses; swap into place during the window. If you miss the window, swap + `systemctl restart` again (players already disconnected).
 7. **Create the GitHub release** with all four ZIPs attached in one `gh release create` call. Asset naming: Linux zips carry `linux`, Windows zips don't — that's how the launcher disambiguates platforms.
 
+### Split / delta updates (exe-pck split, v0.9.659+)
+
+To avoid players re-downloading the ~100MB Godot runtime every content update, the launcher (v2) can pull just the changed bundle. Each release should ALSO ship (in addition to the four full assets, which stay for the website + old launchers + Linux):
+
+- **`phantom-badlands-pck-vX.Y.Z.zip`** — Windows content: `PhantomBadlandsClient.pck` + `VERSION.txt` + `CREDITS.md` (~12MB). Downloaded every content update.
+- **`phantom-badlands-runtime-rN.zip`** — Windows runtime: `PhantomBadlandsClient.exe` + sqlite dll (~38MB). Named by `RUNTIME_VERSION.txt` (`N`). Only re-downloaded when the runtime changes.
+- **`client-manifest.json`** — `{ "content_version", "runtime_version", "windows": { "pck", "runtime" } }`. The launcher reads this; falls back to the full client zip if absent.
+
+Rules:
+- **Bump `RUNTIME_VERSION.txt` ONLY when the exe changes** (Godot engine/version upgrade, export-template change, new GDExtension dll). Most releases keep it the same → players skip the 38MB runtime download and only pull the ~12MB pck. When you DO bump it, name the runtime zip `-rN.zip` with the new N and set `runtime_version` in the manifest to match.
+- **Linux is a single embedded binary** (pck baked in) — NOT splittable. Omit `linux` from the manifest so Linux launchers fall back to the full client zip.
+- Generate the pck/runtime zips with `Compress-Archive` (same as the full zips); write the manifest JSON; attach all three with `gh release upload`.
+- The launcher itself (`launcher/launcher.gd`) reaching players requires rebuilding + re-uploading BOTH launcher zips whenever launcher.gd changes (it does not self-update).
+
 **Launcher download targets** (must always exist at these URLs):
 - `releases/latest/download/phantom-badlands-launcher.zip` (Windows)
 - `releases/latest/download/phantom-badlands-launcher-linux.zip` (Linux)
