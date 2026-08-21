@@ -4516,6 +4516,12 @@ func _process(delta):
 			call_deferred("show_connection_panel")
 
 func _input(event):
+	# v0.9.663 — F12 (dev) screenshot. Works in ANY state, including combat, where
+	# the top-bar 📷 button click can be eaten by combat/menu input handling.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F12:
+		_on_screenshot_button_pressed()
+		get_viewport().set_input_as_handled()
+		return
 	# v0.9.415 — step-through testfx: SPACE advances, R redoes, Q aborts.
 	# Highest priority so it isn't eaten by combat / menus running concurrently.
 	if _testfx_step_active and event is InputEventKey and event.pressed and not event.echo:
