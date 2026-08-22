@@ -4879,7 +4879,7 @@ func handle_move(peer_id: int, message: Dictionary):
 	# House bonus: +5% regen per level of resource_regen upgrade
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
 	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
-	var regen_percent = 0.02 * early_game_mult * house_regen_mult  # 2% per move for resources
+	var regen_percent = 0.05 * early_game_mult * house_regen_mult  # v0.9.667 — 5% per move (was 2% = ~1/step, too slow to recover between fights)
 	var hp_regen_percent = 0.01 * early_game_mult * house_regen_mult  # 1% per move for health
 	var total_max_mana = character.get_total_max_mana()
 	var total_max_stamina = character.get_total_max_stamina()
@@ -5340,18 +5340,22 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 		_handle_meditate(peer_id, character, cloak_was_dropped, _gathering_immune, _is_party_follower)
 		return
 
-	# Regenerate primary resource on rest (same as movement - 2%, min 1)
-	# Early game bonus: 2x regen at level 1, scaling down to 1x by level 25
-	# House bonus: +5% regen per level of resource_regen upgrade
+	# v0.9.667 — Rest restores a MEANINGFUL chunk of the primary combat resource
+	# so it's worth doing between fights (was 2% = ~1 point → not worth it).
+	# Early-game + house bonuses stack on top.
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
 	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
-	var regen_percent = 0.02 * early_game_mult * house_regen_mult
+	var regen_percent = 0.30 * early_game_mult * house_regen_mult
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	var stamina_regen = max(1, int(total_max_stamina * regen_percent))
 	var energy_regen = max(1, int(total_max_energy * regen_percent))
+	var old_stamina = character.current_stamina
+	var old_energy = character.current_energy
 	character.current_stamina = min(total_max_stamina, character.current_stamina + stamina_regen)
 	character.current_energy = min(total_max_energy, character.current_energy + energy_regen)
+	var actual_stamina = character.current_stamina - old_stamina
+	var actual_energy = character.current_energy - old_energy
 
 	# Non-mages: Check if HP is already full
 	var hp_full = character.current_hp >= character.get_total_max_hp()
@@ -5370,22 +5374,22 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 		var comp_heal_percent: float = randf_range(0.10, 0.25)
 		companion_heal_amount = character.regen_companion(comp_heal_percent)
 
-	# Build rest message with resource info
+	# v0.9.667 — build a GRAMMATICAL rest message from whatever was ACTUALLY
+	# recovered (fixes "You rest and 1 Stamina." when HP was already full).
 	var rest_msg = ""
-	# Include cloak drop message if applicable
 	if cloak_was_dropped:
 		rest_msg = "[color=#9932CC]Your cloak fades as you rest.[/color]\n"
-	if hp_full:
-		rest_msg += "[color=#00FF00]You rest"
+	var recovered: Array = []
+	if not hp_full and heal_amount > 0:
+		recovered.append("%d HP" % heal_amount)
+	if class_type in ["Fighter", "Barbarian", "Paladin"] and actual_stamina > 0:
+		recovered.append("%d Stamina" % actual_stamina)
+	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"] and actual_energy > 0:
+		recovered.append("%d Energy" % actual_energy)
+	if recovered.is_empty():
+		rest_msg += "[color=#00FF00]You rest.[/color]"
 	else:
-		rest_msg += "[color=#00FF00]You rest and recover %d HP" % heal_amount
-
-	# Show resource regen based on class path
-	if class_type in ["Fighter", "Barbarian", "Paladin"]:
-		rest_msg += " and %d Stamina" % stamina_regen
-	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"]:
-		rest_msg += " and %d Energy" % energy_regen
-	rest_msg += ".[/color]"
+		rest_msg += "[color=#00FF00]You rest and recover %s.[/color]" % " and ".join(recovered)
 	# Phase B1 — surface companion recovery on rest so it's clear that the
 	# rest also brings the pet back. KO'd companions show a clear callout
 	# that they need a healer to revive.
@@ -32541,16 +32545,20 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 		return
 
 	# --- Non-mage rest (matches overworld rest) ---
-	# Regenerate stamina/energy (2%, with early game + house bonuses)
+	# v0.9.667 — meaningful resource recovery on rest (was 2% = ~1 point).
 	var early_game_mult = _get_early_game_regen_multiplier(character.level)
 	var house_regen_mult = 1.0 + (character.house_bonuses.get("resource_regen", 0) / 100.0)
-	var regen_percent = 0.02 * early_game_mult * house_regen_mult
+	var regen_percent = 0.30 * early_game_mult * house_regen_mult
 	var total_max_stamina = character.get_total_max_stamina()
 	var total_max_energy = character.get_total_max_energy()
 	var stamina_regen = max(1, int(total_max_stamina * regen_percent))
 	var energy_regen = max(1, int(total_max_energy * regen_percent))
+	var old_stamina = character.current_stamina
+	var old_energy = character.current_energy
 	character.current_stamina = min(total_max_stamina, character.current_stamina + stamina_regen)
 	character.current_energy = min(total_max_energy, character.current_energy + energy_regen)
+	var actual_stamina = character.current_stamina - old_stamina
+	var actual_energy = character.current_energy - old_energy
 
 	# HP recovery: 10-25% of max HP
 	var hp_full = character.current_hp >= character.get_total_max_hp()
@@ -32568,17 +32576,19 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 		var comp_heal_percent: float = randf_range(0.10, 0.25)
 		companion_heal_amount = character.regen_companion(comp_heal_percent)
 
-	# Build rest message
+	# v0.9.667 — grammatical rest message from what was ACTUALLY recovered.
 	var rest_msg = "[color=#808080](Consumed 1 %s)[/color]\n" % food_name
-	if hp_full:
-		rest_msg += "[color=#00FF00]You rest"
+	var recovered: Array = []
+	if not hp_full and heal_amount > 0:
+		recovered.append("%d HP" % heal_amount)
+	if class_type in ["Fighter", "Barbarian", "Paladin"] and actual_stamina > 0:
+		recovered.append("%d Stamina" % actual_stamina)
+	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"] and actual_energy > 0:
+		recovered.append("%d Energy" % actual_energy)
+	if recovered.is_empty():
+		rest_msg += "[color=#00FF00]You rest.[/color]"
 	else:
-		rest_msg += "[color=#00FF00]You rest and recover %d HP" % heal_amount
-	if class_type in ["Fighter", "Barbarian", "Paladin"]:
-		rest_msg += " and %d Stamina" % stamina_regen
-	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"]:
-		rest_msg += " and %d Energy" % energy_regen
-	rest_msg += ".[/color]"
+		rest_msg += "[color=#00FF00]You rest and recover %s.[/color]" % " and ".join(recovered)
 	# v0.9.566 — surface companion recovery so it's clear the rest brought
 	# the pet back too. KO callout matches overworld wording.
 	if character.has_active_companion():

@@ -1382,6 +1382,11 @@ var ui_scale_edit_overlay = null
 var _combat_loot_victory_payload: Dictionary = {}
 var _combat_loot_revealed_lines: Array = []
 var _combat_loot_gear_drops: Array = []
+# v0.9.667 — condensed victory-loot aggregates: sum valor/essence, stack
+# materials+parts by name, and drop scratch-off meta cells entirely.
+var _loot_agg_valor: int = 0
+var _loot_agg_essence: int = 0
+var _loot_agg_stack: Dictionary = {}  # base_name -> {"qty": int, "color": String}
 # v0.9.604 — when the loot panel closes we clear pending_continue so the
 # player can move without pressing Space. But the existing safety net at
 # line 2797 ("if _victory_card_up and not pending_continue and not in_combat:
@@ -21989,6 +21994,10 @@ func handle_server_message(message: Dictionary):
 							# first click.
 							_combat_loot_revealed_lines = victory_payload.get("loot", []).duplicate()
 							_combat_loot_gear_drops = victory_payload.get("gear_drops", []).duplicate()
+							# v0.9.667 — reset condensed-loot aggregates each session.
+							_loot_agg_valor = 0
+							_loot_agg_essence = 0
+							_loot_agg_stack = {}
 							# v0.9.566 — inject persisted autoskip preference so
 							# the panel honors the user's setting on every open.
 							_loot_bag["autoskip_enabled"] = autoskip_loot_reveal
@@ -30867,6 +30876,27 @@ func _combat_loot_accumulate_reveal(reveal: Dictionary) -> void:
 	var color: String = String(reveal.get("color", "#FFFFFF"))
 	var symbol: String = String(reveal.get("symbol", ""))
 	var rarity: String = String(reveal.get("rarity", "common"))
+	# v0.9.667 — condense the loot list: drop scratch-off meta cells, and SUM
+	# valor / salvage essence / materials / parts instead of one line each. Built
+	# into the final loot list in _combat_loot_refresh_victory_card.
+	match kind:
+		"filler_plus_two", "filler_chain", "filler_trap", "filler_mystery", "filler_foresight":
+			return  # meta cells — not loot
+		"filler_valor":
+			_loot_agg_valor += int(reveal.get("amount", 0))
+			return
+		"filler_essence":
+			_loot_agg_essence += int(reveal.get("amount", 0))
+			return
+		"filler_material", "filler_part":
+			var parsed: Array = _loot_parse_stack_name(name)
+			var base: String = parsed[0]
+			var qty: int = parsed[1]
+			if _loot_agg_stack.has(base):
+				_loot_agg_stack[base]["qty"] = int(_loot_agg_stack[base]["qty"]) + qty
+			else:
+				_loot_agg_stack[base] = {"qty": qty, "color": color}
+			return
 	# Display line for the loot list. Symbol prefix on equipment matches the
 	# legacy give-loot loop output so the card looks the same as before.
 	var line: String
@@ -30934,9 +30964,31 @@ func _combat_loot_refresh_victory_card() -> void:
 	_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2400)
 	combat_scene_panel.visible = true
 	var payload: Dictionary = _combat_loot_victory_payload.duplicate(true)
-	payload["loot"] = _combat_loot_revealed_lines.duplicate()
+	payload["loot"] = _combat_loot_build_condensed_loot()
 	payload["gear_drops"] = _combat_loot_gear_drops.duplicate()
 	combat_scene_panel.show_victory_card(payload)
+
+func _combat_loot_build_condensed_loot() -> Array:
+	"""v0.9.667 — unique items/eggs first, then ONE summed line each for stacked
+	materials/parts, total Valor, and total Salvage Essence."""
+	var lines: Array = _combat_loot_revealed_lines.duplicate()
+	for base in _loot_agg_stack:
+		var d: Dictionary = _loot_agg_stack[base]
+		lines.append("[color=%s]◆ %s x%d[/color]" % [str(d.get("color", "#1EFF00")), base, int(d.get("qty", 1))])
+	if _loot_agg_valor > 0:
+		lines.append("[color=#FFD700]$ +%d Valor[/color]" % _loot_agg_valor)
+	if _loot_agg_essence > 0:
+		lines.append("[color=#AA66FF]✦ +%d Salvage Essence[/color]" % _loot_agg_essence)
+	return lines
+
+func _loot_parse_stack_name(nm: String) -> Array:
+	"""Split a 'Name xN' stack label into [base_name, qty]; qty defaults to 1."""
+	var re := RegEx.new()
+	re.compile("^(.*) x(\\d+)$")
+	var m = re.search(nm)
+	if m:
+		return [m.get_string(1), int(m.get_string(2))]
+	return [nm, 1]
 
 func _handle_clan_info_data(message: Dictionary) -> void:
 	"""Push server clan state into the panel if it's open."""
