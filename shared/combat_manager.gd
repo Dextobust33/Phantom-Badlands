@@ -82,34 +82,38 @@ const COMBAT_DECK_NON_COMBAT: Array = ["teleport", "cloak"]
 # Pilot covered Warrior damage (v0.9.259). v0.9.260 extends to Mage damage.
 # Subsequent slices add Warrior buffs / Mage CC / Trickster.
 const VARIABLE_COST_MIN_FRACTION: float = 0.3
+# v0.9.667 — ceilings cut ~30-45% so a low-level player can cast 2-3 skills per
+# bar instead of dumping the whole pool on one (the fixed ceilings dwarfed the
+# small early-game pools). Effect scales with spend, so these remain the "full
+# power" cost; spend down to floor_ratio for a cheaper, weaker cast.
 const VARIABLE_COST_TABLE: Dictionary = {
-	"power_strike": {"ceiling": 10, "floor_ratio": 0.3, "resource": "stamina"},
-	"shield_bash":  {"ceiling": 20, "floor_ratio": 0.3, "resource": "stamina"},
-	"cleave":       {"ceiling": 30, "floor_ratio": 0.3, "resource": "stamina"},
-	"devastate":    {"ceiling": 50, "floor_ratio": 0.3, "resource": "stamina"},
-	"blast":        {"ceiling": 50, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},
-	"meteor":       {"ceiling": 100, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},
-	"ambush":       {"ceiling": 30, "floor_ratio": 0.3, "resource": "energy"},
-	"exploit":      {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
-	"gambit":       {"ceiling": 35, "floor_ratio": 0.3, "resource": "energy"},
-	"forcefield":   {"ceiling": 20, "cost_percent": 2, "floor_ratio": 0.3, "resource": "mana"},
+	"power_strike": {"ceiling": 7, "floor_ratio": 0.3, "resource": "stamina"},
+	"shield_bash":  {"ceiling": 13, "floor_ratio": 0.3, "resource": "stamina"},
+	"cleave":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "stamina"},
+	"devastate":    {"ceiling": 32, "floor_ratio": 0.3, "resource": "stamina"},
+	"blast":        {"ceiling": 34, "cost_percent": 4, "floor_ratio": 0.3, "resource": "mana"},
+	"meteor":       {"ceiling": 65, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},
+	"ambush":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "energy"},
+	"exploit":      {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
+	"gambit":       {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
+	"forcefield":   {"ceiling": 15, "cost_percent": 2, "floor_ratio": 0.3, "resource": "mana"},
 	# Warrior buffs (v0.9.263): magnitude scales with spend, duration unchanged.
-	"war_cry":      {"ceiling": 15, "floor_ratio": 0.3, "resource": "stamina"},
-	"fortify":      {"ceiling": 25, "floor_ratio": 0.3, "resource": "stamina"},
-	"iron_skin":    {"ceiling": 35, "floor_ratio": 0.3, "resource": "stamina"},
-	"rally":        {"ceiling": 35, "floor_ratio": 0.3, "resource": "stamina"},
-	"berserk":      {"ceiling": 40, "floor_ratio": 0.3, "resource": "stamina"},
+	"war_cry":      {"ceiling": 11, "floor_ratio": 0.3, "resource": "stamina"},
+	"fortify":      {"ceiling": 17, "floor_ratio": 0.3, "resource": "stamina"},
+	"iron_skin":    {"ceiling": 24, "floor_ratio": 0.3, "resource": "stamina"},
+	"rally":        {"ceiling": 24, "floor_ratio": 0.3, "resource": "stamina"},
+	"berserk":      {"ceiling": 27, "floor_ratio": 0.3, "resource": "stamina"},
 	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
-	"haste":        {"ceiling": 35, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},
-	"paralyze":     {"ceiling": 60, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},
-	"banish":       {"ceiling": 80, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},
+	"haste":        {"ceiling": 24, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},
+	"paralyze":     {"ceiling": 42, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},
+	"banish":       {"ceiling": 55, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},
 	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
 	# magnitude scaling for distract + sabotage. Analyze + Vanish stay fixed-cost
 	# (binary mechanics — partial cast doesn't make sense).
-	"distract":     {"ceiling": 15, "floor_ratio": 0.3, "resource": "energy"},
-	"pickpocket":   {"ceiling": 20, "floor_ratio": 0.3, "resource": "energy"},
-	"sabotage":     {"ceiling": 25, "floor_ratio": 0.3, "resource": "energy"},
-	"perfect_heist":{"ceiling": 50, "floor_ratio": 0.3, "resource": "energy"},
+	"distract":     {"ceiling": 11, "floor_ratio": 0.3, "resource": "energy"},
+	"pickpocket":   {"ceiling": 14, "floor_ratio": 0.3, "resource": "energy"},
+	"sabotage":     {"ceiling": 18, "floor_ratio": 0.3, "resource": "energy"},
+	"perfect_heist":{"ceiling": 34, "floor_ratio": 0.3, "resource": "energy"},
 }
 
 # Active combats (peer_id -> combat_state)
