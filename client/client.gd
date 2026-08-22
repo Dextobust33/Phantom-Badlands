@@ -27147,7 +27147,7 @@ func display_changelog():
 	# v0.9.668 — Egg fix + smaller updates.
 	display_game("[color=#00FF00]v0.9.668[/color] [color=#808080](Current)[/color]")
 	display_game("  [color=#FF8000]★ Fixed MISSING_VARIANT eggs.[/color] Eggs won from loot cards' Mystery cells were dropping without a variant (showing '[i]MISSING_VARIANT[/i]'). They now roll a proper variant, and any broken eggs you already have will hatch as a normal companion instead of staying bugged.")
-	display_game("  [color=#1EFF00]◆ Smaller updates.[/color] Background music was recompressed ([b].wav → .ogg[/b]), shrinking the download by ~20 MB — so future updates are just a few MB. No change to how it sounds.")
+	display_game("  [color=#1EFF00]◆ Smaller updates.[/color] Background music was recompressed ([b].wav → .ogg[/b]), shrinking the content download by [b]~9 MB (about a third)[/b] — so future updates are lighter. No change to how it sounds.")
 	display_game("")
 
 	# v0.9.667 — Combat resource QoL.
