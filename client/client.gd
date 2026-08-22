@@ -27144,8 +27144,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.668 — Egg fix + smaller updates.
+	display_game("[color=#00FF00]v0.9.668[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ Fixed MISSING_VARIANT eggs.[/color] Eggs won from loot cards' Mystery cells were dropping without a variant (showing '[i]MISSING_VARIANT[/i]'). They now roll a proper variant, and any broken eggs you already have will hatch as a normal companion instead of staying bugged.")
+	display_game("  [color=#1EFF00]◆ Smaller updates.[/color] Background music was recompressed ([b].wav → .ogg[/b]), shrinking the download by ~20 MB — so future updates are just a few MB. No change to how it sounds.")
+	display_game("")
+
 	# v0.9.667 — Combat resource QoL.
-	display_game("[color=#00FF00]v0.9.667[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.667[/color]")
 	display_game("  [color=#FF8000]★ SKILLS COST LESS.[/color] Ability costs cut across the board (~30-45%%) so you can cast [b]a few skills per bar[/b] instead of dumping everything on one — a big help at low levels where your resource pool is small.")
 	display_game("  [color=#1EFF00]◆ Resting is worth it.[/color] Rest now restores a real chunk of resource ([b]~30%% of max[/b], was a token 1-2 points), and you recover faster [b]per step[/b] while exploring. No more limping between fights on an empty bar.")
 	display_game("  [color=#1EFF00]◆ Cleaner victory loot.[/color] The loot screen no longer clutters with +2 Reveals / Chain / Trap cells, and your Valor, Salvage Essence, materials, and parts are [b]summed into one line each[/b] instead of a dozen separate entries. Just your loot.")
