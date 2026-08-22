@@ -6869,6 +6869,7 @@ func show_player_info_popup(data: Dictionary):
 	"""Display player stats in a popup panel"""
 	if not player_info_panel or not player_info_content:
 		return
+	player_info_content.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # crisp battler [img]
 
 	# Cache the data so clicking a piece of gear can rebuild the base popup
 	# from scratch (rather than trying to read BBCode back out of the label,
@@ -25956,6 +25957,9 @@ func display_character_status():
 
 	var text = ""
 
+	# v0.9.669 — crisp battler [img] on the status sheet (font glyphs unaffected).
+	if game_output:
+		game_output.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	# === HEADER (stat card style) ===
 	var char_title = "%s — %s %s Lv.%d" % [char.get("name", "Unknown"), char.get("race", "Human"), char.get("class", "Unknown"), char.get("level", 1)]
 	text += _header(char_title) + "\n"
@@ -34024,6 +34028,7 @@ func _ensure_map_sprites_overlay() -> void:
 	add_child(_map_tooltip)
 	_map_tooltip_label = RichTextLabel.new()
 	_map_tooltip_label.bbcode_enabled = true
+	_map_tooltip_label.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # crisp battler [img]
 	_map_tooltip_label.fit_content = true
 	_map_tooltip_label.scroll_active = false
 	_map_tooltip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
