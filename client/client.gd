@@ -27163,8 +27163,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.669 — Player sprites on the map + up/down facing.
+	display_game("[color=#00FF00]v0.9.669[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOUR MAP AVATAR MATCHES COMBAT.[/color] Your character on the world map — and every other player — now shows the [b]same sprite you see in battle[/b], instead of a mismatched placeholder. The player info panel, status screen, and map-hover tooltip use it too, at a [b]larger, crisper size[/b].")
+	display_game("  [color=#1EFF00]◆ Characters face the way they walk.[/color] Move up, down, left, or right and your avatar now [b]turns to face that direction[/b] on the map (for characters whose sprite includes directional art) — no more sliding around locked in a side pose.")
+	display_game("")
+
 	# v0.9.668 — Egg fix + smaller updates.
-	display_game("[color=#00FF00]v0.9.668[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.668[/color]")
 	display_game("  [color=#FF8000]★ Fixed MISSING_VARIANT eggs.[/color] Eggs won from loot cards' Mystery cells were dropping without a variant (showing '[i]MISSING_VARIANT[/i]'). They now roll a proper variant, and any broken eggs you already have will hatch as a normal companion instead of staying bugged.")
 	display_game("  [color=#1EFF00]◆ Smaller updates.[/color] Background music was recompressed ([b].wav → .ogg[/b]), shrinking the content download by [b]~9 MB (about a third)[/b] — so future updates are lighter. No change to how it sounds.")
 	display_game("")
@@ -34526,11 +34532,18 @@ func _sync_map_sprites_overlay() -> void:
 	var local_name = str(character_data.get("name", ""))
 	# v0.9.669 — prefer the combat BATTLER sprite so the map avatar matches combat;
 	# fall back to the LPC class sheet for any class without a battler pool.
-	var local_battler: Texture2D = BattlerSprite.idle_texture(local_cls, local_name)
+	# v0.9.670 — if this character has a matching top-down overworld sprite (TF
+	# sheets 2-5), use its native 4-direction frame so the avatar faces up/down too.
+	var local_overworld: Texture2D = null
+	if BattlerSprite.has_overworld(local_cls, local_name):
+		local_overworld = BattlerSprite.overworld_texture(local_cls, local_name, _local_map_facing)
+	var local_battler: Texture2D = null
+	if local_overworld == null:
+		local_battler = BattlerSprite.idle_texture(local_cls, local_name)
 	var local_atlas: AtlasTexture = null
-	if local_battler == null:
+	if local_overworld == null and local_battler == null:
 		local_atlas = ClassSprite.get_idle_atlas_for_direction(local_cls, _local_map_facing)
-	if local_battler == null and local_atlas == null:
+	if local_overworld == null and local_battler == null and local_atlas == null:
 		local.visible = false
 		if _local_companion_label:
 			_local_companion_label.visible = false
@@ -34541,7 +34554,11 @@ func _sync_map_sprites_overlay() -> void:
 		var lpy = at_pixel_y_center - sprite_px * 0.5
 		local.size = Vector2(sprite_px, sprite_px)
 		local.position = Vector2(lpx, lpy)
-		if local_battler != null:
+		if local_overworld != null:
+			# Overworld frames are native to each direction — no flip needed.
+			local.texture = local_overworld
+			local.flip_h = false
+		elif local_battler != null:
 			local.texture = local_battler
 			# Battlers are side-view (no up/down frames). Update the flip only on
 			# left/right movement; keep the last horizontal facing for up/down so
@@ -34594,11 +34611,17 @@ func _sync_map_sprites_overlay() -> void:
 		var rname = str(entry.get("name", ""))
 		var rfacing = str(_remote_facings.get(rname, "right"))
 		# v0.9.669 — battler sprite (matches combat); LPC fallback.
-		var rbattler: Texture2D = BattlerSprite.idle_texture(rcls, rname)
+		# v0.9.670 — native 4-direction overworld sprite when available.
+		var roverworld: Texture2D = null
+		if BattlerSprite.has_overworld(rcls, rname):
+			roverworld = BattlerSprite.overworld_texture(rcls, rname, rfacing)
+		var rbattler: Texture2D = null
+		if roverworld == null:
+			rbattler = BattlerSprite.idle_texture(rcls, rname)
 		var ratlas: AtlasTexture = null
-		if rbattler == null:
+		if roverworld == null and rbattler == null:
 			ratlas = ClassSprite.get_idle_atlas_for_direction(rcls, rfacing)
-		if rbattler == null and ratlas == null:
+		if roverworld == null and rbattler == null and ratlas == null:
 			continue
 		var rx = int(entry.get("x", 0))
 		var ry = int(entry.get("y", 0))
@@ -34612,7 +34635,10 @@ func _sync_map_sprites_overlay() -> void:
 			continue  # Multiple on same tile — render only the first
 		cells_used[cell_key] = true
 		var slot = _remote_sprite_pool[slot_idx]
-		if rbattler != null:
+		if roverworld != null:
+			slot.texture = roverworld
+			slot.flip_h = false  # overworld frames are native per-direction
+		elif rbattler != null:
 			slot.texture = rbattler
 			slot.flip_h = (rfacing == "right")  # battlers face LEFT natively
 		else:
