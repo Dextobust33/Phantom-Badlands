@@ -27144,8 +27144,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.667 — Combat resource QoL.
+	display_game("[color=#00FF00]v0.9.667[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ SKILLS COST LESS.[/color] Ability costs cut across the board (~30-45%%) so you can cast [b]a few skills per bar[/b] instead of dumping everything on one — a big help at low levels where your resource pool is small.")
+	display_game("  [color=#1EFF00]◆ Resting is worth it.[/color] Rest now restores a real chunk of resource ([b]~30%% of max[/b], was a token 1-2 points), and you recover faster [b]per step[/b] while exploring. No more limping between fights on an empty bar.")
+	display_game("  [color=#1EFF00]◆ Cleaner victory loot.[/color] The loot screen no longer clutters with +2 Reveals / Chain / Trap cells, and your Valor, Salvage Essence, materials, and parts are [b]summed into one line each[/b] instead of a dozen separate entries. Just your loot.")
+	display_game("  • Fixed the '[i]You rest and 1 Stamina.[/i]' broken message.")
+	display_game("")
+
 	# v0.9.666 — Combat feel: card mastery fill + resource regen.
-	display_game("[color=#00FF00]v0.9.666[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.666[/color]")
 	display_game("  [color=#FF8000]★ RESOURCE REGEN.[/color] You now [b]passively regain resource every turn[/b] in combat (12%% of your max mana/stamina/energy), so you're no longer stuck spamming basic attacks for whole fights when you run dry. Regen gear and Path bonuses stack on top.")
 	display_game("  [color=#1EFF00]◆ Ability cards show mastery progress.[/color] Each ability card's background [b]fills left→right in its category color[/b] (red/orange for attacks, green for buffs, etc.) as you use it — when it fills completely, the ability is about to [b]rank up[/b]. See your progress toward every ability's next rank at a glance.")
 	display_game("")
