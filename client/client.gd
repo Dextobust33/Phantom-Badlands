@@ -525,6 +525,15 @@ var _local_map_facing: String = "right"
 # the last LEFT/RIGHT flip and don't snap the avatar to a side when walking
 # up/down. Default true = facing right.
 var _local_battler_flip: bool = true
+# v0.9.669 — world-map walk animation. Overworld sprites (TF sheets 2-5) have
+# walk1/walk2 frames, so the avatar animates a walk cycle while moving and rests
+# on the stand frame when idle. Movement is stamped per step; the animator in
+# _process cycles the frame and rewrites just the .texture (no full re-sync).
+const WALK_ANIM_FRAME_SEC := 0.16       # seconds per walk-cycle frame
+const WALK_MOVING_WINDOW_MS := 320      # treat as "moving" for this long after a step
+var _walk_anim_accum: float = 0.0
+var _local_last_move_ms: int = 0
+var _remote_last_move_ms: Dictionary = {}   # name -> Time.get_ticks_msec() of last step
 # Per-remote-player facing tracking. Keyed by player name. Stores the last
 # known position so the next location update can derive a movement delta
 # and update facing accordingly.
@@ -3058,6 +3067,8 @@ func _process(delta):
 	# only does work while something is actually pending.
 	if not _hint_queue.is_empty() or _pending_numpad_open or _pending_guided_intro:
 		_drain_new_player_modals()
+	# World-map walk animation (cheap; only touches overworld-anim slots).
+	_animate_map_walk(delta)
 	# Clear action triggers from previous frame
 	action_triggered_this_frame.clear()
 	item_selection_consumed_this_frame.clear()
@@ -20789,6 +20800,7 @@ func handle_server_message(message: Dictionary):
 					var dir = _direction_from_delta(ldx, ldy)
 					if dir != "":
 						_local_map_facing = dir
+						_local_last_move_ms = Time.get_ticks_msec()  # walk-anim: mark step
 				_cached_local_x = new_local_x
 				_cached_local_y = new_local_y
 				_cached_local_pos_valid = true
@@ -27166,7 +27178,7 @@ func display_changelog():
 	# v0.9.669 — Player sprites on the map + up/down facing.
 	display_game("[color=#00FF00]v0.9.669[/color] [color=#808080](Current)[/color]")
 	display_game("  [color=#FF8000]★ YOUR MAP AVATAR MATCHES COMBAT.[/color] Your character on the world map — and every other player — now shows the [b]same sprite you see in battle[/b], instead of a mismatched placeholder. The player info panel, status screen, and map-hover tooltip use it too, at a [b]larger, crisper size[/b].")
-	display_game("  [color=#1EFF00]◆ Characters face the way they walk.[/color] Move up, down, left, or right and your avatar now [b]turns to face that direction[/b] on the map (for characters whose sprite includes directional art) — no more sliding around locked in a side pose.")
+	display_game("  [color=#1EFF00]◆ Characters walk on the map.[/color] Move up, down, left, or right and your avatar now [b]turns to face that direction and animates a walking stride[/b] on the map (for characters whose sprite includes directional art) — no more sliding around locked in a side pose. It settles back to a standing frame when you stop.")
 	display_game("")
 
 	# v0.9.668 — Egg fix + smaller updates.
@@ -34085,6 +34097,7 @@ func _update_remote_facings() -> void:
 			var dir = _direction_from_delta(rx - prev.x, ry - prev.y)
 			if dir != "":
 				_remote_facings[pname] = dir
+				_remote_last_move_ms[pname] = Time.get_ticks_msec()  # walk-anim: mark step
 		else:
 			# First time seeing this player — default to right so they
 			# don't render with a stale facing from a prior session.
@@ -34096,6 +34109,48 @@ func _update_remote_facings() -> void:
 		if not seen_names.has(k):
 			_remote_last_pos.erase(k)
 			_remote_facings.erase(k)
+
+
+func _animate_map_walk(delta: float) -> void:
+	"""Cycle overworld map avatars through their walk frames while moving, resting
+	on the stand frame when idle. Cheap: only touches slots flagged ow_anim, and
+	only rewrites .texture when the frame or facing actually changes."""
+	if map_sprites_overlay == null or not is_instance_valid(map_sprites_overlay):
+		return
+	if not (game_state == GameState.PLAYING and has_character and not in_combat and not dungeon_mode):
+		return
+	_walk_anim_accum += delta
+	var now := Time.get_ticks_msec()
+	# 4-step cycle -> stand, walk1, stand, walk2 for a natural stride.
+	var step := int(_walk_anim_accum / WALK_ANIM_FRAME_SEC) % 4
+	var walk_frame: int = [0, 1, 0, 2][step]
+	# Local player.
+	var local: TextureRect = map_sprites_overlay.get_node_or_null("LocalPlayer")
+	if local != null and local.visible and bool(local.get_meta("ow_anim", false)):
+		var moving := (now - _local_last_move_ms) <= WALK_MOVING_WINDOW_MS
+		_apply_walk_frame(local, walk_frame if moving else 0)
+	# Remote players.
+	for slot in _remote_sprite_pool:
+		if slot == null or not is_instance_valid(slot) or not slot.visible:
+			continue
+		if not bool(slot.get_meta("ow_anim", false)):
+			continue
+		var rname := str(slot.get_meta("ow_name", ""))
+		var last := int(_remote_last_move_ms.get(rname, 0))
+		var rmoving := (now - last) <= WALK_MOVING_WINDOW_MS
+		_apply_walk_frame(slot, walk_frame if rmoving else 0)
+
+
+func _apply_walk_frame(slot: TextureRect, frame: int) -> void:
+	var facing := str(slot.get_meta("ow_facing", "down"))
+	if int(slot.get_meta("ow_frame", -1)) == frame and str(slot.get_meta("ow_af", "")) == facing:
+		return
+	var tex := BattlerSprite.overworld_texture(
+		str(slot.get_meta("ow_cls", "")), str(slot.get_meta("ow_name", "")), facing, frame)
+	if tex != null:
+		slot.texture = tex
+		slot.set_meta("ow_frame", frame)
+		slot.set_meta("ow_af", facing)
 
 
 func _strip_remote_player_glyphs(map_text: String) -> String:
@@ -34558,7 +34613,16 @@ func _sync_map_sprites_overlay() -> void:
 			# Overworld frames are native to each direction — no flip needed.
 			local.texture = local_overworld
 			local.flip_h = false
+			# Walk-anim: let _process cycle stand/walk1/walk2 for this slot.
+			local.set_meta("ow_anim", true)
+			local.set_meta("ow_cls", local_cls)
+			local.set_meta("ow_name", local_name)
+			local.set_meta("ow_facing", _local_map_facing)
+			local.set_meta("ow_is_local", true)
+			local.set_meta("ow_frame", 0)   # local_overworld is the stand frame
+			local.set_meta("ow_af", _local_map_facing)
 		elif local_battler != null:
+			local.set_meta("ow_anim", false)
 			local.texture = local_battler
 			# Battlers are side-view (no up/down frames). Update the flip only on
 			# left/right movement; keep the last horizontal facing for up/down so
@@ -34569,6 +34633,7 @@ func _sync_map_sprites_overlay() -> void:
 				_local_battler_flip = false
 			local.flip_h = _local_battler_flip
 		else:
+			local.set_meta("ow_anim", false)
 			local.texture = local_atlas
 			local.flip_h = false
 		local.visible = true
@@ -34638,10 +34703,19 @@ func _sync_map_sprites_overlay() -> void:
 		if roverworld != null:
 			slot.texture = roverworld
 			slot.flip_h = false  # overworld frames are native per-direction
+			slot.set_meta("ow_anim", true)
+			slot.set_meta("ow_cls", rcls)
+			slot.set_meta("ow_name", rname)
+			slot.set_meta("ow_facing", rfacing)
+			slot.set_meta("ow_is_local", false)
+			slot.set_meta("ow_frame", 0)   # roverworld is the stand frame
+			slot.set_meta("ow_af", rfacing)
 		elif rbattler != null:
+			slot.set_meta("ow_anim", false)
 			slot.texture = rbattler
 			slot.flip_h = (rfacing == "right")  # battlers face LEFT natively
 		else:
+			slot.set_meta("ow_anim", false)
 			slot.texture = ratlas
 			slot.flip_h = false
 		var px = map_x_offset + (grid_x + 0.5) * cell_w - sprite_px * 0.5
