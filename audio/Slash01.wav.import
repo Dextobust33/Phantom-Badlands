@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://betykjeqm8mk5"
-path="res://.godot/imported/PostMusic1.wav-1d9ff685e8266f33b55bbd2305a8c11e.sample"
+uid="uid://dn6iv8haw2oav"
+path="res://.godot/imported/Slash01.wav-247f49b7d7ba9077a4ab523d92b96d75.sample"
 
 [deps]
 
-source_file="res://audio/PostMusic1.wav"
-dest_files=["res://.godot/imported/PostMusic1.wav-1d9ff685e8266f33b55bbd2305a8c11e.sample"]
+source_file="res://audio/Slash01.wav"
+dest_files=["res://.godot/imported/Slash01.wav-247f49b7d7ba9077a4ab523d92b96d75.sample"]
 
 [params]
 

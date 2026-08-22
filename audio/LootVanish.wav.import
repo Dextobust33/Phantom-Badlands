@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://drao4khctu1sc"
-path="res://.godot/imported/Misc2.wav-cd95f898ef2b1c133ae897c1aef50877.sample"
+uid="uid://cpiymdukr5mha"
+path="res://.godot/imported/LootVanish.wav-d64b5300d5fa2778fef78e774395873c.sample"
 
 [deps]
 
-source_file="res://audio/Misc2.wav"
-dest_files=["res://.godot/imported/Misc2.wav-cd95f898ef2b1c133ae897c1aef50877.sample"]
+source_file="res://audio/LootVanish.wav"
+dest_files=["res://.godot/imported/LootVanish.wav-d64b5300d5fa2778fef78e774395873c.sample"]
 
 [params]
 

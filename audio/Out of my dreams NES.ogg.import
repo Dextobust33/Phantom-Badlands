@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://cvtoumedqg0ci"
+path="res://.godot/imported/Out of my dreams NES.ogg-13e14ce8e86ca78c4a2ab6a9149b2471.oggvorbisstr"
+
+[deps]
+
+source_file="res://audio/Out of my dreams NES.ogg"
+dest_files=["res://.godot/imported/Out of my dreams NES.ogg-13e14ce8e86ca78c4a2ab6a9149b2471.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1721,14 +1721,14 @@ var music_volume: float = 1.0  # 0.0 to 1.0 multiplier for music
 # music never overwhelms. Everything still respects music_muted / music_volume.
 const MUSIC_POOLS := {
 	"overworld": [
-		"res://audio/Misc1.wav",
-		"res://audio/Misc2.wav",
-		"res://audio/Misc3.wav",
-		"res://audio/Misc4.wav",
-		"res://audio/Out of my dreams NES.wav",
+		"res://audio/Misc1.ogg",
+		"res://audio/Misc2.ogg",
+		"res://audio/Misc3.ogg",
+		"res://audio/Misc4.ogg",
+		"res://audio/Out of my dreams NES.ogg",
 	],
-	"posts": ["res://audio/PostMusic1.wav"],
-	"dungeon": ["res://audio/Dungeon1.wav"],
+	"posts": ["res://audio/PostMusic1.ogg"],
+	"dungeon": ["res://audio/Dungeon1.ogg"],
 }
 const MUSIC_QUIET_GAP_MIN_MS := 120000  # 2 min of quiet between overworld tracks
 const MUSIC_QUIET_GAP_MAX_MS := 300000  # up to 5 min
