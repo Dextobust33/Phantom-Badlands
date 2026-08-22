@@ -3719,6 +3719,14 @@ func _hatch_egg(egg: Dictionary) -> Dictionary:
 	var variant_color = egg.get("variant_color", "#FF00FF")  # Hot pink = error
 	var variant_color2 = egg.get("variant_color2", "")
 	var variant_pattern = egg.get("variant_pattern", "solid")
+	# v0.9.667 — self-heal legacy/broken eggs created without a variant (e.g. the
+	# old combat-loot Mystery-cell stub) so they hatch as a normal companion
+	# instead of MISSING_VARIANT. Crimson is a valid common variant.
+	if variant_name == "MISSING_VARIANT" or variant_name == "":
+		variant_name = "Crimson"
+		variant_color = "#DC143C"
+		variant_color2 = ""
+		variant_pattern = "solid"
 
 	var companion = {
 		"id": "companion_" + egg.monster_type.to_lower().replace(" ", "_") + "_" + str(randi()),

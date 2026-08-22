@@ -20587,25 +20587,25 @@ func _award_combat_loot_slot(peer_id: int, slot: Dictionary, monster_tier: int =
 			var tier_scale: int = clampi(monster_tier, 1, 9)
 			var mroll: int = randi() % 100
 			if mroll < 12:
-				# T1 egg — small but real chance, the standout outcome.
-				var egg_types = ["wolf", "boar", "fox", "rat"]
-				var egg_type: String = egg_types[randi() % egg_types.size()]
-				var egg_data: Dictionary = {
-					"monster_type": egg_type,
-					"tier": 1,
-					"sub_tier": 1,
-				}
-				var egg_cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
-				var egg_result = character.add_egg(egg_data, egg_cap)
-				if egg_result.success:
-					return {
-						"kind": "filler_mystery",
-						"name": "Mystery: %s Egg!" % egg_type.capitalize(),
-						"color": "#88FF88",
-						"rarity": "rare",
-						"mystery_outcome": "egg",
-					}
-				# Egg roll missed — fall through to valor instead of awarding nothing.
+					# T1 egg — small but real chance, the standout outcome. v0.9.667 —
+					# build a PROPER egg via get_egg_for_monster (rolls a variant + all
+					# fields). The old inline stub used invalid lowercase names + no
+					# variant, producing MISSING_VARIANT eggs from loot cards.
+					var egg_types = ["Goblin", "Giant Rat", "Kobold", "Wolf"]
+					var egg_type: String = egg_types[randi() % egg_types.size()]
+					var egg_data: Dictionary = drop_tables.get_egg_for_monster(egg_type)
+					var egg_cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+					if not egg_data.is_empty():
+						var egg_result = character.add_egg(egg_data, egg_cap)
+						if egg_result.success:
+							return {
+								"kind": "filler_mystery",
+								"name": "Mystery: %s Egg!" % str(egg_data.get("companion_name", egg_type)),
+								"color": "#88FF88",
+								"rarity": "rare",
+								"mystery_outcome": "egg",
+							}
+					# Egg roll missed/failed — fall through to valor instead of nothing.
 			if mroll < 50:
 				# Inflated valor — 3x the normal filler_valor roll.
 				var amount3: int = randi_range(2, 6) * tier_scale / 2
