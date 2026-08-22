@@ -3913,12 +3913,9 @@ func _ensure_battler_timer() -> void:
 	_battler_timer.timeout.connect(_on_battler_tick)
 
 func _battler_id_for(cls: String, char_name: String) -> String:
-	var pool: Array = CLASS_SPRITE_POOLS.get(cls, [])
-	if pool.is_empty():
-		return ""
-	# Stable per-character pick from the pool. Same name -> same sprite forever.
-	var idx: int = abs(char_name.hash()) % pool.size()
-	return String(pool[idx])
+	# v0.9.669 — delegate to the shared BattlerSprite helper so combat + the map
+	# avatar / info / status / hover always pick the SAME sprite from one source.
+	return BattlerSprite.id_for(cls, char_name)
 
 func _load_battler(cls: String) -> bool:
 	var id: String = _battler_id_for(cls, _player_name)

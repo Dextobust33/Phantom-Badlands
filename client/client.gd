@@ -6938,16 +6938,23 @@ func show_player_info_popup(data: Dictionary):
 	# player sees in combat / on the map. Wrap in a monospace font BBCode tag
 	# because player_info_content uses a proportional font by default — without
 	# this the art skews horizontally as variable-width chars misalign columns.
-	var class_art = ClassAsciiArt.get_ascii_art(cls)
-	if class_art != "":
-		var rendered_art: String
-		if v_pattern != "solid" and v_color2 != "":
-			var wrapped = "[color=%s]\n%s\n[/color]" % [v_color, class_art]
-			rendered_art = _recolor_ascii_art_pattern(wrapped, v_color, v_color2, v_pattern)
-		else:
-			rendered_art = "[color=%s]%s[/color]" % [v_color, class_art]
-		var art_font = max(1, ClassAsciiArt.get_font_size(cls) - 1)
-		player_info_content.append_text("[center][font=res://font/Consolas/consolas.ttf][font_size=%d]%s[/font_size][/font][/center]\n" % [art_font, rendered_art])
+	# v0.9.669 — show the character's actual COMBAT battler sprite (matches the
+	# map avatar + combat scene). Falls back to the recolored class ASCII art for
+	# any class without a battler pool.
+	var _pi_battler := BattlerSprite.idle_path(cls, str(pname))
+	if _pi_battler != "" and ResourceLoader.exists(_pi_battler):
+		player_info_content.append_text("[center][img=112]%s[/img][/center]\n" % _pi_battler)
+	else:
+		var class_art = ClassAsciiArt.get_ascii_art(cls)
+		if class_art != "":
+			var rendered_art: String
+			if v_pattern != "solid" and v_color2 != "":
+				var wrapped = "[color=%s]\n%s\n[/color]" % [v_color, class_art]
+				rendered_art = _recolor_ascii_art_pattern(wrapped, v_color, v_color2, v_pattern)
+			else:
+				rendered_art = "[color=%s]%s[/color]" % [v_color, class_art]
+			var art_font = max(1, ClassAsciiArt.get_font_size(cls) - 1)
+			player_info_content.append_text("[center][font=res://font/Consolas/consolas.ttf][font_size=%d]%s[/font_size][/font][/center]\n" % [art_font, rendered_art])
 	player_info_content.append_text("[center][color=#FF00FF]XP:[/color] %d / %d[/center]\n" % [exp, xp_needed])
 	player_info_content.append_text("[center][color=#FFD700]%d XP to next level[/color][/center]\n" % xp_remaining)
 	player_info_content.append_text("[center]%s[/center]\n\n" % status_text)
@@ -25982,24 +25989,28 @@ func display_character_status():
 	# Player class ASCII art — recolored using the player's appearance variant
 	# so the inspect page matches what the battle scene shows.
 	var player_class_str: String = str(char.get("class", ""))
-	var class_art: String = ClassAsciiArt.get_ascii_art(player_class_str)
-	if class_art != "":
-		var art_color_raw: String = appearance_color if appearance_color != "" else ClassAsciiArt.get_color(player_class_str)
-		var art_color2_raw: String = str(char.get("appearance_color2", ""))
-		var art_pattern: String = str(char.get("appearance_pattern", "solid"))
-		# Match the readability transform map-hover and player-popup use, so
-		# dark variant palettes render the same on every player surface.
-		var art_color: String = _ensure_readable_color(art_color_raw) if art_color_raw != "" else art_color_raw
-		var art_color2: String = _ensure_readable_color(art_color2_raw) if art_color2_raw != "" else ""
-		var art_font_size: int = max(1, ClassAsciiArt.get_font_size(player_class_str))
-		var rendered_art: String
-		if art_pattern != "solid" and art_color2 != "":
-			# Wrap raw text so the pattern recolor helper has color tags to replace.
-			var wrapped = "[color=%s]\n%s\n[/color]" % [art_color, class_art]
-			rendered_art = _recolor_ascii_art_pattern(wrapped, art_color, art_color2, art_pattern)
-		else:
-			rendered_art = "[color=%s]%s[/color]" % [art_color, class_art]
-		text += "[center][font_size=%d]%s[/font_size][/center]\n\n" % [art_font_size, rendered_art]
+	# v0.9.669 — show the character's COMBAT battler sprite so the status sheet
+	# matches the map avatar + combat scene. ASCII fallback for any class without
+	# a battler pool.
+	var _st_battler := BattlerSprite.idle_path(player_class_str, str(char.get("name", "")))
+	if _st_battler != "" and ResourceLoader.exists(_st_battler):
+		text += "[center][img=112]%s[/img][/center]\n\n" % _st_battler
+	else:
+		var class_art: String = ClassAsciiArt.get_ascii_art(player_class_str)
+		if class_art != "":
+			var art_color_raw: String = appearance_color if appearance_color != "" else ClassAsciiArt.get_color(player_class_str)
+			var art_color2_raw: String = str(char.get("appearance_color2", ""))
+			var art_pattern: String = str(char.get("appearance_pattern", "solid"))
+			var art_color: String = _ensure_readable_color(art_color_raw) if art_color_raw != "" else art_color_raw
+			var art_color2: String = _ensure_readable_color(art_color2_raw) if art_color2_raw != "" else ""
+			var art_font_size: int = max(1, ClassAsciiArt.get_font_size(player_class_str))
+			var rendered_art: String
+			if art_pattern != "solid" and art_color2 != "":
+				var wrapped = "[color=%s]\n%s\n[/color]" % [art_color, class_art]
+				rendered_art = _recolor_ascii_art_pattern(wrapped, art_color, art_color2, art_pattern)
+			else:
+				rendered_art = "[color=%s]%s[/color]" % [art_color, class_art]
+			text += "[center][font_size=%d]%s[/font_size][/center]\n\n" % [art_font_size, rendered_art]
 
 	# === RESOURCES (with stat bars) ===
 	text += _subheader("Resources") + "\n"
@@ -34226,16 +34237,23 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 		lines.append("[color=#AAAAAA]Level %d[/color]" % level)
 	# Variant-recolored class ASCII art (small) so other players see the
 	# correct palette/pattern when hovering over them on the map.
-	var class_art = ClassAsciiArt.get_ascii_art(cls)
-	if class_art != "":
-		var art_str: String
-		if v_pattern != "solid" and v_color2 != "":
-			var wrapped = "[color=%s]\n%s\n[/color]" % [v_color, class_art]
-			art_str = _recolor_ascii_art_pattern(wrapped, v_color, v_color2, v_pattern)
-		else:
-			art_str = "[color=%s]%s[/color]" % [v_color, class_art]
+	# v0.9.669 — show the character's combat battler sprite (matches map avatar +
+	# combat). ASCII fallback for classes without a battler pool.
+	var _hov_battler := BattlerSprite.idle_path(cls, pname)
+	if _hov_battler != "" and ResourceLoader.exists(_hov_battler):
 		lines.append("")
-		lines.append("[font_size=3]%s[/font_size]" % art_str)
+		lines.append("[img=72]%s[/img]" % _hov_battler)
+	else:
+		var class_art = ClassAsciiArt.get_ascii_art(cls)
+		if class_art != "":
+			var art_str: String
+			if v_pattern != "solid" and v_color2 != "":
+				var wrapped = "[color=%s]\n%s\n[/color]" % [v_color, class_art]
+				art_str = _recolor_ascii_art_pattern(wrapped, v_color, v_color2, v_pattern)
+			else:
+				art_str = "[color=%s]%s[/color]" % [v_color, class_art]
+			lines.append("")
+			lines.append("[font_size=3]%s[/font_size]" % art_str)
 	if not is_local:
 		lines.append("")
 		lines.append("[color=#808080][i]Click to examine[/i][/color]")
@@ -34496,8 +34514,14 @@ func _sync_map_sprites_overlay() -> void:
 
 	# --- Local player at center cell ---
 	var local_cls = str(character_data.get("class", ""))
-	var local_atlas: AtlasTexture = ClassSprite.get_idle_atlas_for_direction(local_cls, _local_map_facing)
-	if local_atlas == null:
+	var local_name = str(character_data.get("name", ""))
+	# v0.9.669 — prefer the combat BATTLER sprite so the map avatar matches combat;
+	# fall back to the LPC class sheet for any class without a battler pool.
+	var local_battler: Texture2D = BattlerSprite.idle_texture(local_cls, local_name)
+	var local_atlas: AtlasTexture = null
+	if local_battler == null:
+		local_atlas = ClassSprite.get_idle_atlas_for_direction(local_cls, _local_map_facing)
+	if local_battler == null and local_atlas == null:
 		local.visible = false
 		if _local_companion_label:
 			_local_companion_label.visible = false
@@ -34508,7 +34532,12 @@ func _sync_map_sprites_overlay() -> void:
 		var lpy = at_pixel_y_center - sprite_px * 0.5
 		local.size = Vector2(sprite_px, sprite_px)
 		local.position = Vector2(lpx, lpy)
-		local.texture = local_atlas
+		if local_battler != null:
+			local.texture = local_battler
+			local.flip_h = (_local_map_facing == "right")  # battlers face LEFT natively
+		else:
+			local.texture = local_atlas
+			local.flip_h = false
 		local.visible = true
 		# Stash player data on the slot for hover/click handlers.
 		local.set_meta("player_data", {
@@ -34548,8 +34577,12 @@ func _sync_map_sprites_overlay() -> void:
 		var rcls = str(entry.get("class", ""))
 		var rname = str(entry.get("name", ""))
 		var rfacing = str(_remote_facings.get(rname, "right"))
-		var ratlas: AtlasTexture = ClassSprite.get_idle_atlas_for_direction(rcls, rfacing)
-		if ratlas == null:
+		# v0.9.669 — battler sprite (matches combat); LPC fallback.
+		var rbattler: Texture2D = BattlerSprite.idle_texture(rcls, rname)
+		var ratlas: AtlasTexture = null
+		if rbattler == null:
+			ratlas = ClassSprite.get_idle_atlas_for_direction(rcls, rfacing)
+		if rbattler == null and ratlas == null:
 			continue
 		var rx = int(entry.get("x", 0))
 		var ry = int(entry.get("y", 0))
@@ -34563,7 +34596,12 @@ func _sync_map_sprites_overlay() -> void:
 			continue  # Multiple on same tile — render only the first
 		cells_used[cell_key] = true
 		var slot = _remote_sprite_pool[slot_idx]
-		slot.texture = ratlas
+		if rbattler != null:
+			slot.texture = rbattler
+			slot.flip_h = (rfacing == "right")  # battlers face LEFT natively
+		else:
+			slot.texture = ratlas
+			slot.flip_h = false
 		var px = map_x_offset + (grid_x + 0.5) * cell_w - sprite_px * 0.5
 		# v0.9.345/347 — anchor remote-player Y to the local @'s actual pixel Y
 		# plus the grid-cell offset. rendered_line_h is the actual measured
