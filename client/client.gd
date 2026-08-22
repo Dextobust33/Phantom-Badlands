@@ -521,6 +521,10 @@ var _cached_local_pos_valid: bool = false
 # Defaults to "right" so the first render before any movement matches
 # the previous (single-direction) behavior.
 var _local_map_facing: String = "right"
+# v0.9.669 — battler sprites are side-view only (no up/down frames), so we keep
+# the last LEFT/RIGHT flip and don't snap the avatar to a side when walking
+# up/down. Default true = facing right.
+var _local_battler_flip: bool = true
 # Per-remote-player facing tracking. Keyed by player name. Stores the last
 # known position so the next location update can derive a movement delta
 # and update facing accordingly.
@@ -6944,7 +6948,7 @@ func show_player_info_popup(data: Dictionary):
 	# any class without a battler pool.
 	var _pi_battler := BattlerSprite.idle_path(cls, str(pname))
 	if _pi_battler != "" and ResourceLoader.exists(_pi_battler):
-		player_info_content.append_text("[center][img=112]%s[/img][/center]\n" % _pi_battler)
+		player_info_content.append_text("[center][img=150]%s[/img][/center]\n" % _pi_battler)
 	else:
 		var class_art = ClassAsciiArt.get_ascii_art(cls)
 		if class_art != "":
@@ -25998,7 +26002,7 @@ func display_character_status():
 	# a battler pool.
 	var _st_battler := BattlerSprite.idle_path(player_class_str, str(char.get("name", "")))
 	if _st_battler != "" and ResourceLoader.exists(_st_battler):
-		text += "[center][img=112]%s[/img][/center]\n\n" % _st_battler
+		text += "[center][img=150]%s[/img][/center]\n\n" % _st_battler
 	else:
 		var class_art: String = ClassAsciiArt.get_ascii_art(player_class_str)
 		if class_art != "":
@@ -34247,7 +34251,7 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 	var _hov_battler := BattlerSprite.idle_path(cls, pname)
 	if _hov_battler != "" and ResourceLoader.exists(_hov_battler):
 		lines.append("")
-		lines.append("[img=72]%s[/img]" % _hov_battler)
+		lines.append("[img=144]%s[/img]" % _hov_battler)
 	else:
 		var class_art = ClassAsciiArt.get_ascii_art(cls)
 		if class_art != "":
@@ -34539,7 +34543,14 @@ func _sync_map_sprites_overlay() -> void:
 		local.position = Vector2(lpx, lpy)
 		if local_battler != null:
 			local.texture = local_battler
-			local.flip_h = (_local_map_facing == "right")  # battlers face LEFT natively
+			# Battlers are side-view (no up/down frames). Update the flip only on
+			# left/right movement; keep the last horizontal facing for up/down so
+			# the avatar doesn't snap to a fixed side.
+			if _local_map_facing == "right":
+				_local_battler_flip = true
+			elif _local_map_facing == "left":
+				_local_battler_flip = false
+			local.flip_h = _local_battler_flip
 		else:
 			local.texture = local_atlas
 			local.flip_h = false
