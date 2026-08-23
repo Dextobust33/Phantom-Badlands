@@ -21,6 +21,11 @@ extends Resource
 @export var appearance_color: String = "#FFFFFF"   # primary hex
 @export var appearance_color2: String = ""         # secondary hex (gradient/middle); empty for solid
 @export var appearance_pattern: String = "solid"   # solid | gradient_down | gradient_up | middle | striped | etc.
+# v0.9.670 — the character's combat/map battler sprite id (e.g. "2_1"), STORED at
+# creation from the full pool (BattlerPools.EXPANDED_POOLS). Legacy characters
+# (empty) backfill in from_dict from the frozen LEGACY_POOLS so their look is
+# preserved. Rendered everywhere: combat, map avatar, info/status/hover.
+@export var battler_id: String = ""
 
 # Primary Stats
 @export var strength: int = 10
@@ -1508,6 +1513,7 @@ func to_dict() -> Dictionary:
 		"experience": experience,
 		"experience_to_next_level": experience_to_next_level,
 		"appearance_variant": appearance_variant,
+		"battler_id": battler_id,
 		"appearance_color": appearance_color,
 		"appearance_color2": appearance_color2,
 		"appearance_pattern": appearance_pattern,
@@ -1702,6 +1708,15 @@ func from_dict(data: Dictionary):
 		appearance_color = str(variant.get("color", "#DC143C"))
 		appearance_color2 = str(variant.get("color2", ""))
 		appearance_pattern = str(variant.get("pattern", "solid"))
+
+	# v0.9.670 — combat/map battler sprite id. New characters get one rolled at
+	# create time (from the full pool). Legacy characters (empty) backfill from
+	# the frozen LEGACY_POOLS using the same name-hash formula the old live
+	# derivation used, so their sprite is preserved exactly. Deterministic, so
+	# stable across every from_dict even before the next save.
+	battler_id = str(data.get("battler_id", ""))
+	if battler_id.is_empty():
+		battler_id = BattlerPools.legacy_id_for(class_type, name)
 
 	var stats = data.get("stats", {})
 	strength = stats.get("strength", 10)

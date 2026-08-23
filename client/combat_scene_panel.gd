@@ -40,6 +40,7 @@ var _last_refresh_payload: Dictionary = {}
 # Cached state (last populate call)
 var _player_class: String = ""
 var _player_name: String = ""
+var _player_battler_id: String = ""   # v0.9.670 — stored character.battler_id
 # Cosmetic appearance variant rolled at character creation. Drives per-line
 # pattern recolor of the player's class ASCII art so each character gets a
 # unique look. Populated via populate() payload.
@@ -3324,6 +3325,8 @@ func populate(payload: Dictionary) -> void:
 		_player_class = str(payload["player_class"])
 	if payload.has("player_name"):
 		_player_name = str(payload["player_name"])
+	if payload.has("player_battler_id"):
+		_player_battler_id = str(payload["player_battler_id"])
 	if payload.has("player_appearance_color"):
 		_player_appearance_color = str(payload["player_appearance_color"])
 	if payload.has("player_appearance_color2"):
@@ -3913,8 +3916,11 @@ func _ensure_battler_timer() -> void:
 	_battler_timer.timeout.connect(_on_battler_tick)
 
 func _battler_id_for(cls: String, char_name: String) -> String:
-	# v0.9.669 — delegate to the shared BattlerSprite helper so combat + the map
-	# avatar / info / status / hover always pick the SAME sprite from one source.
+	# v0.9.670 — prefer the character's STORED battler_id (from the combat payload)
+	# so combat + the map avatar / info / status / hover all show the SAME sprite.
+	# Falls back to the legacy name-hash derivation for any character without one.
+	if _player_battler_id != "":
+		return _player_battler_id
 	return BattlerSprite.id_for(cls, char_name)
 
 func _load_battler(cls: String) -> bool:

@@ -2645,6 +2645,13 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	character.appearance_color2 = str(appearance.get("color2", ""))
 	character.appearance_pattern = str(appearance.get("pattern", "solid"))
 
+	# v0.9.670 — roll the combat/map battler sprite from the FULL pool at creation
+	# and store it. Stays on this character forever; existing characters keep
+	# their frozen legacy sprite (backfilled in Character.from_dict).
+	var battler_rng := RandomNumberGenerator.new()
+	battler_rng.randomize()
+	character.battler_id = BattlerPools.pick_expanded(char_class, battler_rng)
+
 	# Give starter gathering tools — equip directly to tool slots
 	var starter_tools = DropTables.generate_starter_tools()
 	for tool in starter_tools:
@@ -7559,6 +7566,7 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 				"name": other_char.name,
 				"level": other_char.level,
 				"class": other_char.get("class_type", ""),
+				"battler_id": other_char.get("battler_id", ""),
 				"companion": comp_data,
 				"in_my_party": is_party_mate,
 				# Audit #14 PvP Slice C V1 (v0.9.553) — x/y already present

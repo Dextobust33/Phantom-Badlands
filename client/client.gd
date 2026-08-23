@@ -6957,7 +6957,7 @@ func show_player_info_popup(data: Dictionary):
 	# v0.9.669 — show the character's actual COMBAT battler sprite (matches the
 	# map avatar + combat scene). Falls back to the recolored class ASCII art for
 	# any class without a battler pool.
-	var _pi_battler := BattlerSprite.idle_path(cls, str(pname))
+	var _pi_battler := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), cls, str(pname))
 	if _pi_battler != "" and ResourceLoader.exists(_pi_battler):
 		player_info_content.append_text("[center][img=150]%s[/img][/center]\n" % _pi_battler)
 	else:
@@ -26012,7 +26012,7 @@ func display_character_status():
 	# v0.9.669 — show the character's COMBAT battler sprite so the status sheet
 	# matches the map avatar + combat scene. ASCII fallback for any class without
 	# a battler pool.
-	var _st_battler := BattlerSprite.idle_path(player_class_str, str(char.get("name", "")))
+	var _st_battler := BattlerSprite.idle_path_resolved(str(char.get("battler_id", "")), player_class_str, str(char.get("name", "")))
 	if _st_battler != "" and ResourceLoader.exists(_st_battler):
 		text += "[center][img=150]%s[/img][/center]\n\n" % _st_battler
 	else:
@@ -31816,6 +31816,7 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		"player_resource_cur": _res.cur,
 		"player_resource_max": _res.max,
 		"player_resource_color": _res.color,
+		"player_battler_id": str(character_data.get("battler_id", "")),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32550,6 +32551,7 @@ func _run_altsprite_test(args: Array) -> void:
 			"player_name": pname,
 			"player_hp": int(character_data.get("current_hp", 100)),
 			"player_max_hp": int(character_data.get("max_hp", 100)),
+			"player_battler_id": str(character_data.get("battler_id", "")),
 			"player_appearance_color": str(character_data.get("appearance_color", "")),
 			"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 			"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32594,6 +32596,7 @@ func _run_combat_fx_demo(in_action_phase: bool = false) -> void:
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
+		"player_battler_id": str(character_data.get("battler_id", "")),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32770,6 +32773,7 @@ func _run_combat_step_demo(mode: String) -> void:
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
+		"player_battler_id": str(character_data.get("battler_id", "")),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32962,6 +32966,7 @@ func _run_combat_pacing_demo() -> void:
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": _res.cur, "player_resource_max": _res.max, "player_resource_color": _res.color,
+		"player_battler_id": str(character_data.get("battler_id", "")),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -33135,6 +33140,7 @@ func _run_combat_miss_demo() -> void:
 		"player_name": str(character_data.get("name", "Player")),
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
+		"player_battler_id": str(character_data.get("battler_id", "")),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -34145,8 +34151,8 @@ func _apply_walk_frame(slot: TextureRect, frame: int) -> void:
 	var facing := str(slot.get_meta("ow_facing", "down"))
 	if int(slot.get_meta("ow_frame", -1)) == frame and str(slot.get_meta("ow_af", "")) == facing:
 		return
-	var tex := BattlerSprite.overworld_texture(
-		str(slot.get_meta("ow_cls", "")), str(slot.get_meta("ow_name", "")), facing, frame)
+	var tex := BattlerSprite.overworld_texture_by_id(
+		str(slot.get_meta("ow_id", "")), facing, frame)
 	if tex != null:
 		slot.texture = tex
 		slot.set_meta("ow_frame", frame)
@@ -34309,7 +34315,7 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 	# correct palette/pattern when hovering over them on the map.
 	# v0.9.669 — show the character's combat battler sprite (matches map avatar +
 	# combat). ASCII fallback for classes without a battler pool.
-	var _hov_battler := BattlerSprite.idle_path(cls, pname)
+	var _hov_battler := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), cls, pname)
 	if _hov_battler != "" and ResourceLoader.exists(_hov_battler):
 		lines.append("")
 		lines.append("[img=144]%s[/img]" % _hov_battler)
@@ -34587,14 +34593,16 @@ func _sync_map_sprites_overlay() -> void:
 	var local_name = str(character_data.get("name", ""))
 	# v0.9.669 — prefer the combat BATTLER sprite so the map avatar matches combat;
 	# fall back to the LPC class sheet for any class without a battler pool.
-	# v0.9.670 — if this character has a matching top-down overworld sprite (TF
-	# sheets 2-5), use its native 4-direction frame so the avatar faces up/down too.
+	# v0.9.670 — resolve the STORED battler id (character.battler_id) so the map
+	# matches combat exactly; if that id has a top-down overworld sprite (TF sheets
+	# 2-5), use its native 4-direction frame so the avatar faces up/down too.
+	var local_bid := BattlerSprite.id_from_data(character_data)
 	var local_overworld: Texture2D = null
-	if BattlerSprite.has_overworld(local_cls, local_name):
-		local_overworld = BattlerSprite.overworld_texture(local_cls, local_name, _local_map_facing)
+	if BattlerSprite.has_overworld_by_id(local_bid):
+		local_overworld = BattlerSprite.overworld_texture_by_id(local_bid, _local_map_facing)
 	var local_battler: Texture2D = null
 	if local_overworld == null:
-		local_battler = BattlerSprite.idle_texture(local_cls, local_name)
+		local_battler = BattlerSprite.idle_texture_by_id(local_bid)
 	var local_atlas: AtlasTexture = null
 	if local_overworld == null and local_battler == null:
 		local_atlas = ClassSprite.get_idle_atlas_for_direction(local_cls, _local_map_facing)
@@ -34615,6 +34623,7 @@ func _sync_map_sprites_overlay() -> void:
 			local.flip_h = false
 			# Walk-anim: let _process cycle stand/walk1/walk2 for this slot.
 			local.set_meta("ow_anim", true)
+			local.set_meta("ow_id", local_bid)
 			local.set_meta("ow_cls", local_cls)
 			local.set_meta("ow_name", local_name)
 			local.set_meta("ow_facing", _local_map_facing)
@@ -34641,6 +34650,7 @@ func _sync_map_sprites_overlay() -> void:
 		local.set_meta("player_data", {
 			"name": str(character_data.get("name", "")),
 			"class": local_cls,
+			"battler_id": str(character_data.get("battler_id", "")),
 			"level": int(character_data.get("level", 1)),
 			"appearance_variant": str(character_data.get("appearance_variant", "")),
 			"appearance_color": str(character_data.get("appearance_color", "")),
@@ -34676,13 +34686,15 @@ func _sync_map_sprites_overlay() -> void:
 		var rname = str(entry.get("name", ""))
 		var rfacing = str(_remote_facings.get(rname, "right"))
 		# v0.9.669 — battler sprite (matches combat); LPC fallback.
-		# v0.9.670 — native 4-direction overworld sprite when available.
+		# v0.9.670 — resolve the remote player's STORED battler id (from the
+		# nearby_players payload); native 4-direction overworld sprite when available.
+		var rbid := BattlerSprite.id_from_data(entry)
 		var roverworld: Texture2D = null
-		if BattlerSprite.has_overworld(rcls, rname):
-			roverworld = BattlerSprite.overworld_texture(rcls, rname, rfacing)
+		if BattlerSprite.has_overworld_by_id(rbid):
+			roverworld = BattlerSprite.overworld_texture_by_id(rbid, rfacing)
 		var rbattler: Texture2D = null
 		if roverworld == null:
-			rbattler = BattlerSprite.idle_texture(rcls, rname)
+			rbattler = BattlerSprite.idle_texture_by_id(rbid)
 		var ratlas: AtlasTexture = null
 		if roverworld == null and rbattler == null:
 			ratlas = ClassSprite.get_idle_atlas_for_direction(rcls, rfacing)
@@ -34704,6 +34716,7 @@ func _sync_map_sprites_overlay() -> void:
 			slot.texture = roverworld
 			slot.flip_h = false  # overworld frames are native per-direction
 			slot.set_meta("ow_anim", true)
+			slot.set_meta("ow_id", rbid)
 			slot.set_meta("ow_cls", rcls)
 			slot.set_meta("ow_name", rname)
 			slot.set_meta("ow_facing", rfacing)
@@ -34729,6 +34742,7 @@ func _sync_map_sprites_overlay() -> void:
 		slot.set_meta("player_data", {
 			"name": rname,
 			"class": rcls,
+			"battler_id": str(entry.get("battler_id", "")),
 			"level": int(entry.get("level", 0)),
 			"in_my_party": bool(entry.get("in_my_party", false)),
 			"appearance_variant": str(entry.get("appearance_variant", "")),
