@@ -18,14 +18,17 @@ extends RefCounted
 # Bands/anchors are tuned to the TF battler content, which sits ~y0.29..0.96 of
 # the 48px frame (head starts ~29% down, feet ~96%), not the full 0..1 — so the
 # top band lands on the helmet, not the empty headroom above it.
+# Anchors are kept INSIDE the character silhouette (roughly x0.40..0.60) so glyphs
+# sit ON the armor, not floating off the body. spawn_glyphs maps these into the
+# actually-drawn sprite square (accounting for KEEP_ASPECT_CENTERED letterbox).
 const SLOT_REGION := {
-	"helm":   {"band": Vector2(0.28, 0.46), "anchor": Vector2(0.50, 0.36), "tint": true},
-	"armor":  {"band": Vector2(0.46, 0.71), "anchor": Vector2(0.50, 0.58), "tint": true},
+	"helm":   {"band": Vector2(0.28, 0.46), "anchor": Vector2(0.50, 0.37), "tint": true},
+	"armor":  {"band": Vector2(0.46, 0.71), "anchor": Vector2(0.50, 0.57), "tint": true},
 	"boots":  {"band": Vector2(0.71, 0.98), "anchor": Vector2(0.50, 0.85), "tint": true},
-	"weapon": {"band": Vector2(0, 0), "anchor": Vector2(0.32, 0.62), "tint": false},
-	"shield": {"band": Vector2(0, 0), "anchor": Vector2(0.68, 0.58), "tint": false},
-	"amulet": {"band": Vector2(0, 0), "anchor": Vector2(0.50, 0.48), "tint": false},
-	"ring":   {"band": Vector2(0, 0), "anchor": Vector2(0.36, 0.70), "tint": false},
+	"weapon": {"band": Vector2(0, 0), "anchor": Vector2(0.43, 0.64), "tint": false},
+	"shield": {"band": Vector2(0, 0), "anchor": Vector2(0.57, 0.64), "tint": false},
+	"amulet": {"band": Vector2(0, 0), "anchor": Vector2(0.50, 0.49), "tint": false},
+	"ring":   {"band": Vector2(0, 0), "anchor": Vector2(0.45, 0.72), "tint": false},
 }
 # Render order for the 3 tintable body slots -> shader band index 0/1/2.
 const TINT_SLOTS := ["helm", "armor", "boots"]
@@ -70,6 +73,11 @@ static func spawn_glyphs(parent: Control, markers: Array, font: Font, glyph_px: 
 	var sz: Vector2 = parent.size
 	if sz.x <= 0.0 or sz.y <= 0.0:
 		return
+	# The battler texture is square and drawn KEEP_ASPECT_CENTERED, so it occupies
+	# a centered square of side min(w,h) — map anchors into THAT, not the full rect,
+	# so glyphs land on the sprite (not the letterbox padding).
+	var side: float = min(sz.x, sz.y)
+	var off: Vector2 = Vector2((sz.x - side) * 0.5, (sz.y - side) * 0.5)
 	var box := float(glyph_px) * 2.0
 	for m in markers:
 		if not m.get("has_glyph", false):
@@ -91,7 +99,7 @@ static func spawn_glyphs(parent: Control, markers: Array, font: Font, glyph_px: 
 		lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 		lbl.add_theme_constant_override("outline_size", maxi(2, glyph_px / 5))
 		var anchor: Vector2 = m["anchor"]
-		lbl.position = Vector2(anchor.x * sz.x, anchor.y * sz.y) - Vector2(box, box) * 0.5
+		lbl.position = off + Vector2(anchor.x * side, anchor.y * side) - Vector2(box, box) * 0.5
 		lbl.set_meta("eq_base_pos", lbl.position)  # for idle-bob sync
 		parent.add_child(lbl)
 

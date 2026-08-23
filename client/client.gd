@@ -538,6 +538,20 @@ var _remote_last_move_ms: Dictionary = {}   # name -> Time.get_ticks_msec() of l
 # rebuild it when equipped gear changes (map syncs run often on movement).
 var _local_equip_mat: ShaderMaterial = null
 var _local_equip_sig: String = ""
+# v0.9.672 — offscreen compositor for the info/status/hover portraits. Those use
+# inline [img], which can't take a shader or child glyph labels, so we render the
+# base sprite + region-tint shader + glyph labels into a SubViewport once and hand
+# the baked ImageTexture to add_image(). Cached per battler_id+color+equipped.
+var _portrait_vp: SubViewport = null
+var _portrait_rect: TextureRect = null
+var _portrait_cache: Dictionary = {}
+# v0.9.672 — remote players' equipped gear is NOT in the frequent nearby_players
+# payload; we lazily fetch it (get_player_equipped) only when a player is actually
+# hovered, then cache it so the hover tooltip can show their equipment markers too.
+var _remote_equip_cache: Dictionary = {}      # name -> equipped dict
+var _remote_equip_requested: Dictionary = {}  # name -> true (already asked this session)
+const PORTRAIT_VP_SIZE := 150
+const PORTRAIT_TOKEN := "￼_EQ_PORTRAIT_￼"
 # Per-remote-player facing tracking. Keyed by player name. Stores the last
 # known position so the next location update can derive a movement delta
 # and update facing accordingly.
@@ -6962,7 +6976,13 @@ func show_player_info_popup(data: Dictionary):
 	# map avatar + combat scene). Falls back to the recolored class ASCII art for
 	# any class without a battler pool.
 	var _pi_battler := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), cls, str(pname))
-	if _pi_battler != "" and ResourceLoader.exists(_pi_battler):
+	# v0.9.672 — composited portrait (base + tint + equipment region-tint + glyphs).
+	var _pi_tex: Texture2D = await _compose_portrait(str(data.get("battler_id", "")), str(data.get("appearance_color", "")), data.get("equipped", {}))
+	if _pi_tex != null:
+		player_info_content.append_text("[center]")
+		player_info_content.add_image(_pi_tex, 150, 150)
+		player_info_content.append_text("[/center]\n")
+	elif _pi_battler != "" and ResourceLoader.exists(_pi_battler):
 		player_info_content.append_text("[center][img=150 color=%s]%s[/img][/center]\n" % [BattlerSprite.tint_hex(str(data.get("appearance_color", ""))), _pi_battler])
 	else:
 		var class_art = ClassAsciiArt.get_ascii_art(cls)
@@ -20733,6 +20753,17 @@ func handle_server_message(message: Dictionary):
 		"player_list":
 			update_online_players(message.get("players", []))
 
+		"player_equipped":
+			# v0.9.672 — lazy remote-gear fetch for the hover portrait. Cache it and,
+			# if we're still hovering that player, rebuild the tooltip with markers.
+			var _pe_name := str(message.get("name", ""))
+			if _pe_name != "":
+				_remote_equip_cache[_pe_name] = message.get("equipped", {})
+				if is_instance_valid(_map_tooltip) and _map_tooltip.visible and is_instance_valid(_map_tooltip_anchor):
+					var _pe_hovered = _map_tooltip_anchor.get_meta("player_data", {})
+					if _pe_hovered is Dictionary and str(_pe_hovered.get("name", "")) == _pe_name:
+						_on_map_sprite_hover(_map_tooltip_anchor)
+
 		"examine_result":
 			# Check if this was triggered by click on player list
 			var examined_name = message.get("name", "")
@@ -25970,6 +26001,9 @@ func display_character_status():
 	var stats = char.get("stats", {})
 	var equipped = char.get("equipped", {})
 	var bonuses = _calculate_equipment_bonuses(equipped)
+	# v0.9.672 — composited portrait (base + tint + equipment region-tint + glyphs),
+	# spliced in at PORTRAIT_TOKEN below (inline [img] can't take a shader/glyphs).
+	var _st_tex: Texture2D = await _compose_portrait(str(char.get("battler_id", "")), str(char.get("appearance_color", "")), equipped)
 
 	var current_xp = char.get("experience", 0)
 	var xp_needed = char.get("experience_to_next_level", 100)
@@ -26018,7 +26052,7 @@ func display_character_status():
 	# a battler pool.
 	var _st_battler := BattlerSprite.idle_path_resolved(str(char.get("battler_id", "")), player_class_str, str(char.get("name", "")))
 	if _st_battler != "" and ResourceLoader.exists(_st_battler):
-		text += "[center][img=150 color=%s]%s[/img][/center]\n\n" % [BattlerSprite.tint_hex(str(char.get("appearance_color", ""))), _st_battler]
+		text += PORTRAIT_TOKEN  # replaced with the composited portrait at display time
 	else:
 		var class_art: String = ClassAsciiArt.get_ascii_art(player_class_str)
 		if class_art != "":
@@ -26229,7 +26263,22 @@ func display_character_status():
 		text += "[color=#808080]── Active Effects ──[/color]\n"
 		text += effects_text
 
-	display_game(text)
+	# v0.9.672 — splice the composited portrait in at PORTRAIT_TOKEN (add_image
+	# needs the runtime texture; falls back to the plain tinted [img] if compose
+	# failed). If there's no token (ascii fallback path), this just appends text.
+	if text.find(PORTRAIT_TOKEN) != -1:
+		var _parts := text.split(PORTRAIT_TOKEN, true, 1)
+		display_game(_parts[0])
+		if _st_tex != null:
+			game_output.append_text("[center]")
+			game_output.add_image(_st_tex, 150, 150)
+			game_output.append_text("[/center]\n\n")
+		elif _st_battler != "":
+			game_output.append_text("[center][img=150 color=%s]%s[/img][/center]\n\n" % [BattlerSprite.tint_hex(str(char.get("appearance_color", ""))), _st_battler])
+		if _parts.size() > 1:
+			display_game(_parts[1])
+	else:
+		display_game(text)
 
 func _build_progression_vectors_text(char: Dictionary) -> String:
 	"""Audit #3 Slice 2 — Progression Vectors dashboard. One section per
@@ -27179,8 +27228,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.672 — Equipment shows on your sprite.
+	display_game("[color=#00FF00]v0.9.672[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOUR GEAR SHOWS ON YOUR SPRITE.[/color] Equipped gear now leaves a visible mark on your character — everywhere the sprite appears (combat, world map, player info, status, cursor hover). Each equipped [b]helmet / armor / boots[/b] tints its part of the sprite a colour, and every piece has a [b]chance of a small marker glyph[/b] on it — the [b]rarer the gear, the more likely[/b] it shows one. So two characters in different gear look distinct at a glance.")
+	display_game("")
+
 	# v0.9.671 — Per-character sprite tint + Player Info sprite fix.
-	display_game("[color=#00FF00]v0.9.671[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.671[/color]")
 	display_game("  [color=#1EFF00]◆ Character color cast.[/color] Each character's sprite now takes a [b]subtle color tint[/b] from their appearance variant (Crimson, Sunset, etc.), so two characters who happen to share the same base sprite still look distinct — in combat, on the map, and on the info/status screens.")
 	display_game("  • Fixed the [b]Player Info[/b] screen showing a different sprite than the map / status / combat scene.")
 	display_game("")
@@ -34180,6 +34234,55 @@ func _apply_walk_frame(slot: TextureRect, frame: int) -> void:
 		slot.set_meta("ow_af", facing)
 
 
+func _ensure_portrait_vp() -> void:
+	if _portrait_vp and is_instance_valid(_portrait_vp):
+		return
+	_portrait_vp = SubViewport.new()
+	_portrait_vp.size = Vector2i(PORTRAIT_VP_SIZE, PORTRAIT_VP_SIZE)
+	_portrait_vp.transparent_bg = true
+	_portrait_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_portrait_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	add_child(_portrait_vp)
+	_portrait_rect = TextureRect.new()
+	_portrait_rect.size = Vector2(PORTRAIT_VP_SIZE, PORTRAIT_VP_SIZE)
+	_portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_portrait_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_portrait_vp.add_child(_portrait_rect)
+
+
+func _compose_portrait(battler_id: String, appearance_color: String, equipped) -> Texture2D:
+	"""Render base sprite + per-character tint + equipment region-tint + glyphs into
+	an ImageTexture for the [img] panels. Cached; async (needs 2 render frames) on
+	first build for a given battler/color/gear combo."""
+	if battler_id == "":
+		return null
+	var base := BattlerSprite.idle_texture_by_id(battler_id)
+	if base == null:
+		return null
+	var eq_sig: String = str(equipped.hash()) if equipped is Dictionary else ""
+	var key := "%s|%s|%s" % [battler_id, appearance_color, eq_sig]
+	if _portrait_cache.has(key):
+		return _portrait_cache[key]
+	_ensure_portrait_vp()
+	for ch in _portrait_rect.get_children():
+		_portrait_rect.remove_child(ch)
+		ch.free()
+	_portrait_rect.texture = base
+	_portrait_rect.self_modulate = BattlerSprite.tint_color(appearance_color)
+	var markers := EquipmentMarkers.markers_for(equipped)
+	_portrait_rect.material = EquipmentMarkers.build_tint_material(markers)
+	EquipmentMarkers.spawn_glyphs(_portrait_rect, markers, null, int(max(7.0, PORTRAIT_VP_SIZE / 15.0)))
+	_portrait_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := _portrait_vp.get_texture().get_image()
+	if img == null:
+		return null
+	var tex := ImageTexture.create_from_image(img)
+	_portrait_cache[key] = tex
+	return tex
+
+
 func _strip_remote_player_glyphs(map_text: String) -> String:
 	"""Replace each visible remote player's letter cell with two raw spaces
 	so the sprite overlay is the only representation. Uses literal string
@@ -34249,15 +34352,17 @@ func _on_map_sprite_hover(node: Control) -> void:
 		return
 	var kind = str(node.get_meta("kind", ""))
 	var content = ""
+	var portrait_data: Dictionary = {}
 	if kind == "player":
 		var data: Dictionary = node.get_meta("player_data", {})
 		content = _build_map_player_tooltip(data, bool(node.get_meta("is_local", false)))
+		portrait_data = data
 	elif kind == "companion":
 		var cdata: Dictionary = node.get_meta("companion_data", {})
 		content = _build_map_companion_tooltip(cdata)
 	if content == "":
 		return
-	_show_map_tooltip(content, node)
+	_show_map_tooltip(content, node, portrait_data)
 
 
 func _on_map_sprite_unhover(node: Control) -> void:
@@ -34339,7 +34444,9 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 	var _hov_battler := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), cls, pname)
 	if _hov_battler != "" and ResourceLoader.exists(_hov_battler):
 		lines.append("")
-		lines.append("[img=144 color=%s]%s[/img]" % [BattlerSprite.tint_hex(str(data.get("appearance_color", ""))), _hov_battler])
+		# v0.9.672 — composited portrait spliced in at display time (see
+		# _show_map_tooltip). Falls back to the plain tinted [img] if compose fails.
+		lines.append(PORTRAIT_TOKEN)
 	else:
 		var class_art = ClassAsciiArt.get_ascii_art(cls)
 		if class_art != "":
@@ -34393,15 +34500,51 @@ func _build_map_companion_tooltip(companion: Dictionary) -> String:
 	return "\n".join(lines)
 
 
-func _show_map_tooltip(content_bbcode: String, anchor: Control) -> void:
+func _hov_battler_fallback(data: Dictionary) -> String:
+	var p := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), str(data.get("class", data.get("class_type", ""))), str(data.get("name", "")))
+	return p if (p != "" and ResourceLoader.exists(p)) else ""
+
+
+func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: Dictionary = {}) -> void:
 	if _map_tooltip == null or not is_instance_valid(_map_tooltip):
 		return
 	if not is_instance_valid(_map_tooltip_label):
 		return
-	_map_tooltip_label.text = content_bbcode
-	_map_tooltip.size = Vector2.ZERO
 	_map_tooltip_anchor = anchor
 	_map_tooltip.visible = true
+	# v0.9.672 — splice the composited portrait in at PORTRAIT_TOKEN so hover
+	# matches combat/map/info/status. Compose is cached; on a miss we await ~2
+	# frames (guard: bail if the cursor moved to a different sprite meanwhile).
+	if content_bbcode.find(PORTRAIT_TOKEN) != -1:
+		# Resolve equipped gear: local carries it inline; for a remote player we
+		# use the lazily-fetched cache, and request it (once) if we don't have it.
+		var _hp_name := str(portrait_data.get("name", ""))
+		var _hp_eq = portrait_data.get("equipped", {})
+		if (not (_hp_eq is Dictionary)) or (_hp_eq as Dictionary).is_empty():
+			if _remote_equip_cache.has(_hp_name):
+				_hp_eq = _remote_equip_cache[_hp_name]
+			elif _hp_name != "":
+				if not _remote_equip_requested.has(_hp_name):
+					_remote_equip_requested[_hp_name] = true
+					send_to_server({"type": "get_player_equipped", "name": _hp_name})
+		var _hp_tex: Texture2D = await _compose_portrait(
+			str(portrait_data.get("battler_id", "")),
+			str(portrait_data.get("appearance_color", "")),
+			_hp_eq)
+		if not (is_instance_valid(_map_tooltip) and _map_tooltip_anchor == anchor):
+			return
+		var _hp_parts := content_bbcode.split(PORTRAIT_TOKEN, true, 1)
+		_map_tooltip_label.clear()
+		_map_tooltip_label.append_text(_hp_parts[0])
+		if _hp_tex != null:
+			_map_tooltip_label.add_image(_hp_tex, 144, 144)
+		elif _hov_battler_fallback(portrait_data) != "":
+			_map_tooltip_label.append_text("[img=144 color=%s]%s[/img]" % [BattlerSprite.tint_hex(str(portrait_data.get("appearance_color", ""))), _hov_battler_fallback(portrait_data)])
+		if _hp_parts.size() > 1:
+			_map_tooltip_label.append_text(_hp_parts[1])
+	else:
+		_map_tooltip_label.text = content_bbcode
+	_map_tooltip.size = Vector2.ZERO
 	# Position next to the anchor — prefer to the right; fall back to left
 	# if it would overflow the viewport. Defer one frame so size is valid.
 	await get_tree().process_frame
@@ -34681,6 +34824,7 @@ func _sync_map_sprites_overlay() -> void:
 			"name": str(character_data.get("name", "")),
 			"class": local_cls,
 			"battler_id": str(character_data.get("battler_id", "")),
+			"equipped": character_data.get("equipped", {}),  # v0.9.672 hover markers
 			"level": int(character_data.get("level", 1)),
 			"appearance_variant": str(character_data.get("appearance_variant", "")),
 			"appearance_color": str(character_data.get("appearance_color", "")),

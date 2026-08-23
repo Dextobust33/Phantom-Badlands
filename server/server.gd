@@ -1611,6 +1611,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_get_players(peer_id)
 		"examine_player":
 			handle_examine_player(peer_id, message)
+		"get_player_equipped":
+			handle_get_player_equipped(peer_id, message)
 		"logout_character":
 			handle_logout_character(peer_id)
 		"logout_account":
@@ -2926,6 +2928,24 @@ func handle_get_players(peer_id: int):
 		"players": player_list,
 		"count": player_list.size()
 	})
+
+func handle_get_player_equipped(peer_id: int, message: Dictionary):
+	# v0.9.672 — lightweight lazy fetch: a client that hovers another player asks
+	# for just that player's equipped gear (kept OUT of the frequent nearby_players
+	# payload) so it can render their equipment sprite markers in the hover tooltip.
+	var target_name := str(message.get("name", ""))
+	if target_name == "":
+		return
+	for pid in characters.keys():
+		var ch = characters[pid]
+		if str(ch.name) == target_name:
+			send_to_peer(peer_id, {
+				"type": "player_equipped",
+				"name": target_name,
+				"equipped": ch.equipped,
+			})
+			return
+
 
 func handle_examine_player(peer_id: int, message: Dictionary):
 	"""Examine another player's character"""
