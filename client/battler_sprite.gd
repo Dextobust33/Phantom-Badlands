@@ -14,6 +14,25 @@ extends RefCounted
 const BATTLER_DIR := "res://client/sprites/battlers/tf/"
 const OVERWORLD_DIR := "res://client/sprites/battlers/overworld/"
 
+# v0.9.671 — per-character identity tint. Two characters can share a battler id,
+# so we wash each sprite with a gentle multiply tint derived from the character's
+# already-rolled appearance_color (Crimson/Sunset/etc). Strength kept low so the
+# sprite stays clearly readable — it's a cast, not a full recolor. Applied via
+# self_modulate on sprite nodes (multiplies UNDER combat FX modulate) and via
+# [img color=...] on the info/status/hover panels.
+const TINT_STRENGTH := 0.30
+
+static func tint_color(appearance_color: String) -> Color:
+	"""Gentle multiply-tint for a sprite from the character's appearance_color.
+	Empty/invalid/white -> Color.WHITE (no visible change)."""
+	if appearance_color == "" or not appearance_color.is_valid_html_color():
+		return Color.WHITE
+	return Color.WHITE.lerp(Color.html(appearance_color), TINT_STRENGTH)
+
+static func tint_hex(appearance_color: String) -> String:
+	"""'#RRGGBB' form of tint_color, for [img color=#..] BBCode."""
+	return "#" + tint_color(appearance_color).to_html(false)
+
 static func has_battler(cls: String) -> bool:
 	return BattlerPools.LEGACY_POOLS.has(cls) and not (BattlerPools.LEGACY_POOLS[cls] as Array).is_empty()
 

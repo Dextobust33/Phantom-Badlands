@@ -3966,6 +3966,9 @@ func _show_player_battler() -> void:
 		_player_sprite_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		_player_sprite_rect.flip_h = true  # RPG-Maker battlers face left; face the enemy
 		_player_sprite_rect.texture = _battler_idle[0]
+		# v0.9.671 — per-character identity tint (self_modulate multiplies UNDER
+		# the FX modulate channel, so fades/flashes/grey-out still work).
+		_player_sprite_rect.self_modulate = BattlerSprite.tint_color(_player_appearance_color)
 		_player_sprite_rect.visible = true
 	if _player_sprite_placeholder and is_instance_valid(_player_sprite_placeholder):
 		_player_sprite_placeholder.visible = false

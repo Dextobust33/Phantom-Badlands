@@ -2999,7 +2999,11 @@ func handle_examine_player(peer_id: int, message: Dictionary):
 				"appearance_variant": char.appearance_variant,
 				"appearance_color": char.appearance_color,
 				"appearance_color2": char.appearance_color2,
-				"appearance_pattern": char.appearance_pattern
+				"appearance_pattern": char.appearance_pattern,
+				# v0.9.671 — stored battler sprite id so the Player Info popup shows
+				# the SAME sprite as the map / status / combat (was falling back to
+				# the legacy name-hash derivation and mismatching).
+				"battler_id": char.battler_id
 			}
 
 			# Location visibility: title holders see all (unless cloaked), nearby players see each other

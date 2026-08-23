@@ -6959,7 +6959,7 @@ func show_player_info_popup(data: Dictionary):
 	# any class without a battler pool.
 	var _pi_battler := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), cls, str(pname))
 	if _pi_battler != "" and ResourceLoader.exists(_pi_battler):
-		player_info_content.append_text("[center][img=150]%s[/img][/center]\n" % _pi_battler)
+		player_info_content.append_text("[center][img=150 color=%s]%s[/img][/center]\n" % [BattlerSprite.tint_hex(str(data.get("appearance_color", ""))), _pi_battler])
 	else:
 		var class_art = ClassAsciiArt.get_ascii_art(cls)
 		if class_art != "":
@@ -26014,7 +26014,7 @@ func display_character_status():
 	# a battler pool.
 	var _st_battler := BattlerSprite.idle_path_resolved(str(char.get("battler_id", "")), player_class_str, str(char.get("name", "")))
 	if _st_battler != "" and ResourceLoader.exists(_st_battler):
-		text += "[center][img=150]%s[/img][/center]\n\n" % _st_battler
+		text += "[center][img=150 color=%s]%s[/img][/center]\n\n" % [BattlerSprite.tint_hex(str(char.get("appearance_color", ""))), _st_battler]
 	else:
 		var class_art: String = ClassAsciiArt.get_ascii_art(player_class_str)
 		if class_art != "":
@@ -27175,8 +27175,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.671 — Per-character sprite tint + Player Info sprite fix.
+	display_game("[color=#00FF00]v0.9.671[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Character color cast.[/color] Each character's sprite now takes a [b]subtle color tint[/b] from their appearance variant (Crimson, Sunset, etc.), so two characters who happen to share the same base sprite still look distinct — in combat, on the map, and on the info/status screens.")
+	display_game("  • Fixed the [b]Player Info[/b] screen showing a different sprite than the map / status / combat scene.")
+	display_game("")
+
 	# v0.9.670 — Bigger character sprite pool (store-at-creation).
-	display_game("[color=#00FF00]v0.9.670[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.670[/color]")
 	display_game("  [color=#FF8000]★ MANY MORE CHARACTER LOOKS.[/color] The character sprite pool [b]more than doubled — 25 → 56[/b]. New characters are randomly assigned a look from a much bigger, class-fitting set [b]at creation[/b], so two same-class characters look different far more often. Your [b]existing characters keep their current look[/b] — this only widens the pool for new ones. The new sprites also walk with up/down facing on the map where available.")
 	display_game("")
 
@@ -34323,7 +34329,7 @@ func _build_map_player_tooltip(data: Dictionary, is_local: bool) -> String:
 	var _hov_battler := BattlerSprite.idle_path_resolved(str(data.get("battler_id", "")), cls, pname)
 	if _hov_battler != "" and ResourceLoader.exists(_hov_battler):
 		lines.append("")
-		lines.append("[img=144]%s[/img]" % _hov_battler)
+		lines.append("[img=144 color=%s]%s[/img]" % [BattlerSprite.tint_hex(str(data.get("appearance_color", ""))), _hov_battler])
 	else:
 		var class_art = ClassAsciiArt.get_ascii_art(cls)
 		if class_art != "":
@@ -34650,6 +34656,8 @@ func _sync_map_sprites_overlay() -> void:
 			local.set_meta("ow_anim", false)
 			local.texture = local_atlas
 			local.flip_h = false
+		# v0.9.671 — per-character identity tint from appearance_color.
+		local.self_modulate = BattlerSprite.tint_color(str(character_data.get("appearance_color", "")))
 		local.visible = true
 		# Stash player data on the slot for hover/click handlers.
 		local.set_meta("player_data", {
@@ -34736,6 +34744,8 @@ func _sync_map_sprites_overlay() -> void:
 			slot.set_meta("ow_anim", false)
 			slot.texture = ratlas
 			slot.flip_h = false
+		# v0.9.671 — per-character identity tint from the remote's appearance_color.
+		slot.self_modulate = BattlerSprite.tint_color(str(entry.get("appearance_color", "")))
 		var px = map_x_offset + (grid_x + 0.5) * cell_w - sprite_px * 0.5
 		# v0.9.345/347 — anchor remote-player Y to the local @'s actual pixel Y
 		# plus the grid-cell offset. rendered_line_h is the actual measured
