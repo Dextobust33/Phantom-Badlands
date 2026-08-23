@@ -27175,8 +27175,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.670 — Bigger character sprite pool (store-at-creation).
+	display_game("[color=#00FF00]v0.9.670[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ MANY MORE CHARACTER LOOKS.[/color] The character sprite pool [b]more than doubled — 25 → 56[/b]. New characters are randomly assigned a look from a much bigger, class-fitting set [b]at creation[/b], so two same-class characters look different far more often. Your [b]existing characters keep their current look[/b] — this only widens the pool for new ones. The new sprites also walk with up/down facing on the map where available.")
+	display_game("")
+
 	# v0.9.669 — Player sprites on the map + up/down facing.
-	display_game("[color=#00FF00]v0.9.669[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.669[/color]")
 	display_game("  [color=#FF8000]★ YOUR MAP AVATAR MATCHES COMBAT.[/color] Your character on the world map — and every other player — now shows the [b]same sprite you see in battle[/b], instead of a mismatched placeholder. The player info panel, status screen, and map-hover tooltip use it too, at a [b]larger, crisper size[/b].")
 	display_game("  [color=#1EFF00]◆ Characters walk on the map.[/color] Move up, down, left, or right and your avatar now [b]turns to face that direction and animates a walking stride[/b] on the map (for characters whose sprite includes directional art) — no more sliding around locked in a side pose. It settles back to a standing frame when you stop.")
 	display_game("")
