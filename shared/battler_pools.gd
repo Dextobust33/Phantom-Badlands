@@ -28,16 +28,19 @@ const LEGACY_POOLS := {
 # TimeFantasy singleframes pack). NEW characters roll their battler_id from here
 # at creation. Each class's pool is a superset of its legacy pool so the theme
 # stays consistent; ids may appear in two classes (e.g. 4_5 Sorcerer+Ninja).
+# v0.9.673 — TimeFantasy military sets (m1_/m2_/m3_, 24 armored soldiers/knights)
+# folded into the martial classes; casters keep their robed pool. military2/3 have
+# no bow frames — combat falls back to the melee swing, so they're safe anywhere.
 const EXPANDED_POOLS := {
-	"Fighter":   ["1_1", "2_1", "6_4", "1_2", "1_3", "2_3", "4_1", "6_6", "7_1"],
-	"Barbarian": ["6_2", "5_3", "7_8", "4_2", "4_8", "5_4", "7_7"],
-	"Paladin":   ["4_7", "2_8", "3_8", "2_2", "7_4", "7_6"],
+	"Fighter":   ["1_1", "2_1", "6_4", "1_2", "1_3", "2_3", "4_1", "6_6", "7_1", "m1_1", "m1_5", "m1_6", "m3_6", "m3_8"],
+	"Barbarian": ["6_2", "5_3", "7_8", "4_2", "4_8", "5_4", "7_7", "m2_1", "m2_7", "m1_2", "m2_3"],
+	"Paladin":   ["4_7", "2_8", "3_8", "2_2", "7_4", "7_6", "m1_3", "m1_4", "m1_7", "m1_8", "m2_8", "m3_4"],
 	"Wizard":    ["1_6", "5_6", "2_6", "3_7"],
 	"Sorcerer":  ["4_5", "3_6", "1_5", "3_5", "5_5"],
 	"Sage":      ["3_3", "5_7", "5_8", "2_7", "4_6", "6_8"],
-	"Thief":     ["5_7", "6_3", "7_5", "1_7", "3_2", "5_2", "7_2"],
-	"Ranger":    ["3_4", "2_4", "6_1", "2_5", "3_1", "6_5", "6_7", "1_4"],
-	"Ninja":     ["4_5", "1_8", "7_3", "4_3", "4_4", "5_1"],
+	"Thief":     ["5_7", "6_3", "7_5", "1_7", "3_2", "5_2", "7_2", "m2_5", "m2_6", "m3_5"],
+	"Ranger":    ["3_4", "2_4", "6_1", "2_5", "3_1", "6_5", "6_7", "1_4", "m2_2", "m3_7", "m3_3"],
+	"Ninja":     ["4_5", "1_8", "7_3", "4_3", "4_4", "5_1", "m2_4", "m3_1", "m3_2"],
 }
 
 static func legacy_id_for(cls: String, char_name: String) -> String:

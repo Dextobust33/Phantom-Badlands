@@ -27228,8 +27228,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.673 — Military sprite sets.
+	display_game("[color=#00FF00]v0.9.673[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Even more character looks.[/color] Added [b]24 armored soldier & knight sprites[/b] (TimeFantasy military sets) to the martial classes, so new Fighters, Barbarians, Paladins, Thieves, Rangers and Ninjas roll from an even bigger pool — [b]80 total looks[/b] now. Existing characters keep their current sprite.")
+	display_game("")
+
 	# v0.9.672 — Equipment shows on your sprite.
-	display_game("[color=#00FF00]v0.9.672[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.672[/color]")
 	display_game("  [color=#FF8000]★ YOUR GEAR SHOWS ON YOUR SPRITE.[/color] Equipped gear now leaves a visible mark on your character — everywhere the sprite appears (combat, world map, player info, status, cursor hover). Each equipped [b]helmet / armor / boots[/b] tints its part of the sprite a colour, and every piece has a [b]chance of a small marker glyph[/b] on it — the [b]rarer the gear, the more likely[/b] it shows one. So two characters in different gear look distinct at a glance.")
 	display_game("")
 
