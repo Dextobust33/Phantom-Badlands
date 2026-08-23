@@ -20,7 +20,7 @@ const OVERWORLD_DIR := "res://client/sprites/battlers/overworld/"
 # sprite stays clearly readable — it's a cast, not a full recolor. Applied via
 # self_modulate on sprite nodes (multiplies UNDER combat FX modulate) and via
 # [img color=...] on the info/status/hover panels.
-const TINT_STRENGTH := 0.30
+const TINT_STRENGTH := 0.35
 
 static func tint_color(appearance_color: String) -> Color:
 	"""Gentle multiply-tint for a sprite from the character's appearance_color.

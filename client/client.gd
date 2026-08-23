@@ -534,6 +534,10 @@ const WALK_MOVING_WINDOW_MS := 320      # treat as "moving" for this long after 
 var _walk_anim_accum: float = 0.0
 var _local_last_move_ms: int = 0
 var _remote_last_move_ms: Dictionary = {}   # name -> Time.get_ticks_msec() of last step
+# v0.9.672 — cache the local avatar's equipment region-tint material so we only
+# rebuild it when equipped gear changes (map syncs run often on movement).
+var _local_equip_mat: ShaderMaterial = null
+var _local_equip_sig: String = ""
 # Per-remote-player facing tracking. Keyed by player name. Stores the last
 # known position so the next location update can derive a movement delta
 # and update facing accordingly.
@@ -31828,6 +31832,7 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		"player_resource_max": _res.max,
 		"player_resource_color": _res.color,
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32563,6 +32568,7 @@ func _run_altsprite_test(args: Array) -> void:
 			"player_hp": int(character_data.get("current_hp", 100)),
 			"player_max_hp": int(character_data.get("max_hp", 100)),
 			"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_equipped": character_data.get("equipped", {}),
 			"player_appearance_color": str(character_data.get("appearance_color", "")),
 			"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 			"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32608,6 +32614,7 @@ func _run_combat_fx_demo(in_action_phase: bool = false) -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32785,6 +32792,7 @@ func _run_combat_step_demo(mode: String) -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -32978,6 +32986,7 @@ func _run_combat_pacing_demo() -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": _res.cur, "player_resource_max": _res.max, "player_resource_color": _res.color,
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -33152,6 +33161,7 @@ func _run_combat_miss_demo() -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
 		"player_appearance_pattern": str(character_data.get("appearance_pattern", "solid")),
@@ -34658,6 +34668,13 @@ func _sync_map_sprites_overlay() -> void:
 			local.flip_h = false
 		# v0.9.671 — per-character identity tint from appearance_color.
 		local.self_modulate = BattlerSprite.tint_color(str(character_data.get("appearance_color", "")))
+		# v0.9.672 — per-equipped-piece region tint (shader), rebuilt only on change.
+		var _eq = character_data.get("equipped", {})
+		var _eq_sig = str(_eq.hash()) if _eq is Dictionary else ""
+		if _eq_sig != _local_equip_sig:
+			_local_equip_sig = _eq_sig
+			_local_equip_mat = EquipmentMarkers.build_tint_material(EquipmentMarkers.markers_for(_eq))
+		local.material = _local_equip_mat
 		local.visible = true
 		# Stash player data on the slot for hover/click handlers.
 		local.set_meta("player_data", {

@@ -41,6 +41,7 @@ var _last_refresh_payload: Dictionary = {}
 var _player_class: String = ""
 var _player_name: String = ""
 var _player_battler_id: String = ""   # v0.9.670 — stored character.battler_id
+var _player_equipped: Dictionary = {} # v0.9.672 — for equipment sprite markers
 # Cosmetic appearance variant rolled at character creation. Drives per-line
 # pattern recolor of the player's class ASCII art so each character gets a
 # unique look. Populated via populate() payload.
@@ -3327,6 +3328,8 @@ func populate(payload: Dictionary) -> void:
 		_player_name = str(payload["player_name"])
 	if payload.has("player_battler_id"):
 		_player_battler_id = str(payload["player_battler_id"])
+	if payload.has("player_equipped") and payload["player_equipped"] is Dictionary:
+		_player_equipped = payload["player_equipped"]
 	if payload.has("player_appearance_color"):
 		_player_appearance_color = str(payload["player_appearance_color"])
 	if payload.has("player_appearance_color2"):
@@ -3915,6 +3918,18 @@ func _ensure_battler_timer() -> void:
 	add_child(_battler_timer)
 	_battler_timer.timeout.connect(_on_battler_tick)
 
+func _apply_combat_equip_glyphs(markers: Array) -> void:
+	"""Spawn equipment glyph Labels over the combat sprite. Deferred one frame so
+	the sprite rect has its laid-out size for anchor positioning."""
+	if not (_player_sprite_rect and is_instance_valid(_player_sprite_rect)):
+		return
+	await get_tree().process_frame
+	if not (_player_sprite_rect and is_instance_valid(_player_sprite_rect)):
+		return
+	var gpx := int(max(8.0, _player_sprite_rect.size.y / 15.0))
+	EquipmentMarkers.spawn_glyphs(_player_sprite_rect, markers, null, gpx)
+
+
 func _battler_id_for(cls: String, char_name: String) -> String:
 	# v0.9.670 — prefer the character's STORED battler_id (from the combat payload)
 	# so combat + the map avatar / info / status / hover all show the SAME sprite.
@@ -3970,6 +3985,10 @@ func _show_player_battler() -> void:
 		# the FX modulate channel, so fades/flashes/grey-out still work).
 		_player_sprite_rect.self_modulate = BattlerSprite.tint_color(_player_appearance_color)
 		_player_sprite_rect.visible = true
+		# v0.9.672 — per-equipped-piece region tint (shader) + glyph markers.
+		var _eq_markers := EquipmentMarkers.markers_for(_player_equipped)
+		_player_sprite_rect.material = EquipmentMarkers.build_tint_material(_eq_markers)
+		_apply_combat_equip_glyphs(_eq_markers)
 	if _player_sprite_placeholder and is_instance_valid(_player_sprite_placeholder):
 		_player_sprite_placeholder.visible = false
 	_battler_timer.start()
@@ -3980,6 +3999,21 @@ func _on_battler_tick() -> void:
 	_battler_frame = (_battler_frame + 1) % _battler_idle.size()
 	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
 		_player_sprite_rect.texture = _battler_idle[_battler_frame]
+		_bob_equip_glyphs(_battler_frame)
+
+
+func _bob_equip_glyphs(frame: int) -> void:
+	"""Nudge equipment glyphs to match the idle bob (TF idle frame 2 sits ~1px
+	lower in the 48px source; scaled to the on-screen sprite height)."""
+	if not (_player_sprite_rect and is_instance_valid(_player_sprite_rect)):
+		return
+	const BOB_SRC := [0.0, 0.0, 1.0]  # per-idle-frame vertical shift, source px
+	var scale: float = _player_sprite_rect.size.y / 48.0
+	var dy: float = float(BOB_SRC[frame % BOB_SRC.size()]) * scale
+	for ch in _player_sprite_rect.get_children():
+		if ch.has_meta("eq_glyph") and ch.has_meta("eq_base_pos"):
+			var base: Vector2 = ch.get_meta("eq_base_pos")
+			ch.position = Vector2(base.x, base.y + dy)
 
 func _set_sprite_texture(tex) -> void:
 	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
