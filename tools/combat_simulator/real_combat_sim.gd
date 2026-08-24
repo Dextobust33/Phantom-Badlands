@@ -40,7 +40,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_hp_sweep()
+	run_matrix()
 	quit()
 
 func run_matrix():
@@ -142,7 +142,8 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 
 func _player_act(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
-	# Opportunistic damage buff (once per fight): buff early for uptime.
+	var mom: int = int(combat.get("momentum", 0))
+	# Opportunistic damage buff (once per fight): buff early for uptime (also builds Momentum).
 	if not combat.get("_sim_buffed", false):
 		for b in WARRIOR_BUFFS:
 			if b in hand:
@@ -150,22 +151,32 @@ func _player_act(combat: Dictionary, ch) -> void:
 				if rb.get("success", false):
 					combat["_sim_buffed"] = true
 					return
-	# Best affordable damage card currently in the drawn hand.
-	for ab in WARRIOR_DMG_PRIORITY:
+	# v0.9.696 — Momentum play: hold Devastate until Momentum is high, unleash the finisher.
+	if mom >= 4 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	# Build with the best affordable BUILDER in hand (Devastate excluded here).
+	for ab in ["cleave", "shield_bash", "power_strike"]:
 		if ab in hand:
-			var r = combat_mgr.process_ability_command(0, ab, "")
-			if r.get("success", false):
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	# Out of resource / no castable card → basic attack (also regens).
+	# If only Devastate is available and we have some Momentum, spend it (beats a basic hit).
+	if mom >= 1 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	# Out of resource / no castable card → basic attack (also regens + builds Momentum? no).
 	combat_mgr.process_attack(combat)
 
-func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0) -> Dictionary:
+func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0) -> Dictionary:
+	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile
+	# (e.g. Momentum gating the burst → lower avg player DPS) by giving back a
+	# fraction of the damage dealt/taken each turn — the reverse-solve knobs.
 	var ch = make_char(level, gear)
 	var monster = make_monster(level, et, extra_hp_mult)
 	var max_hp: int = ch.get_total_max_hp()
 	combat_mgr.start_combat(0, ch, monster)
 	if not combat_mgr.active_combats.has(0):
-		return {"win": false, "turns": 0, "hp_frac": 0.0}
+		return {"win": false, "turns": 0}
 	var combat = combat_mgr.active_combats[0]
 	var turns := 0
 	while turns < 400:
@@ -173,11 +184,50 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0)
 			break
 		turns += 1
 		if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
+			var mhp0: int = int(monster.get("current_hp", 0))
 			_player_act(combat, ch)
+			if player_dmg_scale < 1.0:
+				var dealt: int = mhp0 - int(monster.get("current_hp", 0))
+				if dealt > 0:
+					var giveback: int = int(dealt * (1.0 - player_dmg_scale))
+					monster["current_hp"] = min(int(monster.get("max_hp", 1)), int(monster.get("current_hp", 0)) + giveback)
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
+		var php0: int = ch.current_hp
 		combat_mgr.process_monster_turn(combat)
+		if monster_dmg_scale < 1.0:
+			var taken: int = php0 - ch.current_hp
+			if taken > 0:
+				ch.current_hp = min(max_hp, ch.current_hp + int(taken * (1.0 - monster_dmg_scale)))
 	var win: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
-	var hp_frac: float = clampf(float(ch.current_hp) / float(max(1, max_hp)), 0.0, 1.0)
 	combat_mgr.end_combat(0, win, false)
-	return {"win": win, "turns": turns, "hp_frac": hp_frac}
+	return {"win": win, "turns": turns}
+
+func run_design_solve():
+	# Reverse-solve the DESIGN numbers: what player-damage% × monster-damage% give
+	# the target fight lengths + win-rates → tells us the avg per-turn damage
+	# Momentum must produce (and how much monster damage must soften).
+	var N := 80
+	var pds := [1.0, 0.5, 0.33, 0.25]
+	var mds := [1.0, 0.75, 0.5]
+	print("\n===== DESIGN-SOLVE: player dmg%% × monster dmg%% -> avgTurns@win (L50 BiS Fighter) =====")
+	print("Targets: elite ~6-9t, boss ~10-14t at ~85-90%% win. Find the combo that lands there.")
+	for et in ["elite", "boss"]:
+		print("-- %s (L50 BiS) --" % et)
+		var hdr := "%-12s" % "plyDmg\\monDmg"
+		for md in mds:
+			hdr += "%13s" % ("mon %d%%" % int(md * 100))
+		print(hdr)
+		for pd in pds:
+			var row := "%-12s" % ("ply %d%%" % int(pd * 100))
+			for md in mds:
+				var wins := 0
+				var tt := 0
+				for i in range(N):
+					var r = run_fight(50, "bis", et, 1.0, pd, md)
+					if r.win:
+						wins += 1
+					tt += r.turns
+				row += "%13s" % ("%.1ft@%d%%" % [float(tt) / N, int(100.0 * wins / N)])
+			print(row)
+	print("==============================================================================\n")

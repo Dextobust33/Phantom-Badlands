@@ -61,6 +61,7 @@ static func _monster_matches_keywords(monster: Dictionary, keywords: Array) -> b
 # empties the discard reshuffles in. Standard actions (attack/item/flee/
 # outsmart) bypass the hand entirely.
 const COMBAT_HAND_SIZE: int = 3
+const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via cards, spent by Devastate)
 # Stripped from the deck. v0.9.423 — Cloak + Teleport are out-of-combat
 # utilities only (slip past overworld monsters / fast-travel). All-or-Nothing
 # was removed entirely.
@@ -1033,6 +1034,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"character": character,
 		"monster": monster,
 		"round": 1,
+		"momentum": 0,  # v0.9.696 — Warrior Momentum: builds via Warrior cards, spent by Devastate
 		"player_can_act": not monster_goes_first,  # Monster may act first!
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
@@ -3865,6 +3867,13 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	if ability_info.is_empty():
 		return {"success": false, "messages": ["[color=#FF4444]Unknown warrior ability![/color]"], "combat_ended": false}
 
+	# v0.9.696 — Warrior Momentum: Devastate is a FINISHER. It can't fire at 0
+	# Momentum (no turn-1 nuke) — build Momentum with your other Warrior cards,
+	# THEN unleash. Gated BEFORE the cost so a blocked cast wastes no stamina.
+	if ability_name == "devastate" and int(combat.get("momentum", 0)) < 1:
+		var _mm: String = "[color=#FFA500]Devastate needs Momentum — build it with your other Warrior cards first![/color]"
+		return {"success": false, "messages": [_mm], "message": _mm, "combat_ended": false, "skip_monster_turn": true}
+
 	# Mastery Slice 1 — level gate removed; rank scales effective power.
 
 	# Audit #1 variable-cost rework — abilities in VARIABLE_COST_TABLE take the
@@ -4033,11 +4042,14 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			is_buff_ability = true
 
 		"devastate":
-			# Buffed: 5x damage (was 4x), sqrt STR scaling.
-			# Variable cost: pure damage scaling (no secondary effects).
+			# v0.9.696 — FINISHER: damage scales with Momentum (attack × (2 + Momentum)),
+			# then SPENDS all Momentum. At 5 Momentum = 7× (bigger than the old flat 5×);
+			# at 1 = 3× (weak). Gated at 0 above → build up before you unleash.
+			var _mom: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 5.0 * damage_multiplier * str_mult * variable_fraction)
+			var dev_mult: float = 2.0 + float(_mom)
+			var base_dmg = int(total_attack * dev_mult * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var dev_skill_bonus = character.get_skill_damage_bonus("devastate")
 			base_dmg = apply_skill_damage_bonus(character, "devastate", base_dmg, combat)
@@ -4047,7 +4059,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color]")
+			combat["momentum"] = 0  # spent
+			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color] [color=#C8A24A](spent %d Momentum, ×%.0f)[/color]" % [_mom, dev_mult])
 			messages.append("[color=#FFFF00]A catastrophic blow deals %d damage![/color]" % damage)
 
 		"fortify":
@@ -4076,6 +4089,13 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			character.add_buff("strength", str_bonus, rl_dur)
 			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for %d rounds![/color]" % [actual_heal, str_bonus, rl_dur])
 			is_buff_ability = true
+
+	# v0.9.696 — Warrior Momentum: every successful Warrior card EXCEPT the Devastate
+	# finisher builds +1 Momentum (capped). Devastate spends it (handled in its case).
+	if ability_name != "devastate":
+		var _newmom: int = min(MOMENTUM_MAX, int(combat.get("momentum", 0)) + 1)
+		combat["momentum"] = _newmom
+		messages.append("[color=#C8A24A]⚡ Momentum %d/%d[/color]" % [_newmom, MOMENTUM_MAX])
 
 	# Check if monster died
 	if monster.current_hp <= 0:
