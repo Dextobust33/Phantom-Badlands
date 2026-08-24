@@ -3105,6 +3105,16 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
 	combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + ability_damage_dealt
+	# v0.9.676 — Tier 'rider' milestone picks: a damaging ability inflicts BLEED,
+	# scaling with rider level + the hit's damage. Reuses the monster_bleed DoT
+	# (ticked in _process_monster_dots). Stun/armor-break riders can layer on later.
+	if ability_damage_dealt > 0:
+		var _rider_lvl: int = combat.character.get_ability_rider_level(ability_name)
+		if _rider_lvl > 0:
+			var _bleed: int = max(1, int(ability_damage_dealt * 0.15 * _rider_lvl))
+			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + _bleed
+			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 3)
+			result.messages.append("[color=#FF4444]Rider: %s opens a bleeding wound (%d/turn)![/color]" % [ability_name.replace("_", " ").capitalize(), _bleed])
 	var ability_self_damage = max(0, player_hp_before - combat.character.current_hp)
 	combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + ability_self_damage
 
@@ -4340,6 +4350,11 @@ func apply_skill_cost_reduction(character: Character, ability_name: String, base
 	var racial_mult = character.get_ability_cost_multiplier()
 	if racial_mult < 1.0:
 		cost = int(cost * racial_mult)
+
+	# v0.9.676 — Tier system: 'efficiency' milestone picks reduce cost (floored).
+	var tier_cost_mult = character.get_tier_cost_mult(ability_name)
+	if tier_cost_mult < 1.0:
+		cost = int(cost * tier_cost_mult)
 
 	# Skill enhancement cost reduction
 	var cost_reduction = character.get_skill_cost_reduction(ability_name)

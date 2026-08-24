@@ -18475,67 +18475,43 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 			btn.free()
 	_rank_choice_custom_buttons.clear()
 	var ability_label = _ability_display_name(ability_name)
-	# v0.9.567 — extended to R6 (Legend, Mythic). v0.9.568 — rank labels via const.
-	var rank_label = MASTERY_RANK_NAMES[new_rank] if new_rank >= 0 and new_rank < MASTERY_RANK_NAMES.size() else "Mythic"
-	var rank_mults_local := [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
-	var next_effect_rank = min(current_effect_rank + 1, rank_mults_local.size() - 1)
-	# v0.9.599 — show the actual DELTA gained at this rank-up rather than the
-	# new absolute % from baseline. Old display:
-	#   button: "+%s Damage" % dmg_str → "+-10% Damage" or "++10% Damage"
-	#                                     (double-sign because dmg_str carried
-	#                                      its own sign and the format string
-	#                                      hardcoded a leading "+")
-	#   dialog: "+10%% Damage: scale damage to -10%% (effect rank 0 → 1)"
-	#           — hardcoded "+10%" was also wrong at the final rank step
-	#             (5 → 6 is +15%, not +10%)
-	# New: compute the gain dynamically; show current→new absolute on the dialog
-	# so the player sees what's actually changing without negative-sign confusion.
-	var current_mult_safe: float = rank_mults_local[clampi(current_effect_rank, 0, rank_mults_local.size() - 1)]
-	var next_mult: float = rank_mults_local[next_effect_rank]
-	var delta_pct: int = int(round((next_mult - current_mult_safe) * 100))
-	var current_total_pct: int = int(round(current_mult_safe * 100))
-	var next_total_pct: int = int(round(next_mult * 100))
-	# Button: clean delta (always non-negative since each rank is a gain). Dialog:
-	# absolute current→new so the player sees the ability's true power level.
-	var dmg_button_label: String = "+%d%% Damage" % delta_pct
-	var dmg_dialog_str: String = "%d%% → %d%% damage (+%d%%)" % [current_total_pct, next_total_pct, delta_pct]
-	# Slice 6f (v0.9.549) — Variant Imprint third option when companion was
-	# active at rank-up time. variant_offer carries trait_id / trait_name /
-	# companion_name / description / stack info from the server.
-	var has_variant: bool = variant_offer is Dictionary and not variant_offer.is_empty() and variant_offer.has("trait_id")
-	var variant_line: String = ""
-	if has_variant:
-		var v_name = String(variant_offer.get("trait_name", "Imprint"))
-		var v_comp = String(variant_offer.get("companion_name", "your companion"))
-		var v_desc = String(variant_offer.get("description", ""))
-		var v_cur = int(variant_offer.get("current_stacks", 0))
-		var v_max = int(variant_offer.get("max_stacks", 4))
-		variant_line = "\n  • ✦ Imprint: %s (from %s) — %s [stack %d/%d]" % [v_name, v_comp, v_desc, v_cur + 1, v_max]
-	_rank_choice_popup.title = "Mastery Rank %d (%s) — %s" % [new_rank, rank_label, ability_label]
+	# v0.9.676 — Upgrade → Tier: rank-ups are now MILESTONES offering a branch pick
+	# (Power / Rider / Efficiency) instead of the old +1 Card / +Damage / Imprint.
+	# Current stacks read from character_data.ability_milestone_picks so the player
+	# sees how they've specialised this card so far.
+	var picks: Array = []
+	var mp = character_data.get("ability_milestone_picks", {})
+	if mp is Dictionary and mp.get(ability_name, null) is Array:
+		picks = mp[ability_name]
+	var power_n: int = picks.count("power")
+	var rider_n: int = picks.count("rider")
+	var effic_n: int = picks.count("efficiency")
+	_rank_choice_popup.title = "Milestone — %s" % ability_label
 	_rank_choice_popup.dialog_text = (
-		"You've reached a new mastery rank with %s.\n" +
-		"Choose how to invest this rank:\n\n" +
-		"  • +1 Card: add a copy to your combat deck (currently %d).\n" +
-		"  • +%d%% Damage: %s (effect rank %d → %d).%s"
-	) % [ability_label, current_copy_count, delta_pct, dmg_dialog_str, current_effect_rank, next_effect_rank, variant_line]
-	# Add the action buttons. v0.9.597 — record each in _rank_choice_custom_buttons
-	# so the next popup can detach + free them via remove_button.
-	var btn_copy = _rank_choice_popup.add_button("+1 Card", true, "copy")
-	btn_copy.set_meta("rank_choice_button", true)
-	_rank_choice_custom_buttons.append(btn_copy)
-	var btn_effect = _rank_choice_popup.add_button(dmg_button_label, true, "effect")
-	btn_effect.set_meta("rank_choice_button", true)
-	_rank_choice_custom_buttons.append(btn_effect)
-	if has_variant:
-		var btn_variant = _rank_choice_popup.add_button("✦ %s" % String(variant_offer.get("trait_name", "Imprint")), true, "variant")
-		btn_variant.set_meta("rank_choice_button", true)
-		_rank_choice_custom_buttons.append(btn_variant)
-	_rank_choice_popup.popup_centered(Vector2(540 if has_variant else 440, 260 if has_variant else 220))
+		"%s hit a milestone! Choose how it grows:\n\n" +
+		"  • Power — bigger effect (+12%% each).  Now: x%d\n" +
+		"  • Rider — inflicts/deepens Bleed on hit.  Now: x%d\n" +
+		"  • Efficiency — costs less to cast (-10%% each).  Now: x%d\n\n" +
+		"(Your card keeps tiering up on its own as you use it — this is the specialisation choice.)"
+	) % [ability_label, power_n, rider_n, effic_n]
+	# Buttons — plain labels (no risky emoji glyphs). Actions map to the server's
+	# milestone-pick handler.
+	var btn_power = _rank_choice_popup.add_button("Power  +damage", true, "power")
+	btn_power.set_meta("rank_choice_button", true)
+	_rank_choice_custom_buttons.append(btn_power)
+	var btn_rider = _rank_choice_popup.add_button("Rider  +bleed", true, "rider")
+	btn_rider.set_meta("rank_choice_button", true)
+	_rank_choice_custom_buttons.append(btn_rider)
+	var btn_effic = _rank_choice_popup.add_button("Efficiency  -cost", true, "efficiency")
+	btn_effic.set_meta("rank_choice_button", true)
+	_rank_choice_custom_buttons.append(btn_effic)
+	_rank_choice_popup.popup_centered(Vector2(480, 280))
 
 func _on_rank_choice_picked(action: String) -> void:
 	if _rank_choice_pending_ability == "":
 		return
-	if action != "copy" and action != "effect" and action != "variant":
+	# v0.9.676 — milestone picks (power/rider/efficiency); legacy kinds still valid.
+	if not (action in ["power", "rider", "efficiency", "copy", "effect", "variant"]):
 		return
 	send_to_server({
 		"type": "rank_choice_response",
@@ -21690,6 +21666,15 @@ func handle_server_message(message: Dictionary):
 					var dmg_pct = int((ra_mults[new_er] - 1.0) * 100) if new_er < ra_mults.size() else 20
 					var dmg_str = ("+%d%%" % dmg_pct) if dmg_pct >= 0 else ("%d%%" % dmg_pct)
 					display_game("[color=#FFB6C1]%s — damage modifier now %s.[/color]" % [ra_label, dmg_str])
+				elif ra_choice in ["power", "rider", "efficiency"]:
+					# v0.9.676 — milestone branch pick confirmation.
+					var ra_tier = int(message.get("tier", 1))
+					var ra_line = ""
+					match ra_choice:
+						"power": ra_line = "Power — effect now ×%.2f" % float(message.get("effect_mult", 1.0))
+						"rider": ra_line = "Rider — Bleed level %d" % int(message.get("rider_level", 0))
+						"efficiency": ra_line = "Efficiency — cost now ×%.2f" % float(message.get("cost_mult", 1.0))
+					display_game("[color=#9ACD32]%s milestone (Tier %d): %s.[/color]" % [ra_label, ra_tier, ra_line])
 				elif ra_choice == "variant":
 					# Slice 6f (v0.9.549) — variant imprint applied to account.
 					var v_name = str(message.get("variant_trait_name", "Imprint"))

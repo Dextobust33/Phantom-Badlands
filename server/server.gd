@@ -6503,7 +6503,11 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	var character = characters[peer_id]
 	var ability_name = str(message.get("ability", ""))
 	var choice = str(message.get("choice", ""))
-	if ability_name == "" or (choice != "copy" and choice != "effect" and choice != "variant"):
+	# v0.9.676 — milestone picks (power/rider/efficiency) replace the old
+	# copy/effect/variant menu; the legacy kinds stay accepted for any queued
+	# choices that predate the tier system.
+	var _valid_choices = ["power", "rider", "efficiency", "copy", "effect", "variant"]
+	if ability_name == "" or not (choice in _valid_choices):
 		return
 	# Pop the matching queued choice (first entry matching ability+rank). Allow
 	# any matching ability if no rank is provided — robust to client/server lag.
@@ -6570,6 +6574,25 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 		# but save anyway so cache stays consistent with disk).
 		if persistence != null and rc_account_id_v != "":
 			persistence.save_character(rc_account_id_v, character)
+		return
+	# v0.9.676 — milestone branch pick (Upgrade → Tier). Applies power/rider/
+	# efficiency to ability_milestone_picks and reports the resulting tier/mults.
+	if choice in ["power", "rider", "efficiency"]:
+		var ms_result = character.apply_milestone_pick(ability_name, choice)
+		send_to_peer(peer_id, {
+			"type": "rank_choice_applied",
+			"ability": ability_name,
+			"choice": choice,
+			"ok": bool(ms_result.get("ok", false)),
+			"tier": int(ms_result.get("tier", 1)),
+			"effect_mult": float(ms_result.get("effect_mult", 1.0)),
+			"cost_mult": float(ms_result.get("cost_mult", 1.0)),
+			"rider_level": int(ms_result.get("rider_level", 0)),
+			"next_pending": character.pending_rank_choices[0] if not character.pending_rank_choices.is_empty() else null
+		})
+		var ms_account_id = peers.get(peer_id, {}).get("account_id", "")
+		if bool(ms_result.get("ok", false)) and persistence != null and ms_account_id != "":
+			persistence.save_character(ms_account_id, character)
 		return
 	var apply_result = character.apply_rank_choice(ability_name, choice)
 	if not apply_result.get("ok", false):

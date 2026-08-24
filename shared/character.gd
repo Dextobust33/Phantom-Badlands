@@ -1624,6 +1624,7 @@ func to_dict() -> Dictionary:
 		"ability_uses_backfilled": ability_uses_backfilled,
 		"ability_effect_ranks": ability_effect_ranks,
 		"combat_deck_collection": combat_deck_collection,
+		"ability_milestone_picks": ability_milestone_picks,
 		"pending_rank_choices": pending_rank_choices.duplicate(true),
 		"deck_collection_initialized": deck_collection_initialized,
 		"path_nodes": path_nodes.duplicate(),
@@ -1885,6 +1886,7 @@ func from_dict(data: Dictionary):
 	ability_uses_backfilled = bool(data.get("ability_uses_backfilled", false))
 	ability_effect_ranks = data.get("ability_effect_ranks", {})
 	combat_deck_collection = data.get("combat_deck_collection", {})
+	ability_milestone_picks = data.get("ability_milestone_picks", {})  # v0.9.676; absent = {} (legacy)
 	pending_rank_choices = data.get("pending_rank_choices", [])
 	deck_collection_initialized = bool(data.get("deck_collection_initialized", false))
 	path_nodes = data.get("path_nodes", []) if data.get("path_nodes", []) is Array else []
@@ -2971,7 +2973,9 @@ func get_ability_damage_mult(ability_name: String) -> float:
 	var base_rank: int = get_ability_effect_rank(ability_name)
 	var gear_bonus: int = get_ability_rank_bonus(ability_name)
 	var effective_rank: int = max(0, base_rank + gear_bonus)
-	return _compute_rank_multiplier(effective_rank)
+	# v0.9.676 — Tier system: continuous tier + 'power' milestone picks scale
+	# damage on top of the (now-frozen) legacy effect-rank baseline + gear chase.
+	return _compute_rank_multiplier(effective_rank) * get_tier_effect_mult(ability_name)
 
 
 static func _compute_rank_multiplier(rank: int) -> float:
