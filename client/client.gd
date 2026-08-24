@@ -18654,12 +18654,14 @@ func _get_ability_tooltip(ability_name: String) -> String:
 		var next_rank = rank + 1
 		var next_name = MASTERY_RANK_NAMES[next_rank] if next_rank < MASTERY_RANK_NAMES.size() else "Mythic"
 		var _cat = get_ability_category_info(ability_name)
-		var third = ""
+		var opts := "Power"
 		if str(_cat.get("category", "")) == "offense":
-			third = "Rider (Bleed) / "
+			opts += " / Rider (Bleed)"
 		elif _is_duration_capable(ability_name):
-			third = "Duration (+2 rounds) / "
-		next_preview = "Next milestone (rank %d, %s): choose Power / %sEfficiency. Cards also tier up steadily as you use them." % [next_rank, next_name, third]
+			opts += " / Duration (+2 rounds)"
+		if ability_name != "magic_bolt":  # v0.9.698 — Bolt's cost is player-chosen; Efficiency is a no-op
+			opts += " / Efficiency"
+		next_preview = "Next milestone (rank %d, %s): choose %s. Cards also tier up steadily as you use them." % [next_rank, next_name, opts]
 	var _copies_now = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
 	var deck_line := "In deck: ×%d/3 (extra copies from dungeon rewards & companion cards)" % _copies_now
 	var lines: Array = [display]
@@ -18846,9 +18848,13 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 	var branches := [
 		{"branch": "power", "detail": "Bigger effect\n+12% each", "accent": "#FF6644",
 			"tip": "[b]POWER[/b]\n+12%% effect each  (×%d → ×%d)" % [power_n, power_n + 1]},
-		{"branch": "efficiency", "detail": "Cheaper\n-10% cost", "accent": "#66B0FF",
-			"tip": "[b]EFFICIENCY[/b]\n-10%% cost each  (×%d → ×%d)" % [effic_n, effic_n + 1]},
 	]
+	# v0.9.698 — Efficiency reduces the cast cost via apply_skill_cost_reduction.
+	# Magic Bolt bypasses that (its cost is the mana YOU choose), so the discount
+	# would be a dead pick — don't offer it for Bolt.
+	if ability_name != "magic_bolt":
+		branches.append({"branch": "efficiency", "detail": "Cheaper\n-10% cost", "accent": "#66B0FF",
+			"tip": "[b]EFFICIENCY[/b]\n-10%% cost each  (×%d → ×%d)" % [effic_n, effic_n + 1]})
 	if is_offense:
 		branches.insert(1, {"branch": "rider", "detail": "Bleeds\non hit", "accent": "#FF4444",
 			"tip": "[b]RIDER[/b]\nBleed on hit  (lvl %d → %d)" % [rider_n, rider_n + 1]})
