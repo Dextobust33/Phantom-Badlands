@@ -2614,6 +2614,10 @@ var _momentum_active: bool = false
 var _combo: int = 0
 var _combo_max: int = 5
 var _combo_active: bool = false
+# v0.9.697 — Mage Focus shares the same meter node too (ramp: boosts all spells).
+var _focus: int = 0
+var _focus_max: int = 5
+var _focus_active: bool = false
 
 func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	"""Called from client.gd on each combat_state. Shows a pip meter for Warriors;
@@ -2624,11 +2628,12 @@ func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
 	if not is_warrior:
-		# Only hide if the Trickster engine isn't the one owning the meter.
-		if not _combo_active:
+		# Only hide if no other engine owns the meter.
+		if not (_combo_active or _focus_active):
 			_momentum_label.visible = false
 		return
 	_combo_active = false  # Warrior owns the meter
+	_focus_active = false
 	_momentum_label.visible = true
 	var pips := ""
 	for i in range(_momentum_max):
@@ -2650,10 +2655,11 @@ func update_combo(cur: int, mx: int, is_trickster: bool) -> void:
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
 	if not is_trickster:
-		if not _momentum_active:
+		if not (_momentum_active or _focus_active):
 			_momentum_label.visible = false
 		return
 	_momentum_active = false  # Trickster owns the meter
+	_focus_active = false
 	_momentum_label.visible = true
 	var pips := ""
 	for i in range(_combo_max):
@@ -2666,6 +2672,35 @@ func update_combo(cur: int, mx: int, is_trickster: bool) -> void:
 	else:
 		tag = "[color=#7A6E88]build the chain[/color]"
 	_momentum_label.text = "[color=#B06BE0]✦ Combo[/color]\n%s\n%s" % [pips, tag]
+	if not _hand_cells.is_empty():
+		_refresh_hand()
+
+func update_focus(cur: int, mx: int, is_mage: bool) -> void:
+	"""v0.9.697 — Mage Focus meter (blue ◈). A RAMP: shows the live all-spell damage
+	bonus. No gate; Meteor discharges it. Drives the spell/Meteor card notes."""
+	_focus = cur
+	_focus_max = max(1, mx)
+	_focus_active = is_mage
+	if _momentum_label == null or not is_instance_valid(_momentum_label):
+		return
+	if not is_mage:
+		if not (_momentum_active or _combo_active):
+			_momentum_label.visible = false
+		return
+	_momentum_active = false  # Mage owns the meter
+	_combo_active = false
+	_momentum_label.visible = true
+	var pips := ""
+	for i in range(_focus_max):
+		pips += "[color=#5AC8FF]◈[/color]" if i < cur else "[color=#37485A]◇[/color]"
+	var tag: String
+	if cur >= _focus_max:
+		tag = "[color=#7AE0FF]MAX +%d%% dmg[/color]" % int(cur * 10)
+	elif cur > 0:
+		tag = "[color=#5AC8FF]+%d%% spell dmg[/color]" % int(cur * 10)
+	else:
+		tag = "[color=#6E7E8A]cast to ramp up[/color]"
+	_momentum_label.text = "[color=#5AC8FF]◈ Focus[/color]\n%s\n%s" % [pips, tag]
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
@@ -3582,7 +3617,7 @@ func _refresh_hand() -> void:
 		# clear WHICH cards add Momentum / Combo. Finishers (devastate/gambit) show
 		# their own state below and are excluded here. Only the matching class's
 		# archetype abilities build the meter (universal/companion cards don't).
-		if effect_lbl and (_momentum_active or _combo_active):
+		if effect_lbl and (_momentum_active or _combo_active or _focus_active):
 			var _arch := Character.get_ability_archetype(card_name)
 			if _momentum_active and _arch == "warrior" and card_name != "devastate":
 				var _e := effect_lbl.text
@@ -3592,6 +3627,10 @@ func _refresh_hand() -> void:
 				var _e2 := effect_lbl.text
 				effect_lbl.text = "+✦ Combo" if _e2 == "" else "+✦  %s" % _e2
 				effect_lbl.add_theme_color_override("font_color", Color("#B06BE0"))
+			elif _focus_active and _arch == "mage" and card_name != "meteor":
+				var _e3 := effect_lbl.text
+				effect_lbl.text = "+◈ Focus" if _e3 == "" else "+◈  %s" % _e3
+				effect_lbl.add_theme_color_override("font_color", Color("#5AC8FF"))
 
 		# v0.9.696 — Warrior Devastate is gated behind Momentum: it can't be played
 		# with 0 Momentum. Render it as uncastable (dimmed + hint) until the meter
@@ -3618,6 +3657,19 @@ func _refresh_hand() -> void:
 			else:
 				effect_lbl.text = "Combo ×%d — safer" % _combo
 				effect_lbl.add_theme_color_override("font_color", Color("#B06BE0"))
+
+		# v0.9.697 — Mage Meteor DISCHARGES Focus (bigger per-Focus bonus, resets ramp).
+		# Not gated; the note shows the payoff for spending the ramp now.
+		if _focus_active and card_name == "meteor" and effect_lbl:
+			if _focus >= _focus_max:
+				effect_lbl.text = "Discharge! +%d%%" % int(_focus * 25)
+				effect_lbl.add_theme_color_override("font_color", Color("#7AE0FF"))
+			elif _focus > 0:
+				effect_lbl.text = "Discharge +%d%%" % int(_focus * 25)
+				effect_lbl.add_theme_color_override("font_color", Color("#5AC8FF"))
+			else:
+				effect_lbl.text = "Ramp Focus first"
+				effect_lbl.add_theme_color_override("font_color", Color("#6E7E8A"))
 
 		_set_cell_dim(cell, false, castable)
 

@@ -32281,12 +32281,15 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 		return
 	var is_warrior := bool(state.get("is_warrior_momentum", false))
 	var is_trickster := bool(state.get("is_trickster_combo", false))
+	var is_mage := bool(state.get("is_mage_focus", false))
 	if is_warrior:
 		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true)
 	elif is_trickster and combat_scene_panel.has_method("update_combo"):
 		combat_scene_panel.update_combo(int(state.get("combo", 0)), int(state.get("combo_max", 5)), true)
+	elif is_mage and combat_scene_panel.has_method("update_focus"):
+		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true)
 	else:
-		# Neither engine active → hide the meter.
+		# No class engine active → hide the meter.
 		combat_scene_panel.update_momentum(0, int(state.get("momentum_max", 5)), false)
 
 

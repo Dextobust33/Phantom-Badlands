@@ -67,6 +67,12 @@ const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via card
 const COMBO_MAX: int = 5
 const COMBO_SUCCESS_PER: int = 9   # +% Gambit success per Combo Point (5 ≈ guaranteed)
 const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point (4.5 → 7.0)
+# v0.9.697 — Mage Focus: a RAMP. Every spell channeled builds Focus, which
+# passively boosts ALL spell damage. Meteor is the DISCHARGE — bigger per-Focus
+# bonus, then resets the ramp.
+const FOCUS_MAX: int = 5
+const FOCUS_DMG_PER: float = 0.10    # +% to all spell damage per Focus (ramp)
+const FOCUS_METEOR_PER: float = 0.25 # Meteor's bigger per-Focus discharge bonus
 # Stripped from the deck. v0.9.423 — Cloak + Teleport are out-of-combat
 # utilities only (slip past overworld monsters / fast-travel). All-or-Nothing
 # was removed entirely.
@@ -1041,6 +1047,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"round": 1,
 		"momentum": 0,  # v0.9.696 — Warrior Momentum: builds via Warrior cards, spent by Devastate
 		"combo": 0,  # v0.9.697 — Trickster Combo: builds via Trickster abilities, spent by Gambit
+		"focus": 0,  # v0.9.697 — Mage Focus: builds via any spell, boosts all spell damage, discharged by Meteor
 		"player_can_act": not monster_goes_first,  # Monster may act first!
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
@@ -3356,6 +3363,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 		variable_fraction = float(vc_result.get("fraction", 1.0))
 
+	# v0.9.697 — Mage Focus RAMP. This spell benefits from Focus built by PRIOR
+	# spells; the ramp itself is advanced (or discharged by Meteor) at the bottom.
+	var _focus_prior: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
+	var _focus_mult: float = 1.0 + float(_focus_prior) * FOCUS_DMG_PER
+
 	match ability_name:
 		"magic_bolt":
 			# Variable mana cost - damage scales with INT
@@ -3386,7 +3398,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# INT/75: INT 75=2x, INT 150=3x, INT 225=4x (linear, better at high INT)
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + max(sqrt(float(int_stat)) / 5.0, float(int_stat) / 75.0)
-			var base_damage = int(bolt_amount * int_multiplier)
+			var base_damage = int(bolt_amount * int_multiplier * _focus_mult)  # v0.9.697 Focus ramp
 
 			# Apply damage buff (from War Cry, potions, etc.)
 			var damage_buff = character.get_buff_value("damage")
@@ -3472,7 +3484,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Variable-cost: damage AND burn DoT magnitude scale by spend.
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
-			var base_damage = int(50 * int_multiplier * 2 * variable_fraction)
+			var base_damage = int(50 * int_multiplier * 2 * variable_fraction * _focus_mult)  # v0.9.697 Focus ramp
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
@@ -3561,7 +3573,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
 			var meteor_mult = 3.0 + randf()  # 3.0 to 4.0x random multiplier
-			var base_damage = int(100 * int_multiplier * meteor_mult * variable_fraction)
+			# v0.9.697 — Meteor DISCHARGES Focus with a bigger per-Focus bonus.
+			var _focus_meteor_mult: float = 1.0 + float(_focus_prior) * FOCUS_METEOR_PER
+			var base_damage = int(100 * int_multiplier * meteor_mult * variable_fraction * _focus_meteor_mult)
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
@@ -3685,6 +3699,17 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 					}
 			else:
 				messages.append("[color=#FF4444]The %s resists being banished![/color]" % monster.name)
+
+	# v0.9.697 — Mage Focus ramp: Meteor discharges (resets) it; every other spell
+	# advances it. Placed after a successful cast so refused/failed casts don't ramp.
+	if ability_name == "meteor":
+		if _focus_prior > 0:
+			combat["focus"] = 0
+			messages.append("[color=#5AC8FF]◈ Focus discharged! (Meteor +%d%% damage)[/color]" % int(_focus_prior * FOCUS_METEOR_PER * 100))
+	else:
+		var _newfocus: int = min(FOCUS_MAX, _focus_prior + 1)
+		combat["focus"] = _newfocus
+		messages.append("[color=#5AC8FF]◈ Focus %d/%d (+%d%% spell damage)[/color]" % [_newfocus, FOCUS_MAX, int(_newfocus * FOCUS_DMG_PER * 100)])
 
 	# Check if monster died
 	if monster.current_hp <= 0:
@@ -7397,6 +7422,9 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"combo": int(combat.get("combo", 0)),  # v0.9.697 Trickster Combo
 		"combo_max": COMBO_MAX,
 		"is_trickster_combo": character.get_class_path() == "trickster",
+		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus
+		"focus_max": FOCUS_MAX,
+		"is_mage_focus": character.get_class_path() == "mage",
 		"player_name": character.name,
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),

@@ -40,7 +40,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_matrix()  # swap to run_trickster_matrix() to validate the Trickster Combo engine
+	run_matrix()  # swap: run_matrix() Warrior / run_trickster_matrix() Trickster / run_mage_matrix() Mage
 	quit()
 
 func run_matrix():
@@ -128,6 +128,46 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 	# Low Combo but only Gambit in hand → gamble (spends what little we have).
 	if "gambit" in hand:
 		if combat_mgr.process_ability_command(0, "gambit", "").get("success", false):
+			return
+	combat_mgr.process_attack(combat)
+
+func run_mage_matrix():
+	# v0.9.697 — validate the Mage Focus ramp (spells build Focus → Meteor discharges).
+	var levels := [10, 30, 50, 80]
+	var gears := ["under", "average", "bis"]
+	var enemies := ["plain", "empowered", "elite", "boss"]
+	print("\n===== MAGE FOCUS SIM (%d fights/cell, Wizard + companion) =====" % FIGHTS_PER_CELL)
+	print("%-6s %-9s %-10s %8s %8s" % ["Lvl", "Gear", "Enemy", "WinRate", "AvgTurns"])
+	for lvl in levels:
+		for gear in gears:
+			for et in enemies:
+				var wins := 0
+				var total_turns := 0
+				for i in range(FIGHTS_PER_CELL):
+					var r = run_fight(lvl, gear, et, 1.0, 1.0, 1.0, "Wizard")
+					if r.win:
+						wins += 1
+					total_turns += r.turns
+				print("%-6d %-9s %-10s %7.0f%% %8.1f" % [lvl, gear, et, 100.0*float(wins)/FIGHTS_PER_CELL, float(total_turns)/FIGHTS_PER_CELL])
+	print("=====================================================================\n")
+
+func _player_act_mage(combat: Dictionary, ch) -> void:
+	var hand: Array = combat.get("combat_hand", [])
+	var focus: int = int(combat.get("focus", 0))
+	# Discharge the ramp with Meteor once Focus is built.
+	if focus >= 3 and "meteor" in hand:
+		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
+			return
+	# Ramp with damage spells (each +1 Focus).
+	if "blast" in hand:
+		if combat_mgr.process_ability_command(0, "blast", "").get("success", false):
+			return
+	if "magic_bolt" in hand:
+		var amt := str(max(1, int(min(float(ch.current_mana), ch.get_total_max_mana() * 0.25))))
+		if combat_mgr.process_ability_command(0, "magic_bolt", amt).get("success", false):
+			return
+	if "meteor" in hand:
+		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
 			return
 	combat_mgr.process_attack(combat)
 
@@ -230,6 +270,8 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 			var mhp0: int = int(monster.get("current_hp", 0))
 			if klass == "Thief":
 				_player_act_trickster(combat, ch)
+			elif klass == "Wizard":
+				_player_act_mage(combat, ch)
 			else:
 				_player_act(combat, ch)
 			if player_dmg_scale < 1.0:

@@ -102,7 +102,36 @@ func _run():
 	await process_frame
 	_shot("res://claude_screenshots/combo_ui_c5.png")
 
-	print("Momentum + Combo UI screenshots written to claude_screenshots/")
+	# ---- Mage Focus variants (same meter, blue ◈ ramp, Meteor discharge note) ----
+	var mhand := ["magic_bolt", "blast", "meteor"]
+	if panel.has_method("update_hand"):
+		panel.update_hand(mhand, 8, 4)
+
+	# Focus mid (3/5): +30% ramp; spells "+◈ Focus"; Meteor "Discharge +75%".
+	if panel.has_method("update_focus"):
+		panel.update_focus(3, 5, true)
+	await process_frame
+	await process_frame
+	await process_frame
+	_shot("res://claude_screenshots/focus_ui_f3.png")
+
+	# Focus zero: "cast to ramp up"; Meteor "Ramp Focus first".
+	if panel.has_method("update_focus"):
+		panel.update_focus(0, 5, true)
+	await process_frame
+	await process_frame
+	await process_frame
+	_shot("res://claude_screenshots/focus_ui_f0.png")
+
+	# Focus max (5/5): MAX +50% dmg; Meteor "Discharge! +125%".
+	if panel.has_method("update_focus"):
+		panel.update_focus(5, 5, true)
+	await process_frame
+	await process_frame
+	await process_frame
+	_shot("res://claude_screenshots/focus_ui_f5.png")
+
+	print("Momentum + Combo + Focus UI screenshots written to claude_screenshots/")
 	quit()
 
 func _shot(path: String) -> void:
