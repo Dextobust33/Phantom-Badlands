@@ -27540,8 +27540,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.692 — Fix card damage values reading 0 + companion card damage.
+	display_game("[color=#00FF00]v0.9.692[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Fixed card damage values.[/color] The damage/heal estimate on cards was reading [b]0[/b] (it looked at the wrong stat). It now shows the correct value, and [b]companion cards[/b] (like Kobold's Stash) show their damage too.")
+	display_game("")
+
 	# v0.9.691 — Damage/heal on cards + tier-scaled companion permanence.
-	display_game("[color=#00FF00]v0.9.691[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.691[/color]")
 	display_game("  [color=#1EFF00]◆ Damage & heal on cards.[/color] Cards now show an estimated [color=#FF7A5A]⚔ damage[/color] or [color=#7AE07A]♥ heal[/color] value from your stats, right next to the cost (Warrior abilities first).")
 	display_game("  [color=#1EFF00]◆ Companion cards scale with tier.[/color] Higher-tier companions have stronger cards that take [b]longer to make permanent[/b] — from ~40 casts at Tier 1 (a balanced grind) up to ~216 at Tier 9. The card shows how many casts you need + your progress.")
 	display_game("  [color=#1EFF00]◆ Battle card hover box[/color] + [b]Cards in deck[/b] counter + real numbers on descriptions (hover a number for its formula).")
