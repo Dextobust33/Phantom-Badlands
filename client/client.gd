@@ -27346,8 +27346,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.680 — Companion cards (acquisition pillar 2).
+	display_game("[color=#00FF00]v0.9.680[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ COMPANION CARDS.[/color] Your [b]active companion now grants a card[/b] to your combat deck — [b]'<Type>'s Gift'[/b] — a strike flavoured by that companion's trait ([color=#B22222]bleed[/color], [color=#7FBE2E]poison[/color], [color=#FFD700]crit[/color], [color=#D62828]lifesteal[/color], [color=#FFC04D]stun[/color], [color=#FF6FB5]charm[/color] and more). It [b]tiers up as you play it[/b], and once you've used it enough it becomes a [b]permanent card in your collection[/b] — it stays in your deck even after you swap the companion out. Each companion [b]type[/b] has its own card (~53 to collect). Second source of extra deck copies, after dungeon drops.")
+	display_game("")
+
 	# v0.9.679 — Rare card drops + dungeon chest fix.
-	display_game("[color=#00FF00]v0.9.679[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.679[/color]")
 	display_game("  [color=#FF8000]★ RARE CARD DROPS FROM DUNGEONS.[/color] Clearing a dungeon now has a [b]rare chance[/b] (better in higher-tier dungeons) to drop [b]+1 copy of one of your favourite abilities[/b] (the ones you use most, up to the cap of 3). This is the first real source of extra deck copies — build toward the deck you want.")
 	display_game("  • Fixed: the dungeon boss [b]chest loot[/b] now shows [b]on the completion screen[/b] — it used to flash by and get wiped when you were teleported out.")
 	display_game("")
