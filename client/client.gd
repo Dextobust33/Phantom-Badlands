@@ -18340,9 +18340,11 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 	"""v0.9.688 (Warrior slice) — rich description with CONCRETE numbers computed
 	from your current stats; hover a number for its formula. Non-Warrior abilities
 	fall back to the plain description for now."""
-	var s_str := int(character_data.get("strength", 0))
-	var s_con := int(character_data.get("constitution", 0))
-	var atk := int(character_data.get("total_attack", 0))
+	# v0.9.692 — use the card-estimate helpers; to_dict() omits total_attack, so
+	# character_data.get("total_attack") was always 0 (Bash etc. showed 0 damage).
+	var s_str := _get_card_effective_stat("strength")
+	var s_con := _get_card_effective_stat("constitution")
+	var atk := _get_card_total_attack()
 	match ability_name:
 		"power_strike":
 			return "Deal %s damage — a dependable heavy hit." % _desc_num(int(2 * atk), "2 × Attack (plus √STR scaling)")
@@ -18369,15 +18371,30 @@ func _ability_primary_value(ability_name: String) -> Dictionary:
 	"""v0.9.691 (Warrior slice) — the card's headline damage or heal estimate from
 	your current stats, for the on-card pip. {kind: 'damage'|'heal'|'', value}.
 	Base estimate — actual combat value also scales with tier/mastery/variance."""
-	var s_str := int(character_data.get("strength", 0))
-	var s_con := int(character_data.get("constitution", 0))
-	var atk := int(character_data.get("total_attack", 0))
+	var s_con := _get_card_effective_stat("constitution")
+	var atk := _get_card_total_attack()
 	match ability_name:
 		"power_strike": return {"kind": "damage", "value": int(2.0 * atk)}
 		"shield_bash": return {"kind": "damage", "value": int(1.5 * atk)}
 		"cleave": return {"kind": "damage", "value": int(2.5 * atk)}
 		"devastate": return {"kind": "damage", "value": int(5.0 * atk)}
 		"rally": return {"kind": "heal", "value": int(30 + sqrt(float(s_con)) * 10)}
+	# Companion cards — damage kinds show their strike estimate (power × Attack);
+	# buffs show nothing; heal shows an approximate heal. Powers mirror
+	# combat_manager._process_companion_ability.
+	if ability_name.begins_with("companion_card_"):
+		var _dt = preload("res://shared/drop_tables.gd")
+		var _kind := String(_dt.get_companion_card_data_by_id(ability_name).get("kind", ""))
+		var _powers := {
+			"strike": 1.6, "execute": 1.2, "reckless": 2.1, "bleed": 1.1, "poison": 1.0,
+			"weaken": 1.0, "blind": 1.0, "stun": 1.1, "charm": 1.0, "lifesteal": 1.2,
+			"timestop": 1.0, "plunder": 1.0, "tribute": 1.0, "channel": 0.8,
+		}
+		if _powers.has(_kind):
+			return {"kind": "damage", "value": int(atk * float(_powers[_kind]))}
+		if _kind == "heal":
+			var _mhp := int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
+			return {"kind": "heal", "value": int(_mhp * 0.18)}
 	return {"kind": "", "value": 0}
 
 # v0.9.690 — battle sticky card-description hover box. Shows on combat hand-card
