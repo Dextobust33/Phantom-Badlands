@@ -323,6 +323,12 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 # or while disconnected so popups can pop on next combat.
 @export var ability_effect_ranks: Dictionary = {}
 @export var combat_deck_collection: Dictionary = {}
+# v0.9.676 — Ability redesign slice 2 (Upgrade → Tier). Cards gain a CONTINUOUS
+# tier derived from use count (many tiers over thousands of uses; drives the card
+# mastery-fill + small steady growth). The game's existing rank-up moments become
+# MILESTONES that grant a branch pick — "power" / "rider" / "efficiency" — stored
+# per ability. Replaces the old copy/effect/imprint rank-up menu.
+@export var ability_milestone_picks: Dictionary = {}  # ability -> Array["power"/"rider"/"efficiency"]
 @export var pending_rank_choices: Array = []  # [{ability, new_rank, queued_at}]
 @export var deck_collection_initialized: bool = false  # one-shot init guard
 
@@ -363,6 +369,22 @@ const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 250, 1200, 4000, 10000]
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
 const MASTERY_RANK_BACKFILL_USES: int = 200
+
+# v0.9.676 — Tier system (ability redesign slice 2).
+# CONTINUOUS tier: derived from an ability's total uses via an escalating curve so
+# it keeps ticking up over thousands of uses (fast early, slower later, never
+# stops). Each tier adds a small flat power bump (TIER_POWER_PER).
+# MILESTONES: each mastery-rank threshold crossing (see MASTERY_RANK_THRESHOLDS)
+# grants ONE branch pick. Picks accumulate and stack:
+#   power      -> +MILESTONE_POWER_PER effect each
+#   efficiency -> -MILESTONE_EFFIC_PER cost each (cost floored at 30%)
+#   rider      -> +1 rider level (keyword: bleed/stun/armor-break, applied in combat)
+const TIER_FIRST_USES: float = 3.0     # uses to go tier 1 -> 2
+const TIER_USE_GROWTH: float = 1.28    # each successive tier costs ~28% more uses
+const TIER_POWER_PER: float = 0.02     # +2% effect per continuous tier above 1
+const MILESTONE_POWER_PER: float = 0.12    # +12% effect per "power" pick
+const MILESTONE_EFFIC_PER: float = 0.10    # -10% cost per "efficiency" pick
+const MILESTONE_COST_FLOOR: float = 0.30   # efficiency can't drop cost below 30%
 
 # Audit #1 Slice 4 — off-affinity counter damage multipliers (mirrors
 # Constants.OFF_AFFINITY_MULT_BY_RANK; inlined to avoid load-order coupling).
@@ -3251,6 +3273,82 @@ func initialize_deck_collection_if_needed() -> bool:
 			ability_effect_ranks[ab] = current_use_rank
 	deck_collection_initialized = true
 	return true
+
+## --- v0.9.676 Tier system (ability redesign slice 2) --------------------------
+
+static func tier_for_uses(uses: int) -> int:
+	"""Continuous tier from total uses: escalating curve, fast early then slower,
+	never stops (many tiers over thousands of uses)."""
+	var tier := 1
+	var need := TIER_FIRST_USES
+	var acc := 0.0
+	var u := float(max(0, uses))
+	while u >= acc + need:
+		acc += need
+		tier += 1
+		need *= TIER_USE_GROWTH
+	return tier
+
+func get_ability_tier(ability_name: String) -> int:
+	return tier_for_uses(int(ability_uses.get(ability_name, 0)))
+
+func get_milestone_picks(ability_name: String) -> Array:
+	var picks = ability_milestone_picks.get(ability_name, [])
+	return picks.duplicate() if picks is Array else []
+
+func count_milestone_pick(ability_name: String, kind: String) -> int:
+	var n := 0
+	for p in get_milestone_picks(ability_name):
+		if String(p) == kind:
+			n += 1
+	return n
+
+func milestones_earned(ability_name: String) -> int:
+	"""One milestone per mastery-rank threshold crossed."""
+	return get_ability_rank(ability_name)
+
+func milestones_owed(ability_name: String) -> int:
+	"""Milestones earned but not yet spent on a branch pick."""
+	return max(0, milestones_earned(ability_name) - get_milestone_picks(ability_name).size())
+
+func get_tier_effect_mult(ability_name: String) -> float:
+	"""Damage/effect multiplier from continuous tier + 'power' milestone picks."""
+	var tier := get_ability_tier(ability_name)
+	var power_picks := count_milestone_pick(ability_name, "power")
+	return 1.0 + float(tier - 1) * TIER_POWER_PER + float(power_picks) * MILESTONE_POWER_PER
+
+func get_tier_cost_mult(ability_name: String) -> float:
+	"""Cost multiplier from 'efficiency' milestone picks (floored)."""
+	var effic := count_milestone_pick(ability_name, "efficiency")
+	return max(MILESTONE_COST_FLOOR, 1.0 - float(effic) * MILESTONE_EFFIC_PER)
+
+func get_ability_rider_level(ability_name: String) -> int:
+	"""Number of 'rider' milestone picks — keyword strength (bleed/stun/etc.)."""
+	return count_milestone_pick(ability_name, "rider")
+
+func apply_milestone_pick(ability_name: String, kind: String) -> Dictionary:
+	"""Apply a milestone branch pick. kind = 'power' | 'rider' | 'efficiency'.
+	Appends to ability_milestone_picks. Refuses off-class abilities + bad kinds.
+	Returns {ability, kind, ok, tier, effect_mult, cost_mult, rider_level}."""
+	var result := {"ability": ability_name, "kind": kind, "ok": false}
+	if ability_name == "" or not (kind in ["power", "rider", "efficiency"]):
+		return result
+	var accessible := false
+	for entry in get_all_available_abilities():
+		if entry.get("name", "") == ability_name:
+			accessible = true
+			break
+	if not accessible:
+		return result
+	if not (ability_milestone_picks.get(ability_name, null) is Array):
+		ability_milestone_picks[ability_name] = []
+	ability_milestone_picks[ability_name].append(kind)
+	result["ok"] = true
+	result["tier"] = get_ability_tier(ability_name)
+	result["effect_mult"] = get_tier_effect_mult(ability_name)
+	result["cost_mult"] = get_tier_cost_mult(ability_name)
+	result["rider_level"] = get_ability_rider_level(ability_name)
+	return result
 
 func apply_rank_choice(ability_name: String, choice: String) -> Dictionary:
 	"""Slice 6b — apply a player's rank-up choice. choice is "copy" (+1 to
