@@ -2653,7 +2653,7 @@ static func companion_card_art_bbcode(card_name: String) -> String:
 		return ""
 	return "[center]" + art + "[/center]"
 
-const CARD_ART_BOX := Vector2(134, 104)  # fixed art box inside the 150x190 card
+const CARD_ART_BOX := Vector2(134, 88)  # fixed art box inside the 150x190 card (pips moved to own row v0.9.693)
 
 func _make_card_art_label() -> Control:
 	"""v0.9.686 — a fixed-size CLIP HOLDER (CARD_ART_BOX) containing a full-size
@@ -2898,6 +2898,21 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	effect_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(effect_label)
 
+	# v0.9.693 — rank pips on their own centered line, MOVED off the numbers row
+	# so the damage/heal + cost numbers don't crowd it and stretch the card.
+	var pips_row := CenterContainer.new()
+	pips_row.name = "PipsRow"
+	pips_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pips_label := Label.new()
+	pips_label.name = "Pips"
+	pips_label.text = ""
+	pips_label.add_theme_font_size_override("font_size", 13)
+	pips_label.add_theme_color_override("font_color", Color("#FFD700"))
+	pips_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pips_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pips_row.add_child(pips_label)
+	vbox.add_child(pips_row)
+
 	# --- Info row: rank pips (left) + cost pip (right) ---
 	var info_row := MarginContainer.new()
 	info_row.name = "InfoRow"
@@ -2932,15 +2947,12 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	value_pip.add_child(value_label)
 	info_hb.add_child(value_pip)
-	var pips_label := Label.new()
-	pips_label.name = "Pips"
-	pips_label.text = ""
-	pips_label.add_theme_font_size_override("font_size", 13)
-	pips_label.add_theme_color_override("font_color", Color("#FFD700"))
-	pips_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	pips_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	pips_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	info_hb.add_child(pips_label)
+	# v0.9.693 — expand spacer pushes the cost pip to the right (rank pips moved
+	# to their own centered row above, so the numbers don't crowd this row).
+	var mid_spacer := Control.new()
+	mid_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_hb.add_child(mid_spacer)
 	# Cost pip — a small rounded panel tinted by resource, with the number.
 	var cost_pip := PanelContainer.new()
 	cost_pip.name = "CostPip"

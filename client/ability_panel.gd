@@ -687,26 +687,37 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 	var ctl := HBoxContainer.new()
 	ctl.alignment = BoxContainer.ALIGNMENT_CENTER
 	ctl.add_theme_constant_override("separation", 6)
-	if deck_count >= 1:
-		var minus := Button.new()
-		minus.text = "−"
-		minus.custom_minimum_size = Vector2(30, 22)
-		minus.focus_mode = Control.FOCUS_NONE
-		minus.tooltip_text = "Thin: remove a copy (deck keeps at least 5 cards)."
-		minus.pressed.connect(_on_cull_pressed.bind(ab_name))
-		ctl.add_child(minus)
-	if deck_count < 3:
-		var plus := Button.new()
-		plus.text = "+"
-		plus.custom_minimum_size = Vector2(30, 22)
-		plus.focus_mode = Control.FOCUS_NONE
-		if deck_count == 0:
-			plus.tooltip_text = "Put this card back in your deck."
-			plus.pressed.connect(_on_add_pressed.bind(ab_name))
-		else:
-			plus.tooltip_text = "Extra copies come from dungeon rewards & companion cards."
-			plus.disabled = true
-		ctl.add_child(plus)
+	# v0.9.693 — a companion card that isn't earned yet (key absent) is a LOANER
+	# (a bonus while the companion is active). It can't be thinned/restored; show
+	# a note instead of the -/+ controls (which would just error).
+	var is_loaner := ab_name.begins_with("companion_card_") and not _deck_collection.has(ab_name)
+	if is_loaner:
+		var note := Label.new()
+		note.text = "Loaner — use it to keep"
+		note.add_theme_font_size_override("font_size", 11)
+		note.add_theme_color_override("font_color", Color("#C8A24A"))
+		ctl.add_child(note)
+	else:
+		if deck_count >= 1:
+			var minus := Button.new()
+			minus.text = "−"
+			minus.custom_minimum_size = Vector2(30, 22)
+			minus.focus_mode = Control.FOCUS_NONE
+			minus.tooltip_text = "Thin: remove a copy (deck keeps at least 5 cards)."
+			minus.pressed.connect(_on_cull_pressed.bind(ab_name))
+			ctl.add_child(minus)
+		if deck_count < 3:
+			var plus := Button.new()
+			plus.text = "+"
+			plus.custom_minimum_size = Vector2(30, 22)
+			plus.focus_mode = Control.FOCUS_NONE
+			if deck_count == 0:
+				plus.tooltip_text = "Put this card back in your deck."
+				plus.pressed.connect(_on_add_pressed.bind(ab_name))
+			else:
+				plus.tooltip_text = "Extra copies come from dungeon rewards & companion cards."
+				plus.disabled = true
+			ctl.add_child(plus)
 	entry.add_child(ctl)
 	return entry
 

@@ -3492,11 +3492,13 @@ func add_ability_copy(ability_name: String, from_reward: bool = false) -> Dictio
 	if not accessible:
 		result["reason"] = "Ability not available."
 		return result
-	# v0.9.680 — companion cards can't be manually restored/bought; they're
-	# earned permanent by USING them in combat (rank 2), or granted as a reward.
-	if ability_name.begins_with("companion_card_") and not from_reward:
-		result["new_count"] = int(combat_deck_collection.get(ability_name, 0))
-		result["reason"] = "Companion cards become permanent by using them in combat."
+	# v0.9.680/693 — an EARNED companion card (key present, even if thinned to 0)
+	# can be restored like any card. A never-earned loaner (key ABSENT) can't be
+	# manually added — it must be earned first by using it in combat. (Fixes the
+	# stuck-OUT state: you could thin a permanent companion card but not restore it.)
+	if ability_name.begins_with("companion_card_") and not from_reward and not combat_deck_collection.has(ability_name):
+		result["new_count"] = 0
+		result["reason"] = "This companion card becomes permanent by using it in combat first."
 		return result
 	var current = int(combat_deck_collection.get(ability_name, 0))
 	if current >= MAX_ABILITY_COPIES:

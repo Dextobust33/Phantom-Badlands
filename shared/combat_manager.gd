@@ -7910,7 +7910,10 @@ func _initialize_combat_deck(combat_state: Dictionary) -> void:
 		var _cmt = str(character.get_active_companion().get("monster_type", ""))
 		if _cmt != "":
 			var _ccid = "companion_card_" + _cmt.to_lower().replace(" ", "_")
-			if int(character.combat_deck_collection.get(_ccid, 0)) <= 0:
+			# v0.9.693 — inject the loaner ONLY if the card was never earned (key
+			# absent). If owned (key present) it's built from the collection above;
+			# a thinned-to-0 permanent card stays OUT, not silently re-injected.
+			if not character.combat_deck_collection.has(_ccid):
 				deck.append(_ccid)
 	deck.shuffle()
 	combat_state["combat_deck"] = deck
