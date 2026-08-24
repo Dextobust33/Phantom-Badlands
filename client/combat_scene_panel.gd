@@ -3032,6 +3032,64 @@ func build_milestone_card(branch: String, ability_label: String, category_color_
 	return cell
 
 
+# v0.9.689 — polished formula popup for the [url]-tagged numbers in card
+# descriptions (replaces Godot's unstyled [hint] tooltip).
+var _formula_popup: PanelContainer = null
+var _formula_popup_lbl: RichTextLabel = null
+
+func _ensure_formula_popup() -> void:
+	if _formula_popup != null and is_instance_valid(_formula_popup):
+		return
+	_formula_popup = PanelContainer.new()
+	_formula_popup.name = "FormulaPopup"
+	_formula_popup.top_level = true
+	_formula_popup.z_index = 400
+	_formula_popup.visible = false
+	_formula_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.09, 0.08, 0.06, 0.99)
+	sb.border_color = Color("#C8A24A")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 9
+	sb.content_margin_right = 9
+	sb.content_margin_top = 5
+	sb.content_margin_bottom = 5
+	sb.shadow_color = Color(0, 0, 0, 0.55)
+	sb.shadow_size = 6
+	_formula_popup.add_theme_stylebox_override("panel", sb)
+	_formula_popup_lbl = RichTextLabel.new()
+	_formula_popup_lbl.bbcode_enabled = true
+	_formula_popup_lbl.fit_content = true
+	_formula_popup_lbl.scroll_active = false
+	_formula_popup_lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_formula_popup_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_formula_popup_lbl.add_theme_font_size_override("normal_font_size", 13)
+	_formula_popup_lbl.add_theme_font_size_override("bold_font_size", 13)
+	_formula_popup.add_child(_formula_popup_lbl)
+	# Parent to the window root so it shows even on the Deck screen (this combat
+	# panel is hidden out of combat, which would hide its children).
+	get_tree().root.add_child(_formula_popup)
+
+func _show_formula_popup(formula: String) -> void:
+	if formula == "":
+		return
+	_ensure_formula_popup()
+	_formula_popup_lbl.text = "[color=#D4A017][b]ƒ[/b][/color]  [color=#EDE3C8]%s[/color]" % formula
+	_formula_popup.visible = true
+	_formula_popup.reset_size()
+	var mp := get_global_mouse_position()
+	var sz := _formula_popup.size
+	var vp := get_viewport_rect().size
+	var x: float = clamp(mp.x + 14.0, 4.0, vp.x - sz.x - 4.0)
+	var y: float = clamp(mp.y - sz.y - 10.0, 4.0, vp.y - sz.y - 4.0)
+	_formula_popup.global_position = Vector2(x, y)
+
+func _hide_formula_popup() -> void:
+	if _formula_popup != null and is_instance_valid(_formula_popup):
+		_formula_popup.visible = false
+
+
 func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String, art_bbcode: String = "") -> Control:
 	"""v0.9.678 (slice 3) — a combat-styled card for the DECK SCREEN. Returns a
 	Control holding a Front (banner + icon + cost + copy badge) and a Back (long
@@ -3153,7 +3211,11 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	back_txt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	back_txt.add_theme_font_size_override("normal_font_size", 12)
 	back_txt.add_theme_font_size_override("bold_font_size", 13)
-	back_txt.mouse_filter = Control.MOUSE_FILTER_PASS  # v0.9.688 — receive [hint] hover
+	back_txt.mouse_filter = Control.MOUSE_FILTER_PASS  # v0.9.688 — receive number hover
+	# v0.9.689 — polished formula popup on number hover (numbers are [url]-tagged).
+	back_txt.meta_underlined = false
+	back_txt.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+	back_txt.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 	back_txt.text = "[b]%s[/b]\n%s" % [display, back_bbcode]
 	back.add_child(back_txt)
 	root.add_child(back)

@@ -18324,10 +18324,11 @@ func _get_ability_description_text(ability_name: String) -> String:
 			return ""
 
 func _desc_num(n, formula: String) -> String:
-	"""v0.9.688 — a computed number shown on a card, with the FORMULA revealed on
-	hover ([hint]). Numbers read as concrete values; hover to see how they're
-	derived. Rendered in a RichTextLabel with bbcode_enabled + mouse enabled."""
-	return "[color=#FFE68A][hint=%s][b]%s[/b][/hint][/color]" % [formula, str(n)]
+	"""v0.9.688/689 — a computed number shown on a card. The formula is carried as
+	a [url] meta payload so a POLISHED popup can show it on hover (the RichTextLabel
+	renders it via meta_hover_started → _show_formula_popup), instead of Godot's
+	unstyled [hint] tooltip."""
+	return "[color=#FFE68A][b][url=%s]%s[/url][/b][/color]" % [formula, str(n)]
 
 func _ability_desc_bbcode(ability_name: String) -> String:
 	"""v0.9.688 (Warrior slice) — rich description with CONCRETE numbers computed
