@@ -27334,8 +27334,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.679 — Rare card drops + dungeon chest fix.
+	display_game("[color=#00FF00]v0.9.679[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ RARE CARD DROPS FROM DUNGEONS.[/color] Clearing a dungeon now has a [b]rare chance[/b] (better in higher-tier dungeons) to drop [b]+1 copy of one of your favourite abilities[/b] (the ones you use most, up to the cap of 3). This is the first real source of extra deck copies — build toward the deck you want.")
+	display_game("  • Fixed: the dungeon boss [b]chest loot[/b] now shows [b]on the completion screen[/b] — it used to flash by and get wiped when you were teleported out.")
+	display_game("")
+
 	# v0.9.678 — Deck screen (build your deck).
-	display_game("[color=#00FF00]v0.9.678[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.678[/color]")
 	display_game("  [color=#FF8000]★ BUILD YOUR DECK.[/color] The [b]Deck[/b] screen now shows your abilities as real cards — [b]click a card to flip it[/b] for the full details. You can now [b]thin your deck[/b]: remove cards you don't use (down to 0) so your favourites come up more often, and put them back anytime (deck keeps at least 5 cards). Each card caps at [b]3 copies[/b]; extra copies will come from [b]dungeon rewards & companion cards[/b] (coming soon).")
 	display_game("")
 

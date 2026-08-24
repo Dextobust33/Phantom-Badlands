@@ -212,6 +212,10 @@ var pending_rescue_encounters: Dictionary = {}  # peer_id -> npc_data
 # pressing "Leave Now") removes the entry and re-runs _complete_dungeon to
 # do the actual teleport + dungeon_complete payload.
 var pending_final_chest: Dictionary = {}  # peer_id -> {instance_id, floor_num, chest_x, chest_y}
+# v0.9.679 — carry the final-chest loot lines into the dungeon_complete screen so
+# the player actually reads them (the old separate text message was wiped by the
+# immediate teleport + completion screen).
+var pending_chest_reward_lines: Dictionary = {}  # peer_id -> Array[String]
 var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
 const DUNGEON_SPAWN_CHECK_INTERVAL = 120.0  # v0.9.348: 30→120s. Check fires per-tick A* over chunk grid, contributing to lag spikes with 88+ dungeons in play. Refilling completed dungeons within 2min is acceptable.
@@ -31297,10 +31301,9 @@ func _open_final_chest(peer_id: int):
 		persistence.add_valor(peers[peer_id].account_id, valor_bonus)
 	reward_lines.append("[color=#FFD700]+%d Valor[/color]" % valor_bonus)
 
-	send_to_peer(peer_id, {
-		"type": "text",
-		"message": "[color=#FFD700]You crack the reliquary open![/color]\n%s" % "\n".join(reward_lines)
-	})
+	# v0.9.679 — stash the chest loot so _complete_dungeon can show it ON the
+	# completion screen (the old standalone text message got wiped by the teleport).
+	pending_chest_reward_lines[peer_id] = reward_lines
 	send_character_update(peer_id)
 	save_character(peer_id)
 
@@ -31338,6 +31341,48 @@ func _get_party_id(peer_id: int) -> int:
 		if party.members.has(peer_id):
 			return party_id
 	return -1
+
+func _roll_dungeon_card_reward(character, tier: int) -> Dictionary:
+	"""v0.9.679 — super-rare dungeon CARD DROP: a chance (scaling with tier) to
+	grant +1 copy of one of the player's abilities (below the cap of 3), weighted
+	toward abilities they actually USE so it feels like a copy of a favourite.
+	Feeds the deck-building loop (2nd/3rd copies). Returns
+	{granted, ability, display, new_count}."""
+	var out := {"granted": false, "ability": "", "display": "", "new_count": 0}
+	var chance: float = min(0.30, 0.05 + float(tier) * 0.02)
+	if randf() >= chance:
+		return out
+	var candidates := []
+	var weights := []
+	var total_w := 0
+	for entry in character.get_all_available_abilities():
+		if bool(entry.get("non_combat", false)):
+			continue
+		var aname = str(entry.get("name", ""))
+		if int(character.combat_deck_collection.get(aname, 1)) >= character.MAX_ABILITY_COPIES:
+			continue
+		var w = 1 + int(character.ability_uses.get(aname, 0))
+		candidates.append(entry)
+		weights.append(w)
+		total_w += w
+	if candidates.is_empty() or total_w <= 0:
+		return out
+	var r = randi() % total_w
+	var idx = 0
+	for i in range(weights.size()):
+		r -= weights[i]
+		if r < 0:
+			idx = i
+			break
+	var chosen = candidates[idx]
+	var cname = str(chosen.get("name", ""))
+	var res = character.add_ability_copy(cname, true)
+	if res.get("ok", false):
+		out["granted"] = true
+		out["ability"] = cname
+		out["display"] = str(chosen.get("display", cname))
+		out["new_count"] = int(res.get("new_count", 0))
+	return out
 
 func _complete_dungeon(peer_id: int):
 	"""Handle dungeon completion"""
@@ -31432,6 +31477,9 @@ func _complete_dungeon(peer_id: int):
 			character.add_crafting_material(mat.id, mat.quantity)
 			var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
 			bonus_material_msgs.append("[color=#FF8800]+%s%s (Hard)[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
+
+	# v0.9.679 — super-rare dungeon CARD DROP (+1 copy of a favourite ability).
+	var _card_reward = _roll_dungeon_card_reward(character, int(tier))
 
 	# Record completion (cooldowns removed)
 	character.record_dungeon_completion(dungeon_type)
@@ -31531,12 +31579,25 @@ func _complete_dungeon(peer_id: int):
 		completion_msg += "\n[color=#FFD700]Boss Materials:[/color]\n"
 		completion_msg += "\n".join(bonus_material_msgs)
 
+	# v0.9.679 — final-chest loot, folded in from _open_final_chest so it's shown
+	# ON the completion screen (was a separate text message wiped by the teleport).
+	if pending_chest_reward_lines.has(peer_id):
+		var _chest_lines: Array = pending_chest_reward_lines[peer_id]
+		pending_chest_reward_lines.erase(peer_id)
+		if not _chest_lines.is_empty():
+			completion_msg += "\n\n[color=#FFD700]★ Reliquary Chest ★[/color]\n" + "\n".join(_chest_lines)
+
+	# v0.9.679 — super-rare card drop callout.
+	if _card_reward.get("granted", false):
+		completion_msg += "\n\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3) — thin & build in the Deck screen![/color]" % [str(_card_reward.get("display", "")), int(_card_reward.get("new_count", 2))]
+
 	if xp_result.leveled_up:
 		completion_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % character.level
 
 	send_to_peer(peer_id, {
 		"type": "dungeon_complete",
 		"dungeon_name": dungeon_data.name,
+		"card_reward": _card_reward,
 		"rewards": rewards,
 		"leveled_up": xp_result.leveled_up,
 		"new_level": character.level,
