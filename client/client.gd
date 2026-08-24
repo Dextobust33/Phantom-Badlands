@@ -12348,7 +12348,10 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 	var str_stat = _get_card_effective_stat("strength")
 	var wits_stat = _get_card_effective_stat("wits")
 	var total_attack = _get_card_total_attack()
-	var mastery_mult = _get_ability_mastery_damage_mult(ability_name)
+	# v0.9.694 — use the FULL server multiplier (rank up to 1.45 + tier bonus),
+	# not the old capped-at-1.20, tier-less mastery table, which systematically
+	# under-estimated high-rank/tier hits (e.g. Bash 234 est vs 300 actual).
+	var mastery_mult = _card_damage_multiplier(ability_name)
 	var spell_mult = _estimate_outgoing_damage_multiplier(true)
 	var phys_mult = _estimate_outgoing_damage_multiplier(false)
 	match ability_name:
@@ -27585,9 +27588,10 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.694 — One consistent damage number per card.
+	# v0.9.694 — One consistent + more accurate damage number per card.
 	display_game("[color=#00FF00]v0.9.694[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#1EFF00]◆ One damage number per card.[/color] Cards were showing [b]two different[/b] damage estimates (the pip vs the middle text). Now there's a [b]single estimate[/b] everywhere (pip, hover, effect line all agree). The number is an average — your actual hit still varies with the damage roll and the enemy's defense.")
+	display_game("  [color=#1EFF00]◆ One damage number per card.[/color] Cards were showing [b]two different[/b] damage estimates (the pip vs the middle text). Now there's a [b]single estimate[/b] everywhere (pip, hover, effect line all agree).")
+	display_game("  [color=#1EFF00]◆ More accurate.[/color] The estimate was systematically [b]low[/b] for high-rank/tier abilities (its multiplier was capped and ignored your tier). It now uses your full rank + tier bonus, so it lands close to your real hit — the remaining difference is just the [b]±15% damage roll[/b] and enemy defense.")
 	display_game("")
 
 	# v0.9.693 — Card layout fix + closer numbers + companion-card deck fixes.
