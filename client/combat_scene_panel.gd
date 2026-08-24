@@ -2642,6 +2642,39 @@ func _build_hand_strip() -> HBoxContainer:
 	return outer
 
 
+static func companion_card_art_bbcode(card_name: String) -> String:
+	"""v0.9.683 — the monster ASCII art for a companion card, centered, or "" if
+	the id isn't a companion card / has no art. Keyed by de-slugged type name."""
+	if not card_name.begins_with("companion_card_"):
+		return ""
+	var mtype := card_name.trim_prefix("companion_card_").capitalize()
+	var art := MonsterArt.get_monster_ascii_art(mtype)
+	if art == "":
+		return ""
+	return "[center]" + art + "[/center]"
+
+func _make_card_art_label(font_size: int) -> RichTextLabel:
+	"""A compact mono RichTextLabel that renders a card's companion monster art
+	inside the icon slot (hidden until populated)."""
+	var art_img := RichTextLabel.new()
+	art_img.name = "ArtImg"
+	art_img.bbcode_enabled = true
+	art_img.fit_content = true
+	art_img.scroll_active = false
+	art_img.autowrap_mode = TextServer.AUTOWRAP_OFF
+	art_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art_img.visible = false
+	if _mono_font:
+		art_img.add_theme_font_override("normal_font", _mono_font)
+		art_img.add_theme_font_override("bold_font", _mono_font)
+		art_img.add_theme_font_override("italics_font", _mono_font)
+		art_img.add_theme_font_override("mono_font", _mono_font)
+	art_img.add_theme_font_size_override("normal_font_size", font_size)
+	art_img.add_theme_font_size_override("bold_font_size", font_size)
+	art_img.add_theme_font_size_override("italics_font_size", font_size)
+	art_img.add_theme_font_size_override("mono_font_size", font_size)
+	return art_img
+
 func _build_hand_cell(index: int) -> PanelContainer:
 	"""v0.9.675 — a real PORTRAIT card: category-coloured top banner (hotkey +
 	name), a big centred ability icon, a bottom row with rank pips + a bold cost
@@ -2766,6 +2799,9 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	glyph_label.add_theme_constant_override("outline_size", 4)
 	glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon_wrap.add_child(glyph_label)
+	# v0.9.683 — companion cards show the companion's monster art here instead of
+	# the glyph (populated + toggled in _refresh_hand).
+	icon_wrap.add_child(_make_card_art_label(6))
 	vbox.add_child(icon_wrap)
 
 	# --- Effect line (small, above the info row) ---
@@ -2917,7 +2953,7 @@ func build_milestone_card(branch: String, ability_label: String, category_color_
 	return cell
 
 
-func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String) -> Control:
+func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String, art_bbcode: String = "") -> Control:
 	"""v0.9.678 (slice 3) — a combat-styled card for the DECK SCREEN. Returns a
 	Control holding a Front (banner + icon + cost + copy badge) and a Back (long
 	description); the Back starts hidden. Caller wires a click to flip (toggle
@@ -2976,6 +3012,13 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	glyph_lbl.add_theme_constant_override("outline_size", 4)
 	glyph_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon_wrap.add_child(glyph_lbl)
+	# v0.9.683 — companion cards show the companion's monster art here.
+	if art_bbcode != "":
+		glyph_lbl.visible = false
+		var deck_art := _make_card_art_label(6)
+		deck_art.text = art_bbcode
+		deck_art.visible = true
+		icon_wrap.add_child(deck_art)
 	fv.add_child(icon_wrap)
 	# Bottom row: cost pip + copy badge.
 	var info := MarginContainer.new()
@@ -3138,6 +3181,9 @@ func _refresh_hand() -> void:
 				effect_lbl.text = ""
 			if glyph_lbl:
 				glyph_lbl.text = ""
+			var _ai_empty: RichTextLabel = cell.find_child("ArtImg", true, false)
+			if _ai_empty:
+				_ai_empty.visible = false
 			if emblem_lbl:
 				emblem_lbl.text = ""
 			cell.tooltip_text = ""
@@ -3160,6 +3206,21 @@ func _refresh_hand() -> void:
 		if glyph_lbl:
 			glyph_lbl.text = str(category_info.get("glyph", ""))
 			glyph_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
+		# v0.9.683 — companion cards render the companion's monster art in place of
+		# the glyph.
+		var art_img: RichTextLabel = cell.find_child("ArtImg", true, false)
+		var _cart := companion_card_art_bbcode(card_name)
+		if _cart != "":
+			if art_img:
+				art_img.text = _cart
+				art_img.visible = true
+			if glyph_lbl:
+				glyph_lbl.visible = false
+		else:
+			if art_img:
+				art_img.visible = false
+			if glyph_lbl:
+				glyph_lbl.visible = true
 		if banner:
 			var bsb := banner.get_theme_stylebox("panel") as StyleBoxFlat
 			if bsb:

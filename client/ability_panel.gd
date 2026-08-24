@@ -646,7 +646,9 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 	var glyph := str(cat.get("glyph", ""))
 	var cost_text := _cost_text_for(ab_name)
 	var back := _tooltip_for(ab_name)
-	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back)
+	# v0.9.683 — companion cards carry the companion's monster art.
+	var art_bb: String = csp.companion_card_art_bbcode(ab_name) if csp.has_method("companion_card_art_bbcode") else ""
+	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back, art_bb)
 	var entry := VBoxContainer.new()
 	entry.add_theme_constant_override("separation", 4)
 	if card != null:
