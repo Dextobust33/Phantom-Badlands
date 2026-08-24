@@ -2150,6 +2150,7 @@ func _ready():
 		ability_panel.unequip_requested.connect(_on_ability_panel_unequip)
 		ability_panel.rebind_requested.connect(_on_ability_panel_rebind)
 		ability_panel.cull_requested.connect(_on_ability_panel_cull)
+		ability_panel.add_requested.connect(_on_ability_panel_add)
 
 	# Setup combat scene panel (Phase A — Combat Juice initiative, A1 slice)
 	if combat_scene_panel:
@@ -37335,6 +37336,13 @@ func _on_ability_panel_cull(ability_name: String) -> void:
 	if ability_name == "":
 		return
 	send_to_server({"type": "cull_ability_card", "ability": ability_name})
+
+func _on_ability_panel_add(ability_name: String) -> void:
+	"""v0.9.678 slice 3 — user clicked "+" to restore a thinned card (0 -> 1).
+	Server validates (free only for 0->1; extra copies come from rewards)."""
+	if ability_name == "":
+		return
+	send_to_server({"type": "add_ability_card", "ability": ability_name})
 
 func _populate_companions_panel() -> void:
 	if companions_panel == null:

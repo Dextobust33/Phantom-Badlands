@@ -1601,6 +1601,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_rank_choice_response(peer_id, message)
 		"cull_ability_card":
 			handle_cull_ability_card(peer_id, message)
+		"add_ability_card":
+			handle_add_ability_card(peer_id, message)
 		"wish_select":
 			handle_wish_select(peer_id, message)
 		"continue_flock":
@@ -6659,6 +6661,35 @@ func handle_cull_ability_card(peer_id: int, message: Dictionary):
 		var cull_account_id = peers.get(peer_id, {}).get("account_id", "")
 		if persistence != null and cull_account_id != "":
 			persistence.save_character(cull_account_id, character)
+
+func handle_add_ability_card(peer_id: int, message: Dictionary):
+	"""v0.9.678 (slice 3) — restore a thinned ability back into the deck (0 -> 1,
+	free). Extra copies (2nd/3rd) come from reward sources, not this handler.
+	Rejected during combat. Sends `cull_ability_card_result` (same shape) so the
+	client repaints the deck the same way."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if combat_mgr.is_in_combat(peer_id):
+		send_to_peer(peer_id, {"type": "cull_ability_card_result", "ok": false, "reason": "Cannot edit your deck during combat."})
+		return
+	var ability_name = str(message.get("ability", ""))
+	if ability_name == "":
+		send_to_peer(peer_id, {"type": "cull_ability_card_result", "ok": false, "reason": "Missing ability name."})
+		return
+	var result = character.add_ability_copy(ability_name, false)
+	send_to_peer(peer_id, {
+		"type": "cull_ability_card_result",
+		"ok": bool(result.get("ok", false)),
+		"reason": str(result.get("reason", "")),
+		"ability": ability_name,
+		"new_count": int(result.get("new_count", 0)),
+		"collection": character.combat_deck_collection.duplicate()
+	})
+	if result.get("ok", false):
+		var add_account_id = peers.get(peer_id, {}).get("account_id", "")
+		if persistence != null and add_account_id != "":
+			persistence.save_character(add_account_id, character)
 
 func handle_combat_use_item(peer_id: int, message: Dictionary):
 	"""Handle using an item during combat"""

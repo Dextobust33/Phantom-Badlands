@@ -7703,8 +7703,11 @@ func _initialize_combat_deck(combat_state: Dictionary) -> void:
 	for ability_name in collection.keys():
 		if not accessible.has(ability_name):
 			continue
+		# v0.9.678 — 0 copies = thinned OUT of the deck (skip); otherwise cap at 3.
 		var copies = int(collection.get(ability_name, 1))
-		copies = clamp(copies, 1, 50)
+		if copies <= 0:
+			continue
+		copies = clamp(copies, 1, 3)
 		for i in range(copies):
 			deck.append(ability_name)
 	# Backstop: if the collection is somehow empty (e.g., a non-player edge case),

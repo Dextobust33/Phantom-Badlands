@@ -3414,15 +3414,19 @@ func set_variant_imprints(imprints: Dictionary) -> void:
 	if imprints is Dictionary:
 		ability_variant_imprints = imprints.duplicate(true)
 
+const MIN_DECK_SIZE: int = 5   # v0.9.678 — deck must keep at least this many cards
+const MAX_ABILITY_COPIES: int = 3  # v0.9.678 — cap per ability
+
+func total_deck_copies() -> int:
+	var n := 0
+	for k in combat_deck_collection.keys():
+		n += int(combat_deck_collection[k])
+	return n
+
 func cull_ability_card(ability_name: String) -> Dictionary:
-	"""Slice 6c — permanently remove one copy of an ability card from the deck.
-	Decrements combat_deck_collection[ability_name] by 1, with a HARD MIN OF 1.
-	Resolution of the open design question: keep min=1 to avoid the soft-lock
-	where a player culls every ability to 0, then can't draw any cards in
-	combat to rank up (rank-up requires ability USE, which requires drawing).
-	Players can still shape deck weights heavily by trimming extra copies they
-	earned via rank-up choices. Returns {ok, new_count, reason}.
-	Caller (server) is responsible for save_character + sending the response."""
+	"""v0.9.678 (slice 3) — remove ONE copy, now allowed down to 0 (thinning), as
+	long as the total deck stays >= MIN_DECK_SIZE so combat can always draw a hand.
+	Returns {ok, new_count, reason}. Caller saves + responds."""
 	var result := {"ok": false, "new_count": 0, "reason": ""}
 	if ability_name == "":
 		result["reason"] = "Empty ability name"
@@ -3431,14 +3435,50 @@ func cull_ability_card(ability_name: String) -> Dictionary:
 		result["reason"] = "Ability not in deck collection"
 		return result
 	var current = int(combat_deck_collection.get(ability_name, 0))
-	if current <= 1:
+	if current <= 0:
+		result["new_count"] = 0
+		result["reason"] = "Already out of your deck."
+		return result
+	if total_deck_copies() - 1 < MIN_DECK_SIZE:
 		result["new_count"] = current
-		result["reason"] = "Cannot cull below 1 copy — every ability keeps a baseline."
+		result["reason"] = "Deck can't drop below %d cards." % MIN_DECK_SIZE
 		return result
 	var new_count = current - 1
 	combat_deck_collection[ability_name] = new_count
 	result["ok"] = true
 	result["new_count"] = new_count
+	return result
+
+func add_ability_copy(ability_name: String, from_reward: bool = false) -> Dictionary:
+	"""v0.9.678 (slice 3) — add ONE copy. FREE only restores a thinned ability
+	(0 -> 1); a 2nd/3rd copy (up to MAX_ABILITY_COPIES) must come from a reward
+	source (from_reward=true: dungeon rare card / companion card). Returns
+	{ok, new_count, reason}."""
+	var result := {"ok": false, "new_count": 0, "reason": ""}
+	if ability_name == "":
+		result["reason"] = "Empty ability name"
+		return result
+	# Must be an accessible ability for a free restore.
+	var accessible := false
+	for entry in get_all_available_abilities():
+		if entry.get("name", "") == ability_name and not bool(entry.get("non_combat", false)):
+			accessible = true
+			break
+	if not accessible:
+		result["reason"] = "Ability not available."
+		return result
+	var current = int(combat_deck_collection.get(ability_name, 0))
+	if current >= MAX_ABILITY_COPIES:
+		result["new_count"] = current
+		result["reason"] = "Already at max (%d copies)." % MAX_ABILITY_COPIES
+		return result
+	if current >= 1 and not from_reward:
+		result["new_count"] = current
+		result["reason"] = "Extra copies come from dungeon rewards & companion cards."
+		return result
+	combat_deck_collection[ability_name] = current + 1
+	result["ok"] = true
+	result["new_count"] = current + 1
 	return result
 
 func apply_headstart_ranks(headstarts: Dictionary) -> Array:

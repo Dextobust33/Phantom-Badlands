@@ -13,6 +13,7 @@ signal equip_requested(slot: int, ability_name: String)
 signal unequip_requested(slot: int)
 signal rebind_requested(slot: int)
 signal cull_requested(ability_name: String)  # Slice 6c — remove one deck copy
+signal add_requested(ability_name: String)   # v0.9.678 slice 3 — restore a thinned card (0->1)
 
 const SLOT_COUNT := 6
 
@@ -569,12 +570,15 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 
 		var deck_lbl := Label.new()
 		deck_lbl.add_theme_font_size_override("font_size", 11)
-		if deck_count > 1:
-			deck_lbl.text = "Deck × %d" % deck_count
+		# v0.9.678 — show copies out of the cap of 3; 0 = thinned out of the deck.
+		deck_lbl.text = "Deck × %d/3" % deck_count
+		if deck_count >= 2:
 			deck_lbl.add_theme_color_override("font_color", Color("#9ACD32"))
-		else:
-			deck_lbl.text = "Deck × 1"
+		elif deck_count == 1:
 			deck_lbl.add_theme_color_override("font_color", Color("#888888"))
+		else:
+			deck_lbl.text = "Not in deck"
+			deck_lbl.add_theme_color_override("font_color", Color("#B05050"))
 		deck_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		deck_row.add_child(deck_lbl)
 
@@ -583,15 +587,31 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 		spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		deck_row.add_child(spacer)
 
-		if deck_count > 1:
+		# v0.9.678 slice 3 — thin (−) down to 0, and restore (+) 0→1 for free.
+		# Extra copies (2nd/3rd) come from dungeon rewards / companion cards, so the
+		# + is disabled (with an explanatory tooltip) once a card is already in.
+		if deck_count >= 1:
 			var cull_btn := Button.new()
-			cull_btn.text = "− Cull"
-			cull_btn.tooltip_text = "Remove one copy of this card from your deck (min 1 always remains)."
+			cull_btn.text = "−"
+			cull_btn.tooltip_text = "Thin: remove a copy from your deck (deck keeps at least 5 cards)."
 			cull_btn.focus_mode = Control.FOCUS_NONE
-			cull_btn.custom_minimum_size = Vector2(58, 20)
-			cull_btn.add_theme_font_size_override("font_size", 10)
+			cull_btn.custom_minimum_size = Vector2(28, 20)
+			cull_btn.add_theme_font_size_override("font_size", 12)
 			cull_btn.pressed.connect(_on_cull_pressed.bind(ab_name))
 			deck_row.add_child(cull_btn)
+		if deck_count < 3:
+			var add_btn := Button.new()
+			add_btn.text = "+"
+			add_btn.focus_mode = Control.FOCUS_NONE
+			add_btn.custom_minimum_size = Vector2(28, 20)
+			add_btn.add_theme_font_size_override("font_size", 12)
+			if deck_count == 0:
+				add_btn.tooltip_text = "Put this card back in your deck."
+				add_btn.pressed.connect(_on_add_pressed.bind(ab_name))
+			else:
+				add_btn.tooltip_text = "Extra copies come from dungeon rewards & companion cards."
+				add_btn.disabled = true
+			deck_row.add_child(add_btn)
 
 	card.gui_input.connect(_on_ability_card_input.bind(ab_name, is_unlocked))
 	return card
@@ -599,6 +619,10 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 
 func _on_cull_pressed(ability_name: String) -> void:
 	emit_signal("cull_requested", ability_name)
+
+
+func _on_add_pressed(ability_name: String) -> void:
+	emit_signal("add_requested", ability_name)
 
 
 func _cost_text_for(ability_name: String) -> String:
