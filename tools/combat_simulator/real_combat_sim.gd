@@ -12,6 +12,11 @@ var CharacterScript
 
 const FIGHTS_PER_CELL := 200
 const SLOTS := ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
+# Warrior damage cards, best→worst; the sim casts the highest-priority one that's
+# actually in the drawn hand + affordable (the deck constraint is real). Buffs
+# (war_cry/berserk/iron_skin/fortify/rally) are cast opportunistically for uptime.
+const WARRIOR_DMG_PRIORITY := ["devastate", "cleave", "shield_bash", "power_strike"]
+const WARRIOR_BUFFS := ["berserk", "war_cry"]
 
 func _init():
 	seed(20260824)  # reproducible run-to-run (gear affixes/crits/empowered are RNG)
@@ -110,6 +115,25 @@ func make_monster(level: int, et: String) -> Dictionary:
 	m["current_hp"] = m.get("max_hp", 1)
 	return m
 
+func _player_act(combat: Dictionary, ch) -> void:
+	var hand: Array = combat.get("combat_hand", [])
+	# Opportunistic damage buff (once per fight): buff early for uptime.
+	if not combat.get("_sim_buffed", false):
+		for b in WARRIOR_BUFFS:
+			if b in hand:
+				var rb = combat_mgr.process_ability_command(0, b, "")
+				if rb.get("success", false):
+					combat["_sim_buffed"] = true
+					return
+	# Best affordable damage card currently in the drawn hand.
+	for ab in WARRIOR_DMG_PRIORITY:
+		if ab in hand:
+			var r = combat_mgr.process_ability_command(0, ab, "")
+			if r.get("success", false):
+				return
+	# Out of resource / no castable card → basic attack (also regens).
+	combat_mgr.process_attack(combat)
+
 func run_fight(level: int, gear: String, et: String) -> Dictionary:
 	var ch = make_char(level, gear)
 	var monster = make_monster(level, et)
@@ -124,7 +148,7 @@ func run_fight(level: int, gear: String, et: String) -> Dictionary:
 			break
 		turns += 1
 		if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
-			combat_mgr.process_attack(combat)
+			_player_act(combat, ch)
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
 		combat_mgr.process_monster_turn(combat)
