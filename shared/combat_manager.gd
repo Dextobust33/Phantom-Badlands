@@ -3753,9 +3753,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var war_cry_bonus = max(1, int(35 * variable_fraction))
 			# v0.9.637 — rank-up +Damage + bonus_damage imprint now scale buff value.
 			war_cry_bonus = _apply_buff_value_modifiers(character, "war_cry", war_cry_bonus)
-			character.add_buff("damage", war_cry_bonus, 4)
+			var wc_dur = 4 + character.get_ability_duration_bonus("war_cry")  # v0.9.677 Duration pick
+			character.add_buff("damage", war_cry_bonus, wc_dur)
 			messages.append("[color=#FF4444]WAR CRY![/color]")
-			messages.append("[color=#FFD700]+%d%% damage for 4 rounds![/color]" % war_cry_bonus)
+			messages.append("[color=#FFD700]+%d%% damage for %d rounds![/color]" % [war_cry_bonus, wc_dur])
 			is_buff_ability = true
 
 		"shield_bash":
@@ -3825,14 +3826,15 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# (Defense penalty stays as-is — players don't pick rank-up to nerf
 			# themselves; only the positive buff scales.)
 			damage_bonus = _apply_buff_value_modifiers(character, "berserk", damage_bonus)
-			character.add_buff("damage", damage_bonus, 4)
+			var bk_dur = 4 + character.get_ability_duration_bonus("berserk")  # v0.9.677 Duration pick
+			character.add_buff("damage", damage_bonus, bk_dur)
 			if defense_penalty != 0:
-				character.add_buff("defense_penalty", defense_penalty, 4)
+				character.add_buff("defense_penalty", defense_penalty, bk_dur)
 				messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
-				messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), %d%% defense for 4 rounds![/color]" % [damage_bonus, defense_penalty])
+				messages.append("[color=#FFD700]+%d%% damage (scales with missing HP), %d%% defense for %d rounds![/color]" % [damage_bonus, defense_penalty, bk_dur])
 			else:
 				messages.append("[color=#FF0000][b]BERSERK![/b][/color]")
-				messages.append("[color=#FFD700]⚜ Blood Rage: +%d%% damage for 4 rounds — no defense penalty![/color]" % damage_bonus)
+				messages.append("[color=#FFD700]⚜ Blood Rage: +%d%% damage for %d rounds — no defense penalty![/color]" % [damage_bonus, bk_dur])
 
 		"iron_skin":
 			# Variable cost (v0.9.263): reduction magnitude scales with spend.
@@ -3841,9 +3843,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# v0.9.637 — rank-up +Damage scales the buff value too (damage
 			# reduction is the "damage" knob for this ability).
 			iron_skin_reduction = _apply_buff_value_modifiers(character, "iron_skin", iron_skin_reduction)
-			character.add_buff("damage_reduction", iron_skin_reduction, 4)
+			var is_dur = 4 + character.get_ability_duration_bonus("iron_skin")  # v0.9.677 Duration pick
+			character.add_buff("damage_reduction", iron_skin_reduction, is_dur)
 			messages.append("[color=#AAAAAA]IRON SKIN![/color]")
-			messages.append("[color=#00FF00]Block %d%% damage for 4 rounds![/color]" % iron_skin_reduction)
+			messages.append("[color=#00FF00]Block %d%% damage for %d rounds![/color]" % [iron_skin_reduction, is_dur])
 			is_buff_ability = true
 
 		"devastate":
@@ -3871,8 +3874,9 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var defense_bonus = max(1, int((30 + sqrt(float(str_stat)) * 3) * variable_fraction))
 			# v0.9.637 — rank-up +Damage scales buff value.
 			defense_bonus = _apply_buff_value_modifiers(character, "fortify", defense_bonus)
-			character.add_buff("defense", defense_bonus, 5)
-			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for 5 rounds)[/color]" % defense_bonus)
+			var ft_dur = 5 + character.get_ability_duration_bonus("fortify")  # v0.9.677 Duration pick
+			character.add_buff("defense", defense_bonus, ft_dur)
+			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for %d rounds)[/color]" % [defense_bonus, ft_dur])
 			is_buff_ability = true
 
 		"rally":
@@ -3885,8 +3889,9 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var actual_heal = character.heal(heal_amount)
 			var str_bonus = max(1, int((10 + character.get_effective_stat("strength") / 5) * variable_fraction))
 			str_bonus = _apply_buff_value_modifiers(character, "rally", str_bonus)
-			character.add_buff("strength", str_bonus, 3)
-			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for 3 rounds![/color]" % [actual_heal, str_bonus])
+			var rl_dur = 3 + character.get_ability_duration_bonus("rally")  # v0.9.677 Duration pick
+			character.add_buff("strength", str_bonus, rl_dur)
+			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for %d rounds![/color]" % [actual_heal, str_bonus, rl_dur])
 			is_buff_ability = true
 
 	# Check if monster died

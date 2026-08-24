@@ -3330,12 +3330,16 @@ func get_ability_rider_level(ability_name: String) -> int:
 	"""Number of 'rider' milestone picks — keyword strength (bleed/stun/etc.)."""
 	return count_milestone_pick(ability_name, "rider")
 
+func get_ability_duration_bonus(ability_name: String) -> int:
+	"""Extra buff/debuff rounds from 'duration' milestone picks (+2 rounds each)."""
+	return count_milestone_pick(ability_name, "duration") * 2
+
 func apply_milestone_pick(ability_name: String, kind: String) -> Dictionary:
 	"""Apply a milestone branch pick. kind = 'power' | 'rider' | 'efficiency'.
 	Appends to ability_milestone_picks. Refuses off-class abilities + bad kinds.
 	Returns {ability, kind, ok, tier, effect_mult, cost_mult, rider_level}."""
 	var result := {"ability": ability_name, "kind": kind, "ok": false}
-	if ability_name == "" or not (kind in ["power", "rider", "efficiency"]):
+	if ability_name == "" or not (kind in ["power", "rider", "efficiency", "duration"]):
 		return result
 	var accessible := false
 	for entry in get_all_available_abilities():

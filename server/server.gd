@@ -6506,7 +6506,7 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	# v0.9.676 — milestone picks (power/rider/efficiency) replace the old
 	# copy/effect/variant menu; the legacy kinds stay accepted for any queued
 	# choices that predate the tier system.
-	var _valid_choices = ["power", "rider", "efficiency", "copy", "effect", "variant"]
+	var _valid_choices = ["power", "rider", "efficiency", "duration", "copy", "effect", "variant"]
 	if ability_name == "" or not (choice in _valid_choices):
 		return
 	# Pop the matching queued choice (first entry matching ability+rank). Allow
@@ -6577,7 +6577,7 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 		return
 	# v0.9.676 — milestone branch pick (Upgrade → Tier). Applies power/rider/
 	# efficiency to ability_milestone_picks and reports the resulting tier/mults.
-	if choice in ["power", "rider", "efficiency"]:
+	if choice in ["power", "rider", "efficiency", "duration"]:
 		var ms_result = character.apply_milestone_pick(ability_name, choice)
 		send_to_peer(peer_id, {
 			"type": "rank_choice_applied",

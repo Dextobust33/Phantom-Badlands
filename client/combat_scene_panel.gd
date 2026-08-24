@@ -2830,6 +2830,93 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	return cell
 
 
+func build_milestone_card(branch: String, ability_label: String, category_color_hex: String, glyph: String, detail: String, accent_hex: String, tooltip: String = "") -> PanelContainer:
+	"""v0.9.677 — a card-styled PREVIEW for the milestone chooser: same frame as a
+	combat card (category banner + big icon), with the upgrade's effect + branch
+	name below. Clickable (caller wires gui_input); carries `branch` in meta.
+	accent_hex tints the branch footer so the three options read distinctly.
+	tooltip: hover text with the projected before→after detail."""
+	var cell := PanelContainer.new()
+	cell.custom_minimum_size = Vector2(CARD_W, CARD_H + 34)
+	cell.mouse_filter = Control.MOUSE_FILTER_STOP
+	cell.set_meta("tip_text", tooltip)  # shown in a custom polished box on hover
+	cell.set_meta("branch", branch)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = _theme_card_bg()
+	sb.border_color = Color(category_color_hex)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(10)
+	cell.add_theme_stylebox_override("panel", sb)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 0)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cell.add_child(vbox)
+
+	# Banner (deepened category colour + ability name)
+	var banner := PanelContainer.new()
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bsb := StyleBoxFlat.new()
+	bsb.bg_color = Color(category_color_hex).darkened(0.42)
+	bsb.corner_radius_top_left = 8
+	bsb.corner_radius_top_right = 8
+	bsb.content_margin_left = 6
+	bsb.content_margin_right = 6
+	bsb.content_margin_top = 4
+	bsb.content_margin_bottom = 4
+	banner.add_theme_stylebox_override("panel", bsb)
+	var name_lbl := Label.new()
+	name_lbl.text = ability_label
+	name_lbl.add_theme_font_size_override("font_size", 15)
+	name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	name_lbl.add_theme_constant_override("outline_size", 3)
+	name_lbl.clip_text = true
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner.add_child(name_lbl)
+	vbox.add_child(banner)
+
+	# Icon
+	var icon_wrap := CenterContainer.new()
+	icon_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	icon_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var glyph_lbl := Label.new()
+	glyph_lbl.text = glyph
+	glyph_lbl.add_theme_font_size_override("font_size", 46)
+	glyph_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
+	glyph_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	glyph_lbl.add_theme_constant_override("outline_size", 4)
+	glyph_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_wrap.add_child(glyph_lbl)
+	vbox.add_child(icon_wrap)
+
+	# Detail — what this upgrade does
+	var detail_lbl := Label.new()
+	detail_lbl.text = detail
+	detail_lbl.add_theme_font_size_override("font_size", 13)
+	detail_lbl.add_theme_color_override("font_color", Color("#DDDDDD"))
+	detail_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	detail_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	detail_lbl.custom_minimum_size = Vector2(0, 34)
+	detail_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(detail_lbl)
+
+	# Branch footer (accent-coloured)
+	var footer := Label.new()
+	footer.text = branch.to_upper()
+	footer.add_theme_font_size_override("font_size", 15)
+	footer.add_theme_color_override("font_color", Color(accent_hex))
+	footer.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	footer.add_theme_constant_override("outline_size", 2)
+	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	footer.custom_minimum_size = Vector2(0, 22)
+	footer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(footer)
+
+	return cell
+
+
 func _on_hand_cell_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if index < 0 or index >= _hand_cells.size():

@@ -18425,6 +18425,15 @@ func _get_ability_tooltip(ability_name: String) -> String:
 # across multiple rank-ups in a session to keep the UI consistent and avoid leaks.
 var _rank_choice_popup: AcceptDialog = null
 var _rank_choice_pending_ability: String = ""
+# v0.9.677 — card-themed milestone chooser (replaces the plain AcceptDialog).
+var _milestone_overlay: Control = null
+var _milestone_title: Label = null
+var _milestone_card_row: HBoxContainer = null
+var _milestone_tip: PanelContainer = null
+var _milestone_tip_label: RichTextLabel = null
+# Buff abilities whose Duration milestone pick is wired (Warrior slice). Buffs
+# not here fall back to Power + Efficiency until their class slice wires duration.
+const DURATION_CAPABLE_ABILITIES = ["war_cry", "berserk", "iron_skin", "fortify", "rally"]
 # v0.9.597 — track our custom buttons by reference. Godot 4's AcceptDialog
 # parents `add_button` results inside an internal HBox, NOT as direct children
 # of the dialog. The previous clear-loop `for child in popup.get_children()`
@@ -18447,38 +18456,69 @@ func _ability_display_name(ability_name: String) -> String:
 		"pickpocket": return "Steal"
 	return ability_name.replace("_", " ").capitalize()
 
+func _ensure_milestone_overlay() -> void:
+	if _milestone_overlay != null and is_instance_valid(_milestone_overlay):
+		return
+	# Full-rect dimmed overlay that blocks input behind it.
+	_milestone_overlay = Control.new()
+	_milestone_overlay.name = "MilestoneOverlay"
+	_milestone_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_milestone_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_milestone_overlay.z_index = 200
+	_milestone_overlay.visible = false
+	var dim := ColorRect.new()
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.color = Color(0, 0, 0, 0.72)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_milestone_overlay.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_milestone_overlay.add_child(center)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 14)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(box)
+	_milestone_title = Label.new()
+	_milestone_title.add_theme_font_size_override("font_size", 22)
+	_milestone_title.add_theme_color_override("font_color", Color("#FFD700"))
+	_milestone_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_milestone_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(_milestone_title)
+	var hint := Label.new()
+	hint.text = "Click a card to choose how it grows"
+	hint.add_theme_font_size_override("font_size", 14)
+	hint.add_theme_color_override("font_color", Color("#AAAAAA"))
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(hint)
+	_milestone_card_row = HBoxContainer.new()
+	_milestone_card_row.add_theme_constant_override("separation", 18)
+	_milestone_card_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_milestone_card_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(_milestone_card_row)
+	add_child(_milestone_overlay)
+
+
 func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_count: int, current_effect_rank: int, variant_offer: Dictionary = {}) -> void:
+	# v0.9.677 — card-themed milestone chooser: three preview cards (Power / Rider /
+	# Efficiency), styled like combat cards; click one to pick. Replaces the plain
+	# AcceptDialog. (Args kept for the queued-choice / next_pending callers.)
 	if ability_name == "":
 		return
-	# If a popup is already up for the same ability, don't double-stack.
-	if _rank_choice_popup != null and is_instance_valid(_rank_choice_popup) and _rank_choice_popup.visible and _rank_choice_pending_ability == ability_name:
+	if _milestone_overlay != null and is_instance_valid(_milestone_overlay) and _milestone_overlay.visible and _rank_choice_pending_ability == ability_name:
 		return
 	_rank_choice_pending_ability = ability_name
-	# Build / reuse the dialog
-	if _rank_choice_popup == null or not is_instance_valid(_rank_choice_popup):
-		_rank_choice_popup = AcceptDialog.new()
-		_rank_choice_popup.exclusive = true
-		_rank_choice_popup.dialog_hide_on_ok = false
-		_rank_choice_popup.get_ok_button().visible = false
-		add_child(_rank_choice_popup)
-		_rank_choice_popup.custom_action.connect(_on_rank_choice_picked)
-	# v0.9.597 — clear any prior custom buttons. Track-by-array (not via
-	# popup.get_children()) because AcceptDialog parents add_button results
-	# inside an internal HBox node, not the dialog itself. Old loop walked
-	# direct children and never saw the buttons → they accumulated forever.
-	for btn in _rank_choice_custom_buttons:
-		if is_instance_valid(btn):
-			# `remove_button` detaches the button from the dialog's internal
-			# layout; `free()` then deletes it synchronously so the new
-			# `add_button` calls below don't render alongside the corpses.
-			_rank_choice_popup.remove_button(btn)
-			btn.free()
-	_rank_choice_custom_buttons.clear()
+	_ensure_milestone_overlay()
 	var ability_label = _ability_display_name(ability_name)
-	# v0.9.676 — Upgrade → Tier: rank-ups are now MILESTONES offering a branch pick
-	# (Power / Rider / Efficiency) instead of the old +1 Card / +Damage / Imprint.
-	# Current stacks read from character_data.ability_milestone_picks so the player
-	# sees how they've specialised this card so far.
+	var cat: Dictionary = get_ability_category_info(ability_name)
+	var cat_color := str(cat.get("color", "#8C7656"))
+	var glyph := str(cat.get("glyph", ""))
+	var is_offense := str(cat.get("category", "")) == "offense"
+	_milestone_title.text = "%s — Milestone!" % ability_label
+	for c in _milestone_card_row.get_children():
+		c.queue_free()
+	# Current milestone stacks for this ability (for before→after tooltips).
 	var picks: Array = []
 	var mp = character_data.get("ability_milestone_picks", {})
 	if mp is Dictionary and mp.get(ability_name, null) is Array:
@@ -18486,26 +18526,96 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 	var power_n: int = picks.count("power")
 	var rider_n: int = picks.count("rider")
 	var effic_n: int = picks.count("efficiency")
-	_rank_choice_popup.title = "Milestone — %s" % ability_label
-	_rank_choice_popup.dialog_text = (
-		"%s hit a milestone! Choose how it grows:\n\n" +
-		"  • Power — bigger effect (+12%% each).  Now: x%d\n" +
-		"  • Rider — inflicts/deepens Bleed on hit.  Now: x%d\n" +
-		"  • Efficiency — costs less to cast (-10%% each).  Now: x%d\n\n" +
-		"(Your card keeps tiering up on its own as you use it — this is the specialisation choice.)"
-	) % [ability_label, power_n, rider_n, effic_n]
-	# Buttons — plain labels (no risky emoji glyphs). Actions map to the server's
-	# milestone-pick handler.
-	var btn_power = _rank_choice_popup.add_button("Power  +damage", true, "power")
-	btn_power.set_meta("rank_choice_button", true)
-	_rank_choice_custom_buttons.append(btn_power)
-	var btn_rider = _rank_choice_popup.add_button("Rider  +bleed", true, "rider")
-	btn_rider.set_meta("rank_choice_button", true)
-	_rank_choice_custom_buttons.append(btn_rider)
-	var btn_effic = _rank_choice_popup.add_button("Efficiency  -cost", true, "efficiency")
-	btn_effic.set_meta("rank_choice_button", true)
-	_rank_choice_custom_buttons.append(btn_effic)
-	_rank_choice_popup.popup_centered(Vector2(480, 280))
+	var dur_n: int = picks.count("duration")
+	# v0.9.677 — only OFFER options that make sense for the ability. Rider (bleed on
+	# hit) is offense-only; buffs get Duration (longer) as their third; everything
+	# gets Power (scales damage AND buff magnitude) + Efficiency. Tips are concise
+	# (shown in a polished hover box, not the default text line).
+	var branches := [
+		{"branch": "power", "detail": "Bigger effect\n+12% each", "accent": "#FF6644",
+			"tip": "[b]POWER[/b]\n+12%% effect each  (×%d → ×%d)" % [power_n, power_n + 1]},
+		{"branch": "efficiency", "detail": "Cheaper\n-10% cost", "accent": "#66B0FF",
+			"tip": "[b]EFFICIENCY[/b]\n-10%% cost each  (×%d → ×%d)" % [effic_n, effic_n + 1]},
+	]
+	if is_offense:
+		branches.insert(1, {"branch": "rider", "detail": "Bleeds\non hit", "accent": "#FF4444",
+			"tip": "[b]RIDER[/b]\nBleed on hit  (lvl %d → %d)" % [rider_n, rider_n + 1]})
+	elif ability_name in DURATION_CAPABLE_ABILITIES:
+		branches.insert(1, {"branch": "duration", "detail": "Lasts longer\n+2 rounds", "accent": "#7AE07A",
+			"tip": "[b]DURATION[/b]\n+2 rounds each  (+%d now)" % [dur_n * 2]})
+	for b in branches:
+		if combat_scene_panel == null or not combat_scene_panel.has_method("build_milestone_card"):
+			break
+		var card = combat_scene_panel.build_milestone_card(str(b["branch"]), ability_label, cat_color, glyph, str(b["detail"]), str(b["accent"]), str(b["tip"]))
+		card.gui_input.connect(_on_milestone_card_input.bind(str(b["branch"])))
+		card.mouse_entered.connect(_show_milestone_tip.bind(card))
+		card.mouse_exited.connect(_hide_milestone_tip)
+		_milestone_card_row.add_child(card)
+	_hide_milestone_tip()
+	_milestone_overlay.visible = true
+
+
+func _on_milestone_card_input(event: InputEvent, branch: String) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_on_rank_choice_picked(branch)
+
+
+func _ensure_milestone_tip() -> void:
+	if _milestone_tip != null and is_instance_valid(_milestone_tip):
+		return
+	_milestone_tip = PanelContainer.new()
+	_milestone_tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_milestone_tip.z_index = 210
+	_milestone_tip.visible = false
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.10, 0.09, 0.08, 0.98)
+	sb.border_color = Color("#D4A017")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 6
+	sb.shadow_color = Color(0, 0, 0, 0.6)
+	sb.shadow_size = 4
+	_milestone_tip.add_theme_stylebox_override("panel", sb)
+	_milestone_tip_label = RichTextLabel.new()
+	_milestone_tip_label.bbcode_enabled = true
+	_milestone_tip_label.fit_content = true
+	_milestone_tip_label.scroll_active = false
+	_milestone_tip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_milestone_tip_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_milestone_tip_label.add_theme_font_size_override("normal_font_size", 14)
+	_milestone_tip_label.add_theme_font_size_override("bold_font_size", 15)
+	_milestone_tip_label.add_theme_color_override("default_color", Color("#EDE0C8"))
+	_milestone_tip.add_child(_milestone_tip_label)
+	_milestone_overlay.add_child(_milestone_tip)
+
+
+func _show_milestone_tip(card: Control) -> void:
+	if _milestone_overlay == null or not _milestone_overlay.visible or card == null or not is_instance_valid(card):
+		return
+	_ensure_milestone_tip()
+	_milestone_tip_label.text = "[center]%s[/center]" % str(card.get_meta("tip_text", ""))
+	_milestone_tip.visible = true
+	_milestone_tip.reset_size()
+	await get_tree().process_frame
+	if not is_instance_valid(card) or not is_instance_valid(_milestone_tip) or not _milestone_tip.visible:
+		return
+	var tip_sz := _milestone_tip.size
+	var cpos := card.global_position
+	var x := cpos.x + card.size.x * 0.5 - tip_sz.x * 0.5
+	var y := cpos.y - tip_sz.y - 8.0
+	var vp := get_viewport_rect().size
+	x = clampf(x, 4.0, vp.x - tip_sz.x - 4.0)
+	if y < 4.0:
+		y = cpos.y + card.size.y + 8.0  # flip below if no room above
+	_milestone_tip.global_position = Vector2(x, y)
+
+
+func _hide_milestone_tip() -> void:
+	if _milestone_tip != null and is_instance_valid(_milestone_tip):
+		_milestone_tip.visible = false
 
 func _on_rank_choice_picked(action: String) -> void:
 	if _rank_choice_pending_ability == "":
@@ -18520,6 +18630,9 @@ func _on_rank_choice_picked(action: String) -> void:
 	})
 	if _rank_choice_popup != null and is_instance_valid(_rank_choice_popup):
 		_rank_choice_popup.hide()
+	# v0.9.677 — hide the card-themed milestone overlay after a pick.
+	if _milestone_overlay != null and is_instance_valid(_milestone_overlay):
+		_milestone_overlay.visible = false
 	_rank_choice_pending_ability = ""
 
 func _replay_pending_rank_choice() -> void:
