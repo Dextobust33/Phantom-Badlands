@@ -2928,7 +2928,32 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": "sabotage", "level": 30, "display": "Sabotage"})
 			abilities.append({"name": "gambit", "level": 50, "display": "Gambit"})
 
+	# v0.9.680 — Companion cards. The active companion grants a temporary card
+	# (a strike flavoured by its variant trait); any companion cards you've made
+	# PERMANENT (earned via use) always appear. Keyed by companion TYPE, so
+	# "<Type>'s Gift" is derivable from the id ("companion_card_<type_slug>").
+	var seen_companion := {}
+	if has_active_companion():
+		var _mt = str(active_companion.get("monster_type", ""))
+		if _mt != "":
+			var _cid = "companion_card_" + _mt.to_lower().replace(" ", "_")
+			abilities.append({"name": _cid, "level": 1, "display": "%s's Gift" % _mt, "companion_card": true})
+			seen_companion[_cid] = true
+	for _k in combat_deck_collection.keys():
+		var _ks = String(_k)
+		if _ks.begins_with("companion_card_") and not seen_companion.has(_ks):
+			var _disp = "%s's Gift" % _ks.trim_prefix("companion_card_").capitalize()
+			abilities.append({"name": _ks, "level": 1, "display": _disp, "companion_card": true})
+			seen_companion[_ks] = true
+
 	return abilities
+
+static func companion_card_type_from_id(card_id: String) -> String:
+	"""Reverse the companion-card id to its monster type. capitalize() converts
+	'giant_spider' -> 'Giant Spider', matching the COMPANION_VARIANT_TRAIT keys."""
+	if not card_id.begins_with("companion_card_"):
+		return ""
+	return card_id.trim_prefix("companion_card_").capitalize()
 
 func get_unlocked_abilities() -> Array:
 	"""All abilities are unlocked from L1 — Slice 1 of the ability mastery
@@ -3466,6 +3491,12 @@ func add_ability_copy(ability_name: String, from_reward: bool = false) -> Dictio
 			break
 	if not accessible:
 		result["reason"] = "Ability not available."
+		return result
+	# v0.9.680 — companion cards can't be manually restored/bought; they're
+	# earned permanent by USING them in combat (rank 2), or granted as a reward.
+	if ability_name.begins_with("companion_card_") and not from_reward:
+		result["new_count"] = int(combat_deck_collection.get(ability_name, 0))
+		result["reason"] = "Companion cards become permanent by using them in combat."
 		return result
 	var current = int(combat_deck_collection.get(ability_name, 0))
 	if current >= MAX_ABILITY_COPIES:

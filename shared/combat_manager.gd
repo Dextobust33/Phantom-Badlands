@@ -3014,6 +3014,9 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Trickster abilities (use energy)
 	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]:
 		result = _process_trickster_ability(combat, ability_name)
+	# v0.9.680 — companion cards (variant-flavoured strike; any class).
+	elif ability_name.begins_with("companion_card_"):
+		result = _process_companion_ability(combat, ability_name)
 	else:
 		return {"success": false, "message": "Unknown ability!"}
 
@@ -3064,6 +3067,14 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# Sanctuary headstart purchases).
 				result["mastery_rank_changed"] = {"ability": ability_name, "new_rank": new_rank}
 				result["rank_up_choice_pending"] = queued_choice
+				# v0.9.680 — companion card permanence: a loaner card used enough
+				# (rank 2 = 50 uses) is EARNED permanently and joins your
+				# collection, so it stays in your deck even after the companion
+				# is unequipped.
+				if ability_name.begins_with("companion_card_") and new_rank >= 2:
+					if int(combat.character.combat_deck_collection.get(ability_name, 0)) <= 0:
+						combat.character.combat_deck_collection[ability_name] = 1
+						result.messages.append("[color=#FF99FF]★ %s is now a PERMANENT card in your collection![/color]" % ("%s's Gift" % Character.companion_card_type_from_id(ability_name)))
 		# Audit #1 Slice 6f (v0.9.549) — Variant Imprint riders. Apply after
 		# the ability resolves, before the card is consumed, so monster.current_hp
 		# already reflects the base damage. damage_dealt = monster_hp_before -
@@ -3665,6 +3676,92 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 		return _process_victory(combat, messages)
 
 	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff_ability}
+
+func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dictionary:
+	"""v0.9.680 — Companion card: a strike flavoured by the companion's variant
+	TRAIT (fixed to the card's type via id, so it stays consistent whether the
+	card is a temporary loaner or a permanent one you've earned). Damage scales
+	through the shared mastery/tier path; each trait adds its signature on-hit
+	effect. Cost = a modest amount of the player's class resource."""
+	var character = combat.character
+	var monster = combat.monster
+	var messages: Array = []
+	var mtype: String = Character.companion_card_type_from_id(ability_name)
+	var disp: String = "%s's Gift" % mtype
+	var trait_id: String = DropTablesScript.get_variant_trait_for_companion(mtype)
+	var trait_info: Dictionary = DropTablesScript.get_variant_trait_info(trait_id) if trait_id != "" else {}
+
+	# Cost — modest, in the player's class resource. Tier 'efficiency' picks +
+	# racial reductions fold in via apply_skill_cost_reduction.
+	var path: String = character.get_class_path()
+	var resource_type: String = "mana" if path == "mage" else ("energy" if path == "trickster" else "stamina")
+	var cost: int = apply_skill_cost_reduction(character, ability_name, 10)
+	var paid: bool = false
+	match resource_type:
+		"mana": paid = character.use_mana(cost)
+		"energy": paid = character.use_energy(cost)
+		_: paid = character.use_stamina(cost)
+	if not paid:
+		return {"success": false, "messages": ["[color=#FFA500]Not enough %s for %s.[/color]" % [resource_type, disp]], "combat_ended": false, "skip_monster_turn": true}
+
+	# Damage — a solid strike scaled by mastery/tier/power picks (shared path).
+	var base_dmg: int = int(character.get_total_attack() * 1.3)
+	base_dmg = apply_skill_damage_bonus(character, ability_name, base_dmg, combat)
+	var mod_dmg: int = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+	var damage: int = apply_damage_variance(mod_dmg)
+
+	var tier: int = character.get_ability_tier(ability_name)
+
+	# 'crit' trait doubles on a tier-scaled chance.
+	var did_crit: bool = false
+	if trait_id == "crit" and randi() % 100 < min(60, 25 + tier * 3):
+		damage *= 2
+		did_crit = true
+	monster.current_hp = max(0, monster.current_hp - damage)
+	var crit_txt: String = " [color=#FFFF00]CRIT![/color]" if did_crit else ""
+	messages.append("[color=#FF99FF]★ %s[/color] strikes for [color=#FFFF00]%d[/color]!%s" % [disp, damage, crit_txt])
+
+	# Trait signature on-hit effect.
+	match trait_id:
+		"bleed", "poison":
+			var pct: float = float(trait_info.get("per_stack_pct_of_hit", 5.0))
+			var dur: int = int(trait_info.get("duration", 3))
+			var dot: int = max(1, int(damage * (pct / 100.0) * (2.0 + tier)))
+			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + dot
+			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), dur)
+			messages.append("[color=#FF4444]%s inflicts %s — %d/turn for %d turns![/color]" % [disp, trait_id, dot, dur])
+		"bonus_damage":
+			var extra: int = max(1, int(damage * (float(trait_info.get("per_stack_pct", 6.0)) / 100.0) * (2 + tier)))
+			monster.current_hp = max(0, monster.current_hp - extra)
+			messages.append("[color=#FF8800]%s tears deeper for +%d![/color]" % [disp, extra])
+		"lifesteal":
+			var heal: int = max(1, int(damage * (float(trait_info.get("per_stack_pct", 6.0)) / 100.0) * (2 + tier)))
+			var healed: int = character.heal(heal)
+			if healed > 0:
+				messages.append("[color=#00FF88]%s drains %d HP back to you![/color]" % [disp, healed])
+		"stun":
+			if int(combat.get("monster_stunned", 0)) <= 0 and randi() % 100 < min(60, 20 + tier * 5):
+				combat["monster_stunned"] = 1
+				messages.append("[color=#FFFF00]%s staggers the enemy — it loses its turn![/color]" % disp)
+		"charm":
+			if int(combat.get("monster_charmed", 0)) <= 0 and randi() % 100 < min(45, 15 + tier * 4):
+				combat["monster_charmed"] = 1
+				messages.append("[color=#FF66FF]%s charms the enemy![/color]" % disp)
+		"mana_drain":
+			var amt: int = int(trait_info.get("per_stack_amount", 6)) * (1 + tier)
+			match resource_type:
+				"mana": character.current_mana = min(character.get_total_max_mana(), character.current_mana + amt)
+				"energy": character.current_energy = min(character.get_total_max_energy(), character.current_energy + amt)
+				_: character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + amt)
+			messages.append("[color=#66CCFF]%s siphons %d %s back![/color]" % [disp, amt, resource_type])
+		"enemy_miss", "absorb":
+			# Defensive flavour — a tier-scaled heal (shield/evasion abstraction for v1).
+			var ward: int = max(1, int(float(trait_info.get("per_stack_amount", trait_info.get("per_stack_pct", 6.0))) * (2 + tier)))
+			var warded: int = character.heal(ward)
+			if warded > 0:
+				messages.append("[color=#7FD7FF]%s wards you for %d HP![/color]" % [disp, warded])
+
+	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": false}
 
 func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Process warrior abilities (use stamina)"""
@@ -7715,6 +7812,15 @@ func _initialize_combat_deck(combat_state: Dictionary) -> void:
 	if deck.is_empty():
 		for name2 in accessible.keys():
 			deck.append(name2)
+	# v0.9.680 — inject the active companion's TEMPORARY card (1 copy) if it isn't
+	# already permanent (in the collection). Once earned permanent it builds above
+	# like any card, so guard against a double.
+	if character != null and character.has_active_companion():
+		var _cmt = str(character.get_active_companion().get("monster_type", ""))
+		if _cmt != "":
+			var _ccid = "companion_card_" + _cmt.to_lower().replace(" ", "_")
+			if int(character.combat_deck_collection.get(_ccid, 0)) <= 0:
+				deck.append(_ccid)
 	deck.shuffle()
 	combat_state["combat_deck"] = deck
 	combat_state["combat_discard"] = []
@@ -7785,6 +7891,9 @@ func _ability_display_name(_character, ability_name: String) -> String:
 	this, the rank-up notification used the raw internal id ('Tactical retreat')
 	while the card in the player's hand showed 'Recharge' — players couldn't
 	connect the two and reported phantom ranks-ups on abilities they 'don't have'."""
+	# v0.9.680 — companion cards: "<Type>'s Gift" from the id.
+	if ability_name.begins_with("companion_card_"):
+		return "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
 	match ability_name:
 		"tactical_retreat": return "Recharge"
 		"vanish": return "Phantom Strike"

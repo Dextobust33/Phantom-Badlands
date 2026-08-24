@@ -12049,6 +12049,11 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"tactical_retreat": {"display": "Recharge", "cost": 0, "cost_percent": 0, "resource_type": ""},
 	}
 
+	# v0.9.680 — companion cards: fixed modest cost in the class resource.
+	if ability_name.begins_with("companion_card_"):
+		var _cdisp = "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
+		return {"display": _cdisp, "cost": 10, "cost_percent": 0, "resource_type": resource_type}
+
 	var result = ability_defs.get(ability_name, {})
 	if result.is_empty():
 		return result
@@ -12144,6 +12149,10 @@ func get_ability_category_info(ability_name: String) -> Dictionary:
 	"""Return {category, color, tint_alpha, glyph} for an ability card.
 	Falls back to neutral defaults when an ability isn't in the table
 	(unknown ability — should never happen for current cards)."""
+	# v0.9.680 — companion cards: offense category (so the milestone chooser
+	# offers the Rider branch) but a distinct companion-pink banner + ★ glyph.
+	if ability_name.begins_with("companion_card_"):
+		return {"category": "offense", "color": "#FF99FF", "tint_alpha": 0.12, "glyph": "★"}
 	var category = String(ABILITY_CATEGORIES.get(ability_name, ""))
 	if category == "" or not ABILITY_CATEGORY_DEFS.has(category):
 		return {"category": "", "color": "#8C7656", "tint_alpha": 0.0, "glyph": ""}
@@ -18445,6 +18454,9 @@ func _ability_display_name(ability_name: String) -> String:
 	rank-up / cull / mastery messages used the raw internal id (e.g. 'Tactical
 	retreat') while the actual card in the player's hand showed 'Recharge' —
 	players couldn't connect the two. Mirrors combat_manager._ability_display_name."""
+	# v0.9.680 — companion cards: "<Type>'s Gift" from the id.
+	if ability_name.begins_with("companion_card_"):
+		return "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
 	match ability_name:
 		"tactical_retreat": return "Recharge"
 		"vanish": return "Phantom Strike"
