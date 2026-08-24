@@ -27402,10 +27402,10 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.688 — Deck counter + real numbers on card descriptions.
-	display_game("[color=#00FF00]v0.9.688[/color] [color=#808080](Current)[/color]")
+	# v0.9.689 — Deck counter + real numbers on cards + polished formula popup.
+	display_game("[color=#00FF00]v0.9.689[/color] [color=#808080](Current)[/color]")
 	display_game("  [color=#1EFF00]◆ Deck size counter.[/color] The Deck screen now shows a live [b]Cards in deck[/b] count that updates as you add/remove cards (minimum 5).")
-	display_game("  [color=#1EFF00]◆ Real numbers on cards.[/color] Card descriptions now show [b]concrete numbers[/b] from your stats instead of formulas (Warrior abilities first) — e.g. Rally reads [i]Heals 237 HP, +14 STR[/i]. [b]Hover a number[/b] to see its formula. Flip a card on the Deck screen to see it; more classes + battle hover coming next.")
+	display_game("  [color=#1EFF00]◆ Real numbers on cards.[/color] Card descriptions now show [b]concrete numbers[/b] from your stats instead of formulas (Warrior abilities first) — e.g. Rally reads [i]Heals 237 HP, +14 STR[/i]. [b]Hover a number[/b] and its formula appears in a polished popup. Flip a card on the Deck screen to see it; more classes + battle hover coming next.")
 	display_game("")
 
 	# v0.9.687 — Card polish: names fit + companion art bigger/crisper.
