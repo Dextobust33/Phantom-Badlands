@@ -27598,8 +27598,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.695 — In-combat screenshot fix (dev/QA).
+	display_game("[color=#00FF00]v0.9.695[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Screenshots work in combat.[/color] The [b]📷 button[/b] was being covered by the battle screen; it now sits on top and is clickable in combat, and [b]F12[/b] takes a shot from any screen. A brief on-screen confirmation shows the filename (saved to the claude_screenshots folder).")
+	display_game("")
+
 	# v0.9.694 — One consistent + more accurate damage number per card.
-	display_game("[color=#00FF00]v0.9.694[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.694[/color]")
 	display_game("  [color=#1EFF00]◆ One damage number per card.[/color] Cards were showing [b]two different[/b] damage estimates (the pip vs the middle text). Now there's a [b]single estimate[/b] everywhere (pip, hover, effect line all agree).")
 	display_game("  [color=#1EFF00]◆ More accurate.[/color] The estimate was systematically [b]low[/b] for high-rank/tier abilities (its multiplier was capped and ignored your tier). It now uses your full rank + tier bonus, so it lands close to your real hit — the remaining difference is just the [b]±15% damage roll[/b] and enemy defense.")
 	display_game("")
