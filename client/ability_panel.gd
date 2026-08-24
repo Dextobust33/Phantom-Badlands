@@ -51,6 +51,7 @@ var _title_label: Label
 
 # v0.9.504 — reusable HelpPanel attached to the header ? Help button.
 var _help_panel: Control = null
+var _deck_count_label: RichTextLabel = null  # v0.9.688 — live deck-size counter
 var _path_label_node: RichTextLabel
 var _slots_row: HBoxContainer
 var _slot_cards: Array = []        # Array of PanelContainers, one per slot
@@ -132,6 +133,15 @@ func _build_layout() -> void:
 	rules_lbl.add_theme_color_override("default_color", Color("#B8A98C"))
 	rules_lbl.text = "[color=#D4A017]Deck rules:[/color]  Max [b]3[/b] copies per card  ·  minimum [b]5[/b] cards  ·  [b]click a card to flip[/b] for details  ·  thin cards you don't use so favourites draw more often  ·  extra copies come from [b]dungeon rewards[/b] & [b]companion cards[/b]."
 	root_vbox.add_child(rules_lbl)
+
+	# v0.9.688 — live deck-size counter; updates as you +/- cards.
+	_deck_count_label = RichTextLabel.new()
+	_deck_count_label.bbcode_enabled = true
+	_deck_count_label.fit_content = true
+	_deck_count_label.scroll_active = false
+	_deck_count_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_deck_count_label.add_theme_font_size_override("normal_font_size", 15)
+	root_vbox.add_child(_deck_count_label)
 
 	# v0.9.322 — slot row / status row removed (deck system replaced
 	# slot-equip). Status + cancel-choose still allocated as dummy instances
@@ -418,6 +428,7 @@ func _rebuild_abilities() -> void:
 		unlocked_names[str(u.get("name", ""))] = true
 
 	var locked_count := 0
+	var deck_total := 0
 	for ability in _all:
 		# v0.9.423 — non_combat abilities (Cloak, Teleport) are utility
 		# triggers used outside combat. They shouldn't appear in the combat
@@ -431,6 +442,7 @@ func _rebuild_abilities() -> void:
 		if is_unlocked:
 			# v0.9.678 slice 3 — combat-styled deck card (flip for details) + thin/restore controls.
 			var deck_count := int(_deck_collection.get(ab_name, 1))
+			deck_total += max(0, deck_count)
 			var entry := _make_deck_entry(ability, deck_count)
 			if entry != null:
 				_ability_grid.add_child(entry)
@@ -443,6 +455,11 @@ func _rebuild_abilities() -> void:
 
 	_locked_label.visible = locked_count > 0
 	_locked_grid.visible = locked_count > 0
+
+	# v0.9.688 — refresh the deck-size counter (min 5 enforced server-side).
+	if _deck_count_label != null:
+		var _col := "#7AE07A" if deck_total >= 5 else "#FF8844"
+		_deck_count_label.text = "[color=#B8A98C]Cards in deck:[/color] [color=%s][b]%d[/b][/color] [color=#7A6E58](minimum 5)[/color]" % [_col, deck_total]
 
 
 func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContainer:
@@ -645,7 +662,8 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 	var color := str(cat.get("color", "#8C7656"))
 	var glyph := str(cat.get("glyph", ""))
 	var cost_text := _cost_text_for(ab_name)
-	var back := _tooltip_for(ab_name)
+	# v0.9.688 — computed-number description (Warrior slice); hover a number for its formula.
+	var back: String = client_ref._ability_desc_bbcode(ab_name) if (client_ref and client_ref.has_method("_ability_desc_bbcode")) else _tooltip_for(ab_name)
 	# v0.9.683 — companion cards carry the companion's monster art.
 	var art_bb: String = csp.companion_card_art_bbcode(ab_name) if csp.has_method("companion_card_art_bbcode") else ""
 	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back, art_bb)

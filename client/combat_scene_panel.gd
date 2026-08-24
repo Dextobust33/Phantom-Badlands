@@ -3132,7 +3132,9 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	var back := PanelContainer.new()
 	back.name = "Back"
 	back.set_anchors_preset(Control.PRESET_FULL_RECT)
-	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# v0.9.688 — PASS (not IGNORE) so the RichTextLabel receives hover for the
+	# [hint] formula tooltips, while clicks still bubble up to flip the card.
+	back.mouse_filter = Control.MOUSE_FILTER_PASS
 	back.visible = false
 	var ksb := StyleBoxFlat.new()
 	ksb.bg_color = Color(0.07, 0.06, 0.05, 0.98)
@@ -3151,7 +3153,7 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	back_txt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	back_txt.add_theme_font_size_override("normal_font_size", 12)
 	back_txt.add_theme_font_size_override("bold_font_size", 13)
-	back_txt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back_txt.mouse_filter = Control.MOUSE_FILTER_PASS  # v0.9.688 — receive [hint] hover
 	back_txt.text = "[b]%s[/b]\n%s" % [display, back_bbcode]
 	back.add_child(back_txt)
 	root.add_child(back)

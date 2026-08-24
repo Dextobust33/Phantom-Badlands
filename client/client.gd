@@ -18323,6 +18323,41 @@ func _get_ability_description_text(ability_name: String) -> String:
 		_:
 			return ""
 
+func _desc_num(n, formula: String) -> String:
+	"""v0.9.688 — a computed number shown on a card, with the FORMULA revealed on
+	hover ([hint]). Numbers read as concrete values; hover to see how they're
+	derived. Rendered in a RichTextLabel with bbcode_enabled + mouse enabled."""
+	return "[color=#FFE68A][hint=%s][b]%s[/b][/hint][/color]" % [formula, str(n)]
+
+func _ability_desc_bbcode(ability_name: String) -> String:
+	"""v0.9.688 (Warrior slice) — rich description with CONCRETE numbers computed
+	from your current stats; hover a number for its formula. Non-Warrior abilities
+	fall back to the plain description for now."""
+	var s_str := int(character_data.get("strength", 0))
+	var s_con := int(character_data.get("constitution", 0))
+	var atk := int(character_data.get("total_attack", 0))
+	match ability_name:
+		"power_strike":
+			return "Deal %s damage — a dependable heavy hit." % _desc_num(int(2 * atk), "2 × Attack (plus √STR scaling)")
+		"shield_bash":
+			return "Deal %s damage with a [b]chance to stun[/b] the enemy." % _desc_num(int(1.5 * atk), "1.5 × Attack (plus √STR scaling)")
+		"cleave":
+			return "Deal %s damage and open a bleeding wound for %s/round over [b]4[/b] rounds." % [_desc_num(int(2.5 * atk), "2.5 × Attack (plus √STR scaling)"), _desc_num(int(0.2 * s_str), "20% of STR per round")]
+		"devastate":
+			return "Deal %s damage — a massive finisher." % _desc_num(int(5 * atk), "5 × Attack (plus √STR scaling)")
+		"war_cry":
+			return "Buff yourself: %s damage for [b]4[/b] rounds." % _desc_num("+35%", "flat +35% damage")
+		"berserk":
+			return "Buff yourself: %s damage but %s defense for [b]4[/b] rounds — scales with missing HP, so riskier is stronger." % [_desc_num("+75–200%", "+75% rising to +200% as your HP drops"), _desc_num("−40%", "flat -40% defense")]
+		"iron_skin":
+			return "Buff yourself: %s damage reduction for [b]4[/b] rounds." % _desc_num("60%", "flat 60% damage reduction")
+		"fortify":
+			return "Buff yourself: %s defense for [b]5[/b] rounds." % _desc_num("+%d%%" % int(30 + sqrt(float(s_str)) * 3), "30 + √STR × 3")
+		"rally":
+			return "Heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(int(30 + sqrt(float(s_con)) * 10), "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
+	# Non-Warrior (slice): plain description as bbcode for now.
+	return _get_ability_description_text(ability_name)
+
 func _get_ability_tooltip(ability_name: String) -> String:
 	"""Compose the full hover tooltip for an ability card (plain text):
 	display name, cost summary, effect, current rank + damage modifier,
