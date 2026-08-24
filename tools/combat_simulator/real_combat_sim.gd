@@ -40,10 +40,13 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
+	run_hp_sweep()
+	quit()
+
+func run_matrix():
 	var levels := [10, 30, 50, 80]
 	var gears := ["under", "average", "bis"]
 	var enemies := ["plain", "empowered", "elite", "boss"]
-
 	print("\n===== REAL-CODE COMBAT SIM (%d fights/cell, Fighter + companion) =====" % FIGHTS_PER_CELL)
 	print("%-6s %-9s %-10s %8s %8s %10s" % ["Lvl", "Gear", "Enemy", "WinRate", "AvgTurns", "PlyrHP%%"])
 	for lvl in levels:
@@ -51,19 +54,39 @@ func _init():
 			for et in enemies:
 				var wins := 0
 				var total_turns := 0
-				var total_hpfrac := 0.0
 				for i in range(FIGHTS_PER_CELL):
-					var r = run_fight(lvl, gear, et)
+					var r = run_fight(lvl, gear, et, 1.0)
 					if r.win:
 						wins += 1
 					total_turns += r.turns
-					total_hpfrac += r.hp_frac
-				var wr := 100.0 * float(wins) / float(FIGHTS_PER_CELL)
-				var at := float(total_turns) / float(FIGHTS_PER_CELL)
-				var hp := 100.0 * total_hpfrac / float(FIGHTS_PER_CELL)
-				print("%-6d %-9s %-10s %7.0f%% %8.1f %9.0f%%" % [lvl, gear, et, wr, at, hp])
+				print("%-6d %-9s %-10s %7.0f%% %8.1f" % [lvl, gear, et, 100.0*float(wins)/FIGHTS_PER_CELL, float(total_turns)/FIGHTS_PER_CELL])
 	print("=====================================================================\n")
-	quit()
+
+func run_hp_sweep():
+	# Reverse-solve: how much monster HP is needed to hit target fight lengths.
+	# For well-geared players (BiS), sweep an extra HP multiplier per enemy tier.
+	var mults := [1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0]
+	var N := 60
+	print("\n===== REVERSE-SOLVE: monster HP mult -> fight length (BiS Fighter+companion, %d fights) =====" % N)
+	print("Target lengths: plain ~2-3t, empowered/elite ~6-9t, boss ~10-14t. Read the mult that hits it.")
+	print("(each cell = avgTurns @ winRate%%)")
+	var header := "%-14s" % "Lvl / Enemy"
+	for hm in mults:
+		header += "%9s" % ("%.0fx" % hm)
+	print(header)
+	for lvl in [30, 50, 80]:
+		for et in ["plain", "empowered", "elite", "boss"]:
+			var row := "%-14s" % ("L%d %s" % [lvl, et])
+			for hm in mults:
+				var wins := 0
+				var tt := 0
+				for i in range(N):
+					var r = run_fight(lvl, "bis", et, hm)
+					if r.win: wins += 1
+					tt += r.turns
+				row += "%9s" % ("%.1f@%.0f" % [float(tt)/N, 100.0*float(wins)/N])
+			print(row)
+	print("=================================================================================================\n")
 
 func make_char(level: int, gear: String):
 	var ch = CharacterScript.new()
@@ -97,7 +120,7 @@ func make_char(level: int, gear: String):
 	ch.current_hp = ch.get_total_max_hp()
 	return ch
 
-func make_monster(level: int, et: String) -> Dictionary:
+func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Dictionary:
 	var m = monster_db.generate_monster_by_name("Orc", level)
 	match et:
 		"empowered":
@@ -112,6 +135,8 @@ func make_monster(level: int, et: String) -> Dictionary:
 			m["max_hp"] = int(m.get("max_hp", 1) * 2.5)
 			m["strength"] = int(m.get("strength", 1) * 1.5)
 			m["defense"] = int(m.get("defense", 1) * 1.5)
+	if extra_hp_mult != 1.0:
+		m["max_hp"] = int(m.get("max_hp", 1) * extra_hp_mult)
 	m["current_hp"] = m.get("max_hp", 1)
 	return m
 
@@ -134,9 +159,9 @@ func _player_act(combat: Dictionary, ch) -> void:
 	# Out of resource / no castable card → basic attack (also regens).
 	combat_mgr.process_attack(combat)
 
-func run_fight(level: int, gear: String, et: String) -> Dictionary:
+func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0) -> Dictionary:
 	var ch = make_char(level, gear)
-	var monster = make_monster(level, et)
+	var monster = make_monster(level, et, extra_hp_mult)
 	var max_hp: int = ch.get_total_max_hp()
 	combat_mgr.start_combat(0, ch, monster)
 	if not combat_mgr.active_combats.has(0):
