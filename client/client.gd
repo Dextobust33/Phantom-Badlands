@@ -27366,8 +27366,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.682 — Companion loot cards: Valor + item-drop.
+	display_game("[color=#00FF00]v0.9.682[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Companion loot cards.[/color] The treasure-flavoured companion cards now grant [b]what you actually want[/b]: [color=#FFD700]Kobold's Stash[/color] & [color=#FFD700]Hoarder's Gift[/color] (Mimic) boost your [b]item-drop chance[/b] for the fight, while [color=#FFD700]Sphinx's Toll[/color] & [color=#FFD700]Kelpie's Bargain[/color] grant [b]bonus Valor[/b] on victory. (Replaces the old gem bonus.)")
+	display_game("")
+
 	# v0.9.681 — Companion cards: unique named cards + varied effects (+ cast fix).
-	display_game("[color=#00FF00]v0.9.681[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.681[/color]")
 	display_game("  [color=#FF8000]★ COMPANION CARDS.[/color] Your [b]active companion grants a unique card[/b] to your combat deck — [b]every companion type has its own named card with its own effect[/b] (~53 to collect). Effects run the full range: heavy [color=#FF6644]strikes[/color] & [color=#FFD700]executes[/color], [color=#B22222]bleeds[/color] & [color=#7FBE2E]poisons[/color], [color=#C0C0C0]weaken[/color]/[color=#AAAAFF]blind[/color]/[color=#FFFF00]stun[/color]/[color=#FF66FF]charm[/color] debuffs, self [color=#FF6644]rage[/color]/[color=#66B0FF]guard[/color]/[color=#FFD700]crit[/color] buffs, [color=#7FD7FF]shields[/color], [color=#00FF88]heals[/color], resource drains, and [color=#FFD700]loot boosters[/color]. Each [b]tiers up as you play it[/b] and becomes a [b]permanent deck card[/b] once mastered — kept even after you swap companions. Hover a card to read exactly what it does.")
 	display_game("  • Fixed: companion cards [b]did nothing when cast[/b] in v0.9.680 (they never reached the combat handler). They work now.")
 	display_game("")
