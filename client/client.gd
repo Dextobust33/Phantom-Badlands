@@ -27523,10 +27523,11 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.690 — Battle card hover box + deck counter + real numbers.
-	display_game("[color=#00FF00]v0.9.690[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#1EFF00]◆ Card info in battle.[/color] Hover a card in combat and a [b]polished description box[/b] pops up (with real numbers). It [b]stays while your cursor is over the card or the box[/b], so you can move into it and [b]hover a number[/b] for its formula.")
-	display_game("  [color=#1EFF00]◆ Deck screen[/color]: live [b]Cards in deck[/b] counter, and card descriptions show [b]concrete numbers[/b] from your stats instead of formulas (Warrior first; hover a number for the formula). More classes next.")
+	# v0.9.691 — Damage/heal on cards + tier-scaled companion permanence.
+	display_game("[color=#00FF00]v0.9.691[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Damage & heal on cards.[/color] Cards now show an estimated [color=#FF7A5A]⚔ damage[/color] or [color=#7AE07A]♥ heal[/color] value from your stats, right next to the cost (Warrior abilities first).")
+	display_game("  [color=#1EFF00]◆ Companion cards scale with tier.[/color] Higher-tier companions have stronger cards that take [b]longer to make permanent[/b] — from ~40 casts at Tier 1 (a balanced grind) up to ~216 at Tier 9. The card shows how many casts you need + your progress.")
+	display_game("  [color=#1EFF00]◆ Battle card hover box[/color] + [b]Cards in deck[/b] counter + real numbers on descriptions (hover a number for its formula).")
 	display_game("")
 
 	# v0.9.687 — Card polish: names fit + companion art bigger/crisper.
