@@ -5728,6 +5728,14 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Victory - increment monster kill count
 			characters[peer_id].monsters_killed += 1
 
+			# v0.9.682 — Tribute companion card: bonus valor on victory.
+			var _card_valor: int = int(result.get("card_bonus_valor", 0))
+			if _card_valor > 0:
+				var _tv_account = peers.get(peer_id, {}).get("account_id", "")
+				if _tv_account != "":
+					persistence.add_valor(_tv_account, _card_valor)
+					send_combat_message(peer_id, "[color=#FFD700]★ Tribute: +%d Valor![/color]" % _card_valor)
+
 			# Path milestones (ARPG pillar 3) — one-time feats, +1 Path point
 			# each. grant helper no-ops when already claimed. Dungeon-clear
 			# milestone hooks at the dungeon completion site instead.

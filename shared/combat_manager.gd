@@ -2124,10 +2124,6 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			apex_label = apex_zone_name
 		messages.append("[color=#9F70FF]⚡ %s Bonus: +%d%% XP![/color]" % [apex_label, apex_xp_pct])
 
-	# v0.9.681 — Fortune companion card: XP bonus set during the fight.
-	var _card_xp_mult: float = float(combat.get("card_xp_mult", 1.0))
-	if _card_xp_mult > 1.0:
-		final_xp = int(final_xp * _card_xp_mult)
 	# Award experience
 	character.add_experience(final_xp)
 
@@ -2170,10 +2166,6 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 
 	# Normal gem drops (from high-level monsters) → Monster Gem material
 	var gems_earned = roll_gem_drops(monster, character)
-	# v0.9.681 — Fortune companion card: bonus gems banked during the fight.
-	var _card_gems: int = int(combat.get("card_bonus_gems", 0))
-	if _card_gems > 0:
-		gems_earned += _card_gems
 	if gems_earned > 0:
 		character.add_crafting_material("monster_gem", gems_earned)
 		messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]You found %d Monster Gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
@@ -2382,7 +2374,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		combat.extra_drops.append(title_item)
 
 	# Roll for item drops
-	var dropped_items = roll_combat_drops(monster, character)
+	var dropped_items = roll_combat_drops(monster, character, float(combat.get("card_loot_mult", 1.0)))
 	for item in dropped_items:
 		messages.append("[color=%s]%s dropped: %s![/color]" % [
 			_get_rarity_color(item.get("rarity", "common")),
@@ -2422,6 +2414,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"flock_chance": flock,
 		"dropped_items": all_drops,
 		"gems_earned": gems_earned,
+		"card_bonus_valor": int(combat.get("card_bonus_valor", 0)),  # v0.9.682 — Tribute companion card
 		"summon_next_fight": combat.get("summon_next_fight", ""),
 		"is_rare_variant": monster.get("is_rare_variant", false),
 		"is_apex_variant": monster.get("is_apex_variant", false),  # v0.9.514 — server uses this to roll Apex Crystal drop
@@ -3837,11 +3830,15 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 			var turns: int = 1 + (1 if tier >= 4 else 0)
 			combat["monster_stunned"] = max(int(combat.get("monster_stunned", 0)), turns)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FFFF00]freezes time (%d turns)[/color]!" % [cname, d, turns])
-		"fortune":
+		"plunder":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
-			combat["card_bonus_gems"] = int(combat.get("card_bonus_gems", 0)) + 1 + int(tier / 2)
-			combat["card_xp_mult"] = max(float(combat.get("card_xp_mult", 1.0)), 1.15 + 0.03 * tier)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]bonus loot if you win![/color]" % [cname, d])
+			combat["card_loot_mult"] = max(float(combat.get("card_loot_mult", 1.0)), 2.0 + 0.15 * tier)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]item-drop chance boosted if you win![/color]" % [cname, d])
+		"tribute":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var valor_gain: int = 15 + tier * 5 + int(monster.level * 0.5)
+			combat["card_bonus_valor"] = int(combat.get("card_bonus_valor", 0)) + valor_gain
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]+%d Valor if you win![/color]" % [cname, d, valor_gain])
 		_:
 			var d: int = _companion_strike(character, monster, ability_name, combat, 1.5)
 			messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
@@ -7562,10 +7559,11 @@ func set_drop_tables(tables: Node):
 	"""Set the drop tables reference for item drops"""
 	drop_tables = tables
 
-func roll_combat_drops(monster: Dictionary, character: Character) -> Array:
+func roll_combat_drops(monster: Dictionary, character: Character, bonus_drop_mult: float = 1.0) -> Array:
 	"""Roll for item drops after defeating a monster. Returns array of items.
 	NOTE: Does NOT add items to inventory - server handles that to avoid duplication.
-	TIER BONUS: Fighting higher tier monsters gives +50% drop chance per tier above."""
+	TIER BONUS: Fighting higher tier monsters gives +50% drop chance per tier above.
+	bonus_drop_mult: v0.9.682 — Plunder companion cards multiply the drop chance."""
 	# If drop tables not initialized, return empty
 	if drop_tables == null:
 		return []
@@ -7590,6 +7588,10 @@ func roll_combat_drops(monster: Dictionary, character: Character) -> Array:
 	if hotspot_intensity > 0.0:
 		var hotspot_drop_mult = 1.3 + hotspot_intensity * 0.4
 		drop_chance = int(drop_chance * hotspot_drop_mult)
+
+	# v0.9.682 — Plunder companion card boosts drop chance (banked during the fight).
+	if bonus_drop_mult > 1.0:
+		drop_chance = int(drop_chance * bonus_drop_mult)
 
 	# Roll for drops - server will handle adding to inventory
 	return drop_tables.roll_drops(drop_table_id, drop_chance, monster_level)

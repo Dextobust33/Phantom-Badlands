@@ -1292,7 +1292,7 @@ const COMPANION_CARD_DATA = {
 	# --- T1 ---
 	"Goblin":       {"name": "Cheap Shot",         "kind": "blind",     "desc": "A dirty strike that flings grit in the enemy's eyes — they're likely to miss their next attack."},
 	"Giant Rat":    {"name": "Filth Bite",         "kind": "poison",    "desc": "A festering bite that poisons the enemy, dealing damage every turn."},
-	"Kobold":       {"name": "Pack Frenzy",        "kind": "execute",   "desc": "An opportunist's strike — deals extra damage to wounded enemies."},
+	"Kobold":       {"name": "Kobold's Stash",     "kind": "plunder",   "desc": "The kobold digs up its stash — a strike that boosts your item-drop chance if you win this fight."},
 	"Skeleton":     {"name": "Bone Wall",          "kind": "guard",     "desc": "Rattling bones brace you — take reduced damage for a few rounds."},
 	"Wolf":         {"name": "Hunter's Instinct",  "kind": "focus",     "desc": "Sharpens your aim — greatly increased crit chance for a few rounds."},
 	# --- T2 ---
@@ -1303,8 +1303,8 @@ const COMPANION_CARD_DATA = {
 	"Giant Spider": {"name": "Venom Spray",        "kind": "poison",    "desc": "Coats the enemy in fast-acting venom, dealing damage every turn."},
 	"Wight":        {"name": "Life Leech",         "kind": "lifesteal", "desc": "Drains the enemy's vitality, healing you for part of the damage dealt."},
 	"Siren":        {"name": "Alluring Song",      "kind": "charm",     "desc": "A bewitching song that may charm the enemy into inaction."},
-	"Kelpie":       {"name": "Undertow Slam",      "kind": "strike",    "desc": "A crushing tidal blow."},
-	"Mimic":        {"name": "Hoarder's Gift",     "kind": "fortune",   "desc": "The mimic coughs up treasure — a strike that also grants bonus loot if you win this fight."},
+	"Kelpie":       {"name": "Kelpie's Bargain",   "kind": "tribute",   "desc": "A drowning bargain — a strike that grants bonus Valor if you win this fight."},
+	"Mimic":        {"name": "Hoarder's Gift",     "kind": "plunder",   "desc": "The mimic coughs up treasure — a strike that boosts your item-drop chance if you win this fight."},
 	# --- T3 ---
 	"Ogre":         {"name": "Ogre Smash",         "kind": "strike",    "desc": "A colossal overhead smash."},
 	"Troll":        {"name": "Troll Regeneration", "kind": "heal",      "desc": "Regenerative troll blood knits your wounds, healing you."},
@@ -1333,7 +1333,7 @@ const COMPANION_CARD_DATA = {
 	# --- T6 ---
 	"Elemental":    {"name": "Elemental Surge",    "kind": "rage",      "desc": "Channels raw elements — increased damage for a few rounds."},
 	"Iron Golem":   {"name": "Iron Bulwark",       "kind": "shield",    "desc": "An iron ward that absorbs a burst of incoming damage."},
-	"Sphinx":       {"name": "Sphinx's Boon",      "kind": "fortune",   "desc": "Ancient favor — a strike that also grants bonus loot if you win this fight."},
+	"Sphinx":       {"name": "Sphinx's Toll",      "kind": "tribute",   "desc": "The sphinx demands its due — a strike that grants bonus Valor if you win this fight."},
 	"Hydra":        {"name": "Hydra Onslaught",    "kind": "bleed",     "desc": "Many heads leave many bleeding wounds."},
 	"Phoenix":      {"name": "Rebirth Flame",      "kind": "heal",      "desc": "Phoenix fire mends your wounds, healing you greatly."},
 	"Nazgul":       {"name": "Black Breath",       "kind": "blind",     "desc": "A dread aura — the enemy falters and is likely to miss."},
@@ -1360,7 +1360,8 @@ const COMPANION_CARD_KIND_CATEGORY = {
 	"strike": "offense", "execute": "offense", "reckless": "offense",
 	"bleed": "offense", "poison": "offense", "weaken": "offense",
 	"blind": "offense", "stun": "offense", "charm": "offense",
-	"lifesteal": "offense", "timestop": "offense", "fortune": "offense",
+	"lifesteal": "offense", "timestop": "offense",
+	"tribute": "offense", "plunder": "offense",
 	"rage": "buff", "guard": "buff", "focus": "buff",
 	"shield": "buff", "heal": "buff", "channel": "buff",
 }
