@@ -2653,7 +2653,7 @@ static func companion_card_art_bbcode(card_name: String) -> String:
 		return ""
 	return "[center]" + art + "[/center]"
 
-const CARD_ART_BOX := Vector2(128, 92)  # fixed art box inside the 150x190 card
+const CARD_ART_BOX := Vector2(134, 104)  # fixed art box inside the 150x190 card
 
 func _make_card_art_label() -> Control:
 	"""v0.9.686 — a fixed-size CLIP HOLDER (CARD_ART_BOX) containing a full-size
@@ -2692,6 +2692,20 @@ func _apply_card_art(holder: Control, art_bbcode: String) -> void:
 	var rtl: RichTextLabel = holder.get_node_or_null("ArtRTL")
 	if rtl == null:
 		return
+	# Trim blank top/bottom rows so the creature fills more of the frame (bigger =
+	# crisper after downscale). Column trim is skipped (BBCode spans columns).
+	var raw_lines := art_bbcode.split("\n")
+	var lo: int = 0
+	var hi: int = raw_lines.size() - 1
+	while lo <= hi and _strip_bbcode(raw_lines[lo]).strip_edges() == "":
+		lo += 1
+	while hi >= lo and _strip_bbcode(raw_lines[hi]).strip_edges() == "":
+		hi -= 1
+	var kept: Array = []
+	for i in range(lo, hi + 1):
+		kept.append(raw_lines[i])
+	if not kept.is_empty():
+		art_bbcode = "\n".join(kept)
 	var plain := _strip_bbcode(art_bbcode)
 	var lines := plain.split("\n")
 	var rows: int = max(1, lines.size())
@@ -2724,6 +2738,21 @@ func _apply_card_art(holder: Control, art_bbcode: String) -> void:
 	rtl.pivot_offset = Vector2.ZERO
 	rtl.scale = Vector2(s, s)
 	rtl.position = (CARD_ART_BOX - nat * s) * 0.5
+
+func _fit_label_font(label: Label, text: String, avail_w: float, max_fs: int = 15, min_fs: int = 9) -> void:
+	"""v0.9.687 — set the card-name text + shrink its font (down to min_fs) until
+	it fits avail_w, so long names like 'Kobold's Stash' don't clip on the right."""
+	if label == null:
+		return
+	label.text = text
+	var font := label.get_theme_font("font")
+	var fs := max_fs
+	if font != null and text != "":
+		while fs > min_fs:
+			if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x <= avail_w:
+				break
+			fs -= 1
+	label.add_theme_font_size_override("font_size", fs)
 
 func _build_hand_cell(index: int) -> PanelContainer:
 	"""v0.9.675 — a real PORTRAIT card: category-coloured top banner (hotkey +
@@ -2953,8 +2982,7 @@ func build_milestone_card(branch: String, ability_label: String, category_color_
 	bsb.content_margin_bottom = 4
 	banner.add_theme_stylebox_override("panel", bsb)
 	var name_lbl := Label.new()
-	name_lbl.text = ability_label
-	name_lbl.add_theme_font_size_override("font_size", 15)
+	_fit_label_font(name_lbl, ability_label, 124)
 	name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
 	name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	name_lbl.add_theme_constant_override("outline_size", 3)
@@ -3042,8 +3070,7 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	bsb.content_margin_bottom = 4
 	banner.add_theme_stylebox_override("panel", bsb)
 	var name_lbl := Label.new()
-	name_lbl.text = display
-	name_lbl.add_theme_font_size_override("font_size", 15)
+	_fit_label_font(name_lbl, display, 132)
 	name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
 	name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	name_lbl.add_theme_constant_override("outline_size", 3)
@@ -3299,7 +3326,7 @@ func _refresh_hand() -> void:
 			fill_rect.color = cat_col
 
 		if name_lbl:
-			name_lbl.text = str(info.get("display", card_name))
+			_fit_label_font(name_lbl, str(info.get("display", card_name)), 98)
 			name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
 
 		# Hover tooltip — full ability detail (mirrors AbilityPanel).
