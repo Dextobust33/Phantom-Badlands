@@ -27564,9 +27564,11 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.692 — Fix card damage values reading 0 + companion card damage.
-	display_game("[color=#00FF00]v0.9.692[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#1EFF00]◆ Fixed card damage values.[/color] The damage/heal estimate on cards was reading [b]0[/b] (it looked at the wrong stat). It now shows the correct value, and [b]companion cards[/b] (like Kobold's Stash) show their damage too.")
+	# v0.9.693 — Card layout fix + closer numbers + companion-card deck fixes.
+	display_game("[color=#00FF00]v0.9.693[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Card layout.[/color] Rank pips moved to their own line so big damage/heal + cost numbers no longer stretch cards wider than their neighbours.")
+	display_game("  [color=#1EFF00]◆ Closer damage numbers.[/color] Card damage/heal estimates now fold in your [b]rank & tier[/b] multiplier, so they read much closer to your real hit.")
+	display_game("  [color=#1EFF00]◆ Companion card deck fixes.[/color] Fixed a permanent companion card getting stuck [b]OUT[/b] (couldn't be put back) and still showing up in combat. Loaner companion cards now show a [i]Loaner[/i] note instead of thin/restore buttons.")
 	display_game("")
 
 	# v0.9.691 — Damage/heal on cards + tier-scaled companion permanence.
