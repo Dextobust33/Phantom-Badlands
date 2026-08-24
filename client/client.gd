@@ -575,6 +575,11 @@ static var _map_companion_font: FontFile = null
 var _map_tooltip: PanelContainer = null
 var _map_tooltip_label: RichTextLabel = null
 var _map_tooltip_anchor: Control = null   # Hide tooltip if anchor goes invisible
+# v0.9.673 — generation guard for _show_map_tooltip. Each hover bumps it; a
+# coroutine that resumes after an await (portrait compose / positioning frame)
+# aborts if a newer hover (or an unhover) has superseded it. Fixes the async
+# race where a pending player-portrait compose landed on a companion tooltip.
+var _map_tooltip_gen: int = 0
 @onready var input_field = $RootContainer/BottomStrip/ChatPanel/InputRow/InputField
 @onready var send_button = $RootContainer/BottomStrip/ChatPanel/InputRow/SendButton
 @onready var action_bar = $RootContainer/BottomStrip/CenterPanel/ActionBar
@@ -4418,7 +4423,7 @@ func _process(delta):
 
 	# Movement and hunt (only when playing and not in combat, flock, pending continue, inventory, merchant, settings, abilities, monster select, dungeon, more, companions, eggs, crafting, gathering, storage, market, or popups).
 	# Build mode is intentionally NOT in this exclusion list — players can reposition with their configured movement keys while picking a structure or aiming a placement. WASD remains the placement direction in build_direction_mode (consumed by _input()), so the movement poll below skips W/A/S/D when those slots are also placement keys, preventing a single key press from both moving and placing.
-	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode and not scratch_off_mode and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
+	if connected and has_character and not input_field.has_focus() and not in_combat and not flock_pending and not pending_continue and not inventory_mode and not at_merchant and not settings_mode and not monster_select_mode and not ability_mode and not dungeon_mode and not more_mode and not companions_mode and not eggs_mode and not any_popup_open and not pending_blacksmith and not pending_healer and not pending_rescue_npc and not crafting_mode and not gathering_mode and not harvest_mode and not storage_mode and not market_mode and not scratch_off_mode and not _combat_loot_reveal_active() and pending_dungeon_warning.is_empty() and pending_hotzone_warning.is_empty():
 		if game_state == GameState.PLAYING:
 			var current_time = Time.get_ticks_msec() / 1000.0
 			# Slice 6g — biome move-cooldown modifier. Swamp/Tundra slow the
@@ -27228,8 +27233,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.674 — Hover + loot-movement fixes.
+	display_game("[color=#00FF00]v0.9.674[/color] [color=#808080](Current)[/color]")
+	display_game("  • Fixed being able to [b]move while the loot reveal was still open[/b] (the hunt key slipped through) — movement is now locked until you finish the loot card.")
+	display_game("  • Fixed the map [b]hover tooltip[/b] sometimes showing a player's sprite on a companion when moving the cursor between them quickly.")
+	display_game("")
+
 	# v0.9.673 — Military sprite sets.
-	display_game("[color=#00FF00]v0.9.673[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.673[/color]")
 	display_game("  [color=#1EFF00]◆ Even more character looks.[/color] Added [b]24 armored soldier & knight sprites[/b] (TimeFantasy military sets) to the martial classes, so new Fighters, Barbarians, Paladins, Thieves, Rangers and Ninjas roll from an even bigger pool — [b]80 total looks[/b] now. Existing characters keep their current sprite.")
 	display_game("")
 
@@ -34515,6 +34526,8 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 		return
 	if not is_instance_valid(_map_tooltip_label):
 		return
+	_map_tooltip_gen += 1
+	var my_gen := _map_tooltip_gen
 	_map_tooltip_anchor = anchor
 	_map_tooltip.visible = true
 	# v0.9.672 — splice the composited portrait in at PORTRAIT_TOKEN so hover
@@ -34536,7 +34549,9 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 			str(portrait_data.get("battler_id", "")),
 			str(portrait_data.get("appearance_color", "")),
 			_hp_eq)
-		if not (is_instance_valid(_map_tooltip) and _map_tooltip_anchor == anchor):
+		# A newer hover / unhover superseded this one while composing — abort so we
+		# don't paint a stale player portrait onto whatever's hovered now.
+		if my_gen != _map_tooltip_gen or not is_instance_valid(_map_tooltip):
 			return
 		var _hp_parts := content_bbcode.split(PORTRAIT_TOKEN, true, 1)
 		_map_tooltip_label.clear()
@@ -34553,6 +34568,8 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 	# Position next to the anchor — prefer to the right; fall back to left
 	# if it would overflow the viewport. Defer one frame so size is valid.
 	await get_tree().process_frame
+	if my_gen != _map_tooltip_gen:
+		return
 	if not is_instance_valid(_map_tooltip) or not _map_tooltip.visible:
 		return
 	if not is_instance_valid(anchor):
@@ -34571,6 +34588,7 @@ func _show_map_tooltip(content_bbcode: String, anchor: Control, portrait_data: D
 
 
 func _hide_map_tooltip() -> void:
+	_map_tooltip_gen += 1  # abort any in-flight compose/positioning coroutine
 	if _map_tooltip and is_instance_valid(_map_tooltip):
 		_map_tooltip.visible = false
 	_map_tooltip_anchor = null
