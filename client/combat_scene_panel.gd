@@ -2909,6 +2909,29 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	var info_hb := HBoxContainer.new()
 	info_hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_row.add_child(info_hb)
+	# v0.9.691 — damage/heal value pip (leftmost), styled like the cost pip.
+	var value_pip := PanelContainer.new()
+	value_pip.name = "ValuePip"
+	value_pip.visible = false
+	value_pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var vsb := StyleBoxFlat.new()
+	vsb.bg_color = Color(0.15, 0.15, 0.18, 0.95)
+	vsb.set_corner_radius_all(9)
+	vsb.content_margin_left = 8
+	vsb.content_margin_right = 8
+	vsb.content_margin_top = 1
+	vsb.content_margin_bottom = 1
+	value_pip.add_theme_stylebox_override("panel", vsb)
+	var value_label := Label.new()
+	value_label.name = "Value"
+	value_label.text = ""
+	value_label.add_theme_font_size_override("font_size", 15)
+	value_label.add_theme_color_override("font_color", Color("#FF7A5A"))
+	value_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	value_label.add_theme_constant_override("outline_size", 2)
+	value_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	value_pip.add_child(value_label)
+	info_hb.add_child(value_pip)
 	var pips_label := Label.new()
 	pips_label.name = "Pips"
 	pips_label.text = ""
@@ -3106,7 +3129,7 @@ func _on_hand_cell_mouse_exited(_cell) -> void:
 		client_ref.notify_card_desc_card_exit()
 
 
-func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String, art_bbcode: String = "") -> Control:
+func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String, art_bbcode: String = "", value_text: String = "", value_color: String = "#FF7A5A") -> Control:
 	"""v0.9.678 (slice 3) — a combat-styled card for the DECK SCREEN. Returns a
 	Control holding a Front (banner + icon + cost + copy badge) and a Back (long
 	description); the Back starts hidden. Caller wires a click to flip (toggle
@@ -3193,6 +3216,14 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	cost_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_hb.add_child(cost_lbl)
+	# v0.9.691 — damage/heal value on the deck card front.
+	if value_text != "":
+		var value_lbl := Label.new()
+		value_lbl.text = value_text
+		value_lbl.add_theme_font_size_override("font_size", 12)
+		value_lbl.add_theme_color_override("font_color", Color(value_color))
+		value_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		info_hb.add_child(value_lbl)
 	var copy_lbl := Label.new()
 	copy_lbl.text = ("×%d/3" % copies) if copies > 0 else "OUT"
 	copy_lbl.add_theme_font_size_override("font_size", 12)
@@ -3306,6 +3337,8 @@ func _refresh_hand() -> void:
 		var pips_lbl: Label = cell.find_child("Pips", true, false)
 		var cost_lbl: Label = cell.find_child("Cost", true, false)
 		var cost_pip: PanelContainer = cell.find_child("CostPip", true, false)
+		var value_pip: PanelContainer = cell.find_child("ValuePip", true, false)
+		var value_lbl: Label = cell.find_child("Value", true, false)
 		var effect_lbl: Label = cell.find_child("Effect", true, false)
 		var banner: PanelContainer = cell.find_child("Banner", true, false)
 		var fill_rect: ColorRect = cell.find_child("Fill", true, false)
@@ -3333,6 +3366,8 @@ func _refresh_hand() -> void:
 				cost_lbl.text = ""
 			if cost_pip:
 				cost_pip.visible = false
+			if value_pip:
+				value_pip.visible = false
 			if pips_lbl:
 				pips_lbl.text = ""
 			if effect_lbl:
@@ -3427,6 +3462,21 @@ func _refresh_hand() -> void:
 				csb.set_border_width_all(2)
 		if cost_lbl:
 			cost_lbl.text = "%d" % max(0, planned_int)
+
+		# v0.9.691 — damage/heal value pip (base estimate from your stats).
+		if value_pip and value_lbl and client_ref and client_ref.has_method("_ability_primary_value"):
+			var pv: Dictionary = client_ref._ability_primary_value(card_name)
+			var pv_kind := str(pv.get("kind", ""))
+			if pv_kind == "damage":
+				value_lbl.text = "⚔ %d" % int(pv.get("value", 0))
+				value_lbl.add_theme_color_override("font_color", Color("#FF7A5A"))
+				value_pip.visible = true
+			elif pv_kind == "heal":
+				value_lbl.text = "♥ %d" % int(pv.get("value", 0))
+				value_lbl.add_theme_color_override("font_color", Color("#7AE07A"))
+				value_pip.visible = true
+			else:
+				value_pip.visible = false
 
 		# Rank pips (0-6 filled dots), coloured by rank.
 		if pips_lbl:

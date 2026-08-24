@@ -666,7 +666,19 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 	var back: String = client_ref._ability_desc_bbcode(ab_name) if (client_ref and client_ref.has_method("_ability_desc_bbcode")) else _tooltip_for(ab_name)
 	# v0.9.683 — companion cards carry the companion's monster art.
 	var art_bb: String = csp.companion_card_art_bbcode(ab_name) if csp.has_method("companion_card_art_bbcode") else ""
-	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back, art_bb)
+	# v0.9.691 — damage/heal value on the card front.
+	var val_text := ""
+	var val_color := "#FF7A5A"
+	if client_ref and client_ref.has_method("_ability_primary_value"):
+		var pv: Dictionary = client_ref._ability_primary_value(ab_name)
+		var pv_kind := str(pv.get("kind", ""))
+		if pv_kind == "damage":
+			val_text = "⚔ %d" % int(pv.get("value", 0))
+			val_color = "#FF7A5A"
+		elif pv_kind == "heal":
+			val_text = "♥ %d" % int(pv.get("value", 0))
+			val_color = "#7AE07A"
+	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back, art_bb, val_text, val_color)
 	var entry := VBoxContainer.new()
 	entry.add_theme_constant_override("separation", 4)
 	if card != null:

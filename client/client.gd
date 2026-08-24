@@ -18283,12 +18283,18 @@ func _get_ability_description_text(ability_name: String) -> String:
 	in combat_manager.gd to keep descriptions truthful (Audit #1 Slice 6a
 	follow-up). Trickster ability strings still need verification — flagged
 	in project_audit_01_combat.md for the balance pass."""
-	# v0.9.681 — companion cards: per-type description from the card table.
+	# v0.9.681/691 — companion cards: per-type description + tier-scaled permanence
+	# progress (higher-tier companions take more casts to make permanent).
 	if ability_name.begins_with("companion_card_"):
-		var _cd = preload("res://shared/drop_tables.gd").get_companion_card_data_by_id(ability_name)
-		if not _cd.is_empty():
-			return String(_cd.get("desc", "")) + " Grows stronger as you play it; becomes a permanent deck card once mastered."
-		return "A companion's gift — grows stronger as you play it."
+		var _dt = preload("res://shared/drop_tables.gd")
+		var _cd = _dt.get_companion_card_data_by_id(ability_name)
+		var _base = String(_cd.get("desc", "A companion's gift.")) if not _cd.is_empty() else "A companion's gift."
+		if int(character_data.get("combat_deck_collection", {}).get(ability_name, 0)) >= 1:
+			return _base + " [color=#7AE07A]Permanent card (earned).[/color]"
+		var _mt = ability_name.trim_prefix("companion_card_").capitalize()
+		var _need = _dt.companion_card_permanence_uses(_mt)
+		var _uses = int(character_data.get("ability_uses", {}).get(ability_name, 0))
+		return _base + " Becomes a [b]permanent[/b] deck card after [b]%d[/b] casts (cast %d so far)." % [_need, _uses]
 	match ability_name:
 		"magic_bolt": return "Deal damage equal to mana spent (scales with INT). Variable mana cost."
 		"shield": return "Alias for Forcefield — flat damage absorption shield."
@@ -18358,6 +18364,21 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 			return "Heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(int(30 + sqrt(float(s_con)) * 10), "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
 	# Non-Warrior (slice): plain description as bbcode for now.
 	return _get_ability_description_text(ability_name)
+
+func _ability_primary_value(ability_name: String) -> Dictionary:
+	"""v0.9.691 (Warrior slice) — the card's headline damage or heal estimate from
+	your current stats, for the on-card pip. {kind: 'damage'|'heal'|'', value}.
+	Base estimate — actual combat value also scales with tier/mastery/variance."""
+	var s_str := int(character_data.get("strength", 0))
+	var s_con := int(character_data.get("constitution", 0))
+	var atk := int(character_data.get("total_attack", 0))
+	match ability_name:
+		"power_strike": return {"kind": "damage", "value": int(2.0 * atk)}
+		"shield_bash": return {"kind": "damage", "value": int(1.5 * atk)}
+		"cleave": return {"kind": "damage", "value": int(2.5 * atk)}
+		"devastate": return {"kind": "damage", "value": int(5.0 * atk)}
+		"rally": return {"kind": "heal", "value": int(30 + sqrt(float(s_con)) * 10)}
+	return {"kind": "", "value": 0}
 
 # v0.9.690 — battle sticky card-description hover box. Shows on combat hand-card
 # hover; stays while the cursor is over the CARD or the BOX so you can move into

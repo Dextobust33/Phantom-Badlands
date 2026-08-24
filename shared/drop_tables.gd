@@ -1392,6 +1392,33 @@ static func companion_card_category(card_id: String) -> String:
 	var kind = String(data.get("kind", "strike"))
 	return String(COMPANION_CARD_KIND_CATEGORY.get(kind, "offense"))
 
+# Companion TYPE → tier (1-9), mirroring the COMPANION_VARIANT_TRAIT groupings.
+const COMPANION_TYPE_TIER = {
+	"Goblin": 1, "Giant Rat": 1, "Kobold": 1, "Skeleton": 1, "Wolf": 1,
+	"Orc": 2, "Hobgoblin": 2, "Gnoll": 2, "Zombie": 2, "Giant Spider": 2,
+	"Wight": 2, "Siren": 2, "Kelpie": 2, "Mimic": 2,
+	"Ogre": 3, "Troll": 3, "Wraith": 3, "Wyvern": 3, "Minotaur": 3,
+	"Gargoyle": 3, "Harpy": 3, "Shrieker": 3,
+	"Giant": 4, "Dragon Wyrmling": 4, "Demon": 4, "Vampire": 4, "Gryphon": 4,
+	"Chimaera": 4, "Succubus": 4,
+	"Ancient Dragon": 5, "Demon Lord": 5, "Lich": 5, "Titan": 5, "Balrog": 5,
+	"Cerberus": 5, "Jabberwock": 5,
+	"Elemental": 6, "Iron Golem": 6, "Sphinx": 6, "Hydra": 6, "Phoenix": 6, "Nazgul": 6,
+	"Void Walker": 7, "World Serpent": 7, "Elder Lich": 7, "Primordial Dragon": 7,
+	"Cosmic Horror": 8, "Time Weaver": 8, "Death Incarnate": 8,
+	"Avatar of Chaos": 9, "The Nameless One": 9, "God Slayer": 9, "Entropy": 9,
+}
+
+static func companion_type_tier(monster_type: String) -> int:
+	return int(COMPANION_TYPE_TIER.get(monster_type, 1))
+
+static func companion_card_permanence_uses(monster_type: String) -> int:
+	"""v0.9.691 — casts needed for a companion card to become PERMANENT, scaled by
+	tier: higher-tier companions have stronger cards that take longer to earn.
+	T1 ≈ 40 (a balanced starter grind) → T9 ≈ 216 (a real pursuit)."""
+	var tier := companion_type_tier(monster_type)
+	return 40 + (tier - 1) * 22
+
 static func get_variant_trait_for_companion(monster_type: String) -> String:
 	"""Returns the trait category id (e.g., 'crit') for a companion type, or ''
 	if the companion isn't mapped. Defensive — unmapped companions just don't

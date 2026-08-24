@@ -3042,6 +3042,18 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 			combat_uses_so_far[ability_name] = current_combat_uses + 1
 			combat["mastery_uses_this_fight"] = combat_uses_so_far
 			var rank_result = combat.character.record_mastery_use(ability_name)
+			# v0.9.691 — tier-scaled companion card permanence: a loaner card
+			# becomes PERMANENT once cast enough (T1 ~40 → T9 ~216), so higher-tier
+			# companions grant stronger cards that take longer to earn. Checked
+			# every use (thresholds don't align with rank-up milestones).
+			if ability_name.begins_with("companion_card_") and int(combat.character.combat_deck_collection.get(ability_name, 0)) <= 0:
+				var _cmt: String = Character.companion_card_type_from_id(ability_name)
+				var _need: int = DropTablesScript.companion_card_permanence_uses(_cmt)
+				if int(combat.character.ability_uses.get(ability_name, 0)) >= _need:
+					combat.character.combat_deck_collection[ability_name] = 1
+					if not result.has("messages"):
+						result["messages"] = []
+					result.messages.append("[color=#FF99FF]★ %s is now a PERMANENT card in your collection![/color]" % DropTablesScript.companion_card_display_name(ability_name))
 			if rank_result.get("ranked_up", false):
 				var new_rank = int(rank_result.get("new_rank", 0))
 				var rank_label = combat.character.MASTERY_RANK_NAMES[new_rank] if new_rank < combat.character.MASTERY_RANK_NAMES.size() else "Mythic"
@@ -3070,14 +3082,6 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				# Sanctuary headstart purchases).
 				result["mastery_rank_changed"] = {"ability": ability_name, "new_rank": new_rank}
 				result["rank_up_choice_pending"] = queued_choice
-				# v0.9.680 — companion card permanence: a loaner card used enough
-				# (rank 2 = 50 uses) is EARNED permanently and joins your
-				# collection, so it stays in your deck even after the companion
-				# is unequipped.
-				if ability_name.begins_with("companion_card_") and new_rank >= 2:
-					if int(combat.character.combat_deck_collection.get(ability_name, 0)) <= 0:
-						combat.character.combat_deck_collection[ability_name] = 1
-						result.messages.append("[color=#FF99FF]★ %s is now a PERMANENT card in your collection![/color]" % ("%s's Gift" % Character.companion_card_type_from_id(ability_name)))
 		# Audit #1 Slice 6f (v0.9.549) — Variant Imprint riders. Apply after
 		# the ability resolves, before the card is consumed, so monster.current_hp
 		# already reflects the base damage. damage_dealt = monster_hp_before -
