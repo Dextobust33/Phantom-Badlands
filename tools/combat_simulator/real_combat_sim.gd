@@ -40,7 +40,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_matrix()
+	run_matrix()  # swap to run_trickster_matrix() to validate the Trickster Combo engine
 	quit()
 
 func run_matrix():
@@ -88,9 +88,52 @@ func run_hp_sweep():
 			print(row)
 	print("=================================================================================================\n")
 
-func make_char(level: int, gear: String):
+func run_trickster_matrix():
+	# v0.9.697 — validate the Trickster Combo engine (build via setups → Gambit finisher).
+	var levels := [10, 30, 50, 80]
+	var gears := ["under", "average", "bis"]
+	var enemies := ["plain", "empowered", "elite", "boss"]
+	print("\n===== TRICKSTER COMBO SIM (%d fights/cell, Thief + companion) =====" % FIGHTS_PER_CELL)
+	print("%-6s %-9s %-10s %8s %8s" % ["Lvl", "Gear", "Enemy", "WinRate", "AvgTurns"])
+	for lvl in levels:
+		for gear in gears:
+			for et in enemies:
+				var wins := 0
+				var total_turns := 0
+				for i in range(FIGHTS_PER_CELL):
+					var r = run_fight(lvl, gear, et, 1.0, 1.0, 1.0, "Thief")
+					if r.win:
+						wins += 1
+					total_turns += r.turns
+				print("%-6d %-9s %-10s %7.0f%% %8.1f" % [lvl, gear, et, 100.0*float(wins)/FIGHTS_PER_CELL, float(total_turns)/FIGHTS_PER_CELL])
+	print("=====================================================================\n")
+
+func _player_act_trickster(combat: Dictionary, ch) -> void:
+	var hand: Array = combat.get("combat_hand", [])
+	var combo: int = int(combat.get("combo", 0))
+	# Finisher when the chain is built high (near-guaranteed + big).
+	if combo >= 4 and "gambit" in hand:
+		if combat_mgr.process_ability_command(0, "gambit", "").get("success", false):
+			return
+	# Build Combo with a damage setup (these also +1 Combo).
+	for ab in ["ambush", "exploit"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	# Filler builders (debuffs still add Combo).
+	for ab in ["sabotage", "distract"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	# Low Combo but only Gambit in hand → gamble (spends what little we have).
+	if "gambit" in hand:
+		if combat_mgr.process_ability_command(0, "gambit", "").get("success", false):
+			return
+	combat_mgr.process_attack(combat)
+
+func make_char(level: int, gear: String, klass: String = "Fighter"):
 	var ch = CharacterScript.new()
-	ch.initialize("SimChar", "Fighter", "Human")
+	ch.initialize("SimChar", klass, "Human")
 	for i in range(level - 1):
 		ch.level_up()
 	# Gear tiers: under = common/uncommon a bit below level; average = rare at level;
@@ -167,11 +210,11 @@ func _player_act(combat: Dictionary, ch) -> void:
 	# Out of resource / no castable card → basic attack (also regens + builds Momentum? no).
 	combat_mgr.process_attack(combat)
 
-func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0) -> Dictionary:
+func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter") -> Dictionary:
 	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile
 	# (e.g. Momentum gating the burst → lower avg player DPS) by giving back a
 	# fraction of the damage dealt/taken each turn — the reverse-solve knobs.
-	var ch = make_char(level, gear)
+	var ch = make_char(level, gear, klass)
 	var monster = make_monster(level, et, extra_hp_mult)
 	var max_hp: int = ch.get_total_max_hp()
 	combat_mgr.start_combat(0, ch, monster)
@@ -185,7 +228,10 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		turns += 1
 		if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 			var mhp0: int = int(monster.get("current_hp", 0))
-			_player_act(combat, ch)
+			if klass == "Thief":
+				_player_act_trickster(combat, ch)
+			else:
+				_player_act(combat, ch)
 			if player_dmg_scale < 1.0:
 				var dealt: int = mhp0 - int(monster.get("current_hp", 0))
 				if dealt > 0:

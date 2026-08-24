@@ -32272,16 +32272,22 @@ func _legacy_view_step(delta: int) -> void:
 
 
 func _sync_momentum_meter(state: Dictionary) -> void:
-	"""v0.9.696 — push Warrior Momentum from a combat_state into the scene panel.
-	Server serialises momentum / momentum_max / is_warrior_momentum in
-	get_combat_display(); the panel shows a pip meter and gates Devastate.
-	No-ops (hides the meter) for non-Warriors / servers that don't send it."""
+	"""v0.9.696/697 — push the class engine meter from a combat_state into the scene
+	panel: Warrior Momentum or Trickster Combo (a char is only ever one). Server
+	serialises momentum/momentum_max/is_warrior_momentum + combo/combo_max/
+	is_trickster_combo in get_combat_display(). No-ops (hides the meter) for other
+	classes / servers that don't send the fields."""
 	if combat_scene_panel == null or not combat_scene_panel.has_method("update_momentum"):
 		return
 	var is_warrior := bool(state.get("is_warrior_momentum", false))
-	var cur := int(state.get("momentum", 0))
-	var mx := int(state.get("momentum_max", 5))
-	combat_scene_panel.update_momentum(cur, mx, is_warrior)
+	var is_trickster := bool(state.get("is_trickster_combo", false))
+	if is_warrior:
+		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true)
+	elif is_trickster and combat_scene_panel.has_method("update_combo"):
+		combat_scene_panel.update_combo(int(state.get("combo", 0)), int(state.get("combo_max", 5)), true)
+	else:
+		# Neither engine active → hide the meter.
+		combat_scene_panel.update_momentum(0, int(state.get("momentum_max", 5)), false)
 
 
 func _populate_combat_scene_panel(combat_state: Dictionary) -> void:

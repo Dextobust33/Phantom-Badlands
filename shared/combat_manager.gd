@@ -62,6 +62,11 @@ static func _monster_matches_keywords(monster: Dictionary, keywords: Array) -> b
 # outsmart) bypass the hand entirely.
 const COMBAT_HAND_SIZE: int = 3
 const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via cards, spent by Devastate)
+# v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
+# (the finisher) spends them all, scaling BOTH its success chance and its damage.
+const COMBO_MAX: int = 5
+const COMBO_SUCCESS_PER: int = 9   # +% Gambit success per Combo Point (5 ≈ guaranteed)
+const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point (4.5 → 7.0)
 # Stripped from the deck. v0.9.423 — Cloak + Teleport are out-of-combat
 # utilities only (slip past overworld monsters / fast-travel). All-or-Nothing
 # was removed entirely.
@@ -1035,6 +1040,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"monster": monster,
 		"round": 1,
 		"momentum": 0,  # v0.9.696 — Warrior Momentum: builds via Warrior cards, spent by Devastate
+		"combo": 0,  # v0.9.697 — Trickster Combo: builds via Trickster abilities, spent by Gambit
 		"player_can_act": not monster_goes_first,  # Monster may act first!
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
@@ -4144,6 +4150,15 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 		if not character.use_energy(energy_cost):
 			return {"success": false, "messages": ["[color=#FF4444]Not enough energy! (Need %d)[/color]" % energy_cost], "combat_ended": false, "skip_monster_turn": true}
 
+	# v0.9.697 — Trickster Combo: every non-finisher ability adds a Combo Point.
+	# Gambit (the finisher) SPENDS the chain instead (handled in its case below),
+	# scaling its success chance + damage with the Combo built. Appended before
+	# the match so it reaches all of the early-returning ability paths.
+	if ability_name != "gambit":
+		var _newcombo: int = min(COMBO_MAX, int(combat.get("combo", 0)) + 1)
+		combat["combo"] = _newcombo
+		messages.append("[color=#B06BE0]✦ Combo %d/%d[/color]" % [_newcombo, COMBO_MAX])
+
 	match ability_name:
 		"analyze":
 			messages.append("[color=#00FF00]ANALYZE![/color]")
@@ -4457,20 +4472,29 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			is_buff_ability = true
 
 		"gambit":
-			# High-risk, high-reward ability - big damage with WITS scaling, bonus loot on kill
+			# v0.9.697 FINISHER — Trickster Combo turns the gamble into a sure thing.
+			# Combo raises BOTH the success chance (+9%/pt → ~guaranteed at 5) and the
+			# damage multiplier (4.5 → 7.0), then the whole chain is SPENT (win or lose).
+			# At 0 Combo it's the classic coin-flip that can backfire.
+			var _combo: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
 			var wits = character.get_effective_stat("wits")
 			var success_chance = 55 + int(wits / 4)  # 55% base + 0.25% per WITS
-			success_chance = min(80, success_chance)  # Cap at 80%
+			success_chance = min(80, success_chance)  # Cap at 80% (pre-Combo)
+			success_chance = min(100, success_chance + _combo * COMBO_SUCCESS_PER)
+			combat["combo"] = 0  # the finisher spends the whole chain, win or lose
+			if _combo > 0:
+				messages.append("[color=#B06BE0]✦ Combo x%d spent! (%d%% success, ×%.1f dmg)[/color]" % [_combo, success_chance, 4.5 + _combo * COMBO_DMG_PER])
 
 			if randf() * 100 < success_chance:
-				# Success - deal big damage with WITS scaling (4.5x multiplier).
+				# Success - deal big damage with WITS scaling; Combo boosts the multiplier.
 				# Variable cost (v0.9.261): damage scales by spend. Success chance
 				# stays constant — partial gambit is "same odds, smaller stakes".
 				var wits_mult = 1.0 + (sqrt(float(wits)) / 10.0)  # Same scaling as Ambush
 				var total_attack = character.get_total_attack() + character.get_buff_value("strength")
 				var damage_buff = character.get_buff_value("damage")
 				var damage_multiplier = 1.0 + (damage_buff / 100.0)
-				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult * variable_fraction)
+				var combo_dmg_mult: float = 4.5 + float(_combo) * COMBO_DMG_PER
+				var base_dmg = int(total_attack * combo_dmg_mult * damage_multiplier * wits_mult * variable_fraction)
 				# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 				var gambit_skill_bonus = character.get_skill_damage_bonus("gambit")
 				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg, combat)
@@ -7370,6 +7394,9 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"momentum": int(combat.get("momentum", 0)),  # v0.9.696 Warrior Momentum
 		"momentum_max": MOMENTUM_MAX,
 		"is_warrior_momentum": character.get_class_path() == "warrior",
+		"combo": int(combat.get("combo", 0)),  # v0.9.697 Trickster Combo
+		"combo_max": COMBO_MAX,
+		"is_trickster_combo": character.get_class_path() == "trickster",
 		"player_name": character.name,
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),

@@ -73,7 +73,36 @@ func _run():
 	await process_frame
 	_shot("res://claude_screenshots/momentum_ui_nonwarrior.png")
 
-	print("Momentum UI screenshots written to claude_screenshots/")
+	# ---- Trickster Combo variants (same meter node, purple ✦, Gambit risk note) ----
+	var thand := ["sabotage", "ambush", "gambit"]
+	if panel.has_method("update_hand"):
+		panel.update_hand(thand, 8, 4)
+
+	# Combo mid (3/5): chain building, Gambit "safer".
+	if panel.has_method("update_combo"):
+		panel.update_combo(3, 5, true)
+	await process_frame
+	await process_frame
+	await process_frame
+	_shot("res://claude_screenshots/combo_ui_c3.png")
+
+	# Combo zero: Gambit "High-risk gamble".
+	if panel.has_method("update_combo"):
+		panel.update_combo(0, 5, true)
+	await process_frame
+	await process_frame
+	await process_frame
+	_shot("res://claude_screenshots/combo_ui_c0.png")
+
+	# Combo full (5/5): SURE THING, Gambit "Guaranteed heist!".
+	if panel.has_method("update_combo"):
+		panel.update_combo(5, 5, true)
+	await process_frame
+	await process_frame
+	await process_frame
+	_shot("res://claude_screenshots/combo_ui_c5.png")
+
+	print("Momentum + Combo UI screenshots written to claude_screenshots/")
 	quit()
 
 func _shot(path: String) -> void:

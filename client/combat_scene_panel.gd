@@ -2608,6 +2608,12 @@ var _momentum_label: RichTextLabel = null
 var _momentum: int = 0
 var _momentum_max: int = 5
 var _momentum_active: bool = false
+# v0.9.697 — Trickster Combo shares the same leftmost meter node (_momentum_label).
+# A character is either a Warrior or a Trickster, never both, so the two engines
+# never contend for the meter.
+var _combo: int = 0
+var _combo_max: int = 5
+var _combo_active: bool = false
 
 func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	"""Called from client.gd on each combat_state. Shows a pip meter for Warriors;
@@ -2618,8 +2624,11 @@ func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
 	if not is_warrior:
-		_momentum_label.visible = false
+		# Only hide if the Trickster engine isn't the one owning the meter.
+		if not _combo_active:
+			_momentum_label.visible = false
 		return
+	_combo_active = false  # Warrior owns the meter
 	_momentum_label.visible = true
 	var pips := ""
 	for i in range(_momentum_max):
@@ -2628,6 +2637,35 @@ func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	var tag := "[color=#FFC94D]FINISHER READY[/color]" if ready else "[color=#7A6E58]build to Devastate[/color]"
 	_momentum_label.text = "[color=#C8A24A]⚡ Momentum[/color]\n%s\n%s" % [pips, tag]
 	# Re-gate the hand cards (Devastate availability) now that momentum changed.
+	if not _hand_cells.is_empty():
+		_refresh_hand()
+
+func update_combo(cur: int, mx: int, is_trickster: bool) -> void:
+	"""v0.9.697 — Trickster Combo meter. Unlike Momentum, Gambit is never hard-gated;
+	the meter communicates that Combo makes the gamble reliable + bigger. Drives the
+	Gambit card's risk note in _refresh_hand."""
+	_combo = cur
+	_combo_max = max(1, mx)
+	_combo_active = is_trickster
+	if _momentum_label == null or not is_instance_valid(_momentum_label):
+		return
+	if not is_trickster:
+		if not _momentum_active:
+			_momentum_label.visible = false
+		return
+	_momentum_active = false  # Trickster owns the meter
+	_momentum_label.visible = true
+	var pips := ""
+	for i in range(_combo_max):
+		pips += "[color=#C98CF0]✦[/color]" if i < cur else "[color=#4A3A5A]◇[/color]"
+	var tag: String
+	if cur >= _combo_max:
+		tag = "[color=#7AE07A]SURE THING[/color]"
+	elif cur > 0:
+		tag = "[color=#B06BE0]chain ×%d[/color]" % cur
+	else:
+		tag = "[color=#7A6E88]build the chain[/color]"
+	_momentum_label.text = "[color=#B06BE0]✦ Combo[/color]\n%s\n%s" % [pips, tag]
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
@@ -3552,6 +3590,19 @@ func _refresh_hand() -> void:
 				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
 			if value_pip:
 				value_pip.visible = false
+
+		# v0.9.697 — Trickster Gambit is NEVER hard-gated (you can always gamble); the
+		# card instead shows how Combo converts the risk. High Combo = a sure thing.
+		if _combo_active and card_name == "gambit" and effect_lbl:
+			if _combo >= _combo_max:
+				effect_lbl.text = "Guaranteed heist!"
+				effect_lbl.add_theme_color_override("font_color", Color("#7AE07A"))
+			elif _combo <= 0:
+				effect_lbl.text = "High-risk gamble"
+				effect_lbl.add_theme_color_override("font_color", Color("#E0A050"))
+			else:
+				effect_lbl.text = "Combo ×%d — safer" % _combo
+				effect_lbl.add_theme_color_override("font_color", Color("#B06BE0"))
 
 		_set_cell_dim(cell, false, castable)
 
