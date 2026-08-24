@@ -27366,9 +27366,10 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.680 — Companion cards (acquisition pillar 2).
-	display_game("[color=#00FF00]v0.9.680[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#FF8000]★ COMPANION CARDS.[/color] Your [b]active companion now grants a card[/b] to your combat deck — [b]'<Type>'s Gift'[/b] — a strike flavoured by that companion's trait ([color=#B22222]bleed[/color], [color=#7FBE2E]poison[/color], [color=#FFD700]crit[/color], [color=#D62828]lifesteal[/color], [color=#FFC04D]stun[/color], [color=#FF6FB5]charm[/color] and more). It [b]tiers up as you play it[/b], and once you've used it enough it becomes a [b]permanent card in your collection[/b] — it stays in your deck even after you swap the companion out. Each companion [b]type[/b] has its own card (~53 to collect). Second source of extra deck copies, after dungeon drops.")
+	# v0.9.681 — Companion cards: unique named cards + varied effects (+ cast fix).
+	display_game("[color=#00FF00]v0.9.681[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ COMPANION CARDS.[/color] Your [b]active companion grants a unique card[/b] to your combat deck — [b]every companion type has its own named card with its own effect[/b] (~53 to collect). Effects run the full range: heavy [color=#FF6644]strikes[/color] & [color=#FFD700]executes[/color], [color=#B22222]bleeds[/color] & [color=#7FBE2E]poisons[/color], [color=#C0C0C0]weaken[/color]/[color=#AAAAFF]blind[/color]/[color=#FFFF00]stun[/color]/[color=#FF66FF]charm[/color] debuffs, self [color=#FF6644]rage[/color]/[color=#66B0FF]guard[/color]/[color=#FFD700]crit[/color] buffs, [color=#7FD7FF]shields[/color], [color=#00FF88]heals[/color], resource drains, and [color=#FFD700]loot boosters[/color]. Each [b]tiers up as you play it[/b] and becomes a [b]permanent deck card[/b] once mastered — kept even after you swap companions. Hover a card to read exactly what it does.")
+	display_game("  • Fixed: companion cards [b]did nothing when cast[/b] in v0.9.680 (they never reached the combat handler). They work now.")
 	display_game("")
 
 	# v0.9.679 — Rare card drops + dungeon chest fix.
