@@ -27338,8 +27338,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.677 — Card-themed milestone chooser + Duration.
+	display_game("[color=#00FF00]v0.9.677[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Milestone upgrades are now a card chooser.[/color] Hitting a milestone pops a [b]row of card-styled choices[/b] you click to pick — with a polished hover box showing what each does. Options now [b]fit the ability[/b]: attacks offer [color=#FF6644]Power[/color] / [color=#FF4444]Rider (Bleed)[/color] / [color=#66B0FF]Efficiency[/color]; [b]buffs[/b] offer [color=#FF6644]Power[/color] / [color=#7AE07A]Duration[/color] (lasts +2 rounds) / [color=#66B0FF]Efficiency[/color] — no more offering Bleed to a buff.")
+	display_game("")
+
 	# v0.9.676 — Upgrade → Tier (ability redesign slice 2).
-	display_game("[color=#00FF00]v0.9.676[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.676[/color]")
 	display_game("  [color=#FF8000]★ ABILITY UPGRADES REWORKED.[/color] Your cards now gain [b]tiers[/b] steadily as you use them — the abilities you play keep growing over their whole life (shown by the card's fill). And rank-ups are now [b]milestones[/b] where you choose HOW a card grows: [color=#FF6644]Power[/color] (bigger effect), [color=#FF4444]Rider[/color] (opens a bleeding wound on hit), or [color=#66B0FF]Efficiency[/color] (costs less to cast). Replaces the old +1 Card / +Damage / Imprint menu. First step of a deeper combat/deck revamp.")
 	display_game("")
 
