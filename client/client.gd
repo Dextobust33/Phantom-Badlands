@@ -27600,8 +27600,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.697 — Trickster Combo + Mage Focus + curated starter decks.
+	display_game("[color=#00FF00]v0.9.697[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ TWO MORE CLASS ENGINES.[/color] Each class now has its own combat identity:")
+	display_game("    [color=#B06BE0]✦ TRICKSTER COMBO[/color] — your abilities build [b]Combo[/b]; [color=#B06BE0]Gambit[/color] spends it. High Combo turns the gamble into a [b]sure thing[/b] (reliable [i]and[/i] much bigger). No more coin-flip finishers once you've set up the con.")
+	display_game("    [color=#5AC8FF]◈ MAGE FOCUS[/color] — every spell you cast builds [b]Focus[/b], which boosts [b]all[/b] your spell damage (a ramp — mages start weak, end terrifying). [color=#5AC8FF]Meteor[/color] [b]discharges[/b] the whole ramp for a massive hit.")
+	display_game("  [color=#1EFF00]◆ Cards say what they feed.[/color] Builder cards now show [color=#C8A24A]+⚡ Momentum[/color] / [color=#B06BE0]+✦ Combo[/color] / [color=#5AC8FF]+◈ Focus[/color], and each finisher shows its state — so it's clear which cards power your payoff.")
+	display_game("  [color=#1EFF00]◆ Focused starter decks.[/color] New characters now begin with a tidy [b]5-card deck[/b] (your class's core cards + its finisher) instead of a cluttered pile. Add any other ability anytime from the [b]Deck[/b] screen.")
+	display_game("")
+
 	# v0.9.696 — Warrior Momentum (build-up → finisher).
-	display_game("[color=#00FF00]v0.9.696[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.696[/color]")
 	display_game("  [color=#FF8000]★ WARRIOR MOMENTUM.[/color] Your Warrior abilities now [b]build Momentum[/b] ([color=#FFC94D]⚡[/color], up to 5), and [color=#FF6644]Devastate[/color] is a true [b]finisher[/b] — it [b]can't be cast at 0 Momentum[/b] (no more opening every fight with the nuke). The more Momentum you spend, the harder it lands: [b]×3[/b] at 1 stack up to [b]×7[/b] at 5. A new [color=#FFC94D]Momentum meter[/color] by your hand shows your charge, and Devastate stays greyed ([i]\"Build Momentum first\"[/i]) until it's ready. Build it up — then unleash.")
 	display_game("")
 
