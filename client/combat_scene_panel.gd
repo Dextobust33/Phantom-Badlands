@@ -2653,14 +2653,20 @@ static func companion_card_art_bbcode(card_name: String) -> String:
 		return ""
 	return "[center]" + art + "[/center]"
 
-func _make_card_art_label(font_size: int) -> RichTextLabel:
-	"""A compact mono RichTextLabel that renders a card's companion monster art
-	inside the icon slot (hidden until populated)."""
+const CARD_ART_BOX := Vector2(128, 92)  # fixed art box inside the 150x190 card
+
+func _make_card_art_label() -> RichTextLabel:
+	"""A mono RichTextLabel that renders a card's companion monster art inside a
+	FIXED, clipped box so it can never grow the card (fit_content off + a fixed
+	custom_minimum_size; CenterContainer sizes it to exactly that box). Font is
+	fitted to the box per-art in _apply_card_art. Hidden until populated."""
 	var art_img := RichTextLabel.new()
 	art_img.name = "ArtImg"
 	art_img.bbcode_enabled = true
-	art_img.fit_content = true
+	art_img.fit_content = false
 	art_img.scroll_active = false
+	art_img.clip_contents = true
+	art_img.custom_minimum_size = CARD_ART_BOX
 	art_img.autowrap_mode = TextServer.AUTOWRAP_OFF
 	art_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art_img.visible = false
@@ -2669,11 +2675,33 @@ func _make_card_art_label(font_size: int) -> RichTextLabel:
 		art_img.add_theme_font_override("bold_font", _mono_font)
 		art_img.add_theme_font_override("italics_font", _mono_font)
 		art_img.add_theme_font_override("mono_font", _mono_font)
-	art_img.add_theme_font_size_override("normal_font_size", font_size)
-	art_img.add_theme_font_size_override("bold_font_size", font_size)
-	art_img.add_theme_font_size_override("italics_font_size", font_size)
-	art_img.add_theme_font_size_override("mono_font_size", font_size)
 	return art_img
+
+func _apply_card_art(label: RichTextLabel, art_bbcode: String) -> void:
+	"""Size the art's font to fit CARD_ART_BOX (deterministic from row/col counts,
+	no render pass) and set the text. Clipping is the safety net if the estimate
+	is slightly off. Roughly vertically centered by padding blank lines."""
+	if label == null:
+		return
+	var plain := _strip_bbcode(art_bbcode)
+	var lines := plain.split("\n")
+	var rows: int = max(1, lines.size())
+	var cols: int = 1
+	for ln in lines:
+		cols = max(cols, (ln as String).length())
+	# Mono metrics ~ width 0.62·fs, line height 1.30·fs. Fit both dimensions.
+	var by_w: float = CARD_ART_BOX.x / (float(cols) * 0.62)
+	var by_h: float = CARD_ART_BOX.y / (float(rows) * 1.30)
+	var fs: int = int(clamp(floor(min(by_w, by_h)), 3, 7))
+	label.add_theme_font_size_override("normal_font_size", fs)
+	label.add_theme_font_size_override("bold_font_size", fs)
+	label.add_theme_font_size_override("italics_font_size", fs)
+	label.add_theme_font_size_override("mono_font_size", fs)
+	# Vertical centering: pad blank lines so the art sits mid-box.
+	var fit_rows: int = int(CARD_ART_BOX.y / (float(fs) * 1.30))
+	var pad: int = max(0, int((fit_rows - rows) / 2))
+	var prefix := "\n".repeat(pad) if pad > 0 else ""
+	label.text = prefix + art_bbcode
 
 func _build_hand_cell(index: int) -> PanelContainer:
 	"""v0.9.675 — a real PORTRAIT card: category-coloured top banner (hotkey +
@@ -2799,11 +2827,10 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	glyph_label.add_theme_constant_override("outline_size", 4)
 	glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon_wrap.add_child(glyph_label)
-	# v0.9.683 — companion cards show the companion's monster art here instead of
-	# the glyph (populated + toggled in _refresh_hand). Font 4 = the art's native
-	# size (ASCII_ART_FONT_SIZE), which fits inside the 150x190 card without
-	# growing it (font 6 overflowed and enlarged the whole card).
-	icon_wrap.add_child(_make_card_art_label(4))
+	# v0.9.683/685 — companion cards show the companion's monster art here instead
+	# of the glyph (populated + toggled in _refresh_hand). Fixed-box + clip so it
+	# never grows the card.
+	icon_wrap.add_child(_make_card_art_label())
 	vbox.add_child(icon_wrap)
 
 	# --- Effect line (small, above the info row) ---
@@ -3017,8 +3044,8 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	# v0.9.683 — companion cards show the companion's monster art here.
 	if art_bbcode != "":
 		glyph_lbl.visible = false
-		var deck_art := _make_card_art_label(4)
-		deck_art.text = art_bbcode
+		var deck_art := _make_card_art_label()
+		_apply_card_art(deck_art, art_bbcode)
 		deck_art.visible = true
 		icon_wrap.add_child(deck_art)
 	fv.add_child(icon_wrap)
@@ -3214,7 +3241,7 @@ func _refresh_hand() -> void:
 		var _cart := companion_card_art_bbcode(card_name)
 		if _cart != "":
 			if art_img:
-				art_img.text = _cart
+				_apply_card_art(art_img, _cart)
 				art_img.visible = true
 			if glyph_lbl:
 				glyph_lbl.visible = false
