@@ -42,6 +42,18 @@ var _player_class: String = ""
 var _player_name: String = ""
 var _player_battler_id: String = ""   # v0.9.670 — stored character.battler_id
 var _player_equipped: Dictionary = {} # v0.9.672 — for equipment sprite markers
+var _player_race: String = ""         # v0.9.675 — for race/class card theming
+
+# v0.9.675 — per-class emblem badge on cards (Dingbats block, same coverage as the
+# category glyphs ⚔✦❄◈ that already render). Falls back to the class initial.
+const CLASS_EMBLEM := {
+	"Fighter": "⚔", "Barbarian": "⚒", "Paladin": "✚", "Wizard": "✸",
+	"Sorcerer": "☄", "Sage": "✜", "Thief": "✥", "Ranger": "➹", "Ninja": "✴",
+}
+# v0.9.675 — colorblind aid: each ability category gets a distinct card corner
+# shape (keyed by its glyph) so categories read WITHOUT relying on border colour.
+# Sharp = aggressive (offense), round = soft (buff), between for control/utility.
+const CATEGORY_CORNER := {"⚔": 2, "✦": 13, "❄": 6, "◈": 10}
 # Cosmetic appearance variant rolled at character creation. Drives per-line
 # pattern recolor of the player's class ASCII art so each character gets a
 # unique look. Populated via populate() payload.
@@ -297,6 +309,10 @@ const LUNGE_DURATION := 0.07  # v0.9.439: 0.10 → 0.07. One direction; total = 
 # COMBAT_HAND_SIZE — server fallback uses the server const, so a
 # mismatch would render empty cells.
 const COMBAT_HAND_SIZE := 3
+# v0.9.675 — real portrait card frame (banner + icon + cost pip + rank pips +
+# mastery fill) so the hand reads as actual cards.
+const CARD_W := 150
+const CARD_H := 190
 signal card_played(card_name: String)
 var _hand_strip: HBoxContainer
 var _hand_cells: Array = []  # Array of PanelContainers (5)
@@ -2627,43 +2643,31 @@ func _build_hand_strip() -> HBoxContainer:
 
 
 func _build_hand_cell(index: int) -> PanelContainer:
-	"""Build a single 5-wide card cell. Card title row on top, cost row on
-	bottom, mastery rank tag in the corner. Click sends card_played(name).
-	Tooltip text is repopulated each refresh from client_ref._get_ability_tooltip
-	so hover shows full effect / mastery / progress info matching the
-	out-of-combat AbilityPanel."""
+	"""v0.9.675 — a real PORTRAIT card: category-coloured top banner (hotkey +
+	name), a big centred ability icon, a bottom row with rank pips + a bold cost
+	pip, and the mastery fill washing up from the bottom behind it. Node names
+	(Banner/Row/Key, Banner/Row/Name, IconWrap/Glyph, InfoRow/Pips, InfoRow/Cost,
+	Effect, FillLayer/Fill) are read by _refresh_hand."""
 	var cell := PanelContainer.new()
 	cell.name = "HandCell_%d" % index
-	# Audit #1 Slice 6c — doubled card size for legibility. Player feedback:
-	# cards were easy to miss at the old 108x54. Bumped to 190x108 (~3.3x area)
-	# with proportionally larger fonts. Cards may now visually overlap the
-	# scene_section above; that's intended — they should draw the eye.
-	cell.custom_minimum_size = Vector2(190, 108)
+	cell.custom_minimum_size = Vector2(CARD_W, CARD_H)
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
 	cell.tooltip_text = ""
+	cell.clip_contents = true
 
-	# v0.9.425 — initial stylebox uses neutral colors; per-card category color
-	# is applied each refresh in _refresh_hand. Keep this as the fallback for
-	# the "empty slot" state.
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.07, 0.07, 0.09, 0.92)
+	sb.bg_color = Color(0.09, 0.08, 0.07, 0.97)
 	sb.border_color = Color(0.55, 0.45, 0.30, 1)
 	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(6)
-	# v0.9.665 — no content margins on the panel: the mastery fill spans the card
-	# edge-to-edge. Text padding lives on the inner "Pad" MarginContainer instead.
+	sb.set_corner_radius_all(10)
 	sb.content_margin_left = 0
 	sb.content_margin_right = 0
 	sb.content_margin_top = 0
 	sb.content_margin_bottom = 0
 	cell.add_theme_stylebox_override("panel", sb)
 
-	# v0.9.665 — mastery fill: the card's OWN background fills LEFT->RIGHT in its
-	# CATEGORY color as the ability nears its next rank-up (25% progress = left
-	# quarter colored; full = about to rank up). NOT a bar. FillLayer is a plain
-	# Control (PanelContainer stretches it to the whole card); its child ColorRect
-	# spans the left `progress` fraction via anchor_right (a plain Control respects
-	# child anchors, unlike a Container — so the width is exactly proportional).
+	# Mastery fill — washes UP from the bottom in the category colour as the card
+	# nears its next rank (a card filling toward "level up"). Behind everything.
 	var fill_layer := Control.new()
 	fill_layer.name = "FillLayer"
 	fill_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2671,111 +2675,153 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	var fill_rect := ColorRect.new()
 	fill_rect.name = "Fill"
 	fill_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	fill_rect.color = Color(0.5, 0.4, 0.3, 0.0)  # recolored per-card in _refresh_hand
+	fill_rect.color = Color(0.5, 0.4, 0.3, 0.0)
 	fill_rect.anchor_left = 0.0
-	fill_rect.anchor_top = 0.0
+	fill_rect.anchor_right = 1.0
+	fill_rect.anchor_top = 1.0   # bottom-anchored; anchor_top lowered per progress
 	fill_rect.anchor_bottom = 1.0
-	fill_rect.anchor_right = 0.0  # = progress, set each refresh
 	fill_rect.offset_left = 0
-	fill_rect.offset_top = 0
 	fill_rect.offset_right = 0
+	fill_rect.offset_top = 0
 	fill_rect.offset_bottom = 0
 	fill_layer.add_child(fill_rect)
 
-	# v0.9.425 — category glyph rendered in the top-right corner of the card
-	# (anchored via top_right preset so it stays in place across resizes).
-	# Color and text are populated in _refresh_hand from the ability table.
-	var glyph_label := Label.new()
-	glyph_label.name = "Glyph"
-	glyph_label.text = ""
-	glyph_label.add_theme_font_size_override("font_size", 22)
-	glyph_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
-	glyph_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	glyph_label.position = Vector2(-26, 4)
-	glyph_label.size = Vector2(22, 22)
-	glyph_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	glyph_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cell.add_child(glyph_label)
-
-	# Padding wrapper — restores the text inset now that the panel has no content
-	# margins (so the mastery fill can reach the card edges).
-	var pad := MarginContainer.new()
-	pad.name = "Pad"
-	pad.add_theme_constant_override("margin_left", 10)
-	pad.add_theme_constant_override("margin_right", 10)
-	pad.add_theme_constant_override("margin_top", 8)
-	pad.add_theme_constant_override("margin_bottom", 8)
-	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cell.add_child(pad)
-
 	var vbox := VBoxContainer.new()
 	vbox.name = "VBox"
-	vbox.add_theme_constant_override("separation", 4)
+	vbox.add_theme_constant_override("separation", 0)
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pad.add_child(vbox)
+	cell.add_child(vbox)
 
-	# Top row: hotkey number + ability name
-	var top_row := HBoxContainer.new()
-	top_row.add_theme_constant_override("separation", 6)
-	top_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(top_row)
-
+	# --- Banner (category colour) : hotkey + ability name ---
+	var banner := PanelContainer.new()
+	banner.name = "Banner"
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bsb := StyleBoxFlat.new()
+	bsb.bg_color = Color("#8C7656")
+	bsb.set_corner_radius_all(0)
+	bsb.corner_radius_top_left = 8
+	bsb.corner_radius_top_right = 8
+	bsb.content_margin_left = 6
+	bsb.content_margin_right = 6
+	bsb.content_margin_top = 4
+	bsb.content_margin_bottom = 4
+	banner.add_theme_stylebox_override("panel", bsb)
+	var brow := HBoxContainer.new()
+	brow.name = "Row"
+	brow.add_theme_constant_override("separation", 4)
+	brow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner.add_child(brow)
+	# v0.9.675 — class emblem badge (leftmost in the banner) for race/class identity.
+	var emblem_label := Label.new()
+	emblem_label.name = "Emblem"
+	emblem_label.text = ""
+	emblem_label.add_theme_font_size_override("font_size", 15)
+	emblem_label.add_theme_color_override("font_color", Color("#FFFFFF"))
+	emblem_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	emblem_label.add_theme_constant_override("outline_size", 3)
+	emblem_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	brow.add_child(emblem_label)
 	var key_label := Label.new()
 	key_label.name = "Key"
 	key_label.text = "%d" % (index + 1)
-	key_label.add_theme_font_size_override("font_size", 16)
-	key_label.add_theme_color_override("font_color", Color("#FFD700"))
+	key_label.add_theme_font_size_override("font_size", 15)
+	key_label.add_theme_color_override("font_color", Color("#FFE68A"))
+	key_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	key_label.add_theme_constant_override("outline_size", 3)
 	key_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	top_row.add_child(key_label)
-
+	brow.add_child(key_label)
 	var name_label := Label.new()
 	name_label.name = "Name"
 	name_label.text = "—"
-	name_label.add_theme_font_size_override("font_size", 17)
-	name_label.add_theme_color_override("font_color", Color("#DDDDDD"))
+	name_label.add_theme_font_size_override("font_size", 15)
+	name_label.add_theme_color_override("font_color", Color("#FFFFFF"))
+	name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	name_label.add_theme_constant_override("outline_size", 3)
 	name_label.clip_text = true
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	top_row.add_child(name_label)
+	brow.add_child(name_label)
+	vbox.add_child(banner)
 
-	# Middle row: cost + rank
-	var middle_row := HBoxContainer.new()
-	middle_row.add_theme_constant_override("separation", 8)
-	middle_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vbox.add_child(middle_row)
+	# v0.9.675 — class-colour accent line under the banner (recoloured in refresh).
+	var accent := ColorRect.new()
+	accent.name = "Accent"
+	accent.color = Color("#B08C4C")
+	accent.custom_minimum_size = Vector2(0, 3)
+	accent.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(accent)
 
-	var cost_label := Label.new()
-	cost_label.name = "Cost"
-	cost_label.text = ""
-	cost_label.add_theme_font_size_override("font_size", 14)
-	cost_label.add_theme_color_override("font_color", Color("#9ACD32"))
-	cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	middle_row.add_child(cost_label)
+	# --- Icon (big centred glyph) ---
+	var icon_wrap := CenterContainer.new()
+	icon_wrap.name = "IconWrap"
+	icon_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	icon_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var glyph_label := Label.new()
+	glyph_label.name = "Glyph"
+	glyph_label.text = ""
+	glyph_label.add_theme_font_size_override("font_size", 46)
+	glyph_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.9))
+	glyph_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	glyph_label.add_theme_constant_override("outline_size", 4)
+	glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_wrap.add_child(glyph_label)
+	vbox.add_child(icon_wrap)
 
-	var rank_label := Label.new()
-	rank_label.name = "Rank"
-	rank_label.text = ""
-	rank_label.add_theme_font_size_override("font_size", 13)
-	rank_label.add_theme_color_override("font_color", Color("#888888"))
-	rank_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	rank_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	middle_row.add_child(rank_label)
-
-	# Bottom row: effect estimate (damage / buff magnitude / chance).
-	# Single label that fills the row; populated by _refresh_hand from the
-	# client's _estimate_ability_card_effect helper so the panel doesn't have
-	# to know per-ability formulas.
+	# --- Effect line (small, above the info row) ---
 	var effect_label := Label.new()
 	effect_label.name = "Effect"
 	effect_label.text = ""
-	effect_label.add_theme_font_size_override("font_size", 13)
+	effect_label.add_theme_font_size_override("font_size", 12)
 	effect_label.add_theme_color_override("font_color", Color("#FFA060"))
+	effect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	effect_label.clip_text = true
-	effect_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	effect_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(effect_label)
+
+	# --- Info row: rank pips (left) + cost pip (right) ---
+	var info_row := MarginContainer.new()
+	info_row.name = "InfoRow"
+	info_row.add_theme_constant_override("margin_left", 8)
+	info_row.add_theme_constant_override("margin_right", 8)
+	info_row.add_theme_constant_override("margin_top", 2)
+	info_row.add_theme_constant_override("margin_bottom", 6)
+	info_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var info_hb := HBoxContainer.new()
+	info_hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_row.add_child(info_hb)
+	var pips_label := Label.new()
+	pips_label.name = "Pips"
+	pips_label.text = ""
+	pips_label.add_theme_font_size_override("font_size", 13)
+	pips_label.add_theme_color_override("font_color", Color("#FFD700"))
+	pips_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pips_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	pips_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_hb.add_child(pips_label)
+	# Cost pip — a small rounded panel tinted by resource, with the number.
+	var cost_pip := PanelContainer.new()
+	cost_pip.name = "CostPip"
+	cost_pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var csb := StyleBoxFlat.new()
+	csb.bg_color = Color(0.15, 0.15, 0.18, 0.95)
+	csb.set_corner_radius_all(9)
+	csb.content_margin_left = 8
+	csb.content_margin_right = 8
+	csb.content_margin_top = 1
+	csb.content_margin_bottom = 1
+	cost_pip.add_theme_stylebox_override("panel", csb)
+	var cost_label := Label.new()
+	cost_label.name = "Cost"
+	cost_label.text = ""
+	cost_label.add_theme_font_size_override("font_size", 15)
+	cost_label.add_theme_color_override("font_color", Color("#FFFFFF"))
+	cost_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	cost_label.add_theme_constant_override("outline_size", 2)
+	cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cost_pip.add_child(cost_label)
+	info_hb.add_child(cost_pip)
+	vbox.add_child(info_row)
 
 	# Click handler — pulls the current card name from meta on click.
 	cell.gui_input.connect(_on_hand_cell_input.bind(index))
@@ -2811,52 +2857,85 @@ func update_hand(hand: Array, deck_count: int, discard_count: int) -> void:
 		_refresh_hand()
 
 
+func _theme_class_color() -> Color:
+	if _player_class != "":
+		return ClassSprite.get_class_color(_player_class)
+	return Color("#B08C4C")
+
+
+func _theme_race_color() -> Color:
+	if client_ref and _player_race != "" and client_ref.has_method("_get_race_passive"):
+		var rp = client_ref._get_race_passive(_player_race)
+		var hex := str(rp.get("color", ""))
+		if hex != "" and hex.is_valid_html_color():
+			return Color(hex)
+	return _theme_class_color()
+
+
+func _theme_card_bg() -> Color:
+	# Dark base faintly washed toward the CLASS colour, then the RACE colour, so
+	# the deck reads as "yours" without fighting the category border/banner.
+	var col := Color(0.09, 0.08, 0.07, 0.97).lerp(_theme_class_color(), 0.18)
+	col = col.lerp(_theme_race_color(), 0.10)
+	col.a = 0.97
+	return col
+
+
+func _class_emblem_text() -> String:
+	if CLASS_EMBLEM.has(_player_class):
+		return String(CLASS_EMBLEM[_player_class])
+	return _player_class.substr(0, 1) if _player_class != "" else "◆"
+
+
 func _refresh_hand() -> void:
 	if _hand_cells.is_empty():
 		return
 	for i in range(_hand_cells.size()):
 		var cell: PanelContainer = _hand_cells[i]
-		var vbox = cell.get_node("Pad/VBox")
-		var top_row = vbox.get_child(0)
-		var middle_row = vbox.get_child(1)
-		var key_lbl: Label = top_row.get_child(0)
-		var name_lbl: Label = top_row.get_child(1)
-		var cost_lbl: Label = middle_row.get_child(0)
-		var rank_lbl: Label = middle_row.get_child(1)
-		var effect_lbl: Label = vbox.get_child(2)
+		var key_lbl: Label = cell.find_child("Key", true, false)
+		var name_lbl: Label = cell.find_child("Name", true, false)
+		var glyph_lbl: Label = cell.find_child("Glyph", true, false)
+		var pips_lbl: Label = cell.find_child("Pips", true, false)
+		var cost_lbl: Label = cell.find_child("Cost", true, false)
+		var cost_pip: PanelContainer = cell.find_child("CostPip", true, false)
+		var effect_lbl: Label = cell.find_child("Effect", true, false)
+		var banner: PanelContainer = cell.find_child("Banner", true, false)
+		var fill_rect: ColorRect = cell.find_child("Fill", true, false)
+		var emblem_lbl: Label = cell.find_child("Emblem", true, false)
+		var accent: ColorRect = cell.find_child("Accent", true, false)
 
-		# Hotkey label reads the live keybind for the action-bar slot this
-		# card sits at. Cards 0-4 land at action_5..action_9 (default keys
-		# 1-5), but the user can rebind those — pull the actual label from
-		# the client so a player who remapped action_5 to Z sees "Z" here.
+		# Hotkey label reads the live keybind for the action-bar slot this card
+		# sits at (cards land at action_5..; user may have rebound them).
 		var slot_index = i + 5
 		var key_text = "%d" % (i + 1)
 		if client_ref and client_ref.has_method("get_action_key_name"):
 			var pulled = str(client_ref.get_action_key_name(slot_index))
 			if pulled != "":
 				key_text = pulled
-		key_lbl.text = key_text
-
-		# v0.9.425 — category glyph label (top-right corner). Populated below
-		# for non-empty slots; cleared on empty.
-		var glyph_lbl: Label = cell.get_node_or_null("Glyph")
+		if key_lbl:
+			key_lbl.text = key_text
 
 		if i >= _combat_hand.size():
 			# Empty slot
 			cell.set_meta("card_name", "")
 			cell.set_meta("can_afford", false)
-			name_lbl.text = "—"
-			name_lbl.add_theme_color_override("font_color", Color("#444444"))
-			key_lbl.add_theme_color_override("font_color", Color("#444444"))
-			cost_lbl.text = ""
-			rank_lbl.text = ""
-			effect_lbl.text = ""
-			cell.tooltip_text = ""
+			if name_lbl:
+				name_lbl.text = "—"
+			if cost_lbl:
+				cost_lbl.text = ""
+			if cost_pip:
+				cost_pip.visible = false
+			if pips_lbl:
+				pips_lbl.text = ""
+			if effect_lbl:
+				effect_lbl.text = ""
 			if glyph_lbl:
 				glyph_lbl.text = ""
-			var empty_fill: ColorRect = cell.get_node_or_null("FillLayer/Fill")
-			if empty_fill:
-				empty_fill.visible = false
+			if emblem_lbl:
+				emblem_lbl.text = ""
+			cell.tooltip_text = ""
+			if fill_rect:
+				fill_rect.visible = false
 			_set_cell_dim(cell, true, false)
 			continue
 
@@ -2865,72 +2944,74 @@ func _refresh_hand() -> void:
 		cell.set_meta("card_name", card_name)
 		cell.set_meta("can_afford", bool(info.get("can_afford", true)))
 
-		# v0.9.425 — apply category theming to the cell stylebox + glyph.
+		# Category theming — banner colour + icon.
 		var category_info: Dictionary = {}
 		if client_ref and client_ref.has_method("get_ability_category_info"):
 			category_info = client_ref.get_ability_category_info(card_name)
 		var category_color_hex := str(category_info.get("color", "#8C7656"))
 		cell.set_meta("category_color", category_color_hex)
-		cell.set_meta("category_tint_alpha", float(category_info.get("tint_alpha", 0.0)))
 		if glyph_lbl:
 			glyph_lbl.text = str(category_info.get("glyph", ""))
-			glyph_lbl.add_theme_color_override("font_color", Color(category_color_hex) * Color(1, 1, 1, 0.55))
+			glyph_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
+		if banner:
+			var bsb := banner.get_theme_stylebox("panel") as StyleBoxFlat
+			if bsb:
+				# v0.9.675 — deepen the category colour for the banner so white
+				# title text stays high-contrast on bright categories (e.g. green
+				# Buff) while the hue still reads clearly.
+				bsb.bg_color = Color(category_color_hex).darkened(0.42)
+		# Race/class identity: emblem badge + accent line in the class colour.
+		if emblem_lbl:
+			emblem_lbl.text = _class_emblem_text()
+			emblem_lbl.add_theme_color_override("font_color", _theme_class_color())
+		if accent:
+			accent.color = _theme_class_color()
 
-		# v0.9.665 — mastery fill: the card BG fills LEFT->RIGHT in its CATEGORY
-		# color as the ability nears its next rank-up (0 = no color, 0.25 => left
-		# quarter, full = about to rank up).
-		var fill_rect: ColorRect = cell.get_node_or_null("FillLayer/Fill")
+		# Mastery fill — washes UP from the bottom in category colour as the card
+		# nears its next rank-up (full = about to rank up).
 		if fill_rect:
 			var at_max_rank := bool(info.get("rank_at_max", false))
 			var prog := 1.0 if at_max_rank else clampf(float(info.get("rank_progress", 0.0)), 0.0, 1.0)
-			fill_rect.anchor_right = prog
-			fill_rect.offset_right = 0
+			fill_rect.anchor_top = 1.0 - prog
+			fill_rect.offset_top = 0
 			fill_rect.visible = prog > 0.001
 			var cat_col := Color(category_color_hex)
-			cat_col.a = 0.55  # translucent so the card text stays readable
+			cat_col.a = 0.30
 			fill_rect.color = cat_col
 
-		name_lbl.text = str(info.get("display", card_name))
-		name_lbl.add_theme_color_override("font_color", Color("#DDDDDD"))
-		key_lbl.add_theme_color_override("font_color", Color("#FFD700"))
+		if name_lbl:
+			name_lbl.text = str(info.get("display", card_name))
+			name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
 
-		# Hover tooltip — full ability detail (effect, cost, mastery rank,
-		# progress to next rank). Mirrors the AbilityPanel hover so players
-		# get the same information surface in and out of combat.
+		# Hover tooltip — full ability detail (mirrors AbilityPanel).
 		if client_ref and client_ref.has_method("_get_ability_tooltip"):
 			cell.tooltip_text = str(client_ref._get_ability_tooltip(card_name))
 		else:
 			cell.tooltip_text = str(info.get("display", card_name))
 
-		# Show the single amount that will actually be spent if the card is
-		# triggered now (mirrors server's auto-cast / Magic Bolt smart suggest).
+		# Cost pip — number in a resource-tinted circle.
 		var planned_int = int(info.get("planned_cost", 0))
 		var resource_type = str(info.get("resource_type", ""))
-		if planned_int > 0 and resource_type != "":
-			cost_lbl.text = "%d %s" % [planned_int, _short_resource_label(resource_type)]
-			cost_lbl.add_theme_color_override("font_color", _resource_color(resource_type))
-		else:
-			cost_lbl.text = "Free"
-			cost_lbl.add_theme_color_override("font_color", Color("#888888"))
+		if cost_pip:
+			cost_pip.visible = true
+			var csb := cost_pip.get_theme_stylebox("panel") as StyleBoxFlat
+			if csb:
+				var rc := _resource_color(resource_type) if resource_type != "" else Color("#888888")
+				csb.bg_color = Color(rc.r * 0.45, rc.g * 0.45, rc.b * 0.45, 0.96)
+				csb.border_color = rc
+				csb.set_border_width_all(2)
+		if cost_lbl:
+			cost_lbl.text = "%d" % max(0, planned_int)
 
-		var rank = int(info.get("rank", 0))
-		if rank >= 0 and rank < HAND_RANK_NAMES.size():
-			var remaining = int(info.get("rank_uses_remaining", 0))
-			var at_max = bool(info.get("rank_at_max", false))
-			if at_max:
-				rank_lbl.text = "R%d ★" % rank
-			elif remaining > 0:
-				rank_lbl.text = "R%d +%d" % [rank, remaining]
-			else:
-				rank_lbl.text = "R%d" % rank
-			rank_lbl.add_theme_color_override("font_color", Color(HAND_RANK_COLORS[rank]))
-		else:
-			rank_lbl.text = ""
+		# Rank pips (0-6 filled dots), coloured by rank.
+		if pips_lbl:
+			var rank = clampi(int(info.get("rank", 0)), 0, 6)
+			pips_lbl.text = "●".repeat(rank) + "○".repeat(6 - rank)
+			pips_lbl.add_theme_color_override("font_color", Color(HAND_RANK_COLORS[clampi(rank, 0, HAND_RANK_COLORS.size() - 1)]))
 
-		var effect_text = str(info.get("effect_text", ""))
-		var effect_color = str(info.get("effect_color", "#FFA060"))
-		effect_lbl.text = effect_text
-		effect_lbl.add_theme_color_override("font_color", Color(effect_color))
+		if effect_lbl:
+			effect_lbl.text = str(info.get("effect_text", ""))
+			effect_lbl.add_theme_color_override("font_color", Color(str(info.get("effect_color", "#FFA060"))))
 
 		_set_cell_dim(cell, false, bool(info.get("can_afford", true)))
 
@@ -2956,19 +3037,21 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 	var sb := cell.get_theme_stylebox("panel") as StyleBoxFlat
 	if sb == null:
 		return
+	# v0.9.675 — the whole card fades for empty / uncastable states (clearer than
+	# a subtle bg shift on a framed card); castable cards show the category border
+	# at full colour. bg stays dark so the mastery fill reads.
 	if empty:
 		sb.border_color = Color(0.20, 0.18, 0.14, 1)
-		sb.bg_color = Color(0.04, 0.04, 0.05, 0.85)
+		sb.bg_color = Color(0.05, 0.05, 0.06, 0.9)
+		cell.modulate = Color(1, 1, 1, 0.35)
 	elif not can_afford:
-		sb.border_color = Color(0.35, 0.25, 0.20, 1)
-		sb.bg_color = Color(0.06, 0.05, 0.06, 0.92)
+		sb.border_color = Color(str(cell.get_meta("category_color", "#8C7656")))
+		sb.bg_color = _theme_card_bg()
+		cell.modulate = Color(0.72, 0.72, 0.74, 0.9)
 	else:
-		var category_color_hex = str(cell.get_meta("category_color", "#B08C4C"))
-		# v0.9.665 — base bg stays DARK so an unused card reads as "no color"; the
-		# mastery FillLayer provides the category color proportional to progress.
-		# Category still reads via the border + glyph.
-		sb.border_color = Color(category_color_hex)
-		sb.bg_color = Color(0.06, 0.055, 0.05, 0.95)
+		sb.border_color = Color(str(cell.get_meta("category_color", "#B08C4C")))
+		sb.bg_color = _theme_card_bg()
+		cell.modulate = Color(1, 1, 1, 1)
 
 
 func _resolve_card_info(card_name: String) -> Dictionary:
@@ -3330,6 +3413,8 @@ func populate(payload: Dictionary) -> void:
 		_player_battler_id = str(payload["player_battler_id"])
 	if payload.has("player_equipped") and payload["player_equipped"] is Dictionary:
 		_player_equipped = payload["player_equipped"]
+	if payload.has("player_race"):
+		_player_race = str(payload["player_race"])
 	if payload.has("player_appearance_color"):
 		_player_appearance_color = str(payload["player_appearance_color"])
 	if payload.has("player_appearance_color2"):

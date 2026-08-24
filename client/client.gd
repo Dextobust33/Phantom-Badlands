@@ -5289,6 +5289,10 @@ func show_character_select_panel():
 	# sprite + companion stay visible to the right of the Sanctuary preview on
 	# the char-select screen.
 	_sync_map_sprites_overlay()
+	# v0.9.675 — same class of leftover: the top-left Coords box only updates on
+	# location changes, so it lingered over the Sanctuary map. Re-run its updater
+	# (hides itself now that we're no longer in the PLAYING state).
+	update_coord_post_label()
 
 func show_house_panel():
 	"""Show the house/sanctuary screen - roguelite meta-progression hub"""
@@ -5300,6 +5304,9 @@ func show_house_panel():
 	# House uses the main game UI with game_output for display
 	# Note: Don't call show_game_ui() as it sets game_state to PLAYING
 	game_state = GameState.HOUSE_SCREEN
+	# v0.9.675 — hide the top-left Coords box so it doesn't cover the Sanctuary map
+	# (it only self-updates on location changes; now non-PLAYING, so it hides).
+	update_coord_post_label()
 
 func show_character_create_panel():
 	hide_all_panels()
@@ -27233,8 +27240,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.675 — Real combat cards.
+	display_game("[color=#00FF00]v0.9.675[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ ABILITIES ARE NOW REAL CARDS.[/color] Your combat abilities render as proper cards — a portrait frame with a [b]category-colored banner[/b] (name + hotkey), a big [b]category icon[/b], a [b]cost pip[/b] and [b]rank pips[/b], your [b]class emblem[/b] + a class/race color accent, and a [b]mastery fill that rises[/b] as the card nears its next rank-up. Much clearer that your abilities work as a deck of cards.")
+	display_game("  • Fixed the [b]Coords box[/b] lingering over the Sanctuary / character-select map after leaving a character.")
+	display_game("")
+
 	# v0.9.674 — Hover + loot-movement fixes.
-	display_game("[color=#00FF00]v0.9.674[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.674[/color]")
 	display_game("  • Fixed being able to [b]move while the loot reveal was still open[/b] (the hunt key slipped through) — movement is now locked until you finish the loot card.")
 	display_game("  • Fixed the map [b]hover tooltip[/b] sometimes showing a player's sprite on a companion when moving the cursor between them quickly.")
 	display_game("")
@@ -31902,6 +31915,7 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		"player_resource_max": _res.max,
 		"player_resource_color": _res.color,
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_race": str(character_data.get("race", "")),
 		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
@@ -32638,6 +32652,7 @@ func _run_altsprite_test(args: Array) -> void:
 			"player_hp": int(character_data.get("current_hp", 100)),
 			"player_max_hp": int(character_data.get("max_hp", 100)),
 			"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_race": str(character_data.get("race", "")),
 		"player_equipped": character_data.get("equipped", {}),
 			"player_appearance_color": str(character_data.get("appearance_color", "")),
 			"player_appearance_color2": str(character_data.get("appearance_color2", "")),
@@ -32684,6 +32699,7 @@ func _run_combat_fx_demo(in_action_phase: bool = false) -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_race": str(character_data.get("race", "")),
 		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
@@ -32862,6 +32878,7 @@ func _run_combat_step_demo(mode: String) -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_race": str(character_data.get("race", "")),
 		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
@@ -33056,6 +33073,7 @@ func _run_combat_pacing_demo() -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": _res.cur, "player_resource_max": _res.max, "player_resource_color": _res.color,
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_race": str(character_data.get("race", "")),
 		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
@@ -33231,6 +33249,7 @@ func _run_combat_miss_demo() -> void:
 		"player_hp": 100, "player_max_hp": 100,
 		"player_resource_cur": 70, "player_resource_max": 100, "player_resource_color": "#9999FF",
 		"player_battler_id": str(character_data.get("battler_id", "")),
+		"player_race": str(character_data.get("race", "")),
 		"player_equipped": character_data.get("equipped", {}),
 		"player_appearance_color": str(character_data.get("appearance_color", "")),
 		"player_appearance_color2": str(character_data.get("appearance_color2", "")),
