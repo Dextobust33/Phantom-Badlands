@@ -27401,9 +27401,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.688 — Deck counter + real numbers on card descriptions.
+	display_game("[color=#00FF00]v0.9.688[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Deck size counter.[/color] The Deck screen now shows a live [b]Cards in deck[/b] count that updates as you add/remove cards (minimum 5).")
+	display_game("  [color=#1EFF00]◆ Real numbers on cards.[/color] Card descriptions now show [b]concrete numbers[/b] from your stats instead of formulas (Warrior abilities first) — e.g. Rally reads [i]Heals 237 HP, +14 STR[/i]. [b]Hover a number[/b] to see its formula. Flip a card on the Deck screen to see it; more classes + battle hover coming next.")
+	display_game("")
+
 	# v0.9.687 — Card polish: names fit + companion art bigger/crisper.
-	display_game("[color=#00FF00]v0.9.687[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#1EFF00]◆ Card polish.[/color] Long card names (e.g. [b]Kobold's Stash[/b]) no longer get cut off — the name font shrinks to fit. Companion card art is [b]bigger and a bit crisper[/b] (blank margins trimmed + a larger art area), so the whole companion reads better.")
+	display_game("[color=#00FFFF]v0.9.687[/color]")
+	display_game("  [color=#1EFF00]◆ Card polish.[/color] Long card names (e.g. [b]Kobold's Stash[/b]) no longer get cut off. Companion card art is bigger + a bit crisper.")
 	display_game("")
 
 	# v0.9.682 — Companion loot cards: Valor + item-drop.
