@@ -27600,8 +27600,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.696 — Warrior Momentum (build-up → finisher).
+	display_game("[color=#00FF00]v0.9.696[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ WARRIOR MOMENTUM.[/color] Your Warrior abilities now [b]build Momentum[/b] ([color=#FFC94D]⚡[/color], up to 5), and [color=#FF6644]Devastate[/color] is a true [b]finisher[/b] — it [b]can't be cast at 0 Momentum[/b] (no more opening every fight with the nuke). The more Momentum you spend, the harder it lands: [b]×3[/b] at 1 stack up to [b]×7[/b] at 5. A new [color=#FFC94D]Momentum meter[/color] by your hand shows your charge, and Devastate stays greyed ([i]\"Build Momentum first\"[/i]) until it's ready. Build it up — then unleash.")
+	display_game("")
+
 	# v0.9.695 — In-combat screenshot fix (dev/QA).
-	display_game("[color=#00FF00]v0.9.695[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.695[/color]")
 	display_game("  [color=#1EFF00]◆ Screenshots work in combat.[/color] The [b]📷 button[/b] was being covered by the battle screen; it now sits on top and is clickable in combat, and [b]F12[/b] takes a shot from any screen. A brief on-screen confirmation shows the filename (saved to the claude_screenshots folder).")
 	display_game("")
 
