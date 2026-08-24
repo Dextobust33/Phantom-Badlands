@@ -18357,8 +18357,21 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 	# character_data.get("total_attack") was always 0 (Bash etc. showed 0 damage).
 	var s_str := _get_card_effective_stat("strength")
 	var s_con := _get_card_effective_stat("constitution")
+	var s_int := _get_card_effective_stat("intelligence")
+	var s_wits := _get_card_effective_stat("wits")
 	# v0.9.694 — mirror the authoritative estimate so pip/description/effect agree.
 	var est_dmg := int(_ability_card_estimate(ability_name).get("damage", 0))
+	# v0.9.698 — companion cards: headline number (damage/heal) from the pip helper +
+	# the card's own flavor text. Buff/utility companion cards show just their flavor.
+	if ability_name.begins_with("companion_card_"):
+		var _cdt = preload("res://shared/drop_tables.gd")
+		var _cdesc := String(_cdt.get_companion_card_data_by_id(ability_name).get("desc", ""))
+		var _pv := _ability_primary_value(ability_name)
+		if String(_pv.get("kind", "")) == "damage" and int(_pv.get("value", 0)) > 0:
+			return "Deal %s damage. %s" % [_desc_num(int(_pv.value), "companion power × your Attack × rank/tier"), _cdesc]
+		if String(_pv.get("kind", "")) == "heal" and int(_pv.get("value", 0)) > 0:
+			return "Heal %s HP. %s" % [_desc_num(int(_pv.value), "≈18% of your max HP"), _cdesc]
+		return _cdesc
 	match ability_name:
 		"power_strike":
 			return "Deal %s damage — a dependable heavy hit." % _desc_num(est_dmg, "2 × Attack × √STR scaling × your rank/tier bonus")
@@ -18378,7 +18391,46 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 			return "Buff yourself: %s defense for [b]5[/b] rounds." % _desc_num("+%d%%" % int(30 + sqrt(float(s_str)) * 3), "30 + √STR × 3")
 		"rally":
 			return "Heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(int(30 + sqrt(float(s_con)) * 10), "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
-	# Non-Warrior (slice): plain description as bbcode for now.
+		# --- Mage (v0.9.698) ---
+		"magic_bolt":
+			if est_dmg > 0:
+				return "Deal %s damage — you choose the mana, and more mana means a bigger bolt." % _desc_num(est_dmg, "mana spent × (1 + INT scaling) × rank/tier")
+			return "A bolt whose damage scales with the [b]mana you spend[/b] and your INT — you pick the amount each cast."
+		"blast":
+			return "Deal %s damage and set a [b]burn[/b] for %s/round over [b]3[/b] rounds." % [_desc_num(est_dmg, "50 × (1 + INT×4%) × 2 × rank/tier"), _desc_num(int(0.2 * float(s_int)), "20% of INT per round")]
+		"meteor":
+			return "Deal %s damage — a massive finisher that hits [b]harder with Focus[/b], then discharges it." % _desc_num(est_dmg, "100 × (1 + INT×4%) × 3-4x × rank/tier (+25%/Focus)")
+		"forcefield":
+			return "Raise a shield that absorbs the next %s damage." % _desc_num(int(100 + float(s_int) * 8.0), "100 + INT × 8")
+		"haste":
+			return "[b]Arcane Surge[/b]: gain %s spell damage and a %s double-cast chance for [b]4[/b] rounds." % [_desc_num("+%d%%" % int(40 + float(s_int) / 4.0), "40 + INT ÷ 4"), _desc_num("25%", "chance each damage spell casts twice")]
+		"paralyze":
+			return "%s chance to [b]stun[/b] the enemy for 1-2 turns." % _desc_num("%d%%" % clampi(50 + int(float(s_int) / 2.0), 10, 85), "50 + INT ÷ 2 (max 85%, lower on repeats)")
+		"banish":
+			return "%s chance to [b]banish[/b] the enemy out of the fight (70%% chance it still drops loot)." % _desc_num("%d%%" % clampi(40 + int(float(s_int) / 3.0), 1, 75), "40 + INT ÷ 3 (max 75%)")
+		# --- Trickster (v0.9.698) ---
+		"ambush":
+			return "Deal %s damage with a [b]50%% chance to crit[/b] (+50%%)." % _desc_num(est_dmg, "3 × Attack × √WITS scaling × rank/tier (avg +25% from crit)")
+		"exploit":
+			var _ex_pct := clampi(15 + int(float(s_wits) / 4.0), 15, 35)
+			if est_dmg > 0:
+				return "Deal %s — a slice of the enemy's [b]max HP[/b], so it shines against tough foes." % _desc_num(est_dmg, "%d%% of enemy max HP (15%% + WITS/4, cap 35%%)" % _ex_pct)
+			return "Deal %s of the enemy's [b]max HP[/b] as damage — great against tough foes." % _desc_num("%d%%" % _ex_pct, "15% + WITS/4, capped 35%")
+		"sabotage":
+			return "Weaken the enemy: %s to its strength and defense (stacks up to -50%%)." % _desc_num("-%d%%" % clampi(15 + int(float(s_wits) / 3.0), 1, 50), "15 + WITS ÷ 3 per cast")
+		"vanish":
+			return "[b]Phantom Strike[/b]: your next attack is a [b]guaranteed critical hit[/b]."
+		"gambit":
+			return "Gamble for %s damage — [b]Combo[/b] makes it bigger and more reliable; on a miss you take self-damage." % _desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier, +0.5x/Combo")
+		"analyze":
+			return "Reveal the enemy's stats and your outsmart odds, and gain [b]+10% damage[/b] for the rest of the fight."
+		"distract":
+			return "Distract the enemy for up to %s accuracy on its attacks." % _desc_num("-50%", "scales with energy spent, up to -50%")
+		"pickpocket":
+			return "Steal crafting materials from the enemy — up to [b]4×[/b] per fight."
+		"perfect_heist":
+			return "A high-risk [b]instant win[/b]: a small chance to end the fight outright with bonus XP."
+	# Universal / anything else: plain description as bbcode.
 	return _get_ability_description_text(ability_name)
 
 func _card_damage_multiplier(ability_name: String) -> float:
