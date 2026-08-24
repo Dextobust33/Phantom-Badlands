@@ -122,6 +122,17 @@ func _build_layout() -> void:
 	var help_btn = HelpPanelScript.make_help_button("ability_page", _help_panel)
 	header.add_child(help_btn)
 
+	# v0.9.678 slice 3 — deck rules line, always visible on the page.
+	var rules_lbl := RichTextLabel.new()
+	rules_lbl.bbcode_enabled = true
+	rules_lbl.fit_content = true
+	rules_lbl.scroll_active = false
+	rules_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rules_lbl.add_theme_font_size_override("normal_font_size", 12)
+	rules_lbl.add_theme_color_override("default_color", Color("#B8A98C"))
+	rules_lbl.text = "[color=#D4A017]Deck rules:[/color]  Max [b]3[/b] copies per card  ·  minimum [b]5[/b] cards  ·  [b]click a card to flip[/b] for details  ·  thin cards you don't use so favourites draw more often  ·  extra copies come from [b]dungeon rewards[/b] & [b]companion cards[/b]."
+	root_vbox.add_child(rules_lbl)
+
 	# v0.9.322 — slot row / status row removed (deck system replaced
 	# slot-equip). Status + cancel-choose still allocated as dummy instances
 	# so legacy code paths that touch them don't NPE; they're never added to
@@ -418,8 +429,13 @@ func _rebuild_abilities() -> void:
 		var req_level = int(ability.get("level", 1))
 		var is_unlocked = unlocked_names.has(ab_name) or _player_level >= req_level
 		if is_unlocked:
-			var card := _make_ability_card(ability, true)
-			_ability_grid.add_child(card)
+			# v0.9.678 slice 3 — combat-styled deck card (flip for details) + thin/restore controls.
+			var deck_count := int(_deck_collection.get(ab_name, 1))
+			var entry := _make_deck_entry(ability, deck_count)
+			if entry != null:
+				_ability_grid.add_child(entry)
+			else:
+				_ability_grid.add_child(_make_ability_card(ability, true))  # fallback
 		else:
 			var card := _make_ability_card(ability, false)
 			_locked_grid.add_child(card)
@@ -615,6 +631,66 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 
 	card.gui_input.connect(_on_ability_card_input.bind(ab_name, is_unlocked))
 	return card
+
+
+func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
+	"""v0.9.678 slice 3 — a combat-styled deck card (built by combat_scene_panel,
+	flips on click for the long description) plus a −/+ control row (thin/restore)."""
+	var ab_name := str(ability.get("name", ""))
+	var disp := str(ability.get("display", _humanize(ab_name)))
+	var csp = client_ref.combat_scene_panel if (client_ref and "combat_scene_panel" in client_ref) else null
+	if csp == null or not csp.has_method("build_deck_card"):
+		return null
+	var cat: Dictionary = client_ref.get_ability_category_info(ab_name) if client_ref.has_method("get_ability_category_info") else {}
+	var color := str(cat.get("color", "#8C7656"))
+	var glyph := str(cat.get("glyph", ""))
+	var cost_text := _cost_text_for(ab_name)
+	var back := _tooltip_for(ab_name)
+	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back)
+	var entry := VBoxContainer.new()
+	entry.add_theme_constant_override("separation", 4)
+	if card != null:
+		card.gui_input.connect(_on_deck_card_input.bind(card))
+		entry.add_child(card)
+	var ctl := HBoxContainer.new()
+	ctl.alignment = BoxContainer.ALIGNMENT_CENTER
+	ctl.add_theme_constant_override("separation", 6)
+	if deck_count >= 1:
+		var minus := Button.new()
+		minus.text = "−"
+		minus.custom_minimum_size = Vector2(30, 22)
+		minus.focus_mode = Control.FOCUS_NONE
+		minus.tooltip_text = "Thin: remove a copy (deck keeps at least 5 cards)."
+		minus.pressed.connect(_on_cull_pressed.bind(ab_name))
+		ctl.add_child(minus)
+	if deck_count < 3:
+		var plus := Button.new()
+		plus.text = "+"
+		plus.custom_minimum_size = Vector2(30, 22)
+		plus.focus_mode = Control.FOCUS_NONE
+		if deck_count == 0:
+			plus.tooltip_text = "Put this card back in your deck."
+			plus.pressed.connect(_on_add_pressed.bind(ab_name))
+		else:
+			plus.tooltip_text = "Extra copies come from dungeon rewards & companion cards."
+			plus.disabled = true
+		ctl.add_child(plus)
+	entry.add_child(ctl)
+	return entry
+
+
+func _on_deck_card_input(event: InputEvent, card: Control) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if card == null or not is_instance_valid(card):
+			return
+		var front = card.get_node_or_null("Front")
+		var back = card.get_node_or_null("Back")
+		if front == null or back == null:
+			return
+		var flipped := not bool(card.get_meta("flipped", false))
+		card.set_meta("flipped", flipped)
+		front.visible = not flipped
+		back.visible = flipped
 
 
 func _on_cull_pressed(ability_name: String) -> void:

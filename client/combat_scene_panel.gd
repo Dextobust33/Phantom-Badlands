@@ -2917,6 +2917,126 @@ func build_milestone_card(branch: String, ability_label: String, category_color_
 	return cell
 
 
+func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String) -> Control:
+	"""v0.9.678 (slice 3) — a combat-styled card for the DECK SCREEN. Returns a
+	Control holding a Front (banner + icon + cost + copy badge) and a Back (long
+	description); the Back starts hidden. Caller wires a click to flip (toggle
+	child 'Front'/'Back' visibility). Copy badge shows N/3; 0 = greyed 'out'."""
+	var root := Control.new()
+	root.name = "DeckCard"
+	root.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.set_meta("flipped", false)
+
+	# --- FRONT ---
+	var front := PanelContainer.new()
+	front.name = "Front"
+	front.set_anchors_preset(Control.PRESET_FULL_RECT)
+	front.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fsb := StyleBoxFlat.new()
+	fsb.bg_color = _theme_card_bg() if copies > 0 else Color(0.06, 0.06, 0.07, 0.95)
+	fsb.border_color = Color(category_color_hex) if copies > 0 else Color(0.3, 0.28, 0.24)
+	fsb.set_border_width_all(2)
+	fsb.set_corner_radius_all(10)
+	front.add_theme_stylebox_override("panel", fsb)
+	var fv := VBoxContainer.new()
+	fv.add_theme_constant_override("separation", 0)
+	fv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	front.add_child(fv)
+	var banner := PanelContainer.new()
+	banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bsb := StyleBoxFlat.new()
+	bsb.bg_color = Color(category_color_hex).darkened(0.42)
+	bsb.corner_radius_top_left = 8
+	bsb.corner_radius_top_right = 8
+	bsb.content_margin_left = 6
+	bsb.content_margin_right = 6
+	bsb.content_margin_top = 4
+	bsb.content_margin_bottom = 4
+	banner.add_theme_stylebox_override("panel", bsb)
+	var name_lbl := Label.new()
+	name_lbl.text = display
+	name_lbl.add_theme_font_size_override("font_size", 15)
+	name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
+	name_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	name_lbl.add_theme_constant_override("outline_size", 3)
+	name_lbl.clip_text = true
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner.add_child(name_lbl)
+	fv.add_child(banner)
+	var icon_wrap := CenterContainer.new()
+	icon_wrap.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	icon_wrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var glyph_lbl := Label.new()
+	glyph_lbl.text = glyph
+	glyph_lbl.add_theme_font_size_override("font_size", 46)
+	glyph_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
+	glyph_lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+	glyph_lbl.add_theme_constant_override("outline_size", 4)
+	glyph_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_wrap.add_child(glyph_lbl)
+	fv.add_child(icon_wrap)
+	# Bottom row: cost pip + copy badge.
+	var info := MarginContainer.new()
+	info.add_theme_constant_override("margin_left", 8)
+	info.add_theme_constant_override("margin_right", 8)
+	info.add_theme_constant_override("margin_bottom", 6)
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var info_hb := HBoxContainer.new()
+	info_hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(info_hb)
+	var cost_lbl := Label.new()
+	# Cost helper returns BBCode; strip tags for this plain Label (raw markup was
+	# rendering literally + stretching the card).
+	var _cost_rx := RegEx.new()
+	_cost_rx.compile("\\[.*?\\]")
+	cost_lbl.text = _cost_rx.sub(cost_text, "", true)
+	cost_lbl.add_theme_font_size_override("font_size", 12)
+	cost_lbl.add_theme_color_override("font_color", Color("#9ACD32"))
+	cost_lbl.clip_text = true
+	cost_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cost_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_hb.add_child(cost_lbl)
+	var copy_lbl := Label.new()
+	copy_lbl.text = ("×%d/3" % copies) if copies > 0 else "OUT"
+	copy_lbl.add_theme_font_size_override("font_size", 12)
+	copy_lbl.add_theme_color_override("font_color", Color("#9ACD32") if copies >= 2 else (Color("#B05050") if copies == 0 else Color("#AAAAAA")))
+	copy_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info_hb.add_child(copy_lbl)
+	fv.add_child(info)
+	root.add_child(front)
+
+	# --- BACK (hidden until flipped) ---
+	var back := PanelContainer.new()
+	back.name = "Back"
+	back.set_anchors_preset(Control.PRESET_FULL_RECT)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back.visible = false
+	var ksb := StyleBoxFlat.new()
+	ksb.bg_color = Color(0.07, 0.06, 0.05, 0.98)
+	ksb.border_color = Color(category_color_hex)
+	ksb.set_border_width_all(2)
+	ksb.set_corner_radius_all(10)
+	ksb.content_margin_left = 8
+	ksb.content_margin_right = 8
+	ksb.content_margin_top = 8
+	ksb.content_margin_bottom = 8
+	back.add_theme_stylebox_override("panel", ksb)
+	var back_txt := RichTextLabel.new()
+	back_txt.bbcode_enabled = true
+	back_txt.fit_content = true
+	back_txt.scroll_active = false
+	back_txt.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	back_txt.add_theme_font_size_override("normal_font_size", 12)
+	back_txt.add_theme_font_size_override("bold_font_size", 13)
+	back_txt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	back_txt.text = "[b]%s[/b]\n%s" % [display, back_bbcode]
+	back.add_child(back_txt)
+	root.add_child(back)
+	return root
+
+
 func _on_hand_cell_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if index < 0 or index >= _hand_cells.size():

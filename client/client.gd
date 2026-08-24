@@ -18343,28 +18343,21 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	# Damage abilities scale by MASTERY_RANK_DAMAGE_MULT; non-damage abilities
 	# (buffs / CC / utility) currently rank up cosmetically only — the
 	# tooltip honestly says so rather than promising a damage bump.
-	var damage_abilities := [
-		"magic_bolt", "blast", "meteor",
-		"power_strike", "shield_bash", "cleave", "devastate",
-		"ambush", "exploit", "gambit"
-	]
-	# Slice 6b — rank-up gives a player choice: +1 deck copy OR +10% damage.
-	# Show both branches in the tooltip preview so players can plan investments.
+	# v0.9.678 — cards grow two ways: they TIER UP continuously as you use them,
+	# and each MILESTONE (rank) offers a branch pick that fits the ability.
 	var next_preview = ""
 	if rank < rank_mults.size() - 1:
 		var next_rank = rank + 1
 		var next_name = MASTERY_RANK_NAMES[next_rank] if next_rank < MASTERY_RANK_NAMES.size() else "Mythic"
-		# Compute the effect-rank delta the player would gain by picking "+10% Damage"
-		var effect_ranks = character_data.get("ability_effect_ranks", {})
-		var cur_effect = int(effect_ranks.get(ability_name, 0))
-		var next_effect = min(cur_effect + 1, rank_mults.size() - 1)
-		var next_mult_pct = int((rank_mults[next_effect] - 1.0) * 100)
-		var next_mult_str = ("+%d%%" % next_mult_pct) if next_mult_pct >= 0 else ("%d%%" % next_mult_pct)
-		var copies = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
-		if ability_name in damage_abilities:
-			next_preview = "Next rank %d (%s) — pick: +1 Card (deck %d→%d) OR damage modifier %s" % [next_rank, next_name, copies, copies + 1, next_mult_str]
-		else:
-			next_preview = "Next rank %d (%s) — pick: +1 Card (deck %d→%d) OR no damage gain (utility)" % [next_rank, next_name, copies, copies + 1]
+		var _cat = get_ability_category_info(ability_name)
+		var third = ""
+		if str(_cat.get("category", "")) == "offense":
+			third = "Rider (Bleed) / "
+		elif ability_name in DURATION_CAPABLE_ABILITIES:
+			third = "Duration (+2 rounds) / "
+		next_preview = "Next milestone (rank %d, %s): choose Power / %sEfficiency. Cards also tier up steadily as you use them." % [next_rank, next_name, third]
+	var _copies_now = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
+	var deck_line := "In deck: ×%d/3 (extra copies from dungeon rewards & companion cards)" % _copies_now
 	var lines: Array = [display]
 	if cost_clean.strip_edges() != "":
 		lines.append("Cost: " + cost_clean.strip_edges())
@@ -18392,6 +18385,8 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	lines.append(progress)
 	if next_preview != "":
 		lines.append(next_preview)
+	if deck_line != "":
+		lines.append(deck_line)
 	# v0.9.640 — Imprint stack inline. Player report from the Variant Imprints
 	# memo's V2 candidates: 'currently the only visibility is the rank-up
 	# message log + the popup at imprint time.' Surface the stacked imprints
