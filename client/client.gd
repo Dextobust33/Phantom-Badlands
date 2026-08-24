@@ -859,6 +859,7 @@ const CHAT_MAX_FONT_SIZE = 48
 
 # Combat state
 var in_combat = false
+var _f12_was_down := false  # v0.9.695 — polled F12 screenshot edge-detect
 var flock_pending = false
 var flock_monster_name = ""
 var combat_item_mode = false  # Selecting item to use in combat
@@ -2518,6 +2519,9 @@ func _ready():
 			ss_btn.tooltip_text = "Save a screenshot (claude_screenshots folder)"
 			ss_btn.add_theme_font_size_override("font_size", 13)
 			ss_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+			# v0.9.695 — draw + hit-test above combat overlays (z up to 200) so the
+			# button is clickable IN combat (was being eaten by the battle panel).
+			ss_btn.z_index = 500
 			ss_btn.pressed.connect(_on_screenshot_button_pressed)
 			_ss_parent.add_child(ss_btn)
 			_ss_parent.move_child(ss_btn, music_toggle.get_index())
@@ -3087,6 +3091,12 @@ func _on_window_resized():
 		call_deferred("_sync_map_sprites_overlay")
 
 func _process(delta):
+	# v0.9.695 — F12 screenshot via a polled edge, so NO UI/combat state can eat
+	# the key (the _input path + the top-bar button both get consumed in combat).
+	var _f12_now := Input.is_physical_key_pressed(KEY_F12)
+	if _f12_now and not _f12_was_down:
+		_on_screenshot_button_pressed()
+	_f12_was_down = _f12_now
 	# Drain any queued new-player modal once combat/other modals clear. Cheap:
 	# only does work while something is actually pending.
 	if not _hint_queue.is_empty() or _pending_numpad_open or _pending_guided_intro:
@@ -31152,8 +31162,27 @@ func _on_screenshot_button_pressed() -> void:
 	if err == OK:
 		display_game("[color=#5CE05C]Screenshot saved: %s[/color]" % fname)
 		print("[SCREENSHOT] saved: ", path)
+		_flash_screenshot_toast("📷 %s" % fname)  # survives combat's game_output wipe
 	else:
 		display_game("[color=#FF6B6B]Screenshot failed (err %d)[/color]" % err)
+
+func _flash_screenshot_toast(text: String) -> void:
+	"""v0.9.695 — a brief top-level confirmation that combat can't wipe (unlike
+	game_output). Auto-frees after ~1.6s."""
+	var toast := Label.new()
+	toast.top_level = true
+	toast.z_index = 500
+	toast.text = text
+	toast.add_theme_font_size_override("font_size", 15)
+	toast.add_theme_color_override("font_color", Color("#8CFF8C"))
+	toast.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	toast.add_theme_constant_override("outline_size", 4)
+	toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	get_tree().root.add_child(toast)
+	toast.global_position = Vector2(16, 8)
+	get_tree().create_timer(1.6).timeout.connect(func():
+		if is_instance_valid(toast):
+			toast.queue_free())
 
 
 func open_post_status_panel() -> void:
