@@ -3578,6 +3578,21 @@ func _refresh_hand() -> void:
 			effect_lbl.text = str(info.get("effect_text", ""))
 			effect_lbl.add_theme_color_override("font_color", Color(str(info.get("effect_color", "#FFA060"))))
 
+		# v0.9.697 — BUILDER cards advertise that they feed the finisher, so it's
+		# clear WHICH cards add Momentum / Combo. Finishers (devastate/gambit) show
+		# their own state below and are excluded here. Only the matching class's
+		# archetype abilities build the meter (universal/companion cards don't).
+		if effect_lbl and (_momentum_active or _combo_active):
+			var _arch := Character.get_ability_archetype(card_name)
+			if _momentum_active and _arch == "warrior" and card_name != "devastate":
+				var _e := effect_lbl.text
+				effect_lbl.text = "+⚡ Momentum" if _e == "" else "+⚡  %s" % _e
+				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
+			elif _combo_active and _arch == "trickster" and card_name != "gambit":
+				var _e2 := effect_lbl.text
+				effect_lbl.text = "+✦ Combo" if _e2 == "" else "+✦  %s" % _e2
+				effect_lbl.add_theme_color_override("font_color", Color("#B06BE0"))
+
 		# v0.9.696 — Warrior Devastate is gated behind Momentum: it can't be played
 		# with 0 Momentum. Render it as uncastable (dimmed + hint) until the meter
 		# has at least 1 pip, mirroring the server gate in _process_warrior_ability.
