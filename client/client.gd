@@ -27334,8 +27334,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.678 — Deck screen (build your deck).
+	display_game("[color=#00FF00]v0.9.678[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ BUILD YOUR DECK.[/color] The [b]Deck[/b] screen now shows your abilities as real cards — [b]click a card to flip it[/b] for the full details. You can now [b]thin your deck[/b]: remove cards you don't use (down to 0) so your favourites come up more often, and put them back anytime (deck keeps at least 5 cards). Each card caps at [b]3 copies[/b]; extra copies will come from [b]dungeon rewards & companion cards[/b] (coming soon).")
+	display_game("")
+
 	# v0.9.677 — Card-themed milestone chooser + Duration.
-	display_game("[color=#00FF00]v0.9.677[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.677[/color]")
 	display_game("  [color=#1EFF00]◆ Milestone upgrades are now a card chooser.[/color] Hitting a milestone pops a [b]row of card-styled choices[/b] you click to pick — with a polished hover box showing what each does. Options now [b]fit the ability[/b]: attacks offer [color=#FF6644]Power[/color] / [color=#FF4444]Rider (Bleed)[/color] / [color=#66B0FF]Efficiency[/color]; [b]buffs[/b] offer [color=#FF6644]Power[/color] / [color=#7AE07A]Duration[/color] (lasts +2 rounds) / [color=#66B0FF]Efficiency[/color] — no more offering Bleed to a buff.")
 	display_game("")
 
