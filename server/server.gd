@@ -2616,6 +2616,10 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	var character = Character.new()
 	character.initialize(char_name, char_class, char_race)
 	character.character_id = peer_id
+	# v0.9.698 — seed the curated 5-card starter deck at CREATION so the Deck
+	# screen is correct immediately (previously only the load/combat path seeded,
+	# so a brand-new character's deck read as empty / all-OUT until first combat).
+	character.initialize_deck_collection_if_needed()
 
 	# Slice 5 — spawn-at-post. If the create message specifies a spawn post
 	# (owner + index), validate the post belongs to this account and place
