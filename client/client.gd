@@ -27366,8 +27366,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.683 — Companion card art.
+	display_game("[color=#00FF00]v0.9.683[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Companion cards show their companion.[/color] Each companion card now displays that companion's [b]ASCII art[/b] on the card — in your combat hand and on the Deck screen — instead of a generic icon. First visual pass; sizing/placement will be tuned.")
+	display_game("")
+
 	# v0.9.682 — Companion loot cards: Valor + item-drop.
-	display_game("[color=#00FF00]v0.9.682[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.682[/color]")
 	display_game("  [color=#1EFF00]◆ Companion loot cards.[/color] The treasure-flavoured companion cards now grant [b]what you actually want[/b]: [color=#FFD700]Kobold's Stash[/color] & [color=#FFD700]Hoarder's Gift[/color] (Mimic) boost your [b]item-drop chance[/b] for the fight, while [color=#FFD700]Sphinx's Toll[/color] & [color=#FFD700]Kelpie's Bargain[/color] grant [b]bonus Valor[/b] on victory. (Replaces the old gem bonus.)")
 	display_game("")
 
