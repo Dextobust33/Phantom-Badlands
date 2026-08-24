@@ -3233,6 +3233,19 @@ func backfill_ability_uses_if_needed() -> bool:
 	ability_uses_backfilled = true
 	return true
 
+# v0.9.697 — new characters start with a CURATED 5-card deck (each class's engine:
+# builders + finisher) instead of the whole roster. The rest stays available to ADD
+# via the deck screen. Keeps new-player decks focused + teaches the class engine.
+const CURATED_STARTER_DECKS := {
+	"warrior": ["power_strike", "cleave", "shield_bash", "war_cry", "devastate"],
+	"trickster": ["ambush", "exploit", "sabotage", "vanish", "gambit"],
+	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
+}
+
+func _curated_starter_deck() -> Array:
+	var d = CURATED_STARTER_DECKS.get(get_class_path(), [])
+	return d.duplicate() if d is Array else []
+
 func initialize_deck_collection_if_needed() -> bool:
 	"""Slice 6b one-shot init: populate combat_deck_collection with 1 copy of
 	each accessible ability, and migrate ability_effect_ranks so existing chars
@@ -3277,18 +3290,23 @@ func initialize_deck_collection_if_needed() -> bool:
 				equipped_abilities[i] = ""
 				changed = true
 				break
-	# Always-on additive backfill: any newly-shipped accessible ability the
-	# character doesn't yet have gets 1 copy. Doesn't shrink the collection.
-	# Skip non_combat abilities so they never enter the combat deck.
-	for entry in available:
-		var name = entry.get("name", "")
-		if name == "":
-			continue
-		if bool(entry.get("non_combat", false)):
-			continue
-		if not combat_deck_collection.has(name):
-			combat_deck_collection[name] = 1
+	# v0.9.697 — seed a CURATED 5-card starter deck for brand-new characters
+	# (empty collection). Everything else in the roster stays available to ADD
+	# from the deck screen. NO always-on full-roster backfill anymore — that's
+	# what caused deck bloat; existing characters keep whatever they already have.
+	if not deck_collection_initialized and combat_deck_collection.is_empty():
+		var starter := _curated_starter_deck()
+		if not starter.is_empty():
+			for sname in starter:
+				combat_deck_collection[sname] = 1
 			changed = true
+		else:
+			# Fallback for any class without a curated list: seed all accessible.
+			for entry in available:
+				var nm = String(entry.get("name", ""))
+				if nm != "" and not bool(entry.get("non_combat", false)) and not combat_deck_collection.has(nm):
+					combat_deck_collection[nm] = 1
+					changed = true
 	if deck_collection_initialized:
 		return changed
 	# First-time init: migrate effect ranks too (only once).

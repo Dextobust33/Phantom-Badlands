@@ -441,7 +441,9 @@ func _rebuild_abilities() -> void:
 		var is_unlocked = unlocked_names.has(ab_name) or _player_level >= req_level
 		if is_unlocked:
 			# v0.9.678 slice 3 — combat-styled deck card (flip for details) + thin/restore controls.
-			var deck_count := int(_deck_collection.get(ab_name, 1))
+			# v0.9.697 — default 0 (not 1): with curated starter decks, an ability
+			# absent from the collection is BENCHED (addable), not in the deck.
+			var deck_count := int(_deck_collection.get(ab_name, 0))
 			deck_total += max(0, deck_count)
 			var entry := _make_deck_entry(ability, deck_count)
 			if entry != null:
@@ -474,7 +476,7 @@ func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContaine
 	# v0.9.425 — ability category color drives the border + a subtle bg tint
 	# on unlocked cards (mirrors the combat hand strip theming). Multi-copy
 	# tint kept as a small additional cue. Locked cards stay neutral muted.
-	var deck_count = int(_deck_collection.get(ab_name, 1)) if is_unlocked else 0
+	var deck_count = int(_deck_collection.get(ab_name, 0)) if is_unlocked else 0  # v0.9.697 benched = 0
 	var category_info: Dictionary = {}
 	if client_ref and client_ref.has_method("get_ability_category_info"):
 		category_info = client_ref.get_ability_category_info(ab_name)
@@ -712,7 +714,7 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 			plus.custom_minimum_size = Vector2(30, 22)
 			plus.focus_mode = Control.FOCUS_NONE
 			if deck_count == 0:
-				plus.tooltip_text = "Put this card back in your deck."
+				plus.tooltip_text = "Add this card to your deck."
 				plus.pressed.connect(_on_add_pressed.bind(ab_name))
 			else:
 				plus.tooltip_text = "Extra copies come from dungeon rewards & companion cards."
