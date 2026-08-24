@@ -3573,7 +3573,13 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 	if client_ref.has_method("_estimate_ability_card_effect"):
 		var eff = client_ref._estimate_ability_card_effect(card_name, int(info.get("planned_cost", 0)), float(info.get("fraction", 1.0)))
 		if eff is Dictionary:
-			info["effect_text"] = str(eff.get("text", ""))
+			# v0.9.694 — the damage/heal pip shows the number now, so strip it from
+			# the effect line (leaving only the secondary tag, e.g. "+bleed") to
+			# avoid two different-looking numbers on the same card.
+			var _et := str(eff.get("text", ""))
+			var _rx := RegEx.new()
+			_rx.compile("~\\s*[0-9]+\\s*dmg|Heal\\s+[0-9]+")
+			info["effect_text"] = _rx.sub(_et, "", true).strip_edges()
 			info["effect_color"] = str(eff.get("color", "#FFA060"))
 	# Mastery progress — uses needed before the ability's next rank-up. Renders
 	# inline with the rank tag so the card answers "how close am I to ranking

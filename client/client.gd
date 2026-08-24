@@ -18344,17 +18344,17 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 	# character_data.get("total_attack") was always 0 (Bash etc. showed 0 damage).
 	var s_str := _get_card_effective_stat("strength")
 	var s_con := _get_card_effective_stat("constitution")
-	var atk := _get_card_total_attack()
-	var dmul := _card_damage_multiplier(ability_name)
+	# v0.9.694 — mirror the authoritative estimate so pip/description/effect agree.
+	var est_dmg := int(_ability_card_estimate(ability_name).get("damage", 0))
 	match ability_name:
 		"power_strike":
-			return "Deal %s damage — a dependable heavy hit." % _desc_num(int(2 * atk * dmul), "2 × Attack × your rank/tier bonus (plus √STR scaling)")
+			return "Deal %s damage — a dependable heavy hit." % _desc_num(est_dmg, "2 × Attack × √STR scaling × your rank/tier bonus")
 		"shield_bash":
-			return "Deal %s damage with a [b]chance to stun[/b] the enemy." % _desc_num(int(1.5 * atk * dmul), "1.5 × Attack × your rank/tier bonus (plus √STR scaling)")
+			return "Deal %s damage with a [b]chance to stun[/b] the enemy." % _desc_num(est_dmg, "1.5 × Attack × √STR scaling × your rank/tier bonus")
 		"cleave":
-			return "Deal %s damage and open a bleeding wound for %s/round over [b]4[/b] rounds." % [_desc_num(int(2.5 * atk * dmul), "2.5 × Attack × your rank/tier bonus"), _desc_num(int(0.2 * s_str), "20% of STR per round")]
+			return "Deal %s damage and open a bleeding wound for %s/round over [b]4[/b] rounds." % [_desc_num(est_dmg, "2.5 × Attack × √STR scaling × your rank/tier bonus"), _desc_num(int(0.2 * s_str), "20% of STR per round")]
 		"devastate":
-			return "Deal %s damage — a massive finisher." % _desc_num(int(5 * atk * dmul), "5 × Attack × your rank/tier bonus (plus √STR scaling)")
+			return "Deal %s damage — a massive finisher." % _desc_num(est_dmg, "5 × Attack × √STR scaling × your rank/tier bonus")
 		"war_cry":
 			return "Buff yourself: %s damage for [b]4[/b] rounds." % _desc_num("+35%", "flat +35% damage")
 		"berserk":
@@ -18390,22 +18390,43 @@ func _card_damage_multiplier(ability_name: String) -> float:
 	var tier_mult := 1.0 + float(tier - 1) * 0.02 + float(power_picks) * 0.12
 	return rm * tier_mult
 
+func _ability_card_estimate(ability_name: String) -> Dictionary:
+	"""v0.9.694 — the SINGLE source of truth for a card's damage/heal estimate:
+	parse the authoritative `_estimate_ability_card_effect` (the same one that
+	feeds the card's effect text), so the pip, description, and effect line all
+	agree. Returns {damage:int|-1, heal:int|-1}."""
+	var planned := 0
+	var ps = _get_ability_planned_spend(ability_name)
+	if ps is Dictionary:
+		planned = int(ps.get("amount", 0))
+	var eff = _estimate_ability_card_effect(ability_name, planned, 1.0)
+	var txt := str(eff.get("text", ""))
+	var rx := RegEx.new()
+	rx.compile("~\\s*([0-9]+)\\s*dmg")
+	var m = rx.search(txt)
+	if m != null:
+		return {"damage": int(m.get_string(1)), "heal": -1}
+	var rh := RegEx.new()
+	rh.compile("Heal\\s+([0-9]+)")
+	var mh = rh.search(txt)
+	if mh != null:
+		return {"damage": -1, "heal": int(mh.get_string(1))}
+	return {"damage": -1, "heal": -1}
+
 func _ability_primary_value(ability_name: String) -> Dictionary:
-	"""v0.9.691/693 (Warrior slice) — the card's headline damage or heal estimate,
-	folding in your rank/tier multiplier so it's close to the real hit. {kind:
-	'damage'|'heal'|'', value}. (Excludes monster defense + variance.)"""
-	var s_con := _get_card_effective_stat("constitution")
+	"""v0.9.694 — the card's headline damage or heal pip. For known abilities it
+	MIRRORS `_estimate_ability_card_effect` (via `_ability_card_estimate`) so the
+	pip matches the card's effect text exactly. {kind:'damage'|'heal'|'', value}."""
 	var atk := _get_card_total_attack()
 	var dmul := _card_damage_multiplier(ability_name)
-	match ability_name:
-		"power_strike": return {"kind": "damage", "value": int(2.0 * atk * dmul)}
-		"shield_bash": return {"kind": "damage", "value": int(1.5 * atk * dmul)}
-		"cleave": return {"kind": "damage", "value": int(2.5 * atk * dmul)}
-		"devastate": return {"kind": "damage", "value": int(5.0 * atk * dmul)}
-		"rally": return {"kind": "heal", "value": int(30 + sqrt(float(s_con)) * 10)}
-	# Companion cards — damage kinds show their strike estimate (power × Attack);
-	# buffs show nothing; heal shows an approximate heal. Powers mirror
-	# combat_manager._process_companion_ability.
+	if not ability_name.begins_with("companion_card_"):
+		var est := _ability_card_estimate(ability_name)
+		if int(est.get("damage", -1)) >= 0:
+			return {"kind": "damage", "value": int(est.damage)}
+		if int(est.get("heal", -1)) >= 0:
+			return {"kind": "heal", "value": int(est.heal)}
+		return {"kind": "", "value": 0}
+	# Companion cards (not in the estimator) — power × Attack × rank/tier mult.
 	if ability_name.begins_with("companion_card_"):
 		var _dt = preload("res://shared/drop_tables.gd")
 		var _kind := String(_dt.get_companion_card_data_by_id(ability_name).get("kind", ""))
