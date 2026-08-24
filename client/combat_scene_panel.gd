@@ -2655,33 +2655,42 @@ static func companion_card_art_bbcode(card_name: String) -> String:
 
 const CARD_ART_BOX := Vector2(128, 92)  # fixed art box inside the 150x190 card
 
-func _make_card_art_label() -> RichTextLabel:
-	"""A mono RichTextLabel that renders a card's companion monster art inside a
-	FIXED, clipped box so it can never grow the card (fit_content off + a fixed
-	custom_minimum_size; CenterContainer sizes it to exactly that box). Font is
-	fitted to the box per-art in _apply_card_art. Hidden until populated."""
-	var art_img := RichTextLabel.new()
-	art_img.name = "ArtImg"
-	art_img.bbcode_enabled = true
-	art_img.fit_content = false
-	art_img.scroll_active = false
-	art_img.clip_contents = true
-	art_img.custom_minimum_size = CARD_ART_BOX
-	art_img.autowrap_mode = TextServer.AUTOWRAP_OFF
-	art_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	art_img.visible = false
+func _make_card_art_label() -> Control:
+	"""v0.9.686 — a fixed-size CLIP HOLDER (CARD_ART_BOX) containing a full-size
+	RichTextLabel that we uniformly SCALE DOWN so the WHOLE companion art shows,
+	just small. The holder's fixed min-size keeps the card uniform; the inner RTL
+	renders at natural size and is node-scaled + centered in _apply_card_art.
+	Named 'ArtImg' so _refresh_hand's find_child + visibility toggle still work."""
+	var holder := Control.new()
+	holder.name = "ArtImg"
+	holder.custom_minimum_size = CARD_ART_BOX
+	holder.clip_contents = true
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.visible = false
+	var rtl := RichTextLabel.new()
+	rtl.name = "ArtRTL"
+	rtl.bbcode_enabled = true
+	rtl.fit_content = false
+	rtl.scroll_active = false
+	rtl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if _mono_font:
-		art_img.add_theme_font_override("normal_font", _mono_font)
-		art_img.add_theme_font_override("bold_font", _mono_font)
-		art_img.add_theme_font_override("italics_font", _mono_font)
-		art_img.add_theme_font_override("mono_font", _mono_font)
-	return art_img
+		rtl.add_theme_font_override("normal_font", _mono_font)
+		rtl.add_theme_font_override("bold_font", _mono_font)
+		rtl.add_theme_font_override("italics_font", _mono_font)
+		rtl.add_theme_font_override("mono_font", _mono_font)
+	holder.add_child(rtl)
+	return holder
 
-func _apply_card_art(label: RichTextLabel, art_bbcode: String) -> void:
-	"""Size the art's font to fit CARD_ART_BOX (deterministic from row/col counts,
-	no render pass) and set the text. Clipping is the safety net if the estimate
-	is slightly off. Roughly vertically centered by padding blank lines."""
-	if label == null:
+func _apply_card_art(holder: Control, art_bbcode: String) -> void:
+	"""Render the full art in the inner RTL at a base font, then uniformly scale
+	the RTL node so the ENTIRE art fits (and centers) inside CARD_ART_BOX. Uses
+	measured mono metrics to compute the natural size deterministically (no layout
+	wait), so even a 150x72 monster shows whole, just miniaturized."""
+	if holder == null:
+		return
+	var rtl: RichTextLabel = holder.get_node_or_null("ArtRTL")
+	if rtl == null:
 		return
 	var plain := _strip_bbcode(art_bbcode)
 	var lines := plain.split("\n")
@@ -2689,19 +2698,32 @@ func _apply_card_art(label: RichTextLabel, art_bbcode: String) -> void:
 	var cols: int = 1
 	for ln in lines:
 		cols = max(cols, (ln as String).length())
-	# Mono metrics ~ width 0.62·fs, line height 1.30·fs. Fit both dimensions.
-	var by_w: float = CARD_ART_BOX.x / (float(cols) * 0.62)
-	var by_h: float = CARD_ART_BOX.y / (float(rows) * 1.30)
-	var fs: int = int(clamp(floor(min(by_w, by_h)), 3, 7))
-	label.add_theme_font_size_override("normal_font_size", fs)
-	label.add_theme_font_size_override("bold_font_size", fs)
-	label.add_theme_font_size_override("italics_font_size", fs)
-	label.add_theme_font_size_override("mono_font_size", fs)
-	# Vertical centering: pad blank lines so the art sits mid-box.
-	var fit_rows: int = int(CARD_ART_BOX.y / (float(fs) * 1.30))
-	var pad: int = max(0, int((fit_rows - rows) / 2))
-	var prefix := "\n".repeat(pad) if pad > 0 else ""
-	label.text = prefix + art_bbcode
+	# Measure the mono font: width-per-point + line-height-per-point.
+	var cw: float = 0.62
+	var lh: float = 1.35
+	if _mono_font != null:
+		var wref: float = _mono_font.get_string_size("W", HORIZONTAL_ALIGNMENT_LEFT, -1, 100).x / 100.0
+		var href: float = float(_mono_font.get_height(100)) / 100.0
+		if wref > 0.01:
+			cw = wref
+		if href > 0.01:
+			lh = href
+	var base_fs: int = 8  # render crisp, then downscale
+	rtl.add_theme_font_size_override("normal_font_size", base_fs)
+	rtl.add_theme_font_size_override("bold_font_size", base_fs)
+	rtl.add_theme_font_size_override("italics_font_size", base_fs)
+	rtl.add_theme_font_size_override("mono_font_size", base_fs)
+	# Natural (unscaled) size of the full art, with a little slack so nothing
+	# clips inside the RTL before we scale it.
+	var nat := Vector2(float(cols) * cw * base_fs, float(rows) * lh * base_fs) * 1.06
+	rtl.custom_minimum_size = nat
+	rtl.size = nat
+	rtl.text = art_bbcode
+	# Uniform scale so the WHOLE art fits the box; center it.
+	var s: float = min(CARD_ART_BOX.x / nat.x, CARD_ART_BOX.y / nat.y)
+	rtl.pivot_offset = Vector2.ZERO
+	rtl.scale = Vector2(s, s)
+	rtl.position = (CARD_ART_BOX - nat * s) * 0.5
 
 func _build_hand_cell(index: int) -> PanelContainer:
 	"""v0.9.675 — a real PORTRAIT card: category-coloured top banner (hotkey +
@@ -3210,7 +3232,7 @@ func _refresh_hand() -> void:
 				effect_lbl.text = ""
 			if glyph_lbl:
 				glyph_lbl.text = ""
-			var _ai_empty: RichTextLabel = cell.find_child("ArtImg", true, false)
+			var _ai_empty: Control = cell.find_child("ArtImg", true, false)
 			if _ai_empty:
 				_ai_empty.visible = false
 			if emblem_lbl:
@@ -3237,7 +3259,7 @@ func _refresh_hand() -> void:
 			glyph_lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
 		# v0.9.683 — companion cards render the companion's monster art in place of
 		# the glyph.
-		var art_img: RichTextLabel = cell.find_child("ArtImg", true, false)
+		var art_img: Control = cell.find_child("ArtImg", true, false)
 		var _cart := companion_card_art_bbcode(card_name)
 		if _cart != "":
 			if art_img:
