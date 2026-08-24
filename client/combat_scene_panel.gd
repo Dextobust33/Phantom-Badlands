@@ -2800,8 +2800,10 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	glyph_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon_wrap.add_child(glyph_label)
 	# v0.9.683 — companion cards show the companion's monster art here instead of
-	# the glyph (populated + toggled in _refresh_hand).
-	icon_wrap.add_child(_make_card_art_label(6))
+	# the glyph (populated + toggled in _refresh_hand). Font 4 = the art's native
+	# size (ASCII_ART_FONT_SIZE), which fits inside the 150x190 card without
+	# growing it (font 6 overflowed and enlarged the whole card).
+	icon_wrap.add_child(_make_card_art_label(4))
 	vbox.add_child(icon_wrap)
 
 	# --- Effect line (small, above the info row) ---
@@ -3015,7 +3017,7 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	# v0.9.683 — companion cards show the companion's monster art here.
 	if art_bbcode != "":
 		glyph_lbl.visible = false
-		var deck_art := _make_card_art_label(6)
+		var deck_art := _make_card_art_label(4)
 		deck_art.text = art_bbcode
 		deck_art.visible = true
 		icon_wrap.add_child(deck_art)
