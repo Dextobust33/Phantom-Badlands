@@ -1280,6 +1280,117 @@ const COMPANION_VARIANT_TRAIT = {
 # Max stacks of imprints any single ability can hold (matches mastery rank cap).
 const VARIANT_IMPRINT_MAX_STACKS = 4
 
+# ===== COMPANION CARDS (v0.9.681) =====
+# Every companion TYPE grants a UNIQUE card with its own name + effect. Keyed by
+# type so "companion_card_<type_slug>" resolves here. `kind` drives resolution in
+# combat_manager._process_companion_ability; effects span damage, DoT, debuffs,
+# self-buffs, shields, heals, resource restore, and loot influence. Params per
+# kind are computed in code (scaled by usage tier), so entries stay concise.
+# Kinds: strike execute reckless bleed poison weaken blind stun charm lifesteal
+#        timestop | rage guard focus shield heal channel | fortune
+const COMPANION_CARD_DATA = {
+	# --- T1 ---
+	"Goblin":       {"name": "Cheap Shot",         "kind": "blind",     "desc": "A dirty strike that flings grit in the enemy's eyes — they're likely to miss their next attack."},
+	"Giant Rat":    {"name": "Filth Bite",         "kind": "poison",    "desc": "A festering bite that poisons the enemy, dealing damage every turn."},
+	"Kobold":       {"name": "Pack Frenzy",        "kind": "execute",   "desc": "An opportunist's strike — deals extra damage to wounded enemies."},
+	"Skeleton":     {"name": "Bone Wall",          "kind": "guard",     "desc": "Rattling bones brace you — take reduced damage for a few rounds."},
+	"Wolf":         {"name": "Hunter's Instinct",  "kind": "focus",     "desc": "Sharpens your aim — greatly increased crit chance for a few rounds."},
+	# --- T2 ---
+	"Orc":          {"name": "Brutal Cleaver",     "kind": "strike",    "desc": "A heavy, savage chop that hits hard."},
+	"Hobgoblin":    {"name": "War Banner",         "kind": "rage",      "desc": "A commander's rally — increased damage for a few rounds."},
+	"Gnoll":        {"name": "Savage Rend",        "kind": "bleed",     "desc": "Tears open a bleeding wound that damages the enemy over time."},
+	"Zombie":       {"name": "Enervating Grasp",   "kind": "weaken",    "desc": "A rotting grip that saps the enemy's strength — it deals less damage for a few rounds."},
+	"Giant Spider": {"name": "Venom Spray",        "kind": "poison",    "desc": "Coats the enemy in fast-acting venom, dealing damage every turn."},
+	"Wight":        {"name": "Life Leech",         "kind": "lifesteal", "desc": "Drains the enemy's vitality, healing you for part of the damage dealt."},
+	"Siren":        {"name": "Alluring Song",      "kind": "charm",     "desc": "A bewitching song that may charm the enemy into inaction."},
+	"Kelpie":       {"name": "Undertow Slam",      "kind": "strike",    "desc": "A crushing tidal blow."},
+	"Mimic":        {"name": "Hoarder's Gift",     "kind": "fortune",   "desc": "The mimic coughs up treasure — a strike that also grants bonus loot if you win this fight."},
+	# --- T3 ---
+	"Ogre":         {"name": "Ogre Smash",         "kind": "strike",    "desc": "A colossal overhead smash."},
+	"Troll":        {"name": "Troll Regeneration", "kind": "heal",      "desc": "Regenerative troll blood knits your wounds, healing you."},
+	"Wraith":       {"name": "Soul Siphon",        "kind": "channel",   "desc": "Siphons spectral energy — a strike that restores a chunk of your resource."},
+	"Wyvern":       {"name": "Diving Talon",       "kind": "execute",   "desc": "A precise dive that finishes wounded prey — extra damage to low-health enemies."},
+	"Minotaur":     {"name": "Goring Charge",      "kind": "bleed",     "desc": "A goring charge that leaves the enemy bleeding."},
+	"Gargoyle":     {"name": "Stone Shatter",      "kind": "stun",      "desc": "A stony blow that may stun the enemy, costing it a turn."},
+	"Harpy":        {"name": "Screeching Dive",    "kind": "blind",     "desc": "A shrieking dive that disorients the enemy — likely to miss next turn."},
+	"Shrieker":     {"name": "Piercing Wail",      "kind": "stun",      "desc": "A deafening wail that can stun the enemy."},
+	# --- T4 ---
+	"Giant":        {"name": "Titan's Fist",       "kind": "strike",    "desc": "An earth-shaking punch."},
+	"Dragon Wyrmling": {"name": "Ember Breath",    "kind": "bleed",     "desc": "Searing breath that sets the enemy alight, burning over time."},
+	"Demon":        {"name": "Hellfire Slash",     "kind": "strike",    "desc": "A blazing infernal slash."},
+	"Vampire":      {"name": "Vampiric Kiss",      "kind": "lifesteal", "desc": "Drinks the enemy's blood, healing you for part of the damage dealt."},
+	"Gryphon":      {"name": "Sky Talon",          "kind": "focus",     "desc": "A predator's focus — greatly increased crit chance for a few rounds."},
+	"Chimaera":     {"name": "Three Maws",         "kind": "reckless",  "desc": "A frenzied triple maul — big damage, but you take a little recoil."},
+	"Succubus":     {"name": "Beguiling Kiss",     "kind": "charm",     "desc": "A seductive kiss that may charm the enemy into inaction."},
+	# --- T5 ---
+	"Ancient Dragon": {"name": "Cataclysm Breath", "kind": "strike",    "desc": "A devastating gout of dragonfire."},
+	"Demon Lord":   {"name": "Infernal Drain",     "kind": "lifesteal", "desc": "Rips the enemy's soul, healing you for part of the damage dealt."},
+	"Lich":         {"name": "Arcane Siphon",      "kind": "channel",   "desc": "Siphons arcane power — a strike that restores a chunk of your resource."},
+	"Titan":        {"name": "World Breaker",      "kind": "strike",    "desc": "A world-shattering blow."},
+	"Balrog":       {"name": "Flame Whip",         "kind": "bleed",     "desc": "A whip of fire that burns the enemy over time."},
+	"Cerberus":     {"name": "Threefold Bite",     "kind": "reckless",  "desc": "Three heads tear in — heavy damage with a little recoil."},
+	"Jabberwock":   {"name": "Vorpal Strike",      "kind": "execute",   "desc": "Snicker-snack — devastating against wounded enemies."},
+	# --- T6 ---
+	"Elemental":    {"name": "Elemental Surge",    "kind": "rage",      "desc": "Channels raw elements — increased damage for a few rounds."},
+	"Iron Golem":   {"name": "Iron Bulwark",       "kind": "shield",    "desc": "An iron ward that absorbs a burst of incoming damage."},
+	"Sphinx":       {"name": "Sphinx's Boon",      "kind": "fortune",   "desc": "Ancient favor — a strike that also grants bonus loot if you win this fight."},
+	"Hydra":        {"name": "Hydra Onslaught",    "kind": "bleed",     "desc": "Many heads leave many bleeding wounds."},
+	"Phoenix":      {"name": "Rebirth Flame",      "kind": "heal",      "desc": "Phoenix fire mends your wounds, healing you greatly."},
+	"Nazgul":       {"name": "Black Breath",       "kind": "blind",     "desc": "A dread aura — the enemy falters and is likely to miss."},
+	# --- T7 ---
+	"Void Walker":  {"name": "Void Rift",          "kind": "execute",   "desc": "Tears a rift that consumes wounded enemies — extra damage to the low-health."},
+	"World Serpent": {"name": "Coiling Crush",     "kind": "stun",      "desc": "Constricts the enemy — a crushing blow that may stun."},
+	"Elder Lich":   {"name": "Death Coil",         "kind": "lifesteal", "desc": "Necrotic energy drains the enemy to heal you."},
+	"Primordial Dragon": {"name": "Primordial Roar", "kind": "rage",    "desc": "A primal roar — greatly increased damage for a few rounds."},
+	# --- T8 ---
+	"Cosmic Horror": {"name": "Maddening Gaze",    "kind": "charm",     "desc": "Alien madness that may pacify the enemy into inaction."},
+	"Time Weaver":  {"name": "Time Warp",          "kind": "timestop",  "desc": "Freezes the enemy in time — a strike that makes it lose its next turn(s)."},
+	"Death Incarnate": {"name": "Reaper's Scythe", "kind": "execute",   "desc": "The scythe reaps the wounded — massive extra damage to low-health enemies."},
+	# --- T9 ---
+	"Avatar of Chaos": {"name": "Chaos Nova",      "kind": "reckless",  "desc": "Unleashes raw chaos — massive damage with recoil."},
+	"The Nameless One": {"name": "Unmaking",       "kind": "execute",   "desc": "Erases the wounded from existence — devastating to low-health enemies."},
+	"God Slayer":   {"name": "Godsbane",           "kind": "focus",     "desc": "A perfect killer's focus — greatly increased crit chance for a few rounds."},
+	"Entropy":      {"name": "Entropic Decay",     "kind": "poison",    "desc": "Everything decays — a potent, lingering poison."},
+}
+
+# Which milestone/UI category each companion-card kind belongs to. Buff-category
+# cards deal no damage (pure self-benefit) and get the Duration milestone; the
+# rest deal damage and get the Rider (bleed) milestone. Fortune deals damage too.
+const COMPANION_CARD_KIND_CATEGORY = {
+	"strike": "offense", "execute": "offense", "reckless": "offense",
+	"bleed": "offense", "poison": "offense", "weaken": "offense",
+	"blind": "offense", "stun": "offense", "charm": "offense",
+	"lifesteal": "offense", "timestop": "offense", "fortune": "offense",
+	"rage": "buff", "guard": "buff", "focus": "buff",
+	"shield": "buff", "heal": "buff", "channel": "buff",
+}
+
+static func companion_card_id_for(monster_type: String) -> String:
+	return "companion_card_" + monster_type.to_lower().replace(" ", "_")
+
+static func get_companion_card_data(monster_type: String) -> Dictionary:
+	return COMPANION_CARD_DATA.get(monster_type, {})
+
+static func get_companion_card_data_by_id(card_id: String) -> Dictionary:
+	"""Reverse a 'companion_card_<slug>' id to its data. capitalize() turns
+	'giant_spider' -> 'Giant Spider', matching the COMPANION_CARD_DATA keys."""
+	if not card_id.begins_with("companion_card_"):
+		return {}
+	var mtype = card_id.trim_prefix("companion_card_").capitalize()
+	return COMPANION_CARD_DATA.get(mtype, {})
+
+static func companion_card_display_name(card_id: String) -> String:
+	var data = get_companion_card_data_by_id(card_id)
+	if not data.is_empty():
+		return String(data.get("name", ""))
+	# Fallback for an unmapped type — de-slug to "<Type>'s Gift".
+	return "%s's Gift" % card_id.trim_prefix("companion_card_").capitalize()
+
+static func companion_card_category(card_id: String) -> String:
+	var data = get_companion_card_data_by_id(card_id)
+	var kind = String(data.get("kind", "strike"))
+	return String(COMPANION_CARD_KIND_CATEGORY.get(kind, "offense"))
+
 static func get_variant_trait_for_companion(monster_type: String) -> String:
 	"""Returns the trait category id (e.g., 'crit') for a companion type, or ''
 	if the companion isn't mapped. Defensive — unmapped companions just don't

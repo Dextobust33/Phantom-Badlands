@@ -2933,17 +2933,17 @@ func get_all_available_abilities() -> Array:
 	# PERMANENT (earned via use) always appear. Keyed by companion TYPE, so
 	# "<Type>'s Gift" is derivable from the id ("companion_card_<type_slug>").
 	var seen_companion := {}
+	var _dt_cards = preload("res://shared/drop_tables.gd")
 	if has_active_companion():
 		var _mt = str(active_companion.get("monster_type", ""))
 		if _mt != "":
 			var _cid = "companion_card_" + _mt.to_lower().replace(" ", "_")
-			abilities.append({"name": _cid, "level": 1, "display": "%s's Gift" % _mt, "companion_card": true})
+			abilities.append({"name": _cid, "level": 1, "display": _dt_cards.companion_card_display_name(_cid), "companion_card": true})
 			seen_companion[_cid] = true
 	for _k in combat_deck_collection.keys():
 		var _ks = String(_k)
 		if _ks.begins_with("companion_card_") and not seen_companion.has(_ks):
-			var _disp = "%s's Gift" % _ks.trim_prefix("companion_card_").capitalize()
-			abilities.append({"name": _ks, "level": 1, "display": _disp, "companion_card": true})
+			abilities.append({"name": _ks, "level": 1, "display": _dt_cards.companion_card_display_name(_ks), "companion_card": true})
 			seen_companion[_ks] = true
 
 	return abilities

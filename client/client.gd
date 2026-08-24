@@ -12049,9 +12049,9 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"tactical_retreat": {"display": "Recharge", "cost": 0, "cost_percent": 0, "resource_type": ""},
 	}
 
-	# v0.9.680 — companion cards: fixed modest cost in the class resource.
+	# v0.9.680/681 — companion cards: unique name + fixed modest class-resource cost.
 	if ability_name.begins_with("companion_card_"):
-		var _cdisp = "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
+		var _cdisp = preload("res://shared/drop_tables.gd").companion_card_display_name(ability_name)
 		return {"display": _cdisp, "cost": 10, "cost_percent": 0, "resource_type": resource_type}
 
 	var result = ability_defs.get(ability_name, {})
@@ -12149,9 +12149,14 @@ func get_ability_category_info(ability_name: String) -> Dictionary:
 	"""Return {category, color, tint_alpha, glyph} for an ability card.
 	Falls back to neutral defaults when an ability isn't in the table
 	(unknown ability — should never happen for current cards)."""
-	# v0.9.680 — companion cards: offense category (so the milestone chooser
-	# offers the Rider branch) but a distinct companion-pink banner + ★ glyph.
+	# v0.9.680/681 — companion cards: category follows the card's KIND (damage/
+	# debuff → offense so the milestone chooser offers Rider; self-buff/heal/
+	# shield → buff so it offers Duration). ★ glyph marks the companion identity;
+	# banner color signals the category (pink offense / green buff).
 	if ability_name.begins_with("companion_card_"):
+		var _ccat = preload("res://shared/drop_tables.gd").companion_card_category(ability_name)
+		if _ccat == "buff":
+			return {"category": "buff", "color": "#7AE07A", "tint_alpha": 0.12, "glyph": "★"}
 		return {"category": "offense", "color": "#FF99FF", "tint_alpha": 0.12, "glyph": "★"}
 	var category = String(ABILITY_CATEGORIES.get(ability_name, ""))
 	if category == "" or not ABILITY_CATEGORY_DEFS.has(category):
@@ -18278,6 +18283,12 @@ func _get_ability_description_text(ability_name: String) -> String:
 	in combat_manager.gd to keep descriptions truthful (Audit #1 Slice 6a
 	follow-up). Trickster ability strings still need verification — flagged
 	in project_audit_01_combat.md for the balance pass."""
+	# v0.9.681 — companion cards: per-type description from the card table.
+	if ability_name.begins_with("companion_card_"):
+		var _cd = preload("res://shared/drop_tables.gd").get_companion_card_data_by_id(ability_name)
+		if not _cd.is_empty():
+			return String(_cd.get("desc", "")) + " Grows stronger as you play it; becomes a permanent deck card once mastered."
+		return "A companion's gift — grows stronger as you play it."
 	match ability_name:
 		"magic_bolt": return "Deal damage equal to mana spent (scales with INT). Variable mana cost."
 		"shield": return "Alias for Forcefield — flat damage absorption shield."
@@ -18318,7 +18329,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	progress to next rank."""
 	if ability_name == "":
 		return ""
-	var display = ability_name.replace("_", " ").capitalize()
+	var display = _ability_display_name(ability_name)
 	# Strip BBCode from cost text for tooltip plain text
 	var cost_raw = _get_ability_cost_text(ability_name)
 	var bb_re = RegEx.new()
@@ -18362,7 +18373,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 		var third = ""
 		if str(_cat.get("category", "")) == "offense":
 			third = "Rider (Bleed) / "
-		elif ability_name in DURATION_CAPABLE_ABILITIES:
+		elif _is_duration_capable(ability_name):
 			third = "Duration (+2 rounds) / "
 		next_preview = "Next milestone (rank %d, %s): choose Power / %sEfficiency. Cards also tier up steadily as you use them." % [next_rank, next_name, third]
 	var _copies_now = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
@@ -18439,6 +18450,15 @@ var _milestone_tip_label: RichTextLabel = null
 # Buff abilities whose Duration milestone pick is wired (Warrior slice). Buffs
 # not here fall back to Power + Efficiency until their class slice wires duration.
 const DURATION_CAPABLE_ABILITIES = ["war_cry", "berserk", "iron_skin", "fortify", "rally"]
+
+func _is_duration_capable(ability_name: String) -> bool:
+	# v0.9.681 — buff-kind companion cards (rage/guard/focus/shield/heal/channel)
+	# get the Duration milestone; damage-kind ones get Rider instead.
+	if ability_name in DURATION_CAPABLE_ABILITIES:
+		return true
+	if ability_name.begins_with("companion_card_"):
+		return preload("res://shared/drop_tables.gd").companion_card_category(ability_name) == "buff"
+	return false
 # v0.9.597 — track our custom buttons by reference. Godot 4's AcceptDialog
 # parents `add_button` results inside an internal HBox, NOT as direct children
 # of the dialog. The previous clear-loop `for child in popup.get_children()`
@@ -18454,9 +18474,9 @@ func _ability_display_name(ability_name: String) -> String:
 	rank-up / cull / mastery messages used the raw internal id (e.g. 'Tactical
 	retreat') while the actual card in the player's hand showed 'Recharge' —
 	players couldn't connect the two. Mirrors combat_manager._ability_display_name."""
-	# v0.9.680 — companion cards: "<Type>'s Gift" from the id.
+	# v0.9.680/681 — companion cards: unique per-type card name from the table.
 	if ability_name.begins_with("companion_card_"):
-		return "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
+		return preload("res://shared/drop_tables.gd").companion_card_display_name(ability_name)
 	match ability_name:
 		"tactical_retreat": return "Recharge"
 		"vanish": return "Phantom Strike"
@@ -18548,7 +18568,7 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 	if is_offense:
 		branches.insert(1, {"branch": "rider", "detail": "Bleeds\non hit", "accent": "#FF4444",
 			"tip": "[b]RIDER[/b]\nBleed on hit  (lvl %d → %d)" % [rider_n, rider_n + 1]})
-	elif ability_name in DURATION_CAPABLE_ABILITIES:
+	elif _is_duration_capable(ability_name):
 		branches.insert(1, {"branch": "duration", "detail": "Lasts longer\n+2 rounds", "accent": "#7AE07A",
 			"tip": "[b]DURATION[/b]\n+2 rounds each  (+%d now)" % [dur_n * 2]})
 	for b in branches:

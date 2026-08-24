@@ -1308,7 +1308,9 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			action = CombatAction.OUTSMART
 		_:
 			# Check if it's an ability command
-			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS:
+			# v0.9.681 — companion cards ("companion_card_<type>") are dynamic ids,
+			# not in the static *_ABILITY_COMMANDS lists, so allow them by prefix.
+			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_"):
 				return process_ability_command(peer_id, cmd, arg)
 			return {"success": false, "message": "Unknown combat command! Use: attack, flee, outsmart, or abilities"}
 
@@ -2122,6 +2124,10 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			apex_label = apex_zone_name
 		messages.append("[color=#9F70FF]⚡ %s Bonus: +%d%% XP![/color]" % [apex_label, apex_xp_pct])
 
+	# v0.9.681 — Fortune companion card: XP bonus set during the fight.
+	var _card_xp_mult: float = float(combat.get("card_xp_mult", 1.0))
+	if _card_xp_mult > 1.0:
+		final_xp = int(final_xp * _card_xp_mult)
 	# Award experience
 	character.add_experience(final_xp)
 
@@ -2164,6 +2170,10 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 
 	# Normal gem drops (from high-level monsters) → Monster Gem material
 	var gems_earned = roll_gem_drops(monster, character)
+	# v0.9.681 — Fortune companion card: bonus gems banked during the fight.
+	var _card_gems: int = int(combat.get("card_bonus_gems", 0))
+	if _card_gems > 0:
+		gems_earned += _card_gems
 	if gems_earned > 0:
 		character.add_crafting_material("monster_gem", gems_earned)
 		messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]You found %d Monster Gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
@@ -3677,22 +3687,50 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 
 	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff_ability}
 
+
+func _companion_strike(character, monster, ability_name: String, combat: Dictionary, power: float) -> int:
+	"""Deal a companion-card strike scaled by `power` through the shared mastery/
+	tier damage path, apply it to the monster, and return the damage dealt."""
+	var base_dmg: int = int(character.get_total_attack() * power)
+	base_dmg = apply_skill_damage_bonus(character, ability_name, base_dmg, combat)
+	var mod_dmg: int = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+	var dmg: int = apply_damage_variance(mod_dmg)
+	monster.current_hp = max(0, monster.current_hp - dmg)
+	return dmg
+
+func _companion_restore_resource(character, resource_type: String, frac: float) -> int:
+	"""Restore `frac` of the class resource's max; return the amount restored."""
+	match resource_type:
+		"mana":
+			var mx: int = character.get_total_max_mana()
+			var amt: int = int(mx * frac)
+			character.current_mana = min(mx, character.current_mana + amt)
+			return amt
+		"energy":
+			var mx2: int = character.get_total_max_energy()
+			var amt2: int = int(mx2 * frac)
+			character.current_energy = min(mx2, character.current_energy + amt2)
+			return amt2
+		_:
+			var mx3: int = character.get_total_max_stamina()
+			var amt3: int = int(mx3 * frac)
+			character.current_stamina = min(mx3, character.current_stamina + amt3)
+			return amt3
+
 func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dictionary:
-	"""v0.9.680 — Companion card: a strike flavoured by the companion's variant
-	TRAIT (fixed to the card's type via id, so it stays consistent whether the
-	card is a temporary loaner or a permanent one you've earned). Damage scales
-	through the shared mastery/tier path; each trait adds its signature on-hit
-	effect. Cost = a modest amount of the player's class resource."""
+	"""v0.9.681 — Companion card. Each companion TYPE has a UNIQUE card (name +
+	effect) in DropTablesScript.COMPANION_CARD_DATA. `kind` selects the effect:
+	damage / DoT / debuff / self-buff / shield / heal / resource / loot. Damage
+	scales through the shared mastery/tier path; secondary values scale by the
+	card's usage tier. Cost = a modest amount of the class resource."""
 	var character = combat.character
 	var monster = combat.monster
 	var messages: Array = []
-	var mtype: String = Character.companion_card_type_from_id(ability_name)
-	var disp: String = "%s's Gift" % mtype
-	var trait_id: String = DropTablesScript.get_variant_trait_for_companion(mtype)
-	var trait_info: Dictionary = DropTablesScript.get_variant_trait_info(trait_id) if trait_id != "" else {}
+	var data: Dictionary = DropTablesScript.get_companion_card_data_by_id(ability_name)
+	var cname: String = String(data.get("name", DropTablesScript.companion_card_display_name(ability_name)))
+	var kind: String = String(data.get("kind", "strike"))
 
-	# Cost — modest, in the player's class resource. Tier 'efficiency' picks +
-	# racial reductions fold in via apply_skill_cost_reduction.
+	# Cost — modest, in the class resource (tier 'efficiency' + racial fold in).
 	var path: String = character.get_class_path()
 	var resource_type: String = "mana" if path == "mage" else ("energy" if path == "trickster" else "stamina")
 	var cost: int = apply_skill_cost_reduction(character, ability_name, 10)
@@ -3702,66 +3740,113 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 		"energy": paid = character.use_energy(cost)
 		_: paid = character.use_stamina(cost)
 	if not paid:
-		return {"success": false, "messages": ["[color=#FFA500]Not enough %s for %s.[/color]" % [resource_type, disp]], "combat_ended": false, "skip_monster_turn": true}
-
-	# Damage — a solid strike scaled by mastery/tier/power picks (shared path).
-	var base_dmg: int = int(character.get_total_attack() * 1.3)
-	base_dmg = apply_skill_damage_bonus(character, ability_name, base_dmg, combat)
-	var mod_dmg: int = apply_ability_damage_modifiers(base_dmg, character.level, monster)
-	var damage: int = apply_damage_variance(mod_dmg)
+		return {"success": false, "messages": ["[color=#FFA500]Not enough %s for %s.[/color]" % [resource_type, cname]], "combat_ended": false, "skip_monster_turn": true}
 
 	var tier: int = character.get_ability_tier(ability_name)
+	var tmult: float = character.get_tier_effect_mult(ability_name)
+	var dur_bonus: int = character.get_ability_duration_bonus(ability_name)
+	var is_buff: bool = DropTablesScript.companion_card_category(ability_name) == "buff"
 
-	# 'crit' trait doubles on a tier-scaled chance.
-	var did_crit: bool = false
-	if trait_id == "crit" and randi() % 100 < min(60, 25 + tier * 3):
-		damage *= 2
-		did_crit = true
-	monster.current_hp = max(0, monster.current_hp - damage)
-	var crit_txt: String = " [color=#FFFF00]CRIT![/color]" if did_crit else ""
-	messages.append("[color=#FF99FF]★ %s[/color] strikes for [color=#FFFF00]%d[/color]!%s" % [disp, damage, crit_txt])
-
-	# Trait signature on-hit effect.
-	match trait_id:
-		"bleed", "poison":
-			var pct: float = float(trait_info.get("per_stack_pct_of_hit", 5.0))
-			var dur: int = int(trait_info.get("duration", 3))
-			var dot: int = max(1, int(damage * (pct / 100.0) * (2.0 + tier)))
+	match kind:
+		# ---------- SELF-BUFFS (no damage) ----------
+		"rage":
+			var val: int = 20 + tier * 4
+			character.add_buff("damage", val, 3 + dur_bonus)
+			messages.append("[color=#FF8800]★ %s[/color] — [color=#FF6644]+%d%% damage[/color] for %d rounds!" % [cname, val, 3 + dur_bonus])
+		"guard":
+			var val: int = 22 + tier * 3
+			character.add_buff("damage_reduction", val, 3 + dur_bonus)
+			messages.append("[color=#7FD7FF]★ %s[/color] — [color=#66B0FF]%d%% damage reduction[/color] for %d rounds!" % [cname, val, 3 + dur_bonus])
+		"focus":
+			var val: int = 18 + tier * 4
+			character.add_buff("crit_chance", val, 4 + dur_bonus)
+			messages.append("[color=#FFD700]★ %s[/color] — [color=#FFD700]+%d%% crit[/color] for %d rounds!" % [cname, val, 4 + dur_bonus])
+		"shield":
+			var val: int = int(character.get_total_attack() * (1.0 + 0.25 * tier))
+			combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + val
+			messages.append("[color=#7FD7FF]★ %s[/color] — absorbs the next [color=#7FD7FF]%d[/color] damage!" % [cname, val])
+		"heal":
+			var amt: int = int(character.get_total_max_hp() * (0.15 + 0.03 * tier))
+			var healed: int = character.heal(amt)
+			messages.append("[color=#00FF88]★ %s[/color] — heals [color=#00FF88]%d[/color] HP!" % [cname, healed])
+		"channel":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 0.8)
+			var amtc: int = _companion_restore_resource(character, resource_type, 0.25 + 0.03 * tier)
+			messages.append("[color=#66CCFF]★ %s[/color] strikes for %d and restores [color=#66CCFF]%d %s[/color]!" % [cname, d, amtc, resource_type])
+		# ---------- DAMAGE / DEBUFF ----------
+		"strike":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.6)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for [color=#FFFF00]%d[/color]!" % [cname, d])
+		"execute":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.2)
+			var wounded: bool = monster.max_hp > 0 and float(monster.current_hp) <= 0.30 * float(monster.max_hp)
+			if wounded:
+				var bonus: int = int(d * (1.2 + 0.15 * tier))
+				monster.current_hp = max(0, monster.current_hp - bonus)
+				messages.append("[color=#FF99FF]★ %s[/color] EXECUTES for [color=#FFFF00]%d[/color] (+%d vs wounded)!" % [cname, d, bonus])
+			else:
+				messages.append("[color=#FF99FF]★ %s[/color] hits for [color=#FFFF00]%d[/color]!" % [cname, d])
+		"reckless":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 2.1)
+			var recoil: int = max(1, int(d * 0.05))
+			character.current_hp = max(1, character.current_hp - recoil)
+			messages.append("[color=#FF99FF]★ %s[/color] rips for [color=#FFFF00]%d[/color]! (you take %d recoil)" % [cname, d, recoil])
+		"bleed":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.1)
+			var dot: int = max(1, int(d * 0.18 * tmult))
 			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + dot
-			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), dur)
-			messages.append("[color=#FF4444]%s inflicts %s — %d/turn for %d turns![/color]" % [disp, trait_id, dot, dur])
-		"bonus_damage":
-			var extra: int = max(1, int(damage * (float(trait_info.get("per_stack_pct", 6.0)) / 100.0) * (2 + tier)))
-			monster.current_hp = max(0, monster.current_hp - extra)
-			messages.append("[color=#FF8800]%s tears deeper for +%d![/color]" % [disp, extra])
-		"lifesteal":
-			var heal: int = max(1, int(damage * (float(trait_info.get("per_stack_pct", 6.0)) / 100.0) * (2 + tier)))
-			var healed: int = character.heal(heal)
-			if healed > 0:
-				messages.append("[color=#00FF88]%s drains %d HP back to you![/color]" % [disp, healed])
+			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 3)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and bleeds [color=#FF4444]%d/turn[/color]!" % [cname, d, dot])
+		"poison":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var dot: int = max(1, int(d * 0.15 * tmult))
+			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + dot
+			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 4)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and poisons [color=#7FBE2E]%d/turn[/color]!" % [cname, d, dot])
+		"weaken":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var wk: int = min(50, 15 + tier * 3)
+			combat["monster_weakness"] = max(int(combat.get("monster_weakness", 0)), wk)
+			combat["monster_weakness_duration"] = max(int(combat.get("monster_weakness_duration", 0)), 3)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — enemy [color=#C0C0C0]weakened %d%%[/color]!" % [cname, d, wk])
+		"blind":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var bl: int = min(60, 25 + tier * 4)
+			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), bl)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — enemy [color=#AAAAFF]blinded (%d%% miss)[/color]!" % [cname, d, bl])
 		"stun":
-			if int(combat.get("monster_stunned", 0)) <= 0 and randi() % 100 < min(60, 20 + tier * 5):
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.1)
+			if int(combat.get("monster_stunned", 0)) <= 0 and randi() % 100 < min(65, 30 + tier * 5):
 				combat["monster_stunned"] = 1
-				messages.append("[color=#FFFF00]%s staggers the enemy — it loses its turn![/color]" % disp)
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FFFF00]STUNS[/color]!" % [cname, d])
+			else:
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
 		"charm":
-			if int(combat.get("monster_charmed", 0)) <= 0 and randi() % 100 < min(45, 15 + tier * 4):
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			if int(combat.get("monster_charmed", 0)) <= 0 and randi() % 100 < min(50, 20 + tier * 4):
 				combat["monster_charmed"] = 1
-				messages.append("[color=#FF66FF]%s charms the enemy![/color]" % disp)
-		"mana_drain":
-			var amt: int = int(trait_info.get("per_stack_amount", 6)) * (1 + tier)
-			match resource_type:
-				"mana": character.current_mana = min(character.get_total_max_mana(), character.current_mana + amt)
-				"energy": character.current_energy = min(character.get_total_max_energy(), character.current_energy + amt)
-				_: character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + amt)
-			messages.append("[color=#66CCFF]%s siphons %d %s back![/color]" % [disp, amt, resource_type])
-		"enemy_miss", "absorb":
-			# Defensive flavour — a tier-scaled heal (shield/evasion abstraction for v1).
-			var ward: int = max(1, int(float(trait_info.get("per_stack_amount", trait_info.get("per_stack_pct", 6.0))) * (2 + tier)))
-			var warded: int = character.heal(ward)
-			if warded > 0:
-				messages.append("[color=#7FD7FF]%s wards you for %d HP![/color]" % [disp, warded])
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FF66FF]CHARMS[/color]!" % [cname, d])
+			else:
+				messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
+		"lifesteal":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.2)
+			var healed: int = character.heal(max(1, int(d * 0.40)))
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and drains [color=#00FF88]%d HP[/color]!" % [cname, d, healed])
+		"timestop":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			var turns: int = 1 + (1 if tier >= 4 else 0)
+			combat["monster_stunned"] = max(int(combat.get("monster_stunned", 0)), turns)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d and [color=#FFFF00]freezes time (%d turns)[/color]!" % [cname, d, turns])
+		"fortune":
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
+			combat["card_bonus_gems"] = int(combat.get("card_bonus_gems", 0)) + 1 + int(tier / 2)
+			combat["card_xp_mult"] = max(float(combat.get("card_xp_mult", 1.0)), 1.15 + 0.03 * tier)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]bonus loot if you win![/color]" % [cname, d])
+		_:
+			var d: int = _companion_strike(character, monster, ability_name, combat, 1.5)
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d!" % [cname, d])
 
-	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": false}
+	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff}
 
 func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Process warrior abilities (use stamina)"""
