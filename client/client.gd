@@ -27585,8 +27585,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.694 — One consistent damage number per card.
+	display_game("[color=#00FF00]v0.9.694[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ One damage number per card.[/color] Cards were showing [b]two different[/b] damage estimates (the pip vs the middle text). Now there's a [b]single estimate[/b] everywhere (pip, hover, effect line all agree). The number is an average — your actual hit still varies with the damage roll and the enemy's defense.")
+	display_game("")
+
 	# v0.9.693 — Card layout fix + closer numbers + companion-card deck fixes.
-	display_game("[color=#00FF00]v0.9.693[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.693[/color]")
 	display_game("  [color=#1EFF00]◆ Card layout.[/color] Rank pips moved to their own line so big damage/heal + cost numbers no longer stretch cards wider than their neighbours.")
 	display_game("  [color=#1EFF00]◆ Closer damage numbers.[/color] Card damage/heal estimates now fold in your [b]rank & tier[/b] multiplier, so they read much closer to your real hit.")
 	display_game("  [color=#1EFF00]◆ Companion card deck fixes.[/color] Fixed a permanent companion card getting stuck [b]OUT[/b] (couldn't be put back) and still showing up in combat. Loaner companion cards now show a [i]Loaner[/i] note instead of thin/restore buttons.")
