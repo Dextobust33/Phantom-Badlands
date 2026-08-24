@@ -2603,6 +2603,34 @@ func get_totals_summary_bbcode() -> String:
 
 # === Audit #1 Slice 6a — hand strip ============================================
 
+# v0.9.696 — Warrior Momentum meter state.
+var _momentum_label: RichTextLabel = null
+var _momentum: int = 0
+var _momentum_max: int = 5
+var _momentum_active: bool = false
+
+func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
+	"""Called from client.gd on each combat_state. Shows a pip meter for Warriors;
+	hidden otherwise. Also drives the Devastate card gating in _refresh_hand."""
+	_momentum = cur
+	_momentum_max = max(1, mx)
+	_momentum_active = is_warrior
+	if _momentum_label == null or not is_instance_valid(_momentum_label):
+		return
+	if not is_warrior:
+		_momentum_label.visible = false
+		return
+	_momentum_label.visible = true
+	var pips := ""
+	for i in range(_momentum_max):
+		pips += "[color=#FFC94D]●[/color]" if i < cur else "[color=#5A4E38]○[/color]"
+	var ready := cur >= 1
+	var tag := "[color=#FFC94D]FINISHER READY[/color]" if ready else "[color=#7A6E58]build to Devastate[/color]"
+	_momentum_label.text = "[color=#C8A24A]⚡ Momentum[/color]\n%s\n%s" % [pips, tag]
+	# Re-gate the hand cards (Devastate availability) now that momentum changed.
+	if not _hand_cells.is_empty():
+		_refresh_hand()
+
 func _build_hand_strip() -> HBoxContainer:
 	"""Five card cells + a deck/discard status counter. Each card is a
 	clickable PanelContainer. Empty hand (combat just ended, or all cards
@@ -2614,6 +2642,18 @@ func _build_hand_strip() -> HBoxContainer:
 	outer.alignment = BoxContainer.ALIGNMENT_CENTER
 	outer.add_theme_constant_override("separation", 12)
 	outer.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	# v0.9.696 — Warrior Momentum meter (leftmost). Hidden for non-Warriors.
+	_momentum_label = RichTextLabel.new()
+	_momentum_label.bbcode_enabled = true
+	_momentum_label.fit_content = true
+	_momentum_label.scroll_active = false
+	_momentum_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_momentum_label.add_theme_font_size_override("normal_font_size", 15)
+	_momentum_label.custom_minimum_size = Vector2(120, 0)
+	_momentum_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_momentum_label.visible = false
+	outer.add_child(_momentum_label)
 
 	_hand_strip = HBoxContainer.new()
 	_hand_strip.add_theme_constant_override("separation", 10)
@@ -3500,7 +3540,20 @@ func _refresh_hand() -> void:
 			effect_lbl.text = str(info.get("effect_text", ""))
 			effect_lbl.add_theme_color_override("font_color", Color(str(info.get("effect_color", "#FFA060"))))
 
-		_set_cell_dim(cell, false, bool(info.get("can_afford", true)))
+		# v0.9.696 — Warrior Devastate is gated behind Momentum: it can't be played
+		# with 0 Momentum. Render it as uncastable (dimmed + hint) until the meter
+		# has at least 1 pip, mirroring the server gate in _process_warrior_ability.
+		var castable := bool(info.get("can_afford", true))
+		if _momentum_active and card_name == "devastate" and _momentum < 1:
+			castable = false
+			cell.set_meta("can_afford", false)
+			if effect_lbl:
+				effect_lbl.text = "Build Momentum first"
+				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
+			if value_pip:
+				value_pip.visible = false
+
+		_set_cell_dim(cell, false, castable)
 
 	# Status line
 	if _hand_status_label:

@@ -7367,6 +7367,9 @@ func get_combat_display(peer_id: int) -> Dictionary:
 
 	return {
 		"round": combat.round,
+		"momentum": int(combat.get("momentum", 0)),  # v0.9.696 Warrior Momentum
+		"momentum_max": MOMENTUM_MAX,
+		"is_warrior_momentum": character.get_class_path() == "warrior",
 		"player_name": character.name,
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),

@@ -22196,6 +22196,7 @@ func handle_server_message(message: Dictionary):
 					combat_discard_count = int(state.get("combat_discard_count", 0))
 					if combat_scene_panel and combat_scene_panel.has_method("update_hand"):
 						combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
+					_sync_momentum_meter(state)
 					update_action_bar()
 				# v0.9.412 — end_action_phase trigger MOVED to _drain_combat_queue
 				# (fires when queue empties + popup buffer). Scheduling it
@@ -23414,6 +23415,7 @@ func _process_combat_start(message: Dictionary):
 	# the populate signature stays focused on scene display data.
 	if combat_scene_panel and combat_scene_panel.has_method("update_hand"):
 		combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
+	_sync_momentum_meter(combat_state)
 
 	# Slice 6a — refresh the action bar so keys 1-5 bind to the freshly
 	# drawn hand rather than the stale equipped_abilities order. The earlier
@@ -32262,6 +32264,19 @@ func _legacy_view_step(delta: int) -> void:
 	else:
 		_legacy_view_fight_index = linear
 	_render_legacy_combat_log()
+
+
+func _sync_momentum_meter(state: Dictionary) -> void:
+	"""v0.9.696 — push Warrior Momentum from a combat_state into the scene panel.
+	Server serialises momentum / momentum_max / is_warrior_momentum in
+	get_combat_display(); the panel shows a pip meter and gates Devastate.
+	No-ops (hides the meter) for non-Warriors / servers that don't send it."""
+	if combat_scene_panel == null or not combat_scene_panel.has_method("update_momentum"):
+		return
+	var is_warrior := bool(state.get("is_warrior_momentum", false))
+	var cur := int(state.get("momentum", 0))
+	var mx := int(state.get("momentum_max", 5))
+	combat_scene_panel.update_momentum(cur, mx, is_warrior)
 
 
 func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
