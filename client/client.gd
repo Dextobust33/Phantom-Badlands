@@ -27366,9 +27366,9 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.684 — Companion card art (sized to fit the card).
-	display_game("[color=#00FF00]v0.9.684[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#1EFF00]◆ Companion cards show their companion.[/color] Each companion card now displays that companion's [b]ASCII art[/b] on the card — in your combat hand and on the Deck screen — instead of a generic icon. (Now sized to fit the card properly.)")
+	# v0.9.685 — Companion card art (uniform card size).
+	display_game("[color=#00FF00]v0.9.685[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Companion cards show their companion.[/color] Each companion card displays that companion's [b]ASCII art[/b] on the card — in your combat hand and on the Deck screen. The art is now boxed to fit so companion cards are the [b]same size as every other card[/b].")
 	display_game("")
 
 	# v0.9.682 — Companion loot cards: Valor + item-drop.
