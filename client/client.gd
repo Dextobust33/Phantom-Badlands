@@ -18845,16 +18845,16 @@ func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_c
 	# hit) is offense-only; buffs get Duration (longer) as their third; everything
 	# gets Power (scales damage AND buff magnitude) + Efficiency. Tips are concise
 	# (shown in a polished hover box, not the default text line).
+	# v0.9.698 — Efficiency for Magic Bolt means MORE damage per mana (it discounts
+	# the mana you pay while damage still scales off your intended spend), so its
+	# tip is worded for that; every other ability gets the standard -cost wording.
+	var effic_detail := "More dmg\nper mana" if ability_name == "magic_bolt" else "Cheaper\n-10% cost"
+	var effic_tip := ("[b]EFFICIENCY[/b]\nMagic Bolt: -10%% mana per cast, same damage\n= more damage per mana  (×%d → ×%d)" % [effic_n, effic_n + 1]) if ability_name == "magic_bolt" else ("[b]EFFICIENCY[/b]\n-10%% cost each  (×%d → ×%d)" % [effic_n, effic_n + 1])
 	var branches := [
 		{"branch": "power", "detail": "Bigger effect\n+12% each", "accent": "#FF6644",
 			"tip": "[b]POWER[/b]\n+12%% effect each  (×%d → ×%d)" % [power_n, power_n + 1]},
+		{"branch": "efficiency", "detail": effic_detail, "accent": "#66B0FF", "tip": effic_tip},
 	]
-	# v0.9.698 — Efficiency reduces the cast cost via apply_skill_cost_reduction.
-	# Magic Bolt bypasses that (its cost is the mana YOU choose), so the discount
-	# would be a dead pick — don't offer it for Bolt.
-	if ability_name != "magic_bolt":
-		branches.append({"branch": "efficiency", "detail": "Cheaper\n-10% cost", "accent": "#66B0FF",
-			"tip": "[b]EFFICIENCY[/b]\n-10%% cost each  (×%d → ×%d)" % [effic_n, effic_n + 1]})
 	if is_offense:
 		branches.insert(1, {"branch": "rider", "detail": "Bleeds\non hit", "accent": "#FF4444",
 			"tip": "[b]RIDER[/b]\nBleed on hit  (lvl %d → %d)" % [rider_n, rider_n + 1]})

@@ -3387,6 +3387,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				actual_mana_cost = int(actual_mana_cost * gnome_mult)
 			if passive_effects.has("mana_cost_reduction"):
 				actual_mana_cost = int(actual_mana_cost * (1.0 - passive_effects.get("mana_cost_reduction", 0)))
+			# v0.9.698 - Efficiency milestone for Magic Bolt: damage stays based on the
+			# intended bolt_amount, but you PAY less mana (get_tier_cost_mult = 1 - 10%/pick,
+			# floor 0.30) => more damage per mana. Valid 3rd option vs removing Efficiency.
+			var bolt_effic_mult = character.get_tier_cost_mult("magic_bolt")
+			if bolt_effic_mult < 1.0:
+				actual_mana_cost = int(actual_mana_cost * bolt_effic_mult)
 			actual_mana_cost = max(1, actual_mana_cost)
 			if actual_mana_cost < bolt_amount:
 				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % actual_mana_cost)
