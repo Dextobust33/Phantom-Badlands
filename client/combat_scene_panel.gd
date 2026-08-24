@@ -2766,6 +2766,9 @@ func _build_hand_cell(index: int) -> PanelContainer:
 	cell.mouse_filter = Control.MOUSE_FILTER_STOP
 	cell.tooltip_text = ""
 	cell.clip_contents = true
+	# v0.9.690 — battle sticky description box on hover (client owns the box).
+	cell.mouse_entered.connect(_on_hand_cell_mouse_entered.bind(cell))
+	cell.mouse_exited.connect(_on_hand_cell_mouse_exited.bind(cell))
 
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.09, 0.08, 0.07, 0.97)
@@ -3089,6 +3092,19 @@ func _hide_formula_popup() -> void:
 	if _formula_popup != null and is_instance_valid(_formula_popup):
 		_formula_popup.visible = false
 
+# v0.9.690 — battle hand-card hover → client's sticky description box.
+func _on_hand_cell_mouse_entered(cell) -> void:
+	if client_ref == null or not client_ref.has_method("show_card_desc_box"):
+		return
+	var cn := str(cell.get_meta("card_name", ""))
+	if cn == "":
+		return
+	client_ref.show_card_desc_box(cn, cell.get_global_rect())
+
+func _on_hand_cell_mouse_exited(_cell) -> void:
+	if client_ref != null and client_ref.has_method("notify_card_desc_card_exit"):
+		client_ref.notify_card_desc_card_exit()
+
 
 func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String, art_bbcode: String = "") -> Control:
 	"""v0.9.678 (slice 3) — a combat-styled card for the DECK SCREEN. Returns a
@@ -3393,11 +3409,10 @@ func _refresh_hand() -> void:
 			_fit_label_font(name_lbl, str(info.get("display", card_name)), 98)
 			name_lbl.add_theme_color_override("font_color", Color("#FFFFFF"))
 
-		# Hover tooltip — full ability detail (mirrors AbilityPanel).
-		if client_ref and client_ref.has_method("_get_ability_tooltip"):
-			cell.tooltip_text = str(client_ref._get_ability_tooltip(card_name))
-		else:
-			cell.tooltip_text = str(info.get("display", card_name))
+		# v0.9.690 — the sticky description box (mouse_entered) replaces the plain
+		# native tooltip so numbers + the formula popup work; clear it to avoid a
+		# double tooltip.
+		cell.tooltip_text = ""
 
 		# Cost pip — number in a resource-tinted circle.
 		var planned_int = int(info.get("planned_cost", 0))

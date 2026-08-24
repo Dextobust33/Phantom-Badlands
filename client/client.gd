@@ -18359,6 +18359,106 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 	# Non-Warrior (slice): plain description as bbcode for now.
 	return _get_ability_description_text(ability_name)
 
+# v0.9.690 — battle sticky card-description hover box. Shows on combat hand-card
+# hover; stays while the cursor is over the CARD or the BOX so you can move into
+# it and hover a number for the formula popup.
+var _card_desc_box: PanelContainer = null
+var _card_desc_rtl: RichTextLabel = null
+var _card_desc_over_card: bool = false
+var _card_desc_over_box: bool = false
+var _card_desc_anchor: Rect2 = Rect2()
+
+func _ensure_card_desc_box() -> void:
+	if _card_desc_box != null and is_instance_valid(_card_desc_box):
+		return
+	_card_desc_box = PanelContainer.new()
+	_card_desc_box.name = "CardDescBox"
+	_card_desc_box.top_level = true
+	_card_desc_box.z_index = 320
+	_card_desc_box.visible = false
+	_card_desc_box.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.09, 0.08, 0.06, 0.99)
+	sb.border_color = Color("#C8A24A")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 11
+	sb.content_margin_right = 11
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	sb.shadow_color = Color(0, 0, 0, 0.55)
+	sb.shadow_size = 7
+	_card_desc_box.add_theme_stylebox_override("panel", sb)
+	_card_desc_rtl = RichTextLabel.new()
+	_card_desc_rtl.bbcode_enabled = true
+	_card_desc_rtl.fit_content = true
+	_card_desc_rtl.scroll_active = false
+	_card_desc_rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_card_desc_rtl.custom_minimum_size = Vector2(250, 0)
+	_card_desc_rtl.mouse_filter = Control.MOUSE_FILTER_PASS
+	_card_desc_rtl.meta_underlined = false
+	_card_desc_rtl.add_theme_font_size_override("normal_font_size", 13)
+	_card_desc_rtl.add_theme_font_size_override("bold_font_size", 14)
+	_card_desc_rtl.meta_hover_started.connect(_on_card_desc_meta_hover)
+	_card_desc_rtl.meta_hover_ended.connect(_on_card_desc_meta_unhover)
+	_card_desc_box.add_child(_card_desc_rtl)
+	_card_desc_box.mouse_entered.connect(_on_card_desc_box_enter)
+	_card_desc_box.mouse_exited.connect(_on_card_desc_box_exit)
+	get_tree().root.add_child(_card_desc_box)
+
+func _on_card_desc_meta_hover(meta) -> void:
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(str(meta))
+
+func _on_card_desc_meta_unhover(_m = null) -> void:
+	if combat_scene_panel and combat_scene_panel.has_method("_hide_formula_popup"):
+		combat_scene_panel._hide_formula_popup()
+
+func _on_card_desc_box_enter() -> void:
+	_card_desc_over_box = true
+
+func _on_card_desc_box_exit() -> void:
+	_card_desc_over_box = false
+	_defer_hide_card_desc()
+
+func show_card_desc_box(ability_name: String, anchor_rect: Rect2) -> void:
+	"""Called by combat_scene_panel when a hand card is hovered."""
+	if ability_name == "":
+		return
+	_ensure_card_desc_box()
+	_card_desc_over_card = true
+	var title := _ability_display_name(ability_name)
+	var cost_raw := _get_ability_cost_text(ability_name)
+	var body := _ability_desc_bbcode(ability_name)
+	_card_desc_rtl.text = "[b][color=#FFE1A3]%s[/color][/b]   %s\n%s\n[color=#7A6E58]Hover a number for its formula[/color]" % [title, cost_raw, body]
+	_card_desc_anchor = anchor_rect
+	_card_desc_box.visible = true
+	call_deferred("_position_card_desc_box")
+
+func _position_card_desc_box() -> void:
+	if _card_desc_box == null or not _card_desc_box.visible:
+		return
+	_card_desc_box.reset_size()
+	var sz := _card_desc_box.size
+	var vp := get_viewport_rect().size
+	var x: float = clamp(_card_desc_anchor.position.x + _card_desc_anchor.size.x * 0.5 - sz.x * 0.5, 4.0, vp.x - sz.x - 4.0)
+	var y: float = _card_desc_anchor.position.y - sz.y - 8.0
+	if y < 4.0:
+		y = _card_desc_anchor.position.y + _card_desc_anchor.size.y + 8.0
+	_card_desc_box.global_position = Vector2(x, y)
+
+func notify_card_desc_card_exit() -> void:
+	"""Called by combat_scene_panel when the cursor leaves a hand card."""
+	_card_desc_over_card = false
+	_defer_hide_card_desc()
+
+func _defer_hide_card_desc() -> void:
+	await get_tree().create_timer(0.12).timeout
+	if not _card_desc_over_card and not _card_desc_over_box:
+		if _card_desc_box != null and is_instance_valid(_card_desc_box):
+			_card_desc_box.visible = false
+		_on_card_desc_meta_unhover()
+
 func _get_ability_tooltip(ability_name: String) -> String:
 	"""Compose the full hover tooltip for an ability card (plain text):
 	display name, cost summary, effect, current rank + damage modifier,
