@@ -27366,9 +27366,9 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
-	# v0.9.686 — Companion card art shows the whole companion.
-	display_game("[color=#00FF00]v0.9.686[/color] [color=#808080](Current)[/color]")
-	display_game("  [color=#1EFF00]◆ Companion cards show their companion.[/color] Each companion card displays that companion's [b]full ASCII art[/b] — the whole creature, scaled down to fit inside the card (same size as every other card). Shows in your combat hand and on the Deck screen.")
+	# v0.9.687 — Card polish: names fit + companion art bigger/crisper.
+	display_game("[color=#00FF00]v0.9.687[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Card polish.[/color] Long card names (e.g. [b]Kobold's Stash[/b]) no longer get cut off — the name font shrinks to fit. Companion card art is [b]bigger and a bit crisper[/b] (blank margins trimmed + a larger art area), so the whole companion reads better.")
 	display_game("")
 
 	# v0.9.682 — Companion loot cards: Valor + item-drop.
