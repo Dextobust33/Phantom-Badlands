@@ -19857,6 +19857,30 @@ func _build_craft_slot(kind: String, recipe: Dictionary) -> Dictionary:
 	return {"kind": "BASE", "name": "Standard", "type": "craft_base", "score": 1, "output_name": output_name}
 
 
+func _craft_preview_slot(slot: Dictionary) -> Dictionary:
+	"""Prize Shuffle (#49 slice 3) — display info for a craft modifier shown
+	face-up during the preview. The player chases the good modifiers (Masterful,
+	Duplicate) and avoids Failed(DUD). Rarity/color derived from the kind."""
+	var kind: String = String(slot.get("kind", "BASE"))
+	var nm: String = String(slot.get("name", kind))
+	var color: String = "#CCCCCC"
+	var rarity: String = "common"
+	match kind:
+		"DUD":
+			color = "#888888"; rarity = "common"
+		"BASE":
+			color = "#CCCCCC"; rarity = "common"
+		"QUALITY_UP_1", "DURABILITY_UP_1", "EFFICIENCY_UP_1", "REFUND":
+			color = "#4A9EFF"; rarity = "uncommon"
+		"QUALITY_UP_2", "DURABILITY_UP_2", "EFFICIENCY_UP_2", "DUPLICATE":
+			color = "#A335EE"; rarity = "rare"
+		"QUALITY_UP_3", "DUPLICATE_2":
+			color = "#FFD700"; rarity = "epic"
+		"DUPLICATE_3":
+			color = "#FF8000"; rarity = "legendary"
+	return {"kind": kind, "name": nm, "color": color, "rarity": rarity}
+
+
 func _roll_scratch_off_slot_kind(skill: int) -> String:
 	"""v0.9.357 — pick a slot variety. Base distribution:
 	  NORMAL 70 / LUCKY 15 / JACKPOT 5 / DUD 10
@@ -23892,6 +23916,31 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"craft_boost_no_poor": _boost_no_poor,
 		}
 
+		# Prize Shuffle (#49 slice 3) — preview + shuffle for the crafting minigame.
+		# Crafting has no tool pre-reveals, so no permutation remap is needed.
+		var craft_preview: Array = []
+		for s in craft_slots:
+			craft_preview.append(_craft_preview_slot(s))
+		var c_swap_count: int = clampi(3 + int(recipe.get("difficulty", 1)) / 20, 3, 10)
+		var craft_swaps: Array = []
+		var cn: int = craft_slots.size()
+		for _i in range(c_swap_count):
+			if cn < 2:
+				break
+			var ca: int = randi() % cn
+			var cb: int = randi() % cn
+			if ca == cb:
+				cb = (cb + 1) % cn
+			craft_swaps.append([ca, cb])
+			var tsc = craft_slots[ca]; craft_slots[ca] = craft_slots[cb]; craft_slots[cb] = tsc
+		active_gathering[peer_id]["slots"] = craft_slots
+		var c_peeks: int = 0
+		var c_roll: float = randf()
+		if c_roll < 0.06:
+			c_peeks = 2
+		elif c_roll < 0.20:
+			c_peeks = 1
+
 		var craft_initial_slots: Array = []
 		for i in range(craft_slots.size()):
 			if i in pre_revealed_positions:
@@ -23913,6 +23962,10 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			"bar_width_mult": craft_bar_width_mult,
 			"is_crafting": true,  # Hint so client can adapt completion summary copy
 			"craft_pool": _craft_pool_for_output_type(String(recipe.get("output_type", "")).to_lower()),
+			# Prize Shuffle (#49 slice 3)
+			"preview": craft_preview,
+			"swaps": craft_swaps,
+			"peek_tokens": c_peeks,
 		})
 		return
 
