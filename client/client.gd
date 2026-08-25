@@ -29198,23 +29198,9 @@ func update_tool_status_overlay():
 		var direction = String(hud_nearest_post.get("direction", ""))
 		var distance = int(hud_nearest_post.get("distance", 0))
 		sections.append("[color=#9ACD32]Nearest:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [name_, direction, distance])
-		# Slice 6 — dynamic post state. Append "Under Threat" line when the
-		# nearest post is currently menaced by a tier-2+ active dungeon.
-		# Slice 13 (v0.9.548) — severe threat (2+ threatening dungeons) gets
-		# a redder ⚠⚠ banner so players can tell at a glance whether prices
-		# are merely inflated or the post is mechanically downgraded.
-		if hud_post_threat.get("threatened", false):
-			var threat_dungeon = String(hud_post_threat.get("dungeon_name", "dungeon"))
-			var threat_dir = String(hud_post_threat.get("direction", ""))
-			var threat_dist = int(hud_post_threat.get("distance", 0))
-			var threat_tier = int(hud_post_threat.get("tier", 1))
-			var threat_color = String(hud_post_threat.get("color", "#FF8800"))
-			var threat_count = int(hud_post_threat.get("count", 1))
-			var threat_severe = bool(hud_post_threat.get("severe", false))
-			if threat_severe:
-				sections.append("[color=#FF2020]⚠⚠ SEVERELY THREATENED ([color=#FFCC44]%d dungeons[/color]):[/color] [color=%s]%s[/color] [color=#AAAAAA]T%d %s ~%d[/color]" % [threat_count, threat_color, threat_dungeon, threat_tier, threat_dir, threat_dist])
-			else:
-				sections.append("[color=#FF6347]⚠ Under Threat:[/color] [color=%s]%s[/color] [color=#AAAAAA]T%d %s ~%d[/color]" % [threat_color, threat_dungeon, threat_tier, threat_dir, threat_dist])
+		# v0.9.700 — the "Under Threat" line was REMOVED from this top-left box:
+		# it duplicated the top-right nearest-threat pointer and confused players.
+		# hud_post_threat is still tracked/used elsewhere; only this label line is gone.
 
 	# --- Materials pouch total ---
 	var mats = character_data.get("crafting_materials", {})

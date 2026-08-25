@@ -40,8 +40,30 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_baseline()  # #29 — all 3 classes: win% / turns / casts-per-fight
+	run_hp_solve()  # #29 — find the monster-HP mult that hits ~8-12t at healthy win
 	quit()
+
+func run_hp_solve():
+	# #29 — sweep an extra monster-HP multiplier (War+Trk = accurate classes) to find
+	# what lands "real" fights at ~8-12t with a healthy win-rate. L50, elite/boss.
+	var N := 60
+	var mults := [2.0, 3.0, 4.0, 5.0]
+	print("\n===== #29 MONSTER-HP SOLVE (L50, War+Trk) — avgTurns@win%% per HP mult =====")
+	for c in [["Fighter", "War"], ["Thief", "Trk"]]:
+		for gear in ["average", "bis"]:
+			for et in ["elite", "boss"]:
+				var row := "%s %-8s %-5s" % [c[1], gear, et]
+				for hm in mults:
+					var wins := 0
+					var tt := 0
+					for i in range(N):
+						var r = run_fight(50, gear, et, hm, 1.0, 1.0, c[0])
+						if r.win:
+							wins += 1
+						tt += r.turns
+					row += "   %.0fx: %4.1ft@%d%%" % [hm, float(tt) / N, int(100.0 * wins / N)]
+				print(row)
+	print("=================================================================\n")
 
 func run_baseline():
 	# #29 holistic rebalance baseline — measures win-rate, fight length, AND
