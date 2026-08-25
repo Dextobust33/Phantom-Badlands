@@ -6125,6 +6125,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					# v0.9.664 — grow the grid to match the (now possibly huge) budget
 					# so no reveals are wasted; jackpot budgets add upgraded cells.
 					_resize_combat_loot_bag_for_budget(_bag, _monster_tier)
+					# Prize Shuffle (#49) — snapshot preview + shuffle authoritative
+					# order + roll peek tokens AFTER the grid is sized to the budget.
+					_prepare_combat_loot_shuffle(_bag, _monster_tier)
 					active_combat_loot[peer_id] = _bag
 					_combat_loot_bag_view = _serialize_combat_loot_bag_for_client(_bag, false)
 
@@ -20874,6 +20877,49 @@ func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
 		"rarity": item.get("rarity", "common"),
 	}
 
+func _prepare_combat_loot_shuffle(bag: Dictionary, monster_tier: int) -> void:
+	"""Prize Shuffle (#49) — before the client opens the panel, snapshot every
+	slot's display info for the PREVIEW phase (all cards shown face-up so the
+	player learns what's in the pool), then shuffle the authoritative slot order
+	via a sequence of visible pairwise swaps the client re-animates (so a sharp
+	player can track a prize as it moves). Also rolls RARE peek tokens — an
+	occasional strategic aid the client spends to briefly re-show one face-down
+	cell. Runs once per bag (after the grid is sized to the final budget)."""
+	if bag.has("shuffle_swaps"):
+		return
+	var slots: Array = bag.get("slots", [])
+	var n: int = slots.size()
+	# Pre-shuffle display snapshot — the order the player memorizes.
+	var preview: Array = []
+	for s in slots:
+		preview.append(_preview_slot_for_client(s))
+	# Swap sequence — more swaps at higher tier so big prizes are harder to
+	# follow (skill scales with stakes). Applied to the authoritative order.
+	var swap_count: int = clampi(3 + monster_tier, 3, 14)
+	var swaps: Array = []
+	for _i in range(swap_count):
+		if n < 2:
+			break
+		var a: int = randi() % n
+		var b: int = randi() % n
+		if a == b:
+			b = (b + 1) % n
+		swaps.append([a, b])
+		var tmp = slots[a]
+		slots[a] = slots[b]
+		slots[b] = tmp
+	bag["shuffle_preview"] = preview
+	bag["shuffle_swaps"] = swaps
+	# Rare peek tokens — occasional aid. Most panels give none.
+	var peeks: int = 0
+	var roll: float = randf()
+	if roll < 0.06:
+		peeks = 2
+	elif roll < 0.20:
+		peeks = 1
+	bag["peek_tokens"] = peeks
+
+
 func _serialize_combat_loot_bag_for_client(bag: Dictionary, fully_revealed: bool = false) -> Dictionary:
 	"""Build the client-visible view of the bag. Unrevealed slots ship only a
 	`kind: 'sealed'` placeholder so the client can't peek; revealed slots ship
@@ -20897,6 +20943,12 @@ func _serialize_combat_loot_bag_for_client(bag: Dictionary, fully_revealed: bool
 		"reveals_used": int(bag.get("reveals_used", 0)),
 		"monster_tier": int(bag.get("monster_tier", 1)),
 		"flock_kills": int(bag.get("flock_kills", 1)),
+		# Prize Shuffle (#49) — preview snapshot (pre-shuffle order), the swap
+		# sequence the client re-animates, and rare peek tokens. Only meaningful
+		# on the initial open; harmless on the fully-revealed done view.
+		"preview": bag.get("shuffle_preview", []).duplicate(true),
+		"swaps": bag.get("shuffle_swaps", []).duplicate(true),
+		"peek_tokens": int(bag.get("peek_tokens", 0)),
 	}
 
 func _preview_slot_for_client(slot: Dictionary) -> Dictionary:

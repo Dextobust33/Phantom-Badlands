@@ -60,6 +60,22 @@ var _cascade_active: bool = false
 var _autoskip_enabled: bool = false
 var _autoskip_timer: Timer = null
 
+# === Prize Shuffle (#49) ===
+# Three-beat flow: "preview" (all cards face-up so the player learns the pool) →
+# "shuffle" (flip down + animate the server's swap sequence so a sharp player can
+# track a prize) → "hunt" (the existing budget-limited reveal). Autoskip and old
+# servers (no preview data) skip straight to "hunt".
+var _phase: String = "hunt"
+var _preview_slots: Array = []   # pre-shuffle display content per position
+var _swaps: Array = []           # [[a,b], ...] server swap sequence
+var _shuffle_content: Array = [] # post-shuffle content per position (for peeks)
+var _peek_tokens: int = 0
+var _peek_armed: bool = false    # next card click spends a peek instead of revealing
+var _shuffle_button: Button = null
+var _peek_button: Button = null
+const PREVIEW_AUTO_SECONDS: float = 3.0
+var _preview_timer: Timer = null
+
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -178,9 +194,30 @@ func _build_layout() -> void:
 	footer_hbox.add_theme_constant_override("separation", 8)
 	vbox.add_child(footer_hbox)
 
+	# Prize Shuffle (#49) — Peek button (hunt phase, only when tokens remain).
+	_peek_button = Button.new()
+	_peek_button.text = "Peek"
+	_peek_button.focus_mode = Control.FOCUS_NONE
+	_peek_button.custom_minimum_size = Vector2(120, 36)
+	_peek_button.tooltip_text = "Spend a rare peek to briefly re-show one face-down cell — no reveal used."
+	_peek_button.visible = false
+	_peek_button.pressed.connect(_on_peek_pressed)
+	footer_hbox.add_child(_peek_button)
+
 	var footer_spacer := Control.new()
 	footer_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_hbox.add_child(footer_spacer)
+
+	# Prize Shuffle (#49) — Shuffle button (preview phase: start the shuffle early
+	# instead of waiting out the auto-timer).
+	_shuffle_button = Button.new()
+	_shuffle_button.text = "Shuffle →"
+	_shuffle_button.focus_mode = Control.FOCUS_NONE
+	_shuffle_button.custom_minimum_size = Vector2(140, 36)
+	_shuffle_button.tooltip_text = "Hide and shuffle the prizes, then hunt for them."
+	_shuffle_button.visible = false
+	_shuffle_button.pressed.connect(_on_shuffle_pressed)
+	footer_hbox.add_child(_shuffle_button)
 
 	_done_button = Button.new()
 	_done_button.text = "Done"
@@ -279,18 +316,32 @@ func open_bag(bag_view: Dictionary) -> void:
 	_autoskip_enabled = bool(bag_view.get("autoskip_enabled", false))
 	if _autoskip_checkbox != null:
 		_autoskip_checkbox.set_pressed_no_signal(_autoskip_enabled)
+	# Prize Shuffle (#49) — preview snapshot + swap sequence + peek tokens.
+	_preview_slots = bag_view.get("preview", []).duplicate(true)
+	_swaps = bag_view.get("swaps", []).duplicate(true)
+	_peek_tokens = int(bag_view.get("peek_tokens", 0))
+	_peek_armed = false
 	_ensure_card_count(_slots_data.size())
 	_render_header()
 	_render_pinned(bag_view.get("pinned", []))
+	visible = true
+	# Preview phase — only when we have preview data AND the player isn't
+	# autoskipping (they want speed, not knowledge). Old servers omit "preview"
+	# → fall through to the classic hunt open below.
+	if not _autoskip_enabled and _preview_slots.size() >= _slots_data.size() and _preview_slots.size() > 0:
+		_enter_preview()
+		return
+	# Classic hunt open (autoskip / no preview data).
+	_phase = "hunt"
 	_render_reveals_counter()
 	_render_all_cards()
+	_refresh_action_buttons()
 	# v0.9.596 — seed keyboard focus on the first unrevealed card so the
 	# player can press Enter/Space immediately without first reaching for the
 	# mouse. Autoskip path skips visuals entirely.
 	_focused_target = "grid"
 	_focused_slot = _first_unrevealed_slot()
 	_apply_focus_visuals()
-	visible = true
 	# Kick off autoskip if enabled. Defer one frame so the panel finishes
 	# layout before the first auto-click fires.
 	if _autoskip_enabled:
@@ -351,6 +402,257 @@ func _on_autoskip_toggled(pressed: bool) -> void:
 		_start_autoskip()
 	else:
 		_stop_autoskip()
+
+
+# === Prize Shuffle (#49) — preview → shuffle → hunt ===
+
+func _refresh_action_buttons() -> void:
+	"""Show the footer controls appropriate to the current phase."""
+	if _shuffle_button != null:
+		_shuffle_button.visible = (_phase == "preview")
+	if _done_button != null:
+		_done_button.visible = (_phase == "hunt")
+		_done_button.disabled = _cascade_active
+	if _peek_button != null:
+		_peek_button.visible = (_phase == "hunt" and _peek_tokens > 0)
+		_peek_button.text = ("Peek (%d)" % _peek_tokens)
+		_peek_button.disabled = (_peek_tokens <= 0)
+	if _autoskip_checkbox != null:
+		_autoskip_checkbox.visible = (_phase == "hunt")
+
+
+func _enter_preview() -> void:
+	"""Beat 1 — show every cell face-up so the player learns the pool; the best
+	prizes are highlighted. Auto-advances to the shuffle, or the player can hit
+	the Shuffle button to start early."""
+	_phase = "preview"
+	_cascade_active = false
+	_header_label.text = "[center][color=#FFD54A][b]✦ Memorize the prizes! ✦[/b][/color]   [color=#999]the best are highlighted[/color][/center]"
+	_reveals_label.text = "[center][color=#FFD54A]Prize preview…[/color][/center]"
+	for i in range(_cards.size()):
+		_render_preview_card(i)
+	_refresh_action_buttons()
+	if _preview_timer != null and is_instance_valid(_preview_timer):
+		_preview_timer.queue_free()
+	_preview_timer = Timer.new()
+	_preview_timer.one_shot = true
+	_preview_timer.wait_time = PREVIEW_AUTO_SECONDS
+	_preview_timer.timeout.connect(_on_shuffle_pressed)
+	add_child(_preview_timer)
+	_preview_timer.start()
+
+
+func _on_shuffle_pressed() -> void:
+	if _phase != "preview":
+		return
+	if _preview_timer != null and is_instance_valid(_preview_timer):
+		_preview_timer.stop()
+		_preview_timer.queue_free()
+		_preview_timer = null
+	_enter_shuffle()
+
+
+func _enter_shuffle() -> void:
+	"""Beat 2 — flip every card face-down, then replay the server's swap sequence
+	with floating overlays so a sharp-eyed player can follow the prize they want.
+	After the swaps, position p holds the same content as the server's slots[p]."""
+	_phase = "shuffle"
+	if _shuffle_button != null:
+		_shuffle_button.visible = false
+	_header_label.text = "[center][color=#5C9DFF][b]Shuffling…[/b][/color]  [color=#999]follow the prize you want![/color][/center]"
+	_reveals_label.text = ""
+	# Track post-shuffle content per position (for peeks) by replaying the swaps.
+	_shuffle_content = _preview_slots.duplicate(true)
+	# Fixed card positions (grid-local); overlays move between these.
+	var card_pos: Array = []
+	for i in range(_cards.size()):
+		_render_card(i)  # sealed look under the overlays
+		card_pos.append(_cards[i].global_position - global_position)
+	var overlays: Array = []
+	for i in range(_cards.size()):
+		overlays.append(_make_shuffle_overlay(i, card_pos[i]))
+	var per: float = clampf(1.6 / float(max(1, _swaps.size())), 0.11, 0.28)
+	var step: float = 0.0
+	for pair in _swaps:
+		if not (pair is Array) or pair.size() < 2:
+			continue
+		var a: int = int(pair[0])
+		var b: int = int(pair[1])
+		if a < 0 or b < 0 or a >= overlays.size() or b >= overlays.size() or a == b:
+			continue
+		# Content follows the swap so _shuffle_content ends matching the server.
+		var ca = _shuffle_content[a]
+		_shuffle_content[a] = _shuffle_content[b]
+		_shuffle_content[b] = ca
+		# Capture the actual nodes + targets (positions are fixed per index).
+		var node_a = overlays[a]
+		var node_b = overlays[b]
+		var tgt_a: Vector2 = card_pos[b]
+		var tgt_b: Vector2 = card_pos[a]
+		var dur: float = per
+		_call_deferred_after(step, func():
+			_tween_move(node_a, tgt_a, dur)
+			_tween_move(node_b, tgt_b, dur))
+		# Reflect the swap in the overlay index map for subsequent swaps.
+		overlays[a] = node_b
+		overlays[b] = node_a
+		step += per * 0.7  # slight overlap keeps it flowing but trackable
+	# Fade overlays + enter the hunt after the last swap settles.
+	var captured_overlays := overlays
+	_call_deferred_after(step + per + 0.15, func():
+		for ov in captured_overlays:
+			if is_instance_valid(ov):
+				var tw := create_tween()
+				tw.tween_property(ov, "modulate:a", 0.0, 0.18)
+				tw.tween_callback(Callable(ov, "queue_free"))
+		_enter_hunt())
+
+
+func _make_shuffle_overlay(slot_index: int, local_pos: Vector2) -> Control:
+	"""A floating face-up copy of a preview cell that the shuffle animates."""
+	var slot: Dictionary = _preview_slots[slot_index] if slot_index < _preview_slots.size() else {}
+	var color_hex: String = String(slot.get("color", "#FFFFFF"))
+	var rgb: Color = Color.html(color_hex) if color_hex != "" else Color.WHITE
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.z_index = 20
+	panel.size = _cards[slot_index].size
+	panel.position = local_pos
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(rgb.r * 0.28, rgb.g * 0.28, rgb.b * 0.28, 1.0)
+	sb.border_color = Color(1, 0.85, 0.3, 1) if _is_notable(slot) else Color(rgb.r, rgb.g, rgb.b, 0.9)
+	sb.set_border_width_all(3 if _is_notable(slot) else 2)
+	sb.set_corner_radius_all(4)
+	panel.add_theme_stylebox_override("panel", sb)
+	var lbl := RichTextLabel.new()
+	lbl.bbcode_enabled = true
+	lbl.fit_content = true
+	lbl.scroll_active = false
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.add_theme_font_size_override("normal_font_size", 12)
+	lbl.text = _slot_display_bbcode(slot)
+	panel.add_child(lbl)
+	# Parent to the panel Control (NOT the GridContainer, which would lay the
+	# overlay out as a cell and override our manual positions).
+	add_child(panel)
+	return panel
+
+
+func _tween_move(node: Control, target: Vector2, dur: float) -> void:
+	if not is_instance_valid(node):
+		return
+	var tw := create_tween()
+	tw.tween_property(node, "position", target, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _enter_hunt() -> void:
+	"""Beat 3 — the classic budget-limited reveal, now with knowledge + peeks."""
+	_phase = "hunt"
+	_render_header()
+	_render_reveals_counter()
+	_render_all_cards()
+	_refresh_action_buttons()
+	_focused_target = "grid"
+	_focused_slot = _first_unrevealed_slot()
+	_apply_focus_visuals()
+	if _autoskip_enabled:
+		call_deferred("_start_autoskip")
+
+
+func _on_peek_pressed() -> void:
+	if _phase != "hunt" or _peek_tokens <= 0:
+		return
+	_peek_armed = not _peek_armed
+	if _peek_armed:
+		_header_label.text = "[center][color=#7FD8C8][b]Peek armed[/b] — click a face-down cell to sneak a look.[/color][/center]"
+	else:
+		_render_header()
+
+
+func _do_peek(slot_index: int) -> void:
+	if _peek_tokens <= 0 or slot_index < 0 or slot_index >= _cards.size():
+		return
+	if slot_index >= _slots_data.size() or bool(_slots_data[slot_index].get("revealed", false)):
+		return
+	_peek_tokens -= 1
+	_peek_armed = false
+	emit_signal("play_sfx", "mystery")
+	var content: Dictionary = _shuffle_content[slot_index] if slot_index < _shuffle_content.size() else {}
+	_show_peek_overlay(slot_index, content)
+	_render_header()
+	_refresh_action_buttons()
+
+
+func _show_peek_overlay(slot_index: int, content: Dictionary) -> void:
+	var card: Control = _cards[slot_index]
+	if not is_instance_valid(card):
+		return
+	var overlay := PanelContainer.new()
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.z_index = 30
+	overlay.size = card.size
+	overlay.position = card.global_position - global_position
+	var color_hex: String = String(content.get("color", "#FFFFFF"))
+	var rgb: Color = Color.html(color_hex) if color_hex != "" else Color.WHITE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(rgb.r * 0.3, rgb.g * 0.3, rgb.b * 0.3, 1.0)
+	sb.border_color = Color(0.5, 0.85, 0.78, 1)  # teal peek frame
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(4)
+	overlay.add_theme_stylebox_override("panel", sb)
+	var lbl := RichTextLabel.new()
+	lbl.bbcode_enabled = true
+	lbl.fit_content = true
+	lbl.scroll_active = false
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.add_theme_font_size_override("normal_font_size", 12)
+	lbl.text = _slot_display_bbcode(content)
+	overlay.add_child(lbl)
+	add_child(overlay)
+	_call_deferred_after(1.8, func():
+		if is_instance_valid(overlay):
+			var tw := create_tween()
+			tw.tween_property(overlay, "modulate:a", 0.0, 0.25)
+			tw.tween_callback(Callable(overlay, "queue_free")))
+
+
+func _render_preview_card(slot_index: int) -> void:
+	if slot_index < 0 or slot_index >= _cards.size():
+		return
+	var card: PanelContainer = _cards[slot_index]
+	var lbl: RichTextLabel = _card_labels[slot_index]
+	var slot: Dictionary = _preview_slots[slot_index] if slot_index < _preview_slots.size() else {}
+	var color_hex: String = String(slot.get("color", "#FFFFFF"))
+	var rgb: Color = Color.html(color_hex) if color_hex != "" else Color.WHITE
+	var notable: bool = _is_notable(slot)
+	var sb: StyleBoxFlat = card.get_theme_stylebox("panel").duplicate()
+	sb.bg_color = Color(rgb.r * 0.22, rgb.g * 0.22, rgb.b * 0.22, 1.0)
+	sb.border_color = Color(1, 0.85, 0.3, 1) if notable else Color(rgb.r, rgb.g, rgb.b, 0.85)
+	sb.set_border_width_all(3 if notable else 2)
+	card.add_theme_stylebox_override("panel", sb)
+	var star: String = "[color=#FFD700]✦[/color] " if notable else ""
+	lbl.text = _slot_display_bbcode(slot, star)
+	if notable:
+		_play_reveal_pop(slot_index)
+
+
+func _is_notable(slot: Dictionary) -> bool:
+	"""Prizes worth chasing — draws the eye during preview."""
+	var r: String = String(slot.get("rarity", ""))
+	if r in ["rare", "epic", "legendary"]:
+		return true
+	var k: String = String(slot.get("kind", ""))
+	return k in ["filler_plus_two", "filler_mystery", "filler_chain", "egg", "egg_full"]
+
+
+func _slot_display_bbcode(slot: Dictionary, prefix: String = "") -> String:
+	var color_hex: String = String(slot.get("color", "#FFFFFF"))
+	var name: String = String(slot.get("name", ""))
+	if name == "":
+		name = _kind_display_name(String(slot.get("kind", "")))
+	var symbol: String = String(slot.get("symbol", ""))
+	var sym: String = ("[color=%s]%s[/color] " % [color_hex, symbol]) if symbol != "" else ""
+	return "[center]%s%s[color=%s]%s[/color][/center]" % [prefix, sym, color_hex, name]
 
 
 func _render_pinned(pinned: Array) -> void:
@@ -765,9 +1067,15 @@ func _play_trap_flash_and_shake(slot_index: int) -> void:
 func _on_card_clicked(slot_index: int) -> void:
 	if _cascade_active:
 		return
+	# Prize Shuffle (#49) — no reveals during preview/shuffle; a peek intercepts.
+	if _phase != "hunt":
+		return
 	if slot_index < 0 or slot_index >= _slots_data.size():
 		return
 	if bool(_slots_data[slot_index].get("revealed", false)):
+		return
+	if _peek_armed:
+		_do_peek(slot_index)
 		return
 	if _reveals_used >= _reveal_budget:
 		return
@@ -821,6 +1129,13 @@ func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	var k: int = event.keycode
+	# Prize Shuffle (#49) — during preview, Space/Enter starts the shuffle; block
+	# all reveal keys until the hunt phase begins.
+	if _phase != "hunt":
+		if _phase == "preview" and k in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+			_on_shuffle_pressed()
+			get_viewport().set_input_as_handled()
+		return
 	# v0.9.602 — direct QWERTY-grid slot keys. Take priority over WASD-as-
 	# arrows so A/S/D press the slot, not the focus arrow. Arrow keys
 	# (KEY_LEFT/RIGHT/UP/DOWN) are still available for focus nav.
