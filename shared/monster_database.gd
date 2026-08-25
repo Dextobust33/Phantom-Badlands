@@ -1495,7 +1495,10 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	# Adjust HP - base 2x multiplier with diminishing returns for player attack
 	# Uses hyperbolic saturation: approaches 7.0x asymptotically
 	# This ensures multi-round fights without making high-level monsters unkillable
-	var hp_multiplier = 2.0 + 5.0 * expected_player_attack_bonus / (150.0 + expected_player_attack_bonus)
+	# v0.9.700 (#29) — base HP raised ~1.4× (2.0+5.0 → 2.8+7.0) so trash lands ~2.5-3
+	# turns instead of 1-2. The big length increase for "real fights" rides on the
+	# elite/empowered variant mults below, kept tiered so trash stays snappy.
+	var hp_multiplier = 2.8 + 7.0 * expected_player_attack_bonus / (150.0 + expected_player_attack_bonus)
 	var scaled_hp = max(10, int(base_scaled_hp * hp_multiplier))
 
 	# Minimum HP floor based on level to prevent trivial one-shot kills
@@ -1580,8 +1583,10 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		is_rare_variant = true
 		variant_type = "elite"
 		monster_name = "★ " + base_stats.name + " Champion"
-		# Elite stat bonuses: significantly harder but very rewarding
-		scaled_hp = int(scaled_hp * 1.5)
+		# Elite stat bonuses: significantly harder but very rewarding.
+		# v0.9.700 (#29) — HP 1.5→3.5 so a Champion is a "real fight" (~8t at avg gear),
+		# not a slightly-chunkier trash mob. Damage untouched (win-rate guardrail).
+		scaled_hp = int(scaled_hp * 3.5)
 		scaled_strength = int(scaled_strength * 1.3)
 		scaled_defense = int(scaled_defense * 1.25)
 		experience_reward = int(experience_reward * 1.5)
@@ -1637,6 +1642,11 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 		# +30% XP per modifier (additive), applied at generation like elite's 1.5x
 		if empowered_mods.size() > 0:
 			experience_reward = int(experience_reward * (1.0 + 0.30 * empowered_mods.size()))
+			# v0.9.700 (#29) — empowered monsters are the overworld's "real fights",
+			# but the per-mod hp_mults are tiny (1.10-1.50, and most mods have none),
+			# so add a reliable HP bump by mod count: 1 mod ×2.0 … 3 mods ×3.0 (on top
+			# of base + any per-mod hp_mult). Makes them ~6-8t at avg gear. Damage untouched.
+			scaled_hp = max(10, int(scaled_hp * (1.5 + 0.5 * empowered_mods.size())))
 
 	# Empowered drop chance: +20 per modifier, Gilded adds +20 more on top.
 	var final_drop_chance: int = 100 if is_elite else int(base_stats.get("drop_chance", 5))

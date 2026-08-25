@@ -40,7 +40,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_hp_solve()  # #29 — find the monster-HP mult that hits ~8-12t at healthy win
+	run_baseline()  # #29 all-class baseline
 	quit()
 
 func run_hp_solve():
@@ -255,11 +255,11 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 	var m = monster_db.generate_monster_by_name("Orc", level)
 	match et:
 		"empowered":
-			m["max_hp"] = int(m.get("max_hp", 1) * 1.3)
+			m["max_hp"] = int(m.get("max_hp", 1) * 2.2)  # #29 v0.9.700 — mirrors empowered flat HP (~2 mods)
 			m["strength"] = int(m.get("strength", 1) * 1.1)
 			m["defense"] = int(m.get("defense", 1) * 1.15)
 		"elite":
-			m["max_hp"] = int(m.get("max_hp", 1) * 1.5)
+			m["max_hp"] = int(m.get("max_hp", 1) * 3.5)  # #29 v0.9.700 — mirrors ★ Champion HP 1.5→3.5
 			m["strength"] = int(m.get("strength", 1) * 1.3)
 			m["defense"] = int(m.get("defense", 1) * 1.25)
 		"boss":
