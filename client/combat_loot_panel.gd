@@ -73,8 +73,9 @@ var _peek_tokens: int = 0
 var _peek_armed: bool = false    # next card click spends a peek instead of revealing
 var _shuffle_button: Button = null
 var _peek_button: Button = null
-const PREVIEW_AUTO_SECONDS: float = 3.0
+const PREVIEW_AUTO_SECONDS: float = 4.5  # v0.9.703 — longer study window
 var _preview_timer: Timer = null
+var _preview_pulse_tweens: Array = []  # looping glows on notable preview cards
 
 
 func _ready() -> void:
@@ -428,7 +429,16 @@ func _enter_preview() -> void:
 	_phase = "preview"
 	_cascade_active = false
 	_header_label.text = "[center][color=#FFD54A][b]✦ Memorize the prizes! ✦[/b][/color]   [color=#999]the best are highlighted[/color][/center]"
-	_reveals_label.text = "[center][color=#FFD54A]Prize preview…[/color][/center]"
+	# Callout the single best prize so the player has a clear target to track.
+	var best: Dictionary = _best_preview_prize()
+	if not best.is_empty():
+		var bcolor: String = String(best.get("color", "#FFD700"))
+		var bname: String = String(best.get("name", ""))
+		if bname == "":
+			bname = _kind_display_name(String(best.get("kind", "")))
+		_reveals_label.text = "[center][color=#FFD700]★ Top prize:[/color] [color=%s][b]%s[/b][/color] [color=#FFD700]★[/color][/center]" % [bcolor, bname]
+	else:
+		_reveals_label.text = "[center][color=#FFD54A]Prize preview…[/color][/center]"
 	for i in range(_cards.size()):
 		_render_preview_card(i)
 	_refresh_action_buttons()
@@ -461,11 +471,15 @@ func _enter_shuffle() -> void:
 		_shuffle_button.visible = false
 	_header_label.text = "[center][color=#5C9DFF][b]Shuffling…[/b][/color]  [color=#999]follow the prize you want![/color][/center]"
 	_reveals_label.text = ""
+	emit_signal("play_sfx", "shuffle")  # v0.9.703 juice — soft shuffle cue
+	# Stop the notable-card glow pulses so cards reset to neutral before flipping.
+	_stop_preview_pulses()
 	# Track post-shuffle content per position (for peeks) by replaying the swaps.
 	_shuffle_content = _preview_slots.duplicate(true)
 	# Fixed card positions (grid-local); overlays move between these.
 	var card_pos: Array = []
 	for i in range(_cards.size()):
+		_cards[i].modulate = Color.WHITE  # clear any leftover pulse brightness
 		_render_card(i)  # sealed look under the overlays
 		card_pos.append(_cards[i].global_position - global_position)
 	var overlays: Array = []
@@ -633,7 +647,50 @@ func _render_preview_card(slot_index: int) -> void:
 	var star: String = "[color=#FFD700]✦[/color] " if notable else ""
 	lbl.text = _slot_display_bbcode(slot, star)
 	if notable:
-		_play_reveal_pop(slot_index)
+		_play_preview_pulse(card)
+
+
+func _play_preview_pulse(card: Control) -> void:
+	"""v0.9.703 — a looping brightness pulse so notable prizes visibly 'breathe'
+	during the preview and draw the eye. Tracked so _enter_shuffle can stop them."""
+	if not is_instance_valid(card):
+		return
+	var tw := create_tween().set_loops()
+	tw.tween_property(card, "modulate", Color(1.35, 1.35, 1.15, 1.0), 0.55).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(card, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.55).set_trans(Tween.TRANS_SINE)
+	_preview_pulse_tweens.append(tw)
+
+
+func _stop_preview_pulses() -> void:
+	for tw in _preview_pulse_tweens:
+		if tw != null and tw.is_valid():
+			tw.kill()
+	_preview_pulse_tweens.clear()
+
+
+func _best_preview_prize() -> Dictionary:
+	"""v0.9.703 — the single most valuable slot in the pool, for the top-prize
+	callout. Higher score = better."""
+	var best: Dictionary = {}
+	var best_score: int = 0
+	for slot in _preview_slots:
+		if not (slot is Dictionary):
+			continue
+		var score: int = 0
+		match String(slot.get("rarity", "")):
+			"legendary": score = 100
+			"epic": score = 80
+			"rare": score = 60
+			"uncommon": score = 25
+		match String(slot.get("kind", "")):
+			"egg", "egg_full": score = max(score, 70)
+			"filler_mystery": score = max(score, 45)
+			"filler_plus_two": score = max(score, 35)
+			"filler_chain": score = max(score, 30)
+		if score > best_score:
+			best_score = score
+			best = slot
+	return best
 
 
 func _is_notable(slot: Dictionary) -> bool:
@@ -748,6 +805,13 @@ func reveal_slot(slot_index: int, reveal_data: Dictionary, reveals_used: int, re
 			_play_trap_flash_and_shake(slot_index)
 		"filler_plus_two":
 			emit_signal("play_sfx", "plus_two")
+	# v0.9.703 juice — a real rare/epic/legendary or egg reveal is a "you got it!"
+	# moment: gold burst + rare-drop sound + a bigger pop on top of the base flip.
+	var rar: String = String(reveal_data.get("rarity", ""))
+	if rar in ["rare", "epic", "legendary"] or kind in ["egg", "egg_full"]:
+		emit_signal("play_sfx", "reveal_big")
+		_play_mystery_shimmer(slot_index)
+		_play_big_celebration(slot_index)
 	# Chain neighbors cascade — server already revealed + awarded them; we just
 	# flip the visuals on a stagger so the player reads the chain pattern.
 	if not chain_neighbors.is_empty():
@@ -1010,6 +1074,39 @@ func _play_chain_shockwave(slot_index: int) -> void:
 	var tw := create_tween().set_parallel(true)
 	tw.tween_property(ring, "scale", Vector2(3.2, 3.2), 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(ring, "modulate:a", 0.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(Callable(ring, "queue_free"))
+
+
+func _play_big_celebration(slot_index: int) -> void:
+	"""v0.9.703 — the 'you got it!' flourish for a real rare+/egg reveal: a strong
+	scale pop plus a gold expanding ring so the win reads as a big moment."""
+	if slot_index < 0 or slot_index >= _cards.size():
+		return
+	var card: Control = _cards[slot_index]
+	if not is_instance_valid(card):
+		return
+	# Strong pop.
+	card.pivot_offset = card.size / 2.0
+	var pop := create_tween()
+	pop.tween_property(card, "scale", Vector2(1.22, 1.22), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	pop.tween_property(card, "scale", Vector2(1.0, 1.0), 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	# Gold expanding ring (parented to the panel so the GridContainer won't relayout it).
+	var ring := Panel.new()
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.border_color = Color(1.0, 0.84, 0.2, 0.95)
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(8)
+	ring.add_theme_stylebox_override("panel", sb)
+	ring.z_index = 25
+	ring.size = card.size
+	ring.position = card.global_position - global_position
+	add_child(ring)
+	ring.pivot_offset = ring.size / 2.0
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2(2.8, 2.8), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.chain().tween_callback(Callable(ring, "queue_free"))
 
 

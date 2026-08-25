@@ -27686,8 +27686,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.703 — Prize Shuffle polish (preview + rewards + juice).
+	display_game("[color=#00FF00]v0.9.703[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ PRIZE SHUFFLE POLISH.[/color] Making the loot reveal land harder:")
+	display_game("    [color=#1EFF00]◆ Better preview.[/color] Special cells ([color=#FFD700]Mystery / +2 / Chain[/color], and [color=#FF4444]Traps[/color] to dodge) now show [b]face-up[/b] instead of blank, the best prizes [b]pulse[/b] to catch your eye, a [color=#FFD700]★ Top prize[/color] callout names the headline reward, and you get [b]longer[/b] to study it.")
+	display_game("    [color=#1EFF00]◆ Better rewards.[/color] Every panel now guarantees a [b]headline prize[/b] worth chasing, with less junk filler and bigger amounts.")
+	display_game("    [color=#1EFF00]◆ More juice.[/color] A shuffle sound, and a [b]gold burst + fanfare[/b] when you reveal a real rare/epic/legendary or egg.")
+	display_game("    [color=#1EFF00]◆ Rarer, but bigger.[/color] The panel appears a touch less often — the trade for the better rewards.")
+	display_game("")
+
 	# v0.9.702 — Prize Shuffle loot redesign (combat).
-	display_game("[color=#00FF00]v0.9.702[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.702[/color]")
 	display_game("  [color=#FF8000]★ PRIZE SHUFFLE.[/color] Combat loot is no longer a blind scratch-off. Now it plays in three beats: [color=#FFD54A]Preview[/color] every prize face-up (the best are [b]highlighted[/b] so you know what to chase) → [color=#5AC8FF]Shuffle[/color] them face-down (watch closely — you can [b]follow[/b] a prize; tougher monsters shuffle harder) → [color=#1EFF00]Hunt[/color] with your reveals for the ones you tracked.")
 	display_game("  [color=#1EFF00]◆ Peek tokens.[/color] The panel occasionally grants rare [color=#7FD8C8]peek tokens[/color] — click [b]Peek[/b] then a face-down cell to sneak a look [b]without spending a reveal[/b].")
 	display_game("  [color=#1EFF00]◆ Less junk, rarer but bigger.[/color] Fewer low-value currency filler cells (more useful materials/parts, bigger amounts). The panel appears [b]less often[/b] but pays out [b]more[/b] when it does. ([color=#888]Autoskip still skips straight to taking everything in budget.[/color])")
@@ -31534,6 +31543,14 @@ func _on_combat_loot_sfx(name: String) -> void:
 			# UI tick on top so the bonus has its own audio identity.
 			if gem_gain_player != null:
 				gem_gain_player.play()
+		"shuffle":
+			# Prize Shuffle (#49) — soft scratch cue as the cards flip + shuffle.
+			if scratch_player != null:
+				scratch_player.play()
+		"reveal_big":
+			# Prize Shuffle (#49) — the "you got it!" moment on a real rare+/egg.
+			if rare_drop_player != null:
+				rare_drop_player.play()
 
 func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
 	"""Server confirmed a reveal — update the panel, sync character, and

@@ -78,9 +78,10 @@ const COMBAT_LOOT_SCRATCH_OFF_ENABLED := true
 # jackpot (reveal budget x mult); non-scratch kills award loot inline (equipment
 # cadence unchanged). Empowered elites roll it far more often. All tunable.
 # Prize Shuffle (#49) — "rarer but bigger": the panel fires less often on plain
-# kills (0.125 → 0.09) but pays out more when it does (budget ×4 → ×5), leaning
-# into the rare-jackpot feel now that the panel is a full preview→shuffle→hunt.
-const COMBAT_SCRATCH_BASE_CHANCE := 0.09
+# kills (0.125 → 0.09 → v0.9.703 0.07, marginally rarer) but pays out more when it
+# does (budget ×4 → ×5) + a guaranteed headline prize, leaning into the
+# rare-jackpot feel now that the panel is a full preview→shuffle→hunt.
+const COMBAT_SCRATCH_BASE_CHANCE := 0.07
 const COMBAT_SCRATCH_EMPOWERED_CHANCE := 0.60
 const COMBAT_SCRATCH_BUDGET_MULT := 5
 # Flock chains build toward a reward — each additional monster killed in the
@@ -94,7 +95,7 @@ const COMBAT_LOOT_SLOT_COUNT := 16
 # capped at MAX_SLOTS. Budgets that cross UPGRADE_THRESHOLD add *upgraded* cells
 # (richer rewards + better special-cell odds) as the jackpot payoff.
 const COMBAT_LOOT_MAX_SLOTS := 36  # 6x6 — matches the client's 36 keyboard labels
-const COMBAT_LOOT_CHOICE_MARGIN := 3
+const COMBAT_LOOT_CHOICE_MARGIN := 2  # v0.9.703 (#49) — 3→2: less junk filler padding
 const COMBAT_LOOT_UPGRADE_THRESHOLD := 12
 # Loot-as-chance for gathering + crafting (v0.9.662) — mirrors the combat
 # treat-rhythm. Most gathers/crafts resolve instantly (no minigame); the
@@ -20433,25 +20434,27 @@ func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 	# crafting materials + monster parts (30% currency / 70% craftables) and bump
 	# every amount so even a filler cell reads as a real, if small, reward.
 	var tier_scale: int = clampi(monster_tier, 1, 9)
+	# v0.9.703 (#49) — amounts nudged up again ("marginally better rewards" to
+	# match the marginally-rarer appearance rate).
 	var wroll = randi() % 20
 	if wroll < 3:
-		# Valor — currency (~15%). Bumped: Tier 1: 3-9, Tier 9 up to ~45.
-		var amount: int = max(3, randi_range(3, 9) * tier_scale / 2)
+		# Valor — currency (~15%). Tier 1: 4-12, Tier 9 up to ~50.
+		var amount: int = max(4, randi_range(4, 11) * tier_scale / 2)
 		return {"kind": "filler_valor", "amount": amount}
 	elif wroll < 6:
-		# Salvage Essence (~15%). Bumped floor + scaling.
-		var qty: int = randi_range(2, 3 + tier_scale / 2)
+		# Salvage Essence (~15%).
+		var qty: int = randi_range(2, 4 + tier_scale / 2)
 		return {"kind": "filler_essence", "amount": qty}
 	elif wroll < 14:
 		# T1 crafting material (~40%) — the most useful common filler.
 		var t1_mats = ["iron_ore", "pine_wood", "wheat", "raw_hide"]
 		var mat_id: String = t1_mats[randi() % t1_mats.size()]
-		var qty: int = randi_range(2, 3 + tier_scale / 3)
+		var qty: int = randi_range(2, 4 + tier_scale / 3)
 		return {"kind": "filler_material", "material_id": mat_id, "quantity": qty}
 	else:
 		# Monster Part (~30%) — craftable, scaled to tier.
 		var part_id: String = "monster_hide" if (randi() % 2 == 0) else "monster_bone"
-		var qty: int = randi_range(2, 2 + tier_scale / 2)
+		var qty: int = randi_range(2, 3 + tier_scale / 2)
 		return {"kind": "filler_part", "material_id": part_id, "quantity": qty}
 
 func _build_combat_loot_filler_upgraded(monster_tier: int) -> Dictionary:
@@ -20881,6 +20884,19 @@ func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
 		"rarity": item.get("rarity", "common"),
 	}
 
+func _slot_is_notable_server(slot: Dictionary) -> bool:
+	"""Prize Shuffle (#49) — a slot worth chasing (drives the headline guarantee)."""
+	var k: String = String(slot.get("kind", ""))
+	if k in ["filler_mystery", "filler_chain", "filler_plus_two"]:
+		return true
+	if k == "real":
+		var d: Dictionary = slot.get("drop", {})
+		if str(d.get("type", "")) == "companion_egg":
+			return true
+		return str(d.get("rarity", "common")) in ["rare", "epic", "legendary"]
+	return false
+
+
 func _prepare_combat_loot_shuffle(bag: Dictionary, monster_tier: int) -> void:
 	"""Prize Shuffle (#49) — before the client opens the panel, snapshot every
 	slot's display info for the PREVIEW phase (all cards shown face-up so the
@@ -20893,6 +20909,23 @@ func _prepare_combat_loot_shuffle(bag: Dictionary, monster_tier: int) -> void:
 		return
 	var slots: Array = bag.get("slots", [])
 	var n: int = slots.size()
+	# Prize Shuffle (#49) — guarantee a HEADLINE prize so the preview always has
+	# something worth chasing. If nothing notable is in the pool (no rare+ item,
+	# egg, or mystery/chain/+2 cell), upgrade a plain filler cell to a Mystery.
+	var has_notable: bool = false
+	for s in slots:
+		if _slot_is_notable_server(s):
+			has_notable = true
+			break
+	if not has_notable and n > 0:
+		var candidates: Array = []
+		for i in range(n):
+			var k: String = String(slots[i].get("kind", ""))
+			if k in ["filler_valor", "filler_essence", "filler_material", "filler_part"]:
+				candidates.append(i)
+		if not candidates.is_empty():
+			var pick: int = candidates[randi() % candidates.size()]
+			slots[pick] = {"kind": "filler_mystery", "revealed": false}
 	# Pre-shuffle display snapshot — the order the player memorizes.
 	var preview: Array = []
 	for s in slots:
@@ -20973,6 +21006,16 @@ func _preview_slot_for_client(slot: Dictionary) -> Dictionary:
 			var pid: String = str(slot.get("material_id", ""))
 			var pname: String = CraftingDatabaseScript.get_material_name(pid)
 			return {"kind": "filler_part", "revealed": revealed, "name": "%s x%d" % [pname, int(slot.get("quantity", 1))], "color": "#FF6600"}
+		"filler_plus_two":
+			# Prize Shuffle (#49) — special cells now show face-up in the preview
+			# (were blank), so the player knows to chase them (or dodge the trap).
+			return {"kind": "filler_plus_two", "revealed": revealed, "name": "+2 Reveals", "color": "#FFD700", "symbol": "✦"}
+		"filler_chain":
+			return {"kind": "filler_chain", "revealed": revealed, "name": "Chain Reveal", "color": "#5C9DFF", "symbol": "⚡"}
+		"filler_mystery":
+			return {"kind": "filler_mystery", "revealed": revealed, "name": "Mystery Prize", "color": "#FFD700", "symbol": "✦"}
+		"filler_trap":
+			return {"kind": "filler_trap", "revealed": revealed, "name": "Trap", "color": "#FF4444", "symbol": "☠"}
 		"real":
 			var d: Dictionary = slot.get("drop", {})
 			var t: String = str(d.get("type", ""))
