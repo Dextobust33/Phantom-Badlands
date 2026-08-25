@@ -38395,6 +38395,10 @@ func _get_posts_with_markets() -> Array:
 # Merchant carry inventory: {merchant_id: {items: [], destination_post_key: String}}
 var merchant_inventory: Dictionary = {}
 const MERCHANT_CARRY_CAPACITY = 10
+# v0.9.716 — realm-wide market equalization tuning.
+const MERCHANT_EQUALIZE_MIN_GAP = 4  # only move a stackable good when this post has ≥N more units than the next stop
+const MERCHANT_UNIQUE_KEEP = 1       # leave at least this many uniques of each category at a post
+const MERCHANT_SCATTER_MAX = 2       # max uniques of each category scattered per merchant visit
 # Track which post each merchant was last processed at (avoid re-processing same rest stop)
 var merchant_last_processed_post: Dictionary = {}
 # Timer for merchant arrival checks
@@ -38534,57 +38538,161 @@ func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_id
 			log_message("Merchant %s offloaded %d items at %s" % [merchant_id, items.size(), post_key])
 		merchant_inventory.erase(merchant_id)
 
-	# Step 2: Equalize — compare this post's listings vs next post
+	# Step 2 — realm-wide equalization (v0.9.716). The old model compared THIS post
+	# vs the next stop by listing-COUNT-per-category and moved whole listings, so a
+	# single 500-wood stack (one merged listing) either moved entirely or not at
+	# all, and scarce items piled at hubs. Two mechanics replace it:
+	#   (a) Stackable goods SPLIT by quantity toward the next circuit stop — carry
+	#       half the gap so repeated visits + multiple merchants converge the whole
+	#       connected network toward equal per-post quantities (500 wood trickles
+	#       out ~a chunk per visit instead of all-or-nothing).
+	#   (b) Unique goods (equipment / eggs) SCATTER immediately to random road-
+	#       connected posts that hold fewer, so scarce items spread around the realm
+	#       (the "2 of 3 eggs go to 2 random nearby posts" behaviour).
+	var this_listings = persistence.get_market_listings(post_key)
+
+	# (b) Scatter uniques first (may thin this post's unique listings).
+	_merchant_scatter_uniques(post_key, this_listings)
+
+	# (a) Stackable equalization vs the next circuit stop (where the carry lands).
 	var circuit = world_system._merchant_circuits.get(merchant_idx, [])
 	if circuit.size() < 2:
 		return
-
 	var current_idx = circuit.find(post_key)
 	if current_idx < 0:
 		return
 	var next_key = circuit[(current_idx + 1) % circuit.size()]
 
-	var this_listings = persistence.get_market_listings(post_key)
+	# Re-read (scatter above may have changed this post) and tally quantities.
+	this_listings = persistence.get_market_listings(post_key)
 	var next_listings = persistence.get_market_listings(next_key)
-
-	# Count by category
-	var this_counts: Dictionary = {}
-	var next_counts: Dictionary = {}
+	var this_qty := {}          # item_name -> total quantity here
+	var this_listing_for := {}  # item_name -> a listing here to split
 	for listing in this_listings:
-		var cat = listing.get("category", "equipment")
-		this_counts[cat] = this_counts.get(cat, 0) + 1
+		if _is_unique_listing(listing):
+			continue
+		var nm := String(listing.get("item", {}).get("name", ""))
+		if nm == "":
+			continue
+		this_qty[nm] = int(this_qty.get(nm, 0)) + int(listing.get("quantity", 1))
+		if not this_listing_for.has(nm):
+			this_listing_for[nm] = listing
+	var next_qty := {}
 	for listing in next_listings:
-		var cat = listing.get("category", "equipment")
-		next_counts[cat] = next_counts.get(cat, 0) + 1
+		if _is_unique_listing(listing):
+			continue
+		var nm := String(listing.get("item", {}).get("name", ""))
+		if nm == "":
+			continue
+		next_qty[nm] = int(next_qty.get(nm, 0)) + int(listing.get("quantity", 1))
 
-	# Pick up excess items to carry to next post
+	# Move the most-lopsided items first, half the gap each, up to capacity slots.
+	var names := this_qty.keys()
+	names.sort_custom(func(a, b): return (int(this_qty[a]) - int(next_qty.get(a, 0))) > (int(this_qty[b]) - int(next_qty.get(b, 0))))
 	var to_carry: Array = []
-	var remaining_capacity = MERCHANT_CARRY_CAPACITY
-
-	for cat in this_counts:
-		var this_count = this_counts[cat]
-		var next_count = next_counts.get(cat, 0)
-		if this_count > next_count + 1:
-			var take = mini((this_count - next_count) / 2, remaining_capacity)
-			if take <= 0:
-				continue
-			# Find listings in this category to take (oldest first)
-			var cat_listings: Array = []
-			for listing in this_listings:
-				if listing.get("category", "equipment") == cat:
-					cat_listings.append(listing)
-			cat_listings.sort_custom(func(a, b): return a.get("listed_at", 0) < b.get("listed_at", 0))
-			for i in range(mini(take, cat_listings.size())):
-				var listing = cat_listings[i]
-				var removed = persistence.remove_market_listing(post_key, listing.get("listing_id", ""))
-				if not removed.is_empty():
-					to_carry.append(removed)
-				remaining_capacity -= 1
-				if remaining_capacity <= 0:
-					break
-		if remaining_capacity <= 0:
+	var slots_left := MERCHANT_CARRY_CAPACITY
+	for nm in names:
+		if slots_left <= 0:
 			break
+		var here := int(this_qty[nm])
+		var there := int(next_qty.get(nm, 0))
+		if here - there < MERCHANT_EQUALIZE_MIN_GAP:
+			continue
+		var take := (here - there) / 2
+		if take < 1:
+			continue
+		var carried := _split_stack_listing(post_key, this_listing_for[nm], take)
+		if carried.is_empty():
+			continue
+		to_carry.append(carried)
+		slots_left -= 1
 
 	if to_carry.size() > 0:
 		merchant_inventory[merchant_id] = {"items": to_carry, "destination_post_key": next_key}
-		log_message("Merchant %s picked up %d items at %s, heading to %s" % [merchant_id, to_carry.size(), post_key, next_key])
+		log_message("Merchant %s picked up %d stack(s) at %s, heading to %s" % [merchant_id, to_carry.size(), post_key, next_key])
+
+
+func _is_unique_listing(listing: Dictionary) -> bool:
+	# Equipment and eggs are one-off listings (quantity 1, never merged); everything
+	# else (materials, consumables) is a stackable quantity we can split.
+	var sc := String(listing.get("supply_category", ""))
+	if sc != "":
+		return sc in ["equipment", "egg"]
+	return String(listing.get("category", "")) in ["equipment", "egg"]
+
+
+func _split_stack_listing(post_key: String, listing: Dictionary, take: int) -> Dictionary:
+	# Remove `take` units from a stackable listing at post_key and return a fresh
+	# carry listing (no listing_id) holding them. base_valor is split pro-rata; the
+	# remainder stays in place (or the source listing is removed if fully taken).
+	var qty := int(listing.get("quantity", 1))
+	take = clampi(take, 1, qty)
+	var lid := String(listing.get("listing_id", ""))
+	var total_valor := int(listing.get("base_valor", 0))
+	var per_unit := (float(total_valor) / float(qty)) if qty > 0 else 0.0
+	var carry_valor := int(round(per_unit * take))
+	var carry := listing.duplicate(true)
+	carry.erase("listing_id")
+	carry["quantity"] = take
+	carry["base_valor"] = carry_valor
+	if take >= qty:
+		persistence.remove_market_listing(post_key, lid)
+	else:
+		persistence.update_market_listing_quantity(post_key, lid, qty - take, total_valor - carry_valor)
+	return carry
+
+
+func _merchant_scatter_uniques(post_key: String, this_listings: Array) -> void:
+	# Spread scarce one-off goods (equipment / eggs) from this post to random road-
+	# connected posts that hold fewer of that supply category, so uniques don't pile
+	# at one hub. Immediate (no carry) — the merchant IS the redistribution. Keeps at
+	# least MERCHANT_UNIQUE_KEEP of each category here and moves at most
+	# MERCHANT_SCATTER_MAX per category per visit.
+	var neighbors: Array = []
+	for k in world_system._path_graph.get(post_key, []):
+		if String(k).begins_with("player_") and not _player_post_has_market(k):
+			continue
+		neighbors.append(k)
+	if neighbors.is_empty():
+		return
+	var by_cat := {}  # supply_category -> [listings here]
+	for listing in this_listings:
+		if not _is_unique_listing(listing):
+			continue
+		var sc := String(listing.get("supply_category", listing.get("category", "equipment")))
+		if not by_cat.has(sc):
+			by_cat[sc] = []
+		by_cat[sc].append(listing)
+	for sc in by_cat:
+		var items: Array = by_cat[sc]
+		if items.size() <= MERCHANT_UNIQUE_KEEP:
+			continue
+		var move_n := mini(items.size() - MERCHANT_UNIQUE_KEEP, MERCHANT_SCATTER_MAX)
+		items.sort_custom(func(a, b): return a.get("listed_at", 0) < b.get("listed_at", 0))  # oldest leave first
+		var here_cnt := items.size()
+		for i in range(move_n):
+			if here_cnt <= MERCHANT_UNIQUE_KEEP:
+				break
+			var listing: Dictionary = items[i]
+			# Pick the connected post with the fewest of this category (random tie-break).
+			var shuffled := neighbors.duplicate()
+			shuffled.shuffle()
+			var best_key := ""
+			var best_count := 1 << 30
+			for nk in shuffled:
+				var cnt := 0
+				for nl in persistence.get_market_listings(nk):
+					if String(nl.get("supply_category", nl.get("category", ""))) == sc:
+						cnt += 1
+				if cnt < best_count:
+					best_count = cnt
+					best_key = nk
+			if best_key == "" or best_count >= here_cnt:
+				continue  # nobody poorer than here → don't move
+			var removed = persistence.remove_market_listing(post_key, String(listing.get("listing_id", "")))
+			if removed.is_empty():
+				continue
+			removed.erase("listing_id")
+			persistence.add_market_listing(best_key, removed)
+			here_cnt -= 1
+			log_message("Merchant scattered %s '%s' from %s to %s" % [sc, String(removed.get("item", {}).get("name", "?")), post_key, best_key])
