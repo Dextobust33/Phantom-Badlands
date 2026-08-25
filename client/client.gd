@@ -564,6 +564,14 @@ var _remote_sprite_pool: Array[TextureRect] = []  # Pool of sprite slots reused 
 var _local_companion_label: RichTextLabel = null
 var _remote_companion_pool: Array[RichTextLabel] = []
 const MAP_SPRITE_PIXEL_SIZE := 32
+# v0.9.701 (#46) — map sprites present at inconsistent sizes because the sources
+# have different framing: overworld TF sprites are tightly cropped (character fills
+# the frame) while the battler/atlas fallbacks carry transparent padding, so in the
+# same KEEP_ASPECT box the padded ones look ~half the size. _map_content_cropped
+# trims each fallback texture to its non-transparent bounds (cached) so every map
+# avatar fills its box consistently. Overworld is left alone (already tight + it
+# animates its walk frames).
+var _map_crop_cache: Dictionary = {}
 const MAP_VIEWPORT_CENTER_CELL := 11  # Player is always at (11, 11) in 23x23 map
 const MAP_REMOTE_SPRITE_POOL_SIZE := 16  # Max remote players we'll show; far enough above typical visible counts
 const MAP_COMPANION_LETTER_FONT_SIZE := 14
@@ -34928,6 +34936,40 @@ func _make_map_sprite_slot() -> TextureRect:
 	return rect
 
 
+func _map_content_cropped(tex: Texture2D) -> Texture2D:
+	"""v0.9.701 (#46) — trim a fallback map avatar to its non-transparent content
+	bounds so it fills the KEEP_ASPECT box like the tightly-framed overworld TF
+	sprites do (side-view battler idles carry padding, so uncropped they render at
+	~half the on-screen size). Returns an AtlasTexture over the same source; cached
+	by resource path. Overworld sprites are NOT routed through here (they're already
+	tight and cycle walk frames)."""
+	if tex == null:
+		return tex
+	var key := tex.resource_path
+	if key == "":
+		key = str(tex.get_instance_id())
+	if _map_crop_cache.has(key):
+		return _map_crop_cache[key]
+	# AtlasTexture (class fallback) — already a tight region; leave as-is.
+	if tex is AtlasTexture:
+		_map_crop_cache[key] = tex
+		return tex
+	var img := tex.get_image()
+	if img == null:
+		_map_crop_cache[key] = tex
+		return tex
+	var used := img.get_used_rect()  # non-transparent bounding box
+	# Already tight (or empty) → no crop needed.
+	if used.size.x <= 0 or used.size.y <= 0 or (used.position == Vector2i.ZERO and used.size == Vector2i(img.get_width(), img.get_height())):
+		_map_crop_cache[key] = tex
+		return tex
+	var at := AtlasTexture.new()
+	at.atlas = tex
+	at.region = Rect2(used.position, used.size)
+	_map_crop_cache[key] = at
+	return at
+
+
 func _make_map_companion_label() -> RichTextLabel:
 	"""A tiny RichTextLabel for rendering a player's companion ASCII art
 	below their map sprite. Monospaced (Consolas) so the art aligns at the
@@ -35411,7 +35453,7 @@ func _sync_map_sprites_overlay() -> void:
 			local.set_meta("ow_af", _local_map_facing)
 		elif local_battler != null:
 			local.set_meta("ow_anim", false)
-			local.texture = local_battler
+			local.texture = _map_content_cropped(local_battler)
 			# Battlers are side-view (no up/down frames). Update the flip only on
 			# left/right movement; keep the last horizontal facing for up/down so
 			# the avatar doesn't snap to a fixed side.
@@ -35422,7 +35464,7 @@ func _sync_map_sprites_overlay() -> void:
 			local.flip_h = _local_battler_flip
 		else:
 			local.set_meta("ow_anim", false)
-			local.texture = local_atlas
+			local.texture = _map_content_cropped(local_atlas)
 			local.flip_h = false
 		# v0.9.671 — per-character identity tint from appearance_color.
 		local.self_modulate = BattlerSprite.tint_color(str(character_data.get("appearance_color", "")))
@@ -35514,11 +35556,11 @@ func _sync_map_sprites_overlay() -> void:
 			slot.set_meta("ow_af", rfacing)
 		elif rbattler != null:
 			slot.set_meta("ow_anim", false)
-			slot.texture = rbattler
+			slot.texture = _map_content_cropped(rbattler)
 			slot.flip_h = (rfacing == "right")  # battlers face LEFT natively
 		else:
 			slot.set_meta("ow_anim", false)
-			slot.texture = ratlas
+			slot.texture = _map_content_cropped(ratlas)
 			slot.flip_h = false
 		# v0.9.671 — per-character identity tint from the remote's appearance_color.
 		slot.self_modulate = BattlerSprite.tint_color(str(entry.get("appearance_color", "")))
