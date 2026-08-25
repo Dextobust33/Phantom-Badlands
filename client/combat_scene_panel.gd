@@ -3656,9 +3656,9 @@ func _refresh_hand() -> void:
 				effect_lbl.add_theme_color_override("font_color", Color("#6E7E8A"))
 
 		_set_cell_dim(cell, false, castable)
-		# v0.9.715 — Devastate (Warrior finisher) gets a Momentum-scaled glow:
-		# hard-greyed when locked at 0 Momentum, blazing gold as the meter fills.
-		_apply_finisher_visual(cell, card_name)
+		# v0.9.715 — class payoff cards get a meter-scaled glow: Devastate
+		# (Momentum, hard-locked at 0) and Meteor (Focus, soft-dim at 0).
+		_apply_finisher_visual(cell, card_name, castable)
 
 	# Status line
 	if _hand_status_label:
@@ -3707,31 +3707,57 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 		cell.modulate = Color(1, 1, 1, 1)
 
 
-func _apply_finisher_visual(cell: PanelContainer, card_name: String) -> void:
-	"""v0.9.715 — Warrior Devastate is the Momentum FINISHER. Make its state
-	unmistakable at a glance:
-	  • 0 Momentum  → hard-greyed 'locked' (well below the normal can't-afford dim)
-	  • building    → gold border + colored halo that grows with the meter
-	  • full meter  → a gentle looping pulse so 'FINISHER READY' grabs the eye
-	The Trickster analogue is the Outsmart action-bar button (styled in client.gd),
-	not a hand card — Gambit is a normal card and gets no finisher glow."""
-	if not (_momentum_active and card_name == "devastate"):
+func _apply_finisher_visual(cell: PanelContainer, card_name: String, castable: bool) -> void:
+	"""v0.9.715 — meter-scaled glow for the class PAYOFF hand cards so their state
+	reads at a glance:
+	  • building → class-coloured border + a halo that grows with the meter
+	  • full     → a gentle looping pulse so 'ready' grabs the eye
+	Devastate (Warrior/Momentum) is HARD-gated, so at 0 it gets a locked grey.
+	Meteor (Mage/Focus) is NOT gated (castable but weak at 0 Focus), so at 0 it
+	just soft-dims. The Trickster payoff is the Outsmart action-bar button (styled
+	in client.gd), not a hand card — Gambit is a normal card, no finisher glow."""
+	var meter: int = 0
+	var meter_max: int = 5
+	var glow_col: Color
+	var hard_lock: bool = false
+	if _momentum_active and card_name == "devastate":
+		meter = _momentum
+		meter_max = _momentum_max
+		glow_col = Color("#FFC94D")  # gold
+		hard_lock = true
+	elif _focus_active and card_name == "meteor":
+		meter = _focus
+		meter_max = _focus_max
+		glow_col = Color("#5AC8FF")  # cyan
+		hard_lock = false
+	else:
 		return
 	var sb := cell.get_theme_stylebox("panel") as StyleBoxFlat
 	if sb == null:
 		return
-	var gold := Color("#FFC94D")
-	if _momentum < 1:
-		# Locked — grey it out HARD so it reads as unusable, not just pricey.
+	# Devastate's Momentum lock takes priority — grey it HARD whenever the meter is
+	# empty, since that's exactly why it can't fire (overrides the plain dim).
+	if hard_lock and meter < 1:
 		sb.border_color = Color(0.34, 0.32, 0.30, 1.0)
 		sb.set_border_width_all(2)
 		sb.shadow_size = 0
 		cell.modulate = Color(0.5, 0.5, 0.53, 0.8)
 		return
-	var t: float = clampf(float(_momentum) / float(max(1, _momentum_max)), 0.0, 1.0)
-	sb.border_color = gold.lerp(Color.WHITE, 0.15 * t)
+	# Beyond the lock, a charged glow only makes sense if the card is actually
+	# castable — don't paint an unaffordable card as 'ready'. Let the standard
+	# uncastable dim (from _set_cell_dim) stand.
+	if not castable:
+		return
+	if meter < 1:
+		# Meteor casts (weakly) at 0 Focus — soft-dim + no glow, nudging the player
+		# to ramp Focus first without looking disabled.
+		sb.shadow_size = 0
+		cell.modulate = Color(0.78, 0.80, 0.84, 0.92)
+		return
+	var t: float = clampf(float(meter) / float(max(1, meter_max)), 0.0, 1.0)
+	sb.border_color = glow_col.lerp(Color.WHITE, 0.15 * t)
 	sb.set_border_width_all(int(round(2 + 2 * t)))  # 2 → 4
-	var glow := gold
+	var glow := glow_col
 	glow.a = 0.20 + 0.55 * t
 	sb.shadow_color = glow
 	sb.shadow_size = int(round(2 + 8 * t))  # 2 → 10 px halo
