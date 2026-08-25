@@ -1695,6 +1695,80 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 
 	return monster
 
+func reapply_variant(monster: Dictionary, variant_type: String) -> void:
+	"""v0.9.718 — re-stamp a rare variant onto an ALREADY-generated monster so a flock
+	inherits the killed monster's variant (server.gd trigger_flock_encounter passed a
+	variant_type but this function never existed → the v0.9.711 flock-variant feature
+	errored whenever it fired). Rebuilds the name from base_name and applies the
+	variant's stat multipliers + ability + flags, mirroring scale_monster_to_level().
+	No-op for '' or an already-matching variant. Mutates `monster` in place."""
+	if variant_type == "" or String(monster.get("variant_type", "")) == variant_type:
+		return
+	var base_name := String(monster.get("base_name", monster.get("name", "Monster")))
+	var abilities: Array = monster.get("abilities", [])
+	var new_name := base_name
+	var hp_mult := 1.0
+	var str_mult := 1.0
+	var def_mult := 1.0
+	var xp_mult := 1.0
+	var add_abilities: Array = []
+	match variant_type:
+		"weapon_master":
+			new_name = base_name + " Weapon Master"
+			str_mult = 1.25
+			add_abilities = [ABILITY_WEAPON_MASTER]
+		"shield_guardian":
+			new_name = base_name + " Shield Guardian"
+			hp_mult = 1.25
+			def_mult = 1.25
+			add_abilities = [ABILITY_SHIELD_BEARER]
+		"corrosive":
+			new_name = "Corrosive " + base_name
+			hp_mult = 1.15
+			add_abilities = [ABILITY_CORROSIVE]
+		"sunder":
+			new_name = "Sundering " + base_name
+			str_mult = 1.15
+			add_abilities = [ABILITY_SUNDER]
+		"elite":
+			new_name = "★ " + base_name + " Champion"
+			hp_mult = 3.5
+			str_mult = 1.3
+			def_mult = 1.25
+			xp_mult = 1.5
+			var elite_pool := [
+				ABILITY_REGENERATION, ABILITY_ENRAGE, ABILITY_BERSERKER,
+				ABILITY_MULTI_STRIKE, ABILITY_POISON, ABILITY_BLEED,
+				ABILITY_CURSE, ABILITY_LIFE_STEAL, ABILITY_ARMORED,
+			]
+			elite_pool.shuffle()
+			var added := 0
+			for ea in elite_pool:
+				if ea not in abilities:
+					add_abilities.append(ea)
+					added += 1
+					if added >= 2:
+						break
+		_:
+			return  # unknown variant id — leave the monster untouched
+	monster["name"] = new_name
+	for ea in add_abilities:
+		if ea not in abilities:
+			abilities.append(ea)
+	monster["abilities"] = abilities
+	var new_hp: int = max(10, int(int(monster.get("max_hp", 10)) * hp_mult))
+	monster["max_hp"] = new_hp
+	monster["current_hp"] = new_hp
+	monster["strength"] = max(3, int(int(monster.get("strength", 3)) * str_mult))
+	monster["defense"] = max(1, int(int(monster.get("defense", 1)) * def_mult))
+	monster["experience_reward"] = int(int(monster.get("experience_reward", 0)) * xp_mult)
+	monster["variant_type"] = variant_type
+	monster["is_rare_variant"] = true
+	monster["is_elite"] = (variant_type == "elite")
+	if variant_type == "elite":
+		monster["drop_chance"] = 100
+	monster["lethality"] = calculate_lethality(monster)
+
 func _estimate_player_equipment_attack(player_level: int) -> int:
 	"""Estimate player attack bonus for monster scaling.
 	Conservative estimate: uncommon-rare gear at 95% of level.
