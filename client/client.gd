@@ -27687,8 +27687,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.713 — combat log + loot card fixes.
+	display_game("[color=#00FF00]v0.9.713[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ First strikes show in the log.[/color] When an enemy wins initiative and hits you [b]before Round 1[/b], that attack now appears in the combat-log window (it was previously missing, leaving you unsure what happened).")
+	display_game("  [color=#1EFF00]◆ Loot cards uniform.[/color] Combat loot cards no longer [b]stretch[/b] or render at different sizes when a reveal has a long name.")
+	display_game("")
+
 	# v0.9.712 — flock engine carry actually works + shuffle sizing.
-	display_game("[color=#00FF00]v0.9.712[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.712[/color]")
 	display_game("  [color=#1EFF00]◆ Momentum/Read/Focus carry (for real this time).[/color] The previous attempt read the meter after combat had already been torn down, so it always carried 0. Fixed — your built-up [color=#FFC94D]Momentum[/color] / [color=#7FD8C8]Read[/color] / [color=#5AC8FF]Focus[/color] now actually persist into the next flock member.")
 	display_game("  [color=#1EFF00]◆ Shuffle boxes uniform.[/color] Combat loot-shuffle cards no longer render at different sizes / overlap (fixed-size cards).")
 	display_game("")
