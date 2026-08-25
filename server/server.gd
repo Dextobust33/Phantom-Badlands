@@ -227,6 +227,10 @@ var next_dungeon_id: int = 1
 const MAX_ACTIVE_DUNGEONS = 300  # Support many world + player dungeons
 const DUNGEON_SPAWN_CHECK_INTERVAL = 120.0  # v0.9.348: 30→120s. Check fires per-tick A* over chunk grid, contributing to lag spikes with 88+ dungeons in play. Refilling completed dungeons within 2min is acceptable.
 const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 seconds
+# C0 (dungeon revamp) — a world 'D' stays enterable for this long AFTER the first player
+# enters, so multiple players can each spin up their own instance from the same tile
+# (concurrent play) instead of the tile vanishing the instant one person enters.
+const DUNGEON_ENTERED_DESPAWN_DELAY = 300.0  # 5 min re-entry window after first entry
 const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
@@ -7653,6 +7657,12 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 			continue  # Skip self
 
 		var other_char = characters[other_peer_id]
+		# C0 (dungeon revamp) — a player inside a dungeon keeps their overworld x/y
+		# (only dungeon_x/y change), so without this they'd render standing on the
+		# overworld 'D' tile. Hide in-dungeon players from the overworld map; they're
+		# not really there.
+		if other_char.in_dungeon:
+			continue
 		var dx = abs(other_char.x - my_x)
 		var dy = abs(other_char.y - my_y)
 
@@ -27869,8 +27879,11 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 
 	# If no personal dungeon found, create a new personal instance
 	if instance_id == "":
-		# Mark any world dungeon at this location as completed (player is entering it)
-		_mark_world_dungeon_completed(character.x, character.y)
+		# C0 — entering a world 'D' no longer instantly consumes it. Instead the tile
+		# stays enterable for a re-entry window so OTHER players can also spin up their
+		# own instance from it (concurrent play). Threat pacing is preserved (the post
+		# cooldown still stamps on first entry).
+		_on_world_dungeon_entered(character.x, character.y)
 
 		# Players always get their own dungeon instance now
 		instance_id = _create_player_dungeon_instance(peer_id, "", dungeon_type, character.level)
@@ -29000,6 +29013,13 @@ func _check_dungeon_spawns():
 				dungeons_to_remove.append(instance_id)
 				log_message("Despawning completed dungeon: %s" % instance_id)
 
+		# C0 — despawn a world dungeon whose re-entry window has elapsed (players run
+		# personal copies, so the world instance's active_players is always empty).
+		var entered_despawn_at = instance.get("entered_despawn_at", 0)
+		if entered_despawn_at > 0 and instance.active_players.is_empty() and current_time >= entered_despawn_at:
+			dungeons_to_remove.append(instance_id)
+			log_message("Despawning entered dungeon: %s (re-entry window elapsed)" % instance_id)
+
 		# Also check for very old dungeons (24+ hours) with no players
 		var age = current_time - instance.spawned_at
 		if age > 86400 and instance.active_players.is_empty():  # 24 hours
@@ -29280,6 +29300,27 @@ func _mark_world_dungeon_completed(x: int, y: int):
 			# v0.9.598 — if this was the last T2+ threat for any nearby post,
 			# stamp that post's 10-min cooldown.
 			_stamp_post_cooldowns_for_cleared_dungeon(int(inst.world_x), int(inst.world_y), instance_id)
+			break
+
+func _on_world_dungeon_entered(x: int, y: int):
+	"""C0 (dungeon revamp) — a player entered a world dungeon at (x,y). Unlike the old
+	_mark_world_dungeon_completed (which set completed_at → hid the 'D' instantly), this
+	keeps the tile VISIBLE + enterable for DUNGEON_ENTERED_DESPAWN_DELAY so OTHER players
+	can also enter (each gets their own personal instance = concurrent play). Only the
+	FIRST entrant starts the window + stamps the post cooldown, so threat pacing is
+	unchanged."""
+	for instance_id in active_dungeons:
+		var inst = active_dungeons[instance_id]
+		if inst.get("owner_peer_id", -1) >= 0:
+			continue  # world dungeons only (not personal instances)
+		if inst.get("completed_at", 0) > 0:
+			continue
+		if inst.world_x == x and inst.world_y == y:
+			if inst.get("entered_despawn_at", 0) <= 0:
+				inst["entered_despawn_at"] = int(Time.get_unix_time_from_system()) + int(DUNGEON_ENTERED_DESPAWN_DELAY)
+				# Threat pacing: first entry answers the threat (post cooldown stamp).
+				_stamp_post_cooldowns_for_cleared_dungeon(int(inst.world_x), int(inst.world_y), instance_id)
+				log_message("World dungeon %s at (%d,%d) entered — stays enterable %ds more" % [instance_id, x, y, int(DUNGEON_ENTERED_DESPAWN_DELAY)])
 			break
 
 func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: int = -1) -> Array:
