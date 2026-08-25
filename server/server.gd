@@ -18199,8 +18199,17 @@ func handle_quest_turn_in(peer_id: int, message: Dictionary):
 				if bonus_egg != "" and drop_tables:
 					var egg = drop_tables.get_egg_for_monster(bonus_egg)
 					if not egg.is_empty():
-						character.add_item(egg)
-						chain_progress_msg += "[color=#9ACD32]Chain bonus: %s acquired![/color]\n" % egg.get("name", "Egg")
+						# v0.9.699 — eggs belong in the INCUBATOR, not the inventory.
+						# (Every other egg grant uses add_egg; this quest-chain bonus was
+						# the one path still using add_item — user found a Goblin Sprite
+						# Egg in their bag.) Fall back to inventory only if it's full.
+						var _bonus_egg_cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+						var _bonus_egg_res = character.add_egg(egg, _bonus_egg_cap)
+						if _bonus_egg_res.get("success", false):
+							chain_progress_msg += "[color=#9ACD32]Chain bonus: %s added to your incubator![/color]\n" % egg.get("name", "Egg")
+						else:
+							character.add_item(egg)
+							chain_progress_msg += "[color=#9ACD32]Chain bonus: %s (incubator full — sent to inventory)[/color]\n" % egg.get("name", "Egg")
 				# Audit #6 Slice 6 — Home Stone chain bonuses. Each chain
 				# final-stage may list one or more home_stone_* item_types
 				# in `home_stones`; we mint each via the standard consumable
