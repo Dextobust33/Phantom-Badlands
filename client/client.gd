@@ -27735,8 +27735,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.718 — enemy cosmetics + flock fix.
+	display_game("[color=#00FF00]v0.9.718[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Colorful enemies.[/color] Some monsters now spawn with a [color=#7FD8FF]random color[/color] & pattern tint on their battle art — a splash of variety (and the groundwork for themed dungeons to come).")
+	display_game("  [color=#1EFF00]◆ Flock variant fix.[/color] Killing a [b]rare variant[/b] now correctly spawns a flock of that same variant (it was silently failing before).")
+	display_game("")
+
 	# v0.9.717 — deck screen fixes.
-	display_game("[color=#00FF00]v0.9.717[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.717[/color]")
 	display_game("  [color=#1EFF00]◆ Deck screen polish.[/color] [b]Loaner[/b] companion cards now show as [color=#C8A24A]active (LOAN)[/color] and appear in your Deck strip, with a [b]casts-to-keep[/b] counter. Every card now shows its [b]mastery progress[/b] (how close to the next rank) right on the deck screen.")
 	display_game("")
 
