@@ -27687,8 +27687,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.712 — flock engine carry actually works + shuffle sizing.
+	display_game("[color=#00FF00]v0.9.712[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Momentum/Read/Focus carry (for real this time).[/color] The previous attempt read the meter after combat had already been torn down, so it always carried 0. Fixed — your built-up [color=#FFC94D]Momentum[/color] / [color=#7FD8C8]Read[/color] / [color=#5AC8FF]Focus[/color] now actually persist into the next flock member.")
+	display_game("  [color=#1EFF00]◆ Shuffle boxes uniform.[/color] Combat loot-shuffle cards no longer render at different sizes / overlap (fixed-size cards).")
+	display_game("")
+
 	# v0.9.711 — flock cohesion + fixes.
-	display_game("[color=#00FF00]v0.9.711[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.711[/color]")
 	display_game("  [color=#FF8000]★ FLOCKS FEEL LIKE ONE FIGHT.[/color] Your [color=#FFC94D]Momentum[/color] / [color=#7FD8C8]Read[/color] / [color=#5AC8FF]Focus[/color] now [b]carry across the whole flock[/b] instead of resetting each enemy — build-up finally pays off in big packs. And killing a rare [b]variant[/b] now spawns a flock of [b]that same variant[/b] (the announce no longer lies).")
 	display_game("  [color=#1EFF00]◆ Fixes.[/color] Loot-shuffle cards no longer [b]overlap/mis-align[/b] mid-shuffle. Opening a [b]treasure chest[/b] from a stack now uses just [b]one[/b] (was consuming the whole stack).")
 	display_game("")
