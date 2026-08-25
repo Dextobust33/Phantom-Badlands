@@ -14945,6 +14945,14 @@ func acknowledge_continue():
 		_display_dungeon_complete(complete_msg)
 		return
 
+	# v0.9.700 (#47) — surface any milestone choice queued DURING the fight that was
+	# never shown (e.g. the killing cast ranked the card up and the victory card
+	# covered the popup). Previously these only replayed on RECONNECT, so the choice
+	# sat unusable. Skip during a flock chain (that fight isn't over yet). Deferred so
+	# the overworld/UI restores first.
+	if not flock_pending:
+		call_deferred("_replay_pending_rank_choice")
+
 	var need_dungeon_refresh = pending_dungeon_continue
 	pending_dungeon_continue = false
 	# Reset quest log mode if active
@@ -32388,10 +32396,17 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	# instead of nuking it via reset_flock_history.
 	if _pending_flock_archive:
 		_pending_flock_archive = false
-		# Log was already archived + cleared at combat_end. Nothing to do
-		# here — _flock_history retains the prior fights; _log_lines is
-		# fresh for the new mob's events.
-		pass
+		# v0.9.700 (#45) — the flock-archive clear_log(true) is normally fired by
+		# _drain_combat_queue when the PREVIOUS monster's queue empties. But on a
+		# fast continue into the next flock monster, that queue-empty can land DURING
+		# this monster's round 1 — wiping its freshly-drawn log (user report: flock
+		# fights clear their round-1 events before round 2). If the deferred request
+		# is STILL pending here at the fight boundary, do the archive+clear NOW and
+		# consume the flag so the drain can't fire it mid-round-1.
+		if _pending_flock_archive_request:
+			_pending_flock_archive_request = false
+			combat_scene_panel.clear_log(true)
+		# else: already archived + cleared in the drain — _log_lines is fresh.
 	else:
 		if combat_scene_panel.has_method("reset_flock_history"):
 			combat_scene_panel.reset_flock_history()
