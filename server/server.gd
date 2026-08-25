@@ -5896,6 +5896,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# Queue the summoned monster (preserve dungeon flags for tile clearing)
 				pending_flocks[peer_id] = {
 					"monster_name": summon_next,
+					"variant_type": killed_monster_variant_type,
+					"engine_carry": _flock_engine_carry(peer_id),
 					"monster_level": monster_level,
 					"flock_count": flock_counts[peer_id],  # For visual variety
 					"is_dungeon_combat": result.get("is_dungeon_combat", false),
@@ -5963,6 +5965,8 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"monster_name": monster_base_name,
 					"monster_level": monster_level,
 					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id),
+					"variant_type": killed_monster_variant_type,
+					"engine_carry": _flock_engine_carry(peer_id),
 					"flock_count": flock_counts[peer_id],  # For visual variety
 					"is_dungeon_combat": result.get("is_dungeon_combat", false),
 					"is_boss_fight": result.get("is_boss_fight", false),
@@ -6465,6 +6469,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				# Queue the summoned monster as a pending flock (preserve dungeon flags)
 				pending_flocks[peer_id] = {
 					"monster_name": summon_next,
+					"engine_carry": _flock_engine_carry(peer_id),
 					"monster_level": monster_level,
 					"flock_count": flock_counts[peer_id],
 					"is_dungeon_combat": result.get("is_dungeon_combat", false),
@@ -9617,7 +9622,14 @@ func handle_bug_report(peer_id: int, message: Dictionary):
 		print("[Bug Report] ERROR: Failed to save report from %s to %s" % [player_name, json_filename])
 		send_to_peer(peer_id, {"type": "error", "message": "Failed to save bug report on server."})
 
-func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1):
+func _flock_engine_carry(peer_id: int) -> Dictionary:
+	# v0.9.711 - snapshot the class engines from the active combat so they carry into the next flock member.
+	var ac = combat_mgr.get_active_combat(peer_id)
+	if ac == null:
+		return {}
+	return {"momentum": int(ac.get("momentum", 0)), "combo": int(ac.get("combo", 0)), "focus": int(ac.get("focus", 0))}
+
+func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1, variant_type: String = "", engine_carry: Dictionary = {}):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
 		return
@@ -9626,6 +9638,9 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 
 	# Generate another monster of the same type at the same level
 	var monster = monster_db.generate_monster_by_name(monster_name, monster_level)
+	# Flock inheritance (v0.9.711) - re-stamp the killed variant so the flock stays that variant.
+	if variant_type != "":
+		monster_db.reapply_variant(monster, variant_type)
 
 	# Audit #10 v0.9.512 — stamp apex frontier flag based on the character's
 	# position at engagement time. Combat reward calc reads this to apply the
@@ -9671,6 +9686,10 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 	var internal_state = combat_mgr.get_active_combat(peer_id)
 	if internal_state:
 		internal_state["flock_count"] = flock_count  # Store flock count for flee bonus calculation
+		# v0.9.711 - carry the class engines across the flock so investment persists.
+		internal_state["momentum"] = int(engine_carry.get("momentum", 0))
+		internal_state["combo"] = int(engine_carry.get("combo", 0))
+		internal_state["focus"] = int(engine_carry.get("focus", 0))
 		if is_dungeon_combat:
 			internal_state["is_dungeon_combat"] = true
 			internal_state["is_boss_fight"] = is_boss_fight
@@ -9715,7 +9734,7 @@ func handle_continue_flock(peer_id: int):
 	var is_dungeon_combat = flock_data.get("is_dungeon_combat", false)
 	var is_boss_fight = flock_data.get("is_boss_fight", false)
 	var dungeon_mid = flock_data.get("dungeon_monster_id", -1)
-	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count, is_dungeon_combat, is_boss_fight, dungeon_mid)
+	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count, is_dungeon_combat, is_boss_fight, dungeon_mid, flock_data.get("variant_type", ""), flock_data.get("engine_carry", {}))
 
 # ===== INVENTORY HANDLERS =====
 
