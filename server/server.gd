@@ -5193,6 +5193,13 @@ func handle_move(peer_id: int, message: Dictionary):
 	elif not character.cloak_active:
 		var _threat_zone: Dictionary = _get_threat_zone_dungeon_at(new_pos.x, new_pos.y)
 		var _in_threat: bool = not _threat_zone.is_empty()
+		# v0.9.705 — don't bypass the over-level reduction for way-over-leveled
+		# players: the spilled monsters are clamped to the area level, so full-rate
+		# encounters here would just be trivial spam, not danger.
+		if _in_threat and character.level > 0:
+			var _area_lvl: int = world_system.get_post_anchored_level(new_pos.x, new_pos.y)
+			if character.level - _area_lvl > THREAT_BYPASS_LEVEL_GAP:
+				_in_threat = false
 		if world_system.check_encounter(new_pos.x, new_pos.y, character.level, _in_threat):
 			# Starter area safety: halve encounters for low-level players near origin
 			var _dist = abs(new_pos.x) + abs(new_pos.y)
@@ -29495,6 +29502,12 @@ const POST_THREAT_SERVICE_MULT_SEVERE: float = 2.00
 # wights drifting from a barrow, etc. Gives the Slice 6 "Under Threat" marker
 # mechanical bite without inventing a new entity system.
 const THREAT_CORRIDOR_RADIUS: int = 80
+# v0.9.705 — a threat cone bypasses the over-level encounter-rate reduction so
+# dungeons pull players into danger. But the spilled monsters are LEVEL-CLAMPED to
+# the area, so for a way-over-leveled player the bypass just restores trivial-
+# encounter spam (the exact thing v0.9.620 fixed). Only bypass when the player is
+# within this many levels of the area; beyond it, apply the normal reduction.
+const THREAT_BYPASS_LEVEL_GAP: int = 8
 # v0.9.598 — concurrent-threat cap + post-cleared cooldown. Player feedback
 # said new dungeons spawn faster than they can be cleared, drowning posts.
 # Both knobs gate the spawn side of `_create_world_dungeon`; the per-post
@@ -29506,10 +29519,16 @@ const POST_THREAT_COOLDOWN_SECONDS: int = 600  # 10 minutes
 # of the dungeon affected too large a radius. Cone is tight (~35° half-angle)
 # along the dungeon→post axis, extending to `distance(D→P) + buffer`. Anyone
 # walking laterally around the dungeon now stays out of the spillover.
-const THREAT_CONE_HALF_ANGLE_DEG: float = 35.0
+# v0.9.705 — tightened the spillover footprint (player report: still too large an
+# area). Narrower cone (35°→28° half-angle) + a dedicated max-length cap (65)
+# separate from THREAT_CORRIDOR_RADIUS (which still gates which posts a dungeon
+# threatens / concurrency). Cuts the cone area ~45% while preserving reach for the
+# typical dungeon-near-post case (65 − 15 buffer = reaches posts within ~50 tiles).
+const THREAT_CONE_HALF_ANGLE_DEG: float = 28.0
 const THREAT_CONE_LENGTH_BUFFER: int = 15  # tiles past the post the cone reaches
+const THREAT_CONE_MAX_LENGTH: int = 65     # hard cap on cone length (was THREAT_CORRIDOR_RADIUS=80)
 # Precomputed cos² of the half-angle for sqrt-free containment check.
-const THREAT_CONE_HALF_ANGLE_COS_SQ: float = 0.67101  # cos(35°)² ≈ 0.8192²
+const THREAT_CONE_HALF_ANGLE_COS_SQ: float = 0.77960  # cos(28°)² ≈ 0.88295²
 
 func _count_active_threats_near_post(post_x: int, post_y: int, exclude_instance_id: String = "") -> int:
 	"""v0.9.598 — count active T2+ world dungeons within THREAT_CORRIDOR_RADIUS
@@ -29688,7 +29707,7 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 		if target_post.is_empty():
 			continue
 		var post_dist: int = int(target_post.get("dist", 0))
-		var cone_length: float = float(min(THREAT_CORRIDOR_RADIUS, post_dist + THREAT_CONE_LENGTH_BUFFER))
+		var cone_length: float = float(min(THREAT_CONE_MAX_LENGTH, post_dist + THREAT_CONE_LENGTH_BUFFER))
 		if not _point_in_threat_cone(
 			x, y,
 			inst_x, inst_y,
