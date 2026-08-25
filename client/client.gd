@@ -32194,6 +32194,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_loot_force"})
 		"gm_loot_grant_tools":
 			send_to_server({"type": "gm_loot_grant_tools"})
+		"gm_force_cosmetic":
+			send_to_server({"type": "gm_force_cosmetic"})
 		# Test B2 scenario
 		"gm_test_b2":
 			send_to_server({"type": "gm_test_b2"})
@@ -32621,6 +32623,14 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	if monster_art_inst:
 		var raw_art = monster_art_inst.get_monster_ascii_art(monster_base_name)
 		if raw_art != "":
+			# v0.9.718 (dungeon arc slice 1) — enemy cosmetic tint: recolor the whole
+			# body when this monster rolled a cosmetic (or a dungeon theme stamped one).
+			# apply_variant_border below then skips the now per-line-colored art (its
+			# inline-BBCode guard), so the cosmetic hue carries the identity. Reuses the
+			# existing pattern recolorer.
+			var cos_color = str(combat_state.get("appearance_color", ""))
+			if cos_color != "":
+				raw_art = _recolor_ascii_art_pattern(raw_art, cos_color, str(combat_state.get("appearance_color2", "")), str(combat_state.get("appearance_pattern", "solid")))
 			# Apply variant border tint when this monster rolled a special
 			# variant (Shield Guardian / Weapon Master / Corrosive / Sunder
 			# / Elite). The first and last non-whitespace char of each line

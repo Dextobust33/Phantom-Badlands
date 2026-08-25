@@ -138,6 +138,9 @@ func _render_page() -> void:
 			_add_button("Grant Affixed Test Tools (all 4 affixes)", "gm_loot_grant_tools", Color(1, 0.84, 0))
 			_subtitle_subline("Gives Everlasting / Lucky / Prospector / Wide-Harvest tools so you can test the EFFECTS on gather (durability skip, extra reveals, wildcard, nearby catches).")
 			_add_separator()
+			_add_button("Force Cosmetic Monsters: TOGGLE", "gm_force_cosmetic", Color(0.7, 0.85, 1.0))
+			_subtitle_subline("Dungeon arc: while ON, EVERY monster spawns with a random color/pattern tint on its combat art (normal rate 12%). Start a fight to see it.")
+			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"items":
 			_title_label.text = "ADMIN — ITEMS"

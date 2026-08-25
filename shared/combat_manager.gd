@@ -7467,6 +7467,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# mod count (1 blue / 2 purple / 3 orange). Additive; old clients ignore.
 		"is_empowered": monster.get("is_empowered", false),
 		"empowered_mods": monster.get("empowered_mods", []).duplicate() if monster.get("empowered_mods", []) is Array else [],
+		# v0.9.718 (dungeon arc slice 1) — enemy cosmetic tint. Recolors the combat
+		# ASCII art body (client applies via MonsterArt.apply_cosmetic_tint). Empty
+		# color = no cosmetic (old clients ignore these fields).
+		"appearance_color": monster.get("appearance_color", ""),
+		"appearance_color2": monster.get("appearance_color2", ""),
+		"appearance_pattern": monster.get("appearance_pattern", "solid"),
 		# Audit #11 Slice 9 — threat-corridor encounter tag. When the server
 		# spawned this monster via threat-zone bias, these fields name the
 		# source dungeon so the client can flag the encounter visually.

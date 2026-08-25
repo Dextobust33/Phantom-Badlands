@@ -93,8 +93,30 @@ const EMPOWERED_MODIFIERS = {
 # this color via the existing name_color override path (v0.9.513 apex pattern).
 const EMPOWERED_NAME_COLORS = {1: "#4FC3F7", 2: "#BA68C8", 3: "#FFB74D"}
 
+# v0.9.718 (dungeon arc slice 1) — enemy COSMETIC tint. ~COSMETIC_CHANCE of monsters
+# spawn with a random vivid color + pattern that recolors their combat ASCII art body
+# (purely visual — no stat effect). These hues double as the future dungeon-theme
+# palette (a themed dungeon will stamp ONE of these across all its monsters).
+const COSMETIC_TINTS = [
+	{"name": "Frostbound",   "color": "#7FD8FF", "color2": "#BFEFFF"},
+	{"name": "Embertouched", "color": "#FF7A4D", "color2": "#FFC08A"},
+	{"name": "Venomous",     "color": "#7FE05A", "color2": "#C8F5A0"},
+	{"name": "Voidtouched",  "color": "#B07BFF", "color2": "#E0C8FF"},
+	{"name": "Gilded",       "color": "#FFD54A", "color2": "#FFF0B0"},
+	{"name": "Ashen",        "color": "#B8B8C0", "color2": "#E6E6EE"},
+	{"name": "Bloodstained", "color": "#E0495A", "color2": "#FF9AA6"},
+	{"name": "Stormcharged", "color": "#5AC8FF", "color2": "#B0E8FF"},
+]
+const COSMETIC_PATTERNS = ["solid", "gradient_down", "gradient_up", "striped"]
+const COSMETIC_CHANCE = 0.12
+
 # Balance configuration (set by server)
 var balance_config: Dictionary = {}
+
+# v0.9.718 — dev toggle (admin): when true, EVERY generated monster gets a cosmetic tint
+# (bypasses the 12% roll + the plain-only gate) so enemy cosmetics can be verified on
+# demand instead of grinding the RNG. Flipped by server handle_gm_force_cosmetic.
+var force_cosmetic: bool = false
 
 # Slice 6b — biome affinity. Each monster type maps to the biome strings (see
 # world_system.gd: "plains", "forest", "mountain", "swamp", "snow", "desert")
@@ -1658,9 +1680,24 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	if "broodcalling" in empowered_mods:
 		final_flock_chance = 100
 
+	# v0.9.718 (dungeon arc slice 1) — cosmetic tint roll (visual only, no stats).
+	# Gated to PLAIN monsters (no rare variant, no empowered mod) so a tinted monster
+	# reads as its own thing and doesn't fight the variant/empowered border identity.
+	var appearance_color := ""
+	var appearance_color2 := ""
+	var appearance_pattern := "solid"
+	if force_cosmetic or (not is_rare_variant and empowered_mods.is_empty() and randf() < COSMETIC_CHANCE):
+		var tint: Dictionary = COSMETIC_TINTS[randi() % COSMETIC_TINTS.size()]
+		appearance_color = String(tint["color"])
+		appearance_color2 = String(tint.get("color2", ""))
+		appearance_pattern = COSMETIC_PATTERNS[randi() % COSMETIC_PATTERNS.size()]
+
 	var monster = {
 		"name": monster_name,
 		"base_name": base_stats.name,  # Original name without variant prefix/suffix (for art lookup)
+		"appearance_color": appearance_color,   # v0.9.718 — cosmetic tint (visual)
+		"appearance_color2": appearance_color2,
+		"appearance_pattern": appearance_pattern,
 		"base_level": base_stats.base_level,  # Intrinsic monster base level — needed for accurate HP estimation in client-side discovery system
 		"level": target_level,
 		"max_hp": scaled_hp,

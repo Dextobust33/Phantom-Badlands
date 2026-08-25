@@ -2040,6 +2040,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_giveall(peer_id)
 		"gm_loot_force":
 			handle_gm_loot_force(peer_id)
+		"gm_force_cosmetic":
+			handle_gm_force_cosmetic(peer_id)
 		"gm_loot_grant_tools":
 			handle_gm_loot_grant_tools(peer_id)
 		"gm_teleport":
@@ -36134,6 +36136,18 @@ func handle_gm_loot_force(peer_id: int):
 	var on: bool = not bool(loot_debug_peers.get(peer_id, false))
 	loot_debug_peers[peer_id] = on
 	var msg: String = "[color=#40E0FF][Loot Lab] Force minigame + rare cells: %s[/color]" % ("ON — every gather/craft now shows the minigame with one of each rare cell seeded. Gather or craft a tool to see them." if on else "OFF.")
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+
+
+func handle_gm_force_cosmetic(peer_id: int):
+	"""Dungeon arc slice 1 (dev) — toggle force-cosmetic: every generated monster gets
+	a random cosmetic tint so the enemy-cosmetic rendering can be verified on demand
+	(the normal rate is 12% on plain monsters). Global flag on monster_db."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	monster_db.force_cosmetic = not monster_db.force_cosmetic
+	var msg: String = "[color=#40E0FF][Dungeon Lab] Force cosmetic tint on all monsters: %s[/color]" % ("ON — every monster now spawns with a random color/pattern. Start a fight to see it." if monster_db.force_cosmetic else "OFF — back to the normal 12% rate.")
 	send_to_peer(peer_id, {"type": "text", "message": msg})
 
 
