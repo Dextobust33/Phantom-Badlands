@@ -475,9 +475,12 @@ func _rebuild_abilities() -> void:
 				_ability_grid.add_child(entry)
 			else:
 				_ability_grid.add_child(_make_ability_card(ability, true))  # fallback
-			# v0.9.716 — mirror in-deck cards into the visual "Your Deck" strip.
-			if _deck_strip != null and deck_count >= 1:
-				_deck_strip.add_child(_make_deck_pile_tile(ability, deck_count))
+			# v0.9.716/717 — mirror in-deck cards into the visual "Your Deck" strip.
+			# A companion LOANER (companion equipped, card not yet earned) is active
+			# in the deck with copy count 0, so include it too.
+			var _is_loaner_strip := ab_name.begins_with("companion_card_") and not _deck_collection.has(ab_name)
+			if _deck_strip != null and (deck_count >= 1 or _is_loaner_strip):
+				_deck_strip.add_child(_make_deck_pile_tile(ability, deck_count, _is_loaner_strip))
 		else:
 			var card := _make_ability_card(ability, false)
 			_locked_grid.add_child(card)
@@ -491,19 +494,23 @@ func _rebuild_abilities() -> void:
 		var _col := "#7AE07A" if deck_total >= 5 else "#FF8844"
 		_deck_count_label.text = "[color=#B8A98C]Cards in deck:[/color] [color=%s][b]%d[/b][/color] [color=#7A6E58](minimum 5)[/color]" % [_col, deck_total]
 
-	# v0.9.716 — headline for the visual deck strip.
+	# v0.9.716/717 — headline for the visual deck strip. Count the tiles actually
+	# shown (includes loaners) rather than only owned copies, and let the "Cards in
+	# deck" line above carry the exact copy total to avoid a confusing double count.
 	if _deck_strip_label != null:
 		var _types := _deck_strip.get_child_count() if _deck_strip != null else 0
-		if deck_total <= 0:
+		if _types <= 0:
 			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#FF8844]— empty. Add cards from the catalog below.[/color]"
 		else:
-			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#B8A98C]— %d card%s across %d type%s you'll draw from ([i]click a tile to thin one[/i]):[/color]" % [deck_total, ("" if deck_total == 1 else "s"), _types, ("" if _types == 1 else "s")]
+			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#B8A98C]— the cards you'll draw from ([i]click a tile to thin one[/i]):[/color]"
 
 
-func _make_deck_pile_tile(ability: Dictionary, count: int) -> Control:
-	"""v0.9.716 — compact tile for the visual deck strip: category-tinted, shows the
-	card name + a ×N copy badge. Click to thin one copy (server enforces the 5-card
-	minimum, same as the catalog's Thin button)."""
+func _make_deck_pile_tile(ability: Dictionary, count: int, is_loaner: bool = false) -> Control:
+	"""v0.9.716/717 — compact tile for the visual deck strip: category-tinted, shows
+	the card name + a ×N copy badge (or a gold 'loan' tag for an active companion
+	loaner). Click an OWNED tile to thin one copy (server enforces the 5-card
+	minimum). No native tooltip — those hover boxes look bad; the catalog card below
+	flips for full details."""
 	var ab_name := str(ability.get("name", ""))
 	var disp := str(ability.get("display", _humanize(ab_name)))
 	var col := Color("#8C7656")
@@ -514,11 +521,11 @@ func _make_deck_pile_tile(ability: Dictionary, count: int) -> Control:
 		glyph = str(ci.get("glyph", ""))
 	var tile := PanelContainer.new()
 	tile.mouse_filter = Control.MOUSE_FILTER_STOP
-	tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	tile.tooltip_text = _tooltip_for(ab_name)
+	if not is_loaner:
+		tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(col.r * 0.18, col.g * 0.18, col.b * 0.18, 0.95)
-	sb.border_color = col
+	sb.border_color = Color("#C8A24A") if is_loaner else col
 	sb.set_border_width_all(1)
 	sb.set_corner_radius_all(4)
 	sb.content_margin_left = 6
@@ -528,15 +535,34 @@ func _make_deck_pile_tile(ability: Dictionary, count: int) -> Control:
 	tile.add_theme_stylebox_override("panel", sb)
 	var lbl := Label.new()
 	lbl.add_theme_font_size_override("font_size", 12)
-	lbl.add_theme_color_override("font_color", Color("#F0E6D2"))
+	lbl.add_theme_color_override("font_color", Color("#C8A24A") if is_loaner else Color("#F0E6D2"))
 	var prefix := (glyph + " ") if glyph != "" else ""
-	var badge := ("  ×%d" % count) if count > 1 else ""
+	var badge := ""
+	if is_loaner:
+		badge = "  (loan)"
+	elif count > 1:
+		badge = "  ×%d" % count
 	lbl.text = "%s%s%s" % [prefix, disp, badge]
 	tile.add_child(lbl)
-	tile.gui_input.connect(func(ev: InputEvent):
-		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
-			_on_cull_pressed(ab_name))
+	if not is_loaner:
+		tile.gui_input.connect(func(ev: InputEvent):
+			if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+				_on_cull_pressed(ab_name))
 	return tile
+
+
+func _loaner_permanence_text(ability_name: String) -> String:
+	"""v0.9.717 — 'X/N casts to keep' for an active loaner companion card (the
+	permanence grind), or a 'ready to keep!' nudge once the threshold is met."""
+	var dt = preload("res://shared/drop_tables.gd")
+	var mtype := ability_name.trim_prefix("companion_card_").capitalize()
+	var need := int(dt.companion_card_permanence_uses(mtype))
+	var uses := int(_ability_uses.get(ability_name, 0))
+	if need <= 0:
+		return "use it to keep"
+	if uses >= need:
+		return "ready to keep! (%d/%d)" % [uses, need]
+	return "%d/%d casts to keep" % [uses, need]
 
 
 func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContainer:
@@ -755,22 +781,35 @@ func _make_deck_entry(ability: Dictionary, deck_count: int) -> Control:
 		elif pv_kind == "heal":
 			val_text = "♥ %d" % int(pv.get("value", 0))
 			val_color = "#7AE07A"
-	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back, art_bb, val_text, val_color)
+	# v0.9.693/717 — a companion card that isn't earned yet (key absent) is a LOANER
+	# (active while the companion is equipped). Pass the flag so the card renders LIT
+	# (not greyed) with a 'LOAN' badge instead of 'OUT'.
+	var is_loaner := ab_name.begins_with("companion_card_") and not _deck_collection.has(ab_name)
+	var card = csp.build_deck_card(disp, color, glyph, cost_text, deck_count, back, art_bb, val_text, val_color, is_loaner)
 	var entry := VBoxContainer.new()
 	entry.add_theme_constant_override("separation", 4)
 	if card != null:
 		card.gui_input.connect(_on_deck_card_input.bind(card))
 		entry.add_child(card)
+	# v0.9.717 — mastery progress line so players see how close each card is to its
+	# next rank without flipping it (loaners show permanence progress instead below).
+	if not is_loaner:
+		var rank_lbl := RichTextLabel.new()
+		rank_lbl.bbcode_enabled = true
+		rank_lbl.fit_content = true
+		rank_lbl.scroll_active = false
+		rank_lbl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		rank_lbl.add_theme_font_size_override("normal_font_size", 10)
+		rank_lbl.text = "[center]%s[/center]" % _get_rank_progress_text(ab_name)
+		entry.add_child(rank_lbl)
 	var ctl := HBoxContainer.new()
 	ctl.alignment = BoxContainer.ALIGNMENT_CENTER
 	ctl.add_theme_constant_override("separation", 6)
-	# v0.9.693 — a companion card that isn't earned yet (key absent) is a LOANER
-	# (a bonus while the companion is active). It can't be thinned/restored; show
-	# a note instead of the -/+ controls (which would just error).
-	var is_loaner := ab_name.begins_with("companion_card_") and not _deck_collection.has(ab_name)
+	# The loaner can't be thinned/restored; show permanence progress instead of the
+	# -/+ controls (which would just error).
 	if is_loaner:
 		var note := Label.new()
-		note.text = "Loaner — use it to keep"
+		note.text = "Loaner — " + _loaner_permanence_text(ab_name)
 		note.add_theme_font_size_override("font_size", 11)
 		note.add_theme_color_override("font_color", Color("#C8A24A"))
 		ctl.add_child(note)

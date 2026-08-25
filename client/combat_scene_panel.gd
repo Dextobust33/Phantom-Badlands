@@ -3251,11 +3251,16 @@ func _on_hand_cell_mouse_exited(_cell) -> void:
 		client_ref.notify_card_desc_card_exit()
 
 
-func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String, art_bbcode: String = "", value_text: String = "", value_color: String = "#FF7A5A") -> Control:
+func build_deck_card(display: String, category_color_hex: String, glyph: String, cost_text: String, copies: int, back_bbcode: String, art_bbcode: String = "", value_text: String = "", value_color: String = "#FF7A5A", is_loaner: bool = false) -> Control:
 	"""v0.9.678 (slice 3) — a combat-styled card for the DECK SCREEN. Returns a
 	Control holding a Front (banner + icon + cost + copy badge) and a Back (long
 	description); the Back starts hidden. Caller wires a click to flip (toggle
-	child 'Front'/'Back' visibility). Copy badge shows N/3; 0 = greyed 'out'."""
+	child 'Front'/'Back' visibility). Copy badge shows N/3; 0 = greyed 'out'.
+	v0.9.717 — is_loaner: a companion loaner card is ACTIVE in the deck while the
+	companion is equipped even though its owned-copy count is 0, so render it lit
+	(not greyed) with a 'LOAN' badge instead of 'OUT'."""
+	# A card counts as in-deck (lit) if you own a copy OR it's an active loaner.
+	var active := copies > 0 or is_loaner
 	var root := Control.new()
 	root.name = "DeckCard"
 	root.custom_minimum_size = Vector2(CARD_W, CARD_H)
@@ -3268,8 +3273,8 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 	front.set_anchors_preset(Control.PRESET_FULL_RECT)
 	front.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var fsb := StyleBoxFlat.new()
-	fsb.bg_color = _theme_card_bg() if copies > 0 else Color(0.06, 0.06, 0.07, 0.95)
-	fsb.border_color = Color(category_color_hex) if copies > 0 else Color(0.3, 0.28, 0.24)
+	fsb.bg_color = _theme_card_bg() if active else Color(0.06, 0.06, 0.07, 0.95)
+	fsb.border_color = Color(category_color_hex) if active else Color(0.3, 0.28, 0.24)
 	fsb.set_border_width_all(2)
 	fsb.set_corner_radius_all(10)
 	front.add_theme_stylebox_override("panel", fsb)
@@ -3347,9 +3352,17 @@ func build_deck_card(display: String, category_color_hex: String, glyph: String,
 		value_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		info_hb.add_child(value_lbl)
 	var copy_lbl := Label.new()
-	copy_lbl.text = ("×%d/3" % copies) if copies > 0 else "OUT"
+	if is_loaner and copies == 0:
+		copy_lbl.text = "LOAN"
+	elif copies > 0:
+		copy_lbl.text = "×%d/3" % copies
+	else:
+		copy_lbl.text = "OUT"
 	copy_lbl.add_theme_font_size_override("font_size", 12)
-	copy_lbl.add_theme_color_override("font_color", Color("#9ACD32") if copies >= 2 else (Color("#B05050") if copies == 0 else Color("#AAAAAA")))
+	if is_loaner and copies == 0:
+		copy_lbl.add_theme_color_override("font_color", Color("#C8A24A"))  # gold — active loaner
+	else:
+		copy_lbl.add_theme_color_override("font_color", Color("#9ACD32") if copies >= 2 else (Color("#B05050") if copies == 0 else Color("#AAAAAA")))
 	copy_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_hb.add_child(copy_lbl)
 	fv.add_child(info)
