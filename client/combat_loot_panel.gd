@@ -485,9 +485,9 @@ func _enter_shuffle() -> void:
 	var overlays: Array = []
 	for i in range(_cards.size()):
 		overlays.append(_make_shuffle_overlay(i, card_pos[i]))
-	# v0.9.710 — faster + more overlapping movement (playtest: was too slow).
-	var per: float = clampf(1.0 / float(max(1, _swaps.size())), 0.06, 0.16)
-	var step: float = 0.0
+	# v0.9.711 — apply ALL swaps to the arrangement first (no animation), then glide
+	# each overlay ONCE to its final cell. One tween per node means no competing
+	# tweens leaving cards stuck between positions (the overlap bug).
 	for pair in _swaps:
 		if not (pair is Array) or pair.size() < 2:
 			continue
@@ -495,26 +495,20 @@ func _enter_shuffle() -> void:
 		var b: int = int(pair[1])
 		if a < 0 or b < 0 or a >= overlays.size() or b >= overlays.size() or a == b:
 			continue
-		# Content follows the swap so _shuffle_content ends matching the server.
-		var ca = _shuffle_content[a]
-		_shuffle_content[a] = _shuffle_content[b]
-		_shuffle_content[b] = ca
-		# Capture the actual nodes + targets (positions are fixed per index).
-		var node_a = overlays[a]
-		var node_b = overlays[b]
-		var tgt_a: Vector2 = card_pos[b]
-		var tgt_b: Vector2 = card_pos[a]
-		var dur: float = per
-		_call_deferred_after(step, func():
-			_tween_move(node_a, tgt_a, dur)
-			_tween_move(node_b, tgt_b, dur))
-		# Reflect the swap in the overlay index map for subsequent swaps.
-		overlays[a] = node_b
-		overlays[b] = node_a
-		step += per * 0.5  # more overlap = more simultaneous movement, faster overall
-	# Fade overlays + enter the hunt after the last swap settles.
+		var t = overlays[a]; overlays[a] = overlays[b]; overlays[b] = t
+		var c = _shuffle_content[a]; _shuffle_content[a] = _shuffle_content[b]; _shuffle_content[b] = c
+	var moved: int = 0
+	for p in range(overlays.size()):
+		var node = overlays[p]
+		if not is_instance_valid(node):
+			continue
+		var target: Vector2 = card_pos[p] if p < card_pos.size() else node.position
+		if node.position.distance_to(target) > 0.5:
+			var delay: float = float(moved) * 0.028
+			_call_deferred_after(delay, func(): _tween_move(node, target, 0.42))
+			moved += 1
 	var captured_overlays := overlays
-	_call_deferred_after(step + per + 0.15, func():
+	_call_deferred_after(0.55 + float(moved) * 0.028, func():
 		for ov in captured_overlays:
 			if is_instance_valid(ov):
 				var tw := create_tween()

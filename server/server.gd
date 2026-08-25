@@ -9697,6 +9697,10 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 			if dungeon_monster_id >= 0:
 				internal_state["dungeon_monster_id"] = dungeon_monster_id
 
+	# v0.9.711 fix - re-serialize so the flock combat_start message reflects the carried
+	# engines (result.combat_state was snapshotted at start_combat with momentum=0).
+	if not engine_carry.is_empty():
+		result["combat_state"] = combat_mgr.get_combat_display(peer_id)
 	if result.success:
 		var flock_msg = "[color=#FF4444]Another %s appears! (Pack #%d)[/color]\n%s" % [monster.name, flock_count + 1, result.message]
 		# Get varied colors for flock visual variety
@@ -9749,8 +9753,14 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 	var tier = int(item.get("tier", 1))
 	var chest_name = item.get("name", "Treasure Chest")
 
-	# Remove chest from inventory
-	character.inventory.remove_at(item_index)
+	# Consume ONE chest. Treasure chests stack (is_consumable → quantity), so
+	# remove_at() would nuke the WHOLE stack (v0.9.711 bug: open 1 of 4 → lost all).
+	# Decrement the stack; only remove the slot when the last one is opened.
+	var chest_qty = int(item.get("quantity", 1))
+	if chest_qty > 1:
+		item["quantity"] = chest_qty - 1
+	else:
+		character.inventory.remove_at(item_index)
 
 	# Roll 2-4 random materials appropriate to the tier
 	var num_rewards = randi_range(2, 4)

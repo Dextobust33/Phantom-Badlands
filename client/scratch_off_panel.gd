@@ -494,11 +494,10 @@ func _enter_shuffle() -> void:
 		_shuffle_button.visible = false
 	_scratches_label.text = "[center][color=#5AC8FF][b]Shuffling…[/b][/color] [color=#999]follow the prize you want![/color][/center]"
 	_shuffle_content = _preview_slots.duplicate(true)
-	# The overlays are indexed by current position; replay swaps moving them.
+	# v0.9.711 — apply ALL swaps to the arrangement first (no animation), then glide
+	# each overlay ONCE from its start to its final slot. One tween per node means no
+	# competing tweens leaving cards stuck between positions (the overlap bug).
 	var overlays: Array = _shuffle_overlays.duplicate()
-	# v0.9.710 — faster + more overlapping movement (playtest: was too slow).
-	var per: float = clampf(1.0 / float(max(1, _swaps.size())), 0.06, 0.16)
-	var step: float = 0.0
 	for pair in _swaps:
 		if not (pair is Array) or pair.size() < 2:
 			continue
@@ -506,21 +505,19 @@ func _enter_shuffle() -> void:
 		var b: int = int(pair[1])
 		if a < 0 or b < 0 or a >= overlays.size() or b >= overlays.size() or a == b:
 			continue
-		var ca = _shuffle_content[a]
-		_shuffle_content[a] = _shuffle_content[b]
-		_shuffle_content[b] = ca
-		var node_a = overlays[a]
-		var node_b = overlays[b]
-		var tgt_a: Vector2 = _slot_positions[b] if b < _slot_positions.size() else Vector2.ZERO
-		var tgt_b: Vector2 = _slot_positions[a] if a < _slot_positions.size() else Vector2.ZERO
-		var dur: float = per
-		_ps_after(step, func():
-			_ps_move(node_a, tgt_a, dur)
-			_ps_move(node_b, tgt_b, dur))
-		overlays[a] = node_b
-		overlays[b] = node_a
-		step += per * 0.5
-	_ps_after(step + per + 0.12, func(): _enter_hunt())
+		var t = overlays[a]; overlays[a] = overlays[b]; overlays[b] = t
+		var c = _shuffle_content[a]; _shuffle_content[a] = _shuffle_content[b]; _shuffle_content[b] = c
+	var moved: int = 0
+	for p in range(overlays.size()):
+		var node = overlays[p]
+		if not is_instance_valid(node):
+			continue
+		var target: Vector2 = _slot_positions[p] if p < _slot_positions.size() else node.position
+		if node.position.distance_to(target) > 0.5:
+			var delay: float = float(moved) * 0.028
+			_ps_after(delay, func(): _ps_move(node, target, 0.42))
+			moved += 1
+	_ps_after(0.55 + float(moved) * 0.028, func(): _enter_hunt())
 
 
 func _enter_hunt() -> void:
