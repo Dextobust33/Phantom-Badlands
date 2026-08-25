@@ -27678,8 +27678,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.700 — combat rebalance (resources + monster HP) + fixes.
+	display_game("[color=#00FF00]v0.9.700[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ COMBAT REBALANCE.[/color] Two big changes so the ability engines have room to breathe:")
+	display_game("    [color=#1EFF00]◆ More resources.[/color] Bigger [b]stamina / mana / energy[/b] pools (especially early) + faster regen — you can now cast [b]more than one ability[/b] in a fight instead of running dry after the first.")
+	display_game("    [color=#1EFF00]◆ Longer, meatier fights.[/color] [b]Elites, empowered monsters, and dungeon bosses have much more HP[/b], so the real fights actually last (and your build-up abilities matter). Trash still dies fast. We raised enemy [b]HP, not damage[/b] — so a well-equipped player still wins their-level fights; big challenges just need decent gear now.")
+	display_game("  [color=#1EFF00]◆ Fixes.[/color] Flock fights no longer [b]clear their Round 1 log[/b] before Round 2. Missed [b]milestone upgrade choices[/b] now pop up after the fight. Eggs from quest chains go to your [b]Incubator[/b]. Removed the redundant [b]\"Under Threat\"[/b] line from the top-left map box (it's in the top-right pointer). Rank-up message now names the correct [b]Power / Rider / Efficiency[/b] options.")
+	display_game("")
+
 	# v0.9.699 — playtest fixes.
-	display_game("[color=#00FF00]v0.9.699[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.699[/color]")
 	display_game("  [color=#1EFF00]◆ Loot card locks input.[/color] After a fight you can no longer move or use the action bar [b]before the loot card appears[/b] — it now blocks input the instant the reward is incoming.")
 	display_game("  [color=#1EFF00]◆ Gambit card fixed.[/color] It showed [i]\"-1 damage\"[/i] and a stale Combo note. Now shows its [b]real damage[/b] and reads as a WITS-scaled gamble that builds Read.")
 	display_game("  [color=#1EFF00]◆ Eggs go to your Incubator.[/color] Eggs from starter quest chains were landing in your [b]inventory[/b] — they now go to the [b]Incubator[/b] like every other egg.")
