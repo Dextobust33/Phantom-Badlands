@@ -27729,8 +27729,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.715 — class payoff visual states.
+	display_game("[color=#00FF00]v0.9.715[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Payoff moves now SHOW their charge.[/color] [color=#FFC94D]Devastate[/color] (Warrior), [color=#7FD8C8]Outsmart[/color] (Trickster), and [color=#5AC8FF]Meteor[/color] (Mage) now glow brighter as their meter fills — and grey out when there's nothing built — so you can see at a glance when the big move is ready.")
+	display_game("")
+
 	# v0.9.714 — loot card font-fit + road legibility.
-	display_game("[color=#00FF00]v0.9.714[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.714[/color]")
 	display_game("  [color=#1EFF00]◆ Long loot names now FIT.[/color] Instead of clipping a long reveal name, the loot cards (combat [i]and[/i] gathering) [b]shrink the font[/b] so the whole name fits the card — no more cut-off text.")
 	display_game("  [color=#1EFF00]◆ Roads stand out.[/color] Post-to-post [color=#EBD9A8]roads[/color] used to blend into the terrain around them. They now render in a distinct light-sand color so you can actually follow a road across the map.")
 	display_game("")
