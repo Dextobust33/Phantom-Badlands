@@ -27658,8 +27658,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.698 — Trickster reworked to Outsmart + card descriptions + fixes.
+	display_game("[color=#00FF00]v0.9.698[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ TRICKSTER: OUTSMART.[/color] The Trickster now wins by [b]cleverness[/b], not the biggest hit. Every ability builds [color=#7FD8C8]◉ Read[/color] on your foe, which raises your [b]Outsmart[/b] chance (shown live on the meter). Spring [color=#7FD8C8]Outsmart[/color] to [b]bypass the enemy's HP and win outright[/b] — and it's [b]repeatable[/b] now (a failed read just resets and costs you a hit). Tough, clever foes resist, so you'll still [color=#FF6644]Gambit[/color] & strike your way through bosses. (Replaces the old Combo finisher.)")
+	display_game("  [color=#1EFF00]◆ Real numbers on every card.[/color] Mage, Trickster & companion cards now show [b]concrete damage/effect numbers[/b] on the card + deck view (hover a number for its formula) — the same treatment Warriors already had.")
+	display_game("  [color=#1EFF00]◆ Fixes.[/color] New characters' [b]starter deck now shows correctly[/b] right after creation (was reading empty). [b]Magic Bolt's Efficiency[/b] upgrade now does something useful — [i]more damage per mana[/i] — instead of nothing.")
+	display_game("")
+
 	# v0.9.697 — Trickster Combo + Mage Focus + curated starter decks.
-	display_game("[color=#00FF00]v0.9.697[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.697[/color]")
 	display_game("  [color=#FF8000]★ TWO MORE CLASS ENGINES.[/color] Each class now has its own combat identity:")
 	display_game("    [color=#B06BE0]✦ TRICKSTER COMBO[/color] — your abilities build [b]Combo[/b]; [color=#B06BE0]Gambit[/color] spends it. High Combo turns the gamble into a [b]sure thing[/b] (reliable [i]and[/i] much bigger). No more coin-flip finishers once you've set up the con.")
 	display_game("    [color=#5AC8FF]◈ MAGE FOCUS[/color] — every spell you cast builds [b]Focus[/b], which boosts [b]all[/b] your spell damage (a ramp — mages start weak, end terrifying). [color=#5AC8FF]Meteor[/color] [b]discharges[/b] the whole ramp for a massive hit.")
