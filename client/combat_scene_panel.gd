@@ -3859,8 +3859,9 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 
 
 func _rank_from_uses(uses: int) -> int:
-	# v0.9.567 — mirrors character.gd MASTERY_RANK_THRESHOLDS (extended to R6).
-	var thresholds = [10, 50, 250, 1200, 4000, 10000]
+	# v0.9.716 — synced to character.gd's compressed v0.9.701 curve (was stale
+	# [10,50,250,1200,4000,10000], so card rank pips read wrong after #48).
+	var thresholds = [10, 35, 100, 275, 650, 1400]
 	var rank = 0
 	for t in thresholds:
 		if uses >= int(t):
@@ -3872,7 +3873,8 @@ func _rank_from_uses(uses: int) -> int:
 func _rank_progress_from_uses(uses: int) -> float:
 	# v0.9.665 — fraction (0-1) toward the NEXT mastery rank, for the card fill.
 	# Returns 1.0 at max rank. Mirrors _rank_from_uses thresholds.
-	var thresholds = [10, 50, 250, 1200, 4000, 10000]
+	# v0.9.716 — synced to the compressed v0.9.701 curve (card fill read wrong after #48).
+	var thresholds = [10, 35, 100, 275, 650, 1400]
 	var rank = _rank_from_uses(uses)
 	if rank >= thresholds.size():
 		return 1.0

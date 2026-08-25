@@ -41,7 +41,7 @@ var _deck_collection: Dictionary = {} # Slice 6c: ability_name → deck copy cou
 
 # Mastery rank thresholds + display (mirrors character.gd's MASTERY_RANK_*).
 # v0.9.567 — extended to R6 (Legend, Mythic) + softened early thresholds.
-const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 250, 1200, 4000, 10000]
+const MASTERY_RANK_THRESHOLDS: Array = [10, 35, 100, 275, 650, 1400]  # v0.9.716 — synced to character.gd's compressed v0.9.701 curve (was stale [10,50,250,1200,4000,10000])
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
 const MASTERY_RANK_COLORS: Array = ["#888888", "#9ACD32", "#66CCFF", "#FFD700", "#FF6644", "#FF44FF", "#88FFFF"]

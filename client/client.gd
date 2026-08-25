@@ -12368,8 +12368,9 @@ func _estimate_outgoing_damage_multiplier(is_spell: bool) -> float:
 func _get_ability_rank_progress(ability_name: String) -> Dictionary:
 	# Returns {rank, uses, next_threshold, uses_remaining, at_max} for an
 	# ability so the combat hand card can show "uses until next rank-up".
-	# v0.9.567 — mirrors character.gd MASTERY_RANK_THRESHOLDS (extended to R6).
-	var thresholds = [10, 50, 250, 1200, 4000, 10000]
+	# v0.9.716 — synced to character.gd's compressed v0.9.701 curve (was stale
+	# [10,50,250,1200,4000,10000], so "uses until next rank-up" read wrong after #48).
+	var thresholds = [10, 35, 100, 275, 650, 1400]
 	var uses_dict = character_data.get("ability_uses", {})
 	var uses = int(uses_dict.get(ability_name, 0)) if uses_dict is Dictionary else 0
 	var rank = 0
@@ -18685,12 +18686,17 @@ func _get_ability_tooltip(ability_name: String) -> String:
 	var bb_re = RegEx.new()
 	bb_re.compile("\\[.*?\\]")
 	var cost_clean = bb_re.sub(cost_raw, "", true)
-	var desc = _get_ability_description_text(ability_name)
+	# v0.9.716 — the ability-card native tooltip used the OLD technical copy
+	# ("sqrt STR scaling", "Variable cost 15-50 stamina", "capped 85%, 10% floor").
+	# Reuse the plain-language rich description and strip its BBCode so the tooltip
+	# reads the same friendly way the combat hover box does — no formulas/jargon.
+	var desc = bb_re.sub(_ability_desc_bbcode(ability_name), "", true).strip_edges()
 	var ability_uses = character_data.get("ability_uses", {})
 	var uses = int(ability_uses.get(ability_name, 0))
-	# v0.9.567 — inline rank computation (mirrors character.gd, extended to R6)
-	# v0.9.568 — rank label now sourced from the module-level MASTERY_RANK_NAMES const
-	var thresholds = [10, 50, 250, 1200, 4000, 10000]
+	# v0.9.716 — mastery thresholds synced to the compressed v0.9.701 curve
+	# (character.gd MASTERY_RANK_THRESHOLDS); the tooltip was showing the stale
+	# [10,50,250,1200,4000,10000] so "uses to next rank" was wrong.
+	var thresholds = [10, 35, 100, 275, 650, 1400]
 	var rank = 0
 	for t in thresholds:
 		if uses >= int(t): rank += 1
