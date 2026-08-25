@@ -40,8 +40,34 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_matrix()  # swap: run_matrix() Warrior / run_trickster_matrix() Trickster / run_mage_matrix() Mage
+	run_baseline()  # #29 — all 3 classes: win% / turns / casts-per-fight
 	quit()
+
+func run_baseline():
+	# #29 holistic rebalance baseline — measures win-rate, fight length, AND
+	# casts-per-fight (the resource lever) across all three classes.
+	var N := 60
+	var levels := [10, 50, 80]
+	var gears := ["under", "average", "bis"]
+	var enemies := ["plain", "elite", "boss"]
+	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	print("\n===== #29 BASELINE (%d fights/cell) =====" % N)
+	print("%-4s %-4s %-8s %-7s %6s %7s %7s" % ["Cls", "Lvl", "Gear", "Enemy", "Win%", "Turns", "Casts"])
+	for c in classes:
+		for lvl in levels:
+			for gear in gears:
+				for et in enemies:
+					var wins := 0
+					var tt := 0
+					var tc := 0
+					for i in range(N):
+						var r = run_fight(lvl, gear, et, 1.0, 1.0, 1.0, c[0])
+						if r.win:
+							wins += 1
+						tt += r.turns
+						tc += int(r.get("casts", 0))
+					print("%-4s %-4d %-8s %-7s %5.0f%% %7.1f %7.1f" % [c[1], lvl, gear, et, 100.0 * wins / N, float(tt) / N, float(tc) / N])
+	print("=========================================\n")
 
 func run_matrix():
 	var levels := [10, 30, 50, 80]
@@ -262,18 +288,22 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		return {"win": false, "turns": 0}
 	var combat = combat_mgr.active_combats[0]
 	var turns := 0
+	var casts := 0  # #29 — count ability casts (resource decreased this turn = a cast, not a basic attack)
 	while turns < 400:
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
 		turns += 1
 		if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 			var mhp0: int = int(monster.get("current_hp", 0))
+			var res0: int = _class_resource(ch, klass)
 			if klass == "Thief":
 				_player_act_trickster(combat, ch)
 			elif klass == "Wizard":
 				_player_act_mage(combat, ch)
 			else:
 				_player_act(combat, ch)
+			if _class_resource(ch, klass) < res0:
+				casts += 1
 			if player_dmg_scale < 1.0:
 				var dealt: int = mhp0 - int(monster.get("current_hp", 0))
 				if dealt > 0:
@@ -289,7 +319,15 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 				ch.current_hp = min(max_hp, ch.current_hp + int(taken * (1.0 - monster_dmg_scale)))
 	var win: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 	combat_mgr.end_combat(0, win, false)
-	return {"win": win, "turns": turns}
+	return {"win": win, "turns": turns, "casts": casts}
+
+func _class_resource(ch, klass: String) -> int:
+	# #29 — current value of the class's combat resource, for cast-counting.
+	if klass == "Thief":
+		return int(ch.current_energy)
+	if klass == "Wizard":
+		return int(ch.current_mana)
+	return int(ch.current_stamina)
 
 func run_design_solve():
 	# Reverse-solve the DESIGN numbers: what player-damage% × monster-damage% give

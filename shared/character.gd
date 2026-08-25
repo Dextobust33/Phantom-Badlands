@@ -861,11 +861,14 @@ func calculate_derived_stats():
 	var primary_stat_bonus = _get_primary_stat_for_hp()
 	max_hp = 50 + (constitution * 5) + primary_stat_bonus
 
-	# Resource pools reduced by ~75% from original values for balance
-	var base_mana = int((intelligence * 3) + (wisdom * 1.5))  # Mage resource (was INT×12 + WIS×6)
-	max_mana = int(base_mana * get_mana_multiplier())         # Apply Elf racial bonus (+25%)
-	max_stamina = strength + constitution                      # Warrior resource (was (STR+CON)×4)
-	max_energy = int((wits + dexterity) * 0.75)                # Trickster resource (was (WITS+DEX)×4)
+	# Resource pools. v0.9.700 (#29) — added a FLAT FLOOR so early-game pools hold
+	# ~3 casts (was ~1: pool ≈ one ability's ceiling), and NORMALIZED energy from
+	# ×0.75 → ×1.0 (it was the outlier, ÷5.3 vs the others' ÷4). Floors fix the
+	# early game without over-inflating high level (per-stat scaling unchanged).
+	var base_mana = 30 + int((intelligence * 3) + (wisdom * 1.5))  # Mage resource
+	max_mana = int(base_mana * get_mana_multiplier())              # Apply Elf racial bonus (+25%)
+	max_stamina = 20 + strength + constitution                     # Warrior resource
+	max_energy = 20 + int((wits + dexterity) * 1.0)                # Trickster resource (normalized + floor)
 
 func _get_primary_stat_for_hp() -> int:
 	"""Get primary stat bonus for HP based on class type"""

@@ -512,7 +512,7 @@ func _process_status_ticks(character: Character, messages: Array) -> void:
 # v0.9.665 — flat % of max primary resource regained per player turn, before any
 # gear/Path/buff regen. Raise to make cards castable more often; lower to make
 # resource management tighter.
-const BASE_COMBAT_REGEN_PCT := 12.0
+const BASE_COMBAT_REGEN_PCT := 16.0  # v0.9.700 (#29) — 12→16 so longer fights sustain ~1 cast/turn
 
 func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 	"""Apply equipment-based and buff-based resource regeneration at start of player turn.
@@ -529,13 +529,13 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 	match character.get_class_path():
 		"warrior":
 			var ms = character.get_total_max_stamina()
-			character.current_stamina = mini(ms, character.current_stamina + maxi(2, int(ms * base_pct / 100.0)))
+			character.current_stamina = mini(ms, character.current_stamina + maxi(4, int(ms * base_pct / 100.0)))
 		"mage":
 			var mm = character.get_total_max_mana()
-			character.current_mana = mini(mm, character.current_mana + maxi(2, int(mm * base_pct / 100.0)))
+			character.current_mana = mini(mm, character.current_mana + maxi(4, int(mm * base_pct / 100.0)))
 		"trickster":
 			var me = character.get_total_max_energy()
-			character.current_energy = mini(me, character.current_energy + maxi(2, int(me * base_pct / 100.0)))
+			character.current_energy = mini(me, character.current_energy + maxi(4, int(me * base_pct / 100.0)))
 
 	# Path: combat_resource_regen_pct (Second Wind — % of max primary
 	# resource per combat round, archetype-matched).
