@@ -27686,8 +27686,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.705 — Prize Shuffle finishes the sweep (crafting) + threat spillover.
+	display_game("[color=#00FF00]v0.9.705[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ PRIZE SHUFFLE — CRAFTING.[/color] The crafting minigame now uses the same three beats too: [color=#FFD54A]Preview[/color] the modifiers face-up (chase [color=#A335EE]Polished / Masterful / Bonus[/color], dodge [color=#888888]Failed[/color]) → [color=#5AC8FF]Shuffle[/color] → [color=#1EFF00]time your scratches[/color] to land the good ones. All three loops — combat, gathering, crafting — now share the mechanic (peeks included).")
+	display_game("  [color=#1EFF00]◆ Threat spillover tuned.[/color] Dungeon spillover now covers a [b]smaller area[/b] (tighter cone), and over-leveled characters no longer get spammed with [b]trivial[/b] threat encounters in low zones — but level-appropriate players still get pulled into the danger.")
+	display_game("")
+
 	# v0.9.704 — Prize Shuffle comes to gathering.
-	display_game("[color=#00FF00]v0.9.704[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.704[/color]")
 	display_game("  [color=#FF8000]★ PRIZE SHUFFLE — GATHERING.[/color] Fishing, mining, logging & foraging scratch-offs now use the same three beats as combat loot: [color=#FFD54A]Preview[/color] the catches face-up (best highlighted, with a [color=#FFD700]★ top-prize[/color] callout) → [color=#5AC8FF]Shuffle[/color] them (follow the one you want) → then [color=#1EFF00]time your scratches[/color] to land it. Now you know [b]where[/b] you're aiming and still have to [b]time[/b] it — a double-skill catch.")
 	display_game("  [color=#1EFF00]◆ Peek tokens here too.[/color] Gathering panels occasionally grant rare [color=#7FD8C8]peeks[/color] — sneak a look at a hidden cell without burning a scratch.")
 	display_game("")
