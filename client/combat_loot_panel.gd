@@ -485,7 +485,8 @@ func _enter_shuffle() -> void:
 	var overlays: Array = []
 	for i in range(_cards.size()):
 		overlays.append(_make_shuffle_overlay(i, card_pos[i]))
-	var per: float = clampf(1.6 / float(max(1, _swaps.size())), 0.11, 0.28)
+	# v0.9.710 — faster + more overlapping movement (playtest: was too slow).
+	var per: float = clampf(1.0 / float(max(1, _swaps.size())), 0.06, 0.16)
 	var step: float = 0.0
 	for pair in _swaps:
 		if not (pair is Array) or pair.size() < 2:
@@ -510,7 +511,7 @@ func _enter_shuffle() -> void:
 		# Reflect the swap in the overlay index map for subsequent swaps.
 		overlays[a] = node_b
 		overlays[b] = node_a
-		step += per * 0.7  # slight overlap keeps it flowing but trackable
+		step += per * 0.5  # more overlap = more simultaneous movement, faster overall
 	# Fade overlays + enter the hunt after the last swap settles.
 	var captured_overlays := overlays
 	_call_deferred_after(step + per + 0.15, func():

@@ -496,7 +496,8 @@ func _enter_shuffle() -> void:
 	_shuffle_content = _preview_slots.duplicate(true)
 	# The overlays are indexed by current position; replay swaps moving them.
 	var overlays: Array = _shuffle_overlays.duplicate()
-	var per: float = clampf(1.6 / float(max(1, _swaps.size())), 0.11, 0.28)
+	# v0.9.710 — faster + more overlapping movement (playtest: was too slow).
+	var per: float = clampf(1.0 / float(max(1, _swaps.size())), 0.06, 0.16)
 	var step: float = 0.0
 	for pair in _swaps:
 		if not (pair is Array) or pair.size() < 2:
@@ -518,8 +519,8 @@ func _enter_shuffle() -> void:
 			_ps_move(node_b, tgt_b, dur))
 		overlays[a] = node_b
 		overlays[b] = node_a
-		step += per * 0.7
-	_ps_after(step + per + 0.15, func(): _enter_hunt())
+		step += per * 0.5
+	_ps_after(step + per + 0.12, func(): _enter_hunt())
 
 
 func _enter_hunt() -> void:
@@ -538,11 +539,14 @@ func _make_gather_overlay(pos: Vector2, content: Dictionary, pulse_if_notable: b
 	var color_hex: String = String(content.get("color", "#FFFFFF"))
 	var rgb: Color = Color.html(color_hex) if color_hex != "" else Color.WHITE
 	var notable: bool = _is_notable(content)
-	var panel := PanelContainer.new()
+	# v0.9.710 — use a FIXED-size Panel (not PanelContainer) + a clipped label so a
+	# long preview name (Bonus Find / Auto-Sell / Wildcard) can't grow the box.
+	var panel := Panel.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.z_index = 20
 	panel.size = CARD_SIZE
 	panel.position = pos
+	panel.clip_contents = true
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(rgb.r * 0.28, rgb.g * 0.28, rgb.b * 0.28, 1.0)
 	sb.border_color = Color(1, 0.85, 0.3, 1) if notable else Color(rgb.r, rgb.g, rgb.b, 0.9)
@@ -551,10 +555,17 @@ func _make_gather_overlay(pos: Vector2, content: Dictionary, pulse_if_notable: b
 	panel.add_theme_stylebox_override("panel", sb)
 	var lbl := RichTextLabel.new()
 	lbl.bbcode_enabled = true
-	lbl.fit_content = true
+	lbl.fit_content = false
 	lbl.scroll_active = false
+	lbl.clip_contents = true
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	lbl.add_theme_font_size_override("normal_font_size", 11)
+	lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	lbl.offset_left = 2
+	lbl.offset_top = 2
+	lbl.offset_right = -2
+	lbl.offset_bottom = -2
+	lbl.add_theme_font_size_override("normal_font_size", 10)
 	var star: String = "[color=#FFD700]✦[/color] " if notable else ""
 	lbl.text = _slot_display_bbcode(content, star)
 	panel.add_child(lbl)
@@ -1067,6 +1078,7 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = CARD_SIZE
 	card.size = CARD_SIZE
+	card.clip_contents = true  # v0.9.710 — keep long rare names from blowing out the box
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	var sb := StyleBoxFlat.new()
@@ -1164,6 +1176,21 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 				kind_label.text = "⚡ +"
 			"EFFICIENCY_UP_2":
 				kind_label.text = "⚡ ++"
+			"MOTHERLODE":
+				kind_label.text = "✦ MOTHERLODE"
+				kind_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))
+			"WILDCARD":
+				kind_label.text = "? WILDCARD"
+				kind_label.add_theme_color_override("font_color", Color(1.0, 0.42, 1.0))
+			"AUTO_MARKET":
+				kind_label.text = "$ AUTO-SELL"
+				kind_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))
+			"PROSPECTOR_BONUS":
+				kind_label.text = "✦ BONUS FIND"
+				kind_label.add_theme_color_override("font_color", Color(0.75, 0.45, 1.0))
+			"EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL", "WIDE_HARVEST":
+				kind_label.text = "✦ AFFIX"
+				kind_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))
 			_:
 				kind_label.text = "◆"
 		inner.add_child(kind_label)
@@ -1178,6 +1205,14 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 		if kind == "LUCKY":
 			var qty = int(slot.get("quantity", 2))
 			display_name = "%dx %s" % [qty, display_name]
+		elif kind == "MOTHERLODE":
+			var mq = int(slot.get("quantity", 4))
+			display_name = "%dx %s" % [mq, display_name]
+		elif kind == "PROSPECTOR_BONUS":
+			# Show BOTH the catch and the bonus material so the reveal reads clearly.
+			var bn = String(slot.get("bonus_name", ""))
+			if bn != "":
+				display_name = "%s +%s" % [display_name, bn]
 		elif kind == "DUD":
 			display_name = ""
 		elif kind == "MISS":

@@ -20133,13 +20133,13 @@ func _scratch_off_preview_slot(slot: Dictionary) -> Dictionary:
 		return {"kind": "BAR_BONUS", "name": "+2 Scratches", "color": "#FFD700", "rarity": "rare", "symbol": "✦"}
 	# Prize Shuffle rare outcomes (#49 juice batch A) — face-up preview labels.
 	if kind == "MOTHERLODE":
-		return {"kind": "MOTHERLODE", "name": "Motherlode: %s x%d" % [String(slot.get("name", "Catch")), int(slot.get("quantity", 4))], "color": "#FFD700", "rarity": "epic", "symbol": "✦"}
+		return {"kind": "MOTHERLODE", "name": "Motherlode", "color": "#FFD700", "rarity": "epic", "symbol": "✦"}
 	if kind == "WILDCARD":
-		return {"kind": "WILDCARD", "name": "Wildcard: %s" % String(slot.get("name", "Odd Find")), "color": "#FF66FF", "rarity": "rare", "symbol": "?"}
+		return {"kind": "WILDCARD", "name": "Wildcard", "color": "#FF66FF", "rarity": "rare", "symbol": "?"}
 	if kind == "AUTO_MARKET":
-		return {"kind": "AUTO_MARKET", "name": "Auto-Sell: +%d Valor" % int(slot.get("valor_amount", 0)), "color": "#FFD700", "rarity": "rare", "symbol": "$"}
+		return {"kind": "AUTO_MARKET", "name": "Auto-Sell", "color": "#FFD700", "rarity": "rare", "symbol": "$"}
 	if kind == "PROSPECTOR_BONUS":
-		return {"kind": "PROSPECTOR_BONUS", "name": "Bonus Find: %s +%s" % [String(slot.get("name", "Catch")), String(slot.get("bonus_name", "extra"))], "color": "#A335EE", "rarity": "rare", "symbol": "✦"}
+		return {"kind": "PROSPECTOR_BONUS", "name": "Bonus Find", "color": "#A335EE", "rarity": "rare", "symbol": "✦"}
 	var nm: String = String(slot.get("name", "Catch"))
 	var qty: int = int(slot.get("quantity", 1))
 	var disp: String = nm if qty <= 1 else ("%s x%d" % [nm, qty])
@@ -20285,7 +20285,7 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 	var gather_preview: Array = []
 	for s in slots:
 		gather_preview.append(_scratch_off_preview_slot(s))
-	var g_swap_count: int = clampi(3 + int(gathering_node.get("tier", 1)), 3, 12)
+	var g_swap_count: int = clampi(8 + int(gathering_node.get("tier", 1)) * 2, 8, 22)  # v0.9.710 - more movement
 	var gather_swaps: Array = []
 	var g_origin: Array = []
 	for i in range(slot_count):
