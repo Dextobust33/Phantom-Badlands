@@ -27687,8 +27687,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.707 — Rare crafting tool affixes.
+	display_game("[color=#00FF00]v0.9.707[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ RARE TOOL AFFIXES.[/color] Crafting a tool can now rarely roll a special affix that sticks to the tool forever: [color=#FFD700]Everlasting[/color] (a chance to [b]not use durability[/b] each gather), [color=#FFD700]Lucky[/color] (better scratch-off odds — extra reveal + wider timing bar), and [color=#FFD700]Prospector's[/color] (a standing chance at a [color=#FF66FF]Wildcard[/color] catch every gather). They show up gold in the craft preview, and the tool's name gets the prefix (e.g. [i]Everlasting Lucky Pickaxe[/i]).")
+	display_game("")
+
 	# v0.9.706 — Gathering rare outcomes + minigame juice.
-	display_game("[color=#00FF00]v0.9.706[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.706[/color]")
 	display_game("  [color=#FF8000]★ RARE GATHERING FINDS.[/color] New rare cells can turn up while fishing/mining/logging/foraging: [color=#FFD700]Motherlode[/color] (a bulk haul), [color=#FF66FF]Wildcard[/color] (a catch from a totally different node type — an ore while fishing!), [color=#FFD700]Auto-Sell[/color] (the catch is instantly sold for [b]Valor[/b]), and [color=#A335EE]Prospector's Bonus[/color] (your catch plus a bonus material). Rare, but they light up in the preview so you'll know to chase them.")
 	display_game("  [color=#1EFF00]◆ Minigame juice.[/color] The gathering & crafting scratch-offs now have a [b]shuffle sound[/b] and a [b]gold burst + fanfare[/b] when a rare cell reveals — matching the combat loot feel.")
 	display_game("  [color=#1EFF00]◆ Rarer, but bigger.[/color] The gathering & crafting minigames appear a touch less often (the trade for the richer rewards).")
