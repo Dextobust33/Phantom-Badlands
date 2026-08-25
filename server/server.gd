@@ -101,11 +101,11 @@ const COMBAT_LOOT_UPGRADE_THRESHOLD := 12
 # treat-rhythm. Most gathers/crafts resolve instantly (no minigame); the
 # scratch-off fires ~1/8 of the time, or ~1/2 on a "lucky" node / rare recipe,
 # and is jackpot-boosted when it does. All tunable.
-const GATHER_SCRATCH_BASE_CHANCE := 0.125
+const GATHER_SCRATCH_BASE_CHANCE := 0.09  # v0.9.706 (#49 juice) — rarer but bigger (was 0.125)
 const GATHER_SCRATCH_LUCKY_CHANCE := 0.50
 const GATHER_SCRATCH_LUCKY_TIER := 4      # gathering-node tier >= this = "rich" node
 const GATHER_SCRATCH_BUDGET_MULT := 2     # jackpot reveal budget when the minigame fires
-const CRAFT_SCRATCH_BASE_CHANCE := 0.125
+const CRAFT_SCRATCH_BASE_CHANCE := 0.09  # v0.9.706 (#49 juice) — rarer but bigger (was 0.125)
 const CRAFT_SCRATCH_RARE_CHANCE := 0.50
 const CRAFT_SCRATCH_RARE_DIFFICULTY := 60 # recipe difficulty >= this = "rare" craft
 var active_combat_loot: Dictionary = {}
@@ -19895,6 +19895,16 @@ func _roll_scratch_off_slot_kind(skill: int) -> String:
 	they share this engine. Design memo: project_scratch_off_engagement_design."""
 	if (randi() % 12) == 0:
 		return "BAR_BONUS"
+	# Prize Shuffle rare outcomes (#49 juice batch A) — rare, exciting cells rolled
+	# before the standard distribution (~1.5-2% each, sequential/exclusive).
+	if (randi() % 55) == 0:
+		return "MOTHERLODE"
+	if (randi() % 60) == 0:
+		return "WILDCARD"
+	if (randi() % 60) == 0:
+		return "AUTO_MARKET"
+	if (randi() % 65) == 0:
+		return "PROSPECTOR_BONUS"
 	var skill_bias = mini(skill, 50)
 	var dud_chance = maxi(2, 10 - int(skill_bias * 0.2))  # 10% at L1, floor at 2% past L40
 	var jackpot_chance = mini(20, 5 + int(skill_bias * 0.2))  # 5% at L1, cap 20%
@@ -19911,6 +19921,25 @@ func _roll_scratch_off_slot_kind(skill: int) -> String:
 	if roll < lucky_chance:
 		return "LUCKY"
 	return "NORMAL"
+
+func _roll_wildcard_catch(current_job: String, skill: int) -> Dictionary:
+	"""Prize Shuffle rare outcome (#49) — roll a catch from a DIFFERENT gather job
+	than the one being worked, at a reasonable tier, so the player gets something
+	they'd never normally pull from this node."""
+	var jobs: Array = ["fishing", "mining", "logging", "foraging"]
+	jobs.erase(current_job)
+	var oj: String = jobs[randi() % jobs.size()]
+	var tier: int = clampi(1 + int(skill) / 20, 1, 5)
+	match oj:
+		"fishing":
+			return _roll_gathering_catch("fishing", "deep" if tier >= 3 else "shallow", skill, "", "")
+		"mining":
+			return _roll_gathering_catch("mining", tier, skill, "", "")
+		"logging":
+			return _roll_gathering_catch("logging", tier, skill, "", "")
+		_:
+			return _roll_gathering_catch("foraging", tier, skill, "forest", "")
+
 
 func _roll_gathering_catch(job_type: String, tier_or_water, skill: int, biome: String = "", node_type: String = "") -> Dictionary:
 	"""v0.9.369 — dispatch the appropriate drop-table roll for the job. The
@@ -19958,6 +19987,52 @@ func _build_scratch_off_slot(kind: String, job_type: String, tier_or_water, skil
 			"is_consumable": false,
 			"quantity": 0,
 			"bonus_scratches": 2,
+		}
+	# Prize Shuffle rare outcomes (#49 juice batch A) — exciting rare cells.
+	if kind == "MOTHERLODE":
+		# Bulk haul: a normal catch at ×4-6 quantity.
+		var mc = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
+		var mqty: int = randi_range(4, 6)
+		var mitem: String = String(mc.get("item", mc.get("item_id", "")))
+		return {
+			"kind": "MOTHERLODE", "item": mitem, "name": String(mc.get("name", "Catch")),
+			"type": String(mc.get("type", "material")), "value": int(mc.get("value", 5)),
+			"tier": int(mc.get("tier", 1)), "is_consumable": bool(mc.get("is_consumable", false)),
+			"quantity": mqty, "xp": int(mc.get("xp", 5)) * 2,
+		}
+	if kind == "WILDCARD":
+		# A catch from a DIFFERENT gather job — an ore while fishing, etc.
+		var wc = _roll_wildcard_catch(job_type, skill)
+		var witem: String = String(wc.get("item", wc.get("item_id", "")))
+		return {
+			"kind": "WILDCARD", "item": witem, "name": String(wc.get("name", "Odd Find")),
+			"type": String(wc.get("type", "material")), "value": int(wc.get("value", 5)),
+			"tier": int(wc.get("tier", 1)), "is_consumable": bool(wc.get("is_consumable", false)),
+			"quantity": 1, "xp": int(wc.get("xp", 8)),
+		}
+	if kind == "AUTO_MARKET":
+		# Auto-sold for VALOR (user: valor, not gold) scaled to the catch value.
+		var ac = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
+		var valor_amt: int = maxi(3, int(ac.get("value", 5)) * randi_range(2, 4))
+		return {
+			"kind": "AUTO_MARKET", "item": "", "name": "Sold → +%d Valor" % valor_amt,
+			"type": "auto_market", "value": int(ac.get("value", 5)), "tier": int(ac.get("tier", 1)),
+			"is_consumable": false, "quantity": 1, "valor_amount": valor_amt, "xp": 6,
+		}
+	if kind == "PROSPECTOR_BONUS":
+		# The catch PLUS a bonus material (two-for-one).
+		var pc = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
+		var pb = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
+		var pitem: String = String(pc.get("item", pc.get("item_id", "")))
+		var bitem: String = String(pb.get("item", pb.get("item_id", "")))
+		return {
+			"kind": "PROSPECTOR_BONUS", "item": pitem, "name": String(pc.get("name", "Catch")),
+			"type": String(pc.get("type", "material")), "value": int(pc.get("value", 5)),
+			"tier": int(pc.get("tier", 1)), "is_consumable": bool(pc.get("is_consumable", false)),
+			"quantity": 1, "xp": int(pc.get("xp", 5)) + int(pb.get("xp", 5)),
+			"bonus_item": bitem, "bonus_name": String(pb.get("name", "Bonus")),
+			"bonus_type": String(pb.get("type", "material")), "bonus_tier": int(pb.get("tier", 1)),
+			"bonus_value": int(pb.get("value", 5)),
 		}
 	# Roll a catch. For JACKPOT, retry up to 20 times for a high-value entry.
 	var catch_data = _roll_gathering_catch(job_type, tier_or_water, skill, biome, node_type)
@@ -20015,6 +20090,15 @@ func _scratch_off_preview_slot(slot: Dictionary) -> Dictionary:
 		return {"kind": "DUD", "name": "Empty", "color": "#888888", "rarity": "common"}
 	if kind == "BAR_BONUS":
 		return {"kind": "BAR_BONUS", "name": "+2 Scratches", "color": "#FFD700", "rarity": "rare", "symbol": "✦"}
+	# Prize Shuffle rare outcomes (#49 juice batch A) — face-up preview labels.
+	if kind == "MOTHERLODE":
+		return {"kind": "MOTHERLODE", "name": "Motherlode: %s x%d" % [String(slot.get("name", "Catch")), int(slot.get("quantity", 4))], "color": "#FFD700", "rarity": "epic", "symbol": "✦"}
+	if kind == "WILDCARD":
+		return {"kind": "WILDCARD", "name": "Wildcard: %s" % String(slot.get("name", "Odd Find")), "color": "#FF66FF", "rarity": "rare", "symbol": "?"}
+	if kind == "AUTO_MARKET":
+		return {"kind": "AUTO_MARKET", "name": "Auto-Sell: +%d Valor" % int(slot.get("valor_amount", 0)), "color": "#FFD700", "rarity": "rare", "symbol": "$"}
+	if kind == "PROSPECTOR_BONUS":
+		return {"kind": "PROSPECTOR_BONUS", "name": "Bonus Find: %s +%s" % [String(slot.get("name", "Catch")), String(slot.get("bonus_name", "extra"))], "color": "#A335EE", "rarity": "rare", "symbol": "✦"}
 	var nm: String = String(slot.get("name", "Catch"))
 	var qty: int = int(slot.get("quantity", 1))
 	var disp: String = nm if qty <= 1 else ("%s x%d" % [nm, qty])
@@ -20321,6 +20405,17 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			total_xp += 3
 			awarded.append({"kind": "DUD", "name": "Empty", "type": "dud"})
 			continue
+		# Prize Shuffle rare outcome (#49) — Auto-Market: sell the catch for VALOR
+		# (account-level currency) instead of pulling the item.
+		if kind == "AUTO_MARKET":
+			var v: int = int(slot.get("valor_amount", 0))
+			if v > 0:
+				var acct: String = str(peers[peer_id].get("account_id", "")) if peers.has(peer_id) else ""
+				if acct != "":
+					persistence.add_valor(acct, v)
+			total_xp += int(slot.get("xp", 6))
+			awarded.append({"kind": "AUTO_MARKET", "name": String(slot.get("name", "Sold for Valor")), "type": "valor", "valor": v})
+			continue
 		var item_id: String = slot.get("item", "")
 		var item_name: String = slot.get("name", "Unknown")
 		var slot_type: String = slot.get("type", "fish")
@@ -20335,6 +20430,16 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 			"value": int(slot.get("value", 5)),
 		}
 		_add_gathering_reward(character, reward, qty)
+		# Prize Shuffle rare outcome (#49) — Prospector's Bonus awards an extra
+		# bonus material on top of the main catch.
+		if kind == "PROSPECTOR_BONUS" and String(slot.get("bonus_item", "")) != "":
+			_add_gathering_reward(character, {
+				"id": String(slot.get("bonus_item", "")),
+				"name": String(slot.get("bonus_name", "Bonus")),
+				"type": String(slot.get("bonus_type", "material")),
+				"tier": int(slot.get("bonus_tier", 1)),
+				"value": int(slot.get("bonus_value", 5)),
+			}, 1)
 		# XP was baked at slot-build time per job.
 		var xp = int(slot.get("xp", 5))
 		# Lucky and jackpot grant bonus XP on top of the bigger drops.

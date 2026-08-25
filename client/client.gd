@@ -2206,6 +2206,7 @@ func _ready():
 	scratch_off_panel.slot_missed.connect(_on_scratch_off_slot_missed)
 	scratch_off_panel.auto_skip_toggled.connect(_on_scratch_off_auto_skip_toggled)
 	scratch_off_panel.rhythm_beat.connect(_on_scratch_off_rhythm_beat)
+	scratch_off_panel.play_sfx.connect(_on_scratch_off_sfx)  # v0.9.706 juice
 
 	# Audit #4 Slice 3 — Crafting reveal animation panel. Modal overlay on
 	# the root window; instantiated once and reused for every craft.
@@ -36331,8 +36332,11 @@ func _play_scratch_off_cue(is_miss: bool, item: Dictionary) -> void:
 		return
 	var kind: String = String(item.get("kind", "NORMAL"))
 	match kind:
-		"JACKPOT":
-			if scratch_jackpot_player and scratch_jackpot_player.stream:
+		"JACKPOT", "MOTHERLODE", "WILDCARD", "AUTO_MARKET", "PROSPECTOR_BONUS":
+			# v0.9.706 juice — the rare exciting cells get the "you got it!" fanfare.
+			if rare_drop_player and rare_drop_player.stream:
+				rare_drop_player.play()
+			elif scratch_jackpot_player and scratch_jackpot_player.stream:
 				scratch_jackpot_player.play()
 		"DUD":
 			if scratch_dud_player and scratch_dud_player.stream:
@@ -36340,6 +36344,17 @@ func _play_scratch_off_cue(is_miss: bool, item: Dictionary) -> void:
 		_:  # NORMAL or LUCKY — light scratch sound
 			if scratch_player and scratch_player.stream:
 				scratch_player.play()
+
+
+func _on_scratch_off_sfx(name: String) -> void:
+	"""v0.9.706 (#49 juice) — gathering/crafting panel sfx cues."""
+	match name:
+		"shuffle":
+			if scratch_player and scratch_player.stream:
+				scratch_player.play()
+		"reveal_big":
+			if rare_drop_player and rare_drop_player.stream:
+				rare_drop_player.play()
 
 func handle_scratch_off_complete(message: Dictionary) -> void:
 	"""All scratches spent + items committed. Show summary including missed

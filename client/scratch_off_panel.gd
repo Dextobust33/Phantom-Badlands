@@ -19,6 +19,7 @@ signal slot_clicked(slot_index: int)
 signal slot_missed(slot_index: int)
 signal auto_skip_toggled(value: bool)
 signal rhythm_beat(beat_type: String)  # v0.9.371 — "chop" / "chink" cues for rhythmic patterns
+signal play_sfx(name: String)  # v0.9.706 (#49 juice) — "shuffle" / "reveal_big" cues
 
 const CARD_SIZE := Vector2(64, 64)
 const CANVAS_SIZE := Vector2(640, 380)
@@ -488,6 +489,7 @@ func _enter_shuffle() -> void:
 	track a prize; then fade the overlays and start the timing-bar hunt."""
 	_phase = "shuffle"
 	_stop_preview_pulses()
+	emit_signal("play_sfx", "shuffle")  # v0.9.706 juice — soft shuffle cue
 	if _shuffle_button != null:
 		_shuffle_button.visible = false
 	_scratches_label.text = "[center][color=#5AC8FF][b]Shuffling…[/b][/color] [color=#999]follow the prize you want![/color][/center]"
@@ -1015,6 +1017,32 @@ func _animate_newly_revealed(slots: Array) -> void:
 			card.scale = Vector2(1.35, 1.35)
 			var t := create_tween()
 			t.tween_property(card, "scale", Vector2(1.0, 1.0), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			# v0.9.706 juice — a gold ring on the rare exciting cells.
+			if kind in ["JACKPOT", "MOTHERLODE", "WILDCARD", "AUTO_MARKET", "PROSPECTOR_BONUS", "BAR_BONUS"]:
+				_play_gather_celebration(card)
+
+
+func _play_gather_celebration(card: Control) -> void:
+	"""v0.9.706 juice — expanding gold ring on a rare reveal for a big-win beat."""
+	if not is_instance_valid(card) or _canvas == null:
+		return
+	var ring := Panel.new()
+	ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.border_color = Color(1.0, 0.84, 0.2, 0.95)
+	sb.set_border_width_all(3)
+	sb.set_corner_radius_all(8)
+	ring.add_theme_stylebox_override("panel", sb)
+	ring.z_index = 15
+	ring.size = CARD_SIZE
+	ring.position = card.position
+	_canvas.add_child(ring)
+	ring.pivot_offset = CARD_SIZE * 0.5
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(ring, "scale", Vector2(2.6, 2.6), 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ring, "modulate:a", 0.0, 0.4).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(Callable(ring, "queue_free"))
 
 
 func _play_miss_shake(card: Control, slot_index: int) -> void:
