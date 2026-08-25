@@ -52,6 +52,8 @@ var _title_label: Label
 # v0.9.504 — reusable HelpPanel attached to the header ? Help button.
 var _help_panel: Control = null
 var _deck_count_label: RichTextLabel = null  # v0.9.688 — live deck-size counter
+var _deck_strip_label: RichTextLabel = null   # v0.9.716 — "Your Deck" strip header
+var _deck_strip: HFlowContainer = null        # v0.9.716 — at-a-glance visual of the cards actually in your deck
 var _path_label_node: RichTextLabel
 var _slots_row: HBoxContainer
 var _slot_cards: Array = []        # Array of PanelContainers, one per slot
@@ -143,6 +145,26 @@ func _build_layout() -> void:
 	_deck_count_label.add_theme_font_size_override("normal_font_size", 15)
 	root_vbox.add_child(_deck_count_label)
 
+	# v0.9.716 — visual "Your Deck" strip. The catalog below shows EVERY card with
+	# its copy count; this strip shows only the cards actually IN your deck, badged
+	# by copies, so your real draw pile reads at a glance. Click a tile to thin one
+	# copy (server enforces the 5-card minimum).
+	_deck_strip_label = RichTextLabel.new()
+	_deck_strip_label.bbcode_enabled = true
+	_deck_strip_label.fit_content = true
+	_deck_strip_label.scroll_active = false
+	_deck_strip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_deck_strip_label.add_theme_font_size_override("normal_font_size", 13)
+	root_vbox.add_child(_deck_strip_label)
+	var deck_strip_panel := _make_subpanel()
+	deck_strip_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root_vbox.add_child(deck_strip_panel)
+	_deck_strip = HFlowContainer.new()
+	_deck_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_deck_strip.add_theme_constant_override("h_separation", 4)
+	_deck_strip.add_theme_constant_override("v_separation", 4)
+	deck_strip_panel.add_child(_deck_strip)
+
 	# v0.9.322 — slot row / status row removed (deck system replaced
 	# slot-equip). Status + cancel-choose still allocated as dummy instances
 	# so legacy code paths that touch them don't NPE; they're never added to
@@ -156,7 +178,7 @@ func _build_layout() -> void:
 
 	# Deck cards header
 	var avail_header := Label.new()
-	avail_header.text = "Your Deck — copies, cost, and mastery per card:"
+	avail_header.text = "All Cards — adjust copies (thin unused, add favourites):"
 	avail_header.add_theme_color_override("font_color", Color(0.0, 1.0, 1.0))
 	avail_header.add_theme_font_size_override("font_size", 13)
 	root_vbox.add_child(avail_header)
@@ -422,6 +444,9 @@ func _rebuild_abilities() -> void:
 		child.queue_free()
 	for child in _locked_grid.get_children():
 		child.queue_free()
+	if _deck_strip != null:
+		for child in _deck_strip.get_children():
+			child.queue_free()
 
 	var unlocked_names := {}
 	for u in _unlocked:
@@ -450,6 +475,9 @@ func _rebuild_abilities() -> void:
 				_ability_grid.add_child(entry)
 			else:
 				_ability_grid.add_child(_make_ability_card(ability, true))  # fallback
+			# v0.9.716 — mirror in-deck cards into the visual "Your Deck" strip.
+			if _deck_strip != null and deck_count >= 1:
+				_deck_strip.add_child(_make_deck_pile_tile(ability, deck_count))
 		else:
 			var card := _make_ability_card(ability, false)
 			_locked_grid.add_child(card)
@@ -462,6 +490,53 @@ func _rebuild_abilities() -> void:
 	if _deck_count_label != null:
 		var _col := "#7AE07A" if deck_total >= 5 else "#FF8844"
 		_deck_count_label.text = "[color=#B8A98C]Cards in deck:[/color] [color=%s][b]%d[/b][/color] [color=#7A6E58](minimum 5)[/color]" % [_col, deck_total]
+
+	# v0.9.716 — headline for the visual deck strip.
+	if _deck_strip_label != null:
+		var _types := _deck_strip.get_child_count() if _deck_strip != null else 0
+		if deck_total <= 0:
+			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#FF8844]— empty. Add cards from the catalog below.[/color]"
+		else:
+			_deck_strip_label.text = "[color=#00E5E5][b]⚔ Your Deck[/b][/color] [color=#B8A98C]— %d card%s across %d type%s you'll draw from ([i]click a tile to thin one[/i]):[/color]" % [deck_total, ("" if deck_total == 1 else "s"), _types, ("" if _types == 1 else "s")]
+
+
+func _make_deck_pile_tile(ability: Dictionary, count: int) -> Control:
+	"""v0.9.716 — compact tile for the visual deck strip: category-tinted, shows the
+	card name + a ×N copy badge. Click to thin one copy (server enforces the 5-card
+	minimum, same as the catalog's Thin button)."""
+	var ab_name := str(ability.get("name", ""))
+	var disp := str(ability.get("display", _humanize(ab_name)))
+	var col := Color("#8C7656")
+	var glyph := ""
+	if client_ref and client_ref.has_method("get_ability_category_info"):
+		var ci: Dictionary = client_ref.get_ability_category_info(ab_name)
+		col = Color(str(ci.get("color", "#8C7656")))
+		glyph = str(ci.get("glyph", ""))
+	var tile := PanelContainer.new()
+	tile.mouse_filter = Control.MOUSE_FILTER_STOP
+	tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	tile.tooltip_text = _tooltip_for(ab_name)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(col.r * 0.18, col.g * 0.18, col.b * 0.18, 0.95)
+	sb.border_color = col
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 3
+	tile.add_theme_stylebox_override("panel", sb)
+	var lbl := Label.new()
+	lbl.add_theme_font_size_override("font_size", 12)
+	lbl.add_theme_color_override("font_color", Color("#F0E6D2"))
+	var prefix := (glyph + " ") if glyph != "" else ""
+	var badge := ("  ×%d" % count) if count > 1 else ""
+	lbl.text = "%s%s%s" % [prefix, disp, badge]
+	tile.add_child(lbl)
+	tile.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_LEFT:
+			_on_cull_pressed(ab_name))
+	return tile
 
 
 func _make_ability_card(ability: Dictionary, is_unlocked: bool) -> PanelContainer:
