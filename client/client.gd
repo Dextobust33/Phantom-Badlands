@@ -27670,8 +27670,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.699 — playtest fixes.
+	display_game("[color=#00FF00]v0.9.699[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Loot card locks input.[/color] After a fight you can no longer move or use the action bar [b]before the loot card appears[/b] — it now blocks input the instant the reward is incoming.")
+	display_game("  [color=#1EFF00]◆ Gambit card fixed.[/color] It showed [i]\"-1 damage\"[/i] and a stale Combo note. Now shows its [b]real damage[/b] and reads as a WITS-scaled gamble that builds Read.")
+	display_game("  [color=#1EFF00]◆ Eggs go to your Incubator.[/color] Eggs from starter quest chains were landing in your [b]inventory[/b] — they now go to the [b]Incubator[/b] like every other egg.")
+	display_game("")
+
 	# v0.9.698 — Trickster reworked to Outsmart + card descriptions + fixes.
-	display_game("[color=#00FF00]v0.9.698[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.698[/color]")
 	display_game("  [color=#FF8000]★ TRICKSTER: OUTSMART.[/color] The Trickster now wins by [b]cleverness[/b], not the biggest hit. Every ability builds [color=#7FD8C8]◉ Read[/color] on your foe, which raises your [b]Outsmart[/b] chance (shown live on the meter). Spring [color=#7FD8C8]Outsmart[/color] to [b]bypass the enemy's HP and win outright[/b] — and it's [b]repeatable[/b] now (a failed read just resets and costs you a hit). Tough, clever foes resist, so you'll still [color=#FF6644]Gambit[/color] & strike your way through bosses. (Replaces the old Combo finisher.)")
 	display_game("  [color=#1EFF00]◆ Real numbers on every card.[/color] Mage, Trickster & companion cards now show [b]concrete damage/effect numbers[/b] on the card + deck view (hover a number for its formula) — the same treatment Warriors already had.")
 	display_game("  [color=#1EFF00]◆ Fixes.[/color] New characters' [b]starter deck now shows correctly[/b] right after creation (was reading empty). [b]Magic Bolt's Efficiency[/b] upgrade now does something useful — [i]more damage per mana[/i] — instead of nothing.")
