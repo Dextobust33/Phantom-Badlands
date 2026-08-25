@@ -27687,8 +27687,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.706 — Gathering rare outcomes + minigame juice.
+	display_game("[color=#00FF00]v0.9.706[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ RARE GATHERING FINDS.[/color] New rare cells can turn up while fishing/mining/logging/foraging: [color=#FFD700]Motherlode[/color] (a bulk haul), [color=#FF66FF]Wildcard[/color] (a catch from a totally different node type — an ore while fishing!), [color=#FFD700]Auto-Sell[/color] (the catch is instantly sold for [b]Valor[/b]), and [color=#A335EE]Prospector's Bonus[/color] (your catch plus a bonus material). Rare, but they light up in the preview so you'll know to chase them.")
+	display_game("  [color=#1EFF00]◆ Minigame juice.[/color] The gathering & crafting scratch-offs now have a [b]shuffle sound[/b] and a [b]gold burst + fanfare[/b] when a rare cell reveals — matching the combat loot feel.")
+	display_game("  [color=#1EFF00]◆ Rarer, but bigger.[/color] The gathering & crafting minigames appear a touch less often (the trade for the richer rewards).")
+	display_game("")
+
 	# v0.9.705 — Prize Shuffle finishes the sweep (crafting) + threat spillover.
-	display_game("[color=#00FF00]v0.9.705[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.705[/color]")
 	display_game("  [color=#FF8000]★ PRIZE SHUFFLE — CRAFTING.[/color] The crafting minigame now uses the same three beats too: [color=#FFD54A]Preview[/color] the modifiers face-up (chase [color=#A335EE]Polished / Masterful / Bonus[/color], dodge [color=#888888]Failed[/color]) → [color=#5AC8FF]Shuffle[/color] → [color=#1EFF00]time your scratches[/color] to land the good ones. All three loops — combat, gathering, crafting — now share the mechanic (peeks included).")
 	display_game("  [color=#1EFF00]◆ Threat spillover tuned.[/color] Dungeon spillover now covers a [b]smaller area[/b] (tighter cone), and over-leveled characters no longer get spammed with [b]trivial[/b] threat encounters in low zones — but level-appropriate players still get pulled into the danger.")
 	display_game("")
