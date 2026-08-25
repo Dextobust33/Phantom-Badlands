@@ -27735,8 +27735,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.717 — deck screen fixes.
+	display_game("[color=#00FF00]v0.9.717[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Deck screen polish.[/color] [b]Loaner[/b] companion cards now show as [color=#C8A24A]active (LOAN)[/color] and appear in your Deck strip, with a [b]casts-to-keep[/b] counter. Every card now shows its [b]mastery progress[/b] (how close to the next rank) right on the deck screen.")
+	display_game("")
+
 	# v0.9.716 — deck view, plain skill text, market rebalance.
-	display_game("[color=#00FF00]v0.9.716[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.716[/color]")
 	display_game("  [color=#1EFF00]◆ See your deck at a glance.[/color] The Combat Deck screen now shows a [b]Your Deck[/b] strip up top — just the cards actually in your deck, badged by copies. Click a tile to thin a copy.")
 	display_game("  [color=#1EFF00]◆ Plainer skill text.[/color] Ability tooltips drop the jargon/formulas for plain language, and mastery [b]rank progress[/b] now shows the correct 'uses to next rank' (it was reading an old curve).")
 	display_game("  [color=#1EFF00]◆ Markets rebalance across the realm.[/color] Traveling merchants now spread stacked goods a chunk at a time and scatter scarce items (gear/eggs) to nearby posts, so one hub no longer hoards everything.")
