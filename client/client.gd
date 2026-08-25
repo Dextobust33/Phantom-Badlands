@@ -27686,8 +27686,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.701 — mastery cadence + map avatar size.
+	display_game("[color=#00FF00]v0.9.701[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Card mastery ranks up faster.[/color] The old curve made a card's later [b]milestone upgrade choices[/b] take thousands of fights (basically unreachable). The thresholds are now [b]compressed[/b] — you still get your first milestone quickly, but the mid-game choices [b]recur[/b] and the top ranks (and their damage bonuses) are actually attainable.")
+	display_game("  [color=#1EFF00]◆ Player map sprites are consistent size.[/color] Some players rendered on the world map at [b]~half the size[/b] of others (side-view avatars carried extra padding). All map avatars now [b]fill their tile the same way[/b].")
+	display_game("")
+
 	# v0.9.700 — combat rebalance (resources + monster HP) + fixes.
-	display_game("[color=#00FF00]v0.9.700[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.700[/color]")
 	display_game("  [color=#FF8000]★ COMBAT REBALANCE.[/color] Two big changes so the ability engines have room to breathe:")
 	display_game("    [color=#1EFF00]◆ More resources.[/color] Bigger [b]stamina / mana / energy[/b] pools (especially early) + faster regen — you can now cast [b]more than one ability[/b] in a fight instead of running dry after the first.")
 	display_game("    [color=#1EFF00]◆ Longer, meatier fights.[/color] [b]Elites, empowered monsters, and dungeon bosses have much more HP[/b], so the real fights actually last (and your build-up abilities matter). Trash still dies fast. We raised enemy [b]HP, not damage[/b] — so a well-equipped player still wins their-level fights; big challenges just need decent gear now.")
