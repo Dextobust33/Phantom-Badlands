@@ -1755,9 +1755,34 @@ const MONSTER_DISPLAY_COLORS = {
 
 # ===== HELPER FUNCTIONS =====
 
+# C1 (dungeon revamp) — low-tier-focused SIZE boost. The real size levers are `floors`
+# and `monsters_per_floor` (the per-dungeon `grid_size`/`encounters_per_floor` fields are
+# vestigial — actual floor grids are the global 16-20). Low tiers were too short (T1 = 3
+# floors); this lengthens them most and nudges the already-large high tiers. Applied once
+# at the get_dungeon chokepoint + cached so every consumer (floor gen, step budget,
+# rewards, display) sees the same scaled values. Step budget is PER-FLOOR, so more floors
+# = more total budget automatically — no step change needed.
+const _FLOORS_BOOST := {1: 2, 2: 2, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1}
+const _MONSTERS_BOOST := {1: 1, 2: 1, 3: 1}  # denser low-tier floors; 0 elsewhere
+static var _scaled_cache: Dictionary = {}
+
+static func _scale_dungeon_size(base: Dictionary) -> Dictionary:
+	var d = base.duplicate(true)
+	var tier = int(base.get("tier", 1))
+	d["floors"] = int(base.get("floors", 3)) + int(_FLOORS_BOOST.get(tier, 1))
+	d["monsters_per_floor"] = int(base.get("monsters_per_floor", 3)) + int(_MONSTERS_BOOST.get(tier, 0))
+	return d
+
 static func get_dungeon(dungeon_id: String) -> Dictionary:
-	"""Get dungeon definition by ID"""
-	return DUNGEON_TYPES.get(dungeon_id, {})
+	"""Get dungeon definition by ID (C1: floors/monsters size-scaled, cached)."""
+	if _scaled_cache.has(dungeon_id):
+		return _scaled_cache[dungeon_id]
+	var base = DUNGEON_TYPES.get(dungeon_id, {})
+	if base.is_empty():
+		return {}
+	var scaled = _scale_dungeon_size(base)
+	_scaled_cache[dungeon_id] = scaled
+	return scaled
 
 static func get_dungeons_for_level(player_level: int) -> Array:
 	"""Get list of dungeon IDs appropriate for player level"""
