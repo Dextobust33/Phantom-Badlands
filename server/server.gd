@@ -19750,6 +19750,15 @@ func _roll_craft_slot_kind(pool: String, t: float) -> String:
 			if r < w_dup3: return "DUPLICATE_3"
 			return "REFUND"
 		"tool":
+			# Prize Shuffle batch B (#49) — rare affix cells rolled BEFORE the
+			# standard distribution (~4% each). When revealed they stamp a special
+			# tool_bonus on the crafted tool (see _complete_craft_scratch_off).
+			if randf() < 0.04:
+				return "EVERLASTING"
+			if randf() < 0.04:
+				return "LUCKY_TOOL"
+			if randf() < 0.04:
+				return "PROSPECTOR_TOOL"
 			# Tools: quality still drives base rarity (durability + bar tuning
 			# scale with rarity in DropTables.generate_tool), but extra slot
 			# kinds boost durability / minigame ease on top.
@@ -19846,6 +19855,12 @@ func _build_craft_slot(kind: String, recipe: Dictionary) -> Dictionary:
 			return {"kind": "EFFICIENCY_UP_1", "name": "Easier Minigame", "type": "craft_tool", "score": 1, "output_name": output_name}
 		"EFFICIENCY_UP_2":
 			return {"kind": "EFFICIENCY_UP_2", "name": "Much Easier Minigame", "type": "craft_tool", "score": 1, "output_name": output_name}
+		"EVERLASTING":
+			return {"kind": "EVERLASTING", "name": "Everlasting", "type": "craft_affix", "score": 1, "output_name": output_name}
+		"LUCKY_TOOL":
+			return {"kind": "LUCKY_TOOL", "name": "Lucky", "type": "craft_affix", "score": 1, "output_name": output_name}
+		"PROSPECTOR_TOOL":
+			return {"kind": "PROSPECTOR_TOOL", "name": "Prospector's", "type": "craft_affix", "score": 1, "output_name": output_name}
 		"DUPLICATE":
 			return {"kind": "DUPLICATE", "name": "Bonus +1", "type": "craft_bonus", "score": 1, "output_name": output_name}
 		"DUPLICATE_2":
@@ -19878,6 +19893,8 @@ func _craft_preview_slot(slot: Dictionary) -> Dictionary:
 			color = "#FFD700"; rarity = "epic"
 		"DUPLICATE_3":
 			color = "#FF8000"; rarity = "legendary"
+		"EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL":
+			color = "#FFD700"; rarity = "epic"
 	return {"kind": kind, "name": nm, "color": color, "rarity": rarity}
 
 
@@ -20169,6 +20186,11 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 	# Tool pre-reveals at RANDOM positions.
 	var tool_subtype = _get_tool_subtype_for_job(job_type)
 	var tool = _find_tool_in_inventory(character, tool_subtype)
+	# Prospector tool affix (#49) - chance to inject a Wildcard cell this gather.
+	if not tool.is_empty() and slots.size() > 0:
+		var _wcc: float = float(tool.get("tool_bonuses", {}).get("wildcard_chance", 0.0))
+		if _wcc > 0.0 and randf() < _wcc:
+			slots[randi() % slots.size()] = _build_scratch_off_slot("WILDCARD", job_type, tier_or_water, skill, biome, node_type)
 	var pre_reveals: int = 0
 	if not tool.is_empty():
 		var tb = tool.get("tool_bonuses", {})
@@ -21409,6 +21431,10 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	var refund_count: int = 0         # number of REFUND slots — each = +25% material refund
 	var tool_durability_pct: int = 0  # best tool durability bonus (0 / 25 / 50)
 	var tool_efficiency_tier: int = 0 # best tool efficiency tier (0 / 1 / 2)
+	# Prize Shuffle batch B (#49) — rare tool affixes.
+	var tool_everlasting: bool = false
+	var tool_lucky: bool = false
+	var tool_prospector: bool = false
 	var awarded: Array = []
 	var missed: Array = []
 	for i in range(slots.size()):
@@ -21436,6 +21462,12 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 					tool_efficiency_tier = maxi(tool_efficiency_tier, 1)
 				"EFFICIENCY_UP_2":
 					tool_efficiency_tier = maxi(tool_efficiency_tier, 2)
+				"EVERLASTING":
+					tool_everlasting = true
+				"LUCKY_TOOL":
+					tool_lucky = true
+				"PROSPECTOR_TOOL":
+					tool_prospector = true
 			awarded.append({"kind": kind, "name": name, "type": "craft"})
 		else:
 			var cause = "miss" if (i in miss_positions) else "unscratched"
@@ -21475,6 +21507,9 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	# can read them. Quality recipes / non-tool pools see 0 here.
 	session["craft_tool_durability_pct"] = tool_durability_pct
 	session["craft_tool_efficiency_tier"] = tool_efficiency_tier
+	session["craft_tool_everlasting"] = tool_everlasting
+	session["craft_tool_lucky"] = tool_lucky
+	session["craft_tool_prospector"] = tool_prospector
 
 	# Roll quality with derived score, then hand off to the existing craft
 	# finalize (which sends craft_result + grants XP/inventory).
@@ -22646,6 +22681,9 @@ func _consume_tool_durability(peer_id: int, character, tool_subtype: String):
 	# Check equipped tool slot first
 	var equipped = character.equipped_tools.get(tool_subtype, {})
 	if not equipped.is_empty():
+		var _dfc: float = float(equipped.get("tool_bonuses", {}).get("durability_free_chance", 0.0))
+		if _dfc > 0.0 and randf() < _dfc:
+			return  # Everlasting affix proc — no durability consumed
 		equipped["durability"] = equipped.get("durability", 1) - 1
 		if equipped["durability"] <= 0:
 			var tool_name = equipped.get("name", tool_subtype.capitalize())
@@ -25380,6 +25418,9 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				var craft_session: Dictionary = pending_craft_sessions.get(peer_id, {})
 				var durability_pct: int = int(craft_session.get("craft_tool_durability_pct", 0))
 				var efficiency_tier: int = int(craft_session.get("craft_tool_efficiency_tier", 0))
+				var affix_everlasting: bool = bool(craft_session.get("craft_tool_everlasting", false))
+				var affix_lucky: bool = bool(craft_session.get("craft_tool_lucky", false))
+				var affix_prospector: bool = bool(craft_session.get("craft_tool_prospector", false))
 				var crafted_tools: Array = []
 				for _i in range(maxi(1, quantity)):
 					var tool_data = DropTables.generate_tool(subtype, tool_tier, tool_rarity)
@@ -25404,6 +25445,22 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 						bonuses["bar_speed_mult"] = maxf(0.30, spd - spd_delta)
 						bonuses["bar_width_mult"] = minf(3.00, wid + wid_delta)
 						tool_data["tool_bonuses"] = bonuses
+					if affix_everlasting or affix_lucky or affix_prospector:
+						var abonus: Dictionary = tool_data.get("tool_bonuses", {})
+						var apfx := ""
+						if affix_everlasting:
+							abonus["durability_free_chance"] = 0.20
+							apfx += "Everlasting "
+						if affix_lucky:
+							abonus["reveals"] = int(abonus.get("reveals", 0)) + 1
+							abonus["bar_width_mult"] = minf(3.0, float(abonus.get("bar_width_mult", 1.0)) + 0.20)
+							apfx += "Lucky "
+						if affix_prospector:
+							abonus["wildcard_chance"] = 0.15
+							apfx += "Prospector "
+						tool_data["tool_bonuses"] = abonus
+						if apfx != "":
+							tool_data["name"] = apfx + String(tool_data.get("name", ""))
 					character.inventory.append(tool_data)
 					crafted_tools.append(tool_data)
 				if not crafted_tools.is_empty():
