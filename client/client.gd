@@ -872,6 +872,7 @@ var flock_pending = false
 var flock_monster_name = ""
 var combat_item_mode = false  # Selecting item to use in combat
 var combat_outsmart_failed = false  # Track if outsmart already failed this combat
+var _combat_outsmart_chance: int = 0  # v0.9.715 — live Outsmart % (Trickster Read); drives the Outsmart action-bar button glow
 
 # Audit #1 Slice 6a — combat hand state. Server pushes the hand on every
 # combat_start / combat_update; client mirrors it here so the action bar
@@ -7193,6 +7194,36 @@ func _style_action_button(btn: Button):
 	btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
 	btn.add_theme_color_override("font_disabled_color", THEME_TEXT_DIM)
 
+func _style_outsmart_button(btn: Button, chance: int) -> void:
+	"""v0.9.715 — style the Outsmart combat action button by its live success
+	chance (driven by Trickster Read). No Read → greyed 'not worth it'; rising
+	odds → brighter teal border + a colored halo that grows toward 'strike now'."""
+	var t: float = clampf(float(chance) / 100.0, 0.0, 1.0)
+	var teal := Color("#7FD8C8")
+	var style := StyleBoxFlat.new()
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(2)
+	if chance <= 0:
+		# No Read built — Outsmart will almost certainly fail. Grey it hard so the
+		# player builds Read first instead of throwing away a turn.
+		style.bg_color = Color(0.09, 0.09, 0.10, 0.6)
+		style.border_color = Color(0.30, 0.30, 0.32, 0.5)
+		style.set_border_width_all(1)
+		btn.add_theme_color_override("font_color", Color(0.55, 0.58, 0.58, 1))
+	else:
+		# Charged: brighten bg + teal border + colored glow, all scaled by odds.
+		style.bg_color = Color(0.10 + 0.10 * t, 0.16 + 0.14 * t, 0.16 + 0.12 * t, 0.85)
+		style.border_color = teal.lerp(Color.WHITE, 0.2 * t)
+		style.set_border_width_all(int(round(1 + 2 * t)))  # 1 → 3
+		var glow := teal
+		glow.a = 0.15 + 0.5 * t
+		style.shadow_color = glow
+		style.shadow_size = int(round(2 + 8 * t))  # halo grows with the odds
+		btn.add_theme_color_override("font_color", teal.lerp(Color.WHITE, 0.35 * t))
+	btn.add_theme_stylebox_override("normal", style)
+	btn.add_theme_stylebox_override("hover", style)
+	btn.add_theme_stylebox_override("pressed", style)
+
 func _scale_right_panel_fonts(base_scale: float):
 	"""Scale right panel fonts (stats, map controls, send button) based on window size and user preference"""
 	var stats_size = int(14 * base_scale * ui_scale_right_panel)
@@ -9999,6 +10030,17 @@ func update_action_bar():
 		var action = current_actions[i]
 		button.text = action.label
 		button.disabled = not action.enabled
+
+		# v0.9.715 — Outsmart (Trickster) charges up with Read: greyed when your
+		# odds are ~0 (a failed attempt wastes a turn + resets Read), glowing teal
+		# as the chance climbs so the "now!" moment reads at a glance. Any button
+		# that previously carried the glow but isn't Outsmart now is reset to base.
+		if str(action.get("action_data", "")) == "outsmart":
+			_style_outsmart_button(button, _combat_outsmart_chance)
+			button.set_meta("outsmart_glow", true)
+		elif button.get_meta("outsmart_glow", false):
+			_style_action_button(button)
+			button.set_meta("outsmart_glow", false)
 
 		# Update cost label if it exists
 		if i < action_cost_labels.size():
@@ -32484,6 +32526,9 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	var is_warrior := bool(state.get("is_warrior_momentum", false))
 	var is_trickster := bool(state.get("is_trickster_read", false))
 	var is_mage := bool(state.get("is_mage_focus", false))
+	# v0.9.715 — cache the live Outsmart chance so update_action_bar (called right
+	# after this) can charge up the Outsmart action-bar button. 0 for non-Tricksters.
+	_combat_outsmart_chance = int(state.get("outsmart_chance", 0)) if is_trickster else 0
 	if is_warrior:
 		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true)
 	elif is_trickster and combat_scene_panel.has_method("update_read"):

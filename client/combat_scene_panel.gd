@@ -3656,6 +3656,9 @@ func _refresh_hand() -> void:
 				effect_lbl.add_theme_color_override("font_color", Color("#6E7E8A"))
 
 		_set_cell_dim(cell, false, castable)
+		# v0.9.715 — Devastate (Warrior finisher) gets a Momentum-scaled glow:
+		# hard-greyed when locked at 0 Momentum, blazing gold as the meter fills.
+		_apply_finisher_visual(cell, card_name)
 
 	# Status line
 	if _hand_status_label:
@@ -3679,6 +3682,14 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 	var sb := cell.get_theme_stylebox("panel") as StyleBoxFlat
 	if sb == null:
 		return
+	# v0.9.715 — reset the finisher glow (Devastate/Gambit) each refresh and kill
+	# any running pulse; _apply_finisher_visual re-adds them if this card is a
+	# finisher. Keeps stale halos off cards that changed slots.
+	sb.shadow_size = 0
+	var _prev_pulse = cell.get_meta("finisher_pulse", null)
+	if _prev_pulse != null and is_instance_valid(_prev_pulse):
+		_prev_pulse.kill()
+	cell.set_meta("finisher_pulse", null)
 	# v0.9.675 — the whole card fades for empty / uncastable states (clearer than
 	# a subtle bg shift on a framed card); castable cards show the category border
 	# at full colour. bg stays dark so the mastery fill reads.
@@ -3694,6 +3705,48 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 		sb.border_color = Color(str(cell.get_meta("category_color", "#B08C4C")))
 		sb.bg_color = _theme_card_bg()
 		cell.modulate = Color(1, 1, 1, 1)
+
+
+func _apply_finisher_visual(cell: PanelContainer, card_name: String) -> void:
+	"""v0.9.715 — Warrior Devastate is the Momentum FINISHER. Make its state
+	unmistakable at a glance:
+	  • 0 Momentum  → hard-greyed 'locked' (well below the normal can't-afford dim)
+	  • building    → gold border + colored halo that grows with the meter
+	  • full meter  → a gentle looping pulse so 'FINISHER READY' grabs the eye
+	The Trickster analogue is the Outsmart action-bar button (styled in client.gd),
+	not a hand card — Gambit is a normal card and gets no finisher glow."""
+	if not (_momentum_active and card_name == "devastate"):
+		return
+	var sb := cell.get_theme_stylebox("panel") as StyleBoxFlat
+	if sb == null:
+		return
+	var gold := Color("#FFC94D")
+	if _momentum < 1:
+		# Locked — grey it out HARD so it reads as unusable, not just pricey.
+		sb.border_color = Color(0.34, 0.32, 0.30, 1.0)
+		sb.set_border_width_all(2)
+		sb.shadow_size = 0
+		cell.modulate = Color(0.5, 0.5, 0.53, 0.8)
+		return
+	var t: float = clampf(float(_momentum) / float(max(1, _momentum_max)), 0.0, 1.0)
+	sb.border_color = gold.lerp(Color.WHITE, 0.15 * t)
+	sb.set_border_width_all(int(round(2 + 2 * t)))  # 2 → 4
+	var glow := gold
+	glow.a = 0.20 + 0.55 * t
+	sb.shadow_color = glow
+	sb.shadow_size = int(round(2 + 8 * t))  # 2 → 10 px halo
+	cell.modulate = Color(1, 1, 1, 1)
+	if t >= 0.999:
+		# Ready — pulse the halo. tween_method rewrites shadow_size each step; the
+		# tween is killed/reset in _set_cell_dim on the next _refresh_hand.
+		var pulse := create_tween().set_loops()
+		var _pulse_set := func(s: float):
+			var _sb := cell.get_theme_stylebox("panel") as StyleBoxFlat
+			if _sb:
+				_sb.shadow_size = int(round(s))
+		pulse.tween_method(_pulse_set, 10.0, 16.0, 0.55).set_trans(Tween.TRANS_SINE)
+		pulse.tween_method(_pulse_set, 16.0, 10.0, 0.55).set_trans(Tween.TRANS_SINE)
+		cell.set_meta("finisher_pulse", pulse)
 
 
 func _resolve_card_info(card_name: String) -> Dictionary:
