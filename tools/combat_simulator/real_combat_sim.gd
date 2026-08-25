@@ -263,7 +263,7 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 			m["strength"] = int(m.get("strength", 1) * 1.3)
 			m["defense"] = int(m.get("defense", 1) * 1.25)
 		"boss":
-			m["max_hp"] = int(m.get("max_hp", 1) * 2.5)
+			m["max_hp"] = int(m.get("max_hp", 1) * 5.0)  # #29 v0.9.700 — mirrors dungeon boss hp_mult ×2.5 (2.0→5.0 effective)
 			m["strength"] = int(m.get("strength", 1) * 1.5)
 			m["defense"] = int(m.get("defense", 1) * 1.5)
 	if extra_hp_mult != 1.0:

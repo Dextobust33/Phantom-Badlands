@@ -2645,7 +2645,10 @@ static func get_boss_for_dungeon(dungeon_id: String, dungeon_level: int) -> Dict
 		"name": boss_data.name,  # Display name (e.g., "Orc Warlord")
 		"monster_type": boss_data.get("monster_type", boss_data.name),  # Base monster type for generation (e.g., "Orc")
 		"level": int(dungeon_level * level_mult),
-		"hp_mult": hp_mult,
+		# v0.9.700 (#29) — dungeon bosses are the "big challenge": ×2.5 on top of the
+		# per-dungeon hp_mult (default 2.0 → 5.0 effective) so they land ~10-12t at avg
+		# gear. Base monster HP is already +40%. Damage (attack_mult) untouched.
+		"hp_mult": hp_mult * 2.5,
 		"attack_mult": attack_mult,
 		"abilities": boss_data.get("abilities", []),
 		"is_boss": true,
