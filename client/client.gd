@@ -27735,8 +27735,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.719 — dungeon revamp: co-op + bigger dungeons + wandering pressure.
+	display_game("[color=#00FF00]v0.9.719[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ DUNGEON REVAMP (part 1).[/color] [b]Co-op dungeons:[/b] players in a dungeon no longer block the entrance, multiple people can run the same one, and party members each get their own full rewards. [b]Bigger & longer:[/b] low-tier dungeons gained floors + density.")
+	display_game("  [color=#1EFF00]◆ Wandering pressure replaces the step timer.[/color] The step counter is gone — instead, the longer you linger on a floor the more monsters wander in (away from you). Every dungeon now holds a [color=#87CEEB]guaranteed Escape Scroll[/color] in its treasures as your way out. Threats now clear only when you beat the boss.")
+	display_game("  [color=#1EFF00]◆ Colorful enemies (full palette).[/color] Wild monsters can now roll any color + pattern a companion can.")
+	display_game("")
+
 	# v0.9.718 — enemy cosmetics + flock fix.
-	display_game("[color=#00FF00]v0.9.718[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.718[/color]")
 	display_game("  [color=#1EFF00]◆ Colorful enemies.[/color] Some monsters now spawn with a [color=#7FD8FF]random color[/color] & pattern tint on their battle art — a splash of variety (and the groundwork for themed dungeons to come).")
 	display_game("  [color=#1EFF00]◆ Flock variant fix.[/color] Killing a [b]rare variant[/b] now correctly spawns a flock of that same variant (it was silently failing before).")
 	display_game("")
