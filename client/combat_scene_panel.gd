@@ -2611,9 +2611,10 @@ var _momentum_active: bool = false
 # v0.9.697 — Trickster Combo shares the same leftmost meter node (_momentum_label).
 # A character is either a Warrior or a Trickster, never both, so the two engines
 # never contend for the meter.
-var _combo: int = 0
+var _combo: int = 0  # v0.9.698 — repurposed as "Read" (Trickster Outsmart engine)
 var _combo_max: int = 5
 var _combo_active: bool = false
+var _outsmart_chance: int = 0  # live Outsmart % for the Read meter
 # v0.9.697 — Mage Focus shares the same meter node too (ramp: boosts all spells).
 var _focus: int = 0
 var _focus_max: int = 5
@@ -2645,12 +2646,13 @@ func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
-func update_combo(cur: int, mx: int, is_trickster: bool) -> void:
-	"""v0.9.697 — Trickster Combo meter. Unlike Momentum, Gambit is never hard-gated;
-	the meter communicates that Combo makes the gamble reliable + bigger. Drives the
-	Gambit card's risk note in _refresh_hand."""
+func update_read(cur: int, mx: int, outsmart_chance: int, is_trickster: bool) -> void:
+	"""v0.9.698 — Trickster Read meter (teal ◉). Every Trickster ability builds Read,
+	which raises your Outsmart chance. Shows the LIVE Outsmart % so you know when to
+	spring it. Drives the Gambit label + the '+◉ Read' builder badges in _refresh_hand."""
 	_combo = cur
 	_combo_max = max(1, mx)
+	_outsmart_chance = outsmart_chance
 	_combo_active = is_trickster
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
@@ -2663,15 +2665,10 @@ func update_combo(cur: int, mx: int, is_trickster: bool) -> void:
 	_momentum_label.visible = true
 	var pips := ""
 	for i in range(_combo_max):
-		pips += "[color=#C98CF0]✦[/color]" if i < cur else "[color=#4A3A5A]◇[/color]"
-	var tag: String
-	if cur >= _combo_max:
-		tag = "[color=#7AE07A]SURE THING[/color]"
-	elif cur > 0:
-		tag = "[color=#B06BE0]chain ×%d[/color]" % cur
-	else:
-		tag = "[color=#7A6E88]build the chain[/color]"
-	_momentum_label.text = "[color=#B06BE0]✦ Combo[/color]\n%s\n%s" % [pips, tag]
+		pips += "[color=#7FD8C8]◉[/color]" if i < cur else "[color=#33463F]○[/color]"
+	var oc_color := "#7AE07A" if outsmart_chance >= 70 else ("#7FD8C8" if outsmart_chance >= 40 else "#C89A5A")
+	var tag := "[color=%s]Outsmart %d%%[/color]" % [oc_color, outsmart_chance]
+	_momentum_label.text = "[color=#7FD8C8]◉ Read[/color]\n%s\n%s" % [pips, tag]
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
@@ -3623,10 +3620,10 @@ func _refresh_hand() -> void:
 				var _e := effect_lbl.text
 				effect_lbl.text = "+⚡ Momentum" if _e == "" else "+⚡  %s" % _e
 				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
-			elif _combo_active and _arch == "trickster" and card_name != "gambit":
+			elif _combo_active and _arch == "trickster":
 				var _e2 := effect_lbl.text
-				effect_lbl.text = "+✦ Combo" if _e2 == "" else "+✦  %s" % _e2
-				effect_lbl.add_theme_color_override("font_color", Color("#B06BE0"))
+				effect_lbl.text = "+◉ Read" if _e2 == "" else "+◉  %s" % _e2
+				effect_lbl.add_theme_color_override("font_color", Color("#7FD8C8"))
 			elif _focus_active and _arch == "mage" and card_name != "meteor":
 				var _e3 := effect_lbl.text
 				effect_lbl.text = "+◈ Focus" if _e3 == "" else "+◈  %s" % _e3
@@ -3644,19 +3641,6 @@ func _refresh_hand() -> void:
 				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
 			if value_pip:
 				value_pip.visible = false
-
-		# v0.9.697 — Trickster Gambit is NEVER hard-gated (you can always gamble); the
-		# card instead shows how Combo converts the risk. High Combo = a sure thing.
-		if _combo_active and card_name == "gambit" and effect_lbl:
-			if _combo >= _combo_max:
-				effect_lbl.text = "Guaranteed heist!"
-				effect_lbl.add_theme_color_override("font_color", Color("#7AE07A"))
-			elif _combo <= 0:
-				effect_lbl.text = "High-risk gamble"
-				effect_lbl.add_theme_color_override("font_color", Color("#E0A050"))
-			else:
-				effect_lbl.text = "Combo ×%d — safer" % _combo
-				effect_lbl.add_theme_color_override("font_color", Color("#B06BE0"))
 
 		# v0.9.697 — Mage Meteor DISCHARGES Focus (bigger per-Focus bonus, resets ramp).
 		# Not gated; the note shows the payoff for spending the ramp now.

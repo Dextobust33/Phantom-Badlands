@@ -67,6 +67,9 @@ const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via card
 const COMBO_MAX: int = 5
 const COMBO_SUCCESS_PER: int = 9   # +% Gambit success per Combo Point (5 ≈ guaranteed)
 const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point (4.5 → 7.0)
+# v0.9.698 — Trickster reframe: the `combo` field is now "Read". Every Trickster
+# ability builds Read; Read raises the Outsmart chance (the payoff = bypass HP).
+const READ_OUTSMART_PER: int = 15  # +% Outsmart success per Read (5 Read ≈ +75%)
 # v0.9.697 — Mage Focus: a RAMP. Every spell channeled builds Focus, which
 # passively boosts ALL spell damage. Meteor is the DISCHARGE — bigger per-Focus
 # bonus, then resets the ramp.
@@ -2581,11 +2584,52 @@ func process_special(combat: Dictionary) -> Dictionary:
 		"combat_ended": false
 	}
 
+func _outsmart_chance(character, monster, combat) -> int:
+	"""v0.9.698 — the SINGLE source for Outsmart success chance, so the real roll
+	(process_outsmart) and the Read meter's live preview (get_combat_display) always
+	agree. WITS vs enemy INT + level, plus the Trickster Read bonus."""
+	var player_wits = character.get_effective_stat("wits")
+	var monster_intelligence = int(monster.get("intelligence", 15))
+	var monster_level = int(monster.level)
+	var player_level = character.level
+	var base_chance = 5
+	var wits_bonus = 0
+	if player_wits > 10:
+		wits_bonus = int(18.0 * log(float(player_wits) / 10.0) / log(2.0))
+	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+	var trickster_bonus = 20 if is_trickster else 0
+	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
+	var smart_penalty = max(0, monster_intelligence - 10)
+	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 2)
+	var level_diff = monster_level - player_level
+	var level_penalty = 0
+	if level_diff > 0:
+		if level_diff <= 10:
+			level_penalty = level_diff * 2
+		elif level_diff <= 50:
+			level_penalty = 20 + (level_diff - 10)
+		else:
+			level_penalty = 60 + int((level_diff - 50) * 0.5)
+	var level_bonus = 0
+	if level_diff < 0:
+		level_bonus = min(15, abs(level_diff))
+	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
+	outsmart_chance += int(character.get_path_effect_total("outsmart_pct"))
+	# v0.9.698 — Trickster reframe: each Read (built by playing Trickster abilities)
+	# adds READ_OUTSMART_PER% so a well-read enemy becomes reliably outsmartable.
+	var read := clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+	outsmart_chance += read * READ_OUTSMART_PER
+	var base_max_chance = 85 if is_trickster else 70
+	var max_chance = max(30, base_max_chance - int(monster_intelligence / 3))
+	return clampi(outsmart_chance, 2, max_chance)
+
 func process_outsmart(combat: Dictionary) -> Dictionary:
 	"""Process outsmart action (Trickster ability).
 	Success = instant win with full rewards.
-	Failure = monster gets free attack, can't outsmart again this combat.
-	Tricksters get +20% bonus. High wits helps, high monster INT hurts."""
+	v0.9.698 — Failure now RESETS Read + gives the enemy a free hit, but you can
+	rebuild Read and try again (the old once-per-combat lock is gone).
+	Tricksters get +20% bonus. High wits helps, high monster INT hurts; Read makes
+	it reliable."""
 	var character = combat.character
 	var monster = combat.monster
 	var messages = []
@@ -2593,74 +2637,14 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	# Process status effects (poison/blind tick)
 	_process_status_ticks(character, messages)
 
-	# Check if already failed outsmart this combat
-	if combat.get("outsmart_failed", false):
-		messages.append("[color=#FF4444]You already failed to outsmart this enemy![/color]")
-		return {
-			"success": false,
-			"messages": messages,
-			"combat_ended": false
-		}
-
-	# Calculate outsmart chance - WIT vs monster INT and LEVEL DIFFERENCE are key factors
-	# Dumb monsters are easy to fool, smart ones nearly impossible
-	# Higher level monsters are harder to outsmart - it's risky to fight above your level
+	# v0.9.698 — no once-per-combat lock anymore: Outsmart is the Trickster payoff,
+	# repeatable by rebuilding Read. Chance comes from the shared _outsmart_chance
+	# helper (matches the meter preview); keep the locals the messages below need.
 	var player_wits = character.get_effective_stat("wits")
-	var monster_intelligence = monster.get("intelligence", 15)
-	var player_level = character.level
-	var monster_level = monster.level
-
-	# Base chance is very low - outsmart is situational
-	var base_chance = 5
-
-	# WIT bonus: logarithmic scaling for diminishing returns
-	# Formula: 18 * log2(WITS/10) = ~18% at WITS 20, ~36% at WITS 40, ~54% at WITS 80
-	var wits_bonus = 0
-	if player_wits > 10:
-		wits_bonus = int(18.0 * log(float(player_wits) / 10.0) / log(2.0))
-
-	# Trickster class bonus (+20%)
-	var class_type = character.class_type
-	var is_trickster = class_type in ["Thief", "Ranger", "Ninja"]
-	var trickster_bonus = 20 if is_trickster else 0
-
-	# Dumb monster bonus: +3% per INT below 10
-	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
-
-	# Smart monster penalty: -1% per INT above 10 (reduced from -2% for better balance)
-	var smart_penalty = max(0, monster_intelligence - 10)
-
-	# Additional penalty if monster INT exceeds your wits (-2% per point)
-	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 2)
-
-	# LEVEL DIFFERENCE PENALTY - This is the big balancing factor
-	# Fighting monsters much higher level is risky for Outsmart
-	var level_diff = monster_level - player_level
-	var level_penalty = 0
-	if level_diff > 0:
-		# Scaling penalty: -2% per level for first 10 levels, -1% per level after
-		if level_diff <= 10:
-			level_penalty = level_diff * 2  # -2% to -20% for 1-10 levels above
-		elif level_diff <= 50:
-			level_penalty = 20 + (level_diff - 10)  # -21% to -60% for 11-50 levels above
-		else:
-			# Severe penalty for extreme level differences
-			level_penalty = 60 + int((level_diff - 50) * 0.5)  # -60%+ for 51+ levels above
-
-	# Level BONUS for fighting weaker monsters (small bonus)
-	var level_bonus = 0
-	if level_diff < 0:
-		level_bonus = min(15, abs(level_diff))  # Up to +15% for fighting weaker monsters
-
-	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
-	# Path: outsmart_pct (Silver Tongue — +15% Outsmart success)
-	outsmart_chance += int(character.get_path_effect_total("outsmart_pct"))
-
-	# INT-based cap: High monster INT reduces maximum success chance
-	# Base max: 85% for tricksters, 70% for others. Reduced by monster INT/3
-	var base_max_chance = 85 if is_trickster else 70
-	var max_chance = max(30, base_max_chance - int(monster_intelligence / 3))  # Min 30% cap
-	outsmart_chance = clampi(outsmart_chance, 2, max_chance)
+	var monster_intelligence = int(monster.get("intelligence", 15))
+	var level_diff = int(monster.level) - character.level
+	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+	var outsmart_chance = _outsmart_chance(character, monster, combat)
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
 	var bonus_text = ""
@@ -2910,9 +2894,10 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 			"dungeon_monster_id": combat.get("dungeon_monster_id", -1)
 		}
 	else:
-		# FAILURE! Monster gets free attack
-		combat.outsmart_failed = true
-		messages.append("[color=#FF4444][b]FAILED![/b] The %s sees through your trick![/color]" % monster.name)
+		# FAILURE! v0.9.698 — you overplayed your hand: Read resets to 0 (rebuild it
+		# and try again — no permanent lock) and the monster gets a free attack.
+		combat["combo"] = 0
+		messages.append("[color=#FF4444][b]FAILED![/b] The %s sees through your trick![/color] [color=#B06BE0](Read reset)[/color]" % monster.name)
 
 		# Companion still attacks even when outsmart fails - they're loyal!
 		var _ca2 = messages.size()
@@ -4181,14 +4166,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 		if not character.use_energy(energy_cost):
 			return {"success": false, "messages": ["[color=#FF4444]Not enough energy! (Need %d)[/color]" % energy_cost], "combat_ended": false, "skip_monster_turn": true}
 
-	# v0.9.697 — Trickster Combo: every non-finisher ability adds a Combo Point.
-	# Gambit (the finisher) SPENDS the chain instead (handled in its case below),
-	# scaling its success chance + damage with the Combo built. Appended before
-	# the match so it reaches all of the early-returning ability paths.
-	if ability_name != "gambit":
-		var _newcombo: int = min(COMBO_MAX, int(combat.get("combo", 0)) + 1)
-		combat["combo"] = _newcombo
-		messages.append("[color=#B06BE0]✦ Combo %d/%d[/color]" % [_newcombo, COMBO_MAX])
+	# v0.9.698 — Trickster reframe: EVERY Trickster ability builds "Read" (the `combo`
+	# field), which raises your Outsmart chance (the payoff = bypass HP). Gambit is now
+	# just a damage card, so it builds Read too. Appended before the match so it reaches
+	# all the early-returning ability paths.
+	var _newread: int = min(COMBO_MAX, int(combat.get("combo", 0)) + 1)
+	combat["combo"] = _newread
+	messages.append("[color=#7FD8C8]◉ Read %d/%d[/color]" % [_newread, COMBO_MAX])
 
 	match ability_name:
 		"analyze":
@@ -4503,29 +4487,23 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			is_buff_ability = true
 
 		"gambit":
-			# v0.9.697 FINISHER — Trickster Combo turns the gamble into a sure thing.
-			# Combo raises BOTH the success chance (+9%/pt → ~guaranteed at 5) and the
-			# damage multiplier (4.5 → 7.0), then the whole chain is SPENT (win or lose).
-			# At 0 Combo it's the classic coin-flip that can backfire.
-			var _combo: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+			# v0.9.698 — Gambit is a pure DAMAGE card again (the Trickster payoff moved
+			# to Outsmart). High-risk, high-reward: WITS-scaled 4.5× hit on success, or
+			# self-damage on a miss. Still builds Read (handled before the match) so it
+			# also feeds your Outsmart odds — but it no longer spends anything.
 			var wits = character.get_effective_stat("wits")
 			var success_chance = 55 + int(wits / 4)  # 55% base + 0.25% per WITS
-			success_chance = min(80, success_chance)  # Cap at 80% (pre-Combo)
-			success_chance = min(100, success_chance + _combo * COMBO_SUCCESS_PER)
-			combat["combo"] = 0  # the finisher spends the whole chain, win or lose
-			if _combo > 0:
-				messages.append("[color=#B06BE0]✦ Combo x%d spent! (%d%% success, ×%.1f dmg)[/color]" % [_combo, success_chance, 4.5 + _combo * COMBO_DMG_PER])
+			success_chance = min(80, success_chance)  # Cap at 80%
 
 			if randf() * 100 < success_chance:
-				# Success - deal big damage with WITS scaling; Combo boosts the multiplier.
+				# Success - deal big damage with WITS scaling (4.5x multiplier).
 				# Variable cost (v0.9.261): damage scales by spend. Success chance
 				# stays constant — partial gambit is "same odds, smaller stakes".
 				var wits_mult = 1.0 + (sqrt(float(wits)) / 10.0)  # Same scaling as Ambush
 				var total_attack = character.get_total_attack() + character.get_buff_value("strength")
 				var damage_buff = character.get_buff_value("damage")
 				var damage_multiplier = 1.0 + (damage_buff / 100.0)
-				var combo_dmg_mult: float = 4.5 + float(_combo) * COMBO_DMG_PER
-				var base_dmg = int(total_attack * combo_dmg_mult * damage_multiplier * wits_mult * variable_fraction)
+				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult * variable_fraction)
 				# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 				var gambit_skill_bonus = character.get_skill_damage_bonus("gambit")
 				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg, combat)
@@ -7425,9 +7403,11 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"momentum": int(combat.get("momentum", 0)),  # v0.9.696 Warrior Momentum
 		"momentum_max": MOMENTUM_MAX,
 		"is_warrior_momentum": character.get_class_path() == "warrior",
-		"combo": int(combat.get("combo", 0)),  # v0.9.697 Trickster Combo
-		"combo_max": COMBO_MAX,
-		"is_trickster_combo": character.get_class_path() == "trickster",
+		"read": int(combat.get("combo", 0)),  # v0.9.698 Trickster Read (was Combo)
+		"read_max": COMBO_MAX,
+		"is_trickster_read": character.get_class_path() == "trickster",
+		# Live Outsmart % so players can decide when to spring it (single source: helper).
+		"outsmart_chance": (_outsmart_chance(character, combat.monster, combat) if (character.get_class_path() == "trickster" and combat.has("monster")) else 0),
 		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus
 		"focus_max": FOCUS_MAX,
 		"is_mage_focus": character.get_class_path() == "mage",

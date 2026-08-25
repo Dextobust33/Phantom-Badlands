@@ -8565,7 +8565,7 @@ func update_action_bar():
 		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E=Outsmart, R/1-5=Path abilities
 		var ability_actions = _get_combat_ability_actions()
 		var has_items = _has_usable_combat_items()
-		var can_outsmart = not combat_outsmart_failed  # Track if outsmart already failed this combat
+		var can_outsmart = true  # v0.9.698 — Outsmart is repeatable now (no once-per-combat lock); a failed attempt just resets Read + costs a free hit
 		var swap_attack = character_data.get("swap_attack_with_ability", false)
 
 		# Build base combat actions
@@ -8609,7 +8609,7 @@ func update_action_bar():
 	elif party_combat_active:
 		# Party combat: our turn — same layout as solo combat but no items
 		var ability_actions = _get_combat_ability_actions()
-		var can_outsmart = not combat_outsmart_failed
+		var can_outsmart = true  # v0.9.698 — Outsmart repeatable (see above)
 		var swap_attack = character_data.get("swap_attack_with_ability", false)
 		var attack_action = {"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true}
 		var first_ability = ability_actions[0] if ability_actions.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
@@ -32347,12 +32347,12 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	if combat_scene_panel == null or not combat_scene_panel.has_method("update_momentum"):
 		return
 	var is_warrior := bool(state.get("is_warrior_momentum", false))
-	var is_trickster := bool(state.get("is_trickster_combo", false))
+	var is_trickster := bool(state.get("is_trickster_read", false))
 	var is_mage := bool(state.get("is_mage_focus", false))
 	if is_warrior:
 		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true)
-	elif is_trickster and combat_scene_panel.has_method("update_combo"):
-		combat_scene_panel.update_combo(int(state.get("combo", 0)), int(state.get("combo_max", 5)), true)
+	elif is_trickster and combat_scene_panel.has_method("update_read"):
+		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)), int(state.get("outsmart_chance", 0)), true)
 	elif is_mage and combat_scene_panel.has_method("update_focus"):
 		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true)
 	else:

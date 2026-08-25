@@ -73,34 +73,34 @@ func _run():
 	await process_frame
 	_shot("res://claude_screenshots/momentum_ui_nonwarrior.png")
 
-	# ---- Trickster Combo variants (same meter node, purple ✦, Gambit risk note) ----
+	# ---- Trickster Read variants (teal ◉, live Outsmart %, "+◉ Read" badges) ----
 	var thand := ["sabotage", "ambush", "gambit"]
 	if panel.has_method("update_hand"):
 		panel.update_hand(thand, 8, 4)
 
-	# Combo mid (3/5): chain building, Gambit "safer".
-	if panel.has_method("update_combo"):
-		panel.update_combo(3, 5, true)
+	# Read mid (3/5): Outsmart ~55%.
+	if panel.has_method("update_read"):
+		panel.update_read(3, 5, 55, true)
 	await process_frame
 	await process_frame
 	await process_frame
-	_shot("res://claude_screenshots/combo_ui_c3.png")
+	_shot("res://claude_screenshots/read_ui_r3.png")
 
-	# Combo zero: Gambit "High-risk gamble".
-	if panel.has_method("update_combo"):
-		panel.update_combo(0, 5, true)
+	# Read zero: Outsmart low.
+	if panel.has_method("update_read"):
+		panel.update_read(0, 5, 12, true)
 	await process_frame
 	await process_frame
 	await process_frame
-	_shot("res://claude_screenshots/combo_ui_c0.png")
+	_shot("res://claude_screenshots/read_ui_r0.png")
 
-	# Combo full (5/5): SURE THING, Gambit "Guaranteed heist!".
-	if panel.has_method("update_combo"):
-		panel.update_combo(5, 5, true)
+	# Read full (5/5): Outsmart high (near-guaranteed).
+	if panel.has_method("update_read"):
+		panel.update_read(5, 5, 88, true)
 	await process_frame
 	await process_frame
 	await process_frame
-	_shot("res://claude_screenshots/combo_ui_c5.png")
+	_shot("res://claude_screenshots/read_ui_r5.png")
 
 	# ---- Mage Focus variants (same meter, blue ◈ ramp, Meteor discharge note) ----
 	var mhand := ["magic_bolt", "blast", "meteor"]
