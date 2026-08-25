@@ -27879,10 +27879,16 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 
 	# If no personal dungeon found, create a new personal instance
 	if instance_id == "":
+		# C0 — re-farm guard: a world 'D' lingers a few minutes after being entered
+		# (co-op window), so a player who ALREADY CLEARED it must not re-run it. Others
+		# who haven't cleared it can still enter.
+		if _world_dungeon_cleared_by(peer_id, character.x, character.y):
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]You've already cleared this dungeon — find another one to run again.[/color]"})
+			return
 		# C0 — entering a world 'D' no longer instantly consumes it. Instead the tile
 		# stays enterable for a re-entry window so OTHER players can also spin up their
-		# own instance from it (concurrent play). Threat pacing is preserved (the post
-		# cooldown still stamps on first entry).
+		# own instance from it (concurrent play). The post THREAT is NOT cleared here —
+		# it clears when the boss is defeated (_complete_dungeon).
 		_on_world_dungeon_entered(character.x, character.y)
 
 		# Players always get their own dungeon instance now
@@ -27893,6 +27899,11 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 		# Store hard mode flag on instance
 		if hard_mode and active_dungeons.has(instance_id):
 			active_dungeons[instance_id]["hard_mode"] = true
+		# C0 — remember which world 'D' tile this personal instance was entered from,
+		# so completion can clear that post's threat + lock the tile for this player.
+		if active_dungeons.has(instance_id):
+			active_dungeons[instance_id]["origin_wx"] = character.x
+			active_dungeons[instance_id]["origin_wy"] = character.y
 		# Track this as a non-quest dungeon run
 		if not player_dungeon_instances.has(peer_id):
 			player_dungeon_instances[peer_id] = {}
@@ -29318,10 +29329,43 @@ func _on_world_dungeon_entered(x: int, y: int):
 		if inst.world_x == x and inst.world_y == y:
 			if inst.get("entered_despawn_at", 0) <= 0:
 				inst["entered_despawn_at"] = int(Time.get_unix_time_from_system()) + int(DUNGEON_ENTERED_DESPAWN_DELAY)
-				# Threat pacing: first entry answers the threat (post cooldown stamp).
-				_stamp_post_cooldowns_for_cleared_dungeon(int(inst.world_x), int(inst.world_y), instance_id)
+				# NOTE: threat is NOT cleared on entry (user 2026-08-25) — it clears
+				# when the boss is defeated. See _on_world_dungeon_boss_defeated.
 				log_message("World dungeon %s at (%d,%d) entered — stays enterable %ds more" % [instance_id, x, y, int(DUNGEON_ENTERED_DESPAWN_DELAY)])
 			break
+
+func _world_dungeon_cleared_by(peer_id: int, x: int, y: int) -> bool:
+	"""C0 — has this player already CLEARED the world dungeon at (x,y)? (re-farm guard).
+	The 'D' lingers a few minutes for co-op; once you've beaten its boss you're locked
+	out of re-running THAT tile (others aren't)."""
+	for instance_id in active_dungeons:
+		var inst = active_dungeons[instance_id]
+		if inst.get("owner_peer_id", -1) >= 0:
+			continue  # world dungeons only
+		if inst.world_x == x and inst.world_y == y:
+			return peer_id in inst.get("cleared_by", [])
+	return false
+
+func _on_world_dungeon_boss_defeated(peer_id: int, origin_wx: int, origin_wy: int):
+	"""C0 — a player beat the boss of a personal instance that originated from the world
+	'D' at (origin_wx, origin_wy). Now (and only now) clear that post's threat and lock
+	the tile against a re-farm by this player. The 'D' stays enterable for others who
+	haven't cleared it until it despawns."""
+	for instance_id in active_dungeons:
+		var inst = active_dungeons[instance_id]
+		if inst.get("owner_peer_id", -1) >= 0:
+			continue  # world dungeons only
+		if inst.world_x == origin_wx and inst.world_y == origin_wy:
+			# Threat clears on the FIRST boss defeat (idempotent re-stamp is harmless).
+			if not inst.get("threat_cleared", false):
+				inst["threat_cleared"] = true
+				_stamp_post_cooldowns_for_cleared_dungeon(int(inst.world_x), int(inst.world_y), instance_id)
+			# Per-player re-farm lock.
+			var cleared: Array = inst.get("cleared_by", [])
+			if peer_id not in cleared:
+				cleared.append(peer_id)
+			inst["cleared_by"] = cleared
+			return
 
 func get_visible_dungeons(center_x: int, center_y: int, radius: int, peer_id: int = -1) -> Array:
 	"""Get all dungeon entrances visible within the given radius.
@@ -31962,8 +32006,15 @@ func _complete_dungeon(peer_id: int):
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
 	var instance_id = character.current_dungeon_id
 	var inst_sub_tier = 1
+	# C0 — capture the origin world 'D' (set on entry) so boss defeat can clear that
+	# post's threat + lock the tile against a re-farm. -999999 = not a world-'D' run
+	# (e.g. a quest dungeon) → no threat/lock.
+	var origin_wx = -999999
+	var origin_wy = -999999
 	if active_dungeons.has(instance_id):
 		inst_sub_tier = active_dungeons[instance_id].get("sub_tier", 1)
+		origin_wx = int(active_dungeons[instance_id].get("origin_wx", -999999))
+		origin_wy = int(active_dungeons[instance_id].get("origin_wy", -999999))
 
 	# Calculate rewards (sub-tier scales XP)
 	var rewards = DungeonDatabaseScript.calculate_completion_rewards(dungeon_type, character.dungeon_floor + 1, inst_sub_tier)
@@ -32106,6 +32157,11 @@ func _complete_dungeon(peer_id: int):
 
 	character.exit_dungeon()
 
+	# C0 — boss is down: clear the origin post's threat + lock the world 'D' against a
+	# re-farm by this player (no-op for non-world-'D' runs / quest dungeons).
+	if origin_wx != -999999:
+		_on_world_dungeon_boss_defeated(peer_id, origin_wx, origin_wy)
+
 	# Build completion message
 	var hard_label = " [HARD]" if is_hard_completion else ""
 	var completion_msg = "[color=#FFD700]===== DUNGEON COMPLETE!%s =====[/color]\n" % hard_label
@@ -32199,6 +32255,27 @@ func _complete_dungeon(peer_id: int):
 						f_egg_lost = true
 						f_egg_name = f_egg_data.get("name", boss_egg_monster + " Egg")
 
+			# C0 (party rewards) — each member rolls their OWN boss materials + card
+			# (randomized independently per player, not a shared/split pool), matching
+			# the leader. Boss egg above is the dungeon's signature (same type for all).
+			var f_bonus_material_msgs: Array = []
+			var f_boss_mat_count = 1
+			if tier >= 4:
+				f_boss_mat_count = randi_range(1, 2)
+			if tier >= 7:
+				f_boss_mat_count = randi_range(2, 3)
+			for _fi in range(f_boss_mat_count):
+				for mat in _roll_dungeon_gather("ore", resource_tier, tier):
+					follower.add_crafting_material(mat.id, mat.quantity)
+					var _fq = " x%d" % mat.quantity if mat.quantity > 1 else ""
+					f_bonus_material_msgs.append("[color=#1EFF00]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), _fq])
+			if tier >= 7:
+				for mat in _roll_dungeon_gather("crystal", resource_tier, tier):
+					follower.add_crafting_material(mat.id, mat.quantity)
+					var _fq2 = " x%d" % mat.quantity if mat.quantity > 1 else ""
+					f_bonus_material_msgs.append("[color=#00FFCC]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), _fq2])
+			var f_card_reward = _roll_dungeon_card_reward(follower, int(tier))
+
 			follower.record_dungeon_completion(dungeon_type)
 
 			# Quest progress for follower
@@ -32219,14 +32296,22 @@ func _complete_dungeon(peer_id: int):
 
 			follower.exit_dungeon()
 
+			# C0 — followers cleared the same origin 'D' too: lock it against a re-farm.
+			if origin_wx != -999999:
+				_on_world_dungeon_boss_defeated(pid, origin_wx, origin_wy)
+
 			# Build follower completion message
 			var f_msg = "[color=#FFD700]===== DUNGEON COMPLETE! =====[/color]\n"
 			f_msg += "[color=#00FF00]%s Cleared![/color]\n\n" % dungeon_data.name
 			f_msg += "[color=#00BFFF]+%d XP[/color]\n" % f_rewards.xp
 			if f_egg_given:
-				f_msg += "[color=#FF69B4]★ %s obtained! ★[/color]" % f_egg_name
+				f_msg += "[color=#FF69B4]★ %s obtained! ★[/color]\n" % f_egg_name
 			elif f_egg_lost:
-				f_msg += "[color=#FF6666]★ %s found but eggs full! ★[/color]" % f_egg_name
+				f_msg += "[color=#FF6666]★ %s found but eggs full! ★[/color]\n" % f_egg_name
+			if not f_bonus_material_msgs.is_empty():
+				f_msg += "\n[color=#FFD700]Boss Materials:[/color]\n" + "\n".join(f_bonus_material_msgs) + "\n"
+			if f_card_reward.get("granted", false):
+				f_msg += "\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3)[/color]\n" % [str(f_card_reward.get("display", "")), int(f_card_reward.get("new_count", 2))]
 			if f_xp_result.leveled_up:
 				f_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % follower.level
 
@@ -32234,6 +32319,7 @@ func _complete_dungeon(peer_id: int):
 				"type": "dungeon_complete",
 				"dungeon_name": dungeon_data.name,
 				"rewards": f_rewards,
+				"card_reward": f_card_reward,
 				"leveled_up": f_xp_result.leveled_up,
 				"new_level": follower.level,
 				"message": f_msg,
