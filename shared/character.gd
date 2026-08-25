@@ -365,7 +365,7 @@ var _path_fx_cache_count: int = -1
 # early-rank cost roughly halved. R5 Legend = +30% damage, R6 Mythic = +45%.
 # Backfill still uses 200 uses so legacy characters now land between R3-R4 on
 # load instead of capping at R2 — small QoL bump as a side effect.
-const MASTERY_RANK_THRESHOLDS: Array = [10, 50, 250, 1200, 4000, 10000]
+const MASTERY_RANK_THRESHOLDS: Array = [10, 35, 100, 275, 650, 1400]  # v0.9.701 (#48) — compressed from [10,50,250,1200,4000,10000]: old curve made ranks 4-6 unreachable (~1 use/fight → thousands of fights) + the per-combat cap never binds. New curve keeps the fast first milestone but makes choices recur mid-game + ranks 5-6 reachable long-term.
 const MASTERY_RANK_DAMAGE_MULT: Array = [0.80, 0.90, 1.00, 1.10, 1.20, 1.30, 1.45]
 const MASTERY_RANK_NAMES: Array = ["Untrained", "Novice", "Adept", "Expert", "Master", "Legend", "Mythic"]
 const MASTERY_RANK_BACKFILL_USES: int = 200
