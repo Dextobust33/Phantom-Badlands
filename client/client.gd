@@ -39449,16 +39449,18 @@ func display_dungeon_floor():
 	display_game("[color=%s]===== %s =====[/color]" % [dungeon_color, dungeon_name])
 	display_game("Floor %d/%d | Defeated: %d" % [floor_num, total_floors, encounters_cleared])
 
-	# Step pressure counter
-	var steps_taken = dungeon_data.get("steps_taken", 0)
-	var step_limit = dungeon_data.get("step_limit", 999)
-	var step_pct = float(steps_taken) / float(max(1, step_limit))
-	var step_color = "#FFFFFF"
-	if step_pct >= 0.90:
-		step_color = "#FF4444"
-	elif step_pct >= 0.75:
-		step_color = "#FFFF00"
-	display_game("[color=%s]Steps: %d/%d[/color]" % [step_color, steps_taken, step_limit])
+	# Step pressure counter — C2: the step budget is retired (server sends step_limit
+	# <= 0). Hide the counter; wandering monsters are the pressure now.
+	var step_limit = int(dungeon_data.get("step_limit", 0))
+	if step_limit > 0:
+		var steps_taken = int(dungeon_data.get("steps_taken", 0))
+		var step_pct = float(steps_taken) / float(max(1, step_limit))
+		var step_color = "#FFFFFF"
+		if step_pct >= 0.90:
+			step_color = "#FF4444"
+		elif step_pct >= 0.75:
+			step_color = "#FFFF00"
+		display_game("[color=%s]Steps: %d/%d[/color]" % [step_color, steps_taken, step_limit])
 
 	if alive_count > 0:
 		var alert_text = " ([color=#FF0000]%d alert![/color])" % alert_count if alert_count > 0 else ""

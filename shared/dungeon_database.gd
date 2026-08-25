@@ -2855,10 +2855,10 @@ const ESCAPE_SCROLL_TIERS = {
 	8: "scroll_of_supreme_escape", 9: "scroll_of_supreme_escape"
 }
 
-static func roll_escape_scroll_drop(dungeon_tier: int) -> Dictionary:
-	"""20% chance to drop an escape scroll from treasure. Returns empty dict or scroll item."""
-	if randi() % 100 >= 20:
-		return {}
+static func make_escape_scroll(dungeon_tier: int) -> Dictionary:
+	"""Build the tier-appropriate escape-scroll item (NO roll). Used to GUARANTEE the
+	first escape scroll of a dungeon run (C2 — the exit now that the step budget is
+	retired) and by the 20% treasure roll below."""
 	var scroll_id = ESCAPE_SCROLL_TIERS.get(dungeon_tier, "scroll_of_escape")
 	var tier_max = 4
 	var scroll_name = "Scroll of Escape"
@@ -2874,3 +2874,9 @@ static func roll_escape_scroll_drop(dungeon_tier: int) -> Dictionary:
 		"tier_max": tier_max,
 		"type": "consumable"
 	}
+
+static func roll_escape_scroll_drop(dungeon_tier: int) -> Dictionary:
+	"""20% chance to drop an escape scroll from treasure. Returns empty dict or scroll item."""
+	if randi() % 100 >= 20:
+		return {}
+	return make_escape_scroll(dungeon_tier)

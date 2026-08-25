@@ -112,6 +112,9 @@ var active_combat_loot: Dictionary = {}
 # Loot Lab (#49 dev testing) — peer_id → true when force-mode is on: gather/craft
 # always show the minigame + the board is seeded with one of each rare cell.
 var loot_debug_peers: Dictionary = {}
+# C2 — track whether a peer has been GUARANTEED their escape scroll this dungeon run
+# (the first treasure forces one; cleared on each dungeon entry).
+var _dungeon_scroll_granted: Dictionary = {}
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
@@ -231,6 +234,12 @@ const DUNGEON_DESPAWN_DELAY = 60.0  # Despawn completed dungeons after 60 second
 # enters, so multiple players can each spin up their own instance from the same tile
 # (concurrent play) instead of the tile vanishing the instant one person enters.
 const DUNGEON_ENTERED_DESPAWN_DELAY = 300.0  # 5 min re-entry window after first entry
+# C2 (dungeon revamp) — wandering-monster pressure that REPLACES the retired step budget.
+# The longer you linger on a floor, the more wandering monsters spawn (away from you),
+# up to a cap — so dawdling/backtracking gets more dangerous and pushes you forward.
+const DUNGEON_WANDER_SPAWN_STEPS = 20   # +1 wandering monster per this many floor steps
+const DUNGEON_WANDER_SPAWN_CAP = 4      # max EXTRA monsters beyond the floor's initial set
+const DUNGEON_WANDER_SPAWN_MIN_DIST = 6 # never spawn within this Manhattan dist of the player
 const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
@@ -27810,8 +27819,8 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	var confirmed = message.get("confirmed", false)
 	if not confirmed:
 		var warning_text = "[color=#FF6666]WARNING: There is NO free exit from dungeons![/color]\n"
-		warning_text += "[color=#FFAA00]To leave early, you need an Escape Scroll. You can also exit by defeating the boss.[/color]\n"
-		warning_text += "[color=#808080]If you run out of steps, the dungeon collapses — losing materials and damaging equipment.[/color]\n"
+		warning_text += "[color=#FFAA00]To leave early, use an Escape Scroll (every dungeon holds at least one — search its treasures). You can also exit by defeating the boss.[/color]\n"
+		warning_text += "[color=#808080]The longer you linger on a floor, the more monsters wander in — keep moving forward.[/color]\n"
 		if character.level < dungeon_data.min_level:
 			var level_diff = dungeon_data.min_level - character.level
 			warning_text += "\n[color=#FF4444]You are also %d levels below the recommended level %d![/color]\n" % [level_diff, dungeon_data.min_level]
@@ -27936,6 +27945,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 				return
 		# Enter leader at start position
 		character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
+		_dungeon_scroll_granted.erase(peer_id)  # C2 — fresh run, re-guarantee a scroll
 		if not instance.active_players.has(peer_id):
 			instance.active_players.append(peer_id)
 		_send_dungeon_state(peer_id)
@@ -27953,6 +27963,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 				follower_x = start_pos.x
 				follower_y = start_pos.y  # Fallback: same position
 			characters[pid].enter_dungeon(instance_id, dungeon_type, follower_x, follower_y)
+			_dungeon_scroll_granted.erase(pid)  # C2 — fresh run per member
 			if not instance.active_players.has(pid):
 				instance.active_players.append(pid)
 			_send_dungeon_state(pid)
@@ -27961,6 +27972,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	else:
 		# Solo entry
 		character.enter_dungeon(instance_id, dungeon_type, start_pos.x, start_pos.y)
+		_dungeon_scroll_granted.erase(peer_id)  # C2 — fresh run, re-guarantee a scroll
 		if not instance.active_players.has(peer_id):
 			instance.active_players.append(peer_id)
 		_send_dungeon_state(peer_id)
@@ -28443,30 +28455,15 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		var decay_dmg = clamp(int(character.get_total_max_hp() * 0.06), 1, 1000)
 		character.current_hp = max(1, character.current_hp - decay_dmg)
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#884466]Entropy itself rots at you ([color=#FF4444]-%d HP[/color]).[/color]" % decay_dmg})
-	var dungeon_data_sp = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
-	var tier_sp = dungeon_data_sp.get("tier", 1) if not dungeon_data_sp.is_empty() else 1
-	var is_boss_floor_sp = character.dungeon_floor >= dungeon_data_sp.get("floors", 3) - 1 if not dungeon_data_sp.is_empty() else false
-	var step_limit = DungeonDatabaseScript.get_step_limit(tier_sp, is_boss_floor_sp)
-	# Hard mode: 20% fewer steps allowed
-	if active_dungeons.has(instance_id) and active_dungeons[instance_id].get("hard_mode", false):
-		step_limit = int(step_limit * 0.8)
-	var step_pct = float(character.dungeon_floor_steps) / float(step_limit)
-
 	# Collect event messages to send AFTER dungeon state (so they don't get cleared)
 	var dungeon_event_texts: Array[String] = []
 
-	if character.dungeon_floor_steps >= step_limit:
-		# Collapse!
-		_collapse_dungeon(peer_id)
-		return
-	elif step_pct >= 0.90:
-		# Earthquake warning + damage
-		var quake_dmg = int(character.get_total_max_hp() * randf_range(0.05, 0.10))
-		character.current_hp = max(1, character.current_hp - quake_dmg)
-		dungeon_event_texts.append("[color=#FF8800]EARTHQUAKE! Rocks fall! [color=#FF4444]-%d HP[/color][/color] [color=#FF4444][Steps: %d/%d][/color]" % [quake_dmg, character.dungeon_floor_steps, step_limit])
-	elif step_pct >= 0.75:
-		# Warning
-		dungeon_event_texts.append("[color=#FFFF00]The walls tremble... [Steps: %d/%d][/color]" % [character.dungeon_floor_steps, step_limit])
+	# C2 (dungeon revamp) — the STEP BUDGET is RETIRED. The old collapse / "walls
+	# tremble" warnings / earthquake damage are gone; the pressure now comes from
+	# wandering monsters that ESCALATE the longer you linger on a floor (below).
+	# dungeon_floor_steps is kept purely as the escalation clock. Escape Scrolls (now
+	# guaranteed to spawn in each dungeon) are the way out for a player who can't win.
+	_maybe_escalate_wandering_spawns(peer_id, instance_id)
 
 	# === TRAP CHECK: Check if player stepped on a hidden trap ===
 	var trap = _check_dungeon_trap(instance_id, character.dungeon_floor, new_x, new_y)
@@ -31334,10 +31331,6 @@ func _send_dungeon_state(peer_id: int):
 	if is_hard:
 		display_name += " [HARD]"
 
-	# Hard mode: 20% fewer steps allowed (more pressure)
-	var base_step_limit = DungeonDatabaseScript.get_step_limit(dungeon_data.tier, character.dungeon_floor >= dungeon_data.floors - 1)
-	var effective_step_limit = int(base_step_limit * 0.8) if is_hard else base_step_limit
-
 	send_to_peer(peer_id, {
 		"type": "dungeon_state",
 		"dungeon_type": character.current_dungeon_type,
@@ -31357,7 +31350,7 @@ func _send_dungeon_state(peer_id: int):
 		"monsters": monster_list,
 		"npcs": npc_list,
 		"steps_taken": character.dungeon_floor_steps,
-		"step_limit": effective_step_limit,
+		"step_limit": 0,  # C2 — step budget retired; 0 signals the client to hide the counter
 		"triggered_traps": _get_triggered_traps(instance_id, character.dungeon_floor),
 		"awaiting_final_chest": pending_final_chest.has(peer_id)
 	})
@@ -31596,10 +31589,15 @@ func _open_dungeon_treasure(peer_id: int):
 			else:
 				reward_messages.append("[color=#FF6666]★ %s found but eggs full! (%d/%d) ★[/color]" % [egg_data.name, character.incubating_eggs.size(), _egg_cap])
 
-	# Roll for escape scroll drop (20% chance)
+	# Escape scroll drop. C2 — the step budget is retired, so escape scrolls are the way
+	# out. GUARANTEE at least one per dungeon run: if the 20% roll misses and this peer
+	# hasn't been granted one yet, force it here. Subsequent treasures keep the 20% chance
+	# for extras.
 	var dungeon_data_t = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
 	var dungeon_tier = dungeon_data_t.get("tier", 1) if not dungeon_data_t.is_empty() else 1
 	var scroll_drop = DungeonDatabaseScript.roll_escape_scroll_drop(dungeon_tier)
+	if scroll_drop.is_empty() and not bool(_dungeon_scroll_granted.get(peer_id, false)):
+		scroll_drop = DungeonDatabaseScript.make_escape_scroll(dungeon_tier)
 	if not scroll_drop.is_empty():
 		var scroll_item = {
 			"name": scroll_drop.name,
@@ -31612,6 +31610,7 @@ func _open_dungeon_treasure(peer_id: int):
 		}
 		if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
 			character.inventory.append(scroll_item)
+			_dungeon_scroll_granted[peer_id] = true
 			reward_messages.append("[color=#87CEEB]★ %s ★[/color]" % scroll_drop.name)
 		else:
 			reward_messages.append("[color=#808080]%s found but inventory full![/color]" % scroll_drop.name)
@@ -31709,6 +31708,10 @@ func _advance_dungeon_floor(peer_id: int):
 
 	# Advance floor — including party members
 	character.advance_dungeon_floor(entrance_pos.x, entrance_pos.y)
+	# C2 — reset the wandering-spawn escalation counter for the new floor (the step
+	# clock, dungeon_floor_steps, is reset inside advance_dungeon_floor).
+	if active_dungeons.has(instance_id):
+		active_dungeons[instance_id]["floor_escalation_spawned"] = 0
 
 	send_to_peer(peer_id, {
 		"type": "dungeon_floor_change",
@@ -33041,6 +33044,95 @@ func _get_monster_at_position(instance_id: String, floor_num: int, x: int, y: in
 		if m.alive and m.x == x and m.y == y:
 			return m
 	return null
+
+func _maybe_escalate_wandering_spawns(peer_id: int, instance_id: String) -> void:
+	"""C2 — the step budget is retired; wandering-monster ESCALATION is the pressure.
+	Every DUNGEON_WANDER_SPAWN_STEPS floor-steps, spawn +1 wandering monster (away from
+	the player) up to DUNGEON_WANDER_SPAWN_CAP beyond the floor's initial set. Resets per
+	floor (dungeon_floor_steps resets on advance; floor_escalation_spawned reset there
+	too). No escalation on the boss floor — the boss is the pressure there."""
+	if not characters.has(peer_id) or not active_dungeons.has(instance_id):
+		return
+	var character = characters[peer_id]
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	if dungeon_data.is_empty():
+		return
+	var floor_num = character.dungeon_floor
+	if floor_num >= int(dungeon_data.get("floors", 3)) - 1:
+		return  # boss floor
+	var target: int = mini(DUNGEON_WANDER_SPAWN_CAP, int(character.dungeon_floor_steps / DUNGEON_WANDER_SPAWN_STEPS))
+	var spawned: int = int(active_dungeons[instance_id].get("floor_escalation_spawned", 0))
+	if target <= spawned:
+		return
+	var did := 0
+	for _i in range(target - spawned):
+		if _spawn_one_wandering_monster(instance_id, floor_num, character):
+			did += 1
+	if did > 0:
+		active_dungeons[instance_id]["floor_escalation_spawned"] = spawned + did
+
+func _spawn_one_wandering_monster(instance_id: String, floor_num: int, character) -> bool:
+	"""C2 — spawn a single extra wandering monster on the current floor, at least
+	DUNGEON_WANDER_SPAWN_MIN_DIST from the player. Mirrors the initial-spawn entity
+	shape. Returns false if no safe spot was found (never spawns near the player)."""
+	if not dungeon_floors.has(instance_id):
+		return false
+	var floors = dungeon_floors[instance_id]
+	if floor_num < 0 or floor_num >= floors.size():
+		return false
+	var grid = floors[floor_num]
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+	if dungeon_data.is_empty():
+		return false
+	var tier = dungeon_data.tier
+	var boss_data = dungeon_data.get("boss", {})
+	var monster_type = boss_data.get("monster_type", "Goblin")
+	var display_color = DungeonDatabaseScript.MONSTER_DISPLAY_COLORS.get(tier, "#FF4444")
+	var dungeon_level = int(active_dungeons.get(instance_id, {}).get("dungeon_level", character.level))
+	var monster_level = int(dungeon_level * (1.0 + floor_num * 0.1))
+	var entrance_pos = Vector2i(-1, -1)
+	var exit_pos = Vector2i(-1, -1)
+	for y in range(grid.size()):
+		for x in range(grid[y].size()):
+			if grid[y][x] == DungeonDatabaseScript.TileType.ENTRANCE:
+				entrance_pos = Vector2i(x, y)
+			elif grid[y][x] == DungeonDatabaseScript.TileType.EXIT:
+				exit_pos = Vector2i(x, y)
+	if not dungeon_monsters.has(instance_id):
+		dungeon_monsters[instance_id] = {}
+	if not dungeon_monsters[instance_id].has(floor_num):
+		dungeon_monsters[instance_id][floor_num] = []
+	var floor_monsters = dungeon_monsters[instance_id][floor_num]
+	var occupied = []
+	for m in floor_monsters:
+		if m.get("alive", false):
+			occupied.append(Vector2i(m.x, m.y))
+	var player_pos = Vector2i(character.dungeon_x, character.dungeon_y)
+	var pos = Vector2i(-1, -1)
+	for _try in range(40):
+		var cand = _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied)
+		if cand.x < 0:
+			break
+		if (abs(cand.x - player_pos.x) + abs(cand.y - player_pos.y)) >= DUNGEON_WANDER_SPAWN_MIN_DIST:
+			pos = cand
+			break
+	if pos.x < 0:
+		return false  # no safe spot away from the player — skip (never spawn on them)
+	var display_char = monster_type[0].to_upper() if monster_type.length() > 0 else "M"
+	floor_monsters.append({
+		"id": next_dungeon_monster_id,
+		"x": pos.x, "y": pos.y,
+		"monster_type": monster_type,
+		"level": monster_level,
+		"display_char": display_char,
+		"display_color": display_color,
+		"alive": true,
+		"alert": false,
+		"is_boss": false,
+		"boss_data": {}
+	})
+	next_dungeon_monster_id += 1
+	return true
 
 func _kill_dungeon_monster(instance_id: String, floor_num: int, monster_id: int):
 	"""Mark a monster entity as dead"""
