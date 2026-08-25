@@ -230,7 +230,12 @@ func _build_layout() -> void:
 
 func _build_card(slot_index: int) -> PanelContainer:
 	var card := PanelContainer.new()
+	# v0.9.713 — FIXED size (min == max) + clip so a tall reveal (long rare name +
+	# kind tag) can't grow the card and stretch its whole GridContainer row.
 	card.custom_minimum_size = Vector2(112, 76)
+	card.size = Vector2(112, 76)
+	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	card.clip_contents = true
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.10, 0.08, 0.14, 1.0)
 	sb.border_color = Color(0.55, 0.45, 0.85, 1)
@@ -241,8 +246,10 @@ func _build_card(slot_index: int) -> PanelContainer:
 
 	var inner := RichTextLabel.new()
 	inner.bbcode_enabled = true
-	inner.fit_content = true
+	inner.fit_content = false  # don't let the label force the card taller
 	inner.scroll_active = false
+	inner.clip_contents = true
+	inner.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	inner.add_theme_font_size_override("normal_font_size", 13)
 	inner.text = "[center][color=#888888]?[/color][/center]"

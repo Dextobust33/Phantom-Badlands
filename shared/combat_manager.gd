@@ -1263,6 +1263,15 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		first_strike_msg += "\n" + _indent_multiline(monster_result.get("message", ""), "         ")
 		first_strike_msg += "\n[color=#444444]─────────────────────────────[/color]"
 
+		# v0.9.713 — push the first strike into the combat LOG too, so it shows in the
+		# combat-log window (before this it lived only in the encounter/main text, so a
+		# player attacked before Round 1 had no way to see what hit them in the log).
+		if combat_state.has("combat_log"):
+			combat_state["combat_log"].append("[color=#FF4444]⚔ %s strikes first![/color]" % monster.name)
+			var _fs_line = String(monster_result.get("message", "")).strip_edges()
+			if _fs_line != "":
+				combat_state["combat_log"].append(_fs_line)
+
 		# Check if player died from first strike
 		if character.current_hp <= 0:
 			var death_extra = ""
