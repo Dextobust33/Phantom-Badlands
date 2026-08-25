@@ -1018,7 +1018,7 @@ func _animate_newly_revealed(slots: Array) -> void:
 			var t := create_tween()
 			t.tween_property(card, "scale", Vector2(1.0, 1.0), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 			# v0.9.706 juice — a gold ring on the rare exciting cells.
-			if kind in ["JACKPOT", "MOTHERLODE", "WILDCARD", "AUTO_MARKET", "PROSPECTOR_BONUS", "BAR_BONUS", "EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL"]:
+			if kind in ["JACKPOT", "MOTHERLODE", "WILDCARD", "AUTO_MARKET", "PROSPECTOR_BONUS", "BAR_BONUS", "EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL", "WIDE_HARVEST"]:
 				_play_gather_celebration(card)
 
 

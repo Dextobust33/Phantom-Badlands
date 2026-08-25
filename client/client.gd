@@ -36344,7 +36344,7 @@ func _play_scratch_off_cue(is_miss: bool, item: Dictionary) -> void:
 		return
 	var kind: String = String(item.get("kind", "NORMAL"))
 	match kind:
-		"JACKPOT", "MOTHERLODE", "WILDCARD", "AUTO_MARKET", "PROSPECTOR_BONUS", "EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL":
+		"JACKPOT", "MOTHERLODE", "WILDCARD", "AUTO_MARKET", "PROSPECTOR_BONUS", "EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL", "WIDE_HARVEST":
 			# v0.9.706 juice — the rare exciting cells get the "you got it!" fanfare.
 			if rare_drop_player and rare_drop_player.stream:
 				rare_drop_player.play()

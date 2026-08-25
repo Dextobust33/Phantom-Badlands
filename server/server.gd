@@ -19759,6 +19759,8 @@ func _roll_craft_slot_kind(pool: String, t: float) -> String:
 				return "LUCKY_TOOL"
 			if randf() < 0.04:
 				return "PROSPECTOR_TOOL"
+			if randf() < 0.03:
+				return "WIDE_HARVEST"
 			# Tools: quality still drives base rarity (durability + bar tuning
 			# scale with rarity in DropTables.generate_tool), but extra slot
 			# kinds boost durability / minigame ease on top.
@@ -19861,6 +19863,8 @@ func _build_craft_slot(kind: String, recipe: Dictionary) -> Dictionary:
 			return {"kind": "LUCKY_TOOL", "name": "Lucky", "type": "craft_affix", "score": 1, "output_name": output_name}
 		"PROSPECTOR_TOOL":
 			return {"kind": "PROSPECTOR_TOOL", "name": "Prospector's", "type": "craft_affix", "score": 1, "output_name": output_name}
+		"WIDE_HARVEST":
+			return {"kind": "WIDE_HARVEST", "name": "Wide Harvest", "type": "craft_affix", "score": 1, "output_name": output_name}
 		"DUPLICATE":
 			return {"kind": "DUPLICATE", "name": "Bonus +1", "type": "craft_bonus", "score": 1, "output_name": output_name}
 		"DUPLICATE_2":
@@ -19893,7 +19897,7 @@ func _craft_preview_slot(slot: Dictionary) -> Dictionary:
 			color = "#FFD700"; rarity = "epic"
 		"DUPLICATE_3":
 			color = "#FF8000"; rarity = "legendary"
-		"EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL":
+		"EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL", "WIDE_HARVEST":
 			color = "#FFD700"; rarity = "epic"
 	return {"kind": kind, "name": nm, "color": color, "rarity": rarity}
 
@@ -19938,6 +19942,19 @@ func _roll_scratch_off_slot_kind(skill: int) -> String:
 	if roll < lucky_chance:
 		return "LUCKY"
 	return "NORMAL"
+
+func _gather_skill_for_job(character, job: String) -> int:
+	"""The relevant skill level for a gather job (legacy skills vs job_levels)."""
+	match job:
+		"fishing":
+			return int(character.fishing_skill)
+		"mining":
+			return int(character.mining_skill)
+		"logging":
+			return int(character.logging_skill)
+		_:
+			return int(character.job_levels.get(job, 1))
+
 
 func _roll_wildcard_catch(current_job: String, skill: int) -> Dictionary:
 	"""Prize Shuffle rare outcome (#49) — roll a catch from a DIFFERENT gather job
@@ -20221,6 +20238,7 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 		"scratches_remaining": scratch_budget,
 		"node_x": gathering_node.get("node_x", character.x),
 		"node_y": gathering_node.get("node_y", character.y),
+		"wide_harvest": (not tool.is_empty()) and bool(tool.get("tool_bonuses", {}).get("wide_harvest", false)),
 	}
 	active_gathering[peer_id] = session
 
@@ -20473,6 +20491,17 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		awarded.append({"kind": kind, "item": item_id, "name": item_name, "type": slot_type, "quantity": qty})
 	# v0.9.369 — generic XP grant + counter + node deplete per job type.
 	var session_job: String = String(session.get("job_type", "fishing"))
+	# Wide Harvest tool affix (#49 B2a) - reap 1-2 extra nearby same-type nodes.
+	if bool(session.get("wide_harvest", false)):
+		var _wt = session.get("water_type", "shallow") if session_job == "fishing" else int(session.get("tier", 1))
+		var _ws = _gather_skill_for_job(character, session_job)
+		for _w in range(randi_range(1, 2)):
+			var _wc = _roll_gathering_catch(session_job, _wt, _ws, String(session.get("biome", "")), String(session.get("node_type", "")))
+			var _wi = String(_wc.get("item", _wc.get("item_id", "")))
+			if _wi != "":
+				_add_gathering_reward(character, {"id": _wi, "name": String(_wc.get("name", "Catch")), "type": String(_wc.get("type", "material")), "tier": int(_wc.get("tier", 1)), "value": int(_wc.get("value", 5))}, 1)
+				total_xp += int(_wc.get("xp", 5))
+				awarded.append({"kind": "WIDE_HARVEST", "item": _wi, "name": "Nearby: " + String(_wc.get("name", "Catch")), "type": String(_wc.get("type", "material")), "quantity": 1})
 	var xp_result: Dictionary
 	# v0.9.421 — also calculate the character XP (not just job XP) using the
 	# same taper formula the legacy auto-chain path used (line ~15602).
@@ -21435,6 +21464,7 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	var tool_everlasting: bool = false
 	var tool_lucky: bool = false
 	var tool_prospector: bool = false
+	var tool_wide_harvest: bool = false
 	var awarded: Array = []
 	var missed: Array = []
 	for i in range(slots.size()):
@@ -21468,6 +21498,8 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 					tool_lucky = true
 				"PROSPECTOR_TOOL":
 					tool_prospector = true
+				"WIDE_HARVEST":
+					tool_wide_harvest = true
 			awarded.append({"kind": kind, "name": name, "type": "craft"})
 		else:
 			var cause = "miss" if (i in miss_positions) else "unscratched"
@@ -21510,6 +21542,7 @@ func _complete_craft_scratch_off(peer_id: int) -> void:
 	session["craft_tool_everlasting"] = tool_everlasting
 	session["craft_tool_lucky"] = tool_lucky
 	session["craft_tool_prospector"] = tool_prospector
+	session["craft_tool_wide_harvest"] = tool_wide_harvest
 
 	# Roll quality with derived score, then hand off to the existing craft
 	# finalize (which sends craft_result + grants XP/inventory).
@@ -25421,6 +25454,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 				var affix_everlasting: bool = bool(craft_session.get("craft_tool_everlasting", false))
 				var affix_lucky: bool = bool(craft_session.get("craft_tool_lucky", false))
 				var affix_prospector: bool = bool(craft_session.get("craft_tool_prospector", false))
+				var affix_wide: bool = bool(craft_session.get("craft_tool_wide_harvest", false))
 				var crafted_tools: Array = []
 				for _i in range(maxi(1, quantity)):
 					var tool_data = DropTables.generate_tool(subtype, tool_tier, tool_rarity)
@@ -25445,7 +25479,7 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 						bonuses["bar_speed_mult"] = maxf(0.30, spd - spd_delta)
 						bonuses["bar_width_mult"] = minf(3.00, wid + wid_delta)
 						tool_data["tool_bonuses"] = bonuses
-					if affix_everlasting or affix_lucky or affix_prospector:
+					if affix_everlasting or affix_lucky or affix_prospector or affix_wide:
 						var abonus: Dictionary = tool_data.get("tool_bonuses", {})
 						var apfx := ""
 						if affix_everlasting:
@@ -25458,6 +25492,9 @@ func _finalize_craft(peer_id: int, character, recipe_id: String, recipe: Diction
 						if affix_prospector:
 							abonus["wildcard_chance"] = 0.15
 							apfx += "Prospector "
+						if affix_wide:
+							abonus["wide_harvest"] = true
+							apfx += "Wide-Harvest "
 						tool_data["tool_bonuses"] = abonus
 						if apfx != "":
 							tool_data["name"] = apfx + String(tool_data.get("name", ""))
