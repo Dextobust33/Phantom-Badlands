@@ -27687,8 +27687,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.708 — Wide Harvest tool affix.
+	display_game("[color=#00FF00]v0.9.708[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ WIDE HARVEST.[/color] A rare new crafting affix for tools: a [color=#FFD700]Wide-Harvest[/color] tool reaps [b]1-2 extra catches from nearby nodes[/b] on every gather — you work the whole area, not just one tile. Stacks with the other tool affixes (e.g. [i]Everlasting Wide-Harvest Pickaxe[/i]).")
+	display_game("")
+
 	# v0.9.707 — Rare crafting tool affixes.
-	display_game("[color=#00FF00]v0.9.707[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.707[/color]")
 	display_game("  [color=#FF8000]★ RARE TOOL AFFIXES.[/color] Crafting a tool can now rarely roll a special affix that sticks to the tool forever: [color=#FFD700]Everlasting[/color] (a chance to [b]not use durability[/b] each gather), [color=#FFD700]Lucky[/color] (better scratch-off odds — extra reveal + wider timing bar), and [color=#FFD700]Prospector's[/color] (a standing chance at a [color=#FF66FF]Wildcard[/color] catch every gather). They show up gold in the craft preview, and the tool's name gets the prefix (e.g. [i]Everlasting Lucky Pickaxe[/i]).")
 	display_game("")
 
