@@ -27735,8 +27735,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.716 — deck view, plain skill text, market rebalance.
+	display_game("[color=#00FF00]v0.9.716[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ See your deck at a glance.[/color] The Combat Deck screen now shows a [b]Your Deck[/b] strip up top — just the cards actually in your deck, badged by copies. Click a tile to thin a copy.")
+	display_game("  [color=#1EFF00]◆ Plainer skill text.[/color] Ability tooltips drop the jargon/formulas for plain language, and mastery [b]rank progress[/b] now shows the correct 'uses to next rank' (it was reading an old curve).")
+	display_game("  [color=#1EFF00]◆ Markets rebalance across the realm.[/color] Traveling merchants now spread stacked goods a chunk at a time and scatter scarce items (gear/eggs) to nearby posts, so one hub no longer hoards everything.")
+	display_game("")
+
 	# v0.9.715 — class payoff visual states.
-	display_game("[color=#00FF00]v0.9.715[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.715[/color]")
 	display_game("  [color=#1EFF00]◆ Payoff moves now SHOW their charge.[/color] [color=#FFC94D]Devastate[/color] (Warrior), [color=#7FD8C8]Outsmart[/color] (Trickster), and [color=#5AC8FF]Meteor[/color] (Mage) now glow brighter as their meter fills — and grey out when there's nothing built — so you can see at a glance when the big move is ready.")
 	display_game("")
 
