@@ -422,23 +422,24 @@ const HELP_TOPICS := {
 		),
 	},
 	"combat_loot": {
-		"title": "[color=#FFD700]Loot Reveal[/color]",
+		"title": "[color=#FFD700]Prize Shuffle[/color]",
 		"body": (
-			"After winning a fight, the loot panel pops up with a [color=#FFD700]16-slot scratch-off grid[/color]. Click cells to reveal rewards — gold, items, materials, and the occasional surprise.\n\n"
-			+ "[color=#FFD700]── How it works ──[/color]\n"
-			+ "  • Total reveals = the monster's tier-scaled budget, [color=#88FF88]+1 per flock kill[/color] (group fights).\n"
-			+ "  • Each click reveals one cell. Once you've used your reveals, remaining cells stay hidden and you move on.\n"
-			+ "  • Rare drops (equipment, eggs, special consumables) are [color=#FFD700]pinned[/color] — they'll always appear within your reveal budget regardless of click order.\n"
-			+ "  • Common drops (gold, materials) make up the bulk of the grid.\n\n"
-			+ "[color=#FFD700]── Skipping ──\n"
-			+ "Click [color=#88FF88]Skip Reveal[/color] (or toggle [b]Autoskip[/b]) to instantly take everything within your budget. Useful for grinding when you don't care about the click-by-click reveal. The toggle is persisted across sessions.\n\n"
-			+ "[color=#FFD700]── Movement is blocked ──[/color]\n"
-			+ "You can't move on the world map while the loot panel is open (v0.9.566). Close or autoskip to resume travel.\n\n"
-			+ "[color=#FFD700]── Tiers & quality ──[/color]\n"
-			+ "Higher-tier monsters drop higher-tier items + larger budgets. Apex-variant monsters have a chance at unique exclusive drops (Apex Sigil, Apex Crystal — see /admin or apex zones).\n\n"
-			+ "[color=#FFD700]── ✦ +2 Reveals bonus cell ──[/color]\n"
-			+ "Rare gold-colored cells in the grid grant [color=#FFD700]+2 reveals[/color] to your budget when flipped. Cost: 1 reveal (same as any flip) → net [color=#88FF88]+1 reveal[/color] gained. They roll about [color=#FFD700]1-in-12[/color] of the filler slots. Worth gambling a click on an unrevealed cell if your budget is tight and you've already taken the obvious cells — you might hit one and unlock the rest of the grid.\n\n"
-			+ "[color=#888888]Loot is tracked per player in party combat — everyone gets a full personal reveal panel.[/color]"
+			"After winning a fight, the loot panel plays a [color=#FFD700]three-beat Prize Shuffle[/color] so you know what you're hunting for.\n\n"
+			+ "[color=#FFD700]── 1. Preview ──[/color]\n"
+			+ "Every cell starts [b]face-up[/b] so you can see the whole prize pool. The best prizes — rares, eggs, mystery & bonus cells — are [color=#FFD700]highlighted with a gold border + ✦[/color]. Memorize where the good stuff is. Auto-advances after a few seconds, or press [color=#88FF88]Shuffle →[/color] (or Space) to go early.\n\n"
+			+ "[color=#FFD700]── 2. Shuffle ──[/color]\n"
+			+ "The cells flip face-down and [b]shuffle[/b] — watch closely and you can follow a prize as it moves. Tougher monsters shuffle more, so big prizes are harder to track.\n\n"
+			+ "[color=#FFD700]── 3. Hunt ──[/color]\n"
+			+ "Spend your [color=#88FF88]reveal budget[/color] (tier-scaled, [color=#88FF88]+1 per flock kill[/color]) clicking the cells where you think the prizes landed. You keep what you reveal.\n\n"
+			+ "[color=#FFD700]── 🔍 Peek tokens ──[/color]\n"
+			+ "Occasionally the panel gives you [color=#7FD8C8]peek tokens[/color]. Click [b]Peek[/b], then a face-down cell, to sneak a look at what's there [color=#88FF88]without spending a reveal[/color]. Rare — use them on the cell you think holds the big prize.\n\n"
+			+ "[color=#FFD700]── Equipment is pinned ──[/color]\n"
+			+ "Gear, eggs and special consumables are [color=#FFD700]awarded directly[/color] (shown in the Equipment Found banner) — they're never lost to the shuffle.\n\n"
+			+ "[color=#FFD700]── Skipping ──[/color]\n"
+			+ "Toggle [b]Autoskip[/b] to skip the preview/shuffle and instantly take everything within your budget — useful when grinding. Persisted across sessions.\n\n"
+			+ "[color=#FFD700]── Rarer, but bigger ──[/color]\n"
+			+ "The panel appears less often now, but pays out more when it does. Higher-tier & empowered monsters and flock chains raise the odds.\n\n"
+			+ "[color=#888888]Loot is tracked per player in party combat — everyone gets a full personal panel.[/color]"
 		),
 	},
 	"pvp_combat": {

@@ -27686,8 +27686,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.702 — Prize Shuffle loot redesign (combat).
+	display_game("[color=#00FF00]v0.9.702[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ PRIZE SHUFFLE.[/color] Combat loot is no longer a blind scratch-off. Now it plays in three beats: [color=#FFD54A]Preview[/color] every prize face-up (the best are [b]highlighted[/b] so you know what to chase) → [color=#5AC8FF]Shuffle[/color] them face-down (watch closely — you can [b]follow[/b] a prize; tougher monsters shuffle harder) → [color=#1EFF00]Hunt[/color] with your reveals for the ones you tracked.")
+	display_game("  [color=#1EFF00]◆ Peek tokens.[/color] The panel occasionally grants rare [color=#7FD8C8]peek tokens[/color] — click [b]Peek[/b] then a face-down cell to sneak a look [b]without spending a reveal[/b].")
+	display_game("  [color=#1EFF00]◆ Less junk, rarer but bigger.[/color] Fewer low-value currency filler cells (more useful materials/parts, bigger amounts). The panel appears [b]less often[/b] but pays out [b]more[/b] when it does. ([color=#888]Autoskip still skips straight to taking everything in budget.[/color])")
+	display_game("")
+
 	# v0.9.701 — mastery cadence + map avatar size.
-	display_game("[color=#00FF00]v0.9.701[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.701[/color]")
 	display_game("  [color=#1EFF00]◆ Card mastery ranks up faster.[/color] The old curve made a card's later [b]milestone upgrade choices[/b] take thousands of fights (basically unreachable). The thresholds are now [b]compressed[/b] — you still get your first milestone quickly, but the mid-game choices [b]recur[/b] and the top ranks (and their damage bonuses) are actually attainable.")
 	display_game("  [color=#1EFF00]◆ Player map sprites are consistent size.[/color] Some players rendered on the world map at [b]~half the size[/b] of others (side-view avatars carried extra padding). All map avatars now [b]fill their tile the same way[/b].")
 	display_game("")
