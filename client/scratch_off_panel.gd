@@ -1202,6 +1202,9 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> Control:
 				kind_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))
 			_:
 				kind_label.text = "◆"
+		# v0.9.714 — shrink the tag font so a long label ("✦ MOTHERLODE",
+		# "✦ BONUS FIND") fits the 64px card on one line instead of clipping.
+		_shrink_label_to_width(kind_label, CARD_SIZE.x - 8, 10, 6)
 		inner.add_child(kind_label)
 
 		var name_label := Label.new()
@@ -1233,9 +1236,44 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> Control:
 			else:
 				display_name = "Lost:\n" + lost
 		name_label.text = display_name
+		# v0.9.714 — shrink the name font so a long catch name wraps INSIDE the
+		# remaining card space instead of being clipped. ~16px is taken by the
+		# kind tag line above, leaving ~40px of the 56px inner height.
+		_shrink_wrapped_label(name_label, CARD_SIZE.x - 8, 40.0, 10, 6)
 		inner.add_child(name_label)
 
 	return card
+
+
+func _shrink_label_to_width(label: Label, max_w: float, max_fs: int, min_fs: int) -> void:
+	# Pick the largest font size (max_fs..min_fs) at which the label's text fits
+	# on a single line within max_w. For fixed single-line tags.
+	var font: Font = label.get_theme_default_font()
+	if font == null or label.text == "":
+		return
+	for fs in range(max_fs, min_fs - 1, -1):
+		if font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x <= max_w:
+			label.add_theme_font_size_override("font_size", fs)
+			return
+	label.add_theme_font_size_override("font_size", min_fs)
+
+
+func _shrink_wrapped_label(label: Label, max_w: float, max_h: float, max_fs: int, min_fs: int) -> void:
+	# Pick the largest font size at which the (word-wrapped) text fits within
+	# max_w x max_h. Estimates line count from total text width / max_w.
+	var font: Font = label.get_theme_default_font()
+	if font == null or label.text.strip_edges() == "":
+		return
+	# Longest single word can't shrink below its own width, so also cap by that.
+	for fs in range(max_fs, min_fs - 1, -1):
+		var total_w: float = font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var lines: int = max(1, int(ceil(total_w / max_w)))
+		# account for explicit newlines (e.g. "Lost:\n...")
+		lines = max(lines, label.text.count("\n") + 1)
+		if float(lines) * (float(fs) * 1.3) <= max_h:
+			label.add_theme_font_size_override("font_size", fs)
+			return
+	label.add_theme_font_size_override("font_size", min_fs)
 
 
 func _palette_for_slot(slot: Dictionary) -> Dictionary:

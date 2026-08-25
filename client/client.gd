@@ -27687,8 +27687,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.714 — loot card font-fit + road legibility.
+	display_game("[color=#00FF00]v0.9.714[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Long loot names now FIT.[/color] Instead of clipping a long reveal name, the loot cards (combat [i]and[/i] gathering) [b]shrink the font[/b] so the whole name fits the card — no more cut-off text.")
+	display_game("  [color=#1EFF00]◆ Roads stand out.[/color] Post-to-post [color=#EBD9A8]roads[/color] used to blend into the terrain around them. They now render in a distinct light-sand color so you can actually follow a road across the map.")
+	display_game("")
+
 	# v0.9.713 — combat log + loot card fixes.
-	display_game("[color=#00FF00]v0.9.713[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.713[/color]")
 	display_game("  [color=#1EFF00]◆ First strikes show in the log.[/color] When an enemy wins initiative and hits you [b]before Round 1[/b], that attack now appears in the combat-log window (it was previously missing, leaving you unsure what happened).")
 	display_game("  [color=#1EFF00]◆ Loot cards uniform.[/color] Combat loot cards no longer [b]stretch[/b] or render at different sizes when a reveal has a long name.")
 	display_game("")

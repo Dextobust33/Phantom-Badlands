@@ -301,6 +301,11 @@ const BIOME_EMPTY_COLORS = {
 	BIOME_DESERT:   "#C4A468",  # warm tan
 }
 
+# v0.9.714 — dedicated post-to-post road color. Deliberately lighter/brighter
+# than every BIOME_EMPTY_COLOR so paths read as constructed roads against any
+# biome instead of blending into the tan/brown empty terrain.
+const ROAD_COLOR = "#EBD9A8"
+
 # Per-biome node weight overrides. Each biome rebalances the same node types
 # rather than introducing new ones — keeps Slice 6a a pure distribution
 # shift, no new tile rendering or gather behavior to wire up. Plains uses the
@@ -2324,12 +2329,18 @@ func _render_tile_bbcode(tile_type: String, tier: int = 1, world_x: int = 0, wor
 		# The tier can serve as color index
 		color = flower_colors[(tier - 1) % flower_colors.size()]
 
-	# Biome tint for empty / path tiles — the dominant signal players read
-	# when scanning the map. Plains keeps the baseline brown unchanged.
-	if tile_type == "empty" or tile_type == "path":
+	# Biome tint for empty tiles — the dominant signal players read when
+	# scanning the map. Plains keeps the baseline brown unchanged.
+	if tile_type == "empty":
 		var biome_seed = chunk_manager.world_seed if chunk_manager and "world_seed" in chunk_manager else 0
 		var biome = get_biome_at(world_x, world_y, biome_seed)
 		color = get_biome_empty_color(biome)
+	elif tile_type == "path":
+		# v0.9.714 — roads used to inherit the biome empty color (nearly the same
+		# tan as the path glyph), so they blended into the surrounding terrain.
+		# A distinct light-sand color makes post-to-post roads legible against
+		# every biome's darker/cooler empty tint.
+		color = ROAD_COLOR
 
 	return "[color=%s] %s[/color]" % [color, char]
 
@@ -2349,10 +2360,12 @@ func _render_fog_tile(x: int, y: int) -> String:
 	var color = render.color
 	if TIER_COLORS.has(tile_type) and tile_tier >= 1 and tile_tier <= 6:
 		color = TIER_COLORS[tile_type][tile_tier - 1]
-	if tile_type == "empty" or tile_type == "path":
+	if tile_type == "empty":
 		var biome_seed = chunk_manager.world_seed if "world_seed" in chunk_manager else 0
 		var biome = get_biome_at(x, y, biome_seed)
 		color = get_biome_empty_color(biome)
+	elif tile_type == "path":
+		color = ROAD_COLOR  # v0.9.714 — distinct road color (see _render_tile)
 	return "[color=%s] %s[/color]" % [_dim_color(color, 0.35), char]
 
 func _render_guard_tile(x: int, y: int) -> String:

@@ -1004,13 +1004,39 @@ func _render_card(slot_index: int) -> void:
 		sym_prefix = "[color=%s]✦[/color] " % color_hex + sym_prefix
 	elif kind == "filler_trap":
 		sym_prefix = "[color=%s]☠[/color] " % color_hex + sym_prefix
-	# Wrap in center + small font for compact reveal cards.
-	var label_text: String = "[center]%s%s[color=%s]%s%s[/color][/center]" % [pick_prefix, miss_prefix, color_hex, sym_prefix, name]
 	# Add subtle kind tag underneath for context.
 	var kind_label: String = _kind_display_name(kind)
+	# v0.9.714 — shrink the name font so a long rare name FITS the fixed card
+	# instead of being clipped. Measure the plain name (prefixes add a little,
+	# so pad the estimate) and pick the largest size that wraps within the card.
+	var name_fs: int = _fit_name_font_size(name, kind_label != "")
+	# Wrap in center + fitted font for compact reveal cards.
+	var label_text: String = "[center][font_size=%d]%s%s[color=%s]%s%s[/color][/font_size][/center]" % [name_fs, pick_prefix, miss_prefix, color_hex, sym_prefix, name]
 	if kind_label != "":
 		label_text += "\n[center][color=#666666][font_size=10]%s[/font_size][/color][/center]" % kind_label
 	lbl.text = label_text
+
+
+func _fit_name_font_size(plain: String, has_kind: bool) -> int:
+	# Return the largest font size (13..8) at which `plain` wraps inside the
+	# card's name area. Card is 112x76 with ~6px padding; the kind tag line
+	# (when present) eats ~15px off the bottom.
+	if plain.strip_edges() == "":
+		return 13
+	var font: Font = get_theme_default_font()
+	if font == null:
+		return 13
+	var avail_w: float = 100.0
+	var avail_h: float = 46.0 if has_kind else 62.0
+	# A couple chars of slack for the ★ / rarity-symbol / (missed) prefixes.
+	var measure: String = plain + "  "
+	for fs in [13, 12, 11, 10, 9, 8]:
+		var w: float = font.get_string_size(measure, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var lines: int = max(1, int(ceil(w / avail_w)))
+		var line_h: float = float(fs) * 1.35
+		if float(lines) * line_h <= avail_h:
+			return fs
+	return 8
 
 
 func _kind_display_name(kind: String) -> String:
