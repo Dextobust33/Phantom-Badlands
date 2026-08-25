@@ -77,9 +77,12 @@ const COMBAT_LOOT_SCRATCH_OFF_ENABLED := true
 # kill, not every kill, so players aren't bombarded. When it fires it's a
 # jackpot (reveal budget x mult); non-scratch kills award loot inline (equipment
 # cadence unchanged). Empowered elites roll it far more often. All tunable.
-const COMBAT_SCRATCH_BASE_CHANCE := 0.125
+# Prize Shuffle (#49) — "rarer but bigger": the panel fires less often on plain
+# kills (0.125 → 0.09) but pays out more when it does (budget ×4 → ×5), leaning
+# into the rare-jackpot feel now that the panel is a full preview→shuffle→hunt.
+const COMBAT_SCRATCH_BASE_CHANCE := 0.09
 const COMBAT_SCRATCH_EMPOWERED_CHANCE := 0.60
-const COMBAT_SCRATCH_BUDGET_MULT := 4
+const COMBAT_SCRATCH_BUDGET_MULT := 5
 # Flock chains build toward a reward — each additional monster killed in the
 # chain raises the scratch-off odds (user-requested 2026-08-21), capped below 1.
 const COMBAT_SCRATCH_FLOCK_STEP := 0.12
@@ -20425,30 +20428,31 @@ func _build_combat_loot_filler(monster_tier: int) -> Dictionary:
 		return {"kind": "filler_mystery"}
 	if (randi() % 12) == 0:
 		return {"kind": "filler_plus_two"}
-	var roll = randi() % 4
+	# Prize Shuffle (#49) — "less junk filler": pure currency (Valor/Essence) felt
+	# like filler-spam in the new face-up preview, so bias the mix toward useful
+	# crafting materials + monster parts (30% currency / 70% craftables) and bump
+	# every amount so even a filler cell reads as a real, if small, reward.
 	var tier_scale: int = clampi(monster_tier, 1, 9)
-	match roll:
-		0:
-			# Small Valor — currency. Tier 1: 2-6, Tier 9: 12-30 (rough).
-			var amount: int = randi_range(2, 6) * tier_scale / 2
-			amount = max(1, amount)
-			return {"kind": "filler_valor", "amount": amount}
-		1:
-			# Salvage Essence — scales 1-2 at low tier, up to 3-6 at high tier.
-			var qty: int = randi_range(1, 2 + tier_scale / 3)
-			return {"kind": "filler_essence", "amount": qty}
-		2:
-			# T1 crafting material — Iron Ore / Pine Wood / etc. Pick one
-			# from the tier-1 material pool. Falls through to essence on miss.
-			var t1_mats = ["iron_ore", "pine_wood", "wheat", "raw_hide"]
-			var mat_id: String = t1_mats[randi() % t1_mats.size()]
-			var qty: int = randi_range(1, 2 + tier_scale / 4)
-			return {"kind": "filler_material", "material_id": mat_id, "quantity": qty}
-		_:
-			# Monster Part — small generic part drop scaled to tier.
-			var part_id: String = "monster_hide" if (randi() % 2 == 0) else "monster_bone"
-			var qty: int = randi_range(1, 1 + tier_scale / 3)
-			return {"kind": "filler_part", "material_id": part_id, "quantity": qty}
+	var wroll = randi() % 20
+	if wroll < 3:
+		# Valor — currency (~15%). Bumped: Tier 1: 3-9, Tier 9 up to ~45.
+		var amount: int = max(3, randi_range(3, 9) * tier_scale / 2)
+		return {"kind": "filler_valor", "amount": amount}
+	elif wroll < 6:
+		# Salvage Essence (~15%). Bumped floor + scaling.
+		var qty: int = randi_range(2, 3 + tier_scale / 2)
+		return {"kind": "filler_essence", "amount": qty}
+	elif wroll < 14:
+		# T1 crafting material (~40%) — the most useful common filler.
+		var t1_mats = ["iron_ore", "pine_wood", "wheat", "raw_hide"]
+		var mat_id: String = t1_mats[randi() % t1_mats.size()]
+		var qty: int = randi_range(2, 3 + tier_scale / 3)
+		return {"kind": "filler_material", "material_id": mat_id, "quantity": qty}
+	else:
+		# Monster Part (~30%) — craftable, scaled to tier.
+		var part_id: String = "monster_hide" if (randi() % 2 == 0) else "monster_bone"
+		var qty: int = randi_range(2, 2 + tier_scale / 2)
+		return {"kind": "filler_part", "material_id": part_id, "quantity": qty}
 
 func _build_combat_loot_filler_upgraded(monster_tier: int) -> Dictionary:
 	"""v0.9.664 — a richer filler used for the EXTRA cells added when a jackpot
