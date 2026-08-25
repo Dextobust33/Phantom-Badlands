@@ -522,11 +522,16 @@ func _make_shuffle_overlay(slot_index: int, local_pos: Vector2) -> Control:
 	var slot: Dictionary = _preview_slots[slot_index] if slot_index < _preview_slots.size() else {}
 	var color_hex: String = String(slot.get("color", "#FFFFFF"))
 	var rgb: Color = Color.html(color_hex) if color_hex != "" else Color.WHITE
-	var panel := PanelContainer.new()
+	# v0.9.712 — FIXED-size Panel (not PanelContainer) + clipped label so a long
+	# rare name can't grow the box (was PanelContainer + fit_content → non-uniform
+	# sizes + overlap during the shuffle).
+	var csize: Vector2 = _cards[slot_index].size
+	var panel := Panel.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.z_index = 20
-	panel.size = _cards[slot_index].size
+	panel.size = csize
 	panel.position = local_pos
+	panel.clip_contents = true
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(rgb.r * 0.28, rgb.g * 0.28, rgb.b * 0.28, 1.0)
 	sb.border_color = Color(1, 0.85, 0.3, 1) if _is_notable(slot) else Color(rgb.r, rgb.g, rgb.b, 0.9)
@@ -535,9 +540,16 @@ func _make_shuffle_overlay(slot_index: int, local_pos: Vector2) -> Control:
 	panel.add_theme_stylebox_override("panel", sb)
 	var lbl := RichTextLabel.new()
 	lbl.bbcode_enabled = true
-	lbl.fit_content = true
+	lbl.fit_content = false
 	lbl.scroll_active = false
+	lbl.clip_contents = true
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+	lbl.offset_left = 3
+	lbl.offset_top = 3
+	lbl.offset_right = -3
+	lbl.offset_bottom = -3
 	lbl.add_theme_font_size_override("normal_font_size", 12)
 	lbl.text = _slot_display_bbcode(slot)
 	panel.add_child(lbl)

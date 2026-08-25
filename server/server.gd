@@ -9623,11 +9623,11 @@ func handle_bug_report(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "error", "message": "Failed to save bug report on server."})
 
 func _flock_engine_carry(peer_id: int) -> Dictionary:
-	# v0.9.711 - snapshot the class engines from the active combat so they carry into the next flock member.
-	var ac = combat_mgr.get_active_combat(peer_id)
-	if ac == null:
-		return {}
-	return {"momentum": int(ac.get("momentum", 0)), "combo": int(ac.get("combo", 0)), "focus": int(ac.get("focus", 0))}
+	# v0.9.712 FIX — read the engines snapshotted at end_combat. The v0.9.711 version
+	# read get_active_combat() at the flock store, but end_combat has ALREADY erased
+	# the combat by then (process_combat_command ends it before returning), so it
+	# always captured 0. combat_mgr now stashes them in last_combat_engines pre-erase.
+	return combat_mgr.get_last_combat_engines(peer_id)
 
 func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1, variant_type: String = "", engine_carry: Dictionary = {}):
 	"""Trigger a flock encounter with the same monster type"""

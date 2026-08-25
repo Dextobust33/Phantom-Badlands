@@ -133,6 +133,10 @@ const VARIABLE_COST_TABLE: Dictionary = {
 
 # Active combats (peer_id -> combat_state)
 var active_combats = {}
+# v0.9.712 — class engines (Momentum/Combo/Focus) snapshotted at end_combat BEFORE
+# active_combats is erased, so a flock chain can carry them into the next member
+# (the server's flock store runs AFTER end_combat, when the combat is already gone).
+var last_combat_engines: Dictionary = {}
 
 # Active party combats (leader_peer_id -> party_combat_state)
 var active_party_combats = {}
@@ -1302,6 +1306,11 @@ func get_active_combat(peer_id: int) -> Dictionary:
 	if active_combats.has(peer_id):
 		return active_combats[peer_id]
 	return {}
+
+func get_last_combat_engines(peer_id: int) -> Dictionary:
+	"""v0.9.712 — the class engines (momentum/combo/focus) snapshotted at the last
+	end_combat, so a flock chain can carry them after the combat has been erased."""
+	return last_combat_engines.get(peer_id, {})
 
 func process_combat_command(peer_id: int, command: String) -> Dictionary:
 	"""Process a combat command from player"""
@@ -7345,6 +7354,16 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 		if not expired_persistent.is_empty():
 			_pending_buff_expirations[peer_id] = expired_persistent
 
+		# v0.9.712 — snapshot the class engines BEFORE erasing so a flock chain can
+		# carry them (the server's flock store reads this via get_last_combat_engines
+		# AFTER end_combat has already removed the combat).
+		if active_combats.has(peer_id):
+			var _ac = active_combats[peer_id]
+			last_combat_engines[peer_id] = {
+				"momentum": int(_ac.get("momentum", 0)),
+				"combo": int(_ac.get("combo", 0)),
+				"focus": int(_ac.get("focus", 0)),
+			}
 		# Remove from active combats
 		active_combats.erase(peer_id)
 
