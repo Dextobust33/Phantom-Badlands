@@ -1068,14 +1068,18 @@ func _play_miss_shake(card: Control, slot_index: int) -> void:
 	shake.tween_property(card, "position", base_pos, 0.04)
 
 
-func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
+func _build_slot_card(slot_index: int, slot: Dictionary) -> Control:
 	var is_hidden: bool = slot.is_empty()
 	var kind: String = String(slot.get("kind", "NORMAL"))
 
-	var card := PanelContainer.new()
+	# v0.9.713 — Panel (NOT PanelContainer) so a tall label can't GROW the card and
+	# overlap its jittered neighbours. PanelContainer resizes to its child's min size;
+	# clip_contents only clips the visual, not the layout size. A fixed Panel + an
+	# anchored/clipped inner keeps every card exactly CARD_SIZE.
+	var card := Panel.new()
 	card.custom_minimum_size = CARD_SIZE
 	card.size = CARD_SIZE
-	card.clip_contents = true  # v0.9.710 — keep long rare names from blowing out the box
+	card.clip_contents = true
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
 
 	var sb := StyleBoxFlat.new()
@@ -1102,6 +1106,14 @@ func _build_slot_card(slot_index: int, slot: Dictionary) -> PanelContainer:
 	var inner := VBoxContainer.new()
 	inner.alignment = BoxContainer.ALIGNMENT_CENTER
 	inner.add_theme_constant_override("separation", 0)
+	inner.clip_contents = true
+	# v0.9.713 — anchor the content full-rect (minus a 4px inset) so it FILLS the
+	# fixed-size Panel and clips overflow, instead of the card growing to fit it.
+	inner.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inner.offset_left = 4
+	inner.offset_top = 4
+	inner.offset_right = -4
+	inner.offset_bottom = -4
 	card.add_child(inner)
 
 	if is_hidden:
