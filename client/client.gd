@@ -1406,6 +1406,11 @@ var craft_reveal_panel = null
 # Combat scratch-off (user-requested 2026-05-14)
 const CombatLootPanelScript = preload("res://client/combat_loot_panel.gd")
 var combat_loot_panel = null
+# v0.9.699 — true from the instant a combat loot bag ARRIVES until its panel opens,
+# closing the gap where the panel opens on a deferred timer and the player could act
+# (move / use the action bar) before the loot card appeared. Consulted by
+# _combat_loot_reveal_active().
+var _loot_bag_pending: bool = false
 # v0.9.646 — per-element UI scale system. Manager owns the registry +
 # persistence; overlay is the click-to-resize edit mode UX. Both nullable
 # during early boot; panels guard their register() calls accordingly.
@@ -10127,6 +10132,8 @@ func _open_loot_bag_deferred(loot_bag: Dictionary, beat_done := false) -> void:
 		return
 	if combat_loot_panel:
 		combat_loot_panel.open_bag(loot_bag)
+	# v0.9.699 — panel is now up (visible governs the gate); drop the pending flag.
+	_loot_bag_pending = false
 
 func _start_combat_command_animation(command: String):
 	"""Start an animation based on the combat command"""
@@ -18421,7 +18428,7 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 		"vanish":
 			return "[b]Phantom Strike[/b]: your next attack is a [b]guaranteed critical hit[/b]."
 		"gambit":
-			return "Gamble for %s damage — [b]Combo[/b] makes it bigger and more reliable; on a miss you take self-damage." % _desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier, +0.5x/Combo")
+			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ Read[/color]." % _desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier")
 		"analyze":
 			return "Reveal the enemy's stats and your outsmart odds, and gain [b]+10% damage[/b] for the rest of the fight."
 		"distract":
@@ -18467,7 +18474,7 @@ func _ability_card_estimate(ability_name: String) -> Dictionary:
 	var eff = _estimate_ability_card_effect(ability_name, planned, 1.0)
 	var txt := str(eff.get("text", ""))
 	var rx := RegEx.new()
-	rx.compile("~\\s*([0-9]+)\\s*dmg")
+	rx.compile("~\\s*([0-9]+)")  # v0.9.699 — match any "~N" (Gambit's is "~N @X%", no "dmg")
 	var m = rx.search(txt)
 	if m != null:
 		return {"damage": int(m.get_string(1)), "heal": -1}
@@ -22492,6 +22499,9 @@ func handle_server_message(message: Dictionary):
 							# COMBAT REDESIGN — wait for the killing-blow battler
 							# animation to finish so the loot minigame doesn't pop
 							# over the swing/cast.
+							# v0.9.699 — gate all player input from NOW (bag received)
+							# until the deferred panel opens, so nothing slips in first.
+							_loot_bag_pending = true
 							_open_loot_bag_deferred(_loot_bag)
 			elif message.get("monster_fled", false):
 				# Monster fled (Coward ability or Shrieker summon)
@@ -26282,7 +26292,9 @@ func _combat_loot_reveal_active() -> bool:
 	reveal panel is up. Movement entry points consult this so players can't walk
 	away mid-reveal (used to be possible — they'd return to find the panel still
 	there but their position changed)."""
-	return combat_loot_panel != null and combat_loot_panel.visible
+	# v0.9.699 — also block during the pending window (loot bag received, panel
+	# opening on its deferred timer) so no action slips in before the loot card.
+	return _loot_bag_pending or (combat_loot_panel != null and combat_loot_panel.visible)
 
 func send_move(direction: int):
 	if not connected or not has_character:
@@ -31430,6 +31442,9 @@ func _on_combat_loot_closed() -> void:
 	      space quickly and it stayed up.' _force_end_action_phase tweens
 	      the overlay to alpha=0 + sets visible=false, and the Review FX
 		  button (top-right) can still re-open it via start_review_phase."""
+	# v0.9.699 — safety: ensure the pending-loot input gate is cleared once the
+	# panel closes (covers autoskip paths that may not leave a visible window).
+	_loot_bag_pending = false
 	# (4) FX teardown — must run BEFORE refresh_victory_card so the
 	# overlay state is cleaned up before the victory card lays over it.
 	if combat_scene_panel and combat_scene_panel.has_method("hide_fx_overlay_only"):
