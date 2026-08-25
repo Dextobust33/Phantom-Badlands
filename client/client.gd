@@ -36269,6 +36269,10 @@ func handle_scratch_off_start(message: Dictionary) -> void:
 	# v0.9.375 — crafting pool hint (quality / structure / material) so the
 	# subtitle can explain what the slot kinds mean for this recipe.
 	set_meta("scratchoff_craft_pool", String(message.get("craft_pool", "")))
+	# Prize Shuffle (#49 slice 2) — preview snapshot + swap sequence + peek tokens.
+	set_meta("scratchoff_preview", message.get("preview", []))
+	set_meta("scratchoff_swaps", message.get("swaps", []))
+	set_meta("scratchoff_peek_tokens", int(message.get("peek_tokens", 0)))
 	# v0.9.360 — pick up the server-side auto-skip flag (mirrors character.skip_gather_minigame).
 	# v0.9.361 — initial delay so the player can see the card + click the toggle to halt.
 	scratch_off_auto_skip = bool(message.get("auto_skip", false))
@@ -36544,6 +36548,10 @@ func _render_scratch_off_panel() -> void:
 		"bar_speed_mult": float(get_meta("scratchoff_bar_speed_mult", 1.0)),
 		"bar_width_mult": float(get_meta("scratchoff_bar_width_mult", 1.0)),
 		"craft_pool": String(get_meta("scratchoff_craft_pool", "")),
+		# Prize Shuffle (#49 slice 2) — only consumed by open()'s preview branch.
+		"preview": get_meta("scratchoff_preview", []),
+		"swaps": get_meta("scratchoff_swaps", []),
+		"peek_tokens": int(get_meta("scratchoff_peek_tokens", 0)),
 	}
 	if scratch_off_panel.visible:
 		scratch_off_panel.refresh(snapshot)

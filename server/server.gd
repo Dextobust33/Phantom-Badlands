@@ -19976,6 +19976,30 @@ func _compute_scratch_budget(skill: int) -> int:
 	With 16 slots, this keeps real choice room even at high skill."""
 	return clampi(SCRATCH_OFF_BASE_SCRATCHES + int(skill / 25), SCRATCH_OFF_BASE_SCRATCHES, SCRATCH_OFF_MAX_SCRATCHES)
 
+func _scratch_off_preview_slot(slot: Dictionary) -> Dictionary:
+	"""Prize Shuffle (#49 slice 2) — display info for a gathering catch shown
+	face-up during the preview phase. Rarity/color derived from value + type."""
+	var kind: String = String(slot.get("kind", "NORMAL"))
+	if kind == "DUD":
+		return {"kind": "DUD", "name": "Empty", "color": "#888888", "rarity": "common"}
+	if kind == "BAR_BONUS":
+		return {"kind": "BAR_BONUS", "name": "+2 Scratches", "color": "#FFD700", "rarity": "rare", "symbol": "✦"}
+	var nm: String = String(slot.get("name", "Catch"))
+	var qty: int = int(slot.get("quantity", 1))
+	var disp: String = nm if qty <= 1 else ("%s x%d" % [nm, qty])
+	var value: int = int(slot.get("value", 0))
+	var typ: String = String(slot.get("type", "material"))
+	var color: String = "#1EFF00"
+	var rarity: String = "common"
+	if kind == "JACKPOT" or typ in ["treasure", "treasure_chest", "egg"] or value >= 100:
+		color = "#FFD700"; rarity = "epic"
+	elif value >= 40:
+		color = "#A335EE"; rarity = "rare"
+	elif value >= 15:
+		color = "#4A9EFF"; rarity = "uncommon"
+	return {"kind": kind, "name": disp, "color": color, "rarity": rarity}
+
+
 func _start_scratch_off_fishing(peer_id: int, character, water_type: String, gathering_node: Dictionary) -> void:
 	"""Back-compat shim: fishing-specific entry. Delegates to the generic
 	_start_scratch_off_gathering with the water_type as the tier param."""
@@ -20085,6 +20109,45 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 		_complete_scratch_off_fishing(peer_id)
 		return
 
+	# Prize Shuffle (#49 slice 2) — preview + shuffle for the gathering minigame.
+	# Snapshot every catch (preview, original order), then shuffle the authoritative
+	# slot order via visible swaps the client re-animates, remapping the tool
+	# pre-reveals through the same permutation so they stay honest.
+	var gather_preview: Array = []
+	for s in slots:
+		gather_preview.append(_scratch_off_preview_slot(s))
+	var g_swap_count: int = clampi(3 + int(gathering_node.get("tier", 1)), 3, 12)
+	var gather_swaps: Array = []
+	var g_origin: Array = []
+	for i in range(slot_count):
+		g_origin.append(i)
+	for _i in range(g_swap_count):
+		if slot_count < 2:
+			break
+		var sa: int = randi() % slot_count
+		var sb: int = randi() % slot_count
+		if sa == sb:
+			sb = (sb + 1) % slot_count
+		gather_swaps.append([sa, sb])
+		var tsl = slots[sa]; slots[sa] = slots[sb]; slots[sb] = tsl
+		var tor = g_origin[sa]; g_origin[sa] = g_origin[sb]; g_origin[sb] = tor
+	# Remap tool pre-reveals through the permutation (original index oi now sits at
+	# position p where g_origin[p] == oi).
+	var remapped_pre: Array = []
+	for p in range(slot_count):
+		if g_origin[p] in pre_revealed_positions:
+			remapped_pre.append(p)
+	pre_revealed_positions = remapped_pre
+	session["revealed_positions"] = remapped_pre.duplicate()
+	session["slots"] = slots
+	# Rare peek tokens — occasional aid.
+	var g_peeks: int = 0
+	var g_roll: float = randf()
+	if g_roll < 0.06:
+		g_peeks = 2
+	elif g_roll < 0.20:
+		g_peeks = 1
+
 	var initial_slots: Array = []
 	for i in range(slot_count):
 		if i in pre_revealed_positions:
@@ -20111,6 +20174,10 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 		"auto_skip": bool(character.skip_gather_minigame),
 		"bar_speed_mult": bar_speed_mult,
 		"bar_width_mult": bar_width_mult,
+		# Prize Shuffle (#49 slice 2)
+		"preview": gather_preview,
+		"swaps": gather_swaps,
+		"peek_tokens": g_peeks,
 	})
 
 func handle_scratch_off_reveal(peer_id: int, message: Dictionary) -> void:

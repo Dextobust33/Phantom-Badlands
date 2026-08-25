@@ -313,6 +313,26 @@ const QUILL_LINE_COUNT := 4
 const PLUMB_AMPLITUDE_RATIO := 0.85
 
 
+# === Prize Shuffle (#49 slice 2) ===
+# "preview" (all catches face-up so the player learns the pool) → "shuffle" (flip
+# down + animate the server's swaps on overlays so a sharp player can track a
+# prize) → "hunt" (the existing timing-bar reveal). Auto-skip + old servers skip
+# straight to "hunt". Implemented as an OVERLAY layer on _canvas so the themed
+# card renderer + timing bar are untouched.
+var _phase: String = "hunt"
+var _preview_slots: Array = []
+var _swaps: Array = []
+var _shuffle_content: Array = []
+var _peek_tokens: int = 0
+var _peek_armed: bool = false
+var _shuffle_button: Button = null
+var _peek_button: Button = null
+var _preview_timer: Timer = null
+var _preview_pulse_tweens: Array = []
+var _shuffle_overlays: Array = []
+const PREVIEW_AUTO_SECONDS: float = 4.5
+
+
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -329,9 +349,21 @@ func open(snapshot: Dictionary) -> void:
 	_job_type = String(snapshot.get("job_type", _job_type))
 	_bar_speed = BAR_BASE_SPEED * float(snapshot.get("bar_speed_mult", 1.0))
 	_bar_width = BAR_BASE_WIDTH * float(snapshot.get("bar_width_mult", 1.0))
+	# Prize Shuffle (#49 slice 2) — capture preview/swaps/peeks; enter the preview
+	# phase unless auto-skipping or the server sent no preview (old build).
+	_preview_slots = (snapshot.get("preview", []) as Array).duplicate(true)
+	_swaps = (snapshot.get("swaps", []) as Array).duplicate(true)
+	_peek_tokens = int(snapshot.get("peek_tokens", 0))
+	_peek_armed = false
+	var use_preview: bool = (not bool(snapshot.get("auto_skip", false))) and _preview_slots.size() >= _slot_count and _preview_slots.size() > 0
+	_phase = "preview" if use_preview else "hunt"
 	_randomize_pattern_start()
 	refresh(snapshot)
 	visible = true
+	if _phase == "preview":
+		call_deferred("_enter_preview")
+	else:
+		_refresh_ps_buttons()
 
 
 func _randomize_pattern_start() -> void:
@@ -388,6 +420,262 @@ func _randomize_pattern_start() -> void:
 
 func close() -> void:
 	visible = false
+	# Prize Shuffle (#49 slice 2) — tear down any preview/shuffle state so a fresh
+	# session starts clean.
+	_stop_preview_pulses()
+	_clear_shuffle_overlays()
+	if _preview_timer != null and is_instance_valid(_preview_timer):
+		_preview_timer.queue_free()
+		_preview_timer = null
+	_phase = "hunt"
+	_peek_armed = false
+
+
+# === Prize Shuffle (#49 slice 2) — preview → shuffle → hunt ===
+
+func _refresh_ps_buttons() -> void:
+	if _shuffle_button != null:
+		_shuffle_button.visible = (_phase == "preview")
+	if _peek_button != null:
+		_peek_button.visible = (_phase == "hunt" and _peek_tokens > 0)
+		_peek_button.text = ("Peek (%d)" % _peek_tokens)
+		_peek_button.disabled = (_peek_tokens <= 0)
+	if _toggle_btn != null:
+		_toggle_btn.visible = (_phase == "hunt")
+
+
+func _enter_preview() -> void:
+	"""Beat 1 — overlay every catch face-up (best highlighted) so the player
+	learns the pool. Real cards stay hidden underneath; the timing bar is paused."""
+	_phase = "preview"
+	if _bar_runner != null:
+		_bar_runner.visible = false
+	_clear_shuffle_overlays()
+	var best: Dictionary = _best_preview_prize()
+	if not best.is_empty():
+		var bname: String = String(best.get("name", ""))
+		var bcolor: String = String(best.get("color", "#FFD700"))
+		_scratches_label.text = "[center][color=#FFD700]★ Memorize the catches — top prize:[/color] [color=%s][b]%s[/b][/color] [color=#FFD700]★[/color][/center]" % [bcolor, bname]
+	else:
+		_scratches_label.text = "[center][color=#FFD700]★ Memorize the catches![/color][/center]"
+	for i in range(_slot_count):
+		if i < _slot_positions.size() and i < _preview_slots.size():
+			var ov := _make_gather_overlay(_slot_positions[i], _preview_slots[i], true)
+			_shuffle_overlays.append(ov)
+	_refresh_ps_buttons()
+	if _preview_timer != null and is_instance_valid(_preview_timer):
+		_preview_timer.queue_free()
+	_preview_timer = Timer.new()
+	_preview_timer.one_shot = true
+	_preview_timer.wait_time = PREVIEW_AUTO_SECONDS
+	_preview_timer.timeout.connect(_on_shuffle_pressed)
+	add_child(_preview_timer)
+	_preview_timer.start()
+
+
+func _on_shuffle_pressed() -> void:
+	if _phase != "preview":
+		return
+	if _preview_timer != null and is_instance_valid(_preview_timer):
+		_preview_timer.stop()
+		_preview_timer.queue_free()
+		_preview_timer = null
+	_enter_shuffle()
+
+
+func _enter_shuffle() -> void:
+	"""Beat 2 — animate the server's swaps on the overlays so a sharp player can
+	track a prize; then fade the overlays and start the timing-bar hunt."""
+	_phase = "shuffle"
+	_stop_preview_pulses()
+	if _shuffle_button != null:
+		_shuffle_button.visible = false
+	_scratches_label.text = "[center][color=#5AC8FF][b]Shuffling…[/b][/color] [color=#999]follow the prize you want![/color][/center]"
+	_shuffle_content = _preview_slots.duplicate(true)
+	# The overlays are indexed by current position; replay swaps moving them.
+	var overlays: Array = _shuffle_overlays.duplicate()
+	var per: float = clampf(1.6 / float(max(1, _swaps.size())), 0.11, 0.28)
+	var step: float = 0.0
+	for pair in _swaps:
+		if not (pair is Array) or pair.size() < 2:
+			continue
+		var a: int = int(pair[0])
+		var b: int = int(pair[1])
+		if a < 0 or b < 0 or a >= overlays.size() or b >= overlays.size() or a == b:
+			continue
+		var ca = _shuffle_content[a]
+		_shuffle_content[a] = _shuffle_content[b]
+		_shuffle_content[b] = ca
+		var node_a = overlays[a]
+		var node_b = overlays[b]
+		var tgt_a: Vector2 = _slot_positions[b] if b < _slot_positions.size() else Vector2.ZERO
+		var tgt_b: Vector2 = _slot_positions[a] if a < _slot_positions.size() else Vector2.ZERO
+		var dur: float = per
+		_ps_after(step, func():
+			_ps_move(node_a, tgt_a, dur)
+			_ps_move(node_b, tgt_b, dur))
+		overlays[a] = node_b
+		overlays[b] = node_a
+		step += per * 0.7
+	_ps_after(step + per + 0.15, func(): _enter_hunt())
+
+
+func _enter_hunt() -> void:
+	"""Beat 3 — hand off to the existing timing-bar reveal."""
+	_phase = "hunt"
+	_clear_shuffle_overlays()
+	if _bar_runner != null:
+		_bar_runner.visible = true
+	_refresh_ps_buttons()
+	# Re-render footer/scratches counter from current state.
+	_render_footer({"scratches_remaining": _scratches_remaining})
+	_update_bar_visibility()
+
+
+func _make_gather_overlay(pos: Vector2, content: Dictionary, pulse_if_notable: bool) -> Control:
+	var color_hex: String = String(content.get("color", "#FFFFFF"))
+	var rgb: Color = Color.html(color_hex) if color_hex != "" else Color.WHITE
+	var notable: bool = _is_notable(content)
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.z_index = 20
+	panel.size = CARD_SIZE
+	panel.position = pos
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(rgb.r * 0.28, rgb.g * 0.28, rgb.b * 0.28, 1.0)
+	sb.border_color = Color(1, 0.85, 0.3, 1) if notable else Color(rgb.r, rgb.g, rgb.b, 0.9)
+	sb.set_border_width_all(3 if notable else 2)
+	sb.set_corner_radius_all(4)
+	panel.add_theme_stylebox_override("panel", sb)
+	var lbl := RichTextLabel.new()
+	lbl.bbcode_enabled = true
+	lbl.fit_content = true
+	lbl.scroll_active = false
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lbl.add_theme_font_size_override("normal_font_size", 11)
+	var star: String = "[color=#FFD700]✦[/color] " if notable else ""
+	lbl.text = _slot_display_bbcode(content, star)
+	panel.add_child(lbl)
+	_canvas.add_child(panel)
+	if pulse_if_notable and notable:
+		_play_preview_pulse(panel)
+	return panel
+
+
+func _clear_shuffle_overlays() -> void:
+	# Stop looping pulses BEFORE freeing their targets (a set_loops() tween on a
+	# freed node throws "Infinite loop detected").
+	_stop_preview_pulses()
+	for ov in _shuffle_overlays:
+		if is_instance_valid(ov):
+			var tw := create_tween()
+			tw.tween_property(ov, "modulate:a", 0.0, 0.15)
+			tw.tween_callback(Callable(ov, "queue_free"))
+	_shuffle_overlays.clear()
+
+
+func _ps_move(node: Control, target: Vector2, dur: float) -> void:
+	if not is_instance_valid(node):
+		return
+	var tw := create_tween()
+	tw.tween_property(node, "position", target, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _ps_after(delay: float, fn: Callable) -> void:
+	if delay <= 0.0:
+		fn.call()
+		return
+	var t := Timer.new()
+	t.one_shot = true
+	t.wait_time = max(0.01, delay)
+	t.timeout.connect(func():
+		fn.call()
+		t.queue_free())
+	add_child(t)
+	t.start()
+
+
+func _play_preview_pulse(card: Control) -> void:
+	if not is_instance_valid(card):
+		return
+	# Bind to the card so the loop auto-dies when the overlay is freed.
+	var tw := card.create_tween().set_loops()
+	tw.tween_property(card, "modulate", Color(1.35, 1.35, 1.15, 1.0), 0.55).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(card, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.55).set_trans(Tween.TRANS_SINE)
+	_preview_pulse_tweens.append(tw)
+
+
+func _stop_preview_pulses() -> void:
+	for tw in _preview_pulse_tweens:
+		if tw != null and tw.is_valid():
+			tw.kill()
+	_preview_pulse_tweens.clear()
+
+
+func _best_preview_prize() -> Dictionary:
+	var best: Dictionary = {}
+	var best_score: int = 0
+	for slot in _preview_slots:
+		if not (slot is Dictionary):
+			continue
+		var score: int = 0
+		match String(slot.get("rarity", "")):
+			"legendary": score = 100
+			"epic": score = 80
+			"rare": score = 60
+			"uncommon": score = 25
+		if String(slot.get("kind", "")) == "BAR_BONUS":
+			score = max(score, 40)
+		if score > best_score:
+			best_score = score
+			best = slot
+	return best
+
+
+func _is_notable(slot: Dictionary) -> bool:
+	if String(slot.get("rarity", "")) in ["rare", "epic", "legendary"]:
+		return true
+	return String(slot.get("kind", "")) in ["BAR_BONUS", "JACKPOT"]
+
+
+func _slot_display_bbcode(slot: Dictionary, prefix: String = "") -> String:
+	var color_hex: String = String(slot.get("color", "#FFFFFF"))
+	var name: String = String(slot.get("name", ""))
+	var symbol: String = String(slot.get("symbol", ""))
+	var sym: String = ("[color=%s]%s[/color] " % [color_hex, symbol]) if symbol != "" else ""
+	return "[center]%s%s[color=%s]%s[/color][/center]" % [prefix, sym, color_hex, name]
+
+
+func _on_peek_pressed() -> void:
+	if _phase != "hunt" or _peek_tokens <= 0:
+		return
+	_peek_armed = not _peek_armed
+	if _peek_armed:
+		_scratches_label.text = "[center][color=#7FD8C8][b]Peek armed[/b] — click a hidden cell to sneak a look.[/color][/center]"
+	else:
+		_render_footer({"scratches_remaining": _scratches_remaining})
+
+
+func _do_peek(slot_index: int) -> void:
+	if _peek_tokens <= 0 or slot_index < 0 or slot_index >= _slot_positions.size():
+		return
+	if not _is_slot_still_hidden(slot_index):
+		return
+	_peek_tokens -= 1
+	_peek_armed = false
+	var content: Dictionary = _shuffle_content[slot_index] if slot_index < _shuffle_content.size() else {}
+	var ov := _make_gather_overlay(_slot_positions[slot_index], content, false)
+	# teal peek frame
+	var sb: StyleBoxFlat = ov.get_theme_stylebox("panel")
+	if sb is StyleBoxFlat:
+		(sb as StyleBoxFlat).border_color = Color(0.5, 0.85, 0.78, 1)
+	_ps_after(1.8, func():
+		if is_instance_valid(ov):
+			var tw := create_tween()
+			tw.tween_property(ov, "modulate:a", 0.0, 0.25)
+			tw.tween_callback(Callable(ov, "queue_free")))
+	_render_footer({"scratches_remaining": _scratches_remaining})
+	_refresh_ps_buttons()
 
 
 func refresh(snapshot: Dictionary) -> void:
@@ -421,6 +709,9 @@ func refresh(snapshot: Dictionary) -> void:
 	_render_footer(snapshot)
 	_update_toggle_button()
 	_update_bar_visibility()
+	# Prize Shuffle (#49 slice 2) — keep the bar hidden until the hunt begins.
+	if _phase != "hunt" and _bar_runner != null:
+		_bar_runner.visible = false
 	# Stash for next refresh's transition detection.
 	_prev_slots = slots.duplicate(true)
 	# v0.9.596 — keyboard focus: seed on first refresh, advance after each
@@ -541,6 +832,30 @@ func _build_layout() -> void:
 	_scratches_label.add_theme_font_size_override("normal_font_size", 13)
 	_scratches_label.custom_minimum_size = Vector2(0, 22)
 	vbox.add_child(_scratches_label)
+
+	# Prize Shuffle (#49 slice 2) — Peek (left) + Shuffle (right) footer row.
+	var ps_row := HBoxContainer.new()
+	ps_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(ps_row)
+	_peek_button = Button.new()
+	_peek_button.text = "Peek"
+	_peek_button.focus_mode = Control.FOCUS_NONE
+	_peek_button.custom_minimum_size = Vector2(120, 34)
+	_peek_button.tooltip_text = "Spend a rare peek to briefly re-show one hidden cell — no scratch used."
+	_peek_button.visible = false
+	_peek_button.pressed.connect(_on_peek_pressed)
+	ps_row.add_child(_peek_button)
+	var ps_spacer := Control.new()
+	ps_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ps_row.add_child(ps_spacer)
+	_shuffle_button = Button.new()
+	_shuffle_button.text = "Shuffle →"
+	_shuffle_button.focus_mode = Control.FOCUS_NONE
+	_shuffle_button.custom_minimum_size = Vector2(140, 34)
+	_shuffle_button.tooltip_text = "Hide and shuffle the catches, then time your scratches to find them."
+	_shuffle_button.visible = false
+	_shuffle_button.pressed.connect(_on_shuffle_pressed)
+	ps_row.add_child(_shuffle_button)
 
 
 func _generate_positions(slot_count: int) -> void:
@@ -1089,6 +1404,13 @@ func _resolve_slot_pick(slot_index: int) -> void:
 	"""Common path for mouse-click + keyboard activation. Emits slot_clicked
 	on a timed hit, slot_missed otherwise. Slot validity (still hidden, in
 	bounds) is checked here so callers stay simple."""
+	# Prize Shuffle (#49 slice 2) — no scratching during preview/shuffle; a peek
+	# intercepts the click during the hunt.
+	if _phase != "hunt":
+		return
+	if _peek_armed:
+		_do_peek(slot_index)
+		return
 	if _auto_skip or _scratches_remaining <= 0:
 		return
 	if slot_index < 0 or slot_index >= _slot_cards.size():
@@ -1122,7 +1444,16 @@ const _SLOT_KEY_LABELS := ["1", "2", "3", "4", "Q", "W", "E", "R", "A", "S", "D"
 
 
 func _input(event: InputEvent) -> void:
-	if not visible or _auto_skip or _scratches_remaining <= 0:
+	if not visible:
+		return
+	# Prize Shuffle (#49 slice 2) — during preview, Space/Enter starts the shuffle;
+	# block reveal keys until the hunt begins.
+	if _phase != "hunt":
+		if _phase == "preview" and (event is InputEventKey) and event.pressed and not event.echo and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+			_on_shuffle_pressed()
+			get_viewport().set_input_as_handled()
+		return
+	if _auto_skip or _scratches_remaining <= 0:
 		return
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
@@ -1267,6 +1598,9 @@ func _process(delta: float) -> void:
 	# Advance the bar only while panel is open + auto-skip is off + session
 	# still active. When scratches hit 0 the panel enters its post-complete
 	# hold; freezing the bar makes "Cashing in..." read clearly.
+	# Prize Shuffle (#49 slice 2) — the bar is frozen during preview/shuffle.
+	if _phase != "hunt":
+		return
 	if not visible or _auto_skip or _scratches_remaining <= 0:
 		return
 	# v0.9.370 — per-pattern advance. Dispatcher in one place keeps the
