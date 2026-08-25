@@ -27686,8 +27686,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.704 — Prize Shuffle comes to gathering.
+	display_game("[color=#00FF00]v0.9.704[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ PRIZE SHUFFLE — GATHERING.[/color] Fishing, mining, logging & foraging scratch-offs now use the same three beats as combat loot: [color=#FFD54A]Preview[/color] the catches face-up (best highlighted, with a [color=#FFD700]★ top-prize[/color] callout) → [color=#5AC8FF]Shuffle[/color] them (follow the one you want) → then [color=#1EFF00]time your scratches[/color] to land it. Now you know [b]where[/b] you're aiming and still have to [b]time[/b] it — a double-skill catch.")
+	display_game("  [color=#1EFF00]◆ Peek tokens here too.[/color] Gathering panels occasionally grant rare [color=#7FD8C8]peeks[/color] — sneak a look at a hidden cell without burning a scratch.")
+	display_game("")
+
 	# v0.9.703 — Prize Shuffle polish (preview + rewards + juice).
-	display_game("[color=#00FF00]v0.9.703[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.703[/color]")
 	display_game("  [color=#FF8000]★ PRIZE SHUFFLE POLISH.[/color] Making the loot reveal land harder:")
 	display_game("    [color=#1EFF00]◆ Better preview.[/color] Special cells ([color=#FFD700]Mystery / +2 / Chain[/color], and [color=#FF4444]Traps[/color] to dodge) now show [b]face-up[/b] instead of blank, the best prizes [b]pulse[/b] to catch your eye, a [color=#FFD700]★ Top prize[/color] callout names the headline reward, and you get [b]longer[/b] to study it.")
 	display_game("    [color=#1EFF00]◆ Better rewards.[/color] Every panel now guarantees a [b]headline prize[/b] worth chasing, with less junk filler and bigger amounts.")
