@@ -1741,8 +1741,11 @@ const DUNGEON_TYPES = {
 # - active_players: Array of peer_ids currently inside
 
 # BSP dungeon grid size range (floors vary between min and max)
-const DUNGEON_GRID_SIZE_MIN = 16
-const DUNGEON_GRID_SIZE_MAX = 20
+# C3 (dungeon revamp) — enlarged 16-20 → 18-24 so floors have room for BRANCHING routes
+# (multiple ways through) + the wandering monsters to roam. Pairs with the branching-
+# connection pass in generate_floor_grid.
+const DUNGEON_GRID_SIZE_MIN = 18
+const DUNGEON_GRID_SIZE_MAX = 24
 
 # Monster display colors by dungeon tier
 const MONSTER_DISPLAY_COLORS = {
@@ -1815,8 +1818,9 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 		grid.append(row)
 
 	# BSP split the area (leave 1-tile border)
-	# Scale split depth with grid size: smaller grids get fewer splits
-	var max_depth = 3 if size <= 14 else 4
+	# Scale split depth with grid size: bigger grids get more rooms (C3 — more rooms =
+	# more branching potential).
+	var max_depth = 3 if size <= 14 else (5 if size >= 22 else 4)
 	var partitions = []
 	var initial_rect = Rect2i(1, 1, size - 2, size - 2)
 	_bsp_split(initial_rect, 0, max_depth, rng, partitions)
@@ -1832,13 +1836,33 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 	if rooms.size() >= 2:
 		# Sort rooms by position for more logical connections
 		rooms.sort_custom(func(a, b): return (a.position.y * size + a.position.x) < (b.position.y * size + b.position.x))
-		# Connect each room to the next (chain)
+		# Connect each room to the next (chain) — guarantees the floor is fully connected.
 		for i in range(rooms.size() - 1):
 			_connect_rooms(grid, rooms[i], rooms[i + 1], rng)
 		# Extra connection from last to a middle room for loops
 		if rooms.size() > 3:
 			var mid = rooms.size() / 2
 			_connect_rooms(grid, rooms[rooms.size() - 1], rooms[mid], rng)
+		# C3 — BRANCHING: on top of the chain, wire each room to its NEAREST non-chain
+		# neighbour for ~half the rooms, creating loops and forks so there are multiple
+		# routes through a floor (flank or avoid the wandering monsters, or take a
+		# greedier path). Corridor carving is idempotent, so overlaps are harmless.
+		var extra_edges = int(rooms.size() * 0.5)
+		for _e in range(extra_edges):
+			var a = rng.randi_range(0, rooms.size() - 1)
+			var ca = _get_room_center(rooms[a])
+			var best = -1
+			var best_d = 1 << 30
+			for b in range(rooms.size()):
+				if b == a or b == a - 1 or b == a + 1:
+					continue  # skip self + immediate chain neighbours
+				var cb = _get_room_center(rooms[b])
+				var d = abs(cb.x - ca.x) + abs(cb.y - ca.y)
+				if d < best_d:
+					best_d = d
+					best = b
+			if best >= 0:
+				_connect_rooms(grid, rooms[a], rooms[best], rng)
 
 	# Pick a random corner for entrance placement (adds layout variety)
 	var corners = [
