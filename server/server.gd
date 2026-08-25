@@ -29333,7 +29333,7 @@ const THREAT_CORRIDOR_RADIUS: int = 80
 # said new dungeons spawn faster than they can be cleared, drowning posts.
 # Both knobs gate the spawn side of `_create_world_dungeon`; the per-post
 # cooldown also clamps the post's threat-state cache so the UI agrees.
-const MAX_CONCURRENT_POST_THREATS: int = 3
+const MAX_CONCURRENT_POST_THREATS: int = 2  # v0.9.701 (#44) — 3→2 so a post can't stack as many threats (Crossroads felt perpetually besieged)
 const POST_THREAT_COOLDOWN_SECONDS: int = 600  # 10 minutes
 # v0.9.597 — threat zone is now a cone aimed from each dungeon at the nearest
 # threatened post, not a 80-tile circle. Player report: monsters spilling out
@@ -29385,12 +29385,10 @@ func _post_in_threat_cooldown(post_key: String, now: int) -> bool:
 
 func _stamp_post_cooldowns_for_cleared_dungeon(inst_x: int, inst_y: int, instance_id: String) -> void:
 	"""v0.9.598 — when a T2+ world dungeon is cleared, find every post it was
-	threatening (within THREAT_CORRIDOR_RADIUS). For each post where this was
-	the LAST active threat, stamp the 10-minute cooldown so new T2+ dungeons
-	can't immediately spawn in to replace it.
-
-	Caller already wrote `completed_at` on the dungeon, so we exclude it from
-	the remaining-threats count via `exclude_instance_id`."""
+	threatening (within THREAT_CORRIDOR_RADIUS) and stamp the cooldown so new
+	T2+ dungeons can't immediately spawn in to replace it.
+	v0.9.701 (#44) — stamp on EVERY clear (was: only when the post hit zero
+	threats), so clearing threats at a busy hub actually buys relief."""
 	if chunk_manager == null:
 		return
 	# Cheap tier+ownership precheck so non-threat dungeons don't trigger.
@@ -29412,10 +29410,15 @@ func _stamp_post_cooldowns_for_cleared_dungeon(inst_x: int, inst_y: int, instanc
 		var ddy := py - inst_y
 		if ddx * ddx + ddy * ddy > r_sq:
 			continue
-		# Was this dungeon the last active threat for this post?
-		if _count_active_threats_near_post(px, py, instance_id) == 0:
-			var post_key := "%d,%d" % [px, py]
-			_post_threat_cooldown_until[post_key] = cooldown_end
+		# v0.9.701 (#44) — stamp the cooldown on EVERY clear near this post, not only
+		# when it drops to ZERO threats. At a busy hub (Crossroads) there's almost
+		# always another active threat, so the old "== 0" gate meant the cooldown
+		# NEVER started and new threats respawned as fast as players cleared them.
+		# Now clearing ANY threatening dungeon buys the post a breather from NEW
+		# spawns (existing threats still need clearing). Extends (max) so multiple
+		# clears don't shorten the window.
+		var post_key := "%d,%d" % [px, py]
+		_post_threat_cooldown_until[post_key] = maxi(int(_post_threat_cooldown_until.get(post_key, 0)), cooldown_end)
 
 
 func _dungeon_target_post_for_threat(inst_x: int, inst_y: int) -> Dictionary:
