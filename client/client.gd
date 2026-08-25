@@ -27687,8 +27687,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.709 — dev/testing tooling (Loot Lab).
+	display_game("[color=#00FF00]v0.9.709[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Under-the-hood.[/color] Added developer testing tools for the new rare loot outcomes + tool affixes (admin-only). No gameplay changes for players.")
+	display_game("")
+
 	# v0.9.708 — Wide Harvest tool affix.
-	display_game("[color=#00FF00]v0.9.708[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.708[/color]")
 	display_game("  [color=#FF8000]★ WIDE HARVEST.[/color] A rare new crafting affix for tools: a [color=#FFD700]Wide-Harvest[/color] tool reaps [b]1-2 extra catches from nearby nodes[/b] on every gather — you work the whole area, not just one tile. Stacks with the other tool affixes (e.g. [i]Everlasting Wide-Harvest Pickaxe[/i]).")
 	display_game("")
 
