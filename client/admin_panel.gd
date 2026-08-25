@@ -115,6 +115,7 @@ func _render_page() -> void:
 			_add_button("Misc — heal, reset quests, revive companion", "_page_misc")
 			_add_button("Patreon — fulfill supporter tiers (nearest player)", "_page_patreon", Color(0.95, 0.55, 1.0))
 			_add_button("Abilities — test +X to ability gear (v0.9.606)", "_page_abilities", Color(1, 0.84, 0))
+			_add_button("Loot Lab — force minigame + rare cells / affixed tools", "_page_loot_lab", Color(0.4, 0.9, 1.0))
 			_add_separator()
 			_add_button("Close", "_close", Color(0.7, 0.7, 0.7))
 		"test_b2":
@@ -127,6 +128,15 @@ func _render_page() -> void:
 			_add_button("Give 3x Companion Revive Potion", "give_revive_x3")
 			_add_button("Give 3x Taunt Charm", "give_taunt_x3")
 			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
+			_add_separator()
+			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
+		"loot_lab":
+			_title_label.text = "ADMIN — LOOT LAB"
+			_subtitle_label.text = "[color=#aaaaaa]Test the Prize Shuffle rare outcomes + tool affixes without grinding RNG. Toggle force-mode ON, then gather / craft a tool once — every rare cell is guaranteed in the board.[/color]"
+			_add_button("Force Minigame + Rare Cells: TOGGLE", "gm_loot_force", Color(0.4, 0.9, 1.0))
+			_subtitle_subline("While ON: every gather/craft shows the minigame, and the board is seeded with one of each rare cell (Motherlode / Wildcard / Auto-Sell / Prospector / affixes). Toggle again to turn off.")
+			_add_button("Grant Affixed Test Tools (all 4 affixes)", "gm_loot_grant_tools", Color(1, 0.84, 0))
+			_subtitle_subline("Gives Everlasting / Lucky / Prospector / Wide-Harvest tools so you can test the EFFECTS on gather (durability skip, extra reveals, wildcard, nearby catches).")
 			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"items":
@@ -308,6 +318,9 @@ func _on_button_pressed(action_id: String) -> void:
 			_render_page()
 		"_page_abilities":
 			_current_page = "abilities"
+			_render_page()
+		"_page_loot_lab":
+			_current_page = "loot_lab"
 			_render_page()
 		_:
 			emit_signal("action_triggered", action_id)

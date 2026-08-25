@@ -32093,6 +32093,11 @@ func _on_admin_panel_action(action_id: String) -> void:
 	gm_* server message or a small client-side helper. All server-side
 	commands are gated by _is_admin() server-side."""
 	match action_id:
+		# Loot Lab (dev testing for Prize Shuffle rares + tool affixes)
+		"gm_loot_force":
+			send_to_server({"type": "gm_loot_force"})
+		"gm_loot_grant_tools":
+			send_to_server({"type": "gm_loot_grant_tools"})
 		# Test B2 scenario
 		"gm_test_b2":
 			send_to_server({"type": "gm_test_b2"})

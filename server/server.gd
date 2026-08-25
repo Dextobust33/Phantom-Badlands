@@ -109,6 +109,9 @@ const CRAFT_SCRATCH_BASE_CHANCE := 0.09  # v0.9.706 (#49 juice) — rarer but bi
 const CRAFT_SCRATCH_RARE_CHANCE := 0.50
 const CRAFT_SCRATCH_RARE_DIFFICULTY := 60 # recipe difficulty >= this = "rare" craft
 var active_combat_loot: Dictionary = {}
+# Loot Lab (#49 dev testing) — peer_id → true when force-mode is on: gather/craft
+# always show the minigame + the board is seeded with one of each rare cell.
+var loot_debug_peers: Dictionary = {}
 var pending_wishes = {}  # peer_id -> {wish_options, drop_messages, total_gems, drop_data}
 var at_merchant = {}  # peer_id -> merchant_info dictionary
 var at_trading_post = {}  # peer_id -> trading_post_data dictionary
@@ -2035,6 +2038,10 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_givemats(peer_id, message)
 		"gm_giveall":
 			handle_gm_giveall(peer_id)
+		"gm_loot_force":
+			handle_gm_loot_force(peer_id)
+		"gm_loot_grant_tools":
+			handle_gm_loot_grant_tools(peer_id)
 		"gm_teleport":
 			handle_gm_teleport(peer_id, message)
 		"gm_tp_stable":
@@ -20197,6 +20204,13 @@ func _start_scratch_off_gathering(peer_id: int, character, job_type: String, gat
 	var _show_minigame: bool = false
 	if not bool(character.skip_gather_minigame):
 		_show_minigame = randf() < (GATHER_SCRATCH_LUCKY_CHANCE if _is_lucky else GATHER_SCRATCH_BASE_CHANCE)
+	# Loot Lab (#49 dev) - force the minigame + seed one of each rare cell.
+	if bool(loot_debug_peers.get(peer_id, false)):
+		_show_minigame = true
+		var _lrares = ["MOTHERLODE", "WILDCARD", "AUTO_MARKET", "PROSPECTOR_BONUS", "BAR_BONUS", "JACKPOT", "LUCKY"]
+		for _lri in range(_lrares.size()):
+			if _lri < slots.size():
+				slots[_lri] = _build_scratch_off_slot(_lrares[_lri], job_type, tier_or_water, skill, biome, node_type)
 	if _show_minigame:
 		scratch_budget = scratch_budget * GATHER_SCRATCH_BUDGET_MULT  # jackpot budget
 
@@ -24045,12 +24059,20 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 	if _craft_wants_minigame:
 		var _rare_craft: bool = int(recipe.get("difficulty", 1)) >= CRAFT_SCRATCH_RARE_DIFFICULTY
 		_craft_show_minigame = randf() < (CRAFT_SCRATCH_RARE_CHANCE if _rare_craft else CRAFT_SCRATCH_BASE_CHANCE)
+	if bool(loot_debug_peers.get(peer_id, false)):
+		_craft_show_minigame = true
 	if _craft_show_minigame:
 		# v0.9.372 — replaced 3-round Q&A challenge with scratch-off minigame.
 		# Slot pool reflects skill (more good outcomes as skill grows), player
 		# reveals slots to determine score; best-reveal-wins feeds into the
 		# existing roll_quality pipeline.
 		var craft_slots = _generate_craft_slots(recipe, skill_level, character)
+		# Loot Lab (#49 dev) - seed one of each affix + rare cell for testing.
+		if bool(loot_debug_peers.get(peer_id, false)):
+			var _cseed = ["EVERLASTING", "LUCKY_TOOL", "PROSPECTOR_TOOL", "WIDE_HARVEST", "QUALITY_UP_3", "DUPLICATE", "BAR_BONUS"]
+			for _ci in range(_cseed.size()):
+				if _ci < craft_slots.size():
+					craft_slots[_ci] = _build_craft_slot(_cseed[_ci], recipe)
 		var craft_scratch_budget = _compute_scratch_budget(skill_level)
 
 		# Tool pre-reveals: crafting has no "tool" subtype mapping (rod / pickaxe
@@ -36073,6 +36095,52 @@ func handle_gm_givemats(peer_id: int, message: Dictionary):
 	if added < amount:
 		msg += "\n[color=#FFAA00]Pouch full! %d %s lost (cap: 999)[/color]" % [amount - added, mat_name]
 	send_to_peer(peer_id, {"type": "text", "message": msg})
+
+func handle_gm_loot_force(peer_id: int):
+	"""Loot Lab (#49 dev) — toggle force-mode: every gather/craft shows the
+	minigame with one of each rare cell seeded, so rares can be tested on demand."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	var on: bool = not bool(loot_debug_peers.get(peer_id, false))
+	loot_debug_peers[peer_id] = on
+	var msg: String = "[color=#40E0FF][Loot Lab] Force minigame + rare cells: %s[/color]" % ("ON — every gather/craft now shows the minigame with one of each rare cell seeded. Gather or craft a tool to see them." if on else "OFF.")
+	send_to_peer(peer_id, {"type": "text", "message": msg})
+
+
+func handle_gm_loot_grant_tools(peer_id: int):
+	"""Loot Lab (#49 dev) — grant a tool per gather job with ALL affixes at high
+	proc rates, so the EFFECTS (durability skip / extra reveals / wildcard / nearby
+	catches) can be tested immediately by equipping + gathering."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var made: Array = []
+	for job in ["fishing", "mining", "logging", "foraging"]:
+		var subtype: String = _get_tool_subtype_for_job(job)
+		if subtype == "":
+			continue
+		var td: Dictionary = DropTables.generate_tool(subtype, 5, "epic")
+		if td.is_empty():
+			continue
+		var b: Dictionary = td.get("tool_bonuses", {})
+		b["durability_free_chance"] = 0.5
+		b["reveals"] = int(b.get("reveals", 0)) + 2
+		b["bar_width_mult"] = 2.0
+		b["wildcard_chance"] = 0.8
+		b["wide_harvest"] = true
+		td["tool_bonuses"] = b
+		td["name"] = "TEST Everlasting-Lucky-Prospector-WideHarvest %s" % String(td.get("name", subtype.capitalize()))
+		td["crafted"] = true
+		ch.inventory.append(td)
+		made.append(subtype)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700][Loot Lab] Granted affixed test tools: %s. Equip one + gather to test the EFFECTS (durability skip / +2 reveals / wildcard / nearby catches).[/color]" % ", ".join(made)})
+
 
 func handle_gm_giveall(peer_id: int):
 	if not _is_admin(peer_id):
