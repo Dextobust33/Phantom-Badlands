@@ -2501,6 +2501,24 @@ func _roll_egg_variant() -> Dictionary:
 
 	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
 
+static func roll_cosmetic_variant() -> Dictionary:
+	"""v0.9.719 — STATIC weighted pick from EGG_VARIANTS (the companion cosmetic pool),
+	so enemy monsters can roll the SAME full color + pattern range companions can. Same
+	rarity weighting as _roll_egg_variant. Returns a copy of {name, color, color2?,
+	pattern, rarity}."""
+	var total_weight := 0
+	for variant in EGG_VARIANTS:
+		total_weight += int(variant.rarity)
+	if total_weight <= 0:
+		return EGG_VARIANTS[0].duplicate()
+	var roll := randi() % total_weight
+	var current := 0
+	for variant in EGG_VARIANTS:
+		current += int(variant.rarity)
+		if roll < current:
+			return variant.duplicate()
+	return EGG_VARIANTS[0].duplicate()
+
 func _roll_egg_variant_with_rng(rng: RandomNumberGenerator) -> Dictionary:
 	"""v0.9.512 — deterministic variant roll using a caller-supplied RNG.
 	Used by character.gd's legacy appearance_variant migration so the same

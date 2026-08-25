@@ -93,21 +93,11 @@ const EMPOWERED_MODIFIERS = {
 # this color via the existing name_color override path (v0.9.513 apex pattern).
 const EMPOWERED_NAME_COLORS = {1: "#4FC3F7", 2: "#BA68C8", 3: "#FFB74D"}
 
-# v0.9.718 (dungeon arc slice 1) — enemy COSMETIC tint. ~COSMETIC_CHANCE of monsters
-# spawn with a random vivid color + pattern that recolors their combat ASCII art body
-# (purely visual — no stat effect). These hues double as the future dungeon-theme
-# palette (a themed dungeon will stamp ONE of these across all its monsters).
-const COSMETIC_TINTS = [
-	{"name": "Frostbound",   "color": "#7FD8FF", "color2": "#BFEFFF"},
-	{"name": "Embertouched", "color": "#FF7A4D", "color2": "#FFC08A"},
-	{"name": "Venomous",     "color": "#7FE05A", "color2": "#C8F5A0"},
-	{"name": "Voidtouched",  "color": "#B07BFF", "color2": "#E0C8FF"},
-	{"name": "Gilded",       "color": "#FFD54A", "color2": "#FFF0B0"},
-	{"name": "Ashen",        "color": "#B8B8C0", "color2": "#E6E6EE"},
-	{"name": "Bloodstained", "color": "#E0495A", "color2": "#FF9AA6"},
-	{"name": "Stormcharged", "color": "#5AC8FF", "color2": "#B0E8FF"},
-]
-const COSMETIC_PATTERNS = ["solid", "gradient_down", "gradient_up", "striped"]
+# v0.9.718/719 (dungeon arc slice 1) — enemy COSMETIC tint. ~COSMETIC_CHANCE of monsters
+# spawn with a random color + pattern that recolors their combat ASCII art body (purely
+# visual — no stat effect). Rolls from the SAME pool as companions/eggs
+# (DropTables.EGG_VARIANTS via roll_cosmetic_variant), so enemies can get ANY color +
+# ANY pattern a companion can. Future dungeon themes will stamp ONE variant dungeon-wide.
 const COSMETIC_CHANCE = 0.12
 
 # Balance configuration (set by server)
@@ -1687,10 +1677,12 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var appearance_color2 := ""
 	var appearance_pattern := "solid"
 	if force_cosmetic or (not is_rare_variant and empowered_mods.is_empty() and randf() < COSMETIC_CHANCE):
-		var tint: Dictionary = COSMETIC_TINTS[randi() % COSMETIC_TINTS.size()]
-		appearance_color = String(tint["color"])
+		# Roll from the companion cosmetic pool → any color + any pattern a companion
+		# can get (rarer = fancier patterns). Same weighting the eggs use.
+		var tint: Dictionary = DropTables.roll_cosmetic_variant()
+		appearance_color = String(tint.get("color", ""))
 		appearance_color2 = String(tint.get("color2", ""))
-		appearance_pattern = COSMETIC_PATTERNS[randi() % COSMETIC_PATTERNS.size()]
+		appearance_pattern = String(tint.get("pattern", "solid"))
 
 	var monster = {
 		"name": monster_name,
