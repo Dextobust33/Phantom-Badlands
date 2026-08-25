@@ -29442,12 +29442,9 @@ func update_coord_post_label() -> void:
 		var direction = String(hud_nearest_post.get("direction", ""))
 		var distance = int(hud_nearest_post.get("distance", 0))
 		lines.append("[color=#5F9EA0]Post:[/color] [color=#FFD700]%s[/color] [color=#AAAAAA]%s ~%d[/color]" % [pname, direction, distance])
-		# Under Threat warning when the nearest post is menaced.
-		if hud_post_threat.get("threatened", false):
-			var threat_dungeon = String(hud_post_threat.get("dungeon_name", "dungeon"))
-			var threat_tier = int(hud_post_threat.get("tier", 1))
-			var threat_color = String(hud_post_threat.get("color", "#FF8800"))
-			lines.append("[color=#FF6347]⚠ Threat:[/color] [color=%s]T%d %s[/color]" % [threat_color, threat_tier, threat_dungeon])
+		# v0.9.713 — Threat line REMOVED from this top-left box (user: it's redundant
+		# with the top-right threat pointer + confusing). Top-left = coords + nearest
+		# post only; threat info lives in the top-right box.
 
 	# Audit #13 Slice 3 — Sanctuary Compass line. Direction to nearest UNVISITED
 	# NPC post. Hidden when the upgrade is locked (level 0) or when every post on
