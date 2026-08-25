@@ -3071,7 +3071,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				if not (combat.character.pending_rank_choices is Array):
 					combat.character.pending_rank_choices = []
 				combat.character.pending_rank_choices.append(queued_choice)
-				var rank_msg = "[color=#FFD700]Mastery rank up![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — choose [color=#87CEEB]+1 Card[/color] or [color=#FFB6C1]+10%% Damage[/color]." % [_ability_display_name(combat.character, ability_name), new_rank, rank_label]
+				var rank_msg = "[color=#FFD700]★ Milestone![/color] [color=#9ACD32]%s[/color] reached [color=#FFD700]Rank %d (%s)[/color] — choose [color=#FF6644]Power[/color] / [color=#FF4444]Rider[/color] / [color=#66B0FF]Efficiency[/color]." % [_ability_display_name(combat.character, ability_name), new_rank, rank_label]
 				if not variant_offer.is_empty():
 					rank_msg += " [color=%s]✦ Imprint: %s (from %s)[/color] also available." % [variant_offer.get("color", "#FFD700"), variant_offer.get("trait_name", "?"), variant_offer.get("companion_name", "?")]
 				if not result.has("messages"):
