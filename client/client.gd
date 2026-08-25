@@ -27687,8 +27687,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.711 — flock cohesion + fixes.
+	display_game("[color=#00FF00]v0.9.711[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ FLOCKS FEEL LIKE ONE FIGHT.[/color] Your [color=#FFC94D]Momentum[/color] / [color=#7FD8C8]Read[/color] / [color=#5AC8FF]Focus[/color] now [b]carry across the whole flock[/b] instead of resetting each enemy — build-up finally pays off in big packs. And killing a rare [b]variant[/b] now spawns a flock of [b]that same variant[/b] (the announce no longer lies).")
+	display_game("  [color=#1EFF00]◆ Fixes.[/color] Loot-shuffle cards no longer [b]overlap/mis-align[/b] mid-shuffle. Opening a [b]treasure chest[/b] from a stack now uses just [b]one[/b] (was consuming the whole stack).")
+	display_game("")
+
+	# v0.9.710 — loot minigame polish.
+	display_game("[color=#00FFFF]v0.9.710[/color]")
+	display_game("  [color=#1EFF00]◆ Rare loot clarity + juice.[/color] Rare cells now show a clear label on reveal ([color=#FFD700]Motherlode / Wildcard / Auto-Sell / Bonus Find / Affix[/color]) and Bonus Find shows both items. The shuffle is [b]faster[/b] with more movement, and the rare cells no longer make the scratch box look oversized/janky.")
+	display_game("")
+
 	# v0.9.709 — dev/testing tooling (Loot Lab).
-	display_game("[color=#00FF00]v0.9.709[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.709[/color]")
 	display_game("  [color=#1EFF00]◆ Under-the-hood.[/color] Added developer testing tools for the new rare loot outcomes + tool affixes (admin-only). No gameplay changes for players.")
 	display_game("")
 
