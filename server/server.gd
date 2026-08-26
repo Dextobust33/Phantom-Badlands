@@ -29873,6 +29873,11 @@ func _maybe_send_npc_post_greeting(peer_id: int, post: Dictionary) -> void:
 	# next visit should pick a fresh non-threat rumor rather than re-show a
 	# stale dungeon/resource line that pre-dated the danger.
 	var rumor_line = _build_threat_rumor_line(px, py, quest_giver, personality)
+	if rumor_line != "":
+		# A threatened-dungeon warning is a rumor too — record it in the Atlas (RUMORED).
+		var _thr = _compute_post_threat_state(px, py)
+		if bool(_thr.get("threatened", false)):
+			_note_rumored_dungeons(peer_id, [{"dungeon_type": String(_thr.get("dungeon_type", "")), "name": String(_thr.get("dungeon_name", "")), "tier": int(_thr.get("tier", 0))}])
 	if rumor_line == "":
 		# Try cache first — same account at same post within TTL gets same rumor.
 		if account_id != "" and npc_post_rumor_cache.has(account_id):
@@ -31460,7 +31465,21 @@ func _find_dungeon_rumors_near(x: int, y: int, max_radius: int, limit: int, peer
 			"color": dungeon_data.get("color", "#88FF88")
 		})
 	candidates.sort_custom(func(a, b): return a.distance < b.distance)
-	return candidates.slice(0, mini(limit, candidates.size()))
+	var result: Array = candidates.slice(0, mini(limit, candidates.size()))
+	_note_rumored_dungeons(peer_id, result)
+	return result
+
+func _note_rumored_dungeons(peer_id: int, rumors: Array) -> void:
+	"""P1 Atlas — hearing a rumor about a dungeon marks it RUMORED in the player's Atlas
+	(a "??? Tier N dungeon" hint). note_dungeon_discovery only ESCALATES state, so this
+	never downgrades an already Spotted/Discovered entry. Called from both rumor paths —
+	fresh (_find_dungeon_rumors_near) and the legacy post's shared rumor cache — so any
+	visitor who is SHOWN a rumor gets it recorded, not just whoever filled the cache."""
+	if peer_id < 0 or not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	for r in rumors:
+		character.note_dungeon_discovery(String(r.get("dungeon_type", "")), Character.DUNGEON_STATE_RUMORED, String(r.get("name", "")), int(r.get("tier", 0)))
 
 func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int = -1) -> Array:
 	"""Audit #5 — cached rumor list for legacy trading posts. Refreshes every
@@ -31470,7 +31489,9 @@ func _get_trading_post_rumors(tp_id: String, tp_x: int, tp_y: int, peer_id: int 
 	if trading_post_rumors.has(tp_id):
 		var cached = trading_post_rumors[tp_id]
 		if current_time - int(cached.get("generated_at", 0)) < TRADING_POST_RUMOR_REFRESH_SEC:
-			return cached.get("rumors", [])
+			var cached_rumors: Array = cached.get("rumors", [])
+			_note_rumored_dungeons(peer_id, cached_rumors)  # cache is shared by post id — mark THIS visitor's Atlas too
+			return cached_rumors
 
 	var rumors = _find_dungeon_rumors_near(tp_x, tp_y, 150, 2, peer_id)
 	trading_post_rumors[tp_id] = {
