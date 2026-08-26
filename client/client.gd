@@ -27766,8 +27766,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.724 — Dungeon Atlas.
+	display_game("[color=#00FF00]v0.9.724[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ DUNGEON ATLAS.[/color] A new [b]Atlas[/b] button (bottom-right) opens your personal codex of every dungeon you've [b]discovered[/b] — its tier, level range, monster pool, boss, and the companion egg it yields. Entering a dungeon records it; clearing one tracks your clear count. Dungeons you haven't found yet stay hidden until you stumble onto them.")
+	display_game("  [color=#1EFF00]◆ Locate.[/color] Each discovered Atlas entry has a [color=#5AC8FF]‹ Locate ›[/color] link — click it and the realm points you toward the [b]nearest active dungeon[/b] of that type (compass direction + distance), or tells you none is stirring right now. Your first step toward hunting down the dungeons you want.")
+	display_game("")
+
 	# v0.9.723 — dungeon floor loot + egg sourcing.
-	display_game("[color=#00FF00]v0.9.723[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.723[/color]")
 	display_game("  [color=#FF8000]★ DUNGEON FLOOR LOOT.[/color] Dungeons now scatter [b]pickup loot on the floor[/b] — [color=#A335EE]◉ eggs[/color], [color=#4DA6FF]◆ gear[/color], [color=#FFD700]♦ consumables[/color], [color=#1EFF00]▪ materials[/color], [color=#FFD700]¢ valor[/color], and [color=#87CEEB]! escape scrolls[/color] — [b]auto-collected as you walk over them[/b] (Azure Dreams style). The old treasure chests / coin piles are folded into this one system.")
 	display_game("  [color=#1EFF00]◆ Eggs come from dungeons now.[/color] Dungeon [b]bosses guarantee[/b] an egg of the dungeon's type, and you can find more as [b]floor loot[/b] that [b]matches the dungeon[/b] (a gnoll dungeon drops gnoll eggs). Overworld kills now only [color=#87CEEB]very rarely[/color] yield an egg — any tier is possible, but the odds plummet with tier (a top-tier wild egg is a once-in-a-lifetime find).")
 	display_game("")
@@ -27795,31 +27801,6 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.720[/color]")
 	display_game("  [color=#1EFF00]◆ Better dungeon layouts.[/color] Floors now have [b]small distinct rooms with long branching corridors[/b] (multiple routes to flank or avoid the wandering monsters) instead of blocky room-grids. No more [b]flock/summon[/b] chains in dungeons — every dungeon monster is one visible fight. The loot minigame shows [b]far less often[/b] on dungeon trash (loot still awarded).")
 	display_game("  [color=#1EFF00]◆ Eggs.[/color] Base incubation slots raised [b]3 → 5[/b], and you can now [b]Discard[/b] an unwanted egg from the Eggs tab.")
-	display_game("")
-
-	# v0.9.719 — dungeon revamp: co-op + bigger dungeons + wandering pressure.
-	display_game("[color=#00FFFF]v0.9.719[/color]")
-	display_game("  [color=#FF8000]★ DUNGEON REVAMP (part 1).[/color] [b]Co-op dungeons:[/b] players in a dungeon no longer block the entrance, multiple people can run the same one, and party members each get their own full rewards. [b]Bigger & longer:[/b] low-tier dungeons gained floors + density.")
-	display_game("  [color=#1EFF00]◆ Wandering pressure replaces the step timer.[/color] The step counter is gone — instead, the longer you linger on a floor the more monsters wander in (away from you). Every dungeon now holds a [color=#87CEEB]guaranteed Escape Scroll[/color] in its treasures as your way out. Threats now clear only when you beat the boss.")
-	display_game("  [color=#1EFF00]◆ Colorful enemies (full palette).[/color] Wild monsters can now roll any color + pattern a companion can.")
-	display_game("")
-
-	# v0.9.718 — enemy cosmetics + flock fix.
-	display_game("[color=#00FFFF]v0.9.718[/color]")
-	display_game("  [color=#1EFF00]◆ Colorful enemies.[/color] Some monsters now spawn with a [color=#7FD8FF]random color[/color] & pattern tint on their battle art — a splash of variety (and the groundwork for themed dungeons to come).")
-	display_game("  [color=#1EFF00]◆ Flock variant fix.[/color] Killing a [b]rare variant[/b] now correctly spawns a flock of that same variant (it was silently failing before).")
-	display_game("")
-
-	# v0.9.717 — deck screen fixes.
-	display_game("[color=#00FFFF]v0.9.717[/color]")
-	display_game("  [color=#1EFF00]◆ Deck screen polish.[/color] [b]Loaner[/b] companion cards now show as [color=#C8A24A]active (LOAN)[/color] and appear in your Deck strip, with a [b]casts-to-keep[/b] counter. Every card now shows its [b]mastery progress[/b] (how close to the next rank) right on the deck screen.")
-	display_game("")
-
-	# v0.9.716 — deck view, plain skill text, market rebalance.
-	display_game("[color=#00FFFF]v0.9.716[/color]")
-	display_game("  [color=#1EFF00]◆ See your deck at a glance.[/color] The Combat Deck screen now shows a [b]Your Deck[/b] strip up top — just the cards actually in your deck, badged by copies. Click a tile to thin a copy.")
-	display_game("  [color=#1EFF00]◆ Plainer skill text.[/color] Ability tooltips drop the jargon/formulas for plain language, and mastery [b]rank progress[/b] now shows the correct 'uses to next rank' (it was reading an old curve).")
-	display_game("  [color=#1EFF00]◆ Markets rebalance across the realm.[/color] Traveling merchants now spread stacked goods a chunk at a time and scatter scarce items (gear/eggs) to nearby posts, so one hub no longer hoards everything.")
 	display_game("")
 
 	# v0.9.715 — class payoff visual states.
@@ -32054,7 +32035,7 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 		if st >= 3:  # discovered — full detail (name is click-to-locate)
 			shown += 1
 			var comp := String(e.get("companion", ""))
-			display_game("[color=%s]◆ [url=atlas_locate:%s]%s[/url][/color] [color=#808080](T%d · Lv %d-%d · %d clears)[/color] [color=#5A9BD4][i]‹locate›[/i][/color]" % [tcol, String(e.get("id", "")), String(e.get("name", "?")), tier, int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0))])
+			display_game("[color=%s]◆ %s[/color] [color=#808080](T%d · Lv %d-%d · %d clears)[/color]  [url=atlas_locate:%s][color=#5AC8FF][b][‹ Locate ›][/b][/color][/url]" % [tcol, String(e.get("name", "?")), tier, int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0)), String(e.get("id", ""))])
 			var monsters: Array = e.get("monsters", [])
 			if monsters.size() > 0:
 				display_game("   [color=#909090]Monsters:[/color] %s" % ", ".join(monsters))
