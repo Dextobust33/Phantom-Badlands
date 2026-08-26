@@ -33081,7 +33081,9 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	var _tt_treasure := int(DungeonDatabaseScript.TileType.TREASURE)
 	var _tt_scattered := int(DungeonDatabaseScript.TileType.SCATTERED_LOOT)
 	var _tt_hoard := int(DungeonDatabaseScript.TileType.GOLD_HOARD)
+	var _tt_resource := int(DungeonDatabaseScript.TileType.RESOURCE)
 	var _tt_empty := int(DungeonDatabaseScript.TileType.EMPTY)
+	var resource_tier: int = int(DungeonDatabaseScript.get_dungeon_resource_tier(tier))
 	var _dbg_blanked := 0
 	var _dbg_placed := 0
 	for floor_num in range(floor_count):
@@ -33096,6 +33098,17 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 					_dbg_blanked += 1
 					if not reh.is_empty():
 						_place_floor_item_at(instance_id, floor_num, gx, gy, reh)
+						_dbg_placed += 1
+				elif _t == _tt_resource:
+					# Ore/gather veins are now FLOOR LOOT too (user 2026-08-26) — no more
+					# mining minigame. Drop the vein's ore materials as auto-pickup items.
+					grid[gy][gx] = _tt_empty
+					_dbg_blanked += 1
+					for m in _roll_dungeon_gather("ore", resource_tier, tier):
+						var _mq: int = maxi(1, int(round(float(int(m.get("quantity", 1))) * (1.0 + (sub_tier - 1) * 0.1))))
+						_place_floor_item_at(instance_id, floor_num, gx, gy, {
+							"kind": "material", "char": "▪", "color": "#00FFCC",
+							"item_data": {"material_id": String(m.get("id", "")), "quantity": _mq}})
 						_dbg_placed += 1
 		# (b) A few extra scattered items per floor (tier-scaled), on random empty tiles.
 		var extra: int = 1 + tier / 3 + (randi() % 2)  # ~1-4 per floor
