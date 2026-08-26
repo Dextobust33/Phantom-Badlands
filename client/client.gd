@@ -2124,6 +2124,7 @@ func _ready():
 		companions_panel.companion_release_requested.connect(_on_comp_panel_release)
 		companions_panel.companion_dismiss_requested.connect(_on_comp_panel_dismiss)
 		companions_panel.egg_freeze_toggled.connect(_on_comp_panel_egg_freeze)
+		companions_panel.egg_discard_requested.connect(_on_comp_panel_egg_discard)
 		companions_panel.sort_changed.connect(_on_comp_panel_sort_changed)
 		companions_panel.inspect_back_requested.connect(_on_comp_panel_inspect_back)
 
@@ -38456,6 +38457,25 @@ func _on_comp_panel_egg_freeze(egg_index: int) -> void:
 	if egg_index < 0:
 		return
 	send_to_server({"type": "toggle_egg_freeze", "index": egg_index})
+
+func _on_comp_panel_egg_discard(egg_index: int) -> void:
+	# v0.9.720 — discarding an egg is permanent, so confirm first.
+	if egg_index < 0:
+		return
+	var eggs = character_data.get("incubating_eggs", [])
+	var egg_name = "this egg"
+	if egg_index < eggs.size():
+		egg_name = str(eggs[egg_index].get("companion_name", "this egg"))
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "Discard Egg"
+	dlg.dialog_text = "Permanently discard %s?\nThis cannot be undone." % egg_name
+	dlg.ok_button_text = "Discard"
+	add_child(dlg)
+	dlg.confirmed.connect(func():
+		send_to_server({"type": "discard_egg", "index": egg_index})
+		dlg.queue_free())
+	dlg.canceled.connect(func(): dlg.queue_free())
+	dlg.popup_centered()
 
 func _on_comp_panel_sort_changed(sort_option: String, ascending: bool) -> void:
 	companion_sort_option = sort_option

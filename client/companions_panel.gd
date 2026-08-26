@@ -14,6 +14,7 @@ signal companion_inspect_requested(companion: Dictionary)
 signal companion_release_requested(companion: Dictionary)
 signal companion_dismiss_requested
 signal egg_freeze_toggled(egg_index: int)
+signal egg_discard_requested(egg_index: int)  # v0.9.720 — discard an unwanted egg
 signal sort_changed(sort_option: String, ascending: bool)
 signal inspect_back_requested
 
@@ -963,7 +964,16 @@ func _make_egg_card(egg: Dictionary, index: int) -> PanelContainer:
 	progress_lbl.text = "[color=%s]%s %d%% (%d/%d)%s[/color]" % [color_tag, bar_text, pct, steps, required, status_tag]
 	vbox.add_child(progress_lbl)
 
-	# Click to toggle freeze
+	# v0.9.720 — per-egg Discard button (visible control; confirmed client-side).
+	var discard_btn := Button.new()
+	discard_btn.text = "Discard"
+	discard_btn.add_theme_font_size_override("font_size", 10)
+	discard_btn.focus_mode = Control.FOCUS_NONE
+	discard_btn.tooltip_text = "Permanently discard this egg (frees an incubation slot)."
+	discard_btn.pressed.connect(func(): emit_signal("egg_discard_requested", index))
+	vbox.add_child(discard_btn)
+
+	# Click card (not the button) to toggle freeze
 	card.gui_input.connect(_on_egg_card_input.bind(index))
 	# Hover tooltip — show ability/hatch-target preview for the egg.
 	card.mouse_entered.connect(_on_egg_card_mouse_entered.bind(egg, card))

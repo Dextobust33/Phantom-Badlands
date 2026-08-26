@@ -88,6 +88,7 @@ const COMBAT_SCRATCH_BUDGET_MULT := 5
 # chain raises the scratch-off odds (user-requested 2026-08-21), capped below 1.
 const COMBAT_SCRATCH_FLOCK_STEP := 0.12
 const COMBAT_SCRATCH_MAX_CHANCE := 0.90
+const DUNGEON_LOOT_SCRATCH_MULT := 0.25  # C3 — dungeon trash gets ¼ the loot-minigame odds (bosses exempt)
 const COMBAT_LOOT_SLOT_COUNT := 16
 # v0.9.664 — the reveal budget (×BUDGET_MULT + empowered + path + flock) can far
 # exceed the default 16 slots, wasting reveals on a too-small grid. When it does,
@@ -1747,6 +1748,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_release_all_companions(peer_id)
 		"toggle_egg_freeze":
 			handle_toggle_egg_freeze(peer_id, message)
+		"discard_egg":
+			handle_discard_egg(peer_id, message)
 		"debug_hatch":
 			handle_debug_hatch(peer_id)
 		# Unified gathering system handlers
@@ -5885,8 +5888,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				_empowered_kill_reveals = _empowered_kill_mods.size() + (1 if "gilded" in _empowered_kill_mods else 0)
 
 			# Check for summoner ability - force a follow-up encounter
+			# C3 (user 2026-08-25) — NO chain combat in dungeons: every dungeon monster
+			# is a single visible entity → exactly one combat. Suppress summoner AND
+			# flock chains when this was a dungeon fight.
+			var _is_dungeon_c: bool = result.get("is_dungeon_combat", false)
 			var summon_next = result.get("summon_next_fight", "")
-			if summon_next != "":
+			if summon_next != "" and not _is_dungeon_c:
 				# Summoner called reinforcements - force a flock encounter
 				var monster_level = result.get("monster_level", 1)
 				# Store drops for later (current_drops already defined above)
@@ -5946,7 +5953,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			# Track gems earned this combat
 			var gems_this_combat = result.get("gems_earned", 0)
 
-			if flock_chance > 0 and flock_roll < flock_chance:
+			if flock_chance > 0 and flock_roll < flock_chance and not _is_dungeon_c:
 				# Flock triggered! Store drops for later, don't give items yet
 				# (v0.9.634 flock-buff diagnostic prints stripped in v0.9.642
 				# after the investigation concluded the carryover works correctly.)
@@ -6142,6 +6149,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				var _scratch_chance: float = COMBAT_SCRATCH_EMPOWERED_CHANCE if _empowered_reveals > 0 else COMBAT_SCRATCH_BASE_CHANCE
 				_scratch_chance += float(max(0, _final_flock_kills - 1)) * COMBAT_SCRATCH_FLOCK_STEP
 				_scratch_chance = minf(_scratch_chance, COMBAT_SCRATCH_MAX_CHANCE)
+				# C3 (user 2026-08-25) — dungeons have far MORE fights now (bigger floors +
+				# wandering escalation), so the loot-reveal minigame fired too often. Cut
+				# the odds hard on dungeon TRASH; a dungeon BOSS still gets the full chance.
+				# Loot is still awarded either way — this just shows it directly, not as a
+				# minigame, most of the time.
+				if _is_dungeon_c and not result.get("is_boss_fight", false):
+					_scratch_chance *= DUNGEON_LOOT_SCRATCH_MULT
 				var _do_scratch: bool = COMBAT_LOOT_SCRATCH_OFF_ENABLED and randf() < _scratch_chance
 				var _combat_loot_bag_view: Dictionary = {}
 				if _do_scratch:
@@ -19552,6 +19566,23 @@ func handle_toggle_egg_freeze(peer_id: int, message: Dictionary):
 			"message": "[color=#FFA500]You unfreeze your %s egg. It will resume hatching when you walk.[/color]" % monster_type
 		})
 
+	send_character_update(peer_id)
+	save_character(peer_id)
+
+func handle_discard_egg(peer_id: int, message: Dictionary):
+	"""v0.9.720 — permanently discard an unwanted incubating egg (frees a slot).
+	Client confirms first."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var egg_index = int(message.get("index", -1))
+	if egg_index < 0 or egg_index >= character.incubating_eggs.size():
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid egg index."})
+		return
+	var egg = character.incubating_eggs[egg_index]
+	var monster_type = str(egg.get("monster_type", egg.get("companion_name", "Unknown")))
+	character.incubating_eggs.remove_at(egg_index)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FF8080]You discard your %s egg.[/color]" % monster_type})
 	send_character_update(peer_id)
 	save_character(peer_id)
 

@@ -1699,10 +1699,10 @@ func get_house_companion_capacity(account_id: String) -> int:
 	return total
 
 func get_egg_capacity(account_id: String) -> int:
-	"""Get total egg incubation slots (base 3 + egg_slots upgrade)"""
+	"""Get total egg incubation slots (base 5 + egg_slots upgrade). v0.9.720: base 3→5."""
 	var house = get_house(account_id)
 	var upgrade_level = house.upgrades.get("egg_slots", 0)
-	return 3 + (upgrade_level * HOUSE_UPGRADES.egg_slots.effect)
+	return 5 + (upgrade_level * HOUSE_UPGRADES.egg_slots.effect)
 
 # Audit #13 Slice 2 — Bestiary helpers.
 

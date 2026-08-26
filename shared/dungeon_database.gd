@@ -1817,10 +1817,10 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 			row.append(TileType.WALL)
 		grid.append(row)
 
-	# BSP split the area (leave 1-tile border)
-	# Scale split depth with grid size: bigger grids get more rooms (C3 — more rooms =
-	# more branching potential).
-	var max_depth = 3 if size <= 14 else (5 if size >= 22 else 4)
+	# BSP split the area (leave 1-tile border). v2 (C3) — keep depth moderate so
+	# partitions stay biggish; combined with the small rooms above, that yields long
+	# corridors between distinct chambers (not a packed grid of rooms).
+	var max_depth = 3 if size <= 16 else 4
 	var partitions = []
 	var initial_rect = Rect2i(1, 1, size - 2, size - 2)
 	_bsp_split(initial_rect, 0, max_depth, rng, partitions)
@@ -1839,30 +1839,22 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 		# Connect each room to the next (chain) — guarantees the floor is fully connected.
 		for i in range(rooms.size() - 1):
 			_connect_rooms(grid, rooms[i], rooms[i + 1], rng)
-		# Extra connection from last to a middle room for loops
-		if rooms.size() > 3:
-			var mid = rooms.size() / 2
-			_connect_rooms(grid, rooms[rooms.size() - 1], rooms[mid], rng)
-		# C3 — BRANCHING: on top of the chain, wire each room to its NEAREST non-chain
-		# neighbour for ~half the rooms, creating loops and forks so there are multiple
-		# routes through a floor (flank or avoid the wandering monsters, or take a
-		# greedier path). Corridor carving is idempotent, so overlaps are harmless.
-		var extra_edges = int(rooms.size() * 0.5)
-		for _e in range(extra_edges):
-			var a = rng.randi_range(0, rooms.size() - 1)
+		# C3 v2 — BRANCHING (Azure-Dreams feel): wire EACH room to its 2 nearest other
+		# rooms, so rooms have multiple exits and the floor is a branchy graph (Room 1 →
+		# Rooms 3 & 5, etc.) rather than a straight line. Corridors run through the empty
+		# space around the small rooms, giving long hallways where wandering monsters can
+		# be met mid-corridor. Carving is idempotent, so duplicate edges are harmless.
+		for a in range(rooms.size()):
 			var ca = _get_room_center(rooms[a])
-			var best = -1
-			var best_d = 1 << 30
+			var order: Array = []
 			for b in range(rooms.size()):
-				if b == a or b == a - 1 or b == a + 1:
-					continue  # skip self + immediate chain neighbours
+				if b == a:
+					continue
 				var cb = _get_room_center(rooms[b])
-				var d = abs(cb.x - ca.x) + abs(cb.y - ca.y)
-				if d < best_d:
-					best_d = d
-					best = b
-			if best >= 0:
-				_connect_rooms(grid, rooms[a], rooms[best], rng)
+				order.append([abs(cb.x - ca.x) + abs(cb.y - ca.y), b])
+			order.sort_custom(func(p, q): return p[0] < q[0])
+			for k in range(mini(2, order.size())):
+				_connect_rooms(grid, rooms[a], rooms[int(order[k][1])], rng)
 
 	# Pick a random corner for entrance placement (adds layout variety)
 	var corners = [
@@ -2518,11 +2510,14 @@ static func _bsp_split(rect: Rect2i, depth: int, max_depth: int, rng: RandomNumb
 			out_partitions.append(rect)
 
 static func _carve_room(grid: Array, partition: Rect2i, rng: RandomNumberGenerator) -> Rect2i:
-	"""Carve a random room within a BSP partition (min 3x3, max ~80% of partition)"""
-	var max_w = max(3, int(partition.size.x * 0.8))
-	var max_h = max(3, int(partition.size.y * 0.8))
-	var room_w = rng.randi_range(3, max_w)
-	var room_h = rng.randi_range(3, max_h)
+	"""Carve a SMALL room within a BSP partition — Azure-Dreams feel: distinct little
+	chambers with LONG corridors between them, not big rectangles that fill the grid.
+	v2 (C3 revamp): cap rooms at ~45% of the partition (max 6) so most of each partition
+	stays wall → the center-to-center corridors run 3-4x longer than before."""
+	var max_w = clampi(int(partition.size.x * 0.45), 3, 6)
+	var max_h = clampi(int(partition.size.y * 0.45), 3, 6)
+	var room_w = rng.randi_range(3, max(3, max_w))
+	var room_h = rng.randi_range(3, max(3, max_h))
 
 	# Random position within partition
 	var room_x = partition.position.x + rng.randi_range(1, max(1, partition.size.x - room_w - 1))

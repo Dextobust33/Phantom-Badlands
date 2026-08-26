@@ -467,7 +467,7 @@ const CLOAK_COST_PERCENT = 8  # % of max resource per movement (must exceed rege
 #           steps_remaining: int, hatch_steps: int, bonuses: Dictionary, obtained_at: int,
 #           frozen: bool (optional - if true, egg won't hatch but can be traded)}]
 @export var incubating_eggs: Array = []
-const MAX_INCUBATING_EGGS = 3  # Can only incubate 3 eggs at a time
+const MAX_INCUBATING_EGGS = 5  # Base incubation slots (v0.9.720: 3→5); +egg_slots house upgrade on top
 
 # Variant stat multipliers - special variants give bonus stats
 # NOTE: Variant definitions are in drop_tables.gd EGG_VARIANTS (single source of truth)
