@@ -517,6 +517,13 @@ func _process_status_ticks(character: Character, messages: Array) -> void:
 # gear/Path/buff regen. Raise to make cards castable more often; lower to make
 # resource management tighter.
 const BASE_COMBAT_REGEN_PCT := 16.0  # v0.9.700 (#29) — 12→16 so longer fights sustain ~1 cast/turn
+# Resource-economy fix (2026-08-25): CAP the base regen so it stops scaling with the
+# (huge) late-game pool. Early game the % is below the cap → unchanged; late game the
+# cap binds so bigger cost-tier casts actually STICK instead of refilling next turn.
+# Sustain beyond the cap comes from the regen GEAR affixes (the sustain build axis).
+# regen = min(pct%-of-max, CAP_FLAT + level*CAP_PER_LVL). Tuned via the sim cost-solve.
+const BASE_COMBAT_REGEN_CAP_FLAT := 25
+const BASE_COMBAT_REGEN_CAP_PER_LVL := 0.5
 
 func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 	"""Apply equipment-based and buff-based resource regeneration at start of player turn.
@@ -530,16 +537,20 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 	# trickles back a flat % of its max each player turn. Silent — the resource
 	# bar shows it. Tune BASE_COMBAT_REGEN_PCT to taste.
 	var base_pct := BASE_COMBAT_REGEN_PCT
+	var regen_cap := BASE_COMBAT_REGEN_CAP_FLAT + int(character.level * BASE_COMBAT_REGEN_CAP_PER_LVL)
 	match character.get_class_path():
 		"warrior":
 			var ms = character.get_total_max_stamina()
-			character.current_stamina = mini(ms, character.current_stamina + maxi(4, int(ms * base_pct / 100.0)))
+			var amt := mini(maxi(4, int(ms * base_pct / 100.0)), regen_cap)
+			character.current_stamina = mini(ms, character.current_stamina + amt)
 		"mage":
 			var mm = character.get_total_max_mana()
-			character.current_mana = mini(mm, character.current_mana + maxi(4, int(mm * base_pct / 100.0)))
+			var amt := mini(maxi(4, int(mm * base_pct / 100.0)), regen_cap)
+			character.current_mana = mini(mm, character.current_mana + amt)
 		"trickster":
 			var me = character.get_total_max_energy()
-			character.current_energy = mini(me, character.current_energy + maxi(4, int(me * base_pct / 100.0)))
+			var amt := mini(maxi(4, int(me * base_pct / 100.0)), regen_cap)
+			character.current_energy = mini(me, character.current_energy + amt)
 
 	# Path: combat_resource_regen_pct (Second Wind — % of max primary
 	# resource per combat round, archetype-matched).
