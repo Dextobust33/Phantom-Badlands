@@ -85,8 +85,10 @@ const COMBAT_SCRATCH_BASE_CHANCE := 0.07
 const COMBAT_SCRATCH_EMPOWERED_CHANCE := 0.60
 const COMBAT_SCRATCH_BUDGET_MULT := 5
 # Flock chains build toward a reward — each additional monster killed in the
-# chain raises the scratch-off odds (user-requested 2026-08-21), capped below 1.
-const COMBAT_SCRATCH_FLOCK_STEP := 0.12
+# chain raises the scratch-off odds (user-requested 2026-08-21). v0.9.721 — softened
+# 0.12→0.05/kill (user 2026-08-25): a bigger flock still means a higher chance, but a
+# big flock no longer near-guarantees the minigame (12-kill flock ≈ 62%, not 90%).
+const COMBAT_SCRATCH_FLOCK_STEP := 0.05
 const COMBAT_SCRATCH_MAX_CHANCE := 0.90
 const DUNGEON_LOOT_SCRATCH_MULT := 0.25  # C3 — dungeon trash gets ¼ the loot-minigame odds (bosses exempt)
 const COMBAT_LOOT_SLOT_COUNT := 16
@@ -20743,7 +20745,11 @@ func _combat_loot_reveal_budget(monster_tier: int, flock_kills: int, soldier_lev
 		base = 2
 	else:
 		base = 3
-	var bonus = max(0, flock_kills - 1)
+	# v0.9.721 — flock reveal bonus SOFTENED (user 2026-08-25). Was +1 per extra kill
+	# (then ×COMBAT_SCRATCH_BUDGET_MULT), so a big flock became a pile of reveals. Now
+	# diminishing (~half) + capped, so a bigger flock still earns more but never a
+	# guaranteed bunch. e.g. 5-flock → +2, 12-flock → +3 (before the ×mult).
+	var bonus = mini(int(ceil(float(max(0, flock_kills - 1)) / 2.0)), 3)
 	var soldier_bonus = 0
 	if soldier_level >= 80:
 		soldier_bonus = 3
