@@ -731,6 +731,23 @@ const HELP_TOPICS := {
 			+ "[color=#888888]Target must be online to receive a bounty for the first time (so they know they're marked). Offline players that already have bounties still show on the board (offline) tag.[/color]"
 		),
 	},
+	"quest_board": {
+		"title": "[color=#FFD700]✧ Quest Board[/color]",
+		"body": (
+			"Quests now center on DUNGEONS (P2, 2026-08-26). Walk into the Quest Board (Q) at any trading post to open this panel.\n\n"
+			+ "[color=#FFD700]── Three sections ──[/color]\n"
+			+ "  • [color=#3BE06B]Ready to Turn In[/color] — completed quests. Press [color=#3BE06B]Turn In[/color] to collect XP + Valor (the board closes so you can read the reward).\n"
+			+ "  • [color=#FFD700]Available[/color] — press [color=#FFE066]Accept[/color] to take one. Threat bounties (⚠) and the ★ Featured pick sort to the top.\n"
+			+ "  • [color=#4DD6E0]Your Active Quests[/color] — progress + where to turn in. Press [color=#FF8888]Abandon[/color] to drop one (the starter Pathfinder chain can't be abandoned).\n\n"
+			+ "[color=#FFD700]── Quest kinds ──[/color]\n"
+			+ "  • [color=#FFE066]Conquer[/color] — clear a dungeon and beat its boss.\n"
+			+ "  • [color=#FFE066]Rescue[/color] — free a trapped NPC (look for the [color=#4DD0FF]R[/color] inside); breeders reward a rare egg.\n"
+			+ "  • [color=#FF8800]Threat bounty[/color] — drive off a dungeon menacing this post.\n\n"
+			+ "[color=#FFD700]── Slots ──[/color]\n"
+			+ "You can hold up to 3 active quests. Accepting a dungeon quest spins up your own personal instance to run.\n\n"
+			+ "[color=#888888]Tip: the Cartographer (K) + Dungeon Atlas help you Locate the dungeons your quests point to.[/color]"
+		),
+	},
 	"mastery_atlas": {
 		"title": "[color=#FFD700]Mastery Atlas[/color]",
 		"body": (

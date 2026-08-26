@@ -58,6 +58,13 @@ enum QuestType {
 	DELIVER             # 10 - Audit #6 Slice 9: deliver X of an item (loot/craft/buy — any path)
 }
 
+# P2 (2026-08-26) — the dynamic quest board's type pool. SINGLE SOURCE OF TRUTH: both
+# generate_dynamic_quests (display) and _regenerate_daily_quest (accept/turn-in lookup)
+# walk a shared RNG in lockstep picking `rng.randi() % pool.size()`, so they MUST use the
+# exact same array or the accepted quest won't match the displayed one. Dungeon-centered:
+# only DUNGEON_CLEAR + RESCUE for now (BOSS_HUNT + dungeon-GATHER rejoin in slices 2-3).
+const DYNAMIC_QUEST_TYPES := [QuestType.DUNGEON_CLEAR, QuestType.RESCUE]
+
 # Quest data structure:
 # {
 #   "id": String,
@@ -2332,9 +2339,9 @@ func generate_dynamic_quests(trading_post_id: String, completed_quests: Array, a
 	# Calculate difficulty modifier from progression
 	var progression_modifier = min(0.5, quests_completed_at_post * 0.05)
 
-	# Available quest types for cycling (weighted by what makes sense for the area)
-	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
-		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]
+	# P2 (2026-08-26) — DUNGEON-CENTERED BOARD. Pool is the shared DYNAMIC_QUEST_TYPES
+	# constant (MUST match _regenerate_daily_quest — see the const's note).
+	var quest_types = DYNAMIC_QUEST_TYPES
 
 	# Sliding-window loop: walk indices from 0, skipping below the floor,
 	# yielding until we have board_size visible quests. Active and completed
@@ -2412,17 +2419,12 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	var type_index = rng.randi() % quest_types.size()
 	var picked_type = quest_types[type_index]
 
-	# Some types need features to exist - fall back to KILL_ANY/KILL_TIER if not
+	# P2 dungeon-only board: every dynamic quest routes into a dungeon. _get_dungeon_for_area
+	# walks down to tier 1 (always populated), so this is effectively never empty — but if it
+	# ever is, yield nothing (the board loop skips empties) rather than an overworld fallback.
 	var dungeon_info = _get_dungeon_for_area(area_level)
-	if picked_type == QuestType.DUNGEON_CLEAR and dungeon_info.is_empty():
-		picked_type = QuestType.KILL_TIER
-	if picked_type == QuestType.RESCUE and dungeon_info.is_empty():
-		picked_type = QuestType.BOSS_HUNT
-	if picked_type == QuestType.EXPLORATION:
-		# Need a different post to explore to
-		var nearby_posts = _find_nearby_posts(post_coords, 50, 300)
-		if nearby_posts.is_empty():
-			picked_type = QuestType.KILL_ANY
+	if dungeon_info.is_empty():
+		return {}
 
 	var quest_name: String
 	var quest_desc: String
@@ -2591,10 +2593,10 @@ func _regenerate_daily_quest(quest_id: String, player_level: int = -1, quests_co
 	var daily_seed = hash(trading_post_id + date_str + character_name)
 	var rng = RandomNumberGenerator.new()
 	rng.seed = daily_seed
-	# Advance rng state to match the index (each quest consumes some rng calls)
-	# We need to regenerate all quests up to and including this index
-	var quest_types = [QuestType.KILL_ANY, QuestType.KILL_TIER, QuestType.HOTZONE_KILL,
-		QuestType.BOSS_HUNT, QuestType.EXPLORATION, QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.GATHER]
+	# Advance rng state to match the index (each quest consumes some rng calls).
+	# MUST use the SAME pool as generate_dynamic_quests or the regenerated quest won't
+	# match what was displayed (this exact mismatch caused accept-gives-wrong-quest).
+	var quest_types = DYNAMIC_QUEST_TYPES
 
 	# Determine board size — must match generate_dynamic_quests exactly so
 	# the rng state stays in lockstep when we walk indices below. (Slice 13

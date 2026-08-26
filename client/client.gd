@@ -1514,6 +1514,10 @@ var sanctuary_stable_panel = null
 const BestiaryPanelScript = preload("res://client/bestiary_panel.gd")
 var bestiary_panel = null
 
+# P2 (2026-08-26) — Quest Board panel (replaces the game_output quest text blob).
+const QuestBoardPanelScript = preload("res://client/quest_board_panel.gd")
+var quest_board_panel = null
+
 # Path of the Badlands (ARPG pillar 3) — skill tree panel.
 const PathsPanelScript = preload("res://client/paths_panel.gd")
 var paths_panel = null
@@ -2322,6 +2326,15 @@ func _ready():
 	bestiary_panel = BestiaryPanelScript.new()
 	add_child(bestiary_panel)
 	bestiary_panel.close_requested.connect(_on_bestiary_panel_close)
+
+	# P2 (2026-08-26) — Quest Board panel. Replaces the game_output text blob.
+	quest_board_panel = QuestBoardPanelScript.new()
+	add_child(quest_board_panel)
+	quest_board_panel.accept_requested.connect(func(qid): send_to_server({"type": "quest_accept", "quest_id": qid}))
+	quest_board_panel.turn_in_requested.connect(func(qid): send_to_server({"type": "quest_turn_in", "quest_id": qid}))
+	quest_board_panel.abandon_requested.connect(func(qid): send_to_server({"type": "quest_abandon", "quest_id": qid}))
+	quest_board_panel.refresh_requested.connect(func(): send_to_server({"type": "trading_post_quests"}))
+	quest_board_panel.dismissed.connect(func(): update_action_bar())
 
 	# Combat scratch-off panel (user-requested 2026-05-14). Parented to
 	# game_output_container so the centering math matches other gathering
@@ -4228,7 +4241,8 @@ func _process(delta):
 	var gamble_popup_open = gamble_popup != null and gamble_popup.visible
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
-	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open
+	var quest_board_open = quest_board_panel != null and quest_board_panel.visible
+	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open or quest_board_open
 	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode and not _testfx_step_active
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
@@ -22946,13 +22960,25 @@ func handle_server_message(message: Dictionary):
 			handle_quest_list(message)
 
 		"quest_accepted":
-			display_game("[color=#00FF00]%s[/color]" % message.get("message", "Quest accepted!"))
+			# P2 — if the Quest Board panel is open, refresh it in place (the accepted
+			# quest slides into the Active section) rather than printing behind it.
+			if quest_board_panel != null and quest_board_panel.visible:
+				send_to_server({"type": "trading_post_quests"})
+			else:
+				display_game("[color=#00FF00]%s[/color]" % message.get("message", "Quest accepted!"))
 			update_action_bar()
 
 		"quest_abandoned":
-			display_game("[color=#00FFFF]%s[/color]" % message.get("message", "Quest abandoned."))
+			if quest_board_panel != null and quest_board_panel.visible:
+				send_to_server({"type": "trading_post_quests"})
+			else:
+				display_game("[color=#00FFFF]%s[/color]" % message.get("message", "Quest abandoned."))
 
 		"quest_turned_in":
+			# P2 — turning in is a reward moment: close the board so the full
+			# "Quest Complete" reward/level-up screen is visible in game_output.
+			if quest_board_panel != null and quest_board_panel.visible:
+				quest_board_panel.visible = false
 			handle_quest_turned_in(message)
 
 		"quest_progress":
@@ -41233,6 +41259,16 @@ func handle_quest_list(message: Dictionary):
 	for i in range(9):
 		if is_item_select_key_pressed(i):
 			set_meta("questkey_%d_pressed" % i, true)
+
+	# P2 (2026-08-26) — render into the dedicated Quest Board panel instead of the
+	# game_output text blob. Clear per-card Accept/Turn In/Abandon buttons, sections,
+	# and an inner scroll so it never overflows the screen. The old text path below is
+	# kept as an unreachable fallback (only runs if the panel failed to instantiate).
+	if quest_board_panel != null:
+		quest_view_mode = false
+		quest_board_panel.open_board(message)
+		update_action_bar()
+		return
 
 	quest_view_mode = true
 	update_action_bar()

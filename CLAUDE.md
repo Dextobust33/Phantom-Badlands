@@ -84,18 +84,20 @@ Server messages (`character_update`, `location`, `text`, `combat_update`, `inven
 
 **IMPORTANT — open game/test windows on the secondary monitor.** Always pass `--screen 1` when launching a Godot window so it opens on the user's secondary monitor (index 1), not the primary (index 0). The editor + project manager are already pinned to screen 1 via editor settings; `--screen 1` does the same for CLI-launched game windows. (`--headless` exports take no `--screen`.)
 
+**IMPORTANT — the SERVER window must be launched small so it's closeable.** The project window is 1920×1080, so on a 1080p monitor `--windowed` alone yields a window exactly the screen size with no grabbable title bar (looks fullscreen, can't be closed). ALWAYS launch the server with `--windowed --resolution 1280x720` so it opens as a small, decorated, closeable window. The client can stay full-size.
+
 **Preferred Launch (with output capture):**
 ```bash
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 server/server.tscn 2>&1 &
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 --windowed --resolution 1280x720 server/server.tscn 2>&1 &
 sleep 3
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 client/client.tscn 2>&1
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 --windowed client/client.tscn 2>&1
 ```
 Use `run_in_background: true` and 600000ms timeout. Read output file to see console messages.
 
 **Simple Launch:**
 ```bash
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 server/server.tscn &
-"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 client/client.tscn &
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 --windowed --resolution 1280x720 server/server.tscn &
+"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe" --path "C:\Users\Dexto\Documents\phantasia-revival" --screen 1 --windowed client/client.tscn &
 ```
 
 **Validate GDScript:**

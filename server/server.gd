@@ -15551,7 +15551,8 @@ func handle_trading_post_quests(peer_id: int):
 				"target": quest_data.target,
 				"description": description,
 				"is_complete": quest_data.progress >= quest_data.target,
-				"trading_post": quest.trading_post
+				"trading_post": quest.trading_post,
+				"chain_id": quest.get("chain_id", "")  # P2 — lets the panel hide Abandon on the Pathfinder chain
 			})
 
 	send_to_peer(peer_id, {
