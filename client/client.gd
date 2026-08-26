@@ -1517,6 +1517,7 @@ var bestiary_panel = null
 # P2 (2026-08-26) — Quest Board panel (replaces the game_output quest text blob).
 const QuestBoardPanelScript = preload("res://client/quest_board_panel.gd")
 var quest_board_panel = null
+var _quest_panel_active_only := false  # true = opened from map "Quests" (active-only view), false = board at a post
 
 # Path of the Badlands (ARPG pillar 3) — skill tree panel.
 const PathsPanelScript = preload("res://client/paths_panel.gd")
@@ -22970,7 +22971,8 @@ func handle_server_message(message: Dictionary):
 
 		"quest_abandoned":
 			if quest_board_panel != null and quest_board_panel.visible:
-				send_to_server({"type": "trading_post_quests"})
+				# Refresh the SAME view the panel is showing (map active-only vs post board).
+				send_to_server({"type": "get_quest_log" if _quest_panel_active_only else "trading_post_quests"})
 			else:
 				display_game("[color=#00FFFF]%s[/color]" % message.get("message", "Quest abandoned."))
 
@@ -27797,8 +27799,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.727 — Dungeon-centered quests (P2).
+	display_game("[color=#00FF00]v0.9.727[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ QUESTS NOW CENTER ON DUNGEONS.[/color] The quest board is [b]all dungeon quests[/b] now — the old 'kill 8 monsters / walk to a post' filler is gone. Four kinds: [color=#FFE066]Conquer[/color] (clear a dungeon), [color=#FFE066]Rescue[/color] (free a trapped NPC), [color=#FF8800]Slay the Fabled[/color] (a [b]named, buffed boss[/b] inside a dungeon), and [color=#5AC8FF]Plunder[/color] (recover ✦ relics from a dungeon's floors).")
+	display_game("  [color=#1EFF00]◆ New Quest Board panel.[/color] The board is now a proper [b]panel with clear buttons[/b] — every quest has its own [color=#3BE06B]Accept[/color] / [color=#3BE06B]Turn In[/color] / [color=#FF8888]Abandon[/color], in tidy sections, no more scrolling a wall of text or guessing which number key does what. The map [b]Quests[/b] button opens the same panel (with each quest's dungeon [b]direction + distance[/b]).")
+	display_game("  [color=#1EFF00]◆ Fixes.[/color] Fabled-boss quests no longer complete from overworld kills. Low-tier dungeons no longer spawn far out in high-level territory (tier now matches the area). Cartography's ‹Locate› and the Atlas tie into where your quests point.")
+	display_game("")
+
 	# v0.9.726 — Cartographer NPC + roomier posts.
-	display_game("[color=#00FF00]v0.9.726[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.726[/color]")
 	display_game("  [color=#FF8000]★ CARTOGRAPHER NPC.[/color] Trading posts now have a visible [color=#5AC8FF]Cartographer (K)[/color] — walk into them to open your [b]Dungeon Atlas[/b] and Locate dungeons on the spot. No more digging through menus to find where to consult one.")
 	display_game("  [color=#1EFF00]◆ Roomier posts.[/color] Posts now hold [b]one of each station[/b] instead of two — less clutter.")
 	display_game("  [color=#1EFF00]◆ Players share stations.[/color] You can now [b]stand on the same tile as another player[/b] when you're right next to a station, so nobody blocks the forge/market/healer. (Everywhere else, walking into a player still works as before — party invites, trades, etc.)")
@@ -41266,6 +41275,7 @@ func handle_quest_list(message: Dictionary):
 	# kept as an unreachable fallback (only runs if the panel failed to instantiate).
 	if quest_board_panel != null:
 		quest_view_mode = false
+		_quest_panel_active_only = false
 		quest_board_panel.open_board(message)
 		update_action_bar()
 		return
@@ -41857,6 +41867,15 @@ func handle_quest_turned_in(message: Dictionary):
 
 func handle_quest_log(message: Dictionary):
 	"""Handle quest log display with abandonment option"""
+	# P2 (2026-08-26) — unified Quest panel: the map "Quests" button now opens the same
+	# card panel as the board, in active-only mode (objective + dungeon location + Abandon).
+	if quest_board_panel != null:
+		quest_log_mode = false
+		_quest_panel_active_only = true
+		quest_board_panel.open_board(message, true)
+		update_action_bar()
+		return
+
 	var log_text = message.get("log", "No quests.")
 	var active_count = message.get("active_count", 0)
 	var max_quests = message.get("max_quests", 5)

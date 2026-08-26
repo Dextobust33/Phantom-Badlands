@@ -43,9 +43,10 @@ func _ready() -> void:
 	visible = false
 
 
-func open_board(message: Dictionary) -> void:
+func open_board(message: Dictionary, active_only: bool = false) -> void:
 	"""Render the quest_list payload as cards. Called on every quest_list message
-	(initial open + refreshes after accept/turn-in)."""
+	(initial open + refreshes after accept/turn-in). active_only = the unified 'Your Quests'
+	view opened from the map — shows just the Active section (no Turn In / Available)."""
 	_tp_id = String(message.get("trading_post_id", ""))
 	_active_count = int(message.get("active_count", 0))
 	_max_quests = int(message.get("max_quests", 3))
@@ -54,44 +55,55 @@ func open_board(message: Dictionary) -> void:
 	var turn_ins: Array = message.get("quests_to_turn_in", [])
 	var available: Array = message.get("available_quests", [])
 	var active: Array = message.get("active_quests", [])
+	var full := _active_count >= _max_quests
 
 	_title_label.clear()
-	_title_label.append_text("[color=#FFD700]✧ Quest Board — %s[/color]" % tp_name)
 	_subtitle_label.clear()
-	var full := _active_count >= _max_quests
-	var slot_color := "#FF8866" if full else "#9ACD32"
-	_subtitle_label.append_text("[color=#B0B0B0]%s[/color]   [color=%s]Active quests: %d / %d[/color]%s" % [
-		giver, slot_color, _active_count, _max_quests,
-		("   [color=#FF8866](full — turn in or abandon to free a slot)[/color]" if full else "")])
+	if active_only:
+		_title_label.append_text("[color=#FFD700]✧ Your Quests[/color]")
+		_subtitle_label.append_text("[color=#4DD6E0]Active quests: %d / %d[/color]   [color=#888888]Visit a Quest Board (Q) at a post to take or turn in quests.[/color]" % [_active_count, _max_quests])
+	else:
+		_title_label.append_text("[color=#FFD700]✧ Quest Board — %s[/color]" % tp_name)
+		var slot_color := "#FF8866" if full else "#9ACD32"
+		_subtitle_label.append_text("[color=#B0B0B0]%s[/color]   [color=%s]Active quests: %d / %d[/color]%s" % [
+			giver, slot_color, _active_count, _max_quests,
+			("   [color=#FF8866](full — turn in or abandon to free a slot)[/color]" if full else "")])
 
 	# Rebuild content
 	for c in _content.get_children():
 		c.queue_free()
 
-	# --- Section 1: Ready to Turn In ---
-	if turn_ins.size() > 0:
-		_add_section_header("✓ Ready to Turn In", "#3BE06B")
-		for q in turn_ins:
-			_add_turn_in_card(q)
+	if not active_only:
+		# --- Section 1: Ready to Turn In ---
+		if turn_ins.size() > 0:
+			_add_section_header("✓ Ready to Turn In", "#3BE06B")
+			for q in turn_ins:
+				_add_turn_in_card(q)
 
-	# --- Section 2: Available ---
-	_add_section_header("Available Quests", "#FFD700")
-	if available.size() == 0:
-		_add_empty_line("No quests available here right now.")
-	else:
-		# Threat bounties first, then featured, then the rest.
-		var sorted_avail := available.duplicate()
-		sorted_avail.sort_custom(func(a, b):
-			var at = bool(a.get("is_threat_relief", false))
-			var bt = bool(b.get("is_threat_relief", false))
-			if at != bt:
-				return at
-			return bool(a.get("is_featured", false)) and not bool(b.get("is_featured", false)))
-		for q in sorted_avail:
-			_add_available_card(q, full)
+		# --- Section 2: Available ---
+		_add_section_header("Available Quests", "#FFD700")
+		if available.size() == 0:
+			_add_empty_line("No quests available here right now.")
+		else:
+			# Threat bounties first, then featured, then the rest.
+			var sorted_avail := available.duplicate()
+			sorted_avail.sort_custom(func(a, b):
+				var at = bool(a.get("is_threat_relief", false))
+				var bt = bool(b.get("is_threat_relief", false))
+				if at != bt:
+					return at
+				return bool(a.get("is_featured", false)) and not bool(b.get("is_featured", false)))
+			for q in sorted_avail:
+				_add_available_card(q, full)
 
 	# --- Section 3: Active ---
-	if active.size() > 0:
+	if active_only:
+		if active.size() == 0:
+			_add_empty_line("You have no active quests. Take some at a Quest Board (Q).")
+		else:
+			for q in active:
+				_add_active_card(q)
+	elif active.size() > 0:
 		_add_section_header("Your Active Quests", "#4DD6E0")
 		for q in active:
 			_add_active_card(q)

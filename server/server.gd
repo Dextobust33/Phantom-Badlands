@@ -15526,8 +15526,8 @@ func handle_trading_post_quests(peer_id: int):
 		if not quest.is_empty():
 			var description = quest.get("description", "")
 
-			# Add dungeon direction hints for dungeon and rescue quests
-			if quest.get("type") in [quest_db.QuestType.DUNGEON_CLEAR, quest_db.QuestType.RESCUE]:
+			# Add dungeon direction hints for all dungeon-routed quests.
+			if quest.get("type") in [quest_db.QuestType.DUNGEON_CLEAR, quest_db.QuestType.RESCUE, quest_db.QuestType.BOSS_HUNT, quest_db.QuestType.GATHER]:
 				# Check for player's personal dungeon first
 				var dungeon_info = _get_player_dungeon_info(peer_id, quest_data.quest_id, tp_x, tp_y)
 				if not dungeon_info.is_empty():
@@ -18261,18 +18261,18 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 		if String(quest.get("chain_id", "")) != "":
 			_maybe_send_chain_hint(peer_id, quest)
 
-		# For BOSS_HUNT quests with named bounty, register the bounty
-		if quest.get("type") == quest_db.QuestType.BOSS_HUNT and quest.has("bounty_name"):
-			active_bounties[quest_id] = {
-				"x": int(quest.get("bounty_x", 0)),
-				"y": int(quest.get("bounty_y", 0)),
-				"monster_type": quest.get("bounty_monster_type", ""),
-				"level": int(quest.get("bounty_level", character.level)),
-				"name": quest.get("bounty_name", ""),
-				"peer_id": peer_id,
-			}
-			log_message("Registered bounty '%s' at (%d, %d) for player %s" % [
-				quest.get("bounty_name", ""), int(quest.get("bounty_x", 0)), int(quest.get("bounty_y", 0)), character.name])
+		# P2 Slice 2 — BOSS_HUNT is now a FABLED BOSS inside a personal dungeon (not a
+		# world-tile bounty). Create the instance tagged with the fabled name so its boss
+		# spawns renamed + buffed. Completion mirrors DUNGEON_CLEAR (clear the dungeon).
+		if quest.get("type") == quest_db.QuestType.BOSS_HUNT:
+			var fb_dungeon_type = quest.get("dungeon_type", "")
+			var fb_name = String(quest.get("fabled_boss_name", ""))
+			var fb_instance_id = _create_player_dungeon_instance(peer_id, quest_id, fb_dungeon_type, character.level, fb_name)
+			if fb_instance_id != "":
+				if not player_dungeon_instances.has(peer_id):
+					player_dungeon_instances[peer_id] = {}
+				player_dungeon_instances[peer_id][quest_id] = fb_instance_id
+				log_message("Created fabled-boss dungeon %s ('%s') for player %s" % [fb_instance_id, fb_name, character.name])
 
 		# For RESCUE quests, create a personal dungeon with rescue NPC
 		if quest.get("type") == quest_db.QuestType.RESCUE:
@@ -18299,6 +18299,19 @@ func handle_quest_accept(peer_id: int, message: Dictionary):
 					player_dungeon_instances[peer_id] = {}
 				player_dungeon_instances[peer_id][quest_id] = instance_id
 				log_message("Created personal dungeon %s for player %s quest %s" % [instance_id, character.name, quest_id])
+
+		# P2 Slice 3 — GATHER (dungeon-relic) quests create a personal instance seeded with
+		# N themed relics as floor loot (auto-collected → ticks the quest).
+		if quest.get("type") == quest_db.QuestType.GATHER:
+			var g_dungeon_type = quest.get("dungeon_type", "")
+			var g_relic = String(quest.get("gather_relic_name", "Relic"))
+			var g_count = int(quest.get("target", 3))
+			var g_instance_id = _create_player_dungeon_instance(peer_id, quest_id, g_dungeon_type, character.level, "", g_relic, g_count)
+			if g_instance_id != "":
+				if not player_dungeon_instances.has(peer_id):
+					player_dungeon_instances[peer_id] = {}
+				player_dungeon_instances[peer_id][quest_id] = g_instance_id
+				log_message("Created gather dungeon %s (%d× %s) for player %s" % [g_instance_id, g_count, g_relic, character.name])
 
 		send_to_peer(peer_id, {
 			"type": "quest_accepted",
@@ -18612,8 +18625,8 @@ func handle_get_quest_log(peer_id: int):
 				if description.is_empty():
 					description = quest_data.get("description", "")
 
-		# Add dungeon direction hints for dungeon quests
-		if quest_type == quest_db.QuestType.DUNGEON_CLEAR:
+		# Add dungeon direction hints for dungeon-routed quests (clear / fabled boss / gather).
+		if quest_type == quest_db.QuestType.DUNGEON_CLEAR or quest_type == quest_db.QuestType.BOSS_HUNT or quest_type == quest_db.QuestType.GATHER:
 			var direction_text = ""
 			# Check for player's personal dungeon first
 			var dungeon_info = _get_player_dungeon_info(peer_id, qid, character.x, character.y)
@@ -18692,7 +18705,11 @@ func handle_get_quest_log(peer_id: int):
 			"name": quest_name if not quest_name.is_empty() else "Unknown Quest",
 			"progress": quest.get("progress", 0),
 			"target": quest.get("target", 1),
-			"description": description
+			"description": description,
+			# P2 — extra fields so the unified Quest panel's Active cards render fully.
+			"is_complete": int(quest.get("progress", 0)) >= int(quest.get("target", 1)),
+			"trading_post": quest.get("trading_post", ""),
+			"chain_id": quest.get("chain_id", "")
 		})
 
 	var quest_log = quest_mgr.format_quest_log(character, extra_info)
@@ -29074,8 +29091,11 @@ func _create_dungeon_instance(dungeon_type: String) -> String:
 	log_message("Created dungeon instance: %s (%s) [T%d-%d]" % [instance_id, dungeon_data.name, dungeon_data.tier, sub_tier])
 	return instance_id
 
-func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int) -> String:
-	"""Create a personal dungeon instance for a player's quest. Returns instance ID."""
+func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_type: String, player_level: int, fabled_boss_name: String = "", gather_relic_name: String = "", gather_relic_count: int = 0) -> String:
+	"""Create a personal dungeon instance for a player's quest. Returns instance ID.
+	fabled_boss_name (P2 Slice 2): if set, the dungeon's boss spawns renamed + buffed.
+	gather_relic_name/count (P2 Slice 3): if set, N themed relics spawn as floor loot for a
+	dungeon-gather quest. Both must be stored on the instance BEFORE monsters/items spawn."""
 	if active_dungeons.size() >= MAX_ACTIVE_DUNGEONS:
 		log_message("Cannot create player dungeon - max dungeons reached")
 		return ""
@@ -29152,7 +29172,10 @@ func _create_player_dungeon_instance(peer_id: int, quest_id: String, dungeon_typ
 		"sub_tier": sub_tier,
 		"owner_peer_id": peer_id,  # Track who owns this instance
 		"owner_username": peers.get(peer_id, {}).get("username", ""),  # For reconnect lookup
-		"quest_id": quest_id  # Track which quest this is for
+		"quest_id": quest_id,  # Track which quest this is for
+		"fabled_boss_name": fabled_boss_name,  # P2 Slice 2 — non-empty → boss renamed + buffed
+		"gather_relic_name": gather_relic_name,  # P2 Slice 3 — dungeon-gather relic
+		"gather_relic_count": gather_relic_count
 	}
 
 	# Generate all floor grids (BSP rooms + corridors)
@@ -29435,8 +29458,8 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	var instance_id = "world_dungeon_%d" % next_dungeon_id
 	next_dungeon_id += 1
 
-	# Get spawn location based on tier - higher tiers spawn further from origin
-	var spawn_loc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+	# Spawn location is rolled per-attempt in the loop below (tier-banded via
+	# get_spawn_location_for_tier — higher tiers spawn further from origin).
 
 	# Try to find a valid spawn location (not on a trading post or existing dungeon)
 	var world_x = 0
@@ -29460,12 +29483,14 @@ func _create_world_dungeon(dungeon_type: String) -> String:
 	var r_sq_local: int = THREAT_CORRIDOR_RADIUS * THREAT_CORRIDOR_RADIUS
 
 	for _attempt in range(max_attempts):
-		# Add more randomness to position (within 100 tiles of tier's base location)
-		# This creates a wider spread of dungeons across the map
-		var offset_x = (randi() % 201) - 100
-		var offset_y = (randi() % 201) - 100
-		world_x = spawn_loc.x + offset_x
-		world_y = spawn_loc.y + offset_y
+		# Re-roll a fresh IN-BAND location each attempt. get_spawn_location_for_tier already
+		# randomizes angle + distance within the tier's annulus (T1 = 30-60 tiles, T2 = 60-120,
+		# …), so this spreads dungeons without leaving the band. (Previously a ±100-tile offset
+		# was added here "for spread" — but that swamped low tiers' narrow bands and scattered
+		# T1/T2 dungeons ~145 tiles out into high-level overworld, mismatching their level.)
+		var reloc = DungeonDatabaseScript.get_spawn_location_for_tier(dungeon_data.tier)
+		world_x = reloc.x
+		world_y = reloc.y
 
 		# Check if this location overlaps with a trading post, NPC post, or existing dungeon
 		if trading_post_db.is_trading_post_tile(world_x, world_y) \
@@ -31554,8 +31579,8 @@ func _add_dungeon_directions_to_quests(quests: Array, _tp_x: int, _tp_y: int) ->
 	for quest in quests:
 		var updated_quest = quest.duplicate()
 
-		# Check if this is a dungeon or rescue quest
-		if quest.get("type") in [quest_db.QuestType.DUNGEON_CLEAR, quest_db.QuestType.RESCUE]:
+		# Check if this is a dungeon-routed quest (clear / rescue / fabled boss / gather).
+		if quest.get("type") in [quest_db.QuestType.DUNGEON_CLEAR, quest_db.QuestType.RESCUE, quest_db.QuestType.BOSS_HUNT, quest_db.QuestType.GATHER]:
 			# Add note about personal dungeon being created
 			var dungeon_hint = "\n\n[color=#00FFFF]A personal dungeon will be created for you nearby when you accept this quest.[/color]"
 			updated_quest["description"] = quest.get("description", "") + dungeon_hint
@@ -33314,6 +33339,17 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 				"kind": "escape_scroll", "char": "!", "color": "#87CEEB",
 				"item_data": {"name": scroll_drop.name, "item_type": "escape_scroll", "is_consumable": true,
 					"tier_max": scroll_drop.tier_max, "type": "consumable", "level": 1, "rarity": "uncommon"}})
+	# (e) P2 Slice 3 — dungeon-gather quest relics: N guaranteed themed relics spread across
+	# floors, tagged with the quest_id. Auto-pickup ticks the GATHER quest (_award_floor_item).
+	var gr_name := String(active_dungeons.get(instance_id, {}).get("gather_relic_name", ""))
+	var gr_count := int(active_dungeons.get(instance_id, {}).get("gather_relic_count", 0))
+	var gr_qid := String(active_dungeons.get(instance_id, {}).get("quest_id", ""))
+	if gr_name != "" and gr_count > 0 and floor_count > 0:
+		for k in range(gr_count):
+			var fnum: int = k % floor_count  # distribute round-robin across floors
+			_place_floor_item_random(instance_id, fnum, floor_grids[fnum], {
+				"kind": "quest_relic", "char": "✦", "color": "#5AC8FF",
+				"item_data": {"name": gr_name, "quest_id": gr_qid}})
 	log_message("[FLOORLOOT] %s (%s, tier %d): blanked %d loot-tiles, placed %d items across %d floors" % [instance_id, dungeon_type, tier, _dbg_blanked, _dbg_placed, floor_count])
 
 func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool) -> Dictionary:
@@ -33415,6 +33451,21 @@ func _award_floor_item(peer_id: int, item: Dictionary) -> bool:
 			var mname := mid.capitalize().replace("_", " ") if mid != "" else "materials"
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#1EFF00]You pick up %s%s.[/color]" % [mname, qty_t]})
 			return true
+		"quest_relic":
+			# P2 Slice 3 — dungeon-gather relic. Ticks the GATHER quest instead of entering
+			# inventory. Always consumed (return true) even if the quest is gone.
+			var rq_id := String(data.get("quest_id", ""))
+			var rname := String(data.get("name", "Relic"))
+			var rq_res = character.update_quest_progress(rq_id, 1)
+			if rq_res.get("updated", false):
+				var rmsg := "[color=#5AC8FF]✦ You recover a %s (%d/%d).[/color]" % [rname, int(rq_res.get("progress", 0)), int(rq_res.get("target", 0))]
+				if rq_res.get("completed", false):
+					rmsg = "[color=#00FF00]✦ You've recovered every %s — return to turn the quest in![/color]" % rname
+				send_to_peer(peer_id, {"type": "text", "message": rmsg})
+				send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
+			else:
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#5AC8FF]✦ You pick up a %s.[/color]" % rname})
+			return true
 		"egg":
 			var cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
 			var res = character.add_egg(data, cap)
@@ -33445,6 +33496,8 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 	var boss_data = dungeon_data.get("boss", {})
 	var monster_type = boss_data.get("monster_type", "Goblin")
 	var display_color = DungeonDatabaseScript.MONSTER_DISPLAY_COLORS.get(tier, "#FF4444")
+	# P2 Slice 2 — fabled-boss quest instances rename + buff the boss on the boss floor.
+	var fabled_boss_name = String(active_dungeons.get(instance_id, {}).get("fabled_boss_name", ""))
 	var level_mult = 1.0 + (floor_num * 0.1)
 	var monster_level = int(dungeon_level * level_mult)
 
@@ -33504,17 +33557,28 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 			boss_pos = _find_monster_spawn_position(grid, entrance_pos, exit_pos, occupied_positions)
 
 		if boss_pos.x >= 0:
+			# Fabled boss: rename + buff the boss_data the combat monster is built from.
+			var boss_data_final = boss_data.duplicate()
+			var boss_level = int(dungeon_level * boss_data.get("level_mult", 1.5))
+			var boss_color = "#FF0000"
+			if fabled_boss_name != "":
+				boss_data_final["name"] = fabled_boss_name
+				boss_data_final["hp_mult"] = float(boss_data_final.get("hp_mult", 2.0)) * 1.5
+				boss_data_final["attack_mult"] = float(boss_data_final.get("attack_mult", 1.5)) * 1.25
+				boss_level = int(boss_level * 1.1)
+				boss_color = "#FFD700"  # fabled bosses read gold
 			var boss_entity = {
 				"id": next_dungeon_monster_id,
 				"x": boss_pos.x, "y": boss_pos.y,
 				"monster_type": monster_type,
-				"level": int(dungeon_level * boss_data.get("level_mult", 1.5)),
+				"level": boss_level,
 				"display_char": "B",
-				"display_color": "#FF0000",
+				"display_color": boss_color,
 				"alive": true,
 				"alert": false,
 				"is_boss": true,
-				"boss_data": boss_data.duplicate()
+				"is_fabled": fabled_boss_name != "",
+				"boss_data": boss_data_final
 			}
 			floor_monsters.append(boss_entity)
 			next_dungeon_monster_id += 1

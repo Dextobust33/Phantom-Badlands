@@ -62,8 +62,16 @@ enum QuestType {
 # generate_dynamic_quests (display) and _regenerate_daily_quest (accept/turn-in lookup)
 # walk a shared RNG in lockstep picking `rng.randi() % pool.size()`, so they MUST use the
 # exact same array or the accepted quest won't match the displayed one. Dungeon-centered:
-# only DUNGEON_CLEAR + RESCUE for now (BOSS_HUNT + dungeon-GATHER rejoin in slices 2-3).
-const DYNAMIC_QUEST_TYPES := [QuestType.DUNGEON_CLEAR, QuestType.RESCUE]
+# DUNGEON_CLEAR + RESCUE + BOSS_HUNT (fabled boss) + GATHER (dungeon relic gather).
+const DYNAMIC_QUEST_TYPES := [QuestType.DUNGEON_CLEAR, QuestType.RESCUE, QuestType.BOSS_HUNT, QuestType.GATHER]
+
+# P2 Slice 2 — proper names for fabled dungeon bosses. The quest reads "Slay <name>";
+# the dungeon's boss is renamed to "<name>, the Fabled <boss>" and buffed.
+const FABLED_BOSS_NAMES := [
+	"Gorehowl", "Vorathrax", "Malgrimm", "Skarn", "Ashfang", "Dreadmaw", "Ironclaw",
+	"Nightscar", "Bloodtusk", "Grimshade", "Venmaw", "Skullrend", "Thornheart",
+	"Doomquill", "Ravengloom", "Blackmoor", "Cindervein", "Hexroot", "Wraithbind", "Direhorn",
+]
 
 # Quest data structure:
 # {
@@ -2459,23 +2467,22 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			extra_fields["min_monster_level"] = hz_min_level
 
 		QuestType.BOSS_HUNT:
-			var boss_level = min(int(effective_level * 1.1), max_monster_level)
-			boss_level = max(boss_level, area_level)
-			var bounty_monster = _pick_bounty_monster_type(area_level, rng)
-			var bounty_prefix = _pick_bounty_prefix(bounty_monster, rng)
-			var bounty_name = "%s the %s" % [bounty_prefix, bounty_monster]
-			var bounty_loc = _pick_bounty_location(post_coords, rng)
-			quest_name = "Bounty: %s" % bounty_name
-			quest_desc = "Hunt %s — last spotted near (%d, %d)." % [bounty_name, bounty_loc.x, bounty_loc.y]
+			# P2 Slice 2 — a FABLED BOSS lurking inside a dungeon (no longer a world-tile
+			# bounty). Routes into a personal dungeon of dungeon_info's type whose boss is
+			# renamed + buffed to the fabled name (server: _create_player_dungeon_instance
+			# + _spawn_dungeon_floor_monsters read fabled_boss_name off the instance).
+			var fabled_first = FABLED_BOSS_NAMES[rng.randi() % FABLED_BOSS_NAMES.size()]
+			var dungeon_boss = String(dungeon_info.get("boss", "terror"))
+			var fabled_full = "%s, the Fabled %s" % [fabled_first, dungeon_boss]
+			quest_name = "Slay %s" % fabled_first
+			quest_desc = "A fabled terror, [color=#FF8000]%s[/color], has claimed the %s. Walk into any dungeon (D) near this trading post — you'll be routed to it — and put the fabled boss down." % [fabled_full, dungeon_info.name]
 			target = 1
-			extra_fields["bounty_name"] = bounty_name
-			extra_fields["bounty_monster_type"] = bounty_monster
-			extra_fields["bounty_level"] = boss_level
-			extra_fields["bounty_x"] = bounty_loc.x
-			extra_fields["bounty_y"] = bounty_loc.y
-			# Named bounties give better rewards
-			base_xp = int(base_xp * 1.5)
-			valor = max(valor + 1, int(valor * 1.5))
+			extra_fields["dungeon_type"] = dungeon_info.type
+			extra_fields["fabled_boss_name"] = fabled_full
+			extra_fields["is_fabled_boss"] = true
+			# Fabled bosses are the toughest board quests → the best rewards.
+			base_xp = int(base_xp * 2.2)
+			valor = max(valor + 3, int(valor * 1.6))
 
 		QuestType.RESCUE:
 			var rescue_npc = RESCUE_NPC_TYPES[rng.randi() % RESCUE_NPC_TYPES.size()]
@@ -2527,13 +2534,19 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 			valor = max(valor + 2, int(valor * 1.5))
 
 		QuestType.GATHER:
-			var gather_job = GATHER_QUEST_TYPES[rng.randi() % GATHER_QUEST_TYPES.size()]
-			var gather_count = max(3, int(3 + index + (area_level / 15)))
-			quest_name = "%s Supplies" % gather_job.capitalize()
-			quest_desc = "Gather %d materials through %s." % [gather_count, gather_job]
+			# P2 Slice 3 — DUNGEON GATHER. Recover N themed relics scattered as floor loot
+			# inside a personal dungeon instance (server spawns them + tracks auto-pickup).
+			var gather_count = clampi(3 + index / 2, 3, 6)
+			var relic_theme = String(dungeon_info.get("name", "Dungeon")).split(" ")[0]
+			var relic_name = "%s Relic" % relic_theme
+			quest_name = "Plunder the %s" % dungeon_info.name
+			quest_desc = "Recover %d [color=#5AC8FF]%ss[/color] scattered through the %s. Walk into any dungeon (D) near this trading post — you'll be routed in — and they're auto-collected as you explore." % [gather_count, relic_name, dungeon_info.name]
 			target = gather_count
-			extra_fields["gather_job"] = gather_job
-			base_xp = int(base_xp * 1.3)
+			extra_fields["dungeon_type"] = dungeon_info.type
+			extra_fields["gather_relic_name"] = relic_name
+			extra_fields["is_dungeon_gather"] = true
+			base_xp = int(base_xp * 1.6)
+			valor = max(valor + 2, int(valor * 1.4))
 
 	# Determine reward tier for display tag
 	var reward_tier: String

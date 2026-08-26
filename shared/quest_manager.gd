@@ -165,16 +165,15 @@ func check_kill_progress(character: Character, monster_level: int, player_x: int
 					should_update = true
 
 			QuestDatabaseScript.QuestType.BOSS_HUNT:
-				# Named bounty: check monster name matches bounty_name
+				# P2 Slice 2 — BOSS_HUNT is now a FABLED BOSS inside a dungeon; it completes
+				# ONLY via check_dungeon_progress (defeating the dungeon boss), NOT overworld
+				# kills. New fabled quests have no bounty_name, so they never update here.
+				# Legacy world-bounty quests (with a stored bounty_name) still match by name.
+				# (The old level-threshold `else` fallback was the bug: it made EVERY overworld
+				# kill tick a fabled quest to completion — Slay X showing 4/1.)
 				var bounty_name = quest_data.get("bounty_name", quest.get("bounty_name", ""))
-				if bounty_name != "":
-					if killed_monster_name == bounty_name:
-						should_update = true
-				else:
-					# Legacy boss hunt: check level threshold
-					var min_level_bh = quest.get("target", 1)
-					if monster_level >= min_level_bh:
-						should_update = true
+				if bounty_name != "" and killed_monster_name == bounty_name:
+					should_update = true
 
 			QuestDatabaseScript.QuestType.KILL_TIER:
 				# Must kill a monster whose tier is >= required_tier
@@ -281,9 +280,12 @@ func check_dungeon_progress(character: Character, dungeon_type: String) -> Array
 		var char_name = quest_data.get("character_name", "")
 		var quest = quest_db.get_quest(quest_id, player_level_at_accept, completed_at_post, char_name)
 
-		# Get quest type from stored data (fallback) or regenerated quest
+		# Get quest type from stored data (fallback) or regenerated quest.
+		# P2 Slice 2 — BOSS_HUNT (fabled boss) completes on the same dungeon-clear event
+		# as DUNGEON_CLEAR (its fabled boss is the dungeon's boss).
 		var quest_type = quest_data.get("quest_type", quest.get("type", -1))
-		if quest_type != QuestDatabaseScript.QuestType.DUNGEON_CLEAR:
+		var is_boss_hunt = quest_type == QuestDatabaseScript.QuestType.BOSS_HUNT
+		if quest_type != QuestDatabaseScript.QuestType.DUNGEON_CLEAR and not is_boss_hunt:
 			continue
 
 		# Check if this dungeon type matches the quest requirement
@@ -296,7 +298,8 @@ func check_dungeon_progress(character: Character, dungeon_type: String) -> Array
 			if result.updated:
 				# Use stored quest name if available
 				var quest_name = quest_data.get("quest_name", quest.get("name", "Unknown Quest"))
-				var message = "Dungeon cleared! Quest '%s': %d/%d" % [quest_name, result.progress, result.target]
+				var cleared_verb = "Fabled boss slain!" if is_boss_hunt else "Dungeon cleared!"
+				var message = "%s Quest '%s': %d/%d" % [cleared_verb, quest_name, result.progress, result.target]
 				if result.completed:
 					message = "[color=#00FF00]Quest '%s' complete! Return to turn in.[/color]" % quest_name
 				updates.append({
@@ -781,7 +784,10 @@ func check_gathering_progress(character: Character, gather_job: String) -> Array
 						quest_data["gather_job"] = required_job
 		if quest_type != QuestDatabaseScript.QuestType.GATHER:
 			continue
-		if required_job != "" and required_job != gather_job:
+		# P2 Slice 3 — dungeon-gather quests carry NO gather_job; they are ticked ONLY by
+		# relic pickup inside the dungeon (_award_floor_item), never by overworld gathering.
+		# So require a matching job here (empty job = dungeon-gather → skip).
+		if required_job == "" or required_job != gather_job:
 			continue
 
 		var result = character.update_quest_progress(quest_id, 1)
