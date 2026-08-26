@@ -251,6 +251,14 @@ const DUNGEON_WANDER_SPAWN_MIN_DIST = 6 # never spawn within this Manhattan dist
 const MIN_WORLD_DUNGEONS = 150  # Minimum world dungeons - expect 1 per ~50 tiles of travel
 const MAX_WORLD_DUNGEONS = 200  # Maximum number of world dungeons
 var dungeon_spawn_timer: float = 0.0
+# #61 (2026-08-26) — dungeon-instance persistence across restarts. All dungeon state is
+# in-memory; a restart used to wipe it (players lost runs, quest instances vanished). We
+# now snapshot it to disk periodically + on graceful shutdown, and reload on startup so the
+# existing reconnect path (login: character.in_dungeon) drops the player back at their floor.
+# FileAccess.store_var (not JSON) is used so Vector2i/Rect2i rooms + int floor-keys survive.
+const DUNGEON_STATE_PATH := "user://dungeon_state.dat"
+const DUNGEON_STATE_SAVE_INTERVAL := 90.0  # seconds between periodic snapshots (crash safety)
+var _dungeon_state_save_timer: float = 0.0
 # v0.9.377 — spawn-queue. _check_dungeon_spawns enqueues dungeon_type strings;
 # _process drains one per frame so an 8-spawn catch-up becomes 8 single-frame
 # spikes instead of one 5s freeze. Diagnostics showed _create_world_dungeon
@@ -519,6 +527,10 @@ func _ready():
 		NpcPostDatabaseScript.stamp_post_into_chunks(post, chunk_manager)
 	# Compute and stamp road paths between posts
 	_initialize_road_paths(npc_posts)
+
+	# #61 — reload persisted dungeon instances so players who were mid-run (or hold a dungeon
+	# quest) find their instance intact after a restart (the login reconnect path re-attaches).
+	_load_dungeon_state()
 
 	chunk_manager.save_dirty_chunks()
 
@@ -897,6 +909,8 @@ func _execute_pending_shutdown():
 
 	# Save all characters before shutdown
 	save_all_active_characters()
+	# #61 — snapshot dungeon instances so in-progress runs survive the restart.
+	_save_dungeon_state()
 
 	# Give a moment for the broadcast to be sent
 	await get_tree().create_timer(1.0).timeout
@@ -912,6 +926,12 @@ func _execute_pending_shutdown():
 
 	# Quit the application
 	get_tree().quit()
+
+func _notification(what: int) -> void:
+	# #61 — best-effort dungeon snapshot on a quit request (periodic save is the fallback
+	# for hard kills where this doesn't fire, e.g. headless SIGTERM).
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_dungeon_state()
 
 func load_balance_config():
 	"""Load balance configuration from JSON file. Falls back to defaults if missing."""
@@ -1196,6 +1216,12 @@ func _process(delta):
 		_check_dungeon_spawns()
 		if DIAG_TIMING_ENABLED:
 			_diag_check_dungeon_spawns_us = Time.get_ticks_usec() - _cds_start_us
+
+	# #61 — periodic dungeon-state snapshot (crash safety; a hard kill loses ≤ this interval).
+	_dungeon_state_save_timer += delta
+	if _dungeon_state_save_timer >= DUNGEON_STATE_SAVE_INTERVAL:
+		_dungeon_state_save_timer = 0.0
+		_save_dungeon_state()
 
 	# Audit #12 Slice 6 (v0.9.561) — periodic abandoned-post reclaim sweep.
 	# Runs every POST_RECLAIM_SWEEP_INTERVAL seconds (5 min). Cheap walk over
@@ -2471,6 +2497,21 @@ func handle_select_character(peer_id: int, message: Dictionary):
 			character.exit_dungeon()
 			save_character(peer_id)
 			log_message("DUNGEON RECONNECT: Dungeon %s expired for %s, returning to overworld" % [instance_id, char_name])
+
+	# #61 — rebuild player_dungeon_instances for EVERY instance this player owns (persisted
+	# across restart), so a dungeon-quest instance routes correctly even when the player isn't
+	# currently in it (fixes the "no dungeon nearby" quest hint after a restart). Keyed by
+	# owner_username; also refreshes the stale owner_peer_id to this session's peer.
+	for _iid in active_dungeons:
+		var _inst = active_dungeons[_iid]
+		if String(_inst.get("owner_username", "")) == username:
+			_inst["owner_peer_id"] = peer_id
+			var _qid = String(_inst.get("quest_id", ""))
+			if _qid == "":
+				_qid = "_free_run_" + _iid
+			if not player_dungeon_instances.has(peer_id):
+				player_dungeon_instances[peer_id] = {}
+			player_dungeon_instances[peer_id][_qid] = _iid
 
 	var char_dict_loaded = character.to_dict()
 	# Add account-level valor and projected rank (same as send_character_update)
@@ -29445,6 +29486,95 @@ func _create_world_dungeon_near(dungeon_type: String, near_x: int, near_y: int, 
 	dungeon_floor_rooms[instance_id] = floor_rooms
 	_spawn_all_dungeon_monsters(instance_id, dungeon_type, dungeon_level)
 	return instance_id
+
+func _save_dungeon_state() -> void:
+	"""#61 — snapshot PERSONAL player dungeon runs to disk (one file, overwritten in place).
+	World dungeons ('world_dungeon_*') are deliberately NOT persisted — they carry no player
+	progress and respawn on their own, so persisting them would just bloat the file. Only
+	'player_dungeon_*' instances (quest runs / free runs) are saved, keeping this tiny and
+	bounded by the number of active player runs. Uses native store_var (NOT JSON) so
+	Vector2i/Rect2i rooms + integer floor-keys survive round-trip."""
+	var pa := {}
+	var pf := {}
+	var pfr := {}
+	var pm := {}
+	var pfi := {}
+	var pn := {}
+	var pt := {}
+	for iid in active_dungeons:
+		if not String(iid).begins_with("player_dungeon_"):
+			continue
+		pa[iid] = active_dungeons[iid]
+		if dungeon_floors.has(iid): pf[iid] = dungeon_floors[iid]
+		if dungeon_floor_rooms.has(iid): pfr[iid] = dungeon_floor_rooms[iid]
+		if dungeon_monsters.has(iid): pm[iid] = dungeon_monsters[iid]
+		if dungeon_floor_items.has(iid): pfi[iid] = dungeon_floor_items[iid]
+		if dungeon_npcs.has(iid): pn[iid] = dungeon_npcs[iid]
+		if dungeon_traps.has(iid): pt[iid] = dungeon_traps[iid]
+	# No active player runs → remove the file entirely rather than leave a stale one.
+	if pa.is_empty():
+		if FileAccess.file_exists(DUNGEON_STATE_PATH):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(DUNGEON_STATE_PATH))
+		return
+	var state := {
+		"v": 1,
+		"active_dungeons": pa,
+		"dungeon_floors": pf,
+		"dungeon_floor_rooms": pfr,
+		"dungeon_monsters": pm,
+		"dungeon_floor_items": pfi,
+		"dungeon_npcs": pn,
+		"dungeon_traps": pt,
+		"next_dungeon_id": next_dungeon_id,
+		"next_dungeon_monster_id": next_dungeon_monster_id,
+		"next_dungeon_floor_item_id": next_dungeon_floor_item_id,
+	}
+	var f := FileAccess.open(DUNGEON_STATE_PATH, FileAccess.WRITE)
+	if f == null:
+		log_message("[DUNGEON PERSIST] save failed (err %d)" % FileAccess.get_open_error())
+		return
+	f.store_var(state, false)
+	f.close()
+
+func _load_dungeon_state() -> void:
+	"""#61 — reload the dungeon snapshot at startup so the login reconnect path finds each
+	player's instance. Prunes completed instances + clears stale runtime peer references."""
+	if not FileAccess.file_exists(DUNGEON_STATE_PATH):
+		return
+	var f := FileAccess.open(DUNGEON_STATE_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var state = f.get_var(false)
+	f.close()
+	if typeof(state) != TYPE_DICTIONARY:
+		return
+	active_dungeons = state.get("active_dungeons", {})
+	dungeon_floors = state.get("dungeon_floors", {})
+	dungeon_floor_rooms = state.get("dungeon_floor_rooms", {})
+	dungeon_monsters = state.get("dungeon_monsters", {})
+	dungeon_floor_items = state.get("dungeon_floor_items", {})
+	dungeon_npcs = state.get("dungeon_npcs", {})
+	dungeon_traps = state.get("dungeon_traps", {})
+	next_dungeon_id = maxi(next_dungeon_id, int(state.get("next_dungeon_id", 1)))
+	next_dungeon_monster_id = maxi(next_dungeon_monster_id, int(state.get("next_dungeon_monster_id", 0)))
+	next_dungeon_floor_item_id = maxi(next_dungeon_floor_item_id, int(state.get("next_dungeon_floor_item_id", 0)))
+	# Prune completed instances + reset stale runtime peer refs (peer ids from the old process).
+	var to_drop: Array = []
+	for iid in active_dungeons:
+		var inst = active_dungeons[iid]
+		if int(inst.get("completed_at", 0)) != 0:
+			to_drop.append(iid)
+		else:
+			inst["active_players"] = []
+	for iid in to_drop:
+		active_dungeons.erase(iid)
+		dungeon_floors.erase(iid)
+		dungeon_floor_rooms.erase(iid)
+		dungeon_monsters.erase(iid)
+		dungeon_floor_items.erase(iid)
+		dungeon_npcs.erase(iid)
+		dungeon_traps.erase(iid)
+	log_message("[DUNGEON PERSIST] Reloaded %d dungeon instance(s), dropped %d completed" % [active_dungeons.size(), to_drop.size()])
 
 func _create_world_dungeon(dungeon_type: String) -> String:
 	"""Create a random world dungeon at a random location"""
