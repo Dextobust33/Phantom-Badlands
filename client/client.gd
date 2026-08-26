@@ -27739,8 +27739,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.721 — dungeon special rooms + big fixes.
+	display_game("[color=#00FF00]v0.9.721[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF3333]★ FIXED: un-killable elites.[/color] Champion/elite monsters in flocks could pile up to 5-10× their intended HP (the bar showing 0 while they refused to die). Fixed — elites now have consistent, correct HP and the bar reads true.")
+	display_game("  [color=#1EFF00]◆ Special dungeon rooms.[/color] Floors can now hold a [color=#FFE96A]Shrine[/color] (bless your next fight), [color=#7AE07A]Rest[/color] (full heal), [color=#FF5AF0]Elite Den[/color] (mini-boss + guaranteed drop), or [color=#5AC8FF]Gamble Cache[/color] — tucked down side branches to reward exploring.")
+	display_game("  [color=#1EFF00]◆ Roomier dungeon layouts[/color] with rooms set farther apart and longer corridors.")
+	display_game("  [color=#1EFF00]◆ Threat fixes.[/color] Clearing a dungeon's boss now properly ends its threat (top-right marker, rumors, and roaming spillover all clear). In-dungeon players no longer block the entrance tile.")
+	display_game("")
+
 	# v0.9.720 — dungeon layout + eggs.
-	display_game("[color=#00FF00]v0.9.720[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.720[/color]")
 	display_game("  [color=#1EFF00]◆ Better dungeon layouts.[/color] Floors now have [b]small distinct rooms with long branching corridors[/b] (multiple routes to flank or avoid the wandering monsters) instead of blocky room-grids. No more [b]flock/summon[/b] chains in dungeons — every dungeon monster is one visible fight. The loot minigame shows [b]far less often[/b] on dungeon trash (loot still awarded).")
 	display_game("  [color=#1EFF00]◆ Eggs.[/color] Base incubation slots raised [b]3 → 5[/b], and you can now [b]Discard[/b] an unwanted egg from the Eggs tab.")
 	display_game("")
