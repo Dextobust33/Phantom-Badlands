@@ -100,6 +100,10 @@ const TILE_RENDER = {
 	# interact (matching blacksmith/healer pattern). Magenta to read distinct
 	# from the cargo-storage C glyph (#AAAAFF).
 	"companion_stable": {"char": "C", "color": "#FF80FF", "blocks_move": true, "blocks_los": false},
+	# Cartographer (v0.9.726) — the visible NPC that fronts the Dungeon Atlas + rooted
+	# Locate. Bump to open your Atlas; standing here lets you pay to Locate dungeons.
+	# Cyan 'K' to match the Atlas theme and read distinct from the other station glyphs.
+	"cartographer":  {"char": "K", "color": "#5AC8FF", "blocks_move": true, "blocks_los": false},
 	"tower":         {"char": "^", "color": "#FFFFFF", "blocks_move": false, "blocks_los": false},
 	"storage":       {"char": "C", "color": "#AAAAFF", "blocks_move": false, "blocks_los": false},
 	"guard":         {"char": "G", "color": "#C0C0C0", "blocks_move": true, "blocks_los": false},

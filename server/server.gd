@@ -4909,6 +4909,10 @@ func handle_move(peer_id: int, message: Dictionary):
 					# Audit #4 Slice 1A — live Sanctuary kennel access at T5+ posts.
 					_handle_companion_stable_station(peer_id, character)
 					return
+				elif bump_type == "cartographer":
+					# v0.9.726 — the visible NPC that fronts the Dungeon Atlas + rooted Locate.
+					_handle_cartographer_station(peer_id, character)
+					return
 				elif bump_type == "guard":
 					_handle_guard_post_interact(peer_id, character, target_pos.x, target_pos.y)
 					return
@@ -4921,7 +4925,9 @@ func handle_move(peer_id: int, message: Dictionary):
 
 	# Check for player collision (can't move onto another player's space)
 	# Party members don't block each other (handled by snake movement)
-	if _is_non_party_player_at(new_pos.x, new_pos.y, peer_id):
+	# v0.9.726 — EXCEPT on tiles cardinally adjacent to a station: players OVERLAP there
+	# so a single station serves everyone (no more doubled stations / camped approaches).
+	if _is_non_party_player_at(new_pos.x, new_pos.y, peer_id) and not _tile_is_station_adjacent(new_pos.x, new_pos.y):
 		var bumped_peer_id = _get_player_at(new_pos.x, new_pos.y, peer_id)
 		if bumped_peer_id != -1:
 			var bumped_char = characters[bumped_peer_id]
@@ -14208,6 +14214,12 @@ func _grant_cartography_xp(peer_id: int, character, amount: int, reason: String)
 	elif rank >= 3:
 		unlock = " Post Cartographers now give you [b]direction and distance[/b]."
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#5AC8FF]🧭 Cartography rank up — you're now [b]rank %d[/b] (from %s).%s[/color]" % [rank, reason, unlock]})
+
+func _handle_cartographer_station(peer_id: int, _character) -> void:
+	"""Bump the Cartographer NPC ('K') at a post → open the Dungeon Atlas. Standing at
+	a post is what enables paid Locate (see handle_dungeon_locate); the Atlas header
+	tells the player the Cartographer is here and what a mark costs."""
+	handle_dungeon_atlas_request(peer_id)
 
 func handle_dungeon_atlas_request(peer_id: int):
 	"""Dungeon Atlas (P1) — build a state-gated view of every dungeon for this player.
@@ -38139,6 +38151,26 @@ func _is_non_party_player_at(x: int, y: int, peer_id: int) -> bool:
 			# If both in same party, don't block
 			if my_party_leader != -1 and party_membership.get(other_peer_id, -1) == my_party_leader:
 				continue
+			return true
+	return false
+
+# v0.9.726 — interactable post stations (bump-to-use). Players OVERLAP on tiles
+# cardinally adjacent to any of these so a single station serves everyone.
+const _STATION_ADJ_TYPES := {
+	"forge": true, "apothecary": true, "enchant_table": true, "writing_desk": true,
+	"workbench": true, "quest_board": true, "blacksmith": true, "healer": true,
+	"market": true, "inn": true, "companion_stable": true, "cartographer": true,
+	"throne": true, "guard": true,
+}
+
+func _tile_is_station_adjacent(x: int, y: int) -> bool:
+	"""True if any cardinal neighbor of (x,y) is an interactable post station, so players
+	may stack on that tile to reach the station instead of blocking each other."""
+	if not chunk_manager:
+		return false
+	for o in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+		var t = chunk_manager.get_tile(x + o.x, y + o.y)
+		if t and _STATION_ADJ_TYPES.has(String(t.get("type", ""))):
 			return true
 	return false
 

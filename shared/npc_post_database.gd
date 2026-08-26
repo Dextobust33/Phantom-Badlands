@@ -568,19 +568,23 @@ static func _place_stations(chunk_manager, main_room: Dictionary, is_crossroads:
 	var iy0 = my0 + 1
 	var iy1 = my1 - 1
 
-	# Station list — pairs are preserved (2 forges, 2 healers, etc.) but they
-	# no longer have to land near each other on the map.
+	# Station list — ONE of each (v0.9.726). Previously doubled (2 forges, 2 healers…)
+	# so a player camped on a station's approach tile couldn't lock others out; that's
+	# now solved by letting players OVERLAP on station-adjacent tiles (server movement
+	# collision skips the player-bump when the target tile is next to a station), so a
+	# single station serves everyone.
 	var stations: Array = [
-		"forge", "forge",
-		"apothecary", "apothecary",
-		"enchant_table", "enchant_table",
-		"writing_desk", "writing_desk",
-		"workbench", "workbench",
-		"quest_board", "quest_board",
-		"blacksmith", "blacksmith",
+		"forge",
+		"apothecary",
+		"enchant_table",
+		"writing_desk",
+		"workbench",
+		"quest_board",
+		"blacksmith",
 		"inn",
-		"healer", "healer",
-		"market", "market",
+		"healer",
+		"market",
+		"cartographer",
 	]
 
 	# Audit #4 Slice 1A — Companion Stable at T5+ posts. Live Sanctuary kennel

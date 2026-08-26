@@ -22882,7 +22882,12 @@ func handle_server_message(message: Dictionary):
 		"bestiary_data":
 			_handle_bestiary_data(message)
 		"dungeon_atlas_data":
+			# Enter Atlas view for BOTH entry paths: the More/shortcut button already
+			# sets this before requesting; the Cartographer-bump path is server-initiated,
+			# so set it here too (Back button + refresh-protection). Harmless if already set.
+			pending_more_action = "dungeon_atlas"
 			display_dungeon_atlas(message)
+			update_action_bar()
 
 		# Market messages
 		"market_browse_result":
@@ -27766,8 +27771,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.726 — Cartographer NPC + roomier posts.
+	display_game("[color=#00FF00]v0.9.726[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ CARTOGRAPHER NPC.[/color] Trading posts now have a visible [color=#5AC8FF]Cartographer (K)[/color] — walk into them to open your [b]Dungeon Atlas[/b] and Locate dungeons on the spot. No more digging through menus to find where to consult one.")
+	display_game("  [color=#1EFF00]◆ Roomier posts.[/color] Posts now hold [b]one of each station[/b] instead of two — less clutter.")
+	display_game("  [color=#1EFF00]◆ Players share stations.[/color] You can now [b]stand on the same tile as another player[/b] when you're right next to a station, so nobody blocks the forge/market/healer. (Everywhere else, walking into a player still works as before — party invites, trades, etc.)")
+	display_game("")
+
 	# v0.9.725 — Cartography (rooted Locate).
-	display_game("[color=#00FF00]v0.9.725[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.725[/color]")
 	display_game("  [color=#FF8000]★ CARTOGRAPHY.[/color] The Atlas [color=#5AC8FF]‹ Locate ›[/color] ability is now a real skill you [b]grow[/b]. You earn [color=#5AC8FF]Cartography rank[/color] by [b]discovering[/b] (+20) and [b]clearing[/b] (+40) dungeons, and your rank decides how well the realm can point you at one.")
 	display_game("  [color=#1EFF00]◆ Locate through a Cartographer.[/color] To locate a dungeon you now consult a [b]Cartographer at a trading post[/b] (costs [color=#FFD700]15 Valor[/color]) — the realm's scouts track where dungeons stir, so there's a reason behind the pointer.")
 	display_game("  [color=#1EFF00]◆ Better rank = better intel.[/color] Rank 1-2 gives a [b]rough direction[/b]; rank 3-4 adds [b]distance[/b]; rank 5+ gives [b]precise coordinates[/b]; and at [color=#7AE07A]rank 8[/color] you've earned a cartographer's sixth sense — [b]Locate anywhere, no post or Valor needed[/b].")
@@ -32052,7 +32064,7 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 	elif at_post:
 		display_game("[color=#C8A24A]A Cartographer is here — click ‹ Locate › on a dungeon to mark it (costs Valor).[/color]")
 	else:
-		display_game("[color=#909090]Visit a Cartographer at a trading post to ‹ Locate › a dungeon (or reach rank %d to sense them anywhere).[/color]" % carto_sense)
+		display_game("[color=#909090]Visit the Cartographer ([color=#5AC8FF]K[/color]) at a trading post to ‹ Locate › a dungeon (or reach rank %d to sense them anywhere).[/color]" % carto_sense)
 	display_game("")
 	var tier_colors := ["#FFFFFF", "#FFFFFF", "#1EFF00", "#1EFF00", "#0070DD", "#0070DD", "#A335EE", "#A335EE", "#FF8000", "#FFD700"]
 	var shown := 0
@@ -40044,7 +40056,7 @@ func _display_trading_post_ui():
 	display_game("")
 	display_game("[color=#808080]Walk into tiles to interact:[/color]")
 	display_game("  [color=#FF8800]F[/color] Forge  [color=#00CC66]A[/color] Apothecary  [color=#AA44FF]E[/color] Enchant Table  [color=#87CEEB]S[/color] Scribe  [color=#AA7744]W[/color] Workbench")
-	display_game("  [color=#FFD700]$[/color] Open Market  [color=#FFAA44]I[/color] Inn (Heal)  [color=#C4A882]Q[/color] Quest Board")
+	display_game("  [color=#FFD700]$[/color] Open Market  [color=#FFAA44]I[/color] Inn (Heal)  [color=#C4A882]Q[/color] Quest Board  [color=#5AC8FF]K[/color] Cartographer (Atlas / Locate)")
 	if avail_quests > 0:
 		display_game("[color=#00FF00]%d quest(s) available[/color]" % avail_quests)
 	if ready_quests > 0:
