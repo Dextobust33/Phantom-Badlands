@@ -1589,6 +1589,7 @@ var dungeon_floor_grid: Array = []  # 2D array of tile types
 # player can either walk onto the * tile or hit the button to teleport out.
 var awaiting_final_chest: bool = false
 var dungeon_monsters_data: Array = []  # Monster entities on current floor
+var dungeon_floor_items_data: Array = []  # Floor loot pickups on current floor (Azure Dreams style)
 var dungeon_available: Array = []  # List of available dungeons to enter
 var dungeon_list_mode: bool = false  # Viewing dungeon list
 var dungeon_triggered_traps: Array = []  # Triggered trap positions for map display
@@ -38890,6 +38891,7 @@ func handle_dungeon_state(message: Dictionary):
 	dungeon_floor_grid = message.get("grid", [])
 	dungeon_monsters_data = message.get("monsters", [])
 	dungeon_npcs_data = message.get("npcs", [])
+	dungeon_floor_items_data = message.get("floor_items", [])
 	dungeon_triggered_traps = message.get("triggered_traps", [])
 	awaiting_final_chest = bool(message.get("awaiting_final_chest", false))
 
@@ -38983,6 +38985,7 @@ func handle_dungeon_complete(message: Dictionary):
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
 	dungeon_npcs_data = []
+	dungeon_floor_items_data = []
 	awaiting_final_chest = false
 
 	# Bring back the world-map sprite overlay (hidden while in dungeon).
@@ -39333,6 +39336,7 @@ func handle_dungeon_exit(message: Dictionary):
 	dungeon_floor_grid = []
 	dungeon_monsters_data = []
 	dungeon_npcs_data = []
+	dungeon_floor_items_data = []
 	dungeon_triggered_traps = []
 	dungeon_resource_prompt = false
 	dungeon_food_select = false
@@ -39636,6 +39640,12 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 		var key = "%d,%d" % [trap.get("x", -1), trap.get("y", -1)]
 		trap_map[key] = trap
 
+	# Build floor-loot position lookup (Azure Dreams style pickups)
+	var item_map = {}
+	for fi in dungeon_floor_items_data:
+		var key = "%d,%d" % [fi.get("x", -1), fi.get("y", -1)]
+		item_map[key] = fi
+
 	# Top border
 	lines.append("[color=#FFD700]+" + "-".repeat(render_width) + "+[/color]")
 
@@ -39668,6 +39678,10 @@ func _render_dungeon_grid(grid: Array, player_x: int, player_y: int) -> String:
 					# Render triggered trap marker
 					var tcolor = trap_map[mkey].get("color", "#FF4444")
 					line += "[color=%s]×[/color]" % tcolor
+				elif item_map.has(mkey):
+					# Render floor loot pickup (glyph + color by kind)
+					var fi = item_map[mkey]
+					line += "[color=%s]%s[/color]" % [fi.get("color", "#FFFFFF"), fi.get("char", "?")]
 				else:
 					var tile = grid[y][x]
 					var tile_info = _get_dungeon_tile_display(tile)

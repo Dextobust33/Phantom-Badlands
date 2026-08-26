@@ -195,6 +195,11 @@ var dungeon_floors: Dictionary = {}   # instance_id -> [grid_floor_0, grid_floor
 var dungeon_floor_rooms: Dictionary = {}  # instance_id -> [[rooms_floor_0], [rooms_floor_1], ...]
 var dungeon_monsters: Dictionary = {}     # instance_id -> {floor_num: [monster_entity, ...]}
 var next_dungeon_monster_id: int = 0
+# Dungeon revamp B (2026-08-26) — Azure Dreams-style FLOOR LOOT: pickup items placed on
+# floor tiles, auto-collected on step. Unifies + replaces the old TREASURE/SCATTERED_LOOT/
+# GOLD_HOARD tile loot. Eggs found this way match the dungeon type + tier (random sub-tier).
+var dungeon_floor_items: Dictionary = {}  # instance_id -> {floor_num: [item_entity, ...]}
+var next_dungeon_floor_item_id: int = 0
 var dungeon_combat_breather: Dictionary = {}  # peer_id -> true: skip monster movement on next move after combat
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 
@@ -28136,6 +28141,9 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 	if _is_party_leader(peer_id):
 		_move_party_followers_dungeon(peer_id, old_x, old_y)
 
+	# Dungeon revamp B — auto-collect any floor loot on the tile just stepped onto.
+	_auto_pickup_floor_items(peer_id, instance_id, character.dungeon_floor, new_x, new_y)
+
 	# === STEP PRESSURE: Increment and check thresholds ===
 	character.dungeon_floor_steps += 1
 	# Audit #5 theme tag — Spider Nest WEBBED tiles cost +1 extra step.
@@ -28752,6 +28760,7 @@ func handle_dungeon_exit(peer_id: int):
 				dungeon_floor_rooms.erase(instance_id)
 			if dungeon_monsters.has(instance_id):
 				dungeon_monsters.erase(instance_id)
+			dungeon_floor_items.erase(instance_id)
 			if dungeon_traps.has(instance_id):
 				dungeon_traps.erase(instance_id)
 
@@ -29025,6 +29034,7 @@ func _cleanup_player_dungeon(peer_id: int, quest_id: String):
 		dungeon_floor_rooms.erase(instance_id)
 	if dungeon_monsters.has(instance_id):
 		dungeon_monsters.erase(instance_id)
+	dungeon_floor_items.erase(instance_id)
 	if dungeon_traps.has(instance_id):
 		dungeon_traps.erase(instance_id)
 
@@ -29143,6 +29153,7 @@ func _check_dungeon_spawns():
 		dungeon_floors.erase(instance_id)
 		dungeon_floor_rooms.erase(instance_id)
 		dungeon_monsters.erase(instance_id)
+		dungeon_floor_items.erase(instance_id)
 		world_dungeon_count -= 1
 
 	# v0.9.377 — enqueue spawns instead of running them all in this frame.
@@ -31432,6 +31443,16 @@ func _send_dungeon_state(peer_id: int):
 					"type": m.monster_type
 				})
 
+	# Get floor loot items on current floor (Azure Dreams style pickups)
+	var floor_item_list = []
+	if dungeon_floor_items.has(instance_id):
+		for it in dungeon_floor_items[instance_id].get(character.dungeon_floor, []):
+			floor_item_list.append({
+				"x": it.get("x", 0), "y": it.get("y", 0),
+				"char": it.get("char", "?"), "color": it.get("color", "#FFFFFF"),
+				"kind": it.get("kind", "")
+			})
+
 	# Get rescue NPCs on current floor
 	var npc_list = []
 	if dungeon_npcs.has(instance_id):
@@ -31468,6 +31489,7 @@ func _send_dungeon_state(peer_id: int):
 		"color": dungeon_data.color,
 		"monsters": monster_list,
 		"npcs": npc_list,
+		"floor_items": floor_item_list,
 		"steps_taken": character.dungeon_floor_steps,
 		"step_limit": 0,  # C2 — step budget retired; 0 signals the client to hide the counter
 		"triggered_traps": _get_triggered_traps(instance_id, character.dungeon_floor),
@@ -32274,6 +32296,7 @@ func _complete_dungeon(peer_id: int):
 				dungeon_floor_rooms.erase(instance_id)
 			if dungeon_monsters.has(instance_id):
 				dungeon_monsters.erase(instance_id)
+			dungeon_floor_items.erase(instance_id)
 			if dungeon_traps.has(instance_id):
 				dungeon_traps.erase(instance_id)
 
@@ -33030,6 +33053,170 @@ func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dung
 		var grid = floor_grids[floor_num]
 		var rooms = all_rooms[floor_num] if floor_num < all_rooms.size() else []
 		_spawn_dungeon_floor_monsters(instance_id, floor_num, dungeon_type, dungeon_level, rooms, grid, is_boss_floor)
+
+	# Dungeon revamp B — populate Azure Dreams-style floor loot across all floors.
+	_spawn_all_dungeon_floor_items(instance_id, dungeon_type, dungeon_level)
+
+# ===== DUNGEON FLOOR LOOT (Azure Dreams style) =====
+
+const _FLOOR_LOOT_TILES := [DungeonDatabaseScript.TileType.TREASURE, DungeonDatabaseScript.TileType.SCATTERED_LOOT, DungeonDatabaseScript.TileType.GOLD_HOARD]
+
+func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, dungeon_level: int) -> void:
+	"""Place pickup loot on floor tiles across every floor. Replaces the old
+	TREASURE/SCATTERED_LOOT/GOLD_HOARD tile loot (those tiles are blanked here and their
+	loot re-homed as floor items). Eggs found this way match the dungeon type + tier."""
+	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if dungeon_data.is_empty() or not dungeon_floors.has(instance_id):
+		return
+	dungeon_floor_items[instance_id] = {}
+	var tier: int = int(dungeon_data.get("tier", 1))
+	var boss_egg_monster: String = String(dungeon_data.get("boss_egg", ""))
+	var sub_tier: int = int(active_dungeons.get(instance_id, {}).get("sub_tier", 1))
+	var floor_grids = dungeon_floors[instance_id]
+	var floor_count: int = floor_grids.size()
+	for floor_num in range(floor_count):
+		var grid = floor_grids[floor_num]
+		# (a) Re-home the old loot-marker tiles as floor items on their (good) spots.
+		for gy in range(grid.size()):
+			for gx in range(grid[gy].size()):
+				if int(grid[gy][gx]) in _FLOOR_LOOT_TILES:
+					var reh := _roll_floor_item(dungeon_type, tier, sub_tier, dungeon_level, boss_egg_monster, false)
+					grid[gy][gx] = DungeonDatabaseScript.TileType.EMPTY
+					if not reh.is_empty():
+						_place_floor_item_at(instance_id, floor_num, gx, gy, reh)
+		# (b) A few extra scattered items per floor (tier-scaled), on random empty tiles.
+		var extra: int = 1 + tier / 3 + (randi() % 2)  # ~1-4 per floor
+		for _i in range(extra):
+			var it := _roll_floor_item(dungeon_type, tier, sub_tier, dungeon_level, boss_egg_monster, false)
+			if not it.is_empty():
+				_place_floor_item_random(instance_id, floor_num, grid, it)
+		# (c) Dungeon type-matched EGG as floor loot — ~35% chance per floor.
+		if boss_egg_monster != "" and randf() < 0.35:
+			var egg_it := _roll_floor_item(dungeon_type, tier, sub_tier, dungeon_level, boss_egg_monster, true)
+			if not egg_it.is_empty():
+				_place_floor_item_random(instance_id, floor_num, grid, egg_it)
+	# (d) Guarantee one Escape Scroll as floor loot on the first floor.
+	if floor_count > 0:
+		var scroll_drop = DungeonDatabaseScript.make_escape_scroll(tier)
+		if not scroll_drop.is_empty():
+			_place_floor_item_random(instance_id, 0, floor_grids[0], {
+				"kind": "escape_scroll", "char": "!", "color": "#87CEEB",
+				"item_data": {"name": scroll_drop.name, "item_type": "escape_scroll", "is_consumable": true,
+					"tier_max": scroll_drop.tier_max, "type": "consumable", "level": 1, "rarity": "uncommon"}})
+
+func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool) -> Dictionary:
+	"""Roll one floor-loot item. Returns {kind, char, color, item_data} or {} on a miss."""
+	if force_egg:
+		if boss_egg_monster == "":
+			return {}
+		var egg_sub := 1 + (randi() % 8)  # random sub-tier within the dungeon's tier
+		var egg = drop_tables.get_egg_for_monster(boss_egg_monster, {}, egg_sub)
+		if egg.is_empty():
+			return {}
+		return {"kind": "egg", "char": "◉", "color": "#A335EE", "item_data": egg}
+	var lvl: int = max(1, level)
+	var roll := randi() % 100
+	if roll < 40:  # crafting material
+		var mat = drop_tables.roll_crafting_material_drop(tier)
+		if mat.is_empty():
+			return {}
+		return {"kind": "material", "char": "▪", "color": "#1EFF00", "item_data": mat}
+	elif roll < 62:  # valor coins
+		var v := randi_range(tier * 2, tier * 6)
+		return {"kind": "valor", "char": "¢", "color": "#FFD700", "item_data": {"valor": v}}
+	elif roll < 82:  # equipment
+		var eq = drop_tables.roll_dungeon_chest_equipment(tier, lvl)
+		if eq.is_empty():
+			return {}
+		return {"kind": "equipment", "char": "◆", "color": _get_rarity_color(eq.get("rarity", "common")), "item_data": eq}
+	else:  # consumable
+		var con = drop_tables.roll_dungeon_chest_consumable(tier, lvl)
+		if con.is_empty():
+			return {}
+		return {"kind": "consumable", "char": "♦", "color": "#FFD700", "item_data": con}
+
+func _place_floor_item_random(instance_id: String, floor_num: int, grid: Array, item: Dictionary) -> void:
+	# Find a random EMPTY tile and drop the item there.
+	var attempts := 0
+	while attempts < 60:
+		attempts += 1
+		var y: int = 1 + (randi() % maxi(1, grid.size() - 2))
+		var x: int = 1 + (randi() % maxi(1, grid[y].size() - 2))
+		if int(grid[y][x]) == int(DungeonDatabaseScript.TileType.EMPTY) and not _floor_item_at(instance_id, floor_num, x, y):
+			_place_floor_item_at(instance_id, floor_num, x, y, item)
+			return
+
+func _place_floor_item_at(instance_id: String, floor_num: int, x: int, y: int, item: Dictionary) -> void:
+	if not dungeon_floor_items.has(instance_id):
+		dungeon_floor_items[instance_id] = {}
+	if not dungeon_floor_items[instance_id].has(floor_num):
+		dungeon_floor_items[instance_id][floor_num] = []
+	var ent := item.duplicate(true)
+	ent["id"] = next_dungeon_floor_item_id
+	ent["x"] = x
+	ent["y"] = y
+	next_dungeon_floor_item_id += 1
+	dungeon_floor_items[instance_id][floor_num].append(ent)
+
+func _floor_item_at(instance_id: String, floor_num: int, x: int, y: int) -> bool:
+	if not dungeon_floor_items.has(instance_id):
+		return false
+	for it in dungeon_floor_items[instance_id].get(floor_num, []):
+		if int(it.get("x", -1)) == x and int(it.get("y", -1)) == y:
+			return true
+	return false
+
+func _auto_pickup_floor_items(peer_id: int, instance_id: String, floor_num: int, x: int, y: int) -> void:
+	"""Auto-collect any floor loot on the tile the player just stepped onto."""
+	if not characters.has(peer_id) or not dungeon_floor_items.has(instance_id):
+		return
+	var items: Array = dungeon_floor_items[instance_id].get(floor_num, [])
+	if items.is_empty():
+		return
+	var remaining: Array = []
+	for it in items:
+		if int(it.get("x", -1)) == x and int(it.get("y", -1)) == y:
+			if not _award_floor_item(peer_id, it):
+				remaining.append(it)  # couldn't take (full) — leave it on the floor
+		else:
+			remaining.append(it)
+	dungeon_floor_items[instance_id][floor_num] = remaining
+
+func _award_floor_item(peer_id: int, item: Dictionary) -> bool:
+	"""Give one floor item to the player. Returns false (leave on floor) if it can't be held."""
+	var character = characters[peer_id]
+	var kind := String(item.get("kind", ""))
+	var data: Dictionary = item.get("item_data", {})
+	match kind:
+		"valor":
+			if peers.has(peer_id):
+				persistence.add_valor(peers[peer_id].account_id, int(data.get("valor", 0)))
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]You pick up %d Valor.[/color]" % int(data.get("valor", 0))})
+			return true
+		"material":
+			character.add_crafting_material(String(data.get("id", "")), int(data.get("quantity", 1)))
+			_track_dungeon_material(peer_id, String(data.get("id", "")), int(data.get("quantity", 1)))
+			var qty_t: String = (" x%d" % int(data.get("quantity", 1))) if int(data.get("quantity", 1)) > 1 else ""
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#1EFF00]You pick up %s%s.[/color]" % [String(data.get("id", "material")).capitalize().replace("_", " "), qty_t]})
+			return true
+		"egg":
+			var cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
+			var res = character.add_egg(data, cap)
+			if res.success:
+				send_to_peer(peer_id, {"type": "text", "message": "[color=#A335EE]★ You find a %s on the floor! ★[/color]" % String(data.get("name", "Egg"))})
+				send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
+				return true
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FF6666]A %s lies here but your eggs are full (%d/%d) — leave it and come back.[/color]" % [String(data.get("name", "Egg")), character.incubating_eggs.size(), cap]})
+			return false
+		_:  # equipment / consumable / escape_scroll → inventory
+			if character.inventory.size() < Character.MAX_INVENTORY_SIZE:
+				character.inventory.append(data)
+				var col := _get_rarity_color(String(data.get("rarity", "common")))
+				send_to_peer(peer_id, {"type": "text", "message": "[color=%s]★ You pick up %s ★[/color]" % [col, String(data.get("name", "an item"))]})
+				send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
+				return true
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]%s lies here but your inventory is full.[/color]" % String(data.get("name", "An item"))})
+			return false
 
 func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_type: String, dungeon_level: int, rooms: Array, grid: Array, is_boss_floor: bool):
 	"""Spawn monster entities on a single dungeon floor"""
