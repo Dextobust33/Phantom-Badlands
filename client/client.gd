@@ -27744,8 +27744,19 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.722 — combat resource economy overhaul.
+	display_game("[color=#00FF00]v0.9.722[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ RESOURCE ECONOMY OVERHAUL.[/color] A big change to how [b]Stamina / Mana / Energy[/b] work so your pool matters at [b]every[/b] level — not just early on. In-combat regen is now [b]capped[/b] (it no longer balloons with your huge late-game pool), so managing resources stays a real decision as you grow, and investing in more resource (or resource-regen gear) actually pays off.")
+	display_game("  [color=#1EFF00]◆ Warrior — Devastate is now a DUMP.[/color] It spends a big chunk of your [b]current[/b] Stamina and hits harder the fuller your bar — so building up (and stacking Stamina) pays off. Build with your other cards, then unload.")
+	display_game("  [color=#1EFF00]◆ Trickster — Outsmart spends Energy.[/color] Outsmart now spends Energy to [b]sharpen the read[/b] (a fuller bar = a big boost to your outwit chance) instead of being free to spam — so a deep Energy pool makes your signature move reliable.")
+	display_game("  [color=#1EFF00]◆ Mage — mana costs scale.[/color] Spell mana costs now scale with your mana pool so mana keeps mattering into the late game ([color=#5AC8FF]Magic Bolt[/color] is still your big mana dump for a bigger pool).")
+	display_game("  [color=#1EFF00]◆ Cards show NET cost.[/color] A card's cost number now shows what it [b]actually[/b] drains after this turn's regen (e.g. a 20-cost card with 14 regen shows 6).")
+	display_game("  [color=#C8A24A]⚖ These are large changes — expect follow-up tuning.[/color] If a class feels too starved or too free, let us know so we can balance.")
+	display_game("  [color=#1EFF00]◆ Also fixed:[/color] your realm [b]Rank[/b] no longer drops as you level (it now ranks by overall progress), and traveling [b]merchants[/b] now actually equalize goods across trading posts.")
+	display_game("")
+
 	# v0.9.721 — dungeon special rooms + big fixes.
-	display_game("[color=#00FF00]v0.9.721[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.721[/color]")
 	display_game("  [color=#FF3333]★ FIXED: un-killable elites.[/color] Champion/elite monsters in flocks could pile up to 5-10× their intended HP (the bar showing 0 while they refused to die). Fixed — elites now have consistent, correct HP and the bar reads true.")
 	display_game("  [color=#1EFF00]◆ Special dungeon rooms.[/color] Floors can now hold a [color=#FFE96A]Shrine[/color] (bless your next fight), [color=#7AE07A]Rest[/color] (full heal), [color=#FF5AF0]Elite Den[/color] (mini-boss + guaranteed drop), or [color=#5AC8FF]Gamble Cache[/color] — tucked down side branches to reward exploring.")
 	display_game("  [color=#1EFF00]◆ Roomier dungeon layouts[/color] with rooms set farther apart and longer corridors.")
