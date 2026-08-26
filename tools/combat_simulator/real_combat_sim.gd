@@ -9,6 +9,12 @@ var drop_tables
 var monster_db
 var combat_mgr
 var CharacterScript
+# Cost-tier emulation: after each cast, drain EXTRA resource = spent×(_cost_mult-1)
+# to model a higher-tier (pricier) version of the card WITHOUT editing the const
+# cost table. Damage held at base → conservatively OVER-states drain (real higher
+# tiers also hit harder → shorter fights → less total spend), a safe direction for
+# finding the cost curve that restores early-game pressure. 1.0 = unchanged.
+var _cost_mult: float = 1.0
 
 const FIGHTS_PER_CELL := 200
 const SLOTS := ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
@@ -40,8 +46,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_resource_audit()  # single-fight: does the pool ever bind as level/gear scale?
-	run_flock_audit()     # flock stress: does the pool survive back-to-back chains (safety floor for fix A)?
+	run_cost_solve()      # solve the level→cost-tier curve that restores early-game pressure on avg gear
 	quit()
 
 func run_hp_solve():
@@ -104,6 +109,40 @@ func run_resource_audit():
 						c[1], lvl, gear, et, 100.0 * wins / N, tt / N, tc / N, tmin / N, tend / N, tpool / N])
 	print("=====================================================================\n")
 
+func run_cost_solve():
+	# COST-CURVE SOLVE (2026-08-25). For each character level on AVERAGE gear, sweep a
+	# cost multiplier and read the MinRes% it produces — i.e. "how much pricier must the
+	# card tier be at this level to restore early-game resource pressure?" The mult that
+	# lands MinRes% in the target band (elite ~40-60%, boss ~20-40%) at each level IS the
+	# level→cost-tier curve. L10 baseline (mult 1.0) is the early-game feel we're matching.
+	var N := 70
+	var levels := [10, 25, 50, 80]
+	var mults := [1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0]
+	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	print("\n===== COST-CURVE SOLVE (avg gear, %d fights/cell) — MinRes%% per cost mult =====" % N)
+	print("Target: elite ~40-60%%, boss ~20-40%%. Read the mult that lands there per level.")
+	for c in classes:
+		for et in ["elite", "boss"]:
+			var hdr := "%-4s %-6s " % [c[1], et]
+			for m in mults:
+				hdr += "%9s" % ("%.1fx" % m)
+			print(hdr)
+			for lvl in levels:
+				var row := "  L%-3d      " % lvl
+				for m in mults:
+					_cost_mult = m
+					var tmin := 0.0
+					var wins := 0
+					for i in range(N):
+						var r = run_fight(lvl, "average", et, 1.0, 1.0, 1.0, c[0])
+						tmin += float(r.get("min_res_pct", 0.0))
+						if r.win:
+							wins += 1
+					_cost_mult = 1.0
+					row += "%9s" % ("%.0f@%d" % [tmin / N, int(100.0 * wins / N)])
+				print(row)
+	print("(cell = MinRes%%@Win%%)  =============================================\n")
+
 func run_flock_chain(level: int, gear: String, klass: String, chain_len: int, et: String) -> Dictionary:
 	# Flock STRESS: `chain_len` back-to-back fights on ONE character, resources NOT
 	# refilled between members (only in-combat regen), buffs + engine state (momentum/
@@ -143,6 +182,8 @@ func run_flock_chain(level: int, gear: String, klass: String, chain_len: int, et
 					_player_act(combat, ch)
 				if _class_resource(ch, klass) < res0:
 					total_casts += 1
+					if _cost_mult > 1.0:
+						_drain_resource(ch, klass, int((res0 - _class_resource(ch, klass)) * (_cost_mult - 1.0)))
 				chain_min_res = mini(chain_min_res, _class_resource(ch, klass))
 			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 				break
@@ -464,6 +505,8 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 				_player_act(combat, ch)
 			if _class_resource(ch, klass) < res0:
 				casts += 1
+				if _cost_mult > 1.0:
+					_drain_resource(ch, klass, int((res0 - _class_resource(ch, klass)) * (_cost_mult - 1.0)))
 			min_res = mini(min_res, _class_resource(ch, klass))
 			if player_dmg_scale < 1.0:
 				var dealt: int = mhp0 - int(monster.get("current_hp", 0))
@@ -495,6 +538,17 @@ func _class_resource(ch, klass: String) -> int:
 	if klass == "Wizard":
 		return int(ch.current_mana)
 	return int(ch.current_stamina)
+
+func _drain_resource(ch, klass: String, amt: int) -> void:
+	# Subtract extra resource (cost-tier emulation), floored at 0.
+	if amt <= 0:
+		return
+	if klass == "Thief":
+		ch.current_energy = maxi(0, int(ch.current_energy) - amt)
+	elif klass == "Wizard":
+		ch.current_mana = maxi(0, int(ch.current_mana) - amt)
+	else:
+		ch.current_stamina = maxi(0, int(ch.current_stamina) - amt)
 
 func _class_max_resource(ch, klass: String) -> int:
 	# Max pool for the class's combat resource (for resource-pressure telemetry).
