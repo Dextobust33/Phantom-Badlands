@@ -1996,6 +1996,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_bestiary_request(peer_id)
 		"dungeon_atlas_request":
 			handle_dungeon_atlas_request(peer_id)
+		"dungeon_locate":
+			handle_dungeon_locate(peer_id, message)
 		"house_upgrade":
 			handle_house_upgrade(peer_id, message)
 		"house_discard_item":
@@ -14107,6 +14109,54 @@ func handle_house_request(peer_id: int):
 	# Audit #3 Slice 6 — first Sanctuary open (with BP to spend) teaches the
 	# upgrade screen via the modal overlay.
 	_maybe_send_sanctuary_hint(peer_id)
+
+func _compass_direction(fx: int, fy: int, tx: int, ty: int) -> String:
+	var dx := tx - fx
+	var dy := ty - fy
+	var ns := ""
+	var ew := ""
+	if dy < -abs(dx) / 3: ns = "north"
+	elif dy > abs(dx) / 3: ns = "south"
+	if dx > abs(dy) / 3: ew = "east"
+	elif dx < -abs(dy) / 3: ew = "west"
+	var dir := ns + ew
+	return dir if dir != "" else "here"
+
+func handle_dungeon_locate(peer_id: int, message: Dictionary):
+	"""Dungeon Atlas (P1) — locate the nearest ACTIVE world dungeon of a discovered type.
+	Instances are ephemeral, so 'where' is a live query, not a stored pin. Gated on having
+	discovered the type (the discovery-progression floor)."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var dungeon_type := String(message.get("dungeon_type", ""))
+	var dname := String(DungeonDatabaseScript.get_dungeon(dungeon_type).get("name", dungeon_type))
+	if int(character.dungeon_atlas.get(dungeon_type, {}).get("state", 0)) < Character.DUNGEON_STATE_DISCOVERED:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You must discover %s before you can track it.[/color]" % dname})
+		return
+	# Nearest active world 'D' of this type: matching type, not completed, no owner (world entry).
+	var best_dist := 1 << 30
+	var bx := 0
+	var by := 0
+	var found := false
+	for id in active_dungeons:
+		var d: Dictionary = active_dungeons[id]
+		if String(d.get("dungeon_type", "")) != dungeon_type:
+			continue
+		if d.has("owner_peer_id") or int(d.get("completed_at", 0)) != 0:
+			continue
+		var wx := int(d.get("world_x", 0))
+		var wy := int(d.get("world_y", 0))
+		var dist: int = absi(wx - int(character.x)) + absi(wy - int(character.y))
+		if dist < best_dist:
+			best_dist = dist
+			bx = wx
+			by = wy
+			found = true
+	if not found:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]No active %s stirs in the realm right now — check back soon, or explore to find one.[/color]" % dname})
+		return
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#87CEEB]★ Nearest %s: ~%d tiles to the [b]%s[/b] (%d, %d). Head there to find its entrance.[/color]" % [dname, best_dist, _compass_direction(character.x, character.y, bx, by), bx, by]})
 
 func handle_dungeon_atlas_request(peer_id: int):
 	"""Dungeon Atlas (P1) — build a state-gated view of every dungeon for this player.

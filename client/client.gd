@@ -32051,10 +32051,10 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 		var st := int(e.get("state", 0))
 		var tier := int(e.get("tier", 1))
 		var tcol: String = tier_colors[clampi(tier, 0, 9)]
-		if st >= 3:  # discovered — full detail
+		if st >= 3:  # discovered — full detail (name is click-to-locate)
 			shown += 1
 			var comp := String(e.get("companion", ""))
-			display_game("[color=%s]◆ %s[/color] [color=#808080](T%d · Lv %d-%d · %d clears)[/color]" % [tcol, String(e.get("name", "?")), tier, int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0))])
+			display_game("[color=%s]◆ [url=atlas_locate:%s]%s[/url][/color] [color=#808080](T%d · Lv %d-%d · %d clears)[/color] [color=#5A9BD4][i]‹locate›[/i][/color]" % [tcol, String(e.get("id", "")), String(e.get("name", "?")), tier, int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0))])
 			var monsters: Array = e.get("monsters", [])
 			if monsters.size() > 0:
 				display_game("   [color=#909090]Monsters:[/color] %s" % ", ".join(monsters))
@@ -32541,6 +32541,10 @@ func _on_game_output_meta_clicked(meta) -> void:
 	"""v0.9.612 — dispatch clicks on BBCode [url=...] links in game_output.
 	Currently the L-view flock pagination links are the only consumers."""
 	var meta_str: String = str(meta)
+	if meta_str.begins_with("atlas_locate:"):
+		# Dungeon Atlas — click a discovered dungeon to locate the nearest active one.
+		send_to_server({"type": "dungeon_locate", "dungeon_type": meta_str.substr(13)})
+		return
 	match meta_str:
 		"legacy_prev":
 			if _victory_legacy_view:
