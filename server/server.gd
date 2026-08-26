@@ -33208,10 +33208,14 @@ func _award_floor_item(peer_id: int, item: Dictionary) -> bool:
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]You pick up %d Valor.[/color]" % int(data.get("valor", 0))})
 			return true
 		"material":
-			character.add_crafting_material(String(data.get("id", "")), int(data.get("quantity", 1)))
-			_track_dungeon_material(peer_id, String(data.get("id", "")), int(data.get("quantity", 1)))
-			var qty_t: String = (" x%d" % int(data.get("quantity", 1))) if int(data.get("quantity", 1)) > 1 else ""
-			send_to_peer(peer_id, {"type": "text", "message": "[color=#1EFF00]You pick up %s%s.[/color]" % [String(data.get("id", "material")).capitalize().replace("_", " "), qty_t]})
+			# roll_crafting_material_drop stores the id under "material_id" (not "id").
+			var mid := String(data.get("material_id", data.get("id", "")))
+			var mqty := int(data.get("quantity", 1))
+			character.add_crafting_material(mid, mqty)
+			_track_dungeon_material(peer_id, mid, mqty)
+			var qty_t: String = (" x%d" % mqty) if mqty > 1 else ""
+			var mname := mid.capitalize().replace("_", " ") if mid != "" else "materials"
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#1EFF00]You pick up %s%s.[/color]" % [mname, qty_t]})
 			return true
 		"egg":
 			var cap: int = persistence.get_egg_capacity(peers[peer_id].account_id) if peers.has(peer_id) else Character.MAX_INCUBATING_EGGS
