@@ -57,10 +57,9 @@ func run_proposal_read():
 	# Combined proposal: REAL dumps (Devastate + Outsmart in combat_manager) + capped regen,
 	# with mage cost still emulated at 2x (until cost_percent is raised for real). Shows the
 	# gear-investment gradient (avg = pressured, bis = comfortable) across levels to L1000.
-	_dump_pct = 0.0  # dumps are real now — no emulation
-	_cost_mult = 2.0  # mage attrition placeholder (real fix = raise cost_percent)
+	_dump_pct = 0.0   # dumps are real now — no emulation
+	_cost_mult = 1.0  # mage cost is now REAL (raised cost_percent) — no emulation
 	run_resource_audit()
-	_cost_mult = 1.0
 
 func run_hp_solve():
 	# #29 — sweep an extra monster-HP multiplier (War+Trk = accurate classes) to find

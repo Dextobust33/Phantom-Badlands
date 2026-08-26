@@ -116,12 +116,12 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"shield_bash":  {"ceiling": 13, "floor_ratio": 0.3, "resource": "stamina"},
 	"cleave":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "stamina"},
 	"devastate":    {"ceiling": 32, "floor_ratio": 0.3, "resource": "stamina"},
-	"blast":        {"ceiling": 34, "cost_percent": 4, "floor_ratio": 0.3, "resource": "mana"},
-	"meteor":       {"ceiling": 65, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},
+	"blast":        {"ceiling": 34, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},   # 4→7 (2026-08-25 resource fix — mana attrition scales w/ pool to L1000)
+	"meteor":       {"ceiling": 65, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},  # 6→10
 	"ambush":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "energy"},
 	"exploit":      {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
 	"gambit":       {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
-	"forcefield":   {"ceiling": 15, "cost_percent": 2, "floor_ratio": 0.3, "resource": "mana"},
+	"forcefield":   {"ceiling": 15, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},   # 2→3
 	# Warrior buffs (v0.9.263): magnitude scales with spend, duration unchanged.
 	"war_cry":      {"ceiling": 11, "floor_ratio": 0.3, "resource": "stamina"},
 	"fortify":      {"ceiling": 17, "floor_ratio": 0.3, "resource": "stamina"},
@@ -129,9 +129,9 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"rally":        {"ceiling": 24, "floor_ratio": 0.3, "resource": "stamina"},
 	"berserk":      {"ceiling": 27, "floor_ratio": 0.3, "resource": "stamina"},
 	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
-	"haste":        {"ceiling": 24, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},
-	"paralyze":     {"ceiling": 42, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},
-	"banish":       {"ceiling": 55, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},
+	"haste":        {"ceiling": 24, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
+	"paralyze":     {"ceiling": 42, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},   # 5→8
+	"banish":       {"ceiling": 55, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},  # 7→10
 	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
 	# magnitude scaling for distract + sabotage. Analyze + Vanish stay fixed-cost
 	# (binary mechanics — partial cast doesn't make sense).
