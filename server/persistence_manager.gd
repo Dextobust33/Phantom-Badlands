@@ -1023,8 +1023,15 @@ func add_to_leaderboard(character: Character, cause_of_death: String, account_us
 	# Add to entries
 	leaderboard_data.entries.append(entry)
 
-	# Sort by experience (descending)
-	leaderboard_data.entries.sort_custom(func(a, b): return a.experience > b.experience)
+	# Sort by OVERALL progress descending: level first, current-level XP as tie-break.
+	# v0.9.722 — `experience` is per-level (reset on level-up), so sorting on it alone
+	# ranked a level-40 fresh-into-the-level char below a level-3 char with full XP.
+	leaderboard_data.entries.sort_custom(func(a, b):
+		var al := int(a.get("level", 0))
+		var bl := int(b.get("level", 0))
+		if al != bl:
+			return al > bl
+		return int(a.get("experience", 0)) > int(b.get("experience", 0)))
 
 	# Find rank of new entry
 	var rank = 1

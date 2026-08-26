@@ -13179,16 +13179,27 @@ func force_full_character_update(peer_id: int):
 
 func _calculate_projected_rank(character: Character) -> int:
 	"""Calculate where this character would rank on the leaderboard if they died now.
-	Leaderboard is sorted by experience descending. Returns 1-based rank, 0 if off-board (>100)."""
+	Ranked by OVERALL progress: level first, then current-level XP as a tie-break.
+	Returns 1-based rank, 0 if off-board (>100).
+
+	v0.9.722 fix — this used to compare only `character.experience`, but that field
+	is CURRENT-LEVEL XP: `add_experience` subtracts the threshold on every level-up
+	(character.gd ~2205), so it resets toward 0 each level. Ranking on it alone made
+	a player's rank DROP the instant they leveled up. Level is the monotonic measure
+	of lifetime progress (a higher level always means more total XP), so it dominates;
+	the per-level XP only breaks ties between same-level characters. Counting entries
+	that strictly outrank us is order-independent (no reliance on entry sort order)."""
 	var entries = persistence.leaderboard_data.get("entries", [])
 	if entries.is_empty():
 		return 1
-	var xp = character.experience
-	var rank = 1
+	var lvl := int(character.level)
+	var xp := int(character.experience)
+	var rank := 1
 	for entry in entries:
-		if xp >= entry.get("experience", 0):
-			return rank
-		rank += 1
+		var e_lvl := int(entry.get("level", 0))
+		var e_xp := int(entry.get("experience", 0))
+		if e_lvl > lvl or (e_lvl == lvl and e_xp > xp):
+			rank += 1
 	if rank > 100:
 		return 0
 	return rank
@@ -38742,6 +38753,15 @@ const MERCHANT_UNIQUE_KEEP = 1       # leave at least this many uniques of each 
 const MERCHANT_SCATTER_MAX = 2       # max uniques of each category scattered per merchant visit
 # Track which post each merchant was last processed at (avoid re-processing same rest stop)
 var merchant_last_processed_post: Dictionary = {}
+# v0.9.722 — merchant market-key resolver. Circuit / path-graph keys are
+# `_get_post_key()` form ("post_crossroads_0_0"), but market listings are keyed
+# by the trading-post DISPLAY NAME ("Crossroads") — `_get_market_post_id` falls
+# through `tp.get("post_id", tp.get("name"))` to the name because NPC posts carry
+# no `post_id`. The v0.9.716 equalization looked up the circuit key against the
+# market and ALWAYS found an empty market, so NPC posts never equalized (one hub
+# hoarded 1000+ listings while others stayed bare). This maps a circuit key ->
+# the market key actually used for that post's listings.
+var _circuit_to_market_key: Dictionary = {}
 # Timer for merchant arrival checks
 var _merchant_check_timer: float = 0.0
 const MERCHANT_CHECK_INTERVAL = 30.0
@@ -38862,11 +38882,42 @@ func _check_merchant_arrivals() -> void:
 		merchant_last_processed_post[merchant_id] = at_post
 		_merchant_arrive_at_post(merchant_id, at_post, merchant_idx)
 
+func _market_key_for_post(circuit_key: String) -> String:
+	# Resolve a circuit / path-graph key to the key its market listings live under.
+	# Player posts share one id across circuit + market — pass through. NPC posts
+	# key their market by display name (see `_circuit_to_market_key` note above).
+	if circuit_key == "":
+		return circuit_key
+	if circuit_key.begins_with("player_"):
+		return circuit_key
+	if _circuit_to_market_key.has(circuit_key):
+		return _circuit_to_market_key[circuit_key]
+	# (Re)build the NPC map by POSITION rather than reconstructing `_get_post_key`
+	# (which could diverge if a post's id was backfilled). `_path_post_positions`
+	# is authoritative — its keys ARE the live circuit keys. Match each NPC post to
+	# its circuit key by coordinate, then map -> market key (mirror
+	# `_get_market_post_id`'s `post_id`-then-`name` fallback: NPC posts key by name).
+	if chunk_manager:
+		var pos_to_ckey := {}
+		for ckey in world_system._path_post_positions:
+			var p: Vector2i = world_system._path_post_positions[ckey]
+			pos_to_ckey["%d,%d" % [p.x, p.y]] = ckey
+		for post in chunk_manager.get_npc_posts():
+			var pk := "%d,%d" % [int(post.get("x", 0)), int(post.get("y", 0))]
+			if not pos_to_ckey.has(pk):
+				continue
+			var mkey := String(post.get("post_id", post.get("name", "")))
+			if mkey != "":
+				_circuit_to_market_key[String(pos_to_ckey[pk])] = mkey
+	return _circuit_to_market_key.get(circuit_key, circuit_key)
+
 func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_idx: int) -> void:
 	"""Called when a merchant arrives at a post. Offload carried items, pick up excess."""
 	# Skip player posts that don't have a market station
 	if post_key.begins_with("player_") and not _player_post_has_market(post_key):
 		return
+	# Resolve the circuit key to the market-listing key for all persistence calls.
+	var market_key := _market_key_for_post(post_key)
 	# Step 1: Offload carried items to this post's market
 	if merchant_inventory.has(merchant_id):
 		var carried = merchant_inventory[merchant_id]
@@ -38874,7 +38925,7 @@ func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_id
 		for item in items:
 			var listing = item.duplicate()
 			listing.erase("listing_id")  # Will get a new ID
-			persistence.add_market_listing(post_key, listing)
+			persistence.add_market_listing(market_key, listing)
 		if items.size() > 0:
 			log_message("Merchant %s offloaded %d items at %s" % [merchant_id, items.size(), post_key])
 		merchant_inventory.erase(merchant_id)
@@ -38890,10 +38941,10 @@ func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_id
 	#   (b) Unique goods (equipment / eggs) SCATTER immediately to random road-
 	#       connected posts that hold fewer, so scarce items spread around the realm
 	#       (the "2 of 3 eggs go to 2 random nearby posts" behaviour).
-	var this_listings = persistence.get_market_listings(post_key)
+	var this_listings = persistence.get_market_listings(market_key)
 
 	# (b) Scatter uniques first (may thin this post's unique listings).
-	_merchant_scatter_uniques(post_key, this_listings)
+	_merchant_scatter_uniques(post_key, market_key, this_listings)
 
 	# (a) Stackable equalization vs the next circuit stop (where the carry lands).
 	var circuit = world_system._merchant_circuits.get(merchant_idx, [])
@@ -38903,10 +38954,11 @@ func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_id
 	if current_idx < 0:
 		return
 	var next_key = circuit[(current_idx + 1) % circuit.size()]
+	var next_market_key := _market_key_for_post(next_key)
 
 	# Re-read (scatter above may have changed this post) and tally quantities.
-	this_listings = persistence.get_market_listings(post_key)
-	var next_listings = persistence.get_market_listings(next_key)
+	this_listings = persistence.get_market_listings(market_key)
+	var next_listings = persistence.get_market_listings(next_market_key)
 	var this_qty := {}          # item_name -> total quantity here
 	var this_listing_for := {}  # item_name -> a listing here to split
 	for listing in this_listings:
@@ -38942,7 +38994,7 @@ func _merchant_arrive_at_post(merchant_id: String, post_key: String, merchant_id
 		var take := (here - there) / 2
 		if take < 1:
 			continue
-		var carried := _split_stack_listing(post_key, this_listing_for[nm], take)
+		var carried := _split_stack_listing(market_key, this_listing_for[nm], take)
 		if carried.is_empty():
 			continue
 		to_carry.append(carried)
@@ -38983,14 +39035,15 @@ func _split_stack_listing(post_key: String, listing: Dictionary, take: int) -> D
 	return carry
 
 
-func _merchant_scatter_uniques(post_key: String, this_listings: Array) -> void:
+func _merchant_scatter_uniques(circuit_key: String, market_key: String, this_listings: Array) -> void:
 	# Spread scarce one-off goods (equipment / eggs) from this post to random road-
 	# connected posts that hold fewer of that supply category, so uniques don't pile
 	# at one hub. Immediate (no carry) — the merchant IS the redistribution. Keeps at
 	# least MERCHANT_UNIQUE_KEEP of each category here and moves at most
-	# MERCHANT_SCATTER_MAX per category per visit.
+	# MERCHANT_SCATTER_MAX per category per visit. Neighbors are walked in circuit-key
+	# space (the path graph); each is resolved to its market key at the persistence call.
 	var neighbors: Array = []
-	for k in world_system._path_graph.get(post_key, []):
+	for k in world_system._path_graph.get(circuit_key, []):
 		if String(k).begins_with("player_") and not _player_post_has_market(k):
 			continue
 		neighbors.append(k)
@@ -39022,7 +39075,7 @@ func _merchant_scatter_uniques(post_key: String, this_listings: Array) -> void:
 			var best_count := 1 << 30
 			for nk in shuffled:
 				var cnt := 0
-				for nl in persistence.get_market_listings(nk):
+				for nl in persistence.get_market_listings(_market_key_for_post(nk)):
 					if String(nl.get("supply_category", nl.get("category", ""))) == sc:
 						cnt += 1
 				if cnt < best_count:
@@ -39030,10 +39083,10 @@ func _merchant_scatter_uniques(post_key: String, this_listings: Array) -> void:
 					best_key = nk
 			if best_key == "" or best_count >= here_cnt:
 				continue  # nobody poorer than here → don't move
-			var removed = persistence.remove_market_listing(post_key, String(listing.get("listing_id", "")))
+			var removed = persistence.remove_market_listing(market_key, String(listing.get("listing_id", "")))
 			if removed.is_empty():
 				continue
 			removed.erase("listing_id")
-			persistence.add_market_listing(best_key, removed)
+			persistence.add_market_listing(_market_key_for_post(best_key), removed)
 			here_cnt -= 1
-			log_message("Merchant scattered %s '%s' from %s to %s" % [sc, String(removed.get("item", {}).get("name", "?")), post_key, best_key])
+			log_message("Merchant scattered %s '%s' from %s to %s" % [sc, String(removed.get("item", {}).get("name", "?")), circuit_key, best_key])
