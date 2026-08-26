@@ -32188,6 +32188,8 @@ func _complete_dungeon(peer_id: int):
 	var character = characters[peer_id]
 	var dungeon_type = character.current_dungeon_type
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	# P1 Dungeon Atlas — completing a dungeon bumps its clear count (already discovered).
+	character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(dungeon_data.get("name", dungeon_type)), int(dungeon_data.get("tier", 0)), character.x, character.y, true)
 	var instance_id = character.current_dungeon_id
 	var inst_sub_tier = 1
 	# C0 — capture the origin world 'D' (set on entry) so boss defeat can clear that
