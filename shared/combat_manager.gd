@@ -66,7 +66,7 @@ const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via card
 # fraction of CURRENT stamina (not a flat ceiling), and its power scales with how full
 # the bar was. Makes a big pool worth building (fuller bar = harder hit) and gives the
 # martial resource arc (dump → low → rebuild). %-based → scales to any level. Sim-tuned.
-const DEVASTATE_DUMP_PCT: float = 0.65
+const DEVASTATE_DUMP_PCT: float = 0.60
 # Trickster dump: Outsmart spends this % of CURRENT energy to sharpen the read; bar
 # fullness adds up to OUTSMART_DUMP_MAX_BONUS% outsmart chance, so a bigger energy pool =
 # a more reliable outwit (investment payoff) + gives the Trickster its energy arc. %-based.
@@ -116,8 +116,8 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"shield_bash":  {"ceiling": 13, "floor_ratio": 0.3, "resource": "stamina"},
 	"cleave":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "stamina"},
 	"devastate":    {"ceiling": 32, "floor_ratio": 0.3, "resource": "stamina"},
-	"blast":        {"ceiling": 34, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},   # 4→7 (2026-08-25 resource fix — mana attrition scales w/ pool to L1000)
-	"meteor":       {"ceiling": 65, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},  # 6→10
+	"blast":        {"ceiling": 34, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},   # 4→6 (2026-08-25 resource fix — eased from 7 for flock sustain; scales w/ pool to L1000)
+	"meteor":       {"ceiling": 65, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},   # 6→8 (eased from 10)
 	"ambush":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "energy"},
 	"exploit":      {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
 	"gambit":       {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
@@ -130,8 +130,8 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"berserk":      {"ceiling": 27, "floor_ratio": 0.3, "resource": "stamina"},
 	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
 	"haste":        {"ceiling": 24, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
-	"paralyze":     {"ceiling": 42, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},   # 5→8
-	"banish":       {"ceiling": 55, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},  # 7→10
+	"paralyze":     {"ceiling": 42, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},   # 5→7 (eased from 8)
+	"banish":       {"ceiling": 55, "cost_percent": 9, "floor_ratio": 0.3, "resource": "mana"},   # 7→9 (eased from 10)
 	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
 	# magnitude scaling for distract + sabotage. Analyze + Vanish stay fixed-cost
 	# (binary mechanics — partial cast doesn't make sense).
