@@ -27736,8 +27736,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.720 — dungeon layout + eggs.
+	display_game("[color=#00FF00]v0.9.720[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Better dungeon layouts.[/color] Floors now have [b]small distinct rooms with long branching corridors[/b] (multiple routes to flank or avoid the wandering monsters) instead of blocky room-grids. No more [b]flock/summon[/b] chains in dungeons — every dungeon monster is one visible fight. The loot minigame shows [b]far less often[/b] on dungeon trash (loot still awarded).")
+	display_game("  [color=#1EFF00]◆ Eggs.[/color] Base incubation slots raised [b]3 → 5[/b], and you can now [b]Discard[/b] an unwanted egg from the Eggs tab.")
+	display_game("")
+
 	# v0.9.719 — dungeon revamp: co-op + bigger dungeons + wandering pressure.
-	display_game("[color=#00FF00]v0.9.719[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.719[/color]")
 	display_game("  [color=#FF8000]★ DUNGEON REVAMP (part 1).[/color] [b]Co-op dungeons:[/b] players in a dungeon no longer block the entrance, multiple people can run the same one, and party members each get their own full rewards. [b]Bigger & longer:[/b] low-tier dungeons gained floors + density.")
 	display_game("  [color=#1EFF00]◆ Wandering pressure replaces the step timer.[/color] The step counter is gone — instead, the longer you linger on a floor the more monsters wander in (away from you). Every dungeon now holds a [color=#87CEEB]guaranteed Escape Scroll[/color] in its treasures as your way out. Threats now clear only when you beat the boss.")
 	display_game("  [color=#1EFF00]◆ Colorful enemies (full palette).[/color] Wild monsters can now roll any color + pattern a companion can.")
