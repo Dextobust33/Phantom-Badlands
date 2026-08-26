@@ -67,7 +67,13 @@ enum TileType {
 	CHAOS_WARP,     # Audit #5 Slice 19 — chaos warp burns HP on step (Chaos Sanctum)
 	VOID_WHISPER,   # Audit #5 Slice 19 — void whisper erodes movement +2 steps (Nameless Void)
 	DIVINE_BLOOD,   # Audit #5 Slice 19 — god slayer blood heals on step (God Slayer Arena)
-	DECAY_MOTE      # Audit #5 Slice 19 — entropy decay mote rots HP on step (Entropy End)
+	DECAY_MOTE,     # Audit #5 Slice 19 — entropy decay mote rots HP on step (Entropy End)
+	# C3b (dungeon revamp) special ROOMS — reward/choice rooms placed in branch/dead-end
+	# rooms (not theme-specific). One-shot: convert to CLEARED after use.
+	SHRINE,         # Buff: your next battle is blessed (+damage)
+	REST_ROOM,      # Recover: full HP + all resources
+	ELITE_DEN,      # Mini-boss: an elite-variant fight (guaranteed drop)
+	GAMBLE_CACHE    # Big-or-nothing random payout
 }
 
 # Tile display characters
@@ -134,7 +140,12 @@ const TILE_CHARS = {
 	TileType.CHAOS_WARP: "W",
 	TileType.VOID_WHISPER: "N",
 	TileType.DIVINE_BLOOD: "D",
-	TileType.DECAY_MOTE: "U"
+	TileType.DECAY_MOTE: "U",
+	# C3b special rooms
+	TileType.SHRINE: "¤",
+	TileType.REST_ROOM: "▲",
+	TileType.ELITE_DEN: "◆",
+	TileType.GAMBLE_CACHE: "?"
 }
 
 # Tile colors for display
@@ -201,7 +212,12 @@ const TILE_COLORS = {
 	TileType.CHAOS_WARP: "#FF00FF",
 	TileType.VOID_WHISPER: "#444466",
 	TileType.DIVINE_BLOOD: "#FFFFAA",
-	TileType.DECAY_MOTE: "#884466"
+	TileType.DECAY_MOTE: "#884466",
+	# C3b special rooms — distinct bright colors so they stand out on the map.
+	TileType.SHRINE: "#FFE96A",      # gold — blessing
+	TileType.REST_ROOM: "#7AE07A",   # green — recover
+	TileType.ELITE_DEN: "#FF5AF0",   # magenta — mini-boss
+	TileType.GAMBLE_CACHE: "#5AC8FF" # cyan — gamble
 }
 
 # Sub-tier level ranges per overarching tier (1-9)
@@ -1741,11 +1757,10 @@ const DUNGEON_TYPES = {
 # - active_players: Array of peer_ids currently inside
 
 # BSP dungeon grid size range (floors vary between min and max)
-# C3 (dungeon revamp) — enlarged 16-20 → 18-24 so floors have room for BRANCHING routes
-# (multiple ways through) + the wandering monsters to roam. Pairs with the branching-
-# connection pass in generate_floor_grid.
-const DUNGEON_GRID_SIZE_MIN = 18
-const DUNGEON_GRID_SIZE_MAX = 24
+# C3 (dungeon revamp) — enlarged for the Azure-Dreams feel: bigger floors + FEWER, more
+# SPREAD-OUT rooms so corridors between them run long (v2: 18-24 → 20-28).
+const DUNGEON_GRID_SIZE_MIN = 20
+const DUNGEON_GRID_SIZE_MAX = 28
 
 # Monster display colors by dungeon tier
 const MONSTER_DISPLAY_COLORS = {
@@ -1817,10 +1832,10 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 			row.append(TileType.WALL)
 		grid.append(row)
 
-	# BSP split the area (leave 1-tile border). v2 (C3) — keep depth moderate so
-	# partitions stay biggish; combined with the small rooms above, that yields long
-	# corridors between distinct chambers (not a packed grid of rooms).
-	var max_depth = 3 if size <= 16 else 4
+	# BSP split the area (leave 1-tile border). v3 (C3, Azure-Dreams) — SHALLOW depth so
+	# there are FEWER, BIGGER partitions; the small rooms above then sit far apart inside
+	# them, so corridors run long (playtest: depth-4 partitions were still too cramped).
+	var max_depth = 3 if size <= 26 else 4
 	var partitions = []
 	var initial_rect = Rect2i(1, 1, size - 2, size - 2)
 	_bsp_split(initial_rect, 0, max_depth, rng, partitions)
@@ -1913,6 +1928,29 @@ static func generate_floor_grid(dungeon_id: String, floor_num: int, is_boss_floo
 			var rpos = _get_room_center(rooms[best_room])
 			if grid[rpos.y][rpos.x] == TileType.EMPTY:
 				grid[rpos.y][rpos.x] = TileType.RESOURCE
+
+	# C3b special ROOMS — 0-2 reward/choice rooms per floor, in the LARGER unused rooms
+	# (down a branch, so exploring/choosing to enter one is a decision). Weighted pick
+	# among Shrine (buff) / Rest (recover) / Elite (mini-boss+drop) / Gamble. One-shot.
+	var special_types = [TileType.SHRINE, TileType.REST_ROOM, TileType.ELITE_DEN, TileType.GAMBLE_CACHE]
+	var special_count = 0
+	if rng.randf() < 0.65:
+		special_count = 2 if rng.randf() < 0.30 else 1
+	for _s in range(special_count):
+		var big_room = -1
+		var big_area = 0
+		for ri in range(rooms.size()):
+			if ri in used_rooms:
+				continue
+			var area = rooms[ri].size.x * rooms[ri].size.y
+			if area > big_area:
+				big_area = area
+				big_room = ri
+		if big_room >= 0:
+			used_rooms.append(big_room)
+			var sppos = _get_room_center(rooms[big_room])
+			if grid[sppos.y][sppos.x] == TileType.EMPTY:
+				grid[sppos.y][sppos.x] = special_types[rng.randi() % special_types.size()]
 
 	# Audit #5 theme tags — apply per-dungeon environmental flair
 	_apply_theme_tags(grid, dungeon_id, rng)

@@ -28217,6 +28217,33 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#F0E68C]A beam of light blesses you — your next attack deals [color=#FFD700]+20%% damage[/color].[/color]"})
 	# Audit #5 Slice 13 theme tag — Dragon Hatchery WARM_NEST heals on step
 	# (consumed). 4% max HP, min 1 max 100. T4 — matches Phoenix's ember heal.
+	# C3b special ROOMS (Shrine/Rest/Gamble; Elite is combat, handled in the tile-
+	# interaction section below). One-shot — convert to CLEARED after use.
+	elif tile == DungeonDatabaseScript.TileType.REST_ROOM:
+		character.restore_all_resources()
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.CLEARED
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#7AE07A]You rest in a quiet hollow — HP and resources fully restored.[/color]"})
+	elif tile == DungeonDatabaseScript.TileType.SHRINE:
+		character.set_meta("pending_war_banner", 3)
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.CLEARED
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFE96A]You pray at a shrine — your next battle is blessed ([color=#FFD700]+15%% damage for 3 rounds[/color]).[/color]"})
+	elif tile == DungeonDatabaseScript.TileType.GAMBLE_CACHE:
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.CLEARED
+		var _gtier := int(DungeonDatabaseScript.get_dungeon(character.current_dungeon_type).get("tier", 1))
+		var _acct_g: String = peers[peer_id].account_id if peers.has(peer_id) else ""
+		var _groll := randi() % 100
+		if _groll < 40:
+			var _jv := randi_range(30, 60) * _gtier
+			if _acct_g != "":
+				persistence.add_valor(_acct_g, _jv)
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#5AC8FF]JACKPOT! The gamble cache pays out [color=#FFD700]+%d Valor[/color]![/color]" % _jv})
+		elif _groll < 80:
+			var _sv := randi_range(5, 15) * _gtier
+			if _acct_g != "":
+				persistence.add_valor(_acct_g, _sv)
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#5AC8FF]The gamble cache yields a modest [color=#FFD700]+%d Valor[/color].[/color]" % _sv})
+		else:
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]The gamble cache was empty — better luck next time.[/color]"})
 	elif tile == DungeonDatabaseScript.TileType.WARM_NEST:
 		var nest_heal = clamp(int(character.get_total_max_hp() * 0.04), 1, 100)
 		var max_hp_wn = character.get_total_max_hp()
@@ -28583,6 +28610,24 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		return
 	elif tile_int == int(DungeonDatabaseScript.TileType.FINAL_CHEST):
 		_open_final_chest(peer_id)
+		return
+	elif tile_int == int(DungeonDatabaseScript.TileType.ELITE_DEN):
+		# C3b — Elite Den: an elite-variant mini-boss fight (guaranteed drop; elite
+		# variants roll drop_chance 100 + better loot). Clear the tile first so winning
+		# leaves it walkable and it never re-triggers.
+		grid[new_y][new_x] = DungeonDatabaseScript.TileType.CLEARED
+		var _dd_e = DungeonDatabaseScript.get_dungeon(character.current_dungeon_type)
+		var _boss_e = _dd_e.get("boss", {})
+		var _dlvl_e = int(active_dungeons.get(instance_id, {}).get("dungeon_level", character.level))
+		var _elite_entity = {
+			"id": -1, "x": new_x, "y": new_y,
+			"monster_type": str(_boss_e.get("monster_type", "Goblin")),
+			"level": max(1, int(_dlvl_e * 1.1)),
+			"is_elite": true, "is_boss": false, "boss_data": {},
+			"alive": true, "alert": true, "display_char": "M", "display_color": "#FF5AF0"
+		}
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF5AF0]★ An Elite guardian lurks in this chamber![/color]"})
+		_start_dungeon_monster_combat(peer_id, _elite_entity)
 		return
 
 	# Check if player walked onto a rescue NPC
@@ -29394,6 +29439,11 @@ func _on_world_dungeon_boss_defeated(peer_id: int, origin_wx: int, origin_wy: in
 			if not inst.get("threat_cleared", false):
 				inst["threat_cleared"] = true
 				_stamp_post_cooldowns_for_cleared_dungeon(int(inst.world_x), int(inst.world_y), instance_id)
+				# C3 — invalidate the threat + rumor caches so the top-right threat, the
+				# threatened-post glyphs and the local rumors drop this dungeon at once
+				# (the threat cache is a 3s refresh; rumors a 30-min one).
+				_world_threat_states.clear()
+				trading_post_rumors.clear()
 			# Per-player re-farm lock.
 			var cleared: Array = inst.get("cleared_by", [])
 			if peer_id not in cleared:
@@ -29821,6 +29871,11 @@ func _compute_post_threat_state(post_x: int, post_y: int) -> Dictionary:
 		var instance = active_dungeons[instance_id]
 		if instance.get("completed_at", 0) > 0:
 			continue
+		# C0/C3 — a world dungeon whose BOSS has been defeated no longer threatens,
+		# even while it lingers on the map (co-op re-entry window). Clears the top-right
+		# threat + threatened-post glyphs the moment someone clears it.
+		if instance.get("threat_cleared", false):
+			continue
 		if instance.has("owner_peer_id"):
 			continue  # Personal instances don't threaten the world
 		var dungeon_data = DungeonDatabaseScript.get_dungeon(instance.dungeon_type)
@@ -30114,6 +30169,9 @@ func _get_threat_zone_dungeon_at(x: int, y: int) -> Dictionary:
 	for instance_id in active_dungeons:
 		var instance = active_dungeons[instance_id]
 		if instance.get("completed_at", 0) > 0:
+			continue
+		# C3 — a boss-cleared dungeon no longer spills threat encounters into its cone.
+		if instance.get("threat_cleared", false):
 			continue
 		if instance.has("owner_peer_id"):
 			continue  # Personal instances aren't world threats
@@ -31239,6 +31297,9 @@ func _find_nearest_dungeon_for_quest(from_x: int, from_y: int, dungeon_type: Str
 		var instance = active_dungeons[instance_id]
 		# Skip completed dungeons
 		if instance.get("completed_at", 0) > 0:
+			continue
+		# C3 — a boss-cleared dungeon is no longer a rumor-worthy threat.
+		if instance.get("threat_cleared", false):
 			continue
 		# Skip other players' personal quest dungeons
 		if peer_id >= 0 and instance.has("owner_peer_id") and instance.owner_peer_id != peer_id:
@@ -33359,6 +33420,10 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 	if monster.is_empty():
 		monster = monster_db.generate_monster(monster_entity.level, monster_entity.level)
 	monster.is_dungeon_monster = true
+	# C3b — Elite Den: promote to an elite variant (harder + 2 extra abilities +
+	# guaranteed drop via drop_chance 100). reapply_variant restamps name/stats/abilities.
+	if monster_entity.get("is_elite", false):
+		monster_db.reapply_variant(monster, "elite")
 
 	# Apply boss multipliers if boss
 	var is_boss = monster_entity.is_boss
@@ -37657,6 +37722,10 @@ func _is_non_party_player_at(x: int, y: int, peer_id: int) -> bool:
 		if other_peer_id == peer_id:
 			continue
 		var other_char = characters[other_peer_id]
+		# C0 — a player inside a dungeon keeps their overworld x/y (on the 'D' tile) but
+		# isn't really there, so they must NOT block movement onto that tile.
+		if other_char.in_dungeon:
+			continue
 		if other_char.x == x and other_char.y == y:
 			# If both in same party, don't block
 			if my_party_leader != -1 and party_membership.get(other_peer_id, -1) == my_party_leader:
@@ -37670,6 +37739,8 @@ func _get_player_at(x: int, y: int, exclude_peer_id: int = -1) -> int:
 		if other_peer_id == exclude_peer_id:
 			continue
 		var other_char = characters[other_peer_id]
+		if other_char.in_dungeon:
+			continue  # C0 — in-dungeon players aren't really on their overworld tile
 		if other_char.x == x and other_char.y == y:
 			return other_peer_id
 	return -1

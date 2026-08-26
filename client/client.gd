@@ -39783,6 +39783,14 @@ func _get_dungeon_tile_display(tile_type: int) -> Dictionary:
 			return {"char": "D", "color": "#FFFFAA"}
 		62:  # DECAY_MOTE — Entropy End theme tile, strongest persistent damage (v0.9.462)
 			return {"char": "U", "color": "#884466"}
+		63:  # SHRINE (C3b) — buff room: +damage next battle
+			return {"char": "¤", "color": "#FFE96A"}
+		64:  # REST_ROOM (C3b) — recover: full HP + resources
+			return {"char": "▲", "color": "#7AE07A"}
+		65:  # ELITE_DEN (C3b) — mini-boss fight + guaranteed drop
+			return {"char": "◆", "color": "#FF5AF0"}
+		66:  # GAMBLE_CACHE (C3b) — big-or-nothing payout
+			return {"char": "?", "color": "#5AC8FF"}
 		_:
 			return {"char": "?", "color": "#FFFFFF"}
 
