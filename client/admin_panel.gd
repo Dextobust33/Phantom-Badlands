@@ -200,6 +200,12 @@ func _render_page() -> void:
 			_add_button("Reset Active Quests", "gm_resetquests")
 			_add_button("Show /gmhelp text reference", "show_gmhelp")
 			_add_separator()
+			_subtitle_subline("Cartography (rooted Locate) — set rank to test each precision tier: 1-2 region, 3-4 coarse, 5-7 precise, 8 = anywhere sense.")
+			_add_button("Cartography rank +1", "gm_cartography_up", Color(0.35, 0.78, 1.0))
+			_add_button("Cartography → 5 (precise, post-gated)", "gm_cartography_5", Color(0.35, 0.78, 1.0))
+			_add_button("Cartography → 8 (anywhere sense)", "gm_cartography_8", Color(0.48, 0.88, 0.48))
+			_add_button("Cartography → 1 (reset)", "gm_cartography_1", Color(0.7, 0.7, 0.7))
+			_add_separator()
 			_add_button("Back", "_back_root", Color(0.7, 0.7, 0.7))
 		"abilities":
 			# v0.9.607 — admin page for testing the v0.9.606 +X to ability

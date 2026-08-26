@@ -2081,6 +2081,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_completequest(peer_id, message)
 		"gm_resetquests":
 			handle_gm_resetquests(peer_id)
+		"gm_set_cartography":
+			handle_gm_set_cartography(peer_id, message)
 		"gm_heal":
 			handle_gm_heal(peer_id)
 		"gm_broadcast":
@@ -14122,17 +14124,29 @@ func _compass_direction(fx: int, fy: int, tx: int, ty: int) -> String:
 	var dir := ns + ew
 	return dir if dir != "" else "here"
 
+const CARTOGRAPHER_LOCATE_VALOR_COST := 15  # Cost to have a post Cartographer mark a dungeon. Free at Cartography rank 8 (standing sense).
+const CARTOGRAPHY_SENSE_RANK := 8            # Rank at which Locate works ANYWHERE, no post/Valor.
+
 func handle_dungeon_locate(peer_id: int, message: Dictionary):
 	"""Dungeon Atlas (P1) — locate the nearest ACTIVE world dungeon of a discovered type.
-	Instances are ephemeral, so 'where' is a live query, not a stored pin. Gated on having
-	discovered the type (the discovery-progression floor)."""
-	if not characters.has(peer_id):
+	Rooted in the world: invoked via a Cartographer at a trading post (costs Valor), and
+	its PRECISION is gated by the player's Cartography rank (earned by discovering + clearing
+	dungeons). At rank 8 the player has a standing 'sense' and can locate anywhere, free.
+	Instances are ephemeral, so 'where' is a live query, not a stored pin."""
+	if not characters.has(peer_id) or not peers.has(peer_id):
 		return
 	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
 	var dungeon_type := String(message.get("dungeon_type", ""))
 	var dname := String(DungeonDatabaseScript.get_dungeon(dungeon_type).get("name", dungeon_type))
 	if int(character.dungeon_atlas.get(dungeon_type, {}).get("state", 0)) < Character.DUNGEON_STATE_DISCOVERED:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You must discover %s before you can track it.[/color]" % dname})
+		return
+	var rank: int = int(character.cartography_rank)
+	var has_sense: bool = rank >= CARTOGRAPHY_SENSE_RANK
+	# Gate: below the 'sense' rank you must consult a Cartographer at a trading post.
+	if not has_sense and not _player_at_npc_post(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#C8A24A]🧭 The realm's dungeons shift too often to track from memory. Visit a [b]Cartographer at a trading post[/b] to have one marked — or reach [b]Cartography rank %d[/b] to sense them anywhere. [color=#808080](You are Cartography rank %d.)[/color][/color]" % [CARTOGRAPHY_SENSE_RANK, rank]})
 		return
 	# Nearest active world 'D' of this type: matching type, not completed, no owner (world entry).
 	var best_dist := 1 << 30
@@ -14156,7 +14170,44 @@ func handle_dungeon_locate(peer_id: int, message: Dictionary):
 	if not found:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]No active %s stirs in the realm right now — check back soon, or explore to find one.[/color]" % dname})
 		return
-	send_to_peer(peer_id, {"type": "text", "message": "[color=#87CEEB]★ Nearest %s: ~%d tiles to the [b]%s[/b] (%d, %d). Head there to find its entrance.[/color]" % [dname, best_dist, _compass_direction(character.x, character.y, bx, by), bx, by]})
+	# Charge the Cartographer's fee (skipped when locating via your own 'sense' at rank 8+).
+	if not has_sense:
+		if not persistence.spend_valor(account_id, CARTOGRAPHER_LOCATE_VALOR_COST):
+			var have: int = persistence.get_valor(account_id)
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFAA00]🧭 The Cartographer wants [b]%d Valor[/b] to mark a dungeon — you have %d.[/color]" % [CARTOGRAPHER_LOCATE_VALOR_COST, have]})
+			return
+	# Rank-tiered output: 0 = region only, 1 = coarse (dir + rounded distance), 2 = precise (dir + distance + coords).
+	var precision: int = character.cartography_locate_precision()
+	var compass := _compass_direction(character.x, character.y, bx, by)
+	var body := ""
+	if precision <= 0:
+		body = "somewhere to the [b]%s[/b]" % compass
+	elif precision == 1:
+		var coarse: int = int(round(float(best_dist) / 10.0)) * 10
+		body = "to the [b]%s[/b], roughly %d tiles away" % [compass, maxi(10, coarse)]
+	else:
+		body = "to the [b]%s[/b], %d tiles away — near (%d, %d)" % [compass, best_dist, bx, by]
+	var fee := "" if has_sense else " [color=#808080](−%d Valor)[/color]" % CARTOGRAPHER_LOCATE_VALOR_COST
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#87CEEB]★ Nearest %s: %s.%s[/color]" % [dname, body, fee]})
+	# Push updated valor to the client HUD after a spend.
+	if not has_sense:
+		send_character_update(peer_id)
+
+func _grant_cartography_xp(peer_id: int, character, amount: int, reason: String) -> void:
+	"""Award Cartography XP (rooted-Locate progression) and announce any rank-up +
+	the new locate capability it unlocks."""
+	var gained: int = character.add_cartography_xp(amount)
+	if gained <= 0:
+		return
+	var rank: int = int(character.cartography_rank)
+	var unlock := ""
+	if rank >= CARTOGRAPHY_SENSE_RANK:
+		unlock = " You've earned a cartographer's [b]sixth sense[/b] — you can now Locate dungeons [b]anywhere[/b], no post needed."
+	elif rank >= 5:
+		unlock = " Post Cartographers now mark dungeons with [b]precise coordinates[/b]."
+	elif rank >= 3:
+		unlock = " Post Cartographers now give you [b]direction and distance[/b]."
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#5AC8FF]🧭 Cartography rank up — you're now [b]rank %d[/b] (from %s).%s[/color]" % [rank, reason, unlock]})
 
 func handle_dungeon_atlas_request(peer_id: int):
 	"""Dungeon Atlas (P1) — build a state-gated view of every dungeon for this player.
@@ -14189,7 +14240,13 @@ func handle_dungeon_atlas_request(peer_id: int):
 		entries.append(e)
 	entries.sort_custom(func(a, b): return int(a.get("tier", 0)) < int(b.get("tier", 0)))
 	send_to_peer(peer_id, {"type": "dungeon_atlas_data", "entries": entries,
-		"discovered": discovered_count, "total": DungeonDatabaseScript.DUNGEON_TYPES.size()})
+		"discovered": discovered_count, "total": DungeonDatabaseScript.DUNGEON_TYPES.size(),
+		"cartography_rank": int(character.cartography_rank),
+		"cartography_xp": int(character.cartography_xp),
+		"cartography_next_xp": character.cartography_xp_for_rank(int(character.cartography_rank) + 1),
+		"cartography_max_rank": Character.CARTOGRAPHY_MAX_RANK,
+		"cartography_sense_rank": CARTOGRAPHY_SENSE_RANK,
+		"at_post": _player_at_npc_post(peer_id)})
 
 func handle_bestiary_request(peer_id: int):
 	"""Audit #13 Slice 2 — return the account's bestiary summary (sorted by
@@ -28072,6 +28129,7 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	var _atlas_dd = DungeonDatabaseScript.get_dungeon(dungeon_type)
 	if character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(_atlas_dd.get("name", dungeon_type)), int(_atlas_dd.get("tier", 0)), character.x, character.y):
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]★ Dungeon discovered: %s — added to your Atlas.[/color]" % String(_atlas_dd.get("name", dungeon_type))})
+		_grant_cartography_xp(peer_id, character, 20, "charting a new dungeon")
 
 	# Get starting position (entrance tile)
 	var floor_grid = dungeon_floors[instance_id][0]
@@ -32240,6 +32298,7 @@ func _complete_dungeon(peer_id: int):
 	var dungeon_data = DungeonDatabaseScript.get_dungeon(dungeon_type)
 	# P1 Dungeon Atlas — completing a dungeon bumps its clear count (already discovered).
 	character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(dungeon_data.get("name", dungeon_type)), int(dungeon_data.get("tier", 0)), character.x, character.y, true)
+	_grant_cartography_xp(peer_id, character, 40, "mapping a dungeon end to end")
 	var instance_id = character.current_dungeon_id
 	var inst_sub_tier = 1
 	# C0 — capture the origin world 'D' (set on entry) so boss defeat can clear that
@@ -36933,6 +36992,25 @@ func handle_gm_resetquests(peer_id: int):
 	send_character_update(peer_id)
 	save_character(peer_id)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Cleared %d active quests.[/color]" % count})
+
+func handle_gm_set_cartography(peer_id: int, message: Dictionary):
+	"""Dev force-path for the rooted-Locate Cartography rank. rank == -1 means +1;
+	otherwise set to the given rank (clamped 1..max). Also sets XP to the rank floor
+	so the Atlas progress readout is consistent."""
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var req: int = int(message.get("rank", -1))
+	var new_rank: int = int(ch.cartography_rank) + 1 if req == -1 else req
+	new_rank = clampi(new_rank, 1, Character.CARTOGRAPHY_MAX_RANK)
+	ch.cartography_rank = new_rank
+	ch.cartography_xp = ch.cartography_xp_for_rank(new_rank)
+	send_character_update(peer_id)
+	save_character(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Cartography rank set to %d.[/color]" % new_rank})
 
 func handle_gm_heal(peer_id: int):
 	if not _is_admin(peer_id):

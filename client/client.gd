@@ -27766,10 +27766,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.725 — Cartography (rooted Locate).
+	display_game("[color=#00FF00]v0.9.725[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ CARTOGRAPHY.[/color] The Atlas [color=#5AC8FF]‹ Locate ›[/color] ability is now a real skill you [b]grow[/b]. You earn [color=#5AC8FF]Cartography rank[/color] by [b]discovering[/b] (+20) and [b]clearing[/b] (+40) dungeons, and your rank decides how well the realm can point you at one.")
+	display_game("  [color=#1EFF00]◆ Locate through a Cartographer.[/color] To locate a dungeon you now consult a [b]Cartographer at a trading post[/b] (costs [color=#FFD700]15 Valor[/color]) — the realm's scouts track where dungeons stir, so there's a reason behind the pointer.")
+	display_game("  [color=#1EFF00]◆ Better rank = better intel.[/color] Rank 1-2 gives a [b]rough direction[/b]; rank 3-4 adds [b]distance[/b]; rank 5+ gives [b]precise coordinates[/b]; and at [color=#7AE07A]rank 8[/color] you've earned a cartographer's sixth sense — [b]Locate anywhere, no post or Valor needed[/b].")
+	display_game("  [color=#909090]The Atlas header shows your rank, progress, and current locate precision.[/color]")
+	display_game("")
+
 	# v0.9.724 — Dungeon Atlas.
-	display_game("[color=#00FF00]v0.9.724[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.724[/color]")
 	display_game("  [color=#FF8000]★ DUNGEON ATLAS.[/color] A new [b]Atlas[/b] button (bottom-right) opens your personal codex of every dungeon you've [b]discovered[/b] — its tier, level range, monster pool, boss, and the companion egg it yields. Entering a dungeon records it; clearing one tracks your clear count. Dungeons you haven't found yet stay hidden until you stumble onto them.")
-	display_game("  [color=#1EFF00]◆ Locate.[/color] Each discovered Atlas entry has a [color=#5AC8FF]‹ Locate ›[/color] link — click it and the realm points you toward the [b]nearest active dungeon[/b] of that type (compass direction + distance), or tells you none is stirring right now. Your first step toward hunting down the dungeons you want.")
 	display_game("")
 
 	# v0.9.723 — dungeon floor loot + egg sourcing.
@@ -32024,6 +32031,28 @@ func display_dungeon_atlas(message: Dictionary) -> void:
 	var total: int = int(message.get("total", entries.size()))
 	display_game("[color=#FFD700]═══════ DUNGEON ATLAS ═══════[/color]")
 	display_game("[color=#87CEEB]Discovered %d / %d dungeons[/color]" % [discovered, total])
+	# Cartography standing — gates the Locate ability (earned by discovering + clearing dungeons).
+	var carto_rank: int = int(message.get("cartography_rank", 1))
+	var carto_max: int = int(message.get("cartography_max_rank", 8))
+	var carto_sense: int = int(message.get("cartography_sense_rank", 8))
+	var carto_xp: int = int(message.get("cartography_xp", 0))
+	var carto_next: int = int(message.get("cartography_next_xp", 0))
+	var at_post: bool = bool(message.get("at_post", false))
+	var precision_txt := "region hints only"
+	if carto_rank >= 5:
+		precision_txt = "precise coordinates"
+	elif carto_rank >= 3:
+		precision_txt = "direction + distance"
+	var prog := "[color=#606060](max rank)[/color]"
+	if carto_rank < carto_max:
+		prog = "[color=#606060](%d / %d XP to rank %d)[/color]" % [carto_xp, carto_next, carto_rank + 1]
+	display_game("[color=#5AC8FF]🧭 Cartography rank %d / %d[/color] [color=#909090]— locate precision: %s[/color] %s" % [carto_rank, carto_max, precision_txt, prog])
+	if carto_rank >= carto_sense:
+		display_game("[color=#7AE07A]You can ‹ Locate › dungeons anywhere — no post needed.[/color]")
+	elif at_post:
+		display_game("[color=#C8A24A]A Cartographer is here — click ‹ Locate › on a dungeon to mark it (costs Valor).[/color]")
+	else:
+		display_game("[color=#909090]Visit a Cartographer at a trading post to ‹ Locate › a dungeon (or reach rank %d to sense them anywhere).[/color]" % carto_sense)
 	display_game("")
 	var tier_colors := ["#FFFFFF", "#FFFFFF", "#1EFF00", "#1EFF00", "#0070DD", "#0070DD", "#A335EE", "#A335EE", "#FF8000", "#FFD700"]
 	var shown := 0
@@ -32369,6 +32398,14 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_heal"})
 		"gm_resetquests":
 			send_to_server({"type": "gm_resetquests"})
+		"gm_cartography_up":
+			send_to_server({"type": "gm_set_cartography", "rank": -1})
+		"gm_cartography_5":
+			send_to_server({"type": "gm_set_cartography", "rank": 5})
+		"gm_cartography_8":
+			send_to_server({"type": "gm_set_cartography", "rank": 8})
+		"gm_cartography_1":
+			send_to_server({"type": "gm_set_cartography", "rank": 1})
 		"show_gmhelp":
 			close_admin_menu()
 			display_gm_help()

@@ -289,6 +289,12 @@ static func get_item_slot_from_type(item_type: String) -> String:
 # Codex/Atlas UI. dungeon_type -> {state, clears, name, tier, x, y}. State escalates
 # rumored(1) < spotted(2) < discovered(3); hint-based reveal drives what the panel shows.
 @export var dungeon_atlas: Dictionary = {}
+# Cartography (P1 slice 3c, 2026-08-26) — rooting the Atlas "Locate" ability. Earned
+# by DISCOVERING + CLEARING dungeons; gates locate precision (region -> coarse ->
+# precise -> anywhere). Locate is invoked via a Cartographer at trading posts (costs
+# Valor) until rank 8 grants the standing "sense" usable anywhere. See project_realm_meta_vision.
+@export var cartography_xp: int = 0
+@export var cartography_rank: int = 1
 const MAX_ACTIVE_QUESTS = 3  # v0.9.453 — capped at 3 alongside the regenerating quest board so players triage rather than hoard.
 
 # Monster Knowledge System - tracks which monsters the player has killed
@@ -1660,6 +1666,8 @@ func to_dict() -> Dictionary:
 		"collected_companions": get_collected_companions(),
 		"discovered_posts": discovered_posts,
 		"dungeon_atlas": dungeon_atlas,
+		"cartography_xp": cartography_xp,
+		"cartography_rank": cartography_rank,
 		"crafting_materials": crafting_materials,
 		"auto_salvage_enabled": auto_salvage_enabled,
 		"auto_salvage_max_rarity": auto_salvage_max_rarity,
@@ -1881,6 +1889,8 @@ func from_dict(data: Dictionary):
 	daily_quest_cooldowns = data.get("daily_quest_cooldowns", {})
 	discovered_posts = data.get("discovered_posts", [])
 	dungeon_atlas = data.get("dungeon_atlas", {})
+	cartography_xp = int(data.get("cartography_xp", 0))
+	cartography_rank = maxi(1, int(data.get("cartography_rank", 1)))
 
 	# Monster knowledge system
 	known_monsters = data.get("known_monsters", {})
@@ -2206,6 +2216,40 @@ func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = ""
 		entry["clears"] = int(entry.get("clears", 0)) + 1
 	dungeon_atlas[dungeon_type] = entry
 	return raised
+
+# --- Cartography (rooted Locate) ---
+# Cumulative XP required to REACH each rank (index 0 unused; rank 1 = start).
+# Grants: discover a new dungeon = +20, clear a dungeon = +40 (server hooks).
+# Discovering all 53 types ≈ 1060 XP (~rank 6); clears carry you to rank 8.
+const CARTOGRAPHY_RANK_XP := [0, 0, 60, 150, 300, 500, 800, 1200, 1800]
+const CARTOGRAPHY_MAX_RANK := 8
+
+func cartography_xp_for_rank(rank: int) -> int:
+	if rank <= 1:
+		return 0
+	if rank >= CARTOGRAPHY_MAX_RANK:
+		return CARTOGRAPHY_RANK_XP[CARTOGRAPHY_MAX_RANK]
+	return CARTOGRAPHY_RANK_XP[rank]
+
+func add_cartography_xp(amount: int) -> int:
+	"""Add Cartography XP and recompute rank. Returns the number of ranks GAINED
+	(0 if none) so the server can announce a rank-up."""
+	if amount <= 0:
+		return 0
+	cartography_xp += amount
+	var old_rank: int = cartography_rank
+	while cartography_rank < CARTOGRAPHY_MAX_RANK and cartography_xp >= cartography_xp_for_rank(cartography_rank + 1):
+		cartography_rank += 1
+	return cartography_rank - old_rank
+
+func cartography_locate_precision() -> int:
+	"""0 = region only, 1 = coarse compass+distance, 2 = precise coords.
+	(Rank 8's 'anywhere' bypass is handled separately by the caller.)"""
+	if cartography_rank >= 5:
+		return 2
+	if cartography_rank >= 3:
+		return 1
+	return 0
 
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up. Applies Human racial XP bonus and house XP bonus.
