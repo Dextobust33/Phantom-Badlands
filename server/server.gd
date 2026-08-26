@@ -33054,8 +33054,12 @@ func _spawn_all_dungeon_monsters(instance_id: String, dungeon_type: String, dung
 		var rooms = all_rooms[floor_num] if floor_num < all_rooms.size() else []
 		_spawn_dungeon_floor_monsters(instance_id, floor_num, dungeon_type, dungeon_level, rooms, grid, is_boss_floor)
 
-	# Dungeon revamp B — populate Azure Dreams-style floor loot across all floors.
-	_spawn_all_dungeon_floor_items(instance_id, dungeon_type, dungeon_level)
+	# Dungeon revamp B — populate Azure Dreams-style floor loot, but ONLY for the personal
+	# instances players actually explore (id "player_dungeon_..."). World 'D' entry points
+	# ("world_dungeon_...") are never explored directly — entering one spins up a fresh
+	# personal instance — so generating loot for every world dungeon was pure waste.
+	if instance_id.begins_with("player_dungeon_"):
+		_spawn_all_dungeon_floor_items(instance_id, dungeon_type, dungeon_level)
 
 # ===== DUNGEON FLOOR LOOT (Azure Dreams style) =====
 
@@ -33074,16 +33078,25 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 	var sub_tier: int = int(active_dungeons.get(instance_id, {}).get("sub_tier", 1))
 	var floor_grids = dungeon_floors[instance_id]
 	var floor_count: int = floor_grids.size()
+	var _tt_treasure := int(DungeonDatabaseScript.TileType.TREASURE)
+	var _tt_scattered := int(DungeonDatabaseScript.TileType.SCATTERED_LOOT)
+	var _tt_hoard := int(DungeonDatabaseScript.TileType.GOLD_HOARD)
+	var _tt_empty := int(DungeonDatabaseScript.TileType.EMPTY)
+	var _dbg_blanked := 0
+	var _dbg_placed := 0
 	for floor_num in range(floor_count):
 		var grid = floor_grids[floor_num]
 		# (a) Re-home the old loot-marker tiles as floor items on their (good) spots.
 		for gy in range(grid.size()):
 			for gx in range(grid[gy].size()):
-				if int(grid[gy][gx]) in _FLOOR_LOOT_TILES:
+				var _t := int(grid[gy][gx])
+				if _t == _tt_treasure or _t == _tt_scattered or _t == _tt_hoard:
 					var reh := _roll_floor_item(dungeon_type, tier, sub_tier, dungeon_level, boss_egg_monster, false)
-					grid[gy][gx] = DungeonDatabaseScript.TileType.EMPTY
+					grid[gy][gx] = _tt_empty
+					_dbg_blanked += 1
 					if not reh.is_empty():
 						_place_floor_item_at(instance_id, floor_num, gx, gy, reh)
+						_dbg_placed += 1
 		# (b) A few extra scattered items per floor (tier-scaled), on random empty tiles.
 		var extra: int = 1 + tier / 3 + (randi() % 2)  # ~1-4 per floor
 		for _i in range(extra):
@@ -33103,6 +33116,7 @@ func _spawn_all_dungeon_floor_items(instance_id: String, dungeon_type: String, d
 				"kind": "escape_scroll", "char": "!", "color": "#87CEEB",
 				"item_data": {"name": scroll_drop.name, "item_type": "escape_scroll", "is_consumable": true,
 					"tier_max": scroll_drop.tier_max, "type": "consumable", "level": 1, "rarity": "uncommon"}})
+	log_message("[FLOORLOOT] %s (%s, tier %d): blanked %d loot-tiles, placed %d items across %d floors" % [instance_id, dungeon_type, tier, _dbg_blanked, _dbg_placed, floor_count])
 
 func _roll_floor_item(dungeon_type: String, tier: int, sub_tier: int, level: int, boss_egg_monster: String, force_egg: bool) -> Dictionary:
 	"""Roll one floor-loot item. Returns {kind, char, color, item_data} or {} on a miss."""
