@@ -27745,8 +27745,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.723 — dungeon floor loot + egg sourcing.
+	display_game("[color=#00FF00]v0.9.723[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ DUNGEON FLOOR LOOT.[/color] Dungeons now scatter [b]pickup loot on the floor[/b] — [color=#A335EE]◉ eggs[/color], [color=#4DA6FF]◆ gear[/color], [color=#FFD700]♦ consumables[/color], [color=#1EFF00]▪ materials[/color], [color=#FFD700]¢ valor[/color], and [color=#87CEEB]! escape scrolls[/color] — [b]auto-collected as you walk over them[/b] (Azure Dreams style). The old treasure chests / coin piles are folded into this one system.")
+	display_game("  [color=#1EFF00]◆ Eggs come from dungeons now.[/color] Dungeon [b]bosses guarantee[/b] an egg of the dungeon's type, and you can find more as [b]floor loot[/b] that [b]matches the dungeon[/b] (a gnoll dungeon drops gnoll eggs). Overworld kills now only [color=#87CEEB]very rarely[/color] yield an egg — any tier is possible, but the odds plummet with tier (a top-tier wild egg is a once-in-a-lifetime find).")
+	display_game("")
+
 	# v0.9.722 — combat resource economy overhaul.
-	display_game("[color=#00FF00]v0.9.722[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.722[/color]")
 	display_game("  [color=#FF8000]★ RESOURCE ECONOMY OVERHAUL.[/color] A big change to how [b]Stamina / Mana / Energy[/b] work so your pool matters at [b]every[/b] level — not just early on. In-combat regen is now [b]capped[/b] (it no longer balloons with your huge late-game pool), so managing resources stays a real decision as you grow, and investing in more resource (or resource-regen gear) actually pays off.")
 	display_game("  [color=#1EFF00]◆ Warrior — Devastate is now a DUMP.[/color] It spends a big chunk of your [b]current[/b] Stamina and hits harder the fuller your bar — so building up (and stacking Stamina) pays off. Build with your other cards, then unload.")
 	display_game("  [color=#1EFF00]◆ Trickster — Outsmart spends Energy.[/color] Outsmart now spends Energy to [b]sharpen the read[/b] (a fuller bar = a big boost to your outwit chance) instead of being free to spam — so a deep Energy pool makes your signature move reliable.")
