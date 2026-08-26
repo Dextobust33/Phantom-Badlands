@@ -293,13 +293,16 @@ func generate_monster(min_level: int, max_level: int, biome: String = "") -> Dic
 
 	return monster
 
-func generate_monster_by_name(monster_name: String, target_level: int) -> Dictionary:
-	"""Generate a specific monster type by name at the given level"""
+func generate_monster_by_name(monster_name: String, target_level: int, suppress_rare_rolls: bool = false) -> Dictionary:
+	"""Generate a specific monster type by name at the given level.
+	suppress_rare_rolls=true skips the variant/empowered/cosmetic rolls so a FLOCK member
+	generates as a plain base — the caller then stamps the killed monster's inherited
+	variant/empowered onto it (reapply_variant / reapply_empowered), no re-roll, no compounding."""
 	# Find the monster type by name
 	for type_id in MonsterType.values():
 		var base_stats = get_monster_base_stats(type_id)
 		if base_stats.name == monster_name:
-			return scale_monster_to_level(base_stats, target_level)
+			return scale_monster_to_level(base_stats, target_level, suppress_rare_rolls)
 
 	# Fallback if name not found - generate random monster
 	return generate_monster(target_level, target_level)
@@ -1486,7 +1489,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 		"description": "A mysterious creature"
 	}
 
-func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictionary:
+func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_rare_rolls: bool = false) -> Dictionary:
 	"""Scale monster stats to match target level, accounting for expected player equipment"""
 	var level_diff = target_level - base_stats.base_level
 
@@ -1550,7 +1553,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var variant_type = ""
 
 	# 4% chance for GOOD rare variant (drops gear)
-	if randf() < 0.04 and target_level >= 5:
+	if not suppress_rare_rolls and randf() < 0.04 and target_level >= 5:
 		# Don't double up on abilities
 		if ABILITY_WEAPON_MASTER not in monster_abilities and ABILITY_SHIELD_BEARER not in monster_abilities:
 			is_rare_variant = true
@@ -1571,7 +1574,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 
 	# 2% chance for DANGEROUS rare variant (damages gear) - separate roll
 	# These are scary encounters that give players a reason to upgrade gear
-	if not is_rare_variant and randf() < 0.02 and target_level >= 10:
+	if not suppress_rare_rolls and not is_rare_variant and randf() < 0.02 and target_level >= 10:
 		if ABILITY_CORROSIVE not in monster_abilities and ABILITY_SUNDER not in monster_abilities:
 			is_rare_variant = true
 			# 50/50 corrosive (acid damage) or sunder (physical destruction)
@@ -1590,7 +1593,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 
 	# 1% chance for ELITE variant (powerful, rewarding) - Lv15+ only, separate roll
 	var is_elite = false
-	if not is_rare_variant and randf() < 0.01 and target_level >= 15:
+	if not suppress_rare_rolls and not is_rare_variant and randf() < 0.01 and target_level >= 15:
 		is_elite = true
 		is_rare_variant = true
 		variant_type = "elite"
@@ -1627,7 +1630,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	# an additional 10% for 3. Server grants +1 combat-loot reveal per modifier
 	# (+1 extra for Gilded) and drop_chance scales below.
 	var empowered_mods: Array = []
-	if not is_rare_variant and target_level >= 5 and randf() < 0.25:
+	if not suppress_rare_rolls and not is_rare_variant and target_level >= 5 and randf() < 0.25:
 		var mod_count = 1
 		if target_level >= 40 and randf() < 0.10:
 			mod_count = 3
@@ -1676,7 +1679,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int) -> Dictio
 	var appearance_color := ""
 	var appearance_color2 := ""
 	var appearance_pattern := "solid"
-	if force_cosmetic or (not is_rare_variant and empowered_mods.is_empty() and randf() < COSMETIC_CHANCE):
+	if force_cosmetic or (not suppress_rare_rolls and not is_rare_variant and empowered_mods.is_empty() and randf() < COSMETIC_CHANCE):
 		# Roll from the companion cosmetic pool → any color + any pattern a companion
 		# can get (rarer = fancier patterns). Same weighting the eggs use.
 		var tint: Dictionary = DropTables.roll_cosmetic_variant()
@@ -1810,6 +1813,56 @@ func reapply_variant(monster: Dictionary, variant_type: String) -> void:
 	monster["is_elite"] = (variant_type == "elite")
 	if variant_type == "elite":
 		monster["drop_chance"] = 100
+	monster["lethality"] = calculate_lethality(monster)
+
+func reapply_empowered(monster: Dictionary, mods: Array) -> void:
+	"""v0.9.723 — stamp a specific set of Empowered modifiers onto an already-generated
+	monster so a FLOCK inherits the killed monster's empowered mods instead of re-rolling
+	them each member (a gilded harpy's flock was coming out gilded → juggernaut → normal).
+	Meant for a monster generated with suppress_rare_rolls=true (a plain base), so mods apply
+	cleanly with no compounding. Mirrors the empowered block in scale_monster_to_level.
+	Mutates in place; no-op for empty/unknown mods."""
+	if mods.is_empty():
+		return
+	var base_name := String(monster.get("base_name", monster.get("name", "Monster")))
+	var abilities: Array = monster.get("abilities", [])
+	var new_name := base_name
+	var hp := int(monster.get("max_hp", 10))
+	var strv := int(monster.get("strength", 3))
+	var defv := int(monster.get("defense", 1))
+	var final_mods: Array = []
+	for mod_id in mods:
+		var mod: Dictionary = EMPOWERED_MODIFIERS.get(mod_id, {})
+		if mod.is_empty():
+			continue
+		final_mods.append(mod_id)
+		var mod_ability := String(mod.get("ability", ""))
+		if mod_ability != "" and mod_ability not in abilities:
+			abilities.append(mod_ability)
+		hp = max(10, int(hp * float(mod.get("hp_mult", 1.0))))
+		strv = max(3, int(strv * float(mod.get("str_mult", 1.0))))
+		defv = max(1, int(defv * float(mod.get("def_mult", 1.0))))
+		new_name = String(mod.get("prefix", "")) + " " + new_name
+	if final_mods.is_empty():
+		return
+	# Count-based HP bump (matches scale_monster_to_level's 1.5 + 0.5·count).
+	hp = max(10, int(hp * (1.5 + 0.5 * float(final_mods.size()))))
+	monster["max_hp"] = hp
+	monster["current_hp"] = hp
+	monster["strength"] = strv
+	monster["defense"] = defv
+	monster["abilities"] = abilities
+	monster["name"] = new_name
+	monster["base_name"] = base_name
+	monster["is_empowered"] = true
+	monster["empowered_mods"] = final_mods
+	monster["name_color"] = EMPOWERED_NAME_COLORS.get(final_mods.size(), "")
+	monster["experience_reward"] = int(int(monster.get("experience_reward", 1)) * (1.0 + 0.30 * final_mods.size()))
+	var dc := int(monster.get("drop_chance", 5))
+	monster["drop_chance"] = min(100, dc + 20 * final_mods.size() + (20 if "gilded" in final_mods else 0))
+	# NOTE: deliberately do NOT re-force broodcalling's flock_chance=100 here — the ORIGINAL
+	# broodcalling monster already triggered this flock; forcing it on every inherited member
+	# would make the chain never terminate. Inherited members keep the base flock_chance.
 	monster["lethality"] = calculate_lethality(monster)
 
 func _estimate_player_equipment_attack(player_level: int) -> int:

@@ -5858,6 +5858,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			var killed_monster_max_hp = int(result.get("monster_max_hp", 0))
 			var killed_monster_base_level = int(result.get("monster_base_level", 1))
 			var killed_monster_variant_type = String(result.get("monster_variant_type", ""))
+			# v0.9.723 — capture the killed monster's Empowered mods so the flock inherits
+			# them (gilded/juggernaut/etc.) instead of each member re-rolling its own.
+			var _kmem = result.get("empowered_mods", [])
+			var killed_monster_empowered_mods: Array = _kmem if _kmem is Array else []
 			if killed_monster_base_name != "":
 				characters[peer_id].record_monster_kill(killed_monster_base_name, killed_monster_level)
 				# Audit #13 Slice 2 — account-level bestiary ledger.
@@ -5990,6 +5994,7 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					"monster_level": monster_level,
 					"analyze_bonus": combat_mgr.get_analyze_bonus(peer_id),
 					"variant_type": killed_monster_variant_type,
+					"empowered_mods": killed_monster_empowered_mods,
 					"engine_carry": _flock_engine_carry(peer_id),
 					"flock_count": flock_counts[peer_id],  # For visual variety
 					"is_dungeon_combat": result.get("is_dungeon_combat", false),
@@ -9666,17 +9671,21 @@ func _flock_engine_carry(peer_id: int) -> Dictionary:
 	# always captured 0. combat_mgr now stashes them in last_combat_engines pre-erase.
 	return combat_mgr.get_last_combat_engines(peer_id)
 
-func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1, variant_type: String = "", engine_carry: Dictionary = {}):
+func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: int, analyze_bonus: int = 0, flock_count: int = 1, is_dungeon_combat: bool = false, is_boss_fight: bool = false, dungeon_monster_id: int = -1, variant_type: String = "", engine_carry: Dictionary = {}, empowered_mods: Array = []):
 	"""Trigger a flock encounter with the same monster type"""
 	if not characters.has(peer_id):
 		return
 
 	var character = characters[peer_id]
 
-	# Generate another monster of the same type at the same level
-	var monster = monster_db.generate_monster_by_name(monster_name, monster_level)
-	# Flock inheritance (v0.9.711) - re-stamp the killed variant so the flock stays that variant.
-	if variant_type != "":
+	# Generate another monster of the same type at the same level. v0.9.723 — suppress the
+	# fresh variant/empowered/cosmetic rolls so the flock member is a PLAIN base, then stamp
+	# the KILLED monster's inherited state onto it (no re-roll, no compounding). Empowered
+	# (gilded/juggernaut/…) inherits via reapply_empowered; rare variants via reapply_variant.
+	var monster = monster_db.generate_monster_by_name(monster_name, monster_level, true)
+	if empowered_mods.size() > 0:
+		monster_db.reapply_empowered(monster, empowered_mods)
+	elif variant_type != "":
 		monster_db.reapply_variant(monster, variant_type)
 
 	# Audit #10 v0.9.512 — stamp apex frontier flag based on the character's
@@ -9775,7 +9784,7 @@ func handle_continue_flock(peer_id: int):
 	var is_dungeon_combat = flock_data.get("is_dungeon_combat", false)
 	var is_boss_fight = flock_data.get("is_boss_fight", false)
 	var dungeon_mid = flock_data.get("dungeon_monster_id", -1)
-	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count, is_dungeon_combat, is_boss_fight, dungeon_mid, flock_data.get("variant_type", ""), flock_data.get("engine_carry", {}))
+	trigger_flock_encounter(peer_id, flock_data.monster_name, flock_data.monster_level, analyze_bonus, flock_count, is_dungeon_combat, is_boss_fight, dungeon_mid, flock_data.get("variant_type", ""), flock_data.get("engine_carry", {}), flock_data.get("empowered_mods", []))
 
 # ===== INVENTORY HANDLERS =====
 
