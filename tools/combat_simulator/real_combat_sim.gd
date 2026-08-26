@@ -40,7 +40,8 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_resource_audit()  # resource-economy audit (does the pool ever bind? does it stay pegged high as level/gear scale?)
+	run_resource_audit()  # single-fight: does the pool ever bind as level/gear scale?
+	run_flock_audit()     # flock stress: does the pool survive back-to-back chains (safety floor for fix A)?
 	quit()
 
 func run_hp_solve():
@@ -101,6 +102,95 @@ func run_resource_audit():
 						tpool += float(r.get("max_res", 0))
 					print("%-4s %-4d %-8s %-6s %5.0f%% %7.1f %8.2f %7.0f%% %7.0f%% %7.0f" % [
 						c[1], lvl, gear, et, 100.0 * wins / N, tt / N, tc / N, tmin / N, tend / N, tpool / N])
+	print("=====================================================================\n")
+
+func run_flock_chain(level: int, gear: String, klass: String, chain_len: int, et: String) -> Dictionary:
+	# Flock STRESS: `chain_len` back-to-back fights on ONE character, resources NOT
+	# refilled between members (only in-combat regen), buffs + engine state (momentum/
+	# combo-read/focus) carried via the real preserve path. Mirrors an overworld flock
+	# where you don't return to safety between kills. Headline = chain MinRes% (the
+	# lowest pool% reached across the WHOLE chain): after decoupling regen (fix A) this
+	# must NOT bottom out to ~0 or a flock becomes an un-counterable resource death.
+	var ch = make_char(level, gear, klass)  # full resources at chain START only
+	var max_res: int = maxi(1, _class_max_resource(ch, klass))
+	var chain_min_res: int = _class_resource(ch, klass)
+	var total_turns := 0
+	var total_casts := 0
+	var cleared := 0
+	for m_idx in range(chain_len):
+		var monster = make_monster(level, et)
+		combat_mgr.start_combat(0, ch, monster)
+		if not combat_mgr.active_combats.has(0):
+			break
+		var combat = combat_mgr.active_combats[0]
+		if m_idx > 0:  # carry engine state into the next flock member
+			var snap = combat_mgr.get_last_combat_engines(0)
+			for k in ["momentum", "combo", "focus"]:
+				if snap.has(k):
+					combat[k] = snap[k]
+		var turns := 0
+		while turns < 400:
+			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+				break
+			turns += 1
+			if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
+				var res0: int = _class_resource(ch, klass)
+				if klass == "Thief":
+					_player_act_trickster(combat, ch)
+				elif klass == "Wizard":
+					_player_act_mage(combat, ch)
+				else:
+					_player_act(combat, ch)
+				if _class_resource(ch, klass) < res0:
+					total_casts += 1
+				chain_min_res = mini(chain_min_res, _class_resource(ch, klass))
+			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+				break
+			combat_mgr.process_monster_turn(combat)
+		total_turns += turns
+		var mwin: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+		combat_mgr.end_combat(0, mwin, true)  # preserve buffs/engines across the flock
+		if not mwin or ch.current_hp <= 0:
+			break
+		cleared += 1
+		# resources deliberately NOT refilled here — they carry to the next member.
+	return {
+		"cleared": cleared, "chain_len": chain_len,
+		"survived": ch.current_hp > 0 and cleared == chain_len,
+		"min_res_pct": 100.0 * float(chain_min_res) / float(max_res),
+		"turns": total_turns, "casts": total_casts,
+	}
+
+func run_flock_audit():
+	# Flock-stress audit (2026-08-25). K back-to-back trash fights, resources carried.
+	# ChainMin% = lowest pool% over the whole chain; Clear = avg members cleared of K;
+	# Thru% = fraction of chains fully cleared (survival). After fix A, ChainMin% is the
+	# SAFETY floor — it must stay high enough that a flock isn't a resource death spiral.
+	var N := 60
+	var K := 5
+	var levels := [10, 50, 80]
+	var gears := ["under", "average", "bis"]
+	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	var et := "plain"  # flocks are trash mobs
+	print("\n===== FLOCK STRESS AUDIT (%d chains/cell, K=%d back-to-back, no refill) =====" % [N, K])
+	print("ChainMin%% = lowest pool%% across the whole chain (the safety floor for fix A).")
+	print("%-4s %-4s %-8s %6s %8s %8s %8s" % ["Cls", "Lvl", "Gear", "Thru%", "Clear/K", "ChainMin%", "Casts/t"])
+	for c in classes:
+		for lvl in levels:
+			for gear in gears:
+				var thru := 0
+				var tclear := 0.0
+				var tmin := 0.0
+				var tct := 0.0
+				for i in range(N):
+					var r = run_flock_chain(lvl, gear, c[0], K, et)
+					if r.survived:
+						thru += 1
+					tclear += float(r.cleared)
+					tmin += float(r.get("min_res_pct", 0.0))
+					tct += float(r.get("casts", 0)) / maxf(1.0, float(r.turns))
+				print("%-4s %-4d %-8s %5.0f%% %8.1f %8.0f%% %8.2f" % [
+					c[1], lvl, gear, 100.0 * thru / N, tclear / N, tmin / N, tct / N])
 	print("=====================================================================\n")
 
 func run_baseline():
