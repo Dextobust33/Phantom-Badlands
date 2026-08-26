@@ -19,3 +19,7 @@ claude_screenshots/
 # Launcher Discord webhook secret (bundled at export, never committed)
 launcher/webhook_secret.gd
 client/webhook_secret.gd
+
+# uid companions for the gitignored webhook secrets (no secret inside, ignore anyway)
+client/webhook_secret.gd.uid
+launcher/webhook_secret.gd.uid
