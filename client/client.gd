@@ -10433,6 +10433,7 @@ func _create_shortcut_buttons():
 		["Pouch", "pouch_shortcut"],
 		["Build", "build_shortcut"],
 		["Quests", "quests_shortcut"],
+		["Atlas", "atlas_shortcut"],
 		["Deck", "deck_shortcut"],
 		["Stats", "stats_shortcut"],
 		["Stones", "stones_shortcut"],
@@ -10556,6 +10557,17 @@ func _on_shortcut_button_pressed(action: String):
 			job_mode = false
 			pending_inventory_action = ""
 			send_to_server({"type": "get_quest_log"})
+		"atlas_shortcut":
+			# Dungeon Atlas — same as More→Atlas; request the server view, display on reply.
+			more_mode = false
+			companions_mode = false
+			eggs_mode = false
+			job_mode = false
+			pending_inventory_action = ""
+			pending_more_action = "dungeon_atlas"
+			send_to_server({"type": "dungeon_atlas_request"})
+			display_game("[color=#808080]Consulting your Atlas...[/color]")
+			update_action_bar()
 		"deck_shortcut":
 			if ability_mode:
 				return  # Already viewing the deck

@@ -14136,6 +14136,7 @@ func handle_dungeon_atlas_request(peer_id: int):
 			e["companion"] = String(def.get("boss_egg", ""))
 			e["desc"] = String(def.get("description", ""))
 			e["clears"] = int(rec.get("clears", 0))
+		entries.append(e)
 	entries.sort_custom(func(a, b): return int(a.get("tier", 0)) < int(b.get("tier", 0)))
 	send_to_peer(peer_id, {"type": "dungeon_atlas_data", "entries": entries,
 		"discovered": discovered_count, "total": DungeonDatabaseScript.DUNGEON_TYPES.size()})
