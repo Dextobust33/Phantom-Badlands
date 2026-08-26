@@ -3596,7 +3596,12 @@ func _refresh_hand() -> void:
 				csb.border_color = rc
 				csb.set_border_width_all(2)
 		if cost_lbl:
-			cost_lbl.text = "%d" % max(0, planned_int)
+			# v0.9.72x — show NET cost after this turn's passive regen (cost − regen),
+			# e.g. a 20-cost card with 14 regen shows 6, so the number reflects what the
+			# card actually drains from your bar. Regen mirrors combat_manager's capped
+			# model (min(16%-of-max, 25+lvl·0.5), floor 4).
+			var _regen := _estimate_turn_regen(resource_type)
+			cost_lbl.text = "%d" % maxi(0, planned_int - _regen)
 
 		# v0.9.691 — damage/heal value pip (base estimate from your stats).
 		if value_pip and value_lbl and client_ref and client_ref.has_method("_ability_primary_value"):
@@ -3787,6 +3792,28 @@ func _apply_finisher_visual(cell: PanelContainer, card_name: String, castable: b
 		pulse.tween_method(_pulse_set, 16.0, 10.0, 0.55).set_trans(Tween.TRANS_SINE)
 		cell.set_meta("finisher_pulse", pulse)
 
+
+func _estimate_turn_regen(resource_type: String) -> int:
+	# Mirror combat_manager's per-turn base regen so cards can show NET cost.
+	# regen = clamp(16%-of-max, floor 4, cap = 25 + level·0.5). Only the class's
+	# primary resource regenerates; non-matching types return 0.
+	if client_ref == null or not ("character_data" in client_ref):
+		return 0
+	var cd = client_ref.character_data
+	if not (cd is Dictionary):
+		return 0
+	var max_res := 0
+	match resource_type:
+		"mana": max_res = int(cd.get("max_mana", 0))
+		"stamina": max_res = int(cd.get("max_stamina", 0))
+		"energy": max_res = int(cd.get("max_energy", 0))
+		_: return 0
+	if max_res <= 0:
+		return 0
+	var level := int(cd.get("level", 1))
+	var pct_regen := int(float(max_res) * 16.0 / 100.0)
+	var cap := 25 + int(float(level) * 0.5)
+	return mini(maxi(4, pct_regen), cap)
 
 func _resolve_card_info(card_name: String) -> Dictionary:
 	"""Pull display / cost / resource_type / rank / can_afford from client_ref.

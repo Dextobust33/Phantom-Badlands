@@ -12257,6 +12257,11 @@ func _get_ability_planned_spend(ability_name: String) -> Dictionary:
 		# capped at current mana.
 		var suggested = _estimate_magic_bolt_planned_mana()
 		return {"amount": suggested, "fraction": 1.0, "resource_type": resource_type}
+	if ability_name == "devastate":
+		# v0.9.72x — Devastate is a DUMP finisher: it consumes DEVASTATE_DUMP_PCT (0.65)
+		# of CURRENT stamina, not a flat ceiling. Show the real dump amount so the card
+		# (and its net-cost) reflect what it actually drains.
+		return {"amount": maxi(1, int(current * 0.65)), "fraction": 1.0, "resource_type": resource_type}
 	if ceiling <= 0:
 		return {"amount": 0, "fraction": 1.0, "resource_type": resource_type}
 	if floor_cost > 0 and floor_cost < ceiling:
