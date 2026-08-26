@@ -27983,6 +27983,11 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 
 	var instance = active_dungeons[instance_id]
 
+	# P1 Dungeon Atlas — entering a dungeon fully DISCOVERS it (adds to the player's Atlas).
+	var _atlas_dd = DungeonDatabaseScript.get_dungeon(dungeon_type)
+	if character.note_dungeon_discovery(dungeon_type, Character.DUNGEON_STATE_DISCOVERED, String(_atlas_dd.get("name", dungeon_type)), int(_atlas_dd.get("tier", 0)), character.x, character.y):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFD700]★ Dungeon discovered: %s — added to your Atlas.[/color]" % String(_atlas_dd.get("name", dungeon_type))})
+
 	# Get starting position (entrance tile)
 	var floor_grid = dungeon_floors[instance_id][0]
 	var start_pos = _find_tile_position(floor_grid, DungeonDatabaseScript.TileType.ENTRANCE)

@@ -285,6 +285,10 @@ static func get_item_slot_from_type(item_type: String) -> String:
 @export var daily_quest_cooldowns: Dictionary = {}
 # Discovered trading posts: Array of {name: String, x: int, y: int}
 @export var discovered_posts: Array = []
+# Dungeon Atlas (P1, 2026-08-26) — per-character dungeon discovery record for the
+# Codex/Atlas UI. dungeon_type -> {state, clears, name, tier, x, y}. State escalates
+# rumored(1) < spotted(2) < discovered(3); hint-based reveal drives what the panel shows.
+@export var dungeon_atlas: Dictionary = {}
 const MAX_ACTIVE_QUESTS = 3  # v0.9.453 — capped at 3 alongside the regenerating quest board so players triage rather than hoard.
 
 # Monster Knowledge System - tracks which monsters the player has killed
@@ -1655,6 +1659,7 @@ func to_dict() -> Dictionary:
 		"incubating_eggs": incubating_eggs.duplicate(true),  # Save raw data for persistence
 		"collected_companions": get_collected_companions(),
 		"discovered_posts": discovered_posts,
+		"dungeon_atlas": dungeon_atlas,
 		"crafting_materials": crafting_materials,
 		"auto_salvage_enabled": auto_salvage_enabled,
 		"auto_salvage_max_rarity": auto_salvage_max_rarity,
@@ -1875,6 +1880,7 @@ func from_dict(data: Dictionary):
 	completed_chains = data.get("completed_chains", [])
 	daily_quest_cooldowns = data.get("daily_quest_cooldowns", {})
 	discovered_posts = data.get("discovered_posts", [])
+	dungeon_atlas = data.get("dungeon_atlas", {})
 
 	# Monster knowledge system
 	known_monsters = data.get("known_monsters", {})
@@ -2173,6 +2179,33 @@ func discover_trading_post(post_name: String, post_x: int, post_y: int) -> bool:
 	# Add new discovery
 	discovered_posts.append({"name": post_name, "x": post_x, "y": post_y})
 	return true
+
+# ===== DUNGEON ATLAS (P1) =====
+const DUNGEON_STATE_RUMORED := 1   # heard about it (region + tier hint)
+const DUNGEON_STATE_SPOTTED := 2   # seen its 'D' on the map (name + tier + location)
+const DUNGEON_STATE_DISCOVERED := 3  # entered/cleared it (full detail)
+
+func note_dungeon_discovery(dungeon_type: String, state: int, dname: String = "", tier: int = 0, dx: int = 0, dy: int = 0, record_clear: bool = false) -> bool:
+	"""Record/upgrade a dungeon's Atlas entry. State only ever escalates (rumored <
+	spotted < discovered). Returns true if the state was NEWLY RAISED (for a
+	'Dungeon discovered!' notice). dname/tier/location filled in when known."""
+	if dungeon_type == "":
+		return false
+	var entry: Dictionary = dungeon_atlas.get(dungeon_type, {})
+	var old_state: int = int(entry.get("state", 0))
+	var raised: bool = state > old_state
+	entry["state"] = maxi(old_state, state)
+	if dname != "":
+		entry["name"] = dname
+	if tier > 0:
+		entry["tier"] = tier
+	if dx != 0 or dy != 0:
+		entry["x"] = dx
+		entry["y"] = dy
+	if record_clear:
+		entry["clears"] = int(entry.get("clears", 0)) + 1
+	dungeon_atlas[dungeon_type] = entry
+	return raised
 
 func add_experience(amount: int) -> Dictionary:
 	"""Add experience and check for level up. Applies Human racial XP bonus and house XP bonus.
