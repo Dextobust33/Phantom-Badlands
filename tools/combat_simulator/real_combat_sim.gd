@@ -50,7 +50,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_proposal_read()   # combined fix read: martial dump + mage cost tier + capped regen
+	run_proposal_read()   # single-fight gradient (headline). Also available: run_flock_audit(), run_cost_solve().
 	quit()
 
 func run_proposal_read():
