@@ -6068,8 +6068,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 				if flock_counts.has(peer_id):
 					flock_counts.erase(peer_id)
 
-				# Roll for companion egg drop
-				var egg_drop = drop_tables.roll_egg_drop(killed_monster_name, _get_monster_tier(killed_monster_level))
+				# Roll for companion egg drop. Dungeon revamp B — dungeon kills use the
+				# solid dungeon egg chance; overworld kills use the rarified per-mille table.
+				var egg_drop = drop_tables.roll_egg_drop(killed_monster_name, _get_monster_tier(killed_monster_level), result.get("is_dungeon_combat", false))
 				if not egg_drop.is_empty():
 					all_drops.append({
 						"type": "companion_egg",
@@ -15732,7 +15733,7 @@ func _maybe_send_companion_hint(peer_id: int, companion: Dictionary) -> void:
 		+ "  • [color=#FFFFFF]Default[/color] (20-29%) — neutral\n"
 		+ "  • [color=#87CEEB]Evasive[/color] (<20%) — backline\n\n"
 		+ "[color=#FFD700]── Eggs ──[/color]\n"
-		+ "Eggs hatch as you walk (steps remaining). Drop chances: T1 monsters 3% / T2 monsters 1% on overworld; dungeon bosses guarantee an egg of their type. Use [color=#FFD700]Home Stone (Egg)[/color] to send an incubating egg to your Sanctuary so it survives permadeath.\n\n"
+		+ "Eggs hatch as you walk (steps remaining). [color=#87CEEB]Dungeons are the main egg source[/color] — every dungeon monster has a solid chance to drop an egg and the boss guarantees an egg of its type. Overworld kills only rarely yield an egg now. Use [color=#FFD700]Home Stone (Egg)[/color] to send an incubating egg to your Sanctuary so it survives permadeath.\n\n"
 		+ "[color=#FFD700]── Fusion ──[/color]\n"
 		+ "At a [color=#FF80FF]Companion Stable[/color] (T5+ NPC posts, or build one) you can fuse companions: Same Type (3→1 next sub-tier), Mixed T9 (8 T8.8s → 1 T9), Hybrid (2 different types + Hybrid Catalyst), or Tier Ascend (3 same type + Ascension Catalyst → tier+1)."
 	)

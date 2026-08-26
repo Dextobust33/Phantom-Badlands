@@ -2094,21 +2094,19 @@ const COMPANION_SUB_TIER_ABILITY_MULT = {
 
 # Companion eggs are now DUNGEON-EXCLUSIVE
 # All tiers set to 0 - eggs only drop from dungeon treasure chests
-const EGG_DROP_CHANCE_BY_TIER = {
-	# Audit #4 Slice 3 (v0.9.441) — small overworld egg chance from T1-T2 kills.
-	# Eggs of dungeon-tier monsters (T3+) still only come from dungeon chests
-	# so the dungeon loop remains the canonical companion-acquisition path.
-	# New players can now find low-tier eggs through normal exploration.
-	1: 3,     # 3% per T1 monster kill
-	2: 1,     # 1% per T2 monster kill
-	3: 0,     # T3+ still dungeon-only
-	4: 0,
-	5: 0,
-	6: 0,
-	7: 0,
-	8: 0,
-	9: 0
+# Dungeon revamp B (2026-08-26) — DUNGEONS are the main egg source. Overworld egg
+# drops are now VERY rare (per-MILLE, i.e. out of 1000, so sub-1% is expressible):
+# a low-tier kill can still occasionally yield an egg, but the reliable supply is
+# dungeons (guaranteed boss egg + a solid per-kill chance below). Was 3%/1% per-cent.
+const EGG_DROP_PERMILLE_BY_TIER = {
+	1: 5,     # 0.5% per T1 overworld kill (was 3%)
+	2: 2,     # 0.2% per T2 overworld kill (was 1%)
+	3: 0,     # T3+ overworld: none (dungeon-only)
+	4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0
 }
+# Per-kill egg chance for DUNGEON monsters (any tier). A ~12-monster dungeon run
+# yields ~1 extra egg on top of the guaranteed boss egg → dungeons feel egg-rich.
+const DUNGEON_EGG_DROP_CHANCE = 8  # percent
 
 func get_companion_data(monster_name: String) -> Dictionary:
 	"""Get companion data for a monster. Returns empty dict if none."""
@@ -2539,19 +2537,25 @@ func _roll_egg_variant_with_rng(rng: RandomNumberGenerator) -> Dictionary:
 
 	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
 
-func roll_egg_drop(monster_name: String, monster_tier: int) -> Dictionary:
-	"""Roll for an egg drop from a defeated monster. Returns egg info if dropped."""
-	var drop_chance = EGG_DROP_CHANCE_BY_TIER.get(monster_tier, 0)
-	if drop_chance <= 0:
-		return {}
-
+func roll_egg_drop(monster_name: String, monster_tier: int, is_dungeon: bool = false) -> Dictionary:
+	"""Roll for an egg drop from a defeated monster. Returns egg info if dropped.
+	Dungeon revamp B — dungeons are the main egg source: a DUNGEON kill uses the flat
+	DUNGEON_EGG_DROP_CHANCE (any tier); an OVERWORLD kill uses the rarified per-mille
+	table so eggs there are a rare surprise, not a supply."""
 	# Check if monster has companion data
 	if not COMPANION_DATA.has(monster_name):
 		return {}
 
-	if randi() % 100 < drop_chance:
-		return get_egg_for_monster(monster_name)
+	if is_dungeon:
+		if randi() % 100 < DUNGEON_EGG_DROP_CHANCE:
+			return get_egg_for_monster(monster_name)
+		return {}
 
+	var permille = EGG_DROP_PERMILLE_BY_TIER.get(monster_tier, 0)
+	if permille <= 0:
+		return {}
+	if randi() % 1000 < permille:
+		return get_egg_for_monster(monster_name)
 	return {}
 
 # v0.9.570 — Companion Border Tiers (double-rarity stat layer).
