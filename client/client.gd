@@ -8807,7 +8807,7 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif more_mode:
-		if pending_more_action in ["changelog", "bestiary", "viewing_materials"]:
+		if pending_more_action in ["changelog", "bestiary", "viewing_materials", "dungeon_atlas"]:
 			# Subview within More menu — just show Back button
 			current_actions = [
 				{"label": "Back", "action_type": "local", "action_data": "more_subview_back", "enabled": true},
@@ -8837,6 +8837,7 @@ func update_action_bar():
 				{"label": "Leaders", "action_type": "local", "action_data": "leaderboard", "enabled": true},
 				{"label": "Quests", "action_type": "local", "action_data": "show_quests", "enabled": true},
 				{"label": "Bestiary", "action_type": "local", "action_data": "bestiary", "enabled": true},
+				{"label": "Atlas", "action_type": "local", "action_data": "dungeon_atlas", "enabled": true},
 				{"label": "Pouch", "action_type": "local", "action_data": "pouch_menu", "enabled": true},
 				{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
 				party_action,
@@ -12904,6 +12905,12 @@ func execute_local_action(action: String):
 		"changelog":
 			pending_more_action = "changelog"
 			display_changelog()
+			update_action_bar()
+		"dungeon_atlas":
+			# Dungeon Atlas (P1) — request the server-built view, display on response.
+			pending_more_action = "dungeon_atlas"
+			send_to_server({"type": "dungeon_atlas_request"})
+			display_game("[color=#808080]Consulting your Atlas...[/color]")
 			update_action_bar()
 		"bestiary":
 			# v0.9.639 — Route More→Bestiary to the dedicated panel
@@ -22862,6 +22869,8 @@ func handle_server_message(message: Dictionary):
 		# Audit #13 Slice 2 — Bestiary panel feed
 		"bestiary_data":
 			_handle_bestiary_data(message)
+		"dungeon_atlas_data":
+			display_dungeon_atlas(message)
 
 		# Market messages
 		"market_browse_result":
@@ -32013,6 +32022,44 @@ func _on_paths_panel_close() -> void:
 
 func _on_paths_panel_learn(node_id: String) -> void:
 	send_to_server({"type": "path_spend", "node_id": node_id})
+
+func display_dungeon_atlas(message: Dictionary) -> void:
+	"""Dungeon Atlas (P1) — render the server's state-gated dungeon view in game_output."""
+	game_output.clear()
+	var entries: Array = message.get("entries", [])
+	var discovered: int = int(message.get("discovered", 0))
+	var total: int = int(message.get("total", entries.size()))
+	display_game("[color=#FFD700]═══════ DUNGEON ATLAS ═══════[/color]")
+	display_game("[color=#87CEEB]Discovered %d / %d dungeons[/color]" % [discovered, total])
+	display_game("")
+	var tier_colors := ["#FFFFFF", "#FFFFFF", "#1EFF00", "#1EFF00", "#0070DD", "#0070DD", "#A335EE", "#A335EE", "#FF8000", "#FFD700"]
+	var shown := 0
+	var unknown := 0
+	for e in entries:
+		var st := int(e.get("state", 0))
+		var tier := int(e.get("tier", 1))
+		var tcol: String = tier_colors[clampi(tier, 0, 9)]
+		if st >= 3:  # discovered — full detail
+			shown += 1
+			var comp := String(e.get("companion", ""))
+			display_game("[color=%s]◆ %s[/color] [color=#808080](T%d · Lv %d-%d · %d clears)[/color]" % [tcol, String(e.get("name", "?")), tier, int(e.get("level_min", 1)), int(e.get("level_max", 99)), int(e.get("clears", 0))])
+			var monsters: Array = e.get("monsters", [])
+			if monsters.size() > 0:
+				display_game("   [color=#909090]Monsters:[/color] %s" % ", ".join(monsters))
+			display_game("   [color=#909090]Boss:[/color] %s   [color=#A335EE]Companion egg:[/color] %s" % [String(e.get("boss", "?")), (comp if comp != "" else "—")])
+		elif st == 2:  # spotted
+			shown += 1
+			display_game("[color=%s]◇ %s[/color] [color=#808080](T%d · seen near %d,%d — not yet explored)[/color]" % [tcol, String(e.get("name", "?")), tier, int(e.get("x", 0)), int(e.get("y", 0))])
+		elif st == 1:  # rumored
+			shown += 1
+			display_game("[color=#808080]? [i]??? — a Tier %d dungeon, whispered of nearby[/i][/color]" % tier)
+		else:
+			unknown += 1
+	if shown == 0:
+		display_game("[color=#808080]No dungeons in your Atlas yet. Enter a dungeon to record it here.[/color]")
+	if unknown > 0:
+		display_game("")
+		display_game("[color=#606060]…and %d more dungeon(s) still undiscovered.[/color]" % unknown)
 
 func _handle_bestiary_data(message: Dictionary) -> void:
 	if not bestiary_panel:

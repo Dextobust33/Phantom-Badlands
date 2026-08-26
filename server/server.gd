@@ -1994,6 +1994,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_house_request(peer_id)
 		"bestiary_request":
 			handle_bestiary_request(peer_id)
+		"dungeon_atlas_request":
+			handle_dungeon_atlas_request(peer_id)
 		"house_upgrade":
 			handle_house_upgrade(peer_id, message)
 		"house_discard_item":
@@ -14105,6 +14107,38 @@ func handle_house_request(peer_id: int):
 	# Audit #3 Slice 6 — first Sanctuary open (with BP to spend) teaches the
 	# upgrade screen via the modal overlay.
 	_maybe_send_sanctuary_hint(peer_id)
+
+func handle_dungeon_atlas_request(peer_id: int):
+	"""Dungeon Atlas (P1) — build a state-gated view of every dungeon for this player.
+	Detail is revealed by discovery state: discovered → full, spotted → name/tier/where,
+	rumored → tier+region hint, unknown → hidden."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var atlas: Dictionary = character.dungeon_atlas
+	var entries: Array = []
+	var discovered_count := 0
+	for dt in DungeonDatabaseScript.DUNGEON_TYPES:
+		var def: Dictionary = DungeonDatabaseScript.DUNGEON_TYPES[dt]
+		var rec: Dictionary = atlas.get(dt, {})
+		var st: int = int(rec.get("state", 0))
+		var e: Dictionary = {"id": dt, "state": st, "tier": int(def.get("tier", 1))}
+		if st >= Character.DUNGEON_STATE_SPOTTED:
+			e["name"] = String(def.get("name", dt))
+			e["x"] = int(rec.get("x", 0))
+			e["y"] = int(rec.get("y", 0))
+		if st >= Character.DUNGEON_STATE_DISCOVERED:
+			discovered_count += 1
+			e["level_min"] = int(def.get("min_level", 1))
+			e["level_max"] = int(def.get("max_level", 99))
+			e["monsters"] = def.get("monster_pool", [])
+			e["boss"] = String(def.get("boss", {}).get("name", ""))
+			e["companion"] = String(def.get("boss_egg", ""))
+			e["desc"] = String(def.get("description", ""))
+			e["clears"] = int(rec.get("clears", 0))
+	entries.sort_custom(func(a, b): return int(a.get("tier", 0)) < int(b.get("tier", 0)))
+	send_to_peer(peer_id, {"type": "dungeon_atlas_data", "entries": entries,
+		"discovered": discovered_count, "total": DungeonDatabaseScript.DUNGEON_TYPES.size()})
 
 func handle_bestiary_request(peer_id: int):
 	"""Audit #13 Slice 2 — return the account's bestiary summary (sorted by
