@@ -476,9 +476,8 @@ func _player_act(combat: Dictionary, ch) -> void:
 					return
 	# v0.9.696 — Momentum play: hold Devastate until Momentum is high, unleash the finisher.
 	if mom >= 4 and "devastate" in hand:
+		# Devastate is now a REAL dump in combat_manager (no sim emulation needed).
 		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
-			if _dump_pct > 0.0:
-				_drain_resource(ch, "Fighter", int(ch.current_stamina * _dump_pct))
 			return
 	# Build with the best affordable BUILDER in hand (Devastate excluded here).
 	for ab in ["cleave", "shield_bash", "power_strike"]:

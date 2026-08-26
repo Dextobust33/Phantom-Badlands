@@ -62,6 +62,11 @@ static func _monster_matches_keywords(monster: Dictionary, keywords: Array) -> b
 # outsmart) bypass the hand entirely.
 const COMBAT_HAND_SIZE: int = 3
 const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via cards, spent by Devastate)
+# Resource-economy fix (2026-08-25): Devastate is a DUMP finisher — consumes this
+# fraction of CURRENT stamina (not a flat ceiling), and its power scales with how full
+# the bar was. Makes a big pool worth building (fuller bar = harder hit) and gives the
+# martial resource arc (dump → low → rebuild). %-based → scales to any level. Sim-tuned.
+const DEVASTATE_DUMP_PCT: float = 0.65
 # v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
 # (the finisher) spends them all, scaling BOTH its success chance and its damage.
 const COMBO_MAX: int = 5
@@ -3934,7 +3939,17 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	var variable_fraction: float = 1.0
 	var passive = character.get_class_passive()
 	var passive_effects = passive.get("effects", {})
-	if VARIABLE_COST_TABLE.has(ability_name):
+	if ability_name == "devastate":
+		# DUMP FINISHER (2026-08-25): consume a big % of CURRENT stamina instead of a
+		# flat ceiling; power scales 0.5×..1.5× with how full the bar was, so building
+		# up + investing in a bigger pool pays off. %-based → holds at any level.
+		var _max_st: int = maxi(1, character.get_total_max_stamina())
+		var _st_before: int = int(character.current_stamina)
+		var _dumped: int = maxi(1, int(_st_before * DEVASTATE_DUMP_PCT))
+		character.use_stamina(_dumped)
+		variable_fraction = 0.5 + clampf(float(_st_before) / float(_max_st), 0.0, 1.0)
+		messages.append("[color=#C8A24A]⚡ Dumped %d stamina into the blow![/color]" % _dumped)
+	elif VARIABLE_COST_TABLE.has(ability_name):
 		var vc_result = apply_variable_cost(character, ability_name, combat)
 		for vc_msg in vc_result.get("messages", []):
 			messages.append(vc_msg)
