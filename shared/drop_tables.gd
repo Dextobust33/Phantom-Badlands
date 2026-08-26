@@ -2094,19 +2094,23 @@ const COMPANION_SUB_TIER_ABILITY_MULT = {
 
 # Companion eggs are now DUNGEON-EXCLUSIVE
 # All tiers set to 0 - eggs only drop from dungeon treasure chests
-# Dungeon revamp B (2026-08-26) — DUNGEONS are the main egg source. Overworld egg
-# drops are now VERY rare (per-MILLE, i.e. out of 1000, so sub-1% is expressible):
-# a low-tier kill can still occasionally yield an egg, but the reliable supply is
-# dungeons (guaranteed boss egg + a solid per-kill chance below). Was 3%/1% per-cent.
-const EGG_DROP_PERMILLE_BY_TIER = {
-	1: 5,     # 0.5% per T1 overworld kill (was 3%)
-	2: 2,     # 0.2% per T2 overworld kill (was 1%)
-	3: 0,     # T3+ overworld: none (dungeon-only)
-	4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0
+# Dungeon revamp B (2026-08-26) — DUNGEONS are the main egg source (guaranteed boss
+# egg + dungeon FLOOR LOOT). Overworld eggs are an ALL-TIER lottery: any tier T1-T9 is
+# possible but a rare surprise, the chance dropping steeply per tier — a T9 egg is
+# Mirror-of-Kalandra rare (~1 in 10 million kills). Float chances (obtain rate ≈ roll
+# rate: when the loot minigame doesn't fire, drops award directly; when it does, the
+# grid is sized so nothing is wasted). ~÷3.16 per tier (T1 1e-3 → T9 1e-7).
+const OVERWORLD_EGG_CHANCE_BY_TIER := {
+	1: 0.0010,      #   1 in    1,000
+	2: 0.00032,     #   1 in    3,160
+	3: 0.00010,     #   1 in   10,000
+	4: 0.000032,    #   1 in   31,600
+	5: 0.000010,    #   1 in  100,000
+	6: 0.0000032,   #   1 in  316,000
+	7: 0.0000010,   #   1 in 1,000,000
+	8: 0.00000032,  #   1 in 3,160,000
+	9: 0.00000010,  #   1 in 10,000,000  (Mirror-of-Kalandra rare)
 }
-# Per-kill egg chance for DUNGEON monsters (any tier). A ~12-monster dungeon run
-# yields ~1 extra egg on top of the guaranteed boss egg → dungeons feel egg-rich.
-const DUNGEON_EGG_DROP_CHANCE = 8  # percent
 
 func get_companion_data(monster_name: String) -> Dictionary:
 	"""Get companion data for a monster. Returns empty dict if none."""
@@ -2538,24 +2542,20 @@ func _roll_egg_variant_with_rng(rng: RandomNumberGenerator) -> Dictionary:
 	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
 
 func roll_egg_drop(monster_name: String, monster_tier: int, is_dungeon: bool = false) -> Dictionary:
-	"""Roll for an egg drop from a defeated monster. Returns egg info if dropped.
-	Dungeon revamp B — dungeons are the main egg source: a DUNGEON kill uses the flat
-	DUNGEON_EGG_DROP_CHANCE (any tier); an OVERWORLD kill uses the rarified per-mille
-	table so eggs there are a rare surprise, not a supply."""
-	# Check if monster has companion data
+	"""Roll for an OVERWORLD egg drop from a defeated monster. Returns egg info if dropped.
+	Dungeon revamp B — dungeon kills DON'T drop per-kill eggs (dungeon eggs come from the
+	guaranteed boss egg + dungeon floor loot); overworld kills use the all-tier lottery
+	(rare surprise, steeply tier-scaled, T9 ≈ Mirror rare) with a RANDOM sub-tier."""
+	if is_dungeon:
+		return {}  # dungeon eggs = boss egg + floor loot, not per-kill
 	if not COMPANION_DATA.has(monster_name):
 		return {}
-
-	if is_dungeon:
-		if randi() % 100 < DUNGEON_EGG_DROP_CHANCE:
-			return get_egg_for_monster(monster_name)
+	var chance: float = float(OVERWORLD_EGG_CHANCE_BY_TIER.get(monster_tier, 0.0))
+	if chance <= 0.0:
 		return {}
-
-	var permille = EGG_DROP_PERMILLE_BY_TIER.get(monster_tier, 0)
-	if permille <= 0:
-		return {}
-	if randi() % 1000 < permille:
-		return get_egg_for_monster(monster_name)
+	if randf() < chance:
+		var sub_tier := 1 + (randi() % 8)  # random sub-ranking within the tier
+		return get_egg_for_monster(monster_name, {}, sub_tier)
 	return {}
 
 # v0.9.570 — Companion Border Tiers (double-rarity stat layer).
