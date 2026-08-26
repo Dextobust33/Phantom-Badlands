@@ -15,3 +15,7 @@ releases/
 client/sprites/battlers/tf_svbattle/
 client/sprites/battlers/timefantasy_characters/
 claude_screenshots/
+
+# Launcher Discord webhook secret (bundled at export, never committed)
+launcher/webhook_secret.gd
+client/webhook_secret.gd

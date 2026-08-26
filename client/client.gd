@@ -868,6 +868,15 @@ const CHAT_MAX_FONT_SIZE = 48
 # Combat state
 var in_combat = false
 var _f12_was_down := false  # v0.9.695 — polled F12 screenshot edge-detect
+# In-game player feedback (v0.9.728) — 💡 Suggest Idea / 🐞 Report Issue → Discord webhook.
+var _feedback_webhook_url := ""
+var _feedback_webhook_loaded := false
+var _feedback_kind := ""
+var _feedback_shot: PackedByteArray = PackedByteArray()
+var _feedback_dialog: AcceptDialog = null
+var _feedback_text: TextEdit = null
+var _feedback_attach_check: CheckBox = null
+var _feedback_status: Label = null
 var flock_pending = false
 var flock_monster_name = ""
 var combat_item_mode = false  # Selecting item to use in combat
@@ -2556,6 +2565,20 @@ func _ready():
 			ss_btn.pressed.connect(_on_screenshot_button_pressed)
 			_ss_parent.add_child(ss_btn)
 			_ss_parent.move_child(ss_btn, music_toggle.get_index())
+			# v0.9.728 — player feedback buttons next to the 📷 button. Post to the same
+			# Discord webhook as the launcher (💡 idea / 🐞 issue), text + optional screenshot.
+			for _fb in [["SuggestIdeaButton", "💡", "Suggest an idea / change", "idea"], ["ReportIssueButton", "🐞", "Report an issue / bug", "issue"]]:
+				var fb_btn := Button.new()
+				fb_btn.name = String(_fb[0])
+				fb_btn.text = String(_fb[1])
+				fb_btn.tooltip_text = String(_fb[2])
+				fb_btn.add_theme_font_size_override("font_size", 13)
+				fb_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+				fb_btn.z_index = 500
+				var _kind := String(_fb[3])
+				fb_btn.pressed.connect(func(): _open_feedback(_kind))
+				_ss_parent.add_child(fb_btn)
+				_ss_parent.move_child(fb_btn, music_toggle.get_index())
 			# v0.9.663 — music volume slider next to the ♪ toggle.
 			var vol_slider := HSlider.new()
 			vol_slider.name = "MusicVolumeSlider"
@@ -4243,7 +4266,8 @@ func _process(delta):
 	var upgrade_popup_open = upgrade_popup != null and upgrade_popup.visible
 	var teleport_popup_open = teleport_popup != null and teleport_popup.visible
 	var quest_board_open = quest_board_panel != null and quest_board_panel.visible
-	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open or quest_board_open
+	var feedback_open = _feedback_dialog != null and _feedback_dialog.visible
+	var any_popup_open = ability_popup_open or gamble_popup_open or upgrade_popup_open or teleport_popup_open or quest_board_open or feedback_open
 	var should_process_action_bar = (game_state == GameState.PLAYING or game_state == GameState.HOUSE_SCREEN or game_state == GameState.DEAD or (game_state == GameState.CHARACTER_SELECT and viewing_leaderboard_death)) and not input_field.has_focus() and not merchant_blocks_hotkeys and watch_request_pending == "" and not watch_request_handled and not settings_mode and not combat_item_mode and not target_select_mode and not monster_select_mode and not target_farm_mode and not any_popup_open and not title_mode and not _testfx_step_active
 	if should_process_action_bar:
 		# Determine if we're in item selection mode (need to let item keys through)
@@ -27799,8 +27823,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.728 — Player feedback + launcher revamp.
+	display_game("[color=#00FF00]v0.9.728[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ TELL US WHAT YOU THINK.[/color] Two new buttons up top by the 📷 — [color=#FFE066]💡 Suggest Idea[/color] and [color=#FF8888]🐞 Report Issue[/color]. Type your thoughts (and optionally attach a [b]screenshot of your screen[/b]) and it goes straight to the dev — we're reading them and using them to prioritize. Please send us ideas and bugs!")
+	display_game("  [color=#1EFF00]◆ Revamped launcher.[/color] The launcher is bigger now and shows a [b]Recent Changes[/b] panel so you can read what's new before you hit Play — plus the same [color=#FFE066]💡/🐞[/color] feedback buttons. [color=#808080](Grab the new launcher from the site to get it — a one-time re-download.)[/color]")
+	display_game("")
+
 	# v0.9.727 — Dungeon-centered quests (P2).
-	display_game("[color=#00FF00]v0.9.727[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.727[/color]")
 	display_game("  [color=#FF8000]★ QUESTS NOW CENTER ON DUNGEONS.[/color] The quest board is [b]all dungeon quests[/b] now — the old 'kill 8 monsters / walk to a post' filler is gone. Four kinds: [color=#FFE066]Conquer[/color] (clear a dungeon), [color=#FFE066]Rescue[/color] (free a trapped NPC), [color=#FF8800]Slay the Fabled[/color] (a [b]named, buffed boss[/b] inside a dungeon), and [color=#5AC8FF]Plunder[/color] (recover ✦ relics from a dungeon's floors).")
 	display_game("  [color=#1EFF00]◆ New Quest Board panel.[/color] The board is now a proper [b]panel with clear buttons[/b] — every quest has its own [color=#3BE06B]Accept[/color] / [color=#3BE06B]Turn In[/color] / [color=#FF8888]Abandon[/color], in tidy sections, no more scrolling a wall of text or guessing which number key does what. The map [b]Quests[/b] button opens the same panel (with each quest's dungeon [b]direction + distance[/b]).")
 	display_game("  [color=#1EFF00]◆ Fixes.[/color] Fabled-boss quests no longer complete from overworld kills. Low-tier dungeons no longer spawn far out in high-level territory (tier now matches the area). Cartography's ‹Locate› and the Atlas tie into where your quests point.")
@@ -31514,6 +31544,117 @@ func _refresh_stats_panel_if_open() -> void:
 	var stats: Dictionary = character_data.get("stats", {})
 	var unspent: int = int(character_data.get("unspent_stat_points", 0))
 	stats_panel.refresh(level, xp, xp_to_next, stats, unspent)
+
+# ===================== In-game player feedback (v0.9.728) =====================
+# 💡 Suggest Idea / 🐞 Report Issue buttons (top bar) → a dialog (text + optional
+# screenshot of the current screen) → POST to the same Discord webhook as the launcher.
+# Webhook lives in a gitignored res://webhook_secret.gd (bundled at export). Absent → the
+# feedback dialog tells the player it's unavailable.
+
+func _ensure_webhook_loaded() -> void:
+	if _feedback_webhook_loaded:
+		return
+	_feedback_webhook_loaded = true
+	# FileAccess.file_exists (not ResourceLoader.exists) so a stale .godot filesystem cache
+	# from-source doesn't hide a freshly-added secret; works the same in the exported pck.
+	# NOTE: the client lives in the MAIN project, so its res:// root is the repo — the secret
+	# is at res://client/webhook_secret.gd (the launcher is a separate project → res:// there).
+	if FileAccess.file_exists("res://client/webhook_secret.gd"):
+		var s = load("res://client/webhook_secret.gd")
+		if s:
+			var inst = s.new()
+			var v = inst.get("URL") if inst else null
+			if typeof(v) == TYPE_STRING and String(v) != "":
+				_feedback_webhook_url = String(v)
+
+func _open_feedback(kind: String) -> void:
+	_ensure_webhook_loaded()
+	_feedback_kind = kind
+	# Capture the current game screen NOW (before the dialog covers it) so an attached
+	# shot shows what the player was looking at.
+	_feedback_shot = PackedByteArray()
+	await RenderingServer.frame_post_draw
+	var img: Image = get_viewport().get_texture().get_image()
+	if img:
+		_feedback_shot = img.save_png_to_buffer()
+	if _feedback_dialog == null:
+		_build_feedback_dialog()
+	_feedback_dialog.title = "Suggest an Idea" if kind == "idea" else "Report an Issue"
+	_feedback_text.text = ""
+	_feedback_text.editable = _feedback_webhook_url != ""
+	_feedback_attach_check.button_pressed = not _feedback_shot.is_empty()
+	_feedback_attach_check.disabled = _feedback_shot.is_empty()
+	_feedback_dialog.get_ok_button().disabled = _feedback_webhook_url == ""
+	_feedback_status.text = "" if _feedback_webhook_url != "" else "Feedback is unavailable in this build."
+	_feedback_dialog.popup_centered(Vector2i(600, 460))
+	_feedback_text.grab_focus()
+
+func _build_feedback_dialog() -> void:
+	_feedback_dialog = AcceptDialog.new()
+	_feedback_dialog.ok_button_text = "Send"
+	_feedback_dialog.confirmed.connect(_on_feedback_send)
+	add_child(_feedback_dialog)
+	var vb := VBoxContainer.new()
+	vb.custom_minimum_size = Vector2(560, 380)
+	vb.add_theme_constant_override("separation", 8)
+	_feedback_dialog.add_child(vb)
+	var lbl := Label.new()
+	lbl.text = "Tell us what you think — be as detailed as you like:"
+	vb.add_child(lbl)
+	_feedback_text = TextEdit.new()
+	_feedback_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_feedback_text.custom_minimum_size = Vector2(0, 230)
+	_feedback_text.placeholder_text = "Your idea or the issue you're hitting…"
+	_feedback_text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	vb.add_child(_feedback_text)
+	_feedback_attach_check = CheckBox.new()
+	_feedback_attach_check.text = "Include a screenshot of my current screen"
+	_feedback_attach_check.button_pressed = true
+	vb.add_child(_feedback_attach_check)
+	_feedback_status = Label.new()
+	_feedback_status.add_theme_color_override("font_color", Color(0.6, 0.85, 0.6))
+	vb.add_child(_feedback_status)
+
+func _on_feedback_send() -> void:
+	var txt := _feedback_text.text.strip_edges()
+	if txt == "" or _feedback_webhook_url == "":
+		return
+	var kind_tag := "💡 IDEA" if _feedback_kind == "idea" else "🐞 ISSUE"
+	var pname := String(character_data.get("name", "")) if character_data else ""
+	var who := pname if pname != "" else "unknown"
+	var meta := "in-game · player %s · v%s · %s" % [who, get_version(), OS.get_name()]
+	var content := "%s  (%s)\n%s" % [kind_tag, meta, txt]
+	if content.length() > 1950:
+		content = content.substr(0, 1950) + "…"
+	if _feedback_attach_check.button_pressed and not _feedback_shot.is_empty():
+		_post_feedback_multipart(content, _feedback_shot)
+	else:
+		_post_feedback_json(content)
+	_flash_screenshot_toast("🙏 Feedback sent — thank you!")
+
+func _post_feedback_json(content: String) -> void:
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(func(_r, _rc, _h, _b): req.queue_free())
+	var payload := JSON.stringify({"content": content, "username": "PB Client"})
+	req.request(_feedback_webhook_url, ["Content-Type: application/json", "User-Agent: PhantomBadlandsClient"], HTTPClient.METHOD_POST, payload)
+
+func _post_feedback_multipart(content: String, img_bytes: PackedByteArray) -> void:
+	var boundary := "----PBClient%dBoundary" % Time.get_ticks_msec()
+	var pre := PackedByteArray()
+	pre.append_array(("--%s\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n" % boundary).to_utf8_buffer())
+	pre.append_array(JSON.stringify({"content": content, "username": "PB Client"}).to_utf8_buffer())
+	pre.append_array(("\r\n--%s\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"screenshot.png\"\r\nContent-Type: image/png\r\n\r\n" % boundary).to_utf8_buffer())
+	var post := PackedByteArray()
+	post.append_array(("\r\n--%s--\r\n" % boundary).to_utf8_buffer())
+	var full := PackedByteArray()
+	full.append_array(pre)
+	full.append_array(img_bytes)
+	full.append_array(post)
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(func(_r, _rc, _h, _b): req.queue_free())
+	req.request_raw(_feedback_webhook_url, ["Content-Type: multipart/form-data; boundary=%s" % boundary, "User-Agent: PhantomBadlandsClient"], HTTPClient.METHOD_POST, full)
 
 func _on_screenshot_button_pressed() -> void:
 	"""v0.9.663 — dev/QA screenshot. Saves the current frame to
