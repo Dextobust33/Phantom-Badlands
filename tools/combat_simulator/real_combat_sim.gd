@@ -15,6 +15,10 @@ var CharacterScript
 # tiers also hit harder → shorter fights → less total spend), a safe direction for
 # finding the cost curve that restores early-game pressure. 1.0 = unchanged.
 var _cost_mult: float = 1.0
+# Martial DUMP emulation: after the finisher (Devastate / Gambit) resolves, drain this
+# fraction of the CURRENT pool — models a dump finisher (consume the bar, damage scales
+# with spend). 0 = off. Only the martial finisher branches apply it.
+var _dump_pct: float = 0.0
 
 const FIGHTS_PER_CELL := 200
 const SLOTS := ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
@@ -46,8 +50,18 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_cost_solve()      # solve the level→cost-tier curve that restores early-game pressure on avg gear
+	run_proposal_read()   # combined fix read: martial dump + mage cost tier + capped regen
 	quit()
+
+func run_proposal_read():
+	# Combined proposal: martial DUMP (80% of pool on Devastate/Gambit) + mage cost tier
+	# (2x) + capped regen (live in combat_manager). Confirms martials finally get a MinRes
+	# arc AND shows the gear-investment gradient (avg gear = pressured, bis = comfortable).
+	_dump_pct = 0.8
+	_cost_mult = 2.0
+	run_resource_audit()
+	_dump_pct = 0.0
+	_cost_mult = 1.0
 
 func run_hp_solve():
 	# #29 — sweep an extra monster-HP multiplier (War+Trk = accurate classes) to find
@@ -331,6 +345,8 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 	# Finisher when the chain is built high (near-guaranteed + big).
 	if combo >= 4 and "gambit" in hand:
 		if combat_mgr.process_ability_command(0, "gambit", "").get("success", false):
+			if _dump_pct > 0.0:
+				_drain_resource(ch, "Thief", int(ch.current_energy * _dump_pct))
 			return
 	# Build Combo with a damage setup (these also +1 Combo).
 	for ab in ["ambush", "exploit"]:
@@ -461,6 +477,8 @@ func _player_act(combat: Dictionary, ch) -> void:
 	# v0.9.696 — Momentum play: hold Devastate until Momentum is high, unleash the finisher.
 	if mom >= 4 and "devastate" in hand:
 		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			if _dump_pct > 0.0:
+				_drain_resource(ch, "Fighter", int(ch.current_stamina * _dump_pct))
 			return
 	# Build with the best affordable BUILDER in hand (Devastate excluded here).
 	for ab in ["cleave", "shield_bash", "power_strike"]:
