@@ -40,7 +40,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_baseline()  # #29 all-class baseline
+	run_resource_audit()  # resource-economy audit (does the pool ever bind? does it stay pegged high as level/gear scale?)
 	quit()
 
 func run_hp_solve():
@@ -64,6 +64,44 @@ func run_hp_solve():
 					row += "   %.0fx: %4.1ft@%d%%" % [hm, float(tt) / N, int(100.0 * wins / N)]
 				print(row)
 	print("=================================================================\n")
+
+func run_resource_audit():
+	# Resource-economy audit (2026-08-25). Answers: does the combat resource ever
+	# actually BIND, and does it stay pegged high as level/gear scale (= management
+	# is dead)? Headline column = MinRes% (avg lowest pool% reached in a fight). If
+	# MinRes% stays high (esp. at high lvl / bis gear), the pool is never a real
+	# constraint → the exact "resources stop mattering" problem. Pool = avg max pool.
+	# Casts/t = ability casts per turn (near 1.0 + high MinRes% = casting freely).
+	var N := 80
+	var levels := [10, 50, 80]
+	var gears := ["under", "average", "bis"]
+	var enemies := ["plain", "elite", "boss"]
+	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	print("\n===== RESOURCE AUDIT (%d fights/cell) — does the pool ever bind? =====" % N)
+	print("MinRes%% high = pool never pressured (management dead). Watch it RISE with lvl/gear.")
+	print("%-4s %-4s %-8s %-6s %6s %7s %8s %8s %8s %7s" % ["Cls", "Lvl", "Gear", "Enemy", "Win%", "Turns", "Casts/t", "MinRes%", "EndRes%", "Pool"])
+	for c in classes:
+		for lvl in levels:
+			for gear in gears:
+				for et in enemies:
+					var wins := 0
+					var tt := 0.0
+					var tc := 0.0
+					var tmin := 0.0
+					var tend := 0.0
+					var tpool := 0.0
+					for i in range(N):
+						var r = run_fight(lvl, gear, et, 1.0, 1.0, 1.0, c[0])
+						if r.win:
+							wins += 1
+						tt += r.turns
+						tc += float(r.get("casts", 0)) / maxf(1.0, float(r.turns))
+						tmin += float(r.get("min_res_pct", 0.0))
+						tend += float(r.get("end_res_pct", 0.0))
+						tpool += float(r.get("max_res", 0))
+					print("%-4s %-4d %-8s %-6s %5.0f%% %7.1f %8.2f %7.0f%% %7.0f%% %7.0f" % [
+						c[1], lvl, gear, et, 100.0 * wins / N, tt / N, tc / N, tmin / N, tend / N, tpool / N])
+	print("=====================================================================\n")
 
 func run_baseline():
 	# #29 holistic rebalance baseline — measures win-rate, fight length, AND
@@ -249,6 +287,13 @@ func make_char(level: int, gear: String, klass: String = "Fighter"):
 		"variant": "Normal", "sub_tier": 1, "border_tier": 1,
 	}
 	ch.current_hp = ch.get_total_max_hp()
+	# Enter combat at FULL resources — in real play, out-of-combat regen tops the
+	# pool between fights. (level_up/equip raise MAX but don't refill current, and
+	# make_char only topped HP — leaving resources at the pre-gear base, which
+	# distorted MinRes%/EndRes%.)
+	ch.current_stamina = ch.get_total_max_stamina()
+	ch.current_mana = ch.get_total_max_mana()
+	ch.current_energy = ch.get_total_max_energy()
 	return ch
 
 func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Dictionary:
@@ -311,6 +356,9 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	var combat = combat_mgr.active_combats[0]
 	var turns := 0
 	var casts := 0  # #29 — count ability casts (resource decreased this turn = a cast, not a basic attack)
+	# Resource-economy telemetry: how far the pool is actually pushed over the fight.
+	var max_res: int = maxi(1, _class_max_resource(ch, klass))
+	var min_res: int = _class_resource(ch, klass)
 	while turns < 400:
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
@@ -326,6 +374,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 				_player_act(combat, ch)
 			if _class_resource(ch, klass) < res0:
 				casts += 1
+			min_res = mini(min_res, _class_resource(ch, klass))
 			if player_dmg_scale < 1.0:
 				var dealt: int = mhp0 - int(monster.get("current_hp", 0))
 				if dealt > 0:
@@ -340,8 +389,14 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 			if taken > 0:
 				ch.current_hp = min(max_hp, ch.current_hp + int(taken * (1.0 - monster_dmg_scale)))
 	var win: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+	var end_res: int = _class_resource(ch, klass)
 	combat_mgr.end_combat(0, win, false)
-	return {"win": win, "turns": turns, "casts": casts}
+	return {
+		"win": win, "turns": turns, "casts": casts,
+		"min_res_pct": 100.0 * float(min_res) / float(max_res),
+		"end_res_pct": 100.0 * float(end_res) / float(max_res),
+		"max_res": max_res,
+	}
 
 func _class_resource(ch, klass: String) -> int:
 	# #29 — current value of the class's combat resource, for cast-counting.
@@ -350,6 +405,14 @@ func _class_resource(ch, klass: String) -> int:
 	if klass == "Wizard":
 		return int(ch.current_mana)
 	return int(ch.current_stamina)
+
+func _class_max_resource(ch, klass: String) -> int:
+	# Max pool for the class's combat resource (for resource-pressure telemetry).
+	if klass == "Thief":
+		return int(ch.get_total_max_energy())
+	if klass == "Wizard":
+		return int(ch.get_total_max_mana())
+	return int(ch.get_total_max_stamina())
 
 func run_design_solve():
 	# Reverse-solve the DESIGN numbers: what player-damage% × monster-damage% give
