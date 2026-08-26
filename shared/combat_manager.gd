@@ -67,6 +67,11 @@ const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via card
 # the bar was. Makes a big pool worth building (fuller bar = harder hit) and gives the
 # martial resource arc (dump → low → rebuild). %-based → scales to any level. Sim-tuned.
 const DEVASTATE_DUMP_PCT: float = 0.65
+# Trickster dump: Outsmart spends this % of CURRENT energy to sharpen the read; bar
+# fullness adds up to OUTSMART_DUMP_MAX_BONUS% outsmart chance, so a bigger energy pool =
+# a more reliable outwit (investment payoff) + gives the Trickster its energy arc. %-based.
+const OUTSMART_DUMP_PCT: float = 0.6
+const OUTSMART_DUMP_MAX_BONUS: int = 30
 # v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
 # (the finisher) spends them all, scaling BOTH its success chance and its damage.
 const COMBO_MAX: int = 5
@@ -2679,6 +2684,17 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	var level_diff = int(monster.level) - character.level
 	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
 	var outsmart_chance = _outsmart_chance(character, monster, combat)
+	# Energy DUMP (2026-08-25): spend a big % of current energy to sharpen the read. Bar
+	# fullness (scale-safe) adds outsmart chance, so a bigger energy pool = a more reliable
+	# Outsmart (investment payoff) and Outsmart becomes the Trickster's energy sink.
+	var _os_max_en: int = maxi(1, character.get_total_max_energy())
+	var _os_en_before: int = int(character.current_energy)
+	var _os_dumped: int = maxi(0, int(_os_en_before * OUTSMART_DUMP_PCT))
+	if _os_dumped > 0:
+		character.use_energy(_os_dumped)
+		var _os_bonus: int = int(clampf(float(_os_en_before) / float(_os_max_en), 0.0, 1.0) * float(OUTSMART_DUMP_MAX_BONUS))
+		outsmart_chance = clampi(outsmart_chance + _os_bonus, 2, 95)
+		messages.append("[color=#66FF66]⚡ You spend %d energy to sharpen the read (+%d%% outwit)![/color]" % [_os_dumped, _os_bonus])
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
 	var bonus_text = ""

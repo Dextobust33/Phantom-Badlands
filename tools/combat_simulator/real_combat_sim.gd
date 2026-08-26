@@ -54,13 +54,12 @@ func _init():
 	quit()
 
 func run_proposal_read():
-	# Combined proposal: martial DUMP (80% of pool on Devastate/Gambit) + mage cost tier
-	# (2x) + capped regen (live in combat_manager). Confirms martials finally get a MinRes
-	# arc AND shows the gear-investment gradient (avg gear = pressured, bis = comfortable).
-	_dump_pct = 0.8
-	_cost_mult = 2.0
+	# Combined proposal: REAL dumps (Devastate + Outsmart in combat_manager) + capped regen,
+	# with mage cost still emulated at 2x (until cost_percent is raised for real). Shows the
+	# gear-investment gradient (avg = pressured, bis = comfortable) across levels to L1000.
+	_dump_pct = 0.0  # dumps are real now — no emulation
+	_cost_mult = 2.0  # mage attrition placeholder (real fix = raise cost_percent)
 	run_resource_audit()
-	_dump_pct = 0.0
 	_cost_mult = 1.0
 
 func run_hp_solve():
@@ -341,24 +340,31 @@ func run_trickster_matrix():
 
 func _player_act_trickster(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
-	var combo: int = int(combat.get("combo", 0))
-	# Finisher when the chain is built high (near-guaranteed + big).
-	if combo >= 4 and "gambit" in hand:
-		if combat_mgr.process_ability_command(0, "gambit", "").get("success", false):
-			if _dump_pct > 0.0:
-				_drain_resource(ch, "Thief", int(ch.current_energy * _dump_pct))
-			return
-	# Build Combo with a damage setup (these also +1 Combo).
+	# OUTWIT only when the odds are actually good (chance-gated, like a real player) AND
+	# energy is stocked — Outsmart now DUMPS energy to sharpen the read (+~30% at a full
+	# bar). Don't burn attempts on low-odds outwits vs higher-level bosses; damage instead.
+	var base_os: int = combat_mgr._outsmart_chance(ch, combat.get("monster", {}), combat)
+	var full_en: bool = ch.current_energy > int(ch.get_total_max_energy() * 0.6)
+	if full_en and base_os + 30 >= 70:  # +30 ≈ the full-bar dump bonus
+		var r = combat_mgr.process_outsmart(combat)
+		if r.get("combat_ended", false):
+			combat["combat_ended"] = true
+			if r.get("victory", false):
+				var m = combat.get("monster", {})
+				if m:  # outsmart win leaves monster at full HP — mark dead for the win check
+					m["current_hp"] = 0
+		return
+	# Build Read with damage setups (these spend energy + add Read).
 	for ab in ["ambush", "exploit"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	# Filler builders (debuffs still add Combo).
+	# Filler builders (debuffs still add Read).
 	for ab in ["sabotage", "distract"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	# Low Combo but only Gambit in hand → gamble (spends what little we have).
+	# Low Read but Gambit in hand → chip damage.
 	if "gambit" in hand:
 		if combat_mgr.process_ability_command(0, "gambit", "").get("success", false):
 			return
