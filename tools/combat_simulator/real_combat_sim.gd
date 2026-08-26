@@ -92,10 +92,10 @@ func run_resource_audit():
 	# MinRes% stays high (esp. at high lvl / bis gear), the pool is never a real
 	# constraint → the exact "resources stop mattering" problem. Pool = avg max pool.
 	# Casts/t = ability casts per turn (near 1.0 + high MinRes% = casting freely).
-	var N := 80
-	var levels := [10, 50, 80]
-	var gears := ["under", "average", "bis"]
-	var enemies := ["plain", "elite", "boss"]
+	var N := 40
+	var levels := [10, 50, 200, 1000]  # include EXTREME level — system must hold to L1000+
+	var gears := ["average", "bis"]
+	var enemies := ["elite", "boss"]
 	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
 	print("\n===== RESOURCE AUDIT (%d fights/cell) — does the pool ever bind? =====" % N)
 	print("MinRes%% high = pool never pressured (management dead). Watch it RISE with lvl/gear.")
