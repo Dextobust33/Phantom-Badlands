@@ -1733,6 +1733,20 @@ func reapply_variant(monster: Dictionary, variant_type: String) -> void:
 	No-op for '' or an already-matching variant. Mutates `monster` in place."""
 	if variant_type == "" or String(monster.get("variant_type", "")) == variant_type:
 		return
+	# v0.9.721 FIX — the freshly-generated flock monster may have rolled EMPOWERED
+	# (mutually exclusive with rare variants). Strip that HP inflation BEFORE applying the
+	# inherited variant's multiplier, or elite ×3.5 compounds on empowered ×(1.5-3.0) into
+	# a 5-10× HP monster that feels un-killable. Clears the empowered flags/name-color too
+	# (the name is rebuilt from base_name below, dropping any empowered prefix).
+	if monster.get("is_empowered", false):
+		var _emp_mods: Array = monster.get("empowered_mods", [])
+		var _emp_mult := 1.5 + 0.5 * float(_emp_mods.size())
+		if _emp_mult > 1.0:
+			monster["max_hp"] = max(10, int(round(float(int(monster.get("max_hp", 10))) / _emp_mult)))
+		monster["current_hp"] = int(monster.get("max_hp", 10))
+		monster["is_empowered"] = false
+		monster["empowered_mods"] = []
+		monster["name_color"] = ""
 	var base_name := String(monster.get("base_name", monster.get("name", "Monster")))
 	var abilities: Array = monster.get("abilities", [])
 	var new_name := base_name

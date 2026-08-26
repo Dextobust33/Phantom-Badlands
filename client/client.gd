@@ -20290,16 +20290,19 @@ func update_player_xp_bar():
 			xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
 
 # v0.9.591 — variant HP multipliers, must mirror server's scale_monster_to_level
-# branches in monster_database.gd (Shield Guardian +25% HP, Corrosive +15% HP,
-# Elite +50% HP; Weapon Master/Sunder/base are 1.0×). Used by estimate_enemy_hp
-# to translate prior kills of one variant into expected HP for another.
+# branches in monster_database.gd (Shield Guardian +25% HP, Corrosive +15% HP;
+# Weapon Master/Sunder/base 1.0×). Used by estimate_enemy_hp to translate prior kills
+# of one variant into expected HP for another.
+# v0.9.721 FIX — Elite was 1.5 but the server raised elite HP to ×3.5 in v0.9.700 (#29);
+# the stale estimate made a Champion's bar hit 0 while ~2.3× HP still remained ("shows 0
+# but won't die"). Now synced to 3.5.
 const VARIANT_HP_MULTIPLIERS: Dictionary = {
 	"": 1.0,
 	"weapon_master": 1.0,
 	"shield_guardian": 1.25,
 	"corrosive": 1.15,
 	"sunder": 1.0,
-	"elite": 1.5,
+	"elite": 3.5,
 }
 
 func _get_variant_hp_multiplier(variant_type: String) -> float:
