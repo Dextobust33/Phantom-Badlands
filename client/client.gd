@@ -2045,6 +2045,11 @@ func _ready():
 	# Set window title with version
 	DisplayServer.window_set_title("Phantom Badlands v" + get_version())
 
+	# v0.9.729 — silently bring an outdated launcher up to date (deferred/background so it
+	# never blocks startup). Fixes the bootstrapping gap for players still on the pre-self-
+	# update launcher: the game replaces their launcher with the self-updating one.
+	call_deferred("_maybe_update_launcher")
+
 	# Start maximized (windowed, not exclusive fullscreen)
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 
@@ -27823,8 +27828,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.729 — Self-updating launcher.
+	display_game("[color=#00FF00]v0.9.729[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Your launcher updates itself now.[/color] No more re-downloading the launcher by hand — after this update it quietly upgrades to the new [b]self-updating launcher[/b] in the background, so you always have the latest one (with the changelog panel + feedback buttons). [color=#808080](One-time, automatic — nothing for you to do.)[/color]")
+	display_game("")
+
 	# v0.9.728 — Player feedback + launcher revamp.
-	display_game("[color=#00FF00]v0.9.728[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.728[/color]")
 	display_game("  [color=#FF8000]★ TELL US WHAT YOU THINK.[/color] Two new buttons up top by the 📷 — [color=#FFE066]💡 Suggest Idea[/color] and [color=#FF8888]🐞 Report Issue[/color]. Type your thoughts (and optionally attach a [b]screenshot of your screen[/b]) and it goes straight to the dev — we're reading them and using them to prioritize. Please send us ideas and bugs!")
 	display_game("  [color=#1EFF00]◆ Revamped launcher.[/color] The launcher is bigger now and shows a [b]Recent Changes[/b] panel so you can read what's new before you hit Play — plus the same [color=#FFE066]💡/🐞[/color] feedback buttons. [color=#808080](Grab the new launcher from the site to get it — a one-time re-download.)[/color]")
 	display_game("")
@@ -31655,6 +31665,124 @@ func _post_feedback_multipart(content: String, img_bytes: PackedByteArray) -> vo
 	add_child(req)
 	req.request_completed.connect(func(_r, _rc, _h, _b): req.queue_free())
 	req.request_raw(_feedback_webhook_url, ["Content-Type: multipart/form-data; boundary=%s" % boundary, "User-Agent: PhantomBadlandsClient"], HTTPClient.METHOD_POST, full)
+
+
+# ============ Client-side launcher self-update (v0.9.729) ============
+# Closes the bootstrapping gap: players still on the PRE-self-update launcher can't auto-update
+# it, so the GAME does it for them. The launcher quits after launching us, so its exe is free —
+# we can overwrite it directly (no swapper). Silent, best-effort, background; skips from source
+# or when no launcher sits beside us. Marker LAUNCHER_VERSION.txt (also stamped by the launcher
+# itself) prevents redundant re-downloads.
+const LU_OWNER := "Dextobust33"
+const LU_REPO := "Phantom-Badlands"
+
+func _maybe_update_launcher() -> void:
+	if OS.has_feature("editor"):
+		return  # running from source — no launcher beside us
+	var dir := OS.get_executable_path().get_base_dir()
+	var lname := "PhantomBadlandsLauncher.x86_64" if OS.get_name() == "Linux" else "PhantomBadlandsLauncher.exe"
+	if not FileAccess.file_exists(dir.path_join(lname)):
+		return  # no launcher installed next to the game
+	var local_lv := ""
+	var mfp := dir.path_join("LAUNCHER_VERSION.txt")
+	if FileAccess.file_exists(mfp):
+		var mf := FileAccess.open(mfp, FileAccess.READ)
+		if mf:
+			local_lv = mf.get_as_text().strip_edges()
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(func(r, rc, _h, b):
+		req.queue_free()
+		_lu_on_release(r, rc, b, dir, lname, local_lv))
+	if req.request("https://api.github.com/repos/%s/%s/releases/latest" % [LU_OWNER, LU_REPO], ["User-Agent: PhantomBadlandsClient"]) != OK:
+		req.queue_free()
+
+func _lu_on_release(result: int, code: int, body: PackedByteArray, dir: String, lname: String, local_lv: String) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		return
+	var json = JSON.new()
+	if json.parse(body.get_string_from_utf8()) != OK:
+		return
+	var data = json.data
+	if not (data is Dictionary):
+		return
+	var want_linux := OS.get_name() == "Linux"
+	var manifest_url := ""
+	var launcher_zip_url := ""
+	for a in data.get("assets", []):
+		var an := String(a.get("name", "")).to_lower()
+		if an == "client-manifest.json":
+			manifest_url = String(a.get("browser_download_url", ""))
+		elif an.ends_with(".zip") and "launcher" in an and (("linux" in an) == want_linux):
+			launcher_zip_url = String(a.get("browser_download_url", ""))
+	if manifest_url == "" or launcher_zip_url == "":
+		return
+	var req := HTTPRequest.new()
+	add_child(req)
+	req.request_completed.connect(func(r, rc, _h, b):
+		req.queue_free()
+		_lu_on_manifest(r, rc, b, dir, lname, local_lv, launcher_zip_url))
+	if req.request(manifest_url, ["User-Agent: PhantomBadlandsClient", "Accept: application/octet-stream"]) != OK:
+		req.queue_free()
+
+func _lu_on_manifest(result: int, code: int, body: PackedByteArray, dir: String, lname: String, local_lv: String, zip_url: String) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		return
+	var json = JSON.new()
+	if json.parse(body.get_string_from_utf8()) != OK:
+		return
+	var m = json.data
+	if not (m is Dictionary):
+		return
+	var target_lv := String(m.get("launcher_version", ""))
+	if target_lv == "" or target_lv == local_lv:
+		return  # launcher already current (or manifest doesn't track it)
+	var zip_path := dir.path_join("launcher_update_by_client.zip")
+	var req := HTTPRequest.new()
+	req.download_file = zip_path
+	add_child(req)
+	req.request_completed.connect(func(r, rc, _h, _b):
+		req.queue_free()
+		_lu_on_zip(r, rc, dir, lname, target_lv, zip_path))
+	if req.request(zip_url, ["User-Agent: PhantomBadlandsClient", "Accept: application/octet-stream"]) != OK:
+		req.queue_free()
+
+func _lu_on_zip(result: int, code: int, dir: String, lname: String, target_lv: String, zip_path: String) -> void:
+	if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+		if FileAccess.file_exists(zip_path):
+			DirAccess.remove_absolute(zip_path)
+		return
+	var reader := ZIPReader.new()
+	if reader.open(zip_path) != OK:
+		DirAccess.remove_absolute(zip_path)
+		return
+	var ext := ".x86_64" if OS.get_name() == "Linux" else ".exe"
+	var bytes := PackedByteArray()
+	for fp in reader.get_files():
+		var base := String(fp).get_file()
+		if "launcher" in base.to_lower() and base.ends_with(ext):
+			bytes = reader.read_file(fp)
+			break
+	reader.close()
+	DirAccess.remove_absolute(zip_path)
+	if bytes.is_empty():
+		return
+	var lpath := dir.path_join(lname)
+	# The launcher isn't running (it quit after Play) → overwrite directly. If it somehow IS
+	# locked, remove/open fails and we simply retry next launch (no marker written).
+	if FileAccess.file_exists(lpath):
+		DirAccess.remove_absolute(lpath)
+	var f := FileAccess.open(lpath, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_buffer(bytes)
+	f.close()
+	if OS.get_name() == "Linux":
+		OS.execute("chmod", ["+x", lpath])
+	var mf := FileAccess.open(dir.path_join("LAUNCHER_VERSION.txt"), FileAccess.WRITE)
+	if mf:
+		mf.store_string(target_lv)
+	print("[LAUNCHER UPDATE] Replaced the launcher with v%s (client-side)" % target_lv)
 
 func _on_screenshot_button_pressed() -> void:
 	"""v0.9.663 — dev/QA screenshot. Saves the current frame to

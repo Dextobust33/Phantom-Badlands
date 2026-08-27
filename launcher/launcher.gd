@@ -71,6 +71,9 @@ func _ready():
 	play_button.disabled = true
 	play_button.pressed.connect(_on_play_pressed)
 	game_path = OS.get_executable_path().get_base_dir()
+	# Stamp our own version so the game's client-side launcher-updater knows we're current
+	# (avoids a redundant re-download of the launcher on the next Play).
+	_save_marker("LAUNCHER_VERSION.txt", LAUNCHER_VERSION)
 	local_version = _load_marker("VERSION.txt")
 	local_runtime = _load_marker("RUNTIME_VERSION.txt")
 	version_label.text = "Local: %s" % [local_version if local_version else "Not installed"]
