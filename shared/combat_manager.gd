@@ -18,6 +18,16 @@ const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry",
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
 const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
 
+# #55 (2026-08-26) — floor on the COMBINED buff/gear mitigation multiplier applied to
+# an incoming monster hit (Iron Skin + companion damage_reduction + armor-rarity DR +
+# Shield/Fortify defense buff). 0.15 => those layers can never reduce a hit by more than
+# 85%, so heavy investment = very tanky but never immune (fixes stacked-to-unkillable).
+const MITIGATION_BUFF_FLOOR := 0.15
+# #55 — repeated-stun diminishing returns. Each time the SAME monster is stunned, the
+# next stun's success chance is multiplied by this per prior stun (tracked on the combat
+# state), so a warrior can't perma-stunlock a monster the whole fight with Shield Bash.
+const STUN_REPEAT_FALLOFF := 0.55
+
 # Mastery Slice 1 polish — only the first N uses of an ability per fight
 # count toward rank progress. Stops grind-spam (e.g., 5-mana Magic Bolts
 # repeated 30 times); bridges to deck-building's natural per-round draw
@@ -4050,18 +4060,30 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			# Diminishing stun chance: 100% → 75% → 50% → 25% → 20% floor, scaled by spend
-			var cc_resist = combat.get("cc_resistance", 0)
-			var stun_chance = int(maxi(20, 100 - cc_resist * 25) * variable_fraction)
+			# #55 (2026-08-26) — repeated-stun diminishing returns. Stun chance now falls
+			# off MULTIPLICATIVELY per prior stun this fight (× STUN_REPEAT_FALLOFF), so
+			# continued Shield Bash spam trends toward ~0% (was a flat 20% floor = the
+			# monster could be stunned forever). PLUS a hard block after 2 stuns in a row
+			# guarantees the monster gets to act — it can never be stunlocked the whole
+			# fight. Chance still scales with spend (variable_fraction). Stun-immune
+			# variants (juggernaut) are handled by their own flag upstream.
+			var cc_resist = int(combat.get("cc_resistance", 0))
+			var consec_stuns = int(combat.get("consec_stuns", 0))
+			var stun_chance = int(100.0 * pow(STUN_REPEAT_FALLOFF, cc_resist) * variable_fraction)
 			messages.append("[color=#FF4444]SHIELD BASH![/color]")
-			if randi() % 100 < stun_chance:
+			if consec_stuns < 2 and randi() % 100 < stun_chance:
 				combat["monster_stunned"] = 1  # Enemy skips next turn
 				combat["cc_resistance"] = cc_resist + 1
+				combat["consec_stuns"] = consec_stuns + 1
 				messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
 			else:
-				messages.append("[color=#FFFF00]You deal %d damage but the enemy resists the stun![/color]" % damage)
+				combat["consec_stuns"] = 0  # monster shakes it off and will act next turn
+				if consec_stuns >= 2:
+					messages.append("[color=#FFFF00]You deal %d damage, but the enemy shrugs off the stun and readies itself![/color]" % damage)
+				else:
+					messages.append("[color=#FFFF00]You deal %d damage but the enemy resists the stun![/color]" % damage)
 			if cc_resist > 0:
-				messages.append("[color=#808080](Enemy CC resistance: %d%%)[/color]" % (cc_resist * 25))
+				messages.append("[color=#808080](Enemy stun resistance: next stun ~%d%%)[/color]" % int(100.0 * pow(STUN_REPEAT_FALLOFF, cc_resist + 1)))
 
 		"cleave":
 			# Buffed: 2.5x damage multiplier (was 2x), sqrt STR scaling.
@@ -5671,23 +5693,26 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				elif variance < 0.7:
 					messages.append("[color=#00FF00]The %s's attack is feeble this time.[/color]" % monster.name)
 
-			# Apply damage reduction buff (Iron Skin)
+			# #55 (2026-08-26) — COMBINED mitigation cap. These three buff/gear layers
+			# (Iron Skin & companion damage_reduction, armor-rarity DR, Shield/Fortify
+			# defense buff) used to each multiply down with only a max(1,...) floor, so
+			# stacking them drove every hit to 1 damage = unkillable (derpasaurus).
+			# Now they compose into ONE multiplier clamped so buffs+gear can never cut
+			# more than (1 - MITIGATION_BUFF_FLOOR) of the hit — you can get very tanky
+			# with heavy investment, but never immune. (The separate defense-STAT layer
+			# keeps its own cap upstream, so total mitigation stays bounded.)
+			var _raw_hit: int = damage
+			var _mit_mult := 1.0
 			var damage_reduction = character.get_buff_value("damage_reduction")
 			if damage_reduction > 0:
-				damage = int(damage * (1.0 - damage_reduction / 100.0))
-				damage = max(1, damage)
-
-			# Apply armor rarity damage reduction (percentage)
+				_mit_mult *= (1.0 - damage_reduction / 100.0)
 			if armor_dr_total > 0:
-				damage = int(damage * (1.0 - armor_dr_total / 100.0))
-				damage = max(1, damage)
-
-			# Apply defense buff (Shield spell)
+				_mit_mult *= (1.0 - armor_dr_total / 100.0)
 			var defense_buff = character.get_buff_value("defense")
 			if defense_buff > 0:
-				var reduction = 1.0 - (defense_buff / 100.0)
-				damage = int(damage * reduction)
-				damage = max(1, damage)
+				_mit_mult *= (1.0 - defense_buff / 100.0)
+			_mit_mult = maxf(_mit_mult, MITIGATION_BUFF_FLOOR)
+			damage = max(1, int(_raw_hit * _mit_mult))
 
 			total_damage += damage
 			hits += 1

@@ -2960,12 +2960,17 @@ func get_all_available_abilities() -> Array:
 	# monsters); marked non_combat so the combat deck builder and the
 	# ability panel filter it out of the combat loadout.
 	abilities.append({"name": "cloak", "level": 20, "display": "Cloak", "universal": true, "non_combat": true})
-	# v0.9.423 — utility cards that interact with the hand-cycle.
-	# Forethought: pay 1 resource, skip monster turn (hand also cycles via
-	# the new auto-cycle on any player action). Recharge: surrender turn,
-	# restore 50% of your max primary resource.
-	abilities.append({"name": "forethought", "level": 1, "display": "Forethought", "universal": true})
-	abilities.append({"name": "tactical_retreat", "level": 1, "display": "Recharge", "universal": true})
+	# #55 (2026-08-26) — REMOVED from the deckable pool. Forethought (pay 1 to skip
+	# the monster's turn) and Recharge/tactical_retreat (restore 50% max resource)
+	# were designed for an older, tighter economy; with the current pools they let a
+	# player skip turns into near-invincibility (derpasaurus: 202 forethought casts)
+	# and trivialize resource management. Dropping them from get_all_available_abilities
+	# excludes them from every deck (the deck builder filters to accessible abilities);
+	# any existing copies in combat_deck_collection go inert and ensure_min_deck_size
+	# backfills the slot. Handlers are left in combat_manager for back-compat (they can
+	# no longer be drawn, so they never fire). To restore, re-add these two appends.
+	# abilities.append({"name": "forethought", "level": 1, "display": "Forethought", "universal": true})
+	# abilities.append({"name": "tactical_retreat", "level": 1, "display": "Recharge", "universal": true})
 
 	# Teleport unlocks at different levels per class path
 	var teleport_level = 60  # Default (warrior)
