@@ -27899,8 +27899,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.737 — See your traits + clearer deck.
+	display_game("[color=#00FF00]v0.9.737[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ SEE WHAT YOUR CLASS & RACE ACTUALLY DO.[/color] Your class and race passives were [b]invisible[/b] — now they show as [b]Trait cards[/b] right on your Deck screen (e.g. [color=#4169E1]Arcane Precision[/color] — +15% spell damage, +10% crit; [color=#D2691E]Nimble[/color] — +10% dodge, +15% Valor). Finally see the bonuses you've had all along, framed as part of your deck.")
+	display_game("  [color=#1EFF00]◆ Clearer deck.[/color] Card descriptions on the Deck screen now read in [b]plain language[/b] (the same friendly text as in combat) instead of raw formulas — 'a massive finishing blow' rather than 'INT-scaled burst × 3-4× multiplier, variable cost ≈30% of mana pool.'")
+	display_game("")
+
 	# v0.9.736 — Mage rebalance + fixes (hotfix).
-	display_game("[color=#00FF00]v0.9.736[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.736[/color]")
 	display_game("  [color=#FF8000]★ MAGE REBALANCE — COMMIT YOUR MANA.[/color] [b]Magic Bolt[/b] was quietly broken: a tiny mana chip hit almost as hard as a full cast, so a low-level mage could one-shot everything for pocket change and never run dry. Now Bolt's power [b]scales with how big a bite of your mana you take[/b] — a small chip is weak, a [b]full dump is a massive burst[/b] (then you're empty). Your signature nuke is intact; you just have to actually spend your bar. Fixes low-level combat feeling trivial.")
 	display_game("  [color=#1EFF00]◆ Card market fix.[/color] [b]List Combat Card[/b] was greyed out / stuck at (0) even when you owned tradeable cards — fixed. You can list & sell your companion/dungeon cards now.")
 	display_game("  [color=#1EFF00]◆ Card polish.[/color] Plunder companion cards now boost item [b]quality[/b] (rarity), not just drop chance; the [b]Rider[/b] milestone grows (bleed → armor-break → a gated stun) as you invest in it; cards show their [b]Tier[/b] number in the tooltip; and Haste/Overload can take the Duration rank-up.")
