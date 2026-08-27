@@ -146,6 +146,36 @@ worth checking on its own (separate from this cost audit). All FLAT-damage abili
 4. Cap/DR on defensive-buff stacking (forethought+iron_skin+fortify+rally near-invuln).
 5. Check `exploit` %HP scaling; verify best-gear acquisition path.
 
+## VERIFIED: unified naked-pool cost model (martial/Trickster scaling shipped to sim)
+
+Extended `cost_percent` (of the NAKED pool) to martial + trickster abilities; generalized
+`apply_variable_cost` to scale stamina/energy ceilings the same way mage mana already did.
+cost_percent tuned below flat/pool@L10 so early game is unchanged. Re-ran the clean probe:
+
+```
+                 L10          L1000        L1000
+Ability      cost / c/bar   cost / c/bar   Dmg/Res      (was L1000 flat)
+War power_strike  5 / 37     86 / 125      244          (was cost 5, c/bar 2148, D/R 4204)
+War shield_bash  10 / 19    108 / 99       150          (was 10, 1063, 1616)
+War cleave       16 / 12    128 / 80       200          (was 16, 641, 1608)
+Trk ambush       20 / 9     133 / 74       219          (was 20, 493, 1461)
+Trk gambit       24 / 7.5   160 / 62       172          (was 24, 410, 1144)
+Mag blast        34 / 11    222 / 96        32          (unchanged — already scaled)
+Mag meteor       65 / 6     300 / 76        70
+```
+
+**Result:** Casts/Bar is now ~CONSTANT across levels for every class (~60–125) instead of
+exploding to 2000+ for martial. The 130× cross-class efficiency gap collapsed to ~3–7×.
+Resources are a real constraint at all levels; a bigger/geared pool buys more casts. **L10 is
+unchanged** (early game preserved). Core #55 goal achieved.
+
+Residual (future tuning, non-blocking):
+- Mage abilities still deal less damage-per-cost than martial (D/R 32–70 vs 150–244) — a DAMAGE
+  lever, not cost. Mages are the weak side, so "mages could hit a touch harder," not "nerf martial."
+- magic_bolt fixed at ~4 casts/bar + D/R 2–10 (25%-pool dump) — bad card, needs its own buff/rework.
+- devastate reads "no paid casts" (momentum-gated finisher — not measurable in isolation).
+- exploit D/R still dummy-inflated (%-max-HP × 50× HP probe) — known caveat, ability is fine.
+
 ## Measurement gaps (for a follow-up harness pass)
 - Engine-gated finishers (devastate/gambit) + all Trickster cards at L50+ show "no paid casts" —
   measured in isolation with engines at 0 they either can't cast or spend nothing. Need a variant

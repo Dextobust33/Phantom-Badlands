@@ -122,22 +122,22 @@ const VARIABLE_COST_MIN_FRACTION: float = 0.3
 # small early-game pools). Effect scales with spend, so these remain the "full
 # power" cost; spend down to floor_ratio for a cheaper, weaker cast.
 const VARIABLE_COST_TABLE: Dictionary = {
-	"power_strike": {"ceiling": 7, "floor_ratio": 0.3, "resource": "stamina"},
-	"shield_bash":  {"ceiling": 13, "floor_ratio": 0.3, "resource": "stamina"},
-	"cleave":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "stamina"},
-	"devastate":    {"ceiling": 32, "floor_ratio": 0.3, "resource": "stamina"},
+	"power_strike": {"ceiling": 7, "cost_percent": 8, "floor_ratio": 0.3, "resource": "stamina"},
+	"shield_bash":  {"ceiling": 13, "cost_percent": 10, "floor_ratio": 0.3, "resource": "stamina"},
+	"cleave":       {"ceiling": 20, "cost_percent": 12, "floor_ratio": 0.3, "resource": "stamina"},
+	"devastate":    {"ceiling": 32, "cost_percent": 16, "floor_ratio": 0.3, "resource": "stamina"},
 	"blast":        {"ceiling": 34, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},   # 4→6 (2026-08-25 resource fix — eased from 7 for flock sustain; scales w/ pool to L1000)
 	"meteor":       {"ceiling": 65, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},   # 6→8 (eased from 10)
-	"ambush":       {"ceiling": 20, "floor_ratio": 0.3, "resource": "energy"},
-	"exploit":      {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
-	"gambit":       {"ceiling": 24, "floor_ratio": 0.3, "resource": "energy"},
+	"ambush":       {"ceiling": 20, "cost_percent": 10, "floor_ratio": 0.3, "resource": "energy"},
+	"exploit":      {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "energy"},
+	"gambit":       {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "energy"},
 	"forcefield":   {"ceiling": 15, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},   # 2→3
 	# Warrior buffs (v0.9.263): magnitude scales with spend, duration unchanged.
-	"war_cry":      {"ceiling": 11, "floor_ratio": 0.3, "resource": "stamina"},
-	"fortify":      {"ceiling": 17, "floor_ratio": 0.3, "resource": "stamina"},
-	"iron_skin":    {"ceiling": 24, "floor_ratio": 0.3, "resource": "stamina"},
-	"rally":        {"ceiling": 24, "floor_ratio": 0.3, "resource": "stamina"},
-	"berserk":      {"ceiling": 27, "floor_ratio": 0.3, "resource": "stamina"},
+	"war_cry":      {"ceiling": 11, "cost_percent": 9, "floor_ratio": 0.3, "resource": "stamina"},
+	"fortify":      {"ceiling": 17, "cost_percent": 11, "floor_ratio": 0.3, "resource": "stamina"},
+	"iron_skin":    {"ceiling": 24, "cost_percent": 13, "floor_ratio": 0.3, "resource": "stamina"},
+	"rally":        {"ceiling": 24, "cost_percent": 13, "floor_ratio": 0.3, "resource": "stamina"},
+	"berserk":      {"ceiling": 27, "cost_percent": 14, "floor_ratio": 0.3, "resource": "stamina"},
 	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
 	"haste":        {"ceiling": 24, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
 	"paralyze":     {"ceiling": 42, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},   # 5→7 (eased from 8)
@@ -145,10 +145,10 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
 	# magnitude scaling for distract + sabotage. Analyze + Vanish stay fixed-cost
 	# (binary mechanics — partial cast doesn't make sense).
-	"distract":     {"ceiling": 11, "floor_ratio": 0.3, "resource": "energy"},
-	"pickpocket":   {"ceiling": 14, "floor_ratio": 0.3, "resource": "energy"},
-	"sabotage":     {"ceiling": 18, "floor_ratio": 0.3, "resource": "energy"},
-	"perfect_heist":{"ceiling": 34, "floor_ratio": 0.3, "resource": "energy"},
+	"distract":     {"ceiling": 11, "cost_percent": 8, "floor_ratio": 0.3, "resource": "energy"},
+	"pickpocket":   {"ceiling": 14, "cost_percent": 9, "floor_ratio": 0.3, "resource": "energy"},
+	"sabotage":     {"ceiling": 18, "cost_percent": 10, "floor_ratio": 0.3, "resource": "energy"},
+	"perfect_heist":{"ceiling": 34, "cost_percent": 16, "floor_ratio": 0.3, "resource": "energy"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -4723,16 +4723,24 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 	var cost_percent: int = int(entry.get("cost_percent", 0))
 	var resource_type: String = str(entry.get("resource", "stamina"))
 
-	# #55 Mage slice (2026-08-26) — cost scales with the character's NAKED mana
-	# (character.max_mana = base 30 + INT×3 + WIS×1.5, level/stat-derived, EXCLUDES
-	# equipment + house resource_max), NOT total max mana. So: (a) stat investment in
-	# INT raises damage AND cost together → Dmg/Res stays ~constant across levels
-	# (parity, resources stay relevant); (b) gear that adds +max mana / +regen no
-	# longer inflates the cost, so a high-cap/high-regen build gets MORE casts and
-	# better sustain (was: %-of-total-mana made cap gear worthless / even a penalty).
-	if resource_type == "mana" and cost_percent > 0:
-		var percent_cost = int(character.max_mana * cost_percent / 100.0)
-		base_ceiling = max(base_ceiling, percent_cost)
+	# #55 (2026-08-26) — UNIFIED naked-pool cost model for ALL classes. Cost scales
+	# with the character's NAKED pool (max_mana / max_stamina / max_energy = base +
+	# primary-stat, level-derived, EXCLUDES equipment + house resource_max), NOT the
+	# gear-inflated total. So: (a) stat investment (INT/STR/DEX) raises damage AND cost
+	# together → Dmg/Res stays ~constant across levels (parity; fixes flat martial cost
+	# trivializing at high level — a Warrior was ~130× more resource-efficient than a
+	# Mage); (b) gear +max pool / +regen no longer inflates cost, so a high-cap/high-
+	# regen build gets MORE casts + better sustain. `ceiling = max(flat, naked_pool ×
+	# cost_percent)` — flat still governs early game (cost_percent tuned below
+	# flat/pool@L10), percent takes over as the pool grows.
+	if cost_percent > 0:
+		var naked_pool := 0
+		match resource_type:
+			"mana": naked_pool = character.max_mana
+			"stamina": naked_pool = character.max_stamina
+			"energy": naked_pool = character.max_energy
+		if naked_pool > 0:
+			base_ceiling = max(base_ceiling, int(naked_pool * cost_percent / 100.0))
 	var base_floor: int = max(1, int(base_ceiling * floor_ratio))
 
 	# Apply skill enhancement + racial reduction proportionally to both
