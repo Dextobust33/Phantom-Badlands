@@ -2132,6 +2132,7 @@ func _ready():
 		market_panel.picker_confirm_inventory.connect(_on_market_picker_inventory)
 		market_panel.picker_confirm_material.connect(_on_market_picker_material)
 		market_panel.picker_confirm_egg.connect(_on_market_picker_egg)
+		market_panel.picker_confirm_card.connect(_on_market_picker_card)  # #39
 		market_panel.picker_cancelled.connect(_on_market_picker_cancelled)
 
 	# Setup companions panel
@@ -3199,7 +3200,7 @@ func _process(delta):
 	var _market_should_show: bool = false
 	if market_panel:
 		_market_should_show = (market_mode
-			and pending_market_action in ["", "browse", "my_listings", "inspect", "orders", "orders_inspect", "orders_create", "list_select", "list_material", "list_egg"]
+			and pending_market_action in ["", "browse", "my_listings", "inspect", "orders", "orders_inspect", "orders_create", "list_select", "list_material", "list_egg", "list_card"]
 			and game_state == GameState.PLAYING)
 		if market_panel.visible != _market_should_show:
 			market_panel.visible = _market_should_show
@@ -22121,6 +22122,10 @@ func handle_server_message(message: Dictionary):
 						if market_panel and market_panel.is_picker_open():
 							market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
 						update_action_bar()
+					elif pending_market_action == "list_card":
+						if market_panel and market_panel.is_picker_open():
+							market_panel.open_card_picker(_tradeable_cards())
+						update_action_bar()
 					elif pending_market_action != "":
 						pass  # Don't refresh for other market modes
 				# Don't refresh crafting at player station
@@ -38207,6 +38212,29 @@ func _on_market_panel_refresh() -> void:
 		pending_market_action = "browse"
 		send_to_server({"type": "market_browse", "category": market_category, "page": market_page, "sort": market_sort})
 
+func _tradeable_cards() -> Array:
+	"""#39 — the earned collectible cards (companion + dungeon) the player owns a
+	permanent copy of, shaped for the market card picker."""
+	var out: Array = []
+	var coll: Dictionary = character_data.get("combat_deck_collection", {})
+	var dt = preload("res://shared/drop_tables.gd")
+	for cid in coll.keys():
+		var cids := String(cid)
+		if (cids.begins_with("companion_card_") or cids.begins_with("dungeon_card_")) and int(coll[cid]) > 0:
+			out.append({
+				"card_id": cids,
+				"name": dt.card_display_name(cids),
+				"tier": dt.card_tier(cids),
+				"category": dt.card_category(cids),
+				"count": int(coll[cid]),
+			})
+	out.sort_custom(func(a, b): return int(a.tier) < int(b.tier))
+	return out
+
+func _on_market_picker_card(card_id: String) -> void:
+	# #39 — confirm from the card picker → consignment list on the market.
+	send_to_server({"type": "market_list_card", "card_id": card_id})
+
 func _on_market_panel_list_action(action_id: String) -> void:
 	match action_id:
 		"list_inventory":
@@ -38229,6 +38257,12 @@ func _on_market_panel_list_action(action_id: String) -> void:
 			market_egg_page = 0
 			if market_panel:
 				market_panel.open_egg_picker(character_data.get("incubating_eggs", []))
+			update_action_bar()
+		"list_card":
+			# #39 — list an earned combat card (companion / dungeon).
+			pending_market_action = "list_card"
+			if market_panel:
+				market_panel.open_card_picker(_tradeable_cards())
 			update_action_bar()
 		# v0.9.269: route through preview flow so player gets a confirmation
 		# popup with count + total valor before anything is listed. Also fixes
@@ -41395,6 +41429,7 @@ func _handle_market_list_success(message: Dictionary):
 	var item_name = message.get("item_name", "item")
 	var was_material = pending_market_action == "list_material_qty" or pending_market_action == "list_material"
 	var was_egg = pending_market_action == "list_egg" or message.get("listed_type", "") == "egg"
+	var was_card = pending_market_action == "list_card" or message.get("listed_type", "") == "card"
 	market_selected_material = ""
 	market_selected_material_qty = 0
 	market_selected_inv_index = -1
@@ -41407,7 +41442,11 @@ func _handle_market_list_success(message: Dictionary):
 	# in-panel picker is up, refresh its row cache (the chat displays go to a
 	# hidden game_output behind the panel). Set status for the success flash.
 	var picker_open: bool = market_panel and market_panel.is_picker_open()
-	if was_egg:
+	if was_card:
+		pending_market_action = "list_card"
+		if picker_open:
+			market_panel.open_card_picker(_tradeable_cards())
+	elif was_egg:
 		pending_market_action = "list_egg"
 		if picker_open:
 			market_panel.open_egg_picker(character_data.get("incubating_eggs", []))

@@ -1468,6 +1468,26 @@ static func card_category(card_id: String) -> String:
 	var kind = String(data.get("kind", "strike"))
 	return String(COMPANION_CARD_KIND_CATEGORY.get(kind, "offense"))
 
+static func card_tier(card_id: String) -> int:
+	"""Tier (1-9) of an earned card, for pricing/display. Companion cards derive tier
+	from their monster type; dungeon cards carry an explicit `tier` field."""
+	if card_id.begins_with("dungeon_card_"):
+		return int(get_dungeon_card_data_by_id(card_id).get("tier", 1))
+	if card_id.begins_with("companion_card_"):
+		var mtype = card_id.trim_prefix("companion_card_").capitalize()
+		return companion_type_tier(mtype)
+	return 1
+
+# #39 (2026-08-27) — market valor value of an earned card (companion/dungeon), scaled
+# by tier so rarer high-tier cards are worth more. Consignment payout on listing.
+static func calculate_card_valor(card_id: String) -> int:
+	var tier := card_tier(card_id)
+	var base := 220 + (tier - 1) * 200  # T1 220 → T9 ~1820
+	# Dungeon-exclusive cards are rarer than companion cards → a premium.
+	if card_id.begins_with("dungeon_card_"):
+		base = int(base * 1.35)
+	return base
+
 static func get_variant_trait_for_companion(monster_type: String) -> String:
 	"""Returns the trait category id (e.g., 'crit') for a companion type, or ''
 	if the companion isn't mapped. Defensive — unmapped companions just don't

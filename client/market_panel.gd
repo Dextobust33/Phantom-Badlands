@@ -32,6 +32,7 @@ signal order_create_submit(item_type: String, item_name: String, quantity: int, 
 signal picker_confirm_inventory(inv_index: int, quantity: int)
 signal picker_confirm_material(mat_name: String, quantity: int)
 signal picker_confirm_egg(egg_index: int)
+signal picker_confirm_card(card_id: String)
 signal picker_cancelled
 
 const TAB_BROWSE := "browse"
@@ -63,6 +64,7 @@ const FILTER_CHIPS := [
 	{"id": "rune", "label": "Runes"},
 	{"id": "material", "label": "Mats"},
 	{"id": "monster_part", "label": "Parts"},
+	{"id": "card", "label": "Cards"},
 ]
 
 # Same order the client uses in market_sort_cycle so the panel stays in sync
@@ -79,6 +81,7 @@ const LIST_MENU_ITEMS := [
 	{"id": "list_inventory", "label": "List from Inventory"},
 	{"id": "list_material", "label": "List Materials"},
 	{"id": "list_egg", "label": "List Egg from Incubator"},
+	{"id": "list_card", "label": "List Combat Card"},
 	{"id": "_separator", "label": ""},
 	{"id": "bulk_equipment", "label": "Bulk: All Equipment"},
 	{"id": "bulk_consumable", "label": "Bulk: All Consumables"},
@@ -145,6 +148,8 @@ var _picker_max_btn: Button = null
 var _picker_inventory_cache: Array = []
 var _picker_materials_cache: Dictionary = {}
 var _picker_eggs_cache: Array = []
+var _picker_cards_cache: Array = []  # #39 — [{card_id, name, tier, category, count}]
+var _picker_selected_card_id: String = ""  # #39 — card_id of the selected card row
 # Currently-selected pick — bound to row index in the cache for the current mode.
 var _picker_selected_index: int = -1
 var _picker_selected_name: String = ""
@@ -740,6 +745,9 @@ func populate_inspect(listing: Dictionary, valor: int) -> void:
 		var tier = int(item.get("tier", 1))
 		var sub = int(item.get("sub_tier", 1))
 		meta_lines.append("[color=#87CEEB]Egg:[/color] %s (T%d-%d)" % [variant, tier, sub])
+	if item.get("type", "") == "card":
+		# #39 — earned combat card listing.
+		meta_lines.append("[color=#FFB347]Combat Card:[/color] T%d — a card you equip in your deck" % int(item.get("tier", 1)))
 	if qty > 1:
 		meta_lines.append("[color=#87CEEB]Quantity:[/color] %d" % qty)
 	meta_lines.append("[color=#87CEEB]Seller:[/color] %s" % seller)
@@ -847,7 +855,7 @@ func _rebuild_my_rows() -> void:
 		return
 
 	# Group by category for display
-	var cat_order := {"equipment": 0, "egg": 1, "consumable": 2, "tool": 3, "rune": 4, "monster_part": 5}
+	var cat_order := {"equipment": 0, "egg": 1, "consumable": 2, "tool": 3, "rune": 4, "monster_part": 5, "card": 8}
 	var sorted := _listings.duplicate()
 	sorted.sort_custom(func(a, b):
 		var a_cat = a.get("supply_category", "equipment")
@@ -883,6 +891,7 @@ func _rebuild_my_rows() -> void:
 func _my_listing_category_label(supply_cat: String) -> String:
 	if supply_cat == "equipment": return "Equipment"
 	if supply_cat == "egg": return "Companion Eggs"
+	if supply_cat == "card": return "Combat Cards"
 	if supply_cat == "consumable": return "Consumables"
 	if supply_cat == "tool": return "Tools"
 	if supply_cat == "rune": return "Runes"
@@ -1159,6 +1168,17 @@ func open_egg_picker(incubating_eggs: Array) -> void:
 	_picker_panel.visible = true
 
 
+func open_card_picker(cards: Array) -> void:
+	"""#39 — list an EARNED combat card (companion / dungeon). `cards` is a list of
+	{card_id, name, tier, category, count} the player owns (permanent copies only)."""
+	_picker_mode = "card"
+	_picker_cards_cache = cards if cards is Array else []
+	_picker_title_label.text = "List Combat Card"
+	_rebuild_picker_rows()
+	_clear_picker_selection()
+	_picker_panel.visible = true
+
+
 func refresh_picker() -> void:
 	"""Re-render with whatever cache is current. Use after character_update /
 	inventory_update so the picker stays in sync with server state."""
@@ -1178,6 +1198,8 @@ func close_picker() -> void:
 	_picker_inventory_cache = []
 	_picker_materials_cache = {}
 	_picker_eggs_cache = []
+	_picker_cards_cache = []
+	_picker_selected_card_id = ""
 	_clear_picker_selection()
 
 
@@ -1209,6 +1231,36 @@ func _rebuild_picker_rows() -> void:
 			_build_material_rows()
 		"egg":
 			_build_egg_rows()
+		"card":
+			_build_card_rows()
+
+
+func _build_card_rows() -> void:
+	if _picker_cards_cache.is_empty():
+		var lbl := Label.new()
+		lbl.text = "You have no tradeable cards. Earn companion or dungeon cards first."
+		lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+		lbl.add_theme_font_size_override("font_size", 14)
+		_picker_items_vbox.add_child(lbl)
+		return
+	for entry in _picker_cards_cache:
+		if not (entry is Dictionary):
+			continue
+		var btn := Button.new()
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn.custom_minimum_size = Vector2(0, 28)
+		btn.add_theme_font_size_override("font_size", 14)
+		var cname := String(entry.get("name", "Card"))
+		var ctier := int(entry.get("tier", 1))
+		var ccount := int(entry.get("count", 1))
+		var is_buff := String(entry.get("category", "offense")) == "buff"
+		btn.text = "%s  (T%d)  ×%d owned" % [cname, ctier, ccount]
+		btn.add_theme_color_override("font_color", Color.from_string("#66D0C0" if is_buff else "#FFB347", Color.WHITE))
+		var captured_id := String(entry.get("card_id", ""))
+		var captured_name := cname
+		btn.pressed.connect(func(): _on_picker_card_row_pressed(captured_id, captured_name))
+		_picker_items_vbox.add_child(btn)
 
 
 func _build_inventory_rows() -> void:
@@ -1381,6 +1433,21 @@ func _on_picker_egg_row_pressed(idx: int) -> void:
 	_picker_confirm_btn.disabled = false
 
 
+func _on_picker_card_row_pressed(card_id: String, disp: String) -> void:
+	if card_id == "":
+		return
+	_picker_selected_card_id = card_id
+	_picker_selected_index = 0  # non-negative so confirm enables
+	_picker_selected_name = disp
+	_picker_selected_stackable = false
+	_picker_selected_max = 1
+	_picker_selected_label.text = "[color=#FFD700]Selected:[/color] [color=#87CEEB]%s[/color]" % disp
+	_picker_qty_row.visible = false
+	_picker_qty_input.max_value = 1
+	_picker_qty_input.value = 1
+	_picker_confirm_btn.disabled = false
+
+
 func _on_picker_max_pressed() -> void:
 	if _picker_qty_input:
 		_picker_qty_input.value = _picker_qty_input.max_value
@@ -1411,6 +1478,10 @@ func _on_picker_confirm_pressed() -> void:
 			if _picker_selected_index < 0:
 				return
 			emit_signal("picker_confirm_egg", _picker_selected_index)
+		"card":
+			if _picker_selected_card_id == "":
+				return
+			emit_signal("picker_confirm_card", _picker_selected_card_id)
 	# Server response (market_list_success / market_error / character_update)
 	# closes the picker via the caller. Disable confirm in the meantime so
 	# fast double-clicks don't re-fire.

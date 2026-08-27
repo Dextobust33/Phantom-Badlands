@@ -2176,6 +2176,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_market_list_preview(peer_id, message)
 		"market_list_egg":
 			handle_market_list_egg(peer_id, message)
+		"market_list_card":
+			handle_market_list_card(peer_id, message)
 		# Audit #9 Slice 2 — buy orders (demand-side mirror of listings)
 		"market_orders_browse":
 			handle_market_orders_browse(peer_id, message)
@@ -16888,6 +16890,69 @@ func handle_market_list_egg(peer_id: int, message: Dictionary):
 	})
 	send_character_update(peer_id)
 
+func handle_market_list_card(peer_id: int, message: Dictionary):
+	"""#39 — list an EARNED collectible card (companion/dungeon) on the market. Consignment:
+	awards base valor immediately, removes one copy from the deck collection, and drops the
+	card into the market pool. Only earned permanent cards are tradeable — class abilities and
+	temporary companion loaners are not."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	var account_id = peers[peer_id].account_id
+
+	var post_id = _get_market_post_id(peer_id)
+	if post_id.is_empty():
+		send_to_peer(peer_id, {"type": "market_error", "message": "You must be at a trading post."})
+		return
+
+	var card_id = String(message.get("card_id", ""))
+	# Only earned collectibles are tradeable, and only if the player actually owns a copy.
+	if not (card_id.begins_with("companion_card_") or card_id.begins_with("dungeon_card_")):
+		send_to_peer(peer_id, {"type": "market_error", "message": "Only companion and dungeon cards can be traded."})
+		return
+	var owned = int(character.combat_deck_collection.get(card_id, 0))
+	if owned <= 0:
+		send_to_peer(peer_id, {"type": "market_error", "message": "You don't own a spare copy of that card to sell."})
+		return
+
+	var card_name = DropTablesScript.card_display_name(card_id)
+	var card_tier = DropTablesScript.card_tier(card_id)
+	var base_valor = DropTablesScript.calculate_card_valor(card_id)
+	# Market bonuses (Halfling +15%, Knight +10%), matching eggs/items.
+	var bonus = character.get_market_bonus() + character.get_knight_market_bonus()
+	if bonus > 0:
+		base_valor = int(base_valor * (1.0 + bonus))
+
+	# Remove ONE copy from the collection; if that empties the slot, drop the key and let
+	# ensure_min_deck_size backfill the active deck so it never falls below the minimum.
+	character.combat_deck_collection[card_id] = owned - 1
+	if int(character.combat_deck_collection[card_id]) <= 0:
+		character.combat_deck_collection.erase(card_id)
+	character.ensure_min_deck_size()
+
+	var listing = {
+		"account_id": account_id,
+		"seller_name": character.name,
+		"item": {"type": "card", "card_id": card_id, "name": card_name, "tier": card_tier},
+		"base_valor": base_valor,
+		"supply_category": "card",
+		"listed_at": int(Time.get_unix_time_from_system()),
+		"quantity": 1
+	}
+	var listing_id = persistence.add_market_listing(post_id, listing)
+	persistence.add_valor(account_id, base_valor)
+	save_character(peer_id)
+
+	send_to_peer(peer_id, {
+		"type": "market_list_success",
+		"listing_id": listing_id,
+		"base_valor": base_valor,
+		"item_name": card_name,
+		"total_valor": persistence.get_valor(account_id),
+		"listed_type": "card"
+	})
+	send_character_update(peer_id)
+
 func handle_market_buy(peer_id: int, message: Dictionary):
 	"""Buy a listing from the market. Supports partial quantity for material stacks."""
 	if not characters.has(peer_id):
@@ -16990,6 +17055,12 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		if character.incubating_eggs.size() >= egg_cap:
 			send_to_peer(peer_id, {"type": "market_error", "message": "Your egg incubator is full! (%d/%d)" % [character.incubating_eggs.size(), egg_cap]})
 			return
+	elif item.get("type", "") == "card":
+		# #39 — a card goes into the deck collection; block if already at the copy cap.
+		var _cid = String(item.get("card_id", ""))
+		if int(character.combat_deck_collection.get(_cid, 0)) >= int(character.MAX_ABILITY_COPIES):
+			send_to_peer(peer_id, {"type": "market_error", "message": "You already own the max (%d) copies of that card." % int(character.MAX_ABILITY_COPIES)})
+			return
 	elif character.inventory.size() >= Character.MAX_INVENTORY_SIZE:
 		send_to_peer(peer_id, {"type": "market_error", "message": "Inventory full."})
 		return
@@ -17061,6 +17132,12 @@ func handle_market_buy(peer_id: int, message: Dictionary):
 		character.crafting_materials[mat_name] += buy_qty
 	elif item.get("type", "") == "egg":
 		character.incubating_eggs.append(item)
+	elif item.get("type", "") == "card":
+		# #39 — add the earned card to the buyer's deck collection (capped). Card listings
+		# are single-copy, so buy_qty is 1; clamp defensively anyway.
+		var _bcid = String(item.get("card_id", ""))
+		var _bhave = int(character.combat_deck_collection.get(_bcid, 0))
+		character.combat_deck_collection[_bcid] = mini(int(character.MAX_ABILITY_COPIES), _bhave + buy_qty)
 	else:
 		# Add each item individually (tools, consumables, etc. need separate copies)
 		for _i in range(buy_qty):
