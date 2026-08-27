@@ -478,16 +478,22 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 	# OUTWIT only when the odds are actually good (chance-gated, like a real player) AND
 	# energy is stocked — Outsmart now DUMPS energy to sharpen the read (+~30% at a full
 	# bar). Don't burn attempts on low-odds outwits vs higher-level bosses; damage instead.
-	var base_os: int = combat_mgr._outsmart_chance(ch, combat.get("monster", {}), combat)
-	var full_en: bool = ch.current_energy > int(ch.get_total_max_energy() * 0.6)
-	if full_en and base_os + 30 >= 70:  # +30 ≈ the full-bar dump bonus
+	# #55 identity pass (2026-08-27) — a Trickster is a fast, fragile assassin: vs an
+	# OVER-LEVEL foe it gambles Outsmart TURN 1 (acts first, takes the shot before it can
+	# get hit) — its only real path to killing something far above its level. In a roughly
+	# even fight it still waits for good odds (build Read, then Outsmart) rather than coin-
+	# flipping away a winnable fight.
+	var _mon: Dictionary = combat.get("monster", {})
+	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
+	var full_en: bool = ch.current_energy > int(ch.get_total_max_energy() * 0.5)
+	var _overlevel: bool = int(_mon.get("level", 0)) > ch.level + 8
+	if full_en and ((_overlevel and base_os >= 3) or (base_os + 30 >= 55)):
 		var r = combat_mgr.process_outsmart(combat)
 		if r.get("combat_ended", false):
 			combat["combat_ended"] = true
 			if r.get("victory", false):
-				var m = combat.get("monster", {})
-				if m:  # outsmart win leaves monster at full HP — mark dead for the win check
-					m["current_hp"] = 0
+				if _mon:  # outsmart win leaves monster at full HP — mark dead for the win check
+					_mon["current_hp"] = 0
 		return
 	# Build Read with damage setups (these spend energy + add Read).
 	for ab in ["ambush", "exploit"]:

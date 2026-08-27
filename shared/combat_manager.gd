@@ -94,6 +94,13 @@ const OUTSMART_DUMP_MAX_BONUS: int = 15  # #55 (2026-08-27) 30→15: the dump wa
 # genuine LIMITED gamble: whiff it and you must win by (gear-dependent) damage — so a
 # Trickster can actually LOSE a high-level boss under-geared, like the other classes.
 const OUTSMART_ATTEMPT_FALLOFF: float = 0.5
+# #55 identity pass (2026-08-27) — TRICKSTERS keep a FLOOR Outsmart chance vs ANY foe (the
+# "I can try to outwit anything" fantasy), so their reach is the HIGHEST of the three: they
+# alone can gamble-kill enemies far above their level, where a Mage's burst can't dent the
+# HP and a Warrior can't scratch it. It's a genuine gamble (this floor, then per-attempt
+# falloff) and they're fragile, so a whiff usually means death — high risk, highest ceiling.
+# Non-tricksters get NO floor: their Outsmart still craters vs over-level (stays a long-shot).
+const TRICKSTER_OUTSMART_FLOOR: int = 20
 # v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
 # (the finisher) spends them all, scaling BOTH its success chance and its damage.
 const COMBO_MAX: int = 5
@@ -2671,6 +2678,7 @@ func _outsmart_chance(character, monster, combat) -> int:
 		# toward reliable (its intended identity).
 		wits_bonus = mini(22, int(9.0 * log(float(player_wits) / 10.0) / log(2.0)))
 	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+	var is_mage_os = character.class_type in ["Wizard", "Sorcerer", "Sage"]
 	var trickster_bonus = 10 if is_trickster else 0
 	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
 	var smart_penalty = max(0, monster_intelligence - 10)
@@ -2702,8 +2710,25 @@ func _outsmart_chance(character, monster, combat) -> int:
 	# at its best: landing it kills anything (incl. much-higher-level foes, via the
 	# softened level penalty above) = the Trickster's unique high-risk reach; whiffing it
 	# leaves its (now weaker) raw damage to grind — a real "hard time if Outsmart fails".
-	var base_max_chance = 48 if is_trickster else 38
-	var max_chance = max(22, base_max_chance - int(monster_intelligence / 3))
+	# #55 identity pass (2026-08-27) — Outsmart is the TRICKSTER's signature. Other classes
+	# CAN use it (universal card) but it's far less reliable: Mage ≈ half the Trickster's
+	# odds, Warrior/other ≈ a quarter (a desperate long-shot). Applied as a class factor +
+	# a class-specific cap so it never becomes a reliable option for the Mage or Warrior.
+	var class_os_mult := 1.0
+	var base_max_chance := 48
+	if not is_trickster:
+		if is_mage_os:
+			class_os_mult = 0.5
+			base_max_chance = 24
+		else:
+			class_os_mult = 0.25
+			base_max_chance = 12
+	outsmart_chance = int(outsmart_chance * class_os_mult)
+	# Trickster floor — always a live gamble vs anything (highest reach). Applied before
+	# the per-attempt falloff, so the FIRST shot each fight is real and retries fade.
+	if is_trickster:
+		outsmart_chance = maxi(outsmart_chance, TRICKSTER_OUTSMART_FLOOR)
+	var max_chance = max((10 if is_trickster else 4), base_max_chance - int(monster_intelligence / 3))
 	# #55 — repeated-attempt falloff: each prior Outsmart this fight halves the chance,
 	# so it can't be retried to near-certainty over a long fight (the monster catches on).
 	var os_attempts := int(combat.get("outsmart_attempts", 0))
