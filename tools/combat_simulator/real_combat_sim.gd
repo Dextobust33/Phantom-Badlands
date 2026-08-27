@@ -687,6 +687,18 @@ func _player_act_mage(combat: Dictionary, ch) -> void:
 			return
 	combat_mgr.process_attack(combat)
 
+func _tier_for_level(lvl: int) -> int:
+	# Standard tier bands (mirror monster/world tiering) for picking gear bases.
+	if lvl <= 5: return 1
+	elif lvl <= 15: return 2
+	elif lvl <= 30: return 3
+	elif lvl <= 50: return 4
+	elif lvl <= 100: return 5
+	elif lvl <= 500: return 6
+	elif lvl <= 2000: return 7
+	elif lvl <= 5000: return 8
+	return 9
+
 func make_char(level: int, gear: String, klass: String = "Fighter"):
 	var ch = CharacterScript.new()
 	ch.initialize("SimChar", klass, "Human")
@@ -712,11 +724,33 @@ func make_char(level: int, gear: String, klass: String = "Fighter"):
 			rarity = "uncommon"
 			glevel = max(1, level - 8)
 		"average":
-			rarity = "rare"
+			# #70 CALIBRATION — real players carry a MIXED bag (some under-level, some
+			# lower rarity), not uniform rare-at-exact-level. Ground truth: test02 (real L6
+			# mage) = 121 mana; uniform rare-at-level gave ~3x that. "uncommon, a bit under
+			# level" lands near the real pool while staying a solid mid build.
+			rarity = "uncommon"
+			glevel = max(1, level - 3)
 		"bis":
-			rarity = "artifact"
+			rarity = "epic"
+	# #70 CALIBRATION — mirror the REAL drop path: use a TIER-APPROPRIATE base per slot
+	# (weapon_rusty / armor_chain / …) instead of forcing "<slot>_artifact". The old artifact
+	# bases gave artifact-tier stats even at "rare" rarity, inflating pools ~2.2x vs a real
+	# character (test02 L6 mage: real 121 mana vs the sim's old 261). Ground-truth calibrated.
+	var gtier: int = _tier_for_level(glevel)
 	for slot in SLOTS:
-		var item = drop_tables._generate_item({"item_type": "%s_artifact" % slot}, glevel, rarity)
+		var base_type := ""
+		# Find this slot's base at the char's tier; fall back down tiers if the slot is
+		# absent at that tier (e.g. amulet only appears from T3).
+		for t in range(gtier, 0, -1):
+			for entry in drop_tables.EQUIPMENT_BASES.get(t, []):
+				if String(entry.get("item_type", "")).begins_with(slot):
+					base_type = String(entry["item_type"])
+					break
+			if base_type != "":
+				break
+		if base_type == "":
+			continue  # no base for this slot at/below tier → leave the slot empty (realistic)
+		var item = drop_tables._generate_item({"item_type": base_type}, glevel, rarity)
 		if item is Dictionary and not item.is_empty():
 			ch.equipped[slot] = item
 	# Representative companion (tier scales loosely with level).
