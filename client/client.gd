@@ -27899,8 +27899,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.736 — Mage rebalance + fixes (hotfix).
+	display_game("[color=#00FF00]v0.9.736[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ MAGE REBALANCE — COMMIT YOUR MANA.[/color] [b]Magic Bolt[/b] was quietly broken: a tiny mana chip hit almost as hard as a full cast, so a low-level mage could one-shot everything for pocket change and never run dry. Now Bolt's power [b]scales with how big a bite of your mana you take[/b] — a small chip is weak, a [b]full dump is a massive burst[/b] (then you're empty). Your signature nuke is intact; you just have to actually spend your bar. Fixes low-level combat feeling trivial.")
+	display_game("  [color=#1EFF00]◆ Card market fix.[/color] [b]List Combat Card[/b] was greyed out / stuck at (0) even when you owned tradeable cards — fixed. You can list & sell your companion/dungeon cards now.")
+	display_game("  [color=#1EFF00]◆ Card polish.[/color] Plunder companion cards now boost item [b]quality[/b] (rarity), not just drop chance; the [b]Rider[/b] milestone grows (bleed → armor-break → a gated stun) as you invest in it; cards show their [b]Tier[/b] number in the tooltip; and Haste/Overload can take the Duration rank-up.")
+	display_game("")
+
 	# v0.9.735 — Card variety, trading + performance.
-	display_game("[color=#00FF00]v0.9.735[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.735[/color]")
 	display_game("  [color=#FF8000]★ NEW CARDS TO CHASE — AND TRADE.[/color] Dungeons now drop [b]exclusive combat cards[/b] you can't get anywhere else — a venom strike, a life-drain, a bone shield, a god-killer's finisher, each from its own dungeon — and [b]any class[/b] can run them. You can also now [b]buy & sell earned cards[/b] (companion + dungeon) at the [b]market[/b]: a new [color=#FFE066]List Combat Card[/color] option, and a [color=#FFE066]Cards[/color] filter when browsing.")
 	display_game("  [color=#1EFF00]◆ Every class has 9 cards, each with a real job.[/color] [b]Warrior[/b]'s War Cry is now a tempo/intimidate card (surges Momentum + rattles the foe) instead of overlapping Berserk. [b]Mage[/b] gains [b]Frost Nova[/b] (chill the enemy so its next hit likely misses) and [b]Overload[/b] (burn your own HP to supercharge your next spells — pure glass-cannon burst).")
 	display_game("  [color=#1EFF00]◆ Smoother & cooler.[/color] The game had been rendering far more frames than a turn-based game needs, which could [b]overheat laptops[/b] (brutal at 4K) and bog down the whole PC. It's now frame-capped — the same instant feel at a fraction of the GPU load.")
