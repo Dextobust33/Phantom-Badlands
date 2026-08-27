@@ -52,9 +52,50 @@ func _init():
 
 	_verify_new_mage_cards()
 	_verify_dungeon_cards()
+	run_min_spend_probe()
 	run_difficulty_audit()
 	run_overlevel_audit()
 	quit()
+
+func run_min_spend_probe() -> void:
+	# #70 — the cheese the user hit: does a MINIMUM spend one-shot a same-level normal
+	# monster? For each class + level, measure single-cast damage at the SMALLEST spend
+	# vs the target's HP. Ratio >= 1.0 means a min-spend cast one-shots (trivialized).
+	print("\n===== #70 MIN-SPEND ONE-SHOT PROBE (dmg of a minimum-cost cast vs same-level normal-mob HP) =====")
+	print("ratio = min_cast_damage / monster_max_hp. >=1.0 = a single cheap cast one-shots. Also show cost.")
+	var cases := [
+		["Wizard", "Mag", "magic_bolt"],
+		["Fighter", "War", "power_strike"],
+		["Thief", "Trk", "ambush"],
+	]
+	for lvl in [3, 6, 10, 30, 100]:
+		var line := "L%-4d" % lvl
+		for c in cases:
+			var ch = make_char(lvl, "average", c[0])
+			# For magic_bolt the sim passes the spend as arg; use the SMALLEST (1 mana).
+			# For variable-cost abilities the floor is enforced by apply_variable_cost.
+			var monster = make_monster(lvl, "normal", 1.0)
+			var mhp: int = int(monster.get("max_hp", 1))
+			combat_mgr.start_combat(0, ch, monster)
+			if not combat_mgr.active_combats.has(0):
+				line += "  %s:n/a" % c[1]; continue
+			var combat = combat_mgr.active_combats[0]
+			_force_hand(combat, c[2])
+			# Realistic SMALL spend: for Magic Bolt (free-choice), spend 10% of the mana pool
+			# (a "little mana" cast, like the player report) — NOT the 1-mana theoretical floor.
+			# Variable-cost martial/trickster abilities spend their enforced floor automatically.
+			var pool10: int = max(1, int(ch.get_total_max_mana() * 0.10))
+			var arg: String = str(pool10) if c[2] == "magic_bolt" else ""
+			ch.set_meta("path_last_ability_cost", 0)
+			var mhp0: int = int(monster.current_hp)
+			combat_mgr.process_ability_command(0, c[2], arg)
+			var dmg: int = mhp0 - int(monster.current_hp)
+			var spent: int = pool10 if c[2] == "magic_bolt" else int(ch.get_meta("path_last_ability_cost", 0))
+			var extra: String = ("(INT%d,mana%d)" % [ch.get_effective_stat("intelligence"), ch.get_total_max_mana()]) if c[2] == "magic_bolt" else ""
+			line += "  %s dmg=%d/%d(x%.1f) spent=%d%s" % [c[1], dmg, mhp, float(dmg) / float(max(1, mhp)), spent, extra]
+			combat_mgr.active_combats.erase(0)
+		print(line)
+	print("================================================================================\n")
 
 func _verify_dungeon_cards() -> void:
 	# #38 functional check — grant each dungeon-exclusive card, confirm it appears in the
@@ -178,7 +219,7 @@ func run_difficulty_audit():
 	# Goal: normal = quick + fairly safe; elite = a real fight; boss = dangerous. And GEAR
 	# should matter — an under-geared player should struggle where a bis one is comfortable.
 	var N := 70
-	var levels := [10, 50, 200]
+	var levels := [3, 6, 10, 50, 200]  # #70 — added low levels (L3/L6) to expose low-level trivialization
 	var gears := ["under", "average", "bis"]
 	var enemies := ["normal", "elite", "boss"]
 	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Thief", "Trk"]]
