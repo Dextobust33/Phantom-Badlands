@@ -4419,7 +4419,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var base_damage = character.get_total_attack()
 			var damage_buff = character.get_buff_value("damage")
 			var damage_multiplier = 1.0 + (damage_buff / 100.0)
-			var base_dmg = int(base_damage * 3.0 * damage_multiplier * wits_mult * variable_fraction)
+			# #55 monster-challenge (2026-08-27) — 3.0→2.5× to match the Warrior's cleave
+			# tier; ambush was the Trickster's out-of-line burst (higher mult + 50% crit)
+			# that let it out-DPS everyone and kill bosses in 3t. Still gear-scaled (uses
+			# total_attack) so gear matters.
+			var base_dmg = int(base_damage * 2.5 * damage_multiplier * wits_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ambush_skill_bonus = character.get_skill_damage_bonus("ambush")
 			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg, combat)
@@ -4453,9 +4457,13 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# Variable cost (v0.9.261): damage scales by spend AFTER the percent
 			# calc, so a partial exploit on a beefy monster still does a
 			# proportional chunk of max HP.
+			# #55 monster-challenge (2026-08-27) — %-max-HP is GEAR-INDEPENDENT, so it let
+			# under-geared Tricksters chunk bosses regardless of gear (gear didn't matter).
+			# Trimmed 15%→10% base and 35%→22% cap so it stays a solid anti-tank tool but
+			# isn't a gear-free nuke; Tricksters lean more on their gear-scaled abilities.
 			var wits = character.get_effective_stat("wits")
-			var base_percent = 15 + int(wits / 4)  # 15% base + 0.25% per WIT
-			base_percent = min(35, base_percent)  # Cap at 35%
+			var base_percent = 10 + int(wits / 6)  # 10% base + ~0.17% per WIT
+			base_percent = min(22, base_percent)  # Cap at 22%
 			var raw_damage = int(monster.max_hp * (base_percent / 100.0) * variable_fraction)
 			raw_damage = max(10, raw_damage)  # Minimum 10 damage
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
