@@ -27850,8 +27850,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.733 — Combat balance overhaul.
+	display_game("[color=#00FF00]v0.9.733[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ BIG COMBAT REBALANCE.[/color] Skill costs now [b]scale with your level[/b] for every class, so resources stay a real decision late-game instead of becoming free — and stacking [b]+max resource / regen gear now actually buys you more casts[/b].")
+	display_game("  [color=#1EFF00]◆ Classes brought in line.[/color] [b]Mage[/b]'s Magic Bolt is now a real signature nuke; [b]Warrior/Trickster[/b] ability costs scale like the Mage's so no class runs infinitely for free. Combat is tuned so [b]gear + level matter[/b] and bosses are real fights.")
+	display_game("  [color=#1EFF00]◆ No more cheese.[/color] [b]Forethought[/b] (skip-the-monster) and [b]Recharge[/b] are retired (old-balance cards); stacked mitigation can no longer make you [b]unkillable[/b] (capped ~85%); [b]Shield Bash / Paralyze[/b] can't perma-stunlock (the enemy shakes it off); and [b]Outsmart[/b] is a real gamble again (each retry gets harder) instead of a guaranteed win.")
+	display_game("  [color=#909090]If Forethought/Recharge were in your deck, a card you own was auto-added to keep your deck at 5.[/color]")
+	display_game("")
+
 	# v0.9.732 — Party fixes.
-	display_game("[color=#00FF00]v0.9.732[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.732[/color]")
 	display_game("  [color=#FF8000]★ CAN'T GET STUCK IN A PARTY.[/color] The [b]Party[/b] button (with [color=#FF6666]Disband[/color] / [color=#FF6666]Leave[/color]) had fallen off the bottom of the [b]More[/b] menu — it's back. Party leaders **Disband**, members **Leave**, from More → Party.")
 	display_game("  [color=#1EFF00]◆ Party combat reworked (interim).[/color] The old shared party battle was broken (you saw different monsters, no cards, one kill ended both). For now, [b]parties travel & group together[/b] but each member fights their [b]own normal card battle[/b] — no more broken shared fights. A proper co-op combat rebuild is on the list.")
 	display_game("")
