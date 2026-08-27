@@ -50,7 +50,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_overlevel_audit()      # how far above level each class can punch + risk-vs-level curve.
+	run_difficulty_audit()     # how far above level each class can punch + risk-vs-level curve.
 	quit()
 
 func run_overlevel_audit():
@@ -620,6 +620,16 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 func _player_act(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
 	var mom: int = int(combat.get("momentum", 0))
+	# #55 identity pass (2026-08-27) — a real Warrior is a DEFENSIVE bruiser: keep its
+	# mitigation buffs UP (Iron Skin = damage_reduction, Fortify = defense) so it's the
+	# safest in long fights. Recast when they lapse (models buff uptime, which the old
+	# sim ignored — it only cast damage buffs, so the audit under-rated Warrior tankiness).
+	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") <= 0:
+		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
+			return
+	if "fortify" in hand and ch.get_buff_value("defense") <= 0:
+		if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
+			return
 	# Opportunistic damage buff (once per fight): buff early for uptime (also builds Momentum).
 	if not combat.get("_sim_buffed", false):
 		for b in WARRIOR_BUFFS:

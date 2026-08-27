@@ -72,6 +72,13 @@ static func _monster_matches_keywords(monster: Dictionary, keywords: Array) -> b
 # outsmart) bypass the hand entirely.
 const COMBAT_HAND_SIZE: int = 3
 const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via cards, spent by Devastate)
+# #55 identity pass (2026-08-27) — Warrior = "safest in long fights", INTRINSICALLY.
+# Banked Momentum grants damage reduction (5%/stack → 25% at full). Momentum is built by
+# ANY Warrior builder (power_strike/cleave/shield_bash), so this holds even for a pure-
+# damage deck with no iron_skin/fortify. It stacks with those buffs but the shipped 85%
+# MITIGATION_BUFF_FLOOR cap prevents unkillable — a defensive deck reaches the cap, a
+# damage deck still gets the intrinsic ~25%. Devastate SPENDS Momentum (drops the guard).
+const MOMENTUM_DR_PER: float = 0.05
 # Resource-economy fix (2026-08-25): Devastate is a DUMP finisher — consumes this
 # fraction of CURRENT stamina (not a flat ceiling), and its power scales with how full
 # the bar was. Makes a big pool worth building (fuller bar = harder hit) and gives the
@@ -5761,6 +5768,13 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var defense_buff = character.get_buff_value("defense")
 			if defense_buff > 0:
 				_mit_mult *= (1.0 - defense_buff / 100.0)
+			# #55 Warrior identity — banked Momentum grants damage reduction (5%/stack, up to
+			# 25%). Intrinsic to the Warrior path (any builder feeds Momentum), so it holds even
+			# without iron_skin/fortify; folded UNDER the 85% cap so it can't reach unkillable.
+			if character.get_class_path() == "warrior":
+				var _mom_dr: float = float(clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)) * MOMENTUM_DR_PER
+				if _mom_dr > 0.0:
+					_mit_mult *= (1.0 - _mom_dr)
 			_mit_mult = maxf(_mit_mult, MITIGATION_BUFF_FLOOR)
 			damage = max(1, int(_raw_hit * _mit_mult))
 
