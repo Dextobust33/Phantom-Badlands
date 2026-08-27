@@ -1529,12 +1529,15 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	_apply_gear_resource_regen(character, messages)
 
 	# === BASE MANA REGENERATION FOR MAGES ===
-	# Mages regenerate 2% max mana per round (Sage gets 3%)
+	# #55 identity pass (2026-08-27) — Mage = "can't sustain nearly as long as warriors".
+	# Cut base in-combat mana regen 2%→1.2% (Sage 3%→2%) so once a mage burns its bar on
+	# burst it recovers SLOWLY — you nuke big things while resources last, then fall off.
+	# (Warriors sustain far longer; the mage's power is front-loaded.)
 	var is_mage_class = character.class_type in ["Wizard", "Sorcerer", "Sage"]
 	if is_mage_class and character.current_mana < character.get_total_max_mana():
-		var base_mana_regen_pct = 0.02
+		var base_mana_regen_pct = 0.012
 		if character.class_type == "Sage":
-			base_mana_regen_pct = 0.03
+			base_mana_regen_pct = 0.02
 		var base_regen = max(1, int(character.get_total_max_mana() * base_mana_regen_pct))
 		# Path: combat_regen_bonus_pct (Flowing Font — in-combat mana regen
 		# 50% stronger)
@@ -3486,7 +3489,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# at extreme INT instead of the old linear term exploding. INT 26 (L10) ≈ 18.8×,
 			# INT 66 (L50) ≈ 29.4×, INT 500 (L1000) ≈ 79×.
 			var int_stat = character.get_effective_stat("intelligence")
-			var int_multiplier = 1.0 + 3.5 * sqrt(float(int_stat))
+			# #55 identity pass (2026-08-27) — Mage = "one-shot big things, can't sustain".
+			# Bumped 3.5→4.3 so a full-mana Bolt genuinely nukes a big/over-level target
+			# (the mage's defining strength = burst reach). Balanced by the lower mana regen
+			# below (nuke, then you're dry). Pure sqrt so it stays sane at extreme INT.
+			var int_multiplier = 1.0 + 4.3 * sqrt(float(int_stat))
 			var base_damage = int(bolt_amount * int_multiplier * _focus_mult)  # v0.9.697 Focus ramp
 
 			# Apply damage buff (from War Cry, potions, etc.)
