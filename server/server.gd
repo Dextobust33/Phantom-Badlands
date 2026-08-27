@@ -19760,7 +19760,11 @@ func handle_get_abilities(peer_id: int):
 		# composition so the rebuilt Ability View screen can show copies
 		# per ability and mastery rank/uses.
 		"combat_deck_collection": character.combat_deck_collection,
-		"ability_uses": character.ability_uses
+		"ability_uses": character.ability_uses,
+		# #69 — class + race passives as display dicts, so the Deck screen can show them
+		# as visible Trait cards instead of invisible modifiers.
+		"class_trait": character.get_class_passive(),
+		"race_trait": character.get_race_trait()
 	})
 
 func handle_equip_ability(peer_id: int, message: Dictionary):

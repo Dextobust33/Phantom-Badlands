@@ -38611,7 +38611,10 @@ func _populate_ability_panel() -> void:
 	var ability_uses = character_data.get("ability_uses", {})
 	# Slice 6c — pass deck collection so panel shows copy counts + cull buttons.
 	var deck_collection = character_data.get("combat_deck_collection", {})
-	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label, ability_uses, deck_collection, path)
+	# #69 — class + race passives (from character_update) shown as Trait cards on the deck.
+	var _class_trait = character_data.get("class_trait", {})
+	var _race_trait = character_data.get("race_trait", {})
+	ability_panel.populate(equipped_padded, unlocked, all_abilities, slot_keys, player_level, path_label, ability_uses, deck_collection, path, _class_trait if _class_trait is Dictionary else {}, _race_trait if _race_trait is Dictionary else {})
 
 func _on_ability_panel_close() -> void:
 	exit_ability_mode()

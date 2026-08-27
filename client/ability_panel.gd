@@ -52,6 +52,9 @@ var _title_label: Label
 # v0.9.504 — reusable HelpPanel attached to the header ? Help button.
 var _help_panel: Control = null
 var _deck_count_label: RichTextLabel = null  # v0.9.688 — live deck-size counter
+var _traits_label: RichTextLabel = null      # #69 — class + race passive Trait cards
+var _class_trait: Dictionary = {}            # #69 — {name, description, color}
+var _race_trait: Dictionary = {}             # #69 — {name, description, color}
 var _deck_strip_label: RichTextLabel = null   # v0.9.716 — "Your Deck" strip header
 var _deck_strip: HFlowContainer = null        # v0.9.716 — at-a-glance visual of the cards actually in your deck
 var _path_label_node: RichTextLabel
@@ -144,6 +147,20 @@ func _build_layout() -> void:
 	_deck_count_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_deck_count_label.add_theme_font_size_override("normal_font_size", 15)
 	root_vbox.add_child(_deck_count_label)
+
+	# #69 — Class + Race Trait cards. Surfaces the (previously invisible) class/race
+	# passives as part of your deck identity. Always-on, non-draggable — they're the
+	# "traits" your whole deck plays around.
+	var traits_panel := _make_subpanel()
+	traits_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root_vbox.add_child(traits_panel)
+	_traits_label = RichTextLabel.new()
+	_traits_label.bbcode_enabled = true
+	_traits_label.fit_content = true
+	_traits_label.scroll_active = false
+	_traits_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_traits_label.add_theme_font_size_override("normal_font_size", 13)
+	traits_panel.add_child(_traits_label)
 
 	# v0.9.716 — visual "Your Deck" strip. The catalog below shows EVERY card with
 	# its copy count; this strip shows only the cards actually IN your deck, badged
@@ -331,7 +348,7 @@ func _make_slot_card(slot_index: int) -> PanelContainer:
 
 # === Public API ===
 
-func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String, ability_uses: Dictionary = {}, deck_collection: Dictionary = {}, player_path: String = "warrior") -> void:
+func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys: Array, player_level: int, path_label: String, ability_uses: Dictionary = {}, deck_collection: Dictionary = {}, player_path: String = "warrior", class_trait: Dictionary = {}, race_trait: Dictionary = {}) -> void:
 	if not is_inside_tree():
 		return
 	_equipped = equipped
@@ -343,13 +360,33 @@ func populate(equipped: Array, unlocked: Array, all_abilities: Array, slot_keys:
 	_player_path = player_path
 	_ability_uses = ability_uses
 	_deck_collection = deck_collection
+	_class_trait = class_trait          # #69
+	_race_trait = race_trait            # #69
 	# Reset choose state on data refresh (server sent new abilities → likely an equip/unequip just landed)
 	_choose_for_slot = -1
 	_path_label_node.text = path_label
+	_rebuild_traits()                   # #69
 	_update_status()
 	_cancel_choose_btn.visible = false
 	_rebuild_slots()
 	_rebuild_abilities()
+
+func _rebuild_traits() -> void:
+	# #69 — render the class + race passives as always-on Trait "cards" so players see
+	# what their class/race actually does as part of their deck identity.
+	if _traits_label == null:
+		return
+	var parts: Array = []
+	if not _class_trait.is_empty() and String(_class_trait.get("name", "")) != "None":
+		parts.append("[color=#C8A24A]◆ CLASS TRAIT[/color]  [color=%s][b]%s[/b][/color] — [color=#CFC3AA]%s[/color]" % [
+			String(_class_trait.get("color", "#FFFFFF")), String(_class_trait.get("name", "")), String(_class_trait.get("description", ""))])
+	if not _race_trait.is_empty() and String(_race_trait.get("name", "")) != "None":
+		parts.append("[color=#7FB2FF]◆ RACE TRAIT[/color]  [color=%s][b]%s[/b][/color] — [color=#CFC3AA]%s[/color]" % [
+			String(_race_trait.get("color", "#FFFFFF")), String(_race_trait.get("name", "")), String(_race_trait.get("description", ""))])
+	if parts.is_empty():
+		_traits_label.text = "[color=#808080]Your class & race passives will show here.[/color]"
+	else:
+		_traits_label.text = "\n".join(parts)
 
 func update_deck_collection(deck_collection: Dictionary) -> void:
 	"""Slice 6c — refresh just the deck counts after a cull, without a full
