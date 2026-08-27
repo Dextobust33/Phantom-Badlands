@@ -2550,6 +2550,11 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	# Base 40%, +1% per DEX, +equipment speed (boots!), +speed buffs, +flee bonus
 	# +WITS vs monster speed, -1% per level the monster is above you
 	var flee_chance = 40 + player_dex + equipment_speed + speed_buff + flee_bonus + wits_vs_speed - level_diff
+	# #55 identity pass (2026-08-27) — Tricksters are fast escape artists. A flat flee bonus
+	# (on top of their high DEX) is their OUT: whiff the Outsmart gamble on a huge foe and
+	# you can usually still slip away — but if the flee ALSO fails, the glass cannon dies.
+	if character.class_type in ["Thief", "Ranger", "Ninja"]:
+		flee_chance += 18
 
 	# === CLASS PASSIVE: Ninja Shadow Step ===
 	# +40% flee success chance

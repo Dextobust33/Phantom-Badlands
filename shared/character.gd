@@ -870,6 +870,12 @@ func calculate_derived_stats():
 	# HP formula: Base 50 + CON × 5 + primary stat contribution
 	var primary_stat_bonus = _get_primary_stat_for_hp()
 	max_hp = 50 + (constitution * 5) + primary_stat_bonus
+	# #55 identity pass (2026-08-27) — Tricksters are GLASS CANNONS: fragile-but-fast
+	# assassins. 30% less HP so a whiffed Outsmart (or getting caught before they flee)
+	# usually means death — the risk that pays for their unmatched over-level reach + high
+	# flee. They act first each turn, so they still get their shot before taking a hit.
+	if class_type in ["Thief", "Ranger", "Ninja"]:
+		max_hp = int(max_hp * 0.7)
 
 	# Resource pools. v0.9.700 (#29) — added a FLAT FLOOR so early-game pools hold
 	# ~3 casts (was ~1: pool ≈ one ability's ceiling), and NORMALIZED energy from
