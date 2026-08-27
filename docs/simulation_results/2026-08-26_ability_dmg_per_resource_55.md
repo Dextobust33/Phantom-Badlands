@@ -91,6 +91,61 @@ mana/regen buys MORE casts (cap builds matter) while INT scales power+cost toget
 confound + gear over-estimation mean it's not cleanly verified yet. Keep local; don't ship until the
 regen-free cost probe confirms baseline feel + parity in the L1–50 range.
 
+## CLEAN numbers (regen-free gross-cost probe, 2026-08-26 pm) — the decisive result
+
+Cost now read from `path_last_ability_cost` (gross spend) on a 50× HP dummy (no kill → no
+refund-zero, no regen masking). **Dmg/Res by level shows the core imbalance unambiguously:**
+
+```
+Ability (cost type)        L10     L50    L50bis   L200    L1000
+War power_strike (flat 5)   38     177     322      801     4204
+War shield_bash  (flat 10)  15      70     125      309     1616
+Trk ambush       (flat 20)  14      64     128      277     1461
+Mag blast  (scales w/ mana)  7      16      21       32       32
+Mag meteor (scales w/ mana) 12      27      34       74       70
+Mag magic_bolt (25% pool)  1.7      2      2.3        3       10
+```
+
+**Martial abilities (FLAT cost) → Dmg/Res explodes ~110× (power_strike 38→4204). Mage abilities
+(cost scales with pool) → Dmg/Res stays ~flat (blast 7→32).** By L1000 a Warrior is ~130× more
+resource-efficient than a Mage. Casts/Bar confirms it: L1000 power_strike = **2148 casts/bar**
+(stamina is a non-constraint), Mage blast = 96, magic_bolt = 4.
+
+=> **The culprit is the flat martial cost model, NOT the mage.** The mage naked-mana slice was the
+right *model* but the wrong *class to start with* — mages are already the least efficient. The real
+fix is to bring MARTIAL/Trickster costs onto the same naked-pool `cost_percent` curve so their
+costs scale with level too (Dmg/Res flattens across the board, resources stay a real constraint).
+This is the unified model the user greenlit — mage was the proof-of-concept; martial is where the
+imbalance actually lives.
+
+### Caveat: `exploit` (Trickster) damage is DUMMY-INFLATED — investigate separately
+exploit reads 11k @L10 → 1.5M @L1000 Dmg (Dmg/Res 470→63905). That's because exploit scales with
+enemy MAX HP and the probe uses a 50× HP dummy → its damage is inflated ~50×. On a normal target
+it'd be far lower. BUT: if exploit deals a large %-of-max-HP, it may be an unintended execute/nuke
+worth checking on its own (separate from this cost audit). All FLAT-damage abilities are unaffected.
+
+## Real-player balance findings (server audit, 2026-08-26) — feed the tuning
+- **Max level ≈ 10,000** (`COMPANION_MAX_LEVEL` "same as player max"). High-level cells ARE real;
+  players will climb into the 1000s. Sim now includes L1000.
+- **NO equip level requirement** (code grep: only *dungeon* min-level *warnings* exist). A player can
+  wield gear far above their level. **derpasaurus (L43 Paladin) wears L60–74 gear** (amulet L70,
+  ring L74, shield L73; con +58, attack +55–72) → massively over-statted for L43 → fights monsters
+  far above his level → snowballs better gear. This is the #1 progression break.
+- **derpasaurus's "abuse" = defensive-buff-stack tank.** Top ability uses: forethought 202,
+  iron_skin 165, shield_bash 164, fortify 159, rally 121, devastate 108. Stack mitigation → near-
+  unkillable → grind anything down. Milestone picks nearly all "power". Over-level gear seals it.
+- **Under-gearing is a SYMPTOM, not the target.** Players are under-geared because combat is too easy
+  to force farming. Target = gear-at-level + monsters tuned so proper gearing is required. (Verify
+  the intended best-gear acquisition path is actually viable — TODO.)
+
+## Recommended fix order (post-audit)
+1. **Equip level requirement** (or steep over-level penalty) — stops the L43-in-L74-gear snowball.
+2. **Unified naked-pool cost model for martial/Trickster** (extend the mage slice) — kills the
+   130× efficiency gap; resources stay relevant at all levels.
+3. **Monster challenge pass** so proper gearing is required (ties to the equip-level fix).
+4. Cap/DR on defensive-buff stacking (forethought+iron_skin+fortify+rally near-invuln).
+5. Check `exploit` %HP scaling; verify best-gear acquisition path.
+
 ## Measurement gaps (for a follow-up harness pass)
 - Engine-gated finishers (devastate/gambit) + all Trickster cards at L50+ show "no paid casts" —
   measured in isolation with engines at 0 they either can't cast or spend nothing. Need a variant

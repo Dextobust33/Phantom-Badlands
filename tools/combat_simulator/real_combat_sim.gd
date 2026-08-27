@@ -128,22 +128,28 @@ func _force_hand(combat: Dictionary, ability: String) -> void:
 		combat["combat_hand"] = hand
 
 func _measure_ability(level: int, gear: String, klass: String, ability: String) -> Dictionary:
-	# #55 — single cast on a boss-HP target (won't overkill), ability forced into hand.
-	# Returns {damage, cost} for one cast. Engines (momentum/focus/read) start at 0.
+	# #55 — single cast, ability forced into hand. Returns {damage, cost, pool}.
+	# GROSS cost via the `path_last_ability_cost` meta stamped in apply_variable_cost
+	# (only zeroed on a KILLING blow), read off an UN-KILLABLE dummy (50× HP) so no
+	# kill-refund fires and the per-round mana/stam/energy REGEN can't mask the spend
+	# (net-resource delta was the old confound). magic_bolt isn't on the variable path,
+	# so use its intended spend (the arg). Engines (momentum/focus/read) start at 0.
 	var ch = make_char(level, gear, klass)
-	var monster = make_monster(level, "boss")
+	var monster = make_monster(level, "boss", 50.0)  # ultra-tanky: 1 cast never kills
 	combat_mgr.start_combat(0, ch, monster)
 	if not combat_mgr.active_combats.has(0):
-		return {"damage": 0.0, "cost": 0.0}
+		return {"damage": 0.0, "cost": 0.0, "pool": 0.0}
 	var combat = combat_mgr.active_combats[0]
 	_force_hand(combat, ability)
 	var mhp0: int = int(monster.get("current_hp", 0))
-	var res0: int = _class_resource(ch, klass)
+	ch.set_meta("path_last_ability_cost", 0)  # clear before cast so we read THIS cast's spend
 	var arg: String = str(maxi(1, int(ch.get_total_max_mana() * 0.25))) if ability == "magic_bolt" else ""
 	combat_mgr.process_ability_command(0, ability, arg)
 	var dmg: int = mhp0 - int(monster.get("current_hp", 0))
-	var cost: int = res0 - _class_resource(ch, klass)
-	var pool: int = _class_max_resource(ch, klass)  # #55 — total pool (incl gear) to show casts/bar
+	var cost: int = int(ch.get_meta("path_last_ability_cost", 0))  # GROSS spend, regen-immune
+	if ability == "magic_bolt":
+		cost = int(arg) if arg.is_valid_int() else 0
+	var pool: int = _class_max_resource(ch, klass)  # total pool (incl gear) to show casts/bar
 	combat_mgr.end_combat(0, false, false)
 	return {"damage": float(dmg), "cost": float(cost), "pool": float(pool)}
 
@@ -152,7 +158,7 @@ func run_ability_efficiency():
 	# The flagship question (Bolt vs Blast) is a SIMPLE-ability comparison; finishers
 	# (devastate/meteor/gambit) scale up with their engine so their number here is a FLOOR.
 	var N := 300
-	var cells := [[10, "average"], [50, "average"], [50, "bis"], [200, "average"]]
+	var cells := [[10, "average"], [50, "average"], [50, "bis"], [200, "average"], [1000, "average"]]
 	var sets := [
 		["Fighter", "War", ["power_strike", "shield_bash", "cleave", "devastate"]],
 		["Wizard", "Mag", ["magic_bolt", "blast", "meteor"]],
