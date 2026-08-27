@@ -18,7 +18,7 @@ extends Control
 const GITHUB_OWNER = "Dextobust33"
 const GITHUB_REPO = "Phantom-Badlands"
 const MAX_DOWNLOAD_RETRIES = 3
-const LAUNCHER_VERSION = "2.1"  # bump when launcher.gd changes (surfaced in feedback + future self-update)
+const LAUNCHER_VERSION = "2.2"  # bump when launcher.gd changes; manifest launcher_version drives self-update
 
 func _is_linux() -> bool:
 	return OS.get_name() == "Linux"
@@ -356,9 +356,22 @@ func _on_manifest_downloaded(result: int, response_code: int, body: PackedByteAr
 	_target_runtime = String(m.get("runtime_version", ""))
 	var plat = "linux" if _is_linux() else "windows"
 	var plat_map = m.get(plat, {})
-	var pck_name = String(plat_map.get("pck", ""))
-	var runtime_name = String(plat_map.get("runtime", ""))
+	_pending_pck = String(plat_map.get("pck", ""))
+	_pending_runtime_name = String(plat_map.get("runtime", ""))
 
+	# LAUNCHER SELF-UPDATE takes precedence: if the manifest advertises a newer launcher than
+	# we are, update the launcher first and relaunch (a newer launcher may apply the game
+	# update better). Only triggers when the platform launcher zip is actually present.
+	var lver := String(m.get("launcher_version", ""))
+	if lver != "" and lver != LAUNCHER_VERSION and _find_launcher_asset_url() != "":
+		_start_launcher_self_update(_find_launcher_asset_url())
+		return
+
+	_queue_game_downloads()
+
+func _queue_game_downloads() -> void:
+	var pck_name := _pending_pck
+	var runtime_name := _pending_runtime_name
 	_download_queue.clear()
 	var have_exe = FileAccess.file_exists(game_path.path_join(_client_executable()))
 	if runtime_name != "" and (local_runtime != _target_runtime or not have_exe):
@@ -630,3 +643,104 @@ func _post_feedback_multipart(content: String, path: String):
 	add_child(req)
 	req.request_completed.connect(func(_r, _rc, _h, _b): req.queue_free())
 	req.request_raw(_webhook_url, ["Content-Type: multipart/form-data; boundary=%s" % boundary, "User-Agent: PhantomBadlandsLauncher/2.1"], HTTPClient.METHOD_POST, full)
+
+
+# ============================ launcher self-update (Slice 3) ============================
+# Windows can't overwrite a running .exe, so we download the new launcher next to the old
+# one, spawn a tiny detached swapper (batch / shell) that waits for THIS process to exit,
+# replaces the old exe, and relaunches it — then we quit. Any failure falls through to the
+# normal game update so the player is never bricked. Only runs when the manifest's
+# launcher_version differs from LAUNCHER_VERSION (bump both + reship launcher zips together).
+
+func _launcher_exe_name() -> String:
+	return OS.get_executable_path().get_file()
+
+func _find_launcher_asset_url() -> String:
+	var want_linux = _is_linux()
+	for asset in _assets:
+		var aname = String(asset.get("name", "")).to_lower()
+		if not (aname.ends_with(".zip") and "launcher" in aname):
+			continue
+		if ("linux" in aname) == want_linux:
+			return String(asset.get("browser_download_url", ""))
+	return ""
+
+func _start_launcher_self_update(url: String) -> void:
+	status_label.text = "Updating launcher…"
+	progress_bar.value = 0
+	var req := HTTPRequest.new()
+	req.download_file = game_path.path_join("launcher_update.zip")
+	add_child(req)
+	req.request_completed.connect(func(r, rc, _h, _b):
+		req.queue_free()
+		_on_launcher_update_downloaded(r, rc))
+	if req.request(url, ["User-Agent: PhantomBadlandsLauncher/2.1", "Accept: application/octet-stream"]) != OK:
+		_queue_game_downloads()  # couldn't start — fall through to the game update
+
+func _on_launcher_update_downloaded(result: int, response_code: int) -> void:
+	var zip_path := game_path.path_join("launcher_update.zip")
+	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+		if FileAccess.file_exists(zip_path):
+			DirAccess.remove_absolute(zip_path)
+		_queue_game_downloads()
+		return
+	# Extract just the launcher executable to a ".new" file beside the running launcher.
+	var reader := ZIPReader.new()
+	if reader.open(zip_path) != OK:
+		DirAccess.remove_absolute(zip_path)
+		_queue_game_downloads()
+		return
+	var ext := ".x86_64" if _is_linux() else ".exe"
+	var new_bytes := PackedByteArray()
+	for fp in reader.get_files():
+		var base := String(fp).get_file()
+		if "launcher" in base.to_lower() and base.ends_with(ext):
+			new_bytes = reader.read_file(fp)
+			break
+	reader.close()
+	DirAccess.remove_absolute(zip_path)
+	if new_bytes.is_empty():
+		_queue_game_downloads()
+		return
+	var old_path := OS.get_executable_path()
+	var new_path := old_path + ".new"
+	if FileAccess.file_exists(new_path):
+		DirAccess.remove_absolute(new_path)
+	var nf := FileAccess.open(new_path, FileAccess.WRITE)
+	if nf == null:
+		_queue_game_downloads()
+		return
+	nf.store_buffer(new_bytes)
+	nf.close()
+	_run_launcher_swapper(old_path, new_path)
+
+func _run_launcher_swapper(old_path: String, new_path: String) -> void:
+	status_label.text = "Applying launcher update — restarting…"
+	if _is_linux():
+		var sh := game_path.path_join("_pb_launcher_swap.sh")
+		var f := FileAccess.open(sh, FileAccess.WRITE)
+		if f == null:
+			_queue_game_downloads()
+			return
+		# Linux lets us replace a running binary; brief sleep to let this process exit first.
+		f.store_string("#!/bin/sh\nsleep 1\nmv -f \"%s\" \"%s\"\nchmod +x \"%s\"\n\"%s\" &\nrm -- \"$0\"\n" % [new_path, old_path, old_path, old_path])
+		f.close()
+		OS.execute("chmod", ["+x", sh])
+		OS.create_process("/bin/sh", [sh])
+	else:
+		var bat := game_path.path_join("_pb_launcher_swap.bat")
+		var f := FileAccess.open(bat, FileAccess.WRITE)
+		if f == null:
+			_queue_game_downloads()
+			return
+		# Windows cmd/del/move/start need BACKSLASH paths (forward slashes are read as switches).
+		var old_w := old_path.replace("/", "\\")
+		var new_w := new_path.replace("/", "\\")
+		var bat_w := String(bat).replace("/", "\\")
+		# Loop deleting the old exe until it frees (after we quit), then move new→old + relaunch.
+		var content := "@echo off\r\n:wait\r\ndel \"%s\" >nul 2>&1\r\nif exist \"%s\" (\r\nping -n 2 127.0.0.1 >nul\r\ngoto wait\r\n)\r\nmove /y \"%s\" \"%s\" >nul\r\nstart \"\" \"%s\"\r\ndel \"%%~f0\"\r\n" % [old_w, old_w, new_w, old_w, old_w]
+		f.store_string(content)
+		f.close()
+		OS.create_process("cmd.exe", ["/c", bat_w])
+	await get_tree().create_timer(0.4).timeout
+	get_tree().quit()
