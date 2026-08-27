@@ -18,6 +18,12 @@ config/name="PhantomBadlands"
 run/main_scene="uid://dbwq54oox3iif"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"
+; Cap the frame rate. This is a turn-based text UI — with no cap the render loop
+; ran uncapped, pegging the GPU (esp. brutal at 4K on laptops: ~8.3M px/frame as fast
+; as the card will go → thermal throttling of the whole machine + a slow dGPU spin-down
+; after close). 60 is far more than a text UI needs. Also caps the (windowed) server's
+; main loop so it doesn't busy-spin. Players can still feel it's instant.
+run/max_fps=60
 
 [display]
 
@@ -25,6 +31,9 @@ window/size/viewport_width=1920
 window/size/viewport_height=1080
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+; Explicitly enable vsync (1 = Enabled) rather than relying on the default, so frames
+; are paced to the monitor refresh instead of rendered as fast as possible.
+window/vsync/vsync_mode=1
 
 [editor_plugins]
 
