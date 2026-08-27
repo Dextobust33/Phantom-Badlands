@@ -2467,7 +2467,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		combat.extra_drops.append(title_item)
 
 	# Roll for item drops
-	var dropped_items = roll_combat_drops(monster, character, float(combat.get("card_loot_mult", 1.0)))
+	var dropped_items = roll_combat_drops(monster, character, float(combat.get("card_loot_mult", 1.0)), int(combat.get("card_loot_quality", 0)))
 	for item in dropped_items:
 		messages.append("[color=%s]%s dropped: %s![/color]" % [
 			_get_rarity_color(item.get("rarity", "common")),
@@ -3789,7 +3789,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# actually feel meaningful.
 			spell_damage_bonus = _apply_buff_value_modifiers(character, "haste", spell_damage_bonus)
 			double_cast_chance = _apply_buff_value_modifiers(character, "haste", double_cast_chance)
-			character.add_buff("damage", spell_damage_bonus, 4)
+			var haste_dur = 4 + character.get_ability_duration_bonus("haste")  # #40 Duration milestone
+			character.add_buff("damage", spell_damage_bonus, haste_dur)
 			combat["arcane_surge_double_cast"] = double_cast_chance
 			combat["arcane_surge_double_cast_duration"] = 4
 			messages.append("[color=#00FFFF]ARCANE SURGE![/color]")
@@ -3887,7 +3888,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			character.current_hp = max(1, character.current_hp - ov_cost)
 			var ov_buff = 120  # +120% to the next spell
 			ov_buff = _apply_buff_value_modifiers(character, "overload", ov_buff)
-			character.add_buff("damage", ov_buff, 2)
+			var ov_dur = 2 + character.get_ability_duration_bonus("overload")  # #40 Duration milestone
+			character.add_buff("damage", ov_buff, ov_dur)
 			messages.append("[color=#FF4500]⚡ OVERLOAD![/color]")
 			messages.append("[color=#FFD700]You sear yourself for %d HP to supercharge your spells (+%d%% damage for 2 rounds)![/color]" % [ov_cost, ov_buff])
 			is_buff_ability = true
@@ -4065,7 +4067,9 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 		"plunder":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
 			combat["card_loot_mult"] = max(float(combat.get("card_loot_mult", 1.0)), 2.0 + 0.15 * tier)
-			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]item-drop chance boosted if you win![/color]" % [cname, d])
+			# #40 — Plunder now also bumps item QUALITY: +1 rarity step (+2 at T5+).
+			combat["card_loot_quality"] = max(int(combat.get("card_loot_quality", 0)), 1 + (1 if tier >= 5 else 0))
+			messages.append("[color=#FF99FF]★ %s[/color] hits for %d — [color=#FFD700]item drops boosted (chance + quality) if you win![/color]" % [cname, d])
 		"tribute":
 			var d: int = _companion_strike(character, monster, ability_name, combat, 1.0)
 			var valor_gain: int = 15 + tier * 5 + int(monster.level * 0.5)
@@ -7931,7 +7935,7 @@ func set_drop_tables(tables: Node):
 	"""Set the drop tables reference for item drops"""
 	drop_tables = tables
 
-func roll_combat_drops(monster: Dictionary, character: Character, bonus_drop_mult: float = 1.0) -> Array:
+func roll_combat_drops(monster: Dictionary, character: Character, bonus_drop_mult: float = 1.0, rarity_upgrade: int = 0) -> Array:
 	"""Roll for item drops after defeating a monster. Returns array of items.
 	NOTE: Does NOT add items to inventory - server handles that to avoid duplication.
 	TIER BONUS: Fighting higher tier monsters gives +50% drop chance per tier above.
@@ -7965,8 +7969,9 @@ func roll_combat_drops(monster: Dictionary, character: Character, bonus_drop_mul
 	if bonus_drop_mult > 1.0:
 		drop_chance = int(drop_chance * bonus_drop_mult)
 
-	# Roll for drops - server will handle adding to inventory
-	return drop_tables.roll_drops(drop_table_id, drop_chance, monster_level)
+	# Roll for drops - server will handle adding to inventory. #40 — Plunder also bumps
+	# QUALITY (rarity), not just frequency.
+	return drop_tables.roll_drops(drop_table_id, drop_chance, monster_level, rarity_upgrade)
 
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""

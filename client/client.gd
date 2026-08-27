@@ -18933,7 +18933,7 @@ var _milestone_tip: PanelContainer = null
 var _milestone_tip_label: RichTextLabel = null
 # Buff abilities whose Duration milestone pick is wired (Warrior slice). Buffs
 # not here fall back to Power + Efficiency until their class slice wires duration.
-const DURATION_CAPABLE_ABILITIES = ["berserk", "iron_skin", "fortify", "rally"]
+const DURATION_CAPABLE_ABILITIES = ["berserk", "iron_skin", "fortify", "rally", "haste", "overload"]
 
 func _is_duration_capable(ability_name: String) -> bool:
 	# v0.9.681 — buff-kind companion cards (rage/guard/focus/shield/heal/channel)

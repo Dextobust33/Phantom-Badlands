@@ -3977,8 +3977,21 @@ func _roll_rarity_for_tier(tier: int) -> String:
 		return min_rarity
 	return rolled_rarity
 
-func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int) -> Array:
-	"""Roll for item drops from a monster. Uses D2-style rarity for tier tables."""
+const _RARITY_LADDER := ["common", "uncommon", "rare", "epic", "legendary", "artifact"]
+
+static func upgrade_rarity(rarity: String, steps: int) -> String:
+	"""#40 — bump a rarity up `steps` on the ladder (capped at artifact)."""
+	if steps <= 0:
+		return rarity
+	var idx := _RARITY_LADDER.find(rarity)
+	if idx < 0:
+		return rarity
+	return _RARITY_LADDER[mini(idx + steps, _RARITY_LADDER.size() - 1)]
+
+func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int, rarity_upgrade: int = 0) -> Array:
+	"""Roll for item drops from a monster. Uses D2-style rarity for tier tables.
+	#40 — rarity_upgrade (from a Plunder companion card) bumps a dropped equipment's
+	rolled rarity up that many steps, so Plunder boosts item QUALITY, not just frequency."""
 	var drops = []
 
 	# Apply 15% boost to drop chance
@@ -4004,6 +4017,8 @@ func roll_drops(drop_table_id: String, drop_chance: int, monster_level: int) -> 
 				var base_item = _roll_item_from_table(EQUIPMENT_BASES[tier])
 				if not base_item.is_empty():
 					var rolled_rarity = _roll_rarity_for_tier(tier)
+					if rarity_upgrade > 0:
+						rolled_rarity = upgrade_rarity(rolled_rarity, rarity_upgrade)
 					var generated = _generate_item(base_item, monster_level, rolled_rarity)
 					if not generated.is_empty():
 						drops.append(generated)
