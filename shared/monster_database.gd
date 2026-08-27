@@ -302,10 +302,40 @@ func generate_monster_by_name(monster_name: String, target_level: int, suppress_
 	for type_id in MonsterType.values():
 		var base_stats = get_monster_base_stats(type_id)
 		if base_stats.name == monster_name:
-			return scale_monster_to_level(base_stats, target_level, suppress_rare_rolls)
+			var m = scale_monster_to_level(base_stats, target_level, suppress_rare_rolls)
+			_apply_out_of_tier_bonus(m, type_id, target_level)
+			return m
 
 	# Fallback if name not found - generate random monster
 	return generate_monster(target_level, target_level)
+
+func _monster_base_tier(type_id) -> int:
+	"""The tier a monster TYPE belongs to (its natural home), 1-9."""
+	for t in range(1, 10):
+		if type_id in _get_tier_monsters(t):
+			return t
+	return 1
+
+func _apply_out_of_tier_bonus(monster: Dictionary, type_id, target_level: int) -> void:
+	"""#55 (2026-08-27) — when a HIGH-TIER monster type is generated at a level whose tier
+	is LOWER than its home tier (i.e. summoned into a lower-level area, e.g. by a Shrieker),
+	it keeps its might: boost stats by the tier gap (DEADLY even at the local level) and its
+	XP by MORE than the gap (RICHLY rewarding — the payoff for a dangerous summon). Normal,
+	tier-appropriate spawns have gap<=0 and are untouched."""
+	var base_tier: int = _monster_base_tier(type_id)
+	var level_tier: int = int(_get_tier_info(target_level).tier)
+	var gap: int = base_tier - level_tier
+	if gap <= 0:
+		return
+	var stat_mult: float = 1.0 + float(gap) * 0.6   # deadly (≈ +60% power per tier over)
+	var xp_mult: float = 1.0 + float(gap) * 0.9     # rewarding — grows FASTER than the danger
+	monster["max_hp"] = int(monster.get("max_hp", 1) * stat_mult)
+	monster["current_hp"] = monster["max_hp"]
+	monster["strength"] = int(monster.get("strength", 1) * stat_mult)
+	if monster.has("defense"):
+		monster["defense"] = int(monster.get("defense", 0) * stat_mult)
+	monster["experience_reward"] = int(monster.get("experience_reward", 1) * xp_mult)
+	monster["out_of_tier_gap"] = gap  # flag: an out-of-place, tier-boosted foe (display/loot)
 
 func get_all_monster_names() -> Array:
 	"""Get a list of all monster names for selection UI"""

@@ -54,6 +54,16 @@ func _init():
 	run_overlevel_audit()
 	quit()
 
+func _debug_tier_xp():
+	# Does a HIGHER-TIER monster grant more XP / HP at the SAME level than a lower tier?
+	for lvl in [50, 100]:
+		for tier in [1, 4, 6, 9]:
+			var nm = monster_db.get_random_monster_name_from_tier(tier)
+			var m = monster_db.generate_monster_by_name(nm, lvl)
+			print("[TIERXP] L%-4d T%d  hp=%-8d str=%-6d exp=%-8d  '%s'" % [
+				lvl, tier, int(m.get("max_hp", 0)), int(m.get("strength", 0)), int(m.get("experience_reward", 0)), str(nm).substr(0, 20)])
+
+
 func _debug_xp_dump():
 	# How many levels does a low-level Trickster gain from Outsmarting ONE big enemy?
 	for pair in [[20, 200], [20, 100], [50, 200], [20, 60]]:

@@ -1477,6 +1477,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			result.victory = false
 			result["monster_fled"] = true
 			result["summon_next_fight"] = monster_result.get("summon_next_fight", "")
+			result["summon_next_level"] = monster_result.get("summon_next_level", 0)
 			result["monster_level"] = monster_result.get("monster_level", combat.monster.level)
 			end_combat(peer_id, false)
 			return result
@@ -2505,6 +2506,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		"gems_earned": gems_earned,
 		"card_bonus_valor": int(combat.get("card_bonus_valor", 0)),  # v0.9.682 — Tribute companion card
 		"summon_next_fight": combat.get("summon_next_fight", ""),
+		"summon_next_level": combat.get("summon_next_level", 0),
 		"is_rare_variant": monster.get("is_rare_variant", false),
 		"is_apex_variant": monster.get("is_apex_variant", false),  # v0.9.514 — server uses this to roll Apex Crystal drop
 		"is_apex_frontier": monster.get("is_apex_frontier", false),  # Path milestone: first apex-frontier kill
@@ -6333,14 +6335,19 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if randi() % 100 < 20:  # 20% chance
 			combat["summoner_triggered"] = true
 			var base_name = monster.get("base_name", monster.name)
-			# Shrieker summons higher-tier monsters with weighted probability
+			# Shrieker summons a HIGH-TIER monster type into the current area — generated at
+			# the AREA level (matching the local level), so it's reachable, but its high-tier
+			# TYPE makes it deadly (the tier bonus in generate_monster_by_name boosts its stats)
+			# and richly rewarding (tier-boosted XP). #55 (2026-08-27) — a deliberate "summon
+			# something from a much higher tier into your zone" gamble; Mages/Tricksters with
+			# burst/Outsmart get the best shot, and killing it pays big XP.
 			if base_name == "Shrieker":
 				var summon_tier = _get_shrieker_summon_tier()
 				var summoned_name = monster_database.get_random_monster_name_from_tier(summon_tier)
 				combat["summon_next_fight"] = summoned_name
 				combat["monster_fled"] = true  # Shrieker flees after summoning
-				messages.append("[color=#FF4444]The %s's shriek echoes through the realm, summoning a %s![/color]" % [monster.name, summoned_name])
-				messages.append("[color=#FFA500]The %s scurries away as its call is answered![/color]" % monster.name)
+				messages.append("[color=#FF4444]The %s's shriek tears the veil, dragging a Tier-%d %s into the fray![/color]" % [monster.name, summon_tier, summoned_name])
+				messages.append("[color=#FFA500]It's far below its usual haunts, but its might is intact — a deadly gamble for a huge reward![/color]")
 			else:
 				# Normal summoner: summons same monster type
 				combat["summon_next_fight"] = base_name
@@ -6972,6 +6979,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if combat.get("monster_fled", false):
 		result["monster_fled"] = true
 		result["summon_next_fight"] = combat.get("summon_next_fight", "")
+		result["summon_next_level"] = combat.get("summon_next_level", 0)
 		result["monster_level"] = monster.level
 	return result
 

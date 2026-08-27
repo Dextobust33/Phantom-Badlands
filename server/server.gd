@@ -5960,6 +5960,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			if summon_next != "" and not _is_dungeon_c:
 				# Summoner called reinforcements - force a flock encounter
 				var monster_level = result.get("monster_level", 1)
+				var _summon_lvl_v = int(result.get("summon_next_level", 0))  # #55 Shrieker over-level summon
+				if _summon_lvl_v > 0:
+					monster_level = _summon_lvl_v
 				# Store drops for later (current_drops already defined above)
 				if not pending_flock_drops.has(peer_id):
 					pending_flock_drops[peer_id] = []
@@ -6554,6 +6557,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			if summon_next != "":
 				# Summoner fled but called reinforcements - queue flock encounter
 				var monster_level = result.get("monster_level", characters[peer_id].level)
+				var _summon_lvl_f = int(result.get("summon_next_level", 0))  # #55 Shrieker over-level summon
+				if _summon_lvl_f > 0:
+					monster_level = _summon_lvl_f
 
 				# Track flock count for visual variety
 				if not flock_counts.has(peer_id):
