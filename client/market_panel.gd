@@ -1488,7 +1488,7 @@ func _on_picker_confirm_pressed() -> void:
 	_picker_confirm_btn.disabled = true
 
 
-func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_materials: Dictionary = {}) -> void:
+func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_materials: Dictionary = {}, combat_deck_collection: Dictionary = {}) -> void:
 	"""v0.9.570 — refresh the dropdown menu's per-category labels with live
 	counts. Mirrors `server.handle_market_list_preview` so the menu numbers
 	match what the server would actually list.
@@ -1511,7 +1511,15 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_mater
 		"material": 0,
 		"food": 0,
 		"egg": int(incubating_eggs.size()) if incubating_eggs is Array else 0,
+		"card": 0,
 	}
+	# #39 — count tradeable earned cards (companion + dungeon, count>0) so the
+	# "List Combat Card" menu row shows a real number instead of being greyed at 0.
+	if combat_deck_collection is Dictionary:
+		for _cid in combat_deck_collection.keys():
+			var _cids := String(_cid)
+			if (_cids.begins_with("companion_card_") or _cids.begins_with("dungeon_card_")) and int(combat_deck_collection[_cid]) > 0:
+				counts["card"] += 1
 	# Server filter mirror — see handle_market_list_preview in server.gd.
 	# Equipment: not tool/structure/treasure_chest, not consumable, has
 	# `slot` or `rarity` (covers both crafted and dropped gear).
@@ -1589,6 +1597,8 @@ func update_bulk_counts(inventory: Array, incubating_eggs: Array, crafting_mater
 				n = counts["material"] + counts["food"]
 			"list_egg":
 				n = counts["egg"]
+			"list_card":
+				n = counts["card"]
 			"bulk_equipment":
 				n = counts["equipment"]
 			"bulk_consumable":

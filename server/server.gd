@@ -2087,6 +2087,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_givecompanion(peer_id, message)
 		"gm_spawnmonster":
 			handle_gm_spawnmonster(peer_id, message)
+		"gm_give_test_card":
+			handle_gm_give_test_card(peer_id, message)
 		"gm_givemats":
 			handle_gm_givemats(peer_id, message)
 		"gm_giveall":
@@ -37073,6 +37075,24 @@ func handle_gm_setbp(peer_id: int, message: Dictionary):
 	house["baddie_points"] = amount
 	persistence.save_house(account_id, house)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Baddie Points set to %d[/color]" % amount})
+
+func handle_gm_give_test_card(peer_id: int, message: Dictionary):
+	# #39/#40 test helper — grant permanent, TRADEABLE cards (2 dungeon + 2 companion) so
+	# the card market can be smoke-tested without grinding a dungeon clear / card permanence.
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	if not characters.has(peer_id):
+		return
+	var ch = characters[peer_id]
+	var granted := []
+	for cid in ["dungeon_card_venom_fang", "dungeon_card_crimson_draught", "companion_card_wolf", "companion_card_giant_spider"]:
+		var cur := int(ch.combat_deck_collection.get(cid, 0))
+		ch.combat_deck_collection[cid] = min(int(ch.MAX_ABILITY_COPIES), cur + 1)
+		granted.append(DropTablesScript.card_display_name(cid))
+	save_character(peer_id)
+	send_character_update(peer_id)
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFB347][GM] Granted tradeable test cards: %s. They're permanent — sell them at a trading post → Market → List → 'List Combat Card'.[/color]" % ", ".join(granted)})
 
 func handle_gm_giveitem(peer_id: int, message: Dictionary):
 	if not _is_admin(peer_id):

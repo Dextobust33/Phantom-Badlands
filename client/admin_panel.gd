@@ -151,6 +151,7 @@ func _render_page() -> void:
 			_add_button("Give Starter Kit (Valor / gems / mats)", "gm_giveall")
 			_add_button("Give Egg (random monster type)", "give_egg")
 			_add_button("Give Companion (random, T5)", "give_companion_t5")
+			_add_button("Grant Test Cards (dungeon + companion, tradeable)", "gm_give_test_card", Color(1.0, 0.7, 0.28))
 			_add_separator()
 			# v0.9.496 — fusion catalyst shortcuts for Stable / Sanctuary testing.
 			_add_button("Give 3x Hybrid Catalyst", "give_hybrid_catalyst_x3", Color(1, 0.5, 1))

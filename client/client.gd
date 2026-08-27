@@ -32755,6 +32755,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 				send_to_server({"type": "gm_giveconsumable", "item_type": "charm_taunt", "tier": 5})
 		"spawn_mob_own_level":
 			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1))})
+		"gm_give_test_card":
+			send_to_server({"type": "gm_give_test_card"})
 		# Items
 		"give_item_t5":
 			send_to_server({"type": "gm_giveitem", "tier": 5, "slot": ""})
@@ -38069,10 +38071,13 @@ func _populate_market_panel() -> void:
 		# v0.9.594 — materials live in crafting_materials, not inventory.
 		# Pass the dict through so material/food bulk counts can be computed.
 		var mats = character_data.get("crafting_materials", {})
+		# #39 — pass the deck collection so the "List Combat Card" row counts tradeable cards.
+		var _deck_coll = character_data.get("combat_deck_collection", {})
 		market_panel.update_bulk_counts(
 			inv if inv is Array else [],
 			eggs if eggs is Array else [],
-			mats if mats is Dictionary else {}
+			mats if mats is Dictionary else {},
+			_deck_coll if _deck_coll is Dictionary else {}
 		)
 
 func _on_market_panel_close() -> void:
