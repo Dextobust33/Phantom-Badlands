@@ -198,6 +198,7 @@ func _render_page() -> void:
 			_subtitle_label.text = "[color=#aaaaaa]Self-heal, quest reset, companion revive.[/color]"
 			_add_button("Heal Self (full HP / mana / stamina)", "gm_heal")
 			_add_button("Revive Companion (full HP)", "gm_revive_companion")
+			_add_button("Toggle Co-op Party Combat (#64 test)", "gm_toggle_coop", Color(1.0, 0.7, 0.28))
 			_add_button("Reset Active Quests", "gm_resetquests")
 			_add_button("Show /gmhelp text reference", "show_gmhelp")
 			_add_separator()

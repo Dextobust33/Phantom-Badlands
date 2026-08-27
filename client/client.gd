@@ -32770,6 +32770,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1))})
 		"gm_give_test_card":
 			send_to_server({"type": "gm_give_test_card"})
+		"gm_toggle_coop":
+			send_to_server({"type": "gm_toggle_coop"})
 		# Items
 		"give_item_t5":
 			send_to_server({"type": "gm_giveitem", "tier": 5, "slot": ""})

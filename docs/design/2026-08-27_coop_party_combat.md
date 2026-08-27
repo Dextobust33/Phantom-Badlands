@@ -109,7 +109,15 @@ regress live combat mid-build.
   / `_display_party_combat_hp`) already reads, so no client rewrite needed. Per-recipient `is_your_turn`
   maps to "you haven't locked in yet." Still UN-WIRED (the old handler was dead code — nothing populates
   `party_combat_membership` until the start is wired).
-- **Slice 4 (next):** flip `trigger_encounter`'s party branch from `_start_solo_combat_for` to
-  `start_party_combat_simul` + send `party_combat_start` to all members (puts clients in party-combat
-  mode); shared victory rewards (full XP + own loot each); death/flee/wipe/disband edge cases; then a
-  2-CLIENT live test (co-op needs two connected players to validate the full loop).
+- **Slice 4 DONE (flag-gated, OFF by default) — awaiting a 2-client live test:**
+  - `var party_coop_enabled := false` + a gm toggle (`/admin → Misc → "Toggle Co-op Party Combat"`
+    → `handle_gm_toggle_coop`). OFF = parties fight solo (unchanged); ON = shared co-op.
+  - `trigger_encounter` party branch: when enabled + 2+ members present & free, calls
+    `start_party_combat_simul` + `_send_party_combat_start` (puts everyone in party-combat mode via
+    the client's existing `_handle_party_combat_start`) and skips the solo fanout.
+  - Shared rewards in `_end_party_combat_all`: each SURVIVING member gets FULL XP (`add_experience`)
+    + their OWN `roll_combat_drops` loot roll; per-member save.
+  - **TO VALIDATE:** flip the flag on, form a 2-player party, leader hits a monster. Expect rough
+    edges in the SUBMISSION UX — the client's party UI is reused from the OLD sequential system, so
+    the "lock in / waiting for party / round resolves" flow + action-bar state may need polish once
+    we see it live with two clients. Engine + server flow are proven; the client UX is the unknown.

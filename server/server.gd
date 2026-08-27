@@ -174,6 +174,9 @@ var pending_trade_requests = {}  # {peer_id: requesting_peer_id} - pending incom
 # Party system - tracks active player parties
 var active_parties = {}          # leader_peer_id -> PartyData dict {leader, members[], formed_at}
 var party_membership = {}        # peer_id -> leader_peer_id (quick lookup)
+# #64 Slice 4 — co-op (simultaneous shared) party combat. OFF by default: parties fight solo
+# until this is 2-client tested. Flip live via /admin → Misc → "Toggle Co-op Party Combat".
+var party_coop_enabled: bool = false
 var pending_party_invites = {}   # target_peer_id -> {from_peer_id, timestamp}
 var party_invite_cooldowns = {}  # peer_id -> last_invite_time_msec
 const PARTY_INVITE_COOLDOWN_MS = 10000  # 10 sec anti-spam
@@ -2089,6 +2092,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_gm_spawnmonster(peer_id, message)
 		"gm_give_test_card":
 			handle_gm_give_test_card(peer_id, message)
+		"gm_toggle_coop":
+			handle_gm_toggle_coop(peer_id, message)
 		"gm_givemats":
 			handle_gm_givemats(peer_id, message)
 		"gm_giveall":
@@ -8553,6 +8558,24 @@ func trigger_encounter(peer_id: int):
 	# rendered and the two combat systems collided (separate monsters / cross-ending).
 	# Interim: parties stay travel/chat-only. When the movement-locked leader hits a
 	# monster, each party member fights their OWN normal card combat vs a copy of it.
+	# #64 Slice 4 — CO-OP (shared, simultaneous) party combat, flag-gated (OFF by default).
+	# When enabled and 2+ party members are present & free, they all fight ONE shared monster.
+	if party_coop_enabled and _is_party_leader(peer_id) and active_parties.has(peer_id):
+		var _cmembers: Array = [peer_id]           # leader first (becomes leader_id)
+		var _cchars: Dictionary = {peer_id: character}
+		for _mpid in active_parties[peer_id].get("members", []):
+			if _mpid == peer_id or not characters.has(_mpid):
+				continue
+			if combat_mgr.is_in_combat(_mpid) or characters[_mpid].in_combat:
+				continue
+			_cmembers.append(_mpid)
+			_cchars[_mpid] = characters[_mpid]
+		if _cmembers.size() >= 2:
+			var _cstart = combat_mgr.start_party_combat_simul(_cmembers, _cchars, monster)
+			if _cstart.get("success", false):
+				_send_party_combat_start(peer_id, _cmembers, monster, debuff_messages)
+				return  # co-op started — skip the solo fanout below
+
 	if _is_party_leader(peer_id) and active_parties.has(peer_id):
 		var _party = active_parties[peer_id]
 		for _fpid in _party.get("members", []):
@@ -8567,6 +8590,28 @@ func trigger_encounter(peer_id: int):
 		# leader falls through to their own solo combat below
 
 	_start_solo_combat_for(peer_id, character, monster, debuff_messages)
+
+func _send_party_combat_start(leader_id: int, members: Array, monster: Dictionary, debuff_messages: Array) -> void:
+	"""#64 Slice 4 — put every member into co-op combat mode (the client's existing
+	_handle_party_combat_start renders it) and show the shared monster."""
+	var snap = _party_combat_snapshot(leader_id)
+	var start_msgs: Array = ["[color=#00BFFF]★ Party combat! %d heroes face %s (Lv%d, HP %d).[/color]" % [
+		members.size(), monster.get("name", "Monster"), int(monster.get("level", 1)), int(monster.get("max_hp", 1))]]
+	start_msgs.append_array(debuff_messages)
+	for pid in members:
+		if not characters.has(pid):
+			continue
+		send_to_peer(pid, {
+			"type": "party_combat_start",
+			"messages": start_msgs,
+			"monster_name": monster.get("name", "Monster"),
+			"monster_level": int(monster.get("level", 1)),
+			"combat_state": snap,
+			"is_your_turn": true,   # round 1 — everyone may lock in an action
+			"current_turn_name": "",
+			"use_client_art": true,
+		})
+		send_character_update(pid)
 
 func _start_solo_combat_for(peer_id: int, character, monster: Dictionary, debuff_messages: Array) -> void:
 	"""Start a normal (card-based) solo combat for one player and send combat_start.
@@ -37080,6 +37125,16 @@ func handle_gm_setbp(peer_id: int, message: Dictionary):
 	persistence.save_house(account_id, house)
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#00FF00][GM] Baddie Points set to %d[/color]" % amount})
 
+func handle_gm_toggle_coop(peer_id: int, message: Dictionary):
+	# #64 Slice 4 — flip co-op (shared, simultaneous) party combat on/off for testing.
+	if not _is_admin(peer_id):
+		_gm_deny(peer_id)
+		return
+	party_coop_enabled = not party_coop_enabled
+	var state := "ON" if party_coop_enabled else "OFF"
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFB347][GM] Co-op party combat is now %s. Form a party (2+), then the leader hits a monster to start a shared fight. (OFF = each member fights solo.)[/color]" % state})
+	log_message("[GM] party_coop_enabled -> %s (by peer %d)" % [state, peer_id])
+
 func handle_gm_give_test_card(peer_id: int, message: Dictionary):
 	# #39/#40 test helper — grant permanent, TRADEABLE cards (2 dungeon + 2 companion) so
 	# the card market can be smoke-tested without grinding a dungeon clear / card permanence.
@@ -39446,18 +39501,39 @@ func _broadcast_party_update(leader_id: int, msgs: Array, resolved: bool) -> voi
 		send_character_update(pid)
 
 func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array) -> void:
-	"""#64 Slice 3 — end the fight for everyone + clean up so nobody gets stuck. Full shared
-	rewards (full XP + own loot each) + death/flee/wipe handling are Slice 4."""
+	"""#64 Slice 4 — end the co-op fight for everyone. On victory each SURVIVING member gets
+	FULL XP + their OWN independent loot roll (the monster was HP-scaled — it's earned). Then
+	clean up so nobody gets stuck. (Level-up popups / valor / gem polish can follow.)"""
 	if not combat_mgr.active_party_combats.has(leader_id):
 		return
-	var snap = _party_combat_snapshot(leader_id)
-	var members = combat_mgr.active_party_combats[leader_id].get("members", []).duplicate()
+	var combat = combat_mgr.active_party_combats[leader_id]
+	var monster = combat.get("monster", {})
+	var members = combat.get("members", []).duplicate()
+	if victory:
+		var xp: int = int(monster.get("experience_reward", monster.get("xp_reward", 10)))
+		for pid in members:
+			var st = combat.member_states.get(pid, {})
+			if st.get("dead", false) or st.get("fled", false) or not characters.has(pid):
+				continue
+			var ch = characters[pid]
+			var lvl_res = ch.add_experience(xp)
+			var drops = combat_mgr.roll_combat_drops(monster, ch)
+			for item in drops:
+				ch.add_item(item)
+			var earned := "[color=#1EFF00]%s: +%d XP" % [ch.name, xp]
+			if not drops.is_empty():
+				earned += ", +%d item(s)" % drops.size()
+			if typeof(lvl_res) == TYPE_DICTIONARY and lvl_res.get("leveled_up", false):
+				earned += " — [color=#FFFF00]LEVEL UP![/color]"
+			msgs.append(earned + "[/color]")
 	msgs.append("[color=#FFD700]★ Party victory![/color]" if victory else "[color=#FF4444]The party has fallen...[/color]")
+	var snap = _party_combat_snapshot(leader_id)
 	for pid in members:
 		if characters.has(pid):
 			characters[pid].in_combat = false
 			send_to_peer(pid, {"type": "party_combat_end", "messages": msgs, "victory": victory, "combat_state": snap})
 			send_character_update(pid)
+			save_character(pid)
 		combat_mgr.party_combat_membership.erase(pid)
 	combat_mgr.active_party_combats.erase(leader_id)
 
