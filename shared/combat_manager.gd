@@ -2815,27 +2815,26 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 				else:
 					messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
 
-		# Give full rewards as if monster was killed
+		# Give full rewards as if the monster was killed. #55 (2026-08-27) — use the
+		# EXACT same over-level XP curve as a normal kill (uncapped `1 + sqrt(gap)*0.7`),
+		# so Outsmarting a big enemy pays proportionally to the risk. The old path capped
+		# the within-tier bonus at +50%, so a Trickster's signature over-level Outsmart was
+		# rewarded LESS than just killing it — backwards. Now the biggest gambles pay the most.
 		var base_xp = monster.experience_reward
 		var xp_level_diff = monster.level - character.level
 		var xp_multiplier = 1.0
-
-		# Get tier difference - big rewards for fighting above your tier!
-		var player_tier = _get_tier_for_level(character.level)
-		var monster_tier = _get_tier_for_level(monster.level)
-		var tier_diff = monster_tier - player_tier
-
-		# TIER BONUS: Fighting higher tier monsters is very rewarding!
-		var xp_tier_bonus = 1.0
-		if tier_diff > 0:
-			xp_tier_bonus = pow(2.0, tier_diff)  # 2x per tier
-			messages.append("[color=#FF00FF]* TIER CHALLENGE: +%dx XP bonus! *[/color]" % int(xp_tier_bonus))
-
-		# Small level difference bonus (within same tier)
-		if xp_level_diff > 0 and tier_diff == 0:
-			xp_multiplier = 1.0 + min(0.5, xp_level_diff * 0.02)
-
-		var final_xp = int(base_xp * xp_multiplier * xp_tier_bonus * 1.10)  # +10% XP boost
+		if xp_level_diff > 0:
+			var reference_gap = 10.0 + float(character.level) * 0.05
+			xp_multiplier = 1.0 + sqrt(float(xp_level_diff) / reference_gap) * 0.7
+			var _os_bonus_pct = int((xp_multiplier - 1.0) * 100)
+			if _os_bonus_pct >= 5:
+				messages.append("[color=#FF00FF]* OUTWIT THE MIGHTY: +%d%% XP! *[/color]" % _os_bonus_pct)
+		elif xp_level_diff < 0:
+			var _os_under = abs(xp_level_diff)
+			var _os_thresh = 5.0 + float(character.level) * 0.03
+			if _os_under > _os_thresh:
+				xp_multiplier = maxf(0.4, 1.0 - minf(0.6, (_os_under - _os_thresh) * 0.03))
+		var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
 
 		# Add XP
 		var old_level = character.level
@@ -3041,9 +3040,16 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		if monster.current_hp <= 0:
 			messages.append("[color=#00FF00]Your companion saved you by finishing off the %s![/color]" % monster.name)
 			# Give rewards as if outsmart succeeded (companion clutch kill)
+			# #55 (2026-08-27) — apply the same uncapped over-level XP bonus as a normal kill,
+			# so a companion cleaning up a big foe after a failed Outsmart still pays for the risk.
 			var base_xp = monster.experience_reward
-			var xp_result = character.add_experience(base_xp)
-			messages.append("[color=#FFD700]+%d XP[/color]" % base_xp)
+			var _cc_diff = int(monster.level) - character.level
+			var _cc_mult = 1.0
+			if _cc_diff > 0:
+				_cc_mult = 1.0 + sqrt(float(_cc_diff) / (10.0 + float(character.level) * 0.05)) * 0.7
+			var _cc_xp = int(base_xp * _cc_mult * 1.10)
+			var xp_result = character.add_experience(_cc_xp)
+			messages.append("[color=#FFD700]+%d XP[/color]" % _cc_xp)
 			return {
 				"success": true,
 				"messages": messages,

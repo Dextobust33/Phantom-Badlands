@@ -54,6 +54,25 @@ func _init():
 	run_overlevel_audit()
 	quit()
 
+func _debug_xp_dump():
+	# How many levels does a low-level Trickster gain from Outsmarting ONE big enemy?
+	for pair in [[20, 200], [20, 100], [50, 200], [20, 60]]:
+		var plvl: int = pair[0]
+		var mlvl: int = pair[1]
+		var ch = make_char(plvl, "average", "Thief")
+		var mon = make_monster(mlvl, "boss")
+		var base_xp: int = int(mon.get("experience_reward", 0))
+		var diff: int = mlvl - plvl
+		var mult: float = 1.0
+		if diff > 0:
+			mult = 1.0 + sqrt(float(diff) / (10.0 + float(plvl) * 0.05)) * 0.7
+		var final_xp: int = int(base_xp * mult * 1.10)
+		var lvl_before: int = ch.level
+		ch.add_experience(final_xp)
+		print("[XP] P%d vs L%d boss: base_xp=%d  over-lvl mult=%.2f  final_xp=%d  ->  L%d to L%d  (+%d levels)" % [
+			plvl, mlvl, base_xp, mult, final_xp, lvl_before, ch.level, ch.level - lvl_before])
+
+
 func run_overlevel_audit():
 	var N := 60
 	var plevels := [20, 60, 150]
