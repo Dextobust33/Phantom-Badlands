@@ -8538,11 +8538,30 @@ func trigger_encounter(peer_id: int):
 			debuff_messages.append("[color=#FFD700]Scroll of Finding: %d encounters remaining[/color]" % character.target_farm_remaining)
 		save_character(peer_id)
 
-	# Check if player is a party leader — start party combat instead
-	if _is_party_leader(peer_id):
-		_start_party_combat_encounter(peer_id, monster, debuff_messages)
-		return
+	# v0.9.732 — legacy shared party combat (pre-card-system) is DISABLED pending a
+	# proper rebuild. It routed through the old ability-command path, so cards never
+	# rendered and the two combat systems collided (separate monsters / cross-ending).
+	# Interim: parties stay travel/chat-only. When the movement-locked leader hits a
+	# monster, each party member fights their OWN normal card combat vs a copy of it.
+	if _is_party_leader(peer_id) and active_parties.has(peer_id):
+		var _party = active_parties[peer_id]
+		for _fpid in _party.get("members", []):
+			if _fpid == peer_id or not characters.has(_fpid):
+				continue
+			var _fchar = characters[_fpid]
+			if combat_mgr.is_in_combat(_fpid) or _fchar.in_combat:
+				continue
+			var _fmon = monster.duplicate(true)
+			_fmon["current_hp"] = int(_fmon.get("max_hp", 100))
+			_start_solo_combat_for(_fpid, _fchar, _fmon, [])
+		# leader falls through to their own solo combat below
 
+	_start_solo_combat_for(peer_id, character, monster, debuff_messages)
+
+func _start_solo_combat_for(peer_id: int, character, monster: Dictionary, debuff_messages: Array) -> void:
+	"""Start a normal (card-based) solo combat for one player and send combat_start.
+	Factored out of trigger_encounter so party members can each be dropped into
+	their own solo fight (see the party-combat-disabled note in trigger_encounter)."""
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
 	if result.success:
@@ -32182,11 +32201,8 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 			if mapped != "" and mapped not in monster.abilities:
 				monster.abilities.append(mapped)
 
-	# Party dungeon combat?
-	if _is_party_leader(peer_id):
-		_start_party_combat_encounter(peer_id, monster, [])
-		return
-
+	# v0.9.732 — legacy shared party combat disabled pending rebuild (see
+	# trigger_encounter). In dungeons the leader just fights solo (card-based).
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 
@@ -34239,11 +34255,8 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		monster.is_boss = true
 		monster.name = boss_info.get("name", monster.name)
 
-	# Party dungeon combat?
-	if _is_party_leader(peer_id):
-		_start_party_combat_encounter(peer_id, monster, [])
-		return
-
+	# v0.9.732 — legacy shared party combat disabled pending rebuild (see
+	# trigger_encounter). In dungeons the leader just fights solo (card-based).
 	# Start combat
 	var result = combat_mgr.start_combat(peer_id, character, monster)
 

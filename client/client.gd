@@ -8883,7 +8883,11 @@ func update_action_bar():
 				{"label": "Bestiary", "action_type": "local", "action_data": "bestiary", "enabled": true},
 				{"label": "Atlas", "action_type": "local", "action_data": "dungeon_atlas", "enabled": true},
 				{"label": "Pouch", "action_type": "local", "action_data": "pouch_menu", "enabled": true},
-				{"label": "Changes", "action_type": "local", "action_data": "changelog", "enabled": true},
+				# v0.9.732 — the action bar has only 10 slots. A "Changes" button was
+				# added here, which pushed party_action (slot 10) off the end, so players
+				# in a party had NO way to open the Party menu → Disband/Leave (stuck in
+				# party). party_action is critical when in a party; restore it as slot 9.
+				# (Changelog still auto-shows on updates + in the launcher panel.)
 				party_action,
 			]
 	elif companions_mode:
@@ -27846,8 +27850,14 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.732 — Party fixes.
+	display_game("[color=#00FF00]v0.9.732[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ CAN'T GET STUCK IN A PARTY.[/color] The [b]Party[/b] button (with [color=#FF6666]Disband[/color] / [color=#FF6666]Leave[/color]) had fallen off the bottom of the [b]More[/b] menu — it's back. Party leaders **Disband**, members **Leave**, from More → Party.")
+	display_game("  [color=#1EFF00]◆ Party combat reworked (interim).[/color] The old shared party battle was broken (you saw different monsters, no cards, one kill ended both). For now, [b]parties travel & group together[/b] but each member fights their [b]own normal card battle[/b] — no more broken shared fights. A proper co-op combat rebuild is on the list.")
+	display_game("")
+
 	# v0.9.731 — Road merchants sell + deck/hover fixes.
-	display_game("[color=#00FF00]v0.9.731[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.731[/color]")
 	display_game("  [color=#FF8000]★ BUY FROM ROADSIDE MERCHANTS.[/color] The couriers you meet on the road [b]will actually sell you their cargo[/b] now — press [color=#FFE066]E[/color] to browse what they're hauling (real names, levels & prices, stack counts) and buy it before it reaches market. Couriers also carry [b]more[/b] and travel a bit [b]faster[/b].")
 	display_game("  [color=#1EFF00]◆ Deck never drops below 5.[/color] Swapping from a companion whose [b]loaner card[/b] was filling your deck to one whose card is already permanent no longer leaves you at 4 cards — a spare card you own is added back automatically to keep the deck at 5.")
 	display_game("  [color=#1EFF00]◆ Map hover fix.[/color] Hovering a companion on the map now reliably shows the [b]companion's[/b] art, not the player's sprite.")
