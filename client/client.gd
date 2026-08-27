@@ -27846,8 +27846,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.731 — Road merchants sell + deck/hover fixes.
+	display_game("[color=#00FF00]v0.9.731[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ BUY FROM ROADSIDE MERCHANTS.[/color] The couriers you meet on the road [b]will actually sell you their cargo[/b] now — press [color=#FFE066]E[/color] to browse what they're hauling (real names, levels & prices, stack counts) and buy it before it reaches market. Couriers also carry [b]more[/b] and travel a bit [b]faster[/b].")
+	display_game("  [color=#1EFF00]◆ Deck never drops below 5.[/color] Swapping from a companion whose [b]loaner card[/b] was filling your deck to one whose card is already permanent no longer leaves you at 4 cards — a spare card you own is added back automatically to keep the deck at 5.")
+	display_game("  [color=#1EFF00]◆ Map hover fix.[/color] Hovering a companion on the map now reliably shows the [b]companion's[/b] art, not the player's sprite.")
+	display_game("")
+
 	# v0.9.730 — Feedback buttons fixed.
-	display_game("[color=#00FF00]v0.9.730[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.730[/color]")
 	display_game("  [color=#1EFF00]◆ Feedback buttons work now.[/color] The [color=#FFE066]💡 Suggest Idea[/color] / [color=#FF8888]🐞 Report Issue[/color] buttons (in-game and on the launcher) were showing 'unavailable' in the packaged build — fixed. Please send us your ideas and bug reports; we're reading them!")
 	display_game("")
 
@@ -27876,13 +27883,7 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Players share stations.[/color] You can now [b]stand on the same tile as another player[/b] when you're right next to a station, so nobody blocks the forge/market/healer. (Everywhere else, walking into a player still works as before — party invites, trades, etc.)")
 	display_game("")
 
-	# v0.9.725 — Cartography (rooted Locate).
-	display_game("[color=#00FFFF]v0.9.725[/color]")
-	display_game("  [color=#FF8000]★ CARTOGRAPHY.[/color] The Atlas [color=#5AC8FF]‹ Locate ›[/color] ability is now a real skill you [b]grow[/b]. You earn [color=#5AC8FF]Cartography rank[/color] by [b]discovering[/b] (+20) and [b]clearing[/b] (+40) dungeons, and your rank decides how well the realm can point you at one.")
-	display_game("  [color=#1EFF00]◆ Locate through a Cartographer.[/color] To locate a dungeon you now consult a [b]Cartographer at a trading post[/b] (costs [color=#FFD700]15 Valor[/color]) — the realm's scouts track where dungeons stir, so there's a reason behind the pointer.")
-	display_game("  [color=#1EFF00]◆ Better rank = better intel.[/color] Rank 1-2 gives a [b]rough direction[/b]; rank 3-4 adds [b]distance[/b]; rank 5+ gives [b]precise coordinates[/b]; and at [color=#7AE07A]rank 8[/color] you've earned a cartographer's sixth sense — [b]Locate anywhere, no post or Valor needed[/b].")
-	display_game("  [color=#909090]The Atlas header shows your rank, progress, and current locate precision.[/color]")
-	display_game("")
+	# (v0.9.725 Cartography rolled off the visible changelog window.)
 
 	# v0.9.724 — Dungeon Atlas.
 	display_game("[color=#00FFFF]v0.9.724[/color]")
@@ -35637,6 +35638,12 @@ func _make_map_companion_label() -> RichTextLabel:
 	rtl.size = Vector2(MAP_COMPANION_LABEL_WIDTH, MAP_COMPANION_LABEL_HEIGHT)
 	# STOP — capture hover/click for the tooltip + companion-inspect flow.
 	rtl.mouse_filter = Control.MOUSE_FILTER_STOP
+	# v0.9.731 — the companion marker sits in the cell the player trailed from, so
+	# its rect overlaps the player sprite. Player sprites are z_index 0; raise the
+	# companion above them so a companion marker ALWAYS wins the hover in the overlap
+	# zone (GUI picking honors z_index). Fixes "hovering a companion shows the player
+	# sprite instead of the companion art."
+	rtl.z_index = 1
 	rtl.visible = false
 	rtl.clip_contents = true
 	if _map_companion_font:
@@ -35663,6 +35670,10 @@ func _on_map_sprite_hover(node: Control) -> void:
 		var cdata: Dictionary = node.get_meta("companion_data", {})
 		content = _build_map_companion_tooltip(cdata)
 	if content == "":
+		# Don't leave a stale (player) tooltip up if this node has no data — hiding
+		# also bumps the tooltip generation, cancelling any in-flight portrait compose
+		# from the previous hover so it can't paint a player sprite onto a companion.
+		_hide_map_tooltip()
 		return
 	_show_map_tooltip(content, node, portrait_data)
 

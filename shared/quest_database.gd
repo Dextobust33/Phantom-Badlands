@@ -2421,7 +2421,12 @@ func _generate_daily_quest(trading_post_id: String, quest_id: String, index: int
 	# Minimum XP floor so starter post quests aren't near-zero
 	var min_xp = int((40 + index * 20) * tier_mult)
 	base_xp = max(base_xp, min_xp)
-	var valor = max(0, int((index - 1 + area_level / 50) * tier_mult * distance_bonus_mult))
+	# #62 (2026-08-26) — reassessed turn-in valor. The old formula ((index-1 + area_level/50))
+	# paid ~0-2 valor even for a full dungeon run — the turn-in felt unrewarding vs the effort
+	# (players got more valor from floor-loot ¢ coins). Now scale with area level so a dungeon
+	# quest pays a meaningful chunk (T1 ~5, mid ~30-50, high-tier capped ~150 before the dungeon
+	# arm's ×1.5-1.6 bonus). XP is left as-is (already scales well with the ×2 dungeon multiplier).
+	var valor = int(clampf((3 + area_level * 0.6 + index * 2.0) * tier_mult * distance_bonus_mult, 3, 150))
 
 	# Pick quest type, cycling through available types
 	var type_index = rng.randi() % quest_types.size()
