@@ -50,8 +50,43 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_difficulty_audit()     # #55 monster-challenge pass — win%/turns/danger vs the new economy.
+	run_overlevel_audit()      # how far above level each class can punch + risk-vs-level curve.
 	quit()
+
+func run_overlevel_audit():
+	var N := 60
+	var plevels := [20, 60, 150]
+	var deltas := [0, 5, 10, 20, 35, 60]
+	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Thief", "Trk"]]
+	print("\n===== OVER-LEVEL REACH (%d fights/cell, AVERAGE gear, normal mob) =====" % N)
+	print("Win%% vs a monster at (player level + delta). 'Reliable' ~ >=60%%. Higher delta reachable = punches further above level.")
+	for pl in plevels:
+		for c in classes:
+			var row := "P%-4d %-4s" % [pl, c[1]]
+			for d in deltas:
+				var wins := 0
+				for i in range(N):
+					var r = run_fight(pl, "average", "normal", 1.0, 1.0, 1.0, c[0], pl + d)
+					if r.win:
+						wins += 1
+				row += "  +%-2d:%3d%%" % [d, int(100.0 * wins / N)]
+			print(row)
+	print("")
+	print("===== SAME-LEVEL RISK vs LEVEL (does fighting your OWN level get safer as you level?) =====")
+	print("AVERAGE gear vs a same-level ELITE. Win%% / avg lowest-HP%% reached.")
+	for c in classes:
+		var row2 := "%-4s " % c[1]
+		for pl in [10, 30, 60, 120, 250]:
+			var wins := 0
+			var mhp := 0.0
+			for i in range(N):
+				var r = run_fight(pl, "average", "elite", 1.0, 1.0, 1.0, c[0])
+				if r.win:
+					wins += 1
+				mhp += float(r.get("min_hp_pct", 0.0))
+			row2 += "| L%-3d %3d%% H%2.0f " % [pl, int(100.0 * wins / N), mhp / N]
+		print(row2)
+	print("=====================================================================\n")
 
 func run_difficulty_audit():
 	# Measures combat feel across level × gear × enemy-tier AFTER the #55 player changes.
@@ -610,12 +645,13 @@ func _player_act(combat: Dictionary, ch) -> void:
 	# Out of resource / no castable card → basic attack (also regens + builds Momentum? no).
 	combat_mgr.process_attack(combat)
 
-func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter") -> Dictionary:
+func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter", monster_level: int = -1) -> Dictionary:
 	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile
 	# (e.g. Momentum gating the burst → lower avg player DPS) by giving back a
 	# fraction of the damage dealt/taken each turn — the reverse-solve knobs.
+	# monster_level > 0 pits the player (at `level`) against an OVER/under-level monster.
 	var ch = make_char(level, gear, klass)
-	var monster = make_monster(level, et, extra_hp_mult)
+	var monster = make_monster(monster_level if monster_level > 0 else level, et, extra_hp_mult)
 	var max_hp: int = ch.get_total_max_hp()
 	combat_mgr.start_combat(0, ch, monster)
 	if not combat_mgr.active_combats.has(0):
