@@ -3377,7 +3377,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	# This ensures abilities scale with late-game mana pools
 	var base_cost = ability_info.cost
 	var cost_percent = ability_info.get("cost_percent", 0)
-	var percent_cost = int(character.get_total_max_mana() * cost_percent / 100.0)
+	# #55 Mage slice — cost scales with NAKED mana (max_mana), not total (see
+	# apply_variable_cost). Gear +max mana/regen buys extra casts, not pricier ones.
+	var percent_cost = int(character.max_mana * cost_percent / 100.0)
 	var mana_cost = max(base_cost, percent_cost)
 
 	# Get class passive for spell modifications
@@ -4694,11 +4696,15 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 	var cost_percent: int = int(entry.get("cost_percent", 0))
 	var resource_type: String = str(entry.get("resource", "stamina"))
 
-	# Mage percentage-cost scaling: ceiling = max(base, max_mana * percent / 100).
-	# Matches the existing fixed-cost mage flow so late-game mages still see
-	# scaling. Only applies to mana abilities.
+	# #55 Mage slice (2026-08-26) — cost scales with the character's NAKED mana
+	# (character.max_mana = base 30 + INT×3 + WIS×1.5, level/stat-derived, EXCLUDES
+	# equipment + house resource_max), NOT total max mana. So: (a) stat investment in
+	# INT raises damage AND cost together → Dmg/Res stays ~constant across levels
+	# (parity, resources stay relevant); (b) gear that adds +max mana / +regen no
+	# longer inflates the cost, so a high-cap/high-regen build gets MORE casts and
+	# better sustain (was: %-of-total-mana made cap gear worthless / even a penalty).
 	if resource_type == "mana" and cost_percent > 0:
-		var percent_cost = int(character.get_total_max_mana() * cost_percent / 100.0)
+		var percent_cost = int(character.max_mana * cost_percent / 100.0)
 		base_ceiling = max(base_ceiling, percent_cost)
 	var base_floor: int = max(1, int(base_ceiling * floor_ratio))
 

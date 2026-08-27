@@ -50,7 +50,7 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_proposal_read()   # single-fight gradient (headline). Also available: run_flock_audit(), run_cost_solve().
+	run_ability_efficiency()   # #55 — per-ability damage-per-resource audit across classes.
 	quit()
 
 func run_proposal_read():
@@ -119,6 +119,70 @@ func run_resource_audit():
 						tpool += float(r.get("max_res", 0))
 					print("%-4s %-4d %-8s %-6s %5.0f%% %7.1f %8.2f %7.0f%% %7.0f%% %7.0f" % [
 						c[1], lvl, gear, et, 100.0 * wins / N, tt / N, tc / N, tmin / N, tend / N, tpool / N])
+	print("=====================================================================\n")
+
+func _force_hand(combat: Dictionary, ability: String) -> void:
+	var hand: Array = combat.get("combat_hand", [])
+	if not (ability in hand):
+		hand.append(ability)
+		combat["combat_hand"] = hand
+
+func _measure_ability(level: int, gear: String, klass: String, ability: String) -> Dictionary:
+	# #55 — single cast on a boss-HP target (won't overkill), ability forced into hand.
+	# Returns {damage, cost} for one cast. Engines (momentum/focus/read) start at 0.
+	var ch = make_char(level, gear, klass)
+	var monster = make_monster(level, "boss")
+	combat_mgr.start_combat(0, ch, monster)
+	if not combat_mgr.active_combats.has(0):
+		return {"damage": 0.0, "cost": 0.0}
+	var combat = combat_mgr.active_combats[0]
+	_force_hand(combat, ability)
+	var mhp0: int = int(monster.get("current_hp", 0))
+	var res0: int = _class_resource(ch, klass)
+	var arg: String = str(maxi(1, int(ch.get_total_max_mana() * 0.25))) if ability == "magic_bolt" else ""
+	combat_mgr.process_ability_command(0, ability, arg)
+	var dmg: int = mhp0 - int(monster.get("current_hp", 0))
+	var cost: int = res0 - _class_resource(ch, klass)
+	var pool: int = _class_max_resource(ch, klass)  # #55 — total pool (incl gear) to show casts/bar
+	combat_mgr.end_combat(0, false, false)
+	return {"damage": float(dmg), "cost": float(cost), "pool": float(pool)}
+
+func run_ability_efficiency():
+	# #55 — measure damage-per-resource for each damage ability across classes + levels/gear.
+	# The flagship question (Bolt vs Blast) is a SIMPLE-ability comparison; finishers
+	# (devastate/meteor/gambit) scale up with their engine so their number here is a FLOOR.
+	var N := 300
+	var cells := [[10, "average"], [50, "average"], [50, "bis"], [200, "average"]]
+	var sets := [
+		["Fighter", "War", ["power_strike", "shield_bash", "cleave", "devastate"]],
+		["Wizard", "Mag", ["magic_bolt", "blast", "meteor"]],
+		["Thief", "Trk", ["ambush", "exploit", "gambit"]],
+	]
+	print("\n===== #55 ABILITY DAMAGE-PER-RESOURCE AUDIT (%d casts/cell) =====" % N)
+	print("Per-cast on a boss-HP target; finishers (devastate/meteor/gambit) = FLOOR (engines at 0).")
+	for cell in cells:
+		var lvl: int = int(cell[0])
+		var gear: String = String(cell[1])
+		print("--- L%d %s ---   %-4s %-13s %9s %8s %8s %9s" % [lvl, gear, "Cls", "Ability", "AvgDmg", "AvgCost", "Dmg/Res", "Casts/Bar"])
+		for s in sets:
+			for ab in s[2]:
+				var td := 0.0
+				var tc := 0.0
+				var tp := 0.0
+				var samples := 0
+				for i in range(N):
+					var r = _measure_ability(lvl, gear, String(s[0]), String(ab))
+					if r.cost > 0.0:
+						td += r.damage
+						tc += r.cost
+						tp += r.pool
+						samples += 1
+				if samples > 0:
+					var avg_cost := tc / samples
+					var casts := (tp / samples) / maxf(1.0, avg_cost)  # #55 pool ÷ cost = casts per full bar
+					print("               %-4s %-13s %9.0f %8.1f %8.2f %9.1f" % [s[1], ab, td / samples, avg_cost, (td / samples) / maxf(1.0, avg_cost), casts])
+				else:
+					print("               %-4s %-13s   (no paid casts — free/utility or unaffordable)" % [s[1], ab])
 	print("=====================================================================\n")
 
 func run_cost_solve():
@@ -414,6 +478,17 @@ func make_char(level: int, gear: String, klass: String = "Fighter"):
 	ch.initialize("SimChar", klass, "Human")
 	for i in range(level - 1):
 		ch.level_up()
+	# #55 (2026-08-26) — allocate every level-up stat point into the class's primary
+	# stat so NAKED resource pools (max_mana / max_stamina / max_energy, which drive
+	# the new absolute cost model) scale with level like a real focused build. The sim
+	# previously left points unspent, artificially flattening the pools.
+	var _primary := "strength"
+	if klass in ["Wizard", "Sorcerer", "Sage"]:
+		_primary = "intelligence"
+	elif klass in ["Thief", "Ranger", "Ninja"]:
+		_primary = "dexterity"
+	while ch.unspent_stat_points > 0:
+		ch.spend_stat_point(_primary)
 	# Gear tiers: under = common/uncommon a bit below level; average = rare at level;
 	# bis = artifact at level.
 	var rarity := "common"
