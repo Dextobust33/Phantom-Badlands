@@ -3270,7 +3270,12 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + ability_damage_dealt
 	# v0.9.676 — Tier 'rider' milestone picks: a damaging ability inflicts BLEED,
 	# scaling with rider level + the hit's damage. Reuses the monster_bleed DoT
-	# (ticked in _process_monster_dots). Stun/armor-break riders can layer on later.
+	# (ticked in _process_monster_dots).
+	# #40 — the rider now LAYERS as you invest more milestone picks in it:
+	#   L1+  bleed (DoT)
+	#   L2+  armor-break (chip enemy defense — reuses the sabotage field, capped 50%)
+	#   L3+  a small STUN chance, gated by the SHARED anti-stunlock (cc_resistance +
+	#        consec_stuns falloff) so a rider can never perma-lock the enemy.
 	if ability_damage_dealt > 0:
 		var _rider_lvl: int = combat.character.get_ability_rider_level(ability_name)
 		if _rider_lvl > 0:
@@ -3278,6 +3283,19 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 			combat["monster_bleed"] = int(combat.get("monster_bleed", 0)) + _bleed
 			combat["monster_bleed_duration"] = max(int(combat.get("monster_bleed_duration", 0)), 3)
 			result.messages.append("[color=#FF4444]Rider: %s opens a bleeding wound (%d/turn)![/color]" % [ability_name.replace("_", " ").capitalize(), _bleed])
+			if _rider_lvl >= 2:
+				var _ab: int = 6 * (_rider_lvl - 1)  # L2 -6%, L3 -12%, L4 -18%
+				combat["monster_sabotaged"] = min(50, int(combat.get("monster_sabotaged", 0)) + _ab)
+				result.messages.append("[color=#FFA500]Rider: armor cracked (-%d%% enemy defense)![/color]" % _ab)
+			if _rider_lvl >= 3:
+				var _cc: int = int(combat.get("cc_resistance", 0))
+				var _cons: int = int(combat.get("consec_stuns", 0))
+				var _stun_ch: int = int(15.0 * pow(STUN_REPEAT_FALLOFF, _cc))
+				if _cons < 2 and randi() % 100 < _stun_ch:
+					combat["monster_stunned"] = max(int(combat.get("monster_stunned", 0)), 1)
+					combat["cc_resistance"] = _cc + 1
+					combat["consec_stuns"] = _cons + 1
+					result.messages.append("[color=#FFFF00]Rider: a staggering blow stuns the enemy![/color]")
 	var ability_self_damage = max(0, player_hp_before - combat.character.current_hp)
 	combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + ability_self_damage
 

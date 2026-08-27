@@ -18854,7 +18854,7 @@ func _get_ability_tooltip(ability_name: String) -> String:
 		var _cat = get_ability_category_info(ability_name)
 		var opts := "Power"
 		if str(_cat.get("category", "")) == "offense":
-			opts += " / Rider (Bleed)"
+			opts += " / Rider (Bleed → Armor-break → Stun)"
 		elif _is_duration_capable(ability_name):
 			opts += " / Duration (+2 rounds)"
 		if ability_name != "magic_bolt":  # v0.9.698 — Bolt's cost is player-chosen; Efficiency is a no-op
@@ -18884,7 +18884,9 @@ func _get_ability_tooltip(ability_name: String) -> String:
 		else:
 			lines.append("Locked — unlocks at level %d (you are level %d)" % [unlock_level, current_level])
 	lines.append("")
-	lines.append("Rank %d — %s" % [rank, rank_name])
+	# #40 — surface the card's explicit TIER number alongside its mastery Rank (the card
+	# face shows rank pips + fill; players asked to also read the tier as a number).
+	lines.append("[color=#C8A24A]Tier %d[/color] · Rank %d — %s" % [Character.tier_for_uses(uses), rank, rank_name])
 	lines.append("Damage modifier: %s" % mult_str)
 	lines.append(progress)
 	if next_preview != "":
