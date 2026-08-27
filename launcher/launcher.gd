@@ -18,7 +18,7 @@ extends Control
 const GITHUB_OWNER = "Dextobust33"
 const GITHUB_REPO = "Phantom-Badlands"
 const MAX_DOWNLOAD_RETRIES = 3
-const LAUNCHER_VERSION = "2.2"  # bump when launcher.gd changes; manifest launcher_version drives self-update
+const LAUNCHER_VERSION = "2.3"  # bump when launcher.gd changes; manifest launcher_version drives self-update
 
 func _is_linux() -> bool:
 	return OS.get_name() == "Linux"
@@ -82,8 +82,12 @@ func _ready():
 
 func _load_webhook():
 	# Read the Discord webhook URL from a gitignored, export-bundled script. Absent → disabled.
-	if FileAccess.file_exists("res://webhook_secret.gd"):
-		var s = load("res://webhook_secret.gd")
+	# Detect the secret in BOTH exported (compiled .gd → ResourceLoader.exists) and from-source
+	# (stale cache → FileAccess.file_exists) builds. The exported-only failure was leaving the
+	# feedback buttons greyed out. Launcher is its own project → secret at res://webhook_secret.gd.
+	var _wp := "res://webhook_secret.gd"
+	if ResourceLoader.exists(_wp) or FileAccess.file_exists(_wp):
+		var s = load(_wp)
 		if s:
 			var inst = s.new()
 			var v = inst.get("URL") if inst else null

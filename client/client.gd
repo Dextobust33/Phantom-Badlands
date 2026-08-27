@@ -27828,8 +27828,13 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.730 — Feedback buttons fixed.
+	display_game("[color=#00FF00]v0.9.730[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#1EFF00]◆ Feedback buttons work now.[/color] The [color=#FFE066]💡 Suggest Idea[/color] / [color=#FF8888]🐞 Report Issue[/color] buttons (in-game and on the launcher) were showing 'unavailable' in the packaged build — fixed. Please send us your ideas and bug reports; we're reading them!")
+	display_game("")
+
 	# v0.9.729 — Self-updating launcher.
-	display_game("[color=#00FF00]v0.9.729[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.729[/color]")
 	display_game("  [color=#1EFF00]◆ Your launcher updates itself now.[/color] No more re-downloading the launcher by hand — after this update it quietly upgrades to the new [b]self-updating launcher[/b] in the background, so you always have the latest one (with the changelog panel + feedback buttons). [color=#808080](One-time, automatic — nothing for you to do.)[/color]")
 	display_game("")
 
@@ -31565,12 +31570,16 @@ func _ensure_webhook_loaded() -> void:
 	if _feedback_webhook_loaded:
 		return
 	_feedback_webhook_loaded = true
-	# FileAccess.file_exists (not ResourceLoader.exists) so a stale .godot filesystem cache
-	# from-source doesn't hide a freshly-added secret; works the same in the exported pck.
-	# NOTE: the client lives in the MAIN project, so its res:// root is the repo — the secret
-	# is at res://client/webhook_secret.gd (the launcher is a separate project → res:// there).
-	if FileAccess.file_exists("res://client/webhook_secret.gd"):
-		var s = load("res://client/webhook_secret.gd")
+	# Detect the secret in BOTH exported and from-source builds:
+	#  • Exported pck: .gd scripts are stored COMPILED, so FileAccess.file_exists(".gd") is
+	#    FALSE — but ResourceLoader.exists() sees the script resource. (This was the bug that
+	#    left feedback "unavailable in this build".)
+	#  • From source: a freshly-added .gd may be missing from the stale .godot cache so
+	#    ResourceLoader.exists() is FALSE — but FileAccess.file_exists() reads the real file.
+	# The client lives in the MAIN project → secret at res://client/webhook_secret.gd.
+	var _wp := "res://client/webhook_secret.gd"
+	if ResourceLoader.exists(_wp) or FileAccess.file_exists(_wp):
+		var s = load(_wp)
 		if s:
 			var inst = s.new()
 			var v = inst.get("URL") if inst else null
