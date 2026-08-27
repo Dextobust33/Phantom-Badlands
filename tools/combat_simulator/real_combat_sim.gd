@@ -50,8 +50,38 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_ability_efficiency()   # #55 — per-ability damage-per-resource audit across classes.
+	run_difficulty_audit()     # #55 monster-challenge pass — win%/turns/danger vs the new economy.
 	quit()
+
+func run_difficulty_audit():
+	# Measures combat feel across level × gear × enemy-tier AFTER the #55 player changes.
+	# Per cell: Win% / avg Turns / avg lowest-HP% reached / avg lowest-resource% reached.
+	# Goal: normal = quick + fairly safe; elite = a real fight; boss = dangerous. And GEAR
+	# should matter — an under-geared player should struggle where a bis one is comfortable.
+	var N := 70
+	var levels := [10, 50, 200]
+	var gears := ["under", "average", "bis"]
+	var enemies := ["normal", "elite", "boss"]
+	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Thief", "Trk"]]
+	print("\n===== MONSTER-CHALLENGE AUDIT (%d fights/cell) =====" % N)
+	print("cell = Win%% Turns MinHP%% (per gear: under | average | bis). MinHP%% = lowest HP reached.")
+	for lvl in levels:
+		for c in classes:
+			for et in enemies:
+				var row := "L%-4d %-4s %-7s" % [lvl, c[1], et]
+				for gear in gears:
+					var wins := 0
+					var tt := 0.0
+					var mhp := 0.0
+					for i in range(N):
+						var r = run_fight(lvl, gear, et, 1.0, 1.0, 1.0, c[0])
+						if r.win:
+							wins += 1
+						tt += float(r.turns)
+						mhp += float(r.get("min_hp_pct", 0.0))
+					row += "| %3d%% %4.1ft H%2.0f " % [int(100.0 * wins / N), tt / N, mhp / N]
+				print(row)
+	print("=====================================================================\n")
 
 func run_proposal_read():
 	# Combined proposal: REAL dumps (Devastate + Outsmart in combat_manager) + capped regen,
@@ -466,13 +496,16 @@ func _player_act_mage(combat: Dictionary, ch) -> void:
 	if focus >= 3 and "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
 			return
-	# Ramp with damage spells (each +1 Focus).
+	# #55 — Magic Bolt is now the mage's big burst nuke (rebuilt multiplier). A real
+	# mage opens with it while mana is stocked (dumps ~25% pool for a huge hit), then
+	# falls to Blast for efficient sustain. Meteor discharges the Focus ramp above.
+	if "magic_bolt" in hand and ch.current_mana > int(ch.get_total_max_mana() * 0.25):
+		var amt := str(max(1, int(ch.get_total_max_mana() * 0.25)))
+		if combat_mgr.process_ability_command(0, "magic_bolt", amt).get("success", false):
+			return
+	# Efficient sustain / Focus ramp (each +1 Focus).
 	if "blast" in hand:
 		if combat_mgr.process_ability_command(0, "blast", "").get("success", false):
-			return
-	if "magic_bolt" in hand:
-		var amt := str(max(1, int(min(float(ch.current_mana), ch.get_total_max_mana() * 0.25))))
-		if combat_mgr.process_ability_command(0, "magic_bolt", amt).get("success", false):
 			return
 	if "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
@@ -593,6 +626,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	# Resource-economy telemetry: how far the pool is actually pushed over the fight.
 	var max_res: int = maxi(1, _class_max_resource(ch, klass))
 	var min_res: int = _class_resource(ch, klass)
+	var min_hp_pct := 100.0  # #55 monster-challenge audit — lowest HP% reached (danger telemetry)
 	while turns < 400:
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
@@ -624,6 +658,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 			var taken: int = php0 - ch.current_hp
 			if taken > 0:
 				ch.current_hp = min(max_hp, ch.current_hp + int(taken * (1.0 - monster_dmg_scale)))
+		min_hp_pct = minf(min_hp_pct, 100.0 * float(maxi(0, ch.current_hp)) / float(max_hp))
 	var win: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 	var end_res: int = _class_resource(ch, klass)
 	combat_mgr.end_combat(0, win, false)
@@ -631,6 +666,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		"win": win, "turns": turns, "casts": casts,
 		"min_res_pct": 100.0 * float(min_res) / float(max_res),
 		"end_res_pct": 100.0 * float(end_res) / float(max_res),
+		"min_hp_pct": min_hp_pct,
 		"max_res": max_res,
 	}
 

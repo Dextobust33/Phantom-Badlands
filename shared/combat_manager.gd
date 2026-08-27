@@ -2641,12 +2641,22 @@ func _outsmart_chance(character, monster, combat) -> int:
 	var monster_intelligence = int(monster.get("intelligence", 15))
 	var monster_level = int(monster.level)
 	var player_level = character.level
+	# #55 monster-challenge (2026-08-26) — Outsmart was a turn-1 reliable instant-win:
+	# wits_bonus (+49 @wits66) + flat trickster +20 gave ~74-85% BEFORE any Read, so
+	# Tricksters skipped every fight in 1 turn taking no damage. Rebalanced so the BASE
+	# is a real gamble and the Read engine (build via Trickster cards) is what makes it
+	# reliable — keeping Outsmart's identity (a clever, earned gamble) without it being
+	# a free win button. Halved wits_bonus, trickster flat 20→10, max 85→68.
 	var base_chance = 5
 	var wits_bonus = 0
 	if player_wits > 10:
-		wits_bonus = int(18.0 * log(float(player_wits) / 10.0) / log(2.0))
+		# #55 — CAP the wits contribution. It's log-scaled but log(high wits) still ~48 at
+		# end-game, which kept base Outsmart ~68% (a reliable win button) forever. Capped at
+		# 22 so Outsmart's BASE is a gamble at every level; the Read engine is what pushes it
+		# toward reliable (its intended identity).
+		wits_bonus = mini(22, int(9.0 * log(float(player_wits) / 10.0) / log(2.0)))
 	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
-	var trickster_bonus = 20 if is_trickster else 0
+	var trickster_bonus = 10 if is_trickster else 0
 	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
 	var smart_penalty = max(0, monster_intelligence - 10)
 	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 2)
@@ -2668,8 +2678,8 @@ func _outsmart_chance(character, monster, combat) -> int:
 	# adds READ_OUTSMART_PER% so a well-read enemy becomes reliably outsmartable.
 	var read := clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
 	outsmart_chance += read * READ_OUTSMART_PER
-	var base_max_chance = 85 if is_trickster else 70
-	var max_chance = max(30, base_max_chance - int(monster_intelligence / 3))
+	var base_max_chance = 55 if is_trickster else 42
+	var max_chance = max(25, base_max_chance - int(monster_intelligence / 3))
 	return clampi(outsmart_chance, 2, max_chance)
 
 func process_outsmart(combat: Dictionary) -> Dictionary:
