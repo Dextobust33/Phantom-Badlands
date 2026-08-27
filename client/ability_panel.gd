@@ -937,14 +937,20 @@ func _off_affinity_pct_for(ability_name: String) -> int:
 	return int(round((1.0 - mult) * 100.0))
 
 func _description_for(ability_name: String) -> String:
-	"""v0.9.322 — short BBCode description rendered inside the card. Pulls
-	from the client's existing `_get_ability_description_text` helper which
-	already feeds combat tooltips."""
+	"""#11 — short BBCode description rendered inside the deck card. Now pulls the
+	PLAIN-LANGUAGE `_ability_desc_bbcode` (the same friendly text combat card-hovers
+	use) instead of the jargon-heavy `_get_ability_description_text`, so the deck
+	screen reads like the rest of the game ('Deal a massive finishing blow' rather
+	than 'INT-scaled burst × 3-4× multiplier, variable cost ≈30% of mana pool max')."""
+	if client_ref and client_ref.has_method("_ability_desc_bbcode"):
+		var raw = str(client_ref._ability_desc_bbcode(ability_name))
+		if raw != "":
+			return "[color=#BFB5A4]%s[/color]" % raw
+	# Fallback for anything without a friendly entry (cloak/teleport utility).
 	if client_ref and client_ref.has_method("_get_ability_description_text"):
-		var raw = str(client_ref._get_ability_description_text(ability_name))
-		if raw == "":
-			return ""
-		return "[color=#BFB5A4]%s[/color]" % raw
+		var raw2 = str(client_ref._get_ability_description_text(ability_name))
+		if raw2 != "":
+			return "[color=#BFB5A4]%s[/color]" % raw2
 	return ""
 
 
