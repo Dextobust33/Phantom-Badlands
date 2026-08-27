@@ -89,3 +89,20 @@ new party-members row + turn banner.
 
 NOTE: this is a multi-session feature; Slice 1 is a foundation, deliberately un-wired so it can't
 regress live combat mid-build.
+
+## STATUS
+- **Slice 1 DONE** (commit 60b3a3a): state + submit-gating + per-member decks.
+- **Slice 2 DONE + HEADLESS-VERIFIED:** the resolution engine. `resolve_party_round(leader_id)`
+  resolves members in speed order via a per-member "combat view" (`_party_member_view`) fed to the
+  real solo card handlers (`process_ability_command` / `process_attack`), with two OPT-IN guards
+  that make the reuse safe: `suppress_monster_turn` (member cards don't trigger per-card
+  retaliation) + `suppress_victory` (a killing blow flags `party_kill` instead of running solo
+  rewards). Then `_party_process_monster_phase` runs the monster ONCE vs a random alive member.
+  Verified via `real_combat_sim._verify_party_combat`: 2 members both damage the SHARED monster,
+  the monster hits exactly ONE member, the round advances + hands redraw. Solo combat untouched
+  (guards are opt-in). Still UN-WIRED — `trigger_encounter` routes parties to solo until Slice 4.
+- **Slice 3 (next):** client co-op UI — per-member HP row, submitted/waiting indicator, live view;
+  server handler so a member's combat command becomes `submit_party_action` and (when all in)
+  `resolve_party_round`, broadcasting the round result to all members.
+- **Slice 4:** shared victory rewards (full XP + own loot each), death/flee/wipe/disband edge
+  cases, then flip `trigger_encounter`'s party branch from `_start_solo_combat_for` to this engine.

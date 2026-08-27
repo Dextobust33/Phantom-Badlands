@@ -52,10 +52,41 @@ func _init():
 
 	_verify_new_mage_cards()
 	_verify_dungeon_cards()
+	_verify_party_combat()
 	run_min_spend_probe()
 	run_difficulty_audit()
 	run_overlevel_audit()
 	quit()
+
+func _verify_party_combat() -> void:
+	# #64 Slice 2 — verify the simultaneous engine: 2 members both hit the SHARED monster,
+	# then the monster acts ONCE per round, and hands redraw for round 2.
+	print("===== #64 PARTY COMBAT ENGINE CHECK =====")
+	var ch0 = make_char(20, "average", "Fighter")
+	var ch1 = make_char(20, "average", "Wizard")
+	var chars := {0: ch0, 1: ch1}
+	var monster = make_monster(20, "boss", 3.0)  # beefy so it survives one round
+	var start = combat_mgr.start_party_combat_simul([0, 1], chars, monster)
+	if not combat_mgr.active_party_combats.has(0):
+		print("FAILED to start party combat"); return
+	var m = combat_mgr.active_party_combats[0]
+	var mhp0: int = int(m.monster.current_hp)
+	var hp0b: int = ch0.current_hp
+	var hp1b: int = ch1.current_hp
+	print("started: monster max_hp=%d (x2 party), hands: ch0=%d ch1=%d cards" % [int(monster.get("max_hp", 0)), (m.member_states[0]["hand"] as Array).size(), (m.member_states[1]["hand"] as Array).size()])
+	combat_mgr.submit_party_action(0, 0, {"kind": "attack"})
+	var sub = combat_mgr.submit_party_action(0, 1, {"kind": "attack"})
+	print("both submitted -> all_submitted=%s" % str(sub.get("all_submitted", false)))
+	var res = combat_mgr.resolve_party_round(0)
+	var mhp1: int = int(m.monster.current_hp)
+	var monster_acted: bool = (ch0.current_hp < hp0b) or (ch1.current_hp < hp1b)
+	print("round resolved: monster %d->%d (both hit shared target=%s) | ch0 %d->%d ch1 %d->%d (monster acted on 1=%s) | ended=%s round=%d" % [
+		mhp0, mhp1, str(mhp1 < mhp0), hp0b, ch0.current_hp, hp1b, ch1.current_hp, str(monster_acted), str(res.get("combat_ended", false)), int(res.get("round", 0))])
+	combat_mgr.active_party_combats.erase(0)
+	combat_mgr.party_combat_membership.clear()
+	ch0.in_combat = false
+	ch1.in_combat = false
+	print("=========================================")
 
 func run_min_spend_probe() -> void:
 	# #70 — the cheese the user hit: does a MINIMUM spend one-shot a same-level normal

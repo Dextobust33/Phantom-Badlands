@@ -2017,6 +2017,11 @@ func _apply_on_kill_chase_procs(character: Character, messages: Array) -> void:
 
 func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dictionary:
 	"""Process monster defeat with all ability effects (death message, bonuses, curses)"""
+	# #64 — in SIMULTANEOUS party combat, a member's killing blow must NOT run the solo
+	# victory (single-player loot/XP + end that member's combat). Flag the kill and let the
+	# party layer grant SHARED rewards (full XP + own loot each). Opt-in; solo unaffected.
+	if combat.get("suppress_victory", false):
+		return {"success": true, "messages": messages, "combat_ended": true, "victory": true, "party_kill": true}
 	var victory_msg_start = messages.size()
 	var character = combat.character
 	var monster = combat.monster
@@ -5543,6 +5548,12 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 
 func process_monster_turn(combat: Dictionary) -> Dictionary:
 	"""Process the monster's attack with all ability effects"""
+	# #64 — SIMULTANEOUS party combat resolves each member's card WITHOUT the monster
+	# retaliating (the monster acts ONCE per round, after all members, via the party
+	# monster phase). This opt-in flag suppresses the per-card retaliation. Solo combats
+	# never set it, so they are completely unaffected.
+	if combat.get("suppress_monster_turn", false):
+		return {"messages": [], "combat_ended": false, "monster_skipped": true}
 	# #65 — a monster turn ends the round, so the next round's first item is free again.
 	combat["free_item_used"] = false
 	var character = combat.character
@@ -8735,8 +8746,16 @@ func start_party_combat_simul(party_members: Array, characters: Dictionary, mons
 			# SIMULTANEOUS submission
 			"submitted_this_round": false,
 			"queued_action": {},   # {kind: "ability"|"attack"|"item"|"flee", ability, arg, ...}
-			"hand": [],            # this member's drawn hand of cards for the round
+			# Per-member deck / hand / discard (each member draws from their OWN deck).
+			"hand": [], "deck": [], "discard": [],
 		}
+		# Build this member's deck + opening hand (reuses the solo deck/draw helpers).
+		var _dv := {"character": ch}
+		_initialize_combat_deck(_dv)
+		_draw_to_hand(_dv)
+		member_states[pid]["deck"] = _dv.get("combat_deck", [])
+		member_states[pid]["discard"] = _dv.get("combat_discard", [])
+		member_states[pid]["hand"] = _dv.get("combat_hand", [])
 
 	var combat: Dictionary = {
 		"mode": "party_simul",
@@ -8760,8 +8779,7 @@ func start_party_combat_simul(party_members: Array, characters: Dictionary, mons
 	for pid in party_members:
 		party_combat_membership[pid] = leader_id
 		_apply_party_member_companion(combat, pid)
-	_party_redraw_hands(combat)
-
+	# Opening hands were dealt in the member loop above.
 	return {"success": true, "leader_id": leader_id, "combat": combat}
 
 func submit_party_action(leader_id: int, peer_id: int, action: Dictionary) -> Dictionary:
@@ -8805,15 +8823,143 @@ func _party_alive_members(combat: Dictionary) -> Array:
 	return out
 
 func _party_redraw_hands(combat: Dictionary) -> void:
-	"""#64 Slice 1 — draw each alive member a fresh hand for the new round and clear
-	their submission. Uses the same deck→hand draw as solo combat so hands honour each
-	member's deck. (Draw helper wired in Slice 2 alongside card resolution.)"""
+	"""#64 Slice 2 — start a new round: for each alive member, cycle their current hand to
+	discard and draw a fresh one (mirrors the solo 'fresh hand each round' rule), and clear
+	their submission so they can queue a new action."""
 	var ms: Dictionary = combat.get("member_states", {})
 	for pid in _party_alive_members(combat):
 		var st = ms[pid]
 		st["submitted_this_round"] = false
 		st["queued_action"] = {}
-		# TODO Slice 2: st["hand"] = _draw_combat_hand(combat.characters[pid])
+		# Reuse the solo cycle-and-redraw against this member's stored deck/hand/discard.
+		var view := {
+			"character": combat.characters[pid],
+			"combat_hand": st.get("hand", []),
+			"combat_deck": st.get("deck", []),
+			"combat_discard": st.get("discard", []),
+		}
+		_cycle_hand_after_attack(view)
+		st["hand"] = view.get("combat_hand", [])
+		st["deck"] = view.get("combat_deck", [])
+		st["discard"] = view.get("combat_discard", [])
+
+# ---- #64 Slice 2: round resolution (simultaneous) ----
+const _PARTY_SHARED_MONSTER_KEYS := ["monster_poison", "monster_poison_duration", "monster_burn",
+	"monster_burn_duration", "monster_bleed", "monster_bleed_duration", "monster_stunned",
+	"monster_sabotaged", "enemy_distracted", "cc_resistance", "consec_stuns"]
+
+func _party_member_speed(combat: Dictionary, pid: int) -> int:
+	var ch = combat.characters[pid]
+	return int(ch.get_effective_stat("dexterity")) + int(ch.get_equipment_bonuses().get("speed", 0))
+
+func _party_member_view(combat: Dictionary, pid: int) -> Dictionary:
+	"""A SOLO-shaped combat view for resolving ONE member's action against the SHARED monster.
+	suppress_monster_turn/victory keep the monster from retaliating or granting solo rewards
+	mid-round. Shared monster CC/DoT are copied in (synced back after) so a member's poison/stun
+	persists on the one monster; the member's engines (Momentum/Focus/Combo) come from their state."""
+	var st = combat.member_states[pid]
+	var view := {
+		"character": combat.characters[pid],
+		"monster": combat.monster,  # shared object — HP/kills persist
+		"combat_hand": st.get("hand", []),
+		"combat_deck": st.get("deck", []),
+		"combat_discard": st.get("discard", []),
+		"momentum": int(st.get("momentum", 0)),
+		"focus": int(st.get("focus", 0)),
+		"combo": int(st.get("combo", 0)),
+		"forcefield_shield": int(st.get("forcefield_shield", 0)),
+		"mastery_uses_this_fight": st.get("mastery_uses_this_fight", {}),
+		"player_can_act": true,
+		"suppress_monster_turn": true,
+		"suppress_victory": true,
+		"combat_log": [],
+	}
+	for k in _PARTY_SHARED_MONSTER_KEYS:
+		view[k] = int(combat.get(k, 0))
+	return view
+
+func _party_sync_view_back(combat: Dictionary, pid: int, view: Dictionary) -> void:
+	var st = combat.member_states[pid]
+	st["momentum"] = int(view.get("momentum", 0))
+	st["focus"] = int(view.get("focus", 0))
+	st["combo"] = int(view.get("combo", 0))
+	st["forcefield_shield"] = int(view.get("forcefield_shield", 0))
+	st["mastery_uses_this_fight"] = view.get("mastery_uses_this_fight", {})
+	st["hand"] = view.get("combat_hand", [])
+	st["deck"] = view.get("combat_deck", [])
+	st["discard"] = view.get("combat_discard", [])
+	for k in _PARTY_SHARED_MONSTER_KEYS:
+		combat[k] = int(view.get(k, 0))
+
+func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
+	"""Resolve one member's queued action via the solo card engine on their view."""
+	var st = combat.member_states[pid]
+	var action = st.get("queued_action", {})
+	var kind := String(action.get("kind", "attack"))
+	if kind == "flee":
+		st["fled"] = true
+		return ["[color=#FFAA00]%s slips away from the fight.[/color]" % combat.characters[pid].name]
+	var view := _party_member_view(combat, pid)
+	active_combats[pid] = view
+	var result: Dictionary
+	if kind == "ability":
+		result = process_ability_command(pid, String(action.get("ability", "")), String(action.get("arg", "")))
+	else:
+		result = process_attack(view)
+	_party_sync_view_back(combat, pid, view)
+	active_combats.erase(pid)
+	return result.get("messages", [])
+
+func _party_process_monster_phase(combat: Dictionary) -> Array:
+	"""#64 — the monster acts ONCE per round against a random alive member (suppress OFF here)."""
+	var alive := _party_alive_members(combat)
+	if alive.is_empty():
+		return []
+	var target_pid = alive[randi() % alive.size()]
+	var view := _party_member_view(combat, target_pid)
+	view["suppress_monster_turn"] = false
+	active_combats[target_pid] = view
+	var mres = process_monster_turn(view)
+	_party_sync_view_back(combat, target_pid, view)
+	active_combats.erase(target_pid)
+	var msgs: Array = ["[color=#FF8888]The %s turns on %s![/color]" % [combat.monster.get("name", "monster"), combat.characters[target_pid].name]]
+	msgs.append_array(mres.get("messages", []))
+	return msgs
+
+func _party_check_deaths(combat: Dictionary) -> void:
+	var ms = combat.member_states
+	for pid in combat.get("members", []):
+		var st = ms.get(pid, {})
+		if st.get("dead", false) or st.get("fled", false):
+			continue
+		if combat.characters[pid].current_hp <= 0:
+			st["dead"] = true
+
+func resolve_party_round(leader_id: int) -> Dictionary:
+	"""#64 Slice 2 — resolve one SIMULTANEOUS round: members act in SPEED order, then the monster
+	acts once. Returns {combat_ended, victory?, wipe?, messages, round}. The server calls this once
+	_party_all_submitted(combat) is true. (Shared victory rewards + client sync = Slices 3-4.)"""
+	if not active_party_combats.has(leader_id):
+		return {"combat_ended": true, "messages": ["No party combat."]}
+	var combat = active_party_combats[leader_id]
+	var msgs: Array = []
+	var order := _party_alive_members(combat)
+	order.sort_custom(func(a, b): return _party_member_speed(combat, a) > _party_member_speed(combat, b))
+	for pid in order:
+		var st = combat.member_states[pid]
+		if st.get("dead", false) or st.get("fled", false):
+			continue
+		msgs.append_array(_party_apply_member_action(combat, pid))
+		if int(combat.monster.get("current_hp", 0)) <= 0:
+			msgs.append("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster"))
+			return {"combat_ended": true, "victory": true, "messages": msgs}
+	msgs.append_array(_party_process_monster_phase(combat))
+	_party_check_deaths(combat)
+	if _party_alive_members(combat).is_empty():
+		return {"combat_ended": true, "victory": false, "wipe": true, "messages": msgs}
+	combat["round"] = int(combat.get("round", 1)) + 1
+	_party_redraw_hands(combat)
+	return {"combat_ended": false, "messages": msgs, "round": int(combat["round"])}
 
 func _apply_party_member_companion(combat: Dictionary, peer_id: int):
 	"""Apply companion passives for a party member in party combat."""
