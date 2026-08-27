@@ -5052,12 +5052,13 @@ func _refresh_player_resource() -> void:
 		_overlay_player_resource_text.text = "%d / %d" % [maxi(0, _player_resource_cur), _player_resource_max]
 
 
-# v0.9.501 — Combat readability: tween HP/companion/monster bar drain over
-# ~1 second instead of snapping. Kills any in-progress tween on the bar so
-# rapid hits don't queue stale tweens. Text labels (e.g., "HP 84/150") still
-# update instantly via the caller — the bar is the dramatic reveal; the
-# number is the truth.
-func _animate_bar_value(bar: ProgressBar, target: float, dur: float = 1.0) -> void:
+# v0.9.501 — Combat readability: tween HP/companion/monster bar drain instead
+# of snapping. Kills any in-progress tween on the bar so rapid hits don't queue
+# stale tweens. Text labels (e.g., "HP 84/150") still update instantly via the
+# caller — the bar is the dramatic reveal; the number is the truth.
+# 2026-08-27 — drain sped up 1.0s → 0.45s (player feedback: bar updates felt
+# sluggish in turn-based pacing). Still visible as a drain, just not laggy.
+func _animate_bar_value(bar: ProgressBar, target: float, dur: float = 0.45) -> void:
 	if bar == null or not is_instance_valid(bar):
 		return
 	# v0.9.591 — Godot 4.6 prints an error when get_meta() is called on a key
@@ -5132,7 +5133,9 @@ func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
 		return
 	var anchor_global := anchor.global_position + Vector2(anchor.size.x * 0.5, anchor.size.y * 0.5)
 	# Pink-red color so companion hits are distinguishable from player hits.
-	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true)
+	# Travel from the monster (the attacker) toward the companion — with a launch
+	# delay so the monster's lunge reads BEFORE the number flies.
+	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), 0.30)
 
 
 func _refresh_companion() -> void:
@@ -5570,6 +5573,39 @@ func _lunge_node(node: Control, baseline: Vector2, is_player: bool, forward: boo
 	t.tween_property(node, "position", baseline, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
+# === 2026-08-27 — Get-hit recoil (struck-back knockback) ===
+
+func recoil_player() -> void:
+	_recoil_node(_player_visual_for_fx())
+
+func recoil_companion() -> void:
+	_recoil_node(_companion_art)
+
+func _recoil_node(node: Control) -> void:
+	"""Struck reaction: the target is knocked back to the LEFT (away from the
+	enemy on the right) then snaps home with a slight overshoot. Pairs with the
+	white flash so a hit LANDING on the player/companion is obvious at a glance —
+	not just a number the player has to notice. Reuses the shared lunge_baseline
+	so it returns to the true rest position."""
+	if node == null or not is_instance_valid(node):
+		return
+	var base: Vector2
+	if node.has_meta("lunge_baseline"):
+		base = node.get_meta("lunge_baseline")
+	else:
+		base = node.position
+		node.set_meta("lunge_baseline", base)
+	if node.has_meta("recoil_tween"):
+		var prev = node.get_meta("recoil_tween")
+		if prev != null and is_instance_valid(prev):
+			prev.kill()
+	node.position = base
+	var t := create_tween()
+	node.set_meta("recoil_tween", t)
+	t.tween_property(node, "position", base + Vector2(-12.0, 0.0), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	t.tween_property(node, "position", base, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
 # === v0.9.413 — Miss FX ===
 
 func show_miss_on_monster(source: String = "player") -> void:
@@ -5639,35 +5675,25 @@ func _spawn_miss_label(anchor_global: Vector2, color: Color = Color("#FFD93D")) 
 	var local_anchor: Vector2 = anchor_global - global_position - label.size * 0.5
 	label.position = local_anchor
 
-	# Reuse the damage-stack so misses also stack vertically with hits.
-	# v0.9.415 — use the same reset window as damage popups (scaled by speed)
-	# so misses don't overdraw recent damage numbers; cap so rapid bursts
-	# don't push popups off the top of the panel.
-	var now := float(Time.get_ticks_msec()) / 1000.0
-	if now - _damage_label_last_spawn_ts < DAMAGE_STACK_RESET_S:
-		_damage_label_stack_y = maxf(_damage_label_stack_y - DAMAGE_STACK_STEP_PX, -DAMAGE_STACK_MAX_OFFSET)
-	else:
-		_damage_label_stack_y = 0.0
-	_damage_label_last_spawn_ts = now
-	label.position.y += _damage_label_stack_y
-	# Final on-screen clamp: anchor can already be near the panel top (esp.
-	# monster art), so stack offset on top of that may go negative. Force the
-	# label inside the panel bounds; popups beyond capacity overlap at the
-	# top edge instead of disappearing above it.
-	label.position.y = maxf(label.position.y, 8.0)
+	# Clamp the START inside the panel — the label rises from here, so leave
+	# headroom below the top edge for the float.
+	label.position.y = maxf(label.position.y, 40.0)
 
-	# Bold scale-pop + linger + fade.
-	label.scale = Vector2(0.3, 0.3)
+	# 2026-08-27 — MISS now uses the SAME rise-and-fade as damage numbers so it
+	# reads as part of the same visual family and actually catches the eye. The
+	# old version was a brief static pop (~0.8s) that players watching the enemy
+	# art routinely missed — they'd wait for a number that never came. Pop in,
+	# float up, fade; paired with a subtle whiff SFX on the client side.
 	label.pivot_offset = label.size * 0.5
-	# v0.9.417 — bold scale-pop + linger + fade for MISS popups.
-	# v0.9.439: 0.85/0.35 → 0.55/0.25.
-	var miss_linger := 0.55
-	var miss_fade := 0.25
+	label.scale = Vector2(1.3, 1.3)
+	var start_pos: Vector2 = label.position
+	var life := 1.0
 	var t := create_tween().set_parallel(true)
-	t.tween_property(label, "scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	t.tween_property(label, "scale", Vector2(1.0, 1.0), 0.10).set_delay(0.12)
-	t.tween_property(label, "modulate:a", 0.0, miss_fade).set_delay(miss_linger)
-	t.tween_callback(label.queue_free).set_delay(miss_linger + miss_fade)
+	t.tween_property(label, "scale", Vector2(1.0, 1.0), 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "position:y", start_pos.y - 46.0, life).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	var miss_fade := life * 0.45
+	t.tween_property(label, "modulate:a", 0.0, miss_fade).set_delay(life - miss_fade).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_callback(label.queue_free).set_delay(life + 0.05)
 
 
 func lunge_monster_forward() -> void:
@@ -5686,13 +5712,36 @@ func lunge_monster_forward() -> void:
 	_monster_lunge_tween.tween_property(_monster_art_label, "position", _monster_art_baseline_pos, LUNGE_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
 
+func _attacker_anchor_global(source: String) -> Vector2:
+	"""Screen-space center of the ATTACKER, used as the travel origin for a
+	damage number. source: 'player' → your sprite, 'companion' → companion art,
+	'monster' → monster art. Returns Vector2(INF,INF) (no-travel sentinel) when
+	the node isn't available so the number just spawns at the target."""
+	var node: Control = null
+	match source:
+		"companion":
+			node = _companion_art
+		"monster":
+			node = _monster_art_label
+		_:
+			node = _player_visual_for_fx()
+	if node == null or not is_instance_valid(node):
+		return Vector2(INF, INF)
+	return node.global_position + node.size * 0.5
+
+
 func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player") -> void:
 	"""Spawn a floating damage number above the monster art.
 	source: 'player' (yellow), 'companion' (cyan), 'crit' override (red, larger)."""
 	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
 		return
 	var anchor_global = _monster_art_label.global_position + Vector2(_monster_art_label.size.x * 0.5, _monster_art_label.size.y * 0.25)
-	_spawn_damage_label(anchor_global, amount, is_crit, source, false)
+	# Travel from the ATTACKER (player or companion) so the number visibly comes
+	# from whoever dealt it — the at-a-glance "who hit" cue. Player attacks read
+	# instantly (their battler already stepped on card-play); companion hits get a
+	# short launch delay so the companion's lunge reads BEFORE the number flies.
+	var _tdelay: float = 0.30 if source == "companion" else 0.0
+	_spawn_damage_label(anchor_global, amount, is_crit, source, false, _attacker_anchor_global(source), _tdelay)
 
 
 func show_damage_on_player(amount: int, is_crit: bool) -> void:
@@ -5708,7 +5757,9 @@ func show_damage_on_player(amount: int, is_crit: bool) -> void:
 	if node == null or not is_instance_valid(node):
 		return
 	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.5)
-	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true)
+	# Travel from the monster (the attacker) toward the player — with a launch
+	# delay so the monster's lunge reads BEFORE the number flies.
+	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), 0.30)
 
 
 # DoT floating numbers — small, tag-colored "tick" labels for bleed/poison/
@@ -5807,14 +5858,16 @@ func _load_ttf_runtime(path: String) -> FontFile:
 	font.data = bytes
 	return font
 
-func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, source: String, target_is_player: bool) -> void:
-	# v0.9.396 — damage popup pass 4 per feedback:
-	#   • NO boxy background panel — just a Label with a thick outline that
-	#     forms a "border around the number" (the letterforms themselves get
-	#     a near-black halo, not a rectangle).
-	#   • NO upward drift — the number lingers in place, then fades.
-	#   • Kept: thin+tall scale, white-flash impact, rotation jitter, crit
-	#     shake, vertical no-overlap stacking.
+func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, source: String, target_is_player: bool, from_global: Vector2 = Vector2(INF, INF), travel_delay: float = 0.0) -> void:
+	# 2026-08-27 readability redesign: clean rise-and-fade (normal proportions,
+	# short life). Optional `from_global` = the ATTACKER's screen position; when
+	# given, the number launches from the attacker and flies to the target before
+	# settling, so motion origin shows WHO dealt it (player vs companion sit at
+	# different spots). Sentinel Vector2(INF,INF) = no travel (spawn at target).
+	# `travel_delay` holds the number invisible at the attacker for a beat so the
+	# attacker's LUNGE reads first, THEN the number launches — used for companion
+	# and enemy hits (whose lunge fires on the same message) so the order matches
+	# player attacks (character steps → number flies), not the reverse.
 	var color := Color("#FFD93D")  # default yellow = player damage
 	var font_size := 40
 	if is_crit:
@@ -5862,62 +5915,70 @@ func _spawn_damage_label(anchor_global: Vector2, amount: int, is_crit: bool, sou
 	else:
 		_damage_label_stack_y = 0.0
 	_damage_label_last_spawn_ts = now
-	var x_jitter := randf_range(-22.0, 22.0)
+	# 2026-08-27 readability redesign: small horizontal jitter only (numbers stay
+	# near the sprite that was hit so they're traceable), no static upward stack —
+	# the rise-and-fade motion below separates sequential hits on its own.
+	var x_jitter := randf_range(-8.0, 8.0)
 
-	var local_anchor = anchor_global - global_position - label.size * 0.5
-	local_anchor += Vector2(x_jitter, _damage_label_stack_y)
-	label.position = local_anchor
-	# v0.9.415 — final on-screen clamp: anchor + stack can go above panel
-	# when monster is high in the layout. Keep popups inside the panel.
-	label.position.y = maxf(label.position.y, 8.0)
+	# SETTLE point = the target anchor (where the number ends up + rises from).
+	var target_local: Vector2 = anchor_global - global_position - label.size * 0.5
+	target_local += Vector2(x_jitter, 0.0)
+	# Keep the settle point inside the panel — the rise floats up from here, so
+	# leave headroom below the top edge for the float.
+	target_local.y = maxf(target_local.y, 40.0)
 
-	# Slight random rotation per spawn (more for crits).
-	var jitter_deg = randf_range(-4.0, 4.0) if not is_crit else randf_range(-7.0, 7.0)
-	label.rotation = deg_to_rad(jitter_deg)
+	# Optional travel: launch FROM the attacker and fly to the target. Motion
+	# origin tells the player who dealt it; then it settles + rises so it stays
+	# readable. Sentinel Vector2(INF,INF) → no travel (spawn straight at target).
+	var has_travel: bool = from_global.x < 1e19 and from_global.y < 1e19
+	var travel_t := 0.0
+	if has_travel:
+		label.position = from_global - global_position - label.size * 0.5
+		# Player attacks (no launch delay) fly FAST so the number arrives right on
+		# the heels of their battler step; companion/enemy hits (delayed launch)
+		# travel at a normal pace after their lunge has already read.
+		travel_t = 0.03 if travel_delay <= 0.0 else 0.15
+	else:
+		label.position = target_local
 
-	# Persistent "thin + tall" scale (verticality).
-	var rest_scale := Vector2(0.70, 1.55)
-	label.scale = Vector2(0.30, 1.85)
+	# d0 = launch delay: hold the number invisible at the attacker so its lunge
+	# reads first, then the number appears + flies. Only meaningful with travel.
+	var d0: float = travel_delay if has_travel else 0.0
+	if d0 > 0.0:
+		label.modulate.a = 0.0
+
+	# Readable rise-and-fade: normal proportions, quick pop-in, then float UP
+	# while fading. Short life (~1.1s, crits ~1.3s) so numbers don't crowd.
+	var rest_scale := Vector2(1.0, 1.0)
+	var rise_px := 52.0 if not is_crit else 68.0
+	var life := 1.1 if not is_crit else 1.3
+	label.rotation = 0.0
+	label.scale = Vector2(1.35, 1.35)
 	var t := create_tween().set_parallel(true)
-	# Scale pop-in (overshoot for SNES "punch").
-	t.tween_property(label, "scale", rest_scale, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	# White → damage color flash.
-	t.tween_property(label, "theme_override_colors/font_color", color, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# At launch time (d0): fade in (if it was held), pop in, flash to color.
+	if d0 > 0.0:
+		t.tween_property(label, "modulate:a", 1.0, 0.05).set_delay(d0)
+	t.tween_property(label, "scale", rest_scale, 0.14).set_delay(d0).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(label, "theme_override_colors/font_color", color, 0.16).set_delay(d0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# Travel attacker → target (fast), if requested.
+	if has_travel:
+		t.tween_property(label, "position", target_local, travel_t).set_delay(d0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# Float upward from the settle point (begins after launch delay + travel).
+	t.tween_property(label, "position:y", target_local.y - rise_px, life).set_delay(d0 + travel_t).from(target_local.y).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# Fade out over the last ~45% of life.
+	var fade_time := life * 0.45
+	t.tween_property(label, "modulate:a", 0.0, fade_time).set_delay(d0 + travel_t + life - fade_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 
-	# Crit shake during early linger (small wobble).
-	# v0.9.415 — use the CLAMPED label.position as the shake base so the
-	# shake doesn't pull a clamped popup back above the panel top edge.
+	# Crit: brief horizontal shake after arrival (position:x only, so it doesn't
+	# fight the vertical rise running in parallel).
 	if is_crit:
-		var shake_base: Vector2 = label.position
-		var shake_amp := 4.0
-		var shake_count := 4
-		for i in range(shake_count):
-			var dt := 0.05
-			var dly := 0.20 + i * dt
-			var dir = Vector2(randf_range(-shake_amp, shake_amp), randf_range(-shake_amp, shake_amp))
-			t.tween_property(label, "position", shake_base + dir, dt).set_delay(dly).set_trans(Tween.TRANS_SINE)
-		t.tween_property(label, "position", shake_base, 0.05).set_delay(0.20 + shake_count * 0.05)
+		var shake_amp := 5.0
+		for i in range(4):
+			var dly := d0 + travel_t + 0.02 + i * 0.045
+			t.tween_property(label, "position:x", target_local.x + randf_range(-shake_amp, shake_amp), 0.045).set_delay(dly).set_trans(Tween.TRANS_SINE)
+		t.tween_property(label, "position:x", target_local.x, 0.045).set_delay(d0 + travel_t + 0.02 + 4 * 0.045)
 
-	# v0.9.415 — breathe pulse: gentle scale oscillation during linger so the
-	# number isn't completely static. Runs on its own tween in parallel.
-	var breathe := create_tween().set_loops(3)
-	var beat_a := rest_scale * Vector2(1.05, 0.97)
-	var beat_b := rest_scale * Vector2(0.96, 1.04)
-	breathe.tween_property(label, "scale", beat_a, 0.18).set_trans(Tween.TRANS_SINE).set_delay(0.25)
-	breathe.tween_property(label, "scale", beat_b, 0.18).set_trans(Tween.TRANS_SINE)
-	breathe.tween_property(label, "scale", rest_scale, 0.18).set_trans(Tween.TRANS_SINE)
-
-	# Linger in place, then fade with a subtle scale shrink (no upward drift).
-	# v0.9.439: 1.0/0.35 → 0.65/0.25. Inter-attack delay also dropped to 0.45,
-	# so the popup fades just before the next attack lands.
-	# v0.9.501: per playtest readability ask, ~3× longer dwell so players can
-	# actually read the damage before the next attack lands. 0.65/0.25 → 1.95/0.75
-	# (total ~2.7s vs previous 0.9s).
-	var linger_time := 1.95
-	var fade_time := 0.75
-	t.tween_property(label, "modulate:a", 0.0, fade_time).set_delay(linger_time)
-	t.tween_property(label, "scale", rest_scale * 0.85, fade_time).set_delay(linger_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	t.tween_callback(label.queue_free).set_delay(linger_time + fade_time)
+	t.tween_callback(label.queue_free).set_delay(d0 + travel_t + life + 0.05)
 
 
 # === A3 ability VFX ===

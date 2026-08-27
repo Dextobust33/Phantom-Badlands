@@ -505,6 +505,13 @@ var map_sprites_overlay: Control = null
 # _sync_map_sprites_overlay skip its auto-center logic for one frame so we
 # don't fight the user's drag. Cleared on the next map update.
 var _map_scroll_user_active: bool = false
+# Sprite-overlay layout-settle retry. On login the RichTextLabel hasn't laid out
+# the map yet, so get_parsed_text() can't find the " @" row and the local sprite
+# lands on stale fallback math (offset until the player takes a step). When the @
+# is expected but not yet found, _sync re-defers itself up to this many frames so
+# the sprite snaps into place on its own. Reset each fresh map render.
+var _map_sync_settle_retry: int = 0
+const MAP_SYNC_SETTLE_RETRY_MAX := 8
 # v0.9.390 — capture the most recent dungeon special-tile text message so
 # display_dungeon_floor can re-append it (otherwise the immediately-following
 # dungeon_state clears game_output before the player can read it).
@@ -1754,6 +1761,7 @@ var last_known_hp_before_round: int = 0  # Track HP to detect heavy damage
 # Combat sound effects (subtle, not overwhelming)
 var combat_hit_player: AudioStreamPlayer = null  # Player lands an attack
 var combat_crit_player: AudioStreamPlayer = null  # Critical hit
+var combat_miss_player: AudioStreamPlayer = null  # Attack whiffs (miss) — subtle swing
 var combat_victory_player: AudioStreamPlayer = null  # Monster defeated (plays on first-time discoveries)
 var combat_ability_player: AudioStreamPlayer = null  # Ability use
 var last_combat_sound_time: float = 0.0
@@ -1816,6 +1824,7 @@ const SFX_BASE_VOLUMES: Dictionary = {
 	"danger": -24.0,
 	"combat_hit": -23.0,
 	"combat_crit": -20.0,
+	"combat_miss": -27.0,
 	"combat_victory": -22.0,
 	"combat_ability": -26.0,
 	"egg_hatch": -20.0,
@@ -2659,6 +2668,11 @@ func _init_sound_players():
 	danger_player = _create_sfx_player("res://audio/Damage01.wav", "danger")
 	combat_hit_player = _create_sfx_player("res://audio/Hit.wav", "combat_hit")
 	combat_crit_player = _create_sfx_player("res://audio/Slash01.wav", "combat_crit")
+	# Miss = the same swing wav, quieter + pitched up so it reads as a light
+	# "whiff" that connected with nothing, distinct from the impact of a hit.
+	combat_miss_player = _create_sfx_player("res://audio/Slash01.wav", "combat_miss")
+	if combat_miss_player:
+		combat_miss_player.pitch_scale = 1.5
 	combat_victory_player = _create_sfx_player("res://audio/UI06.wav", "combat_victory")
 	combat_ability_player = _create_sfx_player("res://audio/SciFi01.wav", "combat_ability")
 	egg_hatch_player = _create_sfx_player("res://audio/PowerUp01.wav", "egg_hatch")
@@ -2769,6 +2783,14 @@ func play_combat_crit_sound():
 		combat_crit_player.play()
 		last_combat_sound_time = Time.get_ticks_msec() / 1000.0
 
+func play_combat_miss_sound():
+	"""Play the subtle whiff sound when an attack misses (cooldown-gated like hits)."""
+	if not _can_play_combat_sound():
+		return
+	if combat_miss_player and combat_miss_player.stream:
+		combat_miss_player.play()
+		last_combat_sound_time = Time.get_ticks_msec() / 1000.0
+
 func play_combat_victory_sound(force: bool = false):
 	"""Play victory chime - only plays for first-time monster discoveries unless forced"""
 	if not force:
@@ -2840,6 +2862,7 @@ func _apply_volume_settings():
 		"server_announcement": server_announcement_player,
 		"danger": danger_player,
 		"combat_hit": combat_hit_player,
+		"combat_miss": combat_miss_player,
 		"combat_crit": combat_crit_player,
 		"combat_victory": combat_victory_player,
 		"combat_ability": combat_ability_player,
@@ -34656,6 +34679,8 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 	if comp_match:
 		var comp_dmg := int(comp_match.get_string(1))
 		combat_scene_panel.show_damage_on_companion(comp_dmg, is_crit)
+		combat_scene_panel.flash_companion(is_crit)
+		combat_scene_panel.recoil_companion()
 		combat_scene_panel.lunge_monster_forward()
 		return
 
@@ -34664,6 +34689,7 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 	if damage_to_player > 0:
 		combat_scene_panel.show_damage_on_player(damage_to_player, is_crit)
 		combat_scene_panel.flash_player(is_crit)
+		combat_scene_panel.recoil_player()
 		combat_scene_panel.lunge_monster_forward()
 		combat_scene_panel.add_monster_damage(damage_to_player)
 
@@ -34698,6 +34724,7 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 			combat_scene_panel.show_miss_on_monster("player")
 			missed = true
 		if missed:
+			play_combat_miss_sound()
 			return
 
 	# DoT / proc floating numbers — bleed/poison/thorns/reflect/charm/curse
@@ -35646,12 +35673,34 @@ func _compose_portrait(battler_id: String, appearance_color: String, equipped) -
 	return tex
 
 
+func _remote_entry_has_sprite(entry: Dictionary) -> bool:
+	"""True when we can resolve SOME sprite texture for this remote player
+	(stored battler overworld/idle, or a class-atlas fallback). Mirrors the
+	resolution ladder in _sync_map_sprites_overlay. Used to decide whether it
+	is safe to strip the player's ASCII letter — if no sprite will render, we
+	MUST keep the letter or the player becomes invisible on the map (collision
+	still blocks the tile but nothing is drawn)."""
+	var rbid := BattlerSprite.id_from_data(entry)
+	if BattlerSprite.has_overworld_by_id(rbid):
+		return true
+	if BattlerSprite.idle_texture_by_id(rbid) != null:
+		return true
+	var rcls := str(entry.get("class", ""))
+	var rname := str(entry.get("name", ""))
+	var rfacing := str(_remote_facings.get(rname, "right"))
+	return ClassSprite.get_idle_atlas_for_direction(rcls, rfacing) != null
+
+
 func _strip_remote_player_glyphs(map_text: String) -> String:
 	"""Replace each visible remote player's letter cell with two raw spaces
 	so the sprite overlay is the only representation. Uses literal string
 	replacement constructed from the cached nearby_players data — no regex,
 	so no false positives on terrain that happens to share the player
-	colors (guards in #00FF00, water in #00FFFF)."""
+	colors (guards in #00FF00, water in #00FFFF).
+
+	Only strips a player whose sprite will actually render (_remote_entry_has_sprite);
+	if the sprite can't resolve, the ASCII letter is left in place so the player
+	is never fully invisible."""
 	var out = map_text
 	for entry in _cached_nearby_players:
 		if not (entry is Dictionary):
@@ -35659,6 +35708,8 @@ func _strip_remote_player_glyphs(map_text: String) -> String:
 		var pname = str(entry.get("name", ""))
 		if pname.length() == 0:
 			continue
+		if not _remote_entry_has_sprite(entry):
+			continue  # keep the letter — no sprite to replace it
 		var letter = pname.substr(0, 1).to_upper()
 		var color = "#00FF00" if entry.get("in_my_party", false) else "#00FFFF"
 		var target = "[color=%s] %s[/color]" % [color, letter]
@@ -36120,6 +36171,18 @@ func _sync_map_sprites_overlay() -> void:
 	var at_line_idx: int = -1
 	if at_byte_pos >= 0:
 		at_line_idx = bbcode_text.substr(0, at_byte_pos).count("\n")
+	# On login the RichTextLabel hasn't laid out the appended map text yet, so the
+	# " @" row isn't findable and the fallback math below places the sprite offset
+	# (it corrects only once the player takes a step). When the @ SHOULD be present
+	# (normal overworld play) but isn't yet, re-defer this sync for a few frames so
+	# the avatar snaps into place on its own instead of rendering off-position.
+	if at_byte_pos < 0 and game_state == GameState.PLAYING and has_character \
+			and not in_combat and not dungeon_mode \
+			and _map_sync_settle_retry < MAP_SYNC_SETTLE_RETRY_MAX:
+		_map_sync_settle_retry += 1
+		call_deferred("_sync_map_sprites_overlay")
+		return
+	_map_sync_settle_retry = 0
 	# Compute the centered pixel Y of the @ glyph's row.
 	# v0.9.347 — the half-tile offset at NPC posts (v0.9.346) was caused by
 	# the [b] post-name header: bold text renders with slightly different

@@ -7781,7 +7781,12 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 			# inspect view to compute damage estimates and level-gated
 			# abilities).
 			var comp_data = {}
-			var active_comp = other_char.get("active_companion", {})
+			# NOTE: Character is a Resource — Object.get() takes ONE arg under Godot
+			# 4.7+. Use direct property access (these are all @export vars) instead of
+			# the 2-arg `.get(key, default)` form, which throws and would abort this
+			# whole function (silently emptying every player's nearby list → invisible
+			# players on the map). This regressed on the 4.6→4.7 engine bump.
+			var active_comp = other_char.active_companion
 			if active_comp is Dictionary and not active_comp.is_empty():
 				comp_data = {
 					"name": active_comp.get("name", ""),
@@ -7801,8 +7806,8 @@ func get_nearby_players(peer_id: int, radius: int = 7) -> Array:
 				"y": other_char.y,
 				"name": other_char.name,
 				"level": other_char.level,
-				"class": other_char.get("class_type", ""),
-				"battler_id": other_char.get("battler_id", ""),
+				"class": other_char.class_type,
+				"battler_id": other_char.battler_id,
 				"companion": comp_data,
 				"in_my_party": is_party_mate,
 				# Audit #14 PvP Slice C V1 (v0.9.553) — x/y already present
