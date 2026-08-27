@@ -27897,8 +27897,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.735 — Card variety, trading + performance.
+	display_game("[color=#00FF00]v0.9.735[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ NEW CARDS TO CHASE — AND TRADE.[/color] Dungeons now drop [b]exclusive combat cards[/b] you can't get anywhere else — a venom strike, a life-drain, a bone shield, a god-killer's finisher, each from its own dungeon — and [b]any class[/b] can run them. You can also now [b]buy & sell earned cards[/b] (companion + dungeon) at the [b]market[/b]: a new [color=#FFE066]List Combat Card[/color] option, and a [color=#FFE066]Cards[/color] filter when browsing.")
+	display_game("  [color=#1EFF00]◆ Every class has 9 cards, each with a real job.[/color] [b]Warrior[/b]'s War Cry is now a tempo/intimidate card (surges Momentum + rattles the foe) instead of overlapping Berserk. [b]Mage[/b] gains [b]Frost Nova[/b] (chill the enemy so its next hit likely misses) and [b]Overload[/b] (burn your own HP to supercharge your next spells — pure glass-cannon burst).")
+	display_game("  [color=#1EFF00]◆ Smoother & cooler.[/color] The game had been rendering far more frames than a turn-based game needs, which could [b]overheat laptops[/b] (brutal at 4K) and bog down the whole PC. It's now frame-capped — the same instant feel at a fraction of the GPU load.")
+	display_game("  [color=#1EFF00]◆ Quality of life.[/color] Treasure chests [b]open the whole stack at once[/b] (and stack instead of cluttering your bag); each [b]dungeon floor tells you how much deadlier[/b] it's getting as you descend; and using a [b]second item in one turn[/b] now gives the enemy its swing (no more free heal-spam).")
+	display_game("")
+
 	# v0.9.734 — Class identities + high-tier hunts.
-	display_game("[color=#00FF00]v0.9.734[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.734[/color]")
 	display_game("  [color=#FF8000]★ EACH CLASS PLAYS ITS OWN WAY.[/color] [b]Warriors[/b] get tougher the longer a fight drags (banked Momentum shrugs off damage) — the safe grinders. [b]Mages[/b] are glass cannons — Magic Bolt can one-shot huge foes, but once the mana's gone they fade fast. [b]Tricksters[/b] are fragile but can [b]Outwit ANYTHING[/b] — a gamble that can fell a monster far beyond any other class... or get them killed.")
 	display_game("  [color=#1EFF00]◆ Outwit is a real gamble now.[/color] Its odds are a coinflip at best and each retry gets harder, but it can bypass any foe's HP — so Tricksters (and, far less reliably, Mages) can punch WAY above their weight. Whiff it and the fragile Trickster had better run.")
 	display_game("  [color=#1EFF00]◆ Hunt monsters above your station.[/color] [b]Shriekers[/b] (and summoning scrolls) now drag a [b]much higher-tier monster into your area[/b] — it keeps its tier's might (deadly!) but if you can burst or outwit it down, the [b]XP is enormous[/b]. Punching above your level now pays what the risk is worth.")
@@ -27948,14 +27956,7 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Fixes.[/color] Fabled-boss quests no longer complete from overworld kills. Low-tier dungeons no longer spawn far out in high-level territory (tier now matches the area). Cartography's ‹Locate› and the Atlas tie into where your quests point.")
 	display_game("")
 
-	# v0.9.726 — Cartographer NPC + roomier posts.
-	display_game("[color=#00FFFF]v0.9.726[/color]")
-	display_game("  [color=#FF8000]★ CARTOGRAPHER NPC.[/color] Trading posts now have a visible [color=#5AC8FF]Cartographer (K)[/color] — walk into them to open your [b]Dungeon Atlas[/b] and Locate dungeons on the spot. No more digging through menus to find where to consult one.")
-	display_game("  [color=#1EFF00]◆ Roomier posts.[/color] Posts now hold [b]one of each station[/b] instead of two — less clutter.")
-	display_game("  [color=#1EFF00]◆ Players share stations.[/color] You can now [b]stand on the same tile as another player[/b] when you're right next to a station, so nobody blocks the forge/market/healer. (Everywhere else, walking into a player still works as before — party invites, trades, etc.)")
-	display_game("")
-
-	# (v0.9.725 Cartography rolled off the visible changelog window.)
+	# (v0.9.725/726 rolled off the visible changelog window.)
 
 	# v0.9.724 — Dungeon Atlas.
 	display_game("[color=#00FFFF]v0.9.724[/color]")
