@@ -8693,6 +8693,128 @@ func start_party_combat(party_members: Array, characters: Dictionary, monster: D
 		"first_turn_peer_id": _get_current_turn_peer_id(combat)
 	}
 
+# =========================================================================
+# #64 (2026-08-27) — CO-OP PARTY COMBAT v2: SIMULTANEOUS submit-then-resolve.
+# NEW, UN-WIRED engine (trigger_encounter still routes parties to _start_solo_combat_for
+# until this whole feature is proven — see docs/design/2026-08-27_coop_party_combat.md).
+# Each round every ALIVE member submits ONE queued action; once all have submitted,
+# _resolve_party_round applies them in SPEED order via each member's card view against the
+# SHARED monster, then the monster acts once, then hands redraw. Slice 1 = state + submit
+# gating (this block). Slice 2 = the card-view resolution + monster phase (stubbed here).
+# =========================================================================
+
+func start_party_combat_simul(party_members: Array, characters: Dictionary, monster: Dictionary) -> Dictionary:
+	"""#64 Slice 1 — set up a SIMULTANEOUS party combat. Mirrors start_party_combat's
+	shared-monster + member_states setup, and adds per-member submission tracking
+	(submitted_this_round / queued_action) + a drawn hand each. Returns {success, combat}."""
+	if party_members.is_empty():
+		return {"success": false, "message": "No party members"}
+	var leader_id: int = party_members[0]
+	var party_size: int = party_members.size()
+
+	# Shared monster, HP scaled by party size (one monster everyone fights).
+	monster["original_max_hp"] = monster.get("max_hp", 100)
+	monster["max_hp"] = int(monster.get("max_hp", 100) * party_size)
+	monster["current_hp"] = monster["max_hp"]
+
+	var member_states: Dictionary = {}
+	for pid in party_members:
+		var ch = characters[pid]
+		ch.in_combat = true
+		ch.last_stand_used = false
+		member_states[pid] = {
+			"total_damage_dealt": 0,
+			"total_damage_taken": 0,
+			"player_hp_at_start": ch.current_hp,
+			"fled": false,
+			"dead": false,
+			"forcefield_shield": 0,
+			# Per-member class engines (Momentum / Focus / Combo) live here, not on the
+			# shared monster, so each member ramps independently.
+			"momentum": 0, "focus": 0, "combo": 0,
+			# SIMULTANEOUS submission
+			"submitted_this_round": false,
+			"queued_action": {},   # {kind: "ability"|"attack"|"item"|"flee", ability, arg, ...}
+			"hand": [],            # this member's drawn hand of cards for the round
+		}
+
+	var combat: Dictionary = {
+		"mode": "party_simul",
+		"leader_peer_id": leader_id,
+		"members": party_members.duplicate(),
+		"characters": characters,
+		"monster": monster,
+		"round": 1,
+		"member_states": member_states,
+		"combat_log": [],
+		"started_at": Time.get_ticks_msec(),
+		"cc_resistance": 0,
+		"consec_stuns": 0,
+		# shared monster DoT/CC state (applied by any member's cards)
+		"monster_poison": 0, "monster_poison_duration": 0,
+		"monster_burn": 0, "monster_burn_duration": 0,
+		"monster_bleed": 0, "monster_bleed_duration": 0,
+		"monster_stunned": 0, "monster_sabotaged": 0, "enemy_distracted": 0,
+	}
+	active_party_combats[leader_id] = combat
+	for pid in party_members:
+		party_combat_membership[pid] = leader_id
+		_apply_party_member_companion(combat, pid)
+	_party_redraw_hands(combat)
+
+	return {"success": true, "leader_id": leader_id, "combat": combat}
+
+func submit_party_action(leader_id: int, peer_id: int, action: Dictionary) -> Dictionary:
+	"""#64 Slice 1 — record a member's chosen action for this round. Returns
+	{ok, all_submitted}. When all_submitted is true the caller runs _resolve_party_round.
+	A member can't submit twice, and dead/fled members are ignored."""
+	if not active_party_combats.has(leader_id):
+		return {"ok": false, "reason": "No party combat"}
+	var combat: Dictionary = active_party_combats[leader_id]
+	var ms: Dictionary = combat.get("member_states", {})
+	if not ms.has(peer_id):
+		return {"ok": false, "reason": "Not in this party combat"}
+	var st: Dictionary = ms[peer_id]
+	if st.get("dead", false) or st.get("fled", false):
+		return {"ok": false, "reason": "You are out of this fight"}
+	if st.get("submitted_this_round", false):
+		return {"ok": false, "reason": "Already locked in this round"}
+	st["queued_action"] = action
+	st["submitted_this_round"] = true
+	return {"ok": true, "all_submitted": _party_all_submitted(combat)}
+
+func _party_all_submitted(combat: Dictionary) -> bool:
+	"""True once every ALIVE, non-fled member has locked in an action this round."""
+	var ms: Dictionary = combat.get("member_states", {})
+	for pid in combat.get("members", []):
+		var st = ms.get(pid, {})
+		if st.get("dead", false) or st.get("fled", false):
+			continue
+		if not st.get("submitted_this_round", false):
+			return false
+	return true
+
+func _party_alive_members(combat: Dictionary) -> Array:
+	"""Peer ids of members still in the fight (not dead, not fled)."""
+	var out: Array = []
+	var ms: Dictionary = combat.get("member_states", {})
+	for pid in combat.get("members", []):
+		var st = ms.get(pid, {})
+		if not st.get("dead", false) and not st.get("fled", false):
+			out.append(pid)
+	return out
+
+func _party_redraw_hands(combat: Dictionary) -> void:
+	"""#64 Slice 1 — draw each alive member a fresh hand for the new round and clear
+	their submission. Uses the same deck→hand draw as solo combat so hands honour each
+	member's deck. (Draw helper wired in Slice 2 alongside card resolution.)"""
+	var ms: Dictionary = combat.get("member_states", {})
+	for pid in _party_alive_members(combat):
+		var st = ms[pid]
+		st["submitted_this_round"] = false
+		st["queued_action"] = {}
+		# TODO Slice 2: st["hand"] = _draw_combat_hand(combat.characters[pid])
+
 func _apply_party_member_companion(combat: Dictionary, peer_id: int):
 	"""Apply companion passives for a party member in party combat."""
 	var character = combat.characters[peer_id]
