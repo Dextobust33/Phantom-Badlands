@@ -81,7 +81,12 @@ const DEVASTATE_DUMP_PCT: float = 0.60
 # fullness adds up to OUTSMART_DUMP_MAX_BONUS% outsmart chance, so a bigger energy pool =
 # a more reliable outwit (investment payoff) + gives the Trickster its energy arc. %-based.
 const OUTSMART_DUMP_PCT: float = 0.6
-const OUTSMART_DUMP_MAX_BONUS: int = 30
+const OUTSMART_DUMP_MAX_BONUS: int = 15  # #55 (2026-08-27) 30→15: the dump was stacking ON TOP of the base cap (→~85%), making Outsmart a near-certain win. Now a smaller nudge.
+# #55 — each Outsmart ATTEMPT this fight multiplies the NEXT attempt's chance by this
+# (the monster wises up to the trick). Turns Outsmart from retry-to-certainty into a
+# genuine LIMITED gamble: whiff it and you must win by (gear-dependent) damage — so a
+# Trickster can actually LOSE a high-level boss under-geared, like the other classes.
+const OUTSMART_ATTEMPT_FALLOFF: float = 0.5
 # v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
 # (the finisher) spends them all, scaling BOTH its success chance and its damage.
 const COMBO_MAX: int = 5
@@ -2680,7 +2685,12 @@ func _outsmart_chance(character, monster, combat) -> int:
 	outsmart_chance += read * READ_OUTSMART_PER
 	var base_max_chance = 55 if is_trickster else 42
 	var max_chance = max(25, base_max_chance - int(monster_intelligence / 3))
-	return clampi(outsmart_chance, 2, max_chance)
+	# #55 — repeated-attempt falloff: each prior Outsmart this fight halves the chance,
+	# so it can't be retried to near-certainty over a long fight (the monster catches on).
+	var os_attempts := int(combat.get("outsmart_attempts", 0))
+	if os_attempts > 0:
+		outsmart_chance = int(outsmart_chance * pow(OUTSMART_ATTEMPT_FALLOFF, os_attempts))
+	return clampi(outsmart_chance, 1, max_chance)
 
 func process_outsmart(combat: Dictionary) -> Dictionary:
 	"""Process outsmart action (Trickster ability).
@@ -2713,8 +2723,12 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	if _os_dumped > 0:
 		character.use_energy(_os_dumped)
 		var _os_bonus: int = int(clampf(float(_os_en_before) / float(_os_max_en), 0.0, 1.0) * float(OUTSMART_DUMP_MAX_BONUS))
-		outsmart_chance = clampi(outsmart_chance + _os_bonus, 2, 95)
+		outsmart_chance = clampi(outsmart_chance + _os_bonus, 2, 60)  # #55 — total cap 95→60 (was letting the dump bypass the base cap to ~85%+)
 		messages.append("[color=#66FF66]⚡ You spend %d energy to sharpen the read (+%d%% outwit)![/color]" % [_os_dumped, _os_bonus])
+
+	# #55 — count this attempt so the shared _outsmart_chance falloff makes each further
+	# Outsmart on this monster progressively less likely (no retry-to-certainty).
+	combat["outsmart_attempts"] = int(combat.get("outsmart_attempts", 0)) + 1
 
 	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
 	var bonus_text = ""
