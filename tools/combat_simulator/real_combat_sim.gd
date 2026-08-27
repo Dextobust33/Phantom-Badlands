@@ -50,9 +50,37 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
+	_verify_new_mage_cards()
 	run_difficulty_audit()
 	run_overlevel_audit()
 	quit()
+
+func _verify_new_mage_cards() -> void:
+	# #36 functional check — force-cast Overload + Frost Nova and confirm effects fire
+	# without runtime errors, plus the low-HP Overload block.
+	print("===== #36 NEW MAGE CARD FUNCTIONAL CHECK =====")
+	for lvl in [50, 200]:
+		var ch = make_char(lvl, "average", "Wizard")
+		var monster = make_monster(lvl, "boss", 50.0)  # ultra-tanky so it survives the casts
+		combat_mgr.start_combat(0, ch, monster)
+		if not combat_mgr.active_combats.has(0):
+			print("L%d: could not start combat" % lvl); continue
+		var combat = combat_mgr.active_combats[0]
+		var maxhp: int = ch.get_total_max_hp()
+		var hp0: int = ch.current_hp
+		_force_hand(combat, "overload")
+		var ov = combat_mgr.process_ability_command(0, "overload", "")
+		print("L%-4d Overload : ok=%s  HP %d->%d (-%.0f%% of max)  damage_buff=+%d%%" % [lvl, str(ov.get("success", false)), hp0, ch.current_hp, 100.0 * float(hp0 - ch.current_hp) / float(max(1, maxhp)), int(ch.get_buff_value("damage"))])
+		var mhp0: int = int(monster.current_hp)
+		_force_hand(combat, "frost_nova")
+		var fn = combat_mgr.process_ability_command(0, "frost_nova", "")
+		print("L%-4d FrostNova: ok=%s  dmg=%d  enemy_-acc=%d%%  focus=%d" % [lvl, str(fn.get("success", false)), mhp0 - int(monster.current_hp), int(combat.get("enemy_distracted", 0)), int(combat.get("focus", 0))])
+		# Low-HP block: drop to 10% and confirm Overload refuses.
+		ch.current_hp = int(maxhp * 0.10)
+		var ov2 = combat_mgr.process_ability_command(0, "overload", "")
+		print("L%-4d Overload@10%%HP: ok=%s (expect false — blocked below 25%%)" % [lvl, str(ov2.get("success", false))])
+		combat_mgr.active_combats.erase(0)
+	print("==============================================")
 
 func _debug_tier_xp():
 	# Does a HIGHER-TIER monster grant more XP / HP at the SAME level than a lower tier?
@@ -563,6 +591,15 @@ func run_mage_matrix():
 func _player_act_mage(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
 	var focus: int = int(combat.get("focus", 0))
+	# #36 — Overload before a burst when healthy (glass-cannon combo): sear HP to buff the
+	# next spell. Gated on high HP + no active damage buff so it can't loop or suicide.
+	if "overload" in hand and ch.get_buff_value("damage") <= 0 and ch.current_hp > int(ch.get_total_max_hp() * 0.55) and (("meteor" in hand and focus >= 2) or "magic_bolt" in hand):
+		if combat_mgr.process_ability_command(0, "overload", "").get("success", false):
+			return
+	# #36 — Frost Nova as a Focus-builder + survival chill when the foe isn't chilled yet.
+	if "frost_nova" in hand and int(combat.get("enemy_distracted", 0)) < 20 and focus < 3:
+		if combat_mgr.process_ability_command(0, "frost_nova", "").get("success", false):
+			return
 	# Discharge the ramp with Meteor once Focus is built.
 	if focus >= 3 and "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):

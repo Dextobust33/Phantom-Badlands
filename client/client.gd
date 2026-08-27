@@ -10170,7 +10170,7 @@ func trigger_action(index: int):
 const _NO_TRAVEL_COMMANDS := [
 	"flee", "f", "run", "war_cry", "warcry", "iron_skin", "ironskin", "berserk",
 	"haste", "fortify", "shield", "forcefield", "cloak", "vanish", "teleport",
-	"defend", "guard", "block", "heal", "outsmart", "o",
+	"defend", "guard", "block", "heal", "outsmart", "o", "overload",
 	"bolt", "magic_bolt", "blast", "meteor",
 ]
 
@@ -10261,6 +10261,10 @@ func _start_combat_command_animation(command: String):
 			start_combat_animation("Teleporting...", "#DA70D6")
 		"meteor":
 			start_combat_animation("Casting Meteor...", "#FF6347")
+		"frost_nova":
+			start_combat_animation("Frost Nova...", "#5AC8FF")
+		"overload":
+			start_combat_animation("Overloading...", "#FF4500")
 		# Warrior abilities
 		"power_strike", "strike":
 			start_combat_animation("Power Strike...", "#FF4500")
@@ -12144,6 +12148,10 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"haste": {"display": "Arcane Surge", "cost": 35, "cost_percent": 3, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "cost_floor_ratio": 0.3, "resource_type": "mana"},
+		# #36 Mage 7→9 additions. Frost Nova = variable mana. Overload = HP-cost (shown as
+		# 0 mana; the real cost is 20% max HP, surfaced in its description + card preview).
+		"frost_nova": {"display": "Frost Nova", "cost": 30, "cost_percent": 5, "cost_floor_ratio": 0.3, "resource_type": "mana"},
+		"overload": {"display": "Overload", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
 		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
 		# (floor = ceiling × ratio, after all cost modifiers).
 		"power_strike": {"display": "Strike", "cost": 10, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
@@ -12271,8 +12279,9 @@ const ABILITY_CATEGORIES = {
 	"forcefield": "buff", "haste": "buff",
 	# CONTROL — debuffs to monster, CC, removal
 	"paralyze": "control", "distract": "control", "sabotage": "control", "banish": "control",
+	"frost_nova": "control",
 	# UTILITY — info, setup, resource gain, escape, theft
-	"analyze": "utility", "vanish": "utility", "pickpocket": "utility",
+	"analyze": "utility", "vanish": "utility", "pickpocket": "utility", "overload": "buff",
 	"forethought": "utility", "tactical_retreat": "utility",
 }
 
@@ -12551,13 +12560,18 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 		"banish":
 			var chance = clampi(int((40 + int_stat / 3) * fraction), 1, 75)
 			return {"text": "%d%% banish" % chance, "color": "#7AA8FF"}
+		"frost_nova":
+			var fn_chill = mini(45, max(1, int(30.0 * fraction)))
+			return {"text": "dmg + -%d%% acc" % fn_chill, "color": "#5AC8FF"}
+		"overload":
+			return {"text": "+120%% 2rd", "color": "#FF6347"}
 		"teleport":
 			return {"text": "Flee", "color": "#888888"}
 		"cloak":
 			return {"text": "50% miss", "color": "#7AA8FF"}
 		"war_cry":
-			var bonus = max(1, int(35.0 * fraction))
-			return {"text": "+%d%% dmg" % bonus, "color": "#FFCC66"}
+			var bonus = mini(40, max(1, int(25.0 * fraction)))
+			return {"text": "+2 Mom, -%d%% acc" % bonus, "color": "#FFCC66"}
 		"berserk":
 			var bonus = max(1, int(75.0 * fraction))
 			return {"text": "+%d%% dmg (risk)" % bonus, "color": "#FFCC66"}
@@ -18478,8 +18492,10 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"haste": return "ARCANE SURGE — buffs your spell damage and adds a double-cast chance on damage spells for 4 rounds. +40-60% spell damage (scales with INT and spend), +7-25% double-cast chance. Variable cost (≈30% of mana pool max) — both effects scale with spend."
 		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC. Variable cost (≈30% of mana pool max) — stun CHANCE scales with spend (duration stays 1-2 turns if it lands)."
 		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish. Variable cost (≈30% of mana pool max) — banish CHANCE scales with spend; loot-drop chance stays 50% (bonus outcome)."
+		"frost_nova": return "Deal chip frost damage (30 × INT scaling, below Blast) and chill the enemy so its next attack takes -30% accuracy (scales with spend, capped 45%). Builds Focus. Soft control / survival — distinct from Paralyze's hard stun. Variable mana cost."
+		"overload": return "Spend 20% of your max HP (NOT mana) to buff your spell damage +120% for 2 rounds. Glass-cannon burst that makes you more fragile; blocked below 25% HP so it can't self-kill, and it won't stack over Arcane Surge (highest damage buff wins)."
 		"power_strike": return "2× attack with sqrt STR scaling. Variable cost 3-10 stamina — damage scales linearly with what you spend (30% at floor, 100% at ceiling)."
-		"war_cry": return "+35% damage for 4 rounds (self buff). Variable cost 5-15 stamina — damage bonus scales with spend; duration stays 4 rounds."
+		"war_cry": return "Tempo & intimidate — surge +2 Momentum (toward Devastate + your Momentum guard) and rattle the foe for -25% accuracy (scales with spend, capped 40%). No damage buff, so it pairs with Berserk instead of clashing. Variable cost 5-15 stamina."
 		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor). Variable cost 6-20 stamina — damage AND stun chance scale with spend."
 		"cleave": return "2.5× attack with sqrt STR scaling + 4-round bleed DoT (20% of STR per round). Variable cost 9-30 stamina — damage AND bleed magnitude scale with spend; duration stays 4 rounds."
 		"berserk": return "+75-200% damage (scales with missing HP), -40% defense for 4 rounds. High risk. Variable cost 12-40 stamina — BOTH damage buff AND defense penalty scale with spend (same risk shape, smaller stakes)."
@@ -18541,7 +18557,7 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 		"devastate":
 			return "Deal %s damage — a massive finisher." % _desc_num(est_dmg, "5 × Attack × √STR scaling × your rank/tier bonus")
 		"war_cry":
-			return "Buff yourself: %s damage for [b]4[/b] rounds." % _desc_num("+35%", "flat +35% damage")
+			return "Tempo & intimidate: surge %s and rattle the foe so its NEXT attack is likely to miss (%s accuracy). No damage buff — pair with Berserk." % [_desc_num("+2 Momentum", "a bonus +1 on top of the standard +1, toward Devastate + Momentum guard"), _desc_num("−25%", "one attack; scales with spend, capped 40%")]
 		"berserk":
 			return "Buff yourself: %s damage but %s defense for [b]4[/b] rounds — scales with missing HP, so riskier is stronger." % [_desc_num("+75–200%", "+75% rising to +200% as your HP drops"), _desc_num("−40%", "flat -40% defense")]
 		"iron_skin":
@@ -18567,6 +18583,10 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 			return "%s chance to [b]stun[/b] the enemy for 1-2 turns." % _desc_num("%d%%" % clampi(50 + int(float(s_int) / 2.0), 10, 85), "50 + INT ÷ 2 (max 85%, lower on repeats)")
 		"banish":
 			return "%s chance to [b]banish[/b] the enemy out of the fight (70%% chance it still drops loot)." % _desc_num("%d%%" % clampi(40 + int(float(s_int) / 3.0), 1, 75), "40 + INT ÷ 3 (max 75%)")
+		"frost_nova":
+			return "Deal %s frost damage and [b]chill[/b] the foe so its NEXT attack likely misses (%s accuracy). Builds Focus. A survival lever — not a heal." % [_desc_num(int(30 * (1.0 + float(s_int) * 0.04)), "30 × (1 + INT×4%) × Focus × rank/tier"), _desc_num("−30%", "one attack; scales with spend, capped 45%")]
+		"overload":
+			return "Sear yourself for %s to supercharge your spells by %s [b]for 2 rounds[/b]. Costs HP, not mana — pure glass-cannon burst (blocked below 25%% HP)." % [_desc_num("20% max HP", "self-damage, no self-heal so it can't loop"), _desc_num("+120%", "does not stack with Arcane Surge — the bigger buff wins")]
 		# --- Trickster (v0.9.698) ---
 		"ambush":
 			return "Deal %s damage with a [b]50%% chance to crit[/b] (+50%%)." % _desc_num(est_dmg, "3 × Attack × √WITS scaling × rank/tier (avg +25% from crit)")
@@ -18899,7 +18919,7 @@ var _milestone_tip: PanelContainer = null
 var _milestone_tip_label: RichTextLabel = null
 # Buff abilities whose Duration milestone pick is wired (Warrior slice). Buffs
 # not here fall back to Power + Efficiency until their class slice wires duration.
-const DURATION_CAPABLE_ABILITIES = ["war_cry", "berserk", "iron_skin", "fortify", "rally"]
+const DURATION_CAPABLE_ABILITIES = ["berserk", "iron_skin", "fortify", "rally"]
 
 func _is_duration_capable(ability_name: String) -> bool:
 	# v0.9.681 — buff-kind companion cards (rage/guard/focus/shield/heal/channel)
@@ -19173,6 +19193,12 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		"banish":
 			base_cost = 80
 			cost_percent = 10
+		"frost_nova":
+			base_cost = 30
+			cost_percent = 5
+		"overload":
+			base_cost = 0
+			cost_percent = 0
 		# Warrior abilities (aligned to server ability_info: devastate 50, rally 35)
 		"power_strike": base_cost = 10
 		"war_cry": base_cost = 15
@@ -19207,9 +19233,11 @@ func _get_ability_cost_text(ability_name: String) -> String:
 		return "[color=%s](variable mana)[/color]" % resource_color
 	elif ability_name == "cloak":
 		return "[color=#9932CC](8%% per move)[/color]"
+	elif ability_name == "overload":
+		return "[color=#FF6347](20%% HP)[/color]"  # #36 — HP-cost, not mana
 	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
 	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally", "haste", "paralyze", "banish", "distract", "pickpocket", "sabotage", "perfect_heist"]
+	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally", "haste", "paralyze", "banish", "distract", "pickpocket", "sabotage", "perfect_heist", "frost_nova"]
 	if ability_name in variable_abilities and cost > 0:
 		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
 		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
@@ -30947,7 +30975,7 @@ func show_help():
 
 [color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
   [color=#FFFFFF]L1  Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
-  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +35%% damage buff for 4 rounds
+  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +2 Momentum + rattle foe (-25%% accuracy)
   [color=#FFFFFF]L25 Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
   [color=#FFFFFF]L25 Fortify[/color]      [color=#808080](25 stam)[/color] - +30%% defense + √STR×3 for 5 rounds
   [color=#FFFFFF]L40 Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20%% STR/rnd, 4 rounds)
@@ -30963,6 +30991,8 @@ func show_help():
   [color=#FFFFFF]L40 Blast[/color]        [color=#808080](50+5%%)[/color]  - 2× INT-scaled damage + burn (20%% INT/rnd for 3 rounds)
   [color=#FFFFFF]L40 Haste[/color]        [color=#808080](35+3%%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
   [color=#FFFFFF]L60 Paralyze[/color]     [color=#808080](60+6%%)[/color]  - 50%%+INT/2 chance (max 85%%) to stun 1-2 turns
+  [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%%)[/color]  - Chip frost dmg + chill (-30%% enemy accuracy). Builds Focus, soft control
+  [color=#FFFFFF]Overload[/color]         [color=#808080](20%% HP)[/color] - Burn 20%% max HP to buff your spells +120%% for 2 rounds. No mana, no heal — glass-cannon burst
   [color=#FFFFFF]L80 Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
   [color=#FFFFFF]L100 Meteor[/color]      [color=#808080](100+8%%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
   [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4%% mana (8%% if already full HP)

@@ -2998,6 +2998,9 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": "haste", "level": 30, "display": "Haste"})
 			abilities.append({"name": "paralyze", "level": 50, "display": "Paralyze"})
 			abilities.append({"name": "banish", "level": 70, "display": "Banish"})
+			# #36 (2026-08-27) Mage 7→9 — Frost Nova (soft control) + Overload (HP-cost burst).
+			abilities.append({"name": "frost_nova", "level": 1, "display": "Frost Nova"})
+			abilities.append({"name": "overload", "level": 1, "display": "Overload"})
 		"warrior":
 			abilities.append({"name": "power_strike", "level": 1, "display": "Power Strike"})
 			abilities.append({"name": "war_cry", "level": 10, "display": "War Cry"})

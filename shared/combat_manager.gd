@@ -13,7 +13,7 @@ enum CombatAction {
 }
 
 # Ability lookup for parsing commands
-const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
+const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish", "frost_nova", "overload"]
 const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate", "fortify", "rally"]
 const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
 const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
@@ -159,6 +159,9 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"berserk":      {"ceiling": 27, "cost_percent": 14, "floor_ratio": 0.3, "resource": "stamina"},
 	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
 	"haste":        {"ceiling": 24, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
+	# #36 (2026-08-27) Mage 7→9: Frost Nova = soft control (chip frost dmg + accuracy chill),
+	# variable mana. Overload is HP-cost and NOT listed here (handled in its own case).
+	"frost_nova":   {"ceiling": 24, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},
 	"paralyze":     {"ceiling": 42, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},   # 5→7 (eased from 8)
 	"banish":       {"ceiling": 55, "cost_percent": 9, "floor_ratio": 0.3, "resource": "mana"},   # 7→9 (eased from 10)
 	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
@@ -3150,7 +3153,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	if ability_name in ["cloak", "forethought", "tactical_retreat"]:
 		result = _process_universal_ability(combat, ability_name)
 	# Mage abilities (use mana)
-	elif ability_name in ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]:
+	elif ability_name in ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish", "frost_nova", "overload"]:
 		result = _process_mage_ability(combat, ability_name, arg)
 	# Warrior abilities (use stamina)
 	elif ability_name in ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]:
@@ -3848,12 +3851,54 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			else:
 				messages.append("[color=#FF4444]The %s resists being banished![/color]" % monster.name)
 
+		"frost_nova":
+			# #36 (2026-08-27) Mage 7→9 — SOFT CONTROL / survival lever (not healing).
+			# Chip frost damage (below Blast) + a lingering accuracy chill so the mage
+			# takes fewer hits while it bursts. Builds Focus like any non-Meteor spell
+			# (handled at the bottom). Distinct from Paralyze: soft (miss chance) vs hard
+			# (skip turn) — and unlike Paralyze it also deals damage.
+			var fn_int = character.get_effective_stat("intelligence")
+			var fn_base = int(30 * (1.0 + fn_int * 0.04) * variable_fraction * _focus_mult)
+			fn_base = apply_skill_damage_bonus(character, "frost_nova", fn_base, combat)
+			var fn_mod = apply_ability_damage_modifiers(fn_base, character.level, monster)
+			var fn_dmg = apply_damage_variance(fn_mod)
+			monster.current_hp = max(0, monster.current_hp - fn_dmg)
+			# Accuracy chill — reuse the wired enemy_distracted field; modest, never
+			# downgrades a stronger existing debuff, capped so it stays a survival tool.
+			var fn_chill = mini(45, max(1, int(30 * variable_fraction)))
+			fn_chill = mini(45, _apply_buff_value_modifiers(character, "frost_nova", fn_chill))
+			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), fn_chill)
+			messages.append("[color=#5AC8FF]❄ FROST NOVA![/color]")
+			messages.append("[color=#00FFFF]You deal %d frost damage and chill the enemy (-%d%% accuracy)![/color]" % [fn_dmg, fn_chill])
+
+		"overload":
+			# #36 (2026-08-27) Mage 7→9 — GLASS-CANNON burst enabler. Costs HP (not mana),
+			# so it can't be looped (the Mage has no self-heal) and it makes you MORE fragile
+			# — the identity in a card. Grants a strong "damage" buff consumed by your NEXT
+			# spell. Because add_buff() keeps MAX(value) on the shared "damage" slot, Overload
+			# does NOT stack additively with Haste — no runaway multiplier. Blocked below 25%
+			# HP so it can never be a suicide/soft-lock. is_buff_ability = 75% dodge on the
+			# retaliation, softening the tempo cost.
+			var ov_maxhp = character.get_total_max_hp()
+			var ov_cost = maxi(1, int(ov_maxhp * 0.20))
+			if character.current_hp <= int(ov_maxhp * 0.25):
+				return {"success": false, "messages": ["[color=#FFA500]Too wounded to Overload — you need more than 25% HP to channel it safely.[/color]"], "combat_ended": false, "skip_monster_turn": true}
+			character.current_hp = max(1, character.current_hp - ov_cost)
+			var ov_buff = 120  # +120% to the next spell
+			ov_buff = _apply_buff_value_modifiers(character, "overload", ov_buff)
+			character.add_buff("damage", ov_buff, 2)
+			messages.append("[color=#FF4500]⚡ OVERLOAD![/color]")
+			messages.append("[color=#FFD700]You sear yourself for %d HP to supercharge your spells (+%d%% damage for 2 rounds)![/color]" % [ov_cost, ov_buff])
+			is_buff_ability = true
+
 	# v0.9.697 — Mage Focus ramp: Meteor discharges (resets) it; every other spell
 	# advances it. Placed after a successful cast so refused/failed casts don't ramp.
 	if ability_name == "meteor":
 		if _focus_prior > 0:
 			combat["focus"] = 0
 			messages.append("[color=#5AC8FF]◈ Focus discharged! (Meteor +%d%% damage)[/color]" % int(_focus_prior * FOCUS_METEOR_PER * 100))
+	elif ability_name == "overload":
+		pass  # #36 — Overload is an HP-cost setup; it does not advance Focus.
 	else:
 		var _newfocus: int = min(FOCUS_MAX, _focus_prior + 1)
 		combat["focus"] = _newfocus
@@ -4129,15 +4174,21 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			messages.append("[color=#FFFF00]You deal %d damage![/color]" % damage)
 
 		"war_cry":
-			# Variable cost (v0.9.263): damage magnitude scales with spend.
-			# Duration stays 4 rounds so the buff still "feels real" at floor.
-			var war_cry_bonus = max(1, int(35 * variable_fraction))
-			# v0.9.637 — rank-up +Damage + bonus_damage imprint now scale buff value.
-			war_cry_bonus = _apply_buff_value_modifiers(character, "war_cry", war_cry_bonus)
-			var wc_dur = 4 + character.get_ability_duration_bonus("war_cry")  # v0.9.677 Duration pick
-			character.add_buff("damage", war_cry_bonus, wc_dur)
+			# #36 (2026-08-27) — RE-ROLE. War Cry used to write the "damage" buff slot, the
+			# SAME slot Berserk uses (add_buff keeps MAX value) — so running both was wasted
+			# and the two cards fought over one role. War Cry is now a TEMPO + INTIMIDATE card
+			# that reinforces the Warrior's "safest in long fights" identity WITHOUT touching
+			# the damage slot: it surges Momentum (a bonus +1 here; the shared +1 at the end of
+			# this function makes it +2 total) and rattles the foe so it misses more (reuses the
+			# wired `enemy_distracted` accuracy debuff — modest, never downgrades a stronger one).
+			combat["momentum"] = min(MOMENTUM_MAX, int(combat.get("momentum", 0)) + 1)
+			var wc_intimidate = max(1, int(25 * variable_fraction))
+			# Mastery/imprints amplify the debuff, but cap it so it stays the WEAKER cousin of
+			# the Trickster's Distract (50%) and can't turn the Warrior into an evasion tank.
+			wc_intimidate = mini(40, _apply_buff_value_modifiers(character, "war_cry", wc_intimidate))
+			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), wc_intimidate)
 			messages.append("[color=#FF4444]WAR CRY![/color]")
-			messages.append("[color=#FFD700]+%d%% damage for %d rounds![/color]" % [war_cry_bonus, wc_dur])
+			messages.append("[color=#FFD700]A rallying roar — your Momentum surges and the enemy is rattled (-%d%% accuracy)![/color]" % wc_intimidate)
 			is_buff_ability = true
 
 		"shield_bash":
@@ -4739,6 +4790,9 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"paralyze": return {"level": 50, "cost": 60, "cost_percent": 6, "name": "Paralyze"}
 				"forcefield": return {"level": 10, "cost": 20, "cost_percent": 2, "name": "Forcefield"}
 				"banish": return {"level": 70, "cost": 80, "cost_percent": 10, "name": "Banish"}
+				# #36 Mage 7→9 additions.
+				"frost_nova": return {"level": 1, "cost": 30, "cost_percent": 5, "name": "Frost Nova"}
+				"overload": return {"level": 1, "cost": 0, "cost_percent": 0, "name": "Overload"}  # HP-cost, handled in-case
 				"teleport": return {"level": 80, "cost": 40, "cost_percent": 0, "name": "Teleport"}  # Uses distance-based cost
 				"meteor": return {"level": 100, "cost": 100, "cost_percent": 8, "name": "Meteor"}
 		"warrior":
