@@ -101,8 +101,15 @@ regress live combat mid-build.
   Verified via `real_combat_sim._verify_party_combat`: 2 members both damage the SHARED monster,
   the monster hits exactly ONE member, the round advances + hands redraw. Solo combat untouched
   (guards are opt-in). Still UN-WIRED — `trigger_encounter` routes parties to solo until Slice 4.
-- **Slice 3 (next):** client co-op UI — per-member HP row, submitted/waiting indicator, live view;
-  server handler so a member's combat command becomes `submit_party_action` and (when all in)
-  `resolve_party_round`, broadcasting the round result to all members.
-- **Slice 4:** shared victory rewards (full XP + own loot each), death/flee/wipe/disband edge
-  cases, then flip `trigger_encounter`'s party branch from `_start_solo_combat_for` to this engine.
+- **Slice 3 DONE (server side):** `_handle_party_combat_command` rewritten for the simultaneous
+  flow — a member's command → `submit_party_action`; when `_party_all_submitted`, → `resolve_party_round`
+  → `_broadcast_party_update` (round messages + a live `_party_combat_snapshot`: monster HP, each
+  member's HP + submitted/dead/fled, round) to ALL members; `_end_party_combat_all` on combat_ended.
+  Snapshot field names aligned to what the client's EXISTING party-combat UI (`_handle_party_combat_update`
+  / `_display_party_combat_hp`) already reads, so no client rewrite needed. Per-recipient `is_your_turn`
+  maps to "you haven't locked in yet." Still UN-WIRED (the old handler was dead code — nothing populates
+  `party_combat_membership` until the start is wired).
+- **Slice 4 (next):** flip `trigger_encounter`'s party branch from `_start_solo_combat_for` to
+  `start_party_combat_simul` + send `party_combat_start` to all members (puts clients in party-combat
+  mode); shared victory rewards (full XP + own loot each); death/flee/wipe/disband edge cases; then a
+  2-CLIENT live test (co-op needs two connected players to validate the full loop).

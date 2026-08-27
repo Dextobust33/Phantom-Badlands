@@ -39360,70 +39360,106 @@ func _start_party_combat_encounter(leader_peer_id: int, monster: Dictionary, deb
 		})
 
 func _handle_party_combat_command(peer_id: int, command: String):
-	"""Handle a combat command from a player in party combat."""
+	"""#64 Slice 3 — a party member's combat command becomes a SIMULTANEOUS submission. When
+	every alive member has locked in, resolve the round (combat_mgr.resolve_party_round) and
+	broadcast the result to everyone. NOTE: only reached once co-op combat is wired into
+	trigger_encounter (Slice 4); parties still fight solo until then."""
 	var leader_id = combat_mgr.party_combat_membership.get(peer_id, -1)
-	if leader_id == -1:
+	if leader_id == -1 or not combat_mgr.active_party_combats.has(leader_id):
 		return
-
-	# Parse command string (may include args like "magic_bolt 50")
 	var parts = command.to_lower().split(" ", false)
-	var cmd = parts[0] if parts.size() > 0 else ""
-	var arg = parts[1] if parts.size() > 1 else ""
-
-	var result: Dictionary
-
-	# Map command string to CombatAction or ability
-	match cmd:
-		"attack", "a":
-			result = combat_mgr.process_party_combat_action(leader_id, peer_id, CombatManager.CombatAction.ATTACK)
-		"flee", "f", "run":
-			result = combat_mgr.process_party_combat_action(leader_id, peer_id, CombatManager.CombatAction.FLEE)
-		"outsmart", "o":
-			result = combat_mgr.process_party_combat_action(leader_id, peer_id, CombatManager.CombatAction.OUTSMART)
-		_:
-			# Check if it's an ability command
-			if cmd in CombatManager.MAGE_ABILITY_COMMANDS or cmd in CombatManager.WARRIOR_ABILITY_COMMANDS or cmd in CombatManager.TRICKSTER_ABILITY_COMMANDS or cmd in CombatManager.UNIVERSAL_ABILITY_COMMANDS:
-				result = combat_mgr.process_party_combat_ability(leader_id, peer_id, cmd, arg)
-			else:
-				send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Unknown combat command.[/color]"})
-				return
-
-	if not result.get("success", false):
-		send_to_peer(peer_id, {"type": "text", "message": result.get("message", "Not your turn!")})
+	var cmd = String(parts[0]) if parts.size() > 0 else ""
+	var arg = String(parts[1]) if parts.size() > 1 else ""
+	var action: Dictionary
+	if cmd in ["attack", "a"]:
+		action = {"kind": "attack"}
+	elif cmd in ["flee", "f", "run"]:
+		action = {"kind": "flee"}
+	elif cmd in CombatManager.MAGE_ABILITY_COMMANDS or cmd in CombatManager.WARRIOR_ABILITY_COMMANDS or cmd in CombatManager.TRICKSTER_ABILITY_COMMANDS or cmd in CombatManager.UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
+		action = {"kind": "ability", "ability": cmd, "arg": arg}
+	else:
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Unknown combat command.[/color]"})
 		return
 
-	var messages = result.get("messages", [])
-	var combat_ended = result.get("combat_ended", false)
-	var victory = result.get("victory", false)
-
-	# Get all party members from the combat (before it might be cleaned up)
-	var party_members = []
-	if combat_mgr.active_party_combats.has(leader_id):
-		party_members = combat_mgr.active_party_combats[leader_id].members.duplicate()
-	elif active_parties.has(leader_id):
-		party_members = active_parties[leader_id].members.duplicate()
-
-	if combat_ended:
-		if victory:
-			_handle_party_combat_victory(leader_id, peer_id, result, messages, party_members)
-		else:
-			_handle_party_combat_defeat(leader_id, messages, party_members)
+	var sres = combat_mgr.submit_party_action(leader_id, peer_id, action)
+	if not sres.get("ok", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s[/color]" % sres.get("reason", "Can't submit that.")})
+		return
+	if not sres.get("all_submitted", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#66D0C0]Locked in — waiting for the rest of your party...[/color]"})
+		_broadcast_party_update(leader_id, [], false)
+		return
+	# Everyone's in — resolve the round.
+	var res = combat_mgr.resolve_party_round(leader_id)
+	var msgs = res.get("messages", [])
+	if res.get("combat_ended", false):
+		_end_party_combat_all(leader_id, res.get("victory", false), msgs)
 	else:
-		# Combat continues — send update to all members
-		var next_turn_pid = result.get("next_turn_peer_id", -1)
-		var next_turn_name = characters[next_turn_pid].name if characters.has(next_turn_pid) else ""
-		var combat_state = combat_mgr.get_party_combat_state(leader_id)
+		_broadcast_party_update(leader_id, msgs, true)
 
-		for pid in party_members:
-			if not characters.has(pid):
-				continue
-			send_to_peer(pid, {
-				"type": "party_combat_update",
-				"messages": messages,
-				"combat_state": combat_state,
-				"is_your_turn": (pid == next_turn_pid),
-				"current_turn_name": next_turn_name
-			})
+func _party_combat_snapshot(leader_id: int) -> Dictionary:
+	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return {}
+	var c = combat_mgr.active_party_combats[leader_id]
+	var members := []
+	for pid in c.get("members", []):
+		var st = c.member_states.get(pid, {})
+		var ch = characters.get(pid, null)
+		# Field names mirror what the client's _display_party_combat_hp already reads.
+		members.append({
+			"name": ch.name if ch else "?",
+			"current_hp": ch.current_hp if ch else 0,
+			"max_hp": ch.get_total_max_hp() if ch else 1,
+			"current_mana": ch.current_mana if ch else 0,
+			"current_stamina": ch.current_stamina if ch else 0,
+			"current_energy": ch.current_energy if ch else 0,
+			"submitted": st.get("submitted_this_round", false),
+			"is_dead": st.get("dead", false),
+			"is_fled": st.get("fled", false),
+		})
+	return {
+		"monster_name": c.monster.get("name", "Monster"),
+		"monster_hp": c.monster.get("current_hp", 0),
+		"monster_max_hp": c.monster.get("max_hp", 1),
+		"round": c.get("round", 1),
+		"members": members,
+	}
+
+func _broadcast_party_update(leader_id: int, msgs: Array, resolved: bool) -> void:
+	"""#64 Slice 3 — push the round result + live snapshot to every party member."""
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return
+	var snap = _party_combat_snapshot(leader_id)
+	var c = combat_mgr.active_party_combats[leader_id]
+	for pid in c.get("members", []):
+		if not characters.has(pid):
+			continue
+		# Simultaneous: "your turn" maps to "you can still submit this round" (not yet locked in).
+		var _st = c.member_states.get(pid, {})
+		var _can_act = not _st.get("submitted_this_round", false) and not _st.get("dead", false) and not _st.get("fled", false)
+		send_to_peer(pid, {
+			"type": "party_combat_update", "messages": msgs, "combat_state": snap,
+			"resolved": resolved, "is_your_turn": _can_act,
+			"current_turn_name": "" if _can_act else "your party",
+		})
+		send_character_update(pid)
+
+func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array) -> void:
+	"""#64 Slice 3 — end the fight for everyone + clean up so nobody gets stuck. Full shared
+	rewards (full XP + own loot each) + death/flee/wipe handling are Slice 4."""
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return
+	var snap = _party_combat_snapshot(leader_id)
+	var members = combat_mgr.active_party_combats[leader_id].get("members", []).duplicate()
+	msgs.append("[color=#FFD700]★ Party victory![/color]" if victory else "[color=#FF4444]The party has fallen...[/color]")
+	for pid in members:
+		if characters.has(pid):
+			characters[pid].in_combat = false
+			send_to_peer(pid, {"type": "party_combat_end", "messages": msgs, "victory": victory, "combat_state": snap})
+			send_character_update(pid)
+		combat_mgr.party_combat_membership.erase(pid)
+	combat_mgr.active_party_combats.erase(leader_id)
 
 func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: Dictionary, messages: Array, party_members: Array):
 	"""Handle party combat victory — distribute rewards to all surviving members."""
