@@ -2677,13 +2677,18 @@ func _outsmart_chance(character, monster, combat) -> int:
 	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 2)
 	var level_diff = monster_level - player_level
 	var level_penalty = 0
+	# #55 identity pass (2026-08-27) — Trickster = "kill enemies BIGGER than the warrior
+	# or mage can, IF Outsmart works". Softened the over-level penalty (roughly halved) so
+	# Outsmart stays a live gamble against much-higher-level foes — the Trickster's unique
+	# reach. It's still gated by the base cap (55) + per-attempt falloff, so it's high-risk
+	# high-reward, not reliable. (Balanced by weaker raw Trickster damage so a whiff hurts.)
 	if level_diff > 0:
 		if level_diff <= 10:
-			level_penalty = level_diff * 2
+			level_penalty = level_diff * 1
 		elif level_diff <= 50:
-			level_penalty = 20 + (level_diff - 10)
+			level_penalty = 10 + int((level_diff - 10) * 0.5)
 		else:
-			level_penalty = 60 + int((level_diff - 50) * 0.5)
+			level_penalty = 30 + int((level_diff - 50) * 0.3)
 	var level_bonus = 0
 	if level_diff < 0:
 		level_bonus = min(15, abs(level_diff))
@@ -2693,8 +2698,12 @@ func _outsmart_chance(character, monster, combat) -> int:
 	# adds READ_OUTSMART_PER% so a well-read enemy becomes reliably outsmartable.
 	var read := clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
 	outsmart_chance += read * READ_OUTSMART_PER
-	var base_max_chance = 55 if is_trickster else 42
-	var max_chance = max(25, base_max_chance - int(monster_intelligence / 3))
+	# #55 identity pass — Outsmart caps at ~48% (was 55) so it's a genuine COINFLIP even
+	# at its best: landing it kills anything (incl. much-higher-level foes, via the
+	# softened level penalty above) = the Trickster's unique high-risk reach; whiffing it
+	# leaves its (now weaker) raw damage to grind — a real "hard time if Outsmart fails".
+	var base_max_chance = 48 if is_trickster else 38
+	var max_chance = max(22, base_max_chance - int(monster_intelligence / 3))
 	# #55 — repeated-attempt falloff: each prior Outsmart this fight halves the chance,
 	# so it can't be retried to near-certainty over a long fight (the monster catches on).
 	var os_attempts := int(combat.get("outsmart_attempts", 0))
@@ -4451,7 +4460,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# tier; ambush was the Trickster's out-of-line burst (higher mult + 50% crit)
 			# that let it out-DPS everyone and kill bosses in 3t. Still gear-scaled (uses
 			# total_attack) so gear matters.
-			var base_dmg = int(base_damage * 2.5 * damage_multiplier * wits_mult * variable_fraction)
+			var base_dmg = int(base_damage * 2.2 * damage_multiplier * wits_mult * variable_fraction)  # #55 identity: 2.5→2.2 — Trickster's RELIABLE damage is weaker so a whiffed Outsmart really leaves it struggling (high-variance identity)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ambush_skill_bonus = character.get_skill_damage_bonus("ambush")
 			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg, combat)

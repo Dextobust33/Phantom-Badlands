@@ -50,13 +50,14 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	run_difficulty_audit()     # how far above level each class can punch + risk-vs-level curve.
+	run_difficulty_audit()
+	run_overlevel_audit()
 	quit()
 
 func run_overlevel_audit():
 	var N := 60
 	var plevels := [20, 60, 150]
-	var deltas := [0, 5, 10, 20, 35, 60]
+	var deltas := [0, 20, 40, 60, 90, 130]
 	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Thief", "Trk"]]
 	print("\n===== OVER-LEVEL REACH (%d fights/cell, AVERAGE gear, normal mob) =====" % N)
 	print("Win%% vs a monster at (player level + delta). 'Reliable' ~ >=60%%. Higher delta reachable = punches further above level.")
