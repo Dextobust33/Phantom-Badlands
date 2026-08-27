@@ -3707,20 +3707,25 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Variable cost (v0.9.264): stun CHANCE scales with spend (chance-based
 			# rule). Duration stays 1-2 turns if it lands; floor still has 10% floor.
 			var int_stat = character.get_effective_stat("intelligence")
-			var cc_resist = combat.get("cc_resistance", 0)
-			var resist_penalty = cc_resist * 20  # -20% per prior CC
-			var raw_chance = mini(85, 50 + int(int_stat / 2)) - resist_penalty
-			var success_chance = maxi(10, int(raw_chance * variable_fraction))  # 10% floor for Paralyze
-			if randf() * 100 < success_chance:
+			# #55 (2026-08-26) — same repeated-CC diminishing returns + hard block as Shield
+			# Bash, sharing cc_resistance + consec_stuns so a mage can't chain-paralyze (nor
+			# alternate paralyze/shield-bash) to stunlock a monster the whole fight.
+			var cc_resist = int(combat.get("cc_resistance", 0))
+			var consec_stuns = int(combat.get("consec_stuns", 0))
+			var base_chance = mini(85, 50 + int(int_stat / 2))
+			var success_chance = int(base_chance * pow(STUN_REPEAT_FALLOFF, cc_resist) * variable_fraction)
+			if consec_stuns < 2 and randf() * 100 < success_chance:
 				var stun_duration = 1 + (randi() % 2)  # 1-2 turns
 				combat["monster_stunned"] = stun_duration
 				combat["cc_resistance"] = cc_resist + 1
+				combat["consec_stuns"] = consec_stuns + 1
 				messages.append("[color=#FFFF00]You paralyze the %s for %d turn(s)![/color]" % [monster.name, stun_duration])
 				is_buff_ability = true  # 75% chance to avoid monster's retaliation while casting
 			else:
+				combat["consec_stuns"] = 0  # monster shakes it off and will act
 				messages.append("[color=#FF4444]The %s resists your paralysis![/color]" % monster.name)
 			if cc_resist > 0:
-				messages.append("[color=#808080](Enemy CC resistance: %d%%)[/color]" % (cc_resist * 20))
+				messages.append("[color=#808080](Enemy stun resistance: next ~%d%%)[/color]" % int(base_chance * pow(STUN_REPEAT_FALLOFF, cc_resist + 1)))
 
 		"banish":
 			# Attempt to remove monster from combat with 70% loot chance.
