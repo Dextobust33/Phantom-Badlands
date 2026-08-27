@@ -27850,8 +27850,15 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.734 — Class identities + high-tier hunts.
+	display_game("[color=#00FF00]v0.9.734[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ EACH CLASS PLAYS ITS OWN WAY.[/color] [b]Warriors[/b] get tougher the longer a fight drags (banked Momentum shrugs off damage) — the safe grinders. [b]Mages[/b] are glass cannons — Magic Bolt can one-shot huge foes, but once the mana's gone they fade fast. [b]Tricksters[/b] are fragile but can [b]Outwit ANYTHING[/b] — a gamble that can fell a monster far beyond any other class... or get them killed.")
+	display_game("  [color=#1EFF00]◆ Outwit is a real gamble now.[/color] Its odds are a coinflip at best and each retry gets harder, but it can bypass any foe's HP — so Tricksters (and, far less reliably, Mages) can punch WAY above their weight. Whiff it and the fragile Trickster had better run.")
+	display_game("  [color=#1EFF00]◆ Hunt monsters above your station.[/color] [b]Shriekers[/b] (and summoning scrolls) now drag a [b]much higher-tier monster into your area[/b] — it keeps its tier's might (deadly!) but if you can burst or outwit it down, the [b]XP is enormous[/b]. Punching above your level now pays what the risk is worth.")
+	display_game("")
+
 	# v0.9.733 — Combat balance overhaul.
-	display_game("[color=#00FF00]v0.9.733[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.733[/color]")
 	display_game("  [color=#FF8000]★ BIG COMBAT REBALANCE.[/color] Skill costs now [b]scale with your level[/b] for every class, so resources stay a real decision late-game instead of becoming free — and stacking [b]+max resource / regen gear now actually buys you more casts[/b].")
 	display_game("  [color=#1EFF00]◆ Classes brought in line.[/color] [b]Mage[/b]'s Magic Bolt is now a real signature nuke; [b]Warrior/Trickster[/b] ability costs scale like the Mage's so no class runs infinitely for free. Combat is tuned so [b]gear + level matter[/b] and bosses are real fights.")
 	display_game("  [color=#1EFF00]◆ No more cheese.[/color] [b]Forethought[/b] (skip-the-monster) and [b]Recharge[/b] are retired (old-balance cards); stacked mitigation can no longer make you [b]unkillable[/b] (capped ~85%); [b]Shield Bash / Paralyze[/b] can't perma-stunlock (the enemy shakes it off); and [b]Outsmart[/b] is a real gamble again (each retry gets harder) instead of a guaranteed win.")
