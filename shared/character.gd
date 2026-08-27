@@ -3572,6 +3572,74 @@ func cull_ability_card(ability_name: String) -> Dictionary:
 	result["new_count"] = new_count
 	return result
 
+func _accessible_combat_cards() -> Dictionary:
+	"""Set of currently-accessible combat ability names (excludes non-combat)."""
+	var accessible := {}
+	for entry in get_all_available_abilities():
+		var nm = String(entry.get("name", ""))
+		if nm != "" and not bool(entry.get("non_combat", false)):
+			accessible[nm] = true
+	return accessible
+
+func _active_companion_loaner_id() -> String:
+	"""The active companion's loaner card id, or "" if none / already permanent.
+	A loaner exists only while the card is NOT in combat_deck_collection."""
+	if not has_active_companion():
+		return ""
+	var mt = String(active_companion.get("monster_type", ""))
+	if mt == "":
+		return ""
+	var ccid = "companion_card_" + mt.to_lower().replace(" ", "_")
+	if combat_deck_collection.has(ccid):
+		return ""  # already permanent — counted in the collection, not a loaner
+	return ccid
+
+func effective_deck_size() -> int:
+	"""Size of the deck combat would actually build: accessible permanent copies
+	(capped per-card) PLUS the active companion's loaner (if any). This is the
+	number the player sees on the deck strip and the one that must stay >= 5."""
+	var accessible := _accessible_combat_cards()
+	var n := 0
+	for k in combat_deck_collection.keys():
+		if accessible.has(k):
+			n += clampi(int(combat_deck_collection[k]), 0, MAX_ABILITY_COPIES)
+	var loaner := _active_companion_loaner_id()
+	if loaner != "":
+		n += 1
+	return n
+
+func ensure_min_deck_size() -> Array:
+	"""Guarantee the effective combat deck stays >= MIN_DECK_SIZE. When swapping
+	away from a companion whose loaner propped the deck up to 5 (to a companion
+	whose card is already permanent, or to none), the deck can fall to 4 — this
+	backfills random accessible cards the player owns but isn't running (0 copies
+	first, then a 2nd/3rd copy) until it reaches 5. Returns the card ids added so
+	the caller can tell the player. Never adds companion loaner cards (those are
+	earned by use, not granted)."""
+	var added: Array = []
+	var accessible := _accessible_combat_cards()
+	var guard := 0
+	while effective_deck_size() < MIN_DECK_SIZE and guard < 64:
+		guard += 1
+		# Prefer cards not currently in the deck (0 copies); fall back to any with room.
+		var zero_copy: Array = []
+		var has_room: Array = []
+		for nm in accessible.keys():
+			if String(nm).begins_with("companion_card_"):
+				continue  # earned by use, never auto-granted
+			var copies = int(combat_deck_collection.get(nm, 0))
+			if copies <= 0:
+				zero_copy.append(nm)
+			elif copies < MAX_ABILITY_COPIES:
+				has_room.append(nm)
+		var pool: Array = zero_copy if not zero_copy.is_empty() else has_room
+		if pool.is_empty():
+			break  # nothing left that can be added
+		var pick = String(pool[randi() % pool.size()])
+		combat_deck_collection[pick] = int(combat_deck_collection.get(pick, 0)) + 1
+		added.append(pick)
+	return added
+
 func add_ability_copy(ability_name: String, from_reward: bool = false) -> Dictionary:
 	"""v0.9.678 (slice 3) — add ONE copy. FREE only restores a thinned ability
 	(0 -> 1); a 2nd/3rd copy (up to MAX_ABILITY_COPIES) must come from a reward

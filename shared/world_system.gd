@@ -2940,7 +2940,7 @@ const MERCHANT_FIRST_NAMES = ["Grim", "Kira", "Marcus", "Zara", "Lou", "Mira", "
 	"Finn", "Nora", "Brock", "Ivy", "Cole", "Luna", "Rex", "Faye", "Jax", "Wren"]
 
 # Merchant travel parameters
-const MERCHANT_SPEED = 0.02  # Tiles per second (1 tile every 50 seconds)
+const MERCHANT_SPEED = 0.025  # Tiles per second (1 tile every 40 seconds; v0.9.731 +25% for faster courier circuits)
 const MERCHANT_REST_TIME = 300.0  # 5 minutes rest at each trading post
 
 # Cache for merchant positions (cleared periodically)

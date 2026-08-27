@@ -13344,13 +13344,17 @@ func trigger_merchant_encounter(peer_id: int):
 		})
 		return
 
-	# Build shop items from carried inventory
-	merchant["shop_items"] = carried_items
+	# Build shop items from carried inventory. Carried items are market LISTINGS
+	# ({item:{...}, base_valor, quantity, account_id, ...}) — flatten them into the
+	# flat shop-item shape the client display + buy path expect (name/level/price
+	# live at the top level). Without this the list shows "Unknown (Lv1) - 100 Valor".
+	merchant["shop_items"] = _flatten_carried_to_shop_items(carried_items)
 	merchant["road_merchant"] = true
+	merchant["merchant_id"] = merchant_id
 	at_merchant[peer_id] = merchant
 
 	var services_text = []
-	services_text.append("[R] Browse wares (%d items)" % carried_items.size())
+	services_text.append("[E] Buy wares (%d items)" % merchant["shop_items"].size())
 	services_text.append("[Space] Leave")
 
 	greeting += "\n".join(services_text)
@@ -13361,6 +13365,46 @@ func trigger_merchant_encounter(peer_id: int):
 		"message": greeting,
 		"road_merchant": true
 	})
+
+const ROAD_MERCHANT_MARKUP := 1.2  # Couriered goods cost a convenience premium on the road
+
+func _flatten_carried_to_shop_items(carried_items: Array) -> Array:
+	"""Turn courier-carried market LISTINGS into flat shop items the client can
+	display + buy. Each carried entry is {item:{...}, base_valor (whole stack),
+	quantity, account_id (seller), supply_category, seller_name}. The seller was
+	already paid base_valor at LIST time, so buying on the road only charges the
+	buyer + removes the stack from the carry (it never reaches the destination to
+	re-list). carry_index maps back to the source entry for removal on purchase."""
+	var out: Array = []
+	for i in range(carried_items.size()):
+		var listing = carried_items[i]
+		if typeof(listing) != TYPE_DICTIONARY:
+			continue
+		# Support already-flat entries (defensive) — if there's no nested item, treat
+		# the entry itself as the item.
+		var inner = listing.get("item", listing)
+		var base_valor := int(listing.get("base_valor", 0))
+		var qty := int(listing.get("quantity", 1))
+		var price := int(round(max(1, base_valor) * ROAD_MERCHANT_MARKUP))
+		out.append({
+			"carry_index": i,
+			"name": inner.get("name", "Unknown"),
+			"type": inner.get("type", ""),
+			"level": inner.get("level", 1),
+			"tier": inner.get("tier", 1),
+			"rarity": inner.get("rarity", "common"),
+			"shop_price": price,
+			"quantity": qty,
+			"is_consumable": inner.get("is_consumable", false),
+			"affixes": inner.get("affixes", {}),
+			# Buy-side payload (not shown, used server-side on purchase):
+			"item": inner,
+			"base_valor": base_valor,
+			"account_id": listing.get("account_id", ""),
+			"supply_category": listing.get("supply_category", "equipment"),
+			"seller_name": listing.get("seller_name", ""),
+		})
+	return out
 
 func _get_merchant_voice(merchant_hash: int) -> String:
 	"""Get a voice line for a merchant based on their hash. Trader 21 (art index 20) gets a unique line."""
@@ -14041,12 +14085,134 @@ func _get_shop_rarity(item_level: int, rng: RandomNumberGenerator) -> String:
 		else:
 			return "common"
 
-func handle_merchant_buy(peer_id: int, _message: Dictionary):
-	"""Merchant purchase removed — redirect to Open Market"""
-	send_to_peer(peer_id, {
-		"type": "text",
-		"message": "[color=#FFD700]Items can only be purchased via the Open Market at trading posts.[/color]"
+func handle_merchant_buy(peer_id: int, message: Dictionary):
+	"""Buy a carried item from a ROAD merchant (courier). Intercepting a courier and
+	buying their cargo before it reaches the destination post. The seller was already
+	paid base_valor at LIST time, so this only charges the buyer + removes the stack
+	from the carry (so it isn't re-listed at the destination). Post/other merchants
+	still route to the Open Market."""
+	if not characters.has(peer_id) or not at_merchant.has(peer_id):
+		return
+	var merchant = at_merchant[peer_id]
+	if not merchant.get("road_merchant", false):
+		send_to_peer(peer_id, {
+			"type": "text",
+			"message": "[color=#FFD700]Items can only be purchased via the Open Market at trading posts.[/color]"
+		})
+		return
+
+	var shop_items: Array = merchant.get("shop_items", [])
+	var idx := int(message.get("index", -1))
+	if idx < 0 or idx >= shop_items.size():
+		send_to_peer(peer_id, {"type": "market_error", "message": "That item is no longer available."})
+		return
+
+	var shop_item: Dictionary = shop_items[idx]
+	var character = characters[peer_id]
+	var buyer_account_id = peers[peer_id].account_id
+	var price := int(shop_item.get("shop_price", 0))
+	var qty := int(shop_item.get("quantity", 1))
+	var item: Dictionary = shop_item.get("item", {})
+	var item_type := String(item.get("type", ""))
+
+	# Space checks (mirror handle_market_buy)
+	if item_type == "material":
+		pass  # materials go to the crafting pouch — always fits
+	elif item_type == "egg":
+		var egg_cap = persistence.get_egg_capacity(buyer_account_id)
+		if character.incubating_eggs.size() + qty > egg_cap:
+			send_to_peer(peer_id, {"type": "market_error", "message": "Your egg incubator is full! (%d/%d)" % [character.incubating_eggs.size(), egg_cap]})
+			return
+	else:
+		if character.inventory.size() + qty > Character.MAX_INVENTORY_SIZE:
+			send_to_peer(peer_id, {"type": "market_error", "message": "Not enough inventory space."})
+			return
+
+	var buyer_valor = persistence.get_valor(buyer_account_id)
+	if buyer_valor < price:
+		send_to_peer(peer_id, {"type": "market_error", "message": "Not enough Valor. Need %d, have %d." % [price, buyer_valor]})
+		return
+
+	# Remove the stack from the courier's carry FIRST (prevents double-buy + stops it
+	# being re-listed at the destination). carry_index maps to merchant_inventory items.
+	var merchant_id = String(merchant.get("merchant_id", merchant.get("id", "")))
+	var carry = merchant_inventory.get(merchant_id, {})
+	var carry_items: Array = carry.get("items", [])
+	var carry_index := int(shop_item.get("carry_index", idx))
+	if carry_index < 0 or carry_index >= carry_items.size():
+		send_to_peer(peer_id, {"type": "market_error", "message": "That item is no longer available."})
+		return
+	carry_items.remove_at(carry_index)
+	carry["items"] = carry_items
+	merchant_inventory[merchant_id] = carry
+
+	# Charge buyer. Seller already got base_valor at LIST time; pass half the road
+	# markup to the seller as a bonus (mirrors the Open Market), rest to treasury.
+	persistence.spend_valor(buyer_account_id, price)
+	var base_valor := int(shop_item.get("base_valor", price))
+	var seller_account_id := String(shop_item.get("account_id", ""))
+	if seller_account_id != "" and seller_account_id != buyer_account_id and price > base_valor:
+		var markup_total := price - base_valor
+		var seller_bonus := int(markup_total / 2)
+		var treasury_cut := markup_total - seller_bonus
+		if seller_bonus > 0:
+			persistence.add_valor(seller_account_id, seller_bonus)
+			for pid in peers.keys():
+				if peers[pid].account_id == seller_account_id and characters.has(pid):
+					send_to_peer(pid, {"type": "text", "message": "[color=#FFD700]A courier sold your %s on the road — you earned %d bonus Valor![/color]" % [item.get("name", "item"), seller_bonus]})
+					send_character_update(pid)
+					break
+		if treasury_cut > 0:
+			persistence.add_to_realm_treasury(treasury_cut)
+
+	# Deliver item(s) to the buyer
+	var is_equippable := false
+	var inv_index := -1
+	if item_type == "material":
+		var mat_name = item.get("material_type", item.get("name", ""))
+		if not character.crafting_materials.has(mat_name):
+			character.crafting_materials[mat_name] = 0
+		character.crafting_materials[mat_name] += qty
+	elif item_type == "egg":
+		for _e in range(qty):
+			character.incubating_eggs.append(item.duplicate(true))
+	else:
+		for _i in range(qty):
+			var item_copy = item.duplicate(true)
+			item_copy["id"] = randi()
+			character.inventory.append(item_copy)
+			inv_index = character.inventory.size() - 1
+		is_equippable = ("weapon" in item_type or "armor" in item_type or "helm" in item_type
+			or "shield" in item_type or "boots" in item_type or "ring" in item_type or "amulet" in item_type)
+
+	save_character(peer_id)
+
+	persistence.add_trade_history_entry(buyer_account_id, {
+		"kind": "market_buy",
+		"item_name": String(item.get("name", "item")),
+		"item_tier": int(item.get("tier", 1)),
+		"quantity": qty,
+		"price_valor": price,
+		"post_id": "road",
+		"counterparty_name": String(shop_item.get("seller_name", "")),
 	})
+
+	# Rebuild the shop from remaining carry + refresh the client's list, then confirm.
+	merchant["shop_items"] = _flatten_carried_to_shop_items(carry_items)
+	at_merchant[peer_id] = merchant
+	_send_shop_inventory(peer_id)
+
+	var qty_text = " x%d" % qty if qty > 1 else ""
+	send_to_peer(peer_id, {
+		"type": "merchant_buy_success",
+		"item": item,
+		"item_name": String(item.get("name", "item")) + qty_text,
+		"is_equippable": is_equippable,
+		"inventory_index": inv_index,
+		"price": price,
+		"valor": persistence.get_valor(buyer_account_id),
+	})
+	send_character_update(peer_id)
 
 func _send_shop_inventory(peer_id: int):
 	"""Send shop inventory to player"""
@@ -14067,6 +14233,7 @@ func _send_shop_inventory(peer_id: int):
 			"rarity": item.get("rarity", "common"),
 			"price": item.get("shop_price", 100),
 			"gem_price": int(ceil(item.get("shop_price", 100) / 1000.0)),
+			"quantity": item.get("quantity", 1),
 			# Include affixes for client-side stat computation
 			"affixes": item.get("affixes", {})
 		})
@@ -19630,6 +19797,7 @@ func handle_activate_companion(peer_id: int, message: Dictionary):
 		if character.activate_hatched_companion(comp_id):
 			var companion_name = matched_hatched.get("name", "Unknown")
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]%s is now your active companion![/color]" % companion_name})
+			_notify_deck_backfill(peer_id, character.ensure_min_deck_size())
 			send_character_update(peer_id)
 			save_character(peer_id)
 			return
@@ -19658,10 +19826,26 @@ func handle_activate_companion(peer_id: int, message: Dictionary):
 	if character.activate_companion(gem_id):
 		var companion_name = matched_gem.get("name", "Unknown")
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#00FFFF]%s is now your active companion![/color]" % companion_name})
+		_notify_deck_backfill(peer_id, character.ensure_min_deck_size())
 		send_character_update(peer_id)
 		save_character(peer_id)
 	else:
 		send_to_peer(peer_id, {"type": "error", "message": "Could not activate companion."})
+
+func _notify_deck_backfill(peer_id: int, added: Array) -> void:
+	"""Tell the player when a companion swap auto-added card(s) to keep the deck at
+	the 5-card minimum (a loaner card left with the previous companion)."""
+	if added == null or added.is_empty():
+		return
+	if not characters.has(peer_id):
+		return
+	var names: Array = []
+	for cid in added:
+		if String(cid).begins_with("companion_card_"):
+			names.append(DropTablesScript.companion_card_display_name(String(cid)))
+		else:
+			names.append(String(cid).capitalize().replace("_", " "))
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#9ACD32]Your deck dipped below %d cards — added %s to keep it full.[/color]" % [Character.MIN_DECK_SIZE, ", ".join(names)]})
 
 func handle_dismiss_companion(peer_id: int):
 	"""Handle dismissing the active companion"""
@@ -19679,6 +19863,8 @@ func handle_dismiss_companion(peer_id: int):
 
 	character.dismiss_companion()
 	send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s has been dismissed.[/color]" % companion_name})
+	# Dismissing removes the companion's loaner card — backfill if that dropped the deck below 5.
+	_notify_deck_backfill(peer_id, character.ensure_min_deck_size())
 	send_character_update(peer_id)
 	save_character(peer_id)
 
@@ -39392,7 +39578,7 @@ func _get_posts_with_markets() -> Array:
 
 # Merchant carry inventory: {merchant_id: {items: [], destination_post_key: String}}
 var merchant_inventory: Dictionary = {}
-const MERCHANT_CARRY_CAPACITY = 10
+const MERCHANT_CARRY_CAPACITY = 14  # v0.9.731: +4 slots — couriers now sell on the road, so more cargo = more throughput
 # v0.9.716 — realm-wide market equalization tuning.
 const MERCHANT_EQUALIZE_MIN_GAP = 4  # only move a stackable good when this post has ≥N more units than the next stop
 const MERCHANT_UNIQUE_KEEP = 1       # leave at least this many uniques of each category at a post

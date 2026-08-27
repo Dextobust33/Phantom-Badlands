@@ -9179,7 +9179,7 @@ func update_action_bar():
 				_buy_price = item.get("shop_price", 0)
 				can_afford = character_data.get("valor", 0) >= _buy_price
 			current_actions = [
-				{"label": "Buy(%dg)" % _buy_price if _buy_price > 0 else "Buy", "action_type": "local", "action_data": "confirm_shop_buy", "enabled": can_afford},
+				{"label": "Buy(%dv)" % _buy_price if _buy_price > 0 else "Buy", "action_type": "local", "action_data": "confirm_shop_buy", "enabled": can_afford},
 				{"label": "Back", "action_type": "local", "action_data": "cancel_shop_inspect", "enabled": true},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 				{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
@@ -15258,11 +15258,13 @@ func display_shop_inventory():
 					compare_text = ""
 
 			var themed_name = _get_themed_item_name(item, player_class)
+			var qty = int(item.get("quantity", 1))
+			var qty_suffix = " [color=#AAAAAA]x%d[/color]" % qty if qty > 1 else ""
 			var is_consumable = item.get("is_consumable", false) or "potion" in item_type or "elixir" in item_type or "scroll" in item_type or "home_stone" in item_type or "gold_pouch" in item_type or "tome" in item_type
 			if is_consumable:
-				display_game("[%d] %s [color=%s]%s[/color]%s - [color=#FFD700]%d Valor[/color]" % [i + 1, compare_arrow, color, themed_name, compare_text, price])
+				display_game("[%d] %s [color=%s]%s[/color]%s%s - [color=#FFD700]%d Valor[/color]" % [i + 1, compare_arrow, color, themed_name, qty_suffix, compare_text, price])
 			else:
-				display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s - [color=#FFD700]%d Valor[/color]" % [i + 1, compare_arrow, color, themed_name, level, compare_text, price])
+				display_game("[%d] %s [color=%s]%s[/color] (Lv%d)%s%s - [color=#FFD700]%d Valor[/color]" % [i + 1, compare_arrow, color, themed_name, level, qty_suffix, compare_text, price])
 
 	display_game("")
 	display_game("[color=#808080]%s to buy with Valor[/color]" % get_selection_keys_text(shop_items.size()))
@@ -15280,6 +15282,7 @@ func handle_shop_inventory(message: Dictionary):
 				"level": item.get("level", 1),
 				"rarity": item.get("rarity", "common"),
 				"shop_price": item.get("price", 100),
+				"quantity": item.get("quantity", 1),
 				# Store affixes for client-side stat computation
 				"affixes": item.get("affixes", {})
 			})
@@ -15300,6 +15303,10 @@ func handle_merchant_buy_success(message: Dictionary):
 	var item = message.get("item", {})
 	var inv_index = message.get("inventory_index", -1)
 	var is_equippable = message.get("is_equippable", false)
+	# Keep valor in sync (server is authoritative on price paid + bonuses).
+	if message.has("valor"):
+		character_data["valor"] = message.get("valor", character_data.get("valor", 0))
+		update_currency_display()
 
 	if is_equippable and not item.is_empty():
 		bought_item_pending_equip = item
@@ -15315,6 +15322,17 @@ func handle_merchant_buy_success(message: Dictionary):
 		display_game("[color=#FFD700]Would you like to equip it now?[/color]")
 		display_game("")
 		display_game("[color=#808080][%s] Equip Now  |  [%s] Keep in Inventory[/color]" % [get_action_key_name(0), get_action_key_name(1)])
+		update_action_bar()
+	else:
+		# Non-equippable (materials, eggs, consumables) — confirm briefly and drop the
+		# player back onto the refreshed shop list (shop_inventory already updated the
+		# merchant data just before this message).
+		var item_name = message.get("item_name", item.get("name", "Item"))
+		pending_merchant_action = "buy"
+		game_output.clear()
+		display_game("[color=#00FF00]Purchased %s![/color]" % item_name)
+		display_game("")
+		display_shop_inventory()
 		update_action_bar()
 
 func equip_bought_item():
