@@ -3445,12 +3445,17 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				messages.append("[color=#20B2AA]Cost reduced to %d mana![/color]" % actual_mana_cost)
 			character.current_mana -= actual_mana_cost
 
-			# Calculate INT-based damage (based on intended bolt_amount, not reduced cost)
-			# Hybrid scaling: max of sqrt and linear for better high-level scaling
-			# sqrt(INT)/5: INT 25=2x, INT 100=3x, INT 225=4x (diminishing returns)
-			# INT/75: INT 75=2x, INT 150=3x, INT 225=4x (linear, better at high INT)
+			# #55 (2026-08-26) — Magic Bolt is the mage's signature spell but was the
+			# worst ability in the game (Dmg/Res ~2, i.e. barely more damage than the mana
+			# it burned). Old multiplier `1 + max(sqrt(INT)/5, INT/75)` only reached ~2-6×.
+			# Rebuilt as `1 + 3.5·sqrt(INT)` so a full-mana bolt is a real BURST nuke: with
+			# its ~25%-pool dump identity (few casts per bar) this puts the mage's per-bar
+			# output on par with martial/meteor while staying a low-sustain, high-burst
+			# tool (blast remains the efficient repeatable). Pure-sqrt so it scales gently
+			# at extreme INT instead of the old linear term exploding. INT 26 (L10) ≈ 18.8×,
+			# INT 66 (L50) ≈ 29.4×, INT 500 (L1000) ≈ 79×.
 			var int_stat = character.get_effective_stat("intelligence")
-			var int_multiplier = 1.0 + max(sqrt(float(int_stat)) / 5.0, float(int_stat) / 75.0)
+			var int_multiplier = 1.0 + 3.5 * sqrt(float(int_stat))
 			var base_damage = int(bolt_amount * int_multiplier * _focus_mult)  # v0.9.697 Focus ramp
 
 			# Apply damage buff (from War Cry, potions, etc.)

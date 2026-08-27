@@ -172,7 +172,12 @@ unchanged** (early game preserved). Core #55 goal achieved.
 Residual (future tuning, non-blocking):
 - Mage abilities still deal less damage-per-cost than martial (D/R 32–70 vs 150–244) — a DAMAGE
   lever, not cost. Mages are the weak side, so "mages could hit a touch harder," not "nerf martial."
-- magic_bolt fixed at ~4 casts/bar + D/R 2–10 (25%-pool dump) — bad card, needs its own buff/rework.
+- ~~magic_bolt fixed at ~4 casts/bar + D/R 2–10 (25%-pool dump) — bad card~~ → FIXED: multiplier
+  rebuilt to `1 + 3.5·sqrt(INT)` (was `1 + max(sqrt/5, INT/75)`). Now D/R 16→65 across levels,
+  per-bar burst ~1.4M @L1000 (on par with shield_bash/meteor). Mage brought to parity via its
+  signature spell per user direction; still a low-sustain high-burst tool (blast = efficient spam).
+- Remaining minor: at L50 martial spammables (power_strike per-bar 83K) still lead mage blast
+  (20K); a small blast damage bump could close it, but magic_bolt/meteor are now on-par.
 - devastate reads "no paid casts" (momentum-gated finisher — not measurable in isolation).
 - exploit D/R still dummy-inflated (%-max-HP × 50× HP probe) — known caveat, ability is fine.
 
