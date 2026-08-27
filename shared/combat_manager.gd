@@ -23,6 +23,10 @@ const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
 # Shield/Fortify defense buff). 0.15 => those layers can never reduce a hit by more than
 # 85%, so heavy investment = very tanky but never immune (fixes stacked-to-unkillable).
 const MITIGATION_BUFF_FLOOR := 0.15
+# #70 (2026-08-27) — Magic Bolt spend-fraction efficiency floor. Per-mana damage scales
+# from this floor (at a tiny chip) up to 1.0 (at a full-pool dump), so chip-spam is weak
+# but the full-dump burst is unchanged. Fixes low-level one-shot-for-a-chip trivialization.
+const MAGIC_BOLT_MIN_EFF := 0.15
 # #55 — repeated-stun diminishing returns. Each time the SAME monster is stunned, the
 # next stun's success chance is multiplied by this per prior stun (tracked on the combat
 # state), so a warrior can't perma-stunlock a monster the whole fight with Shield Bash.
@@ -3563,7 +3567,19 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# (the mage's defining strength = burst reach). Balanced by the lower mana regen
 			# below (nuke, then you're dry). Pure sqrt so it stays sane at extreme INT.
 			var int_multiplier = 1.0 + 4.3 * sqrt(float(int_stat))
-			var base_damage = int(bolt_amount * int_multiplier * _focus_mult)  # v0.9.697 Focus ramp
+			# #70 (2026-08-27) — spend-FRACTION efficiency. Damage-per-mana used to be FLAT, so
+			# a tiny chip was as efficient per-mana as a full dump AND sustainable → at low level
+			# a ~10%-pool chip one-shot same-level monsters (player report: L6 mage trivializing
+			# combat). Now per-mana efficiency RISES with the fraction of your MAX pool you commit:
+			# a full dump keeps the FULL multiplier (the glass-cannon burst is unchanged), but a
+			# small chip is weak — so you must DUMP to nuke (and then go dry), preserving the
+			# "burst hard, can't sustain" identity. MB_MIN_EFF floors a chip so it's not worthless.
+			# Fraction is vs MAX pool (not current) so dumping a near-empty bar can't cheese full
+			# efficiency. Full pool -> 1.0x (unchanged); 10% -> ~0.37x; 25% -> ~0.48x.
+			var _mb_pool: int = maxi(1, character.get_total_max_mana())
+			var _mb_frac: float = clampf(float(bolt_amount) / float(_mb_pool), 0.0, 1.0)
+			var _mb_eff: float = MAGIC_BOLT_MIN_EFF + (1.0 - MAGIC_BOLT_MIN_EFF) * _mb_frac
+			var base_damage = int(bolt_amount * int_multiplier * _mb_eff * _focus_mult)  # v0.9.697 Focus ramp
 
 			# Apply damage buff (from War Cry, potions, etc.)
 			var damage_buff = character.get_buff_value("damage")

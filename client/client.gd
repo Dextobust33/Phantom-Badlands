@@ -18496,7 +18496,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		var _uses = int(character_data.get("ability_uses", {}).get(ability_name, 0))
 		return _base + " Becomes a [b]permanent[/b] deck card after [b]%d[/b] casts (cast %d so far)." % [_need, _uses]
 	match ability_name:
-		"magic_bolt": return "Deal damage equal to mana spent (scales with INT). Variable mana cost."
+		"magic_bolt": return "Deal damage scaling with INT and how BIG a bite of your mana you take — a small chip is weak, a FULL dump is a huge burst (then you're dry). The mage's signature nuke: commit your bar. Variable mana cost."
 		"shield": return "Alias for Forcefield — flat damage absorption shield."
 		"cloak": return "Out-of-combat ability — slip past monsters on the overworld. Costs 8% of your max class resource. Requires Lv 20. (Cannot be used in combat.)"
 		"blast": return "INT-scaled burst damage + 3-round burn DoT (20% of INT per round). Variable cost (≈30% of mana pool max) — damage AND burn magnitude scale with spend; duration stays 3 rounds."
