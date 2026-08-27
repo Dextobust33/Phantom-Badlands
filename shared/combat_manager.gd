@@ -5422,10 +5422,25 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 	else:
 		character.remove_item(item_index)
 
-	# Item use is a FREE ACTION - player can still act this turn
-	# No monster turn, no round increment, no buff tick
-	messages.append("[color=#808080](Free action - you may still act)[/color]")
-
+	# #65 (2026-08-27) — item use is a free action, but only ONCE per round. The FIRST item
+	# you use this round is free (you may still act); a SECOND (or later) item makes the
+	# round proceed and the monster takes its normal turn. Stops chaining unlimited potions
+	# while the enemy never acts. free_item_used resets when the monster takes its turn.
+	if combat.get("free_item_used", false):
+		messages.append("[color=#FFA500](You've already taken a free action this round — the enemy seizes the moment![/color]")
+		var _mt = process_monster_turn(combat)
+		for _mm in _mt.get("messages", []):
+			messages.append(_mm)
+		var _ended: bool = character.current_hp <= 0
+		return {
+			"success": true,
+			"messages": messages,
+			"combat_ended": _ended,
+			"victory": false,
+			"monster_name": combat.monster.get("name", "Unknown") if _ended else "",
+		}
+	combat["free_item_used"] = true
+	messages.append("[color=#808080](Free action - you may still act. A second item this round will cost you your guard.)[/color]")
 	return {
 		"success": true,
 		"messages": messages,
@@ -5434,6 +5449,8 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 
 func process_monster_turn(combat: Dictionary) -> Dictionary:
 	"""Process the monster's attack with all ability effects"""
+	# #65 — a monster turn ends the round, so the next round's first item is free again.
+	combat["free_item_used"] = false
 	var character = combat.character
 	var monster = combat.monster
 	var abilities = monster.get("abilities", [])

@@ -3,6 +3,22 @@
 extends Node
 class_name DungeonDatabase
 
+# #67 (2026-08-27) — per-floor difficulty ramp. Each dungeon floor scales monster
+# level up by this fraction of the dungeon's base level (floor_num is 0-based, so
+# floor 1 = +0%, floor 2 = +7%, floor 3 = +14%, ...). Lowered 0.10 → 0.07 for a
+# gentler curve. This is the SINGLE source of truth — spawn code AND the player-facing
+# floor-descent telegraph both read it so the warning always matches reality.
+const FLOOR_DIFFICULTY_PER_FLOOR := 0.07
+
+# Human-readable telegraph shown when a player descends. `floor_index` is 0-based.
+static func floor_difficulty_telegraph(floor_index: int, dungeon_level: int) -> String:
+	var mult := 1.0 + (float(floor_index) * FLOOR_DIFFICULTY_PER_FLOOR)
+	var mlevel := int(dungeon_level * mult)
+	var pct := int(round((mult - 1.0) * 100.0))
+	if floor_index <= 0:
+		return "[color=#AAAAAA]Enemies here are around Lv %d.[/color]" % mlevel
+	return "[color=#FFA500]⚠ Deeper and deadlier — enemies here are around Lv %d (+%d%% vs the entrance).[/color]" % [mlevel, pct]
+
 # Dungeon tile types
 enum TileType {
 	EMPTY,         # Walkable, nothing special
@@ -2699,8 +2715,8 @@ static func get_monster_for_encounter(dungeon_id: String, floor_num: int, dungeo
 			return {}
 		monster_name = monster_pool[0]
 
-	# Scale level based on floor (deeper = harder)
-	var level_mult = 1.0 + (floor_num * 0.1)  # +10% per floor
+	# Scale level based on floor (deeper = harder) — #67 shared ramp constant
+	var level_mult = 1.0 + (floor_num * FLOOR_DIFFICULTY_PER_FLOOR)
 	var monster_level = int(dungeon_level * level_mult)
 
 	return {

@@ -9883,67 +9883,63 @@ func _open_treasure_chest(peer_id: int, item_index: int):
 	var tier = int(item.get("tier", 1))
 	var chest_name = item.get("name", "Treasure Chest")
 
-	# Consume ONE chest. Treasure chests stack (is_consumable → quantity), so
-	# remove_at() would nuke the WHOLE stack (v0.9.711 bug: open 1 of 4 → lost all).
-	# Decrement the stack; only remove the slot when the last one is opened.
+	# #66 (2026-08-27) — open the ENTIRE stack in one action. Small chests were tedious
+	# to open one-by-one; a single "open" now empties the whole stack and reports the
+	# combined haul. Remove the slot entirely (all chests consumed).
 	var chest_qty = int(item.get("quantity", 1))
-	if chest_qty > 1:
-		item["quantity"] = chest_qty - 1
-	else:
-		character.inventory.remove_at(item_index)
+	character.inventory.remove_at(item_index)
 
-	# Roll 2-4 random materials appropriate to the tier
-	var num_rewards = randi_range(2, 4)
+	# Roll each chest's rewards and accumulate totals across the whole stack.
 	var reward_materials = {}
+	var total_gold = 0
+	var compass_drops = []
 	var material_pool = _get_chest_material_pool(tier)
-	for _i in range(num_rewards):
-		if material_pool.is_empty():
-			break
-		var mat_id = material_pool[randi() % material_pool.size()]
-		var qty = randi_range(1, 2 + tier)
-		if reward_materials.has(mat_id):
-			reward_materials[mat_id] += qty
-		else:
-			reward_materials[mat_id] = qty
+	for _c in range(max(1, chest_qty)):
+		var num_rewards = randi_range(2, 4)
+		for _i in range(num_rewards):
+			if material_pool.is_empty():
+				break
+			var mat_id = material_pool[randi() % material_pool.size()]
+			var qty = randi_range(1, 2 + tier)
+			reward_materials[mat_id] = reward_materials.get(mat_id, 0) + qty
+		total_gold += randi_range(25 + tier * 25, 100 + tier * 50)
+		# Audit #5 discoverability — per-chest 18% chance (tier 2+) for a Dungeon
+		# Compass whose tier_max scales with the chest tier.
+		if tier >= 2 and randi() % 100 < 18:
+			var compass_tier_max = mini(9, tier + 1)
+			var compass_name = "Dungeon Compass"
+			if compass_tier_max >= 6:
+				compass_name = "Master Dungeon Compass"
+			elif compass_tier_max >= 4:
+				compass_name = "Greater Dungeon Compass"
+			compass_drops.append({
+				"name": compass_name,
+				"item_type": "dungeon_compass",
+				"type": "consumable",
+				"tier_max": compass_tier_max,
+				"is_consumable": true
+			})
 
-	# Grant materials
+	# Grant materials + gold + any compasses
 	for mat_id in reward_materials:
 		character.add_crafting_material(mat_id, reward_materials[mat_id])
-
-	# Gold bonus scaled by tier
-	var gold_bonus = randi_range(25 + tier * 25, 100 + tier * 50)
-	character.gold += gold_bonus
-
-	# Audit #5 discoverability — chance for a Dungeon Compass to drop with the
-	# chest contents. Compass tier_max scales with chest tier so a tier-1 chest
-	# only points to T1-2 dungeons (relevant to the player who's opening it).
-	# 18% chance starting at tier 2.
-	var compass_drop = {}
-	if tier >= 2 and randi() % 100 < 18:
-		var compass_tier_max = mini(9, tier + 1)
-		var compass_name = "Dungeon Compass"
-		if compass_tier_max >= 6:
-			compass_name = "Master Dungeon Compass"
-		elif compass_tier_max >= 4:
-			compass_name = "Greater Dungeon Compass"
-		compass_drop = {
-			"name": compass_name,
-			"item_type": "dungeon_compass",
-			"type": "consumable",
-			"tier_max": compass_tier_max,
-			"is_consumable": true
-		}
-		character.add_item(compass_drop)
+	character.gold += total_gold
+	for cd in compass_drops:
+		character.add_item(cd)
 
 	# Build result message
-	var msg = "[color=#FFD700]You open the %s![/color]\n" % chest_name
+	var msg = ""
+	if chest_qty > 1:
+		msg = "[color=#FFD700]You open all %d %ss![/color]\n" % [chest_qty, chest_name]
+	else:
+		msg = "[color=#FFD700]You open the %s![/color]\n" % chest_name
 	msg += "[color=#00FF00]Found:[/color]\n"
 	for mat_id in reward_materials:
 		var mat_name = mat_id.replace("_", " ").capitalize()
 		msg += "  [color=#00BFFF]%s x%d[/color]\n" % [mat_name, reward_materials[mat_id]]
-	msg += "  [color=#FFD700]%d Gold[/color]" % gold_bonus
-	if not compass_drop.is_empty():
-		msg += "\n  [color=#9ACD32]+1 %s[/color] [color=#808080](use to reveal nearest T%d-or-lower dungeon)[/color]" % [compass_drop.name, compass_drop.tier_max]
+	msg += "  [color=#FFD700]%d Gold[/color]" % total_gold
+	if compass_drops.size() > 0:
+		msg += "\n  [color=#9ACD32]+%d Dungeon Compass%s[/color] [color=#808080](use to reveal a nearby dungeon)[/color]" % [compass_drops.size(), "es" if compass_drops.size() > 1 else ""]
 
 	send_to_peer(peer_id, {"type": "text", "message": msg})
 	save_character(peer_id)
@@ -23155,18 +23151,20 @@ func _add_gathering_reward(character: Character, reward: Dictionary, qty: int) -
 	"""Add a gathering reward — treasure chests go to inventory, everything else to materials pouch.
 	Returns quantity actually added."""
 	if reward.get("type", "") == "treasure_chest":
-		# Treasure chests are inventory items, not materials
-		for _i in range(qty):
-			if character.inventory.size() >= character.MAX_INVENTORY_SIZE:
-				return _i  # Inventory full — return how many we added
-			character.inventory.append({
-				"name": reward.get("name", "Treasure Chest"),
-				"type": "treasure_chest",
-				"is_consumable": true,
-				"tier": int(reward.get("tier", 1)),
-				"value": int(reward.get("value", 50)),
-			})
-		return qty
+		# #66 — treasure chests are stackable inventory items. Build ONE chest with the
+		# full quantity and let add_item() merge it into any existing identical stack
+		# (the old per-item append() created a fresh slot each time → inventory clog).
+		var chest = {
+			"name": reward.get("name", "Treasure Chest"),
+			"type": "treasure_chest",
+			"is_consumable": true,
+			"tier": int(reward.get("tier", 1)),
+			"value": int(reward.get("value", 50)),
+			"quantity": qty,
+		}
+		if character.add_item(chest):
+			return qty
+		return 0  # Inventory full and no existing stack to merge into
 	else:
 		return character.add_crafting_material(reward["id"], qty)
 
@@ -28478,6 +28476,13 @@ func handle_dungeon_enter(peer_id: int, message: Dictionary):
 	if rescue_redirect_msg != "":
 		send_to_peer(peer_id, {"type": "text", "message": rescue_redirect_msg})
 
+	# #67 — telegraph floor-1 difficulty on entry, plus a note that it climbs each floor.
+	var _entry_lvl := int(active_dungeons.get(instance_id, {}).get("dungeon_level", character.level))
+	send_to_peer(peer_id, {
+		"type": "text",
+		"message": "%s\n[color=#888888]Each floor deeper is tougher — watch the level shown as you descend.[/color]" % DungeonDatabaseScript.floor_difficulty_telegraph(0, _entry_lvl)
+	})
+
 	# Audit #3 Slice 5 — first dungeon entry teaches floors / boss / theme tiles.
 	_maybe_send_dungeon_hint(peer_id)
 
@@ -32399,11 +32404,14 @@ func _advance_dungeon_floor(peer_id: int):
 	if active_dungeons.has(instance_id):
 		active_dungeons[instance_id]["floor_escalation_spawned"] = 0
 
+	# #67 — telegraph the per-floor difficulty ramp so the player knows deeper = deadlier.
+	var _dlevel := int(active_dungeons.get(instance_id, {}).get("dungeon_level", character.level))
+	var _telegraph := DungeonDatabaseScript.floor_difficulty_telegraph(character.dungeon_floor, _dlevel)
 	send_to_peer(peer_id, {
 		"type": "dungeon_floor_change",
 		"floor": character.dungeon_floor + 1,
 		"total_floors": dungeon_data.floors,
-		"message": "[color=#FFFF00]You descend to floor %d...[/color]" % (character.dungeon_floor + 1)
+		"message": "[color=#FFFF00]You descend to floor %d...[/color]\n%s" % [character.dungeon_floor + 1, _telegraph]
 	})
 
 	_send_dungeon_state(peer_id)
@@ -32423,11 +32431,12 @@ func _advance_dungeon_floor(peer_id: int):
 				fy = entrance_pos.y
 				fx = entrance_pos.x
 			characters[pid].advance_dungeon_floor(fx, fy)
+			var _pt := DungeonDatabaseScript.floor_difficulty_telegraph(characters[pid].dungeon_floor, _dlevel)
 			send_to_peer(pid, {
 				"type": "dungeon_floor_change",
 				"floor": characters[pid].dungeon_floor + 1,
 				"total_floors": dungeon_data.floors,
-				"message": "[color=#FFFF00]Your party descends to floor %d...[/color]" % (characters[pid].dungeon_floor + 1)
+				"message": "[color=#FFFF00]Your party descends to floor %d...[/color]\n%s" % [characters[pid].dungeon_floor + 1, _pt]
 			})
 			_send_dungeon_state(pid)
 			save_character(pid)
@@ -33836,7 +33845,7 @@ func _spawn_dungeon_floor_monsters(instance_id: String, floor_num: int, dungeon_
 	var display_color = DungeonDatabaseScript.MONSTER_DISPLAY_COLORS.get(tier, "#FF4444")
 	# P2 Slice 2 — fabled-boss quest instances rename + buff the boss on the boss floor.
 	var fabled_boss_name = String(active_dungeons.get(instance_id, {}).get("fabled_boss_name", ""))
-	var level_mult = 1.0 + (floor_num * 0.1)
+	var level_mult = 1.0 + (floor_num * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR)
 	var monster_level = int(dungeon_level * level_mult)
 
 	# Find entrance and exit positions for distance checks
@@ -34013,7 +34022,7 @@ func _spawn_one_wandering_monster(instance_id: String, floor_num: int, character
 	var monster_type = boss_data.get("monster_type", "Goblin")
 	var display_color = DungeonDatabaseScript.MONSTER_DISPLAY_COLORS.get(tier, "#FF4444")
 	var dungeon_level = int(active_dungeons.get(instance_id, {}).get("dungeon_level", character.level))
-	var monster_level = int(dungeon_level * (1.0 + floor_num * 0.1))
+	var monster_level = int(dungeon_level * (1.0 + floor_num * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))
 	var entrance_pos = Vector2i(-1, -1)
 	var exit_pos = Vector2i(-1, -1)
 	for y in range(grid.size()):
