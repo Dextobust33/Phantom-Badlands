@@ -1399,7 +1399,7 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			# Check if it's an ability command
 			# v0.9.681 — companion cards ("companion_card_<type>") are dynamic ids,
 			# not in the static *_ABILITY_COMMANDS lists, so allow them by prefix.
-			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_"):
+			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
 				return process_ability_command(peer_id, cmd, arg)
 			return {"success": false, "message": "Unknown combat command! Use: attack, flee, outsmart, or abilities"}
 
@@ -3162,7 +3162,8 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]:
 		result = _process_trickster_ability(combat, ability_name)
 	# v0.9.680 — companion cards (variant-flavoured strike; any class).
-	elif ability_name.begins_with("companion_card_"):
+	# #38 — dungeon-exclusive cards share the same data-driven processor.
+	elif ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
 		result = _process_companion_ability(combat, ability_name)
 	else:
 		return {"success": false, "message": "Unknown ability!"}
@@ -3949,8 +3950,9 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 	var character = combat.character
 	var monster = combat.monster
 	var messages: Array = []
-	var data: Dictionary = DropTablesScript.get_companion_card_data_by_id(ability_name)
-	var cname: String = String(data.get("name", DropTablesScript.companion_card_display_name(ability_name)))
+	# #38 — generalized lookups handle BOTH companion_card_ and dungeon_card_ ids.
+	var data: Dictionary = DropTablesScript.get_card_data_by_id(ability_name)
+	var cname: String = String(data.get("name", DropTablesScript.card_display_name(ability_name)))
 	var kind: String = String(data.get("kind", "strike"))
 
 	# Cost — modest, in the class resource (tier 'efficiency' + racial fold in).
@@ -3968,7 +3970,7 @@ func _process_companion_ability(combat: Dictionary, ability_name: String) -> Dic
 	var tier: int = character.get_ability_tier(ability_name)
 	var tmult: float = character.get_tier_effect_mult(ability_name)
 	var dur_bonus: int = character.get_ability_duration_bonus(ability_name)
-	var is_buff: bool = DropTablesScript.companion_card_category(ability_name) == "buff"
+	var is_buff: bool = DropTablesScript.card_category(ability_name) == "buff"
 
 	match kind:
 		# ---------- SELF-BUFFS (no damage) ----------
@@ -8352,6 +8354,9 @@ func _ability_display_name(_character, ability_name: String) -> String:
 	while the card in the player's hand showed 'Recharge' — players couldn't
 	connect the two and reported phantom ranks-ups on abilities they 'don't have'."""
 	# v0.9.680 — companion cards: "<Type>'s Gift" from the id.
+	# #38 — dungeon cards resolve to their proper name via the shared table.
+	if ability_name.begins_with("dungeon_card_"):
+		return DropTablesScript.card_display_name(ability_name)
 	if ability_name.begins_with("companion_card_"):
 		return "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
 	match ability_name:

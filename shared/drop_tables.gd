@@ -1419,6 +1419,55 @@ static func companion_card_permanence_uses(monster_type: String) -> int:
 	var tier := companion_type_tier(monster_type)
 	return 40 + (tier - 1) * 22
 
+# =========================================================================
+# #38 (2026-08-27) — DUNGEON-EXCLUSIVE CARDS. Universal (any class) combat cards
+# earned ONLY by clearing a themed dungeon (replaces the old "copy-drop" reward).
+# They route through the SAME data-driven companion-card processor
+# (_process_companion_card_ability) via a `dungeon_card_<slug>` id, so they need
+# no new combat logic — each uses an EXISTING kind. Granted PERMANENT on a clear.
+# Slice 1 = 4 cards (poison / lifesteal / shield / execute) across 4 dungeon types.
+# =========================================================================
+const DUNGEON_CARD_DATA = {
+	"venom_fang":        {"name": "Venom Fang",         "kind": "poison",    "tier": 2, "dungeon": "spider_nest",      "desc": "A dungeon-forged strike drenched in spider venom — poisons the enemy, dealing damage every turn."},
+	"crimson_draught":   {"name": "Crimson Draught",    "kind": "lifesteal", "tier": 4, "dungeon": "vampire_crypt",    "desc": "Crypt-tainted blood magic — a strike that heals you for part of the damage dealt."},
+	"bulwark_of_bone":   {"name": "Bulwark of Bone",    "kind": "shield",    "tier": 3, "dungeon": "forgotten_crypt",  "desc": "Raise a lattice of grave-bone that absorbs a burst of incoming damage."},
+	"executioners_edge": {"name": "Executioner's Edge", "kind": "execute",   "tier": 9, "dungeon": "god_slayer_arena", "desc": "A god-killer's finishing blow — devastating against wounded enemies."},
+}
+
+static func dungeon_card_id_for_dungeon(dungeon_type: String) -> String:
+	"""The themed dungeon-card id a given dungeon TYPE drops, or "" if none."""
+	for slug in DUNGEON_CARD_DATA:
+		if String(DUNGEON_CARD_DATA[slug].get("dungeon", "")) == dungeon_type:
+			return "dungeon_card_" + String(slug)
+	return ""
+
+static func get_dungeon_card_data_by_id(card_id: String) -> Dictionary:
+	if not card_id.begins_with("dungeon_card_"):
+		return {}
+	return DUNGEON_CARD_DATA.get(card_id.trim_prefix("dungeon_card_"), {})
+
+# ----- Generalized card helpers (handle BOTH companion_card_ and dungeon_card_) -----
+static func is_data_card_id(card_id: String) -> bool:
+	return card_id.begins_with("companion_card_") or card_id.begins_with("dungeon_card_")
+
+static func get_card_data_by_id(card_id: String) -> Dictionary:
+	if card_id.begins_with("dungeon_card_"):
+		return get_dungeon_card_data_by_id(card_id)
+	return get_companion_card_data_by_id(card_id)
+
+static func card_display_name(card_id: String) -> String:
+	if card_id.begins_with("dungeon_card_"):
+		var d = get_dungeon_card_data_by_id(card_id)
+		if not d.is_empty():
+			return String(d.get("name", ""))
+		return card_id.trim_prefix("dungeon_card_").capitalize()
+	return companion_card_display_name(card_id)
+
+static func card_category(card_id: String) -> String:
+	var data = get_card_data_by_id(card_id)
+	var kind = String(data.get("kind", "strike"))
+	return String(COMPANION_CARD_KIND_CATEGORY.get(kind, "offense"))
+
 static func get_variant_trait_for_companion(monster_type: String) -> String:
 	"""Returns the trait category id (e.g., 'crit') for a companion type, or ''
 	if the companion isn't mapped. Defensive — unmapped companions just don't

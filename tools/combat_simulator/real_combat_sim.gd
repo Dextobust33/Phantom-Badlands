@@ -51,9 +51,35 @@ func _init():
 		monster_db.drop_tables = drop_tables
 
 	_verify_new_mage_cards()
+	_verify_dungeon_cards()
 	run_difficulty_audit()
 	run_overlevel_audit()
 	quit()
+
+func _verify_dungeon_cards() -> void:
+	# #38 functional check — grant each dungeon-exclusive card, confirm it appears in the
+	# available pool and casts without runtime error across classes.
+	var DT = load("res://shared/drop_tables.gd")
+	print("===== #38 DUNGEON CARD FUNCTIONAL CHECK =====")
+	print("spider_nest -> %s" % DT.dungeon_card_id_for_dungeon("spider_nest"))
+	print("vampire_crypt -> %s" % DT.dungeon_card_id_for_dungeon("vampire_crypt"))
+	var cards := ["dungeon_card_venom_fang", "dungeon_card_crimson_draught", "dungeon_card_bulwark_of_bone", "dungeon_card_executioners_edge"]
+	for cid in cards:
+		var ch = make_char(60, "average", "Fighter")
+		ch.combat_deck_collection[cid] = 1
+		var avail := false
+		for e in ch.get_all_available_abilities():
+			if String(e.get("name", "")) == cid:
+				avail = true
+		var monster = make_monster(60, "boss", 50.0)
+		combat_mgr.start_combat(0, ch, monster)
+		var combat = combat_mgr.active_combats[0]
+		_force_hand(combat, cid)
+		var mhp0: int = int(monster.current_hp)
+		var res = combat_mgr.process_ability_command(0, cid, "")
+		print("%-30s avail=%s cast_ok=%s dmg=%d name='%s'" % [cid, str(avail), str(res.get("success", false)), mhp0 - int(monster.current_hp), DT.card_display_name(cid)])
+		combat_mgr.active_combats.erase(0)
+	print("=============================================")
 
 func _verify_new_mage_cards() -> void:
 	# #36 functional check — force-cast Overload + Frost Nova and confirm effects fire

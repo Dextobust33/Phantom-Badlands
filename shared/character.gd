@@ -3040,6 +3040,12 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": _ks, "level": 1, "display": _dt_cards.companion_card_display_name(_ks), "companion_card": true})
 			seen_companion[_ks] = true
 
+	# #38 — dungeon-exclusive cards you've earned (permanent on clear) always appear.
+	for _k2 in combat_deck_collection.keys():
+		var _ks2 = String(_k2)
+		if _ks2.begins_with("dungeon_card_") and int(combat_deck_collection.get(_ks2, 0)) > 0:
+			abilities.append({"name": _ks2, "level": 1, "display": _dt_cards.card_display_name(_ks2), "dungeon_card": true})
+
 	return abilities
 
 static func companion_card_type_from_id(card_id: String) -> String:

@@ -32639,16 +32639,29 @@ func _get_party_id(peer_id: int) -> int:
 			return party_id
 	return -1
 
-func _roll_dungeon_card_reward(character, tier: int) -> Dictionary:
-	"""v0.9.679 — super-rare dungeon CARD DROP: a chance (scaling with tier) to
-	grant +1 copy of one of the player's abilities (below the cap of 3), weighted
-	toward abilities they actually USE so it feels like a copy of a favourite.
-	Feeds the deck-building loop (2nd/3rd copies). Returns
-	{granted, ability, display, new_count}."""
-	var out := {"granted": false, "ability": "", "display": "", "new_count": 0}
+func _roll_dungeon_card_reward(character, tier: int, dungeon_type: String = "") -> Dictionary:
+	"""#38 (2026-08-27) — dungeon CARD DROP. A tier-scaled chance to earn the dungeon's
+	themed DUNGEON-EXCLUSIVE card (universal, permanent, found ONLY here). If the dungeon
+	has no themed card, or you already own the max (3) copies, it FALLS BACK to the legacy
+	'copy-drop' (+1 copy of an ability you use). Returns {granted, ability, display,
+	new_count, exclusive}."""
+	var out := {"granted": false, "ability": "", "display": "", "new_count": 0, "exclusive": false}
 	var chance: float = min(0.30, 0.05 + float(tier) * 0.02)
 	if randf() >= chance:
 		return out
+	# Prefer the themed dungeon-exclusive card for this dungeon type.
+	var dcard: String = DropTablesScript.dungeon_card_id_for_dungeon(dungeon_type) if dungeon_type != "" else ""
+	if dcard != "":
+		var cur: int = int(character.combat_deck_collection.get(dcard, 0))
+		if cur < int(character.MAX_ABILITY_COPIES):
+			character.combat_deck_collection[dcard] = cur + 1  # granted PERMANENT
+			out["granted"] = true
+			out["exclusive"] = true
+			out["ability"] = dcard
+			out["display"] = DropTablesScript.card_display_name(dcard)
+			out["new_count"] = cur + 1
+			return out
+		# else: already maxed on the themed card → fall through to the copy-drop.
 	var candidates := []
 	var weights := []
 	var total_w := 0
@@ -32785,8 +32798,8 @@ func _complete_dungeon(peer_id: int):
 			var qty_text = " x%d" % mat.quantity if mat.quantity > 1 else ""
 			bonus_material_msgs.append("[color=#FF8800]+%s%s (Hard)[/color]" % [mat.id.replace("_", " ").capitalize(), qty_text])
 
-	# v0.9.679 — super-rare dungeon CARD DROP (+1 copy of a favourite ability).
-	var _card_reward = _roll_dungeon_card_reward(character, int(tier))
+	# v0.9.679 / #38 — dungeon CARD DROP (themed exclusive card, or copy-drop fallback).
+	var _card_reward = _roll_dungeon_card_reward(character, int(tier), dungeon_type)
 
 	# Record completion (cooldowns removed)
 	character.record_dungeon_completion(dungeon_type)
@@ -32900,9 +32913,12 @@ func _complete_dungeon(peer_id: int):
 		if not _chest_lines.is_empty():
 			completion_msg += "\n\n[color=#FFD700]★ Reliquary Chest ★[/color]\n" + "\n".join(_chest_lines)
 
-	# v0.9.679 — super-rare card drop callout.
+	# v0.9.679 / #38 — card drop callout. Exclusive dungeon cards get a distinct banner.
 	if _card_reward.get("granted", false):
-		completion_msg += "\n\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3) — thin & build in the Deck screen![/color]" % [str(_card_reward.get("display", "")), int(_card_reward.get("new_count", 2))]
+		if _card_reward.get("exclusive", false):
+			completion_msg += "\n\n[color=#FF66FF]★ DUNGEON CARD EARNED! ★[/color]\n[color=#FF99FF]You claim [b]%s[/b] — a card found ONLY in this dungeon (×%d/3). Add it to your deck in the Deck screen![/color]" % [str(_card_reward.get("display", "")), int(_card_reward.get("new_count", 1))]
+		else:
+			completion_msg += "\n\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3) — thin & build in the Deck screen![/color]" % [str(_card_reward.get("display", "")), int(_card_reward.get("new_count", 2))]
 
 	if xp_result.leveled_up:
 		completion_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % character.level
@@ -32976,7 +32992,7 @@ func _complete_dungeon(peer_id: int):
 					follower.add_crafting_material(mat.id, mat.quantity)
 					var _fq2 = " x%d" % mat.quantity if mat.quantity > 1 else ""
 					f_bonus_material_msgs.append("[color=#00FFCC]+%s%s[/color]" % [mat.id.replace("_", " ").capitalize(), _fq2])
-			var f_card_reward = _roll_dungeon_card_reward(follower, int(tier))
+			var f_card_reward = _roll_dungeon_card_reward(follower, int(tier), dungeon_type)
 
 			follower.record_dungeon_completion(dungeon_type)
 
@@ -33013,7 +33029,10 @@ func _complete_dungeon(peer_id: int):
 			if not f_bonus_material_msgs.is_empty():
 				f_msg += "\n[color=#FFD700]Boss Materials:[/color]\n" + "\n".join(f_bonus_material_msgs) + "\n"
 			if f_card_reward.get("granted", false):
-				f_msg += "\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3)[/color]\n" % [str(f_card_reward.get("display", "")), int(f_card_reward.get("new_count", 2))]
+				if f_card_reward.get("exclusive", false):
+					f_msg += "\n[color=#FF66FF]★ DUNGEON CARD EARNED! ★[/color]\n[color=#FF99FF]You claim [b]%s[/b] — found ONLY here (×%d/3)[/color]\n" % [str(f_card_reward.get("display", "")), int(f_card_reward.get("new_count", 1))]
+				else:
+					f_msg += "\n[color=#FF66FF]★ RARE CARD DROP! ★[/color]\n[color=#FF99FF]+1 copy of [b]%s[/b] (deck ×%d/3)[/color]\n" % [str(f_card_reward.get("display", "")), int(f_card_reward.get("new_count", 2))]
 			if f_xp_result.leveled_up:
 				f_msg += "\n[color=#FFFF00]★ LEVEL UP! Now level %d ★[/color]" % follower.level
 

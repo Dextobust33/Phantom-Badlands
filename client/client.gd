@@ -12189,8 +12189,9 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	}
 
 	# v0.9.680/681 — companion cards: unique name + fixed modest class-resource cost.
-	if ability_name.begins_with("companion_card_"):
-		var _cdisp = preload("res://shared/drop_tables.gd").companion_card_display_name(ability_name)
+	# #38 — dungeon-exclusive cards use the same data-driven path (same fixed cost).
+	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
+		var _cdisp = preload("res://shared/drop_tables.gd").card_display_name(ability_name)
 		return {"display": _cdisp, "cost": 10, "cost_percent": 0, "resource_type": resource_type}
 
 	var result = ability_defs.get(ability_name, {})
@@ -12298,6 +12299,13 @@ func get_ability_category_info(ability_name: String) -> Dictionary:
 		if _ccat == "buff":
 			return {"category": "buff", "color": "#7AE07A", "tint_alpha": 0.12, "glyph": "★"}
 		return {"category": "offense", "color": "#FF99FF", "tint_alpha": 0.12, "glyph": "★"}
+	# #38 — dungeon-exclusive cards: distinct ◆ glyph + amber/teal banner so players
+	# recognize them apart from companion (★) cards.
+	if ability_name.begins_with("dungeon_card_"):
+		var _dcat = preload("res://shared/drop_tables.gd").card_category(ability_name)
+		if _dcat == "buff":
+			return {"category": "buff", "color": "#66D0C0", "tint_alpha": 0.12, "glyph": "◆"}
+		return {"category": "offense", "color": "#FFB347", "tint_alpha": 0.12, "glyph": "◆"}
 	var category = String(ABILITY_CATEGORIES.get(ability_name, ""))
 	if category == "" or not ABILITY_CATEGORY_DEFS.has(category):
 		return {"category": "", "color": "#8C7656", "tint_alpha": 0.0, "glyph": ""}
@@ -18469,6 +18477,11 @@ func _get_ability_description_text(ability_name: String) -> String:
 	in combat_manager.gd to keep descriptions truthful (Audit #1 Slice 6a
 	follow-up). Trickster ability strings still need verification — flagged
 	in project_audit_01_combat.md for the balance pass."""
+	# #38 — dungeon-exclusive cards: per-card description (always permanent once earned).
+	if ability_name.begins_with("dungeon_card_"):
+		var _ddt = preload("res://shared/drop_tables.gd")
+		var _ddesc = String(_ddt.get_dungeon_card_data_by_id(ability_name).get("desc", "A dungeon-forged card."))
+		return _ddesc + " [color=#FFB347]Dungeon-exclusive card — found only by clearing its dungeon.[/color]"
 	# v0.9.681/691 — companion cards: per-type description + tier-scaled permanence
 	# progress (higher-tier companions take more casts to make permanent).
 	if ability_name.begins_with("companion_card_"):
@@ -18538,12 +18551,12 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 	var est_dmg := int(_ability_card_estimate(ability_name).get("damage", 0))
 	# v0.9.698 — companion cards: headline number (damage/heal) from the pip helper +
 	# the card's own flavor text. Buff/utility companion cards show just their flavor.
-	if ability_name.begins_with("companion_card_"):
+	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
 		var _cdt = preload("res://shared/drop_tables.gd")
-		var _cdesc := String(_cdt.get_companion_card_data_by_id(ability_name).get("desc", ""))
+		var _cdesc := String(_cdt.get_card_data_by_id(ability_name).get("desc", ""))
 		var _pv := _ability_primary_value(ability_name)
 		if String(_pv.get("kind", "")) == "damage" and int(_pv.get("value", 0)) > 0:
-			return "Deal %s damage. %s" % [_desc_num(int(_pv.value), "companion power × your Attack × rank/tier"), _cdesc]
+			return "Deal %s damage. %s" % [_desc_num(int(_pv.value), "card power × your Attack × rank/tier"), _cdesc]
 		if String(_pv.get("kind", "")) == "heal" and int(_pv.get("value", 0)) > 0:
 			return "Heal %s HP. %s" % [_desc_num(int(_pv.value), "≈18% of your max HP"), _cdesc]
 		return _cdesc
@@ -18663,17 +18676,17 @@ func _ability_primary_value(ability_name: String) -> Dictionary:
 	pip matches the card's effect text exactly. {kind:'damage'|'heal'|'', value}."""
 	var atk := _get_card_total_attack()
 	var dmul := _card_damage_multiplier(ability_name)
-	if not ability_name.begins_with("companion_card_"):
+	if not (ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_")):
 		var est := _ability_card_estimate(ability_name)
 		if int(est.get("damage", -1)) >= 0:
 			return {"kind": "damage", "value": int(est.damage)}
 		if int(est.get("heal", -1)) >= 0:
 			return {"kind": "heal", "value": int(est.heal)}
 		return {"kind": "", "value": 0}
-	# Companion cards (not in the estimator) — power × Attack × rank/tier mult.
-	if ability_name.begins_with("companion_card_"):
+	# Companion + dungeon cards (not in the estimator) — power × Attack × rank/tier mult.
+	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
 		var _dt = preload("res://shared/drop_tables.gd")
-		var _kind := String(_dt.get_companion_card_data_by_id(ability_name).get("kind", ""))
+		var _kind := String(_dt.get_card_data_by_id(ability_name).get("kind", ""))
 		var _powers := {
 			"strike": 1.6, "execute": 1.2, "reckless": 2.1, "bleed": 1.1, "poison": 1.0,
 			"weaken": 1.0, "blind": 1.0, "stun": 1.1, "charm": 1.0, "lifesteal": 1.2,
@@ -18926,8 +18939,8 @@ func _is_duration_capable(ability_name: String) -> bool:
 	# get the Duration milestone; damage-kind ones get Rider instead.
 	if ability_name in DURATION_CAPABLE_ABILITIES:
 		return true
-	if ability_name.begins_with("companion_card_"):
-		return preload("res://shared/drop_tables.gd").companion_card_category(ability_name) == "buff"
+	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
+		return preload("res://shared/drop_tables.gd").card_category(ability_name) == "buff"
 	return false
 # v0.9.597 — track our custom buttons by reference. Godot 4's AcceptDialog
 # parents `add_button` results inside an internal HBox, NOT as direct children
@@ -18945,8 +18958,9 @@ func _ability_display_name(ability_name: String) -> String:
 	retreat') while the actual card in the player's hand showed 'Recharge' —
 	players couldn't connect the two. Mirrors combat_manager._ability_display_name."""
 	# v0.9.680/681 — companion cards: unique per-type card name from the table.
-	if ability_name.begins_with("companion_card_"):
-		return preload("res://shared/drop_tables.gd").companion_card_display_name(ability_name)
+	# #38 — dungeon cards resolve their proper name via the shared table too.
+	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
+		return preload("res://shared/drop_tables.gd").card_display_name(ability_name)
 	match ability_name:
 		"tactical_retreat": return "Recharge"
 		"vanish": return "Phantom Strike"
