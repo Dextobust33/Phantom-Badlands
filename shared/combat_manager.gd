@@ -8848,6 +8848,40 @@ const _PARTY_SHARED_MONSTER_KEYS := ["monster_poison", "monster_poison_duration"
 	"monster_burn_duration", "monster_bleed", "monster_bleed_duration", "monster_stunned",
 	"monster_sabotaged", "enemy_distracted", "cc_resistance", "consec_stuns"]
 
+# #76 — the party member VIEW must be a FULL solo-shaped combat dict. The solo card engine
+# reads these keys DIRECTLY (not via .get), so a missing one aborts the whole ability with a
+# script error mid-resolve — `combat.round += 1` did exactly that and silently swallowed EVERY
+# message from a member's card (server log 2026-08-28: "Invalid access to key 'round'"; the
+# player saw a bare "> name uses Card" header with no result). These are per-MEMBER (each
+# member has their own outsmart attempt, damage tally, pickpockets), so they live in
+# member_states and are synced back after each action.
+# #76 — shared per-ROUND upkeep that process_monster_turn ticks. With the monster now acting
+# once per member, these must be neutralised on every action after the first, or a poison
+# would tick once PER MEMBER (4x damage in a 4-party) and burn/bleed durations would burn
+# down N times faster.
+const _PARTY_DOT_KEYS := ["monster_poison", "monster_poison_duration", "monster_burn",
+	"monster_burn_duration", "monster_bleed", "monster_bleed_duration"]
+
+const _PARTY_VIEW_SOLO_DEFAULTS := {
+	"outsmart_failed": false,
+	"ambusher_active": false,
+	"monster_went_first": false,
+	"enrage_stacks": 0,
+	"thorns_damage": 0,
+	"curse_applied": false,
+	"disarm_applied": false,
+	"summoner_triggered": false,
+	"treasure_decoy_pending": false,
+	"bloodied_fury_triggered": false,
+	"disguise_active": false,
+	"disguise_true_stats": {},
+	"disguise_revealed": false,
+	"total_damage_dealt": 0,
+	"total_damage_taken": 0,
+	"pickpocket_count": 0,
+	"pickpocket_max": 3,
+}
+
 func _party_member_speed(combat: Dictionary, pid: int) -> int:
 	var ch = combat.characters[pid]
 	return int(ch.get_effective_stat("dexterity")) + int(ch.get_equipment_bonuses().get("speed", 0))
@@ -8876,6 +8910,14 @@ func _party_member_view(combat: Dictionary, pid: int) -> Dictionary:
 	}
 	for k in _PARTY_SHARED_MONSTER_KEYS:
 		view[k] = int(combat.get(k, 0))
+	# #76 — seed the remaining solo combat shape (see _PARTY_VIEW_SOLO_DEFAULTS).
+	for k in _PARTY_VIEW_SOLO_DEFAULTS:
+		view[k] = st.get(k, _PARTY_VIEW_SOLO_DEFAULTS[k])
+	view["peer_id"] = pid
+	view["round"] = int(combat.get("round", 1))    # shared — resolve_party_round owns advancing it
+	view["started_at"] = int(combat.get("started_at", 0))
+	view["combat_hand_size"] = COMBAT_HAND_SIZE
+	view["player_hp_at_start"] = int(st.get("player_hp_at_start", combat.characters[pid].current_hp))
 	return view
 
 func _party_sync_view_back(combat: Dictionary, pid: int, view: Dictionary) -> void:
@@ -8890,15 +8932,188 @@ func _party_sync_view_back(combat: Dictionary, pid: int, view: Dictionary) -> vo
 	st["discard"] = view.get("combat_discard", [])
 	for k in _PARTY_SHARED_MONSTER_KEYS:
 		combat[k] = int(view.get(k, 0))
+	# #76 — persist the per-member solo-shape keys so they survive into the next round.
+	for k in _PARTY_VIEW_SOLO_DEFAULTS:
+		st[k] = view.get(k, _PARTY_VIEW_SOLO_DEFAULTS[k])
+	st["player_hp_at_start"] = int(view.get("player_hp_at_start", 0))
+
+# #76 — CO-OP LOG VOICE. Every underlying combat message is written in 2nd person ("you
+# unleash chaos", "Your Kobold attacks", "hits you for 12"). The co-op round log is broadcast
+# to the WHOLE party, so a raw broadcast reads identically on every screen and nobody can tell
+# who did what. Each line is therefore emitted as an ENTRY carrying both voices: the actor
+# still reads "you", everyone else reads the actor's name. The server picks per recipient.
+const _PARTY_VERB_IRREGULAR := {
+	"are": "is", "have": "has", "were": "was", "do": "does", "go": "goes",
+	"can": "can", "cannot": "cannot", "will": "will", "may": "may", "must": "must",
+}
+# Words that can FOLLOW "you" without being a verb — i.e. "you" sits in object position
+# ("hits you for 12"), so only the pronoun is swapped and nothing gets conjugated.
+const _PARTY_NON_VERB_AFTER_YOU := [
+	"for", "with", "a", "an", "the", "to", "in", "on", "at", "of", "from", "by", "as",
+	"under", "back", "up", "down", "into", "against", "before", "after", "and", "or", "but",
+	"your", "never", "also", "still", "just", "now", "only", "barely", "narrowly", "already",
+	"you", "yourself", "it", "they", "he", "she",   # pronouns are never the verb
+]
+
+func _party_conjugate(v: String) -> String:
+	"""2nd person -> 3rd person singular ("unleash" -> "unleashes", "are" -> "is")."""
+	if _PARTY_VERB_IRREGULAR.has(v):
+		return _PARTY_VERB_IRREGULAR[v]
+	if v.ends_with("s") or v.ends_with("sh") or v.ends_with("ch") or v.ends_with("x") or v.ends_with("z") or v.ends_with("o"):
+		return v + "es"
+	return v + "s"
+
+func _party_word_core(token: String) -> String:
+	"""Strip BBCode tags + punctuation off a token so it can be compared as a plain word."""
+	var out := ""
+	var depth := 0
+	for ch in token:
+		if ch == "[":
+			depth += 1
+		elif ch == "]":
+			depth = max(0, depth - 1)
+		elif depth == 0:
+			out += ch
+	return out.strip_edges().to_lower().lstrip("\"'(>").rstrip(".,!?:;\"')")
+
+func _party_swap_word(token: String, old_word: String, new_word: String) -> String:
+	"""Replace the first case-insensitive occurrence of old_word inside a token, keeping any
+	surrounding BBCode/punctuation intact."""
+	var idx := token.findn(old_word)
+	if idx == -1:
+		return token
+	return token.substr(0, idx) + new_word + token.substr(idx + old_word.length())
+
+func _party_thirdperson(text: String, pname: String) -> String:
+	"""Rewrite a 2nd-person combat line into 3rd person naming the actor."""
+	if pname == "":
+		return text
+	# Some combat messages pack several sentences with embedded newlines. Tokenise LINE BY
+	# LINE, or a token like "you!\nThe" never matches the pronoun and stays 2nd person.
+	if text.contains("\n"):
+		var rebuilt: Array = []
+		for ln in text.split("\n"):
+			rebuilt.append(_party_thirdperson(ln, pname))
+		return "\n".join(rebuilt)
+
+	var parts := text.split(" ")
+	var i := 0
+	while i < parts.size():
+		var core := _party_word_core(parts[i])
+		if core == "your":
+			parts[i] = _party_swap_word(parts[i], "your", "%s's" % pname)
+		elif core == "you":
+			parts[i] = _party_swap_word(parts[i], "you", pname)
+			# Look ahead: if the next word is a verb, conjugate it to match the new subject.
+			var j := i + 1
+			while j < parts.size() and _party_word_core(parts[j]) == "":
+				j += 1
+			if j < parts.size():
+				var nxt := _party_word_core(parts[j])
+				if nxt != "" and nxt not in _PARTY_NON_VERB_AFTER_YOU:
+					parts[j] = _party_swap_word(parts[j], nxt, _party_conjugate(nxt))
+					# Compound predicate: "you are poisoned AND take 5" — the second verb
+					# shares the subject we just replaced, so it needs the same agreement.
+					_party_conjugate_compound(parts, j, pname)
+		i += 1
+	return " ".join(parts)
+
+func _party_conjugate_compound(parts: PackedStringArray, from_idx: int, pname: String) -> void:
+	"""After a subject swap, conjugate a second verb joined by "and"/"or" in the same clause.
+	Heavily guarded: stops at sentence end or the next pronoun, and skips capitalised words
+	(another name — "and Bo staggers"), participles and already-3rd-person verbs."""
+	var k := from_idx + 1
+	while k < parts.size():
+		var core := _party_word_core(parts[k])
+		if parts[k].contains(".") or parts[k].contains("!") or parts[k].contains("?"):
+			return
+		if core == "you" or core == "your":
+			return
+		if core == "and" or core == "or":
+			var v_idx := k + 1
+			while v_idx < parts.size() and _party_word_core(parts[v_idx]) == "":
+				v_idx += 1
+			if v_idx >= parts.size():
+				return
+			var v := _party_word_core(parts[v_idx])
+			var raw_v := parts[v_idx].strip_edges()
+			if v == "" or v in _PARTY_NON_VERB_AFTER_YOU:
+				return
+			if v.ends_with("s") or v.ends_with("ing") or v.ends_with("ed"):
+				return
+			if v == pname.to_lower() or (raw_v.length() > 0 and raw_v[0] == raw_v[0].to_upper() and raw_v[0] != raw_v[0].to_lower()):
+				return   # a proper noun, not a verb
+			parts[v_idx] = _party_swap_word(parts[v_idx], v, _party_conjugate(v))
+			return
+		k += 1
+
+func _party_entry(pid: int, self_text: String, other_text: String) -> Dictionary:
+	"""One log line in both voices. pid = the peer it is written about (-1 = neutral)."""
+	return {"pid": pid, "self": self_text, "other": other_text}
+
+func _party_entry_auto(pid: int, pname: String, text: String) -> Dictionary:
+	return _party_entry(pid, text, _party_thirdperson(text, pname))
+
+func _party_neutral(text: String) -> Dictionary:
+	return _party_entry(-1, text, text)
+
+func _party_hp_snapshot(combat: Dictionary, target_pid: int) -> Dictionary:
+	"""#76 Slice 3 — HP as of THIS beat, so the client can drain bars per actor instead of
+	snapping everything to the post-round values at once."""
+	var out := {"monster": int(combat.monster.get("current_hp", 0)), "target_pid": target_pid}
+	var ch = combat.characters.get(target_pid, null)
+	if ch:
+		out["target_hp"] = int(ch.current_hp)
+		out["target_max_hp"] = int(ch.get_total_max_hp())
+		if ch.has_active_companion():
+			var comp = ch.get_active_companion()
+			var cbon = comp.get("bonuses", {})
+			var chpb := int(cbon.get("hp_bonus", 0)) if cbon is Dictionary else 0
+			var cmax := 30 + int(comp.get("level", 1)) * 5 + int(comp.get("sub_tier", 1)) * 10 + chpb
+			out["target_comp_hp"] = int(comp.get("combat_hp", cmax))
+			out["target_comp_max_hp"] = cmax
+	return out
+
+func party_flatten_meta(entries: Array) -> Array:
+	"""Per-line animation metadata parallel to party_flatten_log(): who acted, who was hit,
+	and the HP values to apply on that beat. Same length + order as the messages array."""
+	var out: Array = []
+	for e in entries:
+		if e is Dictionary:
+			var m := {"actor": e.get("actor", "neutral"), "actor_pid": int(e.get("actor_pid", -1)),
+				"target_pid": int(e.get("target_pid", -1)), "head": bool(e.get("head", false))}
+			if e.has("hp"):
+				m["hp"] = e["hp"]
+			out.append(m)
+		else:
+			out.append({"actor": "neutral", "actor_pid": -1, "target_pid": -1})
+	return out
+
+func party_flatten_log(entries: Array, for_pid: int = -1) -> Array:
+	"""Render a round log for ONE recipient: their own lines stay 2nd person, everyone
+	else's are named. for_pid = -1 gives the fully-3rd-person form (server logs)."""
+	var out: Array = []
+	for e in entries:
+		if e is Dictionary:
+			out.append(e.get("self", "") if int(e.get("pid", -1)) == for_pid else e.get("other", ""))
+		else:
+			out.append(String(e))
+	return out
 
 func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
-	"""Resolve one member's queued action via the solo card engine on their view."""
+	"""Resolve one member's queued action via the solo card engine on their view. The
+	underlying process_* messages are written in 2nd person ("You hit for X"); since this
+	log is broadcast to EVERYONE, we prepend a 3rd-person header naming the actor + action
+	so each client can tell who did what (#76)."""
 	var st = combat.member_states[pid]
 	var action = st.get("queued_action", {})
 	var kind := String(action.get("kind", "attack"))
+	var pname: String = combat.characters[pid].name
 	if kind == "flee":
 		st["fled"] = true
-		return ["[color=#FFAA00]%s slips away from the fight.[/color]" % combat.characters[pid].name]
+		return [_party_entry(pid,
+			"[color=#FFAA00]You slip away from the fight.[/color]",
+			"[color=#FFAA00]%s slips away from the fight.[/color]" % pname)]
 	var view := _party_member_view(combat, pid)
 	active_combats[pid] = view
 	var result: Dictionary
@@ -8908,22 +9123,99 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		result = process_attack(view)
 	_party_sync_view_back(combat, pid, view)
 	active_combats.erase(pid)
-	return result.get("messages", [])
+	var act_label: String
+	if kind == "ability":
+		act_label = "uses " + String(action.get("ability", "")).replace("_", " ").capitalize()
+	else:
+		act_label = "attacks"
+	# Header names the actor for everyone else; the actor themself reads it in 2nd person.
+	var self_label: String = "attack" if kind != "ability" else act_label.replace("uses ", "use ")
+	var header := _party_entry(pid,
+		"[color=#8FE3FF]▶ You %s[/color]" % self_label,
+		"[color=#8FE3FF]▶ %s %s[/color]" % [pname, act_label])
+	header["actor"] = "member"
+	header["actor_pid"] = pid
+	header["head"] = true   # the actor's BEAT — the client lunges here, damage pops on the body lines
+	var out: Array = [header]
+	# #76 Slice 3 — every line is tagged with WHO acted so the client can animate the right
+	# sprite. Text heuristics can't do this any more: a teammate's line is 3rd person, so
+	# "Your X attacks" / "You attack" no longer identify the actor.
+	var comp_name: String = ""
+	var actor_ch = combat.characters[pid]
+	if actor_ch.has_active_companion():
+		comp_name = String(actor_ch.get_active_companion().get("name", ""))
+	# Body lines are 2nd person at the source; _party_entry_auto stores the named form
+	# alongside so each client renders the voice that belongs to it.
+	for rm in result.get("messages", []):
+		var e := _party_entry_auto(pid, pname, String(rm))
+		e["actor"] = "companion" if (comp_name != "" and String(rm).contains(comp_name)) else "member"
+		e["actor_pid"] = pid
+		out.append(e)
+	# Bars catch up at the end of THIS actor's beat, not at the end of the round.
+	out[out.size() - 1]["hp"] = {"monster": int(combat.monster.get("current_hp", 0))}
+	return out
 
 func _party_process_monster_phase(combat: Dictionary) -> Array:
-	"""#64 — the monster acts ONCE per round against a random alive member (suppress OFF here)."""
-	var alive := _party_alive_members(combat)
-	if alive.is_empty():
-		return []
-	var target_pid = alive[randi() % alive.size()]
-	var view := _party_member_view(combat, target_pid)
-	view["suppress_monster_turn"] = false
-	active_combats[target_pid] = view
-	var mres = process_monster_turn(view)
-	_party_sync_view_back(combat, target_pid, view)
-	active_combats.erase(target_pid)
-	var msgs: Array = ["[color=#FF8888]The %s turns on %s![/color]" % [combat.monster.get("name", "monster"), combat.characters[target_pid].name]]
-	msgs.append_array(mres.get("messages", []))
+	"""#76 — the monster acts ONCE PER ALIVE MEMBER-GROUP per round (each action targets that
+	member or their companion, exactly as in solo). Measured 2026-08-28: party combat scales
+	monster HP x party_size but gave the monster a SINGLE action against ONE random member, so
+	damage taken per member was 1/N of solo — fight LENGTH was right but PRESSURE collapsed,
+	which is what made co-op trivial. One action per group restores solo-rate pressure exactly
+	without inflating monster stats (raising damage instead would need ~Nx on one target per
+	round = one-shots), so every existing solo balance number stays valid.
+	process_monster_turn returns its narration under the SINGULAR `message` key (see solo path
+	at process_combat_action ~L1471), so read that — reading `messages` silently dropped the
+	entire monster turn from the co-op log (#76)."""
+	var msgs: Array = []
+	var order := _party_alive_members(combat)
+	order.shuffle()   # vary who the monster opens on each round
+	# A stunned monster loses the WHOLE round, not one action per member: resolve the stun
+	# once (which also ticks its countdown once) and end the phase there.
+	if int(combat.get("monster_stunned", 0)) > 0 and not order.is_empty():
+		order = [order[0]]
+	var upkeep_done := false
+	var dot_after_upkeep := {}
+	for target_pid in order:
+		if int(combat.monster.get("current_hp", 0)) <= 0:
+			break   # a DoT tick or reflected damage finished it off mid-phase
+		var st = combat.member_states.get(target_pid, {})
+		if st.get("dead", false) or st.get("fled", false):
+			continue   # dropped earlier in this same phase
+		var view := _party_member_view(combat, target_pid)
+		view["suppress_monster_turn"] = false
+		if upkeep_done:
+			for k in _PARTY_DOT_KEYS:
+				view[k] = 0   # already ticked this round — this action is attack-only
+		active_combats[target_pid] = view
+		var mres = process_monster_turn(view)
+		_party_sync_view_back(combat, target_pid, view)
+		if not upkeep_done:
+			for k in _PARTY_DOT_KEYS:
+				dot_after_upkeep[k] = int(combat.get(k, 0))
+			upkeep_done = true
+		else:
+			for k in _PARTY_DOT_KEYS:
+				combat[k] = dot_after_upkeep[k]   # restore; the zeroed view must not stick
+		active_combats.erase(target_pid)
+		var tname: String = combat.characters[target_pid].name
+		var mhead := _party_entry(target_pid,
+			"[color=#FF8888]▶ The %s turns on YOU![/color]" % combat.monster.get("name", "monster"),
+			"[color=#FF8888]▶ The %s turns on %s![/color]" % [combat.monster.get("name", "monster"), tname])
+		mhead["actor"] = "monster"
+		mhead["target_pid"] = target_pid
+		mhead["head"] = true
+		var first_idx: int = msgs.size()
+		msgs.append(mhead)
+		var mmsg := String(mres.get("message", ""))
+		if mmsg != "":
+			msgs.append(_party_entry_auto(target_pid, tname, mmsg))
+		for rm in mres.get("messages", []):  # some monster paths also use the plural key
+			msgs.append(_party_entry_auto(target_pid, tname, String(rm)))
+		for mi in range(first_idx, msgs.size()):
+			msgs[mi]["actor"] = "monster"
+			msgs[mi]["target_pid"] = target_pid
+		msgs[msgs.size() - 1]["hp"] = _party_hp_snapshot(combat, target_pid)
+		_party_check_deaths(combat)   # so the next iteration skips a member who just fell
 	return msgs
 
 func _party_check_deaths(combat: Dictionary) -> void:
@@ -8942,24 +9234,33 @@ func resolve_party_round(leader_id: int) -> Dictionary:
 	if not active_party_combats.has(leader_id):
 		return {"combat_ended": true, "messages": ["No party combat."]}
 	var combat = active_party_combats[leader_id]
-	var msgs: Array = []
+	# #76 — the log is built as ENTRIES (both voices per line, see _party_entry) so each
+	# client can render its own actions in 2nd person and teammates' by name. `messages`
+	# stays in the result as the fully-3rd-person flattening for any plain consumer.
+	var entries: Array = []
+	entries.append(_party_neutral("[color=#B0B0B0]────── Round %d ──────[/color]" % int(combat.get("round", 1))))
 	var order := _party_alive_members(combat)
 	order.sort_custom(func(a, b): return _party_member_speed(combat, a) > _party_member_speed(combat, b))
 	for pid in order:
 		var st = combat.member_states[pid]
 		if st.get("dead", false) or st.get("fled", false):
 			continue
-		msgs.append_array(_party_apply_member_action(combat, pid))
+		entries.append_array(_party_apply_member_action(combat, pid))
 		if int(combat.monster.get("current_hp", 0)) <= 0:
-			msgs.append("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster"))
-			return {"combat_ended": true, "victory": true, "messages": msgs}
-	msgs.append_array(_party_process_monster_phase(combat))
+			entries.append(_party_neutral("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster")))
+			return {"combat_ended": true, "victory": true, "messages": party_flatten_log(entries), "message_entries": entries}
+	entries.append_array(_party_process_monster_phase(combat))
+	if int(combat.monster.get("current_hp", 0)) <= 0:
+		# A DoT tick (poison/burn/bleed) finished it during the monster phase — that is a win,
+		# not a silently continuing fight against a 0 HP monster.
+		entries.append(_party_neutral("[color=#FFD700]The %s is defeated![/color]" % combat.monster.get("name", "monster")))
+		return {"combat_ended": true, "victory": true, "messages": party_flatten_log(entries), "message_entries": entries}
 	_party_check_deaths(combat)
 	if _party_alive_members(combat).is_empty():
-		return {"combat_ended": true, "victory": false, "wipe": true, "messages": msgs}
+		return {"combat_ended": true, "victory": false, "wipe": true, "messages": party_flatten_log(entries), "message_entries": entries}
 	combat["round"] = int(combat.get("round", 1)) + 1
 	_party_redraw_hands(combat)
-	return {"combat_ended": false, "messages": msgs, "round": int(combat["round"])}
+	return {"combat_ended": false, "messages": party_flatten_log(entries), "message_entries": entries, "round": int(combat["round"])}
 
 func _apply_party_member_companion(combat: Dictionary, peer_id: int):
 	"""Apply companion passives for a party member in party combat."""

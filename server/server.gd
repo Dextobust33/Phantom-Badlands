@@ -8563,9 +8563,11 @@ func trigger_encounter(peer_id: int):
 	# rendered and the two combat systems collided (separate monsters / cross-ending).
 	# Interim: parties stay travel/chat-only. When the movement-locked leader hits a
 	# monster, each party member fights their OWN normal card combat vs a copy of it.
-	# #64 Slice 4 — CO-OP (shared, simultaneous) party combat, flag-gated (OFF by default).
-	# When enabled and 2+ party members are present & free, they all fight ONE shared monster.
-	if party_coop_enabled and _is_party_leader(peer_id) and active_parties.has(peer_id):
+	# #64 / #76 — CO-OP (shared, simultaneous) party combat is now AUTOMATIC: whenever a
+	# party leader hits a monster and 2+ members are present & free, they all fight ONE
+	# shared monster. (Was admin-flag-gated; user asked for it to just work in a party.)
+	# Falls through to the per-member solo fanout below if fewer than 2 members are free.
+	if _is_party_leader(peer_id) and active_parties.has(peer_id):
 		var _cmembers: Array = [peer_id]           # leader first (becomes leader_id)
 		var _cchars: Dictionary = {peer_id: character}
 		for _mpid in active_parties[peer_id].get("members", []):
@@ -8606,7 +8608,7 @@ func _send_party_combat_start(leader_id: int, members: Array, monster: Dictionar
 	for pid in members:
 		if not characters.has(pid):
 			continue
-		send_to_peer(pid, {
+		var _start_msg := {
 			"type": "party_combat_start",
 			"messages": start_msgs,
 			"monster_name": monster.get("name", "Monster"),
@@ -8615,7 +8617,10 @@ func _send_party_combat_start(leader_id: int, members: Array, monster: Dictionar
 			"is_your_turn": true,   # round 1 — everyone may lock in an action
 			"current_turn_name": "",
 			"use_client_art": true,
-		})
+		}
+		# #76 — attach THIS member's own hand + engine meter so the card strip populates.
+		_start_msg.merge(_party_member_hand_payload(leader_id, pid), true)
+		send_to_peer(pid, _start_msg)
 		send_character_update(pid)
 
 func _start_solo_combat_for(peer_id: int, character, monster: Dictionary, debuff_messages: Array) -> void:
@@ -28349,7 +28354,14 @@ func handle_dungeon_list(peer_id: int):
 		if active_instance != "":
 			var sub_range = DungeonDatabaseScript.get_sub_tier_level_range(dungeon_data.tier, inst_sub_tier)
 			display_min = sub_range.min_level
-			display_max = sub_range.max_level
+			# Deeper floors scale monster level up by FLOOR_DIFFICULTY_PER_FLOOR each
+			# (see _spawn_dungeon_floor_monsters: monster_level = dungeon_level ×
+			# (1 + floor_num × PER_FLOOR)). Show the DEEPEST-floor max so the label
+			# reflects what players actually meet — bug report 2026-08-27: a T1-5
+			# dungeon read "6-7" but had level-9 monsters on lower floors.
+			var _floors := int(dungeon_data.get("floors", 1))
+			display_max = int(sub_range.max_level * (1.0 + maxi(0, _floors - 1) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))
+			display_max = maxi(display_max, sub_range.max_level)
 			display_name = DungeonDatabaseScript.get_dungeon_display_name(dungeon_type, dungeon_data.tier, inst_sub_tier)
 
 		dungeon_list.append({
@@ -30066,7 +30078,9 @@ func _get_dungeon_at_location(x: int, y: int, peer_id: int = -1) -> Dictionary:
 				"tier": dungeon_data.tier,
 				"sub_tier": inst_sub_tier,
 				"min_level": sub_range.min_level,
-				"max_level": sub_range.max_level,
+				# Deepest-floor max (deeper floors scale monster level up per floor) so
+				# the readout matches what players meet on lower floors (bug 2026-08-27).
+				"max_level": maxi(sub_range.max_level, int(sub_range.max_level * (1.0 + maxi(0, int(dungeon_data.get("floors", 1)) - 1) * DungeonDatabaseScript.FLOOR_DIFFICULTY_PER_FLOOR))),
 				"color": dungeon_data.color
 			}
 	return {}
@@ -39254,6 +39268,37 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 		combat_mgr.party_combat_membership.erase(peer_id)
 		return
 	var combat = combat_mgr.active_party_combats[leader_id]
+	# #76 — the CO-OP (#64) fight uses a different dict shape than the legacy turn-based one
+	# below: per-member flags live in `member_states`, and there is no dead_members /
+	# fled_members / current_turn_index. Reading those crashed this handler on every co-op
+	# disconnect (server log 2026-08-28: "Invalid access to key 'dead_members'"), which left
+	# the survivors stuck waiting on an action that could never arrive.
+	if String(combat.get("mode", "")) == "party_simul":
+		var ms: Dictionary = combat.get("member_states", {})
+		if ms.has(peer_id):
+			ms[peer_id]["fled"] = true          # treat a disconnect as leaving the fight
+			ms[peer_id]["submitted_this_round"] = true
+		combat_mgr.party_combat_membership.erase(peer_id)
+		var _left: String = characters[peer_id].name if characters.has(peer_id) else "A party member"
+		var _note: Array = ["[color=#FFAA00]%s has left the fight.[/color]" % _left]
+		if combat_mgr._party_alive_members(combat).is_empty():
+			_end_party_combat_all(leader_id, false, _note)
+		elif combat_mgr._party_all_submitted(combat):
+			# The dropped member was the last one everyone was waiting on — resolve now so
+			# the round can't hang.
+			var _dres = combat_mgr.resolve_party_round(leader_id)
+			var _dmsgs: Array = _note + _dres.get("messages", [])
+			var _dentries: Array = _dres.get("message_entries", [])
+			if not _dentries.is_empty():
+				_dentries.insert(0, combat_mgr._party_neutral(_note[0]))   # keep the notice in the per-recipient render
+			if _dres.get("combat_ended", false):
+				_end_party_combat_all(leader_id, _dres.get("victory", false), _dmsgs, _dentries)
+			else:
+				_broadcast_party_update(leader_id, _dmsgs, true, _dentries)
+		else:
+			_broadcast_party_update(leader_id, _note, false)
+		return
+	# ---- legacy turn-based party combat below ----
 	# Mark as dead in the combat
 	if peer_id not in combat.dead_members and peer_id not in combat.fled_members:
 		combat.dead_members.append(peer_id)
@@ -39452,10 +39497,13 @@ func _handle_party_combat_command(peer_id: int, command: String):
 	# Everyone's in — resolve the round.
 	var res = combat_mgr.resolve_party_round(leader_id)
 	var msgs = res.get("messages", [])
+	# #76 — entries carry both voices per line so each member reads their OWN actions as
+	# "you" and everyone else's by name (a flat broadcast read identically on every screen).
+	var log_entries: Array = res.get("message_entries", [])
 	if res.get("combat_ended", false):
-		_end_party_combat_all(leader_id, res.get("victory", false), msgs)
+		_end_party_combat_all(leader_id, res.get("victory", false), msgs, log_entries)
 	else:
-		_broadcast_party_update(leader_id, msgs, true)
+		_broadcast_party_update(leader_id, msgs, true, log_entries)
 
 func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""
@@ -39466,17 +39514,44 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	for pid in c.get("members", []):
 		var st = c.member_states.get(pid, {})
 		var ch = characters.get(pid, null)
-		# Field names mirror what the client's _display_party_combat_hp already reads.
+		# Companion sub-dict for the party card (art + name + HP). Combat HP falls
+		# back to the computed max when the fight isn't tracking it separately.
+		var _comp_out := {}
+		if ch and ch.active_companion is Dictionary and not ch.active_companion.is_empty():
+			var _comp = ch.active_companion
+			var _cl := int(_comp.get("level", 1))
+			var _cs := int(_comp.get("sub_tier", 1))
+			var _cbon = _comp.get("bonuses", {})
+			var _chpb := int(_cbon.get("hp_bonus", 0)) if _cbon is Dictionary else 0
+			var _cmax := 30 + _cl * 5 + _cs * 10 + _chpb
+			_comp_out = {
+				"name": _comp.get("name", ""),
+				"monster_type": _comp.get("monster_type", _comp.get("name", "")),
+				"variant_color": _comp.get("variant_color", "#FFFFFF"),
+				"variant_color2": _comp.get("variant_color2", ""),
+				"variant_pattern": _comp.get("variant_pattern", "solid"),
+				"border_tier": int(_comp.get("border_tier", 0)),  # #76 — silhouette outline colour, mirror player companion
+				"max_hp": _cmax,
+				"combat_hp": int(_comp.get("combat_hp", _cmax)),
+			}
+		# Field names mirror what the client's set_party_members / _display_party_combat_hp read.
 		members.append({
 			"name": ch.name if ch else "?",
+			"peer_id": pid,
 			"current_hp": ch.current_hp if ch else 0,
 			"max_hp": ch.get_total_max_hp() if ch else 1,
-			"current_mana": ch.current_mana if ch else 0,
-			"current_stamina": ch.current_stamina if ch else 0,
-			"current_energy": ch.current_energy if ch else 0,
+			# Primary resource (mana / stamina / energy — the one this class uses).
+			"resource_cur": ch.get_primary_resource_current() if ch else 0,
+			"resource_max": ch.get_primary_resource_max() if ch else 0,
 			"submitted": st.get("submitted_this_round", false),
 			"is_dead": st.get("dead", false),
 			"is_fled": st.get("fled", false),
+			# Visual identity so the party card renders the REAL member (not a sample).
+			"battler_id": ch.battler_id if ch else "",
+			"appearance_color": ch.appearance_color if ch else "#FFFFFF",
+			"class": ch.class_type if ch else "",
+			"equipped": ch.equipped if ch else {},
+			"companion": _comp_out,
 		})
 	return {
 		"monster_name": c.monster.get("name", "Monster"),
@@ -39486,7 +39561,44 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 		"members": members,
 	}
 
-func _broadcast_party_update(leader_id: int, msgs: Array, resolved: bool) -> void:
+func _party_member_hand_payload(leader_id: int, pid: int) -> Dictionary:
+	"""#76 — each party member's OWN card hand + class-engine meters, so the client can
+	populate the card strip + Momentum/Read/Focus meter exactly like solo combat. This is
+	per-RECIPIENT (unlike the shared _party_combat_snapshot), so it rides on each member's
+	individual party_combat_start / party_combat_update message rather than combat_state."""
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return {}
+	var c = combat_mgr.active_party_combats[leader_id]
+	var st = c.member_states.get(pid, {})
+	if st.is_empty():
+		return {}
+	var hand = st.get("hand", [])
+	var deck = st.get("deck", [])
+	var discard = st.get("discard", [])
+	var out := {
+		"combat_hand": hand.duplicate() if hand is Array else [],
+		"combat_deck_count": (deck as Array).size() if deck is Array else 0,
+		"combat_discard_count": (discard as Array).size() if discard is Array else 0,
+		"combat_hand_size": CombatManager.COMBAT_HAND_SIZE,
+	}
+	# Class engine meter — a char is only ever one (Warrior Momentum / Trickster Read /
+	# Mage Focus). Mirror get_combat_display's field names so _sync_momentum_meter reads it.
+	var ch = characters.get(pid, null)
+	if ch:
+		var path = ch.get_class_path()
+		out["is_warrior_momentum"] = path == "warrior"
+		out["momentum"] = int(st.get("momentum", 0))
+		out["momentum_max"] = CombatManager.MOMENTUM_MAX
+		out["is_trickster_read"] = path == "trickster"
+		out["read"] = int(st.get("combo", 0))
+		out["read_max"] = CombatManager.COMBO_MAX
+		out["outsmart_chance"] = 0  # #75 covers Outsmart viability; charge viz not wired for co-op yet
+		out["is_mage_focus"] = path == "mage"
+		out["focus"] = int(st.get("focus", 0))
+		out["focus_max"] = CombatManager.FOCUS_MAX
+	return out
+
+func _broadcast_party_update(leader_id: int, msgs: Array, resolved: bool, log_entries: Array = []) -> void:
 	"""#64 Slice 3 — push the round result + live snapshot to every party member."""
 	if not combat_mgr.active_party_combats.has(leader_id):
 		return
@@ -39498,22 +39610,36 @@ func _broadcast_party_update(leader_id: int, msgs: Array, resolved: bool) -> voi
 		# Simultaneous: "your turn" maps to "you can still submit this round" (not yet locked in).
 		var _st = c.member_states.get(pid, {})
 		var _can_act = not _st.get("submitted_this_round", false) and not _st.get("dead", false) and not _st.get("fled", false)
-		send_to_peer(pid, {
-			"type": "party_combat_update", "messages": msgs, "combat_state": snap,
+		var _pmsgs: Array = combat_mgr.party_flatten_log(log_entries, pid) if not log_entries.is_empty() else msgs
+		# #76 Slice 3 — per-line animation metadata (who acted / who was hit / HP on that
+		# beat) so the client plays the round out actor by actor instead of dumping it.
+		var _pmeta: Array = combat_mgr.party_flatten_meta(log_entries) if not log_entries.is_empty() else []
+		var _upd_msg := {
+			"type": "party_combat_update", "messages": _pmsgs, "message_meta": _pmeta, "combat_state": snap,
 			"resolved": resolved, "is_your_turn": _can_act,
 			"current_turn_name": "" if _can_act else "your party",
-		})
+		}
+		# #76 — refresh THIS member's own hand + engine meter after the round resolves.
+		_upd_msg.merge(_party_member_hand_payload(leader_id, pid), true)
+		send_to_peer(pid, _upd_msg)
 		send_character_update(pid)
 
-func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array) -> void:
+func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entries: Array = []) -> void:
 	"""#64 Slice 4 — end the co-op fight for everyone. On victory each SURVIVING member gets
 	FULL XP + their OWN independent loot roll (the monster was HP-scaled — it's earned). Then
 	clean up so nobody gets stuck. (Level-up popups / valor / gem polish can follow.)"""
 	if not combat_mgr.active_party_combats.has(leader_id):
 		return
+	# #76 — reward/summary lines get appended to `msgs` BELOW; remember where the incoming
+	# round log ends so the per-recipient render can re-attach that tail (it has no entries).
+	var _round_log_len: int = msgs.size()
 	var combat = combat_mgr.active_party_combats[leader_id]
 	var monster = combat.get("monster", {})
 	var members = combat.get("members", []).duplicate()
+	# #76 — per-member victory payload so each client shows the SAME victory card as solo
+	# (xp / level-up / loot list / gear banner). Built here where we know each member's
+	# own XP + independent loot roll; keyed by pid, sent on their party_combat_end below.
+	var member_payloads: Dictionary = {}
 	if victory:
 		var xp: int = int(monster.get("experience_reward", monster.get("xp_reward", 10)))
 		for pid in members:
@@ -39521,10 +39647,26 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array) -> void:
 			if st.get("dead", false) or st.get("fled", false) or not characters.has(pid):
 				continue
 			var ch = characters[pid]
+			var _old_level: int = ch.level
 			var lvl_res = ch.add_experience(xp)
+			var _new_level: int = ch.level
 			var drops = combat_mgr.roll_combat_drops(monster, ch)
+			var _loot_lines: Array = []
+			var _gear_drops: Array = []
 			for item in drops:
-				ch.add_item(item)
+				var awarded := _party_award_drop(pid, item, _old_level)
+				if String(awarded.get("line", "")) != "":
+					_loot_lines.append(awarded["line"])
+				if awarded.has("gear_drop"):
+					_gear_drops.append(awarded["gear_drop"])
+			member_payloads[pid] = {
+				"xp_gain": xp,
+				"old_level": _old_level,
+				"new_level": _new_level,
+				"did_level_up": _new_level > _old_level,
+				"loot": _loot_lines,
+				"gear_drops": _gear_drops,
+			}
 			var earned := "[color=#1EFF00]%s: +%d XP" % [ch.name, xp]
 			if not drops.is_empty():
 				earned += ", +%d item(s)" % drops.size()
@@ -39536,11 +39678,81 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array) -> void:
 	for pid in members:
 		if characters.has(pid):
 			characters[pid].in_combat = false
-			send_to_peer(pid, {"type": "party_combat_end", "messages": msgs, "victory": victory, "combat_state": snap})
+			var _emsgs: Array = msgs
+			var _emeta: Array = []
+			if not log_entries.is_empty():
+				_emsgs = combat_mgr.party_flatten_log(log_entries, pid)
+				_emsgs.append_array(msgs.slice(_round_log_len))
+				_emeta = combat_mgr.party_flatten_meta(log_entries)
+				while _emeta.size() < _emsgs.size():   # reward/summary tail has no actor
+					_emeta.append({"actor": "neutral", "actor_pid": -1, "target_pid": -1})
+			var _end_msg := {
+				"type": "party_combat_end", "messages": _emsgs, "message_meta": _emeta, "victory": victory,
+				"combat_state": snap, "character": characters[pid].to_dict(),
+			}
+			if member_payloads.has(pid):
+				_end_msg["victory_payload"] = member_payloads[pid]
+			send_to_peer(pid, _end_msg)
 			send_character_update(pid)
 			save_character(pid)
 		combat_mgr.party_combat_membership.erase(pid)
 	combat_mgr.active_party_combats.erase(leader_id)
+
+func _party_award_drop(pid: int, item: Dictionary, player_level: int) -> Dictionary:
+	"""#76 — award ONE combat drop to a party member and return {line, gear_drop?} for the
+	victory card, mirroring the solo inline-award formatting (eggs / materials / parts /
+	equipment, with inventory-full auto-salvage). Kept self-contained so the solo path is
+	untouched."""
+	if not characters.has(pid):
+		return {}
+	var ch = characters[pid]
+	var itype := String(item.get("type", ""))
+	if itype == "companion_egg":
+		var egg_data = item.get("egg_data", {})
+		var _egg_cap = persistence.get_egg_capacity(peers[pid].account_id) if peers.has(pid) else Character.MAX_INCUBATING_EGGS
+		var egg_result = ch.add_egg(egg_data, _egg_cap)
+		if egg_result.success:
+			return {"line": "[color=#A335EE]✦ COMPANION EGG: %s[/color]" % egg_data.get("name", "Mysterious Egg")}
+		return {"line": "[color=#FF6666]★ %s found but eggs full! ★[/color]" % egg_data.get("name", "Egg")}
+	elif itype == "crafting_material":
+		var mat_id = item.get("material_id", "")
+		var quantity = int(item.get("quantity", 1))
+		var mat_info = CraftingDatabaseScript.get_material(mat_id)
+		var mat_name = mat_info.get("name", mat_id) if not mat_info.is_empty() else mat_id
+		ch.add_crafting_material(mat_id, quantity)
+		var qty_text = " x%d" % quantity if quantity > 1 else ""
+		return {"line": "[color=#1EFF00]◆ MATERIAL: %s%s[/color]" % [mat_name, qty_text]}
+	elif itype == "monster_part":
+		var mp_id = item.get("material_id", "")
+		var mp_name = item.get("material_name", mp_id)
+		var mp_qty = int(item.get("quantity", 1))
+		ch.add_crafting_material(mp_id, mp_qty)
+		var mp_qty_text = " x%d" % mp_qty if mp_qty > 1 else ""
+		return {"line": "[color=#FF6600]◆ PART: %s%s[/color]" % [mp_name, mp_qty_text]}
+	elif ch.can_add_item():
+		ch.add_item(item)
+		var rarity = item.get("rarity", "common")
+		var color = _get_rarity_color(rarity)
+		var symbol = _get_rarity_symbol(rarity)
+		var iname = item.get("name", "Unknown Item")
+		return {
+			"line": "[color=%s]%s %s[/color]" % [color, symbol, iname],
+			"gear_drop": {
+				"name": iname, "rarity": rarity, "symbol": symbol, "color": color,
+				"level": int(item.get("level", 1)), "level_diff": int(item.get("level", 1)) - player_level,
+			},
+		}
+	else:
+		# Inventory full — salvage into materials rather than lose the drop.
+		var overflow_salvage = drop_tables.get_salvage_value(item)
+		var overflow_mats = overflow_salvage.get("materials", {})
+		if not overflow_mats.is_empty():
+			var of_parts = []
+			for _of_mat_id in overflow_mats:
+				ch.add_crafting_material(_of_mat_id, overflow_mats[_of_mat_id])
+				of_parts.append("%dx %s" % [overflow_mats[_of_mat_id], CraftingDatabaseScript.get_material_name(_of_mat_id)])
+			return {"line": "[color=#FF8800]Inventory full! Salvaged %s → %s[/color]" % [item.get("name", "item"), ", ".join(of_parts)]}
+		return {"line": "[color=#FF4444]Inventory full! %s lost[/color]" % item.get("name", "Unknown Item")}
 
 func _handle_party_combat_victory(leader_id: int, acting_peer_id: int, result: Dictionary, messages: Array, party_members: Array):
 	"""Handle party combat victory — distribute rewards to all surviving members."""

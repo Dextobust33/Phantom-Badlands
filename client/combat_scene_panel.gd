@@ -177,6 +177,24 @@ var _monster_col: VBoxContainer
 var _monster_name_label: RichTextLabel
 var _monster_art_label: RichTextLabel
 var _monster_hp_bar: ProgressBar
+# Co-op (#64 Slice 2) — right-side party column showing OTHER party members
+# (up to 4) + their companions. Hidden/collapsed in solo so solo combat is
+# pixel-identical. Populated by set_party_members(); each card dict holds the
+# node refs needed to update name/HP/art without a rebuild.
+var _party_column: VBoxContainer = null
+var _party_scroll: ScrollContainer = null
+var _party_member_cards: Array = []
+# #76 Slice 3 — peer id -> card, so per-actor FX can find the right teammate. Rebuilt on
+# every set_party_members() call (cards are reused positionally, members can change).
+var _party_card_by_pid: Dictionary = {}
+var _party_card_tweens: Dictionary = {}
+const PARTY_COLUMN_MAX_MEMBERS := 4
+# Offscreen rasterizer for party-member companion art: renders the monster ASCII
+# into an ImageTexture once (cached by monster_type) so it can be scaled to sprite
+# size in a TextureRect. Same idea as the player-portrait SubViewport compositor.
+var _comp_vp: SubViewport = null
+var _comp_vp_label: RichTextLabel = null
+var _comp_tex_cache: Dictionary = {}
 var _monster_hp_text: Label
 
 # Log
@@ -642,15 +660,39 @@ func _build_scene_section_lufia() -> Control:
 	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	left.add_child(_build_log_panel())
 	_make_party_boxes()
-	left.add_child(_player_party_box)
-	left.add_child(_companion_party_box)
+	# Player + companion in ONE card (white border / black bg), side by side with
+	# minimal separation — matching the party-member cards. Kept on the left.
+	var pc_card := PanelContainer.new()
+	pc_card.name = "PlayerCompanionCard"
+	pc_card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	pc_card.size_flags_vertical = Control.SIZE_SHRINK_END
+	pc_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pcsb := StyleBoxFlat.new()
+	pcsb.bg_color = Color(0.0, 0.0, 0.0, 0.88)
+	pcsb.set_corner_radius_all(6)
+	pcsb.set_border_width_all(1)
+	pcsb.border_color = Color(1.0, 1.0, 1.0, 0.9)
+	pcsb.content_margin_left = 6
+	pcsb.content_margin_right = 6
+	pcsb.content_margin_top = 4
+	pcsb.content_margin_bottom = 4
+	pc_card.add_theme_stylebox_override("panel", pcsb)
+	var pc_row := HBoxContainer.new()
+	pc_row.name = "PlayerCompanionRow"
+	pc_row.add_theme_constant_override("separation", 2)
+	pc_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	pc_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc_row.add_child(_player_party_box)
+	pc_row.add_child(_companion_party_box)
+	pc_card.add_child(pc_row)
+	left.add_child(pc_card)
 	hbox.add_child(left)
 	_player_col = left
 	# RIGHT column: monster on top (big), ability hand below.
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	right.size_flags_stretch_ratio = 1.5
+	right.size_flags_stretch_ratio = 1.3  # 1.5 -> 1.3: Deck/Discard counter removed, so the hand needs less width; give it to the party column
 	right.add_theme_constant_override("separation", 8)
 	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_monster_col = _build_monster_column()
@@ -662,12 +704,535 @@ func _build_scene_section_lufia() -> Control:
 	hand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	right.add_child(hand)
 	hbox.add_child(right)
+	# Co-op (#64 Slice 2) — FAR-RIGHT party column. Hidden by default: with a
+	# hidden 3rd child the HBox distributes width between LEFT + RIGHT exactly as
+	# before, so SOLO combat is unchanged. When shown (party of 2+), it takes its
+	# stretch share and pushes the monster + cards leftward into the freed space.
+	_party_column = VBoxContainer.new()
+	_party_column.name = "PartyColumn"
+	_party_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_party_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_party_column.size_flags_stretch_ratio = 1.9  # 1.2 -> 1.9: widened so the main-player-sized member cards fit on-screen instead of spilling off the right
+	_party_column.add_theme_constant_override("separation", 4)
+	_party_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_party_column.visible = false
+	hbox.add_child(_party_column)
 	return hbox
 func _make_party_boxes() -> void:
 	_player_party_box = _build_lufia_party_box(_build_lufia_player_box_content())
 	_player_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_companion_party_box = _build_lufia_party_box(_build_lufia_companion_box_content())
 	_companion_party_box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+
+
+func _build_party_member_card() -> PanelContainer:
+	"""MIRRORS the main player's box + companion box, at the SAME sizes, laid LEFT→RIGHT:
+	  [member name + HP + resource bars] [member sprite portrait 168x138 (flipped)]
+	  [companion name + HP bar] [companion art portrait 168x138 (font 1)].
+	Each card is the NATURAL portrait height (COMPACT_PORTRAIT_H = 138) — NOT forced to
+	share the column — so 4 cards stack, and the companion art renders in the EXACT box
+	the player's own Kobold uses (fits identically; big arts clip the same as the player)."""
+	var card := PanelContainer.new()
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.88)  # black background
+	sb.set_corner_radius_all(6)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(1.0, 1.0, 1.0, 0.9)  # white border
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	card.add_theme_stylebox_override("panel", sb)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(row)
+
+	# 1) member stats — name, HP bar, resource bar (like the player's stats column).
+	var mstats := VBoxContainer.new()
+	mstats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mstats.alignment = BoxContainer.ALIGNMENT_CENTER
+	mstats.add_theme_constant_override("separation", 3)
+	mstats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(mstats)
+	var name_lbl := Label.new()
+	name_lbl.add_theme_font_size_override("font_size", 13)
+	name_lbl.add_theme_color_override("font_color", Color("#8FE3FF"))
+	name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mstats.add_child(name_lbl)
+	card.set_meta("name_lbl", name_lbl)
+	var hp_bar := _make_hp_bar(Color("#FF4444"))
+	hp_bar.show_percentage = false
+	hp_bar.custom_minimum_size = Vector2(COMPACT_BAR_W, 10)
+	mstats.add_child(hp_bar)
+	card.set_meta("hp_bar", hp_bar)
+	var res_bar := _make_hp_bar(Color("#3A7BD5"))
+	res_bar.show_percentage = false
+	res_bar.custom_minimum_size = Vector2(COMPACT_BAR_W, 8)
+	mstats.add_child(res_bar)
+	card.set_meta("res_bar", res_bar)
+
+	# 2) member sprite portrait — 168x138 box, sprite fills (keep-aspect), flipped H
+	#    vs the player (party is RIGHT of the enemy -> faces LEFT toward it).
+	var mport := Panel.new()
+	mport.custom_minimum_size = Vector2(COMPACT_PLAYER_PORTRAIT_W, COMPACT_PORTRAIT_H)
+	mport.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	mport.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pbg := StyleBoxFlat.new()
+	pbg.bg_color = Color(0.06, 0.05, 0.10, 0.0)
+	mport.add_theme_stylebox_override("panel", pbg)
+	row.add_child(mport)
+	var sprite := TextureRect.new()
+	sprite.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	sprite.flip_h = false
+	sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mport.add_child(sprite)
+	card.set_meta("sprite", sprite)
+
+	# 3) companion stats — name + HP bar (like the player's companion stats).
+	var cstats := VBoxContainer.new()
+	cstats.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cstats.alignment = BoxContainer.ALIGNMENT_CENTER
+	cstats.add_theme_constant_override("separation", 3)
+	cstats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(cstats)
+	var comp_name := Label.new()
+	comp_name.add_theme_font_size_override("font_size", 11)
+	comp_name.add_theme_color_override("font_color", Color("#B9A0FF"))
+	comp_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cstats.add_child(comp_name)
+	card.set_meta("comp_name", comp_name)
+	var comp_hp := _make_hp_bar(Color("#66DD66"))
+	comp_hp.show_percentage = false
+	comp_hp.custom_minimum_size = Vector2(COMPACT_BAR_W, 8)
+	cstats.add_child(comp_hp)
+	card.set_meta("comp_hp", comp_hp)
+
+	# 4) companion art portrait — EXACTLY the player's companion box: 168x138, clipped,
+	#    full-rect font-1 ASCII. Renders identically to the Kobold.
+	var cport := Panel.new()
+	cport.custom_minimum_size = Vector2(COMPACT_PORTRAIT_W, COMPACT_PORTRAIT_H)
+	cport.clip_contents = true
+	cport.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	cport.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cbg := StyleBoxFlat.new()
+	cbg.bg_color = Color(0.06, 0.05, 0.10, 0.0)
+	cport.add_theme_stylebox_override("panel", cbg)
+	row.add_child(cport)
+	card.set_meta("comp_box", cport)
+	# CenterContainer vertically + horizontally centers the (fit_content) art in the
+	# box, so an art that fits shows centered, and one taller than 138 clips
+	# SYMMETRICALLY (top+bottom) instead of losing its whole bottom.
+	var ccenter := CenterContainer.new()
+	ccenter.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ccenter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cport.add_child(ccenter)
+	var comp_art := RichTextLabel.new()
+	comp_art.bbcode_enabled = true
+	comp_art.fit_content = true
+	comp_art.scroll_active = false
+	comp_art.autowrap_mode = TextServer.AUTOWRAP_OFF
+	comp_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if _mono_font:
+		comp_art.add_theme_font_override("normal_font", _mono_font)
+		comp_art.add_theme_font_override("bold_font", _mono_font)
+		comp_art.add_theme_font_override("mono_font", _mono_font)
+	ccenter.add_child(comp_art)
+	card.set_meta("comp_art", comp_art)
+	# The art label sits inside a CenterContainer, and a container re-lays out its child
+	# every frame — which would fight a position tween. Lunges move the CENTER CONTAINER
+	# instead; it lives in a plain Panel and keeps whatever position we give it.
+	card.set_meta("comp_center", ccenter)
+
+	return card
+
+
+func set_party_members(members: Array, skip_bars: bool = false) -> void:
+	"""Populate the co-op party column with OTHER members (caller excludes self).
+	Empty → hide the column (solo stays unchanged). Reuses existing cards; builds
+	more as needed up to PARTY_COLUMN_MAX_MEMBERS. Safe to call every round."""
+	if _party_column == null or not is_instance_valid(_party_column):
+		return
+	_party_card_by_pid.clear()
+	var shown: int = mini(members.size(), PARTY_COLUMN_MAX_MEMBERS)
+	if shown <= 0:
+		_party_column.visible = false
+		for c in _party_member_cards:
+			if is_instance_valid(c):
+				c.visible = false
+		return
+	while _party_member_cards.size() < shown:
+		var new_card := _build_party_member_card()
+		_party_member_cards.append(new_card)
+		_party_column.add_child(new_card)
+	for i in range(_party_member_cards.size()):
+		var card: PanelContainer = _party_member_cards[i]
+		if not is_instance_valid(card):
+			continue
+		if i >= shown:
+			card.visible = false
+			continue
+		card.visible = true
+		var m: Dictionary = members[i] if members[i] is Dictionary else {}
+		var pname := str(m.get("name", "Ally"))
+		# #76 Slice 3 — remember which peer this card belongs to so per-actor FX can find
+		# it (the server tags every log line with the acting / target peer id).
+		var _mpid := int(m.get("peer_id", -1))
+		card.set_meta("pid", _mpid)
+		if _mpid != -1:
+			_party_card_by_pid[_mpid] = card
+		var cur := int(m.get("current_hp", m.get("hp", 0)))
+		var mx := maxi(1, int(m.get("max_hp", 1)))
+		var is_dead := bool(m.get("is_dead", false))
+		var is_fled := bool(m.get("is_fled", false))
+		var comp = m.get("companion", {})
+		var name_lbl: Label = card.get_meta("name_lbl")
+		var status := ""
+		if is_dead:
+			status = "  (DEAD)"
+		elif is_fled:
+			status = "  (FLED)"
+		name_lbl.text = pname + status
+		name_lbl.add_theme_color_override("font_color", Color("#FF6B6B") if is_dead else Color("#8FE3FF"))
+		# Battler sprite (player system) — resolve id from stored battler_id, else
+		# class+name; load idle frames for animation; tint; dim when KO'd/fled.
+		var sprite: TextureRect = card.get_meta("sprite")
+		var frames := _load_member_idle_frames(BattlerSprite.id_from_data(m))
+		if not frames.is_empty():
+			sprite.texture = frames[0]
+			sprite.flip_h = false  # members are RIGHT of the enemy → face LEFT (native)
+			sprite.self_modulate = BattlerSprite.tint_color(str(m.get("appearance_color", "")))
+			sprite.visible = true
+		else:
+			sprite.visible = false
+		sprite.modulate.a = 0.4 if (is_dead or is_fled) else 1.0
+		# Equipment markers — region-tint shader + glyphs, the SAME treatment as the
+		# player battler (see _show_player_battler). Applied when the member's equipped
+		# gear is present in the snapshot; members reflect their own gear in combat.
+		var m_eq = m.get("equipped", {})
+		if m_eq is Dictionary and not m_eq.is_empty():
+			var mk := EquipmentMarkers.markers_for(m_eq)
+			sprite.material = EquipmentMarkers.build_tint_material(mk)
+			EquipmentMarkers.spawn_glyphs(sprite, mk, null, 8)
+		else:
+			sprite.material = null
+			for gch in sprite.get_children():
+				if gch.has_meta("eq_glyph"):
+					gch.queue_free()
+		card.set_meta("idle_frames", frames)
+		card.set_meta("frame", 0)
+		card.set_meta("animate", not (is_dead or is_fled))
+		# #76 Slice 3 — during a PACED round the bars are driven beat by beat from the
+		# per-actor HP snapshots, so snapping them to the post-round values here would
+		# spoil the sequence (everyone would already be at their final HP on beat 1).
+		var hp_bar: ProgressBar = card.get_meta("hp_bar")
+		hp_bar.max_value = mx
+		if not skip_bars:
+			hp_bar.value = clampi(cur, 0, mx)
+		# Member resource bar — the class's PRIMARY resource. Real data sends
+		# resource_cur/resource_max (server-picked per class); the admin preview
+		# samples fall back to current_mana/etc.
+		var res_bar: ProgressBar = card.get_meta("res_bar")
+		var res_cur := int(m.get("resource_cur", m.get("current_mana", m.get("current_stamina", m.get("current_energy", 0)))))
+		var res_max := int(m.get("resource_max", m.get("max_mana", m.get("max_stamina", m.get("max_energy", 0)))))
+		if res_max > 0:
+			res_bar.max_value = res_max
+			if not skip_bars:
+				res_bar.value = clampi(res_cur, 0, res_max)
+			res_bar.visible = true
+		else:
+			res_bar.visible = false
+		# Companion name + HP bar (like the player's companion stats).
+		var comp_name: Label = card.get_meta("comp_name")
+		var comp_disp_name := str(comp.get("name", "")) if comp is Dictionary else ""
+		comp_name.text = comp_disp_name
+		comp_name.visible = comp_disp_name != ""
+		var comp_hp: ProgressBar = card.get_meta("comp_hp")
+		var comp_hp_cur := int(comp.get("combat_hp", comp.get("current_hp", 0))) if comp is Dictionary else 0
+		var comp_hp_max := int(comp.get("max_hp", 0)) if comp is Dictionary else 0
+		if comp is Dictionary and not comp.is_empty() and comp_hp_max > 0:
+			comp_hp.max_value = comp_hp_max
+			if not skip_bars:
+				comp_hp.value = clampi(comp_hp_cur, 0, comp_hp_max)
+			comp_hp.visible = true
+		else:
+			comp_hp.visible = false
+		# Companion — crisp font-1 ASCII (like the Kobold), centered in its clip box
+		# by the CenterContainer. NO scaling (no blur); if it exceeds the card height
+		# it clips symmetrically. Whole for anything that fits the card row.
+		var comp_box: Panel = card.get_meta("comp_box")
+		var comp_art: RichTextLabel = card.get_meta("comp_art")
+		var comp_type := str(comp.get("monster_type", "")) if comp is Dictionary else ""
+		var clines: Array = []
+		if comp_type != "" and client_ref and client_ref.has_method("_get_companion_art_lines"):
+			clines = client_ref._get_companion_art_lines(comp_type, pname)
+		if clines.is_empty() and comp_type != "":
+			var raw := MonsterArt.get_monster_ascii_art(comp_type)
+			if raw != "":
+				clines = raw.split("\n")
+		if not clines.is_empty():
+			# #76 — apply the SAME variant recolor + border the PLAYER's own companion gets
+			# (see _build_lufia_companion_box_content ~L5625). Without this, teammates'
+			# companions rendered in the flat default art colour instead of their variant
+			# hue, so a Crimson Wolf didn't look like it does out of battle.
+			var raw_art := "\n".join(clines)
+			if client_ref and client_ref.has_method("_recolor_ascii_art_pattern") and comp is Dictionary:
+				var v_color := str(comp.get("variant_color", "#FFFFFF"))
+				var v_color2 := str(comp.get("variant_color2", ""))
+				var v_pattern := str(comp.get("variant_pattern", "solid"))
+				if client_ref.has_method("_ensure_readable_color"):
+					v_color = client_ref._ensure_readable_color(v_color)
+					if v_color2 != "":
+						v_color2 = client_ref._ensure_readable_color(v_color2)
+				v_color = _battle_lift_color(v_color)
+				if v_color2 != "":
+					v_color2 = _battle_lift_color(v_color2)
+				raw_art = client_ref._recolor_ascii_art_pattern(raw_art, v_color, v_color2, v_pattern)
+			var _bt := int(comp.get("border_tier", 0)) if comp is Dictionary else 0
+			var _bc := ""
+			match _bt:
+				1: _bc = "#FFFFFF"
+				2: _bc = "#1EFF00"
+				3: _bc = "#0070DD"
+				4: _bc = "#A335EE"
+				5: _bc = "#FF8000"
+				6: _bc = "#FFD700"
+			if _bc != "":
+				raw_art = MonsterArt.apply_variant_border(raw_art, _bc)
+			comp_art.text = "[center][font_size=%d]%s[/font_size][/center]" % [COMPACT_ASCII_FONT_SIZE, raw_art]
+			comp_art.modulate.a = 0.4 if (is_dead or is_fled) else 1.0
+			comp_art.scale = Vector2.ONE
+			comp_box.visible = true
+		else:
+			comp_box.visible = false
+	_ensure_battler_timer()
+	_party_column.visible = true
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# #76 Slice 3 — PARTY-CARD FX. A teammate's attack has to animate on THEIR card, and a
+# monster hit on a teammate has to land on THEIR portrait. The solo text heuristics
+# (`_classify_combat_actor`) cannot drive this — a teammate's log line is 3rd person — so
+# the server tags each line with actor/target peer ids and the client routes here.
+# Members sit RIGHT of the enemy and face LEFT, so they lunge -X (toward it).
+# ─────────────────────────────────────────────────────────────────────────────
+func party_card_for_pid(pid: int) -> PanelContainer:
+	var card = _party_card_by_pid.get(pid, null)
+	if card == null or not is_instance_valid(card) or not card.visible:
+		return null
+	return card
+
+func _party_fx_lunge(node: Control) -> void:
+	if node == null or not is_instance_valid(node):
+		return
+	var key := node.get_instance_id()
+	var prev = _party_card_tweens.get(key, null)
+	if prev != null and prev is Tween and prev.is_valid():
+		prev.kill()
+	# Capture the resting position ONCE. Re-reading it mid-lunge (or after an interrupted
+	# tween) would let the card drift a little further left on every attack.
+	if not node.has_meta("fx_baseline"):
+		node.set_meta("fx_baseline", node.position)
+	var base: Vector2 = node.get_meta("fx_baseline")
+	node.position = base
+	var t := create_tween()
+	_party_card_tweens[key] = t
+	t.tween_property(node, "position", base + Vector2(-LUNGE_DISTANCE, 0), LUNGE_DURATION)
+	t.tween_property(node, "position", base, LUNGE_DURATION)
+
+func lunge_party_member(pid: int) -> void:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	_party_fx_lunge(card.get_meta("sprite") as Control)
+
+func lunge_party_companion(pid: int) -> void:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	_party_fx_lunge(card.get_meta("comp_center") as Control)
+
+func _party_node_anchor(node: Control) -> Vector2:
+	var r := node.get_global_rect()
+	return r.position + Vector2(r.size.x * 0.5, r.size.y * 0.3)
+
+func party_member_attacker_anchor(pid: int) -> Vector2:
+	"""Where a teammate's damage number launches FROM (their sprite), so the number
+	visibly travels from whoever dealt it — same cue the player's own attacks use."""
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return Vector2(INF, INF)
+	var n := card.get_meta("sprite") as Control
+	if n == null or not is_instance_valid(n):
+		return Vector2(INF, INF)
+	return _party_node_anchor(n)
+
+func party_companion_attacker_anchor(pid: int) -> Vector2:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return Vector2(INF, INF)
+	var n := card.get_meta("comp_box") as Control
+	if n == null or not is_instance_valid(n):
+		return Vector2(INF, INF)
+	return _party_node_anchor(n)
+
+func show_damage_on_party_member(pid: int, amount: int, is_crit: bool = false) -> void:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	var n := card.get_meta("sprite") as Control
+	if n == null or not is_instance_valid(n):
+		return
+	_spawn_damage_label(_party_node_anchor(n), amount, is_crit, "monster", true)
+
+func show_damage_on_party_companion(pid: int, amount: int, is_crit: bool = false) -> void:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	var n := card.get_meta("comp_box") as Control
+	if n == null or not is_instance_valid(n):
+		return
+	_spawn_damage_label(_party_node_anchor(n), amount, is_crit, "monster", true)
+
+func show_miss_on_party_member(pid: int) -> void:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	var n := card.get_meta("sprite") as Control
+	if n == null or not is_instance_valid(n):
+		return
+	_spawn_miss_label(_party_node_anchor(n))
+
+func update_party_member_hp(pid: int, hp: int, max_hp: int) -> void:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	var bar := card.get_meta("hp_bar") as ProgressBar
+	if bar == null or not is_instance_valid(bar) or max_hp <= 0:
+		return
+	bar.max_value = max_hp
+	_animate_bar_value(bar, clampf(float(hp), 0.0, float(max_hp)))
+
+func update_party_companion_hp(pid: int, hp: int, max_hp: int) -> void:
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	var bar := card.get_meta("comp_hp") as ProgressBar
+	if bar == null or not is_instance_valid(bar) or max_hp <= 0 or not bar.visible:
+		return
+	bar.max_value = max_hp
+	_animate_bar_value(bar, clampf(float(hp), 0.0, float(max_hp)))
+
+
+func _load_member_idle_frames(id: String) -> Array:
+	"""Load a party member's idle animation frames (idle_0..2) for the battler id,
+	falling back to the single idle_0 texture. Mirrors the player's frame loader."""
+	var frames: Array = []
+	if id == "":
+		return frames
+	var p := BattlerSprite.idle_path_by_id(id)
+	if p == "":
+		return frames
+	var folder := p.get_base_dir() + "/"
+	for i in range(3):
+		var it = load(folder + "idle_%d.png" % i)
+		if it != null:
+			frames.append(it)
+	if frames.is_empty():
+		var single := BattlerSprite.idle_texture_by_id(id)
+		if single != null:
+			frames.append(single)
+	return frames
+
+
+func _advance_party_member_frames() -> void:
+	"""Cycle each live party member's battler idle frame (called from the shared
+	battler timer). KO'd/fled members are frozen (animate meta = false)."""
+	if _party_column == null or not is_instance_valid(_party_column) or not _party_column.visible:
+		return
+	for card in _party_member_cards:
+		if not is_instance_valid(card) or not card.visible:
+			continue
+		if not bool(card.get_meta("animate", true)):
+			continue
+		var frames: Array = card.get_meta("idle_frames", [])
+		if frames.size() <= 1:
+			continue
+		var sprite: TextureRect = card.get_meta("sprite")
+		if sprite == null or not is_instance_valid(sprite) or not sprite.visible:
+			continue
+		var fsz: int = frames.size()
+		var fr: int = (int(card.get_meta("frame", 0)) + 1) % fsz
+		card.set_meta("frame", fr)
+		sprite.texture = frames[fr]
+
+
+func _ensure_comp_vp() -> void:
+	if _comp_vp and is_instance_valid(_comp_vp):
+		return
+	_comp_vp = SubViewport.new()
+	_comp_vp.size = Vector2i(240, 220)
+	_comp_vp.transparent_bg = true
+	_comp_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_comp_vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+	add_child(_comp_vp)
+	_comp_vp_label = RichTextLabel.new()
+	_comp_vp_label.bbcode_enabled = true
+	_comp_vp_label.fit_content = true
+	_comp_vp_label.scroll_active = false
+	_comp_vp_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	if _mono_font:
+		_comp_vp_label.add_theme_font_override("normal_font", _mono_font)
+		_comp_vp_label.add_theme_font_override("bold_font", _mono_font)
+		_comp_vp_label.add_theme_font_override("mono_font", _mono_font)
+	_comp_vp.add_child(_comp_vp_label)
+
+
+func _companion_texture(monster_type: String) -> Texture2D:
+	"""Rasterize a companion's monster ASCII into an ImageTexture (cached). Rendered
+	at a natural font in an offscreen SubViewport, then displayed scaled-to-fit — so
+	any-size art becomes a sprite-sized figure. Async (2 render frames on first build)."""
+	if _comp_tex_cache.has(monster_type):
+		return _comp_tex_cache[monster_type]
+	var cart := MonsterArt.get_monster_ascii_art(monster_type)
+	if cart == "":
+		return null
+	_ensure_comp_vp()
+	_comp_vp_label.position = Vector2.ZERO
+	_comp_vp_label.text = "[font_size=8]%s[/font_size]" % cart
+	await get_tree().process_frame
+	var content := _comp_vp_label.get_combined_minimum_size()
+	_comp_vp.size = Vector2i(maxi(16, int(ceil(content.x))), maxi(16, int(ceil(content.y))))
+	_comp_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := _comp_vp.get_texture().get_image()
+	if img == null:
+		return null
+	var tex := ImageTexture.create_from_image(img)
+	_comp_tex_cache[monster_type] = tex
+	return tex
+
+
+func _apply_companion_texture(rect: TextureRect, monster_type: String, dim: bool) -> void:
+	"""Fire-and-forget: fetch (or build) the companion texture and drop it into the
+	card's TextureRect when ready. Safe if the rect is freed before the await returns."""
+	var tex: Texture2D = await _companion_texture(monster_type)
+	if rect == null or not is_instance_valid(rect):
+		return
+	if tex != null:
+		rect.texture = tex
+		rect.modulate.a = 0.4 if dim else 1.0
+		rect.visible = true
+	else:
+		rect.visible = false
 
 
 func start_action_phase() -> void:
@@ -1771,13 +2336,16 @@ func _build_lufia_party_box(content: Control) -> PanelContainer:
 	# was too light; even Cobalt looked washed out. Near-black gives every
 	# variant — Cobalt blue, Crimson red, Gold yellow — maximum contrast
 	# against the bg.
-	sb.bg_color = Color(0.02, 0.02, 0.03, 0.98)
-	sb.border_color = Color(0.75, 0.78, 0.92, 1.0)
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(4)
-	sb.content_margin_left = 6
+	# 2026-08-27 — borderless/transparent: the player + companion now share ONE
+	# outer card (built in _build_scene_section_lufia), so these inner boxes must not
+	# draw their own border/bg or they'd look like two separate cards with a gap.
+	sb.bg_color = Color(0.02, 0.02, 0.03, 0.0)
+	sb.border_color = Color(0.75, 0.78, 0.92, 0.0)
+	sb.set_border_width_all(0)
+	sb.set_corner_radius_all(0)
+	sb.content_margin_left = 4
 	sb.content_margin_top = 4
-	sb.content_margin_right = 6
+	sb.content_margin_right = 4
 	sb.content_margin_bottom = 4
 	box.add_theme_stylebox_override("panel", sb)
 	box.add_child(content)
@@ -2147,7 +2715,10 @@ func _create_player_sprite_holder() -> CenterContainer:
 	# Player PNG sprite holder. Used when there's no ASCII art for the class.
 	_player_sprite_holder = CenterContainer.new()
 	_player_sprite_holder.custom_minimum_size = Vector2(168, 168)
-	_player_sprite_holder.size_flags_vertical = Control.SIZE_SHRINK_END
+	# 2026-08-27 — was SHRINK_END, which pinned the sprite to the BOTTOM of its box
+	# (feedback: player battler sat too low, overlapping the bottom border). CENTER
+	# aligns it vertically between the top and bottom of the box.
+	_player_sprite_holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_player_sprite_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	_player_sprite_rect = TextureRect.new()
@@ -2743,10 +3314,12 @@ func _build_hand_strip() -> HBoxContainer:
 	_hand_status_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_hand_status_label.add_theme_font_size_override("normal_font_size", 11)
 	_hand_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# v0.9.664 — reserve width so "Deck N · Discard M" isn't clipped (the RTL's
-	# fit_content was under-sizing its width vs the old plain Label).
-	_hand_status_label.custom_minimum_size = Vector2(168, 20)
+	# 2026-08-27 — Deck/Discard counter HIDDEN here (freed the ~168px so the party
+	# column has room to fit on-screen). The same Deck/Discard info still shows in the
+	# player box's own deck label. Kept in the tree (invisible) so update code is safe.
+	_hand_status_label.custom_minimum_size = Vector2(0, 0)
 	_hand_status_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_hand_status_label.visible = false
 	outer.add_child(_hand_status_label)
 
 	return outer
@@ -4848,12 +5421,13 @@ func _show_player_battler() -> void:
 	_battler_timer.start()
 
 func _on_battler_tick() -> void:
-	if not _battler_active or _battler_atk_playing or _battler_idle.is_empty():
-		return
-	_battler_frame = (_battler_frame + 1) % _battler_idle.size()
-	if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
-		_player_sprite_rect.texture = _battler_idle[_battler_frame]
-		_bob_equip_glyphs(_battler_frame)
+	if _battler_active and not _battler_atk_playing and not _battler_idle.is_empty():
+		_battler_frame = (_battler_frame + 1) % _battler_idle.size()
+		if _player_sprite_rect and is_instance_valid(_player_sprite_rect):
+			_player_sprite_rect.texture = _battler_idle[_battler_frame]
+			_bob_equip_glyphs(_battler_frame)
+	# Party members idle-animate on the same timer (co-op #64 Slice 2).
+	_advance_party_member_frames()
 
 
 func _bob_equip_glyphs(frame: int) -> void:
@@ -5730,7 +6304,7 @@ func _attacker_anchor_global(source: String) -> Vector2:
 	return node.global_position + node.size * 0.5
 
 
-func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player") -> void:
+func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player", from_override: Vector2 = Vector2(INF, INF)) -> void:
 	"""Spawn a floating damage number above the monster art.
 	source: 'player' (yellow), 'companion' (cyan), 'crit' override (red, larger)."""
 	if _monster_art_label == null or not is_instance_valid(_monster_art_label):
@@ -5741,7 +6315,10 @@ func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player
 	# instantly (their battler already stepped on card-play); companion hits get a
 	# short launch delay so the companion's lunge reads BEFORE the number flies.
 	var _tdelay: float = 0.30 if source == "companion" else 0.0
-	_spawn_damage_label(anchor_global, amount, is_crit, source, false, _attacker_anchor_global(source), _tdelay)
+	# #76 Slice 3 — a TEAMMATE's hit must launch from THEIR card, not from our own battler,
+	# so co-op passes the acting member's anchor explicitly.
+	var _from: Vector2 = from_override if from_override.x != INF else _attacker_anchor_global(source)
+	_spawn_damage_label(anchor_global, amount, is_crit, source, false, _from, _tdelay)
 
 
 func show_damage_on_player(amount: int, is_crit: bool) -> void:

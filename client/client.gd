@@ -1280,6 +1280,7 @@ var party_menu_mode: bool = false       # In the party management menu
 var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
 var party_waiting_for_turn: bool = false   # Not our turn in party combat
 var party_combat_active: bool = false      # We are in party combat (our turn)
+var party_round_submitted: bool = false    # #76 — locked in this round; block re-submit/mash until round resolves
 var party_combat_turn_name: String = ""    # Name of player whose turn it is
 var party_member_bars: Array = []          # Dynamic UI bars for party members
 var party_bars_container: VBoxContainer = null  # Container for party member bars
@@ -10206,6 +10207,15 @@ func send_combat_command(command: String):
 		display_game("[color=#FF0000]You are not in combat![/color]")
 		return
 
+	# #76 — party combat is SIMULTANEOUS: one action per round. Once locked in, ignore
+	# further presses (no mash) until the round resolves. Spectators can't act at all.
+	var _in_party := party_combat_active or party_waiting_for_turn or party_combat_spectating
+	if _in_party:
+		if party_combat_spectating:
+			return
+		if party_round_submitted:
+			return
+
 	# Start combat animation based on command
 	_start_combat_command_animation(command)
 
@@ -10242,6 +10252,17 @@ func send_combat_command(command: String):
 	combat_phase_timer = max(combat_phase_timer, 0.15)
 	combat_phase_paused = true
 	send_to_server({"type": "combat", "command": command})
+
+	# #76 — lock in for this party round: flip to waiting, block re-submit, and post a
+	# PERSISTENT locked-in line to the combat panel log (game_output gets wiped by the
+	# character_update that follows, so the panel log is the durable feedback surface).
+	if _in_party and not party_combat_spectating:
+		party_round_submitted = true
+		party_combat_active = false
+		party_waiting_for_turn = true
+		if combat_scene_panel and combat_scene_panel.has_method("append_log"):
+			combat_scene_panel.append_log("[color=#66D0C0]⏳ Locked in — waiting for your party...[/color]")
+		update_action_bar()
 
 func _show_victory_card_deferred(payload) -> void:
 	if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.has_method("show_victory_card"):
@@ -12147,6 +12168,10 @@ func _on_combat_card_played(card_name: String) -> void:
 	a hotkey press behave identically (variable-cost prompts included)."""
 	if not in_combat or card_name == "":
 		return
+	# #76 — one card per party round; ignore clicks once locked in / spectating.
+	if (party_combat_active or party_waiting_for_turn or party_combat_spectating):
+		if party_round_submitted or party_combat_spectating:
+			return
 	var path = _get_player_active_path()
 	var info = _get_ability_combat_info(card_name, path)
 	if info is Dictionary and not info.is_empty():
@@ -27309,6 +27334,26 @@ func _clear_party_state():
 	party_combat_turn_name = ""
 	_remove_party_bars()
 
+func _apply_party_members_to_panel(combat_state: Dictionary, skip_bars: bool = false) -> void:
+	"""Feed the OTHER party members (exclude self) into the combat scene panel's
+	party column so it renders the real teammates + companions, not samples."""
+	if combat_scene_panel == null or not combat_scene_panel.has_method("set_party_members"):
+		return
+	var my_name := str(character_data.get("name", ""))
+	var others := []
+	for m in combat_state.get("members", []):
+		if not (m is Dictionary):
+			continue
+		if str(m.get("name", "")) != my_name:
+			others.append(m)
+		else:
+			# #76 Slice 3 — our OWN peer id, so per-beat FX can tell "me" from a teammate.
+			_my_party_pid = int(m.get("peer_id", _my_party_pid))
+	if int(combat_state.get("monster_max_hp", 0)) > 0:
+		_party_monster_max_hp = int(combat_state["monster_max_hp"])
+	combat_scene_panel.set_party_members(others, skip_bars)
+
+
 func _handle_party_combat_start(message: Dictionary):
 	"""Handle party combat starting."""
 	var messages = message.get("messages", [])
@@ -27330,6 +27375,7 @@ func _handle_party_combat_start(message: Dictionary):
 	xp_before_combat = character_data.get("experience", 0)
 
 	# Set party combat mode
+	party_round_submitted = false  # #76 — fresh fight, nothing locked in yet
 	if is_my_turn:
 		party_combat_active = true
 		party_waiting_for_turn = false
@@ -27351,8 +27397,27 @@ func _handle_party_combat_start(message: Dictionary):
 			display_game("[center]" + local_art + "[/center]")
 			display_game("")
 
+	# Route the party fight through the FULL combat scene panel (battlefield +
+	# monster + the party column of teammates), then log the start messages there.
+	var _cs_panel: Dictionary = combat_state.duplicate(true)
+	_cs_panel["monster_name"] = monster_name
+	_cs_panel["monster_level"] = monster_level
+	# #76 — clear any persistent-FX / stale victory card from the previous fight so a
+	# fresh party combat starts clean (mirrors the solo combat_start reset at ~23586).
+	_post_loot_victory_persists = false
+	if combat_scene_panel and combat_scene_panel.has_method("reset_for_new_combat"):
+		combat_scene_panel.reset_for_new_combat()
+	if combat_scene_panel and combat_scene_panel.has_method("populate"):
+		_populate_combat_scene_panel(_cs_panel)
+	_apply_party_members_to_panel(combat_state)
+	_apply_party_panel_hp(combat_state)
+	# #76 — populate MY own card hand + class-engine meter (server sends them per-member).
+	_apply_party_hand_from_message(message)
+
 	for msg in messages:
 		display_game(msg)
+		if combat_scene_panel and combat_scene_panel.has_method("append_log"):
+			combat_scene_panel.append_log(msg)
 
 	# Show party HP bar
 	_display_party_combat_hp(combat_state)
@@ -27377,73 +27442,154 @@ func _handle_party_combat_start(message: Dictionary):
 	update_action_bar()
 
 func _handle_party_combat_update(message: Dictionary):
-	"""Handle party combat update (after someone acts)."""
+	"""Handle party combat update (after someone acts). #76 — the round's messages are now
+	fed through the SOLO pacing queue (combat_msg_queue → _drain_combat_queue → _display_combat_msg)
+	so they play out one beat at a time with the same sounds, damage numbers, lunges and screen
+	shake as solo — instead of dumping the whole round instantly."""
 	var messages = message.get("messages", [])
 	var is_my_turn = message.get("is_your_turn", false)
 	var turn_name = message.get("current_turn_name", "")
 	var combat_state = message.get("combat_state", {})
 
-	# Display combat messages
-	for msg in messages:
-		var enhanced_msg = _enhance_combat_message(msg)
-		display_game(enhanced_msg)
-		_trigger_combat_sounds(msg)
-
-	# Update party HP display
-	_display_party_combat_hp(combat_state)
-
-	# Update monster HP from state
-	if combat_state.has("monster_hp"):
-		current_enemy_hp = combat_state.get("monster_hp", current_enemy_hp)
-		current_enemy_max_hp = combat_state.get("monster_max_hp", current_enemy_max_hp)
-		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
-
-	# Update our own HP and resources from combat state
+	# Update our own char_data HP/resources from the snapshot (drives the bars immediately).
 	var my_name = character_data.get("name", "")
 	var members = combat_state.get("members", [])
+	var my_state = {}
 	for m in members:
 		if m.get("name", "") == my_name:
 			character_data["current_hp"] = m.get("current_hp", character_data.get("current_hp", 0))
 			character_data["current_mana"] = m.get("current_mana", character_data.get("current_mana", 0))
 			character_data["current_stamina"] = m.get("current_stamina", character_data.get("current_stamina", 0))
 			character_data["current_energy"] = m.get("current_energy", character_data.get("current_energy", 0))
-			break
-
-	# Check if we died or fled (are we in dead/fled list?)
-	var my_state = {}
-	for m in members:
-		if m.get("name", "") == my_name:
 			my_state = m
 			break
 
+	# Legacy stat-bar sync (hidden behind the scene panel, but keep coherent for the [L] view).
+	if combat_state.has("monster_hp"):
+		current_enemy_hp = combat_state.get("monster_hp", current_enemy_hp)
+		current_enemy_max_hp = combat_state.get("monster_max_hp", current_enemy_max_hp)
+		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)
+
+	# Turn state (flags update immediately so the action bar reflects it).
 	if my_state.get("is_dead", false) or my_state.get("is_fled", false):
-		# We're spectating now
 		party_combat_active = false
 		party_waiting_for_turn = false
 		party_combat_spectating = true
+		party_round_submitted = false
 		if my_state.get("is_dead", false):
 			display_game("[color=#FF0000]You have fallen![/color]")
-		_mark_all_held_hotkeys()
 	elif is_my_turn:
+		# New round — we can act again. Clear the locked-in state.
 		party_combat_active = true
 		party_waiting_for_turn = false
 		party_combat_spectating = false
-		display_game("")
-		display_game("[color=#00FF00]═══ YOUR TURN ═══[/color]")
-		_mark_all_held_hotkeys()
+		party_round_submitted = false
 	else:
 		party_combat_active = false
 		party_waiting_for_turn = true
 		party_combat_spectating = false
 		party_combat_turn_name = turn_name
-		display_game("")
-		display_game("[color=#808080]Waiting for %s...[/color]" % turn_name)
-		_mark_all_held_hotkeys()
+	_mark_all_held_hotkeys()
 
+	# Panel bars → post-round values (monster / my player / my companion). Tween runs while
+	# the messages drain (mirrors solo, where combat_update sets HP as messages play out).
+	# #76 Slice 3 — when the round carries per-line metadata it plays out ACTOR BY ACTOR,
+	# so the bars must NOT be snapped to the post-round values here; each beat drives them
+	# and _drain_combat_queue settles on this snapshot once the queue empties.
+	var _meta_list = message.get("message_meta", [])
+	var _paced: bool = _meta_list is Array and not (_meta_list as Array).is_empty()
+	_display_party_combat_hp(combat_state)
+	_update_party_bars(combat_state)
+	_apply_party_members_to_panel(combat_state, _paced)
+	if _paced:
+		_pending_party_final_state = combat_state
+	else:
+		_apply_party_panel_hp(combat_state)
+	_apply_party_hand_from_message(message)
 	update_player_hp_bar()
 	update_resource_bar()
-	_update_party_bars(combat_state)
 	update_action_bar()
+
+	# PACED PLAYOUT — enqueue the round's messages so _drain_combat_queue plays them out with
+	# per-beat FX/sounds. A "YOUR TURN" marker is queued LAST so it lands after the round reads
+	# out, not before. The interim "locked in, waiting" broadcast has no messages → nothing queued.
+	if not messages.is_empty():
+		var _meta_arr: Array = message.get("message_meta", []) if message.get("message_meta", []) is Array else []
+		for i in range(messages.size()):
+			var _q := {"raw": str(messages[i])}
+			if i < _meta_arr.size() and _meta_arr[i] is Dictionary:
+				_q["meta"] = _meta_arr[i]
+			combat_msg_queue.append(_q)
+		if is_my_turn:
+			combat_msg_queue.append({"raw": "[color=#00FF00]═══ YOUR TURN — choose a card ═══[/color]"})
+		if not combat_phase_paused:
+			_drain_combat_queue()
+
+func _apply_party_hp_beat(hp: Dictionary) -> void:
+	"""#76 Slice 3 — apply ONE beat of the round: the monster's HP after this actor's hit,
+	and (for a monster action) the HP of the member/companion it just struck. Teammates go
+	to their party card; if the beat is about US, it drives our own panel bars."""
+	if combat_scene_panel == null or hp == null or hp.is_empty():
+		return
+	if hp.has("monster") and _party_monster_max_hp > 0 and combat_scene_panel.has_method("update_monster_hp"):
+		combat_scene_panel.update_monster_hp(int(hp["monster"]), _party_monster_max_hp, true)
+	var tpid := int(hp.get("target_pid", -1))
+	if tpid == -1 or not hp.has("target_hp"):
+		return
+	var t_hp := int(hp.get("target_hp", 0))
+	var t_max := maxi(1, int(hp.get("target_max_hp", 1)))
+	var c_hp := int(hp.get("target_comp_hp", -1))
+	var c_max := int(hp.get("target_comp_max_hp", 0))
+	if tpid == _my_party_pid:
+		character_data["current_hp"] = t_hp
+		if combat_scene_panel.has_method("update_player_hp"):
+			combat_scene_panel.update_player_hp(t_hp, t_max)
+		if c_hp >= 0 and c_max > 0 and combat_scene_panel.has_method("update_companion_combat_hp"):
+			combat_scene_panel.update_companion_combat_hp(c_hp, c_max, false)
+		update_player_hp_bar()
+	else:
+		if combat_scene_panel.has_method("update_party_member_hp"):
+			combat_scene_panel.update_party_member_hp(tpid, t_hp, t_max)
+		if c_hp >= 0 and c_max > 0 and combat_scene_panel.has_method("update_party_companion_hp"):
+			combat_scene_panel.update_party_companion_hp(tpid, c_hp, c_max)
+
+
+func _apply_party_panel_hp(combat_state: Dictionary) -> void:
+	"""#76 — push the shared monster HP + MY own player/companion HP into the combat scene
+	panel's bars. Party updates previously only touched the legacy StatsBar widgets (hidden
+	during the combat scene), so the panel bars looked frozen. The party column (teammates)
+	is handled separately by _apply_party_members_to_panel."""
+	if combat_scene_panel == null:
+		return
+	var mmax := int(combat_state.get("monster_max_hp", -1))
+	if mmax > 0 and combat_scene_panel.has_method("update_monster_hp"):
+		combat_scene_panel.update_monster_hp(int(combat_state.get("monster_hp", 0)), mmax, true)
+	var my_name = character_data.get("name", "")
+	for m in combat_state.get("members", []):
+		if m.get("name", "") != my_name:
+			continue
+		if combat_scene_panel.has_method("update_player_hp"):
+			combat_scene_panel.update_player_hp(int(m.get("current_hp", 0)), int(m.get("max_hp", 1)))
+		var comp = m.get("companion", {})
+		if comp is Dictionary and not comp.is_empty() and combat_scene_panel.has_method("update_companion_combat_hp"):
+			var _cmax := int(comp.get("max_hp", 1))
+			combat_scene_panel.update_companion_combat_hp(int(comp.get("combat_hp", _cmax)), _cmax, false)
+		break
+
+func _apply_party_hand_from_message(message: Dictionary) -> void:
+	"""#76 — a party_combat_start/update message carries THIS client's own card hand +
+	class-engine meter (Momentum/Read/Focus). Mirror the solo combat_update path so the
+	card strip + meter render identically in co-op. Absent fields (old server) → no-op."""
+	if combat_scene_panel == null:
+		return
+	if message.has("combat_hand"):
+		combat_hand = message.get("combat_hand", []) if message.get("combat_hand", []) is Array else []
+		combat_deck_count = int(message.get("combat_deck_count", 0))
+		combat_discard_count = int(message.get("combat_discard_count", 0))
+		if combat_scene_panel.has_method("update_hand"):
+			combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
+	# Meter fields ride alongside the hand; _sync_momentum_meter no-ops if none present.
+	_sync_momentum_meter(message)
 
 func _handle_party_combat_end(message: Dictionary):
 	"""Handle party combat ending."""
@@ -27461,11 +27607,8 @@ func _handle_party_combat_end(message: Dictionary):
 	party_waiting_for_turn = false
 	party_combat_spectating = false
 	party_combat_turn_name = ""
+	party_round_submitted = false
 	stop_low_hp_pulse()
-
-	# Display combat messages
-	for msg in messages:
-		display_game(msg)
 
 	if victory and not your_death:
 		# v0.9.591 — record server-authoritative HP truth for the defeated monster
@@ -27488,20 +27631,19 @@ func _handle_party_combat_end(message: Dictionary):
 			update_player_xp_bar()
 			update_currency_display()
 
-		# Show drops
-		var flock_drops = message.get("flock_drops", [])
-		if flock_drops.size() > 0:
+		# #76 — per-member victory payload (xp / level-up / loot list / gear banner),
+		# built server-side to match the solo victory card exactly.
+		var _pvp: Dictionary = message.get("victory_payload", {})
+		var combat_state_end: Dictionary = message.get("combat_state", {})
+
+		# Show drops in the chat log (sourced from the victory payload's loot lines).
+		var _pvp_loot: Array = _pvp.get("loot", [])
+		if _pvp_loot.size() > 0:
 			display_game("")
 			display_game("[color=#FFD700]────── LOOT ──────[/color]")
-			for drop_msg in flock_drops:
-				display_game("  " + drop_msg)
+			for drop_msg in _pvp_loot:
+				display_game("  " + str(drop_msg))
 			display_game("[color=#FFD700]─────────────────────[/color]")
-
-		# XP gain
-		var xp_earned = message.get("xp_earned", 0)
-		var gold_earned = message.get("gold_earned", 0)
-		if xp_earned > 0 or gold_earned > 0:
-			display_game("[color=#00BFFF]+%d XP, +%d Valor[/color]" % [xp_earned, gold_earned])
 
 		# Check for gem gains
 		var total_gems = message.get("total_gems", 0)
@@ -27512,13 +27654,35 @@ func _handle_party_combat_end(message: Dictionary):
 		var drop_value = _calculate_drop_value(message)
 		if drop_value > 0:
 			play_rare_drop_sound(drop_value)
+		play_combat_victory_sound()
 
-		# Require continue press
-		display_game("")
-		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
+		# #76 — PACED KILLING ROUND. Enqueue the final round's messages so the fatal blow
+		# (and everyone's actions that led to it) plays out with FX/sounds, THEN show the
+		# victory card once the queue drains (via _pending_victory_card_payload, the same
+		# mechanism solo uses at _drain_combat_queue's empty branch). Previously the round
+		# was dumped instantly and the card popped immediately — the kill never played out.
+		_apply_party_panel_hp(combat_state_end)  # drop the monster bar toward 0 as it drains
+		# #76 Slice 3 — the final round animates like any other; carry its beat metadata.
+		var _end_meta: Array = message.get("message_meta", []) if message.get("message_meta", []) is Array else []
+		for _mi in range(messages.size()):
+			var _eq := {"raw": str(messages[_mi])}
+			if _mi < _end_meta.size() and _end_meta[_mi] is Dictionary:
+				_eq["meta"] = _end_meta[_mi]
+			combat_msg_queue.append(_eq)
+		if not _pvp.is_empty():
+			_pvp["continue_key"] = get_action_key_name(0)
+			_pending_victory_card_payload = _pvp
+		# Keep the scene visible through the playout + card (generous; drain extends further).
+		_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 8000)
+		if combat_scene_panel:
+			combat_scene_panel.visible = true
+		if not combat_phase_paused:
+			_drain_combat_queue()
 		pending_continue = true
 	elif death_saved:
 		# Death saved
+		for msg in messages:
+			display_game(msg)
 		if message.has("character"):
 			_set_character_data(message.character)
 			update_player_hp_bar()
@@ -27527,6 +27691,8 @@ func _handle_party_combat_end(message: Dictionary):
 		display_game("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 	elif not victory and not your_death:
 		# We survived (fled) but combat was lost
+		for msg in messages:
+			display_game(msg)
 		if message.has("character"):
 			_set_character_data(message.character)
 			update_player_hp_bar()
@@ -27922,8 +28088,16 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.738 — Real co-op party combat.
+	display_game("[color=#00FF00]v0.9.738[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ FIGHT TOGETHER — FOR REAL.[/color] Party up and walk into a monster: you now all fight [b]ONE shared enemy[/b] instead of each being shunted into your own private copy of it. Everyone [b]locks in their card at the same time[/b], then the round plays out in [b]speed order[/b] — each hero and companion steps up, swings, and the health bars drain one after another. You can finally [b]SEE your teammates[/b] and their companions in the fight, with their own gear and their own HP. No setting to flip — just be in a party.")
+	display_game("  [color=#1EFF00]◆ Monsters fight the whole party now.[/color] A group used to trivialise anything: the enemy got [b]one swing per round[/b] no matter how many of you showed up, so a party of four each took a quarter of the heat. It now [b]acts against every hero (or their companion) each round[/b] — the same pressure you'd feel solo, without inflating its damage into one-shots.")
+	display_game("  [color=#1EFF00]◆ The battle log says WHO did what.[/color] Every player used to read the exact same 'you hit for 15' — impossible to tell your hit from an ally's. Now your own actions still read as [b]you[/b], and everyone else's are [b]named[/b] ('Kira unleashes chaos', 'Kira's Wolf Pup attacks').")
+	display_game("  [color=#1EFF00]◆ Party-fight fixes.[/color] Playing a card in a party fight could [b]silently do nothing[/b] — the cost was spent, but no damage, no companion attack, no message. Fixed. Also fixed: a [b]crash when someone disconnected[/b] mid-party-fight, which could leave the rest of the party waiting forever on a turn that never came.")
+	display_game("")
+
 	# v0.9.737 — See your traits + clearer deck.
-	display_game("[color=#00FF00]v0.9.737[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.737[/color]")
 	display_game("  [color=#FF8000]★ SEE WHAT YOUR CLASS & RACE ACTUALLY DO.[/color] Your class and race passives were [b]invisible[/b] — now they show as [b]Trait cards[/b] right on your Deck screen (e.g. [color=#4169E1]Arcane Precision[/color] — +15% spell damage, +10% crit; [color=#D2691E]Nimble[/color] — +10% dodge, +15% Valor). Finally see the bonuses you've had all along, framed as part of your deck.")
 	display_game("  [color=#1EFF00]◆ Clearer deck.[/color] Card descriptions on the Deck screen now read in [b]plain language[/b] (the same friendly text as in combat) instead of raw formulas — 'a massive finishing blow' rather than 'INT-scaled burst × 3-4× multiplier, variable cost ≈30% of mana pool.'")
 	display_game("")
@@ -32764,6 +32938,29 @@ func _handle_clan_invitation_received(message: Dictionary) -> void:
 	display_chat(line)
 	display_game(line)
 
+var _party_preview_on: bool = false
+func _preview_party_column() -> void:
+	"""#64 Slice 2 — client-only preview of the co-op party column. Toggles a set
+	of sample members into the combat panel's right-side column so the layout can
+	be judged during a normal solo fight. No server involvement."""
+	if not in_combat or combat_scene_panel == null or not is_instance_valid(combat_scene_panel):
+		display_game("[color=#FFAA00]Start a fight first, then Preview Party Column to see the layout.[/color]")
+		return
+	_party_preview_on = not _party_preview_on
+	if not _party_preview_on:
+		combat_scene_panel.set_party_members([])
+		display_game("[color=#888888]Party column preview OFF.[/color]")
+		return
+	var sample := [
+		{"name": "Brann", "battler_id": "2_1", "current_hp": 240, "max_hp": 300, "current_mana": 45, "max_mana": 80, "companion": {"name": "Ashfang", "monster_type": "Kobold", "combat_hp": 60, "max_hp": 90}},
+		{"name": "Sela", "battler_id": "3_5", "current_hp": 70, "max_hp": 160, "current_mana": 110, "max_mana": 140},
+		{"name": "Kip", "battler_id": "2_3", "current_hp": 0, "max_hp": 140, "is_dead": true},
+		{"name": "Doran", "battler_id": "3_7", "current_hp": 180, "max_hp": 210, "current_mana": 30, "max_mana": 60, "companion": {"name": "Grix", "monster_type": "Goblin", "combat_hp": 75, "max_hp": 100}},
+	]
+	combat_scene_panel.set_party_members(sample)
+	display_game("[color=#00BFFF]Party column preview ON — 4 sample allies (one KO'd).[/color]")
+
+
 func _on_admin_panel_action(action_id: String) -> void:
 	"""Dispatch admin panel button clicks. Each action_id maps to a
 	gm_* server message or a small client-side helper. All server-side
@@ -32795,6 +32992,8 @@ func _on_admin_panel_action(action_id: String) -> void:
 			send_to_server({"type": "gm_give_test_card"})
 		"gm_toggle_coop":
 			send_to_server({"type": "gm_toggle_coop"})
+		"preview_party_column":
+			_preview_party_column()
 		# Items
 		"give_item_t5":
 			send_to_server({"type": "gm_giveitem", "tier": 5, "slot": ""})
@@ -33165,6 +33364,10 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 	"""A1 — render the combat scene panel from the current combat_state."""
 	if combat_scene_panel == null:
 		return
+	# Clear any stale party column — solo fights show none; party combat re-populates
+	# it right after this call via _apply_party_members_to_panel.
+	if combat_scene_panel.has_method("set_party_members"):
+		combat_scene_panel.set_party_members([])
 	# v0.9.610 — replaced the racy `_combat_scene_was_flock_pending` per-frame
 	# tracker with `_pending_flock_archive` set explicitly at combat_end when
 	# flock_incoming is true. Race-free: even if combat_end + combat_start
@@ -34633,6 +34836,71 @@ func _run_combat_miss_demo() -> void:
 	display_game("[color=#888888]Miss FX demo complete.[/color]")
 
 
+func _dispatch_party_fx(combat_msg: String, damage_to_monster: int, is_crit: bool) -> bool:
+	"""#76 Slice 3 — drive a co-op line's FX from the server's actor metadata.
+
+	Returns TRUE when this line was fully handled — i.e. it belongs to a TEAMMATE (their
+	card lunges, their bars drain, damage lands on their portrait). Returns FALSE for our
+	own beats so the existing solo path runs unchanged: our own lines are still written in
+	2nd person, so the solo heuristics read them correctly.
+
+	Lunges fire on the actor's HEADER line ("> test002 attacks"), damage/miss on the body
+	lines that follow, so each teammate's turn reads as a distinct beat."""
+	if combat_scene_panel == null:
+		return false
+	var actor := str(_party_fx_meta.get("actor", "neutral"))
+	var actor_pid := int(_party_fx_meta.get("actor_pid", -1))
+	var target_pid := int(_party_fx_meta.get("target_pid", -1))
+	var is_head := bool(_party_fx_meta.get("head", false))
+	var lower := combat_msg.to_lower()
+
+	if actor == "member" or actor == "companion":
+		if actor_pid == -1 or actor_pid == _my_party_pid:
+			return false   # our own action — the solo FX path is already correct
+		if is_head:
+			if actor == "companion":
+				combat_scene_panel.lunge_party_companion(actor_pid)
+			else:
+				combat_scene_panel.lunge_party_member(actor_pid)
+			return true
+		if damage_to_monster > 0:
+			var src := "companion" if actor == "companion" else "player"
+			var from: Vector2 = combat_scene_panel.party_companion_attacker_anchor(actor_pid) if actor == "companion" else combat_scene_panel.party_member_attacker_anchor(actor_pid)
+			combat_scene_panel.show_damage_on_monster(damage_to_monster, is_crit, src, from)
+			combat_scene_panel.flash_monster(is_crit)
+			if actor == "companion":
+				combat_scene_panel.lunge_party_companion(actor_pid)
+			else:
+				combat_scene_panel.lunge_party_member(actor_pid)
+		elif " misses" in lower:
+			combat_scene_panel.show_miss_on_monster("companion" if actor == "companion" else "player")
+			play_combat_miss_sound()
+		return true
+
+	if actor == "monster":
+		if target_pid == -1 or target_pid == _my_party_pid:
+			return false   # the monster hit US — solo FX already handle our own portrait
+		if is_head:
+			combat_scene_panel.lunge_monster_forward()
+			return true
+		if damage_to_monster > 0:
+			# Upkeep ticks (poison / burn / bleed) resolve during the monster phase but
+			# damage the MONSTER — pop the number on it rather than on the target member.
+			combat_scene_panel.show_damage_on_monster(damage_to_monster, is_crit, "player")
+			combat_scene_panel.flash_monster(is_crit)
+			return true
+		var dmg := parse_damage_to_player(combat_msg)
+		if dmg > 0:
+			combat_scene_panel.show_damage_on_party_member(target_pid, dmg, is_crit)
+			combat_scene_panel.lunge_monster_forward()
+		elif " misses" in lower:
+			combat_scene_panel.show_miss_on_party_member(target_pid)
+			play_combat_miss_sound()
+		return true
+
+	return false
+
+
 func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 	"""A2 — parse a combat message and trigger the appropriate visual feedback
 	on the battle scene panel. Reads the same text the player sees, so any
@@ -34641,6 +34909,12 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 	var lower = combat_msg.to_lower()
 	var upper = combat_msg.to_upper()
 	var is_crit = "CRITICAL" in upper
+
+	# #76 Slice 3 — in co-op the server tags each line with WHO acted and WHO was hit. Use
+	# that before the solo text heuristics, which can only recognise our own 2nd-person
+	# lines and would otherwise fire a teammate's attack on OUR battler.
+	if not _party_fx_meta.is_empty() and _dispatch_party_fx(combat_msg, damage_to_monster, is_crit):
+		return
 
 	# Damage TO monster — player or companion is attacking.
 	if damage_to_monster > 0:
@@ -34899,6 +35173,13 @@ func _drain_combat_queue():
 	"""Display one queued combat message, then pause before showing the next."""
 	if combat_msg_queue.is_empty():
 		combat_phase_paused = false
+		# #76 Slice 3 — the round played out beat by beat off per-actor HP snapshots; settle
+		# on the authoritative end-of-round state so nothing can drift.
+		if not _pending_party_final_state.is_empty():
+			var _pfs: Dictionary = _pending_party_final_state
+			_pending_party_final_state = {}
+			_apply_party_panel_hp(_pfs)
+			_apply_party_members_to_panel(_pfs)
 		# v0.9.413 — queue just emptied. Fire any deferred victory FX +
 		# card NOW so the final popup is seen before the card covers the
 		# panel. Then schedule end_action_phase with a short buffer.
@@ -34954,7 +35235,13 @@ func _drain_combat_queue():
 		return
 	var entry = combat_msg_queue.pop_front()
 	var raw = entry.raw
+	# #76 Slice 3 — co-op metadata for THIS beat; _dispatch_combat_fx reads it to animate
+	# the right teammate. Cleared straight after so solo lines never see stale data.
+	_party_fx_meta = entry.get("meta", {}) if entry is Dictionary else {}
 	_display_combat_msg(raw)
+	if not _party_fx_meta.is_empty() and _party_fx_meta.has("hp"):
+		_apply_party_hp_beat(_party_fx_meta["hp"])
+	_party_fx_meta = {}
 	# v0.9.417 — universal pacing (speed tiering removed). Two attack delays:
 	#   INTER_ATTACK_DELAY  — gap between consecutive actor attacks. Slightly
 	#                         longer so each actor's turn reads as distinct.
@@ -34984,6 +35271,14 @@ func _drain_combat_queue():
 # v0.9.409 — last actor whose attack/ability message we displayed; used to
 # inject an extra delay at actor boundaries so the visual turns separate.
 var _last_combat_actor: String = ""
+
+# #76 Slice 3 — co-op round playback. Each queued line carries server-authored metadata
+# (who acted, who was hit, and the HP as of that beat) so the round animates actor by
+# actor instead of dumping at once. Empty for solo combat, which is untouched.
+var _party_fx_meta: Dictionary = {}
+var _my_party_pid: int = -1
+var _party_monster_max_hp: int = 0
+var _pending_party_final_state: Dictionary = {}
 
 
 func _classify_combat_actor(raw: String) -> String:

@@ -851,7 +851,7 @@ func get_class_attack_description(damage: int, monster_name: String, is_crit: bo
 	match class_type:
 		"Fighter":
 			if is_crit:
-				crit_text = "With perfect form, you "
+				crit_text = "With perfect form, "   # the template below already supplies "you"
 			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
 		"Barbarian":
 			if is_crit:
