@@ -2369,8 +2369,13 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	character.calculate_derived_stats()
 	var total_hp = character.get_total_max_hp()
 	var total_mana = character.get_total_max_mana()
-	if character.current_hp > 0 and character.current_hp <= character.max_hp and total_hp > character.max_hp * 1.5:
-		# Current HP is suspiciously at or below base max while total is much higher — likely hit by the bug
+	# v0.9.739 — `<=` made this a FREE FULL HEAL ON RELOG for anyone with decent +HP gear:
+	# log out wounded below your BASE max (120 of 298, say) and you logged back in at full,
+	# which quietly undercuts resting. The v0.9.98 bug being repaired capped current_hp to
+	# EXACTLY the base max, so `==` matches the damage it was written for and leaves a merely
+	# wounded character alone.
+	if character.current_hp > 0 and character.current_hp == character.max_hp and total_hp > character.max_hp * 1.5:
+		# Current HP sits exactly on base max while total is much higher — the signature of the bug
 		character.current_hp = total_hp
 		character.current_mana = total_mana
 		log_message("HP/Mana repair: %s healed to full (%d HP, %d mana)" % [char_name, total_hp, total_mana])
@@ -39318,12 +39323,14 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 			var _dentries: Array = _dres.get("message_entries", [])
 			if not _dentries.is_empty():
 				_dentries.insert(0, combat_mgr._party_neutral(_note[0]))   # keep the notice in the per-recipient render
+			# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
+			var _fallen_dres := _party_collect_fallen(leader_id)
 			if _dres.get("combat_ended", false):
 				_end_party_combat_all(leader_id, _dres.get("victory", false), _dmsgs, _dentries)
 			else:
 				_broadcast_party_update(leader_id, _dmsgs, true, _dentries)
-			# v0.9.739 — consistent permadeath: kill anyone who fell, AFTER the round is broadcast.
-			_party_process_permadeaths(leader_id)
+			# Now that the round has been sent, run their deaths.
+			_party_kill_fallen(_fallen_dres)
 		else:
 			_broadcast_party_update(leader_id, _note, false)
 		return
@@ -39493,7 +39500,7 @@ func _start_party_combat_encounter(leader_peer_id: int, monster: Dictionary, deb
 			"current_turn_name": characters[first_turn_pid].name if characters.has(first_turn_pid) else ""
 		})
 
-func _party_process_permadeaths(leader_id: int) -> void:
+func _party_collect_fallen(leader_id: int) -> Array:
 	"""#76 v0.9.739 — CONSISTENT PERMADEATH (user decision 2026-09-01). Dropping to 0 HP in a
 	party now kills the character exactly as it does solo. Before this, a fallen member was
 	merely "downed": still alive at 0 HP, healed by resting, character intact — which made
@@ -39503,8 +39510,9 @@ func _party_process_permadeaths(leader_id: int) -> void:
 	character from `characters`, and the reward + snapshot paths still need it while the round
 	is being sent out. Death saves (Guardian blessing, High King escape) are honoured because
 	this routes through the SAME handle_permadeath the solo path uses."""
+	var fallen: Array = []
 	if not combat_mgr.active_party_combats.has(leader_id):
-		return
+		return fallen
 	var combat: Dictionary = combat_mgr.active_party_combats[leader_id]
 	var monster_name := String(combat.get("monster", {}).get("name", "a monster"))
 	for pid in combat.get("members", []).duplicate():
@@ -39513,14 +39521,25 @@ func _party_process_permadeaths(leader_id: int) -> void:
 			continue
 		st["permadeath_done"] = true
 		combat_mgr.party_combat_membership.erase(pid)
+		if characters.has(pid):
+			fallen.append({"pid": pid, "name": characters[pid].name, "killer": monster_name})
+	return fallen
+
+
+func _party_kill_fallen(fallen: Array) -> void:
+	"""Run permadeath for members collected BEFORE the round was sent out. Collect and kill are
+	split because a WIPE ends the combat: _end_party_combat_all tears down active_party_combats,
+	so anything reading it afterwards found nothing and NOBODY died — the party just sat at 0 HP
+	with no death screen. A single death worked only because that fight carried on."""
+	for entry in fallen:
+		var pid: int = int(entry.get("pid", -1))
 		if not characters.has(pid):
 			continue
-		var _dead_name: String = characters[pid].name
-		handle_permadeath(pid, monster_name)
+		handle_permadeath(pid, String(entry.get("killer", "a monster")))
 		# Guardian / High King saves leave the character ALIVE — only drop them from the
 		# party when they actually died.
 		if not characters.has(pid):
-			_party_drop_member_after_death(pid, _dead_name)
+			_party_drop_member_after_death(pid, String(entry.get("name", "A hero")))
 
 
 func _party_drop_member_after_death(peer_id: int, dead_name: String) -> void:
@@ -39653,12 +39672,14 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 	var rres = combat_mgr.resolve_party_round(leader_id)
 	var rmsgs = rres.get("messages", [])
 	var rentries: Array = rres.get("message_entries", [])
+	# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
+	var _fallen_rres := _party_collect_fallen(leader_id)
 	if rres.get("combat_ended", false):
 		_end_party_combat_all(leader_id, rres.get("victory", false), rmsgs, rentries)
 	else:
 		_broadcast_party_update(leader_id, rmsgs, true, rentries)
-	# v0.9.739 — consistent permadeath: kill anyone who fell, AFTER the round is broadcast.
-	_party_process_permadeaths(leader_id)
+	# Now that the round has been sent, run their deaths.
+	_party_kill_fallen(_fallen_rres)
 
 
 func _handle_party_combat_command(peer_id: int, command: String):
@@ -39697,12 +39718,14 @@ func _handle_party_combat_command(peer_id: int, command: String):
 	# #76 — entries carry both voices per line so each member reads their OWN actions as
 	# "you" and everyone else's by name (a flat broadcast read identically on every screen).
 	var log_entries: Array = res.get("message_entries", [])
+	# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
+	var _fallen_res := _party_collect_fallen(leader_id)
 	if res.get("combat_ended", false):
 		_end_party_combat_all(leader_id, res.get("victory", false), msgs, log_entries)
 	else:
 		_broadcast_party_update(leader_id, msgs, true, log_entries)
-	# v0.9.739 — consistent permadeath: kill anyone who fell, AFTER the round is broadcast.
-	_party_process_permadeaths(leader_id)
+	# Now that the round has been sent, run their deaths.
+	_party_kill_fallen(_fallen_res)
 
 func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""

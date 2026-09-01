@@ -27639,7 +27639,12 @@ func _handle_party_combat_update(message: Dictionary):
 	# _apply_party_hp_beat; the authoritative end-of-round values are applied when the queue
 	# drains, alongside _pending_party_final_state.
 	var _meta_early = message.get("message_meta", [])
-	var _paced_early: bool = _meta_early is Array and not (_meta_early as Array).is_empty()
+	# v0.9.739 — "paced" is not just "this message carries beats": an update arriving while a
+	# PREVIOUS round is still playing back must defer too. The server sends interim broadcasts
+	# with EMPTY messages whenever someone locks in, and those carry the CURRENT (post-round)
+	# HP — so a teammate submitting quickly during our playback dropped our bars before the
+	# damage was shown. That is why it showed up in round 1 (fast submits) and not round 2.
+	var _paced_early: bool = (_meta_early is Array and not (_meta_early as Array).is_empty()) 		or not combat_msg_queue.is_empty()
 	var my_name = character_data.get("name", "")
 	var members = combat_state.get("members", [])
 	var my_state = {}
@@ -27696,7 +27701,7 @@ func _handle_party_combat_update(message: Dictionary):
 	# so the bars must NOT be snapped to the post-round values here; each beat drives them
 	# and _drain_combat_queue settles on this snapshot once the queue empties.
 	var _meta_list = message.get("message_meta", [])
-	var _paced: bool = _meta_list is Array and not (_meta_list as Array).is_empty()
+	var _paced: bool = (_meta_list is Array and not (_meta_list as Array).is_empty()) 		or not combat_msg_queue.is_empty()   # see the note on _paced_early above
 	_apply_party_members_to_panel(combat_state, _paced)
 	if _paced:
 		_pending_party_final_state = combat_state

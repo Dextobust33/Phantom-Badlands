@@ -73,9 +73,20 @@ SCENARIOS = {
         "apply": lambda c: c.update({"current_hp": c.get("max_hp", 100)}),
     },
     "party_wipe": {
-        "doc": "Both members at 1 HP — the whole party should die. Tests permadeath for every "
-               "member at once, and what the client does when nobody survives.",
+        # 1 HP alone did not reliably wipe a party: a level-13 monster near the starting posts
+        # can miss, or simply be killed first. Monster level is derived from distance
+        # (get_post_anchored_level), so this also parks them where everything is level ~134 —
+        # the very first hit that connects ends the fight, no matter what they draw.
+        "doc": "Both at 1 HP AND deep in a level ~134 zone — the next hit wipes the party. "
+               "Tests simultaneous permadeath for everyone at once.",
         "apply": lambda c: c.update({"current_hp": 1}),
+        "at": (250, -150),
+    },
+    "deadly_zone": {
+        "doc": "Healthy, but parked in a level ~134 zone — for testing fights you are meant "
+               "to lose, or how far a party can actually push.",
+        "apply": lambda c: c.update({"current_hp": c.get("max_hp", 100)}),
+        "at": (250, -150),
     },
     "stocked": {
         "doc": "Give both members a stack of potions (for the item-use rules).",
@@ -113,8 +124,10 @@ def main():
         path = os.path.join(SAVE_DIR, fn)
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
+        spot = SCENARIOS[name].get("at")
         if anchor is None:
-            anchor = (c.get("x", 0), c.get("y", 0))
+            anchor = spot if spot else (c.get("x", 0), c.get("y", 0))
+            c["x"], c["y"] = anchor[0], anchor[1]
         else:
             c["x"], c["y"] = anchor[0] + 1, anchor[1]
         c["in_combat"] = False          # never leave a stale lockout behind
