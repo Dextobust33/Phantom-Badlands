@@ -1286,6 +1286,9 @@ var party_lead_choice_partner_id: int = -1   # Peer ID of partner
 var party_disband_confirm: bool = false
 var party_leave_confirm: bool = false
 var party_appoint_mode: bool = false    # Selecting member to appoint as leader
+# v0.9.740 — how the party picks its leader: "rotate" (passes after each fight, the default) or
+# "fixed". Shown and toggled in the Party menu so it is discoverable, not a hidden default.
+var party_control_mode: String = "rotate"
 var party_menu_mode: bool = false       # In the party management menu
 var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
 var party_waiting_for_turn: bool = false   # Not our turn in party combat
@@ -8113,6 +8116,9 @@ func update_action_bar():
 				party_actions.append({"label": "Appoint", "action_type": "local", "action_data": "party_appoint", "enabled": true})
 			else:
 				party_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+			# v0.9.740 — leader-only toggle for how leadership is decided.
+			var _mode_label := "Lead: Rotate" if party_control_mode == "rotate" else "Lead: Fixed"
+			party_actions.append({"label": _mode_label, "action_type": "local", "action_data": "party_control_mode", "enabled": true})
 		else:
 			party_actions.append({"label": "Leave", "action_type": "local", "action_data": "party_leave", "enabled": true})
 			party_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
@@ -14309,6 +14315,14 @@ func execute_local_action(action: String):
 			set_meta("hotkey_0_pressed", true)
 			display_more_menu()
 			update_action_bar()
+		"party_control_mode":
+			# v0.9.740 — toggle how the party picks its leader. Rotate (default) passes
+			# leadership after every fight so nobody is stuck driving; Fixed keeps one leader.
+			var _new_mode := "fixed" if party_control_mode == "rotate" else "rotate"
+			send_to_server({"type": "party_set_control_mode", "mode": _new_mode})
+			party_control_mode = _new_mode
+			update_action_bar()
+
 		"party_disband":
 			party_disband_confirm = true
 			game_output.clear()
@@ -23439,6 +23453,7 @@ func handle_server_message(message: Dictionary):
 		"party_update":
 			var leader_name = message.get("leader", "")
 			party_members = message.get("members", [])
+			party_control_mode = String(message.get("control_mode", party_control_mode))
 			var my_name = character_data.get("name", "")
 			is_party_leader = (leader_name == my_name)
 			in_party = true

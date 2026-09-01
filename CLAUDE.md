@@ -2,6 +2,23 @@
 
 Guidance for Claude Code when working with this repository.
 
+## ⚑ MASTER BACKLOG — read it first, keep it current
+
+**`docs/BACKLOG.md` is the single ordered to-do list.** Read it at the start of a session before
+proposing what to work on, and **update it as work lands** — do not let it go stale.
+
+- Work items **in order**. The order is not preference: each item is placed so its inputs are
+  settled first (measurement before tuning, data model before UI, combat numbers before anything
+  sized against them). Working out of order is what forces revisits.
+- When something ships, tick it and move it to **Recently shipped** in the same commit as the work.
+- When the user agrees a new direction, add it in the position its dependencies allow, and say
+  where it landed and why.
+- Before starting anything, check it is not already listed somewhere else under another name.
+  The Dungeon Atlas was once tracked as three separate tasks in three separate places.
+- If a task turns out to be bigger than its line suggests, split it there rather than in your head.
+
+This file exists because work was being lost and duplicated while jumping between arcs.
+
 ## Quick Start
 
 **Detailed diagrams in `/docs/`:**

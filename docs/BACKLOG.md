@@ -15,11 +15,17 @@ order is what forces revisits.
 ## In progress
 
 ### 1. Party mechanics — server pass
-- [ ] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
-- [ ] Reward policy: **DUPLICATE** — every member gets a full copy (matches combat, which already
-      gives full XP + own loot to each member)
+- [x] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
+      — `Lead: Rotate / Lead: Fixed` toggle in the Party menu. Rotation walks a stable
+      `rotation_order`, not `party.members` (which `_transfer_leadership` reorders new-leader-first,
+      so rotating over it would ping-pong between two players). Verified fair for 3 members
+- [x] Reward policy: **DUPLICATE** — gathering materials and job XP are copied in full to every
+      member. Wrapping `_add_gathering_reward` covers every gathering path at once instead of
+      changing ten call sites. **Crafting shares XP only** — duplicating the crafted item would
+      mint N items from one set of materials
 - [ ] Verify the **leadership-transfer** path (needs a 3rd test account: 2-person parties disband
       instead of transferring, so it is currently unexercised)
+- [ ] Live 2-client test of rotation + duplicated rewards
 
 *Rotation and rewards ship together: both edit party state and `_end_party_combat_all`, so
 splitting them means editing and re-testing the same code twice.*

@@ -2063,6 +2063,8 @@ func _dispatch_message(peer_id: int, msg_type: String, message: Dictionary):
 			handle_party_leave(peer_id)
 		"party_appoint_leader":
 			handle_party_appoint_leader(peer_id, message)
+		"party_set_control_mode":
+			handle_party_set_control_mode(peer_id, message)
 		# GM/Admin command handlers
 		"gm_setlevel":
 			handle_gm_setlevel(peer_id, message)
@@ -21248,6 +21250,8 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 	var job_xp_result: Dictionary = xp_result
 	if session_job in ["fishing", "mining", "logging"]:
 		job_xp_result = character.add_job_xp(session_job, total_xp)
+	# v0.9.740 — share the same job XP with the rest of the party.
+	_party_share_job_xp(peer_id, session_job, total_xp, "gathering")
 	# Compute character XP. Prefer add_job_xp's returned value (any committed
 	# job path); otherwise apply the legacy taper to total_xp (uncommitted
 	# past trial cap, where add_job_xp returns 0 char_xp_gained).
@@ -22459,6 +22463,8 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 	var base_xp_per_round = 35 + (tier - 1) * 25
 	var total_job_xp = base_xp_per_round * session["chain_count"]
 	var job_result = character.add_job_xp(job_type, total_job_xp)
+	# v0.9.740 — share the same job XP with the rest of the party.
+	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
 	var char_xp = job_result.get("char_xp_gained", 0)
 	if char_xp == 0 and total_job_xp > 0:
 		var taper = 1.0 if job_level <= 20 else (0.5 if job_level <= 50 else 0.2)
@@ -22931,6 +22937,8 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	var base_xp_per_round = 35 + (tier - 1) * 25  # T1=35, T2=60, ... T6=160
 	var total_job_xp = base_xp_per_round * chain_count
 	var job_result = character.add_job_xp(job_type, total_job_xp)
+	# v0.9.740 — share the same job XP with the rest of the party.
+	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
 	var char_xp = job_result.get("char_xp_gained", 0)
 	# Always award character XP for gathering even if job XP is at trial cap.
 	# Job commitment gates job-level progression, not character progression.
@@ -23317,7 +23325,65 @@ func _roll_gathering_reward(job_type: String, tier: int, job_level: int, is_risk
 
 	return reward
 
+func _party_share_job_xp(actor_pid: int, job: String, xp: int, what: String = "job") -> void:
+	"""v0.9.740 — DUPLICATE job XP to the rest of the party. Same rule as gathering materials and
+	combat: everyone gets a full copy, nobody is diluted for grouping up.
+
+	NOTE for CRAFTING: only the XP is shared, never the crafted ITEM. Duplicating the item would
+	mint N items from one set of materials — an economy multiplier rather than a fairness fix
+	(agreed with the user 2026-09-01)."""
+	if xp <= 0 or job == "" or not party_membership.has(actor_pid):
+		return
+	var leader_id: int = int(party_membership[actor_pid])
+	if not active_parties.has(leader_id):
+		return
+	var actor_name: String = characters[actor_pid].name if characters.has(actor_pid) else "A party member"
+	for other_pid in active_parties[leader_id].get("members", []):
+		if other_pid == actor_pid or not characters.has(other_pid):
+			continue
+		var res: Dictionary = characters[other_pid].add_job_xp(job, xp)
+		var char_xp: int = int(res.get("char_xp_gained", 0))
+		if char_xp > 0:
+			characters[other_pid].add_experience(char_xp)
+		send_to_peer(other_pid, {"type": "text", "message": "[color=#66D0C0]%s's %s work earns the party +%d %s XP.[/color]" % [actor_name, what, xp, job]})
+		send_character_update(other_pid)
+
+
+func _peer_for_character(ch) -> int:
+	"""Reverse lookup peer_id from a Character. Small dict (online players only)."""
+	for pid in characters:
+		if characters[pid] == ch:
+			return int(pid)
+	return -1
+
+
 func _add_gathering_reward(character: Character, reward: Dictionary, qty: int) -> int:
+	"""v0.9.740 — PARTY SHARE: gathering rewards are DUPLICATED, not split. Every member gets a
+	full copy (user decision 2026-09-01), matching combat, which already grants full XP and its
+	own loot roll to each member. Wrapping the single-character granter means every gathering
+	path — scratch-off, autoskip, legacy per-catch — shares automatically instead of needing the
+	same change in ten call sites (and being missed in one).
+	Returns what the ACTOR received, so existing callers are unaffected."""
+	var got := _add_gathering_reward_single(character, reward, qty)
+	var actor_pid := _peer_for_character(character)
+	if actor_pid == -1 or not party_membership.has(actor_pid):
+		return got
+	var leader_id: int = int(party_membership[actor_pid])
+	if not active_parties.has(leader_id):
+		return got
+	var actor_name: String = character.name
+	var reward_name: String = String(reward.get("name", "materials"))
+	for other_pid in active_parties[leader_id].get("members", []):
+		if other_pid == actor_pid or not characters.has(other_pid):
+			continue
+		var shared := _add_gathering_reward_single(characters[other_pid], reward, qty)
+		if shared > 0:
+			send_to_peer(other_pid, {"type": "text", "message": "[color=#66D0C0]%s gathers for the party: +%d %s[/color]" % [actor_name, shared, reward_name]})
+			send_character_update(other_pid)
+	return got
+
+
+func _add_gathering_reward_single(character: Character, reward: Dictionary, qty: int) -> int:
 	"""Add a gathering reward — treasure chests go to inventory, everything else to materials pouch.
 	Returns quantity actually added."""
 	if reward.get("type", "") == "treasure_chest":
@@ -25331,6 +25397,9 @@ func handle_craft_item(peer_id: int, message: Dictionary):
 			job_xp_gained = int(xp_gained * 0.5)
 			if job_xp_gained > 0:
 				var job_result = character.add_job_xp(matching_job, job_xp_gained)
+				# v0.9.740 — crafting shares the XP with the party but NOT the crafted item:
+				# duplicating the item would mint N items from one set of materials.
+				_party_share_job_xp(peer_id, matching_job, job_xp_gained, "crafting")
 				job_leveled_up = job_result.leveled_up
 				job_new_level = job_result.new_level
 
@@ -38883,7 +38952,9 @@ func _send_party_update(leader_id: int):
 	var update_msg = {
 		"type": "party_update",
 		"leader": characters[leader_id].name if characters.has(leader_id) else "",
-		"members": members_info
+		"members": members_info,
+		# v0.9.740 - the party panel shows who leads AND how leadership is decided.
+		"control_mode": String(party.get("control_mode", "rotate"))
 	}
 	for pid in party.members:
 		send_to_peer(pid, update_msg)
@@ -38901,6 +38972,13 @@ func _disband_party(leader_id: int, reason: String = "Party disbanded."):
 	log_message("Party led by peer %d disbanded: %s" % [leader_id, reason])
 
 func _remove_party_member(leader_id: int, member_peer_id: int):
+	# v0.9.740 - drop them from the rotation order too, or rotation would try to hand the
+	# party to someone who is no longer in it.
+	if active_parties.has(leader_id):
+		var _ro: Array = active_parties[leader_id].get("rotation_order", [])
+		if _ro.has(member_peer_id):
+			_ro.erase(member_peer_id)
+			active_parties[leader_id]["rotation_order"] = _ro
 	"""Remove a member from a party. Auto-disbands if only 1 left."""
 	if not active_parties.has(leader_id):
 		return
@@ -39090,7 +39168,16 @@ func handle_party_lead_choice_response(peer_id: int, message: Dictionary):
 	active_parties[leader_id] = {
 		"leader": leader_id,
 		"members": [leader_id, follower_id],
-		"formed_at": Time.get_ticks_msec()
+		"formed_at": Time.get_ticks_msec(),
+		# v0.9.740 - only the leader can hunt, rest and move the party, so a fixed leader means
+		# one player drives while everyone else watches. DEFAULT is "rotate": leadership passes
+		# after every fight. "fixed" keeps the old behaviour.
+		"control_mode": "rotate",
+		# Rotation walks this STABLE order. party.members is REORDERED by _transfer_leadership
+		# (new leader first), so rotating over that would ping-pong between two players instead
+		# of giving everyone a turn.
+		"rotation_order": [leader_id, follower_id],
+		"rotation_idx": 0
 	}
 	party_membership[leader_id] = leader_id
 	party_membership[follower_id] = leader_id
@@ -39131,6 +39218,11 @@ func _add_member_to_party(leader_id: int, new_member_id: int):
 		return
 
 	party.members.append(new_member_id)
+	# v0.9.740 - keep the rotation order in step with membership.
+	var _rot: Array = party.get("rotation_order", [])
+	if not _rot.has(new_member_id):
+		_rot.append(new_member_id)
+	party["rotation_order"] = _rot
 	party_membership[new_member_id] = leader_id
 
 	# Teleport new member to adjacent tile near last member
@@ -39199,6 +39291,26 @@ func handle_party_leave(peer_id: int):
 			send_to_peer(pid, {"type": "party_member_left", "name": char_name})
 	send_to_peer(peer_id, {"type": "party_disbanded", "reason": "You left the party."})
 	_remove_party_member(leader_id, peer_id)
+
+func handle_party_set_control_mode(peer_id: int, message: Dictionary):
+	"""v0.9.740 - how the party decides who leads. "rotate" (default) hands leadership on after
+	every fight so everyone gets to drive; "fixed" keeps one leader until they appoint someone
+	else. Leader-only, like appointing."""
+	if not _is_party_leader(peer_id):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Only the party leader can change the control mode.[/color]"})
+		return
+	var mode := String(message.get("mode", "rotate"))
+	if not (mode in ["rotate", "fixed"]):
+		return
+	var party = active_parties[peer_id]
+	party["control_mode"] = mode
+	var label: String = "Rotating leader - leadership passes after each fight."
+	if mode == "fixed":
+		label = "Fixed leader - %s stays in charge." % characters[peer_id].name
+	for pid in party.get("members", []):
+		send_to_peer(pid, {"type": "text", "message": "[color=#66D0C0]Party control: %s[/color]" % label})
+	_send_party_update(peer_id)
+
 
 func handle_party_appoint_leader(peer_id: int, message: Dictionary):
 	"""Handle appointing a new party leader."""
@@ -39325,12 +39437,15 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 				_dentries.insert(0, combat_mgr._party_neutral(_note[0]))   # keep the notice in the per-recipient render
 			# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
 			var _fallen_dres := _party_collect_fallen(leader_id)
+			var _members_dres := _party_member_ids(leader_id)
 			if _dres.get("combat_ended", false):
 				_end_party_combat_all(leader_id, _dres.get("victory", false), _dmsgs, _dentries)
 			else:
 				_broadcast_party_update(leader_id, _dmsgs, true, _dentries)
 			# Now that the round has been sent, run their deaths.
 			_party_kill_fallen(_fallen_dres)
+			# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
+			_party_rotate_leader_after_combat(_members_dres)
 		else:
 			_broadcast_party_update(leader_id, _note, false)
 		return
@@ -39500,6 +39615,51 @@ func _start_party_combat_encounter(leader_peer_id: int, monster: Dictionary, deb
 			"current_turn_name": characters[first_turn_pid].name if characters.has(first_turn_pid) else ""
 		})
 
+func _party_member_ids(leader_id: int) -> Array:
+	"""Snapshot of a party combat's members, taken BEFORE the fight is torn down."""
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return []
+	return combat_mgr.active_party_combats[leader_id].get("members", []).duplicate()
+
+
+func _party_rotate_leader_after_combat(member_ids: Array) -> void:
+	"""v0.9.740 - DEFAULT control mode: leadership passes to the next member after every fight.
+	Only the leader can hunt, rest and move the party, so a fixed leader left one player doing
+	all the driving while everyone else watched (user 2026-09-01).
+
+	Takes the combat's MEMBER LIST rather than the leader id: the leader may have just died, in
+	which case the party has already been re-led or disbanded and the old id resolves to nothing.
+	Runs AFTER deaths are processed so leadership is never handed to someone about to fall."""
+	var leader_id := -1
+	for pid in member_ids:
+		if party_membership.has(pid):
+			leader_id = int(party_membership[pid])
+			break
+	if leader_id == -1 or not active_parties.has(leader_id):
+		return
+	var party = active_parties[leader_id]
+	if String(party.get("control_mode", "rotate")) != "rotate":
+		return
+	var order: Array = party.get("rotation_order", [])
+	if order.size() < 2:
+		return
+	var idx: int = int(party.get("rotation_idx", 0))
+	for _i in range(order.size()):
+		idx = (idx + 1) % order.size()
+		var candidate: int = int(order[idx])
+		if candidate == leader_id:
+			continue
+		if not characters.has(candidate) or not party.members.has(candidate):
+			continue   # dead, disconnected, or left
+		party["rotation_idx"] = idx
+		var new_name: String = characters[candidate].name
+		_transfer_leadership(leader_id, candidate)
+		if active_parties.has(candidate):
+			for pid in active_parties[candidate].get("members", []):
+				send_to_peer(pid, {"type": "text", "message": "[color=#66D0C0]%s takes point - they lead the party until the next fight ends.[/color]" % new_name})
+		return
+
+
 func _party_collect_fallen(leader_id: int) -> Array:
 	"""#76 v0.9.739 — CONSISTENT PERMADEATH (user decision 2026-09-01). Dropping to 0 HP in a
 	party now kills the character exactly as it does solo. Before this, a fallen member was
@@ -39603,7 +39763,10 @@ func _dev_autoparty_join(peer_id: int) -> void:
 		active_parties[other_pid] = {
 			"leader": other_pid,
 			"members": [other_pid, peer_id],
-			"formed_at": Time.get_ticks_msec()
+			"formed_at": Time.get_ticks_msec(),
+			"control_mode": "rotate",
+			"rotation_order": [other_pid, peer_id],
+			"rotation_idx": 0
 		}
 		party_membership[other_pid] = other_pid
 		party_membership[peer_id] = other_pid
@@ -39674,12 +39837,15 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 	var rentries: Array = rres.get("message_entries", [])
 	# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
 	var _fallen_rres := _party_collect_fallen(leader_id)
+	var _members_rres := _party_member_ids(leader_id)
 	if rres.get("combat_ended", false):
 		_end_party_combat_all(leader_id, rres.get("victory", false), rmsgs, rentries)
 	else:
 		_broadcast_party_update(leader_id, rmsgs, true, rentries)
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_rres)
+	# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
+	_party_rotate_leader_after_combat(_members_rres)
 
 
 func _handle_party_combat_command(peer_id: int, command: String):
@@ -39720,12 +39886,15 @@ func _handle_party_combat_command(peer_id: int, command: String):
 	var log_entries: Array = res.get("message_entries", [])
 	# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).
 	var _fallen_res := _party_collect_fallen(leader_id)
+	var _members_res := _party_member_ids(leader_id)
 	if res.get("combat_ended", false):
 		_end_party_combat_all(leader_id, res.get("victory", false), msgs, log_entries)
 	else:
 		_broadcast_party_update(leader_id, msgs, true, log_entries)
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_res)
+	# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
+	_party_rotate_leader_after_combat(_members_res)
 
 func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""
