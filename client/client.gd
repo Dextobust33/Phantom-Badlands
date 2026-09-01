@@ -1289,6 +1289,11 @@ var party_appoint_mode: bool = false    # Selecting member to appoint as leader
 # v0.9.740 — how the party picks its leader: "rotate" (passes after each fight, the default) or
 # "fixed". Shown and toggled in the Party menu so it is discoverable, not a hidden default.
 var party_control_mode: String = "rotate"
+# v0.9.740 — party notices (e.g. leadership rotation) that arrive DURING a fight or while the
+# victory screen is up. game_output is wiped by the victory screen and the refreshes behind it,
+# so they are held and printed once the combat panel closes and the player is back on the world
+# view — the window they are actually reading at that moment.
+var _pending_party_notices: Array = []
 var party_menu_mode: bool = false       # In the party management menu
 var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
 var party_waiting_for_turn: bool = false   # Not our turn in party combat
@@ -3412,6 +3417,15 @@ func _process(delta):
 		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up or _action_phase_pending or _victory_pending) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
+			# v0.9.740 — the combat panel just CLOSED: the victory screen is done and the
+			# player is looking at the world again. Flush any party notice held back for
+			# this moment (leadership rotation), so it lands in the window they are now
+			# reading instead of being wiped by the victory screen.
+			if not _combat_scene_should_show and not _pending_party_notices.is_empty():
+				var _notices := _pending_party_notices.duplicate()
+				_pending_party_notices.clear()
+				for _n in _notices:
+					display_game(String(_n))
 		# v0.9.663 — hide the map panel while the combat scene is up so combat fills
 		# the full TopSection width (GameOutputContainer expands in the HBox).
 		if map_panel and is_instance_valid(map_panel):
@@ -23449,6 +23463,17 @@ func handle_server_message(message: Dictionary):
 				display_game("[color=#808080]Follow your leader. Use More → Party for options.[/color]")
 			display_game("[color=#00BFFF]═══════════════════════════════════════[/color]")
 			update_action_bar()
+
+		"party_notice":
+			# Shown in the game window, but only once the fight's UI is out of the way.
+			var _pn := String(message.get("message", ""))
+			if _pn != "":
+				if combat_scene_panel and combat_scene_panel.visible:
+					_pending_party_notices.append(_pn)
+					if combat_scene_panel.has_method("append_log"):
+						combat_scene_panel.append_log(_pn)   # also readable in the combat log
+				else:
+					display_game(_pn)
 
 		"party_update":
 			var leader_name = message.get("leader", "")

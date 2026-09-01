@@ -39667,10 +39667,11 @@ func _party_rotate_leader(member_ids: Array) -> void:
 		_transfer_leadership(leader_id, candidate)
 		if active_parties.has(candidate):
 			for pid in active_parties[candidate].get("members", []):
-				# Sent as CHAT, not text: a `text` line goes to game_output, which the victory
-				# screen and the following refreshes wipe before anyone can read it (the
-				# Player-Visible Output Rule). Chat persists and is scrollable.
-				send_to_peer(pid, {"type": "chat", "sender": "Party", "message": "[color=#66D0C0]%s takes point - they lead the party now.[/color]" % new_name})
+				# Sent as party_notice, NOT text: a `text` line goes to game_output, which the
+				# victory screen and the refreshes behind it wipe before anyone can read it (the
+				# Player-Visible Output Rule). The client holds a party_notice until the combat
+				# panel closes, then prints it in the game window the player is reading.
+				send_to_peer(pid, {"type": "party_notice", "message": "[color=#66D0C0]%s takes point - they lead the party now.[/color]" % new_name})
 		return
 
 
