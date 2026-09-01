@@ -2418,6 +2418,13 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	# Store character in active characters
 	characters[peer_id] = character
+
+	# DEV TEST HARNESS (v0.9.739) — auto-party. Started with `-- --autoparty`, the server puts
+	# every connected test character into ONE party as they log in, so a co-op scenario is
+	# playable the moment both clients are up. Partying by hand before every test was one of
+	# the biggest repeated time sinks (user 2026-09-01). Editor/dev builds only.
+	if _dev_autoparty_enabled():
+		call_deferred("_dev_autoparty_join", peer_id)
 	peers[peer_id].character_name = char_name
 
 	# Mastery Slice 1 — backfill rank-2 worth of uses on archetype abilities
@@ -6855,9 +6862,12 @@ func handle_add_ability_card(peer_id: int, message: Dictionary):
 
 func handle_combat_use_item(peer_id: int, message: Dictionary):
 	"""Handle using an item during combat"""
-	# Items not supported in party combat
+	# #76 v0.9.739 — items now work in CO-OP too, on the same rule as solo but PER MEMBER:
+	# each member's first item of the round is free (they may still act); a second costs
+	# that member their own action for the round, and nobody else's. Five members can each
+	# use one item for free.
 	if combat_mgr.party_combat_membership.has(peer_id):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Items cannot be used in party combat.[/color]"})
+		_handle_party_combat_use_item(peer_id, message)
 		return
 
 	var item_index = message.get("index", -1)
@@ -39312,6 +39322,8 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 				_end_party_combat_all(leader_id, _dres.get("victory", false), _dmsgs, _dentries)
 			else:
 				_broadcast_party_update(leader_id, _dmsgs, true, _dentries)
+			# v0.9.739 — consistent permadeath: kill anyone who fell, AFTER the round is broadcast.
+			_party_process_permadeaths(leader_id)
 		else:
 			_broadcast_party_update(leader_id, _note, false)
 		return
@@ -39481,6 +39493,174 @@ func _start_party_combat_encounter(leader_peer_id: int, monster: Dictionary, deb
 			"current_turn_name": characters[first_turn_pid].name if characters.has(first_turn_pid) else ""
 		})
 
+func _party_process_permadeaths(leader_id: int) -> void:
+	"""#76 v0.9.739 — CONSISTENT PERMADEATH (user decision 2026-09-01). Dropping to 0 HP in a
+	party now kills the character exactly as it does solo. Before this, a fallen member was
+	merely "downed": still alive at 0 HP, healed by resting, character intact — which made
+	partying a permadeath BYPASS, the one safe way to fight anything in the game.
+
+	Called AFTER the round has been broadcast/ended, never before: handle_permadeath erases the
+	character from `characters`, and the reward + snapshot paths still need it while the round
+	is being sent out. Death saves (Guardian blessing, High King escape) are honoured because
+	this routes through the SAME handle_permadeath the solo path uses."""
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return
+	var combat: Dictionary = combat_mgr.active_party_combats[leader_id]
+	var monster_name := String(combat.get("monster", {}).get("name", "a monster"))
+	for pid in combat.get("members", []).duplicate():
+		var st = combat.member_states.get(pid, {})
+		if not st.get("dead", false) or st.get("permadeath_done", false):
+			continue
+		st["permadeath_done"] = true
+		combat_mgr.party_combat_membership.erase(pid)
+		if not characters.has(pid):
+			continue
+		var _dead_name: String = characters[pid].name
+		handle_permadeath(pid, monster_name)
+		# Guardian / High King saves leave the character ALIVE — only drop them from the
+		# party when they actually died.
+		if not characters.has(pid):
+			_party_drop_member_after_death(pid, _dead_name)
+
+
+func _party_drop_member_after_death(peer_id: int, dead_name: String) -> void:
+	"""Remove a permanently dead player from their party. Mirrors the leader/member split in
+	_cleanup_party_on_disconnect: a 2-person party disbands, a larger one hands leadership on."""
+	if not party_membership.has(peer_id):
+		return
+	var leader_id: int = party_membership[peer_id]
+	if not active_parties.has(leader_id):
+		party_membership.erase(peer_id)
+		return
+	var party = active_parties[leader_id]
+	if peer_id == leader_id:
+		if party.members.size() <= 2:
+			_disband_party(leader_id, "%s has fallen." % dead_name)
+			return
+		var new_leader_id := -1
+		for pid in party.members:
+			if pid != peer_id and characters.has(pid):
+				new_leader_id = pid
+				break
+		if new_leader_id == -1:
+			_disband_party(leader_id, "%s has fallen." % dead_name)
+			return
+		_transfer_leadership(leader_id, new_leader_id)
+		_remove_party_member(new_leader_id, peer_id)
+	else:
+		if party.members.size() <= 2:
+			_disband_party(leader_id, "%s has fallen." % dead_name)
+		else:
+			_remove_party_member(leader_id, peer_id)
+
+
+func _dev_autoparty_enabled() -> bool:
+	if not OS.has_feature("editor"):
+		return false
+	for a in OS.get_cmdline_user_args():
+		if String(a) == "--autoparty":
+			return true
+	return false
+
+
+func _dev_autoparty_join(peer_id: int) -> void:
+	"""Put this peer into the single dev party: become leader if nobody else is online, else
+	join the existing one. Deferred so the character is fully registered first."""
+	if not characters.has(peer_id) or party_membership.has(peer_id):
+		return
+	# Join an existing dev party if there is one with room.
+	for leader_id in active_parties.keys():
+		var party = active_parties[leader_id]
+		if party.get("members", []).size() < PARTY_MAX_SIZE and characters.has(leader_id):
+			_add_member_to_party(leader_id, peer_id)
+			log_message("[dev] auto-partied %s into %s's party" % [characters[peer_id].name, characters[leader_id].name])
+			return
+	# No party yet: FORM one with any other partyless player who is already online.
+	# (An earlier cut only ever joined an existing party, so both test clients sat waiting
+	# for each other and no party was created.)
+	for other_pid in characters.keys():
+		if other_pid == peer_id or party_membership.has(other_pid):
+			continue
+		active_parties[other_pid] = {
+			"leader": other_pid,
+			"members": [other_pid, peer_id],
+			"formed_at": Time.get_ticks_msec()
+		}
+		party_membership[other_pid] = other_pid
+		party_membership[peer_id] = other_pid
+		var members_info := []
+		for pid in [other_pid, peer_id]:
+			members_info.append(_build_party_member_info(pid))
+		var formed_msg := {"type": "party_formed", "leader": characters[other_pid].name, "members": members_info}
+		send_to_peer(other_pid, formed_msg)
+		send_to_peer(peer_id, formed_msg)
+		send_location_update(other_pid)
+		send_location_update(peer_id)
+		log_message("[dev] auto-formed party: %s (leader) + %s" % [characters[other_pid].name, characters[peer_id].name])
+		return
+	log_message("[dev] %s is waiting for someone to auto-party with" % characters[peer_id].name)
+
+
+func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
+	"""#76 — item use inside a shared co-op fight. The first item a member uses each round is
+	FREE (they still get to act); a second SPENDS that member's action, which locks them in
+	for the round exactly as if they had played a card. It never forces the rest of the party's
+	round — the simultaneous submit model is what makes co-op work, so one player must not be
+	able to end everyone else's decision window (user direction 2026-09-01)."""
+	var leader_id = combat_mgr.party_combat_membership.get(peer_id, -1)
+	if leader_id == -1 or not combat_mgr.active_party_combats.has(leader_id):
+		return
+	var item_index = int(message.get("index", -1))
+	var target = str(message.get("target", "self"))
+	if item_index < 0:
+		send_to_peer(peer_id, {"type": "error", "message": "Invalid item!"})
+		return
+	# v0.9.739 — the FREE item stays available after you have locked in (it costs no action).
+	# A SECOND one does not: its price is your action for the round, and you have already spent
+	# that. Refuse it instead of consuming the item for nothing — which is what would otherwise
+	# happen, since the submit below would simply be rejected.
+	var _mstate: Dictionary = combat_mgr.active_party_combats[leader_id].get("member_states", {}).get(peer_id, {})
+	if bool(_mstate.get("submitted_this_round", false)) and bool(_mstate.get("free_item_used", false)):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]You have already used your free item AND locked in your action this round — a second item would cost an action you no longer have.[/color]"})
+		return
+	var res = combat_mgr.party_use_item(leader_id, peer_id, item_index, target)
+	if not res.get("success", false):
+		send_to_peer(peer_id, {"type": "error", "message": res.get("message", "You can't use that.")})
+		return
+	var user_name: String = characters[peer_id].name if characters.has(peer_id) else "A party member"
+	# The user reads the item's own 2nd-person lines; the rest of the party gets one short
+	# 3rd-person notice so they can see why someone's HP jumped.
+	for msg in res.get("messages", []):
+		send_combat_message(peer_id, str(msg))
+	for _opid in combat_mgr.active_party_combats[leader_id].get("members", []):
+		if _opid != peer_id:
+			send_to_peer(_opid, {"type": "text", "message": "[color=#66D0C0]%s uses an item.[/color]" % user_name})
+	send_character_update(peer_id)
+	if not bool(res.get("spent_action", false)):
+		# Free use — they can still play a card this round.
+		_broadcast_party_update(leader_id, [], false)
+		return
+	# Second item this round: it costs THIS member their action. Submit it like any other
+	# action so the round resolves once everyone is in.
+	var sres = combat_mgr.submit_party_action(leader_id, peer_id, {"kind": "item"})
+	if not sres.get("ok", false):
+		_broadcast_party_update(leader_id, [], false)
+		return
+	if not sres.get("all_submitted", false):
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#66D0C0]That second item cost you your turn — waiting for the rest of your party...[/color]"})
+		_broadcast_party_update(leader_id, [], false)
+		return
+	var rres = combat_mgr.resolve_party_round(leader_id)
+	var rmsgs = rres.get("messages", [])
+	var rentries: Array = rres.get("message_entries", [])
+	if rres.get("combat_ended", false):
+		_end_party_combat_all(leader_id, rres.get("victory", false), rmsgs, rentries)
+	else:
+		_broadcast_party_update(leader_id, rmsgs, true, rentries)
+	# v0.9.739 — consistent permadeath: kill anyone who fell, AFTER the round is broadcast.
+	_party_process_permadeaths(leader_id)
+
+
 func _handle_party_combat_command(peer_id: int, command: String):
 	"""#64 Slice 3 — a party member's combat command becomes a SIMULTANEOUS submission. When
 	every alive member has locked in, resolve the round (combat_mgr.resolve_party_round) and
@@ -39521,6 +39701,8 @@ func _handle_party_combat_command(peer_id: int, command: String):
 		_end_party_combat_all(leader_id, res.get("victory", false), msgs, log_entries)
 	else:
 		_broadcast_party_update(leader_id, msgs, true, log_entries)
+	# v0.9.739 — consistent permadeath: kill anyone who fell, AFTER the round is broadcast.
+	_party_process_permadeaths(leader_id)
 
 func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""

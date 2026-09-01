@@ -5526,7 +5526,12 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 	# round proceed and the monster takes its normal turn. Stops chaining unlimited potions
 	# while the enemy never acts. free_item_used resets when the monster takes its turn.
 	if combat.get("free_item_used", false):
-		messages.append("[color=#FFA500](You've already taken a free action this round — the enemy seizes the moment![/color]")
+		if combat.get("suppress_monster_turn", false):
+			# CO-OP: the monster acts once per round in the party phase, never here. A second
+			# item costs this member their own action instead.
+			messages.append("[color=#FFA500](You've already taken a free action this round — this one costs you your turn.)[/color]")
+		else:
+			messages.append("[color=#FFA500](You've already taken a free action this round — the enemy seizes the moment![/color]")
 		var _mt = process_monster_turn(combat)
 		for _mm in _mt.get("messages", []):
 			messages.append(_mm)
@@ -5545,6 +5550,30 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		"messages": messages,
 		"combat_ended": false
 	}
+
+func party_use_item(leader_id: int, pid: int, item_index: int, target: String = "self") -> Dictionary:
+	"""#76 — use an item inside a shared co-op fight. Resolves on the member's own view (so
+	the shared monster and their engines stay consistent) and reports whether this use SPENT
+	their action: the first item each round is free, a second costs that member their turn.
+	The monster never retaliates here — the view carries suppress_monster_turn, so the party
+	monster phase remains the only place it acts."""
+	if not active_party_combats.has(leader_id):
+		return {"success": false, "message": "You are not in combat!"}
+	var combat: Dictionary = active_party_combats[leader_id]
+	var st = combat.member_states.get(pid, {})
+	if st.is_empty() or st.get("dead", false) or st.get("fled", false):
+		return {"success": false, "message": "You are out of the fight."}
+	var spent: bool = bool(st.get("free_item_used", false))
+	var view := _party_member_view(combat, pid)
+	active_combats[pid] = view
+	var res := process_use_item(pid, item_index, target)
+	_party_sync_view_back(combat, pid, view)
+	active_combats.erase(pid)
+	if not res.get("success", false):
+		return res
+	res["spent_action"] = spent
+	return res
+
 
 func process_monster_turn(combat: Dictionary) -> Dictionary:
 	"""Process the monster's attack with all ability effects"""
@@ -8868,6 +8897,11 @@ const _PARTY_DOT_KEYS := ["monster_poison", "monster_poison_duration", "monster_
 	"monster_burn_duration", "monster_bleed", "monster_bleed_duration"]
 
 const _PARTY_VIEW_SOLO_DEFAULTS := {
+	# #65/#76 — the free item use is PER MEMBER per round in co-op: five members can each
+	# use one item for free; a member spending a SECOND item pays with their own action for
+	# the round (never the whole party's). Lives here so it survives the view being rebuilt
+	# on every resolve — on the view alone it would reset each beat and never cost anything.
+	"free_item_used": false,
 	"outsmart_failed": false,
 	"ambusher_active": false,
 	"monster_went_first": false,
@@ -9118,6 +9152,18 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 	var action = st.get("queued_action", {})
 	var kind := String(action.get("kind", "attack"))
 	var pname: String = combat.characters[pid].name
+	if kind == "item":
+		# #76 — this member spent their action on a SECOND item this round (the item itself
+		# already resolved in party_use_item). No attack: the cost IS the lost action.
+		var _ihead := _party_entry(pid,
+			"[color=#8FE3FF]▶ You use an item instead of acting[/color]",
+			"[color=#8FE3FF]▶ %s uses an item instead of acting[/color]" % pname)
+		_ihead["actor"] = "member"
+		_ihead["actor_pid"] = pid
+		_ihead["head"] = true
+		_ihead["action_kind"] = "item"
+		_ihead["ability"] = ""
+		return [_ihead]
 	if kind == "flee":
 		st["fled"] = true
 		return [_party_entry(pid,
@@ -9232,6 +9278,11 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 			msgs[mi]["target_pid"] = target_pid
 		msgs[msgs.size() - 1]["hp"] = _party_hp_snapshot(combat, target_pid)
 		_party_check_deaths(combat)   # so the next iteration skips a member who just fell
+	# #65/#76 — the monster's turn ends the round, so every member's free item use returns
+	# (solo does the same at the top of process_monster_turn, which the member views skip).
+	for _fpid in combat.get("members", []):
+		if combat.member_states.has(_fpid):
+			combat.member_states[_fpid]["free_item_used"] = false
 	return msgs
 
 func _party_check_deaths(combat: Dictionary) -> void:

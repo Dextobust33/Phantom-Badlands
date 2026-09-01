@@ -1125,6 +1125,7 @@ func show_damage_on_party_member(pid: int, amount: int, is_crit: bool = false) -
 		return
 	# v0.9.739 — hold the number until the monster's trail actually reaches this card.
 	var wait := _travel_pending_s(pid)
+	_note_number_visible(pid, wait)
 	if wait > 0.0:
 		var t := get_tree().create_timer(wait)
 		t.timeout.connect(func():
@@ -1152,24 +1153,28 @@ func show_miss_on_party_member(pid: int) -> void:
 	_spawn_miss_label(_party_node_anchor(n))
 
 func update_party_member_hp(pid: int, hp: int, max_hp: int) -> void:
-	var card := party_card_for_pid(pid)
-	if card == null:
-		return
-	var bar := card.get_meta("hp_bar") as ProgressBar
-	if bar == null or not is_instance_valid(bar) or max_hp <= 0:
-		return
-	bar.max_value = max_hp
-	_animate_bar_value(bar, clampf(float(hp), 0.0, float(max_hp)))
+	# v0.9.739 — same rule as every other bar: hold the drop until the monster's trail
+	# actually reaches this card, so the number and the bar move together.
+	_apply_bar_after_travel(pid, func():
+		var card := party_card_for_pid(pid)
+		if card == null:
+			return
+		var bar := card.get_meta("hp_bar") as ProgressBar
+		if bar == null or not is_instance_valid(bar) or max_hp <= 0:
+			return
+		bar.max_value = max_hp
+		_animate_bar_value(bar, clampf(float(hp), 0.0, float(max_hp))))
 
 func update_party_companion_hp(pid: int, hp: int, max_hp: int) -> void:
-	var card := party_card_for_pid(pid)
-	if card == null:
-		return
-	var bar := card.get_meta("comp_hp") as ProgressBar
-	if bar == null or not is_instance_valid(bar) or max_hp <= 0 or not bar.visible:
-		return
-	bar.max_value = max_hp
-	_animate_bar_value(bar, clampf(float(hp), 0.0, float(max_hp)))
+	_apply_bar_after_travel(pid, func():
+		var card := party_card_for_pid(pid)
+		if card == null:
+			return
+		var bar := card.get_meta("comp_hp") as ProgressBar
+		if bar == null or not is_instance_valid(bar) or max_hp <= 0 or not bar.visible:
+			return
+		bar.max_value = max_hp
+		_animate_bar_value(bar, clampf(float(hp), 0.0, float(max_hp))))
 
 
 func _load_member_idle_frames(id: String) -> Array:
@@ -4902,13 +4907,19 @@ func populate(payload: Dictionary) -> void:
 
 
 func update_player_hp(current: int, max_hp: int) -> void:
-	_player_hp = current
-	_player_max_hp = maxi(1, max_hp)
-	if is_inside_tree():
-		_refresh_player_hp()
+	# v0.9.739 — hold the drop until the monster's incoming trail lands on us.
+	_apply_bar_after_travel("local", func():
+		_player_hp = current
+		_player_max_hp = maxi(1, max_hp)
+		if is_inside_tree():
+			_refresh_player_hp())
 
 
 func update_monster_hp(current: int, max_hp: int, known: bool, exceeded: bool = false) -> void:
+	_apply_bar_after_travel("monster", func(): _set_monster_hp_now(current, max_hp, known, exceeded))
+
+
+func _set_monster_hp_now(current: int, max_hp: int, known: bool, exceeded: bool = false) -> void:
 	_monster_hp = current
 	_monster_max_hp = maxi(1, max_hp)
 	_monster_hp_known = known
@@ -4921,11 +4932,13 @@ func set_monster_defeated() -> void:
 	"""v0.9.663 — drain the monster HP bar to 0 on the killing blow. Combat ends
 	via the victory path (no combat_update carries monster_hp=0), so without this
 	the bar keeps its last non-zero value when the monster dies."""
-	_monster_hp = 0
-	_monster_hp_known = true
-	_monster_hp_exceeded = false
-	if is_inside_tree():
-		_refresh_monster_hp()
+	# v0.9.739 — the killing blow drains only after its own animation has landed.
+	_apply_bar_after_travel("monster", func():
+		_monster_hp = 0
+		_monster_hp_known = true
+		_monster_hp_exceeded = false
+		if is_inside_tree():
+			_refresh_monster_hp())
 
 
 func update_companion(companion_data: Dictionary) -> void:
@@ -5752,7 +5765,9 @@ func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
 	# delay so the monster's lunge reads BEFORE the number flies.
 	# v0.9.739 — and hold it until the monster's incoming trail lands, same as every
 	# other combatant ("local" is the key the monster's outgoing trail stamps).
-	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), maxf(0.30, _travel_pending_s("local")))
+	var _cd := maxf(0.30, _travel_pending_s("local"))
+	_note_number_visible("local", _cd)
+	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), _cd)
 
 
 func _refresh_companion() -> void:
@@ -6365,6 +6380,7 @@ func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player
 	# number until it lands so the hit reads as CAUSED by the animation rather than arriving
 	# ahead of it. Nothing in flight -> unchanged behaviour.
 	_tdelay = maxf(_tdelay, _travel_pending_s("monster"))
+	_note_number_visible("monster", _tdelay)
 	_spawn_damage_label(anchor_global, amount, is_crit, source, false, _from, _tdelay)
 
 
@@ -6384,7 +6400,9 @@ func show_damage_on_player(amount: int, is_crit: bool) -> void:
 	# Travel from the monster (the attacker) toward the player — with a launch
 	# delay so the monster's lunge reads BEFORE the number flies.
 	# v0.9.739 — and hold it until the monster's incoming trail actually lands on us.
-	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), maxf(0.30, _travel_pending_s("local")))
+	var _pd := maxf(0.30, _travel_pending_s("local"))
+	_note_number_visible("local", _pd)
+	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), _pd)
 
 
 # DoT floating numbers — small, tag-colored "tick" labels for bleed/poison/
@@ -6759,6 +6777,45 @@ func play_travel_fx(attacker: String, fx_type: String = "physical") -> void:
 var _travel_arrival_ms: Dictionary = {}
 
 
+# v0.9.739 — sequence per bar target, so a deferred update can tell whether it is still the
+# newest one when its timer fires. Without this, waits SHRINK as a trail nears its target, so
+# a later update could land before an earlier one and the bar would jump backwards.
+var _bar_seq: Dictionary = {}
+
+
+func _apply_bar_after_travel(key, fn: Callable) -> void:
+	"""THE RULE (user, 2026-09-01): a health bar must not drop until the damage number for
+	that hit has appeared — and the number itself waits for the animation to land. So bars
+	and numbers share one gate: if a trail is still flying at `key`, hold the bar change
+	until it arrives. Nothing in flight = apply immediately (buffs, DoT ticks, regen)."""
+	var seq: int = int(_bar_seq.get(key, 0)) + 1
+	_bar_seq[key] = seq
+	# Wait for whichever comes LAST: the trail landing, or the number appearing.
+	var wait := maxf(_travel_pending_s(key), _number_pending_s(key))
+	if wait <= 0.0:
+		fn.call()
+		return
+	get_tree().create_timer(wait).timeout.connect(func():
+		if int(_bar_seq.get(key, 0)) == seq:
+			fn.call())
+
+
+# v0.9.739 — when the damage number for each target becomes VISIBLE. The number's own launch
+# delay is max(trail flight, a 0.30s hold for companion/monster hits so their lunge reads
+# first) — so gating bars on the trail alone dropped them up to 0.30s BEFORE the number they
+# belong to appeared. Bars wait on whichever is later.
+var _number_visible_ms: Dictionary = {}
+
+
+func _note_number_visible(target_key, delay_s: float) -> void:
+	_number_visible_ms[target_key] = Time.get_ticks_msec() + int(maxf(0.0, delay_s) * 1000.0)
+
+
+func _number_pending_s(target_key) -> float:
+	var left: int = int(_number_visible_ms.get(target_key, 0)) - Time.get_ticks_msec()
+	return (float(left) / 1000.0) if left > 0 else 0.0
+
+
 func _note_travel_arrival(target_key) -> void:
 	_travel_arrival_ms[target_key] = Time.get_ticks_msec() + int(TRAVEL_FX_DURATION * 1000.0)
 
@@ -6848,6 +6905,26 @@ func play_party_buff_aura(pid: int, color: Color = Color("#33CCFF")) -> void:
 	if card == null:
 		return
 	_buff_aura_on(card.get_meta("sprite") as Control, color)
+
+
+func play_party_stealth_fade(pid: int, duration: float = 2.0) -> void:
+	"""v0.9.739 — Vanish / Cloak / Teleport cast by a TEAMMATE. Fades their card SPRITE
+	(not the card, whose modulate the actor spotlight owns) so the two don't fight."""
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	var node := card.get_meta("sprite") as Control
+	if node == null or not is_instance_valid(node):
+		return
+	var t := create_tween()
+	t.tween_property(node, "modulate:a", 0.4, 0.25)
+	t.tween_interval(maxf(0.1, duration - 0.5))
+	t.tween_property(node, "modulate:a", 1.0, 0.25)
+
+
+func play_party_heal_pulse(pid: int) -> void:
+	"""v0.9.739 — green bloom on a teammate's card when they heal themselves."""
+	play_party_buff_aura(pid, Color("#55FF88"))
 
 
 func play_buff_aura(color: Color = Color("#33CCFF")) -> void:
