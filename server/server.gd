@@ -2406,6 +2406,16 @@ func handle_select_character(peer_id: int, message: Dictionary):
 		log_message("Stack consolidation: %s inventory %d → %d slots" % [char_name, pre_size, character.inventory.size()])
 		persistence.save_character(account_id, character)
 
+	# v0.9.739 — a saved in_combat=true is ALWAYS stale at this point. Combat is
+	# only restored further down via saved_combat_state (which sets the flag
+	# itself), so any leftover true came from a crash / mid-fight disconnect whose
+	# state failed to serialize. Left set, it silently locks the character out of
+	# trading, Home Stones AND co-op party combat — the party gate skips any member
+	# whose flag is set, so they get NO fight at all while the leader fights alone.
+	if character.in_combat:
+		log_message("Cleared stale in_combat flag for %s (crash/disconnect recovery)" % char_name)
+		character.in_combat = false
+
 	# Store character in active characters
 	characters[peer_id] = character
 	peers[peer_id].character_name = char_name
@@ -8570,13 +8580,20 @@ func trigger_encounter(peer_id: int):
 	if _is_party_leader(peer_id) and active_parties.has(peer_id):
 		var _cmembers: Array = [peer_id]           # leader first (becomes leader_id)
 		var _cchars: Dictionary = {peer_id: character}
+		var _cskipped: Array = []
 		for _mpid in active_parties[peer_id].get("members", []):
 			if _mpid == peer_id or not characters.has(_mpid):
 				continue
 			if combat_mgr.is_in_combat(_mpid) or characters[_mpid].in_combat:
+				# v0.9.739 — never skip a member silently. Before this, a stuck
+				# in_combat flag dropped a teammate out of the fight with NO message
+				# on either client, which looked exactly like co-op being broken.
+				_cskipped.append(characters[_mpid].name)
 				continue
 			_cmembers.append(_mpid)
 			_cchars[_mpid] = characters[_mpid]
+		if not _cskipped.is_empty():
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s could not join the fight (already in combat).[/color]" % ", ".join(_cskipped)})
 		if _cmembers.size() >= 2:
 			var _cstart = combat_mgr.start_party_combat_simul(_cmembers, _cchars, monster)
 			if _cstart.get("success", false):

@@ -1023,11 +1023,44 @@ func set_party_members(members: Array, skip_bars: bool = false) -> void:
 # the server tags each line with actor/target peer ids and the client routes here.
 # Members sit RIGHT of the enemy and face LEFT, so they lunge -X (toward it).
 # ─────────────────────────────────────────────────────────────────────────────
+# v0.9.739 — how far a non-acting party card is dimmed during another actor's beat.
+# Dim enough to direct the eye, light enough that HP bars stay readable.
+const PARTY_DIM_COLOR: Color = Color(0.62, 0.62, 0.68, 1.0)
+
+
 func party_card_for_pid(pid: int) -> PanelContainer:
 	var card = _party_card_by_pid.get(pid, null)
 	if card == null or not is_instance_valid(card) or not card.visible:
 		return null
 	return card
+
+func spotlight_party_actor(pid: int, include_local: bool = true) -> void:
+	"""v0.9.739 — co-op readability. With 4 members, their companions and the monster all
+	acting inside one round, the player could not tell WHICH card a beat belonged to. Dim
+	everyone except the combatant this beat belongs to — the one acting, or on a monster
+	beat the one being struck — so the eye is already on the right card when the lunge,
+	the trail and the damage number fire. Purely visual; resolution never depends on it.
+
+	pid == -1 means the LOCAL player is the one lit: every teammate card dims and our own
+	column stays bright. The monster's art is deliberately left alone — flash_monster and
+	the victory FX own its modulate, and dimming here would fight them."""
+	for card in _party_member_cards:
+		if card == null or not is_instance_valid(card):
+			continue
+		var card_pid: int = int(card.get_meta("pid", -1))
+		card.modulate = Color(1, 1, 1, 1) if card_pid == pid else PARTY_DIM_COLOR
+	if include_local and _player_party_box and is_instance_valid(_player_party_box):
+		_player_party_box.modulate = Color(1, 1, 1, 1) if pid == -1 else PARTY_DIM_COLOR
+
+
+func clear_party_spotlight() -> void:
+	"""Restore every combatant to full brightness (round over / combat over)."""
+	for card in _party_member_cards:
+		if card != null and is_instance_valid(card):
+			card.modulate = Color(1, 1, 1, 1)
+	if _player_party_box and is_instance_valid(_player_party_box):
+		_player_party_box.modulate = Color(1, 1, 1, 1)
+
 
 func _party_fx_lunge(node: Control) -> void:
 	if node == null or not is_instance_valid(node):
@@ -1089,6 +1122,14 @@ func show_damage_on_party_member(pid: int, amount: int, is_crit: bool = false) -
 		return
 	var n := card.get_meta("sprite") as Control
 	if n == null or not is_instance_valid(n):
+		return
+	# v0.9.739 — hold the number until the monster's trail actually reaches this card.
+	var wait := _travel_pending_s(pid)
+	if wait > 0.0:
+		var t := get_tree().create_timer(wait)
+		t.timeout.connect(func():
+			if is_instance_valid(n):
+				_spawn_damage_label(_party_node_anchor(n), amount, is_crit, "monster", true))
 		return
 	_spawn_damage_label(_party_node_anchor(n), amount, is_crit, "monster", true)
 
@@ -5709,7 +5750,9 @@ func show_damage_on_companion(amount: int, is_crit: bool = false) -> void:
 	# Pink-red color so companion hits are distinguishable from player hits.
 	# Travel from the monster (the attacker) toward the companion — with a launch
 	# delay so the monster's lunge reads BEFORE the number flies.
-	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), 0.30)
+	# v0.9.739 — and hold it until the monster's incoming trail lands, same as every
+	# other combatant ("local" is the key the monster's outgoing trail stamps).
+	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), maxf(0.30, _travel_pending_s("local")))
 
 
 func _refresh_companion() -> void:
@@ -6318,6 +6361,10 @@ func show_damage_on_monster(amount: int, is_crit: bool, source: String = "player
 	# #76 Slice 3 — a TEAMMATE's hit must launch from THEIR card, not from our own battler,
 	# so co-op passes the acting member's anchor explicitly.
 	var _from: Vector2 = from_override if from_override.x != INF else _attacker_anchor_global(source)
+	# v0.9.739 — wait for the trail. If a travel FX is still flying at the monster, hold the
+	# number until it lands so the hit reads as CAUSED by the animation rather than arriving
+	# ahead of it. Nothing in flight -> unchanged behaviour.
+	_tdelay = maxf(_tdelay, _travel_pending_s("monster"))
 	_spawn_damage_label(anchor_global, amount, is_crit, source, false, _from, _tdelay)
 
 
@@ -6336,7 +6383,8 @@ func show_damage_on_player(amount: int, is_crit: bool) -> void:
 	var anchor_global = node.global_position + Vector2(node.size.x * 0.5, node.size.y * 0.5)
 	# Travel from the monster (the attacker) toward the player — with a launch
 	# delay so the monster's lunge reads BEFORE the number flies.
-	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), 0.30)
+	# v0.9.739 — and hold it until the monster's incoming trail actually lands on us.
+	_spawn_damage_label(anchor_global, amount, is_crit, "monster", true, _attacker_anchor_global("monster"), maxf(0.30, _travel_pending_s("local")))
 
 
 # DoT floating numbers — small, tag-colored "tick" labels for bleed/poison/
@@ -6665,6 +6713,14 @@ func _random_trail_from_pool(pool: String) -> String:
 		s += pool[randi() % pool.length()]
 	return s
 
+# v0.9.739 — travel-trail flight time. Was 0.36s, which read as an instant flicker once
+# several actors were animating in sequence; the user asked for 1/3 speed so the eye can
+# actually follow a trail from its caster to its target. Every travel FX shares this, and
+# the client's PARTY_ACTOR_HEAD_DELAY is matched to it so the damage number lands as the
+# trail arrives rather than before it.
+const TRAVEL_FX_DURATION: float = 1.08
+
+
 func play_travel_fx(attacker: String, fx_type: String = "physical") -> void:
 	"""v0.9.664 — a short RANDOM ASCII trail (unique char pool + color per attack
 	type) that flies from the attacker to the target, rotated along the path,
@@ -6691,6 +6747,32 @@ func play_travel_fx(attacker: String, fx_type: String = "physical") -> void:
 	else:
 		from_node = _player_party_box
 		to_node = _monster_art_label
+	_note_travel_arrival("local" if attacker == "monster" else "monster")
+	_travel_fx_between(from_node, to_node, glyph, color)
+
+
+# v0.9.739 — when the trail currently flying at each target will LAND, in ticks-msec.
+# Keyed "monster" or a party pid. Damage numbers consult this so a hit never pops before the
+# animation that caused it arrives. The trail is 1.08s now; the log pacing that used to hide
+# the gap is much shorter than the flight (0.45s in solo), so the number would otherwise beat
+# its own animation to the target — which is exactly what made hits hard to attribute.
+var _travel_arrival_ms: Dictionary = {}
+
+
+func _note_travel_arrival(target_key) -> void:
+	_travel_arrival_ms[target_key] = Time.get_ticks_msec() + int(TRAVEL_FX_DURATION * 1000.0)
+
+
+func _travel_pending_s(target_key) -> float:
+	"""Seconds until the in-flight trail reaches target_key; 0.0 if nothing is in flight."""
+	var left: int = int(_travel_arrival_ms.get(target_key, 0)) - Time.get_ticks_msec()
+	return (float(left) / 1000.0) if left > 0 else 0.0
+
+
+func _travel_fx_between(from_node: Control, to_node: Control, glyph: String, color: Color) -> void:
+	"""v0.9.739 — the trail itself, addressed by NODE so a party card can be either end of
+	it (teammate -> monster, monster -> the teammate it is striking). play_travel_fx keeps
+	the old player/companion/monster shorthand and routes through here."""
 	if from_node == null or not is_instance_valid(from_node):
 		return
 	if to_node == null or not is_instance_valid(to_node):
@@ -6713,15 +6795,68 @@ func play_travel_fx(attacker: String, fx_type: String = "physical") -> void:
 	label.pivot_offset = label.size * 0.5
 	label.rotation = (end_pos - start_pos).angle()  # point the trail along the path
 	var t := create_tween()
-	t.tween_property(label, "position", end_pos, 0.36).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.tween_property(label, "position", end_pos, TRAVEL_FX_DURATION).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	t.tween_callback(_play_impact_burst.bind(end_pos, color))
 	t.tween_callback(label.queue_free)
+
+
+func _travel_fx_glyph_color(fx_type: String, attacker: String) -> Array:
+	"""Resolve the trail glyph + colour for an fx type, shared by every travel FX entry
+	point so a teammate's trail looks identical to the local player's."""
+	var entry: Dictionary = _TRAVEL_FX_TYPES.get(fx_type, _TRAVEL_FX_TYPES["physical"])
+	var glyph: String = _random_trail_from_pool(entry["pool"])
+	var color: Color
+	if String(entry["color"]) == "":
+		color = Color("#FFCC44")
+		if attacker == "companion":
+			color = Color("#66DDFF")
+		elif attacker == "monster":
+			color = Color("#FF5555")
+	else:
+		color = Color(entry["color"])
+	return [glyph, color]
+
+
+func play_party_travel_fx(pid: int, fx_type: String = "physical") -> void:
+	"""v0.9.739 — trail from a TEAMMATE's card to the monster. Co-op previously had no
+	travel FX for anyone but the local player, so a teammate's attack was a bare number."""
+	var card := party_card_for_pid(pid)
+	if card == null or _monster_art_label == null or not is_instance_valid(_monster_art_label):
+		return
+	var src := card.get_meta("sprite") as Control
+	var gc := _travel_fx_glyph_color(fx_type, "player")
+	_note_travel_arrival("monster")
+	_travel_fx_between(src, _monster_art_label, gc[0], gc[1])
+
+
+func play_monster_travel_fx_at(pid: int, fx_type: String = "physical") -> void:
+	"""v0.9.739 — trail from the monster to the party card it is striking, so a hit on a
+	teammate reads as coming FROM the monster instead of a number appearing from nowhere."""
+	var card := party_card_for_pid(pid)
+	if card == null or _monster_art_label == null or not is_instance_valid(_monster_art_label):
+		return
+	var dst := card.get_meta("sprite") as Control
+	var gc := _travel_fx_glyph_color(fx_type, "monster")
+	_note_travel_arrival(pid)
+	_travel_fx_between(_monster_art_label, dst, gc[0], gc[1])
+
+
+func play_party_buff_aura(pid: int, color: Color = Color("#33CCFF")) -> void:
+	"""v0.9.739 — a self-buff (forcefield, iron skin, haste...) cast by a TEAMMATE blooms
+	on THEIR card, so every client sees the same effect the caster sees."""
+	var card := party_card_for_pid(pid)
+	if card == null:
+		return
+	_buff_aura_on(card.get_meta("sprite") as Control, color)
 
 
 func play_buff_aura(color: Color = Color("#33CCFF")) -> void:
 	"""Expanding ring of glyphs around the player sprite. Used for self-buffs
 	(Haste, Iron Skin, War Cry, Berserk, Fortify)."""
-	var node = _player_visual_for_fx()
+	_buff_aura_on(_player_visual_for_fx(), color)
+
+
+func _buff_aura_on(node: Control, color: Color) -> void:
 	if node == null or not is_instance_valid(node):
 		return
 	var center_global = node.global_position + node.size * 0.5

@@ -5810,8 +5810,13 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			return {"success": true, "message": "\n".join(messages)}
 
 	# === DETERMINE NUMBER OF ATTACKS ===
+	# v0.9.739 — CO-OP CAP: in party combat the monster already acts ONCE PER PARTY CARD
+	# (_party_process_monster_phase), so a MULTI_STRIKE monster resolving 2-3 attacks inside
+	# each of those actions piles 2-3 hits onto the SAME member — the one-shot the party
+	# spread is meant to prevent. One strike per card per round; the pressure comes from the
+	# per-member action, not from stacking hits on a single target.
 	var num_attacks = 1
-	if ABILITY_MULTI_STRIKE in abilities:
+	if ABILITY_MULTI_STRIKE in abilities and not bool(combat.get("party_single_strike", false)):
 		num_attacks = randi_range(2, 3)
 		messages.append("[color=#FF4444]The %s attacks multiple times![/color]" % monster.name)
 
@@ -9082,6 +9087,10 @@ func party_flatten_meta(entries: Array) -> Array:
 		if e is Dictionary:
 			var m := {"actor": e.get("actor", "neutral"), "actor_pid": int(e.get("actor_pid", -1)),
 				"target_pid": int(e.get("target_pid", -1)), "head": bool(e.get("head", false))}
+			if e.has("action_kind"):
+				m["action_kind"] = e["action_kind"]
+			if e.has("ability"):
+				m["ability"] = e["ability"]
 			if e.has("hp"):
 				m["hp"] = e["hp"]
 			out.append(m)
@@ -9136,6 +9145,12 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 	header["actor"] = "member"
 	header["actor_pid"] = pid
 	header["head"] = true   # the actor's BEAT — the client lunges here, damage pops on the body lines
+	# v0.9.739 — the client needs to know WHAT was done, not just who did it, so it can play
+	# the matching animation on the right sprite: a targeted ability sends a trail from the
+	# actor to the monster, a self-buff (forcefield, iron skin...) blooms an aura on the
+	# actor's own card. Without this the client could only ever play a generic lunge.
+	header["action_kind"] = kind
+	header["ability"] = String(action.get("ability", "")) if kind == "ability" else ""
 	var out: Array = [header]
 	# #76 Slice 3 — every line is tagged with WHO acted so the client can animate the right
 	# sprite. Text heuristics can't do this any more: a teammate's line is 3rd person, so
@@ -9183,6 +9198,7 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 			continue   # dropped earlier in this same phase
 		var view := _party_member_view(combat, target_pid)
 		view["suppress_monster_turn"] = false
+		view["party_single_strike"] = true   # v0.9.739 — one hit per card (see process_monster_turn)
 		if upkeep_done:
 			for k in _PARTY_DOT_KEYS:
 				view[k] = 0   # already ticked this round — this action is attack-only

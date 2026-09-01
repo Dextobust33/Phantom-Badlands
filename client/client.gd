@@ -505,6 +505,10 @@ var map_sprites_overlay: Control = null
 # _sync_map_sprites_overlay skip its auto-center logic for one frame so we
 # don't fight the user's drag. Cleared on the next map update.
 var _map_scroll_user_active: bool = false
+# v0.9.739 — true only while WE drive the map scroll (auto-centering via scroll_to_line).
+# _on_map_scroll_changed must ignore our own write: the user's scroll suppresses
+# auto-centering, ours must not (and must not recurse back into the sync).
+var _map_scroll_programmatic: bool = false
 # Sprite-overlay layout-settle retry. On login the RichTextLabel hasn't laid out
 # the map yet, so get_parsed_text() can't find the " @" row and the local sprite
 # lands on stale fallback math (offset until the player takes a step). When the @
@@ -512,6 +516,12 @@ var _map_scroll_user_active: bool = false
 # the sprite snaps into place on its own. Reset each fresh map render.
 var _map_sync_settle_retry: int = 0
 const MAP_SYNC_SETTLE_RETRY_MAX := 8
+# v0.9.739 — fingerprint of the layout metrics the sprite position is derived from
+# (row index, row pixel Y, font metrics, panel size). On login these are still settling
+# a frame or two after the map text exists, so the FIRST sync places the avatar a row
+# high; it only corrected when a later redraw (a step, or another player moving) happened
+# to re-run with settled metrics. We now re-sync until the fingerprint stops changing.
+var _map_sync_last_sig: String = ""
 # v0.9.390 — capture the most recent dungeon special-tile text message so
 # display_dungeon_floor can re-append it (otherwise the immediately-following
 # dungeon_state clears game_output before the player can read it).
@@ -1678,6 +1688,11 @@ var combat_msg_queue: Array[Dictionary] = []
 # args here and replay them when _drain_combat_queue finishes.
 var _pending_victory_fx_play: bool = false
 var _pending_victory_card_payload: Variant = null
+# v0.9.739 — bumped on every combat start (solo AND party). The victory card is shown from
+# a 1s timer, which can outlive the fight that scheduled it when fights come back-to-back
+# (party rounds, flock chains). Deferred shows carry the generation they were scheduled in
+# and drop themselves if a new fight has begun, instead of covering a live battlefield.
+var _combat_generation: int = 0
 # v0.9.417 — defer the post-combat text chrome (Damage totals / LOOT / "Press
 # Space to continue...") until the message queue has fully drained, so the
 # chrome doesn't print BEFORE the player's killing-blow / monster-death
@@ -1702,6 +1717,14 @@ const INTER_ATTACK_DELAY: float = 0.45      # v0.9.439: 0.65 → 0.45
 const POST_FINAL_ATTACK_DELAY: float = 0.50 # v0.9.664: 0.25 → 0.50 (linger on the killing blow before chrome/card)
 const AMBIENT_DELAY: float = 0.30           # v0.9.664: 0.06 → 0.30 (0.06 was unreadable — non-attack lines flew by)
 const END_ACTION_PHASE_GRACE: float = 0.30  # v0.9.439: 0.60 → 0.30
+# v0.9.739 — co-op only. Pause after an actor's header line ("▶ test002 attacks") so the
+# spotlight lands, the card lunges, and the player's eye arrives before the damage does.
+# Longer than INTER_ATTACK_DELAY because the header is where the ATTENTION SHIFT happens;
+# the body lines that follow are already being watched.
+# v0.9.739 — matched to combat_scene_panel.TRAVEL_FX_DURATION (1.08s) plus a beat, so the
+# actor's trail has ARRIVED before the body line pops the damage number over its target.
+# Shorter than the trail and the number lands before the animation that caused it.
+const PARTY_ACTOR_HEAD_DELAY: float = 1.20
 
 # Per-turn one-liners (Combat Readability slice #1)
 # Buffered messages between server pulses get folded into one summary per
@@ -10216,25 +10239,33 @@ func send_combat_command(command: String):
 		if party_round_submitted:
 			return
 
-	# Start combat animation based on command
-	_start_combat_command_animation(command)
+	# #76 v0.9.739 — in CO-OP a card play is only a SUBMIT: nothing resolves until every
+	# member has locked in. Firing the attack animation here meant the player watched their
+	# swing at submit time and then, when the round actually resolved, saw a bare damage
+	# number with no animation attached to it. Defer the whole FX burst to our own beat
+	# during playback (_dispatch_party_fx head branch) — the moment the hit really lands.
+	if _in_party:
+		_party_pending_fx_cmd = command
+	else:
+		_start_combat_command_animation(command)
 
 	display_game("[color=#00FFFF]> %s[/color]" % command)
 	# v0.9.403 — Lufia II battlefield reveal: hide the party stat boxes the
 	# moment a card is played so FX play out on a clear stage. end_action_phase
 	# is triggered after the next combat_update arrives (see message handler).
-	if combat_scene_panel and combat_scene_panel.has_method("start_action_phase"):
+	if not _in_party and combat_scene_panel and combat_scene_panel.has_method("start_action_phase"):
 		combat_scene_panel.start_action_phase()
 	# COMBAT REDESIGN — play the class-appropriate battler animation on the action
 	# (melee step+swing / mage cast / ranger bow). Fires on card play so it always
 	# animates and gets a head start before a killing blow's loot screen.
-	if combat_scene_panel and combat_scene_panel.has_method("play_battler_action"):
+	# v0.9.739 — solo only; co-op replays it on our own beat (see above).
+	if not _in_party and combat_scene_panel and combat_scene_panel.has_method("play_battler_action"):
 		combat_scene_panel.play_battler_action()
 	# v0.9.664 — fire the player's ASCII travel FX HERE (card play) so it flies in
 	# sync with the attack animation. The message-timed trail lagged a full server
 	# round-trip behind the client-side animation. Companion/monster trails still
 	# fire from the message dispatch (their animations are message-timed too).
-	if combat_scene_panel and combat_scene_panel.has_method("play_travel_fx"):
+	if not _in_party and combat_scene_panel and combat_scene_panel.has_method("play_travel_fx"):
 		var _cmd_l := command.to_lower()
 		if not (_cmd_l in _NO_TRAVEL_COMMANDS):
 			combat_scene_panel.play_travel_fx("player", _travel_fx_type(_cmd_l))
@@ -10264,7 +10295,12 @@ func send_combat_command(command: String):
 			combat_scene_panel.append_log("[color=#66D0C0]⏳ Locked in — waiting for your party...[/color]")
 		update_action_bar()
 
-func _show_victory_card_deferred(payload) -> void:
+func _show_victory_card_deferred(payload, gen: int = -1) -> void:
+	# v0.9.739 — stale-fight guard: if a new combat started while this timer was pending,
+	# the card belongs to a fight that is already over. Dropping it is what keeps a party
+	# member who never pressed Space from being stuck behind last fight's rewards.
+	if gen != -1 and gen != _combat_generation:
+		return
 	if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.has_method("show_victory_card"):
 		combat_scene_panel.show_victory_card(payload)
 
@@ -22723,7 +22759,7 @@ func handle_server_message(message: Dictionary):
 						else:
 							_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 3200)
 							combat_scene_panel.visible = true
-							get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(victory_payload))
+							get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(victory_payload, _combat_generation))
 
 						# Combat scratch-off (user-requested 2026-05-14) — when
 						# the server attaches a loot_bag, open the reveal panel
@@ -23578,6 +23614,8 @@ func _process_combat_start(message: Dictionary):
 	# back-to-back) combat so it doesn't trigger in this fight.
 	_pending_victory_fx_play = false
 	_pending_victory_card_payload = null
+	_combat_generation += 1
+	_party_pending_fx_cmd = ""
 	# v0.9.418 — clear user-pause from a prior combat so the new fight isn't
 	# frozen from the very first message.
 	_combat_paused = false
@@ -27404,6 +27442,23 @@ func _handle_party_combat_start(message: Dictionary):
 	_cs_panel["monster_level"] = monster_level
 	# #76 — clear any persistent-FX / stale victory card from the previous fight so a
 	# fresh party combat starts clean (mirrors the solo combat_start reset at ~23586).
+	# v0.9.739 — that "mirrors" claim was only half true: the solo path ALSO flushes the
+	# message queue and drops the deferred victory payload, and this handler did neither.
+	# So a member who had not yet pressed Space when the leader started the next fight got
+	# last fight's rewards card re-opened on top of the live battle (the queue-empty branch
+	# of _drain_combat_queue and the 1s _show_victory_card_deferred timer both re-show it),
+	# with no way to see or reach the battlefield behind it.
+	if not combat_msg_queue.is_empty():
+		_flush_combat_queue()
+	_round_message_buffer.clear()
+	_last_combat_actor = ""
+	_pending_victory_fx_play = false
+	_pending_victory_card_payload = null
+	_combat_generation += 1
+	_party_pending_fx_cmd = ""
+	_combat_paused = false
+	if combat_scene_panel and combat_scene_panel.has_method("hide_victory_card"):
+		combat_scene_panel.hide_victory_card()
 	_post_loot_victory_persists = false
 	if combat_scene_panel and combat_scene_panel.has_method("reset_for_new_combat"):
 		combat_scene_panel.reset_for_new_combat()
@@ -33609,7 +33664,19 @@ func _display_combat_msg(combat_msg: String):
 	In condensed mode the text is buffered for a per-turn summary instead of
 	displayed directly — but FX, sounds, and HP tracking still run."""
 	var enhanced_msg = _enhance_combat_message(combat_msg)
-	if condensed_combat_log:
+	# v0.9.739 — in co-op a MEMBER's header line ("▶ test002 uses Blast") is an FX CUE, not
+	# log content: it spotlights the actor and fires their animation, and the body line that
+	# follows already names them and what happened. Printing both cost two log lines per
+	# action, which is much of why a 4-actor round was unreadable — so the header is played,
+	# not printed, leaving ONE summary line per action.
+	# The MONSTER's header is kept: it is the only line that says WHO it turned on (its body
+	# line reads "attacks but misses!" with no target in it).
+	var _pm := _party_fx_meta
+	var _skip_text: bool = (not _pm.is_empty() and bool(_pm.get("head", false))
+		and str(_pm.get("actor", "")) in ["member", "companion"])
+	if _skip_text:
+		pass
+	elif condensed_combat_log:
 		# Stash for summary; don't dump to game_output yet.
 		_round_message_buffer.append(combat_msg)
 	else:
@@ -34836,6 +34903,45 @@ func _run_combat_miss_demo() -> void:
 	display_game("[color=#888888]Miss FX demo complete.[/color]")
 
 
+func _play_party_actor_fx(pid: int, ability: String, action_kind: String) -> void:
+	"""#76 v0.9.739 — render a TEAMMATE's action on their own card: self-buffs bloom an
+	aura there, targeted actions throw a trail at the monster. Mirrors what the local
+	player sees for the same action, which is what makes a co-op round legible."""
+	if combat_scene_panel == null:
+		return
+	var key := ability.to_lower() if action_kind == "ability" else "attack"
+	if key != "attack" and key in _NO_TRAVEL_COMMANDS:
+		# Self-targeted / non-projectile abilities: bloom on the caster.
+		if combat_scene_panel.has_method("play_party_buff_aura"):
+			combat_scene_panel.play_party_buff_aura(pid)
+		return
+	if combat_scene_panel.has_method("play_party_travel_fx"):
+		combat_scene_panel.play_party_travel_fx(pid, _travel_fx_type(key))
+
+
+func _party_pid_or_local(pid: int) -> int:
+	"""Spotlight addressing: our OWN combatant is the player column, not a party card, and
+	the panel represents that as pid -1."""
+	return -1 if pid == _my_party_pid else pid
+
+
+func _play_deferred_party_self_fx() -> void:
+	"""#76 v0.9.739 — run the attack FX that send_combat_command deferred: the class
+	battler animation and the ASCII travel trail. Called from our own header beat so the
+	swing, the trail and the damage number all read as one action."""
+	var cmd := _party_pending_fx_cmd
+	_party_pending_fx_cmd = ""
+	if cmd == "" or combat_scene_panel == null:
+		return
+	_start_combat_command_animation(cmd)
+	if combat_scene_panel.has_method("play_battler_action"):
+		combat_scene_panel.play_battler_action()
+	if combat_scene_panel.has_method("play_travel_fx"):
+		var _l := cmd.to_lower()
+		if not (_l in _NO_TRAVEL_COMMANDS):
+			combat_scene_panel.play_travel_fx("player", _travel_fx_type(_l))
+
+
 func _dispatch_party_fx(combat_msg: String, damage_to_monster: int, is_crit: bool) -> bool:
 	"""#76 Slice 3 — drive a co-op line's FX from the server's actor metadata.
 
@@ -34856,12 +34962,23 @@ func _dispatch_party_fx(combat_msg: String, damage_to_monster: int, is_crit: boo
 
 	if actor == "member" or actor == "companion":
 		if actor_pid == -1 or actor_pid == _my_party_pid:
+			# v0.9.739 — OUR beat has finally arrived. send_combat_command held back the
+			# battler animation + travel FX at submit time (co-op submits do not resolve),
+			# so fire them now, on the header line, right before our damage lands.
+			if actor == "member" and is_head:
+				_play_deferred_party_self_fx()
 			return false   # our own action — the solo FX path is already correct
 		if is_head:
 			if actor == "companion":
 				combat_scene_panel.lunge_party_companion(actor_pid)
 			else:
 				combat_scene_panel.lunge_party_member(actor_pid)
+				# v0.9.739 — play WHAT they did, on their own card. A self-buff
+				# (forcefield, iron skin, haste...) blooms an aura on the caster's card so
+				# every client sees the effect the caster sees; anything targeted sends a
+				# trail from their card to the monster. Before this a teammate's turn was a
+				# lunge and a bare number, with no way to tell an attack from a spell.
+				_play_party_actor_fx(actor_pid, str(_party_fx_meta.get("ability", "")), str(_party_fx_meta.get("action_kind", "attack")))
 			return true
 		if damage_to_monster > 0:
 			var src := "companion" if actor == "companion" else "player"
@@ -34882,6 +34999,10 @@ func _dispatch_party_fx(combat_msg: String, damage_to_monster: int, is_crit: boo
 			return false   # the monster hit US — solo FX already handle our own portrait
 		if is_head:
 			combat_scene_panel.lunge_monster_forward()
+			# v0.9.739 — send the trail at the teammate being struck, so the hit reads as
+			# coming FROM the monster instead of a number appearing over a card.
+			if combat_scene_panel.has_method("play_monster_travel_fx_at"):
+				combat_scene_panel.play_monster_travel_fx_at(target_pid, "physical")
 			return true
 		if damage_to_monster > 0:
 			# Upkeep ticks (poison / burn / bleed) resolve during the monster phase but
@@ -34915,6 +35036,26 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 	# lines and would otherwise fire a teammate's attack on OUR battler.
 	if not _party_fx_meta.is_empty() and _dispatch_party_fx(combat_msg, damage_to_monster, is_crit):
 		return
+
+	# v0.9.664 — COMPANION + MONSTER ASCII travel FX: a short random glyph trail
+	# (unique char pool + color per attack type) that flies attacker→target. The
+	# PLAYER's trail fires at card-play (send_combat_command) so it syncs with the
+	# client-side attack animation instead of lagging a server round-trip behind.
+	# v0.9.739 — HOISTED to the top of the dispatch. It used to sit at the BOTTOM, after
+	# the damage numbers were already spawned, so for a companion or monster hit the trail
+	# was not yet in flight when the number asked "is anything incoming?" — the number
+	# popped first and the animation chased it. The player's trail avoided this only
+	# because it launches earlier, at card-play. Launch first, then show numbers, and the
+	# arrival-wait in combat_scene_panel does the rest for every actor alike.
+	var _tactor := _classify_combat_actor(combat_msg)
+	if _tactor == "companion" or _tactor == "monster":
+		if ("damage" in lower or "attacks" in lower or "smite" in lower
+				or "hits" in lower or "strike" in lower or "slash" in lower
+				or "bite" in lower or "claw" in lower or "stab" in lower
+				or "swing" in lower or "cleave" in lower or "bash" in lower
+				or "shoot" in lower or "pierce" in lower or "slam" in lower
+				or "hack" in lower or "burn" in lower or "blast" in lower):
+			combat_scene_panel.play_travel_fx(_tactor, _travel_fx_type(lower))
 
 	# Damage TO monster — player or companion is attacking.
 	if damage_to_monster > 0:
@@ -35131,19 +35272,6 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 			or "outsmart" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 
-	# v0.9.664 — COMPANION + MONSTER ASCII travel FX: a short random glyph trail
-	# (unique char pool + color per attack type) that flies attacker→target. The
-	# PLAYER's trail fires at card-play (send_combat_command) so it syncs with the
-	# client-side attack animation instead of lagging a server round-trip behind.
-	var _tactor := _classify_combat_actor(combat_msg)
-	if _tactor == "companion" or _tactor == "monster":
-		if ("damage" in lower or "attacks" in lower or "smite" in lower
-				or "hits" in lower or "strike" in lower or "slash" in lower
-				or "bite" in lower or "claw" in lower or "stab" in lower
-				or "swing" in lower or "cleave" in lower or "bash" in lower
-				or "shoot" in lower or "pierce" in lower or "slam" in lower
-				or "hack" in lower or "burn" in lower or "blast" in lower):
-			combat_scene_panel.play_travel_fx(_tactor, _travel_fx_type(lower))
 
 func _travel_fx_type(lower: String) -> String:
 	"""v0.9.664 — classify a combat line into a travel-FX element so the trail
@@ -35212,6 +35340,9 @@ func _drain_combat_queue():
 				var _fprompt: String = "[color=#FFD700]Press [%s] to continue...[/color]" % get_action_key_name(0)
 				_combat_text_to_outputs(_fwarn)
 				_combat_text_to_outputs(_fprompt)
+		# v0.9.739 — round over: every card back to full brightness.
+		if combat_scene_panel and combat_scene_panel.has_method("clear_party_spotlight"):
+			combat_scene_panel.clear_party_spotlight()
 		if _pending_victory_fx_play and combat_scene_panel:
 			_pending_victory_fx_play = false
 			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
@@ -35224,7 +35355,7 @@ func _drain_combat_queue():
 			# before the reward card covers the kill so it doesn't feel rushed.
 			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 3200)
 			combat_scene_panel.visible = true
-			get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(payload))
+			get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(payload, _combat_generation))
 		if combat_scene_panel and combat_scene_panel.has_method("end_action_phase_after"):
 			if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
 				# v0.9.416 — testfx pacing walkthrough has its own explicit
@@ -35237,7 +35368,17 @@ func _drain_combat_queue():
 	var raw = entry.raw
 	# #76 Slice 3 — co-op metadata for THIS beat; _dispatch_combat_fx reads it to animate
 	# the right teammate. Cleared straight after so solo lines never see stale data.
-	_party_fx_meta = entry.get("meta", {}) if entry is Dictionary else {}
+	var _beat_meta: Dictionary = entry.get("meta", {}) if entry is Dictionary else {}
+	_party_fx_meta = _beat_meta
+	# v0.9.739 — point the eye at the card this beat belongs to BEFORE its line lands.
+	# On a monster beat the actor is the monster, so spotlight its TARGET — that's the
+	# card that is about to take the hit.
+	if not _beat_meta.is_empty() and bool(_beat_meta.get("head", false)) and combat_scene_panel and combat_scene_panel.has_method("spotlight_party_actor"):
+		var _sp_actor := str(_beat_meta.get("actor", "neutral"))
+		if _sp_actor == "monster":
+			combat_scene_panel.spotlight_party_actor(_party_pid_or_local(int(_beat_meta.get("target_pid", -1))))
+		elif _sp_actor != "neutral":
+			combat_scene_panel.spotlight_party_actor(_party_pid_or_local(int(_beat_meta.get("actor_pid", -1))))
 	_display_combat_msg(raw)
 	if not _party_fx_meta.is_empty() and _party_fx_meta.has("hp"):
 		_apply_party_hp_beat(_party_fx_meta["hp"])
@@ -35259,6 +35400,20 @@ func _drain_combat_queue():
 		delay = POST_FINAL_ATTACK_DELAY if combat_msg_queue.is_empty() else INTER_ATTACK_DELAY
 	else:
 		delay = AMBIENT_DELAY
+	# v0.9.739 CO-OP PACING — the text heuristic above cannot read a co-op round. Teammate
+	# lines are written in the THIRD person ("Bo strikes the Wight"), so _classify_combat_actor
+	# scores them 'monster' or 'ambient' and hands them the 0.30s AMBIENT_DELAY. That is why a
+	# 4-actor round blurred past: most of its beats were being paced as background chatter.
+	# Drive the pacing off the server metadata instead — the same rule Slice 3 set for FX —
+	# and give each actor's header a longer beat so their turn reads as its own moment.
+	if not _beat_meta.is_empty():
+		var _b_actor := str(_beat_meta.get("actor", "neutral"))
+		if _b_actor == "neutral":
+			delay = AMBIENT_DELAY
+		elif bool(_beat_meta.get("head", false)):
+			delay = PARTY_ACTOR_HEAD_DELAY
+		else:
+			delay = POST_FINAL_ATTACK_DELAY if combat_msg_queue.is_empty() else INTER_ATTACK_DELAY
 	if is_attack:
 		_last_combat_actor = actor
 	# Always pause after showing a message — process_buffer() delivers all
@@ -35276,6 +35431,10 @@ var _last_combat_actor: String = ""
 # (who acted, who was hit, and the HP as of that beat) so the round animates actor by
 # actor instead of dumping at once. Empty for solo combat, which is untouched.
 var _party_fx_meta: Dictionary = {}
+# v0.9.739 — the card we locked in this co-op round, held so its animation can play on
+# our own beat during playback instead of at submit time. Cleared when it fires, and on
+# every combat start / round boundary so a stale command can never animate.
+var _party_pending_fx_cmd: String = ""
 var _my_party_pid: int = -1
 var _party_monster_max_hp: int = 0
 var _pending_party_final_state: Dictionary = {}
@@ -35728,6 +35887,8 @@ func _on_map_scroll_changed(new_value: float) -> void:
 	follows its tile through the scroll. The user-active flag is set so the
 	next sync skips auto-centering and respects the manual scroll position;
 	cleared on the next map update."""
+	if _map_scroll_programmatic:
+		return
 	_map_scroll_user_active = true
 	_sync_map_sprites_overlay()
 	# Clear the flag after a couple of frames so subsequent server-driven
@@ -36427,6 +36588,16 @@ func _sync_map_sprites_overlay() -> void:
 	if not is_instance_valid(map_display) or not is_instance_valid(local):
 		return
 
+	# v0.9.739 LOGIN SPRITE OFFSET — force the label to revalidate its line caches before we
+	# read ANY geometry from it. The map text has just been rebuilt at this point, and until
+	# the caches are revalidated the paragraph offsets, the scrollbar's max/page, and the
+	# offset the label actually draws at can disagree. That disagreement is the bug: at login
+	# we computed a scroll of 80 against fresh content while the label was still drawing at
+	# the previous value, leaving the avatar ~60px (about 2 rows) above its real tile until
+	# the next map redraw. get_content_height() is the cheapest call that forces validation.
+	if map_display.has_method("get_content_height"):
+		map_display.get_content_height()
+
 	var font = map_display.get_theme_font("normal_font")
 	var font_size = map_display.get_theme_font_size("normal_font_size")
 	if font == null or font_size <= 0:
@@ -36477,7 +36648,6 @@ func _sync_map_sprites_overlay() -> void:
 		_map_sync_settle_retry += 1
 		call_deferred("_sync_map_sprites_overlay")
 		return
-	_map_sync_settle_retry = 0
 	# Compute the centered pixel Y of the @ glyph's row.
 	# v0.9.347 — the half-tile offset at NPC posts (v0.9.346) was caused by
 	# the [b] post-name header: bold text renders with slightly different
@@ -36487,7 +36657,29 @@ func _sync_map_sprites_overlay() -> void:
 	# Picks up bold/center/font-size variations automatically.
 	var at_pixel_y_center: float
 	var rendered_line_h: float = line_h  # default — used by remote-player offset too
-	if at_line_idx >= 0 and map_display.has_method("get_paragraph_offset"):
+	# v0.9.739 — resolve the @ row CHARACTER-ACCURATELY. The paragraph path below counts
+	# newlines and reads get_paragraph_offset, which silently misreports whenever a map row
+	# WRAPS: a wrapped row is one paragraph but two visual lines, so the paragraph top is a
+	# line above where the @ actually renders and rendered_line_h measures the pair. That is
+	# exactly the "sprite sits a row high" symptom, and it depends on the panel width/size —
+	# which is still settling at login, and stable by the time you take a step.
+	# get_character_line() maps the @'s character index to its VISUAL line (wrap-aware), and
+	# get_line_offset/get_line_height give that line's own top and height.
+	var _row_resolved := false
+	var _at_vis_line: int = -1
+	if at_byte_pos >= 0 and map_display.has_method("get_character_line") and map_display.has_method("get_line_offset"):
+		_at_vis_line = map_display.get_character_line(at_byte_pos + 1)  # +1 = the @ itself, not the space
+		if _at_vis_line >= 0:
+			var l_top: float = map_display.get_line_offset(_at_vis_line)
+			var l_h: float = float(map_display.get_line_height(_at_vis_line))
+			if l_h <= 0.0:
+				l_h = line_h
+			rendered_line_h = l_h
+			at_pixel_y_center = l_top + l_h * 0.5
+			_row_resolved = true
+	if _row_resolved:
+		pass
+	elif at_line_idx >= 0 and map_display.has_method("get_paragraph_offset"):
 		var at_y_top: float = map_display.get_paragraph_offset(at_line_idx)
 		var paragraph_count: int = map_display.get_paragraph_count() if map_display.has_method("get_paragraph_count") else 0
 		if paragraph_count > at_line_idx + 1:
@@ -36502,27 +36694,47 @@ func _sync_map_sprites_overlay() -> void:
 		# @ glyph not found (dungeon view / pre-character-load) — legacy math.
 		at_pixel_y_center = (2 + MAP_VIEWPORT_CENTER_CELL + 0.5) * line_h
 
-	# v0.9.388 — at high map zoom the content overflows map_display's rect
-	# and the RichTextLabel scrolls internally. Auto-center the v_scroll on
-	# the @ row so the character is always visible (the previous attempt of
-	# just subtracting v_scroll left the @ off-screen because the scroll bar
-	# stayed at its default 0 position). After centering, subtract the
-	# (now-centered) scroll value so the sprite sits on the visible row.
+	# v0.9.388 — at high map zoom the content overflows map_display's rect and the
+	# RichTextLabel scrolls internally, so the sprite has to be placed against whatever
+	# scroll the label is drawing at.
+	#
+	# v0.9.739 — DRIVE THE SCROLL THROUGH THE LABEL'S OWN API, then read back what it did.
+	# Three attempts to predict the applied scroll all failed (settle-retry, the
+	# set_value_no_signal theory, and forcing cache revalidation), because Godot exposes no
+	# way to READ the offset a RichTextLabel is actually drawing at — get_visible_content_rect
+	# reports widget space, not scroll (probed 2026-09-01). Writing the scrollbar value and
+	# assuming the label agreed is the whole problem: at login it did not, leaving the avatar
+	# ~2 rows above its real tile until the next redraw.
+	# scroll_to_line() makes the LABEL do the scrolling through its own internal path, so its
+	# state and the scrollbar cannot disagree; whatever vsb.value reads afterwards is then
+	# authoritative by construction. Targeting half a panel BELOW the @ row makes the label's
+	# minimal "bring this line into view" scroll land the player near the centre.
 	var v_scroll_value: float = 0.0
 	if map_display.has_method("get_v_scroll_bar"):
 		var vsb: VScrollBar = map_display.get_v_scroll_bar()
 		if vsb != null:
-			if vsb.max_value > vsb.page:
-				# Content overflows — auto-center on the @ row. Skip while
-				# the user is actively dragging the scroll bar so we don't
-				# fight their input. _map_scroll_user_active is set briefly
-				# by _on_map_scroll_changed.
-				if not _map_scroll_user_active:
-					var ideal_scroll: float = at_pixel_y_center - map_display.size.y * 0.5
-					ideal_scroll = clampf(ideal_scroll, 0.0, vsb.max_value - vsb.page)
-					vsb.set_value_no_signal(ideal_scroll)
+			# Skip while the user is dragging the scroll bar so we don't fight their input.
+			if vsb.max_value > vsb.page and not _map_scroll_user_active and _at_vis_line >= 0 					and map_display.has_method("scroll_to_line"):
+				var _half_rows: int = int((map_display.size.y * 0.5) / maxf(1.0, rendered_line_h))
+				var _target: int = mini(_at_vis_line + _half_rows, maxi(0, map_display.get_line_count() - 1))
+				_map_scroll_programmatic = true
+				map_display.scroll_to_line(_target)
+				_map_scroll_programmatic = false
 			v_scroll_value = vsb.value
 	at_pixel_y_center -= v_scroll_value
+
+	# v0.9.739 LAYOUT SETTLE — re-sync until the measurement repeats, so a placement made
+	# against half-settled layout (login, a resize, walking into a post and gaining header
+	# lines) is corrected on the next frame instead of persisting until the next map redraw.
+	var _measure_sig := "%d|%.2f|%.2f|%.2f|%.1fx%.1f" % [at_line_idx, at_pixel_y_center,
+		line_h, char_w, map_display.size.x, map_display.size.y]
+	if _measure_sig != _map_sync_last_sig and _map_sync_settle_retry < MAP_SYNC_SETTLE_RETRY_MAX:
+		_map_sync_last_sig = _measure_sig
+		_map_sync_settle_retry += 1
+		call_deferred("_sync_map_sprites_overlay")
+	else:
+		_map_sync_last_sig = _measure_sig
+		_map_sync_settle_retry = 0
 
 	# --- Local player at center cell ---
 	var local_cls = str(character_data.get("class", ""))
