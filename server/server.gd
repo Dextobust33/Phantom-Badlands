@@ -38972,14 +38972,15 @@ func _disband_party(leader_id: int, reason: String = "Party disbanded."):
 	log_message("Party led by peer %d disbanded: %s" % [leader_id, reason])
 
 func _remove_party_member(leader_id: int, member_peer_id: int):
+	"""Remove a member from a party. Auto-disbands if only 1 left."""
 	# v0.9.740 - drop them from the rotation order too, or rotation would try to hand the
-	# party to someone who is no longer in it.
+	# party to someone who is no longer in it. Covers every removal path: leaving, being
+	# removed, disconnecting (leader or not), and dying.
 	if active_parties.has(leader_id):
 		var _ro: Array = active_parties[leader_id].get("rotation_order", [])
 		if _ro.has(member_peer_id):
 			_ro.erase(member_peer_id)
 			active_parties[leader_id]["rotation_order"] = _ro
-	"""Remove a member from a party. Auto-disbands if only 1 left."""
 	if not active_parties.has(leader_id):
 		return
 	var party = active_parties[leader_id]

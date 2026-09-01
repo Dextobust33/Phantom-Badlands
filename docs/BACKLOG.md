@@ -23,9 +23,11 @@ order is what forces revisits.
       member. Wrapping `_add_gathering_reward` covers every gathering path at once instead of
       changing ten call sites. **Crafting shares XP only** — duplicating the crafted item would
       mint N items from one set of materials
-- [ ] Verify the **leadership-transfer** path (needs a 3rd test account: 2-person parties disband
-      instead of transferring, so it is currently unexercised)
-- [ ] Live 2-client test of rotation + duplicated rewards
+- [x] Rotation survives membership **churn** — leavers are dropped from the order, joiners are
+      added, and rotation skips anyone dead/offline/departed. Verified: leavers never lead again,
+      joiners get turns, no stale ids
+- [ ] Verify the **leadership-transfer** path — 3rd test account now exists, run `party3`
+- [ ] Live test of rotation + duplicated rewards (`party3`, `gather_*`, `craft_ready`)
 
 *Rotation and rewards ship together: both edit party state and `_end_party_combat_all`, so
 splitting them means editing and re-testing the same code twice.*
@@ -39,6 +41,11 @@ splitting them means editing and re-testing the same code twice.*
 - [ ] Buffs castable on teammates (forcefield on someone else). Server-side, ability effects
       currently apply to `combat.character`, the caster — cross-targeting is a real change
 - [ ] Quests-style **invite/accept window** (the current chat/action-bar flow is clunky)
+- [ ] **Watch a teammate's minigame.** Gathering (scratch-off) and crafting (reveal panel) are
+      single-player panels driven by a payload sent to the actor alone; the rest of the party
+      only sees the result line. Since rewards now DUPLICATE, everyone is receiving what is being
+      revealed, so watching it is meaningful. Needs the server to broadcast the payload plus each
+      reveal to party members, and a read-only mode on both panels
 
 ### 3. Simulator upgrade — **blocks all balance work**
 - [ ] Teach the sim to spend **abilities and resources**. It drives real combat code but uses

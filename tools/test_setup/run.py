@@ -1,44 +1,45 @@
 #!/usr/bin/env python3
-"""One command to get a co-op test situation on screen.
+"""One command to get a test situation on screen.
 
-Applies a scenario, starts the server with the dev auto-party hook, and starts two clients
-already logged in on the test characters. Removes the repeated setup tax — signing in twice,
-partying up, walking somewhere useful — before every single test.
+Applies a scenario, starts the server with the dev auto-party hook, and starts the clients
+already logged in on the test characters. Removes the repeated setup tax - signing in two or
+three times, partying up, walking somewhere useful - before every single test.
 
-    python tools/test_setup/run.py near_death_one
+    python tools/test_setup/run.py party3
     python tools/test_setup/run.py --list
 
 Dev only: the auto-login and auto-party flags are ignored in exported builds
 (OS.has_feature("editor") is false there), so nothing here reaches players.
 """
-import hashlib, json, os, subprocess, sys, time
-
-GODOT = r"D:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe"
-PROJECT = r"C:\Users\Dexto\Documents\phantasia-revival"
-DATA = os.path.expandvars(r"%APPDATA%\Godot\app_userdata\PhantomBadlands\data")
-DEV_PASSWORD = "devtest"
-
-# account username -> character to play
-PLAYERS = [("Testing", "test02"), ("Testing2", "test002")]
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import scenario as scen  # noqa: E402
 
+GODOT = scen.GODOT
+PROJECT = scen.PROJECT
+DEV_PASSWORD = "devtest"
 
-def set_dev_passwords():
+
+def set_dev_passwords(n):
     """Point the test accounts at a known password so the clients can log themselves in.
     Mirrors persistence_manager.hash_password: sha256(salt + password), hex."""
-    path = os.path.join(DATA, "accounts.json")
-    with open(path, encoding="utf-8") as f:
+    with open(scen.ACCOUNTS, encoding="utf-8") as f:
         db = json.load(f)
+    wanted = {u for u, _, _, _ in scen.PLAYERS[:n]}
     changed = []
     for aid, a in db.get("accounts", {}).items():
-        if a.get("username") in [u for u, _ in PLAYERS]:
+        if a.get("username") in wanted:
             salt = a.get("password_salt", "")
             a["password_hash"] = hashlib.sha256((salt + DEV_PASSWORD).encode()).hexdigest()
             changed.append(a["username"])
-    with open(path, "w", encoding="utf-8") as f:
+    with open(scen.ACCOUNTS, "w", encoding="utf-8") as f:
         json.dump(db, f, indent="\t")
     print("  dev password set for: %s" % ", ".join(changed))
 
@@ -53,9 +54,9 @@ def wait_for_server(timeout=25):
 
 
 def live_instances():
-    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq godot.windows.opt.tools.64.exe", "/FO", "CSV"],
-                         capture_output=True, text=True).stdout
-    return max(0, len([l for l in out.splitlines() if l.startswith('"godot')]))
+    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq godot.windows.opt.tools.64.exe",
+                          "/FO", "CSV"], capture_output=True, text=True).stdout
+    return len([l for l in out.splitlines() if l.startswith('"godot')])
 
 
 def main():
@@ -66,16 +67,18 @@ def main():
         print("unknown scenario %r (use --list)" % name)
         return 1
     if live_instances():
-        print("REFUSING: %d Godot instance(s) already running. Close them first — a second server "
-              "cannot bind 9080 and the clients would silently attach to the OLD one." % live_instances())
+        print("REFUSING: %d Godot instance(s) already running. Close them first - a second "
+              "server cannot bind 9080, and the port check then sees the OLD server and reports "
+              "success while the clients attach to stale code." % live_instances())
         return 1
 
-    print("[1/4] scenario")
+    n = scen.players_for(name)
+    print("[1/4] scenario (%d players)" % n)
     sys.argv = [sys.argv[0], name]
     if scen.main() != 0:
         return 1
     print("[2/4] credentials")
-    set_dev_passwords()
+    set_dev_passwords(n)
 
     print("[3/4] server (auto-party)")
     subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
@@ -86,14 +89,14 @@ def main():
     print("  listening on 9080")
 
     print("[4/4] clients")
-    for i, (user, char) in enumerate(PLAYERS):
+    for i, (user, acc, cname, fn) in enumerate(scen.PLAYERS[:n]):
         if i:
             time.sleep(6)   # CONNECTION_RATE_LIMIT is 5s; back-to-back launches get rejected
         subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
                           "--resolution", "1280x720", "client/client.tscn", "--",
-                          "--user=%s" % user, "--pass=%s" % DEV_PASSWORD, "--char=%s" % char])
-        print("  %s as %s" % (user, char))
-    print("\nready — both clients auto-login, auto-select, and auto-party.")
+                          "--user=%s" % user, "--pass=%s" % DEV_PASSWORD, "--char=%s" % cname])
+        print("  %s as %s" % (user, cname))
+    print("\nready - clients auto-login, auto-select, and auto-party.")
     return 0
 
 
