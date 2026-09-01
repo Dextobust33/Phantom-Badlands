@@ -21252,6 +21252,9 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		job_xp_result = character.add_job_xp(session_job, total_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, session_job, total_xp, "gathering")
+	# v0.9.740 - a gathering session is a shared activity too: hand leadership on so the
+	# same player is not left driving every gather as well as every fight.
+	_party_rotate_leader([peer_id])
 	# Compute character XP. Prefer add_job_xp's returned value (any committed
 	# job path); otherwise apply the legacy taper to total_xp (uncommitted
 	# past trial cap, where add_job_xp returns 0 char_xp_gained).
@@ -22465,6 +22468,9 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
+	# v0.9.740 - a gathering session is a shared activity too: hand leadership on so the
+	# same player is not left driving every gather as well as every fight.
+	_party_rotate_leader([peer_id])
 	var char_xp = job_result.get("char_xp_gained", 0)
 	if char_xp == 0 and total_job_xp > 0:
 		var taper = 1.0 if job_level <= 20 else (0.5 if job_level <= 50 else 0.2)
@@ -22939,6 +22945,9 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
+	# v0.9.740 - a gathering session is a shared activity too: hand leadership on so the
+	# same player is not left driving every gather as well as every fight.
+	_party_rotate_leader([peer_id])
 	var char_xp = job_result.get("char_xp_gained", 0)
 	# Always award character XP for gathering even if job XP is at trial cap.
 	# Job commitment gates job-level progression, not character progression.
@@ -39446,7 +39455,7 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 			# Now that the round has been sent, run their deaths.
 			_party_kill_fallen(_fallen_dres)
 			# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
-			_party_rotate_leader_after_combat(_members_dres)
+			_party_rotate_leader(_members_dres)
 		else:
 			_broadcast_party_update(leader_id, _note, false)
 		return
@@ -39623,8 +39632,9 @@ func _party_member_ids(leader_id: int) -> Array:
 	return combat_mgr.active_party_combats[leader_id].get("members", []).duplicate()
 
 
-func _party_rotate_leader_after_combat(member_ids: Array) -> void:
-	"""v0.9.740 - DEFAULT control mode: leadership passes to the next member after every fight.
+func _party_rotate_leader(member_ids: Array) -> void:
+	"""v0.9.740 - DEFAULT control mode: leadership passes to the next member after every shared
+	ACTIVITY - a fight or a gathering session (user 2026-09-01).
 	Only the leader can hunt, rest and move the party, so a fixed leader left one player doing
 	all the driving while everyone else watched (user 2026-09-01).
 
@@ -39657,7 +39667,10 @@ func _party_rotate_leader_after_combat(member_ids: Array) -> void:
 		_transfer_leadership(leader_id, candidate)
 		if active_parties.has(candidate):
 			for pid in active_parties[candidate].get("members", []):
-				send_to_peer(pid, {"type": "text", "message": "[color=#66D0C0]%s takes point - they lead the party until the next fight ends.[/color]" % new_name})
+				# Sent as CHAT, not text: a `text` line goes to game_output, which the victory
+				# screen and the following refreshes wipe before anyone can read it (the
+				# Player-Visible Output Rule). Chat persists and is scrollable.
+				send_to_peer(pid, {"type": "chat", "sender": "Party", "message": "[color=#66D0C0]%s takes point - they lead the party now.[/color]" % new_name})
 		return
 
 
@@ -39846,7 +39859,7 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_rres)
 	# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
-	_party_rotate_leader_after_combat(_members_rres)
+	_party_rotate_leader(_members_rres)
 
 
 func _handle_party_combat_command(peer_id: int, command: String):
@@ -39895,7 +39908,7 @@ func _handle_party_combat_command(peer_id: int, command: String):
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_res)
 	# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
-	_party_rotate_leader_after_combat(_members_res)
+	_party_rotate_leader(_members_res)
 
 func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""
@@ -40086,6 +40099,10 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 				_end_msg["victory_payload"] = member_payloads[pid]
 			send_to_peer(pid, _end_msg)
 			send_character_update(pid)
+			# v0.9.740 - and redraw where they ARE. Without this the client keeps showing
+			# whatever screen it had before the fight, so a player who fought next to a post
+			# was left staring at the post interior while standing outside it.
+			send_location_update(pid)
 			save_character(pid)
 		combat_mgr.party_combat_membership.erase(pid)
 	combat_mgr.active_party_combats.erase(leader_id)

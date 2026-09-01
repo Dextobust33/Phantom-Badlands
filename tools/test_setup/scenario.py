@@ -106,6 +106,12 @@ SCENARIOS = {
             "and 3-way rotation - a 2-person party disbands instead of transferring.",
         players=3, apply=lambda c: c.update({"current_hp": c.get("max_hp", 100)})),
 
+    "party3_deadly": dict(
+        doc="THREE members at 1 HP in a level ~134 zone. The leader dies and the party should "
+            "TRANSFER leadership rather than disband - the path a 2-person party cannot reach.",
+        players=3, at=(250, -150),
+        apply=lambda c: c.update({"current_hp": 1})),
+
     "gather_water": dict(
         doc="Party standing on water with rods - for fishing and the party reward share.",
         players=2, at=TILES["water"],
