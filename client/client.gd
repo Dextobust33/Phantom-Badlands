@@ -28138,8 +28138,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.739 — Co-op combat you can follow, party items, party permadeath.
+	display_game("[color=#00FF00]v0.9.739[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ CO-OP FIGHTS YOU CAN ACTUALLY FOLLOW.[/color] A party round used to blur past — everyone's attacks resolving at once, numbers landing before the animations that caused them, health bars already emptied by the time you looked. Now the round plays out [b]one actor at a time[/b]: the acting hero is [b]spotlit[/b] while everyone else dims, their effect [b]flies to its target[/b] (three times slower, so you can actually track it), the damage number pops [b]when it lands[/b], and only then does the health bar drop. One clean beat per action.")
+	display_game("  [color=#1EFF00]◆ See what your allies are casting.[/color] A teammate's Bolt used to be a shrug and a number. Now their spells and buffs [b]play on their own card[/b] — a forcefield blooms on the caster, an attack throws its trail at the monster — so you can read what your party is doing at a glance.")
+	display_game("  [color=#1EFF00]◆ Use items in party fights.[/color] Items were [b]blocked entirely[/b] in a party. Now each member's [b]first item each round is free[/b] (you can still play a card), and a second costs [b]only that member[/b] their action — five people can each drink a potion without anyone losing their turn.")
+	display_game("  [color=#FF4444]◆ Death in a party is real death.[/color] Falling in a party fight left you [b]alive at 0 HP[/b], healed up by resting — so partying was a way to dodge permadeath entirely. It now kills your character exactly as it does solo. Bring potions.")
+	display_game("  [color=#1EFF00]◆ Fixes.[/color] Being in a party could [b]silently exclude you from every fight[/b] if a past crash left a stuck flag (which also blocked trading and Home Stones). A multi-strike monster could stack all its hits on [b]one[/b] party member. The victory screen could get [b]stuck over the next battle[/b]. And logging out wounded with good gear used to [b]heal you to full[/b] on your next login.")
+	display_game("")
+
 	# v0.9.738 — Real co-op party combat.
-	display_game("[color=#00FF00]v0.9.738[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.738[/color]")
 	display_game("  [color=#FF8000]★ FIGHT TOGETHER — FOR REAL.[/color] Party up and walk into a monster: you now all fight [b]ONE shared enemy[/b] instead of each being shunted into your own private copy of it. Everyone [b]locks in their card at the same time[/b], then the round plays out in [b]speed order[/b] — each hero and companion steps up, swings, and the health bars drain one after another. You can finally [b]SEE your teammates[/b] and their companions in the fight, with their own gear and their own HP. No setting to flip — just be in a party.")
 	display_game("  [color=#1EFF00]◆ Monsters fight the whole party now.[/color] A group used to trivialise anything: the enemy got [b]one swing per round[/b] no matter how many of you showed up, so a party of four each took a quarter of the heat. It now [b]acts against every hero (or their companion) each round[/b] — the same pressure you'd feel solo, without inflating its damage into one-shots.")
 	display_game("  [color=#1EFF00]◆ The battle log says WHO did what.[/color] Every player used to read the exact same 'you hit for 15' — impossible to tell your hit from an ally's. Now your own actions still read as [b]you[/b], and everyone else's are [b]named[/b] ('Kira unleashes chaos', 'Kira's Wolf Pup attacks').")
@@ -31334,6 +31343,17 @@ func show_help():
 [b][color=#FFD700]══ ⚜ PATHS (TALENT TREE) ══[/color][/b]
 [color=#AAAAAA]Permanent talents for this life. Open via [/color][color=#FFD700]Stats → ⚜ Paths[/color][color=#AAAAAA]. Earn 1 point per 5 levels + 1 per feat (first dungeon/boss/Empowered/3-mod/100 kills/apex kill).[/color]
 [color=#AAAAAA]3 branches per archetype, unlock top-down, every node costs 1 point. Branch [color=#FFB74D]★ keystones[/color] trade power for a downside. Class keystone unlocks at 8 points spent. Choices are permanent — full clear is impossible, build with intent![/color]
+
+[b][color=#FFD700]══ PARTY COMBAT ══[/color][/b]
+Party up and hit a monster together and you all fight [b]ONE shared enemy[/b]. Everyone locks in a
+card at the same time, then the round plays out actor by actor in speed order.
+[color=#00FFFF]The monster acts against EVERY member each round[/color] (you or your companion) — a party is not
+a way to take less heat. It lands at most one hit per member per round.
+[color=#00FFFF]Items:[/color] your FIRST item each round is free and you can still play a card. A SECOND item
+costs [b]you[/b] your action for that round — nobody else's.
+[color=#FF6666]Death is still permanent in a party.[/color] Falling in a party fight kills your character exactly
+as it would solo — your allies fight on without you.
+XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 
 [b][color=#FFD700]══ ITEMS ══[/color][/b]
 [color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
