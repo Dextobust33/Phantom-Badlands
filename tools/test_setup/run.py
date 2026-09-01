@@ -94,7 +94,11 @@ def main():
             time.sleep(6)   # CONNECTION_RATE_LIMIT is 5s; back-to-back launches get rejected
         subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
                           "--resolution", "1280x720", "client/client.tscn", "--",
-                          "--user=%s" % user, "--pass=%s" % DEV_PASSWORD, "--char=%s" % cname])
+                          "--user=%s" % user, "--pass=%s" % DEV_PASSWORD, "--char=%s" % cname,
+                          # Force the LOCAL server. The client remembers the last host it used,
+                          # so one manual connect to production silently sends every later test
+                          # run there - where these accounts do not exist.
+                          "--server=localhost"])
         print("  %s as %s" % (user, cname))
     print("\nready - clients auto-login, auto-select, and auto-party.")
     return 0

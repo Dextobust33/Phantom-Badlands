@@ -5331,7 +5331,7 @@ func _dev_auto_args() -> Dictionary:
 	var out := {}
 	for a in OS.get_cmdline_user_args():
 		var arg := String(a)
-		for key in ["user", "pass", "char"]:
+		for key in ["user", "pass", "char", "server"]:
 			if arg.begins_with("--%s=" % key):
 				out[key] = arg.substr(key.length() + 3)
 	return out
@@ -26689,6 +26689,25 @@ func show_connection_panel():
 		char_select_panel.visible = false
 
 func connect_to_server():
+	# v0.9.740 DEV HARNESS — `-- --server=localhost` forces the target. The from-source client
+	# REMEMBERS THE LAST HOST, and all clients share one settings file, so a single manual
+	# connect to the live server silently points every later test run at PRODUCTION: the test
+	# accounts do not exist there, logins fail, and the cause looks like anything but this.
+	# (This exact trap has cost hours before.) Editor/dev builds only.
+	if _dev_auto.is_empty():
+		_dev_auto = _dev_auto_args()
+	if _dev_auto.has("server"):
+		var _target := String(_dev_auto["server"])
+		var _port := server_port
+		if ":" in _target:
+			var _bits := _target.split(":")
+			_target = _bits[0]
+			_port = int(_bits[1])
+		if _target != server_ip or _port != server_port:
+			server_ip = _target
+			server_port = _port
+		display_game("[color=#8FE3FF][dev] target %s:%d[/color]" % [server_ip, server_port])
+
 	var status = connection.get_status()
 
 	if status == StreamPeerTCP.STATUS_CONNECTED:

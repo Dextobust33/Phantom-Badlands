@@ -154,6 +154,9 @@ stays **solo-possible**; a party is a force multiplier, never a requirement.*
 - Multiple saved decks, swap-on-the-fly, true drag-and-drop (needs server work)
 
 ## Watch items (not tasks — things that must not regress)
+- **The from-source client remembers the last host** and all clients share one settings file, so
+  a single manual connect to production silently sends later local test runs to the LIVE server.
+  The harness forces `--server=localhost` and the client prints its target; don't remove that
 - **Permadeath may change** — do not harden "death is permanent" into copy or design pillars
 - **Archive with discussion** — removing game elements is allowed, but discuss first; improving
   beats removing. Crafting was flagged as "not in a good spot at all"
