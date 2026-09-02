@@ -79,6 +79,7 @@ func _audit_registry() -> Dictionary:
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"roles": ["elite/boss fights vs their ROLE_TARGETS", run_role_audit],
+		"xp": ["how many fights to level, and what is the best way", run_xp_audit],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
@@ -1011,6 +1012,117 @@ func run_role_audit():
 				cost_tot / n, 100.0 * float(tgt.get("danger", 0.0)), int(100.0 * wins / n)])
 	print("=====================================================================
 ")
+
+func _xp_to_next(level: int) -> float:
+	# The LIVE formula. character.gd also contains check_level_up() using
+	# pow(level+1, 2.5) * 100 with a small override table, but nothing calls it — the
+	# path that actually runs is level_up() setting experience_to_next_level.
+	# Flagged rather than used: if anything ever calls the dead one, levelling changes
+	# by orders of magnitude at high level.
+	return pow(float(level + 1), 2.2) * 50.0
+
+func _fight_for_xp(level: int, klass: String, role: String, monster_level: int) -> Dictionary:
+	# One fight. Returns the XP the kill is WORTH, whether the player won, and the turns.
+	#
+	# IMPORTANT: XP is NOT read as a delta on the character. Measured 2026-09-02 — the solo
+	# XP grant does not happen inside combat_manager at all (neither the killing blow nor
+	# end_combat moves character.experience); combat_manager returns the reward and
+	# server.gd applies it. A simulator that drives the shared combat code therefore cannot
+	# observe it, and an earlier version of this audit that tried reported nonsense
+	# (~1 fight per level at every level). So the XP is computed from the monster's own
+	# experience_reward plus the level-gap multiplier from combat_manager, which is the
+	# same arithmetic the server performs.
+	var ch = make_char(level, "average", klass)
+	var monster := make_monster(monster_level, role, 1.0)
+	var reward: float = float(monster.get("experience_reward", 0))
+	ch.in_combat = false
+	combat_mgr.start_combat(0, ch, monster)
+	if not combat_mgr.active_combats.has(0):
+		return {"xp": 0.0, "win": false, "turns": 0}
+	var combat = combat_mgr.active_combats[0]
+	var turns := 0
+	while turns < 400:
+		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+			break
+		turns += 1
+		if combat.get("player_can_act", true):
+			match ch.get_class_path():
+				"trickster": _player_act_trickster(combat, ch)
+				"mage": _player_act_mage(combat, ch)
+				_: _player_act(combat, ch)
+		if int(monster.get("current_hp", 0)) <= 0:
+			break
+		combat_mgr.process_monster_turn(combat)
+	var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+	combat_mgr.end_combat(0, won, false)
+	# Mirror combat_manager's level-gap XP scaling (sqrt bonus above level, graduated
+	# penalty below with a 40% floor), then its flat +10% boost.
+	var diff: int = int(monster_level) - level
+	var mult := 1.0
+	if diff > 0:
+		mult = 1.0 + sqrt(float(diff) / (10.0 + float(level) * 0.05)) * 0.7
+	elif diff < 0:
+		var under: float = float(-diff)
+		var threshold: float = 5.0 + float(level) * 0.03
+		if under > threshold:
+			mult = maxf(0.4, 1.0 - minf(0.6, (under - threshold) * 0.03))
+	var xp: float = reward * mult * 1.10 if won else 0.0
+	return {"xp": xp, "win": won, "turns": turns}
+
+func run_xp_audit():
+	# #6 (user question 2026-09-02) — how long does levelling actually take, and what is
+	# the best way to do it? Reports fights-to-level per role at each level, measured from
+	# the real reward path rather than from the formulas.
+	var samples := 8
+	print("\\n===== #6 XP AUDIT: how many fights to gain a level? =====")
+	print("XP is read as the delta on a real character after a real fight, so every live")
+	print("multiplier is included. Losses count as fights too — 'fights' is the expected")
+	print("number INCLUDING the ones you lose, which is what a player actually experiences.")
+	print("%-8s %12s %10s %10s %10s %10s" % ["Level", "XP needed", "normal", "empowered", "elite", "boss"])
+	for lvl in [1, 5, 10, 25, 50, 100, 250, 1000, 5000]:
+		var need := _xp_to_next(lvl)
+		var row := "%-8d %12.0f" % [lvl, need]
+		for role in ["normal", "empowered", "elite", "boss"]:
+			var xp_tot := 0.0
+			var n := 0
+			for klass in ["Fighter", "Wizard", "Thief"]:
+				for i in range(samples):
+					var r := _fight_for_xp(lvl, klass, role, lvl)
+					xp_tot += float(r.xp)
+					n += 1
+			var per_fight: float = xp_tot / maxf(1.0, float(n))
+			if per_fight <= 0.0:
+				row += "%10s" % "--"
+			else:
+				row += "%10.1f" % (need / per_fight)
+		print(row)
+	print("")
+	print("--- Is fighting ABOVE or BELOW your level better? (L50 and L1000) ---")
+	print("XP/fight counts losses as zero, so it already prices in the risk of dying.")
+	print("XP/turn is the throughput measure — how fast you level per unit of time spent.")
+	print("%-8s %-10s %8s %10s %10s %10s %10s" % ["Level", "monster", "win%", "XP/fight", "XP/turn", "turns", "fights/lv"])
+	for lvl in [50, 1000]:
+		var need := _xp_to_next(lvl)
+		for mult in [0.25, 0.5, 1.0, 1.5, 2.0, 3.0]:
+			var mlvl: int = maxi(1, int(round(float(lvl) * mult)))
+			var xp_tot := 0.0
+			var turn_tot := 0.0
+			var wins := 0
+			var n := 0
+			for klass in ["Fighter", "Wizard", "Thief"]:
+				for i in range(samples):
+					var r := _fight_for_xp(lvl, klass, "normal", mlvl)
+					xp_tot += float(r.xp)
+					turn_tot += float(r.turns)
+					if r.win:
+						wins += 1
+					n += 1
+			var per_fight: float = xp_tot / maxf(1.0, float(n))
+			print("%-8d %-10s %7d%% %10.0f %10.1f %10.1f %10s" % [
+				lvl, "x%.2f" % mult, int(100.0 * wins / maxi(1, n)), per_fight,
+				xp_tot / maxf(1.0, turn_tot), turn_tot / maxf(1.0, float(n)),
+				("%.0f" % (need / per_fight)) if per_fight > 0.0 else "--"])
+	print("=====================================================================\\n")
 
 func run_reference_curve():
 	print("\n===== #6 REFERENCE-PLAYER CURVE (the anchor for the monster model) =====")

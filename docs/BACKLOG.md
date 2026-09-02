@@ -405,10 +405,81 @@ leading fix — not because high-tier monsters are individually weak.
       Sim audits: `-- refcurve` (player curve), `-- refcal` (calibrate against real fights),
       `-- refval` (validate), `-- selection` (sawtooth + variance regression test).
 
-- [ ] **Re-tune elite / boss / variant multipliers against the corrected baseline.** They were
-      sized against the OLD baseline, which was too weak, so they compensated. On a correctly
-      sized monster they now stack too high — the first run showed elite fights at 0% win at L1.
-      This is the immediate next step and the model is not shippable without it
+- [x] **Elite / boss / variant re-tuned against the corrected baseline (2026-09-02).** They had
+      been sized against the old, too-weak baseline and inflated to compensate (Champion HP was
+      raised 1.5 -> 3.5 in v0.9.700). Stacked on a correct baseline they made elites unwinnable
+      — **0% win at L1**. Roles now state a target fight length and cost and the multipliers are
+      derived: `hp_mult = turns_role/turns_normal`, `str_mult = (danger_role/danger_normal) *
+      (turns_normal/turns_role)`. The strength term is the one that is easy to get wrong by
+      hand and is why the old numbers compounded: damage taken is strength x turns, so making a
+      monster tankier **already** makes it more dangerous — the old x3.5 HP with x1.3 STR came
+      to ~4.5x a normal fight's cost rather than the intended 1.75x. `ROLE_TARGETS`: normal
+      5t/40%, empowered 7t/55%, elite 9t/70%, boss 14t/85%. **Measured after: elites 46-80% win
+      (was 0%), bosses 33-83%.** The sim reads `role_multipliers()` from the game rather than
+      mirroring constants, so the two cannot drift apart again. Regression test: `-- roles`
+
+**XP economy — measured 2026-09-02 (`-- xp`). Headline: the XP curve is HEALTHY. The
+problem is what it incentivises.**
+
+Fights needed to gain one level, same-level monsters, across the whole range:
+
+| Level | XP needed | normal | empowered | elite | boss |
+|-------|-----------|--------|-----------|-------|------|
+| L1 | 230 | 42 | 45 | 60 | 51 |
+| L50 | 285,512 | 39 | 54 | 61 | 70 |
+| L1000 | 199,491,766 | 31 | 33 | 34 | 37 |
+| L5000 | 6,869,024,800 | 34 | 36 | 38 | 49 |
+
+**30-70 fights per level, flat from L1 to L5000.** That is close to the documented ~45
+target and, more importantly, it does not drift with level. XP scaling needs no work.
+
+**But the level-gap incentive is inverted, and permadeath makes it dangerous.** XP per
+fight against monsters at a multiple of the player's level (losses counted as zero XP):
+
+| Player | monster | win% | XP/fight | fights/level |
+|--------|---------|------|----------|--------------|
+| L50 | x0.25 | 91% | 222 | **1285** |
+| L50 | x0.50 | 100% | 1,056 | 270 |
+| L50 | x1.00 | 75% | 7,808 | 37 |
+| L50 | x2.00 | 8% | 10,094 | 28 |
+| L50 | **x3.00** | **12%** | 39,601 | **7** |
+| L1000 | x1.00 | 91% | 6,678,136 | 30 |
+| L1000 | **x3.00** | **12%** | 62,551,522 | **3** |
+
+Two conclusions, pulling in opposite directions:
+- **Under-level farming is already well punished** — fighting things at a quarter of your
+  level takes ~1300 fights per level against ~35. This is the reward gradient that item 6
+  wanted, and it means the safe-pocket concern near posts is NOT an XP exploit. Good news
+  that did not need designing
+- **Over-level fighting is wildly over-rewarded.** The optimal strategy by raw throughput
+  is to attack monsters **3x your level at a 12% win rate** — 10x faster levelling than
+  fighting fair. The sqrt over-level bonus compounds with the monster's own level-scaled
+  base XP, so the reward outruns the falling win rate
+
+**That is only optimal if losing is cheap, and under permadeath it is the opposite of
+cheap.** An 88% loss rate is character suicide. So the game is currently telling an
+optimising player to do the single most destructive thing available. Either:
+- the over-level XP bonus is flattened so fair fights are competitive, or
+- losing is made survivable (reliable flee), making the gamble a real choice, or
+- both, deliberately — the gamble is a fine *option*, it just should not be the best one
+
+- [ ] Decide which, then re-run `-- xp`. This interacts with the Trickster's Outsmart
+      identity (its whole design is the over-level gamble) and with 12b's loop, where
+      pushing out "as far as you can survive" is the intended pressure
+
+**Two code-level notes found on the way, neither fixed yet:**
+- [ ] `character.gd::check_level_up()` computes the requirement as `pow(level+1, 2.5) * 100`
+      with a small override table, while the live path (`level_up()` setting
+      `experience_to_next_level`) uses `pow(level+1, 2.2) * 50`. **`check_level_up()` is dead
+      — nothing calls it.** Left in place it is a trap: at L1000 the two differ by ~30x, so
+      anything that ever calls it silently rewrites progression. Delete it or reconcile it
+- [ ] **The simulator cannot observe XP grants.** Neither the killing blow nor `end_combat`
+      moves `character.experience` in the solo path — combat_manager returns the reward and
+      `server.gd` applies it. An earlier version of this audit read XP as a delta on the
+      character and reported ~1 fight per level at every level, which was pure measurement
+      error. The audit now computes XP from the monster's own `experience_reward` plus
+      combat_manager's level-gap arithmetic. Worth remembering for any future reward work:
+      **rewards live server-side and the sim is blind to them**
 - [ ] **Widen calibration sample size.** 24 fights per level per pass leaves visible noise (one
       L1000 pass read 20 turns against a converged 3-5). Raise it before treating the numbers as
       final
