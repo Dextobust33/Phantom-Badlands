@@ -21321,7 +21321,21 @@ func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
 	if base_level < 1:
 		base_level = 1
 
-	# 4. Compute the three ratios and scale.
+	# 4. Compute the ratios and scale.
+	# #6 (2026-09-02) — the server now derives monster HP from the reference-player curve
+	# (monster_database.compute_anchored_stats), NOT from base_hp x tiered_scale x
+	# hp_multiplier. When that curve is available the level ratio comes straight from it,
+	# so client and server read ONE source of truth instead of the client re-deriving
+	# server maths. That mirroring had already drifted before this change — the copy below
+	# still used 2.0 + 5.0*atk/(150+atk) while the server had moved to 2.8 + 7.0*... — which
+	# is exactly why estimates were reported 50-200% off in v0.9.591.
+	var v_ratio: float = target_variant_mult / best_known_variant_mult if best_known_variant_mult > 0.0 else 1.0
+	var curve_ratio: float = _reference_hp_ratio(best_known_level, enemy_level)
+	if curve_ratio > 0.0:
+		return int(float(best_known_hp) * curve_ratio * v_ratio)
+
+	# Legacy fallback: only reached if the reference curve is unavailable, in which case the
+	# server is also on legacy scaling and these formulas are the correct mirror again.
 	var t_known = _calculate_tiered_stat_scale_from_base(base_level, best_known_level)
 	var t_target = _calculate_tiered_stat_scale_from_base(base_level, enemy_level)
 	var m_known = _calculate_hp_multiplier(best_known_level)
@@ -21329,9 +21343,50 @@ func estimate_enemy_hp(enemy_name: String, enemy_level: int) -> int:
 
 	var t_ratio: float = t_target / t_known if t_known > 0.0 else 1.0
 	var m_ratio: float = m_target / m_known if m_known > 0.0 else 1.0
-	var v_ratio: float = target_variant_mult / best_known_variant_mult if best_known_variant_mult > 0.0 else 1.0
 
 	return int(float(best_known_hp) * t_ratio * m_ratio * v_ratio)
+
+var _ref_curve_anchors: Array = []
+var _ref_curve_loaded: bool = false
+
+func _reference_hp_ratio(from_level: int, to_level: int) -> float:
+	"""Ratio of anchored monster HP between two levels, read from the same curve the server
+	uses. Returns 0.0 when the curve is unavailable so the caller can fall back."""
+	if not _ref_curve_loaded:
+		_ref_curve_loaded = true
+		var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+		if f != null:
+			var parsed = JSON.parse_string(f.get_as_text())
+			f.close()
+			if parsed is Dictionary and parsed.get("anchors", null) is Array:
+				_ref_curve_anchors = parsed["anchors"]
+	if _ref_curve_anchors.is_empty():
+		return 0.0
+	var a: float = _reference_hp_at(from_level)
+	var b: float = _reference_hp_at(to_level)
+	if a <= 0.0:
+		return 0.0
+	return b / a
+
+func _reference_hp_at(level: int) -> float:
+	# Log-linear interpolation between anchors, matching monster_database._reference_at.
+	var anchors: Array = _ref_curve_anchors
+	if anchors.is_empty():
+		return 0.0
+	var lvl: float = maxf(1.0, float(level))
+	if lvl <= float(anchors[0].get("level", 1)):
+		return float(anchors[0].get("hp", 0.0))
+	if lvl >= float(anchors[anchors.size() - 1].get("level", 1)):
+		return float(anchors[anchors.size() - 1].get("hp", 0.0))
+	for i in range(1, anchors.size()):
+		var p: Dictionary = anchors[i - 1]
+		var q: Dictionary = anchors[i]
+		var lp: float = float(p.get("level", 1))
+		var lq: float = float(q.get("level", 1))
+		if lvl <= lq:
+			var t: float = (log(lvl) - log(lp)) / maxf(0.000001, (log(lq) - log(lp)))
+			return lerp(float(p.get("hp", 0.0)), float(q.get("hp", 0.0)), t)
+	return float(anchors[anchors.size() - 1].get("hp", 0.0))
 
 func _get_variant_type_from_name(monster_name: String) -> String:
 	"""Recover the variant_type id from a monster's full display name.

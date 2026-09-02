@@ -1898,8 +1898,13 @@ func reapply_empowered(monster: Dictionary, mods: Array) -> void:
 		new_name = String(mod.get("prefix", "")) + " " + new_name
 	if final_mods.is_empty():
 		return
-	# Count-based HP bump (matches scale_monster_to_level's 1.5 + 0.5·count).
-	hp = max(10, int(hp * (1.5 + 0.5 * float(final_mods.size()))))
+	# #6 (2026-09-02) — must match the empowered block in scale_monster_to_level, which now
+	# derives from ROLE_TARGETS rather than the old flat (1.5 + 0.5*count). Two copies of the
+	# same formula is how this drifts; kept in lockstep via role_multipliers().
+	var _emp_m := role_multipliers("empowered")
+	var _emp_scale: float = 1.0 + (float(_emp_m.hp_mult) - 1.0) * (float(final_mods.size()) / 3.0)
+	hp = max(10, int(hp * _emp_scale))
+	strv = max(3, int(strv * (1.0 + (float(_emp_m.str_mult) - 1.0) * (float(final_mods.size()) / 3.0))))
 	monster["max_hp"] = hp
 	monster["current_hp"] = hp
 	monster["strength"] = strv
