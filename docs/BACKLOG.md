@@ -14,9 +14,9 @@ order is what forces revisits.
 
 ## In progress
 
-*(nothing — item 1 is complete and verified; item 2 is next)*
+*(item 3 — identity & theming — is next)*
 
-### 1. Party mechanics — server pass ✅ COMPLETE (unreleased)
+### 1. Party mechanics — server pass ✅ COMPLETE (shipped v0.9.740)
 - [x] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
       — `Lead: Rotate / Lead: Fixed` toggle in the Party menu. Rotation walks a stable
       `rotation_order`, not `party.members` (which `_transfer_leadership` reorders new-leader-first,
@@ -53,7 +53,7 @@ splitting them means editing and re-testing the same code twice.*
 
 ## Next
 
-### 2. Party UI  ← IN PROGRESS
+### 2. Party UI  ← targeting + pacing shipped v0.9.740; invite window + watch-a-minigame remain
 
 **Decided (user 2026-09-01):** targets include **companions** (so companion-affecting loot can
 be added later without redoing the picker). **All buffs** are teammate-targetable EXCEPT
@@ -111,13 +111,40 @@ again self-casts — no new binding — plus a visible Self button.
       revealed, so watching it is meaningful. Needs the server to broadcast the payload plus each
       reveal to party members, and a read-only mode on both panels
 
-### 3. Simulator upgrade — **blocks all balance work**
+### 3. Identity & theming — what "Phantom Badlands" actually means
+*Design item, no code prerequisites. Placed HERE because things depend ON it: the dungeon
+themes (10), the Atlas's voice (9), the realm meta-loop (13) and every word on the website (4)
+all inherit whatever is decided, and re-theming after those are built is a rewrite.*
+
+- [ ] Tie the NAME to the world. The game is centred on **dungeons and companions**, but
+      "Phantom Badlands" currently reads as generic wasteland. Decide what a *Phantom* is in
+      this world and what the *Badlands* are, so the two nouns carry the setting instead of
+      sitting on top of it
+- [ ] Make companions part of the fiction, not a mechanic bolted on — where do they come from,
+      why do they bond, what does a Phantom have to do with them
+- [ ] Same for dungeons: what they are, why they keep appearing, why anyone goes in
+- [ ] Write it down as a short setting bible (a page, not a novel) that the Atlas, quest text,
+      post/NPC flavour and the website can all be written against
+
+### 4. Website refresh — accurate, alive, and showing the game
+*After 3 so the copy is written against settled theming, and after the current release so the
+feature list is true. Dungeon pages are deliberately NOT here — see 11.*
+
+- [ ] **Accuracy pass first.** The site describes an older game; correct the feature list,
+      screenshots and any stale mechanics
+- [ ] Less boring: it reads like a spec sheet. Lead with what playing it feels like
+- [ ] **Simulated screenshots** on the feature pages. Combat, party play, gathering, crafting,
+      market and companions are all visually stable now, so those can be captured today
+      (the in-game 📷 / F12 workflow writes to `claude_screenshots/`)
+- [ ] Carry the settled identity from 3 into the landing copy
+
+### 5. Simulator upgrade — **blocks all balance work**
 - [ ] Teach the sim to spend **abilities and resources**. It drives real combat code but uses
       basic attacks only, which is why the resource-economy flaw and the low-level regression
       both slipped through
 - [ ] Calibrate `make_char` against **real saved characters** (it inflates stats)
 
-### 4. Balance pass (after 3)
+### 6. Balance pass (after 5)
 - [ ] **Magic Bolt flat curve** — measured ~21x per mana at L5 vs ~27x at L20, while monster HP
       scales far faster. Lowering the coefficient only moves where it flips from absurd to
       useless; damage-per-mana has to scale on the same curve as monster HP
@@ -132,8 +159,8 @@ again self-casts — no new binding — plus a visible Self button.
 - [ ] Equipment vs race vs class, compared **against each other** rather than in isolation
 - [ ] How far players can actually push: win rate vs monster-level delta
 
-### 5. Monster packs (a party of N meets ~N monsters)
-Last of the core combat work: packs multiply monsters per fight, so sizing them before 4 fixes
+### 7. Monster packs (a party of N meets ~N monsters)
+Last of the core combat work: packs multiply monsters per fight, so sizing them before 6 fixes
 per-monster numbers guarantees a redo.
 
 ---
@@ -143,14 +170,14 @@ per-monster numbers guarantees a redo.
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
 stays **solo-possible**; a party is a force multiplier, never a requirement.*
 
-### 6. Dungeon F — party in dungeons (north star, most architectural)
+### 8. Dungeon F — party in dungeons (north star, most architectural)
 - [ ] Party **movement** in a shared instance
 - [ ] Party combat inside dungeons on the deck system
 - [ ] Follower-finishes-boss reward case; per-player equipment/chest loot
 
 *Placed here because it builds on 1 and 2. Doing it earlier means touching party code a third time.*
 
-### 7. Dungeon B — loot / progression / discovery
+### 9. Dungeon B — loot / progression / discovery
 - [ ] **Dungeon Atlas / Codex** — hub, quest board, what-drops-where, uniques page.
       This is ONE item; it was previously tracked in three separate memos as three tasks.
       Reveal is **hint-based discovery with progression**, not show-all: entering or clearing
@@ -160,20 +187,22 @@ stays **solo-possible**; a party is a force multiplier, never a requirement.*
 - [ ] Broader scattered loot (runes / gear / scrolls, tier-scaled)
 - [ ] Companion **Tier-RANK** variety
 
-### 8. Dungeon A — themes (slices 2-4)
+### 10. Dungeon A — themes (slices 2-4)
 - [ ] Theme roll / stamp / display; theme to guaranteed themed egg or companion
 - [ ] "Sigil" opt-in modifier consumable
 - [ ] **Preserve** both random special-trait dungeons AND the Catalyst/Sigil opt-in — the Atlas
       and meta work must not delete either
 
-### 9. Dungeon E — presentation
+### 11. Dungeon E — presentation
+*Also owns the website's DUNGEON pages + screenshots (deferred from 4): dungeons are about to
+look different, so shooting them before this lands means shooting them twice.*
 - [ ] Zoom the dungeon view in
 - [ ] **Sprites** for chests, traps and floor drops instead of ASCII glyphs (unused sheets in
       `client/sprites/battlers/tf_svbattle/singleframes/`)
 - [ ] Stop drawing **walls as tiles** — render non-traversable space as void (Azure Dreams style)
 - [ ] Rooms **farther apart**, longer corridors (still too cramped after C3a)
 
-### 10. Dungeon D — bosses (after 4, so boss damage is sized against corrected numbers)
+### 12. Dungeon D — bosses (after 6, so boss damage is sized against corrected numbers)
 - [ ] Real phases, telegraphs and adds. **Telegraph counterplay is mandatory** — no unavoidable
       damage
 
@@ -181,19 +210,36 @@ stays **solo-possible**; a party is a force multiplier, never a requirement.*
 
 ## Then
 
-### 11. Realm meta-loop
+### 13. Realm meta-loop
 - [ ] Reorient **questing onto dungeons** (clear / rescue / boss-hunt / gather). The quest types
       already exist; the work is generation and surfacing, not new types
 - [ ] Real **sinks for excess eggs and companions**: shops that buy and sell, breeders, trainers,
       fusers (fusion exists — expand), companion **tasks**
 - [ ] Living world: rework posts, companions around posts, threats woven in
 
-### 12. Engagement / minigame variety
+### 14. Engagement / minigame variety
 - [ ] Prize Shuffle redesign: gathering and crafting slices (combat slice shipped)
 - [ ] Port the Chain / Mystery / Trap mechanics to gathering and crafting
 - [ ] Trap chests, Mimic chest variant, 2 remaining dungeon-exclusive consumables
 
 ---
+
+### 15. Craft review — the game against industry standards
+*User direction 2026-09-01. Placed LAST of the numbered items because a best-practices pass run
+while combat numbers (6) and the whole dungeon arc (8-12) are mid-rework would produce findings
+that expire before they can be acted on. The parts that DON'T depend on in-flight work —
+onboarding, accessibility, input conventions, save/data safety, performance, settings coverage
+— are stable today and can be pulled forward at any time.*
+
+- [ ] Audit the game as a game: onboarding and first-session experience, moment-to-moment
+      feedback, difficulty curve, session shape, retention loops, readability/accessibility,
+      settings and input conventions, save/data safety, performance
+- [ ] Name concretely where it falls short rather than listing generic best practice, and rank
+      the gaps by player impact against cost to fix
+- [ ] Turn the ranked gaps into backlog items in the right order, rather than one sprawling
+      "polish" task
+- [ ] Existing threads this will likely absorb or supersede: the UX revamp arc, the tutorial +
+      starter-quest item, and the unspent-stat-point nudge
 
 ## Independent — slot in any time (no dependencies)
 - [ ] Card market live list-to-buy smoke test (built, never exercised end to end)
@@ -234,6 +280,9 @@ stays **solo-possible**; a party is a force multiplier, never a requirement.*
 ---
 
 ## Recently shipped
+- **v0.9.740** — party leadership rotation + duplicated rewards, follower/post rules, party of 5,
+  buff + item targeting (teammates and their companions), co-op playback pacing (rounds play fast
+  but complete; Continue skips *to* the rewards), Forcefield/Haste co-op fixes
 - **v0.9.739** — co-op combat you can follow (one animation clock), party items, party permadeath,
   login sprite offset, relog full-heal fix, 2-client test harness (`tools/test_setup/`)
 - **v0.9.738** — real co-op party combat (shared fight, party cards, per-actor playback)
