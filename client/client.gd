@@ -21040,7 +21040,10 @@ func update_player_xp_bar():
 		if recent_xp_gain > 0:
 			xp_label.text = "XP: %d / %d (+%d)" % [current_xp, xp_needed, recent_xp_gain]
 		else:
-			xp_label.text = "XP: %d / %d (-%d to lvl)" % [current_xp, xp_needed, xp_remaining]
+			# The minus was hardcoded into the format string while xp_remaining is already a
+			# positive count, so this rendered as "(-3478 to lvl)" — which reads as negative XP
+			# rather than "3478 still to go". Spotted in a playtest screenshot.
+			xp_label.text = "XP: %d / %d (%d to lvl)" % [current_xp, xp_needed, xp_remaining]
 
 # v0.9.591 — variant HP multipliers, must mirror server's scale_monster_to_level
 # branches in monster_database.gd (Shield Guardian +25% HP, Corrosive +15% HP;
