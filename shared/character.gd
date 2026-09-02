@@ -4005,19 +4005,54 @@ func get_active_companion() -> Dictionary:
 # g() is deliberately ASYMMETRIC:
 #   * UNDER-levelled companions stay USEFUL — floored at 0.60, so a fresh companion is still a
 #     real body that soaks hits rather than a one-hit casualty.
-#   * OVER-levelled companions CARRY, and are not clamped back to parity. A registered
-#     companion kept across characters is meant to pull an under-levelled player forward, so
-#     g rises to 2.5 — a companion with 125% of your health bar, tankier than you are. This is
-#     the mechanical form of the setting's premise that companions outlive their delvers.
+#   * OVER-levelled companions are sized by their OWN level, not the owner's, so a registered
+#     companion keeps every point of the investment that went into it no matter who is walking
+#     it. Beside a fresh character it is enormously tankier than they are — which is the whole
+#     point, and the mechanical form of the setting's premise that companions outlive their
+#     delvers.
 const COMPANION_HP_SHARE := 0.5      # a level-matched companion has 50% of your health bar
 const COMPANION_HP_UNDER_FLOOR := 0.60
-const COMPANION_HP_OVER_CAP := 2.5
+
+static var _ref_player_hp_anchors: Array = []
+static var _ref_player_hp_loaded: bool = false
+
+static func reference_player_hp(level: int) -> float:
+	"""Max HP of the reference player at `level`, from the curve the balance model is built
+	on. Used as a companion's OWN-LEVEL anchor so a high-level companion keeps its absolute
+	power regardless of who is walking it. Returns 0.0 if the curve is unavailable."""
+	if not _ref_player_hp_loaded:
+		_ref_player_hp_loaded = true
+		var f = FileAccess.open("res://shared/reference_player_curve.json", FileAccess.READ)
+		if f != null:
+			var parsed = JSON.parse_string(f.get_as_text())
+			f.close()
+			if parsed is Dictionary and parsed.get("anchors", null) is Array:
+				_ref_player_hp_anchors = parsed["anchors"]
+	var a: Array = _ref_player_hp_anchors
+	if a.is_empty():
+		return 0.0
+	var lvl: float = maxf(1.0, float(level))
+	if lvl <= float(a[0].get("level", 1)):
+		return float(a[0].get("ehp", 0.0))
+	if lvl >= float(a[a.size() - 1].get("level", 1)):
+		return float(a[a.size() - 1].get("ehp", 0.0))
+	for i in range(1, a.size()):
+		var p: Dictionary = a[i - 1]
+		var q: Dictionary = a[i]
+		var lp: float = float(p.get("level", 1))
+		var lq: float = float(q.get("level", 1))
+		if lvl <= lq:
+			var t: float = (log(lvl) - log(lp)) / maxf(0.000001, (log(lq) - log(lp)))
+			return lerp(float(p.get("ehp", 0.0)), float(q.get("ehp", 0.0)), t)
+	return float(a[a.size() - 1].get("ehp", 0.0))
 
 static func companion_level_ratio_mult(comp_level: int, owner_level: int) -> float:
-	"""g(): how a companion's toughness responds to its level RELATIVE to its owner's.
-	sqrt so the curve is generous early and flattens, then clamped to the asymmetric band."""
+	"""How much of the OWNER's health bar an under-levelled companion is worth. Only bites
+	below parity — at or above the owner's level the companion is sized by its OWN level
+	instead (see calculate_companion_max_hp), so nothing is taken away from a high-level
+	companion for being walked by a low-level character."""
 	var r: float = float(maxi(1, comp_level)) / float(maxi(1, owner_level))
-	return clampf(sqrt(r), COMPANION_HP_UNDER_FLOOR, COMPANION_HP_OVER_CAP)
+	return clampf(sqrt(r), COMPANION_HP_UNDER_FLOOR, 1.0)
 
 static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int = 0, owner_level: int = 0) -> int:
 	"""Companion combat-HP pool as a share of its OWNER's max HP.
@@ -4041,8 +4076,19 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	# get_total_max_hp() * bonus/100). It was added FLAT here, so the same table field meant
 	# two different things in two places. Treated as a percentage now, consistently.
 	var bonus_mult: float = 1.0 + float(hp_bonus) / 100.0
-	var g: float = companion_level_ratio_mult(level, owner_level)
-	return maxi(10, int(round(float(owner_max_hp) * COMPANION_HP_SHARE * g * sub_mult * bonus_mult)))
+	# A companion is sized by whichever is BIGGER: the share of its owner's bar it earns for
+	# its relative level, or what its OWN level is worth outright.
+	#
+	# The second half is the point (user 2026-09-02): "if I have a level 250 companion it
+	# should work like a level 250 companion if the player is underleveled — we shouldn't take
+	# power away from high leveled companions as those are the player's investment and
+	# playtime." Anchoring purely to the owner did exactly that: the same L250 companion would
+	# have been worth ~250 HP beside a L10 character and ~1100 beside a L250 one. Now its
+	# floor is its own level, and walking it with a fresh character costs it nothing.
+	var owner_side: float = float(owner_max_hp) * companion_level_ratio_mult(level, owner_level)
+	var own_side: float = reference_player_hp(level)
+	var base: float = maxf(owner_side, own_side)
+	return maxi(10, int(round(base * COMPANION_HP_SHARE * sub_mult * bonus_mult)))
 
 func get_companion_max_hp() -> int:
 	return calculate_companion_max_hp(active_companion, get_total_max_hp(), level)
