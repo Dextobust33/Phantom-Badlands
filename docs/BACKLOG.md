@@ -218,21 +218,61 @@ look different, so shooting them before this lands means shooting them twice.*
 
 ## Then
 
-### 13. Realm meta-loop
+### 13. Roguelike loop — why progress doesn't FEEL like progress
+*User direction 2026-09-01: "I don't much like the options available. It's hard for players to
+feel like they are making much progress." Placed BEFORE the Sanctuary redesign (14) and the
+realm meta-loop (15), because both of those build the vehicles for whatever this decides —
+building sinks and rooms before deciding what a run should leave behind is how you get
+features nobody feels.*
+
+- [ ] Name what actually carries between lives today, and be honest about how thin it is:
+      account level? Sanctuary contents? kennel companions? titles/Valor? mastery? — then say
+      which of those a player can *perceive* after a death
+- [ ] The core question: **what should a single run leave behind?** The setting bible already
+      answers it thematically — *what you brought out alive* — so the mechanics should make
+      companions and the Sanctuary the felt progression, not a stat number
+- [ ] Audit the current between-lives options; the user finds them uncompelling. Say why
+      (too few? too slow? invisible? not chosen by the player?) before designing replacements
+- [ ] Look at how the genre solves this (persistent unlocks, meta-currency, run modifiers,
+      collection completion) and pick deliberately — permadeath without felt accumulation is
+      the retention risk here
+- [ ] **Watch for overlap:** the egg/companion *sinks* live in 15; this item decides what
+      progression should feel like, 15 spends it
+
+### 14. Sanctuary redesign — put the house in the world
+*User direction 2026-09-01. After 13 so it implements a decided progression, and adjacent to 15
+so the companion activities are designed once, not twice.*
+
+- [ ] **Root it in the world.** Today the Sanctuary is a menu between login and character
+      select (`HOUSE_SCREEN`). The user wants it to be a real place — near the starting post
+      is the suggested anchor — so going home is travel, not a screen
+- [ ] **Do it responsibly at scale.** Prior art exists: player posts already claim real tiles
+      (`add_player_tile` / `get_player_tiles` / enclosure checks), so the sparse-tile storage
+      pattern is proven. Decide early between a shared world district, an instanced interior on
+      a world doorway, or true claimed land — the choice drives chunk cost, griefing and what
+      happens when thousands of accounts each own ground
+- [ ] **Customisation** — the user wants the house to be personal, not a fixed room
+- [ ] **More to DO with companions there.** Coordinate with 15's breeders / trainers / tasks
+      rather than inventing a parallel set; the Sanctuary is the natural home for several
+- [ ] Keep what already works: account-level persistence through permadeath, the kennel
+      (30-500 slots) and the Fusion Station
+
+### 15. Realm meta-loop
 - [ ] Reorient **questing onto dungeons** (clear / rescue / boss-hunt / gather). The quest types
       already exist; the work is generation and surfacing, not new types
-- [ ] Real **sinks for excess eggs and companions**: shops that buy and sell, breeders, trainers,
+- [ ] Real **sinks for excess eggs and companions** *(design these WITH 14 — the Sanctuary is
+      the natural home for several, and 13 decides what they should feel like)*: shops that buy and sell, breeders, trainers,
       fusers (fusion exists — expand), companion **tasks**
 - [ ] Living world: rework posts, companions around posts, threats woven in
 
-### 14. Engagement / minigame variety
+### 16. Engagement / minigame variety
 - [ ] Prize Shuffle redesign: gathering and crafting slices (combat slice shipped)
 - [ ] Port the Chain / Mystery / Trap mechanics to gathering and crafting
 - [ ] Trap chests, Mimic chest variant, 2 remaining dungeon-exclusive consumables
 
 ---
 
-### 15. Craft review — the game against industry standards
+### 17. Craft review — the game against industry standards
 *User direction 2026-09-01. Placed LAST of the numbered items because a best-practices pass run
 while combat numbers (6) and the whole dungeon arc (8-12) are mid-rework would produce findings
 that expire before they can be acted on. The parts that DON'T depend on in-flight work —
