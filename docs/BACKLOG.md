@@ -145,14 +145,19 @@ companions are the emotional spine: they outlive their delvers.
 - [x] **Real in-game screenshots** replace the hand-written mock-ups: combat (monster ASCII,
       battler sprite, companion, card hand), a companion art montage of eight types and
       variants, the deck screen, and a fully equipped inventory
+- [x] Screenshots on the **Features page too**, not just the landing page — it was still a wall
+      of bullet lists, which was the original "less boring" complaint. Four figures now break up
+      the combat, party, companion and progression sections
 - [x] Built `tools/test_setup/shots.py` + a dev-only `--shots` client mode so these can be
       **regenerated** rather than re-shot by hand — the presentation pass (11) will invalidate
       every one of them
 - [ ] **Dungeon pages + dungeon screenshots deliberately deferred to 11** (user 2026-09-02):
       the dungeon view is mid-rework, so anything shot now is out of date on arrival. The
       landing page carries a visible placeholder in the meantime
-- [ ] Optional follow-up: carry the Keeper's voice further into Features/FAQ (one line each
-      today)
+- [ ] Follow-ups, none blocking: a **party co-op** screenshot for the "Fighting together"
+      section (needs 2-3 clients, so the single-client capture harness can't do it yet);
+      gathering / crafting / market shots; and carrying the Keeper's voice further into
+      Features and the FAQ (one line each today)
 
 ### 5. Simulator upgrade — **blocks all balance work**
 - [ ] Teach the sim to spend **abilities and resources**. It drives real combat code but uses
