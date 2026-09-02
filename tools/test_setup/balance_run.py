@@ -32,6 +32,22 @@ DEV_PASSWORD = "devtest"
 USER, ACC, CHAR = "Testing3", "acc_6", "test003"
 
 
+def godot_running():
+    """Count live Godot processes.
+
+    Do NOT match tasklist's default table output against the full executable name: the
+    IMAGENAME column is TRUNCATED (godot.windows.opt.tools.64.exe shows as
+    "godot.windows.opt.tools.6..."), so a substring test for the full name never matches and
+    the guard silently passes. That is how a second server got started on top of a running one
+    during a playtest - the stale server still held the old character in memory and wrote it
+    back over the rebuilt fixture. CSV output is untruncated.
+    """
+    out = subprocess.run(["tasklist", "/FO", "CSV", "/NH",
+                          "/FI", "IMAGENAME eq godot.windows.opt.tools.64.exe"],
+                         capture_output=True, text=True).stdout
+    return sum(1 for line in out.splitlines() if line.lower().startswith('"godot'))
+
+
 def set_dev_password():
     with open(scen.ACCOUNTS, encoding="utf-8") as f:
         db = json.load(f)
@@ -61,10 +77,8 @@ def main():
     ap.add_argument("--race", default="Human")
     args = ap.parse_args()
 
-    out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq godot.windows.opt.tools.64.exe"],
-                         capture_output=True, text=True).stdout
-    if "godot.windows.opt.tools.64.exe" in out:
-        print("REFUSING: Godot already running. Close it — a second server cannot bind 9080, "
+    if godot_running():
+        print("REFUSING: Godot already running. Close it - a second server cannot bind 9080, "
               "and the port check would then see the OLD server while the client attaches to "
               "stale code.")
         return 1
