@@ -117,7 +117,15 @@ def main():
                       "--server=localhost"], stdout=clog, stderr=subprocess.STDOUT)
     print("  %s as %s (L%d)" % (USER, CHAR, args.level))
     print("\nready. In game, start an exact-level fight with:")
-    print("    /spawnmonster Orc %d" % args.level)
+    print("    /spawnmonster <Species> %d" % args.level)
+    print("")
+    print("  Use a species that ACTUALLY SPAWNS at this level. `Orc` is a tier-2 monster with")
+    print("  a 0%% spawn rate by L50, so fighting one tests a creature stretched far above its")
+    print("  home tier rather than the content a player meets. That exact mistake produced a")
+    print("  false 'the game trivializes at high level' result in the simulator once already.")
+    print("    ~L50   : Gryphon, Succubus, Vampire, Giant, Demon, Young Dragon, Chimaera")
+    print("    ~L1000 : Elder Lich, World Serpent, Primordial Dragon, Void Walker, Sphinx")
+    print("  The sim's `-- species` audit prints the real spawn table for any level.")
     return 0
 
 
