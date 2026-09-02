@@ -523,3 +523,19 @@ footer a:hover { text-decoration: underline; }
     font-size: 0.9rem;
     font-style: italic;
 }
+
+/* The lure. The tagline carries the threat; this carries the reason anyone
+   actually goes down. Pulp-trailer cadence, so it gets its own emphasis. */
+.lure {
+    max-width: 680px;
+    margin: 1.4rem auto 0;
+    color: var(--text-secondary);
+    font-size: 1.02rem;
+    line-height: 1.7;
+}
+
+.lure-hit {
+    color: var(--gold);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
