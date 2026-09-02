@@ -196,27 +196,32 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"ambush":       {"ceiling": 20, "cost_percent": 22, "floor_ratio": 0.3, "resource": "energy"},
 	"exploit":      {"ceiling": 24, "cost_percent": 18, "floor_ratio": 0.3, "resource": "energy"},
 	"gambit":       {"ceiling": 24, "cost_percent": 19, "floor_ratio": 0.3, "resource": "energy"},
-	"forcefield":   {"ceiling": 15, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},   # 2→3
+	# #6c (2026-09-02) — the utility and buff cards were left behind when the DAMAGE cards were
+	# re-priced, so they stayed effectively free: Forcefield at 3% was the long-standing
+	# "net cost zero" case, and a player reported still seeing a 0-cost ability after the first
+	# pass. They are re-priced here but kept deliberately CHEAPER than the damage cards
+	# (10-22 against 19-30), because a buff pays out over several turns rather than in one hit.
+	"forcefield":   {"ceiling": 15, "cost_percent": 10, "floor_ratio": 0.3, "resource": "mana"},   # 2→3
 	# Warrior buffs (v0.9.263): magnitude scales with spend, duration unchanged.
-	"war_cry":      {"ceiling": 11, "cost_percent": 9, "floor_ratio": 0.3, "resource": "stamina"},
-	"fortify":      {"ceiling": 17, "cost_percent": 11, "floor_ratio": 0.3, "resource": "stamina"},
-	"iron_skin":    {"ceiling": 24, "cost_percent": 13, "floor_ratio": 0.3, "resource": "stamina"},
-	"rally":        {"ceiling": 24, "cost_percent": 13, "floor_ratio": 0.3, "resource": "stamina"},
-	"berserk":      {"ceiling": 27, "cost_percent": 14, "floor_ratio": 0.3, "resource": "stamina"},
+	"war_cry":      {"ceiling": 11, "cost_percent": 15, "floor_ratio": 0.3, "resource": "stamina"},
+	"fortify":      {"ceiling": 17, "cost_percent": 16, "floor_ratio": 0.3, "resource": "stamina"},
+	"iron_skin":    {"ceiling": 24, "cost_percent": 18, "floor_ratio": 0.3, "resource": "stamina"},
+	"rally":        {"ceiling": 24, "cost_percent": 18, "floor_ratio": 0.3, "resource": "stamina"},
+	"berserk":      {"ceiling": 27, "cost_percent": 19, "floor_ratio": 0.3, "resource": "stamina"},
 	# Mage CC (v0.9.264): haste = magnitude scaling, paralyze + banish = chance scaling.
-	"haste":        {"ceiling": 24, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
+	"haste":        {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "mana"},   # 3→5
 	# #36 (2026-08-27) Mage 7→9: Frost Nova = soft control (chip frost dmg + accuracy chill),
 	# variable mana. Overload is HP-cost and NOT listed here (handled in its own case).
-	"frost_nova":   {"ceiling": 24, "cost_percent": 5, "floor_ratio": 0.3, "resource": "mana"},
-	"paralyze":     {"ceiling": 42, "cost_percent": 7, "floor_ratio": 0.3, "resource": "mana"},   # 5→7 (eased from 8)
-	"banish":       {"ceiling": 55, "cost_percent": 9, "floor_ratio": 0.3, "resource": "mana"},   # 7→9 (eased from 10)
+	"frost_nova":   {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "mana"},
+	"paralyze":     {"ceiling": 42, "cost_percent": 15, "floor_ratio": 0.3, "resource": "mana"},   # 5→7 (eased from 8)
+	"banish":       {"ceiling": 55, "cost_percent": 18, "floor_ratio": 0.3, "resource": "mana"},   # 7→9 (eased from 10)
 	# Trickster utility (v0.9.265): chance scaling for pickpocket + perfect_heist,
 	# magnitude scaling for distract + sabotage. Analyze + Vanish stay fixed-cost
 	# (binary mechanics — partial cast doesn't make sense).
-	"distract":     {"ceiling": 11, "cost_percent": 8, "floor_ratio": 0.3, "resource": "energy"},
-	"pickpocket":   {"ceiling": 14, "cost_percent": 9, "floor_ratio": 0.3, "resource": "energy"},
-	"sabotage":     {"ceiling": 18, "cost_percent": 10, "floor_ratio": 0.3, "resource": "energy"},
-	"perfect_heist":{"ceiling": 34, "cost_percent": 16, "floor_ratio": 0.3, "resource": "energy"},
+	"distract":     {"ceiling": 11, "cost_percent": 13, "floor_ratio": 0.3, "resource": "energy"},
+	"pickpocket":   {"ceiling": 14, "cost_percent": 14, "floor_ratio": 0.3, "resource": "energy"},
+	"sabotage":     {"ceiling": 18, "cost_percent": 15, "floor_ratio": 0.3, "resource": "energy"},
+	"perfect_heist":{"ceiling": 34, "cost_percent": 22, "floor_ratio": 0.3, "resource": "energy"},
 }
 
 # Active combats (peer_id -> combat_state)
@@ -727,8 +732,18 @@ func _apply_companion_resource_regen(combat: Dictionary, character: Character, m
 	resource_regen += int(character.get_companion_bonus("stamina_regen"))
 
 	if resource_regen > 0:
-		var regen_amount = max(1, resource_regen)
+		# #6b (2026-09-02) — companion resource regen was applied FLAT while companion HP regen
+		# right above is a PERCENTAGE of max HP. Same family of field, two different meanings,
+		# and the flat one decayed to nothing: a companion granting mana_regen 3 restored 3
+		# mana against a 16,000 pool at L1000. Treated as a percentage of the class's pool now,
+		# consistent with hp_regen and with hp_bonus/mana_bonus elsewhere.
 		var class_path = character.get_class_path()
+		var _pool_for_regen: int = character.get_total_max_stamina()
+		if class_path == "mage":
+			_pool_for_regen = character.get_total_max_mana()
+		elif class_path == "trickster":
+			_pool_for_regen = character.get_total_max_energy()
+		var regen_amount = max(1, int(round(float(_pool_for_regen) * float(resource_regen) / 100.0)))
 		match class_path:
 			"warrior":
 				if character.current_stamina < character.get_total_max_stamina():
@@ -7825,8 +7840,15 @@ func calculate_monster_damage(monster: Dictionary, character: Character, combat:
 
 	# === COMPANION BONUS: Defense ===
 	if character.has_active_companion():
-		var companion_defense = int(character.get_companion_bonus("defense"))
-		companion_defense += combat.get("companion_defense_bonus", 0)
+		# #6b (2026-09-02) — companion DEFENSE was added flat. Companion defense values are
+		# 2-15, which is meaningful beside a level-10 player's defense and invisible beside a
+		# level-1000 player's — the same decay that made companion HP and damage decorative.
+		# Treated as a PERCENTAGE of the player's own defense instead, so a "+6 defense"
+		# companion is a 6% defensive partner at every level. Consistent with hp_bonus and
+		# mana_bonus, which the codebase already consumes as percentages.
+		var companion_defense_pct = float(character.get_companion_bonus("defense"))
+		companion_defense_pct += float(combat.get("companion_defense_bonus", 0))
+		var companion_defense = int(round(float(player_defense) * companion_defense_pct / 100.0))
 		player_defense += companion_defense
 
 	# === CLASS PASSIVE: Fighter Tactical Discipline ===
