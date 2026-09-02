@@ -15196,9 +15196,7 @@ func _queue_party_notice(text: String) -> void:
 	ones are flushed when the player leaves the post-fight flow."""
 	if text == "":
 		return
-	var busy: bool = (in_combat or _coop_playback_pending() or pending_continue
-		or (combat_scene_panel != null and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible))
-	if busy:
+	if _combat_ui_busy():
 		_pending_party_notices.append(text)
 		if combat_scene_panel and combat_scene_panel.has_method("append_log"):
 			combat_scene_panel.append_log(text)   # still readable in the combat log
@@ -15214,6 +15212,9 @@ func _flush_party_notices() -> void:
 		_pending_party_notices.clear()
 		for n in notices:
 			display_game(String(n))
+	# The level-up sting is held by the same rule (update_player_level returns early while the
+	# fight's UI is busy, leaving last_known_level untouched), so re-run it here to let it fire.
+	update_player_level()
 	_drain_new_player_modals()
 
 
@@ -15265,11 +15266,6 @@ func acknowledge_continue():
 		combat_scene_panel.visible = false
 	if game_output:
 		game_output.visible = true
-	# v0.9.740 — the player just dismissed the victory screen, so print any held party notice
-	# (leadership rotation) HERE. This path hides the panel DIRECTLY, so _process never sees a
-	# visibility change and the flush there never fired — which is why the notice showed after
-	# gathering (no victory screen) but never after a fight.
-	_flush_party_notices()
 	# Old auto-harvest hook removed v0.9.436 (combat scratch-off replaces it).
 
 	# If combat was queued while showing egg hatch celebration, start it now
@@ -15317,6 +15313,7 @@ func acknowledge_continue():
 		quest_view_mode = false
 		_display_trading_post_ui()
 		update_action_bar()
+		_flush_party_notices()   # after the redraw: it clears the window
 		return
 
 	# If at dungeon entrance in overworld (not in dungeon), show dungeon info
@@ -15344,6 +15341,10 @@ func acknowledge_continue():
 	# — it deliberately writes no text and only refreshes the map panel.)
 	if not dungeon_mode and not at_trading_post and not (at_corpse and not corpse_info.is_empty()):
 		_display_post_combat_context()
+	# v0.9.740 — held party notices go LAST. Every branch above redraws (and clears) the game
+	# window, so a notice printed before them is wiped — which is exactly what happened to the
+	# leadership line once the context block started clearing.
+	_flush_party_notices()
 
 	# v0.9.398 — re-show the overworld player sprite after combat ends.
 	# Previously the sprite stayed hidden (in_combat had toggled false during
@@ -20255,7 +20256,7 @@ func update_player_level():
 	# round result, so the sting fired as the round STARTED, spoiling the kill. Leaving
 	# last_known_level untouched means the next call (after the queue drains) still sees the
 	# increase and fires it then.
-	if _coop_playback_pending():
+	if _combat_ui_busy():
 		return
 	if last_known_level > 0 and level > last_known_level:
 		play_levelup_sound()
@@ -35113,6 +35114,24 @@ func _party_action_blocked() -> bool:
 	return true
 
 
+func _combat_ui_busy() -> bool:
+	"""TRUE from the moment a fight starts until the player is finished with its aftermath.
+
+	THE PROBLEM THIS EXISTS FOR: `in_combat` is cleared at combat_end while the round is STILL
+	ANIMATING, so every consumer keyed off it alone fires early — teaching hints popped before
+	the damage, the leadership line announced itself mid-round, the level-up sting spoiled the
+	kill, the death screen replaced the fatal blow. Each was fixed separately and a new one kept
+	appearing. This is the state those consumers actually want: still fighting, OR the round is
+	still playing out, OR the victory/death screen is up, OR the Continue prompt is pending."""
+	if in_combat or pending_continue or _party_end_playback:
+		return true
+	if not combat_msg_queue.is_empty():
+		return true
+	if combat_scene_panel != null and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible:
+		return true
+	return false
+
+
 func _coop_playback_pending() -> bool:
 	"""True while a co-op round's beats are still playing out. Anything that shows the RESULT
 	of the round — HP bars, the level-up sting, the death card — must wait for this to clear,
@@ -38182,12 +38201,9 @@ func _enqueue_tutorial_hint(title: String, body: String) -> void:
 func _drain_new_player_modals() -> void:
 	# Show at most one new-player modal at a time. Never interrupt combat, never
 	# stack over another modal. Order: teaching hints → numpad popup → guided tour.
-	# v0.9.740 — `in_combat` alone is not enough: it is cleared at combat_end while the round
-	# is still ANIMATING, so a level-up tip popped before the player had seen the damage, the
-	# kill, or that they had won. Also wait for the playback and the combat UI to be gone.
-	if in_combat or _coop_playback_pending():
-		return
-	if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible:
+	# v0.9.740 — see _combat_ui_busy(): `in_combat` alone is cleared while the round is still
+	# animating, so a level-up tip popped before the player had seen the damage or the kill.
+	if _combat_ui_busy():
 		return
 	if tutorial_hint_panel and tutorial_hint_panel.visible:
 		return
