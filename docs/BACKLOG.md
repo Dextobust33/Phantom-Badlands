@@ -1250,6 +1250,41 @@ against 55%.
 - [ ] Re-run `-- ability_hp`: the weights were set when casts were effectively free, and a
       fight now has a real cast budget
 
+**GEAR VARIANCE — the player-side mirror of the species spread (user question, 2026-09-02).**
+Prompted by finding a *Guardian's Magical Orb of the Troll* (+60 DEF, +432 HP, +79 MP) that was
+"way bigger than anything I was wearing" — +432 HP on a 652-HP character.
+
+The simulator DOES account for items like it: `make_char` rolls gear through the real
+`_generate_item` with rarity drawn from the game's own `RARITY_WEIGHTS`, fresh for every fight,
+so across 90 fights it samples the whole distribution. What it does not do is *report* the
+distribution. Measured, 200 builds of the same class at the same level:
+
+| Level | min HP | median | max HP | spread |
+|-------|--------|--------|--------|--------|
+| L50 | 363 | 463 | 1,265 | **3.5x** |
+| L250 | 1,113 | 2,017 | 5,878 | **5.3x** |
+
+**Gear luck alone moves a character's health bar by 3.5-5x at a fixed level** — a wider swing
+than the 69-point species spread, and the two multiply. A lucky player meeting a weak species
+and an unlucky one meeting a Hydra are not playing the same game at the same level.
+
+**This is probably correct for an ARPG and should not simply be "fixed".** Finding an item that
+doubles your health bar is the chase, and flattening it would remove the reason to hunt loot at
+all. The honest consequence is about how the balance numbers are *read*:
+
+- [ ] **Every difficulty figure in this file describes a MEDIAN player in MEDIAN gear against a
+      MEDIAN monster.** Very few real fights are all three. State that wherever the numbers are
+      used to make a decision
+- [ ] **Measure the tails, not just the mean.** A 10th-percentile-gear player against a
+      high-difficulty species is the combination that actually generates complaints, and nothing
+      currently measures it. Worth an audit that reports p10 / p50 / p90 rather than an average
+- [ ] Decide whether the tails need *bounding* or merely *communicating*. Bounding item variance
+      is an ARPG design change; communicating it (e.g. difficulty telegraphed per encounter) may
+      be the better answer
+- [ ] Note the interaction with 12b: the Phantom's whole premise is that gear and companions
+      carry a player forward, so wide gear variance is the loop working — provided the floor is
+      survivable
+
 ### 6d. Risk, reward & progression incentives
 *Also split out of item 6. This is the economy around fights rather than the fights themselves.*
 
