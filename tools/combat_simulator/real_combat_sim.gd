@@ -76,6 +76,7 @@ func _audit_registry() -> Dictionary:
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
+		"ability_hp": ["ability damage vs monster HP across all levels", run_ability_vs_hp],
 		"flock": ["flock-chain sustain", run_flock_audit],
 		"baseline": ["baseline matrix", run_baseline],
 		"matrix": ["level x gear x enemy matrix", run_matrix],
@@ -783,6 +784,107 @@ func _measure_ability(level: int, gear: String, klass: String, ability: String) 
 	var pool: int = _class_max_resource(ch, klass)  # total pool (incl gear) to show casts/bar
 	combat_mgr.end_combat(0, false, false)
 	return {"damage": float(dmg), "cost": float(cost), "pool": float(pool)}
+
+func _cast_at_scaled(ch, base_monster: Dictionary, ability: String, hp_mult: float) -> float:
+	# One cast by an EXISTING character at a COPY of a given monster, scaled to hp_mult.
+	# max_hp and current_hp are scaled together because combat_manager clamps current_hp to
+	# max_hp — inflating current_hp alone is silently discarded and reads back as fake damage.
+	var monster: Dictionary = base_monster.duplicate(true)
+	var big: int = maxi(1, int(float(base_monster.get("max_hp", 1)) * hp_mult))
+	monster["max_hp"] = big
+	monster["current_hp"] = big
+	# Full resources so the second cast of a pair is never cheaper or weaker than the first.
+	ch.current_stamina = ch.get_total_max_stamina()
+	ch.current_mana = ch.get_total_max_mana()
+	ch.current_energy = ch.get_total_max_energy()
+	ch.current_hp = ch.get_total_max_hp()
+	ch.in_combat = false
+	combat_mgr.start_combat(0, ch, monster)
+	if not combat_mgr.active_combats.has(0):
+		return 0.0
+	var combat = combat_mgr.active_combats[0]
+	_force_hand(combat, ability)
+	var hp0: int = int(monster.get("current_hp", 0))
+	var arg: String = str(maxi(1, int(ch.get_total_max_mana() * 0.25))) if ability == "magic_bolt" else ""
+	combat_mgr.process_ability_command(0, ability, arg)
+	var dmg: int = hp0 - int(monster.get("current_hp", 0))
+	combat_mgr.end_combat(0, false, false)
+	return float(dmg)
+
+func _ability_bar_fraction(level: int, gear: String, klass: String, ability: String, n: int) -> float:
+	# One cast's damage as a FRACTION of a same-level normal monster's health bar, immune to
+	# every way this particular measurement goes wrong (all four were hit while building it):
+	#   1. A flat-damage ability measured on a true-size target is TRUNCATED when it one-shots,
+	#      hiding exactly the early-game overkill we want to see.
+	#   2. A %-max-HP ability (Exploit: 10-22% of max HP) measured on an oversized dummy is
+	#      inflated by the whole dummy multiplier — this audit first claimed Exploit hits for
+	#      46000% of a health bar when it is hard-capped at 22% of one.
+	#   3. Comparing two casts by DIFFERENT randomly-geared characters measures gear variance
+	#      instead of target size.
+	#   4. Comparing two casts against DIFFERENT randomly-chosen monsters measures the gap
+	#      between monster types (a same-level bar ranges ~26k to ~217k at L1000) instead of
+	#      the scaling. This one produced negative and million-percent "fractions".
+	# So: one character and one monster per sample, cast at two sizes of THAT monster, and read
+	# the answer off the slope. Damage that grows with target size is proportional (the slope
+	# is its fraction of any bar); damage that ignores target size is flat (divide by the real
+	# bar). Nothing hardcodes which abilities are percentage-based, so it cannot rot.
+	var m1 := 50.0
+	var m2 := 100.0
+	var acc := 0.0
+	var samples := 0
+	for i in range(n):
+		var ch = make_char(level, gear, klass)
+		var base_monster := make_monster(level, "normal", 1.0)
+		var bar := float(maxi(1, int(base_monster.get("max_hp", 1))))
+		var d1 := _cast_at_scaled(ch, base_monster, ability, m1)
+		var d2 := _cast_at_scaled(ch, base_monster, ability, m2)
+		if d1 <= 0.0 and d2 <= 0.0:
+			continue
+		var frac: float
+		if d2 > 1.5 * maxf(d1, 1.0):
+			frac = (d2 - d1) / maxf(1.0, bar * (m2 - m1))
+		else:
+			frac = d1 / bar
+		acc += frac
+		samples += 1
+	if samples == 0:
+		return 0.0
+	return acc / float(samples)
+
+func run_ability_vs_hp():
+	# #6 (user hypothesis 2026-09-02: "Magic Bolt is extremely powerful early game, I'm
+	# guessing it falls off"). Damage-per-resource alone cannot answer that — what matters is
+	# damage RELATIVE TO THE HEALTH BAR IT HAS TO CHEW THROUGH. An ability whose damage grows
+	# 10x while monster HP grows 100x has "gone up" and still fallen off a cliff.
+	# Reported as: one cast's damage as a % of a same-level NORMAL monster's max HP.
+	# >=100% one-shots trash. A flat-ish row holds its power; a falling row falls off.
+	var N := 25
+	var sets := [
+		["Fighter", "War", ["power_strike", "cleave", "devastate"]],
+		["Wizard", "Mag", ["magic_bolt", "blast", "meteor"]],
+		["Thief", "Trk", ["ambush", "exploit", "gambit"]],
+	]
+	print("
+===== #6 ABILITY POWER vs MONSTER HP ACROSS THE WHOLE GAME (%d casts/cell) =====" % N)
+	print("One cast's damage as %% of a SAME-LEVEL NORMAL monster's max HP, AVERAGE gear.")
+	print(">=100%% one-shots trash. Falling left-to-right = the ability falls off with level.")
+	print("Magic Bolt is cast at its usual sim spend (25%% of the mana pool); finishers read")
+	print("LOW here because their engine (Momentum/Focus/Read) starts at 0 on a single cast.")
+	print("Each cast is measured against two oversized targets and read off the SLOPE, so")
+	print("flat abilities are not truncated by a one-shot and %%-max-HP abilities (Exploit)")
+	print("are not inflated by the dummy's size. See _ability_bar_fraction.")
+	var header := "%-4s %-13s" % ["Cls", "Ability"]
+	for lvl in PROGRESSION_LEVELS:
+		header += "%8s" % ("L%d" % lvl)
+	print(header)
+	for st in sets:
+		for ab in st[2]:
+			var row := "%-4s %-13s" % [st[1], ab]
+			for lvl in PROGRESSION_LEVELS:
+				row += "%7.0f%%" % (100.0 * _ability_bar_fraction(lvl, "average", String(st[0]), String(ab), N))
+			print(row)
+	print("=====================================================================
+")
 
 func run_ability_efficiency():
 	# #55 — measure damage-per-resource for each damage ability across classes + levels/gear.
