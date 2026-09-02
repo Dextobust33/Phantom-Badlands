@@ -676,12 +676,59 @@ bonuses: `get_companion_unlocked_abilities` grants the passive always, the **act
 companion level 5**, and the **threshold at level 15**. A level-1 companion has *one third of
 its kit*, which matches the measurement far better than a percentage that never changed.
 
-- [ ] **Verify that before designing anything** — compare a L1 vs L5 vs L15 companion (the
-      unlock boundaries) rather than L1 vs level-matched. If the jump lands at 5 and 15, the
-      lever is unlock pacing, not bonus scaling
-- [ ] Companion **damage** scales linearly (`player_level*0.3 + companion_level*0.5`) against
-      content that no longer scales linearly at all now that monsters are anchored to the
-      reference curve. This is the real scaling question and it is still open
+**MEASURED 2026-09-02 (`-- comp_unlock`) — it is companion HP, not unlocks, not bonuses.**
+
+The user's read was right and both of the assistant's hypotheses were wrong. Same-level ELITE,
+Fighter, average gear, 24 fights/cell. `survived` = rounds up before KO, `soaked` = hits the
+monster spent on the companion instead of the player:
+
+| Player | comp level | comp HP | survived | soaked | win% |
+|--------|-----------|---------|----------|--------|------|
+| L5 | none | 0 | – | – | 50% |
+| L5 | 1 | 45 | 18.3 | 2.7 | 54% |
+| L5 | matched | 65 | 12.2 | 1.8 | 79% |
+| L50 | 1 | 45 | **2.6** | 0.5 | 20% |
+| L50 | matched | 290 | 5.9 | 1.2 | 41% |
+| L250 | matched | 1,290 | **4.0** | 1.0 | 58% |
+| L1000 | 1 | 45 | **1.3** | 0.3 | 50% |
+| L1000 | matched | 5,040 | 20.9 | 7.5 | 79% |
+| L10000 | none | 0 | – | – | 16% |
+| L10000 | 1 | 45 | **2.6** | **0.1** | 12% |
+| L10000 | matched | 50,040 | 27.3 | 6.1 | 50% |
+
+- **`calculate_companion_max_hp` is `30 + level*5 + sub_tier*10 + hp_bonus` — linear**, while
+  monster damage is now anchored to a player curve that is not. A level-1 companion has **45 HP
+  at every level in the game**: at L10000 it survives 2.6 rounds, soaks **0.1 hits**, and wins
+  12% against 16% for no companion at all. It is not a sponge and not an attacker; it is a
+  casualty. That is the real explanation for "comp L1 == none"
+- **The ability-unlock hypothesis is DISCONFIRMED.** There is no step at companion level 5 or
+  15 — L1000 reads 50% / 66% / 41% for comp levels 1 / 5 / 15, which is noise. Only `matched`
+  separates, and it separates by HP
+- **Even a level-MATCHED companion dies mid-fight through the mid game** — 5.9 rounds at L50,
+  **4.0 rounds at L250** against a fight designed to last 9. This is the user's reported
+  frustration measured directly: *"companion HP always seems rather low, they die frequently
+  and players have to go back to a post to bring them back to life"*
+- Note also a genuine units inconsistency: `hp_bonus` is added **flat** here but consumed as a
+  **percentage** of the player's max HP in `combat_manager` (`get_total_max_hp() * bonus/100`).
+  The same table field means two different things in two places
+
+**Proposed fix — anchor companion HP to the player, the way monsters now are:**
+
+    companion_max_hp = player_max_hp * share(tier, sub_tier) * f(comp_level / player_level)
+
+with `share` around 0.35-0.60 and `f` clamped (say 0.25-1.25) so an under-levelled companion is
+weaker but never a one-hit casualty, and an over-levelled one saturates. Consequences:
+survivability holds at every level by construction; levelling a companion pays visibly; and the
+constant trek back to a post to revive largely goes away.
+
+- [ ] Agree the shape and the numbers before implementing — this changes a core feel system
+- [ ] `calculate_companion_max_hp` is **static and takes only the companion dict**, so it has no
+      access to the player. Threading the owner through is the main implementation cost; check
+      every caller, including any client-side mirror
+- [ ] Reconcile the `hp_bonus` flat-vs-percentage inconsistency in the same pass
+- [ ] Re-run `-- comp_unlock` after the change; it is the regression test for this item
+- [ ] Companion **damage** also scales linearly (`player_level*0.3 + companion_level*0.5`)
+      against content that no longer does. Same class of problem as the HP; fix together
 
 - [ ] Make companion **stat bonuses scale with companion level**, not just variant/sub-tier —
       this is what makes a fresh companion feel like nothing at all today

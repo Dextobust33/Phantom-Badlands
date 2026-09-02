@@ -82,6 +82,7 @@ func _audit_registry() -> Dictionary:
 		"xp": ["how many fights to level, and what is the best way", run_xp_audit],
 		"risk": ["over-level gambles: kill/escape/death and what the reward is worth", run_risk_reward_audit],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
+		"comp_unlock": ["what a companion actually does: survival, soak, unlock boundaries", run_companion_unlock_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
 		"ability_hp": ["ability damage vs monster HP across all levels", run_ability_vs_hp],
@@ -1221,6 +1222,87 @@ func run_risk_reward_audit():
 	print("Read 'levels/death': how many levels of progress a player buys for each character")
 	print("they lose trying. Below ~1.0 the gamble destroys more progress than it creates, so")
 	print("no rational player takes it and the over-level reward is dead content.")
+	print("=====================================================================\\n")
+
+func run_companion_unlock_audit():
+	# #6b (user direction 2026-09-02) — WHY does a level-1 companion measure the same as no
+	# companion, when a companion is targetable (a damage sponge) and attacks every round?
+	#
+	# Win rate alone cannot answer that, so this measures what the companion actually DOES:
+	#   survived   — rounds it stayed up before being knocked out
+	#   soaked     — hits the monster spent on the companion instead of the player (aggro)
+	#   dealt      — damage it contributed
+	# across the ABILITY UNLOCK BOUNDARIES (passive always, active at companion level 5,
+	# threshold at 15) plus a level-matched companion, so unlock pacing and raw survivability
+	# can be told apart.
+	var samples := 24
+	print("\\n===== #6b COMPANION: what does it actually do? =====")
+	print("Same-level ELITE, Fighter, AVERAGE gear, %d fights/cell." % samples)
+	print("compHP is the companion's max combat HP: 30 + level*5 + sub_tier*10 + hp_bonus.")
+	print("survived = rounds up before KO (capped at fight length). soaked = hits taken FOR you.")
+	print("%-7s %-9s %8s %9s %8s %8s %7s" % ["PlyrL", "compL", "compHP", "survived", "soaked", "dealt%", "win%"])
+	for lvl in [5, 50, 250, 1000, 10000]:
+		for comp_mode in ["none", "1", "5", "15", "match"]:
+			var wins := 0
+			var surv := 0.0
+			var soak := 0.0
+			var dealt := 0.0
+			var total_dmg := 0.0
+			var comp_hp := 0
+			var n := 0
+			for i in range(samples):
+				var ch = make_char(lvl, "average", "Fighter")
+				if comp_mode == "none":
+					ch.active_companion = {}
+				else:
+					var cl: int = lvl if comp_mode == "match" else int(comp_mode)
+					ch.active_companion["level"] = cl
+					ch.active_companion["combat_hp"] = ch.get_companion_max_hp()
+				comp_hp = ch.get_companion_max_hp() if comp_mode != "none" else 0
+				var monster := make_monster(lvl, "elite", 1.0)
+				var mhp0: int = int(monster.get("max_hp", 1))
+				ch.in_combat = false
+				combat_mgr.start_combat(0, ch, monster)
+				if not combat_mgr.active_combats.has(0):
+					continue
+				var combat = combat_mgr.active_combats[0]
+				var turns := 0
+				var rounds_up := 0
+				var hits_on_comp := 0
+				var php_prev: int = ch.current_hp
+				while turns < 400:
+					if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+						break
+					turns += 1
+					if combat.get("player_can_act", true):
+						_player_act(combat, ch)
+					if int(monster.get("current_hp", 0)) <= 0:
+						break
+					php_prev = ch.current_hp
+					var comp_hp_before: int = int(ch.active_companion.get("combat_hp", 0)) if comp_mode != "none" else 0
+					combat_mgr.process_monster_turn(combat)
+					if comp_mode != "none":
+						var comp_now: int = int(ch.active_companion.get("combat_hp", 0))
+						if comp_now > 0:
+							rounds_up += 1
+						# A monster turn that cost the companion HP but not the player is a hit
+						# the companion took FOR the player — the sponge working.
+						if comp_now < comp_hp_before and ch.current_hp >= php_prev:
+							hits_on_comp += 1
+				if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+					wins += 1
+				surv += float(rounds_up)
+				soak += float(hits_on_comp)
+				total_dmg += float(mhp0 - maxi(0, int(monster.get("current_hp", 0))))
+				n += 1
+				combat_mgr.end_combat(0, false, false)
+			if n == 0:
+				continue
+			print("%-7d %-9s %8d %9.1f %8.1f %8s %6d%%" % [
+				lvl, comp_mode, comp_hp, surv / n, soak / n, "-", int(100.0 * wins / n)])
+	print("")
+	print("If `survived` collapses to ~1 round at high level, the companion is not a sponge or")
+	print("an attacker — it is a one-hit casualty, and no amount of ability unlocking fixes it.")
 	print("=====================================================================\\n")
 
 func run_reference_curve():
