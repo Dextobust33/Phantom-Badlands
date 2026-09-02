@@ -968,6 +968,31 @@ func run_reference_calibrate():
 			print("L%-6d hp=%12d str=%10d   -> %5.1f turns, %3.0f%% HP cost, %3.0f%% win" % [
 				lvl, int(round(hp)), int(round(st)),
 				float(last["turns"]), 100.0 * float(last["cost"]), 100.0 * float(last["win"])])
+	# Each anchor is calibrated INDEPENDENTLY, so a noisy cell leaves a permanent dent in what
+	# is supposed to be a difficulty RAMP. Measured: L100 came out at 8507 HP and L250 at 6022 —
+	# monsters getting weaker as the player got stronger, the exact fault the reference model
+	# was built to remove, reintroduced by sampling noise. Everything downstream reads it: the
+	# ability table showed a matching bump at L250-500 (power_strike 59-66%, magic_bolt
+	# 179-350%) that is the dip, not the abilities.
+	# Enforce a non-decreasing ramp by carrying the running maximum forward. Deliberately does
+	# not smooth or average — it only refuses to go DOWN, so a genuinely hard level stays hard.
+	var fixed_hp := 0
+	var fixed_str := 0
+	var repaired := 0
+	for row in table:
+		var h := int(row["hp"])
+		var st2 := int(row["str"])
+		if h < fixed_hp or st2 < fixed_str:
+			repaired += 1
+		row["hp"] = maxi(h, fixed_hp)
+		row["str"] = maxi(st2, fixed_str)
+		fixed_hp = int(row["hp"])
+		fixed_str = int(row["str"])
+	if repaired > 0:
+		print("
+Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;" % repaired)
+		print("clamped to the running maximum so the curve is a ramp, never a dip.")
+
 	var out := {"generated": "sim run_reference_calibrate", "target_turns": TARGET_TURNS_NORMAL_SIM, "anchors": table}
 	var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
 	if f:
