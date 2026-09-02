@@ -902,7 +902,7 @@ constant trek back to a post to revive largely goes away.
       improve one (levels, fusion, sub-tier, variants) legible and reachable
 - [ ] Re-run `-- companion` after each change; it is the regression test for this item
 
-### 6c. Class balance & the resource economy — re-measured, now unblocked
+### 6c. Class balance & the resource economy — ability shapes FIXED; class tuning remains
 *Split out of item 6 on 2026-09-02: item 6 had grown to 21 open tasks covering two different
 jobs — sizing the MONSTERS and sizing the CLASSES. They are separate, and the second depends on
 the first being settled.*
@@ -1056,6 +1056,74 @@ ability:**
       resources" utility cards
 - [ ] Equipment vs race vs class, compared **against each other** rather than in isolation
       (`-- races` and `-- classes` now exist for this)
+
+**6c ABILITY WORK COMPLETE (2026-09-02).** Every damage ability now reads off ONE anchor —
+a share of the health bar it is fighting — instead of inventing its own scaling curve.
+
+| Ability | before | after |
+|---------|--------|-------|
+| power_strike | 13% → 128% (9.8x drift) | **~20% flat L1-L1000** |
+| cleave | → **213%** at L10000 | **~25% flat L1-L2500** |
+| magic_bolt | 39% → **467%** (12x drift) | **~50% flat** (full dump) |
+| meteor | **175%** at L1 → 38% | **~50% flat** |
+| blast | 49% → 10% (decaying) | **~27% flat** |
+
+`ABILITY_WEIGHTS` is now the design statement AND the measurement: a weight of 0.22 means
+"this takes a fifth of a normal monster", which is exactly what `-- ability_hp` reports.
+
+**Three faults were found by measuring after each change rather than at the end:**
+- *cleave and blast were given weights but their damage code was never converted.*
+  `ABILITY_WEIGHTS` is inert until the ability reads it. Both sat drifting while their
+  converted siblings went flat — the contrast is what exposed them
+- *Magic Bolt read 5-6%* — the AUDIT casting a timid 25% chip, not the ability being broken
+- *Sage collapsed to 8-10% win* — a REGRESSION the anchoring introduced (below)
+
+**Magic Bolt's spend curve was redesigned on user direction.** The old efficiency floor (0.15)
+made a quarter-spend only 36% as mana-efficient as a full dump, so partial investment was
+punished twice and dumping was 2.8x better. But *mages fight flocks*, so committing the whole
+bar is often wrong — the curve answered the question instead of posing it, and then the flock
+punished the answer. At 0.80 a quarter-spend lands 21% of a full dump rather than 9%, so
+"how much do I hold back for the next one" is a real risk judgement. The old floor existed to
+stop cheap chips one-shotting monsters (#70); anchoring solves that directly, so the tax was
+redundant and only its side effect remained.
+
+**A REGRESSION the anchoring caused, and nearly the wrong fix.** Wisdom's combat value arrived
+through the mana pool (`base_mana = 30 + INT*3 + WIS*1.5`) because old Magic Bolt scaled with
+mana SPENT. Anchoring scaled damage by the FRACTION of pool committed, silently deleting that
+pathway. Sage — 1.0 Wisdom/level against 0.75 Intelligence — absorbed the whole cost and fell
+to 8-10% win at elite. Sage was *already* on record as "the worst class in the game" from
+measurements taken BEFORE the anchoring, so the obvious move was to buff it. **An existing
+known problem is perfect camouflage for a regression you just caused.** Casters now count
+Wisdom at half weight; Sage recovered to 18-23%.
+
+**Class table after 6c** (win% — L10 normal / L30 elite / L80 elite):
+
+| Class | L10 | L30 elite | L80 elite |
+|-------|-----|-----------|-----------|
+| Fighter | 88% | 45% | 61% |
+| Barbarian | 90% | 45% | 38% |
+| Paladin | 73% | 33% | 48% |
+| Wizard | 81% | 43% | 41% |
+| Sorcerer | 85% | 35% | 31% |
+| **Sage** | 71% | **23%** | **18%** |
+| Thief | 68% | 53% | 60% |
+| Ranger | 55% | 51% | **73%** |
+| Ninja | 61% | 55% | 60% |
+
+- [ ] **Sage is still last, and it is now a real class-design issue rather than a bug.** Its
+      effective caster stat growth is **1.25/level** against Wizard 1.62 and Sorcerer 1.65
+      (INT + WIS×0.5), a 24% deficit that its "25% cheaper mana" passive does not repay —
+      cost reduction buys more casts, but each cast is anchored, so it cannot close a damage
+      gap. Either raise its INT growth, or give the passive a damage-relevant clause
+- [ ] **Tricksters still lead** (51-55% at L30 elite, 60-73% at L80 against 31-48% for the
+      others). Exploit was disconfirmed as the cause earlier; Outsmart's instant-win and the
+      dodge advantage remain the open suspects and are still unexamined
+- [ ] **L10000 spike across ALL abilities, including unconverted trickster ones** (ambush 81%).
+      A spike that hits converted and unconverted alike is the final CURVE anchor being low,
+      not an ability fault. Fix in the curve; do not tune abilities against it
+- [ ] The `ABILITY_WEIGHTS` values are proposals. "A power strike takes a fifth of a normal
+      monster" is a design opinion that wants the owner's eye, and it is now a single readable
+      table rather than five formulas
 
 ### 6d. Risk, reward & progression incentives
 *Also split out of item 6. This is the economy around fights rather than the fights themselves.*
