@@ -39668,13 +39668,9 @@ func _party_rotate_leader(member_ids: Array) -> void:
 		party["rotation_idx"] = idx
 		var new_name: String = characters[candidate].name
 		_transfer_leadership(leader_id, candidate)
-		if active_parties.has(candidate):
-			for pid in active_parties[candidate].get("members", []):
-				# Sent as party_notice, NOT text: a `text` line goes to game_output, which the
-				# victory screen and the refreshes behind it wipe before anyone can read it (the
-				# Player-Visible Output Rule). The client holds a party_notice until the combat
-				# panel closes, then prints it in the game window the player is reading.
-				send_to_peer(pid, {"type": "party_notice", "message": "[color=#66D0C0]%s takes point - they lead the party now.[/color]" % new_name})
+		# The announcement rides on party_leader_changed (sent by _transfer_leadership),
+		# which every leadership change already emits - rotation, appointing, and the
+		# transfer after a death. A second notice here just said the same thing twice.
 		return
 
 

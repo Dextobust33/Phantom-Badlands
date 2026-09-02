@@ -15190,6 +15190,22 @@ func _emit_combat_end_chrome(args: Dictionary) -> void:
 	_combat_text_to_outputs("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
 
+func _queue_party_notice(text: String) -> void:
+	"""Show a party announcement in the game window — but not while a fight's UI is up, where
+	it would be wiped by the victory screen (or spoil the round before it has played). Held
+	ones are flushed when the player leaves the post-fight flow."""
+	if text == "":
+		return
+	var busy: bool = (in_combat or _coop_playback_pending() or pending_continue
+		or (combat_scene_panel != null and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible))
+	if busy:
+		_pending_party_notices.append(text)
+		if combat_scene_panel and combat_scene_panel.has_method("append_log"):
+			combat_scene_panel.append_log(text)   # still readable in the combat log
+	else:
+		display_game(text)
+
+
 func _flush_party_notices() -> void:
 	"""Print party notices held while the fight's UI was up, then release any teaching hint
 	held for the same reason."""
@@ -23517,15 +23533,7 @@ func handle_server_message(message: Dictionary):
 			update_action_bar()
 
 		"party_notice":
-			# Shown in the game window, but only once the fight's UI is out of the way.
-			var _pn := String(message.get("message", ""))
-			if _pn != "":
-				if combat_scene_panel and combat_scene_panel.visible:
-					_pending_party_notices.append(_pn)
-					if combat_scene_panel.has_method("append_log"):
-						combat_scene_panel.append_log(_pn)   # also readable in the combat log
-				else:
-					display_game(_pn)
+			_queue_party_notice(String(message.get("message", "")))
 
 		"party_update":
 			var leader_name = message.get("leader", "")
@@ -23552,7 +23560,11 @@ func handle_server_message(message: Dictionary):
 			var new_leader = message.get("new_leader", "")
 			var my_name = character_data.get("name", "")
 			is_party_leader = (new_leader == my_name)
-			display_game("[color=#FFD700]%s is now the party leader.[/color]" % new_leader)
+			# v0.9.740 — the STATE change applies now (action bar, who may hunt), but the
+			# ANNOUNCEMENT waits for the fight's UI to clear. This line used to print the
+			# instant the round resolved, which is why a leadership change was announced
+			# before the round had even played out.
+			_queue_party_notice("[color=#FFD700]%s is now the party leader.[/color]" % new_leader)
 			update_action_bar()
 
 		"party_combat_start":
