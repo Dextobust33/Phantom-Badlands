@@ -14,7 +14,7 @@ order is what forces revisits.
 
 ## In progress
 
-*(item 3 — identity & theming — is next)*
+*(item 4 — website refresh — is next; the setting bible it needed is done)*
 
 ### 1. Party mechanics — server pass ✅ COMPLETE (shipped v0.9.740)
 - [x] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
@@ -111,20 +111,26 @@ again self-casts — no new binding — plus a visible Self button.
       revealed, so watching it is meaningful. Needs the server to broadcast the payload plus each
       reveal to party members, and a read-only mode on both panels
 
-### 3. Identity & theming — what "Phantom Badlands" actually means
-*Design item, no code prerequisites. Placed HERE because things depend ON it: the dungeon
-themes (10), the Atlas's voice (9), the realm meta-loop (13) and every word on the website (4)
-all inherit whatever is decided, and re-theming after those are built is a rewrite.*
+### 3. Identity & theming ✅ COMPLETE — `docs/design/setting_bible.md`
+**Agreed 2026-09-01.** A *phantom* is something the land has kept and pushed back up. It keeps
+**places** (dungeons surface, take root, and bleed monsters toward the nearest holdout) and it
+keeps **people** (delvers don't come back all the way). The two are one phenomenon: **going
+into a phantom place is what makes you one** — permadeath is the bill, not bad luck. The only
+thing that moves cleanly between lives is what you brought out **alive**, which is why
+companions are the emotional spine: they outlive their delvers.
 
-- [ ] Tie the NAME to the world. The game is centred on **dungeons and companions**, but
-      "Phantom Badlands" currently reads as generic wasteland. Decide what a *Phantom* is in
-      this world and what the *Badlands* are, so the two nouns carry the setting instead of
-      sitting on top of it
-- [ ] Make companions part of the fiction, not a mechanic bolted on — where do they come from,
-      why do they bond, what does a Phantom have to do with them
-- [ ] Same for dungeons: what they are, why they keep appearing, why anyone goes in
-- [ ] Write it down as a short setting bible (a page, not a novel) that the Atlas, quest text,
-      post/NPC flavour and the website can all be written against
+- [x] Name tied to the world — "Phantom" and "Badlands" both carry meaning, and every line of
+      it is a reading of a mechanic the game already runs (dungeon spawn timer, threat cones,
+      post-anchored levels, permadeath, Sanctuary, kennel, corpses, fusion, border tier)
+- [x] Companions in the fiction: eggs are the one living thing a dead place produces
+- [x] Dungeons in the fiction: why they appear, why they threaten posts, why they return
+- [x] Setting bible written, with a voice guide (use/avoid word lists) so the Atlas, quests,
+      NPC flavour and website can be written against one register
+- [ ] **Full in-game copy pass** — tutorial intro, help framing, dungeon entry text,
+      egg/companion flavour, post + NPC descriptions rewritten against the bible. **Wanted
+      (user 2026-09-01), deliberately deferred**: it touches a large number of player-facing
+      strings, and doing it before the dungeon arc (8-12) means rewriting dungeon text twice.
+      Do the non-dungeon surfaces any time; save dungeon copy for 11
 
 ### 4. Website refresh — accurate, alive, and showing the game
 *After 3 so the copy is written against settled theming, and after the current release so the
@@ -136,7 +142,9 @@ feature list is true. Dungeon pages are deliberately NOT here — see 11.*
 - [ ] **Simulated screenshots** on the feature pages. Combat, party play, gathering, crafting,
       market and companions are all visually stable now, so those can be captured today
       (the in-game 📷 / F12 workflow writes to `claude_screenshots/`)
-- [ ] Carry the settled identity from 3 into the landing copy
+- [ ] Carry the settled identity from 3 into the landing copy — `docs/design/setting_bible.md`
+      has the premise, the voice rules and the use/avoid word lists. The current tagline
+      ("Classic Text RPG, Modern Systems") describes the software, not the world
 
 ### 5. Simulator upgrade — **blocks all balance work**
 - [ ] Teach the sim to spend **abilities and resources**. It drives real combat code but uses
