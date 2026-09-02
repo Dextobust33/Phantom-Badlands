@@ -86,6 +86,7 @@ func _audit_registry() -> Dictionary:
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"comp_unlock": ["what a companion actually does: survival, soak, unlock boundaries", run_companion_unlock_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
+		"economy": ["is an ability cost real, or does regen cover it?", run_resource_economy_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
 		"ability_hp": ["ability damage vs monster HP across all levels", run_ability_vs_hp],
 		"flock": ["flock-chain sustain", run_flock_audit],
@@ -1561,6 +1562,64 @@ func run_species_audit():
 			print("              SPREAD: %d%% (%s) to %d%% (%s) — %d points" % [
 				int(rows[0][1]), rows[0][0], int(rows[rows.size()-1][1]), rows[rows.size()-1][0],
 				int(rows[rows.size()-1][1]) - int(rows[0][1])])
+	print("=====================================================================
+")
+
+func run_resource_economy_audit():
+	# #6c (user report 2026-09-02: "Blast shows it costs 0 but did 1900 damage").
+	# Ability costs scale with the NAKED pool while per-turn regen is a % of the pool capped at
+	# 25 + level/2. When regen >= cost, the ability is FREE and the resource system stops being
+	# a constraint at all — every card becomes "press the biggest button". This measures cost
+	# against regen for every damage ability, per class, so it is clear which are free and
+	# whether it is a mage problem or a whole-game problem.
+	print("
+===== #6c RESOURCE ECONOMY: is the cost real? =====")
+	print("cost = actual resource spent on one cast. regen = restored per player turn.")
+	print("NET = cost - regen. NET <= 0 means the ability is FREE: the turn pays for itself.")
+	print("%-9s %-14s %7s %9s %9s %9s %8s" % ["Class", "Ability", "Level", "pool", "cost", "regen", "NET"])
+	var cases := [
+		["Fighter", ["power_strike", "cleave", "devastate"]],
+		["Wizard", ["blast", "meteor", "magic_bolt"]],
+		["Thief", ["ambush", "exploit", "gambit"]],
+	]
+	for lvl in [10, 50, 250, 1000]:
+		for c in cases:
+			var klass: String = String(c[0])
+			for ab in (c[1] as Array):
+				var ch = make_char(lvl, "average", klass)
+				var monster := make_monster(lvl, "normal", 1.0)
+				monster["max_hp"] = int(monster.get("max_hp", 1)) * 100
+				monster["current_hp"] = monster.get("max_hp", 1)
+				ch.in_combat = false
+				combat_mgr.start_combat(0, ch, monster)
+				if not combat_mgr.active_combats.has(0):
+					continue
+				var combat = combat_mgr.active_combats[0]
+				_force_hand(combat, String(ab))
+				var pool: int = _class_max_resource(ch)
+				# GROSS cost, read from the `path_last_ability_cost` meta that apply_variable_cost
+				# stamps. A before/after delta on the resource measures NET, because regen fires
+				# during the same turn as the cast — the first version of this audit did exactly
+				# that and reported a cost of 0 for nearly every ability, which then double-counted
+				# regen when NET was computed. _measure_ability already documented this trap.
+				var arg: String = str(maxi(1, int(float(ch.get_total_max_mana()) * 0.20))) if ab == "magic_bolt" else ""
+				ch.set_meta("path_last_ability_cost", 0)
+				combat_mgr.process_ability_command(0, String(ab), arg)
+				var cost: int = int(ch.get_meta("path_last_ability_cost", 0))
+				if ab == "magic_bolt":
+					cost = int(arg) if arg.is_valid_int() else 0
+				# Regen restored on a fresh player turn, measured on its own.
+				var before_regen: int = _class_resource(ch)
+				var msgs: Array = []
+				combat_mgr._apply_gear_resource_regen(ch, msgs)
+				var regen: int = maxi(0, _class_resource(ch) - before_regen)
+				combat_mgr.end_combat(0, false, false)
+				var net: int = cost - regen
+				var flag: String = "  FREE" if net <= 0 else ""
+				print("%-9s %-14s %7d %9d %9d %9d %8d%s" % [klass, ab, lvl, pool, cost, regen, net, flag])
+	print("")
+	print("Any row marked FREE has no resource cost in practice: the turn's regen covers the")
+	print("spend, so there is nothing to manage and no reason to ever cast anything cheaper.")
 	print("=====================================================================
 ")
 

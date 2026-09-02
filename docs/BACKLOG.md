@@ -1046,11 +1046,52 @@ ability:**
       advantage instead
 - [ ] **Paladin is second-worst and slowest** (31%/36%, 17 turns at L80 elite)
 - [ ] **Magic Bolt flat curve** — damage-per-mana has to scale on the same curve as monster HP
-- [ ] Ability cost model / resource economy (costs flat while pools scale).
-      **Measured 2026-09-01:** a level-20 Wizard's Forcefield (`cost_percent: 3`) has a NET
-      cost of **zero** — the same turn's regen refills the spend before the player ever sees
-      it, so a 310-point absorb shield is free every round. Reproduced in SOLO combat, so it
-      is not co-op specific. Regen (~16%/turn) outrunning cost is the whole flaw in one case
+**RESOURCE ECONOMY DISSOLVES WITH LEVEL — measured 2026-09-02 (`-- economy`).**
+Reported from live play: *"Blast shows it costs 0 but did 1900 damage... this may be a problem
+for warriors and tricksters as well."* It is, and it is all three archetypes.
+
+Costs ARE charged — the "0" on screen is regen refilling the spend within the same turn — but
+they are trivial relative to the pool:
+
+| Level | Ability | cost | pool | cost% | **casts per full bar** |
+|-------|---------|------|------|-------|------------------------|
+| L10 | blast | 34 | 130 | 26% | **4** |
+| L10 | ambush | 20 | 114 | 18% | **6** |
+| L1000 | power_strike | 66 | 3,192 | 2.1% | **48** |
+| L1000 | cleave | 100 | 6,093 | 1.6% | **61** |
+| L1000 | blast | 185 | 16,363 | 1.1% | **88** |
+| L1000 | ambush | 104 | 7,057 | 1.5% | **68** |
+| L1000 | magic_bolt | 3,171 | 15,858 | 20% | **5** |
+
+**The resource system works at low level and evaporates by mid-game.** At L10 a mage gets 4
+casts of Blast and has to think; at L1000 they get **88** and cannot run out. Every archetype is
+affected — warriors 48-61 casts, tricksters 68 — so this is not a mage problem.
+
+**Cause, and it was a deliberate decision rather than an oversight.** Ability cost scales with
+the **naked pool** (base + primary stat, excluding gear), by design: the #55 comment states the
+intent as *"gear +max pool no longer inflates cost, so a high-cap/high-regen build gets MORE
+casts + better sustain."* That intent is reasonable. The magnitude is not: at L1000 a Wizard's
+naked pool is ~800 against a total of 16,363, so **gear multiplies the pool ~20x while costs
+stay fixed to the naked value** — and 20x more casts is the whole resource economy gone.
+
+Magic Bolt is the only ability that still costs anything (20% of pool, 5 casts) because its cost
+is the player's explicit spend rather than a table lookup. That is why it felt so expensive
+next to everything else — it was the only card actually paying.
+
+- [ ] **DECISION NEEDED: how much should gear inflate casts-per-bar?** Options:
+      1. Cost as a % of the **total** pool — removes the gear reward entirely, simplest, and
+         makes casts-per-bar constant at every level
+      2. Cost as a % of a **blend** (naked + a capped share of the gear bonus) — preserves the
+         intent that gear improves sustain, but bounds it to something like 1.5-2x rather than
+         20x. **Recommended**
+      3. Cap the gear pool bonus itself — touches more systems
+- [ ] Whatever is chosen, target a **casts-per-bar band** (something like 5-10) and hold it
+      across levels, rather than targeting a cost percentage. Casts-per-bar is the number a
+      player actually experiences
+- [ ] `devastate` reads cost 0 at every level — it is a Momentum dump and pays in Momentum
+      rather than stamina. Worth confirming that is intended and not a second free-cast path
+- [ ] Once costs are real again, **re-check every damage number in 6c**: ability weights were
+      tuned assuming a cost that is not currently being paid
 - [ ] Anti-abuse items that **never landed**: Forethought and Recharge still exist, no mitigation
       cap, no stun DR. Related user direction: remove blue "skip the enemy turn / refund
       resources" utility cards
