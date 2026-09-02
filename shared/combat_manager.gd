@@ -4359,7 +4359,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# Variable cost: damage AND bleed magnitude scale with spend; duration stays 4 rounds.
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 2.5 * damage_multiplier * str_mult * variable_fraction)
+			# #6c — anchored form, same double-counted-stat problem as power_strike. Left
+			# unconverted in the first pass and it showed immediately: power_strike flattened
+			# to ~20% of a health bar while cleave still ran to 213% at L10000.
+			var _cl_anchor: float = _ability_anchored_damage(character, "strength", float(ABILITY_WEIGHTS.get("cleave", 0.28)))
+			var base_dmg = int(_cl_anchor * damage_multiplier * variable_fraction) if _cl_anchor > 0.0 				else int(total_attack * 2.5 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var cleave_skill_bonus = character.get_skill_damage_bonus("cleave")
 			base_dmg = apply_skill_damage_bonus(character, "cleave", base_dmg, combat)

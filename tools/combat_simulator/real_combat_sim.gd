@@ -1809,7 +1809,11 @@ func _cast_at_scaled(ch, base_monster: Dictionary, ability: String, hp_mult: flo
 	var combat = combat_mgr.active_combats[0]
 	_force_hand(combat, ability)
 	var hp0: int = int(monster.get("current_hp", 0))
-	var arg: String = str(maxi(1, int(ch.get_total_max_mana() * 0.25))) if ability == "magic_bolt" else ""
+	# Magic Bolt is measured at a FULL DUMP. Its design is "commit the whole bar for a nuke",
+	# and both the spend fraction and the efficiency curve scale off that commitment, so a
+	# 25% cast reads ~6% of a health bar while a full one reads its actual weight. Measuring
+	# the chip made the ability look broken-weak when it was the audit choosing a timid cast.
+	var arg: String = str(maxi(1, int(ch.get_total_max_mana()))) if ability == "magic_bolt" else ""
 	combat_mgr.process_ability_command(0, ability, arg)
 	var dmg: int = hp0 - int(monster.get("current_hp", 0))
 	combat_mgr.end_combat(0, false, false)
@@ -1872,7 +1876,7 @@ func run_ability_vs_hp():
 ===== #6 ABILITY POWER vs MONSTER HP ACROSS THE WHOLE GAME (%d casts/cell) =====" % N)
 	print("One cast's damage as %% of a SAME-LEVEL NORMAL monster's max HP, AVERAGE gear.")
 	print(">=100%% one-shots trash. Falling left-to-right = the ability falls off with level.")
-	print("Magic Bolt is cast at its usual sim spend (25%% of the mana pool); finishers read")
+	print("Magic Bolt is cast at a FULL mana dump (its design case); finishers read")
 	print("LOW here because their engine (Momentum/Focus/Read) starts at 0 on a single cast.")
 	print("Each cast is measured against two oversized targets and read off the SLOPE, so")
 	print("flat abilities are not truncated by a one-shot and %%-max-HP abilities (Exploit)")
