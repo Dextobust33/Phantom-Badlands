@@ -2250,6 +2250,11 @@ const ROLE_TARGETS := {
 # `-- refcal`. Empty until a calibration has produced them, in which case the derived algebra
 # below is used instead.
 static var _calibrated_role_mults: Dictionary = {}
+# Per-species power corrections from `-- speciescal`, keyed by monster name. 1.0 = untouched.
+static var _species_power: Dictionary = {}
+
+static func set_species_power(m: Dictionary) -> void:
+	_species_power = m if m != null else {}
 
 static func set_calibrated_role_multipliers(m: Dictionary) -> void:
 	_calibrated_role_mults = m if m != null else {}
@@ -2341,6 +2346,8 @@ func _load_reference_curve() -> void:
 			# Role multipliers ride in the same file when a calibration has produced them.
 			if mp.get("role_multipliers", null) is Dictionary:
 				set_calibrated_role_multipliers(mp["role_multipliers"])
+			if mp.get("species_power", null) is Dictionary:
+				set_species_power(mp["species_power"])
 			return
 	var f = FileAccess.open(REFERENCE_CURVE_PATH, FileAccess.READ)
 	if f != null:
@@ -2449,6 +2456,23 @@ func compute_anchored_stats(base_stats: Dictionary, target_level: int) -> Dictio
 	if ref.is_empty():
 		return {}
 	var shape := _species_shape(base_stats)
+	# #6c (2026-09-02) — per-species POWER CORRECTION, calibrated from real fights.
+	#
+	# The shape above normalises a species' HP/STR/DEF ratios, but monster ABILITIES sit
+	# entirely outside the anchor and dominate the outcome. Measured: at the same level in the
+	# same gear, win rate ran from 31% (Titan) to 100% (Shrieker) at L50 and 22% (Hydra, 40
+	# turns, regeneration outpacing player damage) to 86% at L1000 — a ~69-point spread that
+	# made the aggregate difficulty numbers a poor description of any actual fight.
+	#
+	# Rather than model each ability's impact by hand, the sim measures each species' real win
+	# rate and writes back a single multiplier that pulls the outliers toward a band. Variety is
+	# preserved deliberately — the target is a BAND, not equality, so a Hydra is still a harder
+	# fight than a Harpy, just not a different game.
+	var sp_name := String(base_stats.get("name", ""))
+	if _species_power.has(sp_name):
+		var corr: float = float(_species_power[sp_name])
+		shape.hp = float(shape.hp) * corr
+		shape.str = float(shape.str) * corr
 	# #6 (2026-09-02, found in playtest) — the danger budget is per ENCOUNTER, not per monster.
 	# A flock chains more monsters into the same fight with NO healing in between, so a species
 	# with a 35% flock chance really presents ~1.5 monsters per encounter and a calibrated 40%

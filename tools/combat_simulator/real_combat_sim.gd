@@ -70,6 +70,7 @@ func _audit_registry() -> Dictionary:
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
+		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
 		"calibrate": ["make_char vs REAL saved characters", run_calibration_audit],
 		"gear_solve": ["solve the average-gear model against real characters", run_gear_solve],
@@ -1620,6 +1621,112 @@ func run_resource_economy_audit():
 	print("")
 	print("Any row marked FREE has no resource cost in practice: the turn's regen covers the")
 	print("spend, so there is nothing to manage and no reason to ever cast anything cheaper.")
+	print("=====================================================================
+")
+
+func run_species_calibrate():
+	# #6c — calibrate a per-species power correction so the same level is roughly the same
+	# fight whichever monster shows up. Measured spread before this: 31%-100% win at L50 and
+	# 22%-86% at L1000, driven by monster ABILITIES which sit outside the stat anchor.
+	#
+	# Deliberately targets a BAND rather than equality. Species variety is the point — a Hydra
+	# should be a harder fight than a Harpy — so only species outside the band are corrected,
+	# and only toward its edge. Equalising them would make every monster the same fight, which
+	# is a worse outcome than the spread.
+	var samples: int = maxi(4, int(_audit_n / 12.0))
+	var passes := 3
+	var levels := [50, 250, 1000]
+	var target := 0.60          # centre of the acceptable win-rate band
+	var band := 0.12            # +/- this is left alone
+	print("
+===== #6c SPECIES POWER CALIBRATION =====")
+	print("Target band: %.0f%%-%.0f%% win. Species inside it are left alone." % [(target - band) * 100.0, (target + band) * 100.0])
+	var power := {}
+	# Collect the species actually reachable at these levels.
+	var species := {}
+	for lvl in levels:
+		for i in range(300):
+			var t = monster_db.select_monster_type(lvl)
+			var nm := String(monster_db.get_monster_base_stats(t).get("name", ""))
+			if nm != "":
+				species[nm] = int(species.get(nm, 0)) + 1
+	var names: Array = []
+	for k in species.keys():
+		if int(species[k]) >= 10:
+			names.append(k)
+	names.sort()
+	print("Calibrating %d species that actually spawn at L50/L250/L1000." % names.size())
+	for nm in names:
+		var corr := 1.0
+		var last_win := 0.0
+		for pass_i in range(passes):
+			monster_db.set_species_power({nm: corr})
+			var wins := 0
+			var n := 0
+			for lvl in levels:
+				for klass in ["Fighter", "Wizard", "Thief"]:
+					for i in range(samples):
+						var ch = make_char(lvl, "average", klass)
+						var monster = monster_db.generate_monster_by_name(nm, lvl, true)
+						if monster == null or monster.is_empty():
+							continue
+						monster["current_hp"] = monster.get("max_hp", 1)
+						ch.in_combat = false
+						combat_mgr.start_combat(0, ch, monster)
+						if not combat_mgr.active_combats.has(0):
+							continue
+						var combat = combat_mgr.active_combats[0]
+						var t2 := 0
+						while t2 < 300:
+							if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+								break
+							t2 += 1
+							if combat.get("player_can_act", true):
+								match ch.get_class_path():
+									"trickster": _player_act_trickster(combat, ch)
+									"mage": _player_act_mage(combat, ch)
+									_: _player_act(combat, ch)
+							if int(monster.get("current_hp", 0)) <= 0:
+								break
+							combat_mgr.process_monster_turn(combat)
+						if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+							wins += 1
+						n += 1
+						combat_mgr.end_combat(0, false, false)
+			monster_db.set_species_power({})
+			if n == 0:
+				break
+			last_win = float(wins) / float(n)
+			# Only correct OUTSIDE the band, and only toward its nearest edge.
+			var edge := 0.0
+			if last_win < target - band:
+				edge = target - band
+			elif last_win > target + band:
+				edge = target + band
+			else:
+				break
+			# Too-hard species (low win) need LESS power; too-easy need more.
+			corr *= pow(clampf(last_win / maxf(0.02, edge), 0.4, 2.5), 0.6)
+			corr = clampf(corr, 0.35, 2.5)
+		power[nm] = corr
+		if absf(corr - 1.0) > 0.02:
+			print("  %-22s win %3.0f%% -> power x%.2f" % [nm, last_win * 100.0, corr])
+	var existing := {}
+	var rf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+	if rf:
+		var parsed = JSON.parse_string(rf.get_as_text())
+		rf.close()
+		if parsed is Dictionary:
+			existing = parsed
+	existing["species_power"] = power
+	var wf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
+	if wf:
+		wf.store_string(JSON.stringify(existing, "	"))
+		wf.close()
+		print("
+Wrote species_power for %d species." % power.size())
+	monster_db._reference_anchors = []
+	monster_db._curve_is_calibrated = false
 	print("=====================================================================
 ")
 
