@@ -21252,9 +21252,12 @@ func _complete_scratch_off_fishing(peer_id: int) -> void:
 		job_xp_result = character.add_job_xp(session_job, total_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, session_job, total_xp, "gathering")
-	# v0.9.740 - a gathering session is a shared activity too: hand leadership on so the
-	# same player is not left driving every gather as well as every fight.
-	_party_rotate_leader([peer_id])
+	# v0.9.740 - a gathering session is a shared activity too, so hand leadership on.
+	# ONLY when the LEADER gathered: movement, hunting and resting are leader-gated but
+	# gathering is open to everyone, so rotating on anyone's gather moved leadership
+	# around while a non-leader mined - which is not "taking a turn at driving".
+	if _is_party_leader(peer_id):
+		_party_rotate_leader([peer_id])
 	# Compute character XP. Prefer add_job_xp's returned value (any committed
 	# job path); otherwise apply the legacy taper to total_xp (uncommitted
 	# past trial cap, where add_job_xp returns 0 char_xp_gained).
@@ -22468,9 +22471,12 @@ func _auto_resolve_gathering(peer_id: int, character, session: Dictionary, tool:
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
-	# v0.9.740 - a gathering session is a shared activity too: hand leadership on so the
-	# same player is not left driving every gather as well as every fight.
-	_party_rotate_leader([peer_id])
+	# v0.9.740 - a gathering session is a shared activity too, so hand leadership on.
+	# ONLY when the LEADER gathered: movement, hunting and resting are leader-gated but
+	# gathering is open to everyone, so rotating on anyone's gather moved leadership
+	# around while a non-leader mined - which is not "taking a turn at driving".
+	if _is_party_leader(peer_id):
+		_party_rotate_leader([peer_id])
 	var char_xp = job_result.get("char_xp_gained", 0)
 	if char_xp == 0 and total_job_xp > 0:
 		var taper = 1.0 if job_level <= 20 else (0.5 if job_level <= 50 else 0.2)
@@ -22945,9 +22951,12 @@ func _end_gathering_session(peer_id: int, fail_message: String = ""):
 	var job_result = character.add_job_xp(job_type, total_job_xp)
 	# v0.9.740 — share the same job XP with the rest of the party.
 	_party_share_job_xp(peer_id, job_type, total_job_xp, "gathering")
-	# v0.9.740 - a gathering session is a shared activity too: hand leadership on so the
-	# same player is not left driving every gather as well as every fight.
-	_party_rotate_leader([peer_id])
+	# v0.9.740 - a gathering session is a shared activity too, so hand leadership on.
+	# ONLY when the LEADER gathered: movement, hunting and resting are leader-gated but
+	# gathering is open to everyone, so rotating on anyone's gather moved leadership
+	# around while a non-leader mined - which is not "taking a turn at driving".
+	if _is_party_leader(peer_id):
+		_party_rotate_leader([peer_id])
 	var char_xp = job_result.get("char_xp_gained", 0)
 	# Always award character XP for gathering even if job XP is at trial cap.
 	# Job commitment gates job-level progression, not character progression.
