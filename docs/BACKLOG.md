@@ -679,7 +679,37 @@ damping had been protecting against.
       **`ROLE_TARGETS` is deliberately left UNCHANGED at 40/55/65/80** — those are the *inputs*
       that produced the approved *outputs*; retargeting to the measured values would aim the
       calibrator lower and undershoot what was agreed
-- [ ] **The real remaining fault is that difficulty does not hold EVENLY across levels.** With
+- [x] **Level unevenness largely CLOSED (2026-09-02) by single-axis, per-level role
+      calibration.** Four approaches were measured against each other:
+
+      | approach | elite cost (t65) | elite win spread | boss win |
+      |----------|------------------|------------------|----------|
+      | one derived pair | 57-77% | 28 pts | 23-47% |
+      | per-level, 2-axis | 37-67% | 23 pts | 30-47% |
+      | win-only turns | 63-81% | 24 pts | **15-33%** (worse) |
+      | **single-axis, per-level** | **54-68%** | **12 pts** | 30-48% |
+
+      Final: elite cost 54-68% against a 65% target with win rate in a **12-point band**
+      (48-60%), down from 28. Boss cost 65-81% against 80%, win 30-48%. Normal 35-55%
+      against 40%, win 64-82%.
+
+      **Two failed attempts are recorded because both looked obviously right:**
+      - *Measuring fight length on WINS ONLY* — reasonable-sounding (a "14-turn boss fight"
+        describes a fight you win) and **actively harmful**: conditioning on wins SELECTS the
+        favourable, SHORT fights, so it reads short exactly when win rate is low, the
+        calibrator raises HP, win rate drops, and the next pass selects even more lopsided
+        wins. Boss win fell to 15-33%
+      - *Correcting turns AND cost together* — they are coupled through the win rate (raising
+        HP raises cost, which kills the player sooner, which shortens the fight), so two knobs
+        chasing two coupled targets oscillate instead of converging
+
+      **Turn count is now an OUTPUT, not a target.** `hp_mult` is fixed at the role's design
+      length ratio with no feedback; only cost is corrected. Measured turns range widely
+      (2.9-32.2) and that is accepted: the danger numbers were signed off, fight length was
+      not. Tunable directly via `ROLE_TARGETS.turns` with no loop to destabilise
+- [ ] Remaining, and smaller: boss cost averages 71% against its 80% target, and empowered has
+      one outlier at L1 (32% against 55%). Worth one more pass some time, not now
+- [ ] **Superseded note — the original statement of this problem:** With
       the targets settled, this is what is left, and it is the old hump in miniature:
 
       | Level | elite win | boss win |
