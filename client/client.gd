@@ -1294,6 +1294,8 @@ var party_control_mode: String = "rotate"
 # so they are held and printed once the combat panel closes and the player is back on the world
 # view — the window they are actually reading at that moment.
 var _pending_party_notices: Array = []
+# A location refresh held while the combat UI was up (see the "location" handler).
+var _pending_location_message: Variant = null
 var party_menu_mode: bool = false       # In the party management menu
 var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
 var party_waiting_for_turn: bool = false   # Not our turn in party combat
@@ -15191,8 +15193,13 @@ func _emit_combat_end_chrome(args: Dictionary) -> void:
 
 
 func _flush_party_notices() -> void:
-	"""Print party notices that were held while the fight's UI was up, and release any
-	teaching hint that was held for the same reason."""
+	"""Replay everything held back while the fight's UI was up: first the location refresh
+	(it draws the world screen), then party notices on top of it, then any teaching hint.
+	Order matters — the location render is what repopulates the window."""
+	if _pending_location_message != null:
+		var loc = _pending_location_message
+		_pending_location_message = null
+		handle_server_message(loc)
 	if not _pending_party_notices.is_empty():
 		var notices := _pending_party_notices.duplicate()
 		_pending_party_notices.clear()
@@ -21634,6 +21641,15 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
+			# v0.9.740 — HOLD a location refresh that lands while the fight's UI is up. The
+			# server now sends one at the end of a party fight (so nobody is left staring at
+			# the screen they had before), but if it renders while the combat panel still
+			# covers the view, the output is swallowed and NOTHING redraws afterwards — the
+			# game window ends up empty. Replayed when the panel closes.
+			if (in_combat or _coop_playback_pending()
+					or (combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible)):
+				_pending_location_message = message.duplicate(true)
+				return
 			# Cache area + compass info for the Status HUD (visible even after UI updates)
 			hud_area_level = int(message.get("area_level", 0))
 			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
@@ -23787,6 +23803,7 @@ func _process_combat_start(message: Dictionary):
 	_pending_permadeath_message = null
 	_pending_permadeath_countdown = 0
 	_pending_post_death.clear()
+	_pending_location_message = null
 	_party_end_playback = false
 	_combat_generation += 1
 	_party_pending_fx_cmd = ""
@@ -27652,6 +27669,7 @@ func _handle_party_combat_start(message: Dictionary):
 	_pending_permadeath_message = null
 	_pending_permadeath_countdown = 0
 	_pending_post_death.clear()
+	_pending_location_message = null
 	_party_end_playback = false
 	_combat_generation += 1
 	_party_pending_fx_cmd = ""

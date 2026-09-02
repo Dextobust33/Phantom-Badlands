@@ -39,6 +39,11 @@ RECREATE = {
 
 # Real coordinates for the live world seed, found with find_tile.gd. Re-run it if the world
 # seed ever changes - terrain generated with the wrong seed does NOT match the live server.
+# Default anchor for every scenario that does not pin its own. A RECREATED character spawns at
+# the Crossroads (0,0), which is a SAFE ZONE where nothing can be hunted - so any scenario that
+# might involve a fight has to place the party deliberately. ~level 13 here.
+DEFAULT_AT = (57, -11)
+
 TILES = {
     "water":  (59, -10),
     "ore":    (57, -12),
@@ -217,7 +222,7 @@ def main():
         path = os.path.join(SAVE_DIR, fn)
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
-        spot = spec.get("at")
+        spot = spec.get("at", DEFAULT_AT)
         if anchor is None:
             anchor = spot if spot else (c.get("x", 0), c.get("y", 0))
             c["x"], c["y"] = anchor[0], anchor[1]
