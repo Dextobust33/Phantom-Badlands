@@ -42,6 +42,12 @@ const MITIGATION_BUFF_FLOOR := 0.15
 # At 0.80 the efficiency runs 0.82 (10% spend) to 1.00 (full), so committing still pays a
 # little but partial spends are honest: a quarter-spend now lands 21% of a full dump instead
 # of 9%. The judgement becomes risk management rather than a penalty for caution.
+# Spend at which Magic Bolt delivers its full anchored weight. Not the whole pool: at 100% it
+# was ~10x less mana-efficient than Meteor, which made it strictly worse than the cheaper card.
+# At 20% the mage kit lines up as blast 0.037 damage-per-cost%, meteor ~0.032, bolt ~0.028 —
+# sustain most efficient, burst paying a premium for being front-loaded, which is the right
+# shape for a nuke.
+const MAGIC_BOLT_FULL_SPEND_PCT := 0.20
 const MAGIC_BOLT_MIN_EFF := 0.80
 # #55 — repeated-stun diminishing returns. Each time the SAME monster is stunned, the
 # next stun's success chance is multiplied by this per prior stun (tracked on the combat
@@ -166,7 +172,7 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"cleave":       {"ceiling": 20, "cost_percent": 12, "floor_ratio": 0.3, "resource": "stamina"},
 	"devastate":    {"ceiling": 32, "cost_percent": 16, "floor_ratio": 0.3, "resource": "stamina"},
 	"blast":        {"ceiling": 34, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},   # 4→6 (2026-08-25 resource fix — eased from 7 for flock sustain; scales w/ pool to L1000)
-	"meteor":       {"ceiling": 65, "cost_percent": 8, "floor_ratio": 0.3, "resource": "mana"},   # 6→8 (eased from 10)
+	"meteor":       {"ceiling": 65, "cost_percent": 14, "floor_ratio": 0.3, "resource": "mana"},  # 8→14 (#6c: re-priced against its anchored weight — see below)
 	"ambush":       {"ceiling": 20, "cost_percent": 10, "floor_ratio": 0.3, "resource": "energy"},
 	"exploit":      {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "energy"},
 	"gambit":       {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "energy"},
@@ -3678,7 +3684,18 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Fraction is vs MAX pool (not current) so dumping a near-empty bar can't cheese full
 			# efficiency. Full pool -> 1.0x (unchanged); 10% -> ~0.37x; 25% -> ~0.48x.
 			var _mb_pool: int = maxi(1, character.get_total_max_mana())
-			var _mb_frac: float = clampf(float(bolt_amount) / float(_mb_pool), 0.0, 1.0)
+			# #6c (2026-09-02) — Magic Bolt reached full weight only at a WHOLE-POOL dump while
+			# Meteor reached full weight at 8% of the naked pool, so Meteor was ~10x more
+			# mana-efficient and Bolt was strictly worse. Reported from live play: a 547-mana
+			# Bolt and a 50-mana Meteor previewed the same damage.
+			# Bolt now reaches full weight at MAGIC_BOLT_FULL_SPEND_PCT of the pool, which is a
+			# real commitment without being everything you have — and it matches the design
+			# intent that mages judge a spend against the next monster rather than emptying the
+			# bar on this one. Overspending past the ceiling still adds a little on a sqrt taper
+			# rather than being wasted outright, so there is no cliff to punish a misjudgement.
+			var _mb_ceiling: float = maxf(1.0, float(_mb_pool) * MAGIC_BOLT_FULL_SPEND_PCT)
+			var _mb_raw: float = float(bolt_amount) / _mb_ceiling
+			var _mb_frac: float = _mb_raw if _mb_raw <= 1.0 else minf(1.5, 1.0 + 0.3 * (sqrt(_mb_raw) - 1.0))
 			var _mb_eff: float = MAGIC_BOLT_MIN_EFF + (1.0 - MAGIC_BOLT_MIN_EFF) * _mb_frac
 			# #6c — anchored form. The old shape multiplied the mana SPENT (a pool that grows
 			# ~300x across the game) by (1 + 4.3*sqrt(INT)) (another ~23x), so it outscaled
