@@ -3138,6 +3138,57 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 
 # ===== ABILITY SYSTEM =====
 
+# === ABILITY DAMAGE ANCHORING (#6c, 2026-09-02) ===
+# Every damage ability invented its own scaling curve, and measurement showed three different
+# shapes inside one class's kit:
+#   magic_bolt  spend x (1 + 4.3*sqrt(INT))  — BOTH terms grow, so it outscaled everything:
+#                                              39% of a health bar at L10, 467% at L10000
+#   meteor      100 x (1 + 0.04*INT)         — FLAT base, so the opposite: 175% at L1, 38% at
+#                                              L10000. Strong early, irrelevant late
+#   power_strike attack x (1 + sqrt(STR)/10) — attack ALREADY scales with STR, so the stat is
+#                                              counted twice: 13% at L10, 128% at L10000
+# The well-behaved kit (ambush/exploit/gambit, 2-3x drift) is what the others should look like.
+#
+# Fix: size a cast as a SHARE OF THE HEALTH BAR IT IS FIGHTING, anchored to the same calibrated
+# monster curve the rest of the balance model uses — the same move that fixed monster scaling.
+# An ability's `weight` is then literally the fraction of a same-level normal monster it removes
+# at a reference stat line, which is exactly what the `-- ability_hp` audit reports, so the
+# design intent and the measurement are finally the same number.
+#
+# Stat investment still matters, but RELATIVELY: the multiplier is (stat / expected_at_level),
+# damped by a square root. A focused build sits at ~1.0 (measured: an all-in primary stat is
+# level + 13 at every level), gear and spare points push above it. That keeps investment
+# meaningful without re-introducing the compounding, which is what broke the old formulas.
+const ABILITY_STAT_BASELINE_OFFSET := 13.0   # an all-in primary stat measures level + 13
+const ABILITY_STAT_EXPONENT := 0.5           # damping on the relative-stat term
+
+func _ability_stat_ratio(character, stat_name: String) -> float:
+	var stat: float = float(character.get_effective_stat(stat_name))
+	var expected: float = float(character.level) + ABILITY_STAT_BASELINE_OFFSET
+	return pow(maxf(0.05, stat / maxf(1.0, expected)), ABILITY_STAT_EXPONENT)
+
+func _ability_anchored_damage(character, stat_name: String, weight: float) -> float:
+	"""Damage for a cast of the given `weight` (share of a same-level normal monster's health
+	bar) at this character's level and stat line. Returns 0.0 when no calibrated curve is
+	available, which callers treat as "keep the legacy formula"."""
+	if monster_database == null or not monster_database.has_method("reference_monster_hp"):
+		return 0.0
+	var bar: float = float(monster_database.reference_monster_hp(character.level))
+	if bar <= 0.0:
+		return 0.0
+	return bar * weight * _ability_stat_ratio(character, stat_name)
+
+# Target share of a same-level normal monster's health bar, per ability, at a reference stat
+# line and a full variable-cost spend. Read these as the design: "power strike takes a fifth of
+# a normal monster". Tuned against the trickster kit, which already sat at a sane 10-30%.
+const ABILITY_WEIGHTS := {
+	"power_strike": 0.22,
+	"cleave": 0.28,
+	"magic_bolt": 0.55,   # the mage's dump-everything nuke, so the biggest single-cast share
+	"blast": 0.22,        # efficient sustain
+	"meteor": 0.45,       # Focus discharge; the Focus multiplier rides on top
+}
+
 func process_ability_command(peer_id: int, ability_name: String, arg: String) -> Dictionary:
 	"""Process an ability command from player"""
 	if not active_combats.has(peer_id):
@@ -3597,7 +3648,14 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var _mb_pool: int = maxi(1, character.get_total_max_mana())
 			var _mb_frac: float = clampf(float(bolt_amount) / float(_mb_pool), 0.0, 1.0)
 			var _mb_eff: float = MAGIC_BOLT_MIN_EFF + (1.0 - MAGIC_BOLT_MIN_EFF) * _mb_frac
-			var base_damage = int(bolt_amount * int_multiplier * _mb_eff * _focus_mult)  # v0.9.697 Focus ramp
+			# #6c — anchored form. The old shape multiplied the mana SPENT (a pool that grows
+			# ~300x across the game) by (1 + 4.3*sqrt(INT)) (another ~23x), so it outscaled
+			# everything: 39% of a health bar at L10, 467% at L10000 — a ~12x drift where the
+			# best-behaved abilities move 2-3x. The dump-for-a-nuke identity is preserved by
+			# keeping the spend FRACTION (_mb_frac) as the scaler: commit your whole bar and
+			# you get the full weight, chip and you get a fraction of it.
+			var _mb_anchor: float = _ability_anchored_damage(character, "intelligence", float(ABILITY_WEIGHTS.get("magic_bolt", 0.55)))
+			var base_damage: int = int(_mb_anchor * _mb_frac * _mb_eff * _focus_mult) if _mb_anchor > 0.0 				else int(bolt_amount * int_multiplier * _mb_eff * _focus_mult)  # v0.9.697 Focus ramp
 
 			# Apply damage buff (from War Cry, potions, etc.)
 			var damage_buff = character.get_buff_value("damage")
@@ -3774,7 +3832,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var meteor_mult = 3.0 + randf()  # 3.0 to 4.0x random multiplier
 			# v0.9.697 — Meteor DISCHARGES Focus with a bigger per-Focus bonus.
 			var _focus_meteor_mult: float = 1.0 + float(_focus_prior) * FOCUS_METEOR_PER
-			var base_damage = int(100 * int_multiplier * meteor_mult * variable_fraction * _focus_meteor_mult)
+			# #6c — anchored form. The old base was a FLAT 100, so Meteor was 175% of a
+			# health bar at L1 and 38% at L10000: the last early-game one-shot, and irrelevant
+			# late. meteor_mult keeps its 3-4x roll as flavour variance around the anchor.
+			var _mt_anchor: float = _ability_anchored_damage(character, "intelligence", float(ABILITY_WEIGHTS.get("meteor", 0.45)))
+			var base_damage: int = int(_mt_anchor * (meteor_mult / 3.5) * variable_fraction * _focus_meteor_mult) if _mt_anchor > 0.0 				else int(100 * int_multiplier * meteor_mult * variable_fraction * _focus_meteor_mult)
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
@@ -4218,7 +4280,10 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# Variable cost: damage scales linearly with spend (0.3x at floor → 1.0x at ceiling).
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)  # Sqrt scaling
-			var base_dmg = int(total_attack * 2.0 * damage_multiplier * str_mult * variable_fraction)
+			# #6c — anchored form. total_attack ALREADY scales with STR, so multiplying by a
+			# STR term counted the stat twice and drifted 13% -> 128% of a health bar.
+			var _ps_anchor: float = _ability_anchored_damage(character, "strength", float(ABILITY_WEIGHTS.get("power_strike", 0.22)))
+			var base_dmg = int(_ps_anchor * damage_multiplier * variable_fraction) if _ps_anchor > 0.0 				else int(total_attack * 2.0 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ps_skill_bonus = character.get_skill_damage_bonus("power_strike")
 			base_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg, combat)

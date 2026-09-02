@@ -2389,6 +2389,16 @@ func _reference_at(level: int) -> Dictionary:
 			}
 	return last
 
+func reference_monster_hp(level: int) -> float:
+	"""Calibrated HP of a plain same-level monster — the health bar an ability is measured
+	against. Public so combat_manager can size ability damage as a share of it instead of
+	each ability inventing its own scaling curve. Returns 0.0 when no curve is loaded, which
+	callers treat as "fall back to the legacy formula"."""
+	var ref := _reference_at(level)
+	if ref.is_empty():
+		return 0.0
+	return float(ref.get("hp", 0.0))
+
 func _species_shape(base_stats: Dictionary) -> Dictionary:
 	"""A species' stat SHAPE relative to the other monsters of its own tier —
 	how beefy / hard-hitting / armoured it is *for its kind*. Magnitude comes
