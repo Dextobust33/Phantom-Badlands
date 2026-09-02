@@ -31,6 +31,9 @@ order is what forces revisits.
 - [x] **Leadership transfer verified** — with 3 members, the leader dying hands leadership to a
       survivor instead of disbanding. Needed a scenario where ONLY the leader is at 1 HP: in a
       lethal zone the others die first, the party drops to two, and it disbands instead
+- [x] **Party max size is 5** (leader + four). The constant counts the leader, so the old 4 meant
+      leader + 3. Raising it exposed `MAX_CONNECTIONS_PER_IP = 3`, which silently dropped the
+      4th/5th local test clients — loopback is now exempt in DEV builds only
 - [x] Live-tested with 3 clients: rotation, control modes, duplicated rewards, leadership
       transfer, follower control and post formation all confirmed on screen
 

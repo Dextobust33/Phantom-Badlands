@@ -26,6 +26,8 @@ PLAYERS = [
     ("Testing",  "acc_4", "test02",  "acc_4_test02.json"),
     ("Testing2", "acc_5", "test002", "acc_5_test002.json"),
     ("Testing3", "acc_6", "test003", "acc_6_test003.json"),
+    ("Testing4", "acc_7", "test004", "acc_7_test004.json"),
+    ("Testing5", "acc_8", "test005", "acc_8_test005.json"),
 ]
 
 # Permadeath DELETES the character, so a death test destroys its own fixture. Missing test
@@ -35,6 +37,8 @@ RECREATE = {
     "test02":  dict(cls="Wizard",   race="Halfling", level=12, stat="intelligence"),
     "test002": dict(cls="Sorcerer", race="Dwarf",    level=9,  stat="intelligence"),
     "test003": dict(cls="Fighter",  race="Orc",      level=10, stat="strength"),
+    "test004": dict(cls="Ranger",   race="Elf",      level=10, stat="dexterity"),
+    "test005": dict(cls="Paladin",  race="Ogre",     level=10, stat="strength"),
 }
 
 # Real coordinates for the live world seed, found with find_tile.gd. Re-run it if the world
@@ -116,6 +120,11 @@ SCENARIOS = {
             "TRANSFER leadership rather than disband - the path a 2-person party cannot reach.",
         players=3, at=(250, -150),
         apply=lambda c: c.update({"current_hp": 1})),
+
+    "party5": dict(
+        doc="A FULL party of five (leader + four) - the max. Exercises the widest combat party "
+            "column, the longest follower tail through a post doorway, and rotation across five.",
+        players=5, apply=lambda c: c.update({"current_hp": c.get("max_hp", 100)})),
 
     "party3_leader_dies": dict(
         doc="THREE members in a NORMAL zone, but only the LEADER is at 1 HP. The leader dies "

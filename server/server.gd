@@ -180,7 +180,10 @@ var party_coop_enabled: bool = false
 var pending_party_invites = {}   # target_peer_id -> {from_peer_id, timestamp}
 var party_invite_cooldowns = {}  # peer_id -> last_invite_time_msec
 const PARTY_INVITE_COOLDOWN_MS = 10000  # 10 sec anti-spam
-const PARTY_MAX_SIZE = 4
+# v0.9.740 — 5 TOTAL, i.e. a leader plus four. This counts the leader: members[] is built
+# as [leader_id, follower_id] and _get_party_size returns members.size(), so 4 here meant
+# leader + 3, which was not the intent.
+const PARTY_MAX_SIZE = 5
 
 # Title system state - only one Jarl and one High King allowed, up to 3 Eternals
 var current_jarl_id: int = -1              # peer_id of current Jarl (-1 if none)
@@ -1312,8 +1315,13 @@ func _process(delta):
 				return
 
 		# Security: Check max connections per IP
+		# v0.9.740 — LOOPBACK IS EXEMPT IN DEV BUILDS ONLY. Every client in a local multi-client
+		# test comes from 127.0.0.1, so a 5-player party silently lost its 4th and 5th members to
+		# this limit (they connected, were dropped, and simply never appeared). Exported servers
+		# keep the limit exactly as-is, including for loopback.
+		var _dev_loopback: bool = OS.has_feature("editor") and (peer_ip in ["127.0.0.1", "::1", "0:0:0:0:0:0:0:1"])
 		var current_count = ip_connection_counts.get(peer_ip, 0)
-		if current_count >= MAX_CONNECTIONS_PER_IP:
+		if current_count >= MAX_CONNECTIONS_PER_IP and not _dev_loopback:
 			log_message("Security: Rejecting connection from %s (max %d per IP)" % [peer_ip, MAX_CONNECTIONS_PER_IP])
 			peer.disconnect_from_host()
 			return
