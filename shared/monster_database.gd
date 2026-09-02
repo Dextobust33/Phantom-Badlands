@@ -2381,11 +2381,22 @@ func compute_anchored_stats(base_stats: Dictionary, target_level: int) -> Dictio
 	if ref.is_empty():
 		return {}
 	var shape := _species_shape(base_stats)
+	# #6 (2026-09-02, found in playtest) — the danger budget is per ENCOUNTER, not per monster.
+	# A flock chains more monsters into the same fight with NO healing in between, so a species
+	# with a 35% flock chance really presents ~1.5 monsters per encounter and a calibrated 40%
+	# cost per monster becomes 60%+ overall — and the tail (two or three chained, plus a rare
+	# variant) simply kills. Reported from a live L5 test: beat an Orc Weapon Master, died to
+	# the second of its flock.
+	# Expected chain length for chance p is 1/(1-p); dividing each monster's DAMAGE by it keeps
+	# the whole encounter inside the budget. HP is untouched, so each monster still takes its
+	# target number of turns. A species that never flocks is unaffected.
+	var flock_p: float = clampf(float(base_stats.get("flock_chance", 0)) / 100.0, 0.0, 0.85)
+	var chain_len: float = 1.0 / maxf(0.15, 1.0 - flock_p)
 	if _curve_is_calibrated:
 		# Calibrated curve already encodes the target fight length and cost, measured from
 		# real fights. Only the species SHAPE is applied on top.
 		var c_hp: float = float(ref.get("hp", 100.0)) * float(shape.hp)
-		var c_str: float = float(ref.get("str", 10.0)) * float(shape.str)
+		var c_str: float = float(ref.get("str", 10.0)) * float(shape.str) / chain_len
 		var c_def: float = c_str * 0.45 * float(shape.def) / maxf(0.01, float(shape.str))
 		return {
 			"max_hp": maxi(10, int(round(c_hp))),
@@ -2400,6 +2411,7 @@ func compute_anchored_stats(base_stats: Dictionary, target_level: int) -> Dictio
 	var taken_ps: float = maxf(0.000001, float(ref.get("taken_ps", 1.0)))
 	var strength: float = (float(ref.get("ehp", 1.0)) * danger) / (TARGET_TURNS_NORMAL * taken_ps)
 	strength *= float(shape.str)
+	strength /= chain_len
 	# Defense keeps its historic relationship to the monster's own strength — it
 	# is a texture stat here, not a difficulty lever, and the player's damage is
 	# already accounted for in dpt (which was measured THROUGH monster defense).

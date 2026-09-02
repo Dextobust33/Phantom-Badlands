@@ -581,9 +581,45 @@ is never claimed**.
       `make_char` that is hot at L6 and cold at L45, with only 2 genuinely geared real characters
       to fit against. The shape is now right; the absolute level carries that uncertainty
 
+- [x] **Danger budget is per ENCOUNTER, not per monster (found in playtest, 2026-09-02).**
+      First live L5 fight: beat an Orc Weapon Master, then died to the second of its flock. A
+      flock chains more monsters into the same encounter with **no healing in between**, so a
+      species with a 35% flock chance really presents ~1.5 monsters and a calibrated 40% cost
+      per monster becomes 60%+ overall — with the tail (two or three chained, plus a rare
+      variant) simply lethal. Each monster's DAMAGE is now divided by the expected chain length
+      `1/(1-p)`; HP is untouched so each still takes its target number of turns, and a species
+      that never flocks is unaffected
+- [ ] Re-run `-- progression` and `-- roles` after the flock change — every danger number above
+      was measured before it
 - [ ] Decide the target curve first (what *should* win% and danger look like at L10, L100,
       L1000, L10000?), then tune to it. Without a target the sweep has nothing to fail against
 - [ ] Fix the **mid-game hump** and the **late-game slide** — the two ends of the same problem
+
+### 6e. Solo combat presentation — port the party pass back (user 2026-09-02)
+*Found in the first live playtest of the monster model: "solo combat is missing a lot of the
+fixes/improvements we made on party combat — the timing on when healthbars drop, when combat
+numbers and animations are played, and anything else that will improve solo combat."*
+
+- [x] **Root cause found and fixed: the playback gate was co-op-only.**
+      `_coop_playback_pending()` returned `_in_coop_combat() and queue non-empty`, so in SOLO it
+      was **always false** — every result landed the instant the server message arrived while
+      the combat text was still draining through the queue. Health bars dropped before the line
+      explaining the hit, and damage numbers played out of step with the log. The docstring's
+      own reasoning ("anything that shows the RESULT of the round must wait, or it lands before
+      the player has seen what happened") never had anything to do with co-op. It now delegates
+      to `_combat_playback_active()`, which already computed exactly this — one condition
+      instead of two copies to drift apart
+- [x] **Added the SOLO settle on queue-drain.** Holding results back requires something to
+      apply them when the beats finish. The party paths did that from their own authoritative
+      payloads; solo had none, so gating alone would have frozen its bars mid-fight
+- [ ] **Verify in a live fight** — this is a timing change and the simulator cannot see it
+- [ ] Audit the rest of the v0.9.740 party pass for solo-applicable pieces: the round-budget
+      pacing (a co-op round plays to ~6s total, recomputed each beat so it starts brisk and
+      eases into the killing blow), the catch-up drain when a newer round is waiting, and the
+      Continue-button semantics (hurry / wait / dismiss). Solo has its own per-beat delay and
+      may want the same total-budget shape
+- [ ] Check whether attack FX still fire at submit rather than on the beat in solo — that was
+      one of the five co-op bugs and the same code path serves both
 
 ### 6b. Companion power & levelling — **the emotional spine, currently thin**
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them

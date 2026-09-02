@@ -35600,10 +35600,21 @@ func _combat_ui_busy() -> bool:
 
 
 func _coop_playback_pending() -> bool:
-	"""True while a co-op round's beats are still playing out. Anything that shows the RESULT
-	of the round — HP bars, the level-up sting, the death card — must wait for this to clear,
-	or it lands before the player has seen what happened."""
-	return _in_coop_combat() and not combat_msg_queue.is_empty()
+	"""True while a round's beats are still playing out. Anything that shows the RESULT of the
+	round — HP bars, the level-up sting, the death card — must wait for this to clear, or it
+	lands before the player has seen what happened.
+
+	2026-09-02 — this used to require _in_coop_combat(), so in SOLO the gate was always false
+	and every result landed the moment the server message arrived while the combat text was
+	still draining through the queue: health bars dropped before the line explaining the hit,
+	and damage numbers played out of step with the log. Reported from a live playtest ("solo
+	combat is missing the fixes we made on party combat"). The reasoning in the paragraph above
+	never had anything to do with co-op — it is about beats not yet shown — so the co-op
+	requirement was simply wrong.
+
+	Delegates to _combat_playback_active(), which already computed exactly this, rather than
+	keeping a second copy of the condition to drift out of sync."""
+	return _combat_playback_active()
 
 
 func _in_coop_combat() -> bool:
@@ -36008,6 +36019,17 @@ func _drain_combat_queue():
 			update_player_xp_bar()
 			update_currency_display()
 		_party_end_playback = false
+		# 2026-09-02 — SOLO settle. Holding results back until the beats have played (see
+		# _coop_playback_pending) means something has to apply them when the queue drains.
+		# The party paths below do that from their own authoritative payloads; solo had no
+		# equivalent, so without this the bars would simply stop moving mid-fight. Reading
+		# from character_data is idempotent, and the party payloads overwrite it just after.
+		update_player_hp_bar()
+		update_resource_bar()
+		if combat_scene_panel and combat_scene_panel.has_method("update_player_hp"):
+			combat_scene_panel.update_player_hp(
+				int(character_data.get("current_hp", 0)),
+				int(character_data.get("total_max_hp", character_data.get("max_hp", 1))))
 		if not _pending_party_my_state.is_empty():
 			var _pms: Dictionary = _pending_party_my_state
 			_pending_party_my_state = {}
