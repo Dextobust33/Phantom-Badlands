@@ -78,6 +78,7 @@ func _audit_registry() -> Dictionary:
 		"refcurve": ["measure the reference-player curve the monster model anchors to", run_reference_curve],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
+		"roles": ["elite/boss fights vs their ROLE_TARGETS", run_role_audit],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
@@ -957,6 +958,59 @@ func run_reference_calibrate():
 		print("\nWrote shared/reference_monster_curve.json (%d anchors)." % table.size())
 	print("Re-run `-- refval` to confirm the model lands on target with these anchors.")
 	print("=====================================================================\n")
+
+func run_role_audit():
+	# #6 — do elite and boss fights actually feel like their ROLE_TARGETS say they should?
+	# Reports measured turns / share of the player's health bar spent / win rate against the
+	# target for each role, so the derived multipliers can be checked rather than assumed.
+	var samples := 10
+	print("
+===== #6 ROLE AUDIT (measured vs ROLE_TARGETS) =====")
+	print("Each role states a target fight length and cost; multipliers are derived from them.")
+	print("%-10s %-8s %10s %10s %10s %10s %8s" % ["Role", "Level", "turns", "target", "HPcost", "target", "win%"])
+	for role in ["normal", "empowered", "elite", "boss"]:
+		var tgt: Dictionary = monster_db.ROLE_TARGETS.get(role, {})
+		for lvl in [1, 10, 50, 250, 1000, 5000]:
+			var turns_tot := 0.0
+			var cost_tot := 0.0
+			var wins := 0
+			var n := 0
+			for klass in ["Fighter", "Wizard", "Thief"]:
+				for i in range(samples):
+					var ch = make_char(lvl, "average", klass)
+					var monster := make_monster(lvl, role, 1.0)
+					var php0: int = ch.get_total_max_hp()
+					ch.in_combat = false
+					combat_mgr.start_combat(0, ch, monster)
+					if not combat_mgr.active_combats.has(0):
+						continue
+					var combat = combat_mgr.active_combats[0]
+					var turns := 0
+					while turns < 400:
+						if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+							break
+						turns += 1
+						if combat.get("player_can_act", true):
+							match ch.get_class_path():
+								"trickster": _player_act_trickster(combat, ch)
+								"mage": _player_act_mage(combat, ch)
+								_: _player_act(combat, ch)
+						if int(monster.get("current_hp", 0)) <= 0:
+							break
+						combat_mgr.process_monster_turn(combat)
+					if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+						wins += 1
+					turns_tot += float(turns)
+					cost_tot += 100.0 * float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
+					n += 1
+					combat_mgr.end_combat(0, false, false)
+			if n == 0:
+				continue
+			print("%-10s %-8d %10.1f %10.1f %9.0f%% %9.0f%% %7d%%" % [
+				role, lvl, turns_tot / n, float(tgt.get("turns", 0.0)),
+				cost_tot / n, 100.0 * float(tgt.get("danger", 0.0)), int(100.0 * wins / n)])
+	print("=====================================================================
+")
 
 func run_reference_curve():
 	print("\n===== #6 REFERENCE-PLAYER CURVE (the anchor for the monster model) =====")
@@ -1863,19 +1917,15 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 	# own selection (select_monster_type by level, inside generate_monster), so the enemy is
 	# whatever the game would actually spawn at that level.
 	var m = monster_db.generate_monster(level, level)
-	match et:
-		"empowered":
-			m["max_hp"] = int(m.get("max_hp", 1) * 2.2)  # #29 v0.9.700 — mirrors empowered flat HP (~2 mods)
-			m["strength"] = int(m.get("strength", 1) * 1.1)
-			m["defense"] = int(m.get("defense", 1) * 1.15)
-		"elite":
-			m["max_hp"] = int(m.get("max_hp", 1) * 3.5)  # #29 v0.9.700 — mirrors ★ Champion HP 1.5→3.5
-			m["strength"] = int(m.get("strength", 1) * 1.3)
-			m["defense"] = int(m.get("defense", 1) * 1.25)
-		"boss":
-			m["max_hp"] = int(m.get("max_hp", 1) * 5.0)  # #29 v0.9.700 — mirrors dungeon boss hp_mult ×2.5 (2.0→5.0 effective)
-			m["strength"] = int(m.get("strength", 1) * 1.5)
-			m["defense"] = int(m.get("defense", 1) * 1.5)
+	# #6 (2026-09-02) — role multipliers come from monster_database.ROLE_TARGETS, the same
+	# source the game uses, instead of being mirrored by hand here. The old mirrored constants
+	# (2.2 / 3.5 / 5.0) drifted from the game whenever either side was tuned, and they encoded
+	# the pre-reference-model inflation.
+	if et in ["empowered", "elite", "boss"]:
+		var rm: Dictionary = monster_db.role_multipliers(et)
+		m["max_hp"] = int(m.get("max_hp", 1) * float(rm.hp_mult))
+		m["strength"] = int(m.get("strength", 1) * float(rm.str_mult))
+		m["defense"] = int(m.get("defense", 1) * maxf(1.0, float(rm.str_mult)))
 	if extra_hp_mult != 1.0:
 		m["max_hp"] = int(m.get("max_hp", 1) * extra_hp_mult)
 	if not _cal_override.is_empty() and int(_cal_override.get("level", -1)) == level:

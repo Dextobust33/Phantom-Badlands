@@ -1643,9 +1643,13 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 		# Elite stat bonuses: significantly harder but very rewarding.
 		# v0.9.700 (#29) — HP 1.5→3.5 so a Champion is a "real fight" (~8t at avg gear),
 		# not a slightly-chunkier trash mob. Damage untouched (win-rate guardrail).
-		scaled_hp = int(scaled_hp * 3.5)
-		scaled_strength = int(scaled_strength * 1.3)
-		scaled_defense = int(scaled_defense * 1.25)
+		# #6 (2026-09-02) — derived from ROLE_TARGETS rather than hand-tuned. Was
+		# ×3.5 HP / ×1.3 STR, which on the corrected baseline made Champions
+		# unwinnable (0% win at L1) because HP and damage compound into cost.
+		var _elite_m := role_multipliers("elite")
+		scaled_hp = int(scaled_hp * float(_elite_m.hp_mult))
+		scaled_strength = int(scaled_strength * float(_elite_m.str_mult))
+		scaled_defense = int(scaled_defense * maxf(1.0, float(_elite_m.str_mult)))
 		experience_reward = int(experience_reward * 1.5)
 		# Add 2 random abilities from a curated pool (no duplicates)
 		var elite_ability_pool = [
@@ -1703,7 +1707,14 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 			# but the per-mod hp_mults are tiny (1.10-1.50, and most mods have none),
 			# so add a reliable HP bump by mod count: 1 mod ×2.0 … 3 mods ×3.0 (on top
 			# of base + any per-mod hp_mult). Makes them ~6-8t at avg gear. Damage untouched.
-			scaled_hp = max(10, int(scaled_hp * (1.5 + 0.5 * empowered_mods.size())))
+			# #6 (2026-09-02) — was a flat (1.5 + 0.5*mods) bump tuned against the old,
+			# too-weak baseline. Now derived from the empowered role target and scaled by
+			# how many modifiers rolled, with strength adjusted so tankiness and damage
+			# do not compound into an unwinnable fight.
+			var _emp_m := role_multipliers("empowered")
+			var _emp_scale: float = 1.0 + (float(_emp_m.hp_mult) - 1.0) * (float(empowered_mods.size()) / 3.0)
+			scaled_hp = max(10, int(scaled_hp * _emp_scale))
+			scaled_strength = max(3, int(scaled_strength * (1.0 + (float(_emp_m.str_mult) - 1.0) * (float(empowered_mods.size()) / 3.0))))
 
 	# Empowered drop chance: +20 per modifier, Gilded adds +20 more on top.
 	var final_drop_chance: int = 100 if is_elite else int(base_stats.get("drop_chance", 5))
@@ -2203,6 +2214,42 @@ const USE_REFERENCE_MODEL := true          # false = legacy base_level scaling
 # (see the sim's `-- refcal`). Preferred over deriving from the player curve analytically,
 # because the analytic route is self-referential — a player's damage per turn depends on
 # how long the fight lasts, which is what the number is being used to set.
+# ============================================================================
+# ROLE TARGETS (#6, 2026-09-02) — elite/boss sized against the corrected baseline
+# ============================================================================
+# Before the reference-player model, the plain-monster baseline was too weak, so the
+# elite and empowered multipliers had been inflated to compensate (Champion HP was
+# raised 1.5 -> 3.5 in v0.9.700 to make a Champion "a real fight"). Stacking those on a
+# correctly-sized baseline made elites unwinnable — measured 0% win at L1.
+#
+# So roles are no longer hand-tuned multipliers. Each role states what its fight should
+# FEEL like — how long it lasts and how much of the player's health bar it costs — and
+# the multipliers are derived:
+#
+#   hp_mult  = turns_role / turns_normal
+#   str_mult = (danger_role / danger_normal) * (turns_normal / turns_role)
+#
+# The str_mult term is the one that is easy to get wrong by hand, and it is why the old
+# numbers compounded: total damage taken is strength x turns, so making a monster
+# TANKIER already makes it more dangerous. A Champion that lasts 1.8x longer at the same
+# strength already costs 1.8x the health. Raising its damage on top multiplies rather
+# than adds — the old ×3.5 HP with ×1.3 STR was ~4.5x a normal fight's cost, not 1.75x.
+const ROLE_TARGETS := {
+	"normal":    {"turns": 5.0,  "danger": 0.40},
+	"empowered": {"turns": 7.0,  "danger": 0.55},
+	"elite":     {"turns": 9.0,  "danger": 0.70},
+	"boss":      {"turns": 14.0, "danger": 0.85},
+}
+
+static func role_multipliers(role: String) -> Dictionary:
+	"""HP and strength multipliers for a role, relative to a plain monster, derived from
+	that role's target fight length and cost. Defense rides with strength."""
+	var base: Dictionary = ROLE_TARGETS.get("normal", {"turns": 5.0, "danger": 0.40})
+	var r: Dictionary = ROLE_TARGETS.get(role, base)
+	var t_ratio: float = float(r.get("turns", 5.0)) / maxf(0.1, float(base.get("turns", 5.0)))
+	var d_ratio: float = float(r.get("danger", 0.40)) / maxf(0.01, float(base.get("danger", 0.40)))
+	return {"hp_mult": t_ratio, "str_mult": d_ratio / maxf(0.1, t_ratio)}
+
 const REFERENCE_MONSTER_PATH := "res://shared/reference_monster_curve.json"
 const REFERENCE_CURVE_PATH := "res://shared/reference_player_curve.json"
 const TARGET_TURNS_NORMAL := 5.0           # a plain same-level fight, in turns
