@@ -28474,8 +28474,17 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.740 — Party leadership + rewards, buff/item targeting, co-op pacing.
+	display_game("[color=#00FF00]v0.9.740[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ NOBODY GETS STUCK BEING THE PACK MULE.[/color] One player used to do all the work: they walked, they gathered, they crafted, and everyone else tagged along. Now [b]leadership rotates after every fight[/b] so each member takes point in turn (prefer a fixed leader? there's a [color=#FFE066]Lead: Fixed[/color] toggle in the Party menu). Gathering rewards and job XP are [b]copied in full to every member[/b] — nobody splits a pile of ore three ways — and crafting shares its XP with the party.")
+	display_game("  [color=#1EFF00]◆ Buff and heal your teammates.[/color] Every buff and item was [b]locked to yourself[/b], which made supporting your party impossible. Now [b]Forcefield, Iron Skin, Fortify, Rally, Berserk and Haste[/b] — and any item — can be aimed at [b]a teammate or their companion[/b]. You still pay the cost and your own stats set the strength, so a dedicated support build finally does something. [b]Yourself is always the first option[/b], so a quick self-cast is one press or one click.")
+	display_game("  [color=#1EFF00]◆ Parties travel together.[/color] Out in the world the leader steers and the rest follow. [b]Inside a trading post everyone moves freely[/b] — shop, craft, take quests on your own — but the party can only [b]leave together[/b], so nobody gets left behind at the gate. Party size is now [b]five[/b] (leader plus four).")
+	display_game("  [color=#1EFF00]◆ Co-op rounds play at a sane speed.[/color] A party round has three or four times as many actions as a solo one, and it was being played back at solo speed — a fight could spend [b]twelve seconds[/b] animating a single round, and if you acted quickly it fell further behind every turn until the monster sat there at half health with no victory screen in sight. Rounds now play [b]fast but complete[/b], and pressing [color=#FFE066]Continue[/color] early [b]skips ahead to your rewards[/b] instead of skipping past them.")
+	display_game("  [color=#1EFF00]◆ Fixes.[/color] [b]Forcefield's shield never appeared[/b] on any health bar in a party fight — it was protecting you invisibly. [b]Haste[/b]'s double-cast was [b]silently discarded[/b] every round in co-op, so mages paid for a buff they never received. A stale [color=#FFE066]Continue[/color] button could sit on your action bar over a live battle.")
+	display_game("")
+
 	# v0.9.739 — Co-op combat you can follow, party items, party permadeath.
-	display_game("[color=#00FF00]v0.9.739[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.739[/color]")
 	display_game("  [color=#FF8000]★ CO-OP FIGHTS YOU CAN ACTUALLY FOLLOW.[/color] A party round used to blur past — everyone's attacks resolving at once, numbers landing before the animations that caused them, health bars already emptied by the time you looked. Now the round plays out [b]one actor at a time[/b]: the acting hero is [b]spotlit[/b] while everyone else dims, their effect [b]flies to its target[/b] (three times slower, so you can actually track it), the damage number pops [b]when it lands[/b], and only then does the health bar drop. One clean beat per action.")
 	display_game("  [color=#1EFF00]◆ See what your allies are casting.[/color] A teammate's Bolt used to be a shrug and a number. Now their spells and buffs [b]play on their own card[/b] — a forcefield blooms on the caster, an attack throws its trail at the monster — so you can read what your party is doing at a glance.")
 	display_game("  [color=#1EFF00]◆ Use items in party fights.[/color] Items were [b]blocked entirely[/b] in a party. Now each member's [b]first item each round is free[/b] (you can still play a card), and a second costs [b]only that member[/b] their action — five people can each drink a potion without anyone losing their turn.")
@@ -31687,6 +31696,19 @@ card at the same time, then the round plays out actor by actor in speed order.
 a way to take less heat. It lands at most one hit per member per round.
 [color=#00FFFF]Items:[/color] your FIRST item each round is free and you can still play a card. A SECOND item
 costs [b]you[/b] your action for that round — nobody else's.
+[color=#00FFFF]Targeting:[/color] items and the buffs [b]Forcefield, Iron Skin, Fortify, Rally, Berserk, Haste[/b] can be
+aimed at a [b]teammate or their companion[/b] — a picker opens with [b]Yourself first[/b], so a quick
+self-cast is [b][1][/b] or the [color=#FFE066]Cast on Self[/color] button. You pay the cost and your own stats set
+the strength, so supporting the party is worth building for.
+
+[b][color=#FFD700]══ PARTY OUT IN THE WORLD ══[/color][/b]
+A party is up to [b]five[/b] (leader plus four). Out in the world the [b]leader[/b] moves, hunts, gathers
+and crafts; the others follow. [color=#00FFFF]Leadership rotates after every fight[/color] so nobody does all the
+work — the leader can switch this with [color=#FFE066]Lead: Fixed[/color] in the Party menu.
+[color=#00FFFF]Inside a trading post everyone acts freely[/color] (shop, craft, quests, move between stations), but
+the party may only [b]leave together[/b]: gather up first, and nobody is left at the gate.
+[color=#00FFFF]Gathering rewards and job XP are copied IN FULL to every member[/color] — no splitting. Crafting
+shares its XP with the party; the crafted item stays with the crafter.
 [color=#FF6666]Death is still permanent in a party.[/color] Falling in a party fight kills your character exactly
 as it would solo — your allies fight on without you.
 XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
