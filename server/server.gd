@@ -5174,6 +5174,9 @@ func handle_move(peer_id: int, message: Dictionary):
 	var _moving_within_post: bool = not _cur_post.is_empty() and not _dest_post.is_empty()
 	if _is_party_leader(peer_id) and not _moving_within_post:
 		_move_party_followers(peer_id, old_x, old_y)
+		# Entering a post: make sure the tail of the snake did not stay outside.
+		if not _dest_post.is_empty():
+			_pull_stragglers_into_post(peer_id)
 
 	# Audit #14 PvP Slice D.2 (v0.9.557) — auto-claim any PvP loot sack on
 	# the tile the player just stepped onto. Fires once per move; sack is
@@ -39417,6 +39420,33 @@ func _transfer_leadership(old_leader_id: int, new_leader_id: int):
 	_send_party_update(new_leader_id)
 
 	log_message("Party leadership transferred to %s" % new_leader_name)
+
+func _pull_stragglers_into_post(leader_peer_id: int) -> void:
+	"""After the party enters a post, put any follower still OUTSIDE it onto the leader's tile.
+
+	The snake formation moves each follower onto the person-ahead's old tile, so the tail sits
+	N tiles behind the leader — for a party of 3+ that tail is still outside the post, and a
+	follower cannot roam the world alone, so they were stranded with no way back in. Scales to
+	the max party size because it snaps EVERY member who is outside, however long the tail.
+	Party members ignore each other for collision, so stacking on the leader is legal."""
+	if not active_parties.has(leader_peer_id) or not characters.has(leader_peer_id):
+		return
+	if world_system == null or world_system.chunk_manager == null:
+		return
+	var lead = characters[leader_peer_id]
+	if world_system.chunk_manager.get_npc_post_at(lead.x, lead.y).is_empty():
+		return   # leader is not in a post; nothing to pull anyone into
+	for pid in active_parties[leader_peer_id].get("members", []):
+		if pid == leader_peer_id or not characters.has(pid):
+			continue
+		var f = characters[pid]
+		if not world_system.chunk_manager.get_npc_post_at(f.x, f.y).is_empty():
+			continue   # already inside
+		f.x = lead.x
+		f.y = lead.y
+		send_location_update(pid)
+		save_character(pid)
+
 
 func _move_party_followers(leader_peer_id: int, old_leader_x: int, old_leader_y: int):
 	"""Move party followers in snake formation behind the leader."""
