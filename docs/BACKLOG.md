@@ -39,9 +39,23 @@ All four are validated **only in the simulator**. Two things follow, and they se
   top of an unvalidated baseline risks redoing both. The cheap version is a local dev session at
   a few levels, not a release
 
-**Suggested next order:** (a) re-run the stale measurements against the new baseline — cheap and
-it unblocks everything; (b) playtest the monster model locally; (c) then 6c class balance, or
-6b companion power if the Phantom (12b) is being pulled forward, since 6b gates it.
+**Status 2026-09-02:** (a) re-measurement DONE — see 6c. (b) **Playtest DONE and passed.**
+A live L5 session confirmed the model on screen: flocks are survivable again after the
+per-encounter danger fix (the same fight killed the character before it), an empowered
+Broodcalling Orc read as a longer fight as designed, and combat timing now tracks the log.
+User verdict: "seemed good from what I seen."
+
+Three real bugs were found only by playing it, none of which the simulator can see:
+- **Solo never got the party playback pass** — the gate was co-op-only, so in solo every
+  result landed on message arrival while the text was still draining
+- **The companion HP bar DISCARDED updates instead of deferring them** — the log said
+  "knocked out" while the card still read 24/65
+- Two harness faults that both presented as "my character is gone": a stale second server
+  (the guard matched truncated `tasklist` output), and a rebuilt character that was never
+  re-registered on the account after permadeath cleared its slot
+
+**Next:** 6b (companion power) — it is a measured defect, and it gates 12b, the Phantom loop.
+Then 6c, where the mage roster is the clearest remaining balance outlier.
 
 ### What this session proved about trusting measurements
 
@@ -646,13 +660,28 @@ Three things fall out of this, and the first is the headline:
 - But the payoff **saturates**: at L5000-10000 a 10x over-levelled companion is no better than a
   level-matched one (82/81%, 75/79%). Something caps out up there — worth finding before tuning
 
-Confirmed in code, and it explains the first point exactly:
-- **Companion passive stat bonuses do not scale with level at all.** `get_companion_effective_
-  bonuses` applies only variant × sub-tier multipliers to a flat table value. A L1 Ogre and a
-  L10000 Ogre grant the identical `{attack 5, hp_bonus 3}`
-- Only companion **abilities** scale, and only **linearly** (`base + scaling × level`) against
-  content that scales far faster
-- Real companions are tiny in absolute terms (Dexto's L45 Ogre: attack 5, hp_bonus 3)
+**CORRECTION 2026-09-02 (traced the consumption paths).** An earlier version of this item
+claimed "companion passive stat bonuses do not scale with level at all — a L1 Ogre and a
+L10000 Ogre grant the identical `{attack 5, hp_bonus 3}`". That was read off
+`get_companion_effective_bonuses` alone and is **wrong in its implication**. The table values
+are **percentages**, and every consumer applies them to a base that already scales:
+- `attack` multiplies companion damage: `(tier*5 + player_level*0.3 + companion_level*0.5)
+  * (1 + attack/100)` (`drop_tables.get_companion_attack_damage`)
+- `hp_bonus` / `mana_bonus` are `% of the player's own max`
+  (`get_total_max_hp() * comp_hp_bonus / 100.0`)
+So a +5% companion is +5% at every level, like a gear affix. Nothing is "decorative".
+
+**What actually explains `comp L1` ≈ `none`** is almost certainly **ability unlocks**, not stat
+bonuses: `get_companion_unlocked_abilities` grants the passive always, the **active at
+companion level 5**, and the **threshold at level 15**. A level-1 companion has *one third of
+its kit*, which matches the measurement far better than a percentage that never changed.
+
+- [ ] **Verify that before designing anything** — compare a L1 vs L5 vs L15 companion (the
+      unlock boundaries) rather than L1 vs level-matched. If the jump lands at 5 and 15, the
+      lever is unlock pacing, not bonus scaling
+- [ ] Companion **damage** scales linearly (`player_level*0.3 + companion_level*0.5`) against
+      content that no longer scales linearly at all now that monsters are anchored to the
+      reference curve. This is the real scaling question and it is still open
 
 - [ ] Make companion **stat bonuses scale with companion level**, not just variant/sub-tier —
       this is what makes a fresh companion feel like nothing at all today
