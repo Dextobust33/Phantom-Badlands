@@ -1698,6 +1698,8 @@ const ANIMATION_DURATION: float = 0.6
 
 # Phased combat message display
 var combat_msg_queue: Array[Dictionary] = []
+# Companion HP/KO held back while combat beats are still playing, applied on queue drain.
+var _pending_companion_hp: Dictionary = {}
 # v0.9.413 — when combat_end fires during a one-turn battle, the queue is
 # still full of attack messages. Without deferring the victory presentations,
 # the victory FX + card cover the panel immediately and the user never sees
@@ -4901,6 +4903,10 @@ func _input(event):
 			# freshly cleared game_output AFTER the player dismissed. Mirrors
 			# acknowledge_continue's v0.9.417 flush.
 			combat_msg_queue.clear()
+			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
+			# applies deferred bar updates — drop the pending companion value with it so a
+			# stale HP/KO from an abandoned fight cannot land on the next one.
+			_pending_companion_hp = {}
 			combat_phase_paused = false
 			combat_phase_timer = 0.0
 			_pending_combat_end_chrome = {}
@@ -15043,6 +15049,10 @@ func execute_local_action(action: String):
 				_pending_combat_end_chrome = {}
 				_emit_combat_end_chrome(chrome_args)
 			combat_msg_queue.clear()
+			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
+			# applies deferred bar updates — drop the pending companion value with it so a
+			# stale HP/KO from an abandoned fight cannot land on the next one.
+			_pending_companion_hp = {}
 			combat_phase_paused = false
 			combat_phase_timer = 0.0
 			# v0.9.593 — use _force_end_action_phase so the persistent-FX overlay
@@ -15603,6 +15613,10 @@ func acknowledge_continue():
 	# only schedules from inside _drain_combat_queue's empty branch, which the
 	# user may have already passed by pressing SPACE.
 	combat_msg_queue.clear()
+	# Clearing the queue skips _drain_combat_queue's empty handler, which is what
+	# applies deferred bar updates — drop the pending companion value with it so a
+	# stale HP/KO from an abandoned fight cannot land on the next one.
+	_pending_companion_hp = {}
 	combat_phase_paused = false
 	combat_phase_timer = 0.0
 	# v0.9.593 — _force_end_action_phase tears down the persistent overlay too.
@@ -21994,6 +22008,10 @@ func handle_server_message(message: Dictionary):
 			# fire after the player is already dead. Mirrors the v0.9.417
 			# acknowledge_continue fix for the victory path.
 			combat_msg_queue.clear()
+			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
+			# applies deferred bar updates — drop the pending companion value with it so a
+			# stale HP/KO from an abandoned fight cannot land on the next one.
+			_pending_companion_hp = {}
 			combat_phase_paused = false
 			combat_phase_timer = 0.0
 			_pending_victory_fx_play = false
@@ -23155,13 +23173,23 @@ func handle_server_message(message: Dictionary):
 				if combat_scene_panel and combat_scene_panel.has_method("update_combat_status"):
 					combat_scene_panel.update_combat_status(_last_player_status, _last_monster_status)
 				# Phase B1 — companion HP bar update from combat_state.
-				# v0.9.739 — held during co-op playback for the same reason as the player bar.
-				if combat_scene_panel and combat_scene_panel.has_method("update_companion_combat_hp") and not _coop_playback_pending():
-					combat_scene_panel.update_companion_combat_hp(
-						int(state.get("companion_combat_hp", -1)),
-						int(state.get("companion_combat_max_hp", -1)),
-						bool(state.get("companion_ko", false))
-					)
+				# v0.9.739 — held during playback for the same reason as the player bar.
+				# 2026-09-02 — but HOLD means DEFER, not DISCARD. This used to simply skip the
+				# update while beats were playing, so the value was thrown away and the card
+				# kept a stale number until some later combat_state happened to arrive
+				# unblocked. Live playtest: the log read "attacks your Bone Servant for 19
+				# damage / your Bone Servant is knocked out" while the card still showed
+				# HP 24/65 and no KO, "for a long while". Now the pending value is stashed and
+				# applied when the queue drains, exactly like the player bar.
+				if combat_scene_panel and combat_scene_panel.has_method("update_companion_combat_hp"):
+					var _comp_hp := int(state.get("companion_combat_hp", -1))
+					var _comp_max := int(state.get("companion_combat_max_hp", -1))
+					var _comp_ko := bool(state.get("companion_ko", false))
+					if _coop_playback_pending():
+						_pending_companion_hp = {"hp": _comp_hp, "max": _comp_max, "ko": _comp_ko}
+					else:
+						_pending_companion_hp = {}
+						combat_scene_panel.update_companion_combat_hp(_comp_hp, _comp_max, _comp_ko)
 				# Audit #1 Slice 6a — sync hand state from server. Old servers
 				# omit combat_hand; treat as missing data and leave the cached
 				# hand alone so legacy clients-vs-servers don't reset on every
@@ -36030,6 +36058,11 @@ func _drain_combat_queue():
 			combat_scene_panel.update_player_hp(
 				int(character_data.get("current_hp", 0)),
 				int(character_data.get("total_max_hp", character_data.get("max_hp", 1))))
+		if not _pending_companion_hp.is_empty() and combat_scene_panel 				and combat_scene_panel.has_method("update_companion_combat_hp"):
+			var _pc: Dictionary = _pending_companion_hp
+			_pending_companion_hp = {}
+			combat_scene_panel.update_companion_combat_hp(
+				int(_pc.get("hp", -1)), int(_pc.get("max", -1)), bool(_pc.get("ko", false)))
 		if not _pending_party_my_state.is_empty():
 			var _pms: Dictionary = _pending_party_my_state
 			_pending_party_my_state = {}
@@ -36148,6 +36181,10 @@ func _drain_combat_queue():
 			var _pdm_now = _pending_permadeath_message
 			_pending_permadeath_message = null
 			combat_msg_queue.clear()
+			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
+			# applies deferred bar updates — drop the pending companion value with it so a
+			# stale HP/KO from an abandoned fight cannot land on the next one.
+			_pending_companion_hp = {}
 			handle_server_message(_pdm_now)
 			_replay_post_death_messages()
 			return
