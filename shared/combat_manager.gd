@@ -26,7 +26,23 @@ const MITIGATION_BUFF_FLOOR := 0.15
 # #70 (2026-08-27) — Magic Bolt spend-fraction efficiency floor. Per-mana damage scales
 # from this floor (at a tiny chip) up to 1.0 (at a full-pool dump), so chip-spam is weak
 # but the full-dump burst is unchanged. Fixes low-level one-shot-for-a-chip trivialization.
-const MAGIC_BOLT_MIN_EFF := 0.15
+# Magic Bolt's per-mana efficiency floor. 0.15 meant a quarter-spend was only 36% as
+# mana-efficient as a full dump, so damage came out at 9% of a dump for 25% of the bar — the
+# ability punished partial investment twice over.
+#
+# That was the right shape for a DIFFERENT problem (#70): before damage was anchored, a small
+# cheap chip could one-shot a same-level monster, and taxing chips was the available fix. The
+# anchor solves that directly now, so the tax is redundant and its side effect is harmful.
+#
+# It is harmful because it makes the choice fake. Mages fight FLOCKS, so committing the whole
+# bar to one monster is often wrong — the interesting decision is how much to spend on THIS
+# enemy against how much to hold for the next. A curve where dumping is 2.8x more efficient
+# does not pose that question, it answers it, and then the flock punishes the answer.
+#
+# At 0.80 the efficiency runs 0.82 (10% spend) to 1.00 (full), so committing still pays a
+# little but partial spends are honest: a quarter-spend now lands 21% of a full dump instead
+# of 9%. The judgement becomes risk management rather than a penalty for caution.
+const MAGIC_BOLT_MIN_EFF := 0.80
 # #55 — repeated-stun diminishing returns. Each time the SAME monster is stunned, the
 # next stun's success chance is multiplied by this per prior stun (tracked on the combat
 # state), so a warrior can't perma-stunlock a monster the whole fight with Shield Bash.
