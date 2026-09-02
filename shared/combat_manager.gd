@@ -3178,8 +3178,24 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 const ABILITY_STAT_BASELINE_OFFSET := 13.0   # an all-in primary stat measures level + 13
 const ABILITY_STAT_EXPONENT := 0.5           # damping on the relative-stat term
 
+# Mages invest in WISDOM as well as INTELLIGENCE, and Wisdom's combat value used to arrive
+# through the mana pool: base_mana = 30 + INT*3 + WIS*1.5, and the old Magic Bolt scaled with
+# mana SPENT, so a deeper pool meant a bigger hit. Anchoring damage to a share of the health bar
+# scaled it by the FRACTION of the pool committed instead, which silently deleted that pathway.
+#
+# Sage is the class built on it — 1.0 Wisdom per level against 0.75 Intelligence, where Sorcerer
+# takes 1.40 Intelligence — and it showed immediately: Sage measured 8-10% win rate at elite
+# against 28-43% for its own archetype siblings. That was a regression introduced by the
+# anchoring, not a pre-existing class flaw, and it would have been very easy to "fix" by buffing
+# Sage instead of restoring what was taken away.
+#
+# So a caster's damage stat counts Wisdom at half weight. Investment in either stat pays.
+const ABILITY_SECONDARY_STAT_WEIGHT := 0.5
+
 func _ability_stat_ratio(character, stat_name: String) -> float:
 	var stat: float = float(character.get_effective_stat(stat_name))
+	if stat_name == "intelligence":
+		stat += float(character.get_effective_stat("wisdom")) * ABILITY_SECONDARY_STAT_WEIGHT
 	var expected: float = float(character.level) + ABILITY_STAT_BASELINE_OFFSET
 	return pow(maxf(0.05, stat / maxf(1.0, expected)), ABILITY_STAT_EXPONENT)
 
