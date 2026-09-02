@@ -3421,11 +3421,8 @@ func _process(delta):
 			# player is looking at the world again. Flush any party notice held back for
 			# this moment (leadership rotation), so it lands in the window they are now
 			# reading instead of being wiped by the victory screen.
-			if not _combat_scene_should_show and not _pending_party_notices.is_empty():
-				var _notices := _pending_party_notices.duplicate()
-				_pending_party_notices.clear()
-				for _n in _notices:
-					display_game(String(_n))
+			if not _combat_scene_should_show:
+				_flush_party_notices()
 		# v0.9.663 — hide the map panel while the combat scene is up so combat fills
 		# the full TopSection width (GameOutputContainer expands in the HBox).
 		if map_panel and is_instance_valid(map_panel):
@@ -15193,6 +15190,16 @@ func _emit_combat_end_chrome(args: Dictionary) -> void:
 	_combat_text_to_outputs("[color=#808080]Press [%s] to continue...[/color]" % get_action_key_name(0))
 
 
+func _flush_party_notices() -> void:
+	"""Print party notices that were held while the fight's UI was up."""
+	if _pending_party_notices.is_empty():
+		return
+	var notices := _pending_party_notices.duplicate()
+	_pending_party_notices.clear()
+	for n in notices:
+		display_game(String(n))
+
+
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
 	pending_continue = false
@@ -15241,6 +15248,11 @@ func acknowledge_continue():
 		combat_scene_panel.visible = false
 	if game_output:
 		game_output.visible = true
+	# v0.9.740 — the player just dismissed the victory screen, so print any held party notice
+	# (leadership rotation) HERE. This path hides the panel DIRECTLY, so _process never sees a
+	# visibility change and the flush there never fired — which is why the notice showed after
+	# gathering (no victory screen) but never after a fight.
+	_flush_party_notices()
 	# Old auto-harvest hook removed v0.9.436 (combat scratch-off replaces it).
 
 	# If combat was queued while showing egg hatch celebration, start it now
