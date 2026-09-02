@@ -657,11 +657,31 @@ damping had been protecting against.
       3.3 / 3.0 / **2.6** at L250 / L1000 / L5000 against a target of 5. Monster HP is
       under-converging at the top end while the danger axis is on target, so the top of the game
       is quick rather than easy — a different fault from the old sawtooth and a smaller one
-- [ ] Elite and boss are DERIVED from the normal baseline by `ROLE_TARGETS` algebra rather than
-      calibrated directly. That algebra assumes the fight really lasts `turns_role`; measured
-      elite runs ~6.5 turns against 9, so the damage never accumulates to the intended cost.
-      Either calibrate roles directly, or correct the derivation for measured rather than
-      intended length
+- [x] **Roles are now CALIBRATED, not derived (2026-09-02, `-- rolecal`).** The derivation
+      assumed a fight really lasts `turns_role`, which it does not, so damage never accumulated
+      to the intended cost. Measured multipliers replace it: empowered hp x1.31 / str x1.48,
+      elite hp x2.35 / str x1.72, boss hp x3.32 / str x1.72. `monster_database` prefers these
+      over the algebra whenever the curve file carries them.
+
+      **The danger targets are now HIT — and that is the problem.** Verified at n=90:
+
+      | Role | target cost | measured cost | measured WIN% |
+      |------|-------------|---------------|---------------|
+      | normal | 40% | 43% | **74%** |
+      | empowered | 55% | 57% | **60%** |
+      | elite | 65% | 67% | **46%** |
+      | boss | 80% | 75% | **34%** |
+
+- [ ] **DECISION NEEDED: average HP cost and win rate are tightly coupled, and the agreed
+      targets imply brutal win rates.** A fight that removes 80% of the health bar *on average*
+      is lost whenever variance runs against the player — hence a **34% boss win rate**, and
+      23-24% at L10-L50. Under permadeath that is three characters lost per boss killed. The
+      calibrator hit the numbers it was given; the numbers themselves are the question.
+      Roughly: cost 40% -> ~74% win, 55% -> ~60%, 65% -> ~46%, 80% -> ~34%. If bosses should be
+      beatable ~65-70% of the time, boss danger wants to be ~55% rather than 80%
+- [ ] Turn counts are still off target for the big roles (boss 6.4-17.7 against 14, elite
+      5.5-14.6 against 9) even with calibrated multipliers — a single multiplier cannot hold
+      both length and cost across the level range. Secondary to the decision above
 - [ ] The 40 / 70 / 85% danger targets are a **proposal, not a measurement** — worth the owner's
       eye before more work is spent hitting them exactly
 
