@@ -1398,13 +1398,11 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 				combat_mgr.process_monster_turn(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
-				# Fight LENGTH is measured on WINS ONLY. A lost fight ends the moment the
-				# player dies, so at a 30% win rate the mean turn count is dominated by short
-				# deaths — and the calibrator, seeing "too short", raises monster HP, which
-				# raises the cost, which kills the player sooner, which shortens the mean
-				# again. The two corrections were fighting each other: boss fights measured
-				# 5.3 turns against a 14 target while their cost was already at 76%. A target
-				# like "a boss fight lasts 14 turns" describes a fight you WIN.
+				# NOTE: measuring turns on WINS ONLY was tried here and made things WORSE —
+				# boss win rate fell from 30-47% to 15-33%. Conditioning on wins SELECTS the
+				# favourable fights, which are the SHORT ones, so win-only turns read short at
+				# low win rates; the calibrator then raised HP, which lowered the win rate,
+				# which selected even more lopsided wins. A runaway, not a correction.
 				win_turns_tot += float(turns)
 				win_n += 1
 			turns_tot += float(turns)
@@ -1413,9 +1411,10 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 			combat_mgr.end_combat(0, false, false)
 	if n == 0:
 		return {}
-	# Fall back to all fights only if nothing was won, so the signal never vanishes.
-	var turns_out: float = (win_turns_tot / float(win_n)) if win_n > 0 else (turns_tot / float(n))
-	return {"turns": turns_out, "cost": cost_tot / float(n), "win": float(wins) / float(n)}
+	# turns over ALL fights (see the note above on why win-only is biased).
+	return {"turns": turns_tot / float(n), "cost": cost_tot / float(n),
+		"win": float(wins) / float(n),
+		"win_turns": (win_turns_tot / float(win_n)) if win_n > 0 else 0.0}
 
 func run_role_calibrate():
 	# #6 (2026-09-02) — calibrate the ROLE multipliers against real fights, PER ANCHOR LEVEL.
@@ -1447,6 +1446,14 @@ func run_role_calibrate():
 			var hp_m: float = float(seed_m.hp_mult)
 			var st_m: float = float(seed_m.str_mult)
 			var last := {}
+			# SINGLE-AXIS calibration. Feeding BOTH turns and cost back made the two
+			# corrections fight through the win rate: raising HP to lengthen a fight raises
+			# the cost, which kills the player sooner, which shortens the measured fight.
+			# Two knobs chasing two coupled targets oscillated instead of converging.
+			# Only the COST target — the one the owner actually signed off — is corrected.
+			# hp_mult is fixed at the role's design length ratio with no feedback, so the
+			# fight is proportionally longer by construction and cannot chase its own tail.
+			hp_m = t_turns / maxf(0.1, float(monster_db.ROLE_TARGETS.get("normal", {}).get("turns", 5.0)))
 			for pass_i in range(passes):
 				# Override with a single-anchor table so this level uses exactly these values.
 				monster_db.set_calibrated_role_multipliers({
@@ -1456,7 +1463,6 @@ func run_role_calibrate():
 				if r.is_empty():
 					break
 				last = r
-				hp_m *= pow(clampf(t_turns / maxf(0.5, float(r["turns"])), 0.3, 4.0), CAL_CORRECTION_EXP)
 				st_m *= pow(clampf(t_danger / maxf(0.01, float(r["cost"])), 0.3, 4.0), CAL_CORRECTION_EXP)
 			anchors.append({"level": lvl, "hp_mult": hp_m, "str_mult": st_m})
 			if last.is_empty():
