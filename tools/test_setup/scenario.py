@@ -112,6 +112,18 @@ SCENARIOS = {
         players=3, at=(250, -150),
         apply=lambda c: c.update({"current_hp": 1})),
 
+    "party3_leader_dies": dict(
+        doc="THREE members in a NORMAL zone, but only the LEADER is at 1 HP. The leader dies "
+            "while two healthy members remain, which is the only way to reach the leadership "
+            "TRANSFER branch - in a lethal zone the others die first and the party drops to two, "
+            "which disbands instead.",
+        # Pinned OUTSIDE the safe zone: a recreated character spawns at the Crossroads (0,0)
+        # where nothing can be hunted, so a scenario that relies on a fight must place them.
+        # ~level 13 here: lethal to the 1 HP leader, survivable for the healthy two.
+        players=3, at=(57, -11),
+        apply=lambda c: c.update({"current_hp": 1 if c["name"] == "test02"
+                                  else c.get("max_hp", 100)})),
+
     "gather_water": dict(
         doc="Party standing on water with rods - for fishing and the party reward share.",
         players=2, at=TILES["water"],

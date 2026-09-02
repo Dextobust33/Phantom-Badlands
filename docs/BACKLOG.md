@@ -26,7 +26,9 @@ order is what forces revisits.
 - [x] Rotation survives membership **churn** — leavers are dropped from the order, joiners are
       added, and rotation skips anyone dead/offline/departed. Verified: leavers never lead again,
       joiners get turns, no stale ids
-- [ ] Verify the **leadership-transfer** path — 3rd test account now exists, run `party3`
+- [x] **Leadership transfer verified** — with 3 members, the leader dying hands leadership to a
+      survivor instead of disbanding. Needed a scenario where ONLY the leader is at 1 HP: in a
+      lethal zone the others die first, the party drops to two, and it disbands instead
 - [ ] Live test of rotation + duplicated rewards (`party3`, `gather_*`, `craft_ready`)
 
 *Rotation and rewards ship together: both edit party state and `_end_party_combat_all`, so

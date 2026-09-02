@@ -39454,8 +39454,11 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 				_broadcast_party_update(leader_id, _dmsgs, true, _dentries)
 			# Now that the round has been sent, run their deaths.
 			_party_kill_fallen(_fallen_dres)
-			# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
-			_party_rotate_leader(_members_dres)
+			# v0.9.740 - hand leadership on ONLY when the fight is OVER. This used to run after
+			# EVERY round, so leadership changed mid-combat and the "takes point" notice landed
+			# in the middle of round 1, before any damage was shown.
+			if _dres.get("combat_ended", false):
+				_party_rotate_leader(_members_dres)
 		else:
 			_broadcast_party_update(leader_id, _note, false)
 		return
@@ -39859,8 +39862,11 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 		_broadcast_party_update(leader_id, rmsgs, true, rentries)
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_rres)
-	# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
-	_party_rotate_leader(_members_rres)
+	# v0.9.740 - hand leadership on ONLY when the fight is OVER. This used to run after
+	# EVERY round, so leadership changed mid-combat and the "takes point" notice landed
+	# in the middle of round 1, before any damage was shown.
+	if rres.get("combat_ended", false):
+		_party_rotate_leader(_members_rres)
 
 
 func _handle_party_combat_command(peer_id: int, command: String):
@@ -39908,8 +39914,11 @@ func _handle_party_combat_command(peer_id: int, command: String):
 		_broadcast_party_update(leader_id, msgs, true, log_entries)
 	# Now that the round has been sent, run their deaths.
 	_party_kill_fallen(_fallen_res)
-	# v0.9.740 - hand leadership on so one player is not stuck driving every fight.
-	_party_rotate_leader(_members_res)
+	# v0.9.740 - hand leadership on ONLY when the fight is OVER. This used to run after
+	# EVERY round, so leadership changed mid-combat and the "takes point" notice landed
+	# in the middle of round 1, before any damage was shown.
+	if res.get("combat_ended", false):
+		_party_rotate_leader(_members_res)
 
 func _party_combat_snapshot(leader_id: int) -> Dictionary:
 	"""#64 Slice 3 — client-facing snapshot of a simultaneous party fight."""

@@ -15191,13 +15191,14 @@ func _emit_combat_end_chrome(args: Dictionary) -> void:
 
 
 func _flush_party_notices() -> void:
-	"""Print party notices that were held while the fight's UI was up."""
-	if _pending_party_notices.is_empty():
-		return
-	var notices := _pending_party_notices.duplicate()
-	_pending_party_notices.clear()
-	for n in notices:
-		display_game(String(n))
+	"""Print party notices that were held while the fight's UI was up, and release any
+	teaching hint that was held for the same reason."""
+	if not _pending_party_notices.is_empty():
+		var notices := _pending_party_notices.duplicate()
+		_pending_party_notices.clear()
+		for n in notices:
+			display_game(String(n))
+	_drain_new_player_modals()
 
 
 func acknowledge_continue():
@@ -38130,7 +38131,12 @@ func _enqueue_tutorial_hint(title: String, body: String) -> void:
 func _drain_new_player_modals() -> void:
 	# Show at most one new-player modal at a time. Never interrupt combat, never
 	# stack over another modal. Order: teaching hints → numpad popup → guided tour.
-	if in_combat:
+	# v0.9.740 — `in_combat` alone is not enough: it is cleared at combat_end while the round
+	# is still ANIMATING, so a level-up tip popped before the player had seen the damage, the
+	# kill, or that they had won. Also wait for the playback and the combat UI to be gone.
+	if in_combat or _coop_playback_pending():
+		return
+	if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible:
 		return
 	if tutorial_hint_panel and tutorial_hint_panel.visible:
 		return
