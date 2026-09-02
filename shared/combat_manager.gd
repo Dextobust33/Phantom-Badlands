@@ -51,6 +51,15 @@ const MITIGATION_BUFF_FLOOR := 0.15
 # the old naked-only model (gear buys ~20x the casts, economy gone); 1.0 would cost against the
 # full pool (gear buys nothing at all). 0.5 leaves a fully geared character with roughly twice
 # the casts of a naked one — gear rewards a sustain build without deleting resource management.
+# Share of a same-level monster's health bar a level-matched companion removes per hit. At 0.05
+# a companion contributes roughly a quarter of a five-turn fight — a partner rather than a pet,
+# and rather than the 1-2% the old linear formula delivered. The floor/cap mirror the companion
+# HP model: an under-levelled companion still helps, and an over-levelled one is not scaled
+# down to its owner, because that is the player's investment.
+const COMPANION_DAMAGE_SHARE := 0.05
+const COMPANION_DAMAGE_UNDER_FLOOR := 0.60
+const COMPANION_DAMAGE_OVER_CAP := 2.5
+
 const GEAR_COST_SHARE := 0.5
 
 const MAGIC_BOLT_FULL_SPEND_PCT := 0.20
@@ -840,6 +849,26 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	var companion_damage = 0
 	if drop_tables:
 		companion_damage = drop_tables.get_companion_attack_damage(companion_tier, character.level, companion_bonuses, companion_level, companion_sub_tier, companion_border_tier)
+		# #6b (2026-09-02) — anchor companion damage to the health bar it is fighting, the same
+		# way player abilities and monster stats now are. The legacy formula is
+		# `tier*5 + player_level*0.3 + companion_level*0.5`, which is LINEAR against content
+		# that is not: measured, a companion hit was 2.0% of a monster's bar at L50 and 1.1% at
+		# L1000 — decorative, and decaying. Reported from live play as a level-50 Dragon
+		# Wyrmling hitting for ~70 while the player hit for thousands.
+		#
+		# Companion HP was already fixed this way; damage was the untouched half of the item.
+		# Same asymmetric level shape as the HP fix, and for the same reason: an UNDER-levelled
+		# companion still contributes, and an OVER-levelled one keeps every point of the
+		# investment that went into it rather than being scaled down to its owner.
+		var _cmp_bar: float = float(monster_database.reference_monster_hp(character.level)) if (monster_database != null and monster_database.has_method("reference_monster_hp")) else 0.0
+		if _cmp_bar > 0.0:
+			var _cmp_ratio: float = float(maxi(1, companion_level)) / float(maxi(1, character.level))
+			var _cmp_g: float = clampf(sqrt(_cmp_ratio), COMPANION_DAMAGE_UNDER_FLOOR, COMPANION_DAMAGE_OVER_CAP)
+			# Tier and sub-tier stay as the companion's own quality spread, bounded so a rare
+			# companion is better without turning the share into a different order of magnitude.
+			var _cmp_quality: float = 1.0 + 0.06 * float(maxi(1, int(companion_tier)) - 1) + 0.05 * float(maxi(1, int(companion_sub_tier)) - 1)
+			var _cmp_atk_pct: float = 1.0 + float(companion_bonuses.get("attack", 0)) / 100.0
+			companion_damage = int(round(_cmp_bar * COMPANION_DAMAGE_SHARE * _cmp_g * _cmp_quality * _cmp_atk_pct))
 	else:
 		# Fallback formula matching drop_tables
 		companion_damage = companion_tier * 5 + int(character.level * 0.3) + int(companion_level * 0.5)
