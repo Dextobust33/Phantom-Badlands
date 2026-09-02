@@ -14,16 +14,46 @@ order is what forces revisits.
 
 ## In progress
 
-**Item 6 — the progression & difficulty curve — is the active arc**, with 6b (companion power)
-as its twin. Items 1-5 are done. The simulator (5) was finished on 2026-09-02 and immediately
-produced the finding that defines 6: swept across the real level range (L1 → L10000), the
-difficulty curve **does not hold** — it humps around L50-500 and then gets *easier* again.
+**Item 6 (progression & difficulty curve) is the active arc.** Items 1-5 are done. On 2026-09-02
+item 6 was split — it had grown to 21 open tasks covering two different jobs — into:
+**6** the monster model and difficulty curve, **6b** companion power, **6c** class balance
+(blocked, see below), **6d** risk/reward incentives.
 
-Before tuning anything, note what 5 proved about trusting measurements here: four separate
-modelling bugs in the sim each produced confident, wrong balance conclusions (six classes never
-simulated; a tier-2 Orc used as the enemy at every level; an invented companion; a gear model
-fitted to naked test accounts). **Two conclusions were reversed by verification alone.** Check
-what the sim is actually modelling before believing any number it prints.
+### ⚠ Sequencing: a body of UNSHIPPED, sim-only balance change has accumulated
+
+Four significant changes now sit in the tree, none deployed and none played:
+1. **Reference-player monster model** — monster HP/STR/DEF at every level in the game
+2. **Role targets** — elite/boss/empowered multipliers re-derived
+3. **Escape fix** — flee penalty by level ratio instead of raw difference
+4. **Player-post suppression floor** — already marked do-not-deploy until 12b exists
+
+All four are validated **only in the simulator**. Two things follow, and they set the order:
+
+- **6c (class balance) is BLOCKED, not merely "next".** Every class number on record was
+  measured against the OLD monster model, so those absolute figures are stale. Re-run
+  `-- classes`, `-- races`, `-- ability_hp`, `-- companion` first. Tuning classes against a
+  monster model that no longer exists is precisely the revisit-forcing mistake this file exists
+  to prevent
+- **A playtest checkpoint should come before more balance work.** Sim-validated is not the same
+  as feels-right, and the monster model changes every fight in the game. Piling class tuning on
+  top of an unvalidated baseline risks redoing both. The cheap version is a local dev session at
+  a few levels, not a release
+
+**Suggested next order:** (a) re-run the stale measurements against the new baseline — cheap and
+it unblocks everything; (b) playtest the monster model locally; (c) then 6c class balance, or
+6b companion power if the Phantom (12b) is being pulled forward, since 6b gates it.
+
+### What this session proved about trusting measurements
+
+Item 5 found four modelling bugs in the simulator, each of which produced a confident, wrong
+balance conclusion, and **three conclusions were reversed by verification alone** — including
+two that had already been written up. Later work added more of the same: an "Exploit hits for
+46000% of a health bar" reading that was a harness artifact, a "1 fight per level" XP reading
+caused by the sim being unable to observe XP grants at all, and an "optimal strategy is to fight
+things you lose to" headline that came from pricing a permadeath loss at zero.
+
+**Check what a number is actually measuring before believing it, and re-check it before acting
+on it.** Every finding in this file states how it was measured for that reason.
 
 ### 1. Party mechanics — server pass ✅ COMPLETE (shipped v0.9.740)
 - [x] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
@@ -554,22 +584,6 @@ is never claimed**.
 - [ ] Decide the target curve first (what *should* win% and danger look like at L10, L100,
       L1000, L10000?), then tune to it. Without a target the sweep has nothing to fail against
 - [ ] Fix the **mid-game hump** and the **late-game slide** — the two ends of the same problem
-- [ ] **Wizard** rework: worst win rate + longest fights past L100
-- [ ] **Class gap widening with level** (Thief vs Fighter/Wizard at L1000+)
-- [ ] **Magic Bolt flat curve** — ~21x per mana at L5 vs ~27x at L20 while monster HP scales far
-      faster. Damage-per-mana has to scale on the same curve as monster HP
-- [ ] Ability cost model / resource economy (costs flat while pools scale).
-      **Measured 2026-09-01:** a level-20 Wizard's Forcefield (`cost_percent: 3`) has a NET
-      cost of **zero** — the same turn's regen refills the spend before the player ever sees
-      it, so a 310-point absorb shield is free every round. Reproduced in SOLO combat, so it
-      is not co-op specific. Regen (~16%/turn) outrunning cost is the whole flaw in one case
-- [ ] Anti-abuse items that **never landed**: Forethought and Recharge still exist, no mitigation
-      cap, no stun DR. Related user direction: remove blue "skip the enemy turn / refund
-      resources" utility cards
-- [ ] Equipment vs race vs class, compared **against each other** rather than in isolation
-      (`-- races` and `-- classes` now exist for this)
-- [ ] **Gear acquisition must actually exist** at every level band — the loop depends on players
-      having a real way to get better gear, not just on the gear existing in a table
 
 ### 6b. Companion power & levelling — **the emotional spine, currently thin**
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them
@@ -611,6 +625,56 @@ Confirmed in code, and it explains the first point exactly:
 - [ ] Give levelling a companion a **visible, worthwhile payoff curve**; make the ways to
       improve one (levels, fusion, sub-tier, variants) legible and reachable
 - [ ] Re-run `-- companion` after each change; it is the regression test for this item
+
+### 6c. Class balance & the resource economy — **BLOCKED until the baseline is re-measured**
+*Split out of item 6 on 2026-09-02: item 6 had grown to 21 open tasks covering two different
+jobs — sizing the MONSTERS and sizing the CLASSES. They are separate, and the second depends on
+the first being settled.*
+
+**Hard prerequisite, and the reason this is blocked:** every class number quoted below was
+measured against the OLD monster model. The reference-player model changed monster HP, strength
+and defense at every level, so those absolute figures are stale. **Re-run `-- classes`,
+`-- races`, `-- ability_hp` and `-- companion` against the new baseline before tuning anything.**
+Tuning classes against numbers taken from a monster model that no longer exists is exactly the
+revisit-forcing mistake the ordering rule exists to prevent.
+
+- [ ] **Wizard** rework: worst win rate past L100 and by far the longest fights (155 turns at a
+      L250 elite in the old measurements). Its sustain card (Blast) falls to 8-14% of a health
+      bar while its burst card recovers — burst returns, sustain dies
+- [ ] **Class gap widening with level** (Thief ran far ahead of Fighter/Wizard at L1000+). Note
+      the likely mechanism found in item 6: **Exploit is the only ability whose damage is a
+      percentage of the target's max HP**, so it is the only one that holds its value as
+      monster HP scales. Everything else deals absolute damage into a bar on a different curve
+- [ ] **Magic Bolt flat curve** — damage-per-mana has to scale on the same curve as monster HP
+- [ ] Ability cost model / resource economy (costs flat while pools scale).
+      **Measured 2026-09-01:** a level-20 Wizard's Forcefield (`cost_percent: 3`) has a NET
+      cost of **zero** — the same turn's regen refills the spend before the player ever sees
+      it, so a 310-point absorb shield is free every round. Reproduced in SOLO combat, so it
+      is not co-op specific. Regen (~16%/turn) outrunning cost is the whole flaw in one case
+- [ ] Anti-abuse items that **never landed**: Forethought and Recharge still exist, no mitigation
+      cap, no stun DR. Related user direction: remove blue "skip the enemy turn / refund
+      resources" utility cards
+- [ ] Equipment vs race vs class, compared **against each other** rather than in isolation
+      (`-- races` and `-- classes` now exist for this)
+
+### 6d. Risk, reward & progression incentives
+*Also split out of item 6. This is the economy around fights rather than the fights themselves.*
+
+- [ ] **Re-measure the risk/reward table now that escape works**, then decide whether the
+      1.2-9.3 level over-level payouts need raising. The `-- risk` audit models a player who
+      attacks first and flees once hurt; against something far above you that first exchange is
+      often fatal, so its escape column understates a player who runs on sight. Add a
+      "flees immediately" mode before drawing conclusions from it
+- [ ] **Should escaping COST something?** A successful flee is currently free. Dropping carried
+      loot, taking a lasting wound or burning a consumable would make disengaging a real trade
+      rather than a pure out. A design call, deliberately not made unilaterally
+- [ ] Sample-size caveat before tuning on these numbers: 36 fights per cell, and the kill%
+      column is visibly noisy (L50 read 2% at x2.0 but 13% at x3.0 — monster-selection
+      variance, not a real inversion)
+- [ ] **Gear acquisition must actually exist** at every level band — the loop depends on players
+      having a real way to get better gear, not just on the gear existing in a table.
+      **Largely owned by 12b (the Phantom)**, which is the designed answer; this line stays as
+      the check that the answer covers every band
 
 ### 7. Monster packs (a party of N meets ~N monsters)
 Last of the core combat work: packs multiply monsters per fight, so sizing them before 6 fixes
