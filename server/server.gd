@@ -4996,6 +4996,35 @@ func handle_move(peer_id: int, message: Dictionary):
 					_handle_signpost_interact(peer_id, character, target_pos.x, target_pos.y)
 					return
 
+	# v0.9.740 POST FORMATION (user 2026-09-01). Inside a post everyone moves freely; the
+	# one-leads-the-rest-follow formation applies once they step OUT. So the party may only
+	# leave together: the leader cannot walk out while anyone is still wandering the post, and
+	# a follower cannot walk out on their own. Party members can stand on the same tile
+	# (_is_non_party_player_at ignores party mates), so gathering up is always possible.
+	var _cur_post: Dictionary = {}
+	var _dest_post: Dictionary = {}
+	if world_system != null and world_system.chunk_manager != null:
+		_cur_post = world_system.chunk_manager.get_npc_post_at(character.x, character.y)
+		_dest_post = world_system.chunk_manager.get_npc_post_at(new_pos.x, new_pos.y)
+	var _leaving_post: bool = not _cur_post.is_empty() and _dest_post.is_empty()
+	if _leaving_post and party_membership.has(peer_id):
+		if not _is_party_leader(peer_id):
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You can move freely inside the post, but only your party leader can lead the party out.[/color]"})
+			return
+		var _stragglers: Array = []
+		for _mpid in active_parties[peer_id].get("members", []):
+			if _mpid == peer_id or not characters.has(_mpid):
+				continue
+			var _mc = characters[_mpid]
+			if maxi(absi(_mc.x - character.x), absi(_mc.y - character.y)) > 1:
+				_stragglers.append(_mc.name)
+		if not _stragglers.is_empty():
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s must be beside you before the party leaves the post.[/color]" % ", ".join(_stragglers)})
+			for _mpid2 in active_parties[peer_id].get("members", []):
+				if _mpid2 != peer_id and characters.has(_mpid2):
+					send_to_peer(_mpid2, {"type": "text", "message": "[color=#FFA500]%s is ready to leave — stand beside them.[/color]" % character.name})
+			return
+
 	# Check for player collision (can't move onto another player's space)
 	# Party members don't block each other (handled by snake movement)
 	# v0.9.726 — EXCEPT on tiles cardinally adjacent to a station: players OVERLAP there
@@ -5136,8 +5165,10 @@ func handle_move(peer_id: int, message: Dictionary):
 			# Audit #3 v0.9.523 — first companion hatched teaches the system.
 			_maybe_send_companion_hint(peer_id, companion)
 
-	# Party snake movement: move followers in chain behind leader
-	if _is_party_leader(peer_id):
+	# Party snake movement: move followers in chain behind leader.
+	# v0.9.740 — NOT while the destination is inside a post: there everyone moves on their own,
+	# so dragging followers to the leader every step defeated the point.
+	if _is_party_leader(peer_id) and _dest_post.is_empty():
 		_move_party_followers(peer_id, old_x, old_y)
 
 	# Audit #14 PvP Slice D.2 (v0.9.557) — auto-claim any PvP loot sack on

@@ -35,6 +35,10 @@ order is what forces revisits.
       follower cannot move, hunt, rest or gather; **inside a post everyone acts independently**
       (shopping, crafting, quests, walking between stations). Crafting needed no gate — it
       already requires being at a post or station
+- [x] **Post formation** — inside a post nobody is dragged along and everyone moves freely; the
+      party may only leave TOGETHER: the leader cannot step out while anyone is still wandering
+      the post, and a follower cannot step out alone. Party members can share a tile, so
+      gathering up to leave is always possible
 
 *Rotation and rewards ship together: both edit party state and `_end_party_combat_all`, so
 splitting them means editing and re-testing the same code twice.*
