@@ -19,6 +19,19 @@ proposing what to work on, and **update it as work lands** — do not let it go 
 
 This file exists because work was being lost and duplicated while jumping between arcs.
 
+## ⚑ Fix the cause, not the symptom
+
+If a fix looks like the same **shape** as a previous one, stop and name the shared cause before
+writing more code. Implement the structural change that retires the whole class rather than
+adding another guard — say what it is, why it retires the class, and roughly what it costs, then
+do it. (Six consecutive co-op combat bugs shared one cause: `in_combat` is cleared at
+`combat_end` while the round is still animating, so everything keyed off it fired early. One
+`_combat_ui_busy()` state replaced six separate patches.)
+
+Its pair: after two wrong theories about the same bug, **measure instead of guessing** — write
+the diagnostic (a temp file log from GDScript, a headless probe) rather than trying a third
+plausible-sounding fix.
+
 ## Quick Start
 
 **Detailed diagrams in `/docs/`:**
