@@ -47,6 +47,12 @@ const MITIGATION_BUFF_FLOOR := 0.15
 # At 20% the mage kit lines up as blast 0.037 damage-per-cost%, meteor ~0.032, bolt ~0.028 —
 # sustain most efficient, burst paying a premium for being front-loaded, which is the right
 # shape for a nuke.
+# Share of the GEAR portion of a resource pool that ability costs scale against. 0.0 would be
+# the old naked-only model (gear buys ~20x the casts, economy gone); 1.0 would cost against the
+# full pool (gear buys nothing at all). 0.5 leaves a fully geared character with roughly twice
+# the casts of a naked one — gear rewards a sustain build without deleting resource management.
+const GEAR_COST_SHARE := 0.5
+
 const MAGIC_BOLT_FULL_SPEND_PCT := 0.20
 const MAGIC_BOLT_MIN_EFF := 0.80
 # #55 — repeated-stun diminishing returns. Each time the SAME monster is stunned, the
@@ -167,15 +173,20 @@ const VARIABLE_COST_MIN_FRACTION: float = 0.3
 # small early-game pools). Effect scales with spend, so these remain the "full
 # power" cost; spend down to floor_ratio for a cheaper, weaker cast.
 const VARIABLE_COST_TABLE: Dictionary = {
-	"power_strike": {"ceiling": 7, "cost_percent": 8, "floor_ratio": 0.3, "resource": "stamina"},
-	"shield_bash":  {"ceiling": 13, "cost_percent": 10, "floor_ratio": 0.3, "resource": "stamina"},
-	"cleave":       {"ceiling": 20, "cost_percent": 12, "floor_ratio": 0.3, "resource": "stamina"},
-	"devastate":    {"ceiling": 32, "cost_percent": 16, "floor_ratio": 0.3, "resource": "stamina"},
-	"blast":        {"ceiling": 34, "cost_percent": 6, "floor_ratio": 0.3, "resource": "mana"},   # 4→6 (2026-08-25 resource fix — eased from 7 for flock sustain; scales w/ pool to L1000)
-	"meteor":       {"ceiling": 65, "cost_percent": 14, "floor_ratio": 0.3, "resource": "mana"},  # 8→14 (#6c: re-priced against its anchored weight — see below)
-	"ambush":       {"ceiling": 20, "cost_percent": 10, "floor_ratio": 0.3, "resource": "energy"},
-	"exploit":      {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "energy"},
-	"gambit":       {"ceiling": 24, "cost_percent": 12, "floor_ratio": 0.3, "resource": "energy"},
+	# #6c (2026-09-02) — cost_percent values re-solved to hold a CASTS-PER-BAR band (~6-10 at a
+	# full pool) instead of a fixed percentage. They were tuned against much smaller pools: at
+	# L1000 they were delivering 48-88 casts per bar, so resource management did not exist past
+	# the early game. The flat `ceiling` still governs the early game, where 4-6 casts was
+	# already correct, so these only bite once the pool is large.
+	"power_strike": {"ceiling": 7, "cost_percent": 19, "floor_ratio": 0.3, "resource": "stamina"},
+	"shield_bash":  {"ceiling": 13, "cost_percent": 22, "floor_ratio": 0.3, "resource": "stamina"},
+	"cleave":       {"ceiling": 20, "cost_percent": 27, "floor_ratio": 0.3, "resource": "stamina"},
+	"devastate":    {"ceiling": 32, "cost_percent": 30, "floor_ratio": 0.3, "resource": "stamina"},
+	"blast":        {"ceiling": 34, "cost_percent": 21, "floor_ratio": 0.3, "resource": "mana"},   # 4→6 (2026-08-25 resource fix — eased from 7 for flock sustain; scales w/ pool to L1000)
+	"meteor":       {"ceiling": 65, "cost_percent": 27, "floor_ratio": 0.3, "resource": "mana"},  # 8→14 (#6c: re-priced against its anchored weight — see below)
+	"ambush":       {"ceiling": 20, "cost_percent": 22, "floor_ratio": 0.3, "resource": "energy"},
+	"exploit":      {"ceiling": 24, "cost_percent": 18, "floor_ratio": 0.3, "resource": "energy"},
+	"gambit":       {"ceiling": 24, "cost_percent": 19, "floor_ratio": 0.3, "resource": "energy"},
 	"forcefield":   {"ceiling": 15, "cost_percent": 3, "floor_ratio": 0.3, "resource": "mana"},   # 2→3
 	# Warrior buffs (v0.9.263): magnitude scales with spend, duration unchanged.
 	"war_cry":      {"ceiling": 11, "cost_percent": 9, "floor_ratio": 0.3, "resource": "stamina"},
@@ -5066,14 +5077,34 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 	# regen build gets MORE casts + better sustain. `ceiling = max(flat, naked_pool ×
 	# cost_percent)` — flat still governs early game (cost_percent tuned below
 	# flat/pool@L10), percent takes over as the pool grows.
+	# #6c (2026-09-02) — costing against the NAKED pool alone let gear dissolve the resource
+	# economy. Measured: at L1000 a Wizard's naked pool is ~800 against a total of 16,363, so
+	# gear multiplied the pool ~20x while cost stayed pinned to the naked value — 88 casts of
+	# Blast per bar, 68 of Ambush, 48 of Power Strike. Every archetype, not just mages. At L10
+	# the same abilities give 4-6 casts, which is the economy working; it simply evaporated
+	# with gear.
+	#
+	# The original intent (gear should buy MORE casts and better sustain) is kept, but bounded:
+	# cost now scales against the naked pool PLUS a share of the gear bonus. At
+	# GEAR_COST_SHARE = 0.5 a fully geared character gets roughly 2x the casts of a naked one
+	# rather than 20x — gear still rewards a sustain build, it just cannot delete the system.
 	if cost_percent > 0:
 		var naked_pool := 0
+		var total_pool := 0
 		match resource_type:
-			"mana": naked_pool = character.max_mana
-			"stamina": naked_pool = character.max_stamina
-			"energy": naked_pool = character.max_energy
+			"mana":
+				naked_pool = character.max_mana
+				total_pool = character.get_total_max_mana()
+			"stamina":
+				naked_pool = character.max_stamina
+				total_pool = character.get_total_max_stamina()
+			"energy":
+				naked_pool = character.max_energy
+				total_pool = character.get_total_max_energy()
 		if naked_pool > 0:
-			base_ceiling = max(base_ceiling, int(naked_pool * cost_percent / 100.0))
+			var gear_bonus: float = maxf(0.0, float(total_pool - naked_pool))
+			var cost_basis: float = float(naked_pool) + gear_bonus * GEAR_COST_SHARE
+			base_ceiling = max(base_ceiling, int(cost_basis * cost_percent / 100.0))
 	var base_floor: int = max(1, int(base_ceiling * floor_ratio))
 
 	# Apply skill enhancement + racial reduction proportionally to both
