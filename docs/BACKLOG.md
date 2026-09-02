@@ -1203,12 +1203,28 @@ So the model made the *numbers* consistent and left the *abilities* to swing the
 points. That is also a likely source of the residual noise in every per-level audit: each cell
 sampled a random species, so run-to-run variance was partly which monsters showed up.
 
-- [ ] **Bring monster abilities inside the anchor.** Options, roughly in order of appeal:
-      measure each ability's empirical win-rate impact and fold it into the species shape as a
-      counterweight (a regenerating monster gets proportionally less HP); or cap the abilities
-      that scale with fight length (`regeneration` as % of max HP per turn is unbounded against
-      a long fight); or calibrate per-species rather than per-level, which is the brute-force
-      version and probably too slow
+- [x] **FIXED 2026-09-02 by per-species power calibration (`-- speciescal`).** Rather than
+      model a dozen interacting abilities by hand, the sim measures each species' real win rate
+      across three levels and all three archetypes and writes back one power multiplier.
+      Targets a BAND (48-72%) not equality, and only corrects species outside it — variety is
+      the point, a Hydra should still be harder than a Harpy.
+
+      | | before | after |
+      |---|--------|-------|
+      | L50 spread | 69 pts (31%-100%) | **38 pts (57%-95%)** |
+      | L1000 spread | 64 pts (22%-86%) | **24 pts (64%-88%)** |
+
+      **Hydra went from 22% win over 40 turns to 64%** — the regeneration-outpaces-damage case
+      that made a fight an endurance failure rather than a hard one. 29 species corrected; the
+      largest were Harpy x1.70, Shrieker x1.65 and Wraith x1.64 (too easy, made harder) against
+      Hydra x0.60 and Primordial Dragon x0.61 (too hard, softened).
+- [ ] Residual 38-point spread at L50 is worth one more pass — the calibration ran 3 passes and
+      several species were still moving. Note the verification audit measures **Fighter only**
+      while the calibration used all three archetypes, so its absolute win rates read high; the
+      SPREAD is the comparable number, not the level
+- [ ] `regeneration` may still deserve a direct cap rather than being counterweighted by a
+      blunt power multiplier — a monster that heals faster than you damage it is a bad
+      experience even when the win rate says it is fair
 - [ ] **`regeneration` is the standout and may deserve a direct fix first** — it converts a
       stat problem into a time problem, and a 40-turn fight is a bad experience even when won
 - [ ] Re-check the residual noise in the per-level audits once species are anchored; some of
