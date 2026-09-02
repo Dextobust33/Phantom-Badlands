@@ -69,6 +69,7 @@ func _audit_registry() -> Dictionary:
 		"difficulty": ["level x gear x enemy-tier feel", run_difficulty_audit],
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
+		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"races": ["all 8 races on one class", run_race_audit],
 		"calibrate": ["make_char vs REAL saved characters", run_calibration_audit],
 		"gear_solve": ["solve the average-gear model against real characters", run_gear_solve],
@@ -1489,6 +1490,77 @@ func run_role_calibrate():
 Wrote per-level role_multipliers for %d roles into the curve file." % out_roles.size())
 	monster_db._reference_anchors = []
 	monster_db._curve_is_calibrated = false
+	print("=====================================================================
+")
+
+func run_species_audit():
+	# #6c (user challenge 2026-09-02: "monsters differ substantially — is the sim testing a
+	# variety?"). The sim does: select_monster_type picks 20-35 species per level. But every
+	# audit reports the AGGREGATE, which hides the question that actually matters — whether the
+	# same nominal encounter is a different fight depending on WHICH monster shows up.
+	# A wide spread here means average difficulty is meaningless to a player, who meets one
+	# monster at a time, not an average.
+	var samples: int = maxi(8, int(_audit_n / 6.0))
+	print("
+===== #6c PER-SPECIES SPREAD (same level, same gear, Fighter) =====")
+	print("Win%% against each species the game can actually pick at that level, %d fights each." % (samples * 3))
+	for lvl in [50, 1000]:
+		# Collect the species the selector really produces at this level.
+		var seen := {}
+		for i in range(400):
+			var t = monster_db.select_monster_type(lvl)
+			var nm := String(monster_db.get_monster_base_stats(t).get("name", "?"))
+			seen[nm] = int(seen.get(nm, 0)) + 1
+		var names: Array = seen.keys()
+		names.sort_custom(func(a, b): return int(seen[a]) > int(seen[b]))
+		var rows: Array = []
+		for nm in names:
+			if int(seen[nm]) < 8:   # ignore the long tail of rare bleed-through picks
+				continue
+			var wins := 0
+			var turns := 0.0
+			var n := 0
+			for klass in ["Fighter", "Wizard", "Thief"]:
+				for i in range(samples):
+					var ch = make_char(lvl, "average", klass)
+					var monster = monster_db.generate_monster_by_name(nm, lvl, true)
+					if monster == null or monster.is_empty():
+						continue
+					monster["current_hp"] = monster.get("max_hp", 1)
+					ch.in_combat = false
+					combat_mgr.start_combat(0, ch, monster)
+					if not combat_mgr.active_combats.has(0):
+						continue
+					var combat = combat_mgr.active_combats[0]
+					var t2 := 0
+					while t2 < 400:
+						if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+							break
+						t2 += 1
+						if combat.get("player_can_act", true):
+							match ch.get_class_path():
+								"trickster": _player_act_trickster(combat, ch)
+								"mage": _player_act_mage(combat, ch)
+								_: _player_act(combat, ch)
+						if int(monster.get("current_hp", 0)) <= 0:
+							break
+						combat_mgr.process_monster_turn(combat)
+					if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+						wins += 1
+					turns += float(t2)
+					n += 1
+					combat_mgr.end_combat(0, false, false)
+			if n > 0:
+				rows.append([nm, int(100.0 * wins / n), turns / n, int(seen[nm]) * 100 / 400])
+		rows.sort_custom(func(a, b): return int(a[1]) < int(b[1]))
+		print("")
+		print("--- L%d ---   %-22s %7s %8s %7s" % [lvl, "species", "win%", "turns", "spawn%"])
+		for r in rows:
+			print("              %-22s %6d%% %8.1f %6d%%" % [r[0], r[1], r[2], r[3]])
+		if rows.size() >= 2:
+			print("              SPREAD: %d%% (%s) to %d%% (%s) — %d points" % [
+				int(rows[0][1]), rows[0][0], int(rows[rows.size()-1][1]), rows[rows.size()-1][0],
+				int(rows[rows.size()-1][1]) - int(rows[0][1])])
 	print("=====================================================================
 ")
 

@@ -1125,6 +1125,59 @@ Wisdom at half weight; Sage recovered to 18-23%.
       monster" is a design opinion that wants the owner's eye, and it is now a single readable
       table rather than five formulas
 
+**PER-SPECIES SPREAD — the same level is NOT the same fight (user challenge, 2026-09-02).**
+
+Every audit until now reported the AGGREGATE across monster types. That hides the thing a
+player actually experiences, because a player meets one monster at a time, not an average.
+Measured (`-- species`, same level, same gear, 45 fights per species):
+
+| L50 species | win% | turns | spawn% |
+|-------------|------|-------|--------|
+| **Titan** | **31%** | 3.0 | 2% |
+| Lich | 40% | 10.9 | 2% |
+| Chimaera | 48% | 4.0 | 5% |
+| Young Dragon | 62% | 4.6 | 10% |
+| Gryphon | 73% | 3.7 | 7% |
+| Demon | 86% | 6.3 | 8% |
+| Vampire | 93% | 6.6 | 8% |
+| **Shrieker** | **100%** | 3.8 | 3% |
+
+**SPREAD: 69 points.** At L1000 it is 64 points — **Hydra 22%** (40.4 turns!) to
+**Demon Lord 86%**.
+
+**This makes the aggregate numbers nearly meaningless as a description of play.** "L50 elite is
+45%" is the average of a 31% fight and a 100% fight. A player who draws a Titan and a player
+who draws a Shrieker are playing different games at the same level in the same gear.
+
+**Cause: the reference model anchors STATS but not ABILITIES.** `compute_anchored_stats`
+normalises HP, strength and defense, and the species `shape` multiplier is deliberately bounded
+to ~2x. But monster ABILITIES are untouched by any of it, and they dominate:
+- **Hydra: 22% win over 40.4 turns** — `regeneration` heals faster than the player can chew
+  through, turning the fight into an endurance failure rather than a hard fight
+- **Sphinx 22.8 turns, Lich 10.9** — the same pattern, milder
+- **Shrieker 100%** — a monster whose kit does nothing threatening
+- multi_strike, armored, ethereal, life_steal all sit outside the anchor as well
+
+So the model made the *numbers* consistent and left the *abilities* to swing the outcome by 60+
+points. That is also a likely source of the residual noise in every per-level audit: each cell
+sampled a random species, so run-to-run variance was partly which monsters showed up.
+
+- [ ] **Bring monster abilities inside the anchor.** Options, roughly in order of appeal:
+      measure each ability's empirical win-rate impact and fold it into the species shape as a
+      counterweight (a regenerating monster gets proportionally less HP); or cap the abilities
+      that scale with fight length (`regeneration` as % of max HP per turn is unbounded against
+      a long fight); or calibrate per-species rather than per-level, which is the brute-force
+      version and probably too slow
+- [ ] **`regeneration` is the standout and may deserve a direct fix first** — it converts a
+      stat problem into a time problem, and a 40-turn fight is a bad experience even when won
+- [ ] Re-check the residual noise in the per-level audits once species are anchored; some of
+      what was blamed on sample size may be species selection
+- [ ] **Playtest instructions must name real species.** `/spawnmonster Orc 50` was used for
+      several manual tests and Orc has a **0% spawn rate at L50** — a tier-2 monster stretched
+      up, exactly the bug that was fixed in the sim and then reproduced by hand in the manual
+      test. Use the actual spawn table: at L50 that is Gryphon, Succubus, Vampire, Giant,
+      Demon, Young Dragon, Chimaera
+
 ### 6d. Risk, reward & progression incentives
 *Also split out of item 6. This is the economy around fights rather than the fights themselves.*
 
