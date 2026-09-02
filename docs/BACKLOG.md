@@ -262,10 +262,46 @@ wins **100% of fights at 96-100% health**. Not an XP exploit (the downlevel pena
 and a weak monster's base XP is small anyway) — but it means the pressure to move outward has to
 come from the **reward gradient**, since the difficulty model will never apply it.
 
+- [x] **Player-post safe pockets now scale with tier** (user approved 2026-09-02). NPC trading
+      posts already scaled — their anchor is `_distance_to_level(post's own distance)` and post
+      tier comes from `_tier_from_distance`, so a frontier post already anchors high. The hole
+      was **player-built posts**: every one is created with `DEFAULT_PLAYER_POST_TIER = 1` and
+      nothing ever assigns a distance-based tier, so the suppression floor in
+      `_compute_effective_post_tier` was **1 everywhere**. A player could raise a post deep in
+      the frontier, buy guards, and suppress a level-5000 zone to level ~1-2 permanently. The
+      floor is now `max(post tier, wilderness_tier - MAX_PLAYER_POST_SUPPRESSION)` with the cap
+      at 2 tiers, so a pocket is easier than its surroundings but never starter-grade. Guard
+      investment keeps the same range; near the core (wilderness tier 1-3) the floor stays 1 and
+      the early game is untouched
 - [ ] **Decide whether progression pressure is a reward-gradient problem, not a monster-stat
       problem.** Neither formula should simply be removed — the stat downscale fixes a real bug,
       and safe settlements are good design. The lever is making the gear and companions players
       need obtainable only further out
+
+**Root cause of the late-game slide, found 2026-09-02 by auditing the monster tables:**
+`get_monster_base_stats` hand-authors `base_level` / `base_hp` / `base_strength` per monster
+type, and the ratios **de-scale badly** as tiers rise:
+
+| Monster | base Lv | HP/lvl | STR/lvl |
+|---------|---------|--------|---------|
+| Goblin (T1) | 2 | 7.50 | **4.00** |
+| Ogre (T3) | 18 | 5.56 | 1.39 |
+| Ancient Dragon (T5) | 70 | 7.14 | 0.86 |
+| Hydra (T7) | 350 | 4.29 | 0.31 |
+| Avatar of Chaos (T9) | 6000 | 2.50 | **0.07** |
+
+HP per level falls ~3x from T1 to T9; **strength per level falls ~57x**. Meanwhile player
+damage grows roughly with L² (`get_total_attack()` × `(1 + 0.02·STR)`, both terms linear in
+level). That is the late-game easing, and it is not a tuning error — the tables simply have no
+consistent relationship to level. It is why item 6's first task is a **target curve**, and why
+the reference-player model below is the leading fix.
+
+- [ ] **Anchor monster stats to a reference player at the same level** rather than to
+      hand-authored per-tier tables: `monster.hp = reference_damage_per_turn(L) × target_turns
+      (tier)`, and similarly for its damage against reference mitigation. Difficulty becomes flat
+      *by construction* and "gets harder with level" becomes an explicit knob instead of an
+      emergent accident of 54 hand-written stat blocks. The sim now has the machinery to build
+      that reference (`make_char` is calibrated; `-- ability_hp` measures output per level)
 
 - [ ] Decide the target curve first (what *should* win% and danger look like at L10, L100,
       L1000, L10000?), then tune to it. Without a target the sweep has nothing to fail against

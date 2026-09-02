@@ -26610,6 +26610,11 @@ const ENCLOSURE_WALL_TYPES = ["wall", "door", "bridge"]  # Types that do NOT req
 # indicator only this slice; bubble becomes load-bearing in Slice 4 once
 # guard/tower/food gating is implemented).
 const DEFAULT_PLAYER_POST_TIER: int = 1
+# How many tiers easier than the surrounding wilderness a fully-invested player post may make
+# its bubble. Caps the settler-bubble safe pocket RELATIVE to its surroundings so a frontier
+# post cannot be suppressed all the way down to starter-zone difficulty. See
+# _compute_effective_post_tier.
+const MAX_PLAYER_POST_SUPPRESSION: int = 2
 const DEFAULT_PLAYER_POST_BUBBLE_RADIUS: int = 25
 
 # Audit #12 Slice 1 — dynamic bubble radius gated by guard force.
@@ -27087,11 +27092,28 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	else:
 		cx = int(c.get("x", 0))
 		cy = int(c.get("y", 0))
-	var floor_tier = int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER))
 	var owner = String(post_meta.get("_owner", ""))
 
 	var wilderness_info = chunk_manager.get_nearest_npc_post_with_tier(cx, cy)
 	var wilderness_tier = int(wilderness_info.get("tier", 1))
+
+	# 2026-09-02 — the suppression FLOOR now scales with where the post is, instead of being
+	# a flat tier 1. Every player post is created with DEFAULT_PLAYER_POST_TIER = 1 (nothing
+	# ever assigns one a distance-based tier, unlike NPC posts which use _tier_from_distance),
+	# so the floor was 1 EVERYWHERE. A player could raise a post deep in the frontier, buy
+	# enough guards, and suppress a level-5000 zone down to level ~1-2 monsters — a permanent
+	# trivialization pocket in the most dangerous content in the game, and the exact opposite
+	# of "progression should get harder".
+	#
+	# A post can now make its bubble at most MAX_PLAYER_POST_SUPPRESSION tiers easier than the
+	# surrounding wilderness. Guard investment still matters exactly as much as before (the
+	# suppression range is unchanged in size); what changes is that the safe pocket is now
+	# relative to its surroundings rather than absolute. Frontier posts give frontier-grade
+	# safety. Near the core, wilderness_tier is 1-3 so the floor stays 1 and nothing about the
+	# early game changes.
+	var floor_tier = maxi(
+		int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
+		wilderness_tier - MAX_PLAYER_POST_SUPPRESSION)
 
 	if owner == "":
 		return wilderness_tier
