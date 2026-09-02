@@ -2246,9 +2246,27 @@ const ROLE_TARGETS := {
 	"boss":      {"turns": 14.0, "danger": 0.80},
 }
 
+# Role multipliers CALIBRATED against real fights, written into the curve file by the sim's
+# `-- refcal`. Empty until a calibration has produced them, in which case the derived algebra
+# below is used instead.
+static var _calibrated_role_mults: Dictionary = {}
+
+static func set_calibrated_role_multipliers(m: Dictionary) -> void:
+	_calibrated_role_mults = m if m != null else {}
+
 static func role_multipliers(role: String) -> Dictionary:
-	"""HP and strength multipliers for a role, relative to a plain monster, derived from
-	that role's target fight length and cost. Defense rides with strength."""
+	"""HP and strength multipliers for a role, relative to a plain monster.
+
+	MEASURED role multipliers are preferred. The derived form below is only a starting
+	estimate: it assumes the fight actually lasts `turns_role`, and it does not, so the damage
+	never accumulates to the intended cost. Measured at n=90 with the derived values, elite
+	landed at 48% of the player's health bar against a 65% target and boss at 52% against 80%,
+	while NORMAL — the only role that is calibrated rather than derived — hit its 40% target
+	exactly. The algebra is a decent first guess and a poor final answer, so the sim now
+	corrects these against real elite and boss fights the same way it corrects the baseline."""
+	if _calibrated_role_mults.has(role):
+		var c: Dictionary = _calibrated_role_mults[role]
+		return {"hp_mult": float(c.get("hp_mult", 1.0)), "str_mult": float(c.get("str_mult", 1.0))}
 	var base: Dictionary = ROLE_TARGETS.get("normal", {"turns": 5.0, "danger": 0.40})
 	var r: Dictionary = ROLE_TARGETS.get(role, base)
 	var t_ratio: float = float(r.get("turns", 5.0)) / maxf(0.1, float(base.get("turns", 5.0)))
@@ -2283,6 +2301,9 @@ func _load_reference_curve() -> void:
 		if mp is Dictionary and mp.get("anchors", null) is Array and not (mp["anchors"] as Array).is_empty():
 			_reference_anchors = mp["anchors"]
 			_curve_is_calibrated = true
+			# Role multipliers ride in the same file when a calibration has produced them.
+			if mp.get("role_multipliers", null) is Dictionary:
+				set_calibrated_role_multipliers(mp["role_multipliers"])
 			return
 	var f = FileAccess.open(REFERENCE_CURVE_PATH, FileAccess.READ)
 	if f != null:
