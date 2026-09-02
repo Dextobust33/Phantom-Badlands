@@ -4900,8 +4900,6 @@ func handle_move(peer_id: int, message: Dictionary):
 	_clear_afk_on_action(peer_id)
 
 	# Party followers can't move independently
-	if _party_follower_denied(peer_id, "movement"):
-		return
 
 	# Check if in combat
 	if combat_mgr.is_in_combat(peer_id):
@@ -5007,6 +5005,10 @@ func handle_move(peer_id: int, message: Dictionary):
 		_cur_post = world_system.chunk_manager.get_npc_post_at(character.x, character.y)
 		_dest_post = world_system.chunk_manager.get_npc_post_at(new_pos.x, new_pos.y)
 	var _leaving_post: bool = not _cur_post.is_empty() and _dest_post.is_empty()
+	# A follower may not roam the world on their own — but may always walk INTO a post to
+	# rejoin the party inside it, or anyone separated from the leader would be frozen in place.
+	if _dest_post.is_empty() and _party_follower_denied(peer_id, "movement"):
+		return
 	if _leaving_post and party_membership.has(peer_id):
 		if not _is_party_leader(peer_id):
 			send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]You can move freely inside the post, but only your party leader can lead the party out.[/color]"})
@@ -5166,9 +5168,11 @@ func handle_move(peer_id: int, message: Dictionary):
 			_maybe_send_companion_hint(peer_id, companion)
 
 	# Party snake movement: move followers in chain behind leader.
-	# v0.9.740 — NOT while the destination is inside a post: there everyone moves on their own,
-	# so dragging followers to the leader every step defeated the point.
-	if _is_party_leader(peer_id) and _dest_post.is_empty():
+	# v0.9.740 — skipped only when moving WITHIN a post, where everyone moves on their own.
+	# Entering a post must still pull them in: gating on the destination alone left followers
+	# stranded outside, and the follower lock then stopped them walking in after him.
+	var _moving_within_post: bool = not _cur_post.is_empty() and not _dest_post.is_empty()
+	if _is_party_leader(peer_id) and not _moving_within_post:
 		_move_party_followers(peer_id, old_x, old_y)
 
 	# Audit #14 PvP Slice D.2 (v0.9.557) — auto-claim any PvP loot sack on
