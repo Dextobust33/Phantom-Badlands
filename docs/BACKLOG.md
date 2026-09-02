@@ -295,9 +295,27 @@ type, and the ratios **de-scale badly** as tiers rise:
 
 HP per level falls ~3x from T1 to T9; **strength per level falls ~57x**. Meanwhile player
 damage grows roughly with L² (`get_total_attack()` × `(1 + 0.02·STR)`, both terms linear in
-level). That is the late-game easing, and it is not a tuning error — the tables simply have no
-consistent relationship to level. It is why item 6's first task is a **target curve**, and why
-the reference-player model below is the leading fix.
+level).
+
+**CORRECTION (same day, after the user challenged it).** These base ratios do NOT by themselves
+explain the late-game slide, and the first reading of them — that a scaled-up low-tier monster
+might out-damage a native high-tier one — was **wrong**. Checking what the generator actually
+produces reverses it: at L5000 a scaled Goblin has 15,000 HP against a Void Walker's 677,173,
+and high-tier monsters carry far richer ability sets (multi_strike, regeneration, armored,
+enrage, ethereal, mana_drain) that the base table does not show. Full numbers under 12b. Base
+per-level ratios are a **misleading metric read alone** — always check the generated monster.
+
+What survives is still decision-relevant: the tables have no consistent relationship to level
+(hand-authored `base_level` per type, a tiered percentage scale, an HP cap that low-tier monsters
+hit when scaled up, and a linear downscale for monsters generated below their own base level).
+That is why the first task is a **target curve** and why the reference-player model below is the
+leading fix — not because high-tier monsters are individually weak.
+
+- [ ] **Still unmeasured, and a live candidate for the late-game slide:** does
+      `select_monster_type` routinely pick monsters whose `base_level` sits ABOVE the target
+      level at high levels? Those take the linear downscale path and generate as runts — Avatar
+      of Chaos (base 6000) at L5000 has 161,230 HP against Void Walker's 677,173. If tier-9
+      selection is full of below-base picks, that alone could produce the easing.
 
 - [ ] **Anchor monster stats to a reference player at the same level** rather than to
       hand-authored per-tier tables: `monster.hp = reference_damage_per_turn(L) × target_turns
@@ -434,59 +452,120 @@ dungeons are about to look different, so shooting them first means shooting them
 - [ ] Real phases, telegraphs and adds. **Telegraph counterplay is mandatory** — no unavoidable
       damage
 
-### 12b. The Phantom — player-built, egg-populated, scaling training ground
-*User direction 2026-09-02. Placed here because it reuses dungeon generation and level scaling
-(8-12) and because it is the **hard gate on the player-post suppression floor** in item 6 — that
-change must not reach players before this exists.*
+### 12b. The Phantom — the outward loop (player posts, egg/companion investment)
+*User direction 2026-09-02, expanded the same day into a full game loop. Placed here because it
+reuses dungeon generation and level scaling (8-12), and because it is the **hard gate on the
+player-post suppression floor** in item 6 — that change must not reach players before this exists.*
 
-**The intent behind player posts** (user, 2026-09-02): let a player settle an area with no nearby
-post and *control* it — merchants fill its market and move goods across the realm, and it can be
-chosen as the **spawn point for their new characters** instead of the origin post. Spawn-at-post
-already ships (`spawn_post_owner` / `available_spawn_posts` in character creation). Today no
-player has built one because there is no reason to.
+**THE HOOK — the core loop the game has been missing:**
+1. Players push out into the wilderness **as far as they can survive**
+2. They found a post there and **stock it with eggs and companions they no longer need**
+   (consumed, permanently)
+3. They descend into that post's **Phantom** to gear up and win better equipment and companions
+4. Once strong enough, they push **further out** and do it again
+5. **The farther out, the deeper the Phantom can go, and the better what is inside it** — given
+   the right investment
 
-**The problem this solves.** Item 6 raised the player-post suppression floor so a frontier post
-can no longer be suppressed to starter difficulty. That is correct for the difficulty curve and
-**wrong on its own**: a fresh level-1 character spawning at a frontier post walks out of the door
-into tier-5+ monsters and cannot survive, let alone gear up. The flat tier-1 floor was arguably
-serving this purpose deliberately. The floor change and this item ship **together**, or not at
-all.
+This is the outward pull item 6 concluded the game needs. The difficulty model can never enforce
+progression (encounter level is a pure function of position), so the pressure has to come from
+the **reward gradient** — and here the player builds that gradient themselves, at the edge of
+what they can survive. **The loop IS the answer to item 6's open question.**
 
-**The design.** A player builds a *Phantom* at their post and populates it by depositing **eggs**.
-Population composition is proportional to eggs invested — more harpy eggs than goblin means
-harpies roam more often while goblins remain, rarer. The player steers their Phantom's population
-over time by what they feed it. It is deep and scales as you descend, so a fresh character enters
-at the top and works down, levelling and gearing until it can survive the wilderness outside.
+**Egg investment — a sink that pays forward across lives**
+- Each egg is **consumed** and makes that monster type **more likely to spawn** on the Phantom's
+  floors (more harpy eggs than goblin means harpies roam more, goblins remain but rarer)
+- Each egg also **buffs the eggs of that type found inside** — stats enhanced *beyond* the normal
+  tier/sub-tier ceiling. A goblin egg pulled from a heavily-invested player Phantom is far
+  stronger than an identical-tier goblin egg from an overworld one
+- Eggs inside are **MUCH rarer — at least 10x** the normal rate. They are the thing a player
+  hunts long and hard for; getting one **out alive** and hatching it is the payoff for everything
+  invested
+- This is what makes surplus eggs valuable instead of clutter, and what a player **carries
+  forward onto new characters**
 
-**Why this one idea is worth prioritising: it closes four open problems at once.**
-1. The frontier **on-ramp** above — without it the item 6 floor change cannot ship
-2. A real **sink for surplus eggs** — an outstanding need in its own right (see 15, and the
-   market-overflow work); this makes eggs an ongoing currency rather than clutter
-3. **Gives player posts a point** — the stated reason nobody builds them
-4. It is **exactly the fiction**. The setting bible: a phantom is a dead place the ground pushed
-   back up in the shape it died in, and *eggs are the one living thing a dead place produces*.
-   Seeding a phantom with eggs to populate it is the setting, not a mechanic bolted onto it
+**Companion investment — the gearing axis**
+- Companions the player no longer wants are **consumed** to make the **equipment** found in the
+  Phantom stronger — the gear a fresh character needs to survive the wilderness outside
+- Gives retired companions a dignified use and a second sink for the same oversupply
 
-**Open design work, in order:**
-- [ ] **Scaling shape.** Depth maps to monster level, bridging level 1 up to the *local*
-      wilderness level: `level(depth) = lerp(1, local_wilderness_level, depth / max_depth)`, with
-      `max_depth` scaling to the post's tier. A frontier Phantom is automatically *longer*
+**Post creation — Valor-purchased prefabs**
+- Building a post piece by piece is too slow to support this loop. Add: spend a **large amount of
+  Valor** to place a **randomized pre-built post** in a valid area
+- Random design/shape, but guaranteed the necessities — **a Phantom and a market**
+- **More expensive tiers** include crafting stations and other stations
+- Valor's current sinks are bounties, PvP payouts and repairs, so this becomes its major sink —
+  size it against those
+
+**Theming (needed — user asked for it).** Draft to write against the setting bible's two voices:
+a phantom is a dead place the ground refuses to keep down, which comes back **in the shape it
+died in**, and *eggs are the one living thing a dead place produces*. So: the ground under a new
+post is already remembering something. **Feeding it eggs teaches it which shapes to wear** — give
+it goblins and it comes back up goblin. **Giving it companions** — things that lived alongside
+you — is why it returns *possessions*: gear is what the place kept of them. The 10x egg rarity is
+the fiction too: a place only rarely produces something still living, and you have to carry it
+out past everything else it remembers.
+
+**Open questions and risks, in the order they should be settled:**
+- [ ] **6b (companion levelling) is a PREREQUISITE, not a parallel track.** The payoff of this
+      entire loop is companions — and today a level-1 companion is statistically identical to no
+      companion (measured, n=200). A hard-won 10x-rare buffed egg would hatch into something that
+      changes nothing until levelled. Fix companion scaling first or the reward rings hollow
+- [ ] **Does investment raise the egg RATE, or only egg QUALITY?** Quality-only is cleaner, but
+      10x rarity plus pure RNG means a dry run reads as theft after a heavy investment. Prefer a
+      **deterministic floor** (a guaranteed egg at certain depths) so effort always pays, with
+      quality as the variable part
+- [ ] **Account vs character ownership.** Permadeath means the character who built and stocked
+      the post can die. The post and its investment must survive at the **account** level or the
+      loop punishes far beyond intent — but what is carried *out* of a run must still be lost on
+      death, since "what you brought out alive" is the setting's whole point
+- [ ] **Guard against a laundering pump.** Invest cheap eggs, extract better eggs, hatch, invest
+      those companions, get better gear, repeat. The exchange must be lossy and gated by **depth
+      and survival risk**, never by volume
+- [ ] **Phantom-specific monster tiering/scaling** (user 2026-09-02). Seeding a species and
+      scaling it by depth needs a model that holds for ANY species at ANY depth. See the
+      measurement below — the existing model does not provide one
+- [ ] **Scaling shape.** `level(depth) = lerp(1, local_wilderness_level, depth / max_depth)` with
+      `max_depth` scaling to how far out the post is. A frontier Phantom is automatically longer
       because it has further to bridge — "near endless" is really "as long as the gap it closes"
-- [ ] **Measure the species-vs-level interaction FIRST — there is a real trap here.** If eggs set
-      the species and depth sets the level, a Goblin seeded at depth 50 is scaled far above its
-      base level. Per the monster-table audit in item 6, a Goblin carries **4.00 STR per base
-      level** against Avatar of Chaos's **0.07**, so a scaled-up Goblin may be dramatically
-      *deadlier* than a native high-tier monster. Seeding the "weakest" species could be the
-      hardest possible choice — the opposite of the intended exploit, and just as broken. The sim
-      can measure this before any of it is built
-- [ ] **Eggs must be consumed, not deposited once.** A one-time deposit is a one-time sink and
-      the surplus returns; population should decay so the Phantom needs feeding. That is also
-      what makes "controlling your post" an ongoing activity rather than a single afternoon
-- [ ] **Reward gating.** It has to gear a fresh character enough to survive locally without
-      becoming the best farm in the game for everyone else. Suggest loot scaling with depth but
-      capped at the local wilderness tier, with reduced rare-tier rates — an on-ramp, not an
-      endgame. Ties directly to the reward-gradient decision in item 6
+- [ ] **Reward gating.** Must gear a fresh character enough to survive locally without becoming
+      the best farm in the game for established players
+- [ ] Define a **valid area** for placement (min distance from existing posts, terrain rules)
 - [ ] Decide whether a Phantom is per-post, per-account or shared, and who else may enter
+
+**MEASURED 2026-09-02 — the species-scaling question, and a correction.** An earlier claim in
+item 6 that a scaled-up low-tier monster might be *deadlier* than a native high-tier one was
+**wrong**, and the user was right to challenge it. It was inferred from base-table ratios
+(HP/STR/DEF per base level all fall steeply from T1 to T9) without checking what the generator
+actually produces. Generated at the same level, the picture reverses:
+
+| Generated at L5000 | HP | STR | DEF | abilities |
+|---|---|---|---|---|
+| Goblin (T1, base lv2) | 15,000 | 712 | 888 | 2 |
+| Wolf (T1, base lv3) | 15,000 | 1,021 | 965 | 3 |
+| Ancient Dragon (T5) | 280,543 | 4,266 | 5,968 | multi_strike, armored, … |
+| Hydra (T7) | 646,942 | 5,975 | 4,780 | regeneration, multi_strike, enrage, … |
+| Void Walker (T7) | 677,173 | 6,390 | 5,960 | ethereal, mana_drain, … |
+
+A scaled Goblin is **43x weaker in HP** than a Void Walker at the same level, not stronger — and
+high-tier monsters carry far richer ability sets (multi_strike, regeneration, armored, enrage,
+ethereal, mana_drain), which is exactly the "other redeeming stats" the user suspected. Base
+per-level ratios were a misleading metric on their own.
+
+Two real findings survive, and both bear directly on the Phantom:
+- **Low-tier monsters hit an HP CAP when scaled up.** Goblin and Wolf both land on *exactly*
+  15,000 HP at L5000 — a ceiling, not a curve. So seeding a Phantom with cheap low-tier eggs and
+  descending would produce monsters that stop getting harder with depth while the player keeps
+  levelling. That is the actual exploit, and it is the opposite of the one first suspected
+- **Avatar of Chaos (base level 6000) generated at L5000 is a runt** — 161,230 HP against Void
+  Walker's 677,173 — because it sits below its own base level and takes the linear downscale
+  path. Whether `select_monster_type` routinely picks below-base monsters at high level is a live
+  candidate for the late-game difficulty slide in item 6, and is **not yet measured**
+
+Conclusion: the Phantom needs its **own scaling model** rather than reusing the overworld one.
+Depth must set difficulty for **any** seeded species, so the model has to be anchored to depth
+(and through it to a reference player) rather than to each monster's hand-authored base_level.
+This is the same conclusion item 6 reached for the overworld, which is a good sign: **one
+reference-player-anchored monster model serves both.**
 
 ---
 
