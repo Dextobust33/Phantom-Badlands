@@ -4900,8 +4900,7 @@ func handle_move(peer_id: int, message: Dictionary):
 	_clear_afk_on_action(peer_id)
 
 	# Party followers can't move independently
-	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls movement.[/color]"})
+	if _party_follower_denied(peer_id, "movement"):
 		return
 
 	# Check if in combat
@@ -5358,8 +5357,7 @@ func handle_hunt(peer_id: int):
 		return
 
 	# Party members can't hunt independently — only leader triggers encounters
-	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls encounters.[/color]"})
+	if _party_follower_denied(peer_id, "hunting"):
 		return
 
 	# Cancel any active trade (hunting breaks trade)
@@ -5462,8 +5460,7 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 		return
 
 	# Party check: non-leader members can't rest independently
-	if not _is_party_follower and party_membership.has(peer_id) and not _is_party_leader(peer_id):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls resting.[/color]"})
+	if not _is_party_follower and _party_follower_denied(peer_id, "resting"):
 		return
 
 	# If party leader, rest all followers too
@@ -20285,6 +20282,11 @@ func handle_gathering_start(peer_id: int, message: Dictionary):
 	"""Handle player starting a gathering session at a node."""
 	if not characters.has(peer_id):
 		return
+	# v0.9.740 - followers do not gather on their own out in the world (user 2026-09-01):
+	# the party moves as one, and gathering also rotates leadership. Inside a post they are
+	# free to act, which _party_follower_denied allows for.
+	if _party_follower_denied(peer_id, "gathering"):
+		return
 	var character = characters[peer_id]
 
 	if combat_mgr.is_in_combat(peer_id):
@@ -28767,8 +28769,7 @@ func handle_dungeon_move(peer_id: int, message: Dictionary):
 		return
 
 	# Party followers can't move independently in dungeons
-	if party_membership.has(peer_id) and not _is_party_leader(peer_id):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls movement.[/color]"})
+	if _party_follower_denied(peer_id, "movement"):
 		return
 
 	# Accept direction strings from client
@@ -39681,6 +39682,36 @@ func _party_rotate_leader(member_ids: Array) -> void:
 		# which every leadership change already emits - rotation, appointing, and the
 		# transfer after a death. A second notice here just said the same thing twice.
 		return
+
+
+func _party_follower_locked(peer_id: int) -> bool:
+	"""v0.9.740 — TRUE when this player is a party FOLLOWER whose actions the leader controls.
+	Out in the world the party moves as one: one leads and the rest follow, so a follower cannot
+	move, hunt, rest, gather or craft on their own. Gathering and crafting were previously open
+	to everyone, which let a follower act while someone else was driving — and, once gathering
+	rotated leadership, let them hand the lead around mid-journey.
+
+	EXCEPTION (user direction 2026-09-01): INSIDE A POST everyone acts independently — shopping,
+	crafting, quests, walking between stations. The follow formation resumes when they leave."""
+	if not party_membership.has(peer_id) or _is_party_leader(peer_id):
+		return false
+	if not characters.has(peer_id):
+		return false
+	if at_trading_post.has(peer_id):
+		return false
+	var ch = characters[peer_id]
+	if world_system != null and world_system.chunk_manager != null:
+		if not world_system.chunk_manager.get_npc_post_at(ch.x, ch.y).is_empty():
+			return false   # standing inside a post: free to act
+	return true
+
+
+func _party_follower_denied(peer_id: int, what: String) -> bool:
+	"""Same test, but tells the player why. Returns true when the action must be blocked."""
+	if not _party_follower_locked(peer_id):
+		return false
+	send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Your party leader controls %s out in the world. Inside a post you can act on your own.[/color]" % what})
+	return true
 
 
 func _party_collect_fallen(leader_id: int) -> Array:

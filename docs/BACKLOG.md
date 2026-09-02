@@ -31,6 +31,11 @@ order is what forces revisits.
       lethal zone the others die first, the party drops to two, and it disbands instead
 - [ ] Live test of rotation + duplicated rewards (`party3`, `gather_*`, `craft_ready`)
 
+- [x] **Follower control rule** — out in the world one player leads and the rest follow, so a
+      follower cannot move, hunt, rest or gather; **inside a post everyone acts independently**
+      (shopping, crafting, quests, walking between stations). Crafting needed no gate — it
+      already requires being at a post or station
+
 *Rotation and rewards ship together: both edit party state and `_end_party_combat_all`, so
 splitting them means editing and re-testing the same code twice.*
 
