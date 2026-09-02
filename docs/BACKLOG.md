@@ -14,8 +14,16 @@ order is what forces revisits.
 
 ## In progress
 
-*(nothing in flight — items 1-4 are done. **Item 5, the simulator upgrade, is next**,
-and it gates every balance item behind it.)*
+**Item 6 — the progression & difficulty curve — is the active arc**, with 6b (companion power)
+as its twin. Items 1-5 are done. The simulator (5) was finished on 2026-09-02 and immediately
+produced the finding that defines 6: swept across the real level range (L1 → L10000), the
+difficulty curve **does not hold** — it humps around L50-500 and then gets *easier* again.
+
+Before tuning anything, note what 5 proved about trusting measurements here: four separate
+modelling bugs in the sim each produced confident, wrong balance conclusions (six classes never
+simulated; a tier-2 Orc used as the enemy at every level; an invented companion; a gear model
+fitted to naked test accounts). **Two conclusions were reversed by verification alone.** Check
+what the sim is actually modelling before believing any number it prints.
 
 ### 1. Party mechanics — server pass ✅ COMPLETE (shipped v0.9.740)
 - [x] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
@@ -159,16 +167,62 @@ companions are the emotional spine: they outlive their delvers.
       gathering / crafting / market shots; and carrying the Keeper's voice further into
       Features and the FAQ (one line each today)
 
-### 5. Simulator upgrade — **blocks all balance work**
-- [ ] Teach the sim to spend **abilities and resources**. It drives real combat code but uses
-      basic attacks only, which is why the resource-economy flaw and the low-level regression
-      both slipped through
-- [ ] Calibrate `make_char` against **real saved characters** (it inflates stats)
+### 5. Simulator upgrade ✅ COMPLETE (2026-09-02) — **unblocks all balance work**
+- [x] Teach the sim to spend **abilities and resources**. It already drove three archetypes;
+      the finding was worse than the line suggested — `run_fight` dispatched the per-turn AI by
+      exact class string, so **six of the nine classes were never simulated at all**. Sorcerer,
+      Sage, Ranger, Ninja (and Barbarian/Paladin partially) were handed the Warrior AI holding
+      mage/trickster cards, matched nothing, and auto-attacked: 0 casts/turn and a 0% win rate
+      that read as a balance result. The three resource helpers re-derived the archetype the
+      same way, so a Sorcerer's spend was measured against its **stamina** bar. All four now
+      ask `Character.get_class_path()` — the one place the game itself decides
+- [x] Calibrate `make_char` against **real saved characters**. Done, but the important part was
+      *classifying the cohort first*: 5 of the 11 local characters are **naked test accounts**
+      (0 equipped slots) and 1 is an admin-boosted all-epic build. Fitting to them pointed the
+      model the wrong way entirely (it wanted gear 10 levels *below* character level; the
+      geared characters want it at ~0.85x). Only characters with 5+ slots calibrate the
+      "average" tier now
+- [x] Three further model errors found on the way, each fixed at the cause:
+      **the enemy was hardcoded to "Orc" at every level** (a tier-2 monster, so past ~L500 the
+      sim measured a stretched low-tier creature instead of real content — this alone produced
+      a false "the game trivializes at high level" result); **the companion was invented**
+      (a hand-written bonus block 2-4x anything the game can produce — now drawn from
+      `COMPANION_DATA`); and the gear model forced one **uniform rarity** across all seven
+      slots with a **fixed level subtraction**, which is the wrong *shape* — real item level
+      tracks character level proportionally and often sits *above* it
+- [x] Audits are now selectable (`-- classes races calibrate gear_solve progression companion`,
+      `-- n=200` for sample size) instead of by editing `_init`
+- [ ] **Known limitation, carried into 6:** the gear model has a **slope error** — hot at L6
+      (1.57x attack), cold at L45 (0.35x). One item-level ratio cannot fit both ends, and there
+      are only **2 genuinely geared real characters** to fit against. The audit prints a SLOPE
+      WARNING rather than hiding it in a median. High-level balance numbers inherit this
+      uncertainty until more real characters exist
 
-### 6. Balance pass (after 5)
-- [ ] **Magic Bolt flat curve** — measured ~21x per mana at L5 vs ~27x at L20, while monster HP
-      scales far faster. Lowering the coefficient only moves where it flips from absurd to
-      useless; damage-per-mana has to scale on the same curve as monster HP
+### 6. Progression & difficulty curve — **the central balance goal** (user direction 2026-09-02)
+*"Balance must hold throughout the game and not trivialize any of it."* The intended loop:
+**grind gear + companions → level companions → reach bigger challenges → better gear and
+companions.* Progression should get **harder**, never easier. The user is explicitly open to
+changing **itemization, gear, companion levelling and companion power** to hit this.
+
+**Measured 2026-09-02 (`-- progression`, L1 → L10000, the real max):** the curve does *not*
+hold. It is not a smooth ramp — it is a **hump**:
+- Difficulty peaks around **L50–L500** (same-level boss: Fighter 37% @L50, 32% @L100, 30% @L500;
+  Wizard 17-32% across that band), then **gets easier again** past L1000 (Fighter 65-82%,
+  Thief 95-97%). The late game is currently *safer* than the mid game
+- **Wizard is the worst class almost everywhere past L100** and fights are absurdly long —
+  **155 turns** at a L250 elite, 91 at L500. Turn count itself is a balance failure
+- **Thief massively outclasses the other two at high level** (L1000 boss: Thief 95% vs Fighter
+  65% / Wizard 60%) — the class gap widens with progression instead of closing
+- The curve is **jagged**, not monotonic (Fighter boss: 37→32→55→30→65→77% across L50-2500),
+  which points at monster-selection variance between tiers rather than a designed ramp
+
+- [ ] Decide the target curve first (what *should* win% and danger look like at L10, L100,
+      L1000, L10000?), then tune to it. Without a target the sweep has nothing to fail against
+- [ ] Fix the **mid-game hump** and the **late-game slide** — the two ends of the same problem
+- [ ] **Wizard** rework: worst win rate + longest fights past L100
+- [ ] **Class gap widening with level** (Thief vs Fighter/Wizard at L1000+)
+- [ ] **Magic Bolt flat curve** — ~21x per mana at L5 vs ~27x at L20 while monster HP scales far
+      faster. Damage-per-mana has to scale on the same curve as monster HP
 - [ ] Ability cost model / resource economy (costs flat while pools scale).
       **Measured 2026-09-01:** a level-20 Wizard's Forcefield (`cost_percent: 3`) has a NET
       cost of **zero** — the same turn's regen refills the spend before the player ever sees
@@ -178,7 +232,30 @@ companions are the emotional spine: they outlive their delvers.
       cap, no stun DR. Related user direction: remove blue "skip the enemy turn / refund
       resources" utility cards
 - [ ] Equipment vs race vs class, compared **against each other** rather than in isolation
-- [ ] How far players can actually push: win rate vs monster-level delta
+      (`-- races` and `-- classes` now exist for this)
+- [ ] **Gear acquisition must actually exist** at every level band — the loop depends on players
+      having a real way to get better gear, not just on the gear existing in a table
+
+### 6b. Companion power & levelling — **the emotional spine, currently thin**
+*User 2026-09-02: "if companions don't get stronger and players have no way of improving them
+it makes the crucial point of the game pointless."*
+
+**Measured:** companion *level* does still pay at high level (same-level elite, Fighter: no
+companion 45% vs a heavily over-levelled one 87% at L10000), so the system is **not** inert —
+an earlier claim that it was came from the Orc bug above and was **wrong**. But the underlying
+design gap is real and confirmed in code:
+- **Companion passive stat bonuses do not scale with level at all.** `get_companion_effective_
+  bonuses` applies only variant × sub-tier multipliers to a flat table value. A L1 Ogre and a
+  L10000 Ogre grant the identical `{attack 5, hp_bonus 3}`
+- Only companion **abilities** scale, and only **linearly** (`base + scaling × level`) against
+  content that scales far faster
+- Real companions are tiny in absolute terms (Dexto's L45 Ogre: attack 5, hp_bonus 3)
+
+- [ ] Make companion **stat bonuses scale with companion level**, not just variant/sub-tier
+- [ ] Re-shape ability scaling so it keeps pace with content rather than falling behind
+- [ ] Give levelling a companion a **visible, worthwhile payoff curve**; make the ways to
+      improve one (levels, fusion, sub-tier, variants) legible and reachable
+- [ ] Re-run `-- companion` after each change; it is the regression test for this item
 
 ### 7. Monster packs (a party of N meets ~N monsters)
 Last of the core combat work: packs multiply monsters per fight, so sizing them before 6 fixes
