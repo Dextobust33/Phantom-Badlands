@@ -672,13 +672,33 @@ damping had been protecting against.
       | elite | 65% | 67% | **46%** |
       | boss | 80% | 75% | **34%** |
 
-- [ ] **DECISION NEEDED: average HP cost and win rate are tightly coupled, and the agreed
-      targets imply brutal win rates.** A fight that removes 80% of the health bar *on average*
-      is lost whenever variance runs against the player — hence a **34% boss win rate**, and
-      23-24% at L10-L50. Under permadeath that is three characters lost per boss killed. The
-      calibrator hit the numbers it was given; the numbers themselves are the question.
-      Roughly: cost 40% -> ~74% win, 55% -> ~60%, 65% -> ~46%, 80% -> ~34%. If bosses should be
-      beatable ~65-70% of the time, boss danger wants to be ~55% rather than 80%
+- [x] **DECIDED (user, 2026-09-02): the measured costs are the intent** — normal 43%,
+      empowered 57%, elite 67%, boss 75% of the player's health bar. The coupled win rates
+      (74 / 60 / 46 / 34%) were put to the user explicitly, including that a 34% boss win rate
+      under permadeath is roughly three characters lost per boss killed, and accepted.
+      **`ROLE_TARGETS` is deliberately left UNCHANGED at 40/55/65/80** — those are the *inputs*
+      that produced the approved *outputs*; retargeting to the measured values would aim the
+      calibrator lower and undershoot what was agreed
+- [ ] **The real remaining fault is that difficulty does not hold EVENLY across levels.** With
+      the targets settled, this is what is left, and it is the old hump in miniature:
+
+      | Level | elite win | boss win |
+      |-------|-----------|----------|
+      | L1 | 63% | 40% |
+      | **L10** | **38%** | **24%** |
+      | **L50** | **35%** | **23%** |
+      | **L250** | 38% | 35% |
+      | L1000 | 45% | 47% |
+      | L5000 | 62% | 37% |
+
+      Elite spans 35-63% and boss 23-47% against targets of one number each. **L10-L250 is the
+      punishing band** — a boss there is won 23-24% of the time against 47% at L1000, so the
+      same nominal encounter is twice as lethal in the mid game. The role multipliers are a
+      single pair applied at every level, so they cannot correct a level-dependent gap
+- [ ] Candidate fix: make the role multipliers **per-anchor** (calibrated per level like the
+      baseline already is) rather than one pair for the whole game. Same change also addresses
+      the turn-count drift below, since both come from one multiplier serving four orders of
+      magnitude
 - [ ] Turn counts are still off target for the big roles (boss 6.4-17.7 against 14, elite
       5.5-14.6 against 9) even with calibrated multipliers — a single multiplier cannot hold
       both length and cost across the level range. Secondary to the decision above
