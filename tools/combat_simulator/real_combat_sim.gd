@@ -80,6 +80,7 @@ func _audit_registry() -> Dictionary:
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"roles": ["elite/boss fights vs their ROLE_TARGETS", run_role_audit],
 		"xp": ["how many fights to level, and what is the best way", run_xp_audit],
+		"risk": ["over-level gambles: kill/escape/death and what the reward is worth", run_risk_reward_audit],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
@@ -1122,6 +1123,97 @@ func run_xp_audit():
 				lvl, "x%.2f" % mult, int(100.0 * wins / maxi(1, n)), per_fight,
 				xp_tot / maxf(1.0, turn_tot), turn_tot / maxf(1.0, float(n)),
 				("%.0f" % (need / per_fight)) if per_fight > 0.0 else "--"])
+	print("=====================================================================\\n")
+
+func run_risk_reward_audit():
+	# #6 (user direction 2026-09-02) — "taking big risks should be rewarding, but killing
+	# something 3x your level shouldn't be easy, and if you pull it off the reward should be
+	# far more than 1/7th of a level."
+	#
+	# The earlier XP audit measured throughput only (XP per fight, losses counted as zero)
+	# and concluded that over-levelling was "optimal". That framing was WRONG because it
+	# priced a loss at zero rather than at the cost of the character. This models what a real
+	# player actually experiences: fight, and once it is clearly going badly (below the flee
+	# threshold) try to run — using the real process_flee, which is heavily penalised by
+	# level gap and floored at 10%.
+	#
+	# Outcomes are therefore three-way: KILL, ESCAPE, or DEATH (permadeath = the run ends).
+	# Reward is expressed in LEVELS, because "how much of a level did that heroic kill pay"
+	# is the question actually being asked.
+	var samples := 12
+	var flee_at := 0.35  # start trying to escape below 35% HP, as a player would
+	print("\\n===== #6 RISK vs REWARD: what does punching above your level really cost? =====")
+	print("A player who fights, then tries to FLEE once below %.0f%% HP (real process_flee)." % (flee_at * 100.0))
+	print("death%% is permadeath — the character is gone. reward is the kill's XP as a")
+	print("fraction of a level at that level. EV/level nets the reward against the death risk.")
+	print("%-8s %-9s %7s %8s %8s %10s %12s" % ["Level", "monster", "kill%", "escape%", "death%", "reward(lv)", "levels/death"])
+	for lvl in [50, 250, 1000]:
+		var need := _xp_to_next(lvl)
+		for mult in [1.0, 1.5, 2.0, 3.0, 5.0]:
+			var mlvl: int = maxi(1, int(round(float(lvl) * mult)))
+			var kills := 0
+			var escapes := 0
+			var deaths := 0
+			var xp_tot := 0.0
+			var n := 0
+			for klass in ["Fighter", "Wizard", "Thief"]:
+				for i in range(samples):
+					var ch = make_char(lvl, "average", klass)
+					var monster := make_monster(mlvl, "normal", 1.0)
+					var reward: float = float(monster.get("experience_reward", 0))
+					var max_hp: int = ch.get_total_max_hp()
+					ch.in_combat = false
+					combat_mgr.start_combat(0, ch, monster)
+					if not combat_mgr.active_combats.has(0):
+						continue
+					var combat = combat_mgr.active_combats[0]
+					var turns := 0
+					var fled := false
+					while turns < 400:
+						if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+							break
+						turns += 1
+						if combat.get("player_can_act", true):
+							if float(ch.current_hp) / float(max_hp) < flee_at:
+								var fr = combat_mgr.process_flee(combat)
+								if fr.get("fled", fr.get("success", false)):
+									fled = true
+									break
+							else:
+								match ch.get_class_path():
+									"trickster": _player_act_trickster(combat, ch)
+									"mage": _player_act_mage(combat, ch)
+									_: _player_act(combat, ch)
+						if int(monster.get("current_hp", 0)) <= 0:
+							break
+						combat_mgr.process_monster_turn(combat)
+					var killed: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+					if killed:
+						kills += 1
+						var diff: int = mlvl - lvl
+						var m2 := 1.0
+						if diff > 0:
+							m2 = 1.0 + sqrt(float(diff) / (10.0 + float(lvl) * 0.05)) * 0.7
+						xp_tot += reward * m2 * 1.10
+					elif fled:
+						escapes += 1
+					else:
+						deaths += 1
+					n += 1
+					combat_mgr.end_combat(0, killed, false)
+			if n == 0:
+				continue
+			var reward_levels: float = (xp_tot / maxf(1.0, float(kills))) / need if kills > 0 else 0.0
+			var deaths_f: float = float(deaths) / float(n)
+			# How many levels of progress you buy per character you lose, at this gap.
+			var per_death: float = (reward_levels * float(kills) / float(n)) / maxf(0.0001, deaths_f)
+			print("%-8d %-9s %6d%% %7d%% %7d%% %10.2f %12.2f" % [
+				lvl, "x%.1f" % mult, int(100.0 * kills / n), int(100.0 * escapes / n),
+				int(100.0 * deaths / n), reward_levels, per_death])
+	print("")
+	print("Read 'levels/death': how many levels of progress a player buys for each character")
+	print("they lose trying. Below ~1.0 the gamble destroys more progress than it creates, so")
+	print("no rational player takes it and the over-level reward is dead content.")
 	print("=====================================================================\\n")
 
 func run_reference_curve():

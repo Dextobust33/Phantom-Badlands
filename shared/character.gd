@@ -1515,16 +1515,11 @@ func _get_condition_string(wear: int) -> String:
 	else:
 		return "BROKEN"
 
-func check_level_up():
-	"""Check if character should level up"""
-	var exp_table = {
-		2: 100, 3: 250, 4: 500, 5: 1000,
-		10: 10000, 20: 50000, 50: 500000
-	}
-	var required_exp = exp_table.get(level + 1, int(pow(level + 1, 2.5) * 100))
-	
-	if experience >= required_exp:
-		level_up()
+# check_level_up() removed 2026-09-02. It was dead code — nothing in the project called
+# it — and it computed the level requirement as pow(level+1, 2.5) * 100 with a small
+# override table, while the live path (level_up() setting experience_to_next_level) uses
+# pow(level+1, 2.2) * 50. The two diverge by roughly 30x by L1000, so any future caller
+# would have silently rewritten progression. The live requirement is set in level_up().
 
 func level_up():
 	"""Increase level and stats"""

@@ -467,12 +467,61 @@ optimising player to do the single most destructive thing available. Either:
       identity (its whole design is the over-level gamble) and with 12b's loop, where
       pushing out "as far as you can survive" is the intended pressure
 
+**CORRECTION to the XP finding above (2026-09-02, `-- risk`).** The line "the optimal
+strategy is to fight things you lose to" was based on a **throughput** metric — XP per
+attempt with losses counted as zero — which is the wrong lens for a permadeath game and
+produced a misleading headline. Two things it got wrong:
+
+- **A successful over-level kill is NOT worth 1/7th of a level.** The "7 fights per level"
+  figure averaged in the ~88% of attempts that fail. A single successful kill at **3x your
+  level pays 1.24-1.93 LEVELS**, and at 5x it pays **4.3-7.9 levels**. The heroic reward is
+  already large; the earlier presentation obscured it
+- **Over-levelling is not "optimal" at all.** Pricing a loss at zero ignores that a loss
+  costs the character. Netted properly it is heavily negative
+
+Measured with a player who fights and then tries to **flee** below 35% HP (real
+`process_flee`), so failure is three-way — kill, escape, or permadeath:
+
+| Player | monster | kill% | escape% | death% | reward (levels) | levels per death |
+|--------|---------|-------|---------|--------|-----------------|------------------|
+| L50 | x1.0 | 58% | 25% | 16% | 0.04 | 0.13 |
+| L50 | x1.5 | 19% | 8% | **72%** | 0.19 | 0.05 |
+| L50 | x3.0 | 13% | **0%** | 86% | **1.24** | 0.20 |
+| L250 | x3.0 | 13% | **0%** | 86% | **1.74** | 0.28 |
+| L1000 | x3.0 | 25% | **0%** | 75% | **1.93** | 0.64 |
+| L1000 | x5.0 | 8% | **0%** | 91% | **7.91** | 0.72 |
+
+**Killing something 3x your level is already hard** — 13-25%, with 75-86% ending in
+permadeath. The user's "it shouldn't be easy" is satisfied by the current numbers.
+
+**The real defect is that you cannot escape.** Escape drops to **0%** against anything
+1.5x your level or above. `process_flee` subtracts the full level gap from the chance and
+floors it at 10%, so against a monster 100+ levels up it is a 10% roll per turn while
+something that outclasses you is killing you in 2-3 turns. So an over-level fight is not a
+gamble a player can *play* — it is a coin flip on the character with no skill expression
+and no way to bail once it turns.
+
+**And `levels per death` is below 1.0 almost everywhere** (0.01-0.72), meaning the gamble
+destroys more progress than it creates. So no rational player takes it, and the whole
+over-level reward curve — including the big 1.2-7.9 level payouts — is **dead content that
+is never claimed**.
+
+- [ ] **The lever is the failure mode, not the reward size.** Make disengaging from an
+      over-level fight a real, skill-expressible option (a fleeing chance that does not
+      collapse to the 10% floor at large gaps; or a cost to escape — drop loot, take a
+      wound, burn a consumable) so the gamble becomes a decision a player can take, survive,
+      and repeat. Then the existing 1.2-7.9 level payouts become a genuine risk/reward arc
+      instead of a lottery nobody enters
+- [ ] Only after that, revisit whether the payout curve itself needs raising — with a
+      survivable failure mode the same numbers may already be right
+- [ ] Sample-size caveat: 36 fights per cell, and the kill% column is visibly noisy
+      (L50 shows 2% at x2.0 but 13% at x3.0, which is monster-selection variance rather
+      than a real inversion). Widen before tuning against these numbers
+
 **Two code-level notes found on the way, neither fixed yet:**
-- [ ] `character.gd::check_level_up()` computes the requirement as `pow(level+1, 2.5) * 100`
-      with a small override table, while the live path (`level_up()` setting
-      `experience_to_next_level`) uses `pow(level+1, 2.2) * 50`. **`check_level_up()` is dead
-      — nothing calls it.** Left in place it is a trap: at L1000 the two differ by ~30x, so
-      anything that ever calls it silently rewrites progression. Delete it or reconcile it
+- [x] **Dead `check_level_up()` removed (2026-09-02).** It computed the requirement as
+      `pow(level+1, 2.5) * 100` while the live path uses `pow(level+1, 2.2) * 50` — a ~30x
+      divergence by L1000 that any future caller would have silently inherited.
 - [ ] **The simulator cannot observe XP grants.** Neither the killing blow nor `end_combat`
       moves `character.experience` in the solo path — combat_manager returns the reward and
       `server.gd` applies it. An earlier version of this audit read XP as a delta on the
