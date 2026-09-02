@@ -50,13 +50,64 @@ func _init():
 	if "drop_tables" in monster_db:
 		monster_db.drop_tables = drop_tables
 
-	_verify_new_mage_cards()
-	_verify_dungeon_cards()
-	_verify_party_combat()
-	run_min_spend_probe()
-	run_difficulty_audit()
-	run_overlevel_audit()
+	_run_selected_audits()
 	quit()
+
+# --- Audit selection -----------------------------------------------------------
+# Pass audits after a bare `--`, e.g.
+#   godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- classes
+# With no argument the default set runs. `list` prints the registry.
+# Added #5 (2026-09-02): the file had grown ~20 audits that could only be selected by
+# editing _init, so every measurement was a source edit + a lost diff.
+const DEFAULT_AUDITS := ["verify", "min_spend", "difficulty", "overlevel"]
+
+func _audit_registry() -> Dictionary:
+	return {
+		"verify": ["card + party wiring checks", func():
+			_verify_new_mage_cards(); _verify_dungeon_cards(); _verify_party_combat()],
+		"min_spend": ["min-cost cast vs same-level mob HP", run_min_spend_probe],
+		"difficulty": ["level x gear x enemy-tier feel", run_difficulty_audit],
+		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
+		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
+		"races": ["all 8 races on one class", run_race_audit],
+		"calibrate": ["make_char vs REAL saved characters", run_calibration_audit],
+		"gear_solve": ["solve the average-gear model against real characters", run_gear_solve],
+		"progression": ["does difficulty hold from L1 to L10000?", run_progression_audit],
+		"companion": ["does levelling a companion keep paying?", run_companion_audit],
+		"resource": ["resource-economy telemetry", run_resource_audit],
+		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
+		"flock": ["flock-chain sustain", run_flock_audit],
+		"baseline": ["baseline matrix", run_baseline],
+		"matrix": ["level x gear x enemy matrix", run_matrix],
+		"mage": ["mage Focus ramp", run_mage_matrix],
+		"trickster": ["trickster Read/Outsmart", run_trickster_matrix],
+	}
+
+func _run_selected_audits() -> void:
+	var reg := _audit_registry()
+	var wanted: Array = []
+	for a in OS.get_cmdline_user_args():
+		var arg := String(a).lstrip("-")
+		if arg.begins_with("n="):
+			_audit_n = maxi(1, int(arg.substr(2)))
+			continue
+		wanted.append(arg)
+	if wanted.is_empty():
+		wanted = DEFAULT_AUDITS.duplicate()
+	if "list" in wanted or "help" in wanted:
+		print("\nAudits (pass after `--`, space separated; `all` runs every one):")
+		for k in reg.keys():
+			print("  %-12s %s" % [k, reg[k][0]])
+		print("  %-12s %s" % ["(default)", " ".join(DEFAULT_AUDITS)])
+		print("")
+		return
+	if "all" in wanted:
+		wanted = reg.keys()
+	for name in wanted:
+		if not reg.has(name):
+			print("[sim] unknown audit '%s' — run with `-- list`" % name)
+			continue
+		reg[name][1].call()
 
 func _verify_party_combat() -> void:
 	# #64 Slice 2 — verify the simultaneous engine: 2 members both hit the SHARED monster,
@@ -242,6 +293,365 @@ func run_overlevel_audit():
 				mhp += float(r.get("min_hp_pct", 0.0))
 			row2 += "| L%-3d %3d%% H%2.0f " % [pl, int(100.0 * wins / N), mhp / N]
 		print(row2)
+	print("=====================================================================\n")
+
+const ALL_CLASSES := [
+	["Fighter", "warrior"], ["Barbarian", "warrior"], ["Paladin", "warrior"],
+	["Wizard", "mage"], ["Sorcerer", "mage"], ["Sage", "mage"],
+	["Thief", "trickster"], ["Ranger", "trickster"], ["Ninja", "trickster"],
+]
+const ALL_RACES := ["Human", "Elf", "Dwarf", "Ogre", "Halfling", "Orc", "Gnome", "Undead"]
+
+func run_class_audit():
+	# #5 — the sim only ever drove three of the nine classes. Casts/turn is the tell:
+	# a class whose AI never matches its hand falls through to basic attacks, so its
+	# win-rate is a measurement of AUTO-ATTACKING, not of the class. Any row near
+	# 0.00 casts/turn is not being simulated, whatever number sits next to it.
+	var N := 60
+	print("\n===== #5 NINE-CLASS ABILITY-SPEND AUDIT (%d fights/cell, AVERAGE gear) =====" % N)
+	print("Casts/turn near 0 = the class is auto-attacking, i.e. NOT actually simulated.")
+	print("%-11s %-10s %s" % ["Class", "Path", "  L10 normal        L30 elite         L80 elite"])
+	for c in ALL_CLASSES:
+		var row := "%-11s %-10s" % [c[0], c[1]]
+		for case in [[10, "normal"], [30, "elite"], [80, "elite"]]:
+			var wins := 0
+			var turns := 0
+			var casts := 0
+			for i in range(N):
+				var r = run_fight(int(case[0]), "average", String(case[1]), 1.0, 1.0, 1.0, c[0])
+				if r.win:
+					wins += 1
+				turns += int(r.turns)
+				casts += int(r.get("casts", 0))
+			var cpt: float = float(casts) / float(maxi(1, turns))
+			row += "  %3d%% %4.1ft %.2fc/t" % [int(100.0 * wins / N), float(turns) / N, cpt]
+		print(row)
+	print("=====================================================================\n")
+
+func _load_real_characters() -> Array:
+	# #5 — GROUND TRUTH. Real saved characters written by the dev server live in
+	# user://data/characters (same user:// as the server, since the sim runs from this
+	# project). Loaded through Character.from_dict so every derived number comes out of
+	# the SAME code the game uses — no re-implementation to drift.
+	var out: Array = []
+	var dir = DirAccess.open("user://data/characters")
+	if dir == null:
+		return out
+	for fname in dir.get_files():
+		if not fname.ends_with(".json") or fname.ends_with(".bak"):
+			continue
+		var f = FileAccess.open("user://data/characters/" + fname, FileAccess.READ)
+		if f == null:
+			continue
+		var parsed = JSON.parse_string(f.get_as_text())
+		f.close()
+		if not (parsed is Dictionary):
+			continue
+		var ch = CharacterScript.new()
+		ch.from_dict(parsed)
+		out.append(ch)
+	out.sort_custom(func(a, b): return a.level < b.level)
+	return out
+
+# Gear affixes are rolled per item, so ONE make_char is a coin flip, not a measurement —
+# the first version of this audit had "under" gear out-hitting "average" purely on RNG.
+# Average the sim side over this many independent builds per cell.
+const CALIB_ROLLS := 25
+
+const RARITY_RANK := {"common": 0, "uncommon": 1, "rare": 2, "epic": 3, "legendary": 4, "artifact": 5}
+
+func _classify_real(ch) -> Dictionary:
+	# #5 — a saved character file is NOT automatically "a representative player". Half the
+	# local cohort turned out to be naked test accounts (0 equipped slots) and one was an
+	# admin-boosted all-epic build. Averaging those together produced a gear model fitted to
+	# characters wearing nothing, which would have made the sim UNDER-state player power —
+	# the opposite of the inflation it was supposed to fix. So classify first, then compare
+	# each band against the sim tier that band actually corresponds to.
+	var slots := 0
+	var rank_sum := 0.0
+	for slot in SLOTS:
+		var it = ch.equipped.get(slot, null)
+		if it is Dictionary and not it.is_empty():
+			slots += 1
+			rank_sum += float(RARITY_RANK.get(String(it.get("rarity", "common")), 0))
+	var avg_rank: float = rank_sum / float(maxi(1, slots))
+	var band := "partial"
+	var tier := "under"
+	if slots == 0:
+		band = "naked"
+		tier = "-"
+	elif slots >= 5 and avg_rank >= 3.0:
+		band = "chase"
+		tier = "bis"
+	elif slots >= 5:
+		band = "geared"
+		tier = "average"
+	return {"slots": slots, "avg_rank": avg_rank, "band": band, "tier": tier}
+
+func _ratios_vs(real, gear: String) -> Array:
+	# Mean sim/real over CALIB_ROLLS builds at the same level/class/race.
+	var path: String = String(real.get_class_path())
+	var r := [float(maxi(1, real.get_total_max_hp())), float(maxi(1, real.get_total_attack())), float(maxi(1, _pool_for_path(real, path)))]
+	var acc := [0.0, 0.0, 0.0]
+	for i in range(CALIB_ROLLS):
+		var sim = make_char(int(real.level), gear, String(real.class_type), String(real.race))
+		acc[0] += float(sim.get_total_max_hp()) / r[0]
+		acc[1] += float(sim.get_total_attack()) / r[1]
+		acc[2] += float(_pool_for_path(sim, path)) / r[2]
+	for i in range(3):
+		acc[i] /= float(CALIB_ROLLS)
+	return acc
+
+func _median(arr: Array) -> float:
+	if arr.is_empty():
+		return 0.0
+	var c := arr.duplicate()
+	c.sort()
+	if c.size() % 2 == 1:
+		return float(c[c.size() / 2])
+	return 0.5 * (float(c[c.size() / 2 - 1]) + float(c[c.size() / 2]))
+
+func run_calibration_audit():
+	# #5 — make_char is the sim's model of "a player at level N", and every balance number
+	# the sim produces is only as good as that model. This measures it against real saved
+	# characters instead of asserting it in a comment.
+	var reals := _load_real_characters()
+	print("
+===== #5 make_char CALIBRATION vs REAL SAVED CHARACTERS =====")
+	if reals.is_empty():
+		print("No characters in user://data/characters — run the dev server once to create some.")
+		print("=====================================================================
+")
+		return
+	print("Ratio sim/real (1.00 = matched), sim side averaged over %d gear rolls per cell." % CALIB_ROLLS)
+	print("Real values read through Character.from_dict + the same getters combat uses.")
+	print("Each character is compared against the sim tier its OWN kit corresponds to:")
+	print("  naked (0 slots) -> no tier, listed for reference only")
+	print("  partial (1-4)   -> 'under'      geared (5+) -> 'average'      chase (5+ epic+) -> 'bis'")
+	print("")
+	print("%-11s %-10s %-9s %-4s %-8s %-8s %s" % ["Name", "Class", "Race", "Lvl", "Band", "vs tier", "HP     ATK    POOL   (real hp/atk/pool)"])
+	var bands := {}
+	for real in reals:
+		var info := _classify_real(real)
+		var band: String = String(info["band"])
+		var tier: String = String(info["tier"])
+		var path: String = String(real.get_class_path())
+		var gear_for_compare: String = tier if tier != "-" else "under"
+		var acc := _ratios_vs(real, gear_for_compare)
+		if not bands.has(band):
+			bands[band] = {"tier": tier, "rows": []}
+		bands[band]["rows"].append(acc)
+		bands[band]["levels"] = bands[band].get("levels", [])
+		bands[band]["levels"].append([int(real.level), acc[1]])
+		print("%-11s %-10s %-9s %-4d %-8s %-8s %5.2fx %5.2fx %5.2fx  (%d/%d/%d)" % [
+			String(real.name).substr(0, 11), String(real.class_type), String(real.race), int(real.level),
+			"%s/%d" % [band, int(info["slots"])], tier,
+			acc[0], acc[1], acc[2],
+			int(real.get_total_max_hp()), int(real.get_total_attack()), int(_pool_for_path(real, path))])
+	print("")
+	print("Median per band. ONLY the 'geared' row calibrates the average tier — a naked")
+	print("character measures nothing about gear, and a chase build is the 'bis' bookend.")
+	print("%-9s %-8s %8s %8s %8s %5s" % ["Band", "vs tier", "HP", "ATK", "POOL", "n"])
+	for band in ["naked", "partial", "geared", "chase"]:
+		if not bands.has(band):
+			continue
+		var rows: Array = bands[band]["rows"]
+		var cols := [[], [], []]
+		for row in rows:
+			for i in range(3):
+				cols[i].append(float(row[i]))
+		print("%-9s %-8s %7.2fx %7.2fx %7.2fx %5d" % [
+			band, String(bands[band]["tier"]),
+			_median(cols[0]), _median(cols[1]), _median(cols[2]), rows.size()])
+	# A median can hide a SLOPE error: if the model is hot at low level and cold at high
+	# level, the middle looks perfect while both ends are wrong. Say so explicitly — the
+	# whole point of this audit is to stop the sim quietly mis-modelling the player.
+	var geared: Array = bands.get("geared", {}).get("levels", [])
+	if geared.size() >= 2:
+		geared.sort_custom(func(a, b): return int(a[0]) < int(b[0]))
+		var lo: Array = geared[0]
+		var hi: Array = geared[geared.size() - 1]
+		var spread: float = float(hi[1]) / maxf(0.01, float(lo[1]))
+		print("")
+		print("Level trend (ATK ratio): L%d %.2fx  ->  L%d %.2fx" % [int(lo[0]), float(lo[1]), int(hi[0]), float(hi[1])])
+		if spread < 0.67 or spread > 1.5:
+			print("*** SLOPE WARNING: the model does not hold across levels — it is %s at L%d and" % ["hot" if float(lo[1]) > float(hi[1]) else "cold", int(lo[0])])
+			print("    %s at L%d. A single item-level ratio cannot fix both ends; balance numbers" % ["cold" if float(lo[1]) > float(hi[1]) else "hot", int(hi[0])])
+			print("    taken from the far end of that range are NOT trustworthy. Needs a level-")
+			print("    dependent gear model, which needs more real characters to fit against.")
+	print("=====================================================================
+")
+
+# The full playable range. Max level is 10000 (COMPANION_MAX_LEVEL / world_system cap),
+# so a balance claim that only holds to L50 is a claim about 0.5% of the game.
+const PROGRESSION_LEVELS := [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
+
+func run_progression_audit():
+	# #5 (user direction 2026-09-02) — the question this sim exists to answer: does the
+	# difficulty HOLD as a player progresses, or does the game trivialize itself? Sweeps the
+	# whole level range at representative gear and reports, per archetype, the win rate and
+	# how close the player came to dying. A game that gets harder shows win% falling or at
+	# least flat with danger rising; a game that trivializes shows win% climbing to 100%
+	# and min-HP climbing with it.
+	var N := _audit_n
+	print("
+===== #5 PROGRESSION SWEEP: does difficulty hold from L1 to L10000? =====")
+	print("AVERAGE gear (calibrated), same-level enemy, %d fights/cell." % N)
+	print("Win%% = how often the player wins. H%% = average LOWEST HP%% reached (danger:")
+	print("high H%% means it was never close). T = turns. Trivialized looks like 100%%/H90+.")
+	for et in ["normal", "elite", "boss"]:
+		print("")
+		print("--- %s ---" % et.to_upper())
+		print("%-7s %-22s %-22s %-22s" % ["Level", "Fighter", "Wizard", "Thief"])
+		for lvl in PROGRESSION_LEVELS:
+			var row := "L%-6d" % lvl
+			for klass in ["Fighter", "Wizard", "Thief"]:
+				var wins := 0
+				var turns := 0
+				var mhp := 0.0
+				for i in range(N):
+					var r = run_fight(lvl, "average", et, 1.0, 1.0, 1.0, klass)
+					if r.win:
+						wins += 1
+					turns += int(r.turns)
+					mhp += float(r.get("min_hp_pct", 0.0))
+				row += " %3d%% %5.1ft H%3.0f%%      " % [int(100.0 * wins / N), float(turns) / N, mhp / N]
+			print(row)
+	print("=====================================================================
+")
+
+func run_companion_audit():
+	# #5 (user direction 2026-09-02) — the intended loop is "level your companion to reach
+	# bigger challenges". That only works if a companion's contribution KEEPS UP with the
+	# content. Measured here as the win-rate a player has WITHOUT a companion vs WITH one at
+	# several companion levels. If the columns converge as player level rises, companion
+	# investment stops mattering and the loop is broken at the top end.
+	var N := _audit_n
+	print("
+===== #5 COMPANION CONTRIBUTION vs LEVEL =====")
+	print("Win%% at same-level ELITE, Fighter, AVERAGE gear, %d fights/cell." % N)
+	print("If 'none' and 'maxed' converge as level rises, levelling a companion has stopped")
+	print("paying — the grind-your-companion loop only works while the gap is real.")
+	print("%-8s %10s %10s %10s %10s" % ["Level", "none", "compL1", "compL=char", "comp x10"])
+	for lvl in PROGRESSION_LEVELS:
+		var row := "L%-7d" % lvl
+		for mode in ["none", "l1", "match", "x10"]:
+			var wins := 0
+			for i in range(N):
+				_companion_mode = mode
+				var r = run_fight(lvl, "average", "elite", 1.0, 1.0, 1.0, "Fighter")
+				if r.win:
+					wins += 1
+			row += " %9d%%" % int(100.0 * wins / N)
+		_companion_mode = "match"
+		print(row)
+	print("=====================================================================
+")
+
+func run_gear_solve():
+	# #5 — pick the "average" gear model from DATA instead of hand-tuning a rarity string.
+	# Sweeps the two knobs against the real-character cohort and prints the cohort median
+	# sim/real ratio for each combination. The combination whose three medians sit nearest
+	# 1.00 is the calibration; anything else is a guess with a comment attached.
+	var all_reals := _load_real_characters()
+	var reals: Array = []
+	for r in all_reals:
+		if String(_classify_real(r)["band"]) == "geared":
+			reals.append(r)
+	print("
+===== #5 GEAR-MODEL SOLVE (average tier) =====")
+	print("Fitted ONLY to the %d of %d saved characters that are actually GEARED (5+ slots," % [reals.size(), all_reals.size()])
+	print("not all epic). Fitting to naked test accounts pulls the model the wrong way.")
+	if reals.is_empty():
+		print("No geared characters to fit against — play a character before trusting this.")
+		print("=====================================================================
+")
+		return
+	print("Median sim/real per knob combination. Target: all three near 1.00.")
+	print("%-6s %-7s %8s %8s %8s %8s" % ["ItmLvl", "Empty", "HP", "ATK", "POOL", "|err|"])
+	var save_ratio := _gear_avg_level_ratio
+	var save_empty := _gear_avg_empty_chance
+	var best := {}
+	for ratio in [0.7, 0.85, 1.0, 1.15, 1.3]:
+		for empty in [0.0, 0.15, 0.30]:
+			_gear_avg_level_ratio = ratio
+			_gear_avg_empty_chance = empty
+			var cols := [[], [], []]
+			for real in reals:
+				var acc := _ratios_vs(real, "average")
+				for i in range(3):
+					cols[i].append(acc[i])
+			var meds := []
+			var err := 0.0
+			for i in range(3):
+				var m: float = _median(cols[i])
+				meds.append(m)
+				err += absf(m - 1.0)
+			print("%-6.2f %-7.2f %7.2fx %7.2fx %7.2fx %8.2f" % [ratio, empty, meds[0], meds[1], meds[2], err])
+			if best.is_empty() or err < float(best.get("err", 1e9)):
+				best = {"ratio": ratio, "empty": empty, "err": err, "meds": meds}
+	_gear_avg_level_ratio = save_ratio
+	_gear_avg_empty_chance = save_empty
+	# PER-CHARACTER solve. A single best-fit ratio can be wrong in two very different ways:
+	# the constant is off (every character wants the same different ratio) or the SHAPE is
+	# off (each character wants a different ratio, trending with level). Only the second
+	# needs a level-dependent model, so measure which one it is instead of assuming.
+	print("")
+	print("Per-character best ratio — if these trend with level, the model shape is wrong,")
+	print("not just its constant, and no single ratio will ever fit the whole game.")
+	print("%-11s %-5s %-9s %8s %8s" % ["Name", "Lvl", "BestRatio", "ATKratio", "|err|"])
+	_gear_avg_empty_chance = 0.0
+	for real in reals:
+		var best_r := 0.0
+		var best_e := 1e9
+		var best_atk := 0.0
+		for ri in range(1, 41):
+			var ratio2: float = 0.2 + 0.1 * float(ri)
+			_gear_avg_level_ratio = ratio2
+			var acc := _ratios_vs(real, "average")
+			var e: float = absf(acc[0] - 1.0) + absf(acc[1] - 1.0) + absf(acc[2] - 1.0)
+			if e < best_e:
+				best_e = e
+				best_r = ratio2
+				best_atk = acc[1]
+		print("%-11s %-5d %8.2f %8.2fx %8.2f" % [String(real.name).substr(0, 11), int(real.level), best_r, best_atk, best_e])
+	_gear_avg_level_ratio = save_ratio
+	_gear_avg_empty_chance = save_empty
+	print("")
+	print("BEST: item-level ratio=%.2f empty=%.2f -> HP %.2fx ATK %.2fx POOL %.2fx (total error %.2f)" % [
+		float(best.get("ratio", 1.0)), float(best.get("empty", 0.0)),
+		float(best.get("meds")[0]), float(best.get("meds")[1]), float(best.get("meds")[2]), float(best.get("err", 0.0))])
+	print("Set _gear_avg_level_ratio / _gear_avg_empty_chance to these if they beat the current values.")
+	print("=====================================================================
+")
+
+func _pool_for_path(ch, path: String) -> int:
+	match path:
+		"mage": return int(ch.get_total_max_mana())
+		"trickster": return int(ch.get_total_max_energy())
+		_: return int(ch.get_total_max_stamina())
+
+func run_race_audit():
+	# #5 — make_char hardcoded Human, so every balance number ever produced by this sim
+	# was a Human number. Item 6 wants race compared against class; this is the input.
+	var N := 60
+	print("\n===== #5 RACE AUDIT (%d fights/cell, AVERAGE gear, L30 elite) =====" % N)
+	print("One row per race x archetype representative. Win%% / avg turns / lowest HP%% reached.")
+	print("%-10s %s" % ["Race", "Fighter            Wizard             Thief"])
+	for race in ALL_RACES:
+		var row := "%-10s" % race
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			var wins := 0
+			var turns := 0
+			var mhp := 0.0
+			for i in range(N):
+				var r = run_fight(30, "average", "elite", 1.0, 1.0, 1.0, klass, -1, race)
+				if r.win:
+					wins += 1
+				turns += int(r.turns)
+				mhp += float(r.get("min_hp_pct", 0.0))
+			row += "   %3d%% %4.1ft H%2.0f%%" % [int(100.0 * wins / N), float(turns) / N, mhp / N]
+		print(row)
 	print("=====================================================================\n")
 
 func run_difficulty_audit():
@@ -730,9 +1140,52 @@ func _tier_for_level(lvl: int) -> int:
 	elif lvl <= 5000: return 8
 	return 9
 
-func make_char(level: int, gear: String, klass: String = "Fighter"):
+# #5 CALIBRATION knobs for the "average" (representative-player) gear model. Solved
+# against 11 real saved characters by `-- gear_solve`, not hand-picked.
+# Vars, not consts, so `-- gear_solve` can sweep them and pick from data.
+# #5 (2026-09-02): the old knob SUBTRACTED a fixed number of levels ("gear is 3 levels
+# behind you"). Measured against real saved characters that is the wrong SHAPE, not just
+# the wrong number — mean item level tracks character level PROPORTIONALLY (Sylvio L6:
+# 0.62x, ABtest L4: 1.00x, Test001 L5: 1.47x, Dexto L45: 1.10x), and real players wear
+# gear found ABOVE their level in higher-tier zones. A fixed lag of 3 is -50% at L6 and
+# -7% at L45, so it distorted the low end and did nothing at the high end.
+# Solved by `-- gear_solve` against the geared band AND independently confirmed by direct
+# observation: mean(item level / character level) across the geared real characters is 0.86,
+# and a "geared" character has 5+ slots filled, so the empty chance is ~0. The fit and the
+# measurement agree, which is the only reason to trust a 2-character sample this far.
+# CAVEAT: n=2 geared characters (L6 and L45). This is provisional — re-run `-- gear_solve`
+# as more real characters accumulate. A second combination (ratio 1.30 / empty 0.30) scores
+# identically and is pure overfit; it is rejected because nothing observed supports it.
+var _gear_avg_level_ratio: float = 0.85  # item level as a fraction of character level
+var _gear_avg_empty_chance: float = 0.0  # chance a slot is simply unfilled
+# Companion modelling for the companion audit: none / l1 / match (companion level = char
+# level) / x10 (a heavily over-levelled companion).
+var _companion_mode: String = "match"
+# Fights per cell for the progression/companion sweeps. Overridable as `-- n=200 progression`
+# because conclusions about the whole game deserve tighter error bars than a spot check.
+var _audit_n: int = 40
+
+func _roll_slot_rarity(tier: int) -> String:
+	# Sample one slot's rarity from the game's OWN drop table for this tier, so the sim's
+	# idea of "what a player is wearing" is the distribution the game actually produces.
+	if randf() < _gear_avg_empty_chance:
+		return ""
+	var weights: Dictionary = drop_tables.RARITY_WEIGHTS.get(clampi(tier, 1, 9), {})
+	if weights.is_empty():
+		return "uncommon"
+	var total := 0.0
+	for k in weights.keys():
+		total += float(weights[k])
+	var pick := randf() * total
+	for k in weights.keys():
+		pick -= float(weights[k])
+		if pick <= 0.0:
+			return String(k)
+	return "uncommon"
+
+func make_char(level: int, gear: String, klass: String = "Fighter", race: String = "Human"):
 	var ch = CharacterScript.new()
-	ch.initialize("SimChar", klass, "Human")
+	ch.initialize("SimChar", klass, race)
 	for i in range(level - 1):
 		ch.level_up()
 	# #55 (2026-08-26) — allocate every level-up stat point into the class's primary
@@ -746,21 +1199,23 @@ func make_char(level: int, gear: String, klass: String = "Fighter"):
 		_primary = "dexterity"
 	while ch.unspent_stat_points > 0:
 		ch.spend_stat_point(_primary)
-	# Gear tiers: under = common/uncommon a bit below level; average = rare at level;
-	# bis = artifact at level.
+	# Gear model. #5 CALIBRATION (2026-09-02) — "average" no longer forces one hand-picked
+	# rarity on all seven slots. A real player's kit is a MIX: some slots carry a lucky rare,
+	# some a common they never replaced, some sit empty. Uniform rarity is what made the sim
+	# hot (measured +44% ATK / +69% pool vs 11 real saved characters). "average" now ROLLS
+	# each slot's rarity from the game's own RARITY_WEIGHTS for that tier, so the model
+	# tracks the real drop distribution and follows it automatically when drop rates change.
+	# "under" and "bis" stay deliberate uniform bookends (a poor kit / a chase kit).
 	var rarity := "common"
 	var glevel := level
+	var roll_rarity := false
 	match gear:
 		"under":
 			rarity = "uncommon"
 			glevel = max(1, level - 8)
 		"average":
-			# #70 CALIBRATION — real players carry a MIXED bag (some under-level, some
-			# lower rarity), not uniform rare-at-exact-level. Ground truth: test02 (real L6
-			# mage) = 121 mana; uniform rare-at-level gave ~3x that. "uncommon, a bit under
-			# level" lands near the real pool while staying a solid mid build.
-			rarity = "uncommon"
-			glevel = max(1, level - 3)
+			roll_rarity = true
+			glevel = max(1, int(round(level * _gear_avg_level_ratio)))
 		"bis":
 			rarity = "epic"
 	# #70 CALIBRATION — mirror the REAL drop path: use a TIER-APPROPRIATE base per slot
@@ -781,17 +1236,39 @@ func make_char(level: int, gear: String, klass: String = "Fighter"):
 				break
 		if base_type == "":
 			continue  # no base for this slot at/below tier → leave the slot empty (realistic)
-		var item = drop_tables._generate_item({"item_type": base_type}, glevel, rarity)
+		var slot_rarity: String = _roll_slot_rarity(gtier) if roll_rarity else rarity
+		if slot_rarity == "":
+			continue  # rolled an empty slot — a real player has gaps
+		var item = drop_tables._generate_item({"item_type": base_type}, glevel, slot_rarity)
 		if item is Dictionary and not item.is_empty():
 			ch.equipped[slot] = item
-	# Representative companion (tier scales loosely with level).
-	var comp_tier: int = clampi(1 + int(level / 12.0), 1, 9)
-	ch.active_companion = {
-		"id": "sim_comp", "monster_type": "Wolf", "name": "Fang",
-		"tier": comp_tier, "level": level, "xp": 0,
-		"bonuses": {"attack": 10.0, "hp_bonus": 5.0, "mana_bonus": 3.0, "wisdom_bonus": 2.0, "speed": 5.0},
-		"variant": "Normal", "sub_tier": 1, "border_tier": 1,
-	}
+	# #5 CALIBRATION (2026-09-02) — the companion used to be INVENTED: a hand-written
+	# bonus block {attack 10, hp 5, mana 3, wisdom 2, speed 5} that exists on no real
+	# companion. Every real one carries 1-2 small bonuses from drop_tables.COMPANION_DATA
+	# (Dexto's L45 Ogre: attack 5, hp_bonus 3). The sim was handing every character a
+	# companion 2-4x stronger than the game can produce, on top of the gear inflation.
+	# Now: draw a REAL companion of the tier a player would plausibly have, from the game's
+	# own table. "under" gets none — a third of real saved characters have no companion.
+	if gear != "under" and _companion_mode != "none":
+		var comp_tier: int = clampi(1 + int(level / 12.0), 1, 9)
+		var candidates: Array = []
+		for mtype in drop_tables.COMPANION_DATA.keys():
+			var cd: Dictionary = drop_tables.COMPANION_DATA[mtype]
+			if int(cd.get("tier", 1)) == comp_tier:
+				candidates.append(mtype)
+		if candidates.is_empty():
+			candidates = ["Wolf"]
+		var pick: String = String(candidates[randi() % candidates.size()])
+		var pick_data: Dictionary = drop_tables.COMPANION_DATA.get(pick, {})
+		ch.active_companion = {
+			"id": "sim_comp", "monster_type": pick,
+			"name": String(pick_data.get("companion_name", pick)),
+			"tier": int(pick_data.get("tier", 1)),
+			"level": (1 if _companion_mode == "l1" else (level * 10 if _companion_mode == "x10" else level)),
+			"xp": 0,
+			"bonuses": (pick_data.get("bonuses", {}) as Dictionary).duplicate(),
+			"variant": "Normal", "sub_tier": 1, "border_tier": 1,
+		}
 	ch.current_hp = ch.get_total_max_hp()
 	# Enter combat at FULL resources — in real play, out-of-combat regen tops the
 	# pool between fights. (level_up/equip raise MAX but don't refill current, and
@@ -803,7 +1280,13 @@ func make_char(level: int, gear: String, klass: String = "Fighter"):
 	return ch
 
 func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Dictionary:
-	var m = monster_db.generate_monster_by_name("Orc", level)
+	# #5 (2026-09-02) — was hardcoded to "Orc" at every level. An Orc is a TIER-2 monster,
+	# so at L500+ the sim was fighting a low-tier creature stretched far above its home tier
+	# instead of the tier-appropriate content a real player meets there. That made the whole
+	# high-level half of any sweep a measurement of the wrong monster. Now uses the game's
+	# own selection (select_monster_type by level, inside generate_monster), so the enemy is
+	# whatever the game would actually spawn at that level.
+	var m = monster_db.generate_monster(level, level)
 	match et:
 		"empowered":
 			m["max_hp"] = int(m.get("max_hp", 1) * 2.2)  # #29 v0.9.700 — mirrors empowered flat HP (~2 mods)
@@ -860,12 +1343,12 @@ func _player_act(combat: Dictionary, ch) -> void:
 	# Out of resource / no castable card → basic attack (also regens + builds Momentum? no).
 	combat_mgr.process_attack(combat)
 
-func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter", monster_level: int = -1) -> Dictionary:
+func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter", monster_level: int = -1, race: String = "Human") -> Dictionary:
 	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile
 	# (e.g. Momentum gating the burst → lower avg player DPS) by giving back a
 	# fraction of the damage dealt/taken each turn — the reverse-solve knobs.
 	# monster_level > 0 pits the player (at `level`) against an OVER/under-level monster.
-	var ch = make_char(level, gear, klass)
+	var ch = make_char(level, gear, klass, race)
 	var monster = make_monster(monster_level if monster_level > 0 else level, et, extra_hp_mult)
 	var max_hp: int = ch.get_total_max_hp()
 	combat_mgr.start_combat(0, ch, monster)
@@ -885,12 +1368,10 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 			var mhp0: int = int(monster.get("current_hp", 0))
 			var res0: int = _class_resource(ch, klass)
-			if klass == "Thief":
-				_player_act_trickster(combat, ch)
-			elif klass == "Wizard":
-				_player_act_mage(combat, ch)
-			else:
-				_player_act(combat, ch)
+			match ch.get_class_path():
+				"trickster": _player_act_trickster(combat, ch)
+				"mage": _player_act_mage(combat, ch)
+				_: _player_act(combat, ch)
 			if _class_resource(ch, klass) < res0:
 				casts += 1
 				if _cost_mult > 1.0:
@@ -921,32 +1402,31 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		"max_res": max_res,
 	}
 
-func _class_resource(ch, klass: String) -> int:
-	# #29 — current value of the class's combat resource, for cast-counting.
-	if klass == "Thief":
-		return int(ch.current_energy)
-	if klass == "Wizard":
-		return int(ch.current_mana)
-	return int(ch.current_stamina)
+# #5 (2026-09-02) — these three used to re-derive the archetype by string-matching the
+# exact class ("Thief" / "Wizard", else stamina), so the other six classes silently read
+# the WRONG pool: a Sorcerer's cast-count was measured against its stamina bar. They now
+# ask the character, which is the one place the game itself decides (get_class_path).
+# The `klass` argument is kept for call-site compatibility and deliberately unused.
+func _class_resource(ch, _klass: String = "") -> int:
+	match ch.get_class_path():
+		"trickster": return int(ch.current_energy)
+		"mage": return int(ch.current_mana)
+		_: return int(ch.current_stamina)
 
-func _drain_resource(ch, klass: String, amt: int) -> void:
+func _drain_resource(ch, _klass: String, amt: int) -> void:
 	# Subtract extra resource (cost-tier emulation), floored at 0.
 	if amt <= 0:
 		return
-	if klass == "Thief":
-		ch.current_energy = maxi(0, int(ch.current_energy) - amt)
-	elif klass == "Wizard":
-		ch.current_mana = maxi(0, int(ch.current_mana) - amt)
-	else:
-		ch.current_stamina = maxi(0, int(ch.current_stamina) - amt)
+	match ch.get_class_path():
+		"trickster": ch.current_energy = maxi(0, int(ch.current_energy) - amt)
+		"mage": ch.current_mana = maxi(0, int(ch.current_mana) - amt)
+		_: ch.current_stamina = maxi(0, int(ch.current_stamina) - amt)
 
-func _class_max_resource(ch, klass: String) -> int:
-	# Max pool for the class's combat resource (for resource-pressure telemetry).
-	if klass == "Thief":
-		return int(ch.get_total_max_energy())
-	if klass == "Wizard":
-		return int(ch.get_total_max_mana())
-	return int(ch.get_total_max_stamina())
+func _class_max_resource(ch, _klass: String = "") -> int:
+	match ch.get_class_path():
+		"trickster": return int(ch.get_total_max_energy())
+		"mage": return int(ch.get_total_max_mana())
+		_: return int(ch.get_total_max_stamina())
 
 func run_design_solve():
 	# Reverse-solve the DESIGN numbers: what player-damage% × monster-damage% give
