@@ -262,7 +262,10 @@ wins **100% of fights at 96-100% health**. Not an XP exploit (the downlevel pena
 and a weak monster's base XP is small anyway) — but it means the pressure to move outward has to
 come from the **reward gradient**, since the difficulty model will never apply it.
 
-- [x] **Player-post safe pockets now scale with tier** (user approved 2026-09-02). NPC trading
+- [x] **Player-post safe pockets now scale with tier** (user approved 2026-09-02).
+      **DO NOT DEPLOY before item 12b exists** — spawn-at-post already ships, so this change
+      strands a fresh level-1 character outside a frontier post with no way to survive or gear
+      up. Safe to sit in the tree today only because no player has built a post yet. NPC trading
       posts already scaled — their anchor is `_distance_to_level(post's own distance)` and post
       tier comes from `_tier_from_distance`, so a frontier post already anchors high. The hole
       was **player-built posts**: every one is created with `DEFAULT_PLAYER_POST_TIER = 1` and
@@ -430,6 +433,60 @@ dungeons are about to look different, so shooting them first means shooting them
 ### 12. Dungeon D — bosses (after 6, so boss damage is sized against corrected numbers)
 - [ ] Real phases, telegraphs and adds. **Telegraph counterplay is mandatory** — no unavoidable
       damage
+
+### 12b. The Phantom — player-built, egg-populated, scaling training ground
+*User direction 2026-09-02. Placed here because it reuses dungeon generation and level scaling
+(8-12) and because it is the **hard gate on the player-post suppression floor** in item 6 — that
+change must not reach players before this exists.*
+
+**The intent behind player posts** (user, 2026-09-02): let a player settle an area with no nearby
+post and *control* it — merchants fill its market and move goods across the realm, and it can be
+chosen as the **spawn point for their new characters** instead of the origin post. Spawn-at-post
+already ships (`spawn_post_owner` / `available_spawn_posts` in character creation). Today no
+player has built one because there is no reason to.
+
+**The problem this solves.** Item 6 raised the player-post suppression floor so a frontier post
+can no longer be suppressed to starter difficulty. That is correct for the difficulty curve and
+**wrong on its own**: a fresh level-1 character spawning at a frontier post walks out of the door
+into tier-5+ monsters and cannot survive, let alone gear up. The flat tier-1 floor was arguably
+serving this purpose deliberately. The floor change and this item ship **together**, or not at
+all.
+
+**The design.** A player builds a *Phantom* at their post and populates it by depositing **eggs**.
+Population composition is proportional to eggs invested — more harpy eggs than goblin means
+harpies roam more often while goblins remain, rarer. The player steers their Phantom's population
+over time by what they feed it. It is deep and scales as you descend, so a fresh character enters
+at the top and works down, levelling and gearing until it can survive the wilderness outside.
+
+**Why this one idea is worth prioritising: it closes four open problems at once.**
+1. The frontier **on-ramp** above — without it the item 6 floor change cannot ship
+2. A real **sink for surplus eggs** — an outstanding need in its own right (see 15, and the
+   market-overflow work); this makes eggs an ongoing currency rather than clutter
+3. **Gives player posts a point** — the stated reason nobody builds them
+4. It is **exactly the fiction**. The setting bible: a phantom is a dead place the ground pushed
+   back up in the shape it died in, and *eggs are the one living thing a dead place produces*.
+   Seeding a phantom with eggs to populate it is the setting, not a mechanic bolted onto it
+
+**Open design work, in order:**
+- [ ] **Scaling shape.** Depth maps to monster level, bridging level 1 up to the *local*
+      wilderness level: `level(depth) = lerp(1, local_wilderness_level, depth / max_depth)`, with
+      `max_depth` scaling to the post's tier. A frontier Phantom is automatically *longer*
+      because it has further to bridge — "near endless" is really "as long as the gap it closes"
+- [ ] **Measure the species-vs-level interaction FIRST — there is a real trap here.** If eggs set
+      the species and depth sets the level, a Goblin seeded at depth 50 is scaled far above its
+      base level. Per the monster-table audit in item 6, a Goblin carries **4.00 STR per base
+      level** against Avatar of Chaos's **0.07**, so a scaled-up Goblin may be dramatically
+      *deadlier* than a native high-tier monster. Seeding the "weakest" species could be the
+      hardest possible choice — the opposite of the intended exploit, and just as broken. The sim
+      can measure this before any of it is built
+- [ ] **Eggs must be consumed, not deposited once.** A one-time deposit is a one-time sink and
+      the surplus returns; population should decay so the Phantom needs feeding. That is also
+      what makes "controlling your post" an ongoing activity rather than a single afternoon
+- [ ] **Reward gating.** It has to gear a fresh character enough to survive locally without
+      becoming the best farm in the game for everyone else. Suggest loot scaling with depth but
+      capped at the local wilderness tier, with reduced rare-tier rates — an on-ramp, not an
+      endgame. Ties directly to the reward-gradient decision in item 6
+- [ ] Decide whether a Phantom is per-post, per-account or shared, and who else may enter
 
 ---
 
