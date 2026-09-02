@@ -14,7 +14,9 @@ order is what forces revisits.
 
 ## In progress
 
-### 1. Party mechanics — server pass
+*(nothing — item 1 is complete and verified; item 2 is next)*
+
+### 1. Party mechanics — server pass ✅ COMPLETE (unreleased)
 - [x] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
       — `Lead: Rotate / Lead: Fixed` toggle in the Party menu. Rotation walks a stable
       `rotation_order`, not `party.members` (which `_transfer_leadership` reorders new-leader-first,
@@ -29,7 +31,8 @@ order is what forces revisits.
 - [x] **Leadership transfer verified** — with 3 members, the leader dying hands leadership to a
       survivor instead of disbanding. Needed a scenario where ONLY the leader is at 1 HP: in a
       lethal zone the others die first, the party drops to two, and it disbands instead
-- [ ] Live test of rotation + duplicated rewards (`party3`, `gather_*`, `craft_ready`)
+- [x] Live-tested with 3 clients: rotation, control modes, duplicated rewards, leadership
+      transfer, follower control and post formation all confirmed on screen
 
 - [x] **Follower control rule** — out in the world one player leads and the rest follow, so a
       follower cannot move, hunt, rest or gather; **inside a post everyone acts independently**
@@ -47,7 +50,7 @@ splitting them means editing and re-testing the same code twice.*
 
 ## Next
 
-### 2. Party UI (after 1 — rotation changes leader semantics and action-bar states)
+### 2. Party UI  ← START HERE
 - [ ] Target picker: use items **on teammates** (click a party card; number keys as a supplement)
 - [ ] Buffs castable on teammates (forcefield on someone else). Server-side, ability effects
       currently apply to `combat.character`, the caster — cross-targeting is a real change
