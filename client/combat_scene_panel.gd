@@ -4245,12 +4245,15 @@ func _refresh_hand() -> void:
 				csb.border_color = rc
 				csb.set_border_width_all(2)
 		if cost_lbl:
-			# v0.9.72x — show NET cost after this turn's passive regen (cost − regen),
-			# e.g. a 20-cost card with 14 regen shows 6, so the number reflects what the
-			# card actually drains from your bar. Regen mirrors combat_manager's capped
-			# model (min(16%-of-max, 25+lvl·0.5), floor 4).
-			var _regen := _estimate_turn_regen(resource_type)
-			cost_lbl.text = "%d" % maxi(0, planned_int - _regen)
+			# #6c (2026-09-02) — show the GROSS cost. This used to show NET of the turn's regen
+			# (cost - regen), which was well-intentioned but read as nonsense in play: Blast,
+			# Forcefield and Arcane Surge all displayed "0", which a player reasonably reads as
+			# "free" rather than "regen happens to cover this". A cost of 0 that is not free is
+			# worse than no number at all.
+			# Regen is now surfaced separately on the resource bar, so the player can see BOTH
+			# what a card charges and what they get back, and do the subtraction themselves
+			# rather than being handed a number with no explanation.
+			cost_lbl.text = "%d" % maxi(0, planned_int)
 
 		# v0.9.691 — damage/heal value pip (base estimate from your stats).
 		if value_pip and value_lbl and client_ref and client_ref.has_method("_ability_primary_value"):

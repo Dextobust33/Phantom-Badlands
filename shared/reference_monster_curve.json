@@ -76,114 +76,145 @@
 		"boss": [
 			{
 				"hp_mult": 2.8,
-				"level": 1,
+				"level": 1.0,
 				"str_mult": 1.90882506754182
 			},
 			{
 				"hp_mult": 2.8,
-				"level": 10,
+				"level": 10.0,
 				"str_mult": 1.66883385058074
 			},
 			{
 				"hp_mult": 2.8,
-				"level": 50,
+				"level": 50.0,
 				"str_mult": 1.24320492939937
 			},
 			{
 				"hp_mult": 2.8,
-				"level": 250,
+				"level": 250.0,
 				"str_mult": 1.97962553825268
 			},
 			{
 				"hp_mult": 2.8,
-				"level": 1000,
+				"level": 1000.0,
 				"str_mult": 2.1801658006599
 			},
 			{
 				"hp_mult": 2.8,
-				"level": 5000,
+				"level": 5000.0,
 				"str_mult": 2.56230921212356
 			},
 			{
 				"hp_mult": 2.8,
-				"level": 10000,
+				"level": 10000.0,
 				"str_mult": 3.46501297097863
 			}
 		],
 		"elite": [
 			{
 				"hp_mult": 1.8,
-				"level": 1,
+				"level": 1.0,
 				"str_mult": 2.29444569077091
 			},
 			{
 				"hp_mult": 1.8,
-				"level": 10,
+				"level": 10.0,
 				"str_mult": 1.42213004588704
 			},
 			{
 				"hp_mult": 1.8,
-				"level": 50,
+				"level": 50.0,
 				"str_mult": 1.20984523201407
 			},
 			{
 				"hp_mult": 1.8,
-				"level": 250,
+				"level": 250.0,
 				"str_mult": 1.4000260297953
 			},
 			{
 				"hp_mult": 1.8,
-				"level": 1000,
+				"level": 1000.0,
 				"str_mult": 1.9906967860664
 			},
 			{
 				"hp_mult": 1.8,
-				"level": 5000,
+				"level": 5000.0,
 				"str_mult": 2.66207505764154
 			},
 			{
 				"hp_mult": 1.8,
-				"level": 10000,
+				"level": 10000.0,
 				"str_mult": 1.82262164251674
 			}
 		],
 		"empowered": [
 			{
 				"hp_mult": 1.4,
-				"level": 1,
+				"level": 1.0,
 				"str_mult": 1.67567023567134
 			},
 			{
 				"hp_mult": 1.4,
-				"level": 10,
+				"level": 10.0,
 				"str_mult": 1.46484363846061
 			},
 			{
 				"hp_mult": 1.4,
-				"level": 50,
+				"level": 50.0,
 				"str_mult": 1.0269089716052
 			},
 			{
 				"hp_mult": 1.4,
-				"level": 250,
+				"level": 250.0,
 				"str_mult": 1.11955149247727
 			},
 			{
 				"hp_mult": 1.4,
-				"level": 1000,
+				"level": 1000.0,
 				"str_mult": 1.4645829073083
 			},
 			{
 				"hp_mult": 1.4,
-				"level": 5000,
+				"level": 5000.0,
 				"str_mult": 2.33206298258166
 			},
 			{
 				"hp_mult": 1.4,
-				"level": 10000,
+				"level": 10000.0,
 				"str_mult": 1.76133028197839
 			}
 		]
+	},
+	"species_power": {
+		"Ancient Dragon": 1.0,
+		"Balrog": 1.04325815057402,
+		"Cerberus": 1.0,
+		"Chimaera": 1.0,
+		"Demon": 1.55461963297574,
+		"Demon Lord": 1.34213410191835,
+		"Elder Lich": 1.03452482073512,
+		"Elemental": 1.24816986591195,
+		"Gargoyle": 1.44443892425847,
+		"Giant": 1.17787708356577,
+		"Gryphon": 1.06516175227393,
+		"Harpy": 1.70360831763525,
+		"Hydra": 0.600631230720985,
+		"Iron Golem": 1.13346267047736,
+		"Jabberwock": 0.813292672238378,
+		"Lich": 1.02153884848462,
+		"Minotaur": 1.12040226261507,
+		"Nazgul": 1.07284820305709,
+		"Phoenix": 1.08542089724455,
+		"Primordial Dragon": 0.610337196997611,
+		"Shrieker": 1.65420136794112,
+		"Sphinx": 1.29178471031197,
+		"Succubus": 1.57203053388092,
+		"Titan": 1.0,
+		"Vampire": 1.36346450428694,
+		"Void Walker": 1.0,
+		"World Serpent": 0.790174668410665,
+		"Wraith": 1.63506208649067,
+		"Young Dragon": 1.04740301688443
 	},
 	"target_turns": 5.0
 }

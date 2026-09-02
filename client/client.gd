@@ -12590,13 +12590,46 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	if result.is_empty():
 		return result
 
+	# #6c (2026-09-02) — the `cost` / `cost_percent` / `cost_floor_ratio` values in the table
+	# above are a hand-maintained copy of combat_manager's VARIABLE_COST_TABLE and had all gone
+	# stale: forcefield read 20 base / 2% against the real 15 / 10%, blast 50/5% against 34/21%,
+	# haste 35/3% against 24/12%. A 2%-of-pool cost minus the turn's regen floors to zero, which
+	# is why Blast, Forcefield and Arcane Surge all displayed a cost of 0 on their cards.
+	# combat_manager.gd is a shared script, so the real numbers are simply read. Display names
+	# stay local — those are genuinely client-side presentation.
+	var _real_costs: Dictionary = CombatManagerScript.VARIABLE_COST_TABLE
+	if _real_costs.has(ability_name):
+		var _rc: Dictionary = _real_costs[ability_name]
+		result = result.duplicate()
+		result["cost"] = int(_rc.get("ceiling", result.get("cost", 0)))
+		result["cost_percent"] = int(_rc.get("cost_percent", 0))
+		result["cost_floor_ratio"] = float(_rc.get("floor_ratio", 0.3))
+		result["resource_type"] = String(_rc.get("resource", result.get("resource_type", resource_type)))
+
 	# Calculate actual cost for mage abilities with percentage scaling
 	var base_cost = result.cost
 	var cost_percent = result.get("cost_percent", 0)
-	if path == "mage" and cost_percent > 0:
-		var max_mana = character_data.get("total_max_mana", character_data.get("max_mana", 100))
-		var percent_cost = int(max_mana * cost_percent / 100.0)
-		base_cost = max(base_cost, percent_cost)
+	# #6c — mirror apply_variable_cost exactly. Two bugs lived here: the percentage scaling was
+	# gated on `path == "mage"`, so warrior and trickster cards never showed their scaled cost
+	# at all; and it scaled against the TOTAL pool rather than the naked pool plus
+	# GEAR_COST_SHARE of the gear bonus, which is what the server actually charges.
+	if cost_percent > 0:
+		var _res := String(result.get("resource_type", resource_type))
+		var _naked := 0
+		var _total := 0
+		match _res:
+			"mana":
+				_naked = int(character_data.get("max_mana", 0))
+				_total = int(character_data.get("total_max_mana", _naked))
+			"stamina":
+				_naked = int(character_data.get("max_stamina", 0))
+				_total = int(character_data.get("total_max_stamina", _naked))
+			"energy":
+				_naked = int(character_data.get("max_energy", 0))
+				_total = int(character_data.get("total_max_energy", _naked))
+		if _naked > 0:
+			var _basis: float = float(_naked) + maxf(0.0, float(_total - _naked)) * CombatManagerScript.GEAR_COST_SHARE
+			base_cost = max(base_cost, int(_basis * float(cost_percent) / 100.0))
 
 	# Apply race and class cost modifiers to match server calculations
 	var final_cost = base_cost
@@ -20851,6 +20884,17 @@ func _update_shield_bar(max_hp: int):
 	else:
 		shield_fill_panel.visible = false
 
+func _estimate_player_turn_regen(max_val: int) -> int:
+	"""Per-turn passive resource regen, mirroring combat_manager's capped model:
+	min(BASE_COMBAT_REGEN_PCT% of max, CAP_FLAT + level x CAP_PER_LVL), floor 4. Read from the
+	shared script's constants rather than copied — every hand-copied number in this file has
+	eventually gone stale."""
+	if not has_character:
+		return 0
+	var pct: float = float(CombatManagerScript.BASE_COMBAT_REGEN_PCT)
+	var cap: int = int(CombatManagerScript.BASE_COMBAT_REGEN_CAP_FLAT) + int(float(character_data.get("level", 1)) * float(CombatManagerScript.BASE_COMBAT_REGEN_CAP_PER_LVL))
+	return maxi(4, mini(int(float(max_val) * pct / 100.0), cap))
+
 func update_resource_bar():
 	if not resource_bar or not has_character:
 		return
@@ -20898,7 +20942,16 @@ func update_resource_bar():
 		fill.add_theme_stylebox_override("panel", style)
 
 	if label:
-		label.text = "%s: %d/%d" % [resource_name, current_val, max_val]
+		# #6c (2026-09-02, user direction) — show the per-turn REGEN alongside the pool. Cards
+		# show what an ability CHARGES; without seeing what comes back each turn a player cannot
+		# tell why their bar barely moves, and a cheap card reads as free. Showing both lets them
+		# do the subtraction themselves instead of being handed a pre-subtracted number with no
+		# explanation, which is what the old net-cost card badge did.
+		var _regen := _estimate_player_turn_regen(max_val)
+		if _regen > 0:
+			label.text = "%s: %d/%d  (+%d/turn)" % [resource_name, current_val, max_val, _regen]
+		else:
+			label.text = "%s: %d/%d" % [resource_name, current_val, max_val]
 
 	# Update resource bars overlay
 	update_resource_bars_overlay()
