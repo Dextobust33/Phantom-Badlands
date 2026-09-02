@@ -2280,12 +2280,19 @@ func _load_reference_curve() -> void:
 			_curve_is_calibrated = true
 			return
 	var f = FileAccess.open(REFERENCE_CURVE_PATH, FileAccess.READ)
-	if f == null:
-		return
-	var parsed = JSON.parse_string(f.get_as_text())
-	f.close()
-	if parsed is Dictionary and parsed.get("anchors", null) is Array:
-		_reference_anchors = parsed["anchors"]
+	if f != null:
+		var parsed = JSON.parse_string(f.get_as_text())
+		f.close()
+		if parsed is Dictionary and parsed.get("anchors", null) is Array:
+			_reference_anchors = parsed["anchors"]
+	# Fail LOUDLY. USE_REFERENCE_MODEL is on but no curve loaded means every monster in the
+	# game silently reverts to legacy base_level scaling — the sawtooth, the 85x same-level
+	# variance and the tier-boundary difficulty collapses all come back, with nothing on
+	# screen to say so. A missing or unparseable curve file in an export is exactly the kind
+	# of thing that would otherwise be discovered by a player, not by us.
+	if _reference_anchors.is_empty() and USE_REFERENCE_MODEL:
+		push_error("[monster_database] USE_REFERENCE_MODEL is ON but no reference curve loaded (%s / %s). Falling back to LEGACY base_level scaling — monster difficulty will not match the tuned model." % [REFERENCE_MONSTER_PATH, REFERENCE_CURVE_PATH])
+		printerr("[monster_database] reference curve MISSING — monsters are using legacy scaling.")
 
 func _reference_at(level: int) -> Dictionary:
 	"""Interpolate the reference curve at `level`. Interpolation is LINEAR IN
