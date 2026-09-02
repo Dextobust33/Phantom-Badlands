@@ -347,16 +347,6 @@ footer a:hover { text-decoration: underline; }
     text-align: left;
 }
 
-.keeper-attr {
-    display: block;
-    margin-top: 0.5rem;
-    font-size: 0.8rem;
-    font-style: normal;
-    font-family: 'Segoe UI', Tahoma, sans-serif;
-    color: var(--text-secondary);
-    letter-spacing: 0.3px;
-}
-
 /* Setting pitch */
 .pitch {
     padding: 3.5rem 2rem;
