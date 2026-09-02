@@ -1,0 +1,108 @@
+==================================================================
+  TEST SETUP COMMANDS — Gathering Minigames, Crafting, Rarity
+==================================================================
+
+After logging in with your admin account, paste these commands
+into chat one group at a time. Create a new character first
+(any class works, Ranger or Fighter recommended).
+
+--- STEP 1: Level and Resources ---
+/setlevel 50
+/giveall
+
+--- STEP 2: Set Gathering Jobs (needed for gathering bonuses) ---
+/setjob mining 30
+/setjob logging 30
+/setjob foraging 30
+/setjob fishing 30
+/setjob soldier 50
+
+--- STEP 3: Set Specialty Jobs (needed for crafting specialist hints) ---
+/setjob blacksmith 30
+/setjob alchemist 30
+/setjob enchanter 30
+/setjob scribe 30
+
+--- STEP 4: Give Gathering Tools (equip from Inventory > Tools) ---
+/givetool pickaxe 3
+/givetool axe 3
+/givetool sickle 3
+/givetool rod 3
+
+--- STEP 5: Give Crafting Materials (for blacksmithing + alchemy) ---
+/givemats copper_ore 99
+/givemats iron_ore 99
+/givemats steel_ore 99
+/givemats common_wood 99
+/givemats oak_wood 99
+/givemats ragged_leather 99
+/givemats leather_scraps 99
+/givemats thick_leather 99
+/givemats coal 50
+/givemats healing_herb 99
+/givemats mana_blossom 99
+/givemats vigor_root 99
+/givemats small_fish 50
+/givemats medium_fish 50
+/givemats magic_dust 50
+/givemats arcane_crystal 30
+
+--- STEP 6: Give Enchanting Materials ---
+/givemats soul_shard 30
+/givemats enchanted_resin 30
+/givemats rough_gem 30
+/givemats polished_gem 20
+
+--- STEP 7: Give Scribing Materials ---
+/givemats parchment 50
+/givemats fine_parchment 30
+/givemats ink 50
+/givemats arcane_ink 30
+/givemats binding_thread 30
+
+--- STEP 8: Give Construction Materials ---
+/givemats wooden_plank 50
+/givemats stone_block 50
+/givemats rope 50
+
+--- STEP 9: Give Salvage Essence (for enchant/upgrade recipes) ---
+/setessence 5000
+
+==================================================================
+  TESTING CHECKLIST
+==================================================================
+
+GATHERING MINIGAMES:
+  [ ] Mining: Walk to ore deposit (mountains), press R to Mine
+      → Check: Depth meter shows. At depth 3+, "DEEP VEIN" bonus
+  [ ] Fishing: Walk to water (~), press R to Fish
+      → Check: Size roll (Small/Medium/Large/Trophy) shown
+  [ ] Logging: Walk to dense forest, press R to Chop
+      → Check: Momentum bar. At 3/5/7 correct, "BONUS CHOP"
+  [ ] Foraging: Walk to grassland, press R to Forage
+      → Check: Plant names shown (not generic). "NEW DISCOVERY"
+        on first correct. Known plants marked green ◆
+
+SOLDIER HARVEST:
+  [ ] Kill a monster (walk into one)
+      → Check: Harvest prompt with mastery level + saves shown
+      → Wrong answer should give "save" message (soldier Lv50 = 2 saves)
+
+CRAFTING MINIGAME:
+  [ ] Go to Trading Post, select Crafting
+      → Pick Blacksmithing, craft a weapon recipe
+      → Check: 3-round challenge with skill-themed questions
+      → Specialist hint "[Risky]" shown on one wrong answer
+      → Score (0-3) shown in result
+  [ ] Try auto-skip: craft a very low difficulty recipe
+      → Should skip minigame (when skill - difficulty >= 30)
+
+RARITY EFFECTS:
+  [ ] Craft several items, inspect them (Inventory > select item)
+      → Uncommon+ should show rarity bonuses (ATK%, crit, etc.)
+  [ ] Equip crafted weapon → fight monster → verify crit bonuses
+  [ ] Equip crafted armor → fight monster → verify dodge/DR work
+
+CONSUMABLE MULTI-USE:
+  [ ] Craft epic/legendary potion → verify "Uses: 2" or "Uses: 3"
+  [ ] Use it once → still in inventory. Use again → consumed.

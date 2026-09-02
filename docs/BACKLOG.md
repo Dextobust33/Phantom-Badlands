@@ -357,12 +357,67 @@ leading fix — not because high-tier monsters are individually weak.
 - [ ] Whatever replaces it must also **bound same-level variance** deliberately (a designed
       range, e.g. 2-3x, rather than today's emergent 85x)
 
-- [ ] **Anchor monster stats to a reference player at the same level** rather than to
-      hand-authored per-tier tables: `monster.hp = reference_damage_per_turn(L) × target_turns
-      (tier)`, and similarly for its damage against reference mitigation. Difficulty becomes flat
-      *by construction* and "gets harder with level" becomes an explicit knob instead of an
-      emergent accident of 54 hand-written stat blocks. The sim now has the machinery to build
-      that reference (`make_char` is calibrated; `-- ability_hp` measures output per level)
+- [x] **Anchor monster stats to a reference player — BUILT 2026-09-02, behind `USE_REFERENCE_MODEL`
+      in `monster_database.gd`.** Monster magnitude no longer comes from each species'
+      hand-authored `base_level` run through an asymmetric up/down scale. It comes from a
+      calibrated curve of what a real player at that level can actually do.
+
+      **It is SELF-CALIBRATING, and that turned out to be the essential design decision.** The
+      analytic route — measure player damage-per-turn, set `monster.hp = dpt × target_turns` —
+      does not converge, because it is self-referential: a player bursts with abilities and then
+      runs dry, so damage-per-turn depends on how long the fight lasts, which is exactly the
+      number being set. Two failures made that concrete:
+      - Averaging player output over a 12-turn window while designing 5-turn fights produced
+        fights **2x too long at L1 and 16x too long at L5000** — a level-dependent error, because
+        high-level fights ran longest and amortised the opening burst furthest
+      - Matching the window to the target instead made **percentage-of-max-HP abilities blow up**
+        against the oversized probe dummy (measured player damage-per-turn at L10000 leapt from
+        1.9M to 39M)
+
+      So the model stops predicting the fixed point and **finds** it: set stats, run real fights,
+      correct toward target, repeat. It converges in 2-3 passes and is robust to every subtlety
+      that broke the analytic version — ability rotations, resource drain, percentage damage,
+      mitigation, monster abilities — because it never models any of them, only the outcome they
+      jointly produce.
+
+      **Results.** Same-level normal fights now land at 3.4-6.4 turns against a target of 5, with
+      the player spending 25-66% of their health bar (target 40%) and winning 50-83%. And the
+      structural defects are gone:
+
+      | | before | after |
+      |---|---|---|
+      | median monster HP L2000→L2500 | **6.7x collapse** | strictly monotonic |
+      | same-level HP variance | **85x** | **2-3x** (designed band) |
+      | difficulty at tier boundaries | collapses every band | no discontinuity |
+
+      **What it preserves.** Only magnitude is anchored. Species keep their abilities
+      (multi_strike, regeneration, armored, ethereal…), their variants, glass_cannon, the
+      elite/boss multipliers and XP — all still ride on top. Species also keep a bounded stat
+      SHAPE derived from their own base-stat *ratios within their tier*, so a Hydra is still
+      beefier than a Goblin, inside a designed ~2x band instead of an emergent 85x.
+
+      **Difficulty is now an explicit knob**, which was the original goal and was previously not
+      expressible anywhere: `TARGET_TURNS_NORMAL`, `DANGER_NORMAL`, and
+      `PROGRESSION_DANGER_SLOPE` (danger × (1 + slope·log10(level)) — L1 ×1.00, L10000 ×1.24), so
+      "the game gets harder as you progress" is a number someone chose rather than an accident of
+      54 stat blocks.
+
+      Sim audits: `-- refcurve` (player curve), `-- refcal` (calibrate against real fights),
+      `-- refval` (validate), `-- selection` (sawtooth + variance regression test).
+
+- [ ] **Re-tune elite / boss / variant multipliers against the corrected baseline.** They were
+      sized against the OLD baseline, which was too weak, so they compensated. On a correctly
+      sized monster they now stack too high — the first run showed elite fights at 0% win at L1.
+      This is the immediate next step and the model is not shippable without it
+- [ ] **Widen calibration sample size.** 24 fights per level per pass leaves visible noise (one
+      L1000 pass read 20 turns against a converged 3-5). Raise it before treating the numbers as
+      final
+- [ ] **Re-run every balance measurement against the new baseline** — the ability-power table,
+      the class comparison and the companion audit were all measured against the old monster
+      model and their absolute numbers are now stale
+- [ ] **The curve inherits the gear model's known slope error** (item 5): calibrated against a
+      `make_char` that is hot at L6 and cold at L45, with only 2 genuinely geared real characters
+      to fit against. The shape is now right; the absolute level carries that uncertainty
 
 - [ ] Decide the target curve first (what *should* win% and danger look like at L10, L100,
       L1000, L10000?), then tune to it. Without a target the sweep has nothing to fail against

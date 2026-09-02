@@ -1537,6 +1537,13 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 	var base_scaled_strength = max(3, int(base_stats.base_strength * stat_scale))
 	var base_scaled_defense = max(1, int(base_stats.base_defense * stat_scale))
 
+	# #6 (2026-09-02) — reference-player model. When enabled, magnitude comes from
+	# what a real player at this level can do rather than from base_level scaling.
+	# Everything below (abilities, variants, glass_cannon, elite/boss mults, XP) is
+	# untouched and still rides on top. Returns {} if the curve file is missing, in
+	# which case we fall through to the legacy path rather than break generation.
+	var _anchored: Dictionary = compute_anchored_stats(base_stats, target_level) if USE_REFERENCE_MODEL else {}
+
 	# Adjust HP - base 2x multiplier with diminishing returns for player attack
 	# Uses hyperbolic saturation: approaches 7.0x asymptotically
 	# This ensures multi-round fights without making high-level monsters unkillable
@@ -1549,6 +1556,8 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 	# Minimum HP floor based on level to prevent trivial one-shot kills
 	var min_hp = max(10, target_level * 3)
 	scaled_hp = max(scaled_hp, min_hp)
+	if not _anchored.is_empty():
+		scaled_hp = int(_anchored["max_hp"])
 
 	# Adjust strength modestly - armor should reduce damage but not negate it
 	# Only account for ~30% of expected defense so good armor feels impactful
@@ -1558,6 +1567,9 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 	# Defense scales normally but with a small boost at higher levels
 	var defense_bonus = int(target_level / 10)
 	var scaled_defense = max(1, base_scaled_defense + defense_bonus)
+	if not _anchored.is_empty():
+		scaled_strength = int(_anchored["strength"])
+		scaled_defense = int(_anchored["defense"])
 
 	# Calculate XP and gold with tiered formulas (based on final stats)
 	var experience_reward = _calculate_experience_reward(scaled_hp, scaled_strength, scaled_defense, target_level)
@@ -2151,3 +2163,190 @@ func calculate_class_advantage_multiplier(affinity: int, player_class_path: Stri
 			else:
 				return 0.75
 	return 1.0  # Neutral
+
+# ============================================================================
+# REFERENCE-PLAYER MONSTER MODEL (#6, 2026-09-02)
+# ============================================================================
+# Monster magnitude is derived from what a real player at that level can
+# actually do, instead of from each monster's hand-authored base_level run
+# through an asymmetric up/down scale.
+#
+# WHY (all measured this session, from two independent directions):
+#   * PLAYER SIDE — player output grows far faster than player durability. The
+#     reference curve shows damage-per-turn / own-max-HP rising from 1.15 at L1
+#     to ~51 at L5000, a 44x drift. Any fixed monster table is therefore correct
+#     at exactly one level and wrong everywhere else.
+#   * MONSTER SIDE — routing level through base_level made difficulty COLLAPSE
+#     at every tier boundary, because a tier's level band and its monsters' base
+#     levels do not line up (T8 monsters are base 2500-4500 but T8 covers
+#     L2500-5000). Median monster HP fell 6.7x from L2000 to L2500 while the
+#     player only got stronger. Same-level HP variance reached 85x.
+# Re-authoring base levels only moves those teeth. This removes the mechanism.
+#
+# WHAT IT PRESERVES. Only magnitude is anchored. Species identity — abilities
+# (multi_strike, regeneration, armored, ethereal...), variants, glass_cannon,
+# elite/boss multipliers, XP — all still ride on top exactly as before. A Void
+# Walker still behaves like a Void Walker; it is just sized against the player
+# it will actually meet. Species keeps a bounded stat SHAPE (below) so a Hydra
+# is still beefier than a Goblin, within a designed range rather than 85x.
+#
+# HOW DIFFICULTY IS SET. Two explicit knobs, which is the point of the exercise:
+#   TARGET_TURNS_NORMAL — how long a plain same-level fight should last
+#   DANGER_NORMAL       — the fraction of the player's health bar that fight
+#                         should cost them
+# and PROGRESSION_DANGER_SLOPE makes the game get HARDER as a player advances,
+# by design rather than by accident. That was the stated goal and it was
+# previously not expressible anywhere.
+const USE_REFERENCE_MODEL := true          # false = legacy base_level scaling
+# The CALIBRATED monster curve: target hp/strength for a plain same-level monster at each
+# anchor level, produced by driving real fights until they land on the design target
+# (see the sim's `-- refcal`). Preferred over deriving from the player curve analytically,
+# because the analytic route is self-referential — a player's damage per turn depends on
+# how long the fight lasts, which is what the number is being used to set.
+const REFERENCE_MONSTER_PATH := "res://shared/reference_monster_curve.json"
+const REFERENCE_CURVE_PATH := "res://shared/reference_player_curve.json"
+const TARGET_TURNS_NORMAL := 5.0           # a plain same-level fight, in turns
+const DANGER_NORMAL := 0.40                # ...costs this share of the player's HP
+# Difficulty rises with progression: danger is multiplied by
+# (1 + slope * log10(level)). At L1 x1.00, L100 x1.12, L10000 x1.24. Deliberately
+# gentle — it compounds with the player also facing higher tiers and variants.
+const PROGRESSION_DANGER_SLOPE := 0.06
+# Species shape is clamped to this band, so identity survives but same-level
+# variance is a DESIGNED ~2x rather than the 85x the old model produced.
+const SHAPE_MIN := 0.70
+const SHAPE_MAX := 1.45
+
+var _reference_anchors: Array = []
+var _curve_is_calibrated: bool = false
+var _tier_shape_cache: Dictionary = {}
+
+func _load_reference_curve() -> void:
+	if not _reference_anchors.is_empty():
+		return
+	# Prefer the calibrated monster curve; fall back to the player curve only if absent.
+	var mf = FileAccess.open(REFERENCE_MONSTER_PATH, FileAccess.READ)
+	if mf != null:
+		var mp = JSON.parse_string(mf.get_as_text())
+		mf.close()
+		if mp is Dictionary and mp.get("anchors", null) is Array and not (mp["anchors"] as Array).is_empty():
+			_reference_anchors = mp["anchors"]
+			_curve_is_calibrated = true
+			return
+	var f = FileAccess.open(REFERENCE_CURVE_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	if parsed is Dictionary and parsed.get("anchors", null) is Array:
+		_reference_anchors = parsed["anchors"]
+
+func _reference_at(level: int) -> Dictionary:
+	"""Interpolate the reference curve at `level`. Interpolation is LINEAR IN
+	log(level) because the anchors are spaced logarithmically (1..10000) — linear
+	interpolation in raw level would badly under-read everything between, say,
+	L2500 and L5000. Clamps to the end anchors outside the measured range."""
+	_load_reference_curve()
+	if _reference_anchors.is_empty():
+		return {}
+	var lvl: float = maxf(1.0, float(level))
+	var first: Dictionary = _reference_anchors[0]
+	var last: Dictionary = _reference_anchors[_reference_anchors.size() - 1]
+	if lvl <= float(first.get("level", 1)):
+		return first
+	if lvl >= float(last.get("level", 1)):
+		return last
+	for i in range(1, _reference_anchors.size()):
+		var a: Dictionary = _reference_anchors[i - 1]
+		var b: Dictionary = _reference_anchors[i]
+		var la: float = float(a.get("level", 1))
+		var lb: float = float(b.get("level", 1))
+		if lvl <= lb:
+			var t: float = (log(lvl) - log(la)) / maxf(0.000001, (log(lb) - log(la)))
+			return {
+				"level": lvl,
+				"dpt": lerp(float(a.get("dpt", 1.0)), float(b.get("dpt", 1.0)), t),
+				"ehp": lerp(float(a.get("ehp", 1.0)), float(b.get("ehp", 1.0)), t),
+				"taken_ps": lerp(float(a.get("taken_ps", 1.0)), float(b.get("taken_ps", 1.0)), t),
+				"hp": lerp(float(a.get("hp", 1.0)), float(b.get("hp", 1.0)), t),
+				"str": lerp(float(a.get("str", 1.0)), float(b.get("str", 1.0)), t),
+			}
+	return last
+
+func _species_shape(base_stats: Dictionary) -> Dictionary:
+	"""A species' stat SHAPE relative to the other monsters of its own tier —
+	how beefy / hard-hitting / armoured it is *for its kind*. Magnitude comes
+	from the reference curve; this is what keeps a Hydra feeling different from
+	a Goblin. Derived from the existing hand-authored tables (so no new content
+	authoring is needed) but used only as a RATIO, which is why re-tiering or
+	re-authoring a monster can no longer move absolute difficulty."""
+	var tier: int = _monster_base_tier_by_name(base_stats.get("name", ""))
+	if not _tier_shape_cache.has(tier):
+		var sums := {"hp": 0.0, "str": 0.0, "def": 0.0}
+		var n := 0
+		for mt in _get_tier_monsters(tier):
+			var bs = get_monster_base_stats(mt)
+			sums.hp += float(bs.get("base_hp", 1))
+			sums.str += float(bs.get("base_strength", 1))
+			sums.def += float(bs.get("base_defense", 1))
+			n += 1
+		if n > 0:
+			_tier_shape_cache[tier] = {
+				"hp": sums.hp / float(n), "str": sums.str / float(n), "def": sums.def / float(n)}
+		else:
+			_tier_shape_cache[tier] = {"hp": 1.0, "str": 1.0, "def": 1.0}
+	var mean: Dictionary = _tier_shape_cache[tier]
+	return {
+		"hp": clampf(float(base_stats.get("base_hp", 1)) / maxf(1.0, float(mean.hp)), SHAPE_MIN, SHAPE_MAX),
+		"str": clampf(float(base_stats.get("base_strength", 1)) / maxf(1.0, float(mean.str)), SHAPE_MIN, SHAPE_MAX),
+		"def": clampf(float(base_stats.get("base_defense", 1)) / maxf(1.0, float(mean.def)), SHAPE_MIN, SHAPE_MAX),
+	}
+
+func _monster_base_tier_by_name(mname: String) -> int:
+	for t in range(1, 10):
+		for mt in _get_tier_monsters(t):
+			if String(get_monster_base_stats(mt).get("name", "")) == mname:
+				return t
+	return 1
+
+func compute_anchored_stats(base_stats: Dictionary, target_level: int) -> Dictionary:
+	"""Monster hp/strength/defense for a PLAIN monster at `target_level`, derived
+	from the reference player rather than from base_level. Elite/boss/variant
+	multipliers still ride on top downstream — this sets the baseline they scale.
+
+	    hp  = dpt * target_turns                      (fight lasts target_turns)
+	    str = ehp * danger / (target_turns * taken_ps) (fight costs `danger` of the bar)
+
+	Returns {} when the curve is unavailable, so callers fall back to the legacy
+	path rather than generating a broken monster."""
+	var ref := _reference_at(target_level)
+	if ref.is_empty():
+		return {}
+	var shape := _species_shape(base_stats)
+	if _curve_is_calibrated:
+		# Calibrated curve already encodes the target fight length and cost, measured from
+		# real fights. Only the species SHAPE is applied on top.
+		var c_hp: float = float(ref.get("hp", 100.0)) * float(shape.hp)
+		var c_str: float = float(ref.get("str", 10.0)) * float(shape.str)
+		var c_def: float = c_str * 0.45 * float(shape.def) / maxf(0.01, float(shape.str))
+		return {
+			"max_hp": maxi(10, int(round(c_hp))),
+			"strength": maxi(3, int(round(c_str))),
+			"defense": maxi(1, int(round(c_def))),
+		}
+	var danger: float = DANGER_NORMAL * (1.0 + PROGRESSION_DANGER_SLOPE * (log(maxf(1.0, float(target_level))) / log(10.0)))
+	var hp: float = float(ref.get("dpt", 1.0)) * TARGET_TURNS_NORMAL * float(shape.hp)
+	# Strength needed for the monster to remove `danger` of the player's bar over
+	# the whole fight, given how much damage the player actually takes per point
+	# of monster strength at this level.
+	var taken_ps: float = maxf(0.000001, float(ref.get("taken_ps", 1.0)))
+	var strength: float = (float(ref.get("ehp", 1.0)) * danger) / (TARGET_TURNS_NORMAL * taken_ps)
+	strength *= float(shape.str)
+	# Defense keeps its historic relationship to the monster's own strength — it
+	# is a texture stat here, not a difficulty lever, and the player's damage is
+	# already accounted for in dpt (which was measured THROUGH monster defense).
+	var defense: float = strength * 0.45 * float(shape.def) / maxf(0.01, float(shape.str))
+	return {
+		"max_hp": maxi(10, int(round(hp))),
+		"strength": maxi(3, int(round(strength))),
+		"defense": maxi(1, int(round(defense))),
+	}

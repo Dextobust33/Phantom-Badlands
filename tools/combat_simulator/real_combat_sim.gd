@@ -75,6 +75,9 @@ func _audit_registry() -> Dictionary:
 		"progression": ["does difficulty hold from L1 to L10000?", run_progression_audit],
 		"underlevel": ["what fighting below your level is worth (post pull-down)", run_underlevel_audit],
 		"selection": ["why the curve is jagged: tier bands vs monster base levels", run_selection_audit],
+		"refcurve": ["measure the reference-player curve the monster model anchors to", run_reference_curve],
+		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
+		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
@@ -636,6 +639,385 @@ func run_selection_audit():
 	print("the reference-player model in item 6, reached from a different direction.")
 	print("=====================================================================
 ")
+
+# ============================================================================
+# REFERENCE-PLAYER MONSTER MODEL (#6, 2026-09-02)
+# ============================================================================
+# Everything measured this session pointed at one fix, from two independent
+# directions:
+#   * PLAYER SIDE — player damage grows ~L^2 while monster HP grows on an
+#     unrelated curve, so the ratio drifts: abilities are 2.6-35x overkill at L1,
+#     collapse to 8-40% of a health bar around L100-500, then partly recover.
+#   * MONSTER SIDE — level->difficulty is routed through each monster's
+#     hand-authored base_level with an ASYMMETRIC up/down scale, so difficulty
+#     collapses at every tier boundary (median monster HP falls 6.7x from L2000
+#     to L2500) and same-level HP variance reaches 85x.
+# Re-tuning either side moves the problem. The fix is to stop deriving monster
+# magnitude from hand-authored tables at all, and derive it from what a real
+# player at that level can actually do.
+#
+# This curve is the measurement that makes that possible. For each anchor level
+# it records, from the REAL combat code driven by the calibrated make_char:
+#   dpt      — damage per turn a reference player deals
+#   ehp      — the player's max HP (what the monster has to chew through)
+#   taken_ps — damage the player takes per turn per point of monster strength
+# From those three, monster stats follow by algebra rather than by authorship:
+#   monster.hp  = dpt * target_turns(role)
+#   monster.str = ehp * danger(role) / (target_turns(role) * taken_ps)
+# Difficulty then holds by construction at every level, and "gets harder as you
+# progress" becomes an explicit knob (danger/target_turns) instead of an
+# emergent accident of 54 stat blocks.
+#
+# Measured across all three archetypes and MEDIANED, so the reference is not a
+# single class's build. Run with:  -- refcurve
+const REF_ANCHOR_LEVELS := [1, 2, 3, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
+# The probe window MUST equal the fight length the model is designing for. This was
+# originally 12 and the model came out badly wrong in a LEVEL-DEPENDENT way (real
+# in-fight damage was 0.46x the prediction at L1 but 0.06x at L5000). The cause is
+# self-reference: a player bursts with abilities and then runs dry, so damage-per-turn
+# depends on how long the fight is — and the fight length depends on the monster HP the
+# curve is being used to set. Averaging over 12 turns while designing 5-turn fights
+# amortises the opening burst over the wrong window, and the error grows with level
+# because high-level fights ran longest. Measuring over exactly the target window closes
+# the loop: hp = (mean output over N turns) * N really does produce an N-turn fight.
+const REF_PROBE_TURNS := 5    # == TARGET_TURNS_NORMAL in the monster model
+const REF_SAMPLES := 12       # independent characters per class per level
+
+func _measure_reference_at(level: int, klass: String) -> Dictionary:
+	# One character's contribution to the reference curve. Damage per turn is
+	# measured over a real fight against an unkillable dummy so ability rotation,
+	# resource drain and regen all behave exactly as they do in play — a single
+	# cast would flatter classes that open with a nuke and then run dry.
+	var dpt_total := 0.0
+	var taken_total := 0.0
+	var ehp_total := 0.0
+	var samples := 0
+	for s in range(REF_SAMPLES):
+		var ch = make_char(level, "average", klass)
+		var max_hp: int = ch.get_total_max_hp()
+		# Dummy: real generated monster so defense/abilities behave, but with an
+		# HP pool far beyond what the player can chew through in the probe window,
+		# and a KNOWN strength so damage-taken can be normalised per strength point.
+		var monster := make_monster(level, "normal", 1.0)
+		var probe_str: int = maxi(1, int(monster.get("strength", 1)))
+		var huge: int = maxi(1000, int(monster.get("max_hp", 1)) * 10000)
+		monster["max_hp"] = huge
+		monster["current_hp"] = huge
+		monster["strength"] = probe_str
+		ch.in_combat = false
+		combat_mgr.start_combat(0, ch, monster)
+		if not combat_mgr.active_combats.has(0):
+			continue
+		var combat = combat_mgr.active_combats[0]
+		var dealt := 0
+		var taken := 0
+		var turns := 0
+		for t in range(REF_PROBE_TURNS):
+			if ch.current_hp <= 0:
+				break
+			var mhp0: int = int(monster.get("current_hp", 0))
+			var php0: int = ch.current_hp
+			if combat.get("player_can_act", true):
+				match ch.get_class_path():
+					"trickster": _player_act_trickster(combat, ch)
+					"mage": _player_act_mage(combat, ch)
+					_: _player_act(combat, ch)
+			dealt += maxi(0, mhp0 - int(monster.get("current_hp", 0)))
+			combat_mgr.process_monster_turn(combat)
+			taken += maxi(0, php0 - ch.current_hp)
+			turns += 1
+			# Keep the player alive: this probe measures RATES, not survival, and a
+			# death mid-window would truncate the average toward whoever is tankiest.
+			ch.current_hp = max_hp
+		combat_mgr.end_combat(0, false, false)
+		if turns == 0:
+			continue
+		dpt_total += float(dealt) / float(turns)
+		taken_total += (float(taken) / float(turns)) / float(probe_str)
+		ehp_total += float(max_hp)
+		samples += 1
+	if samples == 0:
+		return {}
+	return {
+		"dpt": dpt_total / float(samples),
+		"taken_ps": taken_total / float(samples),
+		"ehp": ehp_total / float(samples),
+	}
+
+# Sim-side mirrors of the monster model's knobs, so validation reports against the same
+# targets the model is aiming at without the sim reaching into monster_database internals.
+const TARGET_TURNS_NORMAL_SIM := 5.0
+const DANGER_NORMAL_SIM := 0.40
+
+func _curve_at(level: int) -> Dictionary:
+	# Read the generated reference curve the same way monster_database does.
+	if _curve_cache.is_empty():
+		var f = FileAccess.open("res://shared/reference_player_curve.json", FileAccess.READ)
+		if f:
+			var parsed = JSON.parse_string(f.get_as_text())
+			f.close()
+			if parsed is Dictionary and parsed.get("anchors", null) is Array:
+				_curve_cache = {"anchors": parsed["anchors"]}
+	var anchors: Array = _curve_cache.get("anchors", [])
+	if anchors.is_empty():
+		return {}
+	var lvl := maxf(1.0, float(level))
+	if lvl <= float(anchors[0].get("level", 1)):
+		return anchors[0]
+	if lvl >= float(anchors[anchors.size() - 1].get("level", 1)):
+		return anchors[anchors.size() - 1]
+	for i in range(1, anchors.size()):
+		var a: Dictionary = anchors[i - 1]
+		var b: Dictionary = anchors[i]
+		var la := float(a.get("level", 1))
+		var lb := float(b.get("level", 1))
+		if lvl <= lb:
+			var t: float = (log(lvl) - log(la)) / maxf(0.000001, (log(lb) - log(la)))
+			return {
+				"dpt": lerp(float(a.get("dpt", 1.0)), float(b.get("dpt", 1.0)), t),
+				"ehp": lerp(float(a.get("ehp", 1.0)), float(b.get("ehp", 1.0)), t),
+				"taken_ps": lerp(float(a.get("taken_ps", 1.0)), float(b.get("taken_ps", 1.0)), t),
+			}
+	return anchors[anchors.size() - 1]
+
+func run_reference_validate():
+	# #6 — close the loop on the reference model. The curve predicts that a plain
+	# same-level fight lasts TARGET_TURNS_NORMAL turns and costs DANGER_NORMAL of the
+	# player's health bar. This measures whether it actually does, and reports the
+	# correction factor if not.
+	#
+	# The first run of the model came out at 13 turns against a target of 5, which means
+	# the probe's damage-per-turn over-reads real in-fight output. Likely causes, all
+	# checkable from the columns below: the probe never lets the monster die (so the
+	# player's opening burst is averaged over a long window differently), it tops the
+	# player's HP up each turn, and it measures against whatever monster the OLD model
+	# produced. This prints predicted vs actual side by side so the correction is
+	# measured rather than guessed.
+	var N := 40
+	print("\n===== #6 REFERENCE MODEL VALIDATION =====")
+	print("Target: a plain same-level fight lasts ~%.0f turns and costs ~%.0f%% of the bar." % [TARGET_TURNS_NORMAL_SIM, DANGER_NORMAL_SIM * 100.0])
+	print("dptCurve = what the curve says; dptReal = damage/turn actually dealt in the fight.")
+	print("The ratio is the correction the curve needs.")
+	print("%-8s %11s %11s %8s %8s %8s %8s" % ["Level", "dptCurve", "dptReal", "ratio", "turns", "win%", "HPcost"])
+	for lvl in PROGRESSION_LEVELS:
+		var ref := _curve_at(lvl)
+		if ref.is_empty():
+			continue
+		var tot_turns := 0.0
+		var tot_dealt := 0.0
+		var wins := 0
+		var hp_cost := 0.0
+		var n := 0
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			for i in range(N / 3):
+				var ch = make_char(lvl, "average", klass)
+				var monster := make_monster(lvl, "normal", 1.0)
+				var mhp0: int = int(monster.get("max_hp", 1))
+				var php0: int = ch.get_total_max_hp()
+				ch.in_combat = false
+				combat_mgr.start_combat(0, ch, monster)
+				if not combat_mgr.active_combats.has(0):
+					continue
+				var combat = combat_mgr.active_combats[0]
+				var turns := 0
+				while turns < 300:
+					if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+						break
+					turns += 1
+					if combat.get("player_can_act", true):
+						match ch.get_class_path():
+							"trickster": _player_act_trickster(combat, ch)
+							"mage": _player_act_mage(combat, ch)
+							_: _player_act(combat, ch)
+					if int(monster.get("current_hp", 0)) <= 0:
+						break
+					combat_mgr.process_monster_turn(combat)
+				var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+				if won:
+					wins += 1
+				tot_turns += float(turns)
+				# AGGREGATE totals, not a mean of per-fight ratios. The mean of
+				# (dealt/turns) is dominated by short fights while the mean of turns is
+				# dominated by long ones, so dividing one by the other is not a rate and
+				# reads far too high — the first version of this audit reported a dpt that
+				# was mathematically inconsistent with its own turn count.
+				tot_dealt += float(mhp0 - maxi(0, int(monster.get("current_hp", 0))))
+				hp_cost += 100.0 * float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
+				n += 1
+				combat_mgr.end_combat(0, false, false)
+		if n == 0:
+			continue
+		var dpt_real: float = tot_dealt / maxf(1.0, tot_turns)
+		print("%-8d %11.0f %11.0f %7.2fx %8.1f %7d%% %7.0f%%" % [
+			lvl, float(ref.get("dpt", 0.0)), dpt_real,
+			dpt_real / maxf(1.0, float(ref.get("dpt", 1.0))),
+			tot_turns / float(n), int(100.0 * wins / n), hp_cost / float(n)])
+	print("")
+	print("If the ratio column is roughly CONSTANT, the curve is the right shape and only")
+	print("needs one scalar correction. If it drifts with level, the probe is wrong in a")
+	print("level-dependent way and the measurement itself has to change.")
+	print("=====================================================================\n")
+
+func _fight_stats_at(level: int, samples: int) -> Dictionary:
+	# Run real same-level fights across all three archetypes and report what actually
+	# happened: mean turns, mean share of the player's health bar spent, win rate.
+	# This is the ground truth the calibration drives toward.
+	var turns_tot := 0.0
+	var cost_tot := 0.0
+	var wins := 0
+	var n := 0
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		for i in range(samples):
+			var ch = make_char(level, "average", klass)
+			var monster := make_monster(level, "normal", 1.0)
+			var php0: int = ch.get_total_max_hp()
+			ch.in_combat = false
+			combat_mgr.start_combat(0, ch, monster)
+			if not combat_mgr.active_combats.has(0):
+				continue
+			var combat = combat_mgr.active_combats[0]
+			var turns := 0
+			while turns < 400:
+				if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+					break
+				turns += 1
+				if combat.get("player_can_act", true):
+					match ch.get_class_path():
+						"trickster": _player_act_trickster(combat, ch)
+						"mage": _player_act_mage(combat, ch)
+						_: _player_act(combat, ch)
+				if int(monster.get("current_hp", 0)) <= 0:
+					break
+				combat_mgr.process_monster_turn(combat)
+			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+				wins += 1
+			turns_tot += float(turns)
+			cost_tot += float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
+			n += 1
+			combat_mgr.end_combat(0, false, false)
+	if n == 0:
+		return {}
+	return {"turns": turns_tot / float(n), "cost": cost_tot / float(n), "win": float(wins) / float(n)}
+
+func run_reference_calibrate():
+	# #6 — SELF-CALIBRATING monster model.
+	#
+	# The analytic route (measure player damage-per-turn, set monster HP = dpt * N) is
+	# self-referential and does not converge on its own: a player bursts and then runs
+	# dry, so their damage-per-turn depends on how long the fight lasts, which depends
+	# on the monster HP the measurement is being used to set. Measuring over a 12-turn
+	# window produced fights 2x too long at L1 and 16x too long at L5000; matching the
+	# window to the target instead made percentage-of-max-HP abilities blow up against
+	# the oversized probe dummy. Both are symptoms of predicting a fixed point rather
+	# than finding one.
+	#
+	# So: stop predicting. Set monster stats, RUN REAL FIGHTS, and correct toward the
+	# design target. Two or three passes converge, and the result is robust to every
+	# subtlety that broke the analytic version (ability rotations, resource drain,
+	# percentage-based damage, mitigation, monster abilities) because it never models
+	# any of them — it measures the outcome they jointly produce.
+	#
+	# Targets: TARGET_TURNS_NORMAL turns, DANGER_NORMAL of the player's health bar.
+	var passes := 4
+	var samples := 8
+	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% HP cost) =====" % [TARGET_TURNS_NORMAL_SIM, DANGER_NORMAL_SIM * 100.0])
+	var table: Array = []
+	for lvl in REF_ANCHOR_LEVELS:
+		# Seed from the model's current output for this level so calibration starts from
+		# wherever the model is now rather than from an arbitrary guess.
+		var seed_m := make_monster(lvl, "normal", 1.0)
+		var hp := float(seed_m.get("max_hp", 100))
+		var st := float(seed_m.get("strength", 10))
+		var last := {}
+		for pass_i in range(passes):
+			_cal_override = {"level": lvl, "hp": int(round(hp)), "str": int(round(st))}
+			var r := _fight_stats_at(lvl, samples)
+			_cal_override = {}
+			if r.is_empty():
+				break
+			last = r
+			# Correct toward target. Damped (sqrt) so a noisy sample cannot send the
+			# next pass wildly off; converges in a handful of passes either way.
+			var turn_err: float = TARGET_TURNS_NORMAL_SIM / maxf(0.5, float(r["turns"]))
+			hp *= sqrt(clampf(turn_err, 0.15, 6.0))
+			var cost_err: float = DANGER_NORMAL_SIM / maxf(0.01, float(r["cost"]))
+			st *= sqrt(clampf(cost_err, 0.15, 6.0))
+		table.append({"level": lvl, "hp": int(round(hp)), "str": int(round(st))})
+		if last.is_empty():
+			print("L%-6d  (no data)" % lvl)
+		else:
+			print("L%-6d hp=%12d str=%10d   -> %5.1f turns, %3.0f%% HP cost, %3.0f%% win" % [
+				lvl, int(round(hp)), int(round(st)),
+				float(last["turns"]), 100.0 * float(last["cost"]), 100.0 * float(last["win"])])
+	var out := {"generated": "sim run_reference_calibrate", "target_turns": TARGET_TURNS_NORMAL_SIM, "anchors": table}
+	var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(out, "\t"))
+		f.close()
+		print("\nWrote shared/reference_monster_curve.json (%d anchors)." % table.size())
+	print("Re-run `-- refval` to confirm the model lands on target with these anchors.")
+	print("=====================================================================\n")
+
+func run_reference_curve():
+	print("\n===== #6 REFERENCE-PLAYER CURVE (the anchor for the monster model) =====")
+	print("Per level, measured from the real combat code with the calibrated make_char:")
+	print("  dpt      = damage/turn a reference player deals (full ability rotation)")
+	print("  ehp      = reference player max HP")
+	print("  taken_ps = damage taken per turn per point of monster strength")
+	print("Median across the three archetypes, %d chars x %d turns each." % [REF_SAMPLES, REF_PROBE_TURNS])
+	print("%-8s %12s %12s %12s %10s %10s" % ["Level", "dpt", "ehp", "taken_ps", "dpt/ehp", "classes"])
+	var table: Array = []
+	for lvl in REF_ANCHOR_LEVELS:
+		var dpts: Array = []
+		var ehps: Array = []
+		var tps: Array = []
+		var ok := 0
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			var r := _measure_reference_at(lvl, klass)
+			if r.is_empty():
+				continue
+			dpts.append(float(r["dpt"]))
+			ehps.append(float(r["ehp"]))
+			tps.append(float(r["taken_ps"]))
+			ok += 1
+		if ok == 0:
+			continue
+		var row := {
+			"level": lvl,
+			"dpt": _median(dpts),
+			"ehp": _median(ehps),
+			"taken_ps": _median(tps),
+		}
+		table.append(row)
+		print("%-8d %12.1f %12.1f %12.4f %10.3f %10d" % [
+			lvl, float(row["dpt"]), float(row["ehp"]), float(row["taken_ps"]),
+			float(row["dpt"]) / maxf(1.0, float(row["ehp"])), ok])
+	# Growth exponents: how fast each side actually scales. If dpt grows much
+	# faster than ehp, the player's offence outruns their own durability, which is
+	# what makes flat monster tables read as "easy late".
+	print("")
+	print("Growth between consecutive anchors (x per level-decade) — the shape the")
+	print("monster model has to track. A flat column means that quantity scales with")
+	print("level; a rising one means it outruns level.")
+	print("%-14s %10s %10s %10s" % ["Range", "dpt x", "ehp x", "taken_ps x"])
+	for i in range(1, table.size()):
+		var a: Dictionary = table[i - 1]
+		var b: Dictionary = table[i]
+		print("%-14s %9.2fx %9.2fx %9.2fx" % [
+			"L%d->L%d" % [int(a["level"]), int(b["level"])],
+			float(b["dpt"]) / maxf(0.001, float(a["dpt"])),
+			float(b["ehp"]) / maxf(0.001, float(a["ehp"])),
+			float(b["taken_ps"]) / maxf(0.000001, float(a["taken_ps"]))])
+	var out := {"generated": "sim run_reference_curve", "anchors": table}
+	var f = FileAccess.open("res://shared/reference_player_curve.json", FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(out, "\t"))
+		f.close()
+		print("\nWrote shared/reference_player_curve.json (%d anchors)." % table.size())
+	else:
+		print("\nCould not write shared/reference_player_curve.json")
+	print("=====================================================================\n")
+
 
 func run_gear_solve():
 	# #5 — pick the "average" gear model from DATA instead of hand-tuning a rarity string.
@@ -1354,6 +1736,10 @@ var _companion_mode: String = "match"
 # Fights per cell for the progression/companion sweeps. Overridable as `-- n=200 progression`
 # because conclusions about the whole game deserve tighter error bars than a spot check.
 var _audit_n: int = 40
+var _curve_cache: Dictionary = {}
+# Calibration override: while set, make_monster stamps these stats onto the generated
+# monster so a candidate can be tested in REAL fights before it is written to the curve.
+var _cal_override: Dictionary = {}
 
 func _roll_slot_rarity(tier: int) -> String:
 	# Sample one slot's rarity from the game's OWN drop table for this tier, so the sim's
@@ -1492,6 +1878,9 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 			m["defense"] = int(m.get("defense", 1) * 1.5)
 	if extra_hp_mult != 1.0:
 		m["max_hp"] = int(m.get("max_hp", 1) * extra_hp_mult)
+	if not _cal_override.is_empty() and int(_cal_override.get("level", -1)) == level:
+		m["max_hp"] = int(_cal_override.get("hp", m.get("max_hp", 1)))
+		m["strength"] = int(_cal_override.get("str", m.get("strength", 1)))
 	m["current_hp"] = m.get("max_hp", 1)
 	return m
 
