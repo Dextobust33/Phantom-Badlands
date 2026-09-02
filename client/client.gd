@@ -954,7 +954,18 @@ var combat_use_page: int = 0  # Current page for combat usable items list (0-ind
 # companion, we route through a tiny target picker (Self / Companion) before
 # firing combat_use_item to the server.
 var target_select_mode: bool = false
+# v0.9.740 — the picker's targets, in display order: yourself, your companion, then each living
+# teammate and their companion. Entry 0 is ALWAYS yourself, so the quick self-cast is the first
+# thing under the cursor and under [1].
+var target_select_options: Array = []
+# Members of the CURRENT party fight (peer_id + companion per member), cached from the combat
+# snapshot because party_update's lighter member info lacks both.
+var _party_combat_members: Array = []
 var target_select_item_index: int = -1
+# v0.9.740 — the picker now serves two callers. "item" resolves to a combat_use_item, "ability"
+# to a combat_command carrying the chosen target.
+var target_select_kind: String = "item"
+var target_select_command: String = ""
 var target_select_companion_name: String = ""
 const INVENTORY_PAGE_SIZE: int = 9  # Items per page (keys 1-9)
 
@@ -1702,6 +1713,11 @@ var _pending_victory_card_payload: Variant = null
 # (party rounds, flock chains). Deferred shows carry the generation they were scheduled in
 # and drop themselves if a new fight has begun, instead of covering a live battlefield.
 var _combat_generation: int = 0
+# v0.9.740 — Continue means "hurry up" until the result is on screen, then "dismiss".
+# _combat_fastforward: the player asked to skip the remaining animation.
+# _victory_card_scheduled: the card's 1s reveal timer is in flight but it is not up yet.
+var _combat_fastforward: bool = false
+var _victory_card_scheduled: bool = false
 # v0.9.417 — defer the post-combat text chrome (Damage totals / LOOT / "Press
 # Space to continue...") until the message queue has fully drained, so the
 # chrome doesn't print BEFORE the player's killing-blow / monster-death
@@ -1723,6 +1739,15 @@ var _combat_paused: bool = false
 # trim the dead time between events.
 const SEPARATOR_DELAY: float = 0.25         # v0.9.439: 0.45 → 0.25 (Review FX is the escape hatch)
 const INTER_ATTACK_DELAY: float = 0.45      # v0.9.439: 0.65 → 0.45
+# v0.9.740 — CO-OP PLAYBACK BUDGET. A co-op round carries one head + body lines for EVERY
+# member AND one monster action per member: ~28 beats for three players against ~8 solo.
+# At the solo per-beat delay that is a 12.6-SECOND round, which is what made co-op feel
+# frozen and put the victory card an age behind the kill. Pace a round by total budget
+# rather than per-beat: solo never exceeds it (the cap applies, so solo is untouched), while
+# a long co-op round plays proportionally faster and eases back to full speed for its last
+# few beats, so the killing blow still lands at readable pace.
+const PARTY_ROUND_BUDGET_S: float = 6.0
+const PARTY_MIN_BEAT_DELAY: float = 0.09
 const POST_FINAL_ATTACK_DELAY: float = 0.50 # v0.9.664: 0.25 → 0.50 (linger on the killing blow before chrome/card)
 const AMBIENT_DELAY: float = 0.30           # v0.9.664: 0.06 → 0.30 (0.06 was unreadable — non-attack lines flew by)
 const END_ACTION_PHASE_GRACE: float = 0.30  # v0.9.439: 0.60 → 0.30
@@ -3924,10 +3949,11 @@ func _process(delta):
 			else:
 				set_meta("questlogkey_%d_pressed" % i, false)
 
-	# Phase B1 — heal-potion target selection (Self / Companion). Hotkeys 1
-	# and 2 pick the option; Space cancels.
+	# Target selection. v0.9.740 — was Self/Companion for heal potions only; now serves any
+	# item and any teammate-targetable buff, so the list is variable-length. [1] is ALWAYS
+	# Yourself (the quick self-cast); Space cancels.
 	if game_state == GameState.PLAYING and not input_field.has_focus() and target_select_mode:
-		for i in range(2):
+		for i in range(mini(9, maxi(2, target_select_options.size()))):
 			if is_item_select_key_pressed(i):
 				if not get_meta("targetselect_%d_pressed" % i, false):
 					set_meta("targetselect_%d_pressed" % i, true)
@@ -8858,6 +8884,27 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
+	elif target_select_mode:
+		# v0.9.740 — the picker is driven by the in-panel list, but the action bar carries a
+		# ONE-CLICK "Use on Self" so a player who never touches hotkeys still has the quick
+		# self-cast in front of them, plus Cancel.
+		var ts_actions: Array[Dictionary] = [
+			{"label": "Cancel", "action_type": "local", "action_data": "target_select_cancel", "enabled": true},
+			{"label": "Cast on Self" if target_select_kind == "ability" else "Use on Self",
+				"action_type": "local", "action_data": "target_select_self", "enabled": true},
+		]
+		for _ti in range(target_select_options.size()):
+			if String(target_select_options[_ti].get("target", "")) == "self":
+				continue   # already offered above
+			ts_actions.append({
+				"label": String(target_select_options[_ti].get("label", "?")),
+				"action_type": "local",
+				"action_data": "target_select_%d" % (_ti + 1),
+				"enabled": true})
+		while ts_actions.size() < 10:
+			ts_actions.append({"label": "---", "action_type": "none", "action_data": "", "enabled": false})
+		current_actions = ts_actions
+
 	elif party_combat_spectating:
 		# Party combat: spectating (dead or fled)
 		current_actions = [
@@ -10288,7 +10335,7 @@ const _NO_TRAVEL_COMMANDS := [
 	"bolt", "magic_bolt", "blast", "meteor",
 ]
 
-func send_combat_command(command: String):
+func send_combat_command(command: String, target: String = ""):
 	if not connected:
 		display_game("[color=#FF0000]Not connected![/color]")
 		return
@@ -10305,6 +10352,11 @@ func send_combat_command(command: String):
 		# your action server-side — the client still thought it could act, so the card played
 		# its animation locally and was then silently rejected by the server.
 		if _party_action_blocked():
+			return
+		# v0.9.740 — a buff played in a party fight asks WHO it is for before it is submitted.
+		# `target` being set means we are coming BACK from the picker, so no loop.
+		if target == "" and _party_buff_can_target_ally(command):
+			_start_buff_target_select(command)
 			return
 
 	# #76 v0.9.739 — in CO-OP a card play is only a SUBMIT: nothing resolves until every
@@ -10350,7 +10402,10 @@ func send_combat_command(command: String):
 	# by 0.15s. Review FX is the escape hatch if anyone needs to re-watch.
 	combat_phase_timer = max(combat_phase_timer, 0.15)
 	combat_phase_paused = true
-	send_to_server({"type": "combat", "command": command})
+	var _payload := {"type": "combat", "command": command}
+	if target != "" and target != "self":
+		_payload["target"] = target   # v0.9.740 — buff aimed at a teammate
+	send_to_server(_payload)
 
 	# #76 — lock in for this party round: flip to waiting, block re-submit, and post a
 	# PERSISTENT locked-in line to the combat panel log (game_output gets wiped by the
@@ -10364,6 +10419,10 @@ func send_combat_command(command: String):
 		update_action_bar()
 
 func _show_victory_card_deferred(payload, gen: int = -1) -> void:
+	# v0.9.740 — cleared on EVERY path, including the stale-fight drop below. acknowledge_continue
+	# holds the player while this is true, so leaking it on the drop path would leave them unable
+	# to continue at all.
+	_victory_card_scheduled = false
 	# v0.9.739 — stale-fight guard: if a new combat started while this timer was pending,
 	# the card belongs to a fight that is already over. Dropping it is what keeps a party
 	# member who never pressed Space from being stuck behind last fight's rewards.
@@ -12967,36 +13026,125 @@ func _is_heal_potion_item(item: Dictionary) -> bool:
 		return true
 	return false
 
-func _start_combat_target_select(item_index: int) -> void:
-	"""Show an in-panel picker with two entries: Self / Companion. Stores
-	the inventory item index for the post-pick dispatch."""
+# Buff abilities a party member can aim at a teammate. MUST match combat_manager's
+# PARTY_TARGETABLE_BUFFS — the server refuses anything else, so listing an extra one here would
+# only produce a picker that eats the player's round.
+const PARTY_TARGETABLE_BUFFS := ["forcefield", "haste", "iron_skin", "fortify", "rally", "berserk"]
+const _ABILITY_ALIASES := {
+	"bolt": "magic_bolt", "strike": "power_strike", "warcry": "war_cry", "bash": "shield_bash",
+	"ironskin": "iron_skin", "heist": "perfect_heist", "shield": "forcefield",
+}
+
+func _canonical_ability(name: String) -> String:
+	return String(_ABILITY_ALIASES.get(name, name))
+
+func _party_buff_can_target_ally(command: String) -> bool:
+	"""True when this command is a buff worth asking about — i.e. we are in a party fight that
+	still has a living teammate to aim it at."""
+	if not (_party_combat_members.size() > 1 and (party_combat_active or party_waiting_for_turn)):
+		return false
+	if not _canonical_ability(command.split(" ")[0]) in PARTY_TARGETABLE_BUFFS:
+		return false
+	_build_target_select_options(false)
+	return target_select_options.size() > 1   # more than just "Yourself"
+
+func _start_buff_target_select(command: String) -> void:
+	"""Ask who a buff should land on. Yourself is first and pre-selected, so the quick
+	self-cast is [1] / one click on the leading entry / the Self button on the action bar."""
+	_build_target_select_options(false)
+	target_select_mode = true
+	target_select_kind = "ability"
+	target_select_command = command
+	target_select_item_index = -1
+	if combat_scene_panel:
+		var entries: Array = []
+		var _label: String = _ability_display_name(_canonical_ability(command.split(" ")[0]))
+		for opt in target_select_options:
+			entries.append({"name": "%s on %s" % [_label, String(opt["label"])],
+				"color": String(opt["color"]), "qty": 1})
+		combat_scene_panel.show_item_picker("Cast on whom?", entries, 0, entries.size())
+	update_action_bar()
+
+func _build_target_select_options(include_companions: bool) -> void:
+	"""Yourself, (your companion), each living teammate, (their companion). Companions are only
+	offered for ITEMS: a player buff has nowhere to land on a companion, and the server refuses
+	a "comp:N" target for an ability, so offering it would just waste the player's round."""
 	var comp: Dictionary = character_data.get("active_companion", {})
 	var comp_name: String = str(comp.get("name", "your companion"))
+	target_select_options.clear()
+	target_select_options.append({"label": "Yourself", "target": "self", "color": "#FFD93D"})
+	if include_companions and comp.size() > 0:
+		target_select_options.append({"label": comp_name + " (your companion)", "target": "companion", "color": "#3DD9FF"})
+	for m in _party_combat_members:
+		if not (m is Dictionary):
+			continue
+		var mname := String(m.get("name", ""))
+		if mname == "" or mname == String(character_data.get("name", "")):
+			continue
+		if bool(m.get("is_dead", false)) or bool(m.get("is_fled", false)):
+			continue
+		var mpid := int(m.get("peer_id", -1))
+		if mpid < 0:
+			continue
+		target_select_options.append({"label": mname, "target": "pid:%d" % mpid, "color": "#8FE3FF"})
+		if not include_companions:
+			continue
+		var mcomp = m.get("companion", {})
+		if mcomp is Dictionary and not mcomp.is_empty():
+			target_select_options.append({
+				"label": "%s (%s's companion)" % [String(mcomp.get("name", "companion")), mname],
+				"target": "comp:%d" % mpid, "color": "#66DDFF"})
+
+func _start_combat_target_select(item_index: int) -> void:
+	"""Show the in-panel target picker for an item.
+
+	v0.9.740 — was a fixed Self/Companion pair; now lists every valid target: yourself, your
+	companion, each living teammate, and each teammate's companion (companions are targetable by
+	design, so companion-affecting loot can be added later without redoing this).
+
+	YOURSELF IS ALWAYS FIRST and highlighted, so the quick self-cast is one click on the leading
+	entry or one press of [1] — a player who never uses hotkeys is not forced to hunt for it."""
+	var comp: Dictionary = character_data.get("active_companion", {})
+	var comp_name: String = str(comp.get("name", "your companion"))
+	_build_target_select_options(true)
 	target_select_mode = true
+	target_select_kind = "item"
+	target_select_command = ""
 	target_select_item_index = item_index
 	target_select_companion_name = comp_name
 	combat_item_mode = false  # leave combat-item mode so input doesn't double-trigger
 	if combat_scene_panel:
-		var entries: Array = [
-			{"name": "Use on yourself", "color": "#FFD93D", "qty": 1},
-			{"name": "Use on " + comp_name, "color": "#3DD9FF", "qty": 1},
-		]
-		combat_scene_panel.show_item_picker("Heal target", entries, 0, 1)
+		var entries: Array = []
+		for opt in target_select_options:
+			entries.append({"name": "Use on " + String(opt["label"]), "color": String(opt["color"]), "qty": 1})
+		combat_scene_panel.show_item_picker("Use on whom?", entries, 0, entries.size())
 	update_action_bar()
 
 func _resolve_target_select(slot: int) -> void:
 	var idx: int = target_select_item_index
-	var target: String = "self" if slot == 1 else "companion"
+	var kind: String = target_select_kind
+	var cmd: String = target_select_command
+	# slot is 1-based (the picker's [1]..[N] keys).
+	var target: String = "self"
+	if slot >= 1 and slot <= target_select_options.size():
+		target = String(target_select_options[slot - 1].get("target", "self"))
 	target_select_mode = false
 	target_select_item_index = -1
+	target_select_command = ""
 	if combat_scene_panel:
 		combat_scene_panel.hide_picker()
+	if kind == "ability":
+		# Pass the target back down; send_combat_command skips the picker when one is given,
+		# so this cannot bounce straight back into the picker.
+		send_combat_command(cmd, target)
+		return
 	send_to_server({"type": "combat_use_item", "index": idx, "target": target})
 	update_action_bar()
 
 func _cancel_target_select() -> void:
 	target_select_mode = false
 	target_select_item_index = -1
+	target_select_command = ""
 	if combat_scene_panel:
 		combat_scene_panel.hide_picker()
 	update_action_bar()
@@ -13059,7 +13207,10 @@ func use_combat_item_by_number(number: int):
 
 	# Phase B1 — heal potions can target the active companion. Pop a tiny
 	# Self/Companion picker before firing the use-item server message.
-	if _is_heal_potion_item(actual_item) and character_data.get("active_companion", {}).size() > 0:
+	# v0.9.740 — in a PARTY fight any usable item offers the full target list (teammates and
+	# their companions), not just heal potions with a companion of your own.
+	var _in_party_fight: bool = _party_combat_members.size() > 1 and (party_combat_active or party_waiting_for_turn)
+	if _in_party_fight or (_is_heal_potion_item(actual_item) and character_data.get("active_companion", {}).size() > 0):
 		_start_combat_target_select(actual_index)
 		return
 
@@ -13080,6 +13231,15 @@ func continue_flock_encounter():
 	send_to_server({"type": "continue_flock"})
 
 func execute_local_action(action: String):
+	# v0.9.740 — dynamic target-picker slots (target_select_1, target_select_2, ...). Same
+	# prefix-dispatch shape as party_appoint_N below; a `var x when ...` match pattern cannot be
+	# used for this because it matches everything and would shadow every case after it.
+	if action.begins_with("target_select_"):
+		var _ts_slot := action.substr(14)
+		if _ts_slot.is_valid_int():
+			_resolve_target_select(int(_ts_slot))
+			return
+
 	# Handle dynamic party appoint actions (party_appoint_0, party_appoint_1, etc.)
 	if action.begins_with("party_appoint_") and action != "party_appoint_cancel":
 		var pick_idx = int(action.replace("party_appoint_", ""))
@@ -14326,6 +14486,13 @@ func execute_local_action(action: String):
 			set_meta("hotkey_0_pressed", true)
 			display_more_menu()
 			update_action_bar()
+		"target_select_cancel":
+			_cancel_target_select()
+
+		"target_select_self":
+			# The quick self-cast: always available as one click while the picker is open.
+			_resolve_target_select(1)
+
 		"party_control_mode":
 			# v0.9.740 — toggle how the party picks its leader. Rotate (default) passes
 			# leadership after every fight so nobody is stuck driving; Fixed keeps one leader.
@@ -15218,8 +15385,28 @@ func _flush_party_notices() -> void:
 	_drain_new_player_modals()
 
 
+func _combat_playback_active() -> bool:
+	"""TRUE while this client is still animating a co-op round — beats left in the queue, or
+	the end-of-fight playout still running."""
+	return not combat_msg_queue.is_empty() or _party_end_playback
+
+
 func acknowledge_continue():
 	"""Clear pending continue state and allow game to proceed"""
+	# v0.9.740 — Continue means TWO different things depending on where the fight is, and
+	# conflating them is what lost players their victory screen. While the round is still
+	# playing (or the card's reveal timer is in flight) it means "hurry up": skip the rest of
+	# the animation and bring the result forward. Only once the card is actually on screen does
+	# it mean "dismiss". Previously the single meaning was "dismiss", and the body below nulls
+	# _pending_victory_card_payload — so an impatient player threw away the very card they were
+	# pressing toward and saw no victory screen at all.
+	if _combat_playback_active():
+		_combat_fastforward = true
+		if not combat_phase_paused:
+			_drain_combat_queue()
+		return
+	if _victory_card_scheduled:
+		return   # card is a beat away; let it land rather than cancelling it
 	pending_continue = false
 	# Dismiss the rewards card now that the player has acknowledged it.
 	# The panel will hide via the existing _process visibility logic on the
@@ -27619,6 +27806,12 @@ func _clear_party_state():
 func _apply_party_members_to_panel(combat_state: Dictionary, skip_bars: bool = false) -> void:
 	"""Feed the OTHER party members (exclude self) into the combat scene panel's
 	party column so it renders the real teammates + companions, not samples."""
+	# v0.9.740 — cache the COMBAT member list for the target picker. party_update's member info
+	# has no peer_id and no companion, but the combat snapshot carries both, which is what the
+	# picker needs to offer "Kira" and "Kira's Wolf" as separate targets.
+	var _cm = combat_state.get("members", [])
+	if _cm is Array and not (_cm as Array).is_empty():
+		_party_combat_members = (_cm as Array).duplicate(true)
 	if combat_scene_panel == null or not combat_scene_panel.has_method("set_party_members"):
 		return
 	var my_name := str(character_data.get("name", ""))
@@ -27631,6 +27824,11 @@ func _apply_party_members_to_panel(combat_state: Dictionary, skip_bars: bool = f
 		else:
 			# #76 Slice 3 — our OWN peer id, so per-beat FX can tell "me" from a teammate.
 			_my_party_pid = int(m.get("peer_id", _my_party_pid))
+			# v0.9.740 — our own Forcefield absorb. In co-op this is the ONLY source: the
+			# solo combat_state that used to feed current_forcefield is never sent, so the
+			# player's own HP bar showed no shield in a party fight either.
+			current_forcefield = int(m.get("forcefield_shield", 0))
+			update_player_hp_bar()
 	if int(combat_state.get("monster_max_hp", 0)) > 0:
 		_party_monster_max_hp = int(combat_state["monster_max_hp"])
 	combat_scene_panel.set_party_members(others, skip_bars)
@@ -27699,6 +27897,13 @@ func _handle_party_combat_start(message: Dictionary):
 	_pending_victory_fx_play = false
 	_pending_victory_card_payload = null
 	_pending_monster_defeated = false
+	# v0.9.740 — the SOLO start handler has always cleared this (_process_combat_start);
+	# the co-op one never did. A member who had not pressed Space when the next party
+	# fight began kept pending_continue set, so their action bar showed "Continue" over
+	# the live battle instead of their cards, with nothing left to continue to.
+	pending_continue = false
+	_combat_fastforward = false
+	_victory_card_scheduled = false
 	_pending_party_my_state = {}
 	_pending_party_end_character = null
 	_pending_permadeath_message = null
@@ -27845,6 +28050,8 @@ func _handle_party_combat_update(message: Dictionary):
 			var _q := {"raw": str(messages[i])}
 			if i < _meta_arr.size() and _meta_arr[i] is Dictionary:
 				_q["meta"] = _meta_arr[i]
+			if i == 0:
+				_q["round_start"] = true   # v0.9.740 — backlog marker, see _drain_combat_queue
 			combat_msg_queue.append(_q)
 		if is_my_turn:
 			combat_msg_queue.append({"raw": "[color=#00FF00]═══ YOUR TURN — choose a card ═══[/color]"})
@@ -27931,6 +28138,9 @@ func _handle_party_combat_end(message: Dictionary):
 	var death_saved = message.get("death_saved", false)
 
 	# Clear combat states
+	# v0.9.740 — drop the cached roster so a finished fight's teammates can't show up as
+	# targets in the next (possibly solo) one.
+	_party_combat_members.clear()
 	in_combat = false
 	combat_item_mode = false
 	combat_outsmart_failed = false
@@ -28015,6 +28225,8 @@ func _handle_party_combat_end(message: Dictionary):
 			var _eq := {"raw": str(messages[_mi])}
 			if _mi < _end_meta.size() and _end_meta[_mi] is Dictionary:
 				_eq["meta"] = _end_meta[_mi]
+			if _mi == 0:
+				_eq["round_start"] = true   # v0.9.740 — backlog marker
 			combat_msg_queue.append(_eq)
 		if not _pvp.is_empty():
 			_pvp["continue_key"] = get_action_key_name(0)
@@ -35104,6 +35316,10 @@ func _party_action_blocked() -> bool:
 	if not (party_combat_active or party_waiting_for_turn or party_combat_spectating):
 		return false
 	if party_combat_active:
+		# v0.9.740 — acting stays UNBLOCKED while the round is still animating. The backlog it
+		# used to create is handled by catching playback up (see _drain_combat_queue), not by
+		# making every player sit through the animation — that would also let one slow client
+		# hold up the whole party.
 		return false
 	var msg := "[color=#FFA500]You've already locked in this round — waiting for your party.[/color]"
 	if party_combat_spectating:
@@ -35612,14 +35828,18 @@ func _drain_combat_queue():
 			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 2200)
 			combat_scene_panel.visible = true
 			combat_scene_panel.play_victory_fx()
+		var _card_scheduled := false
 		if _pending_victory_card_payload != null and combat_scene_panel and combat_scene_panel.has_method("show_victory_card"):
 			var payload = _pending_victory_card_payload
 			_pending_victory_card_payload = null
+			_card_scheduled = true
 			# COMBAT REDESIGN — keep the monster-death FX prompt, but wait ~1s
 			# before the reward card covers the kill so it doesn't feel rushed.
 			_combat_scene_linger_until_ms = max(_combat_scene_linger_until_ms, Time.get_ticks_msec() + 3200)
 			combat_scene_panel.visible = true
 			get_tree().create_timer(1.0).timeout.connect(_show_victory_card_deferred.bind(payload, _combat_generation))
+		_victory_card_scheduled = _card_scheduled
+		_combat_fastforward = false   # v0.9.740 — backlog cleared; normal pacing resumes
 		if combat_scene_panel and combat_scene_panel.has_method("end_action_phase_after"):
 			if "_action_phase_active" in combat_scene_panel and combat_scene_panel._action_phase_active:
 				# v0.9.416 — testfx pacing walkthrough has its own explicit
@@ -35691,11 +35911,49 @@ func _drain_combat_queue():
 			delay = POST_FINAL_ATTACK_DELAY if combat_msg_queue.is_empty() else INTER_ATTACK_DELAY
 	if is_attack:
 		_last_combat_actor = actor
+	# v0.9.740 — spread a long co-op round over PARTY_ROUND_BUDGET_S instead of charging the
+	# solo per-beat delay for every one of its ~28 beats. Recomputed each beat, so the round
+	# starts fast and relaxes to normal speed as it empties.
+	if _party_end_playback or party_combat_active or party_waiting_for_turn or party_combat_spectating:
+		var _beats_left := combat_msg_queue.size() + 1
+		delay = clampf(PARTY_ROUND_BUDGET_S / float(_beats_left), PARTY_MIN_BEAT_DELAY, delay)
+	# v0.9.740 — CO-OP CATCH-UP. A party round RESOLVES as fast as the last player clicks, but
+	# PLAYING it back costs ~0.45s per beat — about 11s for a 3-member round. Players who lock
+	# in straight away made the server resolve the next round while the client was still
+	# animating the previous one, so the queue grew by a whole round each time and never caught
+	# up: the fight was long over server-side while the client sat on a pile of unplayed beats.
+	# The monster's death, the victory card and the end-state settle ALL run only when the queue
+	# empties, so none of them ever fired — the monster kept a half-full HP bar and no victory
+	# screen appeared. Nothing bounded that queue.
+	#
+	# Blocking input until playback finished was considered and rejected (user 2026-09-01): it
+	# makes every player sit through the animation and lets one slow client hold up the party.
+	# Instead, while a NEWER round is waiting, drain at frame rate (one beat per frame, ~60/s)
+	# until the backlog is gone; the newest round then plays at normal speed. Nothing is ever
+	# skipped — every message, HP beat and state change still runs, in order, just faster. Drain
+	# rate (~60 beats/s) far exceeds arrival rate (~28 beats per round), so it always catches up
+	# and the queue always reaches empty.
+	if _combat_fastforward or _combat_queue_pending_rounds() >= 1:
+		delay = 0.0
 	# Always pause after showing a message — process_buffer() delivers all
 	# combat messages in a single frame, so we must block immediate draining
 	# of the next message that arrives from the same buffer batch.
 	combat_phase_timer = delay
 	combat_phase_paused = true
+
+func _combat_queue_pending_rounds() -> int:
+	"""How many LATER rounds are waiting BEHIND the one being played.
+
+	Each round's first beat is tagged `round_start` when it is enqueued. The current round's
+	own mark is popped before this is ever consulted, so any mark still in the queue belongs
+	to a NEWER round — which is exactly the "we have fallen behind" condition. Counting > 1
+	instead of >= 1 was the bug that made catch-up never fire: a half-played round has no
+	mark left, so a real backlog of two rounds counted as one."""
+	var n := 0
+	for e in combat_msg_queue:
+		if e is Dictionary and e.get("round_start", false):
+			n += 1
+	return n
 
 
 # v0.9.409 — last actor whose attack/ability message we displayed; used to

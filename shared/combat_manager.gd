@@ -3136,14 +3136,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	var player_hp_before = combat.character.current_hp
 
 	# Normalize ability names
-	match ability_name:
-		"bolt": ability_name = "magic_bolt"
-		"strike": ability_name = "power_strike"
-		"warcry": ability_name = "war_cry"
-		"bash": ability_name = "shield_bash"
-		"ironskin": ability_name = "iron_skin"
-		"heist": ability_name = "perfect_heist"
-		"shield": ability_name = "forcefield"  # Shield is now an alias for Forcefield
+	ability_name = canonical_ability(ability_name)
 
 	# Audit #1 Slice 6a — hand gate. Only abilities currently in hand may
 	# be cast. Standard actions (attack/item/flee/outsmart) bypass this and
@@ -8960,6 +8953,11 @@ func _party_member_view(combat: Dictionary, pid: int) -> Dictionary:
 		"focus": int(st.get("focus", 0)),
 		"combo": int(st.get("combo", 0)),
 		"forcefield_shield": int(st.get("forcefield_shield", 0)),
+		# v0.9.740 — Arcane Surge (Haste) was seeded nowhere and synced back nowhere, so in
+		# co-op the double-cast chance evaporated the instant the view was rebuilt: the mage
+		# paid for the buff every round and never got the effect. Per-MEMBER, like the shield.
+		"arcane_surge_double_cast": int(st.get("arcane_surge_double_cast", 0)),
+		"arcane_surge_double_cast_duration": int(st.get("arcane_surge_double_cast_duration", 0)),
 		"mastery_uses_this_fight": st.get("mastery_uses_this_fight", {}),
 		"player_can_act": true,
 		"suppress_monster_turn": true,
@@ -8984,6 +8982,8 @@ func _party_sync_view_back(combat: Dictionary, pid: int, view: Dictionary) -> vo
 	st["focus"] = int(view.get("focus", 0))
 	st["combo"] = int(view.get("combo", 0))
 	st["forcefield_shield"] = int(view.get("forcefield_shield", 0))
+	st["arcane_surge_double_cast"] = int(view.get("arcane_surge_double_cast", 0))
+	st["arcane_surge_double_cast_duration"] = int(view.get("arcane_surge_double_cast_duration", 0))
 	st["mastery_uses_this_fight"] = view.get("mastery_uses_this_fight", {})
 	st["hand"] = view.get("combat_hand", [])
 	st["deck"] = view.get("combat_deck", [])
@@ -9162,6 +9162,98 @@ func party_flatten_log(entries: Array, for_pid: int = -1) -> Array:
 			out.append(String(e))
 	return out
 
+# v0.9.740 — BUFF ABILITIES A PARTY MEMBER CAN AIM AT A TEAMMATE.
+#
+# Excluded on purpose:
+#   war_cry   — no longer a self-buff at all; it debuffs the MONSTER'S accuracy (shared), so
+#               "targeting" it at an ally would be a lie.
+#   overload  — burns the CASTER'S hp to boost the CASTER'S next spells; the two halves cannot
+#               be separated without inventing a different ability.
+#   vanish / cloak / teleport — escape and stealth are tied to the caster's own presence in the
+#               fight; on an ally they would pull them out of it.
+#   analyze   — reveals monster info, and the co-op log is already shared with everyone.
+# v0.9.740 — ONE alias table. This mapping was written out twice as an inline `match` (solo
+# and the old turn-based party path) and a third copy was about to be added for buff targeting;
+# a name added to one copy and not the others is a silent "Unknown ability!".
+const ABILITY_ALIASES := {
+	"bolt": "magic_bolt", "strike": "power_strike", "warcry": "war_cry", "bash": "shield_bash",
+	"ironskin": "iron_skin", "heist": "perfect_heist", "shield": "forcefield",
+}
+
+static func canonical_ability(name: String) -> String:
+	return String(ABILITY_ALIASES.get(name, name))
+
+const PARTY_TARGETABLE_BUFFS := ["forcefield", "haste", "iron_skin", "fortify", "rally", "berserk"]
+
+# Per-member buff state that lives on the VIEW rather than on the Character. Redirecting a buff
+# has to move these too, or Forcefield cast on an ally would shield the caster.
+const _PARTY_VIEW_BUFF_KEYS := ["forcefield_shield", "arcane_surge_double_cast",
+	"arcane_surge_double_cast_duration"]
+
+func _snapshot_buffs(ch) -> Dictionary:
+	"""type -> {value, duration} for the character's active combat buffs."""
+	var out := {}
+	for b in ch.active_buffs:
+		out[String(b.get("type", ""))] = {"value": int(b.get("value", 0)), "duration": int(b.get("duration", 0))}
+	return out
+
+func _party_redirect_buff(combat: Dictionary, caster_pid: int, target_pid: int, view: Dictionary,
+		buffs_before: Dictionary, hp_before: int, view_before: Dictionary) -> void:
+	"""Move everything a buff ability just produced from the CASTER to the RECIPIENT.
+
+	The ability itself is run unchanged on the caster: the caster pays the resource cost and the
+	magnitude scales off the CASTER'S stats and rank-ups, which is what makes a support build
+	worth playing. Only the RESULT moves. Doing it as a before/after diff means no per-ability
+	table to keep in sync — a new buff ability is redirectable the moment it is added to
+	PARTY_TARGETABLE_BUFFS."""
+	var caster = combat.characters[caster_pid]
+	var recipient = combat.characters[target_pid]
+	var rst: Dictionary = combat.member_states[target_pid]
+
+	# 1. Character buffs (add_buff): hand over anything new or strengthened, and put the
+	#    caster back exactly where they were.
+	var kept: Array = []
+	for b in caster.active_buffs:
+		var t := String(b.get("type", ""))
+		var val := int(b.get("value", 0))
+		var dur := int(b.get("duration", 0))
+		var was = buffs_before.get(t, null)
+		if was == null:
+			# Brand new — the whole buff belongs to the recipient.
+			_merge_buff(recipient, t, val, dur)
+			continue
+		kept.append({"type": t, "value": int(was["value"]), "duration": int(was["duration"])})
+		if val > int(was["value"]) or dur > int(was["duration"]):
+			# Refreshed an existing buff: the recipient gets the NEW numbers, the caster
+			# keeps the ones they already had.
+			_merge_buff(recipient, t, val, dur)
+	caster.active_buffs = kept
+
+	# 2. View-side buff state (Forcefield shield, Arcane Surge). Roll the caster back to the
+	#    pre-cast value and give the RECIPIENT the gain.
+	for k in _PARTY_VIEW_BUFF_KEYS:
+		var before := int(view_before.get(k, 0))
+		var after := int(view.get(k, 0))
+		if after > before:
+			view[k] = before
+			rst[k] = int(rst.get(k, 0)) + (after - before)
+
+	# 3. Healing (Rally). A GAIN moves to the recipient; a LOSS (ability self-damage) stays
+	#    with the caster — they chose to pay it.
+	var healed: int = int(caster.current_hp) - hp_before
+	if healed > 0:
+		caster.current_hp = hp_before
+		recipient.heal(healed)
+
+func _merge_buff(ch, buff_type: String, value: int, duration: int) -> void:
+	"""add_buff without re-applying the path duration bonus (already baked into `duration`)."""
+	for b in ch.active_buffs:
+		if String(b.get("type", "")) == buff_type:
+			b.value = maxi(int(b.get("value", 0)), value)
+			b.duration = maxi(int(b.get("duration", 0)), duration)
+			return
+	ch.active_buffs.append({"type": buff_type, "value": value, "duration": duration})
+
 func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 	"""Resolve one member's queued action via the solo card engine on their view. The
 	underlying process_* messages are written in 2nd person ("You hit for X"); since this
@@ -9190,11 +9282,30 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 			"[color=#FFAA00]%s slips away from the fight.[/color]" % pname)]
 	var view := _party_member_view(combat, pid)
 	active_combats[pid] = view
+	# v0.9.740 — a buff aimed at a teammate. Resolve it on the CASTER (their cost, their stats,
+	# their rank-ups) and move only the RESULT afterwards; see _party_redirect_buff.
+	var _abil := canonical_ability(String(action.get("ability", ""))) if kind == "ability" else ""
+	var _redirect_pid := -1
+	if kind == "ability" and _abil in PARTY_TARGETABLE_BUFFS:
+		var _tp := int(action.get("target_pid", -1))
+		var _tst = combat.member_states.get(_tp, {})
+		if _tp != pid and combat.characters.has(_tp) 				and not _tst.get("dead", false) and not _tst.get("fled", false):
+			_redirect_pid = _tp
+	var _buffs_before := {}
+	var _hp_before := 0
+	var _view_before := {}
+	if _redirect_pid != -1:
+		_buffs_before = _snapshot_buffs(combat.characters[pid])
+		_hp_before = int(combat.characters[pid].current_hp)
+		for _k in _PARTY_VIEW_BUFF_KEYS:
+			_view_before[_k] = int(view.get(_k, 0))
 	var result: Dictionary
 	if kind == "ability":
-		result = process_ability_command(pid, String(action.get("ability", "")), String(action.get("arg", "")))
+		result = process_ability_command(pid, _abil, String(action.get("arg", "")))
 	else:
 		result = process_attack(view)
+	if _redirect_pid != -1 and result.get("success", true):
+		_party_redirect_buff(combat, pid, _redirect_pid, view, _buffs_before, _hp_before, _view_before)
 	_party_sync_view_back(combat, pid, view)
 	active_combats.erase(pid)
 	var act_label: String
@@ -9216,6 +9327,13 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 	# actor's own card. Without this the client could only ever play a generic lunge.
 	header["action_kind"] = kind
 	header["ability"] = String(action.get("ability", "")) if kind == "ability" else ""
+	# v0.9.740 — a redirected buff says WHO it landed on, both in the log and in the beat
+	# metadata (the client blooms the aura on the recipient's card, not the caster's).
+	if _redirect_pid != -1:
+		var _rname: String = combat.characters[_redirect_pid].name
+		header["target_pid"] = _redirect_pid
+		header["self"] = "[color=#8FE3FF]▶ You %s on %s[/color]" % [self_label, _rname]
+		header["other"] = "[color=#8FE3FF]▶ %s %s on %s[/color]" % [pname, act_label, _rname]
 	var out: Array = [header]
 	# #76 Slice 3 — every line is tagged with WHO acted so the client can animate the right
 	# sprite. Text heuristics can't do this any more: a teammate's line is 3rd person, so
@@ -9488,14 +9606,7 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 	var player_hp_before = character.current_hp
 
 	# Normalize ability names (same as solo)
-	match ability_name:
-		"bolt": ability_name = "magic_bolt"
-		"strike": ability_name = "power_strike"
-		"warcry": ability_name = "war_cry"
-		"bash": ability_name = "shield_bash"
-		"ironskin": ability_name = "iron_skin"
-		"heist": ability_name = "perfect_heist"
-		"shield": ability_name = "forcefield"
+	ability_name = canonical_ability(ability_name)
 
 	# Build adapter dict that mimics solo combat structure
 	var adapter = {

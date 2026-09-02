@@ -80,9 +80,20 @@ def main():
     print("[2/4] credentials")
     set_dev_passwords(n)
 
+    # Capture stdout per process. Godot's user:// log does NOT capture print(), so a
+    # diagnostic added to a client is invisible without this.
+    logdir = os.path.join(PROJECT, "tools", "test_setup", "logs")
+    if not os.path.isdir(logdir):
+        os.makedirs(logdir)
+    for old_log in os.listdir(logdir):
+        if old_log.endswith(".log"):
+            os.remove(os.path.join(logdir, old_log))
+
     print("[3/4] server (auto-party)")
+    slog = open(os.path.join(logdir, "server.log"), "w", encoding="utf-8", errors="replace")
     subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
-                      "--resolution", "1280x720", "server/server.tscn", "--", "--autoparty"])
+                      "--resolution", "1280x720", "server/server.tscn", "--", "--autoparty"],
+                     stdout=slog, stderr=subprocess.STDOUT)
     if not wait_for_server():
         print("  server never started listening")
         return 1
@@ -92,13 +103,14 @@ def main():
     for i, (user, acc, cname, fn) in enumerate(scen.PLAYERS[:n]):
         if i:
             time.sleep(6)   # CONNECTION_RATE_LIMIT is 5s; back-to-back launches get rejected
+        clog = open(os.path.join(logdir, "%s.log" % cname), "w", encoding="utf-8", errors="replace")
         subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
                           "--resolution", "1280x720", "client/client.tscn", "--",
                           "--user=%s" % user, "--pass=%s" % DEV_PASSWORD, "--char=%s" % cname,
                           # Force the LOCAL server. The client remembers the last host it used,
                           # so one manual connect to production silently sends every later test
                           # run there - where these accounts do not exist.
-                          "--server=localhost"])
+                          "--server=localhost"], stdout=clog, stderr=subprocess.STDOUT)
         print("  %s as %s" % (user, cname))
     print("\nready - clients auto-login, auto-select, and auto-party.")
     return 0

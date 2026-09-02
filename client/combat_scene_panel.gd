@@ -770,6 +770,23 @@ func _build_party_member_card() -> PanelContainer:
 	hp_bar.custom_minimum_size = Vector2(COMPACT_BAR_W, 10)
 	mstats.add_child(hp_bar)
 	card.set_meta("hp_bar", hp_bar)
+	# v0.9.740 — Forcefield absorb overlay, the SAME purple fill the player's own HP bar
+	# uses, so a shield reads identically whoever is carrying it.
+	var shield_fill := Panel.new()
+	shield_fill.name = "ShieldFill"
+	shield_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shield_fill.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	shield_fill.anchor_top = 0
+	shield_fill.anchor_bottom = 1
+	shield_fill.offset_left = 0
+	shield_fill.offset_top = 0
+	shield_fill.offset_bottom = 0
+	var shield_style := StyleBoxFlat.new()
+	shield_style.bg_color = Color(0.6, 0.2, 0.8, 0.7)
+	shield_fill.add_theme_stylebox_override("panel", shield_style)
+	shield_fill.visible = false
+	hp_bar.add_child(shield_fill)
+	card.set_meta("shield_fill", shield_fill)
 	var res_bar := _make_hp_bar(Color("#3A7BD5"))
 	res_bar.show_percentage = false
 	res_bar.custom_minimum_size = Vector2(COMPACT_BAR_W, 8)
@@ -936,6 +953,19 @@ func set_party_members(members: Array, skip_bars: bool = false) -> void:
 		hp_bar.max_value = mx
 		if not skip_bars:
 			hp_bar.value = clampi(cur, 0, mx)
+		# v0.9.740 — Forcefield absorb. Shown as a fraction of max HP, capped at full width,
+		# exactly like the player's own bar; the name carries the number so a big shield is
+		# still legible when the overlay is pinned at 100%.
+		var shield_fill = card.get_meta("shield_fill") if card.has_meta("shield_fill") else null
+		var shield_val := int(m.get("forcefield_shield", 0))
+		if shield_fill != null and is_instance_valid(shield_fill):
+			if shield_val > 0 and not (is_dead or is_fled):
+				shield_fill.anchor_right = minf(1.0, float(shield_val) / float(mx))
+				shield_fill.offset_right = 0
+				shield_fill.visible = true
+				name_lbl.text = "%s%s  [%d]" % [pname, status, shield_val]
+			else:
+				shield_fill.visible = false
 		# Member resource bar — the class's PRIMARY resource. Real data sends
 		# resource_cur/resource_max (server-picked per class); the admin preview
 		# samples fall back to current_mana/etc.
@@ -4323,7 +4353,10 @@ func _set_cell_dim(cell: PanelContainer, empty: bool, can_afford: bool) -> void:
 	# any running pulse; _apply_finisher_visual re-adds them if this card is a
 	# finisher. Keeps stale halos off cards that changed slots.
 	sb.shadow_size = 0
-	var _prev_pulse = cell.get_meta("finisher_pulse", null)
+	# NOTE: get_meta(name, null) is NOT a safe read — Godot treats a null default as "no
+	# default given" and pushes an error, which spammed the log on every hand refresh
+	# (54 errors in one fight) and buried real ones. Check has_meta first.
+	var _prev_pulse = cell.get_meta("finisher_pulse") if cell.has_meta("finisher_pulse") else null
 	if _prev_pulse != null and is_instance_valid(_prev_pulse):
 		_prev_pulse.kill()
 	cell.set_meta("finisher_pulse", null)

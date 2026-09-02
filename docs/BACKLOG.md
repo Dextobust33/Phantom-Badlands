@@ -63,10 +63,47 @@ spells). Analyze stays self-only: it reveals monster info and the log is already
 Quick self-cast: the picker opens with **Yourself pre-selected**, so pressing the ability key
 again self-casts — no new binding — plus a visible Self button.
 
-- [ ] Server: separate WHO CASTS from WHO RECEIVES. Items already take a `target`
-      ("self"/"companion"); extend to a party member and their companion
-- [ ] Server: same for buff abilities — effects currently apply to `combat.character`
-- [ ] Client: target picker over the party cards, Yourself first and pre-selected
+- [x] Server: separate WHO CASTS from WHO RECEIVES. Items take a `target`; extended to
+      `"pid:N"` / `"comp:N"` — a teammate or their companion. `process_use_item` gained a
+      `recipient` (effects) while inventory + cost stay on the caster
+- [x] Server: same for buff abilities. Done as a **before/after diff**, not a per-ability
+      table: the ability runs unchanged on the caster (their cost, their stats, their
+      rank-ups) and only the RESULT is moved — Character buffs, view-side state
+      (Forcefield's shield, Arcane Surge) and Rally's heal. A new buff becomes
+      redirectable just by being added to `PARTY_TARGETABLE_BUFFS`.
+      Excluded: `war_cry` (debuffs the MONSTER now, not a self-buff), `overload`,
+      `vanish`/`cloak`/`teleport`, `analyze`
+- [x] Client: target picker over the party cards, Yourself first and pre-selected. One
+      picker serves items (companions listed) and buffs (players only — the server refuses
+      a companion target for an ability). Quick self-cast = `[1]`, the leading entry, or a
+      **Cast/Use on Self** button on the action bar for click-only players
+- [x] Found + fixed on the way: **Arcane Surge (Haste) was silently dropped in co-op** — the
+      double-cast chance was seeded nowhere in the member view and synced back nowhere, so a
+      mage paid for it every round and never got it. Also collapsed the ability-alias map
+      from two inline copies into one `ABILITY_ALIASES` table
+- [x] **Co-op playback pacing** (found during the 3-client pass). Three separate faults, all
+      reading as "the fight froze":
+      1. A co-op round is ~28 beats against ~8 solo (one head + body per member, plus one
+         monster action per member). At the solo per-beat delay that is a **12.6-second**
+         round. Rounds now play to a total budget (~6s), recomputed each beat so the round
+         starts brisk and eases to full speed for the killing blow. Solo unchanged
+      2. Playback could fall behind **without limit** — the server resolves the next round as
+         soon as everyone clicks, so the queue grew a whole round each time. The monster's
+         death, the victory card and the end-state settle ALL run only when the queue empties,
+         so none ever fired. Now: while a newer round waits, drain at frame rate until caught
+         up. Input is deliberately NOT blocked (that would make everyone wait out the
+         animation and let one slow client hold up the party — user's call 2026-09-01)
+      3. **Continue destroyed the victory card** — `acknowledge_continue` nulls the pending
+         payload, so an impatient player threw away the card they were pressing toward. It now
+         means "hurry up" while the round plays, "wait" while the reveal timer is in flight,
+         and "dismiss" only once the card is up
+- [x] Also fixed: co-op start never cleared `pending_continue` (solo always has), leaving a dead
+      Continue button over the next fight; and `get_meta(name, null)` is not a safe read in
+      Godot — a null default reads as *no* default and pushes an error (54 per fight from
+      `_set_cell_dim`, which buried the real signal while diagnosing the above)
+- Regression: `tools/combat_simulator/coop_buff_target_test.gd` (15 assertions), scenario
+  `party_support`; `tools/test_setup/run.py` now captures per-process stdout to
+  `tools/test_setup/logs/` (Godot's `user://` log does not capture `print()`)
 - [ ] Quests-style **invite/accept window** (the current chat/action-bar flow is clunky)
 - [ ] **Watch a teammate's minigame.** Gathering (scratch-off) and crafting (reveal panel) are
       single-player panels driven by a payload sent to the actor alone; the rest of the party
@@ -84,7 +121,11 @@ again self-casts — no new binding — plus a visible Self button.
 - [ ] **Magic Bolt flat curve** — measured ~21x per mana at L5 vs ~27x at L20, while monster HP
       scales far faster. Lowering the coefficient only moves where it flips from absurd to
       useless; damage-per-mana has to scale on the same curve as monster HP
-- [ ] Ability cost model / resource economy (costs flat while pools scale)
+- [ ] Ability cost model / resource economy (costs flat while pools scale).
+      **Measured 2026-09-01:** a level-20 Wizard's Forcefield (`cost_percent: 3`) has a NET
+      cost of **zero** — the same turn's regen refills the spend before the player ever sees
+      it, so a 310-point absorb shield is free every round. Reproduced in SOLO combat, so it
+      is not co-op specific. Regen (~16%/turn) outrunning cost is the whole flaw in one case
 - [ ] Anti-abuse items that **never landed**: Forethought and Recharge still exist, no mitigation
       cap, no stun DR. Related user direction: remove blue "skip the enemy turn / refund
       resources" utility cards

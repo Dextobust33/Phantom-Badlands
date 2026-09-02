@@ -160,6 +160,19 @@ SCENARIOS = {
         apply=lambda c: (c.update({"current_hp": c.get("max_hp", 100)}), give_tools(c),
                          give_materials(c))),
 
+    "party_support": dict(
+        doc="THREE members, healthy, stocked with potions, parked where a fight is findable - "
+            "for the TARGET PICKER: aim a buff (Forcefield / Iron Skin / Rally / Berserk / "
+            "Haste / Fortify) or an item at a teammate or their companion. test02 is a Wizard "
+            "and test003 a Fighter, so both halves of the buff list are represented. The card "
+            "must be in hand, so expect to take a couple of rounds before the buff shows up.",
+        players=3, at=DEFAULT_AT,
+        apply=lambda c: (c.update({"current_hp": c.get("max_hp", 100)}),
+                         c["inventory"].append({
+                             "name": "Health Potion", "type": "health_potion",
+                             "item_type": "health_potion", "is_consumable": True,
+                             "quantity": 5, "tier": 1, "level": 1, "value": 25}))),
+
     "stocked": dict(
         doc="Give everyone a stack of potions (for the combat item rules).",
         players=2,

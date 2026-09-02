@@ -5842,7 +5842,9 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 
 	# Check if player is in party combat — route to party combat handler
 	if combat_mgr.party_combat_membership.has(peer_id):
-		_handle_party_combat_command(peer_id, command)
+		# v0.9.740 — an optional "target" rides along so a buff can be aimed at a teammate
+		# ("pid:N"). Absent / "self" keeps the old behaviour exactly.
+		_handle_party_combat_command(peer_id, command, String(message.get("target", "")))
 		return
 
 	# Store level before combat for milestone detection
@@ -39985,7 +39987,7 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 		_party_rotate_leader(_members_rres)
 
 
-func _handle_party_combat_command(peer_id: int, command: String):
+func _handle_party_combat_command(peer_id: int, command: String, target: String = ""):
 	"""#64 Slice 3 — a party member's combat command becomes a SIMULTANEOUS submission. When
 	every alive member has locked in, resolve the round (combat_mgr.resolve_party_round) and
 	broadcast the result to everyone. NOTE: only reached once co-op combat is wired into
@@ -40003,6 +40005,20 @@ func _handle_party_combat_command(peer_id: int, command: String):
 		action = {"kind": "flee"}
 	elif cmd in CombatManager.MAGE_ABILITY_COMMANDS or cmd in CombatManager.WARRIOR_ABILITY_COMMANDS or cmd in CombatManager.TRICKSTER_ABILITY_COMMANDS or cmd in CombatManager.UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
 		action = {"kind": "ability", "ability": cmd, "arg": arg}
+		# v0.9.740 — aim a buff at a teammate. Validated here (in the party, in THIS fight,
+		# still standing) so combat_manager can trust the pid; a bad one silently self-casts
+		# rather than eating the player's round.
+		if target.begins_with("pid:"):
+			var _tpid := int(target.split(":")[1])
+			var _pc = combat_mgr.active_party_combats.get(leader_id, {})
+			var _tst = _pc.get("member_states", {}).get(_tpid, {})
+			if _tpid != peer_id and _pc.get("characters", {}).has(_tpid) 					and not _tst.get("dead", false) and not _tst.get("fled", false):
+				if CombatManager.canonical_ability(cmd) in CombatManager.PARTY_TARGETABLE_BUFFS:
+					action["target_pid"] = _tpid
+				else:
+					send_to_peer(peer_id, {"type": "text", "message":
+						"[color=#FFA500]%s only works on yourself.[/color]" % cmd.replace("_", " ").capitalize()})
+					return
 	else:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#808080]Unknown combat command.[/color]"})
 		return
@@ -40075,6 +40091,11 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 			"resource_cur": ch.get_primary_resource_current() if ch else 0,
 			"resource_max": ch.get_primary_resource_max() if ch else 0,
 			"submitted": st.get("submitted_this_round", false),
+			# v0.9.740 — Forcefield's absorb, PER MEMBER. It used to live only in the solo
+			# combat_state, which co-op never sends, so a shield was invisible on every party
+			# card - including your own. Now it rides the shared snapshot, so it shows on
+			# whoever is actually carrying it, cast on yourself or handed to a teammate.
+			"forcefield_shield": int(st.get("forcefield_shield", 0)),
 			"is_dead": st.get("dead", false),
 			"is_fled": st.get("fled", false),
 			# Visual identity so the party card renders the REAL member (not a sample).
