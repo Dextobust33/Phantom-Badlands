@@ -25,6 +25,9 @@ func _get_trading_post_art():
 
 # Character script for thematic item display
 const CharacterScript = preload("res://shared/character.gd")
+# Shared combat script, preloaded so the client can read the SERVER'S cost table instead of
+# keeping a hand-maintained copy of it. The copy had gone stale on every ability.
+const CombatManagerScript = preload("res://shared/combat_manager.gd")
 # v0.9.580 — client-side access to trading-post names so the "Turn in elsewhere"
 # hint in display_quest_list can be replaced with "Turn in at <PostName>". Just
 # need the static const TRADING_POSTS — no instantiation required.
@@ -19777,94 +19780,61 @@ func _replay_pending_rank_choice() -> void:
 	_show_rank_choice_popup(ability_name, new_rank, copies, effect_rank)
 
 func _get_ability_cost_text(ability_name: String) -> String:
-	"""Get cost text for an ability"""
+	"""Cost text for an ability, read from the SERVER'S OWN cost table.
+
+	This used to be a hand-maintained copy of combat_manager's VARIABLE_COST_TABLE, and every
+	value in it had gone stale: forcefield read 75/7%% against the real 15/10%%, blast 50/5%%
+	against 34/21%%, meteor 100/8%% against 65/27%%. A player reported Forcefield displaying a
+	cost of 0 while its tooltip said 22-75 mana — two displays disagreeing because they were
+	reading two different tables, neither of them the one the server charges against.
+
+	combat_manager.gd is a SHARED script, so the const can simply be read. Same fix as the
+	monster HP estimator: stop re-deriving server data on the client."""
 	var path = _get_player_active_path()
 	var resource_type = "mana" if path == "mage" else ("stamina" if path == "warrior" else "energy")
 	var resource_color = "#66CCFF" if path == "mage" else ("#FFCC66" if path == "warrior" else "#66FF66")
 
-	# Get base cost and cost percentage for mage abilities
-	var base_cost = 0
-	var cost_percent = 0
-	match ability_name:
-		# Mage abilities - use percentage-based scaling
-		"magic_bolt":
-			base_cost = 0  # Variable
-			cost_percent = 0
-		"shield":
-			base_cost = 20
-			cost_percent = 2
-		"blast":
-			base_cost = 50
-			cost_percent = 5
-		"forcefield":
-			base_cost = 75
-			cost_percent = 7
-		"teleport":
-			base_cost = 40
-			cost_percent = 0  # Distance-based
-		"meteor":
-			base_cost = 100
-			cost_percent = 8
-		"haste":
-			base_cost = 35
-			cost_percent = 3
-		"paralyze":
-			base_cost = 60
-			cost_percent = 6
-		"banish":
-			base_cost = 80
-			cost_percent = 10
-		"frost_nova":
-			base_cost = 30
-			cost_percent = 5
-		"overload":
-			base_cost = 0
-			cost_percent = 0
-		# Warrior abilities (aligned to server ability_info: devastate 50, rally 35)
-		"power_strike": base_cost = 10
-		"war_cry": base_cost = 15
-		"shield_bash": base_cost = 20
-		"cleave": base_cost = 30
-		"berserk": base_cost = 40
-		"iron_skin": base_cost = 35
-		"devastate": base_cost = 50
-		"fortify": base_cost = 25
-		"rally": base_cost = 35
-		# Trickster abilities
-		"analyze": base_cost = 5
-		"distract": base_cost = 15
-		"pickpocket": base_cost = 20
-		"ambush": base_cost = 30
-		"vanish": base_cost = 40
-		"exploit": base_cost = 35
-		"perfect_heist": base_cost = 50
-		"sabotage": base_cost = 25
-		"gambit": base_cost = 35
-		# Universal
-		"cloak": base_cost = 0  # % based
-
-	# Calculate actual cost for mage abilities (max of base or percentage)
-	var cost = base_cost
-	if path == "mage" and cost_percent > 0:
-		var max_mana = character_data.get("total_max_mana", character_data.get("max_mana", 100))
-		var percent_cost = int(max_mana * cost_percent / 100.0)
-		cost = max(base_cost, percent_cost)
-
+	# Abilities whose cost is not a table lookup.
 	if ability_name == "magic_bolt":
 		return "[color=%s](variable mana)[/color]" % resource_color
 	elif ability_name == "cloak":
 		return "[color=#9932CC](8%% per move)[/color]"
 	elif ability_name == "overload":
 		return "[color=#FF6347](20%% HP)[/color]"  # #36 — HP-cost, not mana
-	# Slice 6c variable-cost — show "(f-c res)" using floor = ceiling × 0.3.
-	# Names must mirror combat_manager.gd VARIABLE_COST_TABLE.
-	var variable_abilities := ["power_strike", "shield_bash", "cleave", "devastate", "blast", "meteor", "ambush", "exploit", "gambit", "forcefield", "shield", "war_cry", "iron_skin", "berserk", "fortify", "rally", "haste", "paralyze", "banish", "distract", "pickpocket", "sabotage", "perfect_heist", "frost_nova"]
-	if ability_name in variable_abilities and cost > 0:
-		var floor_cost = max(1, int(cost * 0.3))  # mirrors VARIABLE_COST_MIN_FRACTION
-		return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, cost, resource_type.substr(0, 3)]
-	if cost > 0:
-		return "[color=%s](%d %s)[/color]" % [resource_color, cost, resource_type.substr(0, 3)]
-	return ""
+
+	var table: Dictionary = CombatManagerScript.VARIABLE_COST_TABLE
+	if not table.has(ability_name):
+		return ""
+	var entry: Dictionary = table[ability_name]
+	var flat_ceiling: int = int(entry.get("ceiling", 0))
+	var cost_percent: int = int(entry.get("cost_percent", 0))
+	var floor_ratio: float = float(entry.get("floor_ratio", 0.3))
+	var res: String = String(entry.get("resource", resource_type))
+	resource_type = res
+	resource_color = "#66CCFF" if res == "mana" else ("#FFCC66" if res == "stamina" else "#66FF66")
+
+	# Mirror apply_variable_cost: ceiling = max(flat, cost_basis x cost_percent), where the
+	# basis is the naked pool plus a share of the gear bonus.
+	var naked := 0
+	var total := 0
+	match res:
+		"mana":
+			naked = int(character_data.get("max_mana", 0))
+			total = int(character_data.get("total_max_mana", naked))
+		"stamina":
+			naked = int(character_data.get("max_stamina", 0))
+			total = int(character_data.get("total_max_stamina", naked))
+		"energy":
+			naked = int(character_data.get("max_energy", 0))
+			total = int(character_data.get("total_max_energy", naked))
+	var ceiling := flat_ceiling
+	if cost_percent > 0 and naked > 0:
+		var basis: float = float(naked) + maxf(0.0, float(total - naked)) * CombatManagerScript.GEAR_COST_SHARE
+		ceiling = maxi(flat_ceiling, int(basis * float(cost_percent) / 100.0))
+	if ceiling <= 0:
+		return ""
+	var floor_cost: int = maxi(1, int(float(ceiling) * floor_ratio))
+	return "[color=%s](%d-%d %s)[/color]" % [resource_color, floor_cost, ceiling, resource_type.substr(0, 3)]
 
 func show_ability_equip_prompt():
 	"""Show prompt to select an ability to equip"""
