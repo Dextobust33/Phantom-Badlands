@@ -1254,6 +1254,15 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
   beats removing. Crafting was flagged as "not in a good spot at all"
 - **Early-game survivability** — resource cost scaling still open; starter weapon at creation
   deferred pending playtest
+- **⚑ RE-CALIBRATE AFTER ANY PLAYER-SIDE CHANGE.** Monster stats are derived from a REFERENCE
+  PLAYER (`shared/reference_monster_curve.json`, built by the sim's `-- refcal`). Anything that
+  makes the player stronger or weaker — gear, companions, abilities, resources, classes, races,
+  the `make_char` model itself — silently invalidates that curve, because the monsters were
+  sized against the old player. This has already happened twice: the gear calibration, and the
+  companion HP rework (which pushed elite-at-L1 to 90% win against a 70% target). It is not a
+  bug in the design; it is the cost of anchoring monsters to the player, and it is the right
+  trade. **The rule: after a player-side balance change, run `-- refcal` (2-3 passes), then
+  `-- roles` to confirm, and treat every number measured in between as stale.**
 
 ---
 

@@ -32,6 +32,25 @@ Its pair: after two wrong theories about the same bug, **measure instead of gues
 the diagnostic (a temp file log from GDScript, a headless probe) rather than trying a third
 plausible-sounding fix.
 
+## ⚑ Re-calibrate the monster curve after ANY player-side change
+
+Monster HP/strength/defense are **derived from a reference player**, not hand-authored —
+`shared/reference_monster_curve.json`, produced by the simulator's `-- refcal`, which drives
+real fights and corrects until they hit the design target.
+
+So **anything that changes player power invalidates it**: gear, companions, abilities, the
+resource economy, classes, races, or the `make_char` model itself. The monsters were sized
+against the old player and are now the wrong size. This has already bitten twice — the gear
+calibration, and the companion HP rework, which pushed elite-at-L1 to 90% win against a 70%
+target without touching a single monster.
+
+**After a player-side balance change:**
+```bash
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- refcal refcal
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- roles
+```
+Treat every balance number measured between the change and the re-calibration as stale.
+
 ## Quick Start
 
 **Detailed diagrams in `/docs/`:**
