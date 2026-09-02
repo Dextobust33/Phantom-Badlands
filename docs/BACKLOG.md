@@ -240,6 +240,33 @@ meaningless when monster HP scales on a different curve:
   structural difference is the likeliest driver of Thief pulling away at high level, and it is
   the *shape* the balance model should learn from
 
+**Encounter level vs fight math — a gap the sim deliberately does not model** (user question
+2026-09-02: "is there a formula weakening monsters near the starter post?"). Yes, two:
+1. `world_system.get_post_anchored_level()` — posts pull the encounter level **down** near them
+   and *by construction can never raise it* ("posts are settlements, not difficulty elevators").
+   The starter post sits at origin where the radial curve is already lowest
+2. `monster_database._calculate_tiered_stat_scale()` — a monster spawning below its natural base
+   level has its stats collapse linearly, so a clamped high-tier monster is a runt rather than an
+   apex predator wearing a low level tag (the v0.9.481 fix for the 350-HP "Lv 1" Chimaera)
+
+The sim models neither: it fights **same-level, tier-natural** monsters, which is the correct
+unit for tuning abilities against each other. The consequence for the sweeps above is that they
+are an **upper bound on difficulty** — real players can meet monsters at or below their level, so
+the game is at least as easy as measured, never harder.
+
+**The structural point is bigger than either formula:** `get_area_level_range` is a pure function
+of `(x, y)` and never reads the player's level. Difficulty is chosen by **where you stand**, not
+by how strong you are — so "progression gets harder" is entirely opt-in and nothing enforces it.
+Measured (`-- underlevel`): against a monster at 25% of their level, every class at every level
+wins **100% of fights at 96-100% health**. Not an XP exploit (the downlevel penalty floors at 40%
+and a weak monster's base XP is small anyway) — but it means the pressure to move outward has to
+come from the **reward gradient**, since the difficulty model will never apply it.
+
+- [ ] **Decide whether progression pressure is a reward-gradient problem, not a monster-stat
+      problem.** Neither formula should simply be removed — the stat downscale fixes a real bug,
+      and safe settlements are good design. The lever is making the gear and companions players
+      need obtainable only further out
+
 - [ ] Decide the target curve first (what *should* win% and danger look like at L10, L100,
       L1000, L10000?), then tune to it. Without a target the sweep has nothing to fail against
 - [ ] Fix the **mid-game hump** and the **late-game slide** — the two ends of the same problem

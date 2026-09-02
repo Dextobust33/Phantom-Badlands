@@ -73,6 +73,7 @@ func _audit_registry() -> Dictionary:
 		"calibrate": ["make_char vs REAL saved characters", run_calibration_audit],
 		"gear_solve": ["solve the average-gear model against real characters", run_gear_solve],
 		"progression": ["does difficulty hold from L1 to L10000?", run_progression_audit],
+		"underlevel": ["what fighting below your level is worth (post pull-down)", run_underlevel_audit],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
@@ -546,6 +547,46 @@ func run_companion_audit():
 			row += " %9d%%" % int(100.0 * wins / N)
 		_companion_mode = "match"
 		print(row)
+	print("=====================================================================
+")
+
+func run_underlevel_audit():
+	# #6 (user question 2026-09-02: "there is a formula that weakens monsters near the starter
+	# post — is the sim accounting for it?"). Two separate mechanisms exist:
+	#   1. world_system.get_post_anchored_level() — posts pull the ENCOUNTER LEVEL down in their
+	#      vicinity and can never push it up ("posts are settlements, not difficulty elevators").
+	#   2. monster_database._calculate_tiered_stat_scale() — when a monster spawns BELOW its
+	#      natural base level its stats collapse linearly, so a clamped high-tier monster is a
+	#      runt of its species rather than an apex predator wearing a low level tag.
+	# The sim models NEITHER, because it fights same-level, tier-natural monsters — the right
+	# unit for tuning abilities against each other. What that leaves unmeasured is the
+	# ENCOUNTER: get_area_level_range is a pure function of (x, y) and never reads the player's
+	# level, so what a player meets depends on where they stand, not on how strong they are.
+	# This audit measures what that is worth: a player at `level` against monsters BELOW it.
+	var N := 60
+	print("
+===== #6 UNDER-LEVEL ENCOUNTERS (what standing near a post is worth) =====")
+	print("Win%% for a player at L, fighting a NORMAL monster at a fraction of their level,")
+	print("%d fights/cell, AVERAGE gear. 100%% with no HP lost = free XP forever." % N)
+	print("%-8s %-6s %s" % ["Class", "PlyrL", "  mob=L    mob=75%L   mob=50%L   mob=25%L   mob=10%L"])
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		for lvl in [50, 250, 1000, 5000]:
+			var row := "%-8s %-6d" % [klass, lvl]
+			for frac in [1.0, 0.75, 0.5, 0.25, 0.10]:
+				var mob_level: int = maxi(1, int(round(float(lvl) * frac)))
+				var wins := 0
+				var mhp := 0.0
+				for i in range(N):
+					var r = run_fight(lvl, "average", "normal", 1.0, 1.0, 1.0, klass, mob_level)
+					if r.win:
+						wins += 1
+					mhp += float(r.get("min_hp_pct", 0.0))
+				row += "  %3d%% H%3.0f%%" % [int(100.0 * wins / N), mhp / N]
+			print(row)
+	print("")
+	print("H%% is the average LOWEST health the player dropped to. Where win%% is 100 and H%% is")
+	print("~100, the fight is not a fight — and because encounter level is a function of")
+	print("position only, a player of ANY level can choose that fight by walking to a post.")
 	print("=====================================================================
 ")
 
