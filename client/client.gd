@@ -15193,13 +15193,8 @@ func _emit_combat_end_chrome(args: Dictionary) -> void:
 
 
 func _flush_party_notices() -> void:
-	"""Replay everything held back while the fight's UI was up: first the location refresh
-	(it draws the world screen), then party notices on top of it, then any teaching hint.
-	Order matters — the location render is what repopulates the window."""
-	if _pending_location_message != null:
-		var loc = _pending_location_message
-		_pending_location_message = null
-		handle_server_message(loc)
+	"""Print party notices held while the fight's UI was up, then release any teaching hint
+	held for the same reason."""
 	if not _pending_party_notices.is_empty():
 		var notices := _pending_party_notices.duplicate()
 		_pending_party_notices.clear()
@@ -15328,6 +15323,14 @@ func acknowledge_continue():
 		else:
 			display_dungeon_floor()
 
+	# v0.9.740 — OPEN-WORLD FALLBACK. The branches above redraw a trading post, a corpse or a
+	# dungeon after a fight, but nothing covered plain terrain: game_output is cleared when
+	# combat starts and the fight's text goes to the panel log, so a player who fought in the
+	# open was left staring at a completely EMPTY window. (A `location` message cannot fill it
+	# — it deliberately writes no text and only refreshes the map panel.)
+	if not dungeon_mode and not at_trading_post and not (at_corpse and not corpse_info.is_empty()):
+		_display_post_combat_context()
+
 	# v0.9.398 — re-show the overworld player sprite after combat ends.
 	# Previously the sprite stayed hidden (in_combat had toggled false during
 	# combat_end, but no update_map fired) until the player next moved, which
@@ -15337,6 +15340,37 @@ func acknowledge_continue():
 		_sync_map_sprites_overlay()
 
 	update_action_bar()
+
+func _display_post_combat_context() -> void:
+	"""A short 'where you are now' summary for the game window after a fight in open terrain."""
+	game_output.clear()
+	var region := str(hud_region_name)
+	var cx := int(character_data.get("x", 0))
+	var cy := int(character_data.get("y", 0))
+	if region != "":
+		display_game("[color=#FFD700]───── %s ─────[/color]  [color=#808080](%d, %d)[/color]" % [region, cx, cy])
+	else:
+		display_game("[color=#FFD700]───── The Badlands ─────[/color]  [color=#808080](%d, %d)[/color]" % [cx, cy])
+	if hud_nearest_post is Dictionary and not hud_nearest_post.is_empty():
+		var pname := str(hud_nearest_post.get("name", ""))
+		var pdist := int(hud_nearest_post.get("distance", 0))
+		if pname != "":
+			display_game("[color=#87CEEB]%s[/color] lies %d tiles away." % [pname, pdist])
+	# Anything worth doing right here.
+	var here: Array[String] = []
+	if at_water:
+		here.append("[color=#4FC3F7]water — you could fish[/color]")
+	if at_ore_deposit:
+		here.append("[color=#BCAAA4]an ore deposit — you could mine[/color]")
+	if at_dense_forest:
+		here.append("[color=#81C784]dense forest — you could chop[/color]")
+	if at_dungeon_entrance:
+		here.append("[color=#CE93D8]a dungeon entrance[/color]")
+	if here.is_empty():
+		display_game("[color=#808080]The way is clear. Move on, or hunt for another fight.[/color]")
+	else:
+		display_game("Here: %s" % ", ".join(here))
+
 
 func logout_character():
 	"""Logout of current character, return to character select"""
@@ -21641,15 +21675,6 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
-			# v0.9.740 — HOLD a location refresh that lands while the fight's UI is up. The
-			# server now sends one at the end of a party fight (so nobody is left staring at
-			# the screen they had before), but if it renders while the combat panel still
-			# covers the view, the output is swallowed and NOTHING redraws afterwards — the
-			# game window ends up empty. Replayed when the panel closes.
-			if (in_combat or _coop_playback_pending()
-					or (combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.visible)):
-				_pending_location_message = message.duplicate(true)
-				return
 			# Cache area + compass info for the Status HUD (visible even after UI updates)
 			hud_area_level = int(message.get("area_level", 0))
 			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
