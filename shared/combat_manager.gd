@@ -3757,7 +3757,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Variable-cost: damage AND burn DoT magnitude scale by spend.
 			var int_stat = character.get_effective_stat("intelligence")
 			var int_multiplier = 1.0 + (int_stat * 0.04)  # +4% per INT point
-			var base_damage = int(50 * int_multiplier * 2 * variable_fraction * _focus_mult)  # v0.9.697 Focus ramp
+			# #6c — anchored form. Same FLAT-BASE problem as Meteor: a base of 50 meant Blast
+			# decayed from 49% of a health bar at L1 to ~10% by L1000, so the mage's sustain
+			# card quietly stopped mattering. Third ability in this kit to be left behind by
+			# its own formula rather than by tuning.
+			var _bl_anchor: float = _ability_anchored_damage(character, "intelligence", float(ABILITY_WEIGHTS.get("blast", 0.22)))
+			var base_damage: int = int(_bl_anchor * variable_fraction * _focus_mult) if _bl_anchor > 0.0 				else int(50 * int_multiplier * 2 * variable_fraction * _focus_mult)  # v0.9.697 Focus ramp
 			var damage_buff = character.get_buff_value("damage")
 			base_damage = int(base_damage * (1.0 + damage_buff / 100.0))
 
