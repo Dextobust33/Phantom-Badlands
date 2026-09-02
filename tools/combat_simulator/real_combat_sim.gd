@@ -922,8 +922,11 @@ func run_reference_calibrate():
 	# any of them — it measures the outcome they jointly produce.
 	#
 	# Targets: TARGET_TURNS_NORMAL turns, DANGER_NORMAL of the player's health bar.
+	# Sample size drives everything downstream — monster stats are corrected toward the
+	# target from these fights, so noise here is baked into the curve and inherited by
+	# every later measurement. `-- n=N` sets the per-cell budget.
 	var passes := 4
-	var samples := 8
+	var samples: int = maxi(8, int(_audit_n / 3.0))  # per class; all 3 run
 	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% HP cost) =====" % [TARGET_TURNS_NORMAL_SIM, DANGER_NORMAL_SIM * 100.0])
 	var table: Array = []
 	for lvl in REF_ANCHOR_LEVELS:
@@ -966,7 +969,7 @@ func run_role_audit():
 	# #6 — do elite and boss fights actually feel like their ROLE_TARGETS say they should?
 	# Reports measured turns / share of the player's health bar spent / win rate against the
 	# target for each role, so the derived multipliers can be checked rather than assumed.
-	var samples := 10
+	var samples: int = maxi(10, int(_audit_n / 3.0))  # per class
 	print("
 ===== #6 ROLE AUDIT (measured vs ROLE_TARGETS) =====")
 	print("Each role states a target fight length and cost; multipliers are derived from them.")
@@ -1141,7 +1144,7 @@ func run_risk_reward_audit():
 	# Outcomes are therefore three-way: KILL, ESCAPE, or DEATH (permadeath = the run ends).
 	# Reward is expressed in LEVELS, because "how much of a level did that heroic kill pay"
 	# is the question actually being asked.
-	var samples := 12
+	var samples: int = maxi(12, int(_audit_n / 3.0))  # per class
 	# Bail threshold. Raised from 0.35 after measuring: against something far above the
 	# player, they are killed from full HP without ever passing through a low-HP band, so a
 	# late threshold never fires and reads as "0% escape" when the player simply never got
@@ -1235,7 +1238,7 @@ func run_companion_unlock_audit():
 	# across the ABILITY UNLOCK BOUNDARIES (passive always, active at companion level 5,
 	# threshold at 15) plus a level-matched companion, so unlock pacing and raw survivability
 	# can be told apart.
-	var samples := 24
+	var samples: int = maxi(24, _audit_n)
 	print("\\n===== #6b COMPANION: what does it actually do? =====")
 	print("Same-level ELITE, Fighter, AVERAGE gear, %d fights/cell." % samples)
 	print("compHP is the companion's max combat HP: 30 + level*5 + sub_tier*10 + hp_bonus.")
@@ -1683,7 +1686,7 @@ func run_ability_vs_hp():
 	# 10x while monster HP grows 100x has "gone up" and still fallen off a cliff.
 	# Reported as: one cast's damage as a % of a same-level NORMAL monster's max HP.
 	# >=100% one-shots trash. A flat-ish row holds its power; a falling row falls off.
-	var N := 25
+	var N: int = maxi(25, _audit_n)
 	var sets := [
 		["Fighter", "War", ["power_strike", "cleave", "devastate"]],
 		["Wizard", "Mag", ["magic_bolt", "blast", "meteor"]],
