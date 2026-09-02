@@ -5359,6 +5359,7 @@ func hide_all_panels():
 #   godot --path . client/client.tscn -- --user=NAME --pass=SECRET --char=CHARNAME
 var _dev_auto: Dictionary = {}
 var _dev_auto_login_sent: bool = false
+var _dev_shots_done: bool = false   # v0.9.740 — --shots capture runs once
 var _dev_auto_char_sent: bool = false
 
 
@@ -5368,10 +5369,180 @@ func _dev_auto_args() -> Dictionary:
 	var out := {}
 	for a in OS.get_cmdline_user_args():
 		var arg := String(a)
-		for key in ["user", "pass", "char", "server"]:
+		for key in ["user", "pass", "char", "server", "shots"]:
 			if arg.begins_with("--%s=" % key):
 				out[key] = arg.substr(key.length() + 3)
 	return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# v0.9.740 — DEV SCREENSHOT CAPTURE (`--shots=world,combat,companions,dungeon`).
+#
+# The website needs REAL in-game shots, and they go stale every time the visuals
+# change (the presentation pass will invalidate all of them). Driving the client
+# by hand and pressing F12 is the setup waste the test harness exists to remove,
+# so this scripts the states instead. Dev-only: gated on OS.has_feature("editor")
+# via _dev_auto_args, so it cannot run in a packaged build.
+#
+#   python tools/test_setup/shots.py
+# ─────────────────────────────────────────────────────────────────────────────
+const SHOT_SETTLE_S: float = 1.4   # let art, sprites and tweens finish before the grab
+
+func _dev_shots_requested() -> Array:
+	if not _dev_auto.has("shots"):
+		return []
+	return String(_dev_auto["shots"]).split(",", false)
+
+func _dev_run_shots() -> void:
+	"""Walk the requested scenes, capturing each. Runs once, after login+character select."""
+	if _dev_shots_done:
+		return
+	_dev_shots_done = true
+	var want: Array = _dev_shots_requested()
+	if want.is_empty():
+		return
+	await get_tree().create_timer(2.5).timeout   # world state has landed by now
+	for scene in want:
+		match String(scene).strip_edges():
+			"world":
+				# Take a step first: the location panel is EMPTY until something happens,
+				# and a screenshot of a black panel sells nothing.
+				send_to_server({"type": "move", "direction": "east"})
+				await get_tree().create_timer(1.2).timeout
+				await _dev_shot_capture("world")
+			"companions":
+				await _dev_shot_grant_companions()
+				display_companions()
+				await _dev_shot_capture("companions")
+				close_companions()
+			"companion_art":
+				# A LIST of companion names shows nothing of what they look like. The inspect
+				# view renders each one's ASCII art, which is the actual variety on offer, so
+				# capture several and let the site tile them.
+				await _dev_shot_grant_companions()
+				var _cl: Array = character_data.get("collected_companions", [])
+				var _seen := {}
+				var _shot_n := 0
+				for _c in _cl:
+					if not (_c is Dictionary):
+						continue
+					var _mt := String(_c.get("monster_type", ""))
+					if _mt == "" or _seen.has(_mt):
+						continue   # one per TYPE — duplicates show the same art twice
+					_seen[_mt] = true
+					_open_map_companion_inspect(_c)
+					await _dev_shot_capture("companion_%s" % _mt)
+					_shot_n += 1
+					if _shot_n >= 8:
+						break
+				companions_mode = false
+				pending_companion_action = ""
+				if companions_panel:
+					companions_panel.hide()
+				update_action_bar()
+
+			"deck":
+				enter_ability_mode()
+				await get_tree().create_timer(1.8).timeout
+				await _dev_shot_capture("deck")
+				ability_mode = false
+				update_action_bar()
+
+			"equipment":
+				# An empty equipment doll shows nothing. Spawn a set with real affixes and
+				# actually wear it, so the shot has gear, rarity colours and stat rolls in it.
+				for _slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+					send_to_server({"type": "gm_give_ability_gear", "affix_key": "ability_rank_all",
+						"affix_value": 2, "item_level": 60, "slot": _slot})
+					await get_tree().create_timer(0.35).timeout
+				await get_tree().create_timer(1.2).timeout
+				# Equip from the BACK of the inventory each time: equipping removes the item,
+				# so indices shift under us if we walk forwards.
+				var _inv: Array = character_data.get("inventory", [])
+				for _i in range(_inv.size() - 1, -1, -1):
+					send_to_server({"type": "inventory_equip", "index": _i})
+					await get_tree().create_timer(0.35).timeout
+				await get_tree().create_timer(1.2).timeout
+				open_inventory()
+				await get_tree().create_timer(1.2).timeout
+				display_inventory()
+				await _dev_shot_capture("equipment")
+				inventory_mode = false
+				update_action_bar()
+
+			"combat":
+				# A first-round shot is a bad shot: the monster art has not resolved, its HP
+				# still reads "???", and the log is blank. Play a couple of rounds so the art,
+				# the damage numbers, the companion and a filled log are all on screen.
+				await _dev_shot_ensure_companion()
+				send_to_server({"type": "gm_spawnmonster", "monster_name": "Wight", "level": 14})
+				await get_tree().create_timer(3.0).timeout
+				for _i in range(2):
+					send_to_server({"type": "combat", "command": "attack"})
+					await get_tree().create_timer(2.6).timeout
+				await _dev_shot_capture("combat")
+			"dungeon":
+				# gm_enter_dungeon is REFUSED while in combat, which silently produced a
+				# duplicate of the combat shot. Leave any fight first, and run this scene
+				# BEFORE "combat" (see DEFAULT_SCENES in shots.py).
+				if in_combat:
+					send_to_server({"type": "combat", "command": "flee"})
+					await get_tree().create_timer(2.0).timeout
+				send_to_server({"type": "gm_enter_dungeon", "tier": 3})
+				await get_tree().create_timer(3.0).timeout
+				# Take a couple of steps so the floor is partly explored rather than a
+				# single lit room, and the minimap has something on it.
+				for _d in ["east", "east", "south"]:
+					send_to_server({"type": "move", "direction": _d})
+					await get_tree().create_timer(0.7).timeout
+				await _dev_shot_capture("dungeon")
+			_:
+				pass
+	print("[SHOTS] done")
+
+func _dev_shot_grant_companions() -> void:
+	"""A spread of TYPES — a website shot of an empty roster sells nothing, and the point is
+	the variety. Visually distinct picks rather than a dozen canines."""
+	for mt in ["Wolf", "Wyvern", "Gryphon", "Kelpie", "Harpy", "Minotaur",
+			"Chimaera", "Phoenix", "Lich", "Spider"]:
+		send_to_server({"type": "gm_givecompanion", "monster_type": mt})
+		await get_tree().create_timer(0.3).timeout
+	await get_tree().create_timer(1.8).timeout
+
+
+func _dev_shot_ensure_companion() -> void:
+	"""A combat shot without a companion misses half of what the game looks like."""
+	if character_data.get("active_companion", {}).size() > 0:
+		return
+	send_to_server({"type": "gm_givecompanion", "monster_type": "Wolf"})
+	await get_tree().create_timer(1.2).timeout
+	var comps: Array = character_data.get("collected_companions", [])
+	if comps.size() > 0 and comps[0] is Dictionary:
+		send_to_server({"type": "activate_companion", "id": comps[0].get("id", "")})
+		await get_tree().create_timer(1.2).timeout
+
+
+func _dev_shot_clear_overlays() -> void:
+	"""First-touch tutorial hints fire the moment you reach a new system, so the dungeon shot
+	came back with a modal covering half the screen. Dismiss anything modal before capturing."""
+	if tutorial_hint_panel and is_instance_valid(tutorial_hint_panel) and tutorial_hint_panel.visible:
+		if tutorial_hint_panel.has_method("_on_dismiss"):
+			tutorial_hint_panel._on_dismiss()
+		else:
+			tutorial_hint_panel.hide()
+		await get_tree().create_timer(0.5).timeout
+	if guided_intro_overlay and is_instance_valid(guided_intro_overlay) and guided_intro_overlay.visible:
+		guided_intro_overlay.hide()
+		await get_tree().create_timer(0.3).timeout
+
+
+func _dev_shot_capture(label: String) -> void:
+	await _dev_shot_clear_overlays()
+	await get_tree().create_timer(SHOT_SETTLE_S).timeout
+	set_meta("last_ss_ms", -9999)   # bypass the button debounce
+	await _on_screenshot_button_pressed()
+	print("[SHOTS] captured: %s" % label)
+	await get_tree().create_timer(0.6).timeout
 
 
 func _dev_try_auto_login() -> bool:
@@ -21579,6 +21750,9 @@ func handle_server_message(message: Dictionary):
 						_dev_auto_char_sent = true
 						display_game("[color=#8FE3FF][dev] auto-selecting %s[/color]" % _want)
 						call_deferred("_on_character_selected", _want)
+						# v0.9.740 — website/QA screenshot run, once we are in the world.
+						if not _dev_shots_requested().is_empty():
+							call_deferred("_dev_run_shots")
 						break
 			can_create_character = message.get("can_create", true)
 			# Slice 5 — spawn-at-post: cache the account's posts so the

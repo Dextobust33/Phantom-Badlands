@@ -253,6 +253,12 @@ def main():
             c["x"], c["y"] = anchor[0] + i, anchor[1]
         c["in_combat"] = False           # never leave a stale lockout behind
         c["saved_combat_state"] = {}
+        # Same class of stale state: a character left INSIDE a dungeon stays there on next
+        # login, so an overworld scenario silently starts underground.
+        c["in_dungeon"] = False
+        c["current_dungeon_id"] = ""
+        c["current_dungeon_type"] = ""
+        c["saved_dungeon_state"] = {}
         spec["apply"](c)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(c, f, indent="\t")

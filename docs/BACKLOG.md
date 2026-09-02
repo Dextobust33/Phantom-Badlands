@@ -201,14 +201,34 @@ stays **solo-possible**; a party is a force multiplier, never a requirement.*
 - [ ] **Preserve** both random special-trait dungeons AND the Catalyst/Sigil opt-in — the Atlas
       and meta work must not delete either
 
-### 11. Dungeon E — presentation
-*Also owns the website's DUNGEON pages + screenshots (deferred from 4): dungeons are about to
-look different, so shooting them before this lands means shooting them twice.*
+### 11. Presentation pass — dungeons, world map, minimap, GUI
+*Widened from "Dungeon E" on 2026-09-01 (user): the same pass should look at **how everything is
+drawn**, not just dungeons. Kept as ONE item rather than split, because the map, minimap and
+dungeon view share rendering code and techniques — doing them separately means solving the same
+problem three times. Also owns the website's DUNGEON pages + screenshots (deferred from 4):
+dungeons are about to look different, so shooting them first means shooting them twice.*
+
+**Dungeons**
 - [ ] Zoom the dungeon view in
 - [ ] **Sprites** for chests, traps and floor drops instead of ASCII glyphs (unused sheets in
       `client/sprites/battlers/tf_svbattle/singleframes/`)
 - [ ] Stop drawing **walls as tiles** — render non-traversable space as void (Azure Dreams style)
 - [ ] Rooms **farther apart**, longer corridors (still too cramped after C3a)
+
+**World map, minimap and GUI** *(user 2026-09-01)*
+- [ ] **Explore other ways to draw the ASCII map** — this is exploratory, not a fix list. Try
+      alternatives (denser/sparser glyph sets, colour by biome vs by feature, shading for
+      elevation or danger, spacing and aspect ratio) and compare them side by side before
+      committing
+- [ ] Same for the **minimap** — it is currently a shrunken copy of the same view
+- [ ] **GUI** — look for cheap wins in the overall frame: panel borders, spacing, headers,
+      colour discipline, the empty-panel look (the left panel reads as a black void when there
+      is nothing to say)
+- [ ] Bias to **easy wins first** — the ask was explicitly "see if there are easy ways to make
+      things look better", so time-box the exploration before any large restructure
+- [ ] **Overlaps to fold in here, not track separately:** the 1080p default combat layout
+      (monster art overlapping the cards) and the remaining UI-scale registrations, both
+      currently in *Independent*
 
 ### 12. Dungeon D — bosses (after 6, so boss damage is sized against corrected numbers)
 - [ ] Real phases, telegraphs and adds. **Telegraph counterplay is mandatory** — no unavoidable
@@ -234,12 +254,42 @@ features nobody feels.*
 - [ ] Audit the current between-lives options; the user finds them uncompelling. Say why
       (too few? too slow? invisible? not chosen by the player?) before designing replacements
 - [ ] Look at how the genre solves this (persistent unlocks, meta-currency, run modifiers,
-      collection completion) and pick deliberately — permadeath without felt accumulation is
+      collection completion) and pick deliberately. **Candidate already on the table: player
+      phantoms (14)** — your dead characters persisting as things in the world — permadeath without felt accumulation is
       the retention risk here
 - [ ] **Watch for overlap:** the egg/companion *sinks* live in 15; this item decides what
       progression should feel like, 15 spends it
 
-### 14. Sanctuary redesign — put the house in the world
+### 14. Player phantoms — the dead don't leave
+*User direction 2026-09-02. This fell straight out of the theming rather than being invented
+for it: if what is down there makes delvers into phantoms, then a dead character IS one, and
+phantoms roam. Placed immediately after 13 because 13 decides what a run should leave behind
+and this is the strongest candidate answer on the table — a character who dies becomes
+something other players meet.*
+
+- [ ] Design what a player phantom **is**: a permadead character returning with their build,
+      class, gear and battler sprite, roaming near where they fell. Meeting a former top-ranked
+      player as a thing in the world is the whole appeal — keep the identity legible
+- [ ] Decide what an encounter with one **does**: hunts the living, wanders a territory, or
+      guards the corpse it came from
+- [ ] What killing one yields, and — the part that matters for 13 — **what the dead player
+      gets**. If your past characters persist as marks on the world, permadeath starts adding
+      something instead of only taking it away
+- [ ] **Constraint, performance:** "visible roaming entities" sits in *Hard-deferred* over
+      exactly this cost. Revisit that gate deliberately rather than by accident. A phantom that
+      exists only near its own death site, and only while a player is in range, may sidestep the
+      original objection — confirm before designing around it
+- [ ] **Constraint, balance and griefing:** a level 200 phantom parked near a starter post is a
+      wall a new player cannot pass. Needs level-banding, scaling, or placement rules
+- [ ] **Consent question:** do players want their dead hunting other people? Decide whether it
+      is opt-in, opt-out, or unconditional — and note that unconditional is the most thematically
+      honest and the most likely to annoy someone
+- [ ] Hooks that already exist: corpses spawn where a character fell, the leaderboard remembers
+      names, and battler sprites already reflect equipment
+- [ ] Overlaps to fold in, not track twice: the *living world* strand of 16, and the
+      *Hard-deferred* roaming-entities line
+
+### 15. Sanctuary redesign — put the house in the world
 *User direction 2026-09-01. After 13 so it implements a decided progression, and adjacent to 15
 so the companion activities are designed once, not twice.*
 
@@ -257,7 +307,7 @@ so the companion activities are designed once, not twice.*
 - [ ] Keep what already works: account-level persistence through permadeath, the kennel
       (30-500 slots) and the Fusion Station
 
-### 15. Realm meta-loop
+### 16. Realm meta-loop
 - [ ] Reorient **questing onto dungeons** (clear / rescue / boss-hunt / gather). The quest types
       already exist; the work is generation and surfacing, not new types
 - [ ] Real **sinks for excess eggs and companions** *(design these WITH 14 — the Sanctuary is
@@ -265,14 +315,14 @@ so the companion activities are designed once, not twice.*
       fusers (fusion exists — expand), companion **tasks**
 - [ ] Living world: rework posts, companions around posts, threats woven in
 
-### 16. Engagement / minigame variety
+### 17. Engagement / minigame variety
 - [ ] Prize Shuffle redesign: gathering and crafting slices (combat slice shipped)
 - [ ] Port the Chain / Mystery / Trap mechanics to gathering and crafting
 - [ ] Trap chests, Mimic chest variant, 2 remaining dungeon-exclusive consumables
 
 ---
 
-### 17. Craft review — the game against industry standards
+### 18. Craft review — the game against industry standards
 *User direction 2026-09-01. Placed LAST of the numbered items because a best-practices pass run
 while combat numbers (6) and the whole dungeon arc (8-12) are mid-rework would produce findings
 that expire before they can be acted on. The parts that DON'T depend on in-flight work —
@@ -308,7 +358,8 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
 - [ ] ARPG pillar 5: endgame rift runs
 
 ## Hard-deferred (documented reason — revisit only if the reason changes)
-- Visible roaming entities (performance gate)
+- Visible roaming entities (performance gate) — **now has a design reason to revisit: see 14,
+  player phantoms.** Do not un-defer casually; the gate was cost, and that cost has not changed
 - Full ability mastery as a progression vector (multi-session arc)
 - Group raids
 - Full mentor matching
