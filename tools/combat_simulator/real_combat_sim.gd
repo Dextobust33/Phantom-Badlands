@@ -900,6 +900,8 @@ func _fight_stats_at(level: int, samples: int) -> Dictionary:
 				combat_mgr.process_monster_turn(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
+			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+				wins += 1
 			turns_tot += float(turns)
 			cost_tot += float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
 			n += 1
@@ -1367,6 +1369,7 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 	# of the player's health bar spent. Same shape as _fight_stats_at but for a non-normal role.
 	var turns_tot := 0.0
 	var cost_tot := 0.0
+	var wins := 0
 	var n := 0
 	for klass in ["Fighter", "Wizard", "Thief"]:
 		for i in range(samples):
@@ -1391,63 +1394,66 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 				if int(monster.get("current_hp", 0)) <= 0:
 					break
 				combat_mgr.process_monster_turn(combat)
+			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+				wins += 1
 			turns_tot += float(turns)
 			cost_tot += float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
 			n += 1
 			combat_mgr.end_combat(0, false, false)
 	if n == 0:
 		return {}
-	return {"turns": turns_tot / float(n), "cost": cost_tot / float(n)}
+	return {"turns": turns_tot / float(n), "cost": cost_tot / float(n), "win": float(wins) / float(n)}
 
 func run_role_calibrate():
-	# #6 (2026-09-02) — calibrate the ROLE multipliers against real fights, the same way the
-	# baseline is calibrated, instead of deriving them from algebra.
+	# #6 (2026-09-02) — calibrate the ROLE multipliers against real fights, PER ANCHOR LEVEL.
 	#
-	# The derived form assumes an elite fight really lasts `turns_elite`. It does not, so the
-	# damage never accumulates to the intended cost: measured at n=90, elite landed at 48% of
-	# the player's health bar against a 65% target and boss at 52% against 80%, while NORMAL —
-	# the only role that was calibrated rather than derived — hit its 40% target exactly. That
-	# is a strong hint the method is the problem, not the numbers.
+	# Two lessons are baked in here. First, deriving the multipliers from algebra does not work:
+	# it assumes an elite fight really lasts `turns_elite`, it does not, and the damage never
+	# accumulates to the intended cost. Second, ONE calibrated pair for the whole game does not
+	# work either — measured that way, boss win rate ran 23-24% at L10-L50 against 47% at
+	# L1000, so the same nominal encounter was twice as lethal in the mid game as in the late
+	# game. A single multiplier cannot correct a level-dependent gap.
 	#
-	# Writes role_multipliers into the same curve file, which monster_database prefers over the
-	# algebra when present.
+	# So each anchor level is calibrated independently, exactly as the baseline curve already
+	# is, and monster_database interpolates between them.
 	var passes := 5
 	var samples: int = maxi(6, int(_audit_n / 6.0))
-	var levels := [10, 50, 250, 1000, 5000]
+	var levels := [1, 10, 50, 250, 1000, 5000, 10000]
 	print("
-===== #6 ROLE CALIBRATION (measured, not derived) =====")
-	print("%-11s %8s %9s %9s %9s %9s" % ["Role", "pass", "hp_mult", "str_mult", "turns", "HPcost"])
+===== #6 ROLE CALIBRATION (measured, per anchor level) =====")
+	print("Each level is corrected toward its role's own targets. Final pass shown per level.")
+	print("%-11s %7s %9s %9s %9s %9s %7s" % ["Role", "Level", "hp_mult", "str_mult", "turns", "HPcost", "win%"])
 	var out_roles := {}
 	for role in ["empowered", "elite", "boss"]:
 		var tgt: Dictionary = monster_db.ROLE_TARGETS.get(role, {})
 		var t_turns: float = float(tgt.get("turns", 9.0))
 		var t_danger: float = float(tgt.get("danger", 0.65))
-		var seed_m: Dictionary = monster_db.role_multipliers(role)
-		var hp_m: float = float(seed_m.hp_mult)
-		var st_m: float = float(seed_m.str_mult)
-		for pass_i in range(passes):
-			monster_db.set_calibrated_role_multipliers({role: {"hp_mult": hp_m, "str_mult": st_m}})
-			var acc_t := 0.0
-			var acc_c := 0.0
-			var cells := 0
-			for lvl in levels:
+		var anchors: Array = []
+		for lvl in levels:
+			var seed_m: Dictionary = monster_db.role_multipliers(role)
+			var hp_m: float = float(seed_m.hp_mult)
+			var st_m: float = float(seed_m.str_mult)
+			var last := {}
+			for pass_i in range(passes):
+				# Override with a single-anchor table so this level uses exactly these values.
+				monster_db.set_calibrated_role_multipliers({
+					role: [{"level": lvl, "hp_mult": hp_m, "str_mult": st_m}]})
 				var r := _role_fight_stats(lvl, role, samples)
+				monster_db.set_calibrated_role_multipliers({})
 				if r.is_empty():
-					continue
-				acc_t += float(r["turns"])
-				acc_c += float(r["cost"])
-				cells += 1
-			if cells == 0:
-				break
-			var mt: float = acc_t / float(cells)
-			var mc: float = acc_c / float(cells)
-			print("%-11s %8d %9.2f %9.2f %9.1f %8.0f%%" % [role, pass_i + 1, hp_m, st_m, mt, mc * 100.0])
-			hp_m *= pow(clampf(t_turns / maxf(0.5, mt), 0.3, 4.0), CAL_CORRECTION_EXP)
-			st_m *= pow(clampf(t_danger / maxf(0.01, mc), 0.3, 4.0), CAL_CORRECTION_EXP)
-		out_roles[role] = {"hp_mult": hp_m, "str_mult": st_m}
-		monster_db.set_calibrated_role_multipliers({})
-	# Merge into the existing curve file rather than replacing it — the baseline anchors are
-	# produced by refcal and must survive.
+					break
+				last = r
+				hp_m *= pow(clampf(t_turns / maxf(0.5, float(r["turns"])), 0.3, 4.0), CAL_CORRECTION_EXP)
+				st_m *= pow(clampf(t_danger / maxf(0.01, float(r["cost"])), 0.3, 4.0), CAL_CORRECTION_EXP)
+			anchors.append({"level": lvl, "hp_mult": hp_m, "str_mult": st_m})
+			if last.is_empty():
+				print("%-11s %7d  (no data)" % [role, lvl])
+			else:
+				print("%-11s %7d %9.2f %9.2f %9.1f %8.0f%% %6.0f%%" % [
+					role, lvl, hp_m, st_m, float(last["turns"]),
+					float(last["cost"]) * 100.0, float(last.get("win", 0.0)) * 100.0])
+		out_roles[role] = anchors
+	# Merge into the existing curve file — the baseline anchors from refcal must survive.
 	var existing := {}
 	var rf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
 	if rf:
@@ -1461,9 +1467,7 @@ func run_role_calibrate():
 		wf.store_string(JSON.stringify(existing, "	"))
 		wf.close()
 		print("
-Wrote role_multipliers into shared/reference_monster_curve.json:")
-		for k in out_roles.keys():
-			print("  %-11s hp x%.2f  str x%.2f" % [k, float(out_roles[k].hp_mult), float(out_roles[k].str_mult)])
+Wrote per-level role_multipliers for %d roles into the curve file." % out_roles.size())
 	monster_db._reference_anchors = []
 	monster_db._curve_is_calibrated = false
 	print("=====================================================================

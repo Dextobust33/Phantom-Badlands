@@ -1646,7 +1646,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 		# #6 (2026-09-02) — derived from ROLE_TARGETS rather than hand-tuned. Was
 		# ×3.5 HP / ×1.3 STR, which on the corrected baseline made Champions
 		# unwinnable (0% win at L1) because HP and damage compound into cost.
-		var _elite_m := role_multipliers("elite")
+		var _elite_m := role_multipliers("elite", target_level)
 		scaled_hp = int(scaled_hp * float(_elite_m.hp_mult))
 		scaled_strength = int(scaled_strength * float(_elite_m.str_mult))
 		scaled_defense = int(scaled_defense * maxf(1.0, float(_elite_m.str_mult)))
@@ -1711,7 +1711,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 			# too-weak baseline. Now derived from the empowered role target and scaled by
 			# how many modifiers rolled, with strength adjusted so tankiness and damage
 			# do not compound into an unwinnable fight.
-			var _emp_m := role_multipliers("empowered")
+			var _emp_m := role_multipliers("empowered", target_level)
 			var _emp_scale: float = 1.0 + (float(_emp_m.hp_mult) - 1.0) * (float(empowered_mods.size()) / 3.0)
 			scaled_hp = max(10, int(scaled_hp * _emp_scale))
 			scaled_strength = max(3, int(scaled_strength * (1.0 + (float(_emp_m.str_mult) - 1.0) * (float(empowered_mods.size()) / 3.0))))
@@ -1901,7 +1901,7 @@ func reapply_empowered(monster: Dictionary, mods: Array) -> void:
 	# #6 (2026-09-02) — must match the empowered block in scale_monster_to_level, which now
 	# derives from ROLE_TARGETS rather than the old flat (1.5 + 0.5*count). Two copies of the
 	# same formula is how this drifts; kept in lockstep via role_multipliers().
-	var _emp_m := role_multipliers("empowered")
+	var _emp_m := role_multipliers("empowered", int(monster.get("level", 0)))
 	var _emp_scale: float = 1.0 + (float(_emp_m.hp_mult) - 1.0) * (float(final_mods.size()) / 3.0)
 	hp = max(10, int(hp * _emp_scale))
 	strv = max(3, int(strv * (1.0 + (float(_emp_m.str_mult) - 1.0) * (float(final_mods.size()) / 3.0))))
@@ -2254,7 +2254,36 @@ static var _calibrated_role_mults: Dictionary = {}
 static func set_calibrated_role_multipliers(m: Dictionary) -> void:
 	_calibrated_role_mults = m if m != null else {}
 
-static func role_multipliers(role: String) -> Dictionary:
+static func _interpolate_role_anchors(anchors: Array, level: int) -> Dictionary:
+	"""Log-linear interpolation between calibrated role anchors, matching how the baseline
+	curve is read. level <= 0 (callers with no level to hand) takes the middle anchor rather
+	than an end, so it is a fair average rather than the easiest or hardest point in the game."""
+	if anchors.is_empty():
+		return {"hp_mult": 1.0, "str_mult": 1.0}
+	if level <= 0:
+		var mid: Dictionary = anchors[anchors.size() / 2]
+		return {"hp_mult": float(mid.get("hp_mult", 1.0)), "str_mult": float(mid.get("str_mult", 1.0))}
+	var lvl: float = maxf(1.0, float(level))
+	var first: Dictionary = anchors[0]
+	var last: Dictionary = anchors[anchors.size() - 1]
+	if lvl <= float(first.get("level", 1)):
+		return {"hp_mult": float(first.get("hp_mult", 1.0)), "str_mult": float(first.get("str_mult", 1.0))}
+	if lvl >= float(last.get("level", 1)):
+		return {"hp_mult": float(last.get("hp_mult", 1.0)), "str_mult": float(last.get("str_mult", 1.0))}
+	for i in range(1, anchors.size()):
+		var a2: Dictionary = anchors[i - 1]
+		var b2: Dictionary = anchors[i]
+		var la: float = float(a2.get("level", 1))
+		var lb: float = float(b2.get("level", 1))
+		if lvl <= lb:
+			var t: float = (log(lvl) - log(la)) / maxf(0.000001, (log(lb) - log(la)))
+			return {
+				"hp_mult": lerp(float(a2.get("hp_mult", 1.0)), float(b2.get("hp_mult", 1.0)), t),
+				"str_mult": lerp(float(a2.get("str_mult", 1.0)), float(b2.get("str_mult", 1.0)), t),
+			}
+	return {"hp_mult": float(last.get("hp_mult", 1.0)), "str_mult": float(last.get("str_mult", 1.0))}
+
+static func role_multipliers(role: String, level: int = 0) -> Dictionary:
 	"""HP and strength multipliers for a role, relative to a plain monster.
 
 	MEASURED role multipliers are preferred. The derived form below is only a starting
@@ -2265,8 +2294,16 @@ static func role_multipliers(role: String) -> Dictionary:
 	exactly. The algebra is a decent first guess and a poor final answer, so the sim now
 	corrects these against real elite and boss fights the same way it corrects the baseline."""
 	if _calibrated_role_mults.has(role):
-		var c: Dictionary = _calibrated_role_mults[role]
-		return {"hp_mult": float(c.get("hp_mult", 1.0)), "str_mult": float(c.get("str_mult", 1.0))}
+		var entry = _calibrated_role_mults[role]
+		# PER-LEVEL form (an Array of anchors) is preferred. One pair of multipliers for the
+		# whole game cannot correct a level-dependent gap, and measurement showed a large one:
+		# with a single calibrated pair, boss win rate ran 23-24% at L10-L50 against 47% at
+		# L1000, so the same nominal encounter was twice as lethal in the mid game. The
+		# baseline curve has always been per-anchor; the roles now are too.
+		if entry is Array and not (entry as Array).is_empty():
+			return _interpolate_role_anchors(entry, level)
+		if entry is Dictionary:
+			return {"hp_mult": float(entry.get("hp_mult", 1.0)), "str_mult": float(entry.get("str_mult", 1.0))}
 	var base: Dictionary = ROLE_TARGETS.get("normal", {"turns": 5.0, "danger": 0.40})
 	var r: Dictionary = ROLE_TARGETS.get(role, base)
 	var t_ratio: float = float(r.get("turns", 5.0)) / maxf(0.1, float(base.get("turns", 5.0)))
