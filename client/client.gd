@@ -1294,8 +1294,6 @@ var party_control_mode: String = "rotate"
 # so they are held and printed once the combat panel closes and the player is back on the world
 # view — the window they are actually reading at that moment.
 var _pending_party_notices: Array = []
-# A location refresh held while the combat UI was up (see the "location" handler).
-var _pending_location_message: Variant = null
 var party_menu_mode: bool = false       # In the party management menu
 var party_combat_spectating: bool = false  # Dead/fled in party combat, watching
 var party_waiting_for_turn: bool = false   # Not our turn in party combat
@@ -23828,7 +23826,6 @@ func _process_combat_start(message: Dictionary):
 	_pending_permadeath_message = null
 	_pending_permadeath_countdown = 0
 	_pending_post_death.clear()
-	_pending_location_message = null
 	_party_end_playback = false
 	_combat_generation += 1
 	_party_pending_fx_cmd = ""
@@ -27694,7 +27691,6 @@ func _handle_party_combat_start(message: Dictionary):
 	_pending_permadeath_message = null
 	_pending_permadeath_countdown = 0
 	_pending_post_death.clear()
-	_pending_location_message = null
 	_party_end_playback = false
 	_combat_generation += 1
 	_party_pending_fx_cmd = ""
