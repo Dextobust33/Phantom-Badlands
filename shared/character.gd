@@ -3989,19 +3989,63 @@ func get_active_companion() -> Dictionary:
 
 # === Phase B1 — Companion combat HP ===
 
-static func calculate_companion_max_hp(companion: Dictionary) -> int:
-	"""Companion combat-HP pool. 30 base + 5 per level + 10 per sub_tier +
-	any flat hp_bonus from the companion's bonuses dict."""
+# === COMPANION SURVIVABILITY (#6b, 2026-09-02) ===
+# The old pool was `30 + level*5 + sub_tier*10 + hp_bonus` — LINEAR, while monster damage is
+# anchored to a player curve that is not. Measured consequences: a level-1 companion had 45 HP
+# at EVERY level in the game (at L10000 it survived 2.6 rounds, soaked 0.1 hits, and won 12%
+# against 16% for no companion at all), and even a level-MATCHED companion died mid-fight
+# through the mid game — 4.0 rounds at L250 in a fight designed to last 9. That is the reported
+# "companions die constantly and you keep walking back to a post to revive them".
+#
+# Companion HP is now a SHARE OF ITS OWNER'S, so survivability holds at every level by
+# construction, exactly as monster stats are now anchored to the reference player.
+#
+#   hp = owner_max_hp * COMPANION_HP_SHARE * g(comp_level / owner_level) * tier/sub-tier mult
+#
+# g() is deliberately ASYMMETRIC:
+#   * UNDER-levelled companions stay USEFUL — floored at 0.60, so a fresh companion is still a
+#     real body that soaks hits rather than a one-hit casualty.
+#   * OVER-levelled companions CARRY, and are not clamped back to parity. A registered
+#     companion kept across characters is meant to pull an under-levelled player forward, so
+#     g rises to 2.5 — a companion with 125% of your health bar, tankier than you are. This is
+#     the mechanical form of the setting's premise that companions outlive their delvers.
+const COMPANION_HP_SHARE := 0.5      # a level-matched companion has 50% of your health bar
+const COMPANION_HP_UNDER_FLOOR := 0.60
+const COMPANION_HP_OVER_CAP := 2.5
+
+static func companion_level_ratio_mult(comp_level: int, owner_level: int) -> float:
+	"""g(): how a companion's toughness responds to its level RELATIVE to its owner's.
+	sqrt so the curve is generous early and flattens, then clamped to the asymmetric band."""
+	var r: float = float(maxi(1, comp_level)) / float(maxi(1, owner_level))
+	return clampf(sqrt(r), COMPANION_HP_UNDER_FLOOR, COMPANION_HP_OVER_CAP)
+
+static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int = 0, owner_level: int = 0) -> int:
+	"""Companion combat-HP pool as a share of its OWNER's max HP.
+
+	owner_max_hp/owner_level default to 0 for legacy callers, which falls back to the old
+	absolute formula rather than returning nonsense — but every in-game path goes through
+	get_companion_max_hp(), which supplies them."""
 	if companion == null or companion.is_empty():
 		return 0
 	var level: int = int(companion.get("level", 1))
 	var sub_tier: int = int(companion.get("sub_tier", companion.get("tier", 1)))
 	var bonuses: Dictionary = companion.get("bonuses", {})
 	var hp_bonus: int = int(bonuses.get("hp_bonus", 0))
-	return 30 + level * 5 + sub_tier * 10 + hp_bonus
+	if owner_max_hp <= 0:
+		# Legacy/no-owner path (tools, display of a companion with no owner context).
+		return 30 + level * 5 + sub_tier * 10 + hp_bonus
+	# Sub-tier is the companion's own quality axis; keep it as a modest spread so a rarer
+	# companion is meaningfully beefier without breaking the share model.
+	var sub_mult: float = 1.0 + 0.05 * float(maxi(1, sub_tier) - 1)
+	# hp_bonus is a PERCENTAGE everywhere else it is consumed (combat_manager applies it as
+	# get_total_max_hp() * bonus/100). It was added FLAT here, so the same table field meant
+	# two different things in two places. Treated as a percentage now, consistently.
+	var bonus_mult: float = 1.0 + float(hp_bonus) / 100.0
+	var g: float = companion_level_ratio_mult(level, owner_level)
+	return maxi(10, int(round(float(owner_max_hp) * COMPANION_HP_SHARE * g * sub_mult * bonus_mult)))
 
 func get_companion_max_hp() -> int:
-	return calculate_companion_max_hp(active_companion)
+	return calculate_companion_max_hp(active_companion, get_total_max_hp(), level)
 
 func get_companion_combat_hp() -> int:
 	"""Current persistent companion HP. Defaults to full when not yet set

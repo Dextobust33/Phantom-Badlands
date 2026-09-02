@@ -30364,10 +30364,14 @@ func update_companion_art_overlay():
 	# Phase B1 — companion combat HP shown at the top of the overlay so it's
 	# visible during normal play (not buried in a menu). Uses the same
 	# formula as the server's calculate_companion_max_hp.
-	var sub_tier_for_hp: int = int(active_companion.get("sub_tier", active_companion.get("tier", 1)))
-	var bonuses_for_hp: Dictionary = active_companion.get("bonuses", {})
-	var hp_bonus_flat: int = int(bonuses_for_hp.get("hp_bonus", 0))
-	var comp_max_hp: int = 30 + level * 5 + sub_tier_for_hp * 10 + hp_bonus_flat
+	# #6b (2026-09-02) — companion HP is a SHARE OF THE OWNER'S now, not an absolute
+	# 30 + level*5 + sub_tier*10. Call the real formula instead of re-deriving it: this
+	# mirror had to be kept in step by hand, which is the same drift that put the monster
+	# HP estimator 50-200% off.
+	var _char_max_hp: int = int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
+	var _char_level: int = int(character_data.get("level", 1))
+	var comp_max_hp: int = CharacterScript.calculate_companion_max_hp(
+		active_companion, _char_max_hp, _char_level)
 	var comp_combat_hp: int = int(active_companion.get("combat_hp", comp_max_hp))
 	comp_combat_hp = clampi(comp_combat_hp, 0, comp_max_hp)
 	var hp_color: String

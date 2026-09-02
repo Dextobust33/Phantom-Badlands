@@ -5858,9 +5858,14 @@ func _refresh_companion() -> void:
 	# server's character.calculate_companion_max_hp formula. combat_update
 	# overrides with authoritative values.
 	if _companion_hp_row and is_instance_valid(_companion_hp_row):
+		# #6b (2026-09-02) — companion HP is a share of the OWNER's max HP now. This is only
+		# the pre-first-combat_update placeholder; the authoritative value arrives with
+		# combat_update. Owner HP is not available in this panel, so fall back to the legacy
+		# absolute shape rather than inventing one — it is replaced within a frame.
 		var bonuses: Dictionary = _companion_data.get("bonuses", {})
 		var hp_bonus: int = int(bonuses.get("hp_bonus", 0))
-		var comp_max_hp: int = 30 + level * 5 + sub_tier * 10 + hp_bonus
+		var comp_max_hp: int = int(_companion_data.get(
+			"combat_max_hp", 30 + level * 5 + sub_tier * 10 + hp_bonus))
 		var comp_cur_hp: int = int(_companion_data.get("combat_hp", comp_max_hp))
 		comp_cur_hp = clampi(comp_cur_hp, 0, comp_max_hp)
 		update_companion_combat_hp(comp_cur_hp, comp_max_hp, comp_cur_hp <= 0)

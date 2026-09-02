@@ -1242,7 +1242,9 @@ func run_companion_unlock_audit():
 	print("survived = rounds up before KO (capped at fight length). soaked = hits taken FOR you.")
 	print("%-7s %-9s %8s %9s %8s %8s %7s" % ["PlyrL", "compL", "compHP", "survived", "soaked", "dealt%", "win%"])
 	for lvl in [5, 50, 250, 1000, 10000]:
-		for comp_mode in ["none", "1", "5", "15", "match"]:
+		# "carry" = a registered companion far above the player's level, the case the design
+		# depends on: an established companion pulling a fresh character forward.
+		for comp_mode in ["none", "1", "match", "carry"]:
 			var wins := 0
 			var surv := 0.0
 			var soak := 0.0
@@ -1255,10 +1257,16 @@ func run_companion_unlock_audit():
 				if comp_mode == "none":
 					ch.active_companion = {}
 				else:
-					var cl: int = lvl if comp_mode == "match" else int(comp_mode)
+					var cl: int = lvl
+					if comp_mode == "carry":
+						cl = mini(10000, lvl * 10)
+					elif comp_mode != "match":
+						cl = int(comp_mode)
 					ch.active_companion["level"] = cl
 					ch.active_companion["combat_hp"] = ch.get_companion_max_hp()
-				comp_hp = ch.get_companion_max_hp() if comp_mode != "none" else 0
+				# Accumulate: reporting the last sample's value made the column jump around
+				# (player HP and companion sub-tier are both rolled per sample).
+				comp_hp += ch.get_companion_max_hp() if comp_mode != "none" else 0
 				var monster := make_monster(lvl, "elite", 1.0)
 				var mhp0: int = int(monster.get("max_hp", 1))
 				ch.in_combat = false
@@ -1299,7 +1307,7 @@ func run_companion_unlock_audit():
 			if n == 0:
 				continue
 			print("%-7d %-9s %8d %9.1f %8.1f %8s %6d%%" % [
-				lvl, comp_mode, comp_hp, surv / n, soak / n, "-", int(100.0 * wins / n)])
+				lvl, comp_mode, int(float(comp_hp) / float(n)), surv / n, soak / n, "-", int(100.0 * wins / n)])
 	print("")
 	print("If `survived` collapses to ~1 round at high level, the companion is not a sponge or")
 	print("an attacker — it is a one-hit casualty, and no amount of ability unlocking fixes it.")

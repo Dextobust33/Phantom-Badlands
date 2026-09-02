@@ -721,7 +721,37 @@ weaker but never a one-hit casualty, and an over-levelled one saturates. Consequ
 survivability holds at every level by construction; levelling a companion pays visibly; and the
 constant trek back to a post to revive largely goes away.
 
-- [ ] Agree the shape and the numbers before implementing — this changes a core feel system
+- [x] **IMPLEMENTED 2026-09-02** with `COMPANION_HP_SHARE = 0.5` (user's number): companion HP
+      is now `owner_max_hp * 0.5 * g(comp_level/owner_level) * sub_tier_mult * hp_bonus_mult`.
+      `g` is deliberately **asymmetric** — floored at **0.60** so an under-levelled companion
+      stays a real body rather than a one-hit casualty, and rising to **2.5** so an
+      over-levelled one genuinely **carries** rather than being clamped to parity. That second
+      half is the mechanical form of the design premise that a registered companion pulls a
+      fresh character forward, and of the setting's line that companions outlive their delvers.
+
+      **Measured after (`-- comp_unlock`), win% at same-level elite:**
+
+      | Player | none | comp L1 | matched | carry (10x level) |
+      |--------|------|---------|---------|-------------------|
+      | L5 | 50% | 50% | 54% | **83%** |
+      | L50 | 25% | 33% | 45% | **75%** |
+      | L250 | 45% | 20% | 62% | **75%** |
+      | L1000 | 41% | 54% | 75% | 66% |
+      | L10000 | 8% | 16% | 50% | 37% |
+
+      Under-levelled companions went from useless to useful (L50 comp-L1: 20% -> 33-41%, with
+      HP 45 -> ~178). The carry case lands hardest exactly where it should — at L5-L250, where
+      a fresh character is being pulled through. At L1000+ "carry" converges on "matched"
+      because companion level is capped at 10000, so there is nothing left to carry with.
+- [x] Reconciled the `hp_bonus` units bug in the same pass — it is a **percentage** everywhere
+      now, matching how `combat_manager` already consumed it
+- [x] Both client-side mirrors of the formula updated. `client.gd` now calls the real static
+      function instead of re-deriving it; the combat panel keeps a placeholder only for the
+      frame before the authoritative `combat_update` lands
+- [ ] **Live playtest** — survivability is a feel change and the sim cannot judge whether the
+      revive-trek frustration is actually gone
+- [ ] Sample noise: 24 fights/cell, and some rows invert (L250 comp-L1 reads 20% against 45%
+      for no companion). Widen before treating any single row as real
 - [ ] `calculate_companion_max_hp` is **static and takes only the companion dict**, so it has no
       access to the player. Threading the owner through is the main implementation cost; check
       every caller, including any client-side mirror
