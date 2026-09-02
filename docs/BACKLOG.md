@@ -311,11 +311,51 @@ hit when scaled up, and a linear downscale for monsters generated below their ow
 That is why the first task is a **target curve** and why the reference-player model below is the
 leading fix — not because high-tier monsters are individually weak.
 
-- [ ] **Still unmeasured, and a live candidate for the late-game slide:** does
-      `select_monster_type` routinely pick monsters whose `base_level` sits ABOVE the target
-      level at high levels? Those take the linear downscale path and generate as runts — Avatar
-      of Chaos (base 6000) at L5000 has 161,230 HP against Void Walker's 677,173. If tier-9
-      selection is full of below-base picks, that alone could produce the easing.
+- [x] **MEASURED 2026-09-02 — this is the cause of the late-game slide AND the jaggedness.**
+      `select_monster_type` picks a TIER from the level, then a monster from that tier. But a
+      tier's level BAND and the base levels of the monsters inside it **do not line up**:
+
+      | Tier | monster base levels | level band it covers |
+      |------|--------------------|----------------------|
+      | T6 | 150–400 | ~L150–1000 |
+      | T7 | 700–1500 | ~L1000–2500 |
+      | T8 | 2500–4500 | ~L2500–5000 |
+      | T9 | 6000–9500 | ~L7500–10000 |
+
+      `scale_monster_to_level` scales **up** from base on a tiered percentage curve, but scales
+      **down** on a bare **linear** ratio (`target/base`). So near the **start** of a band most
+      picks sit *above* the target level and generate as downscaled **runts**, while near the
+      **end** of the same band every pick is scaled up and generates at full strength.
+
+      The result is a **sawtooth**, not a curve (`-- selection`, 400 picks/level):
+
+      | Level | tier | runt% | median HP |
+      |-------|------|-------|-----------|
+      | L500 | 6 | 6% | 93,271 |
+      | **L800** | **7** | **39%** | **46,777** ← halved while the player got stronger |
+      | L1500 | 7 | 5% | 205,343 |
+      | L2000 | 7 | 4% | 428,668 |
+      | **L2500** | **8** | **38%** | **63,765** ← **6.7x collapse** at the band boundary |
+      | L5000 | 8 | 7% | 411,141 |
+      | **L7500** | **9** | **34%** | **192,057** ← halved again |
+      | L10000 | 9 | 0% | 1,160,125 |
+
+      Difficulty **collapses at every tier boundary** and climbs back to the end of the band.
+      That is the late-game slide measured in the progression sweep, and it is a *selection*
+      problem, not a monster-strength problem.
+
+      It also produces enormous **same-level variance**: the HP spread between the weakest and
+      strongest monster a player can meet at one level grows to **85x** (L2500: ~7.5k to ~656k).
+      Two players at the same level in the same place can have completely different fights.
+
+- [ ] **Do not fix this by re-authoring `base_level` values — that only moves the teeth.** As
+      long as level→difficulty is routed through each monster's hand-authored base level and an
+      asymmetric up/down scale, some band will always start with runts. The mapping has to stop
+      going through base_level at all. **Same conclusion as the reference-player model above,
+      reached from a completely different direction — which is the strongest argument yet for
+      building it.** It also serves the Phantom (12b), which needs any species to scale by depth.
+- [ ] Whatever replaces it must also **bound same-level variance** deliberately (a designed
+      range, e.g. 2-3x, rather than today's emergent 85x)
 
 - [ ] **Anchor monster stats to a reference player at the same level** rather than to
       hand-authored per-tier tables: `monster.hp = reference_damage_per_turn(L) × target_turns

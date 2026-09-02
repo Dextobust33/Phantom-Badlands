@@ -74,6 +74,7 @@ func _audit_registry() -> Dictionary:
 		"gear_solve": ["solve the average-gear model against real characters", run_gear_solve],
 		"progression": ["does difficulty hold from L1 to L10000?", run_progression_audit],
 		"underlevel": ["what fighting below your level is worth (post pull-down)", run_underlevel_audit],
+		"selection": ["why the curve is jagged: tier bands vs monster base levels", run_selection_audit],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
 		"resource": ["resource-economy telemetry", run_resource_audit],
 		"efficiency": ["damage per resource point by ability", run_ability_efficiency],
@@ -587,6 +588,52 @@ func run_underlevel_audit():
 	print("H%% is the average LOWEST health the player dropped to. Where win%% is 100 and H%% is")
 	print("~100, the fight is not a fight — and because encounter level is a function of")
 	print("position only, a player of ANY level can choose that fight by walking to a post.")
+	print("=====================================================================
+")
+
+func run_selection_audit():
+	# #6 (2026-09-02) — WHY the difficulty curve is jagged and slides in the late game.
+	# select_monster_type picks a TIER from the level, then a monster from that tier. But a
+	# tier's level BAND and the base_levels of the monsters inside it do not line up:
+	#   T6 monsters are base 150-400, but T6 covers L~150-1000
+	#   T7 monsters are base 700-1500, but T7 covers L~1000-2500
+	#   T8 monsters are base 2500-4500, but T8 covers L~2500-5000
+	# scale_monster_to_level scales UP from base with a tiered percentage curve, but scales
+	# DOWN with a bare LINEAR ratio (target/base). So near the START of a band most picks sit
+	# ABOVE the target level and generate as downscaled RUNTS, while near the END of the same
+	# band every pick is scaled up and generates at full strength. The result is a SAWTOOTH:
+	# difficulty collapses at each tier boundary and climbs back to the end of the band.
+	# It also produces enormous same-level variance — at L2500 a monster can roll anywhere
+	# from ~8k to ~656k HP, an 80x spread for the same player at the same place.
+	var N := 400
+	print("
+===== #6 MONSTER SELECTION AUDIT (%d picks/level) =====" % N)
+	print("runt%% = picked monster's base_level is ABOVE the target level, so it takes the")
+	print("linear downscale path. HP spread = max/min generated HP at the SAME level.")
+	print("%-8s %6s %7s %12s %12s %12s %9s" % ["Level", "tier", "runt%", "medianHP", "minHP", "maxHP", "spread"])
+	for lvl in [50, 100, 250, 400, 500, 800, 1000, 1500, 2000, 2500, 4000, 5000, 7500, 10000]:
+		var runts := 0
+		var hps: Array = []
+		var tier := 0
+		for i in range(N):
+			var t = monster_db.select_monster_type(lvl)
+			var bs = monster_db.get_monster_base_stats(t)
+			if int(bs.get("base_level", 1)) > lvl:
+				runts += 1
+			var m = monster_db.scale_monster_to_level(bs, lvl, true)
+			hps.append(int(m.get("max_hp", 0)))
+		tier = int(monster_db._get_tier_info(lvl).tier)
+		hps.sort()
+		var lo: int = maxi(1, int(hps[0]))
+		var hi: int = int(hps[hps.size() - 1])
+		print("%-8d %6d %6d%% %12d %12d %12d %8.0fx" % [
+			lvl, tier, int(100.0 * runts / N), int(hps[hps.size() / 2]), lo, hi, float(hi) / float(lo)])
+	print("")
+	print("Read the medianHP column DOWN: it is not a curve, it is a sawtooth. Where it FALLS")
+	print("as level rises, the game is getting easier as the player gets stronger. Fixing this")
+	print("by re-authoring base_levels only moves the teeth — the level->difficulty mapping has")
+	print("to stop going through each monster's hand-authored base_level. Same conclusion as")
+	print("the reference-player model in item 6, reached from a different direction.")
 	print("=====================================================================
 ")
 
