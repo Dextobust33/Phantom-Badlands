@@ -748,8 +748,19 @@ constant trek back to a post to revive largely goes away.
 - [x] Both client-side mirrors of the formula updated. `client.gd` now calls the real static
       function instead of re-deriving it; the combat panel keeps a placeholder only for the
       frame before the authoritative `combat_update` lands
-- [ ] **Live playtest** — survivability is a feel change and the sim cannot judge whether the
-      revive-trek frustration is actually gone
+- [x] **Live playtest at L250 PASSED (2026-09-02).** User: *"Companion did survive the fight
+      but was taking adequate damage. Companion HP bar timing seemed right."* That is precisely
+      the target — a companion that survives a fair fight while still being at risk, rather
+      than either a one-hit casualty or an invulnerable pet. `COMPANION_HP_SHARE = 0.5` is
+      confirmed by feel, not just by simulation
+- [x] **No-downscaling requirement verified** — a L250 companion measures 1130 HP beside owners
+      at L10 / L50 / L250 / L1000 alike. Beside a fresh character that is eight times their own
+      health bar
+- [ ] **The companion buff moved the whole difficulty curve** and the monster curve was
+      calibrated BEFORE it. The reference player is now meaningfully stronger, so monsters are
+      undersized: measured after the change, elite at L1 reads **90% win at 28% HP cost against
+      a 70% target** (it was 56% before). Re-calibration is running; **any balance number taken
+      between the companion change and that re-calibration is stale**
 - [ ] Sample noise: 24 fights/cell, and some rows invert (L250 comp-L1 reads 20% against 45%
       for no companion). Widen before treating any single row as real
 - [ ] `calculate_companion_max_hp` is **static and takes only the companion dict**, so it has no
