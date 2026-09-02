@@ -626,25 +626,127 @@ Confirmed in code, and it explains the first point exactly:
       improve one (levels, fusion, sub-tier, variants) legible and reachable
 - [ ] Re-run `-- companion` after each change; it is the regression test for this item
 
-### 6c. Class balance & the resource economy — **BLOCKED until the baseline is re-measured**
+### 6c. Class balance & the resource economy — re-measured, now unblocked
 *Split out of item 6 on 2026-09-02: item 6 had grown to 21 open tasks covering two different
 jobs — sizing the MONSTERS and sizing the CLASSES. They are separate, and the second depends on
 the first being settled.*
 
-**Hard prerequisite, and the reason this is blocked:** every class number quoted below was
-measured against the OLD monster model. The reference-player model changed monster HP, strength
-and defense at every level, so those absolute figures are stale. **Re-run `-- classes`,
-`-- races`, `-- ability_hp` and `-- companion` against the new baseline before tuning anything.**
-Tuning classes against numbers taken from a monster model that no longer exists is exactly the
-revisit-forcing mistake the ordering rule exists to prevent.
+**Prerequisite DONE (2026-09-02): re-measured against the new baseline.** The numbers below
+are current; anything quoted from before the reference-player model landed is superseded.
 
-- [ ] **Wizard** rework: worst win rate past L100 and by far the longest fights (155 turns at a
-      L250 elite in the old measurements). Its sustain card (Blast) falls to 8-14% of a health
-      bar while its burst card recovers — burst returns, sustain dies
-- [ ] **Class gap widening with level** (Thief ran far ahead of Fighter/Wizard at L1000+). Note
-      the likely mechanism found in item 6: **Exploit is the only ability whose damage is a
-      percentage of the target's max HP**, so it is the only one that holds its value as
-      monster HP scales. Everything else deals absolute damage into a bar on a different curve
+**RE-MEASURED against the reference-player baseline, 2026-09-02.** These supersede every
+class/race number taken before the monster model changed.
+
+**Classes** (`-- classes`, 60 fights/cell, average gear, win% / turns / casts-per-turn):
+
+| Class | path | L10 normal | L30 elite | L80 elite |
+|-------|------|-----------|-----------|-----------|
+| Fighter | warrior | 81% | 45% | 50% |
+| Barbarian | warrior | 65% | 41% | 48% |
+| **Paladin** | warrior | 50% | **31%** | **36%** |
+| Wizard | mage | 80% | 40% | 38% |
+| Sorcerer | mage | 66% | 53% | 45% |
+| **Sage** | mage | 66% | **20%** | **18%** |
+| Thief | trickster | 56% | 56% | **80%** |
+| Ranger | trickster | 45% | 45% | 63% |
+| Ninja | trickster | 51% | **75%** | 71% |
+
+- Elites are now genuinely hard, which is the ROLE_TARGETS design (9 turns, 70% of the bar)
+  rather than a regression
+- **Sage is the worst class in the game by a wide margin** — 20% and 18% where its own
+  archetype siblings sit at 40-53%. Its passive is 25% cheaper mana, which is worth least
+  in exactly the fights that matter. First thing to look at
+- **Paladin is second-worst** (31/36 against Fighter's 45/50) and the slowest (17 turns at
+  L80 elite)
+- **The trickster lead persists** and widens with level (Thief 80%, Ninja 71% at L80 elite).
+  Likely mechanism already identified: Exploit is the only ability whose damage is a
+  percentage of target max HP
+
+**Races** (`-- races`, L30 elite) — a real ~20-25 point spread, previously invisible because
+`make_char` hardcoded Human:
+
+| Race | Fighter | Wizard | Thief |
+|------|---------|--------|-------|
+| Human | 50% | **58%** | 75% |
+| Elf | 48% | 53% | 63% |
+| Dwarf | 41% | 50% | **76%** |
+| **Ogre** | 41% | **33%** | **51%** |
+| Halfling | 51% | 51% | 75% |
+| Orc | 38% | 48% | 68% |
+| Gnome | 45% | 36% | 66% |
+| **Undead** | **28%** | 50% | 66% |
+
+- **Human is at or near the top for every archetype**, which is backwards: its trait is +10%
+  XP, an out-of-combat bonus. A race with no combat trait leading combat means the other
+  races' traits are underpowered or not firing
+- **Undead (28% Fighter) and Ogre (33% Wizard) are the weak ends.** Ogre's trait is doubled
+  healing received and Undead's is curse immunity + poison healing — both situational, and
+  worth nothing in a fight that contains neither
+- [ ] Check whether the situational racial traits ever actually trigger in combat before
+      re-balancing their numbers — a trait that never fires is a UI problem, not a tuning one
+
+**Companions** (`-- companion`, same-level elite, Fighter) — the gap is now large and holds
+at every level, which it did not appear to under the old model:
+
+| Level | none | comp L1 | comp L=char | comp x10 |
+|-------|------|---------|-------------|----------|
+| L50 | 7% | 40% | 30% | 72% |
+| L1000 | 37% | 45% | 75% | 82% |
+| L2500 | 12% | 17% | 50% | 45% |
+| L10000 | 10% | 15% | **50%** | 50% |
+
+- **A levelled companion is worth ~35-40 points of win rate** at high level (10% -> 50% at
+  L10000). Companions are now clearly load-bearing, which makes 6b more urgent, not less
+- **`comp L1` is still statistically indistinguishable from `none`** at the top end (10 vs 15,
+  12 vs 17) — the flat-stat-bonus finding survives re-measurement
+- **The x10 saturation also survives** (L10000: matched 50%, x10 50%; L2500: 50 vs 45) —
+  over-levelling a companion past your own level stops paying
+
+**Ability power** (`-- ability_hp`, one cast as % of a same-level normal monster's health
+bar). **The monster model fixed the early game on its own, without touching a single
+ability:**
+
+| Ability | L1 | L5 | L50 | L100 | L1000 | L10000 |
+|---------|----|----|-----|------|-------|--------|
+| power_strike | **15%** (was 263%) | 10% | 15% | 18% | 25% | 16% |
+| cleave | **20%** (was 337%) | 14% | 17% | 20% | 33% | 18% |
+| ambush | **18%** (was 261%) | 11% | 13% | 15% | 22% | 15% |
+| exploit | 9% | 10% | 17% | 17% | 17% | 16% |
+| gambit | 13% | 9% | 16% | 28% | 24% | 12% |
+| **magic_bolt** | **60%** (was 1203%) | 36% | 37% | 43% | **123%** | **269%** |
+| **blast** | 63% | 32% | 10% | 44% | 13% | **5%** |
+| meteor | **193%** (was 3463%) | 87% | 30% | 27% | 36% | 18% |
+
+- **The early-game trivialisation is gone.** Every damage card used to be 2.6x-35x overkill on
+  a same-level monster at L1; nothing one-shots now. That was the reported "Magic Bolt is
+  extremely powerful early game" problem and it is **fixed as a side effect of anchoring
+  monsters to the player** — no ability was touched
+- **Warrior and trickster kits are now flat across four orders of magnitude** (10-40% of a
+  health bar from L1 to L10000). That is what "balance holds throughout the game" looks like
+- **The mage roster is now the isolated problem**, and it is two opposite failures in one kit:
+  - [ ] **Magic Bolt is the only ability that outscales** — 36% at L5 rising to **269%** at
+        L10000. Its `mana x (1 + 4.3*sqrt(INT))` shape rides a mana pool that grows faster
+        than level
+  - [ ] **Blast dies** — 63% down to **5%**, so mage sustain evaporates while its burst
+        inflates. This is the mechanism behind Wizard's 40-155 turn fights
+  - [ ] Meteor decays from 193% to 18% and needs re-siting against the other two
+- **Correction to an earlier hypothesis:** the trickster lead was attributed to Exploit being
+  the only %-max-HP ability. Against anchored monsters Exploit is now **flat at 9-25%**, yet
+  tricksters still lead the class table (Thief 80%, Ninja 71% at L80 elite). So Exploit is not
+  the driver — look at Outsmart's instant-win and the dodge/speed advantage instead
+
+- [ ] **Mage roster rework** — now the single clearest class problem, and precisely located:
+      Magic Bolt is the only ability in the game that OUTSCALES (36% of a health bar at L5 to
+      269% at L10000) while Blast, its sustain card, DIES (63% to 5%). Burst inflates while
+      sustain evaporates, which is the mechanism behind Wizard's very long fights. **Sage is
+      the worst class in the game** (20%/18% at L30/L80 elite) — its 25%-cheaper-mana passive
+      is worth least in exactly the fights that decide things
+- [ ] **Trickster lead** (Thief 80%, Ninja 71% at L80 elite against Paladin's 36%). The
+      earlier hypothesis — that Exploit's %-max-HP damage was the driver — is **disconfirmed**
+      by the re-measurement: against anchored monsters Exploit is flat at 9-25% like everything
+      else, yet tricksters still lead. Look at Outsmart's instant-win and the dodge/speed
+      advantage instead
+- [ ] **Paladin is second-worst and slowest** (31%/36%, 17 turns at L80 elite)
 - [ ] **Magic Bolt flat curve** — damage-per-mana has to scale on the same curve as monster HP
 - [ ] Ability cost model / resource economy (costs flat while pools scale).
       **Measured 2026-09-01:** a level-20 Wizard's Forcefield (`cost_percent: 3`) has a NET
