@@ -1368,8 +1368,10 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 	# Real fights against a monster of `role` at `level`, reporting mean turns and mean share
 	# of the player's health bar spent. Same shape as _fight_stats_at but for a non-normal role.
 	var turns_tot := 0.0
+	var win_turns_tot := 0.0
 	var cost_tot := 0.0
 	var wins := 0
+	var win_n := 0
 	var n := 0
 	for klass in ["Fighter", "Wizard", "Thief"]:
 		for i in range(samples):
@@ -1396,13 +1398,24 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 				combat_mgr.process_monster_turn(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
+				# Fight LENGTH is measured on WINS ONLY. A lost fight ends the moment the
+				# player dies, so at a 30% win rate the mean turn count is dominated by short
+				# deaths — and the calibrator, seeing "too short", raises monster HP, which
+				# raises the cost, which kills the player sooner, which shortens the mean
+				# again. The two corrections were fighting each other: boss fights measured
+				# 5.3 turns against a 14 target while their cost was already at 76%. A target
+				# like "a boss fight lasts 14 turns" describes a fight you WIN.
+				win_turns_tot += float(turns)
+				win_n += 1
 			turns_tot += float(turns)
 			cost_tot += float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
 			n += 1
 			combat_mgr.end_combat(0, false, false)
 	if n == 0:
 		return {}
-	return {"turns": turns_tot / float(n), "cost": cost_tot / float(n), "win": float(wins) / float(n)}
+	# Fall back to all fights only if nothing was won, so the signal never vanishes.
+	var turns_out: float = (win_turns_tot / float(win_n)) if win_n > 0 else (turns_tot / float(n))
+	return {"turns": turns_out, "cost": cost_tot / float(n), "win": float(wins) / float(n)}
 
 func run_role_calibrate():
 	# #6 (2026-09-02) — calibrate the ROLE multipliers against real fights, PER ANCHOR LEVEL.
