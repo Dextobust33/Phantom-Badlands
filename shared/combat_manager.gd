@@ -5283,6 +5283,11 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		return {"success": false, "message": "Wait for your turn!"}
 
 	var character = combat.character
+	# v0.9.740 — WHO USES an item and WHO RECEIVES it are different things in a party. The
+	# item always leaves the USER's inventory, but the effect can land on a teammate or their
+	# companion. party_use_item sets combat["item_recipient"]; solo never does, so the solo
+	# path is unchanged (recipient IS the caster).
+	var recipient = combat.get("item_recipient", character)
 	var inventory = character.inventory
 
 	if item_index < 0 or item_index >= inventory.size():
@@ -5324,9 +5329,9 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 	if effect.has("companion_taunt"):
 		# Taunt Charm — companion draws extra aggro for next N monster turns.
 		# Validate: companion must exist and not be KO'd (no aggro to draw).
-		if not character.has_active_companion():
+		if not recipient.has_active_companion():
 			return {"success": false, "message": "You have no active companion to taunt with."}
-		if character.is_companion_ko():
+		if recipient.is_companion_ko():
 			return {"success": false, "message": "Your companion is knocked out — revive them first."}
 		var aggro_bonus: int = int(effect.get("aggro_bonus", 30))
 		var taunt_turns: int = int(effect.get("turns", 3))
@@ -5334,37 +5339,37 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		# 80% aggro clamp anyway, so this is safe).
 		combat["companion_taunt_bonus"] = int(combat.get("companion_taunt_bonus", 0)) + aggro_bonus
 		combat["companion_taunt_turns"] = maxi(int(combat.get("companion_taunt_turns", 0)), taunt_turns)
-		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		var comp_name: String = str(recipient.active_companion.get("name", "your companion"))
 		messages.append("[color=#FFD700]You crush the %s![/color]" % item_name)
 		messages.append("[color=#FF8800]%s glows with menace — drawing +%d%% aggro for %d turns![/color]" % [comp_name, aggro_bonus, taunt_turns])
 	elif effect.has("revive_companion"):
 		# Companion Revive Potion — instantly revives a KO'd active companion
 		# at revive_pct% of max HP. In-combat path: consumes the player's turn.
-		if not character.has_active_companion():
+		if not recipient.has_active_companion():
 			return {"success": false, "message": "You have no active companion to revive."}
-		if not character.is_companion_ko():
+		if not recipient.is_companion_ko():
 			return {"success": false, "message": "Your companion isn't knocked out — no need to use this."}
 		var revive_pct: int = int(effect.get("revive_pct", 50))
-		var comp_max: int = character.get_companion_max_hp()
+		var comp_max: int = recipient.get_companion_max_hp()
 		var revive_hp: int = maxi(1, int(comp_max * revive_pct / 100.0))
-		character.set_companion_combat_hp(revive_hp)
-		var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		recipient.set_companion_combat_hp(revive_hp)
+		var comp_name: String = str(recipient.active_companion.get("name", "your companion"))
 		messages.append("[color=#FFD700]You use the %s![/color]" % item_name)
 		messages.append("[color=#00FF00]Your %s rises with %d/%d HP![/color]" % [comp_name, revive_hp, comp_max])
 	elif effect.has("heal"):
 		# Phase B1 — KO'd companion can only be revived by a healer / NPC,
 		# never by potions or natural regen. Reject here with a clear msg
 		# instead of silently consuming the potion.
-		if target == "companion" and character.has_active_companion() and character.is_companion_ko():
+		if target == "companion" and recipient.has_active_companion() and recipient.is_companion_ko():
 			return {"success": false, "message": "Your companion is knocked out and can only be revived by a healer."}
 		# Healing potion - hybrid flat + % max HP
 		var heal_amount: int
 		# When targeting a companion, use the companion's max HP for the
 		# percentage-based portion so a tier-3 potion heals roughly the same
 		# fraction of the companion as it would the player.
-		var heal_max_hp: int = character.get_total_max_hp()
-		if target == "companion" and character.has_active_companion():
-			heal_max_hp = character.get_companion_max_hp()
+		var heal_max_hp: int = recipient.get_total_max_hp()
+		if target == "companion" and recipient.has_active_companion():
+			heal_max_hp = recipient.get_companion_max_hp()
 		if effect.get("heal_pct_only", false):
 			# Elixir: pure % max HP heal
 			var elixir_pct = effect.get("elixir_pct", drop_tables.ELIXIR_HEAL_PCT.get(item_tier, 50))
@@ -5378,22 +5383,22 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		else:
 			heal_amount = effect.get("base", 0) + (effect.get("per_level", 0) * item_level)
 		var heal_verb = "use" if "scroll" in item_type else "drink"
-		if target == "companion" and character.has_active_companion():
-			var actual_heal: int = character.heal_companion(heal_amount)
-			var comp_name: String = str(character.active_companion.get("name", "your companion"))
+		if target == "companion" and recipient.has_active_companion():
+			var actual_heal: int = recipient.heal_companion(heal_amount)
+			var comp_name: String = str(recipient.active_companion.get("name", "your companion"))
 			messages.append("[color=#00FF00]You %s %s and your %s recovers %d HP![/color]" % [heal_verb, item_name, comp_name, actual_heal])
 		else:
-			var actual_heal = character.heal(heal_amount)
+			var actual_heal = recipient.heal(heal_amount)
 			messages.append("[color=#00FF00]You %s %s and restore %d HP![/color]" % [heal_verb, item_name, actual_heal])
 	elif effect.has("mana") or effect.has("stamina") or effect.has("energy") or effect.has("resource"):
 		# Resource potion - restores the player's PRIMARY resource based on class path
-		var primary_resource = character.get_primary_resource()
+		var primary_resource = recipient.get_primary_resource()
 		var max_resource: int
 		match primary_resource:
-			"mana": max_resource = character.get_total_max_mana()
-			"stamina": max_resource = character.get_total_max_stamina()
-			"energy": max_resource = character.get_total_max_energy()
-			_: max_resource = character.get_total_max_mana()
+			"mana": max_resource = recipient.get_total_max_mana()
+			"stamina": max_resource = recipient.get_total_max_stamina()
+			"energy": max_resource = recipient.get_total_max_energy()
+			_: max_resource = recipient.get_total_max_mana()
 
 		# Hybrid flat + % max resource
 		var resource_amount: int
@@ -5414,24 +5419,24 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 
 		match primary_resource:
 			"mana":
-				old_value = character.current_mana
-				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
-				actual_restore = character.current_mana - old_value
+				old_value = recipient.current_mana
+				recipient.current_mana = min(recipient.get_total_max_mana(), recipient.current_mana + resource_amount)
+				actual_restore = recipient.current_mana - old_value
 				color = "#00FFFF"
 			"stamina":
-				old_value = character.current_stamina
-				character.current_stamina = min(character.get_total_max_stamina(), character.current_stamina + resource_amount)
-				actual_restore = character.current_stamina - old_value
+				old_value = recipient.current_stamina
+				recipient.current_stamina = min(recipient.get_total_max_stamina(), recipient.current_stamina + resource_amount)
+				actual_restore = recipient.current_stamina - old_value
 				color = "#FFCC00"
 			"energy":
-				old_value = character.current_energy
-				character.current_energy = min(character.get_total_max_energy(), character.current_energy + resource_amount)
-				actual_restore = character.current_energy - old_value
+				old_value = recipient.current_energy
+				recipient.current_energy = min(recipient.get_total_max_energy(), recipient.current_energy + resource_amount)
+				actual_restore = recipient.current_energy - old_value
 				color = "#66FF66"
 			_:
-				old_value = character.current_mana
-				character.current_mana = min(character.get_total_max_mana(), character.current_mana + resource_amount)
-				actual_restore = character.current_mana - old_value
+				old_value = recipient.current_mana
+				recipient.current_mana = min(recipient.get_total_max_mana(), recipient.current_mana + resource_amount)
+				actual_restore = recipient.current_mana - old_value
 				color = "#00FFFF"
 				primary_resource = "mana"
 
@@ -5465,10 +5470,10 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 			var crafted_verb: String = "use" if "scroll" in item_type else "drink"
 			var crafted_value_suffix: String = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] or item_effect.has("bonus_pct") else ""
 			if is_battles_buff:
-				character.add_persistent_buff(buff_type, buff_value, duration)
+				recipient.add_persistent_buff(buff_type, buff_value, duration)
 				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [crafted_verb, item_name, buff_value, crafted_value_suffix, buff_type, duration, "s" if duration != 1 else ""])
 			else:
-				character.add_buff(buff_type, buff_value, duration)
+				recipient.add_buff(buff_type, buff_value, duration)
 				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [crafted_verb, item_name, buff_value, crafted_value_suffix, buff_type, duration])
 			crafted_buff_handled = true
 		elif effect.get("tier_forcefield", false):
@@ -5478,12 +5483,12 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 		elif effect.get("stat_pct", false):
 			# Stat scroll: % of character's base stat
 			var stat_pct = tier_data.get("scroll_stat_pct", 10)
-			var equip_bonuses = character.get_equipment_bonuses()
+			var equip_bonuses = recipient.get_equipment_bonuses()
 			match buff_type:
-				"strength": buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
-				"defense": buff_value = maxi(1, int(character.get_total_defense() * stat_pct / 100.0))
-				"speed": buff_value = maxi(1, int((character.dexterity + equip_bonuses.speed) * stat_pct / 100.0))
-				_: buff_value = maxi(1, int(character.get_total_attack() * stat_pct / 100.0))
+				"strength": buff_value = maxi(1, int(recipient.get_total_attack() * stat_pct / 100.0))
+				"defense": buff_value = maxi(1, int(recipient.get_total_defense() * stat_pct / 100.0))
+				"speed": buff_value = maxi(1, int((recipient.dexterity + equip_bonuses.speed) * stat_pct / 100.0))
+				_: buff_value = maxi(1, int(recipient.get_total_attack() * stat_pct / 100.0))
 			duration = tier_data.get("scroll_duration", 1)
 		elif effect.get("tier_value", false):
 			# Percentage scroll: use buff_value directly (lifesteal, thorns, crit %)
@@ -5509,10 +5514,10 @@ func process_use_item(peer_id: int, item_index: int, target: String = "self") ->
 			var value_suffix = "%%" if buff_type in ["lifesteal", "thorns", "crit_chance"] else ""
 
 			if effect.get("battles", false):
-				character.add_persistent_buff(buff_type, buff_value, duration)
+				recipient.add_persistent_buff(buff_type, buff_value, duration)
 				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d battle%s![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration, "s" if duration != 1 else ""])
 			else:
-				character.add_buff(buff_type, buff_value, duration)
+				recipient.add_buff(buff_type, buff_value, duration)
 				messages.append("[color=#00FFFF]You %s %s! +%d%s %s for %d rounds![/color]" % [buff_verb, item_name, buff_value, value_suffix, buff_type, duration])
 
 	# Remove item from inventory (use stack method for consumables)
@@ -5565,8 +5570,22 @@ func party_use_item(leader_id: int, pid: int, item_index: int, target: String = 
 		return {"success": false, "message": "You are out of the fight."}
 	var spent: bool = bool(st.get("free_item_used", false))
 	var view := _party_member_view(combat, pid)
+	# v0.9.740 — TARGETING. "self" / "companion" mean the user and their own companion, as
+	# before. "pid:N" and "comp:N" name a TEAMMATE or that teammate's companion: the item still
+	# leaves the user's inventory, but the effect lands on them. The recipient is passed on the
+	# view so process_use_item can keep cost and inventory on the caster.
+	var effect_target := target
+	if target.begins_with("pid:") or target.begins_with("comp:"):
+		var tpid := int(target.split(":")[1])
+		if not combat.characters.has(tpid):
+			return {"success": false, "message": "They are not in your party."}
+		var tst = combat.member_states.get(tpid, {})
+		if tst.get("dead", false) or tst.get("fled", false):
+			return {"success": false, "message": "They are out of the fight."}
+		view["item_recipient"] = combat.characters[tpid]
+		effect_target = "companion" if target.begins_with("comp:") else "self"
 	active_combats[pid] = view
-	var res := process_use_item(pid, item_index, target)
+	var res := process_use_item(pid, item_index, effect_target)
 	_party_sync_view_back(combat, pid, view)
 	active_combats.erase(pid)
 	if not res.get("success", false):

@@ -53,10 +53,20 @@ splitting them means editing and re-testing the same code twice.*
 
 ## Next
 
-### 2. Party UI  ← START HERE
-- [ ] Target picker: use items **on teammates** (click a party card; number keys as a supplement)
-- [ ] Buffs castable on teammates (forcefield on someone else). Server-side, ability effects
-      currently apply to `combat.character`, the caster — cross-targeting is a real change
+### 2. Party UI  ← IN PROGRESS
+
+**Decided (user 2026-09-01):** targets include **companions** (so companion-affecting loot can
+be added later without redoing the picker). **All buffs** are teammate-targetable EXCEPT
+Vanish / Cloak / Teleport (escape+stealth tied to the caster's own presence — on an ally they
+would pull them out of the fight) and Overload (burns caster HP to boost *the caster's* next
+spells). Analyze stays self-only: it reveals monster info and the log is already shared.
+Quick self-cast: the picker opens with **Yourself pre-selected**, so pressing the ability key
+again self-casts — no new binding — plus a visible Self button.
+
+- [ ] Server: separate WHO CASTS from WHO RECEIVES. Items already take a `target`
+      ("self"/"companion"); extend to a party member and their companion
+- [ ] Server: same for buff abilities — effects currently apply to `combat.character`
+- [ ] Client: target picker over the party cards, Yourself first and pre-selected
 - [ ] Quests-style **invite/accept window** (the current chat/action-bar flow is clunky)
 - [ ] **Watch a teammate's minigame.** Gathering (scratch-off) and crafting (reveal panel) are
       single-player panels driven by a payload sent to the actor alone; the rest of the party
