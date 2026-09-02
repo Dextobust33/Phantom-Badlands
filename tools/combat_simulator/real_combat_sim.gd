@@ -752,6 +752,10 @@ func _measure_reference_at(level: int, klass: String) -> Dictionary:
 # targets the model is aiming at without the sim reaching into monster_database internals.
 const TARGET_TURNS_NORMAL_SIM := 5.0
 const DANGER_NORMAL_SIM := 0.40
+# How hard each calibration pass corrects toward the target. 0.5 (sqrt) is heavily damped and
+# needs many passes to close a large gap; 0.75 converges in the budget we run while staying
+# stable at the sample sizes `-- n=` now provides.
+const CAL_CORRECTION_EXP := 0.75
 
 func _curve_at(level: int) -> Dictionary:
 	# Read the generated reference curve the same way monster_database does.
@@ -925,7 +929,7 @@ func run_reference_calibrate():
 	# Sample size drives everything downstream — monster stats are corrected toward the
 	# target from these fights, so noise here is baked into the curve and inherited by
 	# every later measurement. `-- n=N` sets the per-cell budget.
-	var passes := 4
+	var passes := 6
 	var samples: int = maxi(8, int(_audit_n / 3.0))  # per class; all 3 run
 	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% HP cost) =====" % [TARGET_TURNS_NORMAL_SIM, DANGER_NORMAL_SIM * 100.0])
 	var table: Array = []
@@ -945,10 +949,18 @@ func run_reference_calibrate():
 			last = r
 			# Correct toward target. Damped (sqrt) so a noisy sample cannot send the
 			# next pass wildly off; converges in a handful of passes either way.
+			# Correction exponent, was sqrt (0.5). Damping that heavy needs many passes to close
+			# a large gap: at n=8/class the noise justified it, but with the sample budget now
+			# wired to `-- n=` the measurement is tight enough to move faster. Measured at n=90
+			# with 0.5, four passes left the DANGER axis systematically short of target — normal
+			# 33% against 40%, elite 43% against 70%, boss 51% against 85% — while turn counts
+			# (the HP axis, which starts much closer) landed fine. That is under-convergence,
+			# not a wrong target.
+			var k: float = CAL_CORRECTION_EXP
 			var turn_err: float = TARGET_TURNS_NORMAL_SIM / maxf(0.5, float(r["turns"]))
-			hp *= sqrt(clampf(turn_err, 0.15, 6.0))
+			hp *= pow(clampf(turn_err, 0.15, 6.0), k)
 			var cost_err: float = DANGER_NORMAL_SIM / maxf(0.01, float(r["cost"]))
-			st *= sqrt(clampf(cost_err, 0.15, 6.0))
+			st *= pow(clampf(cost_err, 0.15, 6.0), k)
 		table.append({"level": lvl, "hp": int(round(hp)), "str": int(round(st))})
 		if last.is_empty():
 			print("L%-6d  (no data)" % lvl)

@@ -635,6 +635,59 @@ numbers and animations are played, and anything else that will improve solo comb
 - [ ] Check whether attack FX still fire at submit rather than on the beat in solo — that was
       one of the five co-op bugs and the same code path serves both
 
+**HIGH-SAMPLE RE-MEASUREMENT (`-- n=90`, 2026-09-02).** Supersedes every balance number taken
+before it. Calibration convergence raised from sqrt to `CAL_CORRECTION_EXP = 0.75` over 6 passes
+— justified by the sample budget going from 8 to 30 fights per class, which is what the heavy
+damping had been protecting against.
+
+**Roles — the danger axis converged for NORMAL, partially for elite, not for boss:**
+
+| Role | turns (target) | HP cost (target) | win% |
+|------|----------------|------------------|------|
+| normal | 5.6 / 5.2 / 5.1 / 3.3 / 3.0 / **2.6** (5) | 40 / 30 / 41 / 48 / 44 / 43% (**40%**) | 65-82% |
+| elite | 6.0 / 7.3 / 5.9 / 3.7 / 12.7 / 3.5 (9) | 39 / 52 / **65** / **68** / 44 / 44% (70%) | 47-78% |
+| boss | 9.6 / 9.5 / 8.4 / 23.1 / 8.9 / 15.5 (14) | 48 / 50 / 57 / 57 / 58 / 35% (85%) | 55-76% |
+
+*(levels L1 / L10 / L50 / L250 / L1000 / L5000)*
+
+- **Normal fights now cost exactly their 40% target**, up from 33%. The convergence fix worked
+- **Elite reaches 65-68% at L50-250** (target 70%) but sags at both ends
+- **Boss is still well short** — ~50-58% against 85%. Bosses are a real fight but not frightening
+- [ ] **The remaining structural gap: high-level fights are too SHORT.** Normal turns fall to
+      3.3 / 3.0 / **2.6** at L250 / L1000 / L5000 against a target of 5. Monster HP is
+      under-converging at the top end while the danger axis is on target, so the top of the game
+      is quick rather than easy — a different fault from the old sawtooth and a smaller one
+- [ ] Elite and boss are DERIVED from the normal baseline by `ROLE_TARGETS` algebra rather than
+      calibrated directly. That algebra assumes the fight really lasts `turns_role`; measured
+      elite runs ~6.5 turns against 9, so the damage never accumulates to the intended cost.
+      Either calibrate roles directly, or correct the derivation for measured rather than
+      intended length
+- [ ] The 40 / 70 / 85% danger targets are a **proposal, not a measurement** — worth the owner's
+      eye before more work is spent hitting them exactly
+
+**Ability power (`-- ability_hp`), one cast as % of a same-level normal monster's bar:**
+
+| Ability | L1 | L10 | L100 | L1000 | L5000 | L10000 |
+|---------|----|-----|------|-------|-------|--------|
+| power_strike | 16% | 16% | 16% | 33% | 61% | 123% |
+| cleave | 21% | 19% | 19% | 41% | 108% | 126% |
+| ambush | 14% | 14% | 16% | 24% | 35% | 67% |
+| gambit | 14% | 15% | 21% | 34% | 47% | 57% |
+| exploit | 10% | 11% | 26% | 48% | 33% | 18% |
+| **magic_bolt** | 61% | 42% | 53% | **170%** | **481%** | **379%** |
+| **blast** | 51% | 27% | 19% | 16% | 15% | 25% |
+| meteor | 196% | 87% | 28% | 47% | 52% | 73% |
+
+- **Magic Bolt is confirmed as the outlier, and it is worse than first measured** — 42% of a
+  health bar at L10 rising to **481%** at L5000, an ~11x drift. Every other ability moves by
+  ~4x across the same span. Its `mana x (1 + 4.3*sqrt(INT))` shape rides a mana pool that grows
+  faster than level, and nothing else in the game does that
+- **Blast has stabilised** at 13-27% rather than dying to 5% as it did against the old baseline —
+  it is weak and flat, not collapsing. A smaller problem than it looked
+- **The warrior/trickster rise at the top end (power_strike 123%, cleave 126%) is NOT an ability
+  problem** — it tracks the too-short high-level fights above. Fix the HP convergence and these
+  should settle back; do not tune them first
+
 ### 6b. Companion power & levelling — **the emotional spine, currently thin**
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them
 it makes the crucial point of the game pointless."*
@@ -888,9 +941,11 @@ ability:**
   tricksters still lead the class table (Thief 80%, Ninja 71% at L80 elite). So Exploit is not
   the driver — look at Outsmart's instant-win and the dodge/speed advantage instead
 
-- [ ] **Mage roster rework** — now the single clearest class problem, and precisely located:
-      Magic Bolt is the only ability in the game that OUTSCALES (36% of a health bar at L5 to
-      269% at L10000) while Blast, its sustain card, DIES (63% to 5%). Burst inflates while
+- [ ] **Mage roster rework** — the single clearest class problem. **Re-measured at n=90 against
+      the current baseline (see item 6):** Magic Bolt is the only ability in the game that
+      OUTSCALES — 42% of a health bar at L10 to **481%** at L5000, an ~11x drift where every
+      other ability moves ~4x. Blast has since **stabilised** at 13-27% rather than dying to 5%,
+      so the sustain half is a smaller problem than it first looked; the burst half is worse. Burst inflates while
       sustain evaporates, which is the mechanism behind Wizard's very long fights. **Sage is
       the worst class in the game** (20%/18% at L30/L80 elite) — its 25%-cheaper-mana passive
       is worth least in exactly the fights that decide things
