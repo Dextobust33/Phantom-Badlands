@@ -134,6 +134,13 @@ func _init():
 
 	var acc_id := String(args["acc"])
 	persistence.save_character(acc_id, ch)
+	# Register the character on the ACCOUNT as well. Saving the file alone is not enough —
+	# the server lists characters from the account's character_slots, and PERMADEATH removes
+	# the slot entry while the tool happily rewrites the file. The result is a rebuilt
+	# character that exists on disk but does not appear at the character-select door, which is
+	# exactly what happened the first time a playtest character died. add_character_to_account
+	# is idempotent for an existing name.
+	persistence.add_character_to_account(acc_id, ch.name)
 	print("built %s: %s %s L%d | HP %d | ATK %d | %d/%d gear slots | companion %s (T%d, L%d)" % [
 		String(args["name"]), race, klass, level, ch.get_total_max_hp(), ch.get_total_attack(),
 		equipped, SLOTS.size(), pick, int(pdata.get("tier", 1)), level])
