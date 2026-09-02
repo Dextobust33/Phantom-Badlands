@@ -941,11 +941,31 @@ ability:**
   tricksters still lead the class table (Thief 80%, Ninja 71% at L80 elite). So Exploit is not
   the driver — look at Outsmart's instant-win and the dodge/speed advantage instead
 
-- [ ] **Mage roster rework** — the single clearest class problem. **Re-measured at n=90 against
-      the current baseline (see item 6):** Magic Bolt is the only ability in the game that
-      OUTSCALES — 42% of a health bar at L10 to **481%** at L5000, an ~11x drift where every
-      other ability moves ~4x. Blast has since **stabilised** at 13-27% rather than dying to 5%,
-      so the sustain half is a smaller problem than it first looked; the burst half is worse. Burst inflates while
+- [ ] **Mage roster rework — the clearest class problem, now measured on a clean baseline.**
+      Final n=90 run, after the stale-curve and monotonic-ramp fixes, one cast as % of a
+      same-level normal monster's health bar:
+
+      | Ability | L10 | L100 | L1000 | L10000 | drift |
+      |---------|-----|------|-------|--------|-------|
+      | **magic_bolt** | 39% | 80% | 114% | **467%** | **~12x** |
+      | power_strike | 13% | 33% | 16% | 128% | ~9x |
+      | cleave | 15% | 39% | 23% | 123% | ~8x |
+      | gambit | 10% | 49% | 17% | 47% | ~4x |
+      | ambush | 10% | 33% | 17% | 31% | ~3x |
+      | exploit | 10% | 17% | 28% | 24% | ~2x |
+      | blast | 24% | 19% | 10% | 27% | flat, low |
+      | meteor | 73% | 51% | 24% | 38% | flat (but 175% at L1) |
+
+      - **Magic Bolt is unambiguous.** It has now measured 269 / 481 / 505 / 467% at the top end
+        across four different baselines — the number moves, the verdict does not. Its
+        `mana x (1 + 4.3*sqrt(INT))` shape rides a pool that grows faster than level, and
+        nothing else in the game does
+      - **Warrior burst is a secondary riser** — power_strike 128% and cleave 123% at L10000,
+        ~8-9x drift. Not as severe, but the same shape and worth fixing in the same pass
+      - **Tricksters are the best-behaved kit** (2-4x drift, flat 10-31%) — the shape to aim for
+      - **Blast is weak but stable** (10-27%), not collapsing as it appeared against the old
+        baseline. A smaller problem than first reported
+      - **Meteor is 175% at L1** — the last remaining early-game one-shot Burst inflates while
       sustain evaporates, which is the mechanism behind Wizard's very long fights. **Sage is
       the worst class in the game** (20%/18% at L30/L80 elite) — its 25%-cheaper-mana passive
       is worth least in exactly the fights that decide things
