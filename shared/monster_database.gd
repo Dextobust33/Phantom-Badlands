@@ -2242,8 +2242,8 @@ const USE_REFERENCE_MODEL := true          # false = legacy base_level scaling
 const ROLE_TARGETS := {
 	"normal":    {"turns": 5.0,  "danger": 0.40},
 	"empowered": {"turns": 7.0,  "danger": 0.55},
-	"elite":     {"turns": 9.0,  "danger": 0.70},
-	"boss":      {"turns": 14.0, "danger": 0.85},
+	"elite":     {"turns": 9.0,  "danger": 0.65},
+	"boss":      {"turns": 14.0, "danger": 0.80},
 }
 
 static func role_multipliers(role: String) -> Dictionary:

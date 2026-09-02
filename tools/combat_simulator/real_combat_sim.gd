@@ -974,6 +974,14 @@ func run_reference_calibrate():
 		f.store_string(JSON.stringify(out, "\t"))
 		f.close()
 		print("\nWrote shared/reference_monster_curve.json (%d anchors)." % table.size())
+		# CRITICAL: monster_database caches the curve on first load and _load_reference_curve
+		# early-returns once populated, so writing the file is NOT enough — any audit running
+		# after refcal in the SAME process keeps using the pre-calibration curve. That is exactly
+		# what happened: a `-- refcal roles ability_hp` run showed the calibration hitting ~5
+		# turns while the roles audit that followed measured ~3, and the disagreement was read as
+		# "high-level HP under-converges" when the two were simply measuring different curves.
+		monster_db._reference_anchors = []
+		monster_db._curve_is_calibrated = false
 	print("Re-run `-- refval` to confirm the model lands on target with these anchors.")
 	print("=====================================================================\n")
 
