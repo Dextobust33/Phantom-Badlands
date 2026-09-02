@@ -1219,6 +1219,37 @@ sampled a random species, so run-to-run variance was partly which monsters showe
       test. Use the actual spawn table: at L50 that is Gryphon, Succubus, Vampire, Giant,
       Demon, Young Dragon, Chimaera
 
+**STATE AFTER THE RESOURCE FIX (2026-09-02, n=90).** Costs are real again and the mage kit
+was re-priced, and both landed harder than expected:
+
+| Class | L30 elite before | after | L80 elite before | after |
+|-------|------------------|-------|------------------|-------|
+| Wizard | 43% | **66%** | 41% | **58%** |
+| Sage | 23% | **45%** | 18% | **31%** |
+| Sorcerer | 35% | 51% | 31% | 51% |
+| Fighter | 45% | 43% | 61% | 63% |
+| **Paladin** | 33% | **21%** | 48% | 40% |
+| Thief | 53% | 60% | 60% | **75%** |
+
+The mage recovery is mostly the **Magic Bolt ceiling** (`MAGIC_BOLT_FULL_SPEND_PCT = 0.20`):
+the sim's mage AI spends 25% of its pool per cast, which under the old whole-pool scaling
+delivered a quarter of the ability's weight. It now delivers the full weight. So a large part
+of "the mage roster is weak" was the ability's spend curve, not the roster.
+
+Roles held through the change: normal costs 32-50% against a 40% target, empowered 34-58%
+against 55%.
+
+- [ ] **Paladin is the new worst at L30 elite (21%)** and the slowest (13.3 turns at L80).
+      Different class from the one that was worst an hour ago, which is a reminder that these
+      rankings move whenever a shared system changes — do not tune a class until the systems
+      under it have settled
+- [ ] **Class spread is still 44 points** at L80 elite (Sage 31% to Thief 75%). Narrower than
+      the 55 it was, still too wide
+- [ ] **Turn drift at L250-L1000** (normal 12.7 and 9.2 against a 5 target; empowered 17.7).
+      The HP axis is not holding in the mid-upper band even though cost is
+- [ ] Re-run `-- ability_hp`: the weights were set when casts were effectively free, and a
+      fight now has a real cast budget
+
 ### 6d. Risk, reward & progression incentives
 *Also split out of item 6. This is the economy around fights rather than the fights themselves.*
 
