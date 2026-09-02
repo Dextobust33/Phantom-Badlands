@@ -21,8 +21,8 @@ locals use the same word for the place and the things inside it, and why nobody 
 "dungeon": *a phantom came up*, the way you'd say a storm came in.
 
 What comes up is **drawn to the living**. A phantom that is left alone starts working outward
-toward the nearest holdout. That is the threat corridor, and it is the reason anyone goes down
-at all: not treasure, containment.
+toward the nearest holdout. That is the threat corridor, and it is the reason anyone walks into
+one at all: not treasure, containment.
 
 And it wants something specific. **It wants to make you one of its own** — and given enough
 trips, it does. That is the second meaning of the word, the one nobody mentions to new
@@ -69,7 +69,7 @@ inside are not squatters; they are part of what surfaced.
 You are temporary and the world treats you accordingly. You are not the chosen anything. You
 are one of many, you are useful, and you will be replaced.
 
-- **Death is permanent** because that is what the things down there are for. They want the
+- **Death is permanent** because that is what the things inside are for. They want the
   living, and they are patient about it.
 - **Your corpse stays where you fell.** Somebody else will find it. So will you, next life.
 - **The leaderboard, titles and Valor are the trace you leave** — the Badlands' way of
@@ -153,6 +153,12 @@ A quest board is register 1. The death screen is register 2. Never let a post NP
 seasons, kept.
 **Avoid:** ancient evil, chosen one, sealed away, the darkness, corruption, prophecy, realm.
 
+**Never "go down" or "down there"** (user 2026-09-02) — both read as innuendo and will derail a
+line no matter how good the rest of it is. Say *walk into one*, *go in*, *delve*, *inside*,
+*what is in there*. Note the phrasing that DOES work: the ground refuses to keep them **down**,
+so somebody **puts them back down** — that pairing is the logic of the whole setting in two
+verbs, and it is worth protecting.
+
 **Never explain the mechanism.** Nobody knows *why* the land keeps things. Theories exist; none
 are right. The Keeper may imply it knows. It must never say.
 
@@ -168,7 +174,7 @@ of the game, not a coat of paint on it.
 | Post-anchored monster levels | Posts keep the ground thin around them |
 | Post threat cooldown after clearing | A reprieve, measured in seasons |
 | Eggs / exclusive cards only from dungeons | The only things that come out alive |
-| Permadeath | What is down there finally making you one of its own |
+| Permadeath | What is inside finally making you one of its own |
 | Sanctuary survives death | The one address that stays — and the Keeper who runs it |
 | Kennel companions passing between characters | The bond outlives the delver |
 | Corpses left in the world | Delvers are replaced, and the land keeps the evidence |
@@ -181,7 +187,7 @@ of the game, not a coat of paint on it.
 The conceit is generative, not just descriptive. Things that follow from it and are being
 considered rather than assumed:
 
-- **The delvers who lost become phantoms too.** If what is down there makes you one of its own,
+- **The delvers who lost become phantoms too.** If what is inside makes you one of its own,
   a dead character is not simply gone — it is now one of them. That is the fiction under
   backlog item 14 (player phantoms roaming where they fell). It is also what stops permadeath
   being purely subtractive: the dead stay in the world as something other people meet.

@@ -14,7 +14,8 @@ order is what forces revisits.
 
 ## In progress
 
-*(item 4 — website refresh — is next; the setting bible it needed is done)*
+*(nothing in flight — items 1-4 are done. **Item 5, the simulator upgrade, is next**,
+and it gates every balance item behind it.)*
 
 ### 1. Party mechanics — server pass ✅ COMPLETE (shipped v0.9.740)
 - [x] Leader **rotation** after each combat (default) + alternate **control modes** (fixed / rotate)
@@ -132,19 +133,26 @@ companions are the emotional spine: they outlive their delvers.
       strings, and doing it before the dungeon arc (8-12) means rewriting dungeon text twice.
       Do the non-dungeon surfaces any time; save dungeon copy for 11
 
-### 4. Website refresh — accurate, alive, and showing the game
-*After 3 so the copy is written against settled theming, and after the current release so the
-feature list is true. Dungeon pages are deliberately NOT here — see 11.*
-
-- [ ] **Accuracy pass first.** The site describes an older game; correct the feature list,
-      screenshots and any stale mechanics
-- [ ] Less boring: it reads like a spec sheet. Lead with what playing it feels like
-- [ ] **Simulated screenshots** on the feature pages. Combat, party play, gathering, crafting,
-      market and companions are all visually stable now, so those can be captured today
-      (the in-game 📷 / F12 workflow writes to `claude_screenshots/`)
-- [ ] Carry the settled identity from 3 into the landing copy — `docs/design/setting_bible.md`
-      has the premise, the voice rules and the use/avoid word lists. The current tagline
-      ("Classic Text RPG, Modern Systems") describes the software, not the world
+### 4. Website refresh ✅ COMPLETE (live at phantombadlands.com)
+- [x] **Accuracy pass.** Fixed real errors, not just tone: the FAQ said **Windows only** when
+      Linux has shipped for months; party size said 4 (now 5, with co-op explained); combat was
+      described as ability slots rather than a deck. Added the systems that were missing
+      entirely — Paths, uniques and sets, rank-ups, the card market, the Atlas, Apex Frontier —
+      and gave **equipment and decks** their own coverage, which they had none of
+- [x] Rewritten around the setting rather than a spec sheet, and the **name is now explained in
+      the copy** (wording chosen by the user from drafted options). The hero carries the threat,
+      and a separate line carries the lure: gear, cards found nowhere else, and *eggs*
+- [x] **Real in-game screenshots** replace the hand-written mock-ups: combat (monster ASCII,
+      battler sprite, companion, card hand), a companion art montage of eight types and
+      variants, the deck screen, and a fully equipped inventory
+- [x] Built `tools/test_setup/shots.py` + a dev-only `--shots` client mode so these can be
+      **regenerated** rather than re-shot by hand — the presentation pass (11) will invalidate
+      every one of them
+- [ ] **Dungeon pages + dungeon screenshots deliberately deferred to 11** (user 2026-09-02):
+      the dungeon view is mid-rework, so anything shot now is out of date on arrival. The
+      landing page carries a visible placeholder in the meantime
+- [ ] Optional follow-up: carry the Keeper's voice further into Features/FAQ (one line each
+      today)
 
 ### 5. Simulator upgrade — **blocks all balance work**
 - [ ] Teach the sim to spend **abilities and resources**. It drives real combat code but uses
@@ -379,6 +387,10 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
 ---
 
 ## Recently shipped
+- **2026-09-02 (site + docs, no client build)** — website refresh live: setting-led copy that
+  explains the name, real in-game screenshots, accuracy fixes (Linux support, party of 5,
+  deck-driven combat). Setting bible revised to a single cause. Screenshot capture harness added
+
 - **v0.9.740** — party leadership rotation + duplicated rewards, follower/post rules, party of 5,
   buff + item targeting (teammates and their companions), co-op playback pacing (rounds play fast
   but complete; Continue skips *to* the rewards), Forcefield/Haste co-op fixes
