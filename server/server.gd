@@ -39309,6 +39309,13 @@ func _add_member_to_party(leader_id: int, new_member_id: int):
 
 	# Send full party update to all (including new member)
 	_send_party_update(leader_id)
+	# v0.9.740 — tell the JOINER where they have landed. They previously received only the
+	# silent party_update, so a player who joined an existing party was told nothing at all:
+	# not that they were in a party, nor who leads. Only the first two members saw anything
+	# (party_formed), which made it look like it depended on join order.
+	var _ldr_name: String = characters[leader_id].name if characters.has(leader_id) else "your leader"
+	var _psize: int = party.members.size()
+	send_to_peer(new_member_id, {"type": "text", "message": "[color=#00BFFF]You joined %s's party (%d/%d). %s leads — they control movement, hunting and gathering out in the world.[/color]" % [_ldr_name, _psize, PARTY_MAX_SIZE, _ldr_name]})
 
 	# Send location updates
 	for pid in party.members:
