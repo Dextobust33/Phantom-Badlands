@@ -2554,7 +2554,23 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	var flee_bonus = equipment_bonuses.get("flee_bonus", 0)  # Evasion gear provides flee bonus
 	var monster_level = monster.get("level", 1)
 	var player_level = character.level
-	var level_diff = max(0, monster_level - player_level)  # Only penalize if monster is higher level
+	# #6 (2026-09-02) — the level penalty is a RATIO, not an absolute difference.
+	#
+	# It used to subtract the raw level gap in percentage points, which is meaningless
+	# across a 1-10000 range: 100 levels up is a 10x monster at L10 and a 10% one at
+	# L1000, yet both cost the same 100 points. In practice anything meaningfully above
+	# the player pinned flee to its 10% floor. MEASURED: escape success was **0%** against
+	# monsters 1.5x the player's level or higher — a 10% roll per turn while something that
+	# outclasses you kills you in two or three. That made an over-level fight a coin flip on
+	# the character with no way to disengage, so the (large) over-level rewards were never
+	# claimed by anyone rational.
+	#
+	# Now the penalty scales with how many times over the player the monster is:
+	# 30 points per doubling. Same level = no penalty; 2x = -30; 3x = -48; 5x = -70.
+	# Combined with the raised floor below, running from something far above you is always
+	# possible but never certain — a decision the player can actually play.
+	var level_ratio: float = float(maxi(1, monster_level)) / float(maxi(1, player_level))
+	var level_diff = int(round(30.0 * (log(maxf(1.0, level_ratio)) / log(2.0))))
 
 	# WITS vs monster speed: witty players outsmart faster monsters
 	var player_wits = character.get_effective_stat("wits")
@@ -2623,7 +2639,11 @@ func process_flee(combat: Dictionary) -> Dictionary:
 		if path_flee > 0:
 			messages.append("[color=#FFD700]⚜ Path: +%d%% flee chance![/color]" % path_flee)
 
-	flee_chance = clamp(flee_chance, 10, 95)  # Hardcap 10-95%
+	# #6 (2026-09-02) — floor raised 10 -> 25. At 10% per turn, escaping something that
+	# kills you in 2-3 turns was effectively impossible, which is what made the floor the
+	# binding constraint on every over-level fight. 25% per turn compounds to a real but
+	# uncertain out over the couple of turns a losing player has.
+	flee_chance = clamp(flee_chance, 25, 95)  # Hardcap 25-95%
 
 	var roll = randi() % 100
 

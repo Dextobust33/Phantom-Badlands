@@ -506,12 +506,24 @@ destroys more progress than it creates. So no rational player takes it, and the 
 over-level reward curve — including the big 1.2-7.9 level payouts — is **dead content that
 is never claimed**.
 
-- [ ] **The lever is the failure mode, not the reward size.** Make disengaging from an
-      over-level fight a real, skill-expressible option (a fleeing chance that does not
-      collapse to the 10% floor at large gaps; or a cost to escape — drop loot, take a
-      wound, burn a consumable) so the gamble becomes a decision a player can take, survive,
-      and repeat. Then the existing 1.2-7.9 level payouts become a genuine risk/reward arc
-      instead of a lottery nobody enters
+- [x] **Escape fixed (2026-09-02).** `process_flee` subtracted the RAW level gap in
+      percentage points, which is meaningless across a 1-10000 range — 100 levels up is a 10x
+      monster at L10 and a 10% one at L1000, yet both cost 100 points. Anything meaningfully
+      above the player pinned flee to its 10% floor. Same shape of bug as the gear model's
+      fixed level-lag: an **absolute** difference used where only a **ratio** has meaning.
+      Now the penalty is 30 points per doubling (2x = -30, 3x = -48, 5x = -70) and the floor
+      is raised 10 -> 25. **Measured per attempt: 45% at even level, 24-27% at 1.5-5x** (was
+      pinned at 10%). Running from something far above you is now always possible, never
+      certain, and a decision the player can actually play
+- [ ] **Open follow-up: should escaping COST something?** Right now a successful flee is
+      free. Dropping carried loot, taking a lasting wound or burning a consumable would make
+      disengaging a real trade rather than a pure out. Deliberately not added unilaterally —
+      it is a design call, not a bug fix
+- [ ] Re-measure the risk/reward table now that escape works, and only then decide whether
+      the 1.2-9.3 level payouts need raising. The `-- risk` audit models a player who attacks
+      first and flees once hurt; against something far above you that first exchange is often
+      fatal, so its escape column understates a player who runs immediately. Worth adding a
+      "flees on sight" mode before drawing conclusions from it
 - [ ] Only after that, revisit whether the payout curve itself needs raising — with a
       survivable failure mode the same numbers may already be right
 - [ ] Sample-size caveat: 36 fights per cell, and the kill% column is visibly noisy

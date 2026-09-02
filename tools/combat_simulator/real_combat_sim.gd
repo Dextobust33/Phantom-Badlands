@@ -1141,7 +1141,11 @@ func run_risk_reward_audit():
 	# Reward is expressed in LEVELS, because "how much of a level did that heroic kill pay"
 	# is the question actually being asked.
 	var samples := 12
-	var flee_at := 0.35  # start trying to escape below 35% HP, as a player would
+	# Bail threshold. Raised from 0.35 after measuring: against something far above the
+	# player, they are killed from full HP without ever passing through a low-HP band, so a
+	# late threshold never fires and reads as "0% escape" when the player simply never got
+	# to try. 0.70 models a player who reads the first exchange and runs.
+	var flee_at := 0.70
 	print("\\n===== #6 RISK vs REWARD: what does punching above your level really cost? =====")
 	print("A player who fights, then tries to FLEE once below %.0f%% HP (real process_flee)." % (flee_at * 100.0))
 	print("death%% is permadeath — the character is gone. reward is the kill's XP as a")
@@ -1176,7 +1180,10 @@ func run_risk_reward_audit():
 						if combat.get("player_can_act", true):
 							if float(ch.current_hp) / float(max_hp) < flee_at:
 								var fr = combat_mgr.process_flee(combat)
-								if fr.get("fled", fr.get("success", false)):
+								# Only "fled" means escaped. process_flee returns success:true
+								# for a FAILED attempt too (the action processed), so falling
+								# back to `success` counts every attempt as an escape.
+								if bool(fr.get("fled", false)):
 									fled = true
 									break
 							else:
