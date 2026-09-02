@@ -216,6 +216,30 @@ hold. It is not a smooth ramp — it is a **hump**:
 - The curve is **jagged**, not monotonic (Fighter boss: 37→32→55→30→65→77% across L50-2500),
   which points at monster-selection variance between tiers rather than a designed ramp
 
+**Measured `-- ability_hp`** — one cast's damage as % of a same-level NORMAL monster's bar
+(>=100% one-shots trash). This is the unit balance should be tuned in; raw damage is
+meaningless when monster HP scales on a different curve:
+
+| Ability | L1 | L5 | L10 | L50 | L100 | L500 | L1000 | L10000 |
+|---------|----|----|-----|-----|------|------|-------|--------|
+| power_strike | 263% | 102% | 67% | 35% | 23% | 10% | 42% | 45% |
+| magic_bolt | 1203% | 385% | 210% | 73% | 43% | 84% | 238% | 365% |
+| blast | 1009% | 341% | 142% | 25% | 14% | 8% | 14% | 20% |
+| exploit (%-HP) | 10% | 10% | 11% | 16% | 18% | 17% | 20% | 23% |
+
+- **The early game is a formality.** At L1 every damage card is 2.6x-35x overkill on a normal
+  monster; Magic Bolt is **12x**. This is the user's "Magic Bolt is extremely powerful early
+  game" observation, confirmed and quantified
+- **It does fall off — and then comes back.** Magic Bolt bottoms at 43% around L100 (can no
+  longer one-shot) and recovers to 238-365% past L1000. The U matches the difficulty hump
+  exactly: monster HP outgrows player damage to ~L500, then player damage outgrows it
+- **Blast never recovers** (down to 8-14%) — the mage's *sustain* card dies while its burst
+  card returns, which is why Wizard fights run 40-155 turns in the mid-late game
+- **Exploit is the only ability with a flat, rising curve — because it is %-max-HP.** Every
+  other ability deals absolute damage into a bar that scales on a different curve. That single
+  structural difference is the likeliest driver of Thief pulling away at high level, and it is
+  the *shape* the balance model should learn from
+
 - [ ] Decide the target curve first (what *should* win% and danger look like at L10, L100,
       L1000, L10000?), then tune to it. Without a target the sweep has nothing to fail against
 - [ ] Fix the **mid-game hump** and the **late-game slide** — the two ends of the same problem
@@ -240,10 +264,28 @@ hold. It is not a smooth ramp — it is a **hump**:
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them
 it makes the crucial point of the game pointless."*
 
-**Measured:** companion *level* does still pay at high level (same-level elite, Fighter: no
-companion 45% vs a heavily over-levelled one 87% at L10000), so the system is **not** inert —
-an earlier claim that it was came from the Orc bug above and was **wrong**. But the underlying
-design gap is real and confirmed in code:
+**Measured `-- companion n=200`** (same-level elite, Fighter, win% by companion state):
+
+| Level | none | comp L1 | comp L=char | comp x10 |
+|-------|------|---------|-------------|----------|
+| L10   | 85%  | 84%     | 91%         | 95%      |
+| L50   | 25%  | 32%     | 53%         | 71%      |
+| L500  | 10%  | 14%     | 31%         | 53%      |
+| L2500 | 67%  | 65%     | 81%         | 86%      |
+| L10000| 48%  | 45%     | 75%         | 79%      |
+
+Three things fall out of this, and the first is the headline:
+- **A level-1 companion is statistically indistinguishable from having NO companion**, at every
+  level in the game. The two columns track each other within noise the whole way down. So the
+  flat stat bonuses are effectively **decorative** — all of a companion's real value comes from
+  ability scaling with level
+- Companion **level** therefore does pay, and pays a lot (L500: 10% → 31% → 53%). An earlier
+  claim that companions had become inert at high level came from the Orc bug in item 5 and was
+  **wrong** — corrected here deliberately so it doesn't get re-derived
+- But the payoff **saturates**: at L5000-10000 a 10x over-levelled companion is no better than a
+  level-matched one (82/81%, 75/79%). Something caps out up there — worth finding before tuning
+
+Confirmed in code, and it explains the first point exactly:
 - **Companion passive stat bonuses do not scale with level at all.** `get_companion_effective_
   bonuses` applies only variant × sub-tier multipliers to a flat table value. A L1 Ogre and a
   L10000 Ogre grant the identical `{attack 5, hp_bonus 3}`
@@ -251,7 +293,9 @@ design gap is real and confirmed in code:
   content that scales far faster
 - Real companions are tiny in absolute terms (Dexto's L45 Ogre: attack 5, hp_bonus 3)
 
-- [ ] Make companion **stat bonuses scale with companion level**, not just variant/sub-tier
+- [ ] Make companion **stat bonuses scale with companion level**, not just variant/sub-tier —
+      this is what makes a fresh companion feel like nothing at all today
+- [ ] Find and fix the **high-level saturation** (x10 stops beating level-matched past ~L5000)
 - [ ] Re-shape ability scaling so it keeps pace with content rather than falling behind
 - [ ] Give levelling a companion a **visible, worthwhile payoff curve**; make the ways to
       improve one (levels, fusion, sub-tier, variants) legible and reachable
