@@ -56,7 +56,7 @@ const UPGRADES := [
 	# mean touching ten ability bodies. Offering a choice that silently does nothing is exactly
 	# the defect this redesign exists to fix, so it is not in the pool. Revisit if the damage
 	# path ever reports pre-clamp damage.
-	{"id": "keen", "wired": false, "name": "Keen Edge", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
+	{"id": "keen", "wired": true, "name": "Keen Edge", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
 	 "desc": "+8% critical chance with this card."},
 	{"id": "leeching", "wired": true, "name": "Leeching", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 10% of the damage dealt."},
@@ -64,9 +64,9 @@ const UPGRADES := [
 	 "desc": "Grants an extra point of your class engine (Momentum / Read / Focus)."},
 
 	# ---------------------------------------------------------------- buff, upside ----------
-	{"id": "preload", "wired": false, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "preload", "wired": true, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "The buff is already active on the first round of your NEXT fight."},
-	{"id": "shared", "wired": false, "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "shared", "wired": true, "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "In a party, an ally also receives it at half strength."},
 	{"id": "warding", "wired": true, "name": "Warding", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "Also grants a small shield when cast."},
@@ -74,8 +74,13 @@ const UPGRADES := [
 	# ---------------------------------------------------------------- control, upside -------
 	{"id": "unsettling", "wired": true, "name": "Unsettling", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "The foe's next attack is less likely to land."},
-	{"id": "lingering", "wired": false, "name": "Lingering", "kind": KIND_CONTROL, "stacks": true, "tradeoff": false,
-	 "desc": "+1 round to any debuff this card applies."},
+	# "Lingering" (+1 round to a debuff) and "Overreach" (harder but a round shorter) were both
+	# CUT after implementation was attempted. They describe a duration mechanic that debuffs in
+	# this game do not have: `monster_sabotaged` is a persistent combat value with no rounds at
+	# all, and `enemy_distracted` is consumed by the next attack rather than ticking down. There
+	# is no round counter for either to modify. Adding one purely so two upgrades could exist
+	# would be inventing a mechanic to justify a name - so they are out, like Overkill before
+	# them. Revisit if debuffs ever gain real durations.
 
 	# ---------------------------------------------------------------- any, upside -----------
 	{"id": "refund", "wired": true, "name": "Closing Cost", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
@@ -104,7 +109,7 @@ const UPGRADES := [
 	# are rare as well."
 	{"id": "wild_swing", "wired": true, "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+45% damage, but a real chance to miss outright."},
-	{"id": "bloodprice", "wired": false, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "bloodprice", "wired": true, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Paid in health instead of your resource."},
 	{"id": "brittle", "wired": true, "name": "Brittle Strike", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+30% damage, but your guard is down until your next turn."},
@@ -118,12 +123,10 @@ const UPGRADES := [
 	 "desc": "+50% to the buff, but the foe acts before you this round."},
 	{"id": "costly_vigil", "wired": true, "name": "Costly Vigil", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Lasts twice as long, but drains resource every round it holds."},
-	{"id": "provoking", "wired": false, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "provoking", "wired": true, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, but it turns the foe's attention onto you."},
-	{"id": "unstable_hex", "wired": false, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "unstable_hex", "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, with a small chance it lands on you instead."},
-	{"id": "overreach", "wired": false, "name": "Overreach", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
-	 "desc": "Hits harder, but wears off a round sooner."},
 	{"id": "gamblers_cut", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Half cost, but a quarter of the time it does nothing at all."},
 	{"id": "sacrificial", "wired": true, "name": "Sacrificial", "kind": KIND_ANY, "stacks": false, "tradeoff": true,

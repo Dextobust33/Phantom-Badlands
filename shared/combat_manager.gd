@@ -1286,6 +1286,10 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		monster.strength = max(5, int(monster.strength * 0.5))
 		monster.defense = max(3, int(monster.defense * 0.5))
 
+	# Preload (rank-up): a buff taken with that upgrade is already up on round one of THIS
+	# fight, because it was cast in the previous one. Applied before the state is built so the
+	# opening round already reflects it.
+	apply_preloaded_buff(character, {})
 	# Create combat state
 	var combat_state = {
 		"peer_id": peer_id,
@@ -5689,6 +5693,17 @@ func apply_skill_cost_reduction(character: Character, ability_name: String, base
 	var tier_cost_mult = character.get_tier_cost_mult(ability_name)
 	if tier_cost_mult < 1.0:
 		cost = int(cost * tier_cost_mult)
+	# 2026-09-03 — cost-side rank-up upgrades, at the funnel every ability's cost passes
+	# through. Overdraw's damage half lives in the damage funnel; this is the price it pays,
+	# and the two must stay in step, which is why both are commented as a pair.
+	var _cu_picks: Array = character.get_milestone_picks(ability_name)
+	if not _cu_picks.is_empty():
+		if "overdraw" in _cu_picks:
+			cost = int(cost * 1.25)      # +30% damage, bought here
+		if "gamblers_cut" in _cu_picks:
+			cost = int(cost * 0.50)      # half price, does nothing a quarter of the time
+		if "hair_trigger" in _cu_picks:
+			cost = int(cost * 0.60)      # cheap, wildly variable output
 
 	# Skill enhancement cost reduction
 	var cost_reduction = character.get_skill_cost_reduction(ability_name)
@@ -5718,6 +5733,20 @@ func apply_variable_cost(character: Character, ability_name: String, combat: Dic
 	class passives) to both floor + ceiling so the curve scales with build.
 	On ok: the resource has already been spent on the character."""
 	var result := {"ok": false, "spent": 0, "fraction": 0.0, "messages": [] as Array}
+	# Blood Price (rank-up): the card is paid for in HEALTH rather than in your resource. It
+	# always casts at full strength — the whole trade is that the cost comes off a bar you
+	# cannot regenerate mid-fight nearly as fast.
+	if "bloodprice" in character.get_milestone_picks(ability_name):
+		var hp_cost: int = maxi(1, int(float(character.get_total_max_hp()) * 0.08))
+		if character.current_hp <= hp_cost:
+			result.messages.append("[color=#FF4444]Not enough health to pay the Blood Price![/color]")
+			return result
+		character.current_hp -= hp_cost
+		result.messages.append("[color=#FF6666]Blood Price: paid with %d health.[/color]" % hp_cost)
+		result["ok"] = true
+		result["spent"] = 0
+		result["fraction"] = 1.0
+		return result
 	if not VARIABLE_COST_TABLE.has(ability_name):
 		result.messages.append("[color=#FF4444]Ability %s missing from variable-cost table![/color]" % ability_name)
 		return result
@@ -5936,6 +5965,10 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 					combat["focus"] = mini(FOCUS_MAX, int(combat.get("focus", 0)) + 1)
 					result.messages.append("[color=#5AC8FF]Building: +1 Focus.[/color]")
 
+	if bool(combat.get("_keen_crit", false)):
+		combat["_keen_crit"] = false
+		result.messages.append("[color=#FFD700]Keen Edge: a clean critical.[/color]")
+
 	# Cast-time upgrades that do not depend on damage: these fire whether or not the card hit.
 	if "warding" in picks:
 		var shield: int = maxi(1, int(float(character.get_total_max_hp()) * 0.06))
@@ -5948,6 +5981,25 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 		# The buff was made 50% stronger; this is the defence it cost. Duration matches the
 		# buff it was taken on, so it fades together with the thing it paid for.
 		character.add_buff("open_guard_penalty", 15, _buff_duration(character, ability_name, 4))
+	if "provoking" in picks:
+		# It works, and it makes the foe fixate on you. Real in solo AND in a party, rather
+		# than a party-only pick that reads as dead to a solo player.
+		combat["provoked"] = true
+		result.messages.append("[color=#FF8855]Provoking: it fixes on you now.[/color]")
+	if "unstable_hex" in picks and randf() < 0.20:
+		# One time in five the hex turns around. The stronger debuff was the bet.
+		var self_hit: int = maxi(1, int(float(character.get_total_max_hp()) * 0.04))
+		character.current_hp = maxi(1, int(character.current_hp) - self_hit)
+		result.messages.append("[color=#9400D3]Unstable Hex: it rebounds — %d damage to you.[/color]" % self_hit)
+	if "preload" in picks:
+		# Remembered on the CHARACTER, not the combat, because the whole point is that it
+		# survives the fight it was cast in and re-applies at the start of the next one.
+		character.set_meta("preload_ability", ability_name)
+	if "shared" in picks:
+		# Co-op: an ally also receives the buff at half strength. Solo this is inert by nature
+		# rather than by oversight, and the description says "in a party" so it is not a
+		# surprise. The party path owns the actual application; this marks the intent.
+		_apply_shared_buff_to_ally(combat, character, ability_name, result)
 
 	# Killing-blow upgrades. Checked after the damage block so an overkill hit still leeches.
 	var killed: bool = monster is Dictionary and int(monster.get("current_hp", 1)) <= 0
@@ -5957,6 +6009,48 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 			if spent > 0:
 				_restore_primary_resource(character, spent)
 				result.messages.append("[color=#66FF66]Closing Cost: the kill refunds %d.[/color]" % spent)
+
+func _apply_shared_buff_to_ally(combat: Dictionary, caster, ability_name: String, result: Dictionary) -> void:
+	"""Shared: in a party, one ally also receives this buff at half strength.
+
+	Reuses the party's own buff-redirect notion rather than inventing a second path — the same
+	machinery that lets a mage aim Forcefield at a teammate (v0.9.740). Outside a party there
+	is no ally and nothing happens, which the upgrade's description states plainly."""
+	var leader_id: int = int(party_combat_membership.get(int(combat.get("peer_id", -1)), -1))
+	if leader_id < 0 or not active_party_combats.has(leader_id):
+		return
+	var pc = active_party_combats[leader_id]
+	var me: int = int(combat.get("peer_id", -1))
+	for pid in pc.get("members", []):
+		if pid == me:
+			continue
+		var st = pc.get("member_states", {}).get(pid, {})
+		if st.is_empty() or st.get("dead", false) or st.get("fled", false):
+			continue
+		var ally = pc.get("characters", {}).get(pid, null)
+		if ally == null:
+			continue
+		# Half strength, same duration as the caster's own.
+		for b in caster.active_buffs:
+			var half: int = maxi(1, int(float(b.get("value", 0)) * 0.5))
+			ally.add_buff(String(b.get("type", "")), half, int(b.get("duration", 1)))
+		result.messages.append("[color=#7AA8FF]Shared: %s also receives it, at half strength.[/color]" % ally.name)
+		return
+
+func apply_preloaded_buff(character, combat: Dictionary) -> void:
+	"""Preload: a buff taken with this upgrade is already active on round one of the NEXT fight.
+	Called by start_combat so the effect exists where the player was promised it — the fight
+	after the one they cast it in."""
+	if character == null or not character.has_meta("preload_ability"):
+		return
+	var ability_name := String(character.get_meta("preload_ability"))
+	character.remove_meta("preload_ability")
+	if ability_name == "":
+		return
+	# Re-run the ability's own buff at reduced strength: it is a head start, not a free cast.
+	var val: int = _apply_buff_value_modifiers(character, ability_name, 20)
+	character.add_buff("damage_reduction", maxi(1, int(float(val) * 0.5)),
+		_buff_duration(character, ability_name, 2))
 
 func _restore_primary_resource(character, amount: int) -> void:
 	"""Give back `amount` of whichever resource this class actually spends."""
@@ -6022,6 +6116,14 @@ func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg:
 	if "gamblers_cut" in picks:
 		if randf() < 0.25:
 			return 0.0       # a quarter of the time it simply does not happen
+	# Keen Edge. Abilities had no critical hit of their own — only basic attacks and the mage's
+	# class passive did — so this adds one rather than pretending to modify something that was
+	# not there. Stacking, hence the count rather than a presence check.
+	var keen_stacks: int = character.card_upgrade_count(ability_name, "keen")
+	if keen_stacks > 0 and combat != null and combat is Dictionary:
+		if randf() < 0.08 * float(keen_stacks):
+			dmg *= 1.50
+			combat["_keen_crit"] = true
 	if "sacrificial" in picks and combat != null and combat is Dictionary:
 		var spent_key := "sacrificed_%s" % ability_name
 		if not bool(combat.get(spent_key, false)):
@@ -6068,10 +6170,15 @@ func _apply_buff_value_modifiers(character: Character, ability_name: String, bas
 	var path_buff_pct = character.get_path_effect_total("buff_value_pct")
 	if path_buff_pct != 0.0:
 		value = value * (1.0 + path_buff_pct / 100.0)
-	# 2026-09-03 — buff-side rank-up upgrades. This is already the funnel every buff's magnitude
-	# passes through, so they belong here rather than in each ability body.
+	# 2026-09-03 — buff-side AND debuff-side rank-up upgrades. This is already the funnel every
+	# buff/debuff magnitude passes through (sabotage routes through it too), so they belong here
+	# rather than in each ability body.
 	var picks: Array = character.get_milestone_picks(ability_name)
 	if not picks.is_empty():
+		if "provoking" in picks:
+			value *= 1.60       # the foe focuses you — penalty applied at cast time
+		if "unstable_hex" in picks:
+			value *= 1.60       # sometimes it turns on you instead — rolled at cast time
 		if "concentrated" in picks:
 			value *= 2.0        # half duration, applied in _buff_duration
 		if "fragile_ward" in picks:
@@ -7066,6 +7173,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			if character.get_buff_value("open_guard_penalty") > 0:
 				# Open Guard: a much stronger buff, paid for with defence while it holds.
 				_mit_mult *= 1.15
+			if bool(combat.get("provoked", false)):
+				# Provoking made the debuff stronger and the foe angrier with you specifically.
+				_mit_mult *= 1.20
 			_mit_mult = clampf(_mit_mult, MITIGATION_BUFF_FLOOR, MITIGATION_VULN_CEIL)
 			damage = max(1, int(_raw_hit * _mit_mult))
 

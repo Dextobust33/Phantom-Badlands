@@ -31,7 +31,8 @@ func _init():
 		"overdraw","reckless","brittle","greedy","wild_swing","all_in","slow_burn",
 		"hair_trigger","gamblers_cut","sacrificial",
 		"concentrated","costly_vigil","fragile_ward","slow_cast","reckless_guard",
-		"swift","warding","unsettling"]
+		"swift","warding","unsettling",
+		"keen","preload","shared","bloodprice","provoking","unstable_hex"]
 	var pending: Array = []
 	for u in CU.UPGRADES:
 		if not (String(u["id"]) in wired):
