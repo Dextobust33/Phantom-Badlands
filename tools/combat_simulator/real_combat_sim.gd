@@ -1558,11 +1558,29 @@ func run_species_audit():
 		print("")
 		print("--- L%d ---   %-22s %7s %8s %7s" % [lvl, "species", "win%", "turns", "spawn%"])
 		for r in rows:
-			print("              %-22s %6d%% %8.1f %6d%%" % [r[0], r[1], r[2], r[3]])
-		if rows.size() >= 2:
-			print("              SPREAD: %d%% (%s) to %d%% (%s) — %d points" % [
-				int(rows[0][1]), rows[0][0], int(rows[rows.size()-1][1]), rows[rows.size()-1][0],
-				int(rows[rows.size()-1][1]) - int(rows[0][1])])
+			print("              %-22s%s %6d%% %8.1f %6d%%" % [r[0], " APEX" if monster_db.is_apex_species(String(r[0])) else "     ", r[1], r[2], r[3]])
+		# Report the two populations SEPARATELY. Apex species are deliberately outside the
+		# normal band, so a combined spread mixes "monsters that should be alike" with
+		# "monsters that should be frightening" and reads as a regression when it is the
+		# design working. The number that matters is the spread WITHIN each group.
+		var normal_rows: Array = []
+		var apex_rows: Array = []
+		for r in rows:
+			if monster_db.is_apex_species(String(r[0])):
+				apex_rows.append(r)
+			else:
+				normal_rows.append(r)
+		if normal_rows.size() >= 2:
+			print("              NORMAL spread: %d%% (%s) to %d%% (%s) — %d points" % [
+				int(normal_rows[0][1]), normal_rows[0][0],
+				int(normal_rows[normal_rows.size()-1][1]), normal_rows[normal_rows.size()-1][0],
+				int(normal_rows[normal_rows.size()-1][1]) - int(normal_rows[0][1])])
+		if apex_rows.size() >= 1:
+			var atot := 0
+			for r in apex_rows:
+				atot += int(r[1])
+			print("              APEX: %d species, mean win %d%% (target %d%%) — should sit BELOW the normal group" % [
+				apex_rows.size(), int(float(atot) / float(apex_rows.size())), int(monster_db.APEX_TARGET_WIN * 100.0)])
 	print("=====================================================================
 ")
 
