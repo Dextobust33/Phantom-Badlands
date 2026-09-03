@@ -1301,6 +1301,35 @@ all. The honest consequence is about how the balance numbers are *read*:
       carry a player forward, so wide gear variance is the loop working — provided the floor is
       survivable
 
+### 6f. Open after the 2026-09-02 balance session — untested and unresolved
+
+Everything in 6/6b/6c is committed but **NOTHING is deployed**, and most client changes have
+only had partial playtesting. Read this before touching combat again.
+
+- [ ] **My regression, not yet fixed: post-combat settle timing.** Gating result display on the
+      beat queue means HP and resources land *after* the victory screen instead of before it.
+      User: *"my health and everything dropped around 4 seconds after combat was over."* They
+      later confirmed waiting for all animations still showed no drop, so there may be a second
+      cause. Start here — it undermines the trust of every screenshot taken during a playtest
+- [ ] **Companion durability against apex monsters.** A Chimaera dealt 298 in a round to a
+      companion with 330 HP and only `sub_tier x 3%` damage reduction, so an apex monster
+      one-shots a level-matched companion. `COMPANION_HP_SHARE = 0.5` is the owner's number and
+      tested well at L250 against normal monsters. Whether companions should share some of the
+      player's mitigation, or simply have a larger pool, is a design call and was deliberately
+      NOT guessed at
+- [ ] **Build the HP ledger properly.** Instrument `process_monster_turn` to accumulate every HP
+      change with its cause and assert it against the actual delta. The message-parsing version
+      was removed after producing confident wrong answers three times
+- [ ] **Apex species still average 53% win against their 38% target.** Wraith hit the x2.50
+      correction cap (it was 75% as an apex species); World Serpent and Phoenix are part-way.
+      Another `-- speciescal` pass, and look at why Wraith is so easy for its tier
+- [ ] Companion **ASCII art** takes a beat to reappear after combat — likely the same playback
+      gating as the settle bug
+- [ ] Re-run `-- ability_hp` and `-- classes`: ability weights were tuned when casts were
+      effectively free, and costs are now real
+- [ ] **Sage remains last** (24% caster-stat deficit its passive cannot repay) and **tricksters
+      still lead**. Both are genuine class design, untouched
+
 ### 6d. Risk, reward & progression incentives
 *Also split out of item 6. This is the economy around fights rather than the fights themselves.*
 
