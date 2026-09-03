@@ -810,12 +810,43 @@ look different from how it actually plays, so treat historical numbers in this f
 Danger converged and win rates now descend correctly by role — empowered used to be EASIER than
 normal. L1-L100 lands at 4.5-6.5 turns against a 5-turn target.
 
-- [ ] **Turn counts still swing** (elite 3.9-24.5, boss 6.8-34.0). Danger converged because
-      `str` is a clean independent lever; turns did not because `hp` and `str` are coupled —
-      raising `str` shortens the fight AND raises cost, so the two corrections fight. Needs a
-      joint solve rather than two independent single-axis corrections
-- [ ] **The role SPREAD is compressed**: measured means ~47/53/62/65 against targets 40/55/65/80.
-      A boss is not far enough from a trash fight. `-- rolecal` running
+**ROLE CALIBRATION landed — bosses are dangerous again.** `-- rolecal`, per anchor level:
+
+| role | HP cost | target | win% |
+|------|---------|--------|------|
+| empowered | 39-73% | 55% | 50-80% |
+| elite | 49-72% | 65% | 53-73% |
+| **boss** | **69-85%** | **80%** | **27-50%** |
+
+A boss now costs ~three quarters of the bar and is lost more often than won. Before this session
+it cost half a bar at a 60-73% win rate.
+
+**A FOURTH tooling bug, and this one destroyed committed work rather than misreporting it.**
+`refcal` wrote the curve file with only `anchors`, so running it after `rolecal` silently wiped
+`role_multipliers` — the boss fix above was measured, reported, and then overwritten by the very
+next `refcal` run. **The order documented at the top of CLAUDE.md (`refcal` then `roles`) would
+have destroyed the role calibration every single time.** `refcal` now carries the block forward
+and prints a note when it does. Only caught because a manual file restore happened to print
+"no role_multipliers in current file".
+
+**A correction attempt that FAILED, recorded so it is not retried.** Correcting monster HP
+against EFFECTIVE turns (fight length extrapolated to completion from damage dealt, to escape
+death-truncation) made the low game worse: L1-L100 fell from 4.5-6.5 turns to 2.5-3.0 against a
+5-turn target, L50 HP 6296 -> 3612. For a WON fight eff_turns equals observed turns; for a lost
+one it extrapolates upward, so the mean is always >= observed, and the calibrator concluded
+fights ran long. The premise was wrong: a player who dies on turn 4 experienced a 4-turn fight
+against a monster that is too STRONG, which the danger axis already handles. `eff_turns` is
+still measured and reported — the truncation it describes is real — but it is not the correction
+signal. Reverted.
+
+- [ ] **Turn counts still swing** and this is now the LAST big open item on the curve (boss
+      L5000 43.7 turns, empowered L10000 48.1). Danger converged because `str` is a clean
+      independent lever; turns did not. Note `rolecal` deliberately does NOT calibrate
+      `hp_mult` — it is fixed at the role's design length ratio (1.40/1.80/2.80) with no
+      feedback, so **role fight length inherits the base curve's turn error and multiplies it**.
+      Boss L250 is 30 turns because normal L250 runs long. Fix the base curve, not the roles.
+      Two failed approaches so far: feeding both axes back (oscillates) and effective turns
+      (above). A joint two-variable solve is the untried option
 - [ ] Re-read `ABILITY_WEIGHTS` against `-- ability_hp` now the bar is frozen and the curve moved
 - [ ] Re-run `-- classes`, `-- species` — both were measured against the stale curve
 
