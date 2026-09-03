@@ -12,6 +12,76 @@ order is what forces revisits.
 
 ---
 
+## ⚑ NEXT SESSION: SHIP A RELEASE FIRST
+
+**2026-09-02 ended with 94 commits and nothing in players' hands.** That is the wrong ratio and
+the next session should correct it before starting anything new. The work is real — the day
+found and fixed defects that would each have shipped as live bugs — but none of it reached
+anyone.
+
+**What is committed, working, and unreleased.** All of this is `master`, compile-clean, and most
+of it has been exercised in live play:
+
+| area | change |
+|------|--------|
+| Regeneration | a regenerating boss was **mathematically unwinnable** (net damage/turn negative at every level); capped against the frozen bar |
+| Forcefield | absorbed **1.07-1.41x the caster's whole health bar** per cast; anchored to 0.25x, description corrected |
+| Companions | aggro-scaled HP share — tanks had the SAME pool as glass casters and died ~4x faster than their owner |
+| Companions | aggro rolled per HIT, so a multi_strike burst no longer lands entirely on one target |
+| Companion HP | one number in and out of combat (client had two mirrors of the formula; one used a long-dead formula) |
+| Ability costs | server-authoritative costs + MEASURED per-turn regen; the client can no longer disagree with the bar |
+| Monster curve | ability anchor decoupled from the calibrated curve, curve smoothed, sawtooth removed |
+| Roles | boss/elite/empowered danger calibrated; empowered no longer harder than elite |
+| Tooling | playtest log (victories AND deaths), forced elite/empowered spawns, live spawn table in the fixture |
+
+**Release checklist** (from CLAUDE.md, the parts that have bitten before):
+1. `--editor --quit` recompile FIRST — headless export ships a stale script cache, and v0.9.657-660
+   all shipped old code. Verify by RUNNING the build, not by grepping the pck
+2. Bump `VERSION.txt` (currently 0.9.740); update `display_changelog()` in client.gd
+3. Ship **four** assets under one tag (Win client + Win launcher + Linux client + Linux launcher)
+   plus the pck/runtime split + `client-manifest.json`
+4. `bash deploy_server.sh` for the server
+5. 1-minute in-game warning before the swap
+
+**Known-open at ship time, and acceptable:**
+- Post-combat HP staleness — player reports HP dropping BEFORE combat ends, and the end-of-fight
+  number being the stale one. NOT the post-combat settling I originally assumed. Needs the HP
+  ledger (instrument `process_monster_turn`), not a fourth guess
+- Buff effects (Forcefield) take a beat to appear on the HP bar — same playback-gating family
+- High-level fight LENGTH still swings; danger is calibrated, turns are not
+- Boss win rate 18-46% — **a user DECISION, not a defect**: *"I'm okay with the bosses currently
+  as I think companions and gear will make up the difference"*
+
+---
+
+## ⚑ MEASUREMENT DISCIPLINE — five instrument defects found in ONE day
+
+Every one of these produced confident, wrong numbers, and several were reported to the user as
+fact before being caught. Read this before trusting any historical figure in this file.
+
+1. **Win counted twice** — the same `if` written twice in a row in `_fight_stats_at`. Every win
+   rate that function ever printed was **2x the truth**
+2. **`refcal` printed the pass BEFORE the value it wrote** — the table described a state one
+   correction out of date
+3. **Smoothing/clamping run AFTER the per-anchor print loop** — so the printed table described
+   numbers that no longer existed by the time the file was written
+4. **`refcal` silently wiped `rolecal`'s output** — it wrote only `anchors`, so a measured and
+   reported boss danger fix was destroyed by the next calibration run with no warning
+5. **Victory cost measured BEFORE post-defeat effects** — a flock that took the player to 1 HP
+   logged as costing **0%** of the bar. Mine, written an hour earlier
+
+**The rule that came out of it:** when the player's account disagrees with an instrument, check
+the instrument first. In this session the player was right every single time — the missing
+Forcefield shield, the one-shot companion, the vanished HP bar, the unwinnable regenerator, and
+the 1 HP demon flock were all real, and in several cases the tooling actively denied them.
+
+**The corollary that cost the most time:** a simulator cannot find a defect that depends on
+playing well. Forcefield granting effective immunity was invisible to every audit because the
+sim's mage AI does not maintain it. One sentence from the player — *"as long as I maintain it I
+don't really get hurt"* — found what a day of calibration could not.
+
+---
+
 ## In progress
 
 **Item 6 (progression & difficulty curve) is the active arc.** Items 1-5 are done. On 2026-09-02
