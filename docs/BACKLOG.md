@@ -1702,6 +1702,36 @@ the loop that 12b eventually scales.
 
 **End state:** basic equipment, one registered companion, and a firm grasp of the loop.
 
+**Stage 0 — EVERYTHING IS SKIPPABLE, including the rewards** *(owner clarification 2026-09-03)*
+- [ ] The **tutorial starter quest that grants the equipment and the companion must be
+      skippable too**, not just the tours. Two reasons given, and they want different handling:
+      1. **A returning player bringing their own gear and registered companions.** They do not
+         need the starter kit and should not be walked through equipping their first item
+      2. **A player who just wants the challenge**, skipping the quest AND its rewards
+- [ ] So the skip is offered per-stage, and skipping the Phantom stage forfeits its rewards
+      (gear, egg, registration item) as an accepted consequence rather than a bug
+
+**⚠ CONSEQUENCE — this partly re-opens the gear-anchor decision, and the note above it should
+be read with this.** Item 7 was placed after item 6 because its output makes every new character
+equal the reference player the monster curve is anchored to. **A player who skips lands back in
+the gearless hole** — the one that measured 6.2 turns to kill against 8.1 to live, and killed
+four starter characters. Who actually skips:
+
+| skipper | are they geared? | verdict |
+|---|---|---|
+| returning player with stored gear + registered companions | **yes** | fine — they ARE the reference player by another route |
+| player choosing the challenge | **no** | fine ONLY if it is an informed choice, not a hidden difficulty spike |
+
+So the honest form of the earlier claim is: **the curve is correct by construction for players
+who COMPLETE onboarding, and skipping is an explicit difficulty choice.** That is defensible,
+but it means:
+- [ ] The skip prompt must say plainly what is being given up — "you will start with no gear and
+      no companion, and the world is sized for a character who has both". Not a bare Yes/No
+- [ ] Worth deciding whether a gearless character should still be *survivable* at L1-5 (so
+      skipping is hard rather than fatal), which is option (a) of the original decision. Doing
+      BOTH (a) and (b) is coherent: onboarding gives you the kit, and the first few levels do
+      not assume it
+
 #### Open decisions inside this item
 - [ ] Retire the Pathfinder chain, or keep it as follow-on content? (see above)
 - [ ] Scope of the companion stat/compare rework — a read-only compare view, or does it also
@@ -2194,6 +2224,12 @@ predicted exactly this shape: *"likely gear after abilities are properly balance
       reference player the curve is anchored to. So the low-level band becomes correct by
       construction and no separate curve is needed. **Item 7 is therefore a balance dependency,
       not only a UX arc**, which is why it now sits directly after item 6.
+- [ ] **QUALIFIED 2026-09-03 (same day):** the owner then specified that the gear/companion
+      quest must be **skippable**, so "correct by construction" holds only for players who
+      COMPLETE onboarding. A skipper is back in the gearless case. Either the skip prompt makes
+      that an informed difficulty choice, or the L1-5 band is also made survivable gearless
+      (original option (a)) — the two are compatible and doing both is the safer answer. See
+      Stage 0 under item 7.
 - [ ] Related: the L5 spawn table lists **Skeleton at 18.5% and it is an APEX species** —
       deliberately tuned to a 28-48% win band. Nearly one in five of a new player's first
       fights is a monster designed to beat them. Apex at tier 1 may be too early; the design
