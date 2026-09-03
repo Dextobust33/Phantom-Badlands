@@ -11433,7 +11433,13 @@ func _on_ability_popup_confirm():
 		return
 
 	var amount = int(text)
-	if amount <= 0:
+	# 2026-09-03 — Outsmart is the one caller where committing NOTHING is a legitimate choice:
+	# the energy only buys up to +15% odds, it is not a fee. Rejecting 0 made that impossible,
+	# and with an empty energy bar it made Outsmart unusable ENTIRELY, which is exactly what a
+	# co-op playtest hit ("Couldn't use outsmart turn 4 due to no Energy"). Every other
+	# variable-cost ability still needs a real spend to do anything, so they keep the guard.
+	var _zero_ok: bool = pending_variable_ability == "outsmart"
+	if amount < 0 or (amount == 0 and not _zero_ok):
 		ability_popup_input.text = ""
 		ability_popup_input.placeholder_text = "Must be > 0!"
 		return

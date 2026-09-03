@@ -10320,6 +10320,22 @@ func _party_check_deaths(combat: Dictionary) -> void:
 		if combat.characters[pid].current_hp <= 0:
 			st["dead"] = true
 
+func party_round_ready(leader_id: int) -> bool:
+	"""True when every living, present member has locked in an action. Exposed so callers can
+	ask rather than re-deriving the condition from member_states — the dev auto-act hook needs
+	to know whether filling in the other members completed the round."""
+	if not active_party_combats.has(leader_id):
+		return false
+	var c = active_party_combats[leader_id]
+	for pid in c.get("members", []):
+		var st = c.get("member_states", {}).get(pid, {})
+		if st.is_empty() or st.get("dead", false) or st.get("fled", false):
+			continue
+		if st.get("queued_action", {}) == {}:
+			return false
+	return true
+
+
 func resolve_party_round(leader_id: int) -> Dictionary:
 	"""#64 Slice 2 — resolve one SIMULTANEOUS round: members act in SPEED order, then the monster
 	acts once. Returns {combat_ended, victory?, wipe?, messages, round}. The server calls this once

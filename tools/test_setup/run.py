@@ -90,10 +90,14 @@ def main():
         if old_log.endswith(".log"):
             os.remove(os.path.join(logdir, old_log))
 
-    print("[3/4] server (auto-party)")
+    # --autoact: non-leader members auto-attack so ONE person can test a party fight. Without
+    # it a co-op round never resolves unless you alt-tab and act in every window, which reads
+    # as "nothing happened" rather than "you are still waiting on someone".
+    print("[3/4] server (auto-party, auto-act, fight log)")
     slog = open(os.path.join(logdir, "server.log"), "w", encoding="utf-8", errors="replace")
     subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
-                      "--resolution", "1280x720", "server/server.tscn", "--", "--autoparty"],
+                      "--resolution", "1280x720", "server/server.tscn", "--",
+                      "--autoparty", "--autoact", "--playtest-log"],
                      stdout=slog, stderr=subprocess.STDOUT)
     if not wait_for_server():
         print("  server never started listening")

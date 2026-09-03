@@ -39908,6 +39908,43 @@ func _dev_autoparty_enabled() -> bool:
 	return false
 
 
+func _dev_autoact_enabled() -> bool:
+	"""`-- --autoact`, dev builds only, same gate as --autoparty.
+
+	Co-op rounds only resolve when EVERY member has locked in, so one person testing a party
+	has to alt-tab and act in each window every single round. Miss one and nothing happens at
+	all — no damage, no regen, no Read — which is exactly what a 2026-09-03 playtest hit and
+	reasonably read as "attacking gave me no energy back". With this on, every NON-LEADER member
+	auto-attacks the moment the leader locks in, so the tester drives one window and the round
+	resolves. The leader is never auto-acted: that is the character under test."""
+	if not OS.has_feature("editor"):
+		return false
+	for a in OS.get_cmdline_user_args():
+		if String(a) == "--autoact":
+			return true
+	return false
+
+
+func _dev_autoact_fill(leader_id: int, acting_peer_id: int) -> void:
+	"""Lock in a basic attack for every party member who has not submitted and is not the
+	leader. Called after a submit that did not complete the round."""
+	if not _dev_autoact_enabled():
+		return
+	if not combat_mgr.active_party_combats.has(leader_id):
+		return
+	var c = combat_mgr.active_party_combats[leader_id]
+	for pid in c.get("members", []):
+		if pid == leader_id or pid == acting_peer_id:
+			continue
+		var st = c.get("member_states", {}).get(pid, {})
+		if st.is_empty() or st.get("dead", false) or st.get("fled", false):
+			continue
+		if st.get("queued_action", {}) != {}:
+			continue
+		combat_mgr.submit_party_action(leader_id, pid, {"kind": "attack"})
+		log_message("[dev] auto-acted attack for peer %d" % pid)
+
+
 func _dev_autoparty_join(peer_id: int) -> void:
 	"""Put this peer into the single dev party: become leader if nobody else is online, else
 	join the existing one. Deferred so the character is fully registered first."""
@@ -40064,9 +40101,12 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FFA500]%s[/color]" % sres.get("reason", "Can't submit that.")})
 		return
 	if not sres.get("all_submitted", false):
-		send_to_peer(peer_id, {"type": "text", "message": "[color=#66D0C0]Locked in — waiting for the rest of your party...[/color]"})
-		_broadcast_party_update(leader_id, [], false)
-		return
+		# Dev harness: fill in the other members so one person can test a party fight.
+		_dev_autoact_fill(leader_id, peer_id)
+		if not combat_mgr.party_round_ready(leader_id):
+			send_to_peer(peer_id, {"type": "text", "message": "[color=#66D0C0]Locked in — waiting for the rest of your party...[/color]"})
+			_broadcast_party_update(leader_id, [], false)
+			return
 	# Everyone's in — resolve the round.
 	var res = combat_mgr.resolve_party_round(leader_id)
 	var msgs = res.get("messages", [])
@@ -40186,7 +40226,17 @@ func _party_member_hand_payload(leader_id: int, pid: int) -> Dictionary:
 		out["is_trickster_read"] = path == "trickster"
 		out["read"] = int(st.get("combo", 0))
 		out["read_max"] = CombatManager.COMBO_MAX
-		out["outsmart_chance"] = 0  # #75 covers Outsmart viability; charge viz not wired for co-op yet
+		# 2026-09-03 — was hardcoded 0 with the note "charge viz not wired for co-op yet", which
+		# is why the meter read 0% at every Read level in a party: the number was never computed,
+		# not merely mis-scaled. Now that Outsmart WORKS in co-op the meter has to tell the truth,
+		# so compute it from the same shared helper the roll uses, with this member's own Read.
+		var _os_view := {
+			"character": ch,
+			"monster": c.get("monster", {}),
+			"combo": int(st.get("combo", 0)),
+			"outsmart_attempts": int(st.get("outsmart_attempts", 0)),
+		}
+		out["outsmart_chance"] = int(combat_mgr._outsmart_chance(ch, c.get("monster", {}), _os_view))
 		out["is_mage_focus"] = path == "mage"
 		out["focus"] = int(st.get("focus", 0))
 		out["focus_max"] = CombatManager.FOCUS_MAX
