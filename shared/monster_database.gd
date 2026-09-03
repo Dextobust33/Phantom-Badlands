@@ -1573,6 +1573,10 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 
 	# Calculate XP and gold with tiered formulas (based on final stats)
 	var experience_reward = _calculate_experience_reward(scaled_hp, scaled_strength, scaled_defense, target_level)
+	# Apex species are tuned above their tier's band, so they pay above it too. Applied before
+	# the elite/empowered multipliers below, which then stack on top as normal.
+	if is_apex_species(String(base_stats.get("name", ""))):
+		experience_reward = int(experience_reward * APEX_XP_MULT)
 	# Gold removed — Valor is now earned via market listings only
 
 	# Calculate monster intelligence based on level tier (for Outsmart mechanic)
@@ -2252,6 +2256,41 @@ const ROLE_TARGETS := {
 static var _calibrated_role_mults: Dictionary = {}
 # Per-species power corrections from `-- speciescal`, keyed by monster name. 1.0 = untouched.
 static var _species_power: Dictionary = {}
+
+# APEX SPECIES (#6c, user direction 2026-09-02) — deliberately harder than their tier peers.
+#
+# Calibrating every species into one band makes the same level the same fight, which was the
+# fix for a 69-point spread but overshoots into blandness. The intent: *"when players get to
+# know their limits and climb into the higher tiers they have some monsters they have to be
+# very careful of, but are highly rewarding experience and reward wise."*
+#
+# These are exempt from the normal win-rate band and calibrated to a LOWER one instead, so they
+# read as a genuine threat rather than a stat check — and they pay for it, with an XP bonus
+# scaled to the extra danger. One or two per tier, chosen as the highest-level and most
+# thematically fearsome of their band, so the ladder has a recognisable "careful of that one"
+# at every stage rather than only at the top.
+const APEX_SPECIES := {
+	"Skeleton": true,            # T1
+	"Mimic": true,               # T2 — the ambusher
+	"Wyvern": true, "Wraith": true,           # T3
+	"Chimaera": true,            # T4
+	"Titan": true, "Jabberwock": true,        # T5
+	"Hydra": true, "Phoenix": true,           # T6
+	"Primordial Dragon": true, "World Serpent": true,   # T7
+	"Death Incarnate": true, "Cosmic Horror": true,     # T8
+	"Entropy": true, "God Slayer": true,      # T9
+}
+# Win-rate band an apex species is calibrated to, against the normal 0.60 +/- 0.12.
+const APEX_TARGET_WIN := 0.38
+const APEX_TARGET_BAND := 0.10
+# XP multiplier for killing one. Sized against the risk: at ~38% win against ~60% for a normal
+# species, an apex kill costs roughly 1.6x the attempts, so 2.0x pays a premium on top of that
+# rather than merely compensating.
+const APEX_XP_MULT := 2.0
+
+static func is_apex_species(monster_name: String) -> bool:
+	"""True for species deliberately tuned above their tier's difficulty band."""
+	return APEX_SPECIES.has(monster_name)
 
 static func set_species_power(m: Dictionary) -> void:
 	_species_power = m if m != null else {}

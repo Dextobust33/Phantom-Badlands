@@ -1636,11 +1636,13 @@ func run_species_calibrate():
 	var samples: int = maxi(4, int(_audit_n / 12.0))
 	var passes := 3
 	var levels := [50, 250, 1000]
-	var target := 0.60          # centre of the acceptable win-rate band
-	var band := 0.12            # +/- this is left alone
+	var base_target := 0.60     # centre of the acceptable win-rate band
+	var base_band := 0.12       # +/- this is left alone
 	print("
 ===== #6c SPECIES POWER CALIBRATION =====")
-	print("Target band: %.0f%%-%.0f%% win. Species inside it are left alone." % [(target - band) * 100.0, (target + band) * 100.0])
+	print("Target band: %.0f%%-%.0f%% win. Species inside it are left alone." % [(base_target - base_band) * 100.0, (base_target + base_band) * 100.0])
+	print("APEX species are calibrated to a HARDER band (%.0f%%-%.0f%%) on purpose — they are the" % [(monster_db.APEX_TARGET_WIN - monster_db.APEX_TARGET_BAND) * 100.0, (monster_db.APEX_TARGET_WIN + monster_db.APEX_TARGET_BAND) * 100.0])
+	print("monsters a player should learn to be careful of, and they pay %.1fx XP for it." % monster_db.APEX_XP_MULT)
 	var power := {}
 	# Collect the species actually reachable at these levels.
 	var species := {}
@@ -1657,6 +1659,10 @@ func run_species_calibrate():
 	names.sort()
 	print("Calibrating %d species that actually spawn at L50/L250/L1000." % names.size())
 	for nm in names:
+		# Apex species aim at a deliberately harder band than their peers.
+		var is_apex: bool = monster_db.is_apex_species(nm)
+		var target: float = float(monster_db.APEX_TARGET_WIN) if is_apex else base_target
+		var band: float = float(monster_db.APEX_TARGET_BAND) if is_apex else base_band
 		var corr := 1.0
 		var last_win := 0.0
 		for pass_i in range(passes):
@@ -1710,7 +1716,7 @@ func run_species_calibrate():
 			corr = clampf(corr, 0.35, 2.5)
 		power[nm] = corr
 		if absf(corr - 1.0) > 0.02:
-			print("  %-22s win %3.0f%% -> power x%.2f" % [nm, last_win * 100.0, corr])
+			print("  %-22s%s win %3.0f%% -> power x%.2f" % [nm, " APEX" if is_apex else "     ", last_win * 100.0, corr])
 	var existing := {}
 	var rf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
 	if rf:
