@@ -1722,6 +1722,11 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 
 	# Empowered drop chance: +20 per modifier, Gilded adds +20 more on top.
 	var final_drop_chance: int = 100 if is_elite else int(base_stats.get("drop_chance", 5))
+	# Apex species pay in LOOT as well as XP. The owner's framing was "highly rewarding
+	# experience and reward wise", and an XP multiplier alone makes a dangerous monster
+	# something you kill for a number rather than something you hunt for what it drops.
+	if is_apex_species(String(base_stats.get("name", ""))):
+		final_drop_chance = mini(100, int(round(float(final_drop_chance) * APEX_DROP_MULT)))
 	if empowered_mods.size() > 0:
 		final_drop_chance = min(100, final_drop_chance + 20 * empowered_mods.size() + (20 if "gilded" in empowered_mods else 0))
 
@@ -1769,6 +1774,9 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 		"death_message": base_stats.get("death_message", ""),
 		"is_rare_variant": is_rare_variant,
 		"is_elite": is_elite,
+		# Flagged on the monster so the client can mark an apex species in the UI — a player
+		# cannot learn to be careful of something the game never tells them is dangerous.
+		"is_apex": is_apex_species(String(base_stats.get("name", ""))),
 		"variant_type": variant_type,  # "" / "weapon_master" / "shield_guardian" / "corrosive" / "sunder" / "elite" — drives client-side border tint on monster ASCII art
 		# Empowered (v0.9.651) — stacking modifier ids ("frenzied", "gilded", ...).
 		# name_color drives the D2-style rarity tint on name + ASCII border;
@@ -2287,6 +2295,10 @@ const APEX_TARGET_BAND := 0.10
 # species, an apex kill costs roughly 1.6x the attempts, so 2.0x pays a premium on top of that
 # rather than merely compensating.
 const APEX_XP_MULT := 2.0
+# Drop-chance multiplier for an apex kill. Deliberately larger than the XP multiplier: XP is a
+# steady trickle a player gets from everything, so doubling it is a modest nudge, whereas a
+# drop is the thing actually worth taking the risk for. A base 5% drop becomes 15%.
+const APEX_DROP_MULT := 3.0
 
 static func is_apex_species(monster_name: String) -> bool:
 	"""True for species deliberately tuned above their tier's difficulty band."""
