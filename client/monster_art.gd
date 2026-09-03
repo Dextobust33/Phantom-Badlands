@@ -5332,7 +5332,14 @@ static func get_monster_ascii_art(monster_name: String) -> String:
 				var art_lines = art_map[key]
 				return _brighten_bbcode_colors("\n".join(art_lines))
 
-	# Return empty string if no art found
+	# No art found. 2026-09-03 — this used to return silently, which is how a player hit
+	# "I was fighting a gnoll but I couldn't see the monster" with nothing to diagnose from.
+	# An empty return means the combat window shows NO CREATURE, so say so: it is a defect
+	# every time, never a valid state. This also SPLITS the two possible causes — if this line
+	# appears in the client log, art RESOLUTION failed; if the art is missing on screen and
+	# this line is absent, the art resolved and the RENDER path dropped it.
+	push_warning("[monster_art] no art resolved for '%s' — combat will show no creature" % monster_name)
+	print("[monster_art] MISSING ART for '%s' (checked exact, VARIANT and partial match)" % monster_name)
 	return ""
 
 # Add a decorative border around ASCII art
