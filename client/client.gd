@@ -20893,7 +20893,14 @@ func _estimate_player_turn_regen(max_val: int) -> int:
 		return 0
 	var pct: float = float(CombatManagerScript.BASE_COMBAT_REGEN_PCT)
 	var cap: int = int(CombatManagerScript.BASE_COMBAT_REGEN_CAP_FLAT) + int(float(character_data.get("level", 1)) * float(CombatManagerScript.BASE_COMBAT_REGEN_CAP_PER_LVL))
-	return maxi(4, mini(int(float(max_val) * pct / 100.0), cap))
+	var base_regen: int = maxi(4, mini(int(float(max_val) * pct / 100.0), cap))
+	# The BASE regen above is only part of what comes back each turn — gear regen affixes and
+	# an active companion's regen stack on top. Showing base alone made the bar lie: a player
+	# reported an 81-cost cast moving their pool by 2, because the other ~29 of regen was
+	# invisible. The displayed number has to be the TOTAL or it explains nothing.
+	var gear_regen: int = int(character_data.get("mana_regen", 0)) + int(character_data.get("stamina_regen", 0)) + int(character_data.get("energy_regen", 0))
+	var comp_regen: int = int(character_data.get("companion_resource_regen", 0))
+	return base_regen + maxi(0, gear_regen) + maxi(0, comp_regen)
 
 func update_resource_bar():
 	if not resource_bar or not has_character:

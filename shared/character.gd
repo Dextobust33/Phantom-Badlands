@@ -4075,7 +4075,13 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	# hp_bonus is a PERCENTAGE everywhere else it is consumed (combat_manager applies it as
 	# get_total_max_hp() * bonus/100). It was added FLAT here, so the same table field meant
 	# two different things in two places. Treated as a percentage now, consistently.
-	var bonus_mult: float = 1.0 + float(hp_bonus) / 100.0
+	# IDENTITY (user 2026-09-02) — a tanky companion should FEEL tanky. hp_bonus and defense
+	# are the authored durability profile (Zombie hp_bonus 5, Skeleton defense 2), but read as
+	# raw percentages they moved the pool by 2-5% and every companion felt identical. Divided
+	# by 10 so a durability-profile companion is ~1.5x tougher than a glass one, which is the
+	# spread the table always intended.
+	var defense_bonus: int = int(bonuses.get("defense", 0))
+	var bonus_mult: float = 1.0 + float(hp_bonus + defense_bonus) / 10.0
 	# A companion is sized by whichever is BIGGER: the share of its owner's bar it earns for
 	# its relative level, or what its OWN level is worth outright.
 	#

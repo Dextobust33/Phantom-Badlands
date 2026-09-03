@@ -882,7 +882,14 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 			# Tier and sub-tier stay as the companion's own quality spread, bounded so a rare
 			# companion is better without turning the share into a different order of magnitude.
 			var _cmp_quality: float = 1.0 + 0.06 * float(maxi(1, int(companion_tier)) - 1) + 0.05 * float(maxi(1, int(companion_sub_tier)) - 1)
-			var _cmp_atk_pct: float = 1.0 + float(companion_bonuses.get("attack", 0)) / 100.0
+			# IDENTITY (user 2026-09-02: "percentage damage makes them all feel the same rather
+			# than having their own identities, some hit harder, have higher hp").
+			# The identity data already exists in COMPANION_DATA — a Gnoll carries attack 5, a
+			# Zombie hp_bonus 5, a Skeleton defense 2 — but reading `attack` as a raw percentage
+			# made a Gnoll 1.05x, which is invisible. Divided by 10 instead, so an attack-profile
+			# companion hits ~1.5x and a defensive one trades that away. Same table, same
+			# authored identities, finally legible in play.
+			var _cmp_atk_pct: float = 1.0 + float(companion_bonuses.get("attack", 0)) / 10.0
 			companion_damage = int(round(_cmp_bar * COMPANION_DAMAGE_SHARE * _cmp_g * _cmp_quality * _cmp_atk_pct))
 	else:
 		# Fallback formula matching drop_tables
