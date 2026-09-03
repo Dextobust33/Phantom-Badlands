@@ -2026,6 +2026,125 @@ health to survive the failed attempts.
       bar — its own item under 6c
 - [ ] Ranger's L80 maxHP (720) is far below Ninja's (1186) and Thief's (714) is too — the
       trickster health bars are inconsistent with each other, not just with other archetypes
+## ⚑ PLAYTEST 2026-09-03 (second session, L5 Fighter) — three findings
+
+### A. XP requirement was frozen at 100 — a LIVE bug, worse than it looked
+
+Owner: *"This character started Level 5 needing 100 total xp to level is that right?"* No. It
+should be ~2576.
+
+`experience_to_next_level` was set **only** inside `add_experience()`'s level-up loop.
+`level_up()` — the function that actually increments `level` — never touched it, and the field
+defaults to 100 (the L1 requirement). So every route to a new level that does not go through
+`add_experience` left the requirement frozen.
+
+Three routes did, and **one is live gameplay**:
+
+| route | consequence |
+|---|---|
+| **PARTY COMBAT XP** (`combat_manager` ~11045) | hand-rolls its own level-up loop calling `level_up()`, so **partying freezes your XP requirement at whatever it last was, permanently** |
+| `/setlevel` (`server.gd` ~37279) | admin-levelled characters need 100/level |
+| the balance fixture | how it was spotted |
+
+Party play is the headline feature of v0.9.738-740, so this has been shipped and live. Visible
+in the playtest log: the fixture went L5 → L6 after **two** Gnoll kills, then took ~15 fights
+for the next level once `add_experience` had corrected the field.
+
+The comment above `level_up()` asserted *"the live requirement is set in level_up()"* — it was
+not, and that wrong comment is presumably why nobody looked there.
+
+- [x] **FIXED at the source.** `level_up()` now maintains the field, and both paths call one
+      shared `xp_required_for_next_level()`. Same two-paths-one-field shape as
+      [[feedback-two-paths-read-same-field]]; a dead third formula was removed for this exact
+      reason on 2026-09-02
+
+### B. The difficulty curve assumes GEAR AND A COMPANION a new character does not have
+
+**This is what killed the four starter characters, and it is the most important thing in the
+session.** From the owner's own playtest log, an L5-6 Fighter built as the *reference player*
+(6/7 gear, tier-appropriate companion) against the Gnolls it actually met:
+
+| fights | mean HP cost | target | turns |
+|---|---|---|---|
+| 16 | **~10%** | 40% | 4-8 |
+
+Four times cheaper than designed. But `refcal` anchors the whole monster curve to
+`make_char(level, "average", klass)` — **average gear plus a companion**. A brand-new character
+has neither, and the gearless measurement from earlier the same day showed the other end of it:
+
+| L5 gearless vs same-level Gnoll | turns to kill | turns survived |
+|---|---|---|
+| Fighter | 5.6 | 13.6 |
+| Wizard | 5.8 | 11.3 |
+| Ranger | 6.2 | **8.1** |
+
+So the same monster is trivial for the reference player and lethal for a fresh one. The owner
+predicted exactly this shape: *"likely gear after abilities are properly balanced."*
+
+- [ ] **DECISION NEEDED. The reference player is the wrong anchor for the first few levels.**
+      Options: (a) calibrate the low-level band against a GEARLESS character and let gear be
+      pure upside, (b) guarantee starting gear + a companion so every character IS the
+      reference player, (c) a separate low-level curve that converges into the main one. (b) is
+      the smallest change and the most honest to the current model, but it changes what
+      starting out feels like
+- [ ] Related: the L5 spawn table lists **Skeleton at 18.5% and it is an APEX species** —
+      deliberately tuned to a 28-48% win band. Nearly one in five of a new player's first
+      fights is a monster designed to beat them. Apex at tier 1 may be too early; the design
+      intent ("a recognisable careful-of-that-one at every stage") does not obviously apply
+      before the player has gear, knowledge, or a reliable escape
+- [ ] Monsters near the starter post spawn at L1-L2 against a L5 player (post-anchored level
+      pockets), which softens the above but was not the condition the deaths happened in
+
+### C. Monster ASCII art missing on one Gnoll fight — NOT diagnosed, do not guess again
+
+Owner: *"I had a fight with a gnoll where the ASCII art didn't display at all. It still said I
+was fighting a gnoll but I couldn't see the monster."*
+
+Ruled out so far:
+- **Not missing art data.** `art_map["Gnoll"]` exists, and the lookup has an exact match, a
+  VARIANT match, and a partial-match fallback before it can return ""
+- **Not the empowered prefix.** The log shows "Frenzied Gnoll" that session, but `base_name` is
+  stamped as the unprefixed species (`monster_database` ~1759) and the client looks art up by
+  `monster_base_name`
+- **Not a missing `use_client_art` flag.** All ten `combat_start` senders set it, as do the
+  party and watcher paths
+
+That exhausts the cheap theories, which by the standing rule means the next step is a
+diagnostic, not a fourth guess: log the resolved art name and the returned art LENGTH at the
+render site, then reproduce. Intermittent, so it wants the instrument in place first.
+
+## ⚑ DESIGN PROPOSAL (owner 2026-09-03): gate input on animation, with a player-set speed
+
+Owner: *"we shouldn't allow players next actions to go through until the prior one completes all
+the animations and health bar adjustments... add a little arrow that can be clicked to speed up
+how fast those animations and adjustments go (and one to slow them down)... remember it and stay
+there until they adjust again. It should work for party play as well (maybe a vote before
+increase or slowing down)."*
+
+**This is the structural retirement of an entire bug class and should be treated as such.**
+Every one of these came from the player being allowed to outrun the playback queue: the
+post-combat HP staleness (three failed fixes, five code paths discarding held state), the
+companion HP bar showing a stale number, buff effects appearing a beat late, the victory card
+landing over unsettled bars, and a stale Continue button over a live battle. The current design
+races the animation and then patches each place the race is lost. Gating input removes the race.
+
+It also directly answers the reason the current pacing exists at all: results are held back so
+they land in step with the log, which is only coherent if the player cannot act in the meantime.
+
+Design notes for when it is built:
+- The speed control is what makes gating acceptable — without it, gating is just "the game is
+  slower now". With it, an impatient player sets 3x and a new player sets 0.5x
+- Persist per account, not per character
+- Party: the pacing is shared, so the setting has to be too. A vote is one answer; simplest
+  correct alternative is that the SLOWEST member's setting wins (nobody is ever rushed past
+  something they cannot read), with the leader able to override
+- The existing `_combat_ui_busy()` / `_combat_playback_active()` state is already the "is
+  playback running" predicate, so the gate has a natural home
+- `_settle_combat_bars()` (2026-09-03) stays regardless — it is the correctness backstop for
+  paths that end playback early, e.g. death
+
+- [ ] Sits naturally with backlog item 6e (solo combat presentation). Should be scoped after
+      the current balance pass lands, since it touches every combat input path
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon

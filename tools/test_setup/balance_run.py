@@ -34,37 +34,62 @@ sys.path.insert(0, HERE)
 import scenario as scen  # noqa: E402
 
 TEST_PLAN = """
-================ WHAT TO CHECK THIS SESSION ================
-Everything below is either (a) something I broke and fixed blind, or (b) a balance change with
-no playtime at all. Ordered so a failure early makes the later ones unnecessary.
+================ WHAT TO CHECK THIS SESSION (2026-09-03) ================
+Every damage ability moved onto the anchored model, the monster curve was re-calibrated
+against it, and the combat cards now print numbers the SERVER computed. None of it has been
+played. Ordered so a failure early makes the later ones unnecessary.
 
-1. COMPANION HP READS THE SAME IN BOTH PLACES       [I broke this; you have not seen the fix]
-   Look at the companion card OUT of combat, note the HP. Start any fight, look again.
-   PASS = identical numbers.  FAIL = different numbers, or no HP bar at all (the symptom you
-   reported last). This is the one I most want confirmed.
+1. DO THE CARDS TELL THE TRUTH NOW?                    [the whole point of this session]
+   Hover / read a card's damage number, play it, compare to the damage in the log.
+   PASS = they match (within the normal damage variance).
+   These four were the worst offenders you found, with what they USED to do:
+     Field / Forcefield  said 252, granted 28   -> should now match your shield
+     Meteor              said 554, dealt 264    -> should now match
+     Magic Bolt          said ~20, dealt 200+   -> should now match
+     Devastate           flat number, no mention of Momentum
+   FAIL = any card still off by more than ~20%. Tell me which card and both numbers.
 
-2. POST-COMBAT HP IS HONEST                         [open bug, never fixed, expect FAIL]
-   Win a fight, let every animation finish, read your HP. Then press space to rest.
-   FAIL = HP drops on resting, meaning the post-combat number was stale. Reproducing it is
-   genuinely useful - I could not find the second cause from the log alone. Spamming attack
-   through the victory card is the setup that showed it most reliably.
+2. DEVASTATE SHOULD GROW VISIBLY WITH MOMENTUM         [Warrior only]
+   Play Warrior cards to build Momentum and WATCH the Devastate card between each one.
+   Its number should climb every time, and the card should say "Momentum N/5".
+   At 1 Momentum it is deliberately feeble. At 5 with a full stamina bar it should be the
+   biggest hit you can throw. PASS = the number moves as Momentum moves.
 
-3. A NORMAL FIGHT SHOULD COST ~40-50% OF YOUR BAR   [rebuilt curve, zero playtime]
-   Fight 3-4 same-level monsters from the spawn table above, starting each at full HP.
-   Expect roughly half your health per fight, around 5 turns. Much cheaper, or much longer,
-   means the curve is wrong exactly where the sim says it is right.
+3. POST-COMBAT HP IS HONEST                            [3 previous fixes all looked right]
+   Win a fight, let every animation finish, read your HP. Then move a step, or press space
+   to rest, and read it again.
+   FAIL = the number changes after you act. This is the one I most want confirmed, because
+   the cause was found this time (five code paths threw the held HP away instead of applying
+   it) but the symptom is timing-dependent. Spamming attack through the victory card and
+   then immediately walking is the setup that showed it most reliably.
 
-4. A COMPANION SHOULD NOT DIE IN ONE ROUND          [aggro now rolls per hit]
-   Fight something with multi_strike - a Gryphon "hits 3 times". Previously a single aggro
-   roll put the WHOLE burst on the companion. Now it splits, so expect the log to show the
-   monster hitting you AND the companion in the same round.
+4. CAN A WARRIOR AND A TRICKSTER ACTUALLY KILL THINGS? [you died to gnolls on four characters]
+   Fight 3-4 same-level monsters from the spawn table above, each starting at full HP.
+   Expect roughly 5-6 turns and around half your health bar per fight.
+   Before this pass a gearless Trickster needed 11.5 turns to kill what killed it in 8 - it
+   could not win a straight fight at all. FAIL = still cannot close a normal fight.
 
-5. AN ELITE OR BOSS, IF YOU WILL RISK THE CHARACTER [danger targets just changed]
-   Boss danger is now ~80% of your bar by design - your call, recorded. Expect to nearly die
-   or to die. Worth one attempt to judge whether that reads as exciting or as unfair.
+5. OUTSMART ASKS BEFORE IT SPENDS                      [Trickster; it used to take 60% silently]
+   Press Outsmart on the action bar. A prompt should open asking how much ENERGY to commit,
+   pre-filled with the old automatic amount so Enter reproduces the old behaviour.
+   Committing 0 is legal. PASS = you are asked, and the number you type is what is spent.
 
-NOT worth testing yet: fight LENGTH at high level is known-wrong and already on the backlog.
-============================================================
+6. READ NOW GOES TO 8, AND EVERY STACK SHOULD PAY      [your proposal]
+   Play Trickster cards and watch the Outsmart odds climb. It reads "Read N/8" now.
+   Eight stacks reach the same ceiling five used to, so each step is smaller.
+   FAIL = the odds stop moving before 8 (that was the original bug: stacks 3-5 did nothing).
+
+7. PHANTOM STRIKE SHOULD SAY CRITICAL                  [it always did the damage, never said so]
+   Play Phantom Strike, then attack. The log should call it a critical hit.
+
+8. APEX SPECIES SHOULD BE TAGGED                       [shipped in v0.9.741, never seen]
+   If you meet a Skeleton, Mimic, Wyvern, Wraith, Chimaera, Hydra or Phoenix, its health bar
+   should read a red "TOMBSTONE  <name> [APEX]". Those are tuned harder on purpose and pay
+   2x XP / 3x drops. /spawnmonster Skeleton <level> if none show up.
+
+NOT worth testing: fight LENGTH at high level, and elite/boss win rates - both known-wrong
+and already on the backlog. Boss danger is ~80% of your bar BY DESIGN and your call.
+=========================================================================
 """
 
 GODOT = scen.GODOT

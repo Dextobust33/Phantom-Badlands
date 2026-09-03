@@ -1517,12 +1517,36 @@ func _get_condition_string(wear: int) -> String:
 
 # check_level_up() removed 2026-09-02. It was dead code — nothing in the project called
 # it — and it computed the level requirement as pow(level+1, 2.5) * 100 with a small
-# override table, while the live path (level_up() setting experience_to_next_level) uses
-# pow(level+1, 2.2) * 50. The two diverge by roughly 30x by L1000, so any future caller
-# would have silently rewritten progression. The live requirement is set in level_up().
+# override table, while the live path uses pow(level+1, 2.2) * 50. The two diverge by roughly
+# 30x by L1000, so any future caller would have silently rewritten progression.
+#
+# CORRECTION 2026-09-03: the last line of this comment used to claim "the live requirement is
+# set in level_up()". It was NOT — level_up() never touched the field, and only
+# add_experience() did, which is how party-combat levelling froze every XP requirement at 100.
+# It is set in level_up() now, and both paths share xp_required_for_next_level().
 
 func level_up():
-	"""Increase level and stats"""
+	"""Increase level and stats, INCLUDING the XP required for the next one.
+
+	2026-09-03 — reported from a playtest: *"This character started Level 5 needing 100 total
+	xp to level is that right?"* No. It should have been ~2576.
+
+	`experience_to_next_level` was set ONLY inside `add_experience()`'s level-up loop, so any
+	other route to a new level left it frozen. It defaults to 100, which is the L1 requirement,
+	so a character advanced by any other path needed 100 XP per level forever.
+
+	Three routes did exactly that, and one of them is live gameplay:
+	  - PARTY COMBAT XP (combat_manager ~11045) hand-rolls its own level-up loop and calls this
+	    function, so partying froze your XP requirement at whatever it last was. Party play is
+	    the headline feature of v0.9.738-740, so this has been shipped and live
+	  - `/setlevel` (server.gd ~37279)
+	  - the balance playtest fixture, which is how it was spotted
+
+	The comment that used to sit above this function asserted "the live requirement is set in
+	level_up()" — it was not, and that wrong comment is presumably why nobody looked here. This
+	is the same two-paths-one-field shape that has bitten this codebase repeatedly, so the fix
+	is to make the function that changes `level` responsible for the field that depends on it,
+	rather than adding a third caller that remembers to."""
 	level += 1
 	
 	# Get stat gains for class
@@ -1543,6 +1567,17 @@ func level_up():
 	current_mana = get_total_max_mana()
 	current_stamina = get_total_max_stamina()
 	current_energy = get_total_max_energy()
+
+	# The requirement for the NEXT level. Same formula add_experience() uses; kept here so
+	# every route to a new level maintains it. See the docstring.
+	experience_to_next_level = xp_required_for_next_level(level)
+
+func xp_required_for_next_level(from_level: int) -> int:
+	"""XP needed to go from `from_level` to the next. ONE definition, so the two level-up paths
+	cannot disagree about progression — they did, and a dead `check_level_up()` carrying a third
+	formula (pow(level+1, 2.5) * 100, ~30x divergent by L1000) was removed on 2026-09-02 for the
+	same reason."""
+	return int(pow(from_level + 1, 2.2) * 50)
 
 func get_stat_gains_for_class() -> Dictionary:
 	"""Get stat increases per level based on class (2.5 total stats per level, class-specific distribution)"""
@@ -2351,9 +2386,9 @@ func add_experience(amount: int) -> Dictionary:
 		current_stamina = min(get_total_max_stamina(), current_stamina + stamina_restore)
 		current_energy = min(get_total_max_energy(), current_energy + energy_restore)
 
-		# Calculate next level requirement using polynomial scaling
-		# Formula: (level+1)^2.2 * 50 - scales reasonably up to level 10000
-		experience_to_next_level = int(pow(level + 1, 2.2) * 50)
+		# Calculate next level requirement — shared definition, so this path and level_up()
+		# cannot drift apart (they did: level_up() never set it at all).
+		experience_to_next_level = xp_required_for_next_level(level)
 
 	return {
 		"leveled_up": leveled_up,
