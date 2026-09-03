@@ -1773,6 +1773,81 @@ Recorded at the owner's request, to be picked up when the ordering reaches quest
    entry-time selection rule needs checking. Owner: *"Are some quests overwriting or breaking
    others?"* Answer this before touching quest content.
 
+## ⚑ POST-CONVERSION RE-CALIBRATION — 2026-09-03 (refcal then rolecal, in that order)
+
+Every damage ability is now on the anchored model, which made the player materially stronger and
+invalidated the monster curve by the standing rule. `refcal` + `rolecal` re-run. Read-only
+audits (`roles`, `classes`) below. **Everything measured before this point is stale.**
+
+### Normals landed on target
+
+| level | turns (target 5.0) | HP cost (target 40%) | win |
+|---|---|---|---|
+| 1 | 5.8 | 40% | 79% |
+| 10 | 5.1 | 46% | 71% |
+| 50 | 5.2 | 42% | 82% |
+| 250 | 4.7 | 44% | 76% |
+| 1000 | 3.9 | 35% | 84% |
+| 5000 | 2.6 | 42% | 82% |
+
+Good through L250. The old **post-L1000 slide is still visible** in turns (3.9 then 2.6 against a
+target of 5.0) even though the cost axis holds — the fight gets shorter, not easier.
+
+### Elites and bosses hit their DANGER target by getting sharper, not longer
+
+| role | turns | target | HP cost | target | win |
+|---|---|---|---|---|---|
+| empowered L10 | 5.6 | 7.0 | 76% | 55% | 35% |
+| elite L10 | 5.3 | 9.0 | 86% | 65% | **23%** |
+| elite L50 | 3.7 | 9.0 | 85% | 65% | 30% |
+| boss L1 | 6.0 | 14.0 | 89% | 80% | **12%** |
+| boss L10 | 5.3 | 14.0 | 91% | 80% | **10%** |
+| boss L50 | 4.8 | 14.0 | 85% | 80% | 20% |
+
+**This is the open "length is not calibrated" item biting.** The calibrator converges on ONE
+axis (a deliberate choice — see 6g, where two axes fought each other), and it reaches its cost
+target by making elites and bosses *hit harder in a five-turn fight* rather than *last fourteen
+turns*. Player damage just went up across the board, so fights got shorter still, and the danger
+had to arrive faster to hit the same cost.
+
+Consequence: **boss win rate at L1-L10 is 10-12%.** The owner previously accepted 18-46% with
+*"companions and gear will make up the difference"* — 10% is below what was accepted, and it is
+a burst-damage problem, not a difficulty preference.
+
+- [ ] **DECISION NEEDED: split the role multipliers onto two axes** — HP for length, STR for
+      danger — so an elite is a LONGER fight at its target cost rather than a shorter, sharper
+      one. This is the honest fix and it is what the target table has always said it wanted
+      (9 turns for an elite, 14 for a boss). Do NOT tune win rates directly; that is the symptom
+
+### Tricksters now dominate elites, by design and possibly too well
+
+`classes` audit (60 fights/cell, average gear):
+
+| class | L10 normal | L30 elite | L80 elite |
+|---|---|---|---|
+| Fighter / Barbarian / Paladin | 76 / 76 / 66% | 21 / 15 / 11% | 28 / 16 / 21% |
+| Wizard / Sorcerer / Sage | 78 / 80 / 80% | 20 / 23 / 15% | 20 / 23 / 25% |
+| Thief / Ranger / Ninja | 58 / 58 / 55% | **50 / 28 / 41%** | **53 / 55 / 50%** |
+
+Tricksters are now the WEAKEST against normals (55-58%) and the STRONGEST against elites by a
+wide margin (50-55% against 11-28%). That is the stated identity working — *"kill enemies BIGGER
+than the warrior or mage can"* — and it is a direct, expected consequence of Read raising the
+Outsmart cap, because Outsmart bypasses the health bar entirely and elite HP is what makes
+elites hard.
+
+- [ ] **DECISION: is the reach supposed to cross ROLE or only LEVEL?** The identity as written
+      is about fighting things *above your level*. Outsmart currently ignores the elite/boss HP
+      multiplier as well, which is a second, unstated kind of reach. Narrowing it (an Outsmart
+      penalty per role tier, so an elite is genuinely harder to trick) would keep the level
+      reach and remove the role reach. Recommend this over nerfing Read, which was just fixed
+- [ ] **Paladin is the worst class at every row measured** (66% normal, 11% L30 elite) — was
+      already flagged as "the new worst" after the resource pass. Its own item under 6c
+
+### What is NOT stale
+
+The card previews: `preview_ability_effect` reads the live curve, and the drift guard was
+re-run after the calibration. 22 checks, 0 drift.
+
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
