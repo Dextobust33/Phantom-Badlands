@@ -1613,18 +1613,29 @@ func run_role_calibrate():
 	#
 	# So each anchor level is calibrated independently, exactly as the baseline curve already
 	# is, and monster_database interpolates between them.
-	var passes := 8   # 5 left empowered short of convergence; the correction is damped (0.75)
-	var samples: int = maxi(6, int(_audit_n / 6.0))
+	var passes := 6
+	# 2026-09-03 — SAMPLE SIZE HAD TO RISE WITH THE METRIC CHANGE, and this is the part that is
+	# easy to miss. `danger` was a mean over a continuous variable, so six fights gave a usable
+	# estimate. A WIN RATE is a proportion: at n=6 its standard error is about 20 percentage
+	# points, which is not a signal at all — and the loop was then applying corrections of up to
+	# 4x off that noise, compounded across eight passes. That is why the first win-rate run
+	# produced str_mult values of 20-30 at the top levels while the low levels converged fine.
+	#
+	# So: more samples (SE ~9pp at n=30) AND a much tighter per-pass clamp, so no single noisy
+	# reading can whipsaw a multiplier. 1.35^6 still spans ~6x overall, which is ample range.
+	var samples: int = maxi(30, int(_audit_n))
 	var levels := [1, 10, 50, 250, 1000, 5000, 10000]
 	print("
 ===== #6 ROLE CALIBRATION (measured, per anchor level) =====")
 	print("Each level is corrected toward its role's own targets. Final pass shown per level.")
-	print("%-11s %7s %9s %9s %9s %9s %7s" % ["Role", "Level", "hp_mult", "str_mult", "turns", "HPcost", "win%"])
+	print("%-11s %7s %9s %9s %9s %9s %7s %8s" % [
+		"Role", "Level", "hp_mult", "str_mult", "turns", "HPcost", "win%", "target"])
 	var out_roles := {}
 	for role in ["empowered", "elite", "boss"]:
 		var tgt: Dictionary = monster_db.ROLE_TARGETS.get(role, {})
 		var t_turns: float = float(tgt.get("turns", 9.0))
 		var t_danger: float = float(tgt.get("danger", 0.65))
+		var t_win: float = float(tgt.get("win", 0.40))
 		var anchors: Array = []
 		for lvl in levels:
 			var seed_m: Dictionary = monster_db.role_multipliers(role)
@@ -1648,7 +1659,17 @@ func run_role_calibrate():
 				if r.is_empty():
 					break
 				last = r
-				st_m *= pow(clampf(t_danger / maxf(0.01, float(r["cost"])), 0.3, 4.0), CAL_CORRECTION_EXP)
+				# 2026-09-03 — steer by WIN RATE, not cost. Cost saturates on death (a corpse has
+				# spent 100% of its bar), so at a low win rate the signal was pinned near the
+				# target's ceiling and the correction had nothing left to push against — which
+				# is why this loop could not converge at L1-L50 and left bosses at 7-12%.
+				#
+				# Direction: a HIGHER measured win means the monster is too weak, so str_mult
+				# rises; a lower one means it is too strong, so str_mult falls. The measured
+				# value is floored well above zero because a 0% sample carries no gradient —
+				# without that floor a too-hard monster would be told to get 4x harder.
+				var w_meas: float = maxf(0.02, float(r["win"]))
+				st_m *= pow(clampf(w_meas / maxf(0.01, t_win), 0.75, 1.35), CAL_CORRECTION_EXP)
 			# Same lag refcal had: the loop measures THEN corrects, so `last` describes the
 			# multiplier one step before the one being written. Measured consequence — empowered
 			# was written past its target and came out at 59-74% cost against 55%, above ELITE
@@ -1663,9 +1684,12 @@ func run_role_calibrate():
 			if last.is_empty():
 				print("%-11s %7d  (no data)" % [role, lvl])
 			else:
-				print("%-11s %7d %9.2f %9.2f %9.1f %8.0f%% %6.0f%%" % [
+				var _w: float = float(last.get("win", 0.0)) * 100.0
+				var _tw: float = t_win * 100.0
+				print("%-11s %7d %9.2f %9.2f %9.1f %8.0f%% %6.0f%% %7.0f%% %s" % [
 					role, lvl, hp_m, st_m, float(last["turns"]),
-					float(last["cost"]) * 100.0, float(last.get("win", 0.0)) * 100.0])
+					float(last["cost"]) * 100.0, _w, _tw,
+					"ok" if absf(_w - _tw) <= 8.0 else "OFF"])
 		out_roles[role] = anchors
 	# Merge into the existing curve file — the baseline anchors from refcal must survive.
 	var existing := {}

@@ -195,7 +195,7 @@ Live XP bug plus the whole balance pass. Runtime byte-identical to r1 again (sha
 so launcher users pulled a ~14.8 MB content-only update. Server deployed and verified (reference
 curve loads, no script errors). See *Recently shipped*.
 
-### 2. Fix the calibration METRIC before any more balance tuning ← **the gate**
+### 2. Fix the calibration METRIC ← **the gate** — ✅ DONE 2026-09-03 (see STEP 2 DONE below)
 *Detail: "CORRECTION — elite/boss fights are too short was an INSTRUMENT ARTIFACT" and
 "DOES A WIN RATE MEAN THE SAME THING FOR EVERY CLASS?"*
 
@@ -2518,6 +2518,61 @@ Directions worth considering (not decided):
       and it turns the game's most distinctive mechanic from a dice roll into a moment. Worth
       varying by OUTCOME too — a described near-miss reads better than a flat "sees through it"
 - [ ] Fits the Keeper's voice; see `docs/design/setting_bible.md` before writing the lines
+
+## ⚑ STEP 2 DONE — role calibration steers by WIN RATE, not cost (2026-09-03)
+
+The gate on the whole balance list. `rolecal` corrected `str_mult` toward a **cost** target, and
+cost is measured across all fights while **a dead player has spent 100% of their bar**. So at a
+7% boss win rate the metric was pinned near its ceiling — *"cost 97%"* and *"win 7%"* were the
+same fact stated twice — and the correction had nothing left to push against. That is why the
+loop could not converge at L1-L50 and left bosses at 7-12%.
+
+### The change
+`ROLE_TARGETS` gains a `win` value, and that is what corrections chase. `danger` and `turns` are
+kept as design intent and still reported, but no longer steered by.
+
+| role | win target | rationale |
+|---|---|---|
+| normal | 60% | matches the normal-species band (48-72%) |
+| empowered | 50% | a coin flip you are favoured in |
+| elite | 40% | a real risk |
+| boss | 30% | inside the 18-46% the owner already accepted |
+
+Measured under **fight-to-the-death deliberately** — that is a policy-free measure of monster
+strength. What a real player experiences when they disengage is reported separately by the
+`fallback` audit, because folding a flee policy into the target would mean steering by an
+arbitrary "flee at N%" constant.
+
+### The part that was easy to miss, and nearly shipped wrong
+**Changing the metric forced a change in SAMPLE SIZE, and the first run did not have it.**
+`danger` was a mean over a continuous variable, so `n=6` gave a usable estimate. A win rate is a
+**proportion**: at n=6 its standard error is about **20 percentage points**. The loop was then
+applying corrections of up to 4x off that noise, compounded over eight passes.
+
+The result looked like this — low levels converged, top levels ran away:
+
+| | first run (n=6, clamp 0.3-4.0) | after (n=30+, clamp 0.75-1.35) |
+|---|---|---|
+| boss L10 | 22% win, str_mult 0.54 | on target |
+| elite L10000 | 78% win, **str_mult 30.22** | — |
+| empowered L10000 | 50% win, **str_mult 20.96** | — |
+
+Fixed by raising samples (SE ~9pp at n=30) and tightening the per-pass clamp to 0.75-1.35, which
+still spans ~6x over six passes but stops any single noisy reading whipsawing a multiplier.
+
+**Generalises:** any calibration target that is a PROPORTION needs an order of magnitude more
+samples than one that is a mean. Worth checking before switching any other metric.
+
+### Result
+Converges where cost could not. L1-L1000 lands on target for empowered and elite; boss L1-L250
+went from 7-12% to on-target. The remaining offenders are **L5000 and L10000**, which is the
+already-documented high-level instability (fight length swings wildly up there), not a metric
+problem.
+
+- [ ] L5000/L10000 still off target for all three roles. Same band as the known post-L1000
+      length slide; treat them together rather than as a calibration fault
+- [ ] `normal` has a win target now but `refcal` still steers the base curve by cost. Same
+      argument applies — worth converting once the role side is settled and verified
 
 ## Dungeon arc
 

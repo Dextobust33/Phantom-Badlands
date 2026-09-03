@@ -2256,11 +2256,32 @@ const USE_REFERENCE_MODEL := true          # false = legacy base_level scaling
 # TANKIER already makes it more dangerous. A Champion that lasts 1.8x longer at the same
 # strength already costs 1.8x the health. Raising its damage on top multiplies rather
 # than adds — the old ×3.5 HP with ×1.3 STR was ~4.5x a normal fight's cost, not 1.75x.
+# `win` is what the calibrator TARGETS (2026-09-03). `danger` and `turns` are kept as
+# design intent and are reported, but they are no longer what corrections chase.
+#
+# WHY THE TARGET MOVED. `danger` is the share of the player's health bar a fight costs, measured
+# across all fights — and a dead player has spent 100% of it. So at a 7% boss win rate the metric
+# is pinned near 100% almost by definition: "cost 97%" and "win 7%" were the same fact stated
+# twice, and `rolecal` could not converge at L1-L50 because the thing it was steering by
+# saturated exactly where the monster was strongest. Win rate neither saturates nor truncates,
+# it moves monotonically with monster strength, and it is the language the design decisions are
+# actually made in — the owner signed off on bosses by saying "I'm okay with the bosses
+# currently" about a WIN RATE, not about a cost percentage.
+#
+# The values form a deliberate ladder against the normal-species band (48-72% win, apex 28-48%):
+# an ordinary monster you beat most of the time, an empowered one is a coin flip you are
+# favoured in, an elite is a real risk, and a boss is something you should usually lose to
+# without preparation. Boss sits inside the 18-46% the owner already accepted.
+#
+# Measured under FIGHT-TO-THE-DEATH, deliberately: that is a policy-free measure of how strong
+# the monster is. What a real player experiences when they disengage is reported separately by
+# the `fallback` audit, because folding a flee policy into the calibration target would mean
+# steering by an arbitrary "flee at N%" constant.
 const ROLE_TARGETS := {
-	"normal":    {"turns": 5.0,  "danger": 0.40},
-	"empowered": {"turns": 7.0,  "danger": 0.55},
-	"elite":     {"turns": 9.0,  "danger": 0.65},
-	"boss":      {"turns": 14.0, "danger": 0.80},
+	"normal":    {"turns": 5.0,  "danger": 0.40, "win": 0.60},
+	"empowered": {"turns": 7.0,  "danger": 0.55, "win": 0.50},
+	"elite":     {"turns": 9.0,  "danger": 0.65, "win": 0.40},
+	"boss":      {"turns": 14.0, "danger": 0.80, "win": 0.30},
 }
 
 # Role multipliers CALIBRATED against real fights, written into the curve file by the sim's
