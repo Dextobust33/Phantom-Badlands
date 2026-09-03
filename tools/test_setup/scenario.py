@@ -189,12 +189,14 @@ SCENARIOS = {
         })),
 
     "milestone": dict(
-        doc="ONE Fighter parked where a fight is findable, sitting ONE USE from several card "
-            "milestones at once - for the nine-card rank-up reveal (preview 9, shuffle, turn "
-            "over 3, choose 1). Power Strike and Shield Bash are at 9 uses so the next cast "
-            "hits milestone 1 (upside-only pool); Cleave is at 199 so its next cast hits "
+        doc="TWO characters parked where a fight is findable, each sitting ONE USE from several "
+            "card milestones at once - for the nine-card rank-up reveal (preview 9, shuffle, "
+            "turn over 3, choose 1). Power Strike and Shield Bash are at 9 uses so the next "
+            "cast hits milestone 1 (upside-only pool); Cleave is at 199 so its next cast hits "
             "milestone 3, where TRADE-OFFS unlock and appear amber. Fight anything and play "
-            "those cards.",
+            "those cards. Two players so the reveal can be seen in a PARTY as well as solo - "
+            "the seeding is applied to both, and a class without these cards simply keeps its "
+            "own thresholds.",
         players=2, use=["test003", "test02"], at=DEFAULT_AT,
         apply=lambda c: (c.update({
             "current_hp": c.get("max_hp", 100),
