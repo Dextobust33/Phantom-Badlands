@@ -8554,9 +8554,35 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 		# AFTER end_combat has already removed the combat).
 		if active_combats.has(peer_id):
 			var _ac = active_combats[peer_id]
+			# 2026-09-03 — READ DECAYS ACROSS A CHAIN LINK; Momentum and Focus do not.
+			#
+			# Asked from play: "I noticed read doesn't decrease in flock fights, should it
+			# partially decrease or no?" It should, and the reason is a difference in KIND
+			# rather than degree between the three engines:
+			#
+			#   Momentum and Focus boost DAMAGE, so carrying them into the next monster is
+			#   bounded by that monster's health bar — you still have to chew through all of
+			#   it, and a full carryover just means you start the grind further along.
+			#
+			#   Read boosts OUTSMART, which bypasses the health bar ENTIRELY. Carried in full,
+			#   the 8-stack ramp is a toll paid ONCE for an unlimited chain: every subsequent
+			#   member can be instant-killed at the ceiling. `outsmart_attempts` also resets
+			#   per member, so each one is a fresh roll with no falloff on top of that.
+			#
+			# Two changes today sharpen it further: the ramp to 8 stacks made Read more
+			# expensive to build (so a one-time toll is a bigger relative payoff), and the
+			# per-encounter danger budget divides a flocking monster's damage by the expected
+			# chain length — so a flock is already the SOFTEST encounter type, and full Read
+			# carryover compounds an advantage in exactly the fight that was just made safer.
+			#
+			# Halved rather than reset, because reading a SPECIES transfers even though reading
+			# an individual does not: 8 -> 4 -> 2 -> 1 -> 0. The first chained monster is still
+			# much easier, which is the reward for having built it, but a long chain forces a
+			# rebuild and cannot be farmed off one setup.
+			var _read_carry: int = int(_ac.get("combo", 0)) / 2   # integer division: 8->4, 1->0
 			last_combat_engines[peer_id] = {
 				"momentum": int(_ac.get("momentum", 0)),
-				"combo": int(_ac.get("combo", 0)),
+				"combo": _read_carry,
 				"focus": int(_ac.get("focus", 0)),
 			}
 		# Remove from active combats

@@ -5949,12 +5949,20 @@ func _get_niche_passive_tag() -> String:
 	# holds the display name; pass it as both fields so variant prefixes
 	# ("Corrosive Skeleton", "★ Lich Champion") still match.
 	var monster_dict := {"name": _monster_name, "type": _monster_name}
+	# 2026-09-03 — the square brackets MUST be escaped as [lb]/[rb]. Unescaped, RichTextLabel
+	# tries to parse "[HUNTER'S MARK +25%]" as a BBCode tag; it is not one, so the tag stack
+	# desyncs and the player sees the tag text raw AND a leaked "[/color]" after it. Reported
+	# from play as: "it shows Wolf Lv 2 [HUNTER'S MARK +25%\][/color] for the name".
+	#
+	# This has been broken since the tag was added in v0.9.510 and was simply never seen,
+	# because it only renders for a Paladin facing undead or a Ranger facing a beast — and the
+	# first Ranger playtest was today.
 	if _player_class == "Paladin":
 		if CombatManager._monster_matches_keywords(monster_dict, CombatManager._UNDEAD_DEMON_KEYWORDS):
-			return " [color=#FFD700][DIVINE FAVOR +25%][/color]"
+			return " [color=#FFD700][lb]DIVINE FAVOR +25%[rb][/color]"
 	elif _player_class == "Ranger":
 		if CombatManager._monster_matches_keywords(monster_dict, CombatManager._BEAST_KEYWORDS):
-			return " [color=#228B22][HUNTER'S MARK +25%][/color]"
+			return " [color=#228B22][lb]HUNTER'S MARK +25%[rb][/color]"
 	return ""
 
 

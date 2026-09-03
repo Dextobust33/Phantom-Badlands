@@ -11246,6 +11246,24 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	# Note: damage_dealt_to_current_enemy is subtracted further down at the
 	# remaining_hp computation. Don't subtract here too — would double-count.
 
+	# 2026-09-03 — reported from play: "Outsmart's energy cost should auto input something
+	# rather than the person having to type in a new number every time they use it (similar to
+	# how magic bolt works)." Correct: the block below only ever suggested an amount for
+	# magic_bolt, so Outsmart (and any other variable-cost card routed here) opened with an
+	# empty box and a placeholder.
+	#
+	# `last_ability_amounts` has been WRITTEN on every cast since it was added and never read
+	# once — the comment at the write site says "Remember this amount for next time", and
+	# nothing ever recalled it. So recall it here: whatever you committed last time is the
+	# default, clamped to what you can currently afford. That covers "don't make me retype it"
+	# for every ability at once rather than special-casing Outsmart.
+	if last_ability_amounts.has(ability):
+		suggested_amount = clampi(int(last_ability_amounts[ability]), 0, current_resource)
+	if suggested_amount <= 0 and ability == "outsmart":
+		# First use this session: the amount Outsmart used to take automatically, so pressing
+		# Enter reproduces the behaviour it had before the spend became a choice.
+		suggested_amount = maxi(0, int(float(current_resource) * 0.60))
+
 	if ability == "magic_bolt" and target_hp > 0:
 		# Simulate Magic Bolt damage formula to suggest accurate mana amount
 		# Server formula: damage = bolt_amount * (1 + sqrt(INT)/5) * buffs * passives * reductions
