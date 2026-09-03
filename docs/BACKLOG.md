@@ -841,6 +841,34 @@ against a monster that is too STRONG, which the danger axis already handles. `ef
 still measured and reported — the truncation it describes is real — but it is not the correction
 signal. Reverted.
 
+**EMPOWERED INVERSION FIXED (2026-09-02).** `rolecal` had the same measure-then-correct lag
+`refcal` did — the written multiplier was one correction past the last measurement — so
+empowered was pushed to 59-74% HP cost against a 55% target, ABOVE elite in the middle band.
+With a verification pass and 8 passes instead of 5, `str_mult` fell from 1.46/2.07/1.27 to
+0.96/1.63/0.78 and the tier order is correct again:
+
+| role | HP cost | target |
+|------|---------|--------|
+| normal | 39-54% | 40% |
+| empowered | 49-74% | 55% |
+| elite | 65-80% | 65% |
+| boss | 71-89% | 80% |
+
+**Boss danger CONFIRMED as intended (user 2026-09-02):** *"I think I'm okay with the bosses
+currently as I think companions and gear will make up the difference."* Boss win rate sits at
+18-46%. Do not re-open this as a defect — it is a decision.
+
+- [ ] **UNRESOLVED: the calibrators and the `roles` audit disagree by ~6-8 points on the same
+      quantity, consistently in one direction.** `rolecal` measures empowered at 49-65%; the
+      audit measures the same written multipliers at 59-74%. It is not confined to one role —
+      `normal`, tuned by a completely different calibrator (`refcal`/`_fight_stats_at`), also
+      reads 46% mean against its 40% target. So two independent calibrators each hit their
+      target by their own measurement while the audit says all four run hot. Both paths build
+      characters the same way (`make_char(lvl, "average", klass)`, same three classes); the
+      audit uses 20 samples/class against the calibrators' 10, which explains noise but not a
+      one-directional bias. **Find which of the two is lying before trusting either number.**
+      Given four measurement bugs in this tool today, assume it is a real defect, not variance
+
 - [ ] **Turn counts still swing** and this is now the LAST big open item on the curve (boss
       L5000 43.7 turns, empowered L10000 48.1). Danger converged because `str` is a clean
       independent lever; turns did not. Note `rolecal` deliberately does NOT calibrate
