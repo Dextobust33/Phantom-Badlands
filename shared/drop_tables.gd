@@ -2056,60 +2056,58 @@ func get_monster_companion_abilities(monster_type: String, companion_level: int,
 
 	return result
 
-# === COMPANION EFFECT CEILINGS (2026-09-03) ===
+# === COMPANION EFFECT SCALING (2026-09-03) ===
 # Every percentage a companion passive grants used to be `base + scaling * companion_level`,
-# linear and UNBOUNDED. Measured consequences at companion level ~5000: +1127% max HP (a
-# 12.27x health bar, confirmed against the simulator's own fight loop), +2275% damage, +2025%
-# absorb — which reads `damage * absorb / 100` and therefore absorbed twenty times the
+# LINEAR and unbounded, across 26 effect types. At companion level ~5000 that reached +1127%
+# max HP (a 12.27x health bar, measured against the simulator's own fight loop), +2275%
+# damage, +2025% absorb — which reads `damage * absorb / 100`, so it absorbed twenty times the
 # incoming hit, i.e. immunity — and +405% lifesteal, healing four times the damage dealt.
 #
-# It also made high-level difficulty BIMODAL rather than merely swingy: only 7-10 of 36
-# sampled characters rolled a companion carrying an hp_bonus passive, so the same level was
-# either a 1x health bar or a 13-21x one. That is the most likely explanation for the
-# long-standing observation that the curve gets EASIER past L1000.
+# The problem is not that companions get strong. It is the SPREAD. Only 7-10 of 36 sampled
+# characters carried an hp_bonus passive at all, so at one level the reference player was
+# either a 1x health bar or a 13-21x one, and no single monster size can serve both. Raising
+# difficulty to match the 21x player deletes the 1x player; sizing for the 1x player leaves
+# the 21x one unchallenged. That is why the curve has long read as getting EASIER past L1000.
 #
-# These are ceilings in PERCENTAGE POINTS, approached asymptotically (see `_soft_cap`), not
-# hard clamps: a higher-level companion is always at least as good as a lower-level one, so
-# levelling never stops meaning something. Permanent always-on passives sit lower than
-# conditional ones, which cost a trigger and expire.
-const COMPANION_EFFECT_CAP := {
-	# --- permanent, always-on passives ---
-	"hp_bonus": 40.0, "attack": 35.0, "defense": 30.0, "speed": 25.0,
-	"crit_chance": 20.0, "crit_damage": 50.0, "lifesteal": 15.0,
-	"mana_bonus": 35.0, "wisdom_bonus": 30.0,
-	"hp_regen": 10.0, "mana_regen": 10.0, "energy_regen": 10.0,
-	# --- out of combat: generous, nothing dies to a gathering roll ---
-	"gathering_bonus": 60.0, "gathering_yield": 60.0, "gathering_hint": 60.0,
-	# --- conditional / temporary: paid for with a trigger, and they expire ---
-	"attack_buff": 90.0, "defense_buff": 90.0, "all_buff": 55.0, "speed_buff": 55.0,
-	"dodge_buff": 40.0, "lifesteal_buff": 40.0, "absorb": 50.0, "heal": 55.0,
-	"mana_restore": 55.0, "flee_bonus": 60.0, "slow_enemy": 40.0,
-	"damage_reduction": 50.0, "weakness": 40.0,
+# So growth is kept and its RATE is changed: sqrt, not linear.
+#
+#     value = (base + scaling * GROWTH_K * sqrt(level)) * variant_mult
+#
+# sqrt never stops rising, so a level-5000 companion is always meaningfully better than a
+# level-500 one and levelling never stops paying — a flat ceiling was tried first and was
+# wrong for exactly this reason: it made cLvl 500 and cLvl 10000 differ by 2 percentage
+# points, which strips a high-level companion of its identity. What sqrt removes is only the
+# runaway: +2512% becomes +108% at cLvl 10000, a spread the difficulty curve can straddle.
+const COMPANION_GROWTH_K := 3.85
+
+# A few effects are degenerate above a certain percentage rather than merely strong, so they
+# carry a real ceiling on top of the sqrt curve. `absorb` and `damage_reduction` at 100% are
+# literal immunity; `dodge`/`crit_chance` at 100% mean every hit; `lifesteal` above ~30% makes
+# damage taken irrelevant. These are set high enough that they do not bind until very high
+# companion level — they are safety rails, not the balance knob.
+const COMPANION_EFFECT_CEILING := {
+	"absorb": 60.0, "damage_reduction": 60.0, "dodge_buff": 50.0,
+	"crit_chance": 50.0, "lifesteal": 30.0, "lifesteal_buff": 45.0,
+	"slow_enemy": 60.0, "weakness": 60.0,
 }
-const COMPANION_EFFECT_CAP_DEFAULT := 40.0
 
-static func _companion_cap_for(effect: String) -> float:
-	return float(COMPANION_EFFECT_CAP.get(effect, COMPANION_EFFECT_CAP_DEFAULT))
+static func _companion_growth(base_v: float, scaling: float, companion_level: int, variant_mult: float, effect: String) -> float:
+	"""Grow a companion value with level at a sqrt rate, then apply a ceiling only where a
+	percentage would be degenerate rather than merely strong.
 
-static func _soft_cap(linear: float, ceiling: float) -> float:
-	"""Bend an unbounded linear value toward `ceiling` without ever reaching or exceeding it.
-
-	`ceiling * (1 - exp(-linear / ceiling))` is used rather than `min(linear, ceiling)` for two
-	reasons. It is strictly increasing, so a higher-level or rarer companion is ALWAYS worth at
-	least as much as a lesser one — a hard clamp would make a level-5000 legendary identical to
-	a level-200 common the moment both hit the cap, which is the opposite of a hunt being worth
-	it. And it is smooth: there is no level at which levelling suddenly stops paying.
-
-	The variant multiplier passes through EXACTLY. Both the linear term and the ceiling are
-	scaled by it, and
-
-	    soft_cap(m*L, m*C) = m*C*(1 - exp(-m*L / (m*C))) = m * soft_cap(L, C)
-
-	so a 1.60x variant is worth exactly 1.60x at every level, including at the asymptote. The
-	rarest variants keep paying the most, which is the whole point of hunting them."""
-	if ceiling <= 0.0 or linear <= 0.0:
-		return linear
-	return ceiling * (1.0 - exp(-linear / ceiling))
+	The variant multiplier scales the growth term AND the ceiling, so a 1.60x variant is worth
+	1.60x at every level including where a ceiling binds. Rarer is always better, and the gap
+	never closes — which is the point of hunting variants at all."""
+	var lvl: float = maxf(0.0, float(companion_level))
+	var raw: float = (base_v + scaling * COMPANION_GROWTH_K * sqrt(lvl)) * variant_mult
+	if not COMPANION_EFFECT_CEILING.has(effect):
+		return raw
+	# Approach the ceiling asymptotically rather than clipping to it, so even past the rail a
+	# rarer or higher-level companion still measures better than a lesser one.
+	var ceil_v: float = float(COMPANION_EFFECT_CEILING[effect]) * variant_mult
+	if ceil_v <= 0.0 or raw <= 0.0:
+		return raw
+	return ceil_v * (1.0 - exp(-raw / ceil_v))
 
 func _scale_companion_ability(ability_template: Dictionary, companion_level: int, variant_mult: float) -> Dictionary:
 	"""Scale an ability's values based on companion level and variant multiplier."""
@@ -2117,21 +2115,18 @@ func _scale_companion_ability(ability_template: Dictionary, companion_level: int
 
 	# Scale base values with level
 	if scaled.has("base") and scaled.has("scaling"):
-		var base_value = scaled.base * variant_mult
-		var lin: float = base_value + (scaled.scaling * companion_level * variant_mult)
-		scaled["value"] = int(_soft_cap(lin, _companion_cap_for(String(scaled.get("effect", ""))) * variant_mult))
+		scaled["value"] = int(_companion_growth(float(scaled.base), float(scaled.scaling),
+			companion_level, variant_mult, String(scaled.get("effect", ""))))
 
 	# Scale secondary effects
 	if scaled.has("base2") and scaled.has("scaling2"):
-		var base_value2 = scaled.base2 * variant_mult
-		var lin2: float = base_value2 + (scaled.scaling2 * companion_level * variant_mult)
-		scaled["value2"] = int(_soft_cap(lin2, _companion_cap_for(String(scaled.get("effect2", ""))) * variant_mult))
+		scaled["value2"] = int(_companion_growth(float(scaled.base2), float(scaled.scaling2),
+			companion_level, variant_mult, String(scaled.get("effect2", ""))))
 
 	# Scale tertiary effects
 	if scaled.has("base3") and scaled.has("scaling3"):
-		var base_value3 = scaled.base3 * variant_mult
-		var lin3: float = base_value3 + (scaled.scaling3 * companion_level * variant_mult)
-		scaled["value3"] = int(_soft_cap(lin3, _companion_cap_for(String(scaled.get("effect3", ""))) * variant_mult))
+		scaled["value3"] = int(_companion_growth(float(scaled.base3), float(scaled.scaling3),
+			companion_level, variant_mult, String(scaled.get("effect3", ""))))
 
 	# Scale damage values.
 	# NOT soft-capped, deliberately. `bonus_damage` is applied as FLAT damage
@@ -2150,32 +2145,27 @@ func _scale_companion_ability(ability_template: Dictionary, companion_level: int
 
 	# Scale percentage values (lifesteal, etc)
 	if scaled.has("base_percent") and scaled.has("percent_scaling"):
-		var base_pct = scaled.base_percent * variant_mult
-		var linp: float = base_pct + (scaled.percent_scaling * companion_level * variant_mult)
-		scaled["percent"] = int(_soft_cap(linp, _companion_cap_for(String(scaled.get("effect", ""))) * variant_mult))
+		scaled["percent"] = int(_companion_growth(float(scaled.base_percent), float(scaled.percent_scaling),
+			companion_level, variant_mult, String(scaled.get("effect", ""))))
 
 	# Scale custom-named secondary bases used in threshold effect2 entries
 	if scaled.has("attack_base") and scaled.has("attack_scaling"):
-		var base_val = scaled.attack_base * variant_mult
-		var lina: float = base_val + (scaled.attack_scaling * companion_level * variant_mult)
-		scaled["value2"] = int(_soft_cap(lina, _companion_cap_for("attack") * variant_mult))
+		scaled["value2"] = int(_companion_growth(float(scaled.attack_base), float(scaled.attack_scaling),
+			companion_level, variant_mult, "attack"))
 	if scaled.has("crit_base") and scaled.has("crit_scaling"):
-		var base_val = scaled.crit_base * variant_mult
-		var linc: float = base_val + (scaled.crit_scaling * companion_level * variant_mult)
-		scaled["value2"] = int(_soft_cap(linc, _companion_cap_for("crit_chance") * variant_mult))
+		scaled["value2"] = int(_companion_growth(float(scaled.crit_base), float(scaled.crit_scaling),
+			companion_level, variant_mult, "crit_chance"))
 	if scaled.has("buff_base") and scaled.has("buff_scaling"):
-		var base_val = scaled.buff_base * variant_mult
-		var linb: float = base_val + (scaled.buff_scaling * companion_level * variant_mult)
-		scaled["value2"] = int(_soft_cap(linb, _companion_cap_for(String(scaled.get("effect2", "all_buff"))) * variant_mult))
+		scaled["value2"] = int(_companion_growth(float(scaled.buff_base), float(scaled.buff_scaling),
+			companion_level, variant_mult, String(scaled.get("effect2", "all_buff"))))
 	if scaled.has("base_reduction") and scaled.has("reduction_scaling"):
-		var base_val = scaled.base_reduction * variant_mult
-		var linr: float = base_val + (scaled.reduction_scaling * companion_level * variant_mult)
-		scaled["value"] = int(_soft_cap(linr, _companion_cap_for("damage_reduction") * variant_mult))
+		scaled["value"] = int(_companion_growth(float(scaled.base_reduction), float(scaled.reduction_scaling),
+			companion_level, variant_mult, "damage_reduction"))
 	if scaled.has("weakness_base"):
 		var base_val = scaled.weakness_base * variant_mult
 		if scaled.has("weakness_scaling"):
-			var linw: float = base_val + (scaled.weakness_scaling * companion_level * variant_mult)
-			scaled["weakness_value"] = int(_soft_cap(linw, _companion_cap_for("weakness") * variant_mult))
+			scaled["weakness_value"] = int(_companion_growth(float(scaled.weakness_base),
+				float(scaled.weakness_scaling), companion_level, variant_mult, "weakness"))
 		else:
 			scaled["weakness_value"] = int(base_val)
 
