@@ -190,8 +190,10 @@ consequence below is that **almost every remaining balance number is measured th
 that saturates on death**, so tuning any of them before fixing the metric means tuning against a
 broken instrument. That is step 2, and it gates most of what follows.
 
-### 1. SHIP — done as v0.9.742
-Live XP bug plus the whole balance pass. See *Recently shipped*.
+### 1. SHIP — ✅ DONE, v0.9.742 is live (client, both launchers, server)
+Live XP bug plus the whole balance pass. Runtime byte-identical to r1 again (sha256 compared),
+so launcher users pulled a ~14.8 MB content-only update. Server deployed and verified (reference
+curve loads, no script errors). See *Recently shipped*.
 
 ### 2. Fix the calibration METRIC before any more balance tuning ← **the gate**
 *Detail: "CORRECTION — elite/boss fights are too short was an INSTRUMENT ARTIFACT" and
@@ -2762,6 +2764,15 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
 - **2026-09-02 (site + docs, no client build)** — website refresh live: setting-led copy that
   explains the name, real in-game screenshots, accuracy fixes (Linux support, party of 5,
   deck-driven combat). Setting bible revised to a single cause. Screenshot capture harness added
+
+- **v0.9.742** — the cards stop lying (server-authoritative per-card damage/shield/cost/regen,
+  solo AND party), every damage ability converted to the anchored model (turns-to-kill 2.3/4.9/11.5
+  -> 5.8/5.6/6.2 for Mage/Warrior/Trickster), Devastate scales per point of Momentum, the frozen
+  XP requirement fixed at `level_up()` (party levelling had pinned it at 100 permanently), Read
+  raises its own cap and ramps over 8 stacks with a per-role Outsmart penalty and half-carry
+  across a flock, Outsmart asks before spending energy, Phantom Strike reports its crit,
+  post-combat HP settles via one `_settle_combat_bars()` instead of five paths discarding it,
+  Hunter's Mark stops leaking BBCode, missing monster art fails loudly
 
 - **v0.9.741** — THE BALANCE PASS: every monster resized against a reference player at every
   level (the mid-game hump and the post-L1000 slide are gone), apex species (15 deliberately
