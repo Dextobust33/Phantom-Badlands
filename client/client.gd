@@ -19663,6 +19663,20 @@ func _get_ability_tooltip(ability_name: String) -> String:
 # Slice 6b — rank-up choice popup. Auto-pause UX: modal blocks input until the
 # player picks +1 Copy (deck) or +10% Damage (effect rank). Same node is reused
 # across multiple rank-ups in a session to keep the UI consistent and avoid leaks.
+# === MILESTONE REVEAL (2026-09-03) ===
+# Owner's design: *"it would be nice if it showed a random 9 of them that players get to see for
+# a moment then they get hidden and placed in a random spot so the players get to 'reveal' 3 of
+# them then choose 1 out of those."* Same shape as the Prize Shuffle loot flow, so it is an
+# idiom players already know rather than a second one to learn.
+#
+# The nine are DEALT AND PERSISTED BY THE SERVER, so nothing here re-rolls them: reconnecting
+# shows the same nine, and the server refuses a pick that was not among them.
+var _ms_offer: Array = []          # the nine dealt, in their original order
+var _ms_order: Array = []          # shuffled display order (indices into _ms_offer)
+var _ms_revealed: Dictionary = {}  # display slot -> true once flipped
+var _ms_reveals_left: int = 3
+var _ms_phase: String = ""         # "preview" | "hunt" | "choose"
+var _ms_grid: GridContainer = null
 var _rank_choice_popup: AcceptDialog = null
 var _rank_choice_pending_ability: String = ""
 # v0.9.677 — card-themed milestone chooser (replaces the plain AcceptDialog).
@@ -19750,8 +19764,154 @@ func _ensure_milestone_overlay() -> void:
 	_milestone_card_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_milestone_card_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(_milestone_card_row)
+	# 3x3 for the nine-card reveal. Kept alongside the legacy row rather than replacing it, so a
+	# queued choice from before this change (or an older server that sends no offer) still has
+	# its original menu to render.
+	_ms_grid = GridContainer.new()
+	_ms_grid.columns = 3
+	_ms_grid.add_theme_constant_override("h_separation", 14)
+	_ms_grid.add_theme_constant_override("v_separation", 14)
+	_ms_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ms_grid.visible = false
+	box.add_child(_ms_grid)
 	add_child(_milestone_overlay)
 
+
+func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed: int) -> void:
+	"""Preview nine, hide and shuffle them, reveal a few, choose one.
+
+	Phases: `preview` (all nine face up, briefly) -> `hunt` (face down and shuffled, click to
+	reveal up to `reveals_allowed`) -> `choose` (click any revealed card to take it). The choice
+	is only sent once, and the overlay closes on send."""
+	if ability_name == "" or offer.is_empty():
+		return
+	_rank_choice_pending_ability = ability_name
+	_ensure_milestone_overlay()
+	_ms_offer = offer.duplicate()
+	_ms_reveals_left = maxi(1, reveals_allowed)
+	_ms_revealed.clear()
+	_ms_order.clear()
+	for i in range(_ms_offer.size()):
+		_ms_order.append(i)
+	_milestone_card_row.visible = false
+	_ms_grid.visible = true
+	_milestone_title.text = "%s — Milestone!  Study them..." % _ability_display_name(ability_name)
+	_ms_phase = "preview"
+	_rebuild_milestone_grid()
+	_milestone_overlay.visible = true
+	# Long enough to read nine short names, short enough that it is a memory test rather than a
+	# reading exercise. The player can start hunting early by clicking.
+	await get_tree().create_timer(3.0).timeout
+	if _ms_phase != "preview" or not _milestone_overlay.visible:
+		return
+	_begin_milestone_hunt()
+
+func _begin_milestone_hunt() -> void:
+	if _ms_phase != "preview":
+		return
+	_ms_phase = "hunt"
+	_ms_order.shuffle()
+	_milestone_title.text = "Reveal %d of them" % _ms_reveals_left
+	_rebuild_milestone_grid()
+
+func _rebuild_milestone_grid() -> void:
+	for c in _ms_grid.get_children():
+		c.queue_free()
+	for slot in range(_ms_order.size()):
+		var idx: int = int(_ms_order[slot])
+		var up: Dictionary = _ms_offer[idx]
+		var face_up: bool = (_ms_phase == "preview") or bool(_ms_revealed.get(slot, false))
+		_ms_grid.add_child(_make_milestone_tile(slot, up, face_up))
+
+func _make_milestone_tile(slot: int, up: Dictionary, face_up: bool) -> Control:
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(168, 104)
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	var tradeoff: bool = bool(up.get("tradeoff", false))
+	if face_up:
+		# Trade-offs are visually distinct because they are a different KIND of decision, not a
+		# better or worse one — the player should be able to see at a glance which picks ask
+		# for something back.
+		sb.bg_color = Color("#2A1F14") if tradeoff else Color("#141A22")
+		sb.border_color = Color("#E0902A") if tradeoff else Color("#4A7FB5")
+	else:
+		sb.bg_color = Color("#0E0E12")
+		sb.border_color = Color("#3A3A46")
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	sb.content_margin_left = 9
+	sb.content_margin_right = 9
+	sb.content_margin_top = 7
+	sb.content_margin_bottom = 7
+	card.add_theme_stylebox_override("panel", sb)
+	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(v)
+	var title := Label.new()
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title.add_theme_font_size_override("font_size", 14)
+	var body := RichTextLabel.new()
+	body.bbcode_enabled = true
+	body.fit_content = true
+	body.scroll_active = false
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_theme_font_size_override("normal_font_size", 11)
+	if face_up:
+		title.text = String(up.get("name", "?"))
+		title.add_theme_color_override("font_color", Color("#E0902A") if tradeoff else Color("#9FD0FF"))
+		body.text = "[color=#BFBFBF]%s[/color]%s" % [String(up.get("desc", "")),
+			"\n[color=#E0902A]— asks something back —[/color]" if tradeoff else ""]
+	else:
+		title.text = "?"
+		title.add_theme_color_override("font_color", Color("#6A6A7A"))
+		body.text = "[color=#5A5A66][center]face down[/center][/color]"
+	v.add_child(title)
+	v.add_child(body)
+	card.gui_input.connect(_on_milestone_tile_input.bind(slot))
+	return card
+
+func _on_milestone_tile_input(event: InputEvent, slot: int) -> void:
+	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed):
+		return
+	match _ms_phase:
+		"preview":
+			# Clicking during the preview means "I'm ready" — skip the wait rather than making
+			# an impatient player sit through it.
+			_begin_milestone_hunt()
+		"hunt":
+			if bool(_ms_revealed.get(slot, false)):
+				return
+			_ms_revealed[slot] = true
+			_ms_reveals_left -= 1
+			if _ms_reveals_left <= 0:
+				_ms_phase = "choose"
+				_milestone_title.text = "Choose one"
+			else:
+				_milestone_title.text = "Reveal %d more" % _ms_reveals_left
+			_rebuild_milestone_grid()
+		"choose":
+			if not bool(_ms_revealed.get(slot, false)):
+				return   # only a card you actually turned over may be taken
+			var idx: int = int(_ms_order[slot])
+			var up: Dictionary = _ms_offer[idx]
+			_send_milestone_choice(String(up.get("id", "")))
+
+func _send_milestone_choice(upgrade_id: String) -> void:
+	if upgrade_id == "" or _rank_choice_pending_ability == "":
+		return
+	send_to_server({"type": "rank_choice_response",
+		"ability": _rank_choice_pending_ability, "choice": upgrade_id})
+	_ms_phase = ""
+	_ms_offer.clear()
+	_ms_revealed.clear()
+	_rank_choice_pending_ability = ""
+	if _milestone_overlay != null and is_instance_valid(_milestone_overlay):
+		_milestone_overlay.visible = false
+	if _ms_grid != null and is_instance_valid(_ms_grid):
+		_ms_grid.visible = false
+	_milestone_card_row.visible = true
 
 func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_count: int, current_effect_rank: int, variant_offer: Dictionary = {}) -> void:
 	# v0.9.677 — card-themed milestone chooser: three preview cards (Power / Rider /
@@ -23150,13 +23310,21 @@ func handle_server_message(message: Dictionary):
 			# Slice 6f (v0.9.549) — variant_offer when an active companion's
 			# trait can be imprinted as a 3rd option.
 			var ruc_variant: Dictionary = message.get("variant_offer", {}) if message.has("variant_offer") else {}
-			_show_rank_choice_popup(
-				str(message.get("ability", "")),
-				int(message.get("new_rank", 0)),
-				int(message.get("current_copy_count", 1)),
-				int(message.get("current_effect_rank", 0)),
-				ruc_variant
-			)
+			# 2026-09-03 — the nine-card reveal, when the server dealt an offer. Falls through to
+			# the legacy three-branch popup otherwise, so a choice queued before this change (or
+			# an older server) still renders something the player can act on rather than nothing.
+			var ruc_offer: Array = message.get("upgrade_offer", []) if message.get("upgrade_offer", null) is Array else []
+			if not ruc_offer.is_empty():
+				_show_milestone_reveal(str(message.get("ability", "")), ruc_offer,
+					int(message.get("reveals_allowed", 3)))
+			else:
+				_show_rank_choice_popup(
+					str(message.get("ability", "")),
+					int(message.get("new_rank", 0)),
+					int(message.get("current_copy_count", 1)),
+					int(message.get("current_effect_rank", 0)),
+					ruc_variant
+				)
 
 		"rank_choice_applied":
 			# Slice 6b — server confirmed the choice. Pop the next pending if any
