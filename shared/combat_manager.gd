@@ -10734,13 +10734,22 @@ func _party_outsmart(combat: Dictionary, pid: int, requested_spend: int) -> Arra
 		entries.append(_party_entry(pid,
 			"[color=#FF4444]The %s sees through it. Your read is broken.[/color]" % monster.get("name", "monster"),
 			"[color=#FF4444]The %s sees through %s's trick.[/color]" % [monster.get("name", "monster"), pname]))
+	# The HEAD entry's text is deliberately NOT printed for a member action — the client plays
+	# it (spotlight + animation) and prints only the body lines, to keep a 4-actor round
+	# readable. So the head must be a pure header: promoting the first informative line to head
+	# SWALLOWED it, which is why a zero-energy attempt showed only "sees through it" with no
+	# attempt line and no odds, while a spend-energy attempt looked fine (the spend line took
+	# the head slot instead). Reported from co-op play.
+	var head := _party_entry(pid,
+		"[color=#FFA500]▶ You try to outwit the %s[/color]" % monster.get("name", "monster"),
+		"[color=#FFA500]▶ %s tries to outwit the %s[/color]" % [pname, monster.get("name", "monster")])
+	head["head"] = true
+	head["action_kind"] = "outsmart"
+	head["ability"] = "outsmart"
+	entries.push_front(head)
 	for _e in entries:
 		_e["actor"] = "member"
 		_e["actor_pid"] = pid
-	if not entries.is_empty():
-		entries[0]["head"] = true
-		entries[0]["action_kind"] = "outsmart"
-		entries[0]["ability"] = "outsmart"
 	return entries
 
 func _process_party_monster_phase(combat: Dictionary, max_actions: int = 0) -> Dictionary:

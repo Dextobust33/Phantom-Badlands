@@ -285,8 +285,11 @@ curve loads, no script errors). See *Recently shipped*.
 ### 6. Item 7 — new player experience
 Already placed and sliced. Slice 1 depends on the gear decisions in step 4.
 
-### 7. Input gating + player-set combat speed
-*Detail: DESIGN PROPOSAL (owner 2026-09-03)*
+### 7. Input gating + player-set combat speed + COMBAT LOG READABILITY
+*Detail: DESIGN PROPOSAL (owner 2026-09-03) and COMBAT LOG READABILITY (owner 2026-09-03)*
+The log being "a wall of text" is the same surface: gating gives the reader time, the speed
+control sets the rate, and grouping-by-actor sets the density. Doing them separately means
+touching the combat log three times.
 Retires a whole bug class rather than adding a feature — post-combat HP staleness, the stale
 companion bar, late buff visuals, the victory card over unsettled bars and the stale Continue
 button all come from the player outrunning the playback queue. Scoped after the balance pass
@@ -2471,6 +2474,51 @@ that as a live balance hole before checking whether anything called it.
 - [ ] Delete all three, or rewrite them to delegate to the shared path if the intent was to keep
       a second entry point. Leaving a stale duplicate of a formula next to the real one is the
       exact shape that produced the lying cards
+## ⚑ COMBAT LOG READABILITY — "a wall of text" (owner 2026-09-03, SOLO AND CO-OP)
+
+Owner, after the co-op Outsmart test:
+
+> *"The combat damage summary/window needs to be updated soon. It reads too much like a wall of
+> text and is hard to parse out what you did, what the companion did, and what the enemy did.
+> This stands true for solo combat as well."*
+
+**This is a presentation problem, not a content problem.** Every line is individually fine; the
+failure is that a round arrives as an undifferentiated block with no visual grouping by ACTOR.
+From the co-op screenshots, a single round produced ~12 lines mixing the player's card, its
+damage, a Focus tick, the companion's attack, the monster's turn, a forcefield absorption and a
+poison tick — all the same shape, same indentation, same weight.
+
+Note that co-op already learned half of this lesson: the per-actor HEADER is played (spotlight +
+animation) rather than printed, *"leaving ONE summary line per action"*, precisely because
+printing both made a 4-actor round unreadable. Solo never got that pass, and even in co-op the
+body lines are still a flat list.
+
+Directions worth considering (not decided):
+- **Group by actor**, with the actor's colour as a left gutter or prefix, so the eye can find
+  "what did I do / what did my companion do / what did it do to me" without reading every line
+- **Collapse the incidentals** — DoT ticks, Focus/Read/Momentum gain, buff-absorption lines are
+  bookkeeping, not events. A compact status strip would carry them better than log lines
+- **One line per actor per round** as the default, expandable for detail. The condensed-log path
+  (`condensed_combat_log`, `_round_message_buffer`) already exists and is the natural home
+- The **damage summary card** ("You: 3319  Pet: 234  Foe: 0") is the readable part — it works
+  because it is grouped by actor. That is the model the log should follow
+
+- [ ] Belongs with **item 7 (input gating + player-set combat speed)** in the ordered plan, and
+      with backlog **6e (solo combat presentation — port the party pass back)**. All three are
+      the same surface: gating gives the reader time, pacing controls the rate, and this
+      controls the density. Doing them separately means touching the combat log three times
+
+## ⚑ Outsmart flavour text (owner idea 2026-09-03, small)
+
+> *"It might be cool to do different randomized messages of what the character tried to do to
+> outsmart it (example: rolled between its legs, tried to stab it in the back while it's
+> distracted, etc.)"*
+
+- [ ] A small pool of randomised attempt descriptions on Outsmart, chosen per attempt. Cheap,
+      and it turns the game's most distinctive mechanic from a dice roll into a moment. Worth
+      varying by OUTCOME too — a described near-miss reads better than a flat "sees through it"
+- [ ] Fits the Keeper's voice; see `docs/design/setting_bible.md` before writing the lines
+
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
