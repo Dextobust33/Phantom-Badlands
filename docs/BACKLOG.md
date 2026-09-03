@@ -247,14 +247,25 @@ curve loads, no script errors). See *Recently shipped*.
 - [x] **APEX now starts at tier 2 — DONE.** Owner: *"Apex should wait until Tier 2 at a minimum."*
       Skeleton (T1, 18.5% of the L5 spawn table) removed; Mimic (T2) is now the first apex a
       player can meet. Help page, searchable help topic and changelog lists updated with it
-- [x] **Retire the Pathfinder chain — APPROVED, scheduled with item 7 Slice 1.** Deliberately not
-      done today: it is auto-added at character creation, so removing it before its replacement
-      exists leaves a brand-new player with no guided thread at all. It is a two-line removal at
-      the same code site as the free egg, and both should go in the same change that adds the
-      tutorial Phantom. Existing in-flight pathfinder quests must still be completable, so retire
-      the GRANT, not the definitions
-- [ ] **Should L1-5 also be survivable GEARLESS** (original option (a))? Still open — the one
-      question from this set not yet answered. Pairs with item 7's Stage 0 skip
+- [x] **Pathfinder chain RETIRED — DONE 2026-09-03.** Owner chose to take the gap rather than
+      wait for item 7: *"Remove it."* The GRANT at character creation is gone; the quest
+      DEFINITIONS and every turn-in/display path are untouched, so a character partway through
+      the chain can still finish it. Nothing offers it to a new character any more (the quest
+      board has been dungeon-only since v0.9.727).
+
+      **The starter EGG is deliberately still granted** — it is also slated for removal with
+      item 7, but taking it out before the tutorial Phantom exists would leave a new character
+      with nothing at all. Same code site; it goes in the change that replaces it
+- [x] **L1-5 gearless survivability — DECLINED 2026-09-03.** Owner: *"L1-5 is fine, the tutorial
+      we are adding will fill that gap or existing equipment and companions will."* So option (b)
+      stands alone: the curve is anchored to a geared player, and onboarding (item 7) is what
+      makes a new character meet it. A returning player skipping the tutorial arrives with stored
+      gear and registered companions, which is the same thing by another route.
+
+      **Consequence to keep visible:** the only case left uncovered is a brand-new player who
+      SKIPS onboarding for the challenge. That is now an accepted, informed difficulty choice
+      rather than a defect — which makes item 7's Stage 0 skip prompt load-bearing. It has to
+      state plainly what is being given up
 
 ### 5. Balance work that DEPENDS on step 2
 - [ ] Boss and elite win rates at L1-L50 (7-23% measured fight-to-the-death)

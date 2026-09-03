@@ -2862,30 +2862,20 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	log_message("Character created: %s (%s %s) for peer %d" % [char_name, char_race, char_class, peer_id])
 	update_player_list()
 
-	# Audit #3 Tutorial Initiative Slice 2 (v0.9.564) — Pathfinder onboarding.
-	# Auto-add the starter chain's first stage so new players don't miss it,
-	# and auto-grant a Goblin companion egg so they have a pet to incubate
-	# from minute one (also addresses Audit #4's "tutorial companion gift"
-	# captured item). Existing characters who skip creation get neither — the
-	# chain stays visible on Crossroads' quest board for them as a normal quest.
-	var pf_quest = quest_db.get_quest("pathfinder_1")
-	if not pf_quest.is_empty():
-		var pf_added = character.add_quest(
-			"pathfinder_1",
-			int(pf_quest.get("target", 3)),
-			character.x,
-			character.y,
-			String(pf_quest.get("description", "")),
-			character.level,
-			0,
-			{
-				"quest_name": String(pf_quest.get("name", "Pathfinder's Trial I")),
-				"quest_type": int(pf_quest.get("type", quest_db.QuestType.GATHER)),
-				"gather_job": String(pf_quest.get("gather_job", "fishing")),
-			}
-		)
-		if pf_added:
-			log_message("Auto-added Pathfinder's Trial Stage 1 to %s" % char_name)
+	# PATHFINDER CHAIN RETIRED 2026-09-03 (owner direction). It used to be auto-added here as
+	# the starter quest, and it is being replaced by the new-player experience (backlog item 7):
+	# a guided tutorial quest into a controlled first Phantom, which teaches the loop the game
+	# is actually built on rather than a gathering errand.
+	#
+	# The GRANT is removed, not the quest DEFINITIONS — `pathfinder_1`/`_2`/... still exist in
+	# quest_database, and every turn-in and display path for them is untouched, so any existing
+	# character partway through the chain can still finish and claim it. Nothing offers it to a
+	# new character any more; the quest board has been dungeon-only since v0.9.727.
+	#
+	# NOTE the deliberate asymmetry: the starter EGG below is intentionally still granted. It is
+	# also slated for removal with item 7 (the tutorial Phantom hands out an egg and a
+	# registration item instead), but removing it before that exists would leave a brand-new
+	# character with nothing at all. Egg goes in the same change that replaces it.
 	# Tutorial companion gift — random T1 monster egg ready to hatch in
 	# incubator. Randomized so two friends creating characters at the same
 	# time don't both get a Goblin (v0.9.566 fix — was hardcoded Goblin).
