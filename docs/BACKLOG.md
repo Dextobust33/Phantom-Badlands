@@ -758,47 +758,66 @@ damping had been protecting against.
   problem** — it tracks the too-short high-level fights above. Fix the HP convergence and these
   should settle back; do not tune them first
 
-### 6g. **`refcal` cannot steer fight length — the HP lever cancels itself out** (found 2026-09-02)
+### 6g. **DONE — ability anchor decoupled; curve smoothed** (2026-09-02)
 
-Re-calibrating after the companion change converged the DANGER axis cleanly (33-53% HP cost
-against a 40% target) but left TURNS swinging between 2.0 and 11.8 against a target of 5, at
-every sample size tried. That is not noise. It is structural:
+*Was: "`refcal` cannot steer fight length". User approved the frozen-bar fix.*
 
-```gdscript
-# _ability_anchored_damage
-var bar: float = float(monster_database.reference_monster_hp(character.level))
-return bar * weight * _ability_stat_ratio(character, stat_name)
-```
+**The defect.** Ability damage was `reference_monster_hp(level) * weight * stat_ratio` — a share
+of the SAME curve `refcal` rewrites. Raising monster HP to lengthen a fight raised every
+ability's damage by the identical factor, so fight length never moved and the calibrator kept
+raising HP: **2-5x inflation across every anchor** over repeated runs, while abilities kept pace
+and BASIC ATTACKS (which do not scale with it) silently fell behind. Companion damage had the
+same coupling and was fixed alongside.
 
-**Ability damage is anchored to the very curve `refcal` is tuning.** When the calibrator raises
-monster HP to lengthen a fight, every ability's damage rises by the identical factor and the
-fight length does not move. `str` is an independent lever, so danger converges; `hp` is not, so
-turns cannot. The only thing that still responds is the basic attack (stat-based), which is why
-the result is noisy rather than uniformly wrong — classes leaning on attacks move, classes
-leaning on abilities do not.
+**The fix.** `shared/ability_reference_bar.json` — a frozen snapshot of the curve the
+`ABILITY_WEIGHTS` were authored against, which `refcal` must never rewrite. Ability and
+companion damage read it; monster HP is an independent lever again. **Consequence worth
+stating: "a power strike is worth a fifth of a monster" is now a claim about the FROZEN bar, not
+about whatever monsters currently have.** If calibration decides monsters need 1.5x HP, a power
+strike becomes a seventh of one. That is what makes fight length steerable at all, but it means
+`ABILITY_WEIGHTS` wants re-reading against `-- ability_hp` once the curve settles.
 
-Consequence for anyone reading old numbers: **fight length for an ability-using class is set by
-`ABILITY_WEIGHTS`, not by monster HP.** A kit averaging a 0.22 share per turn kills in ~4.5
-turns whatever the calibrator writes.
+**A second defect the fix exposed.** The monotonic clamp stops dips, but turns a single noisy
+SPIKE into a permanent plateau: L250 spiked to 35351 and L500 — which had calibrated itself to
+16106 — was clamped UP to 35351, inflating every level above it. The curve stepped 5.04x from
+L100 to L250 then 1.00x to L500, and the role audit landed exactly on those anchors (L250 normal
+16.4 turns, L1000 boss 3.1). Now smoothed in log space BEFORE clamping, two light passes.
 
-The L10000 "2.0 turns at 97% win" cell is the same mechanism at its extreme, compounded by
-`_ability_stat_ratio`: `pow(stat / (level + 13), 0.5)`. Stat growth per level is not exactly 1.0,
-so the ratio drifts away from 1.0 as level rises and the realised share climbs above the
-authored weight. This is the "L10000 spike across ALL abilities" already noted in 6c, now with
-a cause.
+| | before | after |
+|---|--------|-------|
+| step between anchors | 1.00x - 5.37x | **1.07x - 2.31x** |
+| monotonic | 3 clamps needed | **True, no clamps fired** |
 
-- [ ] **Decide the lever.** Options, roughly in order of appeal:
-      1. **Decouple the anchor** — ability damage reads a FROZEN reference bar that `refcal`
-         never rewrites, so monster HP becomes a real, independent lever again. Preserves the
-         "an ability is worth a fifth of a monster" design statement at the level it was
-         authored for. **Recommended**
-      2. Have `refcal` correct fight length by scaling `ABILITY_WEIGHTS` instead of monster HP —
-         honest, but it makes the design table an output rather than a statement of intent
-      3. Normalise `_ability_stat_ratio` so it is 1.0 at the reference stat line at EVERY level;
-         fixes the high-level drift but not the cancellation
-- [ ] Until this is settled, **treat every `refcal` turn-count as uninformative** and read the
-      danger column only. The written curve is not wrong, it is just not converged on turns
-- [ ] Re-run `-- refval` and `-- roles` after whichever fix lands
+**THREE measurement bugs in the simulator were found and fixed today.** Every one made the game
+look different from how it actually plays, so treat historical numbers in this file with care:
+- `_fight_stats_at` counted every win TWICE (the same `if` appeared twice in a row) — every win
+  rate that function ever printed was **2x the truth**. Display only; calibration corrects on
+  turns and cost, so written curves were unaffected
+- `refcal` printed the measurement from one correction BEFORE the value it wrote
+- smoothing and clamping run AFTER the per-anchor loop, so the printed table described numbers
+  that no longer existed. Rows are now labelled `raw / pre-smoothing` and a verification table is
+  measured against the final written curve — **that is the only table to trust**
+
+**Where the curve landed** (roles audit, n=60, post-smoothing):
+
+| role | HP cost before | HP cost now | target | win% |
+|------|----------------|-------------|--------|------|
+| normal | 28-56% | 44-57% | 40% | 61-78% |
+| empowered | 23-54% | 46-59% | 55% | 58-71% |
+| elite | 24-58% | 51-71% | 65% | 43-63% |
+| boss | 32-70% | 54-73% | 80% | 43-66% |
+
+Danger converged and win rates now descend correctly by role — empowered used to be EASIER than
+normal. L1-L100 lands at 4.5-6.5 turns against a 5-turn target.
+
+- [ ] **Turn counts still swing** (elite 3.9-24.5, boss 6.8-34.0). Danger converged because
+      `str` is a clean independent lever; turns did not because `hp` and `str` are coupled —
+      raising `str` shortens the fight AND raises cost, so the two corrections fight. Needs a
+      joint solve rather than two independent single-axis corrections
+- [ ] **The role SPREAD is compressed**: measured means ~47/53/62/65 against targets 40/55/65/80.
+      A boss is not far enough from a trash fight. `-- rolecal` running
+- [ ] Re-read `ABILITY_WEIGHTS` against `-- ability_hp` now the bar is frozen and the curve moved
+- [ ] Re-run `-- classes`, `-- species` — both were measured against the stale curve
 
 ### 6b. Companion power & levelling — **the emotional spine, currently thin**
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them
