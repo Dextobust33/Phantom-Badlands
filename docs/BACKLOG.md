@@ -12,45 +12,46 @@ order is what forces revisits.
 
 ---
 
-## ⚑ NEXT SESSION: SHIP A RELEASE FIRST
+## ⚑ v0.9.741 SHIPPED — the balance day reached players (2026-09-03)
 
-**2026-09-02 ended with 94 commits and nothing in players' hands.** That is the wrong ratio and
-the next session should correct it before starting anything new. The work is real — the day
-found and fixed defects that would each have shipped as live bugs — but none of it reached
-anyone.
+The 103 commits of 2026-09-02 are live: **client, launcher (both platforms) and server**,
+under tag `v0.9.741`. Runtime was byte-identical to r1 (sha256 compared, not assumed), so
+launcher users pulled a **14.7 MB content-only update** rather than 38 MB of runtime.
 
-**What is committed, working, and unreleased.** All of this is `master`, compile-clean, and most
-of it has been exercised in live play:
+Shipped: the reference-player monster model at every level, apex species, role calibration,
+the regeneration cap, the Forcefield anchor, companion durability and scaling, server-authoritative
+ability costs, the mage kit re-pricing, the escape ratio fix, the per-encounter flock budget, and
+the solo playback fix.
 
-| area | change |
-|------|--------|
-| Regeneration | a regenerating boss was **mathematically unwinnable** (net damage/turn negative at every level); capped against the frozen bar |
-| Forcefield | absorbed **1.07-1.41x the caster's whole health bar** per cast; anchored to 0.25x, description corrected |
-| Companions | aggro-scaled HP share — tanks had the SAME pool as glass casters and died ~4x faster than their owner |
-| Companions | aggro rolled per HIT, so a multi_strike burst no longer lands entirely on one target |
-| Companion HP | one number in and out of combat (client had two mirrors of the formula; one used a long-dead formula) |
-| Ability costs | server-authoritative costs + MEASURED per-turn regen; the client can no longer disagree with the bar |
-| Monster curve | ability anchor decoupled from the calibrated curve, curve smoothed, sawtooth removed |
-| Roles | boss/elite/empowered danger calibrated; empowered no longer harder than elite |
-| Tooling | playtest log (victories AND deaths), forced elite/empowered spawns, live spawn table in the fixture |
+**Found while writing the changelog:** the apex feature was only half built. `is_apex` was
+stamped on the monster with the comment *"so the client can mark one in the UI"* — and nothing
+ever read it. The entire premise of apex species is that a player learns which ones to fear,
+which cannot happen if the game never says which they are. Now carried through the combat state
+and rendered as a red **☠ [APEX]** on the enemy health bar, stacking with ELITE rather than
+replacing it, plus a help page section and a searchable help topic.
 
-**Release checklist** (from CLAUDE.md, the parts that have bitten before):
-1. `--editor --quit` recompile FIRST — headless export ships a stale script cache, and v0.9.657-660
-   all shipped old code. Verify by RUNNING the build, not by grepping the pck
-2. Bump `VERSION.txt` (currently 0.9.740); update `display_changelog()` in client.gd
-3. Ship **four** assets under one tag (Win client + Win launcher + Linux client + Linux launcher)
-   plus the pck/runtime split + `client-manifest.json`
-4. `bash deploy_server.sh` for the server
-5. 1-minute in-game warning before the swap
+**Release-process notes worth keeping:**
+- The `--editor --quit` recompile was done on the main project AND `launcher/` (separate cache)
+- Build freshness was verified **by running the packaged exe** with a temp `[BUILDVERIFY]` print,
+  as the rule requires. It reported `shared_apex_species=false` on the first pass — which was
+  **the probe being wrong** (it named `get_combat_state`, a method that does not exist), not a
+  stale build. Corrected probe confirmed client var, `MonsterDatabase.is_apex_species("Hydra")`
+  and `CombatManager.FORCEFIELD_SHARE_OF_BAR=0.25` all live in the pck. Five instrument defects
+  yesterday, one more today: **check the instrument first** applies to the release process too
+- The reference curve is a `.json`; confirmed it loads in production by the ABSENCE of the
+  fail-loud `push_error` in the deployed server's journal
+- Nobody was connected at swap time (checked `ss` for established connections on 9080), so no
+  in-game countdown was needed
 
-**Known-open at ship time, and acceptable:**
-- Post-combat HP staleness — player reports HP dropping BEFORE combat ends, and the end-of-fight
-  number being the stale one. NOT the post-combat settling I originally assumed. Needs the HP
-  ledger (instrument `process_monster_turn`), not a fourth guess
+**Known-open at ship time, and accepted:**
+- Post-combat HP staleness — HP appears to drop BEFORE combat ends and the end-of-fight number
+  is the stale one. Needs the HP ledger (instrument `process_monster_turn`), not a fourth guess
 - Buff effects (Forcefield) take a beat to appear on the HP bar — same playback-gating family
 - High-level fight LENGTH still swings; danger is calibrated, turns are not
 - Boss win rate 18-46% — **a user DECISION, not a defect**: *"I'm okay with the bosses currently
   as I think companions and gear will make up the difference"*
+- **Forcefield's 3-6x nerf wants a feel check in live play.** It was immunity before, so the
+  direction is not in doubt, but 0.25x of the bar is an anchor picked by measurement, not by feel
 
 ---
 
@@ -89,25 +90,18 @@ item 6 was split — it had grown to 21 open tasks covering two different jobs �
 **6** the monster model and difficulty curve, **6b** companion power, **6c** class balance
 (blocked, see below), **6d** risk/reward incentives.
 
-### ⚠ Sequencing: a body of UNSHIPPED, sim-only balance change has accumulated
+### ✅ Sequencing: the unshipped balance body is now SHIPPED (v0.9.741, 2026-09-03)
 
-Four significant changes now sit in the tree, none deployed and none played:
-1. **Reference-player monster model** — monster HP/STR/DEF at every level in the game
-2. **Role targets** — elite/boss/empowered multipliers re-derived
-3. **Escape fix** — flee penalty by level ratio instead of raw difference
-4. **Player-post suppression floor** — already marked do-not-deploy until 12b exists
+This section used to warn that four significant balance changes sat in the tree, sim-validated
+and unplayed. They are live as of v0.9.741 — the reference-player monster model, the role
+targets, the escape fix, and the per-encounter flock budget. The player-post suppression floor
+is the one deliberate exception: it remains behind `PLAYER_POST_TIER_FLOOR_ENABLED = false`
+until 12b (the Phantom) gives a new character an on-ramp, and should be flipped in that same
+change.
 
-All four are validated **only in the simulator**. Two things follow, and they set the order:
-
-- **6c (class balance) is BLOCKED, not merely "next".** Every class number on record was
-  measured against the OLD monster model, so those absolute figures are stale. Re-run
-  `-- classes`, `-- races`, `-- ability_hp`, `-- companion` first. Tuning classes against a
-  monster model that no longer exists is precisely the revisit-forcing mistake this file exists
-  to prevent
-- **A playtest checkpoint should come before more balance work.** Sim-validated is not the same
-  as feels-right, and the monster model changes every fight in the game. Piling class tuning on
-  top of an unvalidated baseline risks redoing both. The cheap version is a local dev session at
-  a few levels, not a release
+The sequencing consequence that still stands: **6c (class balance) was blocked because every
+class number on record had been measured against the OLD monster model.** That re-measurement
+is DONE (see 6c) — so 6c is unblocked, and its figures are the ones to trust.
 
 **Status 2026-09-02:** (a) re-measurement DONE — see 6c. (b) **Playtest DONE and passed.**
 A live L5 session confirmed the model on screen: flocks are survivable again after the
@@ -124,8 +118,19 @@ Three real bugs were found only by playing it, none of which the simulator can s
   (the guard matched truncated `tasklist` output), and a rebuilt character that was never
   re-registered on the account after permadeath cleared its slot
 
-**Next:** 6b (companion power) — it is a measured defect, and it gates 12b, the Phantom loop.
-Then 6c, where the mage roster is the clearest remaining balance outlier.
+**Next (as of 2026-09-03, post-release):** the measured-defect half of **6b** shipped in
+v0.9.741 — companion HP by aggro, and damage/defense/resource-regen unflattened. What remains
+under 6b is the *design* question (what a companion is FOR), which gates 12b, the Phantom loop.
+
+So the live choice for the next session is between:
+1. **A feel playtest of v0.9.741** — the largest balance change the game has had, and the one
+   number picked by measurement rather than feel is Forcefield's 3-6x nerf. Cheap, and the last
+   playtest found three bugs no simulator could see
+2. **6c class balance** — now unblocked, with the mage roster the clearest remaining outlier
+3. **6b's design half** — what a companion is for, which unblocks the 12b Phantom arc
+
+Ask the owner rather than assuming; (1) is the cheapest and most likely to change what (2) and
+(3) should say.
 
 ### What this session proved about trusting measurements
 
@@ -1938,6 +1943,17 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
 - **2026-09-02 (site + docs, no client build)** — website refresh live: setting-led copy that
   explains the name, real in-game screenshots, accuracy fixes (Linux support, party of 5,
   deck-driven combat). Setting bible revised to a single cause. Screenshot capture harness added
+
+- **v0.9.741** — THE BALANCE PASS: every monster resized against a reference player at every
+  level (the mid-game hump and the post-L1000 slide are gone), apex species (15 deliberately
+  dangerous species, 2x XP / 3x drops, tagged ☠ [APEX] in combat), elite/boss/empowered roles
+  calibrated (empowered was harder than elite), regeneration capped (a regenerating boss was
+  mathematically unwinnable), Forcefield anchored to the health bar (it was absorbing >1 full
+  bar per cast — immunity with a mana cost) + its lying description fixed, companion HP scaled
+  by aggro and companion damage/defense/regen unflattened, per-hit aggro rolls, server-authoritative
+  ability costs shown on cards, mage kit anchored to the health bar (Bolt/Blast/Cleave) + Wisdom's
+  caster damage restored, escape priced by level RATIO with a 25% floor, flocks budgeted per
+  encounter, solo combat given the co-op playback pass, XP-remaining label fix
 
 - **v0.9.740** — party leadership rotation + duplicated rewards, follower/post rules, party of 5,
   buff + item targeting (teammates and their companions), co-op playback pacing (rounds play fast
