@@ -26614,6 +26614,13 @@ const DEFAULT_PLAYER_POST_TIER: int = 1
 # its bubble. Caps the settler-bubble safe pocket RELATIVE to its surroundings so a frontier
 # post cannot be suppressed all the way down to starter-zone difficulty. See
 # _compute_effective_post_tier.
+# GATE (2026-09-02) — the tier-scaled suppression floor is CORRECT but cannot ship alone.
+# Raising the floor means a frontier post's surroundings stay dangerous, and spawn-at-post
+# ALREADY SHIPS, so a player who founds a post out there and rolls a fresh character walks
+# straight into tier-5 monsters with no way to survive or gear up. The on-ramp that makes it
+# fair is the Phantom (backlog 12b), which is design-only.
+# Default OFF until 12b exists. Flip to true in the same change that lands the Phantom.
+const PLAYER_POST_TIER_FLOOR_ENABLED: bool = false
 const MAX_PLAYER_POST_SUPPRESSION: int = 2
 const DEFAULT_PLAYER_POST_BUBBLE_RADIUS: int = 25
 
@@ -27111,9 +27118,9 @@ func _compute_effective_post_tier(post_meta: Dictionary) -> int:
 	# relative to its surroundings rather than absolute. Frontier posts give frontier-grade
 	# safety. Near the core, wilderness_tier is 1-3 so the floor stays 1 and nothing about the
 	# early game changes.
-	var floor_tier = maxi(
-		int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER)),
-		wilderness_tier - MAX_PLAYER_POST_SUPPRESSION)
+	var floor_tier = int(post_meta.get("tier", DEFAULT_PLAYER_POST_TIER))
+	if PLAYER_POST_TIER_FLOOR_ENABLED:
+		floor_tier = maxi(floor_tier, wilderness_tier - MAX_PLAYER_POST_SUPPRESSION)
 
 	if owner == "":
 		return wilderness_tier

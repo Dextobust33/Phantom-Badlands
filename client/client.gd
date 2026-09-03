@@ -36173,6 +36173,23 @@ func _drain_combat_queue():
 			combat_scene_panel.play_victory_fx()
 		var _card_scheduled := false
 		if _pending_victory_card_payload != null and combat_scene_panel and combat_scene_panel.has_method("show_victory_card"):
+			# 2026-09-02 — SETTLE BEFORE THE CARD, unconditionally. Results are held back while
+			# beats play so they land in step with the log, but the victory card must never
+			# appear over stale bars: reported as "my health and everything dropped around 4
+			# seconds after combat was over". Settling again here is idempotent and guarantees
+			# the ordering no matter which path scheduled the card.
+			update_player_hp_bar()
+			update_resource_bar()
+			update_player_xp_bar()
+			if combat_scene_panel.has_method("update_player_hp"):
+				combat_scene_panel.update_player_hp(
+					int(character_data.get("current_hp", 0)),
+					int(character_data.get("total_max_hp", character_data.get("max_hp", 1))))
+			if not _pending_companion_hp.is_empty() and combat_scene_panel.has_method("update_companion_combat_hp"):
+				var _pc2: Dictionary = _pending_companion_hp
+				_pending_companion_hp = {}
+				combat_scene_panel.update_companion_combat_hp(
+					int(_pc2.get("hp", -1)), int(_pc2.get("max", -1)), bool(_pc2.get("ko", false)))
 			var payload = _pending_victory_card_payload
 			_pending_victory_card_payload = null
 			_card_scheduled = true
