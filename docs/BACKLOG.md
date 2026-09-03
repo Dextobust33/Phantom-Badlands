@@ -1306,6 +1306,17 @@ all. The honest consequence is about how the balance numbers are *read*:
 Everything in 6/6b/6c is committed but **NOTHING is deployed**, and most client changes have
 only had partial playtesting. Read this before touching combat again.
 
+- [x] **RESOLVED: the "missing damage" fight.** A Chimaera logged 298 damage against an 82 HP
+      drop. Reproduced in the sim with empowered rolls enabled and a lifesteal companion, and
+      the arithmetic reconciles exactly every time (355 + 308 heal - 270 damage = 393;
+      288 + 250 - 285 = 253). The player was healed by the companion's Kiss of Death mid-round.
+      Damage application was correct throughout — **the LOG was wrong**, reporting the intended
+      heal (428) rather than the amount actually restored (~216, clamped by missing HP), and
+      never saying the heal was for the player. Fixed; the message now reads "drains N HP for
+      you" with the real figure.
+      **Two separate reports were being conflated**: this one (never resolved by waiting) and a
+      different fight where HP updated ~4 seconds late (which did catch up). Only the second is
+      a display-timing issue
 - [ ] **My regression, not yet fixed: post-combat settle timing.** Gating result display on the
       beat queue means HP and resources land *after* the victory screen instead of before it.
       User: *"my health and everything dropped around 4 seconds after combat was over."* They
