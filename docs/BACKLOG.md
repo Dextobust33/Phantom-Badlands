@@ -758,6 +758,48 @@ damping had been protecting against.
   problem** — it tracks the too-short high-level fights above. Fix the HP convergence and these
   should settle back; do not tune them first
 
+### 6g. **`refcal` cannot steer fight length — the HP lever cancels itself out** (found 2026-09-02)
+
+Re-calibrating after the companion change converged the DANGER axis cleanly (33-53% HP cost
+against a 40% target) but left TURNS swinging between 2.0 and 11.8 against a target of 5, at
+every sample size tried. That is not noise. It is structural:
+
+```gdscript
+# _ability_anchored_damage
+var bar: float = float(monster_database.reference_monster_hp(character.level))
+return bar * weight * _ability_stat_ratio(character, stat_name)
+```
+
+**Ability damage is anchored to the very curve `refcal` is tuning.** When the calibrator raises
+monster HP to lengthen a fight, every ability's damage rises by the identical factor and the
+fight length does not move. `str` is an independent lever, so danger converges; `hp` is not, so
+turns cannot. The only thing that still responds is the basic attack (stat-based), which is why
+the result is noisy rather than uniformly wrong — classes leaning on attacks move, classes
+leaning on abilities do not.
+
+Consequence for anyone reading old numbers: **fight length for an ability-using class is set by
+`ABILITY_WEIGHTS`, not by monster HP.** A kit averaging a 0.22 share per turn kills in ~4.5
+turns whatever the calibrator writes.
+
+The L10000 "2.0 turns at 97% win" cell is the same mechanism at its extreme, compounded by
+`_ability_stat_ratio`: `pow(stat / (level + 13), 0.5)`. Stat growth per level is not exactly 1.0,
+so the ratio drifts away from 1.0 as level rises and the realised share climbs above the
+authored weight. This is the "L10000 spike across ALL abilities" already noted in 6c, now with
+a cause.
+
+- [ ] **Decide the lever.** Options, roughly in order of appeal:
+      1. **Decouple the anchor** — ability damage reads a FROZEN reference bar that `refcal`
+         never rewrites, so monster HP becomes a real, independent lever again. Preserves the
+         "an ability is worth a fifth of a monster" design statement at the level it was
+         authored for. **Recommended**
+      2. Have `refcal` correct fight length by scaling `ABILITY_WEIGHTS` instead of monster HP —
+         honest, but it makes the design table an output rather than a statement of intent
+      3. Normalise `_ability_stat_ratio` so it is 1.0 at the reference stat line at EVERY level;
+         fixes the high-level drift but not the cancellation
+- [ ] Until this is settled, **treat every `refcal` turn-count as uninformative** and read the
+      danger column only. The written curve is not wrong, it is just not converged on turns
+- [ ] Re-run `-- refval` and `-- roles` after whichever fix lands
+
 ### 6b. Companion power & levelling — **the emotional spine, currently thin**
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them
 it makes the crucial point of the game pointless."*
