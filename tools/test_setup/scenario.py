@@ -188,6 +188,27 @@ SCENARIOS = {
             "current_stamina": c.get("max_stamina", 100),
         })),
 
+    "milestone": dict(
+        doc="ONE Fighter parked where a fight is findable, sitting ONE USE from several card "
+            "milestones at once - for the nine-card rank-up reveal (preview 9, shuffle, turn "
+            "over 3, choose 1). Power Strike and Shield Bash are at 9 uses so the next cast "
+            "hits milestone 1 (upside-only pool); Cleave is at 199 so its next cast hits "
+            "milestone 3, where TRADE-OFFS unlock and appear amber. Fight anything and play "
+            "those cards.",
+        players=2, use=["test003", "test02"], at=DEFAULT_AT,
+        apply=lambda c: (c.update({
+            "current_hp": c.get("max_hp", 100),
+            "current_stamina": c.get("max_stamina", 100),
+            "current_mana": c.get("max_mana", 100),
+            "current_energy": c.get("max_energy", 100),
+        }), c.setdefault("ability_uses", {}).update({
+            # One short of a threshold (10 / 50 / 200 / 1000), so the NEXT cast of each of
+            # these fires a milestone and opens the reveal.
+            "power_strike": 9,
+            "shield_bash": 9,
+            "cleave": 199,
+        }))),
+
     "stocked": dict(
         doc="Give everyone a stack of potions (for the combat item rules).",
         players=2,
