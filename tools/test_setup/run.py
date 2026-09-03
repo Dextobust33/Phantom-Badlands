@@ -27,12 +27,12 @@ PROJECT = scen.PROJECT
 DEV_PASSWORD = "devtest"
 
 
-def set_dev_passwords(n):
+def set_dev_passwords(_roster):
     """Point the test accounts at a known password so the clients can log themselves in.
     Mirrors persistence_manager.hash_password: sha256(salt + password), hex."""
     with open(scen.ACCOUNTS, encoding="utf-8") as f:
         db = json.load(f)
-    wanted = {u for u, _, _, _ in scen.PLAYERS[:n]}
+    wanted = {u for u, _, _, _ in _roster}
     changed = []
     for aid, a in db.get("accounts", {}).items():
         if a.get("username") in wanted:
@@ -72,13 +72,14 @@ def main():
               "success while the clients attach to stale code." % live_instances())
         return 1
 
-    n = scen.players_for(name)
+    _roster = scen.roster_for(name)
+    n = len(_roster)
     print("[1/4] scenario (%d players)" % n)
     sys.argv = [sys.argv[0], name]
     if scen.main() != 0:
         return 1
     print("[2/4] credentials")
-    set_dev_passwords(n)
+    set_dev_passwords(_roster)
 
     # Capture stdout per process. Godot's user:// log does NOT capture print(), so a
     # diagnostic added to a client is invisible without this.
@@ -100,7 +101,7 @@ def main():
     print("  listening on 9080")
 
     print("[4/4] clients")
-    for i, (user, acc, cname, fn) in enumerate(scen.PLAYERS[:n]):
+    for i, (user, acc, cname, fn) in enumerate(_roster):
         if i:
             time.sleep(6)   # CONNECTION_RATE_LIMIT is 5s; back-to-back launches get rejected
         clog = open(os.path.join(logdir, "%s.log" % cname), "w", encoding="utf-8", errors="replace")

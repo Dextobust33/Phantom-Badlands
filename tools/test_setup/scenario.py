@@ -173,6 +173,21 @@ SCENARIOS = {
                              "item_type": "health_potion", "is_consumable": True,
                              "quantity": 5, "tier": 1, "level": 1, "value": 25}))),
 
+    "party_outsmart": dict(
+        doc="TWO members for CO-OP OUTSMART, which did not exist before 2026-09-03 (the server "
+            "rejected it, so a Trickster built Read in a party for no payoff). test004 is the "
+            "RANGER and leads, so drive that window; test02 is a Wizard for contrast. Both at "
+            "full HP and FULL ENERGY, parked where a fight is findable. Read builds by playing "
+            "Trickster cards, so expect several rounds before the odds are worth taking.",
+        players=2, use=["test004", "test02"], at=DEFAULT_AT,
+        apply=lambda c: c.update({
+            "current_hp": c.get("max_hp", 100),
+            # Outsmart's spend prompt is the point of the test, so start the bar full.
+            "current_energy": c.get("max_energy", 100),
+            "current_mana": c.get("max_mana", 100),
+            "current_stamina": c.get("max_stamina", 100),
+        })),
+
     "stocked": dict(
         doc="Give everyone a stack of potions (for the combat item rules).",
         players=2,
@@ -217,7 +232,26 @@ def ensure_character(user, acc, cname, fn):
 
 
 def players_for(name):
-    return SCENARIOS[name].get("players", 2)
+    return len(roster_for(name))
+
+
+def roster_for(name):
+    """The PLAYERS entries this scenario wants, in order (the first is the party LEADER).
+
+    Scenarios normally take the first N players, but some need particular CLASSES - party
+    Outsmart is meaningless without a Trickster, and only test004 is one. A scenario can name
+    the characters it needs with `use=[...]`; order is preserved so the character under test
+    can be put first and therefore lead.
+    """
+    spec = SCENARIOS[name]
+    names = spec.get("use")
+    if names:
+        by_name = {c: rec for rec in PLAYERS for c in [rec[2]]}
+        missing = [c for c in names if c not in by_name]
+        if missing:
+            raise KeyError("scenario %r wants unknown character(s): %s" % (name, ", ".join(missing)))
+        return [by_name[c] for c in names]
+    return PLAYERS[:spec.get("players", 2)]
 
 
 def main():
@@ -235,12 +269,13 @@ def main():
         return 1
 
     spec = SCENARIOS[name]
-    n = players_for(name)
-    for user, acc, cname, fn in PLAYERS[:n]:
+    roster = roster_for(name)
+    n = len(roster)
+    for user, acc, cname, fn in roster:
         ensure_character(user, acc, cname, fn)
 
     anchor = None
-    for i, (user, acc, cname, fn) in enumerate(PLAYERS[:n]):
+    for i, (user, acc, cname, fn) in enumerate(roster):
         path = os.path.join(SAVE_DIR, fn)
         with open(path, encoding="utf-8") as f:
             c = json.load(f)
