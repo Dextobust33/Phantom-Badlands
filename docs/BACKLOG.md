@@ -799,6 +799,53 @@ bonuses: `get_companion_unlocked_abilities` grants the passive always, the **act
 companion level 5**, and the **threshold at level 15**. A level-1 companion has *one third of
 its kit*, which matches the measurement far better than a percentage that never changed.
 
+**SHIPPED 2026-09-02 — two companion durability defects found in live play (L50 Wizard).**
+
+1. **Aggro was rolled once per ROUND but applied the whole round's damage.** A `multi_strike`
+   monster put its entire burst on whichever target won a single coin flip, so a Gryphon's
+   3-hit round — ~45% of the player's bar — took ~90% of a companion's smaller pool at once
+   ("it nearly killed my Succubus in one hit"). Aggro is now rolled **per hit** and a round can
+   split across both targets. Expected soak is *unchanged* (25% aggro takes 25% of hits instead
+   of 25% of rounds); only the burst spike is gone. This is not a companion buff.
+
+2. **HP share was a flat 0.5 regardless of how many hits the companion is asked to take**, which
+   made relative durability the **inverse of the design intent**. Lifetime vs the owner is
+   `share*(1-a)/a`, so at a flat 0.5:
+
+   | companion | aggro | lifetime vs owner |
+   |-----------|-------|-------------------|
+   | Iron Golem | 65% | **0.27x** — the tank died ~4x FASTER than its owner |
+   | Wolf | 25% | 1.50x |
+   | Succubus | 12% | **3.67x** — the glass caster was the survivor |
+
+   A 21x spread with the designated soakers at the fragile end. Share is now solved from aggro
+   (`COMPANION_LIFETIME_TARGET = 1.25`), clamped **below by the old 0.5** so no existing
+   companion can be weakened — the standing rule that player investment is never downscaled.
+   Spread 21x → 5x; an Iron Golem goes 0.5 → 2.0 share.
+
+**The share is NOT a share of the player's HP** — a recurring misreading, recorded here so it
+is not re-derived. It multiplies `max(owner_side, own_side)`, and for any invested companion the
+**own-level anchor wins outright**:
+
+| case | owner HP | owner_side | own_side | compHP |
+|------|----------|-----------|----------|--------|
+| L50 owner, L50 Succubus | 659 | 659 | 659 | 330 |
+| L50 owner, L50 Iron Golem | 659 | 659 | 659 | 1318 |
+| **L10 owner, L250 Succubus** | 120 | 120 | **2260** | **1130** |
+| **L10 owner, L250 Iron Golem** | 120 | 120 | **2260** | **4521** |
+
+A L250 companion on a L10 character has ~9.4x that character's HP. The owner's level never
+enters the result once the companion out-levels them. `tools/probe/comp_hp_probe.gd` prints this
+table on demand.
+
+- [ ] **Still open: a matched companion survives only ~3 rounds at L1000** (`-- comp_unlock`,
+      soaking 0.6 hits/fight) even after both fixes. Win% with one is 63% against 6% without, so
+      companions carry enormous weight up there — but they are being knocked out early in the
+      long fights. Re-measure after the curve re-calibration below before tuning further
+- [ ] **Re-run `-- refcal` + `-- roles`.** Companion durability is a PLAYER-SIDE power change, so
+      per the top-of-CLAUDE.md rule the monster curve is now stale. This already bit once when
+      the companion HP rework pushed elite-at-L1 to 90% against a 70% target
+
 **MEASURED 2026-09-02 (`-- comp_unlock`) — it is companion HP, not unlocks, not bonuses.**
 
 The user's read was right and both of the assistant's hypotheses were wrong. Same-level ELITE,
