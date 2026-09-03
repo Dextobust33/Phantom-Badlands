@@ -1625,6 +1625,9 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	character.set_meta("path_last_ability_cost", 0)
 
 	# === EQUIPMENT-BASED RESOURCE REGENERATION (at start of player turn) ===
+	# Snapshot the primary resource so the TOTAL regen actually applied this turn can be
+	# measured and reported to the client, rather than predicted from five separate sources.
+	var _regen_before: int = _primary_resource_value(character)
 	_apply_gear_resource_regen(character, messages)
 
 	# === BASE MANA REGENERATION FOR MAGES ===
@@ -1653,6 +1656,9 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	var _cr = messages.size()
 	_apply_companion_resource_regen(combat, character, messages)
 	_indent_new_messages(messages, _cr, "   ")
+
+	# Everything that regenerates on an attack turn has now run — record the real total.
+	_record_turn_regen(character, _regen_before)
 
 	# === MONSTER DOT EFFECTS (bleed/poison from companion abilities) ===
 	var _cd = messages.size()
@@ -3289,12 +3295,48 @@ const ABILITY_WEIGHTS := {
 	"meteor": 0.45,       # Focus discharge; the Focus multiplier rides on top
 }
 
-func _estimate_turn_regen_for(character) -> int:
-	"""Total resource restored to the character at the start of their turn — base capped regen
-	plus gear affixes plus companion regen. Sent to the client so the resource bar can show a
-	number that actually explains what the player sees."""
+func _primary_resource_value(character) -> int:
+	"""Current value of the character's PRIMARY combat resource, whichever it is."""
 	if character == null:
 		return 0
+	match String(character.get_class_path()):
+		"mage": return int(character.current_mana)
+		"trickster": return int(character.current_energy)
+		_: return int(character.current_stamina)
+
+func _primary_resource_max(character) -> int:
+	"""Max of the character's PRIMARY combat resource."""
+	if character == null:
+		return 0
+	match String(character.get_class_path()):
+		"mage": return int(character.get_total_max_mana())
+		"trickster": return int(character.get_total_max_energy())
+		_: return int(character.get_total_max_stamina())
+
+func _record_turn_regen(character, before: int) -> void:
+	"""Store the regen actually applied this turn, but ONLY when it was not clipped by the
+	pool cap — a player sitting at full resource regenerates 0, and reporting that as the
+	per-turn rate would tell them nothing about their next turn."""
+	if character == null:
+		return
+	var after: int = _primary_resource_value(character)
+	if after >= _primary_resource_max(character):
+		return
+	character.set_meta("measured_turn_regen", maxi(0, after - before))
+
+func _estimate_turn_regen_for(character) -> int:
+	"""Resource restored to the character on their turn, for the client's resource bar.
+
+	Prefers the MEASURED delta from the last turn over any prediction. Regen arrives from up to
+	five separate places (base capped regen, Path Second Wind, gear/buff affixes, the mage
+	arcane-focus trickle, companion regen) and they do NOT all fire on every turn type — the
+	mage trickle and companion regen live in process_attack, so an ABILITY turn regenerates
+	less than a basic attack does. Predicting that sum got it wrong; measuring cannot."""
+	if character == null:
+		return 0
+	var measured = character.get_meta("measured_turn_regen", null)
+	if measured != null and int(measured) >= 0:
+		return int(measured)
 	var path := String(character.get_class_path())
 	var pool: int = character.get_total_max_stamina()
 	var gear_key := "stamina_regen"
@@ -3544,7 +3586,11 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# === GEAR RESOURCE REGEN (skipped on CC ability turns to prevent spend/regen loops) ===
 	var cc_abilities = ["shield_bash", "paralyze"]
 	if ability_name not in cc_abilities:
+		var _ab_regen_before: int = _primary_resource_value(combat.character)
 		_apply_gear_resource_regen(combat.character, result.messages)
+		# An ability turn regenerates LESS than an attack turn (no mage arcane-focus trickle,
+		# no companion regen — both live in process_attack). Report what actually happened.
+		_record_turn_regen(combat.character, _ab_regen_before)
 
 	# === COMPANION ATTACK (only if ability takes a combat turn) ===
 	# Don't attack on free actions like Analyze, Pickpocket success, etc.
@@ -6150,6 +6196,11 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	var total_damage = 0
 	var hits = 0
+	# Per-hit damages, so companion aggro can be rolled PER HIT rather than once for the whole
+	# round. A multi_strike monster used to put its entire burst on whichever target won a
+	# single roll — a Gryphon's 3-hit round costing the player ~45%% of their bar took ~90%% of
+	# a companion's smaller pool in one go, which read as "one hit nearly killed my companion".
+	var hit_damages: Array = []
 
 	for attack_num in range(num_attacks):
 		var hit_roll = randi() % 100
@@ -6288,6 +6339,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			damage = max(1, int(_raw_hit * _mit_mult))
 
 			total_damage += damage
+			hit_damages.append(damage)
 			hits += 1
 
 			# Life steal ability: heal for 50% of damage dealt
@@ -6305,15 +6357,15 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		# Taunt Charm consumable applies a temporary additive bonus for a
 		# few monster turns. Final aggro is clamped to [0, 80] so even tanks
 		# don't permanently soak every hit.
-		var target_companion := false
 		var companion_target_name := ""
+		var final_aggro: int = 0
 		if character.has_active_companion() and not character.is_companion_ko():
 			var comp_dict: Dictionary = character.get_active_companion()
 			var comp_bonuses: Dictionary = comp_dict.get("bonuses", {})
 			var base_aggro: int = int(comp_bonuses.get("aggro", 25))
 			var taunt_bonus: int = int(combat.get("companion_taunt_bonus", 0))
 			var taunt_turns: int = int(combat.get("companion_taunt_turns", 0))
-			var final_aggro: int = base_aggro
+			final_aggro = base_aggro
 			if taunt_turns > 0:
 				final_aggro += taunt_bonus
 				# Decrement taunt counter each monster turn (regardless of
@@ -6324,34 +6376,52 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 					combat.erase("companion_taunt_bonus")
 					combat.erase("companion_taunt_turns")
 			final_aggro = clampi(final_aggro, 0, 80)
-			if randf() * 100.0 < float(final_aggro):
-				target_companion = true
-				companion_target_name = str(comp_dict.get("name", "companion"))
+			companion_target_name = str(comp_dict.get("name", "companion"))
 
-		if target_companion:
+		# Roll each hit independently. A round can now split across both targets, so a
+		# multi_strike burst is shared the way the aggro percentage says it should be.
+		var comp_raw_damage: int = 0
+		var comp_hits: int = 0
+		if companion_target_name != "" and final_aggro > 0:
+			var _remaining: Array = []
+			for _d in hit_damages:
+				if randf() * 100.0 < float(final_aggro):
+					comp_raw_damage += int(_d)
+					comp_hits += 1
+				else:
+					_remaining.append(_d)
+			hit_damages = _remaining
+			total_damage = 0
+			for _d in hit_damages:
+				total_damage += int(_d)
+
+		if comp_hits > 0:
 			var comp_hp_before: int = character.get_companion_combat_hp()
 			# Per-sub_tier damage reduction so tankier companions feel tougher.
 			# 3% per sub_tier, capped at 27% (sub_tier 9). Tracks the same
 			# sub_tier scaling already used for HP pool / variant bonuses.
 			var comp_sub_tier: int = int(character.get_active_companion().get("sub_tier", 1))
 			var comp_dr_pct: int = clampi(comp_sub_tier * 3, 0, 27)
-			var damage_to_companion: int = total_damage
+			var damage_to_companion: int = comp_raw_damage
 			var dr_amount: int = 0
 			if comp_dr_pct > 0:
-				dr_amount = int(total_damage * comp_dr_pct / 100.0)
-				damage_to_companion = maxi(1, total_damage - dr_amount)
+				dr_amount = int(comp_raw_damage * comp_dr_pct / 100.0)
+				damage_to_companion = maxi(1, comp_raw_damage - dr_amount)
 			var comp_new_hp: int = maxi(0, comp_hp_before - damage_to_companion)
 			character.set_companion_combat_hp(comp_new_hp)
 			combat["total_damage_taken"] = combat.get("total_damage_taken", 0)  # companion damage not counted toward player
-			if num_attacks > 1:
-				messages.append("[color=#FF8888]The %s hits your %s %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, companion_target_name, hits, damage_to_companion])
+			if comp_hits > 1:
+				messages.append("[color=#FF8888]The %s hits your %s %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, companion_target_name, comp_hits, damage_to_companion])
 			else:
 				messages.append("[color=#FF8888]The %s attacks your %s for [color=#FF8800]%d[/color] damage![/color]" % [monster.name, companion_target_name, damage_to_companion])
 			if dr_amount > 0:
 				messages.append("[color=#3DD9FF]  Sub-tier %d toughness absorbs %d damage.[/color]" % [comp_sub_tier, dr_amount])
 			if comp_new_hp <= 0 and comp_hp_before > 0:
 				messages.append("[color=#808080]Your %s is knocked out![/color]" % companion_target_name)
-			return {"success": true, "message": "\n".join(messages), "companion_hit": true}
+			# Only short-circuit when the companion soaked the WHOLE round. If some hits landed
+			# on the player, fall through so they resolve normally.
+			if total_damage <= 0:
+				return {"success": true, "message": "\n".join(messages), "companion_hit": true}
 
 		# Check for Forcefield shield (absorbs damage)
 		var forcefield_shield = combat.get("forcefield_shield", 0)
