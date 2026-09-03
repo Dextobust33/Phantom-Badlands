@@ -40043,6 +40043,12 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 		action = {"kind": "attack"}
 	elif cmd in ["flee", "f", "run"]:
 		action = {"kind": "flee"}
+	elif cmd in ["outsmart", "o"]:
+		# 2026-09-03 — Outsmart works in co-op now. It used to fall through to "Unknown combat
+		# command", so a Trickster in a party built Read for a payoff that did not exist.
+		# `arg` carries the energy the player chose to commit, same contract as solo; -1 means
+		# no choice was sent and the old automatic amount applies.
+		action = {"kind": "outsmart", "spend": arg.to_int() if arg.is_valid_int() else -1}
 	elif cmd in CombatManager.MAGE_ABILITY_COMMANDS or cmd in CombatManager.WARRIOR_ABILITY_COMMANDS or cmd in CombatManager.TRICKSTER_ABILITY_COMMANDS or cmd in CombatManager.UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
 		action = {"kind": "ability", "ability": cmd, "arg": arg}
 		# v0.9.740 — aim a buff at a teammate. Validated here (in the party, in THIS fight,

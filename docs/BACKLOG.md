@@ -210,23 +210,51 @@ curve loads, no script errors). See *Recently shipped*.
       length problem it was meant to solve does not exist
 
 ### 3. Cheap cleanups that need no decision — one pass, any time
-- [ ] Delete or delegate `process_party_combat_action` / `_party_process_attack` /
-      `_party_process_outsmart`. All dead (no callers) and carrying stale formulas — the party
-      Outsmart fossil caps at 75% against solo's 48%. *Detail: PARTY-PARITY AUDIT*
+- [x] **DONE 2026-09-03 — the three dead party functions are deleted**
+      (`process_party_combat_action`, `_party_process_attack`, `_party_process_outsmart`), with a
+      comment left in their place explaining why. Removed while implementing party Outsmart,
+      because leaving a stale duplicate beside the real thing is exactly what produced the lying
+      damage cards.
 - [ ] `normal` L50 outlier: 59% cost against a 40% target, 64% win. Check whether it is a
       species/spawn artifact before treating it as a curve fault. *Detail: POST-CONVERSION
       RE-CALIBRATION*
 
-### 4. Owner decisions — answer any time; implement after step 2
-- [ ] **Should Outsmart work in a party?** Today it does not exist there at all, so a Trickster
-      builds Read in co-op and it does nothing — a third of the kit is switched off, and every
-      Read change of 2026-09-03 is solo-only. Not a straight port: an instant win on a SHARED
-      monster raises reward-splitting and consent questions solo never had
-- [ ] **Is APEX too early at tier 1?** Skeleton is 18.5% of L5 spawns and is tuned to a 28-48%
-      win band, so nearly one in five of a new player's first fights is designed to beat them
-- [ ] **Should L1-5 also be survivable GEARLESS** (original option (a))? Pairs with item 7's
-      Stage 0 skip: onboarding hands you the kit, and the early band does not assume it
-- [ ] **Retire the Pathfinder chain, or keep it as post-tutorial content?** *Detail: item 7*
+### 4. Owner decisions — ANSWERED 2026-09-03
+- [x] **Outsmart works in a party — DONE.** Owner: *"Outsmart should work in a party but ideally
+      be balanced in the same way that mages and warriors are. They should have to invest around
+      the same amount of extra to accomplish it just like the mages and warrior do to kill the
+      monster with their abilities."*
+
+      Implemented with **no party-specific pricing**, because that parity is what the solo design
+      already encodes: the investment is the Read ramp plus the optional energy commitment, and
+      the odds come from the same `_outsmart_chance` (class, Wits, level gap, role penalty,
+      attempt falloff). A second balance model for the same button is the defect this codebase
+      keeps producing.
+
+      **Measured — cost to remove one full health bar, as a share of your own pool:**
+
+      | route | to clear 1 bar |
+      |---|---|
+      | Mage: Magic Bolt | **36%** |
+      | Warrior: Power Strike | 86% |
+      | Mage: Blast | 95% |
+      | Warrior: Cleave | 96% |
+      | Trickster: Ambush | 110% |
+      | **Trickster: Outsmart (the 8-stack Read ramp)** | **~128%, over 8 turns** |
+
+      So Outsmart sits at the **expensive end** of the band, not below it — and a failure forfeits
+      the whole ramp. Parity is met, arguably over-met.
+- [x] **APEX now starts at tier 2 — DONE.** Owner: *"Apex should wait until Tier 2 at a minimum."*
+      Skeleton (T1, 18.5% of the L5 spawn table) removed; Mimic (T2) is now the first apex a
+      player can meet. Help page, searchable help topic and changelog lists updated with it
+- [x] **Retire the Pathfinder chain — APPROVED, scheduled with item 7 Slice 1.** Deliberately not
+      done today: it is auto-added at character creation, so removing it before its replacement
+      exists leaves a brand-new player with no guided thread at all. It is a two-line removal at
+      the same code site as the free egg, and both should go in the same change that adds the
+      tutorial Phantom. Existing in-flight pathfinder quests must still be completable, so retire
+      the GRANT, not the definitions
+- [ ] **Should L1-5 also be survivable GEARLESS** (original option (a))? Still open — the one
+      question from this set not yet answered. Pairs with item 7's Stage 0 skip
 
 ### 5. Balance work that DEPENDS on step 2
 - [ ] Boss and elite win rates at L1-L50 (7-23% measured fight-to-the-death)
@@ -235,6 +263,11 @@ curve loads, no script errors). See *Recently shipped*.
       despite the largest health bar
 - [ ] Trickster health bars are inconsistent **with each other**, not just with other archetypes
       (L80: Ranger 720, Thief 714, Ninja 1186)
+- [ ] **Magic Bolt is 2.4-2.7x more resource-efficient than every other route in the game** —
+      36% of the pool to clear a health bar against 86-110% for everything else (measured
+      2026-09-03, `tools/probe/kill_investment.gd`). That is the clearest remaining class
+      outlier and it is the same "mage is too efficient" thread that has come back repeatedly.
+      Either Magic Bolt's cost rises or its weight falls; do it after step 2
 - [ ] L80 elite Trickster gap, ~20 points above the other archetypes. Trend is right after three
       changes; wants a playtest rather than a fourth tune against a 60-fight sample
 

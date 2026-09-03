@@ -2282,9 +2282,15 @@ static var _species_power: Dictionary = {}
 # scaled to the extra danger. One or two per tier, chosen as the highest-level and most
 # thematically fearsome of their band, so the ladder has a recognisable "careful of that one"
 # at every stage rather than only at the top.
+# TIER 2 IS THE FLOOR (owner direction 2026-09-03: "Apex should wait until Tier 2 at a
+# minimum"). Skeleton was T1 and 18.5%% of the L5 spawn table, so nearly one in five of a brand
+# new player's first fights was a species deliberately tuned to a 28-48%% win band — before they
+# have gear, a companion, knowledge of the roster, or a reliable escape. The "recognisable
+# careful-of-that-one at every stage" intent does not apply to a stage where the player has no
+# tools to be careful WITH.
 const APEX_SPECIES := {
-	"Skeleton": true,            # T1
-	"Mimic": true,               # T2 — the ambusher
+	# (no T1 apex — see above)
+	"Mimic": true,               # T2 — the ambusher, the first one you meet
 	"Wyvern": true, "Wraith": true,           # T3
 	"Chimaera": true,            # T4
 	"Titan": true, "Jabberwock": true,        # T5

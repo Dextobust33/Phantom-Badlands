@@ -10167,6 +10167,8 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		return [_party_entry(pid,
 			"[color=#FFAA00]You slip away from the fight.[/color]",
 			"[color=#FFAA00]%s slips away from the fight.[/color]" % pname)]
+	if kind == "outsmart":
+		return _party_outsmart(combat, pid, int(action.get("spend", -1)))
 	var view := _party_member_view(combat, pid)
 	active_combats[pid] = view
 	# v0.9.740 — a buff aimed at a teammate. Resolve it on the CASTER (their cost, their stats,
@@ -10375,103 +10377,16 @@ func _get_xp_zone_text(player_level: int, monster: Dictionary) -> String:
 		return " [color=#FFD700]*CHALLENGE*[/color]"
 	return ""
 
-func process_party_combat_action(leader_id: int, acting_peer_id: int, action: CombatAction) -> Dictionary:
-	"""Process a party member's combat action.
-	Returns: {success, messages[], combat_ended, victory, next_turn_peer_id, monster_phase_results}
-	"""
-	if not active_party_combats.has(leader_id):
-		return {"success": false, "message": "No active party combat"}
-
-	var combat = active_party_combats[leader_id]
-	var current_pid = _get_current_turn_peer_id(combat)
-
-	if acting_peer_id != current_pid:
-		return {"success": false, "message": "Not your turn"}
-
-	var character = combat.characters[acting_peer_id]
-	var monster = combat.monster
-	var ms = combat.member_states[acting_peer_id]
-	var messages = []
-
-	var monster_hp_before = monster.current_hp
-	var player_hp_before = character.current_hp
-
-	# Process player action using EXISTING solo combat logic adapted for party
-	match action:
-		CombatAction.ATTACK:
-			var result = _party_process_attack(combat, acting_peer_id)
-			messages.append_array(result.get("messages", []))
-		CombatAction.FLEE:
-			var result = _party_process_flee(combat, acting_peer_id)
-			messages.append_array(result.get("messages", []))
-			if result.get("fled", false):
-				combat.fled_members.append(acting_peer_id)
-				ms["fled"] = true
-				messages.append("[color=#FFAA00]%s flees from battle![/color]" % character.name)
-		CombatAction.OUTSMART:
-			var result = _party_process_outsmart(combat, acting_peer_id)
-			messages.append_array(result.get("messages", []))
-
-	# Track damage
-	var damage_dealt = max(0, monster_hp_before - monster.current_hp)
-	ms["total_damage_dealt"] = ms.get("total_damage_dealt", 0) + damage_dealt
-	var self_damage = max(0, player_hp_before - character.current_hp)
-	ms["total_damage_taken"] = ms.get("total_damage_taken", 0) + self_damage
-
-	# Check if monster died
-	if monster.current_hp <= 0:
-		var victory_result = _process_party_victory(combat)
-		messages.append_array(victory_result.get("messages", []))
-		return {
-			"success": true,
-			"messages": messages,
-			"combat_ended": true,
-			"victory": true,
-			"monster_name": monster.name,
-			"monster_base_name": monster.get("base_name", monster.name),
-			"monster_base_level": monster.get("base_level", 1),
-			"monster_max_hp": monster.max_hp,
-			"monster_variant_type": monster.get("variant_type", ""),
-			"monster_level": monster.level,
-			"member_rewards": victory_result.get("member_rewards", {})
-		}
-
-	# Check if all members fled/dead
-	if _all_members_inactive(combat):
-		messages.append("[color=#FF4444]The party has been defeated![/color]")
-		_end_party_combat(leader_id, false)
-		return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
-
-	# Advance to next player or monster phase
-	combat.current_turn_index += 1
-	_skip_inactive_members(combat)
-
-	if combat.current_turn_index >= combat.members.size():
-		# All players acted - monster phase
-		var monster_results = _process_party_monster_phase(combat)
-		messages.append_array(monster_results.get("messages", []))
-
-		# Check for deaths
-		_check_party_deaths(combat)
-
-		# Check if all members dead/fled after monster phase
-		if _all_members_inactive(combat):
-			messages.append("[color=#FF4444]The party has been wiped out![/color]")
-			_end_party_combat(leader_id, false)
-			return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
-
-		# Next round
-		combat.round += 1
-		combat.current_turn_index = 0
-		_skip_inactive_members(combat)
-
-	return {
-		"success": true,
-		"messages": messages,
-		"combat_ended": false,
-		"victory": false,
-		"next_turn_peer_id": _get_current_turn_peer_id(combat)
-	}
+# 2026-09-03 — REMOVED three dead party functions: process_party_combat_action (no
+# callers at all), and _party_process_attack / _party_process_outsmart, which only it
+# reached. They were a parallel implementation of combat that had drifted badly out of
+# date while reading as authoritative — the outsmart one computed
+# clamp(30 + (wits - monster_int) * 2, 5, 75), ignoring Read, class, level difference,
+# the attempt falloff and the per-role penalty, and capping at 75%% against the real
+# 48%%. The live co-op path builds a member view and calls the SAME functions solo does
+# (process_attack / process_ability_command / _party_outsmart), which is the only copy
+# that should exist. Left as a comment because a stale duplicate beside the real thing
+# is precisely what produced the lying damage cards.
 
 func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_name: String, arg: String) -> Dictionary:
 	"""Process an ability command from a player in party combat.
@@ -10652,7 +10567,7 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 			_end_party_combat(leader_id, false)
 			return {"success": true, "messages": messages, "combat_ended": true, "victory": false}
 
-	# Advance turn (same logic as process_party_combat_action)
+	# Advance turn (mirrors the turn advance in the party round resolver)
 	# Free actions (analyze, pickpocket success, etc.) don't advance turns
 	var is_free_action = result.get("free_action", false)
 	if not is_free_action:
@@ -10678,72 +10593,6 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 		"victory": false,
 		"next_turn_peer_id": _get_current_turn_peer_id(combat)
 	}
-
-func _party_process_attack(combat: Dictionary, peer_id: int) -> Dictionary:
-	"""Simplified attack logic for party combat member."""
-	var character = combat.characters[peer_id]
-	var monster = combat.monster
-	var ms = combat.member_states[peer_id]
-	var messages = []
-
-	# Resource regen
-	var mage_classes = ["Wizard", "Sorcerer", "Sage"]
-	if character.class_type in mage_classes:
-		var regen_pct = 0.03 if character.class_type == "Sage" else 0.02
-		character.current_mana = min(character.get_total_max_mana(), character.current_mana + max(1, int(character.get_total_max_mana() * regen_pct)))
-
-	# Hit chance
-	var player_dex = character.get_effective_stat("dexterity")
-	var equipment_speed = character.get_equipment_bonuses().get("speed", 0)
-	var monster_speed = monster.get("speed", 10)
-	var hit_chance = clamp(75 + (player_dex + equipment_speed - monster_speed / 2), 30, 95)
-	if character.blind_active:
-		hit_chance = max(10, hit_chance - 30)
-
-	var hit_roll = randi() % 100
-	if hit_roll >= hit_chance:
-		messages.append("[color=#808080]%s's attack misses![/color]" % character.name)
-		return {"messages": messages}
-
-	# Damage calculation
-	var weapon_damage = character.get_equipment_bonuses().get("attack", 0)
-	var base_damage = max(1, character.get_effective_stat("strength") + weapon_damage)
-
-	# Critical hit
-	var crit_chance = 5
-	if character.class_type == "Thief":
-		crit_chance = 15
-	elif character.class_type == "Ninja":
-		crit_chance = 12
-	var is_crit = (randi() % 100) < crit_chance
-	if is_crit:
-		base_damage = int(base_damage * 1.5)
-
-	# Apply variance
-	base_damage = apply_damage_variance(base_damage)
-
-	# Analyze bonus
-	var analyze = ms.get("analyze_bonus", 0)
-	if analyze > 0:
-		base_damage = int(base_damage * (1.0 + analyze / 100.0))
-
-	# Apply damage to monster
-	monster.current_hp -= base_damage
-
-	var crit_text = " [color=#FFD700]CRITICAL![/color]" if is_crit else ""
-	messages.append("[color=#00FF00]%s attacks for %d damage!%s[/color]" % [character.name, base_damage, crit_text])
-
-	# Process companion attack if applicable
-	if not character.active_companion.is_empty() and ms.get("companion_abilities", {}).size() > 0:
-		var comp = character.active_companion
-		var comp_level = comp.get("level", 1)
-		var comp_tier = comp.get("tier", 1)
-		var comp_damage = max(1, int(comp_tier * 3 + comp_level * 0.5))
-		comp_damage = apply_damage_variance(comp_damage)
-		monster.current_hp -= comp_damage
-		messages.append("[color=#00FFAA]  %s's companion attacks for %d![/color]" % [character.name, comp_damage])
-
-	return {"messages": messages}
 
 func _party_process_flee(combat: Dictionary, peer_id: int) -> Dictionary:
 	"""Process flee attempt for a party member (mirrors solo process_flee bonuses)."""
@@ -10805,31 +10654,78 @@ func _party_process_flee(combat: Dictionary, peer_id: int) -> Dictionary:
 		messages.append("[color=#FF4444]%s fails to flee![/color]" % character.name)
 		return {"messages": messages, "fled": false}
 
-func _party_process_outsmart(combat: Dictionary, peer_id: int) -> Dictionary:
-	"""Process outsmart attempt for a party member."""
-	var character = combat.characters[peer_id]
+func _party_outsmart(combat: Dictionary, pid: int, requested_spend: int) -> Array:
+	"""Outsmart, in a party. Owner direction 2026-09-03: it should work in co-op, and a
+	Trickster "should have to invest around the same amount of extra to accomplish it just like
+	the mages and warrior do to kill the monster with their abilities."
+
+	That parity is already what the SOLO design encodes, so this deliberately adds no
+	party-specific pricing: the investment is the Read ramp (eight Trickster cards, each paying
+	its own resource cost, over eight turns) plus the optional energy commitment, and the odds
+	come from the SAME `_outsmart_chance` the solo path uses — so class, Wits, level difference,
+	the per-role penalty and the attempt falloff all apply identically. Anything else would be a
+	second balance model for the same button, which is the exact defect this codebase keeps
+	producing.
+
+	Before this, `submit_party_action` rejected "outsmart" outright, so a Trickster in a party
+	built Read and it did nothing at all — a third of the kit switched off in co-op."""
+	var character = combat.characters[pid]
 	var monster = combat.monster
-	var ms = combat.member_states[peer_id]
-	var messages = []
+	var st = combat.member_states[pid]
+	var pname: String = character.name
+	# The member's own engine + attempt history, so the shared formula sees this Trickster's
+	# Read rather than the party's or nobody's.
+	var view := {
+		"character": character,
+		"monster": monster,
+		"combo": int(st.get("combo", 0)),
+		"outsmart_attempts": int(st.get("outsmart_attempts", 0)),
+	}
+	var chance: int = _outsmart_chance(character, monster, view)
 
-	if ms.get("outsmart_failed", false):
-		messages.append("[color=#808080]%s already failed to outsmart this enemy.[/color]" % character.name)
-		return {"messages": messages}
+	# Energy commitment — the player's call, exactly as in solo. -1 means the client sent no
+	# choice, which keeps the old automatic behaviour rather than silently making it free.
+	var max_en: int = maxi(1, character.get_total_max_energy())
+	var before_en: int = int(character.current_energy)
+	var dumped: int = clampi(requested_spend, 0, before_en) if requested_spend >= 0 		else maxi(0, int(float(before_en) * OUTSMART_DUMP_PCT))
+	var entries := []
+	if dumped > 0:
+		character.use_energy(dumped)
+		var bonus: int = int(clampf(float(dumped) / float(max_en), 0.0, 1.0) * float(OUTSMART_DUMP_MAX_BONUS))
+		chance = clampi(chance + bonus, 2, maxi(60, chance))
+		entries.append(_party_entry(pid,
+			"[color=#66FF66]⚡ You spend %d energy to sharpen the read (+%d%% outwit)![/color]" % [dumped, bonus],
+			"[color=#66FF66]⚡ %s spends energy to sharpen the read.[/color]" % pname))
 
-	var player_wits = character.wits + character.wits_training_bonus
-	var monster_int = monster.get("intelligence", 10)
-	var outsmart_chance = clamp(30 + (player_wits - monster_int) * 2, 5, 75)
+	st["outsmart_attempts"] = int(st.get("outsmart_attempts", 0)) + 1
+	entries.append(_party_entry(pid,
+		"[color=#FFA500]You attempt to outsmart the %s... (%d%% chance)[/color]" % [monster.get("name", "monster"), chance],
+		"[color=#FFA500]%s attempts to outsmart the %s... (%d%% chance)[/color]" % [pname, monster.get("name", "monster"), chance]))
 
-	var roll = randi() % 100
-	if roll < outsmart_chance:
-		# Victory by outsmarting
-		messages.append("[color=#FFD700]%s outsmarts the %s![/color]" % [character.name, monster.get("name", "monster")])
+	if randi() % 100 < chance:
+		# The monster is simply gone. Zeroing its HP hands the kill to the party's own victory
+		# detection, so rewards, XP splitting and the end-of-fight flow stay in ONE place
+		# instead of this function growing a second copy of them.
 		monster.current_hp = 0
-		return {"messages": messages}
+		entries.append(_party_entry(pid,
+			"[color=#00FF00][b]SUCCESS![/b] You outwit the %s![/color]" % monster.get("name", "monster"),
+			"[color=#00FF00][b]%s outwits the %s![/b][/color]" % [pname, monster.get("name", "monster")]))
 	else:
-		ms["outsmart_failed"] = true
-		messages.append("[color=#FF4444]%s fails to outsmart the %s![/color]" % [character.name, monster.get("name", "monster")])
-		return {"messages": messages}
+		# Failure costs the turn and the whole Read ramp — eight turns of building. The monster
+		# phase already acts against every member each round, so no extra free hit is added on
+		# top the way solo does; in a party that would be punishing the same mistake twice.
+		st["combo"] = 0
+		entries.append(_party_entry(pid,
+			"[color=#FF4444]The %s sees through it. Your read is broken.[/color]" % monster.get("name", "monster"),
+			"[color=#FF4444]The %s sees through %s's trick.[/color]" % [monster.get("name", "monster"), pname]))
+	for _e in entries:
+		_e["actor"] = "member"
+		_e["actor_pid"] = pid
+	if not entries.is_empty():
+		entries[0]["head"] = true
+		entries[0]["action_kind"] = "outsmart"
+		entries[0]["ability"] = "outsmart"
+	return entries
 
 func _process_party_monster_phase(combat: Dictionary, max_actions: int = 0) -> Dictionary:
 	"""Process the monster's actions against party members.
