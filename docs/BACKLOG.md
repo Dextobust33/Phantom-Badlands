@@ -179,6 +179,82 @@ splitting them means editing and re-testing the same code twice.*
 
 ---
 
+## ⚑ OPEN FROM 2026-09-03 — the handling order
+
+Nine detailed sections were appended to this file during the 2026-09-03 session (they sit
+between item 7b and the Dungeon arc). This is the ORDER to work them in and why. Detail stays
+in the sections named; this block is the sequence.
+
+**Ordering principle, as always: settle the inputs first.** The single most important
+consequence below is that **almost every remaining balance number is measured through a metric
+that saturates on death**, so tuning any of them before fixing the metric means tuning against a
+broken instrument. That is step 2, and it gates most of what follows.
+
+### 1. SHIP — done as v0.9.742
+Live XP bug plus the whole balance pass. See *Recently shipped*.
+
+### 2. Fix the calibration METRIC before any more balance tuning ← **the gate**
+*Detail: "CORRECTION — elite/boss fights are too short was an INSTRUMENT ARTIFACT" and
+"DOES A WIN RATE MEAN THE SAME THING FOR EVERY CLASS?"*
+
+- [ ] **Calibrate role multipliers against a WIN-RATE target instead of a cost target.** Cost is
+      measured across all fights and a dead player has spent 100% of their bar, so at a 7% boss
+      win rate the metric is pinned near 100% by definition — "cost 97%" and "win 7%" are the
+      same fact twice, which is why `rolecal` cannot converge at L1-L50. Win rate neither
+      truncates nor saturates, and is the language these decisions are actually made in
+- [ ] Measure the outcome under a player who **disengages**, not one who fights to the death.
+      `roles`/`classes` never flee, so death rates are overstated 3-6x for every class
+- [ ] Do **NOT** split onto two axes — documented failure (hp_mult ran away to 305x), and the
+      length problem it was meant to solve does not exist
+
+### 3. Cheap cleanups that need no decision — one pass, any time
+- [ ] Delete or delegate `process_party_combat_action` / `_party_process_attack` /
+      `_party_process_outsmart`. All dead (no callers) and carrying stale formulas — the party
+      Outsmart fossil caps at 75% against solo's 48%. *Detail: PARTY-PARITY AUDIT*
+- [ ] `normal` L50 outlier: 59% cost against a 40% target, 64% win. Check whether it is a
+      species/spawn artifact before treating it as a curve fault. *Detail: POST-CONVERSION
+      RE-CALIBRATION*
+
+### 4. Owner decisions — answer any time; implement after step 2
+- [ ] **Should Outsmart work in a party?** Today it does not exist there at all, so a Trickster
+      builds Read in co-op and it does nothing — a third of the kit is switched off, and every
+      Read change of 2026-09-03 is solo-only. Not a straight port: an instant win on a SHARED
+      monster raises reward-splitting and consent questions solo never had
+- [ ] **Is APEX too early at tier 1?** Skeleton is 18.5% of L5 spawns and is tuned to a 28-48%
+      win band, so nearly one in five of a new player's first fights is designed to beat them
+- [ ] **Should L1-5 also be survivable GEARLESS** (original option (a))? Pairs with item 7's
+      Stage 0 skip: onboarding hands you the kit, and the early band does not assume it
+- [ ] **Retire the Pathfinder chain, or keep it as post-tutorial content?** *Detail: item 7*
+
+### 5. Balance work that DEPENDS on step 2
+- [ ] Boss and elite win rates at L1-L50 (7-23% measured fight-to-the-death)
+- [ ] Post-L1000 length slide — turns fall 3.9 → 2.6 against a 5.0 target while cost holds
+- [ ] **Paladin is the worst class at every row measured** (66% normal / 11% L30 elite / 21% L80)
+      despite the largest health bar
+- [ ] Trickster health bars are inconsistent **with each other**, not just with other archetypes
+      (L80: Ranger 720, Thief 714, Ninja 1186)
+- [ ] L80 elite Trickster gap, ~20 points above the other archetypes. Trend is right after three
+      changes; wants a playtest rather than a fourth tune against a 60-fight sample
+
+### 6. Item 7 — new player experience
+Already placed and sliced. Slice 1 depends on the gear decisions in step 4.
+
+### 7. Input gating + player-set combat speed
+*Detail: DESIGN PROPOSAL (owner 2026-09-03)*
+Retires a whole bug class rather than adding a feature — post-combat HP staleness, the stale
+companion bar, late buff visuals, the victory card over unsettled bars and the stale Continue
+button all come from the player outrunning the playback queue. Scoped after the balance pass
+because it touches every combat input path. Party rule: the **slowest member's setting wins**,
+leader may override.
+
+### 8. Passive — waiting on a recurrence
+- [ ] **Missing monster ASCII art.** Instrumented on 2026-09-03: `get_monster_art` now warns and
+      prints when it resolves nothing, which splits resolution failure from render failure. Three
+      cheap theories already ruled out. Next occurrence tells us which half it is
+- [ ] Quest direction/distance mismatch and multi-quest dungeon routing — deliberately deferred
+      to the dungeon arc. *Detail: QUESTS — owner observations*
+
+
 ## Next
 
 ### 2. Party UI  ← targeting + pacing shipped v0.9.740; invite window + watch-a-minigame remain
