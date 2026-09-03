@@ -19154,7 +19154,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"shield": return "Alias for Forcefield — flat damage absorption shield."
 		"cloak": return "Out-of-combat ability — slip past monsters on the overworld. Costs 8% of your max class resource. Requires Lv 20. (Cannot be used in combat.)"
 		"blast": return "INT-scaled burst damage + 3-round burn DoT (20% of INT per round). Variable cost (≈30% of mana pool max) — damage AND burn magnitude scale with spend; duration stays 3 rounds."
-		"forcefield": return "Absorbs flat damage equal to 100 + INT × 8 until depleted. Variable cost (≈30% of mana pool max) — shield magnitude scales with spend (partial cast = smaller shield)."
+		"forcefield": return "Absorbs damage equal to about a quarter of your maximum HP, scaled by Intelligence, until depleted. Variable cost — shield magnitude scales with spend (partial cast = smaller shield)."
 		"teleport": return "Out-of-combat travel ability (not used in combat)."
 		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. Variable cost (≈30% of mana pool max) — damage scales linearly with spend."
 		"haste": return "ARCANE SURGE — buffs your spell damage and adds a double-cast chance on damage spells for 4 rounds. +40-60% spell damage (scales with INT and spend), +7-25% double-cast chance. Variable cost (≈30% of mana pool max) — both effects scale with spend."
@@ -19244,7 +19244,15 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 		"meteor":
 			return "Deal %s damage — a massive finisher that hits [b]harder with Focus[/b], then discharges it." % _desc_num(est_dmg, "100 × (1 + INT×4%) × 3-4x × rank/tier (+25%/Focus)")
 		"forcefield":
-			return "Raise a shield that absorbs the next %s damage." % _desc_num(int(100 + float(s_int) * 8.0), "100 + INT × 8")
+			# #6c — Forcefield is anchored to the caster's own health bar now, not `100 + INT*8`.
+			# The old text promised a shield 3-6x larger than the ability grants, which a player
+			# reported immediately: "the text says it gives a much larger shield than it does".
+			# Mirrors combat_manager FORCEFIELD_SHARE_OF_BAR (0.25) x the ability stat ratio.
+			var _ff_hp: float = float(character_data.get("total_max_hp", character_data.get("max_hp", 1)))
+			var _ff_lvl: float = maxf(1.0, float(character_data.get("level", 1)))
+			var _ff_ratio: float = pow(maxf(0.05, float(s_int) / (_ff_lvl + 13.0)), 0.5)
+			return "Raise a shield that absorbs the next %s damage." % _desc_num(
+				int(_ff_hp * 0.25 * _ff_ratio), "25% of max HP, scaled by INT")
 		"haste":
 			return "[b]Arcane Surge[/b]: gain %s spell damage and a %s double-cast chance for [b]4[/b] rounds." % [_desc_num("+%d%%" % int(40 + float(s_int) / 4.0), "40 + INT ÷ 4"), _desc_num("25%", "chance each damage spell casts twice")]
 		"paralyze":
