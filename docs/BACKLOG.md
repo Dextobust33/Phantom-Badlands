@@ -1640,13 +1640,17 @@ for 17 and it did over 200 even though the card only showed like 20 some"*.
 Note the signature: the mirror is **exactly right for every ability that was NOT converted**.
 That is a partial migration, not random drift.
 
-- [ ] **Structural fix: delete the mirror.** The server already sends authoritative ability
-      COSTS and per-turn regen (shipped v0.9.741). Send the **damage/shield estimate down the
-      same channel** and have the card render what the server says. This retires the whole
-      class — the fifth time a client-side copy of a server formula has drifted (five stale
-      cost tables, the Forcefield description, now every damage card). Anything less is a sixth
-- [ ] Until then the Forcefield card front is still on the pre-anchor `100 + INT*8` — the
-      description was fixed in v0.9.741 but **the card-front estimator was missed**
+- [x] **DONE 2026-09-03 — the mirror no longer decides.** `combat_manager.preview_ability_effect()`
+      ships in combat_state as `ability_effects` beside `ability_costs`; the client renders what
+      it is told. The preview runs the REAL modifier chain rather than mirroring it again.
+- [x] **DONE — Forcefield card front** corrected (it was the last surface still on `100 + INT*8`).
+- [x] **DONE — drift guard.** `tools/probe/preview_drift.gd` drives the real resolve path and
+      compares. Run it after touching ANY damage formula. It immediately caught three things a
+      review would not have: the preview was 20% high everywhere (rank-0 mastery), Devastate's
+      stamina dump makes a full bar 1.5x, and **both** mirrors still carried pre-#55 constants —
+      Ambush at 3.0 against the code's 2.2, and Exploit advertising 35% of a health bar when it
+      removes 22%. Those two had been lying to Tricksters since #55 with nothing to catch them.
+      22 checks, 0 drift
 
 ### B. Only 5 abilities were anchored, so the CLASSES are now unbalanced against each other
 
@@ -1748,8 +1752,9 @@ Five copies of a comment explaining that clearing skips the settle is the tell. 
 "HOLD means discard" defect fixed for the companion bar in v0.9.741 (89c3960) — fixed there,
 missed here.
 
-- [ ] **One `_settle_combat_bars()` called by the drain-empty branch AND all five clear sites.**
-      Not a sixth guard. This is the structural fix the "fix the cause" rule asks for
+- [x] **DONE 2026-09-03 — `_settle_combat_bars()`**, called by the drain-empty branch AND all
+      five clear sites. Not a sixth guard. NEEDS A LIVE CONFIRMATION from the owner: the symptom
+      is timing-dependent and the previous three attempts at this each looked right in code
 
 ---
 
