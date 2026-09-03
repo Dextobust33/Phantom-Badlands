@@ -82,6 +82,7 @@ func _audit_registry() -> Dictionary:
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
 		"roles": ["elite/boss fights vs their ROLE_TARGETS", run_role_audit],
+		"fallback": ["does a win rate mean the same thing for every class?", run_fallback_audit],
 		"xp": ["how many fights to level, and what is the best way", run_xp_audit],
 		"risk": ["over-level gambles: kill/escape/death and what the reward is worth", run_risk_reward_audit],
 		"companion": ["does levelling a companion keep paying?", run_companion_audit],
@@ -1151,6 +1152,104 @@ func run_role_audit():
 				cost_tot / n, 100.0 * float(tgt.get("danger", 0.0)), int(100.0 * wins / n)])
 	print("=====================================================================
 ")
+
+func run_fallback_audit():
+	# Owner's question (2026-09-03), and it is a question about the INSTRUMENT:
+	#   "If they fail they have no fallback other than fleeing. Do other classes suffer from the
+	#    same situation, are we accounting for this when talking about win rates or health
+	#    costs?"
+	#
+	# The answer is no, and this audit is the evidence. `roles` and `classes` FIGHT TO THE
+	# DEATH — nobody ever disengages — so every non-win is recorded identically whether the
+	# player would really have died or would have walked away with 40% of their bar. And a
+	# death registers as 100% HP cost, which means the cost column saturates for whichever
+	# class dies most, independently of how dangerous the fight actually was.
+	#
+	# Durability makes that bias class-specific: a Trickster carries roughly half a Fighter's
+	# health bar, so the same absolute hit is twice the PERCENTAGE, and it reaches the death
+	# floor sooner. Comparing raw cost% across archetypes is therefore comparing two different
+	# things, which is what this prints.
+	var samples: int = FIGHTS_PER_CELL
+	print("\n===== FALLBACK AUDIT: does a win rate mean the same thing for every class? =====")
+
+	print("\n-- Durability, average gear (the divisor behind every cost%% figure) --")
+	print("%-10s %-11s %9s %9s %11s" % ["class", "archetype", "L30 maxHP", "L80 maxHP", "vs Fighter"])
+	for klass in ["Fighter", "Paladin", "Wizard", "Sorcerer", "Thief", "Ranger", "Ninja"]:
+		var a = make_char(30, "average", klass)
+		var b = make_char(80, "average", klass)
+		var fa = make_char(30, "average", "Fighter")
+		print("%-10s %-11s %9d %9d %10.0f%%" % [
+			klass, String(a.get_class_path()), a.get_total_max_hp(), b.get_total_max_hp(),
+			100.0 * float(a.get_total_max_hp()) / maxf(1.0, float(fa.get_total_max_hp()))])
+
+	for role in ["elite", "boss"]:
+		for lvl in [30, 80]:
+			print("\n-- L%d %s: fight-to-the-death (what `roles`/`classes` measure) vs. a player who RUNS --" % [lvl, role])
+			print("%-10s %26s %30s" % ["", "FIGHT TO THE DEATH", "MAY FLEE BELOW 45%"])
+			print("%-10s %7s %7s %7s %6s   %7s %8s %7s %7s" % [
+				"class", "win%", "died%", "cost%", "OSatt", "win%", "escaped%", "died%", "cost%"])
+			for klass in ["Fighter", "Wizard", "Ranger"]:
+				var a: Dictionary = _fallback_run(lvl, role, klass, samples, false)
+				var b: Dictionary = _fallback_run(lvl, role, klass, samples, true)
+				print("%-10s %6d%% %6d%% %6.0f%% %6.1f   %6d%% %7d%% %6d%% %6.0f%%" % [
+					klass, int(a.win), int(a.died), a.cost, a.os,
+					int(b.win), int(b.escaped), int(b.died), b.cost])
+	print("\nRead it this way: where `escaped%%` is large, the fight-to-the-death `died%%` and")
+	print("`cost%%` were overstating the real consequence, and they overstate it MOST for the")
+	print("class that dies most. A cost%% column cannot be compared across archetypes with")
+	print("different health bars — the survivors' cost is the honest figure.")
+	print("=====================================================================")
+
+func _fallback_run(lvl: int, role: String, klass: String, samples: int, may_flee: bool) -> Dictionary:
+	var wins := 0
+	var died := 0
+	var escaped := 0
+	var os_tot := 0.0
+	var cost_tot := 0.0
+	var n := 0
+	for i in range(samples):
+		var ch = make_char(lvl, "average", klass)
+		var monster := make_monster(lvl, role, 1.0)
+		var php0: int = ch.get_total_max_hp()
+		ch.in_combat = false
+		combat_mgr.start_combat(0, ch, monster)
+		if not combat_mgr.active_combats.has(0):
+			continue
+		var combat = combat_mgr.active_combats[0]
+		var turns := 0
+		var fled := false
+		while turns < 400:
+			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+				break
+			turns += 1
+			if may_flee and float(ch.current_hp) / float(maxi(1, php0)) < 0.45:
+				var fr = combat_mgr.process_flee(combat)
+				# process_flee returns success for any PROCESSED attempt; only `fled` escaped.
+				if fr.get("fled", false):
+					fled = true
+					break
+			if combat.get("player_can_act", true):
+				match ch.get_class_path():
+					"trickster": _player_act_trickster(combat, ch)
+					"mage": _player_act_mage(combat, ch)
+					_: _player_act(combat, ch)
+			if int(monster.get("current_hp", 0)) <= 0:
+				break
+			combat_mgr.process_monster_turn(combat)
+		if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+			wins += 1
+		elif fled:
+			escaped += 1
+		else:
+			died += 1
+		os_tot += float(int(combat.get("outsmart_attempts", 0)))
+		cost_tot += 100.0 * float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
+		n += 1
+		combat_mgr.end_combat(0, false, false)
+	if n == 0:
+		return {"win": 0.0, "died": 0.0, "escaped": 0.0, "cost": 0.0, "os": 0.0}
+	return {"win": 100.0 * wins / n, "died": 100.0 * died / n, "escaped": 100.0 * escaped / n,
+			"cost": cost_tot / n, "os": os_tot / n}
 
 func _xp_to_next(level: int) -> float:
 	# The LIVE formula. character.gd also contains check_level_up() using

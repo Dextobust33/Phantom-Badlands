@@ -26,5 +26,5 @@ func _init():
 					dead += 1
 				prev = pct
 			print(row + ("   <- %d dead stacks" % dead if dead > 0 else "   all stacks pay"))
-	print("\nColumns are Read 0..5.")
+	print("\nColumns are Read 0..COMBO_MAX.")
 	quit()

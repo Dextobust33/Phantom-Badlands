@@ -144,16 +144,26 @@ const OUTSMART_ATTEMPT_FALLOFF: float = 0.5
 const TRICKSTER_OUTSMART_FLOOR: int = 20
 # v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
 # (the finisher) spends them all, scaling BOTH its success chance and its damage.
-const COMBO_MAX: int = 5
+# Read stacks needed to reach the Outsmart ceiling. 2026-09-03: 5 -> 8, owner's proposal —
+# "maybe Read needs to build up to the same points slower. Example: 8 dots instead of the 5
+# until it's maximum chance."
+#
+# It is the right lever for the right reason. Measured, a Trickster gets only 0.5-0.8 Outsmart
+# ATTEMPTS per fight, so the elite dominance was never retry-spam (my earlier theory, wrong):
+# it is that ONE Outsmart at ~45% is worth an entire fight of damage. Slowing the ramp makes the
+# Trickster spend more turns setting up before it earns that shot, and with roughly HALF a
+# Fighter's health bar it may not survive long enough to get there. The ceiling is unchanged —
+# the per-stack values below are re-divided so 8 stacks reach exactly where 5 used to.
+const COMBO_MAX: int = 8
 const COMBO_SUCCESS_PER: int = 9   # +% Gambit success per Combo Point (5 ≈ guaranteed)
 const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point (4.5 → 7.0)
 # v0.9.698 — Trickster reframe: the `combo` field is now "Read". Every Trickster
 # ability builds Read; Read raises the Outsmart chance (the payoff = bypass HP).
-const READ_OUTSMART_PER: int = 15  # +% Outsmart success per Read, against the cap below
+const READ_OUTSMART_PER: int = 9   # +% Outsmart success per Read (8 x 9 = 72, was 5 x 15 = 75)
 # Each Read also lifts the CAP by this much, which is what makes stacks 3-5 worth building.
 # 48 base + 5x5 = 73% at a full Read for a Trickster: reliable, but only after five turns of
 # setup. Without this the cap ate every stack past the second — see _outsmart_chance.
-const READ_CAP_PER: float = 5.0
+const READ_CAP_PER: float = 3.125   # 8 x 3.125 = +25 to the ceiling, exactly where 5 x 5 landed
 
 # Outsmart penalty by monster ROLE (2026-09-03, owner direction).
 #

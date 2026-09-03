@@ -1935,11 +1935,97 @@ term that only touches a value the cap overrides is a term with no effect.
 Measured (60 fights/cell): L30 elite tricksters 50/28/41% → **38/26/31%** against 11-23% for
 everyone else. L80 elite 53/55/50% → **53/53/50%**, against 20-28%.
 
-- [ ] **L80 elite is still a ~25-point gap.** Mechanism identified: Outsmart is RETRYABLE (the
-      once-per-combat lock went in v0.9.698) and Read can be rebuilt, so over a long elite fight
-      a Trickster gets several shots and the cumulative odds far exceed the per-attempt cap even
-      with the 0.5 falloff. Tightening the falloff, or capping attempts per fight, is the lever —
-      not the per-role penalty. Owner's call whether 50% vs 25% is the intended identity
+- [x] ~~L80 elite gap is caused by RETRIES~~ **WRONG — measured at 0.5-0.8 Outsmart attempts
+      per fight, so retry-spam never happens; the low health bar already prevents it. See the
+      fallback-audit section below. The real mechanism is that ONE Outsmart is worth a whole
+      fight of damage, and the fix was the RAMP (owner's proposal), not the falloff.**
+## ⚑ "DOES A WIN RATE MEAN THE SAME THING FOR EVERY CLASS?" — no. (owner, 2026-09-03)
+
+Three questions from the owner, all of them about the instrument rather than the balance, and
+all three were right to ask. New audit: `-- fallback`.
+
+### 1. Trickster HP was already reduced, so does that self-limit the retries? YES
+
+Durability at **average gear** (the divisor behind every `cost%` figure ever quoted):
+
+| class | L30 maxHP | L80 maxHP | vs Fighter (L30) |
+|---|---|---|---|
+| Fighter | 596 | 1020 | 100% |
+| Paladin | 481 | 1274 | 103% |
+| Wizard | 279 | 1625 | 60% |
+| Thief | 264 | 714 | 51% |
+| **Ranger** | **229** | **720** | **26%** |
+| Ninja | 224 | 1186 | 69% |
+
+And the measured **Outsmart attempts per fight: 0.5-0.8.** Less than one.
+
+**So my earlier "cumulative retries over a long fight" theory was WRONG.** Retry-spam is not
+happening and the low health bar is exactly why — the Trickster does not live long enough to
+take a second and third shot. The owner's instinct was correct and mine was a guess.
+
+The real mechanism is simpler: **ONE Outsmart at ~45% is worth an entire fight of damage.**
+That is what made tricksters dominate elites, not stacking attempts. Which means the retry
+falloff was the wrong lever and the RAMP is the right one.
+
+### 2. The owner's fix — Read to 8 stacks instead of 5 — is the correct lever. DONE
+
+`COMBO_MAX` 5 → 8, with `READ_OUTSMART_PER` 15 → 9 and `READ_CAP_PER` 5.0 → 3.125 so **eight
+stacks reach exactly the ceiling five used to** (measured 72% against 71%). The Trickster now
+spends more turns earning its shot, and on half a Fighter's health bar it may not survive to
+get there — which is the intended tension rather than an imposed nerf.
+
+Measured effect on elite win rate (60 fights/cell):
+
+| | before Read fix | after cap raise | after role penalty | **after 8-stack ramp** |
+|---|---|---|---|---|
+| L30 elite (Thief/Ranger/Ninja) | 50/28/41% | 50/28/41% | 38/26/31% | **26/25/26%** |
+| L80 elite | 53/55/50% | 53/55/50% | 53/53/50% | **48/38/51%** |
+| others, for comparison | 11-23% | 11-23% | 11-23% | 11-28% |
+
+**L30 elite is now in band.** L80 elite is still a ~20-point gap for Thief and Ninja. Stopping
+here rather than tuning a fourth time against a 60-fight sample — the trend is right and this
+wants a playtest, not another pass.
+
+### 3. "Do other classes have the same problem, and are win rates / HP costs accounting for it?"
+
+**They all have the same fallback, they all lean on it heavily, and NO, none of the numbers
+account for it.** `roles` and `classes` fight to the death — nobody ever disengages — so every
+non-win is recorded as if the player died. L30 elite:
+
+| | fight to death | | | may flee below 45% | | |
+|---|---|---|---|---|---|---|
+| class | win | died | cost | win | **escaped** | died |
+| Fighter | 23% | 76% | 89% | 10% | **76%** | 13% |
+| Wizard | 29% | 71% | 84% | 15% | **59%** | 25% |
+| Ranger | 28% | 72% | 82% | 21% | **52%** | 26% |
+
+L30 **boss**: Fighter fight-to-death is 7% win / 93% died / 97% cost. Let it run and it is
+**1% win / 85% escaped / 13% died / 75% cost.**
+
+Three consequences, all of which affect how every earlier figure should be read:
+
+1. **Death rates are overstated 3-6x for every class.** The alarming "7% boss win rate" I
+   reported is a fight-to-the-death artifact; a player who disengages escapes 85% of those.
+2. **`cost%` is not comparable across archetypes.** A death registers as 100%, so the column
+   saturates for whichever class dies most; and a Trickster's health bar is a quarter to a half
+   of a Fighter's, so the same absolute hit is a far larger percentage. Two different things
+   are being printed in one column. The survivors' cost is the honest figure.
+3. **Allowing flee LOWERS the win rate** (Fighter 23% → 10%) because the player bails instead
+   of grinding out a marginal win. So "win rate" under fight-to-death is really "win rate if
+   you refuse to ever run", which no real player does.
+
+The Trickster is *not* uniquely disadvantaged by having only flee as a fallback — everyone has
+it. It is, however, **worse at using it**: at L30 elite it dies 26% of the time when trying to
+disengage against the Fighter's 13%, because it hits the flee threshold sooner and has less
+health to survive the failed attempts.
+
+- [ ] **This is the strongest remaining argument for the win-rate-target calibration** proposed
+      in the CORRECTION section: measure and target the outcome under a player who disengages,
+      because that is the player. Fight-to-the-death is a strategy nobody uses
+- [ ] Paladin remains the worst class at every row (66% / 11% / 21%) despite the highest health
+      bar — its own item under 6c
+- [ ] Ranger's L80 maxHP (720) is far below Ninja's (1186) and Thief's (714) is too — the
+      trickster health bars are inconsistent with each other, not just with other archetypes
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
