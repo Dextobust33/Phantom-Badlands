@@ -5985,7 +5985,7 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 		# It works, and it makes the foe fixate on you. Real in solo AND in a party, rather
 		# than a party-only pick that reads as dead to a solo player.
 		combat["provoked"] = true
-		result.messages.append("[color=#FF8855]Provoking: it fixes on you now.[/color]")
+		result.messages.append("[color=#FF8855]Provoking: it turns away from your companion and fixes on YOU.[/color]")
 	if "unstable_hex" in picks and randf() < 0.20:
 		# One time in five the hex turns around. The stronger debuff was the bet.
 		var self_hit: int = maxi(1, int(float(character.get_total_max_hp()) * 0.04))
@@ -7173,9 +7173,6 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			if character.get_buff_value("open_guard_penalty") > 0:
 				# Open Guard: a much stronger buff, paid for with defence while it holds.
 				_mit_mult *= 1.15
-			if bool(combat.get("provoked", false)):
-				# Provoking made the debuff stronger and the foe angrier with you specifically.
-				_mit_mult *= 1.20
 			_mit_mult = clampf(_mit_mult, MITIGATION_BUFF_FLOOR, MITIGATION_VULN_CEIL)
 			damage = max(1, int(_raw_hit * _mit_mult))
 
@@ -7216,6 +7213,13 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				if combat["companion_taunt_turns"] <= 0:
 					combat.erase("companion_taunt_bonus")
 					combat.erase("companion_taunt_turns")
+			# Provoking (rank-up) drags the fight onto YOU and off your companion. Owner:
+			# "Provoke should still work in solo as you can still have a companion in solo play
+			# (possibly NPC teammates as well in the future)." That is the better reading of
+			# the word than a flat damage penalty, and it makes the pick a real trade rather
+			# than a drawback: your companion stops being hit, and you start being hit.
+			if bool(combat.get("provoked", false)):
+				final_aggro -= 45
 			final_aggro = clampi(final_aggro, 0, 80)
 			companion_target_name = str(comp_dict.get("name", "companion"))
 

@@ -124,7 +124,7 @@ const UPGRADES := [
 	{"id": "costly_vigil", "wired": true, "name": "Costly Vigil", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Lasts twice as long, but drains resource every round it holds."},
 	{"id": "provoking", "wired": true, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
-	 "desc": "A stronger debuff, but it turns the foe's attention onto you."},
+	 "desc": "A stronger debuff, and the foe turns off your companion and onto YOU."},
 	{"id": "unstable_hex", "wired": true, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, with a small chance it lands on you instead."},
 	{"id": "gamblers_cut", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
