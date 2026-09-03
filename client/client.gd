@@ -40424,7 +40424,28 @@ func _companion_effective_stats(c: Dictionary) -> Dictionary:
 	var owner_hp := int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
 	var owner_lvl := int(character_data.get("level", 1))
 	out["hp"] = CharacterScript.calculate_companion_max_hp(c, owner_hp, owner_lvl)
-	var mult := _get_variant_multiplier(str(c.get("variant", "Normal"))) * _get_sub_tier_multiplier(int(c.get("sub_tier", 1)))
+	# Every multiplier read from its AUTHORITATIVE shared source, not a client copy. The local
+	# `_get_variant_multiplier` is a hand-listed duplicate of VARIANT_STAT_MULTIPLIERS and is
+	# already incomplete — it misses "Divine" entirely — which is precisely the drift that
+	# produced the lying damage cards.
+	var variant_name := str(c.get("variant", "Normal"))
+	var v_mult := float(CharacterScript.VARIANT_STAT_MULTIPLIERS.get(variant_name, 1.0))
+	var sub_tier := int(c.get("sub_tier", 1))
+	var _dt = preload("res://shared/drop_tables.gd")
+	var s_mult := float(_dt.COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
+	var border := int(c.get("border_tier", 0))
+	var b_mult := 1.0
+	var _dti = _dt.new()
+	if _dti.has_method("get_companion_border_mult"):
+		b_mult = float(_dti.get_companion_border_mult(border))
+	out["variant"] = variant_name
+	out["variant_mult"] = v_mult
+	out["sub_tier"] = sub_tier
+	out["sub_mult"] = s_mult
+	out["border_tier"] = border
+	out["border_mult"] = b_mult
+	var mult := v_mult * s_mult * b_mult
+	out["total_mult"] = mult
 	var scaled := {}
 	for k in (c.get("bonuses", {}) as Dictionary).keys():
 		var v := int(float(c["bonuses"][k]) * mult)
@@ -40432,6 +40453,32 @@ func _companion_effective_stats(c: Dictionary) -> Dictionary:
 			scaled[str(k)] = v
 	out["bonuses"] = scaled
 	return out
+
+func _get_companion_multiplier_breakdown(c: Dictionary) -> String:
+	"""WHERE a companion's numbers come from, so the hunt is legible: which of its qualities are
+	actually paying, and which are only looks.
+
+	Owner, 2026-09-03: *"the multipliers are supposed to affect stats, that's the whole point of
+	having different rarities of companions you can find. That's part of the hunt."* Measured
+	across all 111 variants, 100 of them (90%) carry NO stat multiplier — including every
+	variant at rarity 3 and below, and `Divine` at the very rarest tier. A player could not see
+	that, so a rare-looking find read as an upgrade when it changed nothing. Now it is stated."""
+	if c == null or c.is_empty():
+		return ""
+	var st := _companion_effective_stats(c)
+	var parts: Array = []
+	var v_m := float(st.get("variant_mult", 1.0))
+	var v_txt := "[color=%s]%s x%.2f[/color]" % ["#00FF00" if v_m > 1.0 else "#808080", str(st.get("variant", "?")), v_m]
+	if v_m <= 1.0:
+		v_txt += "[color=#808080] (looks only)[/color]"
+	parts.append(v_txt)
+	var s_m := float(st.get("sub_mult", 1.0))
+	parts.append("[color=%s]sub-tier %d x%.2f[/color]" % ["#00FF00" if s_m > 1.0 else "#808080", int(st.get("sub_tier", 1)), s_m])
+	var b_m := float(st.get("border_mult", 1.0))
+	if b_m != 1.0 or int(st.get("border_tier", 0)) > 0:
+		parts.append("[color=%s]border %d x%.2f[/color]" % ["#00FF00" if b_m > 1.0 else "#808080", int(st.get("border_tier", 0)), b_m])
+	parts.append("[color=#FFD700]= x%.2f total[/color]" % float(st.get("total_mult", 1.0)))
+	return "  ".join(parts)
 
 func _get_companion_comparison_parts(new_c: Dictionary, active_c) -> Array:
 	"""Coloured stat deltas of `new_c` against the companion currently at your side. Same shape

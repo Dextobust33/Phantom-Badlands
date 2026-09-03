@@ -773,6 +773,19 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 	bonuses.text = bonus_text
 	vbox.add_child(bonuses)
 
+	# WHERE those numbers come from — which qualities pay and which are only looks.
+	if client_ref and client_ref.has_method("_get_companion_multiplier_breakdown"):
+		var brk := str(client_ref._get_companion_multiplier_breakdown(c))
+		if brk != "":
+			var brk_lbl := RichTextLabel.new()
+			brk_lbl.bbcode_enabled = true
+			brk_lbl.fit_content = true
+			brk_lbl.scroll_active = false
+			brk_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			brk_lbl.add_theme_font_size_override("normal_font_size", 10)
+			brk_lbl.text = brk
+			vbox.add_child(brk_lbl)
+
 	# Comparison row — only for a companion that is NOT the one already active; comparing the
 	# active companion against itself would just print "identical" on every card.
 	if client_ref and client_ref.has_method("_get_companion_comparison_parts") and not bool(c.get("is_active", false)):
