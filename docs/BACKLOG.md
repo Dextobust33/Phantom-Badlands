@@ -2588,6 +2588,76 @@ the noisy first attempt.
 - [ ] `normal` has a win target now but `refcal` still steers the base curve by cost. Same
       argument applies — worth converting once the role side is settled and verified
 
+## ⚑ CARD RANK-UP REDESIGN — COMPLETE (2026-09-03)
+
+Owner: *"I don't care for the current options and they are uninteresting and the same thing over
+and over. There should be a good variety of interesting choices."*
+
+**The old system** offered the SAME menu at every rank-up of every card: `power` (+12% effect),
+`efficiency` (-10% cost), plus `rider` on damage cards or `duration` on buffs. Two of the three
+were plain scalars and the menu never changed, so there was no decision in it.
+
+**Now:** `shared/card_upgrades.gd` holds **33 upgrades**, all with real effects. A rank-up deals
+**nine**, the player previews them, they are hidden and shuffled, the player turns over **three**,
+and picks **one**. Trade-offs are gated to milestone 3+ so early picks are pure upside while you
+are learning a card.
+
+| card kind | offered at milestone 1 | at milestone 5 |
+|---|---|---|
+| damage | 10 | 21 |
+| buff | 8 | 16 |
+| control | 5 | 10 |
+
+Menu repeat rate across four rank-ups: **0.2%**.
+
+### Rules that were enforced structurally, not by memory
+- **Nothing unwired can be offered.** Every entry carries a `wired` flag that `eligible()`
+  filters on. Offering a choice that silently does nothing is the defect this replaced, so the
+  gate lives in code rather than in a reviewer's head
+- **The offer is drawn ONCE and persisted** on the queued rank-up. Drawing on request would let
+  a player re-roll the menu by reconnecting; re-drawing on replay would show them a different
+  set than the one they were studying. Verified: two draws of the same rank-up differ
+- **The server validates the pick against the offer that character was SHOWN**, not against a
+  static allow-list — stronger, and it cannot go stale as the pool grows
+- **A card's KIND is derived from what the ability does**, not from a list in the upgrade file.
+  Such a list drifts the moment a card is re-roled, which is how War Cry sat in the wrong slot
+  for months
+- **Effects live at existing funnels** — damage in `apply_skill_damage_bonus`, cost in
+  `apply_skill_cost_reduction`, buff magnitude in `_apply_buff_value_modifiers`, duration in a
+  new `_buff_duration()`. Nineteen scattered checks would have drifted apart like the cost tables
+
+### Three upgrades were CUT rather than faked
+- **Overkill** (excess damage carries to the next flock member) — every ability body clamps
+  monster HP at zero, so the excess is discarded before any hook can see it
+- **Lingering** / **Overreach** (debuff lasts a round longer / shorter) — debuffs here are not
+  round-based at all: `monster_sabotaged` is a persistent value and `enemy_distracted` is
+  consumed by the next attack
+
+All three described mechanics the game does not have. Adding one purely so an upgrade could
+exist would be inventing a mechanic to justify a name.
+
+### Party play was checked, not assumed
+Co-op resolves through the same damage funnel on a member view, so upgrades apply there for
+free — measured at 1120 with Executioner against 800 without, on a member view. **Provoking**
+was deliberately built as an aggro pull rather than a flat penalty so it works in SOLO with a
+companion too, and will extend to NPC teammates without change, because it modifies the
+targeting roll rather than special-casing who is present.
+
+### Also fixed on the way
+The **mitigation clamp is two-sided** now. Trade-off downsides were briefly applied AFTER the
+floor so a defensive deck could not launder them away; the owner rejected that — *"if we have a
+mitigation floor we should find a way to respect it"* — and was right, since a rule some code
+steps around is not a rule and the post-clamp multipliers were unbounded. Vulnerabilities
+compose into the same multiplier, `MITIGATION_BUFF_FLOOR` still guarantees you can get tanky,
+and `MITIGATION_VULN_CEIL` guarantees a reckless build cannot be deleted in one hit.
+
+- [ ] **NOT PLAYTESTED.** Compile-clean and unit-verified, but the reveal's timing and whether
+      the choices actually feel hard are things only play can answer. Scenario `milestone` puts
+      a Fighter one use from three thresholds at once (Power Strike and Shield Bash at 9 uses
+      for the upside-only pool, Cleave at 199 for the trade-off pool)
+- [ ] The pool is deliberately shallow for CONTROL cards (5 → 10). More control-flavoured
+      upgrades would help, but only ones that map to mechanics that exist
+
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
