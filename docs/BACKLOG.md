@@ -2288,6 +2288,67 @@ Design notes for when it is built:
 
 - [ ] Sits naturally with backlog item 6e (solo combat presentation). Should be scoped after
       the current balance pass lands, since it touches every combat input path
+## ⚑ PARTY-PARITY AUDIT of every fix from this session (owner ask, 2026-09-03)
+
+Owner: *"It might be worth making sure our prior fixes over this session and the last few are
+fixed for party play as well if need be."* Correct instinct — three of them were solo-only.
+
+### Already covered — the live party path reuses the shared code
+No action needed on these, and the reason is architectural: the live co-op path builds a
+combat-shaped *view* from `member_states` and calls the SAME functions solo does
+(`process_attack(view)` at ~10193, `_process_*_ability(adapter, ...)` at ~10560).
+
+| fix | why it already applies |
+|---|---|
+| Anchored ability damage (all 10 abilities), Devastate×Momentum, Forcefield anchor | shared `_process_*_ability` via the adapter |
+| Phantom Strike reports a crit | shared `process_attack(view)`; the view carries `vanished` |
+| `_settle_combat_bars()` HP staleness | it was extracted from code that already handled `_pending_party_end_character` / `_pending_party_my_state` / `_pending_party_final_state` |
+| **XP requirement frozen at 100** | the party XP loop was the *cause*; fixing `level_up()` fixed party first |
+| Hunter's Mark bracket escape | `combat_scene_panel`, shared by both |
+| `last_ability_amounts` prefill | shared client popup |
+| Missing-art diagnostic | shared `monster_art` |
+
+### Was solo-only — FIXED
+- [x] **Authoritative card numbers.** `ability_costs` (v0.9.741), `ability_effects` and
+      `turn_regen` were added to the solo `get_combat_state()` only, so **a player in a party
+      still saw the client's own estimates** — the ones measured wrong by 0.15x to 6.0x. Co-op
+      is the headline feature, so "we fixed the lying cards" was true for half the game. Now
+      built per-member in `_party_member_hand_payload` (which is per-recipient, the right
+      channel) from a member view, and read by `_apply_party_hand_from_message`
+- [x] **Role flags.** `is_apex_species` / `is_elite` / `is_empowered` reached the solo state
+      only, so a party fight never showed the red apex tag. Added to `_party_combat_snapshot`
+- [x] **Chain engine carry is now ONE definition.** `chain_engine_carry()` holds the rule
+      (Momentum and Focus full, Read halved) and both `end_combat` and `_end_party_combat` call
+      it. Party combat does **not** chain flocks today, so nothing consumes the party snapshot
+      yet — it is written so that when party flocks are wired the carry is already correct
+      instead of silently defaulting to a full, un-decayed Read
+
+### Found: Outsmart does not exist in party combat, so Read is INERT in co-op
+The live party command handler accepts only `attack`, `flee` and `ability` — "outsmart" falls
+through to *"Unknown combat command."* And `_party_member_hand_payload` hardcodes
+`outsmart_chance = 0` with the comment *"charge viz not wired for co-op yet"*.
+
+So a Trickster in a party builds Read and **it does nothing at all** — its entire class engine
+has no payoff in co-op. Everything done to Read today (the cap raise, the 8-stack ramp, the role
+penalty, the halved chain carry) applies only to solo play.
+
+- [ ] **DECISION: should Outsmart work in a party?** It is an instant win on a shared monster,
+      so it is not a straight port — one member could end a fight the whole party is in, which
+      raises reward-splitting and consent questions the solo version never had. Options: enable
+      it as-is, enable at reduced odds, or give the Trickster a different co-op payoff for Read.
+      Until then a Trickster is playing a party fight with one third of its kit switched off
+
+### Hazard: three `_party_*` fossils are DEAD CODE carrying stale formulas
+`process_party_combat_action()` has **no callers**, which makes `_party_process_attack()` and
+`_party_process_outsmart()` unreachable too. They are dangerous because they read as
+authoritative and are badly out of date — `_party_process_outsmart` computes
+`clamp(30 + (wits - monster_int) * 2, 5, 75)`, which ignores Read, class, level difference, the
+attempt falloff and the role penalty, and caps at **75%** against solo's 48%. I nearly reported
+that as a live balance hole before checking whether anything called it.
+
+- [ ] Delete all three, or rewrite them to delegate to the shared path if the intent was to keep
+      a second entry point. Leaving a stale duplicate of a formula next to the real one is the
+      exact shape that produced the lying cards
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon

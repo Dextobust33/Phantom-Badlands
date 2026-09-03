@@ -28534,6 +28534,16 @@ func _apply_party_hand_from_message(message: Dictionary) -> void:
 		combat_discard_count = int(message.get("combat_discard_count", 0))
 		if combat_scene_panel.has_method("update_hand"):
 			combat_scene_panel.update_hand(combat_hand, combat_deck_count, combat_discard_count)
+	# 2026-09-03 — party parity: the authoritative costs/effects/regen ride on this same
+	# per-recipient message in co-op (the solo path reads them off combat_state). Without this
+	# a party member fell back to the client's own estimates, which is exactly the drift the
+	# server-authoritative numbers were introduced to end.
+	if message.get("ability_costs", null) is Dictionary:
+		_server_ability_costs = message["ability_costs"]
+	if message.get("ability_effects", null) is Dictionary:
+		_server_ability_effects = message["ability_effects"]
+	if message.has("turn_regen"):
+		_server_turn_regen = int(message.get("turn_regen", 0))
 	# Meter fields ride alongside the hand; _sync_momentum_meter no-ops if none present.
 	_sync_momentum_meter(message)
 

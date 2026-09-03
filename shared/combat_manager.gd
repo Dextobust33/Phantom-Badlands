@@ -1501,6 +1501,31 @@ func get_active_combat(peer_id: int) -> Dictionary:
 		return active_combats[peer_id]
 	return {}
 
+func chain_engine_carry(momentum: int, combo: int, focus: int) -> Dictionary:
+	"""What the class engines carry into the NEXT link of a flock or summoner chain.
+
+	THE SINGLE DEFINITION. Every path that ends a fight which might chain must build its
+	carry through here, so solo and party cannot disagree about it — the owner's requirement
+	when the solo rule was added: "We should fix the party flock problem for read as it should
+	be uniform."
+
+	Momentum and Focus carry in FULL. They boost damage, so the advantage is bounded by the
+	next monster's health bar: you still have to chew through all of it, and a full carry just
+	starts the grind further along.
+
+	Read (`combo`) is HALVED, because it boosts Outsmart, which bypasses the health bar
+	entirely. Carried in full, the 8-stack ramp is a toll paid ONCE for an unlimited chain —
+	every later member instant-killable at the ceiling, with `outsmart_attempts` resetting per
+	member so each is also a fresh roll with no falloff. Halved rather than reset because
+	reading a SPECIES transfers even though reading an individual does not: 8 -> 4 -> 2 -> 1
+	-> 0. The first chained monster stays much easier, which is the reward for having built it,
+	but a long chain forces a rebuild and cannot be farmed off one setup."""
+	return {
+		"momentum": maxi(0, momentum),
+		"combo": maxi(0, combo) / 2,   # integer division: 8->4, 1->0
+		"focus": maxi(0, focus),
+	}
+
 func get_last_combat_engines(peer_id: int) -> Dictionary:
 	"""v0.9.712 — the class engines (momentum/combo/focus) snapshotted at the last
 	end_combat, so a flock chain can carry them after the combat has been erased."""
@@ -8579,12 +8604,8 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 			# an individual does not: 8 -> 4 -> 2 -> 1 -> 0. The first chained monster is still
 			# much easier, which is the reward for having built it, but a long chain forces a
 			# rebuild and cannot be farmed off one setup.
-			var _read_carry: int = int(_ac.get("combo", 0)) / 2   # integer division: 8->4, 1->0
-			last_combat_engines[peer_id] = {
-				"momentum": int(_ac.get("momentum", 0)),
-				"combo": _read_carry,
-				"focus": int(_ac.get("focus", 0)),
-			}
+			last_combat_engines[peer_id] = chain_engine_carry(
+				int(_ac.get("momentum", 0)), int(_ac.get("combo", 0)), int(_ac.get("focus", 0)))
 		# Remove from active combats
 		active_combats.erase(peer_id)
 
@@ -11100,6 +11121,17 @@ func _end_party_combat(leader_id: int, victory: bool):
 			if hp_boost > 0:
 				character.max_hp = max(1, character.max_hp - hp_boost)
 				character.current_hp = min(character.current_hp, character.get_total_max_hp())
+		# 2026-09-03 — snapshot each member's engines through the SAME helper the solo path
+		# uses. Party combat does not chain flocks today (every flock site lives in the solo
+		# `handle_combat_command`, and the party victory path never reads `flock_chance`), so
+		# nothing consumes this yet. It is written anyway for two reasons: the owner asked for
+		# the rule to be uniform, and when party flocks ARE wired the carry will already be
+		# correct instead of silently defaulting to a full, un-decayed Read.
+		var _pms_engines = combat.member_states.get(pid, {})
+		last_combat_engines[pid] = chain_engine_carry(
+			int(_pms_engines.get("momentum", 0)),
+			int(_pms_engines.get("combo", 0)),
+			int(_pms_engines.get("focus", 0)))
 		party_combat_membership.erase(pid)
 
 	active_party_combats.erase(leader_id)

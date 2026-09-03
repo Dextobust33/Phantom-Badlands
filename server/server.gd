@@ -40149,6 +40149,12 @@ func _party_combat_snapshot(leader_id: int) -> Dictionary:
 		"monster_name": c.monster.get("name", "Monster"),
 		"monster_hp": c.monster.get("current_hp", 0),
 		"monster_max_hp": c.monster.get("max_hp", 1),
+		# 2026-09-03 — party parity: the role flags reached the SOLO combat state only, so a
+		# party fight never showed the red apex tag, and anything the client keys off elite or
+		# empowered was silently absent in co-op.
+		"is_apex_species": c.monster.get("is_apex_species", false),
+		"is_elite": c.monster.get("is_elite", false),
+		"is_empowered": c.monster.get("is_empowered", false),
 		"round": c.get("round", 1),
 		"members": members,
 	}
@@ -40188,6 +40194,27 @@ func _party_member_hand_payload(leader_id: int, pid: int) -> Dictionary:
 		out["is_mage_focus"] = path == "mage"
 		out["focus"] = int(st.get("focus", 0))
 		out["focus_max"] = CombatManager.FOCUS_MAX
+		# 2026-09-03 — PARTY PARITY. The authoritative per-card COSTS (v0.9.741) and
+		# DAMAGE/SHIELD (2026-09-03) were only ever added to the solo `get_combat_state`, so a
+		# player in a party still saw the client's own hand-copied estimates — the ones measured
+		# wrong by 0.15x to 6.0x. Same for the measured per-turn regen. Co-op is the headline
+		# feature, so "we fixed the lying cards" was only true for half the game.
+		#
+		# The builders want a combat-shaped dict; a party member's state is spread across
+		# member_states plus the shared monster, so assemble that view here and hand it over
+		# rather than duplicating either formula.
+		var _member_view := {
+			"character": ch,
+			"monster": c.get("monster", {}),
+			"combat_hand": out["combat_hand"],
+			"momentum": int(st.get("momentum", 0)),
+			"combo": int(st.get("combo", 0)),
+			"focus": int(st.get("focus", 0)),
+			"round": int(c.get("round", 1)),
+		}
+		out["ability_costs"] = combat_mgr._build_ability_cost_info(_member_view)
+		out["ability_effects"] = combat_mgr._build_ability_effect_info(_member_view)
+		out["turn_regen"] = int(combat_mgr._estimate_turn_regen_for(ch))
 	return out
 
 func _broadcast_party_update(leader_id: int, msgs: Array, resolved: bool, log_entries: Array = []) -> void:
