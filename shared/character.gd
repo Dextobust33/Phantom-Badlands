@@ -4012,11 +4012,13 @@ func get_companion_bonus(bonus_type: String) -> float:
 	var bonuses = active_companion.get("bonuses", {})
 	var base_value = bonuses.get(bonus_type, 0.0)
 	# Apply variant multiplier
-	var variant = active_companion.get("variant", "Normal")
-	var multiplier = VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
-	# Apply sub-tier multiplier
+	# 2026-09-03 — derived from the variant's RARITY (drop_tables.companion_variant_mult), which
+	# covers all 111 variants, instead of VARIANT_STAT_MULTIPLIERS, a per-name table that had no
+	# entry for 90% of them. Sub-tier comes from the shared table rather than a third inline copy.
+	var _dt = load("res://shared/drop_tables.gd")
+	var multiplier = _dt.companion_variant_mult(active_companion)
 	var sub_tier = active_companion.get("sub_tier", 1)
-	var sub_tier_mult = {1:1.0, 2:1.1, 3:1.2, 4:1.3, 5:1.4, 6:1.5, 7:1.6, 8:1.7, 9:2.0}.get(sub_tier, 1.0)
+	var sub_tier_mult = float(_dt.COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
 	return base_value * multiplier * sub_tier_mult
 
 func has_active_companion() -> bool:
@@ -4172,7 +4174,12 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	var owner_side: float = float(owner_max_hp) * companion_level_ratio_mult(level, owner_level)
 	var own_side: float = reference_player_hp(level)
 	var base: float = maxf(owner_side, own_side)
-	return maxi(10, int(round(base * companion_hp_share(bonuses) * sub_mult * bonus_mult)))
+	# 2026-09-03 — the VARIANT scales the companion's own body, not just the buff it hands you.
+	# A legendary-variant companion used to have exactly the same health bar as a common one of
+	# the same tier and level, which is most of why rare variants were not worth hunting.
+	var _dt = load("res://shared/drop_tables.gd")
+	var variant_mult: float = _dt.companion_variant_mult(companion)
+	return maxi(10, int(round(base * companion_hp_share(bonuses) * sub_mult * bonus_mult * variant_mult)))
 
 func get_companion_max_hp() -> int:
 	return calculate_companion_max_hp(active_companion, get_total_max_hp(), level)
@@ -4489,11 +4496,11 @@ func get_companion_effective_bonuses() -> Dictionary:
 		return {}
 
 	var base_bonuses = active_companion.get("bonuses", {}).duplicate()
-	var variant = active_companion.get("variant", "Normal")
-	var multiplier = VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
-	# Apply sub-tier multiplier
+	# Same shared sources as get_companion_bonus above — see the note there.
+	var _dt = load("res://shared/drop_tables.gd")
+	var multiplier = _dt.companion_variant_mult(active_companion)
 	var sub_tier = active_companion.get("sub_tier", 1)
-	var sub_tier_mult = {1:1.0, 2:1.1, 3:1.2, 4:1.3, 5:1.4, 6:1.5, 7:1.6, 8:1.7, 9:2.0}.get(sub_tier, 1.0)
+	var sub_tier_mult = float(_dt.COMPANION_SUB_TIER_MULTIPLIERS.get(sub_tier, 1.0))
 	var combined = multiplier * sub_tier_mult
 
 	if combined != 1.0:

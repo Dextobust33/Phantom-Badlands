@@ -2554,23 +2554,72 @@ const EGG_VARIANTS = [
 	{"name": "Prismatic", "color": "#FF69B4", "color2": "#00FFFF", "pattern": "striped", "rarity": 1},
 	{"name": "Void", "color": "#4B0082", "color2": "#000000", "pattern": "gradient_down", "rarity": 1},
 	{"name": "Cosmic", "color": "#FFFFFF", "color2": "#4B0082", "pattern": "diagonal_down", "rarity": 1},
-	{"name": "Divine", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "middle", "rarity": 1}
+	{"name": "Divine", "color": "#FFFFFF", "color2": "#FFD700", "pattern": "middle", "rarity": 1},
+	# 2026-09-03 — more to FIND at the top end without making the top end easier to reach. The
+	# band's odds are fixed by VARIANT_BAND_WEIGHTS, so these widen the prize pool rather than
+	# the door. Named and coloured so the word matches the look: every one of these is a
+	# high-contrast two-tone, because a legendary that renders drab is a bad prize.
+	{"name": "Eclipsed", "color": "#1A1A2E", "color2": "#FF6B00", "pattern": "radial", "rarity": 1},
+	{"name": "Wyrmgold", "color": "#FFD700", "color2": "#8B0000", "pattern": "scales", "rarity": 1},
+	{"name": "Abyssal", "color": "#00121F", "color2": "#00E5FF", "pattern": "gradient_down", "rarity": 1},
+	{"name": "Emberwake", "color": "#FF3300", "color2": "#FFD700", "pattern": "gradient_up", "rarity": 1},
+	{"name": "Hoarfrost", "color": "#E0FFFF", "color2": "#0077BE", "pattern": "edges", "rarity": 1},
+	{"name": "Nightbloom", "color": "#2E003E", "color2": "#FF5FA2", "pattern": "diagonal_up", "rarity": 1},
+	{"name": "Stormglass", "color": "#3A3A5C", "color2": "#7DF9FF", "pattern": "striped", "rarity": 1},
+	{"name": "Gravebloom", "color": "#0B0B0B", "color2": "#7CFC00", "pattern": "middle", "rarity": 1}
 ]
 
+# === VARIANT BAND ODDS (2026-09-03) ===
+#
+# The roll used each variant's `rarity` value directly as its weight, which quietly tied HOW
+# OFTEN you see a rarity band to HOW MANY variants happen to sit in it. Adding a single new
+# legendary variant would therefore have made legendaries MORE COMMON — the opposite of the
+# owner's ask: *"we may want to add more variance to the most rare variants. Not make them
+# easier to get just more options when you finally get one."*
+#
+# So the band's share is frozen here as an explicit constant, and the pick within a band is
+# uniform. These numbers are the aggregate weights the old formula produced at the moment of
+# the change (count x rarity), so the drop rates are IDENTICAL to before — but the pool can now
+# grow without shifting them.
+const VARIANT_BAND_WEIGHTS := {
+	1: 10,   # ~2.5% — the legendary band
+	2: 74,
+	3: 93,
+	4: 36,
+	5: 35,
+	6: 6,
+	8: 64,
+	10: 80,
+}
+
+static func _pick_variant_weighted() -> Dictionary:
+	"""Two stage: choose a RARITY BAND by its frozen weight, then a variant uniformly inside it.
+	Decoupling the two is what lets the rare pool grow without becoming easier to hit."""
+	var total := 0
+	for r in VARIANT_BAND_WEIGHTS:
+		total += int(VARIANT_BAND_WEIGHTS[r])
+	if total <= 0:
+		return EGG_VARIANTS[0].duplicate()
+	var roll := randi() % total
+	var acc := 0
+	var chosen := 10
+	for r in VARIANT_BAND_WEIGHTS:
+		acc += int(VARIANT_BAND_WEIGHTS[r])
+		if roll < acc:
+			chosen = int(r)
+			break
+	var pool: Array = []
+	for v in EGG_VARIANTS:
+		if int(v.get("rarity", 10)) == chosen:
+			pool.append(v)
+	if pool.is_empty():
+		return EGG_VARIANTS[0].duplicate()
+	return (pool[randi() % pool.size()] as Dictionary).duplicate()
+
+
 func _roll_egg_variant() -> Dictionary:
-	"""Roll for a random egg variant using weighted rarity."""
-	var total_weight = 0
-	for variant in EGG_VARIANTS:
-		total_weight += variant.rarity
-
-	var roll = randi() % total_weight
-	var current = 0
-	for variant in EGG_VARIANTS:
-		current += variant.rarity
-		if roll < current:
-			return variant.duplicate()
-
-	return EGG_VARIANTS[0].duplicate()  # Fallback to first variant (Crimson)
+	"""Roll for a random egg variant. Band odds are frozen; see _pick_variant_weighted."""
+	return _pick_variant_weighted()
 
 static func roll_cosmetic_variant() -> Dictionary:
 	"""v0.9.719 — STATIC weighted pick from EGG_VARIANTS (the companion cosmetic pool),
@@ -2666,6 +2715,61 @@ func get_border_tier_info(tier_id: int) -> Dictionary:
 	return BORDER_TIERS[0] if BORDER_TIERS.size() > 0 else {}
 
 
+# === VARIANT POWER (2026-09-03, owner direction) ===
+#
+# THE ONE DEFINITION of what a companion's variant is worth. Derived from the variant's RARITY
+# rather than a per-name table, so a variant can never be added and silently forgotten — which
+# is exactly what had happened: audited across all 111 variants, 100 of them (90%) carried no
+# multiplier at all, every variant at rarity 3 or below was cosmetic, and `Divine` sat at the
+# rarest tier paying 1.00x.
+#
+# Owner: *"the multipliers are supposed to affect stats, that's the whole point of having
+# different rarities of companions you can find. That's part of the hunt."*
+#
+# The curve is deliberately CONVEX: common variants stay near 1.00 so a routine find is not
+# quietly better than the companion you chose, and the value climbs steeply at the rare end
+# where the hunt actually lives.
+#
+#   rarity 10 (commonest) 1.00    rarity 4  1.30
+#   rarity  8             1.05    rarity 3  1.39
+#   rarity  6             1.15    rarity 2  1.49
+#   rarity  5             1.21    rarity 1  1.60  (rarest)
+#
+# The OLD range topped out at 1.50 and applied only to the bonuses a companion granted its
+# owner — never to the companion's own HP or damage. Measured, that made the rarest variant in
+# the game worth FIVE extra HP on a level 30 character. It now scales the companion ITSELF as
+# well as its buff, per the owner: *"we want the companion itself to be affected as well as its
+# buff."*
+const VARIANT_RARITY_MAX_MULT := 0.60   # rarity 1 lands at 1.0 + this
+const VARIANT_RARITY_CURVE := 1.7       # >1 keeps common variants near 1.00
+
+static func variant_mult_for_rarity(rarity: int) -> float:
+	"""Stat multiplier for a variant of the given rarity (1 = rarest, 10 = commonest)."""
+	var r: float = clampf(float(rarity), 1.0, 10.0)
+	var t: float = (10.0 - r) / 9.0
+	return 1.0 + VARIANT_RARITY_MAX_MULT * pow(t, VARIANT_RARITY_CURVE)
+
+static func variant_rarity_of(c: Dictionary) -> int:
+	"""A companion's or egg's variant rarity. Prefers the stored value; falls back to looking
+	the variant NAME up in EGG_VARIANTS so companions saved before the field existed still
+	resolve correctly rather than silently reading as commonest."""
+	if c == null or c.is_empty():
+		return 10
+	if c.has("variant_rarity"):
+		return int(c["variant_rarity"])
+	var name := String(c.get("variant", ""))
+	if name != "":
+		for v in EGG_VARIANTS:
+			if String(v.get("name", "")) == name:
+				return int(v.get("rarity", 10))
+	return 10
+
+static func companion_variant_mult(c: Dictionary) -> float:
+	"""Stat multiplier a companion earns from its variant. Use this everywhere; do not read
+	VARIANT_STAT_MULTIPLIERS, which is the stale per-name table this replaces."""
+	return variant_mult_for_rarity(variant_rarity_of(c))
+
+
 func get_companion_border_mult(border_tier: int) -> float:
 	"""Stat multiplier for a given border tier. Used by combat damage formula
 	and HP-on-display computations to fold border-tier into the final value."""
@@ -2694,6 +2798,16 @@ func get_companion_attack_damage(companion_tier: int, player_level: int, compani
 	# v0.9.570 — apply border-tier multiplier (1.00x base, up to 3.00x Mythic)
 	total = int(total * get_companion_border_mult(border_tier))
 	return total
+
+func get_companion_attack_damage_v(companion: Dictionary, companion_tier: int, player_level: int, companion_level: int = 1) -> int:
+	"""Companion damage INCLUDING its variant. 2026-09-03 — the variant multiplier used to touch
+	only the bonuses a companion granted its owner, never the companion's own output, so a
+	legendary-variant pet hit for exactly the same as a common one. Owner: "we want the
+	companion itself to be affected as well as its buff"."""
+	var base := get_companion_attack_damage(
+		companion_tier, player_level, companion.get("bonuses", {}),
+		companion_level, int(companion.get("sub_tier", 1)), int(companion.get("border_tier", 0)))
+	return maxi(1, int(float(base) * companion_variant_mult(companion)))
 
 func estimate_companion_damage(companion_tier: int, player_level: int, companion_bonuses: Dictionary, companion_level: int, variant_mult: float = 1.0, sub_tier: int = 1, border_tier: int = 0) -> Dictionary:
 	"""Estimate companion damage range for display purposes.
