@@ -23,22 +23,35 @@ func _init():
 			var atk: int = ch.get_total_attack()
 			var s_str: int = ch.get_effective_stat("strength")
 			var s_wit: int = ch.get_effective_stat("wits")
+			# BEST SUSTAINABLE cast — the card you can play every turn, which is what decides
+			# whether a straight fight is winnable. Finishers/gambles are reported separately.
 			var best: float = 0.0
+			var burst: float = 0.0
+			var burst_label := ""
 			match String(case[0]):
 				"Fighter":
 					best = maxf(cm._ability_anchored_damage(ch, "strength", CombatManager.ABILITY_WEIGHTS["cleave"]),
-								float(atk) * 7.0 * (1.0 + sqrt(float(s_str))/10.0))
+								cm._ability_anchored_damage(ch, "strength", CombatManager.ABILITY_WEIGHTS["power_strike"]))
+					burst = cm._ability_anchored_damage(ch, "strength",
+						CombatManager.DEVASTATE_WEIGHT_PER_MOMENTUM * float(CombatManager.MOMENTUM_MAX)) * 1.5
+					burst_label = "Devastate@5+full bar"
 				"Wizard":
-					best = cm._ability_anchored_damage(ch, "intelligence", CombatManager.ABILITY_WEIGHTS["magic_bolt"])
+					best = cm._ability_anchored_damage(ch, "intelligence", CombatManager.ABILITY_WEIGHTS["blast"])
+					burst = cm._ability_anchored_damage(ch, "intelligence", CombatManager.ABILITY_WEIGHTS["magic_bolt"])
+					burst_label = "Magic Bolt (full dump)"
 				"Ranger":
-					best = float(atk) * 4.5 * (1.0 + sqrt(float(s_wit))/10.0)
+					best = cm._ability_anchored_damage(ch, "wits", CombatManager.ABILITY_WEIGHTS["ambush"]) * 1.25
+					burst = cm._ability_anchored_damage(ch, "wits", CombatManager.ABILITY_WEIGHTS["gambit"])
+					burst_label = "Gambit (on hit)"
 			var dfn: float = float(m.get("defense", 0))
 			var mitig: float = dfn / (dfn + 100.0) * 0.6
 			var eff_best: float = best * (1.0 - mitig)
 			var basic: float = float(atk) * (1.0 - mitig)
 			var turns: float = float(m.get("max_hp", 1)) / maxf(1.0, eff_best)
 			var incoming: float = maxf(1.0, float(m.get("strength", 1)) * 0.75)
-			print("  %-10s %7d %7d %10.0f %8.0f %13.1f %11.1f" % [
+			var survive: float = float(ch.get_total_max_hp()) / incoming
+			var verdict := "ok" if turns < survive else "*** CANNOT WIN ***"
+			print("  %-10s %7d %7d %10.0f %8.0f %13.1f %11.1f  %-18s %8.0f %s" % [
 				String(case[0]), ch.get_total_max_hp(), atk, eff_best, basic, turns,
-				float(ch.get_total_max_hp()) / incoming])
+				survive, verdict, burst * (1.0 - mitig), burst_label])
 	quit()

@@ -8994,7 +8994,8 @@ func update_action_bar():
 				first_ability,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
+				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
+				 "cost": 0, "resource_type": "energy"},   # cost 0 = the player is asked how much energy to commit
 				attack_action,  # Attack moves to slot 5
 			]
 			# Add remaining abilities (skip first since it's on slot 1)
@@ -9002,7 +9003,8 @@ func update_action_bar():
 				current_actions.append(ability_actions[i])
 		else:
 			# Normal layout (with optional Attack/Outsmart swap)
-			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart}
+			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
+				"cost": 0, "resource_type": "energy"}   # cost 0 = the player is asked how much energy to commit
 			if swap_attack_outsmart:
 				# Swap: Outsmart on Space, Attack on E
 				current_actions = [
@@ -9039,13 +9041,15 @@ func update_action_bar():
 				first_ability,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart},
+				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
+				 "cost": 0, "resource_type": "energy"},   # cost 0 = the player is asked how much energy to commit
 				attack_action,
 			]
 			for i in range(1, min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 		else:
-			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart}
+			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
+				"cost": 0, "resource_type": "energy"}   # cost 0 = the player is asked how much energy to commit
 			if swap_attack_outsmart:
 				current_actions = [
 					outsmart_action,
@@ -12784,6 +12788,11 @@ func _get_ability_planned_spend(ability_name: String) -> Dictionary:
 		# capped at current mana.
 		var suggested = _estimate_magic_bolt_planned_mana()
 		return {"amount": suggested, "fraction": 1.0, "resource_type": resource_type}
+	if ability_name == "outsmart":
+		# Pre-fill what the ability used to take silently (60% of the current bar), so pressing
+		# Enter reproduces the old behaviour and the player only has to think about it when
+		# they want to. Energy buys up to +15% odds; it is not required.
+		return {"amount": maxi(0, int(current * 0.60)), "fraction": 1.0, "resource_type": resource_type}
 	if ability_name == "devastate":
 		# v0.9.72x — Devastate is a DUMP finisher: it consumes DEVASTATE_DUMP_PCT (0.60)
 		# of CURRENT stamina, not a flat ceiling. Show the real dump amount so the card
@@ -32417,7 +32426,7 @@ func search_help(search_term: String):
 		{
 			"title": "OUTSMART",
 			"keywords": ["outsmart", "trick", "instant", "win", "intelligence", "dumb", "beast"],
-			"content": "[color=#FFA500]Outsmart[/color] - Trick dumb monsters for instant win\nBase 5% + 15×log₂(WIT/10) bonus\n+15% for Tricksters\n+3% per monster INT below 10, -1% per INT above 10\n-2% per point monster INT exceeds your WIT\nLevel penalty: -2%/lvl (1-10), -1%/lvl (11-50) above you\nCap: 85% Trickster, 70% others (reduced by monster INT/2, min 30%)\n[color=#00FF00]Best vs:[/color] Beasts, undead | [color=#FF4444]Worst vs:[/color] Mages, dragons\nFailure = enemy free attack, can't retry"
+			"content": "[color=#FFA500]Outsmart[/color] — trick a monster and win outright, bypassing its HP entirely. The [b]Trickster's signature[/b], and its way of killing things nothing else at its level can touch.\n[color=#7FD8C8]◉ Read is the engine.[/color] Every Trickster card you play adds a stack, and each stack raises [b]both your odds and the ceiling[/b], so no stack is ever wasted. A Trickster against a same-level foe goes from [b]~31% at 0 Read to ~71% at 5[/b].\n[color=#66FF66]You choose the energy to commit[/color] when you press it — worth up to [b]+15%[/b]. Committing 0 is allowed: it is a bonus, not a fee.\n[color=#AAAAAA]Other classes can use it, far less reliably — a Mage gets roughly half a Trickster's odds, a Warrior about a quarter.[/color]\n[color=#AAAAAA]Wits helps (capped). High monster INT hurts. Higher-level foes cost you odds, but only gently — that reach is the whole point.[/color]\n[color=#00FF00]Best vs:[/color] beasts, undead | [color=#FF4444]Worst vs:[/color] mages, dragons\n[color=#FF4444]A miss costs you the turn, your Read, and a free hit.[/color] You can rebuild Read and try again, but every attempt this fight halves your chance."
 		},
 		{
 			"title": "UNIVERSAL ABILITIES",

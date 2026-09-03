@@ -149,7 +149,11 @@ const COMBO_SUCCESS_PER: int = 9   # +% Gambit success per Combo Point (5 ≈ gu
 const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point (4.5 → 7.0)
 # v0.9.698 — Trickster reframe: the `combo` field is now "Read". Every Trickster
 # ability builds Read; Read raises the Outsmart chance (the payoff = bypass HP).
-const READ_OUTSMART_PER: int = 15  # +% Outsmart success per Read (5 Read ≈ +75%)
+const READ_OUTSMART_PER: int = 15  # +% Outsmart success per Read, against the cap below
+# Each Read also lifts the CAP by this much, which is what makes stacks 3-5 worth building.
+# 48 base + 5x5 = 73% at a full Read for a Trickster: reliable, but only after five turns of
+# setup. Without this the cap ate every stack past the second — see _outsmart_chance.
+const READ_CAP_PER: float = 5.0
 # v0.9.697 — Mage Focus: a RAMP. Every spell channeled builds Focus, which
 # passively boosts ALL spell damage. Meteor is the DISCHARGE — bigger per-Focus
 # bonus, then resets the ramp.
@@ -1494,6 +1498,12 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			action = CombatAction.SPECIAL
 		"outsmart", "o":
 			action = CombatAction.OUTSMART
+			# 2026-09-03 — the player now CHOOSES the energy committed, so the amount rides in
+			# on the command. process_combat_action does not carry an arg, so stash it on the
+			# combat. A missing/invalid arg means "decide for me", which keeps the old chat
+			# command and any older client working unchanged.
+			if active_combats.has(peer_id):
+				active_combats[peer_id]["outsmart_spend"] = arg.to_int() if arg.is_valid_int() else -1
 		_:
 			# Check if it's an ability command
 			# v0.9.681 — companion cards ("companion_card_<type>") are dynamic ids,
@@ -1871,8 +1881,13 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 		# Apply vanish bonus (extra 1.5x on top of any crit)
 		if is_vanished:
+			# Phantom Strike's card promises "a guaranteed critical hit". Mechanically that is
+			# what this is — the attack cannot miss and takes the same 1.5x a crit takes — but
+			# it never SAID crit, so the owner played it, attacked, and reasonably reported that
+			# no crit happened. Report it as the critical the card sold.
 			damage = int(damage * 1.5)
-			messages.append("[color=#FFD700]You strike from the shadows![/color]")
+			is_crit = true
+			messages.append("[color=#FFD700]PHANTOM STRIKE — critical hit from the shadows![/color]")
 
 		# Show passive messages (Blood Rage, Chaos Magic, etc.)
 		for msg in passive_messages:
@@ -2917,7 +2932,21 @@ func _outsmart_chance(character, monster, combat) -> int:
 	# the per-attempt falloff, so the FIRST shot each fight is real and retries fade.
 	if is_trickster:
 		outsmart_chance = maxi(outsmart_chance, TRICKSTER_OUTSMART_FLOOR)
-	var max_chance = max((10 if is_trickster else 4), base_max_chance - int(monster_intelligence / 3))
+	# 2026-09-03 — READ RAISES THE CAP. Two passes had been contradicting each other: the
+	# v0.9.698 Read engine adds READ_OUTSMART_PER (+15) per stack and its comments promise
+	# "+75% at 5 Read", while the #55 anti-abuse pass capped the result at 48. From a ~27% base
+	# that means stack 1 helps, stack 2 hits the ceiling, and stacks 3-5 do LITERALLY NOTHING.
+	# The owner spotted it from play alone: "it seemed to cap at around 46% making me wonder why
+	# I should even continue building stacks."
+	#
+	# Both intents can hold if Read lifts the ceiling rather than pushing against it: the BASE
+	# Outsmart stays the coinflip-or-worse gamble #55 wanted, and a fully-built Read — five
+	# turns of playing Trickster cards, which is a real cost and the archetype's whole engine —
+	# makes it reliable, which is what the Read engine was for. Scaled by the class multiplier
+	# so a Mage still gets roughly half the Trickster's reach and a Warrior a quarter.
+	var read_cap_bonus: int = int(float(read) * READ_CAP_PER * class_os_mult)
+	var max_chance = max((10 if is_trickster else 4),
+		base_max_chance + read_cap_bonus - int(monster_intelligence / 3))
 	# #55 — repeated-attempt falloff: each prior Outsmart this fight halves the chance,
 	# so it can't be retried to near-certainty over a long fight (the monster catches on).
 	var os_attempts := int(combat.get("outsmart_attempts", 0))
@@ -2952,11 +2981,30 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	# Outsmart (investment payoff) and Outsmart becomes the Trickster's energy sink.
 	var _os_max_en: int = maxi(1, character.get_total_max_energy())
 	var _os_en_before: int = int(character.current_energy)
-	var _os_dumped: int = maxi(0, int(_os_en_before * OUTSMART_DUMP_PCT))
+	# 2026-09-03 — the spend is the PLAYER'S CALL. It used to take 60% of the current bar
+	# silently and only mention it afterwards, which the owner rightly objected to: "if we are
+	# going to have a cost on outsmart or allow energy to be used to increase the chance the
+	# player should have a say in that or it should be clear, not just a hidden thing that
+	# happens." -1 means no choice was sent (chat command, older client), and keeps the old
+	# behaviour so nothing silently starts costing zero.
+	var _os_requested: int = int(combat.get("outsmart_spend", -1))
+	combat["outsmart_spend"] = -1   # consume it, so the next attempt must ask again
+	var _os_dumped: int = 0
+	if _os_requested >= 0:
+		_os_dumped = clampi(_os_requested, 0, _os_en_before)
+	else:
+		_os_dumped = maxi(0, int(_os_en_before * OUTSMART_DUMP_PCT))
 	if _os_dumped > 0:
 		character.use_energy(_os_dumped)
-		var _os_bonus: int = int(clampf(float(_os_en_before) / float(_os_max_en), 0.0, 1.0) * float(OUTSMART_DUMP_MAX_BONUS))
-		outsmart_chance = clampi(outsmart_chance + _os_bonus, 2, 60)  # #55 — total cap 95→60 (was letting the dump bypass the base cap to ~85%+)
+		# Scaled by the share of the MAX bar committed, so the bonus tracks what was actually
+		# spent rather than how full the bar happened to be. A full-bar dump still pays the
+		# whole OUTSMART_DUMP_MAX_BONUS, so nothing gets weaker for the same investment.
+		var _os_bonus: int = int(clampf(float(_os_dumped) / float(_os_max_en), 0.0, 1.0) * float(OUTSMART_DUMP_MAX_BONUS))
+		# #55 capped the dump's total at 60 so it could not bypass the base cap. That clamp now
+		# has to respect a Read-raised ceiling, or a fully-built Read (73%) would be pushed back
+		# DOWN to 60 by the very ability meant to sharpen it. Ceiling is the higher of the two.
+		var _os_ceiling: int = maxi(60, _outsmart_chance(character, monster, combat))
+		outsmart_chance = clampi(outsmart_chance + _os_bonus, 2, _os_ceiling)
 		messages.append("[color=#66FF66]⚡ You spend %d energy to sharpen the read (+%d%% outwit)![/color]" % [_os_dumped, _os_bonus])
 
 	# #55 — count this attempt so the shared _outsmart_chance falloff makes each further
@@ -3361,12 +3409,35 @@ func _ability_anchored_damage(character, stat_name: String, weight: float) -> fl
 const FORCEFIELD_SHARE_OF_BAR := 0.25
 
 const ABILITY_WEIGHTS := {
-	"power_strike": 0.22,
-	"cleave": 0.28,
+	# --- Warrior: reliable and sustained, with the highest ceiling in the game behind the ---
+	# --- longest setup. Its finisher is what elites and bosses are for. ---------------------
+	"power_strike": 0.22,  # bread and butter
+	"cleave": 0.28,        # bigger, and opens a bleed
+	"shield_bash": 0.16,   # priced BELOW power_strike because it also stuns
+	# --- Mage: burst, then dry. Its ceiling is available on turn one and costs the bar. ----
 	"magic_bolt": 0.55,   # the mage's dump-everything nuke, so the biggest single-cast share
 	"blast": 0.22,        # efficient sustain
 	"meteor": 0.45,       # Focus discharge; the Focus multiplier rides on top
+	"frost_nova": 0.10,   # chip damage — the card is bought for the accuracy chill
+	# --- Trickster: high variance. Weaker reliable damage is the intended identity, but it --
+	# --- has to be LETHAL: before this conversion a gearless L5 Ranger needed 11.5 turns to -
+	# --- kill a same-level Gnoll and survived 8.1, so it could not win a straight fight. ----
+	"ambush": 0.20,       # ~0.25 effective — a 50% crit at +50% rides on top
+	"gambit": 0.42,       # on a HIT; it lands 55-80% of the time, so ~0.27 expected
+	# `exploit` is deliberately NOT here: a share of the ENEMY's max HP is a different model
+	# on purpose (the anti-tank tool, gear-independent, shines exactly where this anchor is
+	# weakest). `devastate` is not here either — its weight scales with Momentum, below.
 }
+
+# Devastate is the Warrior FINISHER, so its weight is not a constant: it is this much per point
+# of Momentum spent. At 1 Momentum that is a deliberately feeble 0.14 of a health bar (dumping
+# early should feel wrong); at MOMENTUM_MAX it is 0.70, and the stamina dump multiplies it up to
+# 1.5x on a full bar — the single biggest hit available to any class, after five turns of setup.
+#
+# Against a NORMAL monster you will rarely reach 5, because four builder casts at 0.22-0.28
+# have already killed it. That is the intent: the finisher is what elites and bosses are for,
+# where the health bar is 1.8x to 2.8x larger and the setup has time to pay.
+const DEVASTATE_WEIGHT_PER_MOMENTUM := 0.14
 
 func _primary_resource_value(character) -> int:
 	"""Current value of the character's PRIMARY combat resource, whichever it is."""
@@ -3500,26 +3571,35 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 	var focus: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
 	var focus_mult: float = 1.0 + float(focus) * FOCUS_DMG_PER
 
-	# --- Anchored abilities (#6c): a share of the health bar they are fighting. -------------
+	# --- Anchored abilities: a share of the health bar they are fighting. ------------------
 	if ABILITY_WEIGHTS.has(name):
+		var is_spell: bool = name in ["magic_bolt", "blast", "meteor", "frost_nova"]
 		var stat := "strength"
-		var is_spell: bool = name in ["magic_bolt", "blast", "meteor"]
 		if is_spell:
 			stat = "intelligence"
+		elif name in ["ambush", "gambit"]:
+			stat = "wits"
 		var dmg: float = _ability_anchored_damage(character, stat, float(ABILITY_WEIGHTS[name]))
 		if dmg > 0.0:
+			var note := ""
 			match name:
 				"magic_bolt":
 					# A full spend is MAGIC_BOLT_FULL_SPEND_PCT of the pool: _mb_frac = 1.0, so
 					# _mb_eff resolves to 1.0 too. Focus rides on top.
 					dmg *= focus_mult
-				"blast":
+				"blast", "frost_nova":
 					dmg *= focus_mult
 				"meteor":
 					# meteor_mult is a 3.0-4.0 roll divided by 3.5, so it averages 1.0 — the
 					# card shows the average rather than a range it cannot predict.
 					dmg *= (1.0 + float(focus) * FOCUS_METEOR_PER)
-			var note := ""
+				"ambush":
+					dmg *= 1.25   # 50% crit at +50% = +25% expected
+				"gambit":
+					# On-hit value with the odds beside it — Gambit can whiff entirely and hurt
+					# you instead, so averaging the misses in would quote a number the player
+					# never actually sees land.
+					note = "%d%% to land" % mini(80, 55 + int(s_wits / 4.0))
 			if is_spell and focus > 0:
 				note = "Focus %d/%d" % [focus, FOCUS_MAX]
 			# Run the REAL modifier chain (mastery rank, off-affinity, imprints, Path effects)
@@ -3542,29 +3622,15 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 			# is 1.5x, not 1.0x. Quoting the un-dumped value understated it by a third.
 			var dev_full: float = 0.5 + clampf(
 				float(character.current_stamina) / maxf(1.0, float(character.get_total_max_stamina())), 0.0, 1.0)
+			var dev_anchor: float = _ability_anchored_damage(character, "strength",
+				DEVASTATE_WEIGHT_PER_MOMENTUM * float(mom))
+			var dev_base: int = int(dev_anchor * dev_full) if dev_anchor > 0.0 				else int(float(total_attack) * (2.0 + float(mom)) * str_mult * dev_full)
 			return {"kind": "damage",
-					"value": apply_skill_damage_bonus(character, name,
-						int(float(total_attack) * (2.0 + float(mom)) * str_mult * dev_full), combat),
+					"value": apply_skill_damage_bonus(character, name, dev_base, combat),
 					"scales": "Momentum %d/%d" % [mom, MOMENTUM_MAX]}
-		"shield_bash":
-			return {"kind": "damage", "value": apply_skill_damage_bonus(character, name, int(float(total_attack) * 1.5 * str_mult), combat), "scales": ""}
-		"ambush":
-			# 2.2x (the #55 pass trimmed 3.0 -> 2.5 -> 2.2; the client mirror kept 3.0, and so
-			# did the first draft of this function until the drift guard caught it), and a 50%
-			# crit at +50% is +25% on average, which is what the card advertises.
-			return {"kind": "damage",
-					"value": apply_skill_damage_bonus(character, name,
-						int(float(total_attack) * 2.2 * wits_mult * 1.25), combat),
-					"scales": ""}
-		"gambit":
-			# The value is the ON-HIT damage; Gambit can miss outright and hurt you instead, so
-			# the odds belong on the card next to it rather than being averaged into a number
-			# the player will never actually see land.
-			var g_success: int = mini(80, 55 + int(s_wits / 4.0))
-			return {"kind": "damage",
-					"value": apply_skill_damage_bonus(character, name,
-						int(float(total_attack) * 4.5 * wits_mult), combat),
-					"scales": "%d%% to land" % g_success}
+		# shield_bash / ambush / gambit / frost_nova are handled by the anchored branch above
+		# now that they are converted. Their temporary attack-based branches are gone with the
+		# formulas they described.
 		"exploit":
 			# #55 trimmed this from (15 + WITS/4, cap 35) to (10 + WITS/6, cap 22) because
 			# %-max-HP is gear-independent. Neither mirror was updated, so Tricksters have been
@@ -4441,7 +4507,10 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# (handled at the bottom). Distinct from Paralyze: soft (miss chance) vs hard
 			# (skip turn) — and unlike Paralyze it also deals damage.
 			var fn_int = character.get_effective_stat("intelligence")
-			var fn_base = int(30 * (1.0 + fn_int * 0.04) * variable_fraction * _focus_mult)
+			# 2026-09-03 — anchored. A flat 30 base meant its chip damage stopped registering
+			# at all past the early levels.
+			var _fn_anchor: float = _ability_anchored_damage(character, "intelligence", float(ABILITY_WEIGHTS.get("frost_nova", 0.10)))
+			var fn_base = int(_fn_anchor * variable_fraction * _focus_mult) if _fn_anchor > 0.0 				else int(30 * (1.0 + fn_int * 0.04) * variable_fraction * _focus_mult)
 			fn_base = apply_skill_damage_bonus(character, "frost_nova", fn_base, combat)
 			var fn_mod = apply_ability_damage_modifiers(fn_base, character.level, monster)
 			var fn_dmg = apply_damage_variance(fn_mod)
@@ -4786,7 +4855,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# Variable cost: damage AND stun chance scale with spend.
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
-			var base_dmg = int(total_attack * 1.5 * damage_multiplier * str_mult * variable_fraction)
+			# 2026-09-03 — anchored. Left on the attack-based formula by #6c, which made it
+			# ~5-10x weaker than a converted card at low level (attack is 16-23 gearless
+			# against a 509-986 health bar).
+			var _sb_anchor: float = _ability_anchored_damage(character, "strength", float(ABILITY_WEIGHTS.get("shield_bash", 0.16)))
+			var base_dmg = int(_sb_anchor * damage_multiplier * variable_fraction) if _sb_anchor > 0.0 				else int(total_attack * 1.5 * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var sb_skill_bonus = character.get_skill_damage_bonus("shield_bash")
 			base_dmg = apply_skill_damage_bonus(character, "shield_bash", base_dmg, combat)
@@ -4895,7 +4968,13 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var str_stat = character.get_effective_stat("strength")
 			var str_mult = 1.0 + (sqrt(float(str_stat)) / 10.0)
 			var dev_mult: float = 2.0 + float(_mom)
-			var base_dmg = int(total_attack * dev_mult * damage_multiplier * str_mult * variable_fraction)
+			# 2026-09-03 — anchored, and the Momentum scaling is now IN the weight rather than
+			# a multiplier on an attack-based base. The old form scaled with `attack`, so the
+			# Warrior's own finisher was one of the weakest cards in the game at low level: 174
+			# at L5 with five turns of setup, against a Mage's 372 on turn one.
+			var _dev_anchor: float = _ability_anchored_damage(character, "strength",
+				DEVASTATE_WEIGHT_PER_MOMENTUM * float(_mom))
+			var base_dmg = int(_dev_anchor * damage_multiplier * variable_fraction) if _dev_anchor > 0.0 				else int(total_attack * dev_mult * damage_multiplier * str_mult * variable_fraction)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var dev_skill_bonus = character.get_skill_damage_bonus("devastate")
 			base_dmg = apply_skill_damage_bonus(character, "devastate", base_dmg, combat)
@@ -5143,7 +5222,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# tier; ambush was the Trickster's out-of-line burst (higher mult + 50% crit)
 			# that let it out-DPS everyone and kill bosses in 3t. Still gear-scaled (uses
 			# total_attack) so gear matters.
-			var base_dmg = int(base_damage * 2.2 * damage_multiplier * wits_mult * variable_fraction)  # #55 identity: 2.5→2.2 — Trickster's RELIABLE damage is weaker so a whiffed Outsmart really leaves it struggling (high-variance identity)
+			# 2026-09-03 — anchored. This was the Trickster's main reliable damage card and it
+			# was never converted, which is why the archetype could not kill anything: 2.2x an
+			# `attack` of 18 is 51, against a health bar of 569.
+			var _am_anchor: float = _ability_anchored_damage(character, "wits", float(ABILITY_WEIGHTS.get("ambush", 0.20)))
+			var base_dmg = int(_am_anchor * damage_multiplier * variable_fraction) if _am_anchor > 0.0 				else int(base_damage * 2.2 * damage_multiplier * wits_mult * variable_fraction)  # #55 identity: 2.5→2.2 — Trickster's RELIABLE damage is weaker so a whiffed Outsmart really leaves it struggling (high-variance identity)
 			# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 			var ambush_skill_bonus = character.get_skill_damage_bonus("ambush")
 			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg, combat)
@@ -5335,7 +5418,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var total_attack = character.get_total_attack() + character.get_buff_value("strength")
 				var damage_buff = character.get_buff_value("damage")
 				var damage_multiplier = 1.0 + (damage_buff / 100.0)
-				var base_dmg = int(total_attack * 4.5 * damage_multiplier * wits_mult * variable_fraction)
+				# 2026-09-03 — anchored. The gamble was strictly dominated before: 107 damage at
+				# L5 against Exploit's ~130 with no risk of self-harm, which is exactly the
+				# "why would I ever take the risk" the owner reported.
+				var _gm_anchor: float = _ability_anchored_damage(character, "wits", float(ABILITY_WEIGHTS.get("gambit", 0.42)))
+				var base_dmg = int(_gm_anchor * damage_multiplier * variable_fraction) if _gm_anchor > 0.0 					else int(total_attack * 4.5 * damage_multiplier * wits_mult * variable_fraction)
 				# Apply mastery + legacy skill enhancement (rank 0 = -20%, rank 4 = +20%)
 				var gambit_skill_bonus = character.get_skill_damage_bonus("gambit")
 				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg, combat)
