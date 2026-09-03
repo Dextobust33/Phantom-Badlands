@@ -3334,9 +3334,8 @@ func _estimate_turn_regen_for(character) -> int:
 	less than a basic attack does. Predicting that sum got it wrong; measuring cannot."""
 	if character == null:
 		return 0
-	var measured = character.get_meta("measured_turn_regen", null)
-	if measured != null and int(measured) >= 0:
-		return int(measured)
+	if character.has_meta("measured_turn_regen"):
+		return maxi(0, int(character.get_meta("measured_turn_regen")))
 	var path := String(character.get_class_path())
 	var pool: int = character.get_total_max_stamina()
 	var gear_key := "stamina_regen"

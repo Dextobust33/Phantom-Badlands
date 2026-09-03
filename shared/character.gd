@@ -4010,8 +4010,34 @@ func get_active_companion() -> Dictionary:
 #     it. Beside a fresh character it is enormously tankier than they are — which is the whole
 #     point, and the mechanical form of the setting's premise that companions outlive their
 #     delvers.
-const COMPANION_HP_SHARE := 0.5      # a level-matched companion has 50% of your health bar
+const COMPANION_HP_SHARE := 0.5      # FLOOR: no companion is ever sized below 50% of your bar
 const COMPANION_HP_UNDER_FLOOR := 0.60
+
+# HP share scales with AGGRO (#6b, user question 2026-09-02: "is companion HP high enough vs
+# monsters of the same level?"). It was a flat 0.5 for every companion regardless of how many
+# hits that companion is asked to take, which made relative durability the INVERSE of the design
+# intent. A companion's lifetime relative to its owner is 0.5*(1-a)/a, so at the old flat share:
+#
+#   Iron Golem   65% aggro -> 0.27x the owner's lifetime   (the tank dies 4x FASTER than you)
+#   Wolf         25% aggro -> 1.50x
+#   Succubus     12% aggro -> 3.67x                        (the glass caster is the durable one)
+#
+# A 21x spread, with the soakers at the fragile end. Share is now solved from aggro so every
+# companion is built to survive the job it is actually given. Clamped BELOW by the old 0.5, so
+# this strictly cannot make any existing companion weaker than it is today — it only stops the
+# tanks from being made of paper.
+const COMPANION_LIFETIME_TARGET := 1.25   # a level-matched companion outlasts its owner slightly
+const COMPANION_HP_SHARE_MAX := 2.0
+const COMPANION_DEFAULT_AGGRO := 25
+
+static func companion_hp_share(bonuses: Dictionary) -> float:
+	"""Share of the owner's health bar this companion gets, solved from its aggro so that
+	expected lifetime is roughly uniform across the roster."""
+	var aggro_pct: int = int(bonuses.get("aggro", COMPANION_DEFAULT_AGGRO))
+	var a: float = clampf(float(aggro_pct) / 100.0, 0.0, 0.80)
+	if a <= 0.0:
+		return COMPANION_HP_SHARE
+	return clampf(COMPANION_LIFETIME_TARGET * a / (1.0 - a), COMPANION_HP_SHARE, COMPANION_HP_SHARE_MAX)
 
 static var _ref_player_hp_anchors: Array = []
 static var _ref_player_hp_loaded: bool = false
@@ -4094,7 +4120,7 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	var owner_side: float = float(owner_max_hp) * companion_level_ratio_mult(level, owner_level)
 	var own_side: float = reference_player_hp(level)
 	var base: float = maxf(owner_side, own_side)
-	return maxi(10, int(round(base * COMPANION_HP_SHARE * sub_mult * bonus_mult)))
+	return maxi(10, int(round(base * companion_hp_share(bonuses) * sub_mult * bonus_mult)))
 
 func get_companion_max_hp() -> int:
 	return calculate_companion_max_hp(active_companion, get_total_max_hp(), level)
