@@ -270,6 +270,10 @@ const ABILITY_MANA_DRAIN = "mana_drain"
 const ABILITY_STAMINA_DRAIN = "stamina_drain"
 const ABILITY_ENERGY_DRAIN = "energy_drain"
 const ABILITY_REGENERATION = "regeneration"
+# Ceiling on monster regeneration, as a share of the frozen ability bar (see
+# ability_reference_bar.json). Must stay comfortably BELOW the smallest damage ability weight
+# (power_strike 0.22) or a regenerating monster can outheal a player who is playing correctly.
+const REGEN_MAX_SHARE_OF_BAR := 0.06
 const ABILITY_DAMAGE_REFLECT = "damage_reflect"
 const ABILITY_ETHEREAL = "ethereal"
 const ABILITY_ARMORED = "armored"
@@ -2169,8 +2173,8 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var _cost_bar: int = maxi(1, character.get_total_max_hp())
 	var _hp0: int = int(combat.get("player_hp_at_start", _cost_bar))
 	var _cost_taken: int = maxi(0, _hp0 - maxi(0, character.current_hp))
+	var _cost_pct: int = int(round(100.0 * float(_cost_taken) / float(_cost_bar)))
 	if _cost_taken > 0:
-		var _cost_pct: int = int(round(100.0 * float(_cost_taken) / float(_cost_bar)))
 		var _cost_col := "#9ACD32"
 		if _cost_pct >= 75:
 			_cost_col = "#FF6666"
@@ -2178,6 +2182,10 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			_cost_col = "#FFAA33"
 		messages.append("[color=%s]That cost you %d HP — %d%% of your health bar.[/color]" % [
 			_cost_col, _cost_taken, _cost_pct])
+	# Log EVERY victory, including free ones. Gating the log on cost > 0 hid exactly the most
+	# interesting result — a fight that cost nothing because a lifesteal companion out-healed
+	# it is a stronger signal about difficulty than one that cost half a bar.
+	if true:
 		playtest_log({
 			"event": "victory",
 			"monster": String(monster.get("name", "?")),
@@ -6117,7 +6125,25 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	# Regeneration ability: heal 10% HP per turn
 	if ABILITY_REGENERATION in abilities:
+		# 10% of the monster's OWN max HP per turn, capped against the reference bar.
+		#
+		# Uncapped, this scaled with the monster's pool, so the tankier the monster the more it
+		# healed — and it compounded with the role multipliers. A player's ability is worth ~22%
+		# of a NORMAL monster's bar; against an elite (x1.8 HP) that is 12% a turn against 10%
+		# healing, and against a boss (x2.8) it is 7.9% against 10% — mathematically unwinnable
+		# no matter how long the fight runs. Measured: a Hydra won 22% of fights over 40.4
+		# TURNS, and a player fled a regenerating flock member in live play because it healed
+		# faster than they could cut.
+		#
+		# The cap is a share of the FROZEN ability bar, so it is an absolute drag that does not
+		# grow with a monster's inflated pool: always well under one ability cast, so the fight
+		# always progresses. A regenerator should be a war of attrition, never an impasse.
+		var _regen_cap := 0
+		if monster_database != null and monster_database.has_method("ability_reference_hp"):
+			_regen_cap = int(float(monster_database.ability_reference_hp(int(monster.get("level", 1)))) * REGEN_MAX_SHARE_OF_BAR)
 		var heal_amount = max(1, int(monster.max_hp * 0.10))
+		if _regen_cap > 0:
+			heal_amount = mini(heal_amount, maxi(1, _regen_cap))
 		monster.current_hp = min(monster.max_hp, monster.current_hp + heal_amount)
 		messages.append("[color=#00FF00]The %s regenerates %d HP![/color]" % [monster.name, heal_amount])
 
