@@ -40396,6 +40396,83 @@ func _format_companion_abilities_summary(c: Dictionary) -> String:
 			lines.append("[color=#FFAA00]Threshold:[/color] %s" % str(t.get("name", "?")))
 	return "\n".join(lines)
 
+# === COMPANION STATS & COMPARISON (item 7 slice 2, 2026-09-03) ===
+#
+# Owner, while specifying the new-player experience: *"how to check their companions stats and
+# info (which likely needs reworked or expanded as I don't think we can currently see much
+# regarding companion stats or ways to compare them quickly and easily to other companions
+# (like we can our equipment from our inventory at a glance))"*. Correct — before this, a
+# companion showed its name, level, tier and the TOP THREE bonuses, arbitrarily truncated. No
+# HP, no totals, and no way to tell whether the one in your kennel beats the one on your side.
+#
+# Equipment already solved this (`_get_item_comparison_parts`), so this deliberately mirrors
+# that idiom — coloured `+N STAT` deltas against what you currently have — rather than
+# inventing a second visual language for the same question.
+#
+# The HP number comes from `CharacterScript.calculate_companion_max_hp`, the SHARED static the
+# server itself uses. That matters: companion HP was reworked twice in two days (aggro-scaled
+# share, then own-level floor), and a hand-copied display formula would have been wrong within
+# the day. Today's lesson, applied — see the card-damage drift that produced v0.9.742.
+func _companion_effective_stats(c: Dictionary) -> Dictionary:
+	"""Everything worth comparing about a companion, on one dict. Bonuses are scaled by the
+	variant and sub-tier multipliers so the numbers match what the companion actually
+	contributes, not the unscaled table values."""
+	var out := {"hp": 0, "bonuses": {}}
+	if c == null or c.is_empty():
+		return out
+	# Real function, not a copy: owner context makes the share model resolve correctly.
+	var owner_hp := int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
+	var owner_lvl := int(character_data.get("level", 1))
+	out["hp"] = CharacterScript.calculate_companion_max_hp(c, owner_hp, owner_lvl)
+	var mult := _get_variant_multiplier(str(c.get("variant", "Normal"))) * _get_sub_tier_multiplier(int(c.get("sub_tier", 1)))
+	var scaled := {}
+	for k in (c.get("bonuses", {}) as Dictionary).keys():
+		var v := int(float(c["bonuses"][k]) * mult)
+		if v != 0:
+			scaled[str(k)] = v
+	out["bonuses"] = scaled
+	return out
+
+func _get_companion_comparison_parts(new_c: Dictionary, active_c) -> Array:
+	"""Coloured stat deltas of `new_c` against the companion currently at your side. Same shape
+	and colour language as the equipment comparison, so the two read alike."""
+	var parts: Array = []
+	if new_c == null or new_c.is_empty():
+		return parts
+	var a := _companion_effective_stats(new_c)
+	var b := {"hp": 0, "bonuses": {}}
+	var have_active: bool = active_c != null and active_c is Dictionary and not (active_c as Dictionary).is_empty()
+	if have_active:
+		b = _companion_effective_stats(active_c)
+	if not have_active:
+		return ["[color=#00FF00]NEW[/color]"]
+	var hp_d: int = int(a["hp"]) - int(b["hp"])
+	if hp_d != 0:
+		parts.append("[color=%s]%+d HP[/color]" % ["#00FF00" if hp_d > 0 else "#FF6666", hp_d])
+	var keys := {}
+	for k in (a["bonuses"] as Dictionary).keys():
+		keys[k] = true
+	for k in (b["bonuses"] as Dictionary).keys():
+		keys[k] = true
+	for k in keys.keys():
+		var d: int = int((a["bonuses"] as Dictionary).get(k, 0)) - int((b["bonuses"] as Dictionary).get(k, 0))
+		if d != 0:
+			parts.append("[color=%s]%+d %s[/color]" % ["#00FF00" if d > 0 else "#FF6666", d, _short_bonus_label(str(k))])
+	if parts.is_empty():
+		parts.append("[color=#FFFF66]identical[/color]")
+	return parts
+
+func _get_companion_full_stat_line(c: Dictionary) -> String:
+	"""One dense line with the companion's REAL combat HP and every bonus it carries — the
+	replacement for a top-three summary that hid most of what a companion does."""
+	if c == null or c.is_empty():
+		return ""
+	var st := _companion_effective_stats(c)
+	var bits: Array = ["[color=#FF8888]%d HP[/color]" % int(st["hp"])]
+	for k in (st["bonuses"] as Dictionary).keys():
+		bits.append("[color=#00FF00]+%d %s[/color]" % [int((st["bonuses"] as Dictionary)[k]), _short_bonus_label(str(k))])
+	return "  ".join(bits)
+
 func _get_companion_card_bonus_summary(c: Dictionary) -> String:
 	# Shorter than the inspector — show top 2 stat bonuses
 	var bonuses = c.get("bonuses", {})

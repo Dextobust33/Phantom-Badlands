@@ -761,11 +761,34 @@ func _make_companion_card(c: Dictionary, is_active: bool, index: int) -> PanelCo
 	bonuses.scroll_active = false
 	bonuses.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bonuses.add_theme_font_size_override("normal_font_size", 11)
+	# 2026-09-03 (item 7 slice 2) — was the top THREE bonuses, arbitrarily truncated, with no
+	# HP and no way to tell whether this companion beats the one at your side. Now the full
+	# line plus a comparison against your active companion, in the same colour language the
+	# equipment comparison uses. Falls back to the old summary against an older client.
 	var bonus_text = ""
-	if client_ref and client_ref.has_method("_get_companion_card_bonus_summary"):
+	if client_ref and client_ref.has_method("_get_companion_full_stat_line"):
+		bonus_text = str(client_ref._get_companion_full_stat_line(c))
+	elif client_ref and client_ref.has_method("_get_companion_card_bonus_summary"):
 		bonus_text = str(client_ref._get_companion_card_bonus_summary(c))
 	bonuses.text = bonus_text
 	vbox.add_child(bonuses)
+
+	# Comparison row — only for a companion that is NOT the one already active; comparing the
+	# active companion against itself would just print "identical" on every card.
+	if client_ref and client_ref.has_method("_get_companion_comparison_parts") and not bool(c.get("is_active", false)):
+		var _active = client_ref.character_data.get("active_companion", {}) if "character_data" in client_ref else {}
+		var _same: bool = _active is Dictionary and str(_active.get("name", "")) == str(c.get("name", "")) 			and int(_active.get("level", -1)) == int(c.get("level", -2))
+		if not _same:
+			var cmp_parts: Array = client_ref._get_companion_comparison_parts(c, _active)
+			if not cmp_parts.is_empty():
+				var cmp := RichTextLabel.new()
+				cmp.bbcode_enabled = true
+				cmp.fit_content = true
+				cmp.scroll_active = false
+				cmp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				cmp.add_theme_font_size_override("normal_font_size", 10)
+				cmp.text = "[color=#808080]vs active:[/color] " + "  ".join(cmp_parts)
+				vbox.add_child(cmp)
 
 	# Capture click events on the card itself
 	card.gui_input.connect(_on_companion_card_input.bind(c, index))
