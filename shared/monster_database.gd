@@ -1781,7 +1781,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 		"is_elite": is_elite,
 		# Flagged on the monster so the client can mark an apex species in the UI — a player
 		# cannot learn to be careful of something the game never tells them is dangerous.
-		"is_apex": is_apex_species(String(base_stats.get("name", ""))),
+		"is_apex_species": is_apex_species(String(base_stats.get("name", ""))),
 		"variant_type": variant_type,  # "" / "weapon_master" / "shield_guardian" / "corrosive" / "sunder" / "elite" — drives client-side border tint on monster ASCII art
 		# Empowered (v0.9.651) — stacking modifier ids ("frenzied", "gilded", ...).
 		# name_color drives the D2-style rarity tint on name + ASCII border;

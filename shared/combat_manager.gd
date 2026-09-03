@@ -8351,6 +8351,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"monster_known": knows_monster,  # Let client know if HP is real or estimated
 		"is_rare_variant": monster.get("is_rare_variant", false),  # For visual indicator
 		"is_elite": monster.get("is_elite", false),  # Elite variant — stronger, better loot
+		# Apex species (v0.9.741) — a handful of species per tier are deliberately tuned
+		# above their band and pay 2x XP / 3x drop chance for it. The flag is here so the
+		# client can NAME them as apex: a player cannot learn to be careful of something
+		# the game never tells them is dangerous. Distinct from is_apex_variant (a rare
+		# roll) and is_apex_frontier (a place) — this is the SPECIES.
+		"is_apex_species": monster.get("is_apex_species", false),
 		"variant_type": monster.get("variant_type", ""),  # Specific variant ID for client-side border tinting on monster ASCII art
 		# Empowered (v0.9.651) — modifier ids for client-side border tint by
 		# mod count (1 blue / 2 purple / 3 orange). Additive; old clients ignore.

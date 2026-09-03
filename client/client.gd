@@ -1675,6 +1675,10 @@ var current_enemy_color: String = "#FFFFFF"  # Monster name color based on class
 var current_enemy_abilities: Array = []  # Monster abilities for damage calculation
 var current_enemy_is_rare_variant: bool = false  # For visual indicator on rare monsters
 var current_enemy_is_elite: bool = false  # Elite variant — stronger, better loot
+# v0.9.741 — apex SPECIES (Hydra, Wyvern, Death Incarnate, ...): tuned harder than their
+# tier band on purpose and rewarded for it. Marked in the UI so players can learn which
+# ones to fear, rather than only finding out by dying to them.
+var current_enemy_is_apex_species: bool = false
 var damage_dealt_to_current_enemy: int = 0
 var current_enemy_hp: int = -1  # Actual HP from server (-1 = unknown)
 var current_enemy_max_hp: int = -1  # Actual max HP from server
@@ -21209,15 +21213,22 @@ func update_enemy_hp_bar(enemy_name: String, enemy_level: int, damage_dealt: int
 	if label_node:
 		# Display enemy name with level (color is shown in main combat text)
 		# Add visual indicator for special variants
+		# v0.9.741 — an apex species is tagged wherever it appears. It stacks with ELITE
+		# rather than replacing it: an elite apex is both, and the player should see both.
+		var apex_tag = " [APEX]" if current_enemy_is_apex_species else ""
 		if current_enemy_is_elite:
-			label_node.text = "★ %s (Lvl %d) [ELITE]:" % [enemy_name, enemy_level]
+			label_node.text = "★ %s (Lvl %d) [ELITE]%s:" % [enemy_name, enemy_level, apex_tag]
+		elif current_enemy_is_apex_species:
+			label_node.text = "☠ %s (Lvl %d) [APEX]:" % [enemy_name, enemy_level]
 		elif current_enemy_is_rare_variant:
 			label_node.text = "★ %s (Lvl %d):" % [enemy_name, enemy_level]
 		else:
 			label_node.text = "%s (Lvl %d):" % [enemy_name, enemy_level]
-		# Set label color — elite overrides affinity with gold
+		# Set label color — elite overrides affinity with gold, apex with danger red.
 		if current_enemy_is_elite:
 			label_node.add_theme_color_override("font_color", Color(1.0, 0.84, 0.0))  # Gold
+		elif current_enemy_is_apex_species:
+			label_node.add_theme_color_override("font_color", Color(1.0, 0.30, 0.25))  # Danger red
 		else:
 			match current_enemy_color:
 				"#FFFF00":  # Yellow - Physical
@@ -23579,6 +23590,7 @@ func handle_server_message(message: Dictionary):
 			current_enemy_level = 0
 			current_enemy_is_rare_variant = false
 			current_enemy_is_elite = false
+			current_enemy_is_apex_species = false
 			damage_dealt_to_current_enemy = 0
 			analyze_revealed_max_hp = -1  # Reset Analyze flag
 
@@ -24466,6 +24478,7 @@ func _process_combat_start(message: Dictionary):
 	current_enemy_abilities = combat_state.get("monster_abilities", [])
 	current_enemy_is_rare_variant = combat_state.get("is_rare_variant", false)
 	current_enemy_is_elite = combat_state.get("is_elite", false)
+	current_enemy_is_apex_species = combat_state.get("is_apex_species", false)
 	current_enemy_is_boss = message.get("is_boss", false)
 	damage_dealt_to_current_enemy = 0
 	analyze_revealed_max_hp = -1  # Reset Analyze flag for new combat
@@ -28798,8 +28811,23 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.741 — The balance pass: monsters resized against a reference player, apex species,
+	# companion durability, honest ability costs, and the solo playback fix.
+	display_game("[color=#00FF00]v0.9.741[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ EVERY MONSTER IN THE GAME HAS BEEN RESIZED.[/color] Monster health, strength and defense were hand-authored numbers that had drifted from what a character at that level can actually do — difficulty [b]humped in the middle levels[/b] and then got [b]easier past level 1000[/b]. They are now [b]derived from a reference character at every level[/b] and calibrated by running thousands of real fights until they hit the target, so the ladder is finally a ladder. Level-to-level unevenness is smoothed out with it — no more a level 61 monster being a wall and a level 62 one being free.")
+	display_game("  [color=#FF8000]★ SOME MONSTERS SHOULD SCARE YOU: APEX SPECIES.[/color] The roster had gone bland — everything at your level was roughly the same fight. Now one or two species per tier are [b]deliberately tuned harder than everything else in their band[/b] and marked [color=#FF4C40]☠ [APEX][/color] in combat: [b]Skeleton, Mimic, Wyvern, Wraith, Chimaera, Titan, Jabberwock, Hydra, Phoenix, Primordial Dragon, World Serpent, Death Incarnate, Cosmic Horror, Entropy, God Slayer[/b]. They pay for the risk — [b]double XP and triple drop chance[/b]. Learn which ones to be careful of; that is the point. Everything else was levelled out (species win rates spanned [b]69 points[/b] at the same level; now 38).")
+	display_game("  [color=#FF4444]★ A REGENERATING BOSS WAS UNWINNABLE.[/color] Not hard — [b]mathematically impossible[/b]: it healed more each turn than a character of its level could deal, at every level in the game, so the fight could only ever end in your death or your escape. Regeneration is now capped.")
+	display_game("  [color=#FF4444]◆ Forcefield was immunity with a mana cost attached.[/color] One cast absorbed [b]more than your entire health bar[/b] — about thirteen turns of damage — for a tenth of your mana, which regen hands back in two turns. It now absorbs [b]about a quarter of your health bar[/b], scaled by Intelligence. The card text has been corrected too: it was quoting a shield [b]three to six times larger[/b] than the ability actually granted.")
+	display_game("  [color=#1EFF00]◆ Your companion can survive a fight now.[/color] Every companion got the [b]same flat share of HP[/b] regardless of what it does, so a tank had the pool of a glass cannon and went down [b]about four times faster than you did[/b]. HP now scales with how much the companion draws fire. Companion [b]damage, defense and resource regen were all flat too[/b] — they never grew as the companion did. All three scale now. A multi-strike monster also no longer dumps its [b]whole burst onto one target[/b], and companion lifesteal reports the heal it actually gave you.")
+	display_game("  [color=#1EFF00]◆ Your cards tell you what they cost.[/color] Ability costs are [b]sent by the server[/b] and printed on the card, along with [b]what you regenerate per turn[/b], so the numbers you plan against are the numbers you are charged. The client had been keeping its own copy of the cost table, and the two had silently drifted — which is why some cards displayed a cost of 0.")
+	display_game("  [color=#1EFF00]◆ Mage kit re-priced.[/color] [b]Magic Bolt punished partial spends so hard the choice was fake[/b] — there was one correct amount to spend and everything else was a trap. Bolt, Blast and Cleave are now anchored to [b]the health bar they have to chew through[/b], so they stay meaningful at level 10 and at level 10000. [b]Wisdom's damage contribution for casters had been accidentally deleted[/b] by an earlier pass — restored.")
+	display_game("  [color=#1EFF00]◆ Solo fights read in the right order.[/color] Solo combat never received the co-op playback pass, so every result landed [b]the moment the server spoke[/b] — health bars emptied before the line explaining the hit, and damage numbers played out of step with the log. Solo now plays back in step, the same as a party fight.")
+	display_game("  [color=#1EFF00]◆ Elites, bosses and empowered monsters are calibrated.[/color] [b]An empowered monster was harder than an elite[/b] — the danger ladder was inverted. All three roles are now measured against real fights rather than hand-tuned multipliers.")
+	display_game("  [color=#1EFF00]◆ Fixes.[/color] The [b]escape penalty[/b] was priced on raw level difference, so fleeing something thirty levels above you cost the same at level 40 as at level 4000 — it scales by ratio now. A [b]flock is budgeted as one encounter[/b] instead of per monster, so a chain of three no longer costs you triple with no chance to heal between. Victory now tells you [b]what the fight cost as a share of your health bar[/b]. The XP readout said [color=#FFE066]“(-3478 to lvl)”[/color] — that is how far you have to go, not a negative. Your [b]companion's health bar could show a stale number[/b] while the log said it was already knocked out.")
+	display_game("")
+
 	# v0.9.740 — Party leadership + rewards, buff/item targeting, co-op pacing.
-	display_game("[color=#00FF00]v0.9.740[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.740[/color]")
 	display_game("  [color=#FF8000]★ NOBODY GETS STUCK BEING THE PACK MULE.[/color] One player used to do all the work: they walked, they gathered, they crafted, and everyone else tagged along. Now [b]leadership rotates after every fight[/b] so each member takes point in turn (prefer a fixed leader? there's a [color=#FFE066]Lead: Fixed[/color] toggle in the Party menu). Gathering rewards and job XP are [b]copied in full to every member[/b] — nobody splits a pile of ore three ways — and crafting shares its XP with the party.")
 	display_game("  [color=#1EFF00]◆ Buff and heal your teammates.[/color] Every buff and item was [b]locked to yourself[/b], which made supporting your party impossible. Now [b]Forcefield, Iron Skin, Fortify, Rally, Berserk and Haste[/b] — and any item — can be aimed at [b]a teammate or their companion[/b]. You still pay the cost and your own stats set the strength, so a dedicated support build finally does something. [b]Yourself is always the first option[/b], so a quick self-cast is one press or one click.")
 	display_game("  [color=#1EFF00]◆ Parties travel together.[/color] Out in the world the leader steers and the rest follow. [b]Inside a trading post everyone moves freely[/b] — shop, craft, take quests on your own — but the party can only [b]leave together[/b], so nobody gets left behind at the gate. Party size is now [b]five[/b] (leader plus four).")
@@ -28889,14 +28917,7 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Revamped launcher.[/color] The launcher is bigger now and shows a [b]Recent Changes[/b] panel so you can read what's new before you hit Play — plus the same [color=#FFE066]💡/🐞[/color] feedback buttons. [color=#808080](Grab the new launcher from the site to get it — a one-time re-download.)[/color]")
 	display_game("")
 
-	# v0.9.727 — Dungeon-centered quests (P2).
-	display_game("[color=#00FFFF]v0.9.727[/color]")
-	display_game("  [color=#FF8000]★ QUESTS NOW CENTER ON DUNGEONS.[/color] The quest board is [b]all dungeon quests[/b] now — the old 'kill 8 monsters / walk to a post' filler is gone. Four kinds: [color=#FFE066]Conquer[/color] (clear a dungeon), [color=#FFE066]Rescue[/color] (free a trapped NPC), [color=#FF8800]Slay the Fabled[/color] (a [b]named, buffed boss[/b] inside a dungeon), and [color=#5AC8FF]Plunder[/color] (recover ✦ relics from a dungeon's floors).")
-	display_game("  [color=#1EFF00]◆ New Quest Board panel.[/color] The board is now a proper [b]panel with clear buttons[/b] — every quest has its own [color=#3BE06B]Accept[/color] / [color=#3BE06B]Turn In[/color] / [color=#FF8888]Abandon[/color], in tidy sections, no more scrolling a wall of text or guessing which number key does what. The map [b]Quests[/b] button opens the same panel (with each quest's dungeon [b]direction + distance[/b]).")
-	display_game("  [color=#1EFF00]◆ Fixes.[/color] Fabled-boss quests no longer complete from overworld kills. Low-tier dungeons no longer spawn far out in high-level territory (tier now matches the area). Cartography's ‹Locate› and the Atlas tie into where your quests point.")
-	display_game("")
-
-	# (v0.9.725/726 rolled off the visible changelog window.)
+	# (v0.9.725-727 rolled off the visible changelog window.)
 
 	# v0.9.724 — Dungeon Atlas.
 	display_game("[color=#00FFFF]v0.9.724[/color]")
@@ -32018,6 +32039,13 @@ func show_help():
   [color=#B8860B]Juggernaut[/color]=+50%% HP, stun-immune | [color=#BA55D3]Venomous[/color]=poison attacks | [color=#7B68EE]Warded[/color]=-35%% ability dmg taken
   [color=#FFD700]Gilded[/color]=harmless, +2 loot reveals | [color=#FF8C00]Broodcalling[/color]=kin avenge it (guaranteed chain fight!)
 
+[b][color=#FFD700]══ ☠ APEX SPECIES ══[/color][/b]
+[color=#AAAAAA]A handful of species per tier are tuned to be [b]genuinely dangerous[/b] — well above the rest of their band, on purpose. They are tagged [color=#FF4C40]☠ [APEX][/color] on the enemy's health bar.[/color]
+[color=#AAAAAA]They pay for the risk: [color=#FFD700]2× experience[/color] and [color=#FFD700]3× drop chance[/color]. Learn which ones to respect — then hunt them when you can take them.[/color]
+  [color=#FF8888]Skeleton | Mimic | Wyvern | Wraith | Chimaera | Titan | Jabberwock | Hydra[/color]
+  [color=#FF8888]Phoenix | Primordial Dragon | World Serpent | Death Incarnate | Cosmic Horror | Entropy | God Slayer[/color]
+[color=#AAAAAA]Apex stacks with ELITE and Empowered — an elite apex carries both tags, and both rewards.[/color]
+
 [b][color=#FFD700]══ ⚜ PATHS (TALENT TREE) ══[/color][/b]
 [color=#AAAAAA]Permanent talents for this life. Open via [/color][color=#FFD700]Stats → ⚜ Paths[/color][color=#AAAAAA]. Earn 1 point per 5 levels + 1 per feat (first dungeon/boss/Empowered/3-mod/100 kills/apex kill).[/color]
 [color=#AAAAAA]3 branches per archetype, unlock top-down, every node costs 1 point. Branch [color=#FFB74D]★ keystones[/color] trade power for a downside. Class keystone unlocks at 8 points spent. Choices are permanent — full clear is impossible, build with intent![/color]
@@ -32341,7 +32369,7 @@ func search_help(search_term: String):
 		{
 			"title": "COMBAT FORMULAS",
 			"keywords": ["combat", "attack", "damage", "defense", "hit", "miss", "dodge", "flee", "crit", "critical", "formula", "calculation", "level", "penalty", "initiative"],
-			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - enemy speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed - level_diff×3\n[color=#FF4444]Initiative:[/color] If monster speed > DEX, (speed-DEX)×2% chance enemy strikes first"
+			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - enemy speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed, penalised by the level RATIO (~30 pts per doubling of the monster's level), floor 25%\n[color=#FF4444]Initiative:[/color] If monster speed > DEX, (speed-DEX)×2% chance enemy strikes first"
 		},
 		{
 			"title": "OUTSMART",
@@ -32357,6 +32385,14 @@ func search_help(search_term: String):
 			"title": "MONSTER ABILITIES",
 			"keywords": ["monster", "ability", "abilities", "multi", "strike", "berserker", "enrage", "life", "steal", "glass", "cannon", "poison", "blind", "curse", "disarm", "bleed", "drain", "armored", "ethereal", "regeneration", "reflect", "thorns", "death", "summoner", "corrosive", "sunder", "wish", "granter", "gem", "gold", "hoarder"],
 			"content": "[color=#FF4444]Offensive:[/color] Multi-Strike (2-3x), Berserker (+dmg when hurt), Enrage (+dmg/round), Life Steal, Glass Cannon (3x dmg, 50% HP)\n[color=#808080]Debuffs:[/color] Curse (-def), Disarm (-atk), Bleed (DoT), Slow (-flee), Drain (resources)\n[color=#FF00FF]Poison:[/color] 30% monster STR damage/round, 35 rounds. Cure: Recharge\n[color=#808080]Blind:[/color] -30% hit, hides monster HP, 15 rounds. Cure: Recharge\n[color=#6666FF]Defensive:[/color] Armored (+50% def), Ethereal (50% dodge), Regeneration, Reflect (25%), Thorns\n[color=#FFD700]Special:[/color] Death Curse (damage on death), Summoner (reinforcements), Corrosive/Sunder (gear damage)\n[color=#00FF00]Rewards:[/color] Wish Granter (10% wish), Gem Bearer (gems scale with level), Gold Hoarder (3x Valor)"
+		},
+		{
+			"title": "APEX SPECIES",
+			"keywords": ["apex", "dangerous", "deadly", "hydra", "wyvern", "phoenix", "titan", "chimaera", "jabberwock", "wraith", "mimic", "skeleton", "dragon", "serpent", "entropy", "cosmic", "horror", "god", "slayer", "death", "incarnate", "hard", "risk", "reward"],
+			"content": "[color=#FF4C40]☠ APEX[/color] marks a species tuned to be [b]genuinely dangerous[/b] — well above the rest of its tier, on purpose. One or two exist per tier so there is something to respect at every stage of the climb.
+[color=#FFD700]Rewards:[/color] 2× experience and 3× drop chance. The risk is priced in.
+[color=#FF8888]The list:[/color] Skeleton, Mimic, Wyvern, Wraith, Chimaera, Titan, Jabberwock, Hydra, Phoenix, Primordial Dragon, World Serpent, Death Incarnate, Cosmic Horror, Entropy, God Slayer
+[color=#AAAAAA]Apex stacks with ELITE and with Empowered modifiers — an elite apex carries both tags and both sets of rewards. Check the enemy's health bar label before you commit.[/color]"
 		},
 		{
 			"title": "ITEMS & POTIONS",
