@@ -6489,8 +6489,19 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 						# Immediate lifesteal heal (percent is pre-scaled)
 						var lifesteal_pct = ability.get("percent", ability.get("base_percent", 20))
 						var heal_amount = max(1, int(character.get_total_max_hp() * lifesteal_pct / 100.0))
+						# Report what was ACTUALLY healed, not what was intended. The heal is
+						# clamped by missing HP, so at near-full health this logged a large
+						# number while restoring almost nothing — and because it never said the
+						# heal was FOR YOU, a fight read as though damage had gone missing.
+						# Reported from live play: a Chimaera logged 298 damage against an 82 HP
+						# drop, with "Kiss of Death drains 428 HP" as the only clue.
+						var hp_before_drain: int = character.current_hp
 						character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
-						messages.append("[color=#00FF00]%s uses %s and drains %d HP![/color]" % [companion.name, ability_name, heal_amount])
+						var actual_drain_heal: int = character.current_hp - hp_before_drain
+						if actual_drain_heal > 0:
+							messages.append("[color=#00FF00]%s uses %s and drains %d HP for you![/color]" % [companion.name, ability_name, actual_drain_heal])
+						else:
+							messages.append("[color=#00FF00]%s uses %s — already at full health.[/color]" % [companion.name, ability_name])
 					elif effect == "mana_restore":
 						# Restore player's primary resource based on class
 						var restore_percent = ability.get("value", 20)
