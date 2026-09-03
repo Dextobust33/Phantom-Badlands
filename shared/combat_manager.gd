@@ -2160,6 +2160,35 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		messages.append("[color=#FFD700]%s[/color]" % death_msg)
 	messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
 
+
+	# v0.9.599 — chase-affix on-kill procs. Past the revive checks so a
+	# Phoenix-rebirth boss doesn't pay out twice in one fight.
+	_apply_on_kill_chase_procs(character, messages)
+
+	# Death curse ability: deal damage on death (nerfed from 25% to 10%, reduced by WIS)
+	# Undead racial: immune to death curses
+	if ABILITY_DEATH_CURSE in abilities:
+		if character.is_immune_to_death_curse():
+			messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
+		else:
+			var base_curse_damage = int(monster.max_hp * 0.10)  # Reduced from 25% to 10%
+			# WIS provides ability resistance: reduces damage by min(50%, WIS/200)
+			var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
+			var wis_reduction = minf(0.50, float(player_wis) / 200.0)  # Max 50% reduction at WIS 100+
+			var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
+			curse_damage = max(1, curse_damage)
+			character.current_hp -= curse_damage
+			character.current_hp = max(1, character.current_hp)
+			if wis_reduction > 0:
+				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
+			else:
+				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
+
+	# MEASURED HERE, DELIBERATELY: after every post-defeat effect has resolved.
+	# This block originally sat right under the "is defeated" line, BEFORE death curse
+	# applied its damage — so a flock of Demon Champions that took a player to 1 HP was
+	# logged as costing 0% of the bar. The player reported the truth and the instrument
+	# disagreed with them; the instrument was wrong.
 	# #6 (2026-09-02) — report what the fight actually COST as a share of the health bar.
 	# The whole difficulty model is expressed in those terms (normal ~40%, empowered ~55%,
 	# elite ~65%, boss ~80%), but a player had no way to see the number, so a playtest could
@@ -2202,29 +2231,6 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			"dmg_dealt": int(combat.get("total_damage_dealt", 0)),
 			"dmg_taken_gross": int(combat.get("total_damage_taken", 0)),
 		})
-
-	# v0.9.599 — chase-affix on-kill procs. Past the revive checks so a
-	# Phoenix-rebirth boss doesn't pay out twice in one fight.
-	_apply_on_kill_chase_procs(character, messages)
-
-	# Death curse ability: deal damage on death (nerfed from 25% to 10%, reduced by WIS)
-	# Undead racial: immune to death curses
-	if ABILITY_DEATH_CURSE in abilities:
-		if character.is_immune_to_death_curse():
-			messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
-		else:
-			var base_curse_damage = int(monster.max_hp * 0.10)  # Reduced from 25% to 10%
-			# WIS provides ability resistance: reduces damage by min(50%, WIS/200)
-			var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
-			var wis_reduction = minf(0.50, float(player_wis) / 200.0)  # Max 50% reduction at WIS 100+
-			var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
-			curse_damage = max(1, curse_damage)
-			character.current_hp -= curse_damage
-			character.current_hp = max(1, character.current_hp)
-			if wis_reduction > 0:
-				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
-			else:
-				messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
 
 	# Calculate XP with smooth level-based scaling (no tier cliffs)
 	var base_xp = monster.experience_reward
