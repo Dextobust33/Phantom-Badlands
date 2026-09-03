@@ -211,8 +211,19 @@ def ensure_character(user, acc, cname, fn):
         return
     spec = RECREATE[cname]
     print("  %s is gone (permadeath?) - recreating" % cname)
+    # 2026-09-03 — recreate with balance_char.gd, NOT make_char.gd. make_char only levels a
+    # character and spends its stat points; it grants no equipment and no companion. So every
+    # fixture rebuilt after a permadeath came back NAKED, while the long-lived fixtures beside
+    # it carried years of accumulated gear. A co-op test then compared a level 13 Wizard with
+    # seven pieces (1128 HP) against a freshly rebuilt level 10 Ranger with none (81 HP) and
+    # read as a 14x class imbalance, when the base values were 114 against 81 and the whole gap
+    # was equipment. Any test run on that pairing is measuring the fixture, not the game.
+    #
+    # balance_char builds the REFERENCE PLAYER instead: level-appropriate gear rolled from the
+    # real drop tables plus a tier-appropriate companion, which is exactly what the monster
+    # curve is calibrated against.
     subprocess.run([GODOT, "--headless", "--path", PROJECT, "--script",
-                    "tools/test_setup/make_char.gd", "--",
+                    "tools/test_setup/balance_char.gd", "--",
                     "--acc=%s" % acc, "--user=%s" % user, "--pass=devtest",
                     "--name=%s" % cname, "--class=%s" % spec["cls"], "--race=%s" % spec["race"],
                     "--level=%d" % spec["level"], "--stat=%s" % spec["stat"]],
