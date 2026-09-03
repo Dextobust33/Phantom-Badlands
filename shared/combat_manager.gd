@@ -154,6 +154,25 @@ const READ_OUTSMART_PER: int = 15  # +% Outsmart success per Read, against the c
 # 48 base + 5x5 = 73% at a full Read for a Trickster: reliable, but only after five turns of
 # setup. Without this the cap ate every stack past the second — see _outsmart_chance.
 const READ_CAP_PER: float = 5.0
+
+# Outsmart penalty by monster ROLE (2026-09-03, owner direction).
+#
+# The Trickster's identity is reach: *"kill enemies BIGGER than the warrior or mage can"*, and
+# the level penalty is deliberately soft so that reach is real. But Outsmart bypasses the health
+# bar entirely, and an elite or boss is hard almost entirely BECAUSE of its health bar — so
+# Outsmart was quietly ignoring the role multiplier as well. Measured after Read was fixed:
+# Tricksters won 50-55% against elites where every other archetype managed 11-28%, while being
+# the WEAKEST archetype against normals.
+#
+# The owner's call was that the reach should cross LEVEL, not ROLE. So a bigger, meaner thing is
+# harder to trick, in proportion to how much of its difficulty lives in HP that Outsmart would
+# otherwise skip. The level reach — the part that was actually signed off — is untouched.
+const OUTSMART_ROLE_PENALTY := {
+	"normal": 0,
+	"empowered": 10,   # 1-3 stacking modifiers; still a normal-bodied monster underneath
+	"elite": 22,       # ~1.8x the health bar, which is exactly what Outsmart would be skipping
+	"boss": 35,        # ~2.8x, and the fight the archetype should not simply be able to opt out of
+}
 # v0.9.697 — Mage Focus: a RAMP. Every spell channeled builds Focus, which
 # passively boosts ALL spell damage. Meteor is the DISCHARGE — bigger per-Focus
 # bonus, then resets the ramp.
@@ -2859,6 +2878,20 @@ func process_special(combat: Dictionary) -> Dictionary:
 		"combat_ended": false
 	}
 
+func _monster_role_name(monster) -> String:
+	"""Which role tier a monster is, as the danger model names them. Boss beats elite beats
+	empowered, because a monster can carry more than one flag and the penalty should reflect
+	the hardest thing about it."""
+	if monster == null or not (monster is Dictionary):
+		return "normal"
+	if monster.get("is_boss", false):
+		return "boss"
+	if monster.get("is_elite", false):
+		return "elite"
+	if monster.get("is_empowered", false):
+		return "empowered"
+	return "normal"
+
 func _outsmart_chance(character, monster, combat) -> int:
 	"""v0.9.698 — the SINGLE source for Outsmart success chance, so the real roll
 	(process_outsmart) and the Read meter's live preview (get_combat_display) always
@@ -2905,6 +2938,10 @@ func _outsmart_chance(character, monster, combat) -> int:
 	if level_diff < 0:
 		level_bonus = min(15, abs(level_diff))
 	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
+	# Role penalty — see OUTSMART_ROLE_PENALTY. Applied here, in the SINGLE source of the odds,
+	# so the meter preview and the real roll cannot disagree about it.
+	var role_penalty: int = int(OUTSMART_ROLE_PENALTY.get(_monster_role_name(monster), 0))
+	outsmart_chance -= role_penalty
 	outsmart_chance += int(character.get_path_effect_total("outsmart_pct"))
 	# v0.9.698 — Trickster reframe: each Read (built by playing Trickster abilities)
 	# adds READ_OUTSMART_PER% so a well-read enemy becomes reliably outsmartable.
@@ -2945,8 +2982,14 @@ func _outsmart_chance(character, monster, combat) -> int:
 	# makes it reliable, which is what the Read engine was for. Scaled by the class multiplier
 	# so a Mage still gets roughly half the Trickster's reach and a Warrior a quarter.
 	var read_cap_bonus: int = int(float(read) * READ_CAP_PER * class_os_mult)
+	# The role penalty has to come off the CEILING as well as the raw chance. Subtracting it
+	# from the raw alone did almost nothing at high Read, because the cap was what actually
+	# bound — measured: Ninja vs an L80 elite did not move at all, and drifted UP to 66%.
+	# That is the same shape as the Read bug this pass just fixed: a term that only touches a
+	# value the cap overrides is a term with no effect. Taking it off both means the penalty
+	# applies exactly once, whichever of the two is binding.
 	var max_chance = max((10 if is_trickster else 4),
-		base_max_chance + read_cap_bonus - int(monster_intelligence / 3))
+		base_max_chance + read_cap_bonus - role_penalty - int(monster_intelligence / 3))
 	# #55 — repeated-attempt falloff: each prior Outsmart this fight halves the chance,
 	# so it can't be retried to near-certainty over a long fight (the monster catches on).
 	var os_attempts := int(combat.get("outsmart_attempts", 0))

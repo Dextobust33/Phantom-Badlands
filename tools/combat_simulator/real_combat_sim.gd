@@ -1090,11 +1090,23 @@ func run_role_audit():
 	print("
 ===== #6 ROLE AUDIT (measured vs ROLE_TARGETS) =====")
 	print("Each role states a target fight length and cost; multipliers are derived from them.")
-	print("%-10s %-8s %10s %10s %10s %10s %8s" % ["Role", "Level", "turns", "target", "HPcost", "target", "win%"])
+	# `turns` is TRUNCATED BY DEATH: a lost fight ends the moment the player dies, so at a 23%
+	# elite win rate the mean is dominated by short deaths and reads far below target even when
+	# a fight you WIN lands on it. Reading that column as "elite fights are too short" is an
+	# instrument artifact, and acting on it is what made hp_mult run away to 305x once already
+	# (see a9e3545 — two coupled targets oscillate).
+	#
+	# `eff` is the unbiased companion: turns extrapolated to completion at the rate the player
+	# was actually chewing through the monster, so every fight contributes and none is selected
+	# for. It is REPORT-ONLY and must stay that way — feeding a length signal back into the
+	# calibrator is the failure mode above, whereas printing one is just being honest.
+	print("%-10s %-8s %10s %8s %10s %10s %10s %8s" % [
+		"Role", "Level", "turns(obs)", "eff", "target", "HPcost", "target", "win%"])
 	for role in ["normal", "empowered", "elite", "boss"]:
 		var tgt: Dictionary = monster_db.ROLE_TARGETS.get(role, {})
 		for lvl in [1, 10, 50, 250, 1000, 5000]:
 			var turns_tot := 0.0
+			var eff_tot := 0.0
 			var cost_tot := 0.0
 			var wins := 0
 			var n := 0
@@ -1124,13 +1136,18 @@ func run_role_audit():
 					if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 						wins += 1
 					turns_tot += float(turns)
+					# Extrapolate to completion so death does not truncate the length signal.
+					var m_max: float = maxf(1.0, float(monster.get("max_hp", 1)))
+					var m_left: float = maxf(0.0, float(monster.get("current_hp", 0)))
+					var dealt: float = maxf(1.0, m_max - m_left)
+					eff_tot += minf(200.0, float(turns) * m_max / dealt)
 					cost_tot += 100.0 * float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
 					n += 1
 					combat_mgr.end_combat(0, false, false)
 			if n == 0:
 				continue
-			print("%-10s %-8d %10.1f %10.1f %9.0f%% %9.0f%% %7d%%" % [
-				role, lvl, turns_tot / n, float(tgt.get("turns", 0.0)),
+			print("%-10s %-8d %10.1f %8.1f %10.1f %9.0f%% %9.0f%% %7d%%" % [
+				role, lvl, turns_tot / n, eff_tot / n, float(tgt.get("turns", 0.0)),
 				cost_tot / n, 100.0 * float(tgt.get("danger", 0.0)), int(100.0 * wins / n)])
 	print("=====================================================================
 ")
@@ -2774,6 +2791,14 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 		m["max_hp"] = int(m.get("max_hp", 1) * float(rm.hp_mult))
 		m["strength"] = int(m.get("strength", 1) * float(rm.str_mult))
 		m["defense"] = int(m.get("defense", 1) * maxf(1.0, float(rm.str_mult)))
+		# 2026-09-03 — STAMP THE ROLE FLAG, not just the stats. The sim was building a monster
+		# with elite numbers and normal flags, so anything the game keys off the flag rather
+		# than the stat line was invisible here: the new per-role Outsmart penalty measured as
+		# having no effect at all, and boss-only damage bonuses, empowered mod handling and
+		# role-gated loot were all being measured against the wrong monster too.
+		m["is_empowered"] = (et == "empowered")
+		m["is_elite"] = (et == "elite")
+		m["is_boss"] = (et == "boss")
 	if extra_hp_mult != 1.0:
 		m["max_hp"] = int(m.get("max_hp", 1) * extra_hp_mult)
 	if not _cal_override.is_empty() and int(_cal_override.get("level", -1)) == level:

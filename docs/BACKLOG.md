@@ -1814,7 +1814,10 @@ Consequence: **boss win rate at L1-L10 is 10-12%.** The owner previously accepte
 *"companions and gear will make up the difference"* — 10% is below what was accepted, and it is
 a burst-damage problem, not a difficulty preference.
 
-- [ ] **DECISION NEEDED: split the role multipliers onto two axes** — HP for length, STR for
+- [x] ~~**DECISION NEEDED: split the role multipliers onto two axes**~~ **RETRACTED — see the
+      CORRECTION section below. The length problem was an instrument artifact and this fix has
+      a documented failure mode.** Original text kept for the record:
+- [ ] ~~split the role multipliers onto two axes~~ — HP for length, STR for
       danger — so an elite is a LONGER fight at its target cost rather than a shorter, sharper
       one. This is the honest fix and it is what the target table has always said it wanted
       (9 turns for an elite, 14 for a boss). Do NOT tune win rates directly; that is the symptom
@@ -1848,6 +1851,95 @@ elites hard.
 The card previews: `preview_ability_effect` reads the live curve, and the drift guard was
 re-run after the calibration. 22 checks, 0 drift.
 
+## ⚑ CORRECTION — "elite/boss fights are too short" was an INSTRUMENT ARTIFACT (2026-09-03)
+
+**Retracted, and worth reading before anyone acts on a fight-length number again.**
+
+Earlier this session I reported that elites and bosses hit their danger target "by getting
+sharper, not longer" — a 5.3-turn elite against a 9-turn target — and recommended splitting the
+role multipliers onto two axes to fix it. The owner approved conditionally: *"as long as this is
+well documented and isn't likely to cause us more future problems."*
+
+That condition is what saved it. Checking the history first (a9e3545) showed two-axis
+calibration had already been tried and reverted, because **turns and cost are coupled through
+the win rate**: raise HP to lengthen a fight, cost rises, the player dies sooner, the measured
+fight shortens. `hp_mult` ran away to 305x from 11.6x. So the recommended fix had a documented
+failure mode — and then the measurement turned out not to need fixing at all.
+
+`_fight_stats_at` already had an unbiased length metric, `eff_turns` (turns extrapolated to
+completion at the rate the player was actually chewing through the monster — every fight
+contributes, none is selected for). The role audit simply never printed it. Now it does:
+
+| role | turns(obs) | **eff** | target |
+|---|---|---|---|
+| normal L10 | 4.9 | **6.1** | 5.0 |
+| elite L10 | 4.8 | **12.0** | 9.0 |
+| elite L50 | 3.7 | **10.5** | 9.0 |
+| boss L10 | 4.6 | **21.4** | 14.0 |
+| boss L50 | 5.3 | **19.1** | 14.0 |
+
+**Fight length is on target or ABOVE it.** An elite at L10 is a ~12-turn fight, not a 5-turn
+one; a boss is ~21 against a target of 14. The `turns(obs)` column is truncated by death — at a
+17% elite win rate the mean is dominated by short losses — so it reads short exactly where the
+monster is strong. Acting on it would have made monsters even beefier: the runaway again.
+
+### What the real problem is
+
+The COST axis, and it has the same disease.
+
+| role | HP cost | target | win |
+|---|---|---|---|
+| elite L10 | 91% | 65% | 17% |
+| boss L10 | 97% | 80% | **7%** |
+| boss L50 | 96% | 80% | 15% |
+
+Cost is measured across all fights, and **a dead player has spent 100% of their bar**. So at a
+7% win rate the measured cost is pinned near 100% almost by definition — "cost 97%" and "win 7%"
+are the same fact stated twice. The calibrator cannot drive cost to 80% while the win rate is
+low, because deaths peg the metric. That is why `rolecal` does not converge at L1-L50.
+
+- [ ] **RECOMMENDED (replaces the two-axis proposal): calibrate the role multipliers against a
+      WIN-RATE target instead of a cost target.** Win rate is not truncated, not saturated, and
+      is the language the design decisions are actually made in — the owner's own sign-off was
+      *"I'm okay with the bosses currently"* about win rates, not about cost percentages. Still
+      SINGLE-AXIS, so it cannot oscillate; it just replaces a saturating metric with a
+      well-behaved one. Low risk, and it directly addresses the 7% boss
+- [ ] Do NOT split onto two axes. Documented failure, and the problem it was meant to solve
+      does not exist
+- [ ] `normal` L50 is an outlier: 59% cost against a 40% target, 64% win. Worth a look after
+      the metric change
+
+### A second instrument defect found on the way
+
+`make_monster` in the simulator applied role MULTIPLIERS but never set the role FLAGS
+(`is_elite` / `is_boss` / `is_empowered`). Every audit was fighting a monster with elite numbers
+and normal flags, so anything the game keys off the flag rather than the stat line was invisible:
+the new Outsmart role penalty measured as having no effect whatsoever, and boss-only damage
+bonuses, empowered-mod handling and role-gated loot were all being measured against the wrong
+monster. Fixed.
+
+That makes **seven** instrument defects in two days. The rule holds: check what a number is
+measuring before believing it, and check it again before acting on it.
+
+## ⚑ Outsmart role penalty — landed, partially (owner direction 2026-09-03)
+
+Owner's call: the Trickster's reach should cross **level, not role**. `OUTSMART_ROLE_PENALTY`
+(empowered 10 / elite 22 / boss 35) now comes off the odds, sized to the share of a role's
+difficulty that lives in the health bar Outsmart would otherwise skip.
+
+It had to be taken off the **ceiling** as well as the raw chance — subtracting it from the raw
+alone did nothing at high Read, because the cap was what actually bound (Ninja vs an L80 elite
+did not move, and drifted UP to 66%). Same shape as the Read-cap bug fixed an hour earlier: a
+term that only touches a value the cap overrides is a term with no effect.
+
+Measured (60 fights/cell): L30 elite tricksters 50/28/41% → **38/26/31%** against 11-23% for
+everyone else. L80 elite 53/55/50% → **53/53/50%**, against 20-28%.
+
+- [ ] **L80 elite is still a ~25-point gap.** Mechanism identified: Outsmart is RETRYABLE (the
+      once-per-combat lock went in v0.9.698) and Read can be rebuilt, so over a long elite fight
+      a Trickster gets several shots and the cumulative odds far exceed the per-attempt cap even
+      with the 0.5 falloff. Tightening the falloff, or capping attempts per fight, is the lever —
+      not the per-role penalty. Owner's call whether 50% vs 25% is the intended identity
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
