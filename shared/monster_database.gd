@@ -293,16 +293,21 @@ func generate_monster(min_level: int, max_level: int, biome: String = "") -> Dic
 
 	return monster
 
-func generate_monster_by_name(monster_name: String, target_level: int, suppress_rare_rolls: bool = false) -> Dictionary:
+func generate_monster_by_name(monster_name: String, target_level: int, suppress_rare_rolls: bool = false, force_role: String = "") -> Dictionary:
 	"""Generate a specific monster type by name at the given level.
 	suppress_rare_rolls=true skips the variant/empowered/cosmetic rolls so a FLOCK member
 	generates as a plain base — the caller then stamps the killed monster's inherited
-	variant/empowered onto it (reapply_variant / reapply_empowered), no re-roll, no compounding."""
+	variant/empowered onto it (reapply_variant / reapply_empowered), no re-roll, no compounding.
+
+	force_role ("empowered" / "elite") makes the corresponding roll land instead of leaving it
+	to chance. Elite is a 1%% roll and empowered 25%%, so testing either by hand meant spawning
+	dozens of monsters and hoping — which is why the elite and boss danger targets went
+	unverified in play while every other change was being checked. Admin/testing only."""
 	# Find the monster type by name
 	for type_id in MonsterType.values():
 		var base_stats = get_monster_base_stats(type_id)
 		if base_stats.name == monster_name:
-			var m = scale_monster_to_level(base_stats, target_level, suppress_rare_rolls)
+			var m = scale_monster_to_level(base_stats, target_level, suppress_rare_rolls, force_role)
 			_apply_out_of_tier_bonus(m, type_id, target_level)
 			return m
 
@@ -1519,7 +1524,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 		"description": "A mysterious creature"
 	}
 
-func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_rare_rolls: bool = false) -> Dictionary:
+func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_rare_rolls: bool = false, force_role: String = "") -> Dictionary:
 	"""Scale monster stats to match target level, accounting for expected player equipment"""
 	var level_diff = target_level - base_stats.base_level
 
@@ -1639,7 +1644,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 
 	# 1% chance for ELITE variant (powerful, rewarding) - Lv15+ only, separate roll
 	var is_elite = false
-	if not suppress_rare_rolls and not is_rare_variant and randf() < 0.01 and target_level >= 15:
+	if force_role == "elite" or (not suppress_rare_rolls and not is_rare_variant and randf() < 0.01 and target_level >= 15):
 		is_elite = true
 		is_rare_variant = true
 		variant_type = "elite"
@@ -1680,7 +1685,7 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 	# an additional 10% for 3. Server grants +1 combat-loot reveal per modifier
 	# (+1 extra for Gilded) and drop_chance scales below.
 	var empowered_mods: Array = []
-	if not suppress_rare_rolls and not is_rare_variant and target_level >= 5 and randf() < 0.25:
+	if force_role == "empowered" or (not suppress_rare_rolls and not is_rare_variant and target_level >= 5 and randf() < 0.25):
 		var mod_count = 1
 		if target_level >= 40 and randf() < 0.10:
 			mod_count = 3

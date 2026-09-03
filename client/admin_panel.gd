@@ -178,6 +178,11 @@ func _render_page() -> void:
 			_title_label.text = "ADMIN — COMBAT"
 			_subtitle_label.text = "[color=#aaaaaa]Force encounters and toggle invincibility.[/color]"
 			_add_button("Spawn Monster (own level)", "spawn_mob_own_level")
+			_subtitle_subline("A normal same-level monster of a species that really spawns here.")
+			_add_button("Spawn EMPOWERED (own level)", "spawn_mob_empowered", Color(1.0, 0.72, 0.3))
+			_subtitle_subline("Normally a 25% roll. Target: ~55% of your health bar.")
+			_add_button("Spawn ELITE Champion (own level)", "spawn_mob_elite", Color(1.0, 0.45, 0.45))
+			_subtitle_subline("Normally a 1% roll, so testing one by hand meant ~100 spawns. Target: ~65%.")
 			_add_button("Spawn Wish Granter (1 HP, 100% wish)", "gm_spawnwish")
 			_add_button("Toggle Godmode", "gm_godmode")
 			_add_separator()

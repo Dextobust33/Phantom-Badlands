@@ -33741,6 +33741,12 @@ func _on_admin_panel_action(action_id: String) -> void:
 				send_to_server({"type": "gm_giveconsumable", "item_type": "charm_taunt", "tier": 5})
 		"spawn_mob_own_level":
 			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1))})
+		"spawn_mob_empowered":
+			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1)),
+				"force_role": "empowered"})
+		"spawn_mob_elite":
+			send_to_server({"type": "gm_spawnmonster", "level": int(character_data.get("level", 1)),
+				"force_role": "elite"})
 		"gm_give_test_card":
 			send_to_server({"type": "gm_give_test_card"})
 		"gm_toggle_coop":

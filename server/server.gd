@@ -37619,13 +37619,16 @@ func handle_gm_spawnmonster(peer_id: int, message: Dictionary):
 		return
 	var monster_name = message.get("monster_name", "")
 	var monster_level = int(message.get("level", ch.level))
+	# force_role ("empowered"/"elite") makes that roll land instead of leaving it to chance.
+	# Elite is a 1% roll, so verifying the elite danger target by hand previously meant
+	# spawning ~100 monsters — which is why it never got checked in play.
+	var force_role := String(message.get("force_role", ""))
 	if monster_name.is_empty():
-		# Spawn random monster at character level
-		var monster = monster_db.generate_monster(monster_level, monster_level)
-		_start_gm_combat(peer_id, monster)
-	else:
-		var monster = monster_db.generate_monster_by_name(monster_name, monster_level)
-		_start_gm_combat(peer_id, monster)
+		# Pick a species that ACTUALLY spawns at this level, then force the role onto it.
+		var picked = monster_db.select_monster_type(monster_level)
+		monster_name = String(monster_db.get_monster_base_stats(picked).get("name", ""))
+	var monster = monster_db.generate_monster_by_name(monster_name, monster_level, false, force_role)
+	_start_gm_combat(peer_id, monster)
 
 func _start_gm_combat(peer_id: int, monster: Dictionary):
 	"""Start combat with a GM-spawned monster"""
