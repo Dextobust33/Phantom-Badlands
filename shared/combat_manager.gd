@@ -2198,7 +2198,9 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			"hp_cost": _cost_taken,
 			"hp_bar": _cost_bar,
 			"hp_cost_pct": _cost_pct,
-			"turns": int(combat.get("rounds", 0)),
+			"turns": int(combat.get("round", 0)),
+			"dmg_dealt": int(combat.get("total_damage_dealt", 0)),
+			"dmg_taken_gross": int(combat.get("total_damage_taken", 0)),
 		})
 
 	# v0.9.599 — chase-affix on-kill procs. Past the revive checks so a
@@ -3346,6 +3348,12 @@ func _ability_anchored_damage(character, stat_name: String, weight: float) -> fl
 # Target share of a same-level normal monster's health bar, per ability, at a reference stat
 # line and a full variable-cost spend. Read these as the design: "power strike takes a fifth of
 # a normal monster". Tuned against the trickster kit, which already sat at a sane 10-30%.
+# Share of the caster's OWN max HP a full-spend Forcefield absorbs. Read it as the defensive
+# twin of ABILITY_WEIGHTS: a power strike removes ~22% of a monster, a forcefield prevents ~25%
+# of a health bar. Anything approaching 1.0 here is immunity, which is what the old flat formula
+# had quietly become.
+const FORCEFIELD_SHARE_OF_BAR := 0.25
+
 const ABILITY_WEIGHTS := {
 	"power_strike": 0.22,
 	"cleave": 0.28,
@@ -4079,8 +4087,22 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# Variable cost (v0.9.262) — apply_variable_cost helper above has
 			# spent the mana and set variable_fraction. Shield magnitude scales
 			# with spend: full = 100 + INT × 8; floor = 30% of that.
-			var int_stat = character.get_effective_stat("intelligence")
-			var shield_value = int((100 + (int_stat * 8)) * variable_fraction)
+			# #6c (2026-09-02) — ANCHORED to the player's own health bar, like every damage
+			# ability is anchored to the monster's. Forcefield was the one card the ability pass
+			# missed, still on the legacy flat `100 + INT*8`: at L50 with ~76 INT that is a 708
+			# shield on a 662 HP character — MORE THAN A FULL HEALTH BAR for ~10% of the mana
+			# pool, refunded by regen in about two turns. A normal monster deals ~53 a turn at
+			# that level, so one cast absorbed ~13 turns of damage. Reported from live play as
+			# "as long as I maintain it I don't really get hurt", and it is why a logged elite
+			# fight cost 0% of the bar against a 65% target.
+			#
+			# Now a full spend absorbs FORCEFIELD_SHARE_OF_BAR of max HP, scaled by the same
+			# stat ratio the damage abilities use, so Intelligence still matters and the value
+			# tracks progression instead of drifting away from it.
+			var _ff_bar: float = float(character.get_total_max_hp())
+			var shield_value = int(_ff_bar * FORCEFIELD_SHARE_OF_BAR * variable_fraction
+				* _ability_stat_ratio(character, "intelligence"))
+			shield_value = maxi(1, shield_value)
 			# v0.9.638 — Forcefield is a buff (shield absorption) that never piped
 			# through apply_skill_damage_bonus. Scale via the same helper so
 			# rank-up +Damage / bonus_damage imprint amplify shield magnitude.
