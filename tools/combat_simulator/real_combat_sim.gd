@@ -81,6 +81,7 @@ func _audit_registry() -> Dictionary:
 		"comphp": ["how much max HP the active companion adds, by level", run_companion_hp_probe],
 		"compcap": ["verify the companion ceiling binds AND rarity still pays more", run_companion_cap_probe],
 		"outcomes": ["classify how normal fights END (win / death / escape / stall)", run_outcome_probe],
+		"spread": ["what progression is worth: gear vs companion vs difficulty", run_progression_spread],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -939,6 +940,55 @@ func run_companion_hp_probe():
 
 var _probe_override: bool = false
 
+func run_progression_spread():
+	"""How much is PROGRESSION worth, and do gear and companion keep pace with each other?
+
+	The owner's question, in two parts: can a player walk through the content on common gear
+	with no rare companion, and can equipment keep up with companion power as both scale?
+	Neither is answerable from a single reference player - the calibration measures one point
+	(average gear + a matched companion) and reports a win rate for it, which says nothing
+	about the spread around that point.
+
+	So this measures the SAME fight at four progression states and reports the gradient. Read
+	it as: a healthy curve has the under-geared player clearly struggling, the reference near
+	its target, and the best-geared player strong but not untouchable. If every row is high,
+	progression buys nothing and the content is walkable from the start. If the gear rows move
+	far less than the companion rows, equipment is not keeping pace and the companion is
+	carrying the player - which is what the uncapped companion scaling used to do."""
+	var samples: int = maxi(12, int(_audit_n / 3.0))
+	var saved_mode: String = _companion_mode
+	print("\n===== PROGRESSION SPREAD — what is gear and companion worth? =====")
+	print("Same normal monster at each level; only the PLAYER changes. Target for the")
+	print("reference row (avg gear + companion) is %.0f%% win." % (WIN_NORMAL_SIM * 100.0))
+	print("%-8s %-34s %8s %8s %8s" % ["level", "player state", "win", "turns", "cost"])
+	for lvl in [10, 100, 1000, 5000]:
+		var rows: Array = []
+		for st in [
+			{"gear": "under", "comp": "none", "label": "under gear, no companion"},
+			{"gear": "average", "comp": "none", "label": "avg gear, NO companion"},
+			{"gear": "average", "comp": "match", "label": "avg gear + companion  <- reference"},
+			{"gear": "bis", "comp": "match", "label": "best gear + companion"},
+		]:
+			_companion_mode = String(st["comp"])
+			var r := _fight_stats_at(lvl, samples, String(st["gear"]))
+			if r.is_empty():
+				continue
+			rows.append({"label": st["label"], "win": float(r["win"]), "turns": float(r["turns"]), "cost": float(r["cost"])})
+			print("%-8d %-34s %7.0f%% %8.1f %7.0f%%" % [lvl, st["label"],
+				100.0 * float(r["win"]), float(r["turns"]), 100.0 * float(r["cost"])])
+		if rows.size() >= 4:
+			# Decompose the gradient. `gear` is the step from no-companion under-geared to
+			# no-companion average-geared; `companion` is the step that adds one at average
+			# gear. If those two are wildly unequal, one axis is carrying the player.
+			var gear_step: float = 100.0 * (rows[1]["win"] - rows[0]["win"])
+			var comp_step: float = 100.0 * (rows[2]["win"] - rows[1]["win"])
+			var bis_step: float = 100.0 * (rows[3]["win"] - rows[2]["win"])
+			print("         gear +%.0fpp | companion +%.0fpp | best-gear +%.0fpp | full spread %.0fpp" % [
+				gear_step, comp_step, bis_step, 100.0 * (rows[3]["win"] - rows[0]["win"])])
+		print("")
+	_companion_mode = saved_mode
+	print("=====================================================================\n")
+
 func run_outcome_probe():
 	"""Classify how fights actually END, rather than only counting wins.
 
@@ -1068,7 +1118,7 @@ func run_outcome_probe():
 	print("=====================================================================
 ")
 
-func _fight_stats_at(level: int, samples: int) -> Dictionary:
+func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dictionary:
 	# Run real same-level fights across all three archetypes and report what actually
 	# happened: mean turns, mean share of the player's health bar spent, win rate.
 	# This is the ground truth the calibration drives toward.
@@ -1079,7 +1129,7 @@ func _fight_stats_at(level: int, samples: int) -> Dictionary:
 	var n := 0
 	for klass in ["Fighter", "Wizard", "Thief"]:
 		for i in range(samples):
-			var ch = make_char(level, "average", klass)
+			var ch = make_char(level, gear, klass)
 			var monster := make_monster(level, "normal", 1.0)
 			var php0: int = ch.get_total_max_hp()
 			ch.in_combat = false
