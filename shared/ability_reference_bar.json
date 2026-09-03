@@ -1,0 +1,63 @@
+{
+  "_comment": "FROZEN ability reference bar. Ability damage is a SHARE OF THIS, not of the live reference_monster_curve.json. Keeping the two joined made monster HP a dead lever: refcal raised monster HP to lengthen a fight, every ability's damage rose by the same factor, the fight length did not move, and the curve inflated 2-5x across repeated runs while abilities silently kept pace and basic attacks fell behind. This file is a snapshot of the curve the ABILITY_WEIGHTS were authored against and must NOT be rewritten by refcal. Change it only as a deliberate re-authoring of what 'a power strike is worth a fifth of a monster' means, and re-measure with -- ability_hp afterwards.",
+  "frozen_from": "shared/reference_monster_curve.json",
+  "frozen_on": "2026-09-02",
+  "anchors": [
+    {
+      "level": 1.0,
+      "hp": 332.0
+    },
+    {
+      "level": 2.0,
+      "hp": 390.0
+    },
+    {
+      "level": 3.0,
+      "hp": 509.0
+    },
+    {
+      "level": 5.0,
+      "hp": 569.0
+    },
+    {
+      "level": 10.0,
+      "hp": 986.0
+    },
+    {
+      "level": 25.0,
+      "hp": 2123.0
+    },
+    {
+      "level": 50.0,
+      "hp": 4060.0
+    },
+    {
+      "level": 100.0,
+      "hp": 5187.0
+    },
+    {
+      "level": 250.0,
+      "hp": 19439.0
+    },
+    {
+      "level": 500.0,
+      "hp": 26561.0
+    },
+    {
+      "level": 1000.0,
+      "hp": 78051.0
+    },
+    {
+      "level": 2500.0,
+      "hp": 134597.0
+    },
+    {
+      "level": 5000.0,
+      "hp": 349022.0
+    },
+    {
+      "level": 10000.0,
+      "hp": 709456.0
+    }
+  ]
+}

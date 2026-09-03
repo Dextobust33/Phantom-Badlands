@@ -2447,6 +2447,47 @@ func _reference_at(level: int) -> Dictionary:
 			}
 	return last
 
+# === FROZEN ABILITY REFERENCE BAR (#6g, 2026-09-02) ===
+# Ability damage used to be a share of reference_monster_hp — the SAME curve refcal rewrites.
+# That made monster HP a dead lever: raising it to lengthen a fight raised every ability's
+# damage by the identical factor, so fight length never moved and repeated calibration runs
+# inflated the curve 2-5x while abilities kept pace and BASIC ATTACKS (which do not scale with
+# it) silently fell behind. The ability bar is now a frozen snapshot that refcal never touches,
+# so monster HP is an independent lever again.
+const ABILITY_BAR_PATH := "res://shared/ability_reference_bar.json"
+static var _ability_bar_anchors: Array = []
+static var _ability_bar_loaded: bool = false
+
+func ability_reference_hp(level: int) -> float:
+	"""The health bar an ABILITY is measured against. Frozen — see ABILITY_BAR_PATH. Falls back
+	to the live curve if the snapshot is missing, so an ability never silently reads 0."""
+	if not _ability_bar_loaded:
+		_ability_bar_loaded = true
+		var f = FileAccess.open(ABILITY_BAR_PATH, FileAccess.READ)
+		if f != null:
+			var parsed = JSON.parse_string(f.get_as_text())
+			f.close()
+			if parsed is Dictionary and parsed.get("anchors", null) is Array:
+				_ability_bar_anchors = parsed["anchors"]
+	var a: Array = _ability_bar_anchors
+	if a.is_empty():
+		return reference_monster_hp(level)
+	var lvl: float = maxf(1.0, float(level))
+	if lvl <= float(a[0].get("level", 1)):
+		return float(a[0].get("hp", 0.0))
+	if lvl >= float(a[a.size() - 1].get("level", 1)):
+		return float(a[a.size() - 1].get("hp", 0.0))
+	# Log-linear, matching _reference_at: the anchors are spaced logarithmically.
+	for i in range(1, a.size()):
+		var p: Dictionary = a[i - 1]
+		var q: Dictionary = a[i]
+		var lp: float = float(p.get("level", 1))
+		var lq: float = float(q.get("level", 1))
+		if lvl <= lq:
+			var t: float = (log(lvl) - log(lp)) / maxf(0.000001, (log(lq) - log(lp)))
+			return lerp(float(p.get("hp", 0.0)), float(q.get("hp", 0.0)), t)
+	return float(a[a.size() - 1].get("hp", 0.0))
+
 func reference_monster_hp(level: int) -> float:
 	"""Calibrated HP of a plain same-level monster — the health bar an ability is measured
 	against. Public so combat_manager can size ability damage as a share of it instead of

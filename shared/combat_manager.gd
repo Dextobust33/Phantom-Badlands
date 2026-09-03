@@ -875,7 +875,14 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 		# Same asymmetric level shape as the HP fix, and for the same reason: an UNDER-levelled
 		# companion still contributes, and an OVER-levelled one keeps every point of the
 		# investment that went into it rather than being scaled down to its owner.
-		var _cmp_bar: float = float(monster_database.reference_monster_hp(character.level)) if (monster_database != null and monster_database.has_method("reference_monster_hp")) else 0.0
+		# #6g — the FROZEN ability bar, for the same reason abilities use it: a share of the
+		# live curve would rise in lockstep with any monster-HP calibration and cancel it out.
+		var _cmp_bar: float = 0.0
+		if monster_database != null:
+			if monster_database.has_method("ability_reference_hp"):
+				_cmp_bar = float(monster_database.ability_reference_hp(character.level))
+			elif monster_database.has_method("reference_monster_hp"):
+				_cmp_bar = float(monster_database.reference_monster_hp(character.level))
 		if _cmp_bar > 0.0:
 			var _cmp_ratio: float = float(maxi(1, companion_level)) / float(maxi(1, character.level))
 			var _cmp_g: float = clampf(sqrt(_cmp_ratio), COMPANION_DAMAGE_UNDER_FLOOR, COMPANION_DAMAGE_OVER_CAP)
@@ -3277,9 +3284,16 @@ func _ability_anchored_damage(character, stat_name: String, weight: float) -> fl
 	"""Damage for a cast of the given `weight` (share of a same-level normal monster's health
 	bar) at this character's level and stat line. Returns 0.0 when no calibrated curve is
 	available, which callers treat as "keep the legacy formula"."""
-	if monster_database == null or not monster_database.has_method("reference_monster_hp"):
+	if monster_database == null:
 		return 0.0
-	var bar: float = float(monster_database.reference_monster_hp(character.level))
+	# #6g (2026-09-02) — reads the FROZEN ability bar, not the live reference curve. Sharing one
+	# curve made monster HP a dead lever for fight length: refcal raised HP, ability damage rose
+	# by the same factor, turns never moved, and the curve inflated 2-5x over repeated runs.
+	var bar: float = 0.0
+	if monster_database.has_method("ability_reference_hp"):
+		bar = float(monster_database.ability_reference_hp(character.level))
+	elif monster_database.has_method("reference_monster_hp"):
+		bar = float(monster_database.reference_monster_hp(character.level))
 	if bar <= 0.0:
 		return 0.0
 	return bar * weight * _ability_stat_ratio(character, stat_name)

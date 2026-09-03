@@ -1686,7 +1686,12 @@ func to_dict() -> Dictionary:
 		"wits_training_bonus": wits_training_bonus,
 		"skill_enhancements": skill_enhancements,
 		"trophies": trophies,
-		"active_companion": active_companion,
+		# Stamped with the DERIVED combat_max_hp/combat_hp (see get_active_companion). to_dict is
+		# both the persistence shape AND the character_update payload the client renders from,
+		# and the client must never re-derive this figure — that mismatch showed a Chimaera as
+		# 290/290 in combat against 665/665 out of it. The stamped fields are recomputed on
+		# every read, so a persisted copy of them is inert.
+		"active_companion": get_active_companion(),
 		"soul_gems": soul_gems,
 		"incubating_eggs": incubating_eggs.duplicate(true),  # Save raw data for persistence
 		"collected_companions": get_collected_companions(),
