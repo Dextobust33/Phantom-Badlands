@@ -173,7 +173,16 @@ static func eligible(kind: String, milestone: int, taken: Array) -> Array:
 	return out
 
 
-static func draw_choices(kind: String, milestone: int, taken: Array, count: int = 3) -> Array:
+# How many upgrades are laid out at a rank-up. The player previews all of them, they are then
+# hidden and shuffled, and the player REVEALS a few before committing to one — the owner's
+# design: *"it would be nice if it showed a random 9 of them that players get to see for a
+# moment then they get hidden and placed in a random spot so the players get to 'reveal' 3 of
+# them then choose 1 out of those."* Mirrors the Prize Shuffle loot flow, so it is an idiom
+# players already know rather than a second one to learn.
+const OFFER_SIZE := 9
+const REVEALS_ALLOWED := 3
+
+static func draw_choices(kind: String, milestone: int, taken: Array, count: int = OFFER_SIZE) -> Array:
 	"""Three (or `count`) distinct upgrades for this rank-up.
 
 	Drawn rather than fixed, so successive milestones on the same card do not repeat — the

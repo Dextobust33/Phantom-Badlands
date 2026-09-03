@@ -53,6 +53,7 @@ const TitlesScript = preload("res://shared/titles.gd")
 const CraftingDatabaseScript = preload("res://shared/crafting_database.gd")
 const PathDatabaseScript = preload("res://shared/path_database.gd")
 const UniqueDatabaseScript = preload("res://shared/unique_database.gd")
+const CardUpgradesScript = preload("res://shared/card_upgrades.gd")
 const DungeonDatabaseScript = preload("res://shared/dungeon_database.gd")
 const NpcPostDatabaseScript = preload("res://shared/npc_post_database.gd")
 const ChunkManagerScript = preload("res://shared/chunk_manager.gd")
@@ -5881,6 +5882,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			"type": "rank_up_choice",
 			"ability": rcp.get("ability", ""),
 			"new_rank": int(rcp.get("new_rank", 0)),
+			# 2026-09-03 — the drawn upgrade offer, plus how many the player may reveal before
+			# committing. Drawn server-side and persisted, so reconnecting cannot re-roll it.
+			"upgrade_offer": rcp.get("upgrade_offer", []),
+			"reveals_allowed": CardUpgradesScript.REVEALS_ALLOWED,
 			"current_effect_rank": int(characters[peer_id].ability_effect_ranks.get(rcp.get("ability", ""), 0)) if characters.has(peer_id) else 0,
 			"current_copy_count": int(characters[peer_id].combat_deck_collection.get(rcp.get("ability", ""), 1)) if characters.has(peer_id) else 1,
 			"variant_offer": rcp.get("variant_offer", {}),
@@ -6728,7 +6733,11 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	# copy/effect/variant menu; the legacy kinds stay accepted for any queued
 	# choices that predate the tier system.
 	var _valid_choices = ["power", "rider", "efficiency", "duration", "copy", "effect", "variant"]
-	if ability_name == "" or not (choice in _valid_choices):
+	# 2026-09-03 — any upgrade id is acceptable PROVIDED it was in the offer this character was
+	# actually shown; that check happens below against the persisted draw, which is stronger
+	# than a static allow-list and cannot go stale as the pool grows.
+	var _is_upgrade_id: bool = not CardUpgradesScript.upgrade_by_id(choice).is_empty()
+	if ability_name == "" or not (choice in _valid_choices or _is_upgrade_id):
 		return
 	# Pop the matching queued choice (first entry matching ability+rank). Allow
 	# any matching ability if no rank is provided — robust to client/server lag.
@@ -6744,6 +6753,17 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	if matched_idx < 0:
 		# No queued choice — drop silently. Could be a duplicate response.
 		return
+	# Validate an upgrade pick against the offer this character was SHOWN. Without this a
+	# client could name any upgrade in the pool, including one it was never dealt.
+	if _is_upgrade_id and not (choice in _valid_choices):
+		var _offer: Array = matched_choice.get("upgrade_offer", [])
+		var _offered_ids: Array = []
+		for _o in _offer:
+			_offered_ids.append(String(_o.get("id", "")))
+		if not _offered_ids.is_empty() and not (choice in _offered_ids):
+			send_to_peer(peer_id, {"type": "text", "message":
+				"[color=#FFA500]That upgrade was not among the ones you were dealt.[/color]"})
+			return
 	character.pending_rank_choices.remove_at(matched_idx)
 	# Slice 6f — variant choice path. Refuses if the queued choice didn't
 	# carry a variant_offer (companion wasn't active at rank-up time) or if

@@ -23,6 +23,17 @@ const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
 # Shield/Fortify defense buff). 0.15 => those layers can never reduce a hit by more than
 # 85%, so heavy investment = very tanky but never immune (fixes stacked-to-unkillable).
 const MITIGATION_BUFF_FLOOR := 0.15
+# The other half of the same clamp (2026-09-03). Rank-up trade-offs like Brittle Strike and
+# Open Guard make the player take MORE damage, and the first implementation applied them AFTER
+# the floor so a defensive deck could not launder the drawback away. The owner rejected that
+# approach and was right to: *"if we have a mitigation floor we should find a way to respect
+# it"* — a rule that some code steps around is not a rule, and unbounded post-clamp multipliers
+# would also have compounded (1.25 x 1.15 with nothing stopping a third).
+#
+# So vulnerabilities now compose INSIDE the same multiplier and the clamp is two-sided: a
+# defensive build can never fall below the floor, and a reckless one can never take more than
+# this ceiling. Both drawbacks together reach it and stop.
+const MITIGATION_VULN_CEIL := 1.45
 # #70 (2026-08-27) — Magic Bolt spend-fraction efficiency floor. Per-mana damage scales
 # from this floor (at a tiny chip) up to 1.0 (at a full-pool dump), so chip-spam is weak
 # but the full-dump burst is unchanged. Fixes low-level one-shot-for-a-chip trivialization.
@@ -3908,6 +3919,11 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 				var variant_offer: Dictionary = _build_variant_offer_for_rank_up(combat, ability_name)
 				if not variant_offer.is_empty():
 					queued_choice["variant_offer"] = variant_offer
+				# 2026-09-03 — draw the upgrade offer ONCE, here, and persist it on the queued
+				# choice. Drawing it when the client asks would let a player re-roll the menu by
+				# reconnecting, and re-drawing on replay would show them a different set than
+				# the one they were looking at.
+				queued_choice["upgrade_offer"] = _build_upgrade_offer(combat.character, ability_name, new_rank)
 				if not (combat.character.pending_rank_choices is Array):
 					combat.character.pending_rank_choices = []
 				combat.character.pending_rank_choices.append(queued_choice)
@@ -6067,6 +6083,30 @@ func _apply_buff_value_modifiers(character: Character, ability_name: String, bas
 	return max(1, int(value))
 
 # Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprint support helpers.
+func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Array:
+	"""The upgrades laid out at this rank-up, as an array of dicts the client can render.
+
+	The card's KIND is derived from what the ability actually does rather than from a list kept
+	in card_upgrades.gd, because such a list drifts the moment a card is re-roled — which is
+	exactly how War Cry sat in the damage-buff slot for months after it became a tempo card."""
+	var CU = load("res://shared/card_upgrades.gd")
+	var is_damage: bool = ability_name in ABILITY_WEIGHTS 		or ability_name in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
+	var is_buff: bool = ability_name in ["forcefield", "shield", "haste", "iron_skin", "fortify",
+		"rally", "berserk", "war_cry", "overload", "vanish"]
+	var is_control: bool = ability_name in ["paralyze", "banish", "sabotage", "distract", "analyze"]
+	var kind: String = CU.card_kind(ability_name, is_damage, is_buff, is_control)
+	var taken: Array = character.get_milestone_picks(ability_name) if character != null else []
+	var drawn: Array = CU.draw_choices(kind, milestone, taken)
+	var out: Array = []
+	for u in drawn:
+		out.append({
+			"id": String(u.get("id", "")),
+			"name": String(u.get("name", "")),
+			"desc": String(u.get("desc", "")),
+			"tradeoff": bool(u.get("tradeoff", false)),
+		})
+	return out
+
 func _build_variant_offer_for_rank_up(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Build the variant_offer dict for a rank-up choice when the player has an
 	active companion that maps to a trait AND the ability's imprint stack
@@ -7013,10 +7053,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				var _mom_dr: float = float(clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)) * MOMENTUM_DR_PER
 				if _mom_dr > 0.0:
 					_mit_mult *= (1.0 - _mom_dr)
-			# 2026-09-03 — rank-up trade-off DOWNSIDES. Applied AFTER the mitigation floor so a
-			# drawback cannot be laundered away by stacking defensive buffs: a trade-off the
-			# player can neutralise is not a trade-off, it is a free upgrade with extra words.
-			_mit_mult = maxf(_mit_mult, MITIGATION_BUFF_FLOOR)
+			# 2026-09-03 — rank-up trade-off DOWNSIDES compose into the SAME multiplier as
+			# everything else, and the clamp below is two-sided. An earlier version applied them
+			# after the floor to stop a defensive deck laundering the drawback away; that
+			# stepped around the rule instead of respecting it, and left the vulnerability
+			# multipliers unbounded. Now the floor still guarantees you can get very tanky, and
+			# the ceiling guarantees a reckless build cannot be deleted in one hit.
 			if bool(combat.get("guard_open", false)):
 				# Brittle Strike bought its damage by leaving the guard open until you act again.
 				_mit_mult *= 1.25
@@ -7024,6 +7066,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			if character.get_buff_value("open_guard_penalty") > 0:
 				# Open Guard: a much stronger buff, paid for with defence while it holds.
 				_mit_mult *= 1.15
+			_mit_mult = clampf(_mit_mult, MITIGATION_BUFF_FLOOR, MITIGATION_VULN_CEIL)
 			damage = max(1, int(_raw_hit * _mit_mult))
 
 			total_damage += damage
