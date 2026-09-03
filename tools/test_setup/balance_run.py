@@ -6,9 +6,16 @@
 
 Builds test003 as the reference player the monster model is tuned against (level-appropriate
 gear rolled from the real drop tables, a tier-appropriate companion at your level), starts the
-server, and logs a single client in. Then fight exact-level monsters with:
+server, and logs a single client in.
 
-    /spawnmonster Orc <level>
+To fight a specific monster:
+
+    /spawnmonster <Species> <level>
+
+USE A SPECIES THAT ACTUALLY SPAWNS AT THAT LEVEL. On launch this script prints the real spawn
+table for your level — pick from it. An earlier playtest used `/spawnmonster Orc 50`; an Orc is
+tier 2 with a 0% spawn rate at L50, so the entire test measured a monster no player meets there.
+The same mistake had already been found and fixed inside the simulator, then reproduced by hand.
 
 WHY a dedicated runner: run.py drives the party scenarios off PLAYERS[:n], whose first entry is
 test02, a Wizard fixture other scenarios depend on. Rebuilding that character to test balance
@@ -25,6 +32,40 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import scenario as scen  # noqa: E402
+
+TEST_PLAN = """
+================ WHAT TO CHECK THIS SESSION ================
+Everything below is either (a) something I broke and fixed blind, or (b) a balance change with
+no playtime at all. Ordered so a failure early makes the later ones unnecessary.
+
+1. COMPANION HP READS THE SAME IN BOTH PLACES       [I broke this; you have not seen the fix]
+   Look at the companion card OUT of combat, note the HP. Start any fight, look again.
+   PASS = identical numbers.  FAIL = different numbers, or no HP bar at all (the symptom you
+   reported last). This is the one I most want confirmed.
+
+2. POST-COMBAT HP IS HONEST                         [open bug, never fixed, expect FAIL]
+   Win a fight, let every animation finish, read your HP. Then press space to rest.
+   FAIL = HP drops on resting, meaning the post-combat number was stale. Reproducing it is
+   genuinely useful - I could not find the second cause from the log alone. Spamming attack
+   through the victory card is the setup that showed it most reliably.
+
+3. A NORMAL FIGHT SHOULD COST ~40-50% OF YOUR BAR   [rebuilt curve, zero playtime]
+   Fight 3-4 same-level monsters from the spawn table above, starting each at full HP.
+   Expect roughly half your health per fight, around 5 turns. Much cheaper, or much longer,
+   means the curve is wrong exactly where the sim says it is right.
+
+4. A COMPANION SHOULD NOT DIE IN ONE ROUND          [aggro now rolls per hit]
+   Fight something with multi_strike - a Gryphon "hits 3 times". Previously a single aggro
+   roll put the WHOLE burst on the companion. Now it splits, so expect the log to show the
+   monster hitting you AND the companion in the same round.
+
+5. AN ELITE OR BOSS, IF YOU WILL RISK THE CHARACTER [danger targets just changed]
+   Boss danger is now ~80% of your bar by design - your call, recorded. Expect to nearly die
+   or to die. Worth one attempt to judge whether that reads as exciting or as unfair.
+
+NOT worth testing yet: fight LENGTH at high level is known-wrong and already on the backlog.
+============================================================
+"""
 
 GODOT = scen.GODOT
 PROJECT = scen.PROJECT
@@ -118,14 +159,24 @@ def main():
     print("  %s as %s (L%d)" % (USER, CHAR, args.level))
     print("\nready. In game, start an exact-level fight with:")
     print("    /spawnmonster <Species> %d" % args.level)
-    print("")
-    print("  Use a species that ACTUALLY SPAWNS at this level. `Orc` is a tier-2 monster with")
-    print("  a 0%% spawn rate by L50, so fighting one tests a creature stretched far above its")
-    print("  home tier rather than the content a player meets. That exact mistake produced a")
-    print("  false 'the game trivializes at high level' result in the simulator once already.")
-    print("    ~L50   : Gryphon, Succubus, Vampire, Giant, Demon, Young Dragon, Chimaera")
-    print("    ~L1000 : Elder Lich, World Serpent, Primordial Dragon, Void Walker, Sphinx")
-    print("  The sim's `-- species` audit prints the real spawn table for any level.")
+
+    # Print the REAL spawn table for this level rather than a hardcoded hint that goes stale.
+    # `Orc` is tier 2 with a 0% spawn rate by L50, so testing against one measures a creature
+    # stretched far above its home tier. That produced a false "the game trivializes at high
+    # level" result in the simulator, and was then reproduced by hand in a playtest.
+    try:
+        out = subprocess.run(
+            [GODOT, "--headless", "--path", PROJECT,
+             "--script", "res://tools/probe/spawn_species.gd", "--", str(args.level)],
+            capture_output=True, text=True, timeout=120).stdout
+        for line in out.splitlines():
+            if line.startswith("Species actually") or line.startswith("   "):
+                print("  " + line.strip() if line.startswith("Species") else line)
+    except Exception as exc:
+        print("  (could not read the spawn table: %s)" % exc)
+
+    print(TEST_PLAN)
+
     return 0
 
 

@@ -1497,7 +1497,7 @@ func run_role_calibrate():
 	#
 	# So each anchor level is calibrated independently, exactly as the baseline curve already
 	# is, and monster_database interpolates between them.
-	var passes := 5
+	var passes := 8   # 5 left empowered short of convergence; the correction is damped (0.75)
 	var samples: int = maxi(6, int(_audit_n / 6.0))
 	var levels := [1, 10, 50, 250, 1000, 5000, 10000]
 	print("
@@ -1533,6 +1533,16 @@ func run_role_calibrate():
 					break
 				last = r
 				st_m *= pow(clampf(t_danger / maxf(0.01, float(r["cost"])), 0.3, 4.0), CAL_CORRECTION_EXP)
+			# Same lag refcal had: the loop measures THEN corrects, so `last` describes the
+			# multiplier one step before the one being written. Measured consequence — empowered
+			# was written past its target and came out at 59-74% cost against 55%, above ELITE
+			# in the middle band, inverting the tier order. Verify against the final value.
+			monster_db.set_calibrated_role_multipliers({
+				role: [{"level": lvl, "hp_mult": hp_m, "str_mult": st_m}]})
+			var verify := _role_fight_stats(lvl, role, samples)
+			monster_db.set_calibrated_role_multipliers({})
+			if not verify.is_empty():
+				last = verify
 			anchors.append({"level": lvl, "hp_mult": hp_m, "str_mult": st_m})
 			if last.is_empty():
 				print("%-11s %7d  (no data)" % [role, lvl])
