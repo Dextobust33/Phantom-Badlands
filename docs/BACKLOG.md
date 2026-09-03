@@ -1610,6 +1610,164 @@ per-monster numbers guarantees a redo.
 
 ---
 
+## ⚑ PLAYTEST 2026-09-03 (post-v0.9.741) — six findings, three of them one root cause
+
+Owner played Warrior, Mage and Trickster out of the starter post. **Two Warriors and two
+Tricksters died to gnolls.** Findings, in the order they should be fixed:
+
+### A. The combat cards LIE about damage — one cause, most of the report
+
+`client.gd::_estimate_ability_card_effect` is a hand-copied mirror of the server's damage
+formulas. The **#6c anchoring pass converted 5 abilities** (power_strike, cleave, magic_bolt,
+blast, meteor) to `bar x weight x stat_ratio` **and the mirror was never updated**, so every
+converted ability's card is now wrong. Measured on a fresh gearless character
+(`tools/probe/card_vs_server.gd`):
+
+| ability | card says | server does | card/real |
+|---|---|---|---|
+| forcefield (L5 Wizard) | 252 | 27 | **6.0x over** |
+| meteor (L5 Wizard) | 644 | 314 | **2.1x over** |
+| magic_bolt (L5 Wizard) | 57 | 383 | **0.15x — 6.7x UNDER** |
+| power_strike (L5 Fighter) | 51 | 125 | 0.41x under |
+| cleave (L5 Fighter) | 64 | 159 | 0.40x under |
+| devastate (any) | flat 5x | 3x at 1 Momentum, 7x at 5 | wrong both ways |
+| shield_bash / ambush / gambit | — | — | 1.00x (still legacy, so still correct) |
+
+The owner's exact reports reproduce: *"Field said 252 shield on the front of the card and only
+gave 28"*, *"used the meteor and it only did 264 even though it said 554"*, *"did a mana bolt
+for 17 and it did over 200 even though the card only showed like 20 some"*.
+
+Note the signature: the mirror is **exactly right for every ability that was NOT converted**.
+That is a partial migration, not random drift.
+
+- [ ] **Structural fix: delete the mirror.** The server already sends authoritative ability
+      COSTS and per-turn regen (shipped v0.9.741). Send the **damage/shield estimate down the
+      same channel** and have the card render what the server says. This retires the whole
+      class — the fifth time a client-side copy of a server formula has drifted (five stale
+      cost tables, the Forcefield description, now every damage card). Anything less is a sixth
+- [ ] Until then the Forcefield card front is still on the pre-anchor `100 + INT*8` — the
+      description was fixed in v0.9.741 but **the card-front estimator was missed**
+
+### B. Only 5 abilities were anchored, so the CLASSES are now unbalanced against each other
+
+The anchored model scales with the monster health bar (509 at L3, 986 at L10). The legacy model
+scales with `attack` (16-23 at those levels, gearless). So a converted ability is worth **5-10x**
+an unconverted one at low level. Which abilities got converted decides which class works:
+
+| class | converted | left on legacy |
+|---|---|---|
+| Mage | magic_bolt, blast, meteor — **its whole damage kit** | — |
+| Warrior | power_strike, cleave | shield_bash, **devastate (its finisher)** |
+| Trickster | **none** | ambush, gambit, exploit(%HP), vanish |
+
+Measured vs a same-level Gnoll, gearless (`tools/probe/starter_fight.gd`):
+
+| L5 vs Gnoll (860 HP) | best hit | turns to kill | turns you survive |
+|---|---|---|---|
+| Wizard | 372 | **2.3** | 11.3 |
+| Fighter | 174 (Devastate at 5 Momentum — 5 turns to build) | 4.9 | 13.6 |
+| Ranger | 75 | **11.5** | **8.1** |
+
+**The Trickster mathematically cannot win a straight fight** — it needs 11.5 turns and survives
+8.1, and it gets worse with level (L8: 16.4 turns to kill, 5.9 to live). That is precisely the
+owner's report: *"I attempted to take down the gnoll with just abilities and not using the
+Outsmart but ultimately didn't have the damage to do so and died."*
+
+Also note a **basic attack does 8-21 against a 631-1239 HP monster** — 40-150 turns. Basic
+attacks are no longer a way to kill anything; the monster curve is calibrated against a player
+who uses anchored abilities.
+
+- [ ] **Decide the model, then convert every damage ability to it** (owner direction needed).
+      Half-converted is the current state and it is the worst one
+
+### C. Read (Trickster) is dead past ~2 stacks
+
+`READ_OUTSMART_PER = 15` per stack, `COMBO_MAX = 5`, so the code comments promise "+75%". But
+`max_chance = 48 - monster_int/3` — **~46 for a gnoll**. From a ~27% base, stack 1 takes you to
+42%, stack 2 hits the cap, and **stacks 3-5 do literally nothing**. Owner: *"it seemed to cap at
+around 46% making me wonder why I should even continue building stacks."* He is exactly right.
+
+Two passes are fighting: the v0.9.698 Read engine (+15/stack, "Read is what makes Outsmart
+reliable") and the #55 anti-abuse cap (48%, "Outsmart must stay a coinflip"). Both cannot be true.
+
+- [ ] Needs a design decision, not a number tweak: either Read raises the CAP, or stacks past
+      the cap buy something else (damage, a guaranteed retry, cost reduction)
+
+### D. Outsmart spends 60% of your energy without asking
+
+`OUTSMART_DUMP_PCT = 0.6` auto-spends 60% of current energy for up to +15% chance, and only
+tells you *after* it happened. Owner: *"If we are going to have a cost on outsmart or allow
+energy to be used to increase the chance the player should have a say in that or it should be
+clear, not just a hidden thing that happens."*
+
+- [ ] Make it a choice (a spend prompt like the other variable-cost cards) or at minimum put it
+      on the card face. Note the card currently shows Outsmart's cost as nothing
+
+### E. Phantom Strike does not crit
+
+Card: *"your next attack is a **guaranteed critical hit**."* Code (`combat_manager` ~1859-1875):
+`vanished` makes the attack **bypass the hit roll** and multiply damage by **1.5**, but it never
+sets `is_crit`, so nothing reports a crit — matching the owner's report. Numerically 1.5x is a
+crit's multiplier, so this may be only a labelling defect, but the card promises a mechanic the
+code does not implement (and a natural crit would stack to 2.25x, which may be unintended).
+
+- [ ] Decide: make it a real crit (flag it, let crit-damage bonuses apply) or reword the card
+
+### F. Gambit is dominated
+
+Owner: *"Gambit seems like a poor choice vs other options since it doesn't do enough damage to
+risk hurting myself."* Measured: Gambit 4.5x attack = **107 at L5**, against Exploit's ~15% of
+enemy max HP = **~130** with no self-damage risk. Gambit is strictly worse before the downside
+is even counted.
+
+- [ ] Falls out of B — if Trickster damage is anchored, re-weight Gambit as the high-variance
+      option it is meant to be
+
+---
+
+## ⚑ POST-COMBAT HP STALENESS — root cause FOUND (2026-09-03)
+
+Reported again, with the detail that cracks it: *"If combat actions are performed too fast it's
+possible for a player to finish the combat before HP bars are properly updated. They typically
+move or take an action pretty quickly after combat and this results in their HP bar going down."*
+
+**Cause.** Combat results are deliberately HELD behind the playback queue so they land in step
+with the log. The code that APPLIES them is the empty-branch of `_drain_combat_queue`. But
+`combat_msg_queue.clear()` is called from **five** places (dismiss, dungeon dismiss,
+`acknowledge_continue`, death, permadeath) and every one of them **skips that settle**. Each
+carries the identical comment:
+
+> *"Clearing the queue skips `_drain_combat_queue`'s empty handler, which is what applies
+> deferred bar updates — drop the pending companion value with it..."*
+
+They drop `_pending_companion_hp` and **never apply the deferred player HP at all**. So the bar
+keeps the pre-fight number until the next unrelated `character_update` — which arrives when the
+player moves. Hence "it drops after I walk."
+
+Five copies of a comment explaining that clearing skips the settle is the tell. This is the same
+"HOLD means discard" defect fixed for the companion bar in v0.9.741 (89c3960) — fixed there,
+missed here.
+
+- [ ] **One `_settle_combat_bars()` called by the drain-empty branch AND all five clear sites.**
+      Not a sixth guard. This is the structural fix the "fix the cause" rule asks for
+
+---
+
+## ⚑ QUESTS — owner observations 2026-09-03 (NOT to be worked now; slot into the dungeon arc)
+
+Recorded at the owner's request, to be picked up when the ordering reaches quests (items 9-12).
+
+1. **Direction/distance changes after accepting.** Very likely by design and badly communicated:
+   the quest board shows a hint for an EXISTING dungeon, but accepting **creates a personal
+   instance** (`player_dungeon_instances[peer][quest_id]`, server.gd ~18722-18762) at a new
+   location — the description even says *"A personal dungeon will be created for you nearby when
+   you accept."* So the pre-accept direction cannot be the dungeon you actually get. Confirm,
+   then either show no direction until accept, or show the instance's.
+2. **"Walk into any dungeon and you'll be routed to the right one" — with several such quests
+   active, which one wins?** Instances are keyed per quest so the DATA does not collide, but the
+   entry-time selection rule needs checking. Owner: *"Are some quests overwriting or breaking
+   others?"* Answer this before touching quest content.
+
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
