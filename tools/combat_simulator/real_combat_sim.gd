@@ -903,8 +903,6 @@ func _fight_stats_at(level: int, samples: int) -> Dictionary:
 				combat_mgr.process_monster_turn(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
-			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
-				wins += 1
 			turns_tot += float(turns)
 			cost_tot += float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
 			n += 1

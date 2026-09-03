@@ -3984,8 +3984,20 @@ func has_active_companion() -> bool:
 	return not active_companion.is_empty()
 
 func get_active_companion() -> Dictionary:
-	"""Get the active companion data."""
-	return active_companion.duplicate(true)
+	"""Get the active companion data.
+
+	Stamps the DERIVED `combat_max_hp` onto the copy. Companion max HP is a real calculation
+	(two anchors, an aggro-solved share, sub-tier and bonus multipliers) and the client had two
+	separate hand-maintained mirrors of it — one of which fell back to the long-dead absolute
+	formula `30 + level*5 + sub_tier*10` and showed a Chimaera as 290/290 in combat while the
+	out-of-combat card correctly read 665/665. Shipping the computed value means no consumer
+	ever has to re-derive it. Safe to stamp: this is a deep copy, so the persisted
+	`active_companion` is untouched."""
+	var out: Dictionary = active_companion.duplicate(true)
+	if not out.is_empty():
+		out["combat_max_hp"] = get_companion_max_hp()
+		out["combat_hp"] = get_companion_combat_hp()
+	return out
 
 # === Phase B1 — Companion combat HP ===
 

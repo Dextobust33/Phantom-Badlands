@@ -30424,10 +30424,15 @@ func update_companion_art_overlay():
 	# 30 + level*5 + sub_tier*10. Call the real formula instead of re-deriving it: this
 	# mirror had to be kept in step by hand, which is the same drift that put the monster
 	# HP estimator 50-200% off.
-	var _char_max_hp: int = int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
-	var _char_level: int = int(character_data.get("level", 1))
-	var comp_max_hp: int = CharacterScript.calculate_companion_max_hp(
-		active_companion, _char_max_hp, _char_level)
+	# The server ships the computed value with the companion payload; prefer it outright and
+	# keep the local calculation only for older servers that omit it. Two mirrors of one
+	# formula is what let the in-combat panel and this card disagree (290 vs 665).
+	var comp_max_hp: int = int(active_companion.get("combat_max_hp", 0))
+	if comp_max_hp <= 0:
+		var _char_max_hp: int = int(character_data.get("total_max_hp", character_data.get("max_hp", 0)))
+		var _char_level: int = int(character_data.get("level", 1))
+		comp_max_hp = CharacterScript.calculate_companion_max_hp(
+			active_companion, _char_max_hp, _char_level)
 	var comp_combat_hp: int = int(active_companion.get("combat_hp", comp_max_hp))
 	comp_combat_hp = clampi(comp_combat_hp, 0, comp_max_hp)
 	var hp_color: String

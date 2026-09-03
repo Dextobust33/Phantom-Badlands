@@ -5861,17 +5861,19 @@ func _refresh_companion() -> void:
 	# server's character.calculate_companion_max_hp formula. combat_update
 	# overrides with authoritative values.
 	if _companion_hp_row and is_instance_valid(_companion_hp_row):
-		# #6b (2026-09-02) — companion HP is a share of the OWNER's max HP now. This is only
-		# the pre-first-combat_update placeholder; the authoritative value arrives with
-		# combat_update. Owner HP is not available in this panel, so fall back to the legacy
-		# absolute shape rather than inventing one — it is replaced within a frame.
-		var bonuses: Dictionary = _companion_data.get("bonuses", {})
-		var hp_bonus: int = int(bonuses.get("hp_bonus", 0))
-		var comp_max_hp: int = int(_companion_data.get(
-			"combat_max_hp", 30 + level * 5 + sub_tier * 10 + hp_bonus))
+		# #6b (2026-09-02) — the server now ships the computed `combat_max_hp` with the
+		# companion payload (see character.get_active_companion), so this panel no longer
+		# re-derives it. The old fallback was the long-dead absolute formula
+		# `30 + level*5 + sub_tier*10`, which rendered a L50 Chimaera as 290/290 in combat
+		# while the out-of-combat card read the correct 665/665 — and it was NOT "replaced
+		# within a frame" as the comment claimed. If the value is genuinely absent (an older
+		# server), show nothing rather than a fabricated number: update_companion_combat_hp
+		# hides the row on max <= 0, and the real value lands with the next combat_update.
+		var comp_max_hp: int = int(_companion_data.get("combat_max_hp", 0))
 		var comp_cur_hp: int = int(_companion_data.get("combat_hp", comp_max_hp))
-		comp_cur_hp = clampi(comp_cur_hp, 0, comp_max_hp)
-		update_companion_combat_hp(comp_cur_hp, comp_max_hp, comp_cur_hp <= 0)
+		if comp_max_hp > 0:
+			comp_cur_hp = clampi(comp_cur_hp, 0, comp_max_hp)
+		update_companion_combat_hp(comp_cur_hp, comp_max_hp, comp_max_hp > 0 and comp_cur_hp <= 0)
 
 	# Companion ASCII art — tiny font, monospaced. No [center] wrapper because
 	# the column is much wider than the art at font_size 2; centering pads with
