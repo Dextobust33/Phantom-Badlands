@@ -2757,7 +2757,12 @@ static func variant_rarity_of(c: Dictionary) -> int:
 		return 10
 	if c.has("variant_rarity"):
 		return int(c["variant_rarity"])
-	var name := String(c.get("variant", ""))
+	# A RAW EGG_VARIANTS entry carries "rarity"/"name" rather than "variant_rarity"/"variant".
+	# Accepting both shapes matters: a verification probe passed a raw entry, got 1.00x for
+	# every rarity, and read as a total failure of the feature when the game path was fine.
+	if c.has("rarity") and not c.has("variant"):
+		return int(c["rarity"])
+	var name := String(c.get("variant", c.get("name", "")))
 	if name != "":
 		for v in EGG_VARIANTS:
 			if String(v.get("name", "")) == name:

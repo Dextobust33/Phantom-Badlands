@@ -4559,8 +4559,9 @@ func get_variant_stat_multiplier() -> float:
 	"""Get the stat multiplier for active companion's variant."""
 	if active_companion.is_empty():
 		return 1.0
-	var variant = active_companion.get("variant", "Normal")
-	return VARIANT_STAT_MULTIPLIERS.get(variant, 1.0)
+	# 2026-09-03 — third consumer of the stale per-name table, missed in the first sweep and
+	# caught only because a verification probe printed 1.00x for every rarity. Derived source.
+	return load("res://shared/drop_tables.gd").companion_variant_mult(active_companion)
 
 func get_companion_monster_type() -> String:
 	"""Get the monster type of the active companion."""
