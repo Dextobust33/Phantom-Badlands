@@ -6662,6 +6662,30 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 		character.current_hp = max(0, character.current_hp)
 
+		# Log the DEATH. Every revive above has already been offered and declined, so if HP is
+		# 0 here it is final. The playtest log recorded victories only, which in a PERMADEATH
+		# game hid the single most important event: a character died and left no record of what
+		# killed it, at what level, in what role of fight, or how long it lasted.
+		if character.current_hp <= 0:
+			playtest_log({
+				"event": "death",
+				"monster": String(monster.get("name", "?")),
+				"monster_level": int(monster.get("level", 0)),
+				"monster_max_hp": int(monster.get("max_hp", 0)),
+				"monster_hp_left": int(monster.get("current_hp", 0)),
+				"role": ("elite" if String(monster.get("name", "")).begins_with("★")
+					else ("empowered" if int(monster.get("empowered_mod_count", 0)) > 0 else "normal")),
+				"player_level": int(character.level),
+				"player_class": String(character.class_type),
+				"hp_bar": int(character.get_total_max_hp()),
+				"killing_blow": int(total_damage),
+				"turns": int(combat.get("round", 0)),
+				"dmg_dealt": int(combat.get("total_damage_dealt", 0)),
+				"companion": (String(character.get_active_companion().get("name", ""))
+					if character.has_active_companion() else ""),
+				"companion_ko": character.is_companion_ko(),
+			})
+
 		# === COMPANION THRESHOLD ABILITY ===
 		# Check if companion's threshold ability should trigger (once per combat)
 		# Uses monster-specific abilities stored at combat start (pre-scaled by level + variant)
