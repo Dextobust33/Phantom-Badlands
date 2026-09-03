@@ -1754,6 +1754,32 @@ Wrote species_power for %d species." % power.size())
 	print("=====================================================================
 ")
 
+# HP ACCOUNTING RECONCILIATION — REMOVED 2026-09-02, and worth recording why.
+#
+# The goal was sound: a player reported a fight where the log said 298 damage but only 82 HP
+# was lost, and said it would be hard to reproduce by hand. That is exactly what a simulator
+# should catch instead of a person.
+#
+# The IMPLEMENTATION was wrong, three times over. It worked by parsing the combat message text
+# and summing the numbers in it, which is brittle by construction:
+#   * v1 took the LAST number in lines containing "damage"/"heal" — missed poison, bleed and
+#     regen entirely, and reported 13-50% of turns as unreconciled. Those were its own blind
+#     spots, not game bugs.
+#   * v2 broadened the keywords and switched to the FIRST number — which in "hits 2 times for
+#     298 total damage" is the HIT COUNT. Mismatches jumped to 93% with gaps of 12,833.
+# Each version produced confident, specific, wrong numbers. A tool that cries wolf about 103
+# bugs when there are none is worse than no tool: the next person to run it wastes a day.
+#
+# The right way to build this is to INSTRUMENT THE SOURCE rather than read its prose — have
+# process_monster_turn accumulate a per-turn ledger of every HP change with its cause, and
+# assert that ledger against the actual delta. That is a change to shared combat code and
+# deserves doing deliberately rather than bolted onto an audit.
+#
+# What was established without it, by direct trace: monster damage application is CORRECT
+# (logged damage matched HP lost exactly across 4 Chimaera multi-strike trials — 160/160,
+# 224/224, 98/98, 183/183), and the reported confusion was companion lifesteal reporting its
+# intended heal instead of the clamped actual one, which is fixed.
+
 func run_reference_curve():
 	print("\n===== #6 REFERENCE-PLAYER CURVE (the anchor for the monster model) =====")
 	print("Per level, measured from the real combat code with the calibrated make_char:")
