@@ -757,6 +757,16 @@ func _measure_reference_at(level: int, klass: String) -> Dictionary:
 # targets the model is aiming at without the sim reaching into monster_database internals.
 const TARGET_TURNS_NORMAL_SIM := 5.0
 const DANGER_NORMAL_SIM := 0.40
+# 2026-09-03 — the base curve's danger axis now steers by WIN RATE, for the same reason rolecal
+# does: cost is measured across all fights and a dead player has spent 100% of their bar, so the
+# metric saturates exactly where the monster is strongest and the correction runs out of signal.
+#
+# It also removes a contradiction the last calibration exposed. rolecal had already moved to
+# win-rate targets, so ROLE_TARGETS said a normal monster should be a 60% fight while refcal was
+# steering the same monsters by cost — and they came out at 72-100% win, with L250 at a flat
+# 100%. Two calibrators disagreeing about what "normal" means is how a curve ends up nobody's
+# intent.
+const WIN_NORMAL_SIM := 0.60
 # How hard each calibration pass corrects toward the target. 0.5 (sqrt) is heavily damped and
 # needs many passes to close a large gap; 0.75 converges in the budget we run while staying
 # stable at the sample sizes `-- n=` now provides.
@@ -949,8 +959,13 @@ func run_reference_calibrate():
 	# target from these fights, so noise here is baked into the curve and inherited by
 	# every later measurement. `-- n=N` sets the per-cell budget.
 	var passes := 6
-	var samples: int = maxi(8, int(_audit_n / 3.0))  # per class; all 3 run
-	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% HP cost) =====" % [TARGET_TURNS_NORMAL_SIM, DANGER_NORMAL_SIM * 100.0])
+	# Raised with the metric change. `cost` was a mean over a continuous variable and eight
+	# fights sufficed; a WIN RATE is a proportion, and at n=8 its standard error is ~17
+	# percentage points. Calibrating against that noise is what produced str_mult values of
+	# 20-30 when rolecal was converted without touching its sample size.
+	var samples: int = maxi(25, int(_audit_n))  # per class; all 3 run
+	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% win) =====" % [TARGET_TURNS_NORMAL_SIM, WIN_NORMAL_SIM * 100.0])
+	print("HP steers TURNS (a mean); STR steers WIN RATE (a proportion). Cost is reported, not targeted.")
 	var table: Array = []
 	for lvl in REF_ANCHOR_LEVELS:
 		# Seed from the model's current output for this level so calibration starts from
@@ -986,8 +1001,20 @@ func run_reference_calibrate():
 			# a diagnostic because the truncation it measures is real.
 			var turn_err: float = TARGET_TURNS_NORMAL_SIM / maxf(0.5, float(r["turns"]))
 			hp *= pow(clampf(turn_err, 0.15, 6.0), k)
-			var cost_err: float = DANGER_NORMAL_SIM / maxf(0.01, float(r["cost"]))
-			st *= pow(clampf(cost_err, 0.15, 6.0), k)
+			# Steer the danger axis by WIN RATE. Direction: a higher measured win means the
+			# monster is too weak, so strength rises; lower means too strong, so it falls. The
+			# measurement is floored well above zero because a 0% sample carries no gradient —
+			# without it a too-hard monster would be told to get several times harder.
+			#
+			# The clamp is much tighter than the cost version's 0.15-6.0. HP and STR are BOTH
+			# being calibrated here and win rate depends on both, so the two axes are coupled
+			# through it — the same coupling that made rolecal oscillate when it chased two
+			# targets. A gentle per-pass step is what keeps that coupling stable rather than
+			# resonant; if a future change makes it oscillate anyway, the fix is to fix HP by
+			# construction as rolecal does, not to widen this.
+			var win_meas: float = maxf(0.03, float(r.get("win", 0.0)))
+			var win_err: float = win_meas / maxf(0.01, WIN_NORMAL_SIM)
+			st *= pow(clampf(win_err, 0.7, 1.4), k)
 		table.append({"level": lvl, "hp": int(round(hp)), "str": int(round(st))})
 		if last.is_empty():
 			print("L%-6d  (no data)" % lvl)
