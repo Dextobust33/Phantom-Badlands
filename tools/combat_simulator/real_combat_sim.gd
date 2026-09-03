@@ -79,6 +79,7 @@ func _audit_registry() -> Dictionary:
 		"selection": ["why the curve is jagged: tier bands vs monster base levels", run_selection_audit],
 		"refcurve": ["measure the reference-player curve the monster model anchors to", run_reference_curve],
 		"comphp": ["how much max HP the active companion adds, by level", run_companion_hp_probe],
+		"compcap": ["verify the companion ceiling binds AND rarity still pays more", run_companion_cap_probe],
 		"outcomes": ["classify how normal fights END (win / death / escape / stall)", run_outcome_probe],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
@@ -881,6 +882,32 @@ func run_reference_validate():
 	print("If the ratio column is roughly CONSTANT, the curve is the right shape and only")
 	print("needs one scalar correction. If it drifts with level, the probe is wrong in a")
 	print("level-dependent way and the measurement itself has to change.")
+	print("=====================================================================\n")
+
+func run_companion_cap_probe():
+	"""Does the ceiling actually bind, and does a rarer variant still pay MORE?
+
+	Two things have to hold at once. The runaway must stop (it reached +1127% max HP), and
+	the rarest variants must remain the best thing you can be carrying — the owner\'s point
+	that players hunt rare variants and will use them constantly. A hard clamp would satisfy
+	the first and destroy the second, which is why the ceiling is approached asymptotically
+	and is itself scaled by the variant multiplier."""
+	print("\n===== COMPANION CEILING — does it bind, and does rarity still pay? =====")
+	print("Titan \'Titanic Endurance\' (hp_bonus, base 12, scaling 0.25), ceiling 40% x variant.")
+	print("%-10s %12s %12s %12s %12s" % ["cLvl", "common 1.00x", "rare 1.30x", "rarest 1.60x", "rarest/common"])
+	for lvl in [1, 10, 50, 100, 500, 1000, 5000, 10000]:
+		var row: Array = []
+		for vm in [1.0, 1.30, 1.60]:
+			var ab = drop_tables.get_monster_companion_abilities("Titan", lvl, vm, 1, "")
+			row.append(float(int(ab.passive.get("value", 0))))
+		print("%-10d %11.0f%% %11.0f%% %11.0f%% %11.2fx" % [lvl, row[0], row[1], row[2],
+			row[2] / maxf(0.01, row[0])])
+	print("")
+	print("Old formula for comparison (base*vm + scaling*lvl*vm), common variant:")
+	var line := "   "
+	for lvl in [1, 10, 50, 100, 500, 1000, 5000, 10000]:
+		line += "L%d=%.0f%%  " % [lvl, 12.0 + 0.25 * float(lvl)]
+	print(line)
 	print("=====================================================================\n")
 
 func run_companion_hp_probe():
