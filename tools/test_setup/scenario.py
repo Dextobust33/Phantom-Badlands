@@ -297,6 +297,13 @@ def main():
         else:
             # Stand them side by side so they can party up without walking.
             c["x"], c["y"] = anchor[0] + i, anchor[1]
+        # 2026-09-03 — a character without this flag is TELEPORTED near Crossroads on its first
+        # login by the v0.8.5 balance migration, which silently overrode wherever the scenario
+        # placed it. Rebuilt fixtures never have it, so after a permadeath the party spawned
+        # scattered across the map and could not move together. Server log, verbatim:
+        # "Balance migration: test004 moved from (57,-11) to (-3,-5)". Setting it here makes
+        # scenario placement authoritative for every character, not just rebuilt ones.
+        c["balance_migrated_v085"] = True
         c["in_combat"] = False           # never leave a stale lockout behind
         c["saved_combat_state"] = {}
         # Same class of stale state: a character left INSIDE a dungeon stays there on next
