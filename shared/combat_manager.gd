@@ -3289,6 +3289,68 @@ const ABILITY_WEIGHTS := {
 	"meteor": 0.45,       # Focus discharge; the Focus multiplier rides on top
 }
 
+func _estimate_turn_regen_for(character) -> int:
+	"""Total resource restored to the character at the start of their turn — base capped regen
+	plus gear affixes plus companion regen. Sent to the client so the resource bar can show a
+	number that actually explains what the player sees."""
+	if character == null:
+		return 0
+	var path := String(character.get_class_path())
+	var pool: int = character.get_total_max_stamina()
+	var gear_key := "stamina_regen"
+	if path == "mage":
+		pool = character.get_total_max_mana()
+		gear_key = "mana_regen"
+	elif path == "trickster":
+		pool = character.get_total_max_energy()
+		gear_key = "energy_regen"
+	var cap: int = BASE_COMBAT_REGEN_CAP_FLAT + int(float(character.level) * BASE_COMBAT_REGEN_CAP_PER_LVL)
+	var base_regen: int = maxi(4, mini(int(float(pool) * BASE_COMBAT_REGEN_PCT / 100.0), cap))
+	var bonuses: Dictionary = character.get_equipment_bonuses()
+	var gear_regen: int = int(bonuses.get(gear_key, 0))
+	var comp_regen: int = 0
+	if character.has_active_companion():
+		comp_regen = int(round(float(pool) * float(character.get_companion_bonus(gear_key)) / 100.0))
+	return base_regen + maxi(0, gear_regen) + maxi(0, comp_regen)
+
+func _build_ability_cost_info(combat: Dictionary) -> Dictionary:
+	"""Per-card {floor, ceiling, resource} for everything in hand, computed by the SAME code
+	that will charge for it — including mastery, Path and class-passive modifiers the client
+	cannot see. Costs are read without spending anything."""
+	var out := {}
+	var character = combat.get("character", null)
+	if character == null:
+		return out
+	for card in combat.get("combat_hand", []):
+		var name := String(card)
+		if not VARIABLE_COST_TABLE.has(name):
+			continue
+		var entry: Dictionary = VARIABLE_COST_TABLE[name]
+		var res := String(entry.get("resource", "stamina"))
+		var flat_ceiling: int = int(entry.get("ceiling", 0))
+		var cost_percent: int = int(entry.get("cost_percent", 0))
+		var naked := 0
+		var total := 0
+		match res:
+			"mana":
+				naked = character.max_mana
+				total = character.get_total_max_mana()
+			"stamina":
+				naked = character.max_stamina
+				total = character.get_total_max_stamina()
+			"energy":
+				naked = character.max_energy
+				total = character.get_total_max_energy()
+		var ceiling := flat_ceiling
+		if cost_percent > 0 and naked > 0:
+			var basis: float = float(naked) + maxf(0.0, float(total - naked)) * GEAR_COST_SHARE
+			ceiling = maxi(flat_ceiling, int(basis * float(cost_percent) / 100.0))
+		# Same modifier chain apply_variable_cost runs, so the number shown is the number charged.
+		var adj_ceiling: int = apply_skill_cost_reduction(character, name, ceiling)
+		var adj_floor: int = apply_skill_cost_reduction(character, name, maxi(1, int(float(ceiling) * float(entry.get("floor_ratio", 0.3)))))
+		out[name] = {"floor": adj_floor, "ceiling": adj_ceiling, "resource": res}
+	return out
+
 func process_ability_command(peer_id: int, ability_name: String, arg: String) -> Dictionary:
 	"""Process an ability command from player"""
 	if not active_combats.has(peer_id):
@@ -8092,6 +8154,15 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# in the combat scene; deck/discard counts ride along for the
 		# "Deck N · Discard M" status indicator.
 		"combat_hand": combat.get("combat_hand", []).duplicate(),
+		# #6c (2026-09-02) — AUTHORITATIVE ability costs and per-turn regen, computed here and
+		# sent to the client. The client used to derive these itself from a hand-maintained copy
+		# of the cost table, which was wrong five separate ways and could never be right in
+		# principle: the server applies mastery-rank cost reduction, Path effects and class
+		# passives that the client does not model. A player reported a card showing 131 cost
+		# while the bar moved 91 with 50 regen displayed — 10 unaccounted, which is exactly the
+		# shape of an invisible server-side modifier.
+		"ability_costs": _build_ability_cost_info(combat),
+		"turn_regen": _estimate_turn_regen_for(combat.character),
 		"combat_deck_count": combat.get("combat_deck", []).size(),
 		"combat_discard_count": combat.get("combat_discard", []).size(),
 		"combat_hand_size": int(combat.get("combat_hand_size", COMBAT_HAND_SIZE)),

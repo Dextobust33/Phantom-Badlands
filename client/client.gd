@@ -1703,6 +1703,11 @@ const ANIMATION_DURATION: float = 0.6
 var combat_msg_queue: Array[Dictionary] = []
 # Companion HP/KO held back while combat beats are still playing, applied on queue drain.
 var _pending_companion_hp: Dictionary = {}
+# Authoritative per-turn regen and per-card costs, sent by the server in combat_state. The
+# client's own estimates were wrong five different ways before this; these are what the server
+# will actually charge and restore.
+var _server_turn_regen: int = 0
+var _server_ability_costs: Dictionary = {}
 # v0.9.413 — when combat_end fires during a one-turn battle, the queue is
 # still full of attack messages. Without deferring the victory presentations,
 # the victory FX + card cover the panel immediately and the user never sees
@@ -12597,6 +12602,15 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	# is why Blast, Forcefield and Arcane Surge all displayed a cost of 0 on their cards.
 	# combat_manager.gd is a shared script, so the real numbers are simply read. Display names
 	# stay local — those are genuinely client-side presentation.
+	# Server-sent cost wins outright — it is the number that will actually be charged.
+	if _server_ability_costs.has(ability_name):
+		var _sc: Dictionary = _server_ability_costs[ability_name]
+		result = result.duplicate()
+		result["cost"] = int(_sc.get("ceiling", 0))
+		result["cost_floor"] = int(_sc.get("floor", 0))
+		result["resource_type"] = String(_sc.get("resource", result.get("resource_type", resource_type)))
+		result["cost_percent"] = 0   # already resolved server-side; do not re-scale below
+		return result
 	var _real_costs: Dictionary = CombatManagerScript.VARIABLE_COST_TABLE
 	if _real_costs.has(ability_name):
 		var _rc: Dictionary = _real_costs[ability_name]
@@ -20954,7 +20968,10 @@ func update_resource_bar():
 		# tell why their bar barely moves, and a cheap card reads as free. Showing both lets them
 		# do the subtraction themselves instead of being handed a pre-subtracted number with no
 		# explanation, which is what the old net-cost card badge did.
-		var _regen := _estimate_player_turn_regen(max_val)
+		# Prefer the SERVER's number: it includes mastery, Path and companion effects the
+		# client cannot model, and a bar that disagrees with what actually happens is worse
+		# than no bar at all.
+		var _regen := int(_server_turn_regen) if _server_turn_regen > 0 else _estimate_player_turn_regen(max_val)
 		if _regen > 0:
 			label.text = "%s: %d/%d  (+%d/turn)" % [resource_name, current_val, max_val, _regen]
 		else:
@@ -23229,6 +23246,11 @@ func handle_server_message(message: Dictionary):
 				# update.
 				if state.has("combat_hand"):
 					combat_hand = state.get("combat_hand", []) if state.get("combat_hand", []) is Array else []
+					# Authoritative cost/regen from the server (see _build_ability_cost_info).
+					if state.get("ability_costs", null) is Dictionary:
+						_server_ability_costs = state["ability_costs"]
+					if state.has("turn_regen"):
+						_server_turn_regen = int(state.get("turn_regen", 0))
 					combat_deck_count = int(state.get("combat_deck_count", 0))
 					combat_discard_count = int(state.get("combat_discard_count", 0))
 					if combat_scene_panel and combat_scene_panel.has_method("update_hand"):
@@ -24486,6 +24508,10 @@ func _process_combat_start(message: Dictionary):
 	# the combat_start payload's combat_state via get_combat_display.
 	if combat_state.has("combat_hand"):
 		combat_hand = combat_state.get("combat_hand", []) if combat_state.get("combat_hand", []) is Array else []
+		if combat_state.get("ability_costs", null) is Dictionary:
+			_server_ability_costs = combat_state["ability_costs"]
+		if combat_state.has("turn_regen"):
+			_server_turn_regen = int(combat_state.get("turn_regen", 0))
 		combat_deck_count = int(combat_state.get("combat_deck_count", 0))
 		combat_discard_count = int(combat_state.get("combat_discard_count", 0))
 	else:
