@@ -3510,6 +3510,16 @@ func count_milestone_pick(ability_name: String, kind: String) -> int:
 			n += 1
 	return n
 
+func has_card_upgrade(ability_name: String, upgrade_id: String) -> bool:
+	"""Whether this card carries a given rank-up upgrade. 2026-09-03 — the milestone picks array
+	now stores upgrade ids from card_upgrades.gd rather than only the four legacy kinds, so this
+	is the general reader; count_milestone_pick above remains for the stackable ones."""
+	return upgrade_id in get_milestone_picks(ability_name)
+
+func card_upgrade_count(ability_name: String, upgrade_id: String) -> int:
+	"""How many times a stackable upgrade has been taken on this card."""
+	return count_milestone_pick(ability_name, upgrade_id)
+
 func milestones_earned(ability_name: String) -> int:
 	"""One milestone per mastery-rank threshold crossed."""
 	return get_ability_rank(ability_name)

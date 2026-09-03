@@ -36,93 +36,97 @@ const TRADEOFF_MIN_MILESTONE := 3
 
 const UPGRADES := [
 	# ---------------------------------------------------------------- legacy four -----------
-	{"id": "power", "name": "Power", "kind": KIND_ANY, "stacks": true, "tradeoff": false,
+	{"id": "power", "wired": true, "name": "Power", "kind": KIND_ANY, "stacks": true, "tradeoff": false,
 	 "desc": "+12% effect."},
-	{"id": "efficiency", "name": "Efficiency", "kind": KIND_ANY, "stacks": true, "tradeoff": false,
+	{"id": "efficiency", "wired": true, "name": "Efficiency", "kind": KIND_ANY, "stacks": true, "tradeoff": false,
 	 "desc": "-10% cost."},
-	{"id": "rider", "name": "Rider", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
+	{"id": "rider", "wired": true, "name": "Rider", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
 	 "desc": "Adds a bleed, then armour-break, then a chance to stun."},
-	{"id": "duration", "name": "Duration", "kind": KIND_BUFF, "stacks": true, "tradeoff": false,
+	{"id": "duration", "wired": true, "name": "Duration", "kind": KIND_BUFF, "stacks": true, "tradeoff": false,
 	 "desc": "+2 rounds."},
 
 	# ---------------------------------------------------------------- damage, upside --------
-	{"id": "executioner", "name": "Executioner", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "executioner", "wired": true, "name": "Executioner", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "+40% damage against a foe below 30% health."},
-	{"id": "opener", "name": "Opener", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "opener", "wired": true, "name": "Opener", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "+50% damage on your FIRST use each fight."},
-	{"id": "overkill", "name": "Overkill", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
-	 "desc": "Damage beyond a kill carries into the next foe of a flock."},
-	{"id": "keen", "name": "Keen Edge", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
+	# "Overkill" (excess damage carries to the next flock member) was designed and then CUT
+	# before it shipped: every ability body clamps the monster's HP at zero, so by the time any
+	# hook can see the result the excess has already been discarded, and reconstructing it would
+	# mean touching ten ability bodies. Offering a choice that silently does nothing is exactly
+	# the defect this redesign exists to fix, so it is not in the pool. Revisit if the damage
+	# path ever reports pre-clamp damage.
+	{"id": "keen", "wired": false, "name": "Keen Edge", "kind": KIND_DAMAGE, "stacks": true, "tradeoff": false,
 	 "desc": "+8% critical chance with this card."},
-	{"id": "leeching", "name": "Leeching", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "leeching", "wired": true, "name": "Leeching", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 10% of the damage dealt."},
-	{"id": "momentum_feed", "name": "Building", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
+	{"id": "momentum_feed", "wired": true, "name": "Building", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": false,
 	 "desc": "Grants an extra point of your class engine (Momentum / Read / Focus)."},
 
 	# ---------------------------------------------------------------- buff, upside ----------
-	{"id": "preload", "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "preload", "wired": false, "name": "Preload", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "The buff is already active on the first round of your NEXT fight."},
-	{"id": "shared", "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "shared", "wired": false, "name": "Shared", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "In a party, an ally also receives it at half strength."},
-	{"id": "warding", "name": "Warding", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	{"id": "warding", "wired": false, "name": "Warding", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
 	 "desc": "Also grants a small shield when cast."},
 
 	# ---------------------------------------------------------------- control, upside -------
-	{"id": "unsettling", "name": "Unsettling", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	{"id": "unsettling", "wired": false, "name": "Unsettling", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "The foe's next attack is less likely to land."},
-	{"id": "lingering", "name": "Lingering", "kind": KIND_CONTROL, "stacks": true, "tradeoff": false,
+	{"id": "lingering", "wired": false, "name": "Lingering", "kind": KIND_CONTROL, "stacks": true, "tradeoff": false,
 	 "desc": "+1 round to any debuff this card applies."},
 
 	# ---------------------------------------------------------------- any, upside -----------
-	{"id": "refund", "name": "Closing Cost", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "refund", "wired": true, "name": "Closing Cost", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Refunds its cost when it lands the killing blow."},
-	{"id": "swift", "name": "Swift", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	{"id": "swift", "wired": false, "name": "Swift", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Small chance to act again immediately."},
 
 	# ---------------------------------------------------------------- TRADE-OFFS ------------
 	# Gated to TRADEOFF_MIN_MILESTONE and beyond: these are the genuinely hard picks, and a
 	# player meeting them on their first rank-up would be choosing blind.
-	{"id": "overdraw", "name": "Overdraw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "overdraw", "wired": true, "name": "Overdraw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+30% damage, but it costs 25% more."},
-	{"id": "reckless", "name": "Reckless", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "reckless", "wired": true, "name": "Reckless", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+35% damage, but you take 5% of your health as recoil."},
-	{"id": "slow_burn", "name": "Slow Burn", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "slow_burn", "wired": true, "name": "Slow Burn", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "-25% immediate damage, but leaves a burn worth far more over time."},
-	{"id": "concentrated", "name": "Concentrated", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
+	{"id": "concentrated", "wired": false, "name": "Concentrated", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Double strength, half the duration."},
-	{"id": "reckless_guard", "name": "Open Guard", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
+	{"id": "reckless_guard", "wired": false, "name": "Open Guard", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "+50% to the buff, but -15% defence while it lasts."},
-	{"id": "hair_trigger", "name": "Hair Trigger", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "hair_trigger", "wired": true, "name": "Hair Trigger", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Costs 40% less, but its effect varies wildly (50%-150%)."},
 	# The trade-off sub-pool needs to be as deep as the main one, or the LATE milestones - the
 	# ones that are supposed to be the interesting decisions - start repeating exactly where the
 	# stakes are highest. Owner: "trade-offs should likely be a large enough pool that repeats
 	# are rare as well."
-	{"id": "wild_swing", "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "wild_swing", "wired": true, "name": "Wild Swing", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+45% damage, but a real chance to miss outright."},
-	{"id": "bloodprice", "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "bloodprice", "wired": false, "name": "Blood Price", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Paid in health instead of your resource."},
-	{"id": "brittle", "name": "Brittle Strike", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "brittle", "wired": true, "name": "Brittle Strike", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+30% damage, but your guard is down until your next turn."},
-	{"id": "all_in", "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "all_in", "wired": true, "name": "All In", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "Hits far harder the EMPTIER your resource bar is, and weakly when it is full."},
-	{"id": "greedy", "name": "Heavy Draw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
+	{"id": "greedy", "wired": true, "name": "Heavy Draw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+25% damage, but the card is slower to come back around."},
-	{"id": "fragile_ward", "name": "Fragile Ward", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
+	{"id": "fragile_ward", "wired": false, "name": "Fragile Ward", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "+60% to the buff, but it shatters on the first hit you take."},
-	{"id": "slow_cast", "name": "Slow Cast", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
+	{"id": "slow_cast", "wired": false, "name": "Slow Cast", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "+50% to the buff, but the foe acts before you this round."},
-	{"id": "costly_vigil", "name": "Costly Vigil", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
+	{"id": "costly_vigil", "wired": false, "name": "Costly Vigil", "kind": KIND_BUFF, "stacks": false, "tradeoff": true,
 	 "desc": "Lasts twice as long, but drains resource every round it holds."},
-	{"id": "provoking", "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "provoking", "wired": false, "name": "Provoking", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, but it turns the foe's attention onto you."},
-	{"id": "unstable_hex", "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "unstable_hex", "wired": false, "name": "Unstable Hex", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "A stronger debuff, with a small chance it lands on you instead."},
-	{"id": "overreach", "name": "Overreach", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
+	{"id": "overreach", "wired": false, "name": "Overreach", "kind": KIND_CONTROL, "stacks": false, "tradeoff": true,
 	 "desc": "Hits harder, but wears off a round sooner."},
-	{"id": "gamblers_cut", "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "gamblers_cut", "wired": true, "name": "Gambler's Cut", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Half cost, but a quarter of the time it does nothing at all."},
-	{"id": "sacrificial", "name": "Sacrificial", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
+	{"id": "sacrificial", "wired": true, "name": "Sacrificial", "kind": KIND_ANY, "stacks": false, "tradeoff": true,
 	 "desc": "Far stronger, but the card is spent for the rest of the fight."},
 ]
 
@@ -152,6 +156,12 @@ static func eligible(kind: String, milestone: int, taken: Array) -> Array:
 	"""Upgrades that may be OFFERED for a card of `kind` at this milestone."""
 	var out: Array = []
 	for u in UPGRADES:
+		# An upgrade whose effect is not yet consumed by combat must never be OFFERED. Shipping
+		# a choice that silently does nothing is the defect this whole redesign exists to
+		# remove, so the gate is here rather than in a reviewer's memory. Flip `wired` to true
+		# in the same change that implements the effect.
+		if not bool(u.get("wired", false)):
+			continue
 		var u_kind := String(u.get("kind", KIND_ANY))
 		if u_kind != KIND_ANY and u_kind != kind:
 			continue

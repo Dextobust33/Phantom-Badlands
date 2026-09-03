@@ -3963,6 +3963,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
 	combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + ability_damage_dealt
+	# 2026-09-03 — card upgrades that need the RESULT of the hit rather than its magnitude.
+	# Kept beside the rider block below, which is the same shape of hook and the model these
+	# follow: read the damage actually dealt, then apply.
+	_apply_card_upgrade_on_hit(combat, ability_name, ability_damage_dealt, result)
 	# v0.9.676 — Tier 'rider' milestone picks: a damaging ability inflicts BLEED,
 	# scaling with rider level + the hit's damage. Reuses the monster_bleed DoT
 	# (ticked in _process_monster_dots).
@@ -5855,7 +5859,141 @@ func apply_skill_damage_bonus(character: Character, ability_name: String, base_d
 			var ramp_total = minf(character.get_path_effect_total("ramp_damage_cap"), path_ramp * float(combat.get("round", 0)))
 			if ramp_total > 0.0:
 				dmg = dmg * (1.0 + ramp_total / 100.0)
+	# 2026-09-03 — CARD RANK-UP UPGRADES (damage side). Applied here, at the end of the existing
+	# modifier chain, because this is already the single funnel every ability's damage passes
+	# through: nineteen scattered checks would drift apart the way the cost tables did.
+	dmg = _apply_card_upgrade_damage(character, ability_name, dmg, combat)
 	return int(dmg)
+
+func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage_dealt: int, result: Dictionary) -> void:
+	"""Rank-up upgrades that resolve AFTER the hit lands, because they depend on what happened:
+	how much was dealt, whether it killed, whether the player should pay for it."""
+	var character = combat.get("character", null)
+	if character == null:
+		return
+	var picks: Array = character.get_milestone_picks(ability_name)
+	if picks.is_empty():
+		return
+	var monster = combat.get("monster", {})
+
+	if damage_dealt > 0:
+		# Leeching — a sustain option that competes with raw damage, which is the point.
+		if "leeching" in picks:
+			var heal: int = maxi(1, int(float(damage_dealt) * 0.10))
+			var before: int = int(character.current_hp)
+			character.current_hp = mini(character.get_total_max_hp(), character.current_hp + heal)
+			var got: int = int(character.current_hp) - before
+			if got > 0:
+				result.messages.append("[color=#66FF66]Leeching: you draw %d health from the wound.[/color]" % got)
+		# Slow Burn traded 25% of the hit away for a burn worth more over time.
+		if "slow_burn" in picks:
+			var burn: int = maxi(1, int(float(damage_dealt) * 0.55))
+			combat["monster_burn"] = int(combat.get("monster_burn", 0)) + burn
+			combat["monster_burn_duration"] = maxi(int(combat.get("monster_burn_duration", 0)), 4)
+			result.messages.append("[color=#FF8800]Slow Burn: it catches, and keeps burning (%d/turn).[/color]" % burn)
+		# Reckless bought its damage with the player's own health.
+		if "reckless" in picks:
+			var recoil: int = maxi(1, int(float(character.get_total_max_hp()) * 0.05))
+			character.current_hp = maxi(1, int(character.current_hp) - recoil)
+			result.messages.append("[color=#FF6666]Reckless: the effort costs you %d health.[/color]" % recoil)
+		# Brittle Strike left the guard open until the next turn.
+		if "brittle" in picks:
+			combat["guard_open"] = true
+			result.messages.append("[color=#FFAA55]Brittle Strike: your guard is open until you act again.[/color]")
+		# Building feeds the class engine an extra point, on top of the standard gain.
+		if "momentum_feed" in picks:
+			match String(character.get_class_path()):
+				"warrior":
+					combat["momentum"] = mini(MOMENTUM_MAX, int(combat.get("momentum", 0)) + 1)
+					result.messages.append("[color=#C8A24A]Building: +1 Momentum.[/color]")
+				"trickster":
+					combat["combo"] = mini(COMBO_MAX, int(combat.get("combo", 0)) + 1)
+					result.messages.append("[color=#7FD8C8]Building: +1 Read.[/color]")
+				"mage":
+					combat["focus"] = mini(FOCUS_MAX, int(combat.get("focus", 0)) + 1)
+					result.messages.append("[color=#5AC8FF]Building: +1 Focus.[/color]")
+
+	# Killing-blow upgrades. Checked after the damage block so an overkill hit still leeches.
+	var killed: bool = monster is Dictionary and int(monster.get("current_hp", 1)) <= 0
+	if killed:
+		if "refund" in picks:
+			var spent: int = int(character.get_meta("path_last_ability_cost", 0))
+			if spent > 0:
+				_restore_primary_resource(character, spent)
+				result.messages.append("[color=#66FF66]Closing Cost: the kill refunds %d.[/color]" % spent)
+
+func _restore_primary_resource(character, amount: int) -> void:
+	"""Give back `amount` of whichever resource this class actually spends."""
+	if character == null or amount <= 0:
+		return
+	match String(character.get_class_path()):
+		"warrior":
+			character.current_stamina = mini(character.get_total_max_stamina(), character.current_stamina + amount)
+		"mage":
+			character.current_mana = mini(character.get_total_max_mana(), character.current_mana + amount)
+		"trickster":
+			character.current_energy = mini(character.get_total_max_energy(), character.current_energy + amount)
+
+func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg: float, combat) -> float:
+	"""Damage-side rank-up upgrades. Each is a no-op unless the card actually carries it, so the
+	cost of asking is a dictionary lookup per pick, not per upgrade in the pool."""
+	if character == null:
+		return dmg
+	var picks: Array = character.get_milestone_picks(ability_name)
+	if picks.is_empty():
+		return dmg
+	var monster = combat.get("monster", {}) if (combat != null and combat is Dictionary) else {}
+
+	# --- upside ---------------------------------------------------------------------------
+	if "executioner" in picks and monster is Dictionary:
+		var mx: float = maxf(1.0, float(monster.get("max_hp", 1)))
+		if float(monster.get("current_hp", mx)) / mx < 0.30:
+			dmg *= 1.40
+	if "opener" in picks and combat != null and combat is Dictionary:
+		# First use of THIS card in THIS fight. Tracked on the combat so a flock chain, which
+		# starts a fresh combat, correctly offers the bonus again.
+		var used_key := "opener_used_%s" % ability_name
+		if not bool(combat.get(used_key, false)):
+			combat[used_key] = true
+			dmg *= 1.50
+	# `keen` (crit chance) and `leeching` are resolved at the damage-application site, not here:
+	# this function returns a magnitude and knows nothing about whether the hit crit or landed.
+
+	# --- trade-offs -------------------------------------------------------------------------
+	if "overdraw" in picks:
+		dmg *= 1.30          # cost side handled in apply_variable_cost
+	if "reckless" in picks:
+		dmg *= 1.35          # recoil applied at the damage-application site
+	if "brittle" in picks:
+		dmg *= 1.30          # guard-down flag set at the application site
+	if "greedy" in picks:
+		dmg *= 1.25          # slower redraw handled by the deck
+	if "wild_swing" in picks:
+		# A real chance to whiff outright — the gamble IS the upgrade.
+		if randf() < 0.20:
+			return 0.0
+		dmg *= 1.45
+	if "all_in" in picks:
+		# Rewards commitment: strongest on an empty bar, weak on a full one. 0.75x at full,
+		# 1.60x at empty, so it is a genuine decision about WHEN to play the card.
+		var pool: int = maxi(1, _primary_resource_max(character))
+		var frac: float = clampf(float(_primary_resource_value(character)) / float(pool), 0.0, 1.0)
+		dmg *= lerpf(1.60, 0.75, frac)
+	if "slow_burn" in picks:
+		dmg *= 0.75          # the burn itself is applied at the application site
+	if "hair_trigger" in picks:
+		dmg *= randf_range(0.50, 1.50)
+	if "gamblers_cut" in picks:
+		if randf() < 0.25:
+			return 0.0       # a quarter of the time it simply does not happen
+	if "sacrificial" in picks and combat != null and combat is Dictionary:
+		var spent_key := "sacrificed_%s" % ability_name
+		if not bool(combat.get(spent_key, false)):
+			combat[spent_key] = true
+			dmg *= 2.00      # once per fight, then the card is spent
+		else:
+			return 0.0
+	return dmg
 
 # v0.9.637 — Buff-ability rank scaling. Player report: 'War Cry just got a
 # rank up and it had a Damage option or a crit chance option (from Wyvern).
