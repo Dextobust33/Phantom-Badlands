@@ -3465,6 +3465,163 @@ func _build_ability_cost_info(combat: Dictionary) -> Dictionary:
 		out[name] = {"floor": adj_floor, "ceiling": adj_ceiling, "resource": res}
 	return out
 
+# === AUTHORITATIVE CARD EFFECT PREVIEW (2026-09-03) ===
+#
+# The client used to compute the number printed on every combat card from its OWN hand-copied
+# mirror of the formulas below (`client.gd::_estimate_ability_card_effect`). The #6c anchoring
+# pass moved five abilities onto the health-bar model and that mirror was never updated, so the
+# cards lied. Measured on a fresh gearless character: Forcefield advertised 252 for a 27-point
+# shield, Meteor promised 2.1x what it dealt, and Magic Bolt UNDER-reported by 6.7x. A player
+# hit all three in a single session and could not tell which of his cards were worth playing.
+#
+# This is the fifth time a client-side copy of a server formula has drifted (five stale cost
+# tables, the Forcefield description, now every damage card), so the fix is the one that retired
+# the cost drift: the server computes it, the client renders what it is told.
+#
+# Values are for a FULL spend, which is what a card headline should advertise. Anything that
+# depends on live combat state (Momentum, Focus) reads that state, so the number moves as the
+# fight does — which is how a Warrior can finally SEE that Momentum makes Devastate hit harder.
+#
+# DRIFT GUARD: `tools/probe/preview_drift.gd` drives the real resolve path and compares it
+# against these numbers. Run it after touching any damage formula. It is what stops this
+# function from quietly becoming the sixth stale mirror.
+func preview_ability_effect(character, combat: Dictionary, ability_name: String) -> Dictionary:
+	"""{kind: "damage"|"shield"|"heal", value: int, scales: String} for one card, at a full
+	spend. `scales` names the live resource the value tracks, so the client can say WHY a
+	number moves without knowing the formula."""
+	if character == null:
+		return {}
+	var name := canonical_ability(ability_name)
+	var total_attack: int = character.get_total_attack()
+	var s_str: float = float(character.get_effective_stat("strength"))
+	var s_wits: float = float(character.get_effective_stat("wits"))
+	var str_mult: float = 1.0 + sqrt(s_str) / 10.0
+	var wits_mult: float = 1.0 + sqrt(s_wits) / 10.0
+	var focus: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
+	var focus_mult: float = 1.0 + float(focus) * FOCUS_DMG_PER
+
+	# --- Anchored abilities (#6c): a share of the health bar they are fighting. -------------
+	if ABILITY_WEIGHTS.has(name):
+		var stat := "strength"
+		var is_spell: bool = name in ["magic_bolt", "blast", "meteor"]
+		if is_spell:
+			stat = "intelligence"
+		var dmg: float = _ability_anchored_damage(character, stat, float(ABILITY_WEIGHTS[name]))
+		if dmg > 0.0:
+			match name:
+				"magic_bolt":
+					# A full spend is MAGIC_BOLT_FULL_SPEND_PCT of the pool: _mb_frac = 1.0, so
+					# _mb_eff resolves to 1.0 too. Focus rides on top.
+					dmg *= focus_mult
+				"blast":
+					dmg *= focus_mult
+				"meteor":
+					# meteor_mult is a 3.0-4.0 roll divided by 3.5, so it averages 1.0 — the
+					# card shows the average rather than a range it cannot predict.
+					dmg *= (1.0 + float(focus) * FOCUS_METEOR_PER)
+			var note := ""
+			if is_spell and focus > 0:
+				note = "Focus %d/%d" % [focus, FOCUS_MAX]
+			# Run the REAL modifier chain (mastery rank, off-affinity, imprints, Path effects)
+			# rather than a fourth copy of it. A rank-0 ability is at 0.80x, which is most of
+			# what a fresh character will ever see, so omitting this made every card ~20% high.
+			var out_dmg: int = apply_skill_damage_bonus(character, name, int(dmg), combat)
+			if is_spell:
+				out_dmg = int(float(out_dmg) * _caster_passive_damage_mult(character))
+			return {"kind": "damage", "value": out_dmg, "scales": note}
+
+	# --- Not yet anchored. Every branch below is TEMPORARY: it disappears as its ability is --
+	# --- converted, and when the last one goes this function is the anchored formula alone. -
+	match name:
+		"devastate":
+			# Finisher: attack x (2 + Momentum). The card MUST show the CURRENT Momentum or a
+			# player cannot see that building it does anything — the old card showed a flat 5x
+			# and never mentioned Momentum, which is exactly what was reported.
+			var mom: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
+			# Devastate DUMPS stamina: variable_fraction is 0.5 + bar fullness, so a full bar
+			# is 1.5x, not 1.0x. Quoting the un-dumped value understated it by a third.
+			var dev_full: float = 0.5 + clampf(
+				float(character.current_stamina) / maxf(1.0, float(character.get_total_max_stamina())), 0.0, 1.0)
+			return {"kind": "damage",
+					"value": apply_skill_damage_bonus(character, name,
+						int(float(total_attack) * (2.0 + float(mom)) * str_mult * dev_full), combat),
+					"scales": "Momentum %d/%d" % [mom, MOMENTUM_MAX]}
+		"shield_bash":
+			return {"kind": "damage", "value": apply_skill_damage_bonus(character, name, int(float(total_attack) * 1.5 * str_mult), combat), "scales": ""}
+		"ambush":
+			# 2.2x (the #55 pass trimmed 3.0 -> 2.5 -> 2.2; the client mirror kept 3.0, and so
+			# did the first draft of this function until the drift guard caught it), and a 50%
+			# crit at +50% is +25% on average, which is what the card advertises.
+			return {"kind": "damage",
+					"value": apply_skill_damage_bonus(character, name,
+						int(float(total_attack) * 2.2 * wits_mult * 1.25), combat),
+					"scales": ""}
+		"gambit":
+			# The value is the ON-HIT damage; Gambit can miss outright and hurt you instead, so
+			# the odds belong on the card next to it rather than being averaged into a number
+			# the player will never actually see land.
+			var g_success: int = mini(80, 55 + int(s_wits / 4.0))
+			return {"kind": "damage",
+					"value": apply_skill_damage_bonus(character, name,
+						int(float(total_attack) * 4.5 * wits_mult), combat),
+					"scales": "%d%% to land" % g_success}
+		"exploit":
+			# #55 trimmed this from (15 + WITS/4, cap 35) to (10 + WITS/6, cap 22) because
+			# %-max-HP is gear-independent. Neither mirror was updated, so Tricksters have been
+			# told "35% of max HP" by a card that removes 22%.
+			var pct: int = mini(22, 10 + int(s_wits / 6.0))
+			var mhp: float = 0.0
+			var mon = combat.get("monster", null)
+			if mon is Dictionary:
+				mhp = float(mon.get("max_hp", 0))
+			if mhp > 0.0:
+				return {"kind": "damage",
+						"value": apply_skill_damage_bonus(character, name, int(mhp * float(pct) / 100.0), combat),
+						"scales": "%d%% of enemy max HP" % pct}
+			return {}
+		"forcefield", "shield":
+			# Anchored to the caster's OWN health bar, not `100 + INT*8`. The card front was the
+			# last surface still on the old formula after v0.9.741 corrected the two
+			# description sites — which is why a 27-point shield still advertised 252.
+			return {"kind": "shield",
+					"value": _apply_buff_value_modifiers(character, "forcefield",
+						int(float(character.get_total_max_hp()) * FORCEFIELD_SHARE_OF_BAR
+							* _ability_stat_ratio(character, "intelligence"))),
+					"scales": ""}
+		"rally":
+			var s_con: float = float(character.get_effective_stat("constitution"))
+			return {"kind": "heal",
+					"value": _apply_buff_value_modifiers(character, "rally", int(30.0 + sqrt(s_con) * 10.0)),
+					"scales": ""}
+	return {}
+
+func _caster_passive_damage_mult(character) -> float:
+	"""Wizard-family passives that land on EVERY spell, expressed as one multiplier so the card
+	quotes what the player will actually see. Arcane Precision is a flat +15%; the +10% spell
+	crit is a 1.5x on a tenth of casts, so +5% in expectation. Together ~1.21x, which is exactly
+	the gap the drift guard reported between the preview and the real Meteor."""
+	var passive: Dictionary = character.get_class_passive()
+	var fx: Dictionary = passive.get("effects", {})
+	var mult: float = 1.0
+	mult *= (1.0 + float(fx.get("spell_damage_bonus", 0.0)))
+	mult *= (1.0 + float(fx.get("spell_crit_bonus", 0.0)) * 0.5)
+	return mult
+
+func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
+	"""Authoritative effect preview for every card in hand. Companion and dungeon cards are
+	omitted deliberately: they are data-driven and the client renders them from the shared card
+	table, which is a shared definition rather than a duplicated formula."""
+	var out := {}
+	var character = combat.get("character", null)
+	if character == null:
+		return out
+	for card in combat.get("combat_hand", []):
+		var name := String(card)
+		var eff: Dictionary = preview_ability_effect(character, combat, name)
+		if not eff.is_empty() and String(eff.get("kind", "")) != "":
+			out[name] = eff
+	return out
+
 func process_ability_command(peer_id: int, ability_name: String, arg: String) -> Dictionary:
 	"""Process an ability command from player"""
 	if not active_combats.has(peer_id):
@@ -8387,6 +8544,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# while the bar moved 91 with 50 regen displayed — 10 unaccounted, which is exactly the
 		# shape of an invisible server-side modifier.
 		"ability_costs": _build_ability_cost_info(combat),
+		# 2026-09-03 — authoritative per-card DAMAGE/SHIELD, for the same reason as the
+		# costs above: the client's own copy of these formulas had drifted up to 6.7x.
+		# Old clients ignore the field and fall back to their local estimate.
+		"ability_effects": _build_ability_effect_info(combat),
 		"turn_regen": _estimate_turn_regen_for(combat.character),
 		"combat_deck_count": combat.get("combat_deck", []).size(),
 		"combat_discard_count": combat.get("combat_discard", []).size(),

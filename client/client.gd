@@ -1712,6 +1712,11 @@ var _pending_companion_hp: Dictionary = {}
 # will actually charge and restore.
 var _server_turn_regen: int = 0
 var _server_ability_costs: Dictionary = {}
+# 2026-09-03 — authoritative per-card damage/shield/heal, same channel as the costs.
+# The local estimates below drifted up to 6.7x after the #6c anchoring pass (a card
+# advertised a 252 shield for 27 points), so the server's number wins wherever it
+# exists. `_estimate_ability_card_effect` only computes when this has no entry.
+var _server_ability_effects: Dictionary = {}
 # v0.9.413 — when combat_end fires during a one-turn battle, the queue is
 # still full of attack messages. Without deferring the victory presentations,
 # the victory FX + card cover the panel immediately and the user never sees
@@ -4915,10 +4920,10 @@ func _input(event):
 			# freshly cleared game_output AFTER the player dismissed. Mirrors
 			# acknowledge_continue's v0.9.417 flush.
 			combat_msg_queue.clear()
-			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
-			# applies deferred bar updates — drop the pending companion value with it so a
-			# stale HP/KO from an abandoned fight cannot land on the next one.
-			_pending_companion_hp = {}
+			# Clearing the queue skips _drain_combat_queue's empty handler, so settle the held
+			# bars HERE. This used to discard the pending companion value and never apply the
+			# player's at all, which is why HP appeared to drop only after the fight was over.
+			_settle_combat_bars()
 			combat_phase_paused = false
 			combat_phase_timer = 0.0
 			_pending_combat_end_chrome = {}
@@ -12941,6 +12946,30 @@ func _get_ability_mastery_damage_mult(ability_name: String) -> float:
 func _estimate_ability_card_effect(ability_name: String, planned_cost: int, fraction: float) -> Dictionary:
 	# Returns {text, color} for the third row of a combat hand card.
 	# Damage abilities show "~N dmg" (orange); non-damage show a short tag.
+	#
+	# 2026-09-03 — the SERVER's number wins. Everything below this block is a
+	# hand-copied mirror of combat_manager's formulas, and the #6c anchoring pass made
+	# five of them wrong by 0.15x to 6.0x while leaving the unconverted ones exactly
+	# right — a partial migration nobody could see from the client. The mirror is kept
+	# ONLY as a fallback for a card the server did not describe (companion/dungeon
+	# cards, and any state where no combat_state has arrived yet).
+	if _server_ability_effects.has(ability_name):
+		var _se: Dictionary = _server_ability_effects[ability_name]
+		var _sv: int = int(_se.get("value", 0))
+		var _sk: String = String(_se.get("kind", ""))
+		var _scales: String = String(_se.get("scales", ""))
+		# A variable-cost card scales with the spend, and `fraction` is what the player
+		# is about to commit. The server quotes a FULL spend, so scale it down here.
+		var _f: float = clampf(fraction, 0.0, 1.0)
+		if _sk == "damage":
+			var _txt: String = "~%d dmg" % max(0, int(float(_sv) * _f))
+			if _scales != "":
+				_txt += " (%s)" % _scales
+			return {"text": _txt, "color": "#FFA060"}
+		if _sk == "shield":
+			return {"text": "Shield %d" % max(0, int(float(_sv) * _f)), "color": "#7AA8FF"}
+		if _sk == "heal":
+			return {"text": "Heal %d" % max(0, int(float(_sv) * _f)), "color": "#80E080"}
 	var int_stat = _get_card_effective_stat("intelligence")
 	var str_stat = _get_card_effective_stat("strength")
 	var wits_stat = _get_card_effective_stat("wits")
@@ -12983,11 +13012,15 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
 		"ambush":
 			var wits_mult = 1.0 + sqrt(float(wits_stat)) / 10.0
-			# 50% crit at +50% damage → average +25%.
-			var dmg = int(float(total_attack) * 3.0 * wits_mult * fraction * phys_mult * mastery_mult * 1.25)
+			# 2.2x, not 3.0 — #55 trimmed it (3.0 -> 2.5 -> 2.2) and this mirror kept the old
+			# value, so the card over-promised by 36%. 50% crit at +50% -> average +25%.
+			var dmg = int(float(total_attack) * 2.2 * wits_mult * fraction * phys_mult * mastery_mult * 1.25)
 			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
 		"exploit":
-			var base_pct = clampi(15 + int(wits_stat / 4), 15, 35)
+			# #55 trimmed this from (15 + WITS/4, cap 35) to (10 + WITS/6, cap 22) because
+			# %-max-HP damage is gear-independent. The mirror kept the old numbers, so the card
+			# advertised 35% of a monster's health bar while the ability removed 22%.
+			var base_pct = mini(22, 10 + int(wits_stat / 6))
 			var max_hp_est = current_enemy_max_hp if current_enemy_max_hp > 0 else _get_estimated_enemy_hp_for_card()
 			if max_hp_est > 0:
 				var dmg = int(float(max_hp_est) * float(base_pct) / 100.0 * fraction * mastery_mult)
@@ -13000,7 +13033,13 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			return {"text": "~%d @%d%%" % [max(0, dmg), success], "color": "#FFA060"}
 		# Non-damage abilities — short effect tags.
 		"forcefield":
-			var shield_val = int((100.0 + float(int_stat) * 8.0) * fraction)
+			# #6c anchored Forcefield to the caster's own health bar. v0.9.741 corrected the two
+			# DESCRIPTION sites and missed this one — the card FRONT — which is the surface a
+			# player actually reads: it advertised a 252 shield for 27 points of absorption.
+			var _ff_hp := float(character_data.get("total_max_hp", character_data.get("max_hp", 1)))
+			var _ff_lvl := maxf(1.0, float(character_data.get("level", 1)))
+			var _ff_ratio := pow(maxf(0.05, float(int_stat) / (_ff_lvl + 13.0)), 0.5)
+			var shield_val = int(_ff_hp * 0.25 * _ff_ratio * fraction)
 			return {"text": "Shield %d" % shield_val, "color": "#7AA8FF"}
 		"haste":
 			var spd = int((20.0 + float(int_stat) / 5.0) * fraction)
@@ -15103,10 +15142,10 @@ func execute_local_action(action: String):
 				_pending_combat_end_chrome = {}
 				_emit_combat_end_chrome(chrome_args)
 			combat_msg_queue.clear()
-			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
-			# applies deferred bar updates — drop the pending companion value with it so a
-			# stale HP/KO from an abandoned fight cannot land on the next one.
-			_pending_companion_hp = {}
+			# Clearing the queue skips _drain_combat_queue's empty handler, so settle the held
+			# bars HERE. This used to discard the pending companion value and never apply the
+			# player's at all, which is why HP appeared to drop only after the fight was over.
+			_settle_combat_bars()
 			combat_phase_paused = false
 			combat_phase_timer = 0.0
 			# v0.9.593 — use _force_end_action_phase so the persistent-FX overlay
@@ -15667,10 +15706,10 @@ func acknowledge_continue():
 	# only schedules from inside _drain_combat_queue's empty branch, which the
 	# user may have already passed by pressing SPACE.
 	combat_msg_queue.clear()
-	# Clearing the queue skips _drain_combat_queue's empty handler, which is what
-	# applies deferred bar updates — drop the pending companion value with it so a
-	# stale HP/KO from an abandoned fight cannot land on the next one.
-	_pending_companion_hp = {}
+	# Clearing the queue skips _drain_combat_queue's empty handler, so settle the held
+	# bars HERE. This used to discard the pending companion value and never apply the
+	# player's at all, which is why HP appeared to drop only after the fight was over.
+	_settle_combat_bars()
 	combat_phase_paused = false
 	combat_phase_timer = 0.0
 	# v0.9.593 — _force_end_action_phase tears down the persistent overlay too.
@@ -22077,10 +22116,10 @@ func handle_server_message(message: Dictionary):
 			# fire after the player is already dead. Mirrors the v0.9.417
 			# acknowledge_continue fix for the victory path.
 			combat_msg_queue.clear()
-			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
-			# applies deferred bar updates — drop the pending companion value with it so a
-			# stale HP/KO from an abandoned fight cannot land on the next one.
-			_pending_companion_hp = {}
+			# Clearing the queue skips _drain_combat_queue's empty handler, so settle the held
+			# bars HERE. This used to discard the pending companion value and never apply the
+			# player's at all, which is why HP appeared to drop only after the fight was over.
+			_settle_combat_bars()
 			combat_phase_paused = false
 			combat_phase_timer = 0.0
 			_pending_victory_fx_play = false
@@ -23268,6 +23307,8 @@ func handle_server_message(message: Dictionary):
 					# Authoritative cost/regen from the server (see _build_ability_cost_info).
 					if state.get("ability_costs", null) is Dictionary:
 						_server_ability_costs = state["ability_costs"]
+					if state.get("ability_effects", null) is Dictionary:
+						_server_ability_effects = state["ability_effects"]
 					if state.has("turn_regen"):
 						_server_turn_regen = int(state.get("turn_regen", 0))
 					combat_deck_count = int(state.get("combat_deck_count", 0))
@@ -24531,6 +24572,8 @@ func _process_combat_start(message: Dictionary):
 		combat_hand = combat_state.get("combat_hand", []) if combat_state.get("combat_hand", []) is Array else []
 		if combat_state.get("ability_costs", null) is Dictionary:
 			_server_ability_costs = combat_state["ability_costs"]
+		if combat_state.get("ability_effects", null) is Dictionary:
+			_server_ability_effects = combat_state["ability_effects"]
 		if combat_state.has("turn_regen"):
 			_server_turn_regen = int(combat_state.get("turn_regen", 0))
 		combat_deck_count = int(combat_state.get("combat_deck_count", 0))
@@ -36149,52 +36192,86 @@ func _travel_fx_type(lower: String) -> String:
 		return "arcane"
 	return "physical"
 
+func _settle_combat_bars() -> void:
+	"""Apply every result that was HELD BACK while the round played out beat by beat.
+
+	Combat results are deliberately withheld until the playback queue drains, so a health bar
+	never empties before the line that explains the hit (see `_coop_playback_pending`). That makes
+	SOMETHING responsible for applying them once playback is over — and that something used to be
+	only the empty-branch of `_drain_combat_queue`.
+
+	The bug that forced this extraction (owner report, 2026-09-03): *"If combat actions are
+	performed too fast it's possible for a player to finish the combat before HP bars are properly
+	updated... they move or take an action pretty quickly after combat and this results in their HP
+	bar going down."* `combat_msg_queue.clear()` is called from FIVE places (victory dismiss,
+	dungeon dismiss, acknowledge_continue, death, permadeath) and every one of them bypassed the
+	drain, so the held player HP was never applied at all — the bar kept its pre-fight number until
+	the next unrelated `character_update`, which arrives when the player moves.
+
+	Each of those five sites carried a comment noting that clearing skips the settle, and each
+	responded by DISCARDING the pending companion value rather than applying it: the same "hold
+	means discard" defect fixed for the companion bar in v0.9.741 (89c3960). Five copies of a
+	comment explaining the hole is the tell that the settle should not have been reachable by only
+	one path.
+
+	So it lives here, and every route that ends playback — draining OR clearing — calls it.
+	Applying and clearing in one step is also what keeps a stale value from an abandoned fight off
+	the NEXT fight, which is what those five discards were reaching for.
+
+	Idempotent: reads authoritative state, and empties each pending slot as it consumes it."""
+	# #76 Slice 3 — the round played out beat by beat off per-actor HP snapshots; settle
+	# on the authoritative end-of-round state so nothing can drift.
+	if _pending_party_end_character != null:
+		var _pec = _pending_party_end_character
+		_pending_party_end_character = null
+		_set_character_data(_pec)
+		update_player_level()
+		update_player_hp_bar()
+		update_resource_bar()
+		update_player_xp_bar()
+		update_currency_display()
+	_party_end_playback = false
+	# 2026-09-02 — SOLO settle. Holding results back until the beats have played (see
+	# _coop_playback_pending) means something has to apply them when the queue drains.
+	# The party paths below do that from their own authoritative payloads; solo had no
+	# equivalent, so without this the bars would simply stop moving mid-fight. Reading
+	# from character_data is idempotent, and the party payloads overwrite it just after.
+	update_player_hp_bar()
+	update_resource_bar()
+	if combat_scene_panel and combat_scene_panel.has_method("update_player_hp"):
+		combat_scene_panel.update_player_hp(
+			int(character_data.get("current_hp", 0)),
+			int(character_data.get("total_max_hp", character_data.get("max_hp", 1))))
+	if not _pending_companion_hp.is_empty() and combat_scene_panel 				and combat_scene_panel.has_method("update_companion_combat_hp"):
+		var _pc: Dictionary = _pending_companion_hp
+		_pending_companion_hp = {}
+		combat_scene_panel.update_companion_combat_hp(
+			int(_pc.get("hp", -1)), int(_pc.get("max", -1)), bool(_pc.get("ko", false)))
+	else:
+		# No panel to show it on (an abandoned or already-torn-down fight). Still clear it:
+		# a stale HP/KO must not survive into the NEXT fight. This is the safety property the
+		# five discard sites were reaching for, kept now that they apply instead of drop.
+		_pending_companion_hp = {}
+	if not _pending_party_my_state.is_empty():
+		var _pms: Dictionary = _pending_party_my_state
+		_pending_party_my_state = {}
+		character_data["current_hp"] = _pms.get("current_hp", character_data.get("current_hp", 0))
+		character_data["current_mana"] = _pms.get("current_mana", character_data.get("current_mana", 0))
+		character_data["current_stamina"] = _pms.get("current_stamina", character_data.get("current_stamina", 0))
+		character_data["current_energy"] = _pms.get("current_energy", character_data.get("current_energy", 0))
+		update_player_hp_bar()
+		update_resource_bar()
+	if not _pending_party_final_state.is_empty():
+		var _pfs: Dictionary = _pending_party_final_state
+		_pending_party_final_state = {}
+		_apply_party_panel_hp(_pfs)
+		_apply_party_members_to_panel(_pfs)
+
 func _drain_combat_queue():
 	"""Display one queued combat message, then pause before showing the next."""
 	if combat_msg_queue.is_empty():
 		combat_phase_paused = false
-		# #76 Slice 3 — the round played out beat by beat off per-actor HP snapshots; settle
-		# on the authoritative end-of-round state so nothing can drift.
-		if _pending_party_end_character != null:
-			var _pec = _pending_party_end_character
-			_pending_party_end_character = null
-			_set_character_data(_pec)
-			update_player_level()
-			update_player_hp_bar()
-			update_resource_bar()
-			update_player_xp_bar()
-			update_currency_display()
-		_party_end_playback = false
-		# 2026-09-02 — SOLO settle. Holding results back until the beats have played (see
-		# _coop_playback_pending) means something has to apply them when the queue drains.
-		# The party paths below do that from their own authoritative payloads; solo had no
-		# equivalent, so without this the bars would simply stop moving mid-fight. Reading
-		# from character_data is idempotent, and the party payloads overwrite it just after.
-		update_player_hp_bar()
-		update_resource_bar()
-		if combat_scene_panel and combat_scene_panel.has_method("update_player_hp"):
-			combat_scene_panel.update_player_hp(
-				int(character_data.get("current_hp", 0)),
-				int(character_data.get("total_max_hp", character_data.get("max_hp", 1))))
-		if not _pending_companion_hp.is_empty() and combat_scene_panel 				and combat_scene_panel.has_method("update_companion_combat_hp"):
-			var _pc: Dictionary = _pending_companion_hp
-			_pending_companion_hp = {}
-			combat_scene_panel.update_companion_combat_hp(
-				int(_pc.get("hp", -1)), int(_pc.get("max", -1)), bool(_pc.get("ko", false)))
-		if not _pending_party_my_state.is_empty():
-			var _pms: Dictionary = _pending_party_my_state
-			_pending_party_my_state = {}
-			character_data["current_hp"] = _pms.get("current_hp", character_data.get("current_hp", 0))
-			character_data["current_mana"] = _pms.get("current_mana", character_data.get("current_mana", 0))
-			character_data["current_stamina"] = _pms.get("current_stamina", character_data.get("current_stamina", 0))
-			character_data["current_energy"] = _pms.get("current_energy", character_data.get("current_energy", 0))
-			update_player_hp_bar()
-			update_resource_bar()
-		if not _pending_party_final_state.is_empty():
-			var _pfs: Dictionary = _pending_party_final_state
-			_pending_party_final_state = {}
-			_apply_party_panel_hp(_pfs)
-			_apply_party_members_to_panel(_pfs)
+		_settle_combat_bars()
 		# v0.9.413 — queue just emptied. Fire any deferred victory FX +
 		# card NOW so the final popup is seen before the card covers the
 		# panel. Then schedule end_action_phase with a short buffer.
@@ -36316,10 +36393,10 @@ func _drain_combat_queue():
 			var _pdm_now = _pending_permadeath_message
 			_pending_permadeath_message = null
 			combat_msg_queue.clear()
-			# Clearing the queue skips _drain_combat_queue's empty handler, which is what
-			# applies deferred bar updates — drop the pending companion value with it so a
-			# stale HP/KO from an abandoned fight cannot land on the next one.
-			_pending_companion_hp = {}
+			# Clearing the queue skips _drain_combat_queue's empty handler, so settle the held
+			# bars HERE. This used to discard the pending companion value and never apply the
+			# player's at all, which is why HP appeared to drop only after the fight was over.
+			_settle_combat_bars()
 			handle_server_message(_pdm_now)
 			_replay_post_death_messages()
 			return
