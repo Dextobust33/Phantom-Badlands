@@ -875,6 +875,7 @@ func _fight_stats_at(level: int, samples: int) -> Dictionary:
 	# happened: mean turns, mean share of the player's health bar spent, win rate.
 	# This is the ground truth the calibration drives toward.
 	var turns_tot := 0.0
+	var eff_tot := 0.0
 	var cost_tot := 0.0
 	var wins := 0
 	var n := 0
@@ -904,12 +905,25 @@ func _fight_stats_at(level: int, samples: int) -> Dictionary:
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
 			turns_tot += float(turns)
+			# EFFECTIVE turns — how long the monster would have taken to kill at the rate the
+			# player was actually chewing through it, whether or not they survived to finish.
+			# Observed `turns` is TRUNCATED by death, so it reads short exactly where the
+			# monster is too strong, and the HP correction then reads that as "too weak" and
+			# raises HP further. Filtering to wins instead is the selection-bias trap already
+			# hit once this session (boss win rate fell 30-47% -> 15-33% when turns were
+			# measured on wins only). This is neither: every fight contributes, extrapolated
+			# to completion.
+			var m_max: float = maxf(1.0, float(monster.get("max_hp", 1)))
+			var m_left: float = maxf(0.0, float(monster.get("current_hp", 0)))
+			var dealt: float = maxf(1.0, m_max - m_left)
+			eff_tot += minf(200.0, float(turns) * m_max / dealt)
 			cost_tot += float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
 			n += 1
 			combat_mgr.end_combat(0, false, false)
 	if n == 0:
 		return {}
-	return {"turns": turns_tot / float(n), "cost": cost_tot / float(n), "win": float(wins) / float(n)}
+	return {"turns": turns_tot / float(n), "eff_turns": eff_tot / float(n),
+		"cost": cost_tot / float(n), "win": float(wins) / float(n)}
 
 func run_reference_calibrate():
 	# #6 — SELF-CALIBRATING monster model.
@@ -961,6 +975,14 @@ func run_reference_calibrate():
 			# (the HP axis, which starts much closer) landed fine. That is under-convergence,
 			# not a wrong target.
 			var k: float = CAL_CORRECTION_EXP
+			# OBSERVED turns, deliberately. Correcting against `eff_turns` (extrapolated to
+			# completion) was tried and made things worse: for a WON fight it equals observed
+			# turns, but for a lost one it extrapolates upward, so the mean is always >=
+			# observed, the calibrator concluded fights ran long, and it shrank monsters —
+			# L1-L100 fell from 4.5-6.5 turns to 2.5-3.0 against a 5-turn target. A player who
+			# dies on turn 4 experienced a 4-turn fight against a monster that is too STRONG,
+			# which is the `str`/danger axis's job, not HP's. `eff_turns` is still reported as
+			# a diagnostic because the truncation it measures is real.
 			var turn_err: float = TARGET_TURNS_NORMAL_SIM / maxf(0.5, float(r["turns"]))
 			hp *= pow(clampf(turn_err, 0.15, 6.0), k)
 			var cost_err: float = DANGER_NORMAL_SIM / maxf(0.01, float(r["cost"]))
@@ -1033,6 +1055,17 @@ Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;
 			float(v["turns"]), 100.0 * float(v["cost"]), 100.0 * float(v["win"])])
 
 	var out := {"generated": "sim run_reference_calibrate", "target_turns": TARGET_TURNS_NORMAL_SIM, "anchors": table}
+	# PRESERVE the role multipliers. refcal and rolecal write the same file, and refcal used to
+	# emit only `anchors` — so the documented order (refcal, then roles) silently DESTROYED a
+	# prior rolecal calibration, including a boss danger fix that had just been measured and
+	# reported. Carry any existing block forward; rolecal overwrites it when it runs.
+	var _prev = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+	if _prev != null:
+		var _parsed = JSON.parse_string(_prev.get_as_text())
+		_prev.close()
+		if _parsed is Dictionary and _parsed.has("role_multipliers"):
+			out["role_multipliers"] = _parsed["role_multipliers"]
+			print("(carried forward existing role_multipliers — re-run `-- rolecal` if the base curve moved much)")
 	var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(out, "\t"))
