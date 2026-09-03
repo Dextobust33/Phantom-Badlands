@@ -5289,6 +5289,47 @@ static func _brighten_bbcode_colors(bbcode: String) -> String:
 	result += bbcode.substr(last)
 	return result
 
+# Species whose art is filed under a different name than the monster database uses.
+const ART_NAME_ALIASES := {
+	"Wolf": "Dire Wolf",
+	"Orc": "Orc Warrior",
+	"Young Dragon": "Dragon Wyrmling",
+}
+
+static func resolve_art_key(monster_name: String) -> String:
+	"""The art_map key for a monster, tolerating VARIANT AND EMPOWERED PREFIXES. "" if none.
+
+	2026-09-03 — a player hit a monster with no art at all, twice. The diagnostic added earlier
+	the same day named it: `MISSING ART for 'Venomous Orc'`.
+
+	The cause is the interaction of two things that were each fine alone. Orc's art is filed
+	under "Orc Warrior", reached through an alias keyed on the EXACT string "Orc"; and empowered
+	monsters carry a prefix, so the name arriving here was "Venomous Orc". The alias missed
+	(not an exact match), the exact and VARIANT lookups missed, and the partial-match fallback
+	could not bridge it either, because "venomous orc" does not contain "orc warrior" and
+	"orc warrior" does not contain "venomous orc". So it returned "" and the battlefield showed
+	no creature.
+
+	That means EVERY prefixed variant of an aliased species had no art — "Venomous Orc",
+	"Frenzied Wolf", "Swift Young Dragon" and so on. Unaliased species were unaffected, because
+	the partial match rescues them ("frenzied gnoll" contains "gnoll"), which is why this looked
+	intermittent rather than systematic.
+
+	Fixed by dropping leading words one at a time and re-checking the alias table at each step,
+	so any number of prefixes resolves to the underlying species."""
+	if monster_name == "":
+		return ""
+	var art_map := get_art_map()
+	var words := monster_name.split(" ", false)
+	for start in range(words.size()):
+		var candidate := " ".join(words.slice(start))
+		if ART_NAME_ALIASES.has(candidate):
+			candidate = ART_NAME_ALIASES[candidate]
+		if art_map.has(candidate):
+			return candidate
+	return ""
+
+
 static func get_monster_ascii_art(monster_name: String) -> String:
 	var art_map = get_art_map()
 
@@ -5331,6 +5372,12 @@ static func get_monster_ascii_art(monster_name: String) -> String:
 			if monster_name.to_lower().contains(key.to_lower()) or key.to_lower().contains(monster_name.to_lower()):
 				var art_lines = art_map[key]
 				return _brighten_bbcode_colors("\n".join(art_lines))
+
+	# Last resort before giving up: strip variant/empowered prefixes and try the species.
+	# This is what rescues "Venomous Orc" -> "Orc" -> "Orc Warrior".
+	var _stripped := resolve_art_key(monster_name)
+	if _stripped != "":
+		return _brighten_bbcode_colors("\n".join(art_map[_stripped]))
 
 	# No art found. 2026-09-03 — this used to return silently, which is how a player hit
 	# "I was fighting a gnoll but I couldn't see the monster" with nothing to diagnose from.
@@ -5405,15 +5452,13 @@ static func get_bordered_art_with_font(monster_name: String, scale: float = 1.0)
 
 	var bordered_art = add_border_to_ascii_art(ascii_art, monster_name)
 
-	# Resolve aliases for font size lookup (same as in get_monster_ascii_art)
+	# Resolve aliases for font size lookup. Uses the SAME prefix-tolerant resolver the art
+	# lookup uses, so a variant gets its species' font size instead of silently falling back to
+	# the default — these were two hand-kept copies of one alias table before.
 	var resolved_name = monster_name
-	var name_mappings = {
-		"Wolf": "Dire Wolf",
-		"Orc": "Orc Warrior",
-		"Young Dragon": "Dragon Wyrmling"
-	}
-	if name_mappings.has(monster_name):
-		resolved_name = name_mappings[monster_name]
+	var _key := resolve_art_key(monster_name)
+	if _key != "":
+		resolved_name = _key
 
 	# Get font size for this monster, then apply scale
 	var base_font_size = ASCII_ART_FONT_SIZE
