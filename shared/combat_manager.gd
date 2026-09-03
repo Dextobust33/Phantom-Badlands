@@ -3952,9 +3952,13 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# extra-turn chain even at 100% chance.
 		if imprint_damage_dealt > 0 and not result.get("skip_monster_turn", false):
 			var et_pct: float = combat.character.get_extra_turn_chance()
+			# Swift (rank-up) rides the same roll rather than adding a second, independent one —
+			# two stacking extra-turn rolls is how a chain becomes possible.
+			if "swift" in combat.character.get_milestone_picks(ability_name):
+				et_pct += 12.0
 			if et_pct > 0 and randf() * 100.0 < et_pct:
 				result["skip_monster_turn"] = true
-				result.messages.append("[color=#FFD700]>> Extra turn! Your gear quickens you.[/color]")
+				result.messages.append("[color=#FFD700]>> Extra turn! You move again before it can react.[/color]")
 		# Audit #1 Slice 6a — successful ability use moves the card from
 		# hand to discard and refills the hand. Done after mastery tracking
 		# so a rank-up notification still ties to the card just played.
@@ -3963,6 +3967,9 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Track damage dealt/taken by the ability itself (backfire, thorns, etc.)
 	var ability_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
 	combat["total_damage_dealt"] = combat.get("total_damage_dealt", 0) + ability_damage_dealt
+	# The Brittle guard-open window closes when you act again; it is re-set below if the card
+	# played this turn was itself Brittle.
+	combat["guard_open"] = false
 	# 2026-09-03 — card upgrades that need the RESULT of the hit rather than its magnitude.
 	# Kept beside the rider block below, which is the same shape of hook and the model these
 	# follow: read the damage actually dealt, then apply.
@@ -4563,7 +4570,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			# actually feel meaningful.
 			spell_damage_bonus = _apply_buff_value_modifiers(character, "haste", spell_damage_bonus)
 			double_cast_chance = _apply_buff_value_modifiers(character, "haste", double_cast_chance)
-			var haste_dur = 4 + character.get_ability_duration_bonus("haste")  # #40 Duration milestone
+			var haste_dur = _buff_duration(character, "haste", 4)
 			character.add_buff("damage", spell_damage_bonus, haste_dur)
 			combat["arcane_surge_double_cast"] = double_cast_chance
 			combat["arcane_surge_double_cast_duration"] = 4
@@ -4665,7 +4672,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			character.current_hp = max(1, character.current_hp - ov_cost)
 			var ov_buff = 120  # +120% to the next spell
 			ov_buff = _apply_buff_value_modifiers(character, "overload", ov_buff)
-			var ov_dur = 2 + character.get_ability_duration_bonus("overload")  # #40 Duration milestone
+			var ov_dur = _buff_duration(character, "overload", 2)
 			character.add_buff("damage", ov_buff, ov_dur)
 			messages.append("[color=#FF4500]⚡ OVERLOAD![/color]")
 			messages.append("[color=#FFD700]You sear yourself for %d HP to supercharge your spells (+%d%% damage for 2 rounds)![/color]" % [ov_cost, ov_buff])
@@ -5064,7 +5071,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# (Defense penalty stays as-is — players don't pick rank-up to nerf
 			# themselves; only the positive buff scales.)
 			damage_bonus = _apply_buff_value_modifiers(character, "berserk", damage_bonus)
-			var bk_dur = 4 + character.get_ability_duration_bonus("berserk")  # v0.9.677 Duration pick
+			var bk_dur = _buff_duration(character, "berserk", 4)
 			character.add_buff("damage", damage_bonus, bk_dur)
 			if defense_penalty != 0:
 				character.add_buff("defense_penalty", defense_penalty, bk_dur)
@@ -5081,7 +5088,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# v0.9.637 — rank-up +Damage scales the buff value too (damage
 			# reduction is the "damage" knob for this ability).
 			iron_skin_reduction = _apply_buff_value_modifiers(character, "iron_skin", iron_skin_reduction)
-			var is_dur = 4 + character.get_ability_duration_bonus("iron_skin")  # v0.9.677 Duration pick
+			var is_dur = _buff_duration(character, "iron_skin", 4)
 			character.add_buff("damage_reduction", iron_skin_reduction, is_dur)
 			messages.append("[color=#AAAAAA]IRON SKIN![/color]")
 			messages.append("[color=#00FF00]Block %d%% damage for %d rounds![/color]" % [iron_skin_reduction, is_dur])
@@ -5122,7 +5129,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var defense_bonus = max(1, int((30 + sqrt(float(str_stat)) * 3) * variable_fraction))
 			# v0.9.637 — rank-up +Damage scales buff value.
 			defense_bonus = _apply_buff_value_modifiers(character, "fortify", defense_bonus)
-			var ft_dur = 5 + character.get_ability_duration_bonus("fortify")  # v0.9.677 Duration pick
+			var ft_dur = _buff_duration(character, "fortify", 5)
 			character.add_buff("defense", defense_bonus, ft_dur)
 			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for %d rounds)[/color]" % [defense_bonus, ft_dur])
 			is_buff_ability = true
@@ -5137,7 +5144,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var actual_heal = character.heal(heal_amount)
 			var str_bonus = max(1, int((10 + character.get_effective_stat("strength") / 5) * variable_fraction))
 			str_bonus = _apply_buff_value_modifiers(character, "rally", str_bonus)
-			var rl_dur = 3 + character.get_ability_duration_bonus("rally")  # v0.9.677 Duration pick
+			var rl_dur = _buff_duration(character, "rally", 3)
 			character.add_buff("strength", str_bonus, rl_dur)
 			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for %d rounds![/color]" % [actual_heal, str_bonus, rl_dur])
 			is_buff_ability = true
@@ -5913,6 +5920,19 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 					combat["focus"] = mini(FOCUS_MAX, int(combat.get("focus", 0)) + 1)
 					result.messages.append("[color=#5AC8FF]Building: +1 Focus.[/color]")
 
+	# Cast-time upgrades that do not depend on damage: these fire whether or not the card hit.
+	if "warding" in picks:
+		var shield: int = maxi(1, int(float(character.get_total_max_hp()) * 0.06))
+		combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + shield
+		result.messages.append("[color=#7AA8FF]Warding: a shield settles over you (%d).[/color]" % shield)
+	if "unsettling" in picks:
+		combat["enemy_distracted"] = maxi(int(combat.get("enemy_distracted", 0)), 25)
+		result.messages.append("[color=#A0E060]Unsettling: it is rattled — its next swing is likely to go wide.[/color]")
+	if "reckless_guard" in picks:
+		# The buff was made 50% stronger; this is the defence it cost. Duration matches the
+		# buff it was taken on, so it fades together with the thing it paid for.
+		character.add_buff("open_guard_penalty", 15, _buff_duration(character, ability_name, 4))
+
 	# Killing-blow upgrades. Checked after the damage block so an overkill hit still leeches.
 	var killed: bool = monster is Dictionary and int(monster.get("current_hp", 1)) <= 0
 	if killed:
@@ -6004,6 +6024,22 @@ func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg:
 # scaling stack (rank mult + bonus_damage imprint) to the BUFF VALUE so the
 # choices have meaning on buff-only abilities. Caller multiplies their base
 # buff value through this before add_buff().
+func _buff_duration(character: Character, ability_name: String, base_rounds: int) -> int:
+	"""How many rounds a buff lasts, after rank-up upgrades.
+
+	Centralised 2026-09-03 because the new upgrades SCALE duration rather than adding to it -
+	Concentrated halves it, Costly Vigil doubles it - and the seven call sites each computed
+	`base + get_ability_duration_bonus(...)` inline, which cannot express a multiplier. Seven
+	copies of an expression is also how the sub-tier table ended up with three drifting
+	versions."""
+	var rounds: float = float(base_rounds + character.get_ability_duration_bonus(ability_name))
+	var picks: Array = character.get_milestone_picks(ability_name)
+	if "concentrated" in picks:
+		rounds *= 0.5      # double strength, half the time — the value side is below
+	if "costly_vigil" in picks:
+		rounds *= 2.0      # lasts twice as long, drains resource each round it holds
+	return maxi(1, int(round(rounds)))
+
 func _apply_buff_value_modifiers(character: Character, ability_name: String, base_value: int) -> int:
 	var value: float = float(base_value)
 	value = value * character.get_ability_damage_mult(ability_name)
@@ -6016,6 +6052,18 @@ func _apply_buff_value_modifiers(character: Character, ability_name: String, bas
 	var path_buff_pct = character.get_path_effect_total("buff_value_pct")
 	if path_buff_pct != 0.0:
 		value = value * (1.0 + path_buff_pct / 100.0)
+	# 2026-09-03 — buff-side rank-up upgrades. This is already the funnel every buff's magnitude
+	# passes through, so they belong here rather than in each ability body.
+	var picks: Array = character.get_milestone_picks(ability_name)
+	if not picks.is_empty():
+		if "concentrated" in picks:
+			value *= 2.0        # half duration, applied in _buff_duration
+		if "fragile_ward" in picks:
+			value *= 1.60       # shatters on the first hit taken
+		if "slow_cast" in picks:
+			value *= 1.50       # the foe acts first this round
+		if "reckless_guard" in picks:
+			value *= 1.50       # -15% defence while it holds
 	return max(1, int(value))
 
 # Audit #1 Slice 6e/6f (v0.9.549) — Variant Imprint support helpers.
@@ -6965,7 +7013,17 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				var _mom_dr: float = float(clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)) * MOMENTUM_DR_PER
 				if _mom_dr > 0.0:
 					_mit_mult *= (1.0 - _mom_dr)
+			# 2026-09-03 — rank-up trade-off DOWNSIDES. Applied AFTER the mitigation floor so a
+			# drawback cannot be laundered away by stacking defensive buffs: a trade-off the
+			# player can neutralise is not a trade-off, it is a free upgrade with extra words.
 			_mit_mult = maxf(_mit_mult, MITIGATION_BUFF_FLOOR)
+			if bool(combat.get("guard_open", false)):
+				# Brittle Strike bought its damage by leaving the guard open until you act again.
+				_mit_mult *= 1.25
+				messages.append("[color=#FFAA55]Your guard was open — the blow lands harder.[/color]")
+			if character.get_buff_value("open_guard_penalty") > 0:
+				# Open Guard: a much stronger buff, paid for with defence while it holds.
+				_mit_mult *= 1.15
 			damage = max(1, int(_raw_hit * _mit_mult))
 
 			total_damage += damage
