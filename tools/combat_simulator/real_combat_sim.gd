@@ -78,6 +78,8 @@ func _audit_registry() -> Dictionary:
 		"underlevel": ["what fighting below your level is worth (post pull-down)", run_underlevel_audit],
 		"selection": ["why the curve is jagged: tier bands vs monster base levels", run_selection_audit],
 		"refcurve": ["measure the reference-player curve the monster model anchors to", run_reference_curve],
+		"comphp": ["how much max HP the active companion adds, by level", run_companion_hp_probe],
+		"outcomes": ["classify how normal fights END (win / death / escape / stall)", run_outcome_probe],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -880,6 +882,164 @@ func run_reference_validate():
 	print("needs one scalar correction. If it drifts with level, the probe is wrong in a")
 	print("level-dependent way and the measurement itself has to change.")
 	print("=====================================================================\n")
+
+func run_companion_hp_probe():
+	"""How large is the companion's max-HP bonus, and does it scale with level?
+
+	`start_combat` applies it as `max_hp += get_total_max_hp() * pct / 100`, so the whole
+	health bar is multiplied by (1 + pct/100) the moment a fight begins. The outcome probe
+	saw that reach 12.27x at L5000, which is a balance question, not only a measurement one."""
+	print("
+===== COMPANION MAX-HP BONUS =====")
+	print("%-8s %10s %10s %10s %10s" % ["level", "n", "median%", "worst%", "worst mult"])
+	for lvl in [1, 5, 10, 50, 100, 500, 1000, 5000, 10000]:
+		var vals: Array = []
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			for i in range(12):
+				var ch = make_char(lvl, "average", klass)
+				if not ch.has_active_companion():
+					vals.append(0.0)
+					continue
+				vals.append(float(int(ch.get_companion_bonus("hp_bonus"))))
+		if vals.is_empty():
+			continue
+		vals.sort()
+		var med: float = vals[vals.size() / 2]
+		var worst: float = vals[vals.size() - 1]
+		print("%-8d %10d %9.0f%% %9.0f%% %9.2fx" % [lvl, vals.size(), med, worst, 1.0 + worst / 100.0])
+	print("=====================================================================
+")
+
+var _probe_override: bool = false
+
+func run_outcome_probe():
+	"""Classify how fights actually END, rather than only counting wins.
+
+	`_fight_stats_at` reports a WIN RATE, and everything that is not a win is implicitly read
+	as a death. That is an assumption, and the calibration output contradicted it: L5000 came
+	back at 62% win with a 13% mean health-bar cost. Those cannot both be true if the other 38%
+	were deaths — a death spends the whole bar, so the mean cost could not be below 0.38.
+
+	So this counts the four ways the loop can leave a fight separately. Same `make_char` /
+	`make_monster` / turn loop as the calibration path, deliberately: a hand-copied fight loop
+	would be the two-paths-one-field defect, and a probe that disagrees with the thing it is
+	probing measures nothing."""
+	var samples: int = maxi(6, int(_audit_n / 5.0))
+	print("
+===== OUTCOME PROBE — how do normal fights END? =====")
+	print("win = monster dead, player alive.  death = player at 0.")
+	print("escape = combat ended with BOTH alive (Outsmart).  stall = hit the 400-turn cap.")
+	print("%-8s %6s %7s %7s %7s %7s %8s" % ["level", "n", "win", "death", "escape", "stall", "cost"])
+	# Two sweeps. The plain one is what a player meets. The `override` one forces the exact
+	# hp/str refcal wrote, which is what refcal's own verify pass measures - if the two
+	# disagree, the disagreement lives in the override path, not in the game.
+	var anchors := {}
+	var cf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+	if cf:
+		var parsed = JSON.parse_string(cf.get_as_text())
+		cf.close()
+		if parsed is Dictionary:
+			for a in parsed.get("anchors", []):
+				anchors[int(a.get("level", 0))] = a
+	for lvl in [5, 10, 500, 5000]:
+		var tally := {"win": 0, "death": 0, "escape": 0, "stall": 0}
+		var by_class := {}
+		var cost_tot := 0.0
+		var n := 0
+		# Cost is a MEAN, so a few impossible values drag it a long way without ever looking
+		# wrong in the summary. Track the extremes and count the negatives: a negative
+		# share-of-health-bar is not noise, it is a broken measurement, and it is the only way
+		# a run containing deaths can report a mean below its own death rate.
+		var cost_min := 99.0
+		var cost_max := -99.0
+		var cost_neg := 0
+		var hp_grew := 0
+		var hp_grow_max := 1.0
+		var peak_over := 0
+		var peak_over_max := 1.0
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			by_class[klass] = {"win": 0, "death": 0, "escape": 0, "stall": 0}
+			for i in range(samples):
+				var ch = make_char(lvl, "average", klass)
+				if _probe_override and anchors.has(lvl):
+					_cal_override = {"level": lvl, "hp": int(anchors[lvl].get("hp", 0)), "str": int(anchors[lvl].get("str", 0))}
+				var monster := make_monster(lvl, "normal", 1.0)
+				_cal_override = {}
+				var php0: int = ch.get_total_max_hp()
+				ch.in_combat = false
+				combat_mgr.start_combat(0, ch, monster)
+				if not combat_mgr.active_combats.has(0):
+					continue
+				# The cost denominator is sampled BEFORE combat starts. If anything raises max
+				# HP after that point, `php0 - current_hp` can come out negative and quietly
+				# drag a mean below its own death rate. Measure the growth rather than assume it.
+				var php_after: int = ch.get_total_max_hp()
+				if php_after > php0:
+					hp_grew += 1
+					hp_grow_max = maxf(hp_grow_max, float(php_after) / float(maxi(1, php0)))
+					if float(php_after) > 1.5 * float(php0) and hp_grew < 4:
+						print("           !! php0=%d -> %d (%.2fx)  base max_hp=%d  companion boost applied=%d  has_comp=%s" % [
+							php0, php_after, float(php_after) / float(maxi(1, php0)), ch.max_hp,
+							int(combat_mgr.active_combats[0].get("companion_hp_boost_applied", 0)),
+							str(ch.has_active_companion())])
+				var combat = combat_mgr.active_combats[0]
+				var turns := 0
+				var peak_hp: int = ch.current_hp
+				while turns < 400:
+					if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+						break
+					turns += 1
+					if combat.get("player_can_act", true):
+						match ch.get_class_path():
+							"trickster": _player_act_trickster(combat, ch)
+							"mage": _player_act_mage(combat, ch)
+							_: _player_act(combat, ch)
+					peak_hp = maxi(peak_hp, ch.current_hp)
+					if int(monster.get("current_hp", 0)) <= 0:
+						break
+					combat_mgr.process_monster_turn(combat)
+					peak_hp = maxi(peak_hp, ch.current_hp)
+				if peak_hp > php0:
+					peak_over += 1
+					peak_over_max = maxf(peak_over_max, float(peak_hp) / float(maxi(1, php0)))
+				var outcome := ""
+				if ch.current_hp <= 0:
+					outcome = "death"
+				elif int(monster.get("current_hp", 0)) <= 0:
+					outcome = "win"
+				elif turns >= 400:
+					outcome = "stall"
+				else:
+					outcome = "escape"
+				tally[outcome] += 1
+				by_class[klass][outcome] += 1
+				var c: float = float(php0 - maxi(0, ch.current_hp)) / float(maxi(1, php0))
+				cost_tot += c
+				cost_min = minf(cost_min, c)
+				cost_max = maxf(cost_max, c)
+				if c < 0.0:
+					cost_neg += 1
+				n += 1
+				combat_mgr.end_combat(0, false, false)
+		if n == 0:
+			continue
+		print("%-8d %6d %6.0f%% %6.0f%% %6.0f%% %6.0f%% %7.0f%%" % [lvl, n,
+			100.0 * tally["win"] / n, 100.0 * tally["death"] / n,
+			100.0 * tally["escape"] / n, 100.0 * tally["stall"] / n,
+			100.0 * cost_tot / n])
+		print("           cost min %.2f  max %.2f  NEGATIVE %d of %d" % [cost_min, cost_max, cost_neg, n])
+		print("           max-HP grew after start_combat: %d of %d (worst %.2fx);  in-fight HP exceeded php0: %d (worst %.2fx)" % [hp_grew, n, hp_grow_max, peak_over, peak_over_max])
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			var b = by_class[klass]
+			print("           %-8s win %d  death %d  escape %d  stall %d" % [klass, b["win"], b["death"], b["escape"], b["stall"]])
+	if not _probe_override:
+		_probe_override = true
+		print("--- same levels, forcing refcal's WRITTEN anchors (its verify path) ---")
+		run_outcome_probe()
+		_probe_override = false
+		return
+	print("=====================================================================
+")
 
 func _fight_stats_at(level: int, samples: int) -> Dictionary:
 	# Run real same-level fights across all three archetypes and report what actually
