@@ -824,8 +824,10 @@ it cost half a bar at a 60-73% win rate.
 **A FOURTH tooling bug, and this one destroyed committed work rather than misreporting it.**
 `refcal` wrote the curve file with only `anchors`, so running it after `rolecal` silently wiped
 `role_multipliers` — the boss fix above was measured, reported, and then overwritten by the very
-next `refcal` run. **The order documented at the top of CLAUDE.md (`refcal` then `roles`) would
-have destroyed the role calibration every single time.** `refcal` now carries the block forward
+next `refcal` run. The documented workflow at the top of CLAUDE.md is `refcal` then `roles`, and
+`roles` is a READ-ONLY audit, so following it exactly was safe — the trap is that `rolecal` (the
+writer) is not in that workflow, so any later `refcal` silently discarded it with no warning and
+no visible symptom until a role audit was re-run. `refcal` now carries the block forward
 and prints a note when it does. Only caught because a manual file restore happened to print
 "no role_multipliers in current file".
 

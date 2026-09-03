@@ -51,6 +51,12 @@ godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.
 ```
 Treat every balance number measured between the change and the re-calibration as stale.
 
+`refcal` rewrites the base anchors; `rolecal` writes the elite/boss multipliers into the SAME
+file. Run **`rolecal` after `refcal`**, never before — `refcal` used to drop the multiplier block
+entirely (fixed 2026-09-02, it now carries them forward, but they were calibrated against the
+OLD base curve and want re-running whenever the base moves much). `roles` and `refval` are
+read-only audits and are always safe.
+
 ## Quick Start
 
 **Detailed diagrams in `/docs/`:**
