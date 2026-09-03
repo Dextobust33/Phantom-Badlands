@@ -2156,6 +2156,29 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		messages.append("[color=#FFD700]%s[/color]" % death_msg)
 	messages.append("[color=#00FF00]The %s is defeated![/color]" % monster.name)
 
+	# #6 (2026-09-02) — report what the fight actually COST as a share of the health bar.
+	# The whole difficulty model is expressed in those terms (normal ~40%, empowered ~55%,
+	# elite ~65%, boss ~80%), but a player had no way to see the number, so a playtest could
+	# only report "I won" — which does not discriminate between a fight that cost 40% and one
+	# that cost 80%, and both models under test predict a win most of the time. It also gives
+	# the player an honest read on how close that was.
+	# NET HP lost, not gross damage taken. The two diverge whenever the player heals mid-fight
+	# (a lifesteal companion, a potion), and the balance targets are expressed in net terms —
+	# the simulator measures (hp_at_start - hp_now) / max_hp. Reporting gross here would read
+	# systematically high against the very targets it exists to be compared with.
+	var _cost_bar: int = maxi(1, character.get_total_max_hp())
+	var _hp0: int = int(combat.get("player_hp_at_start", _cost_bar))
+	var _cost_taken: int = maxi(0, _hp0 - maxi(0, character.current_hp))
+	if _cost_taken > 0:
+		var _cost_pct: int = int(round(100.0 * float(_cost_taken) / float(_cost_bar)))
+		var _cost_col := "#9ACD32"
+		if _cost_pct >= 75:
+			_cost_col = "#FF6666"
+		elif _cost_pct >= 50:
+			_cost_col = "#FFAA33"
+		messages.append("[color=%s]That cost you %d HP — %d%% of your health bar.[/color]" % [
+			_cost_col, _cost_taken, _cost_pct])
+
 	# v0.9.599 — chase-affix on-kill procs. Past the revive checks so a
 	# Phoenix-rebirth boss doesn't pay out twice in one fight.
 	_apply_on_kill_chase_procs(character, messages)
