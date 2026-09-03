@@ -190,7 +190,7 @@ consequence below is that **almost every remaining balance number is measured th
 that saturates on death**, so tuning any of them before fixing the metric means tuning against a
 broken instrument. That is step 2, and it gates most of what follows.
 
-### 1. SHIP — ✅ DONE, v0.9.742 is live (client, both launchers, server)
+### 1. SHIP — ✅ DONE. v0.9.742, then v0.9.743 (client, both launchers, server)
 Live XP bug plus the whole balance pass. Runtime byte-identical to r1 again (sha256 compared),
 so launcher users pulled a ~14.8 MB content-only update. Server deployed and verified (reference
 curve loads, no script errors). See *Recently shipped*.
@@ -2856,6 +2856,15 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
 - **2026-09-02 (site + docs, no client build)** — website refresh live: setting-led copy that
   explains the name, real in-game screenshots, accuracy fixes (Linux support, party of 5,
   deck-driven combat). Setting bible revised to a single cause. Screenshot capture harness added
+
+- **v0.9.743** — invisible monsters fixed (every Orc/Wolf/Young Dragon VARIANT rendered no art
+  at all: their art is filed under an aliased name and the prefix broke the match), Outsmart
+  works in co-op at solo odds and cost (it was rejected outright, so a Trickster's Read had no
+  payoff in a party and the odds meter read a flat 0%), apex species start at TIER 2 (Skeleton
+  was ~1 in 5 of a new character's encounters), party fights get the authoritative card
+  damage/cost/regen and the APEX tag that v0.9.742 only gave solo, Outsmart pre-fills and
+  remembers its spend and accepts 0, the Pathfinder starter chain retired, three dead party
+  functions deleted
 
 - **v0.9.742** — the cards stop lying (server-authoritative per-card damage/shield/cost/regen,
   solo AND party), every damage ability converted to the anchored model (turns-to-kill 2.3/4.9/11.5
