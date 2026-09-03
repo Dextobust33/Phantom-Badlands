@@ -165,6 +165,50 @@ const READ_OUTSMART_PER: int = 9   # +% Outsmart success per Read (8 x 9 = 72, w
 # setup. Without this the cap ate every stack past the second — see _outsmart_chance.
 const READ_CAP_PER: float = 3.125   # 8 x 3.125 = +25 to the ceiling, exactly where 5 x 5 landed
 
+# OUTSMART FLAVOUR (owner idea 2026-09-03): "It might be cool to do different randomized
+# messages of what the character tried to do to outsmart it (example: rolled between its legs,
+# tried to stab it in the back while it's distracted, etc.)"
+#
+# Outsmart is the game's most distinctive mechanic and it read as a bare dice roll. Describing
+# the ATTEMPT makes it an action the character took; describing the OUTCOME separately means a
+# near-miss reads as a story rather than a repeated "it sees through it". Written in the world's
+# plain, worked voice rather than the Keeper's — this is the character doing something, not the
+# Keeper narrating (see docs/design/setting_bible.md).
+const OUTSMART_ATTEMPTS := [
+	"You roll between its legs and come up behind it",
+	"You feint left and cut right",
+	"You kick grit into its eyes",
+	"You go for the tendon while it is turning",
+	"You throw a stone past its head and move the other way",
+	"You play dead until it leans in",
+	"You mimic its own call back at it",
+	"You cut the ground out from under it",
+	"You wait for its swing to overreach, then step inside it",
+	"You point behind it and mean it",
+]
+const OUTSMART_WINS := [
+	"and it never works out where you went",
+	"and it is still looking for you when it falls",
+	"and by the time it understands, it is over",
+	"and the trick lands clean",
+	"and it buys the whole thing",
+]
+const OUTSMART_FAILS := [
+	"but it does not fall for it",
+	"but it was already watching your feet",
+	"but it has seen that one before",
+	"but it turns with you the whole way",
+	"but it simply does not care",
+]
+
+static func outsmart_attempt_line() -> String:
+	return OUTSMART_ATTEMPTS[randi() % OUTSMART_ATTEMPTS.size()]
+
+static func outsmart_outcome_line(won: bool) -> String:
+	if won:
+		return OUTSMART_WINS[randi() % OUTSMART_WINS.size()]
+	return OUTSMART_FAILS[randi() % OUTSMART_FAILS.size()]
+
 # Outsmart penalty by monster ROLE (2026-09-03, owner direction).
 #
 # The Trickster's identity is reach: *"kill enemies BIGGER than the warrior or mage can"*, and
@@ -3089,7 +3133,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	# Outsmart on this monster progressively less likely (no retry-to-certainty).
 	combat["outsmart_attempts"] = int(combat.get("outsmart_attempts", 0)) + 1
 
-	messages.append("[color=#FFA500]You attempt to outsmart the %s...[/color]" % monster.name)
+	messages.append("[color=#FFA500]%s...[/color]" % outsmart_attempt_line())
 	var bonus_text = ""
 	if is_trickster:
 		bonus_text = " [Trickster]"
@@ -3104,7 +3148,8 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 
 	if roll < outsmart_chance:
 		# SUCCESS! Instant victory
-		messages.append("[color=#00FF00][b]SUCCESS![/b] You outwit the %s![/color]" % monster.name)
+		messages.append("[color=#00FF00][b]SUCCESS![/b] %s — you outwit the %s![/color]" % [
+			outsmart_outcome_line(true), monster.name])
 		messages.append("[color=#FFD700]The enemy falls for your trick and you claim victory![/color]")
 
 		# Process death curse (monster curses you as it falls)
@@ -3339,7 +3384,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		# FAILURE! v0.9.698 — you overplayed your hand: Read resets to 0 (rebuild it
 		# and try again — no permanent lock) and the monster gets a free attack.
 		combat["combo"] = 0
-		messages.append("[color=#FF4444][b]FAILED![/b] The %s sees through your trick![/color] [color=#B06BE0](Read reset)[/color]" % monster.name)
+		messages.append("[color=#FF4444][b]FAILED![/b] ...%s.[/color] [color=#B06BE0](Read reset)[/color]" % outsmart_outcome_line(false))
 
 		# Companion still attacks even when outsmart fails - they're loyal!
 		var _ca2 = messages.size()
@@ -10714,26 +10759,31 @@ func _party_outsmart(combat: Dictionary, pid: int, requested_spend: int) -> Arra
 			"[color=#66FF66]⚡ %s spends energy to sharpen the read.[/color]" % pname))
 
 	st["outsmart_attempts"] = int(st.get("outsmart_attempts", 0)) + 1
+	# One line drawn per attempt, then rendered in both voices, so a party reads the same event
+	# from two sides rather than two different tricks.
+	var flavour: String = outsmart_attempt_line()
 	entries.append(_party_entry(pid,
-		"[color=#FFA500]You attempt to outsmart the %s... (%d%% chance)[/color]" % [monster.get("name", "monster"), chance],
-		"[color=#FFA500]%s attempts to outsmart the %s... (%d%% chance)[/color]" % [pname, monster.get("name", "monster"), chance]))
+		"[color=#FFA500]%s... (%d%% chance)[/color]" % [flavour, chance],
+		"[color=#FFA500]%s, %s... (%d%% chance)[/color]" % [pname, flavour.substr(4), chance]))
 
 	if randi() % 100 < chance:
 		# The monster is simply gone. Zeroing its HP hands the kill to the party's own victory
 		# detection, so rewards, XP splitting and the end-of-fight flow stay in ONE place
 		# instead of this function growing a second copy of them.
 		monster.current_hp = 0
+		var won_line: String = outsmart_outcome_line(true)
 		entries.append(_party_entry(pid,
-			"[color=#00FF00][b]SUCCESS![/b] You outwit the %s![/color]" % monster.get("name", "monster"),
+			"[color=#00FF00][b]SUCCESS![/b] %s — you outwit the %s![/color]" % [won_line, monster.get("name", "monster")],
 			"[color=#00FF00][b]%s outwits the %s![/b][/color]" % [pname, monster.get("name", "monster")]))
 	else:
 		# Failure costs the turn and the whole Read ramp — eight turns of building. The monster
 		# phase already acts against every member each round, so no extra free hit is added on
 		# top the way solo does; in a party that would be punishing the same mistake twice.
 		st["combo"] = 0
+		var lost_line: String = outsmart_outcome_line(false)
 		entries.append(_party_entry(pid,
-			"[color=#FF4444]The %s sees through it. Your read is broken.[/color]" % monster.get("name", "monster"),
-			"[color=#FF4444]The %s sees through %s's trick.[/color]" % [monster.get("name", "monster"), pname]))
+			"[color=#FF4444]...%s. Your read is broken.[/color]" % lost_line,
+			"[color=#FF4444]...%s — %s's read is broken.[/color]" % [lost_line, pname]))
 	# The HEAD entry's text is deliberately NOT printed for a member action — the client plays
 	# it (spotlight + animation) and prints only the body lines, to keep a 4-actor round
 	# readable. So the head must be a pure header: promoting the first informative line to head

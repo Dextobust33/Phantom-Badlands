@@ -2563,11 +2563,25 @@ still spans ~6x over six passes but stops any single noisy reading whipsawing a 
 **Generalises:** any calibration target that is a PROPORTION needs an order of magnitude more
 samples than one that is a mean. Worth checking before switching any other metric.
 
-### Result
-Converges where cost could not. L1-L1000 lands on target for empowered and elite; boss L1-L250
-went from 7-12% to on-target. The remaining offenders are **L5000 and L10000**, which is the
-already-documented high-level instability (fight length swings wildly up there), not a metric
-problem.
+### Result — the full run, and it converges where cost could not
+
+**15 of 21 rows on target, and every miss is at L5000/L10000.** The whole L1-L1000 band lands
+for all three roles, and the ladder reads correctly: empowered ~50% > elite ~40% > boss ~30%.
+
+| role (target) | L1 | L10 | L50 | L250 | L1000 | L5000 | L10000 |
+|---|---|---|---|---|---|---|---|
+| empowered (50%) | 47 | 48 | 52 | 56 | 54 | 63 | 73 |
+| elite (40%) | 38 | 47 | 40 | 38 | 46 | 51 | 73 |
+| boss (30%) | 26 | **18** | 33 | 35 | 27 | 53 | 77 |
+
+Against the cost-targeted run this replaces, where boss sat at **7-12% at L1-L50** and could not
+be moved. `str_mult` is sane again too — the whole table spans 0.78 to 3.79, against 20-30 in
+the noisy first attempt.
+
+- [ ] **L5000/L10000 are far too EASY for every role** (63-77% win against 30-50% targets, and a
+      L10000 boss costs **8%** of the health bar). Same band as the known post-L1000 slide;
+      treat them together as one high-level problem rather than three role faults
+- [ ] Boss L10 at 18% is the one mid-band miss worth a look after the above
 
 - [ ] L5000/L10000 still off target for all three roles. Same band as the known post-L1000
       length slide; treat them together rather than as a calibration fault
