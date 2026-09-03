@@ -1604,7 +1604,114 @@ only had partial playtesting. Read this before touching combat again.
       **Largely owned by 12b (the Phantom)**, which is the designed answer; this line stays as
       the check that the answer covers every band
 
-### 7. Monster packs (a party of N meets ~N monsters)
+### 7. New player experience — the way the game should actually START
+*User direction 2026-09-03, and MOVED UP from the bottom of the unordered "Independent" bucket
+at the owner's request: "it seems like it's time to move it up."*
+
+**Why it is placed HERE, immediately after item 6, rather than in the dungeon arc: it is the
+resolution of an open balance decision, not just a UX arc.** The playtest on 2026-09-03 found
+that `refcal` anchors the entire monster curve to `make_char(level, "average")` — **average gear
+PLUS a companion** — while a brand-new character has neither. Measured: the reference-player
+Fighter spent ~10% of its health bar per fight against a 40% target, and a gearless L5 Ranger
+needs 6.2 turns to kill what kills it in 8.1. That gap is what killed four starter characters.
+
+The output of this item is *"basic equipment, one registered companion, and a firm understanding
+of the game loop"* — which is precisely **option (b) of that decision: make every new character
+BE the reference player.** So building this makes item 6's low-level band correct by
+construction, and no separate low-level curve is needed. The owner chose this by describing it.
+
+**Not to be confused with 12b (The Phantom).** 12b is the *endgame outward* loop — player-built,
+egg-stocked, scaling Phantoms at the edge of survivable territory. This item is the player's
+FIRST Phantom, bespoke and controlled. They share vocabulary deliberately: the tutorial teaches
+the loop that 12b eventually scales.
+
+#### What already exists to build on (do not rebuild these)
+- `TUTORIAL_STEPS` (client.gd ~1625) — a 7-step guided tour with `wait_for` gates
+  (`continue` / `move` / `inventory_open` / `inventory_close` / `done`). This IS the "current
+  guided tour" the owner refers to
+- `pending_tutorial_prompt` → **Tutorial / Skip** action-bar buttons, plus
+  `_toggle_disable_tutorial()`. **Skipping already exists** for the main tour — the owner's ask
+  is that it exist for the NEW sanctuary tour too, and be togglable throughout
+- `tutorial_hint_panel` + `_drain_new_player_modals` — first-touch hints per system, queued
+- The **party system** (v0.9.738-740), which is why an NPC party member "shouldn't be that big
+  of a lift" — correct, it is a party member with a server-driven action each round
+- The **dungeon system**, for a bespoke short Phantom
+- **Soul gems** (`character.soul_gems`) — the existing companion-registration currency, i.e.
+  the "stones" the tutorial must explain how to get more of
+- The **Kennel** (`persistence_manager`, 30-500 slots) — where registered companions live
+
+#### What this REPLACES (must be removed in the same arc)
+- [ ] **The free Goblin egg auto-granted on character creation** (`server.gd` ~2867). The owner:
+      *"eliminate/disable the free egg/companion that new characters currently get as this
+      system will replace that."* The tutorial Phantom's egg + guaranteed registration item is
+      the replacement
+- [ ] **The `pathfinder_1` → `pathfinder_2` → ... starter chain**, also auto-added at character
+      creation (same code site). This is the current "starter quest" and the thing being
+      replaced. DECISION: retire it entirely, or keep it as post-tutorial content? It is a
+      gathering chain, so it teaches a different system than this arc does
+
+#### The stages, as specified
+
+**Stage 1 — Account creation / first login: the Sanctuary tour**
+- [ ] On **account** creation (before any character exists), a guided tour of the Sanctuary,
+      in the same style as the existing character tutorial
+- [ ] **Skippable**, and the skip must persist. Note the Sanctuary is account-level while the
+      existing tutorial is character-level, so this needs an account-level "seen/skipped" flag
+
+**Stage 2 — First character login: the existing guided tour**
+- [ ] After the Sanctuary tour and character creation, the existing `TUTORIAL_STEPS` tour plays
+      on login, unless skipped or toggled off. Mostly wiring + ordering, since it exists
+
+**Stage 3 — Tutorial quest, NPC interaction, and the inventory lesson**
+- [ ] A tutorial quest with **NPC interaction and theming** (the Keeper's voice is the natural
+      fit — see `docs/design/setting_bible.md`)
+- [ ] Grant **a piece of gear or two**, then teach, in order: open the inventory → view an item
+      → **what the stats mean** → equip it
+- [ ] The "what the stats mean" step is the one with no existing surface to reuse; item
+      inspection exists, a stat *explainer* does not
+
+**Stage 4 — The first Phantom (tutorial dungeon)**
+- [ ] Guided into it by quest or NPC
+- [ ] **CONTROLLED: no random encounters during this stretch.** The owner is explicit — a new
+      player must not be killed by a wandering spawn before finishing. Needs an encounter
+      suppression flag on the character/route, which is a *new* mechanic (the player-post
+      suppression floor is a different thing and is gated off)
+- [ ] **Short** — "only a few monsters to speak of"
+- [ ] Contains **all of their starter equipment**
+- [ ] Contains **one egg**
+- [ ] A **boss**, which an **NPC party member** helps kill. Reuses the party system; the NPC
+      needs a simple server-side action policy each round
+- [ ] The NPC ally may also have a companion (demonstrates companions in combat before the
+      player owns one)
+
+**Stage 5 — Eggs, companions, and registration (the payoff)**
+- [ ] Teach **what eggs are and how to hatch them**
+- [ ] A **guaranteed companion-registration item in the final Phantom chest** — or handed over
+      by the NPC
+- [ ] Walk through **equipping the companion**
+- [ ] Walk through **checking companion stats and info** — and the owner flags this surface as
+      inadequate: *"I don't think we can currently see much regarding companion stats or ways to
+      compare them quickly and easily to other companions (like we can our equipment from our
+      inventory at a glance)."* **This is a real sub-project, not a tooltip** — a companion
+      stat/compare view with at-a-glance comparison, matching what equipment already offers
+- [ ] Walk through **registering** the companion, and say plainly **what registration means**
+- [ ] Explain **how a registered companion carries to a FUTURE character if this one dies** —
+      this is the permadeath consolation and arguably the single most important thing a new
+      player can be told about the game's shape
+- [ ] Explain **how to get more soul gems** to register more companions later
+
+**End state:** basic equipment, one registered companion, and a firm grasp of the loop.
+
+#### Open decisions inside this item
+- [ ] Retire the Pathfinder chain, or keep it as follow-on content? (see above)
+- [ ] Scope of the companion stat/compare rework — a read-only compare view, or does it also
+      absorb the 6b companion-power work already open?
+- [ ] Does the guaranteed starter gear come from the Phantom only, or partly at Stage 3? The
+      spec says gear at Stage 3 AND "all of their starter equipment" in the Phantom
+
+### 7b. Monster packs (a party of N meets ~N monsters)
+*Renumbered from 7 on 2026-09-03 when the new-player experience took that slot. Nothing
+else in this file referenced it by number.*
 Last of the core combat work: packs multiply monsters per fight, so sizing them before 6 fixes
 per-monster numbers guarantees a redo.
 
@@ -2081,12 +2188,12 @@ has neither, and the gearless measurement from earlier the same day showed the o
 So the same monster is trivial for the reference player and lethal for a fresh one. The owner
 predicted exactly this shape: *"likely gear after abilities are properly balanced."*
 
-- [ ] **DECISION NEEDED. The reference player is the wrong anchor for the first few levels.**
-      Options: (a) calibrate the low-level band against a GEARLESS character and let gear be
-      pure upside, (b) guarantee starting gear + a companion so every character IS the
-      reference player, (c) a separate low-level curve that converges into the main one. (b) is
-      the smallest change and the most honest to the current model, but it changes what
-      starting out feels like
+- [x] **DECIDED 2026-09-03 — option (b), via item 7.** The owner's new-player-experience design
+      ends with the player holding *"basic equipment, one registered companion, and a firm
+      understanding of the game loop"* — i.e. every new character finishes onboarding AS the
+      reference player the curve is anchored to. So the low-level band becomes correct by
+      construction and no separate curve is needed. **Item 7 is therefore a balance dependency,
+      not only a UX arc**, which is why it now sits directly after item 6.
 - [ ] Related: the L5 spawn table lists **Skeleton at 18.5% and it is an APEX species** —
       deliberately tuned to a 28-48% win band. Nearly one in five of a new player's first
       fights is a monster designed to beat them. Apex at tier 1 may be too early; the design
@@ -2423,8 +2530,10 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
       the gaps by player impact against cost to fix
 - [ ] Turn the ranked gaps into backlog items in the right order, rather than one sprawling
       "polish" task
-- [ ] Existing threads this will likely absorb or supersede: the UX revamp arc, the tutorial +
-      starter-quest item, and the unspent-stat-point nudge
+- [ ] Existing threads this will likely absorb or supersede: the UX revamp arc and the
+      unspent-stat-point nudge. **NOT the tutorial/starter-quest thread — that became item 7
+      (new player experience) on 2026-09-03 and is being built, not audited.** An onboarding
+      audit run after item 7 lands is still worth having
 
 ## Independent — slot in any time (no dependencies)
 - [ ] Card market live list-to-buy smoke test (built, never exercised end to end)
@@ -2435,7 +2544,9 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
 - [ ] Companion cosmetics: ASCII border + shadow layer (data layer already shipped)
 - [ ] Merchant/market **baseline NPC stock** — merchants only equalise player listings, so
       off-circuit posts stay bare
-- [ ] Tutorial + starter quest chains for a zero-gear character
+- [x] ~~Tutorial + starter quest chains for a zero-gear character~~ — **promoted to item 7**
+      (new player experience) on 2026-09-03. Do not track it here as well; that is how the
+      Dungeon Atlas ended up as three tasks in three places
 - [ ] Patreon + Founder title (implementation planned, awaiting greenlight)
 - [ ] Item variety — duplicates should be rare
 - [ ] Ability-card level-up progress fill, draggable action bar, plain-language skill text
