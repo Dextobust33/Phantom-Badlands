@@ -2178,6 +2178,20 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			_cost_col = "#FFAA33"
 		messages.append("[color=%s]That cost you %d HP — %d%% of your health bar.[/color]" % [
 			_cost_col, _cost_taken, _cost_pct])
+		playtest_log({
+			"event": "victory",
+			"monster": String(monster.get("name", "?")),
+			"monster_level": int(monster.get("level", 0)),
+			"monster_max_hp": int(monster.get("max_hp", 0)),
+			"role": ("elite" if String(monster.get("name", "")).begins_with("★")
+				else ("empowered" if int(monster.get("empowered_mod_count", 0)) > 0 else "normal")),
+			"player_level": int(character.level),
+			"player_class": String(character.class_type),
+			"hp_cost": _cost_taken,
+			"hp_bar": _cost_bar,
+			"hp_cost_pct": _cost_pct,
+			"turns": int(combat.get("rounds", 0)),
+		})
 
 	# v0.9.599 — chase-affix on-kill procs. Past the revive checks so a
 	# Phoenix-rebirth boss doesn't pay out twice in one fight.
@@ -5205,6 +5219,27 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"exploit": return {"level": 80, "cost": 35, "name": "Exploit"}
 				"perfect_heist": return {"level": 100, "cost": 50, "name": "Perfect Heist"}
 	return {}
+
+# === PLAYTEST LOG (dev only) ===
+# The fixture's log files capture engine stdout only, NOT the in-game message stream, so a
+# playtest's actual results were invisible to anyone not sitting at the screen — every balance
+# question this session had to be answered by the player reading numbers off the UI and typing
+# them back. Enabled by `--playtest-log` on the server command line (balance_run.py passes it);
+# silent and unreferenced otherwise.
+static var playtest_log_path: String = ""
+
+static func playtest_log(entry: Dictionary) -> void:
+	if playtest_log_path == "":
+		return
+	var f = FileAccess.open(playtest_log_path, FileAccess.READ_WRITE)
+	if f == null:
+		f = FileAccess.open(playtest_log_path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.seek_end()
+	entry["t"] = Time.get_datetime_string_from_system()
+	f.store_line(JSON.stringify(entry))
+	f.close()
 
 func _process_victory(combat: Dictionary, messages: Array) -> Dictionary:
 	"""Process monster defeat and return victory result - redirects to ability-aware version"""

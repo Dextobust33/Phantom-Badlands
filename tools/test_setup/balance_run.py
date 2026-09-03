@@ -143,7 +143,7 @@ def main():
     print("[3/4] server")
     slog = open(os.path.join(logdir, "server.log"), "w", encoding="utf-8", errors="replace")
     subprocess.Popen([GODOT, "--path", PROJECT, "--screen", "1", "--windowed",
-                      "--resolution", "1280x720", "server/server.tscn"],
+                      "--resolution", "1280x720", "server/server.tscn", "--playtest-log"],
                      stdout=slog, stderr=subprocess.STDOUT)
     if not wait_for_server():
         print("  server never started listening")

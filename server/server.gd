@@ -474,6 +474,14 @@ func _ready():
 	# Parse command line arguments for port
 	var args = OS.get_cmdline_args()
 	for arg in args:
+		if arg == "--playtest-log":
+			# Dev only. Writes one JSON line per resolved fight so a playtest's results can be
+			# READ rather than reported by the person at the screen. Absolute path because
+			# res:// is not writable in an exported build; this flag is never passed there.
+			var _dir := ProjectSettings.globalize_path("res://tools/test_setup/logs")
+			DirAccess.make_dir_recursive_absolute(_dir)
+			CombatManager.playtest_log_path = _dir + "/playtest.jsonl"
+			print("[playtest-log] writing fight results to ", CombatManager.playtest_log_path)
 		if arg.begins_with("--port="):
 			var port_str = arg.substr(7)
 			if port_str.is_valid_int():
