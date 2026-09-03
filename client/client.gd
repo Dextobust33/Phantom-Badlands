@@ -28897,8 +28897,18 @@ func display_changelog():
 	display_game("[color=#FFD700]═══════ WHAT'S CHANGED ═══════[/color]")
 	display_game("")
 
+	# v0.9.743 — Missing monster art, co-op Outsmart, apex from tier 2, Pathfinder retired.
+	display_game("[color=#00FF00]v0.9.743[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ SOME MONSTERS WERE INVISIBLE.[/color] Certain enemies showed [b]no artwork at all[/b] — an empty battlefield with a health bar floating above it. It hit every [b]Orc, Wolf and Young Dragon[/b] that turned up as a variant (a Venomous Orc, a Frenzied Wolf), because those three creatures keep their art under a different name and the prefix broke the match. Every prefix on every species now resolves properly.")
+	display_game("  [color=#FF8000]★ TRICKSTERS CAN OUTSMART IN A PARTY.[/color] Outsmart simply [b]did not work in co-op[/b] — the game rejected the command outright, so a Trickster in a group built [color=#7FD8C8]◉ Read[/color] toward a payoff that could never happen, with a third of the class switched off. It works now, at exactly the same odds and cost as solo: your Read, your Wits, the level gap and the enemy's rank all count the same. The odds meter in a party read a flat [b]0%%[/b] no matter how much Read you had; it tells the truth now.")
+	display_game("  [color=#1EFF00]◆ The dangerous species start later.[/color] [color=#FF4C40]☠ APEX[/color] monsters — the ones deliberately tuned to beat you — used to include the [b]Skeleton[/b], which is roughly [b]one in five[/b] of everything a brand-new character meets. They now begin at [b]tier 2[/b], so your first fights are a fair introduction rather than a species built to kill you before you own a weapon.")
+	display_game("  [color=#1EFF00]◆ Party fights show the right numbers.[/color] The [b]card damage, costs and regeneration[/b] fixed last version were only reaching SOLO play — in a party you were still seeing the old, wrong estimates. Same for the [color=#FF4C40]☠ APEX[/color] tag, which never appeared in a group fight at all.")
+	display_game("  [color=#1EFF00]◆ Outsmart remembers what you spend.[/color] The energy box is [b]pre-filled[/b] and recalls what you committed last time (as does every other spend-what-you-like card), and committing [b]nothing[/b] is now genuinely allowed — before, an empty energy bar meant you could not attempt it at all.")
+	display_game("  [color=#909090]The old Pathfinder starter quest has been retired ahead of a proper guided opening. A chain already in progress can still be finished.[/color]")
+	display_game("")
+
 	# v0.9.742 — Cards that tell the truth, every ability on one damage model, and the XP fix.
-	display_game("[color=#00FF00]v0.9.742[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FFFF]v0.9.742[/color]")
 	display_game("  [color=#FF8000]\u2605 YOUR CARDS WERE LYING TO YOU.[/color] The damage number on a combat card was worked out by the game client using its own copy of the formulas \u2014 and that copy had gone badly out of date. [b]Forcefield advertised a 252-point shield and granted 28. Meteor promised twice what it dealt. Magic Bolt under-reported by nearly seven times.[/b] Devastate showed a flat number and never mentioned that Momentum is what makes it hit. Every card now shows a number [b]calculated by the server[/b] \u2014 the same one that will actually be applied \u2014 so what you read is what you get. Costs and per-turn regeneration come from the same place, [b]including in party fights[/b], where none of it was reaching you at all.")
 	display_game("  [color=#FF8000]\u2605 EVERY ABILITY IS NOW ON THE SAME DAMAGE MODEL.[/color] Five abilities had been moved onto the new health-bar-anchored scaling and the rest were left on an old formula worth [b]five to ten times less at low level[/b] \u2014 and which abilities got converted decided which class worked. The Mage had its whole kit converted, the Warrior got two cards but [b]not its finisher[/b], and the Trickster got [b]none[/b]. Measured against a same-level monster, turns-to-kill went from [b]2.3 / 4.9 / 11.5[/b] (Mage / Warrior / Trickster) to [b]5.8 / 5.6 / 6.2[/b]. A Trickster genuinely could not win a straight fight before this.")
 	display_game("  [color=#1EFF00]\u25c6 Devastate is a real finisher now.[/color] Its damage scales with [b]each point of Momentum[/b] you spend, and the card tells you so \u2014 dumping at 1 Momentum is deliberately feeble, while a full five-stack blow on a full stamina bar is [b]the single biggest hit available to any class[/b]. Against an ordinary monster you will rarely reach five, because your builder cards have already killed it. That is the point: the finisher is what [b]elites and bosses[/b] are for.")
@@ -29003,12 +29013,7 @@ func display_changelog():
 	display_game("  [color=#1EFF00]◆ Feedback buttons work now.[/color] The [color=#FFE066]💡 Suggest Idea[/color] / [color=#FF8888]🐞 Report Issue[/color] buttons (in-game and on the launcher) were showing 'unavailable' in the packaged build — fixed. Please send us your ideas and bug reports; we're reading them!")
 	display_game("")
 
-	# v0.9.729 — Self-updating launcher.
-	display_game("[color=#00FFFF]v0.9.729[/color]")
-	display_game("  [color=#1EFF00]◆ Your launcher updates itself now.[/color] No more re-downloading the launcher by hand — after this update it quietly upgrades to the new [b]self-updating launcher[/b] in the background, so you always have the latest one (with the changelog panel + feedback buttons). [color=#808080](One-time, automatic — nothing for you to do.)[/color]")
-	display_game("")
-
-	# (v0.9.725-728 rolled off the visible changelog window.)
+	# (v0.9.725-729 rolled off the visible changelog window.)
 
 	# v0.9.724 — Dungeon Atlas.
 	display_game("[color=#00FFFF]v0.9.724[/color]")
