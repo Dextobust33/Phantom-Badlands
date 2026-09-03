@@ -965,23 +965,11 @@ func run_reference_calibrate():
 			hp *= pow(clampf(turn_err, 0.15, 6.0), k)
 			var cost_err: float = DANGER_NORMAL_SIM / maxf(0.01, float(r["cost"]))
 			st *= pow(clampf(cost_err, 0.15, 6.0), k)
-		# The loop measures, THEN corrects — so `last` describes the state one correction BEFORE
-		# the value being written, and printing it misrepresents the curve a reader is about to
-		# trust (it is why a run could print "10.1 turns" for an anchor that had just been
-		# corrected down). Measure once more against the FINAL numbers so the printed row is
-		# actually a description of what got written.
-		_cal_override = {"level": lvl, "hp": int(round(hp)), "str": int(round(st))}
-		var verify := _fight_stats_at(lvl, samples)
-		_cal_override = {}
-		if not verify.is_empty():
-			last = verify
 		table.append({"level": lvl, "hp": int(round(hp)), "str": int(round(st))})
 		if last.is_empty():
 			print("L%-6d  (no data)" % lvl)
 		else:
-			print("L%-6d hp=%12d str=%10d   -> %5.1f turns, %3.0f%% HP cost, %3.0f%% win" % [
-				lvl, int(round(hp)), int(round(st)),
-				float(last["turns"]), 100.0 * float(last["cost"]), 100.0 * float(last["win"])])
+			print("L%-6d raw hp=%12d str=%10d   (pre-smoothing)" % [lvl, int(round(hp)), int(round(st))])
 	# Each anchor is calibrated INDEPENDENTLY, so a noisy cell leaves a permanent dent in what
 	# is supposed to be a difficulty RAMP. Measured: L100 came out at 8507 HP and L250 at 6022 —
 	# monsters getting weaker as the player got stronger, the exact fault the reference model
@@ -990,6 +978,27 @@ func run_reference_calibrate():
 	# 179-350%) that is the dip, not the abilities.
 	# Enforce a non-decreasing ramp by carrying the running maximum forward. Deliberately does
 	# not smooth or average — it only refuses to go DOWN, so a genuinely hard level stays hard.
+	# SMOOTH BEFORE CLAMPING (2026-09-02). The monotonic clamp alone has a failure mode the
+	# comment above did not anticipate: it turns a single noisy SPIKE into a permanent plateau.
+	# Measured on the first decoupled run — L250 spiked to 35351 and L500, which had calibrated
+	# itself to 16106, was clamped UP to 35351 to preserve the ramp. One bad sample inflated
+	# every level above it, and the curve stepped 5.04x from L100 to L250 then 1.00x to L500.
+	# That is the sawtooth a player feels as a wall followed by a coast.
+	#
+	# Anchors are spaced logarithmically and the curve is near-linear in log-log, so smoothing
+	# in LOG space preserves the ramp's shape while averaging out a single-cell miss. Endpoints
+	# are left alone (nothing to average against). Two light passes: enough to halve a lone
+	# spike, not enough to flatten genuine curvature.
+	for _smooth_pass in range(2):
+		var log_hp: Array = []
+		var log_st: Array = []
+		for row in table:
+			log_hp.append(log(maxf(1.0, float(row["hp"]))))
+			log_st.append(log(maxf(1.0, float(row["str"]))))
+		for i in range(1, table.size() - 1):
+			table[i]["hp"] = int(round(exp(0.25 * float(log_hp[i - 1]) + 0.5 * float(log_hp[i]) + 0.25 * float(log_hp[i + 1]))))
+			table[i]["str"] = int(round(exp(0.25 * float(log_st[i - 1]) + 0.5 * float(log_st[i]) + 0.25 * float(log_st[i + 1]))))
+
 	var fixed_hp := 0
 	var fixed_str := 0
 	var repaired := 0
@@ -1006,6 +1015,22 @@ func run_reference_calibrate():
 		print("
 Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;" % repaired)
 		print("clamped to the running maximum so the curve is a ramp, never a dip.")
+
+	# Verify the FINAL table. Smoothing and the monotonic clamp both run AFTER the per-anchor
+	# loop, so anything measured in there describes numbers that no longer exist. This is the
+	# only table a reader should trust: it is measured against exactly what gets written.
+	print("
+--- VERIFIED against the curve actually being written ---")
+	print("%-8s %12s %10s %8s %8s %6s" % ["level", "hp", "str", "turns", "HPcost", "win"])
+	for row in table:
+		_cal_override = {"level": int(row["level"]), "hp": int(row["hp"]), "str": int(row["str"])}
+		var v := _fight_stats_at(int(row["level"]), samples)
+		_cal_override = {}
+		if v.is_empty():
+			continue
+		print("%-8d %12d %10d %7.1f %7.0f%% %5.0f%%" % [
+			int(row["level"]), int(row["hp"]), int(row["str"]),
+			float(v["turns"]), 100.0 * float(v["cost"]), 100.0 * float(v["win"])])
 
 	var out := {"generated": "sim run_reference_calibrate", "target_turns": TARGET_TURNS_NORMAL_SIM, "anchors": table}
 	var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
