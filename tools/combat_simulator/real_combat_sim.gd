@@ -965,6 +965,16 @@ func run_reference_calibrate():
 			hp *= pow(clampf(turn_err, 0.15, 6.0), k)
 			var cost_err: float = DANGER_NORMAL_SIM / maxf(0.01, float(r["cost"]))
 			st *= pow(clampf(cost_err, 0.15, 6.0), k)
+		# The loop measures, THEN corrects — so `last` describes the state one correction BEFORE
+		# the value being written, and printing it misrepresents the curve a reader is about to
+		# trust (it is why a run could print "10.1 turns" for an anchor that had just been
+		# corrected down). Measure once more against the FINAL numbers so the printed row is
+		# actually a description of what got written.
+		_cal_override = {"level": lvl, "hp": int(round(hp)), "str": int(round(st))}
+		var verify := _fight_stats_at(lvl, samples)
+		_cal_override = {}
+		if not verify.is_empty():
+			last = verify
 		table.append({"level": lvl, "hp": int(round(hp)), "str": int(round(st))})
 		if last.is_empty():
 			print("L%-6d  (no data)" % lvl)
