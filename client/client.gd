@@ -957,6 +957,10 @@ var combat_use_page: int = 0  # Current page for combat usable items list (0-ind
 # companion, we route through a tiny target picker (Self / Companion) before
 # firing combat_use_item to the server.
 var target_select_mode: bool = false
+# Which hand slot the card being aimed came from, 1-5, or 0 when it was not launched by a
+# hotkey. The target picker puts "Yourself" at this index so the SAME key casts on yourself:
+# press 2 to play the card on slot 2, press 2 again to keep it. See _start_buff_target_select.
+var _target_select_origin_slot: int = 0
 # v0.9.740 — the picker's targets, in display order: yourself, your companion, then each living
 # teammate and their companion. Entry 0 is ALWAYS yourself, so the quick self-cast is the first
 # thing under the cursor and under [1].
@@ -10568,6 +10572,11 @@ func trigger_action(index: int):
 
 	match action.action_type:
 		"combat":
+			# 2026-09-04 — remember WHICH hotkey played this card, so the buff target picker can
+			# put "Yourself" on the same key: press 2 to play the card in slot 2, press 2 again
+			# to keep it. `index` is the action-bar slot; hand cards occupy slots 5-9, which map
+			# to the number keys 1-5.
+			_target_select_origin_slot = (index - 4) if index >= 5 and index <= 9 else 0
 			# v0.9.739 — check BEFORE the variable-cost prompt. Previously the mana dialog
 			# opened for a player who had already locked in, and only the send was rejected.
 			if _party_action_blocked():
@@ -12611,6 +12620,8 @@ func _get_combat_hand_actions() -> Array:
 	return actions
 
 func _on_combat_card_played(card_name: String) -> void:
+	# Mouse click: no originating hotkey, so the picker keeps "Yourself" first.
+	_target_select_origin_slot = 0
 	"""Audit #1 Slice 6a — mouse path for the combat scene's card row.
 	Mirrors the action bar's 'combat' action_type handling so a click and
 	a hotkey press behave identically (variable-cost prompts included)."""
@@ -13443,9 +13454,22 @@ func _party_buff_can_target_ally(command: String) -> bool:
 	return target_select_options.size() > 1   # more than just "Yourself"
 
 func _start_buff_target_select(command: String) -> void:
-	"""Ask who a buff should land on. Yourself is first and pre-selected, so the quick
-	self-cast is [1] / one click on the leading entry / the Self button on the action bar."""
+	"""Ask who a buff should land on.
+
+	2026-09-04 — "Yourself" is moved to the slot the CARD was on, so the same key does both.
+	Owner: "if my forcefield card is on number 2 and I press 2 when the options on who I want to
+	use it on show up number 2 should be how I use on myself. That way players can press the
+	same hotkey twice to quickly use on themselves."
+
+	Moved rather than duplicated: leaving a second "Yourself" at the top would make one hotkey
+	unreachable for a real teammate, and two entries doing the same thing is its own confusion.
+	Falls back to first place when the card was played with the mouse, where there is no slot to
+	match and the leading entry is still the quick answer."""
 	_build_target_select_options(false)
+	if _target_select_origin_slot >= 2 and _target_select_origin_slot <= target_select_options.size():
+		var _self_opt = target_select_options[0]
+		target_select_options.remove_at(0)
+		target_select_options.insert(_target_select_origin_slot - 1, _self_opt)
 	target_select_mode = true
 	target_select_kind = "ability"
 	target_select_command = command

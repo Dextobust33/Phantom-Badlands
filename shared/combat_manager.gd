@@ -9962,6 +9962,19 @@ func _draw_to_hand(combat_state: Dictionary) -> void:
 			deck.shuffle()
 			discard = []
 		hand.append(deck.pop_back())
+	# 2026-09-04 — shuffle the HAND, not just the deck.
+	#
+	# The cycle is already a genuine redraw: playing a card discards it, cycles the rest of the
+	# hand to discard, and draws three fresh. But a starting deck is small - six cards is
+	# typical early - so drawing 3 of 6 often returns the same three, and they landed in the
+	# same SLOTS every round. Reported: "my hand of cards looks identical to the round before...
+	# The keeping cards in the same spot is a big part of why it looks like it's not an actual
+	# deck or draw."
+	#
+	# Shuffling the hand costs nothing and makes a repeated draw read as a new one. Safe for the
+	# hotkeys precisely BECAUSE every round is a real redraw - the slots were never stable
+	# across rounds in the first place, they only looked it.
+	hand.shuffle()
 	combat_state["combat_hand"] = hand
 	combat_state["combat_deck"] = deck
 	combat_state["combat_discard"] = discard
