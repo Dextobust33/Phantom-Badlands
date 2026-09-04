@@ -4090,12 +4090,120 @@ func update_hand(hand: Array, deck_count: int, discard_count: int) -> void:
 	"""Replace current hand state and rerender the strip. `hand` is an array
 	of canonical ability names (e.g. 'magic_bolt'). Cell metadata reads
 	display name / cost / resource type / mastery rank from client_ref so
-	this panel doesn't have to duplicate the ability tables."""
+	this panel doesn't have to duplicate the ability tables.
+
+	2026-09-04 — a real CYCLE is animated: the old hand drops away to the discard, then the new
+	one deals in. The redraw was always genuine, but with a small deck the same cards return to
+	the same slots and the strip simply looked frozen. Owner: "One thing I notice sometimes is
+	that my hand of cards looks identical to the round before. We may need to add a small
+	animation that shows your cards going into a discard and you drawing new ones."
+
+	The animation is the ANSWER to that report, not decoration: it is what makes a cycle
+	observable when the CONTENTS cannot show it."""
+	var prev_hand: Array = _combat_hand.duplicate()
+	var prev_discard: int = _combat_discard_count
 	_combat_hand = hand.duplicate() if hand is Array else []
 	_combat_deck_count = max(0, deck_count)
 	_combat_discard_count = max(0, discard_count)
-	if is_inside_tree():
+	if not is_inside_tree():
+		return
+	# A combat_update can arrive several times in a round, so only a genuine cycle animates.
+	# The discard growing is the tell that survives an identical-looking hand, which is exactly
+	# the case being fixed.
+	var cycled: bool = prev_hand != _combat_hand or _combat_discard_count > prev_discard
+	if cycled and not prev_hand.is_empty():
+		_play_hand_cycle()
+		return
+	_refresh_hand()
+	if cycled and prev_hand.is_empty():
+		_play_hand_deal_in()   # first hand of a fight - deal it in rather than snapping it on
+
+
+const _HAND_ANIM_OUT := 0.20
+const _HAND_ANIM_IN := 0.22
+const _HAND_ANIM_STAGGER := 0.05
+# Rounds can arrive faster than the animation finishes (a fast-forward, or a 3x player).
+# Two tweens driving the same scale/alpha would fight and could settle anywhere, so the
+# previous one is killed rather than left running.
+var _hand_tween: Tween = null
+
+func _hand_anim_scale() -> float:
+	"""The player's combat-speed setting, so the deal keeps pace with everything else. A player
+	at 3x has said they do not want to watch animations; making this one exempt would be the
+	same mistake as the playback queue ignoring it."""
+	if client_ref != null and "combat_speed" in client_ref:
+		return 1.0 / maxf(0.25, float(client_ref.combat_speed))
+	return 1.0
+
+func _hand_cell_ready_for_anim(cell: Control) -> bool:
+	if cell == null or not is_instance_valid(cell) or not cell.visible:
+		return false
+	# Scaling about the centre needs a pivot; containers set position and size but never touch
+	# scale/rotation/pivot, so animating those does not fight the layout the way position would.
+	cell.pivot_offset = cell.size * 0.5
+	return cell.size.x > 0.0
+
+func _reset_hand_transforms() -> void:
+	"""Put every cell back to plain, upright and opaque.
+
+	The safety property for the whole animation: a card must NEVER be left shrunk or invisible
+	because a tween was interrupted. A decorative effect that can hide the hand is worse than no
+	effect at all, so every path that renders the hand passes through here first."""
+	for cell in _hand_cells:
+		if cell != null and is_instance_valid(cell):
+			cell.scale = Vector2.ONE
+			cell.rotation = 0.0
+			cell.modulate.a = 1.0
+
+func _kill_hand_tween() -> void:
+	if _hand_tween != null and _hand_tween.is_valid():
+		_hand_tween.kill()
+	_hand_tween = null
+
+func _play_hand_cycle() -> void:
+	"""Old hand falls to the discard, then the new hand deals in."""
+	_kill_hand_tween()
+	var sc := _hand_anim_scale()
+	var tw := create_tween()
+	_hand_tween = tw
+	tw.set_parallel(true)
+	var any := false
+	for i in range(_hand_cells.size()):
+		var cell: PanelContainer = _hand_cells[i]
+		if not _hand_cell_ready_for_anim(cell):
+			continue
+		any = true
+		var d := i * _HAND_ANIM_STAGGER * sc
+		tw.tween_property(cell, "scale", Vector2(0.62, 0.62), _HAND_ANIM_OUT * sc).set_delay(d).set_ease(Tween.EASE_IN)
+		tw.tween_property(cell, "rotation", deg_to_rad(-9.0 + i * 4.0), _HAND_ANIM_OUT * sc).set_delay(d)
+		tw.tween_property(cell, "modulate:a", 0.0, _HAND_ANIM_OUT * sc).set_delay(d)
+	if not any:
 		_refresh_hand()
+		return
+	tw.chain().tween_callback(_deal_in_after_discard)
+
+func _deal_in_after_discard() -> void:
+	_refresh_hand()
+	_play_hand_deal_in()
+
+func _play_hand_deal_in() -> void:
+	"""Bring the cells back from the deck: small, tilted and transparent, into place."""
+	_kill_hand_tween()
+	var sc := _hand_anim_scale()
+	var tw := create_tween()
+	_hand_tween = tw
+	tw.set_parallel(true)
+	for i in range(_hand_cells.size()):
+		var cell: PanelContainer = _hand_cells[i]
+		if not _hand_cell_ready_for_anim(cell):
+			continue
+		cell.scale = Vector2(0.74, 0.74)
+		cell.rotation = deg_to_rad(7.0 - i * 3.0)
+		cell.modulate.a = 0.0
+		var d := i * _HAND_ANIM_STAGGER * sc
+		tw.tween_property(cell, "scale", Vector2.ONE, _HAND_ANIM_IN * sc).set_delay(d).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(cell, "rotation", 0.0, _HAND_ANIM_IN * sc).set_delay(d)
+		tw.tween_property(cell, "modulate:a", 1.0, _HAND_ANIM_IN * sc).set_delay(d)
 
 
 func _theme_class_color() -> Color:
@@ -4131,6 +4239,7 @@ func _class_emblem_text() -> String:
 func _refresh_hand() -> void:
 	if _hand_cells.is_empty():
 		return
+	_reset_hand_transforms()
 	for i in range(_hand_cells.size()):
 		var cell: PanelContainer = _hand_cells[i]
 		var key_lbl: Label = cell.find_child("Key", true, false)
@@ -4639,6 +4748,8 @@ func _resource_color(rt: String) -> Color:
 
 func clear_hand() -> void:
 	"""Wipe hand state to '—' cells (called between fights / when combat ends)."""
+	_kill_hand_tween()
+	_reset_hand_transforms()
 	_combat_hand = []
 	_combat_deck_count = 0
 	_combat_discard_count = 0

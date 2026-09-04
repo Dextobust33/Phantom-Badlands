@@ -3304,9 +3304,21 @@ zero drift.
       through `_damage_with_detail` and read as one line each (`Ambush — 302 damage`,
       `Exploit Weakness — 654480 damage`, `Gambit (it pays off) — 771 damage`). Listed as open
       after the work that closed it
-- [ ] **Discard/draw animation.** The hand is shuffled on every draw now (the cycle was always a
-      genuine redraw — small decks just returned the same cards to the same slots), but seeing
-      cards leave and arrive is what will make it read as a deck
+- [x] **DONE 2026-09-04 — the cycle is visible now.** The old hand drops away (shrink, tilt,
+      fade, staggered) and the new one deals back in from the deck. It is the ANSWER to the
+      report rather than decoration: the redraw was always genuine, so when a small deck returns
+      the same cards to the same slots the CONTENTS cannot show a cycle happened — only motion
+      can.
+
+      Triggered on a real cycle only, since a `combat_update` can arrive several times a round:
+      the hand differing **or the discard count growing**, the second of which is what survives
+      an identical-looking hand. The first hand of a fight deals in rather than snapping on.
+
+      Two properties worth keeping if this is ever touched: it animates `scale` / `rotation` /
+      `modulate` and never `position`, because the cells live in an HBoxContainer that owns
+      position and size; and every render path passes through `_reset_hand_transforms()` with
+      the previous tween killed, so an interrupted animation can never leave a card shrunk or
+      invisible. Runs on the player's combat-speed setting like everything else.
 - [x] **DONE 2026-09-04 — and the owner was right to ask whether it was stale.** It had already
       been half-fixed: `c9ec57d` moved the bar from an end-of-ROUND snapshot to an end-of-BEAT
       one (`_mhp_after_player`), which is the gross case that was reported. So the question was
