@@ -1,74 +1,74 @@
 {
 	"anchors": [
 		{
-			"hp": 692.0,
-			"level": 1.0,
-			"str": 31.0
+			"hp": 692,
+			"level": 1,
+			"str": 38
 		},
 		{
-			"hp": 759.0,
-			"level": 2.0,
-			"str": 39.0
+			"hp": 962,
+			"level": 2,
+			"str": 43
 		},
 		{
-			"hp": 970.0,
-			"level": 3.0,
-			"str": 41.0
+			"hp": 1131,
+			"level": 3,
+			"str": 47
 		},
 		{
-			"hp": 1140.0,
-			"level": 5.0,
-			"str": 43.0
+			"hp": 1278,
+			"level": 5,
+			"str": 59
 		},
 		{
-			"hp": 1924.0,
-			"level": 10.0,
-			"str": 56.0
+			"hp": 2050,
+			"level": 10,
+			"str": 71
 		},
 		{
-			"hp": 4216.0,
-			"level": 25.0,
-			"str": 175.0
+			"hp": 4850,
+			"level": 25,
+			"str": 195
 		},
 		{
-			"hp": 8115.0,
-			"level": 50.0,
-			"str": 355.0
+			"hp": 9460,
+			"level": 50,
+			"str": 447
 		},
 		{
-			"hp": 14249.0,
-			"level": 100.0,
-			"str": 1290.0
+			"hp": 15642,
+			"level": 100,
+			"str": 2088
 		},
 		{
-			"hp": 43803.0,
-			"level": 250.0,
-			"str": 3908.0
+			"hp": 56826,
+			"level": 250,
+			"str": 4928
 		},
 		{
-			"hp": 66531.0,
-			"level": 500.0,
-			"str": 7643.0
+			"hp": 68723,
+			"level": 500,
+			"str": 9945
 		},
 		{
-			"hp": 165439.0,
-			"level": 1000.0,
-			"str": 12201.0
+			"hp": 219135,
+			"level": 1000,
+			"str": 16519
 		},
 		{
-			"hp": 267062.0,
-			"level": 2500.0,
-			"str": 30318.0
+			"hp": 438898,
+			"level": 2500,
+			"str": 50450
 		},
 		{
-			"hp": 1008908.0,
-			"level": 5000.0,
-			"str": 64552.0
+			"hp": 1291998,
+			"level": 5000,
+			"str": 78677
 		},
 		{
-			"hp": 1854641.0,
-			"level": 10000.0,
-			"str": 115103.0
+			"hp": 1993833,
+			"level": 10000,
+			"str": 212686
 		}
 	],
 	"generated": "sim run_reference_calibrate",
@@ -188,543 +188,543 @@
 	"species_power": {
 		"Ancient Dragon": [
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.33398305928452
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.0
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.45223298570779
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.57277142408601
 			}
 		],
 		"Balrog": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 0.882482732444341
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.30041883319606
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.562570467774
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.4836914592444
 			}
 		],
 		"Cerberus": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 0.587784453775334
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.0
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.0
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.0
 			}
 		],
 		"Chimaera": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 0.996917705680825
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.0
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.0
 			}
 		],
 		"Cosmic Horror": [
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.0
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.72203166668619
 			}
 		],
 		"Death Incarnate": [
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.53523269123112
 			}
 		],
 		"Demon": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.17174938658262
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.3027494601675
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.30125457885481
 			}
 		],
 		"Demon Lord": [
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.42238377746463
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.32282320494732
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.28188837499444
 			}
 		],
 		"Elder Lich": [
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 2.2745604189475
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 2.5
 			}
 		],
 		"Elemental": [
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.30030220899717
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.37239930063321
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.56809167658893
 			}
 		],
 		"Gargoyle": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.13434739314453
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.50462766829914
 			}
 		],
 		"Giant": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.0
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.12878502532794
 			}
 		],
 		"Giant Rat": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.23091842130387
 			}
 		],
 		"Giant Spider": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.06380275534848
 			}
 		],
 		"Gnoll": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.03659249315157
 			}
 		],
 		"Goblin": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.02096494045798
 			}
 		],
 		"Gryphon": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.0
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.04405271189797
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.00641902369127
 			}
 		],
 		"Harpy": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.3184623499314
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.50609512071809
 			}
 		],
 		"Hobgoblin": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 0.931826537643004
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.22640776304642
 			}
 		],
 		"Hydra": [
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 0.577079962362886
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.0
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.0
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.0
 			}
 		],
 		"Iron Golem": [
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.0
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.19421827156398
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.30692990811115
 			}
 		],
 		"Jabberwock": [
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 0.910098676818429
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 0.649448387160701
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 0.817190254184802
 			}
 		],
 		"Kelpie": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.0
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.17218901242467
 			}
 		],
 		"Lich": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.0
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.48546310315639
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.42193419424294
 			}
 		],
 		"Mimic": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.35492806579496
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.96633097803747
 			}
 		],
 		"Minotaur": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 0.35
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 0.748304210250942
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.0
 			}
 		],
 		"Nazgul": [
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.78944488891616
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 2.06131396434682
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 2.40090257376519
 			}
 		],
 		"Ogre": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 0.464913513331383
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.0
 			}
 		],
 		"Orc": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.0
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.13477298622237
 			}
 		],
 		"Phoenix": [
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.1891743052907
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.71513131499143
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.79864436342079
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 2.2684624203285
 			}
 		],
 		"Primordial Dragon": [
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 0.582639330134239
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.0
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.0
 			}
 		],
 		"Shrieker": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.37644148060677
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.54872544316858
 			}
 		],
 		"Siren": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.0
 			}
 		],
 		"Skeleton": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 0.986606784547197
 			}
 		],
 		"Sphinx": [
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.42421405385401
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.48564454780229
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.98615768121942
 			}
 		],
 		"Succubus": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.33673147032417
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.44059396647032
 			}
 		],
 		"Time Weaver": [
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.81350421121888
 			}
 		],
 		"Titan": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 0.621084844775278
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.32602931266215
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 1.25553596380398
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.64203544415257
 			}
 		],
 		"Troll": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.0
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.34192900603428
 			}
 		],
 		"Vampire": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.13477298622237
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.38083027241507
 			}
 		],
 		"Void Walker": [
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 2.06131396434682
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 2.2389453395239
 			}
 		],
 		"Wight": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 0.830196418841143
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.11766527537688
 			}
 		],
 		"World Serpent": [
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 0.655722683065477
 			},
 			{
-				"level": 1000,
+				"level": 1000.0,
 				"power": 1.35683344235296
 			},
 			{
-				"level": 5000,
+				"level": 5000.0,
 				"power": 1.59780320096257
 			}
 		],
 		"Wraith": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.68810926748326
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 2.2834233352481
 			},
 			{
-				"level": 250,
+				"level": 250.0,
 				"power": 2.24593126245623
 			}
 		],
 		"Wyvern": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.06817775814916
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.33149319033309
 			}
 		],
 		"Young Dragon": [
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 0.880922648816892
 			},
 			{
-				"level": 100,
+				"level": 100.0,
 				"power": 1.0
 			}
 		],
 		"Zombie": [
 			{
-				"level": 10,
+				"level": 10.0,
 				"power": 1.09540492773042
 			},
 			{
-				"level": 50,
+				"level": 50.0,
 				"power": 1.39601232062275
 			}
 		]

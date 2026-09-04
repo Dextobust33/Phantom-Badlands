@@ -661,6 +661,7 @@ const DROP_TABLES = {
 		{"weight": 5, "item_type": "ring_copper", "rarity": "uncommon"}
 	],
 	"tier2": [
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 22, "item_type": "potion_lesser", "rarity": "common"},
 		{"weight": 10, "item_type": "mana_lesser", "rarity": "common"},
 		{"weight": 18, "item_type": "weapon_iron", "rarity": "common"},
@@ -671,6 +672,7 @@ const DROP_TABLES = {
 		{"weight": 8, "item_type": "ring_silver", "rarity": "uncommon"}
 	],
 	"tier3": [
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 18, "item_type": "potion_standard", "rarity": "common"},
 		{"weight": 18, "item_type": "mana_standard", "rarity": "common"},
 		{"weight": 15, "item_type": "weapon_steel", "rarity": "uncommon"},
@@ -685,6 +687,7 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "common"}
 	],
 	"tier4": [
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 14, "item_type": "potion_greater", "rarity": "common"},
 		{"weight": 15, "item_type": "mana_greater", "rarity": "common"},
 		{"weight": 15, "item_type": "weapon_enchanted", "rarity": "rare"},
@@ -734,6 +737,7 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"}
 	],
 	"tier6": [
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 8, "item_type": "potion_master", "rarity": "common"},
 		{"weight": 4, "item_type": "mana_master", "rarity": "common"},
 		{"weight": 14, "item_type": "weapon_elemental", "rarity": "epic"},
@@ -763,6 +767,7 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier7": [
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
 		{"weight": 16, "item_type": "weapon_legendary", "rarity": "epic"},
 		{"weight": 14, "item_type": "armor_legendary", "rarity": "epic"},
@@ -791,6 +796,7 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier8": [
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
 		{"weight": 14, "item_type": "weapon_mythic", "rarity": "legendary"},
 		{"weight": 12, "item_type": "armor_mythic", "rarity": "legendary"},
@@ -816,6 +822,7 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier9": [
+		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "common"},
 		{"weight": 12, "item_type": "weapon_divine", "rarity": "legendary"},
 		{"weight": 11, "item_type": "armor_divine", "rarity": "legendary"},
