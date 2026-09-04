@@ -44,18 +44,54 @@ against the old player and are now the wrong size. This has already bitten twice
 calibration, and the companion HP rework, which pushed elite-at-L1 to 90% win against a 70%
 target without touching a single monster.
 
-**After a player-side balance change:**
+**After a player-side balance change — the whole chain, ONCE each, in this order:**
 ```bash
-godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- refcal refcal
-godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- roles
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- speciescal
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- refcal
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- rolecal
 ```
 Treat every balance number measured between the change and the re-calibration as stale.
+~25 minutes total. `roles`, `refval`, `forensics` and `spread` are read-only audits, always safe.
 
-`refcal` rewrites the base anchors; `rolecal` writes the elite/boss multipliers into the SAME
-file. Run **`rolecal` after `refcal`**, never before — `refcal` used to drop the multiplier block
-entirely (fixed 2026-09-02, it now carries them forward, but they were calibrated against the
-OLD base curve and want re-running whenever the base moves much). `roles` and `refval` are
-read-only audits and are always safe.
+Three layers, each owning ONE quantity:
+
+| audit | owns | writes |
+|---|---|---|
+| `speciescal` | how much monsters differ FROM EACH OTHER | `species_power` |
+| `refcal` | how hard a level is on average | `anchors` |
+| `rolecal` | how much harder elites/bosses are | `role_multipliers` |
+
+All three write the SAME file. Order matters: `refcal` after `speciescal` (the base is measured
+through the corrected species mix), `rolecal` last (its multipliers sit on top of the base).
+
+### ⚑ ONE PASS EACH. If you find yourself iterating, a layer is not orthogonal.
+
+**Do not run these in a loop trying to reach a fixed point.** That was tried on 2026-09-04 and
+abandoned: 45 minutes per attempt, and it would have recurred on every future player-power
+change. Needing to iterate is the SYMPTOM — it means two layers are controlling the same
+quantity and fighting each other.
+
+The cause, when it happened: `speciescal` corrected each species toward an ABSOLUTE win band, so
+it could not tell "this species is too strong" from "the base curve is too strong". A slightly
+hard base made every species measure low, speciescal weakened them all, that made the average
+too easy, refcal strengthened the base to compensate, and every species correction went stale —
+round and round. It showed as ringing rather than convergence: consecutive refcal rounds moving
+L50 68%→51% and L5000 53%→69%, against a ~4.5pp sampling error.
+
+The fix was structural, ~20 lines: judge each species against **the mix at its own level**
+(measured through the real spawn distribution) rather than an absolute number, compared in
+**log-odds** because win rate is bounded. Now a base-curve change moves every species together,
+the ratios are unchanged, and speciescal correctly does nothing. Round-to-round swing fell from
+10.6pp mean to 5.4pp — below the ~6.4pp expected from sampling noise alone, i.e. converged.
+
+**So: if a re-run disagrees with the previous one by more than sampling noise, do not run it a
+third time. Find which two layers are measuring the same thing.**
+
+### ⚑ Judge against ±10pp, not ±5pp
+
+A win rate measured at n≈120 carries ~4.5pp of sampling error, so chasing a 5-point band is
+tuning noise. Nobody can feel 58% against 63%. The faults worth acting on are the GROSS ones —
+L1-L50 at 42%, L100 at 43%, a species at 16%, common gear at 0% win — not the last few points.
 
 ## Quick Start
 
