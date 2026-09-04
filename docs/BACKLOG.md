@@ -284,10 +284,37 @@ live, and one is **worse than recorded**. Judged at ±10pp; 60 fights/cell.
       row above it. A brand-new character meeting a boss is the outlier now, not the range
 - [x] **STALE — the post-L1000 length slide is gone.** Turns were 3.9 → 2.6 against a 5.0
       target; they now read **5.3 at L1000 and 4.5 at L5000**. Within noise of target
-- [ ] **STILL LIVE, but narrower: Paladin is no longer worst at every row.** Now 48% normal /
-      **8% L30 elite** / 41% L80 (was 66 / 11 / 21). It is beaten by Sage at L80 (31%), so the
-      "worst everywhere" framing is wrong — but **8% at L30 elite is the single worst cell in
-      the whole table**, 12pp below the next warrior. That one row is the item
+- [x] **DONE 2026-09-04 — it was a BUG, not a tuning problem, and the owner called it.**
+      *"For Paladin I'm not really sure why it's not better considering it gets healed on
+      attacks, is that not being accounted for?"* It was accounted for in the code and not on
+      the turns that mattered: `combat_regen_percent` (Divine Favor, "heal 3% max HP per round")
+      was implemented inline in `process_attack` only, so **casting a card skipped it entirely**.
+      Paladin casts on a third to a half of its turns at elite, so a third to a half of its
+      healing never happened.
+
+      Same `process_attack` / `process_ability_command` split that had already been found
+      skipping actor and damage metadata for casts — third defect from one cause. Per-round
+      effects now live in `_apply_round_passives`, called from both and stamped by round so it
+      cannot double-heal. The companion's `hp_regen` was in the same block and had the same bug.
+
+      **Measured before and after** (60 fights/cell, same audit):
+
+      | cell | before | after |
+      |---|---|---|
+      | L10 normal | 48% | 55% |
+      | L30 elite | **8%** | **25%** |
+      | L80 elite | 41% | 51% |
+
+      +17pp at the cell that was the worst in the whole table, well beyond the ~6.4pp noise.
+      **A Paladin buff is no longer indicated** — at L30 elite it now sits mid-pack among
+      warriors (Fighter 28%, Paladin 25%, Barbarian 18%). Owner had said *"Paladin heal may need
+      a buff"*; on this evidence the heal was fine and simply was not running
+- [ ] **THE REAL ARCHETYPE PROBLEM IS WARRIORS AT ELITE, visible once Paladin's bug was fixed.**
+      L30 elite by path: tricksters **58 / 58 / 66%**, mages 33 / 40 / 33%, warriors **28 / 25 /
+      18%**. That is a path-shaped gap, not a class-shaped one, so it wants a path-level answer
+      rather than three separate class tunes. Note the turn counts alongside it — warriors take
+      13-29 turns at L80 elite against a trickster's 8-9, so they are not merely losing, they
+      are grinding
 - [ ] **WORSE THAN RECORDED — the Trickster elite gap is ~45pp, not ~20pp.** At L80 elite:
       Thief 80%, Ranger 83%, Ninja 85% against warriors at 60 / 43 / 41 and mages at 38 / 35 /
       31. This is now the largest single distortion in the class table and it is not a tuning
