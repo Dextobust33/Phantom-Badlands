@@ -1003,7 +1003,16 @@ func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffi
 	# into the same bag as the player's action and landing their numbers on whatever the player's
 	# line 0 happened to be. The probe caught it as 17 drifted lines - "dmg=19 not in: Blast -
 	# 1286 damage". Arrays are references, so is_same() at attach time tells the two apart.
-	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount})
+	# ...and the monster's HP as it stands AFTER this hit. Every caller subtracts before it
+	# builds the line, so this is the post-hit value. Carrying it here is what lets the enemy
+	# bar move on the SAME line the number pops on: the bar used to be driven by one snapshot
+	# attached to the last line of an actor's beat, so it trailed the number by however many
+	# lines followed - "the Enemy HP bar wasn't following when the damage number popped up but
+	# rather a while after".
+	var _mhp: int = -1
+	if combat.get("monster", null) is Dictionary:
+		_mhp = int(combat["monster"].get("current_hp", -1))
+	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount, "mhp": _mhp})
 	if detail == "":
 		return "%d %s" % [amount, suffix]
 	# Only the NUMBER carries the link, and the COLOUR SITS INSIDE IT. Godot renders `[url]`
@@ -1030,7 +1039,16 @@ func _note_dmg(combat: Dictionary, messages: Array, amount: int) -> void:
 	# into the same bag as the player's action and landing their numbers on whatever the player's
 	# line 0 happened to be. The probe caught it as 17 drifted lines - "dmg=19 not in: Blast -
 	# 1286 damage". Arrays are references, so is_same() at attach time tells the two apart.
-	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount})
+	# ...and the monster's HP as it stands AFTER this hit. Every caller subtracts before it
+	# builds the line, so this is the post-hit value. Carrying it here is what lets the enemy
+	# bar move on the SAME line the number pops on: the bar used to be driven by one snapshot
+	# attached to the last line of an actor's beat, so it trailed the number by however many
+	# lines followed - "the Enemy HP bar wasn't following when the damage number popped up but
+	# rather a while after".
+	var _mhp: int = -1
+	if combat.get("monster", null) is Dictionary:
+		_mhp = int(combat["monster"].get("current_hp", -1))
+	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount, "mhp": _mhp})
 
 func _mark_actor(combat: Dictionary, from_index: int, actor: String) -> void:
 	"""Record that messages from `from_index` onward belong to `actor`."""
@@ -1056,13 +1074,20 @@ func _attach_actors(combat: Dictionary, result: Dictionary) -> Dictionary:
 	var dmg_out: Array = []
 	dmg_out.resize(msgs.size())
 	dmg_out.fill(0)
+	# Monster HP after each hit, -1 where the line is not a hit. Travels with the damage so the
+	# bar and the number are the SAME event on the client rather than two that drift apart.
+	var mhp_out: Array = []
+	mhp_out.resize(msgs.size())
+	mhp_out.fill(-1)
 	for m in (combat.get("_dmg_marks", []) if combat.get("_dmg_marks", null) is Array else []):
 		if not is_same(m.get("arr", null), msgs):
 			continue   # a mark against a DIFFERENT array - see _note_dmg
 		var at := int(m.get("at", -1))
 		if at >= 0 and at < dmg_out.size():
 			dmg_out[at] = int(m.get("dmg", 0))
+			mhp_out[at] = int(m.get("mhp", -1))
 	result["message_damage"] = dmg_out
+	result["message_monster_hp"] = mhp_out
 	# Deliberately does NOT clear the marks. `process_combat_action` calls `process_attack` and
 	# then appends the MONSTER's lines to the same array afterwards, so an inner attach must
 	# leave the marks intact for the outer one to finish the job. Marks are cleared once per
@@ -11033,6 +11058,7 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 	# Damage per line, indexed beside the messages (see _attach_actors). The client pops the
 	# floating number from THIS, not from the text of the line.
 	var _rdmg: Array = result.get("message_damage", []) if result.get("message_damage", null) is Array else []
+	var _rmhp: Array = result.get("message_monster_hp", []) if result.get("message_monster_hp", null) is Array else []
 	var _ri := 0
 	for rm in result.get("messages", []):
 		var e := _party_entry_auto(pid, pname, String(rm))
@@ -11040,6 +11066,10 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		e["actor_pid"] = pid
 		if _ri < _rdmg.size() and int(_rdmg[_ri]) > 0:
 			e["dmg"] = int(_rdmg[_ri])
+			# Move the enemy bar HERE, on the line that shows the hit. The coarser end-of-beat
+			# snapshot below still runs and still settles the bar; this just stops it trailing.
+			if _ri < _rmhp.size() and int(_rmhp[_ri]) >= 0:
+				e["hp"] = {"monster": int(_rmhp[_ri])}
 		_ri += 1
 		out.append(e)
 	# Bars catch up at each ACTOR BOUNDARY inside this beat, not just at its end.

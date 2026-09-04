@@ -23713,6 +23713,11 @@ func handle_server_message(message: Dictionary):
 				# wording of the line.
 				if _cm_dmg > 0:
 					_cm_meta["dmg"] = _cm_dmg
+					# Monster HP after this hit. Applied on the SAME beat as the number, so the
+					# bar stops trailing it: "the Enemy HP bar wasn't following when the damage
+					# number popped up but rather a while after".
+					if int(message.get("mhp", -1)) >= 0:
+						_cm_meta["mhp"] = int(message["mhp"])
 				combat_msg_queue.append({"raw": combat_msg, "meta": _cm_meta})
 			else:
 				combat_msg_queue.append({"raw": combat_msg})
@@ -35318,6 +35323,13 @@ func _display_combat_msg(combat_msg: String):
 	var damage: int = int(_party_fx_meta.get("dmg", 0)) if not _party_fx_meta.is_empty() else 0
 	if damage <= 0:
 		damage = parse_damage_dealt(combat_msg)
+	# The AUTHORITATIVE monster HP for this line, when the server sent one. Preferred over
+	# the running `damage_dealt_to_current_enemy` estimate below, which is an accumulation of
+	# parsed numbers and drifts whenever a line is missed or the monster heals.
+	var _beat_mhp: int = int(_party_fx_meta.get("mhp", -1)) if not _party_fx_meta.is_empty() else -1
+	if _beat_mhp >= 0 and current_enemy_max_hp > 0 and combat_scene_panel != null:
+		if combat_scene_panel.has_method("update_monster_hp"):
+			combat_scene_panel.update_monster_hp(_beat_mhp, current_enemy_max_hp, true)
 	if damage > 0:
 		damage_dealt_to_current_enemy += damage
 		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)

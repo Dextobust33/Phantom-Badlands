@@ -5861,11 +5861,13 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	# Send all combat messages, each with who produced it when the shared code knows.
 	var _msg_actors: Array = result.get("message_actors", []) if result.get("message_actors", null) is Array else []
 	var _msg_dmg: Array = result.get("message_damage", []) if result.get("message_damage", null) is Array else []
+	var _msg_mhp: Array = result.get("message_monster_hp", []) if result.get("message_monster_hp", null) is Array else []
 	var _mi := 0
 	for msg in result.get("messages", []):
 		send_combat_message(peer_id, msg,
 			String(_msg_actors[_mi]) if _mi < _msg_actors.size() else "",
-			int(_msg_dmg[_mi]) if _mi < _msg_dmg.size() else 0)
+			int(_msg_dmg[_mi]) if _mi < _msg_dmg.size() else 0,
+			int(_msg_mhp[_mi]) if _mi < _msg_mhp.size() else -1)
 		_mi += 1
 
 	# Slice 2 — promote ability rank-ups to account-level record (survives permadeath)
@@ -19749,7 +19751,7 @@ func forward_combat_start_to_watchers(peer_id: int, message: String, monster_nam
 			"use_client_art": true
 		})
 
-func send_combat_message(peer_id: int, message: String, actor: String = "", dmg: int = 0):
+func send_combat_message(peer_id: int, message: String, actor: String = "", dmg: int = 0, mhp: int = -1):
 	"""Send a combat message and forward to watchers.
 
 	`actor` (member / companion / monster / neutral) travels with the line so the client can
@@ -19764,6 +19766,10 @@ func send_combat_message(peer_id: int, message: String, actor: String = "", dmg:
 	# moment the lines were reworded to read as one line per action.
 	if dmg > 0:
 		payload["dmg"] = dmg
+		# The monster's HP after THIS hit, so the bar moves on the same line the number pops
+		# on rather than trailing it to the end of the beat.
+		if mhp >= 0:
+			payload["mhp"] = mhp
 	send_to_peer(peer_id, payload)
 	forward_to_watchers(peer_id, message)
 

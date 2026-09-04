@@ -3307,5 +3307,22 @@ zero drift.
 - [ ] **Discard/draw animation.** The hand is shuffled on every draw now (the cycle was always a
       genuine redraw — small decks just returned the same cards to the same slots), but seeing
       cards leave and arrive is what will make it read as a deck
-- [ ] **Enemy HP bar lags the damage number.** Playback-queue family, same root as item 7's
-      gating half
+- [x] **DONE 2026-09-04 — and the owner was right to ask whether it was stale.** It had already
+      been half-fixed: `c9ec57d` moved the bar from an end-of-ROUND snapshot to an end-of-BEAT
+      one (`_mhp_after_player`), which is the gross case that was reported. So the question was
+      fair — but the line as written was still true, just narrower than it read.
+
+      **Measured before acting: 13 of 16 attack actions produce MORE THAN ONE damage line**
+      (your blow, your companion's, plus Quick Strike / Shocking / Execute procs). The snapshot
+      attaches to the LAST line of the beat, so in 13 cases out of 16 the earlier numbers popped
+      with the bar still frozen. Not stale, and not rare.
+
+      Closed by the mechanism the damage work had just built rather than a third snapshot: the
+      `_dmg_marks` entry now carries the monster's HP after that hit, so it travels beside the
+      number as one event — `message_monster_hp` parallel to `message_damage`, forwarded per
+      line in solo and attached per line in the party path. The end-of-beat snapshot still runs
+      and still settles the bar; it simply no longer has to catch up.
+
+      Solo gains a second thing from it: the bar was driven by `damage_dealt_to_current_enemy`,
+      an ACCUMULATION of parsed numbers that drifts whenever a line is missed or the monster
+      heals. Where the server sends a figure, it is now used directly.

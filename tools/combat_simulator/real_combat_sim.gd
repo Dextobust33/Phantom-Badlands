@@ -1050,6 +1050,8 @@ func run_damage_tag_probe():
 	# bleed and the reflect family. These were the parser's whole remaining job.
 	print("--- basic attacks, companions, procs and damage-over-time ---")
 	var kinds := {}
+	var multi_line_actions := 0
+	var total_actions := 0
 	for cls in ["Wizard", "Fighter", "Thief"]:
 		var ch2 = make_char(60, "average", cls)
 		var mon2 := make_monster(60, "normal", 1.0)
@@ -1065,6 +1067,17 @@ func run_damage_tag_probe():
 			var r2: Dictionary = combat_mgr.process_combat_action(0, combat_mgr.CombatAction.ATTACK)
 			var m2: Array = r2.get("messages", [])
 			var d2: Array = r2.get("message_damage", []) if r2.get("message_damage", null) is Array else []
+			# How many damage lines does ONE action produce? The party path attaches its enemy-bar
+			# snapshot to the LAST line of the actor's beat, so anything above 1 is a number that
+			# pops with the bar still frozen.
+			var _n_dmg := 0
+			for i in range(m2.size()):
+				if i < d2.size() and int(d2[i]) > 0:
+					_n_dmg += 1
+			if _n_dmg > 1:
+				multi_line_actions += 1
+			if _n_dmg >= 1:
+				total_actions += 1
 			for i in range(m2.size()):
 				var d := int(d2[i]) if i < d2.size() else 0
 				if d <= 0:
@@ -1086,6 +1099,8 @@ func run_damage_tag_probe():
 		combat_mgr.end_combat(0, false, false)
 	for k in kinds:
 		print("   %-4d x %s" % [int(kinds[k]), k])
+	print("
+actions with MORE THAN ONE damage line: %d of %d  (each extra line pops a number with the enemy bar frozen)" % [multi_line_actions, total_actions])
 	print("
 lines carrying a number: %d   on the right line: %d   drifted: %d" % [checked, tagged, mismatched])
 	print("=====================================================================
