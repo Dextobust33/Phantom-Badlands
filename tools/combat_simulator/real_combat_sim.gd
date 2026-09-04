@@ -86,6 +86,7 @@ func _audit_registry() -> Dictionary:
 		"offer": ["does a rank-up actually deal a nine-card offer?", run_offer_probe],
 		"art": ["every monster name checked against the ASCII art it resolves to", run_art_audit],
 		"mcheck": ["anchor values vs what make_monster actually builds", run_monster_check],
+		"forensics": ["why one anchor misses: what spawns there and what kills you", run_level_forensics],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -944,6 +945,81 @@ func run_companion_hp_probe():
 
 var _probe_override: bool = false
 
+func run_level_forensics():
+	"""Why is ONE anchor off when its neighbours land?
+
+	L100 verified at 43% and 52% win across two rounds against a 60% target, while every other
+	anchor from L1 to L10000 came in within a few points. Its strength ramp is the tell: L50 ->
+	L100 is 4.28x for a 2x level step where every other step is 2.0-2.3x.
+
+	A single bad anchor with well-behaved neighbours is not a tuning failure, it is something
+	about that level. So: what actually SPAWNS there, how strong is each thing relative to the
+	curve, and which of them is doing the killing."""
+	var levels: Array = [50, 100, 250]
+	for lvl in levels:
+		print("\n===== LEVEL %d FORENSICS =====" % lvl)
+		# --- what spawns, and how strong is it vs the curve anchor ---
+		var seen := {}
+		var hp_by := {}
+		var st_by := {}
+		var n_spawn := 300
+		for i in range(n_spawn):
+			var m := make_monster(lvl, "normal", 1.0)
+			var nm := String(m.get("name", "?"))
+			# Strip variant/empowered prefixes so species group together.
+			var base := String(m.get("base_name", nm))
+			seen[base] = int(seen.get(base, 0)) + 1
+			hp_by[base] = float(hp_by.get(base, 0.0)) + float(m.get("max_hp", 0))
+			st_by[base] = float(st_by.get(base, 0.0)) + float(m.get("strength", 0))
+		var names: Array = seen.keys()
+		names.sort()
+		print("%-26s %6s %10s %10s %8s" % ["species", "share", "mean hp", "mean str", "apex"])
+		for nm in names:
+			var c: int = int(seen[nm])
+			var apex := "APEX" if monster_db.has_method("is_apex_species") and monster_db.is_apex_species(nm) else ""
+			print("%-26s %5.0f%% %10.0f %10.0f %8s" % [nm, 100.0 * float(c) / float(n_spawn),
+				float(hp_by[nm]) / float(c), float(st_by[nm]) / float(c), apex])
+		# --- how deadly is each, measured ---
+		print("  --- win rate per species (Fighter/Wizard/Thief pooled) ---")
+		var wins := {}
+		var runs := {}
+		var samples := 12
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			for i in range(samples * maxi(1, names.size())):
+				var ch = make_char(lvl, "average", klass)
+				var monster := make_monster(lvl, "normal", 1.0)
+				var base2 := String(monster.get("base_name", monster.get("name", "?")))
+				ch.in_combat = false
+				combat_mgr.start_combat(0, ch, monster)
+				if not combat_mgr.active_combats.has(0):
+					continue
+				var combat = combat_mgr.active_combats[0]
+				var turns := 0
+				while turns < 400:
+					if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+						break
+					turns += 1
+					if combat.get("player_can_act", true):
+						match ch.get_class_path():
+							"trickster": _player_act_trickster(combat, ch)
+							"mage": _player_act_mage(combat, ch)
+							_: _player_act(combat, ch)
+					if int(monster.get("current_hp", 0)) <= 0:
+						break
+					combat_mgr.process_monster_turn(combat)
+				runs[base2] = int(runs.get(base2, 0)) + 1
+				if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+					wins[base2] = int(wins.get(base2, 0)) + 1
+				combat_mgr.end_combat(0, false, false)
+		var keys: Array = runs.keys()
+		keys.sort()
+		for nm in keys:
+			var r: int = int(runs[nm])
+			if r < 4:
+				continue
+			print("  %-26s n=%-4d win %3.0f%%" % [nm, r, 100.0 * float(wins.get(nm, 0)) / float(r)])
+	print("=====================================================================\n")
+
 func run_monster_check():
 	"""Does `make_monster` produce what the curve says? The calibration verifies through
 	`_cal_override`, which forces hp/str directly, but a player fights whatever make_monster
@@ -1507,7 +1583,25 @@ func run_reference_calibrate():
 			# which is the `str`/danger axis's job, not HP's. `eff_turns` is still reported as
 			# a diagnostic because the truncation it measures is real.
 			var turn_err: float = TARGET_TURNS_NORMAL_SIM / maxf(0.5, float(r["turns"]))
-			hp *= pow(clampf(turn_err, 0.15, 6.0), k)
+			# 2026-09-04 - the two axes can pull against each other, and when they do the WIN
+			# target wins. Raising HP to lengthen a fight also lowers the win rate, so at a
+			# level where win is already short, obeying the turns target actively makes things
+			# worse. Measured at L100 across two rounds: strength fell 8% while HP rose 22% to
+			# chase turns 4.4 -> 5.1, and the win rate went 52% -> 43% as a result.
+			#
+			# L100 is where this bit because its spawn pool is deadlier PER TURN than its
+			# neighbours': Jabberwock wins 16% against Demon Lord's 82% on a nearly identical
+			# stat line (1869/19470 vs 1645/16606), so the difference lives in ABILITIES, which
+			# this model does not size. About a third of L100 spawns come from sub-45% species,
+			# and a fight that lasts exactly five turns still loses.
+			#
+			# So HP may only rise when the win rate is at or above target. It may always FALL,
+			# because shortening a fight helps both axes at once.
+			var win_now: float = float(r.get("win", 0.0))
+			var hp_step: float = pow(clampf(turn_err, 0.15, 6.0), k)
+			if hp_step > 1.0 and win_now < WIN_NORMAL_SIM:
+				hp_step = 1.0
+			hp *= hp_step
 			# Steer the danger axis by WIN RATE. Direction: a higher measured win means the
 			# monster is too weak, so strength rises; lower means too strong, so it falls. The
 			# measurement is floored well above zero because a 0% sample carries no gradient —
