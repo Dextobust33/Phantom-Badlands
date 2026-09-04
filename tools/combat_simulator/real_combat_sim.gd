@@ -1713,18 +1713,35 @@ Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;
 			int(row["level"]), int(row["hp"]), int(row["str"]),
 			float(v["turns"]), 100.0 * float(v["cost"]), 100.0 * float(v["win"])])
 
-	var out := {"generated": "sim run_reference_calibrate", "target_turns": TARGET_TURNS_NORMAL_SIM, "anchors": table}
-	# PRESERVE the role multipliers. refcal and rolecal write the same file, and refcal used to
-	# emit only `anchors` — so the documented order (refcal, then roles) silently DESTROYED a
-	# prior rolecal calibration, including a boss danger fix that had just been measured and
-	# reported. Carry any existing block forward; rolecal overwrites it when it runs.
+	# START FROM THE EXISTING FILE and overwrite only what refcal owns.
+	#
+	# This used to name the keys to preserve, and that failed twice for the same reason. First
+	# refcal emitted only `anchors`, so the documented order (refcal then rolecal) silently
+	# DESTROYED a prior role calibration. That was fixed by carrying `role_multipliers` forward
+	# by name - and `species_power`, written by `speciescal`, was then wiped by every refcal run
+	# from the day it was added. The mechanism that reads it is live in monster_database and was
+	# simply never receiving data, so per-species power correction has been dead the whole time.
+	#
+	# An allow-list of keys to keep has to be updated by whoever adds the next key, and will not
+	# be. Preserving the whole document and overwriting only refcal's own three fields means any
+	# future block survives by construction.
+	var out := {}
 	var _prev = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
 	if _prev != null:
 		var _parsed = JSON.parse_string(_prev.get_as_text())
 		_prev.close()
-		if _parsed is Dictionary and _parsed.has("role_multipliers"):
-			out["role_multipliers"] = _parsed["role_multipliers"]
-			print("(carried forward existing role_multipliers — re-run `-- rolecal` if the base curve moved much)")
+		if _parsed is Dictionary:
+			out = _parsed
+	var _kept: Array = []
+	for _k in out.keys():
+		if _k not in ["generated", "target_turns", "anchors"]:
+			_kept.append(String(_k))
+	out["generated"] = "sim run_reference_calibrate"
+	out["target_turns"] = TARGET_TURNS_NORMAL_SIM
+	out["anchors"] = table
+	if not _kept.is_empty():
+		_kept.sort()
+		print("(carried forward: %s — re-run their audits if the base curve moved much)" % ", ".join(_kept))
 	var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(out, "\t"))
