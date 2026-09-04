@@ -85,6 +85,7 @@ func _audit_registry() -> Dictionary:
 		"gearpower": ["where the gear ladder goes flat: stat contribution per tier", run_gear_power_audit],
 		"offer": ["does a rank-up actually deal a nine-card offer?", run_offer_probe],
 		"art": ["every monster name checked against the ASCII art it resolves to", run_art_audit],
+		"mcheck": ["anchor values vs what make_monster actually builds", run_monster_check],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -943,6 +944,36 @@ func run_companion_hp_probe():
 
 var _probe_override: bool = false
 
+func run_monster_check():
+	"""Does `make_monster` produce what the curve says? The calibration verifies through
+	`_cal_override`, which forces hp/str directly, but a player fights whatever make_monster
+	builds. If the two disagree the curve is tuned for a monster that never spawns."""
+	print("
+===== ANCHOR vs make_monster =====")
+	print("%-8s %10s %10s %10s %10s %8s" % ["level", "anchor hp", "made hp", "anchor str", "made str", "def"])
+	var f = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+	if f == null:
+		return
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	for a in parsed.get("anchors", []):
+		var lvl := int(a.get("level", 0))
+		if lvl > 100:
+			continue
+		var tot_hp := 0.0
+		var tot_st := 0.0
+		var tot_df := 0.0
+		var n := 40
+		for i in range(n):
+			var m := make_monster(lvl, "normal", 1.0)
+			tot_hp += float(m.get("max_hp", 0))
+			tot_st += float(m.get("strength", 0))
+			tot_df += float(m.get("defense", 0))
+		print("%-8d %10d %10.0f %10d %10.0f %8.0f" % [lvl, int(a.get("hp", 0)), tot_hp / n,
+			int(a.get("str", 0)), tot_st / n, tot_df / n])
+	print("=====================================================================
+")
+
 func run_art_audit():
 	"""Every monster name the game can show, checked against the ASCII art it would resolve to.
 
@@ -1191,7 +1222,7 @@ func run_outcome_probe():
 		if parsed is Dictionary:
 			for a in parsed.get("anchors", []):
 				anchors[int(a.get("level", 0))] = a
-	for lvl in [5, 10, 500, 5000]:
+	for lvl in [1, 5, 10, 50, 500, 5000]:
 		var tally := {"win": 0, "death": 0, "escape": 0, "stall": 0}
 		var by_class := {}
 		var cost_tot := 0.0
@@ -1291,6 +1322,35 @@ func run_outcome_probe():
 	print("=====================================================================
 ")
 
+func _inject_curve(table: Array) -> void:
+	"""Push a candidate anchor table into the monster database so the REAL spawn path uses it.
+
+	This replaces `_cal_override`, which forced `max_hp` and `strength` onto a monster AFTER
+	`generate_monster` had already applied that species' shape - so the calibration measured a
+	creature the game never builds. Measured against the curve it had just written:
+
+	    level   anchor str   what make_monster actually built
+	    L1              22                       14   (0.64x)
+	    L5              31                       21   (0.68x)
+	    L50            495                      592   (1.20x)
+	    L100          1752                     2138   (1.22x)
+
+	Species shape is clamped to a designed 0.70-1.45 band and the mix is not centred on 1.0 at
+	either end, so the override erased a systematic factor rather than noise. The consequence
+	is visible in play: at n=240 the anchors measured 58-61% win at L1-L10 while the monsters
+	a player actually meets measured 66-71%, and at L50 the anchors said 43% while real spawns
+	said 47%. Two different games.
+
+	Injecting the candidate curve instead means every measurement runs through
+	`generate_monster` with its species roll, so the species mix is inside the loop and the
+	numbers that get written are tuned for what spawns."""
+	monster_db._reference_anchors = table.duplicate(true)
+	monster_db._curve_is_calibrated = true
+	# The per-tier shape cache is derived from the curve, so a stale one would silently apply
+	# the PREVIOUS pass's shape to this pass's numbers.
+	if "_tier_shape_cache" in monster_db:
+		monster_db._tier_shape_cache.clear()
+
 func _median3(a: float, b: float, c: float) -> float:
 	"""Middle of three. Returns `b` unchanged whenever b lies between a and c, which is every
 	point on a monotonic ramp - so this preserves curvature exactly and only acts on a local
@@ -1383,6 +1443,13 @@ func run_reference_calibrate():
 	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% win) =====" % [TARGET_TURNS_NORMAL_SIM, WIN_NORMAL_SIM * 100.0])
 	print("HP steers TURNS (a mean); STR steers WIN RATE (a proportion). Cost is reported, not targeted.")
 	var table: Array = []
+	# The working curve. Seeded from whatever the model currently holds so calibration starts
+	# from the live shape, and updated in place as each anchor is solved - later anchors are
+	# then measured against the already-corrected earlier ones rather than against stale values.
+	var work: Array = []
+	for seed_lvl in REF_ANCHOR_LEVELS:
+		var sm := make_monster(seed_lvl, "normal", 1.0)
+		work.append({"level": seed_lvl, "hp": int(sm.get("max_hp", 100)), "str": int(sm.get("strength", 10))})
 	for lvl in REF_ANCHOR_LEVELS:
 		# Seed from the model's current output for this level so calibration starts from
 		# wherever the model is now rather than from an arbitrary guess.
@@ -1391,9 +1458,15 @@ func run_reference_calibrate():
 		var st := float(seed_m.get("strength", 10))
 		var last := {}
 		for pass_i in range(passes):
-			_cal_override = {"level": lvl, "hp": int(round(hp)), "str": int(round(st))}
+			# Write the candidate into the WORKING table and push the whole table into the
+			# monster database, rather than forcing the numbers onto an already-built monster.
+			# The fight then runs through the real spawn path, species shape and all.
+			for wrow in work:
+				if int(wrow["level"]) == lvl:
+					wrow["hp"] = int(round(hp))
+					wrow["str"] = int(round(st))
+			_inject_curve(work)
 			var r := _fight_stats_at(lvl, samples)
-			_cal_override = {}
 			if r.is_empty():
 				break
 			last = r
@@ -1510,10 +1583,11 @@ Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;
 	print("
 --- VERIFIED against the curve actually being written ---")
 	print("%-8s %12s %10s %8s %8s %6s" % ["level", "hp", "str", "turns", "HPcost", "win"])
+	# Verify through the REAL path too: inject the finished table once, then measure each level
+	# with no override at all. This is what a player fights.
+	_inject_curve(table)
 	for row in table:
-		_cal_override = {"level": int(row["level"]), "hp": int(row["hp"]), "str": int(row["str"])}
 		var v := _fight_stats_at(int(row["level"]), samples)
-		_cal_override = {}
 		if v.is_empty():
 			continue
 		print("%-8d %12d %10d %7.1f %7.0f%% %5.0f%%" % [
