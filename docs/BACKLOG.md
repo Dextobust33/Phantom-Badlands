@@ -1826,6 +1826,55 @@ only had partial playtesting. Read this before touching combat again.
 - [ ] **Sage remains last** (24% caster-stat deficit its passive cannot repay) and **tricksters
       still lead**. Both are genuine class design, untouched
 
+### 6i. Themed class drops belong IN the drop table, and their coverage has holes
+*Owner direction 2026-09-04, out of the equipment enumeration. Placed before 6d because it is
+the thing 6d's reward gradient would be built on: "the difficult ones worth the effort" needs
+something worth chasing to point at.*
+
+Owner: *"It seems like themed drops should instead be in the drop table but their type or tier
+of loot should only be dropped by certain enemies. We also likely need to take a look at
+ensuring some enemies throughout the tiers have them so players can chase them, possibly even
+make them part of APEX monster drops."*
+
+**How it works today** (measured, `-- gearsources`): three monster ABILITIES each own a
+hardcoded 35% branch in `combat_manager.gd` that calls a bespoke generator —
+`generate_warrior_gear` / `generate_mage_gear` / `generate_trickster_gear`. Those generators are
+the ONLY source of seven base types (`weapon_warlord`, `shield_bulwark`, `ring_arcane`,
+`amulet_mystic`, `ring_shadow`, `boots_swift`, `amulet_evasion`), which are what actually carry
+`stamina_regen` / `mana_regen` / `energy_regen` / `meditate_bonus` / `flee_bonus`. They are not
+in `EQUIPMENT_BASES`, so no ordinary drop, chest or shop can produce them.
+
+**The coverage, by monster level** — this is the part that needs fixing first:
+
+| kit | monsters | levels |
+|---|---|---|
+| warrior | Minotaur, Iron Golem, Death Incarnate | 23, 200, **4500** |
+| mage | Wraith, Lich, Elemental, Sphinx, Elder Lich, Time Weaver | 22, 80, 150, 250, 1200, 3500 |
+| trickster | Goblin, Giant Spider, Hobgoblin, Void Walker | 2, 7, 10, **700** |
+
+- **A trickster has NO source of their class gear between L11 and L699.** Three of their four
+  sources are starter monsters; then a ~690-level dead zone.
+- **A warrior has one source between L24 and L199, and then nothing until L4500.**
+- Mage is the only kit with a real ladder, and even it jumps 250 → 1200.
+
+So the chase exists on paper and is unreachable for most of the game for two archetypes out of
+three. That alone probably explains part of the mage/warrior/trickster divergence in 6c — worth
+checking before tuning class numbers against it.
+
+- [ ] **Move themed drops into the drop table**, gated by monster rather than branched in
+      combat. Today each is a hand-written `if ABILITY_X in abilities` block with its own rarity
+      floor and its own +15% level boost, so rarity rules, affix rules, tier scaling, market
+      pricing and salvage all have to be re-derived per branch instead of inherited. A
+      `themed_drop` field on the monster naming a kit, resolved through `roll_drops`, gets all
+      of that for free and makes adding a new themed kit data rather than code
+- [ ] **Fill the tier holes** so every archetype can chase its kit at any point in the curve.
+      The table above is the gap list
+- [ ] **Consider APEX monsters as themed-drop carriers.** They are already the "formidable foe"
+      tier by name and by `APEX_SPECIES`, and giving them the kit ties the reward gradient to
+      the thing players already read as dangerous. Ties directly to 6d
+- [ ] While there: `generate_*_gear` boosts item level 15% and floors rarity at uncommon. Decide
+      whether that stays the themed-drop rule or becomes a property of the monster's tier
+
 ### 6d. Risk, reward & progression incentives
 *Also split out of item 6. This is the economy around fights rather than the fights themselves.*
 

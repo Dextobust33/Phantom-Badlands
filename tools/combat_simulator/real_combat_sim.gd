@@ -385,66 +385,101 @@ func run_gear_sources_audit():
 	print("   chase-roll chance:  %s" % str(drop_tables.CHASE_ROLL_CHANCE_BY_RARITY))
 	print("   drop weights:       %s" % str(drop_tables.RARITY_WEIGHTS))
 
-	# ---- the gap check ------------------------------------------------------------------------
+	# ---- BASE ITEM TYPES ------------------------------------------------------------------------
+	# 2026-09-04 — this section exists because the FIRST version of this audit did not have it,
+	# enumerated only the affix pools, and concluded that five declared stats were granted by
+	# nothing. They are granted by BASE TYPE. Owner found it in one question: "what do Minotaurs
+	# drop? Do they not drop warrior gear? Does it not help with getting stamina back?" - yes, and
+	# yes. An audit built to stop me being wrong was wrong in the same way, one level down.
+	#
+	# Measured by EXECUTION, not by reading character.gd: equip one bare item of each base type,
+	# with no affixes, and diff get_equipment_bonuses(). An if/elif chain cannot be enumerated
+	# safely any other way, and this cannot drift when a branch is added.
 	print("
--- stat fields the AGGREGATOR reads that NOTHING can roll --")
-	var probe = CharacterScript.new()
-	probe.initialize("GearProbe", "Fighter", "Human")
-	var declared: Dictionary = probe.get_equipment_bonuses()
-	var orphans: Array = []
-	for field in declared.keys():
-		var f := String(field)
-		# The aggregator names some fields differently from the affix that feeds them.
-		# The aggregator's field names do not match the affix names one-for-one: "strength" is fed
-		# by "str_bonus", "max_mana" by "mana_bonus". Spell the mapping out rather than guessing,
-		# or the report over-states the gaps.
-		var aliases := [f, f + "_bonus", f.replace("max_", "") + "_bonus"]
-		var short := {"strength": "str_bonus", "constitution": "con_bonus", "dexterity": "dex_bonus",
-			"intelligence": "int_bonus", "wisdom": "wis_bonus", "wits": "wits_bonus",
-			"max_hp": "hp_bonus", "speed": "speed_bonus"}
-		if short.has(f):
-			aliases.append(String(short[f]))
-		var found := false
-		for a in aliases:
-			if sources.has(a):
-				found = true
-				break
-		if not found:
-			orphans.append(f)
-	if orphans.is_empty():
-		print("   (none - every field has a source)")
-	else:
-		for o in orphans:
-			print("   %s" % o)
-		print("   ^ read by combat, granted by NO random roll.")
-		# Uniques and sets carry FIXED stat blocks, so they can cover a field the pools cannot.
-		# Check them here rather than leaving the reader to wonder.
-		var udb2 = load("res://shared/unique_database.gd")
-		var fixed := {}
-		if udb2 != null:
-			for uid in udb2.UNIQUES.keys():
-				var u = udb2.UNIQUES[uid]
-				for sk in (u.get("stats", {}) if u is Dictionary else {}).keys():
-					fixed[String(sk)] = "unique"
-			for sid in udb2.SETS.keys():
-				var st2 = udb2.SETS[sid]
-				for bk in (st2.get("bonuses", {}) if st2 is Dictionary else {}).keys():
-					var bb = st2["bonuses"][bk]
-					for sk2 in (bb if bb is Dictionary else {}).keys():
-						fixed[String(sk2)] = "set bonus"
-		for o2 in orphans:
-			if fixed.has(o2):
-				print("     %-18s covered by %s" % [o2, String(fixed[o2])])
-			else:
-				print("     %-18s NOT covered by uniques or sets either" % o2)
+-- ACQUISITION PATHS: every function in drop_tables that yields equipment --")
+	# 2026-09-04 — this section is the owner's correction, twice over. The first version of this
+	# audit read only the affix pools. The second added base types but enumerated them from
+	# EQUIPMENT_BASES, which is the ORDINARY drop pool and does NOT contain the class-specific
+	# bases at all — so it reported "no base type grants a class-specific stat" while
+	# `ring_arcane` visibly grants mana_regen three lines away in character.gd.
+	#
+	# Owner: "You should be exploring all avenues of how players could possibly get gear and
+	# painting a picture of it after based on fact not assumption."
+	#
+	# So the unit here is the ACQUISITION PATH, not the table. Each generator is CALLED and its
+	# output inspected, which is the only way that cannot miss a path that builds items inline.
+	var paths := [
+		["generate_weapon(lvl)", func(l): return drop_tables.generate_weapon(l)],
+		["generate_shield(lvl)", func(l): return drop_tables.generate_shield(l)],
+		["generate_mage_gear (Arcane Hoarder)", func(l): return drop_tables.generate_mage_gear(l)],
+		["generate_trickster_gear (Shadow Hoarder)", func(l): return drop_tables.generate_trickster_gear(l)],
+		["generate_warrior_gear (Warrior Hoarder)", func(l): return drop_tables.generate_warrior_gear(l)],
+		["roll_dungeon_chest_equipment", func(l): return drop_tables.roll_dungeon_chest_equipment(5, l)],
+		["generate_mystery_box_item", func(l): return drop_tables.generate_mystery_box_item(5)],
+	]
+	var type_seen := {}
+	for entry in paths:
+		var label := String(entry[0])
+		var fn: Callable = entry[1]
+		var types := {}
+		for _i in range(400):
+			var it = fn.call(60)
+			if it is Dictionary and not it.is_empty():
+				var ty := String(it.get("type", it.get("item_type", "?")))
+				types[ty] = true
+				type_seen[ty] = true
+		var tl := types.keys()
+		tl.sort()
+		print("   %-42s -> %s" % [label, ", ".join(tl) if not tl.is_empty() else "(nothing)"])
+	# The ordinary drop pool, listed separately because it is table-driven rather than a call.
+	for t in drop_tables.EQUIPMENT_BASES.keys():
+		for e in drop_tables.EQUIPMENT_BASES[t]:
+			type_seen[String(e.get("item_type", ""))] = true
+
+	print("
+-- what each ITEM TYPE grants BEFORE affixes (probed, not read) --")
+	# Equip one bare item of each type and diff the aggregator. An if/elif chain in character.gd
+	# cannot be enumerated any other way without re-implementing it, which is how it drifts.
+	var tkeys := type_seen.keys()
+	tkeys.sort()
+	for ty in tkeys:
+		var it2 := String(ty)
+		if it2 == "" or it2 == "?":
+			continue
+		var probe_ch = CharacterScript.new()
+		probe_ch.initialize("BaseProbe", "Fighter", "Human")
+		var slot := it2.split("_")[0]
+		probe_ch.equipped[slot] = {"id": 1, "type": it2, "rarity": "common", "level": 50,
+			"affixes": {}, "name": it2}
+		var b: Dictionary = probe_ch.get_equipment_bonuses()
+		var notable: Array = []
+		for f in ["mana_regen", "energy_regen", "stamina_regen", "meditate_bonus", "flee_bonus"]:
+			if int(b.get(f, 0)) > 0:
+				notable.append("%s +%d" % [f, int(b[f])])
+				_add.call(f, "BASE TYPE %s" % it2)
+		if not notable.is_empty():
+			print("   %-22s %s" % [it2, ", ".join(notable)])
+
+	print("
+-- monsters that drop TARGETED class gear (35% chance on kill) --")
+	for ab in ["arcane_hoarder", "warrior_hoarder", "cunning_prey"]:
+		var who: Array = []
+		for mt in monster_db.MonsterType.values():
+			var md = monster_db.get_monster_base_stats(mt)
+			if md is Dictionary and (ab in (md.get("abilities", []) as Array)):
+				who.append(String(md.get("name", "?")))
+		print("   %-18s %s" % [ab + ":", ", ".join(who) if not who.is_empty() else "(none found)"])
+	print("   ^ class-targeted drops DO exist - through monster ABILITIES. drop_tables itself")
+	print("     never reads the player's class; the MONSTER decides.")
 
 	print("
 -- uniques and sets --")
 	var udb = load("res://shared/unique_database.gd")
 	if udb != null:
-		print("   uniques: %d, sets: %d  (FIXED rolls, not from the pools above -" % [
+		print("   uniques: %d, sets: %d  (FIXED rolls, not from the pools above)" % [
 			int(udb.UNIQUES.size()), int(udb.SETS.size())])
-		print("   see shared/unique_database.gd; these are the only class-shaped gear in the game)")
+		print("   see shared/unique_database.gd. NOTE: they are NOT the only class-shaped gear -")
+		print("   the hoarder bases above are class-shaped and come from ordinary kills.")
 	print("=====================================================================
 ")
 

@@ -109,16 +109,25 @@ focused-gear model that maximised one stat while discarding attack and defence. 
 continually get that wrong... Once you have a good picture of it you need to find a way to keep
 that in mind in all future sessions."*
 
-The three facts most often got wrong:
+The facts most often got wrong:
+- **Class gear comes from specific MONSTERS.** `drop_tables` never reads the player's class, but
+  monster ABILITIES target it (35% on kill): `warrior_hoarder` (Minotaur, Iron Golem, Death
+  Incarnate) drops Warlord Blade / Bulwark Shield carrying **`stamina_regen`**; `arcane_hoarder`
+  (Wraith, Lich, Elemental, Sphinx, Elder Lich, Time Weaver) drops Arcane Ring / Mystic Amulet
+  carrying **`mana_regen`**; `cunning_prey` (Goblin, Hobgoblin, Giant Spider, Void Walker) drops
+  the Trickster bases carrying **`energy_regen`**. These bases are **not in `EQUIPMENT_BASES`** —
+  killing the right monster is the only route to them
 - the **CHASE pool is epic-and-above only** (25-50% per bonus roll) — crit, `damage_mult`,
-  `extra_turn_chance`, resource-on-hit and +ability ranks all live there and nowhere else
-- **drops are not class-aware.** Nothing in `drop_tables.gd` reads the player's class
-- **five declared gear stats are granted by nothing**: `mana_regen`, `meditate_bonus`,
-  `energy_regen`, `flee_bonus`, `stamina_regen`. Combat reads them; no affix, chase roll, proc,
-  rune, unique or set produces them. Only companions give mana/energy regen
+  `extra_turn_chance`, resource-on-hit and +ability ranks live there and nowhere else
+- **an item's class stats come from its BASE TYPE, not its affixes.** Reading the affix pools
+  alone will tell you a stat has no source when it plainly does
 
-Generalises: when the question is *what content exists*, enumerate it from the data. Reasoning
-about it from recall is the same failure as trusting a faulty instrument, one level up.
+**The meta-lesson, and the point of this section:** an audit written around the wrong UNIT is as
+wrong as a guess and far more convincing. The first version of `gearsources` enumerated affix
+pools and `EQUIPMENT_BASES` and concluded five stats were unobtainable — the class bases are in
+neither. It now walks ACQUISITION PATHS (calling each generator and inspecting its output) and
+PROBES each type by equipping it and diffing the aggregator. When enumerating content, ask what
+unit actually produces it, and prefer executing the real code to reading it.
 
 ## Quick Start
 
