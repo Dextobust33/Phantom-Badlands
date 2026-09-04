@@ -686,15 +686,18 @@ func _process_status_ticks(character: Character, messages: Array) -> void:
 			character.current_hp = max(1, character.current_hp)  # Poison can't kill
 			var turns_left = character.poison_turns_remaining
 			if turns_left > 0:
-				messages.append("[color=#FF00FF]Poison deals %d damage! (%d turns remaining)[/color]" % [poison_dmg, turns_left])
+				# Short form: these now sit as a fragment on a folded line, where "Poison deals 12
+				# damage! (28 turns remaining)" is most of the line's width for a tick that
+				# repeats 28 times. Reported: "The poison line is a bit long."
+				messages.append("[color=#FF00FF]poison %d [color=#9A6A9A](%dt)[/color][/color]" % [poison_dmg, turns_left])
 			else:
-				messages.append("[color=#FF00FF]Poison deals %d damage! The poison fades.[/color]" % poison_dmg)
+				messages.append("[color=#FF00FF]poison %d [color=#9A6A9A](fades)[/color][/color]" % poison_dmg)
 
 	# === BLIND TICK ===
 	if character.blind_active:
 		var still_blind = character.tick_blind()
 		if still_blind:
-			messages.append("[color=#808080]You are blinded! (%d turns remaining)[/color]" % character.blind_turns_remaining)
+			messages.append("[color=#808080]blinded [color=#666666](%dt)[/color][/color]" % character.blind_turns_remaining)
 		else:
 			messages.append("[color=#00FF00]Your vision clears![/color]")
 

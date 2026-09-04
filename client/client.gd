@@ -34926,15 +34926,22 @@ func _on_log_meta_unhover(_meta) -> void:
 		combat_scene_panel._hide_formula_popup()
 
 func _party_actor_color(actor_pid: int) -> String:
-	"""Stable per-member colour. Falls back to the first slot for solo play and for any line
-	whose actor_pid the server did not send."""
-	if actor_pid >= 0 and not _party_combat_members.is_empty():
-		var i: int = _party_combat_members.find(actor_pid)
-		if i >= 0:
-			return String(PARTY_ACTOR_COLORS[i % PARTY_ACTOR_COLORS.size()])
+	"""Stable per-member colour, by the member's position in the combat roster.
+
+	2026-09-04 — `_party_combat_members` holds member INFO DICTIONARIES ({peer_id, name, hp,
+	...}), not bare peer ids, so `.find(actor_pid)` was searching an array of dictionaries for
+	an integer and always returned -1. Every member therefore drew the SAME first colour, which
+	is exactly what was reported: "Player gutters still don't have their own colors so they look
+	identical currently." The per-member palette was correct; the lookup never reached it."""
+	if actor_pid >= 0:
+		for i in range(_party_combat_members.size()):
+			var m = _party_combat_members[i]
+			var pid: int = int(m.get("peer_id", -1)) if m is Dictionary else int(m)
+			if pid == actor_pid:
+				return String(PARTY_ACTOR_COLORS[i % PARTY_ACTOR_COLORS.size()])
 	return String(PARTY_ACTOR_COLORS[0])
 
-func _actor_gutter(actor: String, actor_pid: int = -1) -> String:
+func _actor_gutter(actor: String, actor_pid: int = -1, target_pid: int = -1) -> String:
 	"""The left marker for a line, by WHO acted.
 
 	A companion is indented one step past the member it belongs to and carries the SAME colour,
@@ -34945,6 +34952,11 @@ func _actor_gutter(actor: String, actor_pid: int = -1) -> String:
 	an untagged path looks exactly as it always did rather than mis-attributing."""
 	match actor:
 		"monster":
+			# The monster's marker carries its TARGET'S colour beside its own, so a glance says
+			# who was hit without reading the line. Reported: "For the enemy it doesn't say who
+			# it attempted to hit in each of those parts of its line."
+			if target_pid >= 0:
+				return "[color=#FF3B3B]█[/color][color=%s]▎[/color] " % _party_actor_color(target_pid)
 			return MONSTER_GUTTER
 		"member":
 			return "[color=%s]▎[/color] " % _party_actor_color(actor_pid)
@@ -34998,7 +35010,12 @@ func _display_combat_msg(combat_msg: String):
 		# `append_log_actor` exists at all.
 		var _fold_actor := str(_pm.get("actor", ""))
 		var _fold_pid := int(_pm.get("actor_pid", -1))
-		var _fold_key := "%s:%d" % [_fold_actor, _fold_pid]
+		# The target is part of the key for the MONSTER: folding its swing at you together with
+		# its swing at a teammate's pet produced one line that named neither. Everything the
+		# monster did to ONE target still folds; a change of target starts a new line, which is
+		# information rather than noise.
+		var _fold_tgt := int(_pm.get("target_pid", -1))
+		var _fold_key := "%s:%d:%d" % [_fold_actor, _fold_pid, (_fold_tgt if _fold_actor == "monster" else -1)]
 		var _can_fold: bool = (_fold_actor != "" and _fold_actor != "neutral"
 			and _fold_key == _log_run_key and combat_scene_panel != null
 			and combat_scene_panel.has_method("append_to_last_log"))
@@ -35006,7 +35023,7 @@ func _display_combat_msg(combat_msg: String):
 			combat_scene_panel.append_to_last_log(enhanced_msg.strip_edges())
 		else:
 			_log_run_key = _fold_key if _fold_actor != "" and _fold_actor != "neutral" else ""
-			_combat_text_to_outputs(_actor_gutter(_fold_actor, _fold_pid) + enhanced_msg)
+			_combat_text_to_outputs(_actor_gutter(_fold_actor, _fold_pid, _fold_tgt) + enhanced_msg)
 	stop_combat_animation()
 
 	# Trigger combat sounds based on message content
