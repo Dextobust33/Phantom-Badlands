@@ -1291,6 +1291,12 @@ func run_outcome_probe():
 	print("=====================================================================
 ")
 
+func _median3(a: float, b: float, c: float) -> float:
+	"""Middle of three. Returns `b` unchanged whenever b lies between a and c, which is every
+	point on a monotonic ramp - so this preserves curvature exactly and only acts on a local
+	extreme, i.e. a sampling spike."""
+	return maxf(minf(a, b), minf(maxf(a, b), c))
+
 func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dictionary:
 	# Run real same-level fights across all three archetypes and report what actually
 	# happened: mean turns, mean share of the player's health bar spent, win rate.
@@ -1445,19 +1451,41 @@ func run_reference_calibrate():
 	# every level above it, and the curve stepped 5.04x from L100 to L250 then 1.00x to L500.
 	# That is the sawtooth a player feels as a wall followed by a coast.
 	#
-	# Anchors are spaced logarithmically and the curve is near-linear in log-log, so smoothing
-	# in LOG space preserves the ramp's shape while averaging out a single-cell miss. Endpoints
-	# are left alone (nothing to average against). Two light passes: enough to halve a lone
-	# spike, not enough to flatten genuine curvature.
-	for _smooth_pass in range(2):
-		var log_hp: Array = []
-		var log_st: Array = []
-		for row in table:
-			log_hp.append(log(maxf(1.0, float(row["hp"]))))
-			log_st.append(log(maxf(1.0, float(row["str"]))))
-		for i in range(1, table.size() - 1):
-			table[i]["hp"] = int(round(exp(0.25 * float(log_hp[i - 1]) + 0.5 * float(log_hp[i]) + 0.25 * float(log_hp[i + 1]))))
-			table[i]["str"] = int(round(exp(0.25 * float(log_st[i - 1]) + 0.5 * float(log_st[i]) + 0.25 * float(log_st[i + 1]))))
+	# MEDIAN, not a mean (2026-09-03). The previous kernel was [0.25, 0.5, 0.25] in log space,
+	# justified by "the curve is near-linear in log-log". At the low end it is not: measured
+	# log-str ran 3.47 (L5) -> 3.93 (L10) -> 5.31 (L25), which is steep convexity, and a mean
+	# kernel on a convex curve biases every interior point UPWARD. It was not averaging out
+	# noise there, it was distorting shape.
+	#
+	# The damage was precisely the L1-L50 band that would not calibrate. The correction loop
+	# converged, and then smoothing overwrote its answer:
+	#
+	#     level   calibrated str   written str          resulting win (target 60%)
+	#     L5                  32            40  (+25%)                       45%
+	#     L10                 51            70  (+37%)                       42%
+	#     L50                361           468  (+30%)                       47%
+	#     L25                202           168  (-17%)                       56%
+	#
+	# Eighteen correction passes across three runs could not fix those levels because nothing
+	# they produced survived to be written. The single level smoothing made WEAKER is the one
+	# that landed nearest target, which is the tell.
+	#
+	# A median filter keeps the reason smoothing exists and drops the side effect. On any
+	# monotonic run median(a, b, c) == b, so genuine curvature passes through EXACTLY
+	# unchanged; a lone spike is not merely halved but removed outright, since the median of
+	# {neighbour, spike, neighbour} is a neighbour. The case that motivated smoothing - L250
+	# spiking to 35351 between 8507 and 16106 - resolves to 16106 rather than to a blend.
+	#
+	# One pass, not two: a median filter is idempotent on monotonic data, so a second pass can
+	# only act on whatever the first one created.
+	var log_hp: Array = []
+	var log_st: Array = []
+	for row in table:
+		log_hp.append(log(maxf(1.0, float(row["hp"]))))
+		log_st.append(log(maxf(1.0, float(row["str"]))))
+	for i in range(1, table.size() - 1):
+		table[i]["hp"] = int(round(exp(_median3(float(log_hp[i - 1]), float(log_hp[i]), float(log_hp[i + 1])))))
+		table[i]["str"] = int(round(exp(_median3(float(log_st[i - 1]), float(log_st[i]), float(log_st[i + 1])))))
 
 	var fixed_hp := 0
 	var fixed_str := 0
