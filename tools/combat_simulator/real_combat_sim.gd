@@ -84,6 +84,7 @@ func _audit_registry() -> Dictionary:
 		"spread": ["what progression is worth: gear vs companion vs difficulty", run_progression_spread],
 		"gearpower": ["where the gear ladder goes flat: stat contribution per tier", run_gear_power_audit],
 		"offer": ["does a rank-up actually deal a nine-card offer?", run_offer_probe],
+		"art": ["every monster name checked against the ASCII art it resolves to", run_art_audit],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -941,6 +942,71 @@ func run_companion_hp_probe():
 ")
 
 var _probe_override: bool = false
+
+func run_art_audit():
+	"""Every monster name the game can show, checked against the ASCII art it would resolve to.
+
+	Missing art has now been reported by players three separate times, each time as a single
+	name — Venomous Orc, a Frenzied Ogre that turned out fine, and now a Spider. Each was fixed
+	as a one-off. An inventory retires the class instead: it walks every species the database
+	can produce AND every dungeon boss, applies the variant and empowered prefixes a real
+	monster can carry, and lists what `resolve_art_key` cannot place.
+
+	Dungeon BOSSES are the gap the per-name fixes kept missing. They are named independently of
+	their species (\"Spider Queen\" for a Giant Spider, \"Goblin King\" for a Goblin), so no amount
+	of prefix-stripping reaches the species art — \"Spider Queen\" reduces to \"Queen\", which is
+	not a monster at all."""
+	var ArtScript = load("res://client/monster_art.gd")
+	if ArtScript == null:
+		print("could not load monster_art.gd")
+		return
+	print("
+===== ASCII ART COVERAGE =====")
+	var missing: Array = []
+	var checked := 0
+
+	var species: Array = monster_db.get_all_monster_names()
+	# The prefixes a live monster can actually arrive with.
+	var prefixes: Array = ["", "Venomous ", "Frenzied ", "Swift ", "Armored ", "Ancient "]
+	for nm in species:
+		for pre in prefixes:
+			var full: String = pre + String(nm)
+			checked += 1
+			if String(ArtScript.resolve_art_key(full)) == "":
+				missing.append(full)
+
+	# Dungeon bosses, which carry their OWN names rather than their species'.
+	var DungeonScript = load("res://shared/dungeon_database.gd")
+	if DungeonScript != null:
+		var dd = DungeonScript.new()
+		var seen := {}
+		for prop in ["DUNGEON_TYPES", "DUNGEONS"]:
+			if not (prop in dd):
+				continue
+			var tbl = dd.get(prop)
+			if not (tbl is Dictionary):
+				continue
+			for k in tbl.keys():
+				var entry = tbl[k]
+				if not (entry is Dictionary):
+					continue
+				var boss = entry.get("boss", {})
+				if boss is Dictionary and boss.has("name"):
+					var bn := String(boss["name"])
+					if seen.has(bn):
+						continue
+					seen[bn] = true
+					checked += 1
+					if String(ArtScript.resolve_art_key(bn)) == "":
+						missing.append("[BOSS] " + bn + "  (species: " + String(boss.get("monster_type", "?")) + ")")
+
+	print("checked %d names, %d with NO art:" % [checked, missing.size()])
+	for m in missing:
+		print("   " + m)
+	if missing.is_empty():
+		print("   (none)")
+	print("=====================================================================
+")
 
 func run_offer_probe():
 	"""Does a rank-up actually DEAL an offer? The reveal never fired in play.

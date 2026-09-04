@@ -5296,6 +5296,40 @@ const ART_NAME_ALIASES := {
 	"Young Dragon": "Dragon Wyrmling",
 }
 
+# Dungeon bosses are named INDEPENDENTLY of their species — "Spider Queen" for a Giant Spider,
+# "Goblin King" for a Goblin — so no amount of prefix-stripping reaches the species art:
+# "Spider Queen" reduces to "Queen", which is not a monster at all. An art-coverage audit found
+# this was not one missing boss but ALL of them, twenty-one, plus the Elemental and Siren
+# species which had no art under any name.
+#
+# Every boss entry already carries a `monster_type` naming its species, so the mapping is
+# DERIVED from dungeon_database at first use rather than hand-listed here. A hand-listed copy
+# would go stale the first time a boss is added or renamed, which is the same drift that put
+# three separate "missing art" reports in front of players one name at a time.
+static var _boss_species_cache: Dictionary = {}
+
+static func _boss_species() -> Dictionary:
+	if not _boss_species_cache.is_empty():
+		return _boss_species_cache
+	var DungeonScript = load("res://shared/dungeon_database.gd")
+	if DungeonScript == null:
+		return _boss_species_cache
+	var dd = DungeonScript.new()
+	for prop in ["DUNGEON_TYPES", "DUNGEONS"]:
+		if not (prop in dd):
+			continue
+		var tbl = dd.get(prop)
+		if not (tbl is Dictionary):
+			continue
+		for k in tbl.keys():
+			var entry = tbl[k]
+			if not (entry is Dictionary):
+				continue
+			var boss = entry.get("boss", {})
+			if boss is Dictionary and boss.has("name") and boss.has("monster_type"):
+				_boss_species_cache[String(boss["name"])] = String(boss["monster_type"])
+	return _boss_species_cache
+
 static func resolve_art_key(monster_name: String) -> String:
 	"""The art_map key for a monster, tolerating VARIANT AND EMPOWERED PREFIXES. "" if none.
 
@@ -5327,6 +5361,15 @@ static func resolve_art_key(monster_name: String) -> String:
 			candidate = ART_NAME_ALIASES[candidate]
 		if art_map.has(candidate):
 			return candidate
+		# A dungeon boss: fall back to the art of the species it IS. Checked inside the
+		# word-dropping loop so a PREFIXED boss ("Frenzied Spider Queen") resolves too.
+		var bosses := _boss_species()
+		if bosses.has(candidate):
+			var species := String(bosses[candidate])
+			if ART_NAME_ALIASES.has(species):
+				species = ART_NAME_ALIASES[species]
+			if art_map.has(species):
+				return species
 	return ""
 
 
