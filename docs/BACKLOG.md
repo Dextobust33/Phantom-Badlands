@@ -1096,6 +1096,9 @@ currently as I think companions and gear will make up the difference."* Boss win
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them
 it makes the crucial point of the game pointless."*
 
+> The companion's **card** is audited separately in **6h** — it is deck power competing against
+> class abilities, so it is measured against those, not against companion stats.
+
 **Measured `-- companion n=200`** (same-level elite, Fighter, win% by companion state):
 
 | Level | none | comp L1 | comp L=char | comp x10 |
@@ -1681,6 +1684,51 @@ all. The honest consequence is about how the balance numbers are *read*:
 - [ ] Note the interaction with 12b: the Phantom's whole premise is that gear and companions
       carry a player forward, so wide gear variance is the loop working — provided the floor is
       survivable
+
+### 6h. Companion & dungeon cards have never been audited (owner ask, 2026-09-04)
+
+*Placed after 6c because these cards compete for a deck slot against CLASS abilities, so they
+can only be judged once class card power is settled. Everything in 6c's ability work — the
+naked-pool cost model, the anchor decoupling, the milestone upgrade pool — was applied to the
+class roster and never to these.*
+
+Owner: *"companion cards need an audit to make sure their power is appropriate, see if they have
+good upgrade options like the other abilities, ensure buffs are usable on other party members,
+etc."* Covers both families, since `_process_companion_ability` already serves
+`companion_card_*` and `dungeon_card_*` through one processor.
+
+**Two defects are confirmed by reading the code — no probe needed:**
+
+- [ ] **A companion buff cannot be aimed at a teammate.** `PARTY_TARGETABLE_BUFFS` is a
+      hardcoded list of six CLASS abilities (`forcefield / haste / iron_skin / fortify / rally /
+      berserk`) in both `combat_manager.gd` and `client.gd`. No companion or dungeon card is in
+      it, so the picker never opens for one and the server would refuse the target anyway. Every
+      `kind` that grants a buff or shield is therefore self-only, which is exactly the ask.
+      Note the shape: a hardcoded ability list that a new card silently falls outside of — the
+      same failure that left War Cry in the damage-buff slot for months. Prefer deriving
+      targetability from the card's `kind` over adding names to a second list
+- [ ] **The cost is a flat 10.** `apply_skill_cost_reduction(character, ability_name, 10)` in
+      `_process_companion_ability` — a constant, before reduction, for every companion card at
+      every level. The whole point of #55's naked-pool model is that a flat cost stops mattering
+      as pools grow; these cards were left on the old shape. At high level they are effectively
+      free, which is most of the "is their power appropriate" question on its own
+
+**Open questions — measure, do not guess:**
+
+- [ ] **Do they even rank up?** `card_upgrades.eligible()` picks from a kind-based pool, so
+      nothing there excludes a companion card — but that only matters if the mastery/milestone
+      path fires for `companion_card_*` ids at all. Verify with a probe before concluding either
+      way; assuming it works and assuming it doesn't are equally cheap mistakes here
+- [ ] **Are the offered upgrades meaningful for these kinds?** The pool was written against
+      damage / buff / control class cards. Kinds like `loot` and `resource` may map onto nothing
+      worth offering, which would show up as a rank-up that hands the player three dead choices
+- [ ] **Where does their power sit against a class card of the same tier?** Damage scales
+      through the shared mastery path, but secondary values scale by the card's own usage tier —
+      two different curves in one card. Compare like-for-like at several levels
+- [ ] **Is a dungeon card's rarity reflected in its power?** They are the scarcest cards in the
+      game (#38) and should read that way
+
+Prerequisite: 6c's class tuning, so there is a stable yardstick to measure against.
 
 ### 6f. Open after the 2026-09-02 balance session — untested and unresolved
 
