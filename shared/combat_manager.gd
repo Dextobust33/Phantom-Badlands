@@ -922,6 +922,65 @@ func _apply_companion_passive_effect(combat_state: Dictionary, character: Charac
 		"wisdom_bonus":
 			combat_state["companion_wisdom_bonus"] = combat_state.get("companion_wisdom_bonus", 0) + value
 
+# === WHO SAID IT (2026-09-04) ===
+# Owner, twice: the combat log "reads too much like a wall of text and is hard to parse out what
+# you did, what the companion did, and what the enemy did." That is a grouping problem, and
+# grouping needs to know the ACTOR behind each line.
+#
+# Party combat has carried that tag since #76 Slice 3 - every entry has {"actor": member |
+# companion | monster | neutral} - and the client already reads it, but only to spotlight the
+# right card. SOLO has never had it at all, which is why solo is the worse of the two to read.
+#
+# Tagged at the PHASE BRACKETS, not at the 58 `result.messages.append` sites: solo already marks
+# where the companion's lines begin (`var _ca = messages.size()` before `_indent_new_messages`),
+# so the boundaries exist and only need naming. Tagging at the append sites would be 58 chances
+# to forget one, and inferring the actor from the line TEXT is the heuristic v0.9.739 had to
+# remove from the pacing code.
+#
+# Nothing renders this yet. It ships inert so the log/gating work (backlog item 7) starts from a
+# foundation that is already correct rather than building it under time pressure.
+const ACTOR_PLAYER := "member"
+const ACTOR_COMPANION := "companion"
+const ACTOR_MONSTER := "monster"
+const ACTOR_NEUTRAL := "neutral"
+
+func _mark_actor(combat: Dictionary, from_index: int, actor: String) -> void:
+	"""Record that messages from `from_index` onward belong to `actor`."""
+	if not (combat.get("_actor_marks", null) is Array):
+		combat["_actor_marks"] = []
+	combat["_actor_marks"].append({"from": from_index, "actor": actor})
+
+func _attach_actors(combat: Dictionary, result: Dictionary) -> Dictionary:
+	"""Fill `result.message_actors` from the marks recorded during this action, then clear them.
+
+	Called from EVERY return path rather than only the last. A probe caught the first version
+	tagging nothing on an early return - and one of those early returns fires AFTER the companion
+	has acted, so a "default everything to the player" fallback would have quietly MISattributed
+	the companion's lines rather than leaving them blank. A line attributed to the wrong actor is
+	worse than one left unattributed: the log would read as confidently wrong instead of flat."""
+	var msgs: Array = result.get("messages", []) if result.get("messages", null) is Array else []
+	result["message_actors"] = _actors_for(msgs.size(),
+		combat.get("_actor_marks", []) if combat.get("_actor_marks", null) is Array else [],
+		ACTOR_PLAYER)
+	combat["_actor_marks"] = []
+	return result
+
+static func _actors_for(total: int, marks: Array, default_actor: String) -> Array:
+	"""Expand [{from, actor}, ...] into one actor per message.
+
+	`marks` are the points where the speaker CHANGES, in order; everything before the first mark
+	belongs to `default_actor`. Returns exactly `total` entries so the array can be indexed
+	beside `messages` without a bounds check at every use."""
+	var out: Array = []
+	var cur := default_actor
+	var mi := 0
+	for i in range(total):
+		while mi < marks.size() and i >= int(marks[mi].get("from", 0)):
+			cur = String(marks[mi].get("actor", default_actor))
+			mi += 1
+		out.append(cur)
+	return out
+
 func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	"""Process companion attack during player's turn.
 	Called by both regular attacks and ability usage."""
@@ -1879,7 +1938,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		character.current_hp = max(1, character.current_hp)  # Can't kill yourself
 		messages.append("[color=#FF00FF]You are charmed and attack yourself for [color=#FF8800]%d[/color] damage![/color]" % self_damage)
 		combat.player_can_act = false
-		return {"success": true, "messages": messages, "combat_ended": false}
+		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	# Path: stun counters. stun_immune (Juggernaut's Resolve) and
 	# stun_duration_reduction (Unshakeable/Temporal Slip/Slippery) both
@@ -1898,7 +1957,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		combat["player_webbed"] = false
 		messages.append("[color=#A335EE]You struggle free of the webbing — but lose this turn![/color]")
 		combat.player_can_act = false
-		return {"success": true, "messages": messages, "combat_ended": false}
+		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	# === LULLABY EFFECT (Audit #5 Slice 6 — Siren Enchantress boss_lullaby) ===
 	# Deterministic timed CC: the siren's song reaches the player and the next
@@ -1909,7 +1968,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		combat["player_lulled"] = false
 		messages.append("[color=#00CED1]The siren's lullaby washes over you — you cannot act this turn![/color]")
 		combat.player_can_act = false
-		return {"success": true, "messages": messages, "combat_ended": false}
+		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	# === MADNESS AURA FIZZLE (Cosmic Horror / boss_madness_aura) ===
 	# While madness is active (until specified round), 30% chance for the
@@ -1918,7 +1977,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	if madness_until >= int(combat.get("round", 0)) and randi() % 100 < 30:
 		messages.append("[color=#9400D3]Madness grips you — your hand refuses to obey![/color]")
 		combat.player_can_act = false
-		return {"success": true, "messages": messages, "combat_ended": false}
+		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	# Check for vanish (auto-crit from Trickster ability)
 	var is_vanished = combat.get("vanished", false)
@@ -1953,7 +2012,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	if ethereal_dodge and randi() % 100 < 33:
 		messages.append("[color=#FF00FF]Your attack passes through the ethereal %s![/color]" % monster.name)
 		combat.player_can_act = false
-		return {"success": true, "messages": messages, "combat_ended": false}
+		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	var hit_roll = randi() % 100
 
@@ -2190,16 +2249,20 @@ func process_attack(combat: Dictionary) -> Dictionary:
 		var _ca = messages.size()
 		_process_companion_attack(combat, messages)
 		_indent_new_messages(messages, _ca, "   ")
+		# The bracket that already existed to INDENT the companion's lines now also names them.
+		if messages.size() > _ca:
+			_mark_actor(combat, _ca, ACTOR_COMPANION)
+			_mark_actor(combat, messages.size(), ACTOR_PLAYER)
 		if monster.current_hp <= 0:
-			return _process_victory_with_abilities(combat, messages)
+			return _attach_actors(combat, _process_victory_with_abilities(combat, messages))
 
 	combat.player_can_act = false
 
-	return {
+	return _attach_actors(combat, {
 		"success": true,
 		"messages": messages,
 		"combat_ended": false
-	}
+	})
 
 func _apply_on_hit_chase_procs(character: Character, damage: int, messages: Array) -> void:
 	"""v0.9.599 — chase-affix on-hit triggers. Restores small flat resource on
@@ -2266,7 +2329,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		monster.current_hp = revive_hp
 		messages.append("[color=#FFD700]The %s crumbles to dust... but bones rise once more![/color]" % monster.name)
 		messages.append("[color=#FFAA00]Death Defiance![/color] [color=#9ACD32]The %s revives at %d HP![/color]" % [monster.name, revive_hp])
-		return {"success": true, "messages": messages, "combat_ended": false}
+		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	# Audit #5 boss signature (Slice 11) — Phoenix Rebirth (Phoenix). Same shape
 	# as Death Defiance but revives at 75% HP instead of 50%. Final-tier
@@ -2277,7 +2340,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 		monster.current_hp = phoenix_hp
 		messages.append("[color=#FF8C00]The %s erupts in flames... and is reborn from the ashes![/color]" % monster.name)
 		messages.append("[color=#FFAA00]Phoenix Rebirth![/color] [color=#9ACD32]The %s rises at %d HP![/color]" % [monster.name, phoenix_hp])
-		return {"success": true, "messages": messages, "combat_ended": false}
+		return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	# Custom death message — emit flavor first if set, then ALWAYS emit the
 	# generic "defeated" line so the combat log has an unambiguous death
@@ -4193,7 +4256,7 @@ func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dic
 			else:
 				messages.append("[color=#808080]You catch your breath but you're already at full %s.[/color]" % resource_name)
 			# Player surrenders their action; monster still acts.
-			return {"success": true, "messages": messages, "combat_ended": false}
+			return _attach_actors(combat, {"success": true, "messages": messages, "combat_ended": false})
 
 	return {"success": false, "messages": ["[color=#FF4444]Unknown universal ability![/color]"], "combat_ended": false}
 

@@ -87,6 +87,7 @@ func _audit_registry() -> Dictionary:
 		"art": ["every monster name checked against the ASCII art it resolves to", run_art_audit],
 		"mcheck": ["anchor values vs what make_monster actually builds", run_monster_check],
 		"forensics": ["why one anchor misses: what spawns there and what kills you", run_level_forensics],
+		"actortag": ["verify every solo combat line is attributed to the right actor", run_actor_tag_probe],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -944,6 +945,52 @@ func run_companion_hp_probe():
 ")
 
 var _probe_override: bool = false
+
+func run_actor_tag_probe():
+	"""Does every solo combat line come back attributed to the right actor?
+
+	The tag ships inert - nothing renders it yet - so a mistake here would sit unnoticed until
+	the log work is built on top of it. Printing the attribution beside the line is the cheapest
+	way to see it is right, and a companion line landing under `member` is obvious on sight."""
+	print("
+===== SOLO ACTOR TAGGING =====")
+	var ch = make_char(30, "average", "Fighter")
+	var monster := make_monster(30, "normal", 1.0)
+	ch.in_combat = false
+	combat_mgr.start_combat(0, ch, monster)
+	if not combat_mgr.active_combats.has(0):
+		print("no combat")
+		return
+	var combat = combat_mgr.active_combats[0]
+	print("companion: %s" % ("yes - " + String(ch.get_active_companion().get("name", "?")) if ch.has_active_companion() else "NONE (companion lines will not appear)"))
+	var rounds := 0
+	while rounds < 4 and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
+		rounds += 1
+		var r: Dictionary = combat_mgr.process_attack(combat)
+		var msgs: Array = r.get("messages", [])
+		var actors: Array = r.get("message_actors", []) if r.get("message_actors", null) is Array else []
+		print("--- round %d: %d lines, %d tags ---" % [rounds, msgs.size(), actors.size()])
+		for i in range(msgs.size()):
+			var a := String(actors[i]) if i < actors.size() else "(none)"
+			var line := String(msgs[i]).replace("
+", " ")
+			# Strip BBCode so the attribution is what stands out, not the colour tags.
+			var clean := ""
+			var skip := false
+			for c in line:
+				if c == "[":
+					skip = true
+				elif c == "]":
+					skip = false
+				elif not skip:
+					clean += c
+			print("   %-10s | %s" % [a, clean.substr(0, 78)])
+		if int(monster.get("current_hp", 0)) <= 0:
+			break
+		combat_mgr.process_monster_turn(combat)
+	combat_mgr.end_combat(0, false, false)
+	print("=====================================================================
+")
 
 func run_level_forensics():
 	"""Why is ONE anchor off when its neighbours land?

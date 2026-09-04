@@ -5858,9 +5858,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			send_combat_message(peer_id, msg)
 		return
 
-	# Send all combat messages
+	# Send all combat messages, each with who produced it when the shared code knows.
+	var _msg_actors: Array = result.get("message_actors", []) if result.get("message_actors", null) is Array else []
+	var _mi := 0
 	for msg in result.get("messages", []):
-		send_combat_message(peer_id, msg)
+		send_combat_message(peer_id, msg, String(_msg_actors[_mi]) if _mi < _msg_actors.size() else "")
+		_mi += 1
 
 	# Slice 2 — promote ability rank-ups to account-level record (survives permadeath)
 	if result.has("mastery_rank_changed"):
@@ -19743,9 +19746,17 @@ func forward_combat_start_to_watchers(peer_id: int, message: String, monster_nam
 			"use_client_art": true
 		})
 
-func send_combat_message(peer_id: int, message: String):
-	"""Send a combat message and forward to watchers"""
-	send_to_peer(peer_id, {"type": "combat_message", "message": message})
+func send_combat_message(peer_id: int, message: String, actor: String = ""):
+	"""Send a combat message and forward to watchers.
+
+	`actor` (member / companion / monster / neutral) travels with the line so the client can
+	group the log by WHO acted - the owner's "hard to parse out what you did, what the companion
+	did, and what the enemy did". Optional and omitted when empty, so an older client and every
+	existing caller are unaffected; nothing renders it yet."""
+	var payload := {"type": "combat_message", "message": message}
+	if actor != "":
+		payload["actor"] = actor
+	send_to_peer(peer_id, payload)
 	forward_to_watchers(peer_id, message)
 
 func cleanup_watcher_on_disconnect(peer_id: int):
