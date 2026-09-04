@@ -5561,14 +5561,19 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			# 50% crit chance
+			var _amb_crit := false
 			if randi() % 100 < 50:
 				damage = int(damage * 1.5)
-				messages.append("[color=#FFD700]CRITICAL AMBUSH![/color]")
-			else:
-				messages.append("[color=#00FF00]AMBUSH![/color]")
+				_amb_crit = true
+				_note_modifier(combat, "Critical +50%")
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FFFF00]You deal %d damage![/color]" % damage)
+			# One line. The crit is a MODIFIER of this hit, so it rides on the number rather
+			# than announcing itself on a line of its own.
+			messages.append("[color=%s]Ambush%s[/color] — %s" % [
+				"#FFD700" if _amb_crit else "#00FF00",
+				" (critical)" if _amb_crit else "",
+				_damage_with_detail(combat, damage)])
 
 		"vanish":
 			# Auto-crit on next attack, skips monster turn.
@@ -5602,8 +5607,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(exploit_skill_bonus))
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#00FF00]EXPLOIT WEAKNESS![/color]")
-			messages.append("[color=#FFFF00]You exploit a weakness for %d damage! (%d%% of max HP)[/color]" % [damage, base_percent])
+			_note_modifier(combat, "%d%% of the target's max HP" % base_percent)
+			messages.append("[color=#00FF00]Exploit Weakness[/color] — %s" % _damage_with_detail(combat, damage))
 
 		"perfect_heist":
 			# Chance-based instant win with slight bonus rewards.
@@ -5758,8 +5763,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var damage = apply_damage_variance(mod_dmg)
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
-				messages.append("[color=#FFD700][b]GAMBIT SUCCESS![/b][/color]")
-				messages.append("[color=#00FF00]Your risky gambit pays off for %d damage![/color]" % damage)
+				messages.append("[color=#FFD700][b]Gambit[/b][/color] [color=#8FE38F](it pays off)[/color] — %s" % _damage_with_detail(combat, damage))
 				# Mark for bonus loot if this kills the monster
 				if monster.current_hp <= 0:
 					combat["gambit_kill"] = true
