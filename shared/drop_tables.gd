@@ -4692,12 +4692,37 @@ func _calculate_consumable_value(tier: int, item_type: String) -> int:
 # D2-style guaranteed affix counts per rarity
 # Common = salvage fodder, Legendary/Artifact = best-in-slot potential
 const AFFIX_COUNTS = {
-	"common": 0,
-	"uncommon": 1,    # prefix OR suffix
-	"rare": 2,        # prefix AND suffix
-	"epic": 3,        # prefix + suffix + 1 bonus stat
-	"legendary": 4,   # prefix + suffix + 2 bonus stats
-	"artifact": 5,    # prefix + suffix + 3 bonus stats + guaranteed proc
+	# 2026-09-03 — common 0 -> 1 and uncommon 1 -> 2. The strict D2 convention (white items
+	# carry no affixes) does not survive this game's scaling, because the two halves of an
+	# item's power run on different curves:
+	#
+	#   base stats  effective_level * rarity_mult, and `_get_effective_item_level` is
+	#               LOGARITHMIC above 50 - a level-1000 item counts as 148
+	#   affixes     base + per_level * item_level, LINEAR in the raw level and uncapped
+	#
+	# The character's own stats scale linearly too (~1013 strength at L1000, ~5013 at L5000),
+	# so the base half falls further behind the player every level and by the high game an
+	# item is worth only its affixes. With zero of them, common gear had nothing left to
+	# contribute: a full common kit measured 0% win at L1000 and L5000, against 36% for rare.
+	# It was not a weak rung, it was an absent one.
+	#
+	# Raising base scaling cannot fix this, and was tried first: the base term is multiplied
+	# by rarity_mult, so lifting it hands legendary twice what it hands common. Measured, it
+	# moved common +1pp and epic +8pp - raising the ceiling, the opposite of the intent.
+	# Giving common an affix puts it on the same curve as everything else, which is the only
+	# change that makes the floor scale at all. The top rungs are deliberately untouched;
+	# legendary-plus-companion already wins 94-98% and does not need help.
+	# Strictly increasing. Setting common 1 / uncommon 2 while leaving rare at 2 was tried and
+	# measured: it fixed the floor (common at L1000 went 0% -> 23% win) but left uncommon and
+	# rare on the same affix count, separated only by rarity_mult 1.2 vs 1.4 - a gap that roll
+	# variance swamps. The uncommon -> rare rung measured -6 / -3 / +3 / +0pp, which is the
+	# same dead-rung defect merely relocated. Every rung has to differ by a whole affix.
+	"common": 1,      # prefix OR suffix
+	"uncommon": 2,    # prefix AND suffix
+	"rare": 3,        # prefix + suffix + 1 bonus stat
+	"epic": 4,        # prefix + suffix + 2 bonus stats
+	"legendary": 5,   # prefix + suffix + 3 bonus stats
+	"artifact": 6,    # prefix + suffix + 4 bonus stats + guaranteed proc
 }
 
 # Prefix affixes: Adjective-style names that appear BEFORE the item name
