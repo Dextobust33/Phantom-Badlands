@@ -3281,11 +3281,31 @@ gutter only ever coloured attacks. Both are bracketed the same way now. Verified
 `dmgtag` probe: 29 damage lines across all ten damaging abilities, every number on its own line,
 zero drift.
 
-- [ ] **Migrate the remaining damage lines onto the metadata channel** — basic attacks, companion
-      swings, poison/burn/bleed ticks and reflect still go through `parse_damage_dealt`
+- [x] **DONE 2026-09-04 — the remaining damage lines are migrated; the parser is retired as a
+      MECHANISM.** 20 more sites now record through `_note_dmg(combat, messages, amount)`, the
+      form of `_damage_with_detail` for lines that build their own text: basic attacks (via the
+      class attack description), companion swings and their ability procs, Quick Strike /
+      Shocking / Execute, the three Arcane-Surge double-casts, poison / burn / bleed on the
+      monster, and the thorns / Retribution / Path reflect family. `parse_damage_dealt` stays
+      only as the fallback for anything not yet tagged.
+
+      **The probe caught a flaw in the mechanism itself, which is the reason it exists.** A mark
+      recorded only an INDEX, and the monster turn builds its OWN messages array — so its DoT
+      ticks were recording "index 0" into the same bag as the player's action and landing their
+      numbers on whatever the player's line 0 happened to be (`dmg=19 not in: Blast — 1286
+      damage`, 17 such lines). Marks now name the array as well as the index and are matched
+      with `is_same()` at attach time. 98/98 on the right line, zero drift.
+
+      Verified by execution: basic attacks for all three class wordings, companion attacks,
+      companion ability procs, Quick Strike. **NOT yet exercised by the probe** (same one-line
+      mechanism, but unproven): poison / burn / bleed, thorns / Retribution / Path reflect,
+      Shocking, Execute, and the double-casts — they need the gear or procs that trigger them
+- [x] **STALE — the Trickster kit was already folded.** Ambush / Exploit / Gambit all route
+      through `_damage_with_detail` and read as one line each (`Ambush — 302 damage`,
+      `Exploit Weakness — 654480 damage`, `Gambit (it pays off) — 771 damage`). Listed as open
+      after the work that closed it
 - [ ] **Discard/draw animation.** The hand is shuffled on every draw now (the cycle was always a
       genuine redraw — small decks just returned the same cards to the same slots), but seeing
       cards leave and arrive is what will make it read as a deck
-- [ ] **Trickster kit** — Ambush/Exploit/Gambit still carry their older message shapes
 - [ ] **Enemy HP bar lags the damage number.** Playback-queue family, same root as item 7's
       gating half

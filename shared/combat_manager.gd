@@ -871,6 +871,7 @@ func _process_monster_dots(combat: Dictionary, monster: Dictionary, messages: Ar
 	if poison_damage > 0 and poison_duration > 0:
 		monster.current_hp -= poison_damage
 		monster.current_hp = max(0, monster.current_hp)
+		_note_dmg(combat, messages, poison_damage)
 		messages.append("[color=#00FF00]Poison deals %d damage to the %s![/color]" % [poison_damage, monster.name])
 		combat["monster_poison_duration"] = poison_duration - 1
 		if combat["monster_poison_duration"] <= 0:
@@ -997,7 +998,12 @@ func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffi
 	# and appends it immediately, so `messages.size()` is that index.
 	if not (combat.get("_dmg_marks", null) is Array):
 		combat["_dmg_marks"] = []
-	combat["_dmg_marks"].append({"at": messages.size(), "dmg": amount})
+	# The mark names the ARRAY as well as the index. An index alone is ambiguous: the monster
+	# turn builds its OWN messages array, so its poison/burn/bleed ticks were recording "index 0"
+	# into the same bag as the player's action and landing their numbers on whatever the player's
+	# line 0 happened to be. The probe caught it as 17 drifted lines - "dmg=19 not in: Blast -
+	# 1286 damage". Arrays are references, so is_same() at attach time tells the two apart.
+	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount})
 	if detail == "":
 		return "%d %s" % [amount, suffix]
 	# Only the NUMBER carries the link, and the COLOUR SITS INSIDE IT. Godot renders `[url]`
@@ -1006,6 +1012,25 @@ func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffi
 	# makes it no longer standout"). Nesting the colour inside the tag keeps it.
 	# No bold: with the link underline that read as a different FONT rather than a highlight.
 	return "[url=%s][color=#00E5FF]%d[/color][/url] %s" % [detail, amount, suffix]
+
+func _note_dmg(combat: Dictionary, messages: Array, amount: int) -> void:
+	"""Record that the NEXT line appended to `messages` hits the monster for `amount`.
+
+	The client pops its floating number and moves the enemy bar from this, instead of recovering
+	the figure by regex from the line's wording - which is what silently switched the numbers off
+	when the ability lines were folded into one line each. `_damage_with_detail` records the same
+	mark inline; this is the form for lines that build their own text.
+
+	Call it IMMEDIATELY before the append: the index recorded is `messages.size()`, which is the
+	slot that append is about to fill."""
+	if not (combat.get("_dmg_marks", null) is Array):
+		combat["_dmg_marks"] = []
+	# The mark names the ARRAY as well as the index. An index alone is ambiguous: the monster
+	# turn builds its OWN messages array, so its poison/burn/bleed ticks were recording "index 0"
+	# into the same bag as the player's action and landing their numbers on whatever the player's
+	# line 0 happened to be. The probe caught it as 17 drifted lines - "dmg=19 not in: Blast -
+	# 1286 damage". Arrays are references, so is_same() at attach time tells the two apart.
+	combat["_dmg_marks"].append({"arr": messages, "at": messages.size(), "dmg": amount})
 
 func _mark_actor(combat: Dictionary, from_index: int, actor: String) -> void:
 	"""Record that messages from `from_index` onward belong to `actor`."""
@@ -1032,6 +1057,8 @@ func _attach_actors(combat: Dictionary, result: Dictionary) -> Dictionary:
 	dmg_out.resize(msgs.size())
 	dmg_out.fill(0)
 	for m in (combat.get("_dmg_marks", []) if combat.get("_dmg_marks", null) is Array else []):
+		if not is_same(m.get("arr", null), msgs):
+			continue   # a mark against a DIFFERENT array - see _note_dmg
 		var at := int(m.get("at", -1))
 		if at >= 0 and at < dmg_out.size():
 			dmg_out[at] = int(m.get("dmg", 0))
@@ -1151,6 +1178,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 	companion_damage = max(1, companion_damage)
 	monster.current_hp -= companion_damage
 	monster.current_hp = max(0, monster.current_hp)
+	_note_dmg(combat, messages, companion_damage)
 	messages.append("[color=#00FFFF]Your %s attacks for %d damage![/color]" % [companion.name, companion_damage])
 
 	# === COMPANION CHANCE ABILITIES ===
@@ -1171,6 +1199,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 				monster.current_hp -= bonus_value
 				monster.current_hp = max(0, monster.current_hp)
 				ability_damage_dealt = bonus_value
+				_note_dmg(combat, messages, bonus_value)
 				messages.append("[color=#FFAA00]%s uses %s for %d bonus damage![/color]" % [companion.name, ability_name, bonus_value])
 			elif effect == "stun":
 				combat["monster_stunned"] = 1
@@ -1182,6 +1211,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 				monster.current_hp -= crit_damage
 				monster.current_hp = max(0, monster.current_hp)
 				ability_damage_dealt = companion_damage + crit_damage
+				_note_dmg(combat, messages, crit_damage)
 				messages.append("[color=#FFD700]%s lands a critical %s for %d bonus damage![/color]" % [companion.name, ability_name, crit_damage])
 			elif effect == "bleed":
 				# Apply bleed DoT to monster (damage is pre-scaled)
@@ -1210,6 +1240,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 				monster.current_hp -= total_multi_damage
 				monster.current_hp = max(0, monster.current_hp)
 				ability_damage_dealt = total_multi_damage
+				_note_dmg(combat, messages, total_multi_damage)
 				messages.append("[color=#FFAA00]%s uses %s! %d hits for %d total damage![/color]" % [companion.name, ability_name, num_hits, total_multi_damage])
 			elif effect == "mana_drain":
 				# Drain mana from monster (reduces magic effectiveness)
@@ -1235,6 +1266,7 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 					var exec_damage = int(companion_damage * 0.5)
 					monster.current_hp -= exec_damage
 					monster.current_hp = max(0, monster.current_hp)
+					_note_dmg(combat, messages, exec_damage)
 					messages.append("[color=#FFAA00]%s's %s deals %d damage![/color]" % [companion.name, ability_name, exec_damage])
 			elif effect == "lifesteal":
 				# Direct lifesteal effect (percent is pre-scaled)
@@ -2250,6 +2282,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 		# Use class-specific attack description
 		var attack_desc = character.get_class_attack_description(damage, monster.name, is_crit)
+		_note_dmg(combat, messages, damage)
 		messages.append(attack_desc)
 
 		# === TRICKSTER DOUBLE STRIKE ===
@@ -2259,6 +2292,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 			var second_damage = int(damage * 0.5)
 			monster.current_hp -= second_damage
 			monster.current_hp = max(0, monster.current_hp)
+			_note_dmg(combat, messages, second_damage)
 			messages.append("[color=#66FF66]Quick Strike! +%d bonus damage![/color]" % second_damage)
 
 		# Lifesteal from scroll/potion buff
@@ -2307,6 +2341,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				var lightning_damage = max(1, int(damage * procs.shocking.value / 100.0))
 				monster.current_hp -= lightning_damage
 				monster.current_hp = max(0, monster.current_hp)
+				_note_dmg(combat, messages, lightning_damage)
 				messages.append("[color=#00FFFF]>> Shocking strikes for %d bonus damage![/color]" % lightning_damage)
 
 		# Execute proc (bonus damage when enemy below 30% HP)
@@ -2316,6 +2351,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 				var execute_damage = max(1, int(damage * procs.execute.value / 100.0))
 				monster.current_hp -= execute_damage
 				monster.current_hp = max(0, monster.current_hp)
+				_note_dmg(combat, messages, execute_damage)
 				messages.append("[color=#FF4444]ðŸ’€ Execute strikes for %d bonus damage![/color]" % execute_damage)
 
 		# Thorns ability: reflect damage back to attacker
@@ -4604,6 +4640,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				monster.current_hp -= final_damage
 				monster.current_hp = max(0, monster.current_hp)
 				messages.append("[color=#FF00FF]ARCANE SURGE: DOUBLE CAST![/color]")
+				_note_dmg(combat, messages, final_damage)
 				messages.append("[color=#00FFFF]A second bolt strikes for %d damage![/color]" % final_damage)
 
 		"cloak":
@@ -4671,6 +4708,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
 				messages.append("[color=#FF00FF]ARCANE SURGE: DOUBLE CAST![/color]")
+				_note_dmg(combat, messages, damage)
 				messages.append("[color=#00FFFF]A second explosion deals %d damage![/color]" % damage)
 			# Apply burn DoT (20% of INT per round, scaled by spend, for 3 rounds)
 			var burn_damage = max(1, int(int_stat * 0.2 * variable_fraction))
@@ -4779,6 +4817,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
 				messages.append("[color=#FF00FF]ARCANE SURGE: DOUBLE CAST![/color]")
+				_note_dmg(combat, messages, damage)
 				messages.append("[color=#FF4444]A second meteor crashes down for %d damage![/color]" % damage)
 
 		"haste":
@@ -7125,6 +7164,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		monster.current_hp -= m_burn_damage
 		monster.current_hp = max(0, monster.current_hp)
 		combat["monster_burn_duration"] = m_burn_duration - 1
+		_note_dmg(combat, messages, m_burn_damage)
 		messages.append("[color=#FF6600]The %s burns for %d damage![/color]" % [monster.name, m_burn_damage])
 		if combat["monster_burn_duration"] <= 0:
 			combat["monster_burn"] = 0
@@ -7151,6 +7191,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		monster.current_hp -= m_bleed_damage
 		monster.current_hp = max(0, monster.current_hp)
 		combat["monster_bleed_duration"] = m_bleed_duration - 1
+		_note_dmg(combat, messages, m_bleed_damage)
 		messages.append("[color=#FF4444]The %s bleeds for %d damage![/color]" % [monster.name, m_bleed_damage])
 		if combat["monster_bleed_duration"] <= 0:
 			combat["monster_bleed"] = 0
@@ -7611,6 +7652,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var thorns_damage = max(1, int(total_damage * player_thorns / 100.0))
 			monster.current_hp -= thorns_damage
 			monster.current_hp = max(0, monster.current_hp)
+			_note_dmg(combat, messages, thorns_damage)
 			messages.append("[color=#FF00FF]Thorns reflect %d damage back![/color]" % thorns_damage)
 
 		# Equipment damage reflect proc
@@ -7619,6 +7661,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			var reflect_dmg = max(1, int(total_damage * procs.damage_reflect / 100.0))
 			monster.current_hp -= reflect_dmg
 			monster.current_hp = max(0, monster.current_hp)
+			_note_dmg(combat, messages, reflect_dmg)
 			messages.append("[color=#9932CC]Retribution gear reflects %d damage![/color]" % reflect_dmg)
 			# Check if reflection killed monster
 			if monster.current_hp <= 0:
@@ -7638,6 +7681,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			if path_reflect_total > 0:
 				monster.current_hp -= path_reflect_total
 				monster.current_hp = max(0, monster.current_hp)
+				_note_dmg(combat, messages, path_reflect_total)
 				messages.append("[color=#9ACD32]Your Path punishes the blow — %d damage reflected![/color]" % path_reflect_total)
 				if monster.current_hp <= 0:
 					return _process_victory(combat, messages)
@@ -7848,6 +7892,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 						var bonus_damage = ability.get("damage", ability.get("base_damage", 20))
 						monster.current_hp -= bonus_damage
 						monster.current_hp = max(0, monster.current_hp)
+						_note_dmg(combat, messages, bonus_damage)
 						messages.append("[color=#FF4444]%s uses %s for %d damage![/color]" % [companion.name, ability_name, bonus_damage])
 					elif effect == "execute":
 						var execute_threshold = ability.get("execute_threshold", 20) / 100.0
@@ -7859,6 +7904,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 							var exec_damage = int(monster.max_hp * 0.15)
 							monster.current_hp -= exec_damage
 							monster.current_hp = max(0, monster.current_hp)
+							_note_dmg(combat, messages, exec_damage)
 							messages.append("[color=#FF4444]%s uses %s for %d damage![/color]" % [companion.name, ability_name, exec_damage])
 					elif effect == "revive":
 						# Store revive for if player dies

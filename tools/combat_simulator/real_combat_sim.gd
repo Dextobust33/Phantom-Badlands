@@ -1045,6 +1045,47 @@ func run_damage_tag_probe():
 					print("   MISMATCH dmg=%d not in: %s" % [d, _strip_bb(String(msgs[i])).substr(0, 70)])
 				print("   %-10s dmg=%-9d | %s" % [ab, d, _strip_bb(String(msgs[i])).substr(0, 62)])
 		combat_mgr.end_combat(0, false, false)
+	# ---- phase 2: the lines that used to be REGEXED out of their own prose ------------------
+	# Basic attacks, companion swings, double-strike / shocking / execute procs, poison, burn,
+	# bleed and the reflect family. These were the parser's whole remaining job.
+	print("--- basic attacks, companions, procs and damage-over-time ---")
+	var kinds := {}
+	for cls in ["Wizard", "Fighter", "Thief"]:
+		var ch2 = make_char(60, "average", cls)
+		var mon2 := make_monster(60, "normal", 1.0)
+		mon2["current_hp"] = int(mon2.get("max_hp", 100000)) * 200
+		mon2["max_hp"] = int(mon2["current_hp"])
+		ch2.in_combat = false
+		combat_mgr.start_combat(0, ch2, mon2)
+		if not combat_mgr.active_combats.has(0):
+			continue
+		var combat2 = combat_mgr.active_combats[0]
+		for _r in range(30):
+			ch2.current_hp = ch2.max_hp   # stay alive long enough to see every proc
+			var r2: Dictionary = combat_mgr.process_combat_action(0, combat_mgr.CombatAction.ATTACK)
+			var m2: Array = r2.get("messages", [])
+			var d2: Array = r2.get("message_damage", []) if r2.get("message_damage", null) is Array else []
+			for i in range(m2.size()):
+				var d := int(d2[i]) if i < d2.size() else 0
+				if d <= 0:
+					continue
+				checked += 1
+				var clean := _strip_bb(String(m2[i]))
+				# One key per wording, so the summary says WHICH kinds were actually exercised
+				# rather than just how many lines passed - a shape never reached is not verified.
+				var key := clean.substr(0, 26)
+				if String(m2[i]).contains(str(d)):
+					tagged += 1
+					kinds[key] = int(kinds.get(key, 0)) + 1
+				else:
+					mismatched += 1
+					print("   MISMATCH dmg=%d not in: %s" % [d, clean.substr(0, 70)])
+			if int(mon2.get("current_hp", 0)) <= 0:
+				break
+			combat_mgr.process_monster_turn(combat2)
+		combat_mgr.end_combat(0, false, false)
+	for k in kinds:
+		print("   %-4d x %s" % [int(kinds[k]), k])
 	print("
 lines carrying a number: %d   on the right line: %d   drifted: %d" % [checked, tagged, mismatched])
 	print("=====================================================================
