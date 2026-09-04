@@ -642,7 +642,17 @@ func _build_log_panel() -> Control:
 	_battle_log_band.scroll_active = false
 	_battle_log_band.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_battle_log_band.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_battle_log_band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 2026-09-04 — THIS is the label the player actually reads. The hover was first wired to
+	# `_log_label`, which is allocated but not the one on screen, so the damage numbers were
+	# underlined and dead. Reported twice: "It's also still not hoverable, not sure if you
+	# implemented that." It was implemented, on the wrong label.
+	_battle_log_band.mouse_filter = Control.MOUSE_FILTER_PASS
+	# No underline on links. The underline (and the bold that went with it) made the number
+	# look like a different font rather than a highlight - "Don't really care for the font that
+	# magic bolts damage is". Colour is the affordance; the popup is the payoff.
+	_battle_log_band.meta_underlined = false
+	_battle_log_band.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+	_battle_log_band.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 	_battle_log_band.add_theme_font_size_override("normal_font_size", 14)
 	_battle_log_scroll.add_child(_battle_log_band)
 	return _battle_log_frame

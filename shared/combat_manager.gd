@@ -981,10 +981,12 @@ func _damage_with_detail(combat: Dictionary, amount: int, suffix: String = "dama
 	var detail := _take_modifiers(combat)
 	if detail == "":
 		return "%d %s" % [amount, suffix]
-	# Only the NUMBER carries the link. Wrapping "1526 damage" underlined the word too, which
-	# reads as a mistake - reported: "I don't like how damage after the number is also
-	# underlined." Bold it as well, so the number is the thing the eye lands on.
-	return "[url=%s][b]%d[/b][/url] %s" % [detail, amount, suffix]
+	# Only the NUMBER carries the link, and the COLOUR SITS INSIDE IT. Godot renders `[url]`
+	# in the theme's link colour, which overrode the cyan the line had set - the number came
+	# out white and stopped standing out at all ("now its no longer a different color which
+	# makes it no longer standout"). Nesting the colour inside the tag keeps it.
+	# No bold: with the link underline that read as a different FONT rather than a highlight.
+	return "[url=%s][color=#00E5FF]%d[/color][/url] %s" % [detail, amount, suffix]
 
 func _mark_actor(combat: Dictionary, from_index: int, actor: String) -> void:
 	"""Record that messages from `from_index` onward belong to `actor`."""
@@ -4550,7 +4552,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
 			# ONE line for the whole cast. The modifiers buffered above ride on the number.
-			messages.append("[color=#FF00FF]Magic Bolt[/color] [color=#808080](%d mana)[/color] — [color=#00FFFF]%s[/color]" % [
+			messages.append("[color=#FF00FF]Magic Bolt[/color] [color=#808080](%d mana)[/color] — %s" % [
 				actual_mana_cost, _damage_with_detail(combat, final_damage)])
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
