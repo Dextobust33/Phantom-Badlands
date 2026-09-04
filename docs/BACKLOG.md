@@ -1853,6 +1853,44 @@ only had partial playtesting. Read this before touching combat again.
 - [ ] **Sage remains last** (24% caster-stat deficit its passive cannot repay) and **tricksters
       still lead**. Both are genuine class design, untouched
 
+### 6j. **EVERY class measurement so far modelled a player with NO class kit** (2026-09-04)
+
+Owner: *"Ensure when looking at the sim it's accounting for ALL equipment properly now from your
+audit as well as players being able to somewhat focus on farming certain stats on their
+equipment."*
+
+`make_char` drew gear from `EQUIPMENT_BASES`, which does not contain the Hoarder bases at all.
+So every class/balance number the simulator has ever produced is a player who **never farmed
+their own archetype's gear** — and the monster curve was calibrated against that player.
+
+The sim now has three rungs, all built from the game's own generators (nothing invented):
+`average` (no kit, the historical model), `kit` (average plus the archetype's Hoarder kit,
+affixes unsorted) and `focus` (the same kit, sifting several real drops per slot for the stats
+that class wants — at the MARGIN, never at the cost of overall item power).
+
+**Measured, 60 fights/cell, elite:**
+
+| path | L30 avg → kit | L80 avg → kit |
+|---|---|---|
+| warrior | 18% → 33% (+15) | 51% → 65% (+14) |
+| mage | 36% → 45% (+9) | 33% → 58% (+25) |
+| trickster | 58% → 82% (+24) | 82% → 90% (+8) |
+
+Three conclusions, in order of how much they change:
+
+- [ ] **The curve is calibrated against a player who cannot get their class kit.** The kit is
+      worth +8 to +25pp. Spreading it (6i) without re-calibrating would make the game markedly
+      easier than target wherever a source now exists. **6i and a `refcal` re-run are one piece
+      of work, not two** — and the calibration must decide WHICH rung is the reference player
+- [ ] **The kit does not explain the path gap.** Tricksters lead by 40pp at L30 without it and
+      49pp with it; at L80, 48pp without and 31pp with. It narrows the endgame gap and widens
+      the mid-game one, so it is a real lever but not the answer on its own. The warrior/elite
+      item stands
+- [ ] **Focusing is worth roughly another +10pp on top of the kit** where it helps (Fighter
+      53% vs 40% at L30, Wizard 65% vs 56% at L80), but several cells move the other way by
+      less than the ~6.4pp noise of a 60-fight sample. Do not tune on the focus column until it
+      is re-run at a larger n
+
 ### 6i. Themed class drops belong IN the drop table, and their coverage has holes
 *Owner direction 2026-09-04, out of the equipment enumeration. Placed before 6d because it is
 the thing 6d's reward gradient would be built on: "the difficult ones worth the effort" needs
