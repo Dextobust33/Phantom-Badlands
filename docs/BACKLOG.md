@@ -309,9 +309,26 @@ leader may override.
       ("Spider Queen" is a Giant Spider), so prefix-stripping could never reach the art and
       every boss fight showed an empty battlefield. Bosses now fall back to their species art
       through a mapping DERIVED from dungeon_database. Shipped v0.9.744.
-- [ ] **Elemental and Siren have no art under any name** (nor do their two bosses) — the 14
-      names the audit still reports. Not resolvable by any mapping; they need art drawn, and
-      aliasing them to another creature would show players the wrong monster
+- [x] **DONE 2026-09-04 — and this entry was WRONG.** It said the art needed drawing and that
+      "aliasing them to another creature would show players the wrong monster". Both halves were
+      false: the art has existed all along, as **`Fire Elemental` / `Water Elemental`** and
+      **`Siren A` / `Siren B`**. Nothing needed drawing and nothing was aliased to a different
+      creature — these ARE those creatures.
+
+      The real cause was the pattern this codebase keeps producing: **two paths reading the same
+      field.** `resolve_art_key` consults `ART_NAME_ALIASES`; `get_monster_ascii_art` carried its
+      own inline copy — a random Elemental/Siren pick plus a duplicate of the Wolf / Orc / Young
+      Dragon mappings — and only one of the two knew about variant prefixes. So bare `Elemental`
+      drew fine while `Venomous Elemental` and the boss `Primeval Elemental` drew nothing, and
+      the audit (which uses the other path) reported all 14 as missing.
+
+      One table now serves both, and an alias may name several looks. The pick is by name HASH,
+      not `randi()`: the old inline version re-rolled on every call, so one monster could change
+      appearance between two redraws of the same fight. **Coverage audit: 371 names, 0 missing.**
+
+      Worth keeping visible — the audit was right that something was broken and wrong about what.
+      A coverage check tells you a name does not resolve; it cannot tell you whether the asset is
+      absent or merely unreachable, and the write-up assumed the first without checking the map.
 - [ ] Quest direction/distance mismatch and multi-quest dungeon routing — deliberately deferred
       to the dungeon arc. *Detail: QUESTS — owner observations*
 

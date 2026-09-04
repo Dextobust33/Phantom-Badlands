@@ -5290,11 +5290,40 @@ static func _brighten_bbcode_colors(bbcode: String) -> String:
 	return result
 
 # Species whose art is filed under a different name than the monster database uses.
+#
+# 2026-09-04 — Elemental and Siren were carried here from an inline special case in
+# `get_monster_ascii_art`, which matched the species name EXACTLY. The art has existed all
+# along ("Fire Elemental" / "Water Elemental", "Siren A" / "Siren B"); only the bare species
+# name reached it. So "Elemental" drew fine while "Venomous Elemental" and the boss "Primeval
+# Elemental" drew NOTHING — the exact match missed the prefix, and neither partial matching nor
+# prefix-stripping can bridge "venomous elemental" to "fire elemental". Fourteen names, which
+# the art-coverage audit had been reporting as "no art under any name" and the backlog had
+# written up as needing art DRAWN.
+#
+# The cause was two paths reading the same field: `resolve_art_key` consults this table,
+# `get_monster_ascii_art` had its own inline copy for these two species, and only one of them
+# knew about prefixes. One table now serves both.
+#
+# A value may be a LIST, for a species with several looks. The pick is by name HASH rather than
+# randi(): the previous inline version re-rolled on every call, so one monster could change
+# appearance between two redraws of the same fight. Hashing gives variety ACROSS monsters and
+# stability WITHIN one.
 const ART_NAME_ALIASES := {
 	"Wolf": "Dire Wolf",
 	"Orc": "Orc Warrior",
 	"Young Dragon": "Dragon Wyrmling",
+	"Elemental": ["Fire Elemental", "Water Elemental"],
+	"Siren": ["Siren A", "Siren B"],
 }
+
+static func _resolve_alias(alias_value, seed_name: String) -> String:
+	"""One alias entry to one art key. A list picks by hash of the full monster name."""
+	if alias_value is Array:
+		var opts: Array = alias_value
+		if opts.is_empty():
+			return ""
+		return String(opts[absi(seed_name.hash()) % opts.size()])
+	return String(alias_value)
 
 # Dungeon bosses are named INDEPENDENTLY of their species — "Spider Queen" for a Giant Spider,
 # "Goblin King" for a Goblin — so no amount of prefix-stripping reaches the species art:
@@ -5358,7 +5387,7 @@ static func resolve_art_key(monster_name: String) -> String:
 	for start in range(words.size()):
 		var candidate := " ".join(words.slice(start))
 		if ART_NAME_ALIASES.has(candidate):
-			candidate = ART_NAME_ALIASES[candidate]
+			candidate = _resolve_alias(ART_NAME_ALIASES[candidate], monster_name)
 		if art_map.has(candidate):
 			return candidate
 		# A dungeon boss: fall back to the art of the species it IS. Checked inside the
@@ -5367,7 +5396,7 @@ static func resolve_art_key(monster_name: String) -> String:
 		if bosses.has(candidate):
 			var species := String(bosses[candidate])
 			if ART_NAME_ALIASES.has(species):
-				species = ART_NAME_ALIASES[species]
+				species = _resolve_alias(ART_NAME_ALIASES[species], monster_name)
 			if art_map.has(species):
 				return species
 	return ""
@@ -5376,24 +5405,12 @@ static func resolve_art_key(monster_name: String) -> String:
 static func get_monster_ascii_art(monster_name: String) -> String:
 	var art_map = get_art_map()
 
-	# Handle elemental variants - randomly pick Fire or Water Elemental art
-	if monster_name == "Elemental":
-		var elemental_variants = ["Fire Elemental", "Water Elemental"]
-		monster_name = elemental_variants[randi() % elemental_variants.size()]
-
-	# Handle siren variants - randomly pick Siren A or Siren B art
-	if monster_name == "Siren":
-		var siren_variants = ["Siren A", "Siren B"]
-		monster_name = siren_variants[randi() % siren_variants.size()]
-
-	# Handle name mismatches between database and art entries
-	var name_mappings = {
-		"Wolf": "Dire Wolf",
-		"Orc": "Orc Warrior",
-		"Young Dragon": "Dragon Wyrmling"
-	}
-	if name_mappings.has(monster_name):
-		monster_name = name_mappings[monster_name]
+	# 2026-09-04 — ONE alias table (ART_NAME_ALIASES), not a second copy here. This function used
+	# to carry its own: an inline Elemental/Siren random pick plus a duplicate of the Wolf / Orc /
+	# Young Dragon mappings. Both were EXACT-match only, so every prefixed variant fell through
+	# them, and the two copies could drift apart — which is exactly what had happened.
+	if ART_NAME_ALIASES.has(monster_name):
+		monster_name = _resolve_alias(ART_NAME_ALIASES[monster_name], monster_name)
 
 	# Check for exact match first
 	if art_map.has(monster_name):
