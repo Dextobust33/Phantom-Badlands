@@ -12623,6 +12623,34 @@ func _on_combat_card_played(card_name: String) -> void:
 	var path = _get_player_active_path()
 	var info = _get_ability_combat_info(card_name, path)
 	if info is Dictionary and not info.is_empty():
+		# 2026-09-04 — REFUSE A CARD YOU CANNOT PAY FOR, here rather than at the server.
+		#
+		# This function's own docstring says it "mirrors the action bar's combat handling so a
+		# click and a hotkey press behave identically" - and it did not. The action bar computes
+		# `has_resource` and disables the slot; the mouse path sent the command regardless, so
+		# the server refused it and the player got "Not enough mana! (Need at least 36, you have
+		# 32)" as the only sign anything had happened. Reported: "The card also shouldn't allow
+		# you to select it if it can't be used."
+		#
+		# Same threshold as the hotkey path: a variable-spend card needs its FLOOR, a fixed one
+		# needs its full cost.
+		var _c_cost := int(info.get("cost", 0))
+		var _c_floor := int(info.get("cost_floor", 0))
+		var _need: int = _c_floor if _c_floor > 0 else _c_cost
+		if _need > 0:
+			var _have := 0
+			match str(info.get("resource_type", "")):
+				"mana": _have = int(character_data.get("current_mana", 0))
+				"stamina": _have = int(character_data.get("current_stamina", 0))
+				"energy": _have = int(character_data.get("current_energy", 0))
+				_: _have = _need   # unknown pool: do not block on a guess
+			if _have < _need:
+				# Say WHY, where the player is looking, instead of spending their turn to be
+				# told by the server.
+				display_game("[color=#FF8855]%s needs %d %s — you have %d.[/color]" % [
+					str(info.get("display", card_name)), _need,
+					str(info.get("resource_type", "resource")), _have])
+				return
 		if int(info.get("cost", -1)) == 0 and str(info.get("resource_type", "")) != "":
 			prompt_variable_cost_ability(card_name, str(info.get("resource_type", "mana")))
 			return
