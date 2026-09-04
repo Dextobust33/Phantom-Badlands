@@ -536,7 +536,6 @@ const CONSUMABLE_DROPS = {
 		{"weight": 2, "item_type": "scroll_thorns", "rarity": "common"},
 		{"weight": 2, "item_type": "scroll_slow", "rarity": "common"},
 		{"weight": 2, "item_type": "scroll_doom", "rarity": "common"},
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"},
@@ -661,7 +660,6 @@ const DROP_TABLES = {
 		{"weight": 5, "item_type": "ring_copper", "rarity": "uncommon"}
 	],
 	"tier2": [
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 22, "item_type": "potion_lesser", "rarity": "common"},
 		{"weight": 10, "item_type": "mana_lesser", "rarity": "common"},
 		{"weight": 18, "item_type": "weapon_iron", "rarity": "common"},
@@ -672,7 +670,6 @@ const DROP_TABLES = {
 		{"weight": 8, "item_type": "ring_silver", "rarity": "uncommon"}
 	],
 	"tier3": [
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 18, "item_type": "potion_standard", "rarity": "common"},
 		{"weight": 18, "item_type": "mana_standard", "rarity": "common"},
 		{"weight": 15, "item_type": "weapon_steel", "rarity": "uncommon"},
@@ -687,7 +684,6 @@ const DROP_TABLES = {
 		{"weight": 3, "item_type": "scroll_forcefield", "rarity": "common"}
 	],
 	"tier4": [
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 14, "item_type": "potion_greater", "rarity": "common"},
 		{"weight": 15, "item_type": "mana_greater", "rarity": "common"},
 		{"weight": 15, "item_type": "weapon_enchanted", "rarity": "rare"},
@@ -730,14 +726,12 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "scroll_thorns", "rarity": "common"},
 		{"weight": 2, "item_type": "scroll_slow", "rarity": "common"},
 		{"weight": 2, "item_type": "scroll_doom", "rarity": "common"},
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		# Home Stones - send items to house storage
 		{"weight": 3, "item_type": "home_stone_egg", "rarity": "uncommon"},
 		{"weight": 3, "item_type": "home_stone_supplies", "rarity": "uncommon"},
 		{"weight": 2, "item_type": "home_stone_equipment", "rarity": "rare"}
 	],
 	"tier6": [
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 8, "item_type": "potion_master", "rarity": "common"},
 		{"weight": 4, "item_type": "mana_master", "rarity": "common"},
 		{"weight": 14, "item_type": "weapon_elemental", "rarity": "epic"},
@@ -767,7 +761,6 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier7": [
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 8, "item_type": "elixir_minor", "rarity": "common"},
 		{"weight": 16, "item_type": "weapon_legendary", "rarity": "epic"},
 		{"weight": 14, "item_type": "armor_legendary", "rarity": "epic"},
@@ -796,7 +789,6 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier8": [
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 6, "item_type": "elixir_greater", "rarity": "common"},
 		{"weight": 14, "item_type": "weapon_mythic", "rarity": "legendary"},
 		{"weight": 12, "item_type": "armor_mythic", "rarity": "legendary"},
@@ -822,7 +814,6 @@ const DROP_TABLES = {
 		{"weight": 2, "item_type": "home_stone_companion", "rarity": "rare"}
 	],
 	"tier9": [
-		{"weight": 2, "item_type": "scroll_target_farm", "rarity": "common"},
 		{"weight": 3, "item_type": "elixir_divine", "rarity": "common"},
 		{"weight": 12, "item_type": "weapon_divine", "rarity": "legendary"},
 		{"weight": 11, "item_type": "armor_divine", "rarity": "legendary"},
@@ -4340,16 +4331,25 @@ const DUNGEON_CHEST_CONSUMABLE_CHANCE = 25  # % chance any chest yields a dungeo
 
 # Items keyed by minimum dungeon tier they can drop at. Lower-tier dungeons
 # only drop the simplest of the three; higher tiers add the rarer ones.
+# 2026-09-04 — the Scroll of Finding is here at EVERY tier. Owner: "We could make scrolls of
+# finding either Apex loot or dungeon floor loot." Both, in the end: an apex kill in the
+# overworld or a dungeon chest. It had been a weight-2 entry in the tier5 generic table alone,
+# which meant a player below ~L45 or above ~L85 could not obtain one at all, and where it did
+# drop it was filler rather than a reward.
+#
+# Putting the targeting TOOL behind the game's two "went looking for trouble" activities makes
+# earning it part of the same loop as the gear it targets, instead of something that happens to
+# you while killing rats.
 const DUNGEON_CHEST_CONSUMABLES_BY_TIER = {
-	1: ["floor_skip_charm"],
-	2: ["floor_skip_charm", "reclaimer_lantern"],
-	3: ["floor_skip_charm", "reclaimer_lantern"],
-	4: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
-	5: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
-	6: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
-	7: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
-	8: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
-	9: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic"],
+	1: ["floor_skip_charm", "scroll_target_farm"],
+	2: ["floor_skip_charm", "reclaimer_lantern", "scroll_target_farm"],
+	3: ["floor_skip_charm", "reclaimer_lantern", "scroll_target_farm"],
+	4: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
+	5: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
+	6: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
+	7: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
+	8: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
+	9: ["floor_skip_charm", "reclaimer_lantern", "boss_slayer_tonic", "scroll_target_farm"],
 }
 
 func roll_dungeon_chest_equipment(tier: int, item_level: int) -> Dictionary:
