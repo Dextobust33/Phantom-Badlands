@@ -215,9 +215,13 @@ curve loads, no script errors). See *Recently shipped*.
       comment left in their place explaining why. Removed while implementing party Outsmart,
       because leaving a stale duplicate beside the real thing is exactly what produced the lying
       damage cards.
-- [ ] `normal` L50 outlier: 59% cost against a 40% target, 64% win. Check whether it is a
-      species/spawn artifact before treating it as a curve fault. *Detail: POST-CONVERSION
-      RE-CALIBRATION*
+- [x] **DONE 2026-09-04 — it WAS a species/spawn artifact, exactly as suspected.** Not a curve
+      fault: the species mix at that level contained outliers whose lethality comes from
+      ABILITIES rather than stats, which the curve does not size. Fixed at the cause by
+      restoring `species_power` (see *THE ABILITY GAP*), after which L50 reads 63% win against
+      the 60% target. Worth noting the instinct recorded here — "check whether it is a
+      species/spawn artifact before treating it as a curve fault" — was right, and two attempts
+      to treat it as a curve fault were measured and rejected before the note was re-read
 
 ### 4. Owner decisions — ANSWERED 2026-09-03
 - [x] **Outsmart works in a party — DONE.** Owner: *"Outsmart should work in a party but ideally
@@ -297,9 +301,17 @@ because it touches every combat input path. Party rule: the **slowest member's s
 leader may override.
 
 ### 8. Passive — waiting on a recurrence
-- [ ] **Missing monster ASCII art.** Instrumented on 2026-09-03: `get_monster_art` now warns and
-      prints when it resolves nothing, which splits resolution failure from render failure. Three
-      cheap theories already ruled out. Next occurrence tells us which half it is
+- [x] **DONE 2026-09-04 — it recurred, and the instrumentation paid off.** A player reported a
+      Spider with no art on v0.9.743. Rather than fix the one name for a third time, an art
+      COVERAGE audit was written: it walks every species with every variant prefix plus every
+      dungeon boss and lists what cannot be resolved. It found **33 missing names, of which 21
+      were every dungeon boss in the game** — a boss is named independently of its species
+      ("Spider Queen" is a Giant Spider), so prefix-stripping could never reach the art and
+      every boss fight showed an empty battlefield. Bosses now fall back to their species art
+      through a mapping DERIVED from dungeon_database. Shipped v0.9.744.
+- [ ] **Elemental and Siren have no art under any name** (nor do their two bosses) — the 14
+      names the audit still reports. Not resolvable by any mapping; they need art drawn, and
+      aliasing them to another creature would show players the wrong monster
 - [ ] Quest direction/distance mismatch and multi-quest dungeon routing — deliberately deferred
       to the dungeon arc. *Detail: QUESTS — owner observations*
 
@@ -2498,8 +2510,27 @@ Directions worth considering (not decided):
   "what did I do / what did my companion do / what did it do to me" without reading every line
 - **Collapse the incidentals** — DoT ticks, Focus/Read/Momentum gain, buff-absorption lines are
   bookkeeping, not events. A compact status strip would carry them better than log lines
-- **One line per actor per round** as the default, expandable for detail. The condensed-log path
-  (`condensed_combat_log`, `_round_message_buffer`) already exists and is the natural home
+- **One line per actor per round** as the default, expandable for detail. ~~The condensed-log
+  path already exists and is the natural home~~ — **CORRECTED 2026-09-04: it does not.**
+  `condensed_combat_log` was REMOVED in v0.9.417 ("condensed mode removed; always firehose") and
+  the variable survives only so dead branches still compile; it is never set true. Resurrecting a
+  feature that was deliberately deleted needs the reason it was deleted first
+
+**Where the real foundation is (2026-09-04).** Party combat ALREADY tags every message with who
+acted — `{"actor": "member"|"companion"|"monster"|"neutral", "actor_pid", "target_pid"}` — and the
+client reads it, but only to spotlight the right card. The log line itself is rendered identically
+whoever acted, which is precisely the complaint. Solo has no tagging at all.
+
+So the shared foundation for BOTH halves of item 7 is per-message actor tagging: the log needs it
+to group by actor, and input gating needs the same beat boundaries to know when a beat is done.
+Building it once serves both, which is the reason the two were bundled in the first place.
+
+Do NOT tag at the 58 `result.messages.append` sites in `combat_manager.gd`. Tag at the PHASE
+funnel — record the message count before and after each phase (player action / companion /
+monster turn) and tag the slice — which is one change covering all of them, the same funnel
+pattern that fixed the cost tables and the rank-up delivery. And do NOT infer the actor from the
+line text: party already half-does this (`String(rm).contains(comp_name)`), and a text heuristic
+for pacing is what v0.9.739 had to remove.
 - The **damage summary card** ("You: 3319  Pet: 234  Foe: 0") is the readable part — it works
   because it is grouped by actor. That is the model the log should follow
 
