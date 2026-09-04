@@ -9594,6 +9594,50 @@ func _player_is_at_companion_stable(character) -> bool:
 			return true
 	return false
 
+func _character_holds_companion(account_id: String, char_name: String, slot: int, comp_id: String) -> bool:
+	"""Does the named character ACTUALLY hold this registered slot right now?
+
+	2026-09-04 — the first version of the heal asked only whether a character of that NAME
+	existed, which is not the same question. Reported immediately: a companion stayed "(In use by
+	Dexto)" after the original Dexto was deleted, because the replacement character had the same
+	name. Permadeath makes re-using a name completely normal, so name is not identity here.
+
+	The real invariant is possession, so test that: the holder must reference this slot (or this
+	companion id) in their active companion or their collected list. A deleted character fails it
+	because they cannot be loaded; a same-named REPLACEMENT fails it because they never checked
+	the companion out."""
+	if char_name == "":
+		return false
+	# Prefer a character that is LOGGED IN: their in-memory state is newer than the saved file.
+	for pid in characters.keys():
+		var live_ch = characters[pid]
+		if live_ch == null or String(live_ch.name) != char_name:
+			continue
+		if not peers.has(pid) or String(peers[pid].get("account_id", "")) != account_id:
+			continue
+		return _companion_referenced_by(live_ch.active_companion, live_ch.collected_companions, slot, comp_id)
+	var saved: Character = persistence.load_character_as_object(account_id, char_name)
+	if saved == null:
+		return false   # the holder is gone entirely
+	return _companion_referenced_by(saved.active_companion, saved.collected_companions, slot, comp_id)
+
+func _companion_referenced_by(active, collected, slot: int, comp_id: String) -> bool:
+	"""True when this character's own data points at the registered slot or the companion id."""
+	if active is Dictionary and not active.is_empty():
+		if int(active.get("house_slot", -1)) == slot:
+			return true
+		if comp_id != "" and String(active.get("id", "")) == comp_id:
+			return true
+	if collected is Array:
+		for c in collected:
+			if not (c is Dictionary):
+				continue
+			if int(c.get("house_slot", -1)) == slot:
+				return true
+			if comp_id != "" and String(c.get("id", "")) == comp_id:
+				return true
+	return false
+
 func _heal_orphaned_companion_checkouts(account_id: String) -> int:
 	"""Free registered slots still checked out by a character that no longer exists.
 
@@ -9614,26 +9658,22 @@ func _heal_orphaned_companion_checkouts(account_id: String) -> int:
 	var house = persistence.get_house(account_id)
 	if house == null or not house.has("registered_companions"):
 		return 0
-	var living := {}
-	for entry in persistence.get_account_characters(account_id):
-		if entry is Dictionary:
-			living[String(entry.get("name", ""))] = true
-		else:
-			living[String(entry)] = true
+	var comps: Array = house.registered_companions.get("companions", [])
 	var freed := 0
-	for comp in house.registered_companions.get("companions", []):
+	for slot in range(comps.size()):
+		var comp = comps[slot]
 		if not (comp is Dictionary):
 			continue
 		var holder = comp.get("checked_out_by", null)
 		if holder == null:
 			continue
-		if living.has(String(holder)):
-			continue   # a real character still holds it — leave it alone
+		if _character_holds_companion(account_id, String(holder), slot, String(comp.get("id", ""))):
+			continue   # genuinely checked out — leave it alone
 		comp.erase("checked_out_by")
 		comp.erase("checkout_time")
 		freed += 1
-		log_message("Freed orphaned companion checkout '%s' (held by deleted character '%s') on account %s" % [
-			String(comp.get("name", "?")), String(holder), account_id])
+		log_message("Freed orphaned companion checkout '%s' (slot %d, recorded holder '%s') on account %s" % [
+			String(comp.get("name", "?")), slot, String(holder), account_id])
 	if freed > 0:
 		persistence.save_house(account_id, house)
 	return freed
