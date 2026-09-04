@@ -969,13 +969,30 @@ func _note_modifier(combat: Dictionary, text: String) -> void:
 		combat["_mod_notes"] = []
 	combat["_mod_notes"].append(text)
 
+static func _bbcode_meta_safe(text: String) -> String:
+	"""Make a string safe to sit inside a `[url=...]` BBCode payload.
+
+	2026-09-04, reported from live with a screenshot: an Exploit Weakness line rendered as raw
+	markup, and so did EVERY line after it for the rest of the round - the log turned into a wall
+	of literal `[color=#...]` tags.
+
+	Measured rather than guessed: Godot's BBCode parser treats an apostrophe or a double quote
+	inside a `[url=...]` value as fatal and stops parsing the rest of the string. Spaces, `%`,
+	`[`, `]`, `=`, `,` and `:` are all fine - it is specifically the quote characters. The single
+	offending payload was "13% of the target's max HP" from Exploit Weakness.
+
+	Fixed here rather than by rewording that one string, because the payload is free text written
+	by a dozen call sites and the next apostrophe would break it again. Substitutes the
+	typographic forms, which read identically and are inert to the parser."""
+	return text.replace("'", "’").replace("\"", "”")
+
 func _take_modifiers(combat: Dictionary) -> String:
 	"""The buffered notes as one tooltip payload, and clear them for the next action."""
 	var notes: Array = combat.get("_mod_notes", []) if combat.get("_mod_notes", null) is Array else []
 	combat["_mod_notes"] = []
 	if notes.is_empty():
 		return ""
-	return "  ·  ".join(notes)
+	return _bbcode_meta_safe("  ·  ".join(notes))
 
 func _note_mitigation(combat: Dictionary, text: String) -> void:
 	"""Buffer what REDUCED an incoming hit, so it can ride on the monster's own line.
@@ -992,7 +1009,7 @@ func _take_mitigations(combat: Dictionary) -> String:
 	combat["_mit_notes"] = []
 	if notes.is_empty():
 		return ""
-	return "  ·  ".join(notes)
+	return _bbcode_meta_safe("  ·  ".join(notes))
 
 func _incoming_with_detail(combat: Dictionary, amount: int) -> String:
 	"""The number for a hit on the PLAYER, carrying what softened it on hover.
