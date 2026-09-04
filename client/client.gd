@@ -1741,6 +1741,10 @@ var _victory_card_scheduled: bool = false
 # the watchdog in _process: this exists so the safety net cannot fire on the same frame a
 # legitimate producer is about to.
 var _victory_stall_frames: int = 0
+# Which actor the line currently at the bottom of the log belongs to, as "actor:pid". While the
+# next message matches it, that message is folded onto the same line. Cleared at a round
+# divider and whenever combat starts, so a run never spans rounds.
+var _log_run_key: String = ""
 # v0.9.417 — defer the post-combat text chrome (Damage totals / LOOT / "Press
 # Space to continue...") until the message queue has fully drained, so the
 # chrome doesn't print BEFORE the player's killing-blow / monster-death
@@ -23459,6 +23463,7 @@ func handle_server_message(message: Dictionary):
 			if _pending_round_divider:
 				_pending_round_divider = false
 				combat_msg_queue.append({"raw": "[color=#5C4D33]──────── Round %d ────────[/color]" % _combat_known_round})
+				_log_run_key = ""   # a new round always starts a new line
 			# 2026-09-04 — carry WHO acted, when the server knows. The party path has always
 			# queued a `meta` alongside the line; solo now does too, through the same field, so
 			# one renderer serves both instead of a solo-only special case.
@@ -34978,7 +34983,30 @@ func _display_combat_msg(combat_msg: String):
 		# Firehose mode — routed through the same helper that the per-turn
 		# summary uses so combat text doesn't clutter game_output during
 		# combat (the panel is up; game_output is hidden anyway).
-		_combat_text_to_outputs(_actor_gutter(str(_pm.get("actor", "")), int(_pm.get("actor_pid", -1))) + enhanced_msg)
+		# ONE LINE PER ACTOR PER ROUND. Consecutive lines from the SAME actor are folded onto
+		# the line already on screen rather than starting new ones.
+		#
+		# Owner, after three passes of colour work: "The readability is a bit better but lots of
+		# lines per action is still hard to follow." Colouring thirteen lines makes them easier
+		# to scan; it does not make them five. The research agrees - ADOM's community concluded
+		# the answer to combat spam is FILTERING routine messages rather than colouring them,
+		# and Sil moves damage out of the log entirely. This game already has a damage summary
+		# card doing that job, so the log was duplicating it.
+		#
+		# Folded by the SERVER'S actor tag, never by reading the line text. A text classifier is
+		# what v0.9.739 had to remove from the pacing code, and it is the reason
+		# `append_log_actor` exists at all.
+		var _fold_actor := str(_pm.get("actor", ""))
+		var _fold_pid := int(_pm.get("actor_pid", -1))
+		var _fold_key := "%s:%d" % [_fold_actor, _fold_pid]
+		var _can_fold: bool = (_fold_actor != "" and _fold_actor != "neutral"
+			and _fold_key == _log_run_key and combat_scene_panel != null
+			and combat_scene_panel.has_method("append_to_last_log"))
+		if _can_fold:
+			combat_scene_panel.append_to_last_log(enhanced_msg.strip_edges())
+		else:
+			_log_run_key = _fold_key if _fold_actor != "" and _fold_actor != "neutral" else ""
+			_combat_text_to_outputs(_actor_gutter(_fold_actor, _fold_pid) + enhanced_msg)
 	stop_combat_animation()
 
 	# Trigger combat sounds based on message content
@@ -37118,8 +37146,19 @@ static func _replace_word(text: String, word: String, repl: String) -> String:
 	var out := ""
 	var i := 0
 	var n := word.length()
+	# Never rewrite inside a BBCode tag. The decorations run over the whole line, tags and all,
+	# so "advantage" was being replaced inside `[url=Class advantage +25%]` - which corrupted
+	# both the tooltip payload and the visible line, rendering as
+	# "— » advantage «[/color] +25%]2759 damage". Markup is not prose; only the text between
+	# tags is eligible.
+	var in_tag := false
 	while i < text.length():
-		if text.substr(i, n) == word:
+		var ch := text[i]
+		if ch == "[":
+			in_tag = true
+		elif ch == "]":
+			in_tag = false
+		if not in_tag and text.substr(i, n) == word:
 			var before_ok: bool = (i == 0) or not _is_word_char(text[i - 1])
 			var after_i: int = i + n
 			var after_ok: bool = (after_i >= text.length()) or not _is_word_char(text[after_i])

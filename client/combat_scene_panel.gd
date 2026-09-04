@@ -5021,6 +5021,20 @@ func append_log(bbcode_line: String) -> void:
 			_route_to_overlay_log(bbcode_line, _classify_overlay_actor(bbcode_line))
 
 
+func append_to_last_log(bbcode_fragment: String) -> void:
+	"""Continue the previous log line instead of starting a new one.
+
+	Used to fold everything ONE actor did in a round onto a single line. Falls back to a normal
+	append when there is no previous line, so a fold can never silently drop a message."""
+	if bbcode_fragment.strip_edges() == "":
+		return
+	if _log_lines.is_empty():
+		append_log(bbcode_fragment)
+		return
+	_log_lines[_log_lines.size() - 1] += "[color=#5A5A66]  ·  [/color]" + bbcode_fragment
+	if is_inside_tree():
+		_refresh_log()
+
 func append_log_actor(actor: String, bbcode_line: String) -> void:
 	"""v0.9.415 — explicit actor routing for the per-actor overlay logs.
 	Use this instead of append_log when the caller already knows which actor
