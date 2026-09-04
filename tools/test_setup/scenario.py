@@ -13,6 +13,7 @@ whatever is on disk. The script refuses to run if port 9080 is listening.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -72,19 +73,53 @@ ALL_TOOLS = [
 ]
 
 
-def seed_milestones(c):
-    """Park this character one use short of a card milestone - on cards it can actually PLAY.
+def _mastery_thresholds():
+    """MASTERY_RANK_THRESHOLDS, read out of character.gd rather than copied.
 
-    Three assumptions have cost playtest runs here now. It hardcoded warrior card names against
-    a character the roster table only CLAIMED was a Fighter; it then read `equipped_abilities`
-    and seeded `cloak`, not a combat card; and it seeded the trade-off card on whichever deck
-    entry sorted third, which then had to be randomly drawn into a hand before it could be
-    played - so the trade-off pool went unseen across two sessions.
+    A copy is what broke this: the fixture seeded 199 uses to sit one short of a "200"
+    threshold that has not existed since v0.9.701, when the curve was compressed from
+    [10,50,250,1200,4000,10000] to [10,35,100,275,650,1400]. 199 is not one short of
+    anything - the next rank is at 275 - so the seeded cards simply never ranked up, and the
+    progress fill on the card was telling the truth the whole time.
 
-    Now: two cards fire milestone 1 (the upside-only pool) and EVERY other deck card fires
-    milestone 3 (where trade-offs unlock). Whatever hand comes up, the player reaches the pool
-    they are trying to look at. Thresholds are 10 / 50 / 200 / 1000.
+    Parsing the real constant means the fixture follows the game the next time it is retuned.
     """
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                       "shared", "character.gd")
+    # Deliberately NOT wrapped in a bare except. The first version of this swallowed every
+    # error and fell through to a generic "could not read" - which hid the actual fault (a
+    # NameError on an unimported module) behind a message that pointed at the regex. A fixture
+    # that fails quietly is how this whole class of problem started.
+    with open(src, encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"const\s+MASTERY_RANK_THRESHOLDS[^=]*=\s*\[([0-9,\s]+)\]", text)
+    if not m:
+        raise RuntimeError(
+            "MASTERY_RANK_THRESHOLDS not found in %s - refusing to guess, because a guessed "
+            "threshold table is exactly what made this fixture silently useless" % src)
+    vals = [int(x) for x in m.group(1).replace(" ", "").split(",") if x]
+    if not vals:
+        raise RuntimeError("MASTERY_RANK_THRESHOLDS parsed empty from %s" % src)
+    return vals
+
+
+def seed_milestones(c):
+    """Park this character one use short of a real rank threshold, on cards it can PLAY.
+
+    Four assumptions have cost playtest runs here. Hardcoded warrior card names against a
+    character only the roster table thought was a Fighter; `equipped_abilities` seeding a
+    non-combat card; the trade-off card needing a random hand draw before it could be played;
+    and a threshold table copied from a comment two retunes out of date.
+
+    Now: two cards sit one short of the FIRST threshold (milestone 1, upside-only pool) and
+    every other deck card sits one short of the threshold that reaches TRADEOFF_MIN_MILESTONE,
+    so whatever hand comes up reaches the pool being tested.
+    """
+    thr = _mastery_thresholds()
+    tradeoff_milestone = 3          # shared/card_upgrades.gd TRADEOFF_MIN_MILESTONE
+    first_t = thr[0]
+    td_t = thr[min(tradeoff_milestone, len(thr)) - 1]
+
     deck = sorted(str(a) for a in (c.get("combat_deck_collection") or {}).keys()
                   if a and not str(a).startswith("companion_card"))
     if not deck:
@@ -92,20 +127,18 @@ def seed_milestones(c):
     uses = c.setdefault("ability_uses", {})
     seeded = []
     for a in deck[:2]:
-        uses[a] = 9
-        seeded.append("%s -> milestone 1" % a)
+        uses[a] = first_t - 1
+        seeded.append("%s -> milestone 1 at %d uses" % (a, first_t))
     for a in deck[2:]:
-        uses[a] = 199
-        seeded.append("%s -> milestone 3 (TRADE-OFFS)" % a)
+        uses[a] = td_t - 1
+        seeded.append("%s -> milestone %d at %d uses (TRADE-OFFS)" % (a, tradeoff_milestone, td_t))
     if len(deck) < 3:
-        # A tiny deck still needs the trade-off case reachable at all.
-        uses[deck[-1]] = 199
-        seeded.append("%s -> milestone 3 (TRADE-OFFS)" % deck[-1])
+        uses[deck[-1]] = td_t - 1
+        seeded.append("%s -> milestone %d at %d uses (TRADE-OFFS)" % (deck[-1], tradeoff_milestone, td_t))
 
-    # Make the whole deck live in the action bar. The previous version walked for a free slot
+    # Make the whole deck live in the action bar. An earlier version walked for a free slot
     # and, finding none, overwrote the LAST slot for every remaining pick in turn - so each
-    # write clobbered the one before it and a seeded card silently vanished from the bar
-    # (cleave, observed). Rebuild the tail from the deck instead of patching into it.
+    # write clobbered the one before it and a seeded card silently vanished (cleave, observed).
     eq = c.get("equipped_abilities")
     if isinstance(eq, list) and eq:
         reserved = 2 if len(eq) > 2 else 0     # the first two slots render empty in the saves
