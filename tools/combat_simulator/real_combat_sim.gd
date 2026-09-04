@@ -4077,10 +4077,28 @@ func _apply_class_kit(ch, klass: String, glevel: int, best_of: int, max_pieces: 
 			by_slot[slot] = it
 	# `max_pieces` caps how much of the kit the player actually has. The reference player farms a
 	# piece or two; a "kit" player has finished the set. Which slots they got is left to the draw.
+	#
+	# 2026-09-04 — a kit piece is only WORN if it beats what is already in the slot. The first
+	# version equipped it unconditionally, so an ordinary roll that happened to produce a rare or
+	# epic in that slot was thrown away for an uncommon Warlord Blade. No player does that, and it
+	# made the reference player erratically WEAKER by level rather than stronger — which the whole
+	# curve was then calibrated against. It showed up as normals landing at 20% win at L250
+	# against a 60% target while L1 and L10 were fine.
+	#
+	# Scored with the same `_focus_score` used for choosing between drops, so "better" means
+	# better overall and not merely better at the one stat.
 	var slots := by_slot.keys()
 	slots.shuffle()
-	for i in range(mini(max_pieces, slots.size())):
-		ch.equipped[slots[i]] = by_slot[slots[i]]
+	var worn := 0
+	for slot2 in slots:
+		if worn >= max_pieces:
+			break
+		var cur = ch.equipped.get(slot2, null)
+		if cur is Dictionary and not cur.is_empty():
+			if _focus_score(cur, wants) >= _focus_score(by_slot[slot2], wants):
+				continue   # what they already have is better; a player keeps it
+		ch.equipped[slot2] = by_slot[slot2]
+		worn += 1
 
 func make_char(level: int, gear: String, klass: String = "Fighter", race: String = "Human"):
 	var ch = CharacterScript.new()

@@ -55,6 +55,33 @@ replacing it, plus a help page section and a searchable help topic.
 
 ---
 
+## ⚑ 2026-09-04 — FOUR MORE instrument defects, and what they had in common
+
+A second day of the same lesson, worth recording separately because the tell was different each
+time and the same question would have caught all four: **would a player actually do this?**
+
+1. **The gear model discarded upgrades.** `_apply_class_kit` equipped the class piece
+   unconditionally, so an ordinary roll that produced a rare or epic in that slot was thrown
+   away for an uncommon Warlord Blade. The reference player came out erratically WEAKER by
+   level, and a whole calibration chain was fitted to it before the verification audit caught it
+2. **The focus model discarded attack and defence.** Scoring candidates on the target affix
+   ALONE measured every class as worse with better gear. Not a finding — the signature of a
+   model that optimises one number
+3. **The equipment audit enumerated the wrong table.** Written specifically to stop wrong claims
+   about gear, it walked affix pools and `EQUIPMENT_BASES` and concluded five stats were
+   unobtainable. The class bases are in neither: they come only from Hoarder drops
+4. **The class table measured a player who had never farmed their class.** Same root as 3
+
+**The shared tell, and the one to look for next time:** a fault that is UNIFORM points at the
+target; a fault that is PATCHY points at the instrument. `refcal` landing L1 at 66% and L10 at
+58% but L250 at 20% is not a curve that is too hard — a curve cannot be wrong in patches like
+that. The same signature appeared as "gear made this class worse", which was written off as
+sample noise once before it was believed.
+
+**And the practical rule:** before trusting a model of a player, ask whether a player would
+actually behave that way. Wearing a worse item, ignoring attack to chase mana, and never farming
+your own archetype are all things the model did and no player does.
+
 ## ⚑ MEASUREMENT DISCIPLINE — five instrument defects found in ONE day
 
 Every one of these produced confident, wrong numbers, and several were reported to the user as
