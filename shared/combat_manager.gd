@@ -976,12 +976,28 @@ func _take_modifiers(combat: Dictionary) -> String:
 		return ""
 	return "  ·  ".join(notes)
 
-func _damage_with_detail(combat: Dictionary, amount: int, suffix: String = "damage") -> String:
+func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffix: String = "damage") -> String:
 	"""A damage number carrying its own breakdown on hover.
 
 	Falls back to a plain number when nothing was buffered, so a hit with no modifiers does not
 	advertise an empty tooltip."""
 	var detail := _take_modifiers(combat)
+	# 2026-09-04 - the floating number over the monster used to be recovered by REGEX from
+	# this very line ("deals N damage", "for N damage"). Folding each cast onto one line
+	# reworded them ("Magic Bolt (771 mana) - 1526 damage") and the numbers stopped
+	# appearing: "I'm no longer seeing damage numbers show up over the enemy when the
+	# player hits them."
+	#
+	# Re-wording the prose to satisfy the parser would set the same trap for the next edit.
+	# The damage is a NUMBER the server already has; it now travels beside the line on the
+	# same per-beat metadata channel that already carries actor / target / hp, so the text
+	# is free to say whatever reads best.
+	#
+	# Recorded against the index this line is ABOUT to take - every caller builds the string
+	# and appends it immediately, so `messages.size()` is that index.
+	if not (combat.get("_dmg_marks", null) is Array):
+		combat["_dmg_marks"] = []
+	combat["_dmg_marks"].append({"at": messages.size(), "dmg": amount})
 	if detail == "":
 		return "%d %s" % [amount, suffix]
 	# Only the NUMBER carries the link, and the COLOUR SITS INSIDE IT. Godot renders `[url]`
@@ -1009,6 +1025,17 @@ func _attach_actors(combat: Dictionary, result: Dictionary) -> Dictionary:
 	result["message_actors"] = _actors_for(msgs.size(),
 		combat.get("_actor_marks", []) if combat.get("_actor_marks", null) is Array else [],
 		ACTOR_PLAYER)
+	# Damage dealt TO THE MONSTER on each line, 0 where the line is not a hit. Same length
+	# and order as `messages`, so the client can index it beside them and pop the floating
+	# number without reading a word of the text.
+	var dmg_out: Array = []
+	dmg_out.resize(msgs.size())
+	dmg_out.fill(0)
+	for m in (combat.get("_dmg_marks", []) if combat.get("_dmg_marks", null) is Array else []):
+		var at := int(m.get("at", -1))
+		if at >= 0 and at < dmg_out.size():
+			dmg_out[at] = int(m.get("dmg", 0))
+	result["message_damage"] = dmg_out
 	# Deliberately does NOT clear the marks. `process_combat_action` calls `process_attack` and
 	# then appends the MONSTER's lines to the same array afterwards, so an inner attach must
 	# leave the marks intact for the outer one to finish the job. Marks are cleared once per
@@ -1019,6 +1046,7 @@ func _begin_actor_marks(combat: Dictionary) -> void:
 	"""Start a fresh attribution for one player action. Called at the TOP of each top-level
 	action so marks never leak from the previous round into this one."""
 	combat["_actor_marks"] = []
+	combat["_dmg_marks"] = []
 
 static func _actors_for(total: int, marks: Array, default_actor: String) -> Array:
 	"""Expand [{from, actor}, ...] into one actor per message.
@@ -1793,7 +1821,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			or String(result.get("summon_next_fight", "")) != ""
 		)
 		end_combat(peer_id, result.get("victory", false), _preserve)
-		return result
+		return _attach_actors(combat, result)
 
 	# Monster's turn (if still alive and didn't already act this round)
 	if combat.monster.current_hp > 0 and not result.get("monster_acted", false):
@@ -1844,7 +1872,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			result.monster_name = "%s (Lvl %d)" % [combat.monster.name, combat.monster.level]
 			result.monster_level = combat.monster.level
 			result.messages.append("[color=#FF0000]You have been defeated![/color]")
-			return result
+			return _attach_actors(combat, result)
 	
 	# Increment round
 	combat.round += 1
@@ -3998,6 +4026,14 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	if not combat.player_can_act:
 		return {"success": false, "message": "Wait for your turn!"}
 
+	# 2026-09-04 - the ABILITY path never attached its per-line metadata. process_combat_action
+	# brackets every basic attack with _begin_actor_marks / _attach_actors, but casting a card
+	# returned the class processor's dictionary straight through, so `message_actors` came back
+	# EMPTY for every ability - which is why the actor gutter only ever coloured attacks - and
+	# `message_damage` would have arrived empty too, leaving the floating number switched off
+	# for exactly the lines this work exists to fix. Bracket the cast the same way.
+	_begin_actor_marks(combat)
+
 	var character = combat.character
 	var result: Dictionary
 
@@ -4192,7 +4228,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# v0.9.600 — preserve buffs through potential flock continuations.
 		var _preserve: bool = result.get("victory", false) and int(result.get("flock_chance", 0)) > 0
 		end_combat(peer_id, result.get("victory", false), _preserve)
-		return result
+		return _attach_actors(combat, result)
 
 	# === GEAR RESOURCE REGEN (skipped on CC ability turns to prevent spend/regen loops) ===
 	var cc_abilities = ["shield_bash", "paralyze"]
@@ -4273,7 +4309,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 			result.monster_name = "%s (Lvl %d)" % [combat.monster.name, combat.monster.level]
 			result.monster_level = combat.monster.level
 			result.messages.append("[color=#FF0000]You have been defeated![/color]")
-			return result
+			return _attach_actors(combat, result)
 
 	# Increment round
 	combat.round += 1
@@ -4287,7 +4323,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# Note: Resources do not auto-regenerate in combat
 	# Resource regen comes from gear (Shadow/Warlord/Mystic) or out-of-combat rest/meditate
 
-	return result
+	return _attach_actors(combat, result)
 
 func _process_universal_ability(combat: Dictionary, ability_name: String) -> Dictionary:
 	"""Process universal abilities available to all classes (use class resource)"""
@@ -4561,7 +4597,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			monster.current_hp = max(0, monster.current_hp)
 			# ONE line for the whole cast. The modifiers buffered above ride on the number.
 			messages.append("[color=#FF00FF]Magic Bolt[/color] [color=#808080](%d mana)[/color] — %s" % [
-				actual_mana_cost, _damage_with_detail(combat, final_damage)])
+				actual_mana_cost, _damage_with_detail(combat, messages, final_damage)])
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_mb > 0 and randi() % 100 < dc_chance_mb:
@@ -4628,7 +4664,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF00FF]Blast[/color] — %s" % _damage_with_detail(combat, damage))
+			messages.append("[color=#FF00FF]Blast[/color] — %s" % _damage_with_detail(combat, messages, damage))
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_bl = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_bl > 0 and randi() % 100 < dc_chance_bl:
@@ -4736,7 +4772,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FFD700][b]Meteor[/b][/color] — %s" % _damage_with_detail(combat, damage))
+			messages.append("[color=#FFD700][b]Meteor[/b][/color] — %s" % _damage_with_detail(combat, messages, damage))
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_mt = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_mt > 0 and randi() % 100 < dc_chance_mt:
@@ -5162,7 +5198,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF4444]Power Strike[/color] — %s" % _damage_with_detail(combat, damage))
+			messages.append("[color=#FF4444]Power Strike[/color] — %s" % _damage_with_detail(combat, messages, damage))
 
 		"war_cry":
 			# #36 (2026-08-27) — RE-ROLE. War Cry used to write the "damage" buff slot, the
@@ -5216,7 +5252,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 				combat["monster_stunned"] = 1  # Enemy skips next turn
 				combat["cc_resistance"] = cc_resist + 1
 				combat["consec_stuns"] = consec_stuns + 1
-				messages.append("[color=#FFFF00]%s and stuns[/color]" % _damage_with_detail(combat, damage))
+				messages.append("[color=#FFFF00]%s and stuns[/color]" % _damage_with_detail(combat, messages, damage))
 			else:
 				combat["consec_stuns"] = 0  # monster shakes it off and will act next turn
 				if consec_stuns >= 2:
@@ -5245,7 +5281,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF4444]Cleave[/color] — %s" % _damage_with_detail(combat, damage))
+			messages.append("[color=#FF4444]Cleave[/color] — %s" % _damage_with_detail(combat, messages, damage))
 			# Apply bleed DoT (20% of STR per round, scaled by spend, for 4 rounds)
 			var bleed_damage = max(1, int(str_stat * 0.20 * variable_fraction))
 			combat["monster_bleed"] = bleed_damage
@@ -5317,7 +5353,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			monster.current_hp = max(0, monster.current_hp)
 			combat["momentum"] = 0  # spent
 			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color] [color=#C8A24A](spent %d Momentum, ×%.0f)[/color]" % [_mom, dev_mult])
-			messages.append("[color=#FFFF00]catastrophic blow — %s[/color]" % _damage_with_detail(combat, damage))
+			messages.append("[color=#FFFF00]catastrophic blow — %s[/color]" % _damage_with_detail(combat, messages, damage))
 
 		"fortify":
 			# Variable cost (v0.9.263): defense magnitude scales with spend.
@@ -5578,7 +5614,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=%s]Ambush%s[/color] — %s" % [
 				"#FFD700" if _amb_crit else "#00FF00",
 				" (critical)" if _amb_crit else "",
-				_damage_with_detail(combat, damage)])
+				_damage_with_detail(combat, messages, damage)])
 
 		"vanish":
 			# Auto-crit on next attack, skips monster turn.
@@ -5613,7 +5649,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			_note_modifier(combat, "%d%% of the target's max HP" % base_percent)
-			messages.append("[color=#00FF00]Exploit Weakness[/color] — %s" % _damage_with_detail(combat, damage))
+			messages.append("[color=#00FF00]Exploit Weakness[/color] — %s" % _damage_with_detail(combat, messages, damage))
 
 		"perfect_heist":
 			# Chance-based instant win with slight bonus rewards.
@@ -5768,7 +5804,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var damage = apply_damage_variance(mod_dmg)
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
-				messages.append("[color=#FFD700][b]Gambit[/b][/color] [color=#8FE38F](it pays off)[/color] — %s" % _damage_with_detail(combat, damage))
+				messages.append("[color=#FFD700][b]Gambit[/b][/color] [color=#8FE38F](it pays off)[/color] — %s" % _damage_with_detail(combat, messages, damage))
 				# Mark for bonus loot if this kills the monster
 				if monster.current_hp <= 0:
 					combat["gambit_kill"] = true
@@ -10746,6 +10782,8 @@ func party_flatten_meta(entries: Array) -> Array:
 				m["ability"] = e["ability"]
 			if e.has("hp"):
 				m["hp"] = e["hp"]
+			if e.has("dmg"):
+				m["dmg"] = int(e["dmg"])
 			out.append(m)
 		else:
 			out.append({"actor": "neutral", "actor_pid": -1, "target_pid": -1})
@@ -10946,10 +10984,17 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		comp_name = String(actor_ch.get_active_companion().get("name", ""))
 	# Body lines are 2nd person at the source; _party_entry_auto stores the named form
 	# alongside so each client renders the voice that belongs to it.
+	# Damage per line, indexed beside the messages (see _attach_actors). The client pops the
+	# floating number from THIS, not from the text of the line.
+	var _rdmg: Array = result.get("message_damage", []) if result.get("message_damage", null) is Array else []
+	var _ri := 0
 	for rm in result.get("messages", []):
 		var e := _party_entry_auto(pid, pname, String(rm))
 		e["actor"] = "companion" if (comp_name != "" and String(rm).contains(comp_name)) else "member"
 		e["actor_pid"] = pid
+		if _ri < _rdmg.size() and int(_rdmg[_ri]) > 0:
+			e["dmg"] = int(_rdmg[_ri])
+		_ri += 1
 		out.append(e)
 	# Bars catch up at each ACTOR BOUNDARY inside this beat, not just at its end.
 	#

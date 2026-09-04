@@ -3217,6 +3217,24 @@ because each one looked like "the feature doesn't work":
 - the mouse card path never checked affordability despite a docstring claiming it mirrored the
   hotkey path, so an unaffordable click was refused by the SERVER after the click was spent
 
+**The fold switched the floating damage numbers off** — "I'm no longer seeing damage numbers show
+up over the enemy when the player hits them." They were recovered by REGEX from the line text
+(`deals N damage` / `for N damage`), so rewording the lines silently disabled them. Re-wording the
+prose to satisfy the parser would only re-arm the trap, so the number now rides on the same
+per-beat metadata channel that already carries actor / target / hp, and `parse_damage_dealt` is
+demoted to the fallback for lines that have no metadata yet (basic attacks, companion swings, DoT
+ticks). Migrating those is the remaining half.
+
+That work uncovered a second, older gap: **`process_ability_command` never attached its per-line
+metadata at all.** `process_combat_action` brackets every basic attack with
+`_begin_actor_marks` / `_attach_actors`, but a CAST returned the class processor's dictionary
+straight through — so `message_actors` came back empty for every ability, which is why the actor
+gutter only ever coloured attacks. Both are bracketed the same way now. Verified by a new
+`dmgtag` probe: 29 damage lines across all ten damaging abilities, every number on its own line,
+zero drift.
+
+- [ ] **Migrate the remaining damage lines onto the metadata channel** — basic attacks, companion
+      swings, poison/burn/bleed ticks and reflect still go through `parse_damage_dealt`
 - [ ] **Discard/draw animation.** The hand is shuffled on every draw now (the cycle was always a
       genuine redraw — small decks just returned the same cards to the same slots), but seeing
       cards leave and arrive is what will make it read as a deck

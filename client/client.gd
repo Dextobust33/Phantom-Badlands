@@ -1756,12 +1756,16 @@ var _combat_fastforward: bool = false
 # The SPEED CONTROL is what makes gating acceptable - without it this is just "the game is
 # slower now". An impatient player sets 3x; someone learning sets 0.5x.
 const COMBAT_SPEEDS: Array = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
+# DEFAULT is 1.5x, not 1x. Once input is gated on playback finishing, the old pace is time the
+# player is made to WAIT rather than time they may use, and it read as slow. Owner: "1.5 or 2x is
+# probably a better default." The saved setting overrides it the moment they touch the arrows, so
+# this only decides where a fresh install starts.
 # Written out rather than formatted. GDScript's `%` formatting has no %g, so "%.2gx" printed
 # LITERALLY on the button - reported as "it shows an arrow and then %.2gx and then another
 # arrow". A parallel list of display strings is also simply clearer than trimming zeros off a
 # float at runtime.
 const COMBAT_SPEED_LABELS: Array = ["0.5x", "0.75x", "1x", "1.5x", "2x", "3x"]
-var combat_speed: float = 1.0
+var combat_speed: float = 1.5
 var _combat_speed_label: Label = null
 # Account-level minigame-skip preferences (see _save_keybinds). The SERVER stores these on
 # the character, which is what actually gates the minigame - so they persisted per
@@ -23663,8 +23667,17 @@ func handle_server_message(message: Dictionary):
 			# queued a `meta` alongside the line; solo now does too, through the same field, so
 			# one renderer serves both instead of a solo-only special case.
 			var _cm_actor := str(message.get("actor", ""))
-			if _cm_actor != "":
-				combat_msg_queue.append({"raw": combat_msg, "meta": {"actor": _cm_actor}})
+			var _cm_dmg := int(message.get("dmg", 0))
+			if _cm_actor != "" or _cm_dmg > 0:
+				var _cm_meta := {}
+				if _cm_actor != "":
+					_cm_meta["actor"] = _cm_actor
+				# 2026-09-04 - damage to the monster, straight from the server. See
+				# _display_combat_msg: the floating number is popped from this, not from the
+				# wording of the line.
+				if _cm_dmg > 0:
+					_cm_meta["dmg"] = _cm_dmg
+				combat_msg_queue.append({"raw": combat_msg, "meta": _cm_meta})
 			else:
 				combat_msg_queue.append({"raw": combat_msg})
 			if not combat_phase_paused:
@@ -35260,7 +35273,15 @@ func _display_combat_msg(combat_msg: String):
 		shake_game_output()
 		_flash_damage_tint()
 
-	var damage = parse_damage_dealt(combat_msg)
+	# The server tells us how hard this line hit the monster whenever it knows (every ability
+	# that routes through _damage_with_detail). parse_damage_dealt stays as the fallback for
+	# the lines that carry no metadata yet - basic attacks, companion swings, damage-over-
+	# time ticks - but it is a fallback now, not the mechanism. It is what broke when the
+	# ability lines were folded into one line each: "I'm no longer seeing damage numbers
+	# show up over the enemy when the player hits them."
+	var damage: int = int(_party_fx_meta.get("dmg", 0)) if not _party_fx_meta.is_empty() else 0
+	if damage <= 0:
+		damage = parse_damage_dealt(combat_msg)
 	if damage > 0:
 		damage_dealt_to_current_enemy += damage
 		update_enemy_hp_bar(current_enemy_name, current_enemy_level, damage_dealt_to_current_enemy, current_enemy_hp, current_enemy_max_hp)

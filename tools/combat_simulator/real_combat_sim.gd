@@ -89,6 +89,7 @@ func _audit_registry() -> Dictionary:
 		"forensics": ["why one anchor misses: what spawns there and what kills you", run_level_forensics],
 		"actortag": ["verify every solo combat line is attributed to the right actor", run_actor_tag_probe],
 		"deck": ["does playing a card actually change your hand next round?", run_deck_probe],
+		"dmgtag": ["does each ability line carry its damage number in the metadata?", run_damage_tag_probe],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -982,6 +983,88 @@ func run_deck_probe():
 		print("  FAIL — the deck is not cycling as designed")
 	print("=====================================================================
 ")
+
+func run_damage_tag_probe():
+	"""Does the damage number ride BESIDE each ability line, and on the right line?
+
+	The floating number over the monster used to be recovered by regex from the line text, so
+	folding each cast onto one line silently switched the numbers off. The fix moves the value
+	onto the per-beat metadata; this probe is what says it actually arrives, and lands on the
+	line that shows the hit rather than a neighbour."""
+	print("
+===== ABILITY DAMAGE METADATA =====")
+	var checked := 0
+	var tagged := 0
+	var mismatched := 0
+	for cls in ["Wizard", "Fighter", "Thief"]:
+		var ch = make_char(60, "average", cls)
+		var monster := make_monster(60, "normal", 1.0)
+		monster["current_hp"] = int(monster.get("max_hp", 100000)) * 500   # survive the whole probe
+		monster["max_hp"] = int(monster["current_hp"])
+		# Every ability in the list is cast, whatever the class, so the probe covers all ten
+		# damage lines in one pass. The stat gates are about build identity, not about the
+		# damage plumbing being tested here.
+		ch.intelligence = max(ch.intelligence, 40)
+		ch.wits = max(ch.wits, 40)
+		ch.strength = max(ch.strength, 40)
+		ch.calculate_derived_stats()
+		ch.in_combat = false
+		combat_mgr.start_combat(0, ch, monster)
+		if not combat_mgr.active_combats.has(0):
+			continue
+		print("--- %s ---" % cls)
+		for ab in ABILITY_PROBE_LIST:
+			# Top the resources up so the cast never bounces off a cost check.
+			ch.current_mana = ch.max_mana
+			ch.current_stamina = ch.max_stamina
+			ch.current_energy = ch.max_energy
+			# Deal the card we want to test. Otherwise the hand gate rejects it before any of
+			# the damage code runs, and the probe would report a clean zero.
+			combat_mgr.active_combats[0]["combat_hand"] = [ab]
+			# Magic Bolt spends an amount the player names, so it needs the arg the chat command
+			# carries; without one it returns a usage string and the probe would silently skip
+			# the single most-used card in the game.
+			var arg := str(int(ch.max_mana * 0.25)) if ab == "magic_bolt" else ""
+			var r: Dictionary = combat_mgr.process_ability_command(0, ab, arg)
+			if not bool(r.get("success", false)):
+				print("   skip %-12s %s" % [ab, _strip_bb(String(r.get("message", (r.get("messages", ["?"])[0] if not (r.get("messages", []) as Array).is_empty() else "?")))).substr(0, 60)])
+				continue
+			var msgs: Array = r.get("messages", [])
+			var dmgs: Array = r.get("message_damage", []) if r.get("message_damage", null) is Array else []
+			for i in range(msgs.size()):
+				var d := int(dmgs[i]) if i < dmgs.size() else 0
+				if d <= 0:
+					continue
+				checked += 1
+				# The line the number is attached to must CONTAIN that number - otherwise the
+				# index has drifted and the pop would land on the wrong beat.
+				if String(msgs[i]).contains(str(d)):
+					tagged += 1
+				else:
+					mismatched += 1
+					print("   MISMATCH dmg=%d not in: %s" % [d, _strip_bb(String(msgs[i])).substr(0, 70)])
+				print("   %-10s dmg=%-9d | %s" % [ab, d, _strip_bb(String(msgs[i])).substr(0, 62)])
+		combat_mgr.end_combat(0, false, false)
+	print("
+lines carrying a number: %d   on the right line: %d   drifted: %d" % [checked, tagged, mismatched])
+	print("=====================================================================
+")
+
+const ABILITY_PROBE_LIST := ["magic_bolt", "blast", "meteor", "power_strike", "shield_bash",
+	"cleave", "devastate", "ambush", "exploit", "gambit"]
+
+func _strip_bb(line: String) -> String:
+	var out := ""
+	var skip := false
+	for c in line.replace("
+", " "):
+		if c == "[":
+			skip = true
+		elif c == "]":
+			skip = false
+		elif not skip:
+			out += c
+	return out
 
 func run_actor_tag_probe():
 	"""Does every solo combat line come back attributed to the right actor?
