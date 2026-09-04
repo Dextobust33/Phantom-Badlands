@@ -2580,6 +2580,46 @@ func run_resource_economy_audit():
 	print("=====================================================================
 ")
 
+func _species_win_at(nm: String, lvl: int, samples: int) -> Dictionary:
+	"""Win rate against ONE species at ONE level, pooled across the three archetypes.
+
+	Extracted so the calibration can solve a correction PER LEVEL without the measurement loop
+	being nested four deep inside it. Returns n as well as the rate so the caller can tell "this
+	species never spawns here" apart from "it spawns and always wins", which are the same 0.0
+	otherwise."""
+	var wins := 0
+	var n := 0
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		for i in range(samples):
+			var ch = make_char(lvl, "average", klass)
+			var monster = monster_db.generate_monster_by_name(nm, lvl, true)
+			if monster == null or monster.is_empty():
+				continue
+			monster["current_hp"] = monster.get("max_hp", 1)
+			ch.in_combat = false
+			combat_mgr.start_combat(0, ch, monster)
+			if not combat_mgr.active_combats.has(0):
+				continue
+			var combat = combat_mgr.active_combats[0]
+			var t2 := 0
+			while t2 < 300:
+				if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+					break
+				t2 += 1
+				if combat.get("player_can_act", true):
+					match ch.get_class_path():
+						"trickster": _player_act_trickster(combat, ch)
+						"mage": _player_act_mage(combat, ch)
+						_: _player_act(combat, ch)
+				if int(monster.get("current_hp", 0)) <= 0:
+					break
+				combat_mgr.process_monster_turn(combat)
+			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+				wins += 1
+			n += 1
+			combat_mgr.end_combat(0, false, false)
+	return {"win": (float(wins) / float(n)) if n > 0 else 0.0, "n": n}
+
 func run_species_calibrate():
 	# #6c — calibrate a per-species power correction so the same level is roughly the same
 	# fight whichever monster shows up. Measured spread before this: 31%-100% win at L50 and
@@ -2589,9 +2629,19 @@ func run_species_calibrate():
 	# should be a harder fight than a Harpy — so only species outside the band are corrected,
 	# and only toward its edge. Equalising them would make every monster the same fight, which
 	# is a worse outcome than the spread.
-	var samples: int = maxi(4, int(_audit_n / 12.0))
+	# Raised 2026-09-04 with the per-level split. Pooling three levels per measurement meant 4
+	# per class was really 12 per class; measuring ONE level made every cell 3x smaller, and at
+	# 12 fights the standard error is ~14 percentage points - which is exactly what the first
+	# per-level run produced: Ancient Dragon corrections of 0.50, 0.65, 1.37, 1.25, 1.15, 1.70
+	# across six levels, a noise sequence rather than a curve.
+	var samples: int = maxi(15, int(_audit_n / 3.0))
 	var passes := 3
-	var levels := [50, 250, 1000]
+	# Widened 2026-09-04 from [50, 250, 1000]. Two measured reasons. L100 was the anchor that
+	# would not calibrate and it was NOT SAMPLED here at all, so the corrections applied to it
+	# were extrapolated from levels either side. And coverage: only 29 species were being
+	# calibrated, because low-tier species stop spawning well before L50 and the highest tiers
+	# only appear far above L1000 — neither end was ever measured.
+	var levels := [10, 50, 100, 250, 1000, 5000]
 	var base_target := 0.60     # centre of the acceptable win-rate band
 	var base_band := 0.12       # +/- this is left alone
 	print("
@@ -2602,77 +2652,78 @@ func run_species_calibrate():
 	var power := {}
 	# Collect the species actually reachable at these levels.
 	var species := {}
+	# PER LEVEL, because a species must only be calibrated where it actually turns up. The first
+	# per-level run calibrated a Giant Rat at L5000 (100% win, correction capped at x1.71) and a
+	# Mimic likewise: `generate_monster_by_name` FORCES a spawn, so a "does it appear here" guard
+	# based on generation never fires. Those anchors are meaningless and then get interpolated
+	# into levels that are real.
+	var species_at := {}
 	for lvl in levels:
-		for i in range(300):
+		species_at[lvl] = {}
+		for i in range(400):
 			var t = monster_db.select_monster_type(lvl)
 			var nm := String(monster_db.get_monster_base_stats(t).get("name", ""))
 			if nm != "":
 				species[nm] = int(species.get(nm, 0)) + 1
+				species_at[lvl][nm] = int(species_at[lvl].get(nm, 0)) + 1
 	var names: Array = []
 	for k in species.keys():
 		if int(species[k]) >= 10:
 			names.append(k)
 	names.sort()
-	print("Calibrating %d species that actually spawn at L50/L250/L1000." % names.size())
+	print("Calibrating %d species PER LEVEL at %s." % [names.size(), str(levels)])
 	for nm in names:
 		# Apex species aim at a deliberately harder band than their peers.
 		var is_apex: bool = monster_db.is_apex_species(nm)
 		var target: float = float(monster_db.APEX_TARGET_WIN) if is_apex else base_target
 		var band: float = float(monster_db.APEX_TARGET_BAND) if is_apex else base_band
-		var corr := 1.0
-		var last_win := 0.0
-		for pass_i in range(passes):
-			monster_db.set_species_power({nm: corr})
-			var wins := 0
-			var n := 0
-			for lvl in levels:
-				for klass in ["Fighter", "Wizard", "Thief"]:
-					for i in range(samples):
-						var ch = make_char(lvl, "average", klass)
-						var monster = monster_db.generate_monster_by_name(nm, lvl, true)
-						if monster == null or monster.is_empty():
-							continue
-						monster["current_hp"] = monster.get("max_hp", 1)
-						ch.in_combat = false
-						combat_mgr.start_combat(0, ch, monster)
-						if not combat_mgr.active_combats.has(0):
-							continue
-						var combat = combat_mgr.active_combats[0]
-						var t2 := 0
-						while t2 < 300:
-							if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
-								break
-							t2 += 1
-							if combat.get("player_can_act", true):
-								match ch.get_class_path():
-									"trickster": _player_act_trickster(combat, ch)
-									"mage": _player_act_mage(combat, ch)
-									_: _player_act(combat, ch)
-							if int(monster.get("current_hp", 0)) <= 0:
-								break
-							combat_mgr.process_monster_turn(combat)
-						if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
-							wins += 1
-						n += 1
-						combat_mgr.end_combat(0, false, false)
-			monster_db.set_species_power({})
-			if n == 0:
-				break
-			last_win = float(wins) / float(n)
-			# Only correct OUTSIDE the band, and only toward its nearest edge.
-			var edge := 0.0
-			if last_win < target - band:
-				edge = target - band
-			elif last_win > target + band:
-				edge = target + band
-			else:
-				break
-			# Too-hard species (low win) need LESS power; too-easy need more.
-			corr *= pow(clampf(last_win / maxf(0.02, edge), 0.4, 2.5), 0.6)
-			corr = clampf(corr, 0.35, 2.5)
-		power[nm] = corr
-		if absf(corr - 1.0) > 0.02:
-			print("  %-22s%s win %3.0f%% -> power x%.2f" % [nm, " APEX" if is_apex else "     ", last_win * 100.0, corr])
+		# PER LEVEL, not one scalar for the species. Measured with the flat form: Ancient Dragon
+		# was corrected x0.66 from samples at L50/L250/L1000 and then read 88% win at L100, while
+		# Minotaur calibrated to 56% and read 31% at that same level. A species' difficulty
+		# relative to the curve is not constant with level, because its ABILITIES scale
+		# differently from its stats — which is the entire reason this correction exists.
+		var sp_anchors: Array = []
+		var shown: Array = []
+		for cal_lvl in levels:
+			# At least a 1-in-100 spawn share here, or this level is not part of this species'
+			# life and an anchor for it would be fiction.
+			if int(species_at[cal_lvl].get(nm, 0)) < 4:
+				continue
+			var corr := 1.0
+			var last_win := 0.0
+			var measured := false
+			for pass_i in range(passes):
+				# A bare float while measuring: this pass tests ONE candidate at ONE level, so a
+				# constant is exactly right. The per-level anchors are assembled from the solved
+				# values afterwards.
+				monster_db.set_species_power({nm: corr})
+				var r := _species_win_at(nm, cal_lvl, samples)
+				monster_db.set_species_power({})
+				if int(r.get("n", 0)) == 0:
+					break
+				measured = true
+				last_win = float(r.get("win", 0.0))
+				# Only correct OUTSIDE the band, and only toward its nearest edge.
+				var edge := 0.0
+				if last_win < target - band:
+					edge = target - band
+				elif last_win > target + band:
+					edge = target + band
+				else:
+					break
+				# Too-hard species (low win) need LESS power; too-easy need more.
+				corr *= pow(clampf(last_win / maxf(0.02, edge), 0.4, 2.5), 0.6)
+				corr = clampf(corr, 0.35, 2.5)
+			if not measured:
+				continue   # this species does not spawn at this level; leave a gap, do not guess
+			sp_anchors.append({"level": cal_lvl, "power": corr})
+			if absf(corr - 1.0) > 0.02:
+				shown.append("L%d %.0f%%->x%.2f" % [cal_lvl, last_win * 100.0, corr])
+		if sp_anchors.is_empty():
+			continue
+		power[nm] = sp_anchors
+		if not shown.is_empty():
+			print("  %-22s%s %s" % [nm, " APEX" if is_apex else "     ", "  ".join(shown)])
 	var existing := {}
 	var rf = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
 	if rf:

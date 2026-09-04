@@ -2309,15 +2309,38 @@ static var _species_power: Dictionary = {}
 # have gear, a companion, knowledge of the roster, or a reliable escape. The "recognisable
 # careful-of-that-one at every stage" intent does not apply to a stage where the player has no
 # tools to be careful WITH.
+# 2026-09-04 — REBUILT so the roster matches what the NAMES promise.
+#
+# Owner: *"You would expect an Ancient Dragon to be a very formidable foe, not an easy one."*
+# He was right, and it was systematic rather than a one-off. Apex had been assigned as roughly
+# two per tier without reference to menace, so the calibration was dutifully pushing an ANCIENT
+# DRAGON toward the easy 48-72% band while holding a Jabberwock — Lewis Carroll whimsy — to the
+# hard one. A player cannot learn which monsters to fear if the fearsome names are the safe
+# fights.
+#
+# Changes, all within their existing tier (spawn tables untouched in this pass):
+#   T5  + Ancient Dragon, + Balrog, - Jabberwock
+#       "Ancient" and a Balrog promise a terrible fight; a Jabberwock does not, and it was the
+#       single worst fight in the game at 16% win before this
+#   T6  + Nazgul          — iconic dread, and it sat in the fair band next to a Phoenix
+#   T7  + Elder Lich, + Void Walker   — makes ALL of T7 apex, deliberately
+#   T8  + Time Weaver                 — makes ALL of T8 apex, deliberately
+#
+# T7 and T8 being wholly apex is a decision, not an oversight: by the deep endgame there should
+# be no such thing as a safe encounter, and every name up there already promises otherwise.
+# Below that, apex stays a MINORITY you learn to fear — 19 of 49 species, and only 3 of the 22
+# species in T1-T4.
 const APEX_SPECIES := {
 	# (no T1 apex — see above)
 	"Mimic": true,               # T2 — the ambusher, the first one you meet
 	"Wyvern": true, "Wraith": true,           # T3
 	"Chimaera": true,            # T4
-	"Titan": true, "Jabberwock": true,        # T5
-	"Hydra": true, "Phoenix": true,           # T6
-	"Primordial Dragon": true, "World Serpent": true,   # T7
-	"Death Incarnate": true, "Cosmic Horror": true,     # T8
+	"Ancient Dragon": true, "Balrog": true, "Titan": true,   # T5
+	"Hydra": true, "Phoenix": true, "Nazgul": true,          # T6
+	"Primordial Dragon": true, "World Serpent": true,
+	"Elder Lich": true, "Void Walker": true,                 # T7 — all of it
+	"Death Incarnate": true, "Cosmic Horror": true,
+	"Time Weaver": true,                                     # T8 — all of it
 	"Entropy": true, "God Slayer": true,      # T9
 }
 # Win-rate band an apex species is calibrated to, against the normal 0.60 +/- 0.12.
@@ -2335,6 +2358,46 @@ const APEX_DROP_MULT := 3.0
 static func is_apex_species(monster_name: String) -> bool:
 	"""True for species deliberately tuned above their tier's difficulty band."""
 	return APEX_SPECIES.has(monster_name)
+
+static func _species_power_at(sp_name: String, level: int) -> float:
+	"""A species' power correction AT THIS LEVEL.
+
+	Accepts two shapes. A bare float is a single correction applied at every level - the
+	original format, still produced while a calibration pass is measuring one candidate value,
+	and still valid for a species measured at only one level. An ARRAY of {level, power} is
+	per-level anchors, interpolated the same log-linear way the role multipliers are.
+
+	Per-level exists because one scalar demonstrably cannot be right everywhere. Measured with
+	the flat form: Ancient Dragon was corrected x0.66 from samples at L50/L250/L1000 and then
+	read 88% win at L100, while Minotaur calibrated to 56% and read 31% at the same level. A
+	species' difficulty relative to the curve is not constant with level - its abilities scale
+	differently from its stats, which is the whole reason this correction exists."""
+	if not _species_power.has(sp_name):
+		return 1.0
+	var v = _species_power[sp_name]
+	if v is float or v is int:
+		return float(v)
+	if not (v is Array) or (v as Array).is_empty():
+		return 1.0
+	var anchors: Array = v
+	var lvl: float = maxf(1.0, float(level))
+	var first: Dictionary = anchors[0]
+	var last: Dictionary = anchors[anchors.size() - 1]
+	if lvl <= float(first.get("level", 1)):
+		return float(first.get("power", 1.0))
+	if lvl >= float(last.get("level", 1)):
+		return float(last.get("power", 1.0))
+	for i in range(anchors.size() - 1):
+		var a: Dictionary = anchors[i]
+		var b: Dictionary = anchors[i + 1]
+		var la: float = maxf(1.0, float(a.get("level", 1)))
+		var lb: float = maxf(1.0, float(b.get("level", 1)))
+		if lvl >= la and lvl <= lb:
+			# Log-linear in LEVEL, matching how the base curve and the role anchors are read,
+			# because the anchors are spaced logarithmically.
+			var t: float = (log(lvl) - log(la)) / maxf(0.0001, log(lb) - log(la))
+			return lerpf(float(a.get("power", 1.0)), float(b.get("power", 1.0)), clampf(t, 0.0, 1.0))
+	return 1.0
 
 static func set_species_power(m: Dictionary) -> void:
 	_species_power = m if m != null else {}
@@ -2594,7 +2657,7 @@ func compute_anchored_stats(base_stats: Dictionary, target_level: int) -> Dictio
 	# fight than a Harpy, just not a different game.
 	var sp_name := String(base_stats.get("name", ""))
 	if _species_power.has(sp_name):
-		var corr: float = float(_species_power[sp_name])
+		var corr: float = _species_power_at(sp_name, target_level)
 		shape.hp = float(shape.hp) * corr
 		shape.str = float(shape.str) * corr
 	# #6 (2026-09-02, found in playtest) — the danger budget is per ENCOUNTER, not per monster.
