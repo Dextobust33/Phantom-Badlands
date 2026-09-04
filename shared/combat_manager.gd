@@ -2945,6 +2945,26 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 			messages.append("[color=#66AA66]- The Cunning Prey's gear vanishes into shadow...[/color]")
 
 	# Warrior Hoarder ability: 35% chance to drop warrior gear
+	# === APEX KILL: a Scroll of Finding ===
+	# 2026-09-04 — the other half of the owner's "either Apex loot or dungeon floor loot". An
+	# apex species is the game's declared hard fight (calibrated to ~38% win, carrying an XP
+	# multiplier), so it is the right place to hand out the tool that lets you CHOOSE your next
+	# five encounters. Beat something frightening, then decide what to hunt with it.
+	#
+	# Deliberately not a certainty: at 30% an apex kill is a good chance rather than a vending
+	# machine, and the dungeon-chest route covers players who prefer to delve.
+	# The flag is stamped on the monster at generation (monster_database ~L1784), so this does
+	# not depend on the database node being wired into combat.
+	if drop_tables != null and bool(monster.get("is_apex_species", false)):
+		if randf() < 0.30:
+			var find_scroll = drop_tables._generate_item(
+				{"item_type": "scroll_target_farm", "rarity": "common"}, monster.level)
+			if find_scroll is Dictionary and not find_scroll.is_empty():
+				messages.append("[color=#9F70FF]The apex leaves behind a Scroll of Finding — choose your next quarry.[/color]")
+				if not combat.has("extra_drops"):
+					combat.extra_drops = []
+				combat.extra_drops.append(find_scroll)
+
 	if ABILITY_WARRIOR_HOARDER in abilities and drop_tables != null:
 		if randf() < 0.35:
 			var war_item = drop_tables.generate_warrior_gear(monster.level)
