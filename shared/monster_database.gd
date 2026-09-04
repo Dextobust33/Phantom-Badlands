@@ -646,7 +646,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 8,
 				"description": "A brutish humanoid warrior",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_BERSERKER, ABILITY_WARRIOR_HOARDER],
+				"abilities": [ABILITY_BERSERKER],
 				"death_message": "The orc grunts 'Me... not... weak...' and collapses."
 			}
 		MonsterType.HOBGOBLIN:
@@ -754,7 +754,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 12,
 				"description": "A beautiful sea creature with an entrancing voice",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_CHARM, ABILITY_MANA_DRAIN, ABILITY_ARCANE_HOARDER],
+				"abilities": [ABILITY_CHARM, ABILITY_MANA_DRAIN],
 				"death_message": "The siren's song fades to silence as she sinks beneath the waves."
 			}
 		MonsterType.KELPIE:
@@ -790,7 +790,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 25,
 				"description": "A creature disguised as a treasure chest",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_AMBUSHER, ABILITY_DISGUISE, ABILITY_GOLD_HOARDER, ABILITY_CUNNING_PREY],
+				"abilities": [ABILITY_AMBUSHER, ABILITY_DISGUISE, ABILITY_GOLD_HOARDER],
 				"death_message": "The mimic's chest lid slams shut one final time, its lure finally silent."
 			}
 
@@ -1010,7 +1010,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 18,
 				"description": "An undead noble with supernatural powers",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_LIFE_STEAL, ABILITY_ETHEREAL, ABILITY_DISARM, ABILITY_AMBUSHER, ABILITY_CUNNING_PREY],
+				"abilities": [ABILITY_LIFE_STEAL, ABILITY_ETHEREAL, ABILITY_DISARM, ABILITY_AMBUSHER],
 				"death_message": "The vampire crumbles to dust. 'I'll... be... back...' he whispers."
 			}
 		MonsterType.GRYPHON:
@@ -1064,7 +1064,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 15,
 				"description": "A seductive demon that drains life force",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_CHARM, ABILITY_LIFE_STEAL, ABILITY_MANA_DRAIN, ABILITY_ARCANE_HOARDER],
+				"abilities": [ABILITY_CHARM, ABILITY_LIFE_STEAL, ABILITY_MANA_DRAIN],
 				"death_message": "The succubus fades away with a haunting smile."
 			}
 
@@ -1138,7 +1138,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 25,
 				"description": "A godlike being from the dawn of time",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_WISH_GRANTER, ABILITY_GLASS_CANNON, ABILITY_GEM_BEARER, ABILITY_WARRIOR_HOARDER],
+				"abilities": [ABILITY_WISH_GRANTER, ABILITY_GLASS_CANNON, ABILITY_GEM_BEARER],
 				"death_message": "The titan grants you a final gift as it returns to the cosmos."
 			}
 		MonsterType.BALROG:
@@ -1192,7 +1192,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 22,
 				"description": "A fearsome creature with jaws that bite and claws that catch",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_MULTI_STRIKE, ABILITY_FLEE_ATTACK, ABILITY_AMBUSHER, ABILITY_CUNNING_PREY],
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_MULTI_STRIKE, ABILITY_FLEE_ATTACK, ABILITY_AMBUSHER],
 				"death_message": "The Jabberwock goes galumphing back whence it came... permanently."
 			}
 
@@ -1284,7 +1284,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 18,
 				"description": "An immortal bird of fire and rebirth",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER, ABILITY_ARCANE_HOARDER],
+				"abilities": [ABILITY_DEATH_CURSE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
 				"death_message": "The phoenix erupts in flame... but this time, it doesn't rise."
 			}
 		MonsterType.NAZGUL:
@@ -1302,7 +1302,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 15,
 				"description": "A wraith king bound to a ring of power",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_SLOW_AURA, ABILITY_XP_STEAL, ABILITY_WEAKNESS, ABILITY_LIFE_STEAL, ABILITY_DISARM, ABILITY_AMBUSHER, ABILITY_CUNNING_PREY],
+				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_SLOW_AURA, ABILITY_XP_STEAL, ABILITY_WEAKNESS, ABILITY_LIFE_STEAL, ABILITY_DISARM, ABILITY_AMBUSHER],
 				"death_message": "The Nazgul screams as its ring shatters, freeing what remains of its soul."
 			}
 
@@ -1340,7 +1340,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 15,
 				"description": "A serpent large enough to encircle the world",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_POISON, ABILITY_MULTI_STRIKE, ABILITY_ARMORED, ABILITY_GEM_BEARER, ABILITY_WARRIOR_HOARDER],
+				"abilities": [ABILITY_POISON, ABILITY_MULTI_STRIKE, ABILITY_ARMORED, ABILITY_GEM_BEARER],
 				"death_message": "The World Serpent releases its tail. The cosmos trembles."
 			}
 		MonsterType.ELDER_LICH:
@@ -1396,7 +1396,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 12,
 				"description": "An incomprehensible entity from beyond the stars",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_CURSE, ABILITY_MANA_DRAIN, ABILITY_STAMINA_DRAIN, ABILITY_ENERGY_DRAIN, ABILITY_GEM_BEARER, ABILITY_CUNNING_PREY],
+				"abilities": [ABILITY_UNPREDICTABLE, ABILITY_CURSE, ABILITY_MANA_DRAIN, ABILITY_STAMINA_DRAIN, ABILITY_ENERGY_DRAIN, ABILITY_GEM_BEARER],
 				"death_message": "The Cosmic Horror's form unravels. Your sanity... mostly intact."
 			}
 		MonsterType.TIME_WEAVER:
@@ -1470,7 +1470,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 18,
 				"description": "An entity so ancient its name has been forgotten",
 				"class_affinity": ClassAffinity.CUNNING,  # Weak to Tricksters
-				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_WISH_GRANTER, ABILITY_GEM_BEARER, ABILITY_CUNNING_PREY],
+				"abilities": [ABILITY_ETHEREAL, ABILITY_CURSE, ABILITY_DEATH_CURSE, ABILITY_WISH_GRANTER, ABILITY_GEM_BEARER],
 				"death_message": "At last... a name... *You hear your own name whispered eternally*"
 			}
 		MonsterType.GOD_SLAYER:
@@ -1488,7 +1488,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 20,
 				"description": "A being that has killed gods and taken their power",
 				"class_affinity": ClassAffinity.PHYSICAL,  # Weak to Warriors
-				"abilities": [ABILITY_BERSERKER, ABILITY_GLASS_CANNON, ABILITY_LIFE_STEAL, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER, ABILITY_WARRIOR_HOARDER],
+				"abilities": [ABILITY_BERSERKER, ABILITY_GLASS_CANNON, ABILITY_LIFE_STEAL, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
 				"death_message": "The God Slayer bows. 'Finally... a worthy successor.'"
 			}
 		MonsterType.ENTROPY:
@@ -1506,7 +1506,7 @@ func get_monster_base_stats(type: MonsterType) -> Dictionary:
 				"drop_chance": 25,
 				"description": "The end of all things made manifest",
 				"class_affinity": ClassAffinity.MAGICAL,  # Weak to Mages
-				"abilities": [ABILITY_ARMORED, ABILITY_REGENERATION, ABILITY_DEATH_CURSE, ABILITY_CURSE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER, ABILITY_ARCANE_HOARDER],
+				"abilities": [ABILITY_ARMORED, ABILITY_REGENERATION, ABILITY_DEATH_CURSE, ABILITY_CURSE, ABILITY_GEM_BEARER, ABILITY_WISH_GRANTER],
 				"death_message": "You have defeated the end itself. What lies beyond is... new beginnings."
 			}
 

@@ -1049,27 +1049,10 @@ func get_equipment_bonuses() -> Dictionary:
 			bonuses.wits += max(1, int(base_bonus * 0.3)) if base_bonus > 0 else 0
 			bonuses.energy_regen += max(1, int(base_bonus * 0.1)) if base_bonus > 0 else 0
 		elif "weapon_warlord" in item_type:
-			# Warlord weapon (Warrior): STRENGTH + stamina_regen.
-			#
-			# 2026-09-04 — the strength half is new, and it fixes an ASYMMETRY rather than being a
-			# tuning guess. The other two class kits each grant a PRIMARY STAT plus sustain:
-			#   ring_arcane   INT x0.7   + mana_regen x0.35     (and amulet_mystic max_mana x1.0)
-			#   ring_shadow   WITS x0.5  + energy_regen x0.15   (and boots_swift WITS x0.3)
-			#   weapon_warlord            stamina_regen x0.2    <- sustain ONLY, nothing else
-			# The warrior kit gave a warrior nothing to hit harder with, while being the archetype
-			# measured furthest behind at elite. Owner: "Warriors give more attack for more attack
-			# or ability damage."
-			#
-			# STRENGTH rather than a flat attack bonus because warrior abilities scale on it
-			# (get_effective_stat("strength") in the Power Strike / Cleave / Devastate paths), so
-			# one stat serves both halves of that ask. x0.6 sits between the mage ring's 0.7 and the
-			# trickster ring's 0.5 — parity, not an edge.
-			bonuses.strength += max(1, int(base_bonus * 0.6)) if base_bonus > 0 else 0
+			# Warlord weapon (Warrior): extra stamina_regen (base weapon stats already applied)
 			bonuses.stamina_regen += max(1, int(base_bonus * 0.2)) if base_bonus > 0 else 0
 		elif "shield_bulwark" in item_type:
-			# Bulwark shield (Warrior): CONSTITUTION + stamina_regen. The shield is the defensive
-			# half of the kit, so it takes the defensive stat rather than a second copy of strength.
-			bonuses.constitution += max(1, int(base_bonus * 0.4)) if base_bonus > 0 else 0
+			# Bulwark shield (Warrior): extra stamina_regen (base shield stats already applied)
 			bonuses.stamina_regen += max(1, int(base_bonus * 0.15)) if base_bonus > 0 else 0
 
 		# Apply affix bonuses (from randomized item affixes) - also affected by wear
