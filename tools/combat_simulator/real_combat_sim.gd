@@ -966,7 +966,10 @@ func run_actor_tag_probe():
 	var rounds := 0
 	while rounds < 4 and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 		rounds += 1
-		var r: Dictionary = combat_mgr.process_attack(combat)
+		# process_combat_action is what the SERVER calls - process_attack is only part of it, and
+		# the monster's retaliation is appended by the OUTER function. Probing the inner one
+		# would have verified a path the game does not take.
+		var r: Dictionary = combat_mgr.process_combat_action(0, combat_mgr.CombatAction.ATTACK)
 		var msgs: Array = r.get("messages", [])
 		var actors: Array = r.get("message_actors", []) if r.get("message_actors", null) is Array else []
 		print("--- round %d: %d lines, %d tags ---" % [rounds, msgs.size(), actors.size()])

@@ -23450,7 +23450,14 @@ func handle_server_message(message: Dictionary):
 			if _pending_round_divider:
 				_pending_round_divider = false
 				combat_msg_queue.append({"raw": "[color=#5C4D33]──────── Round %d ────────[/color]" % _combat_known_round})
-			combat_msg_queue.append({"raw": combat_msg})
+			# 2026-09-04 — carry WHO acted, when the server knows. The party path has always
+			# queued a `meta` alongside the line; solo now does too, through the same field, so
+			# one renderer serves both instead of a solo-only special case.
+			var _cm_actor := str(message.get("actor", ""))
+			if _cm_actor != "":
+				combat_msg_queue.append({"raw": combat_msg, "meta": {"actor": _cm_actor}})
+			else:
+				combat_msg_queue.append({"raw": combat_msg})
 			if not combat_phase_paused:
 				_drain_combat_queue()
 
@@ -34869,6 +34876,28 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 
 	return msg
 
+# Owner, twice: the combat log "reads too much like a wall of text and is hard to parse out what
+# you did, what the companion did, and what the enemy did."
+#
+# Every line was the same shape, same weight, same indentation, so a round arrived as an
+# undifferentiated block. A coloured bar down the left edge lets the eye find its own actor's
+# lines without reading any of them — the same trick that makes the damage summary card ("You:
+# 3319  Pet: 234  Foe: 0") the readable part of the screen, which is grouping by actor.
+#
+# Deliberately a GUTTER rather than a prefix word: it costs one character, does not push the
+# text along, and stays out of the way of a line that is already doing its own colouring.
+const ACTOR_GUTTER := {
+	"member": "[color=#7AA8FF]\u258e[/color] ",     # you — the blue used for the player elsewhere
+	"companion": "[color=#77DD77]\u258e[/color] ",  # your companion — green
+	"monster": "[color=#FF6666]\u258e[/color] ",    # what it did to you — red
+}
+
+func _actor_gutter(actor: String) -> String:
+	"""The coloured left bar for a line's actor. Empty for neutral lines and for anything the
+	server did not attribute, so an older server or an untagged path simply looks like it always
+	did rather than mis-attributing."""
+	return String(ACTOR_GUTTER.get(actor, ""))
+
 func _display_combat_msg(combat_msg: String):
 	"""Display a single combat message with all visual effects (extracted from combat_message handler).
 	In condensed mode the text is buffered for a per-turn summary instead of
@@ -34893,7 +34922,7 @@ func _display_combat_msg(combat_msg: String):
 		# Firehose mode — routed through the same helper that the per-turn
 		# summary uses so combat text doesn't clutter game_output during
 		# combat (the panel is up; game_output is hidden anyway).
-		_combat_text_to_outputs(enhanced_msg)
+		_combat_text_to_outputs(_actor_gutter(str(_pm.get("actor", ""))) + enhanced_msg)
 	stop_combat_animation()
 
 	# Trigger combat sounds based on message content

@@ -962,8 +962,16 @@ func _attach_actors(combat: Dictionary, result: Dictionary) -> Dictionary:
 	result["message_actors"] = _actors_for(msgs.size(),
 		combat.get("_actor_marks", []) if combat.get("_actor_marks", null) is Array else [],
 		ACTOR_PLAYER)
-	combat["_actor_marks"] = []
+	# Deliberately does NOT clear the marks. `process_combat_action` calls `process_attack` and
+	# then appends the MONSTER's lines to the same array afterwards, so an inner attach must
+	# leave the marks intact for the outer one to finish the job. Marks are cleared once per
+	# player action instead, by `_begin_actor_marks`.
 	return result
+
+func _begin_actor_marks(combat: Dictionary) -> void:
+	"""Start a fresh attribution for one player action. Called at the TOP of each top-level
+	action so marks never leak from the previous round into this one."""
+	combat["_actor_marks"] = []
 
 static func _actors_for(total: int, marks: Array, default_actor: String) -> Array:
 	"""Expand [{from, actor}, ...] into one actor per message.
@@ -1697,6 +1705,7 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	if not combat.player_can_act:
 		return {"success": false, "message": "Wait for your turn!"}
 	
+	_begin_actor_marks(combat)   # fresh attribution for this action
 	var result = {}
 
 	# Track monster HP before player action for damage tracking
@@ -1744,10 +1753,16 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		var player_hp_before_monster = combat.character.current_hp
 		var monster_hp_before_turn = combat.monster.current_hp
 		var monster_result = process_monster_turn(combat)
+		# The monster's slice. Marked at the CALL SITE rather than inside
+		# process_monster_turn, which has a dozen return paths of two different shapes
+		# ("message" singular and "messages"); everything it produces here is the
+		# monster's by definition, so one bracket covers all of them.
+		_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
 		result.messages.append("[color=#444444]─────────────────────────────[/color]")
 		var monster_msg = monster_result.get("message", "")
 		result.messages.append(_indent_multiline(monster_msg, "         "))
 		result.messages.append("[color=#444444]─────────────────────────────[/color]")
+		_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
@@ -1803,7 +1818,9 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		var buff_name = buff.type.capitalize()
 		result.messages.append("[color=#808080]Your %s buff has worn off.[/color]" % buff_name)
 
-	return result
+	# Re-attach AFTER the monster phase appended its lines - process_attack attached an
+	# earlier, shorter view of the same array.
+	return _attach_actors(combat, result)
 
 func process_attack(combat: Dictionary) -> Dictionary:
 	"""Process player attack action with monster ability interactions"""
@@ -3504,9 +3521,11 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 
 		# Monster gets a free attack
 		var monster_result = process_monster_turn(combat)
+		_mark_actor(combat, messages.size(), ACTOR_MONSTER)
 		messages.append("[color=#444444]─────────────────────────────[/color]")
 		messages.append(_indent_multiline(monster_result.message, "         "))
 		messages.append("[color=#444444]─────────────────────────────[/color]")
+		_mark_actor(combat, messages.size(), ACTOR_PLAYER)
 
 		# Check if player died
 		if character.current_hp <= 0:
@@ -4141,10 +4160,16 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		var player_hp_before_monster = combat.character.current_hp
 		var monster_hp_before_turn = combat.monster.current_hp
 		var monster_result = process_monster_turn(combat)
+		# The monster's slice. Marked at the CALL SITE rather than inside
+		# process_monster_turn, which has a dozen return paths of two different shapes
+		# ("message" singular and "messages"); everything it produces here is the
+		# monster's by definition, so one bracket covers all of them.
+		_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
 		result.messages.append("[color=#444444]─────────────────────────────[/color]")
 		var monster_msg = monster_result.get("message", "")
 		result.messages.append(_indent_multiline(monster_msg, "         "))
 		result.messages.append("[color=#444444]─────────────────────────────[/color]")
+		_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
