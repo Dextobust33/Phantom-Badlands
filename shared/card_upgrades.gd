@@ -91,6 +91,52 @@ const UPGRADES := [
 	# ---------------------------------------------------------------- TRADE-OFFS ------------
 	# Gated to TRADEOFF_MIN_MILESTONE and beyond: these are the genuinely hard picks, and a
 	# player meeting them on their first rank-up would be choosing blind.
+	# ------------------------------------------------- pool widening (2026-09-03) ------------
+	# Reported from play: a buff card's rank-up offered only EIGHT choices, and the whole
+	# premise was *"a large enough pool that you don't see repeats very often"*. Measured, the
+	# UPSIDE-ONLY pools were damage 10 / buff 8 / control 5 against an OFFER_SIZE of 9 — so a
+	# milestone-1 damage offer showed nine of the ten that exist, buff could not fill the
+	# offer at all, and control showed the same five every time. The "repeats are rare" figure
+	# quoted earlier was measured on the FULL pool at late milestones, which is not where a
+	# player meets this.
+	#
+	# These are differentiated by CONDITION rather than by magnitude. The game has a modest set
+	# of levers — heal, resource, shield, distract, stun, damage reduction, the class engines —
+	# and fourteen re-scalings of "gain a small thing" would be the same non-choice the old
+	# three-option menu was. WHEN an upgrade pays changes how a card is played; how much it
+	# pays does not. Every one below fires through a lever that already exists; nothing here
+	# invents a mechanic, which is why Overkill and Lingering were cut rather than faked.
+	{"id": "mending", "wired": true, "name": "Mending", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Heals you for 4% of your health each time you play this."},
+	{"id": "second_wind", "wired": true, "name": "Second Wind", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Gives back 8% of your resource pool on cast."},
+	{"id": "bulwark", "wired": true, "name": "Bulwark", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Shields you for 9% of your health — but only while you are below half."},
+	{"id": "steadfast", "wired": true, "name": "Steadfast", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Take 10% less damage for 2 rounds after playing this."},
+	{"id": "kindling", "wired": true, "name": "Kindling", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Builds your class resource when cast with a full bar."},
+	{"id": "desperate", "wired": true, "name": "Desperation", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Builds your class resource twice over while you are below a third health."},
+	{"id": "opening_act", "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "The FIRST time you play this in a fight, it costs nothing."},
+	{"id": "relentless", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Every third cast of this card restores a third of your resource."},
+	{"id": "vindication", "wired": true, "name": "Vindication", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
+	 "desc": "Heals you for 6% of your health when this lands a killing blow."},
+	{"id": "disorienting", "wired": true, "name": "Disorienting", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	 "desc": "One cast in four leaves the enemy swinging wide."},
+	{"id": "pinning", "wired": true, "name": "Pinning", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	 "desc": "12% chance to stun the enemy outright."},
+	{"id": "harrying", "wired": true, "name": "Harrying", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	 "desc": "Builds your class resource whenever the enemy is already rattled."},
+	{"id": "demoralising", "wired": true, "name": "Demoralising", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
+	 "desc": "Shields you for 5% of your health while the enemy is stunned or rattled."},
+	{"id": "entrenched", "wired": true, "name": "Entrenched", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	 "desc": "Also shields you for 7% of your health when the buff goes up."},
+	{"id": "renewing", "wired": true, "name": "Renewing", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
+	 "desc": "Heals you for 5% of your health when the buff goes up."},
+
 	{"id": "overdraw", "wired": true, "name": "Overdraw", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,
 	 "desc": "+30% damage, but it costs 25% more."},
 	{"id": "reckless", "wired": true, "name": "Reckless", "kind": KIND_DAMAGE, "stacks": false, "tradeoff": true,

@@ -5991,6 +5991,76 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 		var self_hit: int = maxi(1, int(float(character.get_total_max_hp()) * 0.04))
 		character.current_hp = maxi(1, int(character.current_hp) - self_hit)
 		result.messages.append("[color=#9400D3]Unstable Hex: it rebounds — %d damage to you.[/color]" % self_hit)
+	# --- pool-widening upgrades (2026-09-03). Every one routes through a lever that already
+	# exists; they differ by WHEN they pay, which is what makes them play differently rather
+	# than just read differently.
+	if "mending" in picks:
+		var heal_n: int = maxi(1, int(float(character.get_total_max_hp()) * 0.04))
+		var got: int = character.heal(heal_n)
+		if got > 0:
+			result.messages.append("[color=#77DD77]Mending: %d health knits closed.[/color]" % got)
+	if "second_wind" in picks:
+		var back: int = maxi(1, int(float(_primary_pool_max(character)) * 0.08))
+		_restore_primary_resource(character, back)
+		result.messages.append("[color=#66B0FF]Second Wind: %d back.[/color]" % back)
+	if "bulwark" in picks and float(character.current_hp) < 0.5 * float(character.get_total_max_hp()):
+		var bw: int = maxi(1, int(float(character.get_total_max_hp()) * 0.09))
+		combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + bw
+		result.messages.append("[color=#7AA8FF]Bulwark: %d shield — it holds while you are hurt.[/color]" % bw)
+	if "steadfast" in picks:
+		character.add_buff("damage_reduction", 10, _buff_duration(character, ability_name, 2))
+		result.messages.append("[color=#9FD0FF]Steadfast: you brace — 10% less damage taken.[/color]")
+	if "vindication" in picks and monster is Dictionary and int(monster.get("current_hp", 1)) <= 0:
+		var vh: int = maxi(1, int(float(character.get_total_max_hp()) * 0.06))
+		var vgot: int = character.heal(vh)
+		if vgot > 0:
+			result.messages.append("[color=#77DD77]Vindication: the kill restores %d.[/color]" % vgot)
+	if "opening_act" in picks:
+		# Refund the cast outright the FIRST time this card is played in a fight. Refunding
+		# after the fact rather than zeroing the cost up front keeps it out of the cost funnel,
+		# which several other upgrades already modify and where an interaction would be easy
+		# to get wrong.
+		var oa_key := "_opening_act_" + ability_name
+		if not bool(combat.get(oa_key, false)):
+			combat[oa_key] = true
+			var oa_spent: int = int(character.get_meta("path_last_ability_cost", 0))
+			if oa_spent > 0:
+				_restore_primary_resource(character, oa_spent)
+				result.messages.append("[color=#FFD700]Opening Act: the first one is free.[/color]")
+	if "relentless" in picks:
+		var rl_key := "_relentless_" + ability_name
+		var rl_n: int = int(combat.get(rl_key, 0)) + 1
+		combat[rl_key] = rl_n
+		if rl_n % 3 == 0:
+			var rb: int = maxi(1, int(float(_primary_pool_max(character)) / 3.0))
+			_restore_primary_resource(character, rb)
+			result.messages.append("[color=#66B0FF]Relentless: the third strike gives back %d.[/color]" % rb)
+	if "kindling" in picks and _primary_pool_current(character) >= _primary_pool_max(character):
+		_feed_class_engine(combat, character, 1, result, "Kindling")
+	if "desperate" in picks and float(character.current_hp) < 0.34 * float(character.get_total_max_hp()):
+		_feed_class_engine(combat, character, 2, result, "Desperation")
+	if "disorienting" in picks and randf() < 0.25:
+		combat["enemy_distracted"] = maxi(int(combat.get("enemy_distracted", 0)), 25)
+		result.messages.append("[color=#A0E060]Disorienting: it loses track of you.[/color]")
+	if "pinning" in picks and randf() < 0.12:
+		combat["monster_stunned"] = maxi(int(combat.get("monster_stunned", 0)), 1)
+		result.messages.append("[color=#FFD700]Pinning: it is held fast.[/color]")
+	var _rattled: bool = int(combat.get("enemy_distracted", 0)) > 0 or int(combat.get("monster_stunned", 0)) > 0
+	if "harrying" in picks and _rattled:
+		_feed_class_engine(combat, character, 1, result, "Harrying")
+	if "demoralising" in picks and _rattled:
+		var dm: int = maxi(1, int(float(character.get_total_max_hp()) * 0.05))
+		combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + dm
+		result.messages.append("[color=#7AA8FF]Demoralising: %d shield off its stumble.[/color]" % dm)
+	if "entrenched" in picks:
+		var en: int = maxi(1, int(float(character.get_total_max_hp()) * 0.07))
+		combat["forcefield_shield"] = int(combat.get("forcefield_shield", 0)) + en
+		result.messages.append("[color=#7AA8FF]Entrenched: %d shield with it.[/color]" % en)
+	if "renewing" in picks:
+		var rn: int = maxi(1, int(float(character.get_total_max_hp()) * 0.05))
+		var rgot: int = character.heal(rn)
+		if rgot > 0:
+			result.messages.append("[color=#77DD77]Renewing: %d health with it.[/color]" % rgot)
 	if "preload" in picks:
 		# Remembered on the CHARACTER, not the combat, because the whole point is that it
 		# survives the fight it was cast in and re-applies at the start of the next one.
@@ -6051,6 +6121,37 @@ func apply_preloaded_buff(character, combat: Dictionary) -> void:
 	var val: int = _apply_buff_value_modifiers(character, ability_name, 20)
 	character.add_buff("damage_reduction", maxi(1, int(float(val) * 0.5)),
 		_buff_duration(character, ability_name, 2))
+
+func _primary_pool_max(character) -> int:
+	"""Max of whichever pool this class actually spends. Centralised because three of the new
+	rank-up upgrades size themselves against it, and a per-site `match` on class path is how
+	the cost tables drifted apart in the first place."""
+	match character.get_class_path():
+		"warrior": return character.get_total_max_stamina()
+		"mage": return character.get_total_max_mana()
+		"trickster": return character.get_total_max_energy()
+	return character.get_total_max_stamina()
+
+func _primary_pool_current(character) -> int:
+	match character.get_class_path():
+		"warrior": return int(character.current_stamina)
+		"mage": return int(character.current_mana)
+		"trickster": return int(character.current_energy)
+	return int(character.current_stamina)
+
+func _feed_class_engine(combat: Dictionary, character, amount: int, result: Dictionary, label: String) -> void:
+	"""Add to whichever engine this class runs on, respecting its cap. Same shape as the
+	`momentum_feed` upgrade, shared so the two cannot disagree about the caps."""
+	match character.get_class_path():
+		"warrior":
+			combat["momentum"] = mini(MOMENTUM_MAX, int(combat.get("momentum", 0)) + amount)
+			result.messages.append("[color=#C8A24A]%s: +%d Momentum.[/color]" % [label, amount])
+		"trickster":
+			combat["combo"] = mini(COMBO_MAX, int(combat.get("combo", 0)) + amount)
+			result.messages.append("[color=#7FD8C8]%s: +%d Read.[/color]" % [label, amount])
+		"mage":
+			combat["focus"] = mini(FOCUS_MAX, int(combat.get("focus", 0)) + amount)
+			result.messages.append("[color=#5AC8FF]%s: +%d Focus.[/color]" % [label, amount])
 
 func _restore_primary_resource(character, amount: int) -> void:
 	"""Give back `amount` of whichever resource this class actually spends."""
