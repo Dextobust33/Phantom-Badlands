@@ -1583,25 +1583,32 @@ func run_reference_calibrate():
 			# which is the `str`/danger axis's job, not HP's. `eff_turns` is still reported as
 			# a diagnostic because the truncation it measures is real.
 			var turn_err: float = TARGET_TURNS_NORMAL_SIM / maxf(0.5, float(r["turns"]))
-			# 2026-09-04 - the two axes can pull against each other, and when they do the WIN
-			# target wins. Raising HP to lengthen a fight also lowers the win rate, so at a
-			# level where win is already short, obeying the turns target actively makes things
-			# worse. Measured at L100 across two rounds: strength fell 8% while HP rose 22% to
-			# chase turns 4.4 -> 5.1, and the win rate went 52% -> 43% as a result.
+			# 2026-09-04 - REVERTED: an attempt to make the win target override the turns
+			# target here was measured twice and rejected both times. It is kept as a comment
+			# because the reasoning is sound and only the remedy was wrong.
 			#
-			# L100 is where this bit because its spawn pool is deadlier PER TURN than its
-			# neighbours': Jabberwock wins 16% against Demon Lord's 82% on a nearly identical
-			# stat line (1869/19470 vs 1645/16606), so the difference lives in ABILITIES, which
-			# this model does not size. About a third of L100 spawns come from sub-45% species,
-			# and a fight that lasts exactly five turns still loses.
+			# The two axes genuinely do conflict. Raising HP to lengthen a fight always costs
+			# win rate, so at a level already short on wins, obeying the turns target makes it
+			# worse - measured at L100, where strength fell 8% while HP rose 22% to chase turns
+			# 4.4 -> 5.1 and the win rate went 52% -> 43% as a result.
 			#
-			# So HP may only rise when the win rate is at or above target. It may always FALL,
-			# because shortening a fight helps both axes at once.
-			var win_now: float = float(r.get("win", 0.0))
-			var hp_step: float = pow(clampf(turn_err, 0.15, 6.0), k)
-			if hp_step > 1.0 and win_now < WIN_NORMAL_SIM:
-				hp_step = 1.0
-			hp *= hp_step
+			# But braking the HP rise fixes that one level and damages the rest, because the
+			# conflict is not what is usually happening when win sits a little low - noise is.
+			# Rows landing within 5 points of target, out of 14:
+			#
+			#     no brake (shipped)                        13   L100 the only miss
+			#     hard block whenever win < target          10   L1, L5, L100, L1000 miss
+			#     brake scaled by the deficit                8   six miss
+			#
+			# Both remedies traded a broad fit for one row. The real fault is upstream: this
+			# model sizes HP and STRENGTH, while a monster's lethality is dominated by its
+			# ABILITIES. Jabberwock wins 16% and Demon Lord 82% on near-identical stat lines
+			# (1869/19470 vs 1645/16606), and the per-species spread is systemic rather than an
+			# L100 quirk - L50 runs 13% to 100%, L250 runs 9% to 100%. An anchor is therefore an
+			# average over a pool whose members differ ~5x in real difficulty, and how well any
+			# single level fits depends on which species happen to dominate it. Fixing that
+			# means bringing abilities into the shape model, not adding another brake here.
+			hp *= pow(clampf(turn_err, 0.15, 6.0), k)
 			# Steer the danger axis by WIN RATE. Direction: a higher measured win means the
 			# monster is too weak, so strength rises; lower means too strong, so it falls. The
 			# measurement is floored well above zero because a 0% sample carries no gradient —
