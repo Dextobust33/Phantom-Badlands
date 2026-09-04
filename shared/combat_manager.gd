@@ -977,6 +977,34 @@ func _take_modifiers(combat: Dictionary) -> String:
 		return ""
 	return "  ·  ".join(notes)
 
+func _note_mitigation(combat: Dictionary, text: String) -> void:
+	"""Buffer what REDUCED an incoming hit, so it can ride on the monster's own line.
+
+	Deliberately a DIFFERENT buffer from `_note_modifier`. That one collects what made YOUR blow
+	bigger; this collects what made THEIRS smaller. One shared bag would let a modifier from your
+	cast leak onto the monster's line, where it would read as a lie."""
+	if not (combat.get("_mit_notes", null) is Array):
+		combat["_mit_notes"] = []
+	combat["_mit_notes"].append(text)
+
+func _take_mitigations(combat: Dictionary) -> String:
+	var notes: Array = combat.get("_mit_notes", []) if combat.get("_mit_notes", null) is Array else []
+	combat["_mit_notes"] = []
+	if notes.is_empty():
+		return ""
+	return "  ·  ".join(notes)
+
+func _incoming_with_detail(combat: Dictionary, amount: int) -> String:
+	"""The number for a hit on the PLAYER, carrying what softened it on hover.
+
+	Sibling of `_damage_with_detail` minus the damage MARK: that mark drives the floating number
+	over the MONSTER, and this is damage travelling the other way. Recording one here would pop a
+	number on the monster for a blow it just landed on you."""
+	var detail := _take_mitigations(combat)
+	if detail == "":
+		return "[color=#FF8800]%d[/color]" % amount
+	return "[url=%s][color=#FF8800]%d[/color][/url]" % [detail, amount]
+
 func _damage_with_detail(combat: Dictionary, messages: Array, amount: int, suffix: String = "damage") -> String:
 	"""A damage number carrying its own breakdown on hover.
 
@@ -1898,10 +1926,23 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		# `monster_skipped` has been returned since party combat shipped and was never once read.
 		var monster_msg = monster_result.get("message", "")
 		if not bool(monster_result.get("monster_skipped", false)) and monster_msg.strip_edges() != "":
+			# 2026-09-04 — the monster's turn goes in as ONE MESSAGE PER LINE, not one message
+			# containing newlines wrapped in two rules.
+			#
+			# process_monster_turn returns its narration joined with a NEWLINE (it has a dozen return
+			# paths of two different shapes, so the join is its lowest common denominator). Appended
+			# whole, the block was a SINGLE entry: only its first visual line could take an actor
+			# gutter, and the client's fold could not group it at all — which is why the monster's
+			# block kept reading as a wall no matter how much the player's side was folded. The two
+			# divider rules then cost two more lines per round.
+			#
+			# Split into real messages, every line gets its own gutter and the fold applies to them
+			# like anything else. The dividers go with it: the gutter IS the frame now, and it marks
+			# every line rather than just bracketing the group.
 			_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
-			result.messages.append("[color=#444444]─────────────────────────────[/color]")
-			result.messages.append(_indent_multiline(monster_msg, "         "))
-			result.messages.append("[color=#444444]─────────────────────────────[/color]")
+			for _mline in monster_msg.split("\n"):
+				if String(_mline).strip_edges() != "":
+					result.messages.append(String(_mline))
 			_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
@@ -4350,10 +4391,23 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# `monster_skipped` has been returned since party combat shipped and was never once read.
 		var monster_msg = monster_result.get("message", "")
 		if not bool(monster_result.get("monster_skipped", false)) and monster_msg.strip_edges() != "":
+			# 2026-09-04 — the monster's turn goes in as ONE MESSAGE PER LINE, not one message
+			# containing newlines wrapped in two rules.
+			#
+			# process_monster_turn returns its narration joined with a NEWLINE (it has a dozen return
+			# paths of two different shapes, so the join is its lowest common denominator). Appended
+			# whole, the block was a SINGLE entry: only its first visual line could take an actor
+			# gutter, and the client's fold could not group it at all — which is why the monster's
+			# block kept reading as a wall no matter how much the player's side was folded. The two
+			# divider rules then cost two more lines per round.
+			#
+			# Split into real messages, every line gets its own gutter and the fold applies to them
+			# like anything else. The dividers go with it: the gutter IS the frame now, and it marks
+			# every line rather than just bracketing the group.
 			_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
-			result.messages.append("[color=#444444]─────────────────────────────[/color]")
-			result.messages.append(_indent_multiline(monster_msg, "         "))
-			result.messages.append("[color=#444444]─────────────────────────────[/color]")
+			for _mline in monster_msg.split("\n"):
+				if String(_mline).strip_edges() != "":
+					result.messages.append(String(_mline))
 			_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
@@ -7123,6 +7177,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var monster = combat.monster
 	var abilities = monster.get("abilities", [])
 	var messages = []
+	combat["_mit_notes"] = []   # nothing from a previous turn may ride this one's line
 
 	# Check if monster is stunned (Shield Bash, Paralyze, or companion)
 	var stun_turns = int(combat.get("monster_stunned", 0))
@@ -7190,10 +7245,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		monster.current_hp = max(0, monster.current_hp)
 		combat["monster_burn_duration"] = m_burn_duration - 1
 		_note_dmg(combat, messages, m_burn_damage)
-		messages.append("[color=#FF6600]The %s burns for %d damage![/color]" % [monster.name, m_burn_damage])
+		var _burn_line := "[color=#FF6600]The %s burns for %d damage![/color]" % [monster.name, m_burn_damage]
 		if combat["monster_burn_duration"] <= 0:
 			combat["monster_burn"] = 0
-			messages.append("[color=#808080]The flames die out.[/color]")
+			# The last tick says so on the SAME line rather than spending a second one.
+			_burn_line += " [color=#808080](the flames die out)[/color]"
+		messages.append(_burn_line)
 		# Check if burn killed the monster
 		if monster.current_hp <= 0:
 			return _process_victory(combat, messages)
@@ -7657,12 +7714,16 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if forcefield_shield > 0:
 			if total_damage <= forcefield_shield:
 				combat["forcefield_shield"] = forcefield_shield - total_damage
-				messages.append("[color=#FF00FF]Your Forcefield absorbs %d damage! (%d shield remaining)[/color]" % [total_damage, combat.forcefield_shield])
+				# 2026-09-04 - rides on the monster's attack line rather than taking one of its own.
+				# A fully absorbed hit used to read as THREE lines: the absorb, then "attacks and
+				# deals 0 damage!", then whatever followed. Owner: "the forcefield line absorbing
+				# damage seems like it goes multiple lines still (when the monster attacks)."
+				_note_mitigation(combat, "Forcefield absorbs %d (%d shield left)" % [total_damage, combat.forcefield_shield])
 				total_damage = 0
 			else:
 				total_damage -= forcefield_shield
 				combat.erase("forcefield_shield")
-				messages.append("[color=#FF00FF]Your Forcefield absorbs %d damage before breaking![/color]" % forcefield_shield)
+				_note_mitigation(combat, "Forcefield absorbs %d, then breaks" % forcefield_shield)
 
 		# GM godmode: negate all damage
 		if character.get_meta("gm_godmode", false):
@@ -7718,7 +7779,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if character.current_hp <= 0 and character.has_path_effect("death_save_per_combat") and not combat.get("path_death_save_used", false):
 			combat["path_death_save_used"] = true
 			character.current_hp = 1
-			messages.append("[color=#FF4444]The %s attacks and deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, total_damage])
+			messages.append("[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster.name, _incoming_with_detail(combat, total_damage)])
 			messages.append("[color=#FFD700][b]LAST STAND![/b] Your Path holds you at death's door — 1 HP![/color]")
 			return {"success": true, "message": "\n".join(messages), "path_last_stand": true}
 
@@ -7726,7 +7787,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if character.current_hp <= 0:
 			if character.try_last_stand():
 				character.current_hp = 1
-				messages.append("[color=#FF4444]The %s attacks and deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, total_damage])
+				messages.append("[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster.name, _incoming_with_detail(combat, total_damage)])
 				messages.append("[color=#FFD700][b]LAST STAND![/b] Your dwarven resilience saves you![/color]")
 				return {"success": true, "message": "\n".join(messages), "last_stand": true}
 
@@ -7977,11 +8038,16 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 							messages.append("[color=#FFD700]Cooldowns reset![/color]")
 
 		if num_attacks > 1:
-			messages.append("[color=#FF4444]The %s hits %d times for [color=#FF8800]%d[/color] total damage![/color]" % [monster.name, hits, total_damage])
+			messages.append("[color=#FF4444]The %s hits %d times for %s total damage![/color]" % [monster.name, hits, _incoming_with_detail(combat, total_damage)])
 		else:
-			messages.append("[color=#FF4444]The %s attacks and deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, total_damage])
+			messages.append("[color=#FF4444]The %s attacks and deals %s damage![/color]" % [monster.name, _incoming_with_detail(combat, total_damage)])
 	else:
-		messages.append("[color=#00FF00]The %s attacks but misses![/color]" % monster.name)
+		# A miss still CLEARS the buffer, or a shield note would survive to ride a later line.
+		var _missed_mit := _take_mitigations(combat)
+		var _miss_line := "[color=#00FF00]The %s attacks but misses![/color]" % monster.name
+		if _missed_mit != "":
+			_miss_line += " [color=#808080](%s)[/color]" % _missed_mit
+		messages.append(_miss_line)
 
 	# === POST-ATTACK ABILITIES ===
 

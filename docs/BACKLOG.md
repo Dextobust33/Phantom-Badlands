@@ -3304,6 +3304,29 @@ zero drift.
       through `_damage_with_detail` and read as one line each (`Ambush — 302 damage`,
       `Exploit Weakness — 654480 damage`, `Gambit (it pays off) — 771 damage`). Listed as open
       after the work that closed it
+**The MONSTER'S block was still a wall, and for a structural reason** (owner, 2026-09-04: *"the
+forcefield line absorbing damage seems like it goes multiple lines still (when the monster
+attacks)"*). `process_monster_turn` returns its narration joined with a newline — it has a dozen
+return paths of two different shapes, so the join is its lowest common denominator — and the
+caller appended that whole string as ONE message wrapped in two divider rules. So only its first
+visual line could take an actor gutter, the client's fold could not group it at all, and the
+dividers cost two more lines every round. No amount of folding on the player's side could reach
+it.
+
+Three changes, cause-first:
+- the monster's turn is appended **one message per line**, so every line gets its own gutter and
+  folds like anything else. The dividers are gone with it — the gutter is the frame now, and it
+  marks every line rather than bracketing the group
+- **mitigation rides on the hit it softened.** A fully absorbed blow read as three lines (the
+  absorb, then "attacks and deals 0 damage!", then whatever followed); the Forcefield note is now
+  a hover detail on the monster's own damage number. `_note_mitigation` is a DIFFERENT buffer
+  from `_note_modifier` on purpose: that one collects what made your blow bigger, this one what
+  made theirs smaller, and one shared bag would let your cast's modifier ride the monster's line
+  as a lie
+- the burn's last tick says *(the flames die out)* on the burn line instead of taking its own
+
+Measured on the `actortag` probe: a round went from 6 lines to 4, with all 4 attributed.
+
 - [x] **DONE 2026-09-04 — the cycle is visible now.** The old hand drops away (shrink, tilt,
       fade, staggered) and the new one deals back in from the deck. It is the ANSWER to the
       report rather than decoration: the redraw was always genuine, so when a small deck returns
