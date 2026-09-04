@@ -1756,8 +1756,23 @@ var _combat_fastforward: bool = false
 # The SPEED CONTROL is what makes gating acceptable - without it this is just "the game is
 # slower now". An impatient player sets 3x; someone learning sets 0.5x.
 const COMBAT_SPEEDS: Array = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
+# Written out rather than formatted. GDScript's `%` formatting has no %g, so "%.2gx" printed
+# LITERALLY on the button - reported as "it shows an arrow and then %.2gx and then another
+# arrow". A parallel list of display strings is also simply clearer than trimming zeros off a
+# float at runtime.
+const COMBAT_SPEED_LABELS: Array = ["0.5x", "0.75x", "1x", "1.5x", "2x", "3x"]
 var combat_speed: float = 1.0
 var _combat_speed_label: Label = null
+# Account-level minigame-skip preferences (see _save_keybinds). The SERVER stores these on
+# the character, which is what actually gates the minigame - so they persisted per
+# character and every new one started at OFF. With permadeath that means re-toggling them
+# constantly. Owner: "the skip gathering and crafting should be a toggle that's remembered
+# for the account between session so players don't have to toggle them everytime." These
+# are the account-level copy, pushed onto a character that disagrees when it logs in.
+var pref_skip_gather: bool = false
+var pref_skip_craft: bool = false
+var pref_skip_harvest: bool = false
+var _minigame_prefs_pushed: bool = false
 
 var _victory_card_scheduled: bool = false
 # Frames a scheduled-but-unpresented victory card has been waiting with an empty queue. See
@@ -2728,7 +2743,7 @@ func _ready():
 				var _b := Button.new()
 				_b.name = String(_sp[0])
 				_b.text = String(_sp[1])
-				_b.tooltip_text = "Combat animation speed"
+				_b.tooltip_text = "Combat animation speed — slower lets you read each beat, faster skips ahead"
 				_b.focus_mode = Control.FOCUS_NONE   # never eat the spacebar (see ss_btn)
 				_b.mouse_filter = Control.MOUSE_FILTER_STOP
 				_b.add_theme_font_size_override("font_size", 11)
@@ -2740,6 +2755,7 @@ func _ready():
 					_combat_speed_label.name = "CombatSpeedLabel"
 					_combat_speed_label.add_theme_font_size_override("font_size", 11)
 					_combat_speed_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+					_combat_speed_label.tooltip_text = "Combat animation speed"
 					_spd_box.add_child(_combat_speed_label)
 				else:
 					_b.pressed.connect(func(): _step_combat_speed(1))
@@ -3207,6 +3223,24 @@ func _make_skip_toggle(label: String, tooltip: String) -> Button:
 	return btn
 
 
+func _apply_minigame_prefs_to_character() -> void:
+	"""Push the account-level skip preferences onto this character, once per session.
+
+	A character carries its own server-side value, which is what actually gates the
+	minigame. This only makes a NEW character inherit what the player already chose,
+	rather than starting at OFF - the case that made these feel unremembered."""
+	if _minigame_prefs_pushed or character_data == null or character_data.is_empty():
+		return
+	_minigame_prefs_pushed = true
+	for pair in [["skip_gather_minigame", pref_skip_gather],
+			["skip_craft_minigame", pref_skip_craft],
+			["skip_harvest_minigame", pref_skip_harvest]]:
+		var key := String(pair[0])
+		var want: bool = bool(pair[1])
+		if bool(character_data.get(key, false)) != want:
+			character_data[key] = want
+			send_to_server({"type": "setting_change", "setting": key, "value": want})
+
 func _refresh_minigame_skip_toggle_visuals() -> void:
 	"""Repaint each toggle's modulate so green = currently ON, gray = OFF.
 	Called after any toggle press AND on combat_end so server-driven state
@@ -3236,6 +3270,8 @@ func _on_gather_skip_toggle_pressed() -> void:
 	var new_value: bool = not current
 	character_data["skip_gather_minigame"] = new_value
 	send_to_server({"type": "setting_change", "setting": "skip_gather_minigame", "value": new_value})
+	pref_skip_gather = new_value        # remember for the ACCOUNT, not just this character
+	_save_keybinds()
 	_refresh_minigame_skip_toggle_visuals()
 
 
@@ -3245,6 +3281,8 @@ func _on_craft_skip_toggle_pressed() -> void:
 	var new_value: bool = not current
 	character_data["skip_craft_minigame"] = new_value
 	send_to_server({"type": "setting_change", "setting": "skip_craft_minigame", "value": new_value})
+	pref_skip_craft = new_value        # remember for the ACCOUNT, not just this character
+	_save_keybinds()
 	_refresh_minigame_skip_toggle_visuals()
 
 
@@ -15874,11 +15912,14 @@ func _step_combat_speed(dir: int) -> void:
 	combat_speed = float(COMBAT_SPEEDS[idx])
 	_refresh_combat_speed_label()
 	_save_keybinds()   # same file the other client settings live in
-	display_game("[color=#8FE3FF]Combat speed: %.2gx[/color]" % combat_speed)
+	display_game("[color=#8FE3FF]Combat animation speed: %s[/color]" % String(COMBAT_SPEED_LABELS[idx]))
 
 func _refresh_combat_speed_label() -> void:
 	if _combat_speed_label != null and is_instance_valid(_combat_speed_label):
-		_combat_speed_label.text = " %.2gx " % combat_speed
+		var _i := COMBAT_SPEEDS.find(combat_speed)
+		if _i < 0:
+			_i = COMBAT_SPEEDS.find(1.0)
+		_combat_speed_label.text = " %s " % String(COMBAT_SPEED_LABELS[_i])
 		# Tint away from neutral so a non-default pace is visible at a glance.
 		var col := "#9A9A9A"
 		if combat_speed > 1.0:
@@ -21569,6 +21610,10 @@ func _set_character_data(new_data: Dictionary):
 	character_data = new_data
 	if not character_data.has("valor"):
 		character_data["valor"] = account_valor
+	# Once per session, make this character honour the ACCOUNT's minigame-skip choices. Placed
+	# here because it is the one funnel every character payload passes through, so it does not
+	# matter which message happens to arrive first after a login or a character swap.
+	_apply_minigame_prefs_to_character()
 	if not character_data.has("projected_rank") and _preserved_rank > 0:
 		character_data["projected_rank"] = _preserved_rank
 
@@ -26951,6 +26996,12 @@ func _load_keybinds():
 					music_volume = clampf(float(data["music_volume"]), 0.0, 1.0)
 				if data.has("combat_speed"):
 					combat_speed = clampf(float(data["combat_speed"]), 0.25, 4.0)
+				if data.has("skip_gather_minigame"):
+					pref_skip_gather = bool(data["skip_gather_minigame"])
+				if data.has("skip_craft_minigame"):
+					pref_skip_craft = bool(data["skip_craft_minigame"])
+				if data.has("skip_harvest_minigame"):
+					pref_skip_harvest = bool(data["skip_harvest_minigame"])
 				if data.has("sfx_muted"):
 					sfx_muted = data["sfx_muted"]
 				# v0.9.417 — condensed_combat_log removed; ignore any saved value.
@@ -26983,6 +27034,9 @@ func _save_keybinds():
 	# in practice) so the pace a player chose is still there next session - owner: "remember it
 	# and stay there until they adjust again."
 	save_data["combat_speed"] = combat_speed
+	save_data["skip_gather_minigame"] = pref_skip_gather
+	save_data["skip_craft_minigame"] = pref_skip_craft
+	save_data["skip_harvest_minigame"] = pref_skip_harvest
 	save_data["sfx_muted"] = sfx_muted
 	# v0.9.417 — condensed_combat_log removed; no longer saved.
 	save_data["show_map_legend"] = show_map_legend
@@ -27608,6 +27662,8 @@ func _toggle_skip_craft_minigame():
 	var new_value = not current
 	character_data["skip_craft_minigame"] = new_value
 	send_to_server({"type": "setting_change", "setting": "skip_craft_minigame", "value": new_value})
+	pref_skip_craft = new_value        # remember for the ACCOUNT, not just this character
+	_save_keybinds()
 	_refresh_minigame_skip_toggle_visuals()
 	game_output.clear()
 	if new_value:
@@ -27628,6 +27684,8 @@ func _toggle_skip_gather_minigame():
 	var new_value = not current
 	character_data["skip_gather_minigame"] = new_value
 	send_to_server({"type": "setting_change", "setting": "skip_gather_minigame", "value": new_value})
+	pref_skip_gather = new_value        # remember for the ACCOUNT, not just this character
+	_save_keybinds()
 	_refresh_minigame_skip_toggle_visuals()
 	game_output.clear()
 	if new_value:

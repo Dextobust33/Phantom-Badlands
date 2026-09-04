@@ -88,6 +88,7 @@ func _audit_registry() -> Dictionary:
 		"mcheck": ["anchor values vs what make_monster actually builds", run_monster_check],
 		"forensics": ["why one anchor misses: what spawns there and what kills you", run_level_forensics],
 		"actortag": ["verify every solo combat line is attributed to the right actor", run_actor_tag_probe],
+		"deck": ["does playing a card actually change your hand next round?", run_deck_probe],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -945,6 +946,42 @@ func run_companion_hp_probe():
 ")
 
 var _probe_override: bool = false
+
+func run_deck_probe():
+	"""Does a played card actually produce a DIFFERENT hand next round?
+
+	Reported: "Round 1 test002 had Arcane Surge, Bolt, and Life Leech. I used Bolt. It's back to
+	my turn and I still have the same three options." With a six-card deck and a hand of three,
+	the next hand should be the three you did NOT hold - so a repeat is proof of a fault, not
+	bad luck. Exercises `_consume_card_from_hand` and `_draw_to_hand` directly."""
+	print("
+===== DECK CYCLE =====")
+	var view := {
+		"combat_hand": [],
+		"combat_deck": ["a", "b", "c", "d", "e", "f"],
+		"combat_discard": [],
+		"combat_hand_size": 3,
+	}
+	combat_mgr._draw_to_hand(view)
+	var h1: Array = (view["combat_hand"] as Array).duplicate()
+	h1.sort()
+	print("  round 1 hand: %s   (deck %d, discard %d)" % [str(h1), (view["combat_deck"] as Array).size(), (view["combat_discard"] as Array).size()])
+	var played := String(view["combat_hand"][0])
+	combat_mgr._consume_card_from_hand(view, played)
+	var h2: Array = (view["combat_hand"] as Array).duplicate()
+	h2.sort()
+	print("  played '%s' -> round 2 hand: %s   (deck %d, discard %d)" % [played, str(h2), (view["combat_deck"] as Array).size(), (view["combat_discard"] as Array).size()])
+	var overlap := 0
+	for c in h2:
+		if c in h1:
+			overlap += 1
+	print("  cards carried over from the previous hand: %d of %d" % [overlap, h2.size()])
+	if overlap == 0:
+		print("  PASS — a full six-card deck yields the three you did not hold")
+	else:
+		print("  FAIL — the deck is not cycling as designed")
+	print("=====================================================================
+")
 
 func run_actor_tag_probe():
 	"""Does every solo combat line come back attributed to the right actor?

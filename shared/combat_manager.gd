@@ -10457,6 +10457,12 @@ func _party_redraw_hands(combat: Dictionary) -> void:
 		var st = ms[pid]
 		st["submitted_this_round"] = false
 		st["queued_action"] = {}
+		# Skip anyone whose card already cycled their hand this round — see the note in
+		# _party_sync_view_back. A member who attacked, used an item or fled did NOT cycle, so
+		# they still get the fresh hand the rule promises.
+		if bool(st.get("_hand_cycled_this_round", false)):
+			st["_hand_cycled_this_round"] = false
+			continue
 		# Reuse the solo cycle-and-redraw against this member's stored deck/hand/discard.
 		var view := {
 			"character": combat.characters[pid],
@@ -10568,6 +10574,20 @@ func _party_sync_view_back(combat: Dictionary, pid: int, view: Dictionary) -> vo
 	st["hand"] = view.get("combat_hand", [])
 	st["deck"] = view.get("combat_deck", [])
 	st["discard"] = view.get("combat_discard", [])
+	# 2026-09-04 — a member's action resolves through a SOLO-SHAPED view, so if they played a
+	# card, `process_ability_command` has already run `_consume_card_from_hand`: their whole
+	# hand went to discard and three fresh cards were drawn. `_party_redraw_hands` then cycles
+	# every member again at round end, so a card-playing member cycled TWICE per round.
+	#
+	# With a six-card deck that burns the entire deck every round, which turns each hand into an
+	# independent random draw instead of a deck cycle - and makes "the same three cards again"
+	# possible where it should be impossible. Reported: "Round 1 test002 had Arcane Surge, Bolt,
+	# and Life Leech. I used Bolt. It's back to my turn and I still have the same three
+	# options."
+	#
+	# Correct behaviour with 6 cards and a hand of 3 is that the next hand is the three you did
+	# NOT hold.
+	st["_hand_cycled_this_round"] = true
 	for k in _PARTY_SHARED_MONSTER_KEYS:
 		combat[k] = int(view.get(k, 0))
 	# #76 — persist the per-member solo-shape keys so they survive into the next round.
