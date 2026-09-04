@@ -2580,6 +2580,42 @@ func run_resource_economy_audit():
 	print("=====================================================================
 ")
 
+# === RELATIVE SPECIES POWER (2026-09-04) ===
+# `speciescal` used to correct each species toward an ABSOLUTE win band (48-72%, or 28-48% for
+# apex). That made it fight `refcal`, because a species' win rate depends on two things at once
+# - how strong the species is, and how strong the base curve is - and an absolute target cannot
+# tell them apart:
+#
+#   1. base curve slightly too hard, so the average fight sits at 50% instead of 60%
+#   2. speciescal measures EVERY species low and weakens them all toward their absolute bands
+#   3. the average is now ~68%, too easy
+#   4. refcal strengthens the base to pull it back to 60%
+#   5. every species measures differently again, so all the corrections are stale -> goto 1
+#
+# Both were trying to control the same quantity - average difficulty - from opposite ends.
+# Measured as ringing rather than convergence: consecutive rounds moved L50 68% -> 51% and
+# L5000 53% -> 69%, against a ~4.5pp sampling error.
+#
+# Now each species is corrected toward a RATIO of the mix it belongs to. If the base curve is
+# off, every species moves together, the ratios are unchanged, and speciescal correctly does
+# nothing - it has no opinion about the average. `refcal` owns "how hard is this level";
+# speciescal owns "how much do monsters differ from each other". Independent quantities, so one
+# pass of each settles instead of needing iteration.
+#
+# The comparison is done in LOG-ODDS, not raw ratios. Win rate is bounded at 0 and 1, so a raw
+# ratio distorts badly near the ends - 95% and 100% look nearly identical as ratios though one
+# is plainly worse - and "one band harder" would mean different things depending on where the
+# mix average happened to sit. Log-odds is the standard treatment for a bounded proportion: the
+# offset between apex and normal is a constant shift whatever the mean.
+const LOGIT_EPS := 0.02
+
+static func _logit(p: float) -> float:
+	var q: float = clampf(p, LOGIT_EPS, 1.0 - LOGIT_EPS)
+	return log(q / (1.0 - q))
+
+static func _inv_logit(x: float) -> float:
+	return 1.0 / (1.0 + exp(-x))
+
 func _species_win_at(nm: String, lvl: int, samples: int) -> Dictionary:
 	"""Win rate against ONE species at ONE level, pooled across the three archetypes.
 
@@ -2672,6 +2708,20 @@ func run_species_calibrate():
 			names.append(k)
 	names.sort()
 	print("Calibrating %d species PER LEVEL at %s." % [names.size(), str(levels)])
+	# Apex sits a fixed distance BELOW its mix in log-odds, rather than at a fixed win rate. The
+	# shift is derived from the existing intent (38% against 60%) so the design is unchanged -
+	# only its expression, from an absolute that breaks when the base curve moves to a relative
+	# one that does not.
+	var apex_shift: float = _logit(float(monster_db.APEX_TARGET_WIN)) - _logit(base_target)
+	var band_logit: float = _logit(base_target + base_band) - _logit(base_target)
+	print("Each species is judged against the MIX at its own level, not an absolute win rate.")
+	print("Apex target = mix shifted %.2f in log-odds (38%% vs 60%%); band +/-%.2f." % [apex_shift, band_logit])
+	# Measure the mix once per level, through the real spawn distribution.
+	var mix_at := {}
+	for lvl in levels:
+		var mres := _fight_stats_at(lvl, maxi(20, int(_audit_n / 2.0)))
+		mix_at[lvl] = float(mres.get("win", base_target)) if not mres.is_empty() else base_target
+		print("  mix at L%-6d %.0f%% win" % [lvl, 100.0 * float(mix_at[lvl])])
 	for nm in names:
 		# Apex species aim at a deliberately harder band than their peers.
 		var is_apex: bool = monster_db.is_apex_species(nm)
@@ -2689,6 +2739,11 @@ func run_species_calibrate():
 			# life and an anchor for it would be fiction.
 			if int(species_at[cal_lvl].get(nm, 0)) < 4:
 				continue
+			# The MIX this species belongs to, measured at this level through the real spawn
+			# distribution. This is the reference the species is judged against, instead of a
+			# fixed number that silently encodes an assumption about the base curve.
+			var mix_win: float = float(mix_at.get(cal_lvl, base_target))
+			var target_logit: float = _logit(mix_win) + (apex_shift if is_apex else 0.0)
 			var corr := 1.0
 			var last_win := 0.0
 			var measured := false
@@ -2703,14 +2758,14 @@ func run_species_calibrate():
 					break
 				measured = true
 				last_win = float(r.get("win", 0.0))
-				# Only correct OUTSIDE the band, and only toward its nearest edge.
-				var edge := 0.0
-				if last_win < target - band:
-					edge = target - band
-				elif last_win > target + band:
-					edge = target + band
-				else:
+				# Distance from where this species SHOULD sit relative to its mix, in log-odds.
+				# Inside the band it is left alone - variety is the point, and only outliers are
+				# corrected, toward the nearest edge rather than to the centre.
+				var d: float = _logit(last_win) - target_logit
+				if absf(d) <= band_logit:
 					break
+				var edge_logit: float = target_logit + (band_logit if d > 0.0 else -band_logit)
+				var edge: float = _inv_logit(edge_logit)
 				# Too-hard species (low win) need LESS power; too-easy need more.
 				corr *= pow(clampf(last_win / maxf(0.02, edge), 0.4, 2.5), 0.6)
 				corr = clampf(corr, 0.35, 2.5)
