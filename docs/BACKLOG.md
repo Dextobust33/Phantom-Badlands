@@ -55,6 +55,37 @@ replacing it, plus a help page section and a searchable help topic.
 
 ---
 
+## ⚑ LIVE BUG FIXED — deleting a character stranded its registered companion (2026-09-04)
+
+Owner, from live: *"if a character is deleted while they have a companion in use it doesn't go
+back to sanctuary and free up."*
+
+**Cause:** `_award_baddie_points_on_death` returns every registered companion to its Sanctuary
+slot — and it was the ONLY place that did. `handle_delete_character` removed the character file
+and the account entry and touched nothing else, so the registered slot kept `checked_out_by`
+pointing at a character that no longer existed.
+
+**Why it was unrecoverable by hand, which is what makes it worse than it sounds:** that slot
+could not be checked out again (*"already checked out"*) and could not be unregistered
+(`handle_unregister_companion` refuses with *"currently checked out by <name>"*). From the
+player's side the companion, and the registered slot it occupied, were simply gone.
+
+Fixed in two halves:
+- **Prevent:** the return logic is now `_return_registered_companions(account_id, character)`,
+  called from BOTH the death path and deletion. Extracted rather than copied — a character
+  leaving play is a character leaving play, however it happens
+- **Repair:** `_heal_orphaned_companion_checkouts` frees any registered slot whose holder is not
+  in the account's living character list, keyed on name so a real checkout is never touched. It
+  runs at the Companion Stable and at character-select, so an already-broken account fixes
+  itself on next login without a migration or an admin. Same repair-on-read shape as the
+  threat-quest zero-reward self-heal
+
+Verified against a constructed three-slot case: held-by-living untouched, held-by-deleted freed,
+already-free untouched.
+
+- [ ] **Ships in the next release** — server-side only, so it needs a `deploy_server.sh` run and
+      nothing on the client
+
 ## ⚑ UNRESOLVED — refcal and roles disagree by up to 47pp on the SAME curve (2026-09-04)
 
 **The calibration result of 2026-09-04 must not ship until this is understood.** Two audits

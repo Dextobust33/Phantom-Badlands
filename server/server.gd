@@ -2296,6 +2296,11 @@ func handle_list_characters(peer_id: int):
 			"message": "You must be logged in"
 		})
 		return
+	# Repair orphaned companion checkouts here too — AFTER the auth gate. The character-select
+	# screen is the one surface every player passes through, so an account stuck by the deletion
+	# bug frees itself without having to find a Companion Stable first.
+	if String(peers[peer_id].get("account_id", "")) != "":
+		_heal_orphaned_companion_checkouts(peers[peer_id].account_id)
 
 	var account_id = peers[peer_id].account_id
 	var char_list = persistence.get_account_characters(account_id)
@@ -2942,6 +2947,14 @@ func handle_delete_character(peer_id: int, message: Dictionary):
 			"message": "Cannot delete active character. Select a different one first."
 		})
 		return
+
+	# Hand back anything the Sanctuary is still holding for this character BEFORE the file
+	# goes. Loaded as an object rather than raw JSON so collected_companions / active_companion
+	# / the legacy using_registered_companion flag all read exactly as they do on the death
+	# path, which is the code this now shares.
+	var doomed: Character = persistence.load_character_as_object(account_id, char_name)
+	if doomed != null:
+		_return_registered_companions(account_id, doomed)
 
 	# Delete from persistence
 	var success = persistence.delete_character(account_id, char_name)
@@ -9581,6 +9594,50 @@ func _player_is_at_companion_stable(character) -> bool:
 			return true
 	return false
 
+func _heal_orphaned_companion_checkouts(account_id: String) -> int:
+	"""Free registered slots still checked out by a character that no longer exists.
+
+	2026-09-04 — the SELF-HEAL half of the deletion bug. Preventing it going forward does
+	nothing for accounts already carrying a stuck slot, and a stuck slot is unrecoverable by
+	hand: it cannot be checked out (\"already checked out\") and it cannot be unregistered
+	(\"currently checked out by <name>\"). The companion is simply gone from the player's point
+	of view.
+
+	Same shape as the threat-quest self-heal: repair on read, so an affected account fixes
+	itself the next time it opens the Sanctuary rather than needing a migration pass or an
+	admin. Keyed on the character NAME the checkout recorded, checked against the account's
+	living character list, so a checkout held by a real character is never touched.
+
+	Returns how many slots were freed."""
+	if account_id == "":
+		return 0
+	var house = persistence.get_house(account_id)
+	if house == null or not house.has("registered_companions"):
+		return 0
+	var living := {}
+	for entry in persistence.get_account_characters(account_id):
+		if entry is Dictionary:
+			living[String(entry.get("name", ""))] = true
+		else:
+			living[String(entry)] = true
+	var freed := 0
+	for comp in house.registered_companions.get("companions", []):
+		if not (comp is Dictionary):
+			continue
+		var holder = comp.get("checked_out_by", null)
+		if holder == null:
+			continue
+		if living.has(String(holder)):
+			continue   # a real character still holds it — leave it alone
+		comp.erase("checked_out_by")
+		comp.erase("checkout_time")
+		freed += 1
+		log_message("Freed orphaned companion checkout '%s' (held by deleted character '%s') on account %s" % [
+			String(comp.get("name", "?")), String(holder), account_id])
+	if freed > 0:
+		persistence.save_house(account_id, house)
+	return freed
+
 func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 	"""Snapshot of kennel + collected + registered companions for the stable
 	UI. v0.9.489 added registered for the new Fuse tab; only non-checked-out
@@ -9588,6 +9645,9 @@ func _build_companion_stable_payload(peer_id: int) -> Dictionary:
 	on the active collected entry)."""
 	var character = characters[peer_id]
 	var account_id = peers[peer_id].account_id if peers.has(peer_id) else ""
+	# Repair on read — see _heal_orphaned_companion_checkouts. Runs before the house is read so
+	# the snapshot reflects the freed slots immediately.
+	_heal_orphaned_companion_checkouts(account_id)
 	var house = persistence.get_house(account_id) if account_id != "" else null
 	var kennel: Array = []
 	var registered_pub: Array = []
@@ -15614,7 +15674,22 @@ func _award_baddie_points_on_death(peer_id: int, character: Character, account_i
 
 		print("Awarded %d Baddie Points to account %s from character %s" % [bp, account_id, character.name])
 
-	# Return ALL registered companions to house (per-companion house_slot tracking)
+	_return_registered_companions(account_id, character)
+
+	return bp
+
+func _return_registered_companions(account_id: String, character: Character) -> void:
+	"""Send every registered companion this character holds back to its Sanctuary slot.
+
+	2026-09-04 — extracted from the death path because DELETING a character did not do it.
+	Reported from live: "if a character is deleted while they have a companion in use it
+	doesn't go back to sanctuary and free up." The registered slot kept `checked_out_by`
+	pointing at a character that no longer existed, so the companion could not be checked out
+	again AND could not be unregistered - handle_unregister_companion refuses with "currently
+	checked out by <name>". The slot was simply gone.
+
+	One helper called from both paths rather than a second copy: a character leaving play is a
+	character leaving play, however it happens."""
 	var returned_slots = {}
 	for comp in character.collected_companions:
 		var house_slot = comp.get("house_slot", -1)
@@ -15628,8 +15703,6 @@ func _award_baddie_points_on_death(peer_id: int, character: Character, account_i
 	# Legacy fallback: if old character has flag but no house_slot on companions
 	if returned_slots.is_empty() and character.using_registered_companion and character.registered_companion_slot >= 0:
 		persistence.return_companion_to_house(account_id, character.registered_companion_slot, character.active_companion)
-
-	return bp
 
 func _checkout_companion_for_character(account_id: String, character: Character, slot: int, char_name: String):
 	"""Checkout a registered companion from house kennel and assign to character"""
