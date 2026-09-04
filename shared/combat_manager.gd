@@ -2319,6 +2319,11 @@ func process_attack(combat: Dictionary) -> Dictionary:
 	# === COMPANION ATTACK (independent of player hit/miss) ===
 	if monster.current_hp > 0:
 		var _ca = messages.size()
+		# 2026-09-04 — the monster's HP as it stands after YOUR blow and before the companion's,
+		# so the enemy bar can move on the beat that carries your damage number instead of
+		# waiting for the end of the slice. Reported: "the Enemy HP bar wasn't following when
+		# the damage number popped up but rather a while after."
+		combat["_mhp_after_player"] = int(monster.get("current_hp", 0))
 		_process_companion_attack(combat, messages)
 		_indent_new_messages(messages, _ca, "   ")
 		# The bracket that already existed to INDENT the companion's lines now also names them.
@@ -10926,7 +10931,19 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		e["actor"] = "companion" if (comp_name != "" and String(rm).contains(comp_name)) else "member"
 		e["actor_pid"] = pid
 		out.append(e)
-	# Bars catch up at the end of THIS actor's beat, not at the end of the round.
+	# Bars catch up at each ACTOR BOUNDARY inside this beat, not just at its end.
+	#
+	# This used to attach one snapshot to the final line, so a slice of [your cast, your
+	# companion's attack] left the enemy bar frozen until the COMPANION'S line played - well
+	# after your damage number had appeared and gone. Reported from play. The member's own last
+	# line now carries the HP as it stood after their blow, captured before the companion swung.
+	var _mhp_mid: int = int(combat.get("_mhp_after_player", -1))
+	if _mhp_mid >= 0:
+		for i in range(out.size() - 1, -1, -1):
+			if String(out[i].get("actor", "")) == "member":
+				out[i]["hp"] = {"monster": _mhp_mid}
+				break
+		combat["_mhp_after_player"] = -1
 	out[out.size() - 1]["hp"] = {"monster": int(combat.monster.get("current_hp", 0))}
 	return out
 
