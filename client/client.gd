@@ -1740,6 +1740,25 @@ var _combat_generation: int = 0
 # _combat_fastforward: the player asked to skip the remaining animation.
 # _victory_card_scheduled: the card's 1s reveal timer is in flight but it is not up yet.
 var _combat_fastforward: bool = false
+# === COMBAT SPEED + INPUT GATING (2026-09-04, owner design 2026-09-03) ===
+#
+# Owner: "we shouldn't allow players next actions to go through until the prior one completes
+# all the animations and health bar adjustments... add a little arrow that can be clicked to
+# speed up how fast those animations and adjustments go (and one to slow them down)... remember
+# it and stay there until they adjust again."
+#
+# Gating is the structural retirement of a bug class, not a feature. Every one of these came
+# from the player being allowed to outrun the playback queue: post-combat HP staleness (three
+# failed fixes across five code paths), the stale companion bar, buffs appearing a beat late,
+# the victory card landing over unsettled bars, a stale Continue button over a live battle. The
+# old design raced the animation and patched each place the race was lost.
+#
+# The SPEED CONTROL is what makes gating acceptable - without it this is just "the game is
+# slower now". An impatient player sets 3x; someone learning sets 0.5x.
+const COMBAT_SPEEDS: Array = [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]
+var combat_speed: float = 1.0
+var _combat_speed_label: Label = null
+
 var _victory_card_scheduled: bool = false
 # Frames a scheduled-but-unpresented victory card has been waiting with an empty queue. See
 # the watchdog in _process: this exists so the safety net cannot fire on the same frame a
@@ -2695,6 +2714,39 @@ func _ready():
 			_ss_parent.move_child(ss_btn, music_toggle.get_index())
 			# v0.9.728 — player feedback buttons next to the 📷 button. Post to the same
 			# Discord webhook as the launcher (💡 idea / 🐞 issue), text + optional screenshot.
+			# 2026-09-04 — combat speed, as two arrows and a readout. A VISIBLE control rather
+			# than a hotkey: the project rule is that a new entry point is a button someone can
+			# find, and this one has to be discoverable precisely because it is what makes
+			# input gating tolerable. Owner: "add a little arrow that can be clicked to speed up
+			# how fast those animations and adjustments go (and one to slow them down)."
+			var _spd_box := HBoxContainer.new()
+			_spd_box.name = "CombatSpeedBox"
+			_spd_box.add_theme_constant_override("separation", 0)
+			_spd_box.mouse_filter = Control.MOUSE_FILTER_PASS
+			_spd_box.z_index = 500
+			for _sp in [["CombatSpeedDown", "◀", -1], ["CombatSpeedUp", "▶", 1]]:
+				var _b := Button.new()
+				_b.name = String(_sp[0])
+				_b.text = String(_sp[1])
+				_b.tooltip_text = "Combat animation speed"
+				_b.focus_mode = Control.FOCUS_NONE   # never eat the spacebar (see ss_btn)
+				_b.mouse_filter = Control.MOUSE_FILTER_STOP
+				_b.add_theme_font_size_override("font_size", 11)
+				var _dir := int(_sp[2])
+				if _dir < 0:
+					_b.pressed.connect(func(): _step_combat_speed(-1))
+					_spd_box.add_child(_b)
+					_combat_speed_label = Label.new()
+					_combat_speed_label.name = "CombatSpeedLabel"
+					_combat_speed_label.add_theme_font_size_override("font_size", 11)
+					_combat_speed_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+					_spd_box.add_child(_combat_speed_label)
+				else:
+					_b.pressed.connect(func(): _step_combat_speed(1))
+					_spd_box.add_child(_b)
+			_ss_parent.add_child(_spd_box)
+			_ss_parent.move_child(_spd_box, music_toggle.get_index())
+			_refresh_combat_speed_label()
 			for _fb in [["SuggestIdeaButton", "💡", "Suggest an idea / change", "idea"], ["ReportIssueButton", "🐞", "Report an issue / bug", "issue"]]:
 				var fb_btn := Button.new()
 				fb_btn.name = String(_fb[0])
@@ -10572,6 +10624,9 @@ func trigger_action(index: int):
 
 	match action.action_type:
 		"combat":
+			# Do not let the next action outrun the last one's animation.
+			if _combat_input_gated():
+				return
 			# 2026-09-04 — remember WHICH hotkey played this card, so the buff target picker can
 			# put "Yourself" on the same key: press 2 to play the card in slot 2, press 2 again
 			# to keep it. `index` is the action-bar slot; hand cards occupy slots 5-9, which map
@@ -12630,6 +12685,9 @@ func _on_combat_card_played(card_name: String) -> void:
 	# #76 — one card per party round; ignore clicks once locked in / spectating.
 	# v0.9.739 — same authoritative check as send_combat_command: only act on your turn.
 	if _party_action_blocked():
+		return
+	# Same gate as the hotkey path — a click must not outrun the animation either.
+	if _combat_input_gated():
 		return
 	var path = _get_player_active_path()
 	var info = _get_ability_combat_info(card_name, path)
@@ -15806,6 +15864,46 @@ func _flush_party_notices() -> void:
 	update_player_level()
 	_drain_new_player_modals()
 
+
+func _step_combat_speed(dir: int) -> void:
+	"""Move one notch along COMBAT_SPEEDS and remember it."""
+	var idx := COMBAT_SPEEDS.find(combat_speed)
+	if idx < 0:
+		idx = COMBAT_SPEEDS.find(1.0)
+	idx = clampi(idx + dir, 0, COMBAT_SPEEDS.size() - 1)
+	combat_speed = float(COMBAT_SPEEDS[idx])
+	_refresh_combat_speed_label()
+	_save_keybinds()   # same file the other client settings live in
+	display_game("[color=#8FE3FF]Combat speed: %.2gx[/color]" % combat_speed)
+
+func _refresh_combat_speed_label() -> void:
+	if _combat_speed_label != null and is_instance_valid(_combat_speed_label):
+		_combat_speed_label.text = " %.2gx " % combat_speed
+		# Tint away from neutral so a non-default pace is visible at a glance.
+		var col := "#9A9A9A"
+		if combat_speed > 1.0:
+			col = "#8FE3FF"
+		elif combat_speed < 1.0:
+			col = "#E3C08F"
+		_combat_speed_label.add_theme_color_override("font_color", Color(col))
+
+func _combat_input_gated() -> bool:
+	"""TRUE when a combat action should be refused because the previous one is still playing.
+
+	Deliberately does NOT gate during CATCH-UP. Blocking input was considered and rejected once
+	before (2026-09-01) on the grounds that "it makes every player sit through the animation and
+	lets one slow client hold up the party" - a real objection. When a NEWER round is already
+	waiting, the queue drains at frame rate to catch up, and gating there would let a slow
+	client stall everyone. So the gate covers the case it exists for (do not act while your own
+	blow is still landing) and stands aside for the case that objection was about.
+
+	Fast-forward also lifts it: a player who pressed Continue to skip the animation has said
+	they do not want to wait, and gating them after that would be perverse."""
+	if _combat_fastforward:
+		return false
+	if _combat_queue_pending_rounds() >= 1:
+		return false
+	return _combat_playback_active()
 
 func _combat_playback_active() -> bool:
 	"""TRUE while this client is still animating a co-op round — beats left in the queue, or
@@ -26851,6 +26949,8 @@ func _load_keybinds():
 					sfx_volume = clampf(float(data["sfx_volume"]), 0.0, 1.0)
 				if data.has("music_volume"):
 					music_volume = clampf(float(data["music_volume"]), 0.0, 1.0)
+				if data.has("combat_speed"):
+					combat_speed = clampf(float(data["combat_speed"]), 0.25, 4.0)
 				if data.has("sfx_muted"):
 					sfx_muted = data["sfx_muted"]
 				# v0.9.417 — condensed_combat_log removed; ignore any saved value.
@@ -26879,6 +26979,10 @@ func _save_keybinds():
 	# Include sound volume settings
 	save_data["sfx_volume"] = sfx_volume
 	save_data["music_volume"] = music_volume
+	# Persisted with the other client settings (this file is per install, which is per account
+	# in practice) so the pace a player chose is still there next session - owner: "remember it
+	# and stay there until they adjust again."
+	save_data["combat_speed"] = combat_speed
 	save_data["sfx_muted"] = sfx_muted
 	# v0.9.417 — condensed_combat_log removed; no longer saved.
 	save_data["show_map_legend"] = show_map_legend
@@ -37047,6 +37151,11 @@ func _drain_combat_queue():
 	# and the queue always reaches empty.
 	if _combat_fastforward or _combat_queue_pending_rounds() >= 1:
 		delay = 0.0
+	else:
+		# The player's chosen pace. Applied to the FINAL delay so it scales the party budget and
+		# the per-beat gap alike, and never to the catch-up path above - that one is a
+		# correctness mechanism, not a pace.
+		delay /= maxf(0.1, combat_speed)
 	# Always pause after showing a message — process_buffer() delivers all
 	# combat messages in a single frame, so we must block immediate draining
 	# of the next message that arrives from the same buffer batch.
