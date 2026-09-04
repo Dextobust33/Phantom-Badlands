@@ -37116,7 +37116,12 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = enhanced.replace("Buff", "[pulse freq=1.5 color=#00FFFF ease=-2.0]✦ Buff ✦[/pulse]")
 		enhanced = enhanced.replace("bonus", "[color=#00FF00]▲ bonus ▲[/color]")
 		enhanced = enhanced.replace("Bonus", "[color=#00FF00]▲ Bonus ▲[/color]")
-		enhanced = enhanced.replace("advantage", "[color=#00FFFF]» advantage «[/color]")
+		# 2026-09-04 — do NOT decorate "advantage" inside "disadvantage". A plain substring
+		# replace rendered "Class disadvantage: -15% damage" as "Class dis» advantage «",
+		# which reads as a typo and inverts the meaning of the line: a PENALTY was being
+		# dressed up in the cyan used for a bonus. Reported from a screenshot.
+		if not ("disadvantage" in enhanced or "Disadvantage" in enhanced):
+			enhanced = enhanced.replace("advantage", "[color=#00FFFF]» advantage «[/color]")
 
 	# Poison/DoT gets sickly wave
 	if "POISON" in upper_msg or "VENOM" in upper_msg:

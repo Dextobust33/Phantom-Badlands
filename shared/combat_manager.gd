@@ -766,11 +766,11 @@ func _apply_gear_resource_regen(character: Character, messages: Array) -> void:
 		var actual_regen = character.current_mana - old_mana
 		if actual_regen > 0:
 			if bonuses.get("mana_regen", 0) > 0 and character.get_buff_value("mana_regen") > 0:
-				messages.append("[color=#66CCFF]Arcane power restores %d mana.[/color]" % actual_regen)
+				pass   # mana bar already reads "Mana: 32/771 (+32/turn)" - see the Focus note
 			elif character.get_buff_value("mana_regen") > 0:
-				messages.append("[color=#66CCFF]Enchantment restores %d mana.[/color]" % actual_regen)
+				pass   # mana bar already reads "Mana: 32/771 (+32/turn)" - see the Focus note
 			else:
-				messages.append("[color=#66CCFF]Arcane gear restores %d mana.[/color]" % actual_regen)
+				pass   # mana bar already reads "Mana: 32/771 (+32/turn)" - see the Focus note
 
 	# Combine gear energy_regen with buff energy_regen
 	var energy_regen = bonuses.get("energy_regen", 0) + character.get_buff_value("energy_regen")
@@ -943,6 +943,45 @@ const ACTOR_PLAYER := "member"
 const ACTOR_COMPANION := "companion"
 const ACTOR_MONSTER := "monster"
 const ACTOR_NEUTRAL := "neutral"
+
+# === ONE LINE PER ACTION (2026-09-04, owner design) ===
+#
+# *"Ideally each combat action would take one line of text. The damage number could be hoverable
+# like it is for cards if the player wants to see the extra info that goes into it like class
+# advantages, damage modifiers, etc."*
+#
+# A single Magic Bolt was producing SEVEN log lines - skill enhancement, arcane precision, a
+# chaos-magic roll, a spell crit, class advantage or disadvantage, the cast, the strike - plus a
+# Focus tick and a mana-regen line after it. From a screenshot of one cast in co-op: nine lines
+# for one button press, which is most of why the log reads as a wall.
+#
+# None of that information is wrong, and none of it is deleted here. The modifiers are BUFFERED
+# instead of printed, and folded into a tooltip on the damage number, which is exactly how a
+# card already explains its own formula (`[url]` + the panel's formula popup). The line says
+# what happened; the number says why, on demand.
+func _note_modifier(combat: Dictionary, text: String) -> void:
+	"""Buffer a damage-modifier note instead of spending a log line on it."""
+	if not (combat.get("_mod_notes", null) is Array):
+		combat["_mod_notes"] = []
+	combat["_mod_notes"].append(text)
+
+func _take_modifiers(combat: Dictionary) -> String:
+	"""The buffered notes as one tooltip payload, and clear them for the next action."""
+	var notes: Array = combat.get("_mod_notes", []) if combat.get("_mod_notes", null) is Array else []
+	combat["_mod_notes"] = []
+	if notes.is_empty():
+		return ""
+	return "  ·  ".join(notes)
+
+func _damage_with_detail(combat: Dictionary, amount: int, suffix: String = "damage") -> String:
+	"""A damage number carrying its own breakdown on hover.
+
+	Falls back to a plain number when nothing was buffered, so a hit with no modifiers does not
+	advertise an empty tooltip."""
+	var detail := _take_modifiers(combat)
+	if detail == "":
+		return "%d %s" % [amount, suffix]
+	return "[url=%s]%d %s[/url]" % [detail, amount, suffix]
 
 func _mark_actor(combat: Dictionary, from_index: int, actor: String) -> void:
 	"""Record that messages from `from_index` onward belong to `actor`."""
@@ -1757,12 +1796,20 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 		# process_monster_turn, which has a dozen return paths of two different shapes
 		# ("message" singular and "messages"); everything it produces here is the
 		# monster's by definition, so one bracket covers all of them.
-		_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
-		result.messages.append("[color=#444444]─────────────────────────────[/color]")
+		# 2026-09-04 — only frame the monster's turn if it actually TOOK one. In a party the
+		# monster acts once for the whole group in a separate phase, so process_monster_turn
+		# returns `monster_skipped` here and its message is empty - but the divider/message/
+		# divider block was appended regardless, so every card played in co-op produced
+		# "─────" / a BLANK LINE / "─────". Reported from play: "There is a line with nothing
+		# next to it in the combat log", on a screen where one Magic Bolt cost nine lines.
+		# `monster_skipped` has been returned since party combat shipped and was never once read.
 		var monster_msg = monster_result.get("message", "")
-		result.messages.append(_indent_multiline(monster_msg, "         "))
-		result.messages.append("[color=#444444]─────────────────────────────[/color]")
-		_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
+		if not bool(monster_result.get("monster_skipped", false)) and monster_msg.strip_edges() != "":
+			_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
+			result.messages.append("[color=#444444]─────────────────────────────[/color]")
+			result.messages.append(_indent_multiline(monster_msg, "         "))
+			result.messages.append("[color=#444444]─────────────────────────────[/color]")
+			_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
@@ -3521,11 +3568,13 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 
 		# Monster gets a free attack
 		var monster_result = process_monster_turn(combat)
-		_mark_actor(combat, messages.size(), ACTOR_MONSTER)
-		messages.append("[color=#444444]─────────────────────────────[/color]")
-		messages.append(_indent_multiline(monster_result.message, "         "))
-		messages.append("[color=#444444]─────────────────────────────[/color]")
-		_mark_actor(combat, messages.size(), ACTOR_PLAYER)
+		var _mmsg := String(monster_result.get("message", ""))
+		if not bool(monster_result.get("monster_skipped", false)) and _mmsg.strip_edges() != "":
+			_mark_actor(combat, messages.size(), ACTOR_MONSTER)
+			messages.append("[color=#444444]─────────────────────────────[/color]")
+			messages.append(_indent_multiline(_mmsg, "         "))
+			messages.append("[color=#444444]─────────────────────────────[/color]")
+			_mark_actor(combat, messages.size(), ACTOR_PLAYER)
 
 		# Check if player died
 		if character.current_hp <= 0:
@@ -4164,12 +4213,20 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# process_monster_turn, which has a dozen return paths of two different shapes
 		# ("message" singular and "messages"); everything it produces here is the
 		# monster's by definition, so one bracket covers all of them.
-		_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
-		result.messages.append("[color=#444444]─────────────────────────────[/color]")
+		# 2026-09-04 — only frame the monster's turn if it actually TOOK one. In a party the
+		# monster acts once for the whole group in a separate phase, so process_monster_turn
+		# returns `monster_skipped` here and its message is empty - but the divider/message/
+		# divider block was appended regardless, so every card played in co-op produced
+		# "─────" / a BLANK LINE / "─────". Reported from play: "There is a line with nothing
+		# next to it in the combat log", on a screen where one Magic Bolt cost nine lines.
+		# `monster_skipped` has been returned since party combat shipped and was never once read.
 		var monster_msg = monster_result.get("message", "")
-		result.messages.append(_indent_multiline(monster_msg, "         "))
-		result.messages.append("[color=#444444]─────────────────────────────[/color]")
-		_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
+		if not bool(monster_result.get("monster_skipped", false)) and monster_msg.strip_edges() != "":
+			_mark_actor(combat, result.messages.size(), ACTOR_MONSTER)
+			result.messages.append("[color=#444444]─────────────────────────────[/color]")
+			result.messages.append(_indent_multiline(monster_msg, "         "))
+			result.messages.append("[color=#444444]─────────────────────────────[/color]")
+			_mark_actor(combat, result.messages.size(), ACTOR_PLAYER)
 		# Track damage taken from monster
 		var damage_taken_this_turn = max(0, player_hp_before_monster - combat.character.current_hp)
 		combat["total_damage_taken"] = combat.get("total_damage_taken", 0) + damage_taken_this_turn
@@ -4422,13 +4479,13 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var magic_bolt_skill_bonus = character.get_skill_damage_bonus("magic_bolt")
 			base_damage = apply_skill_damage_bonus(character, "magic_bolt", base_damage, combat)
 			if magic_bolt_skill_bonus > 0:
-				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(magic_bolt_skill_bonus))
+				_note_modifier(combat, "Skill Enhancement +%d%%" % int(magic_bolt_skill_bonus))
 
 			# === CLASS PASSIVE: Wizard Arcane Precision ===
 			# +15% spell damage
 			if passive_effects.has("spell_damage_bonus"):
 				base_damage = int(base_damage * (1.0 + passive_effects.get("spell_damage_bonus", 0)))
-				messages.append("[color=#4169E1]Arcane Precision: +%d%% spell damage![/color]" % int(passive_effects.get("spell_damage_bonus", 0) * 100))
+				_note_modifier(combat, "Arcane Precision +%d%%" % int(passive_effects.get("spell_damage_bonus", 0) * 100))
 
 			# === CLASS PASSIVE: Sorcerer Chaos Magic ===
 			# 25% double damage, 5% backfire
@@ -4451,7 +4508,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
 				if randi() % 100 < spell_crit_chance:
 					base_damage = int(base_damage * 1.5)
-					messages.append("[color=#4169E1]Spell Critical! +50%% damage![/color]")
+					_note_modifier(combat, "Spell Critical +50%")
 
 			# Monster WIS reduces damage (up to 30% reduction)
 			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
@@ -4463,16 +4520,17 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var class_multiplier = _get_class_advantage_multiplier(affinity, character.class_type)
 			pre_mod_dmg = int(pre_mod_dmg * class_multiplier)
 			if class_multiplier > 1.0:
-				messages.append("[color=#00BFFF]Class advantage! +%d%% damage![/color]" % [int((class_multiplier - 1.0) * 100)])
+				_note_modifier(combat, "Class advantage +%d%%" % [int((class_multiplier - 1.0) * 100)])
 			elif class_multiplier < 1.0:
-				messages.append("[color=#FF6666]Class disadvantage: -%d%% damage[/color]" % [int((1.0 - class_multiplier) * 100)])
+				_note_modifier(combat, "Class disadvantage -%d%%" % [int((1.0 - class_multiplier) * 100)])
 
 			var final_damage = apply_damage_variance(apply_ability_damage_modifiers(pre_mod_dmg, character.level, monster))
 
 			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF00FF]You cast Magic Bolt for %d mana![/color]" % actual_mana_cost)
-			messages.append("[color=#00FFFF]The bolt strikes for %d damage![/color]" % final_damage)
+			# ONE line for the whole cast. The modifiers buffered above ride on the number.
+			messages.append("[color=#FF00FF]Magic Bolt[/color] [color=#808080](%d mana)[/color] — [color=#00FFFF]%s[/color]" % [
+				actual_mana_cost, _damage_with_detail(combat, final_damage)])
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_mb > 0 and randi() % 100 < dc_chance_mb:
@@ -4797,7 +4855,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	else:
 		var _newfocus: int = min(FOCUS_MAX, _focus_prior + 1)
 		combat["focus"] = _newfocus
-		messages.append("[color=#5AC8FF]◈ Focus %d/%d (+%d%% spell damage)[/color]" % [_newfocus, FOCUS_MAX, int(_newfocus * FOCUS_DMG_PER * 100)])
+		# 2026-09-04 — NOT a log line. The Focus meter is permanently on screen beside the hand
+		# ("◈ Focus ◇◇◇◇◇  +10% spell dmg") and updates live, so this spent a line of the log
+		# restating what the player is already looking at. Owner's target is one line per
+		# action; bookkeeping that is already visible does not earn one.
+		pass
 
 	# Check if monster died
 	if monster.current_hp <= 0:
@@ -10890,7 +10952,7 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 			msgs[mi]["actor"] = "monster"
 			msgs[mi]["target_pid"] = target_pid
 		msgs[msgs.size() - 1]["hp"] = _party_hp_snapshot(combat, target_pid)
-		_party_check_deaths(combat)   # so the next iteration skips a member who just fell
+		_party_check_deaths(combat, msgs)   # skip a member who just fell — and SAY that they did
 	# #65/#76 — the monster's turn ends the round, so every member's free item use returns
 	# (solo does the same at the top of process_monster_turn, which the member views skip).
 	for _fpid in combat.get("members", []):
@@ -10898,7 +10960,14 @@ func _party_process_monster_phase(combat: Dictionary) -> Array:
 			combat.member_states[_fpid]["free_item_used"] = false
 	return msgs
 
-func _party_check_deaths(combat: Dictionary) -> void:
+func _party_check_deaths(combat: Dictionary, msgs: Array = []) -> void:
+	"""Mark members who have just fallen, and SAY SO if given somewhere to say it.
+
+	2026-09-04 — this silently set `dead` and emitted nothing, so a teammate killed by the
+	monster produced no line in the combat log at all. Reported from play: a member died and
+	"I don't even see that line in the combat". The only notice was the world-chat broadcast
+	and a DEAD label on their portrait. A teammate falling is the most consequential thing that
+	happens in a party fight; it cannot be the one event the log omits."""
 	var ms = combat.member_states
 	for pid in combat.get("members", []):
 		var st = ms.get(pid, {})
@@ -10906,6 +10975,12 @@ func _party_check_deaths(combat: Dictionary) -> void:
 			continue
 		if combat.characters[pid].current_hp <= 0:
 			st["dead"] = true
+			if msgs != null:
+				var _dname := String(combat.characters[pid].name)
+				var _e := _party_entry_auto(pid, _dname, "[color=#FF0000]☠ %s has fallen![/color]" % _dname)
+				_e["actor"] = "monster"     # it was the monster's blow that did it
+				_e["target_pid"] = pid
+				msgs.append(_e)
 
 func party_round_ready(leader_id: int) -> bool:
 	"""True when every living, present member has locked in an action. Exposed so callers can

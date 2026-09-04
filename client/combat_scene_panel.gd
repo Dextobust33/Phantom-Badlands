@@ -520,7 +520,15 @@ func _build_layout() -> void:
 	_log_label.scroll_active = false
 	_log_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_log_label.add_theme_font_size_override("normal_font_size", 13)
-	_log_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# 2026-09-04 — PASS, not IGNORE. Owner's design for the log: one line per action, with the
+	# damage number hoverable for the detail that used to be its own lines ("The damage number
+	# could be hoverable like it is for cards if the player wants to see the extra info that
+	# goes into it like class advantages, damage modifiers, etc."). IGNORE meant the label could
+	# not receive hover at all. PASS keeps clicks falling through to the scroll beneath, so
+	# scrolling and dragging are unaffected.
+	_log_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_log_label.meta_hover_started.connect(func(meta): _show_formula_popup(str(meta)))
+	_log_label.meta_hover_ended.connect(func(_meta): _hide_formula_popup())
 	_log_scroll.add_child(_log_label)
 
 	# Build the picker overlay (initially hidden). Lives in the same
