@@ -997,22 +997,33 @@ func run_gear_power_audit():
 	for lvl in [10, 100, 1000, 5000]:
 		var base_hp: float = 0.0
 		var base_atk: float = 0.0
-		for gear in ["naked", "under", "average", "bis"]:
+		for gear in ["naked", "common", "uncommon", "rare", "epic", "legendary"]:
 			var hp_tot: float = 0.0
 			var atk_tot: float = 0.0
 			var affix_tot: float = 0.0
-			var n := 8
+			# Was a hardcoded 8. Rarity rolls affixes, so a rung's stats are a DISTRIBUTION, and
+			# at n=8 the top three rungs read as inverted (legendary below epic) - which would
+			# have been reported as a defect on the strength of noise.
+			var n := maxi(40, _audit_n)
 			for i in range(n):
 				var ch = make_char(lvl, gear, "Fighter")
 				if gear == "naked":
+					# `equipped`, not `equipment` - the first version of this probe guessed the
+					# field name and errored out, which is the same guess-instead-of-read habit
+					# that has bitten the test fixtures repeatedly today.
 					for slot in SLOTS:
-						ch.equipment[slot] = {}
+						ch.equipped[slot] = {}
 				hp_tot += float(ch.get_total_max_hp())
-				atk_tot += float(ch.get_total_attack()) if ch.has_method("get_total_attack") else float(ch.get_equipment_bonuses().get("attack", 0) + ch.strength)
+				var eb: Dictionary = ch.get_equipment_bonuses()
+				atk_tot += float(int(eb.get("attack", 0)) + int(ch.strength))
 				for slot in SLOTS:
-					var it = ch.equipment.get(slot, {})
-					if it is Dictionary and it.has("affixes"):
-						affix_tot += float((it["affixes"] as Array).size())
+					var it = ch.equipped.get(slot, {})
+					if it is Dictionary and it.has("affixes") and it["affixes"] is Dictionary:
+						# A DICTIONARY of stat -> value, not an array. Testing `is Array` here
+						# reported 0.0 affixes at every level and every rarity, which would have
+						# been read as "gear never rolls affixes" - a fabricated defect from a
+						# probe that was wrong about the shape of the data it was reading.
+						affix_tot += float((it["affixes"] as Dictionary).size())
 			var hp: float = hp_tot / float(n)
 			var atk: float = atk_tot / float(n)
 			if gear == "naked":
@@ -1022,9 +1033,11 @@ func run_gear_power_audit():
 				hp / maxf(1.0, base_hp), atk, atk / maxf(1.0, base_atk), affix_tot / float(n)])
 		print("")
 	_companion_mode = saved_mode
-	print("Read it as: if `under` and `average` sit on the same multiplier, the RUNGS are flat")
-	print("and rarity/tier steps need widening. If both sit near 1.0x, gear contributes almost")
-	print("nothing at all and the base values are the problem.")
+	print("Every rung fills ALL slots at ONE rarity, at the character's own level, so the only")
+	print("variable is rarity. Read the step BETWEEN consecutive rows: if common -> legendary is")
+	print("a small climb, the ladder is flat and the rarity steps want widening. The earlier")
+	print("under/average/bis comparison was NOT a ladder - `average` leaves slots empty by")
+	print("design - and reading it as one produced a wrong answer.")
 	print("=====================================================================\n")
 
 func run_progression_spread():
@@ -1050,11 +1063,17 @@ func run_progression_spread():
 	print("%-8s %-34s %8s %8s %8s" % ["level", "player state", "win", "turns", "cost"])
 	for lvl in [10, 100, 1000, 5000]:
 		var rows: Array = []
+		# The RARITY LADDER, not under/average/bis. Those three are not consecutive rungs -
+		# `average` leaves slots empty by design - so the step between them measured as ~0pp and
+		# was wrongly read as "gear progression is flat". Each row below differs from the one
+		# above it in exactly one variable, so the steps mean something.
 		for st in [
-			{"gear": "under", "comp": "none", "label": "under gear, no companion"},
-			{"gear": "average", "comp": "none", "label": "avg gear, NO companion"},
-			{"gear": "average", "comp": "match", "label": "avg gear + companion  <- reference"},
-			{"gear": "bis", "comp": "match", "label": "best gear + companion"},
+			{"gear": "common", "comp": "none", "label": "common gear, no companion"},
+			{"gear": "uncommon", "comp": "none", "label": "uncommon gear, no companion"},
+			{"gear": "rare", "comp": "none", "label": "rare gear, no companion"},
+			{"gear": "epic", "comp": "none", "label": "epic gear, no companion"},
+			{"gear": "rare", "comp": "match", "label": "rare gear + COMPANION"},
+			{"gear": "legendary", "comp": "match", "label": "legendary gear + companion"},
 		]:
 			_companion_mode = String(st["comp"])
 			var r := _fight_stats_at(lvl, samples, String(st["gear"]))
@@ -1063,15 +1082,16 @@ func run_progression_spread():
 			rows.append({"label": st["label"], "win": float(r["win"]), "turns": float(r["turns"]), "cost": float(r["cost"])})
 			print("%-8d %-34s %7.0f%% %8.1f %7.0f%%" % [lvl, st["label"],
 				100.0 * float(r["win"]), float(r["turns"]), 100.0 * float(r["cost"])])
-		if rows.size() >= 4:
-			# Decompose the gradient. `gear` is the step from no-companion under-geared to
-			# no-companion average-geared; `companion` is the step that adds one at average
-			# gear. If those two are wildly unequal, one axis is carrying the player.
-			var gear_step: float = 100.0 * (rows[1]["win"] - rows[0]["win"])
-			var comp_step: float = 100.0 * (rows[2]["win"] - rows[1]["win"])
-			var bis_step: float = 100.0 * (rows[3]["win"] - rows[2]["win"])
-			print("         gear +%.0fpp | companion +%.0fpp | best-gear +%.0fpp | full spread %.0fpp" % [
-				gear_step, comp_step, bis_step, 100.0 * (rows[3]["win"] - rows[0]["win"])])
+		if rows.size() >= 6:
+			# Three GEAR rungs, each one rarity step, against ONE companion step taken at the
+			# same gear. That is the comparison the owner asked for - whether equipment keeps
+			# pace with companion power - in units that can actually be compared.
+			var s1: float = 100.0 * (rows[1]["win"] - rows[0]["win"])   # common   -> uncommon
+			var s2: float = 100.0 * (rows[2]["win"] - rows[1]["win"])   # uncommon -> rare
+			var s3: float = 100.0 * (rows[3]["win"] - rows[2]["win"])   # rare     -> epic
+			var cs: float = 100.0 * (rows[4]["win"] - rows[2]["win"])   # rare, +companion
+			print("         gear rungs: +%.0f / +%.0f / +%.0fpp   |   ONE companion at rare gear: +%.0fpp" % [s1, s2, s3, cs])
+			print("         (mean gear rung %.0fpp vs companion %.0fpp)" % [(s1 + s2 + s3) / 3.0, cs])
 		print("")
 	_companion_mode = saved_mode
 	print("=====================================================================\n")
@@ -3187,6 +3207,15 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 			glevel = max(1, int(round(level * _gear_avg_level_ratio)))
 		"bis":
 			rarity = "epic"
+		# 2026-09-03 — an explicit RARITY LADDER, every slot filled at one rarity and at the
+		# character's own level. The existing three are not a ladder and comparing them as one
+		# gave a wrong answer: `average` deliberately leaves some slots EMPTY to model a real
+		# player's patchy kit, so it carries fewer affixes than `under` (8.6 vs 18.8 at L10)
+		# and measured as a downgrade. That is a difference of distribution, not of rung, and
+		# reading it as "gear progression is flat" was unsound. These rungs differ in exactly
+		# one variable, which is what a ladder has to do to be measurable.
+		"common", "uncommon", "rare", "epic", "legendary":
+			rarity = gear
 	# #70 CALIBRATION — mirror the REAL drop path: use a TIER-APPROPRIATE base per slot
 	# (weapon_rusty / armor_chain / …) instead of forcing "<slot>_artifact". The old artifact
 	# bases gave artifact-tier stats even at "rare" rarity, inflating pools ~2.2x vs a real
