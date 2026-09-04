@@ -1443,19 +1443,37 @@ func run_reference_calibrate():
 	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% win) =====" % [TARGET_TURNS_NORMAL_SIM, WIN_NORMAL_SIM * 100.0])
 	print("HP steers TURNS (a mean); STR steers WIN RATE (a proportion). Cost is reported, not targeted.")
 	var table: Array = []
-	# The working curve. Seeded from whatever the model currently holds so calibration starts
-	# from the live shape, and updated in place as each anchor is solved - later anchors are
-	# then measured against the already-corrected earlier ones rather than against stale values.
+	# The working curve, seeded from the CURVE FILE'S OWN ANCHORS.
+	#
+	# Seeding it from `make_monster` was tried and is wrong in a way that compounds: that
+	# returns a monster with the species SHAPE already applied, so injecting it back as the
+	# curve makes `generate_monster` apply shape a second time. One round doubled the whole
+	# table - L1 strength 22 -> 38, L100 1752 -> 3594 - and L100 verified at 8% win. The curve
+	# and a spawned monster are different quantities and must not be mixed, which is the same
+	# confusion `_cal_override` embodied.
 	var work: Array = []
-	for seed_lvl in REF_ANCHOR_LEVELS:
-		var sm := make_monster(seed_lvl, "normal", 1.0)
-		work.append({"level": seed_lvl, "hp": int(sm.get("max_hp", 100)), "str": int(sm.get("strength", 10))})
+	var seed_file = FileAccess.open("res://shared/reference_monster_curve.json", FileAccess.READ)
+	if seed_file != null:
+		var seed_parsed = JSON.parse_string(seed_file.get_as_text())
+		seed_file.close()
+		if seed_parsed is Dictionary:
+			for a in seed_parsed.get("anchors", []):
+				work.append({"level": int(a.get("level", 0)), "hp": int(a.get("hp", 100)), "str": int(a.get("str", 10))})
+	if work.size() != REF_ANCHOR_LEVELS.size():
+		# No usable curve to start from. Refuse rather than seed from shaped monsters, which is
+		# the mistake above; a bad seed is silently baked into everything downstream.
+		print("REFCAL ABORTED: reference_monster_curve.json has %d anchors, expected %d." % [work.size(), REF_ANCHOR_LEVELS.size()])
+		return
 	for lvl in REF_ANCHOR_LEVELS:
-		# Seed from the model's current output for this level so calibration starts from
-		# wherever the model is now rather than from an arbitrary guess.
-		var seed_m := make_monster(lvl, "normal", 1.0)
-		var hp := float(seed_m.get("max_hp", 100))
-		var st := float(seed_m.get("strength", 10))
+		# Seed from the WORKING CURVE for this level, not from a spawned monster - the same
+		# shape-doubling trap as above. `work` already carries the corrections made at lower
+		# anchors during this run, so each level starts from the best current estimate.
+		var hp := 100.0
+		var st := 10.0
+		for wrow in work:
+			if int(wrow["level"]) == lvl:
+				hp = float(wrow["hp"])
+				st = float(wrow["str"])
 		var last := {}
 		for pass_i in range(passes):
 			# Write the candidate into the WORKING table and push the whole table into the
