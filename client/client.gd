@@ -19710,6 +19710,7 @@ var _ms_reveals_left: int = 3
 var _ms_phase: String = ""         # "preview" | "hunt" | "choose"
 var _ms_ability_label: String = ""  # kept so the header can always name the card being upgraded
 var _ms_preview_panel: RichTextLabel = null  # hover: the card as it would read once upgraded
+const _MS_HOVER_HINT := "[color=#5A5A66][center]Hover a face-up card to see what it does.[/center][/color]"
 var _ms_grid: GridContainer = null
 var _rank_choice_popup: AcceptDialog = null
 var _rank_choice_pending_ability: String = ""
@@ -19818,7 +19819,12 @@ func _ensure_milestone_overlay() -> void:
 	_ms_preview_panel.custom_minimum_size = Vector2(560, 62)
 	_ms_preview_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ms_preview_panel.add_theme_font_size_override("normal_font_size", 12)
-	_ms_preview_panel.visible = false
+	# ALWAYS visible, never toggled. Showing and hiding it re-flowed the box and shunted the
+	# nine cards up and down as the mouse moved across them - which is especially bad here,
+	# because the player has just been asked to memorise WHERE each card is. The panel holds
+	# its own height from the start and only its text changes.
+	_ms_preview_panel.visible = true
+	_ms_preview_panel.text = _MS_HOVER_HINT
 	box.add_child(_ms_preview_panel)
 	add_child(_milestone_overlay)
 
@@ -19968,11 +19974,12 @@ func _on_milestone_tile_hover(slot: int) -> void:
 	if tradeoff:
 		txt += "\n[color=#E0902A]This one asks something back.[/color]"
 	_ms_preview_panel.text = txt
-	_ms_preview_panel.visible = true
 
 func _on_milestone_tile_unhover() -> void:
+	# Back to the hint rather than to nothing: the panel keeps its height either way, and an
+	# empty box that used to hold text reads as a rendering fault.
 	if _ms_preview_panel != null and is_instance_valid(_ms_preview_panel):
-		_ms_preview_panel.visible = false
+		_ms_preview_panel.text = _MS_HOVER_HINT
 
 func _on_milestone_tile_input(event: InputEvent, slot: int) -> void:
 	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed):
@@ -20014,7 +20021,7 @@ func _send_milestone_choice(upgrade_id: String) -> void:
 	if _ms_grid != null and is_instance_valid(_ms_grid):
 		_ms_grid.visible = false
 	if _ms_preview_panel != null and is_instance_valid(_ms_preview_panel):
-		_ms_preview_panel.visible = false
+		_ms_preview_panel.text = _MS_HOVER_HINT
 	_ms_ability_label = ""
 	_milestone_card_row.visible = true
 

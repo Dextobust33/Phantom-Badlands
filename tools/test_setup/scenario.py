@@ -75,51 +75,50 @@ ALL_TOOLS = [
 def seed_milestones(c):
     """Park this character one use short of a card milestone - on cards it can actually PLAY.
 
-    Two assumptions have already cost playtest runs here. The first version hardcoded
-    power_strike / shield_bash / cleave, which are warrior cards, against a character the
-    roster table claimed was a Fighter but which had since become a Ranger. The second read
-    `equipped_abilities` too, and seeded `cloak` - not a combat card and not in the deck.
+    Three assumptions have cost playtest runs here now. It hardcoded warrior card names against
+    a character the roster table only CLAIMED was a Fighter; it then read `equipped_abilities`
+    and seeded `cloak`, not a combat card; and it seeded the trade-off card on whichever deck
+    entry sorted third, which then had to be randomly drawn into a hand before it could be
+    played - so the trade-off pool went unseen across two sessions.
 
-    So the source of truth is `combat_deck_collection`, which IS the combat deck, and the
-    chosen cards are then written into `equipped_abilities` so they are live in the action bar
-    rather than merely owned. A fixture that seeds a card the player cannot cast tests nothing.
-
-    Thresholds are 10 / 50 / 200 / 1000. Two cards are parked at 9 (next cast = milestone 1,
-    the upside-only pool) and one at 199 (next cast = milestone 3, where trade-offs unlock).
+    Now: two cards fire milestone 1 (the upside-only pool) and EVERY other deck card fires
+    milestone 3 (where trade-offs unlock). Whatever hand comes up, the player reaches the pool
+    they are trying to look at. Thresholds are 10 / 50 / 200 / 1000.
     """
     deck = sorted(str(a) for a in (c.get("combat_deck_collection") or {}).keys()
                   if a and not str(a).startswith("companion_card"))
     if not deck:
         return []
     uses = c.setdefault("ability_uses", {})
-    picks, seeded = [], []
+    seeded = []
     for a in deck[:2]:
         uses[a] = 9
-        picks.append(a)
         seeded.append("%s -> milestone 1" % a)
-    third = deck[2] if len(deck) >= 3 else deck[-1]
-    uses[third] = 199
-    if third not in picks:
-        picks.append(third)
-    seeded.append("%s -> milestone 3 (TRADE-OFFS)" % third)
+    for a in deck[2:]:
+        uses[a] = 199
+        seeded.append("%s -> milestone 3 (TRADE-OFFS)" % a)
+    if len(deck) < 3:
+        # A tiny deck still needs the trade-off case reachable at all.
+        uses[deck[-1]] = 199
+        seeded.append("%s -> milestone 3 (TRADE-OFFS)" % deck[-1])
 
-    # Make them live in the action bar. equipped_abilities is a fixed-length slot list; the
-    # first two slots are reserved (they render empty in the saves), so fill from slot 2 on.
+    # Make the whole deck live in the action bar. The previous version walked for a free slot
+    # and, finding none, overwrote the LAST slot for every remaining pick in turn - so each
+    # write clobbered the one before it and a seeded card silently vanished from the bar
+    # (cleave, observed). Rebuild the tail from the deck instead of patching into it.
     eq = c.get("equipped_abilities")
     if isinstance(eq, list) and eq:
-        slot = 2 if len(eq) > 2 else 0
-        for a in picks:
-            if a in eq:
-                continue
-            while slot < len(eq) and eq[slot] not in ("", None):
-                slot += 1
-            if slot < len(eq):
-                eq[slot] = a
-                slot += 1
-            else:
-                # No free slot - overwrite the last one rather than leave the card unplayable.
-                eq[-1] = a
+        reserved = 2 if len(eq) > 2 else 0     # the first two slots render empty in the saves
+        slots = len(eq) - reserved
+        chosen = deck[:slots]
+        for i, a in enumerate(chosen):
+            eq[reserved + i] = a
+        for j in range(reserved + len(chosen), len(eq)):
+            eq[j] = ""
         c["equipped_abilities"] = eq
+        missing = [a for a in deck if a not in eq]
+        if missing:
+            seeded.append("(deck larger than the bar; not equipped: %s)" % ", ".join(missing))
     return seeded
 
 
