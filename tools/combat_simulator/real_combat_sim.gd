@@ -82,6 +82,8 @@ func _audit_registry() -> Dictionary:
 		"compcap": ["verify the companion ceiling binds AND rarity still pays more", run_companion_cap_probe],
 		"outcomes": ["classify how normal fights END (win / death / escape / stall)", run_outcome_probe],
 		"spread": ["what progression is worth: gear vs companion vs difficulty", run_progression_spread],
+		"gearpower": ["where the gear ladder goes flat: stat contribution per tier", run_gear_power_audit],
+		"offer": ["does a rank-up actually deal a nine-card offer?", run_offer_probe],
 		"refval": ["validate the reference model: predicted vs actual fight length", run_reference_validate],
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
@@ -939,6 +941,91 @@ func run_companion_hp_probe():
 ")
 
 var _probe_override: bool = false
+
+func run_offer_probe():
+	"""Does a rank-up actually DEAL an offer? The reveal never fired in play.
+
+	The client falls back to the legacy three-option popup when `upgrade_offer` arrives empty,
+	so an offer that fails to build is indistinguishable, from the player's seat, from the
+	feature not existing. That is exactly what was reported: cleave, blast and forcefield all
+	produced the old menu."""
+	var CU = load("res://shared/card_upgrades.gd")
+	print("
+===== RANK-UP OFFER PROBE =====")
+	print("%-16s %-10s %6s %6s   %s" % ["ability", "kind", "m1", "m3", "sample of the m3 draw"])
+	for ab in ["cleave", "power_strike", "shield_bash", "blast", "forcefield", "haste",
+			"magic_bolt", "meteor", "ambush", "distract", "analyze", "gambit", "vanish"]:
+		var is_damage: bool = ab in combat_mgr.ABILITY_WEIGHTS or ab in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
+		var is_buff: bool = ab in ["forcefield", "shield", "haste", "iron_skin", "fortify", "rally", "berserk", "war_cry", "overload", "vanish"]
+		var is_control: bool = ab in ["paralyze", "banish", "sabotage", "distract", "analyze"]
+		var kind: String = CU.card_kind(ab, is_damage, is_buff, is_control)
+		var m1: Array = CU.draw_choices(kind, 1, [])
+		var m3: Array = CU.draw_choices(kind, 3, [])
+		var names := ""
+		for u in m3:
+			names += String(u.get("id", "?")) + " "
+		print("%-16s %-10s %6d %6d   %s" % [ab, kind, m1.size(), m3.size(), names.substr(0, 60)])
+	print("")
+	print("OFFER_SIZE=%d  REVEALS_ALLOWED=%d  TRADEOFF_MIN_MILESTONE=%d" % [
+		CU.OFFER_SIZE, CU.REVEALS_ALLOWED, CU.TRADEOFF_MIN_MILESTONE])
+	var total := 0
+	var wired := 0
+	for u in CU.UPGRADES:
+		total += 1
+		if bool(u.get("wired", false)):
+			wired += 1
+	print("UPGRADES: %d total, %d wired (only wired ones may be offered)" % [total, wired])
+	print("=====================================================================
+")
+
+func run_gear_power_audit():
+	"""WHERE does the gear ladder go flat?
+
+	The progression spread showed a gear step (under -> average) worth about 0 percentage
+	points of win rate while a companion is worth +28 to +69. Before changing any numbers it is
+	worth knowing whether gear contributes nothing, or contributes plenty but identically at
+	both tiers - those want opposite fixes. So this reports the raw stat contribution rather
+	than a fight outcome: no combat, no RNG beyond the affix rolls themselves.
+
+	`naked` is the same character with every slot empty, which is the only honest denominator -
+	comparing two geared states to each other cannot show what gear is worth in total."""
+	print("\n===== GEAR POWER — what does each rung of the ladder actually add? =====")
+	print("Same character, same level, only the equipment changes. HP and ATK are totals.")
+	print("%-7s %-10s %9s %9s %9s %9s %9s" % ["level", "gear", "maxHP", "vs naked", "attack", "vs naked", "affixes"])
+	var saved_mode: String = _companion_mode
+	_companion_mode = "none"   # isolate GEAR; the companion is the other axis
+	for lvl in [10, 100, 1000, 5000]:
+		var base_hp: float = 0.0
+		var base_atk: float = 0.0
+		for gear in ["naked", "under", "average", "bis"]:
+			var hp_tot: float = 0.0
+			var atk_tot: float = 0.0
+			var affix_tot: float = 0.0
+			var n := 8
+			for i in range(n):
+				var ch = make_char(lvl, gear, "Fighter")
+				if gear == "naked":
+					for slot in SLOTS:
+						ch.equipment[slot] = {}
+				hp_tot += float(ch.get_total_max_hp())
+				atk_tot += float(ch.get_total_attack()) if ch.has_method("get_total_attack") else float(ch.get_equipment_bonuses().get("attack", 0) + ch.strength)
+				for slot in SLOTS:
+					var it = ch.equipment.get(slot, {})
+					if it is Dictionary and it.has("affixes"):
+						affix_tot += float((it["affixes"] as Array).size())
+			var hp: float = hp_tot / float(n)
+			var atk: float = atk_tot / float(n)
+			if gear == "naked":
+				base_hp = hp
+				base_atk = atk
+			print("%-7d %-10s %9.0f %8.2fx %9.0f %8.2fx %9.1f" % [lvl, gear, hp,
+				hp / maxf(1.0, base_hp), atk, atk / maxf(1.0, base_atk), affix_tot / float(n)])
+		print("")
+	_companion_mode = saved_mode
+	print("Read it as: if `under` and `average` sit on the same multiplier, the RUNGS are flat")
+	print("and rarity/tier steps need widening. If both sit near 1.0x, gear contributes almost")
+	print("nothing at all and the base values are the problem.")
+	print("=====================================================================\n")
 
 func run_progression_spread():
 	"""How much is PROGRESSION worth, and do gear and companion keep pace with each other?

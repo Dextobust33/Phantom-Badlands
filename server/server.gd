@@ -5874,6 +5874,10 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 	# on character.pending_rank_choices so disconnect doesn't drop the choice.
 	if result.has("rank_up_choice_pending"):
 		var rcp = result.rank_up_choice_pending
+		# Marked here so `_flush_pending_rank_choices` does not announce it a second time. Both
+		# read the same queue entry by reference, which is what keeps the two in step.
+		if rcp is Dictionary:
+			rcp["announced"] = true
 		# v0.9.588 — forward variant_offer so the client's 3rd "✦ Imprint" button
 		# actually surfaces. Combat manager builds it correctly (v0.9.549) but
 		# this payload was dropping the field, so the imprint option was invisible
@@ -6716,6 +6720,45 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 			"type": "combat_update",
 			"combat_state": combat_mgr.get_combat_display(peer_id)
 		})
+
+func _flush_pending_rank_choices(peer_id: int) -> void:
+	"""Announce any rank-up choice that got QUEUED without ever being sent to its player.
+
+	`rank_up_choice` was only ever sent from `handle_combat_command`, the SOLO path. A rank-up
+	earned in a PARTY still appended to `character.pending_rank_choices` - the queue is written
+	inside the shared ability code - but nothing forwarded it, so the player saw no popup at
+	all and only met the choice at their next login, through the replay path. That is how the
+	nine-card reveal came to look like it had never been built: the offer was drawn, persisted,
+	and never delivered.
+
+	Announcing from the QUEUE rather than from a round result is deliberate. It does not care
+	which code path produced the rank-up, so party rounds, solo rounds and any future route are
+	covered without each one having to remember to forward it. `announced` keeps a popup from
+	re-opening every round while the player is still deciding."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not (character.pending_rank_choices is Array):
+		return
+	for entry in character.pending_rank_choices:
+		if not (entry is Dictionary):
+			continue
+		if bool(entry.get("announced", false)):
+			continue
+		entry["announced"] = true
+		var ab := str(entry.get("ability", ""))
+		send_to_peer(peer_id, {
+			"type": "rank_up_choice",
+			"ability": ab,
+			"new_rank": int(entry.get("new_rank", 0)),
+			"upgrade_offer": entry.get("upgrade_offer", []),
+			"reveals_allowed": CardUpgradesScript.REVEALS_ALLOWED,
+			"current_effect_rank": int(character.ability_effect_ranks.get(ab, 0)),
+			"current_copy_count": int(character.combat_deck_collection.get(ab, 1)),
+			"variant_offer": entry.get("variant_offer", {}),
+		})
+		return   # one at a time; the rest arrive via `next_pending` as each is resolved
+
 
 func handle_rank_choice_response(peer_id: int, message: Dictionary):
 	"""Slice 6b — apply the player's rank-up choice. Choice is 'copy'
@@ -39583,6 +39626,8 @@ func _cleanup_party_combat_on_disconnect(peer_id: int):
 			# The dropped member was the last one everyone was waiting on — resolve now so
 			# the round can't hang.
 			var _dres = combat_mgr.resolve_party_round(leader_id)
+			for _pid in _party_member_ids(leader_id):
+				_flush_pending_rank_choices(_pid)
 			var _dmsgs: Array = _note + _dres.get("messages", [])
 			var _dentries: Array = _dres.get("message_entries", [])
 			if not _dentries.is_empty():
@@ -40056,6 +40101,9 @@ func _handle_party_combat_use_item(peer_id: int, message: Dictionary):
 		_broadcast_party_update(leader_id, [], false)
 		return
 	var rres = combat_mgr.resolve_party_round(leader_id)
+	# Party rank-ups queue on the character but nothing used to forward them.
+	for _pid in _party_member_ids(leader_id):
+		_flush_pending_rank_choices(_pid)
 	var rmsgs = rres.get("messages", [])
 	var rentries: Array = rres.get("message_entries", [])
 	# v0.9.739 — collect the fallen BEFORE the round is sent (a wipe tears the combat down).

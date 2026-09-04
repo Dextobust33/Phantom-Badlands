@@ -72,6 +72,57 @@ ALL_TOOLS = [
 ]
 
 
+def seed_milestones(c):
+    """Park this character one use short of a card milestone - on cards it can actually PLAY.
+
+    Two assumptions have already cost playtest runs here. The first version hardcoded
+    power_strike / shield_bash / cleave, which are warrior cards, against a character the
+    roster table claimed was a Fighter but which had since become a Ranger. The second read
+    `equipped_abilities` too, and seeded `cloak` - not a combat card and not in the deck.
+
+    So the source of truth is `combat_deck_collection`, which IS the combat deck, and the
+    chosen cards are then written into `equipped_abilities` so they are live in the action bar
+    rather than merely owned. A fixture that seeds a card the player cannot cast tests nothing.
+
+    Thresholds are 10 / 50 / 200 / 1000. Two cards are parked at 9 (next cast = milestone 1,
+    the upside-only pool) and one at 199 (next cast = milestone 3, where trade-offs unlock).
+    """
+    deck = sorted(str(a) for a in (c.get("combat_deck_collection") or {}).keys()
+                  if a and not str(a).startswith("companion_card"))
+    if not deck:
+        return []
+    uses = c.setdefault("ability_uses", {})
+    picks, seeded = [], []
+    for a in deck[:2]:
+        uses[a] = 9
+        picks.append(a)
+        seeded.append("%s -> milestone 1" % a)
+    third = deck[2] if len(deck) >= 3 else deck[-1]
+    uses[third] = 199
+    if third not in picks:
+        picks.append(third)
+    seeded.append("%s -> milestone 3 (TRADE-OFFS)" % third)
+
+    # Make them live in the action bar. equipped_abilities is a fixed-length slot list; the
+    # first two slots are reserved (they render empty in the saves), so fill from slot 2 on.
+    eq = c.get("equipped_abilities")
+    if isinstance(eq, list) and eq:
+        slot = 2 if len(eq) > 2 else 0
+        for a in picks:
+            if a in eq:
+                continue
+            while slot < len(eq) and eq[slot] not in ("", None):
+                slot += 1
+            if slot < len(eq):
+                eq[slot] = a
+                slot += 1
+            else:
+                # No free slot - overwrite the last one rather than leave the card unplayable.
+                eq[-1] = a
+        c["equipped_abilities"] = eq
+    return seeded
+
+
 def give_tools(c):
     have = {str(i.get("subtype", "")) for i in c.get("inventory", []) if i.get("type") == "tool"}
     for t in ALL_TOOLS:
@@ -189,27 +240,25 @@ SCENARIOS = {
         })),
 
     "milestone": dict(
-        doc="TWO characters parked where a fight is findable, each sitting ONE USE from several "
-            "card milestones at once - for the nine-card rank-up reveal (preview 9, shuffle, "
-            "turn over 3, choose 1). Power Strike and Shield Bash are at 9 uses so the next "
-            "cast hits milestone 1 (upside-only pool); Cleave is at 199 so its next cast hits "
-            "milestone 3, where TRADE-OFFS unlock and appear amber. Fight anything and play "
-            "those cards. Two players so the reveal can be seen in a PARTY as well as solo - "
-            "the seeding is applied to both, and a class without these cards simply keeps its "
-            "own thresholds.",
+        doc="TWO characters parked where a fight is findable, each parked ONE USE from several "
+            "card milestones - for the nine-card rank-up reveal (preview 9, shuffle, turn over "
+            "3, choose 1). The cards are chosen from each character's OWN deck at launch, so "
+            "this works whatever class they are; the run prints which cards were seeded. Two "
+            "of them fire milestone 1 (upside-only pool) and one fires milestone 3, where "
+            "TRADE-OFFS unlock and render amber. Fight anything and play the named cards.",
         players=2, use=["test003", "test02"], at=DEFAULT_AT,
         apply=lambda c: (c.update({
-            "current_hp": c.get("max_hp", 100),
-            "current_stamina": c.get("max_stamina", 100),
-            "current_mana": c.get("max_mana", 100),
-            "current_energy": c.get("max_energy", 100),
-        }), c.setdefault("ability_uses", {}).update({
-            # One short of a threshold (10 / 50 / 200 / 1000), so the NEXT cast of each of
-            # these fires a milestone and opens the reveal.
-            "power_strike": 9,
-            "shield_bash": 9,
-            "cleave": 199,
-        }))),
+            # Deliberately unkillable. This scenario tests the rank-up REVEAL, not combat
+            # balance, and the first run of it died partway through a fight before any card
+            # reached its milestone - so the fixture never exercised the thing it exists for.
+            # L5/L10 currently measure 40-41% win against a 60% target, so a level-appropriate
+            # fight is a coin flip at best; a UI test should not be gated on winning one.
+            "max_hp": 500000,
+            "current_hp": 500000,
+            "max_stamina": 9999, "current_stamina": 9999,
+            "max_mana": 9999, "current_mana": 9999,
+            "max_energy": 9999, "current_energy": 9999,
+        }), seed_milestones(c))),
 
     "stocked": dict(
         doc="Give everyone a stack of potions (for the combat item rules).",
@@ -335,10 +384,18 @@ def main():
         c["current_dungeon_id"] = ""
         c["current_dungeon_type"] = ""
         c["saved_dungeon_state"] = {}
-        spec["apply"](c)
+        applied = spec["apply"](c)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(c, f, indent="\t")
-        print("  %-8s hp=%-5s at (%s, %s)" % (cname, c.get("current_hp"), c.get("x"), c.get("y")))
+        print("  %-8s %-8s hp=%-5s at (%s, %s)" % (
+            cname, c.get("class", "?"), c.get("current_hp"), c.get("x"), c.get("y")))
+        # Report what the scenario derived from THIS character rather than assumed about
+        # it. A fixture that silently seeds the wrong cards costs a whole playtest, which
+        # is what a hardcoded warrior card list did to the milestone scenario.
+        notes = applied[-1] if isinstance(applied, tuple) else applied
+        if isinstance(notes, list) and notes:
+            for note in notes:
+                print("           play: %s" % note)
     print("scenario %r applied for %d player(s)." % (name, n))
     return 0
 

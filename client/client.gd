@@ -20052,6 +20052,47 @@ func _on_rank_choice_picked(action: String) -> void:
 		_milestone_overlay.visible = false
 	_rank_choice_pending_ability = ""
 
+func _present_rank_choice(payload: Dictionary) -> void:
+	"""Show a queued rank-up the RIGHT way, whichever route it arrived by.
+
+	There were three routes and only one of them knew about the nine-card reveal: the live
+	`rank_up_choice` message checked for an offer, while the login replay and the `next_pending`
+	hand-off both called the legacy popup directly. So a player who ranked up in a PARTY (where
+	the choice queues silently) and then logged back in was shown the old three-option menu, and
+	the reveal looked to them like it had never been built. It had — the offer was drawn,
+	persisted, and sitting unread in the payload.
+
+	Every route now goes through here, so a future route gets the current behaviour by
+	construction rather than by someone remembering to add the check."""
+	if payload == null or payload.is_empty():
+		return
+	var ability_name := str(payload.get("ability", ""))
+	if ability_name == "":
+		return
+	var offer: Array = payload.get("upgrade_offer", []) if payload.get("upgrade_offer", null) is Array else []
+	if not offer.is_empty():
+		# REVEALS_ALLOWED read from the shared file rather than hardcoded, so the count cannot
+		# drift from the server's own validation of the pick.
+		var allowed := 3
+		var payload_allowed = payload.get("reveals_allowed", null)
+		if payload_allowed != null:
+			allowed = int(payload_allowed)
+		else:
+			var CU = load("res://shared/card_upgrades.gd")
+			if CU != null:
+				allowed = int(CU.REVEALS_ALLOWED)
+		_show_milestone_reveal(ability_name, offer, allowed)
+		return
+	# No offer in the payload — a choice queued before the reveal existed, or an older server.
+	# Render the legacy menu so the player can still act rather than being handed nothing.
+	_show_rank_choice_popup(
+		ability_name,
+		int(payload.get("new_rank", 0)),
+		int(payload.get("current_copy_count", character_data.get("combat_deck_collection", {}).get(ability_name, 1))),
+		int(payload.get("current_effect_rank", character_data.get("ability_effect_ranks", {}).get(ability_name, 0))),
+		payload.get("variant_offer", {}) if payload.get("variant_offer", null) is Dictionary else {}
+	)
+
 func _replay_pending_rank_choice() -> void:
 	"""Slice 6b — when a character logs in / spawns with queued choices (e.g.
 	disconnected mid-combat right after a rank-up), pop the first popup so the
@@ -20062,13 +20103,9 @@ func _replay_pending_rank_choice() -> void:
 	var first = queue[0]
 	if not (first is Dictionary):
 		return
-	var ability_name = str(first.get("ability", ""))
-	if ability_name == "":
-		return
-	var new_rank = int(first.get("new_rank", 0))
-	var copies = int(character_data.get("combat_deck_collection", {}).get(ability_name, 1))
-	var effect_rank = int(character_data.get("ability_effect_ranks", {}).get(ability_name, 0))
-	_show_rank_choice_popup(ability_name, new_rank, copies, effect_rank)
+	# The queued entry carries the offer that was DEALT when the rank-up happened, so a replay
+	# shows the same nine the player was looking at rather than a fresh draw.
+	_present_rank_choice(first)
 
 func _get_ability_cost_text(ability_name: String) -> String:
 	"""Cost text for an ability, read from the SERVER'S OWN cost table.
@@ -23313,18 +23350,10 @@ func handle_server_message(message: Dictionary):
 			# 2026-09-03 — the nine-card reveal, when the server dealt an offer. Falls through to
 			# the legacy three-branch popup otherwise, so a choice queued before this change (or
 			# an older server) still renders something the player can act on rather than nothing.
-			var ruc_offer: Array = message.get("upgrade_offer", []) if message.get("upgrade_offer", null) is Array else []
-			if not ruc_offer.is_empty():
-				_show_milestone_reveal(str(message.get("ability", "")), ruc_offer,
-					int(message.get("reveals_allowed", 3)))
-			else:
-				_show_rank_choice_popup(
-					str(message.get("ability", "")),
-					int(message.get("new_rank", 0)),
-					int(message.get("current_copy_count", 1)),
-					int(message.get("current_effect_rank", 0)),
-					ruc_variant
-				)
+			var ruc_payload: Dictionary = message.duplicate(true)
+			if not ruc_variant.is_empty():
+				ruc_payload["variant_offer"] = ruc_variant
+			_present_rank_choice(ruc_payload)
 
 		"rank_choice_applied":
 			# Slice 6b — server confirmed the choice. Pop the next pending if any
@@ -23367,14 +23396,10 @@ func handle_server_message(message: Dictionary):
 				display_game("[color=#FFA500]Imprint refused: %s[/color]" % v_reason)
 			var next_pending = message.get("next_pending", null)
 			if next_pending != null and typeof(next_pending) == TYPE_DICTIONARY:
-				var np_variant: Dictionary = next_pending.get("variant_offer", {}) if next_pending.has("variant_offer") else {}
-				_show_rank_choice_popup(
-					str(next_pending.get("ability", "")),
-					int(next_pending.get("new_rank", 0)),
-					1,
-					0,
-					np_variant
-				)
+				# Same funnel as the other two routes. This one used to drop the offer AND pass
+				# hardcoded 1/0 for copies and effect rank, so a second queued choice rendered
+				# both the wrong menu and the wrong numbers.
+				_present_rank_choice(next_pending)
 
 		"cull_ability_card_result":
 			# Slice 6c — server processed (or rejected) a cull request.
