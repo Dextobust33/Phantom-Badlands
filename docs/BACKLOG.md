@@ -83,8 +83,24 @@ Fixed in two halves:
 Verified against a constructed three-slot case: held-by-living untouched, held-by-deleted freed,
 already-free untouched.
 
-- [ ] **Ships in the next release** — server-side only, so it needs a `deploy_server.sh` run and
-      nothing on the client
+- [x] **SHIPPED AND VERIFIED ON LIVE 2026-09-04.** Owner: *"The corrupted goblin sprite is now
+      freed up."* Both halves confirmed working — the prevention and the self-heal.
+
+      **A second bug was found by the owner within minutes of the first fix**, and it is the more
+      interesting one: the heal originally asked whether a character of that NAME existed, which
+      is not the same question as whether that character HOLDS the companion. With permadeath,
+      reusing a name is completely normal — the replacement character was also called Dexto, so
+      the orphaned checkout looked legitimate and stayed locked.
+
+      The heal now tests **possession**: the recorded holder must actually reference that
+      registered slot (by `house_slot`) or the companion id, in their active companion or their
+      collected list. A deleted holder fails because it cannot be loaded; a same-named
+      replacement fails because it never checked the companion out. Prefers a logged-in
+      character's in-memory state over the saved file, since a player mid-session is ahead of
+      disk — which is the reported case exactly.
+
+      Worth remembering generally: **a character name is not an identity in a permadeath game.**
+      Anything keyed on name across a delete boundary has this bug latent in it
 
 ## ⚑ UNRESOLVED — refcal and roles disagree by up to 47pp on the SAME curve (2026-09-04)
 
