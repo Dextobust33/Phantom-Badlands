@@ -272,19 +272,42 @@ curve loads, no script errors). See *Recently shipped*.
       state plainly what is being given up
 
 ### 5. Balance work that DEPENDS on step 2
-- [ ] Boss and elite win rates at L1-L50 (7-23% measured fight-to-the-death)
-- [ ] Post-L1000 length slide — turns fall 3.9 → 2.6 against a 5.0 target while cost holds
-- [ ] **Paladin is the worst class at every row measured** (66% normal / 11% L30 elite / 21% L80)
-      despite the largest health bar
+
+**RE-MEASURED 2026-09-04** (`roles`, `classes` — read-only). Every number below this heading was
+taken BEFORE the calibration day, so the owner's question — *"are we identifying if things are
+still needed or stale"* — was the right one to ask here. Three of the six are stale, two are
+live, and one is **worse than recorded**. Judged at ±10pp; 60 fights/cell.
+
+- [x] **STALE — boss/elite at L1-L50 was 7-23%, now 35-56%.** Elite reads 35 / 38 / 56% at
+      L1 / L10 / L50 and boss 35% at both L10 and L50. The band as written is gone.
+      **One cell survives and is worth its own line:** boss at L1 is **12%**, against 35%+ every
+      row above it. A brand-new character meeting a boss is the outlier now, not the range
+- [x] **STALE — the post-L1000 length slide is gone.** Turns were 3.9 → 2.6 against a 5.0
+      target; they now read **5.3 at L1000 and 4.5 at L5000**. Within noise of target
+- [ ] **STILL LIVE, but narrower: Paladin is no longer worst at every row.** Now 48% normal /
+      **8% L30 elite** / 41% L80 (was 66 / 11 / 21). It is beaten by Sage at L80 (31%), so the
+      "worst everywhere" framing is wrong — but **8% at L30 elite is the single worst cell in
+      the whole table**, 12pp below the next warrior. That one row is the item
+- [ ] **WORSE THAN RECORDED — the Trickster elite gap is ~45pp, not ~20pp.** At L80 elite:
+      Thief 80%, Ranger 83%, Ninja 85% against warriors at 60 / 43 / 41 and mages at 38 / 35 /
+      31. This is now the largest single distortion in the class table and it is not a tuning
+      nudge — three archetypes are playing different games. Merged with the old "L80 elite
+      Trickster gap" line, which measured the same thing
+- [ ] **NEW, found by the same run: mages RUN DRY in long fights.** Casts per turn collapses to
+      **0.22-0.26 at L80 elite** for all three mage classes (against 0.77-0.78 for tricksters),
+      i.e. by L80 a mage is auto-attacking through most of a long fight. That is the resource
+      economy showing up as a win-rate problem, and it makes the mage row above a symptom rather
+      than the cause — fix the economy before tuning mage numbers
 - [ ] Trickster health bars are inconsistent **with each other**, not just with other archetypes
-      (L80: Ranger 720, Thief 714, Ninja 1186)
+      (L80: Ranger 720, Thief 714, Ninja 1186). **Not re-measured** — needs a different probe
+      than `classes`, so its status is unknown rather than confirmed
 - [ ] **Magic Bolt is 2.4-2.7x more resource-efficient than every other route in the game** —
       36% of the pool to clear a health bar against 86-110% for everything else (measured
       2026-09-03, `tools/probe/kill_investment.gd`). That is the clearest remaining class
       outlier and it is the same "mage is too efficient" thread that has come back repeatedly.
       Either Magic Bolt's cost rises or its weight falls; do it after step 2
-- [ ] L80 elite Trickster gap, ~20 points above the other archetypes. Trend is right after three
-      changes; wants a playtest rather than a fourth tune against a 60-fight sample
+- [x] **MERGED upward** into the re-measured Trickster line — same measurement, and the gap has
+      grown from ~20pp to ~45pp rather than closing
 
 ### 6. Item 7 — new player experience
 Already placed and sliced. Slice 1 depends on the gear decisions in step 4.
