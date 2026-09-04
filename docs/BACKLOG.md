@@ -2658,6 +2658,94 @@ and `MITIGATION_VULN_CEIL` guarantees a reckless build cannot be deleted in one 
 - [ ] The pool is deliberately shallow for CONTROL cards (5 → 10). More control-flavoured
       upgrades would help, but only ones that map to mechanics that exist
 
+## ⚑ THE ABILITY GAP — the fix existed and was being deleted every run (2026-09-04)
+
+L100 sat at 43% win against a 60% target and would not respond to tuning. Forensics on what
+spawns there found the cause is not stats at all: **Jabberwock wins 16% and Demon Lord 82% on
+near-identical stat lines** (str 1869 / hp 19470 against 1645 / 16606). Lethality is dominated
+by ABILITIES, which the reference model does not size — it tunes HP and strength only. The
+spread is systemic, not an L100 quirk: L50 runs 13%-100%, L250 runs 9%-100%.
+
+Two attempts to fix it by rebalancing the calibration axes were measured and REJECTED — each
+fixed L100 and broke several other levels (13/14 rows on target became 10/14, then 8/14). Both
+are recorded in `real_combat_sim.gd` so they are not retried.
+
+**The actual fix already existed.** `species_power` measures each species' REAL win rate and
+corrects it toward a band, and `monster_database._species_shape` reads it. It was absent from
+the curve file because **refcal rewrote the file carrying forward only an allow-list of keys**,
+so every refcal run silently destroyed it. That is the same defect twice: refcal once emitted
+only `anchors` and destroyed a rolecal calibration, was fixed by naming `role_multipliers`, and
+then wiped `species_power` from the day that key was added. refcal now preserves the whole
+document and overwrites only its own three fields, so a future key survives by construction.
+
+Result with it live — **every anchor within 6 points of target, 13 of 14 within 5**, and L100
+at 65% without touching the axes:
+
+    L1 57  L2 60  L3 57  L5 64  L10 63  L25 57  L50 63  L100 65
+    L250 66  L500 63  L1000 58  L2500 60  L5000 61  L10000 62
+
+**The design it restores is the one the owner asked for**: variety kept, difficulty rewarded.
+Normal species calibrate to a 48-72% band; APEX species are held to a deliberately HARDER
+28-48% band and paid 2.0x XP and 3x drop chance for it. Owner 2026-09-04: *"That proportion
+seems fair."* What it removes is the arbitrary case — Cerberus (39%), Ancient Dragon (41%) and
+Gryphon (32%) were as punishing as apex monsters while receiving none of the apex reward — and
+the opposite failure, species sitting at 92% win.
+
+- [ ] Coverage check: speciescal calibrated 29 species "that actually spawn at L50/L250/L1000".
+      Confirm nothing that spawns only at other levels is missed
+- [ ] Re-run `speciescal` after any player-power change, like refcal and rolecal. It is now part
+      of the calibration chain, not a one-off
+
+---
+
+## ⚑ THE COMPANION SPINE — one arc, ordered so nothing gets built twice (owner 2026-09-04)
+
+Owner direction: rewards from dangerous monsters should **build on the theme** rather than being
+generic loot, and the theme is *companions* — *"whatever drops we introduce go towards building
+on our theme, having something to do with our companions"* — heading toward a world that feels
+lived in: **NPCs, wandering travelers, recruitable party members, and companions living around
+the posts trying to survive.**
+
+Four separate places were already circling this (6b companion power, 12b the Phantom's outward
+loop, 16's sinks and living world, and the apex reward question raised on 2026-09-04). They are
+listed here as ONE ordered arc because they share machinery, and building them out of order is
+how the Dungeon Atlas became three tasks in three places.
+
+**The ordering, and why each step has to come before the next:**
+
+1. **6b — companion power & levelling** *(already numbered; do it first)*. Everything below
+   grants, spends or trades companion strength. Design a drop that strengthens a companion
+   before the companion power model is settled and the drop gets re-tuned the day 6b lands.
+   The 2026-09-04 companion work (sqrt growth, the variant multiplier passing through exactly)
+   settled the SHAPE of companion power; 6b is what it should feel like to grow one.
+2. **Companion-themed drops from dangerous monsters** ← NEW, the thing that prompted this.
+   Needs 6b (what a companion upgrade IS) and the apex/species calibration (which monsters are
+   genuinely dangerous — done 2026-09-04). Ideas to design then, not now: reagents that feed a
+   companion, imprint-bearing remains from an apex kill, egg variants only that species drops.
+3. **16's sinks** — shops, breeders, trainers, fusers, companion tasks. These SPEND what step 2
+   grants, so the currency has to exist first or the sinks are designed against a guess.
+4. **Living world: NPCs and companions around the posts** ← expanded. Post-dwelling companions
+   and the people who tend them are the natural home for step 3's shops and trainers. Doing 3
+   first means the NPC is a shopfront for a system that already works, rather than two systems
+   invented at once.
+5. **Wandering travelers** ← NEW. The same NPC representation as step 4, given movement and an
+   encounter. Cheap AFTER 4, a second system if built before it.
+6. **Recruitable party members** ← NEW, and deliberately LAST of the arc. It needs the party
+   machinery (items 1 and 2), an NPC representation (4), and combat AI able to choose actions.
+   The party server pass is done and the AI already exists in a form — `real_combat_sim.gd`
+   drives real characters through real combat with per-class policies, which is the same problem.
+   Built before 4, it invents its own NPC; built after, it borrows one.
+
+**What this arc must NOT do:** invent a second companion progression alongside 6b, or a second
+NPC type alongside the trading-post traders that already exist. Both already have a home.
+
+- [ ] Fold into the arc rather than tracking separately: 12b's *"egg/companion investment"*
+      strand, and 16's *"sinks"* and *"living world"* bullets (left in place below, cross-marked)
+- [ ] The drops do NOT need designing now. Owner: *"they just need added to the to do list so we
+      can do them when appropriate."*
+
+---
+
 ## Dungeon arc
 
 *`docs/design/dungeon_revamp.md` is the master design. Hard constraint throughout: every dungeon
@@ -2913,7 +3001,10 @@ so the companion activities are designed once, not twice.*
 - [ ] Real **sinks for excess eggs and companions** *(design these WITH 14 — the Sanctuary is
       the natural home for several, and 13 decides what they should feel like)*: shops that buy and sell, breeders, trainers,
       fusers (fusion exists — expand), companion **tasks**
+      — **ordered as step 3 of THE COMPANION SPINE**; see that section for why it follows the drops
 - [ ] Living world: rework posts, companions around posts, threats woven in
+      — **step 4 of THE COMPANION SPINE**, and expanded there with NPCs, wandering travelers and
+      recruitable party members, which were not tracked anywhere before 2026-09-04
 
 ### 17. Engagement / minigame variety
 - [ ] Prize Shuffle redesign: gathering and crafting slices (combat slice shipped)
