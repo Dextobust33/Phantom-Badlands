@@ -55,6 +55,49 @@ replacing it, plus a help page section and a searchable help topic.
 
 ---
 
+## ⚑ UNRESOLVED — refcal and roles disagree by up to 47pp on the SAME curve (2026-09-04)
+
+**The calibration result of 2026-09-04 must not ship until this is understood.** Two audits
+measure normal-monster win rate at the same levels, on the same curve, with the same three
+classes and comparable sample sizes, and they disagree — increasingly with level:
+
+| level | refcal reports | roles measures | gap |
+|---|---|---|---|
+| L10 | 73% | 66% | 7pp |
+| L50 | 75% | 53% | 22pp |
+| L250 | 56% | 33% | 23pp |
+| L1000 | 56% | 30% | 26pp |
+| L5000 | 67% | 20% | **47pp** |
+
+**What is established:**
+
+- `mcheck` confirms **the anchors are not what `make_monster` builds**, and the error grows with
+  level: at L1 made strength is 24 against an anchor of 37 (−35%); at L50 it is 659 against 461
+  (+43%); at L100, 2767 against 1991 (+39%)
+- `species_power` has **mean 1.436, median 1.300** — not 1.0. Every monster the game builds is
+  on average ~44% stronger than the base anchor. Committed history shows 1.264 before today, so
+  this is **pre-existing and got worse**, not something introduced by the 2026-09-04 work
+- both audits use `make_monster`, the same three classes and comparable n, so the disagreement
+  is **not** sampling, class mix, or monster selection
+
+**The likely cause, stated as a hypothesis and NOT yet proven:** `speciescal` is meant to own
+RATIOS between species while `refcal` owns the ABSOLUTE level, and that separation is what makes
+the chain converge in one pass. A species-power mean of 1.44 means the species layer is also
+moving the absolute — the exact two-layers-one-quantity failure the orthogonality rule exists to
+prevent. The repair would be to normalise `species_power` to mean 1.0 at each level after
+calibrating it, leaving the absolute entirely to `refcal`.
+
+- [ ] **Prove or disprove the hypothesis before changing anything.** The cheap decisive test is
+      to measure normal win rate at L5000 with a fresh independent probe and see which audit is
+      right, rather than assuming `roles` is
+- [ ] If confirmed: normalise `species_power` to mean 1.0 per level, then re-run the chain ONCE
+- [ ] Either way, re-check `mcheck` afterwards — anchors matching what is built is the property
+      that makes the whole model meaningful, and nothing currently asserts it
+
+**Worth noting how it was caught:** by running the independent read-only audit after the
+calibration rather than trusting the calibrator's own report. `refcal` grades its own homework;
+`roles` does not. Any future calibration should be verified this way before it is believed.
+
 ## ⚑ 2026-09-04 — FOUR MORE instrument defects, and what they had in common
 
 A second day of the same lesson, worth recording separately because the tell was different each
