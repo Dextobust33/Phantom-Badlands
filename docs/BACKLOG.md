@@ -3114,6 +3114,35 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
 ---
 
 ## Recently shipped
+- **v0.9.746** — the per-species correction that had been DEAD since it shipped is finally live.
+  `species_power` measures each species' real win rate and pulls the outliers toward a band, and
+  `monster_database` reads it — but refcal rewrote the curve file carrying forward only an
+  allow-list of keys, so every calibration run silently deleted it. Fixed at the cause: refcal
+  now preserves the whole document and overwrites only its own three fields. Also an APEX roster
+  rebuilt around what the NAMES promise (an Ancient Dragon was being tuned as an ordinary fight
+  while a Jabberwock held the hardest band), per-level species anchors instead of one scalar, and
+  the calibration made CONVERGENT — see *the ability gap* and *orthogonal calibration* below
+
+- **v0.9.745** — the early game was too hard for two measurable reasons, both in the tooling.
+  Smoothing used a MEAN in log space, which biases upward on a convex curve and was inflating
+  the freshly-calibrated numbers 25-37% at L5/L10/L50 — eighteen correction passes could never
+  land because nothing they produced survived to be written (median filter now). And the
+  calibrator measured a monster that never spawns: `_cal_override` forced hp/str onto a creature
+  AFTER its species shape was applied, so real spawns were 0.64x the written strength at L1 and
+  1.22x at L100. L1-L50 went 42-47% win to 57-64%
+
+- **v0.9.744** — every DUNGEON BOSS was invisible (all 21: a boss is named independently of its
+  species, so prefix-stripping could never reach the art — found by writing a coverage audit
+  instead of fixing a third single name), chrome buttons were EATING THE SPACEBAR (a focused
+  Godot Button activates on ui_accept, so the report dialog re-opened on every action, the
+  screenshot button saved silently on every Space, and the volume slider ate the arrow keys),
+  the companion/monster REBALANCE (companion passives were unbounded: +1127% max HP, +2275%
+  damage, effectively immunity at high companion level — sqrt growth now, with rarity still
+  paying exactly 1.60x at every level), gear affixes 0/1/2/3/4 -> 1/2/3/4/5 because common gear
+  carried NO affixes and affixes are the only part of an item that scales past L50 (a full
+  common kit won 0% of fights at L1000), the nine-card rank-up reveal actually reaching players,
+  and the party fight that never ended
+
 - **2026-09-02 (site + docs, no client build)** — website refresh live: setting-led copy that
   explains the name, real in-game screenshots, accuracy fixes (Linux support, party of 5,
   deck-driven combat). Setting bible revised to a single cause. Screenshot capture harness added
@@ -3154,3 +3183,43 @@ onboarding, accessibility, input conventions, save/data safety, performance, set
   login sprite offset, relog full-heal fix, 2-client test harness (`tools/test_setup/`)
 - **v0.9.738** — real co-op party combat (shared fight, party cards, per-actor playback)
 - **v0.9.735** — card arc: dungeon-exclusive cards, card market, class roster pass, FPS cap
+
+---
+
+## ⚑ COMBAT LOG — the wall of text, resolved (2026-09-04)
+
+Owner reported it twice, then through five rounds of screenshots. Final shape: **one line per
+actor per round**, folded by the SERVER'S actor tag; each member has their own gutter colour
+with their companion indented in the same colour; the monster carries a heavier marker plus its
+TARGET'S colour; and the damage number is hoverable for the modifier breakdown that used to be
+its own lines.
+
+    one Magic Bolt   9 lines -> 1
+    a Blast round   13 lines -> ~5
+    poison tick     "Poison deals 12 damage! (28 turns remaining)" -> "poison 12 (28t)"
+
+**Research that shaped it** (owner asked for it explicitly): ADOM's community identified this
+exact failure — "in the end game, every time you attack the user is flooded with a huge number
+of messages" — and concluded the answer is FILTERING routine messages, not colouring them
+better. Sil moves damage onto the monster so the log carries events, not numbers. This game
+already had a damage summary card doing that job, so the log was duplicating it.
+
+**The defects found on the way were nearly all WIRING, not mechanism** — worth remembering,
+because each one looked like "the feature doesn't work":
+- the hoverable number was wired to `_log_label`, which is allocated but never rendered; the
+  visible label is `_battle_log_band`, and it was MOUSE_FILTER_IGNORE
+- gutter colours were looked up with `.find(actor_pid)` on an array of member DICTIONARIES, so
+  every member drew the same first colour
+- actor tagging was verified against `process_attack` when the server calls
+  `process_combat_action`, which WRAPS it and appends the monster's lines afterwards
+- the keyword enhancer rewrote text inside BBCode tags, corrupting the tooltip payload
+- `[url]` renders in the theme's link colour, silently overriding the colour the line had set
+- the mouse card path never checked affordability despite a docstring claiming it mirrored the
+  hotkey path, so an unaffordable click was refused by the SERVER after the click was spent
+
+- [ ] **Discard/draw animation.** The hand is shuffled on every draw now (the cycle was always a
+      genuine redraw — small decks just returned the same cards to the same slots), but seeing
+      cards leave and arrive is what will make it read as a deck
+- [ ] **Trickster kit** — Ambush/Exploit/Gambit still carry their older message shapes
+- [ ] **Enemy HP bar lags the damage number.** Playback-queue family, same root as item 7's
+      gating half
