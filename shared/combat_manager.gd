@@ -4618,13 +4618,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
 				if randi() % 100 < spell_crit_chance:
 					base_damage = int(base_damage * 1.5)
-					messages.append("[color=#4169E1]Spell Critical![/color]")
+					_note_modifier(combat, "Spell Critical")
 
 			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF00FF]You cast Blast![/color]")
-			messages.append("[color=#00FFFF]The explosion deals %d damage![/color]" % damage)
+			messages.append("[color=#FF00FF]Blast[/color] — %s" % _damage_with_detail(combat, damage))
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_bl = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_bl > 0 and randi() % 100 < dc_chance_bl:
@@ -4727,13 +4726,12 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
 				if randi() % 100 < spell_crit_chance:
 					base_damage = int(base_damage * 1.5)
-					messages.append("[color=#4169E1]Spell Critical![/color]")
+					_note_modifier(combat, "Spell Critical")
 
 			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FFD700][b]METEOR![/b][/color]")
-			messages.append("[color=#FF4444]A massive meteor crashes down for %d damage![/color]" % damage)
+			messages.append("[color=#FFD700][b]Meteor[/b][/color] — %s" % _damage_with_detail(combat, damage))
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_mt = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_mt > 0 and randi() % 100 < dc_chance_mt:
@@ -5154,13 +5152,12 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var ps_skill_bonus = character.get_skill_damage_bonus("power_strike")
 			base_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg, combat)
 			if ps_skill_bonus > 0:
-				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(ps_skill_bonus))
+				_note_modifier(combat, "Skill Enhancement +%d%%" % int(ps_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF4444]POWER STRIKE![/color]")
-			messages.append("[color=#FFFF00]You deal %d damage![/color]" % damage)
+			messages.append("[color=#FF4444]Power Strike[/color] — %s" % _damage_with_detail(combat, damage))
 
 		"war_cry":
 			# #36 (2026-08-27) — RE-ROLE. War Cry used to write the "damage" buff slot, the
@@ -5214,7 +5211,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 				combat["monster_stunned"] = 1  # Enemy skips next turn
 				combat["cc_resistance"] = cc_resist + 1
 				combat["consec_stuns"] = consec_stuns + 1
-				messages.append("[color=#FFFF00]You deal %d damage and stun the enemy![/color]" % damage)
+				messages.append("[color=#FFFF00]%s and stuns[/color]" % _damage_with_detail(combat, damage))
 			else:
 				combat["consec_stuns"] = 0  # monster shakes it off and will act next turn
 				if consec_stuns >= 2:
@@ -5238,13 +5235,12 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var cleave_skill_bonus = character.get_skill_damage_bonus("cleave")
 			base_dmg = apply_skill_damage_bonus(character, "cleave", base_dmg, combat)
 			if cleave_skill_bonus > 0:
-				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(cleave_skill_bonus))
+				_note_modifier(combat, "Skill Enhancement +%d%%" % int(cleave_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF4444]CLEAVE![/color]")
-			messages.append("[color=#FFFF00]Your massive swing deals %d damage![/color]" % damage)
+			messages.append("[color=#FF4444]Cleave[/color] — %s" % _damage_with_detail(combat, damage))
 			# Apply bleed DoT (20% of STR per round, scaled by spend, for 4 rounds)
 			var bleed_damage = max(1, int(str_stat * 0.20 * variable_fraction))
 			combat["monster_bleed"] = bleed_damage
@@ -5316,7 +5312,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			monster.current_hp = max(0, monster.current_hp)
 			combat["momentum"] = 0  # spent
 			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color] [color=#C8A24A](spent %d Momentum, ×%.0f)[/color]" % [_mom, dev_mult])
-			messages.append("[color=#FFFF00]A catastrophic blow deals %d damage![/color]" % damage)
+			messages.append("[color=#FFFF00]catastrophic blow — %s[/color]" % _damage_with_detail(combat, damage))
 
 		"fortify":
 			# Variable cost (v0.9.263): defense magnitude scales with spend.
