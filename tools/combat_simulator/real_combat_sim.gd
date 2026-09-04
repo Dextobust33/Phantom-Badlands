@@ -71,6 +71,7 @@ func _audit_registry() -> Dictionary:
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
+		"adjudicate": ["refcal vs roles: which win-rate measurement is right?", run_adjudicate_audit],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -330,6 +331,39 @@ const ALL_CLASSES := [
 	["Thief", "trickster"], ["Ranger", "trickster"], ["Ninja", "trickster"],
 ]
 const ALL_RACES := ["Human", "Elf", "Dwarf", "Ogre", "Halfling", "Orc", "Gnome", "Undead"]
+
+func run_adjudicate_audit():
+	"""Which audit is telling the truth about the win rate — refcal, or roles?
+
+	2026-09-04. They disagree by up to 47pp at the same levels on the same curve, and both
+	arrive there through code that LOOKS equivalent: same three classes, same player AI, same
+	win definition, both end their combats, neither truncates the fight. So rather than keep
+	reading, measure both in ONE process, on ONE curve, at an n where noise cannot explain a
+	gap this size.
+
+	`refcal` reports through `_fight_stats_at`; `roles` reports through a `run_fight` loop. If
+	they agree here, the disagreement was process-to-process variance at small n and the curve is
+	fine. If they diverge, it is systematic and the difference is in those two functions."""
+	var N := 90   # per level per method: sigma ~5.3pp at p=0.5, so a 20pp gap cannot be noise
+	print("
+===== WHICH AUDIT IS RIGHT? _fight_stats_at vs run_fight, same process =====")
+	print("%d fights per cell per method. Sampling error ~5pp; anything above ~15pp is systematic." % N)
+	print("%-8s %14s %14s %10s" % ["level", "_fight_stats_at", "run_fight", "gap"])
+	for lvl in [10, 50, 250, 1000, 5000]:
+		var a := _fight_stats_at(lvl, int(N / 3.0))
+		var wins := 0
+		var tot := 0
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			for i in range(int(N / 3.0)):
+				var r = run_fight(lvl, "average", "normal", 1.0, 1.0, 1.0, klass)
+				if r.win:
+					wins += 1
+				tot += 1
+		var wa := 100.0 * float(a.get("win", 0.0))
+		var wb := 100.0 * float(wins) / float(maxi(1, tot))
+		print("%-8d %13.0f%% %13.0f%% %9.0fpp" % [lvl, wa, wb, absf(wa - wb)])
+	print("=====================================================================
+")
 
 func run_gear_sources_audit():
 	"""EVERY stat a piece of equipment can carry, where it comes from, and what gates it.

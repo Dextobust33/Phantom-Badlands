@@ -8808,6 +8808,7 @@ func _start_solo_combat_for(peer_id: int, character, monster: Dictionary, debuff
 			"use_client_art": true,  # Client should render ASCII art locally
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		_push_first_strike_to_log(peer_id, result)
 		# Forward combat start to watchers with monster info for proper art display
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
 		# Handle instant death: monster killed player on first strike before they could act
@@ -8838,6 +8839,7 @@ func _trigger_specific_encounter(peer_id: int, monster_name: String, monster_lev
 			"use_client_art": true,
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		_push_first_strike_to_log(peer_id, result)
 		forward_combat_start_to_watchers(peer_id, result.message, combat_monster_name, combat_bg_color)
 		if result.get("combat_ended", false):
 			_handle_instant_death_at_combat_start(peer_id, combat_monster_name)
@@ -10156,6 +10158,7 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 			"is_dungeon_combat": is_dungeon_combat,  # Pass to client for UI state
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		_push_first_strike_to_log(peer_id, result)
 		# Forward to watchers
 		forward_to_watchers(peer_id, flock_msg)
 		if result.get("combat_ended", false):
@@ -19450,6 +19453,7 @@ func _start_bounty_combat(peer_id: int, quest_id: String, bounty: Dictionary):
 			"use_client_art": true,
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		_push_first_strike_to_log(peer_id, result)
 		if result.get("combat_ended", false):
 			_handle_instant_death_at_combat_start(peer_id, monster_display_name)
 
@@ -19863,6 +19867,24 @@ func forward_combat_start_to_watchers(peer_id: int, message: String, monster_nam
 			"combat_bg_color": combat_bg_color,
 			"use_client_art": true
 		})
+
+func _push_first_strike_to_log(peer_id: int, result: Dictionary) -> void:
+	"""Send an Ambusher's pre-round-one attack down the LIVE combat-log channel.
+
+	2026-09-04, reported from live: a player fighting flock wolves watched their health drop at
+	the start of each fight with nothing in the log to explain it. The narration existed - it
+	went to `game_output`, which sits behind the battle scene during a fight and is wiped
+	outright by the flock continuation's `clear_output`, and to `combat_state.combat_log`, which
+	only the death and victory summaries read. Neither of those is the live log.
+
+	`combat_message` is the channel the live log consumes, so the lines go there like every other
+	combat action, tagged as the monster so they take its gutter colour."""
+	var lines = result.get("first_strike_lines", [])
+	if not (lines is Array):
+		return
+	for line in lines:
+		if String(line).strip_edges() != "":
+			send_combat_message(peer_id, String(line), "monster")
 
 func send_combat_message(peer_id: int, message: String, actor: String = "", dmg: int = 0, mhp: int = -1):
 	"""Send a combat message and forward to watchers.
@@ -32783,6 +32805,7 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 		"use_client_art": true,  # Client renders ASCII art locally
 		"extra_combat_text": result.get("extra_combat_text", "")
 	})
+	_push_first_strike_to_log(peer_id, result)
 	if result.get("combat_ended", false):
 		_handle_instant_death_at_combat_start(peer_id, monster.name)
 
@@ -34860,6 +34883,7 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 		"use_client_art": true,
 		"extra_combat_text": result.get("extra_combat_text", "")
 	})
+	_push_first_strike_to_log(peer_id, result)
 	if result.get("combat_ended", false):
 		_handle_instant_death_at_combat_start(peer_id, monster.name)
 
@@ -36411,6 +36435,7 @@ func _spawn_crucible_boss(peer_id: int):
 			"use_client_art": true,
 			"extra_combat_text": result.get("extra_combat_text", ""),
 		})
+		_push_first_strike_to_log(peer_id, result)
 		if result.get("combat_ended", false):
 			_handle_instant_death_at_combat_start(peer_id, monster.name)
 
@@ -37845,6 +37870,7 @@ func _start_gm_combat(peer_id: int, monster: Dictionary):
 			"use_client_art": true,
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		_push_first_strike_to_log(peer_id, result)
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
 		if result.get("combat_ended", false):
 			_handle_instant_death_at_combat_start(peer_id, monster_name)
@@ -38293,6 +38319,7 @@ func handle_gm_spawnwish(peer_id: int):
 			"use_client_art": true,
 			"extra_combat_text": result.get("extra_combat_text", "")
 		})
+		_push_first_strike_to_log(peer_id, result)
 		forward_combat_start_to_watchers(peer_id, full_message, monster_name, combat_bg_color)
 		if result.get("combat_ended", false):
 			_handle_instant_death_at_combat_start(peer_id, monster_name)

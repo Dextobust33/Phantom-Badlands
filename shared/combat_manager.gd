@@ -1744,6 +1744,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# === MONSTER FIRST STRIKE ===
 	# If monster won initiative, they attack immediately
 	var first_strike_msg = ""
+	var first_strike_lines: Array = []
 	if monster_goes_first:
 		first_strike_msg = "\n[color=#444444]─────────────────────────────[/color]"
 		first_strike_msg += "\n         [color=#FF4444][b]⚔ The %s strikes first! ⚔[/b][/color]" % monster.name
@@ -1759,6 +1760,24 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 			var _fs_line = String(monster_result.get("message", "")).strip_edges()
 			if _fs_line != "":
 				combat_state["combat_log"].append(_fs_line)
+		# 2026-09-04 - ALSO hand the lines back so the caller can push them down the
+		# `combat_message` channel, which is the only one the LIVE battle log reads.
+		#
+		# Reported from live: a player fighting flock wolves watched their health drop at the start
+		# of each fight with NOTHING in the log. An Ambusher monster strikes before round one, and
+		# that narration only ever reached `game_output` - the encounter panel, which sits BEHIND
+		# the battle scene during a fight and is explicitly wiped by the flock continuation's
+		# `clear_output`. The v0.9.713 fix put it on `combat_state.combat_log`, but nothing on the
+		# client renders that into the live log: it feeds the death and victory summaries only. So
+		# the fix was real and landed on a surface nobody was looking at.
+		#
+		# Split into individual lines for the same reason the monster's turn is - one line per
+		# action is what lets the client tag, colour and fold them like everything else.
+		first_strike_lines.append("[color=#FF4444]⚔ The %s strikes first![/color]" % monster.name)
+		for _fsl in String(monster_result.get("message", "")).split("
+"):
+			if String(_fsl).strip_edges() != "":
+				first_strike_lines.append(String(_fsl).strip_edges())
 
 		# Check if player died from first strike
 		if character.current_hp <= 0:
@@ -1771,6 +1790,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 				"success": true,
 				"message": msg + first_strike_msg + "\n[color=#FF0000]You have been defeated![/color]",
 				"extra_combat_text": death_extra,
+				"first_strike_lines": first_strike_lines,
 				"combat_state": get_combat_display(peer_id),
 				"combat_ended": true,
 				"victory": false
@@ -1795,6 +1815,7 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"success": true,
 		"message": msg + first_strike_msg,
 		"extra_combat_text": extra_combat_text,
+		"first_strike_lines": first_strike_lines,
 		"combat_state": get_combat_display(peer_id)
 	}
 
