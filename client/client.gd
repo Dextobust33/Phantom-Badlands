@@ -37095,6 +37095,42 @@ func _toggle_condensed_combat_log():
 		game_output.clear()
 		display_game_settings()
 
+static func _is_word_char(c: String) -> bool:
+	return c.length() > 0 and (c.to_lower() != c.to_upper() or c.is_valid_int())
+
+static func _replace_word(text: String, word: String, repl: String) -> String:
+	"""Replace `word` only where it stands alone — never inside a longer word.
+
+	2026-09-04 — the combat-message enhancer decorates keywords with a plain `replace()`, and
+	that has now produced two player-visible defects from the same cause:
+
+	    "Class disadvantage: -15% damage"  ->  "Class dis» advantage «"
+	    "test02 casts Blast!"              ->  "test02 cast ✧s Blast!"
+
+	The first also inverted a line's meaning, dressing a PENALTY in the cyan used for bonuses.
+	There are 89 of these replacements, so fixing them one at a time would have left the rest
+	waiting to be found by a player. Boundary-checked here instead, once, for all of them.
+
+	Deliberately not a RegEx: this runs on every combat line, and compiling a pattern per
+	keyword per line is a lot of work to avoid two character comparisons."""
+	if word == "" or not text.contains(word):
+		return text
+	var out := ""
+	var i := 0
+	var n := word.length()
+	while i < text.length():
+		if text.substr(i, n) == word:
+			var before_ok: bool = (i == 0) or not _is_word_char(text[i - 1])
+			var after_i: int = i + n
+			var after_ok: bool = (after_i >= text.length()) or not _is_word_char(text[after_i])
+			if before_ok and after_ok:
+				out += repl
+				i = after_i
+				continue
+		out += text[i]
+		i += 1
+	return out
+
 func _enhance_combat_message(msg: String) -> String:
 	"""Add visual flair and BBCode effects to combat messages"""
 	var enhanced = msg
@@ -37135,55 +37171,55 @@ func _enhance_combat_message(msg: String) -> String:
 		# Trigger stronger shake for crits
 		shake_game_output(2.0)
 		# Apply shake to critical text
-		enhanced = enhanced.replace("CRITICAL HIT", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
-		enhanced = enhanced.replace("Critical Hit", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
-		enhanced = enhanced.replace("critical hit", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
-		enhanced = enhanced.replace("Critical!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
-		enhanced = enhanced.replace("CRITICAL!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
+		enhanced = _replace_word(enhanced, "CRITICAL HIT", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Critical Hit", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
+		enhanced = _replace_word(enhanced, "critical hit", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL HIT ★[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Critical!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
+		enhanced = _replace_word(enhanced, "CRITICAL!", "[shake rate=25 level=8][color=#FF0000]★ CRITICAL! ★[/color][/shake]")
 
 	# Devastating/massive damage gets wave effect
 	if "DEVASTAT" in upper_msg or "MASSIVE" in upper_msg:
-		enhanced = enhanced.replace("Devastating", "[wave amp=30 freq=5][color=#FF4500]Devastating[/color][/wave]")
-		enhanced = enhanced.replace("devastating", "[wave amp=30 freq=5][color=#FF4500]devastating[/color][/wave]")
-		enhanced = enhanced.replace("Massive", "[wave amp=30 freq=5][color=#FF4500]Massive[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Devastating", "[wave amp=30 freq=5][color=#FF4500]Devastating[/color][/wave]")
+		enhanced = _replace_word(enhanced, "devastating", "[wave amp=30 freq=5][color=#FF4500]devastating[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Massive", "[wave amp=30 freq=5][color=#FF4500]Massive[/color][/wave]")
 
 	# Monster death gets rainbow effect
 	if "DEFEATED" in upper_msg or "SLAIN" in upper_msg or "DIES" in upper_msg:
-		enhanced = enhanced.replace("defeated", "[rainbow freq=1.0 sat=0.8 val=0.8]defeated[/rainbow]")
-		enhanced = enhanced.replace("Defeated", "[rainbow freq=1.0 sat=0.8 val=0.8]Defeated[/rainbow]")
-		enhanced = enhanced.replace("slain", "[rainbow freq=1.0 sat=0.8 val=0.8]slain[/rainbow]")
-		enhanced = enhanced.replace("dies", "[rainbow freq=1.0 sat=0.8 val=0.8]dies[/rainbow]")
+		enhanced = _replace_word(enhanced, "defeated", "[rainbow freq=1.0 sat=0.8 val=0.8]defeated[/rainbow]")
+		enhanced = _replace_word(enhanced, "Defeated", "[rainbow freq=1.0 sat=0.8 val=0.8]Defeated[/rainbow]")
+		enhanced = _replace_word(enhanced, "slain", "[rainbow freq=1.0 sat=0.8 val=0.8]slain[/rainbow]")
+		enhanced = _replace_word(enhanced, "dies", "[rainbow freq=1.0 sat=0.8 val=0.8]dies[/rainbow]")
 
 	# Healing gets pulse effect
 	if "HEAL" in upper_msg and ("+" in msg or "RESTORE" in upper_msg):
-		enhanced = enhanced.replace("healed", "[pulse freq=2.0 color=#00FF00 ease=-2.0]healed[/pulse]")
-		enhanced = enhanced.replace("Healed", "[pulse freq=2.0 color=#00FF00 ease=-2.0]Healed[/pulse]")
-		enhanced = enhanced.replace("restored", "[pulse freq=2.0 color=#00FF00 ease=-2.0]restored[/pulse]")
+		enhanced = _replace_word(enhanced, "healed", "[pulse freq=2.0 color=#00FF00 ease=-2.0]healed[/pulse]")
+		enhanced = _replace_word(enhanced, "Healed", "[pulse freq=2.0 color=#00FF00 ease=-2.0]Healed[/pulse]")
+		enhanced = _replace_word(enhanced, "restored", "[pulse freq=2.0 color=#00FF00 ease=-2.0]restored[/pulse]")
 
 	# Flee success gets fade effect
 	if "ESCAPED" in upper_msg or "FLED" in upper_msg:
-		enhanced = enhanced.replace("escaped", "[fade start=0 length=10]escaped[/fade]")
-		enhanced = enhanced.replace("Escaped", "[fade start=0 length=10]Escaped[/fade]")
-		enhanced = enhanced.replace("fled", "[fade start=0 length=10]fled[/fade]")
+		enhanced = _replace_word(enhanced, "escaped", "[fade start=0 length=10]escaped[/fade]")
+		enhanced = _replace_word(enhanced, "Escaped", "[fade start=0 length=10]Escaped[/fade]")
+		enhanced = _replace_word(enhanced, "fled", "[fade start=0 length=10]fled[/fade]")
 
 	# Buff activation gets sparkle effect
 	if "BUFF" in upper_msg or "BONUS" in upper_msg or "ADVANTAGE" in upper_msg:
-		enhanced = enhanced.replace("buff", "[pulse freq=1.5 color=#00FFFF ease=-2.0]✦ buff ✦[/pulse]")
-		enhanced = enhanced.replace("Buff", "[pulse freq=1.5 color=#00FFFF ease=-2.0]✦ Buff ✦[/pulse]")
-		enhanced = enhanced.replace("bonus", "[color=#00FF00]▲ bonus ▲[/color]")
-		enhanced = enhanced.replace("Bonus", "[color=#00FF00]▲ Bonus ▲[/color]")
+		enhanced = _replace_word(enhanced, "buff", "[pulse freq=1.5 color=#00FFFF ease=-2.0]✦ buff ✦[/pulse]")
+		enhanced = _replace_word(enhanced, "Buff", "[pulse freq=1.5 color=#00FFFF ease=-2.0]✦ Buff ✦[/pulse]")
+		enhanced = _replace_word(enhanced, "bonus", "[color=#00FF00]▲ bonus ▲[/color]")
+		enhanced = _replace_word(enhanced, "Bonus", "[color=#00FF00]▲ Bonus ▲[/color]")
 		# 2026-09-04 — do NOT decorate "advantage" inside "disadvantage". A plain substring
 		# replace rendered "Class disadvantage: -15% damage" as "Class dis» advantage «",
 		# which reads as a typo and inverts the meaning of the line: a PENALTY was being
 		# dressed up in the cyan used for a bonus. Reported from a screenshot.
 		if not ("disadvantage" in enhanced or "Disadvantage" in enhanced):
-			enhanced = enhanced.replace("advantage", "[color=#00FFFF]» advantage «[/color]")
+			enhanced = _replace_word(enhanced, "advantage", "[color=#00FFFF]» advantage «[/color]")
 
 	# Poison/DoT gets sickly wave
 	if "POISON" in upper_msg or "VENOM" in upper_msg:
-		enhanced = enhanced.replace("poisoned", "[wave amp=10 freq=3][color=#00FF00]☠ poisoned ☠[/color][/wave]")
-		enhanced = enhanced.replace("Poisoned", "[wave amp=10 freq=3][color=#00FF00]☠ Poisoned ☠[/color][/wave]")
-		enhanced = enhanced.replace("poison", "[color=#00FF00]☠ poison[/color]")
+		enhanced = _replace_word(enhanced, "poisoned", "[wave amp=10 freq=3][color=#00FF00]☠ poisoned ☠[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Poisoned", "[wave amp=10 freq=3][color=#00FF00]☠ Poisoned ☠[/color][/wave]")
+		enhanced = _replace_word(enhanced, "poison", "[color=#00FF00]☠ poison[/color]")
 
 	# Monster ability effects
 	# v0.9.639 — Stripped SMP-range decorative emoji (🩸 💀 😠 👁️ 🔓 👻 💨 ⚔️ ⚠️
@@ -37193,117 +37229,117 @@ func _enhance_combat_message(msg: String) -> String:
 	# wave/shake/fade wrappers already provide the visual signal, so the
 	# emoji were decorative noise.
 	if "MULTI" in upper_msg and "STRIKE" in upper_msg:
-		enhanced = enhanced.replace("multi-strike", "[shake rate=15 level=4][color=#FF6347]multi-strike[/color][/shake]")
-		enhanced = enhanced.replace("Multi-Strike", "[shake rate=15 level=4][color=#FF6347]Multi-Strike[/color][/shake]")
+		enhanced = _replace_word(enhanced, "multi-strike", "[shake rate=15 level=4][color=#FF6347]multi-strike[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Multi-Strike", "[shake rate=15 level=4][color=#FF6347]Multi-Strike[/color][/shake]")
 	if "LIFE STEAL" in upper_msg or "LIFESTEAL" in upper_msg:
-		enhanced = enhanced.replace("life steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]life steal[/pulse]")
-		enhanced = enhanced.replace("Life Steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]Life Steal[/pulse]")
-		enhanced = enhanced.replace("steals life", "[pulse freq=2.0 color=#8B0000 ease=-2.0]steals life[/pulse]")
+		enhanced = _replace_word(enhanced, "life steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]life steal[/pulse]")
+		enhanced = _replace_word(enhanced, "Life Steal", "[pulse freq=2.0 color=#8B0000 ease=-2.0]Life Steal[/pulse]")
+		enhanced = _replace_word(enhanced, "steals life", "[pulse freq=2.0 color=#8B0000 ease=-2.0]steals life[/pulse]")
 	if "REGENERAT" in upper_msg:
-		enhanced = enhanced.replace("regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]regenerates[/pulse]")
-		enhanced = enhanced.replace("Regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]Regenerates[/pulse]")
+		enhanced = _replace_word(enhanced, "regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]regenerates[/pulse]")
+		enhanced = _replace_word(enhanced, "Regenerates", "[pulse freq=1.5 color=#00FF00 ease=-2.0]Regenerates[/pulse]")
 	if "REFLECT" in upper_msg:
-		enhanced = enhanced.replace("reflects", "[color=#FFD700]reflects[/color]")
-		enhanced = enhanced.replace("Reflects", "[color=#FFD700]Reflects[/color]")
-		enhanced = enhanced.replace("reflected", "[color=#FFD700]reflected[/color]")
+		enhanced = _replace_word(enhanced, "reflects", "[color=#FFD700]reflects[/color]")
+		enhanced = _replace_word(enhanced, "Reflects", "[color=#FFD700]Reflects[/color]")
+		enhanced = _replace_word(enhanced, "reflected", "[color=#FFD700]reflected[/color]")
 	if "DRAIN" in upper_msg:
-		enhanced = enhanced.replace("drains", "[wave amp=8 freq=4][color=#9932CC]drains[/color][/wave]")
-		enhanced = enhanced.replace("Drains", "[wave amp=8 freq=4][color=#9932CC]Drains[/color][/wave]")
-		enhanced = enhanced.replace("drained", "[wave amp=8 freq=4][color=#9932CC]drained[/color][/wave]")
+		enhanced = _replace_word(enhanced, "drains", "[wave amp=8 freq=4][color=#9932CC]drains[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Drains", "[wave amp=8 freq=4][color=#9932CC]Drains[/color][/wave]")
+		enhanced = _replace_word(enhanced, "drained", "[wave amp=8 freq=4][color=#9932CC]drained[/color][/wave]")
 	if "ENRAGE" in upper_msg:
-		enhanced = enhanced.replace("enrages", "[shake rate=20 level=6][color=#FF0000]enrages[/color][/shake]")
-		enhanced = enhanced.replace("Enrages", "[shake rate=20 level=6][color=#FF0000]Enrages[/color][/shake]")
-		enhanced = enhanced.replace("enraged", "[shake rate=20 level=6][color=#FF0000]enraged[/color][/shake]")
+		enhanced = _replace_word(enhanced, "enrages", "[shake rate=20 level=6][color=#FF0000]enrages[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Enrages", "[shake rate=20 level=6][color=#FF0000]Enrages[/color][/shake]")
+		enhanced = _replace_word(enhanced, "enraged", "[shake rate=20 level=6][color=#FF0000]enraged[/color][/shake]")
 	if "AMBUSH" in upper_msg:
-		enhanced = enhanced.replace("ambushes", "[fade start=0 length=6][color=#FF4500]ambushes[/color][/fade]")
-		enhanced = enhanced.replace("Ambushes", "[fade start=0 length=6][color=#FF4500]Ambushes[/color][/fade]")
+		enhanced = _replace_word(enhanced, "ambushes", "[fade start=0 length=6][color=#FF4500]ambushes[/color][/fade]")
+		enhanced = _replace_word(enhanced, "Ambushes", "[fade start=0 length=6][color=#FF4500]Ambushes[/color][/fade]")
 	if "SUMMON" in upper_msg:
-		enhanced = enhanced.replace("summons", "[wave amp=12 freq=3][color=#9932CC]summons[/color][/wave]")
-		enhanced = enhanced.replace("Summons", "[wave amp=12 freq=3][color=#9932CC]Summons[/color][/wave]")
+		enhanced = _replace_word(enhanced, "summons", "[wave amp=12 freq=3][color=#9932CC]summons[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Summons", "[wave amp=12 freq=3][color=#9932CC]Summons[/color][/wave]")
 	if "CURSE" in upper_msg:
-		enhanced = enhanced.replace("curses", "[wave amp=10 freq=4][color=#800080]curses[/color][/wave]")
-		enhanced = enhanced.replace("Curses", "[wave amp=10 freq=4][color=#800080]Curses[/color][/wave]")
-		enhanced = enhanced.replace("cursed", "[wave amp=10 freq=4][color=#800080]cursed[/color][/wave]")
+		enhanced = _replace_word(enhanced, "curses", "[wave amp=10 freq=4][color=#800080]curses[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Curses", "[wave amp=10 freq=4][color=#800080]Curses[/color][/wave]")
+		enhanced = _replace_word(enhanced, "cursed", "[wave amp=10 freq=4][color=#800080]cursed[/color][/wave]")
 	if "DISARM" in upper_msg:
-		enhanced = enhanced.replace("disarms", "[color=#FFA500]disarms[/color]")
-		enhanced = enhanced.replace("Disarms", "[color=#FFA500]Disarms[/color]")
-		enhanced = enhanced.replace("disarmed", "[color=#FFA500]disarmed[/color]")
+		enhanced = _replace_word(enhanced, "disarms", "[color=#FFA500]disarms[/color]")
+		enhanced = _replace_word(enhanced, "Disarms", "[color=#FFA500]Disarms[/color]")
+		enhanced = _replace_word(enhanced, "disarmed", "[color=#FFA500]disarmed[/color]")
 	if "ETHEREAL" in upper_msg or "PHASE" in upper_msg:
-		enhanced = enhanced.replace("phases", "[fade start=0 length=8][color=#ADD8E6]phases[/color][/fade]")
-		enhanced = enhanced.replace("ethereal", "[fade start=0 length=8][color=#ADD8E6]ethereal[/color][/fade]")
+		enhanced = _replace_word(enhanced, "phases", "[fade start=0 length=8][color=#ADD8E6]phases[/color][/fade]")
+		enhanced = _replace_word(enhanced, "ethereal", "[fade start=0 length=8][color=#ADD8E6]ethereal[/color][/fade]")
 	if "FLEE" in upper_msg and "MONSTER" in upper_msg:
-		enhanced = enhanced.replace("flees", "[fade start=0 length=10][color=#808080]flees[/color][/fade]")
+		enhanced = _replace_word(enhanced, "flees", "[fade start=0 length=10][color=#808080]flees[/color][/fade]")
 	if "DEATH CURSE" in upper_msg:
-		enhanced = enhanced.replace("death curse", "[shake rate=25 level=8][color=#8B0000]DEATH CURSE[/color][/shake]")
-		enhanced = enhanced.replace("Death Curse", "[shake rate=25 level=8][color=#8B0000]DEATH CURSE[/color][/shake]")
+		enhanced = _replace_word(enhanced, "death curse", "[shake rate=25 level=8][color=#8B0000]DEATH CURSE[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Death Curse", "[shake rate=25 level=8][color=#8B0000]DEATH CURSE[/color][/shake]")
 
 	# Ability cast gets magic sparkle
 	if "CAST" in upper_msg or "INVOKE" in upper_msg:
-		enhanced = enhanced.replace("cast", "[color=#9932CC]✧ cast ✧[/color]")
-		enhanced = enhanced.replace("Cast", "[color=#9932CC]✧ Cast ✧[/color]")
-		enhanced = enhanced.replace("invoke", "[color=#9932CC]✧ invoke ✧[/color]")
+		enhanced = _replace_word(enhanced, "cast", "[color=#9932CC]✧ cast ✧[/color]")
+		enhanced = _replace_word(enhanced, "Cast", "[color=#9932CC]✧ Cast ✧[/color]")
+		enhanced = _replace_word(enhanced, "invoke", "[color=#9932CC]✧ invoke ✧[/color]")
 
 	# Shield/defend gets solid border effect
 	if "SHIELD" in upper_msg or "DEFEND" in upper_msg or "BLOCK" in upper_msg:
-		enhanced = enhanced.replace("shield", "[color=#4169E1]『 shield 』[/color]")
-		enhanced = enhanced.replace("Shield", "[color=#4169E1]『 Shield 』[/color]")
-		enhanced = enhanced.replace("blocked", "[color=#4169E1]▣ blocked ▣[/color]")
-		enhanced = enhanced.replace("Blocked", "[color=#4169E1]▣ Blocked ▣[/color]")
+		enhanced = _replace_word(enhanced, "shield", "[color=#4169E1]『 shield 』[/color]")
+		enhanced = _replace_word(enhanced, "Shield", "[color=#4169E1]『 Shield 』[/color]")
+		enhanced = _replace_word(enhanced, "blocked", "[color=#4169E1]▣ blocked ▣[/color]")
+		enhanced = _replace_word(enhanced, "Blocked", "[color=#4169E1]▣ Blocked ▣[/color]")
 
 	# Mage abilities - magical sparkle effects (v0.9.639 — emoji stripped, BBCode wrappers retained)
 	if "FIREBALL" in upper_msg:
-		enhanced = enhanced.replace("Fireball", "[wave amp=15 freq=4][color=#FF4500]Fireball[/color][/wave]")
-		enhanced = enhanced.replace("fireball", "[wave amp=15 freq=4][color=#FF4500]fireball[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Fireball", "[wave amp=15 freq=4][color=#FF4500]Fireball[/color][/wave]")
+		enhanced = _replace_word(enhanced, "fireball", "[wave amp=15 freq=4][color=#FF4500]fireball[/color][/wave]")
 	if "BOLT" in upper_msg or "MANA BOLT" in upper_msg:
-		enhanced = enhanced.replace("Mana Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]Mana Bolt[/pulse]")
-		enhanced = enhanced.replace("Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]Bolt[/pulse]")
+		enhanced = _replace_word(enhanced, "Mana Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]Mana Bolt[/pulse]")
+		enhanced = _replace_word(enhanced, "Bolt", "[pulse freq=3.0 color=#00BFFF ease=-2.0]Bolt[/pulse]")
 	if "MEDITATE" in upper_msg:
-		enhanced = enhanced.replace("Meditate", "[fade start=2 length=8][color=#9932CC]Meditate[/color][/fade]")
-		enhanced = enhanced.replace("meditate", "[fade start=2 length=8][color=#9932CC]meditate[/color][/fade]")
+		enhanced = _replace_word(enhanced, "Meditate", "[fade start=2 length=8][color=#9932CC]Meditate[/color][/fade]")
+		enhanced = _replace_word(enhanced, "meditate", "[fade start=2 length=8][color=#9932CC]meditate[/color][/fade]")
 	if "FORCEFIELD" in upper_msg:
-		enhanced = enhanced.replace("Forcefield", "[pulse freq=2.0 color=#4169E1 ease=-2.0]Forcefield[/pulse]")
+		enhanced = _replace_word(enhanced, "Forcefield", "[pulse freq=2.0 color=#4169E1 ease=-2.0]Forcefield[/pulse]")
 
 	# Warrior abilities - impact effects
 	if "POWER STRIKE" in upper_msg or "POWERSTRIKE" in upper_msg:
-		enhanced = enhanced.replace("Power Strike", "[shake rate=20 level=5][color=#FF6347]Power Strike[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Power Strike", "[shake rate=20 level=5][color=#FF6347]Power Strike[/color][/shake]")
 	if "BERSERK" in upper_msg:
-		enhanced = enhanced.replace("Berserk", "[shake rate=30 level=10][color=#FF0000]BERSERK[/color][/shake]")
-		enhanced = enhanced.replace("berserk", "[shake rate=30 level=10][color=#FF0000]berserk[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Berserk", "[shake rate=30 level=10][color=#FF0000]BERSERK[/color][/shake]")
+		enhanced = _replace_word(enhanced, "berserk", "[shake rate=30 level=10][color=#FF0000]berserk[/color][/shake]")
 	if "FORTIFY" in upper_msg:
-		enhanced = enhanced.replace("Fortify", "[color=#FFD700]Fortify[/color]")
+		enhanced = _replace_word(enhanced, "Fortify", "[color=#FFD700]Fortify[/color]")
 	if "RALLY" in upper_msg:
-		enhanced = enhanced.replace("Rally", "[wave amp=10 freq=3][color=#FFD700]Rally[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Rally", "[wave amp=10 freq=3][color=#FFD700]Rally[/color][/wave]")
 
 	# Trickster abilities - sneaky effects
 	if "BACKSTAB" in upper_msg:
-		enhanced = enhanced.replace("Backstab", "[fade start=0 length=6][color=#00FF00]Backstab[/color][/fade]")
+		enhanced = _replace_word(enhanced, "Backstab", "[fade start=0 length=6][color=#00FF00]Backstab[/color][/fade]")
 	if "SABOTAGE" in upper_msg:
-		enhanced = enhanced.replace("Sabotage", "[wave amp=8 freq=5][color=#32CD32]Sabotage[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Sabotage", "[wave amp=8 freq=5][color=#32CD32]Sabotage[/color][/wave]")
 	if "GAMBIT" in upper_msg:
-		enhanced = enhanced.replace("Gambit", "[rainbow freq=1.5 sat=0.8 val=0.9]Gambit[/rainbow]")
+		enhanced = _replace_word(enhanced, "Gambit", "[rainbow freq=1.5 sat=0.8 val=0.9]Gambit[/rainbow]")
 	if "ANALYZE" in upper_msg:
-		enhanced = enhanced.replace("Analyze", "[pulse freq=2.0 color=#00FFFF ease=-2.0]Analyze[/pulse]")
+		enhanced = _replace_word(enhanced, "Analyze", "[pulse freq=2.0 color=#00FFFF ease=-2.0]Analyze[/pulse]")
 
 	# Universal abilities
 	if "CLOAK" in upper_msg:
-		enhanced = enhanced.replace("Cloak", "[fade start=0 length=10][color=#9932CC]Cloak[/color][/fade]")
-		enhanced = enhanced.replace("cloaked", "[fade start=0 length=10][color=#9932CC]cloaked[/color][/fade]")
+		enhanced = _replace_word(enhanced, "Cloak", "[fade start=0 length=10][color=#9932CC]Cloak[/color][/fade]")
+		enhanced = _replace_word(enhanced, "cloaked", "[fade start=0 length=10][color=#9932CC]cloaked[/color][/fade]")
 
 	# Haste ability - speed effect
 	if "HASTE" in upper_msg:
-		enhanced = enhanced.replace("Haste", "[wave amp=8 freq=6][color=#00FFFF]Haste[/color][/wave]")
-		enhanced = enhanced.replace("haste", "[wave amp=8 freq=6][color=#00FFFF]haste[/color][/wave]")
+		enhanced = _replace_word(enhanced, "Haste", "[wave amp=8 freq=6][color=#00FFFF]Haste[/color][/wave]")
+		enhanced = _replace_word(enhanced, "haste", "[wave amp=8 freq=6][color=#00FFFF]haste[/color][/wave]")
 
 	# Paralyze ability - static effect
 	if "PARALYZE" in upper_msg or "PARALYZ" in upper_msg:
-		enhanced = enhanced.replace("paralyze", "[shake rate=15 level=4][color=#FFFF00]paralyze[/color][/shake]")
-		enhanced = enhanced.replace("Paralyze", "[shake rate=15 level=4][color=#FFFF00]Paralyze[/color][/shake]")
-		enhanced = enhanced.replace("paralyzed", "[shake rate=15 level=4][color=#FFFF00]paralyzed[/color][/shake]")
+		enhanced = _replace_word(enhanced, "paralyze", "[shake rate=15 level=4][color=#FFFF00]paralyze[/color][/shake]")
+		enhanced = _replace_word(enhanced, "Paralyze", "[shake rate=15 level=4][color=#FFFF00]Paralyze[/color][/shake]")
+		enhanced = _replace_word(enhanced, "paralyzed", "[shake rate=15 level=4][color=#FFFF00]paralyzed[/color][/shake]")
 
 	# Banish ability - dimensional effect (✦ U+2726 is BMP, renders reliably)
 	if "BANISH" in upper_msg:
-		enhanced = enhanced.replace("banish", "[fade start=0 length=8][color=#FF00FF]✦ banish ✦[/color][/fade]")
-		enhanced = enhanced.replace("Banish", "[fade start=0 length=8][color=#FF00FF]✦ Banish ✦[/color][/fade]")
+		enhanced = _replace_word(enhanced, "banish", "[fade start=0 length=8][color=#FF00FF]✦ banish ✦[/color][/fade]")
+		enhanced = _replace_word(enhanced, "Banish", "[fade start=0 length=8][color=#FF00FF]✦ Banish ✦[/color][/fade]")
 
 	# Add impact symbols to large damage numbers
 	var regex = RegEx.new()
@@ -37314,11 +37350,11 @@ func _enhance_combat_message(msg: String) -> String:
 		var dmg_int = int(dmg_num)
 		if dmg_int >= 10000:
 			# Massive damage - wave effect on the number
-			enhanced = enhanced.replace(dmg_num + " damage", "[wave amp=20 freq=6][color=#FF0000]" + dmg_num + "[/color][/wave] damage!!!")
+			enhanced = _replace_word(enhanced, dmg_num + " damage", "[wave amp=20 freq=6][color=#FF0000]" + dmg_num + "[/color][/wave] damage!!!")
 		elif dmg_int >= 1000:
-			enhanced = enhanced.replace(dmg_num + " damage", "[color=#FF4500]" + dmg_num + "[/color] damage!!")
+			enhanced = _replace_word(enhanced, dmg_num + " damage", "[color=#FF4500]" + dmg_num + "[/color] damage!!")
 		elif dmg_int >= 100:
-			enhanced = enhanced.replace(dmg_num + " damage", dmg_num + " damage!")
+			enhanced = _replace_word(enhanced, dmg_num + " damage", dmg_num + " damage!")
 
 	return enhanced
 
