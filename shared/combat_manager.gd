@@ -981,7 +981,10 @@ func _damage_with_detail(combat: Dictionary, amount: int, suffix: String = "dama
 	var detail := _take_modifiers(combat)
 	if detail == "":
 		return "%d %s" % [amount, suffix]
-	return "[url=%s]%d %s[/url]" % [detail, amount, suffix]
+	# Only the NUMBER carries the link. Wrapping "1526 damage" underlined the word too, which
+	# reads as a mistake - reported: "I don't like how damage after the number is also
+	# underlined." Bold it as well, so the number is the thing the eye lands on.
+	return "[url=%s][b]%d[/b][/url] %s" % [detail, amount, suffix]
 
 func _mark_actor(combat: Dictionary, from_index: int, actor: String) -> void:
 	"""Record that messages from `from_index` onward belong to `actor`."""
@@ -3853,9 +3856,27 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 			var note := ""
 			match name:
 				"magic_bolt":
-					# A full spend is MAGIC_BOLT_FULL_SPEND_PCT of the pool: _mb_frac = 1.0, so
-					# _mb_eff resolves to 1.0 too. Focus rides on top.
-					dmg *= focus_mult
+					# 2026-09-04 — quote what THIS player can actually cast RIGHT NOW, not a
+					# full spend they may not be able to afford. Owner: "If the player doesn't
+					# have enough resource for a full cast is it still showing the damage for a
+					# full cast or how much it will do if they actually use it with their
+					# current resource? It should do the latter."
+					#
+					# Mirrors the cast path exactly (see the `_mb_ceiling` block): a full spend
+					# is MAGIC_BOLT_FULL_SPEND_PCT of the MAX pool, the spend fraction scales
+					# the damage, and efficiency ramps from MAGIC_BOLT_MIN_EFF to 1.0 with it.
+					# Deriving it a second way here is what made these cards lie before, so the
+					# constants and the shape are the same ones the cast uses.
+					var _p_pool: float = maxf(1.0, float(character.get_total_max_mana()))
+					var _p_ceiling: float = maxf(1.0, _p_pool * MAGIC_BOLT_FULL_SPEND_PCT)
+					var _p_have: float = maxf(0.0, float(character.current_mana))
+					var _p_spend: float = minf(_p_have, _p_ceiling)
+					var _p_raw: float = _p_spend / _p_ceiling
+					var _p_frac: float = _p_raw if _p_raw <= 1.0 else minf(1.5, 1.0 + 0.3 * (sqrt(_p_raw) - 1.0))
+					var _p_eff: float = MAGIC_BOLT_MIN_EFF + (1.0 - MAGIC_BOLT_MIN_EFF) * _p_frac
+					dmg *= _p_frac * _p_eff * focus_mult
+					if _p_have < _p_ceiling:
+						note = "at %d mana" % int(_p_spend)
 				"blast", "frost_nova":
 					dmg *= focus_mult
 				"meteor":

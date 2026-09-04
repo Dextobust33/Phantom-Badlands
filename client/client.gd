@@ -2652,6 +2652,15 @@ func _ready():
 		# Space is the primary action key. The music toggle is a scene node, so it is fixed
 		# here rather than in the .tscn, alongside the buttons it sits with.
 		music_toggle.focus_mode = Control.FOCUS_NONE
+		# 2026-09-04 — the combat log a player is actually reading during a PARTY fight is
+		# game_output, not the battle panel's own label, so the hoverable damage numbers were
+		# underlined but dead there. Reported: "the damage in the party combat log still isn't
+		# hoverable." Same popup either way.
+		if game_output != null:
+			game_output.mouse_filter = Control.MOUSE_FILTER_PASS
+			if not game_output.meta_hover_started.is_connected(_on_log_meta_hover):
+				game_output.meta_hover_started.connect(_on_log_meta_hover)
+				game_output.meta_hover_ended.connect(_on_log_meta_unhover)
 		if _ss_parent:
 			var ss_btn := Button.new()
 			ss_btn.name = "ScreenshotButton"
@@ -34886,17 +34895,58 @@ func _build_encounter_text(combat_state: Dictionary) -> String:
 #
 # Deliberately a GUTTER rather than a prefix word: it costs one character, does not push the
 # text along, and stays out of the way of a line that is already doing its own colouring.
-const ACTOR_GUTTER := {
-	"member": "[color=#7AA8FF]\u258e[/color] ",     # you — the blue used for the player elsewhere
-	"companion": "[color=#77DD77]\u258e[/color] ",  # your companion — green
-	"monster": "[color=#FF6666]\u258e[/color] ",    # what it did to you — red
-}
+# One colour PER PARTY MEMBER, not one colour for "a member". Reported: "the gutter shouldn't
+# be the same color. Party members and their companions could be given a color like for example
+# test02 and his companion could be yellow... then test002 and their companion could have a
+# purple gutter."
+#
+# Assigned by position in the party, so it is stable for a whole fight and identical on every
+# client. YOU are always the first colour, so your own lines look the same in any party.
+const PARTY_ACTOR_COLORS: Array = ["#FFD24A", "#C08CFF", "#5AD1C8", "#FF9E6B", "#8CC7FF"]
 
-func _actor_gutter(actor: String) -> String:
-	"""The coloured left bar for a line's actor. Empty for neutral lines and for anything the
-	server did not attribute, so an older server or an untagged path simply looks like it always
-	did rather than mis-attributing."""
-	return String(ACTOR_GUTTER.get(actor, ""))
+# The monster gets a FULL BLOCK rather than a thin bar, in a red nothing else uses. Reported:
+# "The Monsters damage and actions just kind of blend in with everything else." Colour alone was
+# not enough when every line shared the same glyph and indent, so the enemy differs in WEIGHT as
+# well as hue - the eye finds a solid bar without reading anything.
+const MONSTER_GUTTER := "[color=#FF3B3B]█[/color] "
+
+func _on_log_meta_hover(meta) -> void:
+	"""A damage number in the log was hovered — show its breakdown using the SAME popup the
+	cards use for their formulas, rather than a second tooltip style to maintain."""
+	if combat_scene_panel and combat_scene_panel.has_method("_show_formula_popup"):
+		combat_scene_panel._show_formula_popup(str(meta))
+
+func _on_log_meta_unhover(_meta) -> void:
+	if combat_scene_panel and combat_scene_panel.has_method("_hide_formula_popup"):
+		combat_scene_panel._hide_formula_popup()
+
+func _party_actor_color(actor_pid: int) -> String:
+	"""Stable per-member colour. Falls back to the first slot for solo play and for any line
+	whose actor_pid the server did not send."""
+	if actor_pid >= 0 and not _party_combat_members.is_empty():
+		var i: int = _party_combat_members.find(actor_pid)
+		if i >= 0:
+			return String(PARTY_ACTOR_COLORS[i % PARTY_ACTOR_COLORS.size()])
+	return String(PARTY_ACTOR_COLORS[0])
+
+func _actor_gutter(actor: String, actor_pid: int = -1) -> String:
+	"""The left marker for a line, by WHO acted.
+
+	A companion is indented one step past the member it belongs to and carries the SAME colour,
+	so a member and their pet read as one group while still being told apart. Reported: "For the
+	companions it seems like the gutter would help if it was indented for the companion action."
+
+	Empty for neutral lines and for anything the server did not attribute, so an older server or
+	an untagged path looks exactly as it always did rather than mis-attributing."""
+	match actor:
+		"monster":
+			return MONSTER_GUTTER
+		"member":
+			return "[color=%s]▎[/color] " % _party_actor_color(actor_pid)
+		"companion":
+			# Same colour as its owner, one indent deeper, lighter glyph.
+			return "  [color=%s]▕[/color] " % _party_actor_color(actor_pid)
+	return ""
 
 func _display_combat_msg(combat_msg: String):
 	"""Display a single combat message with all visual effects (extracted from combat_message handler).
@@ -34911,8 +34961,14 @@ func _display_combat_msg(combat_msg: String):
 	# The MONSTER's header is kept: it is the only line that says WHO it turned on (its body
 	# line reads "attacks but misses!" with no target in it).
 	var _pm := _party_fx_meta
+	# 2026-09-04 — the MONSTER's header is skipped now too. It was kept on the reasoning that it
+	# is "the only line that says WHO it turned on", but its body line already does: "The
+	# Venomous Goblin attacks test002's Wight Wisp for 36 damage". So it cost an extra line for
+	# every target the monster hit - two per round in a two-person party - to repeat the next
+	# line. Reported: "The line where the enemy turns on someone seems redundant and makes each
+	# thing the monster does take an additional line as well."
 	var _skip_text: bool = (not _pm.is_empty() and bool(_pm.get("head", false))
-		and str(_pm.get("actor", "")) in ["member", "companion"])
+		and str(_pm.get("actor", "")) in ["member", "companion", "monster"])
 	if _skip_text:
 		pass
 	elif condensed_combat_log:
@@ -34922,7 +34978,7 @@ func _display_combat_msg(combat_msg: String):
 		# Firehose mode — routed through the same helper that the per-turn
 		# summary uses so combat text doesn't clutter game_output during
 		# combat (the panel is up; game_output is hidden anyway).
-		_combat_text_to_outputs(_actor_gutter(str(_pm.get("actor", ""))) + enhanced_msg)
+		_combat_text_to_outputs(_actor_gutter(str(_pm.get("actor", "")), int(_pm.get("actor_pid", -1))) + enhanced_msg)
 	stop_combat_animation()
 
 	# Trigger combat sounds based on message content
