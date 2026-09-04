@@ -1737,6 +1737,10 @@ var _combat_generation: int = 0
 # _victory_card_scheduled: the card's 1s reveal timer is in flight but it is not up yet.
 var _combat_fastforward: bool = false
 var _victory_card_scheduled: bool = false
+# Frames a scheduled-but-unpresented victory card has been waiting with an empty queue. See
+# the watchdog in _process: this exists so the safety net cannot fire on the same frame a
+# legitimate producer is about to.
+var _victory_stall_frames: int = 0
 # v0.9.417 — defer the post-combat text chrome (Damage totals / LOOT / "Press
 # Space to continue...") until the message queue has fully drained, so the
 # chrome doesn't print BEFORE the player's killing-blow / monster-death
@@ -3458,6 +3462,34 @@ func _process(delta):
 			and combat_scene_panel._action_phase_active
 		)
 		var _victory_pending = _pending_victory_fx_play or _pending_victory_card_payload != null
+		# 2026-09-03 — WATCHDOG: a victory card that was scheduled but never presented.
+		#
+		# Reported from a party fight: the log read "The Thorned Gnoll is defeated!" and
+		# "Party victory!", the action bar read Continue, and the monster sat at HP 223/4700
+		# with its art up. Pressing Space produced the victory screen immediately, so the
+		# payload existed the whole time - nothing was pumping the queue that presents it.
+		#
+		# The card is fired from `_drain_combat_queue`'s empty branch, and the party end
+		# handler only kicks that off `if not combat_phase_paused`. When a beat pause is in
+		# flight but its chain has already ended, nobody restarts the drain and the card waits
+		# for a keypress that a player has no reason to know is required.
+		#
+		# Chasing which of several producers failed to pump would fix one ordering and leave
+		# the rest, so this makes the PRESENTATION self-healing instead: once the queue is
+		# genuinely empty and no pause is outstanding, a pending card is owed to the player and
+		# gets shown. It is idempotent - `_drain_combat_queue` clears the payload as it fires -
+		# and it costs one boolean check per frame.
+		if (_pending_victory_card_payload != null or _pending_victory_fx_play) \
+				and combat_msg_queue.is_empty() and not combat_phase_paused \
+				and not _victory_card_scheduled:
+			_victory_stall_frames += 1
+			# A few frames of grace so a producer that is about to pump on its own still wins
+			# the race; this is a safety net, not the normal route.
+			if _victory_stall_frames > 8:
+				_victory_stall_frames = 0
+				_drain_combat_queue()
+		else:
+			_victory_stall_frames = 0
 		_combat_scene_should_show = (_now_in_combat or _combat_scene_force_visible or _is_lingering or _next_fight_queued or _victory_card_up or _death_card_up or _action_phase_pending or _victory_pending) and not _scene_temporarily_hidden
 		if combat_scene_panel.visible != _combat_scene_should_show:
 			combat_scene_panel.visible = _combat_scene_should_show
@@ -19676,6 +19708,8 @@ var _ms_order: Array = []          # shuffled display order (indices into _ms_of
 var _ms_revealed: Dictionary = {}  # display slot -> true once flipped
 var _ms_reveals_left: int = 3
 var _ms_phase: String = ""         # "preview" | "hunt" | "choose"
+var _ms_ability_label: String = ""  # kept so the header can always name the card being upgraded
+var _ms_preview_panel: RichTextLabel = null  # hover: the card as it would read once upgraded
 var _ms_grid: GridContainer = null
 var _rank_choice_popup: AcceptDialog = null
 var _rank_choice_pending_ability: String = ""
@@ -19774,6 +19808,18 @@ func _ensure_milestone_overlay() -> void:
 	_ms_grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ms_grid.visible = false
 	box.add_child(_ms_grid)
+	# Hover preview: the card as it would read IN COMBAT with that upgrade taken. A name and a
+	# one-line description do not tell a player what a pick actually does to their numbers,
+	# which is most of what makes the choice hard to judge.
+	_ms_preview_panel = RichTextLabel.new()
+	_ms_preview_panel.bbcode_enabled = true
+	_ms_preview_panel.fit_content = true
+	_ms_preview_panel.scroll_active = false
+	_ms_preview_panel.custom_minimum_size = Vector2(560, 62)
+	_ms_preview_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ms_preview_panel.add_theme_font_size_override("normal_font_size", 12)
+	_ms_preview_panel.visible = false
+	box.add_child(_ms_preview_panel)
 	add_child(_milestone_overlay)
 
 
@@ -19795,23 +19841,40 @@ func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed:
 		_ms_order.append(i)
 	_milestone_card_row.visible = false
 	_ms_grid.visible = true
-	_milestone_title.text = "%s — Milestone!  Study them..." % _ability_display_name(ability_name)
+	# The ability being upgraded stays in the title for the WHOLE flow. It used to be replaced
+	# by "Reveal 3 of them" and then "Choose one", so by the time a player was actually picking,
+	# nothing on screen said which card they were upgrading.
+	_ms_ability_label = _ability_display_name(ability_name)
 	_ms_phase = "preview"
+	_set_milestone_header("Memorise their positions — they are about to be shuffled.")
 	_rebuild_milestone_grid()
 	_milestone_overlay.visible = true
-	# Long enough to read nine short names, short enough that it is a memory test rather than a
-	# reading exercise. The player can start hunting early by clicking.
-	await get_tree().create_timer(3.0).timeout
+	# 6s, was 3. Nine cards with names and descriptions is more reading than three seconds
+	# allows, and the whole mechanic is spoiled if the player is still reading when they are
+	# taken away. Clicking any card skips ahead for someone who is ready sooner.
+	var _preview_left := 6.0
+	while _preview_left > 0.0 and _ms_phase == "preview" and _milestone_overlay.visible:
+		# Count down visibly. Being told the shuffle is coming is what makes it a memory game
+		# rather than a surprise - the owner asked that it be obvious the cards move.
+		_set_milestone_header("Memorise their positions — shuffling in %.0f..." % ceil(_preview_left))
+		await get_tree().create_timer(0.25).timeout
+		_preview_left -= 0.25
 	if _ms_phase != "preview" or not _milestone_overlay.visible:
 		return
 	_begin_milestone_hunt()
+
+func _set_milestone_header(instruction: String) -> void:
+	"""Ability name first, instruction second - the name never leaves the screen."""
+	if _milestone_title == null or not is_instance_valid(_milestone_title):
+		return
+	_milestone_title.text = "%s — Milestone!\n%s" % [_ms_ability_label, instruction]
 
 func _begin_milestone_hunt() -> void:
 	if _ms_phase != "preview":
 		return
 	_ms_phase = "hunt"
 	_ms_order.shuffle()
-	_milestone_title.text = "Reveal %d of them" % _ms_reveals_left
+	_set_milestone_header("Shuffled! Turn over %d of them." % _ms_reveals_left)
 	_rebuild_milestone_grid()
 
 func _rebuild_milestone_grid() -> void:
@@ -19870,7 +19933,46 @@ func _make_milestone_tile(slot: int, up: Dictionary, face_up: bool) -> Control:
 	v.add_child(title)
 	v.add_child(body)
 	card.gui_input.connect(_on_milestone_tile_input.bind(slot))
+	if face_up:
+		card.mouse_entered.connect(_on_milestone_tile_hover.bind(slot))
+		card.mouse_exited.connect(_on_milestone_tile_unhover)
 	return card
+
+func _on_milestone_tile_hover(slot: int) -> void:
+	"""Show what the card would look like in combat with this upgrade taken."""
+	if _ms_preview_panel == null or not is_instance_valid(_ms_preview_panel):
+		return
+	if slot < 0 or slot >= _ms_order.size():
+		return
+	var up: Dictionary = _ms_offer[int(_ms_order[slot])]
+	var ab := _rank_choice_pending_ability
+	# Current numbers come from the SERVER's own preview of the card, the same source the
+	# combat hand renders from, so the "now" half of the comparison cannot drift from what the
+	# player is about to see in the fight.
+	var now_line := ""
+	var eff = _server_ability_effects.get(ab, {}) if typeof(_server_ability_effects) == TYPE_DICTIONARY else {}
+	if eff is Dictionary and not eff.is_empty():
+		var kind := String(eff.get("kind", ""))
+		var val := int(eff.get("value", 0))
+		match kind:
+			"damage": now_line = "now: [color=#FF8866]%d damage[/color]" % val
+			"shield": now_line = "now: [color=#7AA8FF]%d shield[/color]" % val
+			"heal":   now_line = "now: [color=#77DD77]%d healing[/color]" % val
+			_:        now_line = ""
+	var tradeoff: bool = bool(up.get("tradeoff", false))
+	var head_col := "#E0902A" if tradeoff else "#9FD0FF"
+	var txt := "[color=%s][b]%s[/b][/color] — [color=#BFBFBF]%s[/color]" % [
+		head_col, String(up.get("name", "?")), String(up.get("desc", ""))]
+	if now_line != "":
+		txt += "\n[color=#8A8A96]%s[/color]" % now_line
+	if tradeoff:
+		txt += "\n[color=#E0902A]This one asks something back.[/color]"
+	_ms_preview_panel.text = txt
+	_ms_preview_panel.visible = true
+
+func _on_milestone_tile_unhover() -> void:
+	if _ms_preview_panel != null and is_instance_valid(_ms_preview_panel):
+		_ms_preview_panel.visible = false
 
 func _on_milestone_tile_input(event: InputEvent, slot: int) -> void:
 	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed):
@@ -19887,9 +19989,9 @@ func _on_milestone_tile_input(event: InputEvent, slot: int) -> void:
 			_ms_reveals_left -= 1
 			if _ms_reveals_left <= 0:
 				_ms_phase = "choose"
-				_milestone_title.text = "Choose one"
+				_set_milestone_header("Choose one to keep.")
 			else:
-				_milestone_title.text = "Reveal %d more" % _ms_reveals_left
+				_set_milestone_header("Turn over %d more." % _ms_reveals_left)
 			_rebuild_milestone_grid()
 		"choose":
 			if not bool(_ms_revealed.get(slot, false)):
@@ -19911,6 +20013,9 @@ func _send_milestone_choice(upgrade_id: String) -> void:
 		_milestone_overlay.visible = false
 	if _ms_grid != null and is_instance_valid(_ms_grid):
 		_ms_grid.visible = false
+	if _ms_preview_panel != null and is_instance_valid(_ms_preview_panel):
+		_ms_preview_panel.visible = false
+	_ms_ability_label = ""
 	_milestone_card_row.visible = true
 
 func _show_rank_choice_popup(ability_name: String, new_rank: int, current_copy_count: int, current_effect_rank: int, variant_offer: Dictionary = {}) -> void:
