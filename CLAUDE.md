@@ -93,6 +93,33 @@ A win rate measured at n≈120 carries ~4.5pp of sampling error, so chasing a 5-
 tuning noise. Nobody can feel 58% against 63%. The faults worth acting on are the GROSS ones —
 L1-L50 at 42%, L100 at 43%, a species at 16%, common gear at 0% win — not the last few points.
 
+## ⚑ Never state what EQUIPMENT can do from memory — look it up
+
+`docs/design/equipment_reference.md` is generated from the game's own tables and lists every stat
+gear can carry, where it comes from, and what gates it. **Read it before any claim about what a
+player can wear, chase, or build toward.** Regenerate with:
+
+```bash
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- gearsources
+```
+
+This rule exists because the same mistake was made three sessions running — "gear is worth ~0pp"
+(an unsound comparison), "there is no mana regen on gear" (there is `mana_on_hit`, epic+), and a
+focused-gear model that maximised one stat while discarding attack and defence. Owner: *"You
+continually get that wrong... Once you have a good picture of it you need to find a way to keep
+that in mind in all future sessions."*
+
+The three facts most often got wrong:
+- the **CHASE pool is epic-and-above only** (25-50% per bonus roll) — crit, `damage_mult`,
+  `extra_turn_chance`, resource-on-hit and +ability ranks all live there and nowhere else
+- **drops are not class-aware.** Nothing in `drop_tables.gd` reads the player's class
+- **five declared gear stats are granted by nothing**: `mana_regen`, `meditate_bonus`,
+  `energy_regen`, `flee_bonus`, `stamina_regen`. Combat reads them; no affix, chase roll, proc,
+  rune, unique or set produces them. Only companions give mana/energy regen
+
+Generalises: when the question is *what content exists*, enumerate it from the data. Reasoning
+about it from recall is the same failure as trusting a faulty instrument, one level up.
+
 ## Quick Start
 
 **Detailed diagrams in `/docs/`:**

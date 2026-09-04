@@ -69,6 +69,8 @@ func _audit_registry() -> Dictionary:
 		"difficulty": ["level x gear x enemy-tier feel", run_difficulty_audit],
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
+		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
+		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -328,6 +330,156 @@ const ALL_CLASSES := [
 	["Thief", "trickster"], ["Ranger", "trickster"], ["Ninja", "trickster"],
 ]
 const ALL_RACES := ["Human", "Elf", "Dwarf", "Ogre", "Halfling", "Orc", "Gnome", "Undead"]
+
+func run_gear_sources_audit():
+	"""EVERY stat a piece of equipment can carry, where it comes from, and what gates it.
+
+	2026-09-04, written after repeatedly getting this wrong in conversation - claiming gear was
+	worth nothing (an unsound comparison), then claiming there was no mana regen on gear at all
+	(there is `mana_on_hit`, epic+). Owner: "You continually get that wrong. You need to take a
+	deeper look at equipment that's possible to get in the game because you keep failing and
+	leaving things out... Once you have a good picture of it you need to find a way to keep that
+	in mind in all future sessions."
+
+	So this is not a one-off answer, it is the answer REGENERATED from the game's own tables. It
+	walks the pools rather than restating them, so it cannot go stale the way a hand-written note
+	would - which is the same reason the boss-art mapping is derived from dungeon_database.
+
+	The last section is the one that matters most: character.get_equipment_bonuses() declares a
+	set of stat fields, and this reports any of them that NO item can actually roll. A field that
+	combat reads and nothing grants is invisible unless something enumerates both sides."""
+	print("
+===== EQUIPMENT: EVERY STAT AND WHERE IT COMES FROM =====")
+	var sources := {}   # stat -> [source strings]
+	var _add := func(stat: String, src: String) -> void:
+		if not sources.has(stat):
+			sources[stat] = []
+		if not (src in sources[stat]):
+			sources[stat].append(src)
+
+	for entry in drop_tables.PREFIX_POOL:
+		_add.call(String(entry.get("stat", "?")), "prefix (any rarity)")
+	for entry in drop_tables.SUFFIX_POOL:
+		_add.call(String(entry.get("stat", "?")), "suffix (any rarity)")
+	for entry in drop_tables.CHASE_SUFFIX_POOL:
+		_add.call(String(entry.get("stat", "?")), "CHASE (epic+ only)")
+	for entry in drop_tables.PROC_SUFFIX_POOL:
+		_add.call("proc:" + String(entry.get("proc_type", "?")), "proc suffix (tier 6+)")
+	for spec in drop_tables.SPECIALTY_AFFIX_STATS.keys():
+		var sd = drop_tables.SPECIALTY_AFFIX_STATS[spec]
+		for st in (sd.get("stats", []) if sd is Dictionary else []):
+			_add.call(String(st), "crafted: %s specialty" % spec)
+	for st in drop_tables.RUNE_AFFIX_CAPS.keys():
+		_add.call(String(st), "enchanter rune")
+
+	print("
+-- by stat --")
+	var keys := sources.keys()
+	keys.sort()
+	for k in keys:
+		print("   %-28s %s" % [k, ", ".join(sources[k])])
+
+	print("
+-- rarity gates --")
+	print("   affixes per rarity: %s" % str(drop_tables.AFFIX_COUNTS))
+	print("   chase-roll chance:  %s" % str(drop_tables.CHASE_ROLL_CHANCE_BY_RARITY))
+	print("   drop weights:       %s" % str(drop_tables.RARITY_WEIGHTS))
+
+	# ---- the gap check ------------------------------------------------------------------------
+	print("
+-- stat fields the AGGREGATOR reads that NOTHING can roll --")
+	var probe = CharacterScript.new()
+	probe.initialize("GearProbe", "Fighter", "Human")
+	var declared: Dictionary = probe.get_equipment_bonuses()
+	var orphans: Array = []
+	for field in declared.keys():
+		var f := String(field)
+		# The aggregator names some fields differently from the affix that feeds them.
+		# The aggregator's field names do not match the affix names one-for-one: "strength" is fed
+		# by "str_bonus", "max_mana" by "mana_bonus". Spell the mapping out rather than guessing,
+		# or the report over-states the gaps.
+		var aliases := [f, f + "_bonus", f.replace("max_", "") + "_bonus"]
+		var short := {"strength": "str_bonus", "constitution": "con_bonus", "dexterity": "dex_bonus",
+			"intelligence": "int_bonus", "wisdom": "wis_bonus", "wits": "wits_bonus",
+			"max_hp": "hp_bonus", "speed": "speed_bonus"}
+		if short.has(f):
+			aliases.append(String(short[f]))
+		var found := false
+		for a in aliases:
+			if sources.has(a):
+				found = true
+				break
+		if not found:
+			orphans.append(f)
+	if orphans.is_empty():
+		print("   (none - every field has a source)")
+	else:
+		for o in orphans:
+			print("   %s" % o)
+		print("   ^ read by combat, granted by NO random roll.")
+		# Uniques and sets carry FIXED stat blocks, so they can cover a field the pools cannot.
+		# Check them here rather than leaving the reader to wonder.
+		var udb2 = load("res://shared/unique_database.gd")
+		var fixed := {}
+		if udb2 != null:
+			for uid in udb2.UNIQUES.keys():
+				var u = udb2.UNIQUES[uid]
+				for sk in (u.get("stats", {}) if u is Dictionary else {}).keys():
+					fixed[String(sk)] = "unique"
+			for sid in udb2.SETS.keys():
+				var st2 = udb2.SETS[sid]
+				for bk in (st2.get("bonuses", {}) if st2 is Dictionary else {}).keys():
+					var bb = st2["bonuses"][bk]
+					for sk2 in (bb if bb is Dictionary else {}).keys():
+						fixed[String(sk2)] = "set bonus"
+		for o2 in orphans:
+			if fixed.has(o2):
+				print("     %-18s covered by %s" % [o2, String(fixed[o2])])
+			else:
+				print("     %-18s NOT covered by uniques or sets either" % o2)
+
+	print("
+-- uniques and sets --")
+	var udb = load("res://shared/unique_database.gd")
+	if udb != null:
+		print("   uniques: %d, sets: %d  (FIXED rolls, not from the pools above -" % [
+			int(udb.UNIQUES.size()), int(udb.SETS.size())])
+		print("   see shared/unique_database.gd; these are the only class-shaped gear in the game)")
+	print("=====================================================================
+")
+
+func run_focus_gear_audit():
+	"""Does chasing your class's resource affix change the picture?
+
+	The nine-class audit rolls gear at RANDOM, so it measures an unsorted kit. If a focused kit
+	moves the mage rows materially, then "mages run dry at L80" is a statement about the gear
+	model and not about mages, and the class table must not be tuned against it."""
+	var N := 60
+	print("
+===== FOCUSED vs RANDOM GEAR (%d fights/cell) =====" % N)
+	print("`focus` keeps the best of %d real drops per slot for the class's own resource affix." % FOCUS_ROLLS)
+	print("epic = every slot epic (unfocused); focus_epic = epic AND chasing the class's stats,")
+	print("which is the only rung where the CHASE pool (of Refresh, +ability rank) can roll at all.")
+	print("%-11s %-8s %s" % ["Class", "Path", " L80 elite:  average      epic         focus_epic"])
+	for c in ALL_CLASSES:
+		var row := "%-11s %-8s" % [c[0], c[1]]
+		for lvl in [80]:
+			var cell := ""
+			for g in ["average", "epic", "focus_epic"]:
+				var wins := 0
+				var turns := 0
+				var casts := 0
+				for i in range(N):
+					var r = run_fight(lvl, g, "elite", 1.0, 1.0, 1.0, c[0])
+					if r.win:
+						wins += 1
+					turns += int(r.turns)
+					casts += int(r.get("casts", 0))
+				cell += "  %3d%% %.2fc/t" % [int(100.0 * wins / N), float(casts) / float(maxi(1, turns))]
+			row += "   " + cell
+		print(row)
+	print("=====================================================================
+")
 
 func run_class_audit():
 	# #5 — the sim only ever drove three of the nine classes. Casts/turn is the tell:
@@ -3808,6 +3960,53 @@ func _roll_slot_rarity(tier: int) -> String:
 			return String(k)
 	return "uncommon"
 
+# How many drops a "focused" player is modelled as sifting through per slot. 8 is roughly the
+# point where the best-of sample stops improving much for a 1-in-10 affix.
+const FOCUS_ROLLS := 8
+
+static func _focus_stats_for(klass: String) -> Array:
+	"""Everything a player of this class would actually chase.
+
+	Includes the CHASE affixes, not just the plain resource one: "of Refresh" (mana_on_hit) and
+	the +ability-rank rolls are epic+ only, so they are exactly what a mage farms for. Owner:
+	"What about the monsters that drop chase items for mages?" - drops are not class-targeted
+	(nothing in drop_tables looks at class), but the chase POOL is rarity-gated, so a focused
+	player reaches them by farming epic+ rather than by farming a particular monster."""
+	if klass in ["Wizard", "Sorcerer", "Sage"]:
+		return ["mana_bonus", "mana_on_hit", "ability_rank_mage_dmg", "ability_rank_magic_bolt"]
+	if klass in ["Thief", "Ranger", "Ninja"]:
+		return ["energy_bonus", "energy_on_hit", "ability_rank_trickster_dmg"]
+	return ["stamina_bonus", "stamina_on_hit", "ability_rank_warrior_dmg"]
+
+static func _affix_of(item: Dictionary, stat: String) -> int:
+	var aff = item.get("affixes", {})
+	if aff is Dictionary:
+		return int(aff.get(stat, 0))
+	return 0
+
+static func _focus_score(item: Dictionary, wants: Array) -> float:
+	"""How much a focused player wants THIS drop.
+
+	2026-09-04 — the first version scored the target affix ALONE, and measured every class as
+	WORSE with focused gear while casts/turn rose. That is not a finding, it is the signature of
+	the model: "best mana roll" also means "throw away the attack and defence rolls", which no
+	player does. A kit is only focused at the MARGIN.
+
+	So: overall affix weight is the base score, and the wanted stats are counted a second time on
+	top. A candidate wins by carrying what you want WITHOUT being a weaker item overall."""
+	var total := 0.0
+	var aff = item.get("affixes", {})
+	if aff is Dictionary:
+		for k in aff.keys():
+			var v = aff[k]
+			if typeof(v) == TYPE_INT or typeof(v) == TYPE_FLOAT:
+				total += float(v)
+	# The item's own base power matters as much as its affixes.
+	total += float(item.get("attack", 0)) + float(item.get("defense", 0))
+	for w in wants:
+		total += float(_affix_of(item, String(w)))
+	return total
+
 func make_char(level: int, gear: String, klass: String = "Fighter", race: String = "Human"):
 	var ch = CharacterScript.new()
 	ch.initialize("SimChar", klass, race)
@@ -3852,6 +4051,13 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 		# one variable, which is what a ladder has to do to be measurable.
 		"common", "uncommon", "rare", "epic", "legendary":
 			rarity = gear
+		"focus":
+			roll_rarity = true
+			glevel = max(1, int(round(level * _gear_avg_level_ratio)))
+		"focus_epic":
+			# Epic is the floor at which CHASE affixes ("of Refresh", +ability rank) can roll at
+			# all, so this is the rung where "farming for mage chase items" is even possible.
+			rarity = "epic"
 	# #70 CALIBRATION — mirror the REAL drop path: use a TIER-APPROPRIATE base per slot
 	# (weapon_rusty / armor_chain / …) instead of forcing "<slot>_artifact". The old artifact
 	# bases gave artifact-tier stats even at "rare" rarity, inflating pools ~2.2x vs a real
@@ -3874,6 +4080,28 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 		if slot_rarity == "":
 			continue  # rolled an empty slot — a real player has gaps
 		var item = drop_tables._generate_item({"item_type": base_type}, glevel, slot_rarity)
+		# 2026-09-04 — "focus" models a player who FARMS FOR THE RIGHT AFFIX rather than wearing
+		# whatever dropped. Owner: "I'd be suspicious of if your data on mages is accounting for
+		# them focusing getting equipment with high MP and mp regen items or ignoring those."
+		#
+		# It was not: `_generate_item` rolls affixes at random, and the class's own resource is
+		# only ~1 in 10 of the pool, so `average` measures an UNSORTED kit. Note also that there is
+		# no mana_regen affix on general gear at all - regen comes from companions and set procs -
+		# so "high MP and MP regen items" is only half-reachable through this path.
+		#
+		# Deliberately NOT hand-written stats: it generates several candidates the drop system
+		# really produces and keeps the best for the target affix. Nothing here is a number the
+		# game cannot roll.
+		if gear == "focus" or gear == "focus_epic":
+			var wants := _focus_stats_for(klass)
+			var best_score := _focus_score(item, wants)
+			for _try in range(FOCUS_ROLLS - 1):
+				var alt = drop_tables._generate_item({"item_type": base_type}, glevel, slot_rarity)
+				if alt is Dictionary and not alt.is_empty():
+					var alt_score := _focus_score(alt, wants)
+					if alt_score > best_score:
+						best_score = alt_score
+						item = alt
 		if item is Dictionary and not item.is_empty():
 			ch.equipped[slot] = item
 	# #5 CALIBRATION (2026-09-02) — the companion used to be INVENTED: a hand-written

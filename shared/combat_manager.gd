@@ -2003,6 +2003,45 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 	# earlier, shorter view of the same array.
 	return _attach_actors(combat, result)
 
+func _apply_round_passives(combat: Dictionary, character, messages: Array) -> void:
+	"""Per-ROUND effects that must not depend on WHICH action the player took.
+
+	2026-09-04 — these lived inline in `process_attack`, so they fired only when the player made a
+	BASIC ATTACK. Cast a card and they were skipped entirely. Paladin's Divine Favor says "Heal 3%
+	max HP per round", and the class audit has Paladin casting on a third to a half of its turns at
+	elite level, so a third to a half of its healing simply did not happen. Owner: "For Paladin I'm
+	not really sure why it's not better considering it gets healed on attacks, is that not being
+	accounted for?" - it was accounted for in the code and not on the turns that mattered.
+
+	Same `process_attack` / `process_ability_command` split that had already been found to skip the
+	actor and damage metadata for casts. Anything described as PER ROUND belongs here, not in one
+	of the two branches.
+
+	Stamped by round so a path that resolves both an attack and an ability in one round cannot heal
+	twice."""
+	if character == null:
+		return
+	if int(combat.get("_round_passives_done", -1)) == int(combat.get("round", 0)):
+		return
+	combat["_round_passives_done"] = int(combat.get("round", 0))
+
+	# === CLASS PASSIVE: Paladin Divine Favor ===
+	var passive = character.get_class_passive()
+	var effects = passive.get("effects", {})
+	if effects.has("combat_regen_percent"):
+		var regen_amount = max(1, int(character.get_total_max_hp() * effects.get("combat_regen_percent", 0)))
+		var actual_heal = character.heal(regen_amount)
+		if actual_heal > 0:
+			messages.append("[color=#FFD700]Divine Favor heals %d HP.[/color]" % actual_heal)
+
+	# === COMPANION BONUS: HP regeneration ===
+	var companion_regen = character.get_companion_bonus("hp_regen")
+	if companion_regen > 0:
+		var c_regen_amount = max(1, int(character.get_total_max_hp() * companion_regen / 100.0))
+		var c_actual_heal = character.heal(c_regen_amount)
+		if c_actual_heal > 0:
+			messages.append("[color=#00FFFF]Companion heals %d HP.[/color]" % c_actual_heal)
+
 func process_attack(combat: Dictionary) -> Dictionary:
 	"""Process player attack action with monster ability interactions"""
 	var character = combat.character
@@ -2214,23 +2253,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 	var hit_roll = randi() % 100
 
-	# === CLASS PASSIVE: Paladin Divine Favor ===
-	# Heal 3% max HP per combat round
-	var passive = character.get_class_passive()
-	var effects = passive.get("effects", {})
-	if effects.has("combat_regen_percent"):
-		var regen_amount = max(1, int(character.get_total_max_hp() * effects.get("combat_regen_percent", 0)))
-		var actual_heal = character.heal(regen_amount)
-		if actual_heal > 0:
-			messages.append("[color=#FFD700]Divine Favor heals %d HP.[/color]" % actual_heal)
-
-	# === COMPANION BONUS: HP regeneration ===
-	var companion_regen = character.get_companion_bonus("hp_regen")
-	if companion_regen > 0:
-		var regen_amount = max(1, int(character.get_total_max_hp() * companion_regen / 100.0))
-		var actual_heal = character.heal(regen_amount)
-		if actual_heal > 0:
-			messages.append("[color=#00FFFF]Companion heals %d HP.[/color]" % actual_heal)
+	_apply_round_passives(combat, character, messages)
 
 	# Path keystone — Phantom Strike: the first attack each combat cannot
 	# miss (the always-crit half lives in calculate_damage, which also stamps
@@ -4247,6 +4270,10 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		# already reflects the base damage. damage_dealt = monster_hp_before -
 		# monster.current_hp captures the ability's actual damage output.
 		var imprint_damage_dealt = max(0, monster_hp_before - combat.monster.current_hp)
+		# Per-round passives apply to a CAST turn exactly as they do to an attack turn.
+		if not result.has("messages"):
+			result["messages"] = []
+		_apply_round_passives(combat, combat.character, result.messages)
 		_apply_imprint_riders_after_cast(combat, ability_name, imprint_damage_dealt, result)
 		# v0.9.608 — log gear's +X ability rank bonus if present. Tells the
 		# player in real-time that their +Cleave gear is actually working.

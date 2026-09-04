@@ -293,6 +293,22 @@ live, and one is **worse than recorded**. Judged at ±10pp; 60 fights/cell.
       31. This is now the largest single distortion in the class table and it is not a tuning
       nudge — three archetypes are playing different games. Merged with the old "L80 elite
       Trickster gap" line, which measured the same thing
+- [ ] **THE CLASS-RESOURCE SUSTAIN LEVER WAS DESIGNED AND NEVER BUILT.** `character.gd`'s
+      equipment aggregator declares `mana_regen`, `meditate_bonus`, `energy_regen`, `flee_bonus`
+      and `stamina_regen`, commented in the source as "Mage gear" / "Trickster gear" / "Warrior
+      gear". `combat_manager.gd` reads all five. **No affix, chase roll, proc, rune, unique or
+      set grants any of them** — verified by enumerating every table (`-- gearsources`). Only
+      COMPANIONS give mana/energy regen.
+
+      So the obvious answer to "mages run dry" — *wear regen gear* — is not a build that exists.
+      Found by the owner asking the right question: *"I'd be suspicious of if your data on mages
+      is accounting for them focusing getting equipment with high MP and mp regen items."* It
+      was not accounting for it, because there is nothing to account for.
+
+      Decide deliberately: implement the five as affixes (they are already read, so it is a drop-
+      table change, not a combat one), or delete the fields and admit resource sustain comes from
+      companions and the economy alone. Either is fine; the current state — read by combat,
+      produced by nothing — is the one that must not stand
 - [ ] **NEW, found by the same run: mages RUN DRY in long fights.** Casts per turn collapses to
       **0.22-0.26 at L80 elite** for all three mage classes (against 0.77-0.78 for tricksters),
       i.e. by L80 a mage is auto-attacking through most of a long fight. That is the resource
