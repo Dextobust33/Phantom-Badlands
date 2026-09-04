@@ -961,6 +961,9 @@ var target_select_mode: bool = false
 # hotkey. The target picker puts "Yourself" at this index so the SAME key casts on yourself:
 # press 2 to play the card on slot 2, press 2 again to keep it. See _start_buff_target_select.
 var _target_select_origin_slot: int = 0
+# The 1-based picker key that means "Yourself", which is NOT always 1. See
+# _start_buff_target_select: the card's own hotkey always self-casts.
+var _target_select_self_key: int = 1
 # v0.9.740 — the picker's targets, in display order: yourself, your companion, then each living
 # teammate and their companion. Entry 0 is ALWAYS yourself, so the quick self-cast is the first
 # thing under the cursor and under [1].
@@ -4133,7 +4136,9 @@ func _process(delta):
 	# item and any teammate-targetable buff, so the list is variable-length. [1] is ALWAYS
 	# Yourself (the quick self-cast); Space cancels.
 	if game_state == GameState.PLAYING and not input_field.has_focus() and target_select_mode:
-		for i in range(mini(9, maxi(2, target_select_options.size()))):
+		# Scan past the end of the list when the card's own key sits beyond it - that key is
+		# the self-cast accelerator and would otherwise never be polled.
+		for i in range(mini(9, maxi(maxi(2, _target_select_self_key), target_select_options.size()))):
 			if is_item_select_key_pressed(i):
 				if not get_meta("targetselect_%d_pressed" % i, false):
 					set_meta("targetselect_%d_pressed" % i, true)
@@ -12719,6 +12724,7 @@ func _get_combat_hand_actions() -> Array:
 func _on_combat_card_played(card_name: String) -> void:
 	# Mouse click: no originating hotkey, so the picker keeps "Yourself" first.
 	_target_select_origin_slot = 0
+	_target_select_self_key = 1
 	"""Audit #1 Slice 6a — mouse path for the combat scene's card row.
 	Mirrors the action bar's 'combat' action_type handling so a click and
 	a hotkey press behave identically (variable-cost prompts included)."""
@@ -13556,20 +13562,38 @@ func _party_buff_can_target_ally(command: String) -> bool:
 func _start_buff_target_select(command: String) -> void:
 	"""Ask who a buff should land on.
 
-	2026-09-04 — "Yourself" is moved to the slot the CARD was on, so the same key does both.
-	Owner: "if my forcefield card is on number 2 and I press 2 when the options on who I want to
-	use it on show up number 2 should be how I use on myself. That way players can press the
-	same hotkey twice to quickly use on themselves."
+	2026-09-04 — THE CARD'S OWN HOTKEY ALWAYS SELF-CASTS. Owner: "if my forcefield card is on
+	number 2 and I press 2 when the options on who I want to use it on show up number 2 should
+	be how I use on myself. That way players can press the same hotkey twice to quickly use on
+	themselves."
 
-	Moved rather than duplicated: leaving a second "Yourself" at the top would make one hotkey
-	unreachable for a real teammate, and two entries doing the same thing is its own confusion.
-	Falls back to first place when the card was played with the mouse, where there is no slot to
-	match and the leading entry is still the quick answer."""
+	Two ways to keep that promise, picked by whether the card's slot names a real entry:
+	  within the list  -> MOVE "Yourself" onto that slot
+	  beyond the list  -> leave it at [1] and let the card's key ALSO mean it
+	Neither ever makes one key mean two things. The mouse path has no originating slot, so
+	"Yourself" simply stays first, which is the quick answer anyway."""
 	_build_target_select_options(false)
-	if _target_select_origin_slot >= 2 and _target_select_origin_slot <= target_select_options.size():
-		var _self_opt = target_select_options[0]
-		target_select_options.remove_at(0)
-		target_select_options.insert(_target_select_origin_slot - 1, _self_opt)
+	_target_select_self_key = 1
+	if _target_select_origin_slot >= 2:
+		if _target_select_origin_slot <= target_select_options.size():
+			# The card's slot names a real entry, so MOVE "Yourself" onto it. Moved rather
+			# than duplicated: a second "Yourself" would make one key unreachable for a real
+			# teammate, and two entries doing the same thing is its own confusion.
+			var _self_opt = target_select_options[0]
+			target_select_options.remove_at(0)
+			target_select_options.insert(_target_select_origin_slot - 1, _self_opt)
+			_target_select_self_key = _target_select_origin_slot
+		else:
+			# 2026-09-04 - the card sits on a HIGHER key than the party has targets: a
+			# forcefield on [3] in a party of two, where the list only reaches [2]. The move
+			# above could not apply, so the promise silently lapsed and the player had to
+			# hunt for [1]: "when my buff forcefield is on the 3 hotkey I can't press 3
+			# again to use it on myself... it breaks the quick self cast uniformity."
+			#
+			# Nothing in the list claims that key, so it is free to be an ACCELERATOR for
+			# "Yourself" alongside [1]. That makes the rule whole - the card's own key always
+			# self-casts - with no key ever meaning two things, whatever the party size.
+			_target_select_self_key = _target_select_origin_slot
 	target_select_mode = true
 	target_select_kind = "ability"
 	target_select_command = command
@@ -13577,9 +13601,15 @@ func _start_buff_target_select(command: String) -> void:
 	if combat_scene_panel:
 		var entries: Array = []
 		var _label: String = _ability_display_name(_canonical_ability(command.split(" ")[0]))
+		var _slot := 0
 		for opt in target_select_options:
-			entries.append({"name": "%s on %s" % [_label, String(opt["label"])],
-				"color": String(opt["color"]), "qty": 1})
+			_slot += 1
+			var _name := "%s on %s" % [_label, String(opt["label"])]
+			# When the card's key is an accelerator rather than this entry's own number,
+			# name it - an invisible shortcut is not a shortcut.
+			if String(opt.get("target", "")) == "self" and _target_select_self_key != _slot:
+				_name += "   (or press %d)" % _target_select_self_key
+			entries.append({"name": _name, "color": String(opt["color"]), "qty": 1})
 		combat_scene_panel.show_item_picker("Cast on whom?", entries, 0, entries.size())
 	update_action_bar()
 
@@ -13625,6 +13655,10 @@ func _start_combat_target_select(item_index: int) -> void:
 	var comp: Dictionary = character_data.get("active_companion", {})
 	var comp_name: String = str(comp.get("name", "your companion"))
 	_build_target_select_options(true)
+	# An ITEM has no originating card slot, so "Yourself" is plain [1]. Reset explicitly:
+	# a buff cast earlier in the fight can leave the accelerator pointing at a key that
+	# names a real teammate in THIS list, which would silently self-target instead.
+	_target_select_self_key = 1
 	target_select_mode = true
 	target_select_kind = "item"
 	target_select_command = ""
@@ -13644,7 +13678,9 @@ func _resolve_target_select(slot: int) -> void:
 	var cmd: String = target_select_command
 	# slot is 1-based (the picker's [1]..[N] keys).
 	var target: String = "self"
-	if slot >= 1 and slot <= target_select_options.size():
+	if slot == _target_select_self_key:
+		target = "self"        # the card's own key, wherever "Yourself" ended up
+	elif slot >= 1 and slot <= target_select_options.size():
 		target = String(target_select_options[slot - 1].get("target", "self"))
 	target_select_mode = false
 	target_select_item_index = -1
