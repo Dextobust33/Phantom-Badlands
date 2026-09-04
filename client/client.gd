@@ -2648,6 +2648,10 @@ func _ready():
 		# current frame to res://claude_screenshots/ (globalized to the project
 		# dir when running from source) so screenshots can be gathered instantly.
 		var _ss_parent = music_toggle.get_parent()
+		# Same reason as the buttons below: a focused control activates on `ui_accept`, and
+		# Space is the primary action key. The music toggle is a scene node, so it is fixed
+		# here rather than in the .tscn, alongside the buttons it sits with.
+		music_toggle.focus_mode = Control.FOCUS_NONE
 		if _ss_parent:
 			var ss_btn := Button.new()
 			ss_btn.name = "ScreenshotButton"
@@ -2655,6 +2659,17 @@ func _ready():
 			ss_btn.tooltip_text = "Save a screenshot (claude_screenshots folder)"
 			ss_btn.add_theme_font_size_override("font_size", 13)
 			ss_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+			# 2026-09-03 — never take keyboard focus. A focused Godot Button activates on
+			# `ui_accept`, and SPACE is this game's primary action key, so a chrome button that
+			# holds focus after a click re-fires on every subsequent action. Reported by a
+			# player as "Report an issue keeps popping up after each action following a bug
+			# report" - the dialog has exactly one caller, this kind of button, so it was being
+			# re-pressed rather than re-opened. The screenshot button had the same defect and
+			# was silently saving a shot on every Space.
+			#
+			# The action bar buttons and the UI-scale button already do this; the chrome row
+			# added later did not, which is the whole bug.
+			ss_btn.focus_mode = Control.FOCUS_NONE
 			# v0.9.695 — draw + hit-test above combat overlays (z up to 200) so the
 			# button is clickable IN combat (was being eaten by the battle panel).
 			ss_btn.z_index = 500
@@ -2670,6 +2685,7 @@ func _ready():
 				fb_btn.tooltip_text = String(_fb[2])
 				fb_btn.add_theme_font_size_override("font_size", 13)
 				fb_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+				fb_btn.focus_mode = Control.FOCUS_NONE   # see ss_btn above - Space re-fired these
 				fb_btn.z_index = 500
 				var _kind := String(_fb[3])
 				fb_btn.pressed.connect(func(): _open_feedback(_kind))
@@ -2682,6 +2698,8 @@ func _ready():
 			vol_slider.max_value = 1.0
 			vol_slider.step = 0.05
 			vol_slider.value = music_volume
+			# A focused HSlider eats the arrow keys, which are movement.
+			vol_slider.focus_mode = Control.FOCUS_NONE
 			vol_slider.custom_minimum_size = Vector2(84, 0)
 			vol_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			vol_slider.tooltip_text = "Music volume"
