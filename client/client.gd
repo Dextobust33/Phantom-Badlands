@@ -35139,6 +35139,10 @@ func _populate_combat_scene_panel(combat_state: Dictionary) -> void:
 		"monster_hp": monster_hp,
 		"monster_max_hp": monster_max_hp,
 		"monster_hp_known": hp_known,
+		# The danger flags the scene needs to warn the player. They were already tracked here
+		# for the legacy health-bar label; the scene just never received them.
+		"monster_is_apex": current_enemy_is_apex_species,
+		"monster_is_elite": current_enemy_is_elite,
 	})
 
 func _update_combat_scene_hp() -> void:
@@ -36884,15 +36888,29 @@ func _dispatch_combat_fx(combat_msg: String, damage_to_monster: int) -> void:
 		# "<X> uses <ability>". Match the same heuristics that already
 		# drive shake_companion_art() at line ~23729 so detection stays
 		# consistent across visuals.
+		# 2026-09-04 — WHO acted comes from the server's actor tag, not from reading the prose.
+		# This decided player-vs-companion with `"Your " in msg` and `"#00FFFF" in msg`, which is
+		# the same text-heuristic class that broke the floating damage numbers when the log was
+		# reworded. It also feeds the fight's damage TOTALS, so a misclassified line silently
+		# moves damage into the wrong bucket - and the owner reported a total that does not match
+		# the lines above it ("You: 999" under bolts summing to 1026).
+		#
+		# The tag is on the beat already (`actor`: member / companion / monster). The heuristics
+		# stay only as the fallback for a line the server did not attribute, so an older server
+		# behaves exactly as before.
 		var src := "player"
-		var has_your = "Your " in combat_msg
-		var has_cyan = "#00FFFF" in combat_msg
-		if has_your and " attacks" in combat_msg:
+		var _meta_actor := String(_party_fx_meta.get("actor", "")) if not _party_fx_meta.is_empty() else ""
+		if _meta_actor == "companion":
 			src = "companion"
-		elif has_cyan and (" uses " in combat_msg or "'s " in combat_msg):
-			src = "companion"
-		elif has_cyan and " attacks" in combat_msg:
-			src = "companion"
+		elif _meta_actor == "":
+			var has_your = "Your " in combat_msg
+			var has_cyan = "#00FFFF" in combat_msg
+			if has_your and " attacks" in combat_msg:
+				src = "companion"
+			elif has_cyan and (" uses " in combat_msg or "'s " in combat_msg):
+				src = "companion"
+			elif has_cyan and " attacks" in combat_msg:
+				src = "companion"
 		combat_scene_panel.show_damage_on_monster(damage_to_monster, is_crit, src)
 		combat_scene_panel.flash_monster(is_crit)
 		if src == "player":

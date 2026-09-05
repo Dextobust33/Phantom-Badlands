@@ -5941,6 +5941,27 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					xp_multiplier = 1.0 + min(0.5, level_diff * 0.02)  # +2% per level, max +50%
 
 				var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
+				# 2026-09-04 - the same HOTSPOT and APEX multipliers a normal kill gets. Owner:
+				# "Heist also doesn't seem like it's giving extra XP, it may be lower than normal
+				# xp kills." It was: the card advertises bonus rewards and pays base x1.375, but the
+				# ordinary victory path stacks a hotspot bonus (+30-70%) and apex bonuses (+10%
+				# frontier, +20% variant) on top of its own. So in a hotspot, or against an apex, a
+				# Perfect Heist paid LESS than simply killing the thing - the opposite of what a
+				# high-risk finisher should do.
+				var _heist_hot: float = float(monster.get("hotspot_intensity", 0.0))
+				if _heist_hot > 0.0:
+					final_xp = int(final_xp * (1.3 + 0.4 * clampf(_heist_hot, 0.0, 1.0)))
+				if monster.get("is_apex_frontier", false):
+					final_xp = int(final_xp * 1.10)
+				if monster.get("is_apex_variant", false):
+					final_xp = int(final_xp * 1.20)
+				# And the COMPANION's share, which this branch never granted at all. Owner: "he
+				# isn't getting XP when I kill things using Heist." Every other victory path pays
+				# it; an instant win should not quietly cost your companion its cut.
+				if character.has_active_companion():
+					var _heist_comp = character.add_companion_xp(max(1, int(base_xp * COMPANION_XP_SHARE)))
+					if _heist_comp.get("leveled_up", false):
+						messages.append("[color=#00FFFF]Your companion reached level %d![/color]" % int(_heist_comp.get("new_level", 0)))
 
 				var heist_old_level = character.level
 				var level_result = character.add_experience(final_xp)

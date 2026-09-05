@@ -175,6 +175,8 @@ var _companion_is_ko: bool = false
 # Monster column
 var _monster_col: VBoxContainer
 var _monster_name_label: RichTextLabel
+var _monster_is_apex: bool = false
+var _monster_is_elite: bool = false
 var _monster_art_label: RichTextLabel
 var _monster_hp_bar: ProgressBar
 # Co-op (#64 Slice 2) — right-side party column showing OTHER party members
@@ -4995,6 +4997,15 @@ func populate(payload: Dictionary) -> void:
 		_monster_level = int(payload["monster_level"])
 	if payload.has("monster_name_color"):
 		_monster_name_color = str(payload["monster_name_color"])
+	# 2026-09-04 — the danger tags. v0.9.741 added "[APEX]" to the LEGACY enemy_health_bar
+	# label, which is hidden the whole time the combat scene is up, so it has never once been
+	# seen by a player in a normal fight. Reported: "If this is an Apex I don't see any visual
+	# indicator in the name or anything." Same shape as the hoverable damage number wired to a
+	# label nobody renders.
+	if payload.has("monster_is_apex"):
+		_monster_is_apex = bool(payload["monster_is_apex"])
+	if payload.has("monster_is_elite"):
+		_monster_is_elite = bool(payload["monster_is_elite"])
 	if payload.has("monster_art_bbcode"):
 		_monster_art_bbcode = str(payload["monster_art_bbcode"])
 	if payload.has("monster_hp_known"):
@@ -6125,7 +6136,14 @@ func _refresh_monster() -> void:
 	# making the bonus visible at the point it triggers, rather than hidden
 	# in the damage formula.
 	var niche_tag := _get_niche_passive_tag()
-	_monster_name_label.text = "[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]%s" % [_monster_name_color, _monster_name, _monster_level, niche_tag]
+	# Danger tags read BEFORE the name so they cannot be missed, and an apex carries a skull
+	# because it is the one a player is most likely to lose to.
+	var danger_tag := ""
+	if _monster_is_elite:
+		danger_tag += "[color=#FFD700][b][ELITE][/b][/color] "
+	if _monster_is_apex:
+		danger_tag += "[color=#FF3B3B][b]☠ APEX[/b][/color] "
+	_monster_name_label.text = "%s[color=%s]%s[/color] [color=#FFD700]Lv %d[/color]%s" % [danger_tag, _monster_name_color, _monster_name, _monster_level, niche_tag]
 	# v0.9.650 — apply the per-element user scale by rewriting the font_size
 	# tag in the stored BBCode. Source BBCode looks like
 	# `[right][font_size=N]...[/font_size][/right]`; we multiply N by the
