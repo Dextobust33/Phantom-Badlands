@@ -3964,7 +3964,80 @@ func run_trickster_matrix():
 				print("%-6d %-9s %-10s %7.0f%% %8.1f" % [lvl, gear, et, 100.0*float(wins)/FIGHTS_PER_CELL, float(total_turns)/FIGHTS_PER_CELL])
 	print("=====================================================================\n")
 
+var _trickster_policy := "assassin"
+
 func _player_act_trickster(combat: Dictionary, ch) -> void:
+	match _trickster_policy:
+		"damage_only": _trickster_damage_only(combat, ch)
+		"deny_first": _trickster_deny_first(combat, ch)
+		"outsmart_rush": _trickster_outsmart_rush(combat, ch)
+		_: _trickster_assassin(combat, ch)
+
+
+func _trickster_damage_only(combat: Dictionary, ch) -> void:
+	# No Outsmart, no denial - just hit things. The control that tells us what Outsmart is worth.
+	var hand: Array = combat.get("combat_hand", [])
+	if "perfect_heist" in hand:
+		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
+			return
+	for ab in ["ambush", "exploit", "gambit"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	combat_mgr.process_attack(combat)
+
+
+func _trickster_deny_first(combat: Dictionary, ch) -> void:
+	# Spend EVERY turn denying the monster its turn while Read builds, then cash Outsmart.
+	# The owner's stated design: "they skip the enemy turn at the cost of resource to help the
+	# trickster survive building up their Outsmart."
+	var hand: Array = combat.get("combat_hand", [])
+	var _mon: Dictionary = combat.get("monster", {})
+	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
+	if ch.current_energy > int(ch.get_total_max_energy() * 0.5) and base_os + 30 >= 55:
+		var r = combat_mgr.process_outsmart(combat)
+		if r.get("combat_ended", false):
+			combat["combat_ended"] = true
+			if r.get("victory", false) and _mon:
+				_mon["current_hp"] = 0
+		return
+	if "perfect_heist" in hand:
+		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
+			return
+	for ab in ["analyze", "distract", "sabotage"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	for ab in ["ambush", "exploit", "gambit"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	combat_mgr.process_attack(combat)
+
+
+func _trickster_outsmart_rush(combat: Dictionary, ch) -> void:
+	# Gamble Outsmart at much worse odds, as early as possible.
+	var hand: Array = combat.get("combat_hand", [])
+	var _mon: Dictionary = combat.get("monster", {})
+	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
+	if base_os >= 20:
+		var r = combat_mgr.process_outsmart(combat)
+		if r.get("combat_ended", false):
+			combat["combat_ended"] = true
+			if r.get("victory", false) and _mon:
+				_mon["current_hp"] = 0
+		return
+	if "perfect_heist" in hand:
+		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
+			return
+	for ab in ["ambush", "exploit", "sabotage", "distract", "analyze", "gambit"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	combat_mgr.process_attack(combat)
+
+
+func _trickster_assassin(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
 	# OUTWIT only when the odds are actually good (chance-gated, like a real player) AND
 	# energy is stocked — Outsmart now DUMPS energy to sharpen the read (+~30% at a full
@@ -4039,7 +4112,60 @@ func run_mage_matrix():
 				print("%-6d %-9s %-10s %7.0f%% %8.1f" % [lvl, gear, et, 100.0*float(wins)/FIGHTS_PER_CELL, float(total_turns)/FIGHTS_PER_CELL])
 	print("=====================================================================\n")
 
+var _mage_policy := "rotation"
+
 func _player_act_mage(combat: Dictionary, ch) -> void:
+	match _mage_policy:
+		"bolt_spam": _mage_bolt_spam(combat, ch)
+		"focus_ramp": _mage_focus_ramp(combat, ch)
+		"shield_first": _mage_shield_first(combat, ch)
+		_: _mage_rotation(combat, ch)
+
+
+func _mage_bolt_spam(combat: Dictionary, ch) -> void:
+	# No setup, no shield - dump mana into Magic Bolt every turn. The control.
+	var hand: Array = combat.get("combat_hand", [])
+	if "magic_bolt" in hand and ch.current_mana > int(ch.get_total_max_mana() * 0.25):
+		var amt := str(max(1, int(ch.get_total_max_mana() * 0.25)))
+		if combat_mgr.process_ability_command(0, "magic_bolt", amt).get("success", false):
+			return
+	if "blast" in hand:
+		if combat_mgr.process_ability_command(0, "blast", "").get("success", false):
+			return
+	combat_mgr.process_attack(combat)
+
+
+func _mage_focus_ramp(combat: Dictionary, ch) -> void:
+	# Build Focus with the cheap cards and discharge with Meteor; never spend the big Bolt.
+	var hand: Array = combat.get("combat_hand", [])
+	var focus: int = int(combat.get("focus", 0))
+	if "forcefield" in hand and int(combat.get("forcefield_shield", 0)) <= 0 and ch.current_hp < int(ch.get_total_max_hp() * 0.70):
+		if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
+			return
+	if focus >= 3 and "meteor" in hand:
+		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
+			return
+	for ab in ["frost_nova", "blast"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	if "meteor" in hand:
+		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
+			return
+	combat_mgr.process_attack(combat)
+
+
+func _mage_shield_first(combat: Dictionary, ch) -> void:
+	# Keep the shield up at ALL times, not only when hurt - a glass cannon that never eats a
+	# full hit. Tests whether Forcefield is worth its tempo proactively rather than reactively.
+	var hand: Array = combat.get("combat_hand", [])
+	if "forcefield" in hand and int(combat.get("forcefield_shield", 0)) <= 0:
+		if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
+			return
+	_mage_rotation(combat, ch)
+
+
+func _mage_rotation(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
 	var focus: int = int(combat.get("focus", 0))
 	# FORCEFIELD - the mage's shield, and this policy never cast it. A glass cannon that never
@@ -5305,11 +5431,35 @@ func run_policy_test():
 	Every policy is tested on the SAME grown characters at the same levels, so gear luck cannot
 	decide the winner - the only thing varying is the decision rule."""
 	var LEVELS := [1, 5, 10, 20]
-	var POLICIES := ["buff_first", "damage_first", "defensive", "momentum_hold"]
 	var CHARS := 3
 	var N := 20
+	# One tournament per archetype. Owner asked for the Warrior specifically, but the Trickster
+	# and Mage policies had just been fixed BY HAND and gained a lot (Thief 4->15 encounters),
+	# which is exactly the state where a hand-written guess is most likely to be leaving value
+	# on the table.
+	var SUITES := [
+		{"klass": "Fighter", "field": "warrior", "policies": ["buff_first", "damage_first", "defensive", "momentum_hold"]},
+		{"klass": "Wizard", "field": "mage", "policies": ["rotation", "bolt_spam", "focus_ramp", "shield_first"]},
+		{"klass": "Thief", "field": "trickster", "policies": ["assassin", "damage_only", "deny_first", "outsmart_rush"]},
+	]
+	for suite in SUITES:
+		_run_one_tournament(String(suite["klass"]), String(suite["field"]), suite["policies"], LEVELS, CHARS, N)
+	print("Highest column wins each row. A default that does NOT win has been under-rating")
+	print("that class in every measurement taken so far.")
+	print("=====================================================================
+")
+
+
+func _set_policy(field: String, value: String) -> void:
+	match field:
+		"warrior": _warrior_policy = value
+		"mage": _mage_policy = value
+		"trickster": _trickster_policy = value
+
+
+func _run_one_tournament(klass: String, field: String, POLICIES: Array, LEVELS: Array, CHARS: int, N: int) -> void:
 	print("
-===== WARRIOR STRATEGY TOURNAMENT =====")
+===== %s STRATEGY TOURNAMENT =====" % klass.to_upper())
 	print("%d grown characters x %d fights per cell, same characters across every policy." % [CHARS, N])
 	var head := "%-6s" % "lv"
 	for pol in POLICIES:
@@ -5320,7 +5470,7 @@ func run_policy_test():
 		# Grow the cohort ONCE, then replay it through each policy.
 		var cohort: Array = []
 		for _c in range(CHARS):
-			var ch = _grow_new_character("Fighter", "Human")
+			var ch = _grow_new_character(klass, "Human")
 			var hunt := 1
 			var guard := 0
 			while ch.level < lvl and guard < 200000:
@@ -5344,7 +5494,7 @@ func run_policy_test():
 			cohort.append(ch)
 		var row := "%-6d" % lvl
 		for pol in POLICIES:
-			_warrior_policy = pol
+			_set_policy(field, String(pol))
 			var w := 0
 			var tot := 0
 			for ch2 in cohort:
@@ -5354,13 +5504,8 @@ func run_policy_test():
 					tot += 1
 			row += "%14d%%" % int(100.0 * float(w) / float(maxi(1, tot)))
 		print(row)
-	_warrior_policy = "buff_first"
+	_set_policy(field, String(POLICIES[0]))
 	_grow_immortal = false
-	print("
-Highest column wins. If buff_first is not it, the default policy has been")
-	print("under-rating the Warrior in every measurement taken so far.")
-	print("=====================================================================
-")
 
 
 func run_grow_reference():
