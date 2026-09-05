@@ -199,6 +199,9 @@ const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point 
 # v0.9.698 — Trickster reframe: the `combo` field is now "Read". Every Trickster
 # ability builds Read; Read raises the Outsmart chance (the payoff = bypass HP).
 const READ_OUTSMART_PER: int = 9   # +% Outsmart success per Read (8 x 9 = 72, was 5 x 15 = 75)
+# +% Assassinate success per Read. 8 stacks = +40, taking a 15% base to 55% - so the finisher is
+# a poor opener and a strong payoff, which is what makes the stall worth running.
+const READ_HEIST_PER: int = 5
 # Each Read also lifts the CAP by this much, which is what makes stacks 3-5 worth building.
 # 48 base + 5x5 = 73% at a full Read for a Trickster: reliable, but only after five turns of
 # setup. Without this the cap ate every stack past the second — see _outsmart_chance.
@@ -701,6 +704,21 @@ func _note_crit_escalation(character, combat: Dictionary) -> void:
 		combat["crit_escalation_stacks"] = int(combat.get("crit_escalation_stacks", 0)) + 1
 
 
+func _note_crit_ramp_attempt(character, combat: Dictionary) -> void:
+	"""Killing Edge ramps on EVERY strike, not only on crits.
+	2026-09-05 — crit-only escalation gave the Ninja 41% at L1, the worst cell on the board: at
+	level 1, with low DEX and short fights, it never landed the crit that starts the ramp, so the
+	build never began. Ramping on any strike is bad-luck protection - it makes the ramp reliable
+	rather than lucky, raising the floor without touching the ceiling (the 75% crit cap is
+	unchanged, so a long fight ends in the same place)."""
+	if character == null or combat == null:
+		return
+	var p: Dictionary = character.get_class_passive()
+	var fx: Dictionary = p.get("effects", {}) if p is Dictionary else {}
+	if int(fx.get("crit_escalation", 0)) > 0:
+		combat["crit_escalation_stacks"] = int(combat.get("crit_escalation_stacks", 0)) + 1
+
+
 func player_crit_chance(character, combat: Dictionary) -> int:
 	"""The player's crit chance, as ONE definition.
 
@@ -786,6 +804,13 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	# Crit and glance are mutually exclusive: a cast is either sharp, ordinary, or fumbled.
 	if character != null:
 		var cc: int = player_crit_chance(character, combat)
+		# Ranger "Steady Hand" trades the top of the range for the bottom: it never glances and
+		# it never crits. Reliable but unspectacular, which is the middle ground the owner asked
+		# for - and it stops no-glance ALONE making the Ranger the strongest class (it measured
+		# 100% at L10 and 98% at L20 on the upside with no downside at all).
+		if _passive_has_no_glance(character):
+			cc = 0
+		_note_crit_ramp_attempt(character, combat)
 		if cc > 0 and (randi() % 100) < cc:
 			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
 			_note_crit_escalation(character, combat)
@@ -6152,7 +6177,19 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var level_diff = monster.level - character.level
 
 			# Base 30% success, +1.5% per wits over monster intelligence
-			var raw_heist_chance = 30 + int((wits - monster_int) * 1.5)
+			# 2026-09-05 — base 30 -> 15, and READ now feeds this instead of only Outsmart.
+			#
+			# The A/B measured that Assassinate carries the Grifter (removing it costs 25-39pp)
+			# while Outsmart contributes almost nothing (removing it costs 0-10pp). So the class
+			# stalls to build Read toward a payoff that a better button had already superseded.
+			# Owner: "Grifters assassinate could replace outsmart, that might be the way."
+			#
+			# Rather than nerf Assassinate flat, it is re-pointed: weak on its own (15% base, so
+			# opening with it is a poor play), strong once the stall has done its work
+			# (+READ_HEIST_PER per stack, so 8 Read is +40). The design the owner described -
+			# stall, build, then cash - now runs through the finisher that actually wins.
+			var _heist_read: int = int(combat.get("combo", 0))
+			var raw_heist_chance = 15 + int((wits - monster_int) * 1.5) + _heist_read * READ_HEIST_PER
 			# Heavy penalty for fighting above your level: -2% per level difference
 			if level_diff > 0:
 				raw_heist_chance -= level_diff * 2
