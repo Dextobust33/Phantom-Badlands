@@ -1292,6 +1292,56 @@ currently as I think companions and gear will make up the difference."* Boss win
 - [ ] Re-read `ABILITY_WEIGHTS` against `-- ability_hp` now the bar is frozen and the curve moved
 - [ ] Re-run `-- classes`, `-- species` — both were measured against the stale curve
 
+### 6b-ii. Companion DAMAGE follows the same rule — and the inspect page is 6-7x wrong
+
+Owner, following the HP fix: *"were other stats of it being done this way as well? If so they
+should follow the same reasoning as the HP and not be nerfed based on player stats."*
+
+**They were.** Combat read the reference bar at the **player's** level and multiplied by
+`sqrt(companion_level / player_level)` clamped to `[0.60, 2.50]`. Two consequences, both the
+same fault as the HP one:
+
+- a companion levelled far past its owner **stopped gaining anything above 2.5x** — investment
+  thrown away
+- every companion's output moved when its **owner** levelled rather than when **it** did
+
+Now the companion's own level picks the bar it is measured against and nothing about the owner
+enters. Measured (T1, attack 5):
+
+| player | companion | before | after | |
+|---|---|---|---|---|
+| 50 | 50 | 305 | 305 | level-matched: **unchanged** |
+| 1000 | 1000 | 5854 | 5854 | level-matched: **unchanged** |
+| 50 | 200 | 609 | **1198** | over-levelled: cap removed, investment kept |
+| 1000 | 50 | 3512 | **305** | under-levelled: worth its own level |
+
+- [ ] **Consequence to feel-check, and it is sharp:** a L50 companion beside a L1000 player drops
+      3512 → 305 damage, an 11x cut. That is the principle applied honestly — it is worth what it
+      has been levelled to — but it makes walking an unlevelled companion at high level nearly
+      pointless where it used to coast on the owner's level. Deliberate, and worth confirming it
+      feels right rather than punishing. Interacts with 6b's note that a matched companion
+      already survives only ~3 rounds at L1000
+
+**SEPARATE BUG, found while checking: the companion inspect page understates damage by 6-7x.**
+
+`client._estimate_companion_damage` implements the LEGACY linear formula
+(`tier*5 + player_level*0.3 + companion_level*0.5`) while combat uses the anchored one. Measured
+displayed-vs-actual: 13 vs 74 at L10, 47 vs 305 at L50, 845 vs 5854 at L1000. Three copies of
+this formula exist — `drop_tables.get_companion_attack_damage`, the client's mirror of it, and
+the real one inline in `combat_manager`.
+
+This is the direct answer to the owner's other question, *"is the companion inspect page and
+stats being accurate and able to be seen at a glance still on our to do list?"* — it is on the
+list (buried inside item 7 as a tutorial step), and the answer to "is it accurate" is **no**.
+
+- [ ] **One source of truth for companion damage.** The anchored formula needs `ability_reference_hp`,
+      which the client has no access to, so the SERVER should compute the estimate and send it
+      with the companion payload. Deleting the two legacy copies is the point — a third copy is
+      how this drifted in the first place
+- [ ] **Pull the companion stat/compare surface out of item 7.** It is gated behind an unbuilt
+      tutorial arc while players cannot currently answer basic questions about their own
+      companions. It is independent work
+
 ### 6b-i. Companion HP now comes from the COMPANION'S level, not the owner's (2026-09-04)
 
 Owner: *"It's kind of odd that the companions HP changes based on the HP of the person who's

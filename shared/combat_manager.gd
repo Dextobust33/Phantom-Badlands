@@ -1208,15 +1208,27 @@ func _process_companion_attack(combat: Dictionary, messages: Array) -> void:
 		# investment that went into it rather than being scaled down to its owner.
 		# #6g — the FROZEN ability bar, for the same reason abilities use it: a share of the
 		# live curve would rise in lockstep with any monster-HP calibration and cancel it out.
+		# 2026-09-04 — anchored to the bar at the COMPANION'S level, not its owner's, and with
+		# the owner-ratio term gone. Owner: "were other stats of it being done this way as well?
+		# If so they should follow the same reasoning as the HP and not be nerfed based on
+		# player stats."
+		#
+		# They were. Damage read the reference bar at the PLAYER's level and then multiplied by
+		# sqrt(companion_level / player_level), clamped to [0.60, 2.50] — so a companion levelled
+		# far past its owner stopped gaining anything at 2.5x (investment thrown away above that
+		# point), and every companion's output moved when its OWNER levelled rather than when IT
+		# did. Exactly the fault just fixed on the HP side, in the other direction.
+		#
+		# Now: the companion's own level picks the bar it is measured against, and nothing about
+		# the owner enters. A companion is worth what it has been levelled to, beside anyone.
 		var _cmp_bar: float = 0.0
 		if monster_database != null:
 			if monster_database.has_method("ability_reference_hp"):
-				_cmp_bar = float(monster_database.ability_reference_hp(character.level))
+				_cmp_bar = float(monster_database.ability_reference_hp(companion_level))
 			elif monster_database.has_method("reference_monster_hp"):
-				_cmp_bar = float(monster_database.reference_monster_hp(character.level))
+				_cmp_bar = float(monster_database.reference_monster_hp(companion_level))
 		if _cmp_bar > 0.0:
-			var _cmp_ratio: float = float(maxi(1, companion_level)) / float(maxi(1, character.level))
-			var _cmp_g: float = clampf(sqrt(_cmp_ratio), COMPANION_DAMAGE_UNDER_FLOOR, COMPANION_DAMAGE_OVER_CAP)
+			var _cmp_g: float = 1.0
 			# Tier and sub-tier stay as the companion's own quality spread, bounded so a rare
 			# companion is better without turning the share into a different order of magnitude.
 			var _cmp_quality: float = 1.0 + 0.06 * float(maxi(1, int(companion_tier)) - 1) + 0.05 * float(maxi(1, int(companion_sub_tier)) - 1)
