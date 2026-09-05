@@ -331,6 +331,38 @@ nerf apparently making a class WORSE, which is impossible. At n=4 characters the
 variance is real even with the fixed seed, because a code change shifts RNG consumption and
 therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
 
+## ⚑ SCOPE WARNING — every class number here covers L1-L20, and the game runs to L10000
+
+Owner, 2026-09-05: *"L20 is nowhere near end game. Not sure such a small level scope is anywhere
+near correct."* Correct, and it qualifies everything in the sections below.
+
+**All grown-character measurements taken today span levels 1-20** — roughly the first 0.2% of the
+level range. Statements like "the Ninja is strong later (93% at L10-20)" describe the EARLY game
+while sounding like they describe the late one. Class balance above L20 is **unmeasured**, not
+verified.
+
+**Why the range is what it is, and why that is a real constraint rather than an oversight:**
+grown characters have to earn their levels by playing. `growref` needed 1,200-9,000 fights per
+character to reach L15, and the requirement curve is `level^2.2` — so L50 costs several times
+that and L100 is impractical. The tool that made today's findings trustworthy is also what caps
+their reach.
+
+**The way out is the task that was already blocked, and now has its input.** The reason
+high-level numbers could not be trusted was `make_char`'s invented gear model, measured at
+**2.09x** a real character's attack at L6 and **0.45x** at L45. `growref` now supplies the real
+curve — `itemLv/lv` around 0.50-0.60 with a measured rarity mix — which is exactly the reference
+needed to fit that model properly. Fit it, and high-level measurement becomes possible again
+without growing a character to L1000.
+
+- [ ] **Fit `make_char`'s gear model to the `growref` profile**, then re-run the class table at
+      L50 / L200 / L1000 / L5000. Until that happens, treat every class conclusion in this file
+      as an EARLY-GAME conclusion
+- [ ] Specifically re-open: "the Ninja ramps late" (measured only to L20, where a ramp has barely
+      started), "the Grifter's advantage grows with level" (two data points), and the Wizard L20
+      falloff (which may be the start of a trend or a single bad cell)
+- [ ] The ordering still holds — monster sizing goes last — but the FINAL difficulty fit must
+      cover the real level range, not L1-L20
+
 ## ⚑ ALL FIVE MEASURED CLASSES, AFTER THE IDENTITY PASS (2026-09-05)
 
 At x1.00 — no monster nerf, grown characters, tournament policies:
