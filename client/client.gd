@@ -29590,7 +29590,15 @@ func display_changelog():
 	# text, the trickster survival deck, and companion power decoupled from the player's.
 	# v0.9.749 — the follow-ups to 748: upgrades on the deck screen, one name per card,
 	# companion XP fixed in both paths, and equipment that actually drops early.
-	display_game("[color=#00FF00]v0.9.749[/color] [color=#808080](Current)[/color]")
+	display_game("[color=#00FF00]v0.9.750[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ APEX MONSTERS ARE MARKED NOW.[/color] An [b]apex[/b] is calibrated to be far deadlier than an ordinary fight, and nothing on screen told you that you were in one — the warning tag existed but lived on a panel that is hidden the whole time you are fighting. A red [b]☠ APEX[/b] and gold [b][ELITE][/b] tag now sit in front of the monster’s name.")
+	display_game("  [color=#FF8000]★ PERFECT HEIST WAS PAYING LESS THAN JUST KILLING THINGS.[/color] The card promises bonus XP. It gave your [b]companion nothing at all[/b], and it skipped the hotspot and apex bonuses AND used a weaker challenge multiplier — so against exactly the over-level foe you would gamble a Heist on, it paid [b]less[/b] than a normal kill. It is now a straight [b]+25%%[/b] over a normal kill at every level gap, for you and your companion.")
+	display_game("  [color=#1EFF00]◆ Card upgrades show on the deck screen.[/color] Last release reached only the combat hover; the deck builds its cards by a different route.")
+	display_game("  [color=#1EFF00]◆ \"Memorise their positions\" was asking the impossible.[/color] The rank-up cards are re-randomised instantly — they teleport, so nobody could ever track one. The preview is there to show you [b]what is on offer[/b], and now says so.")
+	display_game("  [color=#1EFF00]◆ Five upgrades said \"class resource\" for two different things.[/color] Mana/stamina/energy and your class ENGINE (Momentum / Read / Focus) were called the same name, which made [b]Kindling[/b] read as \"gain resource while already full\". What it really does is turn a wasted cast on a full bar into engine progress.")
+	display_game("")
+
+	display_game("[color=#00FFFF]v0.9.749[/color]")
 	display_game("  [color=#FF8000]★ YOUR COMPANION EARNED NOTHING IN CO-OP.[/color] Not a low amount — [b]zero[/b]. The party victory path never granted companion XP at all. In solo it was real but slow: measured in kills, your companion needed [b]1.2 to 2.4x as many[/b] as you to gain a level, worst in the early game where it is already weakest. Its share is now [b]20%%[/b] of a kill, which puts it roughly in step with you.")
 	display_game("  [color=#FF8000]★ EQUIPMENT ACTUALLY DROPS NOW.[/color] The early game was on the [b]stingiest drop table in the game[/b] — measured at [b]56 kills[/b] for your first piece at level 1, against 3 kills at level 100. No monster drops below [b]12%%[/b] any more, which brings it to [b]11-14 kills[/b] per piece at every level up to 50. Mid and late game are untouched.")
 	display_game("  [color=#1EFF00]◆ Card upgrades show on the deck screen too.[/color] Last release put them on the combat hover only; the deck builds its cards by a different route and missed out.")

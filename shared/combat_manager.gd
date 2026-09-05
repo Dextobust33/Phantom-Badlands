@@ -5935,10 +5935,23 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 				# Slight bonus XP (1.25x, was 2x)
 				var base_xp = int(monster.experience_reward * 1.25)
-				# Small bonus for level difference, capped at 1.5x max
+				# 2026-09-04 - the heist bonus now sits ON TOP OF the normal kill's XP, which is
+				# what the card promises. It used its OWN level-difference multiplier capped at
+				# +50%, while an ordinary kill's challenge bonus scales as 1 + sqrt(gap) x 0.7 and
+				# reaches +210%. So against exactly the over-level foe a player would gamble a
+				# Heist on, the instant win paid LESS than simply killing it - at L20 against L40,
+				# normal x2.14 of base against heist x1.93.
 				var xp_multiplier = 1.0
 				if level_diff > 0:
-					xp_multiplier = 1.0 + min(0.5, level_diff * 0.02)  # +2% per level, max +50%
+					var _h_ref_gap: float = 10.0 + float(character.level) * 0.05
+					xp_multiplier = 1.0 + sqrt(float(level_diff) / _h_ref_gap) * 0.7
+				elif level_diff < 0:
+					# The same downlevel penalty a normal kill takes: an instant win on something far
+					# beneath you should not dodge the anti-farming rule.
+					var _h_under: float = absf(float(level_diff))
+					var _h_thresh: float = 5.0 + float(character.level) * 0.03
+					if _h_under > _h_thresh:
+						xp_multiplier = maxf(0.4, 1.0 - minf(0.6, (_h_under - _h_thresh) * 0.03))
 
 				var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
 				# 2026-09-04 - the same HOTSPOT and APEX multipliers a normal kill gets. Owner:
