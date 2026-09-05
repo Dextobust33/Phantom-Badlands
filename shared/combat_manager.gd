@@ -68,8 +68,17 @@ const MITIGATION_VULN_CEIL := 1.45
 # HP model: an under-levelled companion still helps, and an over-levelled one is not scaled
 # down to its owner, because that is the player's investment.
 const COMPANION_DAMAGE_SHARE := 0.05
-const COMPANION_DAMAGE_UNDER_FLOOR := 0.60
-const COMPANION_DAMAGE_OVER_CAP := 2.5
+# RETIRED 2026-09-04 — both were the owner-relative clamp on companion damage, and companion
+# power is no longer measured against its owner at all. The cap is the one that mattered: it
+# stopped an over-levelled companion gaining anything past 2.5x, which is precisely the
+# investment the owner says should NOT be balanced away — "a player with a companion much higher
+# level than themselves should not be balanced, that's their invested power that helps them level
+# and make their progress back."
+#
+# Left declared and named so a future reader finds this note rather than reinventing the clamp.
+# Nothing references them.
+const COMPANION_DAMAGE_UNDER_FLOOR := 0.60   # unused
+const COMPANION_DAMAGE_OVER_CAP := 2.5       # unused
 
 const GEAR_COST_SHARE := 0.5
 

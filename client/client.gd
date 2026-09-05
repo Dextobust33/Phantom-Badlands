@@ -13295,7 +13295,15 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			var fn_chill = mini(45, max(1, int(30.0 * fraction)))
 			return {"text": "dmg + -%d%% acc" % fn_chill, "color": "#5AC8FF"}
 		"overload":
-			return {"text": "+120%% 2rd", "color": "#FF6347"}
+			# 2026-09-04 — a PLAIN string literal, so "%%" is not an escape here and rendered as
+			# two literal percent signs on the card. `%%` only collapses when the string passes
+			# through a `%` format operation, and this one never does. Reported: "Overload
+			# description in the deck page isn't displaying right either."
+			#
+			# Same family as the "%.2gx" that printed literally on the speed control: a format
+			# specifier written into a string nothing formats. Checked every other return in this
+			# function; Overload was the only one.
+			return {"text": "+120% 2rd", "color": "#FF6347"}
 		"teleport":
 			return {"text": "Flee", "color": "#888888"}
 		"cloak":
@@ -16991,7 +16999,7 @@ func _format_unique_effect_lines(ufx: Dictionary) -> Array:
 			"first_strike_autocrit":
 				out.append("[color=#FFD700]Your first attack each combat always crits and cannot miss[/color]")
 			"clutch_time_stop_per_combat":
-				out.append("[color=#FFD700]Once per combat, surviving below 20%% HP freezes time[/color]")
+				out.append("[color=#FFD700]Once per combat, surviving below 20% HP freezes time[/color]")
 			"crit_bleed_rounds":
 				pass  # folded into the crit_bleed_wit_pct line
 			_:
@@ -20536,8 +20544,8 @@ func _get_ability_cost_text(ability_name: String) -> String:
 	"""Cost text for an ability, read from the SERVER'S OWN cost table.
 
 	This used to be a hand-maintained copy of combat_manager's VARIABLE_COST_TABLE, and every
-	value in it had gone stale: forcefield read 75/7%% against the real 15/10%%, blast 50/5%%
-	against 34/21%%, meteor 100/8%% against 65/27%%. A player reported Forcefield displaying a
+	value in it had gone stale: forcefield read 75/7% against the real 15/10%, blast 50/5%
+	against 34/21%, meteor 100/8% against 65/27%. A player reported Forcefield displaying a
 	cost of 0 while its tooltip said 22-75 mana — two displays disagreeing because they were
 	reading two different tables, neither of them the one the server charges against.
 
@@ -20551,9 +20559,9 @@ func _get_ability_cost_text(ability_name: String) -> String:
 	if ability_name == "magic_bolt":
 		return "[color=%s](variable mana)[/color]" % resource_color
 	elif ability_name == "cloak":
-		return "[color=#9932CC](8%% per move)[/color]"
+		return "[color=#9932CC](8% per move)[/color]"
 	elif ability_name == "overload":
-		return "[color=#FF6347](20%% HP)[/color]"  # #36 — HP-cost, not mana
+		return "[color=#FF6347](20% HP)[/color]"  # #36 — HP-cost, not mana
 
 	var table: Dictionary = CombatManagerScript.VARIABLE_COST_TABLE
 	if not table.has(ability_name):
@@ -29563,11 +29571,23 @@ func display_changelog():
 	# v0.9.747 — The combat log rewritten around one line per action, the damage number moved
 	# off text-parsing and onto real data, and Paladin's class passive fixed after never once
 	# firing on a turn the player cast a card.
-	display_game("[color=#00FF00]v0.9.747[/color] [color=#808080](Current)[/color]")
+	# v0.9.748 — card upgrades made visible, a percent-sign bug across 115 lines of player-facing
+	# text, the trickster survival deck, and companion power decoupled from the player's.
+	display_game("[color=#00FF00]v0.9.748[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOUR CARD UPGRADES WERE INVISIBLE.[/color] They were [b]working[/b] the whole time — every upgrade fires in combat — but nothing showed them to you after you picked one, so an upgraded card looked identical to a fresh one. Cards now [b]list the upgrades they carry[/b], with a count for stacked ones, and you can hover each name for what it does.")
+	display_game("  [color=#FF8000]★ COMPANIONS ARE YOUR INVESTMENT AGAIN.[/color] A companion's health and damage were derived from [b]its owner's[/b] stats, which had two absurd consequences: equipping +HP gear changed your companion's health bar, and [b]gaining a level made your companion weaker[/b] (671 → 474 HP for one level, measured). Both now come from the [b]companion's own level[/b] — stable whatever you wear, and rising only when you level the companion. The cap that stopped an over-levelled companion gaining anything past 2.5x is gone too: a companion far above your level is [b]supposed[/b] to carry you, that is what you invested in.")
+	display_game("  [color=#FF8000]★ NEW CHARACTERS START WITH GEAR.[/color] A fresh character had [b]nothing[/b], and measured a [b]5-28%%[/b] win rate against a 60%% target — four deaths in five fights. You now start with a full basic kit in every slot. It is the cheapest gear in the game and your first real drop will beat it, but it is the difference between playing and dying.")
+	display_game("  [color=#1EFF00]◆ Tricksters: a deck that survives long enough to win.[/color] The starter deck is now [b]Analyze, Distract, Sabotage x2, Ambush, Perfect Heist[/b]. Analyze skips the enemy's turn outright; Distract and Sabotage avoid it [b]75%%[/b] of the time — and none of those cards ever said so. They do now. That is the class engine: buy the turns you need to build Read, then finish with Outsmart.")
+	display_game("  [color=#1EFF00]◆ Perfect Heist now actually kills the enemy in a party.[/color] It ended the fight in solo and left the monster standing at full health in co-op.")
+	display_game("  [color=#1EFF00]◆ A stray percent sign in 115 places.[/color] Card costs, unique effects, the help page and the changelog were all printing \"%%\" where they meant \"%\".")
+	display_game("  [color=#909090]Also: an Ambusher's opening strike now appears in the combat log instead of damaging you silently; deleting a character returns its companion to the Sanctuary; and a stray apostrophe in a damage tooltip no longer turns the rest of the log into raw markup.[/color]")
+	display_game("")
+
+	display_game("[color=#00FFFF]v0.9.747[/color]")
 	display_game("  [color=#FF8000]★ THE COMBAT LOG IS ONE LINE PER ACTION NOW.[/color] A single [b]Magic Bolt[/b] used to cost [b]nine lines[/b] and a Blast round thirteen, so the thing you actually did scrolled away before you could read it. Every action now reads as [b]one line[/b], with its own colour down the left so you can tell at a glance what [b]you[/b] did, what [b]your companion[/b] did, and what the [b]enemy[/b] did — and in a party, [b]which teammate[/b]. The monster carries its target's colour, so you can see who it went for without reading a word.")
 	display_game("  [color=#1EFF00]◆ The numbers explain themselves on hover.[/color] All the modifier lines that used to eat the log — skill bonuses, gear procs, crit multipliers — now ride on the [b]damage number itself[/b]. Hover it to see the breakdown. Same for damage coming [b]at[/b] you: a Forcefield absorbing a hit is no longer three lines, it is a note on the blow it softened.")
 	display_game("  [color=#1EFF00]◆ Damage numbers and the enemy health bar are one event again.[/color] The floating number over the enemy was being recovered by [b]reading the log text[/b], so rewording the log switched it off. It now travels as real data alongside the line, as does the enemy's health — so the bar moves on the [b]same beat[/b] as the number instead of trailing behind it. In a typical round your blow and your companion's are two separate numbers, and only the second one used to move the bar.")
-	display_game("  [color=#FF8000]★ PALADINS: YOUR CLASS PASSIVE WAS ONLY WORKING HALF THE TIME.[/color] [b]Divine Favor[/b] says it heals 3%% of your health every round. It only ever fired on a [b]basic attack[/b] — every round you played a card, it silently did nothing, which is a third to a half of an elite fight. Fixed. In testing this took Paladin from the [b]single worst[/b] result in the class table to mid-pack among warriors.")
+	display_game("  [color=#FF8000]★ PALADINS: YOUR CLASS PASSIVE WAS ONLY WORKING HALF THE TIME.[/color] [b]Divine Favor[/b] says it heals 3% of your health every round. It only ever fired on a [b]basic attack[/b] — every round you played a card, it silently did nothing, which is a third to a half of an elite fight. Fixed. In testing this took Paladin from the [b]single worst[/b] result in the class table to mid-pack among warriors.")
 	display_game("  [color=#1EFF00]◆ Your hand visibly cycles now.[/color] Cards drop away to the discard and a fresh hand deals in. The redraw was always genuine — with a small deck the same cards can simply come back, and there was no way to tell that from nothing happening.")
 	display_game("  [color=#1EFF00]◆ Combat speed control, and input that waits its turn.[/color] Arrows beside the combat log set the pace ([b]0.5x to 3x[/b], remembered), and your next action no longer fires while the last one is still landing — which is what caused stale health bars and buffs appearing a beat late. Default is now [b]1.5x[/b].")
 	display_game("  [color=#1EFF00]◆ Elementals and Sirens are visible again.[/color] Every variant of both — and their two bosses — had been fighting you as an [b]empty battlefield[/b]. The art existed the whole time; nothing could reach it. All [b]371[/b] monster names now resolve to art.")
@@ -29579,37 +29599,37 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.746[/color]")
 	display_game("  [color=#FF8000]★ AN ANCIENT DRAGON IS NOW A TERRIFYING FIGHT.[/color] It was not. Neither were a [b]Balrog[/b], a [b]Nazgul[/b] or an [b]Elder Lich[/b] — the game had a list of which species are deliberately deadly, and it had been filled in without much regard to what the names promise, so an [b]Ancient Dragon[/b] was being tuned as an ordinary fight while a [b]Jabberwock[/b] was held to the hardest band in the game. Rebuilt around the names. The deep end (tiers 7 and 8) is now [b]entirely[/b] made of monsters meant to frighten you — but only [b]4 of the 29[/b] species you meet in the early tiers are, so a new character still meets a fair world.")
 	display_game("  [color=#FF8000]★ THE THING THAT MAKES MONSTERS DIFFER FROM EACH OTHER WAS SWITCHED OFF.[/color] The game measures how dangerous each species really is — not from its stats, but by [b]actually fighting it thousands of times[/b] — and corrects the outliers so a level is a fair fight whichever monster turns up, while keeping them genuinely different. That correction was being [b]silently deleted every time the monsters were re-tuned[/b], so it has never once been in effect. It is now, and it covers [b]47 species[/b] instead of the 29 it used to reach.")
-	display_game("  [color=#1EFF00]◆ What that fixes, in fights you will notice.[/color] A [b]Jabberwock[/b] was winnable [b]16%%[/b] of the time; species like [b]Cerberus[/b] and [b]Gryphon[/b] were as punishing as the deliberately-deadly ones while giving [b]none[/b] of their reward. At the other end, several species were being beaten [b]over 90%%[/b] of the time, which is not a fight. Both ends are pulled toward the middle without flattening them — the deadly ones are [b]still deadly[/b], and they still pay [color=#FF4C40]2x XP and 3x drop chance[/color] for it.")
-	display_game("  [color=#1EFF00]◆ Level 100 was a wall, and it is gone.[/color] It measured [b]43%%[/b] winnable against a 60%% target and would not respond to tuning, because about a third of what spawns there came from those under-rewarded punishing species. It now measures [b]exactly 60%%[/b].")
+	display_game("  [color=#1EFF00]◆ What that fixes, in fights you will notice.[/color] A [b]Jabberwock[/b] was winnable [b]16%[/b] of the time; species like [b]Cerberus[/b] and [b]Gryphon[/b] were as punishing as the deliberately-deadly ones while giving [b]none[/b] of their reward. At the other end, several species were being beaten [b]over 90%[/b] of the time, which is not a fight. Both ends are pulled toward the middle without flattening them — the deadly ones are [b]still deadly[/b], and they still pay [color=#FF4C40]2x XP and 3x drop chance[/color] for it.")
+	display_game("  [color=#1EFF00]◆ Level 100 was a wall, and it is gone.[/color] It measured [b]43%[/b] winnable against a 60% target and would not respond to tuning, because about a third of what spawns there came from those under-rewarded punishing species. It now measures [b]exactly 60%[/b].")
 	display_game("  [color=#909090]Across levels 1 to 10000, thirteen of fourteen checkpoints sit within ten points of target, and ALL twenty-one elite/boss checks are within nine — the closest this has ever been.[/color]")
 	display_game("")
 
 	# v0.9.745 — The early game was too hard for a measurable reason: the calibration was
 	# being overwritten by its own smoothing step, and was measuring a monster that never spawns.
 	display_game("[color=#00FFFF]v0.9.745[/color]")
-	display_game("  [color=#FF8000]\u2605 THE EARLY GAME WAS TOO HARD — AND IT WAS OUR BUG, NOT YOUR BUILD.[/color] Levels [b]1 to 50[/b] were measurably harsher than intended: a fair fight there is meant to be winnable about [b]60%%[/b] of the time and it was running at [b]42-47%%[/b]. Two separate faults in the tool that sizes monsters, both now fixed. Those levels now measure [b]57-64%%[/b].")
-	display_game("  [color=#1EFF00]\u25c6 Fault one: the tuning was being thrown away after it was done.[/color] Monster sizes are worked out by simulating thousands of real fights, and a smoothing step ran afterwards to iron out flukes. That step used an [b]average[/b] of each level and its neighbours — which, on a curve that climbs steeply, [b]pushes every value upward[/b]. It was inflating the freshly-tuned numbers by [b]25-37%%[/b] at levels 5, 10 and 50. Eighteen rounds of tuning could never fix those levels because nothing they produced survived to be used. It now uses a [b]median[/b], which removes a genuine fluke completely but leaves a real climb untouched.")
-	display_game("  [color=#1EFF00]\u25c6 Fault two: it was measuring a monster that never spawns.[/color] The tuner built its test monsters by forcing exact numbers onto them, which [b]erased each species' own character[/b] — the thing that makes a Wolf and an Ogre of the same level feel different. Real spawns were [b]36%% weaker[/b] than the tuner thought at level 1 and [b]22%% stronger[/b] at level 100. It was tuning one game and shipping another. Every measurement now runs through the [b]same code that spawns the monster you actually meet[/b].")
+	display_game("  [color=#FF8000]\u2605 THE EARLY GAME WAS TOO HARD — AND IT WAS OUR BUG, NOT YOUR BUILD.[/color] Levels [b]1 to 50[/b] were measurably harsher than intended: a fair fight there is meant to be winnable about [b]60%[/b] of the time and it was running at [b]42-47%[/b]. Two separate faults in the tool that sizes monsters, both now fixed. Those levels now measure [b]57-64%[/b].")
+	display_game("  [color=#1EFF00]\u25c6 Fault one: the tuning was being thrown away after it was done.[/color] Monster sizes are worked out by simulating thousands of real fights, and a smoothing step ran afterwards to iron out flukes. That step used an [b]average[/b] of each level and its neighbours — which, on a curve that climbs steeply, [b]pushes every value upward[/b]. It was inflating the freshly-tuned numbers by [b]25-37%[/b] at levels 5, 10 and 50. Eighteen rounds of tuning could never fix those levels because nothing they produced survived to be used. It now uses a [b]median[/b], which removes a genuine fluke completely but leaves a real climb untouched.")
+	display_game("  [color=#1EFF00]\u25c6 Fault two: it was measuring a monster that never spawns.[/color] The tuner built its test monsters by forcing exact numbers onto them, which [b]erased each species' own character[/b] — the thing that makes a Wolf and an Ogre of the same level feel different. Real spawns were [b]36% weaker[/b] than the tuner thought at level 1 and [b]22% stronger[/b] at level 100. It was tuning one game and shipping another. Every measurement now runs through the [b]same code that spawns the monster you actually meet[/b].")
 	display_game("  [color=#909090]Across levels 1 to 10000, thirteen of fourteen checkpoints now land within four points of target, and twenty of twenty-one elite/boss checks are on target. Level 100 is still about ten points harder than intended and is being looked at.[/color]")
 	display_game("")
 
 	# v0.9.744 — Invisible bosses, buttons eating the spacebar, and the companion/monster
 	# rebalance: companion passives were unbounded (+1127%% max HP at high companion level).
 	display_game("[color=#00FFFF]v0.9.744[/color]")
-	display_game("  [color=#FF4444]\u2605 READ THIS ONE: THE GAME IS HARDER NOW.[/color] A companion's passive bonuses had [b]no upper limit[/b] and grew forever with its level. At high level one was handing you [b]twelve to twenty-one times your own health bar[/b], plus up to [b]+2275%% damage[/b] and enough damage absorption to be [b]effectively immune[/b]. Monsters had been sized against that, so the game quietly split in two: with the right companion nothing could threaten you, and without one the same content was brutal. Companion bonuses now [b]keep growing with level forever[/b] but at a sane rate, and every monster has been [b]re-measured[/b] against a player who is not carrying a small god. Expect fights to be [b]genuinely harder[/b] — especially if you had a high-level companion doing the work.")
+	display_game("  [color=#FF4444]\u2605 READ THIS ONE: THE GAME IS HARDER NOW.[/color] A companion's passive bonuses had [b]no upper limit[/b] and grew forever with its level. At high level one was handing you [b]twelve to twenty-one times your own health bar[/b], plus up to [b]+2275% damage[/b] and enough damage absorption to be [b]effectively immune[/b]. Monsters had been sized against that, so the game quietly split in two: with the right companion nothing could threaten you, and without one the same content was brutal. Companion bonuses now [b]keep growing with level forever[/b] but at a sane rate, and every monster has been [b]re-measured[/b] against a player who is not carrying a small god. Expect fights to be [b]genuinely harder[/b] — especially if you had a high-level companion doing the work.")
 	display_game("  [color=#1EFF00]\u25c6 Rarer companions still pay more — exactly more.[/color] The fix deliberately keeps the [b]hunt[/b] worth it: a rarer variant is worth [b]1.60x[/b] a common one at [b]every[/b] level, and a companion you levelled to 5000 is worth about [b]five times[/b] a low-level common. What is gone is only the runaway.")
 	display_game("  [color=#FF8000]\u2605 EVERY DUNGEON BOSS WAS INVISIBLE.[/color] Not some — [b]all twenty-one of them[/b]. A boss is named separately from its species (a [b]Spider Queen[/b] is a Giant Spider, a [b]Goblin King[/b] is a Goblin), and nothing connected the two, so every boss fight in the game showed an [b]empty battlefield[/b]. Reported by a player. Bosses now show their species' artwork. [color=#909090](Elementals and Sirens still have no art of their own — that is being drawn.)[/color]")
 	display_game("  [color=#FF8000]\u2605 THE SPACEBAR WAS BEING STOLEN.[/color] After clicking the [b]🐞 report[/b] button once, the report window [b]re-opened on every action[/b] — because the button kept keyboard focus and Space, your main action key, kept pressing it again. Reported by a player. The same fault meant the [b]📷 screenshot[/b] button was quietly saving a shot every time you pressed Space, the music toggle flipped on it, and the [b]volume slider ate the arrow keys[/b] — which are movement.")
 	display_game("  [color=#FF8000]\u2605 CARD RANK-UPS ARE A REAL CHOICE NOW.[/color] Every milestone used to offer the [b]same three options[/b] forever: more power, cheaper, or a rider. Now [b]nine[/b] upgrades are dealt from a pool of [b]48[/b], you study them, they are [b]shuffled face-down[/b], you turn over [b]three[/b] and keep [b]one[/b]. Later milestones add [b]trade-offs[/b] — picks that ask for something back, shown in amber. They differ by [b]when[/b] they pay: free on the first cast of a fight, every third cast, only below half health, only while the enemy is reeling.")
 	display_game("  [color=#FF4444]\u25c6 Party rank-ups never reached you.[/color] Ranking a card up [b]in a group[/b] queued the choice silently and told you nothing — you met it at your next login, and even then it showed the [b]old[/b] three-option menu. Both fixed.")
 	display_game("  [color=#FF4444]\u25c6 The party victory screen sometimes never appeared.[/color] The fight ended, the log said [b]Party victory[/b], and the monster stayed on screen at full health with your bars frozen until you pressed Space. The victory screen, the health bars, the monster's death and your companion's portrait all wait on the same signal, and it could simply never fire.")
-	display_game("  [color=#1EFF00]\u25c6 Common gear was worthless — literally.[/color] White items carried [b]no affixes at all[/b], and affixes are the only part of an item that keeps scaling past level 50. Measured, a full set of common gear won [b]0%% of fights at level 1000[/b]. Every rarity now gains an affix ([b]common 0 → 1[/b], uncommon 1 → 2, and so on up), so the bottom of the ladder is worth wearing again.")
+	display_game("  [color=#1EFF00]\u25c6 Common gear was worthless — literally.[/color] White items carried [b]no affixes at all[/b], and affixes are the only part of an item that keeps scaling past level 50. Measured, a full set of common gear won [b]0% of fights at level 1000[/b]. Every rarity now gains an affix ([b]common 0 → 1[/b], uncommon 1 → 2, and so on up), so the bottom of the ladder is worth wearing again.")
 	display_game("")
 
 	# v0.9.743 — Missing monster art, co-op Outsmart, apex from tier 2, Pathfinder retired.
 	display_game("[color=#00FFFF]v0.9.743[/color]")
 	display_game("  [color=#FF8000]★ SOME MONSTERS WERE INVISIBLE.[/color] Certain enemies showed [b]no artwork at all[/b] — an empty battlefield with a health bar floating above it. It hit every [b]Orc, Wolf and Young Dragon[/b] that turned up as a variant (a Venomous Orc, a Frenzied Wolf), because those three creatures keep their art under a different name and the prefix broke the match. Every prefix on every species now resolves properly.")
-	display_game("  [color=#FF8000]★ TRICKSTERS CAN OUTSMART IN A PARTY.[/color] Outsmart simply [b]did not work in co-op[/b] — the game rejected the command outright, so a Trickster in a group built [color=#7FD8C8]◉ Read[/color] toward a payoff that could never happen, with a third of the class switched off. It works now, at exactly the same odds and cost as solo: your Read, your Wits, the level gap and the enemy's rank all count the same. The odds meter in a party read a flat [b]0%%[/b] no matter how much Read you had; it tells the truth now.")
+	display_game("  [color=#FF8000]★ TRICKSTERS CAN OUTSMART IN A PARTY.[/color] Outsmart simply [b]did not work in co-op[/b] — the game rejected the command outright, so a Trickster in a group built [color=#7FD8C8]◉ Read[/color] toward a payoff that could never happen, with a third of the class switched off. It works now, at exactly the same odds and cost as solo: your Read, your Wits, the level gap and the enemy's rank all count the same. The odds meter in a party read a flat [b]0%[/b] no matter how much Read you had; it tells the truth now.")
 	display_game("  [color=#1EFF00]◆ The dangerous species start later.[/color] [color=#FF4C40]☠ APEX[/color] monsters — the ones deliberately tuned to beat you — used to include the [b]Skeleton[/b], which is roughly [b]one in five[/b] of everything a brand-new character meets. They now begin at [b]tier 2[/b], so your first fights are a fair introduction rather than a species built to kill you before you own a weapon.")
 	display_game("  [color=#1EFF00]◆ Party fights show the right numbers.[/color] The [b]card damage, costs and regeneration[/b] fixed last version were only reaching SOLO play — in a party you were still seeing the old, wrong estimates. Same for the [color=#FF4C40]☠ APEX[/color] tag, which never appeared in a group fight at all.")
 	display_game("  [color=#1EFF00]◆ Outsmart remembers what you spend.[/color] The energy box is [b]pre-filled[/b] and recalls what you committed last time (as does every other spend-what-you-like card), and committing [b]nothing[/b] is now genuinely allowed — before, an empty energy bar meant you could not attempt it at all.")
@@ -29622,8 +29642,8 @@ func display_changelog():
 	display_game("  [color=#FF8000]\u2605 EVERY ABILITY IS NOW ON THE SAME DAMAGE MODEL.[/color] Five abilities had been moved onto the new health-bar-anchored scaling and the rest were left on an old formula worth [b]five to ten times less at low level[/b] \u2014 and which abilities got converted decided which class worked. The Mage had its whole kit converted, the Warrior got two cards but [b]not its finisher[/b], and the Trickster got [b]none[/b]. Measured against a same-level monster, turns-to-kill went from [b]2.3 / 4.9 / 11.5[/b] (Mage / Warrior / Trickster) to [b]5.8 / 5.6 / 6.2[/b]. A Trickster genuinely could not win a straight fight before this.")
 	display_game("  [color=#1EFF00]\u25c6 Devastate is a real finisher now.[/color] Its damage scales with [b]each point of Momentum[/b] you spend, and the card tells you so \u2014 dumping at 1 Momentum is deliberately feeble, while a full five-stack blow on a full stamina bar is [b]the single biggest hit available to any class[/b]. Against an ordinary monster you will rarely reach five, because your builder cards have already killed it. That is the point: the finisher is what [b]elites and bosses[/b] are for.")
 	display_game("  [color=#FF4444]\u25c6 Party play was quietly wrecking your XP.[/color] Levelling up [b]inside a party[/b] never updated how much XP the next level needs, so it stayed frozen at the level-1 requirement of 100 \u2014 permanently, for that character. If you have levelled in a group, this is why it felt strange. Fixed.")
-	display_game("  [color=#1EFF00]\u25c6 Trickster: Read finally pays all the way up.[/color] Every stack of [color=#7FD8C8]\u25c9 Read[/color] promised more Outsmart odds, but a hidden ceiling meant [b]stacks past the second did nothing at all[/b]. Read now raises the ceiling as well, so a fully-built Read is genuinely reliable (~31%% to ~71%% against a same-level foe) while a snap Outsmart stays the gamble it should be. It now builds to [b]8[/b] rather than 5 \u2014 same ceiling, earned over more turns. Elites and bosses are [b]harder to trick[/b] than ordinary monsters, so your reach is over things ABOVE YOUR LEVEL rather than a way to skip the biggest fights. In a flock, Read [b]half carries[/b] to the next monster: reading a species transfers, reading an individual does not.")
-	display_game("  [color=#1EFF00]\u25c6 Outsmart asks before it spends.[/color] It used to take [b]60%% of your energy silently[/b] and only mention it afterwards. Now you choose what to commit \u2014 the box is [b]pre-filled[/b] with a sensible amount (and every variable-cost card now remembers what you last spent), and committing nothing is allowed. [b]Phantom Strike[/b] also says [color=#FFD700]CRITICAL[/color] now; it always dealt the damage, it just never told you.")
+	display_game("  [color=#1EFF00]\u25c6 Trickster: Read finally pays all the way up.[/color] Every stack of [color=#7FD8C8]\u25c9 Read[/color] promised more Outsmart odds, but a hidden ceiling meant [b]stacks past the second did nothing at all[/b]. Read now raises the ceiling as well, so a fully-built Read is genuinely reliable (~31% to ~71% against a same-level foe) while a snap Outsmart stays the gamble it should be. It now builds to [b]8[/b] rather than 5 \u2014 same ceiling, earned over more turns. Elites and bosses are [b]harder to trick[/b] than ordinary monsters, so your reach is over things ABOVE YOUR LEVEL rather than a way to skip the biggest fights. In a flock, Read [b]half carries[/b] to the next monster: reading a species transfers, reading an individual does not.")
+	display_game("  [color=#1EFF00]\u25c6 Outsmart asks before it spends.[/color] It used to take [b]60% of your energy silently[/b] and only mention it afterwards. Now you choose what to commit \u2014 the box is [b]pre-filled[/b] with a sensible amount (and every variable-cost card now remembers what you last spent), and committing nothing is allowed. [b]Phantom Strike[/b] also says [color=#FFD700]CRITICAL[/color] now; it always dealt the damage, it just never told you.")
 	display_game("  [color=#1EFF00]\u25c6 Fixes.[/color] Your [b]health bar no longer drops after the fight is over[/b] \u2014 results held back for the animation were being thrown away by five different code paths instead of applied, so the true number only appeared when you next moved. A Ranger fighting a beast (or a Paladin fighting the undead) saw [b]raw markup in the monster's name[/b]. Missing monster artwork now reports itself instead of showing an empty battlefield. And the [b]apex tag now appears in party fights[/b] too.")
 	display_game("")
 
@@ -29995,15 +30015,15 @@ func display_changelog():
 
 	# v0.9.667 — Combat resource QoL.
 	display_game("[color=#00FFFF]v0.9.667[/color]")
-	display_game("  [color=#FF8000]★ SKILLS COST LESS.[/color] Ability costs cut across the board (~30-45%%) so you can cast [b]a few skills per bar[/b] instead of dumping everything on one — a big help at low levels where your resource pool is small.")
-	display_game("  [color=#1EFF00]◆ Resting is worth it.[/color] Rest now restores a real chunk of resource ([b]~30%% of max[/b], was a token 1-2 points), and you recover faster [b]per step[/b] while exploring. No more limping between fights on an empty bar.")
+	display_game("  [color=#FF8000]★ SKILLS COST LESS.[/color] Ability costs cut across the board (~30-45%) so you can cast [b]a few skills per bar[/b] instead of dumping everything on one — a big help at low levels where your resource pool is small.")
+	display_game("  [color=#1EFF00]◆ Resting is worth it.[/color] Rest now restores a real chunk of resource ([b]~30% of max[/b], was a token 1-2 points), and you recover faster [b]per step[/b] while exploring. No more limping between fights on an empty bar.")
 	display_game("  [color=#1EFF00]◆ Cleaner victory loot.[/color] The loot screen no longer clutters with +2 Reveals / Chain / Trap cells, and your Valor, Salvage Essence, materials, and parts are [b]summed into one line each[/b] instead of a dozen separate entries. Just your loot.")
 	display_game("  • Fixed the '[i]You rest and 1 Stamina.[/i]' broken message.")
 	display_game("")
 
 	# v0.9.666 — Combat feel: card mastery fill + resource regen.
 	display_game("[color=#00FFFF]v0.9.666[/color]")
-	display_game("  [color=#FF8000]★ RESOURCE REGEN.[/color] You now [b]passively regain resource every turn[/b] in combat (12%% of your max mana/stamina/energy), so you're no longer stuck spamming basic attacks for whole fights when you run dry. Regen gear and Path bonuses stack on top.")
+	display_game("  [color=#FF8000]★ RESOURCE REGEN.[/color] You now [b]passively regain resource every turn[/b] in combat (12% of your max mana/stamina/energy), so you're no longer stuck spamming basic attacks for whole fights when you run dry. Regen gear and Path bonuses stack on top.")
 	display_game("  [color=#1EFF00]◆ Ability cards show mastery progress.[/color] Each ability card's background [b]fills left→right in its category color[/b] (red/orange for attacks, green for buffs, etc.) as you use it — when it fills completely, the ability is about to [b]rank up[/b]. See your progress toward every ability's next rank at a glance.")
 	display_game("")
 
@@ -30076,7 +30096,7 @@ func display_changelog():
 	# v0.9.656 — Item Sets (ARPG arc pillar 4 complete).
 	display_game("[color=#00FFFF]v0.9.656[/color]")
 	display_game("  [color=#1EFF00]◆ ITEM SETS — pillar 4 complete.[/color]")
-	display_game("  • [b]3 sets of 3 pieces[/b], dropping from the same Empowered/boss hunt as uniques: [color=#1EFF00]The Gravewalker's Vigil[/color] (2pc: +10%% defense + kills cleanse your wounds / 3pc: survive one lethal hit per combat + +20%% damage below half HP), [color=#1EFF00]Regalia of the Stormcaller[/color] (2pc: +10%% spell damage + stronger mana regen / 3pc: spells can double-cast + burns tick 50%% harder), [color=#1EFF00]The Magpie's Hoard[/color] (2pc: +15%% Valor + flee / 3pc: +1 loot reveal + crit chance).")
+	display_game("  • [b]3 sets of 3 pieces[/b], dropping from the same Empowered/boss hunt as uniques: [color=#1EFF00]The Gravewalker's Vigil[/color] (2pc: +10% defense + kills cleanse your wounds / 3pc: survive one lethal hit per combat + +20% damage below half HP), [color=#1EFF00]Regalia of the Stormcaller[/color] (2pc: +10% spell damage + stronger mana regen / 3pc: spells can double-cast + burns tick 50% harder), [color=#1EFF00]The Magpie's Hoard[/color] (2pc: +15% Valor + flee / 3pc: +1 loot reveal + crit chance).")
 	display_game("  • [b]Bonuses activate by equipped count[/b] — 2 pieces wake the first bonus, the full set wakes both. Tooltips show the set roster with your progress and which bonuses are live.")
 	display_game("  • Set bonuses stack with uniques and your Path talents — they all speak the same language under the hood. Build around the overlap.")
 	display_game("")
@@ -30088,7 +30108,7 @@ func display_changelog():
 	display_game("  • [b]A full skill tree per archetype[/b]: Path of the [color=#FF6666]Warlord[/color] (Onslaught / Bulwark / Warlord), the [color=#66CCFF]Archon[/color] (Destruction / Aegis / Wellspring), and the [color=#66FF66]Phantom[/color] (Lethality / Shadow / Fortune). 15 branch nodes each plus a keystone per class — 54 talents total, every one functional.")
 	display_game("  • [b]Earn Path points[/b]: 1 per 5 levels automatically, plus one-time feats (+1 each): first dungeon clear, first boss kill, first Empowered kill, first 3-modifier Empowered kill, 100 kills, first Apex Frontier kill. Feats toast when earned.")
 	display_game("  • [b]Open via Stats → ⚜ Paths[/b]. Branches unlock top-down, every node costs 1 point, choices are [color=#FF6666]permanent for this life[/color] — the tree dies with your character, and a full clear is impossible. Build with intent.")
-	display_game("  • [b]★ Keystones trade power for downsides[/b]: Blood Frenzy (+35%% damage below half HP, -30%% healing), Juggernaut's Resolve (stun immunity, -15%% flee), Last Stand (survive one lethal hit per combat, -10%% max HP), Overload, Time Anchor, Assassinate, Phantom Strike, Jackpot, and more.")
+	display_game("  • [b]★ Keystones trade power for downsides[/b]: Blood Frenzy (+35% damage below half HP, -30% healing), Juggernaut's Resolve (stun immunity, -15% flee), Last Stand (survive one lethal hit per combat, -10% max HP), Overload, Time Anchor, Assassinate, Phantom Strike, Jackpot, and more.")
 	display_game("  • [b]Counterplay nodes answer the Empowered monsters[/b]: stun negation, damage reflection, on-kill cleansing — the Bulwark/Aegis/Shadow branches are your tools against modifier stacks.")
 	display_game("  • [b]Class keystones[/b] (8 points spent to unlock): Drillmaster, Blood Rage, Crusader's Aura, Archmage, Chaos Theory, Transcendence, Cutpurse King, Apex Hunter, Shadow Lord.")
 	display_game("")
@@ -30113,9 +30133,9 @@ func display_changelog():
 	# v0.9.651 — Empowered monsters (ARPG arc pillar 1).
 	display_game("[color=#00FFFF]v0.9.651[/color]")
 	display_game("  [color=#FFD700]⚡ EMPOWERED MONSTERS — Diablo-style elite modifiers. The first slice of the ARPG direction.[/color]")
-	display_game("  • [b]15%% of Lv5+ monsters now spawn Empowered[/b] with 1-3 stacking modifiers that change how the fight plays: [color=#FF5555]Frenzied[/color] (ramping damage), [color=#C71585]Vampiric[/color] (lifesteal), [color=#9ACD32]Thorned[/color] (reflects melee), [color=#00E5EE]Swift[/color] (2-3 strikes/turn), [color=#B8860B]Juggernaut[/color] (+50%% HP, stun-immune), [color=#BA55D3]Venomous[/color] (poison), [color=#7B68EE]Warded[/color] (-35%% ability damage taken), [color=#FFD700]Gilded[/color] (harmless jackpot), [color=#FF8C00]Broodcalling[/color] (its kin WILL avenge it — guaranteed chain fight).")
+	display_game("  • [b]15% of Lv5+ monsters now spawn Empowered[/b] with 1-3 stacking modifiers that change how the fight plays: [color=#FF5555]Frenzied[/color] (ramping damage), [color=#C71585]Vampiric[/color] (lifesteal), [color=#9ACD32]Thorned[/color] (reflects melee), [color=#00E5EE]Swift[/color] (2-3 strikes/turn), [color=#B8860B]Juggernaut[/color] (+50% HP, stun-immune), [color=#BA55D3]Venomous[/color] (poison), [color=#7B68EE]Warded[/color] (-35% ability damage taken), [color=#FFD700]Gilded[/color] (harmless jackpot), [color=#FF8C00]Broodcalling[/color] (its kin WILL avenge it — guaranteed chain fight).")
 	display_game("  • [b]Risk is announced up front[/b]: every modifier is called out at combat start, and the name + ASCII border tint by danger — [color=#4FC3F7]blue[/color] = 1 mod, [color=#BA68C8]purple[/color] = 2 (Lv20+), [color=#FFB74D]orange[/color] = 3 (Lv40+). Read the banner, then fight or flee. Fleeing works exactly as before — no modifier reduces your escape chance.")
-	display_game("  • [b]Reward scales with risk[/b]: +30%% XP per modifier, +20%% drop chance per modifier, and +1 bonus loot reveal per modifier in the victory scratch-off (Gilded gives +2). Modifier bonuses accumulate across flock chains.")
+	display_game("  • [b]Reward scales with risk[/b]: +30% XP per modifier, +20% drop chance per modifier, and +1 bonus loot reveal per modifier in the victory scratch-off (Gilded gives +2). Modifier bonuses accumulate across flock chains.")
 	display_game("  • Existing rare variants (Weapon Master / Shield Guardian / Corrosive / Sundering / ★ Champion) are untouched and roll separately.")
 	display_game("  • This is pillar 1 of 5 on the ARPG roadmap (modifiers → gear +ability ranks → skill tree → uniques → endgame runs).")
 	display_game("")
@@ -30139,7 +30159,7 @@ func display_changelog():
 	display_game("[color=#00FFFF]v0.9.641[/color]")
 	display_game("  [color=#FFD700]Two follow-ups from the variant-imprints memo, closing the V2 design backlog.[/color]")
 	display_game("  • [b]Iron Golem now grants the [color=#7FD7FF]Aegis[/color] imprint[/b] (was Stagger). Aegis was the only trait no companion mapped to — the imprint was effectively unreachable. Iron Golem's defensive-construct theme fits Aegis (damage absorption shield) better than Stagger. Stun is still well-covered at T3 (Gargoyle, Shrieker) and T7-8 (World Serpent, Time Weaver) so the stun pool doesn't shrink meaningfully.")
-	display_game("  • [b][color=#FFC04D]Stagger[/color] and [color=#FF6FB5]Mesmerize[/color] imprint chance bumped 3%% → 5%% per stack[/b]. Max 4 stacks now = 20%% proc chance (was 12%%) so the procs are more 'felt' without crossing into oppressive territory. From the memo: 'current 1%% roll per cast is intentionally tiny. May want to make these more visible / felt.'")
+	display_game("  • [b][color=#FFC04D]Stagger[/color] and [color=#FF6FB5]Mesmerize[/color] imprint chance bumped 3% → 5% per stack[/b]. Max 4 stacks now = 20% proc chance (was 12%) so the procs are more 'felt' without crossing into oppressive territory. From the memo: 'current 1% roll per cast is intentionally tiny. May want to make these more visible / felt.'")
 	display_game("")
 
 	# v0.9.640 — /duel UI + imprint inspect visibility.
@@ -30479,7 +30499,7 @@ func display_changelog():
 	# v0.9.599 — Rank-up UI clarity + Imprint 3x buff + 6 chase affixes.
 	display_game("[color=#00FFFF]v0.9.599[/color]")
 	display_game("  [color=#FFD700]Three things batched. (1) The rank-up popup's '+-9% Damage' button now reads clearly. (2) Imprints — the third rank-up option from your active companion — are 3x stronger across the board. (3) New chase-tier affixes can roll on epic+ gear: % damage, % crit chance, % crit damage, % extra turn, +HP on kill, +resource on hit. Loot is more interesting now.[/color]")
-	display_game("  • [b]Rank-up popup clarity[/b]: button label now shows the ACTUAL gain (\"+10% Damage\") instead of the malformed \"+-9% Damage\" / \"++0% Damage\" that came from prepending '+' to an already-signed string. Dialog text now shows '80%% → 90%% damage (+10%%)' so you see exactly what's changing instead of comparing absolute % from baseline. The final rank (5→6) gain is +15%, which the old hardcoded '+10%' text also lied about — fixed.")
+	display_game("  • [b]Rank-up popup clarity[/b]: button label now shows the ACTUAL gain (\"+10% Damage\") instead of the malformed \"+-9% Damage\" / \"++0% Damage\" that came from prepending '+' to an already-signed string. Dialog text now shows '80% → 90% damage (+10%)' so you see exactly what's changing instead of comparing absolute % from baseline. The final rank (5→6) gain is +15%, which the old hardcoded '+10%' text also lied about — fixed.")
 	display_game("  • [b]Imprint values 3x'd[/b]: per-stack values bumped across all 10 trait categories so the third rank-up option actually competes with +1 Card and +Damage. bonus_damage / crit / lifesteal / enemy_miss go 2%→6% per stack (max 24% at 4 stacks). stun / charm go 1%→3% per stack. mana_drain / absorb go 2→6 per stack. Bleed and poison switched from flat +1/turn to 5% of the ability's hit damage per stack per turn — they now scale with your power instead of being meaningless at high levels.")
 	display_game("  • [b]Six chase affixes[/b]: D2-style 'chase' rolls in a new CHASE_SUFFIX_POOL. Drops only on epic+ items, gated by rarity (25% chance on epic bonus-slots, 35% on legendary, 50% on artifact). damage_mult / crit_chance_bonus / crit_damage_bonus / extra_turn_chance (turn-based attack-speed equivalent) / hp_on_kill / mana_on_hit / stamina_on_hit / energy_on_hit. Each has 2-3 named affix flavors and scales with item level. Combat hooks: damage_mult + crit affixes in calculate_damage; on-hit resource on both auto-attack and ability hits; on-kill HP fires after revive checks so Phoenix-rebirth bosses can't double-pay; extra_turn_chance currently rolls on ability hits only (auto-attack hook follow-up).")
 	display_game("  • [b]Roadmap[/b]: this is round 1 of a multi-release loot arc. Next: gear +X to abilities (D2 +skills), then a skill tree. The CHASE_SUFFIX_POOL is intentionally extensible — future affixes drop in as one-line entries.")
@@ -32723,23 +32743,23 @@ func show_help():
 
 [color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management. [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)
   Use Magic Bolt to kill - costs mana but deals INT-scaled damage. Meditate to recover HP+mana.
-  Mages regen 2%% mana/round (Sage 3%%). [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
+  Mages regen 2% mana/round (Sage 3%). [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
 
 [color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
   Use Outsmart vs dumb monsters (free win!). Analyze to learn stats. Flee if outmatched.
   [color=#2F4F4F]Thief[/color]=crits, [color=#228B22]Ranger[/color]=rewards, [color=#191970]Ninja[/color]=escape artist. [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
 
 [b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
-[color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2%% attack damage per point[/color] | Contributes to Stamina pool
+[color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Contributes to Stamina pool
 [color=#66FF66]CON[/color] [color=#808080]Constitution[/color] - [color=#FFFFFF]+5 max HP per point[/color] | +0.5 defense per point | Contributes to Stamina pool
-[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1%% hit, +2%% flee, -1%% enemy hit per 5 DEX (max 30%% dodge)[/color] | +0.5%% crit | Energy pool
-[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3%% spell damage per point[/color] | Contributes to Mana pool
+[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1% hit, +2% flee, -1% enemy hit per 5 DEX (max 30% dodge)[/color] | +0.5% crit | Energy pool
+[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3% spell damage per point[/color] | Contributes to Mana pool
 [color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
 [color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Outsmart: 15×log₂(WIT/10) bonus[/color] | Contributes to Energy pool
 
 [b][color=#FFD700]══ RACES ══[/color][/b]
-[color=#FFFFFF]Human[/color]=+10%%XP | [color=#66FF99]Elf[/color]=+50%%poison res,+20%%magic res,+25%%mana | [color=#FFA366]Dwarf[/color]=25%%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
-[color=#D2691E]Halfling[/color]=+10%%dodge,+15%%Valor | [color=#556B2F]Orc[/color]=+20%%dmg below 50%%HP | [color=#DDA0DD]Gnome[/color]=-15%%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
+[color=#FFFFFF]Human[/color]=+10%XP | [color=#66FF99]Elf[/color]=+50%poison res,+20%magic res,+25%mana | [color=#FFA366]Dwarf[/color]=25%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
+[color=#D2691E]Halfling[/color]=+10%dodge,+15%Valor | [color=#556B2F]Orc[/color]=+20%dmg below 50%HP | [color=#DDA0DD]Gnome[/color]=-15%ability costs | [color=#708090]Undead[/color]=curse immune,poison heals
 
 [b][color=#FFD700]══ BASICS ══[/color][/b]
 [color=#00FFFF]Keys:[/color] [Esc]=Mode | [NUMPAD]=Move | [%s]=Primary | [%s][%s][%s][%s]=Quick | [%s][%s][%s][%s]=Extra
@@ -32748,100 +32768,100 @@ func show_help():
 
 [b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
 [color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]                  [color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
-  [color=#C0C0C0]Fighter[/color] - 20%% less cost, +15%% DEF               [color=#4169E1]Wizard[/color] - +15%% spell dmg, +10%% crit
-  [color=#8B0000]Barbarian[/color] - +3%%dmg/10%%HP lost, +25%% cost        [color=#9400D3]Sorcerer[/color] - 25%% double dmg, 5%% backfire(max 15%%HP)
-  [color=#FFD700]Paladin[/color] - 3%%HP/rnd heal, +25%% vs undead          [color=#20B2AA]Sage[/color] - 25%% less cost, +50%% meditate
+  [color=#C0C0C0]Fighter[/color] - 20% less cost, +15% DEF               [color=#4169E1]Wizard[/color] - +15% spell dmg, +10% crit
+  [color=#8B0000]Barbarian[/color] - +3%dmg/10%HP lost, +25% cost        [color=#9400D3]Sorcerer[/color] - 25% double dmg, 5% backfire(max 15%HP)
+  [color=#FFD700]Paladin[/color] - 3%HP/rnd heal, +25% vs undead          [color=#20B2AA]Sage[/color] - 25% less cost, +50% meditate
 
 [color=#66FF66]TRICKSTER (WIT>10, Energy=(WIT+DEX)×0.75)[/color]
-  [color=#2F4F4F]Thief[/color] - +10%% crit chance, +35%% crit dmg    [color=#228B22]Ranger[/color] - +25%% vs beasts, +30%% rewards
-  [color=#191970]Ninja[/color] - +40%% flee, no dmg on fail | [color=#66FF66]25%% chance Quick Strike (+50%% dmg)[/color]
+  [color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit dmg    [color=#228B22]Ranger[/color] - +25% vs beasts, +30% rewards
+  [color=#191970]Ninja[/color] - +40% flee, no dmg on fail | [color=#66FF66]25% chance Quick Strike (+50% dmg)[/color]
 
 [b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
-[color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%%+DEX×0.5%%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60%% reduction
-[color=#00FFFF]Lvl Penalty:[/color] -1.5%%/lvl (max-25%%) for attacks vs higher monsters. [color=#FF4444]Monster +4%%/lvl exponential![/color]
-[color=#00FFFF]Hit:[/color] 75%%+(DEX-spd) [30-95%%] | [color=#00FFFF]Flee:[/color] 40%%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%%+lvl-DEX/5(max30%%)-spd/2 [40-95%%]
-[color=#66FF66]Trickster Dodge:[/color] +WIT/50%% dodge (max 15%%). Combined with DEX dodge, tricksters are harder to hit!
-[color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%%, max 45%%, ambusher +15%%)
+[color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%+DEX×0.5%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60% reduction
+[color=#00FFFF]Lvl Penalty:[/color] -1.5%/lvl (max-25%) for attacks vs higher monsters. [color=#FF4444]Monster +4%/lvl exponential![/color]
+[color=#00FFFF]Hit:[/color] 75%+(DEX-spd) [30-95%] | [color=#00FFFF]Flee:[/color] 40%+DEX+spd+WIT/2-monSpd/2-lvldiff | [color=#00FFFF]Enemy:[/color] 85%+lvl-DEX/5(max30%)-spd/2 [40-95%]
+[color=#66FF66]Trickster Dodge:[/color] +WIT/50% dodge (max 15%). Combined with DEX dodge, tricksters are harder to hit!
+[color=#FF4444]Initiative:[/color] mon_spd/2 - DEX/10 (min 5%, max 45%, ambusher +15%)
 
 [b][color=#FFD700]══ ABILITIES ══[/color][/b]
-[color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75%% dodge[/color] on enemy turn!
-[color=#9932CC]Cloak[/color](L20): 8%%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
-[color=#FF00FF]All or Nothing[/color]: ~3%% instakill, fail=monster 2x STR/SPD, +0.1%%/use permanent (max 34%%)
+[color=#00FF00]Buff Advantage:[/color] Defensive abilities (Forcefield, Haste, War Cry, etc) = [color=#FFD700]75% dodge[/color] on enemy turn!
+[color=#9932CC]Cloak[/color](L20): 8%res/step, no encounters | [color=#AA66FF]Teleport[/color](Mage30/Trick45/War60): 10+dist cost
+[color=#FF00FF]All or Nothing[/color]: ~3% instakill, fail=monster 2x STR/SPD, +0.1%/use permanent (max 34%)
 
 [color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
   [color=#FFFFFF]L1  Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
-  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +2 Momentum + rattle foe (-25%% accuracy)
+  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +2 Momentum + rattle foe (-25% accuracy)
   [color=#FFFFFF]L25 Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
-  [color=#FFFFFF]L25 Fortify[/color]      [color=#808080](25 stam)[/color] - +30%% defense + √STR×3 for 5 rounds
-  [color=#FFFFFF]L40 Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20%% STR/rnd, 4 rounds)
+  [color=#FFFFFF]L25 Fortify[/color]      [color=#808080](25 stam)[/color] - +30% defense + √STR×3 for 5 rounds
+  [color=#FFFFFF]L40 Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20% STR/rnd, 4 rounds)
   [color=#FFFFFF]L40 Rally[/color]        [color=#808080](35 stam)[/color] - Heal 30+√CON×10 HP, +STR buff for 3 rounds
-  [color=#FFFFFF]L60 Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200%% damage (more when hurt), -40%% defense, 4 rounds
-  [color=#FFFFFF]L80 Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60%% for 4 rounds
+  [color=#FFFFFF]L60 Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200% damage (more when hurt), -40% defense, 4 rounds
+  [color=#FFFFFF]L80 Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60% for 4 rounds
   [color=#FFFFFF]L100 Devastate[/color]   [color=#808080](50 stam)[/color] - 5× attack damage, scales with √STR
 
-[color=#66FFFF]MAGE ABILITIES[/color] [color=#808080](Mana = INT×3 + WIS×1.5, regen 2%%/round, Sage 3%%)[/color]
+[color=#66FFFF]MAGE ABILITIES[/color] [color=#808080](Mana = INT×3 + WIS×1.5, regen 2%/round, Sage 3%)[/color]
   [color=#FFFFFF]L1  Magic Bolt[/color]   [color=#808080](variable)[/color] - Spend mana to deal damage: mana × (1 + √INT/5). "bolt 50" = spend 50 mana
-  [color=#FFFFFF]L10 Forcefield[/color]   [color=#808080](20+2%%)[/color]  - Absorb shield worth 100 + INT×8 HP. Blocks all damage until depleted
-  [color=#FFFFFF]L25 Cloak[/color]        [color=#808080](30+3%%)[/color]  - 50%% enemy miss chance for 1 attack
-  [color=#FFFFFF]L40 Blast[/color]        [color=#808080](50+5%%)[/color]  - 2× INT-scaled damage + burn (20%% INT/rnd for 3 rounds)
-  [color=#FFFFFF]L40 Haste[/color]        [color=#808080](35+3%%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
-  [color=#FFFFFF]L60 Paralyze[/color]     [color=#808080](60+6%%)[/color]  - 50%%+INT/2 chance (max 85%%) to stun 1-2 turns
-  [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%%)[/color]  - Chip frost dmg + chill (-30%% enemy accuracy). Builds Focus, soft control
-  [color=#FFFFFF]Overload[/color]         [color=#808080](20%% HP)[/color] - Burn 20%% max HP to buff your spells +120%% for 2 rounds. No mana, no heal — glass-cannon burst
+  [color=#FFFFFF]L10 Forcefield[/color]   [color=#808080](20+2%)[/color]  - Absorb shield worth 100 + INT×8 HP. Blocks all damage until depleted
+  [color=#FFFFFF]L25 Cloak[/color]        [color=#808080](30+3%)[/color]  - 50% enemy miss chance for 1 attack
+  [color=#FFFFFF]L40 Blast[/color]        [color=#808080](50+5%)[/color]  - 2× INT-scaled damage + burn (20% INT/rnd for 3 rounds)
+  [color=#FFFFFF]L40 Haste[/color]        [color=#808080](35+3%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
+  [color=#FFFFFF]L60 Paralyze[/color]     [color=#808080](60+6%)[/color]  - 50%+INT/2 chance (max 85%) to stun 1-2 turns
+  [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%)[/color]  - Chip frost dmg + chill (-30% enemy accuracy). Builds Focus, soft control
+  [color=#FFFFFF]Overload[/color]         [color=#808080](20% HP)[/color] - Burn 20% max HP to buff your spells +120% for 2 rounds. No mana, no heal — glass-cannon burst
   [color=#FFFFFF]L80 Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
-  [color=#FFFFFF]L100 Meteor[/color]      [color=#808080](100+8%%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
-  [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4%% mana (8%% if already full HP)
+  [color=#FFFFFF]L100 Meteor[/color]      [color=#808080](100+8%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
+  [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4% mana (8% if already full HP)
 
 [color=#FFA500]TRICKSTER ABILITIES[/color] [color=#808080](Energy = (WIT+DEX)×0.75)[/color]
-  [color=#FFFFFF]L1  Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10%% damage bonus for this fight
-  [color=#FFFFFF]L10 Distract[/color]     [color=#808080](15 en)[/color]  - -50%% enemy accuracy for 1 attack
-  [color=#FFFFFF]L25 Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal Valor (50+lvl×2)×(1+WIT×5%%). 1-3 attempts per fight
-  [color=#FFFFFF]L25 Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%%+WIT/3 (stacks, max 50%%)
-  [color=#FFFFFF]L40 Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50%% crit chance, scales with √WIT
-  [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%%+WIT/4 chance (max 80%%): 4× damage + bonus Valor/gems. Fail = 15%% self-damage
+  [color=#FFFFFF]L1  Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10% damage bonus for this fight
+  [color=#FFFFFF]L10 Distract[/color]     [color=#808080](15 en)[/color]  - -50% enemy accuracy for 1 attack
+  [color=#FFFFFF]L25 Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal Valor (50+lvl×2)×(1+WIT×5%). 1-3 attempts per fight
+  [color=#FFFFFF]L25 Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%+WIT/3 (stacks, max 50%)
+  [color=#FFFFFF]L40 Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
+  [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
   [color=#FFFFFF]L60 Vanish[/color]       [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next attack auto-crits at 1.5×
-  [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35%% of monster's max HP as damage (scales with WIT)
-  [color=#FFFFFF]L100 Perfect Heist[/color] [color=#808080](50 en)[/color] - 30%%+WIT/2 chance: instant win + 25%% bonus Valor. Fail = 20%% self-damage
-  [color=#AAAAAA]Outsmart[/color]         [color=#808080](free)[/color]   - 5%%+15×log₂(WIT/10). Capped by monster INT/3. Easy vs brutes, hard vs mages. Fail = free enemy attack
+  [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
+  [color=#FFFFFF]L100 Perfect Heist[/color] [color=#808080](50 en)[/color] - 30%+WIT/2 chance: instant win + 25% bonus Valor. Fail = 20% self-damage
+  [color=#AAAAAA]Outsmart[/color]         [color=#808080](free)[/color]   - 5%+15×log₂(WIT/10). Capped by monster INT/3. Easy vs brutes, hard vs mages. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
 [color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
 [color=#FF4444]Offense:[/color]
   [color=#FFFFFF]Multi-Strike[/color] - Hits 2-3 times per turn (each hit reduced damage)
-  [color=#FFFFFF]Enrage[/color] - +10%% damage per round, stacks up to 10 (max +100%%)
-  [color=#FFFFFF]Berserker[/color] - +3%% damage per 10%% HP lost. Deadlier when wounded!
+  [color=#FFFFFF]Enrage[/color] - +10% damage per round, stacks up to 10 (max +100%)
+  [color=#FFFFFF]Berserker[/color] - +3% damage per 10% HP lost. Deadlier when wounded!
   [color=#FFFFFF]Life Steal[/color] - Heals for portion of damage dealt
-  [color=#FFFFFF]Glass Cannon[/color] - 3× damage but only 50%% HP. Kill fast!
-  [color=#FFFFFF]Ambusher[/color] - First hit auto-crits, +15%% initiative
-  [color=#FF00FF]Poison[/color] - 30%% STR damage/round for 35 rounds. [color=#FF4444]PERSISTS outside combat![/color]
+  [color=#FFFFFF]Glass Cannon[/color] - 3× damage but only 50% HP. Kill fast!
+  [color=#FFFFFF]Ambusher[/color] - First hit auto-crits, +15% initiative
+  [color=#FF00FF]Poison[/color] - 30% STR damage/round for 35 rounds. [color=#FF4444]PERSISTS outside combat![/color]
 [color=#808080]Debuffs:[/color]
-  [color=#FFFFFF]Curse[/color] - -25%% attack for 20 rounds | [color=#FFFFFF]Weakness[/color] - -25%% attack for 20 rounds
-  [color=#FFFFFF]Disarm[/color] - Removes weapon damage bonus | [color=#FFFFFF]Blind[/color] - -30%% hit chance, hides HP bar, 15 rounds
+  [color=#FFFFFF]Curse[/color] - -25% attack for 20 rounds | [color=#FFFFFF]Weakness[/color] - -25% attack for 20 rounds
+  [color=#FFFFFF]Disarm[/color] - Removes weapon damage bonus | [color=#FFFFFF]Blind[/color] - -30% hit chance, hides HP bar, 15 rounds
   [color=#FFFFFF]Bleed[/color] - Stacking DoT (stack×3 damage/round) | [color=#FFFFFF]Slow[/color] - Reduces flee chance
   [color=#FFFFFF]Charm[/color] - Forces you to hit yourself | [color=#FFFFFF]Drain[/color] - Steals mana/stamina/energy
   [color=#FFFFFF]Buff Destroy[/color] - Removes one active buff | [color=#FFFFFF]Shield Shatter[/color] - Destroys forcefield
 [color=#6666FF]Defense:[/color]
-  [color=#FFFFFF]Armored[/color] - +50%% defense | [color=#FFFFFF]Ethereal[/color] - 50%% chance to dodge attacks
-  [color=#FFFFFF]Regen[/color] - Heals 10%% max HP per round | [color=#FFFFFF]Reflect[/color] - Returns 25%% of damage dealt
+  [color=#FFFFFF]Armored[/color] - +50% defense | [color=#FFFFFF]Ethereal[/color] - 50% chance to dodge attacks
+  [color=#FFFFFF]Regen[/color] - Heals 10% max HP per round | [color=#FFFFFF]Reflect[/color] - Returns 25% of damage dealt
   [color=#FFFFFF]Thorns[/color] - Melee attacks hurt you back | [color=#FFFFFF]Disguise[/color] - Hidden stats for first 2 rounds
 [color=#FFD700]Special:[/color]
-  [color=#FFFFFF]Death Curse[/color] - Deals 10%% max HP damage when killed (can't kill you)
+  [color=#FFFFFF]Death Curse[/color] - Deals 10% max HP damage when killed (can't kill you)
   [color=#FFFFFF]Summoner[/color] - Calls reinforcement monster mid-fight
   [color=#FFFFFF]Corrosive/Sunder[/color] - Damages your gear (repair at blacksmith stations!)
-  [color=#FFFFFF]XP Steal[/color] - Steals 1-3%% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5%% chance to steal equipped item
+  [color=#FFFFFF]XP Steal[/color] - Steals 1-3% of your XP per hit | [color=#FFFFFF]Item Steal[/color] - 5% chance to steal equipped item
 [color=#00FF00]Loot Abilities:[/color]
   [color=#FFFFFF]Gold Hoarder[/color] - Drops 3× Valor | [color=#FFFFFF]Gem Bearer[/color] - Always drops Monster Gems
-  [color=#FFFFFF]Weapon/Shield Master[/color] - 35%% guaranteed equipment drop
-  [color=#FFFFFF]Arcane/Cunning/Warrior Hoarder[/color] - 35%% class-specific gear drop
-  [color=#FFFFFF]Wish Granter[/color] - 10%% chance for a wish (materials, gear, buff, stats, or equip upgrade!)
+  [color=#FFFFFF]Weapon/Shield Master[/color] - 35% guaranteed equipment drop
+  [color=#FFFFFF]Arcane/Cunning/Warrior Hoarder[/color] - 35% class-specific gear drop
+  [color=#FFFFFF]Wish Granter[/color] - 10% chance for a wish (materials, gear, buff, stats, or equip upgrade!)
 [color=#AAAAAA]Wishes:[/color] Gems | Gear | Buff | Equip Upgrade(×12) | Permanent Stats
 [color=#00FFFF]HP Bar:[/color] [color=#FFFFFF]150/200[/color]=Known | [color=#808080]~150/200[/color]=Estimated | [color=#808080]???[/color]=Unknown. Kill to learn!
 
 [b][color=#FFD700]══ EMPOWERED MONSTERS ══[/color][/b]
-[color=#AAAAAA]15%% of Lv5+ monsters carry 1-3 stacking modifiers. Name color = danger: [color=#4FC3F7]1 mod[/color], [color=#BA68C8]2 mods[/color] (Lv20+), [color=#FFB74D]3 mods[/color] (Lv40+).[/color]
-[color=#AAAAAA]Modifiers are announced at combat start — read them, then fight or flee. Each mod = +30%% XP, +20%% drop chance, +1 loot reveal![/color]
+[color=#AAAAAA]15% of Lv5+ monsters carry 1-3 stacking modifiers. Name color = danger: [color=#4FC3F7]1 mod[/color], [color=#BA68C8]2 mods[/color] (Lv20+), [color=#FFB74D]3 mods[/color] (Lv40+).[/color]
+[color=#AAAAAA]Modifiers are announced at combat start — read them, then fight or flee. Each mod = +30% XP, +20% drop chance, +1 loot reveal![/color]
   [color=#FF5555]Frenzied[/color]=damage ramps/round | [color=#C71585]Vampiric[/color]=heals from hits | [color=#9ACD32]Thorned[/color]=reflects melee | [color=#00E5EE]Swift[/color]=2-3 strikes/turn
-  [color=#B8860B]Juggernaut[/color]=+50%% HP, stun-immune | [color=#BA55D3]Venomous[/color]=poison attacks | [color=#7B68EE]Warded[/color]=-35%% ability dmg taken
+  [color=#B8860B]Juggernaut[/color]=+50% HP, stun-immune | [color=#BA55D3]Venomous[/color]=poison attacks | [color=#7B68EE]Warded[/color]=-35% ability dmg taken
   [color=#FFD700]Gilded[/color]=harmless, +2 loot reveals | [color=#FF8C00]Broodcalling[/color]=kin avenge it (guaranteed chain fight!)
 
 [b][color=#FFD700]══ ☠ APEX SPECIES ══[/color][/b]
@@ -32882,24 +32902,24 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [b][color=#FFD700]══ ITEMS ══[/color][/b]
 [color=#00FFFF]Potions([%s]):[/color] Health/Mana/Stam/Energy restore | STR/DEF/SPD boost | Crit/Lifesteal/Thorns effects
 [color=#FF00FF]Buff Scrolls:[/color] Forcefield, Rage, Stone Skin, Haste, Vampirism, Thorns, Precision
-[color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50%% vs type)
+[color=#A335EE]Special Scrolls:[/color] Time Stop(skip enemy turn) | Resurrect(T8+,revive once) | Bane(+50% vs type)
 [color=#A335EE]Runes:[/color] Enchanting-crafted consumables. Use on equipped gear to add affixes or proc effects.
   Stat runes set affix caps (+8 def, +200 HP, etc). Proc runes add lifesteal/shocking/reflect/execute.
   Runes stack in inventory. Sell on market under the Runes category.
-[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50%% 2x Valor or lose half)
-[color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10%% cost or +15%% dmg
+[color=#FFD700]Mystery Items:[/color] Box(random tier/+1 item) | Cursed Coin(50% 2x Valor or lose half)
+[color=#00FF00]Stat Tomes(T6+):[/color] [color=#FF69B4]Permanent[/color] +1 to any stat! | [color=#00FF00]Skill Tomes(T7+):[/color] -10% cost or +15% dmg
 [color=#00FF00]Equip/Unequip:[/color] In the Inventory panel: [b]double-click[/b] an item to equip/use it, [b]drag[/b] it onto its slot to equip, [b]drag a slot off[/b] the doll to unequip, or [b]right-click[/b] for all options (Inspect/Use/Equip/Lock/Salvage/Drop).
 [color=#FF4444]Lock:[/color] Right-click an item → Lock protects it from Salvage All, accidental discard, and single salvage.
-[color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100%% = BROKEN (no stats). Repair via wandering blacksmiths only!
+[color=#AAAAAA]Wear:[/color] Corrosive/Sunder damages gear. 100% = BROKEN (no stats). Repair via wandering blacksmiths only!
 
 [b][color=#FFD700]══ GEAR HUNTING ══[/color][/b]
-[color=#FF6666]Warrior:[/color] Minotaur(t3), Iron Golem(t6), Death Incarnate(t8) - 35%% drop
-[color=#66CCCC]Mage:[/color] Wraith(t3), Lich(t5), Elemental/Sphinx(t6), Elder Lich(t7), Time Weaver(t8) - 35%%
-[color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%%
-[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%%) - 35%% guaranteed drop!
-[color=#FF8000]★ UNIQUES:[/color] 15 named items with fixed rule-breaking powers (Bloodletter's Hook, The Second Sun, Juggernaut's Heart...). Tiny drop chance, [b]boosted by Empowered modifiers (+0.75%%/mod) and bosses (+2.5%%)[/b]. Stats scale to drop level — re-find them stronger forever. Tradeable on the market!
+[color=#FF6666]Warrior:[/color] Minotaur(t3), Iron Golem(t6), Death Incarnate(t8) - 35% drop
+[color=#66CCCC]Mage:[/color] Wraith(t3), Lich(t5), Elemental/Sphinx(t6), Elder Lich(t7), Time Weaver(t8) - 35%
+[color=#66FF66]Trickster:[/color] Goblin(t1), Hobgoblin/Spider(t2), Void Walker(t7) - 35%
+[color=#FFD700]Weapon/Shield:[/color] Any Lv5+ monster can spawn as Master (4%) - 35% guaranteed drop!
+[color=#FF8000]★ UNIQUES:[/color] 15 named items with fixed rule-breaking powers (Bloodletter's Hook, The Second Sun, Juggernaut's Heart...). Tiny drop chance, [b]boosted by Empowered modifiers (+0.75%/mod) and bosses (+2.5%)[/b]. Stats scale to drop level — re-find them stronger forever. Tradeable on the market!
 [color=#1EFF00]◆ SETS:[/color] 3 item sets of 3 pieces (Gravewalker's Vigil, Stormcaller's Regalia, Magpie's Hoard). Equip 2 pieces for the first bonus, all 3 for the big one. Drop from the same Empowered/boss hunt as uniques.
-[color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%%HP)
+[color=#A335EE]Proc Gear(T6+):[/color] Vampire(lifesteal) | Thunder(shock dmg) | Reflection(reflect) | Slayer(execute<20%HP)
 [color=#FFD700]Synergy*:[/color] Asterisk (*) after affix name = double bonus synergy (e.g., Arcane* Hoarder's Ring)
 
 [color=#AAAAAA]Buff Display:[/color] [color=#FF6666]S[/color]=STR [color=#6666FF]D[/color]=DEF [color=#66FF66]V[/color]=SPD [color=#FFD700]C[/color]=Crit [color=#FF00FF]L[/color]=Life [color=#FF4444]T[/color]=Thorns [color=#00FFFF]F[/color]=Force | #=rounds, #+B=battles
@@ -32915,9 +32935,9 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
   Tools have durability (T1=10, T5=100). New characters start with T1 starter tools.
 [color=#FFD700]Bulk Craft:[/color] Stackable recipes (structures, scrolls, runes, etc.) support crafting 1-99x at once!
   Use -Qty/+Qty/Max buttons when a recipe is selected. One minigame for the whole batch.
-[color=#808080]Skip Minigames:[/color] Settings→Game→Skip Craft/Gather. Instant results but ~65%% average rewards.
+[color=#808080]Skip Minigames:[/color] Settings→Game→Skip Craft/Gather. Instant results but ~65% average rewards.
 [color=#FF8800]Tempered Craft:[/color] Equipment recipes have a "Temper" option — target a bonus stat (+ATK/DEF/HP/SPD).
-  Costs 50%% extra materials and halves success chance. Materials lost on failure! High risk, high reward.
+  Costs 50% extra materials and halves success chance. Materials lost on failure! High risk, high reward.
 [color=#FFD700]Recipe Discovery:[/color] Advanced recipes (difficulty 50+) require Recipe Scrolls found in dungeon treasure (T4+).
 [color=#AA66FF]Salvage:[/color] Breaks items into [color=#AA66FF]crafting materials[/color]. Right-click an item → Salvage, or use the panel's Salvage ▾ menu (Junk / All / Consumables / auto-salvage filters). Higher rarity = more materials.
 [color=#00FFFF]Material Pouch:[/color] Inventory→Materials shows resources (ore, wood, fish, monster parts). Max 999 per stack.
@@ -32926,11 +32946,11 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 [b][color=#FFD700]══ WORLD ══[/color][/b]
 [color=#00FF00]Posts(58):[/color] Crossroads(0,0)=spawn & throne | Frostgate(0,-100)=boss. Recharge([%s])!
 [color=#FFD700]Merchants:[/color] Couriers on roads between posts with markets. Browse carried goods when encountered.
-[color=#FF6600]![/color]=Hotspot (+50-150%% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
+[color=#FF6600]![/color]=Hotspot (+50-150% level) | [color=#9932CC]D[/color]=Dungeon entrance (visible on map when nearby!)
 [color=#00FFFF]Quests([%s]):[/color] Kill Any/Type/Level, Hotzone, Boss Hunt, Dungeon Clear, Chains (multi-stage with egg+title bonuses). Board regenerates — no daily caps. Max 3 active.
 [color=#9932CC]Dungeons([%s]):[/color] 53 unique dungeons — every monster type has one! [color=#FFD700]GUARANTEED[/color] companion egg on completion!
   All monsters match dungeon theme (Orc Stronghold = Orcs). Sub-tiers (T3-1, T3-2) = harder variants, better loot!
-  [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50%% stats, -20%% steps, +75%% XP, bonus loot)!
+  [color=#FF8800]Hard Mode:[/color] Clear any dungeon once to unlock Hard Mode (+50% stats, -20% steps, +75% XP, bonus loot)!
 [color=#808080]First Dungeon:[/color] Get "Into the Depths" quest at Crossroads. Dungeons spawn [color=#00FFFF]30+ tiles[/color] from Crossroads in all directions.
 
 [b][color=#FFD700]══ GUARDS & TOWERS ══[/color][/b]
@@ -32957,18 +32977,18 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
   [color=#FFD700]High King[/color](200-1000): Crown + (0,0). ONE only. Knight/Cure/Exile/Treasury. Survives 1 death!
   [color=#9400D3]Elder[/color](1000+): Auto. Many exist. Heal/Mentor/Seek Flame. Can find Eternal Flame.
   [color=#00FFFF]Eternal[/color]: Elder + Flame. Max 3. Has 3 lives! Restore/Bless/Smite/Guardian.
-[color=#FF69B4]Trophies(T8+):[/color] 5%% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
+[color=#FF69B4]Trophies(T8+):[/color] 5% from bosses (Dragon Scale, Phylactery, etc.) - prestige collectibles!
 [color=#00FFFF]Companions:[/color] Companion eggs drop from [color=#9932CC]dungeons only[/color] - bosses guarantee their egg, treasure may have extras!
-  Wolf(+10%%atk) | Phoenix(2%%HP/rnd) | Shadow(+15%%flee) | Frost(+10%%def) | Storm(+5%%crit) + more
+  Wolf(+10%atk) | Phoenix(2%HP/rnd) | Shadow(+15%flee) | Frost(+10%def) | Storm(+5%crit) + more
   [color=#00FFFF]More[/color]→[color=#00FFFF]Companions[/color]: View/activate companions, [color=#00FF00]Inspect[/color] for stats & abilities. [color=#FFAA00]Eggs[/color]: View incubating eggs with art!
   Each monster type has unique abilities in combat! Lv5=active, Lv15=threshold. Scales with level. Hatch eggs by walking!
 
 [b][color=#FFD700]══ WANDERING NPCs ══[/color][/b]
-[color=#DAA520]Blacksmith[/color] (3%% chance when gear damaged): Offers repairs while traveling. Cost = wear%% × item_level × 5 Valor.
+[color=#DAA520]Blacksmith[/color] (3% chance when gear damaged): Offers repairs while traveling. Cost = wear% × item_level × 5 Valor.
   Repair All = 10%% discount! Select items with [1-9] keys, or repair all with [%s].
-[color=#00FF00]Healer[/color] (4%% chance when HP<80%%): Offers healing while traveling. Costs scale with level:
+[color=#00FF00]Healer[/color] (4% chance when HP<80%): Offers healing while traveling. Costs scale with level:
   [%s] Quick (25%% HP) = level×22g | [%s] Full (100%% HP) = level×90g | [%s] Cure All (full+debuffs) = level×180g
-[color=#DAA520]Tax Collector[/color] (5%% chance when 100+g): 8%% tax (min 10g). Bumbling=5%%, Veteran=10%%. Jarls/High Kings immune.
+[color=#DAA520]Tax Collector[/color] (5% chance when 100+g): 8% tax (min 10g). Bumbling=5%, Veteran=10%. Jarls/High Kings immune.
 
 [b][color=#FFD700]══ SANCTUARY (HOUSE) ══[/color][/b]
 [color=#00FFFF]Account-Level Home:[/color] Your Sanctuary persists across all characters on your account!
@@ -32987,9 +33007,9 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
   • Fused companions start at Lv1 with a new random variant
 [color=#FF69B4]Baddie Points (BP):[/color] Meta-currency earned when characters die. Spend on upgrades:
   • Storage (+10 slots/lv) | Registered Companions (+1 slot/lv) | Kennel Capacity
-  • Escape Training (+2%% flee/lv) | Family Inheritance (+50g start/lv)
-  • Ancestral Wisdom (+1%% XP/lv) | Homesteading (+5%% gathering/lv)
-  • Combat: HP/Resource Max/Regen (+5%%/lv) | Stats: STR/CON/DEX/INT/WIS/WITS (+1/lv)
+  • Escape Training (+2% flee/lv) | Family Inheritance (+50g start/lv)
+  • Ancestral Wisdom (+1% XP/lv) | Homesteading (+5% gathering/lv)
+  • Combat: HP/Resource Max/Regen (+5%/lv) | Stats: STR/CON/DEX/INT/WIS/WITS (+1/lv)
 [color=#FFD700]Home Stones:[/color] Found in tier 4-9 loot. Use outside combat/dungeons to send things home:
   • Home Stone (Egg) - Send one incubating egg to storage
   • Home Stone (Supplies) - Send up to 10 consumables to storage
@@ -33009,8 +33029,8 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 
 [b][color=#FFD700]══ RECENT ADDITIONS ══[/color][/b]
 [color=#00FFFF]Mentor System:[/color] [color=#9ACD32]/mentor on[/color] (Lv 20+) volunteers you as a mentor — gold [color=#FFD700]★[/color] shows on your name. [color=#9ACD32]/mentors[/color] lists who's online.
-[color=#00FFFF]Apex Frontier:[/color] >1500 tiles from origin = [color=#9F70FF]⚡ APEX[/color] zone. +10%% XP. Four named zones (Burning Reach NE / Frostbound Verge NW / Sundered Hollows SW / Cinder Wastes SE).
-[color=#00FFFF]Apex Variants:[/color] Every monster spawned in apex frontier is an [color=#9F70FF]Apex[/color] variant — +25%% HP, +10%% damage, +30%% XP total, +50%% Soul Gems. Drops Apex Crystal (750 valor) at 12%% rate.
+[color=#00FFFF]Apex Frontier:[/color] >1500 tiles from origin = [color=#9F70FF]⚡ APEX[/color] zone. +10% XP. Four named zones (Burning Reach NE / Frostbound Verge NW / Sundered Hollows SW / Cinder Wastes SE).
+[color=#00FFFF]Apex Variants:[/color] Every monster spawned in apex frontier is an [color=#9F70FF]Apex[/color] variant — +25% HP, +10% damage, +30% XP total, +50% Soul Gems. Drops Apex Crystal (750 valor) at 12% rate.
 [color=#00FFFF]Repeatable starter chains:[/color] T1 + T2 + T3 chains (13 total) are immediately repeatable after completion. Higher tiers stay one-shot.
 [color=#00FFFF]Threat Corridor HUD:[/color] Within 80 tiles of an active T2+ world dungeon, the Area line surfaces [color=#FF6600]⚠ Threat: <type> spillover from <dungeon>[/color].
 [color=#00FFFF]Sanctuary Stable:[/color] Magenta [color=#FF80FF]C[/color] tile at T5+ posts — live kennel access mid-character (Deposit / Withdraw / Return / Check Out / Fuse). Build one yourself (Construction Lv 35).
@@ -33057,7 +33077,7 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 	display_game("[color=#88AAFF]Travel Stone:[/color] New consumable — buy from any remote market listing without traveling. Drops T5+ chests, exotic Curiosity Trader sells one for 3000v.")
 	display_game("  In Network Browse, inspect any remote listing → 'Buy (Stone x N)' button appears if you have one. Specialty discounts still require physical visit.")
 	display_game("[color=#FF6644]Under Threat — Mechanical Bite:[/color] When a T2+ active dungeon is within 80 tiles of a post, the post shows ⚠ Under Threat.")
-	display_game("  Now means: +50%% service costs / +20%% market markup / threat-zone encounters spawn the dungeon's monster type / your settler bubble loses 1 suppression. Clear the dungeon to remove all four.")
+	display_game("  Now means: +50% service costs / +20% market markup / threat-zone encounters spawn the dungeon's monster type / your settler bubble loses 1 suppression. Clear the dungeon to remove all four.")
 	display_game("[color=#FFD700]Clan Vault Panel:[/color] More → Clan → Open Vault. 30 shared slots; rarity-colored item rows; one-click Withdraw / Deposit.")
 	display_game("  Auto-refreshes when other members act. `/vault` chat command still works as fallback.")
 	display_game("[color=#88FF88]Player Post Inactivity:[/color] Posts now show 'Last tended: Xd ago' on the status panel.")
@@ -33075,7 +33095,7 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 	display_game("[color=#FF8800]Combat Loot Scratch-Off:[/color] Victory rewards are now a 16-slot click-to-reveal grid.")
 	display_game("  Tier-scaled reveal budget + 1 extra per flock kill; remaining slots fill with consolation Valor / Salvage Essence / monster parts.")
 	display_game("[color=#FF8800]Boss Signatures:[/color] All 52 dungeon bosses use a unique signature mechanic distinct from base monsters.")
-	display_game("  Goblin King summons reinforcements, Alpha Wolf scents your blood under 50%% HP, Troll King regrows below 50%%, etc.")
+	display_game("  Goblin King summons reinforcements, Alpha Wolf scents your blood under 50% HP, Troll King regrows below 50%, etc.")
 
 	# Community section
 	display_game("")
@@ -33169,7 +33189,7 @@ func search_help(search_term: String):
 		{
 			"title": "TRICKSTER PATH",
 			"keywords": ["trickster", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "heist", "beast", "animal"],
-			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% XP bonus\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal Valor (50+lvl×2)×(1+WIT×5%%)\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
+			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% XP bonus\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal Valor (50+lvl×2)×(1+WIT×5%)\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
 		},
 		{
 			"title": "COMBAT FORMULAS",
@@ -34368,7 +34388,7 @@ func _handle_duel_request(message: Dictionary) -> void:
 		"%s is challenging you to a duel.\n\n"
 		+ "%s\n\n"
 		+ "Resolved instantly via dice roll comparing both fighters' duel power "
-		+ "(level + STR + DEX + weapon damage, ±30%% variance).\n\n"
+		+ "(level + STR + DEX + weapon damage, ±30% variance).\n\n"
 		+ "[%ds to respond]"
 	) % [challenger_name, stakes_line, ttl]
 	var btn_decline = _duel_request_popup.add_button("Decline", true, "decline")
@@ -41951,7 +41971,7 @@ func _display_temper_target_selection():
 	var recipe = crafting_recipes[crafting_selected_recipe]
 	display_game("[color=#FF8800]═══════ TEMPERED CRAFT: %s ═══════[/color]" % recipe.get("name", "?"))
 	display_game("")
-	display_game("[color=#FFFF00]Tempering guarantees a bonus stat but costs 50%% extra materials[/color]")
+	display_game("[color=#FFFF00]Tempering guarantees a bonus stat but costs 50% extra materials[/color]")
 	display_game("[color=#FFFF00]and halves your success chance. Materials are lost on failure![/color]")
 	display_game("")
 	display_game("[color=#87CEEB]Choose a bonus stat to target:[/color]")
@@ -42351,7 +42371,7 @@ func handle_dungeon_level_warning(message: Dictionary):
 	# Check if hard mode is available
 	var warn_completions = character_data.get("dungeons_completed", {})
 	if warn_completions.get(warn_dtype, 0) > 0:
-		display_game("[color=#FF8800]★ Hard Mode available! +50%% monster stats, +75%% XP, bonus loot[/color]")
+		display_game("[color=#FF8800]★ Hard Mode available! +50% monster stats, +75% XP, bonus loot[/color]")
 		display_game("")
 		display_game("[%s] Enter | [%s] Cancel | [%s] [color=#FF8800]Hard Mode[/color]" % [get_action_key_name(0), get_action_key_name(1), get_action_key_name(2)])
 	else:
