@@ -79,6 +79,7 @@ func _audit_registry() -> Dictionary:
 		"growref": ["EARNED gear profile per level - the reference make_char should encode", run_grow_reference],
 		"growtune": ["what monster nerf a grown player needs to hit target", run_grow_tune],
 		"polytest": ["run warrior strategies head to head and pick the best", run_policy_test],
+		"tempo": ["WHEN each class deals its damage - the Fighter question", run_tempo_audit],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -4964,9 +4965,24 @@ func _grow_recover(ch) -> bool:
 
 
 func _grow_power(ch) -> float:
-	# One scalar for comparing two loadouts, read through the real aggregators so base-type
-	# stats and affixes are both counted (reading either alone is how gear audits go wrong).
-	return float(ch.get_total_attack()) * 2.0 + float(ch.get_total_defense()) + float(ch.get_total_max_hp()) * 0.1
+	# One scalar for comparing two loadouts, read through the real aggregators so base-type stats
+	# and affixes are both counted (reading either alone is how gear audits go wrong).
+	#
+	# 2026-09-05 — was `get_total_attack() * 2 + defense + hp * 0.1` for EVERY class, which is
+	# class-blind and attack-biased. A Mage's attack barely matters (its damage is INT-scaled
+	# ability weight), so the rule told mages to chase gear that does nothing for them, and at a
+	# 0.1 weight a +20 HP item scored the same as +1 attack. Now each class is scored on the stat
+	# that actually drives its damage, and HP is weighted like the survival currency it is under
+	# permadeath. See 6k: the trickster damage stat is WITS, not DEX.
+	var dmg: float
+	match ch.get_class_path():
+		"mage":
+			dmg = float(ch.get_effective_stat("intelligence")) + 0.5 * float(ch.get_effective_stat("wisdom"))
+		"trickster":
+			dmg = float(ch.get_effective_stat("wits"))
+		_:
+			dmg = float(ch.get_total_attack())
+	return dmg * 2.0 + float(ch.get_total_defense()) + float(ch.get_total_max_hp()) * 0.25
 
 
 func _grow_consider_item(ch, item: Dictionary) -> bool:
@@ -5506,6 +5522,127 @@ func _run_one_tournament(klass: String, field: String, POLICIES: Array, LEVELS: 
 		print(row)
 	_set_policy(field, String(POLICIES[0]))
 	_grow_immortal = false
+
+
+func run_tempo_audit():
+	"""WHEN does each class deal its damage, not how much in total.
+
+	The Fighter and the Mage total roughly the same damage over five turns (~1.68 vs ~1.66
+	health bars by ABILITY_WEIGHTS) and win 15% vs 66% at L5. Equal numbers, unequal outcomes,
+	so the difference has to be timing. This measures it directly instead of arguing from the
+	weight table: cumulative share of the monster's health bar removed by the end of each turn,
+	averaged over real fights with grown characters playing their tournament-winning policies.
+
+	If the hypothesis holds, the Mage's curve is steep early and the Fighter's is flat until its
+	Momentum ramp cashes - and the fix is front-loading, not bigger numbers."""
+	var LEVELS := [5, 10]
+	var CHARS := 3
+	var N := 12
+	var TURNS := 8
+	print("
+===== DAMAGE TEMPO - cumulative %% of the monster's bar by end of turn =====")
+	print("%d grown characters x %d fights per cell, tournament-winning policies." % [CHARS, N])
+	_grow_immortal = true
+	for lvl in LEVELS:
+		print("
+--- level %d ---" % lvl)
+		var head := "%-9s" % "class"
+		for t in range(TURNS):
+			head += "%7s" % ("t%d" % (t + 1))
+		head += "%9s%9s" % ["kill_t", "win%"]
+		print(head)
+		for klass in ["Fighter", "Wizard", "Thief"]:
+			var cohort: Array = []
+			for _c in range(CHARS):
+				var ch = _grow_new_character(klass, "Human")
+				var hunt := 1
+				var guard := 0
+				while ch.level < lvl and guard < 200000:
+					hunt = clampi(hunt, 1, ch.level + 20)
+					if randf() < _grow_gather_share(ch.level):
+						if not bool(_grow_gather(ch).ambushed):
+							continue
+					var enc = _grow_encounter(ch, hunt)
+					guard += int(enc.fights)
+					if bool(enc.fled) or float(enc.worst) < 0.50:
+						hunt = maxi(1, hunt - 1)
+					elif float(enc.worst) > 0.75:
+						hunt = mini(ch.level + 20, hunt + 1)
+					if int(enc.xp) > 0:
+						ch.add_experience(int(enc.xp))
+						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
+						_grow_spend_points(ch)
+					for d in (enc.drops as Array):
+						_grow_consider_item(ch, d)
+					_grow_recover(ch)
+				cohort.append(ch)
+			var cum: Array = []
+			for t in range(TURNS):
+				cum.append(0.0)
+			var kill_turns := 0.0
+			var kills := 0
+			var runs := 0
+			for ch2 in cohort:
+				for i in range(N):
+					var prof := _tempo_one_fight(ch2, lvl, TURNS)
+					var arr: Array = prof["cum"]
+					for t in range(TURNS):
+						cum[t] += float(arr[t])
+					runs += 1
+					if int(prof["kill_turn"]) > 0:
+						kill_turns += float(prof["kill_turn"])
+						kills += 1
+			var row := "%-9s" % klass
+			for t in range(TURNS):
+				row += "%6d%%" % int(100.0 * cum[t] / float(maxi(1, runs)))
+			row += "%9.1f%8d%%" % [kill_turns / float(maxi(1, kills)), int(100.0 * float(kills) / float(maxi(1, runs)))]
+			print(row)
+	_grow_immortal = false
+	print("
+A steep early curve front-loads; a flat one back-loads. kill_t = mean turns to kill")
+	print("(wins only). Equal totals with different shapes is the whole Fighter question.")
+	print("=====================================================================
+")
+
+
+func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
+	# One full-health fight, recording the monster's cumulative HP loss at the end of each turn.
+	_grow_rest(ch)
+	var monster = make_monster(level, "normal", 1.0)
+	var mhp: float = float(maxi(1, int(monster.get("max_hp", 1))))
+	var cum: Array = []
+	for t in range(turns_tracked):
+		cum.append(0.0)
+	combat_mgr.start_combat(0, ch, monster)
+	if not combat_mgr.active_combats.has(0):
+		return {"cum": cum, "kill_turn": 0}
+	var combat = combat_mgr.active_combats[0]
+	var turns := 0
+	var kill_turn := 0
+	while turns < 400:
+		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+			break
+		turns += 1
+		if combat.get("player_can_act", true) and ch.current_hp > 0:
+			match ch.get_class_path():
+				"trickster": _player_act_trickster(combat, ch)
+				"mage": _player_act_mage(combat, ch)
+				_: _player_act(combat, ch)
+		var removed: float = (mhp - float(maxi(0, int(monster.get("current_hp", 0))))) / mhp
+		if turns <= turns_tracked:
+			cum[turns - 1] = removed
+		if int(monster.get("current_hp", 0)) <= 0:
+			kill_turn = turns
+			break
+		if ch.current_hp <= 0 or combat.get("combat_ended", false):
+			break
+		combat_mgr.process_monster_turn(combat)
+	# carry the final value forward so a short fight does not read as zero damage later on
+	for t in range(turns_tracked):
+		if t > 0 and cum[t] < cum[t - 1]:
+			cum[t] = cum[t - 1]
+	combat_mgr.end_combat(0, int(monster.get("current_hp", 0)) <= 0, false)
+	return {"cum": cum, "kill_turn": kill_turn}
 
 
 func run_grow_reference():

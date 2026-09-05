@@ -238,12 +238,36 @@ The Fighter's worst cell is **L5 at 15%**, against Wizard 65% and Thief 81% at t
       Note the Wizard also ends up with MORE total HP than the Fighter at L15 (325 vs 289),
       which inverts the archetype: the bruiser is not the tanky one.
 
-      - [ ] **Measure turns-to-kill and damage-by-turn per class before changing any number.**
-            If the hypothesis holds, the fix is front-loading (cheaper/faster Momentum, or a
-            Devastate floor that does not need the full ramp), NOT raising the weights — raising
-            weights would also raise the already-fine ceiling
-      - [ ] Re-check the Warrior's HP against the Mage's; a defensive bruiser measuring less
-            durable than a glass cannon is its own bug
+      - [x] **MEASURED — hypothesis confirmed.** `tempo` records the cumulative share of the
+            monster's bar removed by the end of each turn (3 grown characters x 12 fights,
+            tournament-winning policies):
+
+            | level 5 | t1 | t2 | t3 | t4 | t5 | kill_t | win% |
+            |---|---|---|---|---|---|---|---|
+            | **Fighter** | **6%** | 12% | 24% | 52% | 66% | **6.1** | 22% |
+            | Wizard | 14% | 34% | 62% | 77% | 88% | 5.0 | 83% |
+            | Thief | 38% | 50% | 63% | 69% | 72% | **2.1** | 75% |
+
+            The Fighter removes **6% of a bar on turn one** against the Thief's 38%, stays flat
+            until Devastate cashes at t4 (24%→52%), and needs **6.1 turns to kill** against the
+            Wizard's 5.0 and the Thief's 2.1. It absorbs roughly three times as many monster
+            turns as anyone else, and that is the whole 22%-vs-83% gap. Same shape at L10.
+
+      - [ ] **THE TRAP, and why the fix is not "fewer buffs".** The dead opening IS the two buff
+            turns — but `polytest` proved `buff_first` beats `damage_first` (88% vs 71% at L20),
+            so the Fighter must buff to survive AND loses the fight by doing it. Both are true.
+            The fix is therefore to make the buffs cheap in TEMPO rather than to remove them:
+            enter combat with them already up, extend the duration so they are not recast, or
+            make them free actions. Raising `ABILITY_WEIGHTS` is the wrong lever — the totals are
+            already equal (~1.68 bars vs the Mage's ~1.66) and it would inflate a ceiling that
+            is correct
+      - [x] **The HP "inversion" was mine, not the game's.** By formula a L15 Fighter has 196
+            base HP against a Wizard's 141 — correct for the archetype. The measured 289-vs-325
+            came from the sim's equip rule, `ATK*2 + DEF + HP*0.1`, applied class-blind: a Mage's
+            attack is nearly irrelevant to its damage, and HP at 0.1 scored a +20 HP item level
+            with +1 attack. Now scored on each class's real damage stat (INT+WIS/2 for mages,
+            WITS for tricksters per 6k, attack for warriors) with HP at 0.25. **Gear-curve
+            numbers taken before this used the old rule.**
 - [x] Difficulty scale retargeted accordingly: **1.00 through level 10** (the curve is not at
       fault there), **0.65 at level 20** (the collapse IS universal — Fighter 8%, Wizard 25%,
       Thief 55%). Reads roughly Fighter 55% / Wizard 70% / Thief 66% after
