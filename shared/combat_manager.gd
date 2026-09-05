@@ -4021,6 +4021,10 @@ const FORCEFIELD_SHARE_OF_BAR := 0.25
 # Bounds the maintain-it-forever loop without touching the (already calibrated) first cast.
 const FORCEFIELD_RECAST_FALLOFF := 0.55
 
+# Combat drops are generated at least this fraction of the KILLER's level, regardless of how weak
+# the monster was. Stops "hunt below your level to survive" from permanently stunting gear.
+const DROP_LEVEL_FLOOR_RATIO := 0.75
+
 const ABILITY_WEIGHTS := {
 	# --- Warrior: reliable and sustained, with the highest ceiling in the game behind the ---
 	# --- longest setup. Its finisher is what elites and bosses are for. ---------------------
@@ -10068,7 +10072,27 @@ func roll_combat_drops(monster: Dictionary, character: Character, bonus_drop_mul
 
 	# Roll for drops - server will handle adding to inventory. #40 — Plunder also bumps
 	# QUALITY (rarity), not just frequency.
-	return drop_tables.roll_drops(drop_table_id, drop_chance, monster_level, rarity_upgrade)
+	# === DROP LEVEL FLOOR (2026-09-05) ===
+	# An item is generated at the MONSTER's level (`_generate_item(base, monster_level, ...)`),
+	# which quietly makes safe play self-defeating.
+	#
+	# MEASURED (`growref`, average equipped item level as a fraction of character level):
+	#   Fighter L15 0.26   Wizard L15 0.60   Thief L15 0.25   Ranger 0.36   Ninja 0.24
+	#
+	# A level-15 Thief wearing level-2 gear is not a drop-RATE problem - all seven slots were
+	# full and rarity was fine (38% rare-or-better). The items were simply low LEVEL, because
+	# characters hunt below their own level to survive, so everything they kill drops gear
+	# beneath them. Combined with the down-level XP penalty that is a closed loop: too weak to
+	# fight at level -> weaker loot and slower levelling -> still too weak. Owner, from live:
+	# "Most fights are a struggle because gear is scarce."
+	#
+	# A floor at 75% of the player's level breaks the loop without making trivial farming
+	# optimal: killing something ABOVE you still yields better gear (the floor never binds
+	# there), and killing something far below you no longer actively rots your kit. It changes
+	# item LEVEL only - not drop chance, not rarity, not affix magnitude.
+	var _floor_level: int = int(float(character.level) * DROP_LEVEL_FLOOR_RATIO)
+	var _item_level: int = maxi(monster_level, _floor_level)
+	return drop_tables.roll_drops(drop_table_id, drop_chance, _item_level, rarity_upgrade)
 
 func _get_rarity_color(rarity: String) -> String:
 	"""Get display color for item rarity"""

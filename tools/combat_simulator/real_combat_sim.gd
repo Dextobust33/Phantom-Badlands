@@ -5186,8 +5186,12 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 			break
 		wins += 1
 		xp += int(round(float(monster.get("experience_reward", 0)) * _grow_xp_multiplier(ch, mlvl) * 1.10))
+		# Mirror combat_manager.roll_combat_drops' DROP_LEVEL_FLOOR_RATIO. The harness calls
+		# roll_drops directly rather than going through roll_combat_drops, so without this the
+		# floor would be invisible to every measurement of it.
+		var _drop_lvl: int = maxi(mlvl, int(float(ch.level) * CombatManager.DROP_LEVEL_FLOOR_RATIO))
 		for d in drop_tables.roll_drops(String(monster.get("drop_table_id", "tier1")),
-				int(monster.get("drop_chance", 5)), mlvl):
+				int(monster.get("drop_chance", 5)), _drop_lvl):
 			if d is Dictionary:
 				drops.append(d)
 		if flock <= 0 or (randi() % 100) >= flock:
