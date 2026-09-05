@@ -17,13 +17,19 @@ signal spend_requested(stat_name: String)
 signal paths_requested  # ⚜ Paths button — opens the Path of the Badlands panel
 
 const STAT_ORDER: Array = ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]
+# 2026-09-04 — these read from the code, not from intent. The old DEX line said "Trickster
+# damage", which is simply false: DEX appears nowhere in any damage formula. Trickster ability
+# damage scales on WITS (_ability_anchored_damage is called with "wits" for ambush and gambit,
+# with "strength" for the five warrior cards and "intelligence" for the four mage ones —
+# "dexterity" is never passed). The old WIS line promised "mana efficiency"; no wisdom-based
+# cost reduction exists anywhere in the codebase. Players were being pointed at the wrong stat.
 const STAT_INFO: Dictionary = {
-	"strength": {"label": "Strength", "abbr": "STR", "desc": "Physical attack power. Boosts stamina pool.", "color": "#FF6B5A"},
-	"constitution": {"label": "Constitution", "abbr": "CON", "desc": "Maximum HP. Hardiness and survival.", "color": "#6BFF6B"},
-	"dexterity": {"label": "Dexterity", "abbr": "DEX", "desc": "Speed and dodge. Trickster damage.", "color": "#6BD5FF"},
-	"intelligence": {"label": "Intelligence", "abbr": "INT", "desc": "Magic damage. Boosts mana pool.", "color": "#A56BFF"},
-	"wisdom": {"label": "Wisdom", "abbr": "WIS", "desc": "Mana efficiency. Defensive magic.", "color": "#FFD56B"},
-	"wits": {"label": "Wits", "abbr": "WITS", "desc": "Outsmart enemies. Energy pool & evasion.", "color": "#FF9ECB"},
+	"strength": {"label": "Strength", "abbr": "STR", "desc": "Attack power, all classes. Warrior abilities. Stamina.", "color": "#FF6B5A"},
+	"constitution": {"label": "Constitution", "abbr": "CON", "desc": "Maximum HP and defense. Boosts stamina pool.", "color": "#6BFF6B"},
+	"dexterity": {"label": "Dexterity", "abbr": "DEX", "desc": "Hit chance, crit, dodge, initiative, flee. Energy.", "color": "#6BD5FF"},
+	"intelligence": {"label": "Intelligence", "abbr": "INT", "desc": "Mage ability damage. Boosts mana pool.", "color": "#A56BFF"},
+	"wisdom": {"label": "Wisdom", "abbr": "WIS", "desc": "Backs INT for mage damage. Mana pool. Resistance.", "color": "#FFD56B"},
+	"wits": {"label": "Wits", "abbr": "WITS", "desc": "Trickster ability damage. Outsmart. Energy pool.", "color": "#FF9ECB"},
 }
 
 var _root_panel: PanelContainer
