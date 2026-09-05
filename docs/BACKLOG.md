@@ -197,6 +197,82 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ THE EARLY GAME IS LETHAL, MEASURED BY GROWING A CHARACTER (2026-09-05)
+
+Owner: *"the game is very difficult right now. Most fights are a struggle because gear is
+scarce... you need to do it from the creation with starter gear and level it up like a player
+would have to. Maybe by doing this you'll see how difficult it currently is."*
+
+**Why no previous audit saw this.** Every gear model in the simulator INVENTED a loadout.
+`calibrate` measures the cost: the invented L6 player hits **2.09x** a real character's attack,
+the invented L45 player **0.45x**. The sim has been flattering the early game and starving the
+late one. `newplayer` reported 48% at L1 because it measures a FRESH, FULL-HP character against
+ONE monster — no carried damage, no flock, no failed retreat.
+
+### The `grow` audit — nothing invented
+
+`grow` builds a character the way `handle_create_character` does (one common piece per slot with
+the upward tier search, curated starter deck, Home Stone companion) and plays it forward using
+only real code: `roll_drops` off the monster's own table, items worn only if EQUIPPING them
+raises power through the real aggregators, chance-based `process_flee`, flock chains with no rest
+between links, the real rest loop (10-25% max HP per tick, 15% ambush per tick), the real
+down-level XP penalty, real stat-point spending, and the game's own gathering catch rollers.
+
+**Result at L1, full starter kit, competent card play:**
+
+| class | lived | died at | win% | worst HP on a win | heals interrupted |
+|---|---|---|---|---|---|
+| Fighter | 0/8 | 1.1 | 33% | 39% | 56% |
+| Wizard | 0/8 | 1.1 | 43% | 45% | 30% |
+| Thief | 0/8 | 1.3 | 24% | 58% | 29% |
+
+**24/24 die before level 2**, against a 60% design target for a normal fight. This is not a
+naive-AI artifact: the harness runs this file's class policies, which hold Iron Skin and Fortify
+uptime, hold Devastate until Momentum is high, and cycle builders by affordability.
+
+### The starter companion carries ONE class
+
+| class | with companion | without | delta |
+|---|---|---|---|
+| Fighter | 22% | **5%** | +17pp |
+| Wizard | 22% | 22% | 0pp |
+| Thief | 13% | 13% | 0pp |
+
+The Fighter is unplayable without it. Wizard and Thief get nothing measurable from the same
+tier-1 pool. Companion aggro IS modelled (real `process_monster_turn`; `base_aggro` default 25,
+clamped 0-80, **-45 for evasive**) — so the likely cause is that an evasive companion soaks
+almost nothing, which is worth checking before any companion tuning.
+
+### Owner corrections, applied
+
+- **XP was wrong: 13 fights to L2, not 29.** `experience_to_next_level` starts at the default
+  100; `pow(level+1,2.2)*50` only takes over after the first level-up. The real cliff is
+  **L2->L3, which jumps to 560** (~70 fights). Measured, not read
+- **Gathering XP was missing.** Job XP converts to character XP at taper 1.0 under job level 20,
+  so one-for-one for a new player, and a tier-1 catch pays 3-15 against 8 for a kill. Modelled at
+  the owner's 20%-of-movement figure for L1-2, decaying to 5% by L10 — and it carries the same
+  ambush risk, because *"to gather they still have to be in danger"*
+- **Retreating to a post is a gamble, not a free heal.** *"Real players can't make it back to the
+  post very often without getting ambushed."* Five moves in the open at 15% each = 44% success
+
+### Still unmodelled
+
+- [ ] **Ability rank-ups — the simulator has NEVER applied them.** `ability_effect_ranks` appears
+      in `real_combat_sim.gd` only as a gear affix name; neither `make_char` nor the grow loop
+      ranks a card up, so every measurement it has ever produced omits what a levelling player
+      upgrades. Owner thinks it unlikely to close the gap; still the largest known omission
+- [ ] The harness cannot yet reproduce a survivor, and live has characters at L16, L19 and L45.
+      Owner: *"The only current survival is clever use of cards and abilities."* So the residual
+      gap is play skill above the fixed policy — which means **this harness measures the FLOOR**:
+      what happens to a competent-but-not-expert player. That floor is death before level 2
+
+### Consequence for the plan
+
+Owner chose "fix the player model first" for the curve, then recovery and early XP. Growing
+reference characters is blocked on survivability — a reference fitted to characters that could
+not have survived is not worth having. **So the order inverts: make the early game survivable
+first, then grow the reference at every level, then normalise `species_power` and run the chain.**
+
 ## ⚑ RESOLVED IN PART — the 47pp gap was not what it looked like (2026-09-04, evening)
 
 The prescribed test was run: *"measure normal win rate with a fresh independent probe and see
