@@ -2851,6 +2851,20 @@ func handle_create_character(peer_id: int, message: Dictionary):
 				else:
 					character.add_item(starter_piece)
 
+		# A HOME STONE (COMPANION) with the kit. Owner 2026-09-04: "Players should also get a
+		# Home Stone (Companion) when they get their starter equipment to help them get started
+		# until we get the tutorial stuff implemented."
+		#
+		# It is the item that REGISTERS a companion to the Sanctuary, so it is what turns the
+		# starter egg into something that survives the character's death. Without it a new
+		# player's first companion dies with them and the loop never starts — which matters more
+		# now that companions are the investment axis and no longer inherit their owner's power.
+		# Same reasoning as the rest of this grant: temporary, and item 7 should supersede it.
+		var starter_stone = drop_tables._generate_item(
+			{"item_type": "home_stone_companion", "rarity": "uncommon"}, 1)
+		if starter_stone is Dictionary and not starter_stone.is_empty():
+			character.add_item(starter_stone)
+
 	# Give starter gathering tools — equip directly to tool slots
 	var starter_tools = DropTables.generate_starter_tools()
 	for tool in starter_tools:

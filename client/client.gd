@@ -12780,11 +12780,11 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 	# Ability definitions with display name, base cost, and cost percentage (for mage scaling)
 	var ability_defs = {
 		# Mage abilities - use percentage-based scaling
-		"magic_bolt": {"display": "Bolt", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
+		"magic_bolt": {"display": "Magic Bolt", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
 		# Variable-cost mage abilities (floor = 30% of ceiling)
 		"blast": {"display": "Blast", "cost": 50, "cost_percent": 5, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"shield": {"display": "Shield", "cost": 20, "cost_percent": 2, "cost_floor_ratio": 0.3, "resource_type": "mana"},  # Alias for forcefield
-		"forcefield": {"display": "Field", "cost": 20, "cost_percent": 2, "cost_floor_ratio": 0.3, "resource_type": "mana"},
+		"forcefield": {"display": "Forcefield", "cost": 20, "cost_percent": 2, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"teleport": {"display": "Teleport", "cost": 1000, "cost_percent": 0, "resource_type": "mana"},
 		"meteor": {"display": "Meteor", "cost": 100, "cost_percent": 8, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"haste": {"display": "Arcane Surge", "cost": 35, "cost_percent": 3, "cost_floor_ratio": 0.3, "resource_type": "mana"},
@@ -12796,23 +12796,23 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"overload": {"display": "Overload", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
 		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
 		# (floor = ceiling × ratio, after all cost modifiers).
-		"power_strike": {"display": "Strike", "cost": 10, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
-		"war_cry": {"display": "Cry", "cost": 15, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
-		"shield_bash": {"display": "Bash", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
+		"power_strike": {"display": "Power Strike", "cost": 10, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
+		"war_cry": {"display": "War Cry", "cost": 15, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
+		"shield_bash": {"display": "Shield Bash", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"cleave": {"display": "Cleave", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"berserk": {"display": "Berserk", "cost": 40, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
-		"iron_skin": {"display": "Iron", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
+		"iron_skin": {"display": "Iron Skin", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"devastate": {"display": "Devastate", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"fortify": {"display": "Fortify", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		"rally": {"display": "Rally", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
 		# Trickster abilities. Analyze + Vanish stay fixed-cost (binary mechanics).
 		"analyze": {"display": "Analyze", "cost": 5, "cost_percent": 0, "resource_type": "energy"},
 		"distract": {"display": "Distract", "cost": 15, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
-		"pickpocket": {"display": "Steal", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
+		"pickpocket": {"display": "Pickpocket", "cost": 20, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"ambush": {"display": "Ambush", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"vanish": {"display": "Phantom Strike", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
 		"exploit": {"display": "Exploit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
-		"perfect_heist": {"display": "Heist", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
+		"perfect_heist": {"display": "Perfect Heist", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"sabotage": {"display": "Sabotage", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"gambit": {"display": "Gambit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
@@ -19622,6 +19622,15 @@ func _card_upgrades_line(ability_name: String) -> String:
 [color=#C9A040]Upgrades:[/color] [color=#FFD93D]%s[/color]" % "  ".join(parts)
 
 func _ability_desc_bbcode(ability_name: String) -> String:
+	# 2026-09-04 — the upgrades line is appended HERE, inside the builder, not by each caller.
+	# It was first added at the combat hover box only, and the owner immediately hit the gap:
+	# "I chose Bulwark for my Perfect Heist upgrade and the card still looks like the original
+	# Perfect Heist with no mention of the Bulwark upgrade." The DECK screen builds its card back
+	# from `_ability_desc_bbcode` directly (ability_panel.gd), so an append made by one caller
+	# reaches one surface. Doing it in the builder means every surface inherits it.
+	return _ability_desc_bbcode_body(ability_name) + _card_upgrades_line(ability_name)
+
+func _ability_desc_bbcode_body(ability_name: String) -> String:
 	"""v0.9.688 (Warrior slice) — rich description with CONCRETE numbers computed
 	from your current stats; hover a number for its formula. Non-Warrior abilities
 	fall back to the plain description for now."""
@@ -19861,7 +19870,7 @@ func show_card_desc_box(ability_name: String, anchor_rect: Rect2) -> void:
 	_card_desc_over_card = true
 	var title := _ability_display_name(ability_name)
 	var cost_raw := _get_ability_cost_text(ability_name)
-	var body := _ability_desc_bbcode(ability_name) + _card_upgrades_line(ability_name)
+	var body := _ability_desc_bbcode(ability_name)
 	_card_desc_rtl.text = "[b][color=#FFE1A3]%s[/color][/b]   %s\n%s\n[color=#7A6E58]Hover a number for its formula[/color]" % [title, cost_raw, body]
 	_card_desc_anchor = anchor_rect
 	_card_desc_box.visible = true

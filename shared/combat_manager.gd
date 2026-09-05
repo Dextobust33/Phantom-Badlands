@@ -6096,7 +6096,7 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 			match ability_name:
 				"magic_bolt": return {"level": 1, "cost": 0, "cost_percent": 0, "name": "Magic Bolt"}
 				# Shield removed - use Forcefield instead
-				"haste": return {"level": 30, "cost": 35, "cost_percent": 3, "name": "Haste"}
+				"haste": return {"level": 30, "cost": 35, "cost_percent": 3, "name": "Arcane Surge"}
 				"blast": return {"level": 40, "cost": 50, "cost_percent": 5, "name": "Blast"}
 				"paralyze": return {"level": 50, "cost": 60, "cost_percent": 6, "name": "Paralyze"}
 				"forcefield": return {"level": 10, "cost": 20, "cost_percent": 2, "name": "Forcefield"}
