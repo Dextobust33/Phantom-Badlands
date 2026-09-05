@@ -17022,7 +17022,12 @@ func _format_chase_affix_lines(affixes: Dictionary) -> Array:
 	if affixes.has("crit_damage_bonus"):
 		out.append("[color=#FFD700]+%d%% Crit Damage[/color]" % int(affixes["crit_damage_bonus"]))
 	if affixes.has("extra_turn_chance"):
-		out.append("[color=#FF99FF]+%d%% Extra Turn[/color]" % int(affixes["extra_turn_chance"]))
+		# 2026-09-05 — the bare "+X% Extra Turn" told players nothing about what it does.
+		# Owner: "Buffs that provide a chance to double cast and such don't really specify what
+		# that entails, can it double any ability?" It is not a double cast: it denies the
+		# MONSTER its turn, so you act again first, and it only rolls on a hit that DEALS DAMAGE
+		# (never on buffs, denial cards, or anything that already skips the monster's turn).
+		out.append("[color=#FF99FF]+%d%% Extra Turn[/color] [color=#808080](on a damaging hit — you act again before it can)[/color]" % int(affixes["extra_turn_chance"]))
 	if affixes.has("hp_on_kill"):
 		out.append("[color=#90EE90]+%d HP on Kill[/color]" % int(affixes["hp_on_kill"]))
 	if affixes.has("mana_on_hit"):

@@ -5536,7 +5536,7 @@ func run_grow_tune():
 		head += "%9s" % ("x%.2f" % m)
 	print(head)
 	_grow_immortal = true
-	for klass in ["Fighter", "Wizard", "Grifter", "Ninja", "Ranger"]:
+	for klass in ["Barbarian", "Paladin", "Sorcerer", "Sage"]:
 		for lvl in LEVELS:
 			var pooled: Array = []
 			for m in MULTS:
