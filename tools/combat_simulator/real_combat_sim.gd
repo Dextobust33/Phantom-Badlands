@@ -5061,6 +5061,32 @@ One grown Fighter, encounter by encounter:")
 	print("=====================================================================
 ")
 
+	# Is the starter companion actually DOING anything, or just attached? Owner 2026-09-05:
+	# "Starter companion might help some if you're not using." Presence is not contribution -
+	# measure it by running the same grown character with one and without one.
+	print("Starter companion contribution (L1, 20 characters x 3 encounters per cell):")
+	print("%-9s %14s %14s %10s" % ["class", "with companion", "without", "delta"])
+	_grow_immortal = true
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		var rates: Array = []
+		for use_comp in [true, false]:
+			var w := 0
+			var f := 0
+			for i in range(20):
+				var c = _grow_new_character(klass, "Human")
+				if not use_comp:
+					c.active_companion = {}
+					c.calculate_derived_stats()
+					_grow_rest(c)
+				for e in range(3):
+					var r = _grow_encounter(c, 1)
+					w += int(r.wins)
+					f += int(r.fights)
+			rates.append(100.0 * float(w) / float(maxi(1, f)))
+		print("%-9s %13.0f%% %13.0f%% %9.0fpp" % [klass, rates[0], rates[1], rates[0] - rates[1]])
+	_grow_immortal = false
+
+
 func run_grow_reference():
 	# Build the reference make_char SHOULD encode, by earning it instead of inventing it.
 	#
