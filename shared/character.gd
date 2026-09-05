@@ -4198,9 +4198,34 @@ static func calculate_companion_max_hp(companion: Dictionary, owner_max_hp: int 
 	# playtime." Anchoring purely to the owner did exactly that: the same L250 companion would
 	# have been worth ~250 HP beside a L10 character and ~1100 beside a L250 one. Now its
 	# floor is its own level, and walking it with a fresh character costs it nothing.
-	var owner_side: float = float(owner_max_hp) * companion_level_ratio_mult(level, owner_level)
+	# 2026-09-04 — THE COMPANION'S OWN LEVEL IS THE DRIVER. Owner: "It's kind of odd that the
+	# companions HP changes based on the HP of the person who's using it rather than a value
+	# based on the companions level. Makes companions lose some of their value as players stats
+	# change. Kind of goes against the concept of the companion being able to carry lower level
+	# players."
+	#
+	# It previously took the LARGER of an owner-share term and the companion's own level, and at
+	# low companion levels the owner term won every time — so the companion behaved as an
+	# extension of the player's stat sheet. Two player-visible consequences, both reported and
+	# both reproduced:
+	#
+	#   equipping +HP gear      owner 250 -> 400 max HP  moved the companion 395 -> 633
+	#   GAINING A LEVEL         owner L1 -> L2 at the same 300 max HP  DROPPED it 671 -> 474
+	#
+	# The second is the damning one: levelling up made your companion weaker, because the ratio
+	# term falls as the owner outlevels it (1.000 -> 0.707 -> 0.600).
+	#
+	# The own-level anchor was already here and already carried the right intent in its comment
+	# — "a level 250 companion should work like a level 250 companion if the player is
+	# underleveled" — it was just being outvoted. It is the whole basis now, so a companion's bar
+	# is stable against gear swaps and owner levels, and grows only when the COMPANION does.
+	# That is what makes levelling one an investment rather than a reflection.
 	var own_side: float = reference_player_hp(level)
-	var base: float = maxf(owner_side, own_side)
+	var base: float = own_side
+	if base <= 0.0:
+		# The reference curve is unavailable (missing or unparsable file). Fall back to the
+		# owner-share term rather than returning a floor of nothing.
+		base = float(owner_max_hp) * companion_level_ratio_mult(level, owner_level)
 	# 2026-09-03 — the VARIANT scales the companion's own body, not just the buff it hands you.
 	# A legendary-variant companion used to have exactly the same health bar as a common one of
 	# the same tier and level, which is most of why rare variants were not worth hunting.

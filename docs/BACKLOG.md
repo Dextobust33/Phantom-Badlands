@@ -1292,6 +1292,47 @@ currently as I think companions and gear will make up the difference."* Boss win
 - [ ] Re-read `ABILITY_WEIGHTS` against `-- ability_hp` now the bar is frozen and the curve moved
 - [ ] Re-run `-- classes`, `-- species` — both were measured against the stale curve
 
+### 6b-i. Companion HP now comes from the COMPANION'S level, not the owner's (2026-09-04)
+
+Owner: *"It's kind of odd that the companions HP changes based on the HP of the person who's
+using it rather than a value based on the companions level. Makes companions lose some of their
+value as players stats change. Kind of goes against the concept of the companion being able to
+carry lower level players."*
+
+Found from live play — a player equipping and unequipping gear watched the companion's health
+move with it, then **gained a level and watched it fall**. Both reproduced exactly:
+
+| change | companion HP |
+|---|---|
+| owner equips +HP gear, 250 → 400 max HP | 395 → **633** |
+| owner gains ONE level, same 300 max HP | 671 → **474** |
+
+The second is the damning one: levelling up made your companion weaker, because the owner-share
+ratio falls as you outlevel it (1.000 → 0.707 → 0.600).
+
+`calculate_companion_max_hp` took `max(owner_share, own_level)`, and at low companion levels the
+owner term won every time. The own-level anchor already existed and already carried the right
+intent in its comment — *"a level 250 companion should work like a level 250 companion if the
+player is underleveled"* — it was simply being outvoted. It is the whole basis now.
+
+**After:** the bar is invariant to owner gear and owner level (295 HP in every row above), and
+moves only when the COMPANION does — 295 at L1, 450 at L10, 702 at L25, 1474 at L50. That is
+what makes levelling one an investment rather than a reflection.
+
+- [ ] **Player-side power change — needs the calibration chain re-run before it ships**, and
+      that is currently blocked on the refcal/roles discrepancy. Held on master with the rest of
+      the balance work
+- [ ] Re-run `-- companion` and `-- comp_unlock` afterwards; they are the regression tests for
+      this item
+- [ ] **Consequence to decide:** a low-level companion beside a high-level player is now
+      genuinely weak, where before it inherited their bar. That is the intended direction — it
+      is what makes levelling the companion matter — but it does mean a fresh companion is no
+      longer a free ride at high level. Worth a feel check
+- [ ] While here: the three multipliers COMPOUND (aggro share 1.25 x defence 1.20 x variant 1.49
+      = **2.24x** for a Nexus Bone Servant). Each is individually defensible; nobody checked them
+      stacking. The spread across companions of the same tier and level is ~2.2x, driven mostly
+      by variant and aggro rather than by level — which partly works against this same item
+
 ### 6b. Companion power & levelling — **the emotional spine, currently thin**
 *User 2026-09-02: "if companions don't get stronger and players have no way of improving them
 it makes the crucial point of the game pointless."*
