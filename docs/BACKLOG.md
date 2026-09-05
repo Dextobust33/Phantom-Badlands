@@ -347,8 +347,19 @@ less HP. Owner: *"Fighter should be more durable than the Mage typically."*
 Fixed on **renewability, not magnitude** — the per-cast value is anchored to a share of the
 health bar and was already rebuilt once for being oversized, so cutting it again would only make
 the panic button weak. Each recast within a fight now absorbs 55% of the previous
-(100/55/30/17%), resetting between fights. After: Wizard 6.0 / 5.8 / 4.3, sitting between the
-unshielded floor and the Fighter at every level.
+(100/55/30/17%), resetting between fights.
+
+**Verified at n=8** (the n=3 figures were kept only until a better sample existed):
+
+| level | 5 | 10 | 15 |
+|---|---|---|---|
+| Fighter | 7.5 | 6.6 | 5.8 |
+| Wizard (fixed) | 6.5 | 6.7 | 4.3 |
+| Wizard, no Forcefield | 4.2 | 4.5 | 3.1 |
+
+Fighter ahead at L5 and L15 and level at L10, with the shield still buying ~50% more survival
+than going without. The archetype ordering the owner asked for, and the card is still worth
+casting.
 
 ### The Trickster stall — bounded already, and a change would have broken the class
 
@@ -357,20 +368,22 @@ read) and then attempt to outsmart once it was built. If it failed they had a ve
 with most other tactics aside from assassinate success. Gambits risk of self damage on an
 already squishy character was death back then as well."*
 
-The 16-turn stall was pencilled in as a second loop. It is not one. `analyze` costs a **flat 5
-energy** and there is **no baseline in-combat energy regen** — the `energy_regen` at
-`combat_manager.gd:810` is a gear affix (`cunning_prey` drops) and the on-hit restore is epic+
-chase. So:
+The 16-turn stall was pencilled in as a second loop. **It does not exist.** At n=3 the Thief L15
+cell read 16.0; re-measured at n=8 it reads **4.1**. The whole thing was one lucky character.
 
-```
-L15 Thief: max_energy = 20 + (WITS + DEX) ≈ 20 + 37 + 24 = 81
-           81 / 5 per Analyze                            ≈ 16 casts
-measured                                                  16.0 turns
-```
+**And the explanation I gave for it was numerology.** I wrote that `analyze` costs a flat 5
+energy against a L15 pool of ~81, so 81/5 ≈ 16 casts "landing exactly" on the measurement. That
+arithmetic is real but it was fitted to a single outlier after the fact — presenting coincidence
+as mechanism, which is the same error this file catches everywhere else. Recorded rather than
+quietly deleted, because a confident wrong explanation is more dangerous than a wrong number.
 
-The pool divided by the cost, landing exactly — not a gear outlier. It also explains why denial
-LOSES the A/B at L5 and L10 (2.2 vs 3.9, 4.0 vs 6.1): below a pool depth, energy spent stalling
-is energy not spent killing.
+What the larger sample actually shows: denial is **worse or equal to plain damage at every
+level** — 3.0 / 4.0 / 4.1 against `damage_only`'s 4.7 / 6.9 / 4.9. There is no lock to bound, and
+the reason not to touch the Trickster is simply that there was never anything there.
+
+The design point still stands on the owner's account alone: stall-to-build-Read-then-Outsmart is
+the class's intended and only survival path, and cutting it without a replacement would return
+the Trickster to "a failed Outsmart is death".
 
 **The transferable rule: Forcefield costs a PERCENTAGE of a pool that regenerates, so it renews;
 Analyze costs a FLAT amount against a pool that does not, so it depletes. Same surface shape,
