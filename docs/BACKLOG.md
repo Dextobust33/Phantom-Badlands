@@ -197,6 +197,45 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ CLASS IDENTITY WITHIN AN ARCHETYPE — the three tricksters are nearly one class (owner, 2026-09-05)
+
+Owner: *"the thief should be the one that can flee easier, ninja should be able to build towards
+crit which needs actual viability and ability support, ranger should have its own place or be the
+middle ground in this. Same type of thing for the other classes."*
+
+**The passives that exist today are INVERTED against that intent:**
+
+| class | passive | effects |
+|---|---|---|
+| **Thief** | Backstab | **+35% crit damage, +10% crit chance** |
+| Ranger | Hunter's Mark | +25% vs beasts, +30% XP, +15% gathering |
+| **Ninja** | Shadow Step | **+40% flee, no damage on a failed flee** |
+
+The Ninja owns escape and the Thief owns crit — the exact swap of what is wanted. Ranger's
+passive is utility (XP / gathering / beasts): *a* place, but not a combat identity, and the only
+one of the three that does nothing in a fight against a non-beast.
+
+The other two archetypes are better differentiated already — Fighter (−20% stamina cost, +15%
+defense) / Barbarian (+3% damage per 10% HP missing, +25% stamina cost) / Paladin (+3% combat
+regen, +25% vs undead); Wizard (+15% spell damage, +10% spell crit) / Sorcerer (25% double
+damage, 5% backfire) / Sage (−25% mana cost, +50% meditate).
+
+**Crit viability — better than feared, but unsupported.** The cap is 75% (see the correction in
+6k), so a crit build has real headroom. What is missing is the *ability support* named above:
+nothing in the trickster kit converts crit into a build. `ambush` carries a 50%-crit-at-+50%
+rider, and that is the whole of it.
+
+**Do not start before the Fighter and the gear curve** — it is a design pass, and it wants the
+combat numbers settled underneath it. Ideas for when it does start:
+
+- swap Backstab and Shadow Step so the identities match intent, or rebuild both
+- give the Ninja crit *support* (a card that guarantees or escalates crit, crit-on-kill chains,
+  crit-triggered riders) so the stat has somewhere to go
+- give the Ranger a combat identity, or deliberately make "reliable middle" the identity and
+  price it as one
+- **ask the same question of warriors and mages** — "the same type of thing for the other
+  classes" was the ask, and Barbarian / Paladin / Sorcerer / Sage were not audited here
+
 ## ⚑ TWO MITIGATION LOOPS, ONE REAL — test the ECONOMICS, not the shape (2026-09-05)
 
 Both looked identical from the outside: a card recast every turn that stops the player being
@@ -2593,16 +2632,25 @@ modifiers; trickster HP primary (`WITS*0.5`); debuff magnitude `15 + WITS/3`; fl
 | **Ninja** | **1.25** | 1.0 | 0.0 |
 
 Thief is fine — its growth is majority WITS, its damage stat. **Ninja pours its largest share
-(1.25/level, half of all growth) into DEX**, which buys crit only until the 25% cap — reached at
-DEX 40, roughly **level 24** — after which DEX buys dodge to its own 30% cap (DEX 150) and then
-nothing but hit chance and flee. Past ~L24 a Ninja's dominant stat gain is close to inert, while
-its damage stat grows at 1.0.
+(1.25/level, half of all growth) into DEX.**
+
+**CORRECTED 2026-09-05 — the crit cap is 75%, not 25%.** This section originally said DEX went
+inert around level 24 because crit capped at 25%. That was wrong: `player_crit_max` (25) in
+`balance_config.json` is read into a local at `combat_manager.gd:9238` and **never used**. The
+real cap is a hardcoded `min(crit_chance, 75)` at the roll, reached near DEX 140 — about level
+100 at 1.25 DEX/level. So DEX keeps buying crit for a long time and the "inert past L24" claim
+does not hold.
+
+What still stands: dodge caps at 30% (DEX 150), and neither DEX nor WITS appears in the
+basic-attack formula, so the Fighter-style "levelling buys damage" path is closed for tricksters
+— their damage growth is ability weights, gear, and crit.
+
+- [ ] **`player_crit_max` is a dead config knob.** Anyone tuning it sees no effect. Wire it to
+      the cap or delete it; a knob that silently does nothing is worse than no knob
 
 **Questions to settle** (design decision, not made):
-- is Ninja's DEX-heavy allocation intended, given DEX feeds no damage? Swapping Ninja toward
-  WITS-major (like Thief) is the smallest fix
-- should the DEX crit cap rise, or should crit *damage* scale with DEX past the chance cap, so
-  DEX keeps paying after L24?
+- is Ninja's DEX-heavy allocation intended, given DEX feeds no damage directly? With the cap at
+  75% it at least buys crit for ~100 levels, so this is less urgent than first written
 - should tricksters get a basic-attack floor mirroring the mage `INT/5` (e.g. `max(base, WITS/5)`)
   so their auto-attacks are not frozen at creation-time STR?
 - only 2 of the trickster roster's cards are WITS-scaled — check whether the rest should be
