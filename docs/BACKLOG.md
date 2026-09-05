@@ -197,6 +197,44 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ THE FIGHTER IS THE WEAK CLASS — and the Thief never was (2026-09-05)
+
+Measured with `growtune` at x1.00 (no monster nerf), grown characters, tournament-winning
+policies, 4 characters x 15 fights per cell:
+
+| class | L1 | L5 | L10 | L20 |
+|---|---|---|---|---|
+| **Fighter** | **36%** | **15%** | **31%** | **8%** |
+| Wizard | 91% | 65% | 83% | 25% |
+| Thief | 75% | 81% | 76% | 55% |
+
+**Through level 10 the Wizard and Thief are at or above the 60% target with no help at all, and
+the Fighter is 2-5x weaker at every level.** That is a class-balance fault, not a monster-curve
+fault, and a single difficulty multiplier cannot serve a 36%-vs-91% spread: nerfing enough to
+rescue the Fighter puts the other two above 90%.
+
+The Fighter's worst cell is **L5 at 15%**, against Wizard 65% and Thief 81% at the same level.
+
+- [ ] **Fighter class-side fix — belongs to 6c.** Do NOT hide it by weakening every monster in
+      the game. Note `growref` shows the Fighter is not gear-starved relative to the others
+      (L15: ATK 79 / HP 289, against Wizard ATK 43 / HP 325), so the gap is in the kit or its
+      damage, not in what it finds
+- [x] Difficulty scale retargeted accordingly: **1.00 through level 10** (the curve is not at
+      fault there), **0.65 at level 20** (the collapse IS universal — Fighter 8%, Wizard 25%,
+      Thief 55%). Reads roughly Fighter 55% / Wizard 70% / Thief 66% after
+
+### The correction underneath this
+
+An earlier version of this fit produced 0.80/0.55 anchors and was **committed**. It was measured
+with AI policies that never raised the Mage's shield and never cast the Trickster's kill card, so
+it would have shipped monsters far weaker than the game needs. It also produced the claim that
+the **Thief was "structurally broken"** and beyond help from any nerf — the Thief wins 55-81%
+once played properly, healthier than the Fighter at every level.
+
+**Fifth instrument defect of the day, and the only one that reached a committed balance change.**
+The lesson that generalises: a balance number measured through an agent that plays badly is a
+measurement of the agent. Tournament the policy BEFORE fitting anything to it.
+
 ## ⚑ THE PERMADEATH ARITHMETIC — why no monster tuning could ever have worked (2026-09-05)
 
 **If losing a fight means dying, a 60% win-rate target IS a 40% death rate per fight** — death

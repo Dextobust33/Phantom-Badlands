@@ -2060,43 +2060,47 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 # gear it found - and then sweeps a monster multiplier looking for the 60% target. Win rate at
 # full health against one normal monster:
 #
-# Pooled over 4 grown characters x 15 fights per cell. (An earlier single-character version of
-# this table read Fighter L1 at 62% and was wrong - one character per cell measured that
-# character's gear luck, not the level. It reported a nerf making Wizard L5 HARDER, which is
-# what exposed it.)
+# Pooled over 4 grown characters x 15 fights per cell, with the TOURNAMENT-WINNING policies
+# (Mage shield_first, Trickster deny_first). An earlier fit used policies that never raised the
+# Mage's shield and never cast the Trickster's kill card; it produced 0.80/0.55 anchors that
+# would have shipped monsters far weaker than the game needs. Refitted here.
 #
 #   class    lv   x1.00  x0.75  x0.50  x0.35
 #   Fighter   1     36%    70%    98%   100%
-#   Fighter   5     25%    70%    96%   100%
-#   Fighter  10     26%    83%    98%    96%
-#   Fighter  20      5%    38%    63%    88%
-#   Wizard    1     63%    83%    86%    98%
-#   Wizard    5     46%    81%    95%    98%
-#   Wizard   10     56%    78%    88%    96%
-#   Wizard   20     31%    63%    76%    88%
+#   Fighter   5     15%    58%    93%    98%
+#   Fighter  10     31%    80%    96%    98%
+#   Fighter  20      8%    43%    85%    91%
+#   Wizard    1     91%    93%    95%   100%
+#   Wizard    5     65%    90%    96%   100%
+#   Wizard   10     83%    91%    98%   100%
+#   Wizard   20     25%    63%    83%    96%
+#   Thief     1     75%    76%    90%    88%
+#   Thief     5     81%    86%    90%    93%
+#   Thief    10     76%    83%    85%    81%
+#   Thief    20     55%    66%    65%    71%
 #
-# The whole range is under the 60% target, level 1 included - a Fighter wins 36% of its fights
-# at level 1 and 5% at level 20. Interpolating each row to where it crosses 60% gives ~0.80 for
-# levels 1-10 and ~0.55-0.60 by level 20, which is what the anchors encode. Sitting slightly
-# ABOVE 60% on these numbers is deliberate: this measures a single fight at full health, and the
-# compounding the owner described (flock chains, carried damage, retreats that fail) all lands
-# on top of it.
+# READ THE COLUMNS, NOT THE ROWS. At x1.00 through level 10 the Wizard sits at 65-91% and the
+# Thief at 75-81% - both at or above the 60% target with NO nerf at all. The Fighter is at
+# 15-36%. That spread is a CLASS problem, and a single monster multiplier cannot serve it:
+# nerfing enough to rescue the Fighter would put the other two above 90%.
 #
-# Fitted to Fighter and Wizard only. The Thief does not respond to this lever at all (its row is
-# non-monotonic and L20 never reaches target even at x0.25) because Outsmart does not care about
-# monster HP - that is a separate problem and must not be "fixed" by dragging this curve down.
+# So this scale does nothing through level 10, where the curve is not at fault, and corrects
+# only the level-20 collapse, which IS universal (Fighter 8%, Wizard 25%, Thief 55%). At 0.65
+# that reads roughly Fighter 55%, Wizard 70%, Thief 66%.
 #
-# Held flat past level 20 ON PURPOSE: nothing above 20 has been measured with a grown character,
-# and the older high-level readings came through make_char, whose gear model runs 0.45x a real
-# character at L45. Extrapolating a trend past the last real measurement is how the curve got
-# into this state. Extend it when `growtune` can reach those levels.
+# The Fighter's 15-36% through level 10 is left for a class-side fix (backlog 6c) rather than
+# hidden by weakening every monster in the game - see THE FIGHTER IS THE WEAK CLASS in BACKLOG.
 #
-# This is a stopgap standing in for a `refcal` pass, which is blocked on that same player-model
-# defect. When the chain can be trusted again, this should fold into the anchors and be deleted.
+# Held flat past level 20: nothing above 20 has been measured with a grown character, and the
+# older high-level readings came through make_char, whose gear model runs 0.45x a real character
+# at L45. Extrapolating past the last real measurement is how the curve got into this state.
+#
+# Stopgap standing in for a `refcal` pass, which is blocked on that same player-model defect.
+# Fold into the anchors and delete this when the chain can be trusted again.
 const DIFFICULTY_SCALE_ANCHORS := [
-	{"level": 1, "scale": 0.80},
-	{"level": 10, "scale": 0.80},
-	{"level": 20, "scale": 0.55},
+	{"level": 1, "scale": 1.00},
+	{"level": 10, "scale": 1.00},
+	{"level": 20, "scale": 0.65},
 ]
 
 static func difficulty_scale_for_level(level: int) -> float:
