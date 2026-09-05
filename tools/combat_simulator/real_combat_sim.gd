@@ -4277,7 +4277,36 @@ func _tier_for_level(lvl: int) -> int:
 # CAVEAT: n=2 geared characters (L6 and L45). This is provisional — re-run `-- gear_solve`
 # as more real characters accumulate. A second combination (ratio 1.30 / empty 0.30) scores
 # identically and is pure overfit; it is rejected because nothing observed supports it.
-var _gear_avg_level_ratio: float = 0.85  # item level as a fraction of character level
+var _gear_avg_level_ratio: float = 0.85  # LEGACY flat ratio — see _gear_level_ratio_for()
+
+
+func _gear_level_ratio_for(level: int) -> float:
+	"""Item level as a fraction of character level, FITTED TO GROWN CHARACTERS.
+
+	2026-09-05 — replaces a flat 0.85 that was fitted from n=2 real saved characters and whose
+	own comment called it provisional. `growref` now grows characters by real play and reports
+	what they actually carry, across five classes:
+
+	    level:      3     6    10    15
+	    measured: 0.33  0.32  0.51  0.55
+
+	The ratio is not flat: it sits near a third of character level early, climbs through the
+	teens, and trends toward DROP_LEVEL_FLOOR_RATIO (0.75) as the floor added today replaces
+	older items. A flat 0.85 handed a level-6 character items at level 5 where a grown one wears
+	level 2 — which is exactly why `calibrate` measured make_char at 2.09x a real character's
+	attack at L6.
+
+	Held flat past L25 at the drop floor: beyond there nothing has been grown to check against,
+	and extrapolating past the last measurement is how the old model went wrong."""
+	if level <= 6:
+		return 0.33
+	if level <= 15:
+		# 0.33 at L6 -> 0.55 at L15
+		return 0.33 + (float(level - 6) / 9.0) * 0.22
+	if level <= 25:
+		# 0.55 at L15 -> the 0.75 drop floor by L25
+		return 0.55 + (float(level - 15) / 10.0) * 0.20
+	return 0.75
 var _gear_avg_empty_chance: float = 0.0  # chance a slot is simply unfilled
 # Companion modelling for the companion audit: none / l1 / match (companion level = char
 # level) / x10 (a heavily over-levelled companion).
@@ -4478,7 +4507,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 			pass
 		"average", "average_nokit":
 			roll_rarity = true
-			glevel = max(1, int(round(level * _gear_avg_level_ratio)))
+			glevel = max(1, int(round(level * _gear_level_ratio_for(level))))
 		"bis":
 			rarity = "epic"
 		# 2026-09-03 — an explicit RARITY LADDER, every slot filled at one rarity and at the
@@ -4502,7 +4531,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 			#           actually wants (see _focus_score - at the MARGIN, never at the cost of
 			#           overall item power)
 			roll_rarity = true
-			glevel = max(1, int(round(level * _gear_avg_level_ratio)))
+			glevel = max(1, int(round(level * _gear_level_ratio_for(level))))
 		"focus_epic":
 			# Epic is the floor at which CHASE affixes ("of Refresh", +ability rank) can roll at
 			# all, so this is the rung where "farming for mage chase items" is even possible.
