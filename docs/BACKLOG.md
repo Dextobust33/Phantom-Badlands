@@ -241,9 +241,26 @@ than contradicting it.
       an HP comparison:** the Thief carries MORE total HP than the Fighter at L15 (545 vs 426)
       and still dies in 6.3 turns to the Fighter's 10.4, because the Fighter has 60% damage
       reduction from the stance. Raw HP would have reported an inversion that is not there.
-      Noted in passing: `Thief-noDeny` outlives `Thief` at every level (5.2/11.3/10.0 against
-      3.3/7.3/6.3), so turn-denial costs survival rather than buying it — consistent with the
-      earlier A/B, and a fact for the Trickster design pass rather than something to act on
+      **RETRACTED — "turn-denial costs survival" was a broken metric.** Owner: *"I'm unsure how a
+      stall that builds read, increasing chance of outsmarts success, is causing lower success,
+      that doesn't track for me."* It does not, and the mechanism should have been trusted over
+      the number. The durability probe gives the monster 200x HP to make the fight unwinnable —
+      but **Outsmart ignores monster HP**, so a Grifter could WIN it, and a win ends the combat,
+      which the loop scored as a SHORT survival. It was measuring how fast a strategy ENDS a
+      fight, not how long it survives. Fixed to discard any fight not ending in the player's
+      death. Re-measured:
+
+      | level | Grifter (deny) | Grifter (no deny) |
+      |---|---|---|
+      | 5 | 4.5 | 4.9 |
+      | 10 | 11.5 | 11.9 |
+      | 15 | **13.0** | 8.2 |
+
+      Denial is better at L15 and level at L10 — the opposite of the retracted claim, and it
+      agrees with the win-rate measurement, which had said so all along (`deny_first` beat
+      `assassin` 73% vs 66% at L10 and 68% vs 60% at L20). The Grifter also out-survives the
+      Fighter at L15 (13.0 vs 10.1), but by NOT BEING HIT rather than by toughness — its base HP
+      is 89 against the Fighter's 210. That is the design working, not an inversion
 - [ ] `fights`-to-level readings swung wildly (Wizard L15 460 → 9039). At n=3 that is variance,
       not signal — do not tune progression against it
 
