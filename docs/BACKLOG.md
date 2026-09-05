@@ -314,6 +314,59 @@ nerf apparently making a class WORSE, which is impossible. At n=4 characters the
 variance is real even with the fixed seed, because a code change shifts RNG consumption and
 therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
 
+## ⚑ STAT DESIGN — abilities are the game, and the stats do not say so (owner, 2026-09-05)
+
+Owner: *"each class or archetype should have a main stat they focus (wit for tricksters) and a
+secondary that is good for their particular class... This should also be apparent to the players
+so they know what to focus. What we want to be careful of is not making it where classes get too
+much from a third stat... Abilities should be the primary focus with attack being a slightly
+worse or situational fallback."*
+
+And the fact that drives all of it: *"players mainly use abilities every turn they can instead of
+just attacking. Players are rarely using attack unless they are out of resources or drew a bad
+hand."*
+
+### What is already right
+
+Archetype main stats match the intent: ability damage scales on **strength** (5 warrior cards),
+**intelligence + 0.5×wisdom** (4 mage cards) and **wits** (2 trickster cards), via
+`_ability_stat_ratio`. Gear that grants +STR/+INT/+WITS feeds this correctly —
+`get_effective_stat` includes equipment bonuses.
+
+### What is broken by the same fact
+
+- **`attack` gear affixes are near-dead.** `get_total_attack()` = `strength + bonuses.strength +
+  bonuses.attack`, and it feeds **basic attacks only**. The `attack` affix is separate from
+  `+strength` and never touches ability damage. A player casting every turn gets nothing from it
+- **Every crit affix is near-dead** for the same reason — crit is rolled only in
+  `calculate_damage`, the basic-attack path. That includes the whole epic+ crit chase pool
+  (`crit_chance_bonus`, `crit_damage_bonus`), which is the rarest loot in the game
+- **Secondary stats do not exist per class.** Mages share WIS (half-weight toward INT for every
+  mage class); tricksters nominally have DEX, which feeds NO damage at all; warriors have nothing
+  secondary. So the "secondary that helps whichever class you picked" is not implemented anywhere
+- **Ability coverage is thin for tricksters** — only `ambush` and `gambit` scale on WITS. The rest
+  of the kit routes WITS through other channels (Outsmart chance `min(22, 9*log2(WIT/10))`,
+  debuff magnitude `15 + WITS/3`), which is fine mechanically but invisible as a build direction
+
+### The design to build toward
+
+- [ ] **Main stat per archetype, secondary per class, and both stated in the UI.** The Character
+      Stats page already had to be corrected once today for describing stats that do not do what
+      it claimed — this is the same failure at design level rather than text level
+- [ ] **Guard the third stat.** Owner's explicit caution: a class drawing meaningfully from three
+      stats outscales one drawing from two. Any secondary should be narrow (a class mechanic)
+      rather than a second damage stat
+- [ ] **Re-price attack as the fallback it is.** Either reduce its effectiveness or fold it into
+      the same scaling as abilities, so it reads as "slightly worse or situational" rather than a
+      separate and largely irrelevant axis
+- [ ] **Decide crit-on-abilities** (see the crit section). Owner is open to it if solo and party
+      can both be balanced. Recommended shape: full crit chance on abilities with a SMALLER
+      multiplier than basic attacks (one constant, halves the inflation, trivially revertible),
+      measure, and fall back to re-fitting `ABILITY_WEIGHTS` only if the inflation persists
+- [ ] **Sequencing:** all of this is player-power change, so it lands BEFORE the final difficulty
+      fit. Doing it after would invalidate that fit a fourth time — see the retired difficulty
+      scale for the three times it already happened today
+
 ## ⚑ NINE CLASSES, THREE CARD POOLS — the identity gap is structural (owner, 2026-09-05)
 
 Owner: *"we will want each class in each archetype to have their own identity. All three warrior,

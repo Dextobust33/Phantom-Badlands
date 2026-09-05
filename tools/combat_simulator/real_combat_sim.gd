@@ -3986,7 +3986,7 @@ func _trickster_damage_only(combat: Dictionary, ch) -> void:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _trickster_deny_first(combat: Dictionary, ch) -> void:
@@ -4014,7 +4014,7 @@ func _trickster_deny_first(combat: Dictionary, ch) -> void:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _trickster_outsmart_rush(combat: Dictionary, ch) -> void:
@@ -4036,7 +4036,7 @@ func _trickster_outsmart_rush(combat: Dictionary, ch) -> void:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _trickster_assassin(combat: Dictionary, ch) -> void:
@@ -4092,7 +4092,7 @@ func _trickster_assassin(combat: Dictionary, ch) -> void:
 	if "gambit" in hand:
 		if combat_mgr.process_ability_command(0, "gambit", "").get("success", false):
 			return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 func run_mage_matrix():
 	# v0.9.697 — validate the Mage Focus ramp (spells build Focus → Meteor discharges).
@@ -4134,7 +4134,7 @@ func _mage_bolt_spam(combat: Dictionary, ch) -> void:
 	if "blast" in hand:
 		if combat_mgr.process_ability_command(0, "blast", "").get("success", false):
 			return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _mage_focus_ramp(combat: Dictionary, ch) -> void:
@@ -4154,7 +4154,7 @@ func _mage_focus_ramp(combat: Dictionary, ch) -> void:
 	if "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
 			return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _mage_shield_first(combat: Dictionary, ch) -> void:
@@ -4203,7 +4203,7 @@ func _mage_rotation(combat: Dictionary, ch) -> void:
 	if "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
 			return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 func _tier_for_level(lvl: int) -> int:
 	# Standard tier bands (mirror monster/world tiering) for picking gear bases.
@@ -4653,7 +4653,7 @@ func _warrior_no_opener(combat: Dictionary, ch) -> void:
 	if mom >= 1 and "devastate" in hand:
 		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
 			return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _warrior_damage_first(combat: Dictionary, ch) -> void:
@@ -4668,7 +4668,7 @@ func _warrior_damage_first(combat: Dictionary, ch) -> void:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _warrior_defensive(combat: Dictionary, ch) -> void:
@@ -4695,7 +4695,7 @@ func _warrior_defensive(combat: Dictionary, ch) -> void:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _warrior_momentum_hold(combat: Dictionary, ch) -> void:
@@ -4715,7 +4715,7 @@ func _warrior_momentum_hold(combat: Dictionary, ch) -> void:
 	if mom >= 1 and "devastate" in hand:
 		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
 			return
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 
 func _warrior_buff_first(combat: Dictionary, ch) -> void:
@@ -4754,7 +4754,7 @@ func _warrior_buff_first(combat: Dictionary, ch) -> void:
 		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
 			return
 	# Out of resource / no castable card → basic attack (also regens + builds Momentum? no).
-	combat_mgr.process_attack(combat)
+	_counted_attack(combat)
 
 func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter", monster_level: int = -1, race: String = "Human") -> Dictionary:
 	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile
@@ -5660,10 +5660,25 @@ func run_tempo_audit():
 			print(row)
 	_grow_immortal = false
 	print("
-A steep early curve front-loads; a flat one back-loads. kill_t = mean turns to kill")
+basic attacks: %d of %d player actions (%.0f%%) - crit applies ONLY to these" % [
+		_tempo_basic_attacks, _tempo_actions,
+		100.0 * float(_tempo_basic_attacks) / float(maxi(1, _tempo_actions))])
+	print("A steep early curve front-loads; a flat one back-loads. kill_t = mean turns to kill")
 	print("(wins only). Equal totals with different shapes is the whole Fighter question.")
 	print("=====================================================================
 ")
+
+
+var _tempo_actions := 0
+var _tempo_basic_attacks := 0
+
+func _counted_attack(combat: Dictionary) -> void:
+	# Owner 2026-09-05: "players mainly use abilities every turn they can instead of just
+	# attacking. Players are rarely using attack unless they are out of resources or drew a bad
+	# hand. This makes not doing crit in abilities a bigger problem." This counts it, so the
+	# crit-on-abilities decision is priced rather than argued.
+	_tempo_basic_attacks += 1
+	_counted_attack(combat)
 
 
 func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
@@ -5685,10 +5700,14 @@ func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
 			break
 		turns += 1
 		if combat.get("player_can_act", true) and ch.current_hp > 0:
+			var _atk_before: int = _tempo_basic_attacks
 			match ch.get_class_path():
 				"trickster": _player_act_trickster(combat, ch)
 				"mage": _player_act_mage(combat, ch)
 				_: _player_act(combat, ch)
+			_tempo_actions += 1
+			if _tempo_basic_attacks > _atk_before:
+				pass  # counted inside process_attack wrapper below
 		var removed: float = (mhp - float(maxi(0, int(monster.get("current_hp", 0))))) / mhp
 		if turns <= turns_tracked:
 			cum[turns - 1] = removed
@@ -5780,8 +5799,10 @@ func run_durability_audit():
 				tot_sum += float(ch.get_total_max_hp())
 				def_sum += float(ch.get_total_defense())
 				for i in range(N):
-					turn_sum += float(_durability_one_fight(ch, lvl))
-					runs += 1
+					var _t: int = _durability_one_fight(ch, lvl)
+					if _t >= 0:
+						turn_sum += float(_t)
+						runs += 1
 			var n := float(maxi(1, CHARS))
 			print("%-13s %5d %9d %9d %8d %10.1f" % [
 				label, lvl, int(base_sum / n), int(tot_sum / n), int(def_sum / n),
@@ -5797,8 +5818,20 @@ turns_live is the honest durability number: it counts defense, Iron Skin, the")
 
 
 func _durability_one_fight(ch, level: int) -> int:
-	# An unwinnable fight - the monster has 200x HP - so the only outcome is death, and the
-	# number of monster turns endured is a clean read on how long the class lives.
+	# An unwinnable-by-DAMAGE fight - the monster has 200x HP - so turns endured reads how long
+	# the class lives.
+	#
+	# 2026-09-05 - returns -1 when the fight ends any way OTHER than the player dying, and the
+	# caller discards those. Owner: "I'm unsure how a stall that builds read, increasing chance
+	# of outsmarts success, is causing lower success, that doesn't track for me." It does not:
+	# the measurement was broken. Outsmart ignores monster HP, so a Trickster could WIN this
+	# supposedly unwinnable fight - and a win ends the combat early, which the loop scored as a
+	# SHORT survival. `deny_first` built Read, cashed a winning Outsmart at turn 6, and was
+	# recorded as less durable than a policy that cannot win and simply absorbs hits until it
+	# dies. That is a measure of how fast a strategy ENDS a fight, not of how long it survives.
+	#
+	# The win-rate measurement, where it actually matters, agreed with the owner all along:
+	# deny_first beat assassin at L10 (73% vs 66%) and L20 (68% vs 60%).
 	_grow_rest(ch)
 	var monster = make_monster(level, "normal", 200.0)
 	combat_mgr.start_combat(0, ch, monster)
@@ -5816,8 +5849,10 @@ func _durability_one_fight(ch, level: int) -> int:
 		if ch.current_hp <= 0 or combat.get("combat_ended", false):
 			break
 		combat_mgr.process_monster_turn(combat)
+	var _died: bool = ch.current_hp <= 0
 	combat_mgr.end_combat(0, false, false)
-	return turns
+	# Only a death measures durability. Anything else (an Outsmart win, a flee) is discarded.
+	return turns if _died else -1
 
 
 func run_grow_reference():
