@@ -19562,6 +19562,57 @@ func _desc_num(n, formula: String) -> String:
 	unstyled [hint] tooltip."""
 	return "[color=#FFE68A][b][url=%s]%s[/url][/b][/color]" % [formula, str(n)]
 
+func _card_upgrades_line(ability_name: String) -> String:
+	"""The upgrades this card has actually taken, named, for the card's own description.
+
+	2026-09-04, reported from live: "The card upgrades are we sure those are working? I don't see
+	the upgraded information on my cards in my deck or in combat, they look like the original
+	ones."
+
+	They ARE working - every one of the 48 ids in card_upgrades.gd is read by combat_manager, so
+	an `executioner` or `bulwark` pick really does fire. What did not exist was any way to SEE it:
+	both client reads of `ability_milestone_picks` were inside the rank-up popup, i.e. the moment
+	of choosing. Afterwards the card looked exactly as it had before, so there was no way to tell
+	an upgraded card from a fresh one or to remember what had been picked.
+
+	Rendered here because `_ability_desc_bbcode` feeds both the in-combat hover box and the
+	tooltip, so one addition reaches the card wherever it is shown."""
+	var mp = character_data.get("ability_milestone_picks", {})
+	if not (mp is Dictionary):
+		return ""
+	var picks = mp.get(ability_name, [])
+	if not (picks is Array) or (picks as Array).is_empty():
+		return ""
+	var CU = load("res://shared/card_upgrades.gd")
+	if CU == null:
+		return ""
+	# Stackable upgrades are listed once with a count rather than repeated.
+	var counts := {}
+	var order: Array = []
+	for pid in picks:
+		var key := String(pid)
+		if not counts.has(key):
+			counts[key] = 0
+			order.append(key)
+		counts[key] = int(counts[key]) + 1
+	var parts: Array = []
+	for key in order:
+		var info: Dictionary = CU.upgrade_by_id(key)
+		var label := String(info.get("name", key.capitalize()))
+		var n := int(counts[key])
+		if n > 1:
+			label += " x%d" % n
+		var detail := String(info.get("desc", ""))
+		if detail != "":
+			# The name carries its effect on hover, the same idiom as the damage numbers - and
+			# quote characters are substituted because they end BBCode url parsing dead.
+			detail = detail.replace("'", "’").replace("\"", "”")
+			parts.append("[url=%s]%s[/url]" % [detail, label])
+		else:
+			parts.append(label)
+	return "
+[color=#C9A040]Upgrades:[/color] [color=#FFD93D]%s[/color]" % "  ".join(parts)
+
 func _ability_desc_bbcode(ability_name: String) -> String:
 	"""v0.9.688 (Warrior slice) — rich description with CONCRETE numbers computed
 	from your current stats; hover a number for its formula. Non-Warrior abilities
@@ -19802,7 +19853,7 @@ func show_card_desc_box(ability_name: String, anchor_rect: Rect2) -> void:
 	_card_desc_over_card = true
 	var title := _ability_display_name(ability_name)
 	var cost_raw := _get_ability_cost_text(ability_name)
-	var body := _ability_desc_bbcode(ability_name)
+	var body := _ability_desc_bbcode(ability_name) + _card_upgrades_line(ability_name)
 	_card_desc_rtl.text = "[b][color=#FFE1A3]%s[/color][/b]   %s\n%s\n[color=#7A6E58]Hover a number for its formula[/color]" % [title, cost_raw, body]
 	_card_desc_anchor = anchor_rect
 	_card_desc_box.visible = true

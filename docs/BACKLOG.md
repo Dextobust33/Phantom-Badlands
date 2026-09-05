@@ -102,6 +102,49 @@ already-free untouched.
       Worth remembering generally: **a character name is not an identity in a permadeath game.**
       Anything keyed on name across a delete boundary has this bug latent in it
 
+## ⚑ COMBAT VISIBILITY — two things the player cannot see (owner, 2026-09-04)
+
+### Buffs and debuffs need a panel (NOT started)
+
+Owner: *"Buff and debuff info needs a panel in solo and party combat to show what buffs or
+debuffs are effecting your characters, party members, or enemies and how long those are going to
+last."*
+
+Today a buff announces itself once in the log and then vanishes from view. Nothing shows what is
+currently ACTIVE or how many rounds remain — on you, on a teammate, or on the monster. That
+makes every duration-based card a guess, and it is most of why buffs are ignored in favour of
+damage (the shallow-choice problem in `project_ability_redesign`).
+
+- [ ] One panel serving solo AND party: self, each party member, and the enemy
+- [ ] Show remaining DURATION, not just presence — the owner asked for this explicitly and it is
+      the half that makes a buff plannable
+- [ ] The data already exists: `character.active_buffs` carries `{type, value, duration}` and the
+      monster carries its own debuff state (`monster_bleed`, `monster_burn`, stun counters,
+      Sabotage stacks). The combat scene already renders per-member status CHIPS
+      (`_format_status_chip`) — this is a surfacing job, not a modelling one
+- [ ] Interacts with the Duration upgrade family: several card upgrades extend durations, and
+      none of that is visible either
+
+### DONE 2026-09-04 — card upgrades were invisible after you picked them
+
+Owner: *"The card upgrades are we sure those are working? I don't see the upgraded information on
+my cards in my deck or in combat, they look like the original ones."*
+
+**They were working.** All 48 upgrade ids in `card_upgrades.gd` are read by `combat_manager` —
+`executioner`, `bulwark`, `leeching`, `relentless` and the rest all fire. What did not exist was
+any way to SEE it: both client reads of `ability_milestone_picks` sat inside the rank-up popup,
+the moment of choosing. Afterwards the card rendered identically to a fresh one, so there was no
+way to tell an upgraded card apart or to recall what had been taken.
+
+The card description now lists them — stackables collapsed with a count, each name carrying its
+effect on hover — and it is added in `_ability_desc_bbcode`, which feeds both the in-combat hover
+box and the tooltip, so it reaches the card wherever it appears.
+
+- [ ] **Still open: the card's damage ESTIMATE only accounts for `power`.** `_card_damage_multiplier`
+      counts `picks.count("power")` and nothing else, so a card carrying `concentrated` or
+      `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
+      move a flat estimate, but the unconditional ones should
+
 ## ⚑ UNRESOLVED — refcal and roles disagree by up to 47pp on the SAME curve (2026-09-04)
 
 **The calibration result of 2026-09-04 must not ship until this is understood.** Two audits
