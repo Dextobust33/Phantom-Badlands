@@ -19642,17 +19642,17 @@ func _ability_desc_bbcode(ability_name: String) -> String:
 				return "Deal %s — a slice of the enemy's [b]max HP[/b], so it shines against tough foes." % _desc_num(est_dmg, "%d%% of enemy max HP (15%% + WITS/4, cap 35%%)" % _ex_pct)
 			return "Deal %s of the enemy's [b]max HP[/b] as damage — great against tough foes." % _desc_num("%d%%" % _ex_pct, "15% + WITS/4, capped 35%")
 		"sabotage":
-			return "Weaken the enemy: %s to its strength and defense (stacks up to -50%%)." % _desc_num("-%d%%" % clampi(15 + int(float(s_wits) / 3.0), 1, 50), "15 + WITS ÷ 3 per cast")
+			return ("Weaken the enemy: %s to its strength and defense (stacks up to -50%%). [color=#7FD8C8]The enemy usually loses its turn (75%%).[/color]") % _desc_num("-%d%%" % clampi(15 + int(float(s_wits) / 3.0), 1, 50), "15 + WITS ÷ 3 per cast")
 		"vanish":
-			return "[b]Phantom Strike[/b]: your next attack is a [b]guaranteed critical hit[/b]."
+			return "[b]Phantom Strike[/b]: your next attack is a [b]guaranteed critical hit[/b]. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"gambit":
 			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ Read[/color]." % _desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier")
 		"analyze":
-			return "Reveal the enemy's stats and your outsmart odds, and gain [b]+10% damage[/b] for the rest of the fight."
+			return "Reveal the enemy's stats and your outsmart odds, and gain [b]+10% damage[/b] for the rest of the fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"distract":
-			return "Distract the enemy for up to %s accuracy on its attacks." % _desc_num("-50%", "scales with energy spent, up to -50%")
+			return ("Distract the enemy for up to %s accuracy on its attacks. [color=#7FD8C8]The enemy usually loses its turn (75%%).[/color]") % _desc_num("-50%", "scales with energy spent, up to -50%")
 		"pickpocket":
-			return "Steal crafting materials from the enemy — up to [b]4×[/b] per fight."
+			return "Steal crafting materials from the enemy — up to [b]4×[/b] per fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"perfect_heist":
 			return "A high-risk [b]instant win[/b]: a small chance to end the fight outright with bonus XP."
 	# Universal / anything else: plain description as bbcode.

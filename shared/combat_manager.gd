@@ -5886,6 +5886,22 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 			var roll = randi() % 100
 			if roll < success_chance:
+				# 2026-09-04 — ZERO THE MONSTER. Reported from live: "Perfect Heist doesn't kill
+				# the enemy in party play."
+				#
+				# It returned `combat_ended: true, victory: true` and never touched the monster's
+				# HP. Solo reads those flags and ends the fight, so it looked correct there. The
+				# PARTY engine decides the fight from the SHARED monster's health — and the
+				# adapter a member's action runs through hands over `combat.monster` by reference
+				# ("shared object — HP/kills persist") — so an instant win that only sets flags
+				# leaves the monster standing at full health and the fight carries on.
+				#
+				# Same fix the party Outsmart already uses, for the reason its comment gives:
+				# zeroing the HP hands the kill to the party's own victory detection, so rewards,
+				# XP splitting and the end-of-fight flow stay in ONE place rather than this
+				# branch growing a second copy of them. Solo is unaffected: it returns
+				# immediately on `combat_ended`, so nothing processes the victory twice.
+				monster.current_hp = 0
 				messages.append("[color=#FFD700][b]PERFECT HEIST![/b][/color]")
 				messages.append("[color=#00FF00]You execute a flawless heist![/color]")
 

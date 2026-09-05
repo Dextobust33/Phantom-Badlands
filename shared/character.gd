@@ -3415,7 +3415,20 @@ func backfill_ability_uses_if_needed() -> bool:
 # via the deck screen. Keeps new-player decks focused + teaches the class engine.
 const CURATED_STARTER_DECKS := {
 	"warrior": ["power_strike", "cleave", "shield_bash", "war_cry", "devastate"],
-	"trickster": ["ambush", "exploit", "sabotage", "vanish", "gambit"],
+	# 2026-09-04 — the trickster deck is SIX cards, and it is the survival kit the class needs
+	# to reach its payoff. Owner: "It should contain Analyze, Distract, Sabotage, Ambush,
+	# Perfect Heist, Sabotage. I like that they skip the enemy turn at the cost of resource to
+	# help the trickster survive building up their Outsmart."
+	#
+	# That is the class engine stated plainly: Outsmart is the finisher and it needs Read stacks,
+	# which take turns to build — turns a trickster cannot afford to spend being hit. Analyze
+	# skips the monster's turn outright; Distract and Sabotage avoid it 75% of the time. So the
+	# deck now buys the time the engine needs instead of asking the player to survive on damage
+	# cards that do not.
+	#
+	# Sabotage appears twice deliberately, as the owner listed it: it is the workhorse of that
+	# kit, and a second copy makes it reliably drawable in a three-card hand.
+	"trickster": ["analyze", "distract", "sabotage", "ambush", "perfect_heist", "sabotage"],
 	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
 }
 
