@@ -4956,9 +4956,9 @@ func run_grow_audit():
 					dead = true
 					break
 				# A player who nearly died drops down a level; one who cruised pushes back up.
-				if bool(enc.fled) or float(enc.worst) < 0.30:
+				if bool(enc.fled) or float(enc.worst) < 0.50:
 					hunt = maxi(1, hunt - 1)
-				elif float(enc.worst) > 0.60:
+				elif float(enc.worst) > 0.75:
 					hunt = mini(ch.level + 20, hunt + 1)
 				if int(enc.xp) > 0:
 					ch.add_experience(int(enc.xp))
@@ -5166,9 +5166,9 @@ func run_grow_tune():
 							continue
 					var enc = _grow_encounter(ch, hunt)
 					guard += int(enc.fights)
-					if bool(enc.fled) or float(enc.worst) < 0.30:
+					if bool(enc.fled) or float(enc.worst) < 0.50:
 						hunt = maxi(1, hunt - 1)
-					elif float(enc.worst) > 0.60:
+					elif float(enc.worst) > 0.75:
 						hunt = mini(ch.level + 20, hunt + 1)
 					if int(enc.xp) > 0:
 						ch.add_experience(int(enc.xp))
@@ -5235,9 +5235,9 @@ func run_grow_reference():
 							continue
 					var enc = _grow_encounter(ch, hunt)
 					fights += int(enc.fights)
-					if bool(enc.fled) or float(enc.worst) < 0.30:
+					if bool(enc.fled) or float(enc.worst) < 0.50:
 						hunt = maxi(1, hunt - 1)
-					elif float(enc.worst) > 0.60:
+					elif float(enc.worst) > 0.75:
 						hunt = mini(ch.level + 20, hunt + 1)
 					if int(enc.xp) > 0:
 						ch.add_experience(int(enc.xp))
