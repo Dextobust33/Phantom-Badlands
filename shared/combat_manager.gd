@@ -680,6 +680,17 @@ func apply_damage_variance(base_damage: int) -> int:
 	return max(1, int(base_damage * variance))
 
 
+func _note_crit_escalation(character, combat: Dictionary) -> void:
+	"""Bank one Killing Edge stack. No-op for classes without the passive, so both crit paths can
+	call it unconditionally rather than each re-checking the passive."""
+	if character == null or combat == null:
+		return
+	var p: Dictionary = character.get_class_passive()
+	var fx: Dictionary = p.get("effects", {}) if p is Dictionary else {}
+	if int(fx.get("crit_escalation", 0)) > 0:
+		combat["crit_escalation_stacks"] = int(combat.get("crit_escalation_stacks", 0)) + 1
+
+
 func player_crit_chance(character, combat: Dictionary) -> int:
 	"""The player's crit chance, as ONE definition.
 
@@ -709,6 +720,11 @@ func player_crit_chance(character, combat: Dictionary) -> int:
 		crit_chance += int(float(fx.get("crit_chance_bonus", 0)) * 100.0)
 	crit_chance += int(character.get_crit_chance_bonus())
 	crit_chance += int(character.get_path_effect_total("crit_chance_pct"))
+	# Ninja "Killing Edge" — every crit landed this fight sharpens the next. Stored on the combat
+	# so it resets when the fight does and cannot be banked between encounters.
+	var esc: int = int(fx.get("crit_escalation", 0))
+	if esc > 0:
+		crit_chance += esc * int(combat.get("crit_escalation_stacks", 0))
 	return clampi(crit_chance, 0, 75)
 
 func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dictionary, character = null, combat: Dictionary = {}, messages = null) -> int:
@@ -762,6 +778,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		var cc: int = player_crit_chance(character, combat)
 		if cc > 0 and (randi() % 100) < cc:
 			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
+			_note_crit_escalation(character, combat)
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color]")
 		else:
@@ -5898,7 +5915,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	if ability_name in ["analyze", "distract", "sabotage"]:
 		var _lc: Dictionary = character.get_class_passive()
 		var _lc_fx: Dictionary = _lc.get("effects", {}) if _lc is Dictionary else {}
-		_read_gain += int(_lc_fx.get("denial_read_bonus", 0))
+		# A CHANCE, not a guarantee. Guaranteed double Read put the Grifter well ahead of the
+		# other classes (78/78/91/91 against the Fighter's 61/55/81/70) because it landed on the
+		# exact cards its best policy already spams.
+		var _lc_chance: int = int(_lc_fx.get("denial_read_chance", 0))
+		if _lc_chance > 0 and (randi() % 100) < _lc_chance:
+			_read_gain += 1
 	var _newread: int = min(COMBO_MAX, int(combat.get("combo", 0)) + _read_gain)
 	combat["combo"] = _newread
 	messages.append("[color=#7FD8C8]◉ Read %d/%d[/color]" % [_newread, COMBO_MAX])
@@ -9362,6 +9384,8 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 		is_crit = true
 	if character.has_path_effect("first_strike_autocrit"):
 		combat["path_first_strike_done"] = true
+	if is_crit:
+		_note_crit_escalation(character, combat)
 
 	# === CLASS PASSIVE: Thief Backstab crit damage bonus ===
 	# +50% crit damage multiplier (1.5x becomes 2.0x)

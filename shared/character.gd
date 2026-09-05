@@ -805,11 +805,17 @@ func get_class_passive() -> Dictionary:
 				# terms when it goes wrong. Read is capped at 8 and worth +9% Outsmart per stack,
 				# so the denial bonus halves the turns needed to reach a reliable Outsmart —
 				# turning a desperation move into an engine.
+				# 2026-09-05 — the double Read started GUARANTEED and overshot: the Grifter
+				# measured 78/78/91/91 across levels against the Fighter's 61/55/81/70, because
+				# the bonus lands on exactly the cards its winning policy already spams. Owner:
+				# "maybe we make it a chance of double read instead of a guarantee." A 50% roll
+				# halves the expected gain while keeping the identity — stalling is still the
+				# Grifter's engine, it just is not a metronome.
 				"name": "Long Con",
-				"description": "Denial cards build double Read. +40% flee, and a failed escape costs you nothing.",
+				"description": "Denial cards have a 50% chance to build double Read. +40% flee, and a failed escape costs you nothing.",
 				"color": "#2F4F4F",
 				"effects": {
-					"denial_read_bonus": 1,
+					"denial_read_chance": 50,
 					"flee_bonus": 0.40,
 					"flee_no_damage": true
 				}
@@ -827,12 +833,23 @@ func get_class_passive() -> Dictionary:
 			}
 		"Ninja":
 			return {
-				"name": "Shadow Step",
-				"description": "+40% flee success, take no damage when fleeing",
+				# 2026-09-05 — Shadow Step retired. It duplicated the Grifter's new escape
+				# identity, and the owner wants the Ninja to be the crit class: "ninja should be
+				# able to build towards crit which needs actual viability and ability support."
+				#
+				# That was impossible until today: crit was rolled only on basic attacks, which
+				# are 1% of player actions (measured, 10 of 973). With crit now applying to
+				# abilities, a crit identity has something to stand on.
+				#
+				# ESCALATING rather than flat, so crit is a BUILD and not a stat line: every crit
+				# this fight sharpens the next. It rewards stacking crit from gear and rewards
+				# long fights, and it resets each combat so it cannot be banked.
+				"name": "Killing Edge",
+				"description": "+12% crit chance. Every critical hit this fight sharpens the next (+6%).",
 				"color": "#191970",
 				"effects": {
-					"flee_bonus": 0.40,
-					"flee_no_damage": true
+					"crit_chance_bonus": 0.12,
+					"crit_escalation": 6
 				}
 			}
 		_:
