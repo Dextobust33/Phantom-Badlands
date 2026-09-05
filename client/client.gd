@@ -20182,7 +20182,13 @@ func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed:
 	# nothing on screen said which card they were upgrading.
 	_ms_ability_label = _ability_display_name(ability_name)
 	_ms_phase = "preview"
-	_set_milestone_header("Memorise their positions — they are about to be shuffled.")
+	# 2026-09-04 — the header used to say "Memorise their positions", which asks for something
+	# the code does not permit: the shuffle is `_ms_order.shuffle()` followed by an instant grid
+	# rebuild, so the cards TELEPORT. There is no motion to follow and no way to track a card.
+	# Reported as confusing, and rightly. The preview exists to show what is IN THE POOL, which
+	# is what the original design asked for — "shown for a moment, then hidden and placed in a
+	# random spot" — so the header now says that instead of promising a shell game.
+	_set_milestone_header("Here is what is on offer — they will be hidden and shuffled.")
 	_rebuild_milestone_grid()
 	_milestone_overlay.visible = true
 	# 6s, was 3. Nine cards with names and descriptions is more reading than three seconds
@@ -20192,7 +20198,7 @@ func _show_milestone_reveal(ability_name: String, offer: Array, reveals_allowed:
 	while _preview_left > 0.0 and _ms_phase == "preview" and _milestone_overlay.visible:
 		# Count down visibly. Being told the shuffle is coming is what makes it a memory game
 		# rather than a surprise - the owner asked that it be obvious the cards move.
-		_set_milestone_header("Memorise their positions — shuffling in %.0f..." % ceil(_preview_left))
+		_set_milestone_header("Here is what is on offer — hiding in %.0f..." % ceil(_preview_left))
 		await get_tree().create_timer(0.25).timeout
 		_preview_left -= 0.25
 	if _ms_phase != "preview" or not _milestone_overlay.visible:
@@ -20210,7 +20216,7 @@ func _begin_milestone_hunt() -> void:
 		return
 	_ms_phase = "hunt"
 	_ms_order.shuffle()
-	_set_milestone_header("Shuffled! Turn over %d of them." % _ms_reveals_left)
+	_set_milestone_header("Hidden and shuffled — turn over %d of them, then choose one." % _ms_reveals_left)
 	_rebuild_milestone_grid()
 
 func _rebuild_milestone_grid() -> void:

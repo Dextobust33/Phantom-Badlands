@@ -104,6 +104,55 @@ already-free untouched.
 
 ## ⚑ COMBAT VISIBILITY — two things the player cannot see (owner, 2026-09-04)
 
+### An upgraded card should LOOK upgraded (owner 2026-09-04, NOT started)
+
+Owner: *"Upgrading a card and then the card looking exactly the same and the description being
+exactly the same sucks."* Listing the upgrades in the description (shipped) is the floor, not the
+answer. The ask, in the owner's own sequence:
+
+- [ ] **Preview on the pick screen.** Hovering an upgrade shows YOUR card with that upgrade
+      applied — *"if I'm upgrading Analyze and I hover over a Mending upgrade it should show my
+      Analyze card with the Mending effect"* — and hovering that preview shows what the card
+      would then do. All before committing
+- [ ] **The card itself changes.** Once chosen, the upgraded Analyze is visibly a different card
+      in the deck screen AND in the combat hand, not the same art with a line of text appended
+- [ ] The estimate must follow: `_card_damage_multiplier` still counts only `power` picks, so an
+      upgraded card can show an unupgraded number
+
+**Groundwork that already exists:** `card_upgrades.gd` carries `name` + `desc` per upgrade;
+`_ability_desc_bbcode` is the single description builder every surface now inherits from; the
+hand cell and deck card are both built from one `build_deck_card` path. So a preview is a matter
+of composing a card with a hypothetical pick applied, not new plumbing.
+
+### DONE 2026-09-04 — "memorise their positions" was asking the impossible
+
+The rank-up reveal told the player to *"Memorise their positions — they are about to be
+shuffled."* The shuffle is `_ms_order.shuffle()` followed by an instant grid rebuild: the cards
+TELEPORT. There is no motion to follow, so no player could ever have tracked one. Reported as
+confusing, correctly.
+
+The preview exists to show what is IN THE POOL — which is what the original design asked for,
+*"shown for a moment, then hidden and placed in a random spot"* — so the header says that now
+rather than promising a shell game the code does not implement.
+
+- [ ] Optional follow-up: implement a REAL animated shuffle, which would make the original
+      instruction honest and turn the reveal into an actual game of skill. Bigger job; the text
+      fix is the correct floor
+
+### DONE 2026-09-04 — five upgrade descriptions said "class resource" for two different things
+
+Owner: *"some of the upgrades need reviewed as they don't make sense like get more of your class
+resource if used with a full bar?"* Exactly right, and the cause is wording rather than design.
+There are TWO things a card gives back and both were called "your class resource":
+
+- the **spendable bar** — mana / stamina / energy (`_restore_primary_resource`)
+- the **class engine** — Momentum / Read / Focus (`_feed_class_engine`)
+
+So Kindling reads as "gain resource while your resource is full", when what it does is convert a
+cast that would waste a full bar into engine progress — one of the better picks in the pool. All
+five now name what they actually give, and a rule at the top of `card_upgrades.gd` says which
+term to use so the next one written does not repeat it.
+
 ### Buffs and debuffs need a panel (NOT started)
 
 Owner: *"Buff and debuff info needs a panel in solo and party combat to show what buffs or
@@ -116,8 +165,11 @@ makes every duration-based card a guess, and it is most of why buffs are ignored
 damage (the shallow-choice problem in `project_ability_redesign`).
 
 - [ ] One panel serving solo AND party: self, each party member, and the enemy
-- [ ] Show remaining DURATION, not just presence — the owner asked for this explicitly and it is
-      the half that makes a buff plannable
+- [ ] Show remaining DURATION, its current MAGNITUDE, and whether it is STACKING — owner
+      2026-09-04, restated with detail after multiple players raised it: *"it would be nice to
+      see what buffs and debuffs they have going on and how long they last and how high they
+      currently are, if they are stacking, etc."* Presence alone is not enough; the magnitude is
+      what tells a player whether re-casting is worth a turn
 - [ ] The data already exists: `character.active_buffs` carries `{type, value, duration}` and the
       monster carries its own debuff state (`monster_bleed`, `monster_burn`, stun counters,
       Sabotage stacks). The combat scene already renders per-member status CHIPS

@@ -34,6 +34,17 @@ const KIND_CONTROL := "control"
 # Milestone index (1-based) from which trade-off picks may be offered.
 const TRADEOFF_MIN_MILESTONE := 3
 
+# 2026-09-04 — WORDING RULE, learned from a player report: "some of the upgrades need reviewed
+# as they don't make sense like get more of your class resource if used with a full bar?"
+#
+# The game has TWO things a card can give back and the descriptions were calling both of them
+# "your class resource":
+#   * the SPENDABLE BAR   — mana / stamina / energy. Say it by those names.
+#   * the CLASS ENGINE    — Momentum (warrior) / Read (trickster) / Focus (mage), fed by
+#                           `_feed_class_engine`. Always name the three explicitly.
+# Conflating them makes an upgrade read as nonsense ("more resource while already full"), when
+# what it actually does — convert a wasted cast on a capped bar into engine progress — is one of
+# the better picks in the pool.
 const UPGRADES := [
 	# ---------------------------------------------------------------- legacy four -----------
 	{"id": "power", "wired": true, "name": "Power", "kind": KIND_ANY, "stacks": true, "tradeoff": false,
@@ -109,19 +120,19 @@ const UPGRADES := [
 	{"id": "mending", "wired": true, "name": "Mending", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 4% of your health each time you play this."},
 	{"id": "second_wind", "wired": true, "name": "Second Wind", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
-	 "desc": "Gives back 8% of your resource pool on cast."},
+	 "desc": "Gives back 8% of your mana / stamina / energy on cast."},
 	{"id": "bulwark", "wired": true, "name": "Bulwark", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Shields you for 9% of your health — but only while you are below half."},
 	{"id": "steadfast", "wired": true, "name": "Steadfast", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Take 10% less damage for 2 rounds after playing this."},
 	{"id": "kindling", "wired": true, "name": "Kindling", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
-	 "desc": "Builds your class resource when cast with a full bar."},
+	 "desc": "Cast it on a FULL resource bar and it grants a point of your class engine (Momentum / Read / Focus) instead of wasting the cast."},
 	{"id": "desperate", "wired": true, "name": "Desperation", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
-	 "desc": "Builds your class resource twice over while you are below a third health."},
+	 "desc": "Grants TWO points of your class engine (Momentum / Read / Focus) while you are below a third health."},
 	{"id": "opening_act", "wired": true, "name": "Opening Act", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "The FIRST time you play this in a fight, it costs nothing."},
 	{"id": "relentless", "wired": true, "name": "Relentless", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
-	 "desc": "Every third cast of this card restores a third of your resource."},
+	 "desc": "Every third cast of this card gives back a third of your mana / stamina / energy."},
 	{"id": "vindication", "wired": true, "name": "Vindication", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Heals you for 6% of your health when this lands a killing blow."},
 	{"id": "disorienting", "wired": true, "name": "Disorienting", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
@@ -129,7 +140,7 @@ const UPGRADES := [
 	{"id": "pinning", "wired": true, "name": "Pinning", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "12% chance to stun the enemy outright."},
 	{"id": "harrying", "wired": true, "name": "Harrying", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
-	 "desc": "Builds your class resource whenever the enemy is already rattled."},
+	 "desc": "Grants a point of your class engine (Momentum / Read / Focus) whenever the enemy is stunned or distracted."},
 	{"id": "demoralising", "wired": true, "name": "Demoralising", "kind": KIND_CONTROL, "stacks": false, "tradeoff": false,
 	 "desc": "Shields you for 5% of your health while the enemy is stunned or rattled."},
 	{"id": "entrenched", "wired": true, "name": "Entrenched", "kind": KIND_BUFF, "stacks": false, "tradeoff": false,
