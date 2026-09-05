@@ -5687,7 +5687,10 @@ func run_durability_audit():
 	Also reports BASE max HP with gear stripped, to separate what the class formula grants from
 	what the sim's equip rule chose to wear."""
 	var LEVELS := [5, 10, 15]
-	var CHARS := 3
+	# 2026-09-05 - raised from 3. The sim is seeded (seed(20260824) at the top of this file), so
+	# re-running an audit reproduces it byte for byte: the ONLY way to get more evidence is more
+	# characters. Three was enough to spot the Thief L15 outlier and not enough to believe it.
+	var CHARS := 8
 	var N := 8
 	print("
 ===== DURABILITY - monster turns survived in an unwinnable fight =====")
@@ -5701,11 +5704,19 @@ func run_durability_audit():
 	# If stripping the shield drops the Wizard BELOW the Fighter, the card is the cause and the
 	# lever is Forcefield. If it lands level with the Fighter, the shield is incidental and the
 	# Fighter is simply under-built for its own archetype.
-	for entry in [["Fighter", ""], ["Wizard", "shield_first"], ["Wizard-noFF", "bolt_spam"], ["Thief", ""]]:
-		var klass: String = "Wizard" if String(entry[0]).begins_with("Wizard") else String(entry[0])
+	# Thief-noDeny added 2026-09-05: the Thief read 16.0 turns at L15 against 2.2 at L5 and 2.7
+	# for the same cell a run earlier. Suspected turn-denial chaining - Analyze returns
+	# skip_monster_turn:true, and in an unwinnable fight `deny_first` has nothing to do but spam
+	# it, so a deep enough energy pool might lock a monster out indefinitely. `damage_only` never
+	# touches those cards, so the gap between the two rows is the size of the lock.
+	for entry in [["Fighter", "", ""], ["Wizard", "shield_first", ""], ["Wizard-noFF", "bolt_spam", ""],
+			["Thief", "", "deny_first"], ["Thief-noDeny", "", "damage_only"]]:
 		var label: String = String(entry[0])
+		var klass: String = "Wizard" if label.begins_with("Wizard") else ("Thief" if label.begins_with("Thief") else label)
 		if String(entry[1]) != "":
 			_mage_policy = String(entry[1])
+		if String(entry[2]) != "":
+			_trickster_policy = String(entry[2])
 		for lvl in LEVELS:
 			var base_sum := 0.0
 			var tot_sum := 0.0
@@ -5745,6 +5756,7 @@ func run_durability_audit():
 				label, lvl, int(base_sum / n), int(tot_sum / n), int(def_sum / n),
 				turn_sum / float(maxi(1, runs))])
 	_mage_policy = "shield_first"
+	_trickster_policy = "deny_first"
 	_grow_immortal = false
 	print("
 turns_live is the honest durability number: it counts defense, Iron Skin, the")
