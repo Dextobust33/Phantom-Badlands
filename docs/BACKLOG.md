@@ -331,6 +331,40 @@ nerf apparently making a class WORSE, which is impossible. At n=4 characters the
 variance is real even with the fixed seed, because a code change shifts RNG consumption and
 therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
 
+## ⚑ CRIT AND GLANCE — SHIPPED to the tree 2026-09-05
+
+Abilities were deterministic: they always hit and could never crit. Now they are bracketed on
+both sides, and the pair is close to power-neutral by construction.
+
+- **Crit on abilities** at full chance with a smaller multiplier (`ABILITY_CRIT_DAMAGE` 1.25 vs
+  the basic attack's 1.5), because `ABILITY_WEIGHTS` are anchored and were tuned with no crit in
+  them. Crit chance is now ONE definition — `player_crit_chance()`, extracted from ~60 inline
+  lines in `calculate_damage` so the ability path cannot drift from the attack path
+- **Glancing blows** rather than misses. A true miss costs the resource AND the turn, and under
+  permadeath a whiffed Meteor at low HP is a death rather than a setback. A glance deals 60%
+  instead of 0%, keeps the "abilities can fail" logic, and pairs with crit as a band around the
+  expected value. Chance is `20 − (DEX − monster_speed/2)`, clamped 5–35, so accuracy reduces it
+- Mutually exclusive: a cast is sharp, ordinary, or fumbled
+- Companion strikes route through the same funnel and are excluded — that is the companion's hit
+
+**Measured across the curve** (grown characters, tournament policies):
+
+| | L1 | L5 | L10 | L20 |
+|---|---|---|---|---|
+| before | 75% | 71% | 93% | 94% |
+| after | 72% | 69% | 86% | **80%** |
+
+The L20 fall is larger than the −1.8% headline because glance COMPOUNDS over a long fight and
+L20 fights run longest — a fumble costs more in a drawn-out fight than a short one. That is the
+intended shape, and it pulled the curve toward target without touching a monster stat.
+
+**Two things this unblocks:**
+- The **Ninja crit identity** is now buildable at all. Crit reaching 1% of actions was why it had
+  nothing to stand on
+- **DEX finally does something for casters** — it reduces glance chance, so the stat 6k found
+  feeds nothing for tricksters now matters on every cast. Narrow enough not to breach the owner's
+  third-stat caution: it is accuracy, not a second damage stat
+
 ## ⚑ STAT DESIGN — abilities are the game, and the stats do not say so (owner, 2026-09-05)
 
 Owner: *"each class or archetype should have a main stat they focus (wit for tricksters) and a
