@@ -41,6 +41,9 @@ var pending_update_seconds_remaining: float = 0.0
 # Resolves to /home/ubuntu/.local/share/godot/app_userdata/PhantomBadlands/
 # on the Hetzner host. File is deleted once consumed.
 const SHUTDOWN_SENTINEL_PATH := "user://pending_shutdown.txt"
+# Chance of being ambushed per rest / meditate tick outside a safe zone. 2026-09-05: was an
+# inline 15 at two separate sites; named so recovery is tunable in ONE place.
+const REST_AMBUSH_CHANCE := 5
 const SHUTDOWN_SENTINEL_POLL_INTERVAL := 5.0
 var _shutdown_sentinel_timer: float = 0.0
 var pending_update_last_announcement: int = -1  # Track which announcement was last sent
@@ -5738,11 +5741,16 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 	# Re-send character update after ticking effects
 	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
 
-	# Chance to be ambushed while resting (15%) — not in safe zones
+	# Chance to be ambushed while resting — not in safe zones.
+	# 2026-09-05: 15% -> 5%. At 15%, climbing back from 30% HP takes ~5 rest ticks and
+	# 1 - 0.85^5 = 56% of heal-ups were interrupted, so a wounded player usually walked into
+	# the next fight still wounded. Measured by growing characters from creation (`grow`):
+	# 24/24 died before level 2, and failed recovery was the mechanism. At 5% the same heal-up
+	# lands 77% of the time. Owner 2026-09-05: "I'm fine with rest ambush nerfs across the board."
 	# Only the leader (or solo player) can trigger ambush, not party followers
 	if not _is_party_follower and not _gathering_immune and not world_system.is_safe_zone(character.x, character.y):
 		var ambush_roll = randi() % 100
-		if ambush_roll < 15:
+		if ambush_roll < REST_AMBUSH_CHANCE:
 			send_to_peer(peer_id, {
 				"type": "text",
 				"message": "[color=#FF4444]You are ambushed while resting![/color]"
@@ -5890,11 +5898,11 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 	# Re-send character update after ticking effects
 	send_to_peer(peer_id, {"type": "character_update", "character": character.to_dict()})
 
-	# Chance to be ambushed while meditating (15%) — not in safe zones
+	# Chance to be ambushed while meditating — same nerf as resting (see handle_rest).
 	# Only the leader (or solo player) can trigger ambush, not party followers
 	if not is_party_follower and not gathering_immune and not world_system.is_safe_zone(character.x, character.y):
 		var ambush_roll = randi() % 100
-		if ambush_roll < 15:
+		if ambush_roll < REST_AMBUSH_CHANCE:
 			send_to_peer(peer_id, {
 				"type": "text",
 				"message": "[color=#FF4444]Your meditation is interrupted by an ambush![/color]"

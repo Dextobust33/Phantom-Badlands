@@ -4726,7 +4726,7 @@ func _grow_recover(ch) -> bool:
 	var guard := 0
 	while ch.current_hp < ch.get_total_max_hp() and guard < 60:
 		guard += 1
-		if (randi() % 100) < 15:
+		if (randi() % 100) < 5:  # server.gd REST_AMBUSH_CHANCE
 			return true
 		ch.current_hp = mini(ch.get_total_max_hp(),
 			ch.current_hp + maxi(1, int(float(ch.get_total_max_hp()) * randf_range(0.10, 0.25))))

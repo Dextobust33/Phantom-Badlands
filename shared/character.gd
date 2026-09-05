@@ -1624,7 +1624,25 @@ func xp_required_for_next_level(from_level: int) -> int:
 	cannot disagree about progression — they did, and a dead `check_level_up()` carrying a third
 	formula (pow(level+1, 2.5) * 100, ~30x divergent by L1000) was removed on 2026-09-02 for the
 	same reason."""
-	return int(pow(from_level + 1, 2.2) * 50)
+	var base: float = pow(from_level + 1, 2.2) * 50.0
+	# 2026-09-05 — EARLY-LEVEL SMOOTHING. The raw curve costs 100 XP to reach level 2 (the
+	# starting `experience_to_next_level`) and then 560 to reach level 3: a 5.6x step in one
+	# level, landing exactly where new characters are dying. Measured by growing characters
+	# from creation (`grow` audit): 24/24 died before level 2, and a L1 kill pays 8 XP.
+	#
+	# A discount that fades out by level 9 removes the spike without touching anything later —
+	# the curve is IDENTICAL from level 9 up, so mid and late progression are unchanged:
+	#
+	#   from level:   1     2     3     4     5     6     7     8     9
+	#   before:     100   560  1055  1724  2575  3615  4850  6284  7924
+	#   after:      100   241   541  1024  1738  2733  4062  5775  7924
+	#   step:            2.4x  2.2x  1.9x  1.7x  1.6x  1.5x  1.4x  1.4x
+	#
+	# Owner 2026-09-05: "I'm also fine with smoothing the cliff."
+	if from_level < 9:
+		var t: float = float(from_level - 1) / 8.0
+		base *= lerp(0.35, 1.0, t)
+	return int(base)
 
 func get_stat_gains_for_class() -> Dictionary:
 	"""Get stat increases per level based on class (2.5 total stats per level, class-specific distribution)"""
