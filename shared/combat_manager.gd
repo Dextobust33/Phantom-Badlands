@@ -5799,7 +5799,16 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	# field), which raises your Outsmart chance (the payoff = bypass HP). Gambit is now
 	# just a damage card, so it builds Read too. Appended before the match so it reaches
 	# all the early-returning ability paths.
-	var _newread: int = min(COMBO_MAX, int(combat.get("combo", 0)) + 1)
+	var _read_gain: int = 1
+	# Grifter "Long Con" — the denial cards that skip the monster's turn build DOUBLE Read, so
+	# stalling is an engine rather than a delaying action. Only the turn-skip cards qualify:
+	# every Grifter ability already builds Read, and doubling all of them would just be a flat
+	# Outsmart buff rather than an identity.
+	if ability_name in ["analyze", "distract", "sabotage"]:
+		var _lc: Dictionary = character.get_class_passive()
+		var _lc_fx: Dictionary = _lc.get("effects", {}) if _lc is Dictionary else {}
+		_read_gain += int(_lc_fx.get("denial_read_bonus", 0))
+	var _newread: int = min(COMBO_MAX, int(combat.get("combo", 0)) + _read_gain)
 	combat["combo"] = _newread
 	messages.append("[color=#7FD8C8]◉ Read %d/%d[/color]" % [_newread, COMBO_MAX])
 

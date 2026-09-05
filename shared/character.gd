@@ -795,12 +795,23 @@ func get_class_passive() -> Dictionary:
 		"Grifter":
 			# Nerfed: crit damage 50% → 35%, crit chance 15% → 10%
 			return {
-				"name": "Backstab",
-				"description": "+35% crit damage, +10% base crit chance",
+				# 2026-09-05 — Backstab replaced. It was entirely crit, and crit is rolled only
+				# in `calculate_damage`, the BASIC ATTACK path; a Grifter casts nearly every
+				# turn, so the class's whole identity could not fire. Owner: "players mainly use
+				# abilities every turn they can instead of just attacking."
+				#
+				# The replacement is the class's actual winning line, made deliberate: stall the
+				# monster's turn to build Read, cash a reliable Outsmart, and leave on your own
+				# terms when it goes wrong. Read is capped at 8 and worth +9% Outsmart per stack,
+				# so the denial bonus halves the turns needed to reach a reliable Outsmart —
+				# turning a desperation move into an engine.
+				"name": "Long Con",
+				"description": "Denial cards build double Read. +40% flee, and a failed escape costs you nothing.",
 				"color": "#2F4F4F",
 				"effects": {
-					"crit_damage_bonus": 0.35,  # Reduced from 0.50
-					"crit_chance_bonus": 0.10   # Reduced from 0.15
+					"denial_read_bonus": 1,
+					"flee_bonus": 0.40,
+					"flee_no_damage": true
 				}
 			}
 		"Ranger":

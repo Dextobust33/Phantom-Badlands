@@ -5672,18 +5672,26 @@ basic attacks: %d of %d player actions (%.0f%%) - crit applies ONLY to these" % 
 var _tempo_actions := 0
 var _tempo_basic_attacks := 0
 
+# Gates the action counters so they only see the MEASURED fights. Without this the counter was
+# global while `_tempo_actions` incremented only inside `_tempo_one_fight`, so basic attacks from
+# hundreds of character-GROWTH fights were divided by the actions of twelve measured ones - it
+# read 59% and meant nothing.
+var _tempo_measuring := false
+
 func _counted_attack(combat: Dictionary) -> void:
 	# Owner 2026-09-05: "players mainly use abilities every turn they can instead of just
 	# attacking. Players are rarely using attack unless they are out of resources or drew a bad
 	# hand. This makes not doing crit in abilities a bigger problem." This counts it, so the
 	# crit-on-abilities decision is priced rather than argued.
-	_tempo_basic_attacks += 1
-	_counted_attack(combat)
+	if _tempo_measuring:
+		_tempo_basic_attacks += 1
+	combat_mgr.process_attack(combat)
 
 
 func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
 	# One full-health fight, recording the monster's cumulative HP loss at the end of each turn.
 	_grow_rest(ch)
+	_tempo_measuring = true
 	var monster = make_monster(level, "normal", 1.0)
 	var mhp: float = float(maxi(1, int(monster.get("max_hp", 1))))
 	var cum: Array = []
@@ -5700,14 +5708,11 @@ func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
 			break
 		turns += 1
 		if combat.get("player_can_act", true) and ch.current_hp > 0:
-			var _atk_before: int = _tempo_basic_attacks
 			match ch.get_class_path():
 				"trickster": _player_act_trickster(combat, ch)
 				"mage": _player_act_mage(combat, ch)
 				_: _player_act(combat, ch)
 			_tempo_actions += 1
-			if _tempo_basic_attacks > _atk_before:
-				pass  # counted inside process_attack wrapper below
 		var removed: float = (mhp - float(maxi(0, int(monster.get("current_hp", 0))))) / mhp
 		if turns <= turns_tracked:
 			cum[turns - 1] = removed
@@ -5722,6 +5727,7 @@ func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
 		if t > 0 and cum[t] < cum[t - 1]:
 			cum[t] = cum[t - 1]
 	combat_mgr.end_combat(0, int(monster.get("current_hp", 0)) <= 0, false)
+	_tempo_measuring = false
 	return {"cum": cum, "kill_turn": kill_turn}
 
 

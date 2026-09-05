@@ -478,9 +478,29 @@ So for a Trickster — who spends nearly every turn casting — DEX crit, the Ba
 the entire epic+ crit chase pool are close to dead weight. "Ninja builds toward crit" is not
 short of support; the stat does not function on the actions the class takes.
 
-- [ ] Decide whether crit SHOULD apply to abilities. If yes it is a large change (every ability
-      damage path, and the anchored weights were tuned without it). If no, then DEX crit,
-      Backstab and two epic+ chase affixes need to stop being sold as build directions
+**MEASURED 2026-09-05: basic attacks are 1% of player actions — 10 out of 973.** Owner said
+players *"rarely use attack unless they are out of resources or drew a bad hand"*, and the number
+is starker than that: with resources and a hand available, the policies essentially never attack.
+
+So crit reaches **1%** of what a player does. DEX crit, the class passives built on it, and the
+entire epic+ crit chase pool (`crit_chance_bonus`, `crit_damage_bonus` — the rarest loot in the
+game) are ~99% inert. `attack` gear affixes are in the same position, being basic-attack-only.
+
+*(An earlier version of this measurement read 59% and was wrong: the counter was global while its
+denominator was local, so basic attacks from hundreds of character-GROWTH fights were divided by
+the actions of twelve measured ones.)*
+
+- [ ] **Decide crit-on-abilities — now the highest-leverage itemization fix available**, not a
+      nice-to-have. At 1% coverage the alternative is to stop selling crit as a build direction
+      at all, which also means the Ninja cannot have a crit identity
+      - Recommended shape: full crit CHANCE on abilities with a smaller multiplier than basic
+        attacks (one constant, halves the damage inflation, trivially revertible). Measure, and
+        fall back to re-fitting `ABILITY_WEIGHTS` only if inflation persists
+      - Ability weights are anchored and were tuned with NO crit in them, so expect roughly
+        `crit_chance x (multiplier - 1)` of uniform damage inflation — ~12% at 25% crit
+      - Solo and party share the damage paths so the average is identical; party differs in
+        VARIANCE, where several crits in one round can delete a monster and disturb the pacing
+        work already done
 - [ ] Either way this gates the Ninja crit identity above — there is no point adding crit support
       cards to a stat that does not fire
 
