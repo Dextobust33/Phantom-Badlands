@@ -245,9 +245,24 @@ invalid.** Fixing it, with nothing in the game changed:
 | Wizard | 3 encounters, 40% win | **6 encounters, 54% win** |
 | Fighter | 5 encounters, 39% win | unchanged (policy already complete) |
 
-- [ ] `polytest` runs four Warrior strategies head to head on the same grown cohort. Extend the
-      same treatment to Mage and Trickster once the Warrior answer lands — hand-written policies
-      are guesses, and this is the fourth defect of that shape in two days
+- [x] **Warrior tournament DONE — null result, and a useful one.** Four strategies on the same
+      grown cohort (3 characters x 20 fights per cell, difficulty scale applied):
+
+      | lv | buff_first | damage_first | defensive | momentum_hold |
+      |---|---|---|---|---|
+      | 1 | 61% | 45% | **65%** | 56% |
+      | 5 | **56%** | 46% | 53% | 46% |
+      | 10 | **75%** | 51% | 50% | 51% |
+      | 20 | **88%** | 71% | 55% | 61% |
+
+      The default wins everywhere but L1, where `defensive` leads by 4pp — inside noise at n=60.
+      No change to the Warrior. Three lessons that generalise: buff uptime PAYS for its tempo
+      (`damage_first` loses everywhere); reacting defensively mid-fight is a TRAP (`defensive`
+      collapses to 55% at L20 — once you are losing the answer is to leave, not to turtle, which
+      is the same conclusion the permadeath arithmetic reached); and banking Momentum to 6 is
+      worse than spending at 4.
+- [ ] Extend `polytest` to Mage and Trickster. Their policies were just fixed by hand and gained
+      a lot (Thief 4→15 encounters), which is exactly the situation where a tournament finds more
 - Note: there is **no player `wait`/defend action** (attack / ability / flee / outsmart /
   special), and `process_special` is a stub returning `success:false`
 
