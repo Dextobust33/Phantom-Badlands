@@ -680,6 +680,16 @@ func apply_damage_variance(base_damage: int) -> int:
 	return max(1, int(base_damage * variance))
 
 
+func _passive_has_no_glance(character) -> bool:
+	"""Ranger "Steady Hand" — abilities never glance. The reliability identity: it does not raise
+	damage, it removes the downside roll, which is worth more the more casts a fight takes."""
+	if character == null:
+		return false
+	var p: Dictionary = character.get_class_passive()
+	var fx: Dictionary = p.get("effects", {}) if p is Dictionary else {}
+	return bool(fx.get("no_glance", false))
+
+
 func _note_crit_escalation(character, combat: Dictionary) -> void:
 	"""Bank one Killing Edge stack. No-op for classes without the passive, so both crit paths can
 	call it unconditionally rather than each re-checking the passive."""
@@ -781,7 +791,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			_note_crit_escalation(character, combat)
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color]")
-		else:
+		elif not _passive_has_no_glance(character):
 			var _dex: int = character.get_effective_stat("dexterity")
 			var _mspd: int = int(monster.get("speed", 10))
 			var _gap: int = _dex - int(_mspd / 2.0)

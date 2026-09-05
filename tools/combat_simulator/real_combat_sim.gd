@@ -3973,7 +3973,51 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 		"damage_only": _trickster_damage_only(combat, ch)
 		"deny_first": _trickster_deny_first(combat, ch)
 		"outsmart_rush": _trickster_outsmart_rush(combat, ch)
+		"no_outsmart": _trickster_no_outsmart(combat, ch)
+		"no_heist": _trickster_no_heist(combat, ch)
 		_: _trickster_assassin(combat, ch)
+
+
+func _trickster_no_outsmart(combat: Dictionary, ch) -> void:
+	# deny_first with Outsmart REMOVED. Half of the A/B that prices which win condition carries
+	# the class: the Grifter measures 75/80/98/88 and halving its Read did nothing, so the
+	# strength is in the bypass-HP wins rather than the ramp that feeds them.
+	var hand: Array = combat.get("combat_hand", [])
+	if "perfect_heist" in hand:
+		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
+			return
+	for ab in ["analyze", "distract", "sabotage"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	for ab in ["ambush", "exploit", "gambit"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	_counted_attack(combat)
+
+
+func _trickster_no_heist(combat: Dictionary, ch) -> void:
+	# deny_first with Assassinate REMOVED, Outsmart kept. The other half of the A/B.
+	var hand: Array = combat.get("combat_hand", [])
+	var _mon: Dictionary = combat.get("monster", {})
+	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
+	if ch.current_energy > int(ch.get_total_max_energy() * 0.5) and base_os + 30 >= 55:
+		var r = combat_mgr.process_outsmart(combat)
+		if r.get("combat_ended", false):
+			combat["combat_ended"] = true
+			if r.get("victory", false) and _mon:
+				_mon["current_hp"] = 0
+		return
+	for ab in ["analyze", "distract", "sabotage"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	for ab in ["ambush", "exploit", "gambit"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	_counted_attack(combat)
 
 
 func _trickster_damage_only(combat: Dictionary, ch) -> void:
@@ -5452,7 +5496,7 @@ func run_grow_tune():
 		head += "%9s" % ("x%.2f" % m)
 	print(head)
 	_grow_immortal = true
-	for klass in ["Fighter", "Wizard", "Grifter", "Ninja"]:
+	for klass in ["Fighter", "Wizard", "Grifter", "Ninja", "Ranger"]:
 		for lvl in LEVELS:
 			var pooled: Array = []
 			for m in MULTS:
@@ -5517,7 +5561,7 @@ func run_policy_test():
 	var SUITES := [
 		{"klass": "Fighter", "field": "warrior", "policies": ["buff_first", "no_opener", "defensive", "momentum_hold"]},
 		{"klass": "Wizard", "field": "mage", "policies": ["rotation", "bolt_spam", "focus_ramp", "shield_first"]},
-		{"klass": "Grifter", "field": "trickster", "policies": ["assassin", "damage_only", "deny_first", "outsmart_rush"]},
+		{"klass": "Grifter", "field": "trickster", "policies": ["deny_first", "no_outsmart", "no_heist", "damage_only"]},
 	]
 	for suite in SUITES:
 		_run_one_tournament(String(suite["klass"]), String(suite["field"]), suite["policies"], LEVELS, CHARS, N)

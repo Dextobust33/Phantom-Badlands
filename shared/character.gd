@@ -822,13 +822,24 @@ func get_class_passive() -> Dictionary:
 			}
 		"Ranger":
 			return {
-				"name": "Hunter's Mark",
-				"description": "+25% damage vs beasts, +30% XP from kills, +15% gathering",
-				"color": "#228B22",
+				# 2026-09-05 — Hunter's Mark retired. +25% vs beasts is situational and the XP /
+				# gathering halves are out of combat, so against a non-beast the Ranger had NO
+				# combat passive at all — the only one of the three tricksters in that position.
+				#
+				# Owner's direction was "its own place or the middle ground". With the Grifter
+				# owning escape-and-Outsmart and the Ninja owning escalating crit, the open slot
+				# is RELIABILITY: the trickster that does not gamble. Glancing blows (added today)
+				# give that something concrete to negate.
+				#
+				# Owner: "I'm fine with the never glancing but I feel it may need more than just
+				# that, you can measure to find out." So this starts at no-glance ALONE and gets
+				# measured before anything else is added — adding two things at once would make
+				# it impossible to say which one mattered.
+				"name": "Steady Hand",
+				"description": "Your abilities never glance. Steady damage where others gamble.",
+				"color": "#556B2F",
 				"effects": {
-					"bonus_vs_beasts": 0.25,
-					"xp_bonus": 0.30,
-					"gathering_bonus": 0.15
+					"no_glance": true
 				}
 			}
 		"Ninja":
