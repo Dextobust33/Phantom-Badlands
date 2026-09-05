@@ -360,10 +360,27 @@ mean at different levels:
 - Conversely, the L1-L25 work IS verifiable today, and that is where every reported live problem
   actually sits: new characters dying, gear scarce, progress stalling
 
-- [ ] **Weigh shipping the early-game pass sooner rather than later.** Not because it is perfect,
-      but because live players climbing past L20 is the only thing that produces the data the
-      rest of the balance work needs. The alternative is refining a model nobody can check
-      against a population that cannot form
+- [x] **SHIPPED as v0.9.751 "Mercy for the bitches..."** (2026-09-05) — client, launcher and
+      server, all four platform assets plus the pck split. Runtime byte-identical to r1, so
+      launcher users pulled ~15 MB. Owner: *"This game is still very early so we can take risks."*
+
+- [ ] **RE-CHECK PLAYER PROGRESSION PERIODICALLY** — run `bash tools/check_player_progress.sh`.
+      It reports the live level distribution and says explicitly whether there is anything new to
+      act on. Thresholds it applies:
+      - highest **< L25** → still inside the range already measured; nothing to re-open
+      - highest **≥ L25** → past what grown characters can reach; re-run `calibrate` to check
+        `make_char` against real characters
+      - highest **≥ L50** → the high-level balance work can be validated against real data
+        instead of the `lootsim` extrapolation; re-open the class table and the difficulty fit
+
+      **Snapshot at ship time (2026-09-05):** 18 characters, 16 at L1-9, 2 at L10-24, highest 19.
+
+      **The L45 Ninja is GONE** — it died to permadeath, and it was the single high-level data
+      point `calibrate` used. So make_char's cold end (0.38x a real character's attack at L45) is
+      now anchored to nothing at all. Treat every high-level number as model-only until the
+      population climbs.
+
+
 
 ## ⚑ SCOPE WARNING — every class number here covers L1-L20, and the game runs to L10000
 
