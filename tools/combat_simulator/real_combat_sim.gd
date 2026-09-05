@@ -77,6 +77,7 @@ func _audit_registry() -> Dictionary:
 		"grow": ["grow a character from creation the way a player must", run_grow_audit],
 		"growdiag": ["is the grown character built correctly? (instrument check)", run_grow_diag],
 		"growref": ["EARNED gear profile per level - the reference make_char should encode", run_grow_reference],
+		"growtune": ["what monster nerf a grown player needs to hit target", run_grow_tune],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -5085,6 +5086,100 @@ One grown Fighter, encounter by encounter:")
 			rates.append(100.0 * float(w) / float(maxi(1, f)))
 		print("%-9s %13.0f%% %13.0f%% %9.0fpp" % [klass, rates[0], rates[1], rates[0] - rates[1]])
 	_grow_immortal = false
+
+
+func _grow_scaled_fight(ch, level: int, hp_mult: float, dmg_mult: float) -> bool:
+	# One fight at FULL health against a monster scaled by hp_mult / dmg_mult. Damage is scaled
+	# the same way run_fight does it - give back a fraction of what was actually dealt - so the
+	# monster's real ability mix and hit rolls are preserved rather than replaced by a model.
+	_grow_rest(ch)
+	var monster = make_monster(level, "normal", hp_mult)
+	combat_mgr.start_combat(0, ch, monster)
+	if not combat_mgr.active_combats.has(0):
+		return false
+	var combat = combat_mgr.active_combats[0]
+	var turns := 0
+	while turns < 400:
+		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+			break
+		turns += 1
+		if combat.get("player_can_act", true) and ch.current_hp > 0:
+			match ch.get_class_path():
+				"trickster": _player_act_trickster(combat, ch)
+				"mage": _player_act_mage(combat, ch)
+				_: _player_act(combat, ch)
+		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+			break
+		var hp0: int = ch.current_hp
+		combat_mgr.process_monster_turn(combat)
+		if dmg_mult < 1.0:
+			var taken: int = hp0 - ch.current_hp
+			if taken > 0:
+				ch.current_hp = mini(ch.get_total_max_hp(), ch.current_hp + int(float(taken) * (1.0 - dmg_mult)))
+	var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+	combat_mgr.end_combat(0, won, false)
+	return won
+
+
+func run_grow_tune():
+	"""How much do monsters have to come down for a REALISTICALLY GEARED player to hit target?
+
+	Owner 2026-09-05, after recovery and XP fixes failed to move survival: nerf monster damage
+	"and possibly nerf their hp too... likely this will need to be done for more than just the
+	early game."
+
+	The player here is GROWN, not invented - it carries only gear it actually found, so the
+	answer is not distorted by make_char's 2.09x-at-L6 / 0.45x-at-L45 slope. Win rate is
+	measured at full health against a single normal monster, which is the cleanest read on
+	whether a fight is winnable at all; the compounding (flocks, carried damage, failed
+	retreats) sits on top of whatever this says."""
+	var LEVELS := [1, 5, 10, 20]
+	var MULTS := [1.0, 0.75, 0.5, 0.35, 0.25]
+	var N := 40
+	print("
+===== WHAT NERF DOES A GROWN PLAYER NEED? (target 60% at a normal fight) =====")
+	print("Monster HP and damage both scaled by the same multiplier. %d fights per cell." % N)
+	var head := "%-9s %5s" % ["class", "lv"]
+	for m in MULTS:
+		head += "%9s" % ("x%.2f" % m)
+	print(head)
+	_grow_immortal = true
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		for lvl in LEVELS:
+			var ch = _grow_new_character(klass, "Human")
+			var hunt := 1
+			var guard := 0
+			while ch.level < lvl and guard < 200000:
+				hunt = clampi(hunt, 1, ch.level)
+				if randf() < _grow_gather_share(ch.level):
+					if not bool(_grow_gather(ch).ambushed):
+						continue
+				var enc = _grow_encounter(ch, hunt)
+				guard += int(enc.fights)
+				if bool(enc.fled) or float(enc.worst) < 0.30:
+					hunt = maxi(1, hunt - 1)
+				elif float(enc.worst) > 0.60:
+					hunt = mini(ch.level, hunt + 1)
+				if int(enc.xp) > 0:
+					ch.add_experience(int(enc.xp))
+					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
+					_grow_spend_points(ch)
+				for d in (enc.drops as Array):
+					_grow_consider_item(ch, d)
+				_grow_recover(ch)
+			var row := "%-9s %5d" % [klass, lvl]
+			for m in MULTS:
+				var w := 0
+				for i in range(N):
+					if _grow_scaled_fight(ch, lvl, m, m):
+						w += 1
+				row += "%8d%%" % int(100.0 * float(w) / float(N))
+			print(row)
+	_grow_immortal = false
+	print("
+Read across each row for the first cell at or above 60%.")
+	print("=====================================================================
+")
 
 
 func run_grow_reference():
