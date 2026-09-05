@@ -74,6 +74,8 @@ func _audit_registry() -> Dictionary:
 		"names": ["do all the tables agree on what each card is CALLED?", run_name_consistency_audit],
 		"adjudicate": ["refcal vs roles: which win-rate measurement is right?", run_adjudicate_audit],
 		"newplayer": ["what a character created TODAY actually faces at L1-L10", run_newplayer_audit],
+		"grow": ["grow a character from creation the way a player must", run_grow_audit],
+		"growdiag": ["is the grown character built correctly? (instrument check)", run_grow_diag],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -4611,3 +4613,358 @@ func run_design_solve():
 				row += "%13s" % ("%.1ft@%d%%" % [float(tt) / N, int(100.0 * wins / N)])
 			print(row)
 	print("==============================================================================\n")
+
+# =====================================================================================
+# GROWN CHARACTERS - measure a player's gear by EARNING it, not by inventing it
+# =====================================================================================
+# Owner 2026-09-04: "the game is very difficult right now. Most fights are a struggle because
+# gear is scarce... you need to do it from the creation with starter gear and level it up like
+# a player would have to." Plus two mechanics that make it harder than a naive model:
+# "It's difficult to flee too as it is chance based. Fights can also flock causing difficulty
+# and death." And the trap that closes the loop: "The xp seems to fall off dramatically when
+# fighting things lower level than you but that's the only choice when undergeared."
+#
+# Every gear model above this line INVENTS a loadout, and `calibrate` shows the cost: the
+# invented L6 player hits 2.09x as hard as a real one, the invented L45 player 0.45x. So the sim
+# has flattered the early game and starved the late one, which is why it never showed the
+# struggle being reported from live.
+
+func _grow_new_character(klass: String, race: String):
+	# Created exactly as the server does: one COMMON piece per slot at level 1 (searching UPWARD
+	# for a tier that carries the slot, because tier 1 has no amulet), plus the tier-1 companion
+	# the Home Stone registers. Mirrors server.gd's STARTER EQUIPMENT block.
+	var ch = Character.new()
+	ch.initialize("Grown", klass, race)
+	for slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		var base := ""
+		for tier_try in range(1, 10):
+			for entry in drop_tables.EQUIPMENT_BASES.get(tier_try, []):
+				if String(entry.get("item_type", "")).begins_with(slot):
+					base = String(entry["item_type"])
+					break
+			if base != "":
+				break
+		if base == "":
+			continue
+		var piece = drop_tables._generate_item({"item_type": base}, 1, "common")
+		if piece is Dictionary and not piece.is_empty():
+			ch.equipped[slot] = piece
+	var cands: Array = []
+	for mtype in drop_tables.COMPANION_DATA.keys():
+		if int((drop_tables.COMPANION_DATA[mtype] as Dictionary).get("tier", 1)) == 1:
+			cands.append(mtype)
+	if not cands.is_empty():
+		var pick: String = String(cands[randi() % cands.size()])
+		var pd: Dictionary = drop_tables.COMPANION_DATA.get(pick, {})
+		ch.active_companion = {
+			"id": "grown_comp", "monster_type": pick,
+			"name": String(pd.get("companion_name", pick)),
+			"tier": 1, "level": 1, "xp": 0,
+			"bonuses": (pd.get("bonuses", {}) as Dictionary).duplicate(),
+			"variant": "Normal", "sub_tier": 1, "border_tier": 1,
+		}
+	# The curated starter DECK. server.gd calls this at creation (v0.9.698); without it the
+	# archetype AIs below have no cards to play and fall back to basic attacks, which is not
+	# what any real player does. Owner 2026-09-04: "You'll need to use real methods for each
+	# archetype too. The abilities warriors, mages and tricksters have at their disposal."
+	ch.initialize_deck_collection_if_needed()
+	_grow_spend_points(ch)
+	ch.calculate_derived_stats()
+	_grow_rest(ch)
+	return ch
+
+
+func _grow_spend_points(ch) -> void:
+	# A player spends their level-up points; leaving them unspent flattens the pools and the
+	# stat-driven damage term. Same primary-stat rule make_char uses, so the two are comparable.
+	var primary := "strength"
+	if ch.class_type in ["Wizard", "Sorcerer", "Sage"]:
+		primary = "intelligence"
+	elif ch.class_type in ["Thief", "Ranger", "Ninja"]:
+		primary = "dexterity"
+	var guard := 0
+	while ch.unspent_stat_points > 0 and guard < 4000:
+		guard += 1
+		ch.spend_stat_point(primary)
+
+
+func _grow_rest(ch) -> void:
+	# Full top-up. Used ONLY at creation - between fights recovery goes through _grow_recover,
+	# which is the one the game actually makes you live with.
+	ch.current_hp = ch.get_total_max_hp()
+	ch.current_mana = ch.get_total_max_mana()
+	ch.current_stamina = ch.get_total_max_stamina()
+	ch.current_energy = ch.get_total_max_energy()
+
+
+func _grow_recover(ch) -> bool:
+	# Healing up the way the game makes you: rest ticks of 10-25% max HP (handle_rest), each
+	# carrying a 15% chance of being ambushed outside a safe zone. Returns true if the player was
+	# jumped part-healed - the next encounter then starts from whatever HP they had.
+	#
+	# Owner 2026-09-04: "Random encounters are all over out of the posts and players often can't
+	# heal up before the next one strikes either." That is not a modelling assumption, it is
+	# arithmetic on the game's own numbers: climbing back from 30% takes ~5 ticks, and
+	# 1 - 0.85^5 = 56%, so more than half of all heal-ups get interrupted.
+	var early: float = 2.0 - (float(clampi(ch.level, 1, 25) - 1) / 24.0)
+	var guard := 0
+	while ch.current_hp < ch.get_total_max_hp() and guard < 60:
+		guard += 1
+		if (randi() % 100) < 15:
+			return true
+		ch.current_hp = mini(ch.get_total_max_hp(),
+			ch.current_hp + maxi(1, int(float(ch.get_total_max_hp()) * randf_range(0.10, 0.25))))
+		var rp: float = 0.30 * early
+		ch.current_mana = mini(ch.get_total_max_mana(), ch.current_mana + maxi(1, int(float(ch.get_total_max_mana()) * rp)))
+		ch.current_stamina = mini(ch.get_total_max_stamina(), ch.current_stamina + maxi(1, int(float(ch.get_total_max_stamina()) * rp)))
+		ch.current_energy = mini(ch.get_total_max_energy(), ch.current_energy + maxi(1, int(float(ch.get_total_max_energy()) * rp)))
+	return false
+
+
+func _grow_power(ch) -> float:
+	# One scalar for comparing two loadouts, read through the real aggregators so base-type
+	# stats and affixes are both counted (reading either alone is how gear audits go wrong).
+	return float(ch.get_total_attack()) * 2.0 + float(ch.get_total_defense()) + float(ch.get_total_max_hp()) * 0.1
+
+
+func _grow_consider_item(ch, item: Dictionary) -> bool:
+	# Wear the drop if it actually makes the character stronger - decided by EQUIPPING it and
+	# measuring, not by comparing item levels on paper.
+	var it := String(item.get("item_type", item.get("type", "")))
+	var slot := ""
+	for s in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+		if it.begins_with(s):
+			slot = s
+			break
+	if slot == "" or not ch.equipped.has(slot):
+		return false
+	var before := _grow_power(ch)
+	var old = ch.equipped[slot]
+	ch.equipped[slot] = item
+	if _grow_power(ch) > before:
+		return true
+	ch.equipped[slot] = old
+	return false
+
+
+func _grow_xp_multiplier(ch, monster_level: int) -> float:
+	# The real level-difference XP rule from process_attack, including the down-level penalty
+	# that punishes the only fights an undergeared character can safely take.
+	var diff: int = monster_level - ch.level
+	if diff > 0:
+		var reference_gap := 10.0 + float(ch.level) * 0.05
+		return 1.0 + sqrt(float(diff) / reference_gap) * 0.7
+	elif diff < 0:
+		var under_gap := float(absi(diff))
+		var threshold := 5.0 + float(ch.level) * 0.03
+		if under_gap > threshold:
+			var penalty: float = minf(0.6, (under_gap - threshold) * 0.03)
+			return maxf(0.4, 1.0 - penalty)
+	return 1.0
+
+
+func _grow_encounter(ch, hunt_level: int) -> Dictionary:
+	# One encounter played the way a player must: fight, disengage when it turns, and follow the
+	# flock chain WITHOUT resting between links - which is where the deaths come from. Flee is
+	# the real chance-based process_flee; a failed attempt still costs the monster turn.
+	var fights := 0
+	var xp := 0
+	var drops: Array = []
+	var died := false
+	var fled := false
+	var worst := 1.0
+	var link := 0
+	while link < 12:
+		link += 1
+		fights += 1
+		var monster = make_monster(maxi(1, hunt_level), "normal", 1.0)
+		combat_mgr.start_combat(0, ch, monster)
+		if not combat_mgr.active_combats.has(0):
+			break
+		var combat = combat_mgr.active_combats[0]
+		var turns := 0
+		var escaped := false
+		while turns < 400:
+			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+				break
+			turns += 1
+			if combat.get("player_can_act", true) and ch.current_hp > 0:
+				var hp_frac := float(ch.current_hp) / float(maxi(1, ch.get_total_max_hp()))
+				worst = minf(worst, hp_frac)
+				var m_frac := float(monster.get("current_hp", 0)) / float(maxi(1, int(monster.get("max_hp", 1))))
+				if hp_frac < 0.35 and m_frac > 0.33:
+					var fr = combat_mgr.process_flee(combat)
+					if fr.get("fled", false):
+						escaped = true
+						break
+				else:
+					match ch.get_class_path():
+						"trickster": _player_act_trickster(combat, ch)
+						"mage": _player_act_mage(combat, ch)
+						_: _player_act(combat, ch)
+			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
+				break
+			combat_mgr.process_monster_turn(combat)
+		var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+		var flock: int = int(monster.get("flock_chance", 0))
+		var mlvl: int = int(monster.get("level", hunt_level))
+		combat_mgr.end_combat(0, won, false)
+		if ch.current_hp <= 0:
+			died = true
+			break
+		if escaped:
+			fled = true
+			break
+		if not won:
+			break
+		xp += int(round(float(monster.get("experience_reward", 0)) * _grow_xp_multiplier(ch, mlvl) * 1.10))
+		for d in drop_tables.roll_drops(String(monster.get("drop_table_id", "tier1")),
+				int(monster.get("drop_chance", 5)), mlvl):
+			if d is Dictionary:
+				drops.append(d)
+		if flock <= 0 or (randi() % 100) >= flock:
+			break
+	return {"fights": fights, "xp": xp, "drops": drops, "died": died, "fled": fled, "worst": worst}
+
+
+func run_grow_audit():
+	# Grow characters from creation to a target level, or until permadeath takes them.
+	var TARGET := 20
+	var RUNS := (_audit_n if _audit_n > 1 else 10)
+	var CAP := 60000
+	print("\n===== GROWN CHARACTERS - earned gear, real drops, real flee, real flocks =====")
+	print("%d characters per class, from creation to L%d or death. Permadeath is final." % [RUNS, TARGET])
+	print("The character hunts at the level it can SURVIVE, stepping down after a maul and back")
+	print("up after a comfortable win - and eats the real down-level XP penalty for doing so.")
+	print("%-9s %7s %7s %8s %7s %7s %9s %6s %7s %7s" % ["class", "lived", "diedAt", "fights", "hunt-", "jumped", "upgrades", "slots", "ATK", "HP"])
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		var lived := 0
+		var died_at: Array = []
+		var f_sum := 0
+		var gap_sum := 0.0
+		var jump_sum := 0.0
+		var jump_n := 0
+		var upg_sum := 0
+		var slot_sum := 0
+		var atk_sum := 0
+		var hp_sum := 0
+		for r in range(RUNS):
+			var ch = _grow_new_character(klass, "Human")
+			var hunt: int = 1
+			var upgrades := 0
+			var fights := 0
+			var gap_obs := 0.0
+			var gap_n := 0
+			var jumped := 0
+			var heals := 0
+			var dead := false
+			while ch.level < TARGET and fights < CAP:
+				hunt = clampi(hunt, 1, ch.level)
+				var enc = _grow_encounter(ch, hunt)
+				fights += int(enc.fights)
+				gap_obs += float(ch.level - hunt)
+				gap_n += 1
+				if bool(enc.died):
+					dead = true
+					break
+				# A player who nearly died drops down a level; one who cruised pushes back up.
+				if bool(enc.fled) or float(enc.worst) < 0.30:
+					hunt = maxi(1, hunt - 1)
+				elif float(enc.worst) > 0.60:
+					hunt = mini(ch.level, hunt + 1)
+				if int(enc.xp) > 0:
+					ch.add_experience(int(enc.xp))
+					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
+					_grow_spend_points(ch)
+				for d in (enc.drops as Array):
+					if _grow_consider_item(ch, d):
+						upgrades += 1
+				# Heal up - or get jumped part-healed and walk into the next fight wounded.
+				if _grow_recover(ch):
+					jumped += 1
+				heals += 1
+			f_sum += fights
+			if heals > 0:
+				jump_sum += 100.0 * float(jumped) / float(heals)
+				jump_n += 1
+			if gap_n > 0:
+				gap_sum += gap_obs / float(gap_n)
+			if dead:
+				died_at.append(ch.level)
+			else:
+				lived += 1
+				var filled := 0
+				for s in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+					var e = ch.equipped.get(s, {})
+					if e is Dictionary and not e.is_empty():
+						filled += 1
+				slot_sum += filled
+				upg_sum += upgrades
+				atk_sum += ch.get_total_attack()
+				hp_sum += ch.get_total_max_hp()
+		var avg_died := 0.0
+		for l in died_at:
+			avg_died += float(l)
+		if died_at.size() > 0:
+			avg_died /= float(died_at.size())
+		print("%-9s %6d/%d %7.1f %8d %7.1f %6.0f%% %9.1f %6.1f %7d %7d" % [
+			klass, lived, RUNS, avg_died,
+			int(float(f_sum) / float(maxi(1, RUNS))),
+			gap_sum / float(maxi(1, RUNS)),
+			jump_sum / float(maxi(1, jump_n)),
+			float(upg_sum) / float(maxi(1, lived)),
+			float(slot_sum) / float(maxi(1, lived)),
+			int(float(atk_sum) / float(maxi(1, lived))),
+			int(float(hp_sum) / float(maxi(1, lived)))])
+	print("\nlived    = reached the target without dying   diedAt = average level the dead reached")
+	print("fights   = total encounters attempted         hunt-  = average levels BELOW own level hunted")
+	print("jumped   = share of heal-ups interrupted by an ambush (walked into the next fight hurt)")
+	print("upgrades = pieces actually found and worn over the whole climb (survivors only)")
+	print("=====================================================================\n")
+
+func run_grow_diag():
+	# Instrument check for the grow harness. 12/12 grown characters dying at L1 disagrees with
+	# `newplayer`, which measures 48% win at L1 on the same kit - so before believing the harness,
+	# prove the character it builds is the character it claims to build.
+	print("
+===== GROW HARNESS INSTRUMENT CHECK =====")
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		var g = _grow_new_character(klass, "Human")
+		var m = make_char(1, "starter7", klass, "Human")
+		var gs := 0
+		var ms := 0
+		for sl in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+			var a = g.equipped.get(sl, {})
+			if a is Dictionary and not a.is_empty():
+				gs += 1
+			var b = m.equipped.get(sl, {})
+			if b is Dictionary and not b.is_empty():
+				ms += 1
+		print("%-8s grown     hp=%-5d atk=%-4d def=%-4d slots=%d deck=%d comp=%s" % [
+			klass, g.get_total_max_hp(), g.get_total_attack(), g.get_total_defense(), gs,
+			g.combat_deck_collection.size(), String(g.active_companion.get("name", "none"))])
+		print("%-8s starter7  hp=%-5d atk=%-4d def=%-4d slots=%d deck=%d" % [
+			"", m.get_total_max_hp(), m.get_total_attack(), m.get_total_defense(), ms,
+			m.combat_deck_collection.size()])
+	var mon = make_monster(1, "normal", 1.0)
+	print("L1 normal monster: hp=%s str=%s def=%s xp=%s flock=%s%%" % [
+		str(mon.get("max_hp")), str(mon.get("strength")), str(mon.get("defense")),
+		str(mon.get("experience_reward")), str(mon.get("flock_chance"))])
+	# Now run ONE grown Fighter through single encounters and report what actually happens.
+	print("
+One grown Fighter, encounter by encounter:")
+	var ch = _grow_new_character("Fighter", "Human")
+	for i in range(6):
+		var hp0: int = ch.current_hp
+		var enc = _grow_encounter(ch, 1)
+		print("  enc%d  hp %d->%d/%d  fights=%s xp=%s drops=%s died=%s fled=%s worst=%d%%" % [
+			i + 1, hp0, ch.current_hp, ch.get_total_max_hp(),
+			str(enc.fights), str(enc.xp), str((enc.drops as Array).size()),
+			str(enc.died), str(enc.fled), int(100.0 * float(enc.worst))])
+		if bool(enc.died):
+			print("  DIED at level %d after %d encounters" % [ch.level, i + 1])
+			break
+		var was_jumped := _grow_recover(ch)
+		print("        recover -> hp %d/%d  interrupted=%s" % [ch.current_hp, ch.get_total_max_hp(), str(was_jumped)])
+	print("=====================================================================
+")
