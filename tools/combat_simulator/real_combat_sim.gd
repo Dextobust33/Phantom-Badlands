@@ -4707,11 +4707,16 @@ func _grow_recover(ch) -> bool:
 	# heal up before the next one strikes either." That is not a modelling assumption, it is
 	# arithmetic on the game's own numbers: climbing back from 30% takes ~5 ticks, and
 	# 1 - 0.85^5 = 56%, so more than half of all heal-ups get interrupted.
-	# A badly hurt player does not stand in the open pressing rest - they walk back to a post
-	# and heal where nothing can jump them. `is_safe_zone` is why the ambush roll exists at all,
-	# and modelling only the open-field case is what made this harness kill characters the game
-	# does not kill. The trip costs time, not blood.
+	# A badly hurt player heads for a post, where healing is safe - but GETTING there is not.
+	# Owner 2026-09-05: "Real players can't make it back to the post very often without getting
+	# ambushed." So the trip is a gamble, not a free reset: several moves in the open, each
+	# carrying the same 15% roll. At ~5 moves that is 0.85^5, so barely 44% of retreats land -
+	# and a failed one means fighting at whatever HP drove the retreat in the first place.
+	# The previous version handed out a free full heal here and made the harness too kind.
 	if float(ch.current_hp) / float(maxi(1, ch.get_total_max_hp())) < 0.50:
+		for _step in range(5):
+			if (randi() % 100) < 15:
+				return true
 		ch.current_hp = ch.get_total_max_hp()
 		ch.current_mana = ch.get_total_max_mana()
 		ch.current_stamina = ch.get_total_max_stamina()
