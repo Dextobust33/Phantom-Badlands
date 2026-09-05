@@ -72,6 +72,7 @@ func _audit_registry() -> Dictionary:
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
 		"adjudicate": ["refcal vs roles: which win-rate measurement is right?", run_adjudicate_audit],
+		"newplayer": ["what a character created TODAY actually faces at L1-L10", run_newplayer_audit],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -331,6 +332,38 @@ const ALL_CLASSES := [
 	["Thief", "trickster"], ["Ranger", "trickster"], ["Ninja", "trickster"],
 ]
 const ALL_RACES := ["Human", "Elf", "Dwarf", "Ogre", "Halfling", "Orc", "Gnome", "Undead"]
+
+func run_newplayer_audit():
+	"""What does a character created TODAY actually face at L1-L10?
+
+	2026-09-04, from live: two players on new characters, "they can't really make much of any
+	progress, just death after death". The L1-5 gearless question was DECLINED on 2026-09-03 on
+	an explicit premise - "the tutorial we are adding will fill that gap or existing equipment
+	and companions will" - and item 7 is not built, so the premise is not true yet. The starter
+	Pathfinder chain was retired in the same pass.
+
+	Measures the three states a new character can be in, against what actually spawns."""
+	var N := 60
+	print("
+===== WHAT A NEW CHARACTER FACES (%d fights/cell, normal monsters) =====" % N)
+	print("gearless = every slot empty, no companion (a character created today)")
+	print("under    = a poor kit, uncommon, 8 levels behind")
+	print("average  = the reference player the curve is calibrated against")
+	print("%-7s %10s %10s %10s %10s %10s" % ["level", "gearless", "kit", "kit+unc", "kit+comp", "average"])
+	for lvl in [1, 2, 3, 5, 8, 10]:
+		var row := "%-7d" % lvl
+		for g in ["gearless", "starter7", "starter7u", "starter7c", "average"]:
+			var wins := 0
+			for klass in ["Fighter", "Wizard", "Thief"]:
+				for i in range(int(N / 3.0)):
+					if run_fight(lvl, g, "normal", 1.0, 1.0, 1.0, klass).win:
+						wins += 1
+			row += "%9d%%" % int(100.0 * wins / (int(N / 3.0) * 3))
+		print(row)
+	print("
+A 60%% win rate is the design target for a normal fight at any level.")
+	print("=====================================================================
+")
 
 func run_adjudicate_audit():
 	"""Which audit is telling the truth about the win rate — refcal, or roles?
@@ -4164,6 +4197,19 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 		"under":
 			rarity = "uncommon"
 			glevel = max(1, level - 8)
+		"starter2", "starter4", "starter7", "starter7u", "starter7c":
+			# Candidate STARTER KITS, to size the fix by measurement rather than by feel.
+			# starter2 = weapon + armour; starter4 = + shield and helm; starter7 = every slot.
+			# starter7u raises the kit to UNCOMMON; starter7c keeps common but adds a hatched
+			# companion, which is what the starter egg becomes. Sized at the character's own level,
+			# which is what a creation grant would realistically hand out.
+			rarity = "uncommon" if gear == "starter7u" else "common"
+		"gearless":
+			# EVERY SLOT EMPTY. What a character created TODAY actually starts with: the
+			# Pathfinder starter chain was retired 2026-09-03 and item 7, the tutorial meant to
+			# replace it, is not built. Reported from live 2026-09-04: two players on new
+			# characters, "death after death".
+			pass
 		"average", "average_nokit":
 			roll_rarity = true
 			glevel = max(1, int(round(level * _gear_avg_level_ratio)))
@@ -4200,7 +4246,23 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	# bases gave artifact-tier stats even at "rare" rarity, inflating pools ~2.2x vs a real
 	# character (test02 L6 mage: real 121 mana vs the sim's old 261). Ground-truth calibrated.
 	var gtier: int = _tier_for_level(glevel)
+	var starter_slots: Array = []
+	if gear == "starter2":
+		starter_slots = ["weapon", "armor"]
+	elif gear == "starter4":
+		starter_slots = ["weapon", "armor", "shield", "helm"]
+	elif gear == "starter7" or gear == "starter7u" or gear == "starter7c":
+		starter_slots = []   # every slot - a complete but basic kit
 	for slot in SLOTS:
+		# 2026-09-04 — "gearless" must actually leave every slot EMPTY. The first version only
+		# `pass`ed in the match, so it fell through to the defaults (common, at level) and filled
+		# all seven slots. It measured a fully-common-geared character and called it gearless,
+		# which made the candidate starter kits look WORSE than having nothing. Third gear-model
+		# rung to be wrong this session: check what a rung actually equips before believing it.
+		if gear == "gearless":
+			continue
+		if not starter_slots.is_empty() and not (slot in starter_slots):
+			continue   # a starter kit fills only the named slots; the rest stay empty
 		var base_type := ""
 		# Find this slot's base at the char's tier; fall back down tiers if the slot is
 		# absent at that tier (e.g. amulet only appears from T3).
@@ -4269,7 +4331,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	# companion 2-4x stronger than the game can produce, on top of the gear inflation.
 	# Now: draw a REAL companion of the tier a player would plausibly have, from the game's
 	# own table. "under" gets none — a third of real saved characters have no companion.
-	if gear != "under" and _companion_mode != "none":
+	if gear != "under" and gear != "gearless" and (not gear.begins_with("starter") or gear == "starter7c") and _companion_mode != "none":
 		var comp_tier: int = clampi(1 + int(level / 12.0), 1, 9)
 		var candidates: Array = []
 		for mtype in drop_tables.COMPANION_DATA.keys():

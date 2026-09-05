@@ -2802,6 +2802,47 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	battler_rng.randomize()
 	character.battler_id = BattlerPools.pick_expanded(char_class, battler_rng)
 
+	# === STARTER EQUIPMENT (2026-09-04) ===
+	# Reported from live: two players on new characters, "they can't really make much of any
+	# progress, just death after death."
+	#
+	# MEASURED before acting, against the live curve, 60 fights per cell:
+	#
+	#     level   gearless   full common kit   the reference player
+	#     L1          23%              48%                     68%
+	#     L5          10%              45%                     73%
+	#     L10          5%              46%                     66%
+	#
+	# A character created today has NO equipment: the Pathfinder starter chain was retired
+	# 2026-09-03 and the tutorial meant to replace it (backlog item 7) is not built. That leaves
+	# a 5-28% win rate against a 60% design target, which with permadeath is four deaths in five
+	# fights. The L1-5 question was declined on 2026-09-03 on the explicit premise that "the
+	# tutorial we are adding will fill that gap" — true eventually, not true now.
+	#
+	# One COMMON piece per slot at the character's level: the cheapest thing the drop system can
+	# produce, so it is superseded by the first real drop and worth almost nothing on the
+	# market. It closes the gap from unplayable to playable, not to the reference player — a new
+	# character still has everything to earn.
+	#
+	# Same reasoning that kept the starter egg when the chain was retired: do not take the last
+	# thing away before its replacement exists. Item 7 should supersede this grant, not sit
+	# alongside it.
+	if drop_tables:
+		for starter_slot in ["weapon", "armor", "helm", "shield", "boots", "ring"]:
+			var starter_base := ""
+			for entry in drop_tables.EQUIPMENT_BASES.get(1, []):
+				if String(entry.get("item_type", "")).begins_with(starter_slot):
+					starter_base = String(entry["item_type"])
+					break
+			if starter_base == "":
+				continue
+			var starter_piece = drop_tables._generate_item({"item_type": starter_base}, 1, "common")
+			if starter_piece is Dictionary and not starter_piece.is_empty():
+				if character.equipped.has(starter_slot) and character.equipped[starter_slot].is_empty():
+					character.equipped[starter_slot] = starter_piece
+				else:
+					character.add_item(starter_piece)
+
 	# Give starter gathering tools — equip directly to tool slots
 	var starter_tools = DropTables.generate_starter_tools()
 	for tool in starter_tools:
