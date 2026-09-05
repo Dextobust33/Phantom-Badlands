@@ -109,6 +109,34 @@ extends Resource
 @export var current_energy: int = 80   # Trickster resource
 @export var max_energy: int = 80       # WITS*4 + DEX*4
 
+# --- Temporary in-combat pool boosts (companion buffs) ---
+# 2026-09-04 — these are DELIBERATELY not @export and never written by to_dict().
+# They used to be folded straight into max_hp/max_mana/max_stamina/max_energy at
+# start_combat and subtracted again at end_combat. That made a temporary buff live
+# in a PERSISTED field, and any mid-combat calculate_derived_stats() (level_up,
+# spend_stat_point) wiped the addition while end_combat still ran the subtraction —
+# permanently shrinking the pool. The bite was amplified because the boost is a
+# percentage of TOTAL (base + equipment) but was subtracted from BASE, so a strong
+# companion on a geared character could remove more than the whole base pool at once
+# (live case: a level-4 Ninja reduced to 16 max HP). Held separately, the buff can
+# never desync from the base value and can never reach the save file.
+var combat_temp_hp_bonus: int = 0
+var combat_temp_mana_bonus: int = 0
+var combat_temp_stamina_bonus: int = 0
+var combat_temp_energy_bonus: int = 0
+
+func clear_combat_temp_pool_bonuses() -> void:
+	"""Drop every temporary in-combat pool buff and clamp current values back under
+	the new totals. Safe to call more than once — that idempotence is the point."""
+	combat_temp_hp_bonus = 0
+	combat_temp_mana_bonus = 0
+	combat_temp_stamina_bonus = 0
+	combat_temp_energy_bonus = 0
+	current_hp = mini(current_hp, get_total_max_hp())
+	current_mana = mini(current_mana, get_total_max_mana())
+	current_stamina = mini(current_stamina, get_total_max_stamina())
+	current_energy = mini(current_energy, get_total_max_energy())
+
 # Location & Status (Phantasia 4 style coordinates)
 @export var x: int = 0  # X coordinate
 @export var y: int = 10  # Y coordinate (start at Sanctuary)
@@ -1293,7 +1321,9 @@ func get_total_max_hp() -> int:
 	var path_hp_pct = get_path_effect_total("max_hp_pct")
 	if path_hp_pct != 0.0:
 		total = int(total * (1.0 + path_hp_pct / 100.0))
-	return max(1, total)
+	# Temporary companion buff is a FLAT add on top — never scaled by house/path, so the
+	# amount removed at end_combat is exactly the amount granted at start_combat.
+	return max(1, total + combat_temp_hp_bonus)
 
 func get_total_max_mana() -> int:
 	"""Get total max mana including equipment bonuses and house bonuses.
@@ -1311,7 +1341,7 @@ func get_total_max_mana() -> int:
 		var path_res_pct = get_path_effect_total("max_resource_pct")
 		if path_res_pct != 0.0:
 			total = int(total * (1.0 + path_res_pct / 100.0))
-	return total
+	return total + combat_temp_mana_bonus
 
 func get_total_max_stamina() -> int:
 	"""Get total max stamina including equipment bonuses and house bonuses.
@@ -1329,7 +1359,7 @@ func get_total_max_stamina() -> int:
 		var path_res_pct = get_path_effect_total("max_resource_pct")
 		if path_res_pct != 0.0:
 			total = int(total * (1.0 + path_res_pct / 100.0))
-	return total
+	return total + combat_temp_stamina_bonus
 
 func get_total_max_energy() -> int:
 	"""Get total max energy including equipment bonuses and house bonuses.
@@ -1346,7 +1376,7 @@ func get_total_max_energy() -> int:
 		var path_res_pct = get_path_effect_total("max_resource_pct")
 		if path_res_pct != 0.0:
 			total = int(total * (1.0 + path_res_pct / 100.0))
-	return total
+	return total + combat_temp_energy_bonus
 
 func get_equipment_procs() -> Dictionary:
 	"""Get all proc effects from equipped items.

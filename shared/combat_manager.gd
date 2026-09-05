@@ -1712,7 +1712,9 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		var comp_hp_bonus = int(character.get_companion_bonus("hp_bonus")) + combat_state.get("companion_hp_bonus", 0)
 		if comp_hp_bonus > 0:
 			var hp_boost = max(1, int(character.get_total_max_hp() * comp_hp_bonus / 100.0))
-			character.max_hp += hp_boost
+			# Held in a temp field, NOT folded into the persisted max_hp — see
+			# Character.clear_combat_temp_pool_bonuses for why.
+			character.combat_temp_hp_bonus = hp_boost
 			character.current_hp += hp_boost
 			combat_state["companion_hp_boost_applied"] = hp_boost
 
@@ -1723,19 +1725,19 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 			match class_path:
 				"warrior":
 					var boost = max(1, int(character.get_total_max_stamina() * comp_resource_bonus / 100.0))
-					character.max_stamina += boost
+					character.combat_temp_stamina_bonus = boost
 					character.current_stamina = mini(character.current_stamina + boost, character.get_total_max_stamina())
 					combat_state["companion_resource_boost_applied"] = boost
 					combat_state["companion_resource_boost_type"] = "stamina"
 				"mage":
 					var boost = max(1, int(character.get_total_max_mana() * comp_resource_bonus / 100.0))
-					character.max_mana += boost
+					character.combat_temp_mana_bonus = boost
 					character.current_mana = mini(character.current_mana + boost, character.get_total_max_mana())
 					combat_state["companion_resource_boost_applied"] = boost
 					combat_state["companion_resource_boost_type"] = "mana"
 				"trickster":
 					var boost = max(1, int(character.get_total_max_energy() * comp_resource_bonus / 100.0))
-					character.max_energy += boost
+					character.combat_temp_energy_bonus = boost
 					character.current_energy = mini(character.current_energy + boost, character.get_total_max_energy())
 					combat_state["companion_resource_boost_applied"] = boost
 					combat_state["companion_resource_boost_type"] = "energy"
@@ -9554,31 +9556,10 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 		var combat = active_combats[peer_id]
 		var character = combat.character
 
-		# Restore temporary companion HP/mana boosts
-		var hp_boost = combat.get("companion_hp_boost_applied", 0)
-		if hp_boost > 0:
-			character.max_hp = max(1, character.max_hp - hp_boost)
-			# Cap to total max HP (including equipment), not just base max_hp
-			character.current_hp = mini(character.current_hp, character.get_total_max_hp())
-
-		var resource_boost = combat.get("companion_resource_boost_applied", 0)
-		if resource_boost > 0:
-			var boost_type = combat.get("companion_resource_boost_type", "mana")
-			match boost_type:
-				"stamina":
-					character.max_stamina = max(1, character.max_stamina - resource_boost)
-					character.current_stamina = mini(character.current_stamina, character.get_total_max_stamina())
-				"mana":
-					character.max_mana = max(1, character.max_mana - resource_boost)
-					character.current_mana = mini(character.current_mana, character.get_total_max_mana())
-				"energy":
-					character.max_energy = max(1, character.max_energy - resource_boost)
-					character.current_energy = mini(character.current_energy, character.get_total_max_energy())
-		# Legacy fallback for old combat states
-		var mana_boost = combat.get("companion_mana_boost_applied", 0)
-		if mana_boost > 0 and resource_boost == 0:
-			character.max_mana = max(1, character.max_mana - mana_boost)
-			character.current_mana = mini(character.current_mana, character.get_total_max_mana())
+		# Drop temporary companion pool buffs. This is a plain clear of the temp fields
+		# rather than a subtraction from max_hp/max_mana/..., so it cannot desync from the
+		# base value and is safe to run twice.
+		character.clear_combat_temp_pool_bonuses()
 
 		# Mark character as not in combat
 		character.in_combat = false
@@ -12164,11 +12145,7 @@ func _end_party_combat(leader_id: int, victory: bool):
 		if character:
 			character.in_combat = false
 			# Restore companion boosts
-			var ms = combat.member_states.get(pid, {})
-			var hp_boost = ms.get("companion_hp_boost_applied", 0)
-			if hp_boost > 0:
-				character.max_hp = max(1, character.max_hp - hp_boost)
-				character.current_hp = min(character.current_hp, character.get_total_max_hp())
+			character.clear_combat_temp_pool_bonuses()
 		# 2026-09-03 — snapshot each member's engines through the SAME helper the solo path
 		# uses. Party combat does not chain flocks today (every flock site lives in the solo
 		# `handle_combat_command`, and the party victory path never reads `flock_chance`), so
