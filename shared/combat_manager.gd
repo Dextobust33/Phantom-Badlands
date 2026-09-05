@@ -679,7 +679,39 @@ func apply_damage_variance(base_damage: int) -> int:
 	var variance = 0.85 + (randf() * 0.30)
 	return max(1, int(base_damage * variance))
 
-func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dictionary) -> int:
+
+func player_crit_chance(character, combat: Dictionary) -> int:
+	"""The player's crit chance, as ONE definition.
+
+	2026-09-05 — extracted from `calculate_damage`, which had it inline. It is now needed by the
+	ability path too (see `apply_ability_damage_modifiers`), and duplicating it is exactly the
+	two-paths-read-the-same-field defect this codebase keeps producing.
+
+	Sums: base + DEX, live crit buffs, weapon rarity, companion (bonus / ability / threshold
+	buff), class passive, the epic+ chase affix, and the Keen Eye path node. Capped at 75."""
+	var cfg: Dictionary = balance_config.get("combat", {}) if balance_config else {}
+	var crit_chance: int = int(cfg.get("player_crit_base", 5))
+	crit_chance += int(float(character.get_effective_stat("dexterity")) * float(cfg.get("player_crit_per_dex", 0.5)))
+	crit_chance += int(character.get_buff_value("crit_chance"))
+	var eq = character.equipped if character else {}
+	if eq is Dictionary:
+		var wpn = eq.get("weapon", {})
+		if wpn is Dictionary:
+			var rb = wpn.get("rarity_bonuses", {})
+			if rb is Dictionary and rb.has("crit_chance"):
+				crit_chance += int(rb["crit_chance"])
+	crit_chance += int(character.get_companion_bonus("crit_chance"))
+	crit_chance += int(combat.get("companion_crit_bonus", 0))
+	crit_chance += int(combat.get("companion_crit_buff", 0))
+	var passive: Dictionary = character.get_class_passive()
+	var fx: Dictionary = passive.get("effects", {}) if passive is Dictionary else {}
+	if fx.has("crit_chance_bonus"):
+		crit_chance += int(float(fx.get("crit_chance_bonus", 0)) * 100.0)
+	crit_chance += int(character.get_crit_chance_bonus())
+	crit_chance += int(character.get_path_effect_total("crit_chance_pct"))
+	return clampi(crit_chance, 0, 75)
+
+func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dictionary, character = null, combat: Dictionary = {}, messages = null) -> int:
 	"""Apply 50% defense and level penalty to ability damage"""
 	var mod_damage = damage
 	var mon_def = monster.get("defense", 0)
@@ -697,6 +729,50 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	# which is the build-check: Warded punishes pure casters, melee shrugs it.
 	if "warded" in monster.get("empowered_mods", []):
 		mod_damage = int(mod_damage * 0.65)
+
+	# === ABILITY CRIT (2026-09-05) ===
+	# MEASURED: basic attacks are 1% of player actions (10 of 973). Crit was rolled ONLY in
+	# `calculate_damage`, the basic-attack path, so DEX crit, the class passives built on it and
+	# the entire epic+ crit chase pool - the rarest loot in the game - reached 1% of what a
+	# player does. Owner: "players mainly use abilities every turn they can instead of just
+	# attacking... This makes not doing crit in abilities a bigger problem."
+	#
+	# Abilities crit at the FULL chance but a smaller multiplier than basic attacks. The weights
+	# in ABILITY_WEIGHTS are anchored to a share of a health bar and were tuned with no crit in
+	# them, so a full 1.5x would inflate every ability by ~crit_chance x 0.5. A separate, smaller
+	# constant is one number to tune and trivially revertible if the inflation still shows.
+	# === GLANCING BLOWS (2026-09-05) ===
+	# Owner: "we may also want to consider if damaging abilities should be able to miss. This
+	# would likely adjust power the opposite way of crit some but it stands to reason that they
+	# could fail."
+	#
+	# Right in principle, but a true MISS is doubly punishing - it costs the resource AND the
+	# turn - and under permadeath a whiffed Meteor at low HP is a death rather than a setback.
+	# That is variance landing hardest exactly where it hurts most. A glance keeps the reasoning
+	# (abilities CAN fail) and the downward pressure on average power, without the spike risk,
+	# and it pairs with crit as a symmetric band around the expected value instead of a coin flip.
+	#
+	# Accuracy-driven, so it reads as a skill gap rather than a dice tax: DEX against the
+	# monster's speed, the same comparison the basic-attack hit roll uses. At parity ~20% of
+	# casts glance for 60% damage (-8% expected), against crit's +6% at 25% chance - so the pair
+	# is close to power-neutral, which is what keeps the anchored ABILITY_WEIGHTS honest.
+	#
+	# Crit and glance are mutually exclusive: a cast is either sharp, ordinary, or fumbled.
+	if character != null:
+		var cc: int = player_crit_chance(character, combat)
+		if cc > 0 and (randi() % 100) < cc:
+			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
+			if messages != null and messages is Array:
+				messages.append("[color=#FF6600]CRITICAL![/color]")
+		else:
+			var _dex: int = character.get_effective_stat("dexterity")
+			var _mspd: int = int(monster.get("speed", 10))
+			var _gap: int = _dex - int(_mspd / 2.0)
+			var gc: int = clampi(ABILITY_GLANCE_BASE - _gap, ABILITY_GLANCE_MIN, ABILITY_GLANCE_MAX)
+			if (randi() % 100) < gc:
+				mod_damage = int(float(mod_damage) * ABILITY_GLANCE_DAMAGE)
+				if messages != null and messages is Array:
+					messages.append("[color=#808080]Glancing blow — the strike lands badly.[/color]")
 	return max(1, mod_damage)
 
 func set_monster_database(db: Node):
@@ -4021,6 +4097,20 @@ const FORCEFIELD_SHARE_OF_BAR := 0.25
 # Bounds the maintain-it-forever loop without touching the (already calibrated) first cast.
 const FORCEFIELD_RECAST_FALLOFF := 0.55
 
+# Crit multiplier for ABILITY damage. Deliberately below the basic attack's 1.5x
+# (`player_crit_damage`): ability weights are anchored and were tuned with no crit in them, so
+# the full multiplier would inflate every card by ~crit_chance x 0.5.
+const ABILITY_CRIT_DAMAGE := 1.25
+
+# Glancing blows on ABILITIES. Chance is ABILITY_GLANCE_BASE minus (DEX - monster_speed/2),
+# clamped, so accuracy is what reduces it - the same comparison the basic-attack hit roll makes.
+# A glance deals ABILITY_GLANCE_DAMAGE of normal rather than missing outright, because losing the
+# resource AND the turn under permadeath turns an unlucky roll into a death.
+const ABILITY_GLANCE_BASE := 20
+const ABILITY_GLANCE_MIN := 5
+const ABILITY_GLANCE_MAX := 35
+const ABILITY_GLANCE_DAMAGE := 0.6
+
 # Combat drops are generated at least this fraction of the KILLER's level, regardless of how weak
 # the monster was. Stops "hunt below your level to survive" from permanently stunting gear.
 const DROP_LEVEL_FLOOR_RATIO := 0.75
@@ -4915,7 +5005,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			elif class_multiplier < 1.0:
 				_note_modifier(combat, "Class disadvantage -%d%%" % [int((1.0 - class_multiplier) * 100)])
 
-			var final_damage = apply_damage_variance(apply_ability_damage_modifiers(pre_mod_dmg, character.level, monster))
+			var final_damage = apply_damage_variance(apply_ability_damage_modifiers(pre_mod_dmg, character.level, monster, character, combat, messages))
 
 			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
@@ -5236,7 +5326,7 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var _fn_anchor: float = _ability_anchored_damage(character, "intelligence", float(ABILITY_WEIGHTS.get("frost_nova", 0.10)))
 			var fn_base = int(_fn_anchor * variable_fraction * _focus_mult) if _fn_anchor > 0.0 				else int(30 * (1.0 + fn_int * 0.04) * variable_fraction * _focus_mult)
 			fn_base = apply_skill_damage_bonus(character, "frost_nova", fn_base, combat)
-			var fn_mod = apply_ability_damage_modifiers(fn_base, character.level, monster)
+			var fn_mod = apply_ability_damage_modifiers(fn_base, character.level, monster, character, combat, messages)
 			var fn_dmg = apply_damage_variance(fn_mod)
 			monster.current_hp = max(0, monster.current_hp - fn_dmg)
 			# Accuracy chill — reuse the wired enemy_distracted field; modest, never
@@ -5297,6 +5387,7 @@ func _companion_strike(character, monster, ability_name: String, combat: Diction
 	tier damage path, apply it to the monster, and return the damage dealt."""
 	var base_dmg: int = int(character.get_total_attack() * power)
 	base_dmg = apply_skill_damage_bonus(character, ability_name, base_dmg, combat)
+	# Companion damage - deliberately NOT given the player crit roll; it is the companion's hit.
 	var mod_dmg: int = apply_ability_damage_modifiers(base_dmg, character.level, monster)
 	var dmg: int = apply_damage_variance(mod_dmg)
 	monster.current_hp = max(0, monster.current_hp - dmg)
@@ -5553,7 +5644,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			base_dmg = apply_skill_damage_bonus(character, "power_strike", base_dmg, combat)
 			if ps_skill_bonus > 0:
 				_note_modifier(combat, "Skill Enhancement +%d%%" % int(ps_skill_bonus))
-			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster, character, combat, messages)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
@@ -5592,7 +5683,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			base_dmg = apply_skill_damage_bonus(character, "shield_bash", base_dmg, combat)
 			if sb_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(sb_skill_bonus))
-			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster, character, combat, messages)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
@@ -5636,7 +5727,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			base_dmg = apply_skill_damage_bonus(character, "cleave", base_dmg, combat)
 			if cleave_skill_bonus > 0:
 				_note_modifier(combat, "Skill Enhancement +%d%%" % int(cleave_skill_bonus))
-			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster, character, combat, messages)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
@@ -5706,7 +5797,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			base_dmg = apply_skill_damage_bonus(character, "devastate", base_dmg, combat)
 			if dev_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(dev_skill_bonus))
-			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster, character, combat, messages)
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
@@ -5967,7 +6058,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			base_dmg = apply_skill_damage_bonus(character, "ambush", base_dmg, combat)
 			if ambush_skill_bonus > 0:
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(ambush_skill_bonus))
-			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster, character, combat, messages)
 			var damage = apply_damage_variance(mod_dmg)
 			# 50% crit chance
 			var _amb_crit := false
@@ -6218,7 +6309,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				base_dmg = apply_skill_damage_bonus(character, "gambit", base_dmg, combat)
 				if gambit_skill_bonus > 0:
 					messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(gambit_skill_bonus))
-				var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster)
+				var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster, character, combat, messages)
 				var damage = apply_damage_variance(mod_dmg)
 				monster.current_hp -= damage
 				monster.current_hp = max(0, monster.current_hp)
@@ -9251,62 +9342,19 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var crit_max = cfg.get("player_crit_max", 25)
 	var crit_damage = cfg.get("player_crit_damage", 1.5)
 
-	var crit_chance = crit_base + int(dex_stat * crit_per_dex)
-	# v0.9.637 — Live-read crit_chance buff value. Previously the buff was
-	# snapshotted into combat.crit_bonus at combat START (line ~1060), so any
-	# mid-combat crit_chance buff (e.g., Wyvern crit imprint applied via War
-	# Cry cast) was invisible to the per-attack roll. Reading
-	# character.get_buff_value("crit_chance") here picks up both pre-combat
-	# and mid-combat crit buffs uniformly. The combat-start cache at line
-	# ~1060 is now redundant but harmless — leaving it for the rare caller
-	# that might still inspect combat.crit_bonus directly.
-	var crit_bonus = character.get_buff_value("crit_chance")
-	crit_chance += crit_bonus
-
-	# Add crit bonus from equipment rarity (weapon rarity_bonuses)
-	var crit_equipped = character.equipped if character else {}
-	var weapon_rb = {}
-	if crit_equipped is Dictionary:
-		var wpn = crit_equipped.get("weapon", {})
-		if wpn is Dictionary:
-			weapon_rb = wpn.get("rarity_bonuses", {})
-	if weapon_rb.has("crit_chance"):
-		crit_chance += int(weapon_rb["crit_chance"])
-
-	# Add companion crit bonus (from base bonus)
-	var companion_crit = character.get_companion_bonus("crit_chance")
-	if companion_crit > 0:
-		crit_chance += int(companion_crit)
-	# Add companion crit from passive abilities
-	var companion_crit_bonus = combat.get("companion_crit_bonus", 0)
-	if companion_crit_bonus > 0:
-		crit_chance += companion_crit_bonus
-	# Add companion crit from threshold ability buff
-	var companion_crit_buff = combat.get("companion_crit_buff", 0)
-	if companion_crit_buff > 0:
-		crit_chance += companion_crit_buff
-		# Decrement duration
-		var crit_buff_duration = combat.get("companion_crit_buff_duration", 0)
-		if crit_buff_duration > 0:
-			combat["companion_crit_buff_duration"] = crit_buff_duration - 1
-			if crit_buff_duration - 1 <= 0:
-				combat["companion_crit_buff"] = 0
-
-	# === CLASS PASSIVE: Thief Backstab ===
-	# +15% base crit chance
-	if effects.has("crit_chance_bonus"):
-		crit_chance += int(effects.get("crit_chance_bonus", 0) * 100)
-
-	# v0.9.599 — chase affix: %crit chance from gear (any class can crit now).
-	# Sums across equipped items in get_crit_chance_bonus().
-	var crit_chance_chase: int = int(character.get_crit_chance_bonus())
-	if crit_chance_chase > 0:
-		crit_chance += crit_chance_chase
-
-	# Path: crit_chance_pct (Keen Eye — trickster filler)
-	crit_chance += int(character.get_path_effect_total("crit_chance_pct"))
-
-	crit_chance = min(crit_chance, 75)  # Cap at 75% even with bonuses
+	# 2026-09-05 — this was ~60 lines of inline crit summation. Extracted to
+	# `player_crit_chance` so the ability path can use the SAME definition rather than a
+	# second copy that drifts. Behaviour is unchanged; the cap moved inside the helper.
+	var crit_chance: int = player_crit_chance(character, combat)
+	# Weapon rarity block is still needed below for crit DAMAGE (the helper only sums chance).
+	var weapon_rb: Dictionary = {}
+	var _eq_w = character.equipped if character else {}
+	if _eq_w is Dictionary:
+		var _wpn = _eq_w.get("weapon", {})
+		if _wpn is Dictionary:
+			var _rb = _wpn.get("rarity_bonuses", {})
+			if _rb is Dictionary:
+				weapon_rb = _rb
 	var is_crit = (randi() % 100) < crit_chance
 	# Path keystone — Phantom Strike: first attack each combat always crits
 	# (the cannot-miss half is handled in process_attack's hit roll).
