@@ -77,6 +77,7 @@ func _audit_registry() -> Dictionary:
 		"grow": ["grow a character from creation the way a player must", run_grow_audit],
 		"growdiag": ["is the grown character built correctly? (instrument check)", run_grow_diag],
 		"growref": ["EARNED gear profile per level - the reference make_char should encode", run_grow_reference],
+		"lootsim": ["gear profile at ANY level with no combat - fast path", run_loot_sim],
 		"growtune": ["what monster nerf a grown player needs to hit target", run_grow_tune],
 		"polytest": ["run warrior strategies head to head and pick the best", run_policy_test],
 		"tempo": ["WHEN each class deals its damage - the Fighter question", run_tempo_audit],
@@ -4281,32 +4282,42 @@ var _gear_avg_level_ratio: float = 0.85  # LEGACY flat ratio — see _gear_level
 
 
 func _gear_level_ratio_for(level: int) -> float:
-	"""Item level as a fraction of character level, FITTED TO GROWN CHARACTERS.
+	"""Item level as a fraction of character level, across the WHOLE level range.
 
-	2026-09-05 — replaces a flat 0.85 that was fitted from n=2 real saved characters and whose
-	own comment called it provisional. `growref` now grows characters by real play and reports
-	what they actually carry, across five classes:
+	2026-09-05 — replaces a flat 0.85 fitted from two real saved characters. Built from two
+	sources that agree where they overlap:
 
-	    level:      3     6    10    15
-	    measured: 0.33  0.32  0.51  0.55
+	  GROWN characters (`growref`, real play):        L3 0.33  L6 0.32  L10 0.51  L15 0.55
+	  LOOT SIM (`lootsim`, no combat):                L10 0.51-0.53 ... L5000 0.83-0.89
 
-	The ratio is not flat: it sits near a third of character level early, climbs through the
-	teens, and trends toward DROP_LEVEL_FLOOR_RATIO (0.75) as the floor added today replaces
-	older items. A flat 0.85 handed a level-6 character items at level 5 where a grown one wears
-	level 2 — which is exactly why `calibrate` measured make_char at 2.09x a real character's
-	attack at L6.
+	`lootsim` exists because growing a character is slow only in its COMBAT: the gear profile is
+	produced by the loot system, and kills-per-level is computable (XP required and XP granted
+	both scale level^2.2, giving the ~45-kills-per-level design target). It profiles to L5000 in
+	30 seconds against hours of fighting, and it reproduces the grown values at L10 to within a
+	point, which is what licenses using it beyond where characters can be grown.
 
-	Held flat past L25 at the drop floor: beyond there nothing has been grown to check against,
-	and extrapolating past the last measurement is how the old model went wrong."""
-	if level <= 6:
-		return 0.33
-	if level <= 15:
-		# 0.33 at L6 -> 0.55 at L15
-		return 0.33 + (float(level - 6) / 9.0) * 0.22
-	if level <= 25:
-		# 0.55 at L15 -> the 0.75 drop floor by L25
-		return 0.55 + (float(level - 15) / 10.0) * 0.20
-	return 0.75
+	The ratio climbs and flattens: a third of level early, past half by L15, and asymptotic near
+	0.85-0.89 as the drop floor keeps replacing older items. It never reaches 1.0 because some
+	slots always lag."""
+	var pts := [
+		[1.0, 0.33], [6.0, 0.33], [15.0, 0.55], [25.0, 0.66],
+		[50.0, 0.75], [100.0, 0.81], [1000.0, 0.85], [5000.0, 0.88],
+	]
+	var L := float(maxi(1, level))
+	if L <= float(pts[0][0]):
+		return float(pts[0][1])
+	if L >= float(pts[pts.size() - 1][0]):
+		return float(pts[pts.size() - 1][1])
+	for i in range(pts.size() - 1):
+		var a: Array = pts[i]
+		var b: Array = pts[i + 1]
+		if L >= float(a[0]) and L <= float(b[0]):
+			# log-linear in level, the same way the curve and role anchors are read
+			var la := log(float(a[0]))
+			var lb := log(float(b[0]))
+			var t: float = 0.0 if is_equal_approx(la, lb) else (log(L) - la) / (lb - la)
+			return lerp(float(a[1]), float(b[1]), t)
+	return 0.85
 var _gear_avg_empty_chance: float = 0.0  # chance a slot is simply unfilled
 # Companion modelling for the companion audit: none / l1 / match (companion level = char
 # level) / x10 (a heavily over-levelled companion).
@@ -5932,6 +5943,94 @@ func _durability_one_fight(ch, level: int) -> int:
 	combat_mgr.end_combat(0, false, false)
 	# Only a death measures durability. Anything else (an Outsmart win, a flee) is discarded.
 	return turns if _died else -1
+
+
+# How far below their own level a player hunts, as a fraction of level. Calibrated so lootsim
+# reproduces the grown-character `itemLv/lv` at the L10-L15 overlap (0.50-0.55) rather than the
+# 0.54-0.64 an at-level assumption produced.
+const LOOTSIM_HUNT_GAP_FRAC := 0.08
+
+func run_loot_sim():
+	"""The gear profile at ANY level, without simulating a single fight.
+
+	Owner 2026-09-05: "I worry that there is a much more efficient way to simulate higher level
+	characters and items that would only take a fraction of the time." There is, and it comes
+	from separating two things I had conflated.
+
+	Growing a character is slow because it simulates COMBAT. But the only thing we need from a
+	grown character is its GEAR, and gear is produced by the loot system, not by fighting -
+	combat is just the expensive way to count kills. Kills are computable: XP required and XP
+	granted BOTH scale as level^2.2 (`xp_required_for_next_level` and `_calculate_experience_reward`,
+	whose comment states the ~45-kills-per-level design target), so the ratio is close to
+	level-invariant.
+
+	So: compute kills per level analytically, roll that many drops at the level the drop system
+	would actually produce, equip upgrades through the real aggregator, and read the profile.
+	L1000 is ~45,000 kills and ~5,400 item rolls - seconds, against hours of combat."""
+	var MILESTONES := [10, 25, 50, 100, 250, 1000, 5000]
+	print("
+===== LOOT-ONLY GEAR PROFILE — no combat simulated =====")
+	print("Kills per level derived from the real XP curves; drops rolled through roll_drops.")
+	print("%-9s %6s %8s %9s %16s %8s %9s" % ["class", "lv", "kills", "itemLv/lv", "rar(c/u/r/e+)", "ATK", "HP"])
+	for klass in ["Fighter", "Wizard", "Grifter"]:
+		for target in MILESTONES:
+			var ch = _grow_new_character(klass, "Human")
+			var total_kills := 0
+			for lv in range(1, target):
+				# level up the character to `lv`, spending points as a player would
+				while ch.level < lv:
+					ch.add_experience(ch.experience_to_next_level - ch.experience)
+					_grow_spend_points(ch)
+				# how many kills this level costs, from the game's own two curves
+				# Grown characters hunt BELOW their own level to survive, so their loot comes from
+				# weaker monsters. Ignoring that made the first version of this read 0.54-0.64 at
+				# L10 where grown characters measured 0.50-0.52. The gap closes with level as the
+				# player outgrows the danger, matching what the grow harness's adaptive hunt does.
+				var _hunt_gap: int = maxi(0, int(round(float(lv) * LOOTSIM_HUNT_GAP_FRAC)))
+				var mon = make_monster(maxi(1, lv - _hunt_gap), "normal", 1.0)
+				var xp_each: int = maxi(1, int(mon.get("experience_reward", 1)))
+				var need: int = maxi(1, ch.xp_required_for_next_level(lv))
+				var kills: int = clampi(int(ceil(float(need) / float(xp_each))), 1, 400)
+				total_kills += kills
+				# roll the drops those kills produce, at the level the drop system gives
+				var dl: int = maxi(maxi(1, lv - _hunt_gap), int(float(lv) * CombatManager.DROP_LEVEL_FLOOR_RATIO))
+				var dc: int = int(mon.get("drop_chance", 5))
+				for k in range(kills):
+					if (randi() % 100) >= dc:
+						continue
+					for d in drop_tables.roll_drops(String(mon.get("drop_table_id", "tier1")), 100, dl):
+						if d is Dictionary:
+							_grow_consider_item(ch, d)
+			while ch.level < target:
+				ch.add_experience(ch.experience_to_next_level - ch.experience)
+				_grow_spend_points(ch)
+			var filled := 0
+			var ilv := 0.0
+			var rc := 0
+			var ru := 0
+			var rr := 0
+			var re := 0
+			for sl in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
+				var e = ch.equipped.get(sl, {})
+				if e is Dictionary and not e.is_empty():
+					filled += 1
+					ilv += float(e.get("level", 1))
+					match String(e.get("rarity", "common")):
+						"common": rc += 1
+						"uncommon": ru += 1
+						"rare": rr += 1
+						_: re += 1
+			var tot := float(maxi(1, rc + ru + rr + re))
+			print("%-9s %6d %8d %9.2f  %3.0f/%2.0f/%2.0f/%2.0f%% %8d %9d" % [
+				klass, target, total_kills,
+				(ilv / float(maxi(1, filled))) / float(maxi(1, target)),
+				100.0 * rc / tot, 100.0 * ru / tot, 100.0 * rr / tot, 100.0 * re / tot,
+				ch.get_total_attack(), ch.get_total_max_hp()])
+	print("
+Compare itemLv/lv against the grown-character values (0.33 / 0.32 / 0.51 / 0.55 at")
+	print("L3/6/10/15). Where they agree, this method is validated and reaches any level.")
+	print("=====================================================================
+")
 
 
 func run_grow_reference():
