@@ -5059,6 +5059,36 @@ func _grow_xp_multiplier(ch, monster_level: int) -> float:
 
 var _grow_immortal := false
 
+
+func _grow_update_hunt(state: Dictionary, enc: Dictionary, ch) -> void:
+	# How a player picks their next fight. Owner 2026-09-05: "A real player will recognize if
+	# the fights are too hard and back off and fight what they can handle until they get levels
+	# or gear before trying to push over level again."
+	#
+	# The previous rule stepped DOWN one level after a mauling and back UP after a single
+	# comfortable win - a hill-climb that parks the character permanently on the danger
+	# boundary, making almost every fight marginal and inflating the death rate through a policy
+	# no player would run. Nobody probes upward again the moment one fight goes well.
+	#
+	# Now a setback drops back TWO levels and resets confidence, and it takes a RUN of three
+	# decisively easy wins to justify probing up again. A merely adequate fight is not evidence
+	# of anything and resets the counter, so the character spends its time on fights it can
+	# handle and pushes only once it has clearly outgrown them.
+	var hunt: int = int(state.get("hunt", 1))
+	var confident: int = int(state.get("confident", 0))
+	if bool(enc.get("fled", false)) or float(enc.get("worst", 1.0)) < 0.50:
+		hunt = maxi(1, hunt - 2)
+		confident = 0
+	elif float(enc.get("worst", 1.0)) > 0.75:
+		confident += 1
+		if confident >= 3:
+			hunt = mini(ch.level + 20, hunt + 1)
+			confident = 0
+	else:
+		confident = 0
+	state["hunt"] = clampi(hunt, 1, ch.level + 20)
+	state["confident"] = confident
+
 func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 	# One encounter played the way a player must: fight, disengage when it turns, and follow the
 	# flock chain WITHOUT resting between links - which is where the deaths come from. Flee is
@@ -5167,6 +5197,7 @@ func run_grow_audit():
 		for r in range(RUNS):
 			var ch = _grow_new_character(klass, "Human")
 			var hunt: int = 1
+			var _hunt_state := {"hunt": 1, "confident": 0}
 			var upgrades := 0
 			var fights := 0
 			var gap_obs := 0.0
@@ -5198,10 +5229,9 @@ func run_grow_audit():
 					dead = true
 					break
 				# A player who nearly died drops down a level; one who cruised pushes back up.
-				if bool(enc.fled) or float(enc.worst) < 0.50:
-					hunt = maxi(1, hunt - 1)
-				elif float(enc.worst) > 0.75:
-					hunt = mini(ch.level + 20, hunt + 1)
+				_hunt_state["hunt"] = hunt
+				_grow_update_hunt(_hunt_state, enc, ch)
+				hunt = int(_hunt_state["hunt"])
 				if int(enc.xp) > 0:
 					ch.add_experience(int(enc.xp))
 					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
@@ -5400,6 +5430,7 @@ func run_grow_tune():
 			for _c in range(CHARS):
 				var ch = _grow_new_character(klass, "Human")
 				var hunt := 1
+				var _hunt_state := {"hunt": 1, "confident": 0}
 				var guard := 0
 				while ch.level < lvl and guard < 200000:
 					hunt = clampi(hunt, 1, ch.level + 20)
@@ -5408,10 +5439,9 @@ func run_grow_tune():
 							continue
 					var enc = _grow_encounter(ch, hunt)
 					guard += int(enc.fights)
-					if bool(enc.fled) or float(enc.worst) < 0.50:
-						hunt = maxi(1, hunt - 1)
-					elif float(enc.worst) > 0.75:
-						hunt = mini(ch.level + 20, hunt + 1)
+					_hunt_state["hunt"] = hunt
+					_grow_update_hunt(_hunt_state, enc, ch)
+					hunt = int(_hunt_state["hunt"])
 					if int(enc.xp) > 0:
 						ch.add_experience(int(enc.xp))
 						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
@@ -5489,6 +5519,7 @@ func _run_one_tournament(klass: String, field: String, POLICIES: Array, LEVELS: 
 		for _c in range(CHARS):
 			var ch = _grow_new_character(klass, "Human")
 			var hunt := 1
+			var _hunt_state := {"hunt": 1, "confident": 0}
 			var guard := 0
 			while ch.level < lvl and guard < 200000:
 				hunt = clampi(hunt, 1, ch.level + 20)
@@ -5497,10 +5528,9 @@ func _run_one_tournament(klass: String, field: String, POLICIES: Array, LEVELS: 
 						continue
 				var enc = _grow_encounter(ch, hunt)
 				guard += int(enc.fights)
-				if bool(enc.fled) or float(enc.worst) < 0.50:
-					hunt = maxi(1, hunt - 1)
-				elif float(enc.worst) > 0.75:
-					hunt = mini(ch.level + 20, hunt + 1)
+				_hunt_state["hunt"] = hunt
+				_grow_update_hunt(_hunt_state, enc, ch)
+				hunt = int(_hunt_state["hunt"])
 				if int(enc.xp) > 0:
 					ch.add_experience(int(enc.xp))
 					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
@@ -5557,6 +5587,7 @@ func run_tempo_audit():
 			for _c in range(CHARS):
 				var ch = _grow_new_character(klass, "Human")
 				var hunt := 1
+				var _hunt_state := {"hunt": 1, "confident": 0}
 				var guard := 0
 				while ch.level < lvl and guard < 200000:
 					hunt = clampi(hunt, 1, ch.level + 20)
@@ -5565,10 +5596,9 @@ func run_tempo_audit():
 							continue
 					var enc = _grow_encounter(ch, hunt)
 					guard += int(enc.fights)
-					if bool(enc.fled) or float(enc.worst) < 0.50:
-						hunt = maxi(1, hunt - 1)
-					elif float(enc.worst) > 0.75:
-						hunt = mini(ch.level + 20, hunt + 1)
+					_hunt_state["hunt"] = hunt
+					_grow_update_hunt(_hunt_state, enc, ch)
+					hunt = int(_hunt_state["hunt"])
 					if int(enc.xp) > 0:
 						ch.add_experience(int(enc.xp))
 						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
@@ -5675,6 +5705,7 @@ func run_durability_audit():
 			for _c in range(CHARS):
 				var ch = _grow_new_character(klass, "Human")
 				var hunt := 1
+				var _hunt_state := {"hunt": 1, "confident": 0}
 				var guard := 0
 				while ch.level < lvl and guard < 200000:
 					hunt = clampi(hunt, 1, ch.level + 20)
@@ -5683,10 +5714,9 @@ func run_durability_audit():
 							continue
 					var enc = _grow_encounter(ch, hunt)
 					guard += int(enc.fights)
-					if bool(enc.fled) or float(enc.worst) < 0.50:
-						hunt = maxi(1, hunt - 1)
-					elif float(enc.worst) > 0.75:
-						hunt = mini(ch.level + 20, hunt + 1)
+					_hunt_state["hunt"] = hunt
+					_grow_update_hunt(_hunt_state, enc, ch)
+					hunt = int(_hunt_state["hunt"])
 					if int(enc.xp) > 0:
 						ch.add_experience(int(enc.xp))
 						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
@@ -5772,6 +5802,7 @@ func run_grow_reference():
 			for r in range(RUNS):
 				var ch = _grow_new_character(klass, "Human")
 				var hunt := 1
+				var _hunt_state := {"hunt": 1, "confident": 0}
 				var fights := 0
 				while ch.level < target and fights < 200000:
 					hunt = clampi(hunt, 1, ch.level + 20)
@@ -5780,10 +5811,9 @@ func run_grow_reference():
 							continue
 					var enc = _grow_encounter(ch, hunt)
 					fights += int(enc.fights)
-					if bool(enc.fled) or float(enc.worst) < 0.50:
-						hunt = maxi(1, hunt - 1)
-					elif float(enc.worst) > 0.75:
-						hunt = mini(ch.level + 20, hunt + 1)
+					_hunt_state["hunt"] = hunt
+					_grow_update_hunt(_hunt_state, enc, ch)
+					hunt = int(_hunt_state["hunt"])
 					if int(enc.xp) > 0:
 						ch.add_experience(int(enc.xp))
 						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
