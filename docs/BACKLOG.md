@@ -197,6 +197,84 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ THE PERMADEATH ARITHMETIC — why no monster tuning could ever have worked (2026-09-05)
+
+**If losing a fight means dying, a 60% win-rate target IS a 40% death rate per fight** — death
+every 2.5 fights. Levelling costs several hundred fights, so survival is not unlikely, it is
+arithmetically impossible; even a **95%** win rate dies around fight 20. To survive the fights a
+level costs, the death rate has to be near **0.2%**, which no win-rate target reaches.
+
+**Therefore escape, not win rate, is the load-bearing survivability mechanic.** Monster tuning
+changes how OFTEN you are in a losing fight; it can never change what happens when you are.
+That is why the recovery fix, the XP fix and the monster nerf each measured as real improvements
+and none of them moved survival.
+
+Owner, from live: *"It's difficult to flee too as it is chance based"* and *"the only current
+survival is clever use of cards and abilities"* — which in practice largely means knowing when
+to leave.
+
+**SHIPPED (committed, NOT deployed — owner asked to hold until the pass is coherent):**
+- **Desperation flee** — +40 points scaling with health lost, floor 25→35. At 25% HP escape goes
+  51%→81%. A fight you are winning is unaffected
+- **Difficulty scale** on monster HP and strength — 0.80 to L10, 0.55 at L20, flat beyond. Fitted
+  with `growtune` against grown characters; Fighter L1 36%→70%, L20 5%→81%
+- **Rest ambush 15%→5%** (one named `REST_AMBUSH_CHANCE`, was two inline literals)
+- **Level-2 XP cliff** 5.6x→2.4x, identical from level 9 up
+- **Over-level XP bonus 0.7→2.0** — five levels up now pays +141% instead of +49%
+- **XP computed from PRE-nerf monster stats**, so a difficulty nerf cannot quietly slow progression
+
+## ⚑ THE SIM WAS NOT PLAYING THE GAME — four AI defects (2026-09-05)
+
+Owner: *"I'd like to know your strategies on each character type to ensure the problem isn't our
+strategy or ability and outsmart use."* It was. Cast-site count across every policy:
+
+| card | cast sites | what it is |
+|---|---|---|
+| `perfect_heist` (Assassinate) | **0** | the Trickster's win condition |
+| `analyze` | **0** | in its curated deck; skips the enemy turn |
+| `forcefield` | **0** | the Mage's damage shield |
+| `pickpocket` / `phantom_strike` / `vanish` | 0 | |
+
+The curated trickster deck is Analyze / Distract / Sabotage / Ambush / Assassinate / Sabotage and
+the policy played four of them. **Every Thief/Ranger/Ninja number produced before this was
+invalid.** Fixing it, with nothing in the game changed:
+
+| class | before | after |
+|---|---|---|
+| Thief | 4 encounters, 26% win | **15 encounters, 40% win** |
+| Wizard | 3 encounters, 40% win | **6 encounters, 54% win** |
+| Fighter | 5 encounters, 39% win | unchanged (policy already complete) |
+
+- [ ] `polytest` runs four Warrior strategies head to head on the same grown cohort. Extend the
+      same treatment to Mage and Trickster once the Warrior answer lands — hand-written policies
+      are guesses, and this is the fourth defect of that shape in two days
+- Note: there is **no player `wait`/defend action** (attack / ability / flee / outsmart /
+  special), and `process_special` is a stub returning `success:false`
+
+## ⚑ GEAR DOES NOT KEEP PACE WITH LEVEL — measured (2026-09-05)
+
+Owner: *"gear is scarce"*, and *"making HP or Defense more effective or common on equipment along
+with a drop rate that supports it"*. `growref` grows characters and reports what they actually
+earned. `itemLv/lv` is average equipped item level as a fraction of character level:
+
+| class | lv | slots | itemLv/lv | rarity c/u/r/e+ | ATK | HP | fights to get there |
+|---|---|---|---|---|---|---|---|
+| Fighter | 15 | 7.0 | 0.30 | 52/33/5/10% | 79 | 289 | 1682 |
+| Wizard | 15 | 7.0 | 0.44 | 48/14/33/5% | 43 | 325 | 680 |
+| Thief | 15 | 7.0 | 0.14 | 38/29/19/14% | 41 | 140 | **6088** |
+| Ranger | 15 | 7.0 | 0.18 | 33/52/10/5% | 43 | 203 | 6550 |
+| Ninja | 15 | 7.0 | 0.16 | 38/19/38/5% | 34 | 152 | **8942** |
+
+- **Equipped items sit at 14-44% of character level.** A level-15 Thief wears level-2 gear. Gear
+  does not lag progression, it barely moves
+- **Epic+ is 0-14%**, and the CHASE pool (crit, `damage_mult`, resource-on-hit, +ability ranks) is
+  epic-and-above ONLY — so those affixes are effectively unobtainable in normal play
+- **Fights to reach level 15 range from 680 (Wizard) to 8942 (Ninja)** — a 13x spread between
+  classes for the same level. Measured with the broken trickster AI, so it will narrow, but not
+  by 13x
+- [ ] Owner's proposal — HP/defense more effective and more common, with a drop rate that
+      delivers — is the change this data indicts. Measure with `growref` before and after
+
 ## ⚑ THE EARLY GAME IS LETHAL, MEASURED BY GROWING A CHARACTER (2026-09-05)
 
 Owner: *"the game is very difficult right now. Most fights are a struggle because gear is
