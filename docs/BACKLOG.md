@@ -331,6 +331,61 @@ nerf apparently making a class WORSE, which is impossible. At n=4 characters the
 variance is real even with the fixed seed, because a code change shifts RNG consumption and
 therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
 
+## ⚑ ALL NINE CLASSES MEASURED — warriors are the weakest archetype (2026-09-05)
+
+First complete table. Grown characters, x1.00 (no monster nerf), tournament policies:
+
+| archetype | class | L1 | L5 | L10 | L20 |
+|---|---|---|---|---|---|
+| **Warrior** | Fighter | 61% | 55% | 81% | 70% |
+| | Barbarian | 53% | **50%** | 85% | 66% |
+| | Paladin | 60% | **53%** | 86% | 73% |
+| | *average* | *58%* | ***53%*** | *84%* | *70%* |
+| **Mage** | Wizard | 76% | 73% | 85% | 78% |
+| | Sorcerer | 76% | 68% | 85% | 76% |
+| | Sage | 65% | 66% | 91% | 85% |
+| | *average* | *72%* | *69%* | *87%* | *80%* |
+| **Trickster** | Grifter | 75% | 80% | 98% | 88% |
+| | Ninja | **41%** | 66% | 93% | 93% |
+| | Ranger | 76% | 73% | 100% | 98% |
+| | *average* | *64%* | *73%* | *97%* | *93%* |
+
+**Warriors are last at every level**, and the L5 dip (50-55%) is ARCHETYPE-WIDE — it survived the
+opening stance, which lifted all three. It was never a Fighter problem.
+
+### The cause: warriors have one card until level 10
+
+Cards are level-gated, and the curated starter decks hand out cards the character cannot yet cast.
+What is actually USABLE:
+
+| archetype | at L1 | next |
+|---|---|---|
+| **Warrior** | **1** — power_strike | war_cry@10, shield_bash@25, fortify@35, cleave@40 |
+| Mage | **3** — magic_bolt, frost_nova, overload | forcefield@15, haste@30, blast@40 |
+| Trickster | 1 — analyze | distract@10, sabotage@30, ambush@40 |
+
+A warrior spends levels 1-9 with ONE damage card. A mage has three from level 1. A trickster has
+one card but also **Outsmart**, which is not a card and needs no unlock, plus the denial engine —
+which is why tricksters score 73% at L5 on a single card while warriors score 53%.
+
+**So warriors are uniquely poor early: fewest tools AND no alternative win condition.**
+
+- [ ] **Give warriors a second and third early card.** The cheapest fix is moving existing
+      unlocks down (war_cry 10 -> 1, shield_bash 25 -> 5), matching the mage's three-at-L1. No
+      new content, and the curated deck already lists both, so the deck screen stops showing
+      cards that cannot be cast
+- [ ] Consider whether the curated decks SHOULD contain unusable cards at all. Handing a level-1
+      warrior Devastate (unlock 100) makes the deck screen a list of things they cannot do
+
+### Secondary finding: passives differentiate identity, not power
+
+Within each archetype the three classes track closely (warriors 53-61 at L1, mages 65-76, and
+tricksters 75/76 excluding the Ninja's known ramp problem). Since they share all nine cards, the
+passives are shaping how a class FEELS without fragmenting balance into nine separate problems —
+three archetype curves, nine flavours. That is the desired outcome of the identity pass.
+
+The Ninja at L1 (41%) remains the one genuine outlier, and is already filed.
+
 ## ⚑ THE BOOTSTRAP — high-level balance cannot be validated until the early game works
 
 Owner, 2026-09-05: *"We don't have anyone high level until we get the balance right and our to do
