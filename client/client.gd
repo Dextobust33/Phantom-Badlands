@@ -10874,7 +10874,7 @@ func _start_combat_command_animation(command: String):
 		"exploit":
 			start_combat_animation("Exploiting...", "#FF6600")
 		"perfect_heist", "heist":
-			start_combat_animation("Perfect Heist...", "#FFD700")
+			start_combat_animation("Assassinate...", "#FFD700")
 		_:
 			# Generic ability animation
 			start_combat_animation("Using ability...", "#00FFFF")
@@ -12812,7 +12812,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"ambush": {"display": "Ambush", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"vanish": {"display": "Phantom Strike", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
 		"exploit": {"display": "Exploit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
-		"perfect_heist": {"display": "Perfect Heist", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
+		"perfect_heist": {"display": "Assassinate", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"sabotage": {"display": "Sabotage", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"gambit": {"display": "Gambit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
@@ -20081,11 +20081,12 @@ func _ability_display_name(ability_name: String) -> String:
 	# #38 — dungeon cards resolve their proper name via the shared table too.
 	if ability_name.begins_with("companion_card_") or ability_name.begins_with("dungeon_card_"):
 		return preload("res://shared/drop_tables.gd").card_display_name(ability_name)
-	match ability_name:
-		"tactical_retreat": return "Recharge"
-		"vanish": return "Phantom Strike"
-		"perfect_heist": return "Heist"
-		"pickpocket": return "Steal"
+	# ONE map, in shared code — see CombatManager.ABILITY_DISPLAY_NAMES. This used to keep its
+	# own copy, which is how "Haste" survived on the rank-up screen after combat and the deck had
+	# both been changed to "Arcane Surge".
+	var _canon = CombatManager.ABILITY_DISPLAY_NAMES
+	if _canon.has(ability_name):
+		return String(_canon[ability_name])
 	return ability_name.replace("_", " ").capitalize()
 
 func _ensure_milestone_overlay() -> void:
@@ -29592,7 +29593,7 @@ func display_changelog():
 	# companion XP fixed in both paths, and equipment that actually drops early.
 	display_game("[color=#00FF00]v0.9.750[/color] [color=#808080](Current)[/color]")
 	display_game("  [color=#FF8000]★ APEX MONSTERS ARE MARKED NOW.[/color] An [b]apex[/b] is calibrated to be far deadlier than an ordinary fight, and nothing on screen told you that you were in one — the warning tag existed but lived on a panel that is hidden the whole time you are fighting. A red [b]☠ APEX[/b] and gold [b][ELITE][/b] tag now sit in front of the monster’s name.")
-	display_game("  [color=#FF8000]★ PERFECT HEIST WAS PAYING LESS THAN JUST KILLING THINGS.[/color] The card promises bonus XP. It gave your [b]companion nothing at all[/b], and it skipped the hotspot and apex bonuses AND used a weaker challenge multiplier — so against exactly the over-level foe you would gamble a Heist on, it paid [b]less[/b] than a normal kill. It is now a straight [b]+25%%[/b] over a normal kill at every level gap, for you and your companion.")
+	display_game("  [color=#FF8000]★ PERFECT HEIST IS NOW ASSASSINATE — AND IT WAS PAYING LESS THAN JUST KILLING THINGS.[/color] The card promises bonus XP. It gave your [b]companion nothing at all[/b], and it skipped the hotspot and apex bonuses AND used a weaker challenge multiplier — so against exactly the over-level foe you would gamble a Heist on, it paid [b]less[/b] than a normal kill. It is now a straight [b]+25%%[/b] over a normal kill at every level gap, for you and your companion.")
 	display_game("  [color=#1EFF00]◆ Card upgrades show on the deck screen.[/color] Last release reached only the combat hover; the deck builds its cards by a different route.")
 	display_game("  [color=#1EFF00]◆ \"Memorise their positions\" was asking the impossible.[/color] The rank-up cards are re-randomised instantly — they teleport, so nobody could ever track one. The preview is there to show you [b]what is on offer[/b], and now says so.")
 	display_game("  [color=#1EFF00]◆ Five upgrades said \"class resource\" for two different things.[/color] Mana/stamina/energy and your class ENGINE (Momentum / Read / Focus) were called the same name, which made [b]Kindling[/b] read as \"gain resource while already full\". What it really does is turn a wasted cast on a full bar into engine progress.")
@@ -29610,8 +29611,8 @@ func display_changelog():
 	display_game("  [color=#FF8000]★ YOUR CARD UPGRADES WERE INVISIBLE.[/color] They were [b]working[/b] the whole time — every upgrade fires in combat — but nothing showed them to you after you picked one, so an upgraded card looked identical to a fresh one. Cards now [b]list the upgrades they carry[/b], with a count for stacked ones, and you can hover each name for what it does.")
 	display_game("  [color=#FF8000]★ COMPANIONS ARE YOUR INVESTMENT AGAIN.[/color] A companion's health and damage were derived from [b]its owner's[/b] stats, which had two absurd consequences: equipping +HP gear changed your companion's health bar, and [b]gaining a level made your companion weaker[/b] (671 → 474 HP for one level, measured). Both now come from the [b]companion's own level[/b] — stable whatever you wear, and rising only when you level the companion. The cap that stopped an over-levelled companion gaining anything past 2.5x is gone too: a companion far above your level is [b]supposed[/b] to carry you, that is what you invested in.")
 	display_game("  [color=#FF8000]★ NEW CHARACTERS START WITH GEAR.[/color] A fresh character had [b]nothing[/b], and measured a [b]5-28%%[/b] win rate against a 60%% target — four deaths in five fights. You now start with a full basic kit in every slot. It is the cheapest gear in the game and your first real drop will beat it, but it is the difference between playing and dying.")
-	display_game("  [color=#1EFF00]◆ Tricksters: a deck that survives long enough to win.[/color] The starter deck is now [b]Analyze, Distract, Sabotage x2, Ambush, Perfect Heist[/b]. Analyze skips the enemy's turn outright; Distract and Sabotage avoid it [b]75%%[/b] of the time — and none of those cards ever said so. They do now. That is the class engine: buy the turns you need to build Read, then finish with Outsmart.")
-	display_game("  [color=#1EFF00]◆ Perfect Heist now actually kills the enemy in a party.[/color] It ended the fight in solo and left the monster standing at full health in co-op.")
+	display_game("  [color=#1EFF00]◆ Tricksters: a deck that survives long enough to win.[/color] The starter deck is now [b]Analyze, Distract, Sabotage x2, Ambush, Assassinate[/b]. Analyze skips the enemy's turn outright; Distract and Sabotage avoid it [b]75%%[/b] of the time — and none of those cards ever said so. They do now. That is the class engine: buy the turns you need to build Read, then finish with Outsmart.")
+	display_game("  [color=#1EFF00]◆ Assassinate now actually kills the enemy in a party.[/color] It ended the fight in solo and left the monster standing at full health in co-op.")
 	display_game("  [color=#1EFF00]◆ A stray percent sign in 115 places.[/color] Card costs, unique effects, the help page and the changelog were all printing \"%%\" where they meant \"%\".")
 	display_game("  [color=#909090]Also: an Ambusher's opening strike now appears in the combat log instead of damaging you silently; deleting a character returns its companion to the Sanctuary; and a stray apostrophe in a damage tooltip no longer turns the rest of the log into raw markup.[/color]")
 	display_game("")
@@ -32854,7 +32855,7 @@ func show_help():
   [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
   [color=#FFFFFF]L60 Vanish[/color]       [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next attack auto-crits at 1.5×
   [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
-  [color=#FFFFFF]L100 Perfect Heist[/color] [color=#808080](50 en)[/color] - 30%+WIT/2 chance: instant win + 25% bonus Valor. Fail = 20% self-damage
+  [color=#FFFFFF]L100 Assassinate[/color] [color=#808080](50 en)[/color] - 30%+WIT/2 chance: instant win + 25% bonus Valor. Fail = 20% self-damage
   [color=#AAAAAA]Outsmart[/color]         [color=#808080](free)[/color]   - 5%+15×log₂(WIT/10). Capped by monster INT/3. Easy vs brutes, hard vs mages. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
@@ -33222,7 +33223,7 @@ func search_help(search_term: String):
 		{
 			"title": "TRICKSTER PATH",
 			"keywords": ["trickster", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "heist", "beast", "animal"],
-			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% XP bonus\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal Valor (50+lvl×2)×(1+WIT×5%)\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Perfect Heist (50) - Instant win, 2x rewards"
+			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% XP bonus\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal Valor (50+lvl×2)×(1+WIT×5%)\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Assassinate (50) - Instant win, 2x rewards"
 		},
 		{
 			"title": "COMBAT FORMULAS",

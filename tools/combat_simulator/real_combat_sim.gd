@@ -71,6 +71,7 @@ func _audit_registry() -> Dictionary:
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
+		"names": ["do all the tables agree on what each card is CALLED?", run_name_consistency_audit],
 		"adjudicate": ["refcal vs roles: which win-rate measurement is right?", run_adjudicate_audit],
 		"newplayer": ["what a character created TODAY actually faces at L1-L10", run_newplayer_audit],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
@@ -400,6 +401,42 @@ func run_adjudicate_audit():
 		var wa := 100.0 * float(a.get("win", 0.0))
 		var wb := 100.0 * float(wins) / float(maxi(1, tot))
 		print("%-8d %13.0f%% %13.0f%% %9.0fpp" % [lvl, wa, wb, absf(wa - wb)])
+	print("=====================================================================
+")
+
+func run_name_consistency_audit():
+	"""Does every table agree on what a card is CALLED?
+
+	2026-09-04. The owner reported the same bug twice: "it's called Arcane Surge in battle but
+	Haste in the deck screen", then after a partial fix, "Did we ever fix the differing names on
+	cards like Arcane Surge and Haste (shows different names on upgrades, in combat, in deck)".
+
+	The first fix reconciled the two tables I had found. There were SIX, and four disagreed - the
+	rank-up screen kept its own resolver, and so did an ability-tome table and a constants table
+	nobody had looked at. Reconciling the two you can see is not the same as counting them.
+
+	CombatManager.ABILITY_DISPLAY_NAMES is canonical. This walks every other table and reports
+	anything that disagrees, so the next rename cannot half-land."""
+	print("
+===== CARD NAME CONSISTENCY =====")
+	var CM = load("res://shared/combat_manager.gd")
+	var canon: Dictionary = CM.ABILITY_DISPLAY_NAMES
+	var cm = combat_mgr
+	var bad := 0
+	var checked := 0
+	print("%-18s %-16s %-16s %-16s" % ["id", "canonical", "resolver", "tome table"])
+	for id in canon.keys():
+		var want := String(canon[id])
+		var got := String(cm._ability_display_name(null, String(id)))
+		var tome := String(drop_tables.ABILITY_TOME_DISPLAY_NAMES.get(id, want))
+		var info: Dictionary = {}
+		checked += 1
+		var ok := (got == want) and (tome == want)
+		if not ok:
+			bad += 1
+		print("%-18s %-16s %-16s %-16s %s" % [id, want, got, tome, ("" if ok else "*** MISMATCH ***")])
+	print("
+checked %d names, disagreements: %d" % [checked, bad])
 	print("=====================================================================
 ")
 

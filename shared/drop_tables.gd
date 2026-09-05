@@ -1624,15 +1624,20 @@ const ABILITY_TOME_POOL: Array = [
 
 # Display names for tome contents — keep in sync with character.gd
 # get_all_available_abilities display fields.
+# NOTE 2026-09-04 — these MUST agree with CombatManager.ABILITY_DISPLAY_NAMES, which is the
+# canonical source. This table cannot simply defer to it (drop_tables is loaded BY combat_manager,
+# so the dependency would be circular), so the `-- names` audit in the combat simulator
+# cross-checks every name table against the canonical map instead. Run it after touching any of
+# them. Six separate tables named these abilities before that audit existed, and four disagreed.
 const ABILITY_TOME_DISPLAY_NAMES: Dictionary = {
 	"power_strike": "Power Strike", "war_cry": "War Cry", "shield_bash": "Shield Bash",
 	"cleave": "Cleave", "berserk": "Berserk", "iron_skin": "Iron Skin",
 	"devastate": "Devastate", "fortify": "Fortify", "rally": "Rally",
 	"magic_bolt": "Magic Bolt", "blast": "Blast", "forcefield": "Forcefield",
-	"meteor": "Meteor", "haste": "Haste", "paralyze": "Paralyze", "banish": "Banish",
+	"meteor": "Meteor", "haste": "Arcane Surge", "paralyze": "Paralyze", "banish": "Banish",
 	"analyze": "Analyze", "distract": "Distract", "pickpocket": "Pickpocket",
-	"ambush": "Ambush", "vanish": "Vanish", "exploit": "Exploit",
-	"perfect_heist": "Perfect Heist", "sabotage": "Sabotage", "gambit": "Gambit",
+	"ambush": "Ambush", "vanish": "Phantom Strike", "exploit": "Exploit",
+	"perfect_heist": "Assassinate", "sabotage": "Sabotage", "gambit": "Gambit",
 }
 
 func _generate_ability_tome(item_level: int) -> Dictionary:

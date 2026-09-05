@@ -125,9 +125,9 @@ const TRICKSTER_ABILITIES = {
 	"pickpocket": {"level": 25, "cost": 20, "name": "Pickpocket", "desc": "Steal WITS*10 gold (fail = attacked)"},
 	"ambush": {"level": 40, "cost": 30, "name": "Ambush", "desc": "3x damage with WITS scaling + 50% crit"},
 	"gambit": {"level": 50, "cost": 35, "name": "Gambit", "desc": "4.5x damage, +75% gold & +1 gem on kill (risky)"},
-	"vanish": {"level": 60, "cost": 40, "name": "Vanish", "desc": "Go invisible, next attack crits"},
+	"vanish": {"level": 60, "cost": 40, "name": "Phantom Strike", "desc": "Go invisible, next attack crits"},
 	"exploit": {"level": 80, "cost": 35, "name": "Exploit", "desc": "Deal 15-35% of monster's max HP"},
-	"perfect_heist": {"level": 100, "cost": 50, "name": "Perfect Heist", "desc": "Instant win + double rewards"}
+	"perfect_heist": {"level": 100, "cost": 50, "name": "Assassinate", "desc": "Instant win + double rewards"}
 }
 
 # Path thresholds (which path is active based on highest stat)

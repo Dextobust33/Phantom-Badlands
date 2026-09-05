@@ -3095,7 +3095,7 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": "ambush", "level": 40, "display": "Ambush"})
 			abilities.append({"name": "vanish", "level": 60, "display": "Phantom Strike"})
 			abilities.append({"name": "exploit", "level": 80, "display": "Exploit"})
-			abilities.append({"name": "perfect_heist", "level": 100, "display": "Perfect Heist"})
+			abilities.append({"name": "perfect_heist", "level": 100, "display": "Assassinate"})
 			abilities.append({"name": "sabotage", "level": 30, "display": "Sabotage"})
 			abilities.append({"name": "gambit", "level": 50, "display": "Gambit"})
 

@@ -6161,7 +6161,7 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"gambit": return {"level": 50, "cost": 35, "name": "Gambit"}
 				"vanish": return {"level": 60, "cost": 40, "name": "Phantom Strike"}
 				"exploit": return {"level": 80, "cost": 35, "name": "Exploit"}
-				"perfect_heist": return {"level": 100, "cost": 50, "name": "Perfect Heist"}
+				"perfect_heist": return {"level": 100, "cost": 50, "name": "Assassinate"}
 	return {}
 
 # === PLAYTEST LOG (dev only) ===
@@ -10367,6 +10367,31 @@ func _cycle_hand_after_attack(combat_state: Dictionary) -> void:
 	combat_state["combat_discard"] = discard
 	_draw_to_hand(combat_state)
 
+# THE canonical player-facing name for every ability whose display differs from its id.
+#
+# 2026-09-04 — there were FOUR sources of an ability's name and they disagreed: this function,
+# its mirror in client.gd, the client's combat card table, and the server's `_get_ability_info`.
+# Reported twice by the owner, the second time after a partial fix: "Did we ever fix the
+# differing names on cards like Arcane Surge and Haste (shows different names on upgrades, in
+# combat, in deck)". The first pass reconciled two of the four, which left the rank-up screen
+# still saying "Haste" and newly made perfect_heist disagree the other way.
+#
+# One map, consulted by every resolver. A name added here reaches all of them; a name added
+# anywhere else is a bug.
+const ABILITY_DISPLAY_NAMES := {
+	"tactical_retreat": "Recharge",
+	"vanish": "Phantom Strike",
+	"haste": "Arcane Surge",
+	"magic_bolt": "Magic Bolt",
+	"power_strike": "Power Strike",
+	"shield_bash": "Shield Bash",
+	"war_cry": "War Cry",
+	"iron_skin": "Iron Skin",
+	"perfect_heist": "Assassinate",
+	"pickpocket": "Pickpocket",
+	"forcefield": "Forcefield",
+}
+
 func _ability_display_name(_character, ability_name: String) -> String:
 	"""v0.9.592 — return the player-facing display name for an internal ability
 	id. Must match what the client renders on the actual card in hand; the
@@ -10383,11 +10408,8 @@ func _ability_display_name(_character, ability_name: String) -> String:
 		return DropTablesScript.card_display_name(ability_name)
 	if ability_name.begins_with("companion_card_"):
 		return "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
-	match ability_name:
-		"tactical_retreat": return "Recharge"
-		"vanish": return "Phantom Strike"
-		"perfect_heist": return "Heist"
-		"pickpocket": return "Steal"
+	if ABILITY_DISPLAY_NAMES.has(ability_name):
+		return String(ABILITY_DISPLAY_NAMES[ability_name])
 	return ability_name.replace("_", " ").capitalize()
 
 func _ability_alias_to_card(ability_name: String) -> String:
