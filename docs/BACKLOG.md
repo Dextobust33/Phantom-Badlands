@@ -220,10 +220,40 @@ defense) / Barbarian (+3% damage per 10% HP missing, +25% stamina cost) / Paladi
 regen, +25% vs undead); Wizard (+15% spell damage, +10% spell crit) / Sorcerer (25% double
 damage, 5% backfire) / Sage (−25% mana cost, +50% meditate).
 
-**Crit viability — better than feared, but unsupported.** The cap is 75% (see the correction in
-6k), so a crit build has real headroom. What is missing is the *ability support* named above:
-nothing in the trickster kit converts crit into a build. `ambush` carries a 50%-crit-at-+50%
-rider, and that is the whole of it.
+**Crit viability — WORSE than "unsupported": crit does not apply to abilities at all.**
+
+Owner 2026-09-05: *"Regarding crit it doesn't work with abilities I don't believe so it's uses
+are limited."* Correct, and it is the root of the problem rather than a side note.
+
+`calculate_damage` rolls the full crit calculation — DEX-based chance, the 75% cap, Backstab's
++10%/+35%, weapon rarity crit, companion crit, and every epic+ `crit_chance_bonus` /
+`crit_damage_bonus` chase affix — and it runs on **basic attacks only**. Ability damage rolls
+crit through exactly one path, `spell_crit_bonus`, which is the **Wizard's** passive (Arcane
+Precision, +10%), at three sites, all mage cards.
+
+So for a Trickster — who spends nearly every turn casting — DEX crit, the Backstab passive and
+the entire epic+ crit chase pool are close to dead weight. "Ninja builds toward crit" is not
+short of support; the stat does not function on the actions the class takes.
+
+- [ ] Decide whether crit SHOULD apply to abilities. If yes it is a large change (every ability
+      damage path, and the anchored weights were tuned without it). If no, then DEX crit,
+      Backstab and two epic+ chase affixes need to stop being sold as build directions
+- [ ] Either way this gates the Ninja crit identity above — there is no point adding crit support
+      cards to a stat that does not fire
+
+**"Double cast" buffs — they are not double casts.** Owner: *"Buffs that provide a chance to
+double cast and such don't really specify what that entails, can it double any ability?"*
+
+- `extra_turn_chance` (*of Frenzy*, *of Haste*, Swift rank-up) sets `skip_monster_turn`: the
+  monster does not act, so you move again first. The extra turn can be spent on ANY ability, but
+  it never re-casts the triggering one. It **only rolls on damage-dealing hits**, and never on
+  actions that already skip the monster's turn (Analyze, Pickpocket) so they cannot double up.
+  Bounded — per-cast roll, not recursive
+- Sorcerer's Chaos Magic `double_damage_chance` is double DAMAGE on that cast against a 5%
+  backfire, on two mage cards. Not a second cast
+- [ ] **Player-facing text fix.** Neither the affix names nor their descriptions say any of this:
+      not that it is a turn rather than a cast, not the damage-only condition, not the
+      no-double-up rule. Same class of defect as the card upgrades that showed no upgrade text
 
 **Do not start before the Fighter and the gear curve** — it is a design pass, and it wants the
 combat numbers settled underneath it. Ideas for when it does start:
