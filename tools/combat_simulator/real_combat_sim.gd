@@ -5061,33 +5061,32 @@ var _grow_immortal := false
 
 
 func _grow_update_hunt(state: Dictionary, enc: Dictionary, ch) -> void:
-	# How a player picks their next fight. Owner 2026-09-05: "A real player will recognize if
-	# the fights are too hard and back off and fight what they can handle until they get levels
-	# or gear before trying to push over level again."
+	# How a player picks their next fight.
 	#
-	# The previous rule stepped DOWN one level after a mauling and back UP after a single
-	# comfortable win - a hill-climb that parks the character permanently on the danger
-	# boundary, making almost every fight marginal and inflating the death rate through a policy
-	# no player would run. Nobody probes upward again the moment one fight goes well.
+	# Owner 2026-09-05, on the first version of this: "If the player didn't gain a level or new
+	# equipment they haven't gained any power so why would they climb again?" Exactly right - it
+	# climbed after a run of easy wins, but a win streak is not new power, it is the same
+	# character rolling better. Nobody walks back into a fight that nearly killed them because
+	# the last three went well.
 	#
-	# Now a setback drops back TWO levels and resets confidence, and it takes a RUN of three
-	# decisively easy wins to justify probing up again. A merely adequate fight is not evidence
-	# of anything and resets the counter, so the character spends its time on fights it can
-	# handle and pushes only once it has clearly outgrown them.
+	# So the upward probe is gated on POWER, measured through the same aggregator the equip rule
+	# uses: after a setback the character farms what it can handle until it is materially
+	# stronger - a level, or gear worth wearing - and only then tests the ceiling again. That is
+	# also why the earlier version inflated the death rate: it parked the character permanently
+	# on the danger boundary, re-probing on noise.
 	var hunt: int = int(state.get("hunt", 1))
-	var confident: int = int(state.get("confident", 0))
+	var power: float = _grow_power(ch)
+	if not state.has("power_mark"):
+		state["power_mark"] = power
 	if bool(enc.get("fled", false)) or float(enc.get("worst", 1.0)) < 0.50:
+		# Backed off. Remember how strong we were when it went wrong; that is the bar to clear.
 		hunt = maxi(1, hunt - 2)
-		confident = 0
-	elif float(enc.get("worst", 1.0)) > 0.75:
-		confident += 1
-		if confident >= 3:
-			hunt = mini(ch.level + 20, hunt + 1)
-			confident = 0
-	else:
-		confident = 0
+		state["power_mark"] = power
+	elif float(enc.get("worst", 1.0)) > 0.75 and power > float(state["power_mark"]) * 1.05:
+		# Comfortably clearing fights AND measurably stronger than when we last got hurt.
+		hunt = mini(ch.level + 20, hunt + 1)
+		state["power_mark"] = power
 	state["hunt"] = clampi(hunt, 1, ch.level + 20)
-	state["confident"] = confident
 
 func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 	# One encounter played the way a player must: fight, disengage when it turns, and follow the
@@ -5693,9 +5692,20 @@ func run_durability_audit():
 	print("
 ===== DURABILITY - monster turns survived in an unwinnable fight =====")
 	print("%d grown characters x %d fights per cell. baseHP strips gear; totalHP includes it." % [CHARS, N])
-	print("%-9s %5s %9s %9s %8s %10s" % ["class", "lv", "baseHP", "totalHP", "def", "turns_live"])
+	print("%-13s %5s %9s %9s %8s %10s" % ["class", "lv", "baseHP", "totalHP", "def", "turns_live"])
 	_grow_immortal = true
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	# The A/B that answers "is Forcefield too strong, or is the Fighter too weak?" - owner
+	# 2026-09-05: "we need to find out which and proceed."
+	#   Wizard      = shield_first, the tournament-winning policy (recasts Forcefield freely)
+	#   Wizard-noFF = bolt_spam, which never casts it
+	# If stripping the shield drops the Wizard BELOW the Fighter, the card is the cause and the
+	# lever is Forcefield. If it lands level with the Fighter, the shield is incidental and the
+	# Fighter is simply under-built for its own archetype.
+	for entry in [["Fighter", ""], ["Wizard", "shield_first"], ["Wizard-noFF", "bolt_spam"], ["Thief", ""]]:
+		var klass: String = "Wizard" if String(entry[0]).begins_with("Wizard") else String(entry[0])
+		var label: String = String(entry[0])
+		if String(entry[1]) != "":
+			_mage_policy = String(entry[1])
 		for lvl in LEVELS:
 			var base_sum := 0.0
 			var tot_sum := 0.0
@@ -5731,9 +5741,10 @@ func run_durability_audit():
 					turn_sum += float(_durability_one_fight(ch, lvl))
 					runs += 1
 			var n := float(maxi(1, CHARS))
-			print("%-9s %5d %9d %9d %8d %10.1f" % [
-				klass, lvl, int(base_sum / n), int(tot_sum / n), int(def_sum / n),
+			print("%-13s %5d %9d %9d %8d %10.1f" % [
+				label, lvl, int(base_sum / n), int(tot_sum / n), int(def_sum / n),
 				turn_sum / float(maxi(1, runs))])
+	_mage_policy = "shield_first"
 	_grow_immortal = false
 	print("
 turns_live is the honest durability number: it counts defense, Iron Skin, the")
