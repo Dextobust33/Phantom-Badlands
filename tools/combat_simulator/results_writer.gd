@@ -288,7 +288,7 @@ func _build_class_balance_report(results: Dictionary) -> String:
 	lines.append("| Class | vs Same Lv | vs +5 | vs +10 | vs +20 | Outsmart Rate |")
 	lines.append("|-------|-----------|-------|--------|--------|---------------|")
 
-	var all_classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]
+	var all_classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]
 	for char_class in all_classes:
 		var level_data = class_results.get(char_class, {})
 		# Aggregate win rates per offset across levels for "average" gear
@@ -367,7 +367,7 @@ func _build_gauntlet_results(results: Dictionary) -> String:
 	lines.append("| Class | Lv25 Avg Survived | Lv25 Full Clear | Lv50 Avg | Lv50 Clear | Lv100 Avg | Lv100 Clear |")
 	lines.append("|-------|-------------------|-----------------|----------|------------|-----------|-------------|")
 
-	for char_class in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
+	for char_class in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
 		var class_data = gauntlet.get(char_class, {})
 		var cells = [char_class]
 		for level_key in ["level_25", "level_50", "level_100"]:
@@ -396,7 +396,7 @@ func _build_flock_results(results: Dictionary) -> String:
 	lines.append("| Class | Lv25 x2 | Lv25 x3 | Lv25 x4 | Lv50 x2 | Lv50 x3 | Lv50 x4 | Lv100 x2 | Lv100 x3 | Lv100 x4 |")
 	lines.append("|-------|---------|---------|---------|---------|---------|---------|----------|----------|----------|")
 
-	for char_class in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
+	for char_class in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
 		var class_data = flock.get(char_class, {})
 		var cells = [char_class]
 		for level_key in ["level_25", "level_50", "level_100"]:

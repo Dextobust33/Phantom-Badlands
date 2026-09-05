@@ -9,7 +9,7 @@ const CombatEngine = preload("res://tools/combat_simulator/combat_engine.gd")
 const ResultsWriter = preload("res://tools/combat_simulator/results_writer.gd")
 
 # Simulation configuration
-var CLASSES = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]
+var CLASSES = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]
 var LEVELS = [5, 10, 25, 50, 75, 100, 500, 1000, 5000]
 var GEAR_QUALITIES = ["poor", "average", "good"]
 var MONSTER_LEVEL_OFFSETS = [-5, 0, 5, 10, 20]

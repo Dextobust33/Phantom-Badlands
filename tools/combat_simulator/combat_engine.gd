@@ -567,7 +567,7 @@ func process_monster_turn(monster: Dictionary, character, combat_state: CombatSt
 					character.current_mana = max(0, character.current_mana - drain)
 				"Fighter", "Barbarian", "Paladin":
 					character.current_stamina = max(0, character.current_stamina - drain)
-				"Thief", "Ranger", "Ninja":
+				"Grifter", "Ranger", "Ninja":
 					character.current_energy = max(0, character.current_energy - drain)
 			results.effects.append("mana_drain_%d" % drain)
 

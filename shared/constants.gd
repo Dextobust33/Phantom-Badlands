@@ -53,7 +53,7 @@ const CLASS_PALADIN = "Paladin"
 const CLASS_WIZARD = "Wizard"
 const CLASS_SORCERER = "Sorcerer"
 const CLASS_SAGE = "Sage"
-const CLASS_THIEF = "Thief"
+const CLASS_GRIFTER = "Grifter"
 const CLASS_RANGER = "Ranger"
 const CLASS_NINJA = "Ninja"
 
@@ -64,7 +64,7 @@ const AVAILABLE_CLASSES = [
 	CLASS_WIZARD,
 	CLASS_SORCERER,
 	CLASS_SAGE,
-	CLASS_THIEF,
+	CLASS_GRIFTER,
 	CLASS_RANGER,
 	CLASS_NINJA
 ]
@@ -149,7 +149,7 @@ const CLASS_DESCRIPTIONS = {
 	CLASS_WIZARD: "Offensive spellcaster with high INT. Powerful Mana-based damage spells.",
 	CLASS_SAGE: "Utility mage with balanced INT/WIS. Support spells and high mana pool.",
 	# Trickster Path (WITS-focused, use Energy)
-	CLASS_THIEF: "Cunning trickster with high WITS and DEX. Energy abilities and outsmart tactics.",
+	CLASS_GRIFTER: "Con artist who wins by not fighting fair. WITS drives Outsmart and ability damage; slips away when a fight turns.",
 	CLASS_RANGER: "Versatile hybrid with STR/WITS. Mix of combat and trickster Energy abilities.",
 	# Warrior Path hybrid
 	CLASS_PALADIN: "Holy warrior with sustain and bonus damage vs undead/demons. Uses Stamina.",

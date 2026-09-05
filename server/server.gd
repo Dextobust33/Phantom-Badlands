@@ -2735,7 +2735,7 @@ func handle_create_character(peer_id: int, message: Dictionary):
 		return
 
 	# Validate class (9 available classes: 3 Warrior, 3 Mage, 3 Trickster)
-	var valid_classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sage", "Sorcerer", "Thief", "Ranger", "Ninja"]
+	var valid_classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sage", "Sorcerer", "Grifter", "Ranger", "Ninja"]
 	if char_class not in valid_classes:
 		send_to_peer(peer_id, {
 			"type": "error",
@@ -5675,7 +5675,7 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 		recovered.append("%d HP" % heal_amount)
 	if class_type in ["Fighter", "Barbarian", "Paladin"] and actual_stamina > 0:
 		recovered.append("%d Stamina" % actual_stamina)
-	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"] and actual_energy > 0:
+	elif class_type in ["Grifter", "Ranger", "Ninja", "Trickster"] and actual_energy > 0:
 		recovered.append("%d Energy" % actual_energy)
 	if recovered.is_empty():
 		rest_msg += "[color=#00FF00]You rest.[/color]"
@@ -16393,7 +16393,7 @@ func handle_trading_post_wits_training(peer_id: int):
 	var character = characters[peer_id]
 
 	# Trickster-only
-	if character.class_type not in ["Thief", "Ranger", "Ninja"]:
+	if character.class_type not in ["Grifter", "Ranger", "Ninja"]:
 		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Only Tricksters can train their wits here.[/color]"})
 		return
 
@@ -35054,7 +35054,7 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 		recovered.append("%d HP" % heal_amount)
 	if class_type in ["Fighter", "Barbarian", "Paladin"] and actual_stamina > 0:
 		recovered.append("%d Stamina" % actual_stamina)
-	elif class_type in ["Thief", "Ranger", "Ninja", "Trickster"] and actual_energy > 0:
+	elif class_type in ["Grifter", "Ranger", "Ninja", "Trickster"] and actual_energy > 0:
 		recovered.append("%d Energy" % actual_energy)
 	if recovered.is_empty():
 		rest_msg += "[color=#00FF00]You rest.[/color]"

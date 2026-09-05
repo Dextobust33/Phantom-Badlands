@@ -2491,7 +2491,7 @@ func process_attack(combat: Dictionary) -> Dictionary:
 
 		# === TRICKSTER DOUBLE STRIKE ===
 		# Tricksters have 25% chance for a bonus attack at 50% damage
-		var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+		var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
 		if is_trickster and monster.current_hp > 0 and randi() % 100 < 25:
 			var second_damage = int(damage * 0.5)
 			monster.current_hp -= second_damage
@@ -3304,7 +3304,7 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	# #55 identity pass (2026-08-27) — Tricksters are fast escape artists. A flat flee bonus
 	# (on top of their high DEX) is their OUT: whiff the Outsmart gamble on a huge foe and
 	# you can usually still slip away — but if the flee ALSO fails, the glass cannon dies.
-	if character.class_type in ["Thief", "Ranger", "Ninja"]:
+	if character.class_type in ["Grifter", "Ranger", "Ninja"]:
 		flee_chance += 18
 
 	# === CLASS PASSIVE: Ninja Shadow Step ===
@@ -3476,7 +3476,7 @@ func _outsmart_chance(character, monster, combat) -> int:
 		# 22 so Outsmart's BASE is a gamble at every level; the Read engine is what pushes it
 		# toward reliable (its intended identity).
 		wits_bonus = mini(22, int(9.0 * log(float(player_wits) / 10.0) / log(2.0)))
-	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+	var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
 	var is_mage_os = character.class_type in ["Wizard", "Sorcerer", "Sage"]
 	var trickster_bonus = 10 if is_trickster else 0
 	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
@@ -3579,7 +3579,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 	var player_wits = character.get_effective_stat("wits")
 	var monster_intelligence = int(monster.get("intelligence", 15))
 	var level_diff = int(monster.level) - character.level
-	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+	var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
 	var outsmart_chance = _outsmart_chance(character, monster, combat)
 	# Energy DUMP (2026-08-25): spend a big % of current energy to sharpen the read. Bar
 	# fullness (scale-safe) adds outsmart chance, so a bigger energy pool = a more reliable
@@ -5814,7 +5814,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 			# Calculate and show outsmart chance (must match process_outsmart formula)
 			var player_wits = character.get_effective_stat("wits")
-			var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+			var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
 			var player_level = character.level
 			var monster_level = monster.level
 			var base_chance = 5
@@ -7635,7 +7635,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		combat.erase("path_ghost_step_dodge")
 
 	# WITS provides additional dodge for tricksters: -1% per 50 WITS (max -15%)
-	var is_trickster = character.class_type in ["Thief", "Ranger", "Ninja"]
+	var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
 	if is_trickster:
 		var player_wits = character.get_effective_stat("wits")
 		var wits_dodge = min(15, int(player_wits / 50))
@@ -8373,7 +8373,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			"Fighter", "Barbarian", "Paladin":
 				character.current_stamina = max(0, character.current_stamina - drain)
 				resource_name = "stamina"
-			"Thief", "Ranger", "Ninja":
+			"Grifter", "Ranger", "Ninja":
 				character.current_energy = max(0, character.current_energy - drain)
 				resource_name = "energy"
 			_:

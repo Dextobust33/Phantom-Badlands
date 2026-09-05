@@ -4,7 +4,7 @@ extends SceneTree
 
 func _init():
 	var CharacterScript = load("res://shared/character.gd")
-	for combo in [["Fighter", "warrior"], ["Wizard", "mage"], ["Thief", "trickster"]]:
+	for combo in [["Fighter", "warrior"], ["Wizard", "mage"], ["Grifter", "trickster"]]:
 		var ch = CharacterScript.new()
 		ch.initialize("New_%s" % combo[0], combo[0], "Human")
 		var changed = ch.initialize_deck_collection_if_needed()

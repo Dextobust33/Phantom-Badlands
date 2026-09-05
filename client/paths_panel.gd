@@ -59,7 +59,7 @@ static func archetype_for_class(class_type: String) -> String:
 			return "warrior"
 		"Wizard", "Sorcerer", "Sage":
 			return "mage"
-		"Thief", "Ranger", "Ninja":
+		"Grifter", "Ranger", "Ninja":
 			return "trickster"
 		_:
 			return "warrior"

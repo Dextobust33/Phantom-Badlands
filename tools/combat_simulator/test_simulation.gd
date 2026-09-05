@@ -15,7 +15,7 @@ func run_tests():
 
 	# Test 1: SimulatedCharacter creation
 	print("Test 1: Creating characters...")
-	var classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]
+	var classes = ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]
 	for char_class in classes:
 		var char = SimulatedCharacter.new(char_class, 50)
 		print("  %s L50: HP=%d ATK=%d DEF=%d" % [char_class, char.max_hp, char.get_total_attack(), char.get_total_defense()])

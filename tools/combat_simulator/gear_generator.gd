@@ -196,7 +196,7 @@ func _get_class_path(class_type: String) -> String:
 			return "warrior"
 		"Wizard", "Sorcerer", "Sage":
 			return "mage"
-		"Thief", "Ranger", "Ninja":
+		"Grifter", "Ranger", "Ninja":
 			return "trickster"
 		_:
 			return "warrior"

@@ -103,7 +103,7 @@ func _init():
 	var primary := "strength"
 	if klass in ["Wizard", "Sorcerer", "Sage"]:
 		primary = "intelligence"
-	elif klass in ["Thief", "Ranger", "Ninja"]:
+	elif klass in ["Grifter", "Ranger", "Ninja"]:
 		primary = "dexterity"
 	while ch.unspent_stat_points > 0:
 		ch.spend_stat_point(primary)

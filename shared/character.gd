@@ -217,7 +217,7 @@ const CLASS_EQUIPMENT_THEMES = {
 		"helm": "Circlet", "boots": "Sandals", "ring": "Ring", "amulet": "Pendant"
 	},
 	# Trickster Path - Light leather, agile weapons
-	"Thief": {
+	"Grifter": {
 		"weapon": "Dagger", "shield": "Parry Blade", "armor": "Leathers",
 		"helm": "Mask", "boots": "Boots", "ring": "Ring", "amulet": "Charm"
 	},
@@ -715,7 +715,7 @@ func get_starting_stats_for_class(char_class: String) -> Dictionary:
 		"Wizard": {"strength": 8, "constitution": 10, "dexterity": 10, "intelligence": 17, "wisdom": 12, "wits": 9},
 		"Sage": {"strength": 8, "constitution": 12, "dexterity": 10, "intelligence": 13, "wisdom": 15, "wits": 9},
 		# Trickster Path (WITS > 10 for Energy abilities)
-		"Thief": {"strength": 9, "constitution": 9, "dexterity": 14, "intelligence": 9, "wisdom": 9, "wits": 16},
+		"Grifter": {"strength": 9, "constitution": 9, "dexterity": 14, "intelligence": 9, "wisdom": 9, "wits": 16},
 		"Ranger": {"strength": 12, "constitution": 11, "dexterity": 12, "intelligence": 9, "wisdom": 9, "wits": 14},
 		# Legacy classes (for existing characters)
 		"Paladin": {"strength": 13, "constitution": 14, "dexterity": 10, "intelligence": 9, "wisdom": 12, "wits": 12},
@@ -792,7 +792,7 @@ func get_class_passive() -> Dictionary:
 				}
 			}
 		# Tricksters
-		"Thief":
+		"Grifter":
 			# Nerfed: crit damage 50% → 35%, crit chance 15% → 10%
 			return {
 				"name": "Backstab",
@@ -866,7 +866,7 @@ func get_class_attack_verb() -> String:
 		"Wizard": return "blast"
 		"Sorcerer": return "unleash chaos upon"
 		"Sage": return "channel energy at"
-		"Thief": return "stab"
+		"Grifter": return "stab"
 		"Ranger": return "shoot"
 		"Ninja": return "slash"
 		_: return "attack"
@@ -901,7 +901,7 @@ func get_class_attack_description(damage: int, monster_name: String, is_crit: bo
 			if is_crit:
 				crit_text = "Ancient wisdom empowers you as "
 			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
-		"Thief":
+		"Grifter":
 			if is_crit:
 				crit_text = "You find a gap in their defenses and "
 			return "%syou %s the %s for [color=#FFFF00]%d damage[/color]!" % [crit_text, verb, monster_name, damage]
@@ -927,7 +927,7 @@ func calculate_derived_stats():
 	# assassins. 30% less HP so a whiffed Outsmart (or getting caught before they flee)
 	# usually means death — the risk that pays for their unmatched over-level reach + high
 	# flee. They act first each turn, so they still get their shot before taking a hit.
-	if class_type in ["Thief", "Ranger", "Ninja"]:
+	if class_type in ["Grifter", "Ranger", "Ninja"]:
 		max_hp = int(max_hp * 0.7)
 
 	# Resource pools. v0.9.700 (#29) — added a FLAT FLOOR so early-game pools hold
@@ -946,7 +946,7 @@ func _get_primary_stat_for_hp() -> int:
 			return strength  # Warriors get STR added to HP
 		"Wizard", "Sorcerer", "Sage":
 			return int(intelligence * 0.5)  # Mages get half INT added to HP
-		"Thief", "Ranger", "Ninja":
+		"Grifter", "Ranger", "Ninja":
 			return int(wits * 0.5)  # Tricksters get half WITS added to HP
 		_:
 			return strength
@@ -1178,7 +1178,7 @@ func get_equipment_bonuses() -> Dictionary:
 		"Fighter", "Barbarian", "Paladin":
 			# Stamina class: stamina/energy stay 1:1, mana scales down 0.5x
 			bonuses.max_stamina = int(mana_contrib * 0.5) + stam_energy_contrib
-		"Thief", "Ranger", "Ninja", "Trickster":
+		"Grifter", "Ranger", "Ninja", "Trickster":
 			# Energy class: stamina/energy stay 1:1, mana scales down 0.5x
 			bonuses.max_energy = int(mana_contrib * 0.5) + stam_energy_contrib
 
@@ -1656,7 +1656,7 @@ func get_stat_gains_for_class() -> Dictionary:
 		"Sage": {"strength": 0.0, "constitution": 0.5, "dexterity": 0.25, "intelligence": 0.75, "wisdom": 1.0, "wits": 0.0},
 		"Sorcerer": {"strength": 0.0, "constitution": 0.35, "dexterity": 0.25, "intelligence": 1.40, "wisdom": 0.50, "wits": 0.0},
 		# Trickster Path (primary: WITS/DEX, secondary: varies) - Total: 2.5
-		"Thief": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},
+		"Grifter": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},
 		"Ranger": {"strength": 0.25, "constitution": 0.5, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0},
 		"Ninja": {"strength": 0.0, "constitution": 0.25, "dexterity": 1.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0}
 	}
@@ -1936,6 +1936,12 @@ func from_dict(data: Dictionary):
 		npc_stones_bought = {}
 
 	current_hp = data.get("current_hp", 100)
+	# 2026-09-05 — Thief renamed to Grifter. The class identity is "wins by not fighting fair":
+	# Outsmart and escape, not theft, so the old name described a mechanic the class does not
+	# have. Migrating on LOAD rather than with a one-shot script catches every path (login,
+	# party join, market listing) and is idempotent, so it can stay indefinitely.
+	if String(class_type) == "Thief":
+		class_type = "Grifter"
 	max_hp = data.get("max_hp", 100)
 	current_mana = data.get("current_mana", 50)
 	max_mana = data.get("max_mana", 50)
@@ -3076,7 +3082,7 @@ func get_class_path() -> String:
 			return "warrior"
 		"Wizard", "Sorcerer", "Sage":
 			return "mage"
-		"Thief", "Ranger", "Ninja":
+		"Grifter", "Ranger", "Ninja":
 			return "trickster"
 		_:
 			return "warrior"
@@ -3448,7 +3454,7 @@ func backfill_ability_uses_if_needed() -> bool:
 			archetype_abilities = ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]
 		"Wizard", "Sage", "Sorcerer":
 			archetype_abilities = ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
-		"Thief", "Ranger", "Ninja":
+		"Grifter", "Ranger", "Ninja":
 			archetype_abilities = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]
 		_:
 			archetype_abilities = []

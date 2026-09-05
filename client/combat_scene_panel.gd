@@ -48,7 +48,7 @@ var _player_race: String = ""         # v0.9.675 — for race/class card theming
 # category glyphs ⚔✦❄◈ that already render). Falls back to the class initial.
 const CLASS_EMBLEM := {
 	"Fighter": "⚔", "Barbarian": "⚒", "Paladin": "✚", "Wizard": "✸",
-	"Sorcerer": "☄", "Sage": "✜", "Thief": "✥", "Ranger": "➹", "Ninja": "✴",
+	"Sorcerer": "☄", "Sage": "✜", "Grifter": "✥", "Ranger": "➹", "Ninja": "✴",
 }
 # v0.9.675 — colorblind aid: each ability category gets a distinct card corner
 # shape (keyed by its glyph) so categories read WITHOUT relying on border colour.
@@ -113,7 +113,7 @@ const CLASS_SPRITE_POOLS := {
 	"Wizard": ["1_6", "5_6", "2_6"],
 	"Sorcerer": ["4_5", "3_6", "1_5"],
 	"Sage": ["3_3", "5_7", "5_8"],
-	"Thief": ["5_7", "6_3", "7_5"],
+	"Grifter": ["5_7", "6_3", "7_5"],
 	"Ranger": ["3_4", "2_4", "6_1"],
 	"Ninja": ["4_5", "1_8", "7_3"],
 }
@@ -4722,7 +4722,7 @@ func _resource_type_for_class(cls: String) -> String:
 	match cls:
 		"Wizard", "Sorcerer", "Sage": return "mana"
 		"Fighter", "Barbarian", "Paladin": return "stamina"
-		"Thief", "Ranger", "Ninja": return "energy"
+		"Grifter", "Ranger", "Ninja": return "energy"
 	return ""
 
 

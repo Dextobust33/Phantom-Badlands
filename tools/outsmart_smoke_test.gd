@@ -14,7 +14,7 @@ func _init():
 	combat_mgr.drop_tables = drop_tables
 
 	var ch = CharacterScript.new()
-	ch.initialize("Smoke", "Thief", "Human")
+	ch.initialize("Smoke", "Grifter", "Human")
 	for i in range(29):
 		ch.level_up()
 	ch.current_hp = ch.get_total_max_hp()

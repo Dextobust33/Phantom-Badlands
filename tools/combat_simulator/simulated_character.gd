@@ -82,7 +82,7 @@ const CLASS_STARTING_STATS = {
 	"Wizard": {"strength": 8, "constitution": 10, "dexterity": 10, "intelligence": 17, "wisdom": 12, "wits": 9},
 	"Sorcerer": {"strength": 8, "constitution": 9, "dexterity": 10, "intelligence": 17, "wisdom": 11, "wits": 11},
 	"Sage": {"strength": 8, "constitution": 12, "dexterity": 10, "intelligence": 13, "wisdom": 15, "wits": 9},
-	"Thief": {"strength": 9, "constitution": 9, "dexterity": 14, "intelligence": 9, "wisdom": 9, "wits": 16},
+	"Grifter": {"strength": 9, "constitution": 9, "dexterity": 14, "intelligence": 9, "wisdom": 9, "wits": 16},
 	"Ranger": {"strength": 12, "constitution": 11, "dexterity": 12, "intelligence": 9, "wisdom": 9, "wits": 14},
 	"Ninja": {"strength": 11, "constitution": 10, "dexterity": 17, "intelligence": 12, "wisdom": 11, "wits": 10}
 }
@@ -132,7 +132,7 @@ const CLASS_PASSIVES = {
 			"meditate_bonus": 0.50
 		}
 	},
-	"Thief": {
+	"Grifter": {
 		"name": "Backstab",
 		"effects": {
 			"crit_damage_bonus": 0.35,
@@ -165,7 +165,7 @@ const CLASS_STAT_GAINS = {
 	"Wizard": {"strength": 0.0, "constitution": 0.40, "dexterity": 0.25, "intelligence": 1.10, "wisdom": 0.75, "wits": 0.0},
 	"Sage": {"strength": 0.0, "constitution": 0.5, "dexterity": 0.25, "intelligence": 0.75, "wisdom": 1.0, "wits": 0.0},
 	"Sorcerer": {"strength": 0.0, "constitution": 0.35, "dexterity": 0.25, "intelligence": 1.40, "wisdom": 0.50, "wits": 0.0},
-	"Thief": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},
+	"Grifter": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},
 	"Ranger": {"strength": 0.25, "constitution": 0.5, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0},
 	"Ninja": {"strength": 0.0, "constitution": 0.25, "dexterity": 1.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0}
 }
@@ -186,7 +186,7 @@ const RACIAL_PASSIVES = {
 const OPTIMAL_RACE = {
 	"Fighter": "Dwarf", "Barbarian": "Orc", "Paladin": "Dwarf",
 	"Wizard": "Elf", "Sorcerer": "Gnome", "Sage": "Elf",
-	"Thief": "Halfling", "Ranger": "Halfling", "Ninja": "Halfling"
+	"Grifter": "Halfling", "Ranger": "Halfling", "Ninja": "Halfling"
 }
 
 func _init(char_class: String = "Fighter", char_level: int = 1):
@@ -279,7 +279,7 @@ func _get_primary_stat_for_hp() -> int:
 			return int(strength * 0.5)
 		"Wizard", "Sorcerer", "Sage":
 			return int(intelligence * 0.3)
-		"Thief", "Ranger", "Ninja":
+		"Grifter", "Ranger", "Ninja":
 			return int(dexterity * 0.4)
 		_:
 			return 0
@@ -480,7 +480,7 @@ func get_class_path() -> String:
 
 func is_trickster() -> bool:
 	"""Check if character is a trickster class"""
-	return class_type in ["Thief", "Ranger", "Ninja"]
+	return class_type in ["Grifter", "Ranger", "Ninja"]
 
 func is_mage() -> bool:
 	"""Check if character is a mage class"""
@@ -543,4 +543,4 @@ func get_heal_multiplier() -> float:
 
 static func get_all_classes() -> Array:
 	"""Get list of all class types"""
-	return ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]
+	return ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]

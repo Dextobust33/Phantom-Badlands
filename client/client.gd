@@ -2121,7 +2121,7 @@ const CLASS_DESCRIPTIONS = {
 	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana.\n[color=#4169E1]Passive - Arcane Precision:[/color] +15% spell damage, +10% spell crit chance",
 	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 5% chance to backfire",
 	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.\n[color=#20B2AA]Passive - Mana Mastery:[/color] 25% reduced mana costs, Meditate restores 50% more",
-	"Thief": "Trickster Path. Cunning rogue excelling at critical hits. Uses Energy.\n[color=#2F4F4F]Passive - Backstab:[/color] +50% crit damage, +15% base crit chance",
+	"Grifter": "Trickster Path. Cunning rogue excelling at critical hits. Uses Energy.\n[color=#2F4F4F]Passive - Backstab:[/color] +50% crit damage, +15% base crit chance",
 	"Ranger": "Trickster Path. Hunter with bonuses vs beasts and extra rewards. Uses Energy.\n[color=#228B22]Passive - Hunter's Mark:[/color] +25% damage vs beasts, +30% Valor/XP from kills",
 	"Ninja": "Trickster Path. Shadow warrior with superior escape abilities. Uses Energy.\n[color=#191970]Passive - Shadow Step:[/color] +40% flee success, take no damage when fleeing"
 }
@@ -2132,7 +2132,7 @@ const CLASS_DESCRIPTIONS = {
 const ARCHETYPE_DATA = [
 	{"key": "Warrior", "pitch": "Tough. Hits hard up close.", "resource": "Stamina", "beginner": true, "classes": ["Fighter", "Barbarian", "Paladin"]},
 	{"key": "Mage", "pitch": "Ranged spells, big damage, fragile.", "resource": "Mana", "beginner": false, "classes": ["Wizard", "Sorcerer", "Sage"]},
-	{"key": "Trickster", "pitch": "Crits, evasion, escape.", "resource": "Energy", "beginner": false, "classes": ["Thief", "Ranger", "Ninja"]},
+	{"key": "Trickster", "pitch": "Crits, evasion, escape.", "resource": "Energy", "beginner": false, "classes": ["Grifter", "Ranger", "Ninja"]},
 ]
 
 # Plain-text one-liners for the class buttons (Button can't render BBCode).
@@ -2143,7 +2143,7 @@ const CLASS_CARD_SUMMARY = {
 	"Wizard": "Pure spellcaster. +15% spell damage & crit.",
 	"Sorcerer": "High-risk mage. Chance to double spell damage.",
 	"Sage": "Efficient mage. -25% mana costs, stronger Meditate.",
-	"Thief": "Crit specialist. +50% crit damage, +15% crit chance.",
+	"Grifter": "Crit specialist. +50% crit damage, +15% crit chance.",
 	"Ranger": "Beast hunter. +25% vs beasts, extra XP & Valor.",
 	"Ninja": "Escape artist. +40% flee, no damage when fleeing.",
 }
@@ -2673,7 +2673,7 @@ func _ready():
 	# Setup class options (9 classes: 3 Warrior, 3 Mage, 3 Trickster)
 	if class_option:
 		class_option.clear()
-		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Thief", "Ranger", "Ninja"]:
+		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
 			class_option.add_item(cls)
 		class_option.item_selected.connect(_on_class_selected)
 		_update_class_description()  # Set initial description
@@ -7577,7 +7577,7 @@ func show_player_info_popup(data: Dictionary):
 		var cur = data.get("current_mana", 0)
 		var total = data.get("total_max_mana", 1)
 		player_info_content.append_text("[color=#9999FF]Mana:[/color] %d / %d\n" % [cur, total])
-	elif cls in ["Thief", "Ranger", "Ninja"]:
+	elif cls in ["Grifter", "Ranger", "Ninja"]:
 		var cur = data.get("current_energy", 0)
 		var total = data.get("total_max_energy", 1)
 		player_info_content.append_text("[color=#66FF66]Energy:[/color] %d / %d\n" % [cur, total])
@@ -12498,7 +12498,7 @@ func _get_player_active_path() -> String:
 			return "warrior"
 		"Wizard", "Sorcerer", "Sage":
 			return "mage"
-		"Thief", "Ranger", "Ninja":
+		"Grifter", "Ranger", "Ninja":
 			return "trickster"
 		_:
 			return "warrior"
@@ -17074,7 +17074,7 @@ func _get_player_resource_info() -> Dictionary:
 				"mana_mult": 0.5, "stam_mult": 1.0, "energy_mult": 1.0,
 				"allowed_regens": ["stamina_regen"],
 			}
-		"Thief", "Ranger", "Ninja", "Trickster":
+		"Grifter", "Ranger", "Ninja", "Trickster":
 			return {
 				"label": "EN", "color": "#66FF66",
 				"mana_mult": 0.5, "stam_mult": 1.0, "energy_mult": 1.0,
@@ -17261,7 +17261,7 @@ func _display_computed_item_bonuses(item: Dictionary) -> bool:
 				resource_name = "Stamina"
 				resource_color = "#FFCC00"
 				scaled_total = int(mana_bonus * 0.5) + stam_energy_bonus
-			"Thief", "Ranger", "Ninja", "Trickster":
+			"Grifter", "Ranger", "Ninja", "Trickster":
 				resource_name = "Energy"
 				resource_color = "#66FF66"
 				scaled_total = int(mana_bonus * 0.5) + stam_energy_bonus
@@ -17337,7 +17337,7 @@ func _get_item_compare_value(item: Dictionary, stat: String) -> int:
 			match player_class:
 				"Wizard", "Sorcerer", "Sage":
 					return eff_mana + (eff_stam + eff_energy) * 2
-				"Fighter", "Barbarian", "Paladin", "Thief", "Ranger", "Ninja", "Trickster":
+				"Fighter", "Barbarian", "Paladin", "Grifter", "Ranger", "Ninja", "Trickster":
 					return int(eff_mana * 0.5) + eff_stam + eff_energy
 				_:
 					return eff_mana + eff_stam + eff_energy
@@ -17456,7 +17456,7 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 			resource_color = "#FFCC00"
 			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
 			old_scaled = int(old_eff_mana * 0.5) + old_eff_stam + old_eff_energy
-		"Thief", "Ranger", "Ninja", "Trickster":
+		"Grifter", "Ranger", "Ninja", "Trickster":
 			resource_label = "EN"
 			resource_color = "#66FF66"
 			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
@@ -17733,7 +17733,7 @@ func _display_item_comparison(new_item: Dictionary, old_item: Dictionary):
 			resource_label = "Stamina"
 			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
 			old_scaled = int(old_eff_mana * 0.5) + old_eff_stam + old_eff_energy
-		"Thief", "Ranger", "Ninja", "Trickster":
+		"Grifter", "Ranger", "Ninja", "Trickster":
 			resource_label = "Energy"
 			new_scaled = int(new_eff_mana * 0.5) + new_eff_stam + new_eff_energy
 			old_scaled = int(old_eff_mana * 0.5) + old_eff_stam + old_eff_energy
@@ -19079,7 +19079,7 @@ func _get_item_bonus_summary(item: Dictionary) -> String:
 				resource_name = "Stamina"
 				resource_color = "#FFCC00"
 				scaled_val = int(mana_val * 0.5)
-			"Thief", "Ranger", "Ninja", "Trickster":
+			"Grifter", "Ranger", "Ninja", "Trickster":
 				resource_name = "Energy"
 				resource_color = "#66FF66"
 				scaled_val = int(mana_val * 0.5)
@@ -26020,7 +26020,7 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 				resource_name = "Mana"
 			"Fighter", "Barbarian", "Paladin":
 				resource_name = "Stamina"
-			"Thief", "Ranger", "Ninja":
+			"Grifter", "Ranger", "Ninja":
 				resource_name = "Energy"
 		return "Restores %d + %d%% of max %s" % [tier_data.resource, tier_data.get("resource_pct", 0), resource_name]
 
@@ -26090,7 +26090,7 @@ func _get_item_effect_description(item_type: String, level: int, rarity: String)
 			"Fighter", "Barbarian", "Paladin":
 				resource_name = "Stamina"
 				scaled_bonus = int(mana_bonus * 0.5)
-			"Thief", "Ranger", "Ninja", "Trickster":
+			"Grifter", "Ranger", "Ninja", "Trickster":
 				resource_name = "Energy"
 				scaled_bonus = int(mana_bonus * 0.5)
 		return "+%d Max %s, +%d WIS, +%d WIT" % [scaled_bonus, resource_name, wis_bonus, wit_bonus]
@@ -32566,7 +32566,7 @@ func _get_class_passive(class_type: String) -> Dictionary:
 			return {"name": "Chaos Magic", "description": "25% double damage, 5% backfire. Affects: ALL attacks and abilities", "color": "#9400D3"}
 		"Sage":
 			return {"name": "Mana Mastery", "description": "25% reduced mana costs, +50% Meditate. Affects: All spells, Meditate", "color": "#20B2AA"}
-		"Thief":
+		"Grifter":
 			return {"name": "Backstab", "description": "+15% base crit, +50% crit damage (2x total). Affects: All attacks", "color": "#2F4F4F"}
 		"Ranger":
 			return {"name": "Hunter's Mark", "description": "+25% dmg vs beasts, +30% Valor/XP. Affects: Beast attacks, all rewards", "color": "#228B22"}
@@ -37522,7 +37522,7 @@ func _get_player_resource_for_combat() -> Dictionary:
 		cur = int(character_data.get("current_mana", 0))
 		max_v = maxi(1, int(character_data.get("total_max_mana", character_data.get("max_mana", 1))))
 		color = "#9999FF"
-	elif cls in ["Thief", "Ranger", "Ninja"]:
+	elif cls in ["Grifter", "Ranger", "Ninja"]:
 		cur = int(character_data.get("current_energy", 0))
 		max_v = maxi(1, int(character_data.get("total_max_energy", character_data.get("max_energy", 1))))
 		color = "#66FF66"

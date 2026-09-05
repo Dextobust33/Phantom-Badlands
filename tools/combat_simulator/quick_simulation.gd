@@ -8,7 +8,7 @@ const CombatEngine = preload("res://tools/combat_simulator/combat_engine.gd")
 const ResultsWriter = preload("res://tools/combat_simulator/results_writer.gd")
 
 # Reduced simulation configuration for quick testing
-var CLASSES = ["Fighter", "Wizard", "Thief"]  # One from each path
+var CLASSES = ["Fighter", "Wizard", "Grifter"]  # One from each path
 var LEVELS = [10, 50]  # Just two levels
 var GEAR_QUALITIES = ["average"]  # Just one gear quality
 var MONSTER_LEVEL_OFFSETS = [0, 10]  # Same level and +10

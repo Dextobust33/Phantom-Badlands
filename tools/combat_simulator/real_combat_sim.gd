@@ -192,7 +192,7 @@ func run_min_spend_probe() -> void:
 	var cases := [
 		["Wizard", "Mag", "magic_bolt"],
 		["Fighter", "War", "power_strike"],
-		["Thief", "Trk", "ambush"],
+		["Grifter", "Trk", "ambush"],
 	]
 	for lvl in [3, 6, 10, 30, 100]:
 		var line := "L%-4d" % lvl
@@ -290,7 +290,7 @@ func _debug_xp_dump():
 	for pair in [[20, 200], [20, 100], [50, 200], [20, 60]]:
 		var plvl: int = pair[0]
 		var mlvl: int = pair[1]
-		var ch = make_char(plvl, "average", "Thief")
+		var ch = make_char(plvl, "average", "Grifter")
 		var mon = make_monster(mlvl, "boss")
 		var base_xp: int = int(mon.get("experience_reward", 0))
 		var diff: int = mlvl - plvl
@@ -308,7 +308,7 @@ func run_overlevel_audit():
 	var N := 60
 	var plevels := [20, 60, 150]
 	var deltas := [0, 20, 40, 60, 90, 130]
-	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Thief", "Trk"]]
+	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Grifter", "Trk"]]
 	print("\n===== OVER-LEVEL REACH (%d fights/cell, AVERAGE gear, normal mob) =====" % N)
 	print("Win%% vs a monster at (player level + delta). 'Reliable' ~ >=60%%. Higher delta reachable = punches further above level.")
 	for pl in plevels:
@@ -342,7 +342,7 @@ func run_overlevel_audit():
 const ALL_CLASSES := [
 	["Fighter", "warrior"], ["Barbarian", "warrior"], ["Paladin", "warrior"],
 	["Wizard", "mage"], ["Sorcerer", "mage"], ["Sage", "mage"],
-	["Thief", "trickster"], ["Ranger", "trickster"], ["Ninja", "trickster"],
+	["Grifter", "trickster"], ["Ranger", "trickster"], ["Ninja", "trickster"],
 ]
 const ALL_RACES := ["Human", "Elf", "Dwarf", "Ogre", "Halfling", "Orc", "Gnome", "Undead"]
 
@@ -367,7 +367,7 @@ func run_newplayer_audit():
 		var row := "%-7d" % lvl
 		for g in ["gearless", "starter7", "starter7u", "starter7c", "average"]:
 			var wins := 0
-			for klass in ["Fighter", "Wizard", "Thief"]:
+			for klass in ["Fighter", "Wizard", "Grifter"]:
 				for i in range(int(N / 3.0)):
 					if run_fight(lvl, g, "normal", 1.0, 1.0, 1.0, klass).win:
 						wins += 1
@@ -399,7 +399,7 @@ func run_adjudicate_audit():
 		var a := _fight_stats_at(lvl, int(N / 3.0))
 		var wins := 0
 		var tot := 0
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			for i in range(int(N / 3.0)):
 				var r = run_fight(lvl, "average", "normal", 1.0, 1.0, 1.0, klass)
 				if r.win:
@@ -833,10 +833,10 @@ func run_progression_audit():
 	for et in ["normal", "elite", "boss"]:
 		print("")
 		print("--- %s ---" % et.to_upper())
-		print("%-7s %-22s %-22s %-22s" % ["Level", "Fighter", "Wizard", "Thief"])
+		print("%-7s %-22s %-22s %-22s" % ["Level", "Fighter", "Wizard", "Grifter"])
 		for lvl in PROGRESSION_LEVELS:
 			var row := "L%-6d" % lvl
-			for klass in ["Fighter", "Wizard", "Thief"]:
+			for klass in ["Fighter", "Wizard", "Grifter"]:
 				var wins := 0
 				var turns := 0
 				var mhp := 0.0
@@ -898,7 +898,7 @@ func run_underlevel_audit():
 	print("Win%% for a player at L, fighting a NORMAL monster at a fraction of their level,")
 	print("%d fights/cell, AVERAGE gear. 100%% with no HP lost = free XP forever." % N)
 	print("%-8s %-6s %s" % ["Class", "PlyrL", "  mob=L    mob=75%L   mob=50%L   mob=25%L   mob=10%L"])
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		for lvl in [50, 250, 1000, 5000]:
 			var row := "%-8s %-6d" % [klass, lvl]
 			for frac in [1.0, 0.75, 0.5, 0.25, 0.10]:
@@ -1147,7 +1147,7 @@ func run_reference_validate():
 		var wins := 0
 		var hp_cost := 0.0
 		var n := 0
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			for i in range(N / 3):
 				var ch = make_char(lvl, "average", klass)
 				var monster := make_monster(lvl, "normal", 1.0)
@@ -1236,7 +1236,7 @@ func run_companion_hp_probe():
 	print("%-8s %10s %10s %10s %10s" % ["level", "n", "median%", "worst%", "worst mult"])
 	for lvl in [1, 5, 10, 50, 100, 500, 1000, 5000, 10000]:
 		var vals: Array = []
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			for i in range(12):
 				var ch = make_char(lvl, "average", klass)
 				if not ch.has_active_companion():
@@ -1302,7 +1302,7 @@ func run_damage_tag_probe():
 	var checked := 0
 	var tagged := 0
 	var mismatched := 0
-	for cls in ["Wizard", "Fighter", "Thief"]:
+	for cls in ["Wizard", "Fighter", "Grifter"]:
 		var ch = make_char(60, "average", cls)
 		var monster := make_monster(60, "normal", 1.0)
 		monster["current_hp"] = int(monster.get("max_hp", 100000)) * 500   # survive the whole probe
@@ -1358,7 +1358,7 @@ func run_damage_tag_probe():
 	var kinds := {}
 	var multi_line_actions := 0
 	var total_actions := 0
-	for cls in ["Wizard", "Fighter", "Thief"]:
+	for cls in ["Wizard", "Fighter", "Grifter"]:
 		var ch2 = make_char(60, "average", cls)
 		var mon2 := make_monster(60, "normal", 1.0)
 		mon2["current_hp"] = int(mon2.get("max_hp", 100000)) * 200
@@ -1516,7 +1516,7 @@ func run_level_forensics():
 		var wins := {}
 		var runs := {}
 		var samples := 12
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			for i in range(samples * maxi(1, names.size())):
 				var ch = make_char(lvl, "average", klass)
 				var monster := make_monster(lvl, "normal", 1.0)
@@ -1846,7 +1846,7 @@ func run_outcome_probe():
 		var hp_grow_max := 1.0
 		var peak_over := 0
 		var peak_over_max := 1.0
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			by_class[klass] = {"win": 0, "death": 0, "escape": 0, "stall": 0}
 			for i in range(samples):
 				var ch = make_char(lvl, "average", klass)
@@ -1918,7 +1918,7 @@ func run_outcome_probe():
 			100.0 * cost_tot / n])
 		print("           cost min %.2f  max %.2f  NEGATIVE %d of %d" % [cost_min, cost_max, cost_neg, n])
 		print("           max-HP grew after start_combat: %d of %d (worst %.2fx);  in-fight HP exceeded php0: %d (worst %.2fx)" % [hp_grew, n, hp_grow_max, peak_over, peak_over_max])
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			var b = by_class[klass]
 			print("           %-8s win %d  death %d  escape %d  stall %d" % [klass, b["win"], b["death"], b["escape"], b["stall"]])
 	if not _probe_override:
@@ -1974,7 +1974,7 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 	var cost_tot := 0.0
 	var wins := 0
 	var n := 0
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		for i in range(samples):
 			var ch = make_char(level, gear, klass)
 			var monster := make_monster(level, "normal", 1.0)
@@ -2318,7 +2318,7 @@ func run_role_audit():
 			var cost_tot := 0.0
 			var wins := 0
 			var n := 0
-			for klass in ["Fighter", "Wizard", "Thief"]:
+			for klass in ["Fighter", "Wizard", "Grifter"]:
 				for i in range(samples):
 					var ch = make_char(lvl, "average", klass)
 					var monster := make_monster(lvl, role, 1.0)
@@ -2381,7 +2381,7 @@ func run_fallback_audit():
 
 	print("\n-- Durability, average gear (the divisor behind every cost%% figure) --")
 	print("%-10s %-11s %9s %9s %11s" % ["class", "archetype", "L30 maxHP", "L80 maxHP", "vs Fighter"])
-	for klass in ["Fighter", "Paladin", "Wizard", "Sorcerer", "Thief", "Ranger", "Ninja"]:
+	for klass in ["Fighter", "Paladin", "Wizard", "Sorcerer", "Grifter", "Ranger", "Ninja"]:
 		var a = make_char(30, "average", klass)
 		var b = make_char(80, "average", klass)
 		var fa = make_char(30, "average", "Fighter")
@@ -2530,7 +2530,7 @@ func run_xp_audit():
 		for role in ["normal", "empowered", "elite", "boss"]:
 			var xp_tot := 0.0
 			var n := 0
-			for klass in ["Fighter", "Wizard", "Thief"]:
+			for klass in ["Fighter", "Wizard", "Grifter"]:
 				for i in range(samples):
 					var r := _fight_for_xp(lvl, klass, role, lvl)
 					xp_tot += float(r.xp)
@@ -2554,7 +2554,7 @@ func run_xp_audit():
 			var turn_tot := 0.0
 			var wins := 0
 			var n := 0
-			for klass in ["Fighter", "Wizard", "Thief"]:
+			for klass in ["Fighter", "Wizard", "Grifter"]:
 				for i in range(samples):
 					var r := _fight_for_xp(lvl, klass, "normal", mlvl)
 					xp_tot += float(r.xp)
@@ -2604,7 +2604,7 @@ func run_risk_reward_audit():
 			var deaths := 0
 			var xp_tot := 0.0
 			var n := 0
-			for klass in ["Fighter", "Wizard", "Thief"]:
+			for klass in ["Fighter", "Wizard", "Grifter"]:
 				for i in range(samples):
 					var ch = make_char(lvl, "average", klass)
 					var monster := make_monster(mlvl, "normal", 1.0)
@@ -2766,7 +2766,7 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 	var wins := 0
 	var win_n := 0
 	var n := 0
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		for i in range(samples):
 			var ch = make_char(level, "average", klass)
 			var monster := make_monster(level, role, 1.0)
@@ -2946,7 +2946,7 @@ func run_species_audit():
 			var wins := 0
 			var turns := 0.0
 			var n := 0
-			for klass in ["Fighter", "Wizard", "Thief"]:
+			for klass in ["Fighter", "Wizard", "Grifter"]:
 				for i in range(samples):
 					var ch = make_char(lvl, "average", klass)
 					var monster = monster_db.generate_monster_by_name(nm, lvl, true)
@@ -3023,7 +3023,7 @@ func run_resource_economy_audit():
 	var cases := [
 		["Fighter", ["power_strike", "cleave", "devastate"]],
 		["Wizard", ["blast", "meteor", "magic_bolt"]],
-		["Thief", ["ambush", "exploit", "gambit"]],
+		["Grifter", ["ambush", "exploit", "gambit"]],
 	]
 	for lvl in [10, 50, 250, 1000]:
 		for c in cases:
@@ -3111,7 +3111,7 @@ func _species_win_at(nm: String, lvl: int, samples: int) -> Dictionary:
 	otherwise."""
 	var wins := 0
 	var n := 0
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		for i in range(samples):
 			var ch = make_char(lvl, "average", klass)
 			var monster = monster_db.generate_monster_by_name(nm, lvl, true)
@@ -3324,7 +3324,7 @@ func run_reference_curve():
 		var ehps: Array = []
 		var tps: Array = []
 		var ok := 0
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			var r := _measure_reference_at(lvl, klass)
 			if r.is_empty():
 				continue
@@ -3463,7 +3463,7 @@ func run_race_audit():
 	print("%-10s %s" % ["Race", "Fighter            Wizard             Thief"])
 	for race in ALL_RACES:
 		var row := "%-10s" % race
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			var wins := 0
 			var turns := 0
 			var mhp := 0.0
@@ -3486,7 +3486,7 @@ func run_difficulty_audit():
 	var levels := [3, 6, 10, 50, 200]  # #70 — added low levels (L3/L6) to expose low-level trivialization
 	var gears := ["under", "average", "bis"]
 	var enemies := ["normal", "elite", "boss"]
-	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Thief", "Trk"]]
+	var classes := [["Fighter", "War"], ["Wizard", "Mag"], ["Grifter", "Trk"]]
 	print("\n===== MONSTER-CHALLENGE AUDIT (%d fights/cell) =====" % N)
 	print("cell = Win%% Turns MinHP%% (per gear: under | average | bis). MinHP%% = lowest HP reached.")
 	for lvl in levels:
@@ -3521,7 +3521,7 @@ func run_hp_solve():
 	var N := 60
 	var mults := [2.0, 3.0, 4.0, 5.0]
 	print("\n===== #29 MONSTER-HP SOLVE (L50, War+Trk) — avgTurns@win%% per HP mult =====")
-	for c in [["Fighter", "War"], ["Thief", "Trk"]]:
+	for c in [["Fighter", "War"], ["Grifter", "Trk"]]:
 		for gear in ["average", "bis"]:
 			for et in ["elite", "boss"]:
 				var row := "%s %-8s %-5s" % [c[1], gear, et]
@@ -3548,7 +3548,7 @@ func run_resource_audit():
 	var levels := [10, 50, 200, 1000]  # include EXTREME level — system must hold to L1000+
 	var gears := ["average", "bis"]
 	var enemies := ["elite", "boss"]
-	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	var classes := [["Fighter", "War"], ["Grifter", "Trk"], ["Wizard", "Mag"]]
 	print("\n===== RESOURCE AUDIT (%d fights/cell) — does the pool ever bind? =====" % N)
 	print("MinRes%% high = pool never pressured (management dead). Watch it RISE with lvl/gear.")
 	print("%-4s %-4s %-8s %-6s %6s %7s %8s %8s %8s %7s" % ["Cls", "Lvl", "Gear", "Enemy", "Win%", "Turns", "Casts/t", "MinRes%", "EndRes%", "Pool"])
@@ -3688,7 +3688,7 @@ func run_ability_vs_hp():
 	var sets := [
 		["Fighter", "War", ["power_strike", "cleave", "devastate"]],
 		["Wizard", "Mag", ["magic_bolt", "blast", "meteor"]],
-		["Thief", "Trk", ["ambush", "exploit", "gambit"]],
+		["Grifter", "Trk", ["ambush", "exploit", "gambit"]],
 	]
 	print("
 ===== #6 ABILITY POWER vs MONSTER HP ACROSS THE WHOLE GAME (%d casts/cell) =====" % N)
@@ -3721,7 +3721,7 @@ func run_ability_efficiency():
 	var sets := [
 		["Fighter", "War", ["power_strike", "shield_bash", "cleave", "devastate"]],
 		["Wizard", "Mag", ["magic_bolt", "blast", "meteor"]],
-		["Thief", "Trk", ["ambush", "exploit", "gambit"]],
+		["Grifter", "Trk", ["ambush", "exploit", "gambit"]],
 	]
 	print("\n===== #55 ABILITY DAMAGE-PER-RESOURCE AUDIT (%d casts/cell) =====" % N)
 	print("Per-cast on a boss-HP target; finishers (devastate/meteor/gambit) = FLOOR (engines at 0).")
@@ -3759,7 +3759,7 @@ func run_cost_solve():
 	var N := 70
 	var levels := [10, 25, 50, 80]
 	var mults := [1.0, 1.5, 2.0, 3.0, 4.0, 6.0, 8.0]
-	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	var classes := [["Fighter", "War"], ["Grifter", "Trk"], ["Wizard", "Mag"]]
 	print("\n===== COST-CURVE SOLVE (avg gear, %d fights/cell) — MinRes%% per cost mult =====" % N)
 	print("Target: elite ~40-60%%, boss ~20-40%%. Read the mult that lands there per level.")
 	for c in classes:
@@ -3815,7 +3815,7 @@ func run_flock_chain(level: int, gear: String, klass: String, chain_len: int, et
 			turns += 1
 			if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 				var res0: int = _class_resource(ch, klass)
-				if klass == "Thief":
+				if klass == "Grifter":
 					_player_act_trickster(combat, ch)
 				elif klass == "Wizard":
 					_player_act_mage(combat, ch)
@@ -3852,7 +3852,7 @@ func run_flock_audit():
 	var K := 5
 	var levels := [10, 50, 80]
 	var gears := ["under", "average", "bis"]
-	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	var classes := [["Fighter", "War"], ["Grifter", "Trk"], ["Wizard", "Mag"]]
 	var et := "plain"  # flocks are trash mobs
 	print("\n===== FLOCK STRESS AUDIT (%d chains/cell, K=%d back-to-back, no refill) =====" % [N, K])
 	print("ChainMin%% = lowest pool%% across the whole chain (the safety floor for fix A).")
@@ -3882,7 +3882,7 @@ func run_baseline():
 	var levels := [10, 50, 80]
 	var gears := ["under", "average", "bis"]
 	var enemies := ["plain", "elite", "boss"]
-	var classes := [["Fighter", "War"], ["Thief", "Trk"], ["Wizard", "Mag"]]
+	var classes := [["Fighter", "War"], ["Grifter", "Trk"], ["Wizard", "Mag"]]
 	print("\n===== #29 BASELINE (%d fights/cell) =====" % N)
 	print("%-4s %-4s %-8s %-7s %6s %7s %7s" % ["Cls", "Lvl", "Gear", "Enemy", "Win%", "Turns", "Casts"])
 	for c in classes:
@@ -3959,7 +3959,7 @@ func run_trickster_matrix():
 				var wins := 0
 				var total_turns := 0
 				for i in range(FIGHTS_PER_CELL):
-					var r = run_fight(lvl, gear, et, 1.0, 1.0, 1.0, "Thief")
+					var r = run_fight(lvl, gear, et, 1.0, 1.0, 1.0, "Grifter")
 					if r.win:
 						wins += 1
 					total_turns += r.turns
@@ -4299,7 +4299,7 @@ static func _focus_stats_for(klass: String) -> Array:
 	player reaches them by farming epic+ rather than by farming a particular monster."""
 	if klass in ["Wizard", "Sorcerer", "Sage"]:
 		return ["mana_bonus", "mana_on_hit", "ability_rank_mage_dmg", "ability_rank_magic_bolt"]
-	if klass in ["Thief", "Ranger", "Ninja"]:
+	if klass in ["Grifter", "Ranger", "Ninja"]:
 		return ["energy_bonus", "energy_on_hit", "ability_rank_trickster_dmg"]
 	return ["stamina_bonus", "stamina_on_hit", "ability_rank_warrior_dmg"]
 
@@ -4347,7 +4347,7 @@ func _apply_class_kit(ch, klass: String, glevel: int, best_of: int, max_pieces: 
 	var path := "warrior"
 	if klass in ["Wizard", "Sorcerer", "Sage"]:
 		path = "mage"
-	elif klass in ["Thief", "Ranger", "Ninja"]:
+	elif klass in ["Grifter", "Ranger", "Ninja"]:
 		path = "trickster"
 	# Draw enough times to see each of the kit's bases, then keep the best per slot.
 	var by_slot := {}
@@ -4401,7 +4401,7 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 	var _primary := "strength"
 	if klass in ["Wizard", "Sorcerer", "Sage"]:
 		_primary = "intelligence"
-	elif klass in ["Thief", "Ranger", "Ninja"]:
+	elif klass in ["Grifter", "Ranger", "Ninja"]:
 		_primary = "dexterity"
 	while ch.unspent_stat_points > 0:
 		ch.spend_stat_point(_primary)
@@ -4816,7 +4816,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	}
 
 # #5 (2026-09-02) — these three used to re-derive the archetype by string-matching the
-# exact class ("Thief" / "Wizard", else stamina), so the other six classes silently read
+# exact class ("Grifter" / "Wizard", else stamina), so the other six classes silently read
 # the WRONG pool: a Sorcerer's cast-count was measured against its stamina bar. They now
 # ask the character, which is the one place the game itself decides (get_class_path).
 # The `klass` argument is kept for call-site compatibility and deliberately unused.
@@ -4936,7 +4936,7 @@ func _grow_spend_points(ch) -> void:
 	var primary := "strength"
 	if ch.class_type in ["Wizard", "Sorcerer", "Sage"]:
 		primary = "intelligence"
-	elif ch.class_type in ["Thief", "Ranger", "Ninja"]:
+	elif ch.class_type in ["Grifter", "Ranger", "Ninja"]:
 		primary = "dexterity"
 	var guard := 0
 	while ch.unspent_stat_points > 0 and guard < 4000:
@@ -5209,7 +5209,7 @@ func run_grow_audit():
 	print("The character hunts at the level it can SURVIVE, stepping down after a maul and back")
 	print("up after a comfortable win - and eats the real down-level XP penalty for doing so.")
 	print("%-9s %7s %7s %8s %6s %8s %7s %9s %6s" % ["class", "lived", "diedAt", "fights", "win%", "worstHP", "jumped", "upgrades", "slots"])
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		var lived := 0
 		var died_at: Array = []
 		var f_sum := 0
@@ -5323,7 +5323,7 @@ func run_grow_diag():
 	# prove the character it builds is the character it claims to build.
 	print("
 ===== GROW HARNESS INSTRUMENT CHECK =====")
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		var g = _grow_new_character(klass, "Human")
 		var m = make_char(1, "starter7", klass, "Human")
 		var gs := 0
@@ -5370,7 +5370,7 @@ One grown Fighter, encounter by encounter:")
 	print("Starter companion contribution (L1, 20 characters x 3 encounters per cell):")
 	print("%-9s %14s %14s %10s" % ["class", "with companion", "without", "delta"])
 	_grow_immortal = true
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		var rates: Array = []
 		for use_comp in [true, false]:
 			var w := 0
@@ -5452,7 +5452,7 @@ func run_grow_tune():
 		head += "%9s" % ("x%.2f" % m)
 	print(head)
 	_grow_immortal = true
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		for lvl in LEVELS:
 			var pooled: Array = []
 			for m in MULTS:
@@ -5517,7 +5517,7 @@ func run_policy_test():
 	var SUITES := [
 		{"klass": "Fighter", "field": "warrior", "policies": ["buff_first", "no_opener", "defensive", "momentum_hold"]},
 		{"klass": "Wizard", "field": "mage", "policies": ["rotation", "bolt_spam", "focus_ramp", "shield_first"]},
-		{"klass": "Thief", "field": "trickster", "policies": ["assassin", "damage_only", "deny_first", "outsmart_rush"]},
+		{"klass": "Grifter", "field": "trickster", "policies": ["assassin", "damage_only", "deny_first", "outsmart_rush"]},
 	]
 	for suite in SUITES:
 		_run_one_tournament(String(suite["klass"]), String(suite["field"]), suite["policies"], LEVELS, CHARS, N)
@@ -5612,7 +5612,7 @@ func run_tempo_audit():
 			head += "%7s" % ("t%d" % (t + 1))
 		head += "%9s%9s" % ["kill_t", "win%"]
 		print(head)
-		for klass in ["Fighter", "Wizard", "Thief"]:
+		for klass in ["Fighter", "Wizard", "Grifter"]:
 			var cohort: Array = []
 			for _c in range(CHARS):
 				var ch = _grow_new_character(klass, "Human")
@@ -5760,9 +5760,9 @@ func run_durability_audit():
 	# it, so a deep enough energy pool might lock a monster out indefinitely. `damage_only` never
 	# touches those cards, so the gap between the two rows is the size of the lock.
 	for entry in [["Fighter", "", ""], ["Wizard", "shield_first", ""], ["Wizard-noFF", "bolt_spam", ""],
-			["Thief", "", "deny_first"], ["Thief-noDeny", "", "damage_only"]]:
+			["Grifter", "", "deny_first"], ["Thief-noDeny", "", "damage_only"]]:
 		var label: String = String(entry[0])
-		var klass: String = "Wizard" if label.begins_with("Wizard") else ("Thief" if label.begins_with("Thief") else label)
+		var klass: String = "Wizard" if label.begins_with("Wizard") else ("Grifter" if label.begins_with("Grifter") else label)
 		if String(entry[1]) != "":
 			_mage_policy = String(entry[1])
 		if String(entry[2]) != "":
@@ -5876,7 +5876,7 @@ func run_grow_reference():
 	# Owner 2026-09-05: "you didn't mention tricksters, you should be testing them too."
 	# All three trickster classes, not Thief as a stand-in - Ranger and Ninja have different
 	# stat gains (Ninja DEX 1.25 vs Thief WITS 1.5) and 6k says that changes what levelling buys.
-	for klass in ["Fighter", "Wizard", "Thief", "Ranger", "Ninja"]:
+	for klass in ["Fighter", "Wizard", "Grifter", "Ranger", "Ninja"]:
 		for target in MILESTONES:
 			var slots_a := 0.0
 			var ilv_a := 0.0

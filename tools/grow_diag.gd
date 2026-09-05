@@ -4,7 +4,7 @@ func _init():
 	var sim = Sim.new()
 	get_root().add_child(sim)
 	await process_frame
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	for klass in ["Fighter", "Wizard", "Grifter"]:
 		var g = sim._grow_new_character(klass, "Human")
 		var m = sim.make_char(1, "starter7", klass, "Human")
 		var gslots := 0
