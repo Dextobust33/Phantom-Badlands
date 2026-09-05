@@ -197,6 +197,39 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ THE FIGHTER IS FIXED — closed 2026-09-05
+
+Went from the worst number on the board to on-target, by two changes and no guesswork.
+
+**Diagnosis** (`tempo` — cumulative share of the monster's bar by end of turn): the Fighter
+removed **6% of a health bar on turn one** against the Thief's 38%, stayed flat until Devastate
+cashed at t4, and needed **6.1 turns to kill** against the Wizard's 5.0 and the Thief's 2.1 —
+absorbing roughly three times as many monster turns. Its five-turn damage TOTAL already matched
+the Mage's (~1.68 bars vs ~1.66), so the fault was timing, never damage. That ruled out raising
+`ABILITY_WEIGHTS`, which would have inflated a ceiling that was already correct.
+
+**The trap:** the dead opening was the two buff turns, but `polytest` showed `buff_first` beats
+`damage_first`. The Fighter had to buff to survive AND lost the fight by doing it — so the cost
+was tempo, and tempo is what got refunded.
+
+**Fix:** warriors open combat with Iron Skin and Fortify already active. Tried at the floor-spend
+value first; that failed to resolve it (with floor protection, spending two turns for full
+buffs *still* won), so the stance opens at full strength.
+
+| | L1 | L5 | L10 | L20 |
+|---|---|---|---|---|
+| before | — | 22% | 22% | 8% |
+| after | 71% | 55% | 81% | 83% |
+
+**Policy confirmed, not assumed.** `buff_first` won two tournaments against five alternatives —
+`damage_first`, `defensive`, `momentum_hold`, and `no_opener` (which drops War Cry to buy back the
+last turn the Fighter still spends). It takes L1/L10/L20 and loses L5 to `defensive` by 15pp,
+inside the run-to-run variance seen elsewhere. War Cry earns its turn; no further change.
+
+**Knock-on, already applied:** the L20 difficulty anchor had been fitted against the 8% Fighter
+and was left over-correcting once the stance landed. Refitted 0.65 → 0.80. **The ordering rule
+this makes concrete: monster sizing is DOWNSTREAM of class fixes and must be done last.**
+
 ## ⚑ THE WIZARD FALLS OFF AT L20 — the Fighter problem with the classes swapped (2026-09-05)
 
 With the Warrior stance in and the L20 anchor refitted to 0.80, `growtune` at the live settings:
