@@ -29582,7 +29582,17 @@ func display_changelog():
 	# firing on a turn the player cast a card.
 	# v0.9.748 — card upgrades made visible, a percent-sign bug across 115 lines of player-facing
 	# text, the trickster survival deck, and companion power decoupled from the player's.
-	display_game("[color=#00FF00]v0.9.748[/color] [color=#808080](Current)[/color]")
+	# v0.9.749 — the follow-ups to 748: upgrades on the deck screen, one name per card,
+	# companion XP fixed in both paths, and equipment that actually drops early.
+	display_game("[color=#00FF00]v0.9.749[/color] [color=#808080](Current)[/color]")
+	display_game("  [color=#FF8000]★ YOUR COMPANION EARNED NOTHING IN CO-OP.[/color] Not a low amount — [b]zero[/b]. The party victory path never granted companion XP at all. In solo it was real but slow: measured in kills, your companion needed [b]1.2 to 2.4x as many[/b] as you to gain a level, worst in the early game where it is already weakest. Its share is now [b]20%%[/b] of a kill, which puts it roughly in step with you.")
+	display_game("  [color=#FF8000]★ EQUIPMENT ACTUALLY DROPS NOW.[/color] The early game was on the [b]stingiest drop table in the game[/b] — measured at [b]56 kills[/b] for your first piece at level 1, against 3 kills at level 100. No monster drops below [b]12%%[/b] any more, which brings it to [b]11-14 kills[/b] per piece at every level up to 50. Mid and late game are untouched.")
+	display_game("  [color=#1EFF00]◆ Card upgrades show on the deck screen too.[/color] Last release put them on the combat hover only; the deck builds its cards by a different route and missed out.")
+	display_game("  [color=#1EFF00]◆ Every card has ONE name now.[/color] Nine cards were called different things in combat and in the deck — the worst being [b]Arcane Surge[/b] in battle and [b]Haste[/b] in your deck, which reads as a missing card. Also Bolt/Magic Bolt, Strike/Power Strike, Bash/Shield Bash, Cry/War Cry, Field/Forcefield, Iron/Iron Skin, Heist/Perfect Heist and Steal/Pickpocket.")
+	display_game("  [color=#1EFF00]◆ New characters also get a Home Stone (Companion).[/color] It registers a companion to your Sanctuary, so your first one can outlive you — which is the whole loop.")
+	display_game("")
+
+	display_game("[color=#00FFFF]v0.9.748[/color]")
 	display_game("  [color=#FF8000]★ YOUR CARD UPGRADES WERE INVISIBLE.[/color] They were [b]working[/b] the whole time — every upgrade fires in combat — but nothing showed them to you after you picked one, so an upgraded card looked identical to a fresh one. Cards now [b]list the upgrades they carry[/b], with a count for stacked ones, and you can hover each name for what it does.")
 	display_game("  [color=#FF8000]★ COMPANIONS ARE YOUR INVESTMENT AGAIN.[/color] A companion's health and damage were derived from [b]its owner's[/b] stats, which had two absurd consequences: equipping +HP gear changed your companion's health bar, and [b]gaining a level made your companion weaker[/b] (671 → 474 HP for one level, measured). Both now come from the [b]companion's own level[/b] — stable whatever you wear, and rising only when you level the companion. The cap that stopped an over-levelled companion gaining anything past 2.5x is gone too: a companion far above your level is [b]supposed[/b] to carry you, that is what you invested in.")
 	display_game("  [color=#FF8000]★ NEW CHARACTERS START WITH GEAR.[/color] A fresh character had [b]nothing[/b], and measured a [b]5-28%%[/b] win rate against a 60%% target — four deaths in five fights. You now start with a full basic kit in every slot. It is the cheapest gear in the game and your first real drop will beat it, but it is the difference between playing and dying.")
