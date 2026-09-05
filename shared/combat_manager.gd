@@ -1747,6 +1747,41 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		if comp_wisdom_bonus > 0:
 			combat_state["companion_wisdom_bonus"] = comp_wisdom_bonus
 
+	# === WARRIOR OPENING STANCE (2026-09-05) ===
+	# A warrior braces before it engages, rather than spending the opening of every fight
+	# getting ready while something hits it.
+	#
+	# MEASURED (`tempo`, cumulative share of the monster's bar removed by end of turn, grown
+	# characters on tournament-winning policies):
+	#
+	#   level 5     t1    t2    t3    t4    t5   kill_t  win%
+	#   Fighter     6%   12%   24%   52%   66%      6.1   22%
+	#   Wizard     14%   34%   62%   77%   88%      5.0   83%
+	#   Thief      38%   50%   63%   69%   72%      2.1   75%
+	#
+	# The Fighter removes 6% of a health bar on turn one because turns one and two go to Iron
+	# Skin and Fortify. It then needs 6.1 turns to kill against the Thief's 2.1, so it absorbs
+	# about three times as many monster turns as anyone else - and that, not damage, is the whole
+	# 22%-vs-83% gap. Its five-turn damage total (~1.68 health bars) already matches the Mage's
+	# ~1.66; the problem is entirely WHEN it arrives.
+	#
+	# The trap this has to thread: `polytest` showed buff_first BEATS damage_first (88% vs 71% at
+	# L20), so the Fighter must buff to survive AND loses the fight by doing it. Raising
+	# ABILITY_WEIGHTS is the wrong lever - the totals are equal and it would inflate a ceiling
+	# that is correct. The cost is TEMPO, so tempo is what gets refunded.
+	#
+	# Opens at the FLOOR-spend value only (the same 0.3 ratio a minimum cast buys), so casting
+	# the cards properly still upgrades the magnitude and the decision stays live. This is a
+	# free opening, not a free maximum.
+	if character.get_class_path() == "warrior":
+		var _stance_str: int = character.get_effective_stat("strength")
+		var _stance_dr: int = maxi(1, int(60.0 * ABILITY_FLOOR_RATIO))
+		var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * ABILITY_FLOOR_RATIO))
+		character.add_buff("damage_reduction", _stance_dr, 4)
+		character.add_buff("defense", _stance_def, 5)
+		combat_state["warrior_stance_dr"] = _stance_dr
+		combat_state["warrior_stance_def"] = _stance_def
+
 	# Generate initial combat message
 	var msg = generate_combat_start_message(character, monster)
 
@@ -10399,6 +10434,9 @@ func _cycle_hand_after_attack(combat_state: Dictionary) -> void:
 #
 # One map, consulted by every resolver. A name added here reaches all of them; a name added
 # anywhere else is a bug.
+# The floor a minimum-spend cast buys, matching `floor_ratio` in the variable-cost table.
+const ABILITY_FLOOR_RATIO := 0.3
+
 const ABILITY_DISPLAY_NAMES := {
 	"tactical_retreat": "Recharge",
 	"vanish": "Phantom Strike",

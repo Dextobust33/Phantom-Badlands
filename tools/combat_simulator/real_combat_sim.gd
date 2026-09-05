@@ -4651,13 +4651,13 @@ func _warrior_defensive(combat: Dictionary, ch) -> void:
 	var hurt: bool = ch.current_hp < int(ch.get_total_max_hp() * 0.50)
 	if hurt:
 		for ab in ["iron_skin", "fortify"]:
-			if ab in hand and ch.get_buff_value("damage_reduction" if ab == "iron_skin" else "defense") <= 0:
+			if ab in hand and ch.get_buff_value("damage_reduction" if ab == "iron_skin" else "defense") < (40 if ab == "iron_skin" else 25):
 				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 					return
-	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") <= 0:
+	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") < 40:
 		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
 			return
-	if "fortify" in hand and ch.get_buff_value("defense") <= 0:
+	if "fortify" in hand and ch.get_buff_value("defense") < 25:
 		if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
 			return
 	if mom >= 4 and "devastate" in hand:
@@ -4674,7 +4674,7 @@ func _warrior_momentum_hold(combat: Dictionary, ch) -> void:
 	# Bank Momentum harder and cash a bigger Devastate, using the cheapest builder to get there.
 	var hand: Array = combat.get("combat_hand", [])
 	var mom: int = int(combat.get("momentum", 0))
-	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") <= 0:
+	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") < 40:
 		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
 			return
 	if mom >= 6 and "devastate" in hand:
@@ -4697,10 +4697,10 @@ func _warrior_buff_first(combat: Dictionary, ch) -> void:
 	# mitigation buffs UP (Iron Skin = damage_reduction, Fortify = defense) so it's the
 	# safest in long fights. Recast when they lapse (models buff uptime, which the old
 	# sim ignored — it only cast damage buffs, so the audit under-rated Warrior tankiness).
-	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") <= 0:
+	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") < 40:
 		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
 			return
-	if "fortify" in hand and ch.get_buff_value("defense") <= 0:
+	if "fortify" in hand and ch.get_buff_value("defense") < 25:
 		if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
 			return
 	# Opportunistic damage buff (once per fight): buff early for uptime (also builds Momentum).
