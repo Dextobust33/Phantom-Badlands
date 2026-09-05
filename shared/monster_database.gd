@@ -2087,7 +2087,24 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 # So this scale does nothing through level 10, where the curve is not at fault, and corrects only
 # the level-20 collapse.
 #
-# REFITTED 2026-09-05 after the Warrior opening stance, from 0.65 to 0.80. The 0.65 was fitted
+# RETIRED 2026-09-05 — every anchor is now 1.00 and this scale is a no-op.
+#
+# It existed to correct a level-20 collapse (Fighter 8%, Wizard 25%, Thief 55%) that turned out
+# to be three separate faults wearing one number: a Fighter that could not finish a fight, a
+# Trickster the SIMULATOR could not play, and a Wizard that genuinely falls off. The first two
+# were fixed at the source (opening stance; AI casting Assassinate and the denial cards), and
+# with the drop level floor the Fighter now reads 95% at L20 — so the nerf was weakening every
+# monster in the game to solve a problem that no longer existed.
+#
+# Kept as scaffolding rather than deleted: the anchors and `difficulty_scale_for_level` are the
+# hook a real `refcal` pass should replace, and the history below is why the hook is shaped this
+# way. If a future measurement needs a per-level correction, put it here.
+#
+# Its two-step history is the lesson: 0.65 fitted against a broken Fighter, then 0.80 once the
+# stance landed, then 1.00 once gear landed. Monster sizing is DOWNSTREAM of class and gear
+# fixes and cannot be settled before them.
+#
+# (Original note follows.) REFITTED 2026-09-05 after the Warrior opening stance, from 0.65 to 0.80. The 0.65 was fitted
 # against a Fighter measuring 8% at level 20; the stance took that class to 41% unaided, so the
 # nerf was compensating for a problem that no longer existed. Re-measured at scale 1.00 with the
 # stance in place:
@@ -2114,7 +2131,7 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 const DIFFICULTY_SCALE_ANCHORS := [
 	{"level": 1, "scale": 1.00},
 	{"level": 10, "scale": 1.00},
-	{"level": 20, "scale": 0.80},
+	{"level": 20, "scale": 1.00},
 ]
 
 static func difficulty_scale_for_level(level: int) -> float:
