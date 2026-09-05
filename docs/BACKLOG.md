@@ -216,9 +216,34 @@ rescue the Fighter puts the other two above 90%.
 The Fighter's worst cell is **L5 at 15%**, against Wizard 65% and Thief 81% at the same level.
 
 - [ ] **Fighter class-side fix — belongs to 6c.** Do NOT hide it by weakening every monster in
-      the game. Note `growref` shows the Fighter is not gear-starved relative to the others
-      (L15: ATK 79 / HP 289, against Wizard ATK 43 / HP 325), so the gap is in the kit or its
-      damage, not in what it finds
+      the game.
+
+      **What has been ruled OUT already:**
+      - *Strategy* — `buff_first` won its own tournament against three alternatives at every
+        level, so the Fighter is being played as well as we know how
+      - *Gear starvation* — `growref` at L15 gives the Fighter ATK 79 / HP 289 against the
+        Wizard's ATK 43 / HP 325. It out-attacks the Wizard comfortably
+      - *Raw per-cast damage* — `ABILITY_WEIGHTS` as shares of a health bar: Warrior cleave 0.28
+        / power_strike 0.22 / shield_bash 0.16, with Devastate at 0.14 PER MOMENTUM (0.56 at
+        Momentum 4, matching the Mage's 0.55 Magic Bolt). Over five turns the Warrior totals
+        ~1.68 bars against the Mage's ~1.66. On paper these are equal
+
+      **So the loss is not in the numbers, it is in WHEN they arrive.** The documented design is
+      "reliable and sustained, with the highest ceiling in the game behind the longest setup" —
+      but a normal fight is ~5 turns, and the Warrior spends two of them on Iron Skin / Fortify
+      and several more building Momentum, so its ceiling lands about when the fight is already
+      decided. The Mage's ceiling is available on turn one. Front-loaded beats back-loaded when
+      fights are short, and short fights are what trash monsters are.
+
+      Note the Wizard also ends up with MORE total HP than the Fighter at L15 (325 vs 289),
+      which inverts the archetype: the bruiser is not the tanky one.
+
+      - [ ] **Measure turns-to-kill and damage-by-turn per class before changing any number.**
+            If the hypothesis holds, the fix is front-loading (cheaper/faster Momentum, or a
+            Devastate floor that does not need the full ramp), NOT raising the weights — raising
+            weights would also raise the already-fine ceiling
+      - [ ] Re-check the Warrior's HP against the Mage's; a defensive bruiser measuring less
+            durable than a glass cannon is its own bug
 - [x] Difficulty scale retargeted accordingly: **1.00 through level 10** (the curve is not at
       fault there), **0.65 at level 20** (the collapse IS universal — Fighter 8%, Wizard 25%,
       Thief 55%). Reads roughly Fighter 55% / Wizard 70% / Thief 66% after
