@@ -2084,9 +2084,23 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 # 15-36%. That spread is a CLASS problem, and a single monster multiplier cannot serve it:
 # nerfing enough to rescue the Fighter would put the other two above 90%.
 #
-# So this scale does nothing through level 10, where the curve is not at fault, and corrects
-# only the level-20 collapse, which IS universal (Fighter 8%, Wizard 25%, Thief 55%). At 0.65
-# that reads roughly Fighter 55%, Wizard 70%, Thief 66%.
+# So this scale does nothing through level 10, where the curve is not at fault, and corrects only
+# the level-20 collapse.
+#
+# REFITTED 2026-09-05 after the Warrior opening stance, from 0.65 to 0.80. The 0.65 was fitted
+# against a Fighter measuring 8% at level 20; the stance took that class to 41% unaided, so the
+# nerf was compensating for a problem that no longer existed. Re-measured at scale 1.00 with the
+# stance in place:
+#
+#   L20 unaided:  Fighter 41%   Wizard 13%   Thief 75%
+#   60% crossing: Fighter ~0.85  Wizard ~0.77  Thief none needed
+#
+# The Thief no longer needs help here at all, and the residual collapse is the WIZARD at 13% -
+# which was never about the Fighter. Fitted to the two that still fall short.
+#
+# The ordering lesson, having now made it twice: the difficulty scale is DOWNSTREAM of class
+# fixes. Fit it against a broken class and it inherits the breakage; fix the class afterwards and
+# the scale is left over-correcting. Monster sizing goes LAST, after the player side is settled.
 #
 # The Fighter's 15-36% through level 10 is left for a class-side fix (backlog 6c) rather than
 # hidden by weakening every monster in the game - see THE FIGHTER IS THE WEAK CLASS in BACKLOG.
@@ -2100,7 +2114,7 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 const DIFFICULTY_SCALE_ANCHORS := [
 	{"level": 1, "scale": 1.00},
 	{"level": 10, "scale": 1.00},
-	{"level": 20, "scale": 0.65},
+	{"level": 20, "scale": 0.80},
 ]
 
 static func difficulty_scale_for_level(level: int) -> float:

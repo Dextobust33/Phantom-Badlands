@@ -4626,7 +4626,34 @@ func _player_act(combat: Dictionary, ch) -> void:
 		"damage_first": _warrior_damage_first(combat, ch)
 		"defensive": _warrior_defensive(combat, ch)
 		"momentum_hold": _warrior_momentum_hold(combat, ch)
+		"no_opener": _warrior_no_opener(combat, ch)
 		_: _warrior_buff_first(combat, ch)
+
+
+func _warrior_no_opener(combat: Dictionary, ch) -> void:
+	# buff_first without the once-per-fight damage buff. With the stance now opening at full
+	# strength, War Cry is the ONLY thing still costing the Fighter its first turn - `tempo`
+	# shows turn one at 5% of a health bar, which is companion damage and nothing else. If a
+	# turn of Cleave (0.28 of a bar) beats what the buff returns over the fight, this wins.
+	var hand: Array = combat.get("combat_hand", [])
+	var mom: int = int(combat.get("momentum", 0))
+	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") < 55:
+		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
+			return
+	if "fortify" in hand and ch.get_buff_value("defense") < 30:
+		if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
+			return
+	if mom >= 4 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	for ab in ["cleave", "shield_bash", "power_strike"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	if mom >= 1 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	combat_mgr.process_attack(combat)
 
 
 func _warrior_damage_first(combat: Dictionary, ch) -> void:
@@ -5484,7 +5511,7 @@ func run_policy_test():
 	# which is exactly the state where a hand-written guess is most likely to be leaving value
 	# on the table.
 	var SUITES := [
-		{"klass": "Fighter", "field": "warrior", "policies": ["buff_first", "damage_first", "defensive", "momentum_hold"]},
+		{"klass": "Fighter", "field": "warrior", "policies": ["buff_first", "no_opener", "defensive", "momentum_hold"]},
 		{"klass": "Wizard", "field": "mage", "policies": ["rotation", "bolt_spam", "focus_ramp", "shield_first"]},
 		{"klass": "Thief", "field": "trickster", "policies": ["assassin", "damage_only", "deny_first", "outsmart_rush"]},
 	]
