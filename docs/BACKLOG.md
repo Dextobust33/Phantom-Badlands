@@ -331,6 +331,34 @@ nerf apparently making a class WORSE, which is impossible. At n=4 characters the
 variance is real even with the fixed seed, because a code change shifts RNG consumption and
 therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
 
+## ⚑ THE GRIFTER IS THE STRONGEST CLASS, AND READ IS NOT WHY (2026-09-05)
+
+Current standing at x1.00, grown characters, tournament policies:
+
+| class | L1 | L5 | L10 | L20 |
+|---|---|---|---|---|
+| Fighter | 61% | 55% | 81% | 70% |
+| Wizard | 76% | 73% | 85% | 78% |
+| **Grifter** | **75%** | **80%** | **98%** | **88%** |
+
+**A failed nerf, recorded because the null result is the finding.** Long Con's double Read was
+changed from guaranteed to a 50% chance specifically to bring the Grifter down. It did nothing —
+L1 78→75, L5 78→80, L10 91→98, L20 91→88, all inside the ±10pp run-to-run variance at n=4.
+
+**Read was never the binding constraint.** The Grifter wins through Assassinate ending fights
+outright and Outsmart bypassing HP entirely; how fast Read accrues barely matters when the win
+condition fires regardless. The nerf was aimed at the lever that was easiest to reach rather than
+the one doing the work.
+
+- [ ] If the Grifter needs bringing down, the levers are **Outsmart reliability** or
+      **Assassinate's rate**, not Read. Measure which before touching either — the same mistake
+      twice would be careless
+- [ ] Note the Grifter's advantage GROWS with level (75 → 98 at L10) while the Fighter's does
+      not. Bypass-HP win conditions scale better than damage against monsters whose HP scales
+- [ ] **The Fighter is now the weakest class** (61/55/81/70), and L5 at 55% is under target. It
+      was fixed today from 22%, so this is not a regression — but the spread between best and
+      worst class is ~25pp and worth watching
+
 ## ⚑ CRIT AND GLANCE — SHIPPED to the tree 2026-09-05
 
 Abilities were deterministic: they always hit and could never crit. Now they are bracketed on
