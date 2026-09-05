@@ -197,6 +197,46 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ GEAR — the cause was item LEVEL, not drop rate (2026-09-05)
+
+Owner, from live: *"Most fights are a struggle because gear is scarce"*, and the proposed fix was
+richer HP/defense affixes with a drop rate to support them. The measurement says the affixes and
+the rate were never the problem.
+
+`growref` before: all seven slots FULL, rarity healthy (38% rare-or-better on the Thief), and yet
+`itemLv/lv` — average equipped item level as a fraction of character level — sat at **0.24-0.36**
+for four of five classes. A level-15 Thief in level-2 gear.
+
+**Cause:** `_generate_item(base, monster_level, ...)` generates loot at the MONSTER's level, and
+characters hunt below their own level to survive. Everything they can safely kill drops gear
+beneath them. With the down-level XP penalty on top, that is a closed loop — too weak to fight at
+level → weaker loot and slower levelling → still too weak.
+
+**Fix:** combat drops generate at `max(monster_level, 75% of the KILLER's level)`
+(`DROP_LEVEL_FLOOR_RATIO`, applied in `roll_combat_drops` so every combat path inherits it). It
+changes item LEVEL only — not drop chance, rarity, or affix magnitude — and the floor never binds
+when you punch above your weight, so killing something bigger still pays better.
+
+| class | itemLv/lv | HP@15 | epic+ |
+|---|---|---|---|
+| Fighter | 0.26 → **0.59** | 360 → 380 | 14% → **19%** |
+| Thief | 0.25 → **0.50** | 341 → **582** | 10% → **33%** |
+| Ranger | 0.36 → **0.53** | 328 → **660** | 10% → **29%** |
+| Ninja | 0.24 → **0.54** | 300 → **569** | 5% → **24%** |
+| Wizard | 0.60 → 0.58 | 399 → 332 | 24% → 10% |
+
+Effective gear level roughly doubled for the four starved classes. The Wizard is flat because it
+was never starved — it already hunted near its own level, which supports the diagnosis rather
+than contradicting it.
+
+- [ ] **Watch for a durability inversion.** Thief HP@15 is now 582 and Ranger 660 against the
+      Fighter's 380 — the same archetype-ordering fault that Forcefield caused, with tricksters
+      this time. Being verified with `durability`. If it holds, suspect the sim's equip rule
+      (`_grow_power` weights HP at 0.25 and a trickster's damage stat is WITS, which gear barely
+      supplies, so it hoards HP) before assuming the game is at fault
+- [ ] `fights`-to-level readings swung wildly (Wizard L15 460 → 9039). At n=3 that is variance,
+      not signal — do not tune progression against it
+
 ## ⚑ THE FIGHTER IS FIXED — closed 2026-09-05
 
 Went from the worst number on the board to on-target, by two changes and no guesswork.
