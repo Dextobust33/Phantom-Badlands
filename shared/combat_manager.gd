@@ -748,12 +748,18 @@ func player_crit_chance(character, combat: Dictionary) -> int:
 		crit_chance += int(float(fx.get("crit_chance_bonus", 0)) * 100.0)
 	crit_chance += int(character.get_crit_chance_bonus())
 	crit_chance += int(character.get_path_effect_total("crit_chance_pct"))
+	# 2026-09-05 — the cap now reads from config. `player_crit_max` existed in
+	# balance_config.json, was read into a local in calculate_damage, and was NEVER USED: the
+	# real cap was a hardcoded 75 at the roll. Anyone tuning the knob saw no effect, which is
+	# worse than not having one. The config value is corrected to 75 in the same change, so
+	# behaviour is unchanged and the knob is now live.
+	var _cap: int = int(cfg.get("player_crit_max", 75))
 	# Ninja "Killing Edge" — every crit landed this fight sharpens the next. Stored on the combat
 	# so it resets when the fight does and cannot be banked between encounters.
 	var esc: int = int(fx.get("crit_escalation", 0))
 	if esc > 0:
 		crit_chance += esc * int(combat.get("crit_escalation_stacks", 0))
-	return clampi(crit_chance, 0, 75)
+	return clampi(crit_chance, 0, _cap)
 
 func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dictionary, character = null, combat: Dictionary = {}, messages = null) -> int:
 	"""Apply 50% defense and level penalty to ability damage"""
@@ -9408,7 +9414,6 @@ func calculate_damage(character: Character, monster: Dictionary, combat: Diction
 	var dex_stat = character.get_effective_stat("dexterity")
 	var crit_base = cfg.get("player_crit_base", 5)
 	var crit_per_dex = cfg.get("player_crit_per_dex", 0.5)
-	var crit_max = cfg.get("player_crit_max", 25)
 	var crit_damage = cfg.get("player_crit_damage", 1.5)
 
 	# 2026-09-05 — this was ~60 lines of inline crit summation. Extracted to
