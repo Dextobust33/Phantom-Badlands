@@ -331,6 +331,40 @@ nerf apparently making a class WORSE, which is impossible. At n=4 characters the
 variance is real even with the fixed seed, because a code change shifts RNG consumption and
 therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
 
+## ⚑ THE BOOTSTRAP — high-level balance cannot be validated until the early game works
+
+Owner, 2026-09-05: *"We don't have anyone high level until we get the balance right and our to do
+list done we probably won't."*
+
+The live population is **L1-L19 apart from a single L45 character**. So every question of the form
+"how do high-level players actually behave?" is a question about people the current balance
+prevents from existing. That is a circular dependency, and it changes what "get it right" can
+mean at different levels:
+
+| range | evidence available | can it be verified? |
+|---|---|---|
+| L1-L25 | grown characters, real saves, owner's live reports | **yes, now** |
+| L25-L100 | `lootsim` (calibrated at L10), fitted gear curve | partly — model, not observation |
+| L100+ | extrapolation from the same model | **not until players get there** |
+
+**Consequences for how to work:**
+
+- Do NOT keep deferring on "we should measure high level first". The measurement that would
+  settle it does not exist yet and cannot be manufactured — `lootsim` is the best available
+  substitute precisely because no real high-level character exists to check it against
+- The early game is the gate on everything, INCLUDING the project's own ability to measure. Every
+  high-level question stays unanswerable until players can climb
+- So high-level work should be *plausible and cheap to revise*, not *perfected*. Anything tuned
+  hard against an unvalidated model is likely to be re-tuned once real characters arrive — the
+  same lesson the difficulty scale taught three times in one day, one level up
+- Conversely, the L1-L25 work IS verifiable today, and that is where every reported live problem
+  actually sits: new characters dying, gear scarce, progress stalling
+
+- [ ] **Weigh shipping the early-game pass sooner rather than later.** Not because it is perfect,
+      but because live players climbing past L20 is the only thing that produces the data the
+      rest of the balance work needs. The alternative is refining a model nobody can check
+      against a population that cannot form
+
 ## ⚑ SCOPE WARNING — every class number here covers L1-L20, and the game runs to L10000
 
 Owner, 2026-09-05: *"L20 is nowhere near end game. Not sure such a small level scope is anywhere

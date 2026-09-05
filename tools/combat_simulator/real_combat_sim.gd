@@ -5971,7 +5971,7 @@ func run_loot_sim():
 	print("
 ===== LOOT-ONLY GEAR PROFILE — no combat simulated =====")
 	print("Kills per level derived from the real XP curves; drops rolled through roll_drops.")
-	print("%-9s %6s %8s %9s %16s %8s %9s" % ["class", "lv", "kills", "itemLv/lv", "rar(c/u/r/e+)", "ATK", "HP"])
+	print("%-9s %6s %8s %8s %9s %16s %8s" % ["class", "lv", "kills", "k/level", "itemLv/lv", "rar(c/u/r/e+)", "ATK"])
 	for klass in ["Fighter", "Wizard", "Grifter"]:
 		for target in MILESTONES:
 			var ch = _grow_new_character(klass, "Human")
@@ -5988,7 +5988,23 @@ func run_loot_sim():
 				# player outgrows the danger, matching what the grow harness's adaptive hunt does.
 				var _hunt_gap: int = maxi(0, int(round(float(lv) * LOOTSIM_HUNT_GAP_FRAC)))
 				var mon = make_monster(maxi(1, lv - _hunt_gap), "normal", 1.0)
-				var xp_each: int = maxi(1, int(mon.get("experience_reward", 1)))
+				# Apply the REAL down-level XP penalty. Owner 2026-09-05: "Experience required per
+				# level may need to be reduced to account for players having to fight things
+				# under their level to survive as well if that's the normal."
+				#
+				# It is the normal, and the penalty interacts badly with it: the grace zone is
+				# `5 + level*0.03`, so hunting a FIXED FRACTION below your level stays inside the
+				# grace early and blows through it later. At L100 an 8% gap is 8 levels against a
+				# grace of 8 - free. At L1000 it is 80 levels against a grace of 35, which is
+				# past the -3%/level slope all the way to the 40% floor. So the same cautious
+				# behaviour that is free at level 100 costs 60% of your XP at level 1000.
+				var _raw_xp: float = float(maxi(1, int(mon.get("experience_reward", 1))))
+				var _under: float = float(_hunt_gap)
+				var _thresh: float = 5.0 + float(lv) * 0.03
+				var _xp_mult: float = 1.0
+				if _under > _thresh:
+					_xp_mult = maxf(0.4, 1.0 - minf(0.6, (_under - _thresh) * 0.03))
+				var xp_each: int = maxi(1, int(_raw_xp * _xp_mult * 1.10))
 				var need: int = maxi(1, ch.xp_required_for_next_level(lv))
 				var kills: int = clampi(int(ceil(float(need) / float(xp_each))), 1, 400)
 				total_kills += kills
@@ -6021,11 +6037,12 @@ func run_loot_sim():
 						"rare": rr += 1
 						_: re += 1
 			var tot := float(maxi(1, rc + ru + rr + re))
-			print("%-9s %6d %8d %9.2f  %3.0f/%2.0f/%2.0f/%2.0f%% %8d %9d" % [
+			print("%-9s %6d %8d %8.0f %9.2f  %3.0f/%2.0f/%2.0f/%2.0f%% %8d" % [
 				klass, target, total_kills,
+				float(total_kills) / float(maxi(1, target - 1)),
 				(ilv / float(maxi(1, filled))) / float(maxi(1, target)),
 				100.0 * rc / tot, 100.0 * ru / tot, 100.0 * rr / tot, 100.0 * re / tot,
-				ch.get_total_attack(), ch.get_total_max_hp()])
+				ch.get_total_attack()])
 	print("
 Compare itemLv/lv against the grown-character values (0.33 / 0.32 / 0.51 / 0.55 at")
 	print("L3/6/10/15). Where they agree, this method is validated and reaches any level.")
