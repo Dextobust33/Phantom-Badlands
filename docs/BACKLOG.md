@@ -331,6 +331,50 @@ nerf apparently making a class WORSE, which is impossible. At n=4 characters the
 variance is real even with the fixed seed, because a code change shifts RNG consumption and
 therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
 
+## ⚑ ALL FIVE MEASURED CLASSES, AFTER THE IDENTITY PASS (2026-09-05)
+
+At x1.00 — no monster nerf, grown characters, tournament policies:
+
+| class | L1 | L5 | L10 | L20 |
+|---|---|---|---|---|
+| Fighter | 61% | 55% | 81% | 70% |
+| Wizard | 76% | 73% | 85% | 78% |
+| Grifter | 75% | 80% | 98% | 88% |
+| **Ninja** | **41%** | 66% | 93% | 93% |
+| **Ranger** | 76% | 73% | **100%** | **98%** |
+
+### Ranger — Steady Hand needs LESS, not more
+
+Owner: *"I'm fine with the never glancing but I feel it may need more than just that, you can
+measure to find out."* Measured: no-glance **alone** makes the Ranger the strongest class at L10
+(100%) and L20 (98%).
+
+That is the mechanism behaving as expected — removing the downside roll is worth more the more
+casts a fight takes, so it compounds hardest where fights are longest. Shipping it as no-glance
+alone is what made this readable; a second effect stacked on top would have hidden it.
+
+- [ ] Bring Steady Hand down rather than adding to it. Options: glance chance REDUCED rather than
+      removed (e.g. halved), or no-glance only below some Read/turn count, or trade it against a
+      downside that fits "reliable but unspectacular" — lower crit, or no crit at all
+
+### Ninja — the right shape, a harsh floor
+
+41% at L1 climbing to 93% by L10. Killing Edge escalates from crits, and at level 1 with low DEX
+and short fights it never ramps — so the class is genuinely "builds toward crit", which is the
+identity asked for, but **41% is the worst cell on the board and it lands on brand-new players**.
+
+- [ ] Raise the floor without flattening the ramp. Options: higher base `crit_chance_bonus` with
+      smaller `crit_escalation`, escalation that also triggers on a NON-crit (bad-luck
+      protection, which makes the ramp reliable rather than lucky), or a low-level grace
+- [ ] Do NOT fix this by nerfing monsters at L1 — that is the mistake the retired difficulty
+      scale documents three times over
+
+### Spread
+
+L1 runs 41% (Ninja) to 76% (Wizard/Ranger) — a 35pp gap. L10 runs 81% to 100%. The classes are
+distinct now, which was the goal, but distinctness has arrived as a power spread rather than as
+different routes to a similar outcome.
+
 ## ⚑ THE GRIFTER IS THE STRONGEST CLASS, AND READ IS NOT WHY (2026-09-05)
 
 Current standing at x1.00, grown characters, tournament policies:
