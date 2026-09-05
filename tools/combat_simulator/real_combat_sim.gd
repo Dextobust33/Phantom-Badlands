@@ -138,6 +138,11 @@ func _run_selected_audits() -> void:
 		if not reg.has(name):
 			print("[sim] unknown audit '%s' — run with `-- list`" % name)
 			continue
+		# Reset to the REFERENCE PLAYER before every audit. The companion audits opt back in
+		# via _use_companions_for_this_audit(); resetting here rather than restoring inside each
+		# of them means an opt-in can never leak into whatever runs next, however the audits are
+		# ordered on the command line.
+		_companion_mode = "none"
 		reg[name][1].call()
 
 func _verify_party_combat() -> void:
@@ -1149,6 +1154,7 @@ func run_reference_validate():
 	print("=====================================================================\n")
 
 func run_companion_cap_probe():
+	_use_companions_for_this_audit()
 	"""Does the ceiling actually bind, and does a rarer variant still pay MORE?
 
 	Two things have to hold at once. The runaway must stop (it reached +1127% max HP), and
@@ -1175,6 +1181,7 @@ func run_companion_cap_probe():
 	print("=====================================================================\n")
 
 func run_companion_hp_probe():
+	_use_companions_for_this_audit()
 	"""How large is the companion's max-HP bonus, and does it scale with level?
 
 	`start_combat` applies it as `max_hp += get_total_max_hp() * pct / 100`, so the whole
@@ -2617,6 +2624,7 @@ func run_risk_reward_audit():
 	print("=====================================================================\\n")
 
 func run_companion_unlock_audit():
+	_use_companions_for_this_audit()
 	# #6b (user direction 2026-09-02) — WHY does a level-1 companion measure the same as no
 	# companion, when a companion is targetable (a damage sponge) and attacks every round?
 	#
@@ -4036,7 +4044,28 @@ var _gear_avg_level_ratio: float = 0.85  # item level as a fraction of character
 var _gear_avg_empty_chance: float = 0.0  # chance a slot is simply unfilled
 # Companion modelling for the companion audit: none / l1 / match (companion level = char
 # level) / x10 (a heavily over-levelled companion).
-var _companion_mode: String = "match"
+# 2026-09-04 — the REFERENCE PLAYER HAS NO COMPANION. Owner: "it should likely be removed from
+# the sim power measurement as companions are the way players progress and eventually break the
+# balance through their investment into their companions."
+#
+# That settles a tension the model carried all along. A companion is the INVESTMENT axis: it is
+# MEANT to outgrow the curve, and the point of levelling one is that it eventually trivialises
+# content. Calibrating monsters against a player who has one sizes the game against the reward
+# rather than the baseline — and it is why every companion change so far forced a full
+# recalibration.
+#
+# With the companion outside the measurement, monsters are sized against what a player brings on
+# their own and a companion is straightforwardly a bonus on top. Companion changes stop
+# invalidating the curve, which is what makes them shippable without the 25-minute chain.
+#
+# The audits that EXIST to measure companions opt back in explicitly — see the calls to
+# `_use_companions_for_this_audit()` in each.
+var _companion_mode: String = "none"
+
+func _use_companions_for_this_audit(mode: String = "match") -> void:
+	"""Opt this audit back into companions. The dispatcher resets the mode to the reference
+	player's before every audit, so an opt-in cannot leak into the next one."""
+	_companion_mode = mode
 # Fights per cell for the progression/companion sweeps. Overridable as `-- n=200 progression`
 # because conclusions about the whole game deserve tighter error bars than a spot check.
 var _audit_n: int = 40
