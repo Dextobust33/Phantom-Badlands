@@ -3985,13 +3985,30 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 				if _mon:  # outsmart win leaves monster at full HP — mark dead for the win check
 					_mon["current_hp"] = 0
 		return
+	# ASSASSINATE (perfect_heist) - the class's kill card, and the AI never played it. Owner
+	# 2026-09-05: "I'd like to know your strategies on each character type to ensure the problem
+	# isn't our strategy or ability and outsmart use." It was. The curated trickster deck is
+	# Analyze / Distract / Sabotage / Ambush / Assassinate / Sabotage, and this policy used only
+	# ambush, sabotage, distract and gambit - holding its win condition and never spending it.
+	if "perfect_heist" in hand:
+		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
+			return
+	# TURN DENIAL as survival. Owner 2026-09-04: Analyze / Distract / Sabotage "actually skip the
+	# enemies turn... I like that they skip the enemy turn at the cost of resource to help the
+	# trickster survive building up their Outsmart." That is the class's defensive mechanic and
+	# it was being used only as filler AFTER the damage cards, never when it was needed.
+	if float(ch.current_hp) / float(maxi(1, ch.get_total_max_hp())) < 0.60:
+		for ab in ["analyze", "distract", "sabotage"]:
+			if ab in hand:
+				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+					return
 	# Build Read with damage setups (these spend energy + add Read).
 	for ab in ["ambush", "exploit"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	# Filler builders (debuffs still add Read).
-	for ab in ["sabotage", "distract"]:
+	# Filler builders (debuffs still add Read, and deny the monster its turn).
+	for ab in ["sabotage", "distract", "analyze"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
@@ -4024,6 +4041,12 @@ func run_mage_matrix():
 func _player_act_mage(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
 	var focus: int = int(combat.get("focus", 0))
+	# FORCEFIELD - the mage's shield, and this policy never cast it. A glass cannon that never
+	# raises its guard measures as far more fragile than the class actually is, which is exactly
+	# the kind of instrument fault that gets read as a balance problem.
+	if "forcefield" in hand and ch.get_buff_value("shield") <= 0 and int(combat.get("forcefield_shield", 0)) <= 0 and ch.current_hp < int(ch.get_total_max_hp() * 0.70):
+		if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
+			return
 	# #36 — Overload before a burst when healthy (glass-cannon combo): sear HP to buff the
 	# next spell. Gated on high HP + no active damage buff so it can't loop or suicide.
 	if "overload" in hand and ch.get_buff_value("damage") <= 0 and ch.current_hp > int(ch.get_total_max_hp() * 0.55) and (("meteor" in hand and focus >= 2) or "magic_bolt" in hand):
