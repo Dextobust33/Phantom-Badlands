@@ -78,6 +78,7 @@ func _audit_registry() -> Dictionary:
 		"growdiag": ["is the grown character built correctly? (instrument check)", run_grow_diag],
 		"growref": ["EARNED gear profile per level - the reference make_char should encode", run_grow_reference],
 		"growtune": ["what monster nerf a grown player needs to hit target", run_grow_tune],
+		"polytest": ["run warrior strategies head to head and pick the best", run_policy_test],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -4487,7 +4488,82 @@ func make_monster(level: int, et: String, extra_hp_mult: float = 1.0) -> Diction
 	m["current_hp"] = m.get("max_hp", 1)
 	return m
 
+# Which warrior strategy to run. Owner 2026-09-05: "Attempt different strategies and find the
+# most efficient and build on those." Hand-written policies are guesses; `polytest` runs these
+# head to head on the SAME grown characters and lets the win rate choose.
+var _warrior_policy := "buff_first"
+
 func _player_act(combat: Dictionary, ch) -> void:
+	match _warrior_policy:
+		"damage_first": _warrior_damage_first(combat, ch)
+		"defensive": _warrior_defensive(combat, ch)
+		"momentum_hold": _warrior_momentum_hold(combat, ch)
+		_: _warrior_buff_first(combat, ch)
+
+
+func _warrior_damage_first(combat: Dictionary, ch) -> void:
+	# No setup at all - biggest affordable hit every turn. The control: if buffs are not paying
+	# for the turns they cost, this beats everything else.
+	var hand: Array = combat.get("combat_hand", [])
+	var mom: int = int(combat.get("momentum", 0))
+	if mom >= 4 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	for ab in ["cleave", "power_strike", "shield_bash"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	combat_mgr.process_attack(combat)
+
+
+func _warrior_defensive(combat: Dictionary, ch) -> void:
+	# Buff uptime PLUS a reaction: when the fight turns, spend the turn on mitigation rather
+	# than trading. The buff_first policy never reacts to being hurt at all.
+	var hand: Array = combat.get("combat_hand", [])
+	var mom: int = int(combat.get("momentum", 0))
+	var hurt: bool = ch.current_hp < int(ch.get_total_max_hp() * 0.50)
+	if hurt:
+		for ab in ["iron_skin", "fortify"]:
+			if ab in hand and ch.get_buff_value("damage_reduction" if ab == "iron_skin" else "defense") <= 0:
+				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+					return
+	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") <= 0:
+		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
+			return
+	if "fortify" in hand and ch.get_buff_value("defense") <= 0:
+		if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
+			return
+	if mom >= 4 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	for ab in ["cleave", "shield_bash", "power_strike"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	combat_mgr.process_attack(combat)
+
+
+func _warrior_momentum_hold(combat: Dictionary, ch) -> void:
+	# Bank Momentum harder and cash a bigger Devastate, using the cheapest builder to get there.
+	var hand: Array = combat.get("combat_hand", [])
+	var mom: int = int(combat.get("momentum", 0))
+	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") <= 0:
+		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
+			return
+	if mom >= 6 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	for ab in ["shield_bash", "power_strike", "cleave"]:
+		if ab in hand:
+			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+				return
+	if mom >= 1 and "devastate" in hand:
+		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
+			return
+	combat_mgr.process_attack(combat)
+
+
+func _warrior_buff_first(combat: Dictionary, ch) -> void:
 	var hand: Array = combat.get("combat_hand", [])
 	var mom: int = int(combat.get("momentum", 0))
 	# #55 identity pass (2026-08-27) — a real Warrior is a DEFENSIVE bruiser: keep its
@@ -5213,6 +5289,76 @@ func run_grow_tune():
 	_grow_immortal = false
 	print("
 Read across each row for the first cell at or above 60%.")
+	print("=====================================================================
+")
+
+
+func run_policy_test():
+	"""Run each warrior strategy head to head and let the win rate choose.
+
+	Owner 2026-09-05: "Attempt different strategies and find the most efficient and build on
+	those." Hand-written policies are guesses, and this file has now produced four instrument
+	defects that were really the AI failing to play the game (the Trickster never cast its kill
+	card; the Mage never raised its shield). A tournament is the answer to that class of error:
+	stop asserting which strategy is right and measure it.
+
+	Every policy is tested on the SAME grown characters at the same levels, so gear luck cannot
+	decide the winner - the only thing varying is the decision rule."""
+	var LEVELS := [1, 5, 10, 20]
+	var POLICIES := ["buff_first", "damage_first", "defensive", "momentum_hold"]
+	var CHARS := 3
+	var N := 20
+	print("
+===== WARRIOR STRATEGY TOURNAMENT =====")
+	print("%d grown characters x %d fights per cell, same characters across every policy." % [CHARS, N])
+	var head := "%-6s" % "lv"
+	for pol in POLICIES:
+		head += "%15s" % pol
+	print(head)
+	_grow_immortal = true
+	for lvl in LEVELS:
+		# Grow the cohort ONCE, then replay it through each policy.
+		var cohort: Array = []
+		for _c in range(CHARS):
+			var ch = _grow_new_character("Fighter", "Human")
+			var hunt := 1
+			var guard := 0
+			while ch.level < lvl and guard < 200000:
+				hunt = clampi(hunt, 1, ch.level + 20)
+				if randf() < _grow_gather_share(ch.level):
+					if not bool(_grow_gather(ch).ambushed):
+						continue
+				var enc = _grow_encounter(ch, hunt)
+				guard += int(enc.fights)
+				if bool(enc.fled) or float(enc.worst) < 0.50:
+					hunt = maxi(1, hunt - 1)
+				elif float(enc.worst) > 0.75:
+					hunt = mini(ch.level + 20, hunt + 1)
+				if int(enc.xp) > 0:
+					ch.add_experience(int(enc.xp))
+					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
+					_grow_spend_points(ch)
+				for d in (enc.drops as Array):
+					_grow_consider_item(ch, d)
+				_grow_recover(ch)
+			cohort.append(ch)
+		var row := "%-6d" % lvl
+		for pol in POLICIES:
+			_warrior_policy = pol
+			var w := 0
+			var tot := 0
+			for ch2 in cohort:
+				for i in range(N):
+					if _grow_scaled_fight(ch2, lvl, 1.0, 1.0):
+						w += 1
+					tot += 1
+			row += "%14d%%" % int(100.0 * float(w) / float(maxi(1, tot)))
+		print(row)
+	_warrior_policy = "buff_first"
+	_grow_immortal = false
+	print("
+Highest column wins. If buff_first is not it, the default policy has been")
+	print("under-rating the Warrior in every measurement taken so far.")
 	print("=====================================================================
 ")
 
