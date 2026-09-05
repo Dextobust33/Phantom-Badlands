@@ -80,6 +80,7 @@ func _audit_registry() -> Dictionary:
 		"growtune": ["what monster nerf a grown player needs to hit target", run_grow_tune],
 		"polytest": ["run warrior strategies head to head and pick the best", run_policy_test],
 		"tempo": ["WHEN each class deals its damage - the Fighter question", run_tempo_audit],
+		"durability": ["is the Fighter actually the tanky one? turns survived under fire", run_durability_audit],
 		"species": ["is the same level the same fight across monster types?", run_species_audit],
 		"speciescal": ["calibrate per-species power into a band", run_species_calibrate],
 		"races": ["all 8 races on one class", run_race_audit],
@@ -5643,6 +5644,96 @@ func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
 			cum[t] = cum[t - 1]
 	combat_mgr.end_combat(0, int(monster.get("current_hp", 0)) <= 0, false)
 	return {"cum": cum, "kill_turn": kill_turn}
+
+
+func run_durability_audit():
+	"""Is the Fighter actually the durable class? Owner 2026-09-05: "Fighter should be more
+	durable than the Mage typically."
+
+	Raw max HP is the wrong measure - it ignores defense, Iron Skin's damage reduction, the
+	Warrior opening stance and the Mage's Forcefield, all of which are durability. So this
+	measures the thing itself: put the character in a fight it CANNOT win (monster HP x200) and
+	count the monster turns it survives while playing its normal policy.
+
+	Also reports BASE max HP with gear stripped, to separate what the class formula grants from
+	what the sim's equip rule chose to wear."""
+	var LEVELS := [5, 10, 15]
+	var CHARS := 3
+	var N := 8
+	print("
+===== DURABILITY - monster turns survived in an unwinnable fight =====")
+	print("%d grown characters x %d fights per cell. baseHP strips gear; totalHP includes it." % [CHARS, N])
+	print("%-9s %5s %9s %9s %8s %10s" % ["class", "lv", "baseHP", "totalHP", "def", "turns_live"])
+	_grow_immortal = true
+	for klass in ["Fighter", "Wizard", "Thief"]:
+		for lvl in LEVELS:
+			var base_sum := 0.0
+			var tot_sum := 0.0
+			var def_sum := 0.0
+			var turn_sum := 0.0
+			var runs := 0
+			for _c in range(CHARS):
+				var ch = _grow_new_character(klass, "Human")
+				var hunt := 1
+				var guard := 0
+				while ch.level < lvl and guard < 200000:
+					hunt = clampi(hunt, 1, ch.level + 20)
+					if randf() < _grow_gather_share(ch.level):
+						if not bool(_grow_gather(ch).ambushed):
+							continue
+					var enc = _grow_encounter(ch, hunt)
+					guard += int(enc.fights)
+					if bool(enc.fled) or float(enc.worst) < 0.50:
+						hunt = maxi(1, hunt - 1)
+					elif float(enc.worst) > 0.75:
+						hunt = mini(ch.level + 20, hunt + 1)
+					if int(enc.xp) > 0:
+						ch.add_experience(int(enc.xp))
+						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
+						_grow_spend_points(ch)
+					for d in (enc.drops as Array):
+						_grow_consider_item(ch, d)
+					_grow_recover(ch)
+				base_sum += float(ch.max_hp)
+				tot_sum += float(ch.get_total_max_hp())
+				def_sum += float(ch.get_total_defense())
+				for i in range(N):
+					turn_sum += float(_durability_one_fight(ch, lvl))
+					runs += 1
+			var n := float(maxi(1, CHARS))
+			print("%-9s %5d %9d %9d %8d %10.1f" % [
+				klass, lvl, int(base_sum / n), int(tot_sum / n), int(def_sum / n),
+				turn_sum / float(maxi(1, runs))])
+	_grow_immortal = false
+	print("
+turns_live is the honest durability number: it counts defense, Iron Skin, the")
+	print("Warrior stance and Forcefield, none of which show up in a max-HP comparison.")
+	print("=====================================================================
+")
+
+
+func _durability_one_fight(ch, level: int) -> int:
+	# An unwinnable fight - the monster has 200x HP - so the only outcome is death, and the
+	# number of monster turns endured is a clean read on how long the class lives.
+	_grow_rest(ch)
+	var monster = make_monster(level, "normal", 200.0)
+	combat_mgr.start_combat(0, ch, monster)
+	if not combat_mgr.active_combats.has(0):
+		return 0
+	var combat = combat_mgr.active_combats[0]
+	var turns := 0
+	while turns < 300 and ch.current_hp > 0 and not combat.get("combat_ended", false):
+		turns += 1
+		if combat.get("player_can_act", true) and ch.current_hp > 0:
+			match ch.get_class_path():
+				"trickster": _player_act_trickster(combat, ch)
+				"mage": _player_act_mage(combat, ch)
+				_: _player_act(combat, ch)
+		if ch.current_hp <= 0 or combat.get("combat_ended", false):
+			break
+		combat_mgr.process_monster_turn(combat)
+	combat_mgr.end_combat(0, false, false)
+	return turns
 
 
 func run_grow_reference():
