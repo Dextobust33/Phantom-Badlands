@@ -5133,12 +5133,18 @@ func run_grow_tune():
 	measured at full health against a single normal monster, which is the cleanest read on
 	whether a fight is winnable at all; the compounding (flocks, carried damage, failed
 	retreats) sits on top of whatever this says."""
+	# 2026-09-05 - CHARS per cell, not one. The first version grew a SINGLE character per cell,
+	# so every number carried that character's gear luck rather than the level's difficulty. The
+	# tell was unmissable once the nerf landed: Wizard L5 read 75% before and 50% after, and a
+	# nerf cannot make a fight harder. Pooling several grown characters per cell costs more
+	# growing but is the difference between a measurement and an anecdote.
 	var LEVELS := [1, 5, 10, 20]
 	var MULTS := [1.0, 0.75, 0.5, 0.35, 0.25]
-	var N := 40
+	var CHARS := 4
+	var N := 15
 	print("
 ===== WHAT NERF DOES A GROWN PLAYER NEED? (target 60% at a normal fight) =====")
-	print("Monster HP and damage both scaled by the same multiplier. %d fights per cell." % N)
+	print("Monster HP and damage both scaled by the same multiplier. %d grown characters x %d fights per cell." % [CHARS, N])
 	var head := "%-9s %5s" % ["class", "lv"]
 	for m in MULTS:
 		head += "%9s" % ("x%.2f" % m)
@@ -5146,34 +5152,40 @@ func run_grow_tune():
 	_grow_immortal = true
 	for klass in ["Fighter", "Wizard", "Thief"]:
 		for lvl in LEVELS:
-			var ch = _grow_new_character(klass, "Human")
-			var hunt := 1
-			var guard := 0
-			while ch.level < lvl and guard < 200000:
-				hunt = clampi(hunt, 1, ch.level + 20)
-				if randf() < _grow_gather_share(ch.level):
-					if not bool(_grow_gather(ch).ambushed):
-						continue
-				var enc = _grow_encounter(ch, hunt)
-				guard += int(enc.fights)
-				if bool(enc.fled) or float(enc.worst) < 0.30:
-					hunt = maxi(1, hunt - 1)
-				elif float(enc.worst) > 0.60:
-					hunt = mini(ch.level + 20, hunt + 1)
-				if int(enc.xp) > 0:
-					ch.add_experience(int(enc.xp))
-					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
-					_grow_spend_points(ch)
-				for d in (enc.drops as Array):
-					_grow_consider_item(ch, d)
-				_grow_recover(ch)
-			var row := "%-9s %5d" % [klass, lvl]
+			var pooled: Array = []
 			for m in MULTS:
-				var w := 0
-				for i in range(N):
-					if _grow_scaled_fight(ch, lvl, m, m):
-						w += 1
-				row += "%8d%%" % int(100.0 * float(w) / float(N))
+				pooled.append(0)
+			for _c in range(CHARS):
+				var ch = _grow_new_character(klass, "Human")
+				var hunt := 1
+				var guard := 0
+				while ch.level < lvl and guard < 200000:
+					hunt = clampi(hunt, 1, ch.level + 20)
+					if randf() < _grow_gather_share(ch.level):
+						if not bool(_grow_gather(ch).ambushed):
+							continue
+					var enc = _grow_encounter(ch, hunt)
+					guard += int(enc.fights)
+					if bool(enc.fled) or float(enc.worst) < 0.30:
+						hunt = maxi(1, hunt - 1)
+					elif float(enc.worst) > 0.60:
+						hunt = mini(ch.level + 20, hunt + 1)
+					if int(enc.xp) > 0:
+						ch.add_experience(int(enc.xp))
+						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
+						_grow_spend_points(ch)
+					for d in (enc.drops as Array):
+						_grow_consider_item(ch, d)
+					_grow_recover(ch)
+				for mi in range(MULTS.size()):
+					var w: int = pooled[mi]
+					for i in range(N):
+						if _grow_scaled_fight(ch, lvl, float(MULTS[mi]), float(MULTS[mi])):
+							w += 1
+					pooled[mi] = w
+			var row := "%-9s %5d" % [klass, lvl]
+			for mi2 in range(MULTS.size()):
+				row += "%8d%%" % int(100.0 * float(pooled[mi2]) / float(CHARS * N))
 			print(row)
 	_grow_immortal = false
 	print("
