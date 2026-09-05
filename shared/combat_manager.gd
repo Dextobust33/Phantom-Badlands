@@ -3329,7 +3329,32 @@ func process_flee(combat: Dictionary) -> Dictionary:
 	# kills you in 2-3 turns was effectively impossible, which is what made the floor the
 	# binding constraint on every over-level fight. 25% per turn compounds to a real but
 	# uncertain out over the couple of turns a losing player has.
-	flee_chance = clamp(flee_chance, 25, 95)  # Hardcap 25-95%
+	# === DESPERATION (2026-09-05) ===
+	# Escape gets easier the worse the fight is going. Owner approved a flee buff after the
+	# arithmetic below; this shape was chosen over a flat raise because it targets the only case
+	# that matters without making flee spammable while you are winning.
+	#
+	# WHY THIS IS THE LOAD-BEARING FIX. Under permadeath, if losing a fight means dying, then a
+	# 60% win-rate target IS a 40% death rate per fight - death every 2.5 fights. Levelling takes
+	# several hundred fights, so survival is not merely unlikely, it is arithmetically impossible;
+	# even a 95% win rate dies around fight 20. No monster tuning reaches that, because tuning
+	# only changes how OFTEN you are in a losing fight, never what happens when you are. For a
+	# character to survive the fights a level costs, most losses have to end in escape.
+	#
+	# Owner, from live: "It's difficult to flee too as it is chance based" - and separately, that
+	# the only current survival is clever card play, which in practice largely means knowing when
+	# to leave. This makes leaving actually work.
+	#
+	# +40 points at zero HP, scaling linearly with the health you have lost, so a fight you are
+	# winning is unaffected and a fight that is killing you is usually escapable.
+	var _hp_frac: float = float(maxi(0, character.current_hp)) / float(maxi(1, character.get_total_max_hp()))
+	var _desperation: int = int((1.0 - _hp_frac) * 40.0)
+	if _desperation > 0:
+		flee_chance += _desperation
+
+	# Floor raised 25 -> 35 in the same pass: a 25% floor meant a quarter of desperate escapes
+	# from something far above you, which is the situation this is meant to survive.
+	flee_chance = clamp(flee_chance, 35, 95)
 
 	var roll = randi() % 100
 

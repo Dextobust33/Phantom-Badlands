@@ -4853,7 +4853,7 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 				# than standing there spamming it until they die. The first version of this
 				# loop never went back to attacking, which killed characters the game would not
 				# have killed: an instrument fault, not a difficulty finding.
-				if hp_frac < 0.35 and m_frac > 0.33 and flee_tries < 2:
+				if hp_frac < 0.50 and m_frac > 0.33 and flee_tries < 3:
 					flee_tries += 1
 					var fr = combat_mgr.process_flee(combat)
 					if fr.get("fled", false):
@@ -5204,7 +5204,7 @@ func run_grow_reference():
 	#
 	# Death is suppressed here on purpose: a real L45 character is by definition a SURVIVOR, so
 	# the profile worth encoding is the survivor's, not the average of everyone who tried.
-	var MILESTONES := [5, 10, 20, 30, 45]
+	var MILESTONES := [3, 6, 10, 15]
 	var RUNS := (_audit_n if _audit_n > 1 else 3)
 	print("
 ===== EARNED GEAR PROFILE - what a grown character actually carries =====")
@@ -5212,7 +5212,10 @@ func run_grow_reference():
 	print("itemLv/lv = average equipped item level as a fraction of character level")
 	print("%-9s %5s %6s %7s %9s %8s %8s %8s %8s" % ["class", "lv", "slots", "itemLv/lv", "rar(c/u/r/e+)", "ATK", "HP", "DEF", "fights"])
 	_grow_immortal = true
-	for klass in ["Fighter", "Wizard", "Thief"]:
+	# Owner 2026-09-05: "you didn't mention tricksters, you should be testing them too."
+	# All three trickster classes, not Thief as a stand-in - Ranger and Ninja have different
+	# stat gains (Ninja DEX 1.25 vs Thief WITS 1.5) and 6k says that changes what levelling buys.
+	for klass in ["Fighter", "Wizard", "Thief", "Ranger", "Ninja"]:
 		for target in MILESTONES:
 			var slots_a := 0.0
 			var ilv_a := 0.0
