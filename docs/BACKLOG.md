@@ -197,6 +197,62 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ NINE CLASSES, THREE CARD POOLS — the identity gap is structural (owner, 2026-09-05)
+
+Owner: *"we will want each class in each archetype to have their own identity. All three warrior,
+mage, and trickster identities should feel different enough that you know you're playing them."*
+
+**Card access is keyed to `get_class_path()` — the ARCHETYPE — not to the class.**
+`get_all_available_abilities` matches on the path and appends one of three fixed lists, and
+`grep -c 'class_type ==' shared/character.gd` returns **0**: there is not a single
+class-specific ability grant anywhere in the file.
+
+| archetype | the 9 cards ALL three classes draw |
+|---|---|
+| warrior | power_strike, war_cry, shield_bash, cleave, berserk, iron_skin, devastate, fortify, rally |
+| mage | magic_bolt, forcefield, blast, meteor, haste, paralyze, banish, frost_nova, overload |
+| trickster | analyze, distract, pickpocket, ambush, vanish, exploit, assassinate, sabotage, gambit |
+
+So the nine classes are three classes with three stat-curve variants each. Everything that
+distinguishes them is one passive plus per-level gains:
+
+| class | passive | per-level gains |
+|---|---|---|
+| Fighter | −20% stamina cost, +15% defense | STR 1.25 / CON .75 / DEX .25 / WIT .25 |
+| Barbarian | +3% dmg per 10% HP missing (max +30%), +25% stamina cost | STR 1.5 / CON .75 / DEX .25 |
+| Paladin | +3% combat regen, +25% vs undead | STR .75 / CON 1.0 / DEX .25 / WIS .25 / WIT .25 |
+| Wizard | +15% spell damage, +10% spell crit | INT 1.10 / WIS .75 / CON .40 / DEX .25 |
+| Sorcerer | 25% double damage, 5% backfire | INT 1.40 / WIS .50 / CON .35 / DEX .25 |
+| Sage | −25% mana cost, +50% meditate | WIS 1.0 / INT .75 / CON .5 / DEX .25 |
+| Thief | +35% crit damage, +10% crit chance | WITS 1.5 / DEX .75 / CON .25 |
+| Ranger | +25% vs beasts, +30% XP, +15% gathering | WITS 1.0 / DEX .75 / STR .25 / CON .5 |
+| Ninja | +40% flee, no damage on a failed flee | DEX 1.25 / WITS 1.0 / CON .25 |
+
+### And TWO of the trickster passives do nothing in a normal fight
+
+- **Thief — Backstab is inert.** Its whole passive is crit, and crit does not apply to abilities
+  (see the section above); a Trickster casts nearly every turn. The class's entire identity fires
+  only on basic attacks it rarely makes
+- **Ranger — Hunter's Mark is not a combat passive.** +25% vs beasts is situational and +30% XP /
+  +15% gathering are out-of-combat. Against a non-beast the Ranger has no passive at all
+- **Ninja — Shadow Step works**, and is the only trickster identity that functions as intended
+
+So of three trickster classes, one has a working combat identity, one has a situational one, and
+one has an identity that cannot fire. That is the concrete form of "they don't feel different".
+
+### Shape of the fix (design pass — NOT before the Fighter and the gear curve)
+
+- [ ] **Class-exclusive cards are the lever with the most identity per unit of work.** Two or
+      three per class, replacing shared slots rather than adding to them, so decks stay the same
+      size and the roster does not inflate. The architecture already supports per-card gating —
+      dungeon and companion cards are appended the same way
+- [ ] **Fix the two dead passives first** — they are cheaper than new cards and the Thief cannot
+      have a crit identity until the crit-on-abilities decision is made
+- [ ] Owner's specific direction: Thief flees easier, Ninja builds crit, Ranger takes the middle
+      ground — note this SWAPS the current Thief and Ninja passives (see below)
+- [ ] Warriors and mages are better differentiated than tricksters but still share every card;
+      the same question applies to Barbarian / Paladin / Sorcerer / Sage
+
 ## ⚑ CLASS IDENTITY WITHIN AN ARCHETYPE — the three tricksters are nearly one class (owner, 2026-09-05)
 
 Owner: *"the thief should be the one that can flee easier, ninja should be able to build towards
