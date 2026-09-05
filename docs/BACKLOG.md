@@ -197,48 +197,91 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
-## ⚑ UNRESOLVED — refcal and roles disagree by up to 47pp on the SAME curve (2026-09-04)
+## ⚑ RESOLVED IN PART — the 47pp gap was not what it looked like (2026-09-04, evening)
 
-**The calibration result of 2026-09-04 must not ship until this is understood.** Two audits
-measure normal-monster win rate at the same levels, on the same curve, with the same three
-classes and comparable sample sizes, and they disagree — increasingly with level:
+The prescribed test was run: *"measure normal win rate with a fresh independent probe and see
+which audit is right, rather than assuming `roles` is."* The `adjudicate` audit runs BOTH
+measurement paths in ONE process on ONE curve, 90 fights per cell.
 
-| level | refcal reports | roles measures | gap |
+| level | `_fight_stats_at` (refcal's path) | `run_fight` (roles' path) | gap |
 |---|---|---|---|
-| L10 | 73% | 66% | 7pp |
-| L50 | 75% | 53% | 22pp |
-| L250 | 56% | 33% | 23pp |
-| L1000 | 56% | 30% | 26pp |
-| L5000 | 67% | 20% | **47pp** |
+| L10 | 68% | 57% | 11pp |
+| L50 | 39% | 38% | 1pp |
+| L250 | 13% | 12% | 1pp |
+| L1000 | 10% | 17% | 7pp |
+| L5000 | 11% | 18% | 7pp |
 
-**What is established:**
+**The two measurement functions AGREE** — every gap is at or below the audit's own ~15pp
+systematic threshold. So the 47pp disagreement was never between the two methods, and the
+hypothesis as originally written ("one of these audits is measuring wrong") is **disproven**.
+The two audits were run at different times against DIFFERENT curve files; the curve was
+rewritten at `8727054` (20:05) after the 47pp note was recorded at `24b0212` (18:55).
 
-- `mcheck` confirms **the anchors are not what `make_monster` builds**, and the error grows with
-  level: at L1 made strength is 24 against an anchor of 37 (−35%); at L50 it is 659 against 461
-  (+43%); at L100, 2767 against 1991 (+39%)
-- `species_power` has **mean 1.436, median 1.300** — not 1.0. Every monster the game builds is
-  on average ~44% stronger than the base anchor. Committed history shows 1.264 before today, so
-  this is **pre-existing and got worse**, not something introduced by the 2026-09-04 work
-- both audits use `make_monster`, the same three classes and comparable n, so the disagreement
-  is **not** sampling, class mix, or monster selection
+### CONFIRMED defect 1 — `species_power` is not normalised, and it worsens with level
 
-**The likely cause, stated as a hypothesis and NOT yet proven:** `speciescal` is meant to own
-RATIOS between species while `refcal` owns the ABSOLUTE level, and that separation is what makes
-the chain converge in one pass. A species-power mean of 1.44 means the species layer is also
-moving the absolute — the exact two-layers-one-quantity failure the orthogonality rule exists to
-prevent. The repair would be to normalise `species_power` to mean 1.0 at each level after
-calibrating it, leaving the absolute entirely to `refcal`.
+The orthogonality half of the hypothesis is real and now quantified. `speciescal` is supposed to
+own RATIOS between species, leaving the absolute to `refcal`, which requires its mean to be
+**1.0 at every level**. It is not:
 
-- [ ] **Prove or disprove the hypothesis before changing anything.** The cheap decisive test is
-      to measure normal win rate at L5000 with a fresh independent probe and see which audit is
-      right, rather than assuming `roles` is
-- [ ] If confirmed: normalise `species_power` to mean 1.0 per level, then re-run the chain ONCE
-- [ ] Either way, re-check `mcheck` afterwards — anchors matching what is built is the property
-      that makes the whole model meaningful, and nothing currently asserts it
+| level | n | mean | median | min | max |
+|---|---|---|---|---|---|
+| 10 | 14 | 1.059 | 1.000 | 0.350 | 1.693 |
+| 50 | 25 | 1.202 | 1.171 | 0.586 | 2.062 |
+| 100 | 24 | 1.213 | 1.189 | 0.594 | 2.171 |
+| 250 | 19 | 1.275 | 1.278 | 0.609 | 2.500 |
+| 1000 | 16 | 1.341 | 1.374 | 0.628 | 1.979 |
+| 5000 | 14 | **1.566** | 1.493 | 1.000 | 2.346 |
 
-**Worth noting how it was caught:** by running the independent read-only audit after the
-calibration rather than trusting the calibrator's own report. `refcal` grades its own homework;
-`roles` does not. Any future calibration should be verified this way before it is believed.
+Every monster at L5000 is on average **57% stronger than the anchor `refcal` set**. The species
+layer is moving the absolute — the exact two-layers-one-quantity failure the orthogonality rule
+exists to prevent — and because the drift grows with level, it bends the whole curve rather than
+shifting it. (It was WORSE before `8727054`: L5000 mean 2.27, L1000 1.70.)
+
+- [ ] Normalise `species_power` to mean 1.0 **per level** after calibrating it — but NOT yet;
+      see defect 2, which blocks it
+
+### CONFIRMED defect 2 — the sim's PLAYER is wrong at high level, and it blocks the fix
+
+**This is the deeper blocker and it must be settled first.** `calibrate` (make_char vs real
+saved characters) fires its own slope warning:
+
+```
+Band      vs tier        HP      ATK     POOL     n
+naked     -           1.54x    1.96x    2.46x     2
+partial   under       1.23x    1.10x    2.18x     3
+geared    average     1.38x    1.58x    1.62x     5
+chase     bis         0.42x    0.20x    0.73x     1
+Level trend (ATK ratio): L6 2.09x  ->  L45 0.45x
+*** SLOPE WARNING: the model does not hold across levels — it is hot at L6 and
+    cold at L45. ... balance numbers taken from the far end of that range are
+    NOT trustworthy.
+```
+
+At L6 the sim player hits **2.09x** as hard as a real character; at L45, **0.45x**. Every
+measurement above is taken at L50-L5000 — the far end of exactly that range, extrapolated well
+past the last real character we have to fit against.
+
+**So the 7-18% win rates at L250+ are most likely an instrument artifact, not a live difficulty
+crisis.** Do not act on them. Specifically:
+
+- [ ] **Do NOT re-run the calibration chain yet.** `refcal` sizes monsters to hit a target win
+      rate FOR THE SIM PLAYER. Feed it a player that is less than half as strong as a real one
+      at high level and it will size monsters far too weak for the people actually playing —
+      shipping the inverse of the problem
+- [ ] Fix the **level-dependent gear model** first. The audit says what it needs: more real
+      characters to fit against. Only one real character exists above L14 (a L45 Ninja), and one
+      point cannot define a slope
+- [ ] Note the interaction with **6k**: that L45 real character is a Ninja, whose attack comes
+      almost entirely from gear because the class gains 0 STR/level. A gear model that undershoots
+      at high level will understate tricksters worst of all
+
+**Order:** defect 2 (player model) → re-measure → defect 1 (normalise `species_power`) → chain
+ONCE → re-check `mcheck`. Doing defect 1 first fits the species layer against a broken player.
+
+**Method note worth keeping:** the resolution came from running the two disputed measurements
+*in the same process against the same file*. Two numbers produced at different times against a
+file that changed in between are not a disagreement — they are two different questions. Record
+the curve's git hash alongside any win rate quoted in future.
 
 ## ⚑ 2026-09-04 — FOUR MORE instrument defects, and what they had in common
 
