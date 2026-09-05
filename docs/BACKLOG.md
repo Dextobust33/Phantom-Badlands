@@ -197,6 +197,40 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ THE WIZARD FALLS OFF AT L20 — the Fighter problem with the classes swapped (2026-09-05)
+
+With the Warrior stance in and the L20 anchor refitted to 0.80, `growtune` at the live settings:
+
+| class | L1 | L5 | L10 | L20 |
+|---|---|---|---|---|
+| Fighter | 71% | 55% | 81% | 83% |
+| Wizard | 85% | 68% | 76% | **41%** |
+| Thief | 66% | 71% | 83% | 61% |
+| **average** | 74% | 65% | 80% | **62%** |
+
+**The curve is now on target on average at every level** (62% at L20 against the 60% design
+target; the rest sit above it deliberately, since flocks, carried damage and failed retreats all
+compound on top of a single full-health fight).
+
+What remains is spread. At L20 the Fighter reads 83% and the Wizard 41% — and a single monster
+multiplier cannot serve that gap any more than it could serve the 36%-vs-91% spread at L1 earlier
+today. Nerfing far enough to rescue the Wizard puts the Fighter at 96%.
+
+- [ ] **Wizard L20 falloff is a CLASS item, not a curve item.** Unaided (scale 1.00) it measures
+      **13%** at L20 against the Fighter's 41% and the Thief's 75%. Diagnose it the way the
+      Fighter was: `tempo` for when its damage arrives, `durability` for how long it lives,
+      `polytest` for whether a better policy exists — before touching any number
+- Suspicion worth testing first: the Forcefield recast falloff landed today, and the Mage's
+  survival at L20 was the most shield-dependent of any cell (`durability`: 6.0 with the card
+  against 3.0 without, pre-fix). The falloff may have cost the Wizard more at L20 than anywhere
+  else. If so this is a cost of that fix rather than a pre-existing fault, and the falloff
+  constant is the lever
+
+**Measurement caution recorded with it:** the Thief read 75% at scale 1.00 and 61% at 0.80 — a
+nerf apparently making a class WORSE, which is impossible. At n=4 characters the run-to-run
+variance is real even with the fixed seed, because a code change shifts RNG consumption and
+therefore which characters get grown. Treat cell values as ±10pp and trust the row averages.
+
 ## ⚑ NINE CLASSES, THREE CARD POOLS — the identity gap is structural (owner, 2026-09-05)
 
 Owner: *"we will want each class in each archetype to have their own identity. All three warrior,
