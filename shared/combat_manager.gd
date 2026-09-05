@@ -1775,8 +1775,8 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# free opening, not a free maximum.
 	if character.get_class_path() == "warrior":
 		var _stance_str: int = character.get_effective_stat("strength")
-		var _stance_dr: int = maxi(1, int(60.0 * ABILITY_FLOOR_RATIO))
-		var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * ABILITY_FLOOR_RATIO))
+		var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO))
+		var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO))
 		character.add_buff("damage_reduction", _stance_dr, 4)
 		character.add_buff("defense", _stance_def, 5)
 		combat_state["warrior_stance_dr"] = _stance_dr
@@ -10471,6 +10471,20 @@ func _cycle_hand_after_attack(combat_state: Dictionary) -> void:
 # anywhere else is a bug.
 # The floor a minimum-spend cast buys, matching `floor_ratio` in the variable-cost table.
 const ABILITY_FLOOR_RATIO := 0.3
+
+# How strong the Warrior opening stance is, as a fraction of a full-spend cast.
+#
+# Opened at ABILITY_FLOOR_RATIO (0.3) first, on the reasoning that a free opening should not be a
+# free maximum. But `polytest` then showed the tension is not resolved by a weak stance: with it
+# in place, damage_first (attack from turn one, floor protection) still LOSES to buff_first
+# (spend two turns, full protection) - 36/38/56/60 against 35/46/60/78. So full-strength
+# mitigation is worth more than two turns of damage, and a floor stance just means the Fighter
+# pays the two turns anyway to upgrade it.
+#
+# The measured problem is that it needs BOTH: strong mitigation to survive its six-turn kill, and
+# the opening turns back to shorten it. A full-value stance grants exactly that and nothing else
+# - it does not raise ABILITY_WEIGHTS, whose totals already match the Mage's.
+const WARRIOR_STANCE_RATIO := 1.0
 
 const ABILITY_DISPLAY_NAMES := {
 	"tactical_retreat": "Recharge",
