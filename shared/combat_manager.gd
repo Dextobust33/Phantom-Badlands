@@ -68,6 +68,25 @@ const MITIGATION_VULN_CEIL := 1.45
 # HP model: an under-levelled companion still helps, and an over-levelled one is not scaled
 # down to its owner, because that is the player's investment.
 const COMPANION_DAMAGE_SHARE := 0.05
+# Share of a kill's XP that goes to the active companion. Raised 0.10 -> 0.20 on 2026-09-04.
+#
+# Reported from live: "the companions are only getting like 3 xp a kill or some very low number."
+# Arithmetically correct at 10% — a level-3 monster gives 32 XP — but measured in the unit that
+# matters, KILLS PER LEVEL, the companion needed 1.2-2.4x as many kills to level as its owner,
+# worst in the early game where it is already weakest:
+#
+#     level   kills / player level   kills / companion level
+#     L3               33                      80
+#     L10              16                      30
+#     L100             16                      19
+#
+# At 20% the companion levels roughly in step (1.2x at L3, ~1.0 by L5, faster above). That is
+# the intent — a companion is the investment axis and is meant to be able to outgrow its owner,
+# which it cannot do while it levels at half their rate.
+#
+# ONE constant, used by every grant site. The three sites had the 0.10 written out separately
+# and the party one had no grant at all, which is how a companion in co-op earned nothing.
+const COMPANION_XP_SHARE := 0.20
 # RETIRED 2026-09-04 — both were the owner-relative clamp on companion damage, and companion
 # power is no longer measured against its owner at all. The cap is the one that mattered: it
 # stopped an over-levelled companion gaining anything past 2.5x, which is precisely the
@@ -2868,7 +2887,7 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	# === COMPANION XP DISTRIBUTION ===
 	# Active companions gain 10% of monster XP
 	if character.has_active_companion():
-		var companion_xp = max(1, int(base_xp * 0.10))
+		var companion_xp = max(1, int(base_xp * COMPANION_XP_SHARE))
 		var companion_result = character.add_companion_xp(companion_xp)
 		character.increment_companion_battles()
 		if companion_result.leveled_up:
@@ -3604,7 +3623,7 @@ func process_outsmart(combat: Dictionary) -> Dictionary:
 		# === COMPANION XP DISTRIBUTION ===
 		# Active companions gain 10% of monster XP (same as normal victory)
 		if character.has_active_companion():
-			var companion_xp = max(1, int(base_xp * 0.10))
+			var companion_xp = max(1, int(base_xp * COMPANION_XP_SHARE))
 			var companion_result = character.add_companion_xp(companion_xp)
 			character.increment_companion_battles()
 			if companion_result.leveled_up:

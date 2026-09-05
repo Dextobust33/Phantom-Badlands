@@ -40597,6 +40597,16 @@ func _end_party_combat_all(leader_id: int, victory: bool, msgs: Array, log_entri
 			var _old_level: int = ch.level
 			var lvl_res = ch.add_experience(xp)
 			var _new_level: int = ch.level
+			# 2026-09-04 — COMPANION XP. Reported from live: "the companions are only getting
+			# like 3 xp a kill or some very low number. Seems to be in both solo and party."
+			# In party it was not low, it was ZERO: this path awarded the member's XP and never
+			# touched their companion, so a companion fighting beside you in co-op never gained
+			# a single point. Solo grants 10% of the kill through _process_victory_with_abilities;
+			# this is the same share, so the two paths finally agree.
+			var _comp_lvl_res = ch.add_companion_xp(maxi(1, int(xp * combat_mgr.COMPANION_XP_SHARE)))
+			if _comp_lvl_res.get("leveled_up", false):
+				send_to_peer(pid, {"type": "text", "message":
+					"[color=#00FFFF]Your companion reached level %d![/color]" % int(_comp_lvl_res.get("new_level", 0))})
 			var drops = combat_mgr.roll_combat_drops(monster, ch)
 			var _loot_lines: Array = []
 			var _gear_drops: Array = []
