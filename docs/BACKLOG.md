@@ -2194,64 +2194,72 @@ Three conclusions, in order of how much they change:
       less than the ~6.4pp noise of a 60-fight sample. Do not tune on the focus column until it
       is re-run at a larger n
 
-### 6k. **Tricksters level up two stats, and NEITHER of them is damage** (owner ask, 2026-09-04)
+### 6k. **A Ninja's biggest growth stat buys no damage, and stops paying at ~L24** (owner ask, 2026-09-04)
 
 Owner: *"Tricksters seem like they scale on Dex and Wit. Does that make sense? What does Dex
 actually do for Tricksters, what does Wit actually do, should they be reassessed?"*
 
-Audited by reading the real consumers — not recalled. **Both stats do genuine work.** The hole
-is elsewhere.
+Audited by reading the real consumers. **Both stats do real work, and tricksters DO have a
+damage stat — it is WITS, not DEX.**
 
-**Basic-attack damage, every class:**
-```
-base = get_total_attack()                    # = STR + gear STR + gear attack
-if class is Wizard/Sorcerer/Sage:
-    base = max(base, INT / 5)                # <- mages get a rescue branch
-base = int(base * (1 + STR * 0.02)) + 1d6    # STR again, multiplicatively
-```
-DEX and WITS appear **nowhere** in it. There is no trickster equivalent of the mage's `INT/5`
-floor.
+**Two separate damage paths, and they use different stats.**
 
-**Per-level STR gain** (`shared/character.gd:1633-1643`):
+*Basic attacks* (`calculate_damage`): `base = STR + gear_STR + gear_attack`, then
+`base * (1 + STR*0.02) + 1d6`. Mages get `base = max(base, INT/5)`. **Tricksters get no such
+branch, and gain 0.0 STR/level (Thief, Ninja) — so their basic attack never scales at all
+except through gear.**
 
-| class | STR/level | class | STR/level |
+*Ability damage* (`_ability_anchored_damage(character, stat_name, weight)`) scales on a stat
+passed per card, damped `sqrt(stat / (level + 13))`:
+
+| stat passed | cards |
+|---|---|
+| `strength` | 5 (warrior) |
+| `intelligence` | 4 (mage; WIS counts at half weight — `ABILITY_SECONDARY_STAT_WEIGHT`) |
+| **`wits`** | **2 — ambush, gambit** |
+| `dexterity` | **none** |
+
+**So WITS is the trickster damage stat and DEX is not a damage stat for anyone.**
+
+**What DEX actually does** (all classes): hit chance `75 + (DEX - monster_speed/2)`; crit chance
+`5 + DEX*0.5` **capped at 25**; dodge `min(30, DEX/5)`; initiative / ambush avoidance; flee
+`+1%/DEX`; energy pool.
+
+**What WITS actually does**: trickster ability damage; Outsmart `min(22, 9*log2(WIT/10))` plus
+modifiers; trickster HP primary (`WITS*0.5`); debuff magnitude `15 + WITS/3`; flee
+`(WITS - monster_speed)*0.5`; energy pool.
+
+**The actual defect is the allocation, not the stats.** Per-level gains
+(`shared/character.gd:1633-1643`):
+
+| class | DEX/lvl | WITS/lvl | STR/lvl |
 |---|---|---|---|
-| Barbarian | 1.5 | Wizard / Sage / Sorcerer | 0.0 |
-| Fighter | 1.25 | **Thief** | **0.0** |
-| Paladin | 0.75 | Ranger | 0.25 |
-| | | **Ninja** | **0.0** |
+| Thief | 0.75 | **1.5** | 0.0 |
+| Ranger | 0.75 | 1.0 | 0.25 |
+| **Ninja** | **1.25** | 1.0 | 0.0 |
 
-Mages also gain 0 STR — but they have the `INT/5` branch and gain 1.10-1.40 INT/level, so their
-attack still scales. **Thief and Ninja gain zero STR forever and have no substitute branch, so
-their basic-attack damage is frozen at creation-time STR plus whatever gear adds.** Levelling
-buys them no damage at all.
+Thief is fine — its growth is majority WITS, its damage stat. **Ninja pours its largest share
+(1.25/level, half of all growth) into DEX**, which buys crit only until the 25% cap — reached at
+DEX 40, roughly **level 24** — after which DEX buys dodge to its own 30% cap (DEX 150) and then
+nothing but hit chance and flee. Past ~L24 a Ninja's dominant stat gain is close to inert, while
+its damage stat grows at 1.0.
 
-**What DEX actually does** (all classes): initiative / ambush avoidance (`log(DEX + speed)`);
-hit chance `75 + (DEX - monster_speed/2)`; dodge `min(30, DEX/5)`; crit chance
-`5 + DEX*0.5` capped at **25**; flee `+1%/DEX`; energy pool `20 + (WITS + DEX)`.
+**Questions to settle** (design decision, not made):
+- is Ninja's DEX-heavy allocation intended, given DEX feeds no damage? Swapping Ninja toward
+  WITS-major (like Thief) is the smallest fix
+- should the DEX crit cap rise, or should crit *damage* scale with DEX past the chance cap, so
+  DEX keeps paying after L24?
+- should tricksters get a basic-attack floor mirroring the mage `INT/5` (e.g. `max(base, WITS/5)`)
+  so their auto-attacks are not frozen at creation-time STR?
+- only 2 of the trickster roster's cards are WITS-scaled — check whether the rest should be
 
-**What WITS actually does**: trickster HP primary (`WITS * 0.5`); energy pool; Outsmart chance
-`50 + WITS - monster_INT`; debuff magnitude `15 + WITS/3`; flee `(WITS - monster_speed) * 0.5`.
-It is the most-read stat in combat (13 `get_effective_stat` sites).
+**Prerequisite:** any of these changes player power, so re-run the full calibration chain after.
+Worth auditing all six stats the same way — CON feeds HP and defense but no damage, and that may
+well be correct.
 
-**The two caps make it worse.** A Ninja gains 1.25 DEX/level, so the 25% crit cap
-(`player_crit_max`, reached at DEX 40) lands around **level 24**. After that, DEX buys only
-dodge — itself capped at 30% (DEX 150) — plus hit chance and flee. So past roughly level 24 a
-Ninja's DEX gains stop buying offence entirely, and their WITS gains buy HP, Outsmart and
-debuffs but never damage.
-
-**So: the stats make thematic sense and both are real. The defect is that tricksters are the
-only archetype whose growth stats do not feed damage.** Their entire damage scaling is gear plus
-card upgrades. Options to weigh (design decision, not yet made):
-- give tricksters the mage treatment — a `max(base, DEX/5)` or `max(base, WITS/5)` floor
-- make the multiplicative term class-aware (`1 + primary_stat * 0.02`) rather than always STR
-- raise the DEX crit cap, or make crit *damage* scale with DEX past the chance cap
-- leave damage flat by design and lean harder on Outsmart/debuff/flee as the trickster win
-  condition — but then the class needs a stated damage ceiling and gear tuned for it
-
-**Prerequisite for any of it:** re-run the calibration chain afterwards. This changes player
-power. Also worth checking the same way: nothing outside the mage branch makes INT, WIS or CON
-feed damage either, so the audit should cover all six stats before anything is changed.
+**Player-facing text FIXED already (commit 1f9dcdf)**: the Character Stats page said DEX gave
+"Trickster damage" (false) and WIS gave "mana efficiency" (no such mechanic exists); the help
+block had a stale Outsmart coefficient and four wrong per-level gain rows.
 
 ### 6i. Themed class drops belong IN the drop table, and their coverage has holes
 *Owner direction 2026-09-04, out of the equipment enumeration. Placed before 6d because it is
