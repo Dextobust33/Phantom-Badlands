@@ -229,11 +229,21 @@ Effective gear level roughly doubled for the four starved classes. The Wizard is
 was never starved — it already hunted near its own level, which supports the diagnosis rather
 than contradicting it.
 
-- [ ] **Watch for a durability inversion.** Thief HP@15 is now 582 and Ranger 660 against the
-      Fighter's 380 — the same archetype-ordering fault that Forcefield caused, with tricksters
-      this time. Being verified with `durability`. If it holds, suspect the sim's equip rule
-      (`_grow_power` weights HP at 0.25 and a trickster's damage stat is WITS, which gear barely
-      supplies, so it hoards HP) before assuming the game is at fault
+- [x] **No durability inversion — checked, and the ordering holds.** `durability` at n=8:
+
+      | level | 5 | 10 | 15 |
+      |---|---|---|---|
+      | Fighter | 9.7 | 11.0 | 10.4 |
+      | Wizard | 7.0 | 11.1 | 10.1 |
+      | Thief | 3.3 | 7.3 | 6.3 |
+
+      Fighter ≥ Wizard > Thief throughout. **This is exactly why `turns_live` exists rather than
+      an HP comparison:** the Thief carries MORE total HP than the Fighter at L15 (545 vs 426)
+      and still dies in 6.3 turns to the Fighter's 10.4, because the Fighter has 60% damage
+      reduction from the stance. Raw HP would have reported an inversion that is not there.
+      Noted in passing: `Thief-noDeny` outlives `Thief` at every level (5.2/11.3/10.0 against
+      3.3/7.3/6.3), so turn-denial costs survival rather than buying it — consistent with the
+      earlier A/B, and a fact for the Trickster design pass rather than something to act on
 - [ ] `fights`-to-level readings swung wildly (Wizard L15 460 → 9039). At n=3 that is variance,
       not signal — do not tune progression against it
 
