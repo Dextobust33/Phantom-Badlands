@@ -197,6 +197,61 @@ box and the tooltip, so it reaches the card wherever it appears.
       `keen` shows the same number as an unupgraded one. Conditional upgrades arguably should not
       move a flat estimate, but the unconditional ones should
 
+## ⚑ TWO MITIGATION LOOPS, ONE REAL — test the ECONOMICS, not the shape (2026-09-05)
+
+Both looked identical from the outside: a card recast every turn that stops the player being
+hurt. One needed bounding and one did not, and the difference is the resource maths.
+
+### Forcefield — renewable, and it WAS the problem
+
+`durability` measures monster turns survived in an unwinnable fight (monster HP x200), which
+counts defense, Iron Skin, the Warrior stance and shields — none of which show in a max-HP
+comparison. Identical Wizard build, with the card and without:
+
+| level | 5 | 10 | 15 |
+|---|---|---|---|
+| Fighter | 8.1 | 6.9 | 5.7 |
+| Wizard **with** Forcefield | 10.5 | 7.0 | 6.0 |
+| Wizard **without** | 5.1 | 4.6 | 3.0 |
+
+Stripping it halved the Mage's survival, and without it the archetype ordering was already
+correct. **So the Fighter's durability was never the fault — the card was.** Base HP is Fighter
+210 > Wizard 148 > Thief 89 at L15, exactly right; the Mage was out-tanking the bruiser on 30%
+less HP. Owner: *"Fighter should be more durable than the Mage typically."*
+
+Fixed on **renewability, not magnitude** — the per-cast value is anchored to a share of the
+health bar and was already rebuilt once for being oversized, so cutting it again would only make
+the panic button weak. Each recast within a fight now absorbs 55% of the previous
+(100/55/30/17%), resetting between fights. After: Wizard 6.0 / 5.8 / 4.3, sitting between the
+unshielded floor and the Fighter at every level.
+
+### The Trickster stall — bounded already, and a change would have broken the class
+
+Owner: *"Before the only chance they had was to stall via monster turn skips (which also built
+read) and then attempt to outsmart once it was built. If it failed they had a very hard time
+with most other tactics aside from assassinate success. Gambits risk of self damage on an
+already squishy character was death back then as well."*
+
+The 16-turn stall was pencilled in as a second loop. It is not one. `analyze` costs a **flat 5
+energy** and there is **no baseline in-combat energy regen** — the `energy_regen` at
+`combat_manager.gd:810` is a gear affix (`cunning_prey` drops) and the on-hit restore is epic+
+chase. So:
+
+```
+L15 Thief: max_energy = 20 + (WITS + DEX) ≈ 20 + 37 + 24 = 81
+           81 / 5 per Analyze                            ≈ 16 casts
+measured                                                  16.0 turns
+```
+
+The pool divided by the cost, landing exactly — not a gear outlier. It also explains why denial
+LOSES the A/B at L5 and L10 (2.2 vs 3.9, 4.0 vs 6.1): below a pool depth, energy spent stalling
+is energy not spent killing.
+
+**The transferable rule: Forcefield costs a PERCENTAGE of a pool that regenerates, so it renews;
+Analyze costs a FLAT amount against a pool that does not, so it depletes. Same surface shape,
+opposite economics.** A sweep for "renewable mitigation" must test the resource maths, not the
+pattern — and must ask what a class would do instead before removing its only survival path.
+
 ## ⚑ THE FIGHTER IS THE WEAK CLASS — and the Thief never was (2026-09-05)
 
 Measured with `growtune` at x1.00 (no monster nerf), grown characters, tournament-winning
