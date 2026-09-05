@@ -350,9 +350,31 @@ outright and Outsmart bypassing HP entirely; how fast Read accrues barely matter
 condition fires regardless. The nerf was aimed at the lever that was easiest to reach rather than
 the one doing the work.
 
-- [ ] If the Grifter needs bringing down, the levers are **Outsmart reliability** or
-      **Assassinate's rate**, not Read. Measure which before touching either — the same mistake
-      twice would be careless
+- [x] **A/B DONE — Assassinate carries the class, and Outsmart is nearly redundant.** Four
+      policies on the same grown cohort, each removing one piece:
+
+      | lv | deny_first (full) | no_outsmart | no_heist | damage_only |
+      |---|---|---|---|---|
+      | 1 | 90% | 80% | **51%** | 46% |
+      | 5 | 76% | 80% | 75% | 56% |
+      | 10 | 98% | 96% | **61%** | 61% |
+      | 20 | 85% | 86% | **60%** | 60% |
+
+      Removing **Outsmart costs ~0-10pp**. Removing **Assassinate costs 25-39pp**. And
+      `damage_only` (keeps Assassinate, drops the denial cards) falls to 46/56/61/60, so the
+      **denial engine is worth ~30pp** in its own right.
+
+      So the class runs on **Assassinate + the stall**, with Outsmart contributing almost nothing.
+
+- [ ] **DESIGN PROBLEM, not just a balance one.** The stated identity is "stall to build Read,
+      then cash Outsmart" — and the stall works, but the payoff it builds toward has been
+      superseded. **Assassinate does the same job (bypass HP, end the fight) more reliably**, so
+      Read now ramps toward a button that is no longer the best one in hand. Either:
+      - make Outsmart the stronger finisher at high Read (so the ramp pays off as designed), or
+      - accept Assassinate as the finisher and re-point the Read ramp at something else, or
+      - gate Assassinate (rate, cost, once-per-fight) so it is the emergency and Outsmart is the plan
+- [ ] Whichever is chosen, **the lever to bring the Grifter down is Assassinate's rate, not Read
+      and not Outsmart** — halving Read already measured as no change at all
 - [ ] Note the Grifter's advantage GROWS with level (75 → 98 at L10) while the Fighter's does
       not. Bypass-HP win conditions scale better than damage against monsters whose HP scales
 - [ ] **The Fighter is now the weakest class** (61/55/81/70), and L5 at 55% is under target. It
