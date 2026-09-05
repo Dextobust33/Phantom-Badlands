@@ -4805,7 +4805,7 @@ func _grow_xp_multiplier(ch, monster_level: int) -> float:
 	var diff: int = monster_level - ch.level
 	if diff > 0:
 		var reference_gap := 10.0 + float(ch.level) * 0.05
-		return 1.0 + sqrt(float(diff) / reference_gap) * 0.7
+		return 1.0 + sqrt(float(diff) / reference_gap) * 2.0  # combat_manager: over-level bonus
 	elif diff < 0:
 		var under_gap := float(absi(diff))
 		var threshold := 5.0 + float(ch.level) * 0.03
@@ -4937,7 +4937,7 @@ func run_grow_audit():
 			var endhp_t := 0.0
 			var endhp_n := 0
 			while ch.level < TARGET and fights < CAP:
-				hunt = clampi(hunt, 1, ch.level)
+				hunt = clampi(hunt, 1, ch.level + 20)
 				# Some of the time the player is gathering, not hunting - still out in the
 				# world, still ambushable, but paying better XP early than a kill does.
 				if randf() < _grow_gather_share(ch.level):
@@ -4959,7 +4959,7 @@ func run_grow_audit():
 				if bool(enc.fled) or float(enc.worst) < 0.30:
 					hunt = maxi(1, hunt - 1)
 				elif float(enc.worst) > 0.60:
-					hunt = mini(ch.level, hunt + 1)
+					hunt = mini(ch.level + 20, hunt + 1)
 				if int(enc.xp) > 0:
 					ch.add_experience(int(enc.xp))
 					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
@@ -5150,7 +5150,7 @@ func run_grow_tune():
 			var hunt := 1
 			var guard := 0
 			while ch.level < lvl and guard < 200000:
-				hunt = clampi(hunt, 1, ch.level)
+				hunt = clampi(hunt, 1, ch.level + 20)
 				if randf() < _grow_gather_share(ch.level):
 					if not bool(_grow_gather(ch).ambushed):
 						continue
@@ -5159,7 +5159,7 @@ func run_grow_tune():
 				if bool(enc.fled) or float(enc.worst) < 0.30:
 					hunt = maxi(1, hunt - 1)
 				elif float(enc.worst) > 0.60:
-					hunt = mini(ch.level, hunt + 1)
+					hunt = mini(ch.level + 20, hunt + 1)
 				if int(enc.xp) > 0:
 					ch.add_experience(int(enc.xp))
 					ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))
@@ -5217,7 +5217,7 @@ func run_grow_reference():
 				var hunt := 1
 				var fights := 0
 				while ch.level < target and fights < 200000:
-					hunt = clampi(hunt, 1, ch.level)
+					hunt = clampi(hunt, 1, ch.level + 20)
 					if randf() < _grow_gather_share(ch.level):
 						if not bool(_grow_gather(ch).ambushed):
 							continue
@@ -5226,7 +5226,7 @@ func run_grow_reference():
 					if bool(enc.fled) or float(enc.worst) < 0.30:
 						hunt = maxi(1, hunt - 1)
 					elif float(enc.worst) > 0.60:
-						hunt = mini(ch.level, hunt + 1)
+						hunt = mini(ch.level + 20, hunt + 1)
 					if int(enc.xp) > 0:
 						ch.add_experience(int(enc.xp))
 						ch.add_companion_xp(int(round(float(enc.xp) * CombatManager.COMPANION_XP_SHARE)))

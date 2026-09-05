@@ -2033,11 +2033,22 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 func _calculate_experience_reward(hp: int, strength: int, defense: int, level: int) -> int:
 	"""Calculate XP reward - balanced for ~45 kills per level on average.
 	   Lethality significantly affects XP: weak monsters give less, tough ones more."""
+	# NOTE: XP is derived from the monster's own stats, so any nerf to monster HP / strength
+	# also cuts the XP it pays - down to the 0.7 floor on lethality_bonus below, i.e. up to 30%
+	# less per kill. A difficulty nerf is therefore partly a progression nerf; check both when
+	# tuning either.
 	var lethality = hp + (strength * 2) + defense
 
 	# Target: ~45 kills per level on average (range 35-60 based on lethality)
-	# XP_needed = pow(level+1, 2.2) * 50
-	# XP_reward = XP_needed / 45 = pow(level+1, 2.2) * 1.11
+	# XP_reward = pow(level+1, 2.2) * 1.11, which WAS exactly XP_needed / 45.
+	#
+	# 2026-09-05 — that identity no longer holds below level 9, ON PURPOSE. The requirement
+	# side (Character.xp_required_for_next_level) now carries an early discount that fades out
+	# by level 9, while this reward is deliberately left on the original curve. The gap between
+	# them IS the fix: it drops the early game from ~45 kills per level to ~19, where a new
+	# character was dying long before it could bank 45. Coupling the two again would restore
+	# 45 kills per level everywhere and undo it, so they are intentionally decoupled and this
+	# comment is the record of why.
 	var base_xp = pow(level + 1, 2.2) * 1.11
 
 	# Lethality bonus: weak monsters (0.7x) to tough monsters (1.4x)

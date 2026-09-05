@@ -2749,8 +2749,23 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	if xp_level_diff > 0:
 		var reference_gap = 10.0 + float(character.level) * 0.05
 		var gap_ratio = float(xp_level_diff) / reference_gap
-		# sqrt provides diminishing returns: +70% at gap_ratio 1, +140% at 4, +210% at 9
-		xp_multiplier = 1.0 + sqrt(gap_ratio) * 0.7
+		# 2026-09-05 — coefficient 0.7 -> 2.0. Owner: "We may also want to considerably
+		# increase xp bonus for fighting things above your level."
+		#
+		# At 0.7 a level-1 character fighting FIVE levels up earned +49% XP, and ten levels up
+		# +70%. Against permadeath that is not a gamble anyone should take: the fight is far more
+		# than 70% harder. It also left the only fast route through the ~45-kills-per-level
+		# baseline closed, and undercut the Trickster identity of killing things bigger than the
+		# warrior can. At 2.0 the same fights pay +141% and +200%.
+		#
+		#   gap:      +2     +5    +10    +20   (at level 1, reference_gap 10.05)
+		#   before: 1.31x  1.49x  1.70x  1.99x
+		#   after:  1.89x  2.41x  3.00x  3.83x
+		#
+		# sqrt is kept so the curve still flattens - the reward for a 50-level gap stays within
+		# reach of a 20-level one, and the thing that actually caps this is the win rate, which
+		# falls off a cliff long before the multiplier does.
+		xp_multiplier = 1.0 + sqrt(gap_ratio) * 2.0
 		var bonus_pct = int((xp_multiplier - 1.0) * 100)
 		if xp_tier_diff > 0:
 			messages.append("[color=#FF00FF]* TIER CHALLENGE: +%d%% XP! *[/color]" % bonus_pct)
