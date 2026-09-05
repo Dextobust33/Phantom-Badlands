@@ -3964,7 +3964,7 @@ func run_trickster_matrix():
 				print("%-6d %-9s %-10s %7.0f%% %8.1f" % [lvl, gear, et, 100.0*float(wins)/FIGHTS_PER_CELL, float(total_turns)/FIGHTS_PER_CELL])
 	print("=====================================================================\n")
 
-var _trickster_policy := "assassin"
+var _trickster_policy := "deny_first"  # tournament winner: +7pp at L10, +8pp at L20
 
 func _player_act_trickster(combat: Dictionary, ch) -> void:
 	match _trickster_policy:
@@ -4112,7 +4112,7 @@ func run_mage_matrix():
 				print("%-6d %-9s %-10s %7.0f%% %8.1f" % [lvl, gear, et, 100.0*float(wins)/FIGHTS_PER_CELL, float(total_turns)/FIGHTS_PER_CELL])
 	print("=====================================================================\n")
 
-var _mage_policy := "rotation"
+var _mage_policy := "shield_first"  # tournament winner: beats rotation at every level
 
 func _player_act_mage(combat: Dictionary, ch) -> void:
 	match _mage_policy:
