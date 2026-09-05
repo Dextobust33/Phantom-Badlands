@@ -4017,6 +4017,9 @@ func _ability_anchored_damage(character, stat_name: String, weight: float) -> fl
 # of a health bar. Anything approaching 1.0 here is immunity, which is what the old flat formula
 # had quietly become.
 const FORCEFIELD_SHARE_OF_BAR := 0.25
+# Each Forcefield recast within the same fight absorbs this fraction of the previous one.
+# Bounds the maintain-it-forever loop without touching the (already calibrated) first cast.
+const FORCEFIELD_RECAST_FALLOFF := 0.55
 
 const ABILITY_WEIGHTS := {
 	# --- Warrior: reliable and sustained, with the highest ceiling in the game behind the ---
@@ -5025,8 +5028,40 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var path_ff_pct = character.get_path_effect_total("forcefield_power_pct")
 			if path_ff_pct != 0.0:
 				shield_value = int(shield_value * (1.0 + path_ff_pct / 100.0))
+			# === DIMINISHING RETURNS WITHIN A FIGHT (2026-09-05) ===
+			# The per-cast value was fixed by the anchor above. What was never bounded is how
+			# OFTEN it can be recast, and that turned out to be the real problem.
+			#
+			# MEASURED (`durability` — monster turns survived in an unwinnable fight, grown
+			# characters, same audit run):
+			#
+			#   level        5     10     15
+			#   Fighter    8.1    6.9    5.7
+			#   Wizard    10.5    7.0    6.0     <- recasts Forcefield freely
+			#   Wizard    5.1     4.6    3.0     <- identical build, never casts it
+			#   Thief      2.3    4.8    2.7
+			#
+			# Stripping the card roughly HALVES the Mage's survival at every level, and without
+			# it the archetype ordering is exactly right: Fighter above Wizard above Thief. With
+			# it, the Mage matches or beats the Fighter while carrying 30% less base HP (148 vs
+			# 210 at L15) — so the defensive class was not the durable one. Owner: "Fighter
+			# should be more durable than the Mage typically."
+			#
+			# The fix targets renewability rather than magnitude, because magnitude is already
+			# calibrated and cutting it again would just make the panic button weak. Each recast
+			# inside the same fight absorbs 55% of the previous one (100% / 55% / 30% / 17%), so
+			# the first cast is still the strong defensive play it is meant to be and the
+			# maintain-it-forever loop stops paying. Resets with the fight.
+			var _ff_casts: int = int(combat.get("forcefield_casts", 0))
+			if _ff_casts > 0:
+				shield_value = maxi(1, int(float(shield_value) * pow(FORCEFIELD_RECAST_FALLOFF, float(_ff_casts))))
+			combat["forcefield_casts"] = _ff_casts + 1
 			combat["forcefield_shield"] = shield_value
-			messages.append("[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value)
+			var _ff_msg: String = "[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value
+			if _ff_casts > 0:
+				_ff_msg += "
+[color=#808080]The weave frays — each recast this fight holds less.[/color]"
+			messages.append(_ff_msg)
 			is_buff_ability = true
 
 		"teleport":
