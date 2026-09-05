@@ -2828,11 +2828,19 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# thing away before its replacement exists. Item 7 should supersede this grant, not sit
 	# alongside it.
 	if drop_tables:
-		for starter_slot in ["weapon", "armor", "helm", "shield", "boots", "ring"]:
+		for starter_slot in ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]:
 			var starter_base := ""
-			for entry in drop_tables.EQUIPMENT_BASES.get(1, []):
-				if String(entry.get("item_type", "")).begins_with(starter_slot):
-					starter_base = String(entry["item_type"])
+			# Search UPWARD for the lowest tier that carries this slot. Tier 1 has no amulet at
+			# all - amulets first appear at tier 3 - so a tier-1-only lookup silently left the
+			# slot empty. Reported: "we are missing the top right slot. For my Orc Ranger that is
+			# a Locket." Generalised rather than special-casing the amulet, so any slot the early
+			# tiers happen not to carry is still filled.
+			for tier_try in range(1, 10):
+				for entry in drop_tables.EQUIPMENT_BASES.get(tier_try, []):
+					if String(entry.get("item_type", "")).begins_with(starter_slot):
+						starter_base = String(entry["item_type"])
+						break
+				if starter_base != "":
 					break
 			if starter_base == "":
 				continue
