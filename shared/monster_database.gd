@@ -1576,8 +1576,26 @@ func scale_monster_to_level(base_stats: Dictionary, target_level: int, suppress_
 		scaled_strength = int(_anchored["strength"])
 		scaled_defense = int(_anchored["defense"])
 
+	# Apply the measured difficulty scale to HP and STRENGTH (not defense - defense is what
+	# makes a monster feel armoured, and cutting it would change the texture of a fight rather
+	# than its lethality). See DIFFICULTY_SCALE_ANCHORS above for how these were measured.
+	#
+	# XP is deliberately computed from the PRE-nerf stats (captured here, used below). XP is
+	# derived from lethality = hp + strength*2 + defense, so scaling the monster down would
+	# otherwise cut its XP by up to 30% at the clamp - making the game easier AND slower at the
+	# same time, and partly undoing the levelling fixes. The intent is a monster that is less
+	# dangerous, not one that is worth less; a level is still a level's worth of work.
+	# Owner 2026-09-05: "we may need to increase xp rates across the board or reduce level
+	# requirements" - this removes the reason to, for the nerf's share of it.
+	var _xp_hp: int = scaled_hp
+	var _xp_strength: int = scaled_strength
+	var _dscale := difficulty_scale_for_level(target_level)
+	if _dscale < 1.0:
+		scaled_hp = max(10, int(float(scaled_hp) * _dscale))
+		scaled_strength = max(3, int(float(scaled_strength) * _dscale))
+
 	# Calculate XP and gold with tiered formulas (based on final stats)
-	var experience_reward = _calculate_experience_reward(scaled_hp, scaled_strength, scaled_defense, target_level)
+	var experience_reward = _calculate_experience_reward(_xp_hp, _xp_strength, scaled_defense, target_level)
 	# Apex species are tuned above their tier's band, so they pay above it too. Applied before
 	# the elite/empowered multipliers below, which then stack on top as normal.
 	if is_apex_species(String(base_stats.get("name", ""))):
@@ -2029,6 +2047,75 @@ func _calculate_tiered_stat_scale(base_level: int, target_level: int) -> float:
 			scale += levels_in_tier * 0.005
 
 	return max(0.25, scale)
+
+
+# =====================================================================================
+# EARLY/MID DIFFICULTY SCALE (2026-09-05)
+# =====================================================================================
+# Owner, from live: "the game is very difficult right now. Most fights are a struggle because
+# gear is scarce"; then, after recovery and XP fixes failed to move survival, "nerf their hp
+# too... it's likely this will need to be done for more than just the early game."
+#
+# Measured with `growtune`, which grows a character from creation by actual play - carrying only
+# gear it found - and then sweeps a monster multiplier looking for the 60% target. Win rate at
+# full health against one normal monster:
+#
+# Pooled over 4 grown characters x 15 fights per cell. (An earlier single-character version of
+# this table read Fighter L1 at 62% and was wrong - one character per cell measured that
+# character's gear luck, not the level. It reported a nerf making Wizard L5 HARDER, which is
+# what exposed it.)
+#
+#   class    lv   x1.00  x0.75  x0.50  x0.35
+#   Fighter   1     36%    70%    98%   100%
+#   Fighter   5     25%    70%    96%   100%
+#   Fighter  10     26%    83%    98%    96%
+#   Fighter  20      5%    38%    63%    88%
+#   Wizard    1     63%    83%    86%    98%
+#   Wizard    5     46%    81%    95%    98%
+#   Wizard   10     56%    78%    88%    96%
+#   Wizard   20     31%    63%    76%    88%
+#
+# The whole range is under the 60% target, level 1 included - a Fighter wins 36% of its fights
+# at level 1 and 5% at level 20. Interpolating each row to where it crosses 60% gives ~0.80 for
+# levels 1-10 and ~0.55-0.60 by level 20, which is what the anchors encode. Sitting slightly
+# ABOVE 60% on these numbers is deliberate: this measures a single fight at full health, and the
+# compounding the owner described (flock chains, carried damage, retreats that fail) all lands
+# on top of it.
+#
+# Fitted to Fighter and Wizard only. The Thief does not respond to this lever at all (its row is
+# non-monotonic and L20 never reaches target even at x0.25) because Outsmart does not care about
+# monster HP - that is a separate problem and must not be "fixed" by dragging this curve down.
+#
+# Held flat past level 20 ON PURPOSE: nothing above 20 has been measured with a grown character,
+# and the older high-level readings came through make_char, whose gear model runs 0.45x a real
+# character at L45. Extrapolating a trend past the last real measurement is how the curve got
+# into this state. Extend it when `growtune` can reach those levels.
+#
+# This is a stopgap standing in for a `refcal` pass, which is blocked on that same player-model
+# defect. When the chain can be trusted again, this should fold into the anchors and be deleted.
+const DIFFICULTY_SCALE_ANCHORS := [
+	{"level": 1, "scale": 0.80},
+	{"level": 10, "scale": 0.80},
+	{"level": 20, "scale": 0.55},
+]
+
+static func difficulty_scale_for_level(level: int) -> float:
+	"""Log-linear in level between the anchors, matching how the base curve and role
+	multipliers are read. Flat outside the measured range at both ends."""
+	if level <= int(DIFFICULTY_SCALE_ANCHORS[0]["level"]):
+		return float(DIFFICULTY_SCALE_ANCHORS[0]["scale"])
+	var last: Dictionary = DIFFICULTY_SCALE_ANCHORS[DIFFICULTY_SCALE_ANCHORS.size() - 1]
+	if level >= int(last["level"]):
+		return float(last["scale"])
+	for i in range(DIFFICULTY_SCALE_ANCHORS.size() - 1):
+		var a: Dictionary = DIFFICULTY_SCALE_ANCHORS[i]
+		var b: Dictionary = DIFFICULTY_SCALE_ANCHORS[i + 1]
+		if level >= int(a["level"]) and level <= int(b["level"]):
+			var la := log(float(a["level"]))
+			var lb := log(float(b["level"]))
+			var t: float = 0.0 if is_equal_approx(la, lb) else (log(float(level)) - la) / (lb - la)
+			return lerp(float(a["scale"]), float(b["scale"]), t)
+	return 1.0
 
 func _calculate_experience_reward(hp: int, strength: int, defense: int, level: int) -> int:
 	"""Calculate XP reward - balanced for ~45 kills per level on average.
