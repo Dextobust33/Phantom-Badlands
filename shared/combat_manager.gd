@@ -1975,7 +1975,21 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# Opens at the FLOOR-spend value only (the same 0.3 ratio a minimum cast buys), so casting
 	# the cards properly still upgrades the magnitude and the decision stays live. This is a
 	# free opening, not a free maximum.
-	if character.get_class_path() == "warrior":
+	# 2026-09-06 — NARROWED from all Warriors to the Fighter. A free full-strength Iron Skin
+	# (60% DR, 4 rounds) plus Fortify is larger than most cards in the game, and handing it to
+	# all three made the Barbarian's stated identity — no mitigation, its answer to a long fight
+	# is to make it a short one — simply false: measured, removing it cost the Barbarian 14
+	# turns of survival at L10 (d23.3 -> d9.4), i.e. it was living on the Fighter's payoff.
+	#
+	# Same narrowing as the Momentum damage reduction and the Read damage reduction before it.
+	# The stance was added to fix a FIGHTER tempo problem (polytest: buff_first beat damage_first,
+	# so the Fighter had to spend two turns buffing and lost the fight by doing it) and it belongs
+	# to the class whose identity is mitigation.
+	#
+	# The Barbarian got the loss back through its OWN lever rather than borrowed defence: the Rage
+	# ramp went 0.11 -> 0.16 per stack (+80% at cap), so it survives by killing sooner. That is
+	# the difference between tuning to the target and tuning to the sibling.
+	if character.class_type == "Fighter":
 		var _stance_str: int = character.get_effective_stat("strength")
 		var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO))
 		var _stance_def: int = maxi(1, int((30.0 + sqrt(float(_stance_str)) * 3.0) * WARRIOR_STANCE_RATIO))
@@ -3919,20 +3933,26 @@ const DEVASTATE_WEIGHT_PER_MOMENTUM := 0.14
 # the stamina dump AND the fact that War Cry hands this class +2 a cast while Retribution builds
 # it further from blows it takes, so the Paladin reaches the cap in about three turns where a
 # Ninja needs eight. Cut to 0.10 and +3%/stack.
-const BARBARIAN_RAGE_DMG_PER := 0.11     # +11% to ALL ability damage per Rage held (5 = +55%)
+const BARBARIAN_RAGE_DMG_PER := 0.16     # +16% to ALL ability damage per Rage held (5 = +80%)
 const BARBARIAN_RAMPAGE_PER := 0.13      # discharge weight per Rage spent
-const PALADIN_JUDGEMENT_PER := 0.10      # strike weight per Conviction spent
+const PALADIN_JUDGEMENT_PER := 0.08      # strike weight per Conviction spent
 const PALADIN_LETHAL_BASE := 2           # % chance the judgement is simply lethal
 const PALADIN_LETHAL_PER := 3            # +3% a stack, so a full bank is ~17%
 
-# What the Warrior stack meter is CALLED, per class. The client used to hardcode "Momentum" and
-# "build to Devastate"; both now ride on the combat state so there is no mirror to drift.
-const WARRIOR_ENGINE_LABEL := {
+# What this class's stack is CALLED. Owner 2026-09-06: "Not only do the cards need to be correct
+# description wise but their hover and combat output should too." A Barbarian told its "Momentum"
+# went up is being lied to by the combat log in the same way the old card text lied about damage.
+#
+# ONE table, used by the meter, the card hover, the builder badge and every log line, so the
+# game cannot call the same stack two different things on two different surfaces.
+const CLASS_ENGINE_LABEL := {
 	"Fighter": "Momentum", "Barbarian": "Rage", "Paladin": "Conviction",
+	"Wizard": "Focus", "Sorcerer": "Focus", "Sage": "Focus",
+	"Grifter": "Read", "Ranger": "Read", "Ninja": "Read",
 }
 
-static func warrior_engine_label(class_type: String) -> String:
-	return String(WARRIOR_ENGINE_LABEL.get(class_type, "Momentum"))
+static func class_engine_label(class_type: String) -> String:
+	return String(CLASS_ENGINE_LABEL.get(class_type, "Momentum"))
 # 2026-09-06 — the finisher is ONE CARD WITH THREE MECHANICS, one per Trickster class. Its name
 # and lines already forked; this forks what it DOES, which is what actually makes the classes play
 # differently.
@@ -4198,7 +4218,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 				dev_per = PALADIN_JUDGEMENT_PER
 			var dev_anchor: float = _ability_anchored_damage(character, "strength", dev_per * float(mom))
 			var dev_base: int = int(dev_anchor * dev_full) if dev_anchor > 0.0 				else int(float(total_attack) * (2.0 + float(mom)) * str_mult * dev_full)
-			var dev_note := "%s %d/%d" % [warrior_engine_label(_wcls), mom, MOMENTUM_MAX]
+			var dev_note := "%s %d/%d" % [class_engine_label(_wcls), mom, MOMENTUM_MAX]
 			if _wcls == "Paladin":
 				# The lethal chance is the whole point of the Paladin's version, so the card has
 				# to state it. Single source: same expression the cast uses.
@@ -5464,7 +5484,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	# Momentum (no turn-1 nuke) — build Momentum with your other Warrior cards,
 	# THEN unleash. Gated BEFORE the cost so a blocked cast wastes no stamina.
 	if ability_name == "devastate" and int(combat.get("momentum", 0)) < 1:
-		var _mm: String = "[color=#FFA500]Devastate needs Momentum — build it with your other Warrior cards first![/color]"
+		var _mm: String = "[color=#FFA500]%s needs %s — build it with your other Warrior cards first![/color]" % [
+			_ability_display_name(character, "devastate"), class_engine_label(String(character.class_type))]
 		return {"success": false, "messages": [_mm], "message": _mm, "combat_ended": false, "skip_monster_turn": true}
 
 	# Mastery Slice 1 — level gate removed; rank scales effective power.
@@ -5559,7 +5580,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			wc_intimidate = mini(40, _apply_buff_value_modifiers(character, "war_cry", wc_intimidate))
 			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), wc_intimidate)
 			messages.append("[color=#FF4444]WAR CRY![/color]")
-			messages.append("[color=#FFD700]A rallying roar — your Momentum surges and the enemy is rattled (-%d%% accuracy)![/color]" % wc_intimidate)
+			messages.append("[color=#FFD700]A rallying roar — your %s surges and the enemy is rattled (-%d%% accuracy)![/color]"
+				% [class_engine_label(String(character.class_type)), wc_intimidate])
 			is_buff_ability = true
 
 		"shield_bash":
@@ -5743,7 +5765,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			combat["momentum"] = 0  # spent
-			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color] [color=#C8A24A](spent %d Momentum, ×%.0f)[/color]" % [_mom, dev_mult])
+			# 2026-09-06 — dropped the "x%.0f" that used to be printed here. It was `dev_mult`
+			# (2 + Momentum), the multiplier from the OLD attack-based formula; the damage has
+			# been anchored per-Momentum since 2026-09-03, so the log was quoting a number that
+			# no longer had anything to do with the hit.
+			messages.append("[color=#FF0000][b]DEVASTATE![/b][/color] [color=#C8A24A](spent %d Momentum)[/color]" % _mom)
 			messages.append("[color=#FFFF00]catastrophic blow — %s[/color]" % _damage_with_detail(combat, messages, damage))
 
 		"fortify":
@@ -5779,7 +5805,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 		var _newmom: int = min(MOMENTUM_MAX, int(combat.get("momentum", 0)) + 1)
 		combat["momentum"] = _newmom
 		messages.append("[color=#C8A24A]⚡ %s %d/%d[/color]"
-			% [warrior_engine_label(String(character.class_type)), _newmom, MOMENTUM_MAX])
+			% [class_engine_label(String(character.class_type)), _newmom, MOMENTUM_MAX])
 
 	# Check if monster died
 	if monster.current_hp <= 0:
@@ -6694,7 +6720,8 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 			match String(character.get_class_path()):
 				"warrior":
 					combat["momentum"] = mini(MOMENTUM_MAX, int(combat.get("momentum", 0)) + 1)
-					result.messages.append("[color=#C8A24A]Building: +1 Momentum.[/color]")
+					result.messages.append("[color=#C8A24A]Building: +1 %s.[/color]"
+						% class_engine_label(String(character.class_type)))
 				"trickster":
 					combat["combo"] = mini(COMBO_MAX, int(combat.get("combo", 0)) + 1)
 					result.messages.append("[color=#7FD8C8]Building: +1 Read.[/color]")
@@ -6920,7 +6947,8 @@ func _feed_class_engine(combat: Dictionary, character, amount: int, result: Dict
 	match character.get_class_path():
 		"warrior":
 			combat["momentum"] = mini(MOMENTUM_MAX, int(combat.get("momentum", 0)) + amount)
-			result.messages.append("[color=#C8A24A]%s: +%d Momentum.[/color]" % [label, amount])
+			result.messages.append("[color=#C8A24A]%s: +%d %s.[/color]"
+				% [label, amount, class_engine_label(String(character.class_type))])
 		"trickster":
 			combat["combo"] = mini(COMBO_MAX, int(combat.get("combo", 0)) + amount)
 			result.messages.append("[color=#7FD8C8]%s: +%d Read.[/color]" % [label, amount])
@@ -10000,7 +10028,7 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		# Devastate / Rampage / Judgement depending on the class. The client used to hardcode
 		# both; sending them keeps the naming in ONE place, which is the lesson from the class
 		# passive table the client had also mirrored and got wrong.
-		"momentum_label": warrior_engine_label(String(character.class_type)),
+		"momentum_label": class_engine_label(String(character.class_type)),
 		"momentum_finisher": _ability_display_name(character, "devastate"),
 		"read": int(combat.get("combo", 0)),  # v0.9.698 Trickster Read (was Combo)
 		"read_max": COMBO_MAX,

@@ -842,6 +842,32 @@ a Trickster's totals**, which ignores that the Warrior finisher is multiplied by
 half the turns. First pass read 95/81/85, 98/68/75, 98/96/91 — the Paladin killing an L80 elite in
 8.7 turns where the baseline took 33.8, dominant on BOTH axes at once.
 
+**Second pass (2026-09-06), triggered by the text sweep.** Owner: *"Not only do the cards need to
+be correct description wise but their hover and combat output should too."* Auditing every surface
+turned up a design contradiction rather than just wording: **all three Warriors were being handed a
+free full-strength Iron Skin (60% DR, 4 rounds) + Fortify at the start of every fight**
+(`combat_manager.gd`, the opening stance). That is larger than most cards in the game, and it made
+the Barbarian's stated identity — no mitigation, its answer to a long fight is to make it a short
+one — simply false.
+
+Measured: narrowing the stance to the Fighter cost the Barbarian **14 turns of survival at L10**
+(d23.3 -> d9.4) and dropped it to 68/46/60. It had been living on the Fighter's payoff. The stance
+is now **Fighter-only** (same narrowing as the Momentum DR and the Read DR before it — it was added
+to fix a FIGHTER tempo problem in the first place), and the Barbarian got the loss back through
+**its own lever**: the Rage ramp 0.11 -> 0.16 per stack (+80% at cap), so it survives by killing
+sooner. That is the difference between tuning to the target and tuning to the sibling.
+
+**Final, and the shapes are now visible in the k/d rather than just the win rate:**
+
+| class | L10 / L30e / L80e | k vs d at L30 elite | feel |
+|---|---|---|---|
+| Fighter | 93 / 66 / 68 | k24.3 d35.3 | grinder, 22-24 turn fights |
+| Barbarian | 78 / 60 / 66 | k10.7 d13.2 | knife fight, 6-11 turns |
+| Paladin | 83 / 80 / 75 | k17.9 d24.8 | endure, then end it |
+
+A further Barbarian discharge raise (0.13 -> 0.17) and a Paladin trim were A/B'd and the discharge
+one was REVERTED — it moved nothing outside the +/-6.4pp sampling error at n=60.
+
 **Paladin is still ~+10pp over the ~70% elite target.** Left alone deliberately: it is inside the
 +/-10pp judging band, and the Grifter sits at 88% untouched, so the Paladin is not the outlier.
 Revisit after calibration, not before.

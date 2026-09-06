@@ -3275,6 +3275,11 @@ var _momentum_label: RichTextLabel = null
 var _momentum: int = 0
 var _momentum_max: int = 5
 var _momentum_active: bool = false
+# The Warrior stack's NAME and its finisher's, pushed from the server (Momentum/Rage/Conviction,
+# Devastate/Rampage/Judgement). Held here so the hand cards and the meter cannot disagree about
+# what a Barbarian's stack is called.
+var _momentum_name: String = "Momentum"
+var _momentum_finisher_name: String = "Devastate"
 # v0.9.697 — Trickster Combo shares the same leftmost meter node (_momentum_label).
 # A character is either a Warrior or a Trickster, never both, so the two engines
 # never contend for the meter.
@@ -3293,6 +3298,9 @@ func update_momentum(cur: int, mx: int, is_warrior: bool, label: String = "Momen
 	_momentum = cur
 	_momentum_max = max(1, mx)
 	_momentum_active = is_warrior
+	if is_warrior:
+		_momentum_name = label
+		_momentum_finisher_name = finisher
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
 	if not is_warrior:
@@ -4417,7 +4425,7 @@ func _refresh_hand() -> void:
 			var _arch := Character.get_ability_archetype(card_name)
 			if _momentum_active and _arch == "warrior" and card_name != "devastate":
 				var _e := effect_lbl.text
-				effect_lbl.text = "+⚡ Momentum" if _e == "" else "+⚡  %s" % _e
+				effect_lbl.text = ("+⚡ %s" % _momentum_name) if _e == "" else "+⚡  %s" % _e
 				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
 			elif _combo_active and _arch == "trickster":
 				var _e2 := effect_lbl.text
@@ -4447,7 +4455,7 @@ func _refresh_hand() -> void:
 			castable = false
 			cell.set_meta("can_afford", false)
 			if effect_lbl:
-				effect_lbl.text = "Build Momentum first"
+				effect_lbl.text = "Build %s first" % _momentum_name
 				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
 			if value_pip:
 				value_pip.visible = false

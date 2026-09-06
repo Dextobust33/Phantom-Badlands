@@ -17061,7 +17061,10 @@ func _format_chase_affix_lines(affixes: Dictionary) -> Array:
 	for ability_key in _ABILITY_DISPLAY.keys():
 		var affix_key: String = "ability_rank_%s" % ability_key
 		if affixes.has(affix_key):
-			out.append("[color=#FFD700]+%d to %s[/color]" % [int(affixes[affix_key]), _ABILITY_DISPLAY[ability_key]])
+			# 2026-09-06 — resolve through _ability_display_name, which forks by class. A
+			# Barbarian's gear grants "+2 to Rampage", not "+2 to Devastate"; the table above is
+			# only the fallback for ids with no per-class name.
+			out.append("[color=#FFD700]+%d to %s[/color]" % [int(affixes[affix_key]), _ability_display_name(ability_key)])
 	# Archetype-wide rolls
 	if affixes.has("ability_rank_warrior_dmg"):
 		out.append("[color=#FFD700]+%d to Warrior damage abilities[/color]" % int(affixes["ability_rank_warrior_dmg"]))
@@ -17159,10 +17162,21 @@ func _format_chase_affix_tokens(affixes: Dictionary) -> Array:
 		"ambush": "Amb",
 		"exploit": "Expl",
 	}
+	# Per-class short forms, for the cards whose NAME forks by class. Without this a Barbarian
+	# reads "+2 Dvst" for a bonus to a card its hand calls Rampage.
+	const _ABILITY_SHORT_BY_CLASS := {
+		"devastate": {"Barbarian": "Rmpg", "Paladin": "Judg"},
+		"perfect_heist": {"Ninja": "Assn", "Grifter": "DblX", "Ranger": "KShot"},
+	}
 	for ability_key in _ABILITY_SHORT.keys():
 		var affix_key: String = "ability_rank_%s" % ability_key
 		if affixes.has(affix_key):
-			tokens.append("[color=#FFD700]+%d %s[/color]" % [int(affixes[affix_key]), _ABILITY_SHORT[ability_key]])
+			var _short := String(_ABILITY_SHORT[ability_key])
+			if _ABILITY_SHORT_BY_CLASS.has(ability_key):
+				var _mine := String((_ABILITY_SHORT_BY_CLASS[ability_key] as Dictionary).get(String(character_data.get("class", "")), ""))
+				if _mine != "":
+					_short = _mine
+			tokens.append("[color=#FFD700]+%d %s[/color]" % [int(affixes[affix_key]), _short])
 	# Archetype rolls
 	if affixes.has("ability_rank_warrior_dmg"):
 		tokens.append("[color=#FFD700]+%d War[/color]" % int(affixes["ability_rank_warrior_dmg"]))
@@ -32810,6 +32824,23 @@ func _get_rarity_multiplier_for_status(rarity: String) -> float:
 		"artifact": return 2.5
 		_: return 1.0
 
+func _help_fill_passives(text: String) -> String:
+	"""Expand the {{..._PASSIVES}} tokens in a help page. Both /help and /search render these
+	sections, so the substitution lives here rather than in one of them — a page that got the
+	raw token through would show `{{WARRIOR_PASSIVES}}` to the player."""
+	return text 		.replace("{{WARRIOR_PASSIVES}}", _help_passive_block(["Fighter", "Barbarian", "Paladin"])) 		.replace("{{MAGE_PASSIVES}}", _help_passive_block(["Wizard", "Sorcerer", "Sage"])) 		.replace("{{TRICKSTER_PASSIVES}}", _help_passive_block(["Grifter", "Ranger", "Ninja"]))
+
+func _help_passive_block(classes: Array) -> String:
+	"""One line per class: its name, its passive's name and what that passive actually does —
+	read live from the shared table so this page cannot drift from the game."""
+	var lines: Array = []
+	for c in classes:
+		var p: Dictionary = CharacterScript.class_passive_for(String(c))
+		lines.append("  [color=%s]%s[/color] - %s: %s" % [
+			String(p.get("color", "#FFFFFF")), String(c),
+			String(p.get("name", "?")), String(p.get("description", ""))])
+	return "\n".join(lines)
+
 func show_help():
 	# Clear output before showing help
 	game_output.clear()
@@ -32859,14 +32890,12 @@ func show_help():
 [color=#00FFFF]Map:[/color] [color=#FF6600]![/color]=Danger P=Post [color=#FFD700]$[/color]=Merchant [color=#00FF00]@[/color]=You [color=#00FF00]G[/color]=Guard [color=#FFD700]^[/color]=Tower
 
 [b][color=#FFD700]══ CLASS SPECIALIZATIONS ══[/color][/b]
-[color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]                  [color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
-  [color=#C0C0C0]Fighter[/color] - 20% less cost, +15% DEF               [color=#4169E1]Wizard[/color] - +15% spell dmg, +10% crit
-  [color=#8B0000]Barbarian[/color] - +3%dmg/10%HP lost, +25% cost        [color=#9400D3]Sorcerer[/color] - 25% double dmg, 5% backfire(max 15%HP)
-  [color=#FFD700]Paladin[/color] - 3%HP/rnd heal, +25% vs undead          [color=#20B2AA]Sage[/color] - 25% less cost, +50% meditate
-
+[color=#FF6666]WARRIOR (STR>10, Stamina=STR+CON)[/color]
+{{WARRIOR_PASSIVES}}
+[color=#66FFFF]MAGE (INT>10, Mana=INT×3+WIS×1.5)[/color]
+{{MAGE_PASSIVES}}
 [color=#66FF66]TRICKSTER (WIT>10, Energy=(WIT+DEX)×0.75)[/color]
-  [color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit dmg    [color=#228B22]Ranger[/color] - +25% vs beasts, +30% rewards
-  [color=#191970]Ninja[/color] - +40% flee, no dmg on fail | [color=#66FF66]25% chance Quick Strike (+50% dmg)[/color]
+{{TRICKSTER_PASSIVES}}
 
 [b][color=#FFD700]══ COMBAT FORMULAS ══[/color][/b]
 [color=#00FFFF]ATK:[/color] STR+weapon × (1+STR×0.02) | [color=#00FFFF]Crit:[/color] 1.5x (5%+DEX×0.5%) | [color=#00FFFF]DEF:[/color] DEF/(DEF+100)×60% reduction
@@ -32882,14 +32911,14 @@ func show_help():
 
 [color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
   [color=#FFFFFF]L1  Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
-  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +2 Momentum + rattle foe (-25% accuracy)
+  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +2 to your class stack + rattle foe (-25% accuracy)
   [color=#FFFFFF]L25 Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
   [color=#FFFFFF]L25 Fortify[/color]      [color=#808080](25 stam)[/color] - +30% defense + √STR×3 for 5 rounds
   [color=#FFFFFF]L40 Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20% STR/rnd, 4 rounds)
   [color=#FFFFFF]L40 Rally[/color]        [color=#808080](35 stam)[/color] - Heal 30+√CON×10 HP, +STR buff for 3 rounds
   [color=#FFFFFF]L60 Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200% damage (more when hurt), -40% defense, 4 rounds
   [color=#FFFFFF]L80 Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60% for 4 rounds
-  [color=#FFFFFF]L100 Devastate[/color]   [color=#808080](50 stam)[/color] - 5× attack damage, scales with √STR
+  [color=#FFFFFF]L100 Devastate[/color]   [color=#808080](50 stam)[/color] - FINISHER. Fighter: Devastate. Barbarian: Rampage. Paladin: Judgement
 
 [color=#66FFFF]MAGE ABILITIES[/color] [color=#808080](Mana = INT×3 + WIS×1.5, regen 2%/round, Sage 3%)[/color]
   [color=#FFFFFF]L1  Magic Bolt[/color]   [color=#808080](variable)[/color] - Spend mana to deal damage: mana × (1 + √INT/5). "bolt 50" = spend 50 mana
@@ -33153,6 +33182,13 @@ XP and loot are rolled [b]per member[/b]; a member who dies gets neither.
 
 [color=#808080]Open [/color][color=#00FFFF]More → Changes[/color][color=#808080] for the per-version detailed history.[/color]
 """ % [k0, k1, k2, k3, k4, k5, k6, k7, k8, k1, k5, k4, k4, k1, k4, k4, k0, k1, k1, k2, k3, k1, k2]
+	# 2026-09-06 — the three class blocks are GENERATED from Character.class_passive_for rather
+	# than typed here. This page was the last surviving hand-copy of the passive table and it was
+	# badly wrong: it listed "Thief" (a class that has not existed for a long time), gave the
+	# Ranger an effect it never had, and described the Ninja with the GRIFTER's passive — the
+	# exact swap the owner reported on the character-creation screen, still live on this page.
+	# Substituted AFTER the positional format above so that 23-argument list stays untouched.
+	help_text = _help_fill_passives(help_text)
 	display_game(help_text)
 
 	# New features section (added separately to avoid format string complexity)
@@ -33272,21 +33308,27 @@ func search_help(search_term: String):
 			"keywords": ["warrior", "fighter", "barbarian", "paladin", "stamina", "strength", "melee", "power", "strike", "war", "cry", "shield", "bash", "cleave", "berserk", "iron", "skin", "devastate", "undead", "demon"],
 			"content": "[color=#FF6666]WARRIOR PATH[/color] - Uses Stamina (20 + STR + CON)
 
-[color=#C0C0C0]Fighter[/color] - 20% reduced stamina costs, +15% defense
-[color=#8B0000]Barbarian[/color] - +3% damage per 10% HP missing (max +30%), +25% stamina cost
-[color=#FFD700]Paladin[/color] - Heal 3% max HP per round, +25% damage vs undead/demons
-[color=#FF6666]All Warriors:[/color] you enter every fight with Iron Skin and Fortify already up.
+{{WARRIOR_PASSIVES}}
+[color=#C0C0C0]Fighter only:[/color] you enter every fight with Iron Skin and Fortify already up.
 
 [color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
 Power Strike - reliable damage
 Cleave - bigger, and opens a bleed
 Shield Bash - damage plus a stun, priced below Power Strike
-War Cry - surges Momentum and rattles the foe so it misses more
+War Cry - surges your class stack and rattles the foe so it misses more
 Fortify / Iron Skin - defense and damage reduction
 Berserk - big damage, less defense
-Devastate - the FINISHER. Damage scales with Momentum spent, so it rewards the build-up
+Devastate / Rampage / Judgement - the FINISHER, one card that works differently for each class
 
-[color=#FFD700]Momentum[/color] is the Warrior engine: cards build it, Devastate spends all of it."
+[color=#FFD700]The three Warriors run three different engines[/color], and every Warrior card builds
+whichever one you have:
+  [color=#C0C0C0]Fighter - Momentum[/color]: banked stacks are damage REDUCTION, and Devastate spends them all at once.
+  [color=#8B0000]Barbarian - Rage[/color]: banked stacks are a damage RAMP on every card (+11% each), and Rampage discharges them.
+  [color=#FFD700]Paladin - Conviction[/color]: Judgement always lands, and each stack raises both its damage and the
+  chance it simply ends them. Retribution means every blow you take builds Conviction too." % [
+			CharacterScript.class_passive_for("Fighter").get("description", ""),
+			CharacterScript.class_passive_for("Barbarian").get("description", ""),
+			CharacterScript.class_passive_for("Paladin").get("description", "")]
 
 		},
 		{
@@ -33294,9 +33336,7 @@ Devastate - the FINISHER. Damage scales with Momentum spent, so it rewards the b
 			"keywords": ["mage", "wizard", "sorcerer", "sage", "mana", "magic", "spell", "bolt", "blast", "meteor", "shield", "haste", "paralyze", "forcefield", "banish", "meditate", "intelligence"],
 			"content": "[color=#66FFFF]MAGE PATH[/color] - Uses Mana (30 + INT x3 + WIS x1.5)
 
-[color=#4169E1]Wizard[/color] - +15% spell damage, +10% spell crit chance
-[color=#9400D3]Sorcerer[/color] - 25% chance for double damage, 5% backfire chance
-[color=#20B2AA]Sage[/color] - 25% reduced mana costs, +50% Meditate
+{{MAGE_PASSIVES}}
 
 [color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
 Magic Bolt - the big single-cast nuke; spend more mana for more damage
@@ -33316,10 +33356,7 @@ Haste / Paralyze / Banish - speed, hard stun, and an execute
 			"keywords": ["trickster", "grifter", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "assassinate", "heist", "beast", "animal"],
 			"content": "[color=#66FF66]TRICKSTER PATH[/color] - Uses Energy (20 + WITS + DEX)
 
-[color=#2F4F4F]Grifter[/color] - Denial cards have a 50% chance to build double Read; +40% flee,
-  and a failed escape costs you nothing
-[color=#228B22]Ranger[/color] - Your abilities never glance - and never crit. Steady where the others gamble
-[color=#191970]Ninja[/color] - +12% crit chance, and every critical hit this fight sharpens the next (+6%)
+{{TRICKSTER_PASSIVES}}
 
 [color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
 Analyze / Distract / Sabotage - deny the monster its turn while you build Read
@@ -33481,7 +33518,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 
 		for section in matches:
 			display_game("[b][color=#00FFFF]── %s ──[/color][/b]" % section.title)
-			display_game(section.content)
+			display_game(_help_fill_passives(String(section.content)))
 			display_game("")
 
 	display_game("[color=#808080]Type /help for full help page | /search <term> to search again[/color]")
