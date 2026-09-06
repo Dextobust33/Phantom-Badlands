@@ -211,7 +211,15 @@ const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point 
 # ability builds Read; Read raises the Assassinate chance (the payoff = bypass HP).
 # +% Assassinate success per Read. 8 stacks = +40, taking a 15% base to 55% - so the finisher is
 # a poor opener and a strong payoff, which is what makes the stall worth running.
-const READ_HEIST_PER: int = 5
+# 2026-09-06: 5 -> 3. With the engine split done, this is now the ONLY bypass-the-health-bar
+# effect in the game, so it can finally be priced as one without taking the Grifter and Ranger
+# down with it — which is exactly why the engines had to come first.
+#
+# At 5 it reached 15 base + 20 Wits + 40 Read = 75% at a full stall, and with ~1.5 attempts a
+# fight that compounds to the 96% the class table measured. At 3 a full stall reaches ~59%: a
+# real coin flip with an edge, bought with eight turns of setup, and a miss still spends the Read.
+# That is the "high risk, high reward" the card is described as and has never actually been.
+const READ_HEIST_PER: int = 3
 # Each Read also lifts the CAP by this much, which is what makes stacks 3-5 worth building.
 # 48 base + 5x5 = 73% at a full Read for a Trickster: reliable, but only after five turns of
 # setup. Without this the cap ate every stack past the second — see assassinate_chance.

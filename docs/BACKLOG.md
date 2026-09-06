@@ -1126,6 +1126,50 @@ Current table:
       classes down with it — which was the whole point of doing the engines first.
 - [ ] Barbarian 33/36 at elite remains the weakest cell in the game.
 
+## ⚑⚑ ROOT CAUSE FOUND: the game pays you 75% of a monster turn for NOT attacking
+
+**This is the piece the class table kept pointing at and none of the per-class fixes could reach.
+Found 2026-09-06 while pricing the Ninja. Needs an owner decision — do not tune around it.**
+
+`process_ability_command`: any ability returning `buff_ability: true` gives the monster only a
+**25% chance to act**. Eleven abilities carry that flag, and `analyze` denies the turn outright.
+Damage cards never deny anything. So a non-damage cast buys, on average, **0.75 of a free monster
+turn** — and that is worth far more than any mitigation in the game.
+
+Measured, monster turns actually taken per player turn (L30, playing the real hand):
+
+| class | damage cards cast | monster ACTS | monster DENIED | elite win% |
+|---|---|---|---|---|
+| Fighter | 82% | 75% | 26% | 56% |
+| Ranger | — | 67% | 33% | 81% |
+| Grifter | — | 54% | 47% | 90% |
+| Wizard | 37% | 47% | 53% | 73% |
+| Ninja | 23% | 34% | **66%** | 96% |
+
+**Win rate tracks denial rate almost perfectly.** The Fighter eats 2.2x as many monster turns as
+the Ninja, which is a durability multiplier that has nothing to do with HP, defence or mitigation
+and does not appear anywhere in the k/d decomposition.
+
+**This explains every symptom we have chased:**
+- "Warriors are weakest" — they cast 82% damage cards, so they eat 75% of monster turns.
+- Why the warrior opening stance helped: it is a free buff, i.e. free denial, not just DR.
+- Why lowering the Ninja's finisher odds did nothing: it survives long enough to keep retrying.
+- The `polytest` note already in the warrior stance comment — *"buff_first BEATS damage_first
+  (88% vs 71% at L20)"* — was this effect, seen from one class and never generalised.
+
+**Why it cannot be tuned around:** every per-class fix so far has been buying back tempo the
+system takes from damage-heavy kits. That is the treadmill the owner identified, and this is the
+engine driving it.
+
+- [ ] **OWNER DECISION — pick the shape before anyone touches a number.** Options, not exclusive:
+      1. Reduce the buff advantage (75% -> ~25-40%) so denial is an edge, not the whole game.
+      2. Make it per-ability rather than blanket — a defensive stance earning a reprieve is
+         reasonable; every utility card doing so is not.
+      3. Give damage cards a comparable tempo payoff so attacking is not strictly worse.
+      4. Make denial cost something: diminishing returns within a fight, or a resource premium.
+- [ ] Whatever is chosen, RE-MEASURE the whole class table after: this single rule is worth more
+      than every class-level change made this session put together.
+
 ### Sequencing (agreed)
 
 1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently
