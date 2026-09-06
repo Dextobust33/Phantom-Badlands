@@ -993,6 +993,51 @@ difficulty change — the whole refcal chain — moves warriors and mages and le
 - **Trickster k is not comparable in kind** to the other two archetypes, per the structural point
   above. Do not read 2.7 as "six times better damage".
 
+### TODO: Magic Bolt — damage vs investment is opaque and punishing (owner, 2026-09-06)
+
+Owner: *"Seems like investing a small amount gets a pretty high amount of damage proportionally
+to a large amount. It's very hard for a player to have any idea how much mana they should invest
+before it isn't worth it... Does magic bolt even still compete with the other options? It should
+have the highest top end of the mage's options but not make players ignore other options."*
+
+Measured, L30 Wizard, mana pool 232, ceiling (`MAGIC_BOLT_FULL_SPEND_PCT` 0.20) = 46:
+
+| mana | % of pool | damage | dmg per mana |
+|---|---|---|---|
+| 4 | 2% | 70 | 17.6 |
+| 11 | 5% | 251 | 22.8 |
+| 23 | 10% | 496 | 21.6 |
+| **46** | **20%** | **1091** | **23.7 <- peak** |
+| 92 | 40% | 1432 | 15.6 |
+| 174 | 75% | 1502 | 8.6 |
+| 232 | 100% | 1765 | 7.6 |
+
+Alternatives on the same turn: **Blast 568**, **Meteor 1161**.
+
+**Three separate problems, and they want different fixes:**
+
+1. **The efficiency cliff is invisible.** Value per mana peaks exactly at the ceiling and falls
+   **3.1x** beyond it. Nothing in the game says 46 is the number. The card now names the spend
+   ("at N mana", added 2026-09-06) but not that spending more is progressively wasted.
+2. **Below the ceiling the curve is nearly FLAT** (17.6-23.7 dmg/mana from 2% to 20%). A 4-mana
+   poke is ~74% as mana-efficient as the ideal cast, so the "commit your bar for a nuke" identity
+   does not actually exist — chip casting is fine, which is the owner's observation exactly.
+3. **It loses to Meteor at sensible spends.** Meteor 1161 > Bolt's efficient 1091. Bolt only wins
+   by dumping 40%+ of the pool INTO the efficiency penalty. So the honest ranking today is
+   "cast Meteor, unless you are emptying the bar" — the opposite of a flexible signature spell.
+
+**Design target to hit:** highest top end of the mage kit (it has that: 1765) WITHOUT making the
+other options pointless, and with a spend the player can reason about.
+
+- [ ] Decide the shape first, then tune: should overspend be flat-value (no penalty, no bonus),
+      mildly rewarding, or keep a soft cliff that the UI actually communicates?
+- [ ] Whatever the shape, the card must show the **efficient spend**, not just the chosen one —
+      the sweet spot is a number the player currently has no way to discover.
+- [ ] Re-check against Blast and Meteor after any change: the test is that all three stay worth
+      casting, not that Bolt wins.
+- [ ] Note `MAGIC_BOLT_MIN_EFF` is 0.80, which is why the sub-ceiling curve is so flat. That
+      constant is the main lever for problem 2.
+
 ### Sequencing (agreed)
 
 1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently
