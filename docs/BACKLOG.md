@@ -1038,6 +1038,44 @@ other options pointless, and with a spend the player can reason about.
 - [ ] Note `MAGIC_BOLT_MIN_EFF` is 0.80, which is why the sub-ceiling curve is so flat. That
       constant is the main lever for problem 2.
 
+### Finisher re-pricing CANNOT come first — measured 2026-09-06
+
+I started the Trickster slice by re-pricing the finisher, on the grounds that Tricksters measure
+93-100%. That ordering was wrong, and the measurement says why.
+
+**Change made and KEPT: a missed finisher now spends the Read it was built on.** A miss used to
+cost only the turn, so the player retried at identical odds — at ~2.9 attempts a fight a 75%
+gamble compounds into a near-certainty, which is how a "high-risk, high-reward" card ended up
+with no risk in it. The old Outsmart spent the stacks on a miss ("it has seen that one before")
+and that risk was dropped when Assassinate replaced it. Restoring it re-prices the card WITHOUT
+touching the odds, so a landed finisher is exactly as good as it was. Attempts per fight fell
+from ~2.9 to ~1.0.
+
+**But it barely moved the table** (Grifter 98/100/100 -> 95/98/100), and here is the reason:
+
+| class | lvl | win% | by finisher | by damage | attempts | odds when cast |
+|---|---|---|---|---|---|---|
+| Ninja | 10 | 67% | **100%** | **0%** | 1.38 | 48% |
+| Ninja | 30 | 34% | **100%** | **0%** | 0.82 | 47% |
+| Grifter | 10 | 77% | **100%** | **0%** | 1.38 | 50% |
+| Grifter | 30 | 49% | **100%** | **0%** | 0.98 | 50% |
+
+(Ungeared characters, so lower than the geared audit — but the SPLIT is the point.)
+
+**Every win comes from the finisher. None from damage.** So the finisher's odds ARE the class win
+rate, and there is no correct value for them: price it low and all three Tricksters become
+unplayable, price it high and the fight is decided by one roll. Nudging it can only trade one
+failure for the other.
+
+**Therefore the engine redistribution is a PREREQUISITE, not a follow-up.** Grifter and Ranger
+need a different way to win — the Momentum-shaped and Focus-shaped loops already agreed — before
+the finisher can be priced as what it is meant to be: the Ninja's genuine gamble. Build the
+engines first, then price the finisher against a class that has an alternative.
+
+- [ ] Re-price the finisher AFTER the Grifter and Ranger engines exist, not before.
+- [ ] Re-test the Read DR at that point too — it was kept on probation and its justification
+      (surviving a whiff) changes once a whiff is no longer the whole fight.
+
 ### Sequencing (agreed)
 
 1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently

@@ -5997,6 +5997,22 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				var _fl2: Dictionary = finisher_flavour(character)
 				messages.append("[color=#FF4444][b]%s[/b][/color]" % String(_fl2["miss"]))
 				messages.append("[color=#FF4444]%s[/color]" % String(_fl2["miss_line"]))
+				# 2026-09-06 — A MISSED FINISHER SPENDS THE READ IT WAS BUILT ON.
+				#
+				# Measured, Tricksters win 93-100% of every cell and end fights in under 4 turns
+				# against everyone else's 7-28. The cause is not the odds — it is that a miss
+				# costs nothing but the turn, so the player simply tries again at the SAME odds.
+				# At ~2.9 attempts a fight a 75% gamble compounds to a near-certainty, which is
+				# how a "high-risk, high-reward" card ended up with no risk in it.
+				#
+				# The old Outsmart spent the stacks on a miss ("it has seen that one before"),
+				# and that risk was dropped when Assassinate replaced it. Restored, because it is
+				# the honest version of the design the owner described — stall, build, then bet
+				# the setup — and because it re-prices the card without touching the odds, so a
+				# landed finisher is exactly as good as it was.
+				if int(combat.get("combo", 0)) > 0:
+					combat["combo"] = 0
+					messages.append("[color=#7FD8C8]Your read is spent — it will not fall for that twice.[/color]")
 				# Monster gets a free attack
 				var monster_result = process_monster_turn(combat)
 				messages.append("[color=#444444]─────────────────────────────[/color]")
