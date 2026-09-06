@@ -158,6 +158,19 @@ const MOMENTUM_MAX: int = 5  # v0.9.696 — Warrior Momentum cap (build via card
 # MITIGATION_BUFF_FLOOR cap prevents unkillable — a defensive deck reaches the cap, a
 # damage deck still gets the intrinsic ~25%. Devastate SPENDS Momentum (drops the guard).
 const MOMENTUM_DR_PER: float = 0.05
+# Trickster counterpart, 2026-09-05. Measured: a Trickster playing straight damage cards wins
+# ZERO same-level fights (0 of 120 at L2, L5 and L10), dying around round 3-4 with the monster
+# near full health, while the stall-to-Assassinate line wins 73-88%. So the finisher is not one
+# of the class's options, it is the whole class — and under permadeath the losing half of that
+# coin flip is a dead character. The death logs are exactly that: stall correctly, whiff, die
+# with no fallback.
+#
+# Owner's call was "make the stall survivable, plus a little reach on the damage". This is the
+# survivability half, and it pays for itself: READ is what the stall builds, so the thing that
+# keeps you alive is the thing you were already doing. A whiff then costs you the shot rather
+# than the character. Mirrors the Warrior's banked-Momentum DR exactly — same shape, same 85%
+# shared cap, so it cannot compound into unkillable.
+const READ_DR_PER: float = 0.04   # 8 Read = 32% at a full stall, against Momentum's 25% at 5
 # Resource-economy fix (2026-08-25): Devastate is a DUMP finisher — consumes this
 # fraction of CURRENT stamina (not a flat ceiling), and its power scales with how full
 # the bar was. Makes a big pool worth building (fuller bar = harder hit) and gives the
@@ -3803,7 +3816,13 @@ const ABILITY_WEIGHTS := {
 	# +25 to the shared crit chance instead. At a ~25% baseline that moves the expected multiplier
 	# from ~1.25 to ~1.08, so the weight is raised ~15% to keep the card's average output where it
 	# was. A crit-built Ninja now gets MORE out of it than before, which is the point.
-	"ambush": 0.23,
+	# 2026-09-05: 0.23 -> 0.28, the "little of option 1" half of the owner's call. Straight damage
+	# measured at a 0% win rate in same-level fights, so it was not a weak fallback, it was no
+	# fallback at all. This is deliberately a nudge rather than a fix: the goal is that a whiffed
+	# read leaves you SOMETHING, not that damage becomes a second win condition — that would
+	# delete the class identity the stall exists to express. Re-measured after, and tuned to keep
+	# damage-only well below the stall line.
+	"ambush": 0.28,
 	"gambit": 0.42,       # on a HIT; it lands 55-80% of the time, so ~0.27 expected
 	# `exploit` is deliberately NOT here: a share of the ENEMY's max HP is a different model
 	# on purpose (the anti-tank tool, gear-independent, shines exactly where this anchor is
@@ -7709,6 +7728,12 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				var _mom_dr: float = float(clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)) * MOMENTUM_DR_PER
 				if _mom_dr > 0.0:
 					_mit_mult *= (1.0 - _mom_dr)
+			# Trickster identity — every Read you have built is a blow you see coming. Same shape
+			# as Momentum above, and under the same 85% cap.
+			if character.get_class_path() == "trickster":
+				var _read_dr: float = float(clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)) * READ_DR_PER
+				if _read_dr > 0.0:
+					_mit_mult *= (1.0 - _read_dr)
 			# 2026-09-03 — rank-up trade-off DOWNSIDES compose into the SAME multiplier as
 			# everything else, and the clamp below is two-sided. An earlier version applied them
 			# after the floor to stop a defensive deck laundering the drawback away; that
