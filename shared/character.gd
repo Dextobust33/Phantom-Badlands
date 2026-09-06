@@ -3557,6 +3557,20 @@ const CURATED_STARTER_DECKS := {
 	# the companion loaner — a genuine second copy would be a sixth card, and "any cards over the
 	# 5 are a waste as it just makes them be drawn less".
 	"trickster": ["analyze", "distract", "sabotage", "ambush", "perfect_heist"],
+	# 2026-09-06 — THIS LINE WAS IN THE WRONG TABLE, and it is a live bug, not a sim artifact.
+	#
+	# The mage list was sitting in CURATED_STARTER_DECKS_BY_CLASS under the key "mage". That
+	# table is looked up by CLASS TYPE ("Wizard"/"Sorcerer"/"Sage"), so "mage" never matched;
+	# the lookup fell through to THIS table, which had no mage entry, and landed on
+	# `initialize_deck_collection_if_needed`'s last-resort branch: "seed all accessible".
+	#
+	# Measured: every warrior and trickster ships a 5-card deck and every mage ships a NINE-card
+	# one (magic_bolt, forcefield, blast, meteor, haste, paralyze, banish, frost_nova, overload).
+	# A three-card hand holds a given card 60% of the time out of 5 and 33% out of 9, so a mage
+	# has been drawing its finisher and its ramp about HALF as often as a warrior draws Devastate
+	# — the owner's "any cards over the 5 are a waste as it just makes them be drawn less",
+	# happening to one whole archetype by accident.
+	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
 }
 
 # 2026-09-06 — PER-CLASS starter decks, where the three classes of a path want different cards.
@@ -3619,7 +3633,6 @@ const CURATED_STARTER_DECKS_BY_CLASS := {
 	# a choice that costs a turn rather than something that happens to you. Retribution means
 	# every blow it fails to avoid still feeds the engine.
 	"Paladin": ["power_strike", "war_cry", "fortify", "rally", "devastate"],
-	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
 }
 
 func _curated_starter_deck() -> Array:

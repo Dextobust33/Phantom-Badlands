@@ -64,7 +64,7 @@ const DEFAULT_AUDITS := ["verify", "min_spend", "difficulty", "overlevel"]
 func _audit_registry() -> Dictionary:
 	return {
 		"verify": ["card + party wiring checks", func():
-			_verify_new_mage_cards(); _verify_dungeon_cards(); _verify_party_combat()],
+			_verify_starter_decks(); _verify_new_mage_cards(); _verify_dungeon_cards(); _verify_party_combat()],
 		"min_spend": ["min-cost cast vs same-level mob HP", run_min_spend_probe],
 		"difficulty": ["level x gear x enemy-tier feel", run_difficulty_audit],
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
@@ -6251,3 +6251,38 @@ Compare each row against make_char(level, \"average\") - the gap IS the model er
 ")
 
 
+
+
+
+
+func _verify_starter_decks() -> void:
+	"""Every class must ship the deck it was designed with, and nothing else.
+
+	2026-09-06 — this exists because the mage list was written into the BY_CLASS table under the
+	PATH key "mage". That table is read by class_type, so it never matched, the path table had no
+	mage entry either, and every mage silently fell through to "seed all accessible": a NINE-card
+	deck against everyone else's five. A three-card hand holds a given card 60% of the time out
+	of 5 and 33% out of 9, so mages drew their finisher about half as often as anyone else — and
+	it read as the mage archetype being weak for weeks.
+	 
+	Nothing failed loudly, which is exactly why it survived. A deck of the wrong SIZE is now a
+	loud failure."""
+	print("
+===== STARTER DECK CHECK (every class ships exactly its curated deck) =====")
+	var bad := 0
+	for k in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var c = make_char(30, "average", k, "Human")
+		c.initialize_deck_collection_if_needed()
+		var curated: Array = c._curated_starter_deck()
+		var deck: Array = c.combat_deck_collection.keys()
+		var ok: bool = curated.size() == 5 and deck.size() == curated.size()
+		if not ok:
+			bad += 1
+		print("  %-10s curated=%d deck=%d  %s %s" % [k, curated.size(), deck.size(),
+			"ok" if ok else "*** WRONG ***", str(deck)])
+	if bad > 0:
+		print("  FAIL: %d class(es) do not ship a 5-card deck. A class with no curated list falls" % bad)
+		print("        through to 'seed all accessible', which is a silent, archetype-wide handicap.")
+	else:
+		print("  all nine ship exactly 5 cards")
+	print("==========================================================================")

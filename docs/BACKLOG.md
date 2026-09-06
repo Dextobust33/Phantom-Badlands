@@ -888,6 +888,45 @@ table is stable even across edits to the simulator itself.
 **This invalidates cross-run comparisons made before today.** Any earlier "class X moved" reading
 where X was not the class being changed is suspect.
 
+### LIVE BUG (2026-09-06): every mage shipped a NINE-card deck
+
+**Found while starting the mage slice, and it invalidates weeks of "mages are weak" conclusions.**
+
+`_curated_starter_deck()` reads `CURATED_STARTER_DECKS_BY_CLASS` by **class type**. The mage's
+five-card list was written into that table under the key `"mage"` — a **path**, not a class — so it
+never matched. The path table it falls through to had no mage entry either, so every mage landed on
+`initialize_deck_collection_if_needed`'s last-resort branch: *seed all accessible abilities*.
+
+Measured: warriors and tricksters ship **5** cards; mages shipped **9** (magic_bolt, forcefield,
+blast, meteor, haste, paralyze, banish, frost_nova, overload). A three-card hand holds a given card
+**60% of the time out of 5 and 33% out of 9** — so mages have been drawing their finisher and their
+ramp about HALF as often as a warrior draws Devastate. Exactly the owner's *"any cards over the 5
+are a waste as it just makes them be drawn less"*, inflicted on a whole archetype by accident.
+
+Fixing the one key:
+
+| class | before | after |
+|---|---|---|
+| Wizard | 80 / 50 / 66 | **88 / 75 / 85** |
+| Sorcerer | 66 / 48 / 70 | **81 / 76 / 88** |
+| Sage | 63 / **30** / 53 | **81 / 65 / 66** |
+
+Sage was the single worst cell in the game. The Wizard's "auto-attacks half its turns at L80"
+(0.52 casts/turn) is now 0.88 — it was not a resource-economy fault or a policy fault; the hand
+simply did not contain anything worth casting often enough.
+
+Nothing failed loudly, which is why it survived. `-- verify` now asserts **all nine classes ship
+exactly their 5-card curated deck**, so a class falling through to "seed all accessible" is a loud
+failure instead of a silent archetype-wide handicap.
+
+**OPEN — needs an owner decision.** The fix only helps NEW characters: existing mages have the
+nine-card collection persisted with `deck_collection_initialized = true`, so they keep the bloat.
+Trimming them means rewriting decks players may have deliberately curated from the deck screen.
+Do not do it silently.
+
+**Mages are no longer the weak archetype** — they are now at the TOP of the table. The mage slice
+is therefore about differentiation only; do NOT buff anything while doing it.
+
 ### Mage slice — NEXT
 
 Mapping already agreed: **Sorcerer/Volatility** (Momentum-shaped bank-and-burst), **Wizard/Focus**
