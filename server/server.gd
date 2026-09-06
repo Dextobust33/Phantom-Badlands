@@ -1129,7 +1129,7 @@ func _reconcile_lost_rank_choices(peer_id: int) -> void:
 			character.pending_rank_choices.append(qc)
 			restored += 1
 	if restored > 0:
-		log_message("[RANKFIX] Restored %d unspent rank-up choice(s) for %s" % [restored, character.character_name])
+		log_message("[RANKFIX] Restored %d unspent rank-up choice(s) for %s" % [restored, character.name])
 		send_to_peer(peer_id, {"type": "text", "message":
 			"[color=#FFD700]★ %d card upgrade%s you picked earlier never applied — a bug that has now been fixed.[/color]
 [color=#808080]The choices have been given back to you. Open your Deck to pick them again.[/color]"
