@@ -716,6 +716,31 @@ on cards, the harder it measured.
       This PREDATES the Read-DR change — Assassinate was already the sole win condition — but the
       DR makes the stall stronger, so it widens the gap rather than closing it.
 
+- [x] **Per-class Trickster starter decks + Read pips on the card (2026-09-06).** Ninja now starts
+      `analyze, sabotage, ambush x2, vanish, perfect_heist` (vanish is a GUARANTEED crit, so it
+      starts Killing Edge's ramp instead of waiting on a 12% roll); Ranger starts
+      `analyze, sabotage, exploit x2, ambush, perfect_heist` (exploit is a flat share of enemy max
+      HP — no damage roll to fumble — and deliberately no `gambit`, whose failure roll Steady Hand
+      cannot protect against). Grifter unchanged and listed explicitly.
+
+      A card granting more than one Read now shows one pip per Read on its face, computed
+      SERVER-side and sent with the card. Verified: Grifter denial cards `+◉◉`, ambush `+◉`, Ninja
+      `+◉` throughout, and a Grifter with Desperation below a third health shows `+◉◉◉◉` on
+      analyze (1 base + 1 Long Con + 2 Desperation) — passive, upgrade and conditional stacking.
+
+- [ ] **WARRIOR AND MAGE DECKS get the same treatment** (owner, 2026-09-06: *"Keep this in mind
+      for when we do the warriors and mages as well they each have more cards available in their
+      decks that we can swap around to help give them more identity and play towards their
+      passives strengths."*). Same method that worked here: measure which cards the winning line
+      actually plays, check whether each class's passive can fire on those cards, then swap the
+      starter deck rather than changing the passive. Pools available —
+      warrior: power_strike, war_cry, shield_bash, cleave, berserk, iron_skin, devastate, fortify,
+      rally; mage: magic_bolt, forcefield, blast, meteor, haste, paralyze, banish, frost_nova,
+      overload. Passives to serve: Fighter (Tactical Discipline, cost reduction + defence),
+      Barbarian (Blood Rage, damage as HP drops), Paladin (Divine Favor, regen + anti-undead),
+      Wizard (Arcane Precision, spell damage + spell crit), Sorcerer (Chaos Magic, double damage
+      / backfire), Sage (Mana Mastery, cheaper spells + Meditate).
+
 - [ ] **DESIGN CALL: make the Ninja and Ranger passives reach the line they actually play.**
       Three routes, not mutually exclusive:
       1. **Point the passives at the finisher.** Ninja crit adds to Assassinate's odds (precision

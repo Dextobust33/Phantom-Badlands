@@ -4421,7 +4421,18 @@ func _refresh_hand() -> void:
 				effect_lbl.add_theme_color_override("font_color", Color("#C8A24A"))
 			elif _combo_active and _arch == "trickster":
 				var _e2 := effect_lbl.text
-				effect_lbl.text = "+◉ Read" if _e2 == "" else "+◉  %s" % _e2
+				# 2026-09-06 — a card that grants MORE than one Read shows one pip per Read, so
+				# the Grifter can see which cards his passive (or an upgrade) is doubling without
+				# reading the log after the fact. The count is the server's, not re-derived here.
+				var _rg: int = 0
+				if client_ref and client_ref.has_method("get_card_read_gain"):
+					_rg = int(client_ref.get_card_read_gain(card_name))
+				var _pips := "◉"
+				if _rg > 1:
+					_pips = ""
+					for _i in range(mini(_rg, 4)):
+						_pips += "◉"
+				effect_lbl.text = ("+%s Read" % _pips) if _e2 == "" else "+%s  %s" % [_pips, _e2]
 				effect_lbl.add_theme_color_override("font_color", Color("#7FD8C8"))
 			elif _focus_active and _arch == "mage" and card_name != "meteor":
 				var _e3 := effect_lbl.text

@@ -19153,6 +19153,21 @@ func _get_slot_abbreviation(item_type: String) -> String:
 		return "[color=#666666][AMU][/color]"
 	return ""
 
+func get_card_read_gain(ability_name: String) -> int:
+	"""How much Read this card will grant, as the SERVER computed it. 0 when it is not more
+	than the usual 1, so the card only shouts when there is something to shout about.
+
+	2026-09-06, owner: a Grifter card that grants extra Read — from Long Con, a card upgrade, or
+	a conditional one — should SHOW that on the card. Read from the authoritative payload rather
+	than re-derived here; a client copy of that rule would be the fourth mirror removed this
+	week."""
+	if typeof(_server_ability_effects) != TYPE_DICTIONARY:
+		return 0
+	var eff = _server_ability_effects.get(ability_name, {})
+	if not (eff is Dictionary):
+		return 0
+	return int(eff.get("read_gain", 0))
+
 func _get_themed_item_name(item: Dictionary, owner_class: String = "") -> String:
 	"""Get the item name themed for a specific class.
 	If owner_class is empty, uses the current player's class.

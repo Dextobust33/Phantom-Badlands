@@ -4124,6 +4124,11 @@ func _build_ability_effect_info(combat: Dictionary) -> Dictionary:
 	for card in combat.get("combat_hand", []):
 		var name := String(card)
 		var eff: Dictionary = preview_ability_effect(character, combat, name)
+		var _rg: int = preview_read_gain(character, combat, name)
+		if _rg > 1:
+			if eff.is_empty():
+				eff = {"kind": "read_only"}
+			eff["read_gain"] = _rg
 		if not eff.is_empty() and String(eff.get("kind", "")) != "":
 			out[name] = eff
 	return out
@@ -5641,12 +5646,10 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	# every Grifter ability already builds Read, and doubling all of them would just be a flat
 	# Outsmart buff rather than an identity.
 	if ability_name in ["analyze", "distract", "sabotage"]:
-		var _lc: Dictionary = character.get_class_passive()
-		var _lc_fx: Dictionary = _lc.get("effects", {}) if _lc is Dictionary else {}
 		# A CHANCE, not a guarantee. Guaranteed double Read put the Grifter well ahead of the
 		# other classes (78/78/91/91 against the Fighter's 61/55/81/70) because it landed on the
 		# exact cards its best policy already spams.
-		var _lc_chance: int = int(_lc_fx.get("denial_read_chance", 0))
+		var _lc_chance: int = long_con_denial_chance(character, ability_name)
 		if _lc_chance > 0 and (randi() % 100) < _lc_chance:
 			_read_gain += 1
 			_long_con_proc = true
@@ -6595,6 +6598,44 @@ func _primary_pool_current(character) -> int:
 		"mage": return int(character.current_mana)
 		"trickster": return int(character.current_energy)
 	return int(character.current_stamina)
+
+func long_con_denial_chance(character, ability_name: String) -> int:
+	"""The Grifter's chance of DOUBLE Read from this card, or 0. One definition, so the cast and
+	the card display cannot disagree about which cards it covers."""
+	if not (ability_name in ["analyze", "distract", "sabotage"]):
+		return 0
+	var pas: Dictionary = character.get_class_passive()
+	var fx: Dictionary = pas.get("effects", {}) if pas is Dictionary else {}
+	return int(fx.get("denial_read_chance", 0))
+
+func preview_read_gain(character, combat: Dictionary, ability_name: String) -> int:
+	"""The MOST Read this card can grant on this cast, for the card face.
+
+	2026-09-06, owner: "any cards that are going to give him additional read on use (more than 1)
+	whether from his passive, or a card upgrade, or conditional upgrade, should show that on the
+	card display in combat via multiple read showing on the card."
+
+	Computed server-side and sent with the card, rather than re-derived in the client — a client
+	copy of this would be the fourth mirror found and removed in as many days. It is the CEILING,
+	because Long Con is a coin flip and the conditional upgrades depend on state the player can
+	see for themselves (their own health, their own bar)."""
+	if character == null or character.get_class_path() != "trickster":
+		return 0
+	if Character.get_ability_archetype(ability_name) != "trickster":
+		return 0
+	var gain: int = 1
+	if long_con_denial_chance(character, ability_name) > 0:
+		gain += 1
+	var picks: Array = character.get_milestone_picks(ability_name)
+	if not picks.is_empty():
+		# The upgrades that feed the class engine, which for a Trickster IS Read.
+		if "desperate" in picks and float(character.current_hp) < 0.34 * float(character.get_total_max_hp()):
+			gain += 2
+		if "kindling" in picks and _primary_pool_current(character) >= _primary_pool_max(character):
+			gain += 1
+		if "harrying" in picks:
+			gain += 1
+	return gain
 
 func _feed_class_engine(combat: Dictionary, character, amount: int, result: Dictionary, label: String) -> void:
 	"""Add to whichever engine this class runs on, respecting its cap. Same shape as the
