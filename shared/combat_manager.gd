@@ -1147,6 +1147,8 @@ func _damage_player_through_shield(combat: Dictionary, character, amount: int, l
 			combat["forcefield_shield"] = shield - absorbed
 		else:
 			combat.erase("forcefield_shield")
+		if FORCEFIELD_TRACE:
+			print("[FFTRACE] %s: shield spent to 0 absorbing %d" % [character.character_name, absorbed])
 		remaining -= absorbed
 		_note_mitigation(combat, "Forcefield absorbs %d%s" % [absorbed, (" (%s)" % label) if label != "" else ""])
 	if remaining > 0:
@@ -1827,6 +1829,9 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	var forcefield_buff = character.get_buff_value("forcefield")
 	if forcefield_buff > 0:
 		combat_state["forcefield_shield"] = forcefield_buff
+	if FORCEFIELD_TRACE:
+		print("[FFTRACE] combat START for %s, shield seeded = %d" % [
+			character.character_name, int(combat_state.get("forcefield_shield", 0))])
 
 	# Check for other scroll buffs that affect combat
 	var lifesteal_buff = character.get_buff_value("lifesteal")
@@ -3731,6 +3736,12 @@ func _ability_anchored_damage(character, stat_name: String, weight: float) -> fl
 const FORCEFIELD_SHARE_OF_BAR := 0.25
 # Each Forcefield recast within the same fight absorbs this fraction of the previous one.
 # Bounds the maintain-it-forever loop without touching the (already calibrated) first cast.
+# 2026-09-05 — a targeted trace for a live report I could not reproduce: a player with a 69+14
+# shield took 12 damage to health, and the log line carried no "Forcefield absorbs" annotation,
+# meaning the shield was not on the combat dict when the hit resolved. Solo absorption measures
+# correct 55/55, so rather than guess a third time, this records every write, every clear and the
+# shield's value at the moment damage lands. Flip it off once the cause is known.
+const FORCEFIELD_TRACE: bool = true
 const FORCEFIELD_RECAST_FALLOFF := 0.55
 
 # Crit multiplier for ABILITY damage. Deliberately below the basic attack's 1.5x
@@ -4847,6 +4858,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				shield_value = maxi(1, int(float(shield_value) * pow(FORCEFIELD_RECAST_FALLOFF, float(_ff_casts))))
 			combat["forcefield_casts"] = _ff_casts + 1
 			combat["forcefield_shield"] = shield_value
+			if FORCEFIELD_TRACE:
+				print("[FFTRACE] cast by %s -> shield=%d (recast #%d)" % [character.character_name, shield_value, _ff_casts])
 			var _ff_msg: String = "[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value
 			if _ff_casts > 0:
 				_ff_msg += "
@@ -7794,6 +7807,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 		# Check for Forcefield shield (absorbs damage)
 		var forcefield_shield = combat.get("forcefield_shield", 0)
+		if FORCEFIELD_TRACE and total_damage > 0:
+			print("[FFTRACE] %s hit for %d, shield on the combat dict = %d" % [
+				character.character_name, total_damage, forcefield_shield])
 		if forcefield_shield > 0:
 			if total_damage <= forcefield_shield:
 				combat["forcefield_shield"] = forcefield_shield - total_damage
@@ -7806,6 +7822,9 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			else:
 				total_damage -= forcefield_shield
 				combat.erase("forcefield_shield")
+				if FORCEFIELD_TRACE:
+					print("[FFTRACE] %s: shield broke absorbing %d, %d got through" % [
+						character.character_name, forcefield_shield, total_damage])
 				_note_mitigation(combat, "Forcefield absorbs %d, then breaks" % forcefield_shield)
 
 		# GM godmode: negate all damage
