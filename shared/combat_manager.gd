@@ -7908,14 +7908,20 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				# marked it, so the detector read the next hit as "vanished unspent" and cried
 				# wolf three times in one audit. Leaving a 0-valued key around is also untidy:
 				# every reader tests `> 0`, so erase it and let absence mean absence.
-				if int(combat["forcefield_shield"]) <= 0:
+				# 2026-09-06 — read the remainder into a local BEFORE erasing. The note below
+				# used dot access (`combat.forcefield_shield`), which throws the moment the key
+				# is gone, so the exact-zero erase added yesterday crashed every fully-absorbed
+				# killing blow. Caught by the class audit, not by a unit check — the crash only
+				# happens when a hit lands exactly on the remaining shield.
+				var _ff_left: int = int(combat["forcefield_shield"])
+				if _ff_left <= 0:
 					combat.erase("forcefield_shield")
 					combat["_ff_spent"] = true
 				# 2026-09-04 - rides on the monster's attack line rather than taking one of its own.
 				# A fully absorbed hit used to read as THREE lines: the absorb, then "attacks and
 				# deals 0 damage!", then whatever followed. Owner: "the forcefield line absorbing
 				# damage seems like it goes multiple lines still (when the monster attacks)."
-				_note_mitigation(combat, "Forcefield absorbs %d (%d shield left)" % [total_damage, combat.forcefield_shield])
+				_note_mitigation(combat, "Forcefield absorbs %d (%d shield left)" % [total_damage, _ff_left])
 				total_damage = 0
 			else:
 				total_damage -= forcefield_shield

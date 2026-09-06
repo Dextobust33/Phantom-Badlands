@@ -107,7 +107,6 @@ func _audit_registry() -> Dictionary:
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
 		"roles": ["elite/boss fights vs their ROLE_TARGETS", run_role_audit],
-		"realcheck": ["make_char vs the REAL saved characters — is the reference player honest?", run_real_character_check],
 		"fallback": ["does a win rate mean the same thing for every class?", run_fallback_audit],
 		"xp": ["how many fights to level, and what is the best way", run_xp_audit],
 		"risk": ["over-level gambles: kill/escape/death and what the reward is worth", run_risk_reward_audit],
@@ -661,6 +660,21 @@ func run_class_audit():
 		print(row)
 	print("=====================================================================\n")
 
+func _avg_equipped_level(ch) -> float:
+	"""Mean item level of what a character is WEARING. Used to spot a twinked save: gear far above
+	the character's own level was handed to them, so it says nothing about what a player of that
+	level naturally has, and one of them moves an average on its own."""
+	var tot := 0.0
+	var n := 0
+	var eq = ch.equipped
+	if eq is Dictionary:
+		for k in eq.keys():
+			var it = eq[k]
+			if it is Dictionary and not (it as Dictionary).is_empty():
+				tot += float(int(it.get("level", 0)))
+				n += 1
+	return (tot / float(n)) if n > 0 else 0.0
+
 func _load_real_characters() -> Array:
 	# #5 — GROUND TRUTH. Real saved characters written by the dev server live in
 	# user://data/characters (same user:// as the server, since the sim runs from this
@@ -776,7 +790,11 @@ func run_calibration_audit():
 		bands[band]["rows"].append(acc)
 		bands[band]["levels"] = bands[band].get("levels", [])
 		bands[band]["levels"].append([int(real.level), acc[1]])
-		print("%-11s %-10s %-9s %-4d %-8s %-8s %5.2fx %5.2fx %5.2fx  (%d/%d/%d)" % [
+		# 2026-09-06 — mark a save whose GEAR far outranks its level. Banding already keeps a
+		# naked character from calibrating the geared tier; this catches the opposite end, where
+		# one L4 wearing item-level 24 kit drags a band's median on its own.
+		var _twk: String = "  <-- twinked" if _avg_equipped_level(real) > float(int(real.level)) * 2.0 else ""
+		print("%-11s %-10s %-9s %-4d %-8s %-8s %5.2fx %5.2fx %5.2fx  (%d/%d/%d)%s" % [
 			String(real.name).substr(0, 11), String(real.class_type), String(real.race), int(real.level),
 			"%s/%d" % [band, int(info["slots"])], tier,
 			acc[0], acc[1], acc[2],
@@ -4406,144 +4424,6 @@ func _apply_class_kit(ch, klass: String, glevel: int, best_of: int, max_pieces: 
 				continue   # what they already have is better; a player keeps it
 		ch.equipped[slot2] = by_slot[slot2]
 		worn += 1
-
-const REALCHECK_DIR := "user://realchars"
-# Unix time of 2026-09-03, when character creation began granting one common piece per slot.
-# A character older than this started with NOTHING and is not evidence about today's new player.
-const REALCHECK_ERA_CUTOFF := 1788480000
-
-func run_real_character_check() -> void:
-	"""Compare the sim's reference player against the characters people actually have.
-
-	2026-09-05, owner direction: "Validate make_char against the real saved characters first."
-	The corrected instrument put a same-level normal fight at 100% win at L1, which flatly
-	contradicts what live players report — and the owner's read is that the early game currently
-	feels about right. If the game feels right and the model says it is trivial, the MODEL is
-	wrong, and letting refcal fit monsters to it would size the game for a player who does not
-	exist.
-
-	Reads real character saves (copy them to `user://realchars`) and reports, per character, what
-	make_char would have built at the same level, class and race."""
-	var dir := DirAccess.open(REALCHECK_DIR)
-	if dir == null:
-		print("No characters at %s — copy the server's data/characters/*.json there first." % REALCHECK_DIR)
-		return
-	var files: Array = []
-	for f in dir.get_files():
-		if f.ends_with(".json"):
-			files.append(f)
-	files.sort()
-	if files.is_empty():
-		print("No .json character saves found in %s" % REALCHECK_DIR)
-		return
-
-	print("
-=== make_char vs REAL saved characters ===")
-	print("%-16s %-10s %-4s | %-26s | %-26s" % ["name", "class", "lvl", "REAL  atk/def/hp/pool/gear", "make_char average"])
-	var acc := {"atk": [], "def": [], "hp": [], "pool": [], "gear": []}
-	var skipped_legacy := 0
-	for fname in files:
-		var txt := FileAccess.get_file_as_string("%s/%s" % [REALCHECK_DIR, fname])
-		if txt == "":
-			continue
-		var parsed = JSON.parse_string(txt)
-		if not (parsed is Dictionary):
-			continue
-		var data: Dictionary = parsed
-		if String(data.get("class", "")) == "":
-			continue
-		# 2026-09-05 — SKIP characters created before the starter-kit grant (2026-09-03), when a
-		# new character began with nothing. Owner: "Real characters on the live server have
-		# starter equipment. Your info looks wrong." They were right: every 0/7 character in the
-		# saves predates the grant, and fitting the model to them taught it that new players are
-		# naked when creation actually hands out one common piece per slot. This is the same
-		# legacy-character trap the owner flagged for the progression report — which is where
-		# era-partitioning was added, and then not applied here.
-		if int(data.get("created_at", 0)) < REALCHECK_ERA_CUTOFF:
-			skipped_legacy += 1
-			continue
-		var real = CharacterScript.new()
-		real.from_dict(data)
-		var lvl: int = int(real.level)
-		var sim = make_char(lvl, "average", String(real.class_type), String(real.race))
-		var r_gear := _count_equipped(real)
-		var s_gear := _count_equipped(sim)
-		var r_pool := _primary_pool_of(real)
-		var s_pool := _primary_pool_of(sim)
-		# Gear far above the character's level means someone was handed it — not evidence about
-		# what a player of that level naturally has.
-		var r_ilvl := _avg_equipped_level(real)
-		var twink: String = "  <-- twinked (ilvl %.0f at L%d)" % [r_ilvl, lvl] if r_ilvl > float(lvl) * 2.0 else ""
-		print("%-16s %-10s %-4d | %5d %5d %5d %5d %d/7 | %5d %5d %5d %5d %d/7%s" % [
-			String(real.name).substr(0, 16), String(real.class_type), lvl,
-			real.get_total_attack(), real.get_total_defense(), real.get_total_max_hp(), r_pool, r_gear,
-			sim.get_total_attack(), sim.get_total_defense(), sim.get_total_max_hp(), s_pool, s_gear, twink])
-		if real.get_total_attack() > 0:
-			acc["atk"].append(float(sim.get_total_attack()) / float(real.get_total_attack()))
-		if real.get_total_defense() > 0:
-			acc["def"].append(float(sim.get_total_defense()) / float(real.get_total_defense()))
-		if real.get_total_max_hp() > 0:
-			acc["hp"].append(float(sim.get_total_max_hp()) / float(real.get_total_max_hp()))
-		if r_pool > 0:
-			acc["pool"].append(float(s_pool) / float(r_pool))
-		acc["gear"].append(float(s_gear) - float(r_gear))
-
-	print("
-(skipped %d legacy character(s) created before the starter-kit grant)" % skipped_legacy)
-	print("
---- model vs reality (1.00 = the model matches) ---")
-	print("  %-5s %-8s %-8s %s" % ["", "mean", "median", "n"])
-	for k in ["atk", "def", "hp", "pool"]:
-		var a: Array = acc[k]
-		if a.is_empty():
-			continue
-		var tot := 0.0
-		for v in a:
-			tot += float(v)
-		# The MEDIAN is the honest headline here. The population is small and contains twinked
-		# characters wearing gear far above their level (one L4 measured 211 attack against a
-		# model's 35), and a single one of those drags a mean across the whole conclusion.
-		var sorted_a: Array = a.duplicate()
-		sorted_a.sort()
-		var mid: float = float(sorted_a[sorted_a.size() / 2])
-		if sorted_a.size() % 2 == 0:
-			mid = (float(sorted_a[sorted_a.size() / 2 - 1]) + float(sorted_a[sorted_a.size() / 2])) / 2.0
-		print("  %-5s x%-7.2f x%-7.2f %d" % [k, tot / float(a.size()), mid, a.size()])
-	print("  (n is small — treat this as a sanity check, not a calibration input)")
-	var g: Array = acc["gear"]
-	if not g.is_empty():
-		var gt := 0.0
-		for v in g:
-			gt += float(v)
-		print("  gear  %+.1f slots filled vs the real character" % (gt / float(g.size())))
-
-func _avg_equipped_level(ch) -> float:
-	var tot := 0.0
-	var n := 0
-	var eq = ch.equipped
-	if eq is Dictionary:
-		for k in eq.keys():
-			var it = eq[k]
-			if it is Dictionary and not (it as Dictionary).is_empty():
-				tot += float(int(it.get("level", 0)))
-				n += 1
-	return (tot / float(n)) if n > 0 else 0.0
-
-func _count_equipped(ch) -> int:
-	var n := 0
-	var eq = ch.equipped
-	if eq is Dictionary:
-		for k in eq.keys():
-			var it = eq[k]
-			if it is Dictionary and not (it as Dictionary).is_empty():
-				n += 1
-	return n
-
-func _primary_pool_of(ch) -> int:
-	match ch.get_class_path():
-		"mage": return ch.get_total_max_mana()
-		"trickster": return ch.get_total_max_energy()
-		_: return ch.get_total_max_stamina()
 
 func make_char(level: int, gear: String, klass: String = "Fighter", race: String = "Human"):
 	var ch = CharacterScript.new()
