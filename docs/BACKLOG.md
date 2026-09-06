@@ -900,6 +900,38 @@ n=60. It measured nothing, so it is gone rather than left in as an unjustified b
       against everyone else's 7-28. That is the finisher, and the Trickster slice must re-price it.
 - [ ] **Barbarian 33/36 at elite is the weakest cell in the game** and wants its own look.
 
+### ⚠ STOP TUNING RELATIVE STANDING — it is a treadmill (owner, 2026-09-06)
+
+Owner: *"you added mitigation to the warriors and the tricksters... but since it seems warriors
+are back towards the bottom it seems like we are working in circles a bit."* Correct, and worth
+naming as a rule.
+
+What happened: Warriors got an opening stance (60 DR) to fix the Fighter at 22%. Tricksters got
+Read DR to fix "a whiff is a funeral". Mages got a ward, since removed. Each was individually
+justified by a real measurement — and each moved the RELATIVE standing, so whoever was left
+became "the weakest" and invited the next buff. That is a treadmill, not convergence.
+
+**The rule from here: tune every class against the ABSOLUTE targets, never against each other.**
+`ROLE_TARGETS` already states them — a normal fight should cost ~40% of a health bar, an elite
+~65%, a boss ~80%. A class is "fine" when it hits the target, not when it beats its siblings.
+
+Applied to the corrected table, this says something quite different from "warriors are weakest":
+
+| | vs an absolute target |
+|---|---|
+| Tricksters 93-100%, fights over in ~3 turns | **massively OVER** — the one real problem |
+| Mages 58-95% | roughly in band |
+| Warriors 33-86%, Barbarian 33/36 at elite | **UNDER at elite**, worst cell in the game |
+
+So the answer is not another warrior buff. It is re-pricing the Trickster finisher (which the
+slice was already going to do) and looking at Barbarian/Paladin at elite on their own merits.
+
+**Read DR was A/B'd against this standard and KEPT, narrowly.** Without it Tricksters measure
+98/100/100, 91/98/100, 96/95/100; with it 100/100/100, 93/98/100, 98/98/100 — a 2-3pp difference,
+inside noise. So it is NOT the cause of Trickster dominance. It stays because the case it fixes
+is the UNGEARED early player the death logs describe (whiff survival 83%, still-won 62%), which a
+geared sim character never encounters. Worth re-testing once the finisher is re-priced.
+
 ### Sequencing (agreed)
 
 1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently
