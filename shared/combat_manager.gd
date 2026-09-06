@@ -4391,6 +4391,14 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 
 	# Monster's turn (if still alive and ability didn't end turn specially)
 	# Buff abilities only give monster 25% chance to attack (player is being defensive/cautious)
+	#
+	# 2026-09-05 — flag that THIS action has resolved the monster's turn, whether the monster
+	# took it or it was deliberately skipped. The ability path owns the monster turn; the basic
+	# attack path does NOT (that lives in process_combat_action). Any caller driving combat
+	# directly has to know which it just did, and the simulator did not: it called
+	# process_ability_command AND then process_monster_turn, so every cast handed the monster
+	# TWO turns while a basic attack got one. Measured 1.00 + 1.00 against 0.00 + 1.00.
+	combat["monster_turn_resolved"] = true
 	var monster_attacks = true
 	if result.get("buff_ability", false):
 		monster_attacks = randi() % 100 < 25  # 25% chance monster still attacks

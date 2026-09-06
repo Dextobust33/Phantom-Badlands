@@ -1049,7 +1049,7 @@ func _measure_reference_at(level: int, klass: String) -> Dictionary:
 					"mage": _player_act_mage(combat, ch)
 					_: _player_act(combat, ch)
 			dealt += maxi(0, mhp0 - int(monster.get("current_hp", 0)))
-			combat_mgr.process_monster_turn(combat)
+			_monster_turn_if_owed(combat)
 			taken += maxi(0, php0 - ch.current_hp)
 			turns += 1
 			# Keep the player alive: this probe measures RATES, not survival, and a
@@ -1171,7 +1171,7 @@ func run_reference_validate():
 							_: _player_act(combat, ch)
 					if int(monster.get("current_hp", 0)) <= 0:
 						break
-					combat_mgr.process_monster_turn(combat)
+					_monster_turn_if_owed(combat)
 				var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 				if won:
 					wins += 1
@@ -1402,7 +1402,7 @@ func run_damage_tag_probe():
 					print("   MISMATCH dmg=%d not in: %s" % [d, clean.substr(0, 70)])
 			if int(mon2.get("current_hp", 0)) <= 0:
 				break
-			combat_mgr.process_monster_turn(combat2)
+			_monster_turn_if_owed(combat2)
 		combat_mgr.end_combat(0, false, false)
 	for k in kinds:
 		print("   %-4d x %s" % [int(kinds[k]), k])
@@ -1473,7 +1473,7 @@ func run_actor_tag_probe():
 			print("   %-10s | %s" % [a, clean.substr(0, 78)])
 		if int(monster.get("current_hp", 0)) <= 0:
 			break
-		combat_mgr.process_monster_turn(combat)
+		_monster_turn_if_owed(combat)
 	combat_mgr.end_combat(0, false, false)
 	print("=====================================================================
 ")
@@ -1539,7 +1539,7 @@ func run_level_forensics():
 							_: _player_act(combat, ch)
 					if int(monster.get("current_hp", 0)) <= 0:
 						break
-					combat_mgr.process_monster_turn(combat)
+					_monster_turn_if_owed(combat)
 				runs[base2] = int(runs.get(base2, 0)) + 1
 				if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 					wins[base2] = int(wins.get(base2, 0)) + 1
@@ -1887,7 +1887,7 @@ func run_outcome_probe():
 					peak_hp = maxi(peak_hp, ch.current_hp)
 					if int(monster.get("current_hp", 0)) <= 0:
 						break
-					combat_mgr.process_monster_turn(combat)
+					_monster_turn_if_owed(combat)
 					peak_hp = maxi(peak_hp, ch.current_hp)
 				if peak_hp > php0:
 					peak_over += 1
@@ -1997,7 +1997,7 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 						_: _player_act(combat, ch)
 				if int(monster.get("current_hp", 0)) <= 0:
 					break
-				combat_mgr.process_monster_turn(combat)
+				_monster_turn_if_owed(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
 			turns_tot += float(turns)
@@ -2341,7 +2341,7 @@ func run_role_audit():
 								_: _player_act(combat, ch)
 						if int(monster.get("current_hp", 0)) <= 0:
 							break
-						combat_mgr.process_monster_turn(combat)
+						_monster_turn_if_owed(combat)
 					if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 						wins += 1
 					turns_tot += float(turns)
@@ -2443,7 +2443,7 @@ func _fallback_run(lvl: int, role: String, klass: String, samples: int, may_flee
 					_: _player_act(combat, ch)
 			if int(monster.get("current_hp", 0)) <= 0:
 				break
-			combat_mgr.process_monster_turn(combat)
+			_monster_turn_if_owed(combat)
 		if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 			wins += 1
 		elif fled:
@@ -2498,7 +2498,7 @@ func _fight_for_xp(level: int, klass: String, role: String, monster_level: int) 
 				_: _player_act(combat, ch)
 		if int(monster.get("current_hp", 0)) <= 0:
 			break
-		combat_mgr.process_monster_turn(combat)
+		_monster_turn_if_owed(combat)
 	var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 	combat_mgr.end_combat(0, won, false)
 	# Mirror combat_manager's level-gap XP scaling (sqrt bonus above level, graduated
@@ -2638,7 +2638,7 @@ func run_risk_reward_audit():
 									_: _player_act(combat, ch)
 						if int(monster.get("current_hp", 0)) <= 0:
 							break
-						combat_mgr.process_monster_turn(combat)
+						_monster_turn_if_owed(combat)
 					var killed: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 					if killed:
 						kills += 1
@@ -2733,7 +2733,7 @@ func run_companion_unlock_audit():
 						break
 					php_prev = ch.current_hp
 					var comp_hp_before: int = int(ch.active_companion.get("combat_hp", 0)) if comp_mode != "none" else 0
-					combat_mgr.process_monster_turn(combat)
+					_monster_turn_if_owed(combat)
 					if comp_mode != "none":
 						var comp_now: int = int(ch.active_companion.get("combat_hp", 0))
 						if comp_now > 0:
@@ -2789,7 +2789,7 @@ func _role_fight_stats(level: int, role: String, samples: int) -> Dictionary:
 						_: _player_act(combat, ch)
 				if int(monster.get("current_hp", 0)) <= 0:
 					break
-				combat_mgr.process_monster_turn(combat)
+				_monster_turn_if_owed(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
 				# NOTE: measuring turns on WINS ONLY was tried here and made things WORSE —
@@ -2971,7 +2971,7 @@ func run_species_audit():
 								_: _player_act(combat, ch)
 						if int(monster.get("current_hp", 0)) <= 0:
 							break
-						combat_mgr.process_monster_turn(combat)
+						_monster_turn_if_owed(combat)
 					if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 						wins += 1
 					turns += float(t2)
@@ -3136,7 +3136,7 @@ func _species_win_at(nm: String, lvl: int, samples: int) -> Dictionary:
 						_: _player_act(combat, ch)
 				if int(monster.get("current_hp", 0)) <= 0:
 					break
-				combat_mgr.process_monster_turn(combat)
+				_monster_turn_if_owed(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
 			n += 1
@@ -3829,7 +3829,7 @@ func run_flock_chain(level: int, gear: String, klass: String, chain_len: int, et
 				chain_min_res = mini(chain_min_res, _class_resource(ch, klass))
 			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 				break
-			combat_mgr.process_monster_turn(combat)
+			_monster_turn_if_owed(combat)
 		total_turns += turns
 		var mwin: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 		combat_mgr.end_combat(0, mwin, true)  # preserve buffs/engines across the flock
@@ -4773,6 +4773,27 @@ func _warrior_buff_first(combat: Dictionary, ch) -> void:
 	# Out of resource / no castable card → basic attack (also regens + builds Momentum? no).
 	_counted_attack(combat)
 
+func _monster_turn_if_owed(combat) -> void:
+	"""Advance the monster ONLY when the player's action has not already done so.
+
+	2026-09-05 — the instrument was wrong, and it was wrong in a direction that mattered.
+	`process_ability_command` runs the monster's turn itself; `process_attack` does not (that
+	belongs to `process_combat_action`, which the sim bypasses). Every loop here called the
+	player's action and then `process_monster_turn` unconditionally, so a cast gave the monster
+	TWO turns and a basic attack one. Measured directly: 1.00 turns inside the call for an
+	ability + 1.00 added, against 0.00 + 1.00 for an attack.
+
+	Every win rate, every class comparison and the whole refcal/rolecal chain was measured
+	through this, so ability-heavy play was carrying roughly double the incoming damage it
+	should have. `monster_turn_resolved` is set by the engine itself rather than inferred here,
+	so the two cannot drift apart again."""
+	if combat == null:
+		return
+	if combat.get("monster_turn_resolved", false):
+		combat["monster_turn_resolved"] = false
+		return
+	combat_mgr.process_monster_turn(combat)
+
 func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter", monster_level: int = -1, race: String = "Human") -> Dictionary:
 	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile
 	# (e.g. Momentum gating the burst → lower avg player DPS) by giving back a
@@ -4815,7 +4836,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
 		var php0: int = ch.current_hp
-		combat_mgr.process_monster_turn(combat)
+		_monster_turn_if_owed(combat)
 		if monster_dmg_scale < 1.0:
 			var taken: int = php0 - ch.current_hp
 			if taken > 0:
@@ -5181,7 +5202,7 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 						_: _player_act(combat, ch)
 			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 				break
-			combat_mgr.process_monster_turn(combat)
+			_monster_turn_if_owed(combat)
 		var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 		var flock: int = int(monster.get("flock_chance", 0))
 		var mlvl: int = int(monster.get("level", hunt_level))
@@ -5430,7 +5451,7 @@ func _grow_scaled_fight(ch, level: int, hp_mult: float, dmg_mult: float) -> bool
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
 		var hp0: int = ch.current_hp
-		combat_mgr.process_monster_turn(combat)
+		_monster_turn_if_owed(combat)
 		if dmg_mult < 1.0:
 			var taken: int = hp0 - ch.current_hp
 			if taken > 0:
@@ -5738,7 +5759,7 @@ func _tempo_one_fight(ch, level: int, turns_tracked: int) -> Dictionary:
 			break
 		if ch.current_hp <= 0 or combat.get("combat_ended", false):
 			break
-		combat_mgr.process_monster_turn(combat)
+		_monster_turn_if_owed(combat)
 	# carry the final value forward so a short fight does not read as zero damage later on
 	for t in range(turns_tracked):
 		if t > 0 and cum[t] < cum[t - 1]:
@@ -5871,7 +5892,7 @@ func _durability_one_fight(ch, level: int) -> int:
 				_: _player_act(combat, ch)
 		if ch.current_hp <= 0 or combat.get("combat_ended", false):
 			break
-		combat_mgr.process_monster_turn(combat)
+		_monster_turn_if_owed(combat)
 	var _died: bool = ch.current_hp <= 0
 	combat_mgr.end_combat(0, false, false)
 	# Only a death measures durability. Anything else (an Outsmart win, a flee) is discarded.
