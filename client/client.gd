@@ -2179,6 +2179,23 @@ const TRICKSTER_ABILITY_SLOTS = [
 ]
 
 func _ready():
+	# 2026-09-05 — permanent build-freshness probe. Headless `--export-release` has shipped a
+	# STALE compiled-script cache four releases running (v0.9.657-660), and the only reliable
+	# check is RUNNING the packaged exe, because the pck stores compressed binary tokens that
+	# grepping cannot read. This used to mean adding a temporary print, exporting, running,
+	# removing it and exporting again. As a flag it costs one export and never goes stale.
+	#
+	#   PhantomBadlandsClient.exe --buildverify
+	if "--buildverify" in OS.get_cmdline_args():
+		print("[BUILDVERIFY] version=", get_version())
+		print("[BUILDVERIFY] themed_loot_hook=", has_method("_theme_loot_payload"))
+		print("[BUILDVERIFY] outsmart_button_gone=", not has_method("_style_outsmart_button"))
+		print("[BUILDVERIFY] ability_crit_bonus=", "ambush" in CombatManagerScript.ABILITY_CRIT_BONUS)
+		print("[BUILDVERIFY] passive_single_source=", not CharacterScript.class_passive_for("Ninja").is_empty())
+		print("[BUILDVERIFY] ninja_passive=", CharacterScript.class_passive_for("Ninja").get("name", "?"))
+		print("[BUILDVERIFY] read_meter_label=", "Assassinate" if CombatManagerScript.READ_HEIST_PER > 0 else "?")
+		get_tree().quit()
+		return
 	# Set window title with version
 	DisplayServer.window_set_title("Phantom Badlands v" + get_version())
 
