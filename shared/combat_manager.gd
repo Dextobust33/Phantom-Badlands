@@ -3544,14 +3544,25 @@ func assassinate_chance(character, monster, combat, variable_fraction: float = 1
 	var read: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
 	# Weak on its own (15% base, so opening with it is a poor play), strong once the stall has
 	# done its work (+READ_HEIST_PER per Read). Stall, build, then cash.
-	var chance: int = 15 + int((wits - monster_int) * 1.5) + read * READ_HEIST_PER
+	#
+	# 2026-09-05 — the WITS term is CAPPED. Uncapped at 1.5x the gap it reached +45 by level 25,
+	# which put a Grifter at 57% before building a single Read and pinned it to the ceiling
+	# after one stack. Reported: "my Assassinate % chance isn't going up with my Read." It was
+	# going up; the cap was eating it. A finisher that is already a coin-flip cold is also the
+	# opposite of the stated design, which is that opening with it should be a poor play.
+	var wits_edge: int = clampi(int((wits - monster_int) * 1.5), -20, 20)
+	var chance: int = 15 + wits_edge + read * READ_HEIST_PER
 	# Heavy penalty for punching above your level: -2% per level of gap.
 	if level_diff > 0:
 		chance -= level_diff * 2
 	# Silver Tongue and the uniques that used to buy Outsmart odds now buy these instead, so
 	# the node and the items keep doing what their text promises.
 	chance += int(character.get_path_effect_total("assassinate_pct"))
-	chance = clampi(chance, 5, 60)
+	# Each Read also lifts the CEILING, which is what makes stacks 3-8 worth building. Without
+	# it the cap ate every stack past the first — the exact defect READ_CAP_PER was added to
+	# fix for Outsmart, and which came back when this function replaced it and clamped flat.
+	var ceiling: int = 60 + int(read * READ_CAP_PER)
+	chance = clampi(chance, 5, ceiling)
 	# A partial energy commit scales the odds down proportionally.
 	return max(1, int(chance * variable_fraction))
 
@@ -4036,6 +4047,28 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 		result = _process_companion_ability(combat, ability_name)
 	else:
 		return {"success": false, "message": "Unknown ability!"}
+
+	# 2026-09-05 — POISON AND BLIND TICK ON THE ABILITY PATH TOO.
+	#
+	# `_process_status_ticks` was called from process_attack, process_flee and process_special
+	# and nowhere else. Basic attacks are ~1% of what players actually do (measured: 10 of 973
+	# actions), so a player casting a card every turn barely decremented poison at all. The
+	# message promises "50 turns" and means 50 of YOUR turns; ticking only on the 1% path
+	# stretched that across a huge number of real rounds. Reported: "combat said one thing but
+	# it applied it for a much longer duration." It also meant poison dealt a fraction of its
+	# intended damage while lasting nearly forever.
+	#
+	# Same shape as the crit defect fixed earlier today: a mechanic wired only into the
+	# basic-attack path. Ticked only on a SUCCESSFUL cast, because a rejected one (not enough
+	# resource) does not consume your turn. Prepended so the tick reads before the action, the
+	# way it already does on the attack path.
+	if result.get("success", true) != false:
+		var _tick_msgs: Array = []
+		_process_status_ticks(combat.character, _tick_msgs)
+		if not _tick_msgs.is_empty():
+			if not (result.get("messages", null) is Array):
+				result["messages"] = []
+			result["messages"] = _tick_msgs + result["messages"]
 
 	# Mastery Slice 1 — track ability use only on successful resolution.
 	# A failed ability path (insufficient resources, requirement check) sets

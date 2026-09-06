@@ -1082,6 +1082,59 @@ func _on_restart_confirmed():
 	log_message("Waiting for connections...")
 	update_player_list()
 
+func _reconcile_lost_rank_choices(peer_id: int) -> void:
+	"""Give back the rank-up picks that were silently thrown away.
+
+	2026-09-05 — until today a card-upgrade pick could not be stored: the server validated the
+	choice, popped the queued rank-up, and then dropped it, because neither storage path
+	accepted an upgrade id. Owner, after the fix shipped: "I'm looking at a few of my R1 and R2
+	cards in my Deck screen and combat but still not seeing any difference from the things I
+	picked before."
+
+	They will not, and the upgrade they chose cannot be recovered — it was never written
+	anywhere. What CAN be recovered is the entitlement. `milestones_owed` is
+	(mastery rank - picks stored), and since nothing was stored it never went down: the game
+	still considers those milestones unspent. Only the QUEUE entry that raises the popup was
+	consumed. So re-queue one choice per still-owed milestone and the player picks again.
+
+	Runs on load, is idempotent (it counts what is already queued), and costs nothing for a
+	character with no gap."""
+	if not characters.has(peer_id):
+		return
+	var character = characters[peer_id]
+	if not (character.pending_rank_choices is Array):
+		character.pending_rank_choices = []
+	# How many choices are already waiting for each ability.
+	var queued := {}
+	for q in character.pending_rank_choices:
+		var a := String(q.get("ability", ""))
+		queued[a] = int(queued.get(a, 0)) + 1
+	var restored := 0
+	for entry in character.get_all_available_abilities():
+		var ability := String(entry.get("name", ""))
+		if ability == "":
+			continue
+		var gap: int = character.milestones_owed(ability) - int(queued.get(ability, 0))
+		if gap <= 0:
+			continue
+		var rank: int = character.get_ability_rank(ability)
+		for _i in range(gap):
+			var qc := {
+				"ability": ability,
+				"new_rank": rank,
+				"queued_at": Time.get_unix_time_from_system(),
+				"restored": true,
+			}
+			qc["upgrade_offer"] = combat_mgr._build_upgrade_offer(character, ability, rank)
+			character.pending_rank_choices.append(qc)
+			restored += 1
+	if restored > 0:
+		log_message("[RANKFIX] Restored %d unspent rank-up choice(s) for %s" % [restored, character.character_name])
+		send_to_peer(peer_id, {"type": "text", "message":
+			"[color=#FFD700]★ %d card upgrade%s you picked earlier never applied — a bug that has now been fixed.[/color]
+[color=#808080]The choices have been given back to you. Open your Deck to pick them again.[/color]"
+			% [restored, "" if restored == 1 else "s"]})
+
 func update_player_list():
 	"""Update the player list UI with connected players."""
 	if player_count_label:
@@ -2537,6 +2590,8 @@ func handle_select_character(peer_id: int, message: Dictionary):
 
 	# Update title holder tracking
 	_update_title_holders_on_login(peer_id)
+
+	_reconcile_lost_rank_choices(peer_id)
 
 	var username = peers[peer_id].username
 	log_message("Character loaded: %s (Account: %s) for peer %d" % [char_name, username, peer_id])

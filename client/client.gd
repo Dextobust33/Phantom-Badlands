@@ -9138,18 +9138,26 @@ func update_action_bar():
 				first_ability,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				attack_action,  # Attack moves to slot 4 now that Outsmart is retired
+				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
+				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
+				# ability block has to begin at bar index 4 or every card shifts a key to the
+				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
+				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
+				attack_action,
 			]
 			# Add remaining abilities (skip first since it's on slot 1)
 			for i in range(1, min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 		else:
-			# 2026-09-05 — Outsmart retired, so its E slot is gone and the ability row moves up
-			# one. That is a real gain: one more card reachable without scrolling.
 			current_actions = [
 				attack_action,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
+				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
+				# ability block has to begin at bar index 4 or every card shifts a key to the
+				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
+				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
 			]
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
@@ -9170,6 +9178,11 @@ func update_action_bar():
 				first_ability,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
+				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
+				# ability block has to begin at bar index 4 or every card shifts a key to the
+				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
+				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
 				attack_action,
 			]
 			for i in range(1, min(6, ability_actions.size())):
@@ -9179,6 +9192,11 @@ func update_action_bar():
 				attack_action,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+				# 2026-09-05 — Outsmart's slot stays as an inert placeholder ON PURPOSE. The hand
+				# list from _get_combat_hand_actions is fixed to keys [R, 1, 2, 3, 4, 5], so the
+				# ability block has to begin at bar index 4 or every card shifts a key to the
+				# left. Removing Outsmart without this put the cards on R/1/2 instead of 1/2/3.
+				{"label": "—", "action_type": "none", "action_data": "", "enabled": false},
 			]
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
@@ -13289,12 +13307,18 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			var debuff = clampi(int((15 + wits_stat / 4) * fraction), 1, 30)
 			return {"text": "-%d%% str/def" % debuff, "color": "#A0E060"}
 		"perfect_heist":
-			var monster_int_est = 15
-			if current_enemy_level > 5:
-				monster_int_est = 10 + int(current_enemy_level / 5)
-			var lvl_diff = max(0, current_enemy_level - int(character_data.get("level", 1)))
-			var raw = 30 + int((wits_stat - monster_int_est) * 1.5) - lvl_diff * 2
-			var chance = max(1, int(clampi(raw, 5, 60) * fraction))
+			# 2026-09-05 — use the SERVER's number, not a third copy of the maths.
+			#
+			# Reported: "my Assassinate % under the Read meter shows 60% while the card itself
+			# shows 59%." The meter reads the authoritative value from the combat state; the
+			# card computed its own, and that copy was stale in three separate ways — base 30
+			# against the real 15, no Read term at all, and a GUESS at the enemy's Intelligence
+			# instead of the real value. It only looked close because both were near the cap.
+			#
+			# `_combat_assassinate_chance` is the value the server sent for this exact fight, so
+			# the two readouts cannot disagree any more. It is a full-commit figure, so the
+			# partial-spend fraction applies the same way it does on the meter's roll.
+			var chance = max(1, int(_combat_assassinate_chance * fraction))
 			return {"text": "%d%% kill" % chance, "color": "#A0E060"}
 		"forethought":
 			return {"text": "Skip monster turn", "color": "#9370DB"}
@@ -19512,7 +19536,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"ambush": return "WITS-scaled damage, and it is the surprise strike: +25% crit chance on top of your own. Variable cost 9-30 energy — damage scales with spend."
 		"vanish": return "Go invisible — your next damaging action is a guaranteed crit. Skips enemy turn."
 		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
-		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks. Variable cost 15-50 energy — success CHANCE scales with spend (floor-cast Heist is almost always a miss; full-cost is the only realistic shot)."
+		"perfect_heist": return "Instant-win attempt. 15% base, +5% per Read, plus your Wits against the enemy's Intelligence (capped) and -2% per level it is above you. Each Read raises the ceiling too — 60% cold, 85% at full Read. On success: instant kill + 1.25× XP. On failure: the enemy counter-attacks. Variable cost 15-50 energy — the success CHANCE scales with spend, so a floor cast is almost always a miss."
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
 		"gambit": return "4.5× WITS-scaled damage on hit (55-80% success). On miss: 15% of your max HP as self-damage. Bonus loot if the hit kills. Variable cost 10-35 energy — both hit damage AND miss self-damage scale with spend; success chance stays constant."
 		"forethought": return "Pay 1 of your primary resource to skip the monster's turn. The hand mulligan is now automatic — every player action draws a fresh hand, so Forethought is purely a tempo / safety card. Universal."
@@ -31276,11 +31300,15 @@ func update_companion_art_overlay():
 	comp_combat_hp = clampi(comp_combat_hp, 0, comp_max_hp)
 	var hp_color: String
 	var hp_text: String
-	# v0.9.575 — Wounded/KO'd companions now name the healer remedy directly
-	# so new players know they can rest or visit a healer (H tile at NPC posts).
+	# v0.9.575 — Wounded/KO'd companions name the remedy directly.
+	# 2026-09-05 — the KO line used to say "rest or visit H tile". Resting does NOT revive a
+	# KO'd companion: regen_companion is skipped entirely once it is down, and only a healer
+	# or a Companion Revive Potion brings it back. Reported by a player who kept resting and
+	# wondered why nothing happened. Resting DOES heal a merely wounded one, so that line is
+	# correct and stays.
 	if comp_combat_hp <= 0:
 		hp_color = "#FF6666"
-		hp_text = "KO'd — rest or visit H tile"
+		hp_text = "KO'd — healer (H tile) or a Revive Potion"
 	elif comp_combat_hp < comp_max_hp / 3:
 		hp_color = "#FFAA33"
 		hp_text = "HP %d / %d — wounded, rest or visit H" % [comp_combat_hp, comp_max_hp]
@@ -32795,7 +32823,7 @@ func show_help():
   [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
   [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
   [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
-  [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]Read[/color], ±WIT vs enemy INT, -2%/level above you, caps 60%. Fail = free enemy attack
+  [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]Read[/color], ±WIT (capped) vs enemy INT, -2%/level above you. Each Read also raises the ceiling: 60% cold, 85% at full Read. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
 [color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
@@ -33226,7 +33254,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 			"content": "[color=#FFA500]Assassinate[/color] — find the opening and end a fight in one strike, bypassing the enemy's HP entirely. The [b]Trickster's signature[/b], and its way of killing things nothing else at its level can touch.
 [color=#7FD8C8]◉ Read is the engine.[/color] Every Trickster card you play adds a stack, and each stack adds [b]+5% to the strike[/b]. At 15% base a cold opener is a bad bet; at full Read it is the best button in the game.
 [color=#C8A0FF]Grifters[/color] build Read fastest — their denial cards (Analyze, Distract, Sabotage) have a [b]50% chance to build double[/b], and the log says [b]LONG CON![/b] when it fires.
-[color=#AAAAAA]Wits above the enemy's Intelligence helps. Higher-level foes cost you 2% per level, and the strike caps at 60%.[/color]
+[color=#AAAAAA]Wits above the enemy's Intelligence helps (capped, so it cannot replace Read). Higher-level foes cost you 2% per level. Each Read raises the ceiling as well as the odds — 60% with none, 85% at full Read — so every stack pays.[/color]
 [color=#FF4444]A miss costs you the turn and takes a free hit.[/color] Read survives, so you can line the shot up again.
 [color=#808080]Replaced Outsmart, which did the same job worse — measured, it contributed almost nothing while Assassinate carried the class.[/color]"
 		},
@@ -39204,7 +39232,9 @@ func handle_healer_encounter(message: Dictionary):
 		var ccur: int = int(comp_info.get("current_hp", 0))
 		var cmax: int = int(comp_info.get("max_hp", 1))
 		var cko: bool = bool(comp_info.get("ko", false))
-		var ko_tag: String = "  [color=#FF6666](KO'd — will revive)[/color]" if cko else ""
+		# 2026-09-05 — was "(KO'd — will revive)", which reads as "this fixes itself". It does
+		# not: a KO'd companion stays down until a healer or a Revive Potion brings it back.
+		var ko_tag: String = "  [color=#FF6666](KO'd — needs a healer or Revive Potion)[/color]" if cko else ""
 		display_game("[color=#3DD9FF]%s: %d / %d[/color]%s" % [comp_name, ccur, cmax, ko_tag])
 	display_game("")
 
