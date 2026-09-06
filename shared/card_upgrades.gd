@@ -242,13 +242,24 @@ static func eligible(kind: String, milestone: int, taken: Array) -> Array:
 const OFFER_SIZE := 9
 const REVEALS_ALLOWED := 3
 
-static func draw_choices(kind: String, milestone: int, taken: Array, count: int = OFFER_SIZE) -> Array:
+static func draw_choices(kind: String, milestone: int, taken: Array, count: int = OFFER_SIZE, exclude: Array = []) -> Array:
 	"""Three (or `count`) distinct upgrades for this rank-up.
 
 	Drawn rather than fixed, so successive milestones on the same card do not repeat — the
 	owner's requirement. If the eligible pool has run dry (a heavily-invested card that has
 	taken every non-stacking option), the stackable ones remain, so a menu is always offered."""
 	var pool := eligible(kind, milestone, taken)
+	# 2026-09-05 — drop upgrades that cannot do anything for THIS card, before the draw rather
+	# than after, so the offer still fills to `count` instead of quietly shrinking. Reported:
+	# "I've got a Duration upgrade option for forcefield. I don't think that's viable" — correct,
+	# Forcefield's shield has a CAPACITY, not a duration; it lasts until it is spent.
+	if not exclude.is_empty():
+		var filtered: Array = []
+		for u in pool:
+			if not (String(u.get("id", "")) in exclude):
+				filtered.append(u)
+		if not filtered.is_empty():
+			pool = filtered
 	if pool.is_empty():
 		# Nothing left is a bug in the pool, not a state a player should reach. Fall back to
 		# the always-stackable pair rather than handing back an empty menu.

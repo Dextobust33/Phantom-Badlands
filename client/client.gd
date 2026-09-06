@@ -2194,8 +2194,25 @@ func _ready():
 		print("[BUILDVERIFY] passive_single_source=", not CharacterScript.class_passive_for("Ninja").is_empty())
 		print("[BUILDVERIFY] ninja_passive=", CharacterScript.class_passive_for("Ninja").get("name", "?"))
 		print("[BUILDVERIFY] read_meter_label=", "Assassinate" if CombatManagerScript.READ_HEIST_PER > 0 else "?")
+		# Perf guards for the 4K-laptop thermal-throttling report (v0.9.735). These live in
+		# project.godot, which is baked into the pck — so the only way to know a shipped build
+		# still has them is to ask the running engine.
+		print("[BUILDVERIFY] max_fps=", Engine.max_fps)
+		print("[BUILDVERIFY] vsync_mode=", DisplayServer.window_get_vsync_mode())
 		get_tree().quit()
 		return
+	# 2026-09-05 — enforce vsync HERE rather than in project.godot.
+	#
+	# The 4K-laptop thermal-throttling fix (v0.9.735) set `run/max_fps=60` AND
+	# `window/vsync/vsync_mode=1`. Only the first survives: the Godot editor strips any project
+	# setting that equals its default, and `--editor --quit` is a MANDATORY step before every
+	# export, so the vsync line is deleted on every single release build. It was put back once
+	# with a comment warning about exactly this, and the recompile deleted the comment too.
+	#
+	# Behaviour was never actually lost (1 is the default, which is why it gets stripped), but a
+	# guard that cannot survive the build is not a guard. Set at runtime, it cannot be stripped,
+	# and --buildverify can prove it is live in a packaged client.
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
 	# Set window title with version
 	DisplayServer.window_set_title("Phantom Badlands v" + get_version())
 

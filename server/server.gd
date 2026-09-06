@@ -10274,6 +10274,11 @@ func trigger_flock_encounter(peer_id: int, monster_name: String, monster_level: 
 		internal_state["momentum"] = int(engine_carry.get("momentum", 0))
 		internal_state["combo"] = int(engine_carry.get("combo", 0))
 		internal_state["focus"] = int(engine_carry.get("focus", 0))
+		# The defensive cast survives the pack chaining, along with its recast counter.
+		var _ff_carry: int = int(engine_carry.get("forcefield_shield", 0))
+		if _ff_carry > 0:
+			internal_state["forcefield_shield"] = _ff_carry
+		internal_state["forcefield_casts"] = int(engine_carry.get("forcefield_casts", 0))
 		if is_dungeon_combat:
 			internal_state["is_dungeon_combat"] = true
 			internal_state["is_boss_fight"] = is_boss_fight
@@ -12527,8 +12532,33 @@ func handle_home_stone_select(peer_id: int, message: Dictionary):
 			send_to_peer(peer_id, {"type": "error", "message": "Invalid Home Stone type."})
 			return
 
-	# Consume the Home Stone item
-	character.use_consumable_stack(item_index)
+	# Consume the Home Stone item.
+	#
+	# 2026-09-05 — re-locate the stone by its own id first. Reported: "Home Stone (Equipment)
+	# may be bugged and not actually consuming the home stone on use." It was: the equipment
+	# and supplies variants REMOVE entries from the inventory while doing their work
+	# (`inventory.remove_at`), and this consumed by the index captured before that ran. If the
+	# item sent to the house sat below the stone, every later index shifted down by one, so the
+	# consume landed on whatever now occupied that slot — usually not a consumable at all, in
+	# which case use_consumable_stack returns {} and the stone is silently kept.
+	#
+	# The index is a position; the stone is an object. Address it as one.
+	var _stone_id = item.get("id", null)
+	var _stone_idx: int = -1
+	if _stone_id != null:
+		for _i in range(character.inventory.size()):
+			if character.inventory[_i].get("id", null) == _stone_id:
+				_stone_idx = _i
+				break
+	if _stone_idx < 0 and item_index >= 0 and item_index < character.inventory.size():
+		# No id on the item (legacy stack) — fall back to the old index, but only if the slot
+		# still holds a home stone, so a shifted index cannot eat an unrelated item.
+		if String(character.inventory[item_index].get("item_type", "")).begins_with("home_stone_"):
+			_stone_idx = item_index
+	if _stone_idx >= 0:
+		character.use_consumable_stack(_stone_idx)
+	else:
+		log_message("[HOMESTONE] Could not re-locate the stone to consume it for peer %d" % peer_id)
 	send_character_update(peer_id)
 	save_character(peer_id)
 

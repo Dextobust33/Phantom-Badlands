@@ -580,6 +580,26 @@ the one doing the work.
       was fixed today from 22%, so this is not a regression — but the spread between best and
       worst class is ~25pp and worth watching
 
+## ⚑ Death replay / shareable combat log (owner direction 2026-09-05)
+
+When a player dies, the broadcast chat message should carry a **clickable link** that lets
+anyone open the combat log for that fight — and better still, a **replay** of the battle, so
+the death can be watched rather than guessed at.
+
+Owner: *"when a player dies, the chat message should have a clickable item that allows everyone
+to view the combatlog or even better yet a replay of the battle to see what happened and how
+they died."*
+
+Notes for whoever picks this up:
+- The log is already structured per-beat (actor / target / damage metadata rides beside each
+  line for the floating numbers), so a replay has real data to work from rather than prose.
+- Chat already renders clickable `[url=...]` payloads — see `_bbcode_meta_safe`, which exists
+  because an unescaped payload once turned the whole log into raw markup.
+- Death is permadeath, so this is also the only chance anyone gets to see that character fight.
+- Scope question to settle first: store the log server-side keyed by a death id (shareable to
+  everyone, survives logout) versus shipping it to the client in the broadcast (cheap, but only
+  players online at the time can open it).
+
 ## ⚑ LIVE BUGS FIXED 2026-09-05 (in tree, NOT yet deployed)
 
 **Assassinated dungeon monsters never died.** Reported live: *"a spider attacked them from

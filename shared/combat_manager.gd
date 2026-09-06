@@ -1123,6 +1123,36 @@ const ACTOR_NEUTRAL := "neutral"
 # instead of printed, and folded into a tooltip on the damage number, which is exactly how a
 # card already explains its own formula (`[url]` + the panel's formula popup). The line says
 # what happened; the number says why, on demand.
+func _damage_player_through_shield(combat: Dictionary, character, amount: int, label: String = "") -> int:
+	"""Damage the player, spending the Forcefield shield FIRST. Returns what reached health.
+
+	2026-09-05, reported live: a player with Forcefield up (plus the Entrenched upgrade) was hit
+	and the damage went straight to health. The ordinary attack path absorbs correctly and so
+	does the party one — but four boss abilities subtracted from current_hp directly and never
+	looked at the shield: Talon Barrage, Hellfire, Forge Heat Overflow and Soul Siphon.
+
+	Forcefield's own text promises to absorb "the next N damage" and names no exceptions, so a
+	source that quietly ignores it is the card doing something it does not say. Routed through
+	one helper rather than four copies of the same three lines, so a fifth ability cannot
+	reintroduce the gap.
+
+	Keeps the floor at 1 HP that every one of these sites already had."""
+	var remaining: int = maxi(0, amount)
+	if remaining <= 0:
+		return 0
+	var shield: int = int(combat.get("forcefield_shield", 0))
+	if shield > 0:
+		var absorbed: int = mini(shield, remaining)
+		if shield - absorbed > 0:
+			combat["forcefield_shield"] = shield - absorbed
+		else:
+			combat.erase("forcefield_shield")
+		remaining -= absorbed
+		_note_mitigation(combat, "Forcefield absorbs %d%s" % [absorbed, (" (%s)" % label) if label != "" else ""])
+	if remaining > 0:
+		character.current_hp = maxi(1, character.current_hp - remaining)
+	return remaining
+
 func _note_modifier(combat: Dictionary, text: String) -> void:
 	"""Buffer a damage-modifier note instead of spending a log line on it."""
 	if not (combat.get("_mod_notes", null) is Array):
@@ -2033,7 +2063,7 @@ func get_active_combat(peer_id: int) -> Dictionary:
 		return active_combats[peer_id]
 	return {}
 
-func chain_engine_carry(momentum: int, combo: int, focus: int) -> Dictionary:
+func chain_engine_carry(momentum: int, combo: int, focus: int, forcefield: int = 0, ff_casts: int = 0) -> Dictionary:
 	"""What the class engines carry into the NEXT link of a flock or summoner chain.
 
 	THE SINGLE DEFINITION. Every path that ends a fight which might chain must build its
@@ -2056,6 +2086,20 @@ func chain_engine_carry(momentum: int, combo: int, focus: int) -> Dictionary:
 		"momentum": maxi(0, momentum),
 		"combo": maxi(0, combo) / 2,   # integer division: 8->4, 1->0
 		"focus": maxi(0, focus),
+		# 2026-09-05 — the Forcefield SHIELD carries too, and so does the recast counter.
+		#
+		# Reported live with a screenshot: a player cast Forcefield (69) with Entrenched (14) and
+		# the very next Hobgoblin's 12-damage hit went straight to health. Momentum, Read, Focus
+		# and the Analyze bonus were all carried across a flock link; the shield was not, because
+		# it lives on the combat dict rather than as a character buff, so the "buffs persist
+		# through flocks" work missed it. A flock is budgeted as ONE encounter, so a defensive
+		# cast that evaporates when the pack chains is the panic button failing at the exact
+		# moment it was bought for.
+		#
+		# `forcefield_casts` rides along deliberately: without it the recast falloff resets on
+		# every link, and maintaining a full-strength shield through a long chain would be free.
+		"forcefield_shield": maxi(0, forcefield),
+		"forcefield_casts": maxi(0, ff_casts),
 	}
 
 func get_last_combat_engines(peer_id: int) -> Dictionary:
@@ -3932,8 +3976,13 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 					var _p_frac: float = _p_raw if _p_raw <= 1.0 else minf(1.5, 1.0 + 0.3 * (sqrt(_p_raw) - 1.0))
 					var _p_eff: float = MAGIC_BOLT_MIN_EFF + (1.0 - MAGIC_BOLT_MIN_EFF) * _p_frac
 					dmg *= _p_frac * _p_eff * focus_mult
-					if _p_have < _p_ceiling:
-						note = "at %d mana" % int(_p_spend)
+					# Always name the spend. Owner: "what does the damage on the card for magic
+					# bolt represent since it is a variable cost it's rather confusing." It is
+					# the damage for the mana THIS cast will actually commit — but the card only
+					# said so when the player was short of a full spend, so the rest of the time
+					# it was a bare number with no stated basis on a card whose whole point is
+					# that the number moves with what you spend.
+					note = "at %d mana" % int(_p_spend)
 				"blast", "frost_nova":
 					dmg *= focus_mult
 				"meteor":
@@ -3941,14 +3990,24 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 					# card shows the average rather than a range it cannot predict.
 					dmg *= (1.0 + float(focus) * FOCUS_METEOR_PER)
 				"ambush":
-					dmg *= 1.25   # 50% crit at +50% = +25% expected
+					# 2026-09-05 — the x1.25 here was Ambush's private 50%/1.5x crit, which was
+					# retired when crit was consolidated. It survived in the PREVIEW, so the card
+					# over-quoted the normal hit by 25% — and I had already told the owner this
+					# number carried no crit term, which was wrong. Ambush's affinity is now a
+					# bonus to the shared crit CHANCE, so the quote is the ordinary hit like
+					# every other card's.
+					pass
 				"gambit":
 					# On-hit value with the odds beside it — Gambit can whiff entirely and hurt
 					# you instead, so averaging the misses in would quote a number the player
 					# never actually sees land.
 					note = "%d%% to land" % mini(80, 55 + int(s_wits / 4.0))
 			if is_spell and focus > 0:
-				note = "Focus %d/%d" % [focus, FOCUS_MAX]
+				# Append rather than overwrite — this used to replace magic_bolt's "at N mana",
+				# so the moment a Mage built any Focus the card stopped saying what spend the
+				# number was for.
+				var _fnote := "Focus %d/%d" % [focus, FOCUS_MAX]
+				note = _fnote if note == "" else "%s, %s" % [note, _fnote]
 			# Run the REAL modifier chain (mastery rank, off-affinity, imprints, Path effects)
 			# rather than a fourth copy of it. A rank-0 ability is at 0.80x, which is most of
 			# what a fresh character will ever see, so omitting this made every card ~20% high.
@@ -6658,7 +6717,12 @@ func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Ar
 	var is_control: bool = ability_name in ["paralyze", "banish", "sabotage", "distract", "analyze"]
 	var kind: String = CU.card_kind(ability_name, is_damage, is_buff, is_control)
 	var taken: Array = character.get_milestone_picks(ability_name) if character != null else []
-	var drawn: Array = CU.draw_choices(kind, milestone, taken)
+	# Some "buff" cards have no DURATION to extend — Forcefield grants a shield with a capacity
+	# that lasts until it is spent, and Phantom Strike arms a single auto-crit. Offering them the
+	# Duration upgrade is offering a pick that does nothing at all.
+	var _no_duration: Array = ["forcefield", "shield", "vanish"]
+	var _exclude: Array = ["duration"] if ability_name in _no_duration else []
+	var drawn: Array = CU.draw_choices(kind, milestone, taken, CU.OFFER_SIZE, _exclude)
 	var out: Array = []
 	for u in drawn:
 		out.append({
@@ -8311,7 +8375,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	if ABILITY_BOSS_TALON_BARRAGE in abilities and hits > 0 and randi() % 100 < 30:
 		var barrage_base = max(1, int(monster.get("attack", 1) * 0.5))
 		for i in range(2):
-			character.current_hp = max(1, character.current_hp - barrage_base)
+			_damage_player_through_shield(combat, character, barrage_base, "Talon Barrage")
 		messages.append("[color=#FFD700][b]TALON BARRAGE![/b][/color] [color=#FF8800]The %s rakes you with two extra strikes! [color=#FF4444]-%d HP[/color] each.[/color]" % [monster.name, barrage_base])
 
 	# Audit #5 boss signature (Slice 10) — Soul Burn (Lich). On each successful
@@ -8340,7 +8404,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		var hellfire_stacks = int(combat.get("player_hellfire_stacks", 0))
 		if hellfire_stacks > 0:
 			var hellfire_dmg = max(1, int(character.get_total_max_hp() * 0.04 * hellfire_stacks))
-			character.current_hp = max(1, character.current_hp - hellfire_dmg)
+			_damage_player_through_shield(combat, character, hellfire_dmg, "Hellfire")
 			messages.append("[color=#FF4500][b]HELLFIRE![/b][/color] [color=#FF8800]Your existing burns flare for [color=#FF4444]-%d HP[/color] (%d stacks).[/color]" % [hellfire_dmg, hellfire_stacks])
 		if hellfire_stacks < 5:
 			combat["player_hellfire_stacks"] = hellfire_stacks + 1
@@ -8355,7 +8419,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if heat_stacks >= 5:
 			combat["forge_heat_stacks"] = 0
 			var forge_dmg = max(1, int(character.get_total_max_hp() * 0.10))
-			character.current_hp = max(1, character.current_hp - forge_dmg)
+			_damage_player_through_shield(combat, character, forge_dmg, "Forge Heat")
 			messages.append("[color=#CD7F32][b]FORGE HEAT OVERFLOW![/b][/color] [color=#FF8800]The %s's forge-fires erupt! [color=#FF4444]-%d HP[/color].[/color]" % [monster.name, forge_dmg])
 		else:
 			messages.append("[color=#CD7F32]The %s's heat builds (forge %d/5).[/color]" % [monster.name, heat_stacks])
@@ -8453,7 +8517,7 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if siphon_already != int(combat.round):
 			combat["soul_siphon_last_round"] = int(combat.round)
 			var drain_amt = max(1, int(character.get_total_max_hp() * 0.08))
-			character.current_hp = max(1, character.current_hp - drain_amt)
+			_damage_player_through_shield(combat, character, drain_amt, "Soul Siphon")
 			var heal_amt_ss = mini(drain_amt, int(monster.max_hp) - int(monster.current_hp))
 			monster.current_hp = mini(int(monster.max_hp), int(monster.current_hp) + drain_amt)
 			messages.append("[color=#9370DB][b]SOUL SIPHON![/b][/color] [color=#A0C8E0]The %s drains [color=#FF8800]%d[/color] HP from you — and heals %d.[/color]" % [monster.name, drain_amt, heal_amt_ss])
@@ -9417,7 +9481,8 @@ func end_combat(peer_id: int, victory: bool, preserve_buffs: bool = false):
 			# much easier, which is the reward for having built it, but a long chain forces a
 			# rebuild and cannot be farmed off one setup.
 			last_combat_engines[peer_id] = chain_engine_carry(
-				int(_ac.get("momentum", 0)), int(_ac.get("combo", 0)), int(_ac.get("focus", 0)))
+				int(_ac.get("momentum", 0)), int(_ac.get("combo", 0)), int(_ac.get("focus", 0)),
+				int(_ac.get("forcefield_shield", 0)), int(_ac.get("forcefield_casts", 0)))
 		# Remove from active combats
 		active_combats.erase(peer_id)
 
@@ -11901,7 +11966,9 @@ func _end_party_combat(leader_id: int, victory: bool):
 		last_combat_engines[pid] = chain_engine_carry(
 			int(_pms_engines.get("momentum", 0)),
 			int(_pms_engines.get("combo", 0)),
-			int(_pms_engines.get("focus", 0)))
+			int(_pms_engines.get("focus", 0)),
+			int(_pms_engines.get("forcefield_shield", 0)),
+			int(_pms_engines.get("forcefield_casts", 0)))
 		party_combat_membership.erase(pid)
 
 	active_party_combats.erase(leader_id)
