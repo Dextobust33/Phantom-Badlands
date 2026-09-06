@@ -720,6 +720,16 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	if "warded" in monster.get("empowered_mods", []):
 		mod_damage = int(mod_damage * 0.65)
 
+	# 2026-09-05 — ANALYZE'S BONUS APPLIES TO ABILITIES TOO.
+	# The card says "+10% damage to all attacks for the rest of this combat", but the bonus was
+	# only ever applied in process_attack — the basic-attack path, ~1% of what players do. So a
+	# Trickster spent a turn on Analyze and the damage half of it did essentially nothing. Third
+	# instance of this exact shape today, after crit and poison.
+	var _an_bonus: int = int(combat.get("analyze_bonus", 0))
+	if _an_bonus > 0:
+		mod_damage = int(float(mod_damage) * (1.0 + float(_an_bonus) / 100.0))
+		_note_modifier(combat, "Analyze +%d%%" % _an_bonus)
+
 	# === ABILITY CRIT (2026-09-05) ===
 	# MEASURED: basic attacks are 1% of player actions (10 of 973). Crit was rolled ONLY in
 	# `calculate_damage`, the basic-attack path, so DEX crit, the class passives built on it and
@@ -766,6 +776,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			combat.erase("vanished")
 			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
 			_note_crit_escalation(character, combat)
+			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				messages.append("[color=#00FF00]✦ Out of the shadow — the strike lands true![/color]")
 			return max(1, mod_damage)
@@ -774,6 +785,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			combat["path_first_strike_done"] = true
 			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
 			_note_crit_escalation(character, combat)
+			_note_modifier(combat, "Phantom Strike auto-crit +%d%%" % int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0))
 			if messages != null and messages is Array:
 				messages.append("[color=#9F70FF]✦ Phantom Strike — the first blow lands true![/color]")
 			return max(1, mod_damage)
@@ -788,6 +800,11 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		if cc > 0 and (randi() % 100) < cc:
 			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
 			_note_crit_escalation(character, combat)
+			# 2026-09-05 — buffer it for the damage-number hover. Ambush used to note its own
+			# private crit here; removing that roll left abilities whose ONLY modifier was a crit
+			# with an empty buffer, and _damage_with_detail falls back to a plain number when
+			# nothing is buffered. Reported: "Ambush doesn't seem like you can hover its damage."
+			_note_modifier(combat, "Critical +%d%% (%d%% chance)" % [int((ABILITY_CRIT_DAMAGE - 1.0) * 100.0), cc])
 			if messages != null and messages is Array:
 				messages.append("[color=#FF6600]CRITICAL![/color]")
 		elif not _passive_has_no_glance(character):
@@ -797,6 +814,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			var gc: int = clampi(ABILITY_GLANCE_BASE - _gap, ABILITY_GLANCE_MIN, ABILITY_GLANCE_MAX)
 			if (randi() % 100) < gc:
 				mod_damage = int(float(mod_damage) * ABILITY_GLANCE_DAMAGE)
+				_note_modifier(combat, "Glancing blow -%d%% (%d%% chance)" % [int((1.0 - ABILITY_GLANCE_DAMAGE) * 100.0), gc])
 				if messages != null and messages is Array:
 					messages.append("[color=#808080]Glancing blow — the strike lands badly.[/color]")
 	return max(1, mod_damage)
@@ -3874,6 +3892,13 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 	var wits_mult: float = 1.0 + sqrt(s_wits) / 10.0
 	var focus: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
 	var focus_mult: float = 1.0 + float(focus) * FOCUS_DMG_PER
+	# 2026-09-05 — the quote reacts to LIVE buffs. Owner: "is that taking into account the
+	# characters current buffs, debuffs, as well as the cards upgrades?" Upgrades were already
+	# in (they ride apply_skill_damage_bonus); buffs were not, so casting War Cry moved the real
+	# hit by 50% and moved the number on the card by nothing at all. Same two terms the cast
+	# applies: the damage buff, and Analyze once it reaches abilities.
+	var preview_buff_mult: float = 1.0 + float(character.get_buff_value("damage")) / 100.0
+	preview_buff_mult *= 1.0 + float(int(combat.get("analyze_bonus", 0))) / 100.0
 
 	# --- Anchored abilities: a share of the health bar they are fighting. ------------------
 	if ABILITY_WEIGHTS.has(name):
@@ -3927,7 +3952,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 			# Run the REAL modifier chain (mastery rank, off-affinity, imprints, Path effects)
 			# rather than a fourth copy of it. A rank-0 ability is at 0.80x, which is most of
 			# what a fresh character will ever see, so omitting this made every card ~20% high.
-			var out_dmg: int = apply_skill_damage_bonus(character, name, int(dmg), combat)
+			var out_dmg: int = apply_skill_damage_bonus(character, name, int(dmg * preview_buff_mult), combat)
 			if is_spell:
 				out_dmg = int(float(out_dmg) * _caster_passive_damage_mult(character))
 			return {"kind": "damage", "value": out_dmg, "scales": note}

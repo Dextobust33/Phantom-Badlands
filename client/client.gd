@@ -13222,10 +13222,11 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 			var wits_mult = 1.0 + sqrt(float(wits_stat)) / 10.0
 			# 2.2x, not 3.0 — #55 trimmed it (3.0 -> 2.5 -> 2.2) and this mirror kept the old
 			# value, so the card over-promised by 36%.
-			# 2026-09-05 — the old x1.25 baked in Ambush's private 50%/1.5x crit, which is gone:
-			# the affinity is now +25 to the SHARED crit chance, worth about +8% on average
-			# rather than +25%.
-			var dmg = int(float(total_attack) * 2.2 * wits_mult * fraction * phys_mult * mastery_mult * 1.08)
+			# 2026-09-05 — no crit factor at all. The server's authoritative quote (which wins
+			# whenever a combat state has arrived) shows the NORMAL hit, before crit, glance,
+			# monster defence and the level penalty. This fallback baking in an average-crit
+			# multiplier made the two disagree for the cards that use it.
+			var dmg = int(float(total_attack) * 2.2 * wits_mult * fraction * phys_mult * mastery_mult)
 			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
 		"exploit":
 			# #55 trimmed this from (15 + WITS/4, cap 35) to (10 + WITS/6, cap 22) because
