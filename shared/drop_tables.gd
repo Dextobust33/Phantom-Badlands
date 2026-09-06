@@ -1649,6 +1649,7 @@ func _generate_ability_tome(item_level: int) -> Dictionary:
 	var tier = get_tier_for_level(item_level)
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": "ability_tome",
 		"item_type": "ability_tome",
 		"gift_ability": ability_name,
@@ -3928,6 +3929,7 @@ static func generate_tool(subtype: String, tier: int, rarity: String = "common")
 	var bar_width_mult = minf(3.00, bar_tier["bar_width_mult"] + float(rarity_bonus.get("bar_width_delta", 0.0)))
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"name": name,
 		"type": "tool",
 		"subtype": subtype,
@@ -4283,6 +4285,7 @@ func generate_fallback_item(item_category: String, item_level: int) -> Dictionar
 			var tier_name = get_tier_name(tier)
 			return {
 				"id": randi(),
+				"created_at": int(Time.get_unix_time_from_system()),
 				"type": "health_potion",
 				"name": "%s Health Potion" % tier_name,
 				"rarity": "common",
@@ -4457,6 +4460,7 @@ func _generate_item(drop_entry: Dictionary, monster_level: int, override_rarity:
 
 	var item = {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": item_type,
 		"rarity": final_rarity,
 		"level": final_level,
@@ -5891,6 +5895,7 @@ func generate_weapon(monster_level: int) -> Dictionary:
 
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": weapon_type,
 		"rarity": rarity,
 		"level": boosted_level,
@@ -5935,6 +5940,7 @@ func generate_shield(monster_level: int) -> Dictionary:
 
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": shield_type,
 		"rarity": rarity,
 		"level": boosted_level,
@@ -5976,6 +5982,7 @@ func generate_mage_gear(monster_level: int) -> Dictionary:
 
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
@@ -6024,6 +6031,7 @@ func generate_trickster_gear(monster_level: int) -> Dictionary:
 
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
@@ -6052,6 +6060,7 @@ func generate_warrior_gear(monster_level: int) -> Dictionary:
 
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": item_type,
 		"rarity": rarity,
 		"level": boosted_level,
@@ -6077,6 +6086,7 @@ func generate_shop_item_with_specialty(item_type: String, rarity: String, item_l
 
 	return {
 		"id": randi(),
+		"created_at": int(Time.get_unix_time_from_system()),
 		"type": item_type,
 		"rarity": final_rarity,
 		"level": final_level,
