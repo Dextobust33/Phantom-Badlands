@@ -37211,7 +37211,7 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 	# is exactly the coupling that makes renames dangerous, so every name the finisher can carry
 	# is listed here: Ninja Assassinate, Grifter Perfect Heist, Ranger Killing Shot.
 	if ("ASSASSINATE!" in combat_msg or "PERFECT HEIST!" in combat_msg
-			or "KILLING SHOT!" in combat_msg
+			or "DOUBLE CROSS!" in combat_msg or "KILLING SHOT!" in combat_msg
 			or "outwit" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 

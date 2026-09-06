@@ -3835,14 +3835,21 @@ func run_flock_chain(level: int, gear: String, klass: String, chain_len: int, et
 			turns += 1
 			if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 				var res0: int = _class_resource(ch, klass)
+				# 2026-09-06 — count cards from the ENGINE's own counter, not from "did the
+				# resource fall". Mage regen can cover a cast's cost within the same turn, so the
+				# old inference reported mages at 0.18-0.30 casts a turn while they were casting
+				# on essentially every turn. The resource delta is still used for the cost
+				# multiplier, which is what it is genuinely measuring.
+				var played0: int = int(combat.get("_cards_played", 0))
 				if klass == "Grifter":
 					_player_act_trickster(combat, ch)
 				elif klass == "Wizard":
 					_player_act_mage(combat, ch)
 				else:
 					_player_act(combat, ch)
-				if _class_resource(ch, klass) < res0:
+				if int(combat.get("_cards_played", 0)) > played0:
 					total_casts += 1
+				if _class_resource(ch, klass) < res0:
 					if _cost_mult > 1.0:
 						_drain_resource(ch, klass, int((res0 - _class_resource(ch, klass)) * (_cost_mult - 1.0)))
 				chain_min_res = mini(chain_min_res, _class_resource(ch, klass))
@@ -4838,12 +4845,14 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 			var mhp0: int = int(monster.get("current_hp", 0))
 			var res0: int = _class_resource(ch, klass)
+			var _played0: int = int(combat.get("_cards_played", 0))
 			match ch.get_class_path():
 				"trickster": _player_act_trickster(combat, ch)
 				"mage": _player_act_mage(combat, ch)
 				_: _player_act(combat, ch)
-			if _class_resource(ch, klass) < res0:
+			if int(combat.get("_cards_played", 0)) > _played0:
 				casts += 1
+			if _class_resource(ch, klass) < res0:
 				if _cost_mult > 1.0:
 					_drain_resource(ch, klass, int((res0 - _class_resource(ch, klass)) * (_cost_mult - 1.0)))
 			min_res = mini(min_res, _class_resource(ch, klass))
