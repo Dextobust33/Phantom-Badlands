@@ -7837,6 +7837,14 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 		if forcefield_shield > 0:
 			if total_damage <= forcefield_shield:
 				combat["forcefield_shield"] = forcefield_shield - total_damage
+				# 2026-09-05 — a run of partial absorbs can land the shield on EXACTLY 0, which
+				# is a shield fully spent just as much as one that breaks. Only the break branch
+				# marked it, so the detector read the next hit as "vanished unspent" and cried
+				# wolf three times in one audit. Leaving a 0-valued key around is also untidy:
+				# every reader tests `> 0`, so erase it and let absence mean absence.
+				if int(combat["forcefield_shield"]) <= 0:
+					combat.erase("forcefield_shield")
+					combat["_ff_spent"] = true
 				# 2026-09-04 - rides on the monster's attack line rather than taking one of its own.
 				# A fully absorbed hit used to read as THREE lines: the absorb, then "attacks and
 				# deals 0 damage!", then whatever followed. Owner: "the forcefield line absorbing

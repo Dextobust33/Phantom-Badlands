@@ -580,6 +580,45 @@ the one doing the work.
       was fixed today from 22%, so this is not a regression — but the spread between best and
       worst class is ~25pp and worth watching
 
+## ⚑⚑ THE SIMULATOR WAS DOUBLE-TURNING MONSTERS — ALL PRIOR BALANCE NUMBERS ARE SUSPECT
+
+**Fixed 2026-09-05. Read this before trusting any measurement taken before that date.**
+
+Every fight loop in `real_combat_sim.gd` called the player's action and then
+`process_monster_turn` unconditionally. But `process_ability_command` runs the monster's turn
+**itself** (`combat_manager.gd:4388`); `process_attack` does not, because that belongs to
+`process_combat_action`, which the sim bypasses by calling `process_attack` directly.
+
+Measured, n=200:
+
+| player action | monster turns inside the call | sim then added | total |
+|---|---|---|---|
+| ability (power_strike) | 1.00 | 1.00 | **2.00** |
+| basic attack | 0.00 | 1.00 | 1.00 |
+
+So a cast carried **double** the incoming damage of a swing, purely as an artefact — and under
+every policy in the sim the player casts nearly every turn.
+
+**What this taints:** the nine-class table, the archetype comparisons, `refcal` / `rolecal` /
+`speciescal` (both `_fight_stats_at` and `run_fight` have the shape), and every difficulty
+conclusion drawn from them. It leans against ability play, so the more a class or policy relies
+on cards, the harder it measured.
+
+- [ ] **Re-run the calibration chain** — `speciescal` → `refcal` → `rolecal`, one pass each, in
+      that order. ~25 minutes. Until then treat the curve as unverified.
+- [ ] **Re-measure the nine-class table.** The standing "warriors are the weakest archetype"
+      (58/53/84/70) is the prime suspect: warriors are ability-heavy, so they absorbed the
+      artefact hardest. Do not act on that finding until it is re-measured.
+- [ ] Re-check the difficulty conclusions that drove the early-game work. The player-side fixes
+      (escape scaling, the gear-level floor, the warrior opening stance) were validated against
+      grown characters and live reports as well, so they are not automatically wrong — but the
+      MAGNITUDES were sized against this instrument.
+
+**The fix is at the source, not in the loops:** the engine sets `monster_turn_resolved` when an
+action has settled the monster's turn (taken, or deliberately skipped), and the sim has one
+guard, `_monster_turn_if_owed`, that advances the monster only when it has not. A convention
+kept in the sim alone would drift again the next time an engine path changes.
+
 ## ⚑ Death replay / shareable combat log (owner direction 2026-09-05)
 
 When a player dies, the broadcast chat message should carry a **clickable link** that lets
