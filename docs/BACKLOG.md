@@ -604,20 +604,43 @@ every policy in the sim the player casts nearly every turn.
 conclusion drawn from them. It leans against ability play, so the more a class or policy relies
 on cards, the harder it measured.
 
-- [x] **Reference player validated first (2026-09-05), on owner instruction.** New `-- realcheck`
-      audit loads the live saves through the game's own Character code and compares them to what
-      `make_char` builds at the same level/class/race. It was **x1.60 attack, x2.01 defence,
-      x1.65 pool, +3.6 gear slots** — almost all of it at LOW level, because it handed a new
-      character a full seven-slot kit when every level 1 character on the live server has seven
-      EMPTY slots. Now x1.12 / x1.12 / x1.35 / +0.5. This is why calibration had to wait: refcal
-      would have sized the early game for a player 2-3x stronger than the real one, and the owner
-      reports the early game currently feels about right.
-- [ ] **THEN re-run the calibration chain** — `speciescal` → `refcal` → `rolecal`, one pass each,
-      in that order. ~25 minutes. It REWRITES `shared/reference_monster_curve.json`, which is live
-      balance data, so get owner approval before running. Until then treat the curve as unverified.
-- [ ] Pool is still x1.35 hot. Likely `make_char` spending every level-up point into the primary
-      stat — a deliberate focused-build model rather than a bug, but it inflates resource pools,
-      which is what ability costs are priced against. Worth deciding before the curve is fit.
+- [x] **Reference player validated (2026-09-05), and the FIRST answer was wrong.** New
+      `-- realcheck` audit loads live saves through the game's own Character code and compares
+      them to what `make_char` builds at the same level/class/race.
+
+      The first pass reported x1.60 attack / x2.01 defence / +3.6 gear slots and concluded the
+      model was 2-3x too strong at low level because "every L1 character has seven empty slots".
+      **That was legacy data.** Owner: *"Real characters on the live server have starter
+      equipment. Your info looks wrong."* Correct — character creation has granted one common
+      piece per slot since 2026-09-03, and EVERY 0/7 character in the saves predates that grant.
+      The same legacy-character trap the owner had already flagged for the progression report,
+      which is where era-partitioning was added and then not applied here. `realcheck` now skips
+      pre-grant saves and reports a MEDIAN alongside the mean, because the population is small
+      and contains twinked characters (one L4 wearing item-level 24 gear, 211 attack against a
+      model 35) that drag a mean on their own.
+
+      Corrected, current-era characters only (n=6, median):
+
+      | | model vs real |
+      |---|---|
+      | max HP | x0.99 |
+      | resource pool | x1.07 |
+      | defence | x1.29 |
+      | **attack** | **x0.64** |
+
+      So the reference player is broadly HONEST on durability and resources, somewhat over-armoured,
+      and materially UNDER-armed. It was never 2-3x too strong.
+
+- [ ] **Chase the x0.64 attack gap before fitting the curve.** It biases in a direction that
+      matters: a model player who kills more slowly makes every fight measure longer and costlier,
+      so refcal would weaken monsters to hit its targets and the live game would come out easier
+      than designed. n=6, so confirm it against more characters before acting.
+- [ ] **A high single-fight win rate at L1 is not by itself evidence of a problem.** With the
+      reference player no longer suspect, the corrected instrument's easy L1 fights sit fine
+      beside the owner's report that the early game feels about right — because the difficulty
+      players actually meet lives in the LOOP (flocks, ambushes, no healing between fights,
+      permadeath), not in one same-level fight. Any curve fit that targets single-fight cost
+      should be checked against a grown-character run before it is trusted.
 - [ ] **Re-measure the nine-class table.** The standing "warriors are the weakest archetype"
       (58/53/84/70) is the prime suspect: warriors are ability-heavy, so they absorbed the
       artefact hardest. Do not act on that finding until it is re-measured.

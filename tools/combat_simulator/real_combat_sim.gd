@@ -4408,6 +4408,9 @@ func _apply_class_kit(ch, klass: String, glevel: int, best_of: int, max_pieces: 
 		worn += 1
 
 const REALCHECK_DIR := "user://realchars"
+# Unix time of 2026-09-03, when character creation began granting one common piece per slot.
+# A character older than this started with NOTHING and is not evidence about today's new player.
+const REALCHECK_ERA_CUTOFF := 1788480000
 
 func run_real_character_check() -> void:
 	"""Compare the sim's reference player against the characters people actually have.
@@ -4438,6 +4441,7 @@ func run_real_character_check() -> void:
 === make_char vs REAL saved characters ===")
 	print("%-16s %-10s %-4s | %-26s | %-26s" % ["name", "class", "lvl", "REAL  atk/def/hp/pool/gear", "make_char average"])
 	var acc := {"atk": [], "def": [], "hp": [], "pool": [], "gear": []}
+	var skipped_legacy := 0
 	for fname in files:
 		var txt := FileAccess.get_file_as_string("%s/%s" % [REALCHECK_DIR, fname])
 		if txt == "":
@@ -4448,6 +4452,16 @@ func run_real_character_check() -> void:
 		var data: Dictionary = parsed
 		if String(data.get("class", "")) == "":
 			continue
+		# 2026-09-05 — SKIP characters created before the starter-kit grant (2026-09-03), when a
+		# new character began with nothing. Owner: "Real characters on the live server have
+		# starter equipment. Your info looks wrong." They were right: every 0/7 character in the
+		# saves predates the grant, and fitting the model to them taught it that new players are
+		# naked when creation actually hands out one common piece per slot. This is the same
+		# legacy-character trap the owner flagged for the progression report — which is where
+		# era-partitioning was added, and then not applied here.
+		if int(data.get("created_at", 0)) < REALCHECK_ERA_CUTOFF:
+			skipped_legacy += 1
+			continue
 		var real = CharacterScript.new()
 		real.from_dict(data)
 		var lvl: int = int(real.level)
@@ -4456,10 +4470,14 @@ func run_real_character_check() -> void:
 		var s_gear := _count_equipped(sim)
 		var r_pool := _primary_pool_of(real)
 		var s_pool := _primary_pool_of(sim)
-		print("%-16s %-10s %-4d | %5d %5d %5d %5d %d/7 | %5d %5d %5d %5d %d/7" % [
+		# Gear far above the character's level means someone was handed it — not evidence about
+		# what a player of that level naturally has.
+		var r_ilvl := _avg_equipped_level(real)
+		var twink: String = "  <-- twinked (ilvl %.0f at L%d)" % [r_ilvl, lvl] if r_ilvl > float(lvl) * 2.0 else ""
+		print("%-16s %-10s %-4d | %5d %5d %5d %5d %d/7 | %5d %5d %5d %5d %d/7%s" % [
 			String(real.name).substr(0, 16), String(real.class_type), lvl,
 			real.get_total_attack(), real.get_total_defense(), real.get_total_max_hp(), r_pool, r_gear,
-			sim.get_total_attack(), sim.get_total_defense(), sim.get_total_max_hp(), s_pool, s_gear])
+			sim.get_total_attack(), sim.get_total_defense(), sim.get_total_max_hp(), s_pool, s_gear, twink])
 		if real.get_total_attack() > 0:
 			acc["atk"].append(float(sim.get_total_attack()) / float(real.get_total_attack()))
 		if real.get_total_defense() > 0:
@@ -4471,7 +4489,10 @@ func run_real_character_check() -> void:
 		acc["gear"].append(float(s_gear) - float(r_gear))
 
 	print("
---- how much HOTTER the reference player is than the real one ---")
+(skipped %d legacy character(s) created before the starter-kit grant)" % skipped_legacy)
+	print("
+--- model vs reality (1.00 = the model matches) ---")
+	print("  %-5s %-8s %-8s %s" % ["", "mean", "median", "n"])
 	for k in ["atk", "def", "hp", "pool"]:
 		var a: Array = acc[k]
 		if a.is_empty():
@@ -4479,13 +4500,34 @@ func run_real_character_check() -> void:
 		var tot := 0.0
 		for v in a:
 			tot += float(v)
-		print("  %-5s x%.2f   (1.00 = the model matches reality)" % [k, tot / float(a.size())])
+		# The MEDIAN is the honest headline here. The population is small and contains twinked
+		# characters wearing gear far above their level (one L4 measured 211 attack against a
+		# model's 35), and a single one of those drags a mean across the whole conclusion.
+		var sorted_a: Array = a.duplicate()
+		sorted_a.sort()
+		var mid: float = float(sorted_a[sorted_a.size() / 2])
+		if sorted_a.size() % 2 == 0:
+			mid = (float(sorted_a[sorted_a.size() / 2 - 1]) + float(sorted_a[sorted_a.size() / 2])) / 2.0
+		print("  %-5s x%-7.2f x%-7.2f %d" % [k, tot / float(a.size()), mid, a.size()])
+	print("  (n is small — treat this as a sanity check, not a calibration input)")
 	var g: Array = acc["gear"]
 	if not g.is_empty():
 		var gt := 0.0
 		for v in g:
 			gt += float(v)
 		print("  gear  %+.1f slots filled vs the real character" % (gt / float(g.size())))
+
+func _avg_equipped_level(ch) -> float:
+	var tot := 0.0
+	var n := 0
+	var eq = ch.equipped
+	if eq is Dictionary:
+		for k in eq.keys():
+			var it = eq[k]
+			if it is Dictionary and not (it as Dictionary).is_empty():
+				tot += float(int(it.get("level", 0)))
+				n += 1
+	return (tot / float(n)) if n > 0 else 0.0
 
 func _count_equipped(ch) -> int:
 	var n := 0
@@ -4502,31 +4544,6 @@ func _primary_pool_of(ch) -> int:
 		"mage": return ch.get_total_max_mana()
 		"trickster": return ch.get_total_max_energy()
 		_: return ch.get_total_max_stamina()
-
-func _slot_fill_chance_for(level: int) -> float:
-	"""How much of a real player's kit is actually FILLED at this level.
-
-	2026-09-05 — fitted to the live saves (`-- realcheck`), on the owner's instruction to
-	validate the reference player before letting refcal fit monsters to it. Measured against 17
-	real characters, make_char "average" was x1.60 attack, x2.01 defence, x1.65 resource pool
-	and +3.6 filled slots — and the error is almost entirely LOW LEVEL. At L12-19 the model is
-	close (x1.13 to x1.23); at L1-4 it is 2x to 3.5x, because it hands a brand-new character a
-	full seven-slot kit.
-
-	Observed fill, real characters, legacy twinks excluded:
-	  L1  0/7 (n=7, every one)      L3  ~4.7/7      L4  3/7
-	  L7  7/7                       L8  5/7         L12 7/7      L19 7/7
-
-	So a character earns its kit over roughly the first five levels rather than starting in one.
-	This is what made a same-level L1 fight measure 100% win while live players report the early
-	game feels about right — the owner's read, and the reason to trust the game over the model.
-
-	CAVEAT: n=17, most of them low level, several of them test characters. It is a better model
-	than "everyone starts fully equipped", not a precise one. Re-fit as the population grows —
-	`tools/check_player_progress.sh` reports when there is more to fit against."""
-	if level <= 1:
-		return 0.0
-	return clampf(float(level - 1) / 5.0, 0.0, 1.0)
 
 func make_char(level: int, gear: String, klass: String = "Fighter", race: String = "Human"):
 	var ch = CharacterScript.new()
@@ -4636,11 +4653,6 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 				break
 		if base_type == "":
 			continue  # no base for this slot at/below tier → leave the slot empty (realistic)
-		# A real player has not filled their kit yet at low level — measured, every L1 character
-		# on the live server has SEVEN EMPTY SLOTS. Only the rolled-rarity ("average") rung
-		# models a real player, so the deliberate bookends (under/bis/starter) are untouched.
-		if roll_rarity and randf() > _slot_fill_chance_for(level):
-			continue
 		var slot_rarity: String = _roll_slot_rarity(gtier) if roll_rarity else rarity
 		if slot_rarity == "":
 			continue  # rolled an empty slot — a real player has gaps
