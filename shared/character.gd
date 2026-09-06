@@ -2881,23 +2881,29 @@ func apply_poison(damage: int, duration: int = 20):
 
 func tick_poison() -> int:
 	"""Process one turn of poison. Returns damage dealt (negative = healing for Undead).
-	Called each combat turn."""
+	Called on every player action, in combat and out of it.
+
+	2026-09-05 — the LAST tick used to cure and return 0, which cost two things. A poison sold
+	as "50 turns" only ever dealt 49, and because every caller guards on a non-zero return, the
+	"(fades)" line was unreachable: poison simply stopped with no closure. Now the final turn
+	deals its damage like any other and callers detect expiry from poison_turns_remaining
+	having reached 0."""
 	if not poison_active or poison_turns_remaining <= 0:
 		return 0
 
 	poison_turns_remaining -= 1
+
+	# Undead racial: poison heals instead of damages.
+	var result: int
+	if does_poison_heal():
+		result = -max(1, int(poison_damage * 0.5))
+	else:
+		result = max(1, int(poison_damage * get_poison_damage_multiplier()))
+
+	# Compute the tick FIRST, then expire — cure_poison() zeroes poison_damage.
 	if poison_turns_remaining <= 0:
 		cure_poison()
-		return 0
-
-	# Undead racial: poison heals instead of damages
-	if does_poison_heal():
-		var heal_amount = int(poison_damage * 0.5)  # Heal for 50% of poison damage
-		return -max(1, heal_amount)  # Negative indicates healing
-
-	# Apply racial resistance
-	var final_damage = int(poison_damage * get_poison_damage_multiplier())
-	return max(1, final_damage)
+	return result
 
 func cure_blind():
 	"""Cure blind status effect."""

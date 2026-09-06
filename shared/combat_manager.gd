@@ -163,6 +163,22 @@ const MOMENTUM_DR_PER: float = 0.05
 # the bar was. Makes a big pool worth building (fuller bar = harder hit) and gives the
 # martial resource arc (dump → low → rebuild). %-based → scales to any level. Sim-tuned.
 const DEVASTATE_DUMP_PCT: float = 0.60
+# Poison, sized as a share of the victim's HEALTH BAR rather than the monster's strength.
+#
+# 2026-09-05 — poison used to be 30% of monster strength for 50 turns, and it only ticked on
+# basic attacks (~1% of player actions), so in practice a card-playing player barely felt it.
+# Fixing the tick exposed what those numbers really meant: measured across levels, 50 ticks came
+# to 2.6x the player's health bar at L5 and 127x at L120. Poison cannot kill — it floors you at
+# 1 HP — so the honest description of the old numbers, once ticking correctly, is "pinned at
+# 1 HP for the rest of the fight and the walk home".
+#
+# Anchored to max HP the way ability damage is, so it scales at every level by construction
+# instead of tracking a monster stat that grows on a different curve. 1.5% x 12 = ~18% of a
+# health bar over its life: a real cost that stacks on top of the monster's normal damage,
+# without being a sentence. Duration is short enough to matter inside one fight and still
+# linger a little way out of it, which is poison's identity.
+const POISON_TICK_PCT_OF_MAX_HP: float = 0.015
+const POISON_DURATION_TURNS: int = 12
 # v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
 # (the finisher) spends them all, scaling BOTH its success chance and its damage.
 # Read stacks needed to reach the finisher's ceiling. 2026-09-03: 5 -> 8, owner's proposal —
@@ -795,7 +811,19 @@ func _process_status_ticks(character: Character, messages: Array) -> void:
 	# === POISON TICK ===
 	if character.poison_active:
 		var poison_dmg = character.tick_poison()
-		if poison_dmg > 0:
+		if poison_dmg < 0:
+			# 2026-09-05 — Undead racial: poison HEALS. The out-of-combat tick sites all handled
+			# the negative return; this one only checked `> 0`, so the racial did nothing at all
+			# in a fight — it worked while you walked around and switched off the moment it
+			# mattered. Exactly the in-combat / out-of-combat split it should never have had.
+			var poison_heal: int = -poison_dmg
+			character.current_hp = mini(character.get_total_max_hp(), character.current_hp + poison_heal)
+			var pt_left: int = character.poison_turns_remaining
+			if pt_left > 0:
+				messages.append("[color=#708090]poison heals %d [color=#9A6A9A](%dt)[/color][/color]" % [poison_heal, pt_left])
+			else:
+				messages.append("[color=#708090]poison heals %d [color=#9A6A9A](fades)[/color][/color]" % poison_heal)
+		elif poison_dmg > 0:
 			character.current_hp -= poison_dmg
 			character.current_hp = max(1, character.current_hp)  # Poison can't kill
 			var turns_left = character.poison_turns_remaining
@@ -8017,20 +8045,23 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 
 	# === POST-ATTACK ABILITIES ===
 
-	# Poison ability: apply poison if not already active (lasts 50 turns, persists outside combat)
+	# Poison ability: apply poison if not already active (persists outside combat — ticks on
+	# every move, rest and hunt as well as every combat action)
 	# WIS reduces poison chance and damage
 	if ABILITY_POISON in abilities and not character.poison_active:
 		var player_wis = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
 		var wis_resist = minf(0.50, float(player_wis) / 200.0)  # Max 50% resistance at WIS 100+
 		var poison_chance = int(40 * (1.0 - wis_resist))  # Base 40%, reduced by WIS
 		if randi() % 100 < poison_chance:
-			var base_poison_dmg = max(1, int(monster.strength * 0.30))
+			var base_poison_dmg = max(1, int(float(character.get_total_max_hp()) * POISON_TICK_PCT_OF_MAX_HP))
 			var poison_dmg = max(1, int(base_poison_dmg * (1.0 - wis_resist)))  # WIS also reduces damage
-			character.apply_poison(poison_dmg, 50)
+			character.apply_poison(poison_dmg, POISON_DURATION_TURNS)
+			# Say that it follows you out of the fight. It always has — it ticks on every move,
+			# rest and hunt as well as every combat action — and nothing ever told the player.
 			if wis_resist > 0:
-				messages.append("[color=#FF00FF]You have been poisoned! (-[color=#FF8800]%d[/color] HP/round for 50 turns, WIS resists %d%%)[/color]" % [poison_dmg, int(wis_resist * 100)])
+				messages.append("[color=#FF00FF]You have been poisoned! (-[color=#FF8800]%d[/color] per turn for %d turns, in and out of combat — WIS resists %d%%)[/color]" % [poison_dmg, POISON_DURATION_TURNS, int(wis_resist * 100)])
 			else:
-				messages.append("[color=#FF00FF]You have been poisoned! (-[color=#FF8800]%d[/color] HP/round for 50 turns)[/color]" % poison_dmg)
+				messages.append("[color=#FF00FF]You have been poisoned! (-[color=#FF8800]%d[/color] per turn for %d turns, in and out of combat)[/color]" % [poison_dmg, POISON_DURATION_TURNS])
 
 	# Mana drain ability - drains the character's primary resource based on class path
 	# WIS reduces drain amount

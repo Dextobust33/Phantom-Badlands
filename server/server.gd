@@ -36259,7 +36259,12 @@ func _execute_title_ability(peer_id: int, character: Character, ability_id: Stri
 
 		"smite":
 			if target:
-				target.apply_poison(25, 10)  # 25 poison for 10 rounds
+				# 2026-09-05 — anchored, like the monster poison. A flat 25 x 10 was ~190% of a
+				# low-level player's health bar and ~40% of a high-level one's: the same ability
+				# meant completely different things depending on who it hit. ~25% of the target's
+				# bar over its life, so a Smite is always a serious wound and never a sentence.
+				var _smite_tick: int = maxi(1, int(float(target.get_total_max_hp()) * 0.025))
+				target.apply_poison(_smite_tick, 10)
 				target.add_buff("smite_debuff", 25, 10)  # -25% damage for 10 rounds
 				send_to_peer(target_peer_id, {
 					"type": "text",
