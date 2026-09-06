@@ -353,29 +353,43 @@ First complete table. Grown characters, x1.00 (no monster nerf), tournament poli
 **Warriors are last at every level**, and the L5 dip (50-55%) is ARCHETYPE-WIDE — it survived the
 opening stance, which lifted all three. It was never a Fighter problem.
 
-### The cause: warriors have one card until level 10
+### RETRACTED — the "one card until level 10" cause was invented
 
-Cards are level-gated, and the curated starter decks hand out cards the character cannot yet cast.
-What is actually USABLE:
+Owner: *"This doesn't sound correct at all. I think you're confused with some old systems that
+need retired/archived. Abilities work off of a deck system with no level gating."* Correct.
 
-| archetype | at L1 | next |
-|---|---|---|
-| **Warrior** | **1** — power_strike | war_cry@10, shield_bash@25, fortify@35, cleave@40 |
-| Mage | **3** — magic_bolt, frost_nova, overload | forcefield@15, haste@30, blast@40 |
-| Trickster | 1 — analyze | distract@10, sabotage@30, ambush@40 |
+Measured directly — a level-1 character's actual `combat_deck_collection`:
 
-A warrior spends levels 1-9 with ONE damage card. A mage has three from level 1. A trickster has
-one card but also **Outsmart**, which is not a card and needs no unlock, plus the denial engine —
-which is why tricksters score 73% at L5 on a single card while warriors score 53%.
+```
+Fighter  L1  5 cards: cleave, devastate, power_strike, shield_bash, war_cry
+Wizard   L1  5 cards: blast, forcefield, haste, magic_bolt, meteor
+Grifter  L1  5 cards: ambush, analyze, distract, perfect_heist, sabotage
+```
 
-**So warriors are uniquely poor early: fewest tools AND no alternative win condition.**
+**Every class holds five cards at level 1.** `initialize_deck_collection_if_needed` adds every
+available ability with no level check, and nothing anywhere compares an ability's `level` field
+against the character's. I read the `level` values in `get_all_available_abilities`, assumed they
+gated something, and built a whole causal story on a field nothing consumes.
 
-- [ ] **Give warriors a second and third early card.** The cheapest fix is moving existing
-      unlocks down (war_cry 10 -> 1, shield_bash 25 -> 5), matching the mage's three-at-L1. No
-      new content, and the curated deck already lists both, so the deck screen stops showing
-      cards that cannot be cast
-- [ ] Consider whether the curated decks SHOULD contain unusable cards at all. Handing a level-1
-      warrior Devastate (unlock 100) makes the deck screen a list of things they cannot do
+- [ ] **Retire the vestigial `level` fields on abilities.** They are pre-deck-system leftovers
+      that govern nothing, and they actively produced a wrong diagnosis today. Either delete them
+      or comment them as unused. A dead field that reads like a live one is worse than no field —
+      the same argument as `player_crit_max`, which was a config knob wired to nothing
+
+### The warrior weakness is real; the cause is still open
+
+Warriors measure 58/53/84/70 against mages 72/69/87/80 and tricksters 64/73/97/93, and the L5 dip
+is archetype-wide across all three warrior classes. What is known about the mechanism, from
+`tempo` (cumulative share of the monster's bar by turn):
+
+- warriors need **~6 turns to kill** where mages take 5.0 and tricksters 2.1
+- their five-turn damage TOTAL already matches the mage's, so it is timing, not output
+- the opening stance fixed the dead first two turns and lifted all three warrior classes, but
+  they are still the slowest to finish
+
+- [ ] Diagnose the residual gap with `tempo` per warrior class rather than guessing again.
+      Candidate: Momentum still needs several turns to reach a Devastate worth casting, so the
+      class's payoff lands late in a fight that is decided early
 
 ### Secondary finding: passives differentiate identity, not power
 
