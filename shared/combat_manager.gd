@@ -5910,9 +5910,18 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	var messages = []
 	var is_buff_ability = false  # Buff/debuff abilities only give monster 25% chance to attack
 
-	# Check WITS requirement for trickster path
-	if character.get_stat("wits") <= 10:
-		return {"success": false, "messages": ["[color=#FF4444]You need WITS > 10 to use trickster abilities![/color]"], "combat_ended": false}
+	# 2026-09-05 — REMOVED: a WITS > 10 gate on every trickster ability. Owner: "Ninja is running
+	# into problems using some of their deck cards they are getting a message about their wits
+	# being too low. The wits requirement to use abilities should be removed it was a legacy
+	# thing."
+	#
+	# It was a hard block, not a warning, and it read `get_stat` (the BASE stat) so gear could not
+	# lift you past it. A Ninja starts with WITS 10, so `<= 10` was true and a level-1 Ninja could
+	# not cast a single card in its own deck.
+	#
+	# This also explains a measurement I had misdiagnosed: the Ninja's 41% win at L1, the worst
+	# cell on the board, which I attributed to Killing Edge's crit ramp failing to start. The ramp
+	# was not the problem - the class was locked out of its abilities entirely.
 
 	# Get ability info
 	var ability_info = _get_ability_info("trickster", ability_name)

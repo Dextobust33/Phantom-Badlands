@@ -5696,7 +5696,7 @@ func run_tempo_audit():
 			head += "%7s" % ("t%d" % (t + 1))
 		head += "%9s%9s" % ["kill_t", "win%"]
 		print(head)
-		for klass in ["Fighter", "Wizard", "Grifter"]:
+		for klass in ["Fighter", "Barbarian", "Paladin", "Wizard"]:
 			var cohort: Array = []
 			for _c in range(CHARS):
 				var ch = _grow_new_character(klass, "Human")
