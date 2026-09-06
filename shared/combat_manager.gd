@@ -818,6 +818,17 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		#
 		# It still does not touch Assassinate, and cannot: that card is a pure chance roll with
 		# no damage calculation to crit.
+		# The `vanish` card (displayed "Phantom Strike") sets up an auto-crit. It was consumed
+		# ONLY in process_attack, so a setup card spent a turn to buff a BASIC ATTACK - an action
+		# players take ~1% of the time. Same defect as the keystone of the same name, and as crit
+		# itself before today.
+		if bool(combat.get("vanished", false)):
+			combat.erase("vanished")
+			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
+			_note_crit_escalation(character, combat)
+			if messages != null and messages is Array:
+				messages.append("[color=#00FF00]✦ Out of the shadow — the strike lands true![/color]")
+			return max(1, mod_damage)
 		var _first_strike: bool = character.has_path_effect("first_strike_autocrit") 			and not combat.get("path_first_strike_done", false)
 		if _first_strike:
 			combat["path_first_strike_done"] = true
@@ -4905,9 +4916,11 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	var messages = []
 	var is_buff_ability = false  # Buff abilities only give monster 25% chance to attack
 
-	# Check INT requirement for mage path
-	if character.get_stat("intelligence") <= 10:
-		return {"success": false, "messages": ["[color=#FF4444]You need INT > 10 to use mage abilities![/color]"], "combat_ended": false}
+	# 2026-09-05 — REMOVED, same legacy system as the WITS gate that locked Ninjas out of their
+	# own deck. Owner: "The wits requirement to use abilities should be removed it was a legacy
+	# thing." These two do not currently bite (every warrior starts STR 13+, every mage INT 13+),
+	# but they are the same trap waiting on a stat drain, a respec, or a future class - and they
+	# read the BASE stat, so gear cannot lift a character past them.
 
 	# Get ability info
 	var ability_info = _get_ability_info("mage", ability_name)
@@ -5632,9 +5645,11 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	var messages = []
 	var is_buff_ability = false  # Buff abilities only give monster 25% chance to attack
 
-	# Check STR requirement for warrior path
-	if character.get_stat("strength") <= 10:
-		return {"success": false, "messages": ["[color=#FF4444]You need STR > 10 to use warrior abilities![/color]"], "combat_ended": false}
+	# 2026-09-05 — REMOVED, same legacy system as the WITS gate that locked Ninjas out of their
+	# own deck. Owner: "The wits requirement to use abilities should be removed it was a legacy
+	# thing." These two do not currently bite (every warrior starts STR 13+, every mage INT 13+),
+	# but they are the same trap waiting on a stat drain, a respec, or a future class - and they
+	# read the BASE stat, so gear cannot lift a character past them.
 
 	# Get ability info
 	var ability_info = _get_ability_info("warrior", ability_name)
@@ -6165,14 +6180,17 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				_damage_with_detail(combat, messages, damage)])
 
 		"vanish":
-			# Auto-crit on next attack, skips monster turn.
+			# Auto-crit on the next DAMAGING ACTION (ability or attack), skips monster turn.
+			# 2026-09-05 — was next ATTACK only, consumed solely in process_attack. Owner asked
+			# whether Phantom Strike works with abilities; it did not, for either the card or the
+			# path keystone that shares its name.
 			# v0.9.423 — display name changed Vanish → Phantom Strike to make
 			# its role (setup attack) less confusable with the Flee command.
 			# Internal name kept as "vanish" to preserve saved characters'
 			# combat_deck_collection + mastery records.
 			combat["vanished"] = true  # Next attack auto-crits
 			messages.append("[color=#00FF00]PHANTOM STRIKE![/color]")
-			messages.append("[color=#808080]You fade into shadow... Next attack will crit![/color]")
+			messages.append("[color=#808080]You fade into shadow... your next strike will land true![/color]")
 			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 		"exploit":

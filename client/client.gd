@@ -19558,7 +19558,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"distract": return "Enemy suffers -50% accuracy on its next attack. Variable cost 5-15 energy — accuracy debuff magnitude scales with spend; single-attack scope unchanged."
 		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks. Variable cost 6-20 energy — success CHANCE scales with spend; ore quantity stays the same."
 		"ambush": return "3× WITS-scaled damage with +50% crit chance. Variable cost 9-30 energy — damage scales with spend (crit chance stays 50%)."
-		"vanish": return "Go invisible — your next attack is a guaranteed crit. Skips enemy turn."
+		"vanish": return "Go invisible — your next damaging action is a guaranteed crit. Skips enemy turn."
 		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
 		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks. Variable cost 15-50 energy — success CHANCE scales with spend (floor-cast Heist is almost always a miss; full-cost is the only realistic shot)."
 		"sabotage": return "Reduce the monster's strength and defense by 15-30% (scales with WITS). Stacks up to 50% total. Variable cost 8-25 energy — debuff magnitude scales with spend; 50% stack cap unchanged."
@@ -19717,7 +19717,7 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"sabotage":
 			return ("Weaken the enemy: %s to its strength and defense (stacks up to -50%%). [color=#7FD8C8]The enemy usually loses its turn (75%%).[/color]") % _desc_num("-%d%%" % clampi(15 + int(float(s_wits) / 3.0), 1, 50), "15 + WITS ÷ 3 per cast")
 		"vanish":
-			return "[b]Phantom Strike[/b]: your next attack is a [b]guaranteed critical hit[/b]. [color=#7FD8C8]The enemy loses its turn.[/color]"
+			return "[b]Phantom Strike[/b]: your next damaging action is a [b]guaranteed critical hit[/b] — ability or attack. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"gambit":
 			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ Read[/color]." % _desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier")
 		"analyze":
@@ -32870,7 +32870,7 @@ func show_help():
   [color=#FFFFFF]L25 Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%+WIT/3 (stacks, max 50%)
   [color=#FFFFFF]L40 Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
   [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
-  [color=#FFFFFF]L60 Vanish[/color]       [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next attack auto-crits at 1.5×
+  [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
   [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
   [color=#FFFFFF]L100 Assassinate[/color] [color=#808080](50 en)[/color] - 30%+WIT/2 chance: instant win + 25% bonus Valor. Fail = 20% self-damage
   [color=#AAAAAA]Outsmart[/color]         [color=#808080](free)[/color]   - 5%+15×log₂(WIT/10). Capped by monster INT/3. Easy vs brutes, hard vs mages. Fail = free enemy attack
@@ -33230,17 +33230,68 @@ func search_help(search_term: String):
 		{
 			"title": "WARRIOR PATH",
 			"keywords": ["warrior", "fighter", "barbarian", "paladin", "stamina", "strength", "melee", "power", "strike", "war", "cry", "shield", "bash", "cleave", "berserk", "iron", "skin", "devastate", "undead", "demon"],
-			"content": "[color=#FF6666]WARRIOR PATH[/color] (STR > 10) - Uses Stamina (STR×4 + CON×4)\n\n[color=#C0C0C0]Fighter[/color] - 20% reduced stamina costs, +15% defense from CON\n[color=#8B0000]Barbarian[/color] - +3% damage per 10% HP missing (max +30%), +25% stamina cost\n[color=#FFD700]Paladin[/color] - Heal 3% max HP per round, +25% damage vs undead/demons\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Power Strike (10) - 1.5x damage\nL10 War Cry (15) - +25% damage, 3 rounds\nL25 Shield Bash (20) - Attack + stun\nL40 Cleave (30) - 2x damage\nL60 Berserk (40) - +100% damage, -50% defense, 3 rounds\nL80 Iron Skin (35) - Block 50% damage, 3 rounds\nL100 Devastate (50) - 4x damage"
+			"content": "[color=#FF6666]WARRIOR PATH[/color] - Uses Stamina (20 + STR + CON)
+
+[color=#C0C0C0]Fighter[/color] - 20% reduced stamina costs, +15% defense
+[color=#8B0000]Barbarian[/color] - +3% damage per 10% HP missing (max +30%), +25% stamina cost
+[color=#FFD700]Paladin[/color] - Heal 3% max HP per round, +25% damage vs undead/demons
+[color=#FF6666]All Warriors:[/color] you enter every fight with Iron Skin and Fortify already up.
+
+[color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
+Power Strike - reliable damage
+Cleave - bigger, and opens a bleed
+Shield Bash - damage plus a stun, priced below Power Strike
+War Cry - surges Momentum and rattles the foe so it misses more
+Fortify / Iron Skin - defense and damage reduction
+Berserk - big damage, less defense
+Devastate - the FINISHER. Damage scales with Momentum spent, so it rewards the build-up
+
+[color=#FFD700]Momentum[/color] is the Warrior engine: cards build it, Devastate spends all of it."
+
 		},
 		{
 			"title": "MAGE PATH",
 			"keywords": ["mage", "wizard", "sorcerer", "sage", "mana", "magic", "spell", "bolt", "blast", "meteor", "shield", "haste", "paralyze", "forcefield", "banish", "meditate", "intelligence"],
-			"content": "[color=#66FFFF]MAGE PATH[/color] (INT > 10) - Uses Mana (INT×12 + WIS×6)\n\n[color=#4169E1]Wizard[/color] - +15% spell damage, +10% spell crit chance\n[color=#9400D3]Sorcerer[/color] - 25% chance for double damage, 5% backfire chance\n[color=#20B2AA]Sage[/color] - 25% reduced mana costs, +50% meditate bonus\n\n[color=#AAAAAA]Abilities:[/color]\nMeditate - Restore HP + 4% mana (8% if full HP)\nL1 Magic Bolt (variable) - Mana × (1 + INT/50) damage\nL10 Shield (20) - +50% defense, 3 rounds\nL30 Haste (35) - Speed buff, 5 rounds\nL40 Blast (50) - 2x magic damage\nL50 Paralyze (35) - Stun 1 round\nL60 Forcefield (75) - Block 2 attacks\nL70 Banish (60) - Instant kill weak enemies\nL100 Meteor (100) - 5x magic damage\n\n[color=#FFD700]Magic Bolt Suggestion:[/color] The suggested mana is intentionally high to ensure a kill. It accounts for: monster defense, WIS resistance, level penalty, class affinity, damage variance, and Armored ability. Use less if you want to conserve mana (but may not kill)."
+			"content": "[color=#66FFFF]MAGE PATH[/color] - Uses Mana (30 + INT x3 + WIS x1.5)
+
+[color=#4169E1]Wizard[/color] - +15% spell damage, +10% spell crit chance
+[color=#9400D3]Sorcerer[/color] - 25% chance for double damage, 5% backfire chance
+[color=#20B2AA]Sage[/color] - 25% reduced mana costs, +50% Meditate
+
+[color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
+Magic Bolt - the big single-cast nuke; spend more mana for more damage
+Blast - efficient sustain
+Meteor - discharges the Focus ramp
+Frost Nova - chip damage and an accuracy chill; builds Focus
+Overload - burns your own HP to buff the next spell
+Forcefield - absorbs damage. Each RECAST in the same fight absorbs less, so it is a strong
+  panic button rather than something to hold up permanently
+Haste / Paralyze / Banish - speed, hard stun, and an execute
+
+[color=#FFD700]Focus[/color] is the Mage engine: cards build it, Meteor cashes it."
+
 		},
 		{
 			"title": "TRICKSTER PATH",
 			"keywords": ["trickster", "grifter", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "assassinate", "heist", "beast", "animal"],
-			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% XP bonus\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal Valor (50+lvl×2)×(1+WIT×5%)\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Assassinate (50) - Instant win, 2x rewards"
+			"content": "[color=#66FF66]TRICKSTER PATH[/color] - Uses Energy (20 + WITS + DEX)
+
+[color=#2F4F4F]Grifter[/color] - Denial cards have a 50% chance to build double Read; +40% flee,
+  and a failed escape costs you nothing
+[color=#228B22]Ranger[/color] - Your abilities never glance - and never crit. Steady where the others gamble
+[color=#191970]Ninja[/color] - +12% crit chance, and every critical hit this fight sharpens the next (+6%)
+
+[color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
+Analyze / Distract / Sabotage - deny the monster its turn while you build Read
+Ambush - damage, with a strong crit chance
+Gambit - high damage, but it can hurt you
+Exploit - damage as a share of the monster's own max HP; the anti-tank tool
+Pickpocket - steal Valor
+Phantom Strike - your next damaging action is a guaranteed crit
+Assassinate - ends the fight outright. Weak on its own; Read is what makes it land
+
+[color=#FFD700]Read[/color] is the Trickster engine: every card builds it, and it drives Assassinate."
+
 		},
 		{
 			"title": "COMBAT FORMULAS",
