@@ -604,8 +604,20 @@ every policy in the sim the player casts nearly every turn.
 conclusion drawn from them. It leans against ability play, so the more a class or policy relies
 on cards, the harder it measured.
 
-- [ ] **Re-run the calibration chain** — `speciescal` → `refcal` → `rolecal`, one pass each, in
-      that order. ~25 minutes. Until then treat the curve as unverified.
+- [x] **Reference player validated first (2026-09-05), on owner instruction.** New `-- realcheck`
+      audit loads the live saves through the game's own Character code and compares them to what
+      `make_char` builds at the same level/class/race. It was **x1.60 attack, x2.01 defence,
+      x1.65 pool, +3.6 gear slots** — almost all of it at LOW level, because it handed a new
+      character a full seven-slot kit when every level 1 character on the live server has seven
+      EMPTY slots. Now x1.12 / x1.12 / x1.35 / +0.5. This is why calibration had to wait: refcal
+      would have sized the early game for a player 2-3x stronger than the real one, and the owner
+      reports the early game currently feels about right.
+- [ ] **THEN re-run the calibration chain** — `speciescal` → `refcal` → `rolecal`, one pass each,
+      in that order. ~25 minutes. It REWRITES `shared/reference_monster_curve.json`, which is live
+      balance data, so get owner approval before running. Until then treat the curve as unverified.
+- [ ] Pool is still x1.35 hot. Likely `make_char` spending every level-up point into the primary
+      stat — a deliberate focused-build model rather than a bug, but it inflates resource pools,
+      which is what ability costs are priced against. Worth deciding before the curve is fit.
 - [ ] **Re-measure the nine-class table.** The standing "warriors are the weakest archetype"
       (58/53/84/70) is the prime suspect: warriors are ability-heavy, so they absorbed the
       artefact hardest. Do not act on that finding until it is re-measured.
