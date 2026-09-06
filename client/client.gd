@@ -33239,7 +33239,7 @@ func search_help(search_term: String):
 		},
 		{
 			"title": "TRICKSTER PATH",
-			"keywords": ["trickster", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "heist", "beast", "animal"],
+			"keywords": ["trickster", "grifter", "thief", "ranger", "ninja", "energy", "wits", "crit", "critical", "flee", "analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "assassinate", "heist", "beast", "animal"],
 			"content": "[color=#66FF66]TRICKSTER PATH[/color] (WITS > 10) - Uses Energy ((WIT+DEX)×0.75)\n\n[color=#2F4F4F]Thief[/color] - +10% crit chance, +35% crit damage (1.85x total)\n[color=#228B22]Ranger[/color] - +25% damage vs beasts, +30% XP bonus\n[color=#191970]Ninja[/color] - +40% flee chance, no damage on failed flee\n[color=#66FF66]All Tricksters:[/color] 25% chance for Quick Strike (+50% bonus damage) on attacks\n\n[color=#AAAAAA]Abilities:[/color]\nL1 Analyze (5) - Reveal monster stats\nL10 Distract (15) - -50% enemy accuracy\nL25 Pickpocket (20) - Steal Valor (50+lvl×2)×(1+WIT×5%)\nL40 Ambush (30) - 3x damage + 50% crit\nL60 Vanish (40) - Invisible, next attack crits\nL80 Exploit (35) - 10% monster HP as damage\nL100 Assassinate (50) - Instant win, 2x rewards"
 		},
 		{
