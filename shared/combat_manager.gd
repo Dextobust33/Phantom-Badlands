@@ -3853,6 +3853,29 @@ const ABILITY_WEIGHTS := {
 # Against a NORMAL monster you will rarely reach 5, because four builder casts at 0.22-0.28
 # have already killed it. That is the intent: the finisher is what elites and bosses are for,
 # where the health bar is 1.8x to 2.8x larger and the setup has time to pay.
+# 2026-09-06 — THE TEMPO RULE, narrowed and reduced. Owner approved "2 plus a reduced 1".
+#
+# Any ability flagged `buff_ability` used to give the monster only a 25% chance to act — a free
+# turn 75% of the time. Measured, that single rule explained the whole class table: win rate
+# tracked DENIAL rate almost exactly (Fighter denies 26% and wins 56% at elite; Ninja denies 66%
+# and wins 96%), because a free monster turn is worth more than any mitigation in the game. Every
+# per-class fix this session was really buying back tempo this rule takes from damage-heavy kits,
+# which is the treadmill the owner named.
+#
+# Two changes:
+#   PER-ABILITY — only cards that genuinely blunt the incoming turn earn a reprieve. A defensive
+#   stance or a control effect has a claim; an offensive buff (war_cry, haste, overload, rally) is
+#   damage with extra steps and now buys no tempo at all.
+#   REDUCED — the reprieve is an EDGE, not the game. 75% -> 40%.
+# The reprieve is for a card that does NOTHING BUT defend — you spent the turn guarding, so the
+# blow lands less often. `distract` (-43% accuracy) and `sabotage` (-16% strength) are deliberately
+# NOT here: reducing the incoming hit is already their whole effect, so also skipping the turn
+# paid them twice, and those two are exactly the cards the Trickster kit spams.
+const DEFENSIVE_REPRIEVE_ABILITIES := {
+	"forcefield": true, "fortify": true, "iron_skin": true, "cloak": true, "paralyze": true,
+}
+const DEFENSIVE_REPRIEVE_CHANCE := 40   # % chance the monster's turn is skipped
+
 const DEVASTATE_WEIGHT_PER_MOMENTUM := 0.14
 # 2026-09-06 — the finisher is ONE CARD WITH THREE MECHANICS, one per Trickster class. Its name
 # and lines already forked; this forks what it DOES, which is what actually makes the classes play
@@ -3868,6 +3891,20 @@ const DEVASTATE_WEIGHT_PER_MOMENTUM := 0.14
 #                            shape as the Warrior's Devastate: bank, then cash.
 #   Ranger   FOCUS-shaped    Read is a passive damage RAMP on everything, and the finisher
 #                            discharges it. Steady Hand finally compounds into something.
+# 2026-09-06 — the NINJA's Assassinate is no longer all-or-nothing. Owner: "would lowering the
+# chance further but it still dealing damage be a valid option. Read could increase the damage it
+# does with each point and also increase the chance it's a lethal attack at a low enough chance
+# that falls into balance."
+#
+# That breaks the trap the measurements kept hitting: while the card was a pure coin flip, its
+# odds WERE the class win rate, so no value for them was correct — 96% at elite when high, an
+# unplayable class when low, and lowering them merely lengthened fights because the Ninja
+# survived to keep retrying. Giving the strike a floor means the odds can finally be priced as
+# an upside rather than as the whole outcome.
+const NINJA_STRIKE_PER_READ := 0.11   # 8 Read spent = ~0.9 of a health bar, guaranteed
+const NINJA_LETHAL_BASE := 2          # % chance the strike is simply lethal
+const NINJA_LETHAL_PER_READ := 3      # +3% a stack, so a full stall is ~26%
+
 const GRIFTER_CASHOUT_PER_READ := 0.16   # 8 Read spent = ~1.3 health bars, guaranteed
 const RANGER_AIM_DMG_PER := 0.07         # +7% to ALL damage per Read held (8 = +56%)
 const RANGER_SHOT_PER_READ := 0.11       # 8 Read discharged = ~0.9 of a health bar
@@ -4467,8 +4504,8 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# inference it replaced.
 	combat["_cards_played"] = int(combat.get("_cards_played", 0)) + 1
 	var monster_attacks = true
-	if result.get("buff_ability", false):
-		monster_attacks = randi() % 100 < 25  # 25% chance monster still attacks
+	if result.get("buff_ability", false) and DEFENSIVE_REPRIEVE_ABILITIES.has(ability_name):
+		monster_attacks = randi() % 100 >= DEFENSIVE_REPRIEVE_CHANCE
 		if not monster_attacks:
 			result.messages.append("[color=#00FF00]You act quickly, avoiding the %s's attack![/color]" % combat.monster.name)
 
@@ -5934,7 +5971,21 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# this became the Trickster finisher. Odds live in ONE place — see below.
 			# Owner: "Grifters assassinate could replace outsmart, that might be the way."
 			var level_diff = monster.level - character.level
-			var success_chance = assassinate_chance(character, monster, combat, variable_fraction)
+			var _nj_read: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+			if _nj_read <= 0:
+				messages.append("[color=#808080]You have no read on it yet — watch it first.[/color]")
+				return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+			# The strike ALWAYS lands. Read buys both its size and the chance it simply ends them.
+			var _nj_dmg: int = int(_ability_anchored_damage(character, "wits",
+				NINJA_STRIKE_PER_READ * float(_nj_read)))
+			_nj_dmg = apply_skill_damage_bonus(character, ability_name, _nj_dmg, combat)
+			_nj_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+				_nj_dmg, character.level, monster, character, combat, messages))
+			var success_chance = mini(90, NINJA_LETHAL_BASE + _nj_read * NINJA_LETHAL_PER_READ)
+			if level_diff > 0:
+				success_chance = maxi(1, success_chance - level_diff)
+			success_chance = maxi(1, int(float(success_chance) * variable_fraction))
+			combat["combo"] = 0
 
 			var roll = randi() % 100
 			if roll < success_chance:
@@ -6066,8 +6117,15 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				}
 			else:
 				# Failed heist - take damage and combat continues
+				# Not lethal — but the blade still went in. This is the floor that stops the
+				# card being a coin flip for the whole fight.
+				monster.current_hp = max(0, monster.current_hp - _nj_dmg)
+				messages.append("[color=#FFD700][b]ASSASSINATE![/b][/color]")
+				messages.append("[color=#00FF00]You find the gap and drive it home — %s[/color]"
+					% _damage_with_detail(combat, messages, _nj_dmg))
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
 				var _fl2: Dictionary = finisher_flavour(character)
-				messages.append("[color=#FF4444][b]%s[/b][/color]" % String(_fl2["miss"]))
 				messages.append("[color=#FF4444]%s[/color]" % String(_fl2["miss_line"]))
 				# 2026-09-06 — A MISSED FINISHER SPENDS THE READ IT WAS BUILT ON.
 				#
@@ -6082,9 +6140,6 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				# the honest version of the design the owner described — stall, build, then bet
 				# the setup — and because it re-prices the card without touching the odds, so a
 				# landed finisher is exactly as good as it was.
-				if int(combat.get("combo", 0)) > 0:
-					combat["combo"] = 0
-					messages.append("[color=#7FD8C8]Your read is spent — it will not fall for that twice.[/color]")
 				# Monster gets a free attack
 				var monster_result = process_monster_turn(combat)
 				messages.append("[color=#444444]─────────────────────────────[/color]")

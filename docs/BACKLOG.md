@@ -1161,14 +1161,53 @@ and does not appear anywhere in the k/d decomposition.
 system takes from damage-heavy kits. That is the treadmill the owner identified, and this is the
 engine driving it.
 
-- [ ] **OWNER DECISION — pick the shape before anyone touches a number.** Options, not exclusive:
-      1. Reduce the buff advantage (75% -> ~25-40%) so denial is an edge, not the whole game.
-      2. Make it per-ability rather than blanket — a defensive stance earning a reprieve is
-         reasonable; every utility card doing so is not.
-      3. Give damage cards a comparable tempo payoff so attacking is not strictly worse.
-      4. Make denial cost something: diminishing returns within a fight, or a resource premium.
-- [ ] Whatever is chosen, RE-MEASURE the whole class table after: this single rule is worth more
-      than every class-level change made this session put together.
+- [x] **DONE 2026-09-06 — owner chose "2 plus a reduced 1".**
+      - **Per-ability**: only cards that do NOTHING BUT defend earn a reprieve —
+        `forcefield, fortify, iron_skin, cloak, paralyze`. Offensive buffs (`war_cry`, `haste`,
+        `overload`, `rally`) now buy no tempo at all: they are damage with extra steps.
+      - `distract` and `sabotage` were removed too. Reducing the incoming hit (-43% accuracy,
+        -16% strength) is already their whole effect, so also skipping the turn paid them twice —
+        and those two are exactly what the Trickster kit spams.
+      - **Reduced**: the reprieve is an EDGE, not the game. 75% -> **40%**
+        (`DEFENSIVE_REPRIEVE_CHANCE`).
+
+- [x] **NINJA ASSASSINATE REDESIGNED — owner's proposal, and it breaks the trap.** Owner: *"would
+      lowering the chance further but it still dealing damage be a valid option. Read could
+      increase the damage it does with each point and also increase the chance it's a lethal
+      attack at a low enough chance that falls into balance."*
+
+      While the card was a pure coin flip its odds WERE the class win rate, so no value for them
+      was correct: 96% at elite when high, an unplayable class when low, and lowering them only
+      lengthened fights because the Ninja survived to keep retrying. Now the strike ALWAYS lands
+      (`NINJA_STRIKE_PER_READ` 0.11, so a full stall is ~0.9 of a health bar) and Read also buys
+      a LOW lethal chance (`NINJA_LETHAL_BASE` 2 + 3 a stack, ~26% at full). Read is spent either
+      way. The gamble is finally an upside rather than the whole outcome.
+
+      Ninja went 75/93/95 -> **61/78/78**, with fights 8.6-12.8 turns -> 13.7-20.4.
+
+### The table after both changes
+
+| class | L10 | L30 elite | L80 elite |
+|---|---|---|---|
+| Fighter | 88% | 51% | 55% |
+| Barbarian | 78% | **35%** | 43% |
+| Paladin | 90% | 51% | 55% |
+| Wizard | 78% | 63% | 61% |
+| Sorcerer | 68% | 53% | 75% |
+| Sage | 51% | **31%** | 51% |
+| Grifter | 71% | 56% | 78% |
+| Ranger | 83% | 50% | 60% |
+| Ninja | 61% | **78%** | 78% |
+
+**Elite spread went from 33-100 (67pp, with three classes at 90-100) to 31-78 (47pp).** No class
+now wins by bypassing the game. Against a ~65% elite target the remaining outliers are Sage 31
+and Barbarian 35 at the bottom, Ninja 78 at the top.
+
+- [ ] Sage 31% and Barbarian 35% at elite are now the weakest cells — take them on their own
+      merits, not relative to each other (see the treadmill rule).
+- [ ] Mages lost ground when `haste` stopped buying tempo (Sage 78 -> 51 at L10). Check whether
+      that is correct — Arcane Surge is an offensive buff, so losing the reprieve is principled,
+      but the Sage may need something back elsewhere.
 
 ### Sequencing (agreed)
 
