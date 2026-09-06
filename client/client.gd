@@ -10725,6 +10725,32 @@ func _show_victory_card_deferred(payload, gen: int = -1) -> void:
 	if combat_scene_panel and is_instance_valid(combat_scene_panel) and combat_scene_panel.has_method("show_victory_card"):
 		combat_scene_panel.show_victory_card(payload)
 
+func _theme_loot_payload(v):
+	"""Apply the SAME class theming the inventory uses to any loot payload heading for the
+	victory panel.
+
+	2026-09-05, reported live: an item shown on the victory screen did not carry the themed
+	name it has in your bag, "leading to confusion" — the drop said one thing, the inventory
+	said another, and they are the same object. The server sends the generic base name; every
+	other surface (inventory, merchant, market, comparison) themes it client-side. This is the
+	one surface that never did. Walks the payload so slots, chain neighbours, awarded rows and
+	pinned equipment are all covered by one pass."""
+	if v is Array:
+		var out_a: Array = []
+		for e in v:
+			out_a.append(_theme_loot_payload(e))
+		return out_a
+	if not (v is Dictionary):
+		return v
+	var out: Dictionary = {}
+	for k in v.keys():
+		out[k] = _theme_loot_payload(v[k])
+	var it := String(out.get("item_type", ""))
+	var nm := String(out.get("name", ""))
+	if it != "" and nm != "":
+		out["name"] = _get_themed_item_name({"name": nm, "type": it}, character_data.get("class", ""))
+	return out
+
 func _open_loot_bag_deferred(loot_bag: Dictionary, beat_done := false) -> void:
 	# Hold the loot minigame until the killing-blow battler animation finishes,
 	# THEN a ~1s beat so the kill lands before the reward UI pops. Polls at 80ms.
@@ -10735,7 +10761,7 @@ func _open_loot_bag_deferred(loot_bag: Dictionary, beat_done := false) -> void:
 		get_tree().create_timer(1.0).timeout.connect(_open_loot_bag_deferred.bind(loot_bag, true))
 		return
 	if combat_loot_panel:
-		combat_loot_panel.open_bag(loot_bag)
+		combat_loot_panel.open_bag(_theme_loot_payload(loot_bag))
 	# v0.9.699 — panel is now up (visible governs the gate); drop the pending flag.
 	_loot_bag_pending = false
 
@@ -33992,10 +34018,10 @@ func _handle_combat_loot_reveal_result(message: Dictionary) -> void:
 	if combat_loot_panel:
 		combat_loot_panel.reveal_slot(
 			int(message.get("slot_index", -1)),
-			reveal,
+			_theme_loot_payload(reveal),
 			int(message.get("reveals_used", 0)),
 			int(message.get("reveal_budget", 0)),
-			chain_neighbors,
+			_theme_loot_payload(chain_neighbors),
 			int(message.get("total_slots", 0))
 		)
 
@@ -34009,7 +34035,7 @@ func _handle_combat_loot_done_result(message: Dictionary) -> void:
 		update_player_xp_bar()
 		update_currency_display()
 	if combat_loot_panel:
-		combat_loot_panel.finish(message.get("final_bag", {}))
+		combat_loot_panel.finish(_theme_loot_payload(message.get("final_bag", {})))
 
 func _combat_loot_accumulate_reveal(reveal: Dictionary) -> void:
 	"""Append a display line (and a gear_drops entry for equipment) for a

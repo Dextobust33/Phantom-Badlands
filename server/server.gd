@@ -22190,6 +22190,7 @@ func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
 			return {
 				"kind": "auto_salvaged",
 				"name": "%s (auto-salvaged)" % str(item.get("name", "item")),
+				"item_type": str(item.get("type", "")),
 				"color": "#AA66FF",
 				"rarity": item.get("rarity", "common"),
 			}
@@ -22201,6 +22202,7 @@ func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
 		return {
 			"kind": "item",
 			"name": rname,
+			"item_type": str(item.get("type", "")),
 			"symbol": rsymbol,
 			"color": rcolor,
 			"rarity": rarity,
@@ -22216,12 +22218,14 @@ func _award_real_combat_loot(peer_id: int, item: Dictionary) -> Dictionary:
 		return {
 			"kind": "inv_full_salvaged",
 			"name": "%s (inv full → salvaged)" % str(item.get("name", "item")),
+			"item_type": str(item.get("type", "")),
 			"color": "#FF8800",
 			"rarity": item.get("rarity", "common"),
 		}
 	return {
 		"kind": "inv_full_lost",
 		"name": "%s (inv full, no salvage)" % str(item.get("name", "item")),
+		"item_type": str(item.get("type", "")),
 		"color": "#FF4444",
 		"rarity": item.get("rarity", "common"),
 	}
@@ -22374,6 +22378,11 @@ func _preview_slot_for_client(slot: Dictionary) -> Dictionary:
 				"kind": "item",
 				"revealed": revealed,
 				"name": str(d.get("name", "Item")),
+				# 2026-09-05 — the item TYPE rides along so the client can apply the same class
+				# theming the inventory does. Reported: loot on the victory screen did not match
+				# the name the same item has in your bag ("Steel Weapon" against "Steel Bow"),
+				# which reads as two different items.
+				"item_type": str(d.get("type", "")),
 				"symbol": _get_rarity_symbol(str(d.get("rarity", "common"))),
 				"color": _get_rarity_color(str(d.get("rarity", "common"))),
 				"rarity": str(d.get("rarity", "common")),
