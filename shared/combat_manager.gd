@@ -4007,7 +4007,13 @@ const NINJA_LETHAL_BASE := 2          # % chance the strike is simply lethal
 const NINJA_LETHAL_PER_READ := 3      # +3% a stack, so a full stall is ~26%
 
 const GRIFTER_CASHOUT_PER_READ := 0.16   # 8 Read spent = ~1.3 health bars, guaranteed
-const RANGER_AIM_DMG_PER := 0.07         # +7% to ALL damage per Read held (8 = +56%)
+# 2026-09-06 — 0.07 -> 0.11. Decomposed, the Ranger was worst on BOTH axes at L30 elite: k26.8
+# d30.7, against the Grifter's k25.5 d38.2 and the Ninja's k22.2 d38.1, and it dealt the least
+# damage per turn of the three (420 against 576). That is the shape of a class paying for two
+# payoffs it does not have — the Grifter's mitigation and the Ninja's execute — with a ramp that
+# was not covering either. It also caps at COMBO_MAX 8 where the Wizard's equivalent ramp caps at
+# 5, so the Ranger spends far more of a fight part-way up its own curve.
+const RANGER_AIM_DMG_PER := 0.11         # +11% to ALL damage per Read held (8 = +88%)
 const RANGER_SHOT_PER_READ := 0.11       # 8 Read discharged = ~0.9 of a health bar
 
 func _primary_resource_value(character) -> int:
