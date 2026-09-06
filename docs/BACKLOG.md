@@ -741,26 +741,83 @@ on cards, the harder it measured.
       Wizard (Arcane Precision, spell damage + spell crit), Sorcerer (Chaos Magic, double damage
       / backfire), Sage (Mana Mastery, cheaper spells + Meditate).
 
-- [ ] **DESIGN CALL: make the Ninja and Ranger passives reach the line they actually play.**
-      Three routes, not mutually exclusive:
-      1. **Point the passives at the finisher.** Ninja crit adds to Assassinate's odds (precision
-         finds the opening); Ranger reliability gives a floor on the roll or a cheaper retry.
-         Keeps the stall identity and makes the class choice matter inside it.
-      2. **Make damage a real second line** — more of the earlier option 1 — so crit and no-glance
-         have something to act on. Costs the "wins by cleverness" identity if pushed too far.
-      3. **Re-point the passives entirely** at what the stall does: denial reliability, Read gain,
-         energy economy. Cleanest fit, but it discards the crit-build identity the owner asked
-         for when the three Tricksters were differentiated.
+## ⚑⚑ AGREED DIRECTION (2026-09-06): ONE ENGINE SHAPE PER CLASS, NOT PER ARCHETYPE
 
-- [ ] **DESIGN QUESTION for the owner.** A class whose only viable line is a coin flip is
-      high-variance by construction, and under permadeath the losing half of that flip is a dead
-      character. Options: give Trickster damage enough reach to be a real fallback; lower the
-      variance of the finisher (more Read, better odds, cheaper retry); or accept it as the
-      class identity and make the STALL survivable enough that a whiff is recoverable. This is a
-      direction call, not a number to tune.
-- [ ] **Separate "died in the fight" from "died to the loop"** before any curve work. `death_data`
-      carries `player_hp_at_start`, so this is directly measurable: 9 of 16 entered at full health,
-      but the ones that did not are a different problem with a different fix.
+**Approved by the owner. This supersedes the "make the passives reach the line" question below.**
+
+### The problem, measured
+
+- The three Trickster decks are **80% identical** — `analyze, sabotage, ambush, perfect_heist` are
+  in all three; one card per class differs. `gambit` and `pickpocket` are dealt to nobody.
+- On the line that actually wins, a Ninja makes **zero damage rolls**, so **Killing Edge and
+  Steady Hand fire zero times**. Only Long Con does anything, because the denial cards it keys
+  off are what the line plays.
+- Giving them damage cards fixed AVAILABILITY and exposed the real issue: playing to your passive
+  is a **trap**. Ninja's crit line wins 45%/39% and Ranger's 32%/18% against the Grifter's stall
+  at 93%/90%.
+
+### Why the obvious fix was rejected
+
+Making crit and reliability feed Assassinate was proposed and **turned down by the owner**:
+*"What you're suggesting makes all three classes feel the same again."* Correct — it would make
+three passives into three paint jobs on one button.
+
+### The design
+
+The three engines are not archetype flavour, they are three **shapes**:
+
+| shape | loop |
+|---|---|
+| **Momentum** | build stacks -> passive defence, spend for a burst |
+| **Focus** | build stacks -> passive damage ramp, discharge for a nuke |
+| **Read** | build stacks -> raise the odds of a bypass-HP kill |
+
+Nine classes / three shapes = **each archetype gets one of each**, so no two classes inside an
+archetype play alike. Owner's own idea (*"interchanging read to 1 class in each archetype... and
+the same for momentum, and focus"*). It works because the shapes already exist and are tuned; the
+re-theming is what stops it being a reskin.
+
+| | Momentum-shaped | Focus-shaped | Read-shaped |
+|---|---|---|---|
+| **Warrior** | Fighter — *Momentum* | Barbarian — *Rage* | Paladin — *Conviction* |
+| **Mage** | Sorcerer — *Volatility* | Wizard — *Focus* | Sage — *Insight* |
+| **Trickster** | Grifter — *The Long Con* | Ranger — *Steady Aim* | Ninja — *Read* |
+
+Each class's PASSIVE must feed its own engine:
+- **Killing Edge** (Ninja, crit) -> crits grant Read, so the crit build IS the route to the kill.
+- **Long Con** (Grifter, double stacks on denial) -> already a build-and-cash loop; the Read DR
+  added 2026-09-05 is Momentum's shape exactly.
+- **Steady Hand** (Ranger, never fumbles) -> a damage RAMP is the one engine where reliability
+  compounds, and it finally has something to act on.
+
+### Trickster slice — needs NO new cards
+
+| class | deck | notes |
+|---|---|---|
+| **Ninja** | vanish, ambush, gambit, sabotage, **assassinate** | Assassinate becomes Ninja-ONLY and keeps the name; owner: *"assassinate ... fits ninjas better than the grifters"* |
+| **Grifter** | analyze, distract, sabotage, **pickpocket**, cash-out | `pickpocket` becomes the cash-out (steal + damage scaling with stacks) — already the theft card, currently dealt to nobody |
+| **Ranger** | **exploit**, ambush, analyze, sabotage, aimed shot | `exploit` becomes the discharge — already a flat share of enemy max HP, so scaling it with Aim stays deterministic, which is what Steady Hand is for |
+
+### Hard constraints
+
+- **A deck is 5 cards + the companion loaner.** Owner: *"any cards over the 5 are a waste as it
+  just makes them be drawn less."* Note duplicates DO NOT WORK — the seeding loop assigns
+  `collection[name] = 1`, so a repeated name collapses to one copy.
+- **Exclusivity is the tuning lever.** A card only one class starts with can be tuned freely; a
+  card in all three cannot be tuned for one without moving the other two. That is the answer to
+  the owner's *"balance what the cards do that doesn't also break balance on the other 2"* — the
+  current 4-of-5 overlap is why there is no headroom today.
+
+### Sequencing (agreed)
+
+1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently
+   committed (double-turn fix, Read DR, decks, poison, crit consolidation) is unvalidated, and
+   tuning an engine redistribution against stale numbers repeats the mistake that produced them.
+2. **Build the Trickster slice**, measure, iterate. It is where the death logs, a baseline, and
+   three known-broken passives are.
+3. **Then warriors and mages**, using whatever the slice teaches.
+
+Do NOT do all nine at once: nine untested classes with no way to attribute what broke.
 
 - [ ] **Chase the x0.64 attack gap before fitting the curve.** It biases in a direction that
       matters: a model player who kills more slowly makes every fight measure longer and costlier,
