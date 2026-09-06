@@ -3939,6 +3939,31 @@ const PALADIN_JUDGEMENT_PER := 0.08      # strike weight per Conviction spent
 const PALADIN_LETHAL_BASE := 2           # % chance the judgement is simply lethal
 const PALADIN_LETHAL_PER := 3            # +3% a stack, so a full bank is ~17%
 
+# 2026-09-06 — THE MAGE SLICE, the third and last archetype. Same treatment: `meteor` becomes one
+# card with three mechanics so no two Mages play alike.
+#
+#   Wizard    FOCUS-shaped     unchanged, because Focus already IS this shape: stacks are a
+#                              passive spell-damage ramp and Meteor discharges them for a nuke.
+#   Sorcerer  MOMENTUM-shaped  Volatility banks. While held it is raw power crackling around you
+#                              that turns blows aside (damage reduction), and Cataclysm spends
+#                              the lot for a guaranteed burst. It gives the glass cannon the one
+#                              thing it never had: a reason NOT to dump every turn.
+#   Sage      READ-shaped      Insight buys an Unmaking that always lands plus a chance it simply
+#                              ends them. Displayed as the ORACLE — see CLASS_DISPLAY_NAME.
+#
+# Sized on the FULL bank (FOCUS_MAX is 5, like Momentum), and deliberately NOT by mirroring the
+# Trickster numbers — that mistake cost two iterations on the warriors.
+# 2026-09-06 — this was briefly 0.09 while I was trying to fix a survivability hole that turned
+# out to have a completely different cause: `overload` in the starter deck, which spends 20% of
+# max HP a cast. Removing that one card moved the Sorcerer 81/53/65 -> 96/65/71 and its survival
+# at L30 elite from 13.1 turns to 22.4. The mitigation is back to the Fighter's 5%/stack, because
+# compensating a class for a card is how the treadmill starts.
+const SORCERER_VOLATILITY_DR_PER: float = 0.07   # 7% damage reduction a stack, 35% at cap
+const SORCERER_CATACLYSM_PER: float = 0.28       # burst weight per Volatility spent (1.40 at cap)
+const ORACLE_UNMAKING_PER: float = 0.16          # strike weight per Insight spent (0.80 at cap)
+const ORACLE_LETHAL_BASE: int = 2                # % chance the Unmaking is simply lethal
+const ORACLE_LETHAL_PER: int = 5                 # +5% a stack, so a full bank is ~27%
+
 # What this class's stack is CALLED. Owner 2026-09-06: "Not only do the cards need to be correct
 # description wise but their hover and combat output should too." A Barbarian told its "Momentum"
 # went up is being lied to by the combat log in the same way the old card text lied about damage.
@@ -3947,7 +3972,7 @@ const PALADIN_LETHAL_PER := 3            # +3% a stack, so a full bank is ~17%
 # game cannot call the same stack two different things on two different surfaces.
 const CLASS_ENGINE_LABEL := {
 	"Fighter": "Momentum", "Barbarian": "Rage", "Paladin": "Conviction",
-	"Wizard": "Focus", "Sorcerer": "Focus", "Sage": "Focus",
+	"Wizard": "Focus", "Sorcerer": "Volatility", "Sage": "Insight",
 	"Grifter": "Read", "Ranger": "Read", "Ninja": "Read",
 }
 
@@ -4115,7 +4140,10 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 	var str_mult: float = 1.0 + sqrt(s_str) / 10.0
 	var wits_mult: float = 1.0 + sqrt(s_wits) / 10.0
 	var focus: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
-	var focus_mult: float = 1.0 + float(focus) * FOCUS_DMG_PER
+	# The ramp is the Wizard's alone, so only the Wizard's card may quote it.
+	var focus_mult: float = 1.0
+	if character.class_type == "Wizard":
+		focus_mult = 1.0 + float(focus) * FOCUS_DMG_PER
 	# 2026-09-05 — the quote reacts to LIVE buffs. Owner: "is that taking into account the
 	# characters current buffs, debuffs, as well as the cards upgrades?" Upgrades were already
 	# in (they ride apply_skill_damage_bonus); buffs were not, so casting War Cry moved the real
@@ -4166,9 +4194,26 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 				"blast", "frost_nova":
 					dmg *= focus_mult
 				"meteor":
-					# meteor_mult is a 3.0-4.0 roll divided by 3.5, so it averages 1.0 — the
-					# card shows the average rather than a range it cannot predict.
-					dmg *= (1.0 + float(focus) * FOCUS_METEOR_PER)
+					# One card, three mechanics — so three quotes. Anything else means two of
+					# the three Mages read a number that has nothing to do with their cast.
+					match String(character.class_type):
+						"Sorcerer":
+							dmg = _ability_anchored_damage(character, "intelligence",
+								SORCERER_CATACLYSM_PER * float(focus))
+						"Sage":
+							dmg = _ability_anchored_damage(character, "intelligence",
+								ORACLE_UNMAKING_PER * float(focus))
+							var _ol: int = maxi(1, ORACLE_LETHAL_BASE + focus * ORACLE_LETHAL_PER)
+							var _omon = combat.get("monster", null)
+							if _omon is Dictionary:
+								var _ogap: int = int(_omon.get("level", character.level)) - character.level
+								if _ogap > 0:
+									_ol = maxi(1, _ol - _ogap)
+							note = "%d%% lethal" % _ol
+						_:
+							# meteor_mult is a 3.0-4.0 roll divided by 3.5, so it averages 1.0 —
+							# the card shows the average rather than a range it cannot predict.
+							dmg *= (1.0 + float(focus) * FOCUS_METEOR_PER)
 				"ambush":
 					# 2026-09-05 — the x1.25 here was Ambush's private 50%/1.5x crit, which was
 					# retired when crit was consolidated. It survived in the PREVIEW, so the card
@@ -4186,7 +4231,7 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 				# Append rather than overwrite — this used to replace magic_bolt's "at N mana",
 				# so the moment a Mage built any Focus the card stopped saying what spend the
 				# number was for.
-				var _fnote := "Focus %d/%d" % [focus, FOCUS_MAX]
+				var _fnote := "%s %d/%d" % [class_engine_label(String(character.class_type)), focus, FOCUS_MAX]
 				note = _fnote if note == "" else "%s, %s" % [note, _fnote]
 			# Run the REAL modifier chain (mastery rank, off-affinity, imprints, Path effects)
 			# rather than a fourth copy of it. A rank-0 ability is at 0.80x, which is most of
@@ -4804,7 +4849,13 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	# v0.9.697 — Mage Focus RAMP. This spell benefits from Focus built by PRIOR
 	# spells; the ramp itself is advanced (or discharged by Meteor) at the bottom.
 	var _focus_prior: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
-	var _focus_mult: float = 1.0 + float(_focus_prior) * FOCUS_DMG_PER
+	# 2026-09-06 — the ramp is the WIZARD's payoff, narrowed exactly as the Momentum DR went to
+	# the Fighter and the Read DR to the Grifter. The Sorcerer banks the same stacks for defence
+	# and a burst; the Oracle banks them for odds. Leaving the ramp on all three handed every
+	# Mage a second engine's reward on top of its own, which is what made them play alike.
+	var _focus_mult: float = 1.0
+	if character.class_type == "Wizard":
+		_focus_mult = 1.0 + float(_focus_prior) * FOCUS_DMG_PER
 
 	match ability_name:
 		"magic_bolt":
@@ -5090,6 +5141,59 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			}
 
 		"meteor":
+			# --- SORCERER: loose the bank. Guaranteed, and it costs you the guard it was giving. ---
+			if character.class_type == "Sorcerer":
+				var _sc_vol: int = _focus_prior
+				if _sc_vol <= 0:
+					messages.append("[color=#808080]You have nothing banked yet — cast first, then loose it.[/color]")
+					return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+				var _sc_dmg: int = int(_ability_anchored_damage(character, "intelligence",
+					SORCERER_CATACLYSM_PER * float(_sc_vol)) * variable_fraction)
+				_sc_dmg = int(float(_sc_dmg) * (1.0 + float(character.get_buff_value("damage")) / 100.0))
+				_sc_dmg = apply_skill_damage_bonus(character, ability_name, _sc_dmg, combat)
+				_sc_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+					_sc_dmg, character.level, monster, character, combat, messages))
+				combat["focus"] = 0
+				monster.current_hp = max(0, monster.current_hp - _sc_dmg)
+				messages.append("[color=#FF4500][b]CATACLYSM![/b][/color] [color=#9400D3](spent %d Volatility — your guard goes with it)[/color]" % _sc_vol)
+				messages.append("[color=#FFFF00]Everything you were holding back arrives at once — %s[/color]"
+					% _damage_with_detail(combat, messages, _sc_dmg))
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
+				return {"success": true, "messages": messages, "combat_ended": false}
+			# --- ORACLE (class_type "Sage"): you saw where this ends. Always lands; may simply end it. ---
+			if character.class_type == "Sage":
+				var _or_ins: int = _focus_prior
+				if _or_ins <= 0:
+					messages.append("[color=#808080]You have not read it yet — watch it work first.[/color]")
+					return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+				var _or_dmg: int = int(_ability_anchored_damage(character, "intelligence",
+					ORACLE_UNMAKING_PER * float(_or_ins)) * variable_fraction)
+				_or_dmg = int(float(_or_dmg) * (1.0 + float(character.get_buff_value("damage")) / 100.0))
+				_or_dmg = apply_skill_damage_bonus(character, ability_name, _or_dmg, combat)
+				_or_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+					_or_dmg, character.level, monster, character, combat, messages))
+				var _or_lethal: int = ORACLE_LETHAL_BASE + _or_ins * ORACLE_LETHAL_PER
+				var _or_gap: int = monster.level - character.level
+				if _or_gap > 0:
+					_or_lethal = maxi(1, _or_lethal - _or_gap)
+				_or_lethal = maxi(1, int(float(_or_lethal) * variable_fraction))
+				combat["focus"] = 0
+				if randi() % 100 < _or_lethal:
+					# Zero the HP rather than flagging a win — the party engine decides the fight
+					# from the shared monster's health. Same reason the Ninja's branch does it.
+					monster.current_hp = 0
+					messages.append("[color=#20B2AA][b]UNMAKING![/b][/color]")
+					messages.append("[color=#00FF00]You name the flaw you have been watching, and it comes apart along it.[/color]")
+					return _process_victory(combat, messages)
+				monster.current_hp = max(0, monster.current_hp - _or_dmg)
+				messages.append("[color=#20B2AA][b]UNMAKING![/b][/color] [color=#5AC8FF](spent %d Insight, %d%% lethal)[/color]" % [_or_ins, _or_lethal])
+				messages.append("[color=#FFFF00]The flaw is there, but not yet wide enough — %s[/color]"
+					% _damage_with_detail(combat, messages, _or_dmg))
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
+				return {"success": true, "messages": messages, "combat_ended": false}
+			# --- WIZARD: discharge the ramp. ---
 			# Variable cost (v0.9.260) — apply_variable_cost above has spent the
 			# mana and computed variable_fraction. Base damage 100 × INT × 3-4x rng,
 			# scaled by spend.
@@ -5275,7 +5379,10 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 	if ability_name == "meteor":
 		if _focus_prior > 0:
 			combat["focus"] = 0
-			messages.append("[color=#5AC8FF]◈ Focus discharged! (Meteor +%d%% damage)[/color]" % int(_focus_prior * FOCUS_METEOR_PER * 100))
+			messages.append("[color=#5AC8FF]◈ %s discharged! (%s +%d%% damage)[/color]" % [
+				class_engine_label(String(character.class_type)),
+				_ability_display_name(character, "meteor"),
+				int(_focus_prior * FOCUS_METEOR_PER * 100)])
 	elif ability_name == "overload":
 		pass  # #36 — Overload is an HP-cost setup; it does not advance Focus.
 	else:
@@ -7649,9 +7756,39 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 	var _oth_char = combat.get("character", null)
 	var _oth_before: int = int(_oth_char.current_hp) if _oth_char != null else 0
 	var _oth_result: Dictionary = _process_monster_turn_inner(combat)
-	if _oth_char != null and int(_oth_char.current_hp) < _oth_before:
-		_apply_on_taken_hit(combat, _oth_char, _oth_result)
+	if _oth_char != null:
+		if int(_oth_char.current_hp) < _oth_before:
+			_apply_on_taken_hit(combat, _oth_char, _oth_result)
+		else:
+			_apply_on_unharmed_turn(combat, _oth_char, _oth_result)
 	return _oth_result
+
+func _apply_on_unharmed_turn(combat: Dictionary, character, result: Dictionary) -> void:
+	"""Effects that trigger because the enemy's turn cost you nothing.
+
+	ORACLE "Foresight" — you come through a round untouched and you understand it a little
+	better. The mirror of the Paladin's Retribution, which builds off blows that DO land, and
+	the reason the two Read-shaped classes do not feel the same: one is paid for enduring, the
+	other for not needing to.
+
+	It keys off the OUTCOME (health unchanged over the monster's turn) rather than a specific
+	miss branch, because the monster's turn has a dozen of those — missed, stunned, charmed,
+	absorbed, intercepted by the companion. The card text says exactly that: "any round the
+	enemy fails to hurt you"."""
+	if character == null:
+		return
+	var effects: Dictionary = character.get_class_passive().get("effects", {})
+	var gain: int = int(effects.get("insight_on_unharmed", 0))
+	if gain <= 0:
+		return
+	var before: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
+	var after: int = mini(FOCUS_MAX, before + gain)
+	if after == before:
+		return
+	combat["focus"] = after
+	var line := "[color=#20B2AA]◈ Foresight — Insight %d/%d[/color]" % [after, FOCUS_MAX]
+	if result.has("message"):
+		result["message"] = "%s\n%s" % [String(result["message"]), line]
 
 func _apply_on_taken_hit(combat: Dictionary, character, result: Dictionary) -> void:
 	"""Effects that trigger because a blow got through this turn.
@@ -8122,6 +8259,14 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 				var _mom_dr: float = float(clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)) * MOMENTUM_DR_PER
 				if _mom_dr > 0.0:
 					_mit_mult *= (1.0 - _mom_dr)
+			# SORCERER identity — banked Volatility is unspent power crackling around you, and it
+			# turns blows aside until you loose it. Same shape as Momentum and the Grifter's Read,
+			# under the same 85% cap. It is what gives a glass cannon a reason not to dump every
+			# turn: hold the bank and you are harder to kill, spend it and you are not.
+			if character.class_type == "Sorcerer":
+				var _vol_dr: float = float(clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)) * SORCERER_VOLATILITY_DR_PER
+				if _vol_dr > 0.0:
+					_mit_mult *= (1.0 - _vol_dr)
 			# GRIFTER identity — every Read you have built is a blow you see coming. Same shape as
 			# Momentum above, and under the same 85% cap.
 			#
@@ -10038,6 +10183,13 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus
 		"focus_max": FOCUS_MAX,
 		"is_mage_focus": character.get_class_path() == "mage",
+		# The meter is Focus / Volatility / Insight and its finisher is Meteor / Cataclysm /
+		# Unmaking. `focus_note` is the live "what your stacks are doing right now" line: the
+		# three Mages bank the same number for three different reasons, so the client cannot
+		# work it out without a copy of the class rules — and copies are what keep drifting.
+		"focus_label": class_engine_label(String(character.class_type)),
+		"focus_finisher": _ability_display_name(character, "meteor"),
+		"focus_note": _engine_note(character, combat),
 		"player_name": character.name,
 		"player_hp": character.current_hp,
 		"player_max_hp": character.get_total_max_hp(),
@@ -10792,6 +10944,13 @@ const ABILITY_DISPLAY_BY_CLASS := {
 		"Fighter": "Devastate",
 		"Barbarian": "Rampage",
 		"Paladin": "Judgement",
+	},
+	# The Mage finisher forks the same way. A Wizard drops a meteor, a Sorcerer looses a
+	# cataclysm, an Oracle unmakes the thing where it stands.
+	"meteor": {
+		"Wizard": "Meteor",
+		"Sorcerer": "Cataclysm",
+		"Sage": "Unmaking",
 	},
 }
 
@@ -12588,3 +12747,31 @@ func get_party_combat_state(leader_id: int) -> Dictionary:
 		"members": members_info,
 		"current_turn_peer_id": _get_current_turn_peer_id(combat)
 	}
+
+
+func _engine_note(character, combat: Dictionary) -> String:
+	"""One line saying what the caster's banked stacks are BUYING at this instant.
+
+	Lives here rather than in the client because the numbers are class constants; the meter used
+	to render a hardcoded "+N% spell dmg", which is only true for the Wizard and was simply false
+	for the other two once the engines forked."""
+	var n: int = clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
+	match String(character.class_type):
+		"Sorcerer":
+			if n <= 0:
+				return "cast to bank power"
+			return "-%d%% damage taken" % int(float(n) * SORCERER_VOLATILITY_DR_PER * 100.0)
+		"Sage":
+			if n <= 0:
+				return "watch it work first"
+			var lethal: int = maxi(1, ORACLE_LETHAL_BASE + n * ORACLE_LETHAL_PER)
+			var mon = combat.get("monster", null)
+			if mon is Dictionary:
+				var gap: int = int(mon.get("level", character.level)) - int(character.level)
+				if gap > 0:
+					lethal = maxi(1, lethal - gap)
+			return "%d%% lethal" % lethal
+		_:
+			if n <= 0:
+				return "cast to ramp up"
+			return "+%d%% spell dmg" % int(float(n) * FOCUS_DMG_PER * 100.0)

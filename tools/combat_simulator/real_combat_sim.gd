@@ -4219,60 +4219,90 @@ func _mage_shield_first(combat: Dictionary, ch) -> void:
 
 
 func _mage_rotation(combat: Dictionary, ch) -> void:
+	"""Play the Mage's own engine. 2026-09-06 — one rotation for all three Mages is how the
+	Trickster measurements went wrong, so this forks the same way the Warrior policy does.
+
+	  Wizard    Focus is a damage RAMP, so keep casting and discharge with Meteor.
+	  Sorcerer  banked Volatility is DEFENCE, so hold it and loose Cataclysm near the cap;
+	            dumping at one stack throws away both the burst and the guard.
+	  Oracle    needs ROUNDS it comes through untouched (Foresight), so it leads with control
+	            and shields rather than damage, then Unmakes.
+
+	Ends with a catch-all: a gated rotation that falls through to a staff swing is what made
+	mages measure as a broken archetype once already."""
 	var hand: Array = combat.get("combat_hand", [])
 	var focus: int = int(combat.get("focus", 0))
-	# FORCEFIELD - the mage's shield, and this policy never cast it. A glass cannon that never
-	# raises its guard measures as far more fragile than the class actually is, which is exactly
-	# the kind of instrument fault that gets read as a balance problem.
-	if "forcefield" in hand and ch.get_buff_value("shield") <= 0 and int(combat.get("forcefield_shield", 0)) <= 0 and ch.current_hp < int(ch.get_total_max_hp() * 0.70):
-		if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
-			return
-	# #36 — Overload before a burst when healthy (glass-cannon combo): sear HP to buff the
-	# next spell. Gated on high HP + no active damage buff so it can't loop or suicide.
-	if "overload" in hand and ch.get_buff_value("damage") <= 0 and ch.current_hp > int(ch.get_total_max_hp() * 0.55) and (("meteor" in hand and focus >= 2) or "magic_bolt" in hand):
-		if combat_mgr.process_ability_command(0, "overload", "").get("success", false):
-			return
-	# #36 — Frost Nova as a Focus-builder + survival chill when the foe isn't chilled yet.
-	if "frost_nova" in hand and int(combat.get("enemy_distracted", 0)) < 20 and focus < 3:
-		if combat_mgr.process_ability_command(0, "frost_nova", "").get("success", false):
-			return
-	# Arcane Surge (internally "haste") — stacks bonus spell damage AND a double-cast chance, so
-	# it wants to land BEFORE the nukes it multiplies. It is in the starter deck and the rotation
-	# never cast it, which is most of why mages measured as idle.
-	if "haste" in hand and ch.get_buff_value("damage") <= 0:
-		if combat_mgr.process_ability_command(0, "haste", "").get("success", false):
-			return
-	# Discharge the ramp with Meteor once Focus is built.
-	if focus >= 3 and "meteor" in hand:
+	var cls := String(ch.class_type)
+
+	if cls == "Sorcerer":
+		# Hold the bank: it is damage reduction until it is a Cataclysm.
+		if focus >= 4 and "meteor" in hand:
+			if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
+				return
+		if "forcefield" in hand and int(combat.get("forcefield_shield", 0)) <= 0 and ch.current_hp < int(ch.get_total_max_hp() * 0.75):
+			if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
+				return
+		if "overload" in hand and ch.get_buff_value("damage") <= 0 and ch.current_hp > int(ch.get_total_max_hp() * 0.55):
+			if combat_mgr.process_ability_command(0, "overload", "").get("success", false):
+				return
+		if "magic_bolt" in hand and ch.current_mana > int(ch.get_total_max_mana() * 0.25):
+			if combat_mgr.process_ability_command(0, "magic_bolt", str(maxi(1, int(ch.get_total_max_mana() * 0.25)))).get("success", false):
+				return
+		if "blast" in hand:
+			if combat_mgr.process_ability_command(0, "blast", "").get("success", false):
+				return
+	elif cls == "Sage":
+		# ORACLE — buy untouched rounds, which is what Foresight is paid for.
+		if focus >= 4 and "meteor" in hand:
+			if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
+				return
+		if "forcefield" in hand and int(combat.get("forcefield_shield", 0)) <= 0:
+			if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
+				return
+		# Paralyze only when it is actually buying something. The monster's turn decrements the
+		# stun, so an "is it stunned?" gate alone is true again every round: the probe showed the
+		# Oracle re-stunning for FIVE consecutive turns and dealing no damage at all in that time.
+		# A control card is worth a turn when you are in trouble, not as a permanent state.
+		if "paralyze" in hand and int(combat.get("monster_stunned", 0)) <= 0 and ch.current_hp < int(ch.get_total_max_hp() * 0.60):
+			if combat_mgr.process_ability_command(0, "paralyze", "").get("success", false):
+				return
+		if "frost_nova" in hand and int(combat.get("enemy_distracted", 0)) < 20:
+			if combat_mgr.process_ability_command(0, "frost_nova", "").get("success", false):
+				return
+		if "magic_bolt" in hand and ch.current_mana > int(ch.get_total_max_mana() * 0.25):
+			if combat_mgr.process_ability_command(0, "magic_bolt", str(maxi(1, int(ch.get_total_max_mana() * 0.25)))).get("success", false):
+				return
+	else:
+		# WIZARD — throughput. Every cast ramps, so the worst turn is one that casts nothing.
+		if "forcefield" in hand and int(combat.get("forcefield_shield", 0)) <= 0 and ch.current_hp < int(ch.get_total_max_hp() * 0.70):
+			if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
+				return
+		if "haste" in hand and ch.get_buff_value("damage") <= 0:
+			if combat_mgr.process_ability_command(0, "haste", "").get("success", false):
+				return
+		if focus >= 3 and "meteor" in hand:
+			if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
+				return
+		if "frost_nova" in hand and focus < 3 and int(combat.get("enemy_distracted", 0)) < 20:
+			if combat_mgr.process_ability_command(0, "frost_nova", "").get("success", false):
+				return
+		if "magic_bolt" in hand and ch.current_mana > int(ch.get_total_max_mana() * 0.25):
+			if combat_mgr.process_ability_command(0, "magic_bolt", str(maxi(1, int(ch.get_total_max_mana() * 0.25)))).get("success", false):
+				return
+		if "blast" in hand:
+			if combat_mgr.process_ability_command(0, "blast", "").get("success", false):
+				return
+
+	# Spend the bank rather than swing a staff, then try anything else still castable.
+	if focus >= 1 and "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
 			return
-	# #55 — Magic Bolt is now the mage's big burst nuke (rebuilt multiplier). A real
-	# mage opens with it while mana is stocked (dumps ~25% pool for a huge hit), then
-	# falls to Blast for efficient sustain. Meteor discharges the Focus ramp above.
-	if "magic_bolt" in hand and ch.current_mana > int(ch.get_total_max_mana() * 0.25):
-		var amt := str(max(1, int(ch.get_total_max_mana() * 0.25)))
-		if combat_mgr.process_ability_command(0, "magic_bolt", amt).get("success", false):
-			return
-	# Efficient sustain / Focus ramp (each +1 Focus).
-	if "blast" in hand:
-		if combat_mgr.process_ability_command(0, "blast", "").get("success", false):
-			return
-	if "meteor" in hand:
-		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
-			return
-	# 2026-09-06 — CATCH-ALL: play anything still castable before swinging a staff.
-	#
-	# Measured with a truthful cast counter, mages acted on 0.28-0.47 of turns against the
-	# warrior's 0.90-0.96. Not a class problem — a POLICY one. Every branch above is gated
-	# (magic_bolt needs >25% mana, meteor needs Focus 3, forcefield needs HP <70%), and `haste`
-	# — Arcane Surge, in the mage STARTER DECK — appeared nowhere at all. A hand of
-	# {haste, forcefield, meteor} at full health with low Focus therefore cast NOTHING and threw
-	# a basic attack, which is not what any player does.
-	#
-	# A gate should express a preference, not a refusal. The ordered list above still decides
-	# WHICH card is best; this makes sure the turn is never simply thrown away.
 	for ab in hand:
-		if combat_mgr.process_ability_command(0, String(ab), "").get("success", false):
+		var abs_name := String(ab)
+		if abs_name == "meteor":
+			continue
+		var arg := str(maxi(1, int(ch.get_total_max_mana() * 0.20))) if abs_name == "magic_bolt" else ""
+		if combat_mgr.process_ability_command(0, abs_name, arg).get("success", false):
 			return
 	_counted_attack(combat)
 
@@ -6286,5 +6316,7 @@ func _verify_starter_decks() -> void:
 	else:
 		print("  all nine ship exactly 5 cards")
 	print("==========================================================================")
+
+
 
 

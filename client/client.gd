@@ -2134,7 +2134,7 @@ const CLASS_DESCRIPTIONS = {
 	"Paladin": "Warrior Path. Holy knight who endures, builds Conviction, then passes judgement. Uses Stamina.",
 	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana.",
 	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.",
-	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.",
+	"Sage": "Mage Path. Watches, waits, and unmakes the thing where it stands. Uses Mana.",
 	"Grifter": "Trickster Path. Con artist who wins by not fighting fair. Uses Energy.",
 	"Ranger": "Trickster Path. Steady where the others gamble. Uses Energy.",
 	"Ninja": "Trickster Path. Builds toward critical hits. Uses Energy.",
@@ -2152,11 +2152,11 @@ const ARCHETYPE_DATA = [
 # Plain-text one-liners for the class buttons (Button can't render BBCode).
 const CLASS_CARD_SUMMARY = {
 	"Fighter": "Balanced melee. +15% defense, cheaper abilities.",
-	"Barbarian": "Berserker. More damage the lower your HP.",
-	"Paladin": "Holy knight. Self-heals each round, strong vs undead.",
-	"Wizard": "Pure spellcaster. +15% spell damage & crit.",
-	"Sorcerer": "High-risk mage. Chance to double spell damage.",
-	"Sage": "Efficient mage. -25% mana costs, stronger Meditate.",
+	"Barbarian": "Berserker. Rage makes every card hit harder — no guard, just speed.",
+	"Paladin": "Holy knight. Endures, builds Conviction, then passes judgement.",
+	"Wizard": "Pure spellcaster. Every spell ramps the next.",
+	"Sorcerer": "High-risk mage. Banks volatile power, then looses it all at once.",
+	"Sage": "Patient mage. Reads the fight, then ends it outright.",
 	"Grifter": "Con artist. Stalls to set up a kill, slips away when it turns.",
 	"Ranger": "Reliable. Never fumbles a cast, and never crits by chance.",
 	"Ninja": "Crit build. Each critical hit sharpens the next.",
@@ -2722,7 +2722,9 @@ func _ready():
 	if class_option:
 		class_option.clear()
 		for cls in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
-			class_option.add_item(cls)
+			# Shown under its display name; the selection is read back by INDEX against this same
+			# list, so the stored class_type stays the internal id ("Sage", not "Oracle").
+			class_option.add_item(CharacterScript.class_display_name(cls))
 		class_option.item_selected.connect(_on_class_selected)
 		_update_class_description()  # Set initial description
 
@@ -7121,7 +7123,7 @@ func _on_class_card_pressed(cls: String) -> void:
 		_apply_card_style(b, String(b.get_meta("cls", "")) == cls)
 	if _class_detail_label:
 		_class_detail_label.clear()
-		_class_detail_label.append_text("[b][color=#FFD700]%s — Class Passive[/color][/b]\n%s" % [cls, CLASS_DESCRIPTIONS.get(cls, "")])
+		_class_detail_label.append_text("[b][color=#FFD700]%s — Class Passive[/color][/b]\n%s%s" % [CharacterScript.class_display_name(cls), CLASS_DESCRIPTIONS.get(cls, ""), _class_passive_line(cls)])
 
 func _reset_class_picker_default() -> void:
 	_ensure_class_picker_built()
@@ -12914,9 +12916,12 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		elif player_class == "Barbarian":
 			final_cost = int(final_cost * 1.25)
 	elif ability_resource_type == "mana":
-		# Sage: 25% reduced mana costs
-		if player_class == "Sage":
-			final_cost = int(final_cost * 0.75)
+		# 2026-09-06 — the hardcoded "Sage: 25% reduced mana costs" that lived here is GONE. It
+		# was a client-side copy of a class passive (Mana Mastery), which has been replaced by
+		# Foresight, so the client would have kept quoting a discount the server no longer gives
+		# — a card showing a cost that is not the cost charged. The server reads
+		# `mana_cost_reduction` off the live passive table; nothing needs to be mirrored here.
+		pass
 
 	# Minimum cost of 1 (unless base was 0)
 	if base_cost > 0 and final_cost < 1:
@@ -19578,7 +19583,11 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"blast": return "INT-scaled burst damage + 3-round burn DoT (20% of INT per round). Variable cost (≈30% of mana pool max) — damage AND burn magnitude scale with spend; duration stays 3 rounds."
 		"forcefield": return "Absorbs damage equal to about a quarter of your maximum HP, scaled by Intelligence, until depleted. Variable cost — shield magnitude scales with spend (partial cast = smaller shield)."
 		"teleport": return "Out-of-combat travel ability (not used in combat)."
-		"meteor": return "100 base × INT scaling × 3-4× random multiplier. Massive damage. Variable cost (≈30% of mana pool max) — damage scales linearly with spend."
+		"meteor":
+			match String(character_data.get("class", "")):
+				"Sorcerer": return "CATACLYSM — looses all your banked Volatility in one hit; damage scales with each point spent. Holding the bank is 7% damage reduction a point (35% at cap), and spending it gives that up. Variable cost (≈30% of mana pool max)."
+				"Sage": return "UNMAKING — always lands, and each point of Insight spent raises both its damage and the chance (2% + 5% per point) that it simply ends them. Variable cost (≈30% of mana pool max)."
+				_: return "Discharges your Focus ramp: +25% damage per Focus on top of the +10%/Focus every spell already carries, then resets it. Variable cost (≈30% of mana pool max)."
 		"haste": return "ARCANE SURGE — buffs your spell damage and adds a double-cast chance on damage spells for 4 rounds. +40-60% spell damage (scales with INT and spend), +7-25% double-cast chance. Variable cost (≈30% of mana pool max) — both effects scale with spend."
 		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC. Variable cost (≈30% of mana pool max) — stun CHANCE scales with spend (duration stays 1-2 turns if it lands)."
 		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish. Variable cost (≈30% of mana pool max) — banish CHANCE scales with spend; loot-drop chance stays 50% (bonus outcome)."
@@ -19738,7 +19747,15 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"blast":
 			return "Deal %s damage and set a [b]burn[/b] for %s/round over [b]3[/b] rounds." % [_desc_num(est_dmg, "50 × (1 + INT×4%) × 2 × rank/tier"), _desc_num(int(0.2 * float(s_int)), "20% of INT per round")]
 		"meteor":
-			return "Deal %s damage — a massive finisher that hits [b]harder with Focus[/b], then discharges it." % _desc_num(est_dmg, "100 × (1 + INT×4%) × 3-4x × rank/tier (+25%/Focus)")
+			# One card, three mechanics — the same fork as the Warrior finisher. A single
+			# description would be wrong for two of the three Mages holding it.
+			match String(character_data.get("class", "")):
+				"Sorcerer":
+					return "Deal %s damage — looses [b]all[/b] your Volatility at once. Guaranteed, but the banked power was also %s, and you lose that the moment you spend it." % [_desc_num(est_dmg, "scales with each point of Volatility spent"), _desc_num("turning blows aside", "7% damage reduction per Volatility held, up to 35%")]
+				"Sage":
+					return "Deal %s damage and, with %s, unmake them outright. Spends [b]all[/b] your Insight — each point raises [i]both[/i] the damage and the chance." % [_desc_num(est_dmg, "scales with each point of Insight spent"), _desc_num("a small chance", "2% + 5% per Insight, so ~27% on a full bank; reduced against higher-level foes")]
+				_:
+					return "Deal %s damage — a massive finisher that hits [b]harder with Focus[/b], then discharges it." % _desc_num(est_dmg, "+25% damage per Focus, on top of the +10%/Focus ramp every spell already gets")
 		"forcefield":
 			# #6c — Forcefield is anchored to the caster's own health bar now, not `100 + INT*8`.
 			# The old text promised a shield 3-6x larger than the ability grants, which a player
@@ -32837,7 +32854,7 @@ func _help_passive_block(classes: Array) -> String:
 	for c in classes:
 		var p: Dictionary = CharacterScript.class_passive_for(String(c))
 		lines.append("  [color=%s]%s[/color] - %s: %s" % [
-			String(p.get("color", "#FFFFFF")), String(c),
+			String(p.get("color", "#FFFFFF")), CharacterScript.class_display_name(String(c)),
 			String(p.get("name", "?")), String(p.get("description", ""))])
 	return "\n".join(lines)
 
@@ -33341,14 +33358,22 @@ whichever one you have:
 [color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
 Magic Bolt - the big single-cast nuke; spend more mana for more damage
 Blast - efficient sustain
-Meteor - discharges the Focus ramp
+Meteor / Cataclysm / Unmaking - the FINISHER, one card that works differently for each class
 Frost Nova - chip damage and an accuracy chill; builds Focus
 Overload - burns your own HP to buff the next spell
 Forcefield - absorbs damage. Each RECAST in the same fight absorbs less, so it is a strong
   panic button rather than something to hold up permanently
-Haste / Paralyze / Banish - speed, hard stun, and an execute
+Arcane Surge / Paralyze / Banish - spell damage and a double-cast chance, a hard stun, and a
+  removal spell
 
-[color=#FFD700]Focus[/color] is the Mage engine: cards build it, Meteor cashes it."
+[color=#FFD700]The three Mages run three different engines[/color], and every spell builds whichever
+one you have:
+  [color=#4169E1]Wizard - Focus[/color]: each stack is +10% to ALL your spell damage, and Meteor discharges the
+  whole ramp at once.
+  [color=#9400D3]Sorcerer - Volatility[/color]: banked power turns blows aside (-7% damage taken a stack), and
+  Cataclysm looses the lot — you give up the guard to spend it.
+  [color=#20B2AA]Oracle - Insight[/color]: Unmaking always lands, and each stack raises both its damage and the
+  chance it simply ends them. Foresight builds Insight on any round the enemy fails to hurt you."
 
 		},
 		{
@@ -35169,7 +35194,8 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	elif is_trickster and combat_scene_panel.has_method("update_read"):
 		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)), int(state.get("assassinate_chance", 0)), true)
 	elif is_mage and combat_scene_panel.has_method("update_focus"):
-		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true)
+		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true,
+			String(state.get("focus_label", "Focus")), String(state.get("focus_note", "")))
 	else:
 		# No class engine active → hide the meter.
 		combat_scene_panel.update_momentum(0, int(state.get("momentum_max", 5)), false)

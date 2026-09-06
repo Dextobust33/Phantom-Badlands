@@ -3347,7 +3347,7 @@ func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool)
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
-func update_focus(cur: int, mx: int, is_mage: bool) -> void:
+func update_focus(cur: int, mx: int, is_mage: bool, label: String = "Focus", note: String = "") -> void:
 	"""v0.9.697 — Mage Focus meter (blue ◈). A RAMP: shows the live all-spell damage
 	bonus. No gate; Meteor discharges it. Drives the spell/Meteor card notes."""
 	_focus = cur
@@ -3365,14 +3365,19 @@ func update_focus(cur: int, mx: int, is_mage: bool) -> void:
 	var pips := ""
 	for i in range(_focus_max):
 		pips += "[color=#5AC8FF]◈[/color]" if i < cur else "[color=#37485A]◇[/color]"
+	# The note is computed SERVER-side, because what banked stacks buy differs per class: a
+	# Wizard's ramp, a Sorcerer's guard, an Oracle's odds. This used to be hardcoded as
+	# "+N% spell dmg", which was simply false for two of the three.
 	var tag: String
-	if cur >= _focus_max:
-		tag = "[color=#7AE0FF]MAX +%d%% dmg[/color]" % int(cur * 10)
-	elif cur > 0:
-		tag = "[color=#5AC8FF]+%d%% spell dmg[/color]" % int(cur * 10)
-	else:
+	if note == "":
 		tag = "[color=#6E7E8A]cast to ramp up[/color]"
-	_momentum_label.text = "[color=#5AC8FF]◈ Focus[/color]\n%s\n%s" % [pips, tag]
+	elif cur >= _focus_max:
+		tag = "[color=#7AE0FF]MAX %s[/color]" % note
+	elif cur > 0:
+		tag = "[color=#5AC8FF]%s[/color]" % note
+	else:
+		tag = "[color=#6E7E8A]%s[/color]" % note
+	_momentum_label.text = "[color=#5AC8FF]◈ %s[/color]\n%s\n%s" % [label, pips, tag]
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 

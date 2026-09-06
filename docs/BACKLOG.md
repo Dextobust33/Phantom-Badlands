@@ -935,7 +935,62 @@ Do not do it silently.
 **Mages are no longer the weak archetype** — they are now at the TOP of the table. The mage slice
 is therefore about differentiation only; do NOT buff anything while doing it.
 
-### Mage slice — NEXT
+### Mage slice — DONE 2026-09-06. All nine classes now run one engine shape each.
+
+| class | shape | stack | finisher | deck |
+|---|---|---|---|---|
+| **Wizard** | Focus — ramp -> discharge | Focus | **Meteor** | magic_bolt, blast, forcefield, haste, meteor |
+| **Sorcerer** | Momentum — bank -> guard -> burst | Volatility | **Cataclysm** | magic_bolt, blast, frost_nova, forcefield, meteor |
+| **Oracle** *(stored as "Sage")* | Read — build -> execute | Insight | **Unmaking** | magic_bolt, frost_nova, paralyze, forcefield, meteor |
+
+- The **Focus damage ramp is now the Wizard's alone**, the third such narrowing after the Fighter's
+  Momentum DR and the Grifter's Read DR. Banked Volatility is DEFENCE (7%/stack) and spending it
+  gives that up; banked Insight is ODDS.
+- **Mana Mastery is retired.** Measured, every mage ends L30/L80 elite fights holding 50-70% of its
+  mana: the discount bought an advantage in a currency nobody spends. Replaced with **Foresight** —
+  any round the enemy fails to hurt you builds +1 Insight, the mirror of the Paladin's Retribution.
+- **"Sage" is shown as "Oracle"**, via a display layer. The stored `class_type` stays `"Sage"`:
+  renaming the id would touch 105 sites in 20 files and every saved character carrying it would
+  stop matching its own class tables — a broken character rather than a wrong word.
+
+**Two findings that were NOT the class:**
+1. **Overload is a trap card.** It was in the Sorcerer's starter deck; removing it moved the class
+   81/53/65 -> 96/65/71 and its survival at L30 elite from 13.1 turns to 22.4. Spending 20% of max
+   HP a cast roughly halves how long a mage lives. I had already raised Volatility mitigation to
+   compensate before finding this, and put it back afterwards — treating the symptom first is
+   exactly the treadmill.
+2. **The Oracle policy was re-stunning forever.** The monster's turn decrements the stun, so an
+   "is it stunned?" gate is true again every round; the probe caught it spending FIVE consecutive
+   turns on Paralyze and dealing no damage. Control is worth a turn when you are in trouble, not
+   as a permanent state.
+
+**Final table (60 fights/cell, per-cell seed):**
+
+| class | L10 / L30e / L80e | | class | L10 / L30e / L80e |
+|---|---|---|---|---|
+| Fighter | 93 / 66 / 68 | | Wizard | 88 / 70 / 88 |
+| Barbarian | 78 / 60 / 66 | | Sorcerer | 95 / 75 / 56 |
+| Paladin | 83 / 80 / 75 | | Oracle | 75 / 56 / 73 |
+| Grifter | 78 / 75 / 88 | | Ranger | 71 / **51** / 60 |
+| Ninja | 65 / 70 / 71 | | | |
+
+Elite spread is **51-80**, against **33-100** when the session started. Judged at +/-10pp against
+the ~70% target, the Ranger's 51 at L30 is the one cell still clearly off — and it is a leftover
+from the Trickster slice, not from this one.
+
+### Still open, in order
+
+- **Ranger 51% at L30 elite** — the last class-table outlier. k26.8 against d30.7: it kills far too
+  slowly (29-turn fights, the longest of any class).
+- **Overload's price.** 20% of max HP for +120% for 2 rounds is measurably a losing trade at every
+  level tested. It is out of the Sorcerer's starter deck but still addable, so it is a trap for the
+  player who picks it. Same shape as the Magic Bolt to-do below.
+- **Magic Bolt damage vs investment** (measurements already recorded above).
+- **Re-run the calibration chain** (`speciescal` -> `refcal` -> `rolecal`) — needs owner approval,
+  rewrites live balance data. Every player-side change this session invalidated the curve, and this
+  is the natural point to do it now that all three archetypes are settled.
+
+
 
 Mapping already agreed: **Sorcerer/Volatility** (Momentum-shaped bank-and-burst), **Wizard/Focus**
 (unchanged shape, it already IS Focus), **Sage/Insight** (Read-shaped build-to-execute). `meteor`

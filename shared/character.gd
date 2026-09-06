@@ -733,6 +733,25 @@ func get_class_passive() -> Dictionary:
 	"""Get the unique passive ability for this character's class"""
 	return class_passive_for(class_type)
 
+# 2026-09-06 — the name a class is SHOWN under, where it differs from the id it is STORED under.
+#
+# "Sage" reads as wisdom-and-sustain, which was precisely the passive being retired (Mana Mastery).
+# The class is now the one that watches, waits and then unmakes the thing — an Oracle. The owner
+# was open to the rename.
+#
+# The stored `class_type` deliberately stays "Sage". Renaming the id would touch 105 sites across
+# 20 files and, worse, every saved character carrying `"class_type": "Sage"` would stop matching
+# its own class tables — a broken character rather than a wrong word. This is the same split the
+# cards already use (one `perfect_heist`, three names), and a site that misses the display layer
+# shows an old name instead of breaking someone's save.
+const CLASS_DISPLAY_NAME := {
+	"Sage": "Oracle",
+}
+
+static func class_display_name(class_type: String) -> String:
+	"""What to SHOW the player for this class. Ids are internal; names are not."""
+	return String(CLASS_DISPLAY_NAME.get(class_type, class_type))
+
 static func class_passive_for(class_type: String) -> Dictionary:
 	"""The passive table, addressable WITHOUT a Character instance.
 
@@ -810,13 +829,25 @@ static func class_passive_for(class_type: String) -> Dictionary:
 				}
 			}
 		"Sage":
+			# 2026-09-06 — was Mana Mastery (25% cheaper spells, +50% Meditate). Replaced for the
+			# same reason Divine Favor was: it had nothing to do with this class's engine. Under
+			# the agreed one-shape-per-class design the Oracle is the READ-shaped Mage — build
+			# Insight, then Unmake — and a mana discount feeds none of that.
+			#
+			# It also cost almost nothing to remove. Measured across L30 and L80 elite fights,
+			# every mage ends combat holding 50-70% of its mana pool: mana is simply not the
+			# binding constraint at any level we can measure, so the discount was buying an
+			# advantage in a currency nobody spends.
+			#
+			# Foresight builds the engine off rounds you come through untouched, which the
+			# Oracle's own kit (Frost Nova's chill, Paralyze, Forcefield) is what creates. The
+			# Paladin's Retribution is its mirror: that one builds off blows that DO land.
 			return {
-				"name": "Mana Mastery",
-				"description": "25% reduced mana costs, Meditate restores 50% more",
+				"name": "Foresight",
+				"description": "Any round the enemy fails to hurt you, you gain +1 Insight",
 				"color": "#20B2AA",
 				"effects": {
-					"mana_cost_reduction": 0.25,
-					"meditate_bonus": 0.50
+					"insight_on_unharmed": 1
 				}
 			}
 		# Tricksters
@@ -3578,6 +3609,7 @@ const CURATED_STARTER_DECKS := {
 	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
 }
 
+
 # 2026-09-06 — PER-CLASS starter decks, where the three classes of a path want different cards.
 #
 # Measured first: on the line that actually wins (stall to Assassinate), a Ninja casts analyze
@@ -3638,6 +3670,21 @@ const CURATED_STARTER_DECKS_BY_CLASS := {
 	# a choice that costs a turn rather than something that happens to you. Retribution means
 	# every blow it fails to avoid still feeds the engine.
 	"Paladin": ["power_strike", "war_cry", "fortify", "rally", "devastate"],
+	# WIZARD — Focus-shaped: every spell ramps its damage and Meteor discharges the ramp, so the
+	# deck is throughput. Arcane Surge multiplies what the ramp is already multiplying; Frost Nova
+	# is a cheap builder that also blunts the turn it costs.
+	# Frost Nova was tried in the shield's slot and cost the Wizard 5 turns of survival (d15.4 ->
+	# d10.2 at L30 elite): a ramp class still has to live long enough to ramp. Forcefield back in.
+	"Wizard": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
+	# SORCERER — Momentum-shaped: bank Volatility for the guard it gives, then loose Cataclysm.
+	# Overload states the class out loud — burn your own health for damage — and Forcefield is
+	# what makes holding the bank survivable enough to be a real choice rather than a formality.
+	"Sorcerer": ["magic_bolt", "blast", "frost_nova", "forcefield", "meteor"],
+	# ORACLE (stored as "Sage" — see CLASS_DISPLAY_NAME) — Read-shaped: it needs ROUNDS it comes
+	# through untouched, which is exactly what Foresight pays for. Frost Nova chills, Paralyze
+	# stops the turn outright, Forcefield eats what gets through. Magic Bolt is its only ordinary
+	# damage card; the damage is meant to arrive in the Unmaking.
+	"Sage": ["magic_bolt", "frost_nova", "paralyze", "forcefield", "meteor"],
 }
 
 func _curated_starter_deck() -> Array:
