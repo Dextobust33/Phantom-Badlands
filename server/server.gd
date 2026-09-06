@@ -2537,9 +2537,20 @@ func handle_select_character(peer_id: int, message: Dictionary):
 	# characters so the client tooltip shows the correct damage modifier before
 	# the first combat (the combat init has the same call, but doing it here
 	# means the character_loaded payload already carries the populated dicts).
-	if character.initialize_deck_collection_if_needed():
+	var _deck_changed: bool = character.initialize_deck_collection_if_needed()
+	# 2026-09-06 — one-off deck repair on LOAD. Measured on live: 5 of 17 saved characters carry
+	# 6-13 cards against a designed 5, left over from the old full-roster backfill, two of them
+	# still holding retired/non-combat abilities (all_or_nothing, cloak, teleport). Every extra
+	# card dilutes a three-card hand, so those players have been drawing what matters less often.
+	# Owner: "set them to starters and players can customize manually again." Runs once per
+	# character (guarded by deck_repair_version), and keeps dungeon/companion DROPS, which the
+	# deck screen cannot re-add.
+	var _deck_repaired: bool = character.repair_deck_once()
+	if _deck_changed or _deck_repaired:
 		persistence.save_character(account_id, character)
 		log_message("Mastery: initialized combat deck collection for %s" % char_name)
+	if _deck_repaired:
+		log_message("Deck repair: %s reset to its %d-card starter deck" % [char_name, character.combat_deck_collection.size()])
 
 	# Slice 6e/6f (v0.9.549) — sync account-level Variant Imprints to the
 	# character cache so combat_manager._count_imprint_stacks reads fresh.
@@ -2830,6 +2841,9 @@ func handle_create_character(peer_id: int, message: Dictionary):
 	# screen is correct immediately (previously only the load/combat path seeded,
 	# so a brand-new character's deck read as empty / all-OUT until first combat).
 	character.initialize_deck_collection_if_needed()
+	# A character created NOW is already correct, so stamp the repair as done rather than
+	# letting it fire (and re-save) on this character's first load.
+	character.deck_repair_version = Character.DECK_REPAIR_VERSION
 
 	# Slice 5 — spawn-at-post. If the create message specifies a spawn post
 	# (owner + index), validate the post belongs to this account and place

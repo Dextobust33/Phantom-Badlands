@@ -370,6 +370,9 @@ const CardUpgradesScript = preload("res://shared/card_upgrades.gd")
 @export var ability_milestone_picks: Dictionary = {}  # ability -> Array["power"/"rider"/"efficiency"]
 @export var pending_rank_choices: Array = []  # [{ability, new_rank, queued_at}]
 @export var deck_collection_initialized: bool = false  # one-shot init guard
+# Which one-off deck REPAIRS this character has already had. Bumped when a new repair is added,
+# so each runs exactly once and never fights the player's own deck edits afterwards.
+@export var deck_repair_version: int = 0
 
 # Slice 6e/6f (v0.9.549) — Variant Imprints. Account-level cache mirrored
 # onto the character at load so combat code can read without hitting
@@ -1830,6 +1833,7 @@ func to_dict() -> Dictionary:
 		"ability_milestone_picks": ability_milestone_picks,
 		"pending_rank_choices": pending_rank_choices.duplicate(true),
 		"deck_collection_initialized": deck_collection_initialized,
+		"deck_repair_version": deck_repair_version,
 		"path_nodes": path_nodes.duplicate(),
 		"path_milestones": path_milestones.duplicate(),
 		"swap_attack_with_ability": swap_attack_with_ability,
@@ -2109,6 +2113,7 @@ func from_dict(data: Dictionary):
 	ability_milestone_picks = data.get("ability_milestone_picks", {})  # v0.9.676; absent = {} (legacy)
 	pending_rank_choices = data.get("pending_rank_choices", [])
 	deck_collection_initialized = bool(data.get("deck_collection_initialized", false))
+	deck_repair_version = int(data.get("deck_repair_version", 0))
 	path_nodes = data.get("path_nodes", []) if data.get("path_nodes", []) is Array else []
 	path_milestones = data.get("path_milestones", []) if data.get("path_milestones", []) is Array else []
 	# Ensure keybinds has all slots (in case of legacy data)
@@ -3643,6 +3648,55 @@ func _curated_starter_deck() -> Array:
 		return (by_class as Array).duplicate()
 	var d = CURATED_STARTER_DECKS.get(get_class_path(), [])
 	return d.duplicate() if d is Array else []
+
+const DECK_REPAIR_VERSION := 1
+
+func repair_deck_once() -> bool:
+	"""One-off: put an existing character back on its curated starter deck.
+
+	Owner 2026-09-06: "For existing players we should attempt to fix regardless of their current
+	deck selection. Just set them to starters and players can customize manually again if there
+	is a problem."
+
+	Measured on the live server: 5 of 17 saved characters carry 6-13 cards against a designed 5,
+	left behind by the old always-on full-roster backfill. Two of them still hold `all_or_nothing`,
+	`cloak` and `teleport` — abilities that were RETIRED or made non-combat, so those slots were
+	pure dead weight diluting every draw. A deck is 5 cards plus the companion loaner, and every
+	card past that just makes the ones that matter come up less often.
+
+	ONE EXCEPTION, and it is deliberate. Dungeon and companion cards are DROPS: they are not in
+	the roster, so the deck screen cannot add them back. Deleting them would destroy earned items
+	rather than reset a preference, which is not what "customize manually again" can undo. They
+	are kept; the player can remove them from the deck screen if they would rather have the
+	tighter draw. Everything else in the roster is re-addable, so resetting it costs nothing but
+	a few clicks.
+
+	Runs once per repair version, so it never fights the player's own edits afterwards."""
+	if deck_repair_version >= DECK_REPAIR_VERSION:
+		return false
+	deck_repair_version = DECK_REPAIR_VERSION
+	var starter: Array = _curated_starter_deck()
+	if starter.is_empty():
+		return true  # nothing sane to reset TO; leave the deck alone
+	# Keep only what the player could not get back on their own.
+	var keep: Array = []
+	for k in combat_deck_collection.keys():
+		var ks := String(k)
+		if ks.begins_with("dungeon_card_") or ks.begins_with("companion_card_"):
+			keep.append(ks)
+	var before: int = combat_deck_collection.size()
+	combat_deck_collection.clear()
+	for sname in starter:
+		combat_deck_collection[String(sname)] = 1
+	for ks in keep:
+		combat_deck_collection[ks] = 1
+	# Drop any equipped slot pointing at a card the deck no longer holds, so a slot is not
+	# silently wasted on something undrawable.
+	for i in range(equipped_abilities.size()):
+		var eq := String(equipped_abilities[i]) if equipped_abilities[i] != null else ""
+		if eq != "" and not combat_deck_collection.has(eq):
+			equipped_abilities[i] = ""
+	return before != combat_deck_collection.size() or true
 
 func initialize_deck_collection_if_needed() -> bool:
 	"""Slice 6b one-shot init: populate combat_deck_collection with 1 copy of

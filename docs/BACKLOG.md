@@ -888,9 +888,17 @@ table is stable even across edits to the simulator itself.
 **This invalidates cross-run comparisons made before today.** Any earlier "class X moved" reading
 where X was not the class being changed is suspect.
 
-### LIVE BUG (2026-09-06): every mage shipped a NINE-card deck
+### NOT a live bug (2026-09-06): the nine-card mage deck was MINE, introduced today
 
-**Found while starting the mage slice, and it invalidates weeks of "mages are weak" conclusions.**
+**CORRECTION, same day.** I first reported this as a live bug worth an urgent release. It is not.
+Traced by commit: at the released v0.9.754 the mage key was in the RIGHT table and every mage got
+its correct 5-card deck. `c6c918b` — my own trickster-slice commit from earlier today — moved it
+into the by-class table. **The bug never shipped; no live player was ever affected.**
+
+What it DOES invalidate is every mage number measured after `c6c918b`, which is all of today's:
+the "Sage 30%, the worst cell in the game" reading and the "Wizard auto-attacks half its turns"
+reading were both measuring my own regression. The pre-existing mage concerns from earlier sessions
+are untouched by this and still open.
 
 `_curated_starter_deck()` reads `CURATED_STARTER_DECKS_BY_CLASS` by **class type**. The mage's
 five-card list was written into that table under the key `"mage"` — a **path**, not a class — so it

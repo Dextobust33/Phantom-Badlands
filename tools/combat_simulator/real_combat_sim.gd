@@ -6286,3 +6286,5 @@ func _verify_starter_decks() -> void:
 	else:
 		print("  all nine ship exactly 5 cards")
 	print("==========================================================================")
+
+
