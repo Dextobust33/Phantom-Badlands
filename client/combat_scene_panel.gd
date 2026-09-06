@@ -3278,10 +3278,10 @@ var _momentum_active: bool = false
 # v0.9.697 — Trickster Combo shares the same leftmost meter node (_momentum_label).
 # A character is either a Warrior or a Trickster, never both, so the two engines
 # never contend for the meter.
-var _combo: int = 0  # v0.9.698 — repurposed as "Read" (Trickster Outsmart engine)
+var _combo: int = 0  # v0.9.698 — repurposed as "Read" (Trickster Assassinate engine)
 var _combo_max: int = 5
 var _combo_active: bool = false
-var _outsmart_chance: int = 0  # live Outsmart % for the Read meter
+var _assassinate_chance: int = 0  # live Assassinate % for the Read meter
 # v0.9.697 — Mage Focus shares the same meter node too (ramp: boosts all spells).
 var _focus: int = 0
 var _focus_max: int = 5
@@ -3313,13 +3313,13 @@ func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	if not _hand_cells.is_empty():
 		_refresh_hand()
 
-func update_read(cur: int, mx: int, outsmart_chance: int, is_trickster: bool) -> void:
+func update_read(cur: int, mx: int, assassinate_chance: int, is_trickster: bool) -> void:
 	"""v0.9.698 — Trickster Read meter (teal ◉). Every Trickster ability builds Read,
-	which raises your Outsmart chance. Shows the LIVE Outsmart % so you know when to
+	which raises your Assassinate chance. Shows the LIVE Assassinate % so you know when to
 	spring it. Drives the Gambit label + the '+◉ Read' builder badges in _refresh_hand."""
 	_combo = cur
 	_combo_max = max(1, mx)
-	_outsmart_chance = outsmart_chance
+	_assassinate_chance = assassinate_chance
 	_combo_active = is_trickster
 	if _momentum_label == null or not is_instance_valid(_momentum_label):
 		return
@@ -3333,8 +3333,8 @@ func update_read(cur: int, mx: int, outsmart_chance: int, is_trickster: bool) ->
 	var pips := ""
 	for i in range(_combo_max):
 		pips += "[color=#7FD8C8]◉[/color]" if i < cur else "[color=#33463F]○[/color]"
-	var oc_color := "#7AE07A" if outsmart_chance >= 70 else ("#7FD8C8" if outsmart_chance >= 40 else "#C89A5A")
-	var tag := "[color=%s]Outsmart %d%%[/color]" % [oc_color, outsmart_chance]
+	var oc_color := "#7AE07A" if assassinate_chance >= 70 else ("#7FD8C8" if assassinate_chance >= 40 else "#C89A5A")
+	var tag := "[color=%s]Assassinate %d%%[/color]" % [oc_color, assassinate_chance]
 	_momentum_label.text = "[color=#7FD8C8]◉ Read[/color]\n%s\n%s" % [pips, tag]
 	if not _hand_cells.is_empty():
 		_refresh_hand()

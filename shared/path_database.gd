@@ -129,7 +129,7 @@ const TREES = {
 					{"id": "trickster_3_1", "name": "Deep Pockets", "desc": "+10% max energy.", "effect": {"max_resource_pct": 10}},
 					{"id": "trickster_3_2", "name": "Lasting Tricks", "desc": "Your combat buffs last 2 extra rounds.", "effect": {"buff_duration_bonus": 2}},
 					{"id": "trickster_3_3", "name": "Profiteer", "desc": "+15% Valor from kills.", "effect": {"valor_pct": 15}},
-					{"id": "trickster_3_4", "name": "Silver Tongue", "desc": "+15% Outsmart success chance.", "effect": {"outsmart_pct": 15}},
+					{"id": "trickster_3_4", "name": "Silver Tongue", "desc": "+15% Assassinate success chance.", "effect": {"assassinate_pct": 15}},
 					{"id": "trickster_3_5", "name": "Jackpot", "desc": "KEYSTONE: +1 loot reveal on every combat victory, but you gain 10% less XP.", "keystone": true, "effect": {"loot_reveal_bonus": 1, "xp_pct": -10}},
 				],
 			},

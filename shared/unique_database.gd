@@ -73,7 +73,7 @@ const UNIQUES = {
 	"the_long_con": {
 		"name": "The Long Con", "item_type": "ring_artifact",
 		"lore": "Its first owner sold it twice. Its second owner was its first owner.",
-		"unique_effect": {"outsmart_pct": 20, "valor_pct": 10},
+		"unique_effect": {"assassinate_pct": 20, "valor_pct": 10},
 	},
 	"sevenfold_die": {
 		"name": "The Sevenfold Die", "item_type": "ring_artifact",

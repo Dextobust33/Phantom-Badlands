@@ -211,6 +211,20 @@ var next_dungeon_monster_id: int = 0
 var dungeon_floor_items: Dictionary = {}  # instance_id -> {floor_num: [item_entity, ...]}
 var next_dungeon_floor_item_id: int = 0
 var dungeon_combat_breather: Dictionary = {}  # peer_id -> true: skip monster movement on next move after combat
+# 2026-09-05 — peer_id -> the dungeon monster ENTITY id the player is currently fighting, or -1
+# for a legacy tile encounter. Reported live: "spiders seem to be spawning right next to them,
+# in the spaces they were just standing", and an ambush out of nowhere while resting.
+#
+# The cause was that clearing the entity depended on the VICTORY DICTIONARY carrying
+# `dungeon_monster_id` back, and only the ordinary kill dict did. Assassinate builds its own
+# return and never included it, so the server took the legacy `_clear_dungeon_tile` branch,
+# `m.alive` stayed true, and the assassinated spider was still standing on the grid beside the
+# player — walking back onto them on the next move or rest tick, over and over.
+#
+# The id is known at combat START and cannot go stale within a fight, so the server keeps it
+# itself instead of trusting each of the combat engine's return shapes to remember it. That
+# retires the whole class: any victory path, present or future, clears the monster.
+var dungeon_combat_monster_id: Dictionary = {}
 var player_dungeon_instances: Dictionary = {}  # peer_id -> {quest_id: instance_id} - personal dungeons for quests
 
 # Bounty system tracking
@@ -6653,7 +6667,12 @@ func handle_combat_command(peer_id: int, message: Dictionary):
 					if character.in_dungeon:
 						var is_boss = result.get("is_boss_fight", false)
 						# Kill the monster entity if it was entity-based combat
-						var dead_monster_id = result.get("dungeon_monster_id", -1)
+						# Fall back to the id the server stamped at combat start: a victory dict
+						# that forgets the key must not leave the monster alive on the grid.
+						var dead_monster_id = int(result.get("dungeon_monster_id", -1))
+						if dead_monster_id < 0:
+							dead_monster_id = int(dungeon_combat_monster_id.get(peer_id, -1))
+						dungeon_combat_monster_id.erase(peer_id)
 						if dead_monster_id >= 0:
 							_kill_dungeon_monster(character.current_dungeon_id, character.dungeon_floor, dead_monster_id)
 						else:
@@ -32857,6 +32876,9 @@ func _start_dungeon_encounter(peer_id: int, is_boss: bool):
 	var internal_state = combat_mgr.get_active_combat(peer_id)
 	internal_state["is_dungeon_combat"] = true
 	internal_state["is_boss_fight"] = is_boss
+	# Legacy tile encounter — no monster entity, so make sure a previous fight's id
+	# cannot be mistaken for this one's.
+	dungeon_combat_monster_id[peer_id] = -1
 
 	# Get display-ready combat state (flattened with monster_name, etc.)
 	var display_state = combat_mgr.get_combat_display(peer_id)
@@ -34936,6 +34958,7 @@ func _start_dungeon_monster_combat(peer_id: int, monster_entity: Dictionary):
 	internal_state["is_dungeon_combat"] = true
 	internal_state["is_boss_fight"] = is_boss
 	internal_state["dungeon_monster_id"] = monster_entity.id
+	dungeon_combat_monster_id[peer_id] = int(monster_entity.id)
 
 	# Get display-ready combat state
 	var display_state = combat_mgr.get_combat_display(peer_id)
@@ -36232,7 +36255,7 @@ func _show_pilgrimage_progress(peer_id: int, character: Character):
 			if mind_done:
 				msg += "[color=#00FF00][X] Shrine of Mind - COMPLETE[/color]\n"
 			else:
-				msg += "[color=#6666FF][ ] Shrine of Mind: %d / %d outsmarts[/color]\n" % [outsmarts, out_req]
+				msg += "[color=#6666FF][ ] Shrine of Mind: %d / %d fights ended without beating them down[/color]\n" % [outsmarts, out_req]
 
 			# Wealth
 			var donated = progress.get("gold_donated", 0)
@@ -40375,11 +40398,12 @@ func _handle_party_combat_command(peer_id: int, command: String, target: String 
 	elif cmd in ["flee", "f", "run"]:
 		action = {"kind": "flee"}
 	elif cmd in ["outsmart", "o"]:
-		# 2026-09-03 — Outsmart works in co-op now. It used to fall through to "Unknown combat
-		# command", so a Trickster in a party built Read for a payoff that did not exist.
-		# `arg` carries the energy the player chose to commit, same contract as solo; -1 means
-		# no choice was sent and the old automatic amount applies.
-		action = {"kind": "outsmart", "spend": arg.to_int() if arg.is_valid_int() else -1}
+		# 2026-09-05 — Outsmart RETIRED. Measured: removing it cost 0-10pp of win rate while
+		# removing Assassinate cost 25-39pp, so the Trickster's supposed signature contributed
+		# almost nothing, and two bypass-HP finishers competing for one Read ramp is what muddled
+		# the class. Owner chose to let Assassinate replace it.
+		send_to_peer(peer_id, {"type": "text", "message": "[color=#FF4444]Outsmart has been retired — Assassinate is the Trickster finisher now. Build Read, then take the shot.[/color]"})
+		return
 	elif cmd in CombatManager.MAGE_ABILITY_COMMANDS or cmd in CombatManager.WARRIOR_ABILITY_COMMANDS or cmd in CombatManager.TRICKSTER_ABILITY_COMMANDS or cmd in CombatManager.UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
 		action = {"kind": "ability", "ability": cmd, "arg": arg}
 		# v0.9.740 — aim a buff at a teammate. Validated here (in the party, in THIS fight,
@@ -40532,15 +40556,14 @@ func _party_member_hand_payload(leader_id: int, pid: int) -> Dictionary:
 		out["read_max"] = CombatManager.COMBO_MAX
 		# 2026-09-03 — was hardcoded 0 with the note "charge viz not wired for co-op yet", which
 		# is why the meter read 0% at every Read level in a party: the number was never computed,
-		# not merely mis-scaled. Now that Outsmart WORKS in co-op the meter has to tell the truth,
-		# so compute it from the same shared helper the roll uses, with this member's own Read.
+		# not merely mis-scaled. The meter has to tell the truth, so compute it from the same
+		# shared helper the roll uses, with this member's own Read.
 		var _os_view := {
 			"character": ch,
 			"monster": c.get("monster", {}),
 			"combo": int(st.get("combo", 0)),
-			"outsmart_attempts": int(st.get("outsmart_attempts", 0)),
 		}
-		out["outsmart_chance"] = int(combat_mgr._outsmart_chance(ch, c.get("monster", {}), _os_view))
+		out["assassinate_chance"] = int(combat_mgr.assassinate_chance(ch, c.get("monster", {}), _os_view))
 		out["is_mage_focus"] = path == "mage"
 		out["focus"] = int(st.get("focus", 0))
 		out["focus_max"] = CombatManager.FOCUS_MAX

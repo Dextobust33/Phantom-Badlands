@@ -38,7 +38,7 @@ func _init():
 	var stacks: int = CombatManager.COMBO_MAX
 	print("  Read needs %d stacks; a Trickster card averages %.0f%% of the energy pool" % [stacks, avg_card])
 	print("  Building a full Read therefore costs about %.0f%% of the pool, over %d turns," % [avg_card * float(stacks), stacks])
-	print("  plus an optional energy commitment worth up to +%d%% odds." % CombatManager.OUTSMART_DUMP_MAX_BONUS)
+	print("  and each stack is worth +%d%% Assassinate odds." % CombatManager.READ_HEIST_PER)
 	print("\n  Compare that against the 'to clear 1 bar' column above. Regen over %d turns" % stacks)
 	print("  offsets part of it, exactly as it does for a mage spending across several casts.")
 	quit()

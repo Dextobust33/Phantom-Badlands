@@ -727,6 +727,19 @@ func get_starting_stats_for_class(char_class: String) -> Dictionary:
 
 func get_class_passive() -> Dictionary:
 	"""Get the unique passive ability for this character's class"""
+	return class_passive_for(class_type)
+
+static func class_passive_for(class_type: String) -> Dictionary:
+	"""The passive table, addressable WITHOUT a Character instance.
+
+	2026-09-05 — this exists because the client kept its own hand-copied "mirror" of this
+	table and it had drifted badly: it still described the Grifter as Backstab (+15% crit),
+	the Ranger as Hunter's Mark, and — worst — the Ninja as Shadow Step (+40% flee), which is
+	the GRIFTER's effect. So the character-creation screen advertised two classes' passives
+	swapped and a third that no longer existed. Owner: "we don't want any abilities doing
+	things that it doesn't describe on the hover or in the description of the card."
+
+	A mirror cannot be kept honest by discipline, so there is no longer a mirror."""
 	match class_type:
 		# Warriors
 		"Fighter":

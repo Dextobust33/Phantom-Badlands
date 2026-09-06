@@ -3973,9 +3973,7 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 	match _trickster_policy:
 		"damage_only": _trickster_damage_only(combat, ch)
 		"deny_first": _trickster_deny_first(combat, ch)
-		"outsmart_rush": _trickster_outsmart_rush(combat, ch)
 		"no_outsmart": _trickster_no_outsmart(combat, ch)
-		"no_heist": _trickster_no_heist(combat, ch)
 		_: _trickster_assassin(combat, ch)
 
 
@@ -3998,31 +3996,9 @@ func _trickster_no_outsmart(combat: Dictionary, ch) -> void:
 	_counted_attack(combat)
 
 
-func _trickster_no_heist(combat: Dictionary, ch) -> void:
-	# deny_first with Assassinate REMOVED, Outsmart kept. The other half of the A/B.
-	var hand: Array = combat.get("combat_hand", [])
-	var _mon: Dictionary = combat.get("monster", {})
-	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
-	if ch.current_energy > int(ch.get_total_max_energy() * 0.5) and base_os + 30 >= 55:
-		var r = combat_mgr.process_outsmart(combat)
-		if r.get("combat_ended", false):
-			combat["combat_ended"] = true
-			if r.get("victory", false) and _mon:
-				_mon["current_hp"] = 0
-		return
-	for ab in ["analyze", "distract", "sabotage"]:
-		if ab in hand:
-			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
-				return
-	for ab in ["ambush", "exploit", "gambit"]:
-		if ab in hand:
-			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
-				return
-	_counted_attack(combat)
-
-
 func _trickster_damage_only(combat: Dictionary, ch) -> void:
-	# No Outsmart, no denial - just hit things. The control that tells us what Outsmart is worth.
+	# No Outsmart, no denial - just hit things. The control that tells us what the denial
+	# stall and the finisher are actually worth.
 	var hand: Array = combat.get("combat_hand", [])
 	if "perfect_heist" in hand:
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
@@ -4039,15 +4015,6 @@ func _trickster_deny_first(combat: Dictionary, ch) -> void:
 	# The owner's stated design: "they skip the enemy turn at the cost of resource to help the
 	# trickster survive building up their Outsmart."
 	var hand: Array = combat.get("combat_hand", [])
-	var _mon: Dictionary = combat.get("monster", {})
-	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
-	if ch.current_energy > int(ch.get_total_max_energy() * 0.5) and base_os + 30 >= 55:
-		var r = combat_mgr.process_outsmart(combat)
-		if r.get("combat_ended", false):
-			combat["combat_ended"] = true
-			if r.get("victory", false) and _mon:
-				_mon["current_hp"] = 0
-		return
 	if "perfect_heist" in hand:
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
 			return
@@ -4056,28 +4023,6 @@ func _trickster_deny_first(combat: Dictionary, ch) -> void:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
 	for ab in ["ambush", "exploit", "gambit"]:
-		if ab in hand:
-			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
-				return
-	_counted_attack(combat)
-
-
-func _trickster_outsmart_rush(combat: Dictionary, ch) -> void:
-	# Gamble Outsmart at much worse odds, as early as possible.
-	var hand: Array = combat.get("combat_hand", [])
-	var _mon: Dictionary = combat.get("monster", {})
-	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
-	if base_os >= 20:
-		var r = combat_mgr.process_outsmart(combat)
-		if r.get("combat_ended", false):
-			combat["combat_ended"] = true
-			if r.get("victory", false) and _mon:
-				_mon["current_hp"] = 0
-		return
-	if "perfect_heist" in hand:
-		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
-			return
-	for ab in ["ambush", "exploit", "sabotage", "distract", "analyze", "gambit"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
@@ -4094,18 +4039,6 @@ func _trickster_assassin(combat: Dictionary, ch) -> void:
 	# get hit) — its only real path to killing something far above its level. In a roughly
 	# even fight it still waits for good odds (build Read, then Outsmart) rather than coin-
 	# flipping away a winnable fight.
-	var _mon: Dictionary = combat.get("monster", {})
-	var base_os: int = combat_mgr._outsmart_chance(ch, _mon, combat)
-	var full_en: bool = ch.current_energy > int(ch.get_total_max_energy() * 0.5)
-	var _overlevel: bool = int(_mon.get("level", 0)) > ch.level + 8
-	if full_en and ((_overlevel and base_os >= 3) or (base_os + 30 >= 55)):
-		var r = combat_mgr.process_outsmart(combat)
-		if r.get("combat_ended", false):
-			combat["combat_ended"] = true
-			if r.get("victory", false):
-				if _mon:  # outsmart win leaves monster at full HP — mark dead for the win check
-					_mon["current_hp"] = 0
-		return
 	# ASSASSINATE (perfect_heist) - the class's kill card, and the AI never played it. Owner
 	# 2026-09-05: "I'd like to know your strategies on each character type to ensure the problem
 	# isn't our strategy or ability and outsmart use." It was. The curated trickster deck is
@@ -5601,7 +5534,7 @@ func run_policy_test():
 	var SUITES := [
 		{"klass": "Fighter", "field": "warrior", "policies": ["buff_first", "no_opener", "defensive", "momentum_hold"]},
 		{"klass": "Wizard", "field": "mage", "policies": ["rotation", "bolt_spam", "focus_ramp", "shield_first"]},
-		{"klass": "Grifter", "field": "trickster", "policies": ["deny_first", "no_outsmart", "no_heist", "damage_only"]},
+		{"klass": "Grifter", "field": "trickster", "policies": ["deny_first", "damage_only"]},
 	]
 	for suite in SUITES:
 		_run_one_tournament(String(suite["klass"]), String(suite["field"]), suite["policies"], LEVELS, CHARS, N)

@@ -108,7 +108,7 @@ const PILGRIMAGE_STAGES = {
 	},
 	"trial_mind": {
 		"name": "Trial of Mind",
-		"description": "Outsmart 200 monsters.",
+		"description": "End 200 fights without beating them down — Assassinate or Outsmart.",
 		"requirement": 200,
 		"type": "outsmarts",
 		"shrine_reward_stat": "wits",

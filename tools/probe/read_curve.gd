@@ -19,8 +19,8 @@ func _init():
 			var prev := -1
 			var dead := 0
 			for read in range(0, CombatManager.COMBO_MAX + 1):
-				var c := {"character": ch, "monster": mon, "combo": read, "outsmart_attempts": 0}
-				var pct: int = cm._outsmart_chance(ch, mon, c)
+				var c := {"character": ch, "monster": mon, "combo": read}
+				var pct: int = cm.assassinate_chance(ch, mon, c)
 				row += "%3d%% " % pct
 				if prev == pct:
 					dead += 1

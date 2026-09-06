@@ -8,7 +8,6 @@ enum CombatAction {
 	ATTACK,
 	FLEE,
 	SPECIAL,
-	OUTSMART,
 	ABILITY
 }
 
@@ -164,32 +163,15 @@ const MOMENTUM_DR_PER: float = 0.05
 # the bar was. Makes a big pool worth building (fuller bar = harder hit) and gives the
 # martial resource arc (dump → low → rebuild). %-based → scales to any level. Sim-tuned.
 const DEVASTATE_DUMP_PCT: float = 0.60
-# Trickster dump: Outsmart spends this % of CURRENT energy to sharpen the read; bar
-# fullness adds up to OUTSMART_DUMP_MAX_BONUS% outsmart chance, so a bigger energy pool =
-# a more reliable outwit (investment payoff) + gives the Trickster its energy arc. %-based.
-const OUTSMART_DUMP_PCT: float = 0.6
-const OUTSMART_DUMP_MAX_BONUS: int = 15  # #55 (2026-08-27) 30→15: the dump was stacking ON TOP of the base cap (→~85%), making Outsmart a near-certain win. Now a smaller nudge.
-# #55 — each Outsmart ATTEMPT this fight multiplies the NEXT attempt's chance by this
-# (the monster wises up to the trick). Turns Outsmart from retry-to-certainty into a
-# genuine LIMITED gamble: whiff it and you must win by (gear-dependent) damage — so a
-# Trickster can actually LOSE a high-level boss under-geared, like the other classes.
-const OUTSMART_ATTEMPT_FALLOFF: float = 0.5
-# #55 identity pass (2026-08-27) — TRICKSTERS keep a FLOOR Outsmart chance vs ANY foe (the
-# "I can try to outwit anything" fantasy), so their reach is the HIGHEST of the three: they
-# alone can gamble-kill enemies far above their level, where a Mage's burst can't dent the
-# HP and a Warrior can't scratch it. It's a genuine gamble (this floor, then per-attempt
-# falloff) and they're fragile, so a whiff usually means death — high risk, highest ceiling.
-# Non-tricksters get NO floor: their Outsmart still craters vs over-level (stays a long-shot).
-const TRICKSTER_OUTSMART_FLOOR: int = 20
 # v0.9.697 — Trickster Combo: non-finisher abilities build Combo Points; Gambit
 # (the finisher) spends them all, scaling BOTH its success chance and its damage.
-# Read stacks needed to reach the Outsmart ceiling. 2026-09-03: 5 -> 8, owner's proposal —
+# Read stacks needed to reach the finisher's ceiling. 2026-09-03: 5 -> 8, owner's proposal —
 # "maybe Read needs to build up to the same points slower. Example: 8 dots instead of the 5
 # until it's maximum chance."
 #
-# It is the right lever for the right reason. Measured, a Trickster gets only 0.5-0.8 Outsmart
+# It is the right lever for the right reason. Measured, a Trickster gets only 0.5-0.8 finisher
 # ATTEMPTS per fight, so the elite dominance was never retry-spam (my earlier theory, wrong):
-# it is that ONE Outsmart at ~45% is worth an entire fight of damage. Slowing the ramp makes the
+# it is that ONE instant kill at ~45% is worth an entire fight of damage. Slowing the ramp makes the
 # Trickster spend more turns setting up before it earns that shot, and with roughly HALF a
 # Fighter's health bar it may not survive long enough to get there. The ceiling is unchanged —
 # the per-stack values below are re-divided so 8 stacks reach exactly where 5 used to.
@@ -197,78 +179,15 @@ const COMBO_MAX: int = 8
 const COMBO_SUCCESS_PER: int = 9   # +% Gambit success per Combo Point (5 ≈ guaranteed)
 const COMBO_DMG_PER: float = 0.5   # + Gambit damage multiplier per Combo Point (4.5 → 7.0)
 # v0.9.698 — Trickster reframe: the `combo` field is now "Read". Every Trickster
-# ability builds Read; Read raises the Outsmart chance (the payoff = bypass HP).
-const READ_OUTSMART_PER: int = 9   # +% Outsmart success per Read (8 x 9 = 72, was 5 x 15 = 75)
+# ability builds Read; Read raises the Assassinate chance (the payoff = bypass HP).
 # +% Assassinate success per Read. 8 stacks = +40, taking a 15% base to 55% - so the finisher is
 # a poor opener and a strong payoff, which is what makes the stall worth running.
 const READ_HEIST_PER: int = 5
 # Each Read also lifts the CAP by this much, which is what makes stacks 3-5 worth building.
 # 48 base + 5x5 = 73% at a full Read for a Trickster: reliable, but only after five turns of
-# setup. Without this the cap ate every stack past the second — see _outsmart_chance.
+# setup. Without this the cap ate every stack past the second — see assassinate_chance.
 const READ_CAP_PER: float = 3.125   # 8 x 3.125 = +25 to the ceiling, exactly where 5 x 5 landed
 
-# OUTSMART FLAVOUR (owner idea 2026-09-03): "It might be cool to do different randomized
-# messages of what the character tried to do to outsmart it (example: rolled between its legs,
-# tried to stab it in the back while it's distracted, etc.)"
-#
-# Outsmart is the game's most distinctive mechanic and it read as a bare dice roll. Describing
-# the ATTEMPT makes it an action the character took; describing the OUTCOME separately means a
-# near-miss reads as a story rather than a repeated "it sees through it". Written in the world's
-# plain, worked voice rather than the Keeper's — this is the character doing something, not the
-# Keeper narrating (see docs/design/setting_bible.md).
-const OUTSMART_ATTEMPTS := [
-	"You roll between its legs and come up behind it",
-	"You feint left and cut right",
-	"You kick grit into its eyes",
-	"You go for the tendon while it is turning",
-	"You throw a stone past its head and move the other way",
-	"You play dead until it leans in",
-	"You mimic its own call back at it",
-	"You cut the ground out from under it",
-	"You wait for its swing to overreach, then step inside it",
-	"You point behind it and mean it",
-]
-const OUTSMART_WINS := [
-	"and it never works out where you went",
-	"and it is still looking for you when it falls",
-	"and by the time it understands, it is over",
-	"and the trick lands clean",
-	"and it buys the whole thing",
-]
-const OUTSMART_FAILS := [
-	"but it does not fall for it",
-	"but it was already watching your feet",
-	"but it has seen that one before",
-	"but it turns with you the whole way",
-	"but it simply does not care",
-]
-
-static func outsmart_attempt_line() -> String:
-	return OUTSMART_ATTEMPTS[randi() % OUTSMART_ATTEMPTS.size()]
-
-static func outsmart_outcome_line(won: bool) -> String:
-	if won:
-		return OUTSMART_WINS[randi() % OUTSMART_WINS.size()]
-	return OUTSMART_FAILS[randi() % OUTSMART_FAILS.size()]
-
-# Outsmart penalty by monster ROLE (2026-09-03, owner direction).
-#
-# The Trickster's identity is reach: *"kill enemies BIGGER than the warrior or mage can"*, and
-# the level penalty is deliberately soft so that reach is real. But Outsmart bypasses the health
-# bar entirely, and an elite or boss is hard almost entirely BECAUSE of its health bar — so
-# Outsmart was quietly ignoring the role multiplier as well. Measured after Read was fixed:
-# Tricksters won 50-55% against elites where every other archetype managed 11-28%, while being
-# the WEAKEST archetype against normals.
-#
-# The owner's call was that the reach should cross LEVEL, not ROLE. So a bigger, meaner thing is
-# harder to trick, in proportion to how much of its difficulty lives in HP that Outsmart would
-# otherwise skip. The level reach — the part that was actually signed off — is untouched.
-const OUTSMART_ROLE_PENALTY := {
-	"normal": 0,
-	"empowered": 10,   # 1-3 stacking modifiers; still a normal-bodied monster underneath
-	"elite": 22,       # ~1.8x the health bar, which is exactly what Outsmart would be skipping
-	"boss": 35,        # ~2.8x, and the fight the archetype should not simply be able to opt out of
-}
 # v0.9.697 — Mage Focus: a RAMP. Every spell channeled builds Focus, which
 # passively boosts ALL spell damage. Meteor is the DISCHARGE — bigger per-Focus
 # bonus, then resets the ramp.
@@ -719,7 +638,7 @@ func _note_crit_ramp_attempt(character, combat: Dictionary) -> void:
 		combat["crit_escalation_stacks"] = int(combat.get("crit_escalation_stacks", 0)) + 1
 
 
-func player_crit_chance(character, combat: Dictionary) -> int:
+func player_crit_chance(character, combat: Dictionary, ability_name: String = "") -> int:
 	"""The player's crit chance, as ONE definition.
 
 	2026-09-05 — extracted from `calculate_damage`, which had it inline. It is now needed by the
@@ -746,6 +665,10 @@ func player_crit_chance(character, combat: Dictionary) -> int:
 	var fx: Dictionary = passive.get("effects", {}) if passive is Dictionary else {}
 	if fx.has("crit_chance_bonus"):
 		crit_chance += int(float(fx.get("crit_chance_bonus", 0)) * 100.0)
+	# Wizard "Arcane Precision" stores its crit under a DIFFERENT key and used to be rolled
+	# separately inside three spell branches. Folded in here so there is one roll and one line.
+	if fx.has("spell_crit_bonus"):
+		crit_chance += int(float(fx.get("spell_crit_bonus", 0)) * 100.0)
 	crit_chance += int(character.get_crit_chance_bonus())
 	crit_chance += int(character.get_path_effect_total("crit_chance_pct"))
 	# 2026-09-05 — the cap now reads from config. `player_crit_max` existed in
@@ -759,6 +682,7 @@ func player_crit_chance(character, combat: Dictionary) -> int:
 	var esc: int = int(fx.get("crit_escalation", 0))
 	if esc > 0:
 		crit_chance += esc * int(combat.get("crit_escalation_stacks", 0))
+	crit_chance += int(ABILITY_CRIT_BONUS.get(ability_name, 0))
 	return clampi(crit_chance, 0, _cap)
 
 func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dictionary, character = null, combat: Dictionary = {}, messages = null) -> int:
@@ -837,7 +761,7 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 			if messages != null and messages is Array:
 				messages.append("[color=#9F70FF]✦ Phantom Strike — the first blow lands true![/color]")
 			return max(1, mod_damage)
-		var cc: int = player_crit_chance(character, combat)
+		var cc: int = player_crit_chance(character, combat, str(combat.get("_crit_ability", "")))
 		# Ranger "Steady Hand" trades the top of the range for the bottom: it never glances and
 		# it never crits. Reliable but unspectacular, which is the middle ground the owner asked
 		# for - and it stops no-glance ALONE making the Ranger the strongest class (it measured
@@ -1748,7 +1672,6 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 		"player_can_act": not monster_goes_first,  # Monster may act first!
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
-		"outsmart_failed": false,  # Can only attempt outsmart once per combat
 		# Monster ability tracking
 		"ambusher_active": ambusher_active,  # Monster's first attack crits
 		"monster_went_first": monster_goes_first,  # Track for display
@@ -2113,21 +2036,13 @@ func process_combat_command(peer_id: int, command: String) -> Dictionary:
 			action = CombatAction.FLEE
 		"special", "s":
 			action = CombatAction.SPECIAL
-		"outsmart", "o":
-			action = CombatAction.OUTSMART
-			# 2026-09-03 — the player now CHOOSES the energy committed, so the amount rides in
-			# on the command. process_combat_action does not carry an arg, so stash it on the
-			# combat. A missing/invalid arg means "decide for me", which keeps the old chat
-			# command and any older client working unchanged.
-			if active_combats.has(peer_id):
-				active_combats[peer_id]["outsmart_spend"] = arg.to_int() if arg.is_valid_int() else -1
 		_:
 			# Check if it's an ability command
 			# v0.9.681 — companion cards ("companion_card_<type>") are dynamic ids,
 			# not in the static *_ABILITY_COMMANDS lists, so allow them by prefix.
 			if cmd in MAGE_ABILITY_COMMANDS or cmd in WARRIOR_ABILITY_COMMANDS or cmd in TRICKSTER_ABILITY_COMMANDS or cmd in UNIVERSAL_ABILITY_COMMANDS or cmd.begins_with("companion_card_") or cmd.begins_with("dungeon_card_"):
 				return process_ability_command(peer_id, cmd, arg)
-			return {"success": false, "message": "Unknown combat command! Use: attack, flee, outsmart, or abilities"}
+			return {"success": false, "message": "Unknown combat command! Use: attack, flee, or abilities"}
 
 	return process_combat_action(peer_id, action)
 
@@ -2156,8 +2071,6 @@ func process_combat_action(peer_id: int, action: CombatAction) -> Dictionary:
 			result = process_flee(combat)
 		CombatAction.SPECIAL:
 			result = process_special(combat)
-		CombatAction.OUTSMART:
-			result = process_outsmart(combat)
 
 	# Track damage dealt to monster this turn
 	var damage_dealt_this_turn = max(0, monster_hp_before - combat.monster.current_hp)
@@ -3616,495 +3529,31 @@ func _monster_role_name(monster) -> String:
 		return "empowered"
 	return "normal"
 
-func _outsmart_chance(character, monster, combat) -> int:
-	"""v0.9.698 — the SINGLE source for Outsmart success chance, so the real roll
-	(process_outsmart) and the Read meter's live preview (get_combat_display) always
-	agree. WITS vs enemy INT + level, plus the Trickster Read bonus."""
-	var player_wits = character.get_effective_stat("wits")
-	var monster_intelligence = int(monster.get("intelligence", 15))
-	var monster_level = int(monster.level)
-	var player_level = character.level
-	# #55 monster-challenge (2026-08-26) — Outsmart was a turn-1 reliable instant-win:
-	# wits_bonus (+49 @wits66) + flat trickster +20 gave ~74-85% BEFORE any Read, so
-	# Tricksters skipped every fight in 1 turn taking no damage. Rebalanced so the BASE
-	# is a real gamble and the Read engine (build via Trickster cards) is what makes it
-	# reliable — keeping Outsmart's identity (a clever, earned gamble) without it being
-	# a free win button. Halved wits_bonus, trickster flat 20→10, max 85→68.
-	var base_chance = 5
-	var wits_bonus = 0
-	if player_wits > 10:
-		# #55 — CAP the wits contribution. It's log-scaled but log(high wits) still ~48 at
-		# end-game, which kept base Outsmart ~68% (a reliable win button) forever. Capped at
-		# 22 so Outsmart's BASE is a gamble at every level; the Read engine is what pushes it
-		# toward reliable (its intended identity).
-		wits_bonus = mini(22, int(9.0 * log(float(player_wits) / 10.0) / log(2.0)))
-	var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
-	var is_mage_os = character.class_type in ["Wizard", "Sorcerer", "Sage"]
-	var trickster_bonus = 10 if is_trickster else 0
-	var dumb_bonus = max(0, (10 - monster_intelligence) * 3)
-	var smart_penalty = max(0, monster_intelligence - 10)
-	var int_vs_wits_penalty = max(0, (monster_intelligence - player_wits) * 2)
-	var level_diff = monster_level - player_level
-	var level_penalty = 0
-	# #55 identity pass (2026-08-27) — Trickster = "kill enemies BIGGER than the warrior
-	# or mage can, IF Outsmart works". Softened the over-level penalty (roughly halved) so
-	# Outsmart stays a live gamble against much-higher-level foes — the Trickster's unique
-	# reach. It's still gated by the base cap (55) + per-attempt falloff, so it's high-risk
-	# high-reward, not reliable. (Balanced by weaker raw Trickster damage so a whiff hurts.)
+func assassinate_chance(character, monster, combat, variable_fraction: float = 1.0) -> int:
+	"""2026-09-05 — the SINGLE source for Assassinate success odds, so the real roll, the
+	live number on the card face and Analyze's report can never disagree.
+
+	This replaces `_outsmart_chance` as the Trickster's finisher maths when Outsmart was
+	retired. It exists as a function for the reason Outsmart's did: Analyze had grown its
+	OWN copy of the odds with different constants (cap 85/70 against the real 48, and double
+	the level penalty), so the number it reported to the player was one the game never rolled
+	against. One definition, three readers."""
+	var wits: int = character.get_effective_stat("wits")
+	var monster_int: int = int(monster.get("intelligence", 15))
+	var level_diff: int = int(monster.level) - character.level
+	var read: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+	# Weak on its own (15% base, so opening with it is a poor play), strong once the stall has
+	# done its work (+READ_HEIST_PER per Read). Stall, build, then cash.
+	var chance: int = 15 + int((wits - monster_int) * 1.5) + read * READ_HEIST_PER
+	# Heavy penalty for punching above your level: -2% per level of gap.
 	if level_diff > 0:
-		if level_diff <= 10:
-			level_penalty = level_diff * 1
-		elif level_diff <= 50:
-			level_penalty = 10 + int((level_diff - 10) * 0.5)
-		else:
-			level_penalty = 30 + int((level_diff - 50) * 0.3)
-	var level_bonus = 0
-	if level_diff < 0:
-		level_bonus = min(15, abs(level_diff))
-	var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
-	# Role penalty — see OUTSMART_ROLE_PENALTY. Applied here, in the SINGLE source of the odds,
-	# so the meter preview and the real roll cannot disagree about it.
-	var role_penalty: int = int(OUTSMART_ROLE_PENALTY.get(_monster_role_name(monster), 0))
-	outsmart_chance -= role_penalty
-	outsmart_chance += int(character.get_path_effect_total("outsmart_pct"))
-	# v0.9.698 — Trickster reframe: each Read (built by playing Trickster abilities)
-	# adds READ_OUTSMART_PER% so a well-read enemy becomes reliably outsmartable.
-	var read := clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
-	outsmart_chance += read * READ_OUTSMART_PER
-	# #55 identity pass — Outsmart caps at ~48% (was 55) so it's a genuine COINFLIP even
-	# at its best: landing it kills anything (incl. much-higher-level foes, via the
-	# softened level penalty above) = the Trickster's unique high-risk reach; whiffing it
-	# leaves its (now weaker) raw damage to grind — a real "hard time if Outsmart fails".
-	# #55 identity pass (2026-08-27) — Outsmart is the TRICKSTER's signature. Other classes
-	# CAN use it (universal card) but it's far less reliable: Mage ≈ half the Trickster's
-	# odds, Warrior/other ≈ a quarter (a desperate long-shot). Applied as a class factor +
-	# a class-specific cap so it never becomes a reliable option for the Mage or Warrior.
-	var class_os_mult := 1.0
-	var base_max_chance := 48
-	if not is_trickster:
-		if is_mage_os:
-			class_os_mult = 0.5
-			base_max_chance = 24
-		else:
-			class_os_mult = 0.25
-			base_max_chance = 12
-	outsmart_chance = int(outsmart_chance * class_os_mult)
-	# Trickster floor — always a live gamble vs anything (highest reach). Applied before
-	# the per-attempt falloff, so the FIRST shot each fight is real and retries fade.
-	if is_trickster:
-		outsmart_chance = maxi(outsmart_chance, TRICKSTER_OUTSMART_FLOOR)
-	# 2026-09-03 — READ RAISES THE CAP. Two passes had been contradicting each other: the
-	# v0.9.698 Read engine adds READ_OUTSMART_PER (+15) per stack and its comments promise
-	# "+75% at 5 Read", while the #55 anti-abuse pass capped the result at 48. From a ~27% base
-	# that means stack 1 helps, stack 2 hits the ceiling, and stacks 3-5 do LITERALLY NOTHING.
-	# The owner spotted it from play alone: "it seemed to cap at around 46% making me wonder why
-	# I should even continue building stacks."
-	#
-	# Both intents can hold if Read lifts the ceiling rather than pushing against it: the BASE
-	# Outsmart stays the coinflip-or-worse gamble #55 wanted, and a fully-built Read — five
-	# turns of playing Trickster cards, which is a real cost and the archetype's whole engine —
-	# makes it reliable, which is what the Read engine was for. Scaled by the class multiplier
-	# so a Mage still gets roughly half the Trickster's reach and a Warrior a quarter.
-	var read_cap_bonus: int = int(float(read) * READ_CAP_PER * class_os_mult)
-	# The role penalty has to come off the CEILING as well as the raw chance. Subtracting it
-	# from the raw alone did almost nothing at high Read, because the cap was what actually
-	# bound — measured: Ninja vs an L80 elite did not move at all, and drifted UP to 66%.
-	# That is the same shape as the Read bug this pass just fixed: a term that only touches a
-	# value the cap overrides is a term with no effect. Taking it off both means the penalty
-	# applies exactly once, whichever of the two is binding.
-	var max_chance = max((10 if is_trickster else 4),
-		base_max_chance + read_cap_bonus - role_penalty - int(monster_intelligence / 3))
-	# #55 — repeated-attempt falloff: each prior Outsmart this fight halves the chance,
-	# so it can't be retried to near-certainty over a long fight (the monster catches on).
-	var os_attempts := int(combat.get("outsmart_attempts", 0))
-	if os_attempts > 0:
-		outsmart_chance = int(outsmart_chance * pow(OUTSMART_ATTEMPT_FALLOFF, os_attempts))
-	return clampi(outsmart_chance, 1, max_chance)
-
-func process_outsmart(combat: Dictionary) -> Dictionary:
-	"""Process outsmart action (Trickster ability).
-	Success = instant win with full rewards.
-	v0.9.698 — Failure now RESETS Read + gives the enemy a free hit, but you can
-	rebuild Read and try again (the old once-per-combat lock is gone).
-	Tricksters get +20% bonus. High wits helps, high monster INT hurts; Read makes
-	it reliable."""
-	var character = combat.character
-	var monster = combat.monster
-	var messages = []
-
-	# Process status effects (poison/blind tick)
-	_process_status_ticks(character, messages)
-
-	# v0.9.698 — no once-per-combat lock anymore: Outsmart is the Trickster payoff,
-	# repeatable by rebuilding Read. Chance comes from the shared _outsmart_chance
-	# helper (matches the meter preview); keep the locals the messages below need.
-	var player_wits = character.get_effective_stat("wits")
-	var monster_intelligence = int(monster.get("intelligence", 15))
-	var level_diff = int(monster.level) - character.level
-	var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
-	var outsmart_chance = _outsmart_chance(character, monster, combat)
-	# Energy DUMP (2026-08-25): spend a big % of current energy to sharpen the read. Bar
-	# fullness (scale-safe) adds outsmart chance, so a bigger energy pool = a more reliable
-	# Outsmart (investment payoff) and Outsmart becomes the Trickster's energy sink.
-	var _os_max_en: int = maxi(1, character.get_total_max_energy())
-	var _os_en_before: int = int(character.current_energy)
-	# 2026-09-03 — the spend is the PLAYER'S CALL. It used to take 60% of the current bar
-	# silently and only mention it afterwards, which the owner rightly objected to: "if we are
-	# going to have a cost on outsmart or allow energy to be used to increase the chance the
-	# player should have a say in that or it should be clear, not just a hidden thing that
-	# happens." -1 means no choice was sent (chat command, older client), and keeps the old
-	# behaviour so nothing silently starts costing zero.
-	var _os_requested: int = int(combat.get("outsmart_spend", -1))
-	combat["outsmart_spend"] = -1   # consume it, so the next attempt must ask again
-	var _os_dumped: int = 0
-	if _os_requested >= 0:
-		_os_dumped = clampi(_os_requested, 0, _os_en_before)
-	else:
-		_os_dumped = maxi(0, int(_os_en_before * OUTSMART_DUMP_PCT))
-	if _os_dumped > 0:
-		character.use_energy(_os_dumped)
-		# Scaled by the share of the MAX bar committed, so the bonus tracks what was actually
-		# spent rather than how full the bar happened to be. A full-bar dump still pays the
-		# whole OUTSMART_DUMP_MAX_BONUS, so nothing gets weaker for the same investment.
-		var _os_bonus: int = int(clampf(float(_os_dumped) / float(_os_max_en), 0.0, 1.0) * float(OUTSMART_DUMP_MAX_BONUS))
-		# #55 capped the dump's total at 60 so it could not bypass the base cap. That clamp now
-		# has to respect a Read-raised ceiling, or a fully-built Read (73%) would be pushed back
-		# DOWN to 60 by the very ability meant to sharpen it. Ceiling is the higher of the two.
-		var _os_ceiling: int = maxi(60, _outsmart_chance(character, monster, combat))
-		outsmart_chance = clampi(outsmart_chance + _os_bonus, 2, _os_ceiling)
-		messages.append("[color=#66FF66]⚡ You spend %d energy to sharpen the read (+%d%% outwit)![/color]" % [_os_dumped, _os_bonus])
-
-	# #55 — count this attempt so the shared _outsmart_chance falloff makes each further
-	# Outsmart on this monster progressively less likely (no retry-to-certainty).
-	combat["outsmart_attempts"] = int(combat.get("outsmart_attempts", 0)) + 1
-
-	messages.append("[color=#FFA500]%s...[/color]" % outsmart_attempt_line())
-	var bonus_text = ""
-	if is_trickster:
-		bonus_text = " [Trickster]"
-	var level_text = ""
-	if level_diff > 10:
-		level_text = " [color=#FF4444]Lv%+d[/color]" % level_diff
-	elif level_diff > 0:
-		level_text = " [color=#FFA500]Lv%+d[/color]" % level_diff
-	messages.append("[color=#808080](Wits: %d vs INT: %d, %d%% chance%s%s)[/color]" % [player_wits, monster_intelligence, outsmart_chance, bonus_text, level_text])
-
-	var roll = randi() % 100
-
-	if roll < outsmart_chance:
-		# SUCCESS! Instant victory
-		messages.append("[color=#00FF00][b]SUCCESS![/b] %s — you outwit the %s![/color]" % [
-			outsmart_outcome_line(true), monster.name])
-		messages.append("[color=#FFD700]The enemy falls for your trick and you claim victory![/color]")
-
-		# Process death curse (monster curses you as it falls)
-		var monster_abilities = monster.get("abilities", [])
-		if ABILITY_DEATH_CURSE in monster_abilities:
-			if character.is_immune_to_death_curse():
-				messages.append("[color=#708090]The %s's death curse has no effect on your undead form![/color]" % monster.name)
-			else:
-				var base_curse_damage = int(monster.max_hp * 0.10)
-				var player_wis_stat = character.get_effective_stat("wisdom") + combat.get("companion_wisdom_bonus", 0)
-				var wis_reduction = minf(0.50, float(player_wis_stat) / 200.0)
-				var curse_damage = int(base_curse_damage * (1.0 - wis_reduction))
-				curse_damage = max(1, curse_damage)
-				character.current_hp -= curse_damage
-				character.current_hp = max(1, character.current_hp)
-				if wis_reduction > 0:
-					messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage! (WIS resists %d%%)[/color]" % [monster.name, curse_damage, int(wis_reduction * 100)])
-				else:
-					messages.append("[color=#FF00FF]The %s's death curse deals [color=#FF8800]%d[/color] damage![/color]" % [monster.name, curse_damage])
-
-		# Give full rewards as if the monster was killed. #55 (2026-08-27) — use the
-		# EXACT same over-level XP curve as a normal kill (uncapped `1 + sqrt(gap)*0.7`),
-		# so Outsmarting a big enemy pays proportionally to the risk. The old path capped
-		# the within-tier bonus at +50%, so a Trickster's signature over-level Outsmart was
-		# rewarded LESS than just killing it — backwards. Now the biggest gambles pay the most.
-		var base_xp = monster.experience_reward
-		var xp_level_diff = monster.level - character.level
-		var xp_multiplier = 1.0
-		if xp_level_diff > 0:
-			var reference_gap = 10.0 + float(character.level) * 0.05
-			xp_multiplier = 1.0 + sqrt(float(xp_level_diff) / reference_gap) * 0.7
-			var _os_bonus_pct = int((xp_multiplier - 1.0) * 100)
-			if _os_bonus_pct >= 5:
-				messages.append("[color=#FF00FF]* OUTWIT THE MIGHTY: +%d%% XP! *[/color]" % _os_bonus_pct)
-		elif xp_level_diff < 0:
-			var _os_under = abs(xp_level_diff)
-			var _os_thresh = 5.0 + float(character.level) * 0.03
-			if _os_under > _os_thresh:
-				xp_multiplier = maxf(0.4, 1.0 - minf(0.6, (_os_under - _os_thresh) * 0.03))
-		var final_xp = int(base_xp * xp_multiplier * 1.10)  # +10% XP boost
-
-		# Add XP
-		var old_level = character.level
-		var level_result = character.add_experience(final_xp)
-		# v0.9.634 — Soldier job XP (full-reward / death-save path).
-		character.add_job_xp("soldier", max(1, int(base_xp * 0.25)))
-
-		messages.append("[color=#FF00FF]+%d XP[/color]" % final_xp)
-
-		if level_result.leveled_up:
-			messages.append("[color=#FFD700][b]LEVEL UP![/b] You are now level %d![/color]" % level_result.new_level)
-
-			# Check for newly unlocked abilities
-			var new_abilities = character.get_newly_unlocked_abilities(old_level, level_result.new_level)
-			if new_abilities.size() > 0:
-				messages.append("")
-				messages.append("[color=#00FFFF]+======================================+[/color]")
-				messages.append("[color=#00FFFF]|[/color]  [color=#FFFF00][b]NEW ABILITY UNLOCKED![/b][/color]")
-				for ability in new_abilities:
-					var ability_type = "Universal" if ability.get("universal", false) else "Class"
-					messages.append("[color=#00FFFF]|[/color]  [color=#00FF00]*[/color] [color=#FFFFFF]%s[/color] [color=#808080](%s)[/color]" % [ability.display, ability_type])
-				messages.append("[color=#00FFFF]|[/color]  [color=#808080]Check Abilities menu to equip![/color]")
-				messages.append("[color=#00FFFF]+======================================+[/color]")
-
-		# === COMPANION XP DISTRIBUTION ===
-		# Active companions gain 10% of monster XP (same as normal victory)
-		if character.has_active_companion():
-			var companion_xp = max(1, int(base_xp * COMPANION_XP_SHARE))
-			var companion_result = character.add_companion_xp(companion_xp)
-			character.increment_companion_battles()
-			if companion_result.leveled_up:
-				var companion = character.get_active_companion()
-				messages.append("[color=#00FFFF]* %s leveled up to %d! *[/color]" % [companion.get("name", "Companion"), companion_result.new_level])
-				# Notify of unlocked abilities
-				for ability_level in companion_result.abilities_unlocked:
-					if drop_tables:
-						var tier = companion.get("tier", 1)
-						var ability = drop_tables.get_companion_ability(tier, ability_level)
-						if not ability.is_empty():
-							messages.append("[color=#FFD700]* New ability unlocked: %s! *[/color]" % ability.get("name", "Unknown"))
-
-		# Roll for item drops
-		var dropped_items = []
-		var gems_earned = 0
-		var extra_drops = []
-		var abilities = monster.get("abilities", [])
-		var wish_pending = false
-		var wish_options = []
-
-		if drop_tables:
-			var drops_result = drop_tables.roll_drops(
-				monster.get("drop_table_id", "tier1"),
-				monster.get("drop_chance", 5),
-				monster.level
-			)
-			dropped_items = drops_result
-
-			# Reclaimer's Lantern — dungeon-only consumable that grants a chance
-			# at an extra drop on dungeon monster kills for N battles. The buff
-			# value IS the chance (e.g. 25 → 25% per kill).
-			if combat.get("is_dungeon_combat", false):
-				var lantern_pct = character.get_buff_value("reclaimer_lantern")
-				if lantern_pct > 0 and (randi() % 100) < lantern_pct:
-					var extra_drop = drop_tables.roll_drops(
-						monster.get("drop_table_id", "tier1"),
-						100,  # Bonus roll always succeeds when chance hit
-						monster.level
-					)
-					if extra_drop.size() > 0:
-						messages.append("[color=#FFD700]The Lantern reveals an extra prize![/color]")
-						extra_drops.append_array(extra_drop)
-
-				# Weapon Master ability: 50% chance to drop a weapon with attack bonuses
-			if ABILITY_WEAPON_MASTER in abilities:
-				if randf() < 0.50:  # 50% chance
-					var weapon = drop_tables.generate_weapon(monster.level)
-					if not weapon.is_empty():
-						messages.append("[color=#FF8000]The Weapon Master drops a powerful weapon![/color]")
-						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-							_get_rarity_color(weapon.get("rarity", "common")),
-							weapon.get("name", "Unknown Weapon"),
-							weapon.get("level", 1)
-						])
-						extra_drops.append(weapon)
-				else:
-					messages.append("[color=#AA6666]- The Weapon Master's weapon shatters on death...[/color]")
-
-			# Shield Bearer ability: 50% chance to drop a shield with HP bonuses
-			if ABILITY_SHIELD_BEARER in abilities:
-				if randf() < 0.50:  # 50% chance
-					var shield = drop_tables.generate_shield(monster.level)
-					if not shield.is_empty():
-						messages.append("[color=#00FFFF]The Shield Guardian drops a sturdy shield![/color]")
-						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-							_get_rarity_color(shield.get("rarity", "common")),
-							shield.get("name", "Unknown Shield"),
-							shield.get("level", 1)
-						])
-						extra_drops.append(shield)
-				else:
-					messages.append("[color=#AA6666]- The Shield Guardian's shield crumbles to dust...[/color]")
-
-			# Arcane Hoarder ability: 35% chance to drop mage gear
-			if ABILITY_ARCANE_HOARDER in abilities:
-				if randf() < 0.35:  # 35% chance
-					var mage_item = drop_tables.generate_mage_gear(monster.level)
-					if not mage_item.is_empty():
-						messages.append("[color=#66CCCC]The Arcane Hoarder drops magical equipment![/color]")
-						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-							_get_rarity_color(mage_item.get("rarity", "common")),
-							mage_item.get("name", "Unknown Item"),
-							mage_item.get("level", 1)
-						])
-						extra_drops.append(mage_item)
-				else:
-					messages.append("[color=#AA66AA]- The Arcane Hoarder's magic dissipates...[/color]")
-
-			# Cunning Prey ability: 35% chance to drop trickster gear
-			if ABILITY_CUNNING_PREY in abilities:
-				if randf() < 0.35:  # 35% chance
-					var trick_item = drop_tables.generate_trickster_gear(monster.level)
-					if not trick_item.is_empty():
-						messages.append("[color=#66FF66]The Cunning Prey drops elusive equipment![/color]")
-						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-							_get_rarity_color(trick_item.get("rarity", "common")),
-							trick_item.get("name", "Unknown Item"),
-							trick_item.get("level", 1)
-						])
-						extra_drops.append(trick_item)
-				else:
-					messages.append("[color=#66AA66]- The Cunning Prey's gear vanishes into shadow...[/color]")
-
-			# Warrior Hoarder ability: 35% chance to drop warrior gear
-			if ABILITY_WARRIOR_HOARDER in abilities:
-				if randf() < 0.35:
-					var war_item = drop_tables.generate_warrior_gear(monster.level)
-					if not war_item.is_empty():
-						messages.append("[color=#FF6600]The Warrior Hoarder drops battle-worn gear![/color]")
-						messages.append("[color=%s]Dropped: %s (Level %d)[/color]" % [
-							_get_rarity_color(war_item.get("rarity", "common")),
-							war_item.get("name", "Unknown Item"),
-							war_item.get("level", 1)
-						])
-						extra_drops.append(war_item)
-				else:
-					messages.append("[color=#AA8866]- The Warrior Hoarder's armor crumbles...[/color]")
-
-			# Roll for gem drops → Monster Gems
-			gems_earned = roll_gem_drops(monster, character)
-			if gems_earned > 0:
-				character.add_crafting_material("monster_gem", gems_earned)
-				messages.append("[color=#00FFFF]+ + [/color][color=#FF00FF]+%d Monster Gem%s![/color][color=#00FFFF] + +[/color]" % [gems_earned, "s" if gems_earned > 1 else ""])
-
-		# Wish granter ability: 10% chance to offer a wish (100% if GM-guaranteed)
-		if ABILITY_WISH_GRANTER in abilities:
-			var wish_chance_f = 1.0 if combat.get("gm_wish_guaranteed", false) else 0.10
-			if randf() < wish_chance_f:
-				var monster_lethality = monster.get("lethality", 100)
-				wish_options = generate_wish_options(character, monster.level, monster_lethality)
-				wish_pending = true
-				messages.append("[color=#FFD700]* The %s offers you a WISH! *[/color]" % monster.name)
-				messages.append("[color=#FFD700]Choose your reward wisely...[/color]")
-			else:
-				messages.append("[color=#808080]The %s's magic fades before granting a wish...[/color]" % monster.name)
-
-		# Combine regular drops with extra drops (like normal victory)
-		var all_drops = dropped_items.duplicate()
-		all_drops.append_array(extra_drops)
-
-		return {
-			"success": true,
-			"messages": messages,
-			"combat_ended": true,
-			"victory": true,
-			"victory_type": "outsmart",  # For pilgrimage tracking
-			"monster_name": monster.name,
-			"monster_level": monster.level,
-			"monster_base_name": monster.get("base_name", monster.name),
-			"monster_base_level": monster.get("base_level", 1),
-			"monster_max_hp": monster.max_hp,
-			"monster_variant_type": monster.get("variant_type", ""),
-			"flock_chance": monster.get("flock_chance", 0),
-			"dropped_items": all_drops,
-			"gems_earned": gems_earned,
-			"wish_pending": wish_pending,
-			"wish_options": wish_options,
-			"is_dungeon_combat": combat.get("is_dungeon_combat", false),
-			"is_boss_fight": combat.get("is_boss_fight", false),
-			"dungeon_monster_id": combat.get("dungeon_monster_id", -1)
-		}
-	else:
-		# FAILURE! v0.9.698 — you overplayed your hand: Read resets to 0 (rebuild it
-		# and try again — no permanent lock) and the monster gets a free attack.
-		combat["combo"] = 0
-		messages.append("[color=#FF4444][b]FAILED![/b] ...%s.[/color] [color=#B06BE0](Read reset)[/color]" % outsmart_outcome_line(false))
-
-		# Companion still attacks even when outsmart fails - they're loyal!
-		var _ca2 = messages.size()
-		_process_companion_attack(combat, messages)
-		_indent_new_messages(messages, _ca2, "   ")
-
-		# Check if companion killed the monster
-		if monster.current_hp <= 0:
-			messages.append("[color=#00FF00]Your companion saved you by finishing off the %s![/color]" % monster.name)
-			# Give rewards as if outsmart succeeded (companion clutch kill)
-			# #55 (2026-08-27) — apply the same uncapped over-level XP bonus as a normal kill,
-			# so a companion cleaning up a big foe after a failed Outsmart still pays for the risk.
-			var base_xp = monster.experience_reward
-			var _cc_diff = int(monster.level) - character.level
-			var _cc_mult = 1.0
-			if _cc_diff > 0:
-				_cc_mult = 1.0 + sqrt(float(_cc_diff) / (10.0 + float(character.level) * 0.05)) * 0.7
-			var _cc_xp = int(base_xp * _cc_mult * 1.10)
-			var xp_result = character.add_experience(_cc_xp)
-			messages.append("[color=#FFD700]+%d XP[/color]" % _cc_xp)
-			return {
-				"success": true,
-				"messages": messages,
-				"combat_ended": true,
-				"victory": true,
-				"victory_type": "companion_clutch",
-				"monster_name": monster.name,
-				"monster_level": monster.level,
-				"monster_base_name": monster.get("base_name", monster.name),
-				"monster_base_level": monster.get("base_level", 1),
-				"monster_max_hp": monster.max_hp,
-				"monster_variant_type": monster.get("variant_type", ""),
-				"flock_chance": monster.get("flock_chance", 0),
-				"dropped_items": [],
-				"gems_earned": 0,
-				"is_dungeon_combat": combat.get("is_dungeon_combat", false),
-				"is_boss_fight": combat.get("is_boss_fight", false)
-			}
-
-		# Monster gets a free attack
-		var monster_result = process_monster_turn(combat)
-		var _mmsg := String(monster_result.get("message", ""))
-		if not bool(monster_result.get("monster_skipped", false)) and _mmsg.strip_edges() != "":
-			_mark_actor(combat, messages.size(), ACTOR_MONSTER)
-			messages.append("[color=#444444]─────────────────────────────[/color]")
-			messages.append(_indent_multiline(_mmsg, "         "))
-			messages.append("[color=#444444]─────────────────────────────[/color]")
-			_mark_actor(combat, messages.size(), ACTOR_PLAYER)
-
-		# Check if player died
-		if character.current_hp <= 0:
-			return {
-				"success": true,
-				"messages": messages,
-				"combat_ended": true,
-				"victory": false,
-				"monster_name": "%s (Lvl %d)" % [monster.name, monster.level],
-				"monster_level": monster.level
-			}
-
-		# Combat continues normally
-		combat.round += 1
-		combat.player_can_act = true
-		var expired_buffs = character.tick_buffs()
-		for buff in expired_buffs:
-			var buff_name = buff.type.capitalize()
-			messages.append("[color=#808080]Your %s buff has worn off.[/color]" % buff_name)
-
-		return {
-			"success": true,
-			"messages": messages,
-			"combat_ended": false,
-			"outsmart_failed": true,  # Tell client outsmart can't be used again
-			"monster_acted": true  # Monster already got free attack, don't give another turn
-		}
+		chance -= level_diff * 2
+	# Silver Tongue and the uniques that used to buy Outsmart odds now buy these instead, so
+	# the node and the items keep doing what their text promises.
+	chance += int(character.get_path_effect_total("assassinate_pct"))
+	chance = clampi(chance, 5, 60)
+	# A partial energy commit scales the odds down proportionally.
+	return max(1, int(chance * variable_fraction))
 
 # ===== ABILITY SYSTEM =====
 
@@ -4187,6 +3636,25 @@ const FORCEFIELD_RECAST_FALLOFF := 0.55
 # (`player_crit_damage`): ability weights are anchored and were tuned with no crit in them, so
 # the full multiplier would inflate every card by ~crit_chance x 0.5.
 const ABILITY_CRIT_DAMAGE := 1.25
+# 2026-09-05 — abilities with an inherent crit affinity, as a BONUS to the player's own crit
+# chance rather than a private roll of their own.
+#
+# Reported from live with a screenshot: the same Ambush printed "Ambush (critical) — 243" one
+# round and "★ CRITICAL! ★ · Ambush — 198" the next. There were THREE parallel crit systems —
+# the general ability crit added today, a hardcoded 50%/1.5x roll inside Ambush, and the
+# Wizard's `spell_crit_bonus` rolled inline in three spell branches (silently: it printed no
+# line at all, so a Wizard could not tell a crit from a big roll). They stacked multiplicatively,
+# labelled themselves differently or not at all, and the private ones ignored crit escalation
+# and the Ranger's no-crit rule.
+#
+# Owner: "we don't want any abilities doing things that it doesn't describe on the hover or in
+# the description of the card." A private roll also breaks the crit BUILD the Ninja is meant to
+# chase: a flat 50% that ignores your crit stat means crit gear does nothing on that card.
+# Expressed as a bonus to the real chance, the affinity survives, the build matters, and there
+# is exactly one label.
+const ABILITY_CRIT_BONUS := {
+	"ambush": 25,   # the surprise strike — was a private flat 50% at 1.5x
+}
 
 # Glancing blows on ABILITIES. Chance is ABILITY_GLANCE_BASE minus (DEX - monster_speed/2),
 # clamped, so accuracy is what reduces it - the same comparison the basic-attack hit roll makes.
@@ -4215,7 +3683,11 @@ const ABILITY_WEIGHTS := {
 	# --- Trickster: high variance. Weaker reliable damage is the intended identity, but it --
 	# --- has to be LETHAL: before this conversion a gearless L5 Ranger needed 11.5 turns to -
 	# --- kill a same-level Gnoll and survived 8.1, so it could not win a straight fight. ----
-	"ambush": 0.20,       # ~0.25 effective — a 50% crit at +50% rides on top
+	# 2026-09-05: 0.20 -> 0.23. Ambush lost its private 50%/1.5x roll (expected x1.25) and gained
+	# +25 to the shared crit chance instead. At a ~25% baseline that moves the expected multiplier
+	# from ~1.25 to ~1.08, so the weight is raised ~15% to keep the card's average output where it
+	# was. A crit-built Ninja now gets MORE out of it than before, which is the point.
+	"ambush": 0.23,
 	"gambit": 0.42,       # on a HIT; it lands 55-80% of the time, so ~0.27 expected
 	# `exploit` is deliberately NOT here: a share of the ENEMY's max HP is a different model
 	# on purpose (the anti-tank tool, gear-independent, shines exactly where this anchor is
@@ -5071,14 +4543,6 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 					base_damage = base_damage * 2
 					messages.append("[color=#9400D3]Chaos Magic: DOUBLE DAMAGE![/color]")
 
-			# === CLASS PASSIVE: Wizard Spell Crit ===
-			# +10% spell crit chance (1.5x damage)
-			if passive_effects.has("spell_crit_bonus"):
-				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
-				if randi() % 100 < spell_crit_chance:
-					base_damage = int(base_damage * 1.5)
-					_note_modifier(combat, "Spell Critical +50%")
-
 			# Monster WIS reduces damage (up to 30% reduction)
 			var monster_wis = monster.get("wisdom", monster.get("intelligence", 15))
 			var wis_reduction = min(0.30, float(monster_wis) / 300.0)  # WIS 90 = 30% reduction
@@ -5156,13 +4620,6 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				elif chaos_roll < passive_effects.get("backfire_chance", 0.10) + passive_effects.get("double_damage_chance", 0.25):
 					base_damage = base_damage * 2
 					messages.append("[color=#9400D3]Chaos Magic: DOUBLE DAMAGE![/color]")
-
-			# === CLASS PASSIVE: Wizard Spell Crit ===
-			if passive_effects.has("spell_crit_bonus"):
-				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
-				if randi() % 100 < spell_crit_chance:
-					base_damage = int(base_damage * 1.5)
-					_note_modifier(combat, "Spell Critical")
 
 			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
@@ -5297,13 +4754,6 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				elif chaos_roll < passive_effects.get("backfire_chance", 0.10) + passive_effects.get("double_damage_chance", 0.25):
 					base_damage = base_damage * 2
 					messages.append("[color=#9400D3]Chaos Magic: DOUBLE DAMAGE![/color]")
-
-			# === CLASS PASSIVE: Wizard Spell Crit ===
-			if passive_effects.has("spell_crit_bonus"):
-				var spell_crit_chance = int(passive_effects.get("spell_crit_bonus", 0) * 100)
-				if randi() % 100 < spell_crit_chance:
-					base_damage = int(base_damage * 1.5)
-					_note_modifier(combat, "Spell Critical")
 
 			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
@@ -5990,6 +5440,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 	# just a damage card, so it builds Read too. Appended before the match so it reaches
 	# all the early-returning ability paths.
 	var _read_gain: int = 1
+	var _long_con_proc: bool = false
 	# Grifter "Long Con" — the denial cards that skip the monster's turn build DOUBLE Read, so
 	# stalling is an engine rather than a delaying action. Only the turn-skip cards qualify:
 	# every Grifter ability already builds Read, and doubling all of them would just be a flat
@@ -6003,9 +5454,20 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 		var _lc_chance: int = int(_lc_fx.get("denial_read_chance", 0))
 		if _lc_chance > 0 and (randi() % 100) < _lc_chance:
 			_read_gain += 1
+			_long_con_proc = true
+	# Which card is being cast, so the shared crit roll can add that card's own affinity
+	# (ABILITY_CRIT_BONUS) without a private roll of its own.
+	combat["_crit_ability"] = ability_name
 	var _newread: int = min(COMBO_MAX, int(combat.get("combo", 0)) + _read_gain)
 	combat["combo"] = _newread
-	messages.append("[color=#7FD8C8]◉ Read %d/%d[/color]" % [_newread, COMBO_MAX])
+	# 2026-09-05 — say so when Long Con fires. Reported live: "I'm testing a Grifter and it's
+	# not getting extra read from what I'm seeing." It WAS firing; the log just printed the
+	# same "◉ Read n/m" either way, so a 50% passive was invisible unless you tracked the
+	# number across turns. A passive the player cannot observe may as well not exist.
+	if _long_con_proc:
+		messages.append("[color=#C8A0FF]LONG CON![/color] [color=#7FD8C8]◉ Read %d/%d (+2)[/color]" % [_newread, COMBO_MAX])
+	else:
+		messages.append("[color=#7FD8C8]◉ Read %d/%d[/color]" % [_newread, COMBO_MAX])
 
 	match ability_name:
 		"analyze":
@@ -6016,46 +5478,20 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			var monster_int = monster.get("intelligence", 15)
 			messages.append("[color=#FFA500]Intelligence:[/color] %d" % monster_int)
 
-			# Calculate and show outsmart chance (must match process_outsmart formula)
-			var player_wits = character.get_effective_stat("wits")
-			var is_trickster = character.class_type in ["Grifter", "Ranger", "Ninja"]
-			var player_level = character.level
-			var monster_level = monster.level
-			var base_chance = 5
-			# Logarithmic WITS scaling
-			var wits_bonus = 0
-			if player_wits > 10:
-				wits_bonus = int(18.0 * log(float(player_wits) / 10.0) / log(2.0))
-			var trickster_bonus = 20 if is_trickster else 0
-			var dumb_bonus = max(0, (10 - monster_int) * 3)
-			var smart_penalty = max(0, monster_int - 10)  # -1% per INT above 10
-			var int_vs_wits_penalty = max(0, (monster_int - player_wits) * 2)
-			# Level difference penalty
-			var level_diff = monster_level - player_level
-			var level_penalty = 0
-			if level_diff > 0:
-				if level_diff <= 10:
-					level_penalty = level_diff * 2
-				elif level_diff <= 50:
-					level_penalty = 20 + (level_diff - 10)
-				else:
-					level_penalty = 60 + int((level_diff - 50) * 0.5)
-			var level_bonus = 0
-			if level_diff < 0:
-				level_bonus = min(15, abs(level_diff))
-			var outsmart_chance = base_chance + wits_bonus + trickster_bonus + dumb_bonus + level_bonus - smart_penalty - int_vs_wits_penalty - level_penalty
-			# Path: outsmart_pct (Silver Tongue)
-			outsmart_chance += int(character.get_path_effect_total("outsmart_pct"))
-			# INT-based cap
-			var base_max_chance = 85 if is_trickster else 70
-			var max_chance = max(30, base_max_chance - int(monster_int / 3))
-			outsmart_chance = clampi(outsmart_chance, 2, max_chance)
+			# 2026-09-05 — this used to carry its OWN copy of the odds maths, and the copy had
+			# drifted: 18.0*log WITS scaling against the real 9.0, a flat +20 Trickster bonus
+			# against the real +10, double the level penalty and a cap of 85/70 against the
+			# real 48. So the headline number Analyze reported was one the game never rolled
+			# against. It now asks the single source, and reports the finisher that still
+			# exists.
+			var level_diff = int(monster.level) - character.level
+			var _assn = assassinate_chance(character, monster, combat)
 			var level_warning = ""
 			if level_diff > 10:
 				level_warning = " [color=#FF4444](Lv%+d penalty!)[/color]" % level_diff
 			elif level_diff > 0:
 				level_warning = " [color=#FFA500](Lv%+d)[/color]" % level_diff
-			messages.append("[color=#00FFFF]Outsmart Chance:[/color] %d%%%s" % [outsmart_chance, level_warning])
+			messages.append("[color=#00FFFF]Assassinate Chance:[/color] %d%%%s" % [_assn, level_warning])
 
 			# Grant +10% damage bonus for rest of combat
 			combat["analyze_bonus"] = 10
@@ -6164,20 +5600,11 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				messages.append("[color=#00FFFF]Skill Enhancement: +%d%% damage![/color]" % int(ambush_skill_bonus))
 			var mod_dmg = apply_ability_damage_modifiers(base_dmg, character.level, monster, character, combat, messages)
 			var damage = apply_damage_variance(mod_dmg)
-			# 50% crit chance
-			var _amb_crit := false
-			if randi() % 100 < 50:
-				damage = int(damage * 1.5)
-				_amb_crit = true
-				_note_modifier(combat, "Critical +50%")
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			# One line. The crit is a MODIFIER of this hit, so it rides on the number rather
-			# than announcing itself on a line of its own.
-			messages.append("[color=%s]Ambush%s[/color] — %s" % [
-				"#FFD700" if _amb_crit else "#00FF00",
-				" (critical)" if _amb_crit else "",
-				_damage_with_detail(combat, messages, damage)])
+			# Ambush's crit affinity now rides the SHARED roll (ABILITY_CRIT_BONUS), which has
+			# already announced itself above if it landed. One system, one label.
+			messages.append("[color=#00FF00]Ambush[/color] — %s" % _damage_with_detail(combat, messages, damage))
 
 		"vanish":
 			# Auto-crit on the next DAMAGING ACTION (ability or attack), skips monster turn.
@@ -6222,30 +5649,12 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# Variable cost (v0.9.265): success CHANCE scales with spend.
 			# Already chance-based (5-60% cap), scaling makes floor casts
 			# mostly miss — that's the trickster's high-risk play.
-			var wits = character.get_effective_stat("wits")
-			var monster_int = monster.get("intelligence", 15)
-			var level_diff = monster.level - character.level
-
-			# Base 30% success, +1.5% per wits over monster intelligence
-			# 2026-09-05 — base 30 -> 15, and READ now feeds this instead of only Outsmart.
-			#
 			# The A/B measured that Assassinate carries the Grifter (removing it costs 25-39pp)
-			# while Outsmart contributes almost nothing (removing it costs 0-10pp). So the class
-			# stalls to build Read toward a payoff that a better button had already superseded.
+			# while Outsmart contributed almost nothing (0-10pp), so Outsmart was retired and
+			# this became the Trickster finisher. Odds live in ONE place — see below.
 			# Owner: "Grifters assassinate could replace outsmart, that might be the way."
-			#
-			# Rather than nerf Assassinate flat, it is re-pointed: weak on its own (15% base, so
-			# opening with it is a poor play), strong once the stall has done its work
-			# (+READ_HEIST_PER per stack, so 8 Read is +40). The design the owner described -
-			# stall, build, then cash - now runs through the finisher that actually wins.
-			var _heist_read: int = int(combat.get("combo", 0))
-			var raw_heist_chance = 15 + int((wits - monster_int) * 1.5) + _heist_read * READ_HEIST_PER
-			# Heavy penalty for fighting above your level: -2% per level difference
-			if level_diff > 0:
-				raw_heist_chance -= level_diff * 2
-			# Cap at 5-60% (was 20-90%)
-			raw_heist_chance = clampi(raw_heist_chance, 5, 60)
-			var success_chance = max(1, int(raw_heist_chance * variable_fraction))
+			var level_diff = monster.level - character.level
+			var success_chance = assassinate_chance(character, monster, combat, variable_fraction)
 
 			var roll = randi() % 100
 			if roll < success_chance:
@@ -6359,12 +5768,20 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 					"monster_base_level": monster.get("base_level", 1),
 					"monster_max_hp": monster.max_hp,
 					"monster_variant_type": monster.get("variant_type", ""),
-					"flock_chance": 0,  # No flock after perfect heist
+					# 2026-09-05 — Assassinate now credits the Trial of Mind, because Outsmart is
+					# being retired and the pilgrimage's third stage counted only Outsmarts. Both
+					# are bypass-HP kills, so the stage counts either and existing progress is
+					# preserved rather than stranded mid-chain.
+					"victory_type": "outsmart",
+					"flock_chance": 0,  # no flock after an assassination
 					"dropped_items": dropped_items,
 					"gems_earned": gems_earned,
 					"skip_monster_turn": true,
 					"is_dungeon_combat": combat.get("is_dungeon_combat", false),
-					"is_boss_fight": combat.get("is_boss_fight", false)
+					"is_boss_fight": combat.get("is_boss_fight", false),
+					# Without this the server cannot tell WHICH dungeon entity died, so an
+					# assassinated monster stayed alive on the floor grid and re-engaged.
+					"dungeon_monster_id": combat.get("dungeon_monster_id", -1)
 				}
 			else:
 				# Failed heist - take damage and combat continues
@@ -9967,8 +9384,8 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"read": int(combat.get("combo", 0)),  # v0.9.698 Trickster Read (was Combo)
 		"read_max": COMBO_MAX,
 		"is_trickster_read": character.get_class_path() == "trickster",
-		# Live Outsmart % so players can decide when to spring it (single source: helper).
-		"outsmart_chance": (_outsmart_chance(character, combat.monster, combat) if (character.get_class_path() == "trickster" and combat.has("monster")) else 0),
+		# Live Assassinate % so players can decide when to spring it (single source: helper).
+		"assassinate_chance": (assassinate_chance(character, combat.monster, combat) if (character.get_class_path() == "trickster" and combat.has("monster")) else 0),
 		"focus": int(combat.get("focus", 0)),  # v0.9.697 Mage Focus
 		"focus_max": FOCUS_MAX,
 		"is_mage_focus": character.get_class_path() == "mage",
@@ -10043,8 +9460,6 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"poison_active": character.poison_active,
 		"poison_damage": character.poison_damage,
 		"poison_turns_remaining": character.poison_turns_remaining,
-		# Outsmart tracking
-		"outsmart_failed": combat.get("outsmart_failed", false),
 		# Forcefield/shield for visual display
 		"forcefield_shield": combat.get("forcefield_shield", 0),
 		# Status-effect strip (additive — old clients ignore these fields).
@@ -10774,7 +10189,6 @@ func serialize_combat_state(peer_id: int) -> Dictionary:
 		},
 		"round": combat.get("round", 1),
 		"player_can_act": combat.get("player_can_act", true),
-		"outsmart_failed": combat.get("outsmart_failed", false),
 		"analyze_bonus": combat.get("analyze_bonus", 0),
 		"ambusher_active": combat.get("ambusher_active", false),
 		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
@@ -10816,7 +10230,6 @@ func restore_combat(peer_id: int, character: Character, saved_state: Dictionary)
 		"player_can_act": true,
 		"combat_log": [],
 		"started_at": Time.get_ticks_msec(),
-		"outsmart_failed": saved_state.get("outsmart_failed", false),
 		"ambusher_active": saved_state.get("ambusher_active", false),
 		"analyze_bonus": saved_state.get("analyze_bonus", 0),
 		"is_dungeon_combat": saved_state.get("is_dungeon_combat", false),
@@ -10928,7 +10341,6 @@ func start_party_combat(party_members: Array, characters: Dictionary, monster: D
 		member_states[pid] = {
 			"total_damage_dealt": 0,
 			"total_damage_taken": 0,
-			"outsmart_failed": false,
 			"companion_threshold_triggered": false,
 			"player_hp_at_start": ch.current_hp,
 			"analyze_bonus": 0,
@@ -11179,7 +10591,6 @@ const _PARTY_VIEW_SOLO_DEFAULTS := {
 	# the round (never the whole party's). Lives here so it survives the view being rebuilt
 	# on every resolve — on the view alone it would reset each beat and never cost anything.
 	"free_item_used": false,
-	"outsmart_failed": false,
 	"ambusher_active": false,
 	"monster_went_first": false,
 	"enrage_stacks": 0,
@@ -11561,8 +10972,6 @@ func _party_apply_member_action(combat: Dictionary, pid: int) -> Array:
 		return [_party_entry(pid,
 			"[color=#FFAA00]You slip away from the fight.[/color]",
 			"[color=#FFAA00]%s slips away from the fight.[/color]" % pname)]
-	if kind == "outsmart":
-		return _party_outsmart(combat, pid, int(action.get("spend", -1)))
 	var view := _party_member_view(combat, pid)
 	active_combats[pid] = view
 	# v0.9.740 — a buff aimed at a teammate. Resolve it on the CASTER (their cost, their stats,
@@ -11867,7 +11276,6 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 		"total_damage_dealt": ms.get("total_damage_dealt", 0),
 		"total_damage_taken": ms.get("total_damage_taken", 0),
 		# Per-member buff/debuff state (stored in member_states)
-		"outsmart_failed": ms.get("outsmart_failed", false),
 		"analyze_bonus": ms.get("analyze_bonus", 0),
 		"forcefield_shield": ms.get("forcefield_shield", 0),
 		"cloak_active": ms.get("cloak_active", false),
@@ -11912,6 +11320,7 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 		# Dungeon state
 		"is_dungeon_combat": combat.get("is_dungeon_combat", false),
 		"is_boss_fight": combat.get("is_boss_fight", false),
+		"dungeon_monster_id": combat.get("dungeon_monster_id", -1),
 	}
 
 	# Process the ability using existing solo ability functions
@@ -12100,93 +11509,6 @@ func _party_process_flee(combat: Dictionary, peer_id: int) -> Dictionary:
 	else:
 		messages.append("[color=#FF4444]%s fails to flee![/color]" % character.name)
 		return {"messages": messages, "fled": false}
-
-func _party_outsmart(combat: Dictionary, pid: int, requested_spend: int) -> Array:
-	"""Outsmart, in a party. Owner direction 2026-09-03: it should work in co-op, and a
-	Trickster "should have to invest around the same amount of extra to accomplish it just like
-	the mages and warrior do to kill the monster with their abilities."
-
-	That parity is already what the SOLO design encodes, so this deliberately adds no
-	party-specific pricing: the investment is the Read ramp (eight Trickster cards, each paying
-	its own resource cost, over eight turns) plus the optional energy commitment, and the odds
-	come from the SAME `_outsmart_chance` the solo path uses — so class, Wits, level difference,
-	the per-role penalty and the attempt falloff all apply identically. Anything else would be a
-	second balance model for the same button, which is the exact defect this codebase keeps
-	producing.
-
-	Before this, `submit_party_action` rejected "outsmart" outright, so a Trickster in a party
-	built Read and it did nothing at all — a third of the kit switched off in co-op."""
-	var character = combat.characters[pid]
-	var monster = combat.monster
-	var st = combat.member_states[pid]
-	var pname: String = character.name
-	# The member's own engine + attempt history, so the shared formula sees this Trickster's
-	# Read rather than the party's or nobody's.
-	var view := {
-		"character": character,
-		"monster": monster,
-		"combo": int(st.get("combo", 0)),
-		"outsmart_attempts": int(st.get("outsmart_attempts", 0)),
-	}
-	var chance: int = _outsmart_chance(character, monster, view)
-
-	# Energy commitment — the player's call, exactly as in solo. -1 means the client sent no
-	# choice, which keeps the old automatic behaviour rather than silently making it free.
-	var max_en: int = maxi(1, character.get_total_max_energy())
-	var before_en: int = int(character.current_energy)
-	var dumped: int = clampi(requested_spend, 0, before_en) if requested_spend >= 0 		else maxi(0, int(float(before_en) * OUTSMART_DUMP_PCT))
-	var entries := []
-	if dumped > 0:
-		character.use_energy(dumped)
-		var bonus: int = int(clampf(float(dumped) / float(max_en), 0.0, 1.0) * float(OUTSMART_DUMP_MAX_BONUS))
-		chance = clampi(chance + bonus, 2, maxi(60, chance))
-		entries.append(_party_entry(pid,
-			"[color=#66FF66]⚡ You spend %d energy to sharpen the read (+%d%% outwit)![/color]" % [dumped, bonus],
-			"[color=#66FF66]⚡ %s spends energy to sharpen the read.[/color]" % pname))
-
-	st["outsmart_attempts"] = int(st.get("outsmart_attempts", 0)) + 1
-	# One line drawn per attempt, then rendered in both voices, so a party reads the same event
-	# from two sides rather than two different tricks.
-	var flavour: String = outsmart_attempt_line()
-	entries.append(_party_entry(pid,
-		"[color=#FFA500]%s... (%d%% chance)[/color]" % [flavour, chance],
-		"[color=#FFA500]%s, %s... (%d%% chance)[/color]" % [pname, flavour.substr(4), chance]))
-
-	if randi() % 100 < chance:
-		# The monster is simply gone. Zeroing its HP hands the kill to the party's own victory
-		# detection, so rewards, XP splitting and the end-of-fight flow stay in ONE place
-		# instead of this function growing a second copy of them.
-		monster.current_hp = 0
-		var won_line: String = outsmart_outcome_line(true)
-		entries.append(_party_entry(pid,
-			"[color=#00FF00][b]SUCCESS![/b] %s — you outwit the %s![/color]" % [won_line, monster.get("name", "monster")],
-			"[color=#00FF00][b]%s outwits the %s![/b][/color]" % [pname, monster.get("name", "monster")]))
-	else:
-		# Failure costs the turn and the whole Read ramp — eight turns of building. The monster
-		# phase already acts against every member each round, so no extra free hit is added on
-		# top the way solo does; in a party that would be punishing the same mistake twice.
-		st["combo"] = 0
-		var lost_line: String = outsmart_outcome_line(false)
-		entries.append(_party_entry(pid,
-			"[color=#FF4444]...%s. Your read is broken.[/color]" % lost_line,
-			"[color=#FF4444]...%s — %s's read is broken.[/color]" % [lost_line, pname]))
-	# The HEAD entry's text is deliberately NOT printed for a member action — the client plays
-	# it (spotlight + animation) and prints only the body lines, to keep a 4-actor round
-	# readable. So the head must be a pure header: promoting the first informative line to head
-	# SWALLOWED it, which is why a zero-energy attempt showed only "sees through it" with no
-	# attempt line and no odds, while a spend-energy attempt looked fine (the spend line took
-	# the head slot instead). Reported from co-op play.
-	var head := _party_entry(pid,
-		"[color=#FFA500]▶ You try to outwit the %s[/color]" % monster.get("name", "monster"),
-		"[color=#FFA500]▶ %s tries to outwit the %s[/color]" % [pname, monster.get("name", "monster")])
-	head["head"] = true
-	head["action_kind"] = "outsmart"
-	head["ability"] = "outsmart"
-	entries.push_front(head)
-	for _e in entries:
-		_e["actor"] = "member"
-		_e["actor_pid"] = pid
-	return entries
 
 func _process_party_monster_phase(combat: Dictionary, max_actions: int = 0) -> Dictionary:
 	"""Process the monster's actions against party members.

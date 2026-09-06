@@ -562,20 +562,62 @@ the one doing the work.
 
       So the class runs on **Assassinate + the stall**, with Outsmart contributing almost nothing.
 
-- [ ] **DESIGN PROBLEM, not just a balance one.** The stated identity is "stall to build Read,
-      then cash Outsmart" — and the stall works, but the payoff it builds toward has been
-      superseded. **Assassinate does the same job (bypass HP, end the fight) more reliably**, so
-      Read now ramps toward a button that is no longer the best one in hand. Either:
-      - make Outsmart the stronger finisher at high Read (so the ramp pays off as designed), or
-      - accept Assassinate as the finisher and re-point the Read ramp at something else, or
-      - gate Assassinate (rate, cost, once-per-fight) so it is the emergency and Outsmart is the plan
-- [ ] Whichever is chosen, **the lever to bring the Grifter down is Assassinate's rate, not Read
-      and not Outsmart** — halving Read already measured as no change at all
+- [x] **RESOLVED 2026-09-05 — Outsmart retired, Assassinate is the finisher.** Owner chose to
+      re-point the pilgrimage first, then pull the ability from all nine classes. Read now feeds
+      Assassinate (`READ_HEIST_PER`), which is what the ramp should have been building toward.
+      Removed: the ability-bar slot in all four action-bar branches, the `swap_attack_outsmart`
+      setting (Game settings renumbered 2-7), `_style_outsmart_button`, the chat command,
+      `process_outsmart` / `_party_outsmart` / `_outsmart_chance`, the flavour tables and five
+      tuning constants. `outsmart_pct` (Silver Tongue, The Long Con) became `assassinate_pct` so
+      the node and the unique keep doing what their text promises. Trial of Mind still credits —
+      Assassinate returns `victory_type: "outsmart"`.
+- [ ] **The lever to bring the Grifter down is Assassinate's rate, not Read** — halving Read
+      already measured as no change at all. Not yet acted on; re-measure now that Outsmart is
+      gone, since the A/B above priced a kit that no longer exists
 - [ ] Note the Grifter's advantage GROWS with level (75 → 98 at L10) while the Fighter's does
       not. Bypass-HP win conditions scale better than damage against monsters whose HP scales
 - [ ] **The Fighter is now the weakest class** (61/55/81/70), and L5 at 55% is under target. It
       was fixed today from 22%, so this is not a regression — but the spread between best and
       worst class is ~25pp and worth watching
+
+## ⚑ LIVE BUGS FIXED 2026-09-05 (in tree, NOT yet deployed)
+
+**Assassinated dungeon monsters never died.** Reported live: *"a spider attacked them from
+seemingly out of nowhere when they rested"* and *"the spiders seem to be spawning right next to
+them, in the spaces they were just standing."* Owner's hypothesis was exactly right. Clearing a
+dungeon entity depended on the VICTORY DICTIONARY carrying `dungeon_monster_id` back to the
+server, and only the ordinary-kill dict did. Assassinate builds its own return and omitted it, so
+the server fell through to the legacy `_clear_dungeon_tile` branch, `m.alive` stayed true, and the
+"dead" spider was still standing on the grid beside the player — walking back onto them on the
+next move or rest tick (`handle_dungeon_rest` calls `_move_dungeon_monsters`). Both symptoms, one
+cause. Fixed structurally: the server now remembers the entity id from combat START
+(`dungeon_combat_monster_id`) instead of trusting each return shape, so any victory path present
+or future clears the monster. Verified: 73/73 assassinations now carry the id.
+
+**Three parallel crit systems.** Screenshot showed the same Ambush printing "Ambush (critical) —
+243" one round and "★ CRITICAL! ★ · Ambush — 198" the next. There were three: the general ability
+crit, a hardcoded 50%/1.5x roll inside Ambush, and the Wizard's `spell_crit_bonus` rolled inline
+in three spell branches — silently, printing no line at all. They stacked multiplicatively and
+the private ones ignored crit escalation and the Ranger's no-crit rule. Consolidated into one
+roll: `ABILITY_CRIT_BONUS` expresses a card's crit affinity as a bonus to the player's OWN chance
+(so crit gear finally matters on Ambush, which is the Ninja's whole build), and `spell_crit_bonus`
+is folded into `player_crit_chance`. Ambush's weight 0.20 → 0.23 to hold its average output.
+Measured after: old-style labels 0 everywhere, Ranger 0 crit and 0 glance, Ninja 39% vs Grifter
+27% on Ambush, Wizard 14% on Bolt.
+
+**The client kept a stale copy of the class passive table.** `_get_class_passive` was a hand-copied
+"mirror" and had drifted badly: it advertised the Grifter as *Backstab* (+15% crit, retired), the
+Ranger as *Hunter's Mark* (retired), and the Ninja as *Shadow Step* (+40% flee) — which is the
+GRIFTER's effect. Two classes shown swapped on the character-creation screen. `character.gd` grew
+a static `class_passive_for()` and the mirror now calls it. There is no longer a mirror.
+
+**Long Con was invisible.** Reported: *"I'm testing a Grifter and it's not getting extra read."*
+It was firing; the log printed the same `◉ Read n/m` either way, so a 50% passive could not be
+observed. Now prints **LONG CON!** with `(+2)`.
+
+**Analyze reported odds the game never rolled.** It carried its own copy of the chance maths with
+18.0*log WITS scaling against the real 9.0, a flat +20 Trickster bonus against +10, double the
+level penalty and a cap of 85/70 against 48. Now calls the single source and reports Assassinate.
 
 ## ⚑ CRIT AND GLANCE — SHIPPED to the tree 2026-09-05
 

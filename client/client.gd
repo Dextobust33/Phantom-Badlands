@@ -391,7 +391,6 @@ const COMPARE_STAT_OPTIONS = ["level", "hp", "atk", "def", "wit", "mana", "stami
 var sort_menu_page: int = 0  # 0 = main sorts, 1 = more options (rarity, compare)
 
 # Combat action bar swap settings (per-client)
-var swap_attack_outsmart: bool = false  # Swap Attack (slot 0) with Outsmart (slot 3)
 var disable_tutorial: bool = false  # Skip tutorial on new character creation
 # v0.9.566 — autoskip toggle for combat loot reveal panel. When true, the
 # panel auto-clicks random unrevealed cells once opened. Persisted with the
@@ -900,8 +899,7 @@ var _feedback_status: Label = null
 var flock_pending = false
 var flock_monster_name = ""
 var combat_item_mode = false  # Selecting item to use in combat
-var combat_outsmart_failed = false  # Track if outsmart already failed this combat
-var _combat_outsmart_chance: int = 0  # v0.9.715 — live Outsmart % (Trickster Read); drives the Outsmart action-bar button glow
+var _combat_assassinate_chance: int = 0  # live Assassinate % (Trickster Read); shown on the Read meter and the card face
 
 # Audit #1 Slice 6a — combat hand state. Server pushes the hand on every
 # combat_start / combat_update; client mirrors it here so the action bar
@@ -5393,25 +5391,19 @@ func _input(event):
 					game_output.clear()
 					display_game_settings()
 			elif keycode == KEY_2:
-				toggle_swap_outsmart_setting()
-				await get_tree().create_timer(1.5).timeout
-				if settings_mode and settings_submenu == "game":
-					game_output.clear()
-					display_game_settings()
-			elif keycode == KEY_3:
 				_toggle_skip_craft_minigame()
-			elif keycode == KEY_4:
+			elif keycode == KEY_3:
 				_toggle_skip_gather_minigame()
-			elif keycode == KEY_5:
+			elif keycode == KEY_4:
 				# v0.9.609 — autoskip combat loot toggle. Mirrors
 				# autoskip_loot_reveal (normally only flippable from the
 				# loot panel checkbox, which moves too fast to click).
 				_toggle_autoskip_loot_reveal()
-			elif keycode == KEY_6:
+			elif keycode == KEY_5:
 				_toggle_disable_tutorial()
-			elif keycode == KEY_7:
+			elif keycode == KEY_6:
 				_toggle_map_legend()
-			elif keycode == KEY_8:
+			elif keycode == KEY_7:
 				settings_submenu = "stat_priority"
 				game_output.clear()
 				_display_stat_priority_settings()
@@ -7728,36 +7720,6 @@ func _style_action_button(btn: Button):
 	btn.add_theme_color_override("font_hover_color", THEME_BORDER_GOLD)
 	btn.add_theme_color_override("font_disabled_color", THEME_TEXT_DIM)
 
-func _style_outsmart_button(btn: Button, chance: int) -> void:
-	"""v0.9.715 — style the Outsmart combat action button by its live success
-	chance (driven by Trickster Read). No Read → greyed 'not worth it'; rising
-	odds → brighter teal border + a colored halo that grows toward 'strike now'."""
-	var t: float = clampf(float(chance) / 100.0, 0.0, 1.0)
-	var teal := Color("#7FD8C8")
-	var style := StyleBoxFlat.new()
-	style.set_corner_radius_all(4)
-	style.set_content_margin_all(2)
-	if chance <= 0:
-		# No Read built — Outsmart will almost certainly fail. Grey it hard so the
-		# player builds Read first instead of throwing away a turn.
-		style.bg_color = Color(0.09, 0.09, 0.10, 0.6)
-		style.border_color = Color(0.30, 0.30, 0.32, 0.5)
-		style.set_border_width_all(1)
-		btn.add_theme_color_override("font_color", Color(0.55, 0.58, 0.58, 1))
-	else:
-		# Charged: brighten bg + teal border + colored glow, all scaled by odds.
-		style.bg_color = Color(0.10 + 0.10 * t, 0.16 + 0.14 * t, 0.16 + 0.12 * t, 0.85)
-		style.border_color = teal.lerp(Color.WHITE, 0.2 * t)
-		style.set_border_width_all(int(round(1 + 2 * t)))  # 1 → 3
-		var glow := teal
-		glow.a = 0.15 + 0.5 * t
-		style.shadow_color = glow
-		style.shadow_size = int(round(2 + 8 * t))  # halo grows with the odds
-		btn.add_theme_color_override("font_color", teal.lerp(Color.WHITE, 0.35 * t))
-	btn.add_theme_stylebox_override("normal", style)
-	btn.add_theme_stylebox_override("hover", style)
-	btn.add_theme_stylebox_override("pressed", style)
-
 func _scale_right_panel_fonts(base_scale: float):
 	"""Scale right panel fonts (stats, map controls, send button) based on window size and user preference"""
 	var stats_size = int(14 * base_scale * ui_scale_right_panel)
@@ -9144,10 +9106,9 @@ func update_action_bar():
 			{"label": "---", "action_type": "none", "action_data": "", "enabled": false},
 		]
 	elif in_combat:
-		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E=Outsmart, R/1-5=Path abilities
+		# Combat mode: Space=Attack, Q=Use Item, W=Flee, E/R/1-5=Path abilities
 		var ability_actions = _get_combat_ability_actions()
 		var has_items = _has_usable_combat_items()
-		var can_outsmart = true  # v0.9.698 — Outsmart is repeatable now (no once-per-combat lock); a failed attempt just resets Read + costs a free hit
 		var swap_attack = character_data.get("swap_attack_with_ability", false)
 
 		# Build base combat actions
@@ -9160,33 +9121,19 @@ func update_action_bar():
 				first_ability,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
-				 "cost": 0, "resource_type": "energy"},   # cost 0 = the player is asked how much energy to commit
-				attack_action,  # Attack moves to slot 5
+				attack_action,  # Attack moves to slot 4 now that Outsmart is retired
 			]
 			# Add remaining abilities (skip first since it's on slot 1)
 			for i in range(1, min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 		else:
-			# Normal layout (with optional Attack/Outsmart swap)
-			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
-				"cost": 0, "resource_type": "energy"}   # cost 0 = the player is asked how much energy to commit
-			if swap_attack_outsmart:
-				# Swap: Outsmart on Space, Attack on E
-				current_actions = [
-					outsmart_action,
-					{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-					attack_action,
-				]
-			else:
-				# Default: Attack on Space
-				current_actions = [
-					attack_action,
-					{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-					outsmart_action,
-				]
+			# 2026-09-05 — Outsmart retired, so its E slot is gone and the ability row moves up
+			# one. That is a real gain: one more card reachable without scrolling.
+			current_actions = [
+				attack_action,
+				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
+				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+			]
 			# Add all ability slots
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
@@ -9197,7 +9144,6 @@ func update_action_bar():
 		# a second costs that member their own action, never the whole party's round.
 		var ability_actions = _get_combat_ability_actions()
 		var has_items = _has_usable_combat_items()
-		var can_outsmart = true  # v0.9.698 — Outsmart repeatable (see above)
 		var swap_attack = character_data.get("swap_attack_with_ability", false)
 		var attack_action = {"label": "Attack", "action_type": "combat", "action_data": "attack", "enabled": true}
 		var first_ability = ability_actions[0] if ability_actions.size() > 0 else {"label": "---", "action_type": "none", "action_data": "", "enabled": false}
@@ -9207,29 +9153,16 @@ func update_action_bar():
 				first_ability,
 				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
 				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-				{"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
-				 "cost": 0, "resource_type": "energy"},   # cost 0 = the player is asked how much energy to commit
 				attack_action,
 			]
 			for i in range(1, min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 		else:
-			var outsmart_action = {"label": "Outsmart", "action_type": "combat", "action_data": "outsmart", "enabled": can_outsmart,
-				"cost": 0, "resource_type": "energy"}   # cost 0 = the player is asked how much energy to commit
-			if swap_attack_outsmart:
-				current_actions = [
-					outsmart_action,
-					{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-					attack_action,
-				]
-			else:
-				current_actions = [
-					attack_action,
-					{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
-					{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
-					outsmart_action,
-				]
+			current_actions = [
+				attack_action,
+				{"label": "Use Item", "action_type": "local", "action_data": "combat_item", "enabled": has_items},
+				{"label": "Flee", "action_type": "combat", "action_data": "flee", "enabled": true},
+			]
 			for i in range(min(6, ability_actions.size())):
 				current_actions.append(ability_actions[i])
 	elif party_waiting_for_turn:
@@ -10603,17 +10536,6 @@ func update_action_bar():
 		button.text = action.label
 		button.disabled = not action.enabled
 
-		# v0.9.715 — Outsmart (Trickster) charges up with Read: greyed when your
-		# odds are ~0 (a failed attempt wastes a turn + resets Read), glowing teal
-		# as the chance climbs so the "now!" moment reads at a glance. Any button
-		# that previously carried the glow but isn't Outsmart now is reset to base.
-		if str(action.get("action_data", "")) == "outsmart":
-			_style_outsmart_button(button, _combat_outsmart_chance)
-			button.set_meta("outsmart_glow", true)
-		elif button.get_meta("outsmart_glow", false):
-			_style_action_button(button)
-			button.set_meta("outsmart_glow", false)
-
 		# Update cost label if it exists
 		if i < action_cost_labels.size():
 			var cost_label = action_cost_labels[i]
@@ -10703,7 +10625,7 @@ func trigger_action(index: int):
 const _NO_TRAVEL_COMMANDS := [
 	"flee", "f", "run", "war_cry", "warcry", "iron_skin", "ironskin", "berserk",
 	"haste", "fortify", "shield", "forcefield", "cloak", "vanish", "teleport",
-	"defend", "guard", "block", "heal", "outsmart", "o", "overload",
+	"defend", "guard", "block", "heal", "overload",
 	"bolt", "magic_bolt", "blast", "meteor",
 ]
 
@@ -10824,8 +10746,6 @@ func _start_combat_command_animation(command: String):
 			start_combat_animation("Attacking...", "#FFFF00")
 		"flee", "f", "run":
 			start_combat_animation("Fleeing...", "#808080")
-		"outsmart", "o":
-			start_combat_animation("Outsmarting...", "#00FFFF")
 		# Mage abilities
 		"bolt", "magic_bolt":
 			start_combat_animation("Casting Bolt...", "#00BFFF")
@@ -11433,11 +11353,6 @@ func _show_ability_popup(ability: String, resource_name: String, current_resourc
 	# for every ability at once rather than special-casing Outsmart.
 	if last_ability_amounts.has(ability):
 		suggested_amount = clampi(int(last_ability_amounts[ability]), 0, current_resource)
-	if suggested_amount <= 0 and ability == "outsmart":
-		# First use this session: the amount Outsmart used to take automatically, so pressing
-		# Enter reproduces the behaviour it had before the spend became a choice.
-		suggested_amount = maxi(0, int(float(current_resource) * 0.60))
-
 	if ability == "magic_bolt" and target_hp > 0:
 		# Simulate Magic Bolt damage formula to suggest accurate mana amount
 		# Server formula: damage = bolt_amount * (1 + sqrt(INT)/5) * buffs * passives * reductions
@@ -11607,12 +11522,8 @@ func _on_ability_popup_confirm():
 		return
 
 	var amount = int(text)
-	# 2026-09-03 — Outsmart is the one caller where committing NOTHING is a legitimate choice:
-	# the energy only buys up to +15% odds, it is not a fee. Rejecting 0 made that impossible,
-	# and with an empty energy bar it made Outsmart unusable ENTIRELY, which is exactly what a
-	# co-op playtest hit ("Couldn't use outsmart turn 4 due to no Energy"). Every other
-	# variable-cost ability still needs a real spend to do anything, so they keep the guard.
-	var _zero_ok: bool = pending_variable_ability == "outsmart"
+	# Every variable-cost ability needs a real spend to do anything.
+	var _zero_ok: bool = false
 	if amount < 0 or (amount == 0 and not _zero_ok):
 		ability_popup_input.text = ""
 		ability_popup_input.placeholder_text = "Must be > 0!"
@@ -13020,11 +12931,6 @@ func _get_ability_planned_spend(ability_name: String) -> Dictionary:
 		# capped at current mana.
 		var suggested = _estimate_magic_bolt_planned_mana()
 		return {"amount": suggested, "fraction": 1.0, "resource_type": resource_type}
-	if ability_name == "outsmart":
-		# Pre-fill what the ability used to take silently (60% of the current bar), so pressing
-		# Enter reproduces the old behaviour and the player only has to think about it when
-		# they want to. Energy buys up to +15% odds; it is not required.
-		return {"amount": maxi(0, int(current * 0.60)), "fraction": 1.0, "resource_type": resource_type}
 	if ability_name == "devastate":
 		# v0.9.72x — Devastate is a DUMP finisher: it consumes DEVASTATE_DUMP_PCT (0.60)
 		# of CURRENT stamina, not a flat ceiling. Show the real dump amount so the card
@@ -13254,8 +13160,11 @@ func _estimate_ability_card_effect(ability_name: String, planned_cost: int, frac
 		"ambush":
 			var wits_mult = 1.0 + sqrt(float(wits_stat)) / 10.0
 			# 2.2x, not 3.0 — #55 trimmed it (3.0 -> 2.5 -> 2.2) and this mirror kept the old
-			# value, so the card over-promised by 36%. 50% crit at +50% -> average +25%.
-			var dmg = int(float(total_attack) * 2.2 * wits_mult * fraction * phys_mult * mastery_mult * 1.25)
+			# value, so the card over-promised by 36%.
+			# 2026-09-05 — the old x1.25 baked in Ambush's private 50%/1.5x crit, which is gone:
+			# the affinity is now +25 to the SHARED crit chance, worth about +8% on average
+			# rather than +25%.
+			var dmg = int(float(total_attack) * 2.2 * wits_mult * fraction * phys_mult * mastery_mult * 1.08)
 			return {"text": "~%d dmg" % max(0, dmg), "color": "#FFA060"}
 		"exploit":
 			# #55 trimmed this from (15 + WITS/4, cap 35) to (10 + WITS/6, cap 22) because
@@ -16988,7 +16897,7 @@ func _format_unique_effect_lines(ufx: Dictionary) -> Array:
 		"max_hp_pct": "%+d%% max HP",
 		"loot_reveal_bonus": "+%d loot reveal on every victory",
 		"xp_pct": "%+d%% XP",
-		"outsmart_pct": "+%d%% Outsmart success",
+		"assassinate_pct": "+%d%% Assassinate success",
 		"valor_pct": "+%d%% Valor from kills",
 		"double_cast_pct": "+%d%% chance to cast spells twice",
 	}
@@ -17425,7 +17334,7 @@ func _get_item_comparison_parts(new_item: Dictionary, old_item) -> Array:
 		var c = "#FFA500" if spd_diff > 0 else "#808080"
 		all_diffs["SPD"] = "[color=%s]%+dSPD[/color]" % [c, spd_diff]
 
-	# Wits — affects flee chance, outsmart, Trickster energy pool
+	# Wits — affects flee chance, Assassinate odds, Trickster energy pool
 	var wits_diff = new_bonuses.get("wits", 0) - old_bonuses.get("wits", 0)
 	if wits_diff != 0:
 		var c = "#FF00FF" if wits_diff > 0 else "#808080"
@@ -19460,7 +19369,7 @@ func display_ability_menu():
 	var all_abilities = ability_data.get("all_abilities", [])
 
 	# Show currently equipped abilities in 6 slots
-	# Combat action bar: indices 0-3 are Attack/UseItem/Flee/Outsmart, indices 4-9 are ability slots
+	# Combat action bar: indices 0-2 are Attack/UseItem/Flee, indices 3-9 are ability slots
 	# So ability slot i maps to action bar index (4 + i)
 	display_game("[color=#00FFFF]Your Combat Slots:[/color] (press these keys during combat)")
 	display_game("")
@@ -19554,10 +19463,10 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"devastate": return "5× attack with sqrt STR scaling. Variable cost 15-50 stamina — damage scales linearly with spend."
 		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds. Variable cost 8-25 stamina — defense magnitude scales with spend; duration stays 5 rounds."
 		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds. Variable cost 11-35 stamina — heal amount AND STR buff both scale with spend; duration stays 3 rounds."
-		"analyze": return "Reveal HP, stats, and outsmart chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
+		"analyze": return "Reveal HP, stats, and your Assassinate chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
 		"distract": return "Enemy suffers -50% accuracy on its next attack. Variable cost 5-15 energy — accuracy debuff magnitude scales with spend; single-attack scope unchanged."
 		"pickpocket": return "Steal 1-4 tier-scaled ore from the monster (success chance scales WITS vs INT, capped 10-90%). 1-3 pockets per fight. Failure → enemy counter-attacks. Variable cost 6-20 energy — success CHANCE scales with spend; ore quantity stays the same."
-		"ambush": return "3× WITS-scaled damage with +50% crit chance. Variable cost 9-30 energy — damage scales with spend (crit chance stays 50%)."
+		"ambush": return "WITS-scaled damage, and it is the surprise strike: +25% crit chance on top of your own. Variable cost 9-30 energy — damage scales with spend."
 		"vanish": return "Go invisible — your next damaging action is a guaranteed crit. Skips enemy turn."
 		"exploit": return "Deal 15-35% of the monster's max HP as damage (scales with WITS, capped at 35%). Variable cost 10-35 energy — damage chunk scales with spend."
 		"perfect_heist": return "Risky instant-win attempt — 5-60% success scaling with WITS vs INT (penalized by level diff). On success: instant kill + 1.25× XP. On failure: enemy counter-attacks. Variable cost 15-50 energy — success CHANCE scales with spend (floor-cast Heist is almost always a miss; full-cost is the only realistic shot)."
@@ -19708,7 +19617,7 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 			return "Sear yourself for %s to supercharge your spells by %s [b]for 2 rounds[/b]. Costs HP, not mana — pure glass-cannon burst (blocked below 25%% HP)." % [_desc_num("20% max HP", "self-damage, no self-heal so it can't loop"), _desc_num("+120%", "does not stack with Arcane Surge — the bigger buff wins")]
 		# --- Trickster (v0.9.698) ---
 		"ambush":
-			return "Deal %s damage with a [b]50%% chance to crit[/b] (+50%%)." % _desc_num(est_dmg, "3 × Attack × √WITS scaling × rank/tier (avg +25% from crit)")
+			return "Deal %s damage with [b]+25%% crit chance[/b] on top of your own." % _desc_num(est_dmg, "WITS-anchored damage × rank/tier; Ambush adds +25 to your crit chance")
 		"exploit":
 			var _ex_pct := clampi(15 + int(float(s_wits) / 4.0), 15, 35)
 			if est_dmg > 0:
@@ -19721,7 +19630,7 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"gambit":
 			return "A high-risk gamble: on a hit deal [b]%s damage[/b] (WITS-scaled), but on a miss you take self-damage instead. Like all your tricks, it builds [color=#7FD8C8]◉ Read[/color]." % _desc_num(est_dmg, "4.5 × Attack × √WITS scaling × rank/tier")
 		"analyze":
-			return "Reveal the enemy's stats and your outsmart odds, and gain [b]+10% damage[/b] for the rest of the fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
+			return "Reveal the enemy's stats and your Assassinate odds, and gain [b]+10% damage[/b] for the rest of the fight. [color=#7FD8C8]The enemy loses its turn.[/color]"
 		"distract":
 			return ("Distract the enemy for up to %s accuracy on its attacks. [color=#7FD8C8]The enemy usually loses its turn (75%%).[/color]") % _desc_num("-50%", "scales with energy spent, up to -50%")
 		"pickpocket":
@@ -23959,9 +23868,6 @@ func handle_server_message(message: Dictionary):
 				character_data["max_stamina"] = state.get("player_max_stamina", character_data.get("max_stamina", 0))
 				character_data["current_energy"] = state.get("player_energy", character_data.get("current_energy", 0))
 				character_data["max_energy"] = state.get("player_max_energy", character_data.get("max_energy", 0))
-				# Track if outsmart failed (can't try again this combat)
-				if state.get("outsmart_failed", false):
-					combat_outsmart_failed = true
 				# Update monster HP from server (accurate values)
 				current_enemy_hp = state.get("monster_hp", current_enemy_hp)
 				current_enemy_max_hp = state.get("monster_max_hp", current_enemy_max_hp)
@@ -24051,7 +23957,6 @@ func handle_server_message(message: Dictionary):
 			update_player_hp_bar()
 			update_resource_bar()
 			combat_item_mode = false
-			combat_outsmart_failed = false  # Reset for next combat
 			# Audit #1 Slice 6a — wipe hand state at end of combat. Cards
 			# don't carry across encounters in 6a (deck is rebuilt fresh
 			# each combat from accessible abilities); the visual panel row
@@ -25143,7 +25048,6 @@ func _process_combat_start(message: Dictionary):
 	flock_pending = false
 	flock_monster_name = ""
 	combat_item_mode = false
-	combat_outsmart_failed = false  # Reset outsmart for new combat
 	more_mode = false
 	companions_mode = false
 	build_mode = false
@@ -25506,7 +25410,7 @@ func send_input():
 		# Warrior abilities
 		"power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate",
 		# Trickster abilities
-		"analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "outsmart", "gambit", "sabotage", "perfect_heist", "heist"]
+		"analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "gambit", "sabotage", "perfect_heist", "heist"]
 	var first_word = text.split(" ", false)[0].to_lower() if text.length() > 0 else ""
 	var has_slash = first_word.begins_with("/")
 	if has_slash:
@@ -27100,8 +27004,6 @@ func _load_keybinds():
 				if data.has("inventory_compare_stat") and data["inventory_compare_stat"] in COMPARE_STAT_OPTIONS:
 					inventory_compare_stat = data["inventory_compare_stat"]
 				# Load combat swap settings
-				if data.has("swap_attack_outsmart"):
-					swap_attack_outsmart = data["swap_attack_outsmart"]
 				if data.has("disable_tutorial"):
 					disable_tutorial = data["disable_tutorial"]
 				if data.has("show_numpad_popup"):
@@ -27149,7 +27051,6 @@ func _save_keybinds():
 	var save_data = keybinds.duplicate()
 	# Include other persistent settings
 	save_data["inventory_compare_stat"] = inventory_compare_stat
-	save_data["swap_attack_outsmart"] = swap_attack_outsmart
 	save_data["disable_tutorial"] = disable_tutorial
 	save_data["show_numpad_popup"] = show_numpad_popup
 	save_data["autoskip_loot_reveal"] = autoskip_loot_reveal
@@ -27723,23 +27624,6 @@ func toggle_swap_attack_setting():
 	display_settings_menu()
 	update_action_bar()
 
-func toggle_swap_outsmart_setting():
-	"""Toggle the swap attack with outsmart setting (per-client)"""
-	swap_attack_outsmart = not swap_attack_outsmart
-	_save_keybinds()  # Persist to client settings
-	# Refresh settings display
-	game_output.clear()
-	var status = "[color=#00FF00]ENABLED[/color]" if swap_attack_outsmart else "[color=#FF6666]DISABLED[/color]"
-	display_game("[color=#00FF00]Swap Attack with Outsmart: %s[/color]" % status)
-	if swap_attack_outsmart:
-		display_game("[color=#808080]Outsmart will now appear on the primary action key (%s).[/color]" % get_action_key_name(0))
-		display_game("[color=#808080]Attack will move to the Outsmart slot (%s).[/color]" % get_action_key_name(3))
-	else:
-		display_game("[color=#808080]Attack is now on the primary action key (%s).[/color]" % get_action_key_name(0))
-	await get_tree().create_timer(1.5).timeout
-	display_settings_menu()
-	update_action_bar()
-
 func display_game_settings():
 	"""Display the game settings submenu (minigame toggles, combat swaps)"""
 	display_game("[color=#FFD700]===== GAME SETTINGS =====[/color]")
@@ -27747,28 +27631,26 @@ func display_game_settings():
 	var swap_ability_enabled = character_data.get("swap_attack_with_ability", false)
 	var swap_ability_status = "[color=#00FF00]ON[/color]" if swap_ability_enabled else "[color=#FF6666]OFF[/color]"
 	display_game("[1] Swap Attack with First Ability: %s" % swap_ability_status)
-	var swap_outsmart_status = "[color=#00FF00]ON[/color]" if swap_attack_outsmart else "[color=#FF6666]OFF[/color]"
-	display_game("[2] Swap Attack with Outsmart: %s" % swap_outsmart_status)
 	var skip_craft = character_data.get("skip_craft_minigame", false)
 	var skip_craft_status = "[color=#00FF00]ON[/color]" if skip_craft else "[color=#FF6666]OFF[/color]"
-	display_game("[3] Skip Craft Minigame: %s" % skip_craft_status)
+	display_game("[2] Skip Craft Minigame: %s" % skip_craft_status)
 	var skip_gather = character_data.get("skip_gather_minigame", false)
 	var skip_gather_status = "[color=#00FF00]ON[/color]" if skip_gather else "[color=#FF6666]OFF[/color]"
-	display_game("[4] Skip Gather Minigame: %s" % skip_gather_status)
+	display_game("[3] Skip Gather Minigame: %s" % skip_gather_status)
 	# v0.9.609 — Autoskip Combat Loot. Player feedback: the in-panel toggle
 	# is impossible to disable mid-game because the minigame moves too fast.
 	# This Settings entry lets you flip it OUTSIDE combat. Stored in the
 	# client keybinds file (autoskip_loot_reveal) — keeps in sync with the
 	# in-panel checkbox.
 	var skip_loot_status = "[color=#00FF00]ON[/color]" if autoskip_loot_reveal else "[color=#FF6666]OFF[/color]"
-	display_game("[5] Autoskip Combat Loot Reveal: %s" % skip_loot_status)
+	display_game("[4] Autoskip Combat Loot Reveal: %s" % skip_loot_status)
 	# Old Skip Harvest Minigame setting removed v0.9.436.
 	var tutorial_status = "[color=#FF6666]OFF[/color]" if disable_tutorial else "[color=#00FF00]ON[/color]"
-	display_game("[6] Tutorial on New Character: %s" % tutorial_status)
+	display_game("[5] Tutorial on New Character: %s" % tutorial_status)
 	var legend_status = "[color=#00FF00]ON[/color]" if show_map_legend else "[color=#FF6666]OFF[/color]"
-	display_game("[7] Map Legend: %s" % legend_status)
+	display_game("[6] Map Legend: %s" % legend_status)
 	var pinned_labels = ", ".join(comparison_pinned_stats) if comparison_pinned_stats.size() > 0 else "None"
-	display_game("[8] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
+	display_game("[7] Stat Compare Priority: [color=#00FFFF]%s[/color]" % pinned_labels)
 	display_game("")
 	if skip_craft or skip_gather:
 		display_game("[color=#FFFF00]Skipping minigames gives reduced quality/rewards.[/color]")
@@ -28951,7 +28833,6 @@ func _handle_party_combat_start(message: Dictionary):
 
 	# Set combat state
 	in_combat = true
-	combat_outsmart_failed = false
 	current_forcefield = 0
 	current_enemy_name = monster_name
 	current_enemy_level = monster_level
@@ -29258,7 +29139,6 @@ func _handle_party_combat_end(message: Dictionary):
 	_party_combat_members.clear()
 	in_combat = false
 	combat_item_mode = false
-	combat_outsmart_failed = false
 	current_forcefield = 0
 	party_combat_active = false
 	party_waiting_for_turn = false
@@ -32569,29 +32449,18 @@ func _get_status_effects_text() -> String:
 	return "[color=#AAFFAA]Active Effects:[/color]\n" + "\n".join(lines)
 
 func _get_class_passive(class_type: String) -> Dictionary:
-	"""Get class passive info (client-side mirror of Character.get_class_passive)"""
-	match class_type:
-		"Fighter":
-			return {"name": "Tactical Discipline", "description": "20% reduced stamina costs, +15% defense. Affects: All abilities", "color": "#C0C0C0"}
-		"Barbarian":
-			return {"name": "Blood Rage", "description": "+3% dmg per 10% HP missing (max +30%), +25% ability cost. Affects: All attacks", "color": "#8B0000"}
-		"Paladin":
-			return {"name": "Divine Favor", "description": "Heal 3% HP/round, +25% vs undead/demons. Affects: Combat regen, attacks vs undead", "color": "#FFD700"}
-		"Wizard":
-			return {"name": "Arcane Precision", "description": "+15% spell damage, +10% spell crit. Affects: All attacks and spells", "color": "#4169E1"}
-		"Sorcerer":
-			return {"name": "Chaos Magic", "description": "25% double damage, 5% backfire. Affects: ALL attacks and abilities", "color": "#9400D3"}
-		"Sage":
-			return {"name": "Mana Mastery", "description": "25% reduced mana costs, +50% Meditate. Affects: All spells, Meditate", "color": "#20B2AA"}
-		"Grifter":
-			return {"name": "Backstab", "description": "+15% base crit, +50% crit damage (2x total). Affects: All attacks", "color": "#2F4F4F"}
-		"Ranger":
-			return {"name": "Hunter's Mark", "description": "+25% dmg vs beasts, +30% Valor/XP. Affects: Beast attacks, all rewards", "color": "#228B22"}
-		"Ninja":
-			return {"name": "Shadow Step", "description": "+40% flee chance, no damage on failed flee. Affects: Flee action only", "color": "#191970"}
-		_:
-			return {"name": "None", "description": "No passive ability", "color": "#808080"}
-
+	"""Ask the game's own passive table. This used to be a hand-copied mirror and it had
+	drifted: it advertised the Grifter's Backstab (retired), the Ranger's Hunter's Mark
+	(retired), and the Ninja as Shadow Step — which is the GRIFTER's flee passive. Two
+	classes shown swapped, on the character-creation screen. Now there is one table."""
+	var p: Dictionary = CharacterScript.class_passive_for(class_type)
+	if p.is_empty():
+		return {"name": "None", "description": "No passive ability", "color": "#808080"}
+	return {
+		"name": str(p.get("name", "None")),
+		"description": str(p.get("description", "")),
+		"color": str(p.get("color", "#808080")),
+	}
 
 func _get_race_passive(race_name: String) -> Dictionary:
 	"""Audit #2 Slice 2 — race passive info for the inspect Class & Race
@@ -32797,8 +32666,8 @@ func show_help():
   Mages regen 2% mana/round (Sage 3%). [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient. [color=#808080]Races: Elf(mana+resist), Gnome(cost reduction)[/color]
 
 [color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options. [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)
-  Use Outsmart vs dumb monsters (free win!). Analyze to learn stats. Flee if outmatched.
-  [color=#2F4F4F]Thief[/color]=crits, [color=#228B22]Ranger[/color]=rewards, [color=#191970]Ninja[/color]=escape artist. [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
+  Build [color=#7FD8C8]Read[/color] with your cards, then Assassinate for the instant kill. Analyze to learn stats. Flee if outmatched.
+  [color=#2F4F4F]Grifter[/color]=stalls & escapes, [color=#228B22]Ranger[/color]=steady, [color=#191970]Ninja[/color]=crits. [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
 
 [b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
 [color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Contributes to Stamina pool
@@ -32806,7 +32675,7 @@ func show_help():
 [color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1% hit, +2% flee, -1% enemy hit per 5 DEX (max 30% dodge)[/color] | +0.5% crit | Energy pool
 [color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3% spell damage per point[/color] | Contributes to Mana pool
 [color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] - [color=#FFFFFF]Increases mana pool[/color] | Resists enemy abilities (curse, drain, etc.)
-[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Outsmart: 15×log₂(WIT/10) bonus[/color] | Contributes to Energy pool
+[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] - [color=#FFFFFF]Trickster ability damage; Assassinate odds vs enemy INT[/color] | Contributes to Energy pool
 
 [b][color=#FFD700]══ RACES ══[/color][/b]
 [color=#FFFFFF]Human[/color]=+10%XP | [color=#66FF99]Elf[/color]=+50%poison res,+20%magic res,+25%mana | [color=#FFA366]Dwarf[/color]=25%survive lethal@1HP | [color=#8B4513]Ogre[/color]=2x all healing
@@ -32872,8 +32741,7 @@ func show_help():
   [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
   [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
   [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
-  [color=#FFFFFF]L100 Assassinate[/color] [color=#808080](50 en)[/color] - 30%+WIT/2 chance: instant win + 25% bonus Valor. Fail = 20% self-damage
-  [color=#AAAAAA]Outsmart[/color]         [color=#808080](free)[/color]   - 5%+15×log₂(WIT/10). Capped by monster INT/3. Easy vs brutes, hard vs mages. Fail = free enemy attack
+  [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]Read[/color], ±WIT vs enemy INT, -2%/level above you, caps 60%. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
 [color=#AAAAAA]Tiers:[/color] 9 tiers by area level. Lower tier monsters become rarer but still appear in higher areas.
@@ -33210,7 +33078,7 @@ func search_help(search_term: String):
 		{
 			"title": "GETTING STARTED",
 			"keywords": ["start", "starting", "begin", "beginner", "new", "player", "how", "play", "guide", "tutorial", "first", "tips", "advice", "build", "focus"],
-			"content": "[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage.\n  [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)\n  Start hunting immediately. Use Power Strike for damage. Tank and outlast enemies.\n  [color=#C0C0C0]Fighter[/color]=safe, [color=#8B0000]Barbarian[/color]=risky/high dmg, [color=#FFD700]Paladin[/color]=self-healing\n\n[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management.\n  [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)\n  Use Magic Bolt to kill. Meditate to recover HP+mana.\n  [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient\n\n[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options.\n  [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)\n  Use Outsmart vs dumb monsters (free win!). Analyze to learn stats. Flee if outmatched.\n  [color=#2F4F4F]Thief[/color]=crits, [color=#228B22]Ranger[/color]=rewards, [color=#191970]Ninja[/color]=escape artist"
+			"content": "[color=#FF6666]▸ WARRIOR[/color] - Straightforward melee. High HP, steady damage.\n  [color=#808080]Focus:[/color] [color=#FF6666]STR[/color] (attack) + [color=#66FF66]CON[/color] (HP/defense)\n  Start hunting immediately. Use Power Strike for damage. Tank and outlast enemies.\n  [color=#C0C0C0]Fighter[/color]=safe, [color=#8B0000]Barbarian[/color]=risky/high dmg, [color=#FFD700]Paladin[/color]=self-healing\n\n[color=#66FFFF]▸ MAGE[/color] - Powerful spells, resource management.\n  [color=#808080]Focus:[/color] [color=#FF66FF]INT[/color] (spell power) + [color=#FFFF66]WIS[/color] (mana pool/resist)\n  Use Magic Bolt to kill. Meditate to recover HP+mana.\n  [color=#4169E1]Wizard[/color]=reliable, [color=#9400D3]Sorcerer[/color]=gambler, [color=#20B2AA]Sage[/color]=efficient\n\n[color=#66FF66]▸ TRICKSTER[/color] - Tactical gameplay, many options.\n  [color=#808080]Focus:[/color] [color=#FFA500]WIT[/color] (abilities) + [color=#66FFFF]DEX[/color] (crit/flee)\n  Build [color=#7FD8C8]Read[/color] with your cards, then Assassinate for the instant kill. Analyze to learn stats. Flee if outmatched.\n  [color=#2F4F4F]Grifter[/color]=stalls & escapes, [color=#228B22]Ranger[/color]=steady, [color=#191970]Ninja[/color]=crits"
 		},
 		{
 			"title": "CONTROLS & BASICS",
@@ -33220,7 +33088,7 @@ func search_help(search_term: String):
 		{
 			"title": "STATS",
 			"keywords": ["stats", "str", "strength", "con", "constitution", "dex", "dexterity", "int", "intelligence", "wis", "wisdom", "wit", "wits", "hp", "health", "mana", "stamina", "energy", "level", "up", "gain", "gains", "per"],
-			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = Mage ability damage | +3 mana per point\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Counts half toward mage ability damage | +1.5 mana per point | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = Trickster ability damage | Outsmart: 9×log₂(WIT/10), capped +22 | Contributes to Energy pool\n\n[color=#FFD700]Level Up Stat Gains (2.5 total/level):[/color]\n[color=#FF6666]WARRIOR:[/color] Fighter=STR1.25/CON.75/DEX.25/WIT.25 | Barbarian=STR1.5/CON.75/DEX.25 | Paladin=STR.75/CON1/DEX.25/WIS.25/WIT.25\n[color=#66FFFF]MAGE:[/color] Wizard=INT1.1/WIS.75/CON.4/DEX.25 | Sorcerer=INT1.4/WIS.5/CON.35/DEX.25 | Sage=WIS1/INT.75/CON.5/DEX.25\n[color=#66FF66]TRICKSTER:[/color] Thief=WIT1.5/DEX.75/CON.25 | Ranger=WIT1/DEX.75/CON.5/STR.25 | Ninja=DEX1.25/WIT1/CON.25"
+			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = Mage ability damage | +3 mana per point\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Counts half toward mage ability damage | +1.5 mana per point | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = Trickster ability damage | Assassinate odds (WIT vs enemy INT) | Contributes to Energy pool\n\n[color=#FFD700]Level Up Stat Gains (2.5 total/level):[/color]\n[color=#FF6666]WARRIOR:[/color] Fighter=STR1.25/CON.75/DEX.25/WIT.25 | Barbarian=STR1.5/CON.75/DEX.25 | Paladin=STR.75/CON1/DEX.25/WIS.25/WIT.25\n[color=#66FFFF]MAGE:[/color] Wizard=INT1.1/WIS.75/CON.4/DEX.25 | Sorcerer=INT1.4/WIS.5/CON.35/DEX.25 | Sage=WIS1/INT.75/CON.5/DEX.25\n[color=#66FF66]TRICKSTER:[/color] Grifter=WIT1.5/DEX.75/CON.25 | Ranger=WIT1/DEX.75/CON.5/STR.25 | Ninja=DEX1.25/WIT1/CON.25"
 		},
 		{
 			"title": "RACES",
@@ -33299,9 +33167,14 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 			"content": "[color=#00FFFF]Attack:[/color] (STR + weapon) × (1 + STR×0.02)\n[color=#00FFFF]Critical:[/color] 1.5x damage, chance = 5% + DEX×0.5%\n[color=#00FFFF]Defense:[/color] DEF / (DEF + 100) × 60% damage reduction\n[color=#00FFFF]Level Penalty:[/color] -3% attack / -1.5% ability per level vs higher monsters\n[color=#00FFFF]Hit Chance:[/color] 75% + (DEX - enemy speed), clamped 30-95%\n[color=#00FFFF]Flee Chance:[/color] 40% + DEX + speed, penalised by the level RATIO (~30 pts per doubling of the monster's level), floor 25%\n[color=#FF4444]Initiative:[/color] If monster speed > DEX, (speed-DEX)×2% chance enemy strikes first"
 		},
 		{
-			"title": "OUTSMART",
-			"keywords": ["outsmart", "trick", "instant", "win", "intelligence", "dumb", "beast"],
-			"content": "[color=#FFA500]Outsmart[/color] — trick a monster and win outright, bypassing its HP entirely. The [b]Trickster's signature[/b], and its way of killing things nothing else at its level can touch.\n[color=#7FD8C8]◉ Read is the engine.[/color] Every Trickster card you play adds a stack, and each stack raises [b]both your odds and the ceiling[/b], so no stack is ever wasted. A Trickster against a same-level foe goes from [b]~31% at 0 Read to ~71% at 5[/b].\n[color=#66FF66]You choose the energy to commit[/color] when you press it — worth up to [b]+15%[/b]. Committing 0 is allowed: it is a bonus, not a fee.\n[color=#AAAAAA]Other classes can use it, far less reliably — a Mage gets roughly half a Trickster's odds, a Warrior about a quarter.[/color]\n[color=#AAAAAA]Wits helps (capped). High monster INT hurts. Higher-level foes cost you odds, but only gently — that reach is the whole point.[/color]\n[color=#00FF00]Best vs:[/color] beasts, undead | [color=#FF4444]Worst vs:[/color] mages, dragons\n[color=#FF4444]A miss costs you the turn, your Read, and a free hit.[/color] You can rebuild Read and try again, but every attempt this fight halves your chance."
+			"title": "ASSASSINATE",
+			"keywords": ["assassinate", "assassination", "heist", "trick", "instant", "win", "read", "finisher"],
+			"content": "[color=#FFA500]Assassinate[/color] — find the opening and end a fight in one strike, bypassing the enemy's HP entirely. The [b]Trickster's signature[/b], and its way of killing things nothing else at its level can touch.
+[color=#7FD8C8]◉ Read is the engine.[/color] Every Trickster card you play adds a stack, and each stack adds [b]+5% to the strike[/b]. At 15% base a cold opener is a bad bet; at full Read it is the best button in the game.
+[color=#C8A0FF]Grifters[/color] build Read fastest — their denial cards (Analyze, Distract, Sabotage) have a [b]50% chance to build double[/b], and the log says [b]LONG CON![/b] when it fires.
+[color=#AAAAAA]Wits above the enemy's Intelligence helps. Higher-level foes cost you 2% per level, and the strike caps at 60%.[/color]
+[color=#FF4444]A miss costs you the turn and takes a free hit.[/color] Read survives, so you can line the shot up again.
+[color=#808080]Replaced Outsmart, which did the same job worse — measured, it contributed almost nothing while Assassinate carried the class.[/color]"
 		},
 		{
 			"title": "UNIVERSAL ABILITIES",
@@ -33349,7 +33222,7 @@ Assassinate - ends the fight outright. Weak on its own; Read is what makes it la
 		{
 			"title": "ETERNAL PILGRIMAGE",
 			"keywords": ["pilgrimage", "eternal", "awakening", "trial", "blood", "mind", "wealth", "ember", "crucible", "donate", "shrine", "flame"],
-			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 Tier 8+ monsters (Lv250+) → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - Outsmart 200 monsters → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate 10M gold (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (T8: 10%, T9: 25%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive T9 bosses (/crucible)\n\n[color=#808080]Commands:[/color] /donate <amount> (at shrine), /crucible (start gauntlet)\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials."
+			"content": "[color=#00FFFF]ETERNAL PILGRIMAGE[/color] (Elder only, use Seek Flame to track)\n\n[color=#FFFFFF]1. The Awakening[/color] - Slay 5,000 monsters\n[color=#FF4444]2. Trial of Blood[/color] - Kill 1,000 Tier 8+ monsters (Lv250+) → +3 STR\n[color=#FFFF00]3. Trial of Mind[/color] - End 200 fights without beating them down (Assassinate) → +3 WIT\n[color=#FFD700]4. Trial of Wealth[/color] - Donate 10M gold (/donate <amount>) → +3 WIS\n[color=#FF8800]5. Ember Hunt[/color] - Collect 500 Flame Embers (T8: 10%, T9: 25%)\n[color=#FF0000]6. The Crucible[/color] - Defeat 10 consecutive T9 bosses (/crucible)\n\n[color=#808080]Commands:[/color] /donate <amount> (at shrine), /crucible (start gauntlet)\n[color=#808080]Note:[/color] Crucible death resets progress but keeps previous trials."
 		},
 		{
 			"title": "TITLE ABILITIES",
@@ -35076,13 +34949,12 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	var is_warrior := bool(state.get("is_warrior_momentum", false))
 	var is_trickster := bool(state.get("is_trickster_read", false))
 	var is_mage := bool(state.get("is_mage_focus", false))
-	# v0.9.715 — cache the live Outsmart chance so update_action_bar (called right
-	# after this) can charge up the Outsmart action-bar button. 0 for non-Tricksters.
-	_combat_outsmart_chance = int(state.get("outsmart_chance", 0)) if is_trickster else 0
+	# Live Assassinate chance, cached so the card face can show it. 0 for non-Tricksters.
+	_combat_assassinate_chance = int(state.get("assassinate_chance", 0)) if is_trickster else 0
 	if is_warrior:
 		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true)
 	elif is_trickster and combat_scene_panel.has_method("update_read"):
-		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)), int(state.get("outsmart_chance", 0)), true)
+		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)), int(state.get("assassinate_chance", 0)), true)
 	elif is_mage and combat_scene_panel.has_method("update_focus"):
 		combat_scene_panel.update_focus(int(state.get("focus", 0)), int(state.get("focus_max", 5)), true)
 	else:
@@ -36431,7 +36303,7 @@ func _run_combat_step_demo(mode: String) -> void:
 			{"label": "Potion — heal pulse +45 HP", "action": func():
 				panel.append_log("[color=#00FF00]You drink a potion and restore 45 HP![/color]")
 				panel.play_heal_pulse(45)},
-			{"label": "Outsmart — spiral", "action": func():
+			{"label": "Assassinate — spiral", "action": func():
 				panel.append_log("[color=#33FF99]You outwit the Goblin![/color]")
 				panel.play_outsmart_spiral()},
 			{"label": "Level Up — banner", "action": func():
@@ -37194,7 +37066,7 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 	# still needs the old string. This is the coupling that makes renames dangerous — the
 	# server text was changed first and this check would have silently stopped firing.
 	if ("ASSASSINATE!" in combat_msg or "PERFECT HEIST!" in combat_msg
-			or "outwit" in lower or "outsmart" in lower):
+			or "outwit" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 
 
@@ -46086,7 +45958,7 @@ func _display_stat_selection():
 	display_game("[%s] [color=#FFFF00]DEX[/color] - Dexterity (crit chance)" % get_action_key_name(3))
 	display_game("[%s] [color=#6666FF]INT[/color] - Intelligence (magic power)" % get_action_key_name(4))
 	display_game("[%s] [color=#FF66FF]WIS[/color] - Wisdom (mana/regen)" % get_action_key_name(5))
-	display_game("[%s] [color=#66FFFF]WIT[/color] - Wits (outsmart chance)" % get_action_key_name(6))
+	display_game("[%s] [color=#66FFFF]WIT[/color] - Wits (Trickster damage, Assassinate odds)" % get_action_key_name(6))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to cancel[/color]" % get_action_key_name(0))
 
