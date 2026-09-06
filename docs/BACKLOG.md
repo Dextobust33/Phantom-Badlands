@@ -658,13 +658,32 @@ on cards, the harder it measured.
       player's stats are close (HP x0.99, pool x1.07). The gap is **damage per round**, and it is
       a factor of 2-7 at the levels where new characters live and die.
 
-- [ ] **Decide where that factor comes from before touching the curve.** Candidates, in order of
-      how much they'd explain: rank-0 mastery sitting at 0.80x, damage cards not being in hand
-      every round (the trickster starter deck is utility-heavy), resource limits between casts,
-      and off-affinity penalties. The sim's policy suffers none of these.
-- [ ] **CAVEAT on this sample:** several of these deaths are the owner's own test characters, and
-      the owner reports the early game currently feels about right. Confirm against non-test
-      deaths before treating "4.3x" as the design error.
+- [x] **"2-7x damage gap" RETRACTED — measured directly, output is comparable.** Owner's guesses
+      were the Read/Assassinate combo and that most players run only 5 cards. Both checked:
+
+      - **Deck size matches.** Every real character carries exactly 5 cards, and so does a sim
+        character — `start_combat` initialises the same collection and deals **3-card hands**.
+        Casting is genuinely draw-gated in the sim too (`ambush` came up once in 12 turns). Not
+        the cause.
+      - **Damage per round is comparable**, measured playing whatever is actually in hand:
+        Fighter L3 sim 92 vs real 80; Wizard/Sage L2 sim 148 vs real 27-82.
+
+      The "4.3x" figure was time-to-kill divided by rounds-survived, which conflates output,
+      survivability and ENTRY HP. The L3 Fighter cited as needing "4.4x longer" had entered at
+      **46/204 HP (23%)** — that death was the loop, not the fight.
+
+      **Owner's Read/Assassinate hypothesis is the live one.** For a Trickster, damage per round
+      is the wrong metric at all: Assassinate bypasses the health bar, so the class wins by
+      stalling to a coin-flip rather than by damage. A stall that fails has spent the whole fight
+      producing almost nothing — which is exactly what the L3 Thief and L5 Ninja death logs show.
+
+- [ ] **Measure the Trickster stall properly**, with a metric that is not damage: how often does a
+      real-shaped Trickster reach a Read worth cashing before it dies, and what is the win rate of
+      the stall line versus just playing Ambush every draw? That is the question the death logs
+      actually pose, and it needs the deck/draw model, not a DPS number.
+- [ ] **Separate "died in the fight" from "died to the loop"** before any curve work. `death_data`
+      carries `player_hp_at_start`, so this is directly measurable: 9 of 16 entered at full health,
+      but the ones that did not are a different problem with a different fix.
 
 - [ ] **Chase the x0.64 attack gap before fitting the curve.** It biases in a direction that
       matters: a model player who kills more slowly makes every fight measure longer and costlier,
