@@ -677,10 +677,36 @@ on cards, the harder it measured.
       stalling to a coin-flip rather than by damage. A stall that fails has spent the whole fight
       producing almost nothing — which is exactly what the L3 Thief and L5 Ninja death logs show.
 
-- [ ] **Measure the Trickster stall properly**, with a metric that is not damage: how often does a
-      real-shaped Trickster reach a Read worth cashing before it dies, and what is the win rate of
-      the stall line versus just playing Ambush every draw? That is the question the death logs
-      actually pose, and it needs the deck/draw model, not a DPS number.
+- [x] **MEASURED: Assassinate is not *a* Trickster win condition, it is the ONLY one.** Owner's
+      hypothesis — *"my guess would be read assassinate combo vs straight damage cards"* — is
+      correct, and more strongly than expected. Same-level fights, real 5-card deck, 3-card hands,
+      n=120 per cell:
+
+      | level | stall -> Assassinate | damage cards only |
+      |---|---|---|
+      | 2 | **88%** | **0%** |
+      | 5 | **88%** | **0%** |
+      | 10 | **73%** | **0%** |
+
+      A Trickster playing straight damage never wins a same-level fight — zero of 120 at every
+      level. They die around round 3-4 with the monster near full health. Monster HP at these
+      levels is simply out of reach of Trickster damage output.
+
+      Draw rates, measured properly (an earlier "ambush once in 12 turns" was a probe artefact —
+      forcing a card that is not in hand fails without consuming or refilling, so the hand froze):
+      **ambush is in hand on 60% of turns** — about every other draw, as the owner said — but is
+      only CAST once per 5 turns, because after playing it sits in the discard until the 5-card
+      deck cycles. So **80% of a Trickster's turns are utility or basic attacks**.
+
+      This is what the death logs show: the L3 Thief and L5 Ninja both stalled correctly, whiffed
+      the finisher, and had nothing to fall back on — because there is nothing to fall back on.
+
+- [ ] **DESIGN QUESTION for the owner.** A class whose only viable line is a coin flip is
+      high-variance by construction, and under permadeath the losing half of that flip is a dead
+      character. Options: give Trickster damage enough reach to be a real fallback; lower the
+      variance of the finisher (more Read, better odds, cheaper retry); or accept it as the
+      class identity and make the STALL survivable enough that a whiff is recoverable. This is a
+      direction call, not a number to tune.
 - [ ] **Separate "died in the fight" from "died to the loop"** before any curve work. `death_data`
       carries `player_hp_at_start`, so this is directly measurable: 9 of 16 entered at full health,
       but the ones that did not are a different problem with a different fix.
