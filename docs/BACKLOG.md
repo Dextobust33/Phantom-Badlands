@@ -932,6 +932,67 @@ inside noise. So it is NOT the cause of Trickster dominance. It stays because th
 is the UNGEARED early player the death logs describe (whiff survival 83%, still-won 62%), which a
 geared sim character never encounters. Worth re-testing once the finisher is re-priced.
 
+### DIAGNOSIS: "warriors are weakest" decomposed (2026-09-06)
+
+Owner: *"when you say weakest do you mean they can survive the least number of hits or their
+ability damages are too low... we should ensure we're examining the problems from multiple
+possible angles instead of just applying bandaids."* Right — a win rate is a SYMPTOM, and it
+falls for opposite reasons that want opposite fixes.
+
+The class table now reports **k** (turns needed to KILL) and **d** (turns it can SURVIVE)
+alongside win%. A win is k < d, so the two numbers say which side of the fight is failing.
+
+| class | L10 k/d | L30 elite k/d | L80 elite k/d |
+|---|---|---|---|
+| Fighter | 10.1 / 20.1 | 17.7 / 20.8 | 20.1 / 29.6 |
+| Barbarian | 10.6 / 17.8 | **21.6 / 20.8** | **23.6 / 22.9** |
+| Paladin | 14.3 / 24.2 | **29.2 / 27.7** | **37.3 / 31.7** |
+| Wizard | 7.4 / 21.2 | 11.8 / 21.1 | 20.5 / 42.2 |
+| Sorcerer | 7.7 / 16.9 | 12.4 / 20.6 | 12.3 / 22.8 |
+| Sage | 8.8 / 17.6 | 15.2 / 19.1 | 14.2 / 23.5 |
+| Grifter | 3.3 / 18.4 | 2.8 / 31.7 | 2.7 / 38.4 |
+| Ranger | 3.5 / 17.2 | 3.6 / 22.0 | 3.2 / 41.0 |
+| Ninja | 3.2 / 21.7 | 2.7 / 36.8 | 3.3 / 29.3 |
+
+**Findings:**
+
+1. **Survivability is broadly EQUAL** — d is 17-42 turns for every class. Warriors are mid-pack,
+   not fragile. "Warriors are weakest" is not a durability problem.
+2. **Time-to-kill is what diverges** — Tricksters 2.7-3.6, Mages 7.4-20.5, Warriors 10.1-**37.3**.
+3. **Every losing cell is k > d** (Barbarian 21.6>20.8, Paladin 29.2>27.7 and 37.3>31.7).
+4. **Warriors are not over-buffing.** Measured turn allocation at L30: warriors spend **80-82%**
+   of turns on damage cards, mages **37-42%** — and the mages still kill faster. So the warrior's
+   long TTK is low damage PER CAST, not wasted tempo.
+
+**Consequence, and it matters:** the warrior opening stance (a SURVIVABILITY buff) treated the
+wrong side of the equation. It worked — Fighter 22% -> 85% — by stretching d, when the root cause
+is k. That is the bandaid pattern, confirmed by measurement rather than suspected.
+
+**STRUCTURAL: monster-HP tuning cannot touch Tricksters.** Their finisher bypasses the health bar,
+so their k is not "turns of damage", it is "turns until the coin flip lands". Any global
+difficulty change — the whole refcal chain — moves warriors and mages and leaves Tricksters at
+93-100%. The finisher has to be re-priced DIRECTLY; there is no curve setting that fixes it.
+
+### Angles NOT yet verified — the honest gaps in the picture above
+
+- **Variance.** k and d are means. Fighter L30 has k17.7 < d20.8, which predicts a win, yet it
+  wins only 56% — so spread decides nearly half those fights. The k/d model is mean-field and
+  says nothing about the tails.
+- **Healing and regen are not in d.** Paladin's Divine Favor regenerates 3% a round, so its real
+  durability exceeds HP/damage-taken. Probably why Paladin at k37.3 > d31.7 still wins 46%.
+- **Monster ability escalation over long fights is not modelled.** Enrage stacks, DoTs and
+  specials compound with fight length, so a 30-turn fight is worse than three 10-turn fights.
+  This penalises slow classes SUPERLINEARLY and would make the warrior picture worse than k/d
+  suggests. Worth measuring next.
+- **Companion damage share is UNMEASURED.** An attempt failed twice (the message parse matched
+  nothing, and Assassinate zeroing a dummy monster produced 2.5 billion "damage"). If companions
+  contribute a large fraction, class damage differences are muted and the TTK gap is smaller than
+  it looks.
+- **Resource sustainability across 20-37 turn fights** is untested; `min_res_pct` exists in
+  run_fight and is not being reported.
+- **Trickster k is not comparable in kind** to the other two archetypes, per the structural point
+  above. Do not read 2.7 as "six times better damage".
+
 ### Sequencing (agreed)
 
 1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently

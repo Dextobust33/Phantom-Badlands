@@ -642,21 +642,38 @@ func run_class_audit():
 	var N := 60
 	print("\n===== #5 NINE-CLASS ABILITY-SPEND AUDIT (%d fights/cell, AVERAGE gear) =====" % N)
 	print("Casts/turn near 0 = the class is auto-attacking, i.e. NOT actually simulated.")
-	print("%-11s %-10s %s" % ["Class", "Path", "  L10 normal        L30 elite         L80 elite"])
+	print("%-11s %-10s %s" % ["Class", "Path", "  L10 normal                L30 elite                 L80 elite"])
+	print("            (k = turns needed to KILL, d = turns it can survive; k < d is a win)")
 	for c in ALL_CLASSES:
 		var row := "%-11s %-10s" % [c[0], c[1]]
 		for case in [[10, "normal"], [30, "elite"], [80, "elite"]]:
 			var wins := 0
 			var turns := 0
 			var casts := 0
+			var dealt_tot := 0
+			var taken_tot := 0
+			var mhp_tot := 0
+			var php_tot := 0
 			for i in range(N):
 				var r = run_fight(int(case[0]), "average", String(case[1]), 1.0, 1.0, 1.0, c[0])
 				if r.win:
 					wins += 1
 				turns += int(r.turns)
 				casts += int(r.get("casts", 0))
+				dealt_tot += int(r.get("dealt", 0))
+				taken_tot += int(r.get("taken", 0))
+				mhp_tot += int(r.get("monster_hp", 0))
+				php_tot += int(r.get("player_hp", 0))
 			var cpt: float = float(casts) / float(maxi(1, turns))
-			row += "  %3d%% %4.1ft %.2fc/t" % [int(100.0 * wins / N), float(turns) / N, cpt]
+			# TTK vs TTD — the decomposition. `dealt`/turn against the monster's health bar is
+			# how long the class needs to WIN; `taken`/turn against its own bar is how long it
+			# has. A win rate alone cannot tell those apart, and they want opposite fixes.
+			var dps: float = float(dealt_tot) / float(maxi(1, turns))
+			var tps: float = float(taken_tot) / float(maxi(1, turns))
+			var ttk: float = (float(mhp_tot) / float(maxi(1, N))) / maxf(1.0, dps)
+			var ttd: float = (float(php_tot) / float(maxi(1, N))) / maxf(1.0, tps)
+			row += "  %3d%% %4.1ft %.2fc/t k%4.1f d%4.1f" % [
+				int(100.0 * wins / N), float(turns) / N, cpt, ttk, ttd]
 		print(row)
 	print("=====================================================================\n")
 
@@ -4841,6 +4858,8 @@ func _monster_turn_if_owed(combat) -> void:
 	combat_mgr.process_monster_turn(combat)
 
 func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0, player_dmg_scale: float = 1.0, monster_dmg_scale: float = 1.0, klass: String = "Fighter", monster_level: int = -1, race: String = "Human") -> Dictionary:
+	var _rf_dealt := 0
+	var _rf_taken := 0
 	# player_dmg_scale/monster_dmg_scale < 1.0 simulate a rebalanced damage profile
 	# (e.g. Momentum gating the burst → lower avg player DPS) by giving back a
 	# fraction of the damage dealt/taken each turn — the reverse-solve knobs.
@@ -4850,10 +4869,16 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	var max_hp: int = ch.get_total_max_hp()
 	combat_mgr.start_combat(0, ch, monster)
 	if not combat_mgr.active_combats.has(0):
-		return {"win": false, "turns": 0}
+		return {"dealt": _rf_dealt, "taken": _rf_taken, "win": false, "turns": 0}
 	var combat = combat_mgr.active_combats[0]
 	var turns := 0
-	var casts := 0  # #29 — count ability casts (resource decreased this turn = a cast, not a basic attack)
+	var casts := 0
+	# 2026-09-06 — carry DAMAGE DEALT and TAKEN out of the fight, not just win/lose. Owner:
+	# "when you say weakest do you mean they can survive the least number of hits or their
+	# ability damages are too low... we should ensure we're examining the problems from multiple
+	# possible angles instead of just applying bandaids." A win rate is a SYMPTOM; it falls for
+	# opposite reasons that want opposite fixes. With these two numbers the table reports time to
+	# KILL against time to DIE, which says which side of the fight is actually failing.
 	# Resource-economy telemetry: how far the pool is actually pushed over the fight.
 	var max_res: int = maxi(1, _class_max_resource(ch, klass))
 	var min_res: int = _class_resource(ch, klass)
@@ -4862,6 +4887,11 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
 		turns += 1
+		# 2026-09-06 — capture the player's HP BEFORE they act, not after. The ability path runs
+		# the monster's turn ITSELF, so a php0 taken after the cast misses every hit landed inside
+		# it and `taken` read as ~1 damage a turn for a class losing 15% of its fights. Same shape
+		# as the double-turn defect: measuring around the wrong bracket.
+		var _hp_at_turn_start: int = ch.current_hp
 		if combat.get("player_can_act", true) and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0:
 			var mhp0: int = int(monster.get("current_hp", 0))
 			var res0: int = _class_resource(ch, klass)
@@ -4876,6 +4906,9 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 				if _cost_mult > 1.0:
 					_drain_resource(ch, klass, int((res0 - _class_resource(ch, klass)) * (_cost_mult - 1.0)))
 			min_res = mini(min_res, _class_resource(ch, klass))
+			# Accumulate OUTSIDE the rescale guard — the class audit passes 1.0, so anything
+			# counted inside it never runs at all.
+			_rf_dealt += maxi(0, mhp0 - int(monster.get("current_hp", 0)))
 			if player_dmg_scale < 1.0:
 				var dealt: int = mhp0 - int(monster.get("current_hp", 0))
 				if dealt > 0:
@@ -4885,6 +4918,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 			break
 		var php0: int = ch.current_hp
 		_monster_turn_if_owed(combat)
+		_rf_taken += maxi(0, _hp_at_turn_start - ch.current_hp)
 		if monster_dmg_scale < 1.0:
 			var taken: int = php0 - ch.current_hp
 			if taken > 0:
@@ -4895,6 +4929,8 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	combat_mgr.end_combat(0, win, false)
 	return {
 		"win": win, "turns": turns, "casts": casts,
+		"dealt": _rf_dealt, "taken": _rf_taken,
+		"monster_hp": int(monster.get("max_hp", 1)), "player_hp": max_hp,
 		"min_res_pct": 100.0 * float(min_res) / float(max_res),
 		"end_res_pct": 100.0 * float(end_res) / float(max_res),
 		"min_hp_pct": min_hp_pct,
