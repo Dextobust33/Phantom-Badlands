@@ -631,6 +631,35 @@ on cards, the harder it measured.
       So the reference player is broadly HONEST on durability and resources, somewhat over-armoured,
       and materially UNDER-armed. It was never 2-3x too strong.
 
+- [x] **DEATH LOGS SETTLE IT: the sim/reality gap is the POLICY, not gear and not monsters.**
+      Owner pointed at the death logs (`user://data/leaderboard.json`), a far better sample than
+      saved characters — 52 deaths, 23 since the starter grant, each carrying equipment, stats,
+      HP entering the fight, rounds fought and the full combat log.
+
+      - **57%** of deaths are to a monster **at or below the player's own level**; median killer
+        level gap **+0**.
+      - **9 of 16 died at FULL health**; median HP entering the fatal fight **100%**. It is not
+        the loop grinding them down — they are losing single fights the model scores as 89-100%
+        wins.
+      - **Monsters are identical between sim and live**: Kobold L2 = 624 hp / 22 str in both.
+
+      The combat logs show the cause. A real L3 Thief spent the fight on Analyze, Sabotage and
+      the Read gamble, hitting for 29 per basic stab into 624 hp — **144 total damage over 8
+      rounds**. A real L5 Ninja did the same and left the damage to its companion. Both played
+      the intended Trickster design; both died. The sim's policies instead spend
+      ambush/exploit/gambit, which are **anchored to a share of the monster's health bar** (~20%
+      per cast regardless of stats), so the model kills in 6.5 turns where reality takes twenty.
+
+- [ ] **Settle whether the damage the sim assumes is actually AVAILABLE.** The trickster starter
+      deck is utility-heavy (Analyze / Distract / Sabotage x2 / Ambush / Assassinate). If a real
+      low-level hand rarely holds a damage card, the sim's policy is spending casts a player
+      cannot make, and every difficulty number inherits that. Check the sim's starting deck
+      against what a real new character is dealt before touching the curve.
+- [ ] **Then reconsider what the design target should be.** If a level 2 Kobold has 624 HP and a
+      level 3 player deals ~29 a swing, the intended answer must be an ability or a companion —
+      so "can a player reliably access one at that level?" is the real early-game balance
+      question, not the monster's stat line.
+
 - [ ] **Chase the x0.64 attack gap before fitting the curve.** It biases in a direction that
       matters: a model player who kills more slowly makes every fight measure longer and costlier,
       so refcal would weaken monsters to hit its targets and the live game would come out easier
