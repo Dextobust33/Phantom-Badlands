@@ -806,6 +806,78 @@ redesign rather than force. Do that per archetype, as part of its slice, not up 
 | **Grifter** | analyze, distract, sabotage, **pickpocket**, cash-out | `pickpocket` becomes the cash-out (steal + damage scaling with stacks) — already the theft card, currently dealt to nobody |
 | **Ranger** | **exploit**, ambush, analyze, sabotage, aimed shot | `exploit` becomes the discharge — already a flat share of enemy max HP, so scaling it with Aim stays deterministic, which is what Steady Hand is for |
 
+### Warrior slice — SHIPPED to master 2026-09-06 (not released)
+
+The same treatment the Tricksters got: `devastate` is now ONE CARD WITH THREE MECHANICS and the
+three Warriors start with different decks, so no two of them play alike.
+
+| class | shape | stack | finisher | deck |
+|---|---|---|---|---|
+| **Fighter** | Momentum — bank -> passive DR -> burst | Momentum | **Devastate** (spend all, 0.14/stack) | cleave, shield_bash, iron_skin, power_strike, devastate |
+| **Barbarian** | Focus — ramp -> discharge | Rage | **Rampage** (0.13/stack) | power_strike, cleave, shield_bash, berserk, devastate |
+| **Paladin** | Read — build -> execute | Conviction | **Judgement** (0.10/stack + 2%+3%/stack lethal) | power_strike, war_cry, fortify, rally, devastate |
+
+- The **Momentum damage reduction was narrowed to the Fighter alone**, exactly as the Read
+  mitigation was narrowed to the Grifter. Handing all three Warriors the mitigation on top of
+  their own payoff is how they ended up playing identically.
+- **Barbarian Rage is a passive damage ramp** (+11%/stack to every ability, +55% at cap), applied
+  in the shared ability funnel beside the Ranger's Steady Aim.
+- **Paladin's Divine Favor is retired.** A 3%-max-HP-a-round regen has nothing to do with a
+  build-to-execute loop, and over a long fight it was most of a health bar — which is also why
+  the Paladin measured as the strongest Warrior. Replaced with **Retribution**: every blow that
+  lands on you builds +1 Conviction, so the Paladin is the one Warrior whose engine keeps turning
+  while it is losing. That is what pays for having neither mitigation nor a ramp.
+
+**Measured (60/cell, per-cell seed):**
+
+| class | before | after |
+|---|---|---|
+| Fighter | 90 / 53 / 65 | **93 / 66 / 68** |
+| Barbarian | 81 / 30 / 43 | **98 / 68 / 75** |
+| Paladin | 83 / 53 / 65 | **91 / 80 / 80** |
+
+Two iterations were needed and both were the same fault — **sizing a Warrior mechanic by mirroring
+a Trickster's totals**, which ignores that the Warrior finisher is multiplied by the stamina dump
+(up to 1.5x) and that MOMENTUM_MAX is 5 against COMBO_MAX 8, so a Warrior reaches its cap in about
+half the turns. First pass read 95/81/85, 98/68/75, 98/96/91 — the Paladin killing an L80 elite in
+8.7 turns where the baseline took 33.8, dominant on BOTH axes at once.
+
+**Paladin is still ~+10pp over the ~70% elite target.** Left alone deliberately: it is inside the
++/-10pp judging band, and the Grifter sits at 88% untouched, so the Paladin is not the outlier.
+Revisit after calibration, not before.
+
+### INSTRUMENT FIX (2026-09-06): the class audit now re-seeds PER CELL
+
+`real_combat_sim.gd` seeds once at load, and all nine classes then drew from that one stream in
+table order — so changing how the FIRST class plays shifted the stream for the eight after it.
+Measured: the Warrior slice moved **Sage L10 51%->70% and Ranger L10 83%->68%** without touching a
+line of mage or trickster code. Those are 15-19pp swings against a ~6.4pp sampling error, and they
+would have been read as real effects and "fixed".
+
+Same shape as the calibration-orthogonality fault: two things that should be independent were
+sharing a quantity. `run_class_audit` now seeds from `hash(class|level|role)`, so a cell depends
+only on WHICH cell it is. Verified: untouched classes are now byte-identical across runs, and the
+table is stable even across edits to the simulator itself.
+
+**This invalidates cross-run comparisons made before today.** Any earlier "class X moved" reading
+where X was not the class being changed is suspect.
+
+### Mage slice — NEXT
+
+Mapping already agreed: **Sorcerer/Volatility** (Momentum-shaped bank-and-burst), **Wizard/Focus**
+(unchanged shape, it already IS Focus), **Sage/Insight** (Read-shaped build-to-execute). `meteor`
+forks by class the way `devastate` and `perfect_heist` now do.
+
+Open decisions carried from the warrior slice:
+- **Mana Mastery (Sage) must be replaced**, same reasoning as Divine Favor: cheaper spells and a
+  better Meditate have nothing to do with a bypass-HP finisher. Owner is open to a **class rename**
+  too — "Sage" reads as wisdom/sustain, which is the passive being retired.
+- **Chaos Magic (Sorcerer)** is thematically right for a Volatility bank but is currently a
+  per-cast gamble rather than something that accumulates. Re-point rather than replace.
+- Sage is now the clear worst cell in the game (**30% at L30 elite**) and Wizard casts only
+  **0.52 c/t at L80** — it is auto-attacking half its turns, which is a POLICY or resource-economy
+  fault, not necessarily a class one. Check the instrument before concluding the class is weak.
+
 ### Hard constraints
 
 - **A deck is 5 cards + the companion loaner.** Owner: *"any cards over the 5 are a waste as it

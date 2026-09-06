@@ -647,6 +647,18 @@ func run_class_audit():
 	for c in ALL_CLASSES:
 		var row := "%-11s %-10s" % [c[0], c[1]]
 		for case in [[10, "normal"], [30, "elite"], [80, "elite"]]:
+			# 2026-09-06 — RE-SEED PER CELL. The file seeds ONCE at load and every class then
+			# draws from the same stream in table order, so changing how the FIRST class plays
+			# shifts the stream for all eight after it. Measured: the Warrior slice moved Sage
+			# L10 51%->70% and Ranger L10 83%->68% without touching a line of mage or trickster
+			# code. Those are 15-19pp swings — far past the ~6.4pp sampling error at n=60 — and
+			# they would have been read as real effects.
+			#
+			# This is the instrument fault again, and the same shape as the calibration one: two
+			# things that should be independent were sharing a quantity. A per-cell seed makes a
+			# cell's fights depend only on WHICH cell it is, so an untouched class now measures
+			# byte-identical across runs and any movement it shows is a movement it really had.
+			seed(hash("%s|%d|%s" % [String(c[0]), int(case[0]), String(case[1])]))
 			var wins := 0
 			var turns := 0
 			var casts := 0
@@ -4817,41 +4829,87 @@ func _warrior_momentum_hold(combat: Dictionary, ch) -> void:
 
 
 func _warrior_buff_first(combat: Dictionary, ch) -> void:
+	"""Play the Warrior's own engine. 2026-09-06 — this used to be ONE policy for all three
+	Warriors, which is how the Trickster measurements went wrong: the simulated player was
+	running the Grifter's line on a Ninja, so two of the three passives fired zero times and the
+	classes looked identical because they were being PLAYED identically.
+
+	The three Warriors now want genuinely different turns:
+	  Fighter    keep mitigation up (it stacks with the Momentum DR only it has), bank, cash.
+	  Barbarian  Rage is a damage ramp, so the best turn is almost always another damage card.
+	  Paladin    buy the turns the bank needs; Retribution keeps building while it is hit.
+
+	Ends with a catch-all that tries every remaining card before a basic attack — the mage
+	rotation idled for exactly this reason and measured as a broken archetype."""
 	var hand: Array = combat.get("combat_hand", [])
 	var mom: int = int(combat.get("momentum", 0))
-	# #55 identity pass (2026-08-27) — a real Warrior is a DEFENSIVE bruiser: keep its
-	# mitigation buffs UP (Iron Skin = damage_reduction, Fortify = defense) so it's the
-	# safest in long fights. Recast when they lapse (models buff uptime, which the old
-	# sim ignored — it only cast damage buffs, so the audit under-rated Warrior tankiness).
-	if "iron_skin" in hand and ch.get_buff_value("damage_reduction") < 55:
-		if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
-			return
-	if "fortify" in hand and ch.get_buff_value("defense") < 30:
-		if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
-			return
-	# Opportunistic damage buff (once per fight): buff early for uptime (also builds Momentum).
-	if not combat.get("_sim_buffed", false):
-		for b in WARRIOR_BUFFS:
-			if b in hand:
-				var rb = combat_mgr.process_ability_command(0, b, "")
-				if rb.get("success", false):
-					combat["_sim_buffed"] = true
-					return
-	# v0.9.696 — Momentum play: hold Devastate until Momentum is high, unleash the finisher.
+	var cls := String(ch.class_type)
+	var hurt: bool = ch.current_hp < int(ch.get_total_max_hp() * 0.55)
+
+	# --- the finisher, held until the bank is worth spending -------------------------------
+	# All three want it near the cap: the Fighter's burst, the Barbarian's discharge and the
+	# Paladin's lethal chance ALL scale per stack, so dumping at 1 throws the fight away. This
+	# is the same gate the Trickster policy needed once its finisher stopped being a coin flip.
 	if mom >= 4 and "devastate" in hand:
-		# Devastate is now a REAL dump in combat_manager (no sim emulation needed).
 		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
 			return
-	# Build with the best affordable BUILDER in hand (Devastate excluded here).
-	for ab in ["cleave", "shield_bash", "power_strike"]:
-		if ab in hand:
-			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+
+	if cls == "Barbarian":
+		# Berserk multiplies on top of the Rage ramp; recast when it lapses rather than
+		# once per fight, because its 4-round duration is shorter than these fights.
+		if "berserk" in hand and ch.get_buff_value("damage") < 60:
+			if combat_mgr.process_ability_command(0, "berserk", "").get("success", false):
 				return
-	# If only Devastate is available and we have some Momentum, spend it (beats a basic hit).
+		for ab in ["cleave", "power_strike", "shield_bash"]:
+			if ab in hand:
+				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+					return
+	elif cls == "Paladin":
+		# Rally is the sustain that replaced Divine Favor - now a turn you choose to spend.
+		if hurt and "rally" in hand:
+			if combat_mgr.process_ability_command(0, "rally", "").get("success", false):
+				return
+		# War Cry is worth +2 Conviction, so it is the fastest route to a Judgement.
+		if mom < 4 and "war_cry" in hand:
+			if combat_mgr.process_ability_command(0, "war_cry", "").get("success", false):
+				return
+		if "fortify" in hand and ch.get_buff_value("defense") < 30:
+			if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
+				return
+		for ab in ["power_strike", "cleave", "shield_bash"]:
+			if ab in hand:
+				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+					return
+	else:
+		# FIGHTER (and any warrior without its own line): mitigation uptime first - it is the
+		# half of the Momentum shape that is not the burst.
+		if "iron_skin" in hand and ch.get_buff_value("damage_reduction") < 55:
+			if combat_mgr.process_ability_command(0, "iron_skin", "").get("success", false):
+				return
+		if "fortify" in hand and ch.get_buff_value("defense") < 30:
+			if combat_mgr.process_ability_command(0, "fortify", "").get("success", false):
+				return
+		if not combat.get("_sim_buffed", false):
+			for b in WARRIOR_BUFFS:
+				if b in hand:
+					if combat_mgr.process_ability_command(0, b, "").get("success", false):
+						combat["_sim_buffed"] = true
+						return
+		for ab in ["cleave", "shield_bash", "power_strike"]:
+			if ab in hand:
+				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
+					return
+
+	# Only the finisher left and something banked - still beats a basic attack.
 	if mom >= 1 and "devastate" in hand:
 		if combat_mgr.process_ability_command(0, "devastate", "").get("success", false):
 			return
-	# Out of resource / no castable card → basic attack (also regens + builds Momentum? no).
+	# Catch-all: anything castable at all, in any order, before giving up the turn.
+	for ab in hand:
+		if String(ab) == "devastate":
+			continue
+		if combat_mgr.process_ability_command(0, String(ab), "").get("success", false):
+			return
 	_counted_attack(combat)
 
 func _monster_turn_if_owed(combat) -> void:
@@ -6191,3 +6249,5 @@ func run_grow_reference():
 Compare each row against make_char(level, \"average\") - the gap IS the model error.")
 	print("=====================================================================
 ")
+
+

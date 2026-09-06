@@ -87,74 +87,10 @@ const CLASS_STARTING_STATS = {
 	"Ninja": {"strength": 11, "constitution": 10, "dexterity": 17, "intelligence": 12, "wisdom": 11, "wits": 10}
 }
 
-# Class passive effects (from character.gd lines 609-714)
-const CLASS_PASSIVES = {
-	"Fighter": {
-		"name": "Tactical Discipline",
-		"effects": {
-			"stamina_cost_reduction": 0.20,
-			"defense_bonus_percent": 0.15
-		}
-	},
-	"Barbarian": {
-		"name": "Blood Rage",
-		"effects": {
-			"damage_per_missing_hp": 0.03,
-			"max_rage_bonus": 0.30,
-			"stamina_cost_increase": 0.25
-		}
-	},
-	"Paladin": {
-		"name": "Divine Favor",
-		"effects": {
-			"combat_regen_percent": 0.03,
-			"bonus_vs_undead": 0.25
-		}
-	},
-	"Wizard": {
-		"name": "Arcane Precision",
-		"effects": {
-			"spell_damage_bonus": 0.15,
-			"spell_crit_bonus": 0.10
-		}
-	},
-	"Sorcerer": {
-		"name": "Chaos Magic",
-		"effects": {
-			"double_damage_chance": 0.25,
-			"backfire_chance": 0.05
-		}
-	},
-	"Sage": {
-		"name": "Mana Mastery",
-		"effects": {
-			"mana_cost_reduction": 0.25,
-			"meditate_bonus": 0.50
-		}
-	},
-	"Grifter": {
-		"name": "Backstab",
-		"effects": {
-			"crit_damage_bonus": 0.35,
-			"crit_chance_bonus": 0.10
-		}
-	},
-	"Ranger": {
-		"name": "Hunter's Mark",
-		"effects": {
-			"bonus_vs_beasts": 0.25,
-			"gold_bonus": 0.30,
-			"xp_bonus": 0.30
-		}
-	},
-	"Ninja": {
-		"name": "Shadow Step",
-		"effects": {
-			"flee_bonus": 0.40,
-			"flee_no_damage": true
-		}
-	}
-}
+# 2026-09-06 — the hand-copied CLASS_PASSIVES table that used to live here is GONE.
+# It had already drifted from `character.gd` (the client kept the same kind of mirror and had
+# the Grifter's, Ranger's and Ninja's passives swapped or retired), and a simulator that
+# measures a passive the game does not have is worse than no measurement at all.
 
 # Per-class fractional stat gains per level (from character.gd lines 1176-1191)
 # Total: 2.5 stats per level for all classes
@@ -285,8 +221,8 @@ func _get_primary_stat_for_hp() -> int:
 			return 0
 
 func get_class_passive() -> Dictionary:
-	"""Get the unique passive ability for this character's class"""
-	return CLASS_PASSIVES.get(class_type, {"name": "None", "effects": {}})
+	"""The real passive table, read from the game rather than mirrored."""
+	return Character.class_passive_for(class_type)
 
 func get_effective_stat(stat_name: String) -> int:
 	"""Get stat value including equipment bonuses"""

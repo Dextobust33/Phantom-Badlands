@@ -754,6 +754,14 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 		if _aim > 0:
 			mod_damage = int(float(mod_damage) * (1.0 + float(_aim) * RANGER_AIM_DMG_PER))
 			_note_modifier(combat, "Steady Aim +%d%%" % int(float(_aim) * RANGER_AIM_DMG_PER * 100.0))
+	# Barbarian "Rage" — the Warrior counterpart of Steady Aim. Banked Rage is a passive damage
+	# ramp on every card, and Rampage discharges it. Same funnel, same reason: the ramp has to
+	# reach every damaging ability or the loop is a single payoff instead of an escalation.
+	if character != null and character.class_type == "Barbarian":
+		var _rage: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
+		if _rage > 0:
+			mod_damage = int(float(mod_damage) * (1.0 + float(_rage) * BARBARIAN_RAGE_DMG_PER))
+			_note_modifier(combat, "Rage +%d%%" % int(float(_rage) * BARBARIAN_RAGE_DMG_PER * 100.0))
 	var _an_bonus: int = int(combat.get("analyze_bonus", 0))
 	if _an_bonus > 0:
 		mod_damage = int(float(mod_damage) * (1.0 + float(_an_bonus) / 100.0))
@@ -3877,6 +3885,54 @@ const DEFENSIVE_REPRIEVE_ABILITIES := {
 const DEFENSIVE_REPRIEVE_CHANCE := 40   # % chance the monster's turn is skipped
 
 const DEVASTATE_WEIGHT_PER_MOMENTUM := 0.14
+
+# 2026-09-06 — THE WARRIOR SLICE. Same treatment the Tricksters got: `devastate` is ONE CARD WITH
+# THREE MECHANICS, one per Warrior class, so no two Warriors play alike.
+#
+# Owner's own design, and the reason it works: the three engines are not archetype flavour, they
+# are three SHAPES, and there are exactly three classes in each archetype.
+#
+#   Fighter    MOMENTUM-shaped  bank stacks -> passive damage reduction -> spend for a burst.
+#                               Unchanged; this is the shape Momentum already WAS.
+#   Barbarian  FOCUS-shaped     Rage is a passive damage RAMP on everything you cast, and the
+#                               finisher discharges it. No mitigation: the Barbarian's answer to
+#                               a long fight is to end it faster, which is also what Blood Rage
+#                               (+damage as HP drops) already says.
+#   Paladin    READ-shaped      Conviction buys a strike that ALWAYS lands plus a chance it is
+#                               simply lethal. Same form as the Ninja's Assassinate after the
+#                               2026-09-06 rework, for the same reason: a pure coin flip makes
+#                               the card's odds BE the class win rate, and then no value for
+#                               them is correct.
+#
+# Per-stack values are larger than the Trickster equivalents because MOMENTUM_MAX is 5 and
+# COMBO_MAX is 8 — these are sized on the FULL bank, not per point:
+#   ramp at cap      Ranger 0.07x8 = +56%   Barbarian 0.11x5 = +55%
+#   finisher at cap  Ranger 0.11x8 = 0.88   Barbarian 0.13x5 = 0.65 (it was paid on the way up)
+#                    Ninja  0.11x8 = 0.88   Paladin   0.10x5 = 0.50
+#   lethal at cap    Ninja  2+3x8  = 26%    Paladin   2+3x5  = 17%
+# The Warrior finisher is then multiplied by the stamina dump (up to 1.5x on a full bar), which
+# the Trickster cards do not get — hence the Fighter's 0.70 sitting below the Grifter's 1.28.
+#
+# 2026-09-06, MEASURED — the Paladin's first numbers were 0.17/stack and +5%/stack lethal, sized
+# by mirroring the Ninja's totals. That read 98/96/91, killing an L80 elite in 8.7 turns where
+# the baseline took 33.8: dominant on BOTH axes at once. The mirror was wrong because it ignored
+# the stamina dump AND the fact that War Cry hands this class +2 a cast while Retribution builds
+# it further from blows it takes, so the Paladin reaches the cap in about three turns where a
+# Ninja needs eight. Cut to 0.10 and +3%/stack.
+const BARBARIAN_RAGE_DMG_PER := 0.11     # +11% to ALL ability damage per Rage held (5 = +55%)
+const BARBARIAN_RAMPAGE_PER := 0.13      # discharge weight per Rage spent
+const PALADIN_JUDGEMENT_PER := 0.10      # strike weight per Conviction spent
+const PALADIN_LETHAL_BASE := 2           # % chance the judgement is simply lethal
+const PALADIN_LETHAL_PER := 3            # +3% a stack, so a full bank is ~17%
+
+# What the Warrior stack meter is CALLED, per class. The client used to hardcode "Momentum" and
+# "build to Devastate"; both now ride on the combat state so there is no mirror to drift.
+const WARRIOR_ENGINE_LABEL := {
+	"Fighter": "Momentum", "Barbarian": "Rage", "Paladin": "Conviction",
+}
+
+static func warrior_engine_label(class_type: String) -> String:
+	return String(WARRIOR_ENGINE_LABEL.get(class_type, "Momentum"))
 # 2026-09-06 — the finisher is ONE CARD WITH THREE MECHANICS, one per Trickster class. Its name
 # and lines already forked; this forks what it DOES, which is what actually makes the classes play
 # differently.
@@ -4132,12 +4188,30 @@ func preview_ability_effect(character, combat: Dictionary, ability_name: String)
 			# is 1.5x, not 1.0x. Quoting the un-dumped value understated it by a third.
 			var dev_full: float = 0.5 + clampf(
 				float(character.current_stamina) / maxf(1.0, float(character.get_total_max_stamina())), 0.0, 1.0)
-			var dev_anchor: float = _ability_anchored_damage(character, "strength",
-				DEVASTATE_WEIGHT_PER_MOMENTUM * float(mom))
+			# 2026-09-06 — the card is three cards. Each Warrior class must be quoted its OWN
+			# weight, or the number on the card is the Fighter's and the other two are lied to.
+			var dev_per: float = DEVASTATE_WEIGHT_PER_MOMENTUM
+			var _wcls := String(character.class_type)
+			if _wcls == "Barbarian":
+				dev_per = BARBARIAN_RAMPAGE_PER
+			elif _wcls == "Paladin":
+				dev_per = PALADIN_JUDGEMENT_PER
+			var dev_anchor: float = _ability_anchored_damage(character, "strength", dev_per * float(mom))
 			var dev_base: int = int(dev_anchor * dev_full) if dev_anchor > 0.0 				else int(float(total_attack) * (2.0 + float(mom)) * str_mult * dev_full)
+			var dev_note := "%s %d/%d" % [warrior_engine_label(_wcls), mom, MOMENTUM_MAX]
+			if _wcls == "Paladin":
+				# The lethal chance is the whole point of the Paladin's version, so the card has
+				# to state it. Single source: same expression the cast uses.
+				var _pv: int = maxi(1, PALADIN_LETHAL_BASE + mom * PALADIN_LETHAL_PER)
+				var _pmon = combat.get("monster", null)
+				if _pmon is Dictionary:
+					var _pgap: int = int(_pmon.get("level", character.level)) - character.level
+					if _pgap > 0:
+						_pv = maxi(1, _pv - _pgap)
+				dev_note = "%s, %d%% lethal" % [dev_note, _pv]
 			return {"kind": "damage",
 					"value": apply_skill_damage_bonus(character, name, dev_base, combat),
-					"scales": "Momentum %d/%d" % [mom, MOMENTUM_MAX]}
+					"scales": dev_note}
 		# shield_bash / ambush / gambit / frost_nova are handled by the anchored branch above
 		# now that they are converted. Their temporary attack-based branches are gone with the
 		# formulas they described.
@@ -5598,6 +5672,53 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			is_buff_ability = true
 
 		"devastate":
+			# --- BARBARIAN: discharge the Rage. Guaranteed; you were already paid on the way up. ---
+			if character.class_type == "Barbarian":
+				var _bg_rage: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
+				var _bg_dmg: int = int(_ability_anchored_damage(character, "strength",
+					BARBARIAN_RAMPAGE_PER * float(_bg_rage)) * variable_fraction)
+				_bg_dmg = apply_skill_damage_bonus(character, ability_name, _bg_dmg, combat)
+				_bg_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+					_bg_dmg, character.level, monster, character, combat, messages))
+				combat["momentum"] = 0
+				monster.current_hp = max(0, monster.current_hp - _bg_dmg)
+				messages.append("[color=#FF0000][b]RAMPAGE![/b][/color] [color=#C8A24A](spent %d Rage)[/color]" % _bg_rage)
+				messages.append("[color=#FFFF00]Nothing is held back — %s[/color]"
+					% _damage_with_detail(combat, messages, _bg_dmg))
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
+				return {"success": true, "messages": messages, "combat_ended": false}
+			# --- PALADIN: the judgement. Always lands; Conviction buys size AND a lethal verdict. ---
+			if character.class_type == "Paladin":
+				var _pj_conv: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
+				var _pj_dmg: int = int(_ability_anchored_damage(character, "strength",
+					PALADIN_JUDGEMENT_PER * float(_pj_conv)) * variable_fraction)
+				_pj_dmg = apply_skill_damage_bonus(character, ability_name, _pj_dmg, combat)
+				_pj_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+					_pj_dmg, character.level, monster, character, combat, messages))
+				var _pj_lethal: int = PALADIN_LETHAL_BASE + _pj_conv * PALADIN_LETHAL_PER
+				var _pj_gap: int = monster.level - character.level
+				if _pj_gap > 0:
+					_pj_lethal = maxi(1, _pj_lethal - _pj_gap)
+				_pj_lethal = maxi(1, int(float(_pj_lethal) * variable_fraction))
+				combat["momentum"] = 0
+				var _pj_fl: Dictionary = finisher_flavour(character)
+				if randi() % 100 < _pj_lethal:
+					# Zero the HP rather than flagging a win — the party engine decides the fight
+					# from the shared monster's health, so a flags-only kill leaves it standing.
+					# Same reason the Ninja's branch does it; see the note there.
+					monster.current_hp = 0
+					messages.append("[color=#FFD700][b]%s[/b][/color]" % String(_pj_fl["hit"]))
+					messages.append("[color=#00FF00]%s[/color]" % String(_pj_fl["hit_line"]))
+					return _process_victory(combat, messages)
+				monster.current_hp = max(0, monster.current_hp - _pj_dmg)
+				messages.append("[color=#FFD700][b]JUDGEMENT![/b][/color] [color=#C8A24A](spent %d Conviction, %d%% lethal)[/color]" % [_pj_conv, _pj_lethal])
+				messages.append("[color=#FFFF00]The verdict lands short of final — %s[/color]"
+					% _damage_with_detail(combat, messages, _pj_dmg))
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
+				return {"success": true, "messages": messages, "combat_ended": false}
+			# --- FIGHTER: bank the Momentum, then spend it all in one blow. ---
 			# v0.9.696 — FINISHER: damage scales with Momentum (attack × (2 + Momentum)),
 			# then SPENDS all Momentum. At 5 Momentum = 7× (bigger than the old flat 5×);
 			# at 1 = 3× (weak). Gated at 0 above → build up before you unleash.
@@ -5657,7 +5778,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 	if ability_name != "devastate":
 		var _newmom: int = min(MOMENTUM_MAX, int(combat.get("momentum", 0)) + 1)
 		combat["momentum"] = _newmom
-		messages.append("[color=#C8A24A]⚡ Momentum %d/%d[/color]" % [_newmom, MOMENTUM_MAX])
+		messages.append("[color=#C8A24A]⚡ %s %d/%d[/color]"
+			% [warrior_engine_label(String(character.class_type)), _newmom, MOMENTUM_MAX])
 
 	# Check if monster died
 	if monster.current_hp <= 0:
@@ -7487,6 +7609,46 @@ func party_use_item(leader_id: int, pid: int, item_index: int, target: String = 
 
 
 func process_monster_turn(combat: Dictionary) -> Dictionary:
+	"""Run the monster's turn, then apply anything that keys off HAVING BEEN HIT.
+
+	2026-09-06 — a wrapper rather than a hook at the damage site, because the monster's turn has
+	a dozen return points (charmed, missed, companion intercept, last stand, resurrect, ...) and
+	the player's HP is decremented in several of them. A per-site hook would be a dozen copies,
+	and the thirteenth return added later would silently miss it — which is exactly the shape of
+	the Forcefield leak, where four boss abilities subtracted from health without consulting the
+	shield. One funnel, measured by the only thing that is actually true across all of them: did
+	the player finish this turn with less health than they started it with."""
+	var _oth_char = combat.get("character", null)
+	var _oth_before: int = int(_oth_char.current_hp) if _oth_char != null else 0
+	var _oth_result: Dictionary = _process_monster_turn_inner(combat)
+	if _oth_char != null and int(_oth_char.current_hp) < _oth_before:
+		_apply_on_taken_hit(combat, _oth_char, _oth_result)
+	return _oth_result
+
+func _apply_on_taken_hit(combat: Dictionary, character, result: Dictionary) -> void:
+	"""Effects that trigger because a blow got through this turn.
+
+	PALADIN "Retribution" — being hit builds Conviction. The other two Warriors build only by
+	acting, so the Paladin is the one whose engine still turns while it is losing, which is what
+	a class built around passing judgement on what hurt you should feel like. It is also the
+	reason the Paladin can afford to have no mitigation and no ramp: the Fighter banks safety,
+	the Barbarian banks damage, the Paladin banks the verdict."""
+	if character == null:
+		return
+	var effects: Dictionary = character.get_class_passive().get("effects", {})
+	var gain: int = int(effects.get("conviction_on_hit", 0))
+	if gain <= 0:
+		return
+	var before: int = clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
+	var after: int = mini(MOMENTUM_MAX, before + gain)
+	if after == before:
+		return
+	combat["momentum"] = after
+	var line := "[color=#FFD700]⚔ Retribution — Conviction %d/%d[/color]" % [after, MOMENTUM_MAX]
+	if result.has("message"):
+		result["message"] = "%s\n%s" % [String(result["message"]), line]
+
+func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 	"""Process the monster's attack with all ability effects"""
 	# #64 — SIMULTANEOUS party combat resolves each member's card WITHOUT the monster
 	# retaliating (the monster acts ONCE per round, after all members, via the party
@@ -7920,7 +8082,15 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 			# #55 Warrior identity — banked Momentum grants damage reduction (5%/stack, up to
 			# 25%). Intrinsic to the Warrior path (any builder feeds Momentum), so it holds even
 			# without iron_skin/fortify; folded UNDER the 85% cap so it can't reach unkillable.
-			if character.get_class_path() == "warrior":
+			#
+			# 2026-09-06 — narrowed from all Warriors to the FIGHTER alone, exactly as the Read
+			# mitigation was narrowed to the Grifter. The Fighter is the Momentum-shaped Warrior
+			# (bank -> passive defence -> spend for a burst), so the defence is its payoff. The
+			# Barbarian is Focus-shaped and gets a damage RAMP from the same stacks; the Paladin
+			# is Read-shaped and gets ODDS. Handing all three the mitigation as well gave every
+			# Warrior a second engine's reward on top of its own, which is precisely how the
+			# three of them ended up playing identically.
+			if character.class_type == "Fighter":
 				var _mom_dr: float = float(clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)) * MOMENTUM_DR_PER
 				if _mom_dr > 0.0:
 					_mit_mult *= (1.0 - _mom_dr)
@@ -9826,6 +9996,12 @@ func get_combat_display(peer_id: int) -> Dictionary:
 		"momentum": int(combat.get("momentum", 0)),  # v0.9.696 Warrior Momentum
 		"momentum_max": MOMENTUM_MAX,
 		"is_warrior_momentum": character.get_class_path() == "warrior",
+		# 2026-09-06 — the meter is called Momentum / Rage / Conviction and its finisher is
+		# Devastate / Rampage / Judgement depending on the class. The client used to hardcode
+		# both; sending them keeps the naming in ONE place, which is the lesson from the class
+		# passive table the client had also mirrored and got wrong.
+		"momentum_label": warrior_engine_label(String(character.class_type)),
+		"momentum_finisher": _ability_display_name(character, "devastate"),
 		"read": int(combat.get("combo", 0)),  # v0.9.698 Trickster Read (was Combo)
 		"read_max": COMBO_MAX,
 		"is_trickster_read": character.get_class_path() == "trickster",
@@ -10582,6 +10758,13 @@ const ABILITY_DISPLAY_BY_CLASS := {
 		"Grifter": "Double Cross",
 		"Ranger": "Killing Shot",
 	},
+	# 2026-09-06 — the Warrior finisher forks the same way. A Fighter devastates, a Barbarian
+	# rampages, a Paladin passes judgement.
+	"devastate": {
+		"Fighter": "Devastate",
+		"Barbarian": "Rampage",
+		"Paladin": "Judgement",
+	},
 }
 
 # Success / failure lines for the finisher, per class. Falls back to the Ninja's wording for any
@@ -10608,6 +10791,27 @@ const FINISHER_FLAVOUR := {
 		"hit_line": "One shot, placed exactly where it had to go. It drops before it hears it.",
 		"miss": "THE SHOT GOES WIDE!",
 		"miss_line": "The shot skips off bone — and it breaks cover straight at you!",
+	},
+	# The Paladin is the Warrior who ENDS things; only its finisher can miss, so only it needs
+	# the failure pair. Fighter and Barbarian are listed so the meter and the log can name the
+	# card without falling back to the Ninja's wording.
+	"Paladin": {
+		"hit": "JUDGEMENT!",
+		"hit_line": "You have been weighed. The sentence is carried out where you stand.",
+		"miss": "THE SENTENCE IS STAYED!",
+		"miss_line": "Your conviction wavers a half-breath — and it answers for it!",
+	},
+	"Fighter": {
+		"hit": "DEVASTATE!",
+		"hit_line": "Every step you took to get here lands in one blow.",
+		"miss": "THE BLOW GOES WIDE!",
+		"miss_line": "You over-commit, and it makes you pay for the swing!",
+	},
+	"Barbarian": {
+		"hit": "RAMPAGE!",
+		"hit_line": "Nothing is held back. Nothing is left standing.",
+		"miss": "THE RAGE BREAKS!",
+		"miss_line": "You swing through empty air — and it is already inside your guard!",
 	},
 }
 

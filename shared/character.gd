@@ -765,12 +765,23 @@ static func class_passive_for(class_type: String) -> Dictionary:
 				}
 			}
 		"Paladin":
+			# 2026-09-06 — was Divine Favor (3% max HP a round, +25% vs undead). Replaced because
+			# it had nothing to do with the Paladin's engine. Under the agreed one-shape-per-class
+			# design the Paladin is the READ-shaped Warrior: build Conviction, then pass Judgement,
+			# which always lands and can simply end them. A per-round heal is a survivability
+			# passive on a class whose whole loop is now about ENDING the fight, so the two pulled
+			# in opposite directions — and 3% a round over a long fight was most of a health bar,
+			# which is also why the Paladin was measuring as the strongest Warrior.
+			#
+			# Retribution builds the engine off being hit, so the Paladin is the one Warrior whose
+			# stacks keep climbing while it is losing. That is what pays for having neither the
+			# Fighter's mitigation nor the Barbarian's damage ramp.
 			return {
-				"name": "Divine Favor",
-				"description": "Heal 3% max HP per round, +25% damage vs undead/demons",
+				"name": "Retribution",
+				"description": "Every blow that lands on you builds +1 Conviction, +25% damage vs undead/demons",
 				"color": "#FFD700",
 				"effects": {
-					"combat_regen_percent": 0.03,
+					"conviction_on_hit": 1,
 					"bonus_vs_undead": 0.25
 				}
 			}
@@ -3579,6 +3590,35 @@ const CURATED_STARTER_DECKS_BY_CLASS := {
 	# GRIFTER — already aligned: Long Con doubles Read on exactly the denial cards this plays.
 	# Unchanged, and listed explicitly so it is obvious it was considered rather than missed.
 	"Grifter": ["analyze", "distract", "sabotage", "ambush", "perfect_heist"],
+	# --- WARRIORS, 2026-09-06 -------------------------------------------------------------
+	# The three of them shared ONE deck, which is the same fault the Tricksters had: identical
+	# cards plus a different passive is not a different class. Each now starts with the cards
+	# its engine can actually act on.
+	#
+	# FIGHTER — Momentum-shaped: bank stacks for damage reduction, then spend them in one blow.
+	# So its deck is the defensive bruiser it was always described as. Iron Skin and Fortify
+	# both blunt the incoming turn, which stacks with the Momentum mitigation only the Fighter
+	# now has, and both earn the defensive tempo reprieve. Its damage is concentrated in
+	# Devastate rather than spread across throughput.
+	# 2026-09-06, MEASURED — this list first held BOTH Iron Skin and Fortify. That read 81% at
+	# elite with d48.3 against k27.2: it stopped dying, but 31-turn fights are not a Warrior
+	# identity, they are a stalemate. Two mitigation cards in a five-card deck also means the
+	# Fighter draws a defensive card most turns and its damage never arrives. Power Strike takes
+	# Fortify's slot; Iron Skin alone carries the defensive half.
+	"Fighter": ["cleave", "shield_bash", "iron_skin", "power_strike", "devastate"],
+	# BARBARIAN — Focus-shaped: Rage is a passive damage ramp on every card, so the best use of
+	# any turn is another damaging card, and the ramp compounds. Three damage builders keeps its
+	# uptime high; Berserk multiplies on top of the ramp and its defence penalty is exactly the
+	# trade this class is supposed to be making. No mitigation on purpose — the Barbarian's
+	# answer to a long fight is to make it a short one.
+	"Barbarian": ["power_strike", "cleave", "shield_bash", "berserk", "devastate"],
+	# PALADIN — Read-shaped: build Conviction, then pass Judgement, which always lands and can
+	# simply end them. Like the Ninja it makes few damage rolls; its damage is the finisher. So
+	# the deck buys the turns the bank needs: War Cry surges Conviction (+2) AND rattles the
+	# foe, Fortify blunts the turn, Rally is the sustain that replaced the passive regen — now
+	# a choice that costs a turn rather than something that happens to you. Retribution means
+	# every blow it fails to avoid still feeds the engine.
+	"Paladin": ["power_strike", "war_cry", "fortify", "rally", "devastate"],
 	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
 }
 

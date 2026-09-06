@@ -3287,7 +3287,7 @@ var _focus: int = 0
 var _focus_max: int = 5
 var _focus_active: bool = false
 
-func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
+func update_momentum(cur: int, mx: int, is_warrior: bool, label: String = "Momentum", finisher: String = "Devastate") -> void:
 	"""Called from client.gd on each combat_state. Shows a pip meter for Warriors;
 	hidden otherwise. Also drives the Devastate card gating in _refresh_hand."""
 	_momentum = cur
@@ -3307,8 +3307,8 @@ func update_momentum(cur: int, mx: int, is_warrior: bool) -> void:
 	for i in range(_momentum_max):
 		pips += "[color=#FFC94D]●[/color]" if i < cur else "[color=#5A4E38]○[/color]"
 	var ready := cur >= 1
-	var tag := "[color=#FFC94D]FINISHER READY[/color]" if ready else "[color=#7A6E58]build to Devastate[/color]"
-	_momentum_label.text = "[color=#C8A24A]⚡ Momentum[/color]\n%s\n%s" % [pips, tag]
+	var tag := "[color=#FFC94D]FINISHER READY[/color]" if ready else "[color=#7A6E58]build to %s[/color]" % finisher
+	_momentum_label.text = "[color=#C8A24A]⚡ %s[/color]\n%s\n%s" % [label, pips, tag]
 	# Re-gate the hand cards (Devastate availability) now that momentum changed.
 	if not _hand_cells.is_empty():
 		_refresh_hand()

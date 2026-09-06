@@ -115,7 +115,7 @@ const WARRIOR_ABILITIES = {
 	"cleave": {"level": 40, "cost": 30, "name": "Cleave", "desc": "Deal STR * 2 damage"},
 	"berserk": {"level": 60, "cost": 40, "name": "Berserk", "desc": "+100% damage, -50% defense 3 rounds"},
 	"iron_skin": {"level": 80, "cost": 35, "name": "Iron Skin", "desc": "Block 50% damage for 3 rounds"},
-	"devastate": {"level": 100, "cost": 50, "name": "Devastate", "desc": "Deal STR * 4 damage"}
+	"devastate": {"level": 100, "cost": 50, "name": "Devastate", "desc": "Finisher: spends your whole class stack, damage scales with what you spend"}
 }
 
 # Trickster Abilities (WITS-based, use Energy)

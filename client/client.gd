@@ -2112,16 +2112,32 @@ const RACE_DESCRIPTIONS = {
 	"Undead": "Deathless and cursed. Immune to death curses, poison heals instead of damages."
 }
 
+func _class_passive_line(cls: String) -> String:
+	"""The class's CURRENT passive, read from the game rather than mirrored here."""
+	var p: Dictionary = CharacterScript.class_passive_for(cls)
+	if p.is_empty():
+		return ""
+	return "\n[color=%s]Passive - %s:[/color] %s" % [
+		String(p.get("color", "#FFD700")), String(p.get("name", "")), String(p.get("description", ""))]
+
+# 2026-09-06 — the PASSIVE half of these strings is gone. It was a hand-copy of the table in
+# `Character.class_passive_for`, and it had already gone wrong once in exactly the way a mirror
+# does: this screen advertised the Grifter's effect as the Ninja's, described the Ranger with a
+# passive that no longer existed, and quoted numbers for a retired one. Dropping the Paladin's
+# Divine Favor here would have been the fourth such drift.
+#
+# These now hold FLAVOUR only. `_class_passive_line()` renders the live passive underneath, so
+# character creation cannot disagree with the game about what a class does.
 const CLASS_DESCRIPTIONS = {
-	"Fighter": "Warrior Path. Balanced melee fighter with solid defense and offense. Uses Stamina.\n[color=#C0C0C0]Passive - Tactical Discipline:[/color] 20% reduced stamina costs, +15% defense",
-	"Barbarian": "Warrior Path. Aggressive berserker trading defense for raw damage. Uses Stamina.\n[color=#8B0000]Passive - Blood Rage:[/color] +3% damage per 10% HP missing (max +30%), abilities cost 25% more",
-	"Paladin": "Warrior Path. Holy knight with sustain and bonus damage vs evil. Uses Stamina.\n[color=#FFD700]Passive - Divine Favor:[/color] Heal 3% max HP per round, +25% damage vs undead/demons",
-	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana.\n[color=#4169E1]Passive - Arcane Precision:[/color] +15% spell damage, +10% spell crit chance",
-	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 5% chance to backfire",
-	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.\n[color=#20B2AA]Passive - Mana Mastery:[/color] 25% reduced mana costs, Meditate restores 50% more",
-	"Grifter": "Trickster Path. Con artist who wins by not fighting fair. Uses Energy.\n[color=#2F4F4F]Passive - Long Con:[/color] Denial cards have a 50% chance to build double Read; +40% flee, and a failed escape costs nothing",
-	"Ranger": "Trickster Path. Steady where the others gamble. Uses Energy.\n[color=#228B22]Passive - Steady Hand:[/color] Your abilities never glance and never crit by chance (a guaranteed crit from a card still lands)",
-	"Ninja": "Trickster Path. Builds toward critical hits. Uses Energy.\n[color=#191970]Passive - Killing Edge:[/color] +12% crit chance, and every critical hit this fight sharpens the next (+6%)"
+	"Fighter": "Warrior Path. Balanced melee fighter with solid defense and offense. Uses Stamina.",
+	"Barbarian": "Warrior Path. Aggressive berserker trading defense for raw damage. Uses Stamina.",
+	"Paladin": "Warrior Path. Holy knight who endures, builds Conviction, then passes judgement. Uses Stamina.",
+	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana.",
+	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.",
+	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.",
+	"Grifter": "Trickster Path. Con artist who wins by not fighting fair. Uses Energy.",
+	"Ranger": "Trickster Path. Steady where the others gamble. Uses Energy.",
+	"Ninja": "Trickster Path. Builds toward critical hits. Uses Energy.",
 }
 
 # Archetype-first character creation (2-step picker). Maps the 3 paths to their
@@ -6940,7 +6956,7 @@ func _update_class_description():
 		return
 	var selected_class = class_option.get_item_text(class_option.selected)
 	class_description.clear()
-	class_description.append_text(CLASS_DESCRIPTIONS.get(selected_class, ""))
+	class_description.append_text(CLASS_DESCRIPTIONS.get(selected_class, "") + _class_passive_line(selected_class))
 
 # ===== Archetype-first class picker (2-step) =====
 # Replaces the legacy Class dropdown with Step 1 (pick a path) → Step 2 (pick a
@@ -19555,12 +19571,16 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"frost_nova": return "Deal chip frost damage (30 × INT scaling, below Blast) and chill the enemy so its next attack takes -30% accuracy (scales with spend, capped 45%). Builds Focus. Soft control / survival — distinct from Paralyze's hard stun. Variable mana cost."
 		"overload": return "Spend 20% of your max HP (NOT mana) to buff your spell damage +120% for 2 rounds. Glass-cannon burst that makes you more fragile; blocked below 25% HP so it can't self-kill, and it won't stack over Arcane Surge (highest damage buff wins)."
 		"power_strike": return "2× attack with sqrt STR scaling. Variable cost 3-10 stamina — damage scales linearly with what you spend (30% at floor, 100% at ceiling)."
-		"war_cry": return "Tempo & intimidate — surge +2 Momentum (toward Devastate + your Momentum guard) and rattle the foe for -25% accuracy (scales with spend, capped 40%). No damage buff, so it pairs with Berserk instead of clashing. Variable cost 5-15 stamina."
+		"war_cry": return "Tempo & intimidate — surge +2 stacks of your class engine (Conviction for a Paladin, Momentum otherwise) and rattle the foe for -25% accuracy (scales with spend, capped 40%). No damage buff, so it pairs with Berserk instead of clashing. Variable cost 5-15 stamina."
 		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor). Variable cost 6-20 stamina — damage AND stun chance scale with spend."
 		"cleave": return "2.5× attack with sqrt STR scaling + 4-round bleed DoT (20% of STR per round). Variable cost 9-30 stamina — damage AND bleed magnitude scale with spend; duration stays 4 rounds."
 		"berserk": return "+75-200% damage (scales with missing HP), -40% defense for 4 rounds. High risk. Variable cost 12-40 stamina — BOTH damage buff AND defense penalty scale with spend (same risk shape, smaller stakes)."
 		"iron_skin": return "60% damage reduction for 4 rounds. Variable cost 11-35 stamina — reduction magnitude scales with spend; duration stays 4 rounds."
-		"devastate": return "5× attack with sqrt STR scaling. Variable cost 15-50 stamina — damage scales linearly with spend."
+		"devastate":
+			match String(character_data.get("class", "")):
+				"Barbarian": return "RAMPAGE — discharges all your Rage; damage scales with each point spent, on top of the +11%-per-Rage ramp those points were already giving every card. Variable cost 15-50 stamina; a fuller bar hits harder."
+				"Paladin": return "JUDGEMENT — always lands, and each point of Conviction spent raises both its damage and the chance (2% + 3% per point) that it simply kills outright. Variable cost 15-50 stamina; a fuller bar hits harder."
+				_: return "Spends all your Momentum; damage scales with each point spent. Variable cost 15-50 stamina — a fuller bar hits harder (up to 1.5x)."
 		"fortify": return "+ (30 + sqrt(STR)×3)% defense for 5 rounds. Variable cost 8-25 stamina — defense magnitude scales with spend; duration stays 5 rounds."
 		"rally": return "Heal (30 + sqrt(CON)×10) HP and gain +(10 + STR/5) strength for 3 rounds. Variable cost 11-35 stamina — heal amount AND STR buff both scale with spend; duration stays 3 rounds."
 		"analyze": return "Reveal HP, stats, and your Assassinate chance for this monster. Grants +10% damage to all attacks for the rest of this combat. Skips enemy turn."
@@ -19675,9 +19695,19 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"cleave":
 			return "Deal %s damage and open a bleeding wound for %s/round over [b]4[/b] rounds." % [_desc_num(est_dmg, "2.5 × Attack × √STR scaling × your rank/tier bonus"), _desc_num(int(0.2 * s_str), "20% of STR per round")]
 		"devastate":
-			return "Deal %s damage — a massive finisher." % _desc_num(est_dmg, "5 × Attack × √STR scaling × your rank/tier bonus")
+			# 2026-09-06 — one card, three mechanics, so one description would be a lie to two of
+			# the three classes holding it. Owner's standing rule: "we don't want any abilities
+			# doing things that it doesn't describe on the hover or in the description of the
+			# card." The old text said "5 x attack" and was already wrong for everyone.
+			match String(character_data.get("class", "")):
+				"Barbarian":
+					return "Deal %s damage — discharges [b]all[/b] your Rage. Rage also adds %s to every damaging card while you hold it, so this is the payoff [i]on top of[/i] the ramp, not instead of it." % [_desc_num(est_dmg, "scales with each point of Rage spent, x your stamina bar (up to 1.5x when full)"), _desc_num("+11% each", "+11% ability damage per Rage held, up to +55% at 5")]
+				"Paladin":
+					return "Deal %s damage and, with %s, end them outright. Spends [b]all[/b] your Conviction — each point raises [i]both[/i] the damage and the lethal chance." % [_desc_num(est_dmg, "scales with each point of Conviction spent, x your stamina bar (up to 1.5x when full)"), _desc_num("a small chance", "2% + 3% per Conviction, so ~17% on a full bank; reduced against higher-level foes")]
+				_:
+					return "Deal %s damage — spends [b]all[/b] your Momentum. Dumping at 1 is deliberately feeble; a full five-stack blow on a full stamina bar is the single biggest hit available to any class." % _desc_num(est_dmg, "scales with each point of Momentum spent, x your stamina bar (up to 1.5x when full)")
 		"war_cry":
-			return "Tempo & intimidate: surge %s and rattle the foe so its NEXT attack is likely to miss (%s accuracy). No damage buff — pair with Berserk." % [_desc_num("+2 Momentum", "a bonus +1 on top of the standard +1, toward Devastate + Momentum guard"), _desc_num("−25%", "one attack; scales with spend, capped 40%")]
+			return "Tempo & intimidate: surge %s and rattle the foe so its NEXT attack is likely to miss (%s accuracy). No damage buff — pair with Berserk." % [_desc_num("+2 stacks", "a bonus +1 on top of the standard +1 — Conviction for a Paladin, Momentum otherwise"), _desc_num("−25%", "one attack; scales with spend, capped 40%")]
 		"berserk":
 			return "Buff yourself: %s damage but %s defense for [b]4[/b] rounds — scales with missing HP, so riskier is stronger." % [_desc_num("+75–200%", "+75% rising to +200% as your HP drops"), _desc_num("−40%", "flat -40% defense")]
 		"iron_skin":
@@ -35094,7 +35124,11 @@ func _sync_momentum_meter(state: Dictionary) -> void:
 	# Live Assassinate chance, cached so the card face can show it. 0 for non-Tricksters.
 	_combat_assassinate_chance = int(state.get("assassinate_chance", 0)) if is_trickster else 0
 	if is_warrior:
-		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true)
+		# The meter's NAME comes from the server (Momentum / Rage / Conviction) so the three
+		# Warrior classes read differently without the client keeping its own class table — the
+		# mirror that had the passives swapped is the reason we no longer do that.
+		combat_scene_panel.update_momentum(int(state.get("momentum", 0)), int(state.get("momentum_max", 5)), true,
+			String(state.get("momentum_label", "Momentum")), String(state.get("momentum_finisher", "Devastate")))
 	elif is_trickster and combat_scene_panel.has_method("update_read"):
 		combat_scene_panel.update_read(int(state.get("read", 0)), int(state.get("read_max", 5)), int(state.get("assassinate_chance", 0)), true)
 	elif is_mage and combat_scene_panel.has_method("update_focus"):
