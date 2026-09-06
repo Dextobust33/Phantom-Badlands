@@ -6972,7 +6972,7 @@ func handle_rank_choice_response(peer_id: int, message: Dictionary):
 		return
 	# v0.9.676 — milestone branch pick (Upgrade → Tier). Applies power/rider/
 	# efficiency to ability_milestone_picks and reports the resulting tier/mults.
-	if choice in ["power", "rider", "efficiency", "duration"]:
+	if choice in ["power", "rider", "efficiency", "duration"] or _is_upgrade_id:
 		var ms_result = character.apply_milestone_pick(ability_name, choice)
 		send_to_peer(peer_id, {
 			"type": "rank_choice_applied",

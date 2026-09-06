@@ -3988,6 +3988,12 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	# `message_damage` would have arrived empty too, leaving the floating number switched off
 	# for exactly the lines this work exists to fix. Bracket the cast the same way.
 	_begin_actor_marks(combat)
+	# 2026-09-05 — Kindling asks "was your resource bar FULL when you cast this?", but its check
+	# lived in the on-hit rider, which runs AFTER the cast has paid its cost. The bar is
+	# therefore never still full by then and the upgrade could not fire at all. Snapshot the
+	# answer here, before the cost is taken.
+	if combat.has("character") and combat.character != null:
+		combat["_pool_full_at_cast"] = _primary_pool_current(combat.character) >= _primary_pool_max(combat.character)
 
 	var character = combat.character
 	var result: Dictionary
@@ -6297,7 +6303,7 @@ func _apply_card_upgrade_on_hit(combat: Dictionary, ability_name: String, damage
 			var rb: int = maxi(1, int(float(_primary_pool_max(character)) / 3.0))
 			_restore_primary_resource(character, rb)
 			result.messages.append("[color=#66B0FF]Relentless: the third strike gives back %d.[/color]" % rb)
-	if "kindling" in picks and _primary_pool_current(character) >= _primary_pool_max(character):
+	if "kindling" in picks and bool(combat.get("_pool_full_at_cast", false)):
 		_feed_class_engine(combat, character, 1, result, "Kindling")
 	if "desperate" in picks and float(character.current_hp) < 0.34 * float(character.get_total_max_hp()):
 		_feed_class_engine(combat, character, 2, result, "Desperation")

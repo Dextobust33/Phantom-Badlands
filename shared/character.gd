@@ -366,6 +366,7 @@ const DEFAULT_ABILITY_KEYBINDS = {0: "R", 1: "1", 2: "2", 3: "3", 4: "4", 5: "5"
 # mastery-fill + small steady growth). The game's existing rank-up moments become
 # MILESTONES that grant a branch pick — "power" / "rider" / "efficiency" — stored
 # per ability. Replaces the old copy/effect/imprint rank-up menu.
+const CardUpgradesScript = preload("res://shared/card_upgrades.gd")
 @export var ability_milestone_picks: Dictionary = {}  # ability -> Array["power"/"rider"/"efficiency"]
 @export var pending_rank_choices: Array = []  # [{ability, new_rank, queued_at}]
 @export var deck_collection_initialized: bool = false  # one-shot init guard
@@ -849,7 +850,7 @@ static func class_passive_for(class_type: String) -> Dictionary:
 				# measured before anything else is added — adding two things at once would make
 				# it impossible to say which one mattered.
 				"name": "Steady Hand",
-				"description": "Your abilities never glance. Steady damage where others gamble.",
+				"description": "Your abilities never glance and never crit by chance. Steady damage where others gamble. A guaranteed crit from a card still lands.",
 				"color": "#556B2F",
 				"effects": {
 					"no_glance": true
@@ -3688,7 +3689,19 @@ func apply_milestone_pick(ability_name: String, kind: String) -> Dictionary:
 	Appends to ability_milestone_picks. Refuses off-class abilities + bad kinds.
 	Returns {ability, kind, ok, tier, effect_mult, cost_mult, rider_level}."""
 	var result := {"ability": ability_name, "kind": kind, "ok": false}
-	if ability_name == "" or not (kind in ["power", "rider", "efficiency", "duration"]):
+	if ability_name == "":
+		return result
+	# 2026-09-05 — card-upgrade ids are accepted here as well as the four legacy kinds.
+	#
+	# Reported live: "I still think a lot of the card upgrades aren't actually working. Haven't
+	# seen swift actually work... Never seen a shield from bulwark or a heal from the heal one."
+	# Measured: NONE of the 48 worked, and none ever could. The combat riders read them out of
+	# `ability_milestone_picks`, but nothing could ever put one IN — this function refused any
+	# kind outside the four, and `apply_rank_choice` only understands "copy"/"effect". So the
+	# server validated the player's pick, consumed the queued rank-up, and dropped it on the
+	# floor. An entire feature that read as implemented from either end alone.
+	var _is_upgrade := not CardUpgradesScript.upgrade_by_id(kind).is_empty()
+	if not (kind in ["power", "rider", "efficiency", "duration"] or _is_upgrade):
 		return result
 	var accessible := false
 	for entry in get_all_available_abilities():
@@ -3699,6 +3712,12 @@ func apply_milestone_pick(ability_name: String, kind: String) -> Dictionary:
 		return result
 	if not (ability_milestone_picks.get(ability_name, null) is Array):
 		ability_milestone_picks[ability_name] = []
+	# Respect the upgrade's own `stacks` flag — a non-stacking upgrade taken twice would
+	# otherwise fire its rider twice per cast.
+	if _is_upgrade and not bool(CardUpgradesScript.upgrade_by_id(kind).get("stacks", false)):
+		if kind in ability_milestone_picks[ability_name]:
+			result["already_taken"] = true
+			return result
 	ability_milestone_picks[ability_name].append(kind)
 	result["ok"] = true
 	result["tier"] = get_ability_tier(ability_name)

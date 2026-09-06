@@ -2120,7 +2120,7 @@ const CLASS_DESCRIPTIONS = {
 	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 5% chance to backfire",
 	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.\n[color=#20B2AA]Passive - Mana Mastery:[/color] 25% reduced mana costs, Meditate restores 50% more",
 	"Grifter": "Trickster Path. Con artist who wins by not fighting fair. Uses Energy.\n[color=#2F4F4F]Passive - Long Con:[/color] Denial cards have a 50% chance to build double Read; +40% flee, and a failed escape costs nothing",
-	"Ranger": "Trickster Path. Steady where the others gamble. Uses Energy.\n[color=#228B22]Passive - Steady Hand:[/color] Your abilities never glance - and never crit",
+	"Ranger": "Trickster Path. Steady where the others gamble. Uses Energy.\n[color=#228B22]Passive - Steady Hand:[/color] Your abilities never glance and never crit by chance (a guaranteed crit from a card still lands)",
 	"Ninja": "Trickster Path. Builds toward critical hits. Uses Energy.\n[color=#191970]Passive - Killing Edge:[/color] +12% crit chance, and every critical hit this fight sharpens the next (+6%)"
 }
 
@@ -2142,7 +2142,7 @@ const CLASS_CARD_SUMMARY = {
 	"Sorcerer": "High-risk mage. Chance to double spell damage.",
 	"Sage": "Efficient mage. -25% mana costs, stronger Meditate.",
 	"Grifter": "Con artist. Stalls to set up a kill, slips away when it turns.",
-	"Ranger": "Reliable. Never fumbles a cast, never crits either.",
+	"Ranger": "Reliable. Never fumbles a cast, and never crits by chance.",
 	"Ninja": "Crit build. Each critical hit sharpens the next.",
 }
 
