@@ -631,34 +631,40 @@ on cards, the harder it measured.
       So the reference player is broadly HONEST on durability and resources, somewhat over-armoured,
       and materially UNDER-armed. It was never 2-3x too strong.
 
-- [x] **DEATH LOGS SETTLE IT: the sim/reality gap is the POLICY, not gear and not monsters.**
-      Owner pointed at the death logs (`user://data/leaderboard.json`), a far better sample than
-      saved characters — 52 deaths, 23 since the starter grant, each carrying equipment, stats,
-      HP entering the fight, rounds fought and the full combat log.
+- [x] **DEATH LOGS, READ PROPERLY: low-level monster HP is far too high for real player output.**
+      Owner challenged a bad reading of mine — I quoted "a L3 player hits for 29", which was a
+      single BASIC ATTACK line I generalised from after reading only the first 26 lines of each
+      log. *"Players mainly do abilities and should be doing much more than that? Did you look at
+      the numbers from the logs?"* Correct on both counts. Parsed in full, players ARE using
+      abilities and hitting hard: Cleave 83-130, a "catastrophic blow" of 257, Exploit Weakness
+      66, smites of 133-203.
 
-      - **57%** of deaths are to a monster **at or below the player's own level**; median killer
-        level gap **+0**.
-      - **9 of 16 died at FULL health**; median HP entering the fatal fight **100%**. It is not
-        the loop grinding them down — they are losing single fights the model scores as 89-100%
-        wins.
-      - **Monsters are identical between sim and live**: Kobold L2 = 624 hp / 22 str in both.
+      The real numbers, post-grant deaths, killers AT OR BELOW the player's level:
 
-      The combat logs show the cause. A real L3 Thief spent the fight on Analyze, Sabotage and
-      the Read gamble, hitting for 29 per basic stab into 624 hp — **144 total damage over 8
-      rounds**. A real L5 Ninja did the same and left the damage to its companion. Both played
-      the intended Trickster design; both died. The sim's policies instead spend
-      ambush/exploit/gambit, which are **anchored to a share of the monster's health bar** (~20%
-      per cast regardless of stats), so the model kills in 6.5 turns where reality takes twenty.
+      | | |
+      |---|---|
+      | player output | 18-161 damage per round |
+      | same-level normal monster HP | 624 (Kobold L2) to 1743 (Mimic L3) |
+      | rounds needed to KILL | 8.8 to 47.7 |
+      | rounds they actually survived | 1 to 14 |
+      | **median** | **the fight needed 4.3x more rounds than the player lived** |
 
-- [ ] **Settle whether the damage the sim assumes is actually AVAILABLE.** The trickster starter
-      deck is utility-heavy (Analyze / Distract / Sabotage x2 / Ambush / Assassinate). If a real
-      low-level hand rarely holds a damage card, the sim's policy is spending casts a player
-      cannot make, and every difficulty number inherits that. Check the sim's starting deck
-      against what a real new character is dealt before touching the curve.
-- [ ] **Then reconsider what the design target should be.** If a level 2 Kobold has 624 HP and a
-      level 3 player deals ~29 a swing, the intended answer must be an ability or a companion —
-      so "can a player reliably access one at that level?" is the real early-game balance
-      question, not the monster's stat line.
+      The sim assumes a same-level normal dies in ~6.5 turns, so it never sees this: its policy
+      achieves the ~114+ damage a round that L1 requires, where real players manage 10-80. The
+      closest real case (a L2 Ninja at 137/round against an Orc's 1208 hp) needed 8.8 rounds and
+      survived 8 — it nearly worked. The worst needed 47x.
+
+      Monsters and the sim agree exactly (Kobold L2 = 624hp/22str in both), and the reference
+      player's stats are close (HP x0.99, pool x1.07). The gap is **damage per round**, and it is
+      a factor of 2-7 at the levels where new characters live and die.
+
+- [ ] **Decide where that factor comes from before touching the curve.** Candidates, in order of
+      how much they'd explain: rank-0 mastery sitting at 0.80x, damage cards not being in hand
+      every round (the trickster starter deck is utility-heavy), resource limits between casts,
+      and off-affinity penalties. The sim's policy suffers none of these.
+- [ ] **CAVEAT on this sample:** several of these deaths are the owner's own test characters, and
+      the owner reports the early game currently feels about right. Confirm against non-test
+      deaths before treating "4.3x" as the design error.
 
 - [ ] **Chase the x0.64 attack gap before fitting the curve.** It biases in a direction that
       matters: a model player who kills more slowly makes every fight measure longer and costlier,
