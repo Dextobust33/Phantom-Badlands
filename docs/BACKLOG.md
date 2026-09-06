@@ -783,12 +783,20 @@ re-theming is what stops it being a reskin.
 | **Mage** | Sorcerer — *Volatility* | Wizard — *Focus* | Sage — *Insight* |
 | **Trickster** | Grifter — *The Long Con* | Ranger — *Steady Aim* | Ninja — *Read* |
 
-Each class's PASSIVE must feed its own engine:
+**Passives may be REDESIGNED, not just re-pointed** — owner, 2026-09-06: *"We can also redesign
+class passives as needed to support the new direction."* That removes the main constraint: a
+passive that cannot be made to feed its class's engine can be replaced outright rather than
+bent. Current passives and how they land:
 - **Killing Edge** (Ninja, crit) -> crits grant Read, so the crit build IS the route to the kill.
 - **Long Con** (Grifter, double stacks on denial) -> already a build-and-cash loop; the Read DR
   added 2026-09-05 is Momentum's shape exactly.
 - **Steady Hand** (Ranger, never fumbles) -> a damage RAMP is the one engine where reliability
   compounds, and it finally has something to act on.
+
+The six warrior/mage passives are NOT yet checked against their proposed engines, and some will
+not fit — Divine Favor (regen + anti-undead) has nothing to do with a build-to-execute loop, and
+Mana Mastery (cheaper spells) does not obviously feed a bypass-HP finisher. Those are the ones to
+redesign rather than force. Do that per archetype, as part of its slice, not up front.
 
 ### Trickster slice — needs NO new cards
 
@@ -807,6 +815,41 @@ Each class's PASSIVE must feed its own engine:
   card in all three cannot be tuned for one without moving the other two. That is the answer to
   the owner's *"balance what the cards do that doesn't also break balance on the other 2"* — the
   current 4-of-5 overlap is why there is no headroom today.
+
+### Step 1 DONE (2026-09-06): the nine-class table on the FIXED instrument
+
+60 fights per cell, average gear, zero script errors.
+
+| class | path | L10 normal | L30 elite | L80 elite | turns/fight |
+|---|---|---|---|---|---|
+| Fighter | warrior | 85% | 56% | 70% | 10-18 |
+| Barbarian | warrior | 83% | **33%** | **36%** | 10-17 |
+| Paladin | warrior | 86% | 55% | 46% | 14-29 |
+| Wizard | mage | **35%** | **15%** | **16%** | 8-19 |
+| Sorcerer | mage | 46% | 33% | **10%** | 8-14 |
+| Sage | mage | **33%** | **8%** | **15%** | 8-17 |
+| Grifter | trickster | **100%** | **98%** | **98%** | **2.8-3.1** |
+| Ranger | trickster | 96% | 98% | **100%** | 3.0-3.4 |
+| Ninja | trickster | **100%** | **100%** | 98% | 2.9-3.8 |
+
+**Tricksters are not "strongest", they are unbeatable** — 96-100% everywhere, ending fights in
+under 4 turns where warriors take 10-29. That is Assassinate: not merely the Trickster's only
+line, but the best line in the game by a wide margin. The Read DR added 2026-09-05 widened it.
+
+**Mages are broken** — 8-46%, and casting 0.20-0.33 times a turn against the Trickster's
+0.48-0.69, so they are barely acting at all. Worth finding out WHY before tuning numbers:
+resource starvation, cost, or hand draw.
+
+**Warriors are closest to sane**, with Barbarian falling off hard at elite (33/36%).
+
+This vindicates doing step 1 first. The OLD (double-turn) numbers had Mages looking healthy
+(72-87%) and Tricksters middling — building the engine redistribution on those would have tuned
+in exactly the wrong direction.
+
+**What it means for the plan:** making Assassinate Ninja-only removes the dominant line from two
+of three Tricksters, which this table says is needed anyway. But the Ninja keeps a ~99% line
+unless the finisher itself is toned down, so the slice must re-price Assassinate, not just move
+it. Mages need work independent of the engine redistribution.
 
 ### Sequencing (agreed)
 
