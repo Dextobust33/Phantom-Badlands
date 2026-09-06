@@ -809,6 +809,23 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	#
 	# Crit and glance are mutually exclusive: a cast is either sharp, ordinary, or fumbled.
 	if character != null:
+		# Path keystone "Phantom Strike" — the first strike of a fight always crits. It lived
+		# ONLY in process_attack, the basic-attack path, which is ~1% of player actions
+		# (measured: 24 of 1900). A keystone costing 10% of max HP that applies to one action in
+		# a hundred is a trap, not a choice. Owner asked whether it works with abilities: it did
+		# not. Now the first DAMAGING ACTION of a combat counts, ability or attack, and the
+		# shared `path_first_strike_done` flag keeps it to one per fight across both paths.
+		#
+		# It still does not touch Assassinate, and cannot: that card is a pure chance roll with
+		# no damage calculation to crit.
+		var _first_strike: bool = character.has_path_effect("first_strike_autocrit") 			and not combat.get("path_first_strike_done", false)
+		if _first_strike:
+			combat["path_first_strike_done"] = true
+			mod_damage = int(float(mod_damage) * ABILITY_CRIT_DAMAGE)
+			_note_crit_escalation(character, combat)
+			if messages != null and messages is Array:
+				messages.append("[color=#9F70FF]✦ Phantom Strike — the first blow lands true![/color]")
+			return max(1, mod_damage)
 		var cc: int = player_crit_chance(character, combat)
 		# Ranger "Steady Hand" trades the top of the range for the bottom: it never glances and
 		# it never crits. Reliable but unspectacular, which is the middle ground the owner asked

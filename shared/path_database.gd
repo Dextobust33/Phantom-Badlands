@@ -120,7 +120,7 @@ const TREES = {
 					{"id": "trickster_2_2", "name": "Slippery", "desc": "Stuns and webs on you last 1 turn less.", "effect": {"stun_duration_reduction": 1}},
 					{"id": "trickster_2_3", "name": "Ghost Step", "desc": "After a failed flee attempt, +30% dodge until your next turn.", "effect": {"failed_flee_dodge_pct": 30}},
 					{"id": "trickster_2_4", "name": "Bleed Them Dry", "desc": "Killing blows cleanse your poison and bleed.", "effect": {"kill_cleanse": true}},
-					{"id": "trickster_2_5", "name": "Phantom Strike", "desc": "KEYSTONE: Your first attack each combat always crits and cannot miss. Your max HP is reduced 10%.", "keystone": true, "effect": {"first_strike_autocrit": true, "max_hp_pct": -10}},
+					{"id": "trickster_2_5", "name": "Phantom Strike", "desc": "KEYSTONE: Your first damaging action each combat always crits, and a first attack cannot miss. Your max HP is reduced 10%.", "keystone": true, "effect": {"first_strike_autocrit": true, "max_hp_pct": -10}},
 				],
 			},
 			{
