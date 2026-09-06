@@ -3539,9 +3539,13 @@ const CURATED_STARTER_DECKS := {
 	# deck now buys the time the engine needs instead of asking the player to survive on damage
 	# cards that do not.
 	#
-	# Sabotage appears twice deliberately, as the owner listed it: it is the workhorse of that
-	# kit, and a second copy makes it reliably drawable in a three-card hand.
-	"trickster": ["analyze", "distract", "sabotage", "ambush", "perfect_heist", "sabotage"],
+	# 2026-09-06 — this list USED to name Sabotage twice, "so a second copy is reliably drawable
+	# in a three-card hand". It never was: the seeding loop does `collection[name] = 1`, an
+	# ASSIGNMENT, so a repeated name collapses to a single copy and always has. The duplicate is
+	# removed rather than made to work, because the owner's rule is that a deck is 5 cards plus
+	# the companion loaner — a genuine second copy would be a sixth card, and "any cards over the
+	# 5 are a waste as it just makes them be drawn less".
+	"trickster": ["analyze", "distract", "sabotage", "ambush", "perfect_heist"],
 }
 
 # 2026-09-06 — PER-CLASS starter decks, where the three classes of a path want different cards.
@@ -3565,16 +3569,16 @@ const CURATED_STARTER_DECKS_BY_CLASS := {
 	# the escalation ramp rather than waiting on a 12% roll; `ambush` carries the +25 crit
 	# affinity. Two of them so a three-card hand reliably holds one. Keeps analyze + sabotage
 	# so it still survives long enough to use them.
-	"Ninja": ["analyze", "sabotage", "ambush", "ambush", "vanish", "perfect_heist"],
+	"Ninja": ["analyze", "sabotage", "ambush", "vanish", "perfect_heist"],
 	# RANGER — Steady Hand is about never fumbling, so its cards are the ones where consistency
 	# is the whole point. `exploit` is a flat share of the enemy's MAX HP: gear-independent,
 	# no damage roll to fumble, and strongest exactly where a Trickster's raw damage is weakest.
 	# Deliberately NO `gambit` — a card that whiffs outright and hurts you is the opposite of
 	# "steady where the others gamble", and Steady Hand cannot protect against its failure roll.
-	"Ranger": ["analyze", "sabotage", "exploit", "exploit", "ambush", "perfect_heist"],
+	"Ranger": ["analyze", "sabotage", "exploit", "ambush", "perfect_heist"],
 	# GRIFTER — already aligned: Long Con doubles Read on exactly the denial cards this plays.
 	# Unchanged, and listed explicitly so it is obvious it was considered rather than missed.
-	"Grifter": ["analyze", "distract", "sabotage", "ambush", "perfect_heist", "sabotage"],
+	"Grifter": ["analyze", "distract", "sabotage", "ambush", "perfect_heist"],
 	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
 }
 
