@@ -6230,8 +6230,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				# branch growing a second copy of them. Solo is unaffected: it returns
 				# immediately on `combat_ended`, so nothing processes the victory twice.
 				monster.current_hp = 0
-				messages.append("[color=#FFD700][b]PERFECT HEIST![/b][/color]")
-				messages.append("[color=#00FF00]You execute a flawless heist![/color]")
+				messages.append("[color=#FFD700][b]ASSASSINATE![/b][/color]")
+				messages.append("[color=#00FF00]You find the opening and end it in one strike![/color]")
 
 				# Slight bonus XP (1.25x, was 2x)
 				var base_xp = int(monster.experience_reward * 1.25)
@@ -6333,8 +6333,8 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				}
 			else:
 				# Failed heist - take damage and combat continues
-				messages.append("[color=#FF4444][b]HEIST FAILED![/b][/color]")
-				messages.append("[color=#FF4444]You're caught mid-heist![/color]")
+				messages.append("[color=#FF4444][b]ASSASSINATION FAILED![/b][/color]")
+				messages.append("[color=#FF4444]They catch the movement and turn on you![/color]")
 				# Monster gets a free attack
 				var monster_result = process_monster_turn(combat)
 				messages.append("[color=#444444]─────────────────────────────[/color]")

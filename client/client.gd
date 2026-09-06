@@ -37136,10 +37136,14 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 			or "AMBUSH!" in combat_msg or "EXPLOIT WEAKNESS!" in combat_msg):
 		combat_scene_panel.play_slash_arc(is_crit or "DEVASTATE!" in combat_msg)
 
-	# A4 — outsmart spiral. Trickster outwit/Perfect Heist plays a green
+	# A4 — outsmart spiral. Trickster outwit/Assassinate plays a green
 	# spiral inward to the monster as the cue that they've been outplayed.
-	if ("PERFECT HEIST!" in combat_msg or "outwit" in lower
-			or "outsmart" in lower):
+	# 2026-09-05 — "PERFECT HEIST!" kept alongside "ASSASSINATE!": the FX is matched on the
+	# combat LINE, so a client running against an older server (or replaying an older log)
+	# still needs the old string. This is the coupling that makes renames dangerous — the
+	# server text was changed first and this check would have silently stopped firing.
+	if ("ASSASSINATE!" in combat_msg or "PERFECT HEIST!" in combat_msg
+			or "outwit" in lower or "outsmart" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 
 
