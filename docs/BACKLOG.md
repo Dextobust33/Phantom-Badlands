@@ -851,6 +851,55 @@ of three Tricksters, which this table says is needed anyway. But the Ninja keeps
 unless the finisher itself is toned down, so the slice must re-price Assassinate, not just move
 it. Mages need work independent of the engine redistribution.
 
+### The mage "problem" was the simulator, not the mages (2026-09-06)
+
+Owner asked me to diagnose and fix mages after they measured 8-46%, worst of every archetype.
+**There was nothing to fix.** The audit's mage policy was playing them badly:
+
+- every branch was gated (magic_bolt needs >25% mana, meteor needs Focus 3, forcefield needs
+  HP <70%), and **`haste` — Arcane Surge, in the mage STARTER DECK — appeared nowhere at all**;
+- so a hand of {haste, forcefield, meteor} at full health with low Focus cast NOTHING and threw
+  a basic attack, which is not what any player does.
+
+A gate should express a preference, not a refusal. The rotation now casts Arcane Surge before the
+nukes it multiplies, and ends with a catch-all that plays anything still castable before swinging
+a staff.
+
+| class | before | after |
+|---|---|---|
+| Wizard | 36 / 20 / 23 | **85 / 71 / 75** |
+| Sorcerer | 35 / 20 / 10 | **86 / 75 / 76** |
+| Sage | 28 / 11 / 8 | **95 / 60 / 76** |
+
+Casts per turn went 0.28-0.47 -> 0.72-0.91.
+
+**The casts-per-turn column was also lying**, separately: it inferred a cast from "did the class
+resource fall", which cannot see one whose cost is covered by regen. Mages regenerate mana every
+round. Counted in the engine now (`_cards_played`), on the shared path every class reaches.
+
+**A mage opening ward was added and then REMOVED.** It was designed off the false diagnosis that
+mages had no mitigation layer. A/B'd once the policy was fixed: with 85/71/75, 86/75/76, 95/60/76;
+without 95/70/80, 88/71/66, 83/58/60 — differences swinging both ways inside the +/-10pp noise at
+n=60. It measured nothing, so it is gone rather than left in as an unjustified buff.
+
+**The corrected nine-class table** (and note this restores "warriors are weakest", now for real):
+
+| class | L10 | L30 elite | L80 elite |
+|---|---|---|---|
+| Fighter | 85% | 56% | 70% |
+| Barbarian | 83% | **33%** | **36%** |
+| Paladin | 86% | 55% | 46% |
+| Wizard | 95% | 70% | 80% |
+| Sorcerer | 88% | 71% | 66% |
+| Sage | 83% | 58% | 60% |
+| Grifter | 100% | 100% | 100% |
+| Ranger | 93% | 98% | 100% |
+| Ninja | 98% | 98% | 100% |
+
+- [ ] **Tricksters at 93-100% are the outstanding balance problem.** Fights end in ~3 turns
+      against everyone else's 7-28. That is the finisher, and the Trickster slice must re-price it.
+- [ ] **Barbarian 33/36 at elite is the weakest cell in the game** and wants its own look.
+
 ### Sequencing (agreed)
 
 1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently

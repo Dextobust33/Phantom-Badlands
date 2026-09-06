@@ -4189,6 +4189,12 @@ func _mage_rotation(combat: Dictionary, ch) -> void:
 	if "frost_nova" in hand and int(combat.get("enemy_distracted", 0)) < 20 and focus < 3:
 		if combat_mgr.process_ability_command(0, "frost_nova", "").get("success", false):
 			return
+	# Arcane Surge (internally "haste") — stacks bonus spell damage AND a double-cast chance, so
+	# it wants to land BEFORE the nukes it multiplies. It is in the starter deck and the rotation
+	# never cast it, which is most of why mages measured as idle.
+	if "haste" in hand and ch.get_buff_value("damage") <= 0:
+		if combat_mgr.process_ability_command(0, "haste", "").get("success", false):
+			return
 	# Discharge the ramp with Meteor once Focus is built.
 	if focus >= 3 and "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
@@ -4206,6 +4212,20 @@ func _mage_rotation(combat: Dictionary, ch) -> void:
 			return
 	if "meteor" in hand:
 		if combat_mgr.process_ability_command(0, "meteor", "").get("success", false):
+			return
+	# 2026-09-06 — CATCH-ALL: play anything still castable before swinging a staff.
+	#
+	# Measured with a truthful cast counter, mages acted on 0.28-0.47 of turns against the
+	# warrior's 0.90-0.96. Not a class problem — a POLICY one. Every branch above is gated
+	# (magic_bolt needs >25% mana, meteor needs Focus 3, forcefield needs HP <70%), and `haste`
+	# — Arcane Surge, in the mage STARTER DECK — appeared nowhere at all. A hand of
+	# {haste, forcefield, meteor} at full health with low Focus therefore cast NOTHING and threw
+	# a basic attack, which is not what any player does.
+	#
+	# A gate should express a preference, not a refusal. The ordered list above still decides
+	# WHICH card is best; this makes sure the turn is never simply thrown away.
+	for ab in hand:
+		if combat_mgr.process_ability_command(0, String(ab), "").get("success", false):
 			return
 	_counted_attack(combat)
 

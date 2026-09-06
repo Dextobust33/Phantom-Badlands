@@ -1951,28 +1951,6 @@ func start_combat(peer_id: int, character: Character, monster: Dictionary) -> Di
 	# Opens at the FLOOR-spend value only (the same 0.3 ratio a minimum cast buys), so casting
 	# the cards properly still upgrades the magnitude and the decision stays live. This is a
 	# free opening, not a free maximum.
-	# 2026-09-06 — THE MAGE OPENS WARDED, for the same reason the Warrior opens braced.
-	#
-	# Diagnosed from the nine-class table (mages 8-46%, worst everywhere) and then measured
-	# directly: against a same-level monster a Wizard takes ~254 damage a turn and a Fighter
-	# takes ~36. Seven times less, at the same level, with near-identical HP and defence. The
-	# difference is not stats, it is that EVERY OTHER ARCHETYPE HAS A MITIGATION LAYER and the
-	# mage has none:
-	#   warrior   - opens with Iron Skin + Fortify already up (the block just below)
-	#   trickster - denial cards skip or avoid the monster's turn outright, plus Read DR
-	#   mage      - Forcefield, one cast, a quarter of a health bar, and nothing else
-	#
-	# So the mage gets the same KIND of opening the warrior got, built from its own defensive
-	# card rather than a new mechanic, and on the same terms the warrior's comment sets out:
-	# the FLOOR-spend value only, so casting Forcefield properly is still an upgrade and the
-	# decision stays live. A free opening, not a free maximum.
-	if character.get_class_path() == "mage":
-		var _ward: int = maxi(1, int(float(character.get_total_max_hp())
-			* FORCEFIELD_SHARE_OF_BAR * MAGE_OPENING_WARD_RATIO))
-		combat_state["forcefield_shield"] = _ward
-		combat_state["_ff_watch"] = _ward
-		combat_state["_ff_spent"] = false
-
 	if character.get_class_path() == "warrior":
 		var _stance_str: int = character.get_effective_stat("strength")
 		var _stance_dr: int = maxi(1, int(60.0 * WARRIOR_STANCE_RATIO))
@@ -10416,9 +10394,6 @@ const ABILITY_FLOOR_RATIO := 0.3
 # the opening turns back to shorten it. A full-value stance grants exactly that and nothing else
 # - it does not raise ABILITY_WEIGHTS, whose totals already match the Mage's.
 const WARRIOR_STANCE_RATIO := 1.0
-# What fraction of a full Forcefield the mage opens the fight already carrying. Mirrors the
-# warrior's "floor-spend value only" rule, so the card is still worth casting properly.
-const MAGE_OPENING_WARD_RATIO := 1.0
 
 const ABILITY_DISPLAY_NAMES := {
 	"tactical_retreat": "Recharge",
