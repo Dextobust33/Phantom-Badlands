@@ -701,6 +701,32 @@ on cards, the harder it measured.
       This is what the death logs show: the L3 Thief and L5 Ninja both stalled correctly, whiffed
       the finisher, and had nothing to fall back on — because there is nothing to fall back on.
 
+- [x] **MEASURED: two of three Trickster passives are INERT on the winning line.** Owner's worry:
+      *"if Rangers and Ninjas will still be able to play into their passives effectively"*.
+      Justified, and stronger than "less effective". A Ninja on the stall line, 100 fights at L10,
+      6.7 turns each, casts: analyze 3.07, perfect_heist 1.83, distract 1.28, sabotage 0.49 —
+      and **ambush 0.00, basic attack 0.00**. It never makes a damage roll.
+
+      | passive | fires? | why |
+      |---|---|---|
+      | **Long Con** (Grifter) | ~4.8 casts/fight | analyze/distract/sabotage ARE the denial cards |
+      | **Killing Edge** (Ninja) | **never** | crit needs a damage roll; there are none |
+      | **Steady Hand** (Ranger) | **never** | nothing to glance |
+
+      This PREDATES the Read-DR change — Assassinate was already the sole win condition — but the
+      DR makes the stall stronger, so it widens the gap rather than closing it.
+
+- [ ] **DESIGN CALL: make the Ninja and Ranger passives reach the line they actually play.**
+      Three routes, not mutually exclusive:
+      1. **Point the passives at the finisher.** Ninja crit adds to Assassinate's odds (precision
+         finds the opening); Ranger reliability gives a floor on the roll or a cheaper retry.
+         Keeps the stall identity and makes the class choice matter inside it.
+      2. **Make damage a real second line** — more of the earlier option 1 — so crit and no-glance
+         have something to act on. Costs the "wins by cleverness" identity if pushed too far.
+      3. **Re-point the passives entirely** at what the stall does: denial reliability, Read gain,
+         energy economy. Cleanest fit, but it discards the crit-build identity the owner asked
+         for when the three Tricksters were differentiated.
+
 - [ ] **DESIGN QUESTION for the owner.** A class whose only viable line is a coin flip is
       high-variance by construction, and under permadeath the losing half of that flip is a dead
       character. Options: give Trickster damage enough reach to be a real fallback; lower the
