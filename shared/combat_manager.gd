@@ -5872,8 +5872,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				# branch growing a second copy of them. Solo is unaffected: it returns
 				# immediately on `combat_ended`, so nothing processes the victory twice.
 				monster.current_hp = 0
-				messages.append("[color=#FFD700][b]ASSASSINATE![/b][/color]")
-				messages.append("[color=#00FF00]You find the opening and end it in one strike![/color]")
+				var _fl: Dictionary = finisher_flavour(character)
+				messages.append("[color=#FFD700][b]%s[/b][/color]" % String(_fl["hit"]))
+				messages.append("[color=#00FF00]%s[/color]" % String(_fl["hit_line"]))
 
 				# Slight bonus XP (1.25x, was 2x)
 				var base_xp = int(monster.experience_reward * 1.25)
@@ -5983,8 +5984,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 				}
 			else:
 				# Failed heist - take damage and combat continues
-				messages.append("[color=#FF4444][b]ASSASSINATION FAILED![/b][/color]")
-				messages.append("[color=#FF4444]They catch the movement and turn on you![/color]")
+				var _fl2: Dictionary = finisher_flavour(character)
+				messages.append("[color=#FF4444][b]%s[/b][/color]" % String(_fl2["miss"]))
+				messages.append("[color=#FF4444]%s[/color]" % String(_fl2["miss_line"]))
 				# Monster gets a free attack
 				var monster_result = process_monster_turn(combat)
 				messages.append("[color=#444444]─────────────────────────────[/color]")
@@ -10397,6 +10399,58 @@ const ABILITY_DISPLAY_NAMES := {
 	"forcefield": "Forcefield",
 }
 
+# 2026-09-06 — the SAME card, told as three different stories.
+#
+# Owner: "The assassinate name fits Ninja. We would just change the name, combat lines and
+# description of it on Grifter to something more fitting, not remove it mechanically. Then the
+# assassinate name is freed up for a purpose on ninja."
+#
+# The nine-class table says the bypass-HP finisher is the strongest line in the game (Tricksters
+# 96-100%, fights over in under 4 turns). Taking it off two of the three classes was the obvious
+# response and the wrong one: it is what they have, and the classes would just be poorer. What
+# actually made them feel identical was sharing one NAME and one set of lines for the trick each
+# one is supposed to pull differently.
+#
+# So the mechanic stays put and the FICTION forks. A Grifter runs a con; a Ranger takes a shot; a
+# Ninja assassinates. `Perfect Heist` is restored to the Grifter, which is where the name came
+# from before it was globally renamed.
+const ABILITY_DISPLAY_BY_CLASS := {
+	"perfect_heist": {
+		"Ninja": "Assassinate",
+		"Grifter": "Perfect Heist",
+		"Ranger": "Killing Shot",
+	},
+}
+
+# Success / failure lines for the finisher, per class. Falls back to the Ninja's wording for any
+# class not listed, so a new class cannot end up with no text at all.
+const FINISHER_FLAVOUR := {
+	"Ninja": {
+		"hit": "ASSASSINATE!",
+		"hit_line": "You find the opening and end it in one strike!",
+		"miss": "ASSASSINATION FAILED!",
+		"miss_line": "They catch the movement and turn on you!",
+	},
+	"Grifter": {
+		"hit": "PERFECT HEIST!",
+		"hit_line": "It never sees the hand that takes everything — including its life.",
+		"miss": "THE CON COLLAPSES!",
+		"miss_line": "It reads your face a beat too early and comes for you!",
+	},
+	"Ranger": {
+		"hit": "KILLING SHOT!",
+		"hit_line": "One shot, placed exactly where it had to go. It drops before it hears it.",
+		"miss": "THE SHOT GOES WIDE!",
+		"miss_line": "The shot skips off bone — and it breaks cover straight at you!",
+	},
+}
+
+static func finisher_flavour(character) -> Dictionary:
+	"""The finisher's wording for this character's class, defaulting to the Ninja's."""
+	if character == null:
+		return FINISHER_FLAVOUR["Ninja"]
+	return FINISHER_FLAVOUR.get(String(character.class_type), FINISHER_FLAVOUR["Ninja"])
+
 func _ability_display_name(_character, ability_name: String) -> String:
 	"""v0.9.592 — return the player-facing display name for an internal ability
 	id. Must match what the client renders on the actual card in hand; the
@@ -10413,6 +10467,13 @@ func _ability_display_name(_character, ability_name: String) -> String:
 		return DropTablesScript.card_display_name(ability_name)
 	if ability_name.begins_with("companion_card_"):
 		return "%s's Gift" % ability_name.trim_prefix("companion_card_").capitalize()
+	# A class-specific name wins: the same card is Assassinate / Perfect Heist / Killing Shot
+	# depending on who is holding it.
+	if _character != null and ABILITY_DISPLAY_BY_CLASS.has(ability_name):
+		var per_class: Dictionary = ABILITY_DISPLAY_BY_CLASS[ability_name]
+		var mine := String(per_class.get(String(_character.class_type), ""))
+		if mine != "":
+			return mine
 	if ABILITY_DISPLAY_NAMES.has(ability_name):
 		return String(ABILITY_DISPLAY_NAMES[ability_name])
 	return ability_name.replace("_", " ").capitalize()

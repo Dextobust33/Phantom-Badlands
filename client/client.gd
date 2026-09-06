@@ -12801,7 +12801,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"ambush": {"display": "Ambush", "cost": 30, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"vanish": {"display": "Phantom Strike", "cost": 40, "cost_percent": 0, "resource_type": "energy"},
 		"exploit": {"display": "Exploit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
-		"perfect_heist": {"display": "Assassinate", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
+		"perfect_heist": {"display": "", "cost": 50, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},   # display resolved per class
 		"sabotage": {"display": "Sabotage", "cost": 25, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		"gambit": {"display": "Gambit", "cost": 35, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "energy"},
 		# Universal abilities
@@ -20098,6 +20098,14 @@ func _ability_display_name(ability_name: String) -> String:
 	# ONE map, in shared code — see CombatManager.ABILITY_DISPLAY_NAMES. This used to keep its
 	# own copy, which is how "Haste" survived on the rank-up screen after combat and the deck had
 	# both been changed to "Arcane Surge".
+	# 2026-09-06 — a class-specific name wins. The bypass-HP finisher is Assassinate for a Ninja,
+	# Perfect Heist for a Grifter and Killing Shot for a Ranger: one mechanic, three fictions.
+	# Read from the SHARED map so the card, the log and the server all say the same word.
+	var _by_class = CombatManager.ABILITY_DISPLAY_BY_CLASS
+	if _by_class.has(ability_name):
+		var _mine := String((_by_class[ability_name] as Dictionary).get(String(character_data.get("class", "")), ""))
+		if _mine != "":
+			return _mine
 	var _canon = CombatManager.ABILITY_DISPLAY_NAMES
 	if _canon.has(ability_name):
 		return String(_canon[ability_name])
@@ -37199,7 +37207,11 @@ func _dispatch_ability_fx(combat_msg: String, lower: String, upper: String, is_c
 	# combat LINE, so a client running against an older server (or replaying an older log)
 	# still needs the old string. This is the coupling that makes renames dangerous — the
 	# server text was changed first and this check would have silently stopped firing.
+	# 2026-09-06 — all three names of the SAME card. The FX is matched on the combat LINE, which
+	# is exactly the coupling that makes renames dangerous, so every name the finisher can carry
+	# is listed here: Ninja Assassinate, Grifter Perfect Heist, Ranger Killing Shot.
 	if ("ASSASSINATE!" in combat_msg or "PERFECT HEIST!" in combat_msg
+			or "KILLING SHOT!" in combat_msg
 			or "outwit" in lower):
 		combat_scene_panel.play_outsmart_spiral()
 

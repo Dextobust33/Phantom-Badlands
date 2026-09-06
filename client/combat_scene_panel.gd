@@ -4623,7 +4623,14 @@ func _resolve_card_info(card_name: String) -> Dictionary:
 	if client_ref.has_method("_get_ability_combat_info"):
 		var ability_info = client_ref._get_ability_combat_info(card_name, path)
 		if ability_info is Dictionary and not ability_info.is_empty():
-			info["display"] = str(ability_info.get("display", info["display"]))
+			# 2026-09-06 — an EMPTY display means "resolve it per class" (the finisher is named
+			# differently for Ninja / Grifter / Ranger), so fall through to the resolver rather
+			# than rendering a blank card.
+			var _disp := str(ability_info.get("display", ""))
+			if _disp == "" and client_ref.has_method("_ability_display_name"):
+				_disp = str(client_ref._ability_display_name(card_name))
+			if _disp != "":
+				info["display"] = _disp
 			info["cost"] = int(ability_info.get("cost", 0))
 			# Slice 6c — variable-cost abilities carry a floor; cards light up if
 			# you can afford the floor, even when below the ceiling.
