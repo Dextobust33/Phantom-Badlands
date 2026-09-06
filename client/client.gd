@@ -2121,9 +2121,9 @@ const CLASS_DESCRIPTIONS = {
 	"Wizard": "Mage Path. Pure spellcaster with high magic damage. Uses Mana.\n[color=#4169E1]Passive - Arcane Precision:[/color] +15% spell damage, +10% spell crit chance",
 	"Sorcerer": "Mage Path. Chaotic mage with high-risk, high-reward magic. Uses Mana.\n[color=#9400D3]Passive - Chaos Magic:[/color] 25% chance for double spell damage, 5% chance to backfire",
 	"Sage": "Mage Path. Wise scholar with efficient mana use. Uses Mana.\n[color=#20B2AA]Passive - Mana Mastery:[/color] 25% reduced mana costs, Meditate restores 50% more",
-	"Grifter": "Trickster Path. Cunning rogue excelling at critical hits. Uses Energy.\n[color=#2F4F4F]Passive - Backstab:[/color] +50% crit damage, +15% base crit chance",
-	"Ranger": "Trickster Path. Hunter with bonuses vs beasts and extra rewards. Uses Energy.\n[color=#228B22]Passive - Hunter's Mark:[/color] +25% damage vs beasts, +30% Valor/XP from kills",
-	"Ninja": "Trickster Path. Shadow warrior with superior escape abilities. Uses Energy.\n[color=#191970]Passive - Shadow Step:[/color] +40% flee success, take no damage when fleeing"
+	"Grifter": "Trickster Path. Con artist who wins by not fighting fair. Uses Energy.\n[color=#2F4F4F]Passive - Long Con:[/color] Denial cards have a 50% chance to build double Read; +40% flee, and a failed escape costs nothing",
+	"Ranger": "Trickster Path. Steady where the others gamble. Uses Energy.\n[color=#228B22]Passive - Steady Hand:[/color] Your abilities never glance - and never crit",
+	"Ninja": "Trickster Path. Builds toward critical hits. Uses Energy.\n[color=#191970]Passive - Killing Edge:[/color] +12% crit chance, and every critical hit this fight sharpens the next (+6%)"
 }
 
 # Archetype-first character creation (2-step picker). Maps the 3 paths to their
@@ -2132,7 +2132,7 @@ const CLASS_DESCRIPTIONS = {
 const ARCHETYPE_DATA = [
 	{"key": "Warrior", "pitch": "Tough. Hits hard up close.", "resource": "Stamina", "beginner": true, "classes": ["Fighter", "Barbarian", "Paladin"]},
 	{"key": "Mage", "pitch": "Ranged spells, big damage, fragile.", "resource": "Mana", "beginner": false, "classes": ["Wizard", "Sorcerer", "Sage"]},
-	{"key": "Trickster", "pitch": "Crits, evasion, escape.", "resource": "Energy", "beginner": false, "classes": ["Grifter", "Ranger", "Ninja"]},
+	{"key": "Trickster", "pitch": "Outwit, evade, or strike critically.", "resource": "Energy", "beginner": false, "classes": ["Grifter", "Ranger", "Ninja"]},
 ]
 
 # Plain-text one-liners for the class buttons (Button can't render BBCode).
@@ -2143,9 +2143,9 @@ const CLASS_CARD_SUMMARY = {
 	"Wizard": "Pure spellcaster. +15% spell damage & crit.",
 	"Sorcerer": "High-risk mage. Chance to double spell damage.",
 	"Sage": "Efficient mage. -25% mana costs, stronger Meditate.",
-	"Grifter": "Crit specialist. +50% crit damage, +15% crit chance.",
-	"Ranger": "Beast hunter. +25% vs beasts, extra XP & Valor.",
-	"Ninja": "Escape artist. +40% flee, no damage when fleeing.",
+	"Grifter": "Con artist. Stalls to set up a kill, slips away when it turns.",
+	"Ranger": "Reliable. Never fumbles a cast, never crits either.",
+	"Ninja": "Crit build. Each critical hit sharpens the next.",
 }
 
 const BEGINNER_CLASSES = ["Fighter", "Paladin", "Ranger"]
