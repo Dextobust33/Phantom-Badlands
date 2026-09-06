@@ -1076,6 +1076,56 @@ engines first, then price the finisher against a class that has an alternative.
 - [ ] Re-test the Read DR at that point too — it was kept on probation and its justification
       (surviving a whiff) changes once a whiff is no longer the whole fight.
 
+### TRICKSTER SLICE — engines built and measured (2026-09-06)
+
+**One card, three MECHANICS.** The finisher's name and lines already forked by class; now what it
+DOES forks too, which is what actually makes them play differently. No new cards were needed.
+
+| class | shape | the finisher does | stacks also give |
+|---|---|---|---|
+| **Ninja** | Read | gamble that bypasses the health bar (unchanged) | odds |
+| **Grifter** | Momentum | guaranteed burst, magnitude scales with the Read it SPENDS | passive DR |
+| **Ranger** | Focus | discharges the aim, deterministic, never fumbles | +7% damage per Read to EVERYTHING |
+
+Constants: `GRIFTER_CASHOUT_PER_READ` 0.16, `RANGER_AIM_DMG_PER` 0.07, `RANGER_SHOT_PER_READ` 0.11.
+
+**The headline is not the win rate, it is the fight.** Trickster fights went from **2.8-3.2 turns
+to 6.3-32.8**. They now build and cash instead of instant-winning, and their kill times (6.5-34.8)
+sit in the same range as the warriors' (10.1-37.3) rather than a fifth of it.
+
+**Read DR is now GRIFTER-ONLY.** Giving it to all three handed every class a second engine's
+payoff on top of its own, and it showed once fights got long: Tricksters were surviving 41-98
+turns against the warriors' 18-32. The Grifter is the Momentum-shaped one, so the defence is its
+payoff; the Ranger has the damage ramp and the Ninja has the odds.
+
+**A policy fault was found and fixed on the way,** the same shape as the mage one: the simulator
+cast the finisher the instant it appeared in hand, with no Read check. Fine for a gamble, ruinous
+for a banked-stack payoff — it threw the whole con away at one stack, and the classes measured
+23%/13%. With `_finisher_is_ready` gating the spend they read 95%/91%. **Audit how the simulated
+player plays a class before believing the class is broken** — twice in one day now.
+
+Current table:
+
+| class | L10 | L30 elite | L80 elite |
+|---|---|---|---|
+| Fighter | 85% | 56% | 70% |
+| Barbarian | 83% | **33%** | **36%** |
+| Paladin | 86% | 55% | 46% |
+| Wizard | 90% | 73% | 78% |
+| Sorcerer | 83% | 73% | 73% |
+| Sage | 78% | 58% | 78% |
+| Grifter | 95% | 90% | 96% |
+| Ranger | 91% | 81% | 86% |
+| Ninja | 96% | 96% | 100% |
+
+- [ ] **Judge these against ROLE_TARGETS, not each other** (see the treadmill rule). At an elite
+      target of ~65%: Tricksters 81-100% are OVER, mages 58-78% are about right, warriors 33-56%
+      are UNDER. Both ends need work, independently.
+- [ ] **The Ninja is still the outlier** at 96/96/100 in 6-9 turns. Its gamble is now the only
+      bypass-HP effect in the game, so it can finally be priced as one without taking two other
+      classes down with it — which was the whole point of doing the engines first.
+- [ ] Barbarian 33/36 at elite remains the weakest cell in the game.
+
 ### Sequencing (agreed)
 
 1. **Re-measure the nine-class table on the FIXED instrument** first. Everything currently

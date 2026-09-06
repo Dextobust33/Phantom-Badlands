@@ -738,6 +738,14 @@ func apply_ability_damage_modifiers(damage: int, char_level: int, monster: Dicti
 	# only ever applied in process_attack — the basic-attack path, ~1% of what players do. So a
 	# Trickster spent a turn on Analyze and the damage half of it did essentially nothing. Third
 	# instance of this exact shape today, after crit and poison.
+	# Ranger "Steady Aim" — Read is a passive damage RAMP for this class, not an odds ramp.
+	# Applied in the shared ability funnel so every damaging card benefits, which is what makes
+	# the Ranger's loop escalation rather than a single payoff.
+	if character != null and character.class_type == "Ranger":
+		var _aim: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+		if _aim > 0:
+			mod_damage = int(float(mod_damage) * (1.0 + float(_aim) * RANGER_AIM_DMG_PER))
+			_note_modifier(combat, "Steady Aim +%d%%" % int(float(_aim) * RANGER_AIM_DMG_PER * 100.0))
 	var _an_bonus: int = int(combat.get("analyze_bonus", 0))
 	if _an_bonus > 0:
 		mod_damage = int(float(mod_damage) * (1.0 + float(_an_bonus) / 100.0))
@@ -3838,6 +3846,23 @@ const ABILITY_WEIGHTS := {
 # have already killed it. That is the intent: the finisher is what elites and bosses are for,
 # where the health bar is 1.8x to 2.8x larger and the setup has time to pay.
 const DEVASTATE_WEIGHT_PER_MOMENTUM := 0.14
+# 2026-09-06 — the finisher is ONE CARD WITH THREE MECHANICS, one per Trickster class. Its name
+# and lines already forked; this forks what it DOES, which is what actually makes the classes play
+# differently.
+#
+# Measured first: 100% of Trickster wins came from this card and 0% from damage, so its odds WERE
+# the class win rate and no value for them was correct — price it low and all three classes are
+# unplayable, price it high and the fight is one roll. The fix is not a number, it is giving the
+# other two classes a different way to win, which is the agreed one-engine-shape-per-class design.
+#
+#   Ninja    READ-shaped     gamble, bypasses the health bar entirely. Unchanged.
+#   Grifter  MOMENTUM-shaped guaranteed burst, magnitude scales with the Read it SPENDS. Same
+#                            shape as the Warrior's Devastate: bank, then cash.
+#   Ranger   FOCUS-shaped    Read is a passive damage RAMP on everything, and the finisher
+#                            discharges it. Steady Hand finally compounds into something.
+const GRIFTER_CASHOUT_PER_READ := 0.16   # 8 Read spent = ~1.3 health bars, guaranteed
+const RANGER_AIM_DMG_PER := 0.07         # +7% to ALL damage per Read held (8 = +56%)
+const RANGER_SHOT_PER_READ := 0.11       # 8 Read discharged = ~0.9 of a health bar
 
 func _primary_resource_value(character) -> int:
 	"""Current value of the character's PRIMARY combat resource, whichever it is."""
@@ -5853,6 +5878,45 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			messages.append("[color=#00FF00]Exploit Weakness[/color] — %s" % _damage_with_detail(combat, messages, damage))
 
 		"perfect_heist":
+			# --- GRIFTER: cash the con. Guaranteed damage, scaled by the Read it spends. ---
+			if character.class_type == "Grifter":
+				var _gc_read: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+				if _gc_read <= 0:
+					messages.append("[color=#808080]You have nothing on it yet — read it first.[/color]")
+					return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+				var _gc_dmg: int = int(_ability_anchored_damage(character, "wits",
+					GRIFTER_CASHOUT_PER_READ * float(_gc_read)))
+				_gc_dmg = apply_skill_damage_bonus(character, ability_name, _gc_dmg, combat)
+				_gc_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+					_gc_dmg, character.level, monster, character, combat, messages))
+				combat["combo"] = 0
+				monster.current_hp = max(0, monster.current_hp - _gc_dmg)
+				messages.append("[color=#FFD700][b]DOUBLE CROSS![/b][/color]")
+				messages.append("[color=#00FF00]You cash in everything you had on it — %s[/color]"
+					% _damage_with_detail(combat, messages, _gc_dmg))
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
+				return {"success": true, "messages": messages, "combat_ended": false}
+			# --- RANGER: discharge the aim. Guaranteed, deterministic, never fumbles. ---
+			if character.class_type == "Ranger":
+				var _rs_read: int = clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+				if _rs_read <= 0:
+					messages.append("[color=#808080]You have not steadied the shot yet.[/color]")
+					return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+				var _rs_dmg: int = int(_ability_anchored_damage(character, "wits",
+					RANGER_SHOT_PER_READ * float(_rs_read)))
+				_rs_dmg = apply_skill_damage_bonus(character, ability_name, _rs_dmg, combat)
+				_rs_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+					_rs_dmg, character.level, monster, character, combat, messages))
+				combat["combo"] = 0
+				monster.current_hp = max(0, monster.current_hp - _rs_dmg)
+				messages.append("[color=#FFD700][b]KILLING SHOT![/b][/color]")
+				messages.append("[color=#00FF00]Every steadied breath goes into it — %s[/color]"
+					% _damage_with_detail(combat, messages, _rs_dmg))
+				if monster.current_hp <= 0:
+					return _process_victory(combat, messages)
+				return {"success": true, "messages": messages, "combat_ended": false}
+			# --- NINJA: the gamble. Bypasses the health bar. ---
 			# Chance-based instant win with slight bonus rewards.
 			# Variable cost (v0.9.265): success CHANCE scales with spend.
 			# Already chance-based (5-60% cap), scaling makes floor casts
@@ -7797,9 +7861,18 @@ func process_monster_turn(combat: Dictionary) -> Dictionary:
 				var _mom_dr: float = float(clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)) * MOMENTUM_DR_PER
 				if _mom_dr > 0.0:
 					_mit_mult *= (1.0 - _mom_dr)
-			# Trickster identity — every Read you have built is a blow you see coming. Same shape
-			# as Momentum above, and under the same 85% cap.
-			if character.get_class_path() == "trickster":
+			# GRIFTER identity — every Read you have built is a blow you see coming. Same shape as
+			# Momentum above, and under the same 85% cap.
+			#
+			# 2026-09-06 — narrowed from all Tricksters to the Grifter ALONE, which is what the
+			# agreed one-engine-shape-per-class design actually says: the Grifter is the
+			# Momentum-shaped one (bank stacks -> passive defence -> spend for a burst), so the
+			# defence belongs to it. The Ranger is Focus-shaped and already gets a damage RAMP
+			# from the same stacks; the Ninja is Read-shaped and gets ODDS. Giving all three the
+			# mitigation as well was handing every class a second engine's payoff on top of its
+			# own, and it showed: once fights stopped ending in 3 turns, Tricksters were surviving
+			# 41-98 turns against the warriors' 18-32.
+			if character.class_type == "Grifter":
 				var _read_dr: float = float(clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)) * READ_DR_PER
 				if _read_dr > 0.0:
 					_mit_mult *= (1.0 - _read_dr)

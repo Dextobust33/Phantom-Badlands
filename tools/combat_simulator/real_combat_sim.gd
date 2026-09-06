@@ -4020,12 +4020,30 @@ func _player_act_trickster(combat: Dictionary, ch) -> void:
 		_: _trickster_assassin(combat, ch)
 
 
+func _finisher_is_ready(combat: Dictionary, ch) -> bool:
+	"""Should the Trickster spend its finisher THIS turn? The answer now differs by class.
+
+	2026-09-06 — the policy used to cast `perfect_heist` the instant it appeared in hand, with no
+	check at all. Defensible for the Ninja, whose card is a gamble that bypasses the health bar;
+	ruinous for the other two. After the engine split the Grifter's Double Cross and the Ranger's
+	Killing Shot SPEND banked Read for damage proportional to it, so firing at one stack throws
+	the whole con away. Measured that way they read 23%/13% — the policy dumping the bank, not
+	the engine being weak. Same lesson as the mage rotation: audit how the simulated player plays
+	a class before believing the class is broken."""
+	var read: int = int(combat.get("combo", 0))
+	match String(ch.class_type):
+		"Grifter", "Ranger":
+			return read >= 6
+		_:
+			return int(combat_mgr.assassinate_chance(ch, combat.get("monster", {}), combat)) >= 45
+
+
 func _trickster_no_outsmart(combat: Dictionary, ch) -> void:
 	# deny_first with Outsmart REMOVED. Half of the A/B that prices which win condition carries
 	# the class: the Grifter measures 75/80/98/88 and halving its Read did nothing, so the
 	# strength is in the bypass-HP wins rather than the ramp that feeds them.
 	var hand: Array = combat.get("combat_hand", [])
-	if "perfect_heist" in hand:
+	if "perfect_heist" in hand and _finisher_is_ready(combat, ch):
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
 			return
 	for ab in ["analyze", "distract", "sabotage"]:
@@ -4043,7 +4061,7 @@ func _trickster_damage_only(combat: Dictionary, ch) -> void:
 	# No Outsmart, no denial - just hit things. The control that tells us what the denial
 	# stall and the finisher are actually worth.
 	var hand: Array = combat.get("combat_hand", [])
-	if "perfect_heist" in hand:
+	if "perfect_heist" in hand and _finisher_is_ready(combat, ch):
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
 			return
 	for ab in ["ambush", "exploit", "gambit"]:
@@ -4058,7 +4076,7 @@ func _trickster_deny_first(combat: Dictionary, ch) -> void:
 	# The owner's stated design: "they skip the enemy turn at the cost of resource to help the
 	# trickster survive building up their Outsmart."
 	var hand: Array = combat.get("combat_hand", [])
-	if "perfect_heist" in hand:
+	if "perfect_heist" in hand and _finisher_is_ready(combat, ch):
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
 			return
 	for ab in ["analyze", "distract", "sabotage"]:
@@ -4087,7 +4105,7 @@ func _trickster_assassin(combat: Dictionary, ch) -> void:
 	# isn't our strategy or ability and outsmart use." It was. The curated trickster deck is
 	# Analyze / Distract / Sabotage / Ambush / Assassinate / Sabotage, and this policy used only
 	# ambush, sabotage, distract and gambit - holding its win condition and never spending it.
-	if "perfect_heist" in hand:
+	if "perfect_heist" in hand and _finisher_is_ready(combat, ch):
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
 			return
 	# TURN DENIAL as survival. Owner 2026-09-04: Analyze / Distract / Sabotage "actually skip the
