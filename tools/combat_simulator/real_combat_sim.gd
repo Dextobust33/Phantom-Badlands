@@ -107,6 +107,7 @@ func _audit_registry() -> Dictionary:
 		"refcal": ["calibrate monster stats against REAL fights until they hit target", run_reference_calibrate],
 		"rolecal": ["calibrate the elite/boss multipliers against real fights", run_role_calibrate],
 		"roles": ["elite/boss fights vs their ROLE_TARGETS", run_role_audit],
+		"realcheck": ["make_char vs the REAL saved characters — is the reference player honest?", run_real_character_check],
 		"fallback": ["does a win rate mean the same thing for every class?", run_fallback_audit],
 		"xp": ["how many fights to level, and what is the best way", run_xp_audit],
 		"risk": ["over-level gambles: kill/escape/death and what the reward is worth", run_risk_reward_audit],
@@ -4406,6 +4407,127 @@ func _apply_class_kit(ch, klass: String, glevel: int, best_of: int, max_pieces: 
 		ch.equipped[slot2] = by_slot[slot2]
 		worn += 1
 
+const REALCHECK_DIR := "user://realchars"
+
+func run_real_character_check() -> void:
+	"""Compare the sim's reference player against the characters people actually have.
+
+	2026-09-05, owner direction: "Validate make_char against the real saved characters first."
+	The corrected instrument put a same-level normal fight at 100% win at L1, which flatly
+	contradicts what live players report — and the owner's read is that the early game currently
+	feels about right. If the game feels right and the model says it is trivial, the MODEL is
+	wrong, and letting refcal fit monsters to it would size the game for a player who does not
+	exist.
+
+	Reads real character saves (copy them to `user://realchars`) and reports, per character, what
+	make_char would have built at the same level, class and race."""
+	var dir := DirAccess.open(REALCHECK_DIR)
+	if dir == null:
+		print("No characters at %s — copy the server's data/characters/*.json there first." % REALCHECK_DIR)
+		return
+	var files: Array = []
+	for f in dir.get_files():
+		if f.ends_with(".json"):
+			files.append(f)
+	files.sort()
+	if files.is_empty():
+		print("No .json character saves found in %s" % REALCHECK_DIR)
+		return
+
+	print("
+=== make_char vs REAL saved characters ===")
+	print("%-16s %-10s %-4s | %-26s | %-26s" % ["name", "class", "lvl", "REAL  atk/def/hp/pool/gear", "make_char average"])
+	var acc := {"atk": [], "def": [], "hp": [], "pool": [], "gear": []}
+	for fname in files:
+		var txt := FileAccess.get_file_as_string("%s/%s" % [REALCHECK_DIR, fname])
+		if txt == "":
+			continue
+		var parsed = JSON.parse_string(txt)
+		if not (parsed is Dictionary):
+			continue
+		var data: Dictionary = parsed
+		if String(data.get("class", "")) == "":
+			continue
+		var real = CharacterScript.new()
+		real.from_dict(data)
+		var lvl: int = int(real.level)
+		var sim = make_char(lvl, "average", String(real.class_type), String(real.race))
+		var r_gear := _count_equipped(real)
+		var s_gear := _count_equipped(sim)
+		var r_pool := _primary_pool_of(real)
+		var s_pool := _primary_pool_of(sim)
+		print("%-16s %-10s %-4d | %5d %5d %5d %5d %d/7 | %5d %5d %5d %5d %d/7" % [
+			String(real.name).substr(0, 16), String(real.class_type), lvl,
+			real.get_total_attack(), real.get_total_defense(), real.get_total_max_hp(), r_pool, r_gear,
+			sim.get_total_attack(), sim.get_total_defense(), sim.get_total_max_hp(), s_pool, s_gear])
+		if real.get_total_attack() > 0:
+			acc["atk"].append(float(sim.get_total_attack()) / float(real.get_total_attack()))
+		if real.get_total_defense() > 0:
+			acc["def"].append(float(sim.get_total_defense()) / float(real.get_total_defense()))
+		if real.get_total_max_hp() > 0:
+			acc["hp"].append(float(sim.get_total_max_hp()) / float(real.get_total_max_hp()))
+		if r_pool > 0:
+			acc["pool"].append(float(s_pool) / float(r_pool))
+		acc["gear"].append(float(s_gear) - float(r_gear))
+
+	print("
+--- how much HOTTER the reference player is than the real one ---")
+	for k in ["atk", "def", "hp", "pool"]:
+		var a: Array = acc[k]
+		if a.is_empty():
+			continue
+		var tot := 0.0
+		for v in a:
+			tot += float(v)
+		print("  %-5s x%.2f   (1.00 = the model matches reality)" % [k, tot / float(a.size())])
+	var g: Array = acc["gear"]
+	if not g.is_empty():
+		var gt := 0.0
+		for v in g:
+			gt += float(v)
+		print("  gear  %+.1f slots filled vs the real character" % (gt / float(g.size())))
+
+func _count_equipped(ch) -> int:
+	var n := 0
+	var eq = ch.equipped
+	if eq is Dictionary:
+		for k in eq.keys():
+			var it = eq[k]
+			if it is Dictionary and not (it as Dictionary).is_empty():
+				n += 1
+	return n
+
+func _primary_pool_of(ch) -> int:
+	match ch.get_class_path():
+		"mage": return ch.get_total_max_mana()
+		"trickster": return ch.get_total_max_energy()
+		_: return ch.get_total_max_stamina()
+
+func _slot_fill_chance_for(level: int) -> float:
+	"""How much of a real player's kit is actually FILLED at this level.
+
+	2026-09-05 — fitted to the live saves (`-- realcheck`), on the owner's instruction to
+	validate the reference player before letting refcal fit monsters to it. Measured against 17
+	real characters, make_char "average" was x1.60 attack, x2.01 defence, x1.65 resource pool
+	and +3.6 filled slots — and the error is almost entirely LOW LEVEL. At L12-19 the model is
+	close (x1.13 to x1.23); at L1-4 it is 2x to 3.5x, because it hands a brand-new character a
+	full seven-slot kit.
+
+	Observed fill, real characters, legacy twinks excluded:
+	  L1  0/7 (n=7, every one)      L3  ~4.7/7      L4  3/7
+	  L7  7/7                       L8  5/7         L12 7/7      L19 7/7
+
+	So a character earns its kit over roughly the first five levels rather than starting in one.
+	This is what made a same-level L1 fight measure 100% win while live players report the early
+	game feels about right — the owner's read, and the reason to trust the game over the model.
+
+	CAVEAT: n=17, most of them low level, several of them test characters. It is a better model
+	than "everyone starts fully equipped", not a precise one. Re-fit as the population grows —
+	`tools/check_player_progress.sh` reports when there is more to fit against."""
+	if level <= 1:
+		return 0.0
+	return clampf(float(level - 1) / 5.0, 0.0, 1.0)
+
 func make_char(level: int, gear: String, klass: String = "Fighter", race: String = "Human"):
 	var ch = CharacterScript.new()
 	ch.initialize("SimChar", klass, race)
@@ -4514,6 +4636,11 @@ func make_char(level: int, gear: String, klass: String = "Fighter", race: String
 				break
 		if base_type == "":
 			continue  # no base for this slot at/below tier → leave the slot empty (realistic)
+		# A real player has not filled their kit yet at low level — measured, every L1 character
+		# on the live server has SEVEN EMPTY SLOTS. Only the rolled-rarity ("average") rung
+		# models a real player, so the deliberate bookends (under/bis/starter) are untouched.
+		if roll_rarity and randf() > _slot_fill_chance_for(level):
+			continue
 		var slot_rarity: String = _roll_slot_rarity(gtier) if roll_rarity else rarity
 		if slot_rarity == "":
 			continue  # rolled an empty slot — a real player has gaps
