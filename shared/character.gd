@@ -3542,10 +3542,48 @@ const CURATED_STARTER_DECKS := {
 	# Sabotage appears twice deliberately, as the owner listed it: it is the workhorse of that
 	# kit, and a second copy makes it reliably drawable in a three-card hand.
 	"trickster": ["analyze", "distract", "sabotage", "ambush", "perfect_heist", "sabotage"],
+}
+
+# 2026-09-06 — PER-CLASS starter decks, where the three classes of a path want different cards.
+#
+# Measured first: on the line that actually wins (stall to Assassinate), a Ninja casts analyze
+# 3.07, perfect_heist 1.83, distract 1.28 and sabotage 0.49 per fight — and ambush 0.00, with
+# zero basic attacks. It never makes a damage roll at all. So Killing Edge (+12% crit, +6% per
+# crit) and Steady Hand (never glances) both fire ZERO times, because both need a damage roll,
+# while the Grifter's Long Con fires on nearly every cast because the denial cards it keys off
+# are exactly what the line plays. One passive of three was doing anything.
+#
+# Owner: "Ranger and Ninjas starter deck should be adjusted. They should start with cards from
+# their deck that make sense for their intended play styles." So the fix is the deck, not the
+# passive: give each class the cards its passive can act on, keeping enough denial that the
+# class still survives to its payoff.
+#
+# The path deck above stays as the fallback for anything not listed here.
+const CURATED_STARTER_DECKS_BY_CLASS := {
+	# NINJA — Killing Edge wants damage rolls to crit on, and crits that beget crits.
+	# `vanish` (Phantom Strike) is a GUARANTEED crit on the next damaging action, which starts
+	# the escalation ramp rather than waiting on a 12% roll; `ambush` carries the +25 crit
+	# affinity. Two of them so a three-card hand reliably holds one. Keeps analyze + sabotage
+	# so it still survives long enough to use them.
+	"Ninja": ["analyze", "sabotage", "ambush", "ambush", "vanish", "perfect_heist"],
+	# RANGER — Steady Hand is about never fumbling, so its cards are the ones where consistency
+	# is the whole point. `exploit` is a flat share of the enemy's MAX HP: gear-independent,
+	# no damage roll to fumble, and strongest exactly where a Trickster's raw damage is weakest.
+	# Deliberately NO `gambit` — a card that whiffs outright and hurts you is the opposite of
+	# "steady where the others gamble", and Steady Hand cannot protect against its failure roll.
+	"Ranger": ["analyze", "sabotage", "exploit", "exploit", "ambush", "perfect_heist"],
+	# GRIFTER — already aligned: Long Con doubles Read on exactly the denial cards this plays.
+	# Unchanged, and listed explicitly so it is obvious it was considered rather than missed.
+	"Grifter": ["analyze", "distract", "sabotage", "ambush", "perfect_heist", "sabotage"],
 	"mage": ["magic_bolt", "blast", "forcefield", "haste", "meteor"],
 }
 
 func _curated_starter_deck() -> Array:
+	# A class-specific deck wins over the path default, so Ninja/Ranger get cards their passives
+	# can actually act on. Falls back to the path deck for every class without an entry.
+	var by_class = CURATED_STARTER_DECKS_BY_CLASS.get(class_type, null)
+	if by_class is Array and not (by_class as Array).is_empty():
+		return (by_class as Array).duplicate()
 	var d = CURATED_STARTER_DECKS.get(get_class_path(), [])
 	return d.duplicate() if d is Array else []
 
