@@ -1756,15 +1756,45 @@ func xp_required_for_next_level(from_level: int) -> int:
 	return int(base)
 
 func get_stat_gains_for_class() -> Dictionary:
-	"""Get stat increases per level based on class (2.5 total stats per level, class-specific distribution)"""
+	"""Stat increases per level. 2.5 total for every class; only the distribution differs.
+
+	2026-09-07 — owner: "while each class should have a primary stat that effects their damage they
+	should also have a secondary stat that can be used to help pad the things they struggle in."
+
+	Checked against the code, THREE classes were levelling the wrong stat fastest — their damage
+	stat was their SECONDARY, so they got progressively worse at killing relative to everyone else
+	as they levelled:
+
+	    class     grew fastest     but damage scales from     death/encounter
+	    Paladin   CON  1.00        strength (0.75)            2.3%
+	    Sage      WIS  1.00        intelligence (0.75)        1.7%
+	    Ninja     DEX  1.25        wits (1.00)                2.7%
+
+	MEASURED, and the Ninja is the exception: realigning it made things WORSE (2.7% -> 4.3%), so
+	it is reverted. DEX is not a mismatch for that class, it is its ONLY mitigation — dodge is
+	DEX/5 up to 30% — and it has nothing else to replace what trading it away costs. Exactly the
+	same lesson as `sabotage`, which could not be cut for a damage card for the same reason.
+	Paladin 2.3% -> 1.0% (its first survivor) and Sage 1.7% -> 1.5% both kept.
+
+	Every class whose top stat DID match its damage stat sat in the healthy group: Fighter 0.2%,
+	Sorcerer 0.2%, Grifter 0.3%, Wizard 0.7%. That is the cause of the slow-kill loop I kept
+	finding downstream — long fights, more damage taken, more recovery, more exposure — without
+	ever finding what produced it.
+
+	Primary now drives DAMAGE; the secondary pads what the class struggles with, which is the
+	owner's rule: Paladin keeps CON at 0.75 (it is still the enduring one), the Oracle keeps WIS
+	(mana pool and Meditate), and the Ninja keeps DEX (dodge and crit — its fragility). Totals are
+	untouched at 2.5, so nobody gains raw power; the allocation just points at the right thing.
+
+	NOTE: this only affects levels gained from here. Existing characters keep the stats they have."""
 	var gains = {
 		# Warrior Path (primary: STR, secondary: CON) - Total: 2.5
 		"Fighter": {"strength": 1.25, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.25},
 		"Barbarian": {"strength": 1.5, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.0},
-		"Paladin": {"strength": 0.75, "constitution": 1.0, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.25, "wits": 0.25},
+		"Paladin": {"strength": 1.0, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.25, "wits": 0.25},
 		# Mage Path (primary: INT, secondary: WIS) - Total: 2.5
 		"Wizard": {"strength": 0.0, "constitution": 0.40, "dexterity": 0.25, "intelligence": 1.10, "wisdom": 0.75, "wits": 0.0},
-		"Sage": {"strength": 0.0, "constitution": 0.5, "dexterity": 0.25, "intelligence": 0.75, "wisdom": 1.0, "wits": 0.0},
+		"Sage": {"strength": 0.0, "constitution": 0.5, "dexterity": 0.25, "intelligence": 1.0, "wisdom": 0.75, "wits": 0.0},
 		"Sorcerer": {"strength": 0.0, "constitution": 0.35, "dexterity": 0.25, "intelligence": 1.40, "wisdom": 0.50, "wits": 0.0},
 		# Trickster Path (primary: WITS/DEX, secondary: varies) - Total: 2.5
 		"Grifter": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},

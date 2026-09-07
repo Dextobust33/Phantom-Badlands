@@ -5661,6 +5661,12 @@ func run_grow_audit():
 	# archetype — especially now the three in an archetype no longer play alike.
 	for _grow_row in ALL_CLASSES:
 		var klass := String(_grow_row[0])
+		# 2026-09-07 — SEED PER CLASS. `grow` shares one RNG stream across all nine, so changing
+		# three classes shifted the stream for the other six: a stat change to Paladin/Sage/Ninja
+		# appeared to move the Grifter 0.3%->1.4% and the Sorcerer 5 survivors->12, neither of
+		# which was touched. The class audit was fixed this way earlier; this one was missed, and
+		# it makes every cross-run comparison here unattributable. Same fault, second instrument.
+		seed(hash("grow|%s" % klass))
 		var lived := 0
 		var died_at: Array = []
 		var f_sum := 0

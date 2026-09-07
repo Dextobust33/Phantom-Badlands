@@ -4051,6 +4051,20 @@ const RANGER_AIM_DMG_PER := 0.11         # +11% to ALL damage per Read held (8 =
 # damaging action, and that is most of what the card is worth to a Killing Edge Ninja.
 const VANISH_WEIGHT := 0.18
 
+# Damage reduction granted by CONSTITUTION, as a fraction. Read against the same level-scaled
+# baseline the ability-damage ratio uses (`level + 13`), so a character who keeps their CON in
+# step with their level holds a steady share rather than one that decays or explodes.
+#
+# CON_DR_AT_PAR is what a class sitting exactly at par gets; the cap stops a CON-stacked build
+# from turning mitigation into a substitute for kill speed or positioning.
+const CON_DR_AT_PAR: float = 0.10
+const CON_DR_CAP: float = 0.22
+
+static func con_damage_reduction(character) -> float:
+	var con: float = float(character.get_effective_stat("constitution"))
+	var par: float = maxf(1.0, float(character.level) + ABILITY_STAT_BASELINE_OFFSET)
+	return clampf(CON_DR_AT_PAR * (con / par), 0.0, CON_DR_CAP)
+
 # How much of a species' flock chance actually applies, by player level. A flock is consecutive
 # fights with NO rest between them, which is the harshest thing in the early game for any class
 # that kills slowly — and it was flat from L1 to L10000.
@@ -8355,6 +8369,21 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 			# keeps its own cap upstream, so total mitigation stays bounded.)
 			var _raw_hit: int = damage
 			var _mit_mult := 1.0
+			# 2026-09-07 — CONSTITUTION NOW BUYS MITIGATION, not only hit points.
+			#
+			# Owner: "it sounds like a bit of mitigation and kill speed should be derived from the
+			# class's stats as well." Measured, that was the missing piece. Of the six stats, only
+			# DEX granted any mitigation at all (dodge, DEX/5 capped 30%) and CON granted pure HP;
+			# STR, INT, WITS and WIS granted none. So a class trying to pad the thing it actually
+			# dies from had no stat that did it, which is why every stat redistribution I tried
+			# moved so little — and why CON correlated at +0.23 with death rate, the WRONG sign.
+			#
+			# Scaled against level the same way ability damage is, so it neither withers late nor
+			# trivialises the early game, and capped well below the point where stacking CON is a
+			# substitute for playing well. Folded under the existing 85% total mitigation cap.
+			var _con_dr: float = con_damage_reduction(character)
+			if _con_dr > 0.0:
+				_mit_mult *= (1.0 - _con_dr)
 			var damage_reduction = character.get_buff_value("damage_reduction")
 			if damage_reduction > 0:
 				_mit_mult *= (1.0 - damage_reduction / 100.0)
