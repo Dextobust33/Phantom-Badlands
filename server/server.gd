@@ -43,7 +43,16 @@ var pending_update_seconds_remaining: float = 0.0
 const SHUTDOWN_SENTINEL_PATH := "user://pending_shutdown.txt"
 # Chance of being ambushed per rest / meditate tick outside a safe zone. 2026-09-05: was an
 # inline 15 at two separate sites; named so recovery is tunable in ONE place.
-const REST_AMBUSH_CHANCE := 5
+# 2026-09-07 — 5 -> 4, and rest ticks got bigger at the same time (REST_HEAL_MIN/MAX below).
+# Owner chose "2 with a slight bit of 1": mostly fewer, larger rest ticks plus a small cut to the
+# ambush rate. The point is EXPOSURE, not healing throughput — climbing back from 30% HP took ~5
+# ticks and now takes ~3, so the same recovery is rolled against fewer times. Measured, failed
+# recovery is what kills six of the nine classes in a real climb: they win slowly, take more
+# damage, need more ticks, get interrupted, and walk into the next fight at 68% HP.
+const REST_AMBUSH_CHANCE := 4
+# One rest tick, as a share of max HP. The simulator READS these rather than copying them.
+const REST_HEAL_MIN := 0.20
+const REST_HEAL_MAX := 0.35
 const SHUTDOWN_SENTINEL_POLL_INTERVAL := 5.0
 var _shutdown_sentinel_timer: float = 0.0
 var pending_update_last_announcement: int = -1  # Track which announcement was last sent
@@ -5737,7 +5746,7 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 
 	if not hp_full:
 		# Restore 10-25% of max HP
-		var heal_percent = randf_range(0.10, 0.25)
+		var heal_percent = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 		heal_amount = int(character.get_total_max_hp() * heal_percent)
 		heal_amount = max(1, heal_amount)  # At least 1 HP
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
@@ -5745,7 +5754,7 @@ func handle_rest(peer_id: int, _is_party_follower: bool = false):
 	# Phase B1 — companion recovers a similar % on rest. Skipped when KO'd.
 	var companion_heal_amount: int = 0
 	if character.has_active_companion() and not character.is_companion_ko():
-		var comp_heal_percent: float = randf_range(0.10, 0.25)
+		var comp_heal_percent: float = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 		companion_heal_amount = character.regen_companion(comp_heal_percent)
 
 	# v0.9.667 — build a GRAMMATICAL rest message from whatever was ACTUALLY
@@ -5910,7 +5919,7 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 		meditate_msg = "%s[color=#66CCCC]You meditate deeply and recover %d Mana.%s[/color]" % [cloak_prefix, mana_regen, bonus_text]
 	else:
 		# Not full HP: also heal
-		var heal_percent = randf_range(0.10, 0.25)
+		var heal_percent = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 		var heal_amount = int(character.get_total_max_hp() * heal_percent)
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
@@ -5926,7 +5935,7 @@ func _handle_meditate(peer_id: int, character: Character, cloak_was_dropped: boo
 		if character.is_companion_ko():
 			meditate_msg += "\n[color=#FF6666]Your %s is knocked out and needs a healer to revive.[/color]" % comp_name
 		else:
-			var comp_meditate_percent: float = randf_range(0.10, 0.25)
+			var comp_meditate_percent: float = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 			var comp_heal_amount: int = character.regen_companion(comp_meditate_percent)
 			if comp_heal_amount > 0:
 				meditate_msg += "\n[color=#3DD9FF]Your %s recovers %d HP.[/color]" % [comp_name, comp_heal_amount]
@@ -35166,7 +35175,7 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 	var hp_full = character.current_hp >= character.get_total_max_hp()
 	var heal_amount = 0
 	if not hp_full:
-		var heal_percent = randf_range(0.10, 0.25)
+		var heal_percent = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 		heal_amount = int(character.get_total_max_hp() * heal_percent)
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
@@ -35175,7 +35184,7 @@ func handle_dungeon_rest(peer_id: int, message: Dictionary):
 	# overworld rest path). Skipped when KO'd; only healers revive.
 	var companion_heal_amount: int = 0
 	if character.has_active_companion() and not character.is_companion_ko():
-		var comp_heal_percent: float = randf_range(0.10, 0.25)
+		var comp_heal_percent: float = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 		companion_heal_amount = character.regen_companion(comp_heal_percent)
 
 	# v0.9.667 — grammatical rest message from what was ACTUALLY recovered.
@@ -35265,7 +35274,7 @@ func _handle_dungeon_meditate(peer_id: int, character: Character, food_name: Str
 	if at_full_hp:
 		meditate_msg += "[color=#66CCCC]You meditate deeply and recover %d Mana.[/color] [color=#00FF00](HP already full)[/color]%s" % [mana_regen, bonus_text]
 	else:
-		var heal_percent = randf_range(0.10, 0.25)
+		var heal_percent = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 		var heal_amount = int(character.get_total_max_hp() * heal_percent)
 		heal_amount = max(1, heal_amount)
 		character.current_hp = min(character.get_total_max_hp(), character.current_hp + heal_amount)
@@ -35274,7 +35283,7 @@ func _handle_dungeon_meditate(peer_id: int, character: Character, food_name: Str
 	# v0.9.566 — companion recovers on dungeon meditate, matching overworld
 	# meditate. Skipped when KO'd.
 	if character.has_active_companion() and not character.is_companion_ko():
-		var comp_meditate_percent: float = randf_range(0.10, 0.25)
+		var comp_meditate_percent: float = randf_range(REST_HEAL_MIN, REST_HEAL_MAX)
 		var comp_heal_amount: int = character.regen_companion(comp_meditate_percent)
 		if comp_heal_amount > 0:
 			var comp_name: String = str(character.active_companion.get("name", "your companion"))

@@ -29,6 +29,15 @@ const WARRIOR_DMG_PRIORITY := ["devastate", "cleave", "shield_bash", "power_stri
 # When the simulated player gives up on a fight and runs. A real player does not trade to the
 # last hit point, and the harness modelling that as a death is what made every loss look fatal.
 const RUN_FIGHT_FLEE_AT: float = 0.30
+# The REAL rest-ambush chance, read from the server rather than copied.
+#
+# 2026-09-07 — this loop hardcoded 15 while the game has used 5 since 2026-09-05, when it was
+# nerfed for precisely the reason being investigated here: interrupted heal-ups were killing new
+# characters. The nerf reached the game and never reached the simulator, so every `grow` run since
+# has modelled a rest-ambush rate THREE TIMES worse than reality — and I then diagnosed the
+# recovery economy as the binding constraint for six of nine classes off the back of it. Read the
+# constant; do not keep a copy of it.
+const ServerScript = preload("res://server/server.gd")
 # TEMP diagnostic counters for the grow-vs-classes contradiction.
 # Career-death diagnostics. ONE constructor, used for both the declaration and the per-run reset:
 # they were two literals for about ten minutes and a field added to one and not the other crashed
@@ -5356,7 +5365,7 @@ func _grow_recover(ch) -> bool:
 	# The previous version handed out a free full heal here and made the harness too kind.
 	if float(ch.current_hp) / float(maxi(1, ch.get_total_max_hp())) < 0.50:
 		for _step in range(5):
-			if (randi() % 100) < 15:
+			if (randi() % 100) < ServerScript.REST_AMBUSH_CHANCE:
 				return true
 		ch.current_hp = ch.get_total_max_hp()
 		ch.current_mana = ch.get_total_max_mana()
@@ -5443,8 +5452,10 @@ func _grow_gather(ch) -> Dictionary:
 	if char_xp > 0:
 		ch.add_experience(char_xp)
 		_grow_spend_points(ch)
-	# Gathering happens out in the world, so it can be interrupted the same way resting is.
-	return {"xp": char_xp, "ambushed": (randi() % 100) < 15}
+	# Gathering happens out in the world, so it can be interrupted the same way resting is —
+	# and the game uses REST_AMBUSH_CHANCE for both paths, so this reads the same constant
+	# rather than the stale 15 it used to hardcode.
+	return {"xp": char_xp, "ambushed": (randi() % 100) < ServerScript.REST_AMBUSH_CHANCE}
 
 
 func _grow_gather_share(level: int) -> float:
