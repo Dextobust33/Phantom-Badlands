@@ -3098,7 +3098,26 @@ func _build_player_status_bbcode(s: Dictionary) -> String:
 			var bdur: int = int(b.get("duration", 0))
 			if btype == "" or bdur <= 0:
 				continue
-			chips.append(_format_status_chip(btype, "%dT" % bdur))
+			# 2026-09-07 — show the MAGNITUDE, not just the timer. A chip reading "Iron Skin 4T"
+			# told the player how long something lasted without ever saying what it was worth.
+			var bval: int = int(b.get("value", 0))
+			if bval > 0:
+				chips.append(_format_status_chip(btype, "+%d%% %dT" % [bval, bdur]))
+			else:
+				chips.append(_format_status_chip(btype, "%dT" % bdur))
+	# Total damage reduction, with its sources. Most of it is NOT a buff — CON grants it from the
+	# stat and the class engines grant it from banked stacks — so it appeared on no surface, and a
+	# player could hold 25% from their own engine without knowing. It also makes the decision to
+	# SPEND those stacks legible, since spending them gives the mitigation up.
+	var mit: int = int(s.get("mitigation_pct", 0))
+	if mit > 0:
+		var srcs: Array = s.get("mitigation_sources", [])
+		var parts: Array = []
+		for src in srcs:
+			if src is Dictionary:
+				parts.append("%s %d%%" % [str(src.get("label", "?")), int(src.get("pct", 0))])
+		var detail: String = (" (" + ", ".join(parts) + ")") if not parts.is_empty() else ""
+		chips.append(_format_status_chip("damage_reduction", "-%d%% taken%s" % [mit, detail]))
 	return "  ".join(chips)
 
 func _build_monster_status_bbcode(s: Dictionary) -> String:
@@ -3127,6 +3146,18 @@ func _build_monster_status_bbcode(s: Dictionary) -> String:
 	if slow_turns > 0:
 		var sval: int = int(s.get("slow_value", 0))
 		chips.append(_format_status_chip("slow", "-%d%% %dT" % [sval, slow_turns]))
+	# 2026-09-07 — the Trickster kit's own debuffs. These last the FIGHT rather than a number of
+	# turns, so they show their magnitude and no timer; the player needs to see the number because
+	# sabotage stacks to a 50% cap and distract is overwritten rather than added to.
+	var sab: int = int(s.get("sabotage_value", 0))
+	if sab > 0:
+		chips.append(_format_status_chip("weakness", "-%d%% str/def" % sab))
+	var dis: int = int(s.get("distract_value", 0))
+	if dis > 0:
+		chips.append(_format_status_chip("slow", "-%d%% acc" % dis))
+	var anz: int = int(s.get("analyze_value", 0))
+	if anz > 0:
+		chips.append(_format_status_chip("weakness", "analyzed +%d%%" % anz))
 	if chips.is_empty():
 		return ""
 	# Right-align so the chips read from the inside edge inward, matching the

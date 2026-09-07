@@ -10342,6 +10342,51 @@ func set_analyze_bonus(peer_id: int, bonus: int):
 	if active_combats.has(peer_id):
 		active_combats[peer_id]["analyze_bonus"] = bonus
 
+func player_mitigation_breakdown(character, combat: Dictionary) -> Array:
+	"""Every source currently reducing incoming damage, as {label, pct} — for DISPLAY.
+
+	2026-09-07, owner: "players should be able to see their damage reduction and any other buffs
+	in there as well as their durations."
+
+	Most of a character's mitigation is not a buff and so appeared nowhere: CON grants damage
+	reduction from the stat, and the class engines grant it from banked stacks (Fighter Momentum,
+	Sorcerer Volatility, Grifter Read). A player could hold 25% reduction from their own engine and
+	have no way to know it, which also makes the decision to SPEND those stacks unreadable.
+
+	Mirrors the order in the damage path deliberately, and the multiplicative combine below matches
+	how it is actually applied — the sources do not simply add."""
+	var out: Array = []
+	var con_dr := con_damage_reduction(character)
+	if con_dr > 0.0:
+		out.append({"label": "Constitution", "pct": int(round(con_dr * 100.0))})
+	var buff_dr := int(character.get_buff_value("damage_reduction"))
+	if buff_dr > 0:
+		out.append({"label": "Damage reduction", "pct": buff_dr})
+	var def_buff := int(character.get_buff_value("defense"))
+	if def_buff > 0:
+		out.append({"label": "Defense", "pct": def_buff})
+	var cls := String(character.class_type)
+	if cls == "Fighter":
+		var m := clampi(int(combat.get("momentum", 0)), 0, MOMENTUM_MAX)
+		if m > 0:
+			out.append({"label": class_engine_label(cls), "pct": int(round(float(m) * MOMENTUM_DR_PER * 100.0))})
+	elif cls == "Sorcerer":
+		var v := clampi(int(combat.get("focus", 0)), 0, FOCUS_MAX)
+		if v > 0:
+			out.append({"label": class_engine_label(cls), "pct": int(round(float(v) * SORCERER_VOLATILITY_DR_PER * 100.0))})
+	elif cls == "Grifter":
+		var r := clampi(int(combat.get("combo", 0)), 0, COMBO_MAX)
+		if r > 0:
+			out.append({"label": class_engine_label(cls), "pct": int(round(float(r) * READ_DR_PER * 100.0))})
+	return out
+
+func player_total_mitigation_pct(character, combat: Dictionary) -> int:
+	"""The combined reduction, combined MULTIPLICATIVELY the way the damage path does it."""
+	var mult := 1.0
+	for src in player_mitigation_breakdown(character, combat):
+		mult *= (1.0 - float(int(src["pct"])) / 100.0)
+	return int(round((1.0 - mult) * 100.0))
+
 func get_combat_display(peer_id: int) -> Dictionary:
 	"""Get formatted combat state for display"""
 	if not active_combats.has(peer_id):
@@ -10476,6 +10521,10 @@ func get_combat_display(peer_id: int) -> Dictionary:
 			"cloak": character.cloak_active,
 			"forcefield_shield": int(combat.get("forcefield_shield", 0)),
 			"buffs": character.active_buffs.duplicate(true) if character.active_buffs is Array else [],
+			# Mitigation the player cannot otherwise see: CON and banked engine stacks are not
+			# buffs, so they appeared on no surface at all.
+			"mitigation_pct": player_total_mitigation_pct(character, combat),
+			"mitigation_sources": player_mitigation_breakdown(character, combat),
 		},
 		"monster_status": {
 			"bleed_damage": int(combat.get("monster_bleed", 0)),
@@ -10488,6 +10537,14 @@ func get_combat_display(peer_id: int) -> Dictionary:
 			"weakness_turns": int(combat.get("monster_weakness_duration", 0)),
 			"slow_value": int(combat.get("monster_slowed", 0)),
 			"slow_turns": int(combat.get("monster_slow_duration", 0)),
+			# 2026-09-07 — the three debuffs the CURRENT card set actually applies were missing,
+			# so the entire Trickster kit was invisible: you cast Sabotage/Hamstring/Snare,
+			# Distract, or Analyze/Track/Mark and had no way to see whether it landed, how big it
+			# was, or when it runs out. These are combat-scoped rather than turn-scoped, so they
+			# carry no duration — they last the fight, which is what "--" means on the chip.
+			"sabotage_value": int(combat.get("monster_sabotaged", 0)),
+			"distract_value": int(combat.get("enemy_distracted", 0)),
+			"analyze_value": int(combat.get("analyze_bonus", 0)),
 		},
 		# Phase B1 — Companion combat HP. Additive fields; old clients ignore
 		# them. -1 / false when no active companion.

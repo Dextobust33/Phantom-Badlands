@@ -125,9 +125,22 @@ while the Paladin's stat realignment held.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 
-- [ ] **Buff/debuff panel.** One panel serving solo AND party: self, each member, the enemy. Show
-      remaining DURATION, current MAGNITUDE and whether it is STACKING. The data already exists in
-      `character.active_buffs` as `{type, value, duration}`.
+- [x] **Buff/debuff visibility — SELF and ENEMY done 2026-09-07.** Party members still to do.
+      Three gaps, all of them things the player could not see at all:
+      - The **enemy's debuffs from the current card set** were never sent. Sabotage/Hamstring/Snare,
+        Distract and Analyze/Track/Mark are most of the Trickster kit, and you had no way to know
+        whether one landed or how big it was. Now sent and shown with magnitude.
+      - Player buff chips showed **duration only** — "Iron Skin 4T" never said what it was worth.
+        Now magnitude and duration.
+      - **Most mitigation is not a buff**, so it appeared nowhere: CON grants it from the stat and
+        the class engines grant it from banked stacks (Fighter Momentum, Sorcerer Volatility,
+        Grifter Read). A Fighter now reads "-54% taken (Constitution 6%, Damage reduction 48%,
+        Momentum 5%)". This also makes SPENDING engine stacks legible, since spending gives the
+        mitigation up.
+      Computed by `player_mitigation_breakdown()` in the combat manager, combined multiplicatively
+      the way the damage path actually applies it, so the number cannot drift from the real one.
+      `-- statuschips` prints what both sides show.
+- [ ] **Buff panel, party half.** Same strip for each party member, plus a STACKING indicator.
 - [ ] **Card upgrade preview.** Hovering an upgrade shows YOUR card with it applied; once chosen the
       card is visibly different. Also: the damage estimate still counts only `power` picks
       (`_card_damage_multiplier`), so other upgrade families read as doing nothing.

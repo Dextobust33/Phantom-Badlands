@@ -112,6 +112,7 @@ func _audit_registry() -> Dictionary:
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
+		"statuschips": ["what the combat status strip actually shows both sides", run_statuschips],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -6999,3 +7000,42 @@ func run_magecost() -> void:
 	print("=====================================")
 
 const MAGIC_BOLT_REF_SPEND := 0.20
+
+
+func run_statuschips() -> void:
+	"""What the combat status strip reports, for a class whose mitigation is mostly invisible.
+
+	Owner 2026-09-07: players should see their damage reduction and their buffs WITH durations.
+	Most mitigation is not a buff - CON grants it from the stat, the engines from banked stacks -
+	so none of it reached any surface."""
+	for klass in ["Fighter", "Grifter", "Ninja"]:
+		var ch = make_char(30, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		var monster = make_monster(30, "elite", 1.0)
+		combat_mgr.start_combat(0, ch, monster)
+		var combat = combat_mgr.active_combats[0]
+		# play a few turns so stacks and debuffs actually exist
+		for t in range(6):
+			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0:
+				break
+			match ch.get_class_path():
+				"trickster": _player_act_trickster(combat, ch)
+				"mage": _player_act_mage(combat, ch)
+				_: _player_act(combat, ch)
+			_monster_turn_if_owed(combat)
+		var d: Dictionary = combat_mgr.get_combat_display(0)
+		var ps: Dictionary = d.get("player_status", {})
+		var ms: Dictionary = d.get("monster_status", {})
+		print("
+--- %s ---" % klass)
+		print("  total mitigation: %d%%" % int(ps.get("mitigation_pct", 0)))
+		for src in (ps.get("mitigation_sources", []) as Array):
+			print("     %-16s %d%%" % [str(src.get("label", "?")), int(src.get("pct", 0))])
+		var buffs: Array = ps.get("buffs", [])
+		for b in buffs:
+			if b is Dictionary:
+				print("     buff %-14s +%d for %dT" % [str(b.get("type","?")), int(b.get("value",0)), int(b.get("duration",0))])
+		print("  on the monster: sabotage -%d%%  distract -%d%%  analyzed +%d%%  stun %dT" % [
+			int(ms.get("sabotage_value", 0)), int(ms.get("distract_value", 0)),
+			int(ms.get("analyze_value", 0)), int(ms.get("stun_turns", 0))])
+		combat_mgr.end_combat(0, false, false)
