@@ -1,5 +1,12 @@
 # Combat System Flow
 
+> **STALENESS WARNING (audited 2026-09-07).** This document predates the class-identity rework
+> (v0.9.755) and the theming pass (v0.9.756). Class names, passives, card names, combat flow and
+> balance numbers in older sections may be wrong. Known-good sources, in order:
+> `docs/BACKLOG.md` (current state), `shared/character.gd::class_passive_for` (passives),
+> and the simulator audits `-- statdesc`, `-- cardnames`, `-- riskcurve`.
+> Correct anything you find wrong here rather than working around it.
+
 ## Combat Lifecycle
 
 ```mermaid

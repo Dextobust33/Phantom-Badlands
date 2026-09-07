@@ -90,23 +90,32 @@ Three paths, three classes each. Each path uses a different resource.
 |------|----------|---------|------------|
 | Warrior | Stamina (STR*4 + CON*4) | Fighter, Barbarian, Paladin | STR, CON |
 | Mage | Mana (INT-based) | Wizard, Sorcerer, Sage | INT, WIS |
-| Trickster | Energy (WITS*4 + DEX*4) | Thief, Ranger, Ninja | WITS, DEX |
+| Trickster | Energy (WITS*4 + DEX*4) | Grifter, Ranger, Ninja | WITS, DEX |
 
 **Class Passives:**
 
-| Class | Passive |
-|-------|---------|
-| Fighter | Tactical Discipline: -20% stamina costs, +15% defense |
-| Barbarian | Blood Rage: +3% damage per 10% HP missing (max +30%), abilities cost 25% more |
-| Paladin | Divine Favor: Heal 3% max HP/round, +25% damage vs undead/demons |
-| Wizard | Arcane Precision: +15% spell damage, +10% spell crit |
-| Sorcerer | Chaos Magic: 25% chance double spell damage, 5% backfire |
-| Sage | Mana Mastery: -25% mana costs, Meditate restores 50% more |
-| Thief | Backstab: +50% crit damage, +15% base crit chance |
-| Ranger | Hunter's Mark: +25% damage vs beasts, +30% Valor/XP from kills |
-| Ninja | Shadow Step: +40% flee success, take no damage when fleeing |
+| Class | Shown as | Engine | Passive |
+|-------|----------|--------|---------|
+| Fighter | Fighter | Momentum | Tactical Discipline: -20% stamina costs, +15% defense |
+| Barbarian | Barbarian | Rage | Blood Rage: +3% damage per 10% HP missing (max +30%), abilities cost 25% more |
+| Paladin | Paladin | Conviction | Retribution: every blow that lands on you builds +1 Conviction, +25% vs undead/demons |
+| Wizard | Wizard | Focus | Arcane Precision: +15% spell damage, +10% spell crit |
+| Sorcerer | Sorcerer | Volatility | Chaos Magic: 25% chance double spell damage, 5% backfire |
+| Sage | **Oracle** | Insight | Foresight: any round the enemy fails to hurt you, +1 Insight |
+| Grifter | Grifter | Read | Long Con: denial cards have a 50% chance to build double Read; +40% flee |
+| Ranger | Ranger | Read | Steady Hand: abilities never glance and never crit by chance |
+| Ninja | Ninja | Read | Killing Edge: +20% crit chance, each crit this fight sharpens the next (+9%) |
 
-**Note:** Paladin, Sorcerer, and Ninja are legacy classes -- no longer available for new characters but existing characters keep them.
+**All nine classes are available.** (A previous version of this table listed Paladin, Sorcerer and
+Ninja as "legacy, no longer available" -- that was never true of the current game.)
+
+**"Thief" no longer exists as a class; it is the Grifter.** The `thief` DUNGEON TRAP is unrelated
+and still live.
+
+**Verify rather than trust this table** -- it has gone stale twice. `class_passive_for()` in
+`shared/character.gd` is the single source, and the simulator prints the live values:
+`godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- statdesc`
+(stats per class) and `-- cardnames` (what each class calls its five cards).
 
 **Universal Resource Bonuses:** Equipment resource stats convert to your class's primary resource. Mana affixes are 2x larger, so mana-to-stamina/energy converts at 0.5x.
 

@@ -44,6 +44,34 @@ against the old player and are now the wrong size. This has already bitten twice
 calibration, and the companion HP rework, which pushed elite-at-L1 to 90% win against a 70%
 target without touching a single monster.
 
+### ⚑ FIRST: run `preflight`. The chain is the LAST step, not the feedback loop.
+
+2026-09-07 — two chain runs cost ~45 minutes each and **neither failed because the simulation was
+wrong**. It faithfully measured a broken instrument both times: a reference player that had quietly
+become the strongest class in each archetype, and a calibration sampler that never retreated while
+every other loop did. Both are detectable in about two minutes.
+
+```bash
+godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- preflight
+```
+
+It asserts what the chain ASSUMES and cannot check itself: every class ships a 5-card deck, the two
+measurement paths agree within 15pp, and no class is idling on auto-attack. **If preflight fails,
+the chain will produce a confident wrong curve and the only cost of finding out is another
+45 minutes.** Iterate with `lowlevel` / `riskcurve` / `endgame` / `cardnames` / `statdesc`
+(2-4 minutes each), then run the chain once.
+
+**A global player buff cannot fix a per-class gap.** The chain holds win rate at target, so any
+across-the-board buff is cancelled by monsters getting stronger on the next refit. Only PER-CLASS
+changes survive a refit. Measured: a global CON mitigation buff washed out entirely; a per-class
+stat realignment held.
+
+**The chain optimises WIN rate and is blind to DEATH rate.** Since retreat was added, a non-win is
+usually a retreat, so holding win rate at target says nothing about how often players die — and
+under permadeath that is the only number that decides whether a class can finish. `refcal` now
+REPORTS death rate; it cannot steer by it (at a ~0.3% target there is under one expected death per
+sample). If a refit hits its win target while the death column climbs, it has made the game worse.
+
 **After a player-side balance change — the whole chain, ONCE each, in this order:**
 ```bash
 godot --headless --path . --script res://tools/combat_simulator/real_combat_sim.gd -- speciescal
@@ -92,6 +120,42 @@ third time. Find which two layers are measuring the same thing.**
 A win rate measured at n≈120 carries ~4.5pp of sampling error, so chasing a 5-point band is
 tuning noise. Nobody can feel 58% against 63%. The faults worth acting on are the GROSS ones —
 L1-L50 at 42%, L100 at 43%, a species at 16%, common gear at 0% win — not the last few points.
+
+## ⚑ Before believing ANY measurement, ask what would make the harness produce it
+
+This has been the answer more often than a real game fault. A day of balance work on 2026-09-07
+produced nine instrument defects and two genuine game bugs. The recurring shapes:
+
+- **Two copies of one value.** The simulator hardcoded a 15% rest-ambush rate while the game had
+  used 5% for two days; the same function carried BOTH numbers, one stale and one hand-copied with
+  a comment naming the constant it was copying. Read the constant, never copy it.
+- **The change is not on the executed path.** A fix produced byte-identical output because the
+  active policy was `deny_first` and the edit was in `_trickster_assassin`. **Identical numbers
+  after a real change mean the change is not running.**
+- **Shared RNG across measurement cells.** Changing one class moved the other eight, because they
+  drew from one stream in table order. Seed per cell (`hash(class|level|role)`), then verify by
+  re-measuring something you did NOT change: it must come back byte-identical.
+- **Comparing two things that differ in more than one way.** `adjudicate` reported an 18pp
+  "systematic instrument gap" that was mostly one side sampling nine classes and the other three.
+- **A number invented and then quoted as measured.** "~115 encounters to L20" was a bad division,
+  used as a design target, and wrong by 4x. If you did not measure it, say so in the same sentence.
+- **A silent no-op.** An audit exited cleanly having printed only a header. A detector that never
+  fires looks exactly like one that finds nothing — prove it fires by injecting the fault.
+
+**And the counterpart: check the CARD and the POLICY before blaming the class.** Twice in one day
+the class was fine — `overload` in the Sorcerer's deck (20% max HP a cast) was halving its survival,
+and the simulated Oracle re-stunned for five straight turns because the monster's turn decrements
+the stun, so an "is it stunned?" gate is true again every round.
+
+## ⚑ A rename touches SEVEN surfaces
+
+Card face, action bar, combat log, hover text, buff panel, gear-affix tokens, help pages. Miss one
+and a renamed card announces its old name where the player is looking. Three were found only by
+sweeping: the action bar read the client's own name table, the combat log styles cards by literal
+word (so a renamed card silently loses its effect), and the buff panel had its own copy.
+
+`-- cardnames` and `-- statdesc` print what each class is actually shown. Run them after any
+naming or stat change.
 
 ## ⚑ Never state what EQUIPMENT can do from memory — look it up
 

@@ -50,11 +50,10 @@ phantasia-revival/
 │
 ├── tools/                          — Development and testing utilities
 │   ├── combat_simulator/            — Headless combat balance testing tool
-│   │   ├── simulator.gd              — Entry point, orchestrates simulations (~580 lines)
-│   │   ├── combat_engine.gd          — Simulated damage formulas and abilities (~2,050 lines)
+│   │   ├── real_combat_sim.gd       — THE balance tool; drives the real shared combat code
+│   │   ├── archive/                 — ARCHIVED 2026-09-07: the old re-implemented simulator
 │   │   ├── simulated_character.gd    — Lightweight character for simulation (~550 lines)
 │   │   ├── gear_generator.gd         — Equipment generation for sims (~395 lines)
-│   │   ├── results_writer.gd         — JSON and Markdown output (~525 lines)
 │   │   ├── quick_simulation.gd       — Quick-run script (~260 lines)
 │   │   ├── test_simulation.gd        — Test harness (~125 lines)
 │   │   ├── run_simulation.bat        — Windows batch launcher

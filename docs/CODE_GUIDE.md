@@ -1,5 +1,12 @@
 # Phantom Badlands Code Guide
 
+> **STALENESS WARNING (audited 2026-09-07).** This document predates the class-identity rework
+> (v0.9.755) and the theming pass (v0.9.756). Class names, passives, card names, combat flow and
+> balance numbers in older sections may be wrong. Known-good sources, in order:
+> `docs/BACKLOG.md` (current state), `shared/character.gd::class_passive_for` (passives),
+> and the simulator audits `-- statdesc`, `-- cardnames`, `-- riskcurve`.
+> Correct anything you find wrong here rather than working around it.
+
 A practical walkthrough for modifying Phantom Badlands -- a text-based multiplayer RPG built with Godot 4.6 and GDScript.
 
 ---
@@ -846,13 +853,10 @@ func handle_server_message(message: Dictionary):
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `combat_simulator/simulator.gd` | -- | Main entry point for combat balance testing |
-| `combat_simulator/combat_engine.gd` | -- | Ports combat formulas for headless simulation |
+| `combat_simulator/real_combat_sim.gd` | -- | **The** balance tool. Drives the REAL shared combat code; `-- preflight` before any calibration chain, `-- riskcurve` / `-- endgame` / `-- lowlevel` / `-- cardnames` / `-- statdesc` for cheap checks |
+| `combat_simulator/archive/` | -- | ARCHIVED 2026-09-07 — the old simulator that re-implemented the formulas. Its copies drifted from the game; do not run it to answer a balance question |
 | `combat_simulator/simulated_character.gd` | -- | Lightweight character for simulation |
 | `combat_simulator/gear_generator.gd` | -- | Generates level-appropriate equipment |
-| `combat_simulator/results_writer.gd` | -- | JSON and Markdown output generation |
-| `combat_simulator/quick_simulation.gd` | -- | Quick single-run simulation |
-| `combat_simulator/test_simulation.gd` | -- | Test harness for simulation |
 
 ### Root
 
