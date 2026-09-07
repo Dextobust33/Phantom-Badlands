@@ -3357,7 +3357,6 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": "banish", "level": 70, "display": "Banish"})
 			# #36 (2026-08-27) Mage 7→9 — Frost Nova (soft control) + Overload (HP-cost burst).
 			abilities.append({"name": "frost_nova", "level": 1, "display": "Frost Nova"})
-			abilities.append({"name": "overload", "level": 1, "display": "Overload"})
 		"warrior":
 			abilities.append({"name": "power_strike", "level": 1, "display": "Power Strike"})
 			abilities.append({"name": "war_cry", "level": 10, "display": "War Cry"})
@@ -3904,6 +3903,15 @@ func initialize_deck_collection_if_needed() -> bool:
 	# existing characters drop it from their deck collections.
 	if combat_deck_collection.has("all_or_nothing"):
 		combat_deck_collection.erase("all_or_nothing")
+		changed = true
+	# 2026-09-07 — OVERLOAD RETIRED, owner approved. It was the only card that cost HEALTH, in a
+	# game where health is the resource you die from, spent against a 30% retreat threshold. So
+	# any price high enough to matter also moved you toward fleeing the fight you spent it to win.
+	# Measured twice: at 20% of max HP it cost the Sorcerer 81/53/65 -> 96/65/71; re-priced to 12%
+	# it STILL gave 2/40 survivors against 12/40 for the card it replaced. Damage does not save
+	# you; hit points do. Removed rather than shaved a third time.
+	if combat_deck_collection.has("overload"):
+		combat_deck_collection.erase("overload")
 		changed = true
 	# v0.9.423 — also unequip non_combat abilities (and retired all_or_nothing)
 	# from combat slots so a slot isn't silently wasted after the migration.

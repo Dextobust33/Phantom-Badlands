@@ -4051,10 +4051,6 @@ const RANGER_AIM_DMG_PER := 0.11         # +11% to ALL damage per Read held (8 =
 # damaging action, and that is most of what the card is worth to a Killing Edge Ninja.
 const VANISH_WEIGHT := 0.18
 
-# Share of max HP Overload burns. It is the only card in the game that costs health, so it is
-# priced against the RETREAT THRESHOLD (30%) rather than against its damage: at 20% a single cast
-# from full left you two hits from fleeing.
-const OVERLOAD_HP_COST_PCT := 0.12
 
 # Per-class COMBAT LOG lines, so a renamed card does not announce itself under its old name.
 # Owner 2026-09-07: "make sure they are changed in all the relevant areas so we don't have to
@@ -5480,40 +5476,17 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				"You deal %d frost damage and chill the enemy (-%d%% accuracy)!") % [fn_dmg, fn_chill]])
 
 		"overload":
-			# #36 (2026-08-27) Mage 7→9 — GLASS-CANNON burst enabler. Costs HP (not mana),
-			# so it can't be looped (the Mage has no self-heal) and it makes you MORE fragile
-			# — the identity in a card. Grants a strong "damage" buff consumed by your NEXT
-			# spell. Because add_buff() keeps MAX(value) on the shared "damage" slot, Overload
-			# does NOT stack additively with Haste — no runaway multiplier. Blocked below 25%
-			# HP so it can never be a suicide/soft-lock. is_buff_ability = 75% dodge on the
-			# retaliation, softening the tempo cost.
-			var ov_maxhp = character.get_total_max_hp()
-			# 2026-09-07 — RE-PRICED, 20% -> 12% of max HP, and 2 -> 3 rounds.
+			# 2026-09-07 — RETIRED, owner approved. See the note in `character.gd` beside the deck
+			# migration: it was the only card that cost HEALTH in a game where health is the resource
+			# you die from, and it was spent against a 30% retreat threshold, so no price worked.
+			# Measured twice — at 20% of max HP it cost the Sorcerer 81/53/65 -> 96/65/71, and
+			# re-priced to 12% it STILL gave 2/40 survivors against 12/40 for the card it replaced.
+			# Damage does not save you; hit points do.
 			#
-			# Measured as a losing trade at every level: removing it from the Sorcerer's starter
-			# deck moved that class 81/53/65 to 96/65/71 and its survival at L30 elite from 13.1
-			# turns to 22.4. The arithmetic looks fine on paper (+120% across two casts for one
-			# turn) and loses anyway, because of what the number collides with: **the retreat
-			# threshold is 30% HP**. Casting it from full drops you to 80%, so two monster hits
-			# put you in flee range, and the card shortens the very fight you spent it to win.
-			#
-			# At 12% for three rounds the trade is defensible: one turn plus an eighth of your bar
-			# for +120% across roughly three casts. It stays a glass-cannon gamble — it is still
-			# the only card in the game that costs health — without being strictly wrong to pick.
-			var ov_cost = maxi(1, int(ov_maxhp * OVERLOAD_HP_COST_PCT))
-			if character.current_hp <= int(ov_maxhp * 0.25):
-				return {"success": false, "messages": ["[color=#FFA500]Too wounded to Overload — you need more than 25% HP to channel it safely.[/color]"], "combat_ended": false, "skip_monster_turn": true}
-			character.current_hp = max(1, character.current_hp - ov_cost)
-			var ov_buff = 120  # +120% to the next spell
-			ov_buff = _apply_buff_value_modifiers(character, "overload", ov_buff)
-			var ov_dur = _buff_duration(character, "overload", 3)
-			character.add_buff("damage", ov_buff, ov_dur)
-			messages.append("[color=#FF4500]⚡ OVERLOAD![/color]")
-			# The duration was hardcoded as "2 rounds" in this line while the real value comes from
-			# `_buff_duration`, which card upgrades and Path effects extend — so an upgraded
-			# Overload told the player the wrong number.
-			messages.append("[color=#FFD700]You sear yourself for %d HP to supercharge your spells (+%d%% damage for %d rounds)![/color]" % [ov_cost, ov_buff, ov_dur])
-			is_buff_ability = true
+			# Kept as a branch rather than deleted so a player who still has it bound is TOLD, rather
+			# than getting a silent failure — the same treatment Outsmart got.
+			messages.append("[color=#FF4444]Overload has been retired — it cost more health than the damage was ever worth. Arcane Surge is the mage damage buff now.[/color]")
+			return {"success": false, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
 
 	# v0.9.697 — Mage Focus ramp: Meteor discharges (resets) it; every other spell
 	# advances it. Placed after a successful cast so refused/failed casts don't ramp.
@@ -5524,8 +5497,6 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				class_engine_label(String(character.class_type)),
 				_ability_display_name(character, "meteor"),
 				int(_focus_prior * FOCUS_METEOR_PER * 100)])
-	elif ability_name == "overload":
-		pass  # #36 — Overload is an HP-cost setup; it does not advance Focus.
 	else:
 		var _newfocus: int = min(FOCUS_MAX, _focus_prior + 1)
 		combat["focus"] = _newfocus
@@ -7420,7 +7391,7 @@ func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Ar
 	var CU = load("res://shared/card_upgrades.gd")
 	var is_damage: bool = ability_name in ABILITY_WEIGHTS 		or ability_name in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
 	var is_buff: bool = ability_name in ["forcefield", "shield", "haste", "iron_skin", "fortify",
-		"rally", "berserk", "war_cry", "overload", "vanish"]
+		"rally", "berserk", "war_cry", "vanish"]
 	var is_control: bool = ability_name in ["paralyze", "banish", "sabotage", "distract", "analyze", "shadowstep"]
 	var kind: String = CU.card_kind(ability_name, is_damage, is_buff, is_control)
 	var taken: Array = character.get_milestone_picks(ability_name) if character != null else []

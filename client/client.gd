@@ -12803,7 +12803,6 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		# #36 Mage 7→9 additions. Frost Nova = variable mana. Overload = HP-cost (shown as
 		# 0 mana; the real cost is OVERLOAD_HP_COST_PCT of max HP, surfaced in its description).
 		"frost_nova": {"display": "Frost Nova", "cost": 30, "cost_percent": 5, "cost_floor_ratio": 0.3, "resource_type": "mana"},
-		"overload": {"display": "Overload", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
 		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
 		# (floor = ceiling × ratio, after all cost modifiers).
 		"power_strike": {"display": "Power Strike", "cost": 10, "cost_floor_ratio": 0.3, "cost_percent": 0, "resource_type": "stamina"},
@@ -12979,7 +12978,7 @@ const ABILITY_CATEGORIES = {
 	"paralyze": "control", "distract": "control", "sabotage": "control", "banish": "control",
 	"frost_nova": "control",
 	# UTILITY — info, setup, resource gain, escape, theft
-	"analyze": "utility", "vanish": "utility", "pickpocket": "utility", "overload": "buff",
+	"analyze": "utility", "vanish": "utility", "pickpocket": "utility",
 	"forethought": "utility", "tactical_retreat": "utility",
 }
 
@@ -20147,7 +20146,7 @@ var _milestone_tip: PanelContainer = null
 var _milestone_tip_label: RichTextLabel = null
 # Buff abilities whose Duration milestone pick is wired (Warrior slice). Buffs
 # not here fall back to Power + Efficiency until their class slice wires duration.
-const DURATION_CAPABLE_ABILITIES = ["berserk", "iron_skin", "fortify", "rally", "haste", "overload"]
+const DURATION_CAPABLE_ABILITIES = ["berserk", "iron_skin", "fortify", "rally", "haste"]
 
 func _is_duration_capable(ability_name: String) -> bool:
 	# v0.9.681 — buff-kind companion cards (rage/guard/focus/shield/heal/channel)
@@ -33010,7 +33009,6 @@ func show_help():
   [color=#FFFFFF]L40 Haste[/color]        [color=#808080](35+3%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
   [color=#FFFFFF]L60 Paralyze[/color]     [color=#808080](60+6%)[/color]  - 50%+INT/2 chance (max 85%) to stun 1-2 turns
   [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%)[/color]  - Chip frost dmg + chill (-30% enemy accuracy). Builds Focus, soft control
-  [color=#FFFFFF]Overload[/color]         [color=#808080](12% HP)[/color] - Burn 12% max HP to buff your spells +120% for 3 rounds. No mana, no heal — glass-cannon burst
   [color=#FFFFFF]L80 Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
   [color=#FFFFFF]L100 Meteor[/color]      [color=#808080](100+8%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
   [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4% mana (8% if already full HP)
@@ -33430,7 +33428,6 @@ Meteor / Cataclysm / Unmaking - the FINISHER, one card that works differently fo
 Frost Nova - chip damage and an accuracy chill; builds your engine. An Oracle's is
   [color=#20B2AA]Stillness[/color], and its Paralyze is [color=#20B2AA]Transfix[/color], its
   Forcefield a [color=#20B2AA]Premonition[/color]
-Overload - burns your own HP to buff the next spell
 Forcefield - absorbs damage. Each RECAST in the same fight absorbs less, so it is a strong
   panic button rather than something to hold up permanently
 Arcane Surge / Paralyze / Banish - spell damage and a double-cast chance, a hard stun, and a

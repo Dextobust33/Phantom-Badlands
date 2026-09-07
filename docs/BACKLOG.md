@@ -104,19 +104,15 @@ while the Paladin's stat realignment held.
       Residual, minor: at **L10** Bolt is both the biggest hit and marginally the most efficient
       (25.8 against Blast's 23.0). A 12% edge is a preference, not a trap — revisit only if early
       mages read as one-button.
-- [ ] **Overload needs a DESIGN change, not another price change** (partly addressed 2026-09-07).
-      Re-priced 20% -> 12% of max HP and 2 -> 3 rounds, which is strictly better and fixed a real
-      text bug (the log hardcoded "2 rounds" while `_buff_duration` lets upgrades extend it).
-      **But measured, it is still a losing trade**: swapping the re-priced card into the Sorcerer's
-      starter deck gave 0.2% death per encounter and 2/40 survivors against 0.1% and 12/40 for the
-      frost_nova version. Six times fewer characters finished.
-      The cause is structural rather than numeric. **Damage does not save you; hit points do.** It
-      is the only card that costs health, in a game where health is the resource you die from, and
-      it is spent against a 30% retreat threshold. Do not keep shaving the percentage — either give
-      it something that offsets the risk it creates (a shield, or the HP back on a kill), make the
-      cost scale with the fight, or accept it as a deliberate expert-only gamble and say so on the
-      card. Discuss before changing.
-      It is NOT in any starter deck, so no new player meets it by accident.
+- [x] **Overload RETIRED 2026-09-07** — owner approved removing it rather than re-pricing again.
+      It was the only card that cost HEALTH in a game where health is the resource you die from,
+      spent against a 30% retreat threshold, so no price worked: at 20% of max HP it cost the
+      Sorcerer 81/53/65 -> 96/65/71, and re-priced to 12% it STILL gave 2/40 survivors against
+      12/40 for the card it replaced. **Damage does not save you; hit points do.**
+      Off the roster, migrated out of existing decks on load (same as `all_or_nothing`), and the
+      cast path kept as a branch that TELLS a player who still has it bound rather than failing
+      silently — the treatment Outsmart got. `-- verify` now asserts it REFUSES, since a retired
+      card that still casts is the bug worth catching.
 - [ ] **Retire the vestigial `level` fields on abilities** — pre-deck-system leftovers that no
       longer gate anything.
 

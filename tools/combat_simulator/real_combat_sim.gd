@@ -310,17 +310,16 @@ func _verify_new_mage_cards() -> void:
 		var combat = combat_mgr.active_combats[0]
 		var maxhp: int = ch.get_total_max_hp()
 		var hp0: int = ch.current_hp
+		# 2026-09-07 — Overload RETIRED, so this now checks it REFUSES rather than that it works.
+		# A retired card that still casts is the bug worth catching here.
 		_force_hand(combat, "overload")
 		var ov = combat_mgr.process_ability_command(0, "overload", "")
-		print("L%-4d Overload : ok=%s  HP %d->%d (-%.0f%% of max)  damage_buff=+%d%%" % [lvl, str(ov.get("success", false)), hp0, ch.current_hp, 100.0 * float(hp0 - ch.current_hp) / float(max(1, maxhp)), int(ch.get_buff_value("damage"))])
+		print("L%-4d Overload : refused=%s (expect true — retired)  HP unchanged=%s" % [
+			lvl, str(not ov.get("success", true)), str(hp0 == ch.current_hp)])
 		var mhp0: int = int(monster.current_hp)
 		_force_hand(combat, "frost_nova")
 		var fn = combat_mgr.process_ability_command(0, "frost_nova", "")
 		print("L%-4d FrostNova: ok=%s  dmg=%d  enemy_-acc=%d%%  focus=%d" % [lvl, str(fn.get("success", false)), mhp0 - int(monster.current_hp), int(combat.get("enemy_distracted", 0)), int(combat.get("focus", 0))])
-		# Low-HP block: drop to 10% and confirm Overload refuses.
-		ch.current_hp = int(maxhp * 0.10)
-		var ov2 = combat_mgr.process_ability_command(0, "overload", "")
-		print("L%-4d Overload@10%%HP: ok=%s (expect false — blocked below 25%%)" % [lvl, str(ov2.get("success", false))])
 		combat_mgr.active_combats.erase(0)
 	print("==============================================")
 
@@ -1818,7 +1817,7 @@ func run_offer_probe():
 	for ab in ["cleave", "power_strike", "shield_bash", "blast", "forcefield", "haste",
 			"magic_bolt", "meteor", "ambush", "distract", "analyze", "gambit", "vanish"]:
 		var is_damage: bool = ab in combat_mgr.ABILITY_WEIGHTS or ab in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
-		var is_buff: bool = ab in ["forcefield", "shield", "haste", "iron_skin", "fortify", "rally", "berserk", "war_cry", "overload", "vanish"]
+		var is_buff: bool = ab in ["forcefield", "shield", "haste", "iron_skin", "fortify", "rally", "berserk", "war_cry", "vanish"]
 		var is_control: bool = ab in ["paralyze", "banish", "sabotage", "distract", "analyze"]
 		var kind: String = CU.card_kind(ab, is_damage, is_buff, is_control)
 		var m1: Array = CU.draw_choices(kind, 1, [])
@@ -4430,9 +4429,6 @@ func _mage_rotation(combat: Dictionary, ch) -> void:
 				return
 		if "forcefield" in hand and int(combat.get("forcefield_shield", 0)) <= 0 and ch.current_hp < int(ch.get_total_max_hp() * 0.75):
 			if combat_mgr.process_ability_command(0, "forcefield", "").get("success", false):
-				return
-		if "overload" in hand and ch.get_buff_value("damage") <= 0 and ch.current_hp > int(ch.get_total_max_hp() * 0.55):
-			if combat_mgr.process_ability_command(0, "overload", "").get("success", false):
 				return
 		if "magic_bolt" in hand and ch.current_mana > int(ch.get_total_max_mana() * 0.25):
 			if combat_mgr.process_ability_command(0, "magic_bolt", str(maxi(1, int(ch.get_total_max_mana() * 0.25)))).get("success", false):
