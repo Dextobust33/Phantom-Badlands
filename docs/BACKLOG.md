@@ -1100,12 +1100,34 @@ players don't have potions, they aren't something that obtainable for early game
 death above lands at ~L1.9, so the rates are REAL for the range that matters, not an upper bound.
 Worth adding later for the mid/late game; it changes nothing about the problem below.
 
-### Difficulty RAMP — agreed direction, NOT yet implemented
+### Difficulty RAMP — IMPLEMENTED 2026-09-06 (`DIFFICULTY_RAMP`)
 
-Owner chose "option 1 with a bit of 2": raise the turns target so the strength axis stops doing all
-the work, **and** keep the early game easier while players learn their class, tightening once they
-have their feet under them. That means `refcal`'s single global target becomes a per-level curve.
-Blocked on the measurement contradiction above.
+Owner: *"early game fights being a bit easier while the players get a feel for playing their
+class... then it getting more difficult once they've got their feet under them"*, and *"the early
+game ... should be the players chance to learn the engines... Once they have some levels and gear
+under their belt is where it should start mattering that they actually play well in order to
+survive fights of the same level (and especially higher level which will normally require good
+gear or card upgrades)."*
+
+Both calibration targets were single global constants, so a level-1 fight was tuned to be exactly
+as punishing as a level-5000 one. They are now a per-level curve:
+
+| level | win target | turns target |
+|---|---|---|
+| 1 | 92% | 4 |
+| 10 | 88% | 5 |
+| 25 | 80% | 6.5 |
+| 50 | 72% | 8 |
+| 250 | 65% | 9 |
+| 1000+ | 60% | 10 |
+
+WIN ramps DOWN (a beginner mostly wins; a veteran earns it). TURNS ramps UP — not as padding, but
+because turn count is the knob that decides how much of a fight is decisions rather than dice, and
+that only needs to open up where the owner wants play to matter. It also settles the engine
+question: **the engines not firing at L1-L3 is INTENDED**, not a defect. Early fights are short and
+settled on the basic kit, which is what makes them a place to learn; the engines are what the mid
+game turns on.
+
 
 ### Calibration chain — RAN 2026-09-06, result NOT ADOPTED. Needs an owner decision.
 

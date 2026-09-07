@@ -1161,6 +1161,53 @@ const DANGER_NORMAL_SIM := 0.40
 # 100%. Two calibrators disagreeing about what "normal" means is how a curve ends up nobody's
 # intent.
 const WIN_NORMAL_SIM := 0.60
+
+# --- THE DIFFICULTY RAMP (owner, 2026-09-06) --------------------------------------------------
+# "I'm okay with early game fights being a bit easier while the players get a feel for playing
+# their class and then it getting more difficult once they've got their feet under them", and:
+# "the early game ... should be the players chance to learn the engines and how to play their
+# characters. Once they have some levels and gear under their belt is where it should start
+# mattering that they actually play well in order to survive fights of the same level (and
+# especially higher level which will normally require good gear or card upgrades as well)".
+#
+# Both targets were single global constants, so calibration made a level-1 fight exactly as
+# punishing as a level-5000 one. Measured, that is why a new character dies at L1.9: 3.7-33.6%
+# death per encounter, against a climb to L20 that costs 448 of them.
+#
+# WIN ramps DOWN with level - a beginner should mostly win, a veteran should have to earn it.
+# TURNS ramps UP - a low-level fight is short and settled on the basic kit, which is exactly why
+# it is a good place to learn (the engines are deliberately NOT expected to fire yet), while a
+# high-level fight lasts long enough for the class engine to be what decides it. Length is not
+# the goal and this is not padding: it is the knob that sets how much of a fight is decisions
+# rather than dice, and it only opens up where the owner wants play to matter.
+const DIFFICULTY_RAMP := [
+	{"level": 1,     "win": 0.92, "turns": 4.0},
+	{"level": 10,    "win": 0.88, "turns": 5.0},
+	{"level": 25,    "win": 0.80, "turns": 6.5},
+	{"level": 50,    "win": 0.72, "turns": 8.0},
+	{"level": 250,   "win": 0.65, "turns": 9.0},
+	{"level": 1000,  "win": 0.60, "turns": 10.0},
+	{"level": 10000, "win": 0.58, "turns": 10.0},
+]
+
+static func _ramp_at(level: int, key: String) -> float:
+	"""Linear interpolation across DIFFICULTY_RAMP, clamped at both ends."""
+	var rows: Array = DIFFICULTY_RAMP
+	if level <= int(rows[0]["level"]):
+		return float(rows[0][key])
+	for i in range(rows.size() - 1):
+		var a: Dictionary = rows[i]
+		var b: Dictionary = rows[i + 1]
+		if level <= int(b["level"]):
+			var t: float = float(level - int(a["level"])) / maxf(1.0, float(int(b["level"]) - int(a["level"])))
+			return lerpf(float(a[key]), float(b[key]), t)
+	return float(rows[rows.size() - 1][key])
+
+static func win_target_for(level: int) -> float:
+	return _ramp_at(level, "win")
+
+static func turns_target_for(level: int) -> float:
+	return _ramp_at(level, "turns")
 # How hard each calibration pass corrects toward the target. 0.5 (sqrt) is heavily damped and
 # needs many passes to close a large gap; 0.75 converges in the budget we run while staying
 # stable at the sample sizes `-- n=` now provides.
@@ -2144,7 +2191,11 @@ func run_reference_calibrate():
 	# percentage points. Calibrating against that noise is what produced str_mult values of
 	# 20-30 when rolecal was converted without touching its sample size.
 	var samples: int = maxi(25, int(_audit_n))  # per class; all 3 run
-	print("\n===== #6 MONSTER MODEL CALIBRATION (target %.0f turns, %.0f%% win) =====" % [TARGET_TURNS_NORMAL_SIM, WIN_NORMAL_SIM * 100.0])
+	print("\n===== #6 MONSTER MODEL CALIBRATION (targets RAMP with level) =====")
+	print("L1 %.0f%% win / %.0f turns  ->  L50 %.0f%% / %.0f  ->  L1000 %.0f%% / %.0f" % [
+		win_target_for(1) * 100.0, turns_target_for(1),
+		win_target_for(50) * 100.0, turns_target_for(50),
+		win_target_for(1000) * 100.0, turns_target_for(1000)])
 	print("HP steers TURNS (a mean); STR steers WIN RATE (a proportion). Cost is reported, not targeted.")
 	var table: Array = []
 	# The working curve, seeded from the CURVE FILE'S OWN ANCHORS.
@@ -2210,7 +2261,7 @@ func run_reference_calibrate():
 			# dies on turn 4 experienced a 4-turn fight against a monster that is too STRONG,
 			# which is the `str`/danger axis's job, not HP's. `eff_turns` is still reported as
 			# a diagnostic because the truncation it measures is real.
-			var turn_err: float = TARGET_TURNS_NORMAL_SIM / maxf(0.5, float(r["turns"]))
+			var turn_err: float = turns_target_for(lvl) / maxf(0.5, float(r["turns"]))
 			# 2026-09-04 - REVERTED: an attempt to make the win target override the turns
 			# target here was measured twice and rejected both times. It is kept as a comment
 			# because the reasoning is sound and only the remedy was wrong.
@@ -2249,7 +2300,7 @@ func run_reference_calibrate():
 			# resonant; if a future change makes it oscillate anyway, the fix is to fix HP by
 			# construction as rolecal does, not to widen this.
 			var win_meas: float = maxf(0.03, float(r.get("win", 0.0)))
-			var win_err: float = win_meas / maxf(0.01, WIN_NORMAL_SIM)
+			var win_err: float = win_meas / maxf(0.01, win_target_for(lvl))
 			st *= pow(clampf(win_err, 0.7, 1.4), k)
 		table.append({"level": lvl, "hp": int(round(hp)), "str": int(round(st))})
 		if last.is_empty():
