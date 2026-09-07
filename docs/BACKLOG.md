@@ -1017,22 +1017,47 @@ one decides whether a class is viable. **Win-rate parity was never the right tar
 Also fixed: `grow` — the audit that most directly asks the owner's question (grow from creation,
 hunt what you can survive, permadeath final) — sampled only three classes. Now all nine.
 
-**STILL BROKEN, and the next thing to resolve.** `grow` and `classes` contradict each other:
+**RESOLVED 2026-09-06 — there was never a contradiction.** `grow` (0/40 survive), `classes`
+(0-6% death per fight) and `newplayer` (a starter kit wins 78-90%) are the SAME numbers seen at
+two different scales. A per-fight death rate and its career consequence are different quantities:
+a climb to L20 takes ~115 encounters, and 0.96^115 = 1%. A few percent a fight IS certain death
+over a career.
 
-- `classes` (with retreat): 0-6% death per fight at L10-L80.
-- `newplayer`: a starter kit wins **78-90%** of L1-L10 normal fights.
-- `grow`: **0 of 40 characters survive to L20, in every class**, dying at L1.1-2.5.
+Ruled out by measurement, not by argument:
+- **Flee works** — 87% of attempts escape, so retreat is not failing.
+- **Recovery works** — encounters start at 83% HP on average.
+- **The character is not weak** — `_grow_new_character` at L1 beats `make_char` on every axis
+  (Fighter 254 HP against 162, plus a companion). It was the first thing suspected and it was wrong.
+- Deaths land at char **L1.9 hunting L1.1** — a level-1 monster is doing the killing, on flock
+  link 1.4, entering that fight at 62% HP.
 
-Those cannot all be true. `grow` already models flee, flocks, ambush-interrupted resting and real
-drops, so it is not simply missing a mechanic. Candidate explanations, none yet tested: the early
-game (L1-3) is far more lethal than L10 and the class engines cannot run on a level-1 resource
-pool (the Ninja wins 12% of its fights in `grow` against the Wizard's 84% — a 7x spread that does
-not appear at L10); or `grow`'s retreat is failing far more often than `run_fight`'s; or its
-hunt-level stepping never finds a survivable level at L1 because there is nothing below it.
+**The number that actually answers the owner's definition of balance**, now printed by `grow`:
 
-**Do not tune difficulty or run the chain again until these agree.** Two instruments disagreeing
-about the same quantity is the exact fault CLAUDE.md warns about, and the ramp work below depends
-on believing one of them.
+| class | death/encounter | reaches L20 |
+|---|---|---|
+| Ranger | 3.7% | 1.4% |
+| Wizard / Grifter | 3.8% | 1.1% |
+| Sorcerer | 5.0% | 0.3% |
+| Fighter | 5.9% | 0.1% |
+| Sage | 9.6% | 0.0% |
+| Paladin | 11.1% | 0.0% |
+| Barbarian | 16.7% | 0.0% |
+| **Ninja** | **33.6%** | 0.0% |
+
+**For half of characters to reach L20 the per-encounter death rate must be <= 0.60%; for a quarter,
+<= 1.20%.** The best class in the game is at 3.7%. That is the real balance target and nothing is
+close to it — and it is a far more demanding constraint than any win-rate goal, which is why
+win-rate tuning never surfaced it.
+
+**The Ninja at 33.6% is a screaming outlier** — it dies in its first or second fight, at level 1,
+and wins only 12% of them. Consistent with the engine theory: it needs 8 Read and a level-1 Ninja's
+energy pool cannot pay for eight casts. The engines do not function at the levels where players are
+learning them, which is exactly the stretch the owner wants to be gentler.
+
+**Known remaining model gap: CONSUMABLES ARE NOT MODELLED AT ALL** (`grep` for potion/consumable in
+the simulator returns zero). A real player carries healing items, so every death rate above is an
+UPPER bound. This is the next thing to add before treating the absolute numbers as final — it is
+also the last item on the owner's list of "how the game actually works".
 
 ### Difficulty RAMP — agreed direction, NOT yet implemented
 

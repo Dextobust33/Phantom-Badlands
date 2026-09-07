@@ -29,6 +29,9 @@ const WARRIOR_DMG_PRIORITY := ["devastate", "cleave", "shield_bash", "power_stri
 # When the simulated player gives up on a fight and runs. A real player does not trade to the
 # last hit point, and the harness modelling that as a death is what made every loss look fatal.
 const RUN_FIGHT_FLEE_AT: float = 0.30
+# TEMP diagnostic counters for the grow-vs-classes contradiction.
+var _gd := {"flee_try": 0, "flee_ok": 0, "links": 0, "deaths": 0, "death_link": 0,
+	"death_hp0": 0.0, "death_lvl": 0.0, "death_hunt": 0.0, "enc": 0, "enc_hp0": 0.0}
 var _rf_may_flee: bool = true
 const WARRIOR_BUFFS := ["berserk", "war_cry"]
 
@@ -5412,6 +5415,11 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 	while link < 5:
 		link += 1
 		fights += 1
+		_gd["links"] = int(_gd["links"]) + 1
+		var _hp0_frac: float = float(ch.current_hp) / float(maxi(1, ch.get_total_max_hp()))
+		if link == 1:
+			_gd["enc"] = int(_gd["enc"]) + 1
+			_gd["enc_hp0"] = float(_gd["enc_hp0"]) + _hp0_frac
 		var monster = make_monster(maxi(1, hunt_level), "normal", 1.0)
 		combat_mgr.start_combat(0, ch, monster)
 		if not combat_mgr.active_combats.has(0):
@@ -5435,7 +5443,10 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 				# have killed: an instrument fault, not a difficulty finding.
 				if hp_frac < 0.50 and m_frac > 0.33 and flee_tries < 3:
 					flee_tries += 1
+					_gd["flee_try"] = int(_gd["flee_try"]) + 1
 					var fr = combat_mgr.process_flee(combat)
+					if fr.get("fled", false):
+						_gd["flee_ok"] = int(_gd["flee_ok"]) + 1
 					if fr.get("fled", false):
 						escaped = true
 						break
@@ -5452,6 +5463,11 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 		var mlvl: int = int(monster.get("level", hunt_level))
 		combat_mgr.end_combat(0, won, false)
 		if ch.current_hp <= 0:
+			_gd["deaths"] = int(_gd["deaths"]) + 1
+			_gd["death_link"] = float(_gd["death_link"]) + float(link)
+			_gd["death_hp0"] = float(_gd["death_hp0"]) + _hp0_frac
+			_gd["death_lvl"] = float(_gd["death_lvl"]) + float(ch.level)
+			_gd["death_hunt"] = float(_gd["death_hunt"]) + float(hunt_level)
 			died = true
 			if _grow_immortal:
 				# Reference mode: a real L45 character is by definition someone who SURVIVED,
@@ -5490,7 +5506,9 @@ func run_grow_audit():
 	print("%d characters per class, from creation to L%d or death. Permadeath is final." % [RUNS, TARGET])
 	print("The character hunts at the level it can SURVIVE, stepping down after a maul and back")
 	print("up after a comfortable win - and eats the real down-level XP penalty for doing so.")
-	print("%-9s %7s %7s %8s %6s %8s %7s %9s %6s" % ["class", "lived", "diedAt", "fights", "win%", "worstHP", "jumped", "upgrades", "slots"])
+	_gd = {"flee_try": 0, "flee_ok": 0, "links": 0, "deaths": 0, "death_link": 0.0,
+		"death_hp0": 0.0, "death_lvl": 0.0, "death_hunt": 0.0, "enc": 0, "enc_hp0": 0.0}
+	print("%-9s %7s %7s %8s %6s %8s %7s %9s %6s %8s %9s" % ["class", "lived", "diedAt", "fights", "win%", "worstHP", "jumped", "upgrades", "slots", "death/enc", "->L20"])
 	# 2026-09-06 — ALL NINE. This audit is the closest thing the project has to the owner's actual
 	# definition of balance: "they can make it through the entire game if they play wisely." It
 	# grows a character from creation, hunts at the level it can survive, steps down after a maul,
@@ -5590,19 +5608,50 @@ func run_grow_audit():
 			avg_died += float(l)
 		if died_at.size() > 0:
 			avg_died /= float(died_at.size())
-		print("%-9s %6d/%d %7.1f %8d %5.0f%% %7.0f%% %6.0f%% %9.1f %6.1f" % [
+		# 2026-09-06 — DEATH PER ENCOUNTER, and what it implies for a whole climb.
+		#
+		# `grow` reporting 0/40 looked like it contradicted `classes` (0-6% death per fight) and
+		# `newplayer` (a starter kit wins 78-90%). It does not. They are the SAME numbers: a few
+		# percent per encounter, compounded over the ~115 encounters a climb to L20 takes. At 4%
+		# a fight, 0.96^115 = 1%. The per-fight rate and its career consequence are different
+		# quantities and only one of them answers "can this class finish the game".
+		#
+		# So the audit now prints both, and the projection is the number to design against.
+		var _deaths_c: int = RUNS - lived
+		var _dpe: float = float(_deaths_c) / maxf(1.0, float(f_sum))
+		var _to20: float = pow(1.0 - _dpe, 115.0)
+		print("%-9s %6d/%d %7.1f %8d %5.0f%% %7.0f%% %6.0f%% %9.1f %6.1f %7.1f%% %8.2f%%" % [
 			klass, lived, RUNS, avg_died,
 			int(float(f_sum) / float(maxi(1, RUNS))),
 			100.0 * float(w_sum) / float(maxi(1, f_sum)),
 			100.0 * eh_sum / float(maxi(1, eh_n)),
 			jump_sum / float(maxi(1, jump_n)),
 			float(upg_sum) / float(maxi(1, lived)),
-			float(slot_sum) / float(maxi(1, lived))])
+			float(slot_sum) / float(maxi(1, lived)),
+			100.0 * _dpe, 100.0 * _to20])
 	print("\nlived    = reached the target without dying   diedAt = average level the dead reached")
 	print("fights   = total encounters attempted         hunt-  = average levels BELOW own level hunted")
 	print("win%     = share of individual FIGHTS won   worstHP = HP left at the low point of a won fight")
 	print("jumped   = share of heal-ups interrupted by an ambush (walked into the next fight hurt)")
 	print("upgrades = pieces actually found and worn over the whole climb (survivors only)")
+	print("death/enc= share of ENCOUNTERS that killed the character   ->L20 = that rate compounded")
+	print("           over the ~115 encounters a climb to L20 takes. THIS is the number that answers")
+	print("           'can this class finish the game'. For half of characters to make L20 it has to")
+	print("           be <= 0.60%; for a quarter, <= 1.20%. No class is close today.")
+	print("           NOTE: consumables are NOT modelled here at all - a real player carries healing")
+	print("           items, so these death rates are an UPPER bound until that is added.")
+	var _d: float = maxf(1.0, float(_gd["deaths"]))
+	print("
+--- WHY THEY DIE ---")
+	print("  flee attempts %d, escaped %d (%.0f%% of attempts succeed)" % [
+		int(_gd["flee_try"]), int(_gd["flee_ok"]),
+		100.0 * float(_gd["flee_ok"]) / maxf(1.0, float(_gd["flee_try"]))])
+	print("  fights (flock links) %d across %d encounters = %.2f links per encounter" % [
+		int(_gd["links"]), int(_gd["enc"]), float(_gd["links"]) / maxf(1.0, float(_gd["enc"]))])
+	print("  encounters STARTED at %.0f%% HP on average" % [100.0 * float(_gd["enc_hp0"]) / maxf(1.0, float(_gd["enc"]))])
+	print("  deaths %d: on flock link %.2f, entered that fight at %.0f%% HP, at char L%.1f hunting L%.1f" % [
+		int(_gd["deaths"]), float(_gd["death_link"]) / _d, 100.0 * float(_gd["death_hp0"]) / _d,
+		float(_gd["death_lvl"]) / _d, float(_gd["death_hunt"]) / _d])
 	print("=====================================================================\n")
 
 func run_grow_diag():
@@ -6376,7 +6425,3 @@ func _verify_starter_decks() -> void:
 	else:
 		print("  all nine ship exactly 5 cards")
 	print("==========================================================================")
-
-
-
-
