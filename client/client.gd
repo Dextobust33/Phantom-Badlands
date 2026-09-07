@@ -12801,7 +12801,7 @@ func _get_ability_combat_info(ability_name: String, path: String) -> Dictionary:
 		"paralyze": {"display": "Paralyze", "cost": 60, "cost_percent": 6, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"banish": {"display": "Banish", "cost": 80, "cost_percent": 10, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		# #36 Mage 7→9 additions. Frost Nova = variable mana. Overload = HP-cost (shown as
-		# 0 mana; the real cost is 20% max HP, surfaced in its description + card preview).
+		# 0 mana; the real cost is OVERLOAD_HP_COST_PCT of max HP, surfaced in its description).
 		"frost_nova": {"display": "Frost Nova", "cost": 30, "cost_percent": 5, "cost_floor_ratio": 0.3, "resource_type": "mana"},
 		"overload": {"display": "Overload", "cost": 0, "cost_percent": 0, "resource_type": "mana"},
 		# Warrior abilities. Variable-cost abilities carry cost_floor_ratio
@@ -19602,7 +19602,7 @@ func _get_ability_description_text(ability_name: String) -> String:
 		"paralyze": return "Stun the enemy 1-2 turns. Chance ≈ 50 + INT/2 (capped 85%, 10% floor); drops -20% per prior CC. Variable cost (≈30% of mana pool max) — stun CHANCE scales with spend (duration stays 1-2 turns if it lands)."
 		"banish": return "40% + INT/3 chance (75% cap) to remove a non-boss from the fight. 50% loot drop on banish. Variable cost (≈30% of mana pool max) — banish CHANCE scales with spend; loot-drop chance stays 50% (bonus outcome)."
 		"frost_nova": return "Deal chip frost damage (30 × INT scaling, below Blast) and chill the enemy so its next attack takes -30% accuracy (scales with spend, capped 45%). Builds Focus. Soft control / survival — distinct from Paralyze's hard stun. Variable mana cost."
-		"overload": return "Spend 20% of your max HP (NOT mana) to buff your spell damage +120% for 2 rounds. Glass-cannon burst that makes you more fragile; blocked below 25% HP so it can't self-kill, and it won't stack over Arcane Surge (highest damage buff wins)."
+		"overload": return "Spend 12% of your max HP (NOT mana) to buff your spell damage +120% for 3 rounds. Glass-cannon burst that makes you more fragile; blocked below 25% HP so it can't self-kill, and it won't stack over Arcane Surge (highest damage buff wins)."
 		"power_strike": return "2× attack with sqrt STR scaling. Variable cost 3-10 stamina — damage scales linearly with what you spend (30% at floor, 100% at ceiling)."
 		"war_cry": return "Tempo & intimidate — surge +2 stacks of your class engine (Conviction for a Paladin, Momentum otherwise) and rattle the foe for -25% accuracy (scales with spend, capped 40%). No damage buff, so it pairs with Berserk instead of clashing. Variable cost 5-15 stamina."
 		"shield_bash": return "1.5× attack with sqrt STR scaling + chance to stun (drops -25% per prior CC, 20% floor). Variable cost 6-20 stamina — damage AND stun chance scale with spend."
@@ -19795,7 +19795,7 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"frost_nova":
 			return "Deal %s frost damage and [b]chill[/b] the foe so its NEXT attack likely misses (%s accuracy). Builds Focus. A survival lever — not a heal." % [_desc_num(int(30 * (1.0 + float(s_int) * 0.04)), "30 × (1 + INT×4%) × Focus × rank/tier"), _desc_num("−30%", "one attack; scales with spend, capped 45%")]
 		"overload":
-			return "Sear yourself for %s to supercharge your spells by %s [b]for 2 rounds[/b]. Costs HP, not mana — pure glass-cannon burst (blocked below 25%% HP)." % [_desc_num("20% max HP", "self-damage, no self-heal so it can't loop"), _desc_num("+120%", "does not stack with Arcane Surge — the bigger buff wins")]
+			return "Sear yourself for %s to supercharge your spells by %s [b]for 3 rounds[/b]. Costs HP, not mana — pure glass-cannon burst (blocked below 25%% HP)." % [_desc_num("12% max HP", "self-damage, no self-heal so it can't loop"), _desc_num("+120%", "does not stack with Arcane Surge — the bigger buff wins")]
 		# --- Trickster (v0.9.698) ---
 		"ambush":
 			return "Deal %s damage with [b]+25%% crit chance[/b] on top of your own." % _desc_num(est_dmg, "WITS-anchored damage × rank/tier; Ambush adds +25 to your crit chance")
@@ -33010,7 +33010,7 @@ func show_help():
   [color=#FFFFFF]L40 Haste[/color]        [color=#808080](35+3%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
   [color=#FFFFFF]L60 Paralyze[/color]     [color=#808080](60+6%)[/color]  - 50%+INT/2 chance (max 85%) to stun 1-2 turns
   [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%)[/color]  - Chip frost dmg + chill (-30% enemy accuracy). Builds Focus, soft control
-  [color=#FFFFFF]Overload[/color]         [color=#808080](20% HP)[/color] - Burn 20% max HP to buff your spells +120% for 2 rounds. No mana, no heal — glass-cannon burst
+  [color=#FFFFFF]Overload[/color]         [color=#808080](12% HP)[/color] - Burn 12% max HP to buff your spells +120% for 3 rounds. No mana, no heal — glass-cannon burst
   [color=#FFFFFF]L80 Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
   [color=#FFFFFF]L100 Meteor[/color]      [color=#808080](100+8%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
   [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4% mana (8% if already full HP)
