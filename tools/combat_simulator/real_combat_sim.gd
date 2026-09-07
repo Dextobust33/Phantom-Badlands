@@ -84,6 +84,7 @@ func _audit_registry() -> Dictionary:
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
+		"climbcost": ["how many encounters a climb to L20 actually costs", run_climbcost],
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
 		"names": ["do all the tables agree on what each card is CALLED?", run_name_consistency_audit],
@@ -6509,3 +6510,37 @@ func run_lowlevel() -> void:
 				float(casts) / tf, float(atks) / tf, float(eng_end) / float(fights),
 				100.0 * float(wins) / float(fights)])
 	print("=======================================================")
+
+
+func run_climbcost() -> void:
+	"""How many ENCOUNTERS a climb to L20 costs — by arithmetic, not by simulating the climb.
+
+	2026-09-06 — I quoted "~115" as a design target from a bad division (total encounters over
+	characters, when every character had died at L1.9 after ~13 encounters), then tried to measure
+	it by running immortal climbs and that produced no data at all. This does it the cheap way:
+	the XP the curve demands to reach each level, against the XP an encounter at that level
+	actually pays. No long run, and nothing to go wrong quietly."""
+	var ch = Character.new()
+	ch.initialize("Ruler", "Fighter", "Human")
+	print("
+===== WHAT A CLIMB TO L20 COSTS =====")
+	print("%-7s %14s %14s %14s" % ["level", "xp for level", "xp/encounter", "encounters"])
+	var total := 0.0
+	for lvl in range(1, 20):
+		var need: int = ch.xp_required_for_next_level(lvl)
+		# What one encounter at this level pays, measured through the real monster + reward path.
+		var xp_sum := 0.0
+		var n := 8
+		for i in range(n):
+			var m = make_monster(lvl, "normal", 1.0)
+			xp_sum += float(m.get("experience_reward", 0))
+		var per: float = maxf(1.0, xp_sum / float(n))
+		var enc: float = float(need) / per
+		total += enc
+		if lvl <= 5 or lvl % 5 == 0:
+			print("%-7d %14d %14.0f %14.1f" % [lvl, need, per, enc])
+	print("%-7s %14s %14s %14.0f" % ["TOTAL", "", "", total])
+	print("A per-encounter death rate d gives (1-d)^%.0f odds of surviving the climb:" % total)
+	for d in [0.037, 0.02, 0.01, 0.006, 0.003]:
+		print("   %5.1f%% -> %6.2f%% reach L20" % [d * 100.0, 100.0 * pow(1.0 - d, total)])
+	print("=====================================")

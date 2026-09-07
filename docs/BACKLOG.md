@@ -1044,12 +1044,27 @@ Ruled out by measurement, not by argument:
 | Barbarian | 16.7% | 0.0% |
 | **Ninja** | **33.6%** | 0.0% |
 
-**CAVEAT on the target, my error:** the "~115 encounters to L20" I first quoted was a bad division
-(total encounters / characters, when every character had already died at L1.9 after ~13 encounters).
-The real figure is unmeasured — the run that would settle it did not finish. The DIRECTION is not in
-doubt: a climb to L20 is certainly well over a hundred encounters, so the per-encounter death rate
-has to be roughly an order of magnitude below today's 3.7-33.6%. Treat the exact threshold as
-unverified until the climb cost is measured. The best class in the game is at 3.7%. That is the real balance target and nothing is
+**MEASURED (`-- climbcost`, 2026-09-06): a climb to L20 costs 448 encounters.** I first quoted
+"~115" from a bad division and stated it as a target; it was 4x too low. Done properly — the XP the
+curve demands per level against the XP an encounter at that level pays — the survival arithmetic is
+far harsher than I said:
+
+| death per encounter | reach L20 |
+|---|---|
+| **3.7%** (the best class today) | **0.00%** |
+| 2.0% | 0.01% |
+| 1.0% | 1.11% |
+| 0.6% | 6.76% |
+| 0.3% | 26.05% |
+
+**For even a QUARTER of characters to reach L20, death per encounter must be about 0.3% — twelve
+times lower than the best class in the game today, and a hundred times lower than the Ninja.** As
+measured, the game is not survivable to L20 by anyone.
+
+Caveat worth stating: the simulated player may play less wisely than a real one — it does not skip
+encounters it could avoid, and "wise play" in the owner's sense may include a lot the harness does
+not model. But the gap is two orders of magnitude, not a few points, so the direction is not in
+doubt. The best class in the game is at 3.7%. That is the real balance target and nothing is
 close to it — and it is a far more demanding constraint than any win-rate goal, which is why
 win-rate tuning never surfaced it.
 
