@@ -1014,9 +1014,61 @@ risk at every level. Measure per stage and per equipment profile, never as one g
 **Language:** do not call reaching L20 "finishing the game" — it is ~0.3% of the ladder. I
 described a 66% chance of reaching L20 that way and it was wrong by two orders of magnitude.
 
+### TOOLING: stop using the 45-minute chain as the feedback loop (2026-09-07)
+
+Owner: *"we need to find a way to continue making progress without wasting time on failed long
+sims."* Both failed chains this session cost ~45 minutes each and **neither failed because the
+simulation was wrong** — it faithfully measured a broken instrument both times (a reference player
+that was the strongest of each archetype; a calibration sampler that never retreated). Three cheap
+audits now cover that ground:
+
+| audit | ~time | answers |
+|---|---|---|
+| **`preflight`** | 2 min | is the chain worth running? decks are 5 cards, the two measurement paths agree within 15pp, nobody is idling on auto-attack. **Both failed chains would have been caught by this.** |
+| **`lowlevel`** | 2 min | are L1-L3 classes resource-starved, and is anyone auto-attacking? |
+| **`riskcurve`** | 4 min | death rate by LEVEL and by GEAR — does risk fall as you progress? |
+
+**Loop: iterate with the cheap audits, gate with `preflight`, run the chain ONCE at the end.**
+
+### RISK CURVE — the audit that matches the owner's definition (2026-09-07)
+
+| level | gearless | under | average | bis |
+|---|---|---|---|---|
+| 3 | 3.7% | 0.0% | 0.0% | 0.0% |
+| 10 | 22.2% | 11.1% | 3.7% | 0.0% |
+| 30 | 88.9% | 7.4% | 7.4% | 0.0% |
+| 100 | **100%** | 14.8% | 7.4% | **0.0%** |
+| 500 | **100%** | 22.2% | 11.1% | 3.7% |
+
+The shape is correct and it is the whole reason "most characters die" and "a careful player reaches
+the top" are compatible: **down** a column an under-geared character goes from survivable to certain
+death as levels rise; **across** a row, gear cuts risk decisively. That gradient is the route up.
+
+**Limit, stated in the audit itself:** at ~27 fights per cell, `0.0%` means "below about 4%", and
+endgame viability turns on telling 0.02% from 1%. It resolves the SHAPE, not the small rates. A
+targeted high-n pass on BIS at L500+ is the follow-up, and it is cheap because it is a few cells,
+not the grid.
+
+### NINJA — fixed 2026-09-07 (`4efb240`)
+
+`vanish` (Phantom Strike) dealt **zero damage** and handed over a free turn, bypassing the narrowed
+tempo rule by returning `skip_monster_turn` itself. Four of the Ninja's five cards therefore did
+nothing offensive and it needed 12.1 turns to kill an L10 normal against 3.8-9.3 for everyone else.
+It now deals anchored damage (0.18) and gives up the free turn.
+
+Second fault, mine: **`vanish` was in no trickster rotation in the simulator** while sitting in the
+Ninja's starter deck, so the simulated Ninja played four cards of five and auto-attacked on the
+fifth — 17-30% of its turns. I diagnosed resource starvation and re-priced a card before checking
+the policy, which is the mage-rotation mistake repeated. Third, inside that: I fixed
+`_trickster_assassin`, measured byte-identical output, and only then checked that `deny_first` is
+the active policy. **Identical numbers after a real change mean the change is not on the executed
+path.**
+
+Result: casts 0.98/turn (was 0.70), L3 win 50% -> 79%.
+
 ### PERMADEATH COUNTERWEIGHT: the council — new direction, NOT started
 
-Owner 2026-09-07. An aspirational milestone admits a player to a **council** (name TBD):
+Owner 2026-09-07. An aspirational milestone admits a player to **The Unburied** (name chosen by the owner 2026-09-07):
 
 - **Great powers that affect the realm and other players** — the first genuinely social endgame
   hook in the design.
@@ -1030,11 +1082,9 @@ This is the mechanism that breaks the compounding maths at the top of the ladder
 
 Naming candidates, against the setting bible (a phantom is a dead thing the ground refuses to keep
 down; permadeath IS becoming one):
-- **The Unburied** — recommended. Thematically exact: these are the ones the ground keeps sending
-  back, which is precisely what extra lives ARE. Says the mechanic out loud without explaining it.
-- **The Vigil** — those who keep watch over the realm; leans on the powers rather than the lives.
-- **The Cairn** — a cairn marks the dead and is built by many hands; collective, sombre, and it
-  reads as a place as well as a body of people.
+**Named: THE UNBURIED.** Thematically exact against the setting bible — a phantom is a dead thing
+the ground refuses to keep down, and these are the ones it keeps sending back, which is precisely
+what extra lives ARE. Says the mechanic out loud without explaining it.
 
 ### MEASUREMENT OVERHAUL (2026-09-06) — the tools were modelling a player who never runs away
 
