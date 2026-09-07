@@ -17176,6 +17176,11 @@ func _format_chase_affix_tokens(affixes: Dictionary) -> Array:
 		"devastate": {"Barbarian": "Rmpg", "Paladin": "Judg"},
 		"power_strike": {"Paladin": "Rprch"},
 		"shield_bash": {"Barbarian": "Rush"},
+		"magic_bolt": {"Sorcerer": "ChBolt", "Sage": "MLnce"},
+		"blast": {"Sorcerer": "WSurge"},
+		"meteor": {"Sorcerer": "Cata", "Sage": "Unmk"},
+		"ambush": {"Grifter": "Sucker"},
+		"exploit": {"Ranger": "WkPnt"},
 		"perfect_heist": {"Ninja": "Assn", "Grifter": "DblX", "Ranger": "KShot"},
 	}
 	for ability_key in _ABILITY_SHORT.keys():
@@ -33412,10 +33417,13 @@ whichever one you have:
 {{MAGE_PASSIVES}}
 
 [color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
-Magic Bolt - the big single-cast nuke; spend more mana for more damage
-Blast - efficient sustain
+Magic Bolt - the big single-cast nuke; spend more mana for more damage. A Sorcerer's is a
+  [color=#9400D3]Chaos Bolt[/color], an Oracle's a [color=#20B2AA]Mind Lance[/color]
+Blast - efficient sustain. A Sorcerer's is a [color=#9400D3]Wild Surge[/color]
 Meteor / Cataclysm / Unmaking - the FINISHER, one card that works differently for each class
-Frost Nova - chip damage and an accuracy chill; builds Focus
+Frost Nova - chip damage and an accuracy chill; builds your engine. An Oracle's is
+  [color=#20B2AA]Stillness[/color], and its Paralyze is [color=#20B2AA]Transfix[/color], its
+  Forcefield a [color=#20B2AA]Premonition[/color]
 Overload - burns your own HP to buff the next spell
 Forcefield - absorbs damage. Each RECAST in the same fight absorbs less, so it is a strong
   panic button rather than something to hold up permanently
@@ -33440,10 +33448,14 @@ one you have:
 {{TRICKSTER_PASSIVES}}
 
 [color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
-Analyze / Distract / Sabotage - deny the monster its turn while you build Read
-Ambush - damage, with a strong crit chance
+Analyze / Distract / Sabotage - deny the monster its turn while you build Read. Analyze reads
+  [color=#2F4F4F]Size Them Up[/color] for a Grifter, [color=#228B22]Track[/color] for a Ranger and
+  [color=#191970]Mark[/color] for a Ninja; a Ranger's Sabotage is a [color=#228B22]Snare[/color]
+  and a Ninja's is a [color=#191970]Hamstring[/color]
+Ambush - damage, with a strong crit chance. A Grifter's is a [color=#2F4F4F]Sucker Punch[/color]
 Gambit - high damage, but it can hurt you
-Exploit - damage as a share of the monster's own max HP; the anti-tank tool
+Exploit - damage as a share of the monster's own max HP; the anti-tank tool. A Ranger's is a
+  [color=#228B22]Weak Point[/color]
 Pickpocket - steal Valor
 Phantom Strike - your next damaging action is a guaranteed crit
 Assassinate - ends the fight outright. Weak on its own; Read is what makes it land
@@ -38049,6 +38061,27 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = _replace_word(enhanced, "Fortify", "[color=#FFD700]Fortify[/color]")
 	if "RALLY" in upper_msg:
 		enhanced = _replace_word(enhanced, "Rally", "[wave amp=10 freq=3][color=#FFD700]Rally[/color][/wave]")
+
+	# Mage + Trickster renames — matched alongside the shared names so a renamed card keeps its
+	# styling. These match on the literal word, so every new form needs a line.
+	if "CHAOS BOLT" in upper_msg:
+		enhanced = _replace_word(enhanced, "Chaos Bolt", "[shake rate=18 level=6][color=#9400D3]Chaos Bolt[/color][/shake]")
+	if "WILD SURGE" in upper_msg:
+		enhanced = _replace_word(enhanced, "Wild Surge", "[wave amp=12 freq=4][color=#9400D3]Wild Surge[/color][/wave]")
+	if "MIND LANCE" in upper_msg:
+		enhanced = _replace_word(enhanced, "Mind Lance", "[color=#20B2AA]Mind Lance[/color]")
+	if "STILLNESS" in upper_msg:
+		enhanced = _replace_word(enhanced, "STILLNESS", "[color=#20B2AA]STILLNESS[/color]")
+	if "TRANSFIX" in upper_msg:
+		enhanced = _replace_word(enhanced, "transfix", "[color=#20B2AA]transfix[/color]")
+	if "PREMONITION" in upper_msg:
+		enhanced = _replace_word(enhanced, "Premonition", "[pulse freq=2.0 color=#20B2AA ease=-2.0]Premonition[/pulse]")
+	if "SUCKER PUNCH" in upper_msg:
+		enhanced = _replace_word(enhanced, "Sucker Punch", "[shake rate=20 level=5][color=#2F4F4F]Sucker Punch[/color][/shake]")
+	if "WEAK POINT" in upper_msg:
+		enhanced = _replace_word(enhanced, "Weak Point", "[color=#228B22]Weak Point[/color]")
+	if "HAMSTRING" in upper_msg:
+		enhanced = _replace_word(enhanced, "hamstring", "[color=#191970]hamstring[/color]")
 
 	# Trickster abilities - sneaky effects
 	if "BACKSTAB" in upper_msg:

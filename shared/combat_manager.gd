@@ -4070,6 +4070,26 @@ const ABILITY_LINES_BY_CLASS := {
 		"body": "A shield of faith closes around you! (+%d%% defense for %d rounds)"}},
 	"rally": {"Paladin": {
 		"body": "You lay on hands — healed %d HP, +%d STR for %d rounds!"}},
+	# --- Mage ---
+	"magic_bolt": {
+		"Sorcerer": {"title": "Chaos Bolt"},
+		"Sage": {"title": "Mind Lance"},
+	},
+	"blast": {"Sorcerer": {"title": "Wild Surge"}},
+	"frost_nova": {"Sage": {
+		"title": "◈ STILLNESS!",
+		"body": "The moment slows around it — %d damage, and it moves a half-beat late (-%d%% accuracy)!"}},
+	"paralyze": {"Sage": {"body": "You transfix the %s for %d turn(s)!"}},
+	"forcefield": {"Sage": {
+		"body": "[color=#FF00FF]You saw it coming. (Premonition absorbs the next %d damage)[/color]"}},
+	# --- Trickster ---
+	"analyze": {
+		"Grifter": {"title": "SIZING THEM UP!"},
+		"Ranger": {"title": "TRACKING!"},
+		"Ninja": {"title": "MARKED!"},
+	},
+	"ambush": {"Grifter": {"title": "Sucker Punch"}},
+	"exploit": {"Ranger": {"title": "Weak Point"}},
 }
 
 static func ability_line(character, ability_name: String, key: String, fallback: String) -> String:
@@ -5080,7 +5100,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			monster.current_hp -= final_damage
 			monster.current_hp = max(0, monster.current_hp)
 			# ONE line for the whole cast. The modifiers buffered above ride on the number.
-			messages.append("[color=#FF00FF]Magic Bolt[/color] [color=#808080](%d mana)[/color] — %s" % [
+			messages.append("[color=#FF00FF]%s[/color] [color=#808080](%d mana)[/color] — %s" % [
+				ability_line(character, "magic_bolt", "title", "Magic Bolt"),
 				actual_mana_cost, _damage_with_detail(combat, messages, final_damage)])
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_mb = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
@@ -5142,7 +5163,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var damage = apply_damage_variance(base_damage)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF00FF]Blast[/color] — %s" % _damage_with_detail(combat, messages, damage))
+			messages.append("[color=#FF00FF]%s[/color] — %s" % [
+				ability_line(character, "blast", "title", "Blast"),
+				_damage_with_detail(combat, messages, damage)])
 			# v0.9.423 — Arcane Surge double-cast roll
 			var dc_chance_bl = int(combat.get("arcane_surge_double_cast", 0)) + int(character.get_path_effect_total("double_cast_pct"))
 			if dc_chance_bl > 0 and randi() % 100 < dc_chance_bl:
@@ -5216,7 +5239,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			combat["forcefield_shield"] = shield_value
 			combat["_ff_watch"] = shield_value
 			combat["_ff_spent"] = false
-			var _ff_msg: String = "[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]" % shield_value
+			var _ff_msg: String = ability_line(character, "forcefield", "body",
+				"[color=#FF00FF]You cast Forcefield! (Absorbs next %d damage)[/color]") % shield_value
 			if _ff_casts > 0:
 				_ff_msg += "
 [color=#808080]The weave frays — each recast this fight holds less.[/color]"
@@ -5386,7 +5410,8 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 				combat["monster_stunned"] = stun_duration
 				combat["cc_resistance"] = cc_resist + 1
 				combat["consec_stuns"] = consec_stuns + 1
-				messages.append("[color=#FFFF00]You paralyze the %s for %d turn(s)![/color]" % [monster.name, stun_duration])
+				messages.append("[color=#FFFF00]%s[/color]" % [ability_line(character, "paralyze", "body",
+					"You paralyze the %s for %d turn(s)!") % [monster.name, stun_duration]])
 				is_buff_ability = true  # 75% chance to avoid monster's retaliation while casting
 			else:
 				combat["consec_stuns"] = 0  # monster shakes it off and will act
@@ -5445,8 +5470,9 @@ func _process_mage_ability(combat: Dictionary, ability_name: String, arg: String
 			var fn_chill = mini(45, max(1, int(30 * variable_fraction)))
 			fn_chill = mini(45, _apply_buff_value_modifiers(character, "frost_nova", fn_chill))
 			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), fn_chill)
-			messages.append("[color=#5AC8FF]❄ FROST NOVA![/color]")
-			messages.append("[color=#00FFFF]You deal %d frost damage and chill the enemy (-%d%% accuracy)![/color]" % [fn_dmg, fn_chill])
+			messages.append("[color=#5AC8FF]%s[/color]" % ability_line(character, "frost_nova", "title", "❄ FROST NOVA!"))
+			messages.append("[color=#00FFFF]%s[/color]" % [ability_line(character, "frost_nova", "body",
+				"You deal %d frost damage and chill the enemy (-%d%% accuracy)!") % [fn_dmg, fn_chill]])
 
 		"overload":
 			# #36 (2026-08-27) Mage 7→9 — GLASS-CANNON burst enabler. Costs HP (not mana),
@@ -6104,7 +6130,7 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 	match ability_name:
 		"analyze":
-			messages.append("[color=#00FF00]ANALYZE![/color]")
+			messages.append("[color=#00FF00]%s[/color]" % ability_line(character, "analyze", "title", "ANALYZE!"))
 			messages.append("[color=#808080]%s (Level %d)[/color]" % [monster.name, monster.level])
 			messages.append("[color=#FF4444]HP:[/color] %d/%d" % [monster.current_hp, monster.max_hp])
 			messages.append("[color=#FFFF00]Damage:[/color] ~%d" % monster.strength)
@@ -6237,7 +6263,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			monster.current_hp = max(0, monster.current_hp)
 			# Ambush's crit affinity now rides the SHARED roll (ABILITY_CRIT_BONUS), which has
 			# already announced itself above if it landed. One system, one label.
-			messages.append("[color=#00FF00]Ambush[/color] — %s" % _damage_with_detail(combat, messages, damage))
+			messages.append("[color=#00FF00]%s[/color] — %s" % [
+				ability_line(character, "ambush", "title", "Ambush"),
+				_damage_with_detail(combat, messages, damage)])
 
 		"vanish":
 			# Auto-crit on the next DAMAGING ACTION (ability or attack), skips monster turn.
@@ -6294,7 +6322,9 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
 			_note_modifier(combat, "%d%% of the target's max HP" % base_percent)
-			messages.append("[color=#00FF00]Exploit Weakness[/color] — %s" % _damage_with_detail(combat, messages, damage))
+			messages.append("[color=#00FF00]%s[/color] — %s" % [
+				ability_line(character, "exploit", "title", "Exploit Weakness"),
+				_damage_with_detail(combat, messages, damage)])
 
 		"perfect_heist":
 			# --- GRIFTER: cash the con. Guaranteed damage, scaled by the Read it spends. ---
@@ -11181,10 +11211,41 @@ const ABILITY_DISPLAY_BY_CLASS := {
 	"rally": {
 		"Paladin": "Lay on Hands",
 	},
+	# --- MAGE + TRICKSTER THEMING, 2026-09-07. Display names only; no card is mechanically
+	# --- wrong for its class the way `sabotage` was, so nothing here moves balance. The WIZARD
+	# --- is deliberately unchanged: it is the classical baseline the other two deviate from.
+	"magic_bolt": {
+		"Sorcerer": "Chaos Bolt",
+		"Sage": "Mind Lance",      # an Oracle's damage is insight, not raw arcane force
+	},
+	"blast": {
+		"Sorcerer": "Wild Surge",
+	},
+	"frost_nova": {
+		"Sage": "Stillness",       # it slows the moment rather than freezing the air
+	},
+	"paralyze": {
+		"Sage": "Transfix",        # held by a look
+	},
+	"forcefield": {
+		"Sage": "Premonition",     # its passive is Foresight: you knew the blow was coming
+	},
+	"analyze": {
+		"Grifter": "Size Them Up",
+		"Ranger": "Track",
+		"Ninja": "Mark",
+	},
+	"ambush": {
+		"Grifter": "Sucker Punch", # a con artist hits you when you are not looking
+	},
+	"exploit": {
+		"Ranger": "Weak Point",    # it is a share of max HP, so it IS a weak point
+	},
 	# A Ninja HAMSTRINGS; it does not sabotage. Same mechanic, honest fiction — sabotage is a
 	# saboteur's tool and the Grifter is the one who deals in tricks and setups.
 	"sabotage": {
 		"Ninja": "Hamstring",
+		"Ranger": "Snare",
 	},
 	# The Mage finisher forks the same way. A Wizard drops a meteor, a Sorcerer looses a
 	# cataclysm, an Oracle unmakes the thing where it stands.
