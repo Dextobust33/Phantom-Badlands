@@ -2128,6 +2128,7 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 				continue
 			var combat = combat_mgr.active_combats[0]
 			var turns := 0
+			var fled := false
 			while turns < 400:
 				if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 					break
@@ -2139,6 +2140,21 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 						_: _player_act(combat, ch)
 				if int(monster.get("current_hp", 0)) <= 0:
 					break
+				# 2026-09-06 — RETREAT, matching `run_fight`.
+				#
+				# This sampler is what `refcal` fits the monster curve to, and it was the ONE fight
+				# loop left that never ran away — so the curve was sized against a player who trades
+				# to the last hit point while every other audit measured one who retreats. Measured:
+				# `adjudicate` put the two paths 22pp apart at L10 (90% against 68%). Monsters tuned
+				# against a fight-to-the-death player come out too strong for a real one, which is
+				# exactly the direction the ramped curve missed in.
+				#
+				# Same defect I found and fixed in `adjudicate` earlier the same day and missed here,
+				# in the one place where it changes the game rather than a report.
+				if not fled and float(ch.current_hp) / float(maxi(1, php0)) < RUN_FIGHT_FLEE_AT:
+					if bool(combat_mgr.process_flee(combat).get("fled", false)):
+						fled = true
+						break
 				_monster_turn_if_owed(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
@@ -5707,9 +5723,9 @@ func run_grow_audit():
 	print("jumped   = share of heal-ups interrupted by an ambush (walked into the next fight hurt)")
 	print("upgrades = pieces actually found and worn over the whole climb (survivors only)")
 	print("death/enc= share of ENCOUNTERS that killed the character   ->L20 = that rate compounded")
-	print("           over the ~115 encounters a climb to L20 takes. THIS is the number that answers")
-	print("           'can this class finish the game'. For half of characters to make L20 it has to")
-	print("           be <= 0.60%; for a quarter, <= 1.20%. No class is close today.")
+	print("           over a climb to L20. THIS is the number that answers 'can this class finish")
+	print("           the game'. See `-- climbcost` for the encounter count and the survival curve;")
+	print("           the '115' this legend used to quote was my bad arithmetic, not a measurement.")
 	print("           Consumables are not modelled, and owner 2026-09-06 confirms that is CORRECT")
 	print("           for this range: healing items are not obtainable early, and every death")
 	print("           above lands at ~L1.9. These rates are real, not an upper bound.")
