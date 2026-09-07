@@ -113,8 +113,15 @@ while the Paladin's stat realignment held.
       cast path kept as a branch that TELLS a player who still has it bound rather than failing
       silently — the treatment Outsmart got. `-- verify` now asserts it REFUSES, since a retired
       card that still casts is the bug worth catching.
-- [ ] **Retire the vestigial `level` fields on abilities** — pre-deck-system leftovers that no
-      longer gate anything.
+- [x] **Vestigial ability `level` fields — the PLAYER-FACING half fixed 2026-09-07.** Confirmed
+      nothing gates on them: no resolver, sort or filter reads an ability's `level`. But they had
+      leaked into the help page, which listed "L100 Devastate" and "L25 Shield Bash" a few lines
+      above "all available from level 1" — a direct contradiction on the same screen, telling a new
+      player they could not have their finisher until level 100. All 24 prefixes removed and the
+      clarifier moved to the top of each list.
+      The dict fields themselves are left in place: they are inert, and removing them touches every
+      ability entry for no player-visible gain. If they are ever removed, do it in one pass and
+      re-run `-- verify`.
 
 ## Phase 3 — combat UX debt (visible to every player, every fight)
 

@@ -32991,37 +32991,38 @@ func show_help():
 [color=#FF00FF]All or Nothing[/color]: ~3% instakill, fail=monster 2x STR/SPD, +0.1%/use permanent (max 34%)
 
 [color=#FF6666]WARRIOR ABILITIES[/color] [color=#808080](Stamina = STR + CON)[/color]
-  [color=#FFFFFF]L1  Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
-  [color=#FFFFFF]L10 War Cry[/color]      [color=#808080](15 stam)[/color] - +2 to your class stack + rattle foe (-25% accuracy)
-  [color=#FFFFFF]L25 Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
-  [color=#FFFFFF]L25 Fortify[/color]      [color=#808080](25 stam)[/color] - +30% defense + √STR×3 for 5 rounds
-  [color=#FFFFFF]L40 Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20% STR/rnd, 4 rounds)
-  [color=#FFFFFF]L40 Rally[/color]        [color=#808080](35 stam)[/color] - Heal 30+√CON×10 HP, +STR buff for 3 rounds
-  [color=#FFFFFF]L60 Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200% damage (more when hurt), -40% defense, 4 rounds
-  [color=#FFFFFF]L80 Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60% for 4 rounds
-  [color=#FFFFFF]L100 Devastate[/color]   [color=#808080](50 stam)[/color] - FINISHER. Fighter: Devastate. Barbarian: Rampage. Paladin: Judgement
+[color=#808080]Every card is available from level 1 — your DECK decides what you draw.[/color]
+  [color=#FFFFFF]Power Strike[/color] [color=#808080](10 stam)[/color] - 2× attack damage, scales with √STR
+  [color=#FFFFFF]War Cry[/color]      [color=#808080](15 stam)[/color] - +2 to your class stack + rattle foe (-25% accuracy)
+  [color=#FFFFFF]Shield Bash[/color]  [color=#808080](20 stam)[/color] - 1.5× damage + stun (enemy skips 1 turn)
+  [color=#FFFFFF]Fortify[/color]      [color=#808080](25 stam)[/color] - +30% defense + √STR×3 for 5 rounds
+  [color=#FFFFFF]Cleave[/color]       [color=#808080](30 stam)[/color] - 2.5× damage + bleed (20% STR/rnd, 4 rounds)
+  [color=#FFFFFF]Rally[/color]        [color=#808080](35 stam)[/color] - Heal 30+√CON×10 HP, +STR buff for 3 rounds
+  [color=#FFFFFF]Berserk[/color]      [color=#808080](40 stam)[/color] - +75-200% damage (more when hurt), -40% defense, 4 rounds
+  [color=#FFFFFF]Iron Skin[/color]    [color=#808080](35 stam)[/color] - Reduce all damage by 60% for 4 rounds
+  [color=#FFFFFF]Devastate[/color]   [color=#808080](50 stam)[/color] - FINISHER. Fighter: Devastate. Barbarian: Rampage. Paladin: Judgement
 
 [color=#66FFFF]MAGE ABILITIES[/color] [color=#808080](Mana = INT×3 + WIS×1.5, regen 2%/round, Sage 3%)[/color]
-  [color=#FFFFFF]L1  Magic Bolt[/color]   [color=#808080](variable)[/color] - Spend mana to deal damage: mana × (1 + √INT/5). "bolt 50" = spend 50 mana
-  [color=#FFFFFF]L10 Forcefield[/color]   [color=#808080](20+2%)[/color]  - Absorb shield worth 100 + INT×8 HP. Blocks all damage until depleted
-  [color=#FFFFFF]L25 Cloak[/color]        [color=#808080](30+3%)[/color]  - 50% enemy miss chance for 1 attack
-  [color=#FFFFFF]L40 Blast[/color]        [color=#808080](50+5%)[/color]  - 2× INT-scaled damage + burn (20% INT/rnd for 3 rounds)
-  [color=#FFFFFF]L40 Haste[/color]        [color=#808080](35+3%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
-  [color=#FFFFFF]L60 Paralyze[/color]     [color=#808080](60+6%)[/color]  - 50%+INT/2 chance (max 85%) to stun 1-2 turns
+  [color=#FFFFFF]Magic Bolt[/color]   [color=#808080](variable)[/color] - Spend mana to deal damage: mana × (1 + √INT/5). "bolt 50" = spend 50 mana
+  [color=#FFFFFF]Forcefield[/color]   [color=#808080](20+2%)[/color]  - Absorb shield worth 100 + INT×8 HP. Blocks all damage until depleted
+  [color=#FFFFFF]Cloak[/color]        [color=#808080](30+3%)[/color]  - 50% enemy miss chance for 1 attack
+  [color=#FFFFFF]Blast[/color]        [color=#808080](50+5%)[/color]  - 2× INT-scaled damage + burn (20% INT/rnd for 3 rounds)
+  [color=#FFFFFF]Haste[/color]        [color=#808080](35+3%)[/color]  - +20+INT/5 speed for 5 rounds (helps hit, dodge, flee)
+  [color=#FFFFFF]Paralyze[/color]     [color=#808080](60+6%)[/color]  - 50%+INT/2 chance (max 85%) to stun 1-2 turns
   [color=#FFFFFF]Frost Nova[/color]       [color=#808080](30+5%)[/color]  - Chip frost dmg + chill (-30% enemy accuracy). Builds Focus, soft control
-  [color=#FFFFFF]L80 Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
-  [color=#FFFFFF]L100 Meteor[/color]      [color=#808080](100+8%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
+  [color=#FFFFFF]Teleport[/color]     [color=#808080](40)[/color]      - Guaranteed flee from any combat
+  [color=#FFFFFF]Meteor[/color]      [color=#808080](100+8%)[/color] - 3-4× INT-scaled massive damage. Save mana for this!
   [color=#66FFFF]Meditate[/color]         [color=#808080](free)[/color]    - Restore HP + 4% mana (8% if already full HP)
 
 [color=#FFA500]TRICKSTER ABILITIES[/color] [color=#808080](Energy = (WIT+DEX)×0.75)[/color]
-  [color=#FFFFFF]L1  Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10% damage bonus for this fight
-  [color=#FFFFFF]L10 Distract[/color]     [color=#808080](15 en)[/color]  - -50% enemy accuracy for 1 attack
-  [color=#FFFFFF]L25 Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal Valor (50+lvl×2)×(1+WIT×5%). 1-3 attempts per fight
-  [color=#FFFFFF]L25 Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%+WIT/3 (stacks, max 50%)
-  [color=#FFFFFF]L40 Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
-  [color=#FFFFFF]L50 Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
+  [color=#FFFFFF]Analyze[/color]      [color=#808080](5 en)[/color]   - Reveal monster stats + 10% damage bonus for this fight
+  [color=#FFFFFF]Distract[/color]     [color=#808080](15 en)[/color]  - -50% enemy accuracy for 1 attack
+  [color=#FFFFFF]Pickpocket[/color]   [color=#808080](20 en)[/color]  - Steal Valor (50+lvl×2)×(1+WIT×5%). 1-3 attempts per fight
+  [color=#FFFFFF]Sabotage[/color]     [color=#808080](25 en)[/color]  - Reduce monster STR/DEF by 15%+WIT/3 (stacks, max 50%)
+  [color=#FFFFFF]Ambush[/color]       [color=#808080](30 en)[/color]  - 3× damage + 50% crit chance, scales with √WIT
+  [color=#FFFFFF]Gambit[/color]       [color=#808080](35 en)[/color]  - 55%+WIT/4 chance (max 80%): 4× damage + bonus Valor/gems. Fail = 15% self-damage
   [color=#FFFFFF]Phantom Strike[/color]  [color=#808080](40 en)[/color]  - Go invisible, skip enemy turn. Next damaging action auto-crits
-  [color=#FFFFFF]L80 Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
+  [color=#FFFFFF]Exploit[/color]      [color=#808080](35 en)[/color]  - Deal 15-35% of monster's max HP as damage (scales with WIT)
   [color=#FFFFFF]Assassinate[/color]      [color=#808080](50 en)[/color] - Instant win. 15% base +5% per [color=#7FD8C8]Read[/color], ±WIT (capped) vs enemy INT, -2%/level above you. Each Read also raises the ceiling: 60% cold, 85% at full Read. Fail = free enemy attack
 
 [b][color=#FFD700]══ MONSTER ABILITIES ══[/color][/b]
