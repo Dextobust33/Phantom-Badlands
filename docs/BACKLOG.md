@@ -104,9 +104,19 @@ while the Paladin's stat realignment held.
       Residual, minor: at **L10** Bolt is both the biggest hit and marginally the most efficient
       (25.8 against Blast's 23.0). A 12% edge is a preference, not a trap — revisit only if early
       mages read as one-button.
-- [ ] **Overload is a trap card.** 20% of max HP for +120% over 2 rounds measured as a losing trade
-      at every level: removing it from the Sorcerer's starter deck moved that class 81/53/65 to
-      96/65/71. It is still addable, so it remains a trap for whoever picks it.
+- [ ] **Overload needs a DESIGN change, not another price change** (partly addressed 2026-09-07).
+      Re-priced 20% -> 12% of max HP and 2 -> 3 rounds, which is strictly better and fixed a real
+      text bug (the log hardcoded "2 rounds" while `_buff_duration` lets upgrades extend it).
+      **But measured, it is still a losing trade**: swapping the re-priced card into the Sorcerer's
+      starter deck gave 0.2% death per encounter and 2/40 survivors against 0.1% and 12/40 for the
+      frost_nova version. Six times fewer characters finished.
+      The cause is structural rather than numeric. **Damage does not save you; hit points do.** It
+      is the only card that costs health, in a game where health is the resource you die from, and
+      it is spent against a 30% retreat threshold. Do not keep shaving the percentage — either give
+      it something that offsets the risk it creates (a shield, or the HP back on a kill), make the
+      cost scale with the fight, or accept it as a deliberate expert-only gamble and say so on the
+      card. Discuss before changing.
+      It is NOT in any starter deck, so no new player meets it by accident.
 - [ ] **Retire the vestigial `level` fields on abilities** — pre-deck-system leftovers that no
       longer gate anything.
 
