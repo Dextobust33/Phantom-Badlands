@@ -1030,6 +1030,36 @@ audits now cover that ground:
 
 **Loop: iterate with the cheap audits, gate with `preflight`, run the chain ONCE at the end.**
 
+### NINJA: a DODGE card, not a damage card (owner 2026-09-07) — NEXT
+
+Owner: *"remove its lowest performing or least thematic card and add something that gives it some
+sort of dodge."* This is a better fit than what I tried, and the A/B is why.
+
+**What I got wrong.** I diagnosed the Ninja as short of damage (two damaging cards of five) and
+A/B'd `sabotage` out for a third. Both attempts made it WORSE — L3 win 79% -> 50% with `gambit`,
+-> 29% with `exploit`. `sabotage`'s -16% strength debuff is the class's ONLY damage reduction (the
+Grifter has Read DR, the Fighter has Momentum DR and Iron Skin, the Ninja has nothing by design),
+so the "wasted turn" was load-bearing for survival. Shipping that change on reasoning alone would
+have made the worst class materially worse.
+
+**Why dodge is the right shape.** It swaps mitigation for mitigation rather than trading it for
+damage, so the class is not left naked — and it is far more thematic. `sabotage` is a saboteur's
+tool; the Grifter is the one who deals in tricks and setups. An assassin avoids the blow.
+Candidates: reuse the `cloak` effect (50% miss chance for one attack — check whether it is still
+combat-legal, it was migrated to non-combat at some point), or a Ninja-exclusive card, which has
+the tuning advantage that it can be moved without touching the Grifter or the Ranger.
+
+### THEMING PASS — per class, AFTER balance settles (owner 2026-09-07)
+
+Owner: *"once we have the balance where it needs to be we need to take a look at each class
+individually and see if the cards match the theme. If we need to change card names, descriptions,
+combat logs, hover, or even effects we should discuss and do so then."*
+
+Explicitly sequenced AFTER the numbers land, and explicitly includes **effects**, not just text —
+a card can be renamed, re-described, or re-mechanic'd to fit its class. Discuss before changing.
+Known candidates already: `sabotage` on a Ninja (above), and every card whose name/description
+forked by class this session should be re-read as a set rather than individually.
+
 ### WATCH: rest changes scaled meditate and companion regen too (2026-09-07)
 
 `REST_HEAL_MIN/MAX` (0.20-0.35, up from 0.10-0.25) replaced **eight** sites, not one — meditate and

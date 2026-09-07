@@ -914,12 +914,25 @@ static func class_passive_for(class_type: String) -> Dictionary:
 				# ESCALATING rather than flat, so crit is a BUILD and not a stat line: every crit
 				# this fight sharpens the next. It rewards stacking crit from gear and rewards
 				# long fights, and it resets each combat so it cannot be banked.
+				# 2026-09-07 — 12% -> 20% base, escalation 6 -> 9.
+				#
+				# The Ninja was the worst class in a real climb: 59% of its early fights won
+				# against 92-100% for everyone else, and 10.5 turns to kill an L10 normal against
+				# the Fighter's 5.5. Its deck cannot be the fix — it has only two damaging cards,
+				# and A/B'ing `sabotage` out for either `gambit` or `exploit` made it WORSE (L3
+				# win 79% -> 50% and -> 29%), because that -16% strength debuff is the only damage
+				# reduction the class has and is load-bearing for survival, not a wasted turn.
+				#
+				# So the lever is the passive, which is the one thing that is Ninja-EXCLUSIVE and
+				# can be tuned without moving the Grifter or the Ranger. It also finally has
+				# something to act on: Phantom Strike deals damage now, so the crit chain has a
+				# reliable opener instead of waiting on a 12% roll.
 				"name": "Killing Edge",
-				"description": "+12% crit chance. Every critical hit this fight sharpens the next (+6%).",
+				"description": "+20% crit chance. Every critical hit this fight sharpens the next (+9%).",
 				"color": "#191970",
 				"effects": {
-					"crit_chance_bonus": 0.12,
-					"crit_escalation": 6
+					"crit_chance_bonus": 0.20,
+					"crit_escalation": 9
 				}
 			}
 		_:
