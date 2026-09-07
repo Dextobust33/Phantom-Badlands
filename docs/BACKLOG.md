@@ -990,6 +990,52 @@ from the Trickster slice, not from this one.
   level tested. It is out of the Sorcerer's starter deck but still addable, so it is a trap for the
   player who picks it. Same shape as the Magic Bolt to-do below.
 - **Magic Bolt damage vs investment** (measurements already recorded above).
+### WHAT "BALANCED" MEANS HERE — settled 2026-09-07, read before any balance work
+
+- **"Most characters die, that is the point."** Balance is not every class reaching the top.
+- **AND** *"a careful player should be able to get there, with good gear, card upgrades, strong
+  companion, and skilled play."* Both hold at once.
+- *"Even with all of these things if a high level player isn't careful and takes on a challenge too
+  great or a monster that is too many levels higher than them they can still meet their end."*
+- Balanced does NOT mean equal kill speed; classes should feel different and players find their
+  preference through playstyle.
+
+**The measurement consequence — and I had this wrong twice.** A single per-encounter death rate
+applied across the whole ladder is the wrong model. Measured (`-- climbcost`): a climb costs **462
+encounters to L20, 2,336 to L100, 18,916 to L1000, 177,663 to L10000.** At any CONSTANT rate the
+endgame is arithmetically unreachable — even 0.02%/encounter, fifty times better than the best
+class today, gives 0% at L10000. That is not a tuning gap; it is what a constant rate does over
+177,000 trials.
+
+So the target is **death rate as a FUNCTION OF PROGRESSION**: it must fall as gear, card upgrades,
+companion strength and player skill accumulate, while a careless or under-geared player stays at
+risk at every level. Measure per stage and per equipment profile, never as one global number.
+
+**Language:** do not call reaching L20 "finishing the game" — it is ~0.3% of the ladder. I
+described a 66% chance of reaching L20 that way and it was wrong by two orders of magnitude.
+
+### PERMADEATH COUNTERWEIGHT: the council — new direction, NOT started
+
+Owner 2026-09-07. An aspirational milestone admits a player to a **council** (name TBD):
+
+- **Great powers that affect the realm and other players** — the first genuinely social endgame
+  hook in the design.
+- **3 extra lives.**
+- Possibly a **late endgame loop granting a further life** for a hard-won achievement, deliberately
+  not easy, so members do not become effectively unkillable.
+
+This is the mechanism that breaks the compounding maths at the top of the ladder, and it is why
+"most characters die" and "a careful player gets there" are not in conflict. Supersedes the vaguer
+"permadeath may change" note.
+
+Naming candidates, against the setting bible (a phantom is a dead thing the ground refuses to keep
+down; permadeath IS becoming one):
+- **The Unburied** — recommended. Thematically exact: these are the ones the ground keeps sending
+  back, which is precisely what extra lives ARE. Says the mechanic out loud without explaining it.
+- **The Vigil** — those who keep watch over the realm; leans on the powers rather than the lives.
+- **The Cairn** — a cairn marks the dead and is built by many hands; collective, sombre, and it
+  reads as a place as well as a body of people.
+
 ### MEASUREMENT OVERHAUL (2026-09-06) — the tools were modelling a player who never runs away
 
 Owner: *"Ensure the tools are taking into account how the game actually works, random encounters,

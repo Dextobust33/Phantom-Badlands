@@ -84,6 +84,7 @@ func _audit_registry() -> Dictionary:
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
+		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"climbcost": ["how many encounters a climb to L20 actually costs", run_climbcost],
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
@@ -6580,34 +6581,129 @@ func run_lowlevel() -> void:
 
 
 func run_climbcost() -> void:
-	"""How many ENCOUNTERS a climb to L20 costs — by arithmetic, not by simulating the climb.
+	"""What a climb COSTS in encounters, to each milestone — not just to L20.
 
-	2026-09-06 — I quoted "~115" as a design target from a bad division (total encounters over
-	characters, when every character had died at L1.9 after ~13 encounters), then tried to measure
-	it by running immortal climbs and that produced no data at all. This does it the cheap way:
-	the XP the curve demands to reach each level, against the XP an encounter at that level
-	actually pays. No long run, and nothing to go wrong quietly."""
+	2026-09-07, owner: "L20 is really just the beginning of the game so that's highly
+	inaccurate." Correct, and it matters: I had been calling a 66% chance of reaching L20
+	"can finish the game", when the curve runs to L10000. Reaching L20 is surviving the
+	tutorial. This prints the whole ladder so the survival bar is stated against the real
+	length of the game rather than against its first few hours."""
 	var ch = Character.new()
 	ch.initialize("Ruler", "Fighter", "Human")
-	print("
-===== WHAT A CLIMB TO L20 COSTS =====")
-	print("%-7s %14s %14s %14s" % ["level", "xp for level", "xp/encounter", "encounters"])
+	var milestones := [20, 50, 100, 250, 1000, 5000, 10000]
+	var next_i := 0
 	var total := 0.0
-	for lvl in range(1, 20):
+	print("
+===== WHAT A CLIMB COSTS, IN ENCOUNTERS =====")
+	print("%-9s %14s %14s" % ["reach", "encounters", "cumulative"])
+	var lvl := 1
+	while lvl < milestones[milestones.size() - 1] and next_i < milestones.size():
 		var need: int = ch.xp_required_for_next_level(lvl)
-		# What one encounter at this level pays, measured through the real monster + reward path.
 		var xp_sum := 0.0
-		var n := 8
+		var n := 4
 		for i in range(n):
 			var m = make_monster(lvl, "normal", 1.0)
 			xp_sum += float(m.get("experience_reward", 0))
-		var per: float = maxf(1.0, xp_sum / float(n))
-		var enc: float = float(need) / per
-		total += enc
-		if lvl <= 5 or lvl % 5 == 0:
-			print("%-7d %14d %14.0f %14.1f" % [lvl, need, per, enc])
-	print("%-7s %14s %14s %14.0f" % ["TOTAL", "", "", total])
-	print("A per-encounter death rate d gives (1-d)^%.0f odds of surviving the climb:" % total)
-	for d in [0.037, 0.02, 0.01, 0.006, 0.003]:
-		print("   %5.1f%% -> %6.2f%% reach L20" % [d * 100.0, 100.0 * pow(1.0 - d, total)])
-	print("=====================================")
+		total += float(need) / maxf(1.0, xp_sum / float(n))
+		lvl += 1
+		if next_i < milestones.size() and lvl >= milestones[next_i]:
+			print("%-9s %14s %14.0f" % ["L%d" % milestones[next_i], "", total])
+			next_i += 1
+	print("
+Survival, at a given death-per-encounter rate:")
+	print("%-14s %10s %10s %10s %10s" % ["death/enc", "-> L20", "-> L100", "-> L1000", "-> L10000"])
+	var marks := {}
+	# re-walk cheaply to capture cumulative cost at each milestone
+	var ch2 = Character.new()
+	ch2.initialize("R2", "Fighter", "Human")
+	var t2 := 0.0
+	var l2 := 1
+	var mi := 0
+	while l2 < 10000 and mi < milestones.size():
+		var need2: int = ch2.xp_required_for_next_level(l2)
+		var xs := 0.0
+		for i in range(4):
+			xs += float(make_monster(l2, "normal", 1.0).get("experience_reward", 0))
+		t2 += float(need2) / maxf(1.0, xs / 4.0)
+		l2 += 1
+		if l2 >= milestones[mi]:
+			marks[milestones[mi]] = t2
+			mi += 1
+	for d in [0.244, 0.058, 0.028, 0.008, 0.004, 0.001, 0.0002]:
+		print("%13.2f%% %9.2f%% %9.2f%% %9.2f%% %9.2f%%" % [d * 100.0,
+			100.0 * pow(1.0 - d, marks.get(20, 1.0)),
+			100.0 * pow(1.0 - d, marks.get(100, 1.0)),
+			100.0 * pow(1.0 - d, marks.get(1000, 1.0)),
+			100.0 * pow(1.0 - d, marks.get(10000, 1.0))])
+	print("=============================================")
+
+func run_preflight() -> void:
+	"""Cheap checks that must pass BEFORE spending 45 minutes on the calibration chain.
+
+	2026-09-06, owner: "we need to find a way to continue making progress without wasting time on
+	failed long sims." Both failed chains this session cost ~45 minutes each and neither failed
+	because the simulation was wrong — it faithfully measured a broken instrument:
+
+	  1. `refcal` sampled Fighter/Wizard/Grifter, which the engine rework had quietly made the
+	     STRONGEST of their archetypes, so six classes were below target by construction.
+	  2. `_fight_stats_at` never retreated while every other loop did, so the curve was fitted to
+	     a player who fights to the death — 22pp apart at L10.
+
+	Both are detectable in about two minutes. This is that two minutes. It asserts the things the
+	chain ASSUMES and cannot check for itself; if any of it fails, the chain will produce a
+	confident, wrong curve and the only cost of finding out is another three quarters of an hour."""
+	var fail := 0
+	print("
+===== PREFLIGHT: is the calibration chain worth running? =====")
+
+	# 1. Every class ships the deck it was designed with.
+	print("
+[1] starter decks")
+	for k in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var c = make_char(30, "average", k, "Human")
+		c.initialize_deck_collection_if_needed()
+		if c._curated_starter_deck().size() != 5 or c.combat_deck_collection.size() != 5:
+			print("    FAIL %s ships %d cards" % [k, c.combat_deck_collection.size()])
+			fail += 1
+	if fail == 0:
+		print("    ok - all nine ship exactly 5")
+
+	# 2. The two measurement paths must agree, or the chain fits the wrong player.
+	print("
+[2] measurement paths agree (refcal's sampler vs the shared fight loop)")
+	var worst := 0.0
+	for lvl in [10, 250]:
+		var a := _fight_stats_at(lvl, 27)
+		var wins := 0
+		var tot := 0
+		for row in ALL_CLASSES:
+			for i in range(3):
+				if run_fight(lvl, "average", "normal", 1.0, 1.0, 1.0, String(row[0])).win:
+					wins += 1
+				tot += 1
+		var wa := 100.0 * float(a.get("win", 0.0))
+		var wb := 100.0 * float(wins) / float(maxi(1, tot))
+		var gap: float = absf(wa - wb)
+		worst = maxf(worst, gap)
+		print("    L%-6d sampler %3.0f%%   fight loop %3.0f%%   gap %2.0fpp %s" % [lvl, wa, wb, gap, "" if gap <= 15.0 else "<-- FAIL"])
+		if gap > 15.0:
+			fail += 1
+	# 3. Nobody is idling: a class that cannot cast is a policy bug, not a balance result.
+	print("
+[3] every class actually plays its cards")
+	for row in ALL_CLASSES:
+		var klass := String(row[0])
+		var casts := 0
+		var turns := 0
+		for i in range(4):
+			var r = run_fight(30, "average", "normal", 1.0, 1.0, 1.0, klass)
+			casts += int(r.get("casts", 0))
+			turns += int(r.get("turns", 0))
+		var cpt: float = float(casts) / maxf(1.0, float(turns))
+		if cpt < 0.55:
+			print("    FAIL %-10s casts %.2f/turn - it is auto-attacking, fix the policy first" % [klass, cpt])
+			fail += 1
+	print("
+%s" % ("PREFLIGHT PASSED - the chain is worth running." if fail == 0
+		else "PREFLIGHT FAILED (%d) - fix these BEFORE the chain; it cannot detect them itself." % fail))
+	print("=============================================================")
