@@ -296,6 +296,26 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"distract":     {"ceiling": 11, "cost_percent": 13, "floor_ratio": 0.3, "resource": "energy"},
 	"pickpocket":   {"ceiling": 14, "cost_percent": 14, "floor_ratio": 0.3, "resource": "energy"},
 	"sabotage":     {"ceiling": 18, "cost_percent": 15, "floor_ratio": 0.3, "resource": "energy"},
+	# 2026-09-06 — `vanish` was a FLAT 40 in a table where everything else is a percentage of the
+	# pool: 71% of a Ninja's entire 56-energy bar at level 1, for one of only five cards it holds.
+	# The Ninja is the only class in the game that basic-attacks meaningfully (22% of its turns
+	# against 1-4% for everyone else), wins 30% of its L3 fights against 73-100% for the rest, and
+	# dies in its first or second fight in a real climb.
+	#
+	# CORRECTION, same day: I first read `perfect_heist` as a flat 50 too and nearly re-priced it.
+	# It was already in this table at 22%; the 50 lives in `_get_ability_info`, which this table
+	# SUPERSEDES, so it is dead data. Owner asked "are we sure this isn't stale ability data?" —
+	# it was, and it had already fooled me into a wrong diagnosis.
+	#
+	# Owner: "If the problem is that they can't use their abilities because they don't have enough
+	# resource they can attack for a turn to get some resource back. If that doesn't work then
+	# maybe we lower the floor cost on some abilities." It already attacks to recover and it is
+	# not enough, so this is that fix — and it is the structural one, because a flat cost in a
+	# percentage table is also the core resource-economy flaw: trivial at L1000, crippling at L1.
+	#
+	# Both already read `variable_fraction` in their cast code and were silently always getting
+	# 1.0 for it, so scaling with spend is what they were written to expect.
+	"vanish":       {"ceiling": 40, "cost_percent": 16, "floor_ratio": 0.3, "resource": "energy"},
 	"perfect_heist":{"ceiling": 34, "cost_percent": 22, "floor_ratio": 0.3, "resource": "energy"},
 }
 
@@ -6482,6 +6502,16 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 
 	return {"success": true, "messages": messages, "combat_ended": false, "buff_ability": is_buff_ability}
 
+# 2026-09-06 — owner asked whether `perfect_heist` was stale ability data now that the card is
+# called Assassinate. The ID is current: one card, three class-specific NAMES, resolved through
+# ABILITY_DISPLAY_BY_CLASS. But the question found something real next door — the `name` fields in
+# this table are hardcoded, do NOT fork by class, and say "Assassinate" for a Grifter whose card
+# reads Double Cross. They are currently DEAD (all three callers read `cost` and nothing else), so
+# no player has seen them; they are removed rather than left for someone to wire up later, which
+# is exactly how the character-creation screen ended up advertising the wrong passives.
+#
+# The `cost` values here are now also superseded for any ability listed in VARIABLE_COST_TABLE,
+# which takes precedence — including `vanish` and `perfect_heist` as of today.
 func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 	"""Get ability info from constants"""
 	# Universal abilities (available to all paths)
@@ -6494,40 +6524,40 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 		"mage":
 			# Mage abilities use percentage-based mana costs for late-game scaling
 			match ability_name:
-				"magic_bolt": return {"level": 1, "cost": 0, "cost_percent": 0, "name": "Magic Bolt"}
+				"magic_bolt": return {"level": 1, "cost": 0, "cost_percent": 0}
 				# Shield removed - use Forcefield instead
-				"haste": return {"level": 30, "cost": 35, "cost_percent": 3, "name": "Arcane Surge"}
-				"blast": return {"level": 40, "cost": 50, "cost_percent": 5, "name": "Blast"}
-				"paralyze": return {"level": 50, "cost": 60, "cost_percent": 6, "name": "Paralyze"}
-				"forcefield": return {"level": 10, "cost": 20, "cost_percent": 2, "name": "Forcefield"}
-				"banish": return {"level": 70, "cost": 80, "cost_percent": 10, "name": "Banish"}
+				"haste": return {"level": 30, "cost": 35, "cost_percent": 3}
+				"blast": return {"level": 40, "cost": 50, "cost_percent": 5}
+				"paralyze": return {"level": 50, "cost": 60, "cost_percent": 6}
+				"forcefield": return {"level": 10, "cost": 20, "cost_percent": 2}
+				"banish": return {"level": 70, "cost": 80, "cost_percent": 10}
 				# #36 Mage 7→9 additions.
-				"frost_nova": return {"level": 1, "cost": 30, "cost_percent": 5, "name": "Frost Nova"}
-				"overload": return {"level": 1, "cost": 0, "cost_percent": 0, "name": "Overload"}  # HP-cost, handled in-case
-				"teleport": return {"level": 80, "cost": 40, "cost_percent": 0, "name": "Teleport"}  # Uses distance-based cost
-				"meteor": return {"level": 100, "cost": 100, "cost_percent": 8, "name": "Meteor"}
+				"frost_nova": return {"level": 1, "cost": 30, "cost_percent": 5}
+				"overload": return {"level": 1, "cost": 0, "cost_percent": 0}  # HP-cost, handled in-case
+				"teleport": return {"level": 80, "cost": 40, "cost_percent": 0}  # Uses distance-based cost
+				"meteor": return {"level": 100, "cost": 100, "cost_percent": 8}
 		"warrior":
 			match ability_name:
-				"power_strike": return {"level": 1, "cost": 10, "name": "Power Strike"}
-				"war_cry": return {"level": 10, "cost": 15, "name": "War Cry"}
-				"shield_bash": return {"level": 25, "cost": 20, "name": "Shield Bash"}
-				"fortify": return {"level": 35, "cost": 25, "name": "Fortify"}
-				"cleave": return {"level": 40, "cost": 30, "name": "Cleave"}
-				"rally": return {"level": 55, "cost": 35, "name": "Rally"}
-				"berserk": return {"level": 60, "cost": 40, "name": "Berserk"}
-				"iron_skin": return {"level": 80, "cost": 35, "name": "Iron Skin"}
-				"devastate": return {"level": 100, "cost": 50, "name": "Devastate"}
+				"power_strike": return {"level": 1, "cost": 10}
+				"war_cry": return {"level": 10, "cost": 15}
+				"shield_bash": return {"level": 25, "cost": 20}
+				"fortify": return {"level": 35, "cost": 25}
+				"cleave": return {"level": 40, "cost": 30}
+				"rally": return {"level": 55, "cost": 35}
+				"berserk": return {"level": 60, "cost": 40}
+				"iron_skin": return {"level": 80, "cost": 35}
+				"devastate": return {"level": 100, "cost": 50}
 		"trickster":
 			match ability_name:
-				"analyze": return {"level": 1, "cost": 5, "name": "Analyze"}
-				"distract": return {"level": 10, "cost": 15, "name": "Distract"}
-				"pickpocket": return {"level": 25, "cost": 20, "name": "Pickpocket"}
-				"sabotage": return {"level": 30, "cost": 25, "name": "Sabotage"}
-				"ambush": return {"level": 40, "cost": 30, "name": "Ambush"}
-				"gambit": return {"level": 50, "cost": 35, "name": "Gambit"}
-				"vanish": return {"level": 60, "cost": 40, "name": "Phantom Strike"}
-				"exploit": return {"level": 80, "cost": 35, "name": "Exploit"}
-				"perfect_heist": return {"level": 100, "cost": 50, "name": "Assassinate"}
+				"analyze": return {"level": 1, "cost": 5}
+				"distract": return {"level": 10, "cost": 15}
+				"pickpocket": return {"level": 25, "cost": 20}
+				"sabotage": return {"level": 30, "cost": 25}
+				"ambush": return {"level": 40, "cost": 30}
+				"gambit": return {"level": 50, "cost": 35}
+				"vanish": return {"level": 60, "cost": 40}
+				"exploit": return {"level": 80, "cost": 35}
+				"perfect_heist": return {"level": 100, "cost": 50}
 	return {}
 
 # === PLAYTEST LOG (dev only) ===

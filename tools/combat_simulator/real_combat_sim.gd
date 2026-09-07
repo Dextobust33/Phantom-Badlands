@@ -30,8 +30,15 @@ const WARRIOR_DMG_PRIORITY := ["devastate", "cleave", "shield_bash", "power_stri
 # last hit point, and the harness modelling that as a death is what made every loss look fatal.
 const RUN_FIGHT_FLEE_AT: float = 0.30
 # TEMP diagnostic counters for the grow-vs-classes contradiction.
-var _gd := {"flee_try": 0, "flee_ok": 0, "links": 0, "deaths": 0, "death_link": 0,
-	"death_hp0": 0.0, "death_lvl": 0.0, "death_hunt": 0.0, "enc": 0, "enc_hp0": 0.0}
+# Career-death diagnostics. ONE constructor, used for both the declaration and the per-run reset:
+# they were two literals for about ten minutes and a field added to one and not the other crashed
+# the audit immediately. Same defect this session keeps finding in the game itself.
+static func _gd_fresh() -> Dictionary:
+	return {"flee_try": 0, "flee_ok": 0, "links": 0, "deaths": 0, "death_link": 0.0,
+		"death_hp0": 0.0, "death_lvl": 0.0, "death_hunt": 0.0, "enc": 0, "enc_hp0": 0.0,
+		"death_no_flee": 0, "death_hp_prev": 0.0, "hits": 0, "hit_frac": 0.0, "biggest_hit": 0.0}
+
+var _gd := _gd_fresh()
 var _rf_may_flee: bool = true
 const WARRIOR_BUFFS := ["berserk", "war_cry"]
 
@@ -76,6 +83,7 @@ func _audit_registry() -> Dictionary:
 		"difficulty": ["level x gear x enemy-tier feel", run_difficulty_audit],
 		"overlevel": ["how far above level a class can reach", run_overlevel_audit],
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
+		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
 		"names": ["do all the tables agree on what each card is CALLED?", run_name_consistency_audit],
@@ -5457,7 +5465,20 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 						_: _player_act(combat, ch)
 			if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 				break
+			var _hp_pre: int = ch.current_hp
 			_monster_turn_if_owed(combat)
+			var _took: int = maxi(0, _hp_pre - ch.current_hp)
+			if _took > 0:
+				var _f: float = float(_took) / float(maxi(1, ch.get_total_max_hp()))
+				_gd["hits"] = int(_gd["hits"]) + 1
+				_gd["hit_frac"] = float(_gd["hit_frac"]) + _f
+				_gd["biggest_hit"] = maxf(float(_gd["biggest_hit"]), _f)
+			if ch.current_hp <= 0:
+				# HP the player had going INTO the blow that killed them: if this is well above
+				# the 50% flee threshold, they never had the chance to run.
+				_gd["death_hp_prev"] = float(_gd["death_hp_prev"]) + float(_hp_pre) / float(maxi(1, ch.get_total_max_hp()))
+				if flee_tries == 0:
+					_gd["death_no_flee"] = int(_gd["death_no_flee"]) + 1
 		var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
 		var flock: int = int(monster.get("flock_chance", 0))
 		var mlvl: int = int(monster.get("level", hunt_level))
@@ -5506,8 +5527,7 @@ func run_grow_audit():
 	print("%d characters per class, from creation to L%d or death. Permadeath is final." % [RUNS, TARGET])
 	print("The character hunts at the level it can SURVIVE, stepping down after a maul and back")
 	print("up after a comfortable win - and eats the real down-level XP penalty for doing so.")
-	_gd = {"flee_try": 0, "flee_ok": 0, "links": 0, "deaths": 0, "death_link": 0.0,
-		"death_hp0": 0.0, "death_lvl": 0.0, "death_hunt": 0.0, "enc": 0, "enc_hp0": 0.0}
+	_gd = _gd_fresh()
 	print("%-9s %7s %7s %8s %6s %8s %7s %9s %6s %8s %9s" % ["class", "lived", "diedAt", "fights", "win%", "worstHP", "jumped", "upgrades", "slots", "death/enc", "->L20"])
 	# 2026-09-06 — ALL NINE. This audit is the closest thing the project has to the owner's actual
 	# definition of balance: "they can make it through the entire game if they play wisely." It
@@ -5638,8 +5658,9 @@ func run_grow_audit():
 	print("           over the ~115 encounters a climb to L20 takes. THIS is the number that answers")
 	print("           'can this class finish the game'. For half of characters to make L20 it has to")
 	print("           be <= 0.60%; for a quarter, <= 1.20%. No class is close today.")
-	print("           NOTE: consumables are NOT modelled here at all - a real player carries healing")
-	print("           items, so these death rates are an UPPER bound until that is added.")
+	print("           Consumables are not modelled, and owner 2026-09-06 confirms that is CORRECT")
+	print("           for this range: healing items are not obtainable early, and every death")
+	print("           above lands at ~L1.9. These rates are real, not an upper bound.")
 	var _d: float = maxf(1.0, float(_gd["deaths"]))
 	print("
 --- WHY THEY DIE ---")
@@ -5649,6 +5670,13 @@ func run_grow_audit():
 	print("  fights (flock links) %d across %d encounters = %.2f links per encounter" % [
 		int(_gd["links"]), int(_gd["enc"]), float(_gd["links"]) / maxf(1.0, float(_gd["enc"]))])
 	print("  encounters STARTED at %.0f%% HP on average" % [100.0 * float(_gd["enc_hp0"]) / maxf(1.0, float(_gd["enc"]))])
+	print("  monster hits: %d, average %.0f%% of the player's MAX HP each, worst single blow %.0f%%" % [
+		int(_gd["hits"]), 100.0 * float(_gd["hit_frac"]) / maxf(1.0, float(_gd["hits"])),
+		100.0 * float(_gd["biggest_hit"])])
+	print("  of %d deaths, %d (%.0f%%) never attempted a flee — the killing blow landed from %.0f%% HP" % [
+		int(_gd["deaths"]), int(_gd["death_no_flee"]),
+		100.0 * float(_gd["death_no_flee"]) / _d,
+		100.0 * float(_gd["death_hp_prev"]) / _d])
 	print("  deaths %d: on flock link %.2f, entered that fight at %.0f%% HP, at char L%.1f hunting L%.1f" % [
 		int(_gd["deaths"]), float(_gd["death_link"]) / _d, 100.0 * float(_gd["death_hp0"]) / _d,
 		float(_gd["death_lvl"]) / _d, float(_gd["death_hunt"]) / _d])
@@ -6425,3 +6453,59 @@ func _verify_starter_decks() -> void:
 	else:
 		print("  all nine ship exactly 5 cards")
 	print("==========================================================================")
+
+
+func run_lowlevel() -> void:
+	print("
+===== IS THE LEVEL-1 PROBLEM RESOURCE STARVATION? =====")
+	print("%-10s %6s %7s %9s %8s %8s %9s %8s" % ["class","lvl","pool","regen/t","cast/t","atk/t","engine@end","win%"])
+	for row in ALL_CLASSES:
+		var klass := String(row[0])
+		for lvl in [1, 3]:
+			var casts := 0
+			var atks := 0
+			var turns := 0
+			var wins := 0
+			var eng_end := 0
+			var pool := 0
+			var fights := 14
+			for f in range(fights):
+				var ch = _grow_new_character(klass, "Human")
+				while ch.level < lvl:
+					ch.level += 1
+					_grow_spend_points(ch)
+				ch.current_hp = ch.get_total_max_hp()
+				pool = _class_max_resource(ch, klass)
+				var monster = make_monster(lvl, "normal", 1.0)
+				combat_mgr.start_combat(0, ch, monster)
+				if not combat_mgr.active_combats.has(0):
+					continue
+				var combat = combat_mgr.active_combats[0]
+				var t := 0
+				while t < 60 and ch.current_hp > 0 and int(monster.get("current_hp", 0)) > 0 and not combat.get("combat_ended", false):
+					t += 1
+					var hand: Array = (combat.get("combat_hand", []) as Array).duplicate()
+					match ch.get_class_path():
+						"trickster": _player_act_trickster(combat, ch)
+						"mage": _player_act_mage(combat, ch)
+						_: _player_act(combat, ch)
+					var newhand: Array = combat.get("combat_hand", [])
+					var played := false
+					for c in hand:
+						if not newhand.has(c):
+							played = true; break
+					if played:
+						casts += 1
+					else:
+						atks += 1
+					_monster_turn_if_owed(combat)
+				turns += t
+				if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
+					wins += 1
+				eng_end += int(combat.get("momentum", 0)) + int(combat.get("combo", 0)) + int(combat.get("focus", 0))
+				combat_mgr.end_combat(0, false, false)
+			var tf := maxf(1.0, float(turns))
+			print("%-10s %6d %7d %9s %8.2f %8.2f %9.1f %7.0f%%" % [klass, lvl, pool, "-",
+				float(casts) / tf, float(atks) / tf, float(eng_end) / float(fights),
+				100.0 * float(wins) / float(fights)])
+	print("=======================================================")

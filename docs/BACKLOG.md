@@ -1044,20 +1044,46 @@ Ruled out by measurement, not by argument:
 | Barbarian | 16.7% | 0.0% |
 | **Ninja** | **33.6%** | 0.0% |
 
-**For half of characters to reach L20 the per-encounter death rate must be <= 0.60%; for a quarter,
-<= 1.20%.** The best class in the game is at 3.7%. That is the real balance target and nothing is
+**CAVEAT on the target, my error:** the "~115 encounters to L20" I first quoted was a bad division
+(total encounters / characters, when every character had already died at L1.9 after ~13 encounters).
+The real figure is unmeasured — the run that would settle it did not finish. The DIRECTION is not in
+doubt: a climb to L20 is certainly well over a hundred encounters, so the per-encounter death rate
+has to be roughly an order of magnitude below today's 3.7-33.6%. Treat the exact threshold as
+unverified until the climb cost is measured. The best class in the game is at 3.7%. That is the real balance target and nothing is
 close to it — and it is a far more demanding constraint than any win-rate goal, which is why
 win-rate tuning never surfaced it.
 
-**The Ninja at 33.6% is a screaming outlier** — it dies in its first or second fight, at level 1,
+**Level-1 resource starvation — DIAGNOSED and PARTLY FIXED.** New `-- lowlevel` audit: at L1-L3 the
+Ninja is the only class that basic-attacks meaningfully (14-38% of its turns against 0-7% for
+everyone else). Cause: `vanish` was a FLAT 40 energy in a table where every other card is a
+percentage of the pool — 71% of a Ninja's entire 56-energy bar, for one of only five cards it has.
+Now 16% of pool, and its L3 win rate went **30% -> 50%**. It is still the outlier, so its kit is
+simply more expensive per turn than its siblings'; next levers are its `ambush` price or a cheaper
+card in the deck.
+
+**A correction worth keeping.** I first read `perfect_heist` as a flat 50 as well and nearly
+re-priced it. It was ALREADY percentage-based at 22%; the 50 lives in `_get_ability_info`, which
+`VARIABLE_COST_TABLE` supersedes, so it is dead data that produced a confidently wrong diagnosis.
+The owner's question — *"perfect_heist? Isn't that assassinate now? Are we sure this isn't stale
+ability data?"* — is what caught it. The dead `name` fields in the same table (which say
+"Assassinate" for a Grifter whose card reads Double Cross) have been stripped for the same reason.
+
+**AND THE BIGGER ONE: no class reaches its engine at low level.** Measured at L1-L3, every class
+ends its fights holding **0.1-3.1 stacks** against caps of 5 and 8. The engines built this session
+are effectively absent for the whole early game — the stretch where a player is learning what their
+class feels like. That is a design question, not a bug: either the engines pay off sooner at low
+level, or the early game is explicitly the "basic kit" tutorial and the engines are what the mid
+game unlocks.
+
+**The Ninja at 33.6% death/encounter is a screaming outlier** — it dies in its first or second fight, at level 1,
 and wins only 12% of them. Consistent with the engine theory: it needs 8 Read and a level-1 Ninja's
 energy pool cannot pay for eight casts. The engines do not function at the levels where players are
 learning them, which is exactly the stretch the owner wants to be gentler.
 
-**Known remaining model gap: CONSUMABLES ARE NOT MODELLED AT ALL** (`grep` for potion/consumable in
-the simulator returns zero). A real player carries healing items, so every death rate above is an
-UPPER bound. This is the next thing to add before treating the absolute numbers as final — it is
-also the last item on the owner's list of "how the game actually works".
+**Consumables are not modelled, and owner 2026-09-06 confirms that is CORRECT here:** *"Early game
+players don't have potions, they aren't something that obtainable for early game players."* Every
+death above lands at ~L1.9, so the rates are REAL for the range that matters, not an upper bound.
+Worth adding later for the mid/late game; it changes nothing about the problem below.
 
 ### Difficulty RAMP — agreed direction, NOT yet implemented
 
