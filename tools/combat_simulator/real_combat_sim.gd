@@ -400,8 +400,13 @@ func run_adjudicate_audit():
 		var a := _fight_stats_at(lvl, int(N / 3.0))
 		var wins := 0
 		var tot := 0
-		for klass in ["Fighter", "Wizard", "Grifter"]:
-			for i in range(int(N / 3.0)):
+		# 2026-09-06 — must sample the SAME class set as `_fight_stats_at`, which now covers all
+		# nine. Comparing nine classes against the three strongest measures the class list, not
+		# the two code paths, and the first run after the change duly reported an 18pp "systematic
+		# instrument gap" that was mostly just that.
+		for klass_row in ALL_CLASSES:
+			var klass := String(klass_row[0])
+			for i in range(maxi(3, int(N / 9.0))):
 				var r = run_fight(lvl, "average", "normal", 1.0, 1.0, 1.0, klass)
 				if r.win:
 					wins += 1
@@ -2023,8 +2028,26 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 	var cost_tot := 0.0
 	var wins := 0
 	var n := 0
-	for klass in ["Fighter", "Wizard", "Grifter"]:
-		for i in range(samples):
+	# 2026-09-06 — ALL NINE, not one per archetype. THIS sampler is the one that WRITES the
+	# monster curve, so its bias becomes the game's balance.
+	#
+	# It sampled Fighter / Wizard / Grifter, which was harmless while the three classes in an
+	# archetype played identically — any one of them was representative. The engine-shape rework
+	# made them genuinely different, and those three turn out to be the STRONGEST of their
+	# archetypes: on the curve this bias produced they measured 93 / 56 / 48 while their siblings
+	# sat at 25-50 (Paladin 28%, Barbarian 30%, Ninja 25%). The monsters were sized against the
+	# best player in each archetype, so six of nine classes were below target by construction.
+	#
+	# The reference must be the AVERAGE player, not the best one. Per-class samples are divided by
+	# three so the TOTAL sample count — which is what the mean's precision depends on — stays where
+	# it was and the run does not take three times as long.
+	#
+	# NOTE: ~20 other audits in this file still use the three-class shorthand. They are read-only
+	# and their bias only colours a report; this one is the one that changes the game.
+	var _ref_samples: int = maxi(9, int(round(float(samples) / 3.0)))
+	for klass_row in ALL_CLASSES:
+		var klass := String(klass_row[0])
+		for i in range(_ref_samples):
 			var ch = make_char(level, gear, klass)
 			var monster := make_monster(level, "normal", 1.0)
 			var php0: int = ch.get_total_max_hp()

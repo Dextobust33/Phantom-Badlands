@@ -980,15 +980,67 @@ from the Trickster slice, not from this one.
 
 ### Still open, in order
 
-- **Ranger 51% at L30 elite** — the last class-table outlier. k26.8 against d30.7: it kills far too
-  slowly (29-turn fights, the longest of any class).
+- ~~**Ranger 51% at L30 elite**~~ — **FIXED 2026-09-06** (`86188db`). Decomposed rather than buffed
+  on sight: it was worst on BOTH axes (k26.8 d30.7 against the Grifter's k25.5 d38.2 and the
+  Ninja's k22.2 d38.1) and dealt the least damage per turn of the three (420 against 576) — a
+  class paying for the Grifter's mitigation and the Ninja's execute while having neither, with a
+  ramp that was not covering it. Steady Aim 0.07 -> 0.11 per Read: **71/51/60 -> 86/75/81**, kill
+  time 26.8 -> 22.4 turns. Grifter and Ninja measured byte-identical across the change.
 - **Overload's price.** 20% of max HP for +120% for 2 rounds is measurably a losing trade at every
   level tested. It is out of the Sorcerer's starter deck but still addable, so it is a trap for the
   player who picks it. Same shape as the Magic Bolt to-do below.
 - **Magic Bolt damage vs investment** (measurements already recorded above).
-- **Re-run the calibration chain** (`speciescal` -> `refcal` -> `rolecal`) — needs owner approval,
-  rewrites live balance data. Every player-side change this session invalidated the curve, and this
-  is the natural point to do it now that all three archetypes are settled.
+### Calibration chain — RAN 2026-09-06, result NOT ADOPTED. Needs an owner decision.
+
+Owner approved the run. It completed, it found and fixed a real instrument bias, and the resulting
+curve was then **rejected on measurement** — the pre-calibration curve is back in place and the
+calibrated one is archived beside it.
+
+**The bias it found, and this one is a keeper (`refcal` fix, shipped).** `_fight_stats_at` — the
+sampler that WRITES the monster curve — measured only `Fighter, Wizard, Grifter`, one per
+archetype. That was harmless while the three classes in an archetype played identically; any one
+of them was representative. **The engine-shape rework made them different, and those three are the
+strongest of their archetypes.** Monsters were therefore sized against the best player in each
+archetype, and the other six sat below target by construction: on the first calibrated curve,
+Paladin 28%, Barbarian 30%, Ninja 25%. It now samples all nine, with per-class counts divided by
+three so total sample size (which is what the mean's precision depends on) is unchanged.
+~20 other audits still use the three-class shorthand; they are read-only, so their bias only
+colours a report rather than changing the game.
+
+**Why the curve was rejected.** `refcal` steers HP by TURNS and strength by WIN RATE, against a
+5-turn / 60% target. Fitting those together forced monsters into a **glass-cannon** shape at every
+level — HP down to 0.35-0.44x, strength up 2-4x:
+
+| level | hp | str |
+|---|---|---|
+| 1 | 0.38x | 4.13x |
+| 50 | 0.42x | 2.32x |
+| 1000 | 0.35x | 2.03x |
+| 10000 | 0.34x | 2.30x |
+
+That is the least interesting fight geometry there is: the fight ends before any decision matters
+and the outcome is variance. It also **widened the class spread rather than narrowing it** — L10
+normal went from 65-95% on the old curve to 26-91% on the new one, because harder monsters amplify
+the differences between classes. Six of nine classes lost most same-level trash fights.
+
+**And it did not converge.** It hit its TURNS target (4.5-5.3 against 5.0) but missed both others:
+win 44-49% measured independently against a 60% target, and HP cost 51-72% against a 40% target.
+Per the ONE-PASS rule this was NOT re-run a third time.
+
+**The decision that is actually needed** is not a number in the class table — it is whether a
+normal same-level fight should be a ~5-turn exchange. That target is what forces the HP/damage
+split, and the split is what decides how much decision-making fits in a fight. Raising it is not
+"padding a fight to make it last" (owner, correctly, does not want that) — it is refusing a shape
+where nothing the player decides can matter. Options, in the order I would try them:
+1. Raise `TARGET_TURNS_NORMAL_SIM` (5.0) so the strength axis stops having to do all the work,
+   then re-run the chain once.
+2. Leave the curve as it is today and accept that the old curve is easy at low level (the known
+   `#70` low-level trivialization).
+3. Adopt the calibrated curve and rebalance nine classes against it — most work, and it starts
+   from the fight shape I would least want.
+
+Artifacts, both in the session scratchpad: `reference_monster_curve.pre-cal.json` (live) and
+`reference_monster_curve.calibrated-9class.json` (rejected).
 
 
 
