@@ -112,6 +112,7 @@ func _audit_registry() -> Dictionary:
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
+		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
 		"endgame": ["the 95% target: does a WELL-GEARED endgame player survive 19 fights in 20?", run_endgame],
@@ -6951,3 +6952,54 @@ func run_statdesc() -> void:
 			print("    %-13s %s" % [st.capitalize(), Character.stat_description_for(st, k)])
 	print("
 ===============================================")
+
+
+func run_magecost() -> void:
+	"""Damage per point of mana for every damaging mage card, measured through the real cast path.
+
+	Owner, standing question: "Magic Bolt still overshadows the mage roster for the same
+	investment... it should have the highest top end of the mages options but not make players
+	ignore other options."
+
+	The distinction that matters: a card can have the highest CEILING (biggest single hit) and
+	still be the wrong default if it is also the most EFFICIENT. Efficiency is what decides which
+	card you cast every turn; the ceiling only decides your burst."""
+	print("
+===== MAGE KIT: DAMAGE PER MANA =====")
+	print("Cast through the real path on a Wizard at zero Focus, so no ramp is included.")
+	print("%-6s %-13s %9s %9s %11s" % ["level", "card", "mana", "damage", "dmg/mana"])
+	for lvl in [10, 50, 200]:
+		var rows: Array = []
+		for card in ["magic_bolt", "blast", "meteor", "frost_nova"]:
+			var dmg_tot := 0.0
+			var mana_tot := 0.0
+			var n := 40
+			for i in range(n):
+				var ch = make_char(lvl, "average", "Wizard", "Human")
+				ch.current_hp = ch.get_total_max_hp()
+				var monster = make_monster(lvl, "normal", 40.0)   # fat target so nothing dies mid-measure
+				combat_mgr.start_combat(0, ch, monster)
+				if not combat_mgr.active_combats.has(0):
+					continue
+				var combat = combat_mgr.active_combats[0]
+				var m0: int = ch.current_mana
+				var h0: int = int(monster.get("current_hp", 0))
+				var arg := ""
+				if card == "magic_bolt":
+					arg = str(maxi(1, int(float(ch.get_total_max_mana()) * MAGIC_BOLT_REF_SPEND)))
+				var r = combat_mgr.process_ability_command(0, card, arg)
+				if r.get("success", false):
+					dmg_tot += float(h0 - int(monster.get("current_hp", 0)))
+					mana_tot += float(m0 - ch.current_mana)
+				combat_mgr.end_combat(0, false, false)
+			if mana_tot > 0.0:
+				rows.append([card, mana_tot / float(n), dmg_tot / float(n), dmg_tot / mana_tot])
+		rows.sort_custom(func(a, b): return float(a[3]) > float(b[3]))
+		for row in rows:
+			print("%-6d %-13s %9.0f %9.0f %11.2f" % [lvl, combat_mgr._ability_display_name(null, String(row[0])),
+				float(row[1]), float(row[2]), float(row[3])])
+		print("")
+	print("Top of each block is the most mana-efficient card at that level.")
+	print("=====================================")
+
+const MAGIC_BOLT_REF_SPEND := 0.20

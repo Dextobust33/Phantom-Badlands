@@ -95,8 +95,15 @@ while the Paladin's stat realignment held.
       it now mostly means a retreat. Revisit alongside the Unburied, since extra lives change what
       survival means. `refcal` REPORTS death rate now but cannot steer by it — at a ~0.3% target
       there is under one expected death per sample, so there is no signal to correct against.
-- [ ] **Magic Bolt damage vs investment** — does it still overshadow the mage roster for the same
-      spend? It should have the highest top end without making the other cards pointless.
+- [x] **Magic Bolt damage vs investment — RESOLVED 2026-09-07** (`magecost` audit, n=40 through the
+      real cast path). It is exactly the design asked for: **highest single-cast damage at every
+      level** (452 / 1,743 / 6,368 at L10 / L50 / L200) and the **least mana-efficient card from L50
+      onward** (11.8 dmg-per-mana against Meteor's 18.3 at L200). You burst with it and sustain with
+      Blast or discharge with Meteor. Meteor's lead is understated: measured at ZERO Focus, and the
+      discharge is its whole point.
+      Residual, minor: at **L10** Bolt is both the biggest hit and marginally the most efficient
+      (25.8 against Blast's 23.0). A 12% edge is a preference, not a trap — revisit only if early
+      mages read as one-button.
 - [ ] **Overload is a trap card.** 20% of max HP for +120% over 2 rounds measured as a losing trade
       at every level: removing it from the Sorcerer's starter deck moved that class 81/53/65 to
       96/65/71. It is still addable, so it remains a trap for whoever picks it.
