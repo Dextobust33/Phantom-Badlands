@@ -2126,6 +2126,7 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 	var eff_tot := 0.0
 	var cost_tot := 0.0
 	var wins := 0
+	var deaths := 0
 	var n := 0
 	# 2026-09-06 — ALL NINE, not one per archetype. THIS sampler is the one that WRITES the
 	# monster curve, so its bias becomes the game's balance.
@@ -2186,6 +2187,8 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 				_monster_turn_if_owed(combat)
 			if int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0:
 				wins += 1
+			elif not fled and ch.current_hp <= 0:
+				deaths += 1
 			turns_tot += float(turns)
 			# EFFECTIVE turns — how long the monster would have taken to kill at the rate the
 			# player was actually chewing through it, whether or not they survived to finish.
@@ -2204,8 +2207,21 @@ func _fight_stats_at(level: int, samples: int, gear: String = "average") -> Dict
 			combat_mgr.end_combat(0, false, false)
 	if n == 0:
 		return {}
+	# 2026-09-07 — REPORT the death rate. Owner: "it sounds like monster strength is now more of
+	# the problem than player strength." Exactly right. This sampler never counted deaths, so
+	# `refcal` steered monster strength by WIN rate while death rate moved as an unmeasured side
+	# effect: the chain raised strength to hold win rate after a player buff, and career survivors
+	# fell 51 -> 27, with L10 NORMAL fights killing 5-15% while L30 elites were won 61-90%. Routine
+	# hunting lethal and elites a stroll — the design inverted.
+	#
+	# REPORTED, not steered by. At a ~0.3% design target and a few hundred fights per level there
+	# is less than one expected death per sample, so there is no signal to correct against. Nor are
+	# the two independent: monster strength moves both. The honest lever is the WIN targets in
+	# DIFFICULTY_RAMP — 60% at high level leaves 40% of fights ending in retreat-or-death, and
+	# enough of that becomes death to make a long climb impossible.
 	return {"turns": turns_tot / float(n), "eff_turns": eff_tot / float(n),
-		"cost": cost_tot / float(n), "win": float(wins) / float(n)}
+		"cost": cost_tot / float(n), "win": float(wins) / float(n),
+		"death": float(deaths) / float(n)}
 
 func run_reference_calibrate():
 	# #6 — SELF-CALIBRATING monster model.
@@ -2424,7 +2440,7 @@ Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;
 	# only table a reader should trust: it is measured against exactly what gets written.
 	print("
 --- VERIFIED against the curve actually being written ---")
-	print("%-8s %12s %10s %8s %8s %6s" % ["level", "hp", "str", "turns", "HPcost", "win"])
+	print("%-8s %12s %10s %8s %8s %6s %7s" % ["level", "hp", "str", "turns", "HPcost", "win", "DEATH"])
 	# Verify through the REAL path too: inject the finished table once, then measure each level
 	# with no override at all. This is what a player fights.
 	_inject_curve(table)
@@ -2432,9 +2448,13 @@ Monotonicity repair: %d anchor(s) would have made monsters WEAKER as level rose;
 		var v := _fight_stats_at(int(row["level"]), samples)
 		if v.is_empty():
 			continue
-		print("%-8d %12d %10d %7.1f %7.0f%% %5.0f%%" % [
+		# DEATH is the column the calibration does NOT steer by, shown so the trade-off it is
+		# making is visible. A run that hits its win target while this column climbs has made the
+		# game less survivable, which is what happened on 2026-09-07 (survivors 51 -> 27).
+		print("%-8d %12d %10d %7.1f %7.0f%% %5.0f%% %6.1f%%" % [
 			int(row["level"]), int(row["hp"]), int(row["str"]),
-			float(v["turns"]), 100.0 * float(v["cost"]), 100.0 * float(v["win"])])
+			float(v["turns"]), 100.0 * float(v["cost"]), 100.0 * float(v["win"]),
+			100.0 * float(v.get("death", 0.0))])
 
 	# START FROM THE EXISTING FILE and overwrite only what refcal owns.
 	#
