@@ -3449,6 +3449,18 @@ func _process_victory_with_abilities(combat: Dictionary, messages: Array) -> Dic
 	var flock = monster.get("flock_chance", 0)
 	if ABILITY_PACK_LEADER in abilities:
 		flock = min(75, flock + 25)
+	# 2026-09-07 — FLOCKS RAMP WITH LEVEL, like everything else about difficulty now.
+	#
+	# `flock_chance` is a flat per-species number (25-45%) and rolls again on every link, so a
+	# level-1 character faced the same chain a level-5000 one does: 1.85 fights back to back with
+	# no rest between them. Measured in a real climb, that is where the deaths land — on flock
+	# link 1.85, entering at 71% HP — and it is why three classes still fail a career while
+	# winning 100% of isolated fights at the same level. The chain, not the fight, is the killer.
+	#
+	# Same principle as DIFFICULTY_RAMP: the early game is where a player is learning their class,
+	# so it should not open with the mechanic that punishes a slow kill hardest. Full strength by
+	# L25, which is where the ramp also expects play to start mattering.
+	flock = int(round(float(flock) * flock_scale_for_level(character.level)))
 
 	# Combine regular drops with extra drops from abilities
 	var all_drops = dropped_items.duplicate()
@@ -4037,6 +4049,16 @@ const RANGER_AIM_DMG_PER := 0.11         # +11% to ALL damage per Read held (8 =
 # Phantom Strike's own damage. Below `ambush` (0.28) because it ALSO guarantees a crit on the next
 # damaging action, and that is most of what the card is worth to a Killing Edge Ninja.
 const VANISH_WEIGHT := 0.18
+
+# How much of a species' flock chance actually applies, by player level. A flock is consecutive
+# fights with NO rest between them, which is the harshest thing in the early game for any class
+# that kills slowly — and it was flat from L1 to L10000.
+static func flock_scale_for_level(level: int) -> float:
+	if level <= 3:
+		return 0.35
+	if level >= 25:
+		return 1.0
+	return 0.35 + 0.65 * (float(level - 3) / 22.0)
 const RANGER_SHOT_PER_READ := 0.11       # 8 Read discharged = ~0.9 of a health bar
 
 func _primary_resource_value(character) -> int:

@@ -1030,6 +1030,33 @@ audits now cover that ground:
 
 **Loop: iterate with the cheap audits, gate with `preflight`, run the chain ONCE at the end.**
 
+### WATCH: rest changes scaled meditate and companion regen too (2026-09-07)
+
+`REST_HEAL_MIN/MAX` (0.20-0.35, up from 0.10-0.25) replaced **eight** sites, not one — meditate and
+companion regen share the same range. That is consistent, but it is a broader buff than "rest heals
+more" and mages get it twice (their rest AND their Meditate).
+
+Owner: *"if the mages end up too powerful we could always adjust it down enough that it makes a
+difference in their power."* So Meditate is a known, deliberate lever if the mage classes come back
+too strong — do not treat a mage overshoot as a class-design problem before checking this first.
+Needs a feel check in play, not only in the sim.
+
+### FLOCK CHAINS RAMP WITH LEVEL (2026-09-07)
+
+`flock_chance` was a flat per-species 25-45% that rolls again on every link, identical at L1 and
+L10000. Measured in a real climb, that is exactly where deaths land — **on flock link 1.85,
+entering at 71% HP** — and it explains why three classes failed a career while winning **100% of
+isolated fights at the same level**. The chain, not the fight, was killing them.
+
+`flock_scale_for_level()`: 35% of the species value at L1-3, ramping to full by L25 — the same
+level the difficulty ramp expects play to start mattering. Same principle: the early game is where
+a player learns their class, so it should not open with the mechanic that punishes a slow kill
+hardest.
+
+The simulator was reading the raw species number rather than the victory path's, so it routes
+through the shared function now. That two-paths defect has produced a wrong answer at nearly every
+step of this session.
+
 ### RISK CURVE — the audit that matches the owner's definition (2026-09-07)
 
 | level | gearless | under | average | bis |

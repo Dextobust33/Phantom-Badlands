@@ -5584,7 +5584,11 @@ func _grow_encounter(ch, hunt_level: int) -> Dictionary:
 				if flee_tries == 0:
 					_gd["death_no_flee"] = int(_gd["death_no_flee"]) + 1
 		var won: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
-		var flock: int = int(monster.get("flock_chance", 0))
+		# Scaled through the SAME function the real victory path uses. This read the raw species
+		# number, so a rule added in combat_manager would have been invisible here — the two-paths
+		# defect that has produced a wrong answer at nearly every step of this session.
+		var flock: int = int(round(float(monster.get("flock_chance", 0))
+			* CombatManager.flock_scale_for_level(ch.level)))
 		var mlvl: int = int(monster.get("level", hunt_level))
 		combat_mgr.end_combat(0, won, false)
 		if ch.current_hp <= 0:
