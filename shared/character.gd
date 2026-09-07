@@ -748,6 +748,58 @@ const CLASS_DISPLAY_NAME := {
 	"Sage": "Oracle",
 }
 
+# What each stat actually does FOR THIS CLASS, read from the code rather than from intent.
+#
+# 2026-09-07, owner: "anywhere they see their stats or that gives a description of them should be
+# accurate for that class. They should know every benefit they get upfront so they know what gear
+# to focus."
+#
+# That last clause is the point: a stat line is gear advice. A Ninja told "WITS: trickster ability
+# damage" and a Wizard told the same thing are being pointed at very different purchases, and the
+# panel said the same words to both. Worse, it still credited WITS with "Outsmart", an ability
+# REMOVED this session, and CON with only HP and defense after CON started granting damage
+# reduction. This surface has now drifted twice; sourcing it per class is the fix.
+#
+# Ground truth for each claim:
+#   STR  -> `_ability_anchored_damage(character, "strength", ...)` for the warrior cards; feeds
+#           `get_total_attack()` for everyone, and the stamina pool.
+#   CON  -> max HP, defense, `con_damage_reduction()`, stamina pool.
+#   DEX  -> hit chance, crit, dodge (DEX/5, capped 30%), initiative, flee, energy pool.
+#   INT  -> `_ability_anchored_damage(..., "intelligence", ...)` for mage cards; mana pool.
+#   WIS  -> counts HALF toward mage ability damage; mana pool; resists enemy abilities.
+#   WITS -> `_ability_anchored_damage(..., "wits", ...)` for trickster cards; assassinate odds;
+#           energy pool; a trickster-only dodge (WITS/50, capped 15%).
+static func stat_description_for(stat: String, class_type: String) -> String:
+	var path := ""
+	match class_type:
+		"Fighter", "Barbarian", "Paladin": path = "warrior"
+		"Wizard", "Sorcerer", "Sage": path = "mage"
+		"Grifter", "Ranger", "Ninja": path = "trickster"
+	match stat:
+		"strength":
+			if path == "warrior":
+				return "YOUR ability damage. Attack power. Stamina pool."
+			return "Attack power on basic attacks. Stamina pool. Not your ability damage."
+		"constitution":
+			return "Max HP, defense, and damage reduction. Stamina pool."
+		"dexterity":
+			if class_type == "Ninja":
+				return "Dodge (your main defence), crit, hit chance, flee. Energy pool."
+			return "Hit chance, crit, dodge, initiative, flee. Energy pool."
+		"intelligence":
+			if path == "mage":
+				return "YOUR ability damage. Mana pool."
+			return "Mana pool only. Not your ability damage."
+		"wisdom":
+			if path == "mage":
+				return "Counts HALF toward your ability damage. Mana pool. Resists enemy abilities."
+			return "Resists enemy abilities (curse, drain). Mana pool."
+		"wits":
+			if path == "trickster":
+				return "YOUR ability damage. Assassinate odds. Dodge. Energy pool."
+			return "Energy pool. No damage contribution for your class."
+	return ""
+
 static func class_display_name(class_type: String) -> String:
 	"""What to SHOW the player for this class. Ids are internal; names are not."""
 	return String(CLASS_DISPLAY_NAME.get(class_type, class_type))
@@ -1754,6 +1806,14 @@ func xp_required_for_next_level(from_level: int) -> int:
 		var t: float = float(from_level - 1) / 8.0
 		base *= lerp(0.35, 1.0, t)
 	return int(base)
+
+static func stat_gains_for(class_type: String) -> Dictionary:
+	"""The per-level gains, addressable without a Character instance so help screens and audits
+	read the same table the level-up does. The help page kept its own copy and it went stale the
+	same day the gains changed."""
+	var c = Character.new()
+	c.class_type = class_type
+	return c.get_stat_gains_for_class()
 
 func get_stat_gains_for_class() -> Dictionary:
 	"""Stat increases per level. 2.5 total for every class; only the distribution differs.

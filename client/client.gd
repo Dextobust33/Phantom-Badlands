@@ -12716,7 +12716,10 @@ func _get_combat_hand_actions() -> Array:
 					"stamina": has_resource = current_stamina >= affordability_threshold
 					"energy": has_resource = current_energy >= affordability_threshold
 			actions.append({
-				"label": str(info.get("display", card_name)),
+				# 2026-09-07 — resolve through the shared per-class resolver, not this table's
+				# own `display`. The action-bar button is what a player looks at, and it was the
+				# one surface still announcing a renamed card under its old name.
+				"label": _ability_display_name(card_name),
 				"action_type": "combat",
 				"action_data": card_name,
 				"enabled": has_resource,
@@ -12772,7 +12775,7 @@ func _on_combat_card_played(card_name: String) -> void:
 				# Say WHY, where the player is looking, instead of spending their turn to be
 				# told by the server.
 				display_game("[color=#FF8855]%s needs %d %s — you have %d.[/color]" % [
-					str(info.get("display", card_name)), _need,
+					_ability_display_name(card_name), _need,
 					str(info.get("resource_type", "resource")), _have])
 				return
 		if int(info.get("cost", -1)) == 0 and str(info.get("resource_type", "")) != "":
@@ -17171,6 +17174,8 @@ func _format_chase_affix_tokens(affixes: Dictionary) -> Array:
 	# reads "+2 Dvst" for a bonus to a card its hand calls Rampage.
 	const _ABILITY_SHORT_BY_CLASS := {
 		"devastate": {"Barbarian": "Rmpg", "Paladin": "Judg"},
+		"power_strike": {"Paladin": "Rprch"},
+		"shield_bash": {"Barbarian": "Rush"},
 		"perfect_heist": {"Ninja": "Assn", "Grifter": "DblX", "Ranger": "KShot"},
 	}
 	for ability_key in _ABILITY_SHORT.keys():
@@ -19712,8 +19717,12 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		return _cdesc
 	match ability_name:
 		"power_strike":
+			if String(character_data.get("class", "")) == "Paladin":
+				return "Deal %s damage — a rebuke before the sentence." % _desc_num(est_dmg, "2 × Attack × √STR scaling × your rank/tier bonus")
 			return "Deal %s damage — a dependable heavy hit." % _desc_num(est_dmg, "2 × Attack × √STR scaling × your rank/tier bonus")
 		"shield_bash":
+			if String(character_data.get("class", "")) == "Barbarian":
+				return "Charge through them for %s damage, with a [b]chance to stun[/b]." % _desc_num(est_dmg, "1.5 × Attack × √STR scaling × your rank/tier bonus")
 			return "Deal %s damage with a [b]chance to stun[/b] the enemy." % _desc_num(est_dmg, "1.5 × Attack × √STR scaling × your rank/tier bonus")
 		"cleave":
 			return "Deal %s damage and open a bleeding wound for %s/round over [b]4[/b] rounds." % [_desc_num(est_dmg, "2.5 × Attack × √STR scaling × your rank/tier bonus"), _desc_num(int(0.2 * s_str), "20% of STR per round")]
@@ -19734,10 +19743,16 @@ func _ability_desc_bbcode_body(ability_name: String) -> String:
 		"berserk":
 			return "Buff yourself: %s damage but %s defense for [b]4[/b] rounds — scales with missing HP, so riskier is stronger." % [_desc_num("+75–200%", "+75% rising to +200% as your HP drops"), _desc_num("−40%", "flat -40% defense")]
 		"iron_skin":
+			if String(character_data.get("class", "")) == "Fighter":
+				return "Set your guard: %s damage reduction for [b]4[/b] rounds." % _desc_num("60%", "flat 60% damage reduction")
 			return "Buff yourself: %s damage reduction for [b]4[/b] rounds." % _desc_num("60%", "flat 60% damage reduction")
 		"fortify":
+			if String(character_data.get("class", "")) == "Paladin":
+				return "A shield of faith closes around you: %s defense for [b]5[/b] rounds." % _desc_num("+%d%%" % int(30 + sqrt(float(s_str)) * 3), "30 + √STR × 3")
 			return "Buff yourself: %s defense for [b]5[/b] rounds." % _desc_num("+%d%%" % int(30 + sqrt(float(s_str)) * 3), "30 + √STR × 3")
 		"rally":
+			if String(character_data.get("class", "")) == "Paladin":
+				return "Lay on hands: heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(int(30 + sqrt(float(s_con)) * 10), "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
 			return "Heal %s HP and gain %s STR for [b]3[/b] rounds." % [_desc_num(int(30 + sqrt(float(s_con)) * 10), "30 + √CON × 10"), _desc_num("+%d" % int(10 + s_str / 5.0), "10 + STR ÷ 5")]
 		# --- Mage (v0.9.698) ---
 		"magic_bolt":
@@ -21617,15 +21632,18 @@ func _get_buff_display_name(buff_type: String) -> String:
 		"defense_penalty": return "Defense Penalty"
 		"gold_find": return "Valor Find"
 		"xp_bonus": return "XP Bonus"
-		"war_cry": return "War Cry"
+		# 2026-09-07 — buff names fork by class too. A Paladin with Fortify up should see
+		# "Shield of Faith" in the buff panel, not the shared card name. Resolves through the
+		# same table as the card face so the two can never disagree.
+		"war_cry": return _ability_display_name("war_cry")
 		"berserk": return "Berserk"
-		"iron_skin": return "Iron Skin"
+		"iron_skin": return _ability_display_name("iron_skin")
 		"haste": return "Arcane Surge"
 		"vanish": return "Phantom Strike"
 		"cloak", "invisibility": return "Invisibility"
 		"shield": return "Shield"
-		"rally": return "Rally"
-		"fortify": return "Fortify"
+		"rally": return _ability_display_name("rally")
+		"fortify": return _ability_display_name("fortify")
 		_: return buff_type.replace("_", " ").capitalize()
 
 func _get_buff_color(buff_type: String) -> String:
@@ -32851,11 +32869,37 @@ func _get_rarity_multiplier_for_status(rarity: String) -> float:
 		"artifact": return 2.5
 		_: return 1.0
 
+func _help_stat_table() -> String:
+	"""The stat page, generated. It carried a hand-written per-class level-gain table that went
+	stale the same day the gains changed, credited WITS with `Outsmart` (removed this session),
+	and never mentioned that CON grants damage reduction. Owner: players "should know every
+	benefit they get upfront so they know what gear to focus" — so it reads the same source the
+	stats panel does, and marks the reader's own class."""
+	var out: Array = []
+	out.append("[color=#FFD700]What each stat does FOR YOUR CLASS:[/color]")
+	var cls := String(character_data.get("class", ""))
+	for st in ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]:
+		var d := CharacterScript.stat_description_for(st, cls)
+		if d != "":
+			out.append("  [color=#FFFFFF]%s[/color] - %s" % [st.capitalize(), d])
+	out.append("")
+	out.append("[color=#FFD700]Stat gains per level (2.5 total for every class):[/color]")
+	for k in ["Fighter", "Barbarian", "Paladin", "Wizard", "Sorcerer", "Sage", "Grifter", "Ranger", "Ninja"]:
+		var g: Dictionary = CharacterScript.stat_gains_for(k)
+		var parts: Array = []
+		for st2 in ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]:
+			var v: float = float(g.get(st2, 0.0))
+			if v > 0.0:
+				parts.append("%s %.2f" % [st2.substr(0, 3).to_upper(), v])
+		var mark := "   <- you" if k == cls else ""
+		out.append("  [color=#FFFFFF]%-10s[/color] %s%s" % [CharacterScript.class_display_name(k), ", ".join(parts), mark])
+	return "\n".join(out)
+
 func _help_fill_passives(text: String) -> String:
 	"""Expand the {{..._PASSIVES}} tokens in a help page. Both /help and /search render these
 	sections, so the substitution lives here rather than in one of them — a page that got the
 	raw token through would show `{{WARRIOR_PASSIVES}}` to the player."""
-	return text 		.replace("{{WARRIOR_PASSIVES}}", _help_passive_block(["Fighter", "Barbarian", "Paladin"])) 		.replace("{{MAGE_PASSIVES}}", _help_passive_block(["Wizard", "Sorcerer", "Sage"])) 		.replace("{{TRICKSTER_PASSIVES}}", _help_passive_block(["Grifter", "Ranger", "Ninja"]))
+	return text 		.replace("{{WARRIOR_PASSIVES}}", _help_passive_block(["Fighter", "Barbarian", "Paladin"])) 		.replace("{{MAGE_PASSIVES}}", _help_passive_block(["Wizard", "Sorcerer", "Sage"])) 		.replace("{{TRICKSTER_PASSIVES}}", _help_passive_block(["Grifter", "Ranger", "Ninja"])) 		.replace("{{STAT_TABLE}}", _help_stat_table())
 
 func _help_passive_block(classes: Array) -> String:
 	"""One line per class: its name, its passive's name and what that passive actually does —
@@ -32900,7 +32944,7 @@ func show_help():
   [color=#2F4F4F]Grifter[/color]=stalls & escapes, [color=#228B22]Ranger[/color]=steady, [color=#191970]Ninja[/color]=crits. [color=#808080]Races: Halfling(Valor+dodge), Gnome(costs)[/color]
 
 [b][color=#FFD700]══ WHAT STATS DO ══[/color][/b]
-[color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Contributes to Stamina pool
+[color=#FF6666]STR[/color] [color=#808080]Strength[/color]  - [color=#FFFFFF]+2% attack damage per point[/color] | Warrior ability damage | Stamina pool
 [color=#66FF66]CON[/color] [color=#808080]Constitution[/color] - [color=#FFFFFF]+5 max HP per point[/color] | +0.5 defense per point | Contributes to Stamina pool
 [color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] - [color=#FFFFFF]+1% hit, +2% flee, -1% enemy hit per 5 DEX (max 30% dodge)[/color] | +0.5% crit | Energy pool
 [color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] - [color=#FFFFFF]+3% spell damage per point[/color] | Contributes to Mana pool
@@ -33323,7 +33367,7 @@ func search_help(search_term: String):
 		{
 			"title": "STATS",
 			"keywords": ["stats", "str", "strength", "con", "constitution", "dex", "dexterity", "int", "intelligence", "wis", "wisdom", "wit", "wits", "hp", "health", "mana", "stamina", "energy", "level", "up", "gain", "gains", "per"],
-			"content": "[color=#FF6666]STR[/color] [color=#808080]Strength[/color] = +2% attack damage per point | Contributes to Stamina pool\n[color=#66FF66]CON[/color] [color=#808080]Constitution[/color] = +5 max HP per point | +0.5 defense per point | Contributes to Stamina pool\n[color=#66FFFF]DEX[/color] [color=#808080]Dexterity[/color] = +1% hit chance, +2% flee chance | +0.5% crit per point | Contributes to Energy pool\n[color=#FF66FF]INT[/color] [color=#808080]Intelligence[/color] = Mage ability damage | +3 mana per point\n[color=#FFFF66]WIS[/color] [color=#808080]Wisdom[/color] = Counts half toward mage ability damage | +1.5 mana per point | Resists enemy abilities (curse, drain, etc.)\n[color=#FFA500]WIT[/color] [color=#808080]Wits[/color] = Trickster ability damage | Assassinate odds (WIT vs enemy INT) | Contributes to Energy pool\n\n[color=#FFD700]Level Up Stat Gains (2.5 total/level):[/color]\n[color=#FF6666]WARRIOR:[/color] Fighter=STR1.25/CON.75/DEX.25/WIT.25 | Barbarian=STR1.5/CON.75/DEX.25 | Paladin=STR.75/CON1/DEX.25/WIS.25/WIT.25\n[color=#66FFFF]MAGE:[/color] Wizard=INT1.1/WIS.75/CON.4/DEX.25 | Sorcerer=INT1.4/WIS.5/CON.35/DEX.25 | Sage=WIS1/INT.75/CON.5/DEX.25\n[color=#66FF66]TRICKSTER:[/color] Grifter=WIT1.5/DEX.75/CON.25 | Ranger=WIT1/DEX.75/CON.5/STR.25 | Ninja=DEX1.25/WIT1/CON.25"
+			"content": "{{STAT_TABLE}}"
 		},
 		{
 			"title": "RACES",
@@ -33339,11 +33383,13 @@ func search_help(search_term: String):
 [color=#C0C0C0]Fighter only:[/color] you enter every fight with Iron Skin and Fortify already up.
 
 [color=#AAAAAA]Cards[/color] (all available from level 1 - your DECK decides what you draw):
-Power Strike - reliable damage
+Power Strike - reliable damage. A Paladin's reads [color=#FFD700]Reproach[/color]
 Cleave - bigger, and opens a bleed
-Shield Bash - damage plus a stun, priced below Power Strike
-War Cry - surges your class stack and rattles the foe so it misses more
-Fortify / Iron Skin - defense and damage reduction
+Shield Bash - damage plus a stun, priced below Power Strike. A Barbarian's is a [color=#8B0000]Bull Rush[/color]
+War Cry - surges your class stack and rattles the foe. A Paladin's is an [color=#FFD700]Invocation[/color]
+Fortify / Iron Skin - defense and damage reduction. A Fighter's Iron Skin is a [color=#C0C0C0]Bulwark[/color];
+  a Paladin's Fortify is a [color=#FFD700]Shield of Faith[/color]
+Rally - heal and a strength buff. A Paladin's is [color=#FFD700]Lay on Hands[/color]
 Berserk - big damage, less defense
 Devastate / Rampage / Judgement - the FINISHER, one card that works differently for each class
 
@@ -33680,7 +33726,7 @@ func open_stats_panel() -> void:
 	var xp_to_next: int = int(character_data.get("experience_to_next_level", 100))
 	var stats: Dictionary = character_data.get("stats", {})
 	var unspent: int = int(character_data.get("unspent_stat_points", 0))
-	stats_panel.open(level, xp, xp_to_next, stats, unspent)
+	stats_panel.open(level, xp, xp_to_next, stats, unspent, String(character_data.get("class", "")))
 
 func close_stats_panel() -> void:
 	if stats_panel:
@@ -37978,8 +38024,24 @@ func _enhance_combat_message(msg: String) -> String:
 		enhanced = _replace_word(enhanced, "Forcefield", "[pulse freq=2.0 color=#4169E1 ease=-2.0]Forcefield[/pulse]")
 
 	# Warrior abilities - impact effects
+	#
+	# 2026-09-07 — these match on the WORD, so a card renamed per class quietly lost its styling:
+	# a Paladin's log said "Reproach" and nothing here was looking for it. Each renamed form is
+	# matched alongside the shared one.
 	if "POWER STRIKE" in upper_msg or "POWERSTRIKE" in upper_msg:
 		enhanced = _replace_word(enhanced, "Power Strike", "[shake rate=20 level=5][color=#FF6347]Power Strike[/color][/shake]")
+	if "REPROACH" in upper_msg:
+		enhanced = _replace_word(enhanced, "Reproach", "[shake rate=20 level=5][color=#FFD700]Reproach[/color][/shake]")
+	if "BULL RUSH" in upper_msg:
+		enhanced = _replace_word(enhanced, "BULL RUSH", "[shake rate=25 level=8][color=#8B0000]BULL RUSH[/color][/shake]")
+	if "BULWARK" in upper_msg:
+		enhanced = _replace_word(enhanced, "BULWARK", "[color=#C0C0C0]BULWARK[/color]")
+	if "INVOCATION" in upper_msg:
+		enhanced = _replace_word(enhanced, "INVOCATION", "[wave amp=8 freq=3][color=#FFD700]INVOCATION[/color][/wave]")
+	if "SHIELD OF FAITH" in upper_msg:
+		enhanced = _replace_word(enhanced, "A shield of faith", "[color=#FFD700]A shield of faith[/color]")
+	if "LAY ON HANDS" in upper_msg or "lay on hands" in enhanced:
+		enhanced = _replace_word(enhanced, "lay on hands", "[wave amp=10 freq=3][color=#FFD700]lay on hands[/color][/wave]")
 	if "BERSERK" in upper_msg:
 		enhanced = _replace_word(enhanced, "Berserk", "[shake rate=30 level=10][color=#FF0000]BERSERK[/color][/shake]")
 		enhanced = _replace_word(enhanced, "berserk", "[shake rate=30 level=10][color=#FF0000]berserk[/color][/shake]")
@@ -46208,12 +46270,15 @@ func _display_stat_selection():
 	display_game("")
 	display_game("Choose which stat to grant [color=#00FF00]+5[/color] to [color=#FFD700]%s[/color]:" % pending_bless_target)
 	display_game("")
-	display_game("[%s] [color=#FF6666]STR[/color] - Strength (damage)" % get_action_key_name(1))
-	display_game("[%s] [color=#00FF00]CON[/color] - Constitution (health)" % get_action_key_name(2))
-	display_game("[%s] [color=#FFFF00]DEX[/color] - Dexterity (crit chance)" % get_action_key_name(3))
-	display_game("[%s] [color=#6666FF]INT[/color] - Intelligence (magic power)" % get_action_key_name(4))
-	display_game("[%s] [color=#FF66FF]WIS[/color] - Wisdom (mana/regen)" % get_action_key_name(5))
-	display_game("[%s] [color=#66FFFF]WIT[/color] - Wits (Trickster damage, Assassinate odds)" % get_action_key_name(6))
+	# 2026-09-07 — this blesses ANOTHER player, so it cannot be class-specific; it must at least
+	# be generically TRUE. It was not: WIS was described as "mana/regen" (no wisdom-based regen
+	# exists) and CON omitted the damage reduction it now grants.
+	display_game("[%s] [color=#FF6666]STR[/color] - Attack power, Warrior ability damage, stamina" % get_action_key_name(1))
+	display_game("[%s] [color=#00FF00]CON[/color] - Max HP, defense, damage reduction, stamina" % get_action_key_name(2))
+	display_game("[%s] [color=#FFFF00]DEX[/color] - Hit chance, crit, dodge, flee, energy" % get_action_key_name(3))
+	display_game("[%s] [color=#6666FF]INT[/color] - Mage ability damage, mana pool" % get_action_key_name(4))
+	display_game("[%s] [color=#FF66FF]WIS[/color] - Half of Mage ability damage, mana, resistance" % get_action_key_name(5))
+	display_game("[%s] [color=#66FFFF]WIT[/color] - Trickster ability damage, Assassinate odds, energy" % get_action_key_name(6))
 	display_game("")
 	display_game("[color=#808080]Press [%s] to cancel[/color]" % get_action_key_name(0))
 

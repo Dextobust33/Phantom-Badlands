@@ -111,6 +111,8 @@ func _audit_registry() -> Dictionary:
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
+		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
+		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
 		"endgame": ["the 95% target: does a WELL-GEARED endgame player survive 19 fights in 20?", run_endgame],
 		"climbcost": ["how many encounters a climb to L20 actually costs", run_climbcost],
@@ -6911,3 +6913,41 @@ func run_endgame() -> void:
 Target: 95%+ survival. Below that, a player doing everything right still dies too often.")
 	print("Well above it is also information: the endgame may not be dangerous enough.")
 	print("====================================================")
+
+
+func run_cardnames() -> void:
+	"""What each class actually sees on its five cards. The theming pass's proof.
+
+	2026-09-07, owner: "make sure they are changed in all the relevant areas so we don't have to
+	come right back and change cards or combat logs." A rename touches the card face, the action
+	bar, the hover, the combat log, the buff panel, gear affix tokens and the help page — seven
+	surfaces, and this one prints the resolved name so a miss is visible rather than discovered
+	in play."""
+	print("
+===== WHAT EACH CLASS CALLS ITS CARDS =====")
+	for row in ALL_CLASSES:
+		var klass := String(row[0])
+		var ch = make_char(30, "average", klass, "Human")
+		ch.initialize_deck_collection_if_needed()
+		var names: Array = []
+		for card in ch.combat_deck_collection.keys():
+			names.append(combat_mgr._ability_display_name(ch, String(card)))
+		print("  %-10s (%s)  %s" % [Character.class_display_name(klass),
+			combat_mgr.class_engine_label(klass), ", ".join(names)])
+	print("===========================================")
+
+
+func run_statdesc() -> void:
+	"""What each class is told about its own stats. Owner: players "should know every benefit
+	they get upfront so they know what gear to focus" — so a wrong line here is bad gear advice,
+	not just bad copy. This surface has drifted twice already."""
+	print("
+===== WHAT EACH CLASS IS TOLD ITS STATS DO =====")
+	for row in [["Fighter", 0], ["Wizard", 0], ["Ninja", 0]]:
+		var k := String(row[0])
+		print("
+  --- %s ---" % Character.class_display_name(k))
+		for st in ["strength", "constitution", "dexterity", "intelligence", "wisdom", "wits"]:
+			print("    %-13s %s" % [st.capitalize(), Character.stat_description_for(st, k)])
+	print("
+===============================================")

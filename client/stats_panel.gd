@@ -1,5 +1,6 @@
 extends Control
 class_name StatsPanel
+const CharacterScript = preload("res://shared/character.gd")
 
 # Audit #3 Slice 1 / UI remediation — visual stat allocation panel.
 # Replaces the chat-command-only `/stats` + `/spendstat <stat>` interface
@@ -41,6 +42,10 @@ var _help_panel: Control = null
 var _bank_label: RichTextLabel
 var _row_container: VBoxContainer
 
+# Which class is looking at this panel. A stat line is gear advice, and the same words mean very
+# different things to a Ninja and a Wizard — see Character.stat_description_for.
+var _class_type: String = ""
+
 var _level: int = 1
 var _experience: int = 0
 var _experience_to_next: int = 100
@@ -55,7 +60,8 @@ func _ready() -> void:
 	visible = false
 
 
-func open(level: int, xp: int, xp_to_next: int, stats: Dictionary, unspent: int) -> void:
+func open(level: int, xp: int, xp_to_next: int, stats: Dictionary, unspent: int, class_type: String = "") -> void:
+	_class_type = class_type
 	refresh(level, xp, xp_to_next, stats, unspent)
 	visible = true
 
@@ -64,7 +70,9 @@ func close() -> void:
 	visible = false
 
 
-func refresh(level: int, xp: int, xp_to_next: int, stats: Dictionary, unspent: int) -> void:
+func refresh(level: int, xp: int, xp_to_next: int, stats: Dictionary, unspent: int, class_type: String = "") -> void:
+	if class_type != "":
+		_class_type = class_type
 	_level = level
 	_experience = xp
 	_experience_to_next = xp_to_next
@@ -225,7 +233,12 @@ func _render() -> void:
 		desc_label.scroll_active = false
 		desc_label.add_theme_font_size_override("normal_font_size", 11)
 		desc_label.custom_minimum_size = Vector2(0, 16)
-		desc_label.text = "[color=#A0A0A0]%s[/color]" % info["desc"]
+		# Class-specific where we know the class, and the SHARED description either way — this
+		# panel has drifted twice from what the code does (it credited WITS with "Outsmart" for a
+		# session after Outsmart was removed, and CON with only HP after CON started granting
+		# damage reduction). It is not a place to keep a second copy.
+		var _d: String = CharacterScript.stat_description_for(stat_name, _class_type) if _class_type != "" else ""
+		desc_label.text = "[color=#A0A0A0]%s[/color]" % (_d if _d != "" else String(info["desc"]))
 		text_vbox.add_child(desc_label)
 
 		# Right: [+1] button

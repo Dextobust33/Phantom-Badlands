@@ -4051,6 +4051,35 @@ const RANGER_AIM_DMG_PER := 0.11         # +11% to ALL damage per Read held (8 =
 # damaging action, and that is most of what the card is worth to a Killing Edge Ninja.
 const VANISH_WEIGHT := 0.18
 
+# Per-class COMBAT LOG lines, so a renamed card does not announce itself under its old name.
+# Owner 2026-09-07: "make sure they are changed in all the relevant areas so we don't have to
+# come right back and change cards or combat logs."
+#
+# One table rather than a branch per card: the Mage and Trickster theming passes add entries
+# here instead of growing if/else chains through the resolvers. `body` keeps the SAME format
+# arguments as the default line it replaces.
+const ABILITY_LINES_BY_CLASS := {
+	"iron_skin": {"Fighter": {
+		"title": "BULWARK!", "body": "You set your guard — block %d%% damage for %d rounds!"}},
+	"shield_bash": {"Barbarian": {"title": "BULL RUSH!"}},
+	"power_strike": {"Paladin": {"title": "Reproach"}},
+	"war_cry": {"Paladin": {
+		"title": "INVOCATION!",
+		"body": "You call it down — your %s surges and the enemy falters (-%d%% accuracy)!"}},
+	"fortify": {"Paladin": {
+		"body": "A shield of faith closes around you! (+%d%% defense for %d rounds)"}},
+	"rally": {"Paladin": {
+		"body": "You lay on hands — healed %d HP, +%d STR for %d rounds!"}},
+}
+
+static func ability_line(character, ability_name: String, key: String, fallback: String) -> String:
+	"""The class-specific log line for this card, or the shared one."""
+	if character == null:
+		return fallback
+	var per: Dictionary = ABILITY_LINES_BY_CLASS.get(ability_name, {})
+	var mine: Dictionary = per.get(String(character.class_type), {})
+	return String(mine.get(key, fallback))
+
 # Damage reduction granted by CONSTITUTION, as a fraction. Read against the same level-scaled
 # baseline the ability-damage ratio uses (`level + 13`), so a character who keeps their CON in
 # step with their level holds a steady share rather than one that decays or explodes.
@@ -5736,7 +5765,9 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var damage = apply_damage_variance(mod_dmg)
 			monster.current_hp -= damage
 			monster.current_hp = max(0, monster.current_hp)
-			messages.append("[color=#FF4444]Power Strike[/color] — %s" % _damage_with_detail(combat, messages, damage))
+			messages.append("[color=#FF4444]%s[/color] — %s" % [
+				ability_line(character, "power_strike", "title", "Power Strike"),
+				_damage_with_detail(combat, messages, damage)])
 
 		"war_cry":
 			# #36 (2026-08-27) — RE-ROLE. War Cry used to write the "damage" buff slot, the
@@ -5752,7 +5783,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			# the Trickster's Distract (50%) and can't turn the Warrior into an evasion tank.
 			wc_intimidate = mini(40, _apply_buff_value_modifiers(character, "war_cry", wc_intimidate))
 			combat["enemy_distracted"] = max(int(combat.get("enemy_distracted", 0)), wc_intimidate)
-			messages.append("[color=#FF4444]WAR CRY![/color]")
+			messages.append("[color=#FF4444]%s[/color]" % ability_line(character, "war_cry", "title", "WAR CRY!"))
 			messages.append("[color=#FFD700]A rallying roar — your %s surges and the enemy is rattled (-%d%% accuracy)![/color]"
 				% [class_engine_label(String(character.class_type)), wc_intimidate])
 			is_buff_ability = true
@@ -5786,7 +5817,7 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			var cc_resist = int(combat.get("cc_resistance", 0))
 			var consec_stuns = int(combat.get("consec_stuns", 0))
 			var stun_chance = int(100.0 * pow(STUN_REPEAT_FALLOFF, cc_resist) * variable_fraction)
-			messages.append("[color=#FF4444]SHIELD BASH![/color]")
+			messages.append("[color=#FF4444]%s[/color]" % ability_line(character, "shield_bash", "title", "SHIELD BASH!"))
 			if consec_stuns < 2 and randi() % 100 < stun_chance:
 				combat["monster_stunned"] = 1  # Enemy skips next turn
 				combat["cc_resistance"] = cc_resist + 1
@@ -5862,8 +5893,9 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			iron_skin_reduction = _apply_buff_value_modifiers(character, "iron_skin", iron_skin_reduction)
 			var is_dur = _buff_duration(character, "iron_skin", 4)
 			character.add_buff("damage_reduction", iron_skin_reduction, is_dur)
-			messages.append("[color=#AAAAAA]IRON SKIN![/color]")
-			messages.append("[color=#00FF00]Block %d%% damage for %d rounds![/color]" % [iron_skin_reduction, is_dur])
+			messages.append("[color=#AAAAAA]%s[/color]" % ability_line(character, "iron_skin", "title", "IRON SKIN!"))
+			messages.append("[color=#00FF00]%s[/color]" % [ability_line(character, "iron_skin", "body",
+				"Block %d%% damage for %d rounds!") % [iron_skin_reduction, is_dur]])
 			is_buff_ability = true
 
 		"devastate":
@@ -5954,7 +5986,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			defense_bonus = _apply_buff_value_modifiers(character, "fortify", defense_bonus)
 			var ft_dur = _buff_duration(character, "fortify", 5)
 			character.add_buff("defense", defense_bonus, ft_dur)
-			messages.append("[color=#00FFFF]You fortify your defenses! (+%d%% defense for %d rounds)[/color]" % [defense_bonus, ft_dur])
+			messages.append("[color=#00FFFF]%s[/color]" % [ability_line(character, "fortify", "body",
+				"You fortify your defenses! (+%d%% defense for %d rounds)") % [defense_bonus, ft_dur]])
 			is_buff_ability = true
 
 		"rally":
@@ -5969,7 +6002,8 @@ func _process_warrior_ability(combat: Dictionary, ability_name: String) -> Dicti
 			str_bonus = _apply_buff_value_modifiers(character, "rally", str_bonus)
 			var rl_dur = _buff_duration(character, "rally", 3)
 			character.add_buff("strength", str_bonus, rl_dur)
-			messages.append("[color=#00FF00]You rally your strength! Healed %d HP, +%d STR for %d rounds![/color]" % [actual_heal, str_bonus, rl_dur])
+			messages.append("[color=#00FF00]%s[/color]" % [ability_line(character, "rally", "body",
+				"You rally your strength! Healed %d HP, +%d STR for %d rounds!") % [actual_heal, str_bonus, rl_dur]])
 			is_buff_ability = true
 
 	# v0.9.696 — Warrior Momentum: every successful Warrior card EXCEPT the Devastate
@@ -11052,6 +11086,34 @@ const ABILITY_FLOOR_RATIO := 0.3
 const WARRIOR_STANCE_RATIO := 1.0
 
 const ABILITY_DISPLAY_NAMES := {
+	# 2026-09-07 — COMPLETED. This held only the cards whose display name differs from their id,
+	# and the client kept its own `display` field for the other twenty. Two tables, and the client
+	# one is what the action bar reads, so a card renamed in the shared table still announced its
+	# old name on the button. Everything lives here now and the client resolves through it.
+	#
+	# Owner: "make sure they are changed in all the relevant areas so we don't have to come right
+	# back and change cards or combat logs."
+	"ambush": "Ambush",
+	"analyze": "Analyze",
+	"banish": "Banish",
+	"berserk": "Berserk",
+	"cleave": "Cleave",
+	"cloak": "Cloak",
+	"devastate": "Devastate",
+	"distract": "Distract",
+	"exploit": "Exploit",
+	"forethought": "Forethought",
+	"fortify": "Fortify",
+	"frost_nova": "Frost Nova",
+	"gambit": "Gambit",
+	"meteor": "Meteor",
+	"overload": "Overload",
+	"paralyze": "Paralyze",
+	"rally": "Rally",
+	"sabotage": "Sabotage",
+	"shield": "Shield",
+	"teleport": "Teleport",
+
 	"tactical_retreat": "Recharge",
 	"vanish": "Phantom Strike",
 	"shadowstep": "Shadowstep",
@@ -11093,6 +11155,31 @@ const ABILITY_DISPLAY_BY_CLASS := {
 		"Fighter": "Devastate",
 		"Barbarian": "Rampage",
 		"Paladin": "Judgement",
+	},
+	# --- WARRIOR THEMING PASS, 2026-09-07 -------------------------------------------------
+	# Display names only. Every one of these cards does something appropriate to its class once
+	# it is called the right thing, so nothing here touches balance.
+	"iron_skin": {
+		# "Iron Skin" reads as monstrous hide or a spell. A disciplined soldier BRACES.
+		"Fighter": "Bulwark",
+	},
+	"shield_bash": {
+		# A barbarian carrying a shield is off-key; same mechanic as a shoulder charge.
+		"Barbarian": "Bull Rush",
+	},
+	# The Paladin had the most drift: its finisher is Judgement and the rest of its deck was
+	# generic martial cards, so it read as a Fighter with a heal.
+	"power_strike": {
+		"Paladin": "Reproach",
+	},
+	"war_cry": {
+		"Paladin": "Invocation",
+	},
+	"fortify": {
+		"Paladin": "Shield of Faith",
+	},
+	"rally": {
+		"Paladin": "Lay on Hands",
 	},
 	# A Ninja HAMSTRINGS; it does not sabotage. Same mechanic, honest fiction — sabotage is a
 	# saboteur's tool and the Grifter is the one who deals in tricks and setups.
