@@ -3270,6 +3270,7 @@ func get_all_available_abilities() -> Array:
 			abilities.append({"name": "exploit", "level": 80, "display": "Exploit"})
 			abilities.append({"name": "perfect_heist", "level": 100, "display": "Assassinate"})
 			abilities.append({"name": "sabotage", "level": 30, "display": "Sabotage"})
+			abilities.append({"name": "shadowstep", "level": 30, "display": "Shadowstep"})
 			abilities.append({"name": "gambit", "level": 50, "display": "Gambit"})
 
 	# v0.9.680 — Companion cards. The active companion grants a temporary card
@@ -3493,7 +3494,7 @@ func has_path_effect(effect_key: String) -> bool:
 
 const _WARRIOR_ARCHETYPE_ABILITIES = ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]
 const _MAGE_ARCHETYPE_ABILITIES = ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
-const _TRICKSTER_ARCHETYPE_ABILITIES = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]
+const _TRICKSTER_ARCHETYPE_ABILITIES = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit", "shadowstep"]
 const _UNIVERSAL_ABILITIES = ["cloak", "all_or_nothing", "forethought", "tactical_retreat", "shield"]
 
 static func get_ability_archetype(ability_name: String) -> String:
@@ -3574,7 +3575,7 @@ func backfill_ability_uses_if_needed() -> bool:
 		"Wizard", "Sage", "Sorcerer":
 			archetype_abilities = ["magic_bolt", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish"]
 		"Grifter", "Ranger", "Ninja":
-			archetype_abilities = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]
+			archetype_abilities = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit", "shadowstep"]
 		_:
 			archetype_abilities = []
 	for ab in archetype_abilities:
@@ -3644,6 +3645,16 @@ const CURATED_STARTER_DECKS_BY_CLASS := {
 	# the escalation ramp rather than waiting on a 12% roll; `ambush` carries the +25 crit
 	# affinity. Two of them so a three-card hand reliably holds one. Keeps analyze + sabotage
 	# so it still survives long enough to use them.
+	# 2026-09-07 — `sabotage` STAYS, and this is the correction worth recording. I read the owner's
+	# "lowest performing or least thematic card" as one thing and it is two: sabotage is the Ninja's
+	# LEAST THEMATIC card and simultaneously its BEST. It cuts monster strength AND defense, lasts
+	# the whole fight and stacks to 50%, so it lowers incoming damage and raises outgoing at once.
+	# Four A/Bs all lost to it — gambit (L3 79%->50%), exploit (->29%), distract (86%/71%->71%/57%)
+	# and the purpose-built Shadowstep (->57%/50%).
+	#
+	# So the theming problem is solved the way this session solved it everywhere else: ONE card,
+	# a class-specific NAME and fiction. A Ninja hamstrings; it does not sabotage. Zero balance
+	# risk, which is the right trade for a fix that was only ever about theme.
 	"Ninja": ["analyze", "sabotage", "ambush", "vanish", "perfect_heist"],
 	# RANGER — Steady Hand is about never fumbling, so its cards are the ones where consistency
 	# is the whole point. `exploit` is a flat share of the enemy's MAX HP: gear-independent,

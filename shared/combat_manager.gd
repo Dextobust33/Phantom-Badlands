@@ -14,7 +14,7 @@ enum CombatAction {
 # Ability lookup for parsing commands
 const MAGE_ABILITY_COMMANDS = ["magic_bolt", "bolt", "cloak", "blast", "forcefield", "teleport", "meteor", "haste", "paralyze", "banish", "frost_nova", "overload"]
 const WARRIOR_ABILITY_COMMANDS = ["power_strike", "strike", "war_cry", "warcry", "shield_bash", "bash", "cleave", "berserk", "iron_skin", "ironskin", "devastate", "fortify", "rally"]
-const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit"]
+const TRICKSTER_ABILITY_COMMANDS = ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "heist", "sabotage", "gambit", "shadowstep"]
 const UNIVERSAL_ABILITY_COMMANDS = ["forethought", "tactical_retreat"]
 
 # #55 (2026-08-26) — floor on the COMBINED buff/gear mitigation multiplier applied to
@@ -296,6 +296,7 @@ const VARIABLE_COST_TABLE: Dictionary = {
 	"distract":     {"ceiling": 11, "cost_percent": 13, "floor_ratio": 0.3, "resource": "energy"},
 	"pickpocket":   {"ceiling": 14, "cost_percent": 14, "floor_ratio": 0.3, "resource": "energy"},
 	"sabotage":     {"ceiling": 18, "cost_percent": 15, "floor_ratio": 0.3, "resource": "energy"},
+	"shadowstep":   {"ceiling": 16, "cost_percent": 14, "floor_ratio": 0.3, "resource": "energy"},
 	# 2026-09-06 — `vanish` was a FLAT 40 in a table where everything else is a percentage of the
 	# pool: 71% of a Ninja's entire 56-energy bar at level 1, for one of only five cards it holds.
 	# The Ninja is the only class in the game that basic-attacks meaningfully (22% of its turns
@@ -4450,7 +4451,7 @@ func process_ability_command(peer_id: int, ability_name: String, arg: String) ->
 	elif ability_name in ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]:
 		result = _process_warrior_ability(combat, ability_name)
 	# Trickster abilities (use energy)
-	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]:
+	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit", "shadowstep"]:
 		result = _process_trickster_ability(combat, ability_name)
 	# v0.9.680 — companion cards (variant-flavoured strike; any class).
 	# #38 — dungeon-exclusive cards share the same data-driven processor.
@@ -6493,7 +6494,37 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# Store debuffs in combat state
 			var existing_sabotage = combat.get("monster_sabotaged", 0)
 			combat["monster_sabotaged"] = min(50, existing_sabotage + debuff_amount)  # Cap at 50%
-			messages.append("[color=#FFA500]You sabotage the %s! (-%d%% strength/defense)[/color]" % [monster.name, debuff_amount])
+			# Named per class — a Ninja hamstrings. Same effect, and the log says what the card
+			# in that player's hand is actually called.
+			if character.class_type == "Ninja":
+				messages.append("[color=#FFA500]You hamstring the %s! (-%d%% strength/defense)[/color]" % [monster.name, debuff_amount])
+			else:
+				messages.append("[color=#FFA500]You sabotage the %s! (-%d%% strength/defense)[/color]" % [monster.name, debuff_amount])
+			is_buff_ability = true
+
+		"shadowstep":
+			# 2026-09-07 — NINJA-EXCLUSIVE. Owner: "remove its lowest performing or least thematic
+			# card and add something that gives it some sort of dodge."
+			#
+			# `sabotage` was the Ninja's only mitigation AND its least thematic card — sabotage is
+			# a saboteur's tool, and the Grifter is the one who deals in tricks. It could not
+			# simply be cut: A/B'ing it out for `gambit` or `exploit` took the L3 win rate from
+			# 79% to 50% and 29%, because that debuff was load-bearing for survival on a class
+			# with no damage reduction by design.
+			#
+			# So this replaces mitigation with BETTER, better-themed mitigation. `distract` was
+			# tried first and measured worse (86%/71% -> 71%/57%): it blunts ONE attack, and a
+			# class that needs long fights wants something that lasts. Shadowstep is sustained.
+			#
+			# Exclusive to the Ninja, which is the tuning property the class was missing — every
+			# other card in its deck is shared, so nothing could be moved for it alone.
+			var ss_dex = character.get_effective_stat("dexterity")
+			var ss_evade = max(1, int((12 + ss_dex / 4.0) * variable_fraction))
+			ss_evade = mini(45, _apply_buff_value_modifiers(character, "shadowstep", ss_evade))
+			var ss_dur = _buff_duration(character, "shadowstep", 4)
+			character.add_buff("evasion", ss_evade, ss_dur)
+			messages.append("[color=#191970][b]SHADOWSTEP![/b][/color]")
+			messages.append("[color=#00FF00]You are already somewhere else — %d%% harder to hit for %d rounds.[/color]" % [ss_evade, ss_dur])
 			is_buff_ability = true
 
 		"gambit":
@@ -6597,6 +6628,7 @@ func _get_ability_info(path: String, ability_name: String) -> Dictionary:
 				"distract": return {"level": 10, "cost": 15}
 				"pickpocket": return {"level": 25, "cost": 20}
 				"sabotage": return {"level": 30, "cost": 25}
+				"shadowstep": return {"level": 30, "cost": 22}
 				"ambush": return {"level": 40, "cost": 30}
 				"gambit": return {"level": 50, "cost": 35}
 				"vanish": return {"level": 60, "cost": 40}
@@ -7291,7 +7323,7 @@ func _build_upgrade_offer(character, ability_name: String, milestone: int) -> Ar
 	var is_damage: bool = ability_name in ABILITY_WEIGHTS 		or ability_name in ["shield_bash", "devastate", "ambush", "gambit", "exploit", "frost_nova"]
 	var is_buff: bool = ability_name in ["forcefield", "shield", "haste", "iron_skin", "fortify",
 		"rally", "berserk", "war_cry", "overload", "vanish"]
-	var is_control: bool = ability_name in ["paralyze", "banish", "sabotage", "distract", "analyze"]
+	var is_control: bool = ability_name in ["paralyze", "banish", "sabotage", "distract", "analyze", "shadowstep"]
 	var kind: String = CU.card_kind(ability_name, is_damage, is_buff, is_control)
 	var taken: Array = character.get_milestone_picks(ability_name) if character != null else []
 	# Some "buff" cards have no DURATION to extend — Forcefield grants a shield with a capacity
@@ -8079,6 +8111,13 @@ func _process_monster_turn_inner(combat: Dictionary) -> Dictionary:
 		var player_wits = character.get_effective_stat("wits")
 		var wits_dodge = min(15, int(player_wits / 50))
 		hit_chance -= wits_dodge
+
+	# Sustained evasion (Shadowstep). A dedicated buff rather than overloading `speed`, which
+	# also drives turn order and equipment scaling — a card that says "harder to hit" should move
+	# exactly that and nothing else.
+	var evasion_buff = character.get_buff_value("evasion")
+	if evasion_buff > 0:
+		hit_chance -= evasion_buff
 
 	# Speed buff (from Haste, equipment, etc.) reduces monster hit chance
 	var speed_buff = character.get_buff_value("speed")
@@ -10986,6 +11025,7 @@ const WARRIOR_STANCE_RATIO := 1.0
 const ABILITY_DISPLAY_NAMES := {
 	"tactical_retreat": "Recharge",
 	"vanish": "Phantom Strike",
+	"shadowstep": "Shadowstep",
 	"haste": "Arcane Surge",
 	"magic_bolt": "Magic Bolt",
 	"power_strike": "Power Strike",
@@ -11024,6 +11064,11 @@ const ABILITY_DISPLAY_BY_CLASS := {
 		"Fighter": "Devastate",
 		"Barbarian": "Rampage",
 		"Paladin": "Judgement",
+	},
+	# A Ninja HAMSTRINGS; it does not sabotage. Same mechanic, honest fiction — sabotage is a
+	# saboteur's tool and the Grifter is the one who deals in tricks and setups.
+	"sabotage": {
+		"Ninja": "Hamstring",
 	},
 	# The Mage finisher forks the same way. A Wizard drops a meteor, a Sorcerer looses a
 	# cataclysm, an Oracle unmakes the thing where it stands.
@@ -12310,7 +12355,7 @@ func process_party_combat_ability(leader_id: int, acting_peer_id: int, ability_n
 		result = _process_mage_ability(adapter, ability_name, arg)
 	elif ability_name in ["power_strike", "war_cry", "shield_bash", "cleave", "berserk", "iron_skin", "devastate", "fortify", "rally"]:
 		result = _process_warrior_ability(adapter, ability_name)
-	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit"]:
+	elif ability_name in ["analyze", "distract", "pickpocket", "ambush", "vanish", "exploit", "perfect_heist", "sabotage", "gambit", "shadowstep"]:
 		result = _process_trickster_ability(adapter, ability_name)
 	else:
 		return {"success": false, "message": "Unknown ability!"}

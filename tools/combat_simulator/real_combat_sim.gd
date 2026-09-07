@@ -4183,7 +4183,7 @@ func _trickster_no_outsmart(combat: Dictionary, ch) -> void:
 	if "perfect_heist" in hand and _finisher_is_ready(combat, ch):
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
 			return
-	for ab in ["analyze", "distract", "sabotage"]:
+	for ab in ["analyze", "distract", "sabotage", "shadowstep"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
@@ -4216,7 +4216,7 @@ func _trickster_deny_first(combat: Dictionary, ch) -> void:
 	if "perfect_heist" in hand and _finisher_is_ready(combat, ch):
 		if combat_mgr.process_ability_command(0, "perfect_heist", "").get("success", false):
 			return
-	for ab in ["analyze", "distract", "sabotage"]:
+	for ab in ["analyze", "distract", "sabotage", "shadowstep"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
@@ -4265,7 +4265,7 @@ func _trickster_assassin(combat: Dictionary, ch) -> void:
 	# trickster survive building up their Outsmart." That is the class's defensive mechanic and
 	# it was being used only as filler AFTER the damage cards, never when it was needed.
 	if float(ch.current_hp) / float(maxi(1, ch.get_total_max_hp())) < 0.60:
-		for ab in ["analyze", "distract", "sabotage"]:
+		for ab in ["analyze", "distract", "sabotage", "shadowstep"]:
 			if ab in hand:
 				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 					return
