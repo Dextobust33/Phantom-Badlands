@@ -4210,10 +4210,25 @@ func _trickster_deny_first(combat: Dictionary, ch) -> void:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
-	for ab in ["ambush", "exploit", "gambit"]:
+	# 2026-09-07 — `vanish` was missing from EVERY trickster rotation, and it is in the Ninja's
+	# starter deck. The simulated Ninja therefore played with four of its five cards and threw a
+	# basic attack whenever it drew the fifth: 17-30% of its turns against 0-7% for its siblings.
+	# I read that as resource starvation and had already re-priced a card before checking the
+	# policy — the same mistake as the mage rotation, which measured as a broken archetype for
+	# exactly this reason, and I made it again a few hours later.
+	#
+	# `deny_first` is the ACTIVE policy (`_trickster_policy`), which is a second trap: I fixed
+	# `_trickster_assassin` first, measured byte-identical output, and only then checked which
+	# function actually runs. Identical numbers after a real change mean the change is not on the
+	# executed path.
+	for ab in ["vanish", "ambush", "exploit", "gambit"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return
+	# Anything still castable beats a staff swing.
+	for ab in hand:
+		if combat_mgr.process_ability_command(0, String(ab), "").get("success", false):
+			return
 	_counted_attack(combat)
 
 
@@ -4245,7 +4260,15 @@ func _trickster_assassin(combat: Dictionary, ch) -> void:
 				if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 					return
 	# Build Read with damage setups (these spend energy + add Read).
-	for ab in ["ambush", "exploit"]:
+	#
+	# 2026-09-07 — `vanish` (Phantom Strike) was MISSING from this list, and it is in the Ninja's
+	# starter deck. So the simulated Ninja played with four cards out of five and threw a basic
+	# attack whenever it drew the fifth: 17-30% of its turns against 0-7% for its siblings. I read
+	# that as resource starvation and had already re-priced a card before checking the policy —
+	# the same mistake as the mage rotation, which measured as a broken archetype for the same
+	# reason. Ahead of `ambush` because it also guarantees the next crit, which is the whole point
+	# of Killing Edge.
+	for ab in ["vanish", "ambush", "exploit"]:
 		if ab in hand:
 			if combat_mgr.process_ability_command(0, ab, "").get("success", false):
 				return

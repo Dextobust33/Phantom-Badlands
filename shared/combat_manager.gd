@@ -4034,6 +4034,9 @@ const GRIFTER_CASHOUT_PER_READ := 0.16   # 8 Read spent = ~1.3 health bars, guar
 # was not covering either. It also caps at COMBO_MAX 8 where the Wizard's equivalent ramp caps at
 # 5, so the Ranger spends far more of a fight part-way up its own curve.
 const RANGER_AIM_DMG_PER := 0.11         # +11% to ALL damage per Read held (8 = +88%)
+# Phantom Strike's own damage. Below `ambush` (0.28) because it ALSO guarantees a crit on the next
+# damaging action, and that is most of what the card is worth to a Killing Edge Ninja.
+const VANISH_WEIGHT := 0.18
 const RANGER_SHOT_PER_READ := 0.11       # 8 Read discharged = ~0.9 of a health bar
 
 func _primary_resource_value(character) -> int:
@@ -6174,10 +6177,29 @@ func _process_trickster_ability(combat: Dictionary, ability_name: String) -> Dic
 			# its role (setup attack) less confusable with the Flee command.
 			# Internal name kept as "vanish" to preserve saved characters'
 			# combat_deck_collection + mastery records.
-			combat["vanished"] = true  # Next attack auto-crits
+			# 2026-09-07 — PHANTOM STRIKE NOW STRIKES.
+			#
+			# It dealt ZERO damage and handed over a free turn (`skip_monster_turn`), which is the
+			# old tempo economy surviving in a card that bypassed the narrowed reprieve rule by
+			# returning the flag itself. On a Ninja that is ruinous: measured, FOUR of its five
+			# cards dealt no damage at all (analyze, sabotage, vanish, and a finisher that needs a
+			# full bank), so it took 12.1 turns to kill an L10 normal against 3.8-9.3 for every
+			# other class, and died in 24% of its encounters — the worst cell in the game.
+			#
+			# The card's own text already promised "your next strike will land true". It now lands
+			# one: real anchored damage, the auto-crit setup kept, and the free turn given up. That
+			# is a straight trade of tempo for damage, which is what the class was short of, and it
+			# makes the name honest.
+			var _vn_dmg: int = int(_ability_anchored_damage(character, "wits", VANISH_WEIGHT) * variable_fraction)
+			_vn_dmg = apply_skill_damage_bonus(character, ability_name, _vn_dmg, combat)
+			_vn_dmg = apply_damage_variance(apply_ability_damage_modifiers(
+				_vn_dmg, character.level, monster, character, combat, messages))
+			monster.current_hp = max(0, monster.current_hp - _vn_dmg)
+			combat["vanished"] = true  # the NEXT damaging action auto-crits
 			messages.append("[color=#00FF00]PHANTOM STRIKE![/color]")
-			messages.append("[color=#808080]You fade into shadow... your next strike will land true![/color]")
-			return {"success": true, "messages": messages, "combat_ended": false, "skip_monster_turn": true}
+			messages.append("[color=#00FF00]You strike from the dark — %s[/color]"
+				% _damage_with_detail(combat, messages, _vn_dmg))
+			messages.append("[color=#808080]...and your next strike will land true.[/color]")
 
 		"exploit":
 			# Uses monster's MAX HP, scales with WITS (15-35%).
