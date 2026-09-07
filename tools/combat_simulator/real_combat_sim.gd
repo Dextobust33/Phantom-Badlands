@@ -85,6 +85,7 @@ func _audit_registry() -> Dictionary:
 		"classes": ["all 9 classes: does each actually SPEND its cards?", run_class_audit],
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
+		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
 		"climbcost": ["how many encounters a climb to L20 actually costs", run_climbcost],
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
@@ -6730,3 +6731,64 @@ func run_preflight() -> void:
 %s" % ("PREFLIGHT PASSED - the chain is worth running." if fail == 0
 		else "PREFLIGHT FAILED (%d) - fix these BEFORE the chain; it cannot detect them itself." % fail))
 	print("=============================================================")
+
+
+func run_risk_curve() -> void:
+	"""Death rate per encounter, by LEVEL and by GEAR. The audit the owner's definition needs.
+
+	2026-09-07. Balance here is not win-rate parity and not survival-to-the-top for everyone.
+	Owner: most characters die and that is the point, AND "a careful player should be able to get
+	there, with good gear, card upgrades, strong companion, and skilled play", AND a careless or
+	badly over-matched player dies at any level.
+
+	Those only hold together if death risk FALLS as progression accumulates. A single global death
+	rate cannot express that, and treating it as one is what led me to conclude the endgame was
+	unreachable: at a CONSTANT rate it is, because a climb to L10000 is ~177,000 encounters.
+
+	So this reports the surface, not a number: rows are levels, columns are gear profiles. What
+	matters is the SHAPE.
+	  - Down a column, as level rises: the game may get harder, but not so fast that gear cannot
+	    answer it.
+	  - Across a row, as gear improves: risk must fall HARD. That gradient IS the careful player's
+	    route to the top, and if it is flat then gear does not matter and no amount of skill or
+	    farming can save anyone.
+	Under-geared cells are SUPPOSED to be lethal. That is the "took on more than they could handle"
+	case working correctly."""
+	var levels := [3, 10, 30, 100, 500]
+	var gears := ["gearless", "under", "average", "bis"]
+	var n := 24
+	print("
+===== DEATH RATE PER ENCOUNTER, BY STAGE AND GEAR =====")
+	print("%d fights per cell, all nine classes. Retreat is modelled, so these are DEATHS, not losses." % (n * 9))
+	print("Read ACROSS: does better gear cut the risk? That gradient is the careful player's route up.")
+	var header := "%-8s" % "level"
+	for g in gears:
+		header += " %10s" % g
+	header += "   gear pays"
+	print(header)
+	for lvl in levels:
+		var row := "%-8d" % lvl
+		var first := -1.0
+		var last := -1.0
+		for g in gears:
+			var deaths := 0
+			var tot := 0
+			for klass_row in ALL_CLASSES:
+				for i in range(int(n / 9.0) + 1):
+					var r = run_fight(lvl, g, "normal", 1.0, 1.0, 1.0, String(klass_row[0]))
+					if bool(r.get("died", false)):
+						deaths += 1
+					tot += 1
+			var d: float = 100.0 * float(deaths) / float(maxi(1, tot))
+			if first < 0.0:
+				first = d
+			last = d
+			row += " %9.1f%%" % d
+		# how much of the risk the full gear ladder removes
+		var pays: String = "-" if first <= 0.05 else ("%.0fx safer" % (first / maxf(0.05, last)))
+		row += "   %s" % pays
+		print(row)
+	print("
+A FLAT row means gear does not matter and nobody can earn their way up.")
+	print("A steep row means the careful, geared player has a route the careless one does not.")
+	print("=======================================================")
