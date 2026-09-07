@@ -112,6 +112,7 @@ func _audit_registry() -> Dictionary:
 		"lowlevel": ["are the low-level classes resource-starved? casts vs basic attacks", run_lowlevel],
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
+		"endgame": ["the 95% target: does a WELL-GEARED endgame player survive 19 fights in 20?", run_endgame],
 		"climbcost": ["how many encounters a climb to L20 actually costs", run_climbcost],
 		"focusgear": ["does chasing your resource affix change the class table?", run_focus_gear_audit],
 		"gearsources": ["every stat gear can carry, where from, and what gates it", run_gear_sources_audit],
@@ -6866,3 +6867,47 @@ func run_risk_curve() -> void:
 A FLAT row means gear does not matter and nobody can earn their way up.")
 	print("A steep row means the careful, geared player has a route the careless one does not.")
 	print("=======================================================")
+
+
+func run_endgame() -> void:
+	"""Does a player who is doing everything right survive 95% of endgame fights?
+
+	Owner 2026-09-07: "realistically I'd say 95% of high level/endgame fights should result in
+	survival if the player is playing the game as intended, farming up gear that is near their
+	current level, upgrading their cards, using a companion close to level, playing wisely and
+	knowing when to run for survival."
+
+	That is a precise, testable target and nothing measured it. `riskcurve` covers the same cells
+	at ~27 fights each, where 0.0% only means "below about 4%" — useless against a 5% target. This
+	runs the BIS cells at high n so the number is real.
+
+	SURVIVAL here means not dying: a fight won, or one retreated from in time. Retreat is part of
+	"playing wisely and knowing when to run", so it counts."""
+	var levels := [100, 250, 500, 1000]
+	var per_class := 50   # x9 classes = 450 fights a level
+	print("
+===== THE 95%% TARGET: BIS GEAR, ENDGAME LEVELS =====")
+	print("%d fights per level (%d per class). Survival = won OR retreated in time." % [per_class * 9, per_class])
+	print("%-8s %10s %10s %10s %12s" % ["level", "won", "retreated", "DIED", "survived"])
+	for lvl in levels:
+		var won := 0
+		var fled := 0
+		var died := 0
+		for row in ALL_CLASSES:
+			for i in range(per_class):
+				var r = run_fight(lvl, "bis", "normal", 1.0, 1.0, 1.0, String(row[0]))
+				if r.win:
+					won += 1
+				elif bool(r.get("died", false)):
+					died += 1
+				else:
+					fled += 1
+		var tot: float = maxf(1.0, float(won + fled + died))
+		var surv: float = 100.0 * float(won + fled) / tot
+		print("%-8d %9.0f%% %9.0f%% %9.1f%% %11.1f%% %s" % [lvl,
+			100.0 * won / tot, 100.0 * fled / tot, 100.0 * died / tot, surv,
+			"ok" if surv >= 95.0 else "<-- BELOW TARGET"])
+	print("
+Target: 95%+ survival. Below that, a player doing everything right still dies too often.")
+	print("Well above it is also information: the endgame may not be dangerous enough.")
+	print("====================================================")

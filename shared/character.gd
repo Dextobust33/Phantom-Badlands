@@ -1786,19 +1786,36 @@ func get_stat_gains_for_class() -> Dictionary:
 	(mana pool and Meditate), and the Ninja keeps DEX (dodge and crit — its fragility). Totals are
 	untouched at 2.5, so nobody gains raw power; the allocation just points at the right thing.
 
+	2026-09-07, second pass — the three classes that still could not finish a climb (Sage 1.3%,
+	Barbarian 1.5%, Ranger 1.9% death per encounter against 0.1-0.7% for the rest) all now pad
+	from CON, which finally buys mitigation rather than only hit points:
+
+	    Barbarian  STR 1.50 -> 1.25, CON 0.75 -> 1.00   STR stays primary; it has no mitigation
+	                                                    at all by design, so CON is the only pad
+	    Ranger     STR 0.25 -> 0.00, CON 0.50 -> 0.75   its STR was vestigial - Ranger damage
+	                                                    scales from WITS, so that point did nothing
+	    Sage       WIS 0.75 -> 0.50, CON 0.50 -> 0.75   INT stays primary; WIS was surplus past
+	                                                    the mana pool it needs
+
+	Totals stay at 2.5 and every class keeps its damage stat primary. Per-class is also the ONLY
+	kind of change that survives a calibration refit: the chain holds WIN rate at target, so any
+	global player buff is cancelled by the monsters getting stronger. Measured — a global CON
+	mitigation buff washed out entirely on the next chain run while the Paladin's realignment
+	held.
+
 	NOTE: this only affects levels gained from here. Existing characters keep the stats they have."""
 	var gains = {
 		# Warrior Path (primary: STR, secondary: CON) - Total: 2.5
 		"Fighter": {"strength": 1.25, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.25},
-		"Barbarian": {"strength": 1.5, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.0},
+		"Barbarian": {"strength": 1.25, "constitution": 1.0, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 0.0},
 		"Paladin": {"strength": 1.0, "constitution": 0.75, "dexterity": 0.25, "intelligence": 0.0, "wisdom": 0.25, "wits": 0.25},
 		# Mage Path (primary: INT, secondary: WIS) - Total: 2.5
 		"Wizard": {"strength": 0.0, "constitution": 0.40, "dexterity": 0.25, "intelligence": 1.10, "wisdom": 0.75, "wits": 0.0},
-		"Sage": {"strength": 0.0, "constitution": 0.5, "dexterity": 0.25, "intelligence": 1.0, "wisdom": 0.75, "wits": 0.0},
+		"Sage": {"strength": 0.0, "constitution": 0.75, "dexterity": 0.25, "intelligence": 1.0, "wisdom": 0.5, "wits": 0.0},
 		"Sorcerer": {"strength": 0.0, "constitution": 0.35, "dexterity": 0.25, "intelligence": 1.40, "wisdom": 0.50, "wits": 0.0},
 		# Trickster Path (primary: WITS/DEX, secondary: varies) - Total: 2.5
 		"Grifter": {"strength": 0.0, "constitution": 0.25, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.5},
-		"Ranger": {"strength": 0.25, "constitution": 0.5, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0},
+		"Ranger": {"strength": 0.0, "constitution": 0.75, "dexterity": 0.75, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0},
 		"Ninja": {"strength": 0.0, "constitution": 0.25, "dexterity": 1.25, "intelligence": 0.0, "wisdom": 0.0, "wits": 1.0}
 	}
 
