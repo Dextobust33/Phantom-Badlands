@@ -990,6 +990,57 @@ from the Trickster slice, not from this one.
   level tested. It is out of the Sorcerer's starter deck but still addable, so it is a trap for the
   player who picks it. Same shape as the Magic Bolt to-do below.
 - **Magic Bolt damage vs investment** (measurements already recorded above).
+### MEASUREMENT OVERHAUL (2026-09-06) — the tools were modelling a player who never runs away
+
+Owner: *"Ensure the tools are taking into account how the game actually works, random encounters,
+flee chances, flocks, resting, resource recovery."* and *"Being balanced may not mean that all of
+the classes can kill things in the same amount of turns. The main thing is that they can make it
+through the entire game if they play wisely."*
+
+**The biggest defect found this session, and it invalidated the target itself.** `run_fight` — the
+shared loop behind `classes`, `outcomes`, `adjudicate` AND the calibration — had **no flee at all**.
+`outcomes` reported **escape 0% at every level**: the simulated player fought to the last hit point
+every time, so every loss was scored as a death. Nobody plays that way, and under permadeath the
+difference is not cosmetic — it is the entire question of whether a class can finish the game.
+
+Adding retreat (real `process_flee`, below 30% HP) to that one shared loop:
+
+| | before (no retreat) | after |
+|---|---|---|
+| how a loss ended | 100% death | **0-6% death, rest retreat** |
+| what the audit reported | win rate | win rate **+ death rate** |
+
+Every class now shows a **0-6% death rate**. The class table reports both, because under permadeath
+a loss you walk away from costs a trip back and a death costs the character — and only the second
+one decides whether a class is viable. **Win-rate parity was never the right target.**
+
+Also fixed: `grow` — the audit that most directly asks the owner's question (grow from creation,
+hunt what you can survive, permadeath final) — sampled only three classes. Now all nine.
+
+**STILL BROKEN, and the next thing to resolve.** `grow` and `classes` contradict each other:
+
+- `classes` (with retreat): 0-6% death per fight at L10-L80.
+- `newplayer`: a starter kit wins **78-90%** of L1-L10 normal fights.
+- `grow`: **0 of 40 characters survive to L20, in every class**, dying at L1.1-2.5.
+
+Those cannot all be true. `grow` already models flee, flocks, ambush-interrupted resting and real
+drops, so it is not simply missing a mechanic. Candidate explanations, none yet tested: the early
+game (L1-3) is far more lethal than L10 and the class engines cannot run on a level-1 resource
+pool (the Ninja wins 12% of its fights in `grow` against the Wizard's 84% — a 7x spread that does
+not appear at L10); or `grow`'s retreat is failing far more often than `run_fight`'s; or its
+hunt-level stepping never finds a survivable level at L1 because there is nothing below it.
+
+**Do not tune difficulty or run the chain again until these agree.** Two instruments disagreeing
+about the same quantity is the exact fault CLAUDE.md warns about, and the ramp work below depends
+on believing one of them.
+
+### Difficulty RAMP — agreed direction, NOT yet implemented
+
+Owner chose "option 1 with a bit of 2": raise the turns target so the strength axis stops doing all
+the work, **and** keep the early game easier while players learn their class, tightening once they
+have their feet under them. That means `refcal`'s single global target becomes a per-level curve.
+Blocked on the measurement contradiction above.
+
 ### Calibration chain — RAN 2026-09-06, result NOT ADOPTED. Needs an owner decision.
 
 Owner approved the run. It completed, it found and fixed a real instrument bias, and the resulting

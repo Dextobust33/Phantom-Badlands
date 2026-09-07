@@ -26,6 +26,10 @@ const SLOTS := ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
 # actually in the drawn hand + affordable (the deck constraint is real). Buffs
 # (war_cry/berserk/iron_skin/fortify/rally) are cast opportunistically for uptime.
 const WARRIOR_DMG_PRIORITY := ["devastate", "cleave", "shield_bash", "power_strike"]
+# When the simulated player gives up on a fight and runs. A real player does not trade to the
+# last hit point, and the harness modelling that as a death is what made every loss look fatal.
+const RUN_FIGHT_FLEE_AT: float = 0.30
+var _rf_may_flee: bool = true
 const WARRIOR_BUFFS := ["berserk", "war_cry"]
 
 func _init():
@@ -648,7 +652,7 @@ func run_class_audit():
 	print("\n===== #5 NINE-CLASS ABILITY-SPEND AUDIT (%d fights/cell, AVERAGE gear) =====" % N)
 	print("Casts/turn near 0 = the class is auto-attacking, i.e. NOT actually simulated.")
 	print("%-11s %-10s %s" % ["Class", "Path", "  L10 normal                L30 elite                 L80 elite"])
-	print("            (k = turns needed to KILL, d = turns it can survive; k < d is a win)")
+	print("            (w = win rate, X = DEATH rate — the rest retreated; k = turns to KILL, d = turns it survives)")
 	for c in ALL_CLASSES:
 		var row := "%-11s %-10s" % [c[0], c[1]]
 		for case in [[10, "normal"], [30, "elite"], [80, "elite"]]:
@@ -665,6 +669,7 @@ func run_class_audit():
 			# byte-identical across runs and any movement it shows is a movement it really had.
 			seed(hash("%s|%d|%s" % [String(c[0]), int(case[0]), String(case[1])]))
 			var wins := 0
+			var deaths := 0
 			var turns := 0
 			var casts := 0
 			var dealt_tot := 0
@@ -675,6 +680,8 @@ func run_class_audit():
 				var r = run_fight(int(case[0]), "average", String(case[1]), 1.0, 1.0, 1.0, c[0])
 				if r.win:
 					wins += 1
+				if bool(r.get("died", false)):
+					deaths += 1
 				turns += int(r.turns)
 				casts += int(r.get("casts", 0))
 				dealt_tot += int(r.get("dealt", 0))
@@ -689,8 +696,13 @@ func run_class_audit():
 			var tps: float = float(taken_tot) / float(maxi(1, turns))
 			var ttk: float = (float(mhp_tot) / float(maxi(1, N))) / maxf(1.0, dps)
 			var ttd: float = (float(php_tot) / float(maxi(1, N))) / maxf(1.0, tps)
-			row += "  %3d%% %4.1ft %.2fc/t k%4.1f d%4.1f" % [
-				int(100.0 * wins / N), float(turns) / N, cpt, ttk, ttd]
+			# 2026-09-06 — DEATH rate beside the win rate, and it is the more important number.
+			# Under permadeath a class is viable if it can retreat from what it cannot beat; a
+			# loss it walks away from costs a trip back, a death costs the character. Owner's
+			# definition of balance is "they can make it through the entire game if they play
+			# wisely", and this is the column that speaks to it.
+			row += "  %3d%%w %2d%%X %4.1ft %.2fc/t k%4.1f d%4.1f" % [
+				int(100.0 * wins / N), int(100.0 * deaths / N), float(turns) / N, cpt, ttk, ttd]
 		print(row)
 	print("=====================================================================\n")
 
@@ -5012,6 +5024,7 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 	var max_res: int = maxi(1, _class_max_resource(ch, klass))
 	var min_res: int = _class_resource(ch, klass)
 	var min_hp_pct := 100.0  # #55 monster-challenge audit — lowest HP% reached (danger telemetry)
+	var _rf_fled := false
 	while turns < 400:
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
@@ -5045,6 +5058,20 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 					monster["current_hp"] = min(int(monster.get("max_hp", 1)), int(monster.get("current_hp", 0)) + giveback)
 		if ch.current_hp <= 0 or int(monster.get("current_hp", 0)) <= 0 or combat.get("combat_ended", false):
 			break
+		# 2026-09-06 — RETREAT. Owner: "Ensure the tools are taking into account how the game
+		# actually works... flee chances." Measured before this existed, `outcomes` reported
+		# escape 0% at EVERY level: this loop fought to the death every time, so every loss was
+		# scored as a death. No player does that, and under permadeath the difference is not
+		# cosmetic — it is the whole question of whether a class can finish the game. It also
+		# means "win rate" was never the quantity that mattered; DEATH rate is.
+		#
+		# Uses the real `process_flee`, which carries the game's own penalties, so the escape is
+		# a gamble rather than a free exit — and a failed attempt still costs the turn.
+		if _rf_may_flee and not _rf_fled and float(ch.current_hp) / float(maxi(1, max_hp)) < RUN_FIGHT_FLEE_AT:
+			var _fr: Dictionary = combat_mgr.process_flee(combat)
+			if bool(_fr.get("fled", false)):
+				_rf_fled = true
+				break
 		var php0: int = ch.current_hp
 		_monster_turn_if_owed(combat)
 		_rf_taken += maxi(0, _hp_at_turn_start - ch.current_hp)
@@ -5054,10 +5081,14 @@ func run_fight(level: int, gear: String, et: String, extra_hp_mult: float = 1.0,
 				ch.current_hp = min(max_hp, ch.current_hp + int(taken * (1.0 - monster_dmg_scale)))
 		min_hp_pct = minf(min_hp_pct, 100.0 * float(maxi(0, ch.current_hp)) / float(max_hp))
 	var win: bool = int(monster.get("current_hp", 0)) <= 0 and ch.current_hp > 0
+	# THREE outcomes, not two. A retreat is not a win, but it is emphatically not a death either,
+	# and permadeath makes that the most important distinction in the game.
+	var died: bool = (not win) and (not _rf_fled) and ch.current_hp <= 0
 	var end_res: int = _class_resource(ch, klass)
 	combat_mgr.end_combat(0, win, false)
 	return {
-		"win": win, "turns": turns, "casts": casts,
+		"win": win, "fled": _rf_fled, "died": died,
+		"turns": turns, "casts": casts,
 		"dealt": _rf_dealt, "taken": _rf_taken,
 		"monster_hp": int(monster.get("max_hp", 1)), "player_hp": max_hp,
 		"min_res_pct": 100.0 * float(min_res) / float(max_res),
@@ -5460,7 +5491,13 @@ func run_grow_audit():
 	print("The character hunts at the level it can SURVIVE, stepping down after a maul and back")
 	print("up after a comfortable win - and eats the real down-level XP penalty for doing so.")
 	print("%-9s %7s %7s %8s %6s %8s %7s %9s %6s" % ["class", "lived", "diedAt", "fights", "win%", "worstHP", "jumped", "upgrades", "slots"])
-	for klass in ["Fighter", "Wizard", "Grifter"]:
+	# 2026-09-06 — ALL NINE. This audit is the closest thing the project has to the owner's actual
+	# definition of balance: "they can make it through the entire game if they play wisely." It
+	# grows a character from creation, hunts at the level it can survive, steps down after a maul,
+	# and permadeath is final. That question has to be asked of every class, not of one per
+	# archetype — especially now the three in an archetype no longer play alike.
+	for _grow_row in ALL_CLASSES:
+		var klass := String(_grow_row[0])
 		var lived := 0
 		var died_at: Array = []
 		var f_sum := 0
