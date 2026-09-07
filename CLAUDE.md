@@ -371,6 +371,27 @@ Rules:
 
 **Cross-platform launcher details:** `launcher/launcher.gd` detects OS — `.x86_64` exe name on Linux, picks the `*-linux-*` client zip, `chmod +x`'s the extracted client (ZIP drops the exec bit). Linux client ships as a single binary (PCK embedded); sqlite `.so` sits flat next to the binary.
 
+### Warning players before a restart — the shutdown sentinel
+
+Write the countdown (seconds) to the server's sentinel file over SSH; the running server polls it
+every 5s, announces the countdown in-game, then shuts down. The path resolves through Godot's
+`user://`:
+
+```bash
+ssh -i "$SSH_KEY" ubuntu@5.78.217.135   "echo 60 > ~/.local/share/godot/app_userdata/PhantomBadlands/pending_shutdown.txt"
+```
+
+The file is consumed and deleted when read, so wait for it to disappear (that means the countdown
+started), then wait out the countdown before swapping the binary. Bounded to [5s, 600s].
+
+**Verify the swap took** by hashing the running process, not the file on disk — a failed swap and a
+successful one look identical in `systemctl status`:
+
+```bash
+LOCAL=$(sha256sum builds/server/PhantomBadlandsServer.x86_64 | cut -d' ' -f1)
+ssh -i "$SSH_KEY" ubuntu@5.78.217.135   'PID=$(systemctl show -p MainPID --value phantom-badlands); sudo sha256sum /proc/$PID/exe'
+```
+
 ### Deploying server updates
 
 ```bash
