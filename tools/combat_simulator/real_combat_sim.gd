@@ -28,6 +28,23 @@ const SLOTS := ["weapon", "armor", "helm", "shield", "boots", "ring", "amulet"]
 const WARRIOR_DMG_PRIORITY := ["devastate", "cleave", "shield_bash", "power_strike"]
 # When the simulated player gives up on a fight and runs. A real player does not trade to the
 # last hit point, and the harness modelling that as a death is what made every loss look fatal.
+# Encounters a climb to L20 costs. OBSERVED, not modelled.
+#
+# 2026-09-07, owner: "is that taking average encounter experience per level vs the actual amount
+# it takes to level up the character? The number may be correct but it seems high." It was. The
+# `climbcost` arithmetic divides the XP a level demands by the XP of ONE SAME-LEVEL NORMAL
+# monster, which ignores everything that makes a real encounter pay more: flock chains (measured
+# 1.37 links each), gathering XP (which out-pays kills early), and elite or over-level kills. It
+# came out at 462 while the Fighter — the only class with enough survivors to observe — actually
+# reached L20 in ~250. The model is an UPPER BOUND, off by about 1.85x.
+#
+# This is the observed figure. It is still only an approximation for the projection below, because
+# classes level at different paces: the Sorcerer needs ~498 encounters where the Fighter needs
+# ~250, so at an IDENTICAL death rate it dies far more often. Levelling pace is as much a survival
+# factor as death rate, and nothing here measures it directly. Where this column and the `lived`
+# column disagree, `lived` is the measurement.
+const ENCOUNTERS_TO_L20: float = 250.0
+
 const RUN_FIGHT_FLEE_AT: float = 0.30
 # The REAL rest-ambush chance, read from the server rather than copied.
 #
@@ -5747,7 +5764,18 @@ func run_grow_audit():
 		# So the audit now prints both, and the projection is the number to design against.
 		var _deaths_c: int = RUNS - lived
 		var _dpe: float = float(_deaths_c) / maxf(1.0, float(f_sum))
-		var _to20: float = pow(1.0 - _dpe, 115.0)
+		# 2026-09-07 — this projected over a hardcoded 115 encounters, a figure I invented early
+		# and later MEASURED as wrong: `-- climbcost` puts a climb to L20 at ~462 encounters of
+		# same-level normals. I corrected climbcost and left this stale, so the column overstated
+		# survival badly — it printed 4.16% for a class whose real odds over 462 encounters are
+		# effectively zero.
+		#
+		# It is now a MODEL sitting next to the ground truth in the `lived` column, and where the
+		# two disagree, `lived` is the measurement and this is the extrapolation. They differ
+		# legitimately: a real climb gets flock chains (several fights per encounter), gathering
+		# XP and down-level hunting, so it takes fewer ENCOUNTERS than the same-level-normal
+		# arithmetic assumes — the Fighter reached L20 in ~250.
+		var _to20: float = pow(1.0 - _dpe, ENCOUNTERS_TO_L20)
 		print("%-9s %6d/%d %7.1f %8d %5.0f%% %7.0f%% %6.0f%% %9.1f %6.1f %7.1f%% %8.2f%%" % [
 			klass, lived, RUNS, avg_died,
 			int(float(f_sum) / float(maxi(1, RUNS))),
@@ -5762,6 +5790,7 @@ func run_grow_audit():
 	print("win%     = share of individual FIGHTS won   worstHP = HP left at the low point of a won fight")
 	print("jumped   = share of heal-ups interrupted by an ambush (walked into the next fight hurt)")
 	print("upgrades = pieces actually found and worn over the whole climb (survivors only)")
+	print("lived    = GROUND TRUTH: how many of the %d actually reached L20." % RUNS)
 	print("death/enc= share of ENCOUNTERS that killed the character   ->L20 = that rate compounded")
 	print("           over a climb to L20. THIS is the number that answers 'can this class finish")
 	print("           the game'. See `-- climbcost` for the encounter count and the survival curve;")
@@ -6648,6 +6677,10 @@ func run_climbcost() -> void:
 		if next_i < milestones.size() and lvl >= milestones[next_i]:
 			print("%-9s %14s %14.0f" % ["L%d" % milestones[next_i], "", total])
 			next_i += 1
+	print("
+UPPER BOUND: this counts ONE same-level normal per encounter, so it ignores flock")
+	print("chains (~1.37 monsters an encounter), gathering XP, and elite/over-level kills. Observed,")
+	print("a Fighter reaches L20 in ~250 encounters against the ~462 below — the model is ~1.85x high.")
 	print("
 Survival, at a given death-per-encounter rate:")
 	print("%-14s %10s %10s %10s %10s" % ["death/enc", "-> L20", "-> L100", "-> L1000", "-> L10000"])
