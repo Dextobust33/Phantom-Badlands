@@ -58,6 +58,37 @@ func _apply_companion_border_tier(art: String, border_tier: int) -> String:
 	return MonsterArt.apply_variant_border(art, _BORDER_TIER_COLORS[border_tier])
 
 
+func _floor_art_color(hex: String) -> String:
+	"""Lift a colour until ASCII art painted in it is actually visible on the dark combat panel.
+
+	Deliberately NOT a plain luminance floor. `MonsterArt._brighten_bbcode_colors` floors the
+	art's own tags at luma 0.45, but applied to the VARIANT palette that rule is too blunt:
+	Crimson (#DC143C) sits at luma 0.257 and reads perfectly well against black, and forcing it
+	to 0.45 only washes it out to pink. Luma under-rates saturated hues, which is precisely what
+	this palette is made of.
+
+	So two floors, whichever binds:
+	  - VALUE (max channel) >= 0.45 - catches the genuinely DIM colours (#000000, #0A0A0A,
+	    #2F2F2F, #1A1A2E) which is the real failure. Saturated hues already pass.
+	  - luma >= 0.18 - catches colours bright in a weak channel only, i.e. deep blues like
+	    #000080, which are dim to the EYE however high their value.
+	Scaling is uniform across channels, so hue and saturation survive; a colour that cannot reach
+	the luma floor without clipping (a pure blue) simply goes as far as it can."""
+	if hex == "" or not hex.begins_with("#"):
+		return hex
+	var c := Color(hex)
+	var value: float = maxf(c.r, maxf(c.g, c.b))
+	if value <= 0.001:
+		return "#9A9A9A"              # pure black carries no hue to scale - use a neutral grey
+	var luma: float = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+	var f: float = maxf(1.0, maxf(0.45 / value, 0.18 / maxf(luma, 0.001)))
+	f = minf(f, 1.0 / value)          # never clip a channel - clipping is what shifts the hue
+	if f <= 1.0001:
+		return hex
+	c = Color(minf(1.0, c.r * f), minf(1.0, c.g * f), minf(1.0, c.b * f))
+	return "#" + c.to_html(false)
+
+
 func _recolor_ascii_art_pattern(art: String, color1: String, color2: String, pattern: String) -> String:
 	"""Apply pattern-based coloring to ASCII art for visual variety.
 	Patterns: solid, gradient_down, gradient_up, middle, striped, edges,
@@ -66,6 +97,18 @@ func _recolor_ascii_art_pattern(art: String, color1: String, color2: String, pat
 	NOTE: Art from monster_art.gd has structure: [color=#XXX] on first line,
 	art text on middle lines, [/color] on last line. We must wrap each line
 	in its own color tags for patterns to work."""
+	# 2026-09-08 - FLOOR both variant colours before they touch the art. Owner, on a Giant Rat in
+	# combat: "this rat is only showing the left half of it... it could maybe be a pattern or
+	# variant where the right half didn't display." That is exactly it, and the right half was
+	# never missing - `split_v` paints the left half color1 and the right half color2, so a dark
+	# variant colour renders the right half in near-black ON near-black and it reads as absent.
+	#
+	# `monster_art.gd` already floors luminance at MONSTER_ART_MIN_LUMA for the art's OWN colour
+	# tags (`_brighten_bbcode_colors`), but the variant colours arrive here from the appearance
+	# system and bypassed it entirely. Same rule, applied at the other door.
+	color1 = _floor_art_color(color1)
+	color2 = _floor_art_color(color2)
+
 	# Safety check - if color2 is empty or pattern is solid, use simple recolor
 	if pattern == "solid" or color2 == "" or color2 == null:
 		return _recolor_ascii_art(art, color1)
@@ -25836,7 +25879,7 @@ func _process_combat_start(message: Dictionary):
 			if art_color == "":
 				art_color = message.get("art_color", "")  # Regular encounters use art_color
 			if art_color != "":
-				local_art = _recolor_ascii_art(local_art, art_color)
+				local_art = _recolor_ascii_art(local_art, _floor_art_color(art_color))
 
 			# Build encounter text with traits
 			var encounter_text = _build_encounter_text(combat_state)
@@ -34253,6 +34296,22 @@ func _strip_bbcode(text: String) -> String:
 var _dungeon_rendering: bool = false
 
 
+func _dungeon_menu_open() -> bool:
+	"""Is the player reading a MENU rather than walking the floor?
+
+	2026-09-08 - routing every non-map message to chat was too broad. Reported: "took another
+	screenshot while trying to rest in the dungeon. The options show up down in the chat, that
+	won't work there isn't nearly enough room." Right: a rest/food/item menu is something you
+	read and act on, and the chat strip is neither tall enough nor where attention is.
+
+	So a menu takes the canvas and the map yields to it - which is the honest priority, since you
+	are not walking while choosing food. Only INCIDENTAL notices (a screenshot confirmation, a
+	tile flavour line) go to chat."""
+	return (dungeon_food_select or dungeon_resource_prompt or dungeon_list_mode
+		or awaiting_dungeon_gather_result or awaiting_dungeon_trap_ack
+		or inventory_mode or combat_item_mode or settings_mode or admin_mode)
+
+
 func display_game(text: String):
 	# 2026-09-08 — in a dungeon, `game_output` IS the map. Anything appended to it pushes the
 	# floor up and eventually scrolls it off. Reported: "screenshot output is going in the
@@ -34262,7 +34321,7 @@ func display_game(text: String):
 	# also kept as the dungeon's pending line so the next map draw shows it beneath the floor.
 	# It stays readable in both places and the canvas never accumulates — which matters because
 	# the Player-Visible Output Rule means these messages cannot simply be dropped.
-	if dungeon_mode and not _dungeon_rendering:
+	if dungeon_mode and not _dungeon_rendering and not _dungeon_menu_open():
 		if chat_output:
 			chat_output.append_text(text + "\n")
 		var plain := text.strip_edges()
