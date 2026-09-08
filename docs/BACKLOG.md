@@ -304,6 +304,45 @@ while the Paladin's stat realignment held.
 
 ## Phase 5 — the dungeon arc (the big content direction)
 
+- [ ] **Dungeon sprites, and a hoverable key** (owner 2026-09-08): *"ideally we will use sprites
+      or something for these spaces as well as floor loot and such. We want to use sprites as much
+      as possible for the dungeons. We will want to ensure they are added to the key on the right
+      as well though. It could be hoverable like our other hover features to see what it actually
+      does."*
+      Prompted by the `g` glyphs on a Minotaur's Labyrinth floor. **Note the collision this
+      exposes:** theme tiles are drawn as LETTERS while the key says "Letters = Monsters", so a
+      bull-rune tile and a goblin look the same. Sprites fix that by removing letters from
+      non-monster things entirely.
+      Scope: theme tiles, floor loot (currently ◉ egg / ◆ gear / ♦ consumable / ▪ material /
+      ¢ valor / ! scroll), special rooms, traps, stairs. Sprite candidates were already scouted
+      — unused single-frames under `client/sprites/battlers/tf_svbattle/singleframes/` and
+      `timefantasy_characters/`; the load pattern to copy is `battler_sprite.gd`.
+      The KEY must list every sprite used, and each entry hovers to explain what the thing does —
+      the same `[url=...]` + `meta_hover_started` → `_show_formula_popup` idiom the combat status
+      chips and card damage numbers already use.
+      **Do AFTER the room spread**, and after the zoom/font is settled: sprite size depends on how
+      many tiles are on screen, and that is not final until a floor actually fills the view.
+      **Unused art already in the repo** (verified 2026-09-08, not recalled): `tf_svbattle/`
+      **3,042 PNGs** and `timefantasy_characters/` **1,829**, neither referenced anywhere in the
+      client — the code only loads `sprites/ascii/`, `sprites/battlers/`, `battlers/overworld/`,
+      `battlers/tf/` and `sprites/classes/`. So ~4,900 sprites are available without sourcing
+      anything. ⚡ They also ship inside the .pck; check whether the unadopted packs are inflating
+      the download and `.gdignore` what we do not use (dev screenshots once cost ~23MB an update
+      the same way).
+- [ ] **Dungeon monsters: hover for art, level and type** (owner 2026-09-08): *"find a few sprites
+      we can use for them or just make it where players can hover their mouse over them in the
+      dungeon and see their ascii art (and optionally level and variant or type... Level 8 Venomous
+      Orc)... this would require that the type of encounter get chosen beforehand I assume."*
+      **Half of that assumption is already satisfied — checked, not guessed.** A dungeon monster
+      entity is created with BOTH `monster_type` and `level` at spawn
+      (`_spawn_dungeon_floor_monsters`), and `monster_type` is ALREADY sent to the client as
+      `type` in the `dungeon_state` monster list. So "Level 8 Orc" + its ASCII art (client already
+      has `monster_art.gd`) needs only ONE extra field on the wire: `level`.
+      What is NOT pre-decided is the VARIANT (Venomous / elite / empowered) — that is rolled when
+      combat starts. Pre-rolling it at spawn is a real design change, and arguably a good one
+      under permadeath: seeing a Venomous Orc coming down the corridor is information you can act
+      on. Decide that separately; the cheap 90% does not depend on it.
+
 - [ ] **Dungeon revamp — the design IS captured**, in `docs/design/dungeon_revamp.md` (139 lines)
       plus `docs/design/dungeon_themes.md`. This line used to say "details not yet captured",
       which was stale and undersold how much has already shipped: instancing + no re-farm,
