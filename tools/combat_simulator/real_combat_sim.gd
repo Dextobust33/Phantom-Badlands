@@ -113,6 +113,7 @@ func _audit_registry() -> Dictionary:
 		"preflight": ["RUN THIS BEFORE THE CALIBRATION CHAIN - cheap checks that it is worth running", run_preflight],
 		"cardnames": ["every class: what each of its 5 cards is CALLED", run_cardnames],
 		"statuschips": ["what the combat status strip actually shows both sides", run_statuschips],
+		"upgradepreview": ["do card UPGRADES move the number the card prints?", run_upgradepreview],
 		"magecost": ["damage per MANA for the mage kit - does Magic Bolt make the others pointless?", run_magecost],
 		"statdesc": ["what each class is TOLD its stats do", run_statdesc],
 		"riskcurve": ["DEATH RATE by stage and gear - does risk FALL as you progress?", run_risk_curve],
@@ -7039,3 +7040,66 @@ func run_statuschips() -> void:
 			int(ms.get("sabotage_value", 0)), int(ms.get("distract_value", 0)),
 			int(ms.get("analyze_value", 0)), int(ms.get("stun_turns", 0))])
 		combat_mgr.end_combat(0, false, false)
+
+
+func run_upgradepreview() -> void:
+	"""Does the number a card PRINTS match the damage the card DEALS, once upgrades are on it?
+
+	Before 2026-09-07 the client estimate counted `power` picks and nothing else, while
+	combat_manager applied nine more multipliers from hard-coded literals. So Slow Burn took 25%
+	off every hit and the card face never moved, and Overdraw / Reckless / Brittle / Greedy each
+	added 25-35% that appeared nowhere. This drives the REAL `_apply_card_upgrade_damage` a few
+	thousand times per upgrade and compares the mean against `CardUpgrades.estimate_damage_mult`,
+	which is what the card prints. They read one table now, so a disagreement here means the
+	table and the roller have come apart again."""
+	var CU = load("res://shared/card_upgrades.gd")
+	var ch = make_char(30, "average", "Fighter", "Human")
+	ch.initialize_deck_collection_if_needed()
+	var monster = make_monster(30, "normal", 1.0)
+	combat_mgr.start_combat(0, ch, monster)
+	var combat = combat_mgr.active_combats[0]
+	var N := 4000
+	var BASE := 1000.0
+	print("upgrade        printed   rolled   delta   verdict")
+	print("--------------------------------------------------")
+	var worst := 0.0
+	for id in CU.DAMAGE_MULTS.keys():
+		var e: Dictionary = CU.DAMAGE_MULTS[id]
+		ch.ability_milestone_picks["devastate"] = [String(id)]
+		var total := 0.0
+		for i in range(N):
+			total += combat_mgr._apply_card_upgrade_damage(ch, "devastate", BASE, combat)
+		var rolled: float = total / float(N) / BASE
+		var printed: float = CU.estimate_damage_mult([String(id)])
+		var verdict := "ok"
+		if not bool(e.get("estimate", false)):
+			# Deliberately excluded from the printed number - the card shows it as a
+			# "situational" note instead. `devastate` is a full-health foe on turn 1, so
+			# executioner does not fire and opener/sacrificial do.
+			verdict = "situational (shown separately)"
+			printed = 1.0
+		else:
+			var delta: float = absf(rolled - printed)
+			worst = maxf(worst, delta)
+			if delta > 0.04:
+				verdict = "MISMATCH"
+		print("%-13s  %6.3f   %6.3f   %+6.3f  %s" % [id, printed, rolled, rolled - printed, verdict])
+	ch.ability_milestone_picks.erase("devastate")
+	print("
+worst estimable gap: %.3f  (%s)" % [worst, "PASS" if worst <= 0.04 else "FAIL"])
+
+	# A stack of upgrades, which is what a real invested card looks like.
+	print("
+--- a card carrying several, the case the old estimate got worst ---")
+	for combo in [["power"], ["slow_burn"], ["power", "power", "slow_burn"], ["overdraw", "reckless"], ["greedy", "brittle", "keen", "keen"]]:
+		ch.ability_milestone_picks["devastate"] = combo.duplicate()
+		var tot := 0.0
+		for i in range(N):
+			tot += combat_mgr._apply_card_upgrade_damage(ch, "devastate", BASE, combat)
+		var rolled2: float = tot / float(N) / BASE
+		# `power` rides the tier multiplier, not this function, so it is excluded from the
+		# comparison here - the client applies it separately and the audit above covers it.
+		var est: float = CU.estimate_damage_mult(combo)
+		print("%-34s printed %5.3f   rolled %5.3f   %s" % [
+			str(combo), est, rolled2, "ok" if absf(est - rolled2) <= 0.05 else "MISMATCH"])
+	ch.ability_milestone_picks.erase("devastate")

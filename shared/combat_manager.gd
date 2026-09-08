@@ -7270,57 +7270,60 @@ func _apply_card_upgrade_damage(character: Character, ability_name: String, dmg:
 	if "executioner" in picks and monster is Dictionary:
 		var mx: float = maxf(1.0, float(monster.get("max_hp", 1)))
 		if float(monster.get("current_hp", mx)) / mx < 0.30:
-			dmg *= 1.40
+			dmg *= CardUpgrades.damage_mult_for("executioner")
 	if "opener" in picks and combat != null and combat is Dictionary:
 		# First use of THIS card in THIS fight. Tracked on the combat so a flock chain, which
 		# starts a fresh combat, correctly offers the bonus again.
 		var used_key := "opener_used_%s" % ability_name
 		if not bool(combat.get(used_key, false)):
 			combat[used_key] = true
-			dmg *= 1.50
+			dmg *= CardUpgrades.damage_mult_for("opener")
 	# `keen` (crit chance) and `leeching` are resolved at the damage-application site, not here:
 	# this function returns a magnitude and knows nothing about whether the hit crit or landed.
 
 	# --- trade-offs -------------------------------------------------------------------------
-	if "overdraw" in picks:
-		dmg *= 1.30          # cost side handled in apply_variable_cost
-	if "reckless" in picks:
-		dmg *= 1.35          # recoil applied at the damage-application site
-	if "brittle" in picks:
-		dmg *= 1.30          # guard-down flag set at the application site
-	if "greedy" in picks:
-		dmg *= 1.25          # slower redraw handled by the deck
+	# 2026-09-07 — the magnitudes now come from CardUpgrades.DAMAGE_MULTS rather than living as
+	# literals here, because the client card estimate reads the same table. When these were
+	# hard-coded the estimate could not see them, so a card carrying Slow Burn printed its old
+	# number and hit 25% softer.
+	for flat_id in ["overdraw", "reckless", "brittle", "greedy"]:
+		# overdraw: cost side in apply_variable_cost. reckless: recoil at the application site.
+		# brittle: guard-down flag there too. greedy: slower redraw handled by the deck.
+		if flat_id in picks:
+			dmg *= CardUpgrades.damage_mult_for(flat_id)
 	if "wild_swing" in picks:
 		# A real chance to whiff outright — the gamble IS the upgrade.
-		if randf() < 0.20:
+		if randf() < CardUpgrades.damage_miss_chance("wild_swing"):
 			return 0.0
-		dmg *= 1.45
+		dmg *= CardUpgrades.damage_mult_for("wild_swing")
 	if "all_in" in picks:
 		# Rewards commitment: strongest on an empty bar, weak on a full one. 0.75x at full,
 		# 1.60x at empty, so it is a genuine decision about WHEN to play the card.
 		var pool: int = maxi(1, _primary_resource_max(character))
 		var frac: float = clampf(float(_primary_resource_value(character)) / float(pool), 0.0, 1.0)
-		dmg *= lerpf(1.60, 0.75, frac)
+		dmg *= lerpf(CardUpgrades.damage_mult_for("all_in"), 0.75, frac)
 	if "slow_burn" in picks:
-		dmg *= 0.75          # the burn itself is applied at the application site
+		# The burn itself is applied at the damage-application site.
+		dmg *= CardUpgrades.damage_mult_for("slow_burn")
 	if "hair_trigger" in picks:
 		dmg *= randf_range(0.50, 1.50)
 	if "gamblers_cut" in picks:
-		if randf() < 0.25:
+		if randf() < CardUpgrades.damage_miss_chance("gamblers_cut"):
 			return 0.0       # a quarter of the time it simply does not happen
 	# Keen Edge. Abilities had no critical hit of their own — only basic attacks and the mage's
 	# class passive did — so this adds one rather than pretending to modify something that was
 	# not there. Stacking, hence the count rather than a presence check.
 	var keen_stacks: int = character.card_upgrade_count(ability_name, "keen")
 	if keen_stacks > 0 and combat != null and combat is Dictionary:
-		if randf() < 0.08 * float(keen_stacks):
-			dmg *= 1.50
+		if randf() < float(CardUpgrades.DAMAGE_MULTS["keen"]["chance"]) * float(keen_stacks):
+			dmg *= CardUpgrades.damage_mult_for("keen")
 			combat["_keen_crit"] = true
 	if "sacrificial" in picks and combat != null and combat is Dictionary:
 		var spent_key := "sacrificed_%s" % ability_name
 		if not bool(combat.get(spent_key, false)):
 			combat[spent_key] = true
-			dmg *= 2.00      # once per fight, then the card is spent
+			# once per fight, then the card is spent
+			dmg *= CardUpgrades.damage_mult_for("sacrificial")
 		else:
 			return 0.0
 	return dmg

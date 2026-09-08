@@ -339,6 +339,28 @@ godot --headless --path . --export-release ...    # now current
 
 **Verify a build is current by RUNNING it** — grepping the pck is USELESS (scripts are compressed binary tokens, `script_export_mode=2`). Temp `print(has_method("some_new_func"))` in `_ready`, run the exe, check stdout — that's how v0.9.661 was verified.
 
+### ⚑ MANDATORY release gate — run it, every time, before uploading anything
+
+```bash
+bash tools/verify_release_build.sh builds/windows/PhantomBadlandsClient.exe
+```
+
+It runs the packaged client with `--buildverify` and **exits non-zero** if the build is stale or
+has lost a performance guard. It asserts:
+
+| check | why |
+|---|---|
+| `vsync_mode=1` | the editor STRIPS `window/vsync/vsync_mode` from project.godot on every `--editor --quit`, because 1 is the default. Now set from code in `client.gd::_ready` so it cannot be stripped. |
+| `max_fps=60` | the 4K-laptop thermal-throttling fix. Also set from code now — it used to live only in project.godot with nothing asserting it. |
+| `version` matches VERSION.txt | catches a build exported before the bump |
+| three feature probes | catches the **stale script cache** — a stale export ships OLD code with the NEW version stamped beside it, so the version alone proves nothing |
+
+The `--buildverify` probe existed from 2026-09-05 and **nothing ever ran it**. Owner, 2026-09-07:
+*"we need to find a solution so this is Always done with every new release without me having to
+tell you or correct it each time."* A check nobody runs is not a check — this script is what runs
+it. When adding a new perf setting or a risky new surface, add a line to `--buildverify` in
+`client.gd` and a `check` to the script; that is how the gate stays worth having.
+
 ### Creating a release
 
 Every release ships **FOUR assets under ONE `vX.Y.Z` tag**: Windows client + Windows launcher + Linux client + Linux launcher. NEVER ship a Windows-only release — the website serves both platforms, and a missing launcher ZIP breaks new-player downloads.
@@ -349,7 +371,8 @@ Every release ships **FOUR assets under ONE `vX.Y.Z` tag**: Windows client + Win
 4. **Build Linux pair** — `bash build_linux_release.sh` produces both Linux ZIPs (reads VERSION.txt automatically).
 5. **Send 1-minute in-game warning** via the production server's pending-shutdown countdown — same UI as "detecting remains". Players need time to finish combat / trades / dungeons.
 6. **`scp` the new server binary as `.new` first** so it's staged before the countdown elapses; swap into place during the window. If you miss the window, swap + `systemctl restart` again (players already disconnected).
-7. **Create the GitHub release** with all four ZIPs attached in one `gh release create` call. Asset naming: Linux zips carry `linux`, Windows zips don't — that's how the launcher disambiguates platforms.
+7. **Verify BOTH platform builds before uploading** — `bash tools/verify_release_build.sh <exe>`. Non-zero exit means do not upload; see the release gate above.
+8. **Create the GitHub release** with all four ZIPs attached in one `gh release create` call. Asset naming: Linux zips carry `linux`, Windows zips don't — that's how the launcher disambiguates platforms.
 
 ### Split / delta updates (exe-pck split, v0.9.659+)
 

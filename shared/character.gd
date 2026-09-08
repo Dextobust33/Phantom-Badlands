@@ -804,6 +804,43 @@ static func class_display_name(class_type: String) -> String:
 	"""What to SHOW the player for this class. Ids are internal; names are not."""
 	return String(CLASS_DISPLAY_NAME.get(class_type, class_type))
 
+static func race_passive_for(race_name: String) -> Dictionary:
+	"""The RACIAL passive table, addressable without a Character instance.
+
+	2026-09-07 — added for exactly the reason `class_passive_for` below was: the client held TWO
+	hand-copies of this and both had drifted off the getters in this file. Owner, looking at
+	character creation: *"some of the other info is dated."* It was:
+
+	  * Dwarf's Last Stand was advertised as 25% on the create screen and 34% on the inspect
+	    screen. `try_last_stand` rolls 34%, so the screen a player reads BEFORE committing to a
+	    race understated its one survival trait by nine points.
+	  * Halfling's +15% Valor was advertised as coming from MONSTER KILLS. `get_market_bonus`
+	    pays it on MARKET LISTINGS. A player could pick Halfling to farm and never see it.
+
+	Both copies now read this table, so there is one place to be right. The percentages here are
+	stated as the getters compute them — when you change a getter, change the line beside it."""
+	match race_name:
+		"Human":
+			return {"name": "Ambition", "description": "+10% XP from all sources.", "color": "#E6D8B0"}
+		"Elf":
+			return {"name": "Forest Heritage", "description": "+25% max Mana, +20% magic resist, takes 50% poison damage.", "color": "#88FFAA"}
+		"Dwarf":
+			# get_last_stand chance — see try_last_stand()
+			return {"name": "Last Stand", "description": "34% chance to survive lethal damage with 1 HP (once per combat).", "color": "#D4A05A"}
+		"Ogre":
+			return {"name": "Hearty", "description": "Healing items and effects restore 2x HP.", "color": "#9CC25A"}
+		"Halfling":
+			# get_market_bonus() pays this on LISTINGS, not kills.
+			return {"name": "Light-Footed", "description": "+10% dodge chance, +15% Valor from market listings.", "color": "#F0C474"}
+		"Orc":
+			return {"name": "Berserker", "description": "+20% damage when below 50% HP.", "color": "#D24A4A"}
+		"Gnome":
+			return {"name": "Arcane Tinkerer", "description": "-15% ability resource costs (mana / stamina / energy).", "color": "#9BA8FF"}
+		"Undead":
+			return {"name": "Cursed Resilience", "description": "Immune to death-curse effects; poison heals instead of damaging.", "color": "#A8A8A8"}
+	return {"name": "None", "description": "No racial passive", "color": "#808080"}
+
+
 static func class_passive_for(class_type: String) -> Dictionary:
 	"""The passive table, addressable WITHOUT a Character instance.
 

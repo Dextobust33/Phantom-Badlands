@@ -274,3 +274,101 @@ static func draw_choices(kind: String, milestone: int, taken: Array, count: int 
 		if out.size() >= count:
 			break
 	return out
+
+
+# === DAMAGE-SIDE MULTIPLIERS — ONE TABLE, TWO READERS (2026-09-07) ===
+#
+# `combat_manager._apply_card_upgrade_damage` rolls these for real; the client card estimate
+# reads the same table for its EXPECTED value. Before this table existed the two disagreed
+# badly: the estimate counted only `power`, so a card carrying Slow Burn showed its old number
+# while hitting 25% softer, and Overdraw / Reckless / Brittle / Greedy each added 25-35% that
+# never appeared anywhere the player could see it. Five upgrades that silently moved the
+# number the card was printing.
+#
+#   mult      the multiplier applied when it fires
+#   chance    probability of firing (absent = always)
+#   miss      probability the card does NOTHING at all instead
+#   estimate  true if the card face can honestly fold it into one number. Conditional
+#             upgrades are false: their trigger is a fact about the FIGHT, not the card, so
+#             they are listed as a separate "when" note rather than averaged into a lie.
+const DAMAGE_MULTS := {
+	"overdraw":     {"mult": 1.30, "estimate": true},
+	"reckless":     {"mult": 1.35, "estimate": true},
+	"brittle":      {"mult": 1.30, "estimate": true},
+	"greedy":       {"mult": 1.25, "estimate": true},
+	"slow_burn":    {"mult": 0.75, "estimate": true},
+	"wild_swing":   {"mult": 1.45, "miss": 0.20, "estimate": true},
+	"gamblers_cut": {"mult": 1.00, "miss": 0.25, "estimate": true},
+	"hair_trigger": {"mult": 1.00, "estimate": true},   # uniform 0.50-1.50, mean 1.0
+	"keen":         {"mult": 1.50, "chance": 0.08, "stacks": true, "estimate": true},
+	"executioner":  {"mult": 1.40, "estimate": false, "when": "foe under 30%"},
+	"opener":       {"mult": 1.50, "estimate": false, "when": "first use each fight"},
+	"sacrificial":  {"mult": 2.00, "estimate": false, "when": "once per fight"},
+	"all_in":       {"mult": 1.60, "estimate": false, "when": "on a near-empty bar"},
+}
+
+
+static func damage_mult_for(id: String) -> float:
+	"""The multiplier `id` applies when it fires. Single lookup so combat_manager never
+	hard-codes a constant the estimate cannot see."""
+	var e = DAMAGE_MULTS.get(id, null)
+	if e == null:
+		return 1.0
+	return float(e.get("mult", 1.0))
+
+
+static func damage_miss_chance(id: String) -> float:
+	"""Probability `id` makes the card do nothing at all (Wild Swing, Gambler's Cut)."""
+	var e = DAMAGE_MULTS.get(id, null)
+	if e == null:
+		return 0.0
+	return float(e.get("miss", 0.0))
+
+
+static func estimate_damage_mult(picks: Array) -> float:
+	"""Expected damage multiplier from every upgrade a card carries whose effect does not
+	depend on the state of the fight. Used by the client's card estimate so the printed
+	number matches what the card actually hits for."""
+	if picks == null or picks.is_empty():
+		return 1.0
+	var counts := {}
+	for p in picks:
+		var k := String(p)
+		counts[k] = int(counts.get(k, 0)) + 1
+	var total := 1.0
+	for id in counts.keys():
+		var e = DAMAGE_MULTS.get(id, null)
+		if e == null or not bool(e.get("estimate", false)):
+			continue
+		var n: int = int(counts[id])
+		var mult := float(e.get("mult", 1.0))
+		var miss := float(e.get("miss", 0.0))
+		var chance := float(e.get("chance", 1.0))
+		var per := 0.0
+		if chance < 1.0:
+			# Stacking proc (Keen Edge): n stacks share one roll at n x chance.
+			per = 1.0 + minf(1.0, chance * float(n)) * (mult - 1.0)
+			total *= per
+			continue
+		per = (1.0 - miss) * mult
+		# Non-stacking upgrades are held once even if the array somehow repeats them.
+		total *= per if not bool(e.get("stacks", false)) else pow(per, float(n))
+	return total
+
+
+static func conditional_damage_notes(picks: Array) -> Array:
+	"""The upgrades deliberately LEFT OUT of `estimate_damage_mult`, as short
+	"x1.4 when foe under 30%" strings, so the card can show them honestly instead of
+	burying them in an average that is wrong in both directions."""
+	var out: Array = []
+	var seen := {}
+	for p in picks:
+		var id := String(p)
+		if seen.has(id):
+			continue
+		seen[id] = true
+		var e = DAMAGE_MULTS.get(id, null)
+		if e == null or bool(e.get("estimate", false)):
+			continue
+		out.append("x%.2g %s" % [float(e.get("mult", 1.0)), String(e.get("when", ""))])
+	return out

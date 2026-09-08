@@ -2101,16 +2101,67 @@ const COMPANION_MONSTER_ABILITIES = {
 }
 
 # ===== RACE DESCRIPTIONS =====
+# FLAVOUR ONLY - the mechanical half is rendered live by `_race_passive_line()` from
+# `Character.race_passive_for`. These strings used to carry the numbers too, and they had gone
+# stale: Dwarf was advertised at 25% Last Stand against a real 34%, and the Halfling's Valor
+# bonus was attributed to monster kills when it is paid on market listings. Same lesson as the
+# class descriptions above - a mirror cannot be kept honest by discipline.
 const RACE_DESCRIPTIONS = {
-	"Human": "Adaptable and ambitious. Gains +10% bonus experience from all sources.",
-	"Elf": "Ancient and resilient. 50% reduced poison damage, +20% magic resistance, +25% mana.",
-	"Dwarf": "Sturdy and determined. 25% chance to survive lethal damage with 1 HP (once per combat).",
-	"Ogre": "Massive and regenerative. All healing effects are doubled.",
-	"Halfling": "Lucky and nimble. +10% dodge chance, +15% Valor from monster kills.",
-	"Orc": "Fierce and relentless. +20% damage when below 50% HP.",
-	"Gnome": "Clever and efficient. All ability costs reduced by 15%.",
-	"Undead": "Deathless and cursed. Immune to death curses, poison heals instead of damages."
+	"Human": "Adaptable and ambitious.",
+	"Elf": "Ancient and resilient.",
+	"Dwarf": "Sturdy and determined.",
+	"Ogre": "Massive and regenerative.",
+	"Halfling": "Lucky and nimble.",
+	"Orc": "Fierce and relentless.",
+	"Gnome": "Clever and efficient.",
+	"Undead": "Deathless and cursed."
 }
+
+func _race_passive_line(race_name: String) -> String:
+	"""The race's CURRENT passive, read from the game rather than mirrored here."""
+	var p: Dictionary = CharacterScript.race_passive_for(race_name)
+	if p.is_empty():
+		return ""
+	return "
+[color=%s]Passive - %s:[/color] %s" % [
+		String(p.get("color", "#FFD700")), String(p.get("name", "")), String(p.get("description", ""))]
+
+func _class_engine_and_deck_line(cls: String) -> String:
+	"""The two things character creation never said, both read live from the game.
+
+	2026-09-07, owner: *"Seems like it's not showing the correct classes or descriptions."* The
+	screen predates the work that gave every class its own ENGINE and its own forked cards, so it
+	still pitched nine classes on flavour and a passive alone. A player choosing between Barbarian
+	and Paladin got no hint that one banks Rage and the other banks Conviction, and no sight of
+	the five cards they would actually be holding — which is most of what makes them play
+	differently. Sourced from `class_engine_label` and `CURATED_STARTER_DECKS_BY_CLASS`, so it
+	cannot drift the way the passive text did."""
+	var out := ""
+	var engine := String(CombatManagerScript.class_engine_label(cls))
+	if engine != "":
+		out += "\n[color=#C8A24A]Builds:[/color] %s" % engine
+	var deck = CharacterScript.CURATED_STARTER_DECKS_BY_CLASS.get(cls, null)
+	if deck is Array and not (deck as Array).is_empty():
+		var names: Array = []
+		for ab in deck:
+			names.append(_ability_display_name_for_class(String(ab), cls))
+		out += "\n[color=#8C7656]Starting cards:[/color] %s" % ", ".join(names)
+	return out
+
+
+func _ability_display_name_for_class(ability_name: String, cls: String) -> String:
+	"""What a card is CALLED in this class's hands, with no Character to ask. The same card is
+	Devastate / Rampage / Judgement depending on who holds it, and character creation has to
+	name them before the character exists."""
+	var per_class = CombatManagerScript.ABILITY_DISPLAY_BY_CLASS.get(ability_name, null)
+	if per_class is Dictionary:
+		var mine := String((per_class as Dictionary).get(cls, ""))
+		if mine != "":
+			return mine
+	if CombatManagerScript.ABILITY_DISPLAY_NAMES.has(ability_name):
+		return String(CombatManagerScript.ABILITY_DISPLAY_NAMES[ability_name])
+	return ability_name.replace("_", " ").capitalize()
+
 
 func _class_passive_line(cls: String) -> String:
 	"""The class's CURRENT passive, read from the game rather than mirrored here."""
@@ -2156,7 +2207,7 @@ const CLASS_CARD_SUMMARY = {
 	"Paladin": "Holy knight. Endures, builds Conviction, then passes judgement.",
 	"Wizard": "Pure spellcaster. Every spell ramps the next.",
 	"Sorcerer": "High-risk mage. Banks volatile power, then looses it all at once.",
-	"Sage": "Patient mage. Reads the fight, then ends it outright.",
+	"Sage": "Patient mage. Banks Insight while untouched, then unmakes the foe outright.",
 	"Grifter": "Con artist. Stalls to set up a kill, slips away when it turns.",
 	"Ranger": "Reliable. Never fumbles a cast, and never crits by chance.",
 	"Ninja": "Crit build. Each critical hit sharpens the next.",
@@ -2229,6 +2280,14 @@ func _ready():
 	# guard that cannot survive the build is not a guard. Set at runtime, it cannot be stripped,
 	# and --buildverify can prove it is live in a packaged client.
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+	# 2026-09-07 — and the frame cap, for the same reason and one more. `run/max_fps=60` is not
+	# the engine default so the editor does not strip it, but it still lived in exactly ONE place
+	# (project.godot) with nothing asserting it at runtime, which is the shape the vsync setting
+	# was in right before it started disappearing from every build. Owner: *"we need to find a
+	# solution so this is Always done with every new release without me having to tell you or
+	# correct it each time."* Both guards are now set from code and both are reported by
+	# --buildverify, which `tools/verify_release_build.sh` runs as a mandatory release gate.
+	Engine.max_fps = 60
 	# Set window title with version
 	DisplayServer.window_set_title("Phantom Badlands v" + get_version())
 
@@ -6948,7 +7007,12 @@ func _update_race_description():
 	if not race_option or not race_description:
 		return
 	var selected_race = race_option.get_item_text(race_option.selected)
-	race_description.text = "Racial Passive: " + RACE_DESCRIPTIONS.get(selected_race, "")
+	# RaceDescription is a plain Label, so this is the un-marked-up twin of `_race_passive_line`.
+	# Both read `Character.race_passive_for` — the point is that neither states a number of its own.
+	var rp: Dictionary = CharacterScript.race_passive_for(selected_race)
+	race_description.text = "%s  Racial Passive — %s: %s" % [
+		RACE_DESCRIPTIONS.get(selected_race, ""),
+		String(rp.get("name", "")), String(rp.get("description", ""))]
 
 func _on_class_selected(_index: int):
 	_update_class_description()
@@ -7093,7 +7157,11 @@ func _populate_class_cards(archetype_key: String) -> void:
 		b.clip_text = false
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		var star = "   ★ beginner-friendly" if cls in BEGINNER_CLASSES else ""
-		b.text = "%s%s\n%s" % [cls, star, CLASS_CARD_SUMMARY.get(cls, "")]
+		# 2026-09-07 — `class_display_name`, not the raw id. The Sage is SHOWN as the Oracle
+		# everywhere else in the game (the stored id stays "Sage" because renaming it would touch
+		# 105 sites and break every save carrying it), but this button printed the id — so the
+		# pick list said "Sage" while the detail panel directly beneath it said "Oracle".
+		b.text = "%s%s\n%s" % [CharacterScript.class_display_name(cls), star, CLASS_CARD_SUMMARY.get(cls, "")]
 		b.add_theme_font_size_override("font_size", 12)
 		b.set_meta("cls", cls)
 		b.pressed.connect(_on_class_card_pressed.bind(cls))
@@ -7123,7 +7191,9 @@ func _on_class_card_pressed(cls: String) -> void:
 		_apply_card_style(b, String(b.get_meta("cls", "")) == cls)
 	if _class_detail_label:
 		_class_detail_label.clear()
-		_class_detail_label.append_text("[b][color=#FFD700]%s — Class Passive[/color][/b]\n%s%s" % [CharacterScript.class_display_name(cls), CLASS_DESCRIPTIONS.get(cls, ""), _class_passive_line(cls)])
+		_class_detail_label.append_text("[b][color=#FFD700]%s — Class Passive[/color][/b]\n%s%s%s" % [
+			CharacterScript.class_display_name(cls), CLASS_DESCRIPTIONS.get(cls, ""),
+			_class_passive_line(cls), _class_engine_and_deck_line(cls)])
 
 func _reset_class_picker_default() -> void:
 	_ensure_class_picker_built()
@@ -19684,8 +19754,17 @@ func _card_upgrades_line(ability_name: String) -> String:
 			parts.append("[url=%s]%s[/url]" % [detail, label])
 		else:
 			parts.append(label)
-	return "
+	var line := "
 [color=#C9A040]Upgrades:[/color] [color=#FFD93D]%s[/color]" % "  ".join(parts)
+	# 2026-09-07 — the SITUATIONAL multipliers get their own line. They are deliberately kept
+	# out of the card's damage number (an Executioner card is not 40% stronger, it is 40%
+	# stronger against a nearly-dead foe), but leaving them off the card entirely was how they
+	# came to read as doing nothing. Stating the trigger is the honest middle.
+	var notes: Array = CU.conditional_damage_notes(picks as Array)
+	if not notes.is_empty():
+		line += "
+[color=#8C7656]Situational:[/color] [color=#C9A040]%s[/color]" % "  ".join(notes)
+	return line
 
 func _ability_desc_bbcode(ability_name: String) -> String:
 	# 2026-09-04 — the upgrades line is appended HERE, inside the builder, not by each caller.
@@ -19840,7 +19919,18 @@ func _card_damage_multiplier(ability_name: String) -> float:
 	if picks is Array:
 		power_picks = (picks as Array).count("power")
 	var tier_mult := 1.0 + float(tier - 1) * 0.02 + float(power_picks) * 0.12
-	return rm * tier_mult
+	# 2026-09-07 — fold in every OTHER damage upgrade the card carries. This used to count
+	# `power` alone, which meant five upgrades silently moved the real hit while the card kept
+	# printing its old number: Overdraw / Reckless / Brittle / Greedy add 25-35%, and Slow Burn
+	# TAKES 25% away. A player picking Slow Burn saw no change and had no way to learn it had
+	# cost them anything. The magnitudes come from the same table combat_manager rolls against,
+	# so the estimate cannot drift from the hit again. Conditional upgrades are excluded on
+	# purpose and shown as their own line — see `_card_conditional_upgrade_line`.
+	var CU = load("res://shared/card_upgrades.gd")
+	var upg_mult := 1.0
+	if CU != null and picks is Array:
+		upg_mult = CU.estimate_damage_mult(picks as Array)
+	return rm * tier_mult * upg_mult
 
 func _ability_card_estimate(ability_name: String) -> Dictionary:
 	"""v0.9.694 — the SINGLE source of truth for a card's damage/heal estimate:
@@ -20410,9 +20500,68 @@ func _on_milestone_tile_hover(slot: int) -> void:
 		head_col, String(up.get("name", "?")), String(up.get("desc", ""))]
 	if now_line != "":
 		txt += "\n[color=#8A8A96]%s[/color]" % now_line
+		# 2026-09-07 — and what the card becomes if you take it. "+12% effect" is a fact about
+		# the upgrade; "412 → 462 damage" is a fact about YOUR card, which is what the choice is
+		# actually between. Only damage cards get this, because the damage estimate is the one
+		# number the card prints.
+		txt += _upgrade_after_line(ab, String(up.get("id", "")), int(eff.get("value", 0)), String(eff.get("kind", "")))
 	if tradeoff:
 		txt += "\n[color=#E0902A]This one asks something back.[/color]"
 	_ms_preview_panel.text = txt
+
+func _upgrade_after_line(ability_name: String, upgrade_id: String, current_value: int, kind: String) -> String:
+	"""The second half of the rank-up hover: your card's number WITH this upgrade on it.
+
+	The backlog item was "hovering an upgrade shows YOUR card with it applied". The panel already
+	said what the card does now; the pick itself was still described in the abstract, so two
+	options reading "+12% effect" and "+30% damage, costs more" gave no sense of which was the
+	bigger number on THIS card at THIS rank. Ratios come from the same table the server rolls
+	against, so the preview cannot promise something the hit does not deliver."""
+	if current_value <= 0 or upgrade_id == "":
+		return ""
+	if kind != "damage":
+		return ""    # shield/heal cards do not run through the damage multiplier
+	var picks: Array = []
+	var mp = character_data.get("ability_milestone_picks", {})
+	if mp is Dictionary and mp.get(ability_name, null) is Array:
+		picks = (mp[ability_name] as Array).duplicate()
+	var ratio := 1.0
+	var conditional := false
+	var when_txt := ""
+	if upgrade_id == "power":
+		# Power lands on the TIER multiplier, where each pick adds +0.12 of the BASE rather than
+		# compounding — so the marginal gain shrinks as a card accumulates them, and the preview
+		# has to show that honestly instead of printing +12% forever.
+		var uses := int(character_data.get("ability_uses", {}).get(ability_name, 0))
+		var tier := Character.tier_for_uses(uses)
+		var before := 1.0 + float(tier - 1) * 0.02 + float(picks.count("power")) * 0.12
+		if before <= 0.0:
+			return ""
+		ratio = (before + 0.12) / before
+	else:
+		var CU = load("res://shared/card_upgrades.gd")
+		if CU == null or not CU.DAMAGE_MULTS.has(upgrade_id):
+			return ""
+		var e: Dictionary = CU.DAMAGE_MULTS[upgrade_id]
+		if not bool(e.get("estimate", false)):
+			conditional = true
+			ratio = float(e.get("mult", 1.0))
+			when_txt = String(e.get("when", ""))
+		else:
+			var before_m: float = CU.estimate_damage_mult(picks)
+			if before_m <= 0.0:
+				return ""
+			ratio = CU.estimate_damage_mult(picks + [upgrade_id]) / before_m
+	if absf(ratio - 1.0) < 0.005:
+		return ""
+	var after := int(round(float(current_value) * ratio))
+	var pct := int(round((ratio - 1.0) * 100.0))
+	var col := "#77DD77" if ratio > 1.0 else "#FF8866"
+	var sign_txt := "+" if pct > 0 else ""
+	if conditional:
+		return "\n[color=%s]→ %d damage %s[/color] [color=#8A8A96](%s%d%%)[/color]" % [col, after, when_txt, sign_txt, pct]
+	return "\n[color=%s]→ %d damage[/color] [color=#8A8A96](%s%d%%)[/color]" % [col, after, sign_txt, pct]
+
 
 func _on_milestone_tile_unhover() -> void:
 	# Back to the hint rather than to nothing: the panel keeps its height either way, and an
@@ -32704,31 +32853,10 @@ func _get_class_passive(class_type: String) -> Dictionary:
 	}
 
 func _get_race_passive(race_name: String) -> Dictionary:
-	"""Audit #2 Slice 2 — race passive info for the inspect Class & Race
-	section. Mirrors the per-effect getters in character.gd (get_xp_multiplier,
-	has_poison_resistance, get_magic_resistance, get_mana_multiplier,
-	try_last_stand, get_heal_multiplier, get_dodge_bonus, get_market_bonus,
-	get_low_hp_damage_bonus, get_ability_cost_multiplier, is_immune_to_death_curse,
-	does_poison_heal)."""
-	match race_name:
-		"Human":
-			return {"name": "Ambition", "description": "+10% XP from all sources.", "color": "#E6D8B0"}
-		"Elf":
-			return {"name": "Forest Heritage", "description": "+25% max Mana, +20% magic resist, takes 50% poison damage.", "color": "#88FFAA"}
-		"Dwarf":
-			return {"name": "Last Stand", "description": "34% chance to survive lethal damage with 1 HP (once per combat).", "color": "#D4A05A"}
-		"Ogre":
-			return {"name": "Hearty", "description": "Healing items and effects restore 2× HP.", "color": "#9CC25A"}
-		"Halfling":
-			return {"name": "Light-Footed", "description": "+10% dodge chance, +15% Valor from market listings.", "color": "#F0C474"}
-		"Orc":
-			return {"name": "Berserker", "description": "+20% damage when below 50% HP.", "color": "#D24A4A"}
-		"Gnome":
-			return {"name": "Arcane Tinkerer", "description": "−15% ability resource costs (mana / stamina / energy).", "color": "#9BA8FF"}
-		"Undead":
-			return {"name": "Cursed Resilience", "description": "Immune to death-curse effects; poison heals instead of damaging.", "color": "#A8A8A8"}
-		_:
-			return {"name": "None", "description": "No racial passive", "color": "#808080"}
+	"""Delegates to Character.race_passive_for. This used to be a hand-copy of the getters in
+	character.gd and it had drifted on two races (Dwarf's Last Stand chance, and where the
+	Halfling's Valor bonus actually comes from) - the same failure the class passives had."""
+	return CharacterScript.race_passive_for(race_name)
 
 func _get_buff_value(buff_type: String) -> int:
 	"""Get the current value of a buff type from character_data (combines active and persistent buffs)"""
