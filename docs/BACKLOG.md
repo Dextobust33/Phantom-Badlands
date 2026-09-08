@@ -215,10 +215,23 @@ while the Paladin's stat realignment held.
       now name their engine there.
 - [ ] **Death replay / shareable combat log.** When a player dies, the chat message carries a
       clickable link to the combat log — ideally a replay — so everyone can see how it happened.
-- [ ] **Combat layout at 1080p.** Monster ASCII still overlaps the player/companion cards by
-      default; per-element resize exists but players should not have to reach for it.
+- [ ] **Combat layout at 1080p — CONFIRM BEFORE BUILDING.** Owner 2026-09-08: *"needs confirmed
+      before we work it. May not be an issue anymore."* The overlap was logged 2026-05-28 and the
+      combat scene has been rebuilt several times since, so the report may already be stale.
+      Capture first: `python tools/test_setup/shots.py combat` renders the real client at
+      1920x1080 (SHOT_RES) into `claude_screenshots/`. Look at the image before writing any code;
+      if the overlap is gone, close this item rather than "fixing" it.
 - [ ] **Extend UI-scale registration** to the elements that still lack it (action bar, status HUD,
       inventory, market, crafting, sanctuary).
+
+- [ ] **Dungeon level mismatch — BLOCKED, needs a second example.** Owner reported a 1-1 wolf
+      dungeon advertising "recommended level 3" while floor-1 wolves were level 6. A real defect
+      was found and fixed in v0.9.758 (the warning quoted `min_level`, a static field on the
+      dungeon TYPE, while monsters are sized from the INSTANCE and scale per floor). But the
+      specific 3-to-6 gap could NOT be reproduced: tier 1 sub-tier 1 computes to a level 1-2 band,
+      so something else may also be involved. Owner 2026-09-08: *"something we will need another
+      example of since you were unable to find its cause."* Do not guess at a second fix — wait
+      for a repro with the DUNGEON NAME, then trace that instance's `dungeon_level`.
 
 ## Phase 4 — party (half-built; finish or cut)
 
