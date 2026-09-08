@@ -12,7 +12,16 @@ common way to lose a session.
 
 ## Where the game is (2026-09-07)
 
-Live: **v0.9.756** (client + server). Two releases shipped that day.
+Live: **v0.9.757** (client + server).
+
+- **Cards tell the truth about their own damage.** The estimate counted `power` picks alone while
+  nine more multipliers were applied, so four upgrades added 25-35% invisibly and Slow Burn took
+  25% away with no visible change. One shared table now feeds the roller and the card face; the
+  rank-up hover previews YOUR card with the pick on it. `-- upgradepreview` holds them to 0.007.
+- **All nine engines have their own name** (Momentum / Rage / Conviction, Focus / Volatility /
+  Insight, Leverage / Aim / Read). `-- enginenames` checks every surface, 9/9.
+- **Every release now passes `tools/verify_release_build.sh`** before upload, which asserts the
+  perf guards and catches the stale-export cache. v0.9.757 was the first through it.
 
 - **All nine classes run one of three engine shapes**, one of each per archetype, with their own
   starter deck and their own card names. No two classes in a path play alike.
