@@ -2317,6 +2317,7 @@ func _ready():
 	# correct it each time."* Both guards are now set from code and both are reported by
 	# --buildverify, which `tools/verify_release_build.sh` runs as a mandatory release gate.
 	Engine.max_fps = 60
+	_check_for_duplicate_instance()
 	# Set window title with version
 	DisplayServer.window_set_title("Phantom Badlands v" + get_version())
 
@@ -20321,6 +20322,59 @@ func _is_duration_capable(ability_name: String) -> bool:
 # 3-button sets (one per active companion across the swap).
 var _rank_choice_custom_buttons: Array = []
 
+const _INSTANCE_LOCK := "user://instance.lock"
+const _INSTANCE_HEARTBEAT_S := 30
+const _INSTANCE_STALE_S := 90
+var _duplicate_instance_warned := false
+
+func _check_for_duplicate_instance() -> void:
+	"""Notice when a SECOND client is already running, and say so. Never blocks.
+
+	2026-09-08, after a headless dev process was found alive for three days. Owner: *"Ensure this
+	can't happen to players either."* Checked rather than assumed, and the dangerous form already
+	cannot happen: nothing overrides `auto_accept_quit`, so closing the window really does end the
+	process, the client runs no threads that could hold it open, and the launcher quits a second
+	after spawning the game. A player cannot end up with a windowless orphan.
+
+	What CAN happen is two visible clients — launch twice and you get two 60fps render loops and
+	two TCP connections, which is the same silent CPU drain that produced the 4K-laptop thermal
+	report, just in player form.
+
+	This WARNS and lets you continue, deliberately. A hard block would have to decide whether a
+	lock belongs to a live client or a crashed one, and getting that wrong locks a player out of
+	their own game — a far worse failure than two windows. So the lock carries a heartbeat: a
+	crashed client stops writing it and goes stale on its own, and a reused PID cannot fake one."""
+	var now := int(Time.get_unix_time_from_system())
+	var f := FileAccess.open(_INSTANCE_LOCK, FileAccess.READ)
+	if f != null:
+		var parsed = JSON.parse_string(f.get_as_text())
+		f.close()
+		if parsed is Dictionary:
+			var pid := int(parsed.get("pid", 0))
+			var beat := int(parsed.get("heartbeat", 0))
+			var fresh: bool = (now - beat) < _INSTANCE_STALE_S
+			var alive: bool = pid > 0 and pid != OS.get_process_id() and OS.is_process_running(pid)
+			if alive and fresh:
+				_duplicate_instance_warned = true
+	_write_instance_lock()
+	var t := Timer.new()
+	t.wait_time = float(_INSTANCE_HEARTBEAT_S)
+	t.autostart = true
+	t.timeout.connect(_write_instance_lock)
+	add_child(t)
+
+
+func _write_instance_lock() -> void:
+	var f := FileAccess.open(_INSTANCE_LOCK, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(JSON.stringify({
+		"pid": OS.get_process_id(),
+		"heartbeat": int(Time.get_unix_time_from_system()),
+	}))
+	f.close()
+
+
 func _derive_short_name(ability_name: String) -> String:
 	"""A compact label for a gear affix token, derived from what the card is CALLED in MY hands.
 
@@ -23262,6 +23316,12 @@ func handle_server_message(message: Dictionary):
 				display_examine_result(message)
 
 		"location":
+			# Surfaced HERE rather than at _ready, because at startup there is no game output to
+			# print into yet. Fires once, on the first location message after entering the world.
+			if _duplicate_instance_warned:
+				_duplicate_instance_warned = false
+				display_game("[color=#FFAA00]Another copy of Phantom Badlands is already running on this PC.[/color]")
+				display_game("[color=#808080]Two clients means two of everything — twice the CPU and a hotter, slower machine. Close the other window unless you meant to run both.[/color]")
 			# Cache area + compass info for the Status HUD (visible even after UI updates)
 			hud_area_level = int(message.get("area_level", 0))
 			hud_area_is_hotspot = bool(message.get("area_is_hotspot", false))
