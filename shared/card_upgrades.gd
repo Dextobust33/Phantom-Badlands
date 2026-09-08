@@ -97,7 +97,7 @@ const UPGRADES := [
 	{"id": "refund", "wired": true, "name": "Closing Cost", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
 	 "desc": "Refunds its cost when it lands the killing blow."},
 	{"id": "swift", "wired": true, "name": "Swift", "kind": KIND_ANY, "stacks": false, "tradeoff": false,
-	 "desc": "Small chance to act again immediately."},
+	 "desc": "12% chance the enemy loses its turn, so you act again. Damaging cards only."},
 
 	# ---------------------------------------------------------------- TRADE-OFFS ------------
 	# Gated to TRADEOFF_MIN_MILESTONE and beyond: these are the genuinely hard picks, and a

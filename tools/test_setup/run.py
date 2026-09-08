@@ -77,10 +77,16 @@ def _settle_milestones(roster):
     queue of rank-up popups.
 
     2026-09-08, owner: "you need to set me up so I don't have to click through a dozen card
-    upgrades". `backfill_ability_uses_if_needed` grants a fresh character 200 uses of every
-    archetype ability, which crosses three thresholds each, so a brand new test character owes
-    ~20 choices before it has swung once. Each is spent on "power" here, which is the neutral
-    pick - it makes the cards stronger, not different, so a UI check is not confounded."""
+    upgrades", and then again after a death recreated the character: "I had to go through all the
+    card upgrades again."
+
+    The first version settled the picks already in the JSON and reported "settled 0" - correct and
+    useless, because `backfill_ability_uses_if_needed` runs SERVER-SIDE when the character LOADS,
+    which is after this. It grants 200 uses of every archetype ability, crossing three mastery
+    thresholds each, so the queue was created after the settling had finished. Setting
+    `ability_uses_backfilled` suppresses the backfill itself, which is the thing generating them.
+    Any picks already earned are still settled on "power", the neutral choice - stronger cards,
+    not different ones, so a UI check is not confounded."""
     n = 0
     for _u, _acc, cname, fn in roster:
         path = os.path.join(scen.SAVE_DIR, fn)
@@ -98,6 +104,7 @@ def _settle_milestones(roster):
                 n += earned - have
         c["ability_milestone_picks"] = picks
         c["pending_rank_choices"] = []
+        c["ability_uses_backfilled"] = True   # stop the server creating a fresh queue on load
         with open(path, "w", encoding="utf-8") as f:
             json.dump(c, f, indent="	")
     print("  settled %d owed card upgrade(s) - no rank-up popups this session" % n)

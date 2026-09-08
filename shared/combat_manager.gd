@@ -7239,9 +7239,10 @@ func preview_read_gain(character, combat: Dictionary, ability_name: String) -> i
 	card display in combat via multiple read showing on the card."
 
 	Computed server-side and sent with the card, rather than re-derived in the client — a client
-	copy of this would be the fourth mirror found and removed in as many days. It is the CEILING,
-	because Long Con is a coin flip and the conditional upgrades depend on state the player can
-	see for themselves (their own health, their own bar)."""
+	copy of this would be the fourth mirror found and removed in as many days. Long Con is a coin flip
+	so it is counted optimistically, but every CONDITIONAL upgrade is evaluated against the fight
+	as it stands RIGHT NOW - a pip the player cannot currently earn is not a preview, it is a
+	wrong number on a card."""
 	if character == null or character.get_class_path() != "trickster":
 		return 0
 	if Character.get_ability_archetype(ability_name) != "trickster":
@@ -7256,7 +7257,14 @@ func preview_read_gain(character, combat: Dictionary, ability_name: String) -> i
 			gain += 2
 		if "kindling" in picks and _primary_pool_current(character) >= _primary_pool_max(character):
 			gain += 1
-		if "harrying" in picks:
+		# 2026-09-08 - CONDITIONAL, matching the cast. Reported from play: "Track shows it gives
+		# two circles towards my engine stack but only gives 1 when I use it." Harrying only
+		# fires when the enemy is rattled (see the `_rattled` gate where it is actually applied),
+		# which is what its own description says: "whenever the enemy is stunned or distracted".
+		# This preview counted it unconditionally, so the card promised a stack the fight had not
+		# earned. `desperate` and `kindling` directly above were already conditional - harrying
+		# was the odd one out inside its own function.
+		if "harrying" in picks and (int(combat.get("enemy_distracted", 0)) > 0 or int(combat.get("monster_stunned", 0)) > 0):
 			gain += 1
 	return gain
 
