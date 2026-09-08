@@ -2918,8 +2918,25 @@ func _build_monster_column() -> VBoxContainer:
 		_lufia_monster_status.fit_content = true
 		_lufia_monster_status.scroll_active = false
 		_lufia_monster_status.add_theme_font_size_override("normal_font_size", 12)
-		_lufia_monster_status.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		# EXPAND_FILL, not SHRINK_CENTER. Reported live: "as soon as they cleared it went right
+		# back to being stretched vertically and broken." That was this line. A RichTextLabel
+		# with `fit_content` derives its HEIGHT from its width, so SHRINK_CENTER collapsed it to
+		# almost no width, the chips wrapped to roughly one character per line, and the label
+		# grew to hundreds of pixels tall - stretching the monster column, squashing the ASCII
+		# art out of proportion and pushing the bottom of the scene off a 1080p screen. It only
+		# showed once the label HAD text, which is why three earlier captures looked fine.
+		# `_monster_name_label`, four lines below, has always used EXPAND_FILL; I did not copy it.
+		_lufia_monster_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_lufia_monster_status.autowrap_mode = TextServer.AUTOWRAP_OFF
 		_lufia_monster_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# 2026-09-08 - HIDDEN until it has something to say. Reported live: "Monster ASCII art
+		# looks skewed... Can't see the bottom of combat anymore." That was this label: a
+		# RichTextLabel with fit_content still claims a line of height when empty, and this
+		# column is where the monster ART is sized. One empty line squeezed the art (skewed) and
+		# made the column taller, pushing the player card, the hand and the status strip off the
+		# bottom of a 1080p screen. With no debuffs on the monster the layout is now byte-for-byte
+		# what it was before this label existed.
+		_lufia_monster_status.visible = false
 		col.add_child(_lufia_monster_status)
 
 	_monster_name_label = RichTextLabel.new()
@@ -3013,6 +3030,22 @@ func _build_shared_hp_strip() -> HBoxContainer:
 	return strip
 
 
+func debug_status_state() -> String:
+	"""Report where the status chips ACTUALLY are. Added 2026-09-08 after four capture rounds
+	failed to show the monster chip row and code inspection could not say why."""
+	var mon_ok: bool = _lufia_monster_status != null and is_instance_valid(_lufia_monster_status)
+	var out := "lufia_mon_label=%s" % ("yes" if mon_ok else "NULL")
+	if mon_ok:
+		out += " text='%s' visible=%s size=%s pos=%s" % [
+			_lufia_monster_status.text, _lufia_monster_status.visible,
+			_lufia_monster_status.size, _lufia_monster_status.global_position]
+	if _monster_status_label != null and is_instance_valid(_monster_status_label):
+		out += " | shared_mon='%s' pos=%s" % [_monster_status_label.text, _monster_status_label.global_position]
+	if _player_status_label != null and is_instance_valid(_player_status_label):
+		out += " | player='%s' pos=%s" % [_player_status_label.text, _player_status_label.global_position]
+	return out
+
+
 func _build_shared_status_strip() -> HBoxContainer:
 	"""Tag-colored row showing active buffs / debuffs / DoT timers under each
 	combatant's HP bar. Mirrors the HP-strip layout (player on left, monster
@@ -3099,7 +3132,8 @@ func update_combat_status(player_status: Dictionary, monster_status: Dictionary)
 	if _lufia_monster_status != null and is_instance_valid(_lufia_monster_status):
 		# Rendered under the monster; the shared strip's right half stays blank so the same
 		# chips are not drawn twice in two different places.
-		_lufia_monster_status.text = mon_bb
+		_lufia_monster_status.text = ("[center]%s[/center]" % mon_bb) if mon_bb != "" else ""
+		_lufia_monster_status.visible = mon_bb != ""   # zero footprint when the monster is clean
 		_monster_status_label.text = ""
 	else:
 		_monster_status_label.text = mon_bb

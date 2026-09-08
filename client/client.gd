@@ -5817,21 +5817,30 @@ func _dev_run_shots() -> void:
 				# the monster's chip row renders in the right place, which is the question the
 				# shot is usually being taken to answer.
 				var _debuffs := ["analyze", "sabotage", "distract", "frost_nova", "paralyze"]
-				# Cast up to TWO, so the monster's chip row has more than one entry and its
-				# position is unmistakable in the frame.
+				# Check the hand EVERY round, not once. The hand is redrawn each turn, so a
+				# single check before attacking only sees the opening draw - and when that draw
+				# held no debuff the capture went ahead with an unmarked monster and the shot
+				# could not show the chip row at all. Third iteration on this harness: each time
+				# the capture "worked" and produced a frame that could not answer the question.
 				var _cast_n := 0
-				for _c in combat_hand:
-					if _cast_n >= 2:
-						break
-					if String(_c) in _debuffs and in_combat:
-						send_to_server({"type": "combat", "command": String(_c)})
-						_cast_n += 1
-						await get_tree().create_timer(2.6).timeout
-				for _i in range(2):
+				for _round in range(4):
 					if not in_combat:
-						break     # it died anyway; do not keep swinging at nothing
-					send_to_server({"type": "combat", "command": "attack"})
+						break
+					var _played := ""
+					if _cast_n < 2:
+						for _c in combat_hand:
+							if String(_c) in _debuffs:
+								_played = String(_c)
+								break
+					if _played != "":
+						send_to_server({"type": "combat", "command": _played})
+						_cast_n += 1
+					else:
+						send_to_server({"type": "combat", "command": "attack"})
 					await get_tree().create_timer(2.6).timeout
+				if _cast_n == 0:
+					print("[SHOTS] WARNING: no debuff was drawn in 4 rounds - the monster is")
+					print("[SHOTS] unmarked, so this frame cannot show the monster chip row.")
 				# A capture taken outside combat is the WRONG SCREEN, and a wrong screenshot is
 				# worse than none: it looks like evidence. Say so loudly rather than saving it.
 				if not in_combat:
@@ -5846,6 +5855,8 @@ func _dev_run_shots() -> void:
 					# code did not settle why the chips were absent from the frame, so print the
 					# payload rather than keep guessing at it.
 					print("[SHOTS] monster_status=", _last_monster_status)
+					if combat_scene_panel != null and combat_scene_panel.has_method("debug_status_state"):
+						print("[SHOTS] ", combat_scene_panel.debug_status_state())
 					if _milestone_overlay != null and is_instance_valid(_milestone_overlay) and _milestone_overlay.visible:
 						_milestone_overlay.visible = false
 						await get_tree().create_timer(0.4).timeout
