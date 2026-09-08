@@ -12,7 +12,13 @@ common way to lose a session.
 
 ## Where the game is (2026-09-07)
 
-Live: **v0.9.757** (client + server).
+Live: **v0.9.758** (client + server).
+
+- **One name and one number per thing.** A day of player reports turned out to be one shape nine
+  times over: a value stated in two places, drifting. Card faces vs hovers, the Trickster meter
+  tag, stat pools, racial passives (SIX copies), loot names, dungeon levels. Each was fixed at the
+  precedence or the generator, not at the instance.
+- **`-- namesweep`, `-- enginenames`, `-- statdesc`** cover all nine classes and fail loudly.
 
 - **Cards tell the truth about their own damage.** The estimate counted `power` picks alone while
   nine more multipliers were applied, so four upgrades added 25-35% invisibly and Slow Burn took
